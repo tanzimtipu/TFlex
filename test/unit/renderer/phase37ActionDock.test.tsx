@@ -584,17 +584,35 @@ describe("Phase 37 item 21 � the dock's default contents", () => {
     });
   });
 
-  it("keeps a cross-stage pin visible in a stage whose default set does not hold it", () => {
-    const { host, unmount } = renderDock({
+  it("Phase 42 (item 2) — a stage-native pin homes in its OWN stage, not the active one", () => {
+    // A stale `dockPins: ['watermark']` must NOT surface in the PAGES dock;
+    // watermark's single home is REVIEW.
+    const pages = renderDock({
       activeStage: "pages",
       dockPins: ["watermark"],
       dockUnpinned: ["rotate"],
     });
     try {
-      expect(verbIds(host, "pins")).toEqual(["watermark"]);
-      expect(verbIds(host)).not.toContain("rotate");
+      expect(pages.host.querySelector('[data-dock-group="pins"]')).toBeNull();
+      expect(verbIds(pages.host)).not.toContain("rotate");
+      expect(verbIds(pages.host)).not.toContain("watermark");
     } finally {
-      unmount();
+      pages.unmount();
+    }
+    // In REVIEW the pin is deduped against the stage default — one glyph only.
+    const review = renderDock({ activeStage: "review", dockPins: ["watermark"] });
+    try {
+      expect(verbIds(review.host).filter((id) => id === "watermark")).toEqual(["watermark"]);
+      expect(review.host.querySelector('[data-dock-group="pins"]')).toBeNull();
+    } finally {
+      review.unmount();
+    }
+    // A GLOBAL tool (no stage dock) still pins into any stage.
+    const globalPin = renderDock({ activeStage: "pages", dockPins: ["zoomIn"] });
+    try {
+      expect(verbIds(globalPin.host, "pins")).toEqual(["zoomIn"]);
+    } finally {
+      globalPin.unmount();
     }
   });
 });

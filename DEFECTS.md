@@ -5,6 +5,34 @@
 > inspect the current `OPEN`, `FIX-READY`, and `DISPUTED` entries first; closed records are
 > historical evidence and must not be loaded wholesale.
 
+## DEF-359: Palette reports a stage-native pin as "pinned to the dock" in stages whose dock filters it out
+
+- Status: CLOSED
+- Severity: MEDIUM
+- Found by: adversary (ADV-097)
+- Phase: 42
+
+Steps to reproduce:
+1. `npm.cmd run build` (exit 0); seed a temp userData dir with a copy of the operator's real `%APPDATA%\tflex\settings.json` (carries `dockPins: ["watermark"]`) and launch the dev app through the canonical `e2e/lib/launch.cjs` helper; open `report.pdf`.
+2. Walk every stage (Ctrl+1..4), read the Action Dock verb/pin lists, then open Ctrl+K in each stage and read the Watermark row's `data-palette-pinned` / `data-palette-pin-state` / `data-palette-pin-stage`.
+3. In EDIT (Ctrl+2) open Ctrl+K, search "watermark", click its pin toggle, read the notice, and re-read the persisted `dockPins`.
+
+Expected: the Phase-40 item-6 / DEF-353 contract — the palette's pin toggle reflects what the dock is actually showing, and the two surfaces never disagree about the same tool. With Phase 42's one-home filter the dock hides a stage-native pin outside its stage, so the palette must stop reporting that tool as pinned in those stages (or state that it is pinned in its own stage), and a toggle in a foreign stage must name the dock the action actually touched.
+
+Actual (pre-fix): `isPinVisibleInStage` was applied only in `ActionDock`; the host's `isPaletteToolPinned` (`dockPins.includes(id)`) was unchanged, so the palette reported the tool pinned in stages whose dock filtered it out. With `dockPins: ["watermark"]` the dock correctly showed Watermark only in REVIEW, but the palette row had `data-palette-pinned=true` and state `pinned` in ALL FOUR stages. Pressing that toggle in EDIT reported "Unpinned Watermark from the dock" although the EDIT dock never contained it; pinning from EDIT reported "Pinned Watermark to the dock" while the EDIT dock was unchanged (the pin actually lands in REVIEW).
+
+Raw (post-fix): `e2e/def359_palette_pin_verify.spec.cjs` — 2 passed. Per-stage Watermark row with the operator's real `dockPins:["watermark"]`:
+- PAGES: dockHasWatermark=false; row `data-palette-pinned="false"`, `data-palette-pin-state="pinned-elsewhere"`, `data-palette-pin-stage="review"`, aria-label "Unpin Watermark from the Review dock".
+- EDIT: identical to PAGES.
+- REVIEW: dockHasWatermark=true; row `data-palette-pinned="true"`, `data-palette-pin-state="pinned"`, no `data-palette-pin-stage`, aria-label "Unpin Watermark from the dock".
+- DELIVER: identical to PAGES.
+Watermark renders in exactly REVIEW across the four docks. Unpin/re-pin from EDIT: persisted `dockPins` before `["watermark"]`; unpin notice "Unpinned Watermark from the Review dock", row flips to `unpinned`, persisted `[]`; re-pin notice "Pinned Watermark to the Review dock", row returns to `pinned-elsewhere`, persisted `["watermark"]` — a real state change each way, no phantom message.
+
+History:
+- qa: opened (adversary ADV-097).
+- fix: `buildPaletteRows` scopes the marker to the active stage via `isPinVisibleInStage` (`pinned` = in the current dock, `pinnedStage` = the tool's own stage when the current dock filters it out); `palettePinStateFor` / `palettePinDockName` drive the toggle state and the notice copy, and `CommandPalette` passes `activeStage`.
+- qa: CLOSED -- retested on the rebuilt dev tree. `e2e/def359_palette_pin_verify.spec.cjs`: 2 passed. The palette marker agrees with the dock's visible contents in every stage (pinned iff the dock shows it), names REVIEW as the home in the three foreign stages, and the foreign-stage unpin/re-pin notices name the Review dock and make a real persisted change.
+
 ## DEF-358: After the EDIT-toolbar retirement, the armed edit tool has no active state on its dock verb
 
 - Status: CLOSED

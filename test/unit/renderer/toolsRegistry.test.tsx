@@ -21,12 +21,14 @@ import { describe, expect, it } from "vitest";
 import { createRoot } from "react-dom/client";
 import { act } from "react";
 import { ToolsPalette } from "../../../src/renderer/components/ToolsPalette";
+import { buildPaletteRows } from "../../../src/renderer/state/commandPalette";
 import {
   PALETTE_GROUPS,
   PALETTE_TOOL_IDS,
   TOOL_REGISTRY,
   dockRelevantIdsForStage,
   dockToolsForStage,
+  isPinVisibleInStage,
   paletteEntries,
   toolById,
   toolsForStage,
@@ -241,6 +243,62 @@ describe("toolsRegistry — canonical surface + the curated dock sets (DEF-313)"
       expect(allDockIds, id).not.toContain(id);
       // ...and each is still a registered entry (nothing removed).
       expect(toolById(id), id).toBeDefined();
+    }
+  });
+});
+
+describe("toolsRegistry — Phase 42: one icon per tool and one home per tool", () => {
+  it("gives every entry a DISTINCT icon (zero duplicate icon groups)", () => {
+    const icons = TOOL_REGISTRY.map((e) => e.icon);
+    const distinct = new Set(icons);
+    // The identity of a Lucide icon is its component reference, so a shared
+    // glyph is a shared reference and this set collapses the duplicates.
+    expect(distinct.size, "entries vs distinct icons").toBe(TOOL_REGISTRY.length);
+    // And no two entries share a component: a duplicate would appear here.
+    const seen = new Map<unknown, string>();
+    const clashes: string[] = [];
+    for (const entry of TOOL_REGISTRY) {
+      const prev = seen.get(entry.icon);
+      if (prev !== undefined) clashes.push(`${prev} + ${entry.id}`);
+      else seen.set(entry.icon, entry.id);
+    }
+    expect(clashes, "duplicate icon groups").toEqual([]);
+  });
+
+  it("puts watermark in exactly ONE stage's dock (REVIEW) and no other", () => {
+    const stages = ["pages", "edit", "review", "deliver"] as const;
+    const holders = stages.filter((stage) =>
+      dockToolsForStage(stage).some((e) => e.id === "watermark"),
+    );
+    expect(holders).toEqual(["review"]);
+    // The registry designates REVIEW as its canonical stage.
+    expect(toolById("watermark")?.stage).toBe("review");
+  });
+
+  it("keeps watermark reachable (and enabled) through the palette", () => {
+    expect(PALETTE_TOOL_IDS).toContain("watermark");
+    const row = buildPaletteRows({ query: "watermark" }).find(
+      (r) => r.kind === "tool" && r.id === "watermark",
+    );
+    expect(row?.kind === "tool" ? row.enabled : false).toBe(true);
+  });
+
+  it("renders a stale STAGE pin only in the tool's own stage; GLOBAL pins anywhere", () => {
+    // The operator's persisted `dockPins: ['watermark']` must not leak into the
+    // EDIT dock; it surfaces only in REVIEW.
+    const watermark = toolById("watermark");
+    expect(watermark).toBeDefined();
+    if (watermark === undefined) return;
+    expect(isPinVisibleInStage(watermark, "review")).toBe(true);
+    expect(isPinVisibleInStage(watermark, "edit")).toBe(false);
+    expect(isPinVisibleInStage(watermark, "pages")).toBe(false);
+    // A GLOBAL tool has no stage dock, so a pin is its only home and it may
+    // appear in any stage.
+    const undo = toolById("undo");
+    expect(undo?.stage).toBe("global");
+    if (undo === undefined) return;
+    for (const stage of ["pages", "edit", "review", "deliver"] as const) {
+      expect(isPinVisibleInStage(undo, stage), stage).toBe(true);
     }
   });
 });

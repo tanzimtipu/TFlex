@@ -64,7 +64,7 @@ import {
   shouldLiftDock,
   type PillBox,
 } from '../state/dockFit';
-import { toolById, dockToolsForStage, type ToolEntry } from '../state/toolsRegistry';
+import { toolById, dockToolsForStage, isPinVisibleInStage, type ToolEntry } from '../state/toolsRegistry';
 import {
   PAGE_COMPACT_W,
   PAGE_FULL_W,
@@ -482,9 +482,17 @@ export function ActionDock(props: ActionDockProps): ReactElement {
 
   // ---- State 3: pins ----------------------------------------------------
   const pins = useMemo(() => sanitizeDockPins(dockPins), [dockPins]);
+  // Phase 42 (item 2) — a pinned STAGE tool surfaces only in its own stage's
+  // dock (one home per tool); a GLOBAL tool (no stage dock) still pins into
+  // any stage. A pin of the active stage's own default is deduped just below.
   const pinnedEntries = useMemo(
-    () => pins.flatMap((id) => (toolById(id) === undefined ? [] : [toolById(id) as ToolEntry])),
-    [pins],
+    () =>
+      pins.flatMap((id) => {
+        const entry = toolById(id);
+        if (entry === undefined) return [];
+        return isPinVisibleInStage(entry, activeStage) ? [entry] : [];
+      }),
+    [pins, activeStage],
   );
   const dedupedPins = useMemo(
     () => dedupePinsAgainst(pinnedEntries, primaryIds),

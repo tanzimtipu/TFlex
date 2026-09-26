@@ -276,19 +276,24 @@ test('P36-C3-C pins (Phase 37 item 21): un-pin a default verb, re-pin restores, 
   expect(await win.locator('[data-dock-verb="split"]').count(), 're-pinning a default verb restores it').toBe(1);
   expect((s2 && s2.dockUnpinned) || [], 'the un-pin is cleared on re-pin').not.toContain('split');
 
-  // --- cap at 4: seed four cross-stage pins, then the Pin item is refused. ---
+  // --- cap at 4: seed four GLOBAL pins, then the Pin item is refused. ---
+  // Phase 42 (item 2) — a STAGE-NATIVE pin now surfaces only in its own stage
+  // (one home per tool), so the cross-stage assertion uses GLOBAL tools: they
+  // have no stage dock, so a pin is their only home and it may render in any
+  // stage. (The old seed — watermark/optimize/audit/recognizeText — was four
+  // stage-native tools and no longer renders outside their own stages.)
   const s3 = await loadSettings();
   await win.evaluate((v) => window.tflex.saveSettings(v), {
     ...s3,
-    dockPins: ['watermark', 'optimize', 'audit', 'recognizeText'],
+    dockPins: ['panMode', 'paneOpen', 'paneClear', 'redo'],
     dockUnpinned: [],
   });
   await win.waitForTimeout(800);
   await setStage(1);
   const pinnedIds = await win.$$eval('[data-action-dock] [data-dock-pin]', (els) =>
     els.map((e) => e.getAttribute('data-dock-pin')));
-  console.log(`[P36C3-C] seeded cross-stage pins=${JSON.stringify(pinnedIds)} divider=${await win.locator('[data-dock-divider]').count()}`);
-  expect(pinnedIds.length, 'four cross-stage pins render after the divider').toBe(4);
+  console.log(`[P36C3-C] seeded global pins=${JSON.stringify(pinnedIds)} divider=${await win.locator('[data-dock-divider]').count()}`);
+  expect(pinnedIds.length, 'four global pins render after the divider').toBe(4);
   await openMenu('rotate');
   const pinItem = win.locator('[data-dock-menu-item="pin"]');
   expect(await pinItem.isDisabled()).toBe(true);
@@ -297,11 +302,11 @@ test('P36-C3-C pins (Phase 37 item 21): un-pin a default verb, re-pin restores, 
   await win.keyboard.press('Escape');
   await win.waitForTimeout(300);
 
-  // --- unpin round-trip on a seeded cross-stage pin. ---
+  // --- unpin round-trip on a seeded global pin. ---
   await setStage(1);
-  await openMenu('audit');
+  await openMenu('panMode');
   await invokeMenu('unpin');
-  expect(await win.locator('[data-dock-pin="audit"]').count()).toBe(0);
+  expect(await win.locator('[data-dock-pin="panMode"]').count()).toBe(0);
   expect((await win.$$eval('[data-action-dock] [data-dock-pin]', (els) => els.map((e) => e.getAttribute('data-dock-pin')))).length).toBe(3);
 });
 

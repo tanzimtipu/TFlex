@@ -4109,3 +4109,88 @@ Disposition: ACCEPTED -> DEF-358
   reasoned from the CSS (the panes consume the capped `--tf-pane-inset`, the bar
   consumes the uncapped `--tf-tools-inset`) but not exercised, as it needs a
   second OCR run.
+
+
+## ADV-097: Palette still reports a stage-native pin as "pinned to the dock" in stages whose dock filters it out, and pinning one from a foreign stage silently has no visible effect (DEF-353 invariant regressed)
+
+- Session: phase-42 gate
+- Suggested severity: MEDIUM
+
+What I did:
+1. Copied the operator's real `%APPDATA%\tflex\settings.json` (carries
+   `dockPins: ["watermark"]`) into a temp userData dir and launched the dev build
+   through `e2e/lib/launch.cjs` (`node test-fixtures/adv-p42/probe.cjs pin watermark`),
+   opened `report.pdf`.
+2. Walked every stage (Ctrl+1..4), read the Action Dock verb/pin lists, then
+   opened Ctrl+K in each stage and read the Watermark row's
+   `data-palette-pinned` / `data-palette-pin-state` (probe `pin-palette`).
+3. In EDIT (Ctrl+2) opened Ctrl+K, searched "watermark" (screenshot
+   `pin-palette-edit-watermark.png`), clicked its pin toggle, read the notice,
+   and re-read the EDIT dock.
+4. Repeated with `dockPins: ["rotateCounterClockwise"]` (a stage-native tool that
+   is NOT any stage's default) and `["undo"]` (a global tool).
+
+Expected: the Phase-40 item-6 / DEF-353 contract - the palette's pin toggle
+reflects what the dock is actually showing, and the two surfaces never disagree
+about the same tool. With Phase 42's one-home filter, the dock hides a
+stage-native pin outside its stage; the palette should therefore stop reporting
+that tool as pinned in those stages (or state that it is pinned in its own
+stage).
+
+Actual: `isPinVisibleInStage` is applied only in `ActionDock`; the host's
+`isPaletteToolPinned` (App.tsx:7866, `dockPins.includes(id)`) is unchanged, so
+the palette reports the tool pinned in stages whose dock filters it out. With
+`dockPins: ["watermark"]` the dock correctly shows Watermark only in REVIEW
+(absent from PAGES/EDIT/DELIVER - the Phase-42 fix holds), but the palette row
+has `data-palette-pinned=true` and state `pinned` in ALL FOUR stages. The
+screenshot shows the EDIT dock's bottom bar with no Watermark while the palette
+row carries the filled pin glyph and the "Review" tag. Pressing that toggle in
+EDIT reported "Unpinned Watermark from the dock" although the EDIT dock never
+contained it. Reverse direction: from EDIT, pinning the unpinned Watermark row
+reported "Pinned Watermark to the dock" and flipped the row to pinned while the
+EDIT dock was unchanged - the pin actually lands in REVIEW with no hint, and it
+consumes one of the 4 pin slots. `rotateCounterClockwise` behaves the same:
+palette reports pinned in all four stages, only the PAGES dock renders it as a
+pin (so no capability is lost, but the marker disagrees in three stages).
+
+Screenshot: test-fixtures/adv-p42/shots/pin-palette-edit-watermark.png (EDIT
+dock + palette row showing Watermark pinned); dock-edit.png.
+
+Disposition: ACCEPTED -> DEF-359
+
+
+## Negative results - Phase 42 (no finding)
+
+- Icon identity (item 1): the real app's Ctrl+K palette rendered 94 rows with
+  ZERO blank glyphs and ZERO duplicate lucide classes; every stage dock
+  (PAGES/EDIT/REVIEW/DELIVER) rendered its verbs with distinct, label-correct
+  glyphs. I inspected the flagged near-miss pairs at 20px and an 8x enlargement
+  from the live DOM (test-fixtures/adv-p42/shots/near-miss-pairs.png). All pairs
+  are genuinely distinct: SquareDashed vs SquareDashedMousePointer (a cursor
+  arrow appears inside the latter), SquareX vs SquarePen vs SquarePlus, Minimize
+  (four corner strokes) vs Minus (a bar), Maximize2 vs Square, Type vs
+  TextCursorInput, and FileDown vs FileUp (arrow direction). Borderline only:
+  SquareDashed / SquareDashedMousePointer, where the cursor is small at 20px -
+  but they never co-occur (PAGES toolbar vs the REVIEW annotation flyout), so I
+  do not call it a clash. exportPages = image-down, exportDocx = file-type,
+  exportComments = file-down, importComments = file-up, extract =
+  arrow-up-from-line: each matches its label - no mis-mapped or inverted glyph.
+- Pin rule (item 2), other cases: a GLOBAL pin (`undo`) renders as a pin in all
+  four stage docks and the palette agrees everywhere; an unknown id (`ghostTool`)
+  is dropped without a crash and renders nowhere, as before. A stale pin of a
+  retired-but-present id (`editMode`) renders only in the EDIT dock (its own
+  stage) - pre-existing pin behaviour, not a Phase-42 change.
+- One home: with the operator's real `dockPins: ["watermark"]`, Watermark
+  rendered exactly once across the four docks (REVIEW inline, deduped against its
+  own stage default) and the other three docks were byte-identical to
+  `DOCK_STAGE_IDS`. Every REVIEW verb (annotate, sign, stamp, flatten, forms,
+  watermark, exportComments, importComments) and DELIVER verb (optimize, audit,
+  exportPages, exportText, exportDocx, createFromImages) kept its home.
+- Watermark capability (item 3): opens exactly one dialog from its REVIEW dock
+  verb AND from the Ctrl+K palette (probe `wm`: count=1 both ways; screenshot
+  test-fixtures/adv-p42/shots/watermark-dock.png). No watermark-dialog code was
+  touched by the phase diff.
+- Could not reproduce: any visual icon clash, blank glyph, or mis-mapped glyph.
+  I did not run the app in Multi Mode (the dock is shared and driven by the
+  focused pane's stage) nor in the dark/frosted themes for this icon pass -
+  both are out of the phase's icon-identity scope and were reasoned only.

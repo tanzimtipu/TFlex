@@ -25,7 +25,13 @@
 
 import { DOCK_AVAILABILITY_REASON, sanitizeDockPins } from './dockModel';
 import { STAGE_LABELS, type Stage } from './stages';
-import { TOOL_REGISTRY, toolById, type ToolEntry, type ToolStage } from './toolsRegistry';
+import {
+  TOOL_REGISTRY,
+  isPinVisibleInStage,
+  toolById,
+  type ToolEntry,
+  type ToolStage,
+} from './toolsRegistry';
 
 /** Row key prefixes (stable React keys and e2e selectors). */
 export const PALETTE_TOOL_PREFIX = 'tool:';
@@ -213,7 +219,18 @@ export interface PaletteToolRow {
   id: string;
   entry: ToolEntry;
   score: number;
+  /** DEF-359 — the pin is in the CURRENT stage's dock. A stage-native tool
+   *  pinned outside its own stage has `pinned: false` here and carries the
+   *  home in `pinnedStage`, so the palette never reports a pin in a dock that
+   *  filters the tool out. */
   pinned: boolean;
+  /** The tool's own stage when the pin lives there but the current stage does
+   *  not render it (the palette's "pinned-elsewhere" state). */
+  pinnedStage?: ToolStage;
+  /** The stage whose dock this row's pin ACTION lands in / is removed from,
+   *  when that is not the current dock (drives the notice copy). Undefined for
+   *  a global tool and for a tool already in the current stage. */
+  pinHomeStage?: ToolStage;
   enabled: boolean;
   reason: string | undefined;
 }
@@ -245,6 +262,12 @@ export interface PaletteRowGateArgs {
    *  palette's pin toggle icon must reflect what the dock is actually showing,
    *  so the host supplies the full answer; absent falls back to `dockPins`. */
   isToolPinned?: (id: string) => boolean;
+  /** DEF-359 — the stage the user is looking at (the focused pane's stage).
+   *  Phase 42's ONE-HOME rule means a stage-native tool only renders in its own
+   *  stage's dock; the palette scopes a pin's marker to this stage (naming the
+   *  home in `pinnedStage`) so the two surfaces can never disagree. Absent
+   *  preserves the unscoped Phase-40 behaviour. */
+  activeStage?: Stage;
 }
 
 /** The enabled state + the reason copy for one registry row. */
@@ -289,16 +312,27 @@ export function buildPaletteRows(args: PaletteRowsArgs): PaletteRow[] {
 
   const toolRows: PaletteToolRow[] = entries.map((entry) => {
     const state = paletteRowState(entry, args);
+    const rawPinned =
+      args.isToolPinned !== undefined
+        ? args.isToolPinned(entry.id)
+        : pins.includes(entry.id);
+    // DEF-359 — scope the palette's pin marker to the dock the user is
+    // actually looking at, using the SAME Phase-42 one-home rule the Action
+    // Dock applies (`isPinVisibleInStage`). A stage-native tool pinned in
+    // another stage is reported as pinned THERE (`pinnedStage`), never as if
+    // it were in the current dock; a global tool pins everywhere as before.
+    const visibleHere =
+      args.activeStage === undefined || isPinVisibleInStage(entry, args.activeStage);
+    const foreign = !visibleHere && entry.stage !== 'global';
     return {
       kind: 'tool',
       key: `${PALETTE_TOOL_PREFIX}${entry.id}`,
       id: entry.id,
       entry,
       score: scoreToolEntry(entry, query),
-      pinned:
-        args.isToolPinned !== undefined
-          ? args.isToolPinned(entry.id)
-          : pins.includes(entry.id),
+      pinned: rawPinned && visibleHere,
+      ...(rawPinned && foreign ? { pinnedStage: entry.stage } : {}),
+      ...(foreign ? { pinHomeStage: entry.stage } : {}),
       enabled: state.enabled,
       reason: state.reason,
     };
@@ -453,4 +487,28 @@ export function stageTagFor(row: PaletteRow): string | null {
 /** The stage a tool belongs to, for the tag chip's `data-stage` hook. */
 export function rowStage(row: PaletteRow): ToolStage | Stage | null {
   return row.kind === 'tool' ? row.entry.stage : null;
+}
+
+/* -------------------------------------------------------------------------
+ * DEF-359 — the pin toggle's state and copy
+ * ---------------------------------------------------------------------- */
+
+/** The three pin states the palette can render. `pinned` = in the CURRENT
+ *  stage's dock; `pinned-elsewhere` = pinned, but in the tool's own stage
+ *  (`row.pinnedStage`), which the current dock filters out; `unpinned` = not
+ *  in any dock. */
+export type PalettePinState = 'pinned' | 'pinned-elsewhere' | 'unpinned';
+
+export function palettePinStateFor(row: PaletteToolRow): PalettePinState {
+  if (row.pinned) return 'pinned';
+  return row.pinnedStage === undefined ? 'unpinned' : 'pinned-elsewhere';
+}
+
+/** The dock name a pin action on this row actually lands in / leaves, or
+ *  `undefined` when it is the current dock (the copy then just says "the
+ *  dock"). A stage-native tool pinned from/into a foreign stage names that
+ *  stage, so the notice never claims a change the visible dock did not make. */
+export function palettePinDockName(row: PaletteToolRow): string | undefined {
+  const stage = row.pinnedStage ?? row.pinHomeStage;
+  return stage === undefined ? undefined : STAGE_TAG_LABELS[stage];
 }

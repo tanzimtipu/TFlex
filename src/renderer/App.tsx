@@ -9343,6 +9343,7 @@ pushToast(
         dockPins={dockPins}
         isToolPinned={isPaletteToolPinned}
         isStageDefault={isPaletteStageDefault}
+        activeStage={activeStage}
         isToolEnabled={paletteToolEnabled}
         disabledReasonFor={paletteDisabledReason}
         toolUsage={settings.toolUsage}

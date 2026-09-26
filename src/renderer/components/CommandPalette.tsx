@@ -31,11 +31,14 @@ import {
   firstActionableIndex,
   isRowActionable,
   paletteNavFor,
+  palettePinDockName,
+  palettePinStateFor,
   stepHighlightEnabled,
   type PaletteRecentFile,
   type PaletteRow,
 } from '../state/commandPalette';
 import { palettePinAllowed } from '../state/dockModel';
+import type { Stage } from '../state/stages';
 import type { ToolEntry } from '../state/toolsRegistry';
 import { useBackdropFadeAnimation, useCommandPaletteAnimation } from '../hooks/useAnimations';
 
@@ -73,6 +76,10 @@ export interface CommandPaletteProps {
    *  focused-stage default the user has not un-pinned). Drives the pin
    *  toggle's icon/state; absent falls back to `dockPins` membership. */
   isToolPinned?: (id: string) => boolean;
+  /** DEF-359 — the stage the user is looking at. A stage-native tool's pin can
+   *  only render in its own stage's dock (Phase 42 one-home), so the palette
+   *  scopes the marker to this stage and names the home when they differ. */
+  activeStage?: Stage;
   /** Live availability gate, same contract as the Action Dock. */
   isToolEnabled?: (entry: ToolEntry) => boolean;
   /** DEF-327 — the SAME live refusal copy the Action Dock shows, so a disabled
@@ -102,6 +109,7 @@ export function CommandPalette(props: CommandPaletteProps): ReactElement {
     onOpenRecent,
     isToolPinned,
     isStageDefault,
+    activeStage,
     entries,
   } = props;
 
@@ -132,11 +140,12 @@ export function CommandPalette(props: CommandPaletteProps): ReactElement {
         usage: toolUsage,
         dockPins,
         isToolPinned,
+        activeStage,
         isToolEnabled: (entry): boolean => gateRef.current?.(entry) ?? true,
         disabledReasonFor: (entry): string | undefined => reasonRef.current?.(entry),
         entries,
       }),
-    [open, query, recentFiles, toolUsage, dockPins, isToolPinned, entries],
+    [open, query, recentFiles, toolUsage, dockPins, isToolPinned, activeStage, entries],
   );
 
   // Opening resets the surface: an empty query, the first runnable row
@@ -191,12 +200,24 @@ export function CommandPalette(props: CommandPaletteProps): ReactElement {
         setNotice(`${row.entry.label} is already pinned`);
         return;
       }
+      // DEF-359 — a stage-native tool pinned in its OWN stage is not in this
+      // stage's dock; report where it actually lives rather than writing a
+      // redundant pin the visible dock would never show.
+      if (row.pinnedStage !== undefined) {
+        setNotice(`${row.entry.label} is pinned to the ${STAGE_TAG_LABELS[row.pinnedStage]} dock`);
+        return;
+      }
       if (!palettePinAllowed({ pins: dockPins, isStageDefault: isStageDefault?.(row.id) ?? false })) {
         setNotice(PALETTE_DOCK_FULL_MESSAGE);
         return;
       }
       onPinTool(row.id);
-      setNotice(`Pinned ${row.entry.label} to the dock`);
+      const dock = palettePinDockName(row);
+      setNotice(
+        dock === undefined
+          ? `Pinned ${row.entry.label} to the dock`
+          : `Pinned ${row.entry.label} to the ${dock} dock`,
+      );
     },
     [dockPins, onPinTool, isStageDefault],
   );
@@ -214,13 +235,25 @@ export function CommandPalette(props: CommandPaletteProps): ReactElement {
       // box, so the latter would not close anyway — this is the run guard).
       event.stopPropagation();
       if (row.kind !== 'tool' || !row.enabled) return;
-      if (row.pinned) {
+      const dock = palettePinDockName(row);
+      // DEF-359 — a pin that lives in ANOTHER stage (pinnedStage) is still a
+      // pin: the toggle removes it and says from WHERE. A pin in this stage's
+      // dock keeps the original "from the dock" copy.
+      if (row.pinned || row.pinnedStage !== undefined) {
         if (onUnpinTool === undefined) {
-          setNotice(`${row.entry.label} is pinned to the dock`);
+          setNotice(
+            dock === undefined
+              ? `${row.entry.label} is pinned to the dock`
+              : `${row.entry.label} is pinned to the ${dock} dock`,
+          );
           return;
         }
         onUnpinTool(row.id);
-        setNotice(`Unpinned ${row.entry.label} from the dock`);
+        setNotice(
+          dock === undefined
+            ? `Unpinned ${row.entry.label} from the dock`
+            : `Unpinned ${row.entry.label} from the ${dock} dock`,
+        );
         return;
       }
       if (!palettePinAllowed({ pins: dockPins, isStageDefault: isStageDefault?.(row.id) ?? false })) {
@@ -228,7 +261,11 @@ export function CommandPalette(props: CommandPaletteProps): ReactElement {
         return;
       }
       onPinTool(row.id);
-      setNotice(`Pinned ${row.entry.label} to the dock`);
+      setNotice(
+        dock === undefined
+          ? `Pinned ${row.entry.label} to the dock`
+          : `Pinned ${row.entry.label} to the ${dock} dock`,
+      );
     },
     [dockPins, onPinTool, onUnpinTool, isStageDefault],
   );
@@ -437,6 +474,19 @@ function PaletteRowItem(props: PaletteRowItemProps): ReactElement {
   }
 
   const Icon = row.entry.icon;
+  // DEF-359 — the toggle reflects the dock the user is looking at: a pin that
+  // lives in another stage renders as "pinned-elsewhere" and its copy names
+  // that stage, so the marker never disagrees with the visible dock.
+  const pinState = palettePinStateFor(row);
+  const pinOn = pinState !== 'unpinned';
+  const pinDock = palettePinDockName(row);
+  const pinLabel = pinOn
+    ? pinDock === undefined
+      ? `Unpin ${row.entry.label} from the dock`
+      : `Unpin ${row.entry.label} from the ${pinDock} dock`
+    : pinDock === undefined
+      ? `Pin ${row.entry.label} to the dock`
+      : `Pin ${row.entry.label} to the ${pinDock} dock`;
   return (
     <li
       id={id}
@@ -447,6 +497,7 @@ function PaletteRowItem(props: PaletteRowItemProps): ReactElement {
       data-palette-tool-id={row.id}
       data-stage={row.entry.stage}
       data-palette-pinned={row.pinned ? 'true' : 'false'}
+      {...(row.pinnedStage === undefined ? {} : { 'data-palette-pin-stage': row.pinnedStage })}
       data-palette-disabled={row.enabled ? 'false' : 'true'}
       role="option"
       aria-selected={highlighted}
@@ -461,38 +512,30 @@ function PaletteRowItem(props: PaletteRowItemProps): ReactElement {
       <span className="command-palette-row-label">{row.entry.label}</span>
       <span className="command-palette-row-desc">{row.reason ?? row.entry.description}</span>
       {/* Phase 40 (item 6) — the pin TOGGLE. Its glyph is a solid, upright pin
-          when the tool is in the dock and an outline, 45deg-tilted pin when it
+          when the tool is in a dock and an outline, 45deg-tilted pin when it
           is not, so the state reads by SHAPE as well as by colour. The click
           handler stops propagation, so a pin click never runs the row. */}
       <button
         type="button"
         className={
-          row.pinned
+          pinOn
             ? 'command-palette-pin-toggle command-palette-pin-toggle-on'
             : 'command-palette-pin-toggle'
         }
         data-palette-pin-toggle
-        data-palette-pin-state={row.pinned ? 'pinned' : 'unpinned'}
-        {...(row.pinned ? { 'data-palette-pin': 'true' } : {})}
-        aria-pressed={row.pinned}
-        aria-label={
-          row.pinned
-            ? `Unpin ${row.entry.label} from the dock`
-            : `Pin ${row.entry.label} to the dock`
-        }
-        title={
-          row.pinned
-            ? `Unpin ${row.entry.label} from the dock`
-            : `Pin ${row.entry.label} to the dock`
-        }
+        data-palette-pin-state={pinState}
+        {...(pinOn ? { 'data-palette-pin': 'true' } : {})}
+        aria-pressed={pinOn}
+        aria-label={pinLabel}
+        title={pinLabel}
         disabled={!row.enabled}
         onClick={(event): void => onTogglePin(row, event)}
       >
-        <span className="command-palette-pin-glyph" data-pin-state={row.pinned ? 'pinned' : 'unpinned'}>
+        <span className="command-palette-pin-glyph" data-pin-state={pinState}>
           <Pin
             size={13}
-            fill={row.pinned ? 'currentColor' : 'none'}
-            className={row.pinned ? 'pin-glyph-pinned' : 'pin-glyph-unpinned'}
+            fill={pinOn ? 'currentColor' : 'none'}
+            className={pinOn ? 'pin-glyph-pinned' : 'pin-glyph-unpinned'}
             aria-hidden
           />
         </span>
