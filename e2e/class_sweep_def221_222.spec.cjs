@@ -61,12 +61,14 @@ async function openReport() {
 
 async function armEditTool(tool) {
   // Phase 36 (chunk 3) — the per-view command row is retired; Edit mode is the
-  // EDIT dock's `editMode` verb.
+  // EDIT stage. Phase 41 (item 2) — the legacy edit toolbar is retired; its
+  // tool modes ride the EDIT dock.
   await toggleEditMode(win);
-  await win.waitForSelector('[data-edit-toolbar]', { timeout: 10000 });
+  await win.locator('[data-dock-verb="editTextBox"]').waitFor({ state: 'visible', timeout: 10000 });
   await win.waitForTimeout(300);
   if (tool && tool !== 'off') {
-    await win.click(`[data-edit-tool="${tool}"]`);
+    const verb = { text: 'editText', box: 'editTextBox', image: 'editImage' }[tool];
+    await win.locator(`[data-dock-verb="${verb}"]`).click();
     await win.waitForTimeout(400);
   }
 }
@@ -345,11 +347,9 @@ async function createTextBoxBelow(scale, runPx, label) {
   // recompute the canvas-px rect from the actual viewport point. Phase 36: read
   // the panel's ACTUAL right edge (it is wider than the old hardcoded 500px and
   // now floats inside .workspace-main), so a fixed MIN_X starts the drag on it.
-  const panelRight = await win.evaluate(() => {
-    const p = document.querySelector('[data-text-panel]');
-    return p ? p.getBoundingClientRect().right : 0;
-  });
-  const MIN_X = Math.max(500, panelRight + 40);
+  // Phase 38 retired the floating card; the text panel is re-parented into the
+  // Inspector at the RIGHT edge, so there is no left-edge card to dodge.
+  const MIN_X = 500;
   if (a.x < MIN_X) {
     const shift = MIN_X - a.x;
     a = { x: a.x + shift, y: a.y };
@@ -564,9 +564,11 @@ test('A1c image move: old rect masked, band above stable, no leftover, save/reop
     } catch (e) { return 'throw:' + e.message; }
   });
   const flash = await aroundFlash(async () => {
+    // The placement can sit under the bottom-centre Action Dock; start the drag
+    // at the placement's top edge so the dock does not intercept the pointerdown.
     await dragMouse(
-      { x: imgRect.x + imgRect.w / 2, y: imgRect.y + imgRect.h / 2 },
-      { x: imgRect.x + imgRect.w / 2 + 110, y: imgRect.y + imgRect.h / 2 + 90 },
+      { x: imgRect.x + imgRect.w / 2, y: imgRect.y + 6 },
+      { x: imgRect.x + imgRect.w / 2 + 110, y: imgRect.y + 6 + 90 },
       14,
     );
   }, 3000, 2);
@@ -832,9 +834,11 @@ test('B1 DEF-223 retest: image move commits, mask exact, persists, no flash', as
   const imgRect = await imagePlacementRect();
   expect(imgRect, 'committed .edit-image-placement must exist').toBeTruthy();
   const flash = await aroundFlash(async () => {
+    // The placement can sit under the bottom-centre Action Dock; start the drag
+    // at the placement's top edge so the dock does not intercept the pointerdown.
     await dragMouse(
-      { x: imgRect.x + imgRect.w / 2, y: imgRect.y + imgRect.h / 2 },
-      { x: imgRect.x + imgRect.w / 2 + 110, y: imgRect.y + imgRect.h / 2 + 90 },
+      { x: imgRect.x + imgRect.w / 2, y: imgRect.y + 6 },
+      { x: imgRect.x + imgRect.w / 2 + 110, y: imgRect.y + 6 + 90 },
       14,
     );
   }, 3000, 2);
@@ -903,10 +907,14 @@ test('B2 DEF-223 retest: image resize commits, persists, neighbours intact, no f
   console.log(`[B2|IMG-PX] old=${JSON.stringify(imgPx)}`);
 
   // A plain click selects the placement (pointerdown + pointerup, no move),
-  // which mounts the corner handles.
+  // which mounts the corner handles. The placement can sit under the
+  // bottom-centre Action Dock, so scroll it up first and click its top edge.
   const imgRect0 = await imagePlacementRect();
   expect(imgRect0, 'committed .edit-image-placement must exist').toBeTruthy();
-  await win.mouse.click(imgRect0.x + imgRect0.w / 2, imgRect0.y + imgRect0.h / 2);
+  await win.evaluate(() => { const sc = document.querySelector('.document-scroller'); if (sc) sc.scrollTop += 160; });
+  await win.waitForTimeout(400);
+  const imgRectSel = await imagePlacementRect();
+  await win.mouse.click(imgRectSel.x + imgRectSel.w / 2, imgRectSel.y + 6);
   await win.waitForTimeout(400);
   const handle = await win.evaluate(() => {
     const h = document.querySelector('.edit-image-handle-se');

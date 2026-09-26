@@ -453,3 +453,40 @@ describe("Phase 38 feature B — DEF-354 / DEF-355 on-wash contrast", () => {
   });
 });
 
+/**
+ * Phase 41 (item 3) — the professional SELECTION trio. The accent glyph sits on
+ * the `--select-fill` wash composited over the control's real surface (the
+ * panel for the text-props segmented buttons, the rail for the thumbnail's
+ * page-number label). Both must clear the 4.5:1 interactive-text floor in all
+ * three themes, and the trio must be the SAME token names everywhere.
+ */
+describe("Phase 41 item 3 — the selection trio clears the text floor", () => {
+  it("--select-glyph on --select-fill over --panel-bg clears 4.5:1 in all three themes", () => {
+    const failures: string[] = [];
+    const measured: string[] = [];
+    for (const { id, map } of THEMES) {
+      const surface = washSurface(map, "--select-fill", "--panel-bg");
+      const ink = tokenColor(map, "--select-glyph");
+      const ratio = contrast(ink, surface);
+      measured.push(`${id} ${ratio.toFixed(2)}`);
+      if (ratio < TEXT_FLOOR) {
+        failures.push(
+          `${id} --select-glyph on --select-fill/--panel-bg = ${ratio.toFixed(2)} (floor ${TEXT_FLOOR})`,
+        );
+      }
+    }
+    console.log(`[P41 selection] glyph on fill: ${measured.join(" | ")}`);
+    expect(failures, failures.join("\n")).toEqual([]);
+  });
+
+  it("the trio is declared per theme and the glyph resolves to the theme primary", () => {
+    for (const { id, map } of THEMES) {
+      expect(resolveToken("--select-fill", map), `${id} --select-fill`).toBeTruthy();
+      expect(resolveToken("--select-edge", map), `${id} --select-edge`).toBeTruthy();
+      expect(resolveToken("--select-glyph", map), `${id} --select-glyph`).toBe(
+        resolveToken("--sem-primary", map),
+      );
+    }
+  });
+});
+

@@ -1043,10 +1043,11 @@ describe("Phase D — three-theme coherence + embedded theme picker license", ()
     if (activeGlow !== null) {
       expect(activeGlow[1] ?? "").toMatch(/\d+px\s+rgba\(37,\s*99,\s*235/);
     }
+    // Phase 41 (item 3) split .thumb-selected out of the frosted accent-halo
+    // rule: the CURRENT-page marker keeps the frosted-scoped accent halo; the
+    // SELECTED thumb now consumes the shared neutral selection trio.
     const thumbGlow =
-      /:root\[data-theme="frosted"\]\s+\.thumb-current,[\s\S]*?\.thumb-selected\s*\{([\s\S]*?)\n\}/.exec(
-        cssClean,
-      );
+      /:root\[data-theme="frosted"\]\s+\.thumb-current\s*\{([\s\S]*?)\n\}/.exec(cssClean);
     expect(thumbGlow).not.toBeNull();
     if (thumbGlow !== null) {
       expect(thumbGlow[1] ?? "").toMatch(/\d+px\s+rgba\(37,\s*99,\s*235/);
@@ -1334,13 +1335,6 @@ describe("Phase 20 — surface motion contract", () => {
       primitive: "TfResize",
       presenceFiles: ["src/renderer/signatures/SignatureManagerModal.tsx"],
       preset: null,
-    },
-    {
-      surface: "edit toolbar",
-      wrapperFile: "src/renderer/edit/EditToolbar.tsx",
-      primitive: "TfBar",
-      presenceFiles: ["src/renderer/components/DocumentView.tsx"],
-      preset: "tfBar",
     },
     {
       surface: "search bar",

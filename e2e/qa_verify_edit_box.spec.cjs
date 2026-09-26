@@ -23,10 +23,10 @@ test.describe('Verification: Add Box Edit Mode', () => {
 
     // 2. Enter Edit mode (Phase 36 — the EDIT dock's `editMode` verb)
     await toggleEditMode(win);
-    await win.waitForSelector('[data-edit-toolbar]', { timeout: 10000 });
+    await win.locator('[data-dock-verb="editTextBox"]').waitFor({ state: 'visible', timeout: 10000 });
 
     // 3. Click "Add box" tool
-    await win.click('[data-edit-tool="box"]');
+    await win.locator('[data-dock-verb="editTextBox"]').click();
     await win.waitForTimeout(400);
 
     // 4. Click on existing text to edit it

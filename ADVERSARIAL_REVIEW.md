@@ -4013,3 +4013,99 @@ Disposition: ACCEPTED -> DEF-355
 
 
 
+
+
+## ADV-096: After the EDIT-toolbar retirement, the armed edit tool has no active state on its dock verb
+
+- Session: phase-41 gate
+- Suggested severity: MEDIUM
+
+What I did:
+1. `npm.cmd run build:renderer` (exit 0); launched the dev build through the
+   canonical `e2e/lib/launch.cjs` (harness `test-fixtures/adv-p41/probe.cjs`),
+   opened `report.pdf`, pressed Ctrl+2 for EDIT. The dock renders the four edit
+   verbs `editText` (primary), `editImage`, `editTextBox`, `editToolOff`.
+2. Clicked `Edit text` (editText); the page's `.edit-layer` armed
+   (`data-tool="text"`). Then armed `editTextBox` / `editImage` / `editToolOff`
+   in turn.
+3. Read the target verb's attributes/class/computed style, and the `aria-pressed`
+   of every edit verb, after each arm (`probe.cjs detail`).
+
+Expected: the armed tool's dock verb shows an active/pressed state so the user
+can see which edit tool is live - the retired `.edit-toolbar-btn-active` did
+exactly that (accent wash + accent border) - and keyboard/AT users get the toggle
+through `aria-pressed`.
+
+Actual: no edit verb ever carries an active state. After arming `editText`:
+`hasAttribute('aria-pressed') === false`, `class="action-dock-verb
+action-dock-verb-primary"`, `boxShadow:none`. After arming `editTextBox` or
+`editImage`: `class="action-dock-verb"`, `boxShadow:none` (only the transient
+hover wash from the click shows). Armed and unarmed are indistinguishable, and
+`editText` looks accent-tinted whether or not it is armed because it is the dock
+PRIMARY verb. Root cause: `src/renderer/components/DocumentView.tsx:4342` still
+passes `activeToolIds={editModeOpen ? ['editMode'] : []}`, but `editMode` was
+retired as a dock verb in Phase 37 (`DOCK_STAGE_IDS.edit` is
+editText/editImage/editTextBox/editToolOff/recognizeText/batchOcr/ocrSuspects;
+`SURFACE_BY_ID.editMode = 'panel'`), so the id never matches a rendered verb and
+the dock's pressed treatment `.action-dock-verb[aria-pressed='true']`
+(styles.css:13696) is never applied to an edit tool.
+
+Screenshot: test-fixtures/adv-p41/shots/dock-armed-editText.png (and
+dock-armed-editTextBox.png)
+
+Disposition: ACCEPTED -> DEF-358
+
+
+## Negative results - Phase 41 (no finding)
+
+- Item 1 - Inspector surface: computed `background-color` alpha is 1 in all 3
+  themes x 4 stages; in frosted the `linear-gradient(rgba(255,255,255,0.68),
+  rgba(255,255,255,0.68))` glass film composites over the opaque
+  `--tf-canvas-opaque` (#eef1f5), `isolation:isolate`, z-index 30. A 10x18
+  `elementFromPoint` grid inside the panel returned only the panel and its
+  descendants in every stage (0 offenders), so no control is unreachable under
+  it. With the page zoomed hard against the panel edge (EDIT), pixel scans of the
+  panel's page-facing margin found 0 dark page-text pixels in light/frosted and
+  no near-white canopy pixel in dark (top colours 16,20,25 / 23,28,34 - all well
+  below the page white), i.e. no bleed-through. Geometry is unchanged
+  (border-radius 0, width 264, 1px hairline left border). Toggling collapse 6x
+  alternated 264<->44 with the inset tracking it; a resize sweep
+  1920/1024/900/760/640 stayed opaque with the inset following the ladder.
+- DEF-357 (adjacent to item 1): verified FIXED. With the OCR suspects bar open
+  and the Inspector open at 1440x900 the bar's right edge equals the Inspector's
+  left edge (both 1176, gap/overlap 0); the close button (x 1142..1164) sits
+  entirely left of the panel, `elementFromPoint` at its centre resolves to the
+  button's own SVG child, and a real Playwright pointer click closed the bar. It
+  holds when the Inspector is collapsed (44px) and across 1920/1024/900/760/640
+  and all three themes. Limitation: `report.pdf` current-page OCR yielded 0
+  suspects, so the bar body was only exercised in its empty state
+  (scrollHeight == clientHeight == 109).
+- Item 2 - reachability (besides the missing indicator above): all four edit
+  verbs arm/unmount correctly (`data-tool` text/box/image; `editToolOff` -> 0
+  layers); entering EDIT -> arm text -> leave -> return leaves the layer off with
+  no error; 24 rapid tool switches and closing a document with a tool armed both
+  produced no pageerror and a clean welcome; the palette lists all edit ids and
+  the EDIT panel's Default font picker works and persists (`editDefaultFont`
+  = "Times"); `[data-edit-toolbar]` / `.edit-toolbar` / `[data-edit-tool]` count
+  0 in every stage.
+- Item 3 - selection states: floors hold for the active align option (5.30 light
+  / 5.77 dark / 6.83 frosted) and the selected thumbnail (5.63 / 6.66 / 7.43).
+  The active option's resting == hovered (by design) and is distinct from a
+  non-active hover (0.07 vs 0.04 fill plus the accent-tinted edge + inset ring);
+  a selected thumb's hover does not change; `.thumb-current` (solid accent ring)
+  and `.thumb-selected` (tint + select-edge inset ring) stay distinct; under
+  forced-colors the selected thumb keeps a distinct border (rgb(55,0,110) vs
+  rgb(0,0,0)).
+- Item 4 - separators/edge: `.stage-rail` `border-right` equals `--divider` in
+  all three themes with gap 0 / overlap 0 at 1440 and 900. The Inspector's
+  selected page-facing edge equals `--panel-border` (never `--sem-primary`);
+  rest box-shadow none, selected gains the neutral inset highlight + outward
+  glow. (The 0.667px computed hairline is the app's global pixel scale, the same
+  on every hairline - not a Phase-41 change.)
+- Could not reproduce / not verified: a keyboard `:focus-visible` ring on the
+  active align option - my Tab/Shift-Tab sequence did not land focus back on the
+  button, so the readout was inconclusive rather than a finding (styles.css:2873
+  declares a 2px accent outline). Multi Mode with the OCR bar + Inspector was
+  reasoned from the CSS (the panes consume the capped `--tf-pane-inset`, the bar
+  consumes the uncapped `--tf-tools-inset`) but not exercised, as it needs a
+  second OCR run.

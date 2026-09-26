@@ -23,6 +23,16 @@ export interface WhatsNewEntry {
 /** Ordered newest first. */
 export const WHATS_NEW: WhatsNewEntry[] = [
   {
+    version: '1.33.0',
+    date: '2026-09-26',
+    highlights: [
+      'The Inspector now matches the other panels in every theme - no more see-through panel in Edit mode.',
+      'The old Edit toolbar is retired: its tools now live in the dock and the Edit panel.',
+      'Selected options and the selected page use a softer, professional highlight.',
+      'A clean separator between the side rail and the context panel, and a subtle glow in place of the blue line on the Inspector.',
+    ],
+  },
+  {
     version: '1.32.0',
     date: '2026-09-26',
     highlights: [

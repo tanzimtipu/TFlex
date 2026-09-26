@@ -30,10 +30,23 @@ test.setTimeout(180000);
 
 const state = () => win.evaluate(() => ({
   stage: document.querySelector('[data-stage-rail]')?.getAttribute('data-active-stage') ?? null,
-  editToolbar: document.querySelectorAll('[data-edit-toolbar]').length,
+  // Phase 41 (item 2) — the legacy edit toolbar is retired; the edit layer
+  // (mounted only while edit mode is on and a tool is armed) is the observable.
+  editLayer: document.querySelectorAll('.edit-layer').length,
 }));
 
-test('DEF-342: EDIT stage returns its edit toolbar after a tab switch (fixed)', async () => {
+// Arm the edit-text tool through the EDIT dock. When edit mode is OFF the
+// handler is a no-op, so the edit layer stays unmounted — a faithful probe of
+// "is edit mode on in the EDIT stage".
+async function armEditText() {
+  const verb = win.locator('[data-dock-verb="editText"]');
+  if ((await verb.count()) > 0) {
+    await verb.click();
+    await win.waitForTimeout(400);
+  }
+}
+
+test('DEF-342: EDIT stage returns its edit mode after a tab switch (fixed)', async () => {
   // Pane = report.pdf.
   const report = getSamplePath('report.pdf');
   await app.evaluate(async ({ dialog }, fp) => {
@@ -43,14 +56,15 @@ test('DEF-342: EDIT stage returns its edit toolbar after a tab switch (fixed)', 
   await win.waitForSelector('.pdf-page canvas', { timeout: 30000 });
   await win.waitForTimeout(1000);
 
-  // Enter EDIT: the stage is the switch, so the edit toolbar mounts.
+  // Enter EDIT: the stage is the switch, so edit mode turns on.
   await win.evaluate(() => { if (document.activeElement instanceof HTMLElement) document.activeElement.blur(); });
   await win.keyboard.press('Control+2');
   await win.waitForTimeout(600);
+  await armEditText();
   const inEdit = await state();
   log('in-edit', inEdit);
   expect(inEdit.stage, 'the EDIT stage is active').toBe('edit');
-  expect(inEdit.editToolbar, 'entering EDIT mounts the edit toolbar').toBe(1);
+  expect(inEdit.editLayer, 'entering EDIT enables edit mode (the edit layer mounts)').toBeGreaterThan(0);
 
   // Close the only tab while in EDIT, then open a document again.
   await win.locator('.tab-active .tab-close').click();
@@ -63,6 +77,7 @@ test('DEF-342: EDIT stage returns its edit toolbar after a tab switch (fixed)', 
   }, long);
   await win.locator('[data-toolbar-open]').first().click();
   await win.waitForTimeout(2000);
+  await armEditText();
   const afterOpen = await state();
   log('after-open', afterOpen);
 
@@ -70,6 +85,7 @@ test('DEF-342: EDIT stage returns its edit toolbar after a tab switch (fixed)', 
   await win.evaluate(() => { if (document.activeElement instanceof HTMLElement) document.activeElement.blur(); });
   await win.keyboard.press('Control+2');
   await win.waitForTimeout(600);
+  await armEditText();
   const afterReselect = await state();
   log('after-reselect', afterReselect);
 
@@ -78,11 +94,12 @@ test('DEF-342: EDIT stage returns its edit toolbar after a tab switch (fixed)', 
   await win.waitForTimeout(400);
   await win.keyboard.press('Control+2');
   await win.waitForTimeout(600);
+  await armEditText();
   const afterCycle = await state();
   log('after-cycle', afterCycle);
 
   expect(afterOpen.stage, 'the rail still shows EDIT after the tab switch').toBe('edit');
-  expect(afterOpen.editToolbar, 'the edit toolbar returns when a document arrives while the stage is EDIT').toBe(1);
-  expect(afterReselect.editToolbar, 're-selecting EDIT keeps the edit toolbar').toBe(1);
-  expect(afterCycle.editToolbar, 'a real stage change keeps it').toBe(1);
+  expect(afterOpen.editLayer, 'edit mode returns when a document arrives while the stage is EDIT').toBeGreaterThan(0);
+  expect(afterReselect.editLayer, 're-selecting EDIT keeps edit mode').toBeGreaterThan(0);
+  expect(afterCycle.editLayer, 'a real stage change keeps it').toBeGreaterThan(0);
 });

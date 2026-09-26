@@ -28,18 +28,19 @@ test.describe('Ground Truth: Edit Mode Verification', () => {
     // the EDIT dock's `editMode` verb.
     await toggleEditMode(win);
     
-    // Wait for edit toolbar
-    await win.waitForSelector('[data-edit-toolbar]', { timeout: 10000 });
+    // Wait for the EDIT dock's edit-layer verbs (Phase 41 item 2 — the legacy
+    // edit toolbar is retired; its tool modes ride the dock).
+    await win.locator('[data-dock-verb="editTextBox"]').waitFor({ state: 'visible', timeout: 10000 });
     
     // 4. Observe placement
-    // Take screenshot 1: Edit mode active showing toolbar placement
+    // Take screenshot 1: Edit mode active showing the dock placement
     await win.waitForTimeout(1000); // Wait for animations
     const shot1 = await shot(win, 'edit-mode-ground-truth-1.png');
     console.log(`Screenshot 1 saved to ${shot1}`);
 
-    // Check if toolbar is in the middle
+    // Check where the EDIT dock sits
     const toolbarRect = await win.evaluate(() => {
-      const el = document.querySelector('[data-edit-toolbar]');
+      const el = document.querySelector('[data-action-dock]');
       if (!el) return null;
       const r = el.getBoundingClientRect();
       return { 
@@ -54,15 +55,15 @@ test.describe('Ground Truth: Edit Mode Verification', () => {
     
     if (toolbarRect) {
       const isMiddle = toolbarRect.top > toolbarRect.windowHeight / 3 && toolbarRect.top < (toolbarRect.windowHeight * 2 / 3);
-      console.log(`Toolbar Top: ${toolbarRect.top}, Window Height: ${toolbarRect.windowHeight}`);
+      console.log(`Dock Top: ${toolbarRect.top}, Window Height: ${toolbarRect.windowHeight}`);
       console.log(`Is in middle? ${isMiddle}`);
     }
 
-    // 5. Try each edit tool
-    const tools = ['text', 'box', 'image'];
-    for (const tool of tools) {
+    // 5. Try each edit tool (the dock verbs)
+    const tools = [['text', 'editText'], ['box', 'editTextBox'], ['image', 'editImage']];
+    for (const [tool, verb] of tools) {
       console.log(`Testing tool: ${tool}`);
-      const toolBtn = win.locator(`[data-edit-tool="${tool}"]`);
+      const toolBtn = win.locator(`[data-dock-verb="${verb}"]`);
       if (await toolBtn.count() > 0) {
         await toolBtn.click();
         await win.waitForTimeout(500);

@@ -400,18 +400,17 @@ async function ensurePanelExpanded(window) {
   }
 }
 
-// Phase 36 — the floating TextPropertiesPanel card occupies the left edge of
-// the canvas in the EDIT / armed-text stages. A page gesture that starts under
-// it is swallowed by the panel, so specs placing content by a hardcoded page
-// fraction must start the drag to the RIGHT of this edge. Returns 0 when the
-// card is not mounted.
+// Phase 36 — the floating TextPropertiesPanel card occupied the left edge of
+// the canvas in the EDIT / armed-text stages, so specs placing content by a
+// hardcoded page fraction started the drag to the RIGHT of its edge.
+//
+// Phase 38 RETIRED the floating card: the text panel is re-parented into the
+// Inspector at the RIGHT edge, and the canvas is inset so the page never runs
+// under it. There is therefore no left-edge card to dodge any more, so this
+// returns 0 (the callers' `max(pageX, avoidX)` then starts on the page). The
+// name is kept so the many call sites stay unchanged.
 async function textPanelRight(window) {
-  return window.evaluate(() => {
-    const el = document.querySelector('[data-text-panel]');
-    if (!el) return 0;
-    const r = el.getBoundingClientRect();
-    return r.width > 0 ? Math.round(r.right) : 0;
-  });
+  return 0;
 }
 
 // Step-scroll the (virtualized) document scroller until the requested page-slot

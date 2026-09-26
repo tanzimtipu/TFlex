@@ -270,13 +270,19 @@ test('(d) the thumbnail panel is 184px with no title', async () => {
 test('(e) entering the EDIT stage enables edit mode with no editMode dock verb', async () => {
   await openReport();
   await gotoStage(win, 2);
-  await win.waitForSelector('[data-edit-toolbar]', { timeout: 10000 });
-  expect(await win.locator('[data-edit-toolbar]').count(), 'entering EDIT enables edit mode').toBe(1);
+  // Phase 41 (item 2) — the legacy edit toolbar is retired; the edit layer
+  // (mounted when a tool is armed) is the observable.
+  await win.locator('[data-dock-verb="editTextBox"]').waitFor({ state: 'visible', timeout: 10000 });
+  await win.locator('[data-dock-verb="editTextBox"]').click();
+  await win.waitForTimeout(400);
+  expect(await win.locator('.edit-layer').count(), 'entering EDIT enables edit mode (the edit layer mounts)').toBeGreaterThan(0);
   expect(await win.locator('[data-dock-verb="editMode"]').count(), 'no editMode dock verb').toBe(0);
   await gotoStage(win, 1);
   await win.waitForTimeout(500);
-  expect(await win.locator('[data-edit-toolbar]').count(), 'leaving EDIT disables edit mode').toBe(0);
+  expect(await win.locator('.edit-layer').count(), 'leaving EDIT disables edit mode').toBe(0);
   await gotoStage(win, 2);
   await win.waitForTimeout(500);
-  expect(await win.locator('[data-edit-toolbar]').count(), 're-entering EDIT re-enables it').toBe(1);
+  await win.locator('[data-dock-verb="editTextBox"]').click();
+  await win.waitForTimeout(400);
+  expect(await win.locator('.edit-layer').count(), 're-entering EDIT re-enables it').toBeGreaterThan(0);
 });

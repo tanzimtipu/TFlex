@@ -59,8 +59,8 @@ test('E1: edit text run, add box, exit/re-enter edit mode with no phantom surfac
   // Phase 36 (chunk 3) — the per-view command row is retired; Edit mode is the
   // EDIT dock's `editMode` verb.
   await toggleEditMode(win);
-  await win.waitForSelector('[data-edit-toolbar]', { timeout: 8000 });
-  await win.click('[data-edit-tool="text"]');
+  await win.locator('[data-dock-verb="editText"]').waitFor({ state: 'visible', timeout: 8000 });
+  await win.locator('[data-dock-verb="editText"]').click();
   await win.waitForTimeout(400);
 
   // Open a text run and replace it.
@@ -90,7 +90,7 @@ test('E1: edit text run, add box, exit/re-enter edit mode with no phantom surfac
 
   // Add a text box.
   const box = await win.locator('.page-slot[data-page="1"]').first().boundingBox();
-  await win.click('[data-edit-tool="box"]');
+  await win.locator('[data-dock-verb="editTextBox"]').click();
   await win.waitForTimeout(400);
   await win.mouse.move(box.x + 150, box.y + 200);
   await win.mouse.down();

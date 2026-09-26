@@ -245,8 +245,8 @@ const PALETTE_MEASURE = `(() => {
     if (h) { const n = parseInt(h[1], 16); return 'rgb(' + ((n >> 16) & 255) + ', ' + ((n >> 8) & 255) + ', ' + (n & 255) + ')'; }
     const p = parse(v); return p ? 'rgb(' + p.r + ', ' + p.g + ', ' + p.b + ')' : v; };
   // Sample the computed colour of every palette-hooked control on screen.
-  const hooked = [...document.querySelectorAll('[data-dock-verb], .tool-btn[data-icon], .ann-tool-btn[data-tool], .edit-toolbar-btn[data-edit-tool], .tools-palette-entry[data-tool-id], .rail-tab[data-rail-tab]')];
-  const samples = hooked.map((el) => ({ sel: el.tagName + (el.getAttribute('data-dock-verb') ? '[dock=' + el.getAttribute('data-dock-verb') + ']' : '') + (el.getAttribute('data-icon') ? '[icon=' + el.getAttribute('data-icon') + ']' : '') + (el.getAttribute('data-tool') ? '[tool=' + el.getAttribute('data-tool') + ']' : '') + (el.getAttribute('data-edit-tool') ? '[edit=' + el.getAttribute('data-edit-tool') + ']' : '') + (el.getAttribute('data-tool-id') ? '[tid=' + el.getAttribute('data-tool-id') + ']' : '') + (el.getAttribute('data-rail-tab') ? '[rail=' + el.getAttribute('data-rail-tab') + ']' : ''),
+  const hooked = [...document.querySelectorAll('[data-dock-verb], .tool-btn[data-icon], .ann-tool-btn[data-tool], .tools-palette-entry[data-tool-id], .rail-tab[data-rail-tab]')];
+  const samples = hooked.map((el) => ({ sel: el.tagName + (el.getAttribute('data-dock-verb') ? '[dock=' + el.getAttribute('data-dock-verb') + ']' : '') + (el.getAttribute('data-icon') ? '[icon=' + el.getAttribute('data-icon') + ']' : '') + (el.getAttribute('data-tool') ? '[tool=' + el.getAttribute('data-tool') + ']' : '') + (el.getAttribute('data-tool-id') ? '[tid=' + el.getAttribute('data-tool-id') + ']' : '') + (el.getAttribute('data-rail-tab') ? '[rail=' + el.getAttribute('data-rail-tab') + ']' : ''),
     color: getComputedStyle(el).color }));
   const allowed = new Set([...Object.values(roleVals), dockPrimary].map(norm));
   const outside = samples.filter((s) => !allowed.has(s.color));
@@ -273,7 +273,9 @@ test('P40-12 palette finite + contrast table in all three themes', async () => {
 });
 
 // ---------------------------------------------------------------------------
-// Item 13 — separators neutral; only the active panel edge takes the accent.
+// Item 13 — separators neutral; the active panel edge is a neutral glow.
+// Phase 41 (item 4) SUPERSEDES the Phase-40 rule "the active panel edge takes
+// --sem-primary": the edge is now the neutral panel border plus a shadow/glow.
 // ---------------------------------------------------------------------------
 const EDGE_MEASURE = `(() => {
   const insp = document.querySelector('[data-inspector]');
@@ -281,11 +283,13 @@ const EDGE_MEASURE = `(() => {
   const cs = getComputedStyle(insp);
   const divider = getComputedStyle(document.documentElement).getPropertyValue('--divider').trim();
   const semPrimary = getComputedStyle(document.documentElement).getPropertyValue('--sem-primary').trim();
+  const panelBorder = getComputedStyle(document.documentElement).getPropertyValue('--panel-border').trim();
   return { selection: insp.getAttribute('data-inspector-selection'),
-    borderLeft: cs.borderLeftColor, borderLeftWidth: cs.borderLeftWidth, divider, semPrimary };
+    borderLeft: cs.borderLeftColor, borderLeftWidth: cs.borderLeftWidth, boxShadow: cs.boxShadow,
+    divider, semPrimary, panelBorder };
 })()`;
 
-test('P40-13 separators neutral; active panel edge takes the accent', async () => {
+test('P40-13 separators neutral; the active panel edge is a neutral glow (Phase 41 supersedes the accent)', async () => {
   app = await launchApp();
   win = await app.firstWindow();
   await win.waitForSelector('.sample-card', { timeout: 30000 });
@@ -297,16 +301,25 @@ test('P40-13 separators neutral; active panel edge takes the accent', async () =
   console.log(`[P40 item13 rest] ${JSON.stringify(rest)}`);
   expect(rest, 'Inspector present').not.toBeNull();
 
-  // With a live selection the page-facing edge takes --sem-primary.
+  // With a live selection the page-facing edge stays NEUTRAL and gains a glow
+  // (Phase 41 item 4 — never the accent).
   await win.locator('[data-context-panel-thumbs] .thumb-item').first().click();
   await win.waitForTimeout(800);
   const active = await win.evaluate(EDGE_MEASURE);
   console.log(`[P40 item13 active] ${JSON.stringify(active)}`);
   expect(active.selection, 'a live selection is published to the Inspector').not.toBe('none');
-  const parse = (c) => { const m = /rgba?\(([^)]+)\)/.exec(c || ''); if (!m) return null; const p = m[1].split(',').map(Number); return { r:p[0], g:p[1], b:p[2] }; };
+  const parse = (c) => {
+    const s = String(c || '').trim();
+    const h = /^#([0-9a-f]{6})([0-9a-f]{2})?$/i.exec(s);
+    if (h) { const n = parseInt(h[1], 16); return { r:(n>>16)&255, g:(n>>8)&255, b:n&255, a: h[2] !== undefined ? parseInt(h[2],16)/255 : 1 }; }
+    const m = /rgba?\(([^)]+)\)/.exec(s); if (!m) return null; const p = m[1].split(',').map(Number); return { r:p[0], g:p[1], b:p[2], a: p.length > 3 ? p[3] : 1 };
+  };
   const hex = (c) => { const p = parse(c); return p ? '#' + [p.r,p.g,p.b].map((v) => v.toString(16).padStart(2,'0')).join('') : c; };
-  console.log(`[P40 item13 active edge] borderLeft=${active.borderLeft} (${hex(active.borderLeft)}) semPrimary=${active.semPrimary}`);
-  expect(hex(active.borderLeft), 'the active Inspector edge is the primary role').toBe(active.semPrimary.toLowerCase());
+  const sameColor = (a, b, tol = 0.02) => { const x = parse(a), y = parse(b); return !!x && !!y && x.r === y.r && x.g === y.g && x.b === y.b && Math.abs(x.a - y.a) <= tol; };
+  console.log(`[P40 item13 active edge] borderLeft=${active.borderLeft} (${hex(active.borderLeft)}) panelBorder=${active.panelBorder} semPrimary=${active.semPrimary} boxShadow=${active.boxShadow}`);
+  expect(sameColor(active.borderLeft, active.panelBorder), `the active Inspector edge is the neutral panel border, not the accent (${active.borderLeft} vs ${active.panelBorder})`).toBe(true);
+  expect(sameColor(active.borderLeft, active.semPrimary), 'the active Inspector edge is never --sem-primary').toBe(false);
+  expect(active.boxShadow, 'the active Inspector edge gains a shadow/glow').not.toBe('none');
 
   // Screenshots per surface (dock, palette, panels, dialog).
   await win.screenshot({ path: path.join(SHOTS, 'phase40-item13-surfaces.png') });

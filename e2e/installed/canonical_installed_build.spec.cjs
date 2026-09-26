@@ -199,14 +199,20 @@ test('CORE 1: Stage Rail chrome reachable; annotation toolbar reachable; edit to
     await gotoStage(win, 2);
     expect(await win.locator('[data-dock-verb="editMode"]').count(),
       'no editMode dock verb (the stage is the switch)').toBe(0);
-    await win.waitForSelector('[data-edit-toolbar]', { timeout: 10000 });
-    expect(await win.locator('.edit-toolbar').isVisible(), 'edit toolbar mounted on entering EDIT').toBe(true);
+    // Phase 41 (item 2) — the legacy edit toolbar is retired; the edit layer
+    // (mounted when a tool is armed) is the observable.
+    await win.locator('[data-dock-verb="editTextBox"]').waitFor({ state: 'visible', timeout: 10000 });
+    await win.locator('[data-dock-verb="editTextBox"]').click();
+    await win.waitForTimeout(400);
+    expect(await win.locator('.edit-layer').count(), 'edit mode is on entering EDIT (the edit layer mounts)').toBeGreaterThan(0);
     await gotoStage(win, 1);
     await win.waitForTimeout(500);
-    expect(await win.locator('[data-edit-toolbar]').count(), 'edit toolbar disarms on leaving EDIT').toBe(0);
+    expect(await win.locator('.edit-layer').count(), 'edit mode disarms on leaving EDIT').toBe(0);
     await gotoStage(win, 2);
     await win.waitForTimeout(500);
-    expect(await win.locator('[data-edit-toolbar]').count(), 're-entering EDIT re-arms the edit toolbar').toBe(1);
+    await win.locator('[data-dock-verb="editTextBox"]').click();
+    await win.waitForTimeout(400);
+    expect(await win.locator('.edit-layer').count(), 're-entering EDIT re-arms edit mode').toBeGreaterThan(0);
     expect(pageErrors, 'zero uncaught renderer page errors').toEqual([]);
   }, 'canonical-core1');
 });

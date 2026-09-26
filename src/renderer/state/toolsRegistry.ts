@@ -37,7 +37,10 @@
 //   - components/TitleBar.tsx          app menu button + window controls
 //   - App.tsx menuGroups               File / Edit / View / Tools / Help rows
 //   - annotations/AnnotationToolbar.tsx 11 annotation tools + colour + pen
-//   - edit/EditToolbar.tsx             4 edit tools + default font
+//   - edit/EditToolbar.tsx             (RETIRED Phase 41 item 2 — the four
+//                                      edit tool modes are EDIT dock verbs
+//                                      now; the default font lives in the
+//                                      EDIT ContextPanel)
 //   - components/SideRail.tsx          rail view tabs, collapse, page verbs,
 //                                      per-page actions menu
 //   - components/Welcome.tsx           open / create-from-images / merge /
@@ -1285,10 +1288,13 @@ const SURFACE_BY_ID: Record<ToolId, ToolSurface> = {
   clearPageSelection: 'panel',
   dragPage: 'panel',
   // EDIT — the curated dock set is editText/editImage/editTextBox/
-  // recognizeText/cropPages; Phase 37 (item 13) removed the `editMode`
-  // verb — entering the EDIT STAGE is the switch that turns edit mode on.
+  // editToolOff/recognizeText/cropPages; Phase 37 (item 13) removed the
+  // `editMode` verb — entering the EDIT STAGE is the switch that turns edit
+  // mode on. Phase 41 (item 2) — the edit-layer "off" tool joins the dock as
+  // well, so ALL four legacy edit-toolbar tool modes (off/text/box/image) are
+  // dock verbs after the toolbar's retirement; the palette keeps listing it.
   editMode: 'panel',
-  editToolOff: 'panel',
+  editToolOff: 'dock',
   editText: 'dock',
   editTextBox: 'dock',
   editImage: 'dock',
@@ -1417,7 +1423,7 @@ export function toolsForStage(stage: ToolStage): readonly ToolEntry[] {
  *  switch that turns Edit mode on, so the dock no longer offers that verb. */
 export const DOCK_STAGE_IDS: Readonly<Record<Stage, readonly string[]>> = {
   pages: ['rotate', 'extract', 'insertPages', 'replacePages', 'split', 'delete', 'merge', 'cropPages'],
-  edit: ['editText', 'editImage', 'editTextBox', 'recognizeText', 'batchOcr', 'ocrSuspects'],
+  edit: ['editText', 'editImage', 'editTextBox', 'editToolOff', 'recognizeText', 'batchOcr', 'ocrSuspects'],
   review: [
     'annotate',
     'sign',

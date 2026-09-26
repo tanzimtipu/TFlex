@@ -333,12 +333,10 @@ test('P13-QA: workspace light + icon-only toolbar sweep + hand pan + rotate + ac
     }));
     return {
       annToolbar: scan('.ann-toolbar'),
-      editToolbar: scan('.edit-toolbar'),
       labelSpans: document.querySelectorAll('.tool-btn-label').length,
     };
   });
   console.log(`[ann] buttons (${sweep.annToolbar.length}): ${JSON.stringify(sweep.annToolbar.map((b) => b.label))}`);
-  console.log(`[edit] buttons (${sweep.editToolbar.length}): ${JSON.stringify(sweep.editToolbar.map((b) => b.label))}`);
   for (const b of [...sweep.annToolbar]) {
     expect(b.label, 'every toolbar button must have an aria-label').toBeTruthy();
     expect(b.title, 'every toolbar button must have a title tooltip').toBeTruthy();
@@ -490,25 +488,23 @@ test('P13-QA: workspace light + icon-only toolbar sweep + hand pan + rotate + ac
   // Annotation close-up with an armed accent tool (color evidence in shot)
   await win.locator('.ann-toolbar').first().screenshot({ path: path.join(SHOTS, 'phase13-qa-07-annotation-toolbar-closeup.png') });
 
-  // --- Edit toolbar icon-only (CONTROL-INDEX row): Off / Edit text / Add box / Image ---
+  // --- Edit tools (CONTROL-INDEX row): Off / Edit text / Add box / Image ---
+  // Phase 41 (item 2) — the legacy edit toolbar is retired; its four tool modes
+  // ride the EDIT dock now. Assert the dock hosts all four, each named.
   await toggleEditMode(win);
   await wait(600);
   const editSweep = await win.evaluate(() => {
-    const btns = Array.from(document.querySelectorAll('.edit-toolbar button')).map((b) => ({
-      label: b.getAttribute('aria-label'),
-      tool: b.getAttribute('data-edit-tool'),
-      innerText: (b.innerText || '').trim(),
-    }));
-    return { btns, labelSpans: document.querySelectorAll('.edit-toolbar .tool-btn-label').length };
+    const btns = Array.from(document.querySelectorAll('[data-action-dock] [data-dock-verb]'))
+      .filter((b) => ['editToolOff', 'editText', 'editTextBox', 'editImage'].includes(b.getAttribute('data-dock-verb')))
+      .map((b) => ({ label: b.getAttribute('aria-label'), tool: b.getAttribute('data-dock-verb') }));
+    return { btns };
   });
-  console.log(`[edit-toolbar] ${JSON.stringify(editSweep.btns)} labelSpans=${editSweep.labelSpans}`);
-  expect(editSweep.btns.length, 'edit toolbar must render its tools').toBeGreaterThanOrEqual(3);
+  console.log(`[edit-dock] ${JSON.stringify(editSweep.btns)}`);
+  expect(editSweep.btns.length, 'the EDIT dock renders its four edit tools').toBe(4);
   for (const b of editSweep.btns) {
-    expect(b.label, 'every edit-toolbar button must be named').toBeTruthy();
-    expect(b.innerText, 'edit toolbar buttons are icon-only').toBe('');
+    expect(b.label, 'every edit-dock verb must be named').toBeTruthy();
   }
-  expect(editSweep.labelSpans).toBe(0);
-  await win.locator('.edit-toolbar').first().screenshot({ path: path.join(SHOTS, 'phase13-qa-11-edit-toolbar-closeup.png') });
+  await win.locator('[data-action-dock]').first().screenshot({ path: path.join(SHOTS, 'phase13-qa-11-edit-toolbar-closeup.png') });
   await gotoStage(win, 1); // leave the EDIT stage (turns edit mode off)
   await wait(400);
 

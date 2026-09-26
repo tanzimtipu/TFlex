@@ -118,7 +118,7 @@ test.describe.serial('theme UI fixes (icons / spacing / badge)', () => {
         const sR = scroller.getBoundingClientRect();
         const pR = page.getBoundingClientRect();
         let chromeBottom = wsR.top;
-        for (const s of ['.ann-toolbar', '.search-bar', '.edit-toolbar']) {
+        for (const s of ['.ann-toolbar', '.search-bar']) {
           const el = document.querySelector(s);
           if (!el) continue;
           const r = el.getBoundingClientRect();

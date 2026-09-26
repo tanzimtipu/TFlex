@@ -15,7 +15,9 @@
 //      counter-clockwise callback (mirrors the cw button).
 //   4. Toolbar Hand (pan) toggle — reflects handActive through
 //      aria-pressed / data-hand-active and fires onHandToggle.
-//   5. EditToolbar — icon-only buttons keep aria-label + title.
+//
+// (The Phase 10 EditToolbar this suite also covered was RETIRED in
+//  Phase 41 item 2 — its controls live in the EDIT dock / panel now.)
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 import { describe, expect, it, vi } from "vitest";
@@ -24,7 +26,6 @@ import { act } from "react";
 import type { ReactElement } from "react";
 import { AppHeader } from "../../../src/renderer/components/AppHeader";
 import { Toolbar } from "../../../src/renderer/components/Toolbar";
-import { EditToolbar, defaultEditHint } from "../../../src/renderer/edit/EditToolbar";
 import type { ZoomMode } from "../../../src/renderer/state/zoom";
 
 function mount(element: ReactElement): HTMLElement {
@@ -200,35 +201,6 @@ describe("Phase 13 — Toolbar is icon-only", () => {
     expect(host.querySelector("[data-toolbar-save-as]")).toBeNull();
     expect(host.querySelector("[data-toolbar-open]")).toBeNull();
     expect(host.querySelector("[data-toolbar-save]")).toBeNull();
-    unmount(host);
-  });
-});
-
-describe("Phase 13 — EditToolbar is icon-only", () => {
-  function mountEdit(tool: "off" | "text" | "box" | "image"): HTMLElement {
-    return mount(
-      <EditToolbar
-        tool={tool}
-        onSelect={NOOP}
-        defaultFont="Helvetica"
-        onDefaultFontChange={NOOP}
-        enabled
-        hint={defaultEditHint(tool)}
-      />,
-    );
-  }
-
-  it("renders no text labels and keeps aria-label + title on all four buttons", () => {
-    const host = mountEdit("text");
-    const buttons = Array.from(host.querySelectorAll<HTMLButtonElement>("[data-edit-tool]"));
-    expect(buttons).toHaveLength(4);
-    for (const btn of buttons) {
-      expect(btn.getAttribute("aria-label")).toBeTruthy();
-      expect(btn.getAttribute("title")).toBeTruthy();
-      // Icon-only: the only visible content is the SVG glyph.
-      const labelSpan = Array.from(btn.children).find((c) => c.tagName === "SPAN");
-      expect(labelSpan).toBeUndefined();
-    }
     unmount(host);
   });
 });

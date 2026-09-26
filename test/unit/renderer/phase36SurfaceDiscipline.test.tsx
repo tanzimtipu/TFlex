@@ -88,6 +88,10 @@ const SANCTIONED: Record<Capability, { surfaces: Surface[]; why: string }> = {
   editText: { surfaces: ['dock'], why: 'the EDIT dock verb' },
   editImage: { surfaces: ['dock'], why: 'the EDIT dock verb' },
   editTextBox: { surfaces: ['dock'], why: 'the EDIT dock verb' },
+  editToolOff: {
+    surfaces: ['dock'],
+    why: 'Phase 41 item 2: the retired EDIT toolbar\'s off mode rides the EDIT dock',
+  },
   recognizeText: {
     surfaces: ['dock', 'panel'],
     why: 'the dock verb + the EDIT panel Recognition section (ruling 4 keeps the panel home)',

@@ -67,8 +67,8 @@ export interface AnnotationToolbarProps {
    *  rail panel can show its empty state, but the tools can't be armed). */
   disabled?: boolean;
   /** B1 — Phase 10 edit-content mode. When true the per-page
-   *  EditOverlay is pointer-active and the EditToolbar is rendered
-   *  above the document; arming an annotation tool would either
+   *  EditOverlay is pointer-active; arming an annotation tool would
+   *  either
    *  silently lose its input to the EditOverlay or visually confuse
    *  the user (two parallel pointer-active layers). We mirror the
    *  host's gating here: while editModeOpen, every tool button is

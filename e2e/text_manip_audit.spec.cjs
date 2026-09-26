@@ -65,7 +65,7 @@ async function fillPanelText(win, text) {
 }
 
 async function closeEditMode(win) {
-  if ((await win.locator('[data-edit-toolbar]').count()) > 0) {
+  if ((await win.locator('[data-dock-verb="editTextBox"]').count()) > 0) {
     await toggleEditMode(win);
     await win.waitForTimeout(400);
   }
@@ -258,11 +258,11 @@ module.exports = { CONTROLS };
 // Target placement
 // ---------------------------------------------------------------------------
 async function placeEditBox(win, text) {
-  if ((await win.locator('[data-edit-toolbar]').count()) === 0) {
+  if ((await win.locator('[data-dock-verb="editTextBox"]').count()) === 0) {
     await toggleEditMode(win);
-    await win.waitForSelector('[data-edit-toolbar]', { timeout: 8000 });
+    await win.locator('[data-dock-verb="editTextBox"]').waitFor({ state: 'visible', timeout: 8000 });
   }
-await win.click('[data-edit-tool="box"]');
+  await win.locator('[data-dock-verb="editTextBox"]').click();
   await win.waitForTimeout(400);
   await dragOnPage(win, 0.55, 0.3);
   await fillPanelText(win, text);
@@ -291,11 +291,11 @@ async function placeAnn(win, kind, text, fx, fy) {
 }
 
 async function placeRun(win, text) {
-  if ((await win.locator('[data-edit-toolbar]').count()) === 0) {
+  if ((await win.locator('[data-dock-verb="editText"]').count()) === 0) {
     await toggleEditMode(win);
-    await win.waitForSelector('[data-edit-toolbar]', { timeout: 8000 });
+    await win.locator('[data-dock-verb="editText"]').waitFor({ state: 'visible', timeout: 8000 });
   }
-  await win.click('[data-edit-tool="text"]');
+  await win.locator('[data-dock-verb="editText"]').click();
   await win.waitForTimeout(300);
   const span = win.locator('.pdf-page[data-page="1"] .textLayer span').filter({ hasText: /[A-Za-z]/ }).first();
   await span.waitFor({ state: 'attached', timeout: 10000 });
@@ -372,11 +372,11 @@ async function selectRun(win) {
 }
 
 async function sweepRun(win, shape, text) {
-  if ((await win.locator('[data-edit-toolbar]').count()) === 0) {
+  if ((await win.locator('[data-dock-verb="editText"]').count()) === 0) {
     await toggleEditMode(win);
-    await win.waitForSelector('[data-edit-toolbar]', { timeout: 8000 });
+    await win.locator('[data-dock-verb="editText"]').waitFor({ state: 'visible', timeout: 8000 });
   }
-  await win.click('[data-edit-tool="text"]');
+  await win.locator('[data-dock-verb="editText"]').click();
   await win.waitForTimeout(300);
   // DEF-266 faithful workflow: select the run ONCE, type to open the session,
   // then apply every control in sequence WITHOUT blurring. The focus guard must

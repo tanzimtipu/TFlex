@@ -76,7 +76,7 @@ describe("DEF-313 / Phase 37 item 21 — the dock's relevant set per stage", () 
       "rotate", "extract", "insertPages", "replacePages", "split", "delete", "merge", "cropPages",
     ]);
     expect(dockToolsForStage("edit").map((e) => e.id)).toEqual([
-      "editText", "editImage", "editTextBox", "recognizeText", "batchOcr", "ocrSuspects",
+      "editText", "editImage", "editTextBox", "editToolOff", "recognizeText", "batchOcr", "ocrSuspects",
     ]);
     expect(dockToolsForStage("review").map((e) => e.id)).toEqual([
       "annotate", "sign", "stamp", "flatten", "forms", "watermark",
@@ -108,7 +108,7 @@ describe("DEF-313 / Phase 37 item 21 — the dock's relevant set per stage", () 
     for (const id of [
       "renumberPages", "rotateCounterClockwise", "pageThumbnails",
       "outlinePanel", "pageContextMenu", "clearPageSelection", "dragPage",
-      "editMode", "editToolOff", "editDefaultFont", "annotationsPanel",
+      "editMode", "editDefaultFont", "annotationsPanel",
       "annSelect", "annHighlight", "annInk", "annColor",
     ]) {
       expect(docked, id).not.toContain(id);

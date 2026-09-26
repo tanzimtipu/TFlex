@@ -277,8 +277,8 @@ test('TOOL D edit-mode box: panel, click, dblclick, controls, persist', async ()
   try {
     await openReport(win, app);
     await win.click('button[aria-label="Edit content"]');
-    await win.waitForSelector('[data-edit-toolbar]', { timeout: 8000 });
-    await win.click('[data-edit-tool="box"]');
+    await win.locator('[data-dock-verb="editTextBox"]').waitFor({ state: 'visible', timeout: 8000 });
+    await win.locator('[data-dock-verb="editTextBox"]').click();
     await win.waitForTimeout(300);
     const panelArmed = await panelState(win);
     const pg = await win.locator('.pdf-page[data-page="1"]').boundingBox();

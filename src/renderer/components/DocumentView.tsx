@@ -83,7 +83,6 @@ import {
 } from "./pageLayoutMode";
 import { AnnotationFlyout } from "./AnnotationFlyout";
 import { AnnotationToolbar } from "../annotations/AnnotationToolbar";
-import { EditToolbar, defaultEditHint } from "../edit/EditToolbar";
 import { isTextPanelFocusTarget } from "../edit/TextPropertiesPanel";
 import {
   annotationStyleFromPanelPatch,
@@ -95,7 +94,12 @@ import {
   textStyleValuesFromStyle,
   type TextStyleValues,
 } from "../edit/textStyle";
-import { engineTextBoxesToPlacements, hexToEditColor, sameTextBoxes } from "../edit/model";
+import {
+  editDockVerbFor,
+  engineTextBoxesToPlacements,
+  hexToEditColor,
+  sameTextBoxes,
+} from "../edit/model";
 import type { TextBoxStylePatch } from "../../shared/types";
 import type { EngineState } from "../engine/types";
 import {
@@ -397,8 +401,8 @@ interface DocumentViewProps extends DocumentViewDockProps {
   themeName?: AppTheme;
   // -- Phase 10: Edit-content overlay --
   /** Edit mode is open. When true, the per-page EditOverlay
-   *  becomes pointer-active and the EditToolbar renders above
-   *  the document area. The overlay is layered on top of the
+   *  becomes pointer-active and the EDIT dock's edit-layer tools arm
+   *  on the page. The overlay is layered on top of the
    *  existing annotation overlay (text selection / signing /
    *  forms), so a single mode is active at a time. */
   editModeOpen?: boolean;
@@ -1521,11 +1525,11 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
   // ---- Phase C â€” frosted chrome-over-document measurement ----------------
   //
   // The frosted theme floats the workspace chrome rows (toolbar /
-  // annotation toolbar / search bar / edit toolbar) OVER a full-bleed
+  // annotation toolbar / search bar) OVER a full-bleed
   // .document-scroller, so the page visibly scrolls under the
   // translucent frosted sheets. The stack height is not static: the
-  // command toolbar wraps when the window is narrow, the search bar
-  // adds a row while open, the edit toolbar adds a row in edit mode.
+  // command toolbar wraps when the window is narrow and the search bar
+  // adds a row while open.
   // This effect measures the rows' real heights and publishes the sum
   // as `--tf-chrome-y` on .workspace-main for the floating text panel
   // (`top: calc(var(--tf-chrome-y) + 8px)`).
@@ -1547,7 +1551,7 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
       let chromePx = 0;
       for (const el of Array.from(
         main.querySelectorAll<HTMLElement>(
-          ".toolbar, .search-bar, .edit-toolbar",
+          ".toolbar, .search-bar",
         ),
       )) {
         chromePx += el.offsetHeight;
@@ -2966,8 +2970,6 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editModeOpen, engineState.textBoxes]);
 
-  const editToolbarHint = edit !== null ? defaultEditHint(edit.state.tool) : defaultEditHint("off");
-
   const hitsByPage = useMemo(() => {
     const map = new Map<number, SearchHit[]>();
     for (const hit of hits) {
@@ -3793,6 +3795,11 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
       // EDIT â€” the current page's modelled content + the recognition summary.
       editContent={editContent}
       onSelectEditContent={selectEditContent}
+      // Phase 41 (item 2) — the retired edit toolbar's Default font control is
+      // re-homed to this EDIT panel, so the capability is still settable with a
+      // document open in EDIT.
+      editDefaultFont={edit?.defaultFont}
+      onEditDefaultFontChange={edit?.onDefaultFontChange ?? null}
       ocrStatus={ocrStatus}
       ocrHasRun={ocrHasRun}
       ocrSuspectCount={ocrSuspectCount}
@@ -3933,23 +3940,6 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
             Multi Mode renders ONE shared Action Dock (plus each pane's own
             pills and the one focused-pane flyout) in the stage; this view
             suppresses its rows and its own dock while `suppressToolbar`. */}
-        <AnimatePresence>
-          {!suppressToolbar && editModeOpen && edit !== null && (
-            <EditToolbar
-              tool={edit.state.tool}
-              onSelect={(t): void => edit.onAction({ type: "set-tool", tool: t })}
-              defaultFont={edit.defaultFont}
-              onDefaultFontChange={
-                edit.onDefaultFontChange === undefined
-                  ? (): void => undefined
-                  : (f): void => edit.onDefaultFontChange?.(f)
-              }
-              enabled
-              hint={editToolbarHint}
-              ladder={dockLadder}
-            />
-          )}
-        </AnimatePresence>
         <AnimatePresence>
           {searchOpen && (
             <SearchBar
@@ -4354,7 +4344,15 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
             toolArmed={dockToolArmed}
             dragInProgress={dockDragInProgress}
             toolUsage={toolUsage}
-            activeToolIds={editModeOpen ? ['editMode'] : []}
+            // DEF-358 — the dock's active treatment keys off the ACTUAL armed
+            // edit-tool verb (text/box/image/off), not the retired `editMode`
+            // toggle (Phase 37 removed that verb, so `['editMode']` never
+            // matched a rendered verb and an armed tool looked unarmed).
+            activeToolIds={
+              editModeOpen && edit !== null && edit !== undefined
+                ? [editDockVerbFor(edit.state.tool)]
+                : []
+            }
             onIdleChange={setDockIdle}
           />
         )}

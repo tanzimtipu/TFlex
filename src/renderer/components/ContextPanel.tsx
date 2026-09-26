@@ -51,7 +51,8 @@ import type { EngineState } from '../engine/types';
 import type { OutlineNode } from '../pdf/pdfjs';
 import type { PageDropOp } from '../state/pageDrag';
 import type { Stage } from '../state/stages';
-import type { SavedSignature } from '../../shared/types';
+import { EDIT_DEFAULT_FONTS } from '../state/preferences';
+import type { EditFont, SavedSignature } from '../../shared/types';
 
 /** A single item in the EDIT stage's content outline: the text boxes and
  *  image placements the app already models for the CURRENT page. Built by the
@@ -143,6 +144,12 @@ onInsertBlank?: (page: number) => void;
   onRecognizeText?: () => void;
   /** The EXISTING suspects-panel entry (App's own gated open handler). */
   onOpenOcrSuspects?: () => void;
+  /** Phase 41 (item 2) — the DEFAULT FONT for new / replaced text, the one
+   *  control the retired edit toolbar still owned. Its home is now this EDIT
+   *  panel (the palette's own refusal copy already points here: "Pick the font
+   *  in the Edit panel"). The host threads the existing edit-session values. */
+  editDefaultFont?: EditFont;
+  onEditDefaultFontChange?: ((font: EditFont) => void) | null;
 
   // --- REVIEW -----------------------------------------------------------
   /** The active document's annotations. The REVIEW body re-parents the SAME
@@ -245,6 +252,8 @@ onInsertBlank,
     ocrSuspectCount = 0,
     onRecognizeText,
     onOpenOcrSuspects,
+    editDefaultFont,
+    onEditDefaultFontChange = null,
     annotations = [],
     onJumpToAnnotation = null,
     onEditAnnotation = null,
@@ -385,6 +394,33 @@ const pageCount = engineState.pageCount;
     <>
       <section className="context-panel-section" data-context-panel-section="content" aria-label="Content">
         <div className="context-panel-section-title">Content</div>
+        {/* Phase 41 (item 2) — the retired edit toolbar's last control. New /
+            replaced text uses this font; the host persists it like before. */}
+        <div className="context-panel-row" data-edit-default-font-row>
+          <span className="context-panel-row-label">Default font</span>
+          <span className="context-panel-row-value">
+            <select
+              className="context-panel-select"
+              data-edit-default-font
+              aria-label="Default font"
+              value={editDefaultFont ?? ''}
+              disabled={onEditDefaultFontChange === null}
+              onChange={(e): void => {
+                const v = e.target.value;
+                if (EDIT_DEFAULT_FONTS.includes(v as EditFont)) {
+                  onEditDefaultFontChange?.(v as EditFont);
+                }
+              }}
+            >
+              {editDefaultFont === undefined && <option value="">—</option>}
+              {EDIT_DEFAULT_FONTS.map((f) => (
+                <option key={f} value={f}>
+                  {f}
+                </option>
+              ))}
+            </select>
+          </span>
+        </div>
         {pageEditContent.length === 0 ? (
           <p className="context-panel-empty" data-edit-content-empty>
             No editable content on this page.

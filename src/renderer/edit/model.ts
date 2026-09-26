@@ -30,6 +30,28 @@ import type {
  *  + image bytes. */
 export type EditTool = "off" | "text" | "box" | "image";
 
+/**
+ * DEF-358 — the Edit tool's ACTION DOCK VERB id. After Phase 37 retired the
+ * `editMode` dock verb, the dock's active treatment is driven by the verb
+ * that IS actually rendered, so the armed state must be expressed as the
+ * edit tool's own verb id, not the retired `editMode` toggle:
+ *   text -> editText, box -> editTextBox, image -> editImage,
+ *   off  -> editToolOff.
+ * Pure, so the mapping is unit-testable without a mounted dock.
+ */
+export function editDockVerbFor(tool: EditTool): string {
+  switch (tool) {
+    case "text":
+      return "editText";
+    case "box":
+      return "editTextBox";
+    case "image":
+      return "editImage";
+    default:
+      return "editToolOff";
+  }
+}
+
 /** Style applied to a text-edit op. Read from `AppSettings.editDefaultFont`
  *  (preserved in the settings.json round-trip), the dialog can override
  *  it per-op. The inline editor shows the current style so the user

@@ -11,10 +11,11 @@
 //     relative).
 //   - .document-scroller goes full-bleed (absolute inset 0) under
 //     the chrome rows in the frosted theme only.
-//   - .toolbar / .search-bar / .edit-toolbar float
+//   - .toolbar / .search-bar float
 //     above it (position: relative; z-index: 1) — one comma-joined
 //     rule. Phase 19 retired the separate `.ann-toolbar` row (the
-//     annotation tools now live inside the `.toolbar` capsule).
+//     annotation tools now live inside the `.toolbar` capsule);
+//     Phase 41 item 2 retired the `.edit-toolbar` row.
 //   - .document-content is flush (Phase 29): zero padding in every
 //     theme, so the first page sits at the scroller's top edge and
 //     scrolls under the floating rows from the very start.
@@ -75,14 +76,17 @@ describe("Phase C — frosted chrome over the document (full-bleed scroller)", (
   });
 
   it("the workspace chrome rows float above the scroller (frosted scope, z-index 1)", () => {
-    // The four rows live in ONE comma-joined frosted rule at the end
-    // of the file (the trailing `.edit-toolbar` must ALSO be
-    // frosted-prefixed so the base rule's body is never captured).
-    const m = /:root\[data-theme="frosted"\]\s+\.toolbar,[\s\S]*?:root\[data-theme="frosted"\]\s+\.edit-toolbar\s*\{([\s\S]*?)\n\}/
-      .exec(cssClean);
-    expect(m, "frosted chrome-row float rule missing").not.toBeNull();
-    if (m === null) return;
-    const body = m[1] ?? "";
+    // The chrome rows live in ONE comma-joined frosted rule at the end
+    // of the file (the trailing `.search-bar` must ALSO be
+    // frosted-prefixed so the base rule's body is never captured). The
+    // layout override is the LAST combined `.toolbar, .search-bar` rule.
+    const matches = [
+      ...cssClean.matchAll(
+        /:root\[data-theme="frosted"\]\s+\.toolbar,[\s\S]*?:root\[data-theme="frosted"\]\s+\.search-bar\s*\{([\s\S]*?)\n\}/g,
+      ),
+    ];
+    const body = matches.at(-1)?.[1] ?? "";
+    expect(matches.length, "frosted chrome-row float rule missing").toBeGreaterThan(0);
     expect(body).toMatch(/position:\s*relative/);
     expect(body).toMatch(/z-index:\s*1/);
     // Phase 19 — the retired annotation row is NOT a floating chrome
@@ -134,8 +138,8 @@ describe("Phase C — frosted chrome over the document (full-bleed scroller)", (
       /grid-template-rows:\s*auto\s+auto\s+auto\s+auto\s+1fr/,
     );
     // Each conditional chrome row is pinned ABOVE the scroller's row.
-    const edit = firstRule("\\.edit-toolbar");
-    expect(edit, ".edit-toolbar must be pinned to grid row 3").toMatch(/grid-row:\s*3/);
+    // (The edit toolbar's row 3 was RETIRED with the toolbar in Phase 41
+    // item 2; the row collapses to zero and the search bar keeps row 4.)
     const search = firstRule("\\.search-bar");
     expect(search, ".search-bar must be pinned to grid row 4").toMatch(/grid-row:\s*4/);
     const scroller = firstRule("\\.document-scroller");

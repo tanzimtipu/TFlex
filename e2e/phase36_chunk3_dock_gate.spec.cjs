@@ -82,7 +82,7 @@ async function loadSettings() {
 // curated subset. `editMode` is retired (the EDIT stage is the switch).
 const EXPECTED = {
   pages: ['rotate', 'extract', 'insertPages', 'replacePages', 'split', 'delete', 'merge', 'cropPages'],
-  edit: ['editText', 'editImage', 'editTextBox', 'recognizeText', 'batchOcr', 'ocrSuspects'],
+  edit: ['editText', 'editImage', 'editTextBox', 'editToolOff', 'recognizeText', 'batchOcr', 'ocrSuspects'],
   review: ['annotate', 'sign', 'stamp', 'flatten', 'forms', 'watermark', 'exportComments', 'importComments'],
   deliver: ['optimize', 'audit', 'exportPages', 'exportText', 'exportDocx', 'createFromImages'],
 };
@@ -993,13 +993,17 @@ test('P36-C3-J reachability: every relocated control acts from its new home', as
   // retired).
   await setStage(2);
   const editModeVerb = await win.locator('[data-dock-verb="editMode"]').count();
-  const editToolbar = await win.locator('[data-edit-toolbar]').count();
+  // Phase 41 (item 2) — the legacy edit toolbar is retired; the edit layer
+  // (mounted only while edit mode is on and a tool is armed) is the observable.
+  await win.locator('[data-dock-verb="editText"]').click();
+  await win.waitForTimeout(500);
+  const editLayer = await win.locator('.edit-layer').count();
   const editTextEnabled = await win.locator('[data-dock-verb="editText"]').isEnabled();
-  console.log(`[P36C3-J] EDIT dock: editModeVerb=${editModeVerb} editToolbar=${editToolbar} editTextEnabled=${editTextEnabled}`);
+  console.log(`[P36C3-J] EDIT dock: editModeVerb=${editModeVerb} editLayer=${editLayer} editTextEnabled=${editTextEnabled}`);
   expect(editModeVerb, 'the editMode verb is retired').toBe(0);
-  expect(editToolbar, 'entering EDIT enables Edit mode').toBeGreaterThan(0);
+  expect(editLayer, 'entering EDIT enables Edit mode (the edit layer mounts)').toBeGreaterThan(0);
   expect(editTextEnabled, 'the edit-layer tools are enabled in the EDIT stage').toBe(true);
-  log('edit -> EDIT dock', editToolbar > 0, `editToolbar=${editToolbar} (stage-enabled)`);
+  log('edit -> EDIT dock', editLayer > 0, `editLayer=${editLayer} (stage-enabled)`);
 
   // sign -> REVIEW dock
   await setStage(3);
@@ -1126,23 +1130,28 @@ test('P36-C3-K reachability on a form document: forms + flatten act from REVIEW 
 // ---------------------------------------------------------------------------
 test('P36-C3-Q the EDIT stage is the Edit-mode switch (the editMode verb is retired)', async () => {
   await openSample();
-  // Entering EDIT enables Edit mode.
+  // Entering EDIT enables Edit mode. Phase 41 (item 2) — the legacy edit
+  // toolbar is retired; the edit layer is the observable (arm a tool first).
   await setStage(2);
   await win.waitForTimeout(600);
   expect(await win.locator('[data-dock-verb="editMode"]').count(), 'the editMode dock verb is retired').toBe(0);
-  expect(await win.locator('[data-edit-toolbar]').count(), 'Edit mode is ON in the EDIT stage').toBeGreaterThan(0);
+  await win.locator('[data-dock-verb="editText"]').click();
+  await win.waitForTimeout(500);
+  expect(await win.locator('.edit-layer').count(), 'Edit mode is ON in the EDIT stage (the edit layer mounts)').toBeGreaterThan(0);
   expect(await win.locator('[data-dock-verb="editText"]').isEnabled(), 'the edit-layer tools are enabled').toBe(true);
-  console.log(`[P36C3-Q] EDIT: toolbar=${await win.locator('[data-edit-toolbar]').count()} editTextEnabled=${await win.locator('[data-dock-verb="editText"]').isEnabled()}`);
+  console.log(`[P36C3-Q] EDIT: editLayer=${await win.locator('.edit-layer').count()} editTextEnabled=${await win.locator('[data-dock-verb="editText"]').isEnabled()}`);
 
   // Leaving EDIT turns it OFF.
   await setStage(1);
   await win.waitForTimeout(600);
-  expect(await win.locator('[data-edit-toolbar]').count(), 'leaving EDIT turns Edit mode OFF').toBe(0);
+  expect(await win.locator('.edit-layer').count(), 'leaving EDIT turns Edit mode OFF').toBe(0);
 
   // Re-entering turns it back ON.
   await setStage(2);
   await win.waitForTimeout(600);
-  expect(await win.locator('[data-edit-toolbar]').count(), 're-entering EDIT turns it ON again').toBeGreaterThan(0);
+  await win.locator('[data-dock-verb="editText"]').click();
+  await win.waitForTimeout(500);
+  expect(await win.locator('.edit-layer').count(), 're-entering EDIT turns it ON again').toBeGreaterThan(0);
   console.log('[P36C3-Q] stage-driven Edit mode verified both ways');
 });
 

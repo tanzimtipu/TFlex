@@ -153,21 +153,21 @@ async function waitForBox(win, text, pred, timeout = 12000) {
 
 // Create a committed TFlex text box through the real UI and select it.
 async function createTextBox(win, text, fx = 0.22, fy = 0.18) {
-  if ((await win.locator('[data-edit-toolbar]').count()) === 0) {
+  if ((await win.locator('[data-dock-verb="editTextBox"]').count()) === 0) {
     await toggleEditMode(win);
-    await win.waitForSelector('[data-edit-toolbar]', { timeout: 8000 });
+    await win.locator('[data-dock-verb="editTextBox"]').waitFor({ state: 'visible', timeout: 8000 });
   }
-  await win.click('[data-edit-tool="box"]');
+  await win.locator('[data-dock-verb="editTextBox"]').click();
   const pg = await win.locator('.pdf-page[data-page="1"]').boundingBox();
   const vp = await win.evaluate(() => ({ w: window.innerWidth, h: window.innerHeight }));
-  // Keep the drag clear of the floating Text-properties panel (Phase 25), which
-  // overlays the page's left edge and would swallow the drag start.
-  const panelRight = await win.evaluate(() => {
-    const p = document.querySelector('[data-text-panel]');
-    return p ? p.getBoundingClientRect().right : 0;
+  // Phase 41 — the text panel is re-parented into the Inspector (right edge),
+  // so the drag must start LEFT of the Inspector, not right of a floating card.
+  const inspectorLeft = await win.evaluate(() => {
+    const i = document.querySelector('[data-inspector]');
+    return i ? i.getBoundingClientRect().left : window.innerWidth;
   });
   let x = Math.max(40, Math.min(pg.x + pg.width * fx, vp.w - 240));
-  x = Math.min(Math.max(x, panelRight + 40), vp.w - 240);
+  x = Math.min(x, inspectorLeft - 40);
   const y = Math.max(pg.y + 20, Math.min(pg.y + pg.height * fy, vp.h - 200));
   await win.mouse.move(x, y);
   await win.mouse.down();
@@ -191,7 +191,7 @@ async function createTextBox(win, text, fx = 0.22, fy = 0.18) {
 
 /** Close Edit mode (annotation tools are gated while it is open). */
 async function closeEditMode(win) {
-  if ((await win.locator('[data-edit-toolbar]').count()) > 0) {
+  if ((await win.locator('[data-dock-verb="editTextBox"]').count()) > 0) {
     await toggleEditMode(win);
     await win.waitForTimeout(400);
   }
@@ -276,7 +276,10 @@ test('C1 open/close: floating card, page does not reflow, three themes', async (
       log('C1', r);
 
       expect(settled, `${theme}: panel must reach an open width`).not.toBeNull();
-      expect(settled.panelW, `${theme}: open panel width ~248px`).toBeGreaterThan(240);
+      // Phase 38 retired the floating card; the panel is re-parented into the
+      // Inspector (216px inside the 264px column), so the open width is the
+      // Inspector's panel width, not the retired card's 248px.
+      expect(settled.panelW, `${theme}: open panel width ~216px`).toBeGreaterThan(200);
       expect(openWidths.length, `${theme}: floating width is constant (no docked interpolation)`).toBeLessThanOrEqual(2);
       expect(canvasLeftSpan, `${theme}: page canvas left unchanged (span ${canvasLeftSpan})`).toBeLessThanOrEqual(0.5);
       expect(canvasTopSpan, `${theme}: page canvas top unchanged (span ${canvasTopSpan})`).toBeLessThanOrEqual(0.5);
@@ -516,14 +519,14 @@ const RETIRED_STYLE = '.edit-inline-field-font, .edit-inline-field-size, .edit-i
 async function dragOnPage(win, fx, fy) {
   const pg = await win.locator('.pdf-page[data-page="1"]').boundingBox();
   const vp = await win.evaluate(() => ({ w: window.innerWidth, h: window.innerHeight }));
-  // Keep the drag clear of the floating Text-properties panel (Phase 26),
-  // which overlays the page's left edge and would swallow the drag start.
-  const panelRight = await win.evaluate(() => {
-    const p = document.querySelector('[data-text-panel]');
-    return p ? p.getBoundingClientRect().right : 0;
+  // Phase 41 — the text panel is re-parented into the Inspector (right edge),
+  // so the drag must start LEFT of the Inspector, not right of a floating card.
+  const inspectorLeft = await win.evaluate(() => {
+    const i = document.querySelector('[data-inspector]');
+    return i ? i.getBoundingClientRect().left : window.innerWidth;
   });
   let x = Math.max(40, Math.min(pg.x + pg.width * fx, vp.w - 200));
-  x = Math.min(Math.max(x, panelRight + 40), vp.w - 200);
+  x = Math.min(x, inspectorLeft - 40);
   const y = Math.max(pg.y + 20, Math.min(pg.y + pg.height * fy, vp.h - 200));
   await win.mouse.move(x, y);
   await win.mouse.down();
@@ -546,8 +549,8 @@ test('C3 no floating style toolbox; panel Text field + Confirm/Delete remain', a
 
     // -- text box path ------------------------------------------------------
     await toggleEditMode(win);
-    await win.waitForSelector('[data-edit-toolbar]', { timeout: 8000 });
-    await win.click('[data-edit-tool="box"]');
+    await win.locator('[data-dock-verb="editTextBox"]').waitFor({ state: 'visible', timeout: 8000 });
+    await win.locator('[data-dock-verb="editTextBox"]').click();
     await dragOnPage(win, 0.25, 0.2);
     // Phase 26 — the panel Text field is the editor; no in-canvas editor.
     await win.waitForSelector('[data-txt-text]', { timeout: 8000 });
@@ -569,12 +572,13 @@ test('C3 no floating style toolbox; panel Text field + Confirm/Delete remain', a
     out.textBoxCommitted = await win.evaluate((ret) => ({
       retired: document.querySelectorAll(ret).length,
       confirm: !!document.querySelector('[data-edit-box-action="confirm"]'),
-      edit: !!document.querySelector('[data-edit-box-action="edit"]'),
+      cancel: !!document.querySelector('[data-edit-box-action="cancel"]'),
       del: !!document.querySelector('[data-edit-box-action="delete"]'),
       editor: document.querySelectorAll('[data-edit-editor], .edit-inline-editor').length,
     }), RETIRED_STYLE);
-    await win.click('[data-edit-box-action="edit"]');
-    await win.waitForTimeout(400);
+    // Phase 26/38 — the inline editor is retired and the box toolbar's "Edit"
+    // action is gone; the panel Text field is the editor. Assert the current
+    // toolbar (Confirm / Delete / Cancel) and that the panel field is live.
     out.textBoxEditTarget = await win.evaluate((ret) => ({
       retired: document.querySelectorAll(ret).length,
       editor: document.querySelectorAll('[data-edit-editor], .edit-inline-editor').length,
@@ -639,8 +643,8 @@ test('C3 no floating style toolbox; panel Text field + Confirm/Delete remain', a
     // -- edit-text-run path -------------------------------------------------
     await armAnnotationTool(win, 'select');
     await toggleEditMode(win);
-    await win.waitForSelector('[data-edit-toolbar]', { timeout: 8000 });
-    await win.click('[data-edit-tool="text"]');
+    await win.locator('[data-dock-verb="editText"]').waitFor({ state: 'visible', timeout: 8000 });
+    await win.locator('[data-dock-verb="editText"]').click();
     const span = win.locator('.pdf-page[data-page="1"] .textLayer span').filter({ hasText: /[A-Za-z]/ }).first();
     const sb = (await span.count()) ? await span.boundingBox() : null;
     if (sb) {
@@ -666,7 +670,7 @@ test('C3 no floating style toolbox; panel Text field + Confirm/Delete remain', a
     expect(out.textBox.panelEnabled, 'text box: panel Text field live on placement').toBe(true);
     expect(out.textBoxEditTarget.panelEnabled, 'text box: Edit targets the panel Text field').toBe(true);
     expect(out.textBoxCommitted.confirm, 'text box (committed): Confirm present').toBe(true);
-    expect(out.textBoxCommitted.edit, 'text box (committed): Edit present').toBe(true);
+    expect(out.textBoxCommitted.cancel, 'text box (committed): Cancel present').toBe(true);
     expect(out.textBoxCommitted.del, 'text box (committed): Delete present').toBe(true);
     expect(out.annTextbox.confirm, 'annotation textbox: Confirm present').toBe(true);
     expect(out.annTextbox.del, 'annotation textbox: Delete present').toBe(true);
@@ -801,8 +805,8 @@ test('C4 panel re-target matrix + annotation per-family scope', async () => {
     await armAnnotationTool(win, 'select');
     await win.waitForTimeout(300);
     await toggleEditMode(win);
-    await win.waitForSelector('[data-edit-toolbar]', { timeout: 8000 });
-    await win.click('[data-edit-tool="box"]');
+    await win.locator('[data-dock-verb="editTextBox"]').waitFor({ state: 'visible', timeout: 8000 });
+    await win.locator('[data-dock-verb="editTextBox"]').click();
     const pgB = await win.locator('.pdf-page[data-page="1"]').boundingBox();
     const vpB = await win.evaluate(() => ({ w: window.innerWidth, h: window.innerHeight }));
     const bx = Math.max(40, Math.min(pgB.x + pgB.width * 0.55, vpB.w - 260));
@@ -909,7 +913,8 @@ test('C7 reduced motion + three themes', async () => {
       expect(st.controls, `${theme}: reduced — controls intact`).toBe(3);
       expect(travelFrames, `${theme}: reduced — panel never travels (opacity only)`).toBe(0);
       expect(widths.length, `${theme}: reduced — width change is instant (no tween)`).toBeLessThanOrEqual(2);
-      expect(widths[widths.length - 1], `${theme}: reduced — reaches the open width`).toBeGreaterThan(240);
+      // Phase 38 retired the floating card; the panel is the Inspector's 216px.
+      expect(widths[widths.length - 1], `${theme}: reduced — reaches the open width`).toBeGreaterThan(200);
 
       await startProbe(win, 700);
       await armAnnotationTool(win, 'select');

@@ -156,11 +156,11 @@ async function fillPanelText(win, text) {
 
 // Place a committed TFlex Edit-mode text box through the real UI and select it.
 async function createTextBox(win, text, fx = 0.62, fy = 0.2) {
-  if ((await win.locator('[data-edit-toolbar]').count()) === 0) {
+  if ((await win.locator('[data-dock-verb="editTextBox"]').count()) === 0) {
     await toggleEditMode(win);
-    await win.waitForSelector('[data-edit-toolbar]', { timeout: 8000 });
+    await win.locator('[data-dock-verb="editTextBox"]').waitFor({ state: 'visible', timeout: 8000 });
   }
-  await win.click('[data-edit-tool="box"]');
+  await win.locator('[data-dock-verb="editTextBox"]').click();
   await win.waitForTimeout(600);
   const pg = await win.locator('.pdf-page[data-page="1"]').boundingBox();
   const vp = await win.evaluate(() => ({ w: window.innerWidth, h: window.innerHeight }));
@@ -186,7 +186,7 @@ async function selectBox(win, text) {
 
 /** Close Edit mode (annotation tools are gated while it is open). */
 async function closeEditMode(win) {
-  if ((await win.locator('[data-edit-toolbar]').count()) > 0) {
+  if ((await win.locator('[data-dock-verb="editTextBox"]').count()) > 0) {
     await toggleEditMode(win);
     await win.waitForTimeout(400);
   }
@@ -401,8 +401,8 @@ test('C1d Edit-mode text run: panel char spacing drives the run commit', async (
     await win.waitForSelector('.sample-card', { timeout: 30000 });
     await openReport(app, win);
     await toggleEditMode(win);
-    await win.waitForSelector('[data-edit-toolbar]', { timeout: 8000 });
-    await win.click('[data-edit-tool="text"]');
+    await win.locator('[data-dock-verb="editText"]').waitFor({ state: 'visible', timeout: 8000 });
+    await win.locator('[data-dock-verb="editText"]').click();
     await win.waitForTimeout(300);
 
     // Click a real text-layer run (the reliable hit target).

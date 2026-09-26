@@ -211,6 +211,7 @@ import {
 import { describeEngineError } from "./engine/types";
 import { stubRendererEngine } from "./engine/stubEngine";
 import {
+  editDockVerbFor,
   editReducer,
   engineTextBoxesToPlacements,
   initialEditState,
@@ -657,7 +658,8 @@ export function App(): ReactElement {
   // Phase 10 — Edit-content mode. The toolbar shows the Edit
   // button; clicking it (or pressing the menu shortcut) toggles
   // this. When on, the per-page EditOverlay becomes pointer-active
-  // and the EditToolbar appears above the document area. The
+  // and the EDIT stage's dock arms the edit-layer tools on the
+  // page. The
   // active tool / selection / placements list is per-tab and
   // lives on `openTabs[id].edit`.
   const [editModeOpen, setEditModeOpen] = useState(false);
@@ -7663,6 +7665,15 @@ pushToast(
     ? resolveDockPane(multiMode, multiMode.focused)
     : null;
   const dockStage: Stage = stageForPane(stageState, dockPane);
+  // DEF-358 — the shared dock's pressed verb follows the DOCK pane's own edit
+  // tool (text/box/image/off). The retired `editMode` verb never matched a
+  // rendered verb, so an armed edit tool used to look unarmed in Multi Mode too.
+  const dockTabId: string | null =
+    dockPane === null ? null : dockPane === "A" ? multiMode.paneA : multiMode.paneB;
+  const dockEditTool =
+    editModeOpen && dockTabId !== null ? openTabs[dockTabId]?.edit.tool ?? null : null;
+  const dockActiveToolIds: string[] =
+    dockEditTool === null ? [] : [editDockVerbFor(dockEditTool)];
   const onStageChange = useCallback(
     (stage: Stage): void => {
       dispatchStage({ type: "set", pane: stagePane, stage });
@@ -8495,7 +8506,7 @@ pushToast(
                 onUnpinTool={onDockUnpin}
                 onRunTool={runSharedDockTool}
                 toolUsage={settings.toolUsage}
-                activeToolIds={editModeOpen ? ['editMode'] : []}
+                activeToolIds={dockActiveToolIds}
                 onIdleChange={setSharedDockIdle}
                 onLiftChange={setSharedDockLift}
               />

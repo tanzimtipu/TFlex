@@ -1,8 +1,10 @@
 // Phase 37 (item 3) — the secondary tool surface's ladder.
 //
 // After a tool is picked from the Action Dock the matching secondary surface
-// appears: an annotation tool -> the AnnotationFlyout, an edit tool -> the
-// EditToolbar. REQUIREMENTS.md rules that surface renders as ONE ROW with NO
+// appears: an annotation tool -> the AnnotationFlyout. (The EDIT secondary
+// toolbar was RETIRED in Phase 41 item 2: its controls now live in the dock
+// and the EDIT panel.) REQUIREMENTS.md rules that surface renders as ONE ROW
+// with NO
 // header and follows the SAME responsive ladder as the dock (E): hide the
 // labels first, then show left/right arrows to scroll the row. Neither the
 // dock nor this row may ever stack.

@@ -10,31 +10,14 @@
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
-import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import { act, createElement } from 'react';
 import { createRoot } from 'react-dom/client';
 import { AnnotationFlyout } from '../../../src/renderer/components/AnnotationFlyout';
 import { AnnotationToolbar } from '../../../src/renderer/annotations/AnnotationToolbar';
 import { initialAnnotationToolState } from '../../../src/renderer/annotations/model';
-import { EditToolbar } from '../../../src/renderer/edit/EditToolbar';
 import { resolveDockLadder } from '../../../src/renderer/state/dockResponsive';
 import { resolveSecondaryRowLadder } from '../../../src/renderer/state/secondaryRow';
-
-const CSS = readFileSync(
-  resolve(__dirname, '../../../src/renderer/styles.css'),
-  'utf8',
-).replace(/\/\*[\s\S]*?\*\//g, '');
-
-function ruleBody(selector: string): string {
-  const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  const bodies: string[] = [];
-  const needle = new RegExp(`${escaped}\\s*\\{([^}]*)\\}`, 'g');
-  let m: RegExpExecArray | null;
-  while ((m = needle.exec(CSS)) !== null) bodies.push(m[1]);
-  return bodies.join('\n');
-}
 
 function mount(el: ReturnType<typeof createElement>): { host: HTMLElement; unmount: () => void } {
   const host = document.createElement('div');
@@ -72,68 +55,6 @@ describe('Phase 37 item 3 — the shared secondary-row ladder', () => {
   });
 });
 
-describe('Phase 37 item 3 — the EditToolbar single row', () => {
-  function editToolbar(ladder: ReturnType<typeof resolveDockLadder> | undefined) {
-    return mount(
-      createElement(EditToolbar, {
-        tool: 'off',
-        onSelect: vi.fn(),
-        defaultFont: 'Helvetica',
-        onDefaultFontChange: vi.fn(),
-        enabled: true,
-        hint: 'Pick a tool',
-        ladder,
-      }),
-    );
-  }
-
-  it('is one row and never wraps (labels rung hides the Font label + hint)', () => {
-    const wide = editToolbar(resolveDockLadder(1600));
-    try {
-      expect(wide.host.querySelector('[data-edit-hint]')).not.toBeNull();
-      expect(wide.host.querySelector('.edit-toolbar-font-label')).not.toBeNull();
-      expect(wide.host.querySelector('[data-edit-arrow]')).toBeNull();
-    } finally {
-      wide.unmount();
-    }
-
-    const mid = editToolbar(resolveDockLadder(800));
-    try {
-      expect(mid.host.querySelector('[data-edit-toolbar]')?.getAttribute('data-edit-icon-only')).toBe('true');
-      expect(mid.host.querySelector('[data-edit-hint]')).toBeNull();
-      expect(mid.host.querySelector('.edit-toolbar-font-label')).toBeNull();
-      // The controls themselves stay.
-      expect(mid.host.querySelectorAll('[data-edit-tool]')).toHaveLength(4);
-    } finally {
-      mid.unmount();
-    }
-  });
-
-  it('shows the scroll arrows at the last rung without dropping any control', () => {
-    const narrow = editToolbar(resolveDockLadder(640));
-    try {
-      expect(narrow.host.querySelector('[data-edit-toolbar]')?.getAttribute('data-edit-arrows')).toBe('true');
-      expect(narrow.host.querySelectorAll('[data-edit-arrow]')).toHaveLength(2);
-      expect(narrow.host.querySelectorAll('[data-edit-tool]')).toHaveLength(4);
-      // Clicking an arrow is a no-op in jsdom but must not throw.
-      const left = narrow.host.querySelector<HTMLButtonElement>('[data-edit-arrow="left"]');
-      act((): void => {
-        left?.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
-      });
-      expect(narrow.host.querySelector('[data-edit-arrow="right"]')).not.toBeNull();
-    } finally {
-      narrow.unmount();
-    }
-  });
-
-  it('the stylesheet keeps the row on one line and scrolls it', () => {
-    expect(ruleBody('.edit-toolbar')).toMatch(/flex-wrap:\s*nowrap/);
-    const scroll = ruleBody('.edit-toolbar-scroll');
-    expect(scroll).toMatch(/overflow-x:\s*auto/);
-    expect(scroll).toMatch(/flex:\s*1 1 auto/);
-  });
-});
-
 describe('DEF-337 — the secondary rows offer arrows only on a real overflow', () => {
   /** Force layout widths on the matching scroll container (jsdom has no
    *  layout). Returns a restore function. */
@@ -165,31 +86,6 @@ describe('DEF-337 — the secondary rows offer arrows only on a real overflow', 
       }
     };
   }
-
-  it('the EditToolbar drops its arrows when the row fits', () => {
-    const restore = stubScrollWidths('data-edit-toolbar-scroll', 195, 195);
-    try {
-      const { host, unmount } = mount(
-        createElement(EditToolbar, {
-          tool: 'off',
-          onSelect: vi.fn(),
-          defaultFont: 'Helvetica',
-          onDefaultFontChange: vi.fn(),
-          enabled: true,
-          hint: 'Pick a tool',
-          ladder: resolveDockLadder(640),
-        }),
-      );
-      try {
-        expect(host.querySelector('[data-edit-toolbar]')?.getAttribute('data-edit-arrows')).toBe('false');
-        expect(host.querySelector('[data-edit-arrow]')).toBeNull();
-      } finally {
-        unmount();
-      }
-    } finally {
-      restore();
-    }
-  });
 
   it('the AnnotationFlyout drops its arrows when the body fits (never dead at any width)', () => {
     const restore = stubScrollWidths('data-annotation-flyout-scroll', 195, 195);

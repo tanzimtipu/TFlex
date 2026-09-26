@@ -21,7 +21,7 @@ fs.mkdirSync(SHOTS, { recursive: true });
 
 const DOCK_STAGE_IDS = {
   pages: ['rotate', 'extract', 'insertPages', 'replacePages', 'split', 'delete', 'merge', 'cropPages'],
-  edit: ['editText', 'editImage', 'editTextBox', 'recognizeText', 'batchOcr', 'ocrSuspects'],
+  edit: ['editText', 'editImage', 'editTextBox', 'editToolOff', 'recognizeText', 'batchOcr', 'ocrSuspects'],
   review: ['annotate', 'sign', 'stamp', 'flatten', 'forms', 'watermark', 'exportComments', 'importComments'],
   deliver: ['optimize', 'audit', 'exportPages', 'exportText', 'exportDocx', 'createFromImages'],
 };
@@ -131,8 +131,9 @@ test('P37-A Inspector: text block on top, divider, scrolling, flush, collapse, s
 
   // --- EDIT flow: place a text box; it becomes the live selection. ---
   await gotoStage(2);
-  const editToolbar = win.locator('[data-edit-toolbar]');
-  await expect(editToolbar).toBeVisible({ timeout: 8000 });
+  // Phase 41 (item 2) — the legacy edit toolbar is retired; the EDIT dock's
+  // edit-layer verbs are the edit-mode surface now (enabled in the EDIT stage).
+  await expect(win.locator('[data-dock-verb="editTextBox"]')).toBeEnabled({ timeout: 8000 });
   expect(await win.locator('[data-dock-verb="editMode"]').count(), 'item 13: no editMode dock verb').toBe(0);
   await win.locator('[data-dock-verb="editTextBox"]').click();
   await win.waitForTimeout(500);
@@ -226,7 +227,13 @@ test('P37-A Inspector: text block on top, divider, scrolling, flush, collapse, s
   });
   console.log(`[P37-A] flush=${JSON.stringify(flush)}`);
   expect.soft(flush.radius, 'no rounded left corner').toBe('0px');
-  expect.soft(flush.shadow, 'no shadow seam').toBe('none');
+  // Phase 41 (item 4) supersedes the Phase-37 "no shadow seam" rule: with a
+  // live selection the Inspector edge carries the neutral glow (an inset
+  // highlight + a soft outward glow), never a hard drop-shadow seam.
+  expect.soft(
+    flush.shadow === 'none' || flush.shadow.includes('inset'),
+    `the Inspector edge is shadow-free at rest or the Phase-41 neutral glow (got ${flush.shadow})`,
+  ).toBe(true);
   expect.soft(
     Math.abs(flush.inspectorTop - flush.workspaceTop),
     `Inspector is flush with the canvas top (inspector=${flush.inspectorTop} canvas=${flush.workspaceTop} leftPanel=${flush.contextPanelTop})`,
@@ -361,46 +368,24 @@ test('P37-A2 secondary row: one row, no header, follows the dock ladder', async 
   expect(flyoutNarrow.arrowCount, 'no dead arrow controls render').toBe(0);
   expect(flyoutNarrow.tools, 'no tool is dropped').toBeGreaterThanOrEqual(5);
 
-  // EditToolbar (the EDIT secondary row) at the same ladder.
+  // Phase 41 (item 2) — the legacy EditToolbar (the EDIT secondary row) is
+  // RETIRED. Its four tool modes now ride the EDIT dock; assert all four are
+  // reachable at the wide and the narrow rung (no capability lost).
   await setWindowSize(1440, 900);
   await gotoStage(2);
-  const editWide = await win.evaluate(() => {
-    const t = document.querySelector('[data-edit-toolbar]');
-    const tools = [...t.querySelectorAll('[data-edit-tool]')];
-    return {
-      arrows: t.getAttribute('data-edit-arrows'),
-      iconOnly: t.getAttribute('data-edit-icon-only'),
-      rows: new Set(tools.map((x) => Math.round(x.getBoundingClientRect().top))).size,
-      tools: tools.length,
-      hint: t.querySelectorAll('[data-edit-hint]').length,
-    };
-  });
-  console.log(`[P37-A2] edit toolbar wide=${JSON.stringify(editWide)}`);
-  expect(editWide.arrows).toBe('false');
-  expect(editWide.rows, 'the edit tools are on ONE row').toBe(1);
-  expect(editWide.tools).toBe(4);
+  const editWide = await dockAllVerbIds();
+  console.log(`[P37-A2] EDIT dock wide=${JSON.stringify(editWide)}`);
+  for (const id of ['editText', 'editImage', 'editTextBox', 'editToolOff']) {
+    expect(editWide, `wide: ${id} rides the EDIT dock`).toContain(id);
+  }
   await setWindowSize(640, 800);
   await win.waitForTimeout(600);
-  const editNarrow = await win.evaluate(() => {
-    const t = document.querySelector('[data-edit-toolbar]');
-    const sc = document.querySelector('[data-edit-toolbar-scroll]');
-    return {
-      arrows: t.getAttribute('data-edit-arrows'),
-      iconOnly: t.getAttribute('data-edit-icon-only'),
-      arrowCount: t.querySelectorAll('[data-edit-arrow]').length,
-      tools: t.querySelectorAll('[data-edit-tool]').length,
-      scrollWidth: sc?.scrollWidth ?? null,
-      clientWidth: sc?.clientWidth ?? null,
-    };
-  });
-  console.log(`[P37-A2] edit toolbar narrow=${JSON.stringify(editNarrow)}`);
-  expect(editNarrow.iconOnly, 'the edit toolbar is icon-only at the last rung').toBe('true');
-  // DEF-337 — the arrows render iff the row genuinely overflows; the four edit
-  // tools fit at 640, so no dead arrows are offered.
-  expect(editNarrow.scrollWidth, 'the edit row fits at 640').toBe(editNarrow.clientWidth);
-  expect(editNarrow.arrows, 'no arrows when the edit row fits (DEF-337)').toBe('false');
-  expect(editNarrow.arrowCount, 'no dead arrow controls render').toBe(0);
-  expect(editNarrow.tools).toBe(4);
+  await gotoStage(2);
+  const editNarrow = await dockAllVerbIds();
+  console.log(`[P37-A2] EDIT dock narrow=${JSON.stringify(editNarrow)}`);
+  for (const id of ['editText', 'editImage', 'editTextBox', 'editToolOff']) {
+    expect(editNarrow, `narrow: ${id} is still reachable on the EDIT dock`).toContain(id);
+  }
 });
 
 // ---------------------------------------------------------------------------
@@ -640,22 +625,26 @@ test('P37-C edit text: Confirm/Delete/Cancel, selected text visible, stage is th
   await setWindowSize(1440, 900);
 
   // --- item 13: the EDIT stage is the switch. ---
+  // Phase 41 (item 2) — the legacy edit toolbar is retired; the edit layer
+  // (mounted only while edit mode is on and a tool is armed) is the observable.
   await gotoStage(2);
-  expect(await win.locator('[data-edit-toolbar]').count(), 'entering EDIT enables edit mode').toBe(1);
+  await win.locator('[data-dock-verb="editText"]').click();
+  await win.waitForTimeout(500);
+  expect(await win.locator('.edit-layer').count(), 'entering EDIT enables edit mode (the edit layer mounts)').toBeGreaterThan(0);
   expect(await win.locator('[data-dock-verb="editMode"]').count(), 'no editMode verb in the EDIT dock').toBe(0);
   await gotoStage(1);
   await win.waitForTimeout(500);
-  expect(await win.locator('[data-edit-toolbar]').count(), 'leaving EDIT disables edit mode').toBe(0);
+  expect(await win.locator('.edit-layer').count(), 'leaving EDIT disables edit mode').toBe(0);
   await gotoStage(3);
   await win.waitForTimeout(500);
-  expect(await win.locator('[data-edit-toolbar]').count(), 'REVIEW keeps edit mode off').toBe(0);
+  expect(await win.locator('.edit-layer').count(), 'REVIEW keeps edit mode off').toBe(0);
   await gotoStage(2);
   await win.waitForTimeout(500);
-  expect(await win.locator('[data-edit-toolbar]').count(), 're-entering EDIT re-enables it').toBe(1);
-
-  // --- items 11 + 12: select a text run. ---
   await win.locator('[data-dock-verb="editText"]').click();
   await win.waitForTimeout(500);
+  expect(await win.locator('.edit-layer').count(), 're-entering EDIT re-enables it').toBeGreaterThan(0);
+
+  // --- items 11 + 12: select a text run. ---
   const gotRun = await selectTextRun();
   console.log(`[P37-C] text run selected=${gotRun}`);
   expect(gotRun, 'a text run is selectable in the EDIT flow').toBe(true);

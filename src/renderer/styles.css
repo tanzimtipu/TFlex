@@ -79,6 +79,18 @@
   --accent-hover-bg: rgba(37, 99, 235, 0.08);
   --focus-ring: 0 0 0 2px rgba(37, 99, 235, 0.35);
 
+  /* Phase 41 (item 3) — THE PROFESSIONAL SELECTION treatment. ONE token trio
+   * drives BOTH the text panel's active align/spacing option and the thumbnail
+   * rail's selected page: a low-saturation NEUTRAL tint for the fill, a muted
+   * accent-tinted hairline/ring for the edge, and the accent reserved for the
+   * GLYPH (the segmented icon / the page-number label) instead of a solid
+   * accent slab. Geometry and timing are identical in all three themes; only
+   * the two wash values move per theme, to keep the glyph >= 4.5:1 on the
+   * composited fill (measured by phase38LegibilityContrast.test.ts). */
+  --select-fill: rgba(15, 23, 42, 0.07);
+  --select-edge: rgba(37, 99, 235, 0.45);
+  --select-glyph: var(--sem-primary);
+
   /* Phase-15 frosted-acrylic — THEME-INDEPENDENT structural tokens.
    * They live in :root (next to the --tf-motion-* system, same
    * convention) because they are identical in all three themes: the
@@ -551,6 +563,13 @@
    * 5.99:1. The wash and every family hue are unchanged. */
   --dock-primary-fg: #63a8e8;
 
+  /* Phase 41 (item 3) — the shared selection trio on the dark theme: the same
+     token NAMES as :root (identical geometry/timing), the wash retuned for the
+     near-black surface so the accent glyph keeps its floor. --select-glyph
+     resolves through the dark --sem-primary. */
+  --select-fill: rgba(255, 255, 255, 0.09);
+  --select-edge: rgba(99, 168, 232, 0.5);
+
   --border: #242a31;
   --border-strong: #2e353d;
   --border-subtle: #1e242b;
@@ -747,6 +766,13 @@
    * measured 4.34:1; blue-700 (the frosted family blue) measures 5.61:1. The
    * wash and every family hue are unchanged. */
   --dock-primary-fg: #1d4ed8;
+
+  /* Phase 41 (item 3) — the shared selection trio on the light frosted glass:
+     the same token NAMES as :root/dark (identical geometry/timing), the wash
+     retuned so the accent glyph keeps its floor over the glass composite.
+     --select-glyph resolves through the frosted --sem-primary (#1e40af). */
+  --select-fill: rgba(15, 23, 42, 0.06);
+  --select-edge: rgba(30, 64, 175, 0.55);
 
   /* Hairlines */
   --border: var(--tf-border);
@@ -2904,10 +2930,20 @@ input[type="checkbox"] {
   color: var(--fg-strong);
 }
 
+/* Phase 41 (item 3) — SUPERSEDES the solid accent slab. The active align /
+ * spacing option is a professional SELECTION: a low-saturation tinted fill,
+ * a muted accent-tinted edge (hairline + inner ring), and the accent on the
+ * GLYPH only. Geometry and timing are unchanged (same box, same
+ * .text-props-btn transition). */
 .text-props-btn-active {
-  background: var(--accent);
-  border-color: var(--accent);
-  color: var(--fg-on-accent);
+  background: var(--select-fill);
+  border-color: var(--select-edge);
+  color: var(--select-glyph);
+  box-shadow: inset 0 0 0 1px var(--select-edge);
+}
+.text-props-btn-active:hover:not(:disabled) {
+  background: var(--select-fill);
+  color: var(--select-glyph);
 }
 
 .text-props-btn:disabled,
@@ -3436,7 +3472,6 @@ input[type="checkbox"] {
 .tools-palette-entry:active:not(:disabled),
 .modal-close:active,
 .sheet-close:active,
-.edit-toolbar-btn:active:not(:disabled),
 .sig-tab:active,
 .sig-saved-pick:active:not(:disabled),
 .toast-close:active,
@@ -4504,15 +4539,19 @@ input[type="checkbox"] {
 }
 
 .thumb-selected {
-  /* Phase-3 workspace: the multi-select state carries the same faint
-   * 0.10 accent wash as the current-page marker, distinguished by
-   * the accent ring (selection is a soft orange indicator, not a
-   * solid block). */
-  background: var(--accent-selected);
-  border-color: var(--accent);
-  /* a soft inner ring on top of the soft accent background to distinguish
-   * selection from "current page" */
-  box-shadow: inset 0 0 0 1px var(--accent);
+  /* Phase 41 (item 3) — the SAME professional selection trio as the text
+   * panel's active option: low-saturation tinted fill, muted accent-tinted
+   * edge + inner ring, accent reserved for the page-number glyph. Same
+   * geometry (1px border, inset ring — no slot shift) and the same
+   * --motion-fast --ease-out transition as every theme. */
+  background: var(--select-fill);
+  border-color: var(--select-edge);
+  box-shadow: inset 0 0 0 1px var(--select-edge);
+}
+
+.thumb-selected .thumb-label {
+  color: var(--select-glyph);
+  font-weight: 500;
 }
 
 .thumb-dragging {
@@ -6817,6 +6856,22 @@ rect.ann-highlight.ann-preview {
   flex-direction: column;
   min-width: 0;
   z-index: 30;
+}
+
+/* Phase 41 (item 1) — the Inspector is an OPAQUE surface in every theme and
+ * every stage. On light/dark --panel-bg is already opaque; on frosted it is
+ * the translucent glass film, so this composites that film over the frosted
+ * canvas base: the COMPUTED background-color stays opaque and no canvas
+ * content (page text, an edit layer, the edit toolbar's hint) can read
+ * through the panel. `isolation: isolate` keeps the panel's own stacking
+ * self-contained above the canvas it already sits over (z-index 30). */
+.inspector {
+  isolation: isolate;
+}
+:root[data-theme="frosted"] .inspector {
+  background:
+    linear-gradient(var(--panel-bg), var(--panel-bg)),
+    var(--tf-canvas-opaque);
 }
 
 /* Phase 37 (items 3 + 6) — the Inspector's responsive/user collapse. It stays
@@ -9203,146 +9258,6 @@ rect.ann-highlight.ann-preview {
 }
 
 /* ---------------------------------------------------------------------------
- * Phase 10 - Edit toolbar (above the document)
- * ------------------------------------------------------------------------- */
-
-.edit-toolbar {
-  display: flex;
-  /* Phase 37 (item 3) — the secondary edit row is ONE row: it never wraps and
-   * never stacks. At the ladder's last rung the arrows scroll it. */
-  flex-wrap: nowrap;
-  align-items: center;
-  gap: 6px;
-  padding: 6px 12px;
-  background: var(--bg-toolbar, var(--bg-raised));
-  border-bottom: 1px solid var(--border);
-  font-family: var(--font-ui, "Inter", system-ui, sans-serif);
-  /* DEF-178/179 — pinned grid row: the edit toolbar is a CONDITIONAL
-   * chrome row of .workspace-main; an explicit row keeps it out of
-   * the 1fr scroller row (see the .workspace-main comment). */
-  grid-row: 3;
-}
-
-/* Phase 37 (item 3) — the single scrolling row + the ladder's arrows. */
-.edit-toolbar-scroll {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  flex: 1 1 auto;
-  min-width: 0;
-  overflow-x: auto;
-  overflow-y: hidden;
-}
-
-.edit-toolbar-arrow {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  flex: 0 0 auto;
-  width: 26px;
-  height: 26px;
-  padding: 0;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-2);
-  background: transparent;
-  color: var(--fg-muted);
-  cursor: pointer;
-  transition: background var(--motion-fast) var(--ease-out);
-}
-.edit-toolbar-arrow:hover { background: var(--bg-hover, var(--accent-soft)); color: var(--fg); }
-.edit-toolbar-arrow:focus-visible { outline: none; box-shadow: var(--focus-ring); }
-
-.edit-toolbar-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  height: 26px;
-  padding: 0 8px;
-  border: 1px solid var(--border);
-  background: transparent;
-  color: var(--fg-muted);
-  font-size: 12px;
-  font-weight: 500;
-  border-radius: var(--radius-1);
-  cursor: pointer;
-  transition:
-    background var(--motion-fast) var(--ease-out),
-    color var(--motion-fast) var(--ease-out),
-    border-color var(--motion-fast) var(--ease-out),
-    box-shadow var(--motion-fast) var(--ease-out),
-    transform var(--motion-fast) var(--ease-in-out);
-}
-
-.edit-toolbar-btn:hover:not(:disabled) {
-  background: var(--bg-hover, var(--accent-soft));
-  color: var(--fg);
-  border-color: var(--border-strong);
-}
-
-.edit-toolbar-btn-active {
-  /* Phase 4 — armed edit-mode button = the shared orange wash.
-   * Chunk 2 — selection animates over --tf-motion-normal (180ms,
-   * the 140-180ms tool-selection band) instead of snapping. */
-  background: var(--accent-selected);
-  color: var(--accent);
-  border-color: var(--accent);
-  transition:
-    background var(--tf-motion-normal) var(--tf-ease-standard),
-    color var(--tf-motion-normal) var(--tf-ease-standard),
-    border-color var(--tf-motion-normal) var(--tf-ease-standard);
-}
-
-.edit-toolbar-btn:focus-visible {
-  outline: none;
-  box-shadow: var(--focus-ring);
-}
-
-.edit-toolbar-btn:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
-.edit-toolbar-divider {
-  width: 1px;
-  height: 18px;
-  background: var(--border);
-  margin: 0 2px;
-}
-
-.edit-toolbar-font {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-}
-
-.edit-toolbar-font-label {
-  font-size: var(--tf-label-size);
-  color: var(--fg-muted);
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  font-weight: 600;
-}
-
-.edit-toolbar-font select {
-  height: 24px;
-  font-size: 12px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-1);
-  /* Phase 4 — dropdown surface matches --bg-input everywhere. */
-  background: var(--bg-input);
-  color: var(--fg);
-  padding: 0 4px;
-}
-
-.edit-toolbar-hint {
-  margin-left: auto;
-  font-size: var(--tf-label-size);
-  color: var(--fg-muted);
-  font-style: italic;
-  user-select: none;
-}
-
-/* ---------------------------------------------------------------------------
  * Phase 11 - OCR dialog + suspects panel
  * ------------------------------------------------------------------------- */
 
@@ -9836,6 +9751,23 @@ rect.ann-highlight.ann-preview {
 @keyframes ocr-bar-in {
   from { transform: translateY(-6px); opacity: 0; }
   to   { transform: translateY(0); opacity: 1; }
+}
+
+/* DEF-357 — the always-on Inspector owns its full-height column, so the OCR
+ * bar (a top FLOW strip) reserves that column's width instead of running
+ * under the fixed panel. Without this the bar spanned the full frame
+ * (`grid-column: 1 / -1`) and its `margin-left: auto` close button landed at
+ * x=1408, INSIDE the Inspector's 264px column (x=1178..1442 at 1440 wide):
+ * `elementFromPoint` over the button returned the Inspector header's SVG rect
+ * and the panel could not be closed from its own control. Reserving
+ * `--tf-tools-inset` (the SAME registered token the page-view scroller and the
+ * `.canvas-overlay` consume, 0px with the Inspector closed, 264px / the
+ * collapsed strip width with it open) puts the bar's right edge flush against
+ * the panel's left edge, so every bar control is hit-testable. The bar's
+ * background no longer needs to reach under the opaque panel: the Inspector
+ * paints over that strip anyway. */
+.app-main > .ocr-suspects-panel {
+  margin-right: var(--tf-tools-inset, 0px);
 }
 
 :root[data-theme="dark"] .ocr-suspects-panel {
@@ -10412,7 +10344,6 @@ rect.ann-highlight.ann-preview {
 .rail-tab:hover,
 .ann-panel-row-jump:hover,
 .ann-panel-row-delete:hover,
-.edit-toolbar-btn:hover:not(:disabled),
 .sig-tab:hover,
 .sig-saved-pick:hover:not(:disabled),
 .sig-saved-delete:hover,
@@ -10458,7 +10389,6 @@ rect.ann-highlight.ann-preview {
 .rail-tab:active,
 .ann-panel-row-jump:active,
 .ann-panel-row-delete:active,
-.edit-toolbar-btn:active:not(:disabled),
 .sig-tab:active,
 .sig-saved-pick:active:not(:disabled),
 .sig-saved-delete:active,
@@ -10660,7 +10590,7 @@ rect.ann-highlight.ann-preview {
  * shared state washes (hover highlight, selected tint, pressed, focus ring)
  * still provide all interaction feedback. Selectors ride the stable data
  * attributes already carried by the controls (data-icon / data-tool-id /
- * data-tool / data-edit-tool / data-rail-tab) — no structural changes, no
+ * data-tool / data-rail-tab) — no structural changes, no
  * emojis, lucide-only. The two-tone corner dots are RETIRED (they were
  * decorative noise; shape + label carry the meaning).
  * ------------------------------------------------------------------------- */
@@ -10708,15 +10638,6 @@ rect.ann-highlight.ann-preview {
 .ann-tool-btn[data-tool="callout"]:hover { color: var(--sem-affirmative); }
 .ann-tool-btn[data-tool="note"],
 .ann-tool-btn[data-tool="note"]:hover { color: var(--sem-affirmative); }
-
-/* ---- Edit toolbar (per data-edit-tool). Category: ordinary content
- *      editing -> NEUTRAL. ---- */
-.edit-toolbar-btn[data-edit-tool="text"],
-.edit-toolbar-btn[data-edit-tool="text"]:hover:not(:disabled) { color: var(--sem-neutral); }
-.edit-toolbar-btn[data-edit-tool="box"],
-.edit-toolbar-btn[data-edit-tool="box"]:hover:not(:disabled) { color: var(--sem-neutral); }
-.edit-toolbar-btn[data-edit-tool="image"],
-.edit-toolbar-btn[data-edit-tool="image"]:hover:not(:disabled) { color: var(--sem-neutral); }
 
 /* ---- Tools palette (per data-tool-id). The entry-level selectors
  *      beat the shared hover-brighten rule, so each icon keeps its
@@ -11009,14 +10930,29 @@ rect.ann-highlight.ann-preview {
     box-shadow var(--motion-fast) var(--ease-out);
 }
 
-:root[data-theme="frosted"] .thumb-current,
-:root[data-theme="frosted"] .thumb-selected {
+:root[data-theme="frosted"] .thumb-current {
   background: var(--glass-selected-bg);
   border-color: var(--glass-selected-border);
   border-radius: var(--radius-3);
   box-shadow:
     0 0 0 2px var(--glass-selected-border),
     0 0 0 4px rgba(37, 99, 235, 0.15);
+}
+
+/* Phase 41 (item 3) — the frosted SELECTED thumb now consumes the SAME shared
+ * selection trio as light/dark, so all three themes share one geometry (1px
+ * border + 1px inset ring) and one timing. Only the wash values move, via the
+ * frosted --select-fill / --select-edge. */
+:root[data-theme="frosted"] .thumb-selected {
+  background: var(--select-fill);
+  border-color: var(--select-edge);
+  border-radius: var(--radius-3);
+  box-shadow: inset 0 0 0 1px var(--select-edge);
+}
+
+:root[data-theme="frosted"] .thumb-selected .thumb-label {
+  color: var(--select-glyph);
+  font-weight: 500;
 }
 
 /* The windowed page-overlay editors keep their OPAQUE sheets so the
@@ -11224,7 +11160,7 @@ rect.ann-highlight.ann-preview {
  *
  * In the frosted theme the scroller is full-bleed inside
  * .workspace-main (inset 0, painted under the chrome at z-index 0)
- * and the chrome rows (.toolbar / .search-bar / .edit-toolbar) float
+ * and the chrome rows (.toolbar / .search-bar) float
  * above it at z-index 1 with their translucent
  * sheets + the Phase-A backdrop-filter. As the user scrolls, page
  * content moves UP under the rows and visibly diffuses through the
@@ -11273,8 +11209,7 @@ rect.ann-highlight.ann-preview {
 }
 
 :root[data-theme="frosted"] .toolbar,
-:root[data-theme="frosted"] .search-bar,
-:root[data-theme="frosted"] .edit-toolbar {
+:root[data-theme="frosted"] .search-bar {
   /* The chrome rows float above the scroller: their translucent
    * sheets + backdrop-filter diffuse the page that scrolls under
    * them, and they keep receiving every pointer event. */
@@ -12925,7 +12860,11 @@ rect.ann-highlight.ann-preview {
    * content box, enough for every 12px stage word with a visible edge gap. */
   padding: var(--sp-2) 3px;
   background: var(--bg-rail);
-  border-right: 1px solid var(--border);
+  /* Phase 41 (item 4a) — the 1px NEUTRAL separator between the side rail and
+   * the ContextPanel. It is the rail's own page-facing hairline (no gap, no
+   * overlap; the panel's column starts flush at the rail's border box), drawn
+   * with the shared --divider token in every theme. */
+  border-right: 1px solid var(--divider);
   -webkit-app-region: no-drag;
   transition: width var(--motion-duration-panel) var(--motion-ease-layout);
 }
@@ -13291,6 +13230,21 @@ rect.ann-highlight.ann-preview {
 
 .context-panel-row-label { color: var(--fg-muted); }
 .context-panel-row-value { color: var(--fg); text-align: right; min-width: 0; }
+
+/* Phase 41 (item 2) — the EDIT panel's Default font picker (the retired edit
+ * toolbar's control, re-homed). Matches the shared input surface. */
+.context-panel-select {
+  height: 24px;
+  max-width: 100%;
+  font-size: var(--fs-xs);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-1);
+  background: var(--bg-input);
+  color: var(--fg);
+  padding: 0 4px;
+}
+.context-panel-select:focus-visible { outline: none; box-shadow: var(--focus-ring); }
+.context-panel-select:disabled { opacity: 0.5; cursor: not-allowed; }
 
 .context-panel-list {
   display: flex;
@@ -13769,6 +13723,7 @@ rect.ann-highlight.ann-preview {
 .action-dock-verb[data-dock-verb='clearPageSelection']:not(.action-dock-verb-primary):not([aria-pressed='true']):not(:disabled) { color: var(--sem-attention); }
 .action-dock-verb[data-dock-verb='merge']:not(.action-dock-verb-primary):not([aria-pressed='true']):not(:disabled) { color: var(--sem-affirmative); }
 .action-dock-verb[data-dock-verb='cropPages']:not(.action-dock-verb-primary):not([aria-pressed='true']):not(:disabled) { color: var(--sem-neutral); }
+.action-dock-verb[data-dock-verb='editToolOff']:not(.action-dock-verb-primary):not([aria-pressed='true']):not(:disabled) { color: var(--sem-neutral); }
 .action-dock-verb[data-dock-verb='editText']:not(.action-dock-verb-primary):not([aria-pressed='true']):not(:disabled) { color: var(--sem-neutral); }
 .action-dock-verb[data-dock-verb='editImage']:not(.action-dock-verb-primary):not([aria-pressed='true']):not(:disabled) { color: var(--sem-neutral); }
 .action-dock-verb[data-dock-verb='editTextBox']:not(.action-dock-verb-primary):not([aria-pressed='true']):not(:disabled) { color: var(--sem-neutral); }
@@ -14834,21 +14789,26 @@ rect.ann-highlight.ann-preview {
   color: var(--sem-neutral);
 }
 
-/* ---- Phase 40 (item 11/13) — SEPARATOR + ACTIVE-EDGE RULE ----
+/* ---- Phase 41 (item 4) — SUPERSEDES the Phase 40 ACTIVE-EDGE RULE ----
  *
  * Separators are ALWAYS the lowest-contrast NEUTRAL divider token
  * (`--divider`) — a 1px hairline, never a coloured or heavy border. This is
  * already the shared treatment across the Inspector inter-row rules, the
  * ContextPanel outline + inter-section rules and the command-palette rows.
  *
- * The ACTIVE / selected panel edge is the ONE edge that may take colour, and
- * it is STATE-DRIVEN (never a decorative one-sided stripe): the Inspector's
- * page-facing edge takes the PRIMARY role only while it hosts a live
- * selection (`data-inspector-selection` is not `none`); at rest every panel
- * edge is the neutral hairline. Identical geometry in all three themes; only
- * the colour value moves per theme. */
+ * Phase 41 (item 4): the Inspector's page-facing edge is NEVER the accent.
+ * The retired Phase-40 rule coloured that edge with `--sem-primary` while a
+ * selection was live. It is replaced by a layered NEUTRAL shadow/glow, so the
+ * active/selected state is still distinguishable from the resting one by
+ * ELEVATION (a crisp 1px inner highlight + a soft outward glow) rather than a
+ * coloured line: at rest `box-shadow: none`; with a live selection the edge
+ * gains the glow. Identical geometry and glow in all three themes; the ink
+ * resolves per theme. */
 .inspector[data-inspector-selection]:not([data-inspector-selection='none']) {
-  border-left-color: var(--sem-primary);
+  border-left-color: var(--panel-border);
+  box-shadow:
+    inset 1px 0 0 0 var(--border-subtle),
+    -6px 0 16px -8px color-mix(in srgb, var(--fg) 38%, transparent);
 }
 
 

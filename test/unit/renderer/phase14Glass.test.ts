@@ -580,12 +580,18 @@ describe("Phase 14.1 — standardized chrome heights + glass material components
   });
 
   it("the selected thumbnail is a thin accent outline + halo, not a blue rectangle", () => {
+    // Phase 41 (item 3) — the selected thumb is now the shared professional
+    // selection trio: a low-saturation tinted fill + a 1px accent-tinted inset
+    // ring, in EVERY theme (identical geometry), with the accent reserved for
+    // the page-number glyph. It is still a thin outline, never a solid blue
+    // slab, and `--glass-selected-bg` (#2563eb @ 0.12) is no longer its fill.
     const selected = findRuleBodies(css, ':root[data-theme="frosted"] .thumb-selected')
       .find((b) => /box-shadow:/.test(b));
     expect(selected).toBeDefined();
-    expect(selected ?? "").toMatch(/0 0 0 2px var\(--glass-selected-border\)/);
-    expect(selected ?? "").toMatch(/0 0 0 4px rgba\(37,\s*99,\s*235,\s*0\.15\)/);
-    expect(selected ?? "").not.toMatch(/background:\s*rgba\(37,\s*99,\s*235,\s*0\.14\)/);
+    expect(selected ?? "").toMatch(/box-shadow:\s*inset 0 0 0 1px var\(--select-edge\)/);
+    expect(selected ?? "").toMatch(/background:\s*var\(--select-fill\)/);
+    expect(selected ?? "").not.toMatch(/var\(--glass-selected-bg\)/);
+    expect(selected ?? "").not.toMatch(/background:\s*rgba\(37,\s*99,\s*235,\s*0\.1[24]\)/);
   });
 
   it("the design-token ladder (spacing / radii / control sizes) is declared", () => {

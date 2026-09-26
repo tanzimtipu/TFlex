@@ -24,7 +24,8 @@
 //   1. .ann-toolbar is IN the DOM below the CommandBar (v1.16.1: absent).
 //   2. [data-toolbar-edit-toggle] exists in the CommandBar
 //      (v1.16.1: absent, Edit mode unreachable).
-//   3. Arming the Edit toggle mounts .edit-toolbar (v1.16.1: unreachable).
+//   3. Arming an edit tool mounts .edit-layer (v1.16.1: unreachable; Phase 41
+//      item 2 retired the legacy .edit-toolbar).
 //   4. Zero renderer console errors / uncaught page errors after open
 //      (v1.16.1 had none either - the renderer never crashed; the
 //      components simply never mounted from the stale bundle).
@@ -42,7 +43,7 @@ const PACKAGED_EXE =
   process.env.TFLEX_PACKAGED_EXE ||
   path.join(__dirname, '..', 'release', 'win-unpacked', 'TFlex.exe');
 
-test('DEF-214 re-verify: v1.17.0 packaged build mounts .ann-toolbar, the CommandBar Edit toggle, and .edit-toolbar when armed', async () => {
+test('DEF-214 re-verify: v1.17.0 packaged build mounts .ann-toolbar, the CommandBar Edit toggle, and .edit-layer when armed', async () => {
   test.setTimeout(180000);
 
   const electronApp = await launchApp([], null, PACKAGED_EXE);
@@ -86,13 +87,20 @@ test('DEF-214 re-verify: v1.17.0 packaged build mounts .ann-toolbar, the Command
     expect(await editToggle.count()).toBe(1);
     console.log('[def214] [data-toolbar-edit-toggle] present in CommandBar');
 
-    // 3. Arming Edit mode mounts the edit toolbar (v1.16.1: unreachable).
+    // 3. Arming Edit mode enables the edit layer (v1.16.1: unreachable).
+    //    Phase 41 (item 2) — the legacy edit toolbar is retired; the edit layer
+    //    (mounted when a tool is armed) is the observable.
     await editToggle.click();
-    await window.locator('.edit-toolbar').waitFor({ timeout: 10000, state: 'attached' });
+    await window.waitForTimeout(400);
+    const editVerb = window.locator('[data-dock-verb="editTextBox"]');
+    await editVerb.waitFor({ timeout: 10000, state: 'visible' });
+    await editVerb.click();
     await window.waitForTimeout(400); // enter animation settle
-    const editBox = await window.locator('.edit-toolbar').boundingBox();
-    expect(editBox, '.edit-toolbar mounted after arming Edit mode').not.toBeNull();
-    console.log(`[def214] .edit-toolbar mounted after arming: ${JSON.stringify(editBox)}`);
+    const editLayer = window.locator('.edit-layer');
+    await editLayer.waitFor({ timeout: 10000, state: 'attached' });
+    const editBox = await editLayer.boundingBox();
+    expect(editBox, '.edit-layer mounted after arming an edit tool').not.toBeNull();
+    console.log(`[def214] .edit-layer mounted after arming: ${JSON.stringify(editBox)}`);
     await shot(window, 'def214-v1170-editmode.png');
 
     // 4. No renderer console errors / uncaught page errors after open.

@@ -185,11 +185,11 @@ test('C1 no in-canvas editor for textbox/callout/note/edit box', async () => {
     // Edit-mode text box: enter Edit mode, arm box, drag, then double-click.
     await win.screenshot({ path: path.join(SHOTS, 'phase26-annotations-clean.png') }).catch(() => {});
     await toggleEditMode(win);
-    await win.waitForSelector('[data-edit-toolbar]', { timeout: 8000 });
-    await win.click('[data-edit-tool="box"]');
+    await win.locator('[data-dock-verb="editTextBox"]').waitFor({ state: 'visible', timeout: 8000 });
+    await win.locator('[data-dock-verb="editTextBox"]').click();
     const editArmed = await win.evaluate(() => ({
-      tool: document.querySelector('[data-edit-tool="box"]')?.getAttribute('aria-pressed'),
-      toolbar: !!document.querySelector('[data-edit-toolbar]'),
+      tool: document.querySelector('[data-dock-verb="editTextBox"]')?.getAttribute('aria-pressed'),
+      dockVerb: !!document.querySelector('[data-dock-verb="editTextBox"]'),
       layer: !!document.querySelector('.edit-layer'),
     }));
     log('C1-edit-armed', editArmed);

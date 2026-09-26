@@ -239,11 +239,10 @@ describe("Phase 40 item 11 — every tool category maps to a declared role", () 
     expect(failures, failures.join("\n")).toEqual([]);
   });
 
-  it("every annotation, edit and rail-tab hook resolves to a semantic role", () => {
+  it("every annotation and rail-tab hook resolves to a semantic role", () => {
     const failures: string[] = [];
     const hooks: ReadonlyArray<{ re: RegExp; label: string }> = [
       { re: /\[data-tool="[a-z]+"\][^{]*\{[^}]*color:\s*var\((--(?:sem|tf-stage)-[a-z]+)\)/g, label: "annotation tool" },
-      { re: /\[data-edit-tool="[a-z]+"\][^{]*\{[^}]*color:\s*var\((--(?:sem|tf-stage)-[a-z]+)\)/g, label: "edit tool" },
       { re: /\[data-rail-tab="[a-z]+"\][^{]*\{[^}]*color:\s*var\((--(?:sem|tf-stage)-[a-z]+)\)/g, label: "rail tab" },
     ];
     for (const hook of hooks) {
@@ -312,8 +311,17 @@ describe("Phase 40 item 12/13 — separators and the active panel edge", () => {
     expect(CSS_NO_COMMENTS).toMatch(
       /\.context-panel-outline\s*\{[^}]*border-top:\s*1px solid var\(--divider\)/,
     );
-    // The ACTIVE Inspector edge is state-driven and takes the PRIMARY role.
+    // Phase 41 (item 4) SUPERSEDES the Phase-40 "active edge takes
+    // --sem-primary" rule: the Inspector's page-facing edge is now the neutral
+    // hairline plus a NEUTRAL shadow/glow while a selection is live.
     expect(CSS_NO_COMMENTS).toMatch(
+      /\.inspector\[data-inspector-selection\]:not\(\[data-inspector-selection='none'\]\)\s*\{[^}]*border-left-color:\s*var\(--panel-border\)/,
+    );
+    expect(CSS_NO_COMMENTS).toMatch(
+      /\.inspector\[data-inspector-selection\]:not\(\[data-inspector-selection='none'\]\)\s*\{[^}]*box-shadow:/,
+    );
+    // The retired accent edge must be gone.
+    expect(CSS_NO_COMMENTS).not.toMatch(
       /\.inspector\[data-inspector-selection\]:not\(\[data-inspector-selection='none'\]\)\s*\{[^}]*border-left-color:\s*var\(--sem-primary\)/,
     );
     // No decorative one-sided accent stripe exists on a resting panel.

@@ -539,11 +539,11 @@ test('C3 text element move integrity + save/reopen', async () => {
     // switch (the `editMode` dock verb is retired), so enter the stage.
     await armAnnotationTool(win, 'select');
     await win.waitForTimeout(300);
-    if ((await win.locator('[data-edit-toolbar]').count()) === 0) {
+    if ((await win.locator('[data-dock-verb="editTextBox"]').count()) === 0) {
       await gotoStage(win, 2);
-      await win.waitForSelector('[data-edit-toolbar]', { timeout: 8000 });
+      await win.locator('[data-dock-verb="editTextBox"]').waitFor({ state: 'visible', timeout: 8000 });
     }
-    await win.click('[data-edit-tool="box"]');
+    await win.locator('[data-dock-verb="editTextBox"]').click();
     await dragOnPage(win, 0.58, 0.66, 200, 70);
     // Phase 26 — panel Text field is the editor (session commits on blur).
     // Phase 36 (chunk 6): in the EDIT stage the Inspector ALSO re-parents the
@@ -586,12 +586,12 @@ test('C3 text element move integrity + save/reopen', async () => {
     // resets edit mode while the stage stays EDIT, and the stage effect only
     // fires on a stage CHANGE, so force a real stage change (PAGES -> EDIT) to
     // re-enter edit mode. (Recorded as DEF-342.)
-    if ((await win.locator('[data-edit-toolbar]').count()) === 0) {
+    if ((await win.locator('[data-dock-verb="editTextBox"]').count()) === 0) {
       await gotoStage(win, 1);
       await gotoStage(win, 2);
-      await win.waitForSelector('[data-edit-toolbar]', { timeout: 8000 });
+      await win.locator('[data-dock-verb="editTextBox"]').waitFor({ state: 'visible', timeout: 8000 });
     }
-    await win.click('[data-edit-tool="box"]');
+    await win.locator('[data-dock-verb="editTextBox"]').click();
     await win.waitForTimeout(800);
     postBox = await boxGeom(win);
     const ebOverlay = await pageRelRect(win, '.edit-box');

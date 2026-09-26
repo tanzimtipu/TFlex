@@ -158,7 +158,7 @@ test('B5-port: Edit mode excludes the annotation surface', async () => {
   await openAnnotationFlyout(window);
   expect(await window.locator('[data-ann-tools-visible]').count(), 'annotation tools visible in REVIEW').toBeGreaterThan(0);
   await toggleEditMode(window);
-  await window.waitForSelector('[data-edit-toolbar]', { timeout: 10000 });
+  await window.locator('[data-dock-verb="editTextBox"]').waitFor({ state: 'visible', timeout: 10000 });
   expect(await window.locator('[data-annotation-flyout]').count(), 'no annotation flyout while Edit mode is open').toBe(0);
   expect(await window.locator('[data-ann-tools-visible]').count(), 'no annotation tools while Edit mode is open').toBe(0);
 });

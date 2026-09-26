@@ -5,6 +5,49 @@
 > inspect the current `OPEN`, `FIX-READY`, and `DISPUTED` entries first; closed records are
 > historical evidence and must not be loaded wholesale.
 
+## DEF-358: After the EDIT-toolbar retirement, the armed edit tool has no active state on its dock verb
+
+- Status: CLOSED
+- Severity: MEDIUM
+- Found by: adversary (ADV-096)
+- Phase: 41
+
+Steps to reproduce:
+1. `npm.cmd run build` (exit 0); launch the dev app through the canonical `e2e/lib/launch.cjs` helper; open `report.pdf`; press Ctrl+2 for EDIT. The dock renders the four edit verbs `editText` (primary), `editImage`, `editTextBox`, `editToolOff`.
+2. Click `Edit text` (editText); the page's `.edit-layer` arms (`data-tool="text"`). Then arm `editTextBox` / `editImage` / `editToolOff` in turn.
+3. Read the target verb's attributes/class/computed style, and the `aria-pressed` of every edit verb, after each arm.
+
+Expected: the armed tool's dock verb shows an active/pressed state so the user can see which edit tool is live — the retired `.edit-toolbar-btn-active` did exactly that (accent wash + accent border) — and keyboard/AT users get the toggle through `aria-pressed`.
+Actual (pre-fix): no edit verb ever carried an active state. After arming `editText`: `hasAttribute('aria-pressed') === false`, `class="action-dock-verb action-dock-verb-primary"`, `boxShadow:none`. After arming `editTextBox` or `editImage`: `class="action-dock-verb"`, `boxShadow:none` (only the transient hover wash from the click showed). Armed and unarmed were indistinguishable, and `editText` looked accent-tinted whether or not it was armed because it is the dock PRIMARY verb. Root cause: `src/renderer/components/DocumentView.tsx:4342` still passed `activeToolIds={editModeOpen ? ['editMode'] : []}`, but `editMode` was retired as a dock verb in Phase 37 (`DOCK_STAGE_IDS.edit` is editText/editImage/editTextBox/editToolOff/recognizeText/batchOcr/ocrSuspects), so the id never matched a rendered verb and the dock's pressed treatment `.action-dock-verb[aria-pressed='true']` (styles.css:13696) was never applied to an edit tool.
+Raw (post-fix): `e2e/def358_editdock_verify.spec.cjs` — single-mode dock: entering EDIT -> `editToolOff` pressed; `editText` -> `editText` only; `editTextBox` -> `editTextBox` only; `editImage` -> `editImage` only; `editToolOff` -> `editToolOff` only. Multi Mode shared dock (`.multi-dock-layer`): identical matrix. Every pressed verb: `aria-pressed="true"`, `boxShadow: rgb(37, 99, 235) 0px 0px 0px 1px inset`, `background: rgba(37, 99, 235, 0.12)`; every unarmed verb: `aria-pressed` absent, `boxShadow: none`. Exactly one edit verb pressed at a time; the unarmed state carries no inset ring.
+Screenshot: screenshots/def358-edit-dock-armed.png
+
+History:
+- qa: opened (adversary ADV-096).
+- fix: `editDockVerbFor` (src/renderer/edit/model.ts) maps the armed tool to its rendered verb; DocumentView passes `[editDockVerbFor(edit.state.tool)]` and App passes `dockActiveToolIds` to the Multi Mode shared dock.
+- qa: CLOSED -- retested on the rebuilt dev tree. `e2e/def358_editdock_verify.spec.cjs`: 2 passed. The single-mode dock and the Multi Mode shared dock both show exactly one edit verb pressed with the selected inset ring; entering EDIT marks `editToolOff`; unarmed verbs carry no ring. Screenshot inspected: the armed "Edit text" verb carries the accent wash + ring while its siblings are plain.
+
+## DEF-357: the OCR suspects bar's close button is unclickable — the always-on Inspector overlaps it
+
+- Status: CLOSED
+- Severity: MEDIUM
+- Found by: qa
+- Phase: 40 (observed during the Phase 41 gate while migrating `e2e/phase20_verify.spec.cjs`)
+
+Steps to reproduce:
+1. `npm.cmd run build` (exit 0); launch the dev app through the canonical `e2e/lib/launch.cjs` helper; open `report.pdf`.
+2. Run OCR on the current page (Command Palette -> Recognize text -> confirm); the OCR suspects bar auto-opens at the top of `.app-main`.
+3. Read the `.ocr-suspects-close` button's rect and `document.elementFromPoint` at its centre.
+
+Expected: the close button is clickable and closes the OCR suspects bar.
+Actual: the button sits at the bar's right edge (x=1408, y=52 at 1440x900) inside the always-on Inspector's bounds (x=1178..1442, y=44..); `elementFromPoint` returns a `<rect>` from the Inspector's header SVG, so a real pointer click is intercepted and the panel cannot be closed from its own control. Raw (`e2e/phase20_verify.spec.cjs` C4b): `{"btn":{"x":1408,"y":52,"w":22,"h":22},"top":"rect.[object SVGAnimatedString]","insp":{"x":1178,"y":44,"w":264}}`; Playwright `click('.ocr-suspects-close')` timed out 30s with "subtree intercepts pointer events".
+Screenshot: screenshots/phase20-verify-ocr-suspects.png (captured by the spec)
+
+History:
+- qa: opened (observed while migrating `e2e/phase20_verify.spec.cjs` for the Phase 41 gate; the spec now closes the panel through the control's own handler so the entrance-animation probe still runs).
+- fix: the OCR suspects bar reserves the fixed Inspector's column via the shared `--tf-tools-inset` token (`.app-main > .ocr-suspects-panel { margin-right: var(--tf-tools-inset, 0px) }`), so its right edge is flush with the panel's left edge.
+- qa: CLOSED -- retested on the rebuilt dev tree. `e2e/def357_ocrbar_verify.spec.cjs`: 1 passed across 3 themes x {1440x900, 900x700, 640x700} x Inspector expanded/collapsed (18 combinations; at 900/640 the ladder forces the collapsed strip). Every combination: `elementFromPoint` over the close button returned the button's own SVG child (`insideBtn=true`), the close button's right edge sat left of the Inspector's left edge (e.g. 1164 vs 1176 at 1440 expanded), the bar and body right edges equalled the Inspector's left edge (1176/1176), the body was visible and not horizontally clipped (scrollWidth == clientWidth), and a real Playwright pointer click closed the bar. Screenshot inspected: the bar spans to the Inspector's left edge with the close X clear of the panel. Limitation: `report.pdf` current-page OCR yielded 0 low-confidence words, so the body was exercised in its empty state (scrollHeight == clientHeight == 109).
+
 ## DEF-356: Ctrl+S on a CLEAN on-disk document rewrote the file although the toolbar Save is disabled
 
 - Status: CLOSED

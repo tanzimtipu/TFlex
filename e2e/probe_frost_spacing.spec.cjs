@@ -26,7 +26,7 @@ test('frosted spacing probe: containing-block chain + per-theme page top', async
         const sc = document.querySelector('.document-scroller');
         const p = document.querySelector('.tab-pane[aria-hidden="false"] .pdf-page[data-page="1"]');
         const ws = document.querySelector('.workspace-main');
-        const rows = ['.action-dock', '.ann-toolbar', '.search-bar', '.edit-toolbar'].map((s) => {
+        const rows = ['.action-dock', '.ann-toolbar', '.search-bar'].map((s) => {
           const el = document.querySelector(s);
           if (!el) return { s, present: false };
           const r = el.getBoundingClientRect();
