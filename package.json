@@ -1,6 +1,6 @@
 {
     "name": "tflex",
-    "version": "1.35.0",
+    "version": "1.36.0",
     "description": "TFlex - desktop PDF studio for Windows",
     "repository": "tanzimtipu/TFlex",
     "type": "module",
@@ -19,10 +19,17 @@
         "verify": "node scripts/check-conventions.mjs && npm run typecheck",
         "verify:full": "npm run verify && npm run test:unit"
     },
+    "tflex": {
+        "neonAuthBaseUrl": "https://ep-fragrant-pond-b3gqd6cf.neonauth.c-4.ap-southeast-1.aws.neon.tech/neondb/auth",
+        "neonDataApiUrl": "https://ep-fragrant-pond-b3gqd6cf.apirest.c-4.ap-southeast-1.aws.neon.tech/neondb/rest/v1",
+        "neonFunctionApiUrl": "https://br-purple-tooth-b31y4y7b-api.compute.c-4.ap-southeast-1.aws.neon.tech/"
+    },
     "dependencies": {
         "@fontsource-variable/inter": "^5.2.5",
         "@neon/config": "^1.7.2",
         "@neon/env": "^1.4.3",
+        "@neondatabase/auth": "^0.5.0-beta",
+        "@neondatabase/neon-js": "^0.7.0-beta",
         "@pdf-lib/fontkit": "^1.1.1",
         "electron-updater": "^6.8.9",
         "lucide-react": "^1.34.0",
