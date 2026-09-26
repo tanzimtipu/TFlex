@@ -3651,3 +3651,63 @@ with the one-home rule.
 its own comment notes the arrows flag oscillates) and passed in isolation and in two later runs - a
 test-timing flake in a Phase 36 spec, not a product defect. Watch it at the next release gate; if it flakes
 again, make its inline-verb count wait on the lane flag instead of sampling once.
+
+## 2026-09-26: Release 1.35.0 - Phase 43 (animation completeness and app-wide icon identity)
+
+Release 1.35.0 is published: https://github.com/tanzimtipu/tflex-releases/releases/tag/v1.35.0 with all
+four assets, and the public feed verifies (`version: 1.35.0`, sha512 `HI/Wm+fK...`, size 163292165).
+Commits: `04e3238` (the phase), `9dd21c8` (notes), `abfd0f3` (bump), tag `v1.35.0`. Gates: `verify:full`
+420 files / **5310 tests** green, the packaged canonical spec 9/9 at 1.35.0, 22 phase-suite e2e tests, and
+all six criteria measured.
+
+**THE ANIMATION AUDIT (Phase 43 item 1) - the durable summary.** The full audit table lives in
+`screenshots/phase43-animation-audit.md`, but `screenshots/` is GITIGNORED, so the record that survives is
+here. The sweep covered 43 element rows and found ELEVEN surfaces with no token-based animation; all were
+fixed: dock verbs and the arrows lane (colour-only -> `--motion-translate-micro` lift + `--motion-scale-press`),
+the annotation-flyout arrows, the stage-rail buttons, the stage-rail active indicator (instant -> `tf-anim-tab-in`),
+the ContextPanel outline disclosure (snap -> `tf-anim-materialize`), the update indicator's press, the
+palette pin toggle and its glyph (rotate/opacity snap -> token transition), the dock/overflow/context menus
+(no entrance -> a new token-only `anim-menu-pop` keyframe composing via the independent `translate`
+property so it cannot clobber `translateX(-50%)`), and `.ann-flash`. Deliberately-static entries with
+reasons: separators, native controls, always-mounted chrome, the loading/indeterminate spinners (three
+exemptions), and the frosted ambient sheen. Two PRE-EXISTING layout-property animations were found and left
+alone (flagged for a future pass, since Phase 15 prefers transform/opacity): the `.stage-rail` WIDTH tween
+and the outline section's HEIGHT toggle (its content is animated instead).
+
+**Lesson 1 - a green guard proves only what its parser can see.** The Phase 42 registry invariant passed, and
+the Phase 43 app-wide icon guard reported ZERO clashes - while a real different-action duplicate (`Hash`:
+the Inspector's page-rename control vs the registry's `pageJump` "Go to page") sat undetected, because the
+guard's `importedIcons` regex used a lazy `\{([\s\S]*?)\}` that spanned earlier `import {}` statements and
+swallowed the FIRST named icon of the next lucide import (DEF-363). qa's INDEPENDENT sweep found it. Fix:
+`[^}]*` per statement plus a regression test that a first-named import after a preceding named import is
+detected. Rule: an invariant that scans source must be tested on the shape it scans, and a periodic
+independent scan belongs in the gate.
+
+**Lesson 2 - an allow-list needs a reason per entry and is only as good as its last audit.** The icon rule is
+"two DIFFERENT actions may never share a glyph"; the universal close `X` and the same action mirrored on two
+surfaces may. The first allow-list hid genuine cross-action pairs (`MessageSquare` rail-vs-note-marker,
+`Highlighter`/`Underline` annotation-tool-vs-text-format-toggle, `Minus` zoom-vs-pen-width, `ChevronRight`
+outline-vs-disclosure, `Search`, `PanelRightClose`, `Type`), which were split into distinct glyphs
+(`MessageSquareText`/`StickyNote`, `PaintBucket`/`Baseline`, `Slash`, `SquareChevronRight`,
+`TextSearch`, `PanelRightDashed`, `TextCursor`); `Minus` and `PanelRightClose` then became single-surface and
+were DROPPED from the allow-list (a "still shared" assertion catches a stale entry). The operator's reported
+clash was `Columns2` (Multi Mode vs the two-page layout vs the empty-pane glyph): Multi Mode is now
+`PanelsLeftRight` and the empty pane `PanelLeftDashed`. `ToolsPalette.tsx` is EXCLUDED as dead code (a
+regression test fails if it is ever re-wired) rather than allow-listed.
+
+**Lesson 3 - "every element should have animation" needs an app-wide token sweep, not a selector list.**
+The first animation guard checked a hand-picked selector list and therefore missed `.ann-flash` (hardcoded
+`1.6s ease-out`, DEF-362). The fix added `--motion-duration-flash` (1600ms - the locator flash must outlive
+the scroll) plus an app-wide `animation:` sweep over every live declaration with three documented spinner
+exemptions. A guard built from a list will always miss the next element; scan the stylesheet.
+
+**Lesson 4 - the layout transition is a FLIP on the paper-owning slot.** The one/two/four-page switch now
+animates by reusing the proven `zoomFlip` FLIP unit on `.page-slot` (not `.pdf-page`, the DEF-302 lesson),
+transform-only, over `--motion-duration-layout`/`--motion-ease-layout`, with the reduced-motion token
+collapsing to 0 and the instant path skipping the class. Measured 322-350ms live and 0 animation starts
+under reduced motion. PDF pixels are never recoloured or cross-faded.
+
+**Process note for a future round:** durable artefacts (the animation audit table, the icon allow-list
+`phase43-icon-allowlist.md`) were written under `screenshots/`, which is gitignored - they do NOT reach the
+repo. No role currently owns a tracked `docs/` path, so anything that must persist belongs in this file or
+needs the operator to approve a tracked docs location.
