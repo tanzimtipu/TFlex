@@ -30,7 +30,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import type { CSSProperties, ReactElement } from 'react';
 import type { LucideIcon } from 'lucide-react';
-import { ChevronLeft, ChevronRight, Ellipsis } from 'lucide-react';
+import { ChevronsLeft, ChevronsRight, Ellipsis } from 'lucide-react';
 import {
   DOCK_AVAILABILITY_REASON,
   DOCK_BULK_IDS,
@@ -786,7 +786,7 @@ export function ActionDock(props: ActionDockProps): ReactElement {
           title="Scroll left"
           onClick={(): void => scrollVerbs(-1)}
         >
-          <ChevronLeft size={20} aria-hidden />
+          <ChevronsLeft size={20} aria-hidden />
         </button>
       )}
       <div className="action-dock-scroll" ref={scrollRef} data-dock-scroll>
@@ -819,7 +819,7 @@ export function ActionDock(props: ActionDockProps): ReactElement {
               {!iconOnly && <span className="action-dock-label">More</span>}
             </button>
             {overflowOpen && (
-              <div className="action-dock-menu action-dock-menu-overflow" role="menu" data-dock-overflow-menu>
+              <div className="action-dock-menu action-dock-menu-overflow anim-menu-pop" role="menu" data-dock-overflow-menu>
                 {overflowVerbs.map((verb) => {
                   const Icon = verb.icon;
                   return (
@@ -863,7 +863,7 @@ export function ActionDock(props: ActionDockProps): ReactElement {
           title="Scroll right"
           onClick={(): void => scrollVerbs(1)}
         >
-          <ChevronRight size={20} aria-hidden />
+          <ChevronsRight size={20} aria-hidden />
         </button>
       )}
       {/* DEF-312 — the Pin/Unpin menu is portaled to `document.body`. The dock
@@ -877,7 +877,7 @@ export function ActionDock(props: ActionDockProps): ReactElement {
         createPortal(
           <div
             ref={menuRef}
-            className="action-dock-menu"
+            className="action-dock-menu anim-menu-pop"
             role="menu"
             aria-label={`${menu.id} options`}
             data-dock-menu

@@ -2381,3 +2381,50 @@ tool its OWN icon, and a tool must live in exactly one stage's dock.
    and `verify:full` plus the phase suites are green.
 
 **Settings impact:** none - no new `AppSettings` field; this is registry data (icons) and one stage mapping.
+
+## Phase 43 — Animation completeness and app-wide icon identity (2 operator items)
+
+**Operator request (2026-09-26):** the two items below (verbatim intent). The Phase 15 animation system is
+the contract for item 1 ("every element should have animation"); the Phase 42 uniqueness rule is extended
+app-wide by item 2.
+
+**Features**
+
+**A. Animation completeness (item 1)**
+- The single-view page-layout transition (one <-> two <-> four pages) must ANIMATE through the centralised
+  motion system - the page slots move/fade with the layout change instead of snapping - respecting
+  `prefers-reduced-motion` (immediate switch) and the Phase 15 rule that PDF page CONTENT is never
+  recoloured or cross-faded (the layout/box animates, the page's own pixels do not).
+- A full AUDIT of the application finds every element that lacks an animation and fixes it: every
+  interactive surface (dialogs, popovers/menus, the palette, the dock, the panels/rail, the tabs, the
+  flyout, the pills, the toasts, the context menus, the thumbnail selection, the layout control, the
+  collapse/expand controls) must use a motion token - no hardcoded durations/easings - or carry a stated
+  reason it must not animate.
+
+**B. No two elements share an icon (item 2)**
+- The Multi Mode toggle and the two-page layout option currently share the same icon. No two elements of
+  DIFFERENT actions may share an icon anywhere in the app - not just in the tool registry. One universal
+  action repeated verbatim (the close affordance) counts as ONE action; everything else gets its own glyph.
+- The uniqueness invariant is extended to cover the app's icon usages (registry + header controls + the
+  layout control + the dock/palette/panels/dialogs/pills) so it cannot regress.
+
+**Success criteria**
+
+1. Switching the page layout (one/two/four) animates: frame capture shows a transition on the page slots
+   using the motion tokens (report the token, the duration and the captured frames); with reduced motion
+   enabled the switch is immediate; the page CONTENT's pixels are not recoloured during the transition.
+2. An animation audit table is produced listing every interactive surface/element, its animation and the
+   token used - and every entry is either token-animated or carries a one-line reason it must stay static
+   (the table is part of the report; keep it where the team can read it).
+3. Every element the audit found without animation is fixed, with the token named per element.
+4. No two DIFFERENT actions share an icon anywhere in the app: the Multi Mode toggle and the two-page layout
+   option are distinct, and a sweep of all icon usages finds no other duplicate (report the before/after
+   duplicate list; an automated assertion covers it so it cannot regress).
+5. The changed/new icons render at the standard sizes with the contrast floors met in all three themes, and
+   each still describes its control.
+6. No regression: the Phase 15 motion rules (tokens only, identical timing across themes, transform/opacity
+   only, reduced-motion fallback, PDF content protected), the Phase 42 registry invariant, and the earlier
+   phases all hold; `verify:full` plus the phase suites are green.
+
+**Settings impact:** none - no new `AppSettings` field; motion tokens are CSS/JS constants, and the icon
+change is presentational.

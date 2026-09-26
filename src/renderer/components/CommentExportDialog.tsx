@@ -13,7 +13,7 @@
 //      path; on cancel, the dialog simply closes.
 
 import { useEffect, useRef, useState, type ReactElement } from "react";
-import { X, Download } from "lucide-react";
+import { X, FileDown } from "lucide-react";
 import { useBackdropClose } from "./modalBackdrop";
 import { AnimatePresence } from "motion/react";
 import { TfBackdrop, TfDialog } from "./motion/TfMotion";
@@ -188,7 +188,7 @@ export function CommentExportDialog(
             }}
             data-comment-export-confirm
           >
-            <Download size={16} aria-hidden />
+            <FileDown size={16} aria-hidden />
             {running ? "Exporting…" : "Export comments"}
           </button>
         </div>

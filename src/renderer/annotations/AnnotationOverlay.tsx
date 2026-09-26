@@ -27,7 +27,7 @@
 // palette that a double-clicked shape used to open is gone too — the
 // annotation toolbar's `[data-ann-color]` control is the colour path.
 
-import { MessageSquare } from "lucide-react";
+import { StickyNote } from "lucide-react";
 import { Component, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type {
   CSSProperties,
@@ -2037,7 +2037,7 @@ function DomAnnotation({
           color: hex,
         }}
       >
-        <MessageSquare size={size} strokeWidth={2} aria-hidden />
+        <StickyNote size={size} strokeWidth={2} aria-hidden />
         {hasText && (
           <div className="ann-note-text" data-ann-note-text style={noteTextStyle}>
             <AnnStyledLines

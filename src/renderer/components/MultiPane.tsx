@@ -19,7 +19,7 @@ import type {
   ReactElement,
   ReactNode,
 } from "react";
-import { Columns2, FileText, FolderOpen, GripVertical, X } from "lucide-react";
+import { File, FolderOpen, GripVertical, PanelLeftDashed, X } from "lucide-react";
 import { paneTabId, type MultiModeState, type PaneId } from "../state/multiMode";
 import {
   MIN_PANE_WIDTH_PX,
@@ -130,7 +130,7 @@ export function MultiPaneEmpty(props: {
   return (
     <div className="multi-pane-empty">
       <div className="multi-pane-empty-inner">
-        <Columns2 size={28} aria-hidden className="multi-pane-empty-icon" />
+        <PanelLeftDashed size={28} aria-hidden className="multi-pane-empty-icon" />
         <p className="multi-pane-empty-title">Pane {pane} is empty</p>
         <p className="multi-pane-empty-hint">
           Pick one of the open documents, or open a PDF into this pane.
@@ -147,7 +147,7 @@ export function MultiPaneEmpty(props: {
                   aria-label={`Show ${option.title} in pane ${pane}`}
                   title={`Show ${option.title} in pane ${pane}`}
                 >
-                  <FileText size={16} aria-hidden />
+                  <File size={16} aria-hidden />
                   <span className="multi-pane-pick-title">{option.title}</span>
                   <span className="multi-pane-pick-count">
                     {option.pageCount} {option.pageCount === 1 ? "page" : "pages"}

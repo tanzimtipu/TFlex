@@ -27,23 +27,23 @@
 import {
   ChevronLeft,
   ChevronRight,
-  Columns2,
   Expand,
   FileSignature,
   GitMerge,
   Hand,
   Layers,
-  Minus,
   Minimize2,
   MoveHorizontal,
+  PanelsLeftRight,
   Pencil,
   PieChart,
-  Plus,
   RotateCcw,
   RotateCw,
   Scissors,
   Search,
   Trash2,
+  ZoomIn,
+  ZoomOut,
 } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import type { ReactNode } from 'react';
@@ -242,13 +242,13 @@ export function CommandBar(props: CommandBarProps) {
       {/* GROUP: Zoom — [- 372% +] + the two fit modes */}
       <GlassControlGroup label="Zoom" className="toolbar-group">
         <button type="button" className="tool-btn" onClick={onZoomOut} aria-label="Zoom out" title="Zoom out">
-          <Minus size={22} aria-hidden />
+          <ZoomOut size={22} aria-hidden />
         </button>
         <span className="zoom-percent" title="Current zoom">
           {zoomPercent}%
         </span>
         <button type="button" className="tool-btn" onClick={onZoomIn} aria-label="Zoom in" title="Zoom in">
-          <Plus size={22} aria-hidden />
+          <ZoomIn size={22} aria-hidden />
         </button>
         <button
           type="button"
@@ -340,7 +340,7 @@ export function CommandBar(props: CommandBarProps) {
             data-multi-mode-active={multiModeEnabled ? 'true' : 'false'}
             data-icon="multi-mode"
           >
-            <Columns2 size={22} aria-hidden />
+            <PanelsLeftRight size={22} aria-hidden />
           </button>
         )}
         {onEditModeToggle !== undefined && (

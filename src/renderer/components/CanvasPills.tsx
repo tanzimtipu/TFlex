@@ -23,9 +23,9 @@ import {
   ChevronRight,
   Expand,
   Hand,
-  Minus,
   MoveHorizontal,
-  Plus,
+  ZoomIn,
+  ZoomOut,
 } from 'lucide-react';
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { ReactElement } from 'react';
@@ -191,13 +191,13 @@ export function CanvasPills(props: CanvasPillsProps): ReactElement {
       {/* Zoom pill — bottom-RIGHT. */}
       <div className="canvas-pill canvas-pill-zoom" role="group" aria-label="Zoom" data-zoom-pill>
         <button type="button" className="tool-btn" onClick={onZoomOut} aria-label="Zoom out" title="Zoom out">
-          <Minus size={20} aria-hidden />
+          <ZoomOut size={20} aria-hidden />
         </button>
         <span className="zoom-percent" title="Current zoom">
           {zoomPercent}%
         </span>
         <button type="button" className="tool-btn" onClick={onZoomIn} aria-label="Zoom in" title="Zoom in">
-          <Plus size={20} aria-hidden />
+          <ZoomIn size={20} aria-hidden />
         </button>
         <button
           type="button"

@@ -42,6 +42,10 @@
   --motion-duration-layout: 350ms;
   /* Theme crossfade (colors/borders/shadows together). */
   --motion-theme-crossfade: 400ms;
+  /* Flash: the transient "scroll to" locator feedback (`.ann-flash`). It is
+   * deliberately longer than every interaction band because it must survive
+   * the scroll it announces to be seen at all. */
+  --motion-duration-flash: 1600ms;
   /* Canonical no-motion duration (see the reduced-motion block below). */
   --motion-duration-reduced: 0ms;
 
@@ -109,6 +113,7 @@
     --motion-duration-panel: var(--motion-duration-reduced);
     --motion-duration-layout: var(--motion-duration-reduced);
     --motion-theme-crossfade: var(--motion-duration-reduced);
+    --motion-duration-flash: var(--motion-duration-reduced);
   }
 
   /* Movement is disabled outright; the state change remains. DEF-234
@@ -130,9 +135,11 @@
   .anim-materialize,
   .anim-dissolve,
   .anim-lift,
-  .anim-press {
+  .anim-press,
+  .anim-menu-pop {
     animation: none !important;
     transform: none !important;
+    translate: none !important;
   }
 }
 
@@ -156,6 +163,7 @@
   --motion-duration-panel: var(--motion-duration-reduced);
   --motion-duration-layout: var(--motion-duration-reduced);
   --motion-theme-crossfade: var(--motion-duration-reduced);
+  --motion-duration-flash: var(--motion-duration-reduced);
 }
 
 /* ---------------------------------------------------------------------------
@@ -194,6 +202,16 @@
   to   { opacity: var(--motion-opacity-visible); transform: translateY(0); }
 }
 .anim-drop-in { animation: tf-anim-drop-in var(--motion-duration-fast) var(--motion-ease-enter) both; }
+
+/* Menus/popovers that carry their OWN centering transform (the Action Dock's
+ * portaled pin menu, the thumbnail right-click menu): the entrance composes
+ * through the INDEPENDENT `translate` property so it never clobbers a
+ * `transform: translateX(-50%)` on the same element. Values are tokens only. */
+@keyframes tf-anim-menu-pop {
+  from { opacity: var(--motion-opacity-hidden); translate: 0 calc(-1 * var(--motion-translate-small)); }
+  to   { opacity: var(--motion-opacity-visible); translate: 0 0; }
+}
+.anim-menu-pop { animation: tf-anim-menu-pop var(--motion-duration-fast) var(--motion-ease-enter) both; }
 
 /* Sidebars/panels — Slide In / Slide Out (full-width drawer travel). */
 @keyframes tf-anim-slide-in-left {

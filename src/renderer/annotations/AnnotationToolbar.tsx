@@ -26,7 +26,7 @@ import {
   ArrowUpRight,
   StickyNote,
   MousePointer2,
-  Minus,
+  Slash,
   MessageCirclePlus,
   ChevronDown,
   Check,
@@ -713,7 +713,7 @@ export function AnnotationToolbar(props: AnnotationToolbarProps): ReactElement {
                         title={`Pen width: ${w} pt`}
                         data-pen-width={w}
                       >
-                        <Minus
+                        <Slash
                           size={Math.max(8, Math.min(18, w * 2.5))}
                           strokeWidth={Math.max(2, Math.min(6, w))}
                           aria-hidden

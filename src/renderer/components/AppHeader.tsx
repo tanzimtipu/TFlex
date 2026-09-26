@@ -11,18 +11,18 @@ import {
 import {
   Check,
   ChevronDown,
-  Columns2,
   Command,
   FolderOpen,
   Monitor,
   Moon,
+  PanelsLeftRight,
   Plus,
   Printer,
   Save,
   SaveAll,
   Search,
   Settings,
-  Sparkles,
+  Snowflake,
   Sun,
 } from "lucide-react";
 import { AnimatePresence } from "motion/react";
@@ -158,7 +158,7 @@ function themeIcon(value: ThemeDefault, size: number): ReactElement {
   if (value === "dark") return <Moon {...props} />;
   if (value === "light") return <Sun {...props} />;
   if (value === "system") return <Monitor {...props} />;
-  return <Sparkles {...props} />;
+  return <Snowflake {...props} />;
 }
 
 function themeLabel(value: ThemeDefault): string {
@@ -565,7 +565,7 @@ export function AppHeader(props: AppHeaderProps): ReactElement {
             data-header-multi-mode
             data-multi-mode-active={multiModeEnabled ? 'true' : 'false'}
           >
-            <Columns2 size={16} aria-hidden />
+            <PanelsLeftRight size={16} aria-hidden />
           </button>
         )}
         {/* Phase 30 — Print, immediately left of the settings gear. Same

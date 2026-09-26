@@ -24,7 +24,7 @@
 // dialog remains the source of truth for that case.
 
 import { type ReactElement, useEffect, useState, useCallback } from "react";
-import { Check, Download, RefreshCw, RotateCw, X } from "lucide-react";
+import { Check, Download, LoaderCircle, RefreshCw, X } from "lucide-react";
 import type { UpdateState } from "../../shared/types";
 import { normalizeUpdateState } from "./updateStateNormalize";
 
@@ -229,7 +229,7 @@ export function UpdateIndicator(props: UpdateIndicatorProps): ReactElement | nul
           aria-label={view.ariaLabel}
           title={view.ariaLabel}
         >
-          <RotateCw size={16} aria-hidden className="update-indicator-spin" />
+          <LoaderCircle size={16} aria-hidden className="update-indicator-spin" />
           <span>{view.progress}%</span>
         </span>
       );

@@ -27,18 +27,18 @@ import {
   AlignJustify,
   AlignLeft,
   AlignRight,
+  Baseline,
   Bold,
   Eraser,
-  Highlighter,
   IndentDecrease,
   IndentIncrease,
   Italic,
   List,
   ListOrdered,
+  PaintBucket,
   RemoveFormatting,
   Subscript,
   Superscript,
-  Underline,
 } from "lucide-react";
 import type { EditFont, TextBoxStylePatch, TextAlign, TextListStyle } from "../../shared/types";
 import { AnimatedPanel } from "../components/AnimatedPanel";
@@ -332,7 +332,7 @@ export function TextPropertiesPanel(props: TextPropertiesPanelProps): ReactEleme
               title="Underline"
               onClick={(): void => onPatch({ underline: !values.underline })}
             >
-              <Underline size={14} />
+              <Baseline size={14} />
             </button>
             <button
               type="button"
@@ -379,7 +379,7 @@ export function TextPropertiesPanel(props: TextPropertiesPanelProps): ReactEleme
           <label className="text-props-row">
             <span className="text-props-label">Highlight</span>
             <span className="text-props-color-wrap">
-              <Highlighter size={13} className="text-props-inline-icon" />
+              <PaintBucket size={13} className="text-props-inline-icon" />
               <input
                 className="text-props-color"
                 data-txt-highlight

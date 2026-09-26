@@ -1,5 +1,5 @@
 import type { ReactElement } from "react";
-import { FileImage, FilePlus2, FileText, FolderOpen, GitMerge, Sparkles, X } from "lucide-react";
+import { File, FileImage, FilePlus2, FolderOpen, GitMerge, Sparkles, X } from "lucide-react";
 import { useEffect, useState } from "react";
 import type { RecentFile, SampleDocument } from "../../shared/types";
 import { formatOpenedAt } from "../utils/recentPath";
@@ -115,7 +115,7 @@ export function Welcome(props: WelcomeProps): ReactElement {
                     title={`Open ${row.entry.path}`}
                   >
                     <span className="doc-icon" aria-hidden>
-                      <FileText size={16} />
+                      <File size={16} />
                     </span>
                     <span className="recent-row-text">
                       <div className="doc-name">{row.meta.name}</div>

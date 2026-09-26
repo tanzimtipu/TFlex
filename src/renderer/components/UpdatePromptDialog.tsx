@@ -46,7 +46,7 @@
 import type { ReactElement } from "react";
 import { useEffect, useState } from "react";
 import { AnimatePresence } from "motion/react";
-import { Download, RefreshCw, RotateCw, X } from "lucide-react";
+import { Download, LoaderCircle, RefreshCw, X } from "lucide-react";
 import type { UpdateState } from "../../shared/types";
 import { TfBackdrop, TfSheet } from "./motion/TfMotion";
 
@@ -340,7 +340,7 @@ export function UpdatePromptDialog(
               data-update-prompt-downloading
             >
               <p className="update-prompt-text update-prompt-downloading-text">
-                <RotateCw
+                <LoaderCircle
                   size={16}
                   aria-hidden
                   className="update-prompt-spinner"

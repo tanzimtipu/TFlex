@@ -5,6 +5,97 @@
 > inspect the current `OPEN`, `FIX-READY`, and `DISPUTED` entries first; closed records are
 > historical evidence and must not be loaded wholesale.
 
+## DEF-363: the icon guard's import extractor drops the first icon after a preceding named import, so the app-wide sweep misses shared icons (a different-action `Hash` pair remains)
+
+- Status: CLOSED
+- Severity: LOW
+- Found by: qa
+- Phase: 43
+
+Steps to reproduce:
+1. `npm.cmd run build` (exit 0).
+2. Replicate the guard's `importedIcons` regex (`/import\s+(?:type\s+)?\{([\s\S]*?)\}\s+from\s+["']lucide-react["']/g`) on `src/renderer/components/Inspector.tsx`: the captured names are `["useMemo } from 'react';\r\nimport type { ReactElement","ReactNode } from 'react';\r\nimport { Hash","PanelRightClose","PanelRightOpen","X"]` — `Hash` is polluted and not detected.
+3. Run the corrected app-wide sweep (per-import `[^}]*` extraction): 55 lucide files / 134 distinct icons / 69 shared.
+
+Expected: REQUIREMENTS.md Phase 43 criterion 4 — "a sweep of all icon usages finds no other duplicate"; the guard's allow-list covers every shared icon.
+
+Actual: the guard's extractor spans across earlier `import {}` statements, so the FIRST icon of any lucide import that follows another named import is dropped. The guard therefore reports only 47 files / 126 distinct / 63 shared (all allow-listed) and misses 6 shared icons: `ClipboardPaste` (CreateFromImagesDialog + registry `createFromClipboard` — same action), `File` (MultiPane + Welcome — same action), `Hash` (Inspector "Rename pages" vs registry `pageJump` "Go to page" — DIFFERENT actions), `LayoutGrid` (dead ToolsPalette "Grid layout" vs registry `toolsPalette` "Browse all tools" — different actions, dead code), `MessageSquare` (AnnCommentIcon + AnnotationCommentBox — same action), `TriangleAlert` (PrintWindowApp error indicator vs registry `ocrSuspects` — different actions, separate window). The `Hash` pair is a genuine criterion-4 violation the guard cannot see.
+
+Raw: guard replica `GUARD_FILES=47 GUARD_DISTINCT_ICONS=126 GUARD_SHARED_ICONS=63`; corrected sweep `FILES_WITH_LUCIDE=55 DISTINCT_ICONS=134 SHARED_ICONS=69`.
+
+History:
+- qa: opened (DEF-361 FIX-READY retest).
+- qa: CLOSED (FIX-READY retest). `npm.cmd run build` exit 0. Guard test `npm.cmd run test:unit -- test/unit/renderer/phase43IconUniqueness.test.ts` = 1 file / 7 tests passed (includes the DEF-363 extractor regression: first named icon after a preceding import is detected, and `Hash` is found in Inspector.tsx). Independent corrected-parser sweep over all renderer files: 55 files / 135 distinct / 68 shared; the `Hash` pair is gone (`pageJump` -> `ArrowRightToLine`, Inspector keeps `Hash`), and no DIFFERENT-action pair remains among live surfaces (the only cross-action candidate, `LayoutGrid`, is the DEAD `ToolsPalette.tsx` excluded by the guard's dead-file regression test; `ClipboardPaste`/`File`/`MessageSquare`/`TriangleAlert` are same-action allow-list entries).
+
+## DEF-362: the annotation "scroll to" flash overlay animates on hardcoded timing the Phase 43 audit and guard both miss
+
+- Status: CLOSED
+- Severity: LOW
+- Found by: qa
+- Phase: 43
+
+Steps to reproduce:
+1. `npm.cmd run build` (exit 0); launch the dev app through the canonical `e2e/lib/launch.cjs` helper; open `report.pdf`; press Ctrl+3 (REVIEW) and open the Annotations rail tab.
+2. Click an annotation row so the panel flashes/scolls to it (the `FlashBox` overlay, `src/renderer/annotations/AnnotationOverlay.tsx:2232`).
+3. Read the computed animation of `.ann-flash`, or scan `src/renderer/styles.css` for live `transition`/`animation` declarations with a bare duration/easing.
+
+Expected: REQUIREMENTS.md Phase 43 criteria 2/3 and the Phase 15 contract — every animated element is token-animated or carries a stated static reason; no hardcoded durations/easings.
+
+Actual: `.ann-flash` (styles.css:5072) carries `animation: ann-flash 1.6s ease-out forwards` — a hardcoded 1.6s duration and `ease-out` easing, with no `--motion-*` token. It is absent from `screenshots/phase43-animation-audit.md` and from the guard's `AUDITED_SELECTORS`, so neither the audit nor `test/unit/renderer/phase43AnimationTokens.test.ts` can catch it. It is a transient, non-interactive feedback overlay (`aria-hidden`), so the practical impact is low.
+
+Raw: independent scan of `styles.css` (live, non-`::after` rules) found 7 hardcoded-timing hits: 3 documented loading spinners (`.update-indicator-spin`, `.update-prompt-spinner`, `.update-prompt-progress-indeterminate .update-prompt-progress-bar`), 2 false positives (`transition-property` with no timing value; `animation: none`), 1 dead rule (`.tools-palette-entry` 220ms — the `ToolsPalette` component is tree-shaken out of `dist/renderer/assets/index-*.js`), and `.ann-flash`. `animations.css` had 0 real hits.
+
+History:
+- qa: opened (Phase 43 gate).
+- qa: CLOSED (FIX-READY retest). `.ann-flash` now carries `animation: ann-flash var(--motion-duration-flash) var(--motion-ease-exit) forwards` (styles.css:5077); `--motion-duration-flash: 1600ms` is defined in animations.css:48 (reduced-motion override at :116/:166). The guard's app-wide `animation:` sweep is live (13 checked declarations, 3 spinner exemptions; `phase43AnimationTokens.test.ts` 19 passed). Independent stylesheet scan: the only remaining hardcoded timing is the DEAD `.tools-palette-entry` transition (220ms; `tools-palette-entry` absent from the built bundle) plus the 3 documented spinner exemptions — no live hardcoded animation remains. Live app: `e2e/def362_flash_verify.spec.cjs` drew an ink annotation, clicked the REVIEW panel row's jump button, and read `.ann-flash` computed = name `ann-flash`, dur `1.6s`, ease `cubic-bezier(0.4, 0, 1, 1)`, fill `forwards` (1 passed); screenshot `screenshots/def-362-ann-flash.png` shows the blue flash outline around the stroke.
+
+## DEF-361: Phase 43's app-wide icon sweep misses two surfaces and allow-lists several different-action glyph pairs
+
+- Status: CLOSED
+- Severity: LOW
+- Found by: qa
+- Phase: 43
+
+Steps to reproduce:
+1. `npm.cmd run build` (exit 0); launch the dev app through the canonical `e2e/lib/launch.cjs` helper; open `report.pdf`.
+2. Independently scan every `src/renderer/**/*.ts(x)` file for Lucide imports + `<Icon` / `icon: Icon` usages and group by icon (the guard in `test/unit/renderer/phase43IconUniqueness.test.ts` scans only its `NAMED_FILES` + `*Dialog.tsx`).
+3. Compare the shared-icon list against the guard's `SHARED_ALLOW` and judge each pair by whether the same glyph triggers the same user-visible action.
+
+Expected: REQUIREMENTS.md Phase 43 criterion 4 — "No two DIFFERENT actions share an icon anywhere in the app ... a sweep of all icon usages finds no other duplicate".
+
+Actual: the operator's reported clash (Multi Mode toggle vs two-page option) is FIXED and the guard is live, but the sweep finds cross-action duplicates the guard cannot see:
+- `MessageSquare` — the registry's `annotationsPanel` entry ("Show the document's annotations in the rail", action `railTabAnnotations`) and the on-page note-annotation marker (`src/renderer/annotations/AnnotationOverlay.tsx:2040`, action "open/edit this note"). `AnnotationOverlay.tsx` is not in the guard's `NAMED_FILES`, so this cannot regress-guard. (The note TOOL uses `StickyNote`, so the on-page marker is also inconsistent with its own tool glyph.)
+- `Highlighter` / `Underline` — the annotation tools (toolbar + list legend) and the Inspector text-formatting toggles (`src/renderer/edit/TextPropertiesPanel.tsx:335,382`, actions "toggle text underline" / "set text highlight colour"). `TextPropertiesPanel.tsx` is not in the guard's `NAMED_FILES`.
+- Allow-listed pairs that are technically DIFFERENT actions: `Minus` (window minimize vs pen-width swatch), `ChevronRight` (next page vs outline disclosure), `Search` (open find bar vs palette search-field adornment), `PanelRightClose` (inspector collapse vs registry `paneClear`), `Type` (annotation text type vs edit-content text item). These are conventional directional/utility glyph reuses in different contexts, so the practical impact is low.
+
+Raw: independent sweep over 173 renderer files / 123 distinct icons / 62 icons shared by >1 file; the guard's detection logic (replicated) reports `REAL violations: []` for its own file set and flags a synthetic `Columns2` clash (`["Columns2 shared by components/AppHeader.tsx + components/PageLayoutControl.tsx"]`).
+
+History:
+- qa: opened (Phase 43 gate).
+- qa: CLOSED (FIX-READY retest). The two added files are now scanned (guard replica detects `StickyNote` in AnnotationOverlay.tsx and `Baseline`/`PaintBucket` in TextPropertiesPanel.tsx); the 9 named pairs are split (registry `annotationsPanel` -> MessageSquareText, on-page note marker -> StickyNote, Inspector highlight -> PaintBucket, underline -> Baseline, pen-width swatch -> Slash, outline disclosure -> SquareChevronRight/Down, palette field -> TextSearch, `paneClear` -> PanelRightDashed, `editText` -> TextCursor); `Minus`/`PanelRightClose` are single-surface. Allow-list = 63 entries, each with a reason; guard replica reports 47 files / 126 distinct icons / 63 shared, all allow-listed, 5 tests passed. Independent corrected sweep (55 lucide files / 134 distinct / 69 shared) finds 6 shared icons the guard's extractor misses; the different-action `Hash` pair and the extractor bug are filed as DEF-363.
+
+## DEF-360: Phase 43's ContextPanel collapse-glyph swap leaves the Phase 37 unit test pinning the retired chevrons — verify:full is RED
+
+- Status: CLOSED
+- Severity: MEDIUM
+- Found by: qa
+- Phase: 43
+
+Steps to reproduce:
+1. `npm.cmd run build` (exit 0).
+2. `npm.cmd run verify:full`.
+3. Observe the unit suite: `test/unit/renderer/phase37Chunk5.test.tsx > Phase 37 item 4 - the collapse chevron flips > expanded shows ChevronLeft and collapsed shows ChevronRight, both directions` fails.
+
+Expected: `verify:full` is green (REQUIREMENTS.md Phase 43 criterion 6: "verify:full plus the phase suites are green"). The Phase 43 icon change is intentional, so the Phase 37 test's glyph contract must be updated to the new glyphs.
+
+Actual: `verify:full` exits 1. `Test Files 1 failed | 419 passed (420)`, `Tests 1 failed | 5305 passed (5306)`. The failure is `AssertionError: expected null not to be null` at `phase37Chunk5.test.tsx:284` — `expect(btn()?.querySelector("svg.lucide-chevron-left")).not.toBeNull()`. Phase 43 changed the ContextPanel collapse button from `ChevronLeft`/`ChevronRight` to `PanelLeftClose`/`PanelRightOpen` (`src/renderer/components/ContextPanel.tsx`), so the button now renders `svg.lucide-panel-left-close` / `svg.lucide-panel-right-open` and the Phase 37 test's chevron selectors no longer match. The product behaviour (collapse/expand, `data-collapse-direction`, titles) is unchanged; only the pinned glyph contract is stale.
+
+Raw: `e2e/phase43-verifyfull.log` (verbatim summary: `Test Files 1 failed | 419 passed (420)` / `Tests 1 failed | 5305 passed (5306)`).
+
+History:
+- qa: opened (Phase 43 gate).
+- qa: CLOSED (FIX-READY retest). `npm.cmd run test:unit -- test/unit/renderer/phase37Chunk5.test.tsx` -> 1 file / 21 tests passed, exit 0. `npm.cmd run verify:full` -> `Test Files 420 passed (420)` / `Tests 5308 passed (5308)`, exit 0.
+
 ## DEF-359: Palette reports a stage-native pin as "pinned to the dock" in stages whose dock filters it out
 
 - Status: CLOSED

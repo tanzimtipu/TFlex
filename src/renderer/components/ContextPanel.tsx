@@ -29,15 +29,16 @@ import { useMemo, useState } from 'react';
 import type { ReactElement } from 'react';
 import type { PDFDocumentProxy } from 'pdfjs-dist';
 import {
-  ChevronDown,
-  ChevronLeft,
-  ChevronRight,
   FilePlus2,
   FileSignature,
+  GitMerge,
   Image as ImageIcon,
-  Plus,
+  PanelLeftClose,
+  PanelRightOpen,
   ScanText,
-  Type,
+  SquareChevronDown,
+  SquareChevronRight,
+  TextCursor,
 } from 'lucide-react';
 import { OutlinePanel, RulerStrip, ThumbnailRail } from './SideRail';
 import type { ThumbVerbs } from './SideRail';
@@ -316,11 +317,12 @@ const pageCount = engineState.pageCount;
   });
 
   // Phase 37 (item 4) — the collapse control is the RAIL's affordance,
-  // re-homed to this header. The chevron FLIPS with the state: expanded shows
-  // ChevronLeft (press to collapse toward the edge), collapsed shows
-  // ChevronRight (press to expand). `data-rail-collapse` and the two
-  // titles/aria-labels are unchanged, so the existing e2e contract resolves
-  // in both states.
+  // re-homed to this header. The glyph FLIPS with the state: expanded shows
+  // PanelLeftClose (press to collapse toward the edge), collapsed shows
+  // PanelRightOpen (press to expand). Phase 43 replaced the retired chevrons
+  // here so the glyph matches the rail's own collapse/expand affordance.
+  // `data-rail-collapse` and the two titles/aria-labels are unchanged, so the
+  // existing e2e contract resolves in both states.
   const collapseButton = (
     <button
       type="button"
@@ -331,7 +333,7 @@ const pageCount = engineState.pageCount;
       data-rail-collapse
       data-collapse-direction={collapsed ? 'expand' : 'collapse'}
     >
-      {collapsed ? <ChevronRight size={16} aria-hidden /> : <ChevronLeft size={16} aria-hidden />}
+      {collapsed ? <PanelRightOpen size={16} aria-hidden /> : <PanelLeftClose size={16} aria-hidden />}
     </button>
   );
 
@@ -372,7 +374,7 @@ const pageCount = engineState.pageCount;
             aria-controls="context-panel-outline-body"
             data-outline-toggle
           >
-            {outlineOpen ? <ChevronDown size={14} aria-hidden /> : <ChevronRight size={14} aria-hidden />}
+            {outlineOpen ? <SquareChevronDown size={14} aria-hidden /> : <SquareChevronRight size={14} aria-hidden />}
             <span>Outline</span>
           </button>
           {outlineOpen && (
@@ -444,7 +446,7 @@ const pageCount = engineState.pageCount;
                 {item.kind === 'image' ? (
                   <ImageIcon size={14} aria-hidden />
                 ) : (
-                  <Type size={14} aria-hidden />
+                  <TextCursor size={14} aria-hidden />
                 )}
                 <span className="context-panel-item-label">{item.label}</span>
               </button>
@@ -665,7 +667,7 @@ const headerTitle = contextPanelTitle(stage, pageCount);
                 aria-label="Combine with another PDF"
                 data-context-panel-combine
               >
-                <Plus size={12} aria-hidden />
+                <GitMerge size={12} aria-hidden />
                 <span>Combine…</span>
               </button>
             )}

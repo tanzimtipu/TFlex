@@ -43,6 +43,7 @@ import {
   type ZoomFlipPending,
   type ZoomFlipPageEl,
   type ZoomFlipRect,
+  type FlipKind,
 } from "./zoomFlip";
 import { PageView } from "./PageView";
 import { SearchBar } from "./SearchBar";
@@ -1682,6 +1683,10 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
   // AND the content together. The slot's layout box coincides with the page
   // wrapper's (same geometry formula), so the invert maths is unchanged.
   const pendingZoomFlipRef = useRef<ZoomFlipPending | null>(null);
+  // Phase 43 (item 1) — which motion band the pending FLIP plays on. The zoom
+  // handlers capture `zoom`; the page-layout switch captures `layout` so the
+  // slots animate over `--motion-duration-layout` instead of the zoom token.
+  const pendingFlipKindRef = useRef<FlipKind>("zoom");
   const instantMotion = useInstantMotion();
   const instantMotionRef = useRef(instantMotion);
   instantMotionRef.current = instantMotion;
@@ -1719,8 +1724,19 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
       anchorPage: anchor.page,
       anchorOffsetBefore: anchor.el.getBoundingClientRect().top - scrollerTop,
     };
+    pendingFlipKindRef.current = "zoom";
     return true;
   }, []);
+
+  /** Phase 43 (item 1) — capture the pre-layout-switch rects for the page-
+   *  layout FLIP. It is the same First capture as the zoom (paper-owning
+   *  `.page-slot` rects + scroll anchor), tagged `layout` so the apply effect
+   *  plays the LAYOUT token band. Returns false when nothing is mounted. */
+  const captureLayoutFlip = useCallback((): boolean => {
+    const ok = captureZoomFlip();
+    if (ok) pendingFlipKindRef.current = "layout";
+    return ok;
+  }, [captureZoomFlip]);
 
   // Apply the zoom FLIP after the new layout commits. Keyed on
   // `effectiveScale`: manual zoom steps change it; fit-mode recomputes are
@@ -1730,6 +1746,8 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
     const pending = pendingZoomFlipRef.current;
     if (pending === null) return;
     pendingZoomFlipRef.current = null;
+    const kind = pendingFlipKindRef.current;
+    pendingFlipKindRef.current = "zoom";
     const scroller = scrollerRef.current;
     if (scroller === null) return;
     const pages: ZoomFlipPageEl[] = [];
@@ -1737,10 +1755,12 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
       const el = pageUnitFor(page);
       if (el !== null) pages.push({ page, el });
     });
-    runZoomFlip(scroller, pages, pending, instantMotionRef.current);
-    // `effectiveScale` is the only committed signal that the layout moved.
+    runZoomFlip(scroller, pages, pending, instantMotionRef.current, kind);
+    // `effectiveScale` and `layoutMode` are the two committed signals that the
+    // slot geometry moved (zoom step / page-layout switch). A fit recompute
+    // without a capture runs this with a null pending and does nothing.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [effectiveScale]);
+  }, [effectiveScale, layoutMode]);
 
 
   // ---- per-page slot geometry (DEF-141) ----------------------------------
@@ -2591,10 +2611,15 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
   // be fitted to ONE page by clicking the active ONE option.
   const onChangePageLayout = useCallback(
     (mode: PageLayoutMode): void => {
+      // Phase 43 (item 1) — capture First (the pre-switch `.page-slot` rects +
+      // scroll anchor) before the grid reflows, so the apply effect plays the
+      // LAYOUT-token FLIP for every mounted page (transform only; the page
+      // pixels are never recoloured or cross-faded).
+      captureLayoutFlip();
       setPageLayout(mode);
       setMode(pageLayoutFitMode(mode));
     },
-    [setMode],
+    [captureLayoutFlip, setMode],
   );
 
   // Phase 40 (item 9) — the honest readout for the current layout. Single

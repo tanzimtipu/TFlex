@@ -86,6 +86,16 @@ export interface ZoomFlipPending {
  *  global reduced-motion / `data-animations="off"` catch-alls. */
 export const ZOOM_FLIP_CLASS = "pdf-page-zoom-flip";
 
+/** Phase 43 (item 1) — the class for a PAGE-LAYOUT FLIP. It reuses the same
+ *  `tf-page-zoom-flip` keyframe and start vars as the zoom FLIP, but the CSS
+ *  rule drives it with the LAYOUT motion token (`--motion-duration-layout` /
+ *  `--motion-ease-layout`, 350ms) instead of the zoom's standard token. The
+ *  page pixels are moved, never recoloured or cross-faded. */
+export const LAYOUT_FLIP_CLASS = "pdf-page-layout-flip";
+
+/** Which token band a FLIP plays on: the zoom step or the layout switch. */
+export type FlipKind = "zoom" | "layout";
+
 /** The element the FLIP must animate: the PAPER-OWNING page unit. It paints
  *  the sheet's paper background (styles.css `.page-slot`, DEF-099) AND
  *  contains the page content (`.pdf-page` + canvas/text/overlays) as a child,
@@ -197,9 +207,10 @@ function clearZoomFlipVars(el: HTMLElement): void {
   el.style.removeProperty(ZOOM_FLIP_DY_VAR);
 }
 
-/** Stop and erase any FLIP currently applied to `el`. */
+/** Stop and erase any FLIP (zoom or layout) currently applied to `el`. */
 export function clearZoomFlip(el: HTMLElement): void {
   el.classList.remove(ZOOM_FLIP_CLASS);
+  el.classList.remove(LAYOUT_FLIP_CLASS);
   clearZoomFlipVars(el);
 }
 
@@ -208,7 +219,11 @@ export function clearZoomFlip(el: HTMLElement): void {
  *  the start transform vars, forces one reflow, then adds the class so a
  *  second zoom step restarts instead of being swallowed. Returns false when
  *  there is nothing to animate. */
-export function applyZoomFlip(el: HTMLElement, first: ZoomFlipRect): boolean {
+export function applyZoomFlip(
+  el: HTMLElement,
+  first: ZoomFlipRect,
+  kind: FlipKind = "zoom",
+): boolean {
   clearZoomFlip(el);
   const r = el.getBoundingClientRect();
   const inv = zoomFlipInvert(first, {
@@ -224,7 +239,7 @@ export function applyZoomFlip(el: HTMLElement, first: ZoomFlipRect): boolean {
   el.style.setProperty(ZOOM_FLIP_DX_VAR, `${Number(inv.dx.toFixed(4))}px`);
   el.style.setProperty(ZOOM_FLIP_DY_VAR, `${Number(inv.dy.toFixed(4))}px`);
   void el.offsetWidth;
-  el.classList.add(ZOOM_FLIP_CLASS);
+  el.classList.add(kind === "layout" ? LAYOUT_FLIP_CLASS : ZOOM_FLIP_CLASS);
   return true;
 }
 
@@ -250,6 +265,7 @@ export function runZoomFlip(
   pages: readonly ZoomFlipPageEl[],
   pending: ZoomFlipPending,
   instant: boolean,
+  kind: FlipKind = "zoom",
 ): number {
   const scrollerTop = scroller.getBoundingClientRect().top;
   if (pending.anchorPage !== null) {
@@ -272,7 +288,7 @@ export function runZoomFlip(
       clearZoomFlip(p.el);
       continue;
     }
-    if (applyZoomFlip(p.el, first)) {
+    if (applyZoomFlip(p.el, first, kind)) {
       animated += 1;
     }
   }

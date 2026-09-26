@@ -23,7 +23,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { ChangeEvent, MouseEvent as ReactMouseEvent, ReactElement } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
-import { Pin, Search } from 'lucide-react';
+import { Pin, TextSearch } from 'lucide-react';
 import {
   PALETTE_DOCK_FULL_MESSAGE,
   STAGE_TAG_LABELS,
@@ -367,7 +367,7 @@ export function CommandPalette(props: CommandPaletteProps): ReactElement {
             exit="exit"
           >
             <div className="command-palette-search">
-              <Search size={15} aria-hidden />
+              <TextSearch size={15} aria-hidden />
               <input
                 ref={inputRef}
                 className="command-palette-input"

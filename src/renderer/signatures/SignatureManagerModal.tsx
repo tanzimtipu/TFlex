@@ -23,7 +23,7 @@
 // (SigTabPane). Reduced motion keeps the same structure with a
 // zero-duration swap.
 
-import { FileSignature, Trash2 } from "lucide-react";
+import { PenLine, Trash2 } from "lucide-react";
 import {
   useCallback,
   useEffect,
@@ -539,7 +539,7 @@ function SavedTab({
   if (saved.length === 0) {
     return (
       <div className="sig-empty">
-        <FileSignature size={20} aria-hidden />
+        <PenLine size={20} aria-hidden />
         <p>No saved signatures yet.</p>
         <p className="hint">
           Draw or type a signature in the other tabs, then Save it. Saved

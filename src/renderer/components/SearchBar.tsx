@@ -1,4 +1,4 @@
-import { ChevronDown, ChevronUp, X } from 'lucide-react';
+import { ArrowDown, ArrowUp, X } from 'lucide-react';
 import { useEffect, useRef } from 'react';
 import { useIsPresent } from 'motion/react';
 import { TfBar } from './motion/TfMotion';
@@ -75,7 +75,7 @@ export function SearchBar(props: SearchBarProps) {
         disabled={resultCount === 0}
         title="Previous hit (Shift+Enter)"
       >
-        <ChevronUp size={16} aria-hidden />
+        <ArrowUp size={16} aria-hidden />
       </button>
       <button
         type="button"
@@ -84,7 +84,7 @@ export function SearchBar(props: SearchBarProps) {
         disabled={resultCount === 0}
         title="Next hit (Enter)"
       >
-        <ChevronDown size={16} aria-hidden />
+        <ArrowDown size={16} aria-hidden />
       </button>
       <button type="button" className="tool-btn" onClick={onClose} title="Close search (Esc)">
         <X size={16} aria-hidden />

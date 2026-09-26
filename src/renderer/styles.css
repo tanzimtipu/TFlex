@@ -3871,6 +3871,22 @@ input[type="checkbox"] {
   }
 }
 
+/* Phase 43 (item 1) — the PAGE-LAYOUT FLIP. Switching one/two/four re-lays-out
+   the slots instantly (the grid reflows) and each page unit plays the SAME
+   transform-only FLIP as the zoom (identical keyframe, identical vars), but
+   over the LAYOUT motion token (--motion-duration-layout / --motion-ease-layout)
+   rather than the zoom's standard token. The page's paper colour and its
+   bitmap are never recoloured, cross-faded or opacity-animated — only the
+   slot's transform moves, so the PDF content's pixels are untouched. The
+   duration/easing come from the centralised tokens; the global
+   prefers-reduced-motion and :root[data-animations="off"] catch-alls collapse
+   --motion-duration-layout to 0, and DocumentView additionally skips the
+   class entirely on the instant path. */
+.pdf-page-layout-flip {
+  transform-origin: 0 0;
+  animation: tf-page-zoom-flip var(--motion-duration-layout) var(--motion-ease-layout);
+}
+
 .pdf-page {
   position: relative;
   /* DEF-099 — paper-white background on the page slot itself.
@@ -4328,6 +4344,13 @@ input[type="checkbox"] {
 
 .update-indicator > svg {
   flex: 0 0 auto;
+}
+
+/* Phase 43 (item 1) — the clickable update indicator states compress on
+ * press like every other button (the base rule already carries transform
+ * in its transition list, so this rides the token band). */
+.update-indicator:active:not([disabled]) {
+  transform: scale(var(--motion-scale-press));
 }
 
 /* 'checking' — icon-only muted chip with a slow spin so the
@@ -5051,7 +5074,7 @@ rect.ann-highlight.ann-preview {
   border: 2px solid var(--accent);
   border-radius: var(--radius-2);
   pointer-events: none;
-  animation: ann-flash 1.6s ease-out forwards;
+  animation: ann-flash var(--motion-duration-flash) var(--motion-ease-exit) forwards;
 }
 
 @keyframes ann-flash {
@@ -10474,6 +10497,26 @@ rect.ann-highlight.ann-preview {
     transform: none !important;
   }
 
+  /* Phase 43 (item 1) — every hover-lift / press-compression this phase
+   * added is pure movement, so reduced motion drops the transform (the
+   * colour wash + focus ring still communicate the state). */
+  .action-dock-verb,
+  .action-dock-verb:hover:not(:disabled),
+  .action-dock-verb:active:not(:disabled),
+  .action-dock-arrow,
+  .action-dock-arrow:hover:not(:disabled),
+  .action-dock-arrow:active:not(:disabled),
+  .annotation-flyout-arrow,
+  .annotation-flyout-arrow:hover,
+  .annotation-flyout-arrow:active:not(:disabled),
+  .stage-rail-btn,
+  .stage-rail-btn:active,
+  .update-indicator:active:not([disabled]),
+  .command-palette-pin-toggle,
+  .command-palette-pin-toggle:active:not([disabled]) {
+    transform: none !important;
+  }
+
   /* Phase 20 (criterion 6, DEF-234) — the edit inline editor's legacy CSS
    * entrance keyframe (edit-bar-in, translateY -2px) is collapsed to
    * 0.01ms by the catch-all above, but a collapsed animation still PAINTS
@@ -12897,14 +12940,22 @@ rect.ann-highlight.ann-preview {
   border-radius: var(--radius-2);
   color: var(--fg-muted);
   cursor: pointer;
+  /* Phase 43 (item 1) — the stage buttons gain the token press compression
+   * and hover elevation on top of the colour wash. */
   transition:
     background-color var(--motion-duration-fast) var(--motion-ease-standard),
-    color var(--motion-duration-fast) var(--motion-ease-standard);
+    color var(--motion-duration-fast) var(--motion-ease-standard),
+    transform var(--motion-duration-micro) var(--motion-ease-standard),
+    box-shadow var(--motion-duration-micro) var(--motion-ease-standard);
 }
 
 .stage-rail-btn:hover {
   background: var(--accent-soft);
   color: var(--fg-strong);
+}
+
+.stage-rail-btn:active {
+  transform: scale(var(--motion-scale-press));
 }
 
 .stage-rail-btn:focus-visible {
@@ -12917,7 +12968,10 @@ rect.ann-highlight.ann-preview {
   color: var(--fg-strong);
 }
 
-/* The 2px accent indicator on the active stage's leading edge. */
+/* The 2px accent indicator on the active stage's leading edge. Phase 43
+ * (item 1) — it fades in on the token band when a stage becomes active
+ * (opacity-only: the bar's width/position never animate, so no layout is
+ * touched), driven by the canonical tf-anim-tab-in keyframe. */
 .stage-rail-btn-active::before {
   content: '';
   position: absolute;
@@ -12926,6 +12980,7 @@ rect.ann-highlight.ann-preview {
   left: 0;
   width: 2px;
   background: var(--accent);
+  animation: tf-anim-tab-in var(--motion-duration-fast) var(--motion-ease-enter) both;
 }
 
 /* Phase 36 (chunk 8) — per-stage IDENTIFICATION: each stage button's icon
@@ -13158,6 +13213,20 @@ rect.ann-highlight.ann-preview {
   min-height: 0;
   overflow: hidden;
   padding-bottom: var(--space-small);
+  /* Phase 43 (item 1) — the Outline disclosure's body MATERIALIZES in on
+   * the token band when the section is opened instead of snapping (the
+   * section's own height is a layout property and must not animate, so
+   * only the disclosed content's transform/opacity move). */
+  animation: tf-anim-materialize var(--motion-duration-standard) var(--motion-ease-enter) both;
+}
+
+/* Phase 43 (item 1) — reduced motion removes the Outline body's materialize
+ * outright (its `from` scale would paint one travel frame): the disclosed
+ * content still appears, instantly and in place. */
+@media (prefers-reduced-motion: reduce) {
+  .context-panel-outline-body {
+    animation: none !important;
+  }
 }
 
 /* DEF-318 — the REVIEW annotations section owns a BOUNDED, scrollable body,
@@ -13650,19 +13719,28 @@ rect.ann-highlight.ann-preview {
   border: 0;
   border-radius: 8px;
   color: var(--fg-muted);
-  cursor: pointer;
+cursor: pointer;
+  /* Phase 43 (item 1) — the verb carries the full hover/press motion set:
+   * the colour wash (fast) PLUS a token transform band (micro) so the verb
+   * LIFTS on hover and COMPRESSES on press like every other control. All
+   * values are motion tokens — no literal duration/easing. */
   transition:
     background-color var(--motion-duration-fast) var(--motion-ease-standard),
-    color var(--motion-duration-fast) var(--motion-ease-standard);
+    color var(--motion-duration-fast) var(--motion-ease-standard),
+    transform var(--motion-duration-micro) var(--motion-ease-standard),
+    box-shadow var(--motion-duration-micro) var(--motion-ease-standard);
 }
 
 .action-dock-verb:hover:not(:disabled) {
   background: var(--bg-hover);
   color: var(--fg-strong);
+  transform: translateY(calc(-1 * var(--motion-translate-micro)));
+  box-shadow: var(--motion-elevation-hover);
 }
 
 .action-dock-verb:active:not(:disabled) {
   background: var(--bg-active);
+  transform: scale(var(--motion-scale-press));
 }
 
 .action-dock-verb:focus-visible {
@@ -13919,18 +13997,25 @@ rect.ann-highlight.ann-preview {
   border-radius: 8px;
   color: var(--fg-muted);
   cursor: pointer;
+  /* Phase 43 (item 1) — the arrows lane controls get the same token
+   * hover-lift + press-compression as the verbs they drive. */
   transition:
     background-color var(--motion-duration-fast) var(--motion-ease-standard),
-    color var(--motion-duration-fast) var(--motion-ease-standard);
+    color var(--motion-duration-fast) var(--motion-ease-standard),
+    transform var(--motion-duration-micro) var(--motion-ease-standard),
+    box-shadow var(--motion-duration-micro) var(--motion-ease-standard);
 }
 
 .action-dock-arrow:hover:not(:disabled) {
   background: var(--bg-hover);
   color: var(--fg-strong);
+  transform: translateY(calc(-1 * var(--motion-translate-micro)));
+  box-shadow: var(--motion-elevation-hover);
 }
 
 .action-dock-arrow:active:not(:disabled) {
   background: var(--bg-active);
+  transform: scale(var(--motion-scale-press));
 }
 
 .action-dock-arrow:focus-visible {
@@ -14251,9 +14336,14 @@ rect.ann-highlight.ann-preview {
   background: transparent;
   color: var(--fg-muted);
   cursor: pointer;
-  transition: background-color var(--motion-duration-fast) var(--motion-ease-standard);
+  /* Phase 43 (item 1) — the flyout's scroll arrows carry the token press
+   * compression alongside the colour wash (transform/opacity only). */
+  transition:
+    background-color var(--motion-duration-fast) var(--motion-ease-standard),
+    transform var(--motion-duration-micro) var(--motion-ease-standard);
 }
 .annotation-flyout-arrow:hover { background: var(--bg-hover); color: var(--fg-strong); }
+.annotation-flyout-arrow:active:not(:disabled) { transform: scale(var(--motion-scale-press)); }
 .annotation-flyout-arrow:focus-visible { outline: 2px solid var(--tf-accent-focus); outline-offset: -2px; }
 
 .annotation-flyout-body {
@@ -14468,9 +14558,12 @@ rect.ann-highlight.ann-preview {
   border-radius: var(--radius-2);
   color: var(--fg-muted);
   cursor: pointer;
+  /* Phase 43 (item 1) — the pin toggle also compresses on press, on the
+   * token band, alongside its colour wash. */
   transition:
     background-color var(--motion-duration-fast) var(--motion-ease-standard),
-    color var(--motion-duration-fast) var(--motion-ease-standard);
+    color var(--motion-duration-fast) var(--motion-ease-standard),
+    transform var(--motion-duration-micro) var(--motion-ease-standard);
 }
 
 .command-palette-pin-toggle:hover:not([disabled]) {
@@ -14481,6 +14574,7 @@ rect.ann-highlight.ann-preview {
 .command-palette-pin-toggle:active:not([disabled]) {
   background: var(--accent-pressed-soft);
   color: var(--accent);
+  transform: scale(var(--motion-scale-press));
 }
 
 .command-palette-pin-toggle:focus-visible {
@@ -14501,6 +14595,15 @@ rect.ann-highlight.ann-preview {
   display: inline-flex;
   align-items: center;
   justify-content: center;
+}
+
+/* Phase 43 (item 1) — the pin GLYPH's pinned/unpinned state (rotate -45deg
+ * + opacity) is the same SVG element, so a token transition here animates
+ * the toggle instead of snapping. */
+.command-palette-pin-glyph svg {
+  transition:
+    transform var(--motion-duration-fast) var(--motion-ease-standard),
+    opacity var(--motion-duration-fast) var(--motion-ease-standard);
 }
 
 .command-palette-pin-glyph .pin-glyph-unpinned {

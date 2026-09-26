@@ -142,7 +142,7 @@ export function usePageThumbMenu(handlers: PageMenuHandlers): PageThumbMenuContr
     menu === null || menuPos === null ? null : (
       <div
         ref={menuRef}
-        className="context-menu"
+        className="context-menu anim-menu-pop"
         role="menu"
         aria-label={`Page ${menu.page} actions`}
         data-context-menu

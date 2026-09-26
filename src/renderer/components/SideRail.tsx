@@ -1,4 +1,4 @@
-import { ChevronRight, Images, List, MessageSquare, PanelLeftClose, PanelRightOpen, Undo2, RotateCw, Scissors, Trash2 } from 'lucide-react';
+import { Images, List, MessageSquareText, PanelLeftClose, PanelRightOpen, SquareChevronRight, Undo2, RotateCw, Scissors, Trash2 } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
 import type { ReactElement } from 'react';
 import type { PDFDocumentProxy, PDFPageProxy } from 'pdfjs-dist';
@@ -211,7 +211,7 @@ export function SideRail(props: SideRailProps) {
               title="Annotations"
               data-rail-tab="annotations"
             >
-              <MessageSquare size={22} aria-hidden />
+              <MessageSquareText size={22} aria-hidden />
             </button>
             {outline !== null && (
               <button
@@ -1626,7 +1626,7 @@ export function OutlinePanel({ doc, outline, onJump, onError }: OutlinePanelProp
                   aria-label={isCollapsed ? 'Expand' : 'Collapse'}
                 >
                   <span className={isCollapsed ? 'chevron chevron-closed' : 'chevron'}>
-                    <ChevronRight size={22} aria-hidden />
+                    <SquareChevronRight size={22} aria-hidden />
                   </span>
                 </button>
               ) : (

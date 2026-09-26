@@ -430,16 +430,21 @@ test('P40-7 palette pin toggle pins/unpins, does not run the tool, survives rest
   const glyphBefore = await toggle.locator('svg').getAttribute('fill');
   console.log(`[P40 item7 before] state=${before} glyphFill=${glyphBefore}`);
 
-  // PIN.
+  // PIN. Phase 42 (DEF-359) scopes the palette's pin marker to the ACTIVE
+  // stage's dock: watermark is stage-native to REVIEW, so pinning it from the
+  // default PAGES stage reads `pinned-elsewhere` (naming REVIEW), not `pinned`.
+  // The pin still writes dockPins and the glyph still flips on.
   await toggle.click();
   await win.waitForTimeout(600);
   const s1 = await loadSettings();
   const afterPin = await toggle.getAttribute('data-palette-pin-state');
+  const pinStage = await row.getAttribute('data-palette-pin-stage');
   const glyphAfter = await toggle.locator('svg').getAttribute('fill');
   const paletteStillOpen = await win.locator('[data-command-palette]').count();
-  console.log(`[P40 item7 pinned] dockPins=${JSON.stringify(s1 && s1.dockPins)} state=${afterPin} glyphFill=${glyphAfter} paletteOpen=${paletteStillOpen}`);
+  console.log(`[P40 item7 pinned] dockPins=${JSON.stringify(s1 && s1.dockPins)} state=${afterPin} pinStage=${pinStage} glyphFill=${glyphAfter} paletteOpen=${paletteStillOpen}`);
   expect((s1 && s1.dockPins) || [], 'pin wrote the tool id to dockPins').toContain('watermark');
-  expect(afterPin, 'the pin state flipped to pinned').toBe('pinned');
+  expect(afterPin, 'a foreign-stage pin reads pinned-elsewhere (DEF-359)').toBe('pinned-elsewhere');
+  expect(pinStage, 'the foreign pin names its home stage REVIEW').toBe('review');
   expect(glyphAfter, 'the pin glyph differs by state').not.toBe(glyphBefore);
   expect(paletteStillOpen, 'clicking the pin did NOT run the tool (palette stays open)').toBe(1);
 
