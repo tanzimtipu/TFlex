@@ -23,6 +23,15 @@ export interface WhatsNewEntry {
 /** Ordered newest first. */
 export const WHATS_NEW: WhatsNewEntry[] = [
   {
+    version: '1.36.0',
+    date: '2026-09-26',
+    highlights: [
+      'Optional accounts: sign in with email or Google, verify your email, and keep your preferences and signatures in sync across devices.',
+      'Accounts are OFF by default in this build - they are being battle-tested before they are switched on for everyone.',
+      'Syncing keeps device-specific things local (window size, recent files) and shares only your preferences and signatures.',
+    ],
+  },
+  {
     version: '1.35.0',
     date: '2026-09-26',
     highlights: [
