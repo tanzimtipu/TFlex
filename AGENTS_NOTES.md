@@ -3606,3 +3606,48 @@ and the selected thumbnail, with the floors re-measured (>=5.30 text, >=5.63 thu
 boundary is a 1px `--divider` hairline (the dev's anchor correction: `.side-rail` is retired, the live
 element is `.stage-rail`); and the `release/` build hit a transient OneDrive `EPERM` on renaming
 `win-unpacked` (a retry succeeded) - an environment fragility worth a retry-on-EPERM if it recurs.
+
+## 2026-09-26: Release 1.34.0 - Phase 42 (tool icon identity and one dock home per tool)
+
+Release 1.34.0 is published: https://github.com/tanzimtipu/tflex-releases/releases/tag/v1.34.0 with all
+four assets, and the public feed verifies (`version: 1.34.0`, sha512 `3AfqgiaF...`, size 163292579).
+Commits: `2d8a8cf` (the phase), `3dbe7bb` (notes), `ea4d8d4` (bump), tag `v1.34.0`. Gates: `verify:full`
+417 files / **5279 tests** green, the packaged canonical spec 9/9 at 1.34.0, 32 phase-suite e2e tests, and
+all six criteria measured.
+
+**Lesson 1 - icon identity is a registry INVARIANT, and a regex parse is the cheap audit.** The operator
+reported watermark and edit-text sharing a glyph; a parse of `toolsRegistry.ts` found **15 duplicate groups**
+(94 entries, only 72 distinct icons): `Type` x3 (editText/watermark/annTextbox), `ScanText` x3,
+`ArrowDownToLine` x3, `FileText` x3, and eleven pairs including the whole close family sharing `X`. 24
+entries got new distinct glyphs (watermark -> `Droplet`, annotate -> `Brush`, sign -> `Signature`, the closes
+split into `SquareX`/`PanelRightClose`/`SquareDashed`/`ListX`, ...), and `toolsRegistry.test.tsx` now asserts
+`distinct.size === TOOL_REGISTRY.length` plus an explicit clash list, so a duplicate fails the suite. Keep
+that assertion; after any registry edit, re-run it before anything else.
+
+**Lesson 2 - "the tool is in two docks" was the USER'S OWN STATE, not the mapping.** I verified the registry
+first: `watermark` has ONE entry with `stage: 'review'`, and the stage->dock derivation never put it in
+EDIT. The leak was `dockPins: ["watermark"]` in the operator's real `settings.json` - `ActionDock` rendered
+pins in EVERY stage. Lesson: when a home/stage report says "it appears twice", read the persisted state
+(`settings.json`) before hunting a mapping bug. Fix: `isPinVisibleInStage(entry, stage)` - a pinned
+STAGE-NATIVE tool surfaces only in its own stage's dock; a GLOBAL tool (no stage dock) still pins anywhere.
+
+**Lesson 3 - a visibility rule must be applied at EVERY reader of that state (the DEF-353 invariant,
+again).** The Phase 42 fix landed in `ActionDock` only; the palette's `isPaletteToolPinned` still reported
+`pinned` in stages whose dock filters the tool out, and toggling it from a foreign stage announced
+"Unpinned Watermark from the dock" while the EDIT dock never changed (ADV-097/DEF-359). Fix: the palette's
+pin marker is scoped to the ACTIVE stage - a three-state `data-palette-pin-state` (`pinned` /
+`pinned-elsewhere` / `unpinned`), with `data-palette-pin-stage` naming the home dock and every notice naming
+the dock the action actually touched. This is the third time this class has bitten (DEF-353, DEF-359, and
+the DEF-345 stage-switch panel): when one rule governs two surfaces, wire it into BOTH in the same change,
+and give a single-fate state a way to say "elsewhere" rather than lying.
+
+**Migrated premise worth remembering:** `e2e/phase36_chunk3_dock_gate.spec.cjs` `P36-C3-C` seeded four
+STAGE-NATIVE pins (`watermark`/`optimize`/`audit`/`recognizeText`) at PAGES and expected four rendered pins -
+exactly the behaviour the operator asked us to remove. It now seeds four GLOBAL pins
+(`panMode`/`paneOpen`/`paneClear`/`redo`), so it still proves unpin/re-pin/cap/persistence while agreeing
+with the one-home rule.
+
+**Observation (LOW, not filed):** `P36-C3-F` failed once in a combined suite run (`inlineVerbs=3`, expected 8,
+its own comment notes the arrows flag oscillates) and passed in isolation and in two later runs - a
+test-timing flake in a Phase 36 spec, not a product defect. Watch it at the next release gate; if it flakes
+again, make its inline-verb count wait on the lane flag instead of sampling once.
