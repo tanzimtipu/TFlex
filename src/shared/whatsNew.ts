@@ -23,6 +23,14 @@ export interface WhatsNewEntry {
 /** Ordered newest first. */
 export const WHATS_NEW: WhatsNewEntry[] = [
   {
+    version: '1.34.0',
+    date: '2026-09-26',
+    highlights: [
+      'Every tool now has its own icon - no two tools look alike in the dock or the tool search.',
+      'Watermark lives in one place: the Review dock. Pinning it no longer shows it in other stages, and the tool search always names the dock it is pinned to.',
+    ],
+  },
+  {
     version: '1.33.0',
     date: '2026-09-26',
     highlights: [
