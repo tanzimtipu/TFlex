@@ -3550,3 +3550,59 @@ dialog is now viewport-responsive; Merge PDF can start from scratch with no docu
 first open runs in MEMORY so a source file cannot be overwritten); the palette pin toggles persist through
 the existing `dockPins`; and `e2e/phase40_def351_356_verify.spec.cjs` is the single consolidated verify
 spec (three near-duplicate ones were deleted).
+
+## 2026-09-26: Release 1.33.0 - Phase 41 (Inspector surface, the legacy EDIT toolbar, selection styling, separators)
+
+Release 1.33.0 is published: https://github.com/tanzimtipu/tflex-releases/releases/tag/v1.33.0 with all
+four assets, and the public feed verifies (`version: 1.33.0`, sha512 `x/VCzeHiq...`, size 163291816).
+Commits: `6f44b75` (Phase 41, 57 files), `d37eb27` (bump), tag `v1.33.0`. Gates: `verify:full` 416 files /
+**5267 tests** green, the packaged canonical spec 9/9 at 1.33.0, 34 phase-suite e2e tests, and all seven
+criteria measured individually.
+
+**Lesson 1 - "transparent" was the FROSTED theme, and the overlap was a flow bar under a fixed panel.**
+The operator reported the Inspector as transparent in EDIT with text behind it. The computed background was
+already opaque in light/dark and identical across stages; the culprit was the frosted glass film
+(`rgba(255,255,255,0.68)`) in EVERY stage, through which the EDIT hint line (`"Edit mode is off..."`) was
+legible - that hint rendered full-canvas-width UNDER the panel. Fix: the Inspector composites its panel
+background over `--tf-canvas-opaque` in the frosted theme (`linear-gradient(...)` + `isolation: isolate`),
+so the surface is opaque everywhere. Rule: when a surface looks wrong in one mode, measure its computed
+background PER THEME AND STAGE before believing a stage-specific cause.
+
+**Lesson 2 - a fixed right panel owns its column; every top-flow bar must reserve it.** DEF-357 (found by
+qa while migrating specs): the OCR suspects bar's close button was unclickable because the always-on
+Inspector overlapped it (`elementFromPoint` returned the Inspector header). Fix: `.app-main >
+.ocr-suspects-panel { margin-right: var(--tf-tools-inset) }` - the same token the page scroller and the
+canvas overlay already consume. Reservation was chosen over z-index: raising the bar would have covered the
+Inspector's own header controls. When a new fixed panel or a new full-width bar is added, reserve the
+column through the ONE inset token.
+
+**Lesson 3 - retiring a surface must carry its FEEDBACK, not only its controls.** The audit-before-retire
+rule worked (the operator's item asked to check the dock first): the edit toolbar's `off` tool was promoted
+to a dock verb and the Default-font select moved into the EDIT ContextPanel before the toolbar was deleted.
+But the adversary then found ADV-096/DEF-358: the toolbar's ARMED-TOOL highlight lost its home, because
+`DocumentView` still passed `activeToolIds={editModeOpen ? ['editMode'] : []}` and `editMode` is no longer a
+rendered verb - so arming any edit tool left every dock verb unpressed. Fix: pass the actual armed verb
+(`editDockVerbFor(tool)`), including on the Multi Mode shared dock, where the same miss existed. A
+retirement audit must list the surface's STATES (active/pressed/disabled/error feedback), not just its
+buttons.
+
+**Lesson 4 - a registry change moves every spec that pins the set.** Promoting `editToolOff` to the EDIT
+dock broke NINE unit assertions across five files (`def311_314_dockCuration`, `def330_dockDefaultSize`,
+`phase36MultiChrome`, `phase36SurfaceDiscipline`, `toolsRegistry`) - the exact recurring class from Phase 36
+and 40. The e2e side was worse: the retired `[data-edit-toolbar]` selector appeared in roughly twenty specs
+(all re-pointed by qa). Keep the curation sets pinned in ONE exported constant per stage so a promotion
+touches one place.
+
+**Lesson 5 - the phase's own polish can silently reverse a recent rule; the contract must say so.** Item 4
+removed the blue line on the Inspector's edge, which Phase 40 had introduced as "the active panel edge takes
+`--sem-primary`". The operator's item is a SUPERSESSION, and REQUIREMENTS.md records it as one: the active
+state is now conveyed by elevation (a neutral inset highlight plus an outward glow), not colour. Always
+state a supersession in the phase text so the criterion-11 discipline (`ContextPanel = which thing?`,
+`Inspector = what IS it?`) does not read as violated.
+
+**Also recorded:** the selection treatment is now one token trio (`--select-fill/--select-edge/--select-glyph`,
+translucent tints with the accent reserved for the glyph) shared by the text panel's align/spacing buttons
+and the selected thumbnail, with the floors re-measured (>=5.30 text, >=5.63 thumb); the rail/ContextPanel
+boundary is a 1px `--divider` hairline (the dev's anchor correction: `.side-rail` is retired, the live
+element is `.stage-rail`); and the `release/` build hit a transient OneDrive `EPERM` on renaming
+`win-unpacked` (a retry succeeded) - an environment fragility worth a retry-on-EPERM if it recurs.
