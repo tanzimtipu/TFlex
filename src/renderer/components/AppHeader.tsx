@@ -24,6 +24,7 @@ import {
   Settings,
   Snowflake,
   Sun,
+  UserRound,
 } from "lucide-react";
 import { AnimatePresence } from "motion/react";
 import type { Theme } from "../state/theme";
@@ -52,6 +53,15 @@ export const TOOL_SEARCH_ACCESSIBLE_NAME = "Search tools and commands (Ctrl+K)";
 
 /** Phase 40 (item 5) — the Ctrl+F find icon's accessible name. */
 export const FIND_IN_DOCUMENT_ACCESSIBLE_NAME = "Find in document (Ctrl+F)";
+
+/** Phase 44 — the account control's accessible name while signed out. */
+export const ACCOUNT_SIGNED_OUT_ACCESSIBLE_NAME = "Sign in or create an account";
+
+/** Phase 44 — the account control's accessible name while signed in, naming
+ *  the account so the entry point can never be confused with another control. */
+export function accountSignedInAccessibleName(email: string | null): string {
+  return email === null || email.length === 0 ? "Account" : `Account: ${email}`;
+}
 
 interface AppHeaderProps {
   activeId: string | null;
@@ -138,6 +148,14 @@ interface AppHeaderProps {
    *  document is open). The find bar is per-document, so with none open
    *  the control disables with a reason instead of doing nothing. */
   findEnabled?: boolean;
+  /** Phase 44 — the account entry point. Rendered ONLY when provided, which
+   *  the host gates on the `accountsEnabled` settings flag; while the flag is
+   *  off the header carries no account control at all. */
+  onOpenAccounts?: () => void;
+  /** Phase 44 — whether a session is currently held (drives the accessible
+   *  name) and the signed-in email shown in the tooltip. */
+  accountsSignedIn?: boolean;
+  accountsEmail?: string | null;
 }
 
 /** Phase-15 — the three themes the picker offers, in display order
@@ -166,7 +184,7 @@ function themeLabel(value: ThemeDefault): string {
 }
 
 export function AppHeader(props: AppHeaderProps): ReactElement {
-  const { activeId, tabs, onActivate, onClose, theme, themeDefault, onThemeChange, onNewEmptyTab, onOpenPreferences, onPrint, printEnabled = true, onMultiModeToggle, updateIndicator = null, onOpenFile, onSave, onSaveAs, saveModified = false, saveInPlaceEnabled = true, multiModeEnabled = false, onOpenToolSearch, onOpenFind, findEnabled = false } = props;
+  const { activeId, tabs, onActivate, onClose, theme, themeDefault, onThemeChange, onNewEmptyTab, onOpenPreferences, onPrint, printEnabled = true, onMultiModeToggle, updateIndicator = null, onOpenFile, onSave, onSaveAs, saveModified = false, saveInPlaceEnabled = true, multiModeEnabled = false, onOpenToolSearch, onOpenFind, findEnabled = false, onOpenAccounts, accountsSignedIn = false, accountsEmail = null } = props;
   // Phase-15 — the embedded theme dropdown. All hooks stay at the top
   // of the component (DEF-117 hook-order contract): no early returns.
   // The picker's selection is the SAVED preference (themeDefault) —
@@ -566,6 +584,22 @@ export function AppHeader(props: AppHeaderProps): ReactElement {
             data-multi-mode-active={multiModeEnabled ? 'true' : 'false'}
           >
             <PanelsLeftRight size={16} aria-hidden />
+          </button>
+        )}
+        {/* Phase 44 — the account entry point. Rendered only when the host
+            wires it (the `accountsEnabled` flag is on); a distinct glyph from
+            every other header control. */}
+        {onOpenAccounts !== undefined && (
+          <button
+            type="button"
+            className="header-accounts"
+            onClick={onOpenAccounts}
+            aria-haspopup="dialog"
+            aria-label={accountsSignedIn ? accountSignedInAccessibleName(accountsEmail) : ACCOUNT_SIGNED_OUT_ACCESSIBLE_NAME}
+            title={accountsSignedIn ? accountSignedInAccessibleName(accountsEmail) : "Sign in or create an account"}
+            data-header-accounts={accountsSignedIn ? "signed-in" : "signed-out"}
+          >
+            <UserRound size={16} aria-hidden />
           </button>
         )}
         {/* Phase 30 — Print, immediately left of the settings gear. Same

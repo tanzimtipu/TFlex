@@ -266,6 +266,12 @@ export const DEFAULT_SETTINGS: AppSettings = {
   recentFiles: [],
 };
 
+/** Phase 44 — maximum persisted length of `syncDeviceId` (an install id). */
+export const SYNC_DEVICE_ID_MAX = 64;
+
+/** Phase 44 — maximum persisted length of `lastSyncedAt` (ISO-8601). */
+export const LAST_SYNCED_AT_MAX = 32;
+
 /** Phase-15 frosted-acrylic migration — the set of accepted `AppTheme`
  *  values. `theme` is validated preserve-if-valid against this list in
  *  `normalizeSettings`; any other value is rejected (falls back to
@@ -568,6 +574,36 @@ export function normalizeSettings(raw: unknown): AppSettings {
   const dockUnpinned = normalizeDockUnpinned(rawObj.dockUnpinned);
   if (dockUnpinned !== null) {
     settings.dockUnpinned = dockUnpinned;
+  }
+
+  // Phase 44: accounts feature flag. Strict boolean; any non-boolean
+  // rejects the field (consumer default `false`). Stands alone so a bad
+  // value never disturbs the sync fields.
+  if (typeof rawObj.accountsEnabled === 'boolean') {
+    settings.accountsEnabled = rawObj.accountsEnabled;
+  }
+
+  // Phase 44: sync install id. Reject-if-invalid: a present value must be a
+  // non-empty string of at most SYNC_DEVICE_ID_MAX chars, else the field
+  // stays absent (consumer generates a fresh id).
+  if (
+    typeof rawObj.syncDeviceId === 'string' &&
+    rawObj.syncDeviceId.length > 0 &&
+    rawObj.syncDeviceId.length <= SYNC_DEVICE_ID_MAX
+  ) {
+    settings.syncDeviceId = rawObj.syncDeviceId;
+  }
+
+  // Phase 44: last-sync timestamp. Reject-if-invalid: a present value must
+  // be an ISO-8601-parseable string of at most LAST_SYNCED_AT_MAX chars,
+  // else the field stays absent. Display-only.
+  if (
+    typeof rawObj.lastSyncedAt === 'string' &&
+    rawObj.lastSyncedAt.length > 0 &&
+    rawObj.lastSyncedAt.length <= LAST_SYNCED_AT_MAX &&
+    !Number.isNaN(Date.parse(rawObj.lastSyncedAt))
+  ) {
+    settings.lastSyncedAt = rawObj.lastSyncedAt;
   }
 
   return settings;

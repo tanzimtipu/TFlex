@@ -60,6 +60,33 @@ export class SignatureService {
     return this.list();
   }
 
+  /**
+   * Phase 44 - apply a batch of cloud signature rows: upsert the drawn/typed
+   * entries by id and remove the soft-deleted ids, preserving local order and
+   * appending new ids. Image rows never reach here (metadata only, deferred).
+   * Returns the updated list.
+   */
+  async applySynced(
+    upserts: SavedSignature[],
+    removedIds: string[],
+  ): Promise<SavedSignature[]> {
+    const list = await this.list();
+    const removed = new Set(removedIds);
+    const byId = new Map<string, SavedSignature>();
+    const order: string[] = [];
+    for (const entry of list) {
+      if (removed.has(entry.id)) continue;
+      byId.set(entry.id, entry);
+      order.push(entry.id);
+    }
+    for (const upsert of upserts) {
+      if (!byId.has(upsert.id)) order.push(upsert.id);
+      byId.set(upsert.id, structuredClone(upsert));
+    }
+    await this._writeToDisk(order.map((id) => byId.get(id)!));
+    return this.list();
+  }
+
   // -----------------------------------------------------------------------
   // Internal
   // -----------------------------------------------------------------------

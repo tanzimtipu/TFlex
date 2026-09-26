@@ -168,6 +168,19 @@ export interface AppSettings {
    *  default `[]`). Unknown tool ids are dropped by the consumer, which
    *  owns the tools registry — main has no registry to check against. */
   dockUnpinned?: string[];
+  /** Phase 44 — feature flag for accounts + cloud sync. Strict boolean;
+   *  default `false` (hidden). Validated preserve-if-valid in settings.ts:
+   *  a non-boolean rejects the field (consumer default `false`). */
+  accountsEnabled?: boolean;
+  /** Phase 44 — generated per-install id used for sync conflict notes.
+   *  Non-empty string, capped at 64 chars; validated preserve-if-valid in
+   *  settings.ts (a present-but-invalid value rejects the field). */
+  syncDeviceId?: string;
+  /** Phase 44 — ISO-8601 timestamp of the last successful sync, for display
+   *  only. String capped at 32 chars; validated preserve-if-valid in
+   *  settings.ts. The session/JWT is NOT a settings field — it lives only
+   *  in the encrypted vault (`src/main/services/accounts/vault.ts`). */
+  lastSyncedAt?: string;
 }
 
 /** Phase 6 — what the renderer gets back from `app:getInfo`. The

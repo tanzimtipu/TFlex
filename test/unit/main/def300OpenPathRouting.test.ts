@@ -81,10 +81,25 @@ vi.mock('electron', () => ({
   Menu: { setApplicationMenu: vi.fn(), buildFromTemplate: vi.fn().mockReturnValue({}) },
   dialog: { showSaveDialog: vi.fn(), showErrorBox: vi.fn() },
   shell: { openPath: vi.fn() },
+  // Phase 44 — the accounts session vault reads Electron safeStorage at
+  // construction; a reversible base64 transform stands in for encryption.
+  safeStorage: {
+    isEncryptionAvailable: vi.fn().mockReturnValue(true),
+    encryptString: vi.fn().mockImplementation((text: string) =>
+      Buffer.from(Buffer.from(text, 'utf8').toString('base64'), 'utf8'),
+    ),
+    decryptString: vi.fn().mockImplementation((buf: Buffer) =>
+      Buffer.from(buf.toString('utf8'), 'base64').toString('utf8'),
+    ),
+  },
   screen: { getAllDisplays: vi.fn().mockReturnValue([{ workArea: { x: 0, y: 0, width: 1920, height: 1080 } }]) },
 }));
 
-vi.mock('../../../src/main/window', () => ({ createMainWindow: _createMainWindow }));
+vi.mock('../../../src/main/window', () => ({
+  createMainWindow: _createMainWindow,
+  installAuthPopupHandler: vi.fn(),
+  deriveAuthHost: vi.fn().mockReturnValue(null),
+}));
 
 vi.mock('../../../src/main/services/settings', () => ({
   SettingsService: vi.fn().mockImplementation(function () { return _settingsInstance; }),

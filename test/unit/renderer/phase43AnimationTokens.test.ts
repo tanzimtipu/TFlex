@@ -182,6 +182,44 @@ const AUDITED_SELECTORS: readonly string[] = [
   ".print-check",
   ".print-radio-group",
   ".ann-flash",
+  // Phase 44 — the accounts surface: the header entry point and the dialog's
+  // `.accounts-*` rules. Added so a future hardcoded `transition:` in any of
+  // these rules fails the audited scan (the app-wide sweep only covers
+  // `animation:` shorthands). The current rules resolve from `--motion-*` /
+  // `--motion-duration-*` tokens.
+  ".header-accounts",
+  ".accounts-status",
+  ".accounts-unconfigured",
+  ".accounts-unconfigured-title",
+  ".accounts-unconfigured-text",
+  ".accounts-notice",
+  ".accounts-mode",
+  ".accounts-mode-tab",
+  ".accounts-mode-tab-active",
+  ".accounts-field",
+  ".accounts-label",
+  ".accounts-input",
+  ".accounts-banner",
+  ".accounts-banner-error",
+  ".accounts-banner-info",
+  ".accounts-submit",
+  ".accounts-google",
+  ".accounts-otp-lead",
+  ".accounts-otp-actions",
+  ".accounts-link",
+  ".accounts-identity",
+  ".accounts-identity-label",
+  ".accounts-identity-email",
+  ".accounts-sync",
+  ".accounts-sync-now",
+  ".accounts-sync-status",
+  ".accounts-sync-label",
+  ".accounts-sync-detail",
+  ".accounts-sync-positive",
+  ".accounts-sync-warning",
+  ".accounts-sync-error",
+  ".accounts-actions",
+  ".accounts-signout",
 ];
 
 function selectorMatches(selector: string, token: string): boolean {

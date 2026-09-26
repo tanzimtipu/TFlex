@@ -1,5 +1,6 @@
-import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron';
+import { app, BrowserWindow, dialog, ipcMain, safeStorage, shell } from 'electron';
 import { join } from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { IPC } from '../shared/ipc';
 import type {
   AppSettings,
@@ -39,9 +40,16 @@ import { setBundledFontDir } from './services/fonts';
 import { SamplesService } from './services/samples';
 import { DEFAULT_SETTINGS, SettingsService } from './services/settings';
 import { SignatureService } from './services/signature-service';
+import { AccountsVault } from './services/accounts/vault';
+import { registerAccountsIpc } from './services/accounts/ipc';
+import { getAccountsConfig } from './services/accounts/config';
+import { SyncStateStore } from './services/accounts/sync-state';
+import { AccountsSyncEngine, SyncCoordinator } from './services/accounts/sync';
+import { PostgrestSyncTransport } from './services/accounts/transport';
+import { createSettingsPort, createSignaturesPort } from './services/accounts/ports';
 import { UpdateService } from './services/update-service';
 import { applyMenuEnabledState, buildAppMenu } from './menu';
-import { createMainWindow } from './window';
+import { createMainWindow, deriveAuthHost, installAuthPopupHandler } from './window';
 import { planCaptionMaximize } from './window-maximize';
 import { closePrintWindow, notifyPrintDocumentGone, openPrintWindow } from './print-window';
 import { extractFileArgument, looksLikePdfPath } from './open-path';
@@ -208,12 +216,21 @@ export async function start(): Promise<void> {
   ipcMain.handle(IPC.printListPrinters, (event) => listPrinters(event.sender));
   ipcMain.handle(IPC.printJob, (_event, payload: PrintJobPayload) => printJob(payload));
 
+  // Phase 44 - assigned once the accounts services exist below; the settings
+  // broadcast closes over it so a settings write can request a debounced sync.
+  let accountsSync: SyncCoordinator | null = null;
+
   const broadcast = (settings: AppSettings): void => {
     for (const win of BrowserWindow.getAllWindows()) {
       if (!win.isDestroyed()) {
         win.webContents.send(IPC.settingsChangedEvent, settings);
       }
     }
+    // Phase 44 - a settings write is the natural sync trigger. The
+    // coordinator is debounced and single-flight, and the engine makes no
+    // network call while the flag is off or no session is held, so this
+    // stays off the UI path and off the network on startup.
+    accountsSync?.requestSync();
   };
 
   // DEF-230 — a failed settings write no longer rejects the IPC call; the
@@ -240,6 +257,47 @@ export async function start(): Promise<void> {
   setBundledFontDir(join(app.getAppPath(), 'assets', 'fonts'));
   const engine = new EngineService(ocr);
   const signatures = new SignatureService(join(app.getPath('userData'), 'signatures.json'));
+
+  // Phase 44 — encrypted session vault + its three IPC channels. The JWT is
+  // stored via Electron safeStorage under userData and never enters
+  // settings.json. When encryption is unavailable the vault degrades to an
+  // in-memory session for this run (see the vault module).
+  const accountsVault = new AccountsVault(
+    join(app.getPath('userData'), 'accounts-session.bin'),
+    safeStorage,
+  );
+
+  // Phase 44 - the sync engine. The transport is built per sync from the
+  // current config (env override, else the shipped package.json `tflex`
+  // block). It only reaches the network once a session is held and the
+  // feature flag is on; `sync()` maps every failure to a SyncReport.
+  const accountsSyncEngine = new AccountsSyncEngine({
+    getToken: () => accountsVault.getSessionToken(),
+    getConfig: () => getAccountsConfig(process.env, app.getAppPath()),
+    makeTransport: ({ dataApiUrl, getToken }) =>
+      new PostgrestSyncTransport({ dataApiUrl, getToken }),
+    state: new SyncStateStore(join(app.getPath('userData'), 'accounts-sync.json')),
+    settings: createSettingsPort(settings),
+    signatures: createSignaturesPort(signatures),
+  });
+  // Every report the coordinator produces - including debounced/background
+  // runs a renderer did not trigger - is broadcast, so any window sees sync
+  // state changes without having called accounts:syncNow.
+  accountsSync = new SyncCoordinator(accountsSyncEngine, {
+    onReport: (report) => {
+      for (const win of BrowserWindow.getAllWindows()) {
+        if (!win.isDestroyed()) {
+          win.webContents.send(IPC.accountsSyncReportEvent, report);
+        }
+      }
+    },
+  });
+  // Session channels + the syncNow trigger. Registered after the coordinator
+  // exists so accounts:syncNow can delegate to it. The config provider backs
+  // accounts:getConfig (env override, else the shipped package.json block).
+  registerAccountsIpc(ipcMain, accountsVault, accountsSync, () =>
+    getAccountsConfig(process.env, app.getAppPath()),
+  );
 
   ipcMain.handle(IPC.windowMinimize, (event) => {
     BrowserWindow.fromWebContents(event.sender)?.minimize();
@@ -623,6 +681,9 @@ export async function start(): Promise<void> {
   const rendererDevUrl = app.isPackaged
     ? undefined
     : (process.env.ELECTRON_RENDERER_URL ?? 'http://localhost:5173');
+  // Phase 44 - the app's own URL, used only to detect the auth popup landing
+  // back on the app after the provider flow so it can be closed automatically.
+  const rendererAuthUrl = rendererDevUrl ?? pathToFileURL(rendererHtml).href;
 
   // Phase 35 - the standalone print window. `print:openWindow` validates the
   // context in main (openPrintWindow) and creates/focuses its own top-level OS
@@ -683,6 +744,14 @@ export async function start(): Promise<void> {
       onMinimizedChanged: broadcastMinimizedChanged,
       // DEF-142 — gate the whole-window close on unsaved edits.
       onCloseRequested: onWindowCloseRequested,
+    });
+    // Phase 44 - the auth popup: a real child window for the provider flow,
+    // sharing the app session, allowed only for the configured auth host and
+    // closed once it returns to the callback/app URL. Main forwards no token.
+    installAuthPopupHandler(win, {
+      getAuthHost: () =>
+        deriveAuthHost(getAccountsConfig(process.env, app.getAppPath()).authBaseUrl),
+      getAppUrl: () => rendererAuthUrl,
     });
     // Phase 35 / DEF-300 — track the main window explicitly so OS file-opens
     // are routed to it, and flush any path that was queued before its

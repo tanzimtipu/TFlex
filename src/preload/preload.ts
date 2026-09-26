@@ -45,6 +45,7 @@ import type {
 import type { Result } from "../shared/result";
 import type { FdfOpenError, PdfOpenError } from "../shared/types";
 import type { SignatureSource } from "../shared/types";
+import type { AccountStatusResult, AccountsClientConfig, SetSessionPayload, SyncReport } from "../shared/accounts";
 import { normalizeArrayBuffer } from "./to-array-buffer";
 
 // The renderer's engineClient.ts declares `window.tflex?.engine` with its own
@@ -557,6 +558,41 @@ const api = {
     },
     openPath(path: string): Promise<void> {
       return ipcRenderer.invoke(IPC.appOpenPath, path);
+    },
+  },
+  // Phase 44 — accounts session vault. The renderer calls `setSession`
+  // after a successful sign-in with the user's identity + session JWT;
+  // `getStatus` returns status + email only (never the token); `clearSession`
+  // signs out. The token never comes back over this bridge.
+  accounts: {
+    getStatus(): Promise<AccountStatusResult> {
+      return ipcRenderer.invoke(IPC.accountsGetStatus);
+    },
+    // Phase 44 — the non-secret config the renderer needs to construct the
+    // Neon auth client. Resolves { authBaseUrl, configured }; never the
+    // session token or the Data API URL.
+    getConfig(): Promise<AccountsClientConfig> {
+      return ipcRenderer.invoke(IPC.accountsGetConfig);
+    },
+    setSession(payload: SetSessionPayload): Promise<void> {
+      return ipcRenderer.invoke(IPC.accountsSetSession, payload);
+    },
+    clearSession(): Promise<void> {
+      return ipcRenderer.invoke(IPC.accountsClearSession);
+    },
+    // Phase 44 — sync control. `syncNow` triggers a sync and resolves with
+    // its SyncReport; `onSyncReport` receives every report the coordinator
+    // produces (debounced background runs included), not just the one this
+    // renderer triggered.
+    syncNow(): Promise<SyncReport> {
+      return ipcRenderer.invoke(IPC.accountsSyncNow);
+    },
+    onSyncReport(cb: (report: SyncReport) => void): () => void {
+      const listener = (_event: unknown, report: SyncReport): void => cb(report);
+      ipcRenderer.on(IPC.accountsSyncReportEvent, listener);
+      return () => {
+        ipcRenderer.removeListener(IPC.accountsSyncReportEvent, listener);
+      };
     },
   },
   // Phase 6: OTA updates

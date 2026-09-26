@@ -40,6 +40,7 @@ import {
 } from "./components/Inspector";
 import type { InspectorTextSelection } from "./components/Inspector";
 import { AboutDialog } from "./components/AboutDialog";
+import { AccountsDialog } from "./components/AccountsDialog";
 import { PreferencesDialog } from "./components/PreferencesDialog";
 import { UpdateIndicator } from "./components/UpdateIndicator";
 import { UpdatePromptDialog } from "./components/UpdatePromptDialog";
@@ -624,6 +625,16 @@ export function App(): ReactElement {
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
   const [aboutOpen, setAboutOpen] = useState(false);
   const [prefsOpen, setPrefsOpen] = useState(false);
+  // Phase 44 — the account surface. `accountsOpen` is only ever meaningful
+  // while `settings.accountsEnabled` is true; the flag gates BOTH the top-bar
+  // control and this dialog, so with the flag off nothing account-related is
+  // reachable. The status/email mirror the account surface for the top-bar
+  // label, reported back through `onStatusChange`.
+  const [accountsOpen, setAccountsOpen] = useState(false);
+  const [accountStatus, setAccountStatus] = useState<{ signedIn: boolean; email: string | null }>({
+    signedIn: false,
+    email: null,
+  });
   // OTA UX — the update prompt. Opens automatically when the
   // backend pushes an `available` (Update to X.Y.Z available) or
   // `downloaded` (Restart to update) UpdateState over
@@ -8391,6 +8402,12 @@ pushToast(
           onOpenToolSearch={openCommandPalette}
           onOpenFind={openFindInDocument}
           findEnabled={activeTabHasDocument}
+          // Phase 44 — the account entry point is rendered ONLY while the
+          // `accountsEnabled` settings flag is on; flipping the flag off (via
+          // the settings echo) removes the control without a restart.
+          onOpenAccounts={settings.accountsEnabled === true ? (): void => setAccountsOpen(true) : undefined}
+          accountsSignedIn={accountStatus.signedIn}
+          accountsEmail={accountStatus.email}
           // Phase 22 — the relocated Open / Save / Save As. The CommandBar
           // no longer renders them; the caption strip owns them now.
           onOpenFile={onOpenClick}
@@ -9349,6 +9366,13 @@ pushToast(
         toolUsage={settings.toolUsage}
         recentFiles={paletteRecents}
         onOpenRecent={onPaletteOpenRecent}
+      />
+      <AccountsDialog
+        open={settings.accountsEnabled === true && accountsOpen}
+        onClose={(): void => setAccountsOpen(false)}
+        onStatusChange={(status, email): void => {
+          setAccountStatus({ signedIn: status === "signed-in", email });
+        }}
       />
       <AboutDialog
         open={aboutOpen}

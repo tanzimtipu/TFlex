@@ -1,4 +1,5 @@
 import type { Result } from "./result";
+import type { AccountStatusResult, AccountsClientConfig, SetSessionPayload, SyncReport } from "./accounts";
 import type {
   AddStampPayload,
   AddTextBoxPayload,
@@ -228,6 +229,27 @@ export const IPC = {
   printOpenWindow: "print:openWindow",
   printNotifyDocumentGone: "print:notifyDocumentGone",
   printDocumentGoneEvent: "print:documentGone",
+  // Phase 44 — accounts session vault. `getStatus` resolves to status +
+  // email only (never the session token); `setSession` is called by the
+  // renderer after a successful sign-in and stores the JWT through
+  // Electron safeStorage in the main process; `clearSession` signs out.
+  // The network/sync transport is a later chunk.
+  accountsGetStatus: "accounts:getStatus",
+  accountsSetSession: "accounts:setSession",
+  accountsClearSession: "accounts:clearSession",
+  // Phase 44 — sync control. `accounts:syncNow` (renderer -> main, invoke)
+  // triggers a sync and resolves with the resulting `SyncReport` (single-
+  // flight and debounced in the coordinator). `accounts:syncReport` (main ->
+  // renderer, broadcast) delivers every `SyncReport` the coordinator
+  // produces — including the ones from debounced/triggered background runs
+  // — so a renderer that never calls syncNow still sees state changes.
+  accountsSyncNow: "accounts:syncNow",
+  accountsSyncReportEvent: "accounts:syncReport",
+  // Phase 44 — the non-secret accounts config for constructing the auth
+  // client IN the renderer. `accounts:getConfig` (invoke, no payload)
+  // resolves `{ authBaseUrl: string | null; configured: boolean }`; it never
+  // throws and never returns the Data API URL, a token or a secret.
+  accountsGetConfig: "accounts:getConfig",
 } as const;
 
 /** Result of `signatures:save` and `signatures:list`. The renderer treats
@@ -661,6 +683,35 @@ setEnabled(state: import("./types").MenuEnabledState): void;
   app?: {
     getInfo(): Promise<AppInfo>;
     openPath(path: string): Promise<void>;
+  };
+  /**
+   * Phase 44 — accounts session surface. `getStatus` returns the coarse
+   * account status plus the signed-in email (NEVER the session token);
+   * `setSession` hands the main process the user identity and the session
+   * JWT after a successful sign-in, which the main process encrypts with
+   * Electron safeStorage; `clearSession` signs out and deletes the stored
+   * session. Optional so a preload without the accounts bridge degrades
+   * gracefully (jsdom tests, older builds) — the renderer gates on the
+   * `accountsEnabled` flag anyway.
+   */
+  accounts?: {
+    getStatus(): Promise<AccountStatusResult>;
+    /** Resolve the non-secret accounts config the renderer needs to construct
+     *  the auth client (`{ authBaseUrl, configured }`). Never rejects;
+     *  unconfigured resolves `{ authBaseUrl: null, configured: false }`. */
+    getConfig(): Promise<AccountsClientConfig>;
+    setSession(payload: SetSessionPayload): Promise<void>;
+    clearSession(): Promise<void>;
+    /** Trigger a sync now and resolve with its `SyncReport`. Single-flight:
+     *  overlapping calls join the in-flight attempt. Never rejects. A run
+     *  with the feature off or no session resolves `idle`; a run with no
+     *  configured transport resolves `unavailable` — neither makes a
+     *  network call. */
+    syncNow(): Promise<SyncReport>;
+    /** Subscribe to every `SyncReport` the coordinator produces, including
+     *  the debounced/background runs a caller did not request. Returns an
+     *  unsubscribe. */
+    onSyncReport(cb: (report: SyncReport) => void): () => void;
   };
   /**
    * Phase 35 (DEF-295) — resolve a `File` from a drag-and-drop (or any

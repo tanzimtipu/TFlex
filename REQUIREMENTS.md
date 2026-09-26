@@ -2428,3 +2428,129 @@ app-wide by item 2.
 
 **Settings impact:** none - no new `AppSettings` field; motion tokens are CSS/JS constants, and the icon
 change is presentational.
+
+## Standing standards (operator rulings, apply to every phase from now on)
+
+**Animation - HARD RULE (operator, 2026-09-26).** Every element that appears, disappears, moves, changes
+state or responds to input must animate through the CENTRALISED motion system: `src/renderer/hooks/motionTokens.ts`
+plus the `src/renderer/styles/animations.css` tokens and the `AnimatedDialog`/`AnimatedPanel`/`AnimatedTab`
+wrappers. No hardcoded durations or easings; transform/opacity only (never width/height/margin); identical
+timing in light, dark and frosted; a `prefers-reduced-motion` fallback; and PDF page content is never
+recoloured or cross-faded. Every phase that adds or changes a surface must state that surface's animation
+and the token it uses, and the animation guard test must cover it. A new or changed element with no
+token-based animation is a DEFECT, not a polish item.
+
+**Icon identity (operator, 2026-09-26).** No two elements of different actions may share an icon anywhere in
+the app. One universal action repeated verbatim (the close affordance) counts as one action; the same action
+mirrored on two surfaces is allowed and must be allow-listed with a written reason. The icon guard test must
+cover every surface.
+
+**Test discipline (operator, 2026-09-26).** Targeted tests per change; the full suite only at a release gate
+or when the human explicitly asks. Do not run the full suite "to be safe".
+
+**To-do discipline (operator, 2026-09-26).** The orchestrator maintains a live to-do list for the run and
+reports pending / in-progress / done in every dispatch summary.
+
+## Phase 44 — Accounts and cloud sync on Neon (operator request 2026-09-26)
+
+**Operator request (verbatim intent):** the app gets a **Sign in / Sign up** option on the top bar; users can
+register or sign in with **email or Google**; **email registration requires verification**; registered users
+are stored in **Neon**; the account also stores the user's **app settings and signatures** so that signing in
+on any device restores them; **account deletion and data export** are included; the whole feature ships
+**behind a flag** until battle-tested; **OTA stays on GitHub** (this database is NOT used for updates).
+Operator rulings that shape it: the Neon project is `twilight-tooth-46220295` ("RealTflex", `aws-ap-southeast-1`),
+the email sender is Neon's **shared** provider, and the free **0.5 GB** storage limit must be respected.
+
+**SUPERSESSION (recorded deliberately).** The v1 contract says "No network calls in product code. v1 is fully
+offline." Phase 44 deliberately supersedes that for the accounts and sync paths ONLY: the app must remain
+fully usable **offline and signed-out**, with local data authoritative while signed out, and every network
+path must degrade gracefully (never block the UI, never lose local work).
+
+**Prerequisites that are NOT code (see "Unowned paths" below) - both are required before implementation can
+land:**
+- **P1 - the conventions gate must be amended.** `scripts/check-conventions.mjs` scans `src/` and fails on
+  `fetch(`, `XMLHttpRequest`, `http/https/net/dns` imports and ANY non-localhost URL literal, so the accounts
+  transport cannot exist in `src/` under the current rule. The amendment is NARROW: keep the rule for
+  everything, add an explicit allowlist naming the ONE accounts/sync module path (e.g.
+  `src/main/services/accounts/**`) and the permitted hosts (`*.neon.tech` only), with the reason recorded in
+  the script. No other file and no other host becomes permitted; the check must still fail for a network call
+  anywhere else.
+- **P2 - the Neon infrastructure files** (`neon.ts` body, the Function source) live at the repo root and are
+  writable by no role today. They are needed only for the Neon FUNCTION and the declared-bucket wiring; Auth,
+  the Data API, the schema, RLS and the `tflex` bucket are already live, so the accounts/sync feature does NOT
+  depend on P2.
+
+**Features**
+
+**A. Sign in / Sign up on the top bar.** A control in the top bar opens an account surface: **Sign in** and
+**Sign up** with **email + password**, and **Continue with Google**. While signed out it offers sign-in /
+registration; while signed in it shows the account (email), **Sync now**, **Sign out**, **Export my data** and
+**Delete my account**. Everything obeys the standing animation and icon rules.
+
+**B. Email verification.** A registration with email must be verified with the **OTP code** Neon emails
+(Neon's shared sender; production may move to custom SMTP later). The UI must handle: code sent, wrong code,
+expired code, resend, and the verified-signed-in state.
+
+**C. Settings sync.** The signed-in user's app settings are stored in `public.user_settings` (one row per user,
+JSONB) and restored on any device. **Device-local fields are EXCLUDED** and never synced: window geometry, the
+recent-files list, and any path-bearing field. Conflict rule: **last-write-wins per record** on `updated_at`
+with a `revision` counter; the FIRST link of a device to an existing account makes the **cloud authoritative**,
+after which the newest write wins. Sync is debounced and must never block or slow the UI.
+
+**D. Signature sync.** The user's signatures live in `public.user_signatures` (metadata: label, kind
+`drawn|typed|image`, payload for vector/typed data, `storage_key` for images) with the **image bytes in the
+private `tflex` bucket**, never base64 in the database. Deletes are SOFT (`deleted_at`) so a second device
+converges.
+
+**E. Storage discipline (the operator's 0.5 GB cap).** Settings stay a few KB per user; signature images go to
+the bucket; per-signature and per-user caps are enforced in the app so a user cannot fill the branch limit;
+no counters, logs or analytics tables are added.
+
+**F. Offline and signed-out behaviour.** No network call on startup; the app never waits on the network to
+become usable; a failed sync surfaces a non-blocking message and retries later; signing out leaves all local
+data intact.
+
+**G. Security.** The **JWT is the only credential** the app holds; it is stored with Electron `safeStorage`,
+never in `settings.json`, never logged, never committed. The **Data API's RLS is the per-row boundary**
+(`auth.user_id() = user_id`) with `authenticated`-role grants and NO `anonymous` privileges; the app must never
+be trusted to filter rows. The client secret exists only in Neon's server-side config.
+
+**H. Flag, deletion and export.** The whole feature is hidden behind an `AppSettings` flag (default OFF) until
+battle-tested. **Delete my account** erases the user's `user_settings` row, their signatures and their bucket
+objects, then the auth user. **Export my data** writes a JSON (plus the images) the user chooses a location for.
+
+**Success criteria**
+
+1. With the flag OFF, no account surface is reachable anywhere and the app behaves exactly as today (verified
+   by the existing suites plus a targeted assertion).
+2. With the flag ON, the top bar offers Sign in / Sign up; email registration sends an OTP; entering the code
+   verifies and signs the user in; a wrong or expired code shows a clear, non-blocking error; resend works.
+3. Google sign-in completes on a real machine through the system browser and returns to the app signed in
+   (the redirect URI `https://ep-fragrant-pond-b3gqd6cf.neonauth.c-4.ap-southeast-1.aws.neon.tech/neondb/auth/callback/google`
+   is registered in the operator's Google project).
+4. Signing in on a second device (or a fresh profile) restores that user's settings and signatures.
+5. Device-local fields (window geometry, recent files, paths) are NEVER overwritten by a sync (verified by
+   syncing after locally moving/resizing the window and reopening a file).
+6. Two devices editing settings resolve by last-write-wins on `updated_at`, with no data loss of the newer
+   write.
+7. Signature images land in the `tflex` bucket and the database holds only metadata (verified by inspecting
+   both); a soft-deleted signature disappears on the other device after a sync.
+8. Signing out restores local-only behaviour with all local data intact; sync failures never block the UI
+   (verified with the network unreachable).
+9. The JWT is never in `settings.json`, never in a log, never in the repo (grep assertion + a manual check of
+   the storage location).
+10. **Adversarial: a signed-in user cannot read or write another user's rows or objects** - attempts through
+    the Data API and the bucket are denied by RLS/policies, and the attempt is recorded as a release blocker
+    if it succeeds.
+11. Delete my account removes the rows, the signature objects and the auth user (verified from the Neon side).
+12. Export my data produces a readable JSON plus images at the user's chosen location.
+13. Sync is debounced and small: the measured payload per sync and the row sizes are reported, and the
+    projected per-user storage stays far below the 0.5 GB branch limit.
+14. No regression: the standing standards (animation, icon identity), the earlier phases and `verify:full`
+    all stay green; the measured startup time is unchanged with the flag both off and on.
+
+**Settings impact:** three new `AppSettings` fields, all validated in `src/main/services/settings.ts`
+(preserve-if-valid, reject-if-invalid) before any renderer reads them: `accountsEnabled?: boolean` (default
+false - the feature flag), `syncDeviceId?: string` (a generated install id used for conflict notes; non-empty
+string, capped length) and `lastSyncedAt?: string` (an ISO timestamp for display only). **The session/JWT is
+NOT a settings field** - it is stored via Electron `safeStorage` in the main process.

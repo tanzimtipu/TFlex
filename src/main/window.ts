@@ -54,6 +54,160 @@ export function resolvePreloadPath(): string {
   return join(mainModuleDir(), '../preload/preload.cjs');
 }
 
+// ---------------------------------------------------------------------------
+// Phase 44 - auth popup. The renderer's social sign-in (`signIn.social`)
+// opens a provider page that must run in a REAL popup window sharing the
+// app's session (so the resulting session cookie is visible to the app
+// renderer), because a full-window navigation cannot complete in the app
+// window. The rules below are deliberately narrow: ONLY https on the
+// configured auth host may become a popup; everything else is denied.
+// ---------------------------------------------------------------------------
+
+/** Path prefix the auth host uses to hand control back to the app. */
+const AUTH_CALLBACK_PATH = '/callback';
+
+export type AuthPopupAction = 'allow' | 'deny';
+
+/**
+ * Phase 44 - pure decision for a renderer `window.open` request. `allow`
+ * only when the URL parses, is `https:` and its hostname is exactly the
+ * configured auth host. Every other case - a different https host, `http:`,
+ * `javascript:`, `file:`, a malformed URL, or no configured host - is denied.
+ * Exported for the unit tests.
+ */
+export function decideAuthPopup(url: string, authHost: string | null): AuthPopupAction {
+  const host = (authHost ?? '').trim().toLowerCase();
+  if (host.length === 0) return 'deny';
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return 'deny';
+  }
+  if (parsed.protocol !== 'https:') return 'deny';
+  if (parsed.hostname.toLowerCase() !== host) return 'deny';
+  return 'allow';
+}
+
+/**
+ * Parse the configured auth base URL down to a bare lowercase hostname.
+ * Returns null when absent or unparseable. Exported for the unit tests.
+ */
+export function deriveAuthHost(authBaseUrl: string | null): string | null {
+  if (authBaseUrl === null) return null;
+  try {
+    const parsed = new URL(authBaseUrl);
+    const host = parsed.hostname.trim().toLowerCase();
+    return host.length > 0 ? host : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Phase 44 - true when the popup has landed on the flow's completion URL:
+ * the auth host's `/callback` path (any suffix), or the app's own URL/origin.
+ * Used to auto-close the popup so no stray window is left behind. Exported
+ * for the unit tests.
+ */
+export function isAuthCompletionUrl(
+  url: string,
+  authHost: string | null,
+  appUrl: string | null,
+): boolean {
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return false;
+  }
+  const host = (authHost ?? '').trim().toLowerCase();
+  if (
+    host.length > 0 &&
+    parsed.protocol === 'https:' &&
+    parsed.hostname.toLowerCase() === host &&
+    (parsed.pathname === AUTH_CALLBACK_PATH ||
+      parsed.pathname.startsWith(`${AUTH_CALLBACK_PATH}/`))
+  ) {
+    return true;
+  }
+  if (appUrl !== null) {
+    try {
+      const app = new URL(appUrl);
+      if (app.protocol === 'file:') {
+        return parsed.protocol === 'file:' && parsed.pathname === app.pathname;
+      }
+      return parsed.origin === app.origin;
+    } catch {
+      return false;
+    }
+  }
+  return false;
+}
+
+export interface AuthPopupDeps {
+  /** Resolve the configured auth host at decision time; null denies all. */
+  getAuthHost: () => string | null;
+  /** The app's own renderer URL, used only for completion detection. */
+  getAppUrl: () => string | null;
+}
+
+/**
+ * Phase 44 - wire the main window's `window.open` path to the auth popup
+ * rules. `setWindowOpenHandler` decides allow/deny; `did-create-window`
+ * attaches the close-on-completion listener and tracks the child so it can
+ * never outlive the main window. The popup gets no node integration, keeps
+ * context isolation and sandbox on, and is explicitly bound to the main
+ * window's session, so the auth cookie it receives is visible to the app
+ * renderer. Main never reads or forwards the token.
+ */
+export function installAuthPopupHandler(win: BrowserWindow, deps: AuthPopupDeps): void {
+  const popups = new Set<BrowserWindow>();
+
+  win.webContents.setWindowOpenHandler(({ url }) => {
+    if (decideAuthPopup(url, deps.getAuthHost()) === 'deny') {
+      return { action: 'deny' };
+    }
+    return {
+      action: 'allow',
+      overrideBrowserWindowOptions: {
+        parent: win,
+        autoHideMenuBar: true,
+        webPreferences: {
+          nodeIntegration: false,
+          contextIsolation: true,
+          sandbox: true,
+          session: win.webContents.session,
+        },
+      },
+    };
+  });
+
+  win.webContents.on('did-create-window', (child) => {
+    popups.add(child);
+    child.on('closed', () => {
+      popups.delete(child);
+    });
+    // Observe only, never prevent: the auth host's callback response (which
+    // carries the Set-Cookie) must be allowed to commit before we close.
+    child.webContents.on('did-navigate', (_event, url) => {
+      if (isAuthCompletionUrl(url, deps.getAuthHost(), deps.getAppUrl()) && !child.isDestroyed()) {
+        child.close();
+      }
+    });
+  });
+
+  // The popup must never outlive the app: closing the main window closes it.
+  win.on('closed', () => {
+    for (const popup of popups) {
+      if (!popup.isDestroyed()) {
+        popup.close();
+      }
+    }
+    popups.clear();
+  });
+}
+
 function rectOnSomeDisplay(geometry: WindowGeometry): boolean {
   const rect: Rectangle = {
     x: geometry.x,
