@@ -23,6 +23,15 @@ export interface WhatsNewEntry {
 /** Ordered newest first. */
 export const WHATS_NEW: WhatsNewEntry[] = [
   {
+    version: '1.35.0',
+    date: '2026-09-26',
+    highlights: [
+      'The one, two and four-page view now glides between layouts instead of snapping.',
+      "Motion is everywhere it belongs: menus, dock buttons, the stage rail and the outline now animate through the app's motion system.",
+      'No two different controls share an icon any more - the Multi View toggle and the two-page view are easy to tell apart.',
+    ],
+  },
+  {
     version: '1.34.0',
     date: '2026-09-26',
     highlights: [
