@@ -4092,3 +4092,43 @@ round-trip still needs a real account (the popup reaches Google's consent page i
 occurrence of "a change that adds a call on a collaborator must sweep every test that mocks that
 collaborator" (after DEF-304 and DEF-305). Only two main test files load `src/main/index.ts`, so only those
 two can hit it - keep that in mind for the next `session.*`/window-level change.
+
+## 2026-09-27: Release 1.40.0 - the Lax-cookie lesson (desktop OAuth against a web-origin provider)
+
+Release 1.40.0 is published: https://github.com/tanzimtipu/tflex-releases/releases/tag/v1.40.0 with all four
+assets, and the public feed verifies (`version: 1.40.0`, sha512 `PSuQXLIC...`, size 171,915,642). Commits:
+`bf3e8ac` (the fix, 22 files), `60edee9` (notes), `195f285` (bump), tag `v1.40.0`. Gates: `verify:full`
+446 files / **5733 tests**; the packaged canonical spec 9/9; the phase47 completion spec 2/2 (the popup now
+closes itself); and the packaged auth evidence (the Origin header on the wire, the provider's real reasons).
+
+**THE LESSON (measured with a real-Electron probe, because nothing less could have found it): a
+`SameSite=Lax` session cookie can NEVER reach a packaged Electron renderer.** The app loads the renderer from
+`file://`, so its origin is opaque/null and any request it makes to the auth host is **cross-site**; a real
+probe showed Lax and Strict cookies are withheld while `SameSite=None; Secure` is sent. Better Auth's default
+session cookie is **lax** - so Google sign-in succeeded in the popup and the app could never learn it: the
+operator's stuck window, exactly. **Rule: for a desktop app talking to a cookie-based web auth service, do the
+session exchange in the MAIN process, which holds the shared session and whose `session.fetch` attaches every
+cookie regardless of SameSite.** The implementation: after the loopback callback fires, main reads the cookies
+(`session.cookies.get`), calls `GET {authBase}/get-session` and `GET {authBase}/token` through
+`session.fetch`, builds the user, and stores it in the vault; the renderer then only re-queries
+`accounts:getStatus` and never reads the session itself. Do NOT design a desktop sign-in around a renderer-side
+session read.
+
+**The operator's single symptom ("Something went wrong" / a stuck window) had FOUR independent causes**, each
+invisible to the unit tests and each pinned by a live probe, in this order: (1) `connect-src` CSP blocked every
+request; (2) the `file://` renderer sends NO `Origin`, and the provider refuses Origin-checked routes
+(`MISSING_ORIGIN`) - sign-up is one of them; (3) the loopback minted `127.0.0.1`, which the branch does not
+trust (it trusts the hostname `localhost`) -> `INVALID_CALLBACKURL`; (4) the Lax cookie above. **When an auth
+flow fails, probe the provider directly before touching the client** - four rounds were spent on client
+theories that a single curl/CDP capture would have dismissed.
+
+**Also recorded:** the popup's completion matcher needed the minted LOOPBACK url (Neon's real callback path is
+`/neondb/auth/callback/google`, which the old `/callback` rule never matched), and the minted URL must be
+RETAINED past the single-use listener's consumption or the popup's `did-navigate` arrives after the URL is
+gone (DEF-365) - clear it on popup close/new flow/30 s grace instead. The electron-session mock is now ONE
+shared helper (`test/unit/main/helpers/electronSessionMock.ts`) used by both files that load
+`src/main/index.ts`, which is how the DEF-304/305/364 class stops recurring. And the `release/win-unpacked`
+lock returns whenever the harness re-reads the tree: when it does, build with
+`--config.directories.output=<scratch>` and copy ONLY the four artifacts into `release/` (the approved
+deviation), and clean any orphaned `release/win-unpacked.tmp` - it trips the conventions gate as a dev file
+under `release/`.
