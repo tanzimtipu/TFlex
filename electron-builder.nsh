@@ -63,6 +63,47 @@ Var /GLOBAL tflexLegacyProbe
 Var /GLOBAL tflexLegacyProven
 Var /GLOBAL tflexLegacyDirFailed
 
+; --- Phase 49 fix — rebrand install directory (Jovrel 1.42.0).
+;
+; DEFECT: 1.41.0 (the first Jovrel installer) inherited the OLD per-machine
+; TFlex install location and nested itself inside it, landing at
+; "C:\Program Files\TFlex\Jovrel" instead of "C:\Program Files\Jovrel".
+;
+; Root cause (verified against the generated NSIS, not guessed):
+;   1. electron-builder derives the install-info registry key from the appId
+;      GUID (${APP_GUID} = f890a78b-...), which Phase 49 deliberately KEPT at
+;      com.tflex.app so the new product replaces the old one in place.
+;   2. In the installer's .onInit, initMultiUser -> setInstallModePerAllUsers
+;      (templates/nsis/multiUser.nsh, "check registry for previous installation
+;      path") reads HKLM "Software\<GUID>" InstallLocation and, when present,
+;      copies it straight into $INSTDIR. For an upgrade over TFlex that value is
+;      "C:\Program Files\TFlex".
+;   3. The assisted installer (allowToChangeInstallationDirectory is true here)
+;      defines instFilesPre as MUI_PAGE_CUSTOMFUNCTION_PRE
+;      (templates/nsis/assistedInstaller.nsh). It runs
+;        ${StrContains} $0 "${APP_FILENAME}" $INSTDIR
+;        ${If} $0 == ""
+;          StrCpy $INSTDIR "$INSTDIR\${APP_FILENAME}"
+;        ${EndIf}
+;      APP_FILENAME is the new product dir name "Jovrel"; the inherited
+;      "C:\Program Files\TFlex" does not contain it, so "\Jovrel" was appended:
+;      exactly the observed "C:\Program Files\TFlex\Jovrel".
+;
+; customInit is inserted by installer.nsi immediately AFTER initMultiUser and
+; BEFORE any page, so this is the supported place to correct the inherited
+; value. Any $INSTDIR under the legacy TFlex root is reset to the canonical
+; per-machine directory. A path the user chose on a previous Jovrel install
+; (anything outside the TFlex root) is preserved, and the directory page still
+; lets the user pick a custom path afterwards.
+!macro customInit
+  StrCpy $0 "$PROGRAMFILES64\TFlex"
+  StrLen $1 $0
+  StrCpy $2 $INSTDIR $1
+  ${If} $2 == $0
+    StrCpy $INSTDIR "$PROGRAMFILES64\Jovrel"
+  ${EndIf}
+!macroend
+
 !macro customInstall
   ; --- 0. Prove the legacy per-user TFlex identity before touching anything.
   ;        All reads below are from HKCU / $LOCALAPPDATA, which under elevation
@@ -171,6 +212,39 @@ Var /GLOBAL tflexLegacyDirFailed
   ;        author/company, so there is no known publisher value to invent.
   WriteRegStr SHELL_CONTEXT "${UNINSTALL_REGISTRY_KEY}" "InstallLocation" "$INSTDIR"
   WriteRegStr SHELL_CONTEXT "${UNINSTALL_REGISTRY_KEY}" "DisplayPath" "$appExe"
+
+  ; --- 4. Rebrand leftover cleanup (Phase 49 fix).
+  ;        An install that ran BEFORE this fix (1.41.0) nested itself at
+  ;        "$PROGRAMFILES64\TFlex\Jovrel" and left the old TFlex parent behind.
+  ;        Remove that stale nested install and the then-empty TFlex parent.
+  ;        Safety, all exact, never a bare substring:
+  ;          - the nested directory is removed only when it holds BOTH our
+  ;            executables, by exact name: "Jovrel.exe" AND
+  ;            "Uninstall Jovrel.exe" (a directory that merely has one
+  ;            similarly named file is untouched);
+  ;          - the nested directory is only touched when the CURRENT install
+  ;            does not target inside the legacy TFlex root, so a user-chosen
+  ;            custom path can never be the directory we delete;
+  ;          - the parent is removed with a NON-RECURSIVE RMDir, which NSIS
+  ;            can only ever complete on an EMPTY directory - any other
+  ;            content makes it fail silently and the directory is left.
+  StrCpy $0 "$PROGRAMFILES64\TFlex"
+  StrLen $1 $0
+  StrCpy $2 $INSTDIR $1
+  ${If} $2 != $0
+    ${If} ${FileExists} "$0\Jovrel\Jovrel.exe"
+    ${AndIf} ${FileExists} "$0\Jovrel\Uninstall Jovrel.exe"
+      ClearErrors
+      RMDir /r "$0\Jovrel"
+      IfErrors 0 tflexNestedDirRemoved
+        MessageBox MB_ICONEXCLAMATION|MB_OK "Jovrel could not remove the previous nested installation in:$\r$\n$0\Jovrel$\r$\n$\r$\nA file there is in use - Jovrel is most likely still running. Close Jovrel and run this installer again. The TFlex folder was left in place."
+        Goto tflexNestedCleanupDone
+      tflexNestedDirRemoved:
+    ${EndIf}
+    ; Non-recursive: only removes the parent if nothing else is left inside it.
+    RMDir "$0"
+    tflexNestedCleanupDone:
+  ${EndIf}
 !macroend
 
 !endif

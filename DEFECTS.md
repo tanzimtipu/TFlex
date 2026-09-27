@@ -5,6 +5,46 @@
 > inspect the current `OPEN`, `FIX-READY`, and `DISPUTED` entries first; closed records are
 > historical evidence and must not be loaded wholesale.
 
+## DEF-368: the first Jovrel installer (1.41.0) inherited the TFlex install location and nested itself at C:\Program Files\TFlex\Jovrel
+
+- Status: CLOSED
+- Severity: HIGH
+- Found by: operator (live install), relayed through the orchestrator; filed by qa
+- Phase: 49
+
+Steps to reproduce:
+1. Install the per-machine TFlex build so HKLM `Software\f890a78b-df18-5f38-8f11-e53795b72a9d` `InstallLocation` = `C:\Program Files\TFlex` (appId `com.tflex.app` -> NSIS GUID f890a78b-df18-5f38-8f11-e53795b72a9d).
+2. Run the 1.41.0 Jovrel installer (perMachine, allowToChangeInstallationDirectory).
+3. Inspect the install directory and the Add/Remove Programs entry.
+
+Expected: the product installs to `C:\Program Files\Jovrel` (Phase 49 success criterion 1), replacing the TFlex install in place (criterion 2), with no stale TFlex directory left.
+
+Actual: the installer lands at `C:\Program Files\TFlex\Jovrel` and leaves `C:\Program Files\TFlex` (now containing only `Jovrel`) behind. The app runs and the shortcuts are correct, but the install-path criterion is broken and a stale parent remains.
+
+Root cause (verified against the generated NSIS and the electron-builder templates, not guessed):
+- `appId` deliberately stays `com.tflex.app`, so the install-info key is HKLM `Software\<GUID>` and `initMultiUser` reads it.
+- `templates/nsis/multiUser.nsh` `initMultiUser` -> `setInstallModePerAllUsers` copies that key's `InstallLocation` into `$INSTDIR`; on an upgrade over TFlex that value is `C:\Program Files\TFlex`.
+- `templates/nsis/assistedInstaller.nsh`'s `instFilesPre` then runs `${StrContains} $0 "${APP_FILENAME}" $INSTDIR`; `APP_FILENAME` is `Jovrel`, the inherited path does not contain it, so `StrCpy $INSTDIR "$INSTDIR\${APP_FILENAME}"` appends `\Jovrel`.
+
+Raw registry / filesystem evidence (operator machine; read-only re-confirmed by qa):
+- HKLM `Software\Microsoft\Windows\CurrentVersion\Uninstall\f890a78b-df18-5f38-8f11-e53795b72a9d`: `DisplayName = Jovrel 1.41.0`, `DisplayVersion = 1.41.0`, `InstallLocation = C:\Program Files\TFlex\Jovrel`, `UninstallString = "C:\Program Files\TFlex\Jovrel\Uninstall Jovrel.exe" /allusers`.
+- HKLM `Software\f890a78b-df18-5f38-8f11-e53795b72a9d`: `InstallLocation = C:\Program Files\TFlex\Jovrel`.
+- `C:\Program Files\TFlex` contains exactly one child, `Jovrel`; `C:\Program Files\Jovrel` does not exist.
+- Shortcuts are correct: `Start Menu\Programs\Jovrel.lnk` and `Public\Desktop\Jovrel.lnk` -> `C:\Program Files\TFlex\Jovrel\Jovrel.exe`.
+
+Fix (1.41.1): `electron-builder.nsh` adds a `customInit` macro (inserted by `installer.nsi` immediately after `initMultiUser`) that resets a `$INSTDIR` under the legacy `$PROGRAMFILES64\TFlex` root to `$PROGRAMFILES64\Jovrel`, plus a leftover cleanup in `customInstall` that removes `$PROGRAMFILES64\TFlex\Jovrel` only when it holds BOTH `Jovrel.exe` AND `Uninstall Jovrel.exe`, then non-recursively removes the (now-empty) `$PROGRAMFILES64\TFlex`. A user-chosen custom path outside the TFlex root is preserved.
+
+Screenshot: none
+
+History:
+- qa: opened (filed from the operator's live 1.41.0 install evidence, relayed by the orchestrator).
+- qa: CLOSED (release-gate verification of the 1.41.1 installer from source + artifact; the operator's elevated install is the only remaining live confirmation). Evidence on the 1.41.1 tree:
+  - `test/unit/main/phase49InstallDir.test.ts` -> 7 passed, including the live `makensis -PPO` preprocess of the real `electron-builder.nsh`.
+  - An independent QA `electron-builder --win nsis` rebuild (scratch output; `release/` untouched) produced `Jovrel-Setup-1.41.1-x64.exe` at exactly the shipped size 173,348,601 bytes; its generated installer script `!include`s `...\TFlex\electron-builder.nsh` and inserts `!insertmacro customInit` immediately after `!insertmacro initMultiUser`.
+  - QA `makensis -PPO` expansion of the real `.nsh`: `StrCpy $0 "$PROGRAMFILES64\TFlex"` / `StrLen $1 $0` / `StrCmp `$2` `$0`` ... `StrCpy $INSTDIR "$PROGRAMFILES64\Jovrel"`; cleanup `IfFileExists `$0\Jovrel\Jovrel.exe``, `IfFileExists `$0\Jovrel\Uninstall Jovrel.exe``, `RMDir /r "$0\Jovrel"`, `RMDir "$0"` (non-recursive, no `RMDir /r "$0"`).
+  - `release/Jovrel-Setup-1.41.1-x64.exe` sha512 (independently recomputed by qa) `hVVm1XZ5M7kKBYMXvYwYUWpX8gVuTRlfZX4HO5LWMaKXXEexL8/DyDBO6/5yTURfiKdhx/DXO5IvW99hIrQcOg==`, size 173,348,601, equals `latest.yml`; version 1.41.1.
+  - The operator's machine meets the cleanup preconditions (nested dir holds `Jovrel.exe` + `Uninstall Jovrel.exe`). Remaining operator-only confirmation: run the 1.41.1 setup elevated and confirm `C:\Program Files\Jovrel\Jovrel.exe`, ARP `InstallLocation = C:\Program Files\Jovrel`, and both `C:\Program Files\TFlex\Jovrel` and the emptied `C:\Program Files\TFlex` gone.
+
 ## DEF-366: the Phase 48 bar clamp puts a bottom-edge annotation's action bar into the comment box's zone, so Confirm/Cancel/Delete are covered and unclickable
 
 - Status: CLOSED
