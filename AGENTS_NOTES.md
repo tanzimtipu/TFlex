@@ -4168,3 +4168,48 @@ never a minor for a fix batch. 1.40.1 follows it.
 **Also verified by the gate:** the annotation control audit covered 10 annotation types at four page edges and
 two zoom levels (8 offenders fixed), the comment box now opens on SELECTION rather than on creation (text,
 note and rectangle verified), and `verify:full` picked up DEF-366/367 as new defects rather than regressions.
+
+## 2026-09-27: Release 1.41.0 - the product is JOVREL (the project stays TFlex)
+
+Release 1.41.0 is published: https://github.com/tanzimtipu/tflex-releases/releases/tag/v1.41.0 with all four
+assets, and the public feed verifies (`version: 1.41.0`, path `Jovrel-Setup-1.41.0-x64.exe`, sha512
+`5X5wvwOi...`, size 173,347,975). Commits: `3dc1fd6` (the rebrand, 81 files), `682643c` (notes), `ed8fade`
+(bump), tag `v1.41.0`. Gates: `verify:full` 451 files / **5801 tests**; the packaged canonical spec 9/9 at
+1.41.0; the packaged Jovrel brand gate 4/4.
+
+**THE SPLIT (contract, from Phase 49 - read this before naming anything):**
+- **Jovrel = the PRODUCT**: what a user sees and what Windows reads - `productName: Jovrel`, `Jovrel.exe`,
+  `C:\Program Files\Jovrel`, the ARP entry, the shortcuts, the `.pdf` ProgID `Jovrel.pdf` with the Jovrel PDF
+  icon, the window/print titles, the About/Welcome/account/title-bar brand, the PDF Producer metadata, and the
+  artifact names `Jovrel-Setup-${version}-${arch}.${ext}` / `Jovrel-${version}-portable-${arch}.${ext}`.
+- **TFlex = the PROJECT**: the repo name, the npm package `tflex`, the `tflex` config block in package.json and
+  its keys, the `TFlexApi` type and `tflex:` IPC channel names, storage keys, the `/TFlexColor`, `/TFlexSig`,
+  `/TFlexBox`, `/TFlexComments` PDF catalog keys (round-trip compatibility with existing documents), the
+  `TFlex<family>` font names, `TFLEX_GH_TOKEN`, the docs/agents, and the OTA repo `tflex-releases` (renaming it
+  would break the updater AND the published feed). Never "tidy" one of these into Jovrel.
+
+**Two traps worth remembering:**
+1. **`productName` alone does NOT move Electron's userData.** electron-builder stamps the product name into the
+   EXE metadata, but the packaged `package.json` still carries `name: tflex`, and Electron derives `userData`
+   from the app NAME - so the app must call `app.setName('Jovrel')` early (before any store or the single
+   instance lock) to actually land in `%APPDATA%\Jovrel`. With that in place the rebrand would have silently
+   orphaned every existing user's settings/signatures/session, so a ONE-TIME, copy-only, idempotent migration
+   copies them across (`src/main/services/userdata-migration.ts`; the old directory is never touched). Any
+   future product-name change needs the same pair: `app.setName` + a migration.
+2. **The NSIS upgrade identity is `appId`, not the name.** Keeping `appId: com.tflex.app` keeps the GUID, so the
+   Jovrel installer properly UNINSTALLS an existing TFlex install and replaces it in place (one product, one
+   ARP entry) instead of adding a second one. Changing appId would split the install history - do not.
+
+**Brand assets, and where they live:** the operator's `jovrel-brand` folder was placed as `assets/brand/`
+(SHIPPED: `jovrel.ico`, `jovrel-pdf.ico`, the mark SVG + PNGs, the PDF-file SVG + PNGs, both wordmark PNGs) and
+`docs/brand/website/` (NOT shipped: `favicon.ico`, the preview sheet). The mark is implemented INLINE in the
+renderer (`src/renderer/components/BrandMark.tsx`, per-instance gradient id via `useId()` - an SVG `id` is
+global, so two marks with the same id would fight) with the exact asset geometry: tile `rx=230`, gradient
+`#60A5FA -> #1E3A8A`, three white `stroke-width=20` round-capped paths. Sizes in use: title bar/print 18px,
+Welcome 24px, account sheet 26px, About 56px. `src/renderer/components/BrandWordmark.tsx` renders "Jovrel" in
+Inter with `currentColor`, so it follows each surface's theme foreground.
+
+**Release-procedure note:** the four assets are now `Jovrel-Setup-<version>-x64.exe`, its `.blockmap`,
+`Jovrel-<version>-portable-x64.exe` and `latest.yml`; the canonical installed spec points at
+`C:\Program Files\Jovrel\Jovrel.exe`; and the OTA feed's `path` is the Jovrel setup. The old `TFlex-Setup-*`
+artifacts remain in `release/` as history (never upload them).
