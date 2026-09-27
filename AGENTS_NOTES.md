@@ -4132,3 +4132,39 @@ lock returns whenever the harness re-reads the tree: when it does, build with
 `--config.directories.output=<scratch>` and copy ONLY the four artifacts into `release/` (the approved
 deviation), and clean any orphaned `release/win-unpacked.tmp` - it trips the conventions gate as a dev file
 under `release/`.
+
+## 2026-09-27: Release 1.40.1 (PATCH) - deletes must actually delete, and a clamp can collide
+
+Release 1.40.1 is published: https://github.com/tanzimtipu/tflex-releases/releases/tag/v1.40.1 with all four
+assets, and the public feed verifies (`version: 1.40.1`, sha512 `KtAZ7JPO...`, size 171,916,372). Commits:
+`cfbe39e` (the fixes, 18 files), `47b6481` (notes), `5c32bd2` (bump), tag `v1.40.1`. Gates: `verify:full`
+448 files / **5768 tests**; the packaged canonical spec 9/9; the packaged phase48 spec 3/3.
+
+**Lesson 1 - a tombstone row is not a delete, and the user reads the TABLE.** The operator deleted signatures,
+synced, and still saw them in `public.user_signatures`. The sync was working exactly as designed: it
+soft-deleted (set `deleted_at`) precisely so a second device could converge - and the diagnosis (read-only
+query) found **15 rows all carrying `deleted_at`**, i.e. the tombstones HAD reached the cloud. The design was
+the bug from the user's point of view. Rule: **the cloud must not keep a row the user deleted; a tombstone
+belongs on the DEVICE.** The fix hard-deletes the remote row and keeps a device-local `signatureTombstones`
+map (id -> deletedAt, 90-day TTL) that (a) ignores and re-deletes a stale pull carrying the id, (b) cleans
+legacy `deleted_at` rows as they are pulled, and (c) treats remote ABSENCE as another device's delete so an
+offline device converges without resurrecting. Keep this shape for any future per-user record.
+
+**Lesson 2 - clamping one control can collide with another control that assumed the old position.** The Phase
+48 clamp (which fixed a genuine out-of-view defect the operator reported) flipped the annotation action bar
+above an annotation near the page's bottom edge - and the COMMENT BOX, which had always assumed the bar sat
+BELOW (`barTop = ring.bottom + 4`), then landed exactly on top of it, making Delete unclickable for 4 of 5
+bottom-edge cases (DEF-366, found by the gate). Rule: when two chrome elements are positioned relative to the
+same anchor, derive BOTH from ONE shared box (the fix exposes `selectionActionBarBox(...)` and places the card
+from it) - never let two independent placement functions infer each other's position. The same audit also
+caught DEF-367: the signature bar used a 32px constant while rendering 41.1px, so it hung 6.4px past the page
+edge - measure the real box, never a stale constant.
+
+**Lesson 3 (process, now contract) - PATCH for fixes.** The operator corrected the version policy:
+`1.39.0 -> 1.40.0` for a fix batch should have been `1.39.1`. The standing rule is now recorded in
+REQUIREMENTS "Standing standards": **fixes take a PATCH bump, features a MINOR, breaking changes a MAJOR** -
+never a minor for a fix batch. 1.40.1 follows it.
+
+**Also verified by the gate:** the annotation control audit covered 10 annotation types at four page edges and
+two zoom levels (8 offenders fixed), the comment box now opens on SELECTION rather than on creation (text,
+note and rectangle verified), and `verify:full` picked up DEF-366/367 as new defects rather than regressions.
