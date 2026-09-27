@@ -8,9 +8,16 @@
          sign-in returns in the user's `image` field. Any future avatar host
          (for example the app's own storage bucket) must be added here
          explicitly - never by relaxing img-src to https:. -->
+    <!-- Phase 45 (item A) - connect-src must permit the app's OWN backend.
+         Before this line the renderer could not make ANY network request, so
+         the Neon auth SDK's fetch was blocked by the CSP and the failure was
+         misreported as "you appear to be offline". The scope is ONE trusted
+         provider - https://*.neon.tech - which covers the auth host, the Data
+         API host and the Function host on every branch. It is NOT widened to
+         https: generally; add any future provider host explicitly here. -->
     <meta
       http-equiv="Content-Security-Policy"
-      content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://lh3.googleusercontent.com; font-src 'self' data:; worker-src 'self' blob:; connect-src 'self' blob: data:; object-src 'self' blob:;"
+      content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://lh3.googleusercontent.com; font-src 'self' data:; worker-src 'self' blob:; connect-src 'self' blob: data: https://*.neon.tech; object-src 'self' blob:;"
     />
     <title>TFlex</title>
   </head>

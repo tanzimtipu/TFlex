@@ -186,7 +186,7 @@ export function StampDialog(
           dialogRef.current = el;
           drag.windowRef(el);
         }}
-        className={drag.dragging ? "modal-dialog dialog modal-dialog-dragging" : "modal-dialog dialog"}
+        className={drag.dragging ? "modal-dialog dialog modal-dialog-dragging modal-dialog-tool" : "modal-dialog dialog modal-dialog-tool"}
         onClick={(e): void => e.stopPropagation()}
         // DEF-147 — the dialog is the drag handle (whole-window
         // chrome). stopPropagation keeps the press from reaching

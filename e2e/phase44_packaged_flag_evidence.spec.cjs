@@ -87,7 +87,7 @@ test('packaged FRESH profile: account section SHOWS by default, zero accounts tr
     const version = await app.evaluate(({ app: a }) => a.getVersion());
     const execPath = await app.evaluate(() => process.execPath);
     console.log(`[p44-evidence] version=${version} execPath=${execPath}`);
-    expect(version, 'packaged build version').toBe('1.37.0');
+    expect(version, 'packaged build version').toBe('1.38.0');
     expect(execPath.toLowerCase(), 'launched the packaged exe').toContain('win-unpacked');
 
     await page.waitForSelector('.app', { timeout: 30000 });

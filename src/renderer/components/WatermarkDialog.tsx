@@ -47,12 +47,33 @@ const POSITION_SLOTS: WatermarkPosition[] = [
   "bottom-right",
 ];
 
-/** Frame width of the live preview in px. The frame keeps the
+/** Frame width of the live preview in px. The frame keeps a
  *  Letter-page aspect (612x792 pt), so 1 pt maps to
  *  PREVIEW_FRAME_W / 612 px. */
 const PREVIEW_FRAME_W = 150;
 const PREVIEW_FRAME_H = Math.round((PREVIEW_FRAME_W * 792) / 612);
 const PT_TO_PREVIEW_PX = PREVIEW_FRAME_W / 612;
+
+/** Phase 45 (item 7) — the sane bounds for an explicit watermark placement, in
+ *  PDF points (top-left origin). PDF user space is capped at 14400 units (200
+ *  inches); the engine itself accepts any finite signed value
+ *  (`normalizeWatermarkSettings`: x/y either present -> both required, finite),
+ *  so the dialog screens out the obviously-wrong (blank, NaN, out-of-page)
+ *  input before the payload reaches the engine. */
+export const MIN_WATERMARK_COORD = 0;
+export const MAX_WATERMARK_COORD = 14400;
+
+/** Parse one custom coordinate input. Returns null when the field is blank or
+ *  not a finite number inside the sane bounds, so the caller reports the error. */
+export function parseWatermarkCoord(raw: string): number | null {
+  const trimmed = raw.trim();
+  if (trimmed === "") return null;
+  const n = Number(trimmed);
+  if (!Number.isFinite(n) || n < MIN_WATERMARK_COORD || n > MAX_WATERMARK_COORD) {
+    return null;
+  }
+  return n;
+}
 
 /** Map the three bundled standard fonts to the closest CSS family for
  *  the live preview (the engine uses the pdf-lib standard fonts). */
@@ -178,6 +199,7 @@ export function WatermarkDialog(props: WatermarkDialogProps): ReactElement {
   const [color, setColor] = useState<EditColor>(DEFAULT_COLOR);
   const [opacity, setOpacity] = useState(0.5);
   const [position, setPosition] = useState<WatermarkPosition>("center");
+  const [customXY, setCustomXY] = useState(false);
   const [xInput, setXInput] = useState("");
   const [yInput, setYInput] = useState("");
   const [tile, setTile] = useState(false);
@@ -209,6 +231,7 @@ export function WatermarkDialog(props: WatermarkDialogProps): ReactElement {
     setColor(DEFAULT_COLOR);
     setOpacity(0.5);
     setPosition("center");
+    setCustomXY(false);
     setXInput("");
     setYInput("");
     setTile(false);
@@ -277,6 +300,23 @@ export function WatermarkDialog(props: WatermarkDialogProps): ReactElement {
     })();
   };
 
+  /** Phase 45 (item 7) — ticking "Custom position (X, Y)" disables the
+   *  predefined grid (visibly disabled, never hidden) and enables the two
+   *  coordinate inputs. Tiling and an explicit placement are mutually
+   *  exclusive, so ticking custom clears tiling. `position` is never cleared,
+   *  so unticking restores the previously selected grid slot. */
+  const onToggleCustomXY = (checked: boolean): void => {
+    setCustomXY(checked);
+    if (checked) {
+      setTile(false);
+      // Seed a neutral 1-inch (72pt) placement so the ticked state is
+      // immediately valid and previewable instead of blank fields.
+      setXInput((v): string => (v.trim() === "" ? "72" : v));
+      setYInput((v): string => (v.trim() === "" ? "72" : v));
+      setError(null);
+    }
+  };
+
   const onConfirmClick = (): void => {
     setError(null);
     if (type === "text" && text.trim().length === 0) {
@@ -316,22 +356,21 @@ export function WatermarkDialog(props: WatermarkDialogProps): ReactElement {
     if (tile) {
       settings.tile = true;
       // Position and explicit x/y are ignored by the engine when tiling.
-    } else {
-      const x = xInput.trim() === "" ? null : Number(xInput);
-      const y = yInput.trim() === "" ? null : Number(yInput);
-      if (x !== null && y !== null) {
-        if (!Number.isFinite(x) || !Number.isFinite(y)) {
-          setError("The X and Y coordinates must be numbers (PDF points).");
-          return;
-        }
-        settings.x = x;
-        settings.y = y;
-      } else if (x !== null || y !== null) {
-        setError("Provide both an X and a Y coordinate (or leave both blank to use a grid slot).");
+    } else if (customXY) {
+      // Phase 45 (item 7) — the tick is the ONLY source of explicit coords:
+      // both are required and must be finite points inside the sane bounds.
+      const x = parseWatermarkCoord(xInput);
+      const y = parseWatermarkCoord(yInput);
+      if (x === null || y === null) {
+        setError(
+          `The custom X and Y must be numbers between ${MIN_WATERMARK_COORD} and ${MAX_WATERMARK_COORD} points.`,
+        );
         return;
-      } else {
-        settings.position = position;
       }
+      settings.x = x;
+      settings.y = y;
+    } else {
+      settings.position = position;
     }
     if (type === "text") {
       settings.text = text.trim();
@@ -365,7 +404,7 @@ export function WatermarkDialog(props: WatermarkDialogProps): ReactElement {
               dialogRef.current = el;
               drag.windowRef(el);
             }}
-            className={drag.dragging ? "modal-dialog dialog modal-dialog-dragging" : "modal-dialog dialog"}
+            className={drag.dragging ? "modal-dialog dialog modal-dialog-dragging modal-dialog-tool" : "modal-dialog dialog modal-dialog-tool"}
             onClick={(e): void => e.stopPropagation()}
             onPointerDown={(e): void => {
               e.stopPropagation();
@@ -395,6 +434,13 @@ export function WatermarkDialog(props: WatermarkDialogProps): ReactElement {
                 Overlay text or an image across the selected pages. The
                 watermark is baked into the page content (undo removes it).
               </p>
+
+              {/* Phase 45 item 6 — two columns so the dialog reads square
+                  instead of a tall slab: fields on the left, live preview
+                  and the applied list on the right. Collapses to one column
+                  when the box is narrow. */}
+              <div className="watermark-cols">
+              <div className="watermark-col-fields">
 
               <fieldset className="modal-position">
                 <legend>Content</legend>
@@ -561,6 +607,19 @@ export function WatermarkDialog(props: WatermarkDialogProps): ReactElement {
 
               <fieldset className="modal-position">
                 <legend>Position</legend>
+                {/* Phase 45 (item 7) — the custom-position tick sits WITH the
+                    grid: ticking it disables (dims, never hides) the nine
+                    predefined slots and enables the X/Y inputs. Unticking
+                    restores the grid and its remembered selection. */}
+                <label className="watermark-check">
+                  <input
+                    type="checkbox"
+                    checked={customXY}
+                    onChange={(e): void => onToggleCustomXY(e.target.checked)}
+                    data-watermark-custom-xy
+                  />
+                  <span>Custom position (X, Y)</span>
+                </label>
                 <div className="watermark-position-grid" role="group" aria-label="Grid position">
                   {POSITION_SLOTS.map((slot) => (
                     <button
@@ -570,7 +629,8 @@ export function WatermarkDialog(props: WatermarkDialogProps): ReactElement {
                       onClick={(): void => setPosition(slot)}
                       aria-pressed={position === slot}
                       aria-label={slot}
-                      title={slot}
+                      title={customXY ? "Disabled while Custom position (X, Y) is ticked" : slot}
+                      disabled={customXY}
                       data-watermark-position={slot}
                     >
                       <span className="watermark-slot-dot" />
@@ -579,21 +639,29 @@ export function WatermarkDialog(props: WatermarkDialogProps): ReactElement {
                 </div>
                 <div className="modal-row">
                   <label className="modal-field">
-                    <span>X (pt, blank = grid slot)</span>
+                    <span>X (pt)</span>
                     <input
                       className="modal-input"
                       type="number"
+                      min={MIN_WATERMARK_COORD}
+                      max={MAX_WATERMARK_COORD}
+                      step={1}
                       value={xInput}
+                      disabled={!customXY}
                       onChange={(e): void => setXInput(e.target.value)}
                       data-watermark-x
                     />
                   </label>
                   <label className="modal-field">
-                    <span>Y (pt, blank = grid slot)</span>
+                    <span>Y (pt)</span>
                     <input
                       className="modal-input"
                       type="number"
+                      min={MIN_WATERMARK_COORD}
+                      max={MAX_WATERMARK_COORD}
+                      step={1}
                       value={yInput}
+                      disabled={!customXY}
                       onChange={(e): void => setYInput(e.target.value)}
                       data-watermark-y
                     />
@@ -603,11 +671,18 @@ export function WatermarkDialog(props: WatermarkDialogProps): ReactElement {
                       type="checkbox"
                       checked={tile}
                       onChange={(e): void => setTile(e.target.checked)}
+                      disabled={customXY}
                       data-watermark-tile
                     />
                     <span>Tile across the page</span>
                   </label>
                 </div>
+                {customXY && (
+                  <span className="modal-hint" data-watermark-custom-hint>
+                    The preview places the watermark's top-left corner at X, Y
+                    (measured from the page's top-left).
+                  </span>
+                )}
               </fieldset>
 
               <fieldset className="modal-position">
@@ -649,6 +724,8 @@ export function WatermarkDialog(props: WatermarkDialogProps): ReactElement {
                 </div>
               </fieldset>
 
+              </div>
+              <div className="watermark-col-side">
               <section className="watermark-preview-wrap" aria-label="Watermark preview">
                 <header className="watermark-preview-header">
                   <span className="stamp-preview-title">Preview</span>
@@ -663,6 +740,9 @@ export function WatermarkDialog(props: WatermarkDialogProps): ReactElement {
                     color={color}
                     opacity={opacity}
                     position={position}
+                    customXY={customXY}
+                    customX={parseWatermarkCoord(xInput)}
+                    customY={parseWatermarkCoord(yInput)}
                     tile={tile}
                     imageUrl={imageUrl}
                   />
@@ -708,6 +788,8 @@ export function WatermarkDialog(props: WatermarkDialogProps): ReactElement {
                   </span>
                 </section>
               )}
+              </div>
+              </div>
             </div>
             <div className="modal-footer">
               <button type="button" className="btn btn-secondary" onClick={onClose}>
@@ -743,6 +825,11 @@ function WatermarkPreview(props: {
   color: EditColor;
   opacity: number;
   position: WatermarkPosition;
+  /** Phase 45 (item 7) — explicit placement mode + values, or null when the
+   *  field is blank / invalid (the grid slot then drives the preview). */
+  customXY: boolean;
+  customX: number | null;
+  customY: number | null;
   tile: boolean;
   imageUrl: string | null;
 }): ReactElement {
@@ -756,6 +843,9 @@ function WatermarkPreview(props: {
     color,
     opacity,
     position,
+    customXY,
+    customX,
+    customY,
     tile,
     imageUrl,
   } = props;
@@ -830,13 +920,19 @@ function WatermarkPreview(props: {
     );
   }
 
+  const customPlaced = customXY && customX !== null && customY !== null;
+
   return (
     <div
       className="watermark-preview-frame"
       style={{ width: PREVIEW_FRAME_W, height: PREVIEW_FRAME_H }}
       data-watermark-preview="single"
     >
-      {renderContent(slotStyle(position, {}))}
+      {renderContent(
+        customPlaced
+          ? { left: customX * PT_TO_PREVIEW_PX, top: customY * PT_TO_PREVIEW_PX }
+          : slotStyle(position, {}),
+      )}
     </div>
   );
 }

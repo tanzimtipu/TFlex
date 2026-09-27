@@ -250,6 +250,14 @@ export const IPC = {
   // resolves `{ authBaseUrl: string | null; configured: boolean }`; it never
   // throws and never returns the Data API URL, a token or a secret.
   accountsGetConfig: "accounts:getConfig",
+  // Phase 45 — main-side clipboard image reader. The renderer's async
+  // clipboard API cannot see a FILE copied in Explorer (the CF_HDROP /
+  // text/uri-list flavour) because the renderer has no `fs`. This channel
+  // (invoke, no payload) resolves the best available clipboard image from
+  // the native clipboard image OR a copied image file, and always resolves a
+  // typed `ClipboardImageResult` — it never throws. Main only, read-only:
+  // it never writes to disk.
+  clipboardReadImage: "clipboard:readImage",
 } as const;
 
 /** Result of `signatures:save` and `signatures:list`. The renderer treats
@@ -262,6 +270,27 @@ export type SavedSignaturesResult = SavedSignature[];
 export interface WindowMinimizedChange {
   minimized: boolean;
 }
+
+/** Phase 45 — MIME types `clipboard:readImage` can return. Only the two the
+ *  engine's "Create from clipboard" path can consume, so a copied file whose
+ *  magic bytes are some other image type is reported as unreadable rather
+ *  than returned with a mime the renderer cannot use. */
+export type ClipboardImageMime = "image/png" | "image/jpeg";
+
+/** Phase 45 — why `clipboard:readImage` could not produce an image.
+ *  `empty`: the clipboard held no usable content at all (nothing copied).
+ *  `no-image`: the clipboard held content (text, or a copied file list with
+ *  no image-extension path) but no image. `too-large`: an image was found
+ *  but exceeded the size cap. `unreadable`: an image path was found but
+ *  could not be stat'd/read, or its magic bytes were not PNG/JPEG. */
+export type ClipboardImageReason = "empty" | "no-image" | "too-large" | "unreadable";
+
+/** Phase 45 — result of `clipboard:readImage`. `ok: true` carries the raw
+ *  image bytes and the sniffed MIME; `ok: false` carries a non-throwing
+ *  reason. The handler never rejects. */
+export type ClipboardImageResult =
+  | { ok: true; bytes: Uint8Array; mime: ClipboardImageMime }
+  | { ok: false; reason: ClipboardImageReason };
 
 /** Phase 9 — engine surface exposed to the renderer. Each method
  *  routes over the matching `engine:*` IPC channel through preload.
@@ -725,6 +754,17 @@ setEnabled(state: import("./types").MenuEnabledState): void;
    */
   webUtils?: {
     getPathForFile(file: File): string;
+  };
+  /**
+   * Phase 45 — main-side clipboard image reader. `readImage()` (invoke, no
+   * payload) resolves the best available clipboard image — the native
+   * clipboard image, or an image FILE copied in Explorer (CF_HDROP /
+   * text/uri-list) — as `ClipboardImageResult`. It never rejects: an absent
+   * or unusable image resolves `{ ok: false, reason }`. Optional so a preload
+   * without the bridge degrades gracefully (jsdom tests, older builds).
+   */
+  clipboard?: {
+    readImage(): Promise<ClipboardImageResult>;
   };
   /**
    * Phase 35 — subscribe to an OS file-open request pushed by main

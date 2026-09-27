@@ -164,7 +164,7 @@ export function MergeDialog(props: MergeDialogProps): ReactElement | null {
           data-picking={picking ? "true" : "false"}
         >
       <TfDialog
-        className="modal-dialog dialog merge-dialog"
+        className="modal-dialog dialog merge-dialog modal-dialog-tool"
         ref={dialogRef}
         onClick={(e): void => e.stopPropagation()}
         role="dialog"

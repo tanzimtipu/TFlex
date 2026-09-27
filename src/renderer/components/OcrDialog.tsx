@@ -420,7 +420,7 @@ export function OcrDialog(props: OcrDialogProps): ReactElement | null {
       {open && (
         <TfBackdrop className="modal-backdrop" {...backdrop}>
       <TfDialog
-        className="modal-dialog dialog ocr-dialog"
+        className="modal-dialog dialog ocr-dialog modal-dialog-tool"
         ref={dialogRef}
         onClick={(e): void => e.stopPropagation()}
         role="dialog"

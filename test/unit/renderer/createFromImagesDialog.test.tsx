@@ -2,11 +2,16 @@
 // React 19 needs this flag set before importing react-dom/client so
 // that `act` recognises the test env and stops spamming stderr.
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import {
   CreateFromImagesDialog,
+  CLIPBOARD_NO_IMAGE_MESSAGE,
+  CLIPBOARD_EMPTY_MESSAGE,
+  CLIPBOARD_TOO_LARGE_MESSAGE,
+  CLIPBOARD_UNREADABLE_MESSAGE,
+  clipboardReasonMessage,
   DEFAULT_CREATE_IMAGE_QUALITY,
   clampCreateImageQuality,
 } from "../../../src/renderer/components/CreateFromImagesDialog";
@@ -48,6 +53,7 @@ interface RenderArgs {
   onConfirm?: (c: { files: File[]; quality: number }) => void;
   onQualityChange?: (q: number) => void;
   onClose?: () => void;
+  readClipboard?: () => Promise<Uint8Array | string | null | { error: string }>;
 }
 
 function renderDialog(args: RenderArgs = {}): {
@@ -65,6 +71,7 @@ function renderDialog(args: RenderArgs = {}): {
         initialQuality={args.initialQuality ?? DEFAULT_CREATE_IMAGE_QUALITY}
         onQualityChange={args.onQualityChange}
         onConfirm={args.onConfirm ?? ((): void => undefined)}
+        readClipboard={args.readClipboard}
         onClose={args.onClose ?? ((): void => undefined)}
       />,
     );
@@ -79,6 +86,25 @@ function renderDialog(args: RenderArgs = {}): {
       container.remove();
     },
   };
+}
+
+/** A PNG signature followed by filler; enough for the dialog (it only
+ *  sniffs the magic bytes, never decodes in jsdom). */
+function pngBytes(fill = 0): Uint8Array {
+  return new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, fill]);
+}
+
+/** Drive the dialog's clipboard button and flush the async handler. */
+async function clickClipboard(container: HTMLElement): Promise<void> {
+  const button = container.querySelector<HTMLButtonElement>(
+    "[data-create-from-clipboard]",
+  );
+  expect(button).not.toBeNull();
+  await act(async (): Promise<void> => {
+    button?.click();
+    // Let the awaited readClipboard() + state commit settle.
+    await Promise.resolve();
+  });
 }
 
 describe("CreateFromImagesDialog — render contract", () => {
@@ -241,5 +267,243 @@ describe("clampCreateImageQuality — boundary clamp (0..1 fraction)", () => {
     expect(clampCreateImageQuality(0)).toBe(0);
     expect(clampCreateImageQuality(1)).toBe(1);
     expect(clampCreateImageQuality(0.85)).toBe(0.85);
+  });
+});
+
+// Phase 45 item 1 — the clipboard path. The dialog must INSERT a copied
+// image into the same list the picker feeds (with a preview), and must
+// refuse plain text with a clear, non-blocking message instead of
+// synthesising a text PDF.
+describe("CreateFromImagesDialog — clipboard image (Phase 45 item 1)", () => {
+  const realCreate = URL.createObjectURL;
+  const realRevoke = URL.revokeObjectURL;
+
+  beforeEach((): void => {
+    // jsdom lacks object URLs; stub them so ImageThumb takes its real
+    // (non-empty) branch and we can assert the rendered src + revoke.
+    (URL as unknown as { createObjectURL: (f: Blob) => string }).createObjectURL = vi.fn(
+      () => "blob:clip-test",
+    ) as unknown as (f: Blob) => string;
+    (URL as unknown as { revokeObjectURL: (u: string) => void }).revokeObjectURL = vi.fn();
+  });
+
+  afterEach((): void => {
+    (URL as unknown as { createObjectURL: unknown }).createObjectURL = realCreate;
+    (URL as unknown as { revokeObjectURL: unknown }).revokeObjectURL = realRevoke;
+  });
+
+  it("renders the clipboard button only when the host supplies the reader", () => {
+    const without = renderDialog();
+    expect(without.container.querySelector("[data-create-from-clipboard]")).toBeNull();
+    without.cleanup();
+
+    const withReader = renderDialog({ readClipboard: async () => null });
+    expect(
+      withReader.container.querySelector("[data-create-from-clipboard]"),
+    ).not.toBeNull();
+    withReader.cleanup();
+  });
+
+  it("inserts a copied PNG as a list item with a rendered preview", async () => {
+    const { container, cleanup } = renderDialog({
+      readClipboard: async () => pngBytes(),
+    });
+    await clickClipboard(container);
+
+    expect(container.querySelectorAll("[data-create-image-row]").length).toBe(1);
+    const name = container.querySelector(".create-image-name");
+    expect(name?.textContent).toBe("Clipboard image 1.png");
+    // The actual preview element the operator said was missing.
+    const thumb = container.querySelector<HTMLImageElement>("[data-create-thumb]");
+    expect(thumb).not.toBeNull();
+    expect(thumb?.src).toBe("blob:clip-test");
+    // Confirm is now enabled (one image in the list).
+    const confirm = container.querySelector<HTMLButtonElement>("[data-create-confirm]");
+    expect(confirm?.disabled).toBe(false);
+    cleanup();
+  });
+
+  it("labels a clipboard JPEG by its magic bytes, not always .png", async () => {
+    const jpeg = new Uint8Array([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10]);
+    const { container, cleanup } = renderDialog({
+      readClipboard: async () => jpeg,
+    });
+    await clickClipboard(container);
+    expect(container.querySelector(".create-image-name")?.textContent).toBe(
+      "Clipboard image 1.jpg",
+    );
+    cleanup();
+  });
+
+  it("numbers successive clipboard images so they do not collide", async () => {
+    const { container, cleanup } = renderDialog({
+      readClipboard: async () => pngBytes(),
+    });
+    await clickClipboard(container);
+    await clickClipboard(container);
+    const names = [...container.querySelectorAll(".create-image-name")].map(
+      (n) => n.textContent,
+    );
+    expect(names).toEqual(["Clipboard image 1.png", "Clipboard image 2.png"]);
+    expect(container.querySelectorAll("[data-create-image-row]").length).toBe(2);
+    cleanup();
+  });
+
+  it("revokes the preview object URL when a row is removed", async () => {
+    const { container, cleanup } = renderDialog({
+      readClipboard: async () => pngBytes(),
+    });
+    await clickClipboard(container);
+    const remove = container.querySelector<HTMLButtonElement>("[data-create-remove='0']");
+    await act(async (): Promise<void> => {
+      remove?.click();
+      await Promise.resolve();
+    });
+    expect(container.querySelectorAll("[data-create-image-row]").length).toBe(0);
+    expect(URL.revokeObjectURL).toHaveBeenCalledWith("blob:clip-test");
+    cleanup();
+  });
+
+  it("refuses plain text with the clear message and creates nothing", async () => {
+    const onConfirm = vi.fn();
+    const { container, cleanup } = renderDialog({
+      onConfirm,
+      readClipboard: async () => "just some copied text",
+    });
+    await clickClipboard(container);
+
+    const alert = container.querySelector(".modal-status[role='alert']");
+    expect(alert?.textContent).toBe(CLIPBOARD_NO_IMAGE_MESSAGE);
+    expect(container.querySelectorAll("[data-create-image-row]").length).toBe(0);
+    const confirm = container.querySelector<HTMLButtonElement>("[data-create-confirm]");
+    expect(confirm?.disabled).toBe(true);
+    expect(onConfirm).not.toHaveBeenCalled();
+    cleanup();
+  });
+
+  it("reports an empty clipboard without creating anything", async () => {
+    const { container, cleanup } = renderDialog({ readClipboard: async () => null });
+    await clickClipboard(container);
+    expect(
+      container.querySelector(".modal-status[role='alert']")?.textContent,
+    ).toBe("Clipboard is empty.");
+    expect(container.querySelectorAll("[data-create-image-row]").length).toBe(0);
+    cleanup();
+  });
+
+  it("surfaces a reader error verbatim", async () => {
+    const { container, cleanup } = renderDialog({
+      readClipboard: async () => ({ error: "Could not read clipboard: denied" }),
+    });
+    await clickClipboard(container);
+    expect(
+      container.querySelector(".modal-status[role='alert']")?.textContent,
+    ).toBe("Could not read clipboard: denied");
+    cleanup();
+  });
+});
+
+// Phase 45 item 2 — the main-side clipboard channel is the PRIMARY path (it
+// also sees an image FILE copied in Explorer, which the async web clipboard
+// cannot); the renderer reader is only the fallback for an older preload. Each
+// of the channel's four failure reasons maps to a clear, non-blocking message.
+describe("CreateFromImagesDialog — clipboard routing (Phase 45 item 2)", () => {
+  const realCreate = URL.createObjectURL;
+  const realRevoke = URL.revokeObjectURL;
+  const globalWindow = window as unknown as { tflex?: unknown };
+
+  type Reason = "empty" | "no-image" | "too-large" | "unreadable";
+  type BridgeResult =
+    | { ok: true; bytes: Uint8Array; mime: "image/png" | "image/jpeg" }
+    | { ok: false; reason: Reason };
+
+  function setClipboardBridge(readImage: () => Promise<BridgeResult>): void {
+    globalWindow.tflex = { clipboard: { readImage } };
+  }
+
+  beforeEach((): void => {
+    (URL as unknown as { createObjectURL: (f: Blob) => string }).createObjectURL = vi.fn(
+      () => "blob:clip-test",
+    ) as unknown as (f: Blob) => string;
+    (URL as unknown as { revokeObjectURL: (u: string) => void }).revokeObjectURL = vi.fn();
+  });
+
+  afterEach((): void => {
+    delete globalWindow.tflex;
+    (URL as unknown as { createObjectURL: unknown }).createObjectURL = realCreate;
+    (URL as unknown as { revokeObjectURL: unknown }).revokeObjectURL = realRevoke;
+  });
+
+  it("offers the button from the channel alone, with no fallback reader", () => {
+    setClipboardBridge(async () => ({ ok: false, reason: "empty" }));
+    const { container, cleanup } = renderDialog();
+    expect(container.querySelector("[data-create-from-clipboard]")).not.toBeNull();
+    cleanup();
+  });
+
+  it("PRIMARY: inserts an image FILE read by the channel (JPEG magic bytes)", async () => {
+    const jpeg = new Uint8Array([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10]);
+    setClipboardBridge(async () => ({ ok: true, bytes: jpeg, mime: "image/jpeg" }));
+    const fallback = vi.fn(async () => pngBytes());
+    const { container, cleanup } = renderDialog({ readClipboard: fallback });
+    await clickClipboard(container);
+
+    expect(container.querySelectorAll("[data-create-image-row]").length).toBe(1);
+    expect(container.querySelector(".create-image-name")?.textContent).toBe(
+      "Clipboard image 1.jpg",
+    );
+    expect(container.querySelector("[data-create-thumb]")).not.toBeNull();
+    // The channel covers the case, so the fallback is never consulted.
+    expect(fallback).not.toHaveBeenCalled();
+    cleanup();
+  });
+
+  it("FALLBACK: uses the renderer reader when no channel is exposed", async () => {
+    const { container, cleanup } = renderDialog({ readClipboard: async () => pngBytes() });
+    await clickClipboard(container);
+    expect(container.querySelector(".create-image-name")?.textContent).toBe(
+      "Clipboard image 1.png",
+    );
+    cleanup();
+  });
+
+  it("does NOT fall back when the channel answers no-image", async () => {
+    setClipboardBridge(async () => ({ ok: false, reason: "no-image" }));
+    const fallback = vi.fn(async () => pngBytes());
+    const { container, cleanup } = renderDialog({ readClipboard: fallback });
+    await clickClipboard(container);
+    expect(container.querySelector(".modal-status[role='alert']")?.textContent).toBe(
+      CLIPBOARD_NO_IMAGE_MESSAGE,
+    );
+    expect(container.querySelectorAll("[data-create-image-row]").length).toBe(0);
+    expect(fallback).not.toHaveBeenCalled();
+    cleanup();
+  });
+
+  it("maps all four channel reasons to their non-blocking messages", async () => {
+    const cases: ReadonlyArray<readonly [Reason, string]> = [
+      ["empty", CLIPBOARD_EMPTY_MESSAGE],
+      ["no-image", CLIPBOARD_NO_IMAGE_MESSAGE],
+      ["too-large", CLIPBOARD_TOO_LARGE_MESSAGE],
+      ["unreadable", CLIPBOARD_UNREADABLE_MESSAGE],
+    ];
+    for (const [reason, message] of cases) {
+      setClipboardBridge(async () => ({ ok: false, reason }));
+      const { container, cleanup } = renderDialog();
+      await clickClipboard(container);
+      expect(container.querySelector(".modal-status[role='alert']")?.textContent).toBe(message);
+      expect(container.querySelectorAll("[data-create-image-row]").length).toBe(0);
+      expect(
+        container.querySelector<HTMLButtonElement>("[data-create-confirm]")?.disabled,
+      ).toBe(true);
+      cleanup();
+    }
+  });
+
+  it("clipboardReasonMessage covers every reason", () => {
+    expect(clipboardReasonMessage("empty")).toBe(CLIPBOARD_EMPTY_MESSAGE);
+    expect(clipboardReasonMessage("no-image")).toBe(CLIPBOARD_NO_IMAGE_MESSAGE);
+    expect(clipboardReasonMessage("too-large")).toBe(CLIPBOARD_TOO_LARGE_MESSAGE);
+    expect(clipboardReasonMessage("unreadable")).toBe(CLIPBOARD_UNREADABLE_MESSAGE);
   });
 });

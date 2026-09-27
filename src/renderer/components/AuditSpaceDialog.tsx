@@ -132,7 +132,7 @@ export function AuditSpaceDialog(props: AuditSpaceDialogProps): ReactElement | n
       {open && (
         <TfBackdrop className="modal-backdrop" {...backdrop}>
       <TfDialog
-        className="modal-dialog dialog audit-dialog"
+        className="modal-dialog dialog audit-dialog modal-dialog-tool"
         ref={dialogRef}
         onClick={(e): void => e.stopPropagation()}
         role="dialog"

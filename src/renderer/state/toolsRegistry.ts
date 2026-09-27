@@ -1448,7 +1448,7 @@ export function toolsForStage(stage: ToolStage): readonly ToolEntry[] {
  *  switch that turns Edit mode on, so the dock no longer offers that verb. */
 export const DOCK_STAGE_IDS: Readonly<Record<Stage, readonly string[]>> = {
   pages: ['rotate', 'extract', 'insertPages', 'replacePages', 'split', 'delete', 'merge', 'cropPages'],
-  edit: ['editText', 'editImage', 'editTextBox', 'editToolOff', 'recognizeText', 'batchOcr', 'ocrSuspects'],
+  edit: ['editToolOff', 'editText', 'editImage', 'editTextBox', 'recognizeText', 'batchOcr', 'ocrSuspects'],
   review: [
     'annotate',
     'sign',

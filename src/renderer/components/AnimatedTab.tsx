@@ -25,12 +25,17 @@ export interface AnimatedTabProps {
   title: string;
   active: boolean;
   modified: boolean;
+  /** Phase 45 (item 2) — the tab's palette slot from its position in the
+   *  strip (`tabColourSlot(index)`). Paints the per-tab colour identity via
+   *  `data-tab-colour`; optional so a bare harness mount defaults to slot 0
+   *  rather than an undefined colour. */
+  colourSlot?: number;
   onActivate: (id: string) => void;
   onClose: (id: string) => void;
 }
 
 export function AnimatedTab(props: AnimatedTabProps): ReactElement {
-  const { id, title, active, modified, onActivate, onClose } = props;
+  const { id, title, active, modified, colourSlot = 0, onActivate, onClose } = props;
   const variants = useTabVariants();
   const input: TabInput = { id, title, modified };
 
@@ -78,8 +83,16 @@ export function AnimatedTab(props: AnimatedTabProps): ReactElement {
         role="tab"
         aria-selected={active}
         data-tab-id={id}
+        data-tab-colour={colourSlot}
         onMouseDown={onTabMouseDown}
       >
+        {/* Phase 45 (item 2) — the per-tab colour identity. A small filled
+         *  chip at the tab's leading edge, painted from the slot token. It
+         *  is the ONE colour-carrying element, so the tab's TEXT colour (and
+         *  therefore every contrast floor) is untouched by the colour rule —
+         *  the ACTIVE state still reads from the raised surface + accent
+         *  underline + strong text, never from the chip. */}
+        <span className="tab-colour-chip" aria-hidden />
         <span className="tab-title" title={title}>
           <span
             className={

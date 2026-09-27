@@ -45,7 +45,7 @@ const DOCK_LABELS: Record<Stage, string[]> = {
     'Split pages', 'Delete pages', 'Merge PDFs', 'Crop pages',
   ],
   edit: [
-    'Edit text', 'Edit images', 'Add a text box', 'Edit mode off', 'Recognize text (OCR)',
+    'Edit mode off', 'Edit text', 'Edit images', 'Add a text box', 'Recognize text (OCR)',
     'Batch OCR all tabs', 'OCR suspects',
   ],
   review: [

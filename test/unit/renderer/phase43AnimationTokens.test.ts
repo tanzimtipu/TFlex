@@ -173,6 +173,10 @@ const AUDITED_SELECTORS: readonly string[] = [
   ".update-prompt-body",
   ".update-prompt-progress-bar",
   ".tab",
+  // Phase 45 (item 3) — the Multi Mode activation FLIP. The band is armed by
+  // the stage's `data-mode-anim` attribute; listing the stage selector here
+  // means a future hardcoded duration/easing on the pane FLIP fails the audit.
+  ".tab-stage[data-mode-anim]",
   ".command-palette",
   ".command-palette-row",
   ".command-palette-pin-toggle",

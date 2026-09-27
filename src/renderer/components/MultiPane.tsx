@@ -12,7 +12,7 @@
 // the stage; the panes' widths read it, so resizing re-lays-out without
 // re-rendering either DocumentView.
 
-import { useCallback, useLayoutEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import type {
   CSSProperties,
   PointerEvent as ReactPointerEvent,
@@ -21,6 +21,15 @@ import type {
 } from "react";
 import { File, FolderOpen, GripVertical, PanelLeftDashed, X } from "lucide-react";
 import { paneTabId, type MultiModeState, type PaneId } from "../state/multiMode";
+import { useInstantMotion } from "../hooks/useAnimations";
+import { MOTION_DURATION } from "../hooks/motionTokens";
+import {
+  MODE_ANIM_ATTR,
+  applyModeFlip,
+  clearModeFlip,
+  modeFlipDelta,
+  type ModeFlipRect,
+} from "./modeTransition";
 import {
   MIN_PANE_WIDTH_PX,
   MULTI_DOCK_BAND_BASE_PX,
@@ -95,7 +104,7 @@ export function MultiPaneHeader(props: {
 }): ReactElement {
   const { pane, title, pageCount, onClear } = props;
   return (
-    <div className="multi-pane-header" data-pane-header data-pane={pane}>
+    <div className="multi-pane-header anim-bar-reveal" data-pane-header data-pane={pane}>
       <span className="multi-pane-badge" aria-hidden>
         {pane}
       </span>
@@ -128,7 +137,7 @@ export function MultiPaneEmpty(props: {
 }): ReactElement {
   const { pane, options, onPick, onOpen } = props;
   return (
-    <div className="multi-pane-empty">
+    <div className="multi-pane-empty anim-materialize">
       <div className="multi-pane-empty-inner">
         <PanelLeftDashed size={28} aria-hidden className="multi-pane-empty-icon" />
         <p className="multi-pane-empty-title">Pane {pane} is empty</p>
@@ -182,7 +191,7 @@ export function MultiDivider(props: {
   const { onPointerDown, onPointerMove, onPointerUp } = props;
   return (
     <div
-      className="multi-divider"
+      className="multi-divider anim-materialize"
       data-multi-divider
       role="separator"
       aria-orientation="vertical"
@@ -236,6 +245,108 @@ export function DocumentStage(props: DocumentStageProps): ReactElement {
   const [stageWidth, setStageWidth] = useState(0);
 
   const multiOn = multiMode.enabled;
+
+  // Phase 45 (item 3) — the Multi Mode activation FLIP. The pane geometry
+  // changes instantly (keys stay stable, no remount, no per-frame reflow);
+  // this lays a one-band transform-only animation on top, from each pane's
+  // PREVIOUS rect to identity. `useInstantMotion` covers BOTH reduced motion
+  // and the Animations-off setting, so those switch instantly (no attribute,
+  // no FLIP). Geometry is read via offset* (transform-independent), so a
+  // toggle mid-animation still measures the real layout box.
+  const instantMotion = useInstantMotion();
+  const prevModeRectsRef = useRef<
+    Map<string, { rect: ModeFlipRect; pane: PaneId | null; visible: boolean }>
+  >(new Map());
+  const lastMultiOnRef = useRef(multiOn);
+  const modeBandTimerRef = useRef<number | null>(null);
+
+  const paneRect = (el: HTMLElement): ModeFlipRect => ({
+    left: el.offsetLeft,
+    top: el.offsetTop,
+    width: el.offsetWidth,
+    height: el.offsetHeight,
+  });
+
+  // Runs every commit (no dep array): the previous map must hold the last
+  // committed geometry before a toggle reads it as `first`.
+  useLayoutEffect((): void => {
+    const stage = stageRef.current;
+    if (stage === null) return;
+    const changed = lastMultiOnRef.current !== multiOn;
+    lastMultiOnRef.current = multiOn;
+    const panes = Array.from(
+      stage.querySelectorAll<HTMLElement>(".tab-pane[data-pane-tab]"),
+    );
+
+    if (changed) {
+      // Stop any in-flight band so a rapid re-toggle restarts cleanly.
+      if (modeBandTimerRef.current !== null) {
+        window.clearTimeout(modeBandTimerRef.current);
+        modeBandTimerRef.current = null;
+      }
+      stage.removeAttribute(MODE_ANIM_ATTR);
+      if (!instantMotion) {
+        for (const el of panes) {
+          const id = el.dataset.paneTab;
+          if (id === undefined || id === "") continue;
+          if (el.getAttribute("aria-hidden") !== "false") {
+            clearModeFlip(el);
+            continue;
+          }
+          const before = prevModeRectsRef.current.get(id) ?? null;
+          const current = paneRect(el);
+          const pane: PaneId = (el.dataset.pane as PaneId | undefined) ?? before?.pane ?? "A";
+          // A pane that was not on screen before APPEARS (slides in from its
+          // outer edge); one that was visible FLIPs from its previous box.
+          const first = before !== null && before.visible ? before.rect : null;
+          const delta = modeFlipDelta(first, current, pane);
+          if (delta === null) {
+            clearModeFlip(el);
+          } else {
+            applyModeFlip(el, delta.dx, delta.dy);
+          }
+        }
+        // Arm the token-driven band on the stage; the stylesheet turns it into
+        // the `tf-mode-split` animation on every `[data-pane-tab]` pane.
+        stage.setAttribute(MODE_ANIM_ATTR, multiOn ? "in" : "out");
+        modeBandTimerRef.current = window.setTimeout((): void => {
+          modeBandTimerRef.current = null;
+          stage.removeAttribute(MODE_ANIM_ATTR);
+          for (const el of Array.from(
+            stage.querySelectorAll<HTMLElement>(".tab-pane[data-pane-tab]"),
+          )) {
+            clearModeFlip(el);
+          }
+        }, MOTION_DURATION.layout + 60);
+      }
+    }
+
+    const record = new Map<
+      string,
+      { rect: ModeFlipRect; pane: PaneId | null; visible: boolean }
+    >();
+    for (const el of panes) {
+      const id = el.dataset.paneTab;
+      if (id === undefined || id === "") continue;
+      record.set(id, {
+        rect: paneRect(el),
+        pane: (el.dataset.pane as PaneId | undefined) ?? null,
+        visible: el.getAttribute("aria-hidden") === "false",
+      });
+    }
+    prevModeRectsRef.current = record;
+  });
+
+  // Clear a pending band timer on unmount.
+  useEffect((): (() => void) => {
+    return (): void => {
+      if (modeBandTimerRef.current !== null) {
+        window.clearTimeout(modeBandTimerRef.current);
+        modeBandTimerRef.current = null;
+      }
+    };
+  }, []);
+
   // Phase 39 (DEF-349) / Phase 40 (item 1) — the per-pane pill band. The
   // pane's two pills are laid out HORIZONTALLY (page at the pane's left, zoom
   // at its right); when the page column can no longer hold that pair, the pane
@@ -427,6 +538,7 @@ export function DocumentStage(props: DocumentStageProps): ReactElement {
                 key={tab.id}
                 className="tab-pane"
                 data-pane={pane ?? undefined}
+                data-pane-tab={tab.id}
                 data-pane-focused={pane === null ? undefined : focused ? "true" : "false"}
                 style={{ visibility: visible ? "visible" : "hidden", ...pillTokensFor(pane) }}
                 aria-hidden={!visible}
@@ -456,6 +568,7 @@ export function DocumentStage(props: DocumentStageProps): ReactElement {
               key={`empty-${pane}`}
               className="tab-pane"
               data-pane={pane}
+              data-pane-tab={`empty-${pane}`}
               data-pane-empty
               data-pane-focused={multiMode.focused === pane ? "true" : "false"}
               style={{ visibility: "visible" }}

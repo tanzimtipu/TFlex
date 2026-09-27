@@ -1,5 +1,10 @@
 import { contextBridge, ipcRenderer, webUtils } from "electron";
-import { IPC, type SavedSignaturesResult, type WindowMinimizedChange } from "../shared/ipc";
+import {
+  IPC,
+  type ClipboardImageResult,
+  type SavedSignaturesResult,
+  type WindowMinimizedChange,
+} from "../shared/ipc";
 import type {
   AppInfo,
   AppSettings,
@@ -537,6 +542,16 @@ const api = {
   webUtils: {
     getPathForFile(file: File): string {
       return webUtils.getPathForFile(file);
+    },
+  },
+  // Phase 45 — main-side clipboard image reader. The renderer cannot see an
+  // image FILE copied in Explorer (CF_HDROP / text/uri-list) because it has
+  // no `fs`; this bridge asks main, which resolves the native clipboard image
+  // or opens the copied file. Never rejects: an absent image resolves
+  // `{ ok: false, reason }`.
+  clipboard: {
+    readImage(): Promise<ClipboardImageResult> {
+      return ipcRenderer.invoke(IPC.clipboardReadImage);
     },
   },
   engine: engineApi,

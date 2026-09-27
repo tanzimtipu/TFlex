@@ -211,7 +211,7 @@ export function CropPagesDialog(
       {open && (
         <TfBackdrop className="modal-backdrop" {...backdrop} data-crop-pages-dialog>
       <TfDialog
-        className="modal-dialog modal-dialog-wide dialog"
+        className="modal-dialog modal-dialog-wide dialog modal-dialog-tool"
         ref={dialogRef}
         onClick={(e): void => e.stopPropagation()}
         role="dialog"

@@ -266,7 +266,7 @@ export function ExportDialog(props: ExportDialogProps): ReactElement | null {
       {open && (
         <TfBackdrop className="modal-backdrop" {...backdrop}>
       <TfDialog
-        className="modal-dialog dialog"
+        className="modal-dialog dialog modal-dialog-tool"
         ref={dialogRef}
         onClick={(e): void => e.stopPropagation()}
         role="dialog"

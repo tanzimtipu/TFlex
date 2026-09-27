@@ -1855,7 +1855,9 @@ input[type="checkbox"] {
   border-bottom: none;
   border-top-left-radius: var(--radius-2);
   border-top-right-radius: var(--radius-2);
-  background: var(--bg-tab);
+  /* Phase 45 — the 8% per-tab wash (see the palette block below). Falls
+   * back to the old transparent surface when a slot token is absent. */
+  background: color-mix(in srgb, var(--tf-tab-accent, transparent) 8%, var(--bg-tab));
   color: var(--fg-muted);
   font-size: var(--fs-sm);
   cursor: pointer;
@@ -1870,12 +1872,57 @@ input[type="checkbox"] {
     box-shadow var(--motion-normal) var(--ease-out);
 }
 
+/* ===========================================================================
+ * Phase 45 (item 2) — DISTINCT TAB COLOURS.
+ *
+ * Diagnosis: every `.tab` painted `--bg-tab`, which is `transparent` in all
+ * three themes, and the only colour was the shared `--accent` underline on the
+ * ACTIVE tab — so all tabs read identically and the Phase-40 claim never
+ * landed. The fix gives each tab a palette slot from its strip POSITION
+ * (`tabColourSlot`, a fixed 4-entry cycle). Because the cycle wraps by one,
+ * two ADJACENT tabs always land on different slots — including after a close,
+ * where the remaining indices re-flow.
+ *
+ * The colour is carried by the `.tab-colour-chip` (a filled leading chip) and
+ * a WHISPER-soft 8% background wash. The wash is deliberately capped at 8%:
+ * measured against the real header surfaces, the worst-case `--fg-muted`
+ * inactive-text contrast is 5.32:1 (light, over ATTENTION) and 4.70:1 (dark,
+ * over AFFIRMATIVE) — both above the 4.5:1 text floor. The chip itself is a
+ * non-text mark (>= 3:1 against every header surface in every theme). The
+ * ACTIVE tab keeps its raised surface + accent underline + `--fg-strong` text,
+ * so a coloured tab can never read as selected.
+ *
+ * Palette slots (declared semantic tokens; no invented values):
+ *   0 PRIMARY blue | 1 ATTENTION red | 2 AFFIRMATIVE green | 3 NEUTRAL slate
+ * ========================================================================= */
+
+/* Default slot — a tab with no data attribute (bare harness mount) stays
+ * neutral rather than colourless. */
+.tab {
+  --tf-tab-accent: var(--sem-neutral);
+}
+
+.tab[data-tab-colour="0"] { --tf-tab-accent: var(--sem-primary); }
+.tab[data-tab-colour="1"] { --tf-tab-accent: var(--sem-attention); }
+.tab[data-tab-colour="2"] { --tf-tab-accent: var(--sem-affirmative); }
+.tab[data-tab-colour="3"] { --tf-tab-accent: var(--sem-neutral); }
+
+.tab-colour-chip {
+  flex: 0 0 auto;
+  width: 9px;
+  height: 9px;
+  border-radius: var(--radius-1);
+  background: var(--tf-tab-accent);
+}
+
 /* Phase 4 — tab hover uses the shared hover token (dark
  * rgba(255,255,255,0.04), the light mirror in light), exactly like
  * every other interactive surface. No bright tabs: the hover is a
- * whisper, not a highlight. */
+ * whisper, not a highlight.
+ * Phase 45 — the hover wash keeps the tab's OWN hue so colour identity
+ * survives the hover; the text still brightens to `--fg`. */
 .tab:hover {
-  background: var(--bg-hover);
+  background: color-mix(in srgb, var(--tf-tab-accent) 14%, transparent);
   color: var(--fg);
 }
 
@@ -1891,7 +1938,11 @@ input[type="checkbox"] {
 
 .tab-active {
   color: var(--fg-strong);
-  background: var(--bg-tab-active);
+  /* Phase 45 — the active tab keeps its raised surface but carries a
+   * stronger 16% wash of its OWN hue, so the colour identity survives while
+   * the accent underline (::after) remains the selection signal. `--fg-strong`
+   * text over the mixed surface stays far above every contrast floor. */
+  background: color-mix(in srgb, var(--tf-tab-accent, transparent) 16%, var(--bg-tab-active));
   /* Phase 2 — borderless active tab: the old `border-color:
    * var(--border)` drew a full outline around the active tab; the
    * borderless look keeps the 1px transparent frame (reserved space,
@@ -2465,6 +2516,11 @@ input[type="checkbox"] {
   position: relative;
   min-height: 0;
   min-width: 0;
+  /* Phase 45 (item 3) — the Multi Mode activation FLIP translates a pane by
+   * up to a full pane width; the stage clips that travel so a mid-animation
+   * pane can never paint over the side rail or the Inspector. The panes are
+   * absolutely positioned inside the stage, so this clips nothing at rest. */
+  overflow: hidden;
   /* DEF-320 — the stage is the app frame's second column, in the same 1fr row
    * as the rail (the first column is the rail's 44px track; see .app-main). */
   grid-column: 2;
@@ -4752,6 +4808,11 @@ input[type="checkbox"] {
   align-items: center;
   gap: 6px;
   padding: 0 var(--sp-2) 8px;
+  /* Phase 45 (item 5) — a DEFINITE, non-shrinking row. `.thumb-scroller-inner`
+     below it owns all of the column's vertical give (`flex: 1 1 auto` +
+     `min-height: 0`), so this row can never be squeezed to zero and the first
+     thumbnail can never ride up under the Undo control. */
+  flex: 0 0 auto;
 }
 
 .rail-action-btn {
@@ -4768,12 +4829,27 @@ input[type="checkbox"] {
   color: var(--fg-muted);
   font-size: var(--fs-xs);
   cursor: pointer;
+  /* Phase 45 (item 5) — the label stays on ONE line and is clipped by the
+     control's own box. Previously "Undo last change" wrapped to two lines in
+     the 150px Multi Mode strip, and the overflowing line reached down over the
+     first thumbnail's preview. The icon + ellipsized label always fit inside
+     the 24px band, so the control and the thumbnail can never intersect. */
+  white-space: nowrap;
+  overflow: hidden;
   transition:
     background var(--motion-fast) var(--ease-out),
     color var(--motion-fast) var(--ease-out),
     border-color var(--motion-fast) var(--ease-out),
     box-shadow var(--motion-fast) var(--ease-out),
     transform var(--motion-fast) var(--ease-in-out);
+}
+
+/* The label shrinks and ellipsizes instead of wrapping. */
+.rail-action-btn > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .rail-action-btn:hover:not([disabled]) {
@@ -5010,6 +5086,37 @@ input[type="checkbox"] {
  * estate than the standard 460 px. */
 .modal-dialog-wide {
   width: min(720px, calc(100vw - 32px));
+}
+
+/* Phase 45 item 6 — square tool dialogs.
+ *
+ * The operator's complaint: tool windows (Watermark named) render as
+ * tall portrait slabs (~460 x 836 at 1440x900, aspect 0.55) because the
+ * base `.modal-dialog` width is a fixed 460 px while its height is
+ * content-driven up to the viewport. Widening the tool box and capping
+ * its height at the same value turns it into a near-square; the body
+ * owns the vertical scroll when the content genuinely exceeds the box,
+ * exactly like the DEF-219/Phase-40 containment pattern. The small
+ * confirm/alert dialogs keep the base 460 px box, and the `.sheet`
+ * surfaces (Preferences / About / Accounts) already ship 560x640. */
+.modal-dialog.modal-dialog-tool {
+  width: min(620px, calc(100vw - 32px));
+  max-height: min(calc(100vh - 64px), 620px);
+  grid-template-rows: auto minmax(0, 1fr) auto;
+}
+
+/* Wide-by-design tools (Crop / Renumber) keep the 720 px layout but
+ * gain the same height cap so the pair reads landscape-to-square, not
+ * a slab. */
+.modal-dialog.modal-dialog-tool.modal-dialog-wide {
+  width: min(720px, calc(100vw - 32px));
+  max-height: min(calc(100vh - 64px), 680px);
+}
+
+.modal-dialog.modal-dialog-tool > .modal-body {
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
 }
 
 .modal-header {
@@ -9001,12 +9108,26 @@ rect.ann-highlight.ann-preview {
 
 .create-image-row {
   display: grid;
-  grid-template-columns: 28px 1fr 28px;
+  grid-template-columns: 28px 40px minmax(0, 1fr) 28px;
   align-items: center;
   gap: 8px;
   padding: 6px 10px;
   border-bottom: 1px solid var(--border-subtle);
   font-size: var(--fs-sm);
+}
+
+/* Phase 45 item 1 — per-row preview. The source bytes are a real File
+ * (picked or converted from clipboard bytes), so the thumbnail is a
+ * plain object URL; `object-fit: cover` keeps every row the same
+ * height regardless of the image's aspect. */
+.create-image-thumb {
+  width: 36px;
+  height: 36px;
+  object-fit: cover;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-1);
+  background: var(--bg-app);
+  display: block;
 }
 
 .create-image-row:last-child {
@@ -12121,6 +12242,20 @@ rect.ann-highlight.ann-preview {
   background: #ffffff;
 }
 
+/* Phase 45 (item 7) — with "Custom position (X, Y)" ticked the nine predefined
+ * slots are DISABLED, not hidden: they dim in place so the operator can see
+ * them turn off, and the remembered slot comes back the moment the tick is
+ * cleared. The dimming also applies to the active slot, so no grid choice ever
+ * reads as selected while the custom coordinates drive placement. */
+.watermark-slot:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.watermark-slot:disabled:hover {
+  border-color: var(--border);
+}
+
 .watermark-image-name {
   font-size: var(--fs-sm);
   color: var(--fg-strong);
@@ -12248,6 +12383,31 @@ rect.ann-highlight.ann-preview {
  *    inputs flex to the available width instead. */
 [data-watermark-dialog] .modal-position {
   min-width: 0;
+}
+
+/* Phase 45 item 6 — the watermark body's two-column layout. The fields
+ * column flexes; the preview/applied column is fixed to fit the 150 px
+ * preview frame plus its padding. Collapsing to one column below ~700 px
+ * keeps the narrow-window wrapping behaviour DEF-219 fixed intact. */
+.watermark-cols {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 176px;
+  gap: var(--sp-4);
+  align-items: start;
+}
+
+.watermark-col-fields,
+.watermark-col-side {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+}
+
+@media (max-width: 700px) {
+  .watermark-cols {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 
 /* ===========================================================================
@@ -12581,6 +12741,43 @@ rect.ann-highlight.ann-preview {
 
 .tab-stage[data-multi-mode="true"] .tab-pane[data-pane][data-pane-focused="true"] {
   box-shadow: inset 0 0 0 1px var(--accent-soft);
+}
+
+/* ===========================================================================
+ * Phase 45 (item 3) — THE MULTI MODE ACTIVATION ANIMATION.
+ *
+ * Entering and leaving Multi Mode plays ONE transform-only FLIP per pane over
+ * the LAYOUT motion token (`--motion-duration-layout` / `--motion-ease-layout`
+ * — the catalogue's token for "large coordinated layout morphs"; no new token
+ * was needed and no duration/easing is hardcoded). The pane geometry itself
+ * has already changed in one frame (so the divider drag stays 1:1 and nothing
+ * reflows per frame); the FLIP starts each pane at its PREVIOUS position
+ * (`--tf-mode-dx` / `--tf-mode-dy`, written by modeTransition.ts) and animates
+ * to identity. The panes are the SAME mounted elements, the PDF bitmap is only
+ * translated — never recoloured, cross-faded or re-rastered.
+ *
+ * The stage attribute `data-mode-anim` is armed for the band by MultiPane and
+ * is NEVER armed under reduced motion / Animations-off (those switch
+ * instantly). This rule is placed AFTER the `animation: none` in the pane
+ * rule above so it wins the cascade while armed.
+ * ========================================================================= */
+@keyframes tf-mode-split {
+  from { transform: translate(var(--tf-mode-dx, 0px), var(--tf-mode-dy, 0px)); }
+  to   { transform: translate(0, 0); }
+}
+
+.tab-stage[data-mode-anim] .tab-pane[data-pane-tab][aria-hidden="false"] {
+  animation: tf-mode-split var(--motion-duration-layout) var(--motion-ease-layout) both;
+  /* Short-lived: attached only while the band is armed, never at rest. */
+  will-change: transform;
+}
+
+/* Reduced motion: the band is never armed, and this override guarantees the
+ * FLIP keyframe can never paint its `from` transform even if it were. */
+@media (prefers-reduced-motion: reduce) {
+  .tab-stage[data-mode-anim] .tab-pane[data-pane-tab][aria-hidden="false"] {
+    animation: none !important;
+  }
 }
 
 /* ---- per-pane header ---------------------------------------------------- */
@@ -14056,19 +14253,26 @@ cursor: pointer;
   outline-offset: -2px;
 }
 
-/* State 1/2 — the FIRST button carries the stage-primary accent-soft wash.
- * DEF-340 — its ink is the per-theme `--dock-primary-fg` (the accent family
- * tuned to clear 4.5:1 on that wash in all three themes; the plain --accent
- * measured 4.27 / 2.92 / 4.34). The wash itself is unchanged, so the primary
- * verb stays the only accent-filled verb in the dock. */
+/* State 1/2 — the FIRST button is the stage's LEAD command, but it is NOT a
+ * toggle and must never read as "selected". Phase 45 (item 4): the old
+ * accent-soft wash made the leading verb look armed even when the actual
+ * toggle ("Edit mode off") was the selected one — the operator read "Edit text"
+ * as highlighted. The lead verb is now distinguished by INK ONLY (strong, 600
+ * weight, no fill), while the selected state keeps the accent wash + inset ring
+ * (below). So exactly the ARMED tool looks selected; the first verb no longer
+ * does. The wash is reserved for the pressed/selected treatment. */
 .action-dock-verb-primary {
-  background: var(--accent-soft);
-  color: var(--dock-primary-fg, var(--accent));
+  background: transparent;
+  color: var(--fg-strong);
+  font-weight: 600;
 }
 
+/* The lead verb hovers and presses like any other verb (the base
+ * `.action-dock-verb:hover` / `:active` rules supply the surface); this
+ * override only keeps its ink strong rather than re-tinting it. */
 .action-dock-verb-primary:hover:not(:disabled) {
-  background: var(--accent-hover-bg);
-  color: var(--dock-primary-fg, var(--accent));
+  background: var(--bg-hover);
+  color: var(--fg-strong);
 }
 
 .action-dock-verb:disabled {
@@ -15234,12 +15438,22 @@ cursor: pointer;
  * resolve per theme; nothing animates PDF content.
  * ========================================================================== */
 
+/* Phase 45 (item A) - the account sheet is sized to its CONTENT, not a wide
+ * sheet with a narrow form floating in it. The old body was capped at 420px
+ * inside a 560px sheet, which is exactly the dead space the operator reported.
+ * The sheet now shrinks to 440px and the body fills it edge to edge. At the
+ * minimum supported window (640px) the sheet still fits (640 - 64 = 576). */
+.sheet-accounts {
+  width: min(440px, calc(100vw - 64px));
+}
+
 .sheet-body-accounts {
   display: flex;
   flex-direction: column;
   gap: 14px;
-  min-width: 340px;
-  max-width: 420px;
+  width: 100%;
+  min-width: 0;
+  max-width: none;
 }
 
 .accounts-status {
@@ -15483,4 +15697,93 @@ cursor: pointer;
 
 .accounts-signout {
   margin-left: auto;
+}
+
+/* ----- Phase 45 — rebuilt account surface chrome -----
+ * The branded header reuses the app's own "TF" mark + "TFlex" wordmark (the
+ * same treatment the title bar renders), so the surface belongs to TFlex
+ * instead of reading as a bare hosted form. All values are theme tokens; no
+ * colour is hardcoded outside the Google provider mark. */
+
+.accounts-brand {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.accounts-brand-mark {
+  width: 26px;
+  height: 26px;
+  border-radius: 6px;
+  font-size: 12px;
+}
+
+.accounts-brand-text {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.15;
+  min-width: 0;
+}
+
+.accounts-brand-name {
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--fg-strong);
+}
+
+.accounts-brand-sub {
+  font-size: 11.5px;
+  color: var(--fg-muted);
+}
+
+/* Forgot-password affordance: a quiet accent link under the password. */
+.accounts-forgot {
+  align-self: flex-end;
+  margin-top: -8px;
+  padding: 2px 0;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--accent);
+  font: inherit;
+  font-size: 12.5px;
+  cursor: pointer;
+  transition: color var(--motion-duration-fast) var(--motion-ease-standard);
+}
+
+.accounts-forgot:hover {
+  text-decoration: underline;
+}
+
+.accounts-forgot:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
+/* The "or" rule that separates the primary action from the Google button. */
+.accounts-divider {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--fg-faint);
+  font-size: 11.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.accounts-divider::before,
+.accounts-divider::after {
+  content: "";
+  flex: 1 1 auto;
+  height: 1px;
+  background: var(--border-subtle);
+}
+
+/* The inline Google brand mark. NEVER recoloured by the theme: the G keeps
+ * its provider colours in light, dark and frosted alike. */
+.accounts-google-mark {
+  flex: 0 0 auto;
 }

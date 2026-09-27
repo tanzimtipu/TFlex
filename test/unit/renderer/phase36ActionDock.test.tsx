@@ -139,7 +139,7 @@ describe("Phase 36 — ActionDock State 1: stage verbs", () => {
     }
   });
 
-  it("gives the FIRST button the stage-primary accent-soft treatment", () => {
+  it("gives the FIRST button the stage-primary treatment (lead-command class, not a selected look)", () => {
     const { host, unmount } = renderDock({ activeStage: "deliver" });
     try {
       const first = verbs(host, "primary")[0];

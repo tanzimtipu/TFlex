@@ -8,7 +8,7 @@
 import type { AccountsErrorCode } from "../../shared/accounts";
 
 export type AccountsMode = "sign-in" | "sign-up";
-export type AccountsStep = "credentials" | "otp";
+export type AccountsStep = "credentials" | "otp" | "reset-request" | "reset-confirm";
 
 export interface AccountsBanner {
   tone: "error" | "info";
@@ -22,18 +22,27 @@ export interface AccountsMachineState {
   password: string;
   name: string;
   otp: string;
+  /** Phase 45 - the reset code emailed for the forgot-password flow. */
+  resetCode: string;
+  /** Phase 45 - the new password entered on the reset-confirm step. */
+  newPassword: string;
   busy: boolean;
   banner: AccountsBanner | null;
   /** True once a code has been requested for the current email. */
   otpSent: boolean;
+  /** Phase 45 - true once a password-reset code has been requested. */
+  resetSent: boolean;
 }
 
 export type AccountsMachineAction =
   | { type: "set-mode"; mode: AccountsMode }
-  | { type: "set-field"; field: "email" | "password" | "name" | "otp"; value: string }
+  | { type: "set-field"; field: "email" | "password" | "name" | "otp" | "resetCode" | "newPassword"; value: string }
   | { type: "busy"; value: boolean }
   | { type: "back" }
   | { type: "otp-sent" }
+  | { type: "open-reset" }
+  | { type: "reset-sent" }
+  | { type: "reset-done" }
   | { type: "signed-in" }
   | { type: "info"; text: string }
   | { type: "error"; code: AccountsErrorCode }
@@ -46,9 +55,12 @@ export const initialAccountsState: AccountsMachineState = {
   password: "",
   name: "",
   otp: "",
+  resetCode: "",
+  newPassword: "",
   busy: false,
   banner: null,
   otpSent: false,
+  resetSent: false,
 };
 
 /** One clear, non-blocking message per error code. */
@@ -65,6 +77,8 @@ export function messageForError(code: AccountsErrorCode): string {
     case "network-offline":
       return "You appear to be offline. Check your connection and try again.";
     case "server":
+      // Phase 45 - reached with connectivity present (a blocked or refused
+      // request). Deliberately NOT worded as an offline error.
       return "Something went wrong. Try again in a moment.";
   }
 }
@@ -92,7 +106,17 @@ export function accountsReducer(
     case "busy":
       return { ...state, busy: action.value };
     case "back":
-      return { ...state, step: "credentials", otp: "", busy: false, banner: null, otpSent: false };
+      return {
+        ...state,
+        step: "credentials",
+        otp: "",
+        resetCode: "",
+        newPassword: "",
+        busy: false,
+        banner: null,
+        otpSent: false,
+        resetSent: false,
+      };
     case "otp-sent":
       return {
         ...state,
@@ -101,6 +125,34 @@ export function accountsReducer(
         otpSent: true,
         otp: "",
         banner: { tone: "info", text: `We sent a verification code to ${state.email}.` },
+      };
+    case "open-reset":
+      return {
+        ...state,
+        step: "reset-request",
+        busy: false,
+        banner: null,
+        resetSent: false,
+        resetCode: "",
+        newPassword: "",
+      };
+    case "reset-sent":
+      return {
+        ...state,
+        step: "reset-confirm",
+        busy: false,
+        resetSent: true,
+        resetCode: "",
+        banner: { tone: "info", text: `We sent a password reset code to ${state.email}.` },
+      };
+    case "reset-done":
+      // The reset succeeded: return to sign-in with a positive banner, keeping
+      // the email so the user only has to type the new password.
+      return {
+        ...initialAccountsState,
+        mode: state.mode,
+        email: state.email,
+        banner: { tone: "info", text: "Password updated. Sign in with your new password." },
       };
     case "signed-in":
       return { ...initialAccountsState, banner: null };

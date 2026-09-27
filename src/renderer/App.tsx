@@ -6231,61 +6231,43 @@ pushToast(
     return { bytes: new Uint8Array(res.value), path };
   }, []);
 
-  /** Reads the OS clipboard via the existing signatures IPC bridge
-   *  is not appropriate (signatures save drawn signatures, not raw
-   *  image bytes). Instead we expose a small renderer-side helper
-   *  that uses the browser-standard `navigator.clipboard.read` /
-   *  Electron's native `clipboard.readImage` / `clipboard.readText`.
-   *  The helper falls back to `null` (empty / unsupported), which
-   *  the dialog surfaces as "Clipboard is empty". */
+  /** Reads the OS clipboard and returns raw image bytes, a string when
+   *  the clipboard holds only text, or null when empty/unavailable.
+   *  Phase 45 item 1 — the Create-from-images dialog is the only
+   *  consumer: it inserts image bytes into its list and refuses a
+   *  string with a clear message, so plain text can never become a
+   *  bogus PDF. Image MIME types are checked before text so a copied
+   *  image wins when the clipboard carries both.
+   *
+   *  The renderer path is `navigator.clipboard.read()` (Chromium's
+   *  async clipboard); the previous `window.electron.clipboard` shim
+   *  was dead — preload exposes only `window.tflex` — and Electron
+   *  44's main-process clipboard no longer has send-sync readImage.
+   *  Electron's `clipboard` module lives in the MAIN process; if a
+   *  future requirement needs formats the async API cannot see
+   *  (e.g. an image FILE copied in the OS file manager), it needs a
+   *  new main-side IPC channel — not reachable from here. */
   const readClipboard = useCallback(async (): Promise<
     Uint8Array | string | null | { error: string }
   > => {
     // Browser-side: navigator.clipboard is the only portable API.
-    // Electron's renderer also exposes `electron.clipboard` via the
-    // preload bridge; we use it when available so image bytes
-    // survive (navigator.clipboard.read on images isn't universally
-    // supported in Chromium yet).
-    const electronClipboard = (
-      window as unknown as {
-        electron?: {
-          clipboard?: {
-            readImage?: () => { toPNG?: () => Uint8Array } | null;
-            readText?: () => string;
-            readBuffer?: (format: string) => Uint8Array;
-          };
-        };
-      }
-    ).electron?.clipboard;
-    if (electronClipboard !== undefined) {
-      try {
-        const img = electronClipboard.readImage?.();
-        if (img !== null && img !== undefined && typeof img.toPNG === "function") {
-          const png = img.toPNG();
-          if (png.length > 0) return png;
-        }
-        if (typeof electronClipboard.readBuffer === "function") {
-          const buf = electronClipboard.readBuffer("image/png");
-          if (buf.length > 0) return buf;
-        }
-        const text = electronClipboard.readText?.();
-        if (typeof text === "string" && text.length > 0) return text;
-      } catch {
-        // fall through
-      }
-    }
+    // Electron's renderer session grants `clipboard-read`, so reading
+    // a real OS image (a copied bitmap / screenshot) yields
+    // `image/png` here.
     if (typeof navigator !== "undefined" && navigator.clipboard !== undefined) {
       try {
         const items = await navigator.clipboard.read();
+        // Two passes: return any image first, so an item that also
+        // carries text/plain cannot be mistaken for text.
         for (const item of items) {
-          if (item.types.includes("image/png")) {
-            const blob = await item.getType("image/png");
-            return new Uint8Array(await blob.arrayBuffer());
+          for (const mime of ["image/png", "image/jpeg"]) {
+            if (item.types.includes(mime)) {
+              const blob = await item.getType(mime);
+              return new Uint8Array(await blob.arrayBuffer());
+            }
           }
-          if (item.types.includes("image/jpeg")) {
-            const blob = await item.getType("image/jpeg");
-            return new Uint8Array(await blob.arrayBuffer());
-          }
+        }
+        for (const item of items) {
           if (item.types.includes("text/plain")) {
             const blob = await item.getType("text/plain");
             return await blob.text();
@@ -6299,38 +6281,12 @@ pushToast(
     return null;
   }, []);
 
-  const onCreateFromClipboardConfirm = useCallback(
-    async (choice: { content: Uint8Array | string; quality: number }): Promise<void> => {
-      setCreateOpen(false);
-      const docId = `create-clipboard-${crypto.randomUUID()}`;
-      const result = await engineRef.current.createFromClipboard(
-        docId,
-        choice.content,
-      );
-      if (!result.ok) {
-        pushToast("error", describeEngineError(result.error.code, result.error.message));
-        return;
-      }
-      // Synthesise a display name from the content shape (text vs. image).
-      const isText = typeof choice.content === "string";
-      const displayName = isText
-        ? "Created from clipboard text.pdf"
-        : "Created from clipboard image.pdf";
-      const opened = await openFromBytes(toArrayBuffer(result.value), {
-        kind: "file",
-        path: `<create-clipboard>${displayName}`,
-        displayName,
-        onDiskPath: null,
-        dedupePath: false,
-      });
-      void choice.quality; // currently unused; engine.createFromClipboard doesn't take a quality
-      if (opened !== null) {
-        dispatchTabs({ type: "set-modified", id: opened.tabId, modified: true });
-        pushToast("info", "Created PDF from clipboard content.");
-      }
-    },
-    [openFromBytes, pushToast],
-  );
+  // Phase 45 item 1 — clipboard content no longer becomes a PDF directly.
+  // The Create-from-images dialog reads the clipboard itself, inserts a
+  // copied image into its list (with a preview) and refuses plain text;
+  // the confirm path above (`onCreateConfirm` -> engine.createFromImages)
+  // is then the single creation route. `engine.createFromClipboard`
+  // remains available on the engine client for other callers.
 
   const searchIndexProgressRef = useRef<SearchIndexProgress | null>(null);
 
@@ -7140,8 +7096,8 @@ pushToast(
   // `onSetRecentsCap` / `onAnnotationPaletteChange` / `onLayoutChange`
   // / `onEditModeToggle` / `onToolsPaletteToggle` / `onRotateClockwise`
   // / `onExtract` / `onRotate` / `onDelete` / `onSign` / `onForms` /
-  // `onBatchOcr` / `onOcrSuspects` / `onClose` / `onCancel` /
-  // `onCreateFromClipboard`) does NOT appear in any child component's
+  // `onBatchOcr` / `onOcrSuspects` / `onClose` / `onCancel`) does NOT
+  // appear in any child component's
   // `useEffect` dep array. They are wired to user-event callbacks
   // (onClick / onChange / onConfirm), which fire only on user input
   // and don't drive the boot-time render loop. They're left as
@@ -9018,9 +8974,6 @@ pushToast(
         }}
         onConfirm={(c): void => {
           void onCreateConfirm(c.files, c.quality);
-        }}
-        onCreateFromClipboard={(c): void => {
-          void onCreateFromClipboardConfirm(c);
         }}
         readClipboard={readClipboard}
         onClose={onCancelCreate}

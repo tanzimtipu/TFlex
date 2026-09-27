@@ -30,6 +30,13 @@ export interface AccountsAuthAdapter {
   verifyOtp(input: { email: string; otp: string }): Promise<AuthOutcome>;
   /** Starts the provider flow. The SDK owns the popup/redirect. */
 signInGoogle(): Promise<StartOutcome>;
+  /** Phase 45 - request an emailed password-reset code (the Email OTP
+   *  plugin's `/email-otp/request-password-reset`). No redirect link: the
+   *  code is entered in-app, which is what an offline desktop app needs. */
+  requestPasswordReset(input: { email: string }): Promise<StartOutcome>;
+  /** Phase 45 - complete the reset with the emailed code and a new
+   *  password (`/email-otp/reset-password`). */
+  resetPassword(input: { email: string; otp: string; password: string }): Promise<StartOutcome>;
   signOut(): Promise<void>;
   /** Phase 44 (operator amendment) — the ONE profile field the identity
    *  provider lets the app change (the display name). Reads the updated name
@@ -41,12 +48,29 @@ signInGoogle(): Promise<StartOutcome>;
 const OTP_TYPE_EMAIL_VERIFICATION = "email-verification";
 
 /**
+ * True unless the renderer positively knows it has no network link.
+ *
+ * Phase 45 - `navigator.onLine === false` is the ONLY signal that earns the
+ * "offline" copy. Unknown/absent maps to online, so a request that fails for
+ * any other reason (a CSP block, DNS/proxy failure, a server that refused)
+ * is never mislabelled as the user being offline.
+ */
+export function rendererIsOnline(): boolean {
+  return typeof navigator === "undefined" || navigator.onLine !== false;
+}
+
+/**
  * Map a transport/SDK error to the shared `AccountsErrorCode` union the UI
  * branches on. Kept pure and defensive: the SDK surfaces a `code` string and
  * an HTTP `status` on its `error` object, but the exact spelling can vary, so
  * both the code and a lowercase message are consulted.
+ *
+ * `online` is injected (defaulting to the live renderer connectivity) so the
+ * mapping is unit-testable without a DOM: a transport failure becomes
+ * `network-offline` only when the app is genuinely offline, and `server`
+ * otherwise.
  */
-export function mapAuthError(error: unknown): AccountsErrorCode {
+export function mapAuthError(error: unknown, online: boolean = rendererIsOnline()): AccountsErrorCode {
   const rec = (error ?? {}) as { code?: unknown; status?: unknown; message?: unknown };
   const code = typeof rec.code === "string" ? rec.code.toUpperCase() : "";
   const status = typeof rec.status === "number" ? rec.status : 0;
@@ -73,9 +97,12 @@ export function mapAuthError(error: unknown): AccountsErrorCode {
   if (
     status === 0 ||
     code.startsWith("NETWORK_") ||
-    /network|offline|failed to connect|connection/.test(`${code} ${message}`.toLowerCase())
+    /network|offline|failed to connect|connection|failed to fetch/.test(`${code} ${message}`.toLowerCase())
   ) {
-    return "network-offline";
+    // Phase 45 - only claim "offline" when the renderer itself reports no
+    // link; otherwise the transport failed for a non-connectivity reason and
+    // the honest answer is a server/reachability error.
+    return online ? "server" : "network-offline";
   }
   return "server";
 }
@@ -98,6 +125,9 @@ interface NeonSdkClient {
   emailOtp: {
     sendVerificationOtp(input: { email: string; type: string }): Promise<SdkResult>;
     verifyEmail(input: { email: string; otp: string }): Promise<SdkResult>;
+    /** Phase 45 - the Email OTP plugin's password-reset endpoints. */
+    requestPasswordReset(input: { email: string }): Promise<SdkResult>;
+    resetPassword(input: { email: string; otp: string; password: string }): Promise<SdkResult>;
   };
 signOut(): Promise<SdkResult>;
   /** Better Auth's user update; the Managed provider permits `name`. */
@@ -184,6 +214,22 @@ export function createNeonAuthAdapter(baseUrl: string): AccountsAuthAdapter {
       const res = await call(() => neon.adapter.emailOtp.verifyEmail(input));
       if (!res.ok) return failedFrom(res.error);
       return finishSession();
+    },
+    async requestPasswordReset(input) {
+      const res = await call(() =>
+        neon.adapter.emailOtp.requestPasswordReset({ email: input.email }),
+      );
+      return res.ok ? { ok: true } : failedFrom(res.error);
+    },
+    async resetPassword(input) {
+      const res = await call(() =>
+        neon.adapter.emailOtp.resetPassword({
+          email: input.email,
+          otp: input.otp,
+          password: input.password,
+        }),
+      );
+      return res.ok ? { ok: true } : failedFrom(res.error);
     },
     async signInGoogle() {
       const res = await call(() => neon.adapter.signIn.social({ provider: "google" }));

@@ -253,7 +253,7 @@ export function DocxExportDialog(
           data-docx-export-dialog
         >
       <TfDialog
-        className="modal-dialog dialog"
+        className="modal-dialog dialog modal-dialog-tool"
         ref={dialogRef}
         onClick={(e): void => e.stopPropagation()}
         role="dialog"

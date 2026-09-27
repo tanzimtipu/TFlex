@@ -22,6 +22,7 @@ const {
     _openPath,
     _ipcOn,
     _applyMenuEnabled,
+    _clipboard,
 } = vi.hoisted(() => {
   const engineState = { pageCount: 1, modified: false, pageOrder: [0], rotations: [0], deleted: [false] };
 
@@ -102,6 +103,13 @@ const {
     _fromWebContents: vi.fn(),
     _quit: vi.fn(),
     _createMainWindow: vi.fn(),
+    // Phase 45 — the electron clipboard the clipboard:readImage handler
+    // delegates to (mocked here so the wiring is asserted end-to-end).
+    // Electron 44 exposes only the ASYNC clipboard API.
+    _clipboard: {
+      read: vi.fn().mockResolvedValue([]),
+      readText: vi.fn().mockResolvedValue(''),
+    },
   };
 });
 
@@ -129,6 +137,8 @@ vi.mock('electron', () => ({
     handle: _handle,
     on: _ipcOn,
   },
+  // Phase 45 — clipboard:readImage reaches Electron 44's async clipboard API.
+  clipboard: _clipboard,
   Menu: {
     setApplicationMenu: _setApplicationMenu,
     buildFromTemplate: vi.fn().mockReturnValue({}),
@@ -1367,5 +1377,39 @@ describe('main/index - DEF-142 close/quit gate', () => {
     onCloseRequested(mockWin, event2);
     expect(event2.preventDefault).not.toHaveBeenCalled();
     expect(send).not.toHaveBeenCalled();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Phase 45 - clipboard:readImage wiring (electron clipboard mocked)
+// ---------------------------------------------------------------------------
+
+describe('main/index - clipboard:readImage', () => {
+  beforeEach(async () => {
+    vi.clearAllMocks();
+    _handle.mockClear();
+    _on.mockClear();
+    _getAllWindows.mockReturnValue([]);
+    _clipboard.read.mockResolvedValue([]);
+    _clipboard.readText.mockResolvedValue('');
+    await start();
+  });
+
+  it('registers the channel and returns an async image/png item', async () => {
+    const call = _handle.mock.calls.find((c: unknown[]) => c[0] === IPC.clipboardReadImage);
+    expect(call).toBeDefined();
+    const handler = call![1] as () => Promise<{ ok: boolean }>;
+    const png = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x01]);
+    _clipboard.read.mockResolvedValue([
+      { types: ['image/png'], getType: async () => png },
+    ]);
+    await expect(handler()).resolves.toEqual({ ok: true, bytes: png, mime: 'image/png' });
+    expect(_clipboard.read).toHaveBeenCalled();
+  });
+
+  it('resolves empty (never throws) for a blank electron clipboard', async () => {
+    const call = _handle.mock.calls.find((c: unknown[]) => c[0] === IPC.clipboardReadImage);
+    const handler = call![1] as () => Promise<{ ok: boolean; reason?: string }>;
+    await expect(handler()).resolves.toEqual({ ok: false, reason: 'empty' });
   });
 });

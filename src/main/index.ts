@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, ipcMain, safeStorage, shell } from 'electron';
+import { app, BrowserWindow, clipboard, dialog, ipcMain, safeStorage, shell } from 'electron';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { IPC } from '../shared/ipc';
@@ -32,6 +32,7 @@ import type {
 } from '../shared/types';
 import type { SignatureSource } from '../shared/types';
 import { openPdfDialog, openPdfDialogMulti, savePdfDialog } from './services/dialog';
+import { readClipboardImage, type ClipboardLike } from './services/clipboard-image';
 import { EngineService } from './services/engine';
 import { OcrService } from './services/ocr';
 import { loadPdfFile, loadFdfFile } from './services/pdf-file';
@@ -381,6 +382,15 @@ export async function start(): Promise<void> {
   // Phase 40 — multi-select sibling for "Merge PDF from scratch"; resolves to
   // a normalized string[] (empty on cancel).
   ipcMain.handle(IPC.openFilesDialog, (_event, kind?: OpenFileDialogKind) => openPdfDialogMulti(kind));
+  // Phase 45 — best available clipboard image (native image, or an image FILE
+  // copied in Explorer read through `fs`). Always resolves a typed
+  // ClipboardImageResult; never throws. Read-only: writes nothing to disk.
+  // Electron 44 removed the synchronous clipboard API (readImage/readBuffer/
+  // availableFormats are undefined at runtime), so the service uses the async
+  // read()/readText() methods and the handler awaits its Promise.
+  ipcMain.handle(IPC.clipboardReadImage, () =>
+    readClipboardImage(clipboard as unknown as ClipboardLike),
+  );
   ipcMain.handle(IPC.pdfLoad, (_event, path: string) => loadPdfFile(path));
   ipcMain.handle(IPC.fdfLoad, (_event, path: string) => loadFdfFile(path));
   ipcMain.handle(IPC.samplesList, () => samples.list());

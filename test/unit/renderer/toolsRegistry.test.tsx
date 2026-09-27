@@ -209,7 +209,7 @@ describe("toolsRegistry — canonical surface + the curated dock sets (DEF-313)"
       "rotate", "extract", "insertPages", "replacePages", "split", "delete", "merge", "cropPages",
     ]);
     expect(dockToolsForStage("edit").map((e) => e.id)).toEqual([
-      "editText", "editImage", "editTextBox", "editToolOff", "recognizeText", "batchOcr", "ocrSuspects",
+      "editToolOff", "editText", "editImage", "editTextBox", "recognizeText", "batchOcr", "ocrSuspects",
     ]);
     expect(dockToolsForStage("review").map((e) => e.id)).toEqual([
       "annotate", "sign", "stamp", "flatten", "forms", "watermark",

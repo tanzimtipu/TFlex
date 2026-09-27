@@ -42,17 +42,13 @@ import {
   qualityPercentToFraction,
 } from "../state/preferences";
 import { pickImageFilesInRenderer, type PickedImages } from "../utils/pickImageFiles";
+import type {
+  ClipboardImageReason,
+  ClipboardImageResult,
+} from "../../shared/ipc";
 
 export interface CreateFromImagesConfirm {
   files: File[];
-  quality: number;
-}
-
-/** Clipboard create: the host wires the OS clipboard read + engine
- *  call. The dialog surfaces the button; the host owns the bytes
- *  flow. */
-export interface CreateFromClipboardConfirm {
-  content: Uint8Array | string;
   quality: number;
 }
 
@@ -70,14 +66,16 @@ interface CreateFromImagesDialogProps {
    *  host reads the File bytes off disk and forwards them to
    *  `engine.createFromImages`. Quality is the FRACTION (0..1). */
   onConfirm: (choice: CreateFromImagesConfirm) => void;
-  /** Fires when the user clicks "Create from clipboard". Host
-   *  reads the OS clipboard, then calls `engine.createFromClipboard`
-   *  with the bytes (or text). Quality is the FRACTION (0..1). */
-  onCreateFromClipboard?: (choice: CreateFromClipboardConfirm) => void;
-  /** Reads the OS clipboard and returns bytes (image) or string
-   *  (text). The dialog uses this to surface a one-click
-   *  "Create from clipboard" path. Returning null signals an
-   *  empty clipboard or read error (the dialog surfaces a toast). */
+  /** Reads the OS clipboard and returns image bytes, or a string
+   *  when the clipboard holds only text. Phase 45 item 1: the dialog
+   *  uses this to INSERT a copied image into the item list (with a
+   *  preview), never to create a PDF straight from text. Phase 45
+   *  item 2: this is now the FALLBACK — the main-side
+   *  `window.tflex.clipboard.readImage()` channel is tried first
+   *  (it also sees an image FILE copied in Explorer), and this
+   *  renderer path is used only when that channel is absent (an
+   *  older preload). Returning null signals an empty clipboard;
+   *  `{ error }` surfaces a read failure. */
   readClipboard?: () => Promise<Uint8Array | string | null | { error: string }>;
   onClose: () => void;
 }
@@ -85,6 +83,97 @@ interface CreateFromImagesDialogProps {
 /** Re-export the validation helpers so the dialog's caller doesn't
  *  have to reach into the preferences module. */
 export { DEFAULT_CREATE_IMAGE_QUALITY, clampCreateImageQuality };
+
+/** Phase 45 item 1 — the non-blocking message shown when the clipboard
+ *  holds only text. The dialog refuses to turn plain text into an
+ *  "image" (the operator's "it incorrectly works for texts"); the
+ *  message names the fix instead of creating a bogus PDF. Phase 45
+ *  item 2 — also the `no-image` reason from the main-side reader. */
+export const CLIPBOARD_NO_IMAGE_MESSAGE =
+  "The clipboard has no image. Copy an image, then try again - or use Add images…";
+
+/** Phase 45 item 2 — the clipboard held nothing usable (nothing copied). */
+export const CLIPBOARD_EMPTY_MESSAGE = "Clipboard is empty.";
+
+/** Phase 45 item 2 — an image was found but exceeded the 20 MB cap. */
+export const CLIPBOARD_TOO_LARGE_MESSAGE =
+  "That image is too large to import (up to 20 MB). Copy a smaller image, or use Add images…";
+
+/** Phase 45 item 2 — an image path was found but could not be read, or its
+ *  magic bytes were neither PNG nor JPEG. */
+export const CLIPBOARD_UNREADABLE_MESSAGE =
+  "Could not read the image on the clipboard. Copy it again, or use Add images…";
+
+/** Phase 45 item 2 — the four non-blocking messages, keyed by the main-side
+ *  reader's reason. Every one keeps the dialog open with the list untouched;
+ *  nothing is ever synthesised from a failed read. */
+export function clipboardReasonMessage(reason: ClipboardImageReason): string {
+  switch (reason) {
+    case "empty":
+      return CLIPBOARD_EMPTY_MESSAGE;
+    case "no-image":
+      return CLIPBOARD_NO_IMAGE_MESSAGE;
+    case "too-large":
+      return CLIPBOARD_TOO_LARGE_MESSAGE;
+    case "unreadable":
+      return CLIPBOARD_UNREADABLE_MESSAGE;
+  }
+}
+
+/** Phase 45 item 2 — the main-side clipboard image reader off `window.tflex`,
+ *  or null when the preload does not expose it (older builds / jsdom). Guarded
+ *  exactly like `accountsBridge` / `tflex.app`: a missing or malformed bridge
+ *  is a null, never a throw. */
+export function clipboardImageBridge(): {
+  readImage(): Promise<ClipboardImageResult>;
+} | null {
+  const w = window as unknown as {
+    tflex?: { clipboard?: { readImage?: () => Promise<ClipboardImageResult> } };
+  };
+  const api = w.tflex?.clipboard;
+  if (api === undefined || typeof api.readImage !== "function") return null;
+  return api as { readImage(): Promise<ClipboardImageResult> };
+}
+
+/** Sniff the MIME type from the leading magic bytes so a clipboard
+ *  JPEG is not mislabelled as a PNG (the blob URL's type drives how the
+ *  thumbnail decodes). Falls back to PNG, which the engine's own
+ *  `detectImageFormat` corrects anyway. The main-side reader reports the
+ *  same mime from the same magic bytes; the sniff here is the renderer's
+ *  own validation before an item enters the list. */
+function sniffClipboardImageType(bytes: Uint8Array): { mime: string; ext: string } {
+  if (bytes.length >= 3 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff) {
+    return { mime: "image/jpeg", ext: "jpg" };
+  }
+  return { mime: "image/png", ext: "png" };
+}
+
+/** One row's preview thumbnail. Owns its object URL so it is revoked
+ *  exactly when the row unmounts (remove, re-open, dialog close) -
+ *  the leak the old list could not have managed because it rendered
+ *  no preview at all. Clipboard images are converted to a File before
+ *  they enter the list, so every item uses this same preview path. */
+function ImageThumb({ file }: { file: File }): ReactElement {
+  const [url] = useState<string>(() =>
+    typeof URL.createObjectURL === "function" ? URL.createObjectURL(file) : "",
+  );
+  useEffect(
+    () => (): void => {
+      if (url !== "") URL.revokeObjectURL(url);
+    },
+    [url],
+  );
+  return (
+    <img
+      className="create-image-thumb"
+      src={url}
+      alt=""
+      aria-hidden
+      draggable={false}
+      data-create-thumb
+    />
+  );
+}
 
 export function CreateFromImagesDialog(
   props: CreateFromImagesDialogProps,
@@ -94,11 +183,13 @@ export function CreateFromImagesDialog(
     initialQuality,
     onQualityChange,
     onConfirm,
-    onCreateFromClipboard,
     readClipboard,
     onClose,
   } = props;
   const [files, setFiles] = useState<File[]>([]);
+  // Monotonic counter for clipboard-image filenames so repeated pastes
+  // do not collide in the list (`Clipboard image 1.png`, `…2.png`).
+  const clipboardCountRef = useRef(0);
   // Internal state is the percent display value (10..100) so the
   // input feels natural. We convert to / from a fraction at every
   // boundary. The min/max on the input also reflect the percent
@@ -118,6 +209,7 @@ export function CreateFromImagesDialog(
     setError(null);
     setQualityPercent(qualityFractionToPercent(initialQuality));
     setPicking(false);
+    clipboardCountRef.current = 0;
   }, [open, initialQuality]);
 
   // Esc closes; focus first interactive control on open.
@@ -142,6 +234,10 @@ export function CreateFromImagesDialog(
   // matches what's persisted.
   const qualityFraction = qualityPercentToFraction(qualityPercent);
   const valid = files.length > 0 && qualityFraction >= 0 && qualityFraction <= 1;
+  // Phase 45 item 2 — the button is offered when EITHER clipboard source
+  // exists: the main-side channel (primary, sees a copied image FILE) or the
+  // renderer fallback (older preload).
+  const clipboardReady = clipboardImageBridge() !== null || readClipboard !== undefined;
 
   const pickFiles = async (): Promise<void> => {
     setPicking(true);
@@ -176,27 +272,63 @@ export function CreateFromImagesDialog(
     setFiles((prev) => prev.filter((_, i) => i !== idx));
   };
 
+  /** Insert raw clipboard image bytes into the SAME list the file picker
+   *  feeds, as a real File, so the preview, de-dupe-free append, remove and
+   *  confirm flows are identical for both sources. Sniffs the magic bytes
+   *  (never trusting a label) before the item is added. */
+  const insertImageBytes = (bytes: Uint8Array): void => {
+    if (bytes.byteLength === 0) {
+      setError("The clipboard image is empty.");
+      return;
+    }
+    const { mime, ext } = sniffClipboardImageType(bytes);
+    clipboardCountRef.current += 1;
+    const name = `Clipboard image ${clipboardCountRef.current}.${ext}`;
+    const file = new File([bytes as BlobPart], name, { type: mime });
+    setFiles((prev) => [...prev, file]);
+  };
+
   const onClipboardClick = async (): Promise<void> => {
-    if (readClipboard === undefined || onCreateFromClipboard === undefined) return;
+    // PRIMARY: the main-side reader. Unlike `navigator.clipboard.read()` it
+    // also sees an image FILE copied in Explorer (CF_HDROP / text/uri-list),
+    // because main has `fs`. It never throws; `{ ok: false, reason }` maps to
+    // one of four clear, non-blocking messages.
+    const bridge = clipboardImageBridge();
+    if (bridge === null && readClipboard === undefined) return;
     setClipboardBusy(true);
     setError(null);
     try {
-      const content = await readClipboard();
+      if (bridge !== null) {
+        const result = await bridge.readImage();
+        if (result.ok) {
+          // The backend already sniffed the mime; the renderer re-sniffs the
+          // magic bytes as its own validation before the item enters the list.
+          insertImageBytes(result.bytes);
+          return;
+        }
+        setError(clipboardReasonMessage(result.reason));
+        return;
+      }
+      // FALLBACK (older preload): the renderer's async clipboard. It cannot
+      // see a copied image FILE, but it is all an older preload exposes.
+      const fallback = readClipboard;
+      if (fallback === undefined) return;
+      const content = await fallback();
       if (content === null) {
-        setError("Clipboard is empty.");
+        setError(CLIPBOARD_EMPTY_MESSAGE);
         return;
       }
       if (typeof content === "object" && "error" in content) {
         setError(content.error);
         return;
       }
-      onCreateFromClipboard({
-        content,
-        quality: qualityPercentToFraction(qualityPercent),
-      });
-      // The host closes the dialog on success; if the user clicks
-      // Create from clipboard and the engine returns an error, the
-      // host surfaces the toast but keeps the dialog open.
+      if (typeof content === "string") {
+        // Plain text is NOT an image. Refuse it with a clear, non-blocking
+        // message and keep the dialog open; do not synthesize a text PDF.
+        setError(CLIPBOARD_NO_IMAGE_MESSAGE);
+        return;
+      }
+      insertImageBytes(content);
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       setError(`Could not read clipboard: ${msg}`);
@@ -253,9 +385,9 @@ export function CreateFromImagesDialog(
         </div>
         <div className="modal-body">
           <p className="modal-help">
-            Pick one or more JPEG or PNG images. Each image becomes a
-            page in the new PDF, in the order they appear below. The
-            result opens as a new tab.
+            Pick one or more JPEG or PNG images, or paste one from the
+            clipboard. Each image becomes a page in the new PDF, in the
+            order they appear below. The result opens as a new tab.
           </p>
 
           <div className="modal-row">
@@ -270,7 +402,7 @@ export function CreateFromImagesDialog(
             >
               {picking ? "Picking…" : files.length === 0 ? "Add images…" : "Add more…"}
             </button>
-            {onCreateFromClipboard !== undefined && readClipboard !== undefined && (
+            {clipboardReady && (
               <button
                 type="button"
                 className="btn btn-secondary"
@@ -278,7 +410,7 @@ export function CreateFromImagesDialog(
                   void onClipboardClick();
                 }}
                 disabled={clipboardBusy || picking}
-                title="Create a PDF from the OS clipboard (image or text)"
+                title="Insert the image currently on the OS clipboard"
                 data-create-from-clipboard
               >
                 <ClipboardPaste size={16} aria-hidden />
@@ -309,6 +441,7 @@ export function CreateFromImagesDialog(
                   data-create-image-row={idx}
                 >
                   <span className="create-image-index">{idx + 1}</span>
+                  <ImageThumb file={f} />
                   <span className="create-image-name" title={f.name}>
                     {f.name}
                   </span>

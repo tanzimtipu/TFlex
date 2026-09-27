@@ -117,7 +117,7 @@ export function RenumberPagesDialog(
           data-renumber-pages-dialog
         >
       <TfDialog
-        className="modal-dialog modal-dialog-wide dialog"
+        className="modal-dialog modal-dialog-wide dialog modal-dialog-tool"
         ref={dialogRef}
         onClick={(e): void => e.stopPropagation()}
         role="dialog"

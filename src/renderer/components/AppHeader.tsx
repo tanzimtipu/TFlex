@@ -29,6 +29,7 @@ import { AnimatePresence } from "motion/react";
 import type { Theme } from "../state/theme";
 import type { ThemeDefault } from "../state/preferences";
 import type { TabInput } from "../state/tabMouseDown";
+import { tabColourSlot } from "../state/tabColour";
 import { AnimatedTab } from "./AnimatedTab";
 import { TfMorph } from "./motion/TfMotion";
 import { useMorphPreset } from "./motion/useMorphPreset";
@@ -456,7 +457,7 @@ export function AppHeader(props: AppHeaderProps): ReactElement {
               animating — only tabs opened during the session
               materialize. */}
           <AnimatePresence initial={false}>
-            {tabs.map((tab) => {
+            {tabs.map((tab, index) => {
               const isActive = tab.id === activeId;
               return (
                 <AnimatedTab
@@ -465,6 +466,10 @@ export function AppHeader(props: AppHeaderProps): ReactElement {
                   title={tab.title}
                   active={isActive}
                   modified={tab.modified}
+                  // Phase 45 (item 2) — the per-tab colour is the strip
+                  // POSITION's palette slot, so the assignment is
+                  // deterministic and neighbours can never collide.
+                  colourSlot={tabColourSlot(index)}
                   onActivate={onActivate}
                   onClose={onClose}
                 />

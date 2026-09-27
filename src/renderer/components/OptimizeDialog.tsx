@@ -219,7 +219,7 @@ export function OptimizeDialog(props: OptimizeDialogProps): ReactElement | null 
       {open && (
         <TfBackdrop className="modal-backdrop" {...backdrop}>
       <TfDialog
-        className="modal-dialog dialog optimize-dialog"
+        className="modal-dialog dialog optimize-dialog modal-dialog-tool"
         ref={dialogRef}
         onClick={(e): void => e.stopPropagation()}
         role="dialog"

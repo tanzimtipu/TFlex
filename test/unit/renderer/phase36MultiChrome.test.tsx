@@ -362,10 +362,10 @@ describe("Phase 36 (chunk 7) ï¿½ the ONE shared Action Dock", () => {
       focusPane(host, "B");
       // Focused B -> B's EDIT stage verbs: the same ONE dock, new contents.
       expect(dockVerbIds(host)).toEqual([
+        "editToolOff",
         "editText",
         "editImage",
         "editTextBox",
-        "editToolOff",
         "recognizeText",
         "batchOcr",
         "ocrSuspects",
@@ -396,10 +396,10 @@ describe("Phase 36 (chunk 7) ï¿½ the ONE shared Action Dock", () => {
       });
       expect(paneEl(host, "B").getAttribute("data-pane-focused")).toBe("true");
       expect(dockVerbIds(host)).toEqual([
+        "editToolOff",
         "editText",
         "editImage",
         "editTextBox",
-        "editToolOff",
         "recognizeText",
         "batchOcr",
         "ocrSuspects",

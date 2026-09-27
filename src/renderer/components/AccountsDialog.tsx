@@ -71,6 +71,42 @@ function Banner({ banner, variants }: { banner: AccountsBanner | null; variants:
   );
 }
 
+/**
+ * The Google "G" mark, inline (no network fetch, so it renders offline).
+ * This is a PROVIDER brand mark, not a tool icon: it is an SVG rather than a
+ * Lucide glyph and is therefore not a participant in the icon-identity guard,
+ * while still being visually distinct from every tool icon in the app.
+ */
+function GoogleMark(): ReactElement {
+  return (
+    <svg
+      className="accounts-google-mark"
+      viewBox="0 0 18 18"
+      width="16"
+      height="16"
+      aria-hidden
+      focusable="false"
+    >
+      <path
+        fill="#4285F4"
+        d="M17.64 9.2c0-.64-.06-1.25-.16-1.84H9v3.48h4.84a4.14 4.14 0 0 1-1.8 2.72v2.26h2.92c1.71-1.57 2.68-3.88 2.68-6.62z"
+      />
+      <path
+        fill="#34A853"
+        d="M9 18c2.43 0 4.47-.8 5.96-2.18l-2.92-2.26c-.8.54-1.84.86-3.04.86-2.34 0-4.32-1.58-5.03-3.7H.96v2.33A9 9 0 0 0 9 18z"
+      />
+      <path
+        fill="#FBBC05"
+        d="M3.97 10.72a5.41 5.41 0 0 1 0-3.44V4.95H.96a9 9 0 0 0 0 8.1l3.01-2.33z"
+      />
+      <path
+        fill="#EA4335"
+        d="M9 3.58c1.32 0 2.5.45 3.44 1.35l2.58-2.58C13.46.89 11.43 0 9 0A9 9 0 0 0 .96 4.95l3.01 2.33C4.68 5.16 6.66 3.58 9 3.58z"
+      />
+    </svg>
+  );
+}
+
 export function AccountsDialog(props: AccountsDialogProps): ReactElement {
   const { open, onClose, createAdapter, onStatusChange } = props;
   const [state, dispatch] = useReducer(accountsReducer, initialAccountsState);
@@ -190,8 +226,20 @@ export function AccountsDialog(props: AccountsDialogProps): ReactElement {
       return;
     }
     void adapter.signInEmail({ email, password: state.password }).then((res) => {
-      if (res.ok) completeSignIn(res.user, res.token);
-      else dispatch({ type: "error", code: res.code });
+      if (res.ok) {
+        completeSignIn(res.user, res.token);
+        return;
+      }
+      if (res.code === "email-not-verified") {
+        // Honest unverified-email state: send the verification code and move
+        // the surface to its OTP step rather than leaving a dead banner.
+        void adapter.sendOtp({ email }).then((otpRes) => {
+          if (otpRes.ok) dispatch({ type: "otp-sent" });
+          else dispatch({ type: "error", code: res.code });
+        });
+        return;
+      }
+      dispatch({ type: "error", code: res.code });
     });
   }, [adapter, state, completeSignIn]);
 
@@ -212,6 +260,47 @@ export function AccountsDialog(props: AccountsDialogProps): ReactElement {
       else dispatch({ type: "error", code: res.code });
     });
   }, [adapter]);
+
+  /** Enter the forgot-password flow (sign-in view only). */
+  const openReset = useCallback((): void => {
+    dispatch({ type: "open-reset" });
+  }, []);
+
+  /** Request an emailed password-reset code. */
+  const submitResetRequest = useCallback((): void => {
+    if (adapter === null) return;
+    const email = state.email.trim();
+    if (email.length === 0) {
+      dispatch({ type: "info", text: "Enter the email for your account." });
+      return;
+    }
+    dispatch({ type: "busy", value: true });
+    void adapter.requestPasswordReset({ email }).then((res) => {
+      if (res.ok) dispatch({ type: "reset-sent" });
+      else dispatch({ type: "error", code: res.code });
+    });
+  }, [adapter, state.email]);
+
+  /** Complete the reset with the emailed code and a new password. */
+  const submitResetConfirm = useCallback((): void => {
+    if (adapter === null) return;
+    const email = state.email.trim();
+    if (state.resetCode.trim().length === 0) {
+      dispatch({ type: "info", text: "Enter the reset code from the email." });
+      return;
+    }
+    if (state.newPassword.length < 8) {
+      dispatch({ type: "info", text: "Choose a password of at least 8 characters." });
+      return;
+    }
+    dispatch({ type: "busy", value: true });
+    void adapter
+      .resetPassword({ email, otp: state.resetCode.trim(), password: state.newPassword })
+      .then((res) => {
+        if (res.ok) dispatch({ type: "reset-done" });
+        else dispatch({ type: "error", code: res.code });
+      });
+  }, [adapter, state.email, state.resetCode, state.newPassword]);
 
   const signOut = useCallback((): void => {
     const api = accountsBridge();
@@ -248,8 +337,18 @@ export function AccountsDialog(props: AccountsDialogProps): ReactElement {
       ariaLabel="Account"
       testId="accounts-dialog"
     >
-      <header className="sheet-header">
-        <h2 className="sheet-title">Account</h2>
+      <header className="sheet-header accounts-header">
+        {/* Phase 45 - the app's own wordmark treatment (the same "TF" mark and
+            "TFlex" name the title bar renders), so the surface reads as part of
+            TFlex rather than a bare hosted form. */}
+        <div className="accounts-brand">
+          <span className="brand-mark accounts-brand-mark" aria-hidden>TF</span>
+          <span className="accounts-brand-text">
+            <span className="accounts-brand-name">TFlex</span>
+            <span className="accounts-brand-sub">Account and sync</span>
+          </span>
+        </div>
+        <h2 className="visually-hidden">Account</h2>
         <button
           type="button"
           className="sheet-close"
@@ -262,7 +361,7 @@ export function AccountsDialog(props: AccountsDialogProps): ReactElement {
       </header>
       <div className="sheet-body sheet-body-accounts">
         {configState === "loading" && (
-          <p className="accounts-status" data-accounts-loading>Loading account settings�</p>
+          <p className="accounts-status" data-accounts-loading>Loading account settings...</p>
         )}
         {configState === "unconfigured" && (
           <div className="accounts-unconfigured" data-accounts-unconfigured>
@@ -344,6 +443,16 @@ export function AccountsDialog(props: AccountsDialogProps): ReactElement {
                     data-accounts-password
                   />
                 </label>
+                {state.mode === "sign-in" && (
+                  <button
+                    type="button"
+                    className="accounts-forgot"
+                    onClick={openReset}
+                    data-accounts-forgot
+                  >
+                    Forgot password?
+                  </button>
+                )}
                 <Banner banner={state.banner} variants={bannerPop} />
                 <button
                   type="button"
@@ -352,8 +461,11 @@ export function AccountsDialog(props: AccountsDialogProps): ReactElement {
                   disabled={state.busy}
                   data-accounts-submit
                 >
-                  {state.busy ? "Working�" : state.mode === "sign-up" ? "Create account" : "Sign in"}
+                  {state.busy ? "Working..." : state.mode === "sign-up" ? "Create account" : "Sign in"}
                 </button>
+                <div className="accounts-divider" aria-hidden>
+                  <span>or</span>
+                </div>
                 <button
                   type="button"
                   className="btn btn-secondary accounts-google"
@@ -361,10 +473,11 @@ export function AccountsDialog(props: AccountsDialogProps): ReactElement {
                   disabled={state.busy}
                   data-accounts-google
                 >
+                  <GoogleMark />
                   Continue with Google
                 </button>
               </>
-            ) : (
+            ) : state.step === "otp" ? (
               <>
                 <p className="accounts-otp-lead" data-accounts-otp-lead>
                   Enter the verification code we emailed to {state.email}.
@@ -390,7 +503,7 @@ export function AccountsDialog(props: AccountsDialogProps): ReactElement {
                   disabled={state.busy}
                   data-accounts-submit
                 >
-                  {state.busy ? "Verifying�" : "Verify code"}
+                  {state.busy ? "Verifying..." : "Verify code"}
                 </button>
                 <div className="accounts-otp-actions">
                   <button
@@ -413,6 +526,97 @@ export function AccountsDialog(props: AccountsDialogProps): ReactElement {
                   </button>
                 </div>
               </>
+            ) : state.step === "reset-request" ? (
+              <>
+                <p className="accounts-otp-lead" data-accounts-reset-lead>
+                  Enter your account email and we will send a reset code.
+                </p>
+                <label className="accounts-field" htmlFor="accounts-reset-email">
+                  <span className="accounts-label">Email</span>
+                  <input
+                    id="accounts-reset-email"
+                    type="email"
+                    className="accounts-input"
+                    value={state.email}
+                    autoComplete="email"
+                    onChange={(e): void => dispatch({ type: "set-field", field: "email", value: e.target.value })}
+                    data-accounts-reset-email
+                  />
+                </label>
+                <Banner banner={state.banner} variants={bannerPop} />
+                <button
+                  type="button"
+                  className="btn btn-primary accounts-submit"
+                  onClick={submitResetRequest}
+                  disabled={state.busy}
+                  data-accounts-reset-submit
+                >
+                  {state.busy ? "Sending..." : "Send reset code"}
+                </button>
+                <div className="accounts-otp-actions">
+                  <button
+                    type="button"
+                    className="accounts-link"
+                    onClick={(): void => dispatch({ type: "back" })}
+                    data-accounts-back
+                  >
+                    <ArrowLeft size={14} aria-hidden />
+                    Back to sign in
+                  </button>
+                </div>
+              </>
+            ) : (
+              <>
+                <p className="accounts-otp-lead" data-accounts-reset-confirm-lead>
+                  Enter the reset code we emailed to {state.email} and choose a new password.
+                </p>
+                <label className="accounts-field" htmlFor="accounts-reset-code">
+                  <span className="accounts-label">Reset code</span>
+                  <input
+                    id="accounts-reset-code"
+                    type="text"
+                    inputMode="numeric"
+                    className="accounts-input"
+                    value={state.resetCode}
+                    autoComplete="one-time-code"
+                    onChange={(e): void => dispatch({ type: "set-field", field: "resetCode", value: e.target.value })}
+                    data-accounts-reset-code
+                  />
+                </label>
+                <label className="accounts-field" htmlFor="accounts-new-password">
+                  <span className="accounts-label">New password</span>
+                  <input
+                    id="accounts-new-password"
+                    type="password"
+                    className="accounts-input"
+                    value={state.newPassword}
+                    autoComplete="new-password"
+                    onChange={(e): void => dispatch({ type: "set-field", field: "newPassword", value: e.target.value })}
+                    data-accounts-new-password
+                  />
+                </label>
+                <Banner banner={state.banner} variants={bannerPop} />
+                <button
+                  type="button"
+                  className="btn btn-primary accounts-submit"
+                  onClick={submitResetConfirm}
+                  disabled={state.busy}
+                  data-accounts-reset-confirm
+                >
+                  {state.busy ? "Updating..." : "Set new password"}
+                </button>
+                <div className="accounts-otp-actions">
+                  <button
+                    type="button"
+                    className="accounts-link"
+                    onClick={(): void => dispatch({ type: "back" })}
+                    data-accounts-back
+                  >
+                    <ArrowLeft size={14} aria-hidden />
+                    Back to sign in
+                  </button>
+                </div>
+              </>
             )}
           </div>
         )}
@@ -431,7 +635,7 @@ export function AccountsDialog(props: AccountsDialogProps): ReactElement {
                 data-accounts-sync-now
               >
                 <RefreshCcw size={14} aria-hidden />
-                {syncing ? "Syncing�" : "Sync now"}
+                {syncing ? "Syncing..." : "Sync now"}
               </button>
               <AnimatePresence mode="wait" initial={false}>
                 <motion.div
