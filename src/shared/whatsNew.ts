@@ -23,6 +23,15 @@ export interface WhatsNewEntry {
 /** Ordered newest first. */
 export const WHATS_NEW: WhatsNewEntry[] = [
   {
+    version: '1.37.0',
+    date: '2026-09-27',
+    highlights: [
+      'Accounts are on by default: sign in with email or Google from the top right, and your preferences and signatures follow you to any device.',
+      'Your account now has a proper profile button - your photo, or your initials - with your profile, the sync status and sign-out one click away.',
+      "Signature images sync through the app's own secure endpoint, and the database only stores metadata.",
+    ],
+  },
+  {
     version: '1.36.0',
     date: '2026-09-26',
     highlights: [
