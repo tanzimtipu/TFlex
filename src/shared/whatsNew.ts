@@ -23,6 +23,15 @@ export interface WhatsNewEntry {
 /** Ordered newest first. */
 export const WHATS_NEW: WhatsNewEntry[] = [
   {
+    version: '1.40.1',
+    date: '2026-09-27',
+    highlights: [
+      'Deleting a signature now removes it from your account as well, not just from this device.',
+      'Annotation controls stay inside the page at the edges, and the comment box no longer covers them.',
+      'Creating text or a comment no longer opens the comment box by itself - it opens when you select the annotation.',
+    ],
+  },
+  {
     version: '1.40.0',
     date: '2026-09-27',
     highlights: [
