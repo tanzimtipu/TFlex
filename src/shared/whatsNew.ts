@@ -23,6 +23,15 @@ export interface WhatsNewEntry {
 /** Ordered newest first. */
 export const WHATS_NEW: WhatsNewEntry[] = [
   {
+    version: '1.41.0',
+    date: '2026-09-27',
+    highlights: [
+      'TFlex is now Jovrel - the same app with a new name and a new look: the Jovrel mark appears in the title bar, the welcome screen, About and the print window.',
+      'Windows sees it as Jovrel too, including the installer, the shortcuts and the PDF file icon.',
+      'Your settings, signatures and sign-in carry over automatically - there is nothing to set up again.',
+    ],
+  },
+  {
     version: '1.40.1',
     date: '2026-09-27',
     highlights: [
