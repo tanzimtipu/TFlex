@@ -7,6 +7,13 @@
  * for local edits (the local half of last-write-wins), and the per-signature
  * updated_at map used to detect local deletes and changed rows.
  *
+ * Phase 48 - `signatureTombstones` is the DEVICE-LOCAL half of the delete
+ * protocol. A hard-deleted cloud row leaves no marker there, so this device
+ * remembers which signature ids it deleted (id -> ISO deletion time). A pull
+ * that still carries such an id is ignored and the cloud row is re-deleted,
+ * and a remote row missing for a previously-synced id is treated as a delete
+ * pushed by another device. The tombstone is pruned after a fixed window.
+ *
  * This is deliberately NOT part of `settings.json`: it is device-local
  * bookkeeping, not a user preference, and it must not be exported or synced
  * itself. A missing or corrupt file simply means "no sync record yet", which
@@ -29,6 +36,10 @@ export interface SyncState {
   /** id -> content hash of the signature last agreed on; detects a local
    *  edit and a local hard-delete (id present here, absent locally). */
   signatures?: Record<string, string>;
+  /** Phase 48 - id -> ISO timestamp when THIS device hard-deleted the
+   *  signature. The cloud row is gone, so the tombstone lives here; it stops
+   *  a stale pull resurrecting the id and is pruned after the TTL. */
+  signatureTombstones?: Record<string, string>;
 }
 
 export class SyncStateStore {
@@ -91,6 +102,15 @@ export class SyncStateStore {
         if (typeof value === 'string') signatures[id] = value;
       }
       state.signatures = signatures;
+    }
+    if (isPlainObject(raw.signatureTombstones)) {
+      const tombstones: Record<string, string> = {};
+      for (const [id, value] of Object.entries(
+        raw.signatureTombstones as Record<string, unknown>,
+      )) {
+        if (typeof value === 'string') tombstones[id] = value;
+      }
+      state.signatureTombstones = tombstones;
     }
     return state;
   }

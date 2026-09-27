@@ -10,9 +10,12 @@
  *   - Settings: last-write-wins on `updated_at` with a `revision` counter;
  *     the FIRST link of a device (no local sync record) takes the CLOUD as
  *     authoritative. Device-local fields are never pushed or pulled.
- *   - Signatures: metadata only; deletes are SOFT (`deleted_at`) so a second
- *     device converges. Image bytes are a later chunk: `kind:'image'` rows
- *     sync metadata only and are not applied to the local signature store.
+ *   - Signatures: metadata only. A local delete HARD-deletes the cloud row
+ *     (`deleteSignature`) and records a DEVICE-LOCAL tombstone in the sync
+ *     state, which is what keeps a second device converging without leaving a
+ *     lingering row in the cloud. Image bytes are a later chunk:
+ *     `kind:'image'` rows sync metadata only and are not applied to the local
+ *     signature store.
  *   - Every failure maps to a `SyncReport` and is non-blocking; `sync()`
  *     never throws. No session/flag/config means no network call at all.
  *
@@ -150,7 +153,9 @@ export interface SyncTransport {
   upsertSettingsRow(row: SettingsPushRow): Promise<SettingsCloudRow>;
   fetchSignatureRows(): Promise<SignatureCloudRow[]>;
   upsertSignatureRows(rows: SignaturePushRow[]): Promise<void>;
-  softDeleteSignature(id: string, deletedAt: string): Promise<void>;
+  /** Phase 48 - HARD-delete the row (no `deleted_at` tombstone left behind);
+   *  convergence is carried by the device-local tombstone instead. */
+  deleteSignature(id: string): Promise<void>;
   /** Phase 44 chunk 5 - POST the PNG bytes to the Neon Function and return the
    *  stored object key. Throws `SyncTransportError` (never a raw error). */
   uploadSignatureImage(bytes: Uint8Array): Promise<string>;
@@ -389,6 +394,34 @@ function sortValue(value: unknown): unknown {
 }
 
 // ---------------------------------------------------------------------------
+// Phase 48 - device-local delete tombstones
+// ---------------------------------------------------------------------------
+
+/**
+ * How long a device remembers that it deleted a signature. The tombstone is
+ * only needed until every other device that could still hold the signature
+ * has observed the cloud row's absence (which removes it locally); 90 days is
+ * far longer than any plausible offline window and keeps the map tiny.
+ */
+export const SIGNATURE_TOMBSTONE_TTL_MS = 90 * 24 * 60 * 60 * 1000;
+
+/** Drop tombstones older than the TTL so the device-local map cannot grow
+ *  without bound. A malformed timestamp is kept (never guess it is old). */
+export function pruneSignatureTombstones(
+  tombstones: Record<string, string>,
+  now: string,
+  ttlMs: number = SIGNATURE_TOMBSTONE_TTL_MS,
+): Record<string, string> {
+  const cutoff = Date.parse(now) - ttlMs;
+  const out: Record<string, string> = {};
+  for (const [id, at] of Object.entries(tombstones)) {
+    const parsed = Date.parse(at);
+    if (!Number.isFinite(parsed) || parsed > cutoff) out[id] = at;
+  }
+  return out;
+}
+
+// ---------------------------------------------------------------------------
 // Local ports
 // ---------------------------------------------------------------------------
 
@@ -548,6 +581,9 @@ export class AccountsSyncEngine {
   ): Promise<{ pushed: number; pulled: number }> {
     const prevHashes = state.signatures ?? {};
     state.signatures = { ...prevHashes };
+    // Tombstones are device-local and pruned on every run (ageing rule).
+    const tombstones = pruneSignatureTombstones(state.signatureTombstones ?? {}, now);
+    state.signatureTombstones = tombstones;
     let pushed = 0;
     let pulled = 0;
 
@@ -557,34 +593,56 @@ export class AccountsSyncEngine {
     const localImageById = new Map(localImages.map((m) => [m.id, m]));
 
     // 1. Local hard-deletes: an id we previously synced that is now absent
-    //    from BOTH local stores was deleted locally; soft-delete it in the
-    //    cloud so the other device converges.
+    //    from BOTH local stores was deleted locally. HARD-delete the cloud row
+    //    and record a DEVICE-LOCAL tombstone; the tombstone (not a lingering
+    //    cloud row) is what keeps a stale pull from resurrecting it.
     for (const id of Object.keys(prevHashes)) {
       if (localById.has(id) || localImageById.has(id)) continue;
-      await transport.softDeleteSignature(id, now);
+      await transport.deleteSignature(id);
       delete state.signatures[id];
+      tombstones[id] = now;
       pushed += 1;
     }
 
     // 2. Pull. Apply a cloud row only when this device has no local edit for
     //    that id (an edited local signature is pushed instead, below).
     const remote = await transport.fetchSignatureRows();
+    const remoteIds = new Set(remote.map((row) => row.id));
     const upserts: SavedSignature[] = [];
     const removedIds: string[] = [];
     const imageUpserts: ImageSignatureMeta[] = [];
     const imageRemovedIds: string[] = [];
     for (const row of remote) {
       const prevHash = prevHashes[row.id];
+      const isImageRow = row.kind === 'image';
 
-      if (row.kind === 'image') {
+      // 2a. A row this device already deleted: ignore it and re-delete it,
+      //     in case a stale copy was pushed back by another device.
+      if (tombstones[row.id] !== undefined) {
+        await transport.deleteSignature(row.id);
+        delete state.signatures[row.id];
+        if (isImageRow) imageRemovedIds.push(row.id);
+        else removedIds.push(row.id);
+        pushed += 1;
+        continue;
+      }
+
+      // 2b. A legacy soft-deleted row (`deleted_at` set): hard-delete it so
+      //     the cloud stops carrying it, and remember the id locally.
+      if (row.deleted_at !== null) {
+        await transport.deleteSignature(row.id);
+        delete state.signatures[row.id];
+        tombstones[row.id] = now;
+        if (isImageRow) imageRemovedIds.push(row.id);
+        else removedIds.push(row.id);
+        pushed += 1;
+        continue;
+      }
+
+      if (isImageRow) {
         const localMeta = localImageById.get(row.id);
         const localHash = localMeta === undefined ? null : hashImageSignature(localMeta);
         if (localHash !== null && prevHash !== localHash) continue; // local wins
-        if (row.deleted_at !== null) {
-          imageRemovedIds.push(row.id);
-          delete state.signatures[row.id];
-          continue;
-        }
         const meta = remoteImageToLocal(row);
         if (meta === null) continue; // image row with no key: nothing to pull
         // Download the bytes when the key is set and the local blob is missing.
@@ -601,17 +659,28 @@ export class AccountsSyncEngine {
       const localSig = localById.get(row.id);
       const localHash = localSig === undefined ? null : hashSignature(localSig);
       if (localHash !== null && prevHash !== localHash) continue; // local wins
-      if (row.deleted_at !== null) {
-        removedIds.push(row.id);
-        delete state.signatures[row.id];
-        continue;
-      }
       const mapped = remoteSignatureToLocal(row);
       if (mapped === null) continue;
       upserts.push(mapped);
       state.signatures[row.id] = hashSignature(mapped);
       pulled += 1;
     }
+
+    // 2c. Remote absence: an id we previously synced, still present locally,
+    //     but no longer on the server was HARD-deleted by another device.
+    //     Remove it locally so this device converges and never pushes it back.
+    for (const id of Object.keys(prevHashes)) {
+      if (tombstones[id] !== undefined) continue; // our own delete (step 1)
+      if (remoteIds.has(id)) continue;
+      if (localById.has(id)) {
+        removedIds.push(id);
+        delete state.signatures[id];
+      } else if (localImageById.has(id)) {
+        imageRemovedIds.push(id);
+        delete state.signatures[id];
+      }
+    }
+
     if (upserts.length > 0 || removedIds.length > 0) {
       await this.deps.signatures.applyRemote(upserts, removedIds);
     }

@@ -21,6 +21,7 @@ import { useMemo, useRef, useState } from 'react';
 import type { CSSProperties, ReactElement } from 'react';
 import { MessageSquare, Send } from 'lucide-react';
 import { annotationBounds, overlayRectToCss } from './geometry';
+import { CONTROL_BAR_HEIGHT, placeControlNearAnchor } from '../components/controlPlacement';
 import type { Annotation, PageRect } from './model';
 import type { CommentEntry } from '../../shared/types';
 
@@ -34,13 +35,17 @@ export const COMMENT_BOX_MIN_BELOW = 160;
  *  rule only has to keep the un-selected annotations clear of the card's
  *  primary hit band). */
 export const COMMENT_BOX_ESTIMATED_HEIGHT = 160;
-/** Gap between the action bar's top edge and the card. */
-const ACTION_BAR_CLEARANCE = 36;
+/** Gap between the action bar's edge and the card. */
+const ACTION_BAR_CLEARANCE = 8;
 /** Gap between the card and the page view's edges. */
 const EDGE_GAP = 8;
 
+/** The selected-annotation action bar's assumed width in CSS px
+ *  (Confirm + colour swatch + Cancel + Delete + gaps/padding). */
+export const ANNOTATION_ACTION_BAR_WIDTH = 240;
+
 /** A CSS-px box for the overlap test. */
-interface CssBox {
+export interface CssBox {
   left: number;
   top: number;
   width: number;
@@ -57,16 +62,48 @@ function boxesOverlap(a: CssBox, b: CssBox): boolean {
   );
 }
 
+/** DEF-366 - the action bar's ACTUAL page-view box for a selected
+ *  annotation. This is the ONE shared placement step: the bar itself
+ *  (`SelectedContentChrome`) and the comment card below both derive
+ *  from this call, so the two can never disagree about which side of
+ *  the annotation the bar sits on. Exported for unit tests. */
+export function selectionActionBarBox(
+  bounds: PageRect,
+  cssScale: number,
+  widthPt: number,
+  heightPt: number,
+): CssBox {
+  const ring = overlayRectToCss(bounds, cssScale);
+  const placed = placeControlNearAnchor({
+    anchor: { left: ring.left, top: ring.top, bottom: ring.top + ring.height },
+    size: { width: ANNOTATION_ACTION_BAR_WIDTH, height: CONTROL_BAR_HEIGHT },
+    viewport: { width: widthPt * cssScale, height: heightPt * cssScale },
+  });
+  return {
+    left: placed.left,
+    top: placed.top,
+    width: ANNOTATION_ACTION_BAR_WIDTH,
+    height: CONTROL_BAR_HEIGHT,
+  };
+}
+
 /** Pure placement math: where the comment card sits inside the page
  *  view for a given annotation. Exported for unit tests.
  *
- *  DEF-326 — `avoid` carries the OTHER committed annotations' page bounds.
+ *  DEF-326 - `avoid` carries the OTHER committed annotations' page bounds.
  *  The card is first tried BELOW the selection (the Phase-28 home); when
  *  that box would cover another annotation's own hit surface (which would
  *  make that annotation unclickable behind the card, the reopened-note
  *  regression), the card flips ABOVE the selection instead. Only when
  *  neither band is clear does it fall back to the legacy below/above
- *  choice. The selected annotation itself is never in `avoid`. */
+ *  choice. The selected annotation itself is never in `avoid`.
+ *
+ *  DEF-366 - the card is measured against the action bar's ACTUAL box
+ *  (`selectionActionBarBox`), not the pre-Phase-48 assumption that the
+ *  bar always sits below the annotation. At the page's bottom edge the
+ *  bar flips ABOVE the annotation; the card then goes ABOVE THE BAR, so
+ *  the bar's Confirm / Cancel / Delete controls are never covered. The
+ *  bar is the anchor the two placements share, so they cannot collide. */
 export function commentBoxPlacement(
   bounds: PageRect,
   cssScale: number,
@@ -77,7 +114,10 @@ export function commentBoxPlacement(
   const pageW = widthPt * cssScale;
   const pageH = heightPt * cssScale;
   const ring = overlayRectToCss(bounds, cssScale);
-  const barTop = ring.top + ring.height + 4;
+  const bar = selectionActionBarBox(bounds, cssScale, widthPt, heightPt);
+  // The bar flipped above the annotation when its top is above the
+  // ring's top (at the bottom edge there is no room below).
+  const barAbove = bar.top < ring.top;
   const left = Math.max(
     EDGE_GAP,
     Math.min(ring.left, Math.max(EDGE_GAP, pageW - COMMENT_BOX_WIDTH - EDGE_GAP)),
@@ -86,7 +126,10 @@ export function commentBoxPlacement(
     const box = overlayRectToCss(r, cssScale);
     return { left: box.left, top: box.top, width: box.width, height: box.height };
   });
-  const belowTop = barTop + ACTION_BAR_CLEARANCE;
+  // The card's home is on the far side of the BAR (never between the
+  // bar and the annotation). When the bar is below, that is below the
+  // bar; when the bar flipped above, it is above the bar.
+  const belowTop = bar.top + bar.height + ACTION_BAR_CLEARANCE;
   const roomBelow = pageH - belowTop >= COMMENT_BOX_MIN_BELOW;
   const belowBox: CssBox = {
     left,
@@ -94,16 +137,23 @@ export function commentBoxPlacement(
     width: COMMENT_BOX_WIDTH,
     height: COMMENT_BOX_ESTIMATED_HEIGHT,
   };
-  const aboveBottom = Math.max(EDGE_GAP, pageH - ring.top + EDGE_GAP);
+  const aboveCardBottom = barAbove ? bar.top - EDGE_GAP : ring.top - EDGE_GAP;
+  const aboveBottom = Math.max(EDGE_GAP, pageH - aboveCardBottom);
   const aboveBox: CssBox = {
     left,
-    top: pageH - aboveBottom - COMMENT_BOX_ESTIMATED_HEIGHT,
+    top: aboveCardBottom - COMMENT_BOX_ESTIMATED_HEIGHT,
     width: COMMENT_BOX_WIDTH,
     height: COMMENT_BOX_ESTIMATED_HEIGHT,
   };
   const belowBlocked = avoidBoxes.some((box) => boxesOverlap(belowBox, box));
   const aboveBlocked = avoidBoxes.some((box) => boxesOverlap(aboveBox, box));
 
+  // The bar flipped above (bottom edge): the card MUST stay on the
+  // bar's far side so the bar's controls remain clickable - never
+  // place it in the band between the bar and the annotation.
+  if (barAbove) {
+    return { left, bottom: aboveBottom, width: COMMENT_BOX_WIDTH };
+  }
   if (roomBelow && !belowBlocked) {
     return { left, top: belowTop, width: COMMENT_BOX_WIDTH };
   }

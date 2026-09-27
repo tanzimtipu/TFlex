@@ -444,7 +444,9 @@ describe("Phase 28 - comment box placement + time formatting", () => {
   it("sits clear below the annotation and its action bar on a mid-page element", () => {
     const style = commentBoxPlacement({ x: 100, y: 100, width: 150, height: 80 }, 1, 612, 792);
     expect(style.width).toBe(COMMENT_BOX_WIDTH);
-    expect(style.top).toBe(100 + 80 + 4 + 36);
+    // DEF-366 - the card sits just below the action bar's REAL box
+    // (32px bar + an 8px gap), not the old 36px fixed clearance.
+    expect(style.top).toBe(100 + 80 + 4 + 32 + 8);
     // Below the ring's bottom edge, so the annotation's own surface and
     // the action bar (4px under the ring) are never covered.
     expect(Number(style.top)).toBeGreaterThan(180 + 4);

@@ -16,9 +16,12 @@ import { getAccountsConfig } from '../../../src/main/services/accounts/config';
 import {
   AccountsSyncEngine,
   DEVICE_LOCAL_SETTINGS_KEYS,
+  hashSignature,
   mergePulledSettings,
   pickSyncedSettings,
+  pruneSignatureTombstones,
   resolveSettingsConflict,
+  SIGNATURE_TOMBSTONE_TTL_MS,
   SyncCoordinator,
   SyncTransportError,
   type SettingsCloudRow,
@@ -124,7 +127,7 @@ interface FakeTransport extends SyncTransport {
     upsertSettings: SettingsPushRow[];
     fetchSignatures: number;
     upsertSignatures: SignaturePushRow[];
-    softDelete: { id: string; deletedAt: string }[];
+    deleteSignature: string[];
     uploads: Uint8Array[];
     downloads: string[];
   };
@@ -144,7 +147,7 @@ function fakeTransport(options: {
     upsertSettings: [],
     fetchSignatures: 0,
     upsertSignatures: [],
-    softDelete: [],
+    deleteSignature: [],
     uploads: [],
     downloads: [],
   };
@@ -171,8 +174,8 @@ function fakeTransport(options: {
     async upsertSignatureRows(rows) {
       calls.upsertSignatures.push(...rows);
     },
-    async softDeleteSignature(id, deletedAt) {
-      calls.softDelete.push({ id, deletedAt });
+    async deleteSignature(id) {
+      calls.deleteSignature.push(id);
     },
     async uploadSignatureImage(bytes) {
       calls.uploads.push(bytes);
@@ -436,16 +439,19 @@ describe('AccountsSyncEngine', () => {
     expect((state.state() as { settingsRevision: number }).settingsRevision).toBe(4);
   });
 
-  it('soft-deletes a signature the user removed locally', async () => {
+  it('hard-deletes a signature the user removed locally and records a tombstone', async () => {
     const signatures = fakeSignaturesPort([]);
     const state = fakeStateStore({ signatures: { 'sig-1': 'oldhash' } });
     const transport = fakeTransport({ settingsRow: null, signatureRows: [] });
     const { engine } = makeEngine({ signatures: signatures.port, stateWrapper: state, transport });
 
-    await engine.sync();
+    const report = await engine.sync();
 
-    expect(transport.calls.softDelete).toEqual([{ id: 'sig-1', deletedAt: NOW }]);
+    expect(transport.calls.deleteSignature).toEqual(['sig-1']);
     expect((state.state() as { signatures: Record<string, string> }).signatures).toEqual({});
+    expect(state.state().signatureTombstones).toEqual({ 'sig-1': NOW });
+    expect(transport.calls.upsertSignatures).toHaveLength(0);
+    expect(report.phase).toBe('synced');
   });
 
   it('pulls an image row: downloads the bytes and applies the metadata locally', async () => {
@@ -578,7 +584,7 @@ describe('AccountsSyncEngine', () => {
     });
   });
 
-  it('soft-deletes an image signature removed locally', async () => {
+  it('hard-deletes an image signature removed locally', async () => {
     const signatures = fakeSignaturesPort([], []);
     const state = fakeStateStore({ signatures: { 'img-old': 'oldhash' } });
     const transport = fakeTransport({ settingsRow: null, signatureRows: [] });
@@ -586,7 +592,7 @@ describe('AccountsSyncEngine', () => {
 
     await engine.sync();
 
-    expect(transport.calls.softDelete).toEqual([{ id: 'img-old', deletedAt: NOW }]);
+    expect(transport.calls.deleteSignature).toEqual(['img-old']);
     expect((state.state() as { signatures: Record<string, string> }).signatures).toEqual({});
   });
 
@@ -655,6 +661,125 @@ describe('AccountsSyncEngine', () => {
       transport: fakeTransport({ throwOnFetch: 'not an error object' }),
     });
     await expect(engine2.sync()).resolves.toMatchObject({ phase: 'error' });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Phase 48 - hard delete + device-local tombstones
+// ---------------------------------------------------------------------------
+
+describe('signature hard delete and convergence (Phase 48)', () => {
+  it('a pull still carrying a tombstoned row is ignored and re-deleted', async () => {
+    const signatures = fakeSignaturesPort([]);
+    const state = fakeStateStore({ signatures: {}, signatureTombstones: { 'sig-x': NOW } });
+    const transport = fakeTransport({
+      settingsRow: null,
+      signatureRows: [
+        {
+          id: 'sig-x',
+          label: 'X',
+          kind: 'typed',
+          payload: { kind: 'typed', text: 'X', width: 1, height: 1 },
+          storage_key: null,
+          sort_order: 0,
+          deleted_at: null,
+          updated_at: NOW,
+        },
+      ],
+    });
+    const { engine } = makeEngine({ signatures: signatures.port, stateWrapper: state, transport });
+
+    const report = await engine.sync();
+
+    expect(transport.calls.deleteSignature).toEqual(['sig-x']);
+    expect(transport.calls.upsertSignatures).toHaveLength(0);
+    expect(signatures.current()).toEqual([]);
+    expect(state.state().signatures).toEqual({});
+    expect(report.pulled).toBe(0);
+  });
+
+  it('cleans up a legacy soft-deleted row by hard-deleting it and tombstoning the id', async () => {
+    const signatures = fakeSignaturesPort([]);
+    const state = fakeStateStore({});
+    const transport = fakeTransport({
+      settingsRow: null,
+      signatureRows: [
+        {
+          id: 'sig-legacy',
+          label: 'Old',
+          kind: 'typed',
+          payload: null,
+          storage_key: null,
+          sort_order: 0,
+          deleted_at: '2026-09-27T11:00:00.000Z',
+          updated_at: NOW,
+        },
+      ],
+    });
+    const { engine } = makeEngine({ signatures: signatures.port, stateWrapper: state, transport });
+
+    await engine.sync();
+
+    expect(transport.calls.deleteSignature).toEqual(['sig-legacy']);
+    expect(transport.calls.upsertSignatures).toHaveLength(0);
+    expect(signatures.current()).toEqual([]);
+    expect(state.state().signatureTombstones).toEqual({ 'sig-legacy': NOW });
+  });
+
+  it('device B converges: a remote-absent id it still holds is removed, never re-pushed', async () => {
+    const local: SavedSignature = {
+      id: 'sig-b',
+      label: 'B',
+      createdAt: NOW,
+      source: { kind: 'typed', text: 'B', width: 10, height: 10 },
+    };
+    const signatures = fakeSignaturesPort([local]);
+    const state = fakeStateStore({ signatures: { 'sig-b': hashSignature(local) } });
+    const transport = fakeTransport({ settingsRow: null, signatureRows: [] });
+    const { engine } = makeEngine({ signatures: signatures.port, stateWrapper: state, transport });
+
+    const report = await engine.sync();
+
+    expect(transport.calls.deleteSignature).toEqual([]);
+    expect(transport.calls.upsertSignatures).toHaveLength(0);
+    expect(signatures.current()).toEqual([]);
+    expect(signatures.calls[0].removedIds).toEqual(['sig-b']);
+    expect(state.state().signatures).toEqual({});
+    expect(report.phase).toBe('synced');
+  });
+
+  it('a signature deleted locally is hard-deleted and its tombstone survives a later sync', async () => {
+    const first = fakeStateStore({ signatures: { 'sig-1': 'h' } });
+    const signatures = fakeSignaturesPort([]);
+    const transport = fakeTransport({ settingsRow: null, signatureRows: [] });
+    const { engine } = makeEngine({ signatures: signatures.port, stateWrapper: first, transport });
+
+    await engine.sync();
+
+    expect(transport.calls.deleteSignature).toEqual(['sig-1']);
+    expect(first.state().signatureTombstones).toEqual({ 'sig-1': NOW });
+    expect(first.state().signatures).toEqual({});
+
+    // A later sync neither re-deletes (the row is gone) nor drops the
+    // tombstone; the stale-pull guard stays armed.
+    const secondTransport = fakeTransport({ settingsRow: null, signatureRows: [] });
+    const second = makeEngine({
+      signatures: signatures.port,
+      stateWrapper: first,
+      transport: secondTransport,
+    });
+    await second.engine.sync();
+    expect(secondTransport.calls.deleteSignature).toEqual([]);
+    expect(first.state().signatureTombstones).toEqual({ 'sig-1': NOW });
+  });
+});
+
+describe('pruneSignatureTombstones', () => {
+  it('keeps recent tombstones, drops ones older than the TTL, keeps malformed ones', () => {
+    const old = new Date(Date.parse(NOW) - SIGNATURE_TOMBSTONE_TTL_MS - 1000).toISOString();
+    const recent = new Date(Date.parse(NOW) - 1000).toISOString();
+    const pruned = pruneSignatureTombstones({ old, recent, bad: 'not-a-date' }, NOW);
+    expect(pruned).toEqual({ recent, bad: 'not-a-date' });
   });
 });
 

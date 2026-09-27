@@ -5,6 +5,65 @@
 > inspect the current `OPEN`, `FIX-READY`, and `DISPUTED` entries first; closed records are
 > historical evidence and must not be loaded wholesale.
 
+## DEF-366: the Phase 48 bar clamp puts a bottom-edge annotation's action bar into the comment box's zone, so Confirm/Cancel/Delete are covered and unclickable
+
+- Status: CLOSED
+- Severity: MEDIUM
+- Found by: qa
+- Phase: 48
+
+Steps to reproduce:
+1. `npm.cmd run build` (exit 0), then `npm.cmd run test:e2e -- e2e/phase48_gate.spec.cjs -g "annotation bars clamp"`.
+   (Manual: open `report.pdf`, REVIEW > Annotate > Rectangle, drag a rectangle flush to the page's bottom edge, then click it to select it.)
+2. Select the bottom-edge rectangle. The selection opens the comment box (Phase-28 behaviour) as well as the action bar.
+
+Expected: the action bar (Confirm / colour / Cancel / Delete) stays inside the page and its buttons are clickable - Phase 48 success criterion 3 / feature C ("every control must stay inside the visible canvas/viewport").
+
+Actual: the bar is inside the page, but the comment box is bottom-anchored just above the annotation and overlaps almost the entire bar (the Phase 48 clamp flips the bar above the annotation when there is no room below, which is exactly the comment box's zone). `document.elementFromPoint` at the Delete button's centre returns the comment box, and a real mouse click at that point does not delete the annotation. Raw measurements (page-relative CSS px):
+- rect flush at the page bottom, 100% (page 612x792): bar top=656.0 bottom=689.1; comment-box top=564.8 bottom=684.7 (overlap 656-684.7 = ~29 of the bar's 33px); Delete centre (768.2, 633.2) -> `DIV|ann-comment-form`; real click left the rect count unchanged (1 -> 1).
+- rect at the bottom-right corner, 100%: bar top=666.0 bottom=699.1; comment-box top=534.8 bottom=654.7; Delete centre -> `BUTTON|ann-comment-submit`.
+- ellipse flush at the page bottom, 100%: bar top=656.0 bottom=689.1; Delete centre -> `DIV|ann-comment-form`.
+- rect flush at the page bottom, 110% (page 673.2x871.2): bar top=725.2 bottom=758.3; Delete centre -> `DIV|ann-comment-form`.
+- note at the page bottom, 100%: bar bottom=786.1, clickable (no comment box mounted at that moment), so 4 of the 5 bottom-edge cases are blocked.
+
+Root cause: `commentBoxPlacement` computes its clearance from a bar that sits BELOW the annotation (`barTop = ring.top + ring.height + 4`) and, when there is no room below, bottom-anchors the card just above the ring; the Phase 48 clamp now flips the bar ABOVE the ring too, so the two collide. `AnnotationOverlay` passes only `otherAnnBounds` as `avoid`, so the card cannot see the action bar. The pre-fix bar was simply off-page (the operator's original report); the clamp moved it into the card's zone without coordinating the two.
+
+Screenshot: screenshots/phase48-gate-rect-bottom.png
+
+History:
+- qa: opened (Phase 48 gate; independent e2e re-measure in `e2e/phase48_gate.spec.cjs`).
+- qa: CLOSED (FIX-READY retest on the rebuilt tree; `e2e/phase48_gate.spec.cjs` -> 3 passed). The card now derives from the bar's ACTUAL box (`selectionActionBarBox`), so it sits on the bar's far side. Re-measured page-relative CSS px, all `insidePage:true`, `elementFromPoint` at the Delete centre resolves to the Delete BUTTON, and a real click deletes:
+  - rect-bottom-100 (page 612x792): bar top=656.0 bottom=689.1; comment-box top=528.1 bottom=648.0 (clear of the bar by 8px); Delete centre (768.2,633.2) -> `BUTTON|...--delete`; real click 1 -> 0.
+  - rect-corner-100: bar top=666.0 bottom=699.1; comment-box top=538.1 bottom=658.0; Delete centre (952.6,643.2) -> `BUTTON|...--delete`.
+  - ellipse-bottom-100: bar top=656.0 bottom=689.1; comment-box top=528.1 bottom=648.0; Delete centre (621.3,633.2) -> `BUTTON|...--delete`.
+  - note-bottom-100: bar top=753.0 bottom=786.1; no comment box mounted; Delete centre (952.6,730.2) -> `BUTTON|...--delete`.
+  - rect-bottom-110 (page 673.2x871.2): bar top=736.2 bottom=769.3; comment-box top=608.4 bottom=728.3; Delete centre (983.2,634.7) -> `BUTTON|...--delete`.
+  Zero out-of-view / unclickable offenders. Evidence: `e2e/phase48_gate.spec.cjs` item-3 run log.
+
+## DEF-367: the pending signature action bar pokes ~6px below the page's bottom edge (its clamp assumes a 32px bar, the bar renders at 41px)
+
+- Status: CLOSED
+- Severity: LOW
+- Found by: qa
+- Phase: 48
+
+Steps to reproduce:
+1. `npm.cmd run build` (exit 0), then `npm.cmd run test:e2e -- e2e/phase48_gate.spec.cjs -g "signature bar clamps"`.
+   (Manual: open `report.pdf`, Sign > Type a signature > Save, click the saved row, then place it at the page's bottom-right corner.)
+
+Expected: the pending signature action bar's full box stays inside the page's bottom edge (feature C).
+
+Actual: at 100% (page 612x792) the pending bar's page-relative box is top=757.3, bottom=798.4 - 6.4px below the page bottom. `SignatureActionBar` clamps with `ACTION_BAR_HEIGHT_PX = 32`, but the rendered bar is 41.1px tall (`padding: 8px 12px` + the button row), so the clamp under-reserves ~9px. The committed/selected bar clamps inside (bottom=775.1). The bar remains visible on the canvas and its Delete button is clickable (`elementFromPoint` resolves), so this is cosmetic - but with less scroll clearance the overflow would be clipped by the scroller.
+
+Screenshot: screenshots/phase48-gate-signature-right.png
+
+History:
+- qa: opened (Phase 48 gate; independent e2e re-measure in `e2e/phase48_gate.spec.cjs`).
+- qa: CLOSED (FIX-READY retest on the rebuilt tree; `e2e/phase48_gate.spec.cjs` -> 3 passed). `SignatureActionBar` now reserves `SIGNATURE_ACTION_BAR_HEIGHT = 42` (the measured 41.1px render) and clamps into the page viewport. Re-measured page-relative CSS px at 100% (page 612x792), both `insidePage:true` and Delete `elementFromPoint` resolves to the Delete BUTTON:
+  - pending placement at the bottom-right corner: bar top=747.3 bottom=788.4 (was 798.4 - 6.4px below the page; now 3.6px inside); Delete centre (919.9,708.5) -> `BUTTON|...sig-action-btn-delete`.
+  - selected committed placement: bar top=724.0 bottom=765.1; Delete centre (918.6,685.2) -> `BUTTON|...sig-action-btn-delete`.
+  Evidence: `e2e/phase48_gate.spec.cjs` signature run log.
+
 ## DEF-365: the Google sign-in popup still does not close on the loopback landing - the completion rule never fires because the listener clears the active callback URL first
 
 - Status: CLOSED

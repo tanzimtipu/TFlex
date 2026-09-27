@@ -39,6 +39,7 @@ import {
   ContentActionBar,
   useSelectableDrag,
 } from "../components/selectableContent";
+import { selectionActionBarBox } from "./AnnotationCommentBox";
 import { rectsClose, type ImageResizeHandle } from "../edit/geometry";
 import { measureTextWidthCss } from "../edit/rasterize";
 import {
@@ -426,6 +427,17 @@ export function AnnotationOverlay(props: AnnotationOverlayProps): ReactElement {
   // delete + re-create with the same id and the moved geometry (the
   // shared IPC contract has no annotation move op).
   const [selectedAnnId, setSelectedAnnId] = useState<string | null>(null);
+  /** Phase 48 (item 4) — the id of a text / note / callout annotation
+   *  that was SELECTED AS A SIDE EFFECT of being placed (not by the
+   *  user). The operator's rule: "Placing text/comments brings the
+   *  comment popup with it. Comment dialog box should only appear if
+   *  user selects the annotation later like rectangle." So a
+   *  just-placed text-bearing annotation keeps its normal action bar
+   *  (the selection is still needed for the text-properties panel) but
+   *  the comment box is held back until the user SELECTS it again. It
+   *  clears on the next user selection gesture (surface click, drag or
+   *  note activation). */
+  const [freshPlacementId, setFreshPlacementId] = useState<string | null>(null);
   /** Draft override while dragging or pending — `ann` may be absent
    *  from the `annotations` list (mid delete-then-recreate echo), so
    *  the render merges it back in. */
@@ -662,6 +674,9 @@ export function AnnotationOverlay(props: AnnotationOverlayProps): ReactElement {
   const requestTextFocus = useCallback(
     (ann: Annotation): void => {
       onDisarmTool?.();
+      // Phase 48 (item 4) — entering a text target by user gesture is a
+      // later selection; release the fresh-placement hold.
+      setFreshPlacementId(null);
       setSelectedAnnId(ann.id);
       if (isTextKind(ann.kind)) onTextFocusRequest?.(ann.id);
     },
@@ -675,6 +690,9 @@ export function AnnotationOverlay(props: AnnotationOverlayProps): ReactElement {
     (e: React.PointerEvent, ann: Annotation, handle?: ImageResizeHandle): void => {
       if (e.button !== 0) return;
       e.stopPropagation();
+      // Phase 48 (item 4) — pressing the annotation again (even to
+      // drag it) is a later selection, so the comment box may open.
+      setFreshPlacementId(null);
       setSelectedAnnId(ann.id);
       movedRef.current = false;
       const bounds = annotationBounds(effectiveAnnotations.find((a) => a.id === ann.id) ?? ann);
@@ -703,6 +721,8 @@ export function AnnotationOverlay(props: AnnotationOverlayProps): ReactElement {
       if (e.button !== 0) return;
       if (ann.kind !== "callout") return;
       e.stopPropagation();
+      // Phase 48 (item 4) — a later user gesture on the callout.
+      setFreshPlacementId(null);
       setSelectedAnnId(ann.id);
       movedRef.current = false;
       const bounds = annotationBounds(effectiveAnnotations.find((a) => a.id === ann.id) ?? ann);
@@ -749,6 +769,9 @@ export function AnnotationOverlay(props: AnnotationOverlayProps): ReactElement {
       }
       // A bare click with no drag: drop any stale gesture state.
       selDrag.endDrag();
+      // Phase 48 (item 4) — a deliberate user selection clears the
+      // fresh-placement hold, so the comment box opens now.
+      setFreshPlacementId(null);
       setSelectedAnnId(ann.id);
       // Phase 26 — a click on a text element enters its text-editing
       // session in the panel: disarm any armed creation tool (Bug 1 —
@@ -1056,6 +1079,9 @@ export function AnnotationOverlay(props: AnnotationOverlayProps): ReactElement {
    *  next click on the placed annotation. */
   const selectPlacedAnnotation = (ann: Annotation): void => {
     placedSelectionRef.current = ann.id;
+    // Phase 48 (item 4) — this selection is placement-driven, so the
+    // comment box stays closed until the user selects it again.
+    setFreshPlacementId(ann.id);
     setAnnDraft({ id: ann.id, ann });
     setSelectedAnnId(ann.id);
   };
@@ -1217,6 +1243,7 @@ export function AnnotationOverlay(props: AnnotationOverlayProps): ReactElement {
             ann={selectedAnn}
             cssScale={cssScale}
             widthPt={widthPt}
+            heightPt={heightPt}
             paletteTheme={paletteTheme}
             annotationPalette={annotationPalette}
             onAnnotationPaletteChange={onAnnotationPaletteChange}
@@ -1245,8 +1272,13 @@ export function AnnotationOverlay(props: AnnotationOverlayProps): ReactElement {
           Anchored to the annotation's rect, clamped to the page view
           (see `commentBoxPlacement`), and placed clear of the
           annotation surface and the action bar so neither gesture path
-          is blocked. */}
-      {selectedAnn !== null && onAddComment !== undefined && (
+          is blocked. Phase 48 (item 4) — a just-PLACED text / note /
+          callout is held back (`freshPlacementId`): the box opens only
+          when the user selects the annotation, exactly like a
+          rectangle. */}
+      {selectedAnn !== null &&
+        onAddComment !== undefined &&
+        freshPlacementId !== selectedAnn.id && (
         <AnnotationCommentBox
           ann={selectedAnn}
           entries={threadByAnnId.get(selectedAnn.id)?.entries ?? EMPTY_COMMENT_ENTRIES}
@@ -2257,6 +2289,10 @@ interface SelectedContentChromeProps {
   ann: Annotation;
   cssScale: number;
   widthPt: number;
+  /** Phase 48 (item 3) — page height in points, so the action bar can be
+   *  clamped into the page's vertical bounds (a shape at the bottom edge
+   *  used to push the bar past the page). */
+  heightPt: number;
   paletteTheme?: AnnotationTheme;
   annotationPalette?: AnnotationColors;
   onAnnotationPaletteChange?: (next: AnnotationColors) => void;
@@ -2285,6 +2321,7 @@ function SelectedContentChrome(props: SelectedContentChromeProps): ReactElement 
     ann,
     cssScale,
     widthPt,
+    heightPt,
     paletteTheme,
     annotationPalette,
     onAnnotationPaletteChange,
@@ -2297,8 +2334,14 @@ function SelectedContentChrome(props: SelectedContentChromeProps): ReactElement 
   const bounds = annotationBounds(ann);
   const ring = overlayRectToCss(bounds, cssScale);
   const resizable = RESIZABLE_KINDS.has(ann.kind);
-  const topCss = (bounds.y + bounds.height) * cssScale + 4;
-  const leftCss = Math.max(0, Math.min(bounds.x * cssScale, widthPt * cssScale - 240));
+  // Phase 48 (item 3) / DEF-366 — the action bar is placed under the
+  // annotation and CLAMPED into the page view on both axes through the
+  // ONE shared step (`selectionActionBarBox`): a shape flush with the
+  // page's bottom edge flips the bar above the shape (or clamps it
+  // inside) instead of rendering the Delete control outside the visible
+  // page. The comment card derives from the SAME box, so the two can
+  // never collide again.
+  const barBox = selectionActionBarBox(bounds, cssScale, widthPt, heightPt);
   return (
     <>
       {/* DEF-154 — the frame positions the ring + handles as ONE unit
@@ -2339,8 +2382,8 @@ function SelectedContentChrome(props: SelectedContentChromeProps): ReactElement 
       <ContentActionBar
         className="content-action-bar ann-content-action"
         dataBar={`ann-${ann.kind}`}
-        left={leftCss}
-        top={topCss}
+        left={barBox.left}
+        top={barBox.top}
         onConfirm={onConfirm}
         onCancel={onCancel}
         onDelete={onDelete}

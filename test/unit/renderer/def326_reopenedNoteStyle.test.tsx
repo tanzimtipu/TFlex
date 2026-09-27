@@ -103,9 +103,11 @@ describe("DEF-326 — a reopened note's panel shows the engine's font", () => {
 
 describe("DEF-326 — the comment card never covers a neighbouring annotation", () => {
   it("flips above the selection when the below band would cover the note", () => {
-    // Baseline: with nothing below to avoid, the card keeps its Phase-28 home.
+    // Baseline: with nothing below to avoid, the card keeps its Phase-28
+    // home - just BELOW the action bar (DEF-366: derived from the bar's
+    // real box, so it clears the bar's full height plus an 8px gap).
     const clear = commentBoxPlacement(CALLOUT_BOUNDS, 1, 612, 792);
-    expect(clear.top).toBe(200 + 20 + 4 + 36);
+    expect(clear.top).toBe(200 + 20 + 4 + 32 + 8);
 
     const flipped = commentBoxPlacement(CALLOUT_BOUNDS, 1, 612, 792, [NOTE_AVOID]);
     // Bottom-anchored above the ring -> the note at y 300 is clear.
@@ -125,7 +127,7 @@ describe("DEF-326 — the comment card never covers a neighbouring annotation", 
   it("keeps the below placement when the avoid rect is outside its band", () => {
     const farAway: PageRect = { x: 200, y: 760, width: 24, height: 24 };
     const style = commentBoxPlacement(CALLOUT_BOUNDS, 1, 612, 792, [farAway]);
-    expect(style.top).toBe(200 + 20 + 4 + 36);
+    expect(style.top).toBe(200 + 20 + 4 + 32 + 8);
   });
 
   it("the rendered card is bottom-anchored (not over the note) when it collides", () => {

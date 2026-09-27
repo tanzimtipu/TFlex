@@ -27,6 +27,7 @@ import {
 } from "./model";
 import { DRAW_PEN_COLOR, scaledStrokeWidth } from "./canvas";
 import { useDragWindow } from "../components/useDragWindow";
+import { clampControlPosition } from "../components/controlPlacement";
 import { TfBar } from "../components/motion/TfMotion";
 
 // Default size (in page points) for the ghost preview + the new
@@ -572,6 +573,8 @@ export function SignaturesOverlay(props: SignaturesOverlayProps): ReactElement |
             rect={pendingPlacement.rect}
             signature={signatures[pendingPlacement.signatureId] ?? null}
             cssScale={cssScale}
+            pageWidthPt={pageWidthPt}
+            pageHeightPt={pageHeightPt}
             onConfirm={onConfirmPending}
             onCancel={onCancelPending}
             onDelete={onDeletePending}
@@ -634,6 +637,7 @@ export function SignaturesOverlay(props: SignaturesOverlayProps): ReactElement |
             return (
               <SignatureActionBar
                 base={{ x: barRect.x * cssScale, y: barRect.y * cssScale, width: barRect.width * cssScale, height: barRect.height * cssScale }}
+                viewport={{ width: pageWidthPt * cssScale, height: pageHeightPt * cssScale }}
                 confirmTitle="Commit position changes"
                 cancelTitle="Cancel (Esc) — revert selection"
                 deleteTitle="Delete signature"
@@ -652,6 +656,10 @@ interface PendingPlacementViewProps {
   rect: SignaturePlacement["rect"];
   signature: SavedSignature | null;
   cssScale: number;
+  /** Phase 48 (item 3) — page view in points, so the pending
+   *  placement's action bar clamps inside the page. */
+  pageWidthPt: number;
+  pageHeightPt: number;
   onConfirm: () => void;
   onCancel: () => void;
   /** B1 — Delete drops the pending placement without exiting
@@ -666,7 +674,7 @@ interface PendingPlacementViewProps {
  *  user can decide whether to keep or discard the placement before
  *  it enters the engine. */
 function PendingPlacementView(props: PendingPlacementViewProps): ReactElement {
-  const { rect, signature, cssScale, onConfirm, onCancel, onDelete } = props;
+  const { rect, signature, cssScale, pageWidthPt, pageHeightPt, onConfirm, onCancel, onDelete } = props;
   // Phase 20 / DEF-236 — the exiting pending view is INERT: its Confirm
   // button keeps DOM focus otherwise, and a held Enter during the exit
   // window re-fired the stale commit (11 placements from one Confirm).
@@ -695,6 +703,8 @@ function PendingPlacementView(props: PendingPlacementViewProps): ReactElement {
       />
       <SignatureActionBar
         base={{ x: 0, y: 0, width: widthPx, height: heightPx }}
+        viewport={{ width: pageWidthPt * cssScale, height: pageHeightPt * cssScale }}
+        offset={{ x: leftPx, y: topPx }}
         confirmTitle="Confirm placement"
         cancelTitle="Cancel (Esc) — exits Sign mode"
         deleteTitle="Discard (stay in Sign mode)"
@@ -705,6 +715,15 @@ function PendingPlacementView(props: PendingPlacementViewProps): ReactElement {
     </TfBar>
   );
 }
+
+/** DEF-367 — the signature action bar's RENDERED height (CSS px): the
+ *  inline `padding: 8px 12px` (16px) + the `.toolbox-action-btn` row
+ *  (~23.2px) + the 2px border = ~41.2px. The Phase-48 clamp used the
+ *  shared 32px content-bar estimate, so the pending bar poked ~6.4px
+ *  past the page's bottom edge. Reserving the real height (rounded up
+ *  to 42) keeps the whole box inside; over-reserving only pulls it a
+ *  hair further inside. */
+export const SIGNATURE_ACTION_BAR_HEIGHT = 42;
 
 /** DEF-123 / DEF-147 — the shared floating action bar (Confirm /
  *  Cancel / Delete). Used by BOTH the pending (uncommitted) placement
@@ -726,8 +745,20 @@ export function SignatureActionBar(props: {
   onConfirm: () => void;
   onCancel: () => void;
   onDelete: () => void;
+  /** Phase 48 (item 3) — the page view (CSS px). When present the bar
+   *  is hard-clamped inside it on both axes, so a signature at the
+   *  page's right or bottom edge can no longer push its controls off
+   *  the visible page. */
+  viewport?: { width: number; height: number };
+  /** Page-space offset of this bar's containing block. The SELECTED
+   *  committed bar is a direct child of the page layer (0,0); the
+   *  PENDING bar lives inside the placement wrapper, offset by the
+   *  placement's page position. Clamping works in page space. */
+  offset?: { x: number; y: number };
 }): ReactElement {
   const { base, confirmTitle, cancelTitle, deleteTitle, onConfirm, onCancel, onDelete } = props;
+  const viewport = props.viewport;
+  const offset = props.offset ?? { x: 0, y: 0 };
   const drag = useDragWindow({ controlsSelector: ".sig-action-btn, button, [role='button']" });
   // Phase 20 / DEF-236 — the bar is keyboard-bearing (three buttons) and
   // is mounted inside an AnimatePresence in BOTH roles (the pending
@@ -735,11 +766,23 @@ export function SignatureActionBar(props: {
   // it must be inert so focus leaves the ghost window and a held Enter
   // cannot re-fire a commit.
   const isPresent = useIsPresent();
-  // Anchor the action bar above the rect. If there isn't enough
-  // room above (top of page), flip it below the rect.
-  const ACTION_BAR_HEIGHT_PX = 32;
-  const useAbove = base.y >= ACTION_BAR_HEIGHT_PX + 4;
-  const barTop = useAbove ? base.y - ACTION_BAR_HEIGHT_PX - 4 : base.y + base.height + 4;
+  const BAR_MIN_WIDTH = 260;
+  const useAbove = base.y >= SIGNATURE_ACTION_BAR_HEIGHT + 4;
+  const barTop = useAbove ? base.y - SIGNATURE_ACTION_BAR_HEIGHT - 4 : base.y + base.height + 4;
+  // Phase 48 (item 3) — clamp into the page view when the host supplies
+  // it (both axes), in page space, honouring the containing block.
+  const rawLeft = base.x + drag.offset.x;
+  let left = rawLeft;
+  let top = barTop + drag.offset.y;
+  if (viewport !== undefined) {
+    const placed = clampControlPosition(
+      { left: offset.x + rawLeft, top: offset.y + top },
+      { width: BAR_MIN_WIDTH, height: SIGNATURE_ACTION_BAR_HEIGHT },
+      viewport,
+    );
+    left = placed.left - offset.x;
+    top = placed.top - offset.y;
+  }
   return (
     // Phase 20 — the signature action bar is a floating contextual bar
     // (TfBar): token-driven enter/exit with the exit-frame
@@ -755,8 +798,8 @@ export function SignatureActionBar(props: {
       inert={!isPresent}
       style={{
         position: "absolute",
-        left: base.x + drag.offset.x,
-        top: barTop + drag.offset.y,
+        left,
+        top,
         // DEF-147 — the bar needs REAL grab-able chrome for the
         // whole-window drag handle to be reachable. At `minWidth:
         // 200` with a 3px CSS padding the three buttons span

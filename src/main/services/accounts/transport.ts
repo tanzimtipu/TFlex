@@ -100,10 +100,10 @@ export class PostgrestSyncTransport implements SyncTransport {
     if (error !== null) throw toTransportError(error);
   }
 
-  async softDeleteSignature(id: string, deletedAt: string): Promise<void> {
+  async deleteSignature(id: string): Promise<void> {
     const { error } = await this.client
       .from('user_signatures')
-      .update({ deleted_at: deletedAt })
+      .delete()
       .eq('id', id);
     if (error !== null) throw toTransportError(error);
   }

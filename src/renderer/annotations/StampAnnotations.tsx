@@ -32,6 +32,10 @@ import {
   ContentActionBar,
   useSelectableDrag,
 } from "../components/selectableContent";
+import {
+  CONTROL_BAR_HEIGHT,
+  placeControlNearAnchor,
+} from "../components/controlPlacement";
 import { TfBar } from "../components/motion/TfMotion";
 import { rectsClose } from "../edit/geometry";
 import type { ImageResizeHandle } from "../edit/geometry";
@@ -375,12 +379,23 @@ export function StampAnnotations(props: StampAnnotationsProps): ReactElement | n
   if (items.length === 0) return null;
 
   const selectedBounds = selectedStamp !== null ? { ...rectFor(selectedStamp) } : null;
+  // Phase 48 (item 3) — clamp the bar into the page view on BOTH axes
+  // through the shared helper: a stamp at the page's bottom edge used
+  // to drop the bar below the page.
   const barPos =
     selectedBounds !== null
-      ? {
-          left: Math.max(0, Math.min(selectedBounds.x * cssScale, pageWidthPt * cssScale - 240)),
-          top: (selectedBounds.y + selectedBounds.height) * cssScale + 4,
-        }
+      ? (() => {
+          const ring = {
+            left: selectedBounds.x * cssScale,
+            top: selectedBounds.y * cssScale,
+            bottom: (selectedBounds.y + selectedBounds.height) * cssScale,
+          };
+          return placeControlNearAnchor({
+            anchor: ring,
+            size: { width: 240, height: CONTROL_BAR_HEIGHT },
+            viewport: { width: pageWidthPt * cssScale, height: pageHeightPt * cssScale },
+          });
+        })()
       : null;
 
   return (

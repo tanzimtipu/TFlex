@@ -54,6 +54,10 @@ import { TfBar } from "../components/motion/TfMotion";
 import {
   ContentActionBar,
 } from "../components/selectableContent";
+import {
+  CONTROL_BAR_HEIGHT,
+  placeControlNearAnchor,
+} from "../components/controlPlacement";
 import { measureTextWidthCss } from "./rasterize";
 import {
   LIVE_TEXT_DEFAULT_LINE_HEIGHT,
@@ -1228,6 +1232,22 @@ export function EditOverlay(props: EditOverlayProps): ReactElement | null {
         : textTarget.text
       : null;
 
+  // Phase 48 (item 3) — the text-run action bar is placed under the run
+  // and clamped into the page view on both axes (was bottom-edge
+  // unclamped).
+  const runBarPlacement =
+    runSelection === null
+      ? null
+      : placeControlNearAnchor({
+          anchor: {
+            left: runSelection.rect.x * cssScale,
+            top: runSelection.rect.y * cssScale,
+            bottom: (runSelection.rect.y + runSelection.rect.height) * cssScale,
+          },
+          size: { width: 240, height: CONTROL_BAR_HEIGHT },
+          viewport: { width: pageWidthPt * cssScale, height: pageHeightPt * cssScale },
+        });
+
   return (
     <div
       ref={rootRef}
@@ -1333,6 +1353,7 @@ export function EditOverlay(props: EditOverlayProps): ReactElement | null {
               box={box}
               cssScale={cssScale}
               pageWidthPt={pageWidthPt}
+              pageHeightPt={pageHeightPt}
               onConfirm={(): void => {
                 if (pendingTextBoxMove === null) {
                   // No pending move — Confirm commits the selection
@@ -1382,8 +1403,8 @@ export function EditOverlay(props: EditOverlayProps): ReactElement | null {
         <ContentActionBar
           className="content-action-bar edit-textrun-bar"
           dataBar="textrun"
-          left={Math.max(0, Math.min(runSelection.rect.x * cssScale, pageWidthPt * cssScale - 240))}
-          top={(runSelection.rect.y + runSelection.rect.height) * cssScale + 4}
+          left={runBarPlacement?.left ?? 0}
+          top={runBarPlacement?.top ?? 0}
           onConfirm={(): void => {
             if (pendingRunMove === null) {
               setRunSelection(null);
@@ -1507,6 +1528,7 @@ export function EditOverlay(props: EditOverlayProps): ReactElement | null {
               cropping={edit.cropping}
               cssScale={cssScale}
               pageWidthPt={pageWidthPt}
+              pageHeightPt={pageHeightPt}
               onReplace={(): void => {
                 void onClickReplace();
               }}
@@ -1883,6 +1905,8 @@ interface PlacementToolbarProps {
   cropping: boolean;
   cssScale: number;
   pageWidthPt: number;
+  /** Phase 48 (item 3) — page height, for the bottom-edge clamp. */
+  pageHeightPt: number;
   onReplace: () => void;
   onCrop: () => void;
   onDelete: () => void;
@@ -1905,25 +1929,33 @@ interface TextBoxToolbarProps {
   box: TextBoxPlacement;
   cssScale: number;
   pageWidthPt: number;
+  /** Phase 48 (item 3) — page height, so the bar clamps into the
+   *  page's bottom edge instead of rendering below it. */
+  pageHeightPt: number;
   onConfirm: () => void;
   onDelete: () => void;
   onCancel: () => void;
 }
 
 function TextBoxToolbar(props: TextBoxToolbarProps): ReactElement {
-  const { box, cssScale, pageWidthPt, onConfirm, onDelete, onCancel } = props;
+  const { box, cssScale, pageWidthPt, pageHeightPt, onConfirm, onDelete, onCancel } = props;
   // Position the toolbar just under the box, anchored to its left
-  // edge. Clamp inside the page.
-  const topPt = box.rect.y + box.rect.height + 4;
-  const leftPt = box.rect.x;
-  const topCss = topPt * cssScale;
-  const leftCss = Math.max(0, Math.min(leftPt * cssScale, pageWidthPt * cssScale - 200));
+  // edge, then clamp into the page view on both axes (Phase 48 item 3).
+  const bar = placeControlNearAnchor({
+    anchor: {
+      left: box.rect.x * cssScale,
+      top: box.rect.y * cssScale,
+      bottom: (box.rect.y + box.rect.height) * cssScale,
+    },
+    size: { width: 200, height: CONTROL_BAR_HEIGHT },
+    viewport: { width: pageWidthPt * cssScale, height: pageHeightPt * cssScale },
+  });
   return (
     <TfBar
       className="content-action-bar edit-box-toolbar"
       data-edit-box-id={box.id}
       data-edit-box-toolbar
-      style={{ left: leftCss, top: topCss }}
+      style={{ left: bar.left, top: bar.top }}
       onPointerDown={(e): void => e.stopPropagation()}
     >
       <button
@@ -1961,18 +1993,24 @@ function TextBoxToolbar(props: TextBoxToolbarProps): ReactElement {
 }
 
 function PlacementToolbar(props: PlacementToolbarProps): ReactElement {
-  const { placement, cropping, cssScale, pageWidthPt, onReplace, onCrop, onDelete } = props;
+  const { placement, cropping, cssScale, pageWidthPt, pageHeightPt, onReplace, onCrop, onDelete } = props;
   // Position the toolbar just under the placement, anchored to the
-  // placement's left edge. Clamp inside the page.
-  const topPt = placement.rect.y + placement.rect.height + 4;
-  const leftPt = placement.rect.x;
-  const topCss = topPt * cssScale;
-  const leftCss = Math.max(0, Math.min(leftPt * cssScale, pageWidthPt * cssScale - 220));
+  // placement's left edge, then clamp into the page view (Phase 48
+  // item 3 — both axes).
+  const bar = placeControlNearAnchor({
+    anchor: {
+      left: placement.rect.x * cssScale,
+      top: placement.rect.y * cssScale,
+      bottom: (placement.rect.y + placement.rect.height) * cssScale,
+    },
+    size: { width: 220, height: CONTROL_BAR_HEIGHT },
+    viewport: { width: pageWidthPt * cssScale, height: pageHeightPt * cssScale },
+  });
   return (
     <TfBar
       className="edit-image-toolbar"
       data-placement-id={placement.id}
-      style={{ left: leftCss, top: topCss }}
+      style={{ left: bar.left, top: bar.top }}
       onPointerDown={(e): void => e.stopPropagation()}
     >
       <button

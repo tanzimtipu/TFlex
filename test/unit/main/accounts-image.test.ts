@@ -183,6 +183,30 @@ describe('image transport error mapping', () => {
 });
 
 // ---------------------------------------------------------------------------
+// Phase 48 - hard delete via the Data API
+// ---------------------------------------------------------------------------
+
+describe('deleteSignature', () => {
+  it('sends a DELETE filtered to the row id (no soft-delete update)', async () => {
+    const { impl, calls } = mockFetch(() => new Response(null, { status: 204 }));
+    await makeTransport(impl).deleteSignature('sig-1');
+
+    expect(calls).toHaveLength(1);
+    expect(calls[0].init?.method).toBe('DELETE');
+    expect(calls[0].url).toContain('/user_signatures');
+    expect(calls[0].url).toContain('id=eq.sig-1');
+    expect(calls[0].auth).toBe('Bearer jwt');
+  });
+
+  it('maps a rejected delete to a typed server error', async () => {
+    const { impl } = mockFetch(() => jsonResponse({ message: 'denied' }, 403));
+    const error = await rejection(makeTransport(impl).deleteSignature('sig-1'));
+    expect(error).toBeInstanceOf(SyncTransportError);
+    expect((error as SyncTransportError).kind).toBe('server');
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Local image store round trip
 // ---------------------------------------------------------------------------
 

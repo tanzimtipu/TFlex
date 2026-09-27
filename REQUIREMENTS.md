@@ -2451,6 +2451,11 @@ or when the human explicitly asks. Do not run the full suite "to be safe".
 **To-do discipline (operator, 2026-09-26).** The orchestrator maintains a live to-do list for the run and
 reports pending / in-progress / done in every dispatch summary.
 
+**Version numbering - STANDING RULE (operator, 2026-09-27).** A release of BUG FIXES takes a **PATCH** bump
+(1.39.0 -> 1.39.1). A **MINOR** bump is for new features/capabilities. A **MAJOR** bump is only for a breaking
+change. Never bump a minor for a fix batch. (The operator corrected 1.39.0 -> 1.40.0, which should have been
+1.39.1.)
+
 ## Phase 44 — Accounts and cloud sync on Neon (operator request 2026-09-26)
 
 **Operator request (verbatim intent):** the app gets a **Sign in / Sign up** option on the top bar; users can
@@ -2642,3 +2647,57 @@ ticking it DISABLES the predefined position choices.
 
 **Settings impact:** none - no new `AppSettings` field; the dialog shapes, the tab colours and the watermark
 position toggle are view state, not preferences.
+
+## Phase 48 - Deleted signatures must actually leave the cloud + three annotation corrections
+
+**Operator report (verbatim intent, 2026-09-27).**
+1. "After the initial sync, if I delete signatures and sync again, it doesn't delete them in the neon
+   user_signature table. The table still contains the previous signatures. Check why are those signatures
+   still kept in the table when it syncs correctly in the app."
+2. **PROCESS RULE (standing):** "For bug fixes, never bump like major update like 1.39.0 to 1.40.0, it
+   should have been 1.39.1."
+3. "Adding rectangle under annotation shows the delete icon outside of the view. See if it is widespread."
+4. "Placing text/comments brings the comment popup with it. Comment dialog box should only appear if user
+   selects the annotation later like rectangle."
+
+**Features**
+
+**A. A deleted signature must leave the cloud (item 1).**
+- Deleting a signature locally and syncing must remove it from `public.user_signatures` - the row must not
+  linger. The sync must keep working in both directions (a delete on one device must not be resurrected by a
+  stale pull from another), so the fix must state HOW convergence is preserved now that rows are actually
+  removed.
+
+**B. Version numbering rule (item 2) - STANDING.**
+- Bug fixes take a **PATCH** bump (1.39.0 -> 1.39.1); a MINOR bump is for new features/capabilities; a MAJOR
+  bump only for a breaking change. This release's work is a set of fixes, so it ships as the next PATCH.
+
+**C. No annotation control may render outside the view (item 3).**
+- The operator saw a rectangle annotation's delete control positioned outside the visible area. Audit EVERY
+  annotation type and control (rectangle, ellipse, arrow, highlight, ink, text box, comment/note, stamp,
+  signature, image, and the box/text property bars): with the annotation at any page edge and at any zoom,
+  every control must stay inside the visible canvas/viewport, clamped (the codebase already has a clamp
+  pattern for panels - reuse it). Report the audit table and fix each offender.
+
+**D. The comment box opens on SELECTION, not on creation (item 4).**
+- Placing text or a comment must NOT immediately open the comment dialog: the annotation is created, and the
+  comment box appears only when the user later SELECTS that annotation - the same behaviour a rectangle has.
+
+**Success criteria**
+
+1. Delete a signature locally -> sync -> the row is GONE from `public.user_signatures` (verified by querying
+   the table before/after, and the app's own list agrees). A second device that syncs afterwards does NOT
+   resurrect it.
+2. The release carrying these fixes uses a PATCH version bump (state the version), and the rule is recorded
+   in the standing standards.
+3. An audit table lists every annotation type x control with its position at the page's four edges and at
+   several zoom levels; every control stays inside the visible area (measured boxes, zero out-of-view
+   offenders) - before/after per fixed offender.
+4. Placing text/comment creates the annotation WITHOUT opening the comment box; selecting it afterwards opens
+   the box (verified for both text and comment); a rectangle behaves as before; and the action bar (Confirm/
+   Delete/Cancel) still appears on creation as it does for other annotations.
+5. No regression: the earlier annotation behaviour, the standing animation/icon rules, `verify:full` and the
+   phase suites stay green.
+
+**Settings impact:** none - no new `AppSettings` field; the delete policy and the annotation behaviours are
+code behaviour, not preferences.
