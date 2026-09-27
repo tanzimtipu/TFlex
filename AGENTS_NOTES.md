@@ -3959,3 +3959,42 @@ need either an authorised commit or a revert; they do not affect the shipped app
 `tflex` bucket (needs a real upload endpoint inside the `api` Function - its source is a root file), Export my
 data and Delete my account, and the live verification of the Google round-trip, the OTP email and two-device
 sync against a real account. The RLS boundary itself is already proven live (read denied, write rejected).
+
+## 2026-09-27: Release 1.37.0 - accounts ON by default, the top-right profile menu, images via the Function
+
+Release 1.37.0 is published: https://github.com/tanzimtipu/tflex-releases/releases/tag/v1.37.0 with all four
+assets, and the public feed verifies (`version: 1.37.0`, sha512 `IpFxUsnB...`, size 171,905,562). Commits:
+`a1319d4` (the feature, 36 files), `988f7eb` (notes), `e09bb74` (bump), tag `v1.37.0`. Gates: `verify:full`
+430 files / **5480 tests** green; the packaged canonical spec 9/9 at 1.37.0; the packaged flag-evidence spec
+re-pointed and passing (a fresh profile SHOWS the account section, an explicitly-OFF profile hides it with
+zero accounts traffic). The installer grew from ~163 MB to ~172 MB (the Neon SDKs).
+
+**Operator amendments this round (record them, they change the contract):**
+- **No beta toggle.** The "Accounts (beta)" Preferences row was REMOVED. Accounts are simply ON: the
+  `accountsEnabled` setting survives as an internal escape hatch with a default of true, but it is not
+  exposed in the UI. Never re-add a Preferences row for it unless the operator asks.
+- **The top-right account section.** Signed out = a sign-in entry; signed in = a **round avatar** whose
+  content falls back **image -> initials(first + last) -> email's first letter**, and clicking it EXPANDS a
+  panel with the profile, **Update profile**, **Sync now** (live status) and **Sign out**. `Update profile`
+  edits the DISPLAY NAME only - the Managed provider cannot change email or password, so those are shown
+  read-only with the wording "Email and password are managed by your sign-in provider and can't be changed
+  here." `AccountUser.image` and `AccountStatusResult.name/image` were added so a COLD BOOT renders the right
+  avatar with NO network call (the vault already stores the whole user object).
+- **The CSP is deliberately narrow.** `img-src` gained exactly `https://lh3.googleusercontent.com` (the
+  Google avatar CDN) with a comment saying any future avatar host must be added explicitly - never by
+  relaxing to `https:`. A non-allow-listed host falls back to initials via the image's error path.
+
+**The Neon Function `api` is real now (the operator pasted the source).** `hello.ts` verifies the caller's JWT
+against the branch JWKS (`jose`, issuer = the auth base URL's origin) and then reads/writes the PRIVATE
+`tflex` bucket with the injected `AWS_*` credentials, `forcePathStyle: true`. `POST /signatures` stores under
+`signatures/<verified-sub>/<uuid>.png` with a 256 KB cap; `GET /signatures/<key>` returns a ~5-minute
+presigned URL and **403s** any key outside the caller's own prefix. Unauthenticated probes return 401
+(verified live). The app uploads/downloads through it with its user JWT; the AWS credentials never leave the
+server. **Finding: the platform shadowed `/healthz`** (it returned `ok`, not the handler's JSON) - use any
+other path for a status probe. The three bundling packages (`jose`, `@aws-sdk/client-s3`,
+`@aws-sdk/s3-request-presigner`) are DEV dependencies so they bundle into the Function and never into the app
+(verified: the packaged manifest has no devDependencies).
+
+**Still open:** the image-signature UI surface (image rows sync but are not listed in the renderer yet); the
+live Google round-trip, OTP email and two-device sync (needs a real account); Export/Delete; the
+`.agents/**` + `skills-lock.json` housekeeping (no role may stage `.agents/`).
