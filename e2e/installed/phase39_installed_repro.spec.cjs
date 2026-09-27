@@ -1,5 +1,5 @@
 // Phase 39 - reproduce the operator's items 1-3 against the INSTALLED 1.30.0
-// build (C:\Program Files\TFlex\TFlex.exe). Installed-app spec, lives under
+// build (C:\Program Files\Jovrel\Jovrel.exe). Installed-app spec, lives under
 // e2e/installed/ per the repo convention; launches through the canonical
 // launchApp with an explicit packaged exe.
 const { test, expect } = require('@playwright/test');
@@ -7,7 +7,7 @@ const path = require('node:path');
 const { launchApp, getSamplePath } = require('../lib/launch.cjs');
 const { hardClose, dismissUpdatePrompt, toggleMultiModeViaPalette } = require('../lib/helpers.cjs');
 
-const EXE = process.env.TFLEX_PACKAGED_EXE || 'C:\\Program Files\\TFlex\\TFlex.exe';
+const EXE = process.env.TFLEX_PACKAGED_EXE || 'C:\\Program Files\\Jovrel\\Jovrel.exe';
 const SHOTS = path.resolve(__dirname, '..', '..', 'screenshots');
 let app = null;
 let win = null;

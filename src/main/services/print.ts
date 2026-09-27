@@ -377,7 +377,7 @@ export function composePrintHtml(payload: PrintJobPayload): string {
 <html>
 <head>
 <meta charset="utf-8">
-<title>TFlex Print</title>
+<title>Jovrel Print</title>
 <style>
 @page { size: ${landscape ? 'landscape' : 'portrait'}; margin: 0; }
 html, body { margin: 0; padding: 0; }

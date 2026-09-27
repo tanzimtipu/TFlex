@@ -1323,7 +1323,7 @@ export function App(): ReactElement {
     if (updateApi === undefined || typeof updateApi.check !== "function") {
       pushToast(
         "info",
-        "Update checks are not available in this build of TFlex.",
+        "Update checks are not available in this build of Jovrel.",
       );
       return;
     }
@@ -7228,7 +7228,7 @@ pushToast(
         label: "Help",
         entries: [
           { id: "check", label: "Check for Update...", accelerator: "Ctrl+Shift+U", action: "checkForUpdate" },
-          { id: "about", label: "About TFlex", action: "about" },
+          { id: "about", label: "About Jovrel", action: "about" },
         ],
       },
     ],

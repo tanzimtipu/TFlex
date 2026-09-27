@@ -1,7 +1,7 @@
 // Release 1.28.0 Gate 4 - the STAGES headline checks against the INSTALLED build.
 //
 // Launches ONLY through the canonical launchInstalled() helper (e2e/installed/*
-// specs use it; it targets %LOCALAPPDATA%\Programs\tflex\TFlex.exe). Captures
+// specs use it; it targets C:\Program Files\Jovrel\Jovrel.exe). Captures
 // exactly ONE screenshot - screenshots/release-1280-stages.png - a NEW file, so
 // no recorded screenshot is overwritten.
 //

@@ -217,7 +217,7 @@ describe("Phase 46 - Google sign-in: the real failure reaches the user", () => {
 
   it("a popup that will not open is reported, not left as a dead button", async () => {
     const h = harness({ open: () => false });
-    await until(() => expect(h.calls.info).toContain("TFlex could not open the Google sign-in window. Try again."));
+    await until(() => expect(h.calls.info).toContain("Jovrel could not open the Google sign-in window. Try again."));
     expect(h.calls.signedIn).toHaveLength(0);
     expect(h.bridge.stopOAuthCallback).toHaveBeenCalledTimes(1);
   });

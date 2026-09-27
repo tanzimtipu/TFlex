@@ -41,7 +41,7 @@ export const PRINT_WINDOW_MIN_HEIGHT = 520;
 export const PRINT_WINDOW_MAX_PAGES = 50_000;
 /** The renderer entry flag that selects the print-only UI. */
 export const PRINT_WINDOW_ENTRY_FLAG = 'print';
-export const PRINT_WINDOW_TITLE = 'Print - TFlex';
+export const PRINT_WINDOW_TITLE = 'Print - Jovrel';
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);

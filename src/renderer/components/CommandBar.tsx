@@ -20,7 +20,7 @@
 //
 // Phase 22 — the File (Open) and Save groups LEFT this bar: the
 // operator relocated Open / Save / Save As into the caption strip
-// (AppHeader's .titlebar-file group), immediately right of the TFlex
+// (AppHeader's .titlebar-file group), immediately right of the Jovrel
 // brand. This bar carries the page/zoom/tools/actions controls only,
 // and no duplicate File/Save control exists anywhere in the DOM.
 
@@ -186,7 +186,7 @@ export function CommandBar(props: CommandBarProps) {
       {/* Phase 22 — the File (Open) and Save groups are GONE: the
        *  operator relocated Open / Save / Save As into the caption
        *  strip (AppHeader's .titlebar-file group), immediately right
-       *  of the TFlex brand. This bar keeps only the working
+       *  of the Jovrel brand. This bar keeps only the working
        *  document controls (navigation / zoom / tools / actions), and
        *  no duplicate control exists anywhere in the DOM. */}
 

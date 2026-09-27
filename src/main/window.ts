@@ -431,6 +431,10 @@ export function createMainWindow(settings: AppSettings, deps: WindowDeps): Brows
     show: false,
     autoHideMenuBar: false,
     backgroundColor: '#eef1f5',
+    // Phase 49 — the native window title (taskbar tooltip / Alt-Tab / the OS
+    // window list) is the product name. The renderer's own document title
+    // takes over once the page loads.
+    title: 'Jovrel',
     hasShadow: true,
     webPreferences: {
       preload: resolvePreloadPath(),

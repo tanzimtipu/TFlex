@@ -205,10 +205,10 @@ export class UpdateService {
     // electron-builder.yml for the exact asset names):
     //   latest.yml                                — SINGLE manifest listing BOTH
     //                                               arch installers in `files:`
-    //   TFlex-Setup-<version>-x64.exe             — x64 NSIS installer
-    //   TFlex-Setup-<version>-x64.exe.blockmap    — x64 differential blockmap
-    //   TFlex-Setup-<version>-ia32.exe            — ia32 NSIS installer
-    //   TFlex-Setup-<version>-ia32.exe.blockmap   — ia32 differential blockmap
+    //   Jovrel-Setup-<version>-x64.exe             — x64 NSIS installer
+    //   Jovrel-Setup-<version>-x64.exe.blockmap    — x64 differential blockmap
+    //   Jovrel-Setup-<version>-ia32.exe            — ia32 NSIS installer
+    //   Jovrel-Setup-<version>-ia32.exe.blockmap   — ia32 differential blockmap
     //
     // Windows emits ONLY latest.yml for every architecture (electron-builder's
     // getArchPrefixForUpdateFile returns "" off Linux), so BOTH archs request
@@ -219,7 +219,7 @@ export class UpdateService {
     // MUST therefore keep the `-x64` / `-ia32` token. A per-machine install
     // additionally carries `isAdminRightsRequired: true` per file, so the
     // updater re-runs the installer elevated via resources/elevate.exe.
-    // The portable builds (TFlex-<version>-portable-<arch>.exe) are NOT listed
+    // The portable builds (Jovrel-<version>-portable-<arch>.exe) are NOT listed
     // in latest.yml and are gated by isPortableBuild() above.
     //
     // Token env vars (read at RUNTIME from the process environment, never

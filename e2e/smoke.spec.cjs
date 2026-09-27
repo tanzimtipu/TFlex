@@ -154,11 +154,11 @@ async function runSmoke(electronApp, window) {
   console.log('Checking DEF-074...');
   await electronApp.evaluate(({ Menu }) => {
     const helpMenu = Menu.getApplicationMenu().items.find(i => i.label === 'Help');
-    helpMenu.submenu.items.find(i => i.label === 'About TFlex').click();
+    helpMenu.submenu.items.find(i => i.label === 'About Jovrel').click();
   });
   const aboutDialog = await window.waitForSelector('.about-dialog, .sheet, .dialog');
   const aboutText = await aboutDialog.textContent();
-  if (aboutText.includes('TFlex') && (aboutText.includes('v1') || aboutText.includes('portable'))) {
+  if (aboutText.includes('Jovrel') && (aboutText.includes('v1') || aboutText.includes('portable'))) {
       console.log('DEF-074: FIXED');
   } else {
       console.log('DEF-074: STILL OPEN - text: ' + aboutText);

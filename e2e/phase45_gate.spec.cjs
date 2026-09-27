@@ -209,12 +209,20 @@ test('P45-2a branded header + Google mark + no dead space at 1440 and min window
   await win.locator('[data-header-accounts]').click();
   await win.waitForSelector('[data-accounts-auth]', { timeout: 15000 });
 
-  // Branded header: the app's own wordmark treatment.
-  const brandMark = (await win.locator('.accounts-brand-mark').textContent()) ?? '';
+  // Branded header: the app's own wordmark treatment. Phase 49 - the mark is
+  // now the inline JOVREL SVG (BrandMark, empty textContent) and the visible
+  // name is "Jovrel"; the old text-tile assertion ("TF"/"TFlex") is stale.
+  const brandMark = await win.locator('.accounts-brand-mark').evaluate((el) => ({
+    tag: el.tagName.toLowerCase(),
+    isSvg: el instanceof SVGElement,
+    hasDataAttr: el.hasAttribute('data-brand-mark'),
+    text: (el.textContent ?? '').trim(),
+  }));
   const brandName = (await win.locator('.accounts-brand-name').textContent()) ?? '';
   console.log(`[P45-2a brand] mark=${JSON.stringify(brandMark)} name=${JSON.stringify(brandName)}`);
-  expect(brandMark.trim()).toBe('TF');
-  expect(brandName.trim()).toBe('TFlex');
+  expect(brandMark.isSvg, 'the brand mark is the inline SVG (Phase 49)').toBe(true);
+  expect(brandMark.hasDataAttr, 'the brand mark carries data-brand-mark').toBe(true);
+  expect(brandName.trim()).toBe('Jovrel');
 
   // Google button carries the Google "G" mark (4 brand-coloured paths).
   const google = await win.locator('[data-accounts-google]').evaluate((el) => {

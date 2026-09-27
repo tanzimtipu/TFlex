@@ -18,7 +18,7 @@ export const PRINT_WINDOW_ENTRY_FLAG = "print";
 export const PRINT_WINDOW_MAX_PAGES = 50_000;
 
 /** Mirrors `PRINT_WINDOW_TITLE` in the main-process module. */
-export const PRINT_WINDOW_TITLE = "Print - TFlex";
+export const PRINT_WINDOW_TITLE = "Print - Jovrel";
 
 export type RendererEntry =
   | { kind: "app" }
@@ -103,10 +103,10 @@ export function resolveRendererEntry(search: string): RendererEntry {
  * The document title the renderer entry should carry, or null when the entry
  * must leave the document title alone.
  *
- * The print window loads the SAME index.html as the app, whose `<title>TFlex</title>`
+ * The print window loads the SAME index.html as the app, whose `<title>Jovrel</title>`
  * overrides the BrowserWindow `title` option - so unless the print entry sets
  * `document.title` itself, the OS title bar (and taskbar / Alt-Tab) shows
- * "TFlex" for both windows (DEF-298). Both the print UI and its error state are
+ * "Jovrel" for both windows (DEF-298). Both the print UI and its error state are
  * the standalone print window, so both carry the print title; the normal app
  * entry returns null and the main window's title is never touched.
  */

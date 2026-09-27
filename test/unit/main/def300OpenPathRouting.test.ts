@@ -66,6 +66,7 @@ const {
 vi.mock('electron', async () => ({
   app: {
     requestSingleInstanceLock: vi.fn().mockReturnValue(true),
+    setName: vi.fn(),
     quit: _quit,
     whenReady: vi.fn().mockResolvedValue(undefined),
     on: _on,

@@ -2,7 +2,7 @@
 //
 // 1.37.0 changed the default: accounts ship ENABLED (DEFAULT_SETTINGS
 // .accountsEnabled === true). This spec proves, against
-// release/win-unpacked/TFlex.exe:
+// release/win-unpacked/Jovrel.exe:
 //   A. a FRESH packaged profile (no settings.json) SHOWS the top-right account
 //      section (the signed-out sign-in entry), with ZERO accounts network
 //      traffic;
@@ -14,7 +14,7 @@
 // for any *.neon.tech request. The sync engine makes no network call while no
 // session is held, so a fresh profile stays silent even with the flag on.
 //
-// Run with TFLEX_PACKAGED_EXE pointing at release/win-unpacked/TFlex.exe.
+// Run with TFLEX_PACKAGED_EXE pointing at release/win-unpacked/Jovrel.exe.
 
 const { test, expect } = require('@playwright/test');
 const http = require('node:http');
@@ -26,7 +26,7 @@ const { hardClose } = require('./lib/helpers.cjs');
 
 const PACKAGED_EXE =
   process.env.TFLEX_PACKAGED_EXE ||
-  path.join(process.cwd(), 'release', 'win-unpacked', 'TFlex.exe');
+  path.join(process.cwd(), 'release', 'win-unpacked', 'Jovrel.exe');
 
 function startRecorder() {
   const hits = [];
@@ -87,7 +87,7 @@ test('packaged FRESH profile: account section SHOWS by default, zero accounts tr
     const version = await app.evaluate(({ app: a }) => a.getVersion());
     const execPath = await app.evaluate(() => process.execPath);
     console.log(`[p44-evidence] version=${version} execPath=${execPath}`);
-    expect(version, 'packaged build version').toBe('1.40.0');
+    expect(version, 'packaged build version').toBe('1.41.0');
     expect(execPath.toLowerCase(), 'launched the packaged exe').toContain('win-unpacked');
 
     await page.waitForSelector('.app', { timeout: 30000 });

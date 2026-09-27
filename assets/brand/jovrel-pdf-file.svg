@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
+  <!-- PDF file-association icon (transparent background) -->
+  <!-- sheet -->
+  <path d="M164 61 L573 61 L860 235 L860 961 L164 961 Z"
+        fill="#FFFFFF" stroke="#788089" stroke-width="12" stroke-linejoin="round"/>
+  <polygon points="573,61 573,235 860,235" fill="#D6DBE1" stroke="#788089" stroke-width="12" stroke-linejoin="round"/>
+  <!-- text lines -->
+  <g fill="#BEC4CC">
+    <rect x="256" y="225" width="382" height="12" rx="6"/>
+    <rect x="256" y="312" width="474" height="12" rx="6"/>
+    <rect x="256" y="399" width="428" height="12" rx="6"/>
+    <rect x="256" y="486" width="290" height="12" rx="6"/>
+  </g>
+  <!-- PDF band -->
+  <rect x="164" y="711" width="696" height="159" fill="#2E6BD8"/>
+  <text x="655" y="815" font-family="Segoe UI, Arial, sans-serif" font-size="95"
+        font-weight="700" fill="#FFFFFF" text-anchor="middle">PDF</text>
+  <!-- app badge: mini Jovrel mark -->
+  <g transform="translate(46,630) scale(0.3398)">
+    <rect x="0" y="0" width="1024" height="1024" rx="230" fill="#2E6BD8"/>
+    <g fill="none" stroke="#FFFFFF" stroke-width="26" stroke-linecap="round">
+      <path d="M 556 240 L 556 578 A 105 105 0 0 1 403 605"/>
+      <path d="M 609 240 L 609 578 A 158 158 0 0 1 398 630"/>
+      <path d="M 662 240 L 662 578 A 211 211 0 0 1 393 655"/>
+    </g>
+  </g>
+</svg>

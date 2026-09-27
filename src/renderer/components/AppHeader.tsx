@@ -31,6 +31,8 @@ import type { ThemeDefault } from "../state/preferences";
 import type { TabInput } from "../state/tabMouseDown";
 import { tabColourSlot } from "../state/tabColour";
 import { AnimatedTab } from "./AnimatedTab";
+import { BrandMark } from "./BrandMark";
+import { BrandWordmark } from "./BrandWordmark";
 import { TfMorph } from "./motion/TfMotion";
 import { useMorphPreset } from "./motion/useMorphPreset";
 import { useLiveReducedMotion, useInstantMotion } from "../hooks/useAnimations";
@@ -394,12 +396,12 @@ export function AppHeader(props: AppHeaderProps): ReactElement {
   return (
     <header className="app-header">
       <div className="brand">
-        <span className="brand-mark" aria-hidden>TF</span>
-        <span>TFlex</span>
+        <BrandMark size={18} className="brand-mark" />
+        <BrandWordmark className="brand-name" />
       </div>
       {/* Phase 22 — the FILE-ACTION group. Open + Save + Save As moved
        *  out of the CommandBar into the caption strip, immediately to
-       *  the right of the TFlex brand and to the left of the tab strip,
+       *  the right of the Jovrel brand and to the left of the tab strip,
        *  as ONE grouped capsule sized to the title-bar ladder (28px
        *  controls). The stable e2e hooks move with the controls:
        *  [data-toolbar-open] / [data-toolbar-save] /

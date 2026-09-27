@@ -207,7 +207,7 @@ export function runGoogleSignIn(ports: GoogleSignInPorts): GoogleSignInHandle {
     }
     if (!ports.openWindow(started.url)) {
       end();
-      ports.onInfo("TFlex could not open the Google sign-in window. Try again.");
+      ports.onInfo("Jovrel could not open the Google sign-in window. Try again.");
       return;
     }
     ports.onInfo("Finish signing in with Google in the window that opened.");

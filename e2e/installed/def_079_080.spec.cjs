@@ -18,7 +18,7 @@ const { pathToFileURL } = require('node:url');
 // to avoid importing from e2e/lib if it's easier to keep it self-contained.
 async function launchApp(extraEnv = {}) {
   const projectRoot = path.resolve(__dirname, '../..');
-  const executablePath = path.join(projectRoot, 'release', 'win-unpacked', 'TFlex.exe');
+  const executablePath = path.join(projectRoot, 'release', 'win-unpacked', 'Jovrel.exe');
   
   const uniqueId = `${Date.now()}-${Math.floor(Math.random() * 1000000)}`;
   const tempUserData = path.join(os.tmpdir(), `tflex-retest-def079-${uniqueId}`);

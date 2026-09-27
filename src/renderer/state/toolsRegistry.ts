@@ -776,7 +776,7 @@ const REGISTRY = [
   },
 
   // ---- DELIVER -------------------------------------------------------
-  // shrink it, audit it, get it out of TFlex in the format the user needs.
+  // shrink it, audit it, get it out of Jovrel in the format the user needs.
   {
     id: 'optimize',
     label: 'Reduce file size',
@@ -1127,7 +1127,7 @@ const REGISTRY = [
   {
     id: 'checkForUpdate',
     label: 'Check for Update',
-    description: 'Ask the updater whether a newer TFlex exists.',
+    description: 'Ask the updater whether a newer Jovrel exists.',
     icon: RefreshCw,
     shortcut: 'Ctrl+Shift+U',
     stage: 'global',
@@ -1147,7 +1147,7 @@ const REGISTRY = [
   {
     id: 'updateInstall',
     label: 'Restart to update',
-    description: 'Install the downloaded update and relaunch TFlex.',
+    description: 'Install the downloaded update and relaunch Jovrel.',
     icon: Check,
     shortcut: '',
     stage: 'global',
@@ -1156,7 +1156,7 @@ const REGISTRY = [
   },
   {
     id: 'about',
-    label: 'About TFlex',
+    label: 'About Jovrel',
     description: 'Version, credits and the changelog.',
     icon: Info,
     shortcut: '',
@@ -1258,7 +1258,7 @@ const REGISTRY = [
   {
     id: 'windowMinimize',
     label: 'Minimize window',
-    description: 'Minimize the TFlex window.',
+    description: 'Minimize the Jovrel window.',
     icon: Minimize,
     shortcut: '',
     stage: 'global',
@@ -1268,7 +1268,7 @@ const REGISTRY = [
   {
     id: 'windowMaximize',
     label: 'Maximize window',
-    description: 'Maximize or restore the TFlex window.',
+    description: 'Maximize or restore the Jovrel window.',
     icon: Maximize2,
     shortcut: '',
     stage: 'global',
@@ -1278,7 +1278,7 @@ const REGISTRY = [
   {
     id: 'windowClose',
     label: 'Close window',
-    description: 'Close the TFlex window.',
+    description: 'Close the Jovrel window.',
     icon: X,
     shortcut: '',
     stage: 'global',

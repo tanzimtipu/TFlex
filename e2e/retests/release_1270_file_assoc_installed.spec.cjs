@@ -1,12 +1,12 @@
 // Release 1.27.0 gate 3 (qa) - the PDF handler on the INSTALLED build.
 //
 // Phase 35 success criterion 2, second half (behaviour). The read-only
-// registry evidence (TFlex.pdf ProgID + .pdf OpenWithProgids) is captured
+// registry evidence (Jovrel.pdf ProgID + .pdf OpenWithProgids) is captured
 // out-of-band with `reg query` and logged here too.
 //
 //   1. Launch the installed exe WITH a PDF path argument -> that document
 //      opens (a real tab + rendered canvas), not the welcome screen.
-//   2. With TFlex already running, launch it again with a DIFFERENT PDF ->
+//   2. With Jovrel already running, launch it again with a DIFFERENT PDF ->
 //      the second process exits immediately (single-instance lock) and the
 //      document opens in the RUNNING instance (a second tab, still ONE
 //      BrowserWindow).
@@ -25,7 +25,7 @@ const { hardClose, dismissUpdatePrompt } = require('../lib/helpers.cjs');
 const EXPECTED = require('../../package.json').version;
 const INSTALLED =
   process.env.TFLEX_PACKAGED_EXE ||
-  path.join(process.env.LOCALAPPDATA || '', 'Programs', 'TFlex', 'TFlex.exe');
+  'C:\\Program Files\\Jovrel\\Jovrel.exe';
 const SAMPLES = path.resolve(__dirname, '..', '..', 'assets', 'samples');
 
 function tmpCopy(name) {
@@ -86,7 +86,7 @@ test('1.27.0 installed: app.getVersion, argv-open, and single-instance argv-open
   console.log(`[release-1270-fa] main pid=${mainPid} windows=${JSON.stringify(windowsBefore)}`);
   expect(windowsBefore.length, 'one main window after the argv launch').toBe(1);
 
-  // --- Launch AGAIN with a DIFFERENT pdf while TFlex is running ---------
+  // --- Launch AGAIN with a DIFFERENT pdf while Jovrel is running ---------
   const child = spawn(INSTALLED, [pdfB], { stdio: 'ignore', windowsHide: true });
   let exited = false;
   let code = null;

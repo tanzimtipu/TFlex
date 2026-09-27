@@ -29,9 +29,8 @@
 //      that gates on `disabled` will trip React's hook-order check if
 //      a hook moves below such a branch.
 //
-//   2. NO emojis anywhere — the brand mark stays a text "TF" glyph in
-//      a 4x4 rounded square so it reads as a deliberate logotype
-//      instead of a pictogram.
+//   2. NO emojis anywhere — the brand mark is the inline JOVREL SVG
+//      (BrandMark) rather than a text glyph or a pictogram.
 //
 //   3. The `-webkit-app-region` CSS contract: this component's outer
 //      `.titlebar` carries `drag` (declared in styles.css); the

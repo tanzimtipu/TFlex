@@ -34,7 +34,7 @@ const { hardClose, dismissUpdatePrompt, openSamplePath, armAnnotationTool, gotoS
 const EXPECTED = require('../../package.json').version;
 const PACKAGED_EXE =
   process.env.TFLEX_PACKAGED_EXE ||
-  path.join(process.env.LOCALAPPDATA || '', 'Programs', 'TFlex', 'TFlex.exe');
+  'C:\\Program Files\\Jovrel\\Jovrel.exe';
 
 const mm = (v) => String(v).trim().split('.').slice(0, 3).join('.');
 const log = (label, obj) => console.log(`[canonical|${label}] ${JSON.stringify(obj)}`);
@@ -142,11 +142,18 @@ test('VERSION GATE: installed FileVersion and app.getVersion() match package.jso
 // ===========================================================================
 test("ABOUT: Help > About reports the package.json version and a non-empty What's New highlight", async () => {
   await withApp(async (win, pageErrors) => {
-    // Help > About TFlex via the title-bar application menu (real user action).
+    // Help > About Jovrel via the title-bar application menu (real user action).
     await win.click('[data-menu-button]');
     await win.waitForSelector('[data-menu-popover]', { timeout: 10000 });
     await win.click('[data-menu-action="about"]');
     await win.waitForSelector('[data-about-dialog]:visible', { timeout: 15000 });
+    // The dialog mounts with a defensive "unavailable" fallback and fills in
+    // from the async app:getInfo IPC; wait for it to settle before reading
+    // (reading on first paint is a race - the assertion below is unchanged).
+    await win.waitForFunction(() => {
+      const el = document.querySelector('[data-about-version]');
+      return el !== null && (el.textContent ?? '').trim() !== 'unavailable';
+    }, null, { timeout: 15000 });
 
     const version = (await win.locator('[data-about-version]').innerText()).trim();
     const highlights = win.locator('[data-whats-new-highlight]');

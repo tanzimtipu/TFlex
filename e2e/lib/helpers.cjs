@@ -11,7 +11,7 @@ const fs = require('node:fs');
 const { execSync } = require('node:child_process');
 const { launchApp, getSamplePath } = require('./launch.cjs');
 
-const INSTALLED = path.join(process.env.LOCALAPPDATA, 'Programs', 'tflex', 'TFlex.exe');
+const INSTALLED = process.env.TFLEX_PACKAGED_EXE || 'C:\\Program Files\\Jovrel\\Jovrel.exe';
 const SHOTS = path.resolve(__dirname, '..', '..', 'screenshots');
 
 // Bound window so `shot(name)` works without threading `win` through every call.

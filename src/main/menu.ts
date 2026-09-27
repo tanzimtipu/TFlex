@@ -197,7 +197,7 @@ export function buildAppMenu(deps: MenuDeps): void {
         },
         { type: 'separator' },
         {
-          label: 'About TFlex',
+          label: 'About Jovrel',
           click: () => send('about'),
         },
       ],

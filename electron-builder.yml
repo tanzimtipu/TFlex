@@ -1,5 +1,11 @@
+# Phase 49 — the PRODUCT is Jovrel; the PROJECT stays TFlex.
+# `appId` STAYS com.tflex.app on purpose: it is an INTERNAL identity, and
+# electron-builder derives the NSIS upgrade GUID (UUID.v5 of appId + ns) from
+# it. Changing it would register a SECOND product and orphan the old install;
+# keeping it makes a Jovrel installer find and replace an existing TFlex
+# install in place via the same Add/Remove Programs entry and install dir.
 appId: com.tflex.app
-productName: TFlex
+productName: Jovrel
 directories:
   output: release
 files:
@@ -7,6 +13,10 @@ files:
   - assets/**
   - package.json
 win:
+  # Phase 49 — the application icon (window/taskbar/executable). Resolved
+  # from the project root like every other path here; the brand assets ship
+  # via the `assets/**` files rule above.
+  icon: assets/brand/jovrel.ico
   # Phase 38 item A — x64 ONLY (operator ruling 2026-09-25: 32-bit is DEFERRED).
   # Electron 44 publishes no win32-ia32 binary upstream (electron-v44.0.0-win32-ia32.zip
   # 404s; the local checksums.json lists only x64/arm64 for win32), so an ia32
@@ -21,18 +31,19 @@ win:
     - target: portable
       arch:
         - x64
-  # Phase 35 — register TFlex as a .pdf handler so it appears in Explorer's
-  # "Open with" list and can be chosen as the default PDF app in Windows
-  # Settings. `name` is the ProgID / file class (electron-builder passes it
-  # straight to the NSIS APP_ASSOCIATE macro as FILECLASS); `description` is
-  # the class description shown to the shell. No `icon` key: the association
-  # inherits the application icon (`$appExe,0`), consistent with the rest of
-  # the builder config, which sets no custom icon. This never sets the
-  # Windows default handler on its own — the user picks that in Settings.
+  # Phase 35 / Phase 49 — register Jovrel as a .pdf handler so it appears in
+  # Explorer's "Open with" list and can be chosen as the default PDF app in
+  # Windows Settings. `name` is the ProgID / file class (electron-builder
+  # passes it straight to the NSIS APP_ASSOCIATE macro as FILECLASS);
+  # `description` is the class description shown to the shell. Phase 49 sets
+  # an explicit per-extension `icon` (the Jovrel PDF file-type icon) instead
+  # of inheriting the application icon. This never sets the Windows default
+  # handler on its own — the user picks that in Settings.
   fileAssociations:
     - ext: pdf
-      name: TFlex.pdf
-      description: PDF Document
+      name: Jovrel.pdf
+      description: Jovrel PDF Document
+      icon: assets/brand/jovrel-pdf.ico
 # Phase 13 review — borderless / frameless NSIS installer is NOT supportable
 # via electron-builder, and the limit is recorded here honestly:
 #
@@ -57,8 +68,8 @@ nsis:
   # to the standard Program Files location, with the normal UAC elevation prompt
   # (RequestExecutionLevel admin), a per-machine Add/Remove Programs entry
   # (HKLM) and an uninstaller in the install folder:
-  #   x64 build -> $PROGRAMFILES64\TFlex = C:\Program Files\TFlex
-  # (the ia32 -> $PROGRAMFILES\TFlex WOW64 path is deferred with the ia32 target;
+  #   x64 build -> $PROGRAMFILES64\Jovrel = C:\Program Files\Jovrel
+  # (the ia32 -> $PROGRAMFILES\Jovrel WOW64 path is deferred with the ia32 target;
   # it returns unchanged if the runtime is ever repinned with a 32-bit binary.)
   # `allowElevation` lets the assisted installer offer elevation for the
   # install; `packElevateHelper` below packs resources/elevate.exe so the
@@ -75,6 +86,10 @@ nsis:
   # the EACCES retry fallback.
   packElevateHelper: true
   allowToChangeInstallationDirectory: true
+  # Phase 49 — Jovrel brand icons for the installer and the uninstaller
+  # (electron-builder accepts the same .ico for both).
+  installerIcon: assets/brand/jovrel.ico
+  uninstallerIcon: assets/brand/jovrel.ico
   # Phase 38 item A (operator ruling 2026-09-25) — remove the LEGACY per-user
   # install (pre-1.30: %LOCALAPPDATA%\Programs\TFlex, an HKCU uninstall entry
   # and an HKCU TFlex.pdf ProgID) when this per-machine installer runs, so a
@@ -88,9 +103,9 @@ nsis:
   # `ia32` if it ever returns) — electron-builder's Arch names, which is also
   # what electron-updater's findFile() matches against process.arch. See the
   # feed notes below.
-  artifactName: TFlex-Setup-${version}-${arch}.${ext}
+  artifactName: Jovrel-Setup-${version}-${arch}.${ext}
 portable:
-  artifactName: TFlex-${version}-portable-${arch}.${ext}
+  artifactName: Jovrel-${version}-portable-${arch}.${ext}
 # Publish target for GitHub Releases. `npm run dist` passes `--publish never`
 # so artifacts are built locally without uploading; the operator publishes by
 # running `electron-builder --publish onTag` (or `always`) with `GH_TOKEN` set,
@@ -98,11 +113,11 @@ portable:
 #
 # When published, electron-builder uploads these release assets to the GitHub
 # release for the matching git tag (vMAJOR.MINOR.PATCH):
-#   TFlex-Setup-<version>-x64.exe           — x64 NSIS installer (auto-updateable)
-#   TFlex-Setup-<version>-x64.exe.blockmap  — x64 differential update blockmap
+#   Jovrel-Setup-<version>-x64.exe           — x64 NSIS installer (auto-updateable)
+#   Jovrel-Setup-<version>-x64.exe.blockmap  — x64 differential update blockmap
 #   latest.yml                              — the SINGLE update feed manifest
 #                                             consumed by electron-updater
-#   TFlex-<version>-portable-x64.exe        — portable x64 (direct download)
+#   Jovrel-<version>-portable-x64.exe        — portable x64 (direct download)
 # (32-bit artifacts are deferred per the 2026-09-25 operator ruling; if ia32
 # returns, the same four names gain an -ia32 twin and latest.yml lists both.)
 #

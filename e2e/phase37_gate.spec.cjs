@@ -1048,7 +1048,7 @@ test('P37-F print: no in-app modal; title-bar / File > Print / Ctrl+P open the s
     preview: document.querySelectorAll('[data-print-preview]').length,
   }));
   console.log(`[P37-F] title-bar Print window=${JSON.stringify(info)} chrome=${JSON.stringify(chrome)}`);
-  expect(info.title, 'the standalone window title').toBe('Print - TFlex');
+  expect(info.title, 'the standalone window title').toBe('Print - Jovrel');
   expect(info.count, 'exactly two windows (app + print)').toBe(2);
   expect(chrome.printWindow).toBe(1);
   expect(chrome.tabs).toBe(0);

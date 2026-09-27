@@ -74,7 +74,7 @@ export interface TextPropertiesPanelProps {
   /** Emit the smallest style patch for a control gesture. */
   onPatch: (patch: TextBoxStylePatch) => void;
   /** Phase 24 — the target family tag. `"text"` (default) is a
-   *  TFlex-owned text object; `"annotation"` is a textbox / callout /
+   *  Jovrel-owned text object; `"annotation"` is a textbox / callout /
    *  note annotation. Since Phase 24 the two are identical for control
    *  gating: every control is live in both. The tag survives only for
    *  the panel surface attribute and the colour-control label. */

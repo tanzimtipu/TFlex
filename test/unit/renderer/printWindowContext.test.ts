@@ -82,16 +82,16 @@ describe("resolveRendererEntry - malformed context", () => {
 });
 
 describe("rendererEntryTitle - the print window's OS title (DEF-298)", () => {
-  it("is 'Print - TFlex' for the print entry", () => {
+  it("is 'Print - Jovrel' for the print entry", () => {
     const entry = resolveRendererEntry(searchFor(CONTEXT));
-    expect(rendererEntryTitle(entry)).toBe("Print - TFlex");
+    expect(rendererEntryTitle(entry)).toBe("Print - Jovrel");
     expect(rendererEntryTitle(entry)).toBe(PRINT_WINDOW_TITLE);
   });
 
-  it("is 'Print - TFlex' for the print window's error state", () => {
+  it("is 'Print - Jovrel' for the print window's error state", () => {
     const entry = resolveRendererEntry("?tfWindow=print");
     expect(entry.kind).toBe("print-error");
-    expect(rendererEntryTitle(entry)).toBe("Print - TFlex");
+    expect(rendererEntryTitle(entry)).toBe("Print - Jovrel");
   });
 
   it("is null for the normal app entry, so the main window's title is untouched", () => {

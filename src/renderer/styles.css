@@ -1587,16 +1587,23 @@ input[type="checkbox"] {
   user-select: none;
 }
 
+/* Phase 49 - the JOVREL mark is an inline SVG (BrandMark); the tile, its
+ * squircle radius and the triple-stroke J all come from the SVG, so this
+ * class only owns layout. Width/height arrive from the component's `size`
+ * prop (18px in the title bar), which keeps the mark crisp because the
+ * 1024x1024 viewBox scales losslessly. */
 .brand-mark {
-  width: 18px;
-  height: 18px;
-  border-radius: 4px;
-  background: var(--accent);
-  display: grid;
-  place-items: center;
-  color: var(--fg-on-accent);
-  font-size: var(--tf-label-size);
-  font-weight: 700;
+  display: block;
+  flex: none;
+}
+
+/* The wordmark is themed text (Inter), not an image: `currentColor` lets the
+ * title-bar `.brand` (--fg-strong) and each surface pick the foreground, which
+ * is how the brand's light-bg / dark-bg variants collapse into one rule. */
+.brand-wordmark {
+  color: currentColor;
+  font-weight: 600;
+  letter-spacing: -0.01em;
 }
 
 /* ---------------------------------------------------------------------------
@@ -2553,12 +2560,24 @@ input[type="checkbox"] {
   background: var(--bg-base);
 }
 
-.welcome-eyebrow {
-  font-size: var(--fs-xs);
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--fg-muted);
-  margin-bottom: var(--sp-2);
+/* Phase 49 - the welcome hero's brand lockup: the JOVREL mark beside the
+ * wordmark, replacing the old plain-text eyebrow. */
+.welcome-brand {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+  margin-bottom: var(--sp-3);
+  color: var(--fg-strong);
+}
+
+.welcome-brand-mark {
+  display: block;
+  flex: none;
+}
+
+.welcome-brand-name {
+  font-size: var(--fs-lg);
+  letter-spacing: -0.01em;
 }
 
 /* Phase 6 — the welcome headline is the ONE heading that may exceed
@@ -7791,15 +7810,7 @@ rect.ann-highlight.ann-preview {
 /* ----- About dialog ----- */
 
 .about-mark {
-  width: 56px;
-  height: 56px;
-  border-radius: var(--radius-3);
-  background: var(--accent);
-  color: var(--fg-on-accent);
-  display: grid;
-  place-items: center;
-  font-size: 22px;
-  font-weight: 700;
+  display: block;
   margin-bottom: var(--sp-3);
 }
 .about-name {
@@ -10068,11 +10079,33 @@ rect.ann-highlight.ann-preview {
   flex: 0 0 auto;
 }
 
+/* Phase 49 - the print window's brand lockup (mark + wordmark), matching the
+ * in-app title bar. The heading then takes the remaining width so the page
+ * count stays pinned to the trailing edge. */
+.print-window-brand {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+  color: var(--fg-strong);
+  flex: none;
+}
+
+.print-window-brand-mark {
+  display: block;
+  flex: none;
+}
+
+.print-window-brand-name {
+  font-size: var(--fs-md);
+  letter-spacing: -0.01em;
+}
+
 .print-window-heading {
   display: flex;
   align-items: baseline;
   gap: var(--sp-2);
   min-width: 0;
+  flex: 1 1 auto;
 }
 
 .print-window-title {
@@ -15233,7 +15266,7 @@ cursor: pointer;
  * readable. Every control stays mounted and reachable — only its face
  * compacts, exactly like the DEF-244 Open/theme bands:
  *
- *   <= 900px — the brand drops its wordmark (the "TF" mark stays), the File
+ *   <= 900px — the brand drops its wordmark (the Jovrel mark stays), the File
  *              trigger drops its text label (the chevron, aria-label and
  *              "File menu" tooltip stay), and the header's paddings/gaps
  *              tighten. The quick file actions stay icon-and-hook identical;
@@ -15714,10 +15747,8 @@ cursor: pointer;
 }
 
 .accounts-brand-mark {
-  width: 26px;
-  height: 26px;
-  border-radius: 6px;
-  font-size: 12px;
+  display: block;
+  flex: none;
 }
 
 .accounts-brand-text {

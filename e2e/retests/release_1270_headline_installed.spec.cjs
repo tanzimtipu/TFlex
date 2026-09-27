@@ -2,7 +2,7 @@
 // INSTALLED build.
 //
 //   (a) the standalone print window opens from the in-app dialog's detach
-//       control, is titled "Print - TFlex", renders ONLY the print UI, and is
+//       control, is titled "Print - Jovrel", renders ONLY the print UI, and is
 //       a top-level window that can be moved outside the app window; ONE
 //       screenshot: screenshots/release-1270-print-window.png.
 //   (b) with the "Microsoft Print to PDF" virtual destination, printing
@@ -24,7 +24,7 @@ const { SHOTS, openFile, tmpCopy, twoPaneSetup } = require('../lib/p33_common.cj
 const EXPECTED = require('../../package.json').version;
 const INSTALLED =
   process.env.TFLEX_PACKAGED_EXE ||
-  path.join(process.env.LOCALAPPDATA || '', 'Programs', 'TFlex', 'TFlex.exe');
+  'C:\\Program Files\\Jovrel\\Jovrel.exe';
 
 let app = null;
 let win = null;
@@ -98,7 +98,7 @@ async function openDetachedPrintWindow() {
 // ---------------------------------------------------------------------------
 // (a) standalone print window: title, print-only UI, movable outside
 // ---------------------------------------------------------------------------
-test('1.27.0 (a): detach opens "Print - TFlex", print-only UI, movable outside the app', async () => {
+test('1.27.0 (a): detach opens "Print - Jovrel", print-only UI, movable outside the app', async () => {
   const printPage = await openDetachedPrintWindow();
 
   const info = await app.evaluate(({ BrowserWindow }) => {
@@ -117,7 +117,7 @@ test('1.27.0 (a): detach opens "Print - TFlex", print-only UI, movable outside t
     };
   });
   console.log(`[release-1270-g5a] window info=${JSON.stringify(info)}`);
-  expect(info.title, 'print window OS title').toBe('Print - TFlex');
+  expect(info.title, 'print window OS title').toBe('Print - Jovrel');
   expect(info.parent, 'print window is top-level (not a child of the app window)').toBe(false);
   expect(info.resizable).toBe(true);
   expect(info.count).toBe(2);
@@ -193,7 +193,7 @@ test('1.27.0 (b): virtual PDF destination produces the PDF with no Windows/Chrom
   console.log(`[release-1270-g5b] OS windows after confirm=${JSON.stringify(after)}`);
   const visiblePrintWindows = after
     .map((line) => { const [pid, vis, cls, ...rest] = line.split('|'); return { pid, vis, cls, title: rest.join('|') }; })
-    .filter((w) => w.vis === 'True' && (w.cls === '#32770' || /\bprint\b/i.test(w.title)) && !/^Print - TFlex$/i.test(w.title));
+    .filter((w) => w.vis === 'True' && (w.cls === '#32770' || /\bprint\b/i.test(w.title)) && !/^Print - Jovrel$/i.test(w.title));
   console.log(`[release-1270-g5b] visible Windows/Chromium print windows=${JSON.stringify(visiblePrintWindows)}`);
   expect(visiblePrintWindows).toEqual([]);
 

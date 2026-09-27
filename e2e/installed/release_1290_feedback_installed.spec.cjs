@@ -2,7 +2,7 @@
 // INSTALLED build.
 //
 // Launches ONLY through the canonical launchInstalled() helper
-// (e2e/installed/* specs use it; it targets %LOCALAPPDATA%\Programs\tflex\TFlex.exe).
+// (e2e/installed/* specs use it; it targets C:\Program Files\Jovrel\Jovrel.exe).
 // Captures exactly TWO screenshots - screenshots/release-1290-dock-inspector.png
 // and screenshots/release-1290-print-window.png - both NEW files.
 //
@@ -212,7 +212,7 @@ test('(c) print opens the STANDALONE window from the title bar and File > Print;
     printer: document.querySelectorAll('[data-print-printer]').length,
   }));
   log('print-titlebar', { info, chrome });
-  expect(info.title, 'the standalone window title').toBe('Print - TFlex');
+  expect(info.title, 'the standalone window title').toBe('Print - Jovrel');
   expect(info.count, 'exactly two windows (app + print)').toBe(2);
   expect(chrome.printWindow).toBe(1);
   expect(chrome.tabs, 'the print window is not the app shell').toBe(0);

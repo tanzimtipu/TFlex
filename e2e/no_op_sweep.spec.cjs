@@ -203,7 +203,7 @@ test.describe('No-op Sweep and Feature Verification', () => {
     });
     await window.waitForSelector('[data-about-dialog]');
     const aboutText = await window.locator('[data-about-dialog]').textContent();
-    expect(aboutText).toContain('TFlex');
+    expect(aboutText).toContain('Jovrel');
     console.log('DEF-074: About dialog surfaces info FIXED');
   });
 });

@@ -30,7 +30,7 @@ const { test, expect } = require('@playwright/test');
 const { hardClose } = require('../lib/helpers.cjs');
 const { launchApp } = require('../lib/launch.cjs');
 
-const EXE_PATH = "C:\\Users\\tanzi\\AppData\\Local\\Programs\\tflex\\TFlex.exe";
+const EXE_PATH = process.env.TFLEX_PACKAGED_EXE || "C:\\Program Files\\Jovrel\\Jovrel.exe";
 const SHOT = 'screenshots';
 
 let electronApp = null;

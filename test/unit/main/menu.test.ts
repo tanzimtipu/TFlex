@@ -232,7 +232,7 @@ describe('DEF-065: menu.ts', () => {
       expect(send).toHaveBeenCalledWith('menu:action', { action: 'checkForUpdate' });
     });
 
-    it('keeps the About TFlex item in the Help menu', () => {
+    it('keeps the About Jovrel item in the Help menu', () => {
       buildAppMenu({ sendToFocused: vi.fn(), sendPrintRequest: vi.fn() });
 
       const template = _buildFromTemplate.mock.calls[0][0] as Array<{
@@ -241,7 +241,7 @@ describe('DEF-065: menu.ts', () => {
       }>;
       const help = template.find((t) => t.label === 'Help');
       const helpItems = help!.submenu ?? [];
-      expect(helpItems.some((i) => i.label === 'About TFlex')).toBe(true);
+      expect(helpItems.some((i) => i.label === 'About Jovrel')).toBe(true);
     });
 
     it('uses an accelerator that is free of collisions with the rest of the menu', () => {

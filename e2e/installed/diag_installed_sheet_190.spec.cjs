@@ -14,7 +14,7 @@ const fs = require('node:fs');
 const { launchApp } = require('../lib/launch.cjs');
 const { hardClose } = require('../lib/helpers.cjs');
 
-const INSTALLED = path.join(process.env.LOCALAPPDATA, 'Programs', 'tflex', 'TFlex.exe');
+const INSTALLED = process.env.TFLEX_PACKAGED_EXE || 'C:\\Program Files\\Jovrel\\Jovrel.exe';
 const SHOTS = path.resolve(__dirname, '..', '..', 'screenshots');
 
 test('diag: installed app sheet-backdrop source', async () => {

@@ -67,7 +67,7 @@ interface PdfFieldObject {
  *
  *  pdf.js 4.x (pinned 4.10.38) removed `renderInteractiveForms` from
  *  `RenderParameters`; the v3 flag drew each widget's appearance from
- *  the PDF's stored /V values. Since TFlex edits forms through the
+ *  the PDF's stored /V values. Since Jovrel edits forms through the
  *  ENGINE (pdf-lib, over IPC) while pdf.js only renders, the pdf.js
  *  document proxy never sees the user's typed values — widgets render
  *  with their blank default appearance and tesseract misses text like

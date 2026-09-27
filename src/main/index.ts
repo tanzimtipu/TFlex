@@ -57,6 +57,7 @@ import { OAuthCallbackService } from './services/accounts/oauth-callback';
 import { registerOAuthCallbackIpc } from './services/accounts/oauth-callback-ipc';
 import { installAuthOriginHeader } from './services/accounts/origin-header';
 import { UpdateService } from './services/update-service';
+import { LEGACY_USERDATA_DIRNAME, migrateLegacyUserData } from './services/userdata-migration';
 import { applyMenuEnabledState, buildAppMenu } from './menu';
 import { createMainWindow, deriveAuthHost, installAuthPopupHandler } from './window';
 import { planCaptionMaximize } from './window-maximize';
@@ -66,6 +67,15 @@ import { extractFileArgument, looksLikePdfPath } from './open-path';
 function mainModuleDir(): string {
   return __dirname;
 }
+
+// Phase 49 — the PRODUCT is Jovrel. Electron derives the default userData
+// directory from the application name; the npm package name must stay `tflex`,
+// and electron-builder's `productName` config alone does not change
+// app.getName(), so the runtime name is set explicitly. This MUST run before
+// requestSingleInstanceLock() below and before any getPath('userData') read,
+// so the lock file and every store land under `%APPDATA%\Jovrel`;
+// userdata-migration.ts then copies the pre-rename `%APPDATA%\tflex` state in.
+app.setName('Jovrel');
 
 // Test harness: export start() so unit tests can call it directly.
 // In production the module-level init below calls start() automatically;
@@ -147,7 +157,7 @@ export function sendOpenPath(path: string): void {
  */
 async function handleOsOpenPath(path: string): Promise<void> {
   if (!looksLikePdfPath(path)) {
-    dialog.showErrorBox('Cannot open file', `TFlex is a PDF app and cannot open:\n${path}`);
+    dialog.showErrorBox('Cannot open file', `Jovrel is a PDF app and cannot open:\n${path}`);
     return;
   }
   const check = await loadPdfFile(path);
@@ -188,6 +198,20 @@ if (!_isVitest) {
 
 export async function start(): Promise<void> {
   await app.whenReady();
+
+  // Phase 49 — one-time migration of the operator's per-user state from the
+  // pre-rename `%APPDATA%\tflex` directory into the new `%APPDATA%\Jovrel`
+  // userData directory. Runs before any store is constructed below. Gated
+  // inside migrateLegacyUserData: old dir absent, same dir, or new dir
+  // already holding settings.json all skip; the old directory is never
+  // modified or deleted.
+  const userDataMigration = await migrateLegacyUserData(
+    app.getPath('userData'),
+    join(app.getPath('appData'), LEGACY_USERDATA_DIRNAME),
+  );
+  if (userDataMigration.kind === 'migrated' && userDataMigration.copied.length > 0) {
+    console.log(`[userdata] migrated TFlex per-user state: ${userDataMigration.copied.join(', ')}`);
+  }
 
   // Phase 6: build the application menu. The menu sends actions to the
   // focused window's renderer via IPC, where the same handlers as toolbar

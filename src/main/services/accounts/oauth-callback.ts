@@ -335,14 +335,14 @@ const SUCCESS_PAGE =
   '<title>Sign-in complete</title></head>' +
   '<body style="font-family:system-ui,sans-serif;margin:0;padding:2.5rem">' +
   '<h1 style="font-size:1.25rem">Sign-in complete</h1>' +
-  '<p>You can close this window and return to TFlex.</p>' +
+  '<p>You can close this window and return to Jovrel.</p>' +
   '</body></html>';
 const FORBIDDEN_PAGE =
   '<!doctype html><html lang="en"><head><meta charset="utf-8">' +
   '<title>Sign-in could not be verified</title></head>' +
   '<body style="font-family:system-ui,sans-serif;margin:0;padding:2.5rem">' +
   '<h1 style="font-size:1.25rem">Sign-in could not be verified</h1>' +
-  '<p>Close this window and try again from TFlex.</p></body></html>';
+  '<p>Close this window and try again from Jovrel.</p></body></html>';
 const NOT_FOUND_PAGE =
   '<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Not found</title></head><body></body></html>';
 const METHOD_PAGE =

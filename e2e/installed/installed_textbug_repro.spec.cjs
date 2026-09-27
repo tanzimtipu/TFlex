@@ -1,5 +1,5 @@
 // Operator text-manipulation bugs on the INSTALLED app (2026-09-20, explicit
-// orchestrator dispatch). Launches %LOCALAPPDATA%\Programs\TFlex\TFlex.exe via
+// orchestrator dispatch). Launches C:\Program Files\Jovrel\Jovrel.exe via
 // the canonical launchApp() from e2e/lib/launch.cjs - NEVER the dev build.
 //
 // Reproduces four tools through the real UI and measures raw behaviour:
@@ -25,7 +25,7 @@ const { hardClose, dismissUpdatePrompt, armAnnotationTool, openSample, openSampl
 
 const PACKAGED_EXE =
   process.env.TFLEX_PACKAGED_EXE ||
-  path.join(process.env.LOCALAPPDATA || '', 'Programs', 'TFlex', 'TFlex.exe');
+  'C:\\Program Files\\Jovrel\\Jovrel.exe';
 const SHOTS = path.resolve(__dirname, '..', '..', 'screenshots');
 const REPORT = path.join(SHOTS, 'installed-textbug-repro.json');
 fs.mkdirSync(SHOTS, { recursive: true });

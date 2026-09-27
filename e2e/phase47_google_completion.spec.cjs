@@ -22,7 +22,7 @@ const { hardClose } = require('./lib/helpers.cjs');
 
 const PACKAGED_EXE =
   process.env.TFLEX_PACKAGED_EXE ||
-  path.join(process.cwd(), 'release', 'win-unpacked', 'TFlex.exe');
+  path.join(process.cwd(), 'release', 'win-unpacked', 'Jovrel.exe');
 
 let app = null;
 let win = null;
@@ -41,7 +41,7 @@ test('P47 packaged: popup closes when the flow lands on its minted loopback call
 
   const version = await app.evaluate(({ app: a }) => a.getVersion());
   console.log(`[P47 version] ${version}`);
-  expect(version, 'packaged build version').toBe('1.40.0');
+  expect(version, 'packaged build version').toBe('1.41.0');
 
   // Subscribe to the real trace bridge BEFORE the flow starts.
   await win.evaluate(() => {

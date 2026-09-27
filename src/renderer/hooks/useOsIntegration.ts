@@ -91,16 +91,16 @@ export function useOsFileDrop(options: OsFileDropOptions): void {
       const files = e.dataTransfer === null ? [] : Array.from(e.dataTransfer.files);
       const first = files[0];
       if (first === undefined) {
-        onError("TFlex could not read the dropped file.");
+        onError("Jovrel could not read the dropped file.");
         return;
       }
       if (!isPdfFile(first)) {
-        onError(`"${first.name}" is not a PDF. TFlex can only open PDF files.`);
+        onError(`"${first.name}" is not a PDF. Jovrel can only open PDF files.`);
         return;
       }
       const path = resolveDroppedPath(first);
       if (path === null) {
-        onError("TFlex could not resolve the dropped file's location.");
+        onError("Jovrel could not resolve the dropped file's location.");
         return;
       }
       void Promise.resolve(openPath(path)).catch(() => undefined);
@@ -142,11 +142,11 @@ export function useOsOpenPathRequests(options: OsOpenPathRequestOptions): void {
     return subscribe((path: unknown): void => {
       const { openPath, onError } = optionsRef.current;
       if (typeof path !== "string" || path.trim() === "") {
-        onError("TFlex received an invalid file path from Windows.");
+        onError("Jovrel received an invalid file path from Windows.");
         return;
       }
       void Promise.resolve(openPath(path)).catch(() => {
-        onError("TFlex could not open the requested file.");
+        onError("Jovrel could not open the requested file.");
       });
     });
   }, []);

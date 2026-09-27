@@ -13,6 +13,8 @@ import { useCallback, useEffect, useMemo, useState, type ReactElement } from "re
 import { TriangleAlert } from "lucide-react";
 import type { PDFDocumentProxy } from "pdfjs-dist";
 import { PrintPanel } from "../components/PrintPanel";
+import { BrandMark } from "../components/BrandMark";
+import { BrandWordmark } from "../components/BrandWordmark";
 import { usePrintControls } from "../components/usePrintControls";
 import { openPdfDocument } from "../pdf/pdfjs";
 import { getEngine } from "../engine/engineClient";
@@ -183,7 +185,7 @@ function PrintWindowSurface({ context, deps }: PrintWindowSurfaceProps): ReactEl
   const closeWindow = useCallback((): void => deps.closeWindow(), [deps]);
 
   const blockedReason = gone
-    ? "The document was closed in TFlex, so it can no longer be printed."
+    ? "The document was closed in Jovrel, so it can no longer be printed."
     : loadError !== null
       ? loadError
       : doc === null
@@ -205,6 +207,10 @@ function PrintWindowSurface({ context, deps }: PrintWindowSurfaceProps): ReactEl
   return (
     <div className="print-window" data-print-window>
       <header className="print-window-header">
+        <div className="print-window-brand">
+          <BrandMark size={18} className="print-window-brand-mark" />
+          <BrandWordmark className="print-window-brand-name" />
+        </div>
         <div className="print-window-heading">
           <h1 className="print-window-title">Print</h1>
           <span className="print-window-doc" data-print-window-doc title={documentName}>
@@ -220,7 +226,7 @@ function PrintWindowSurface({ context, deps }: PrintWindowSurfaceProps): ReactEl
         <div className="print-window-banner" role="alert" data-print-document-gone>
           <TriangleAlert size={16} aria-hidden />
           <span>
-            This document was closed in TFlex. Its pages can no longer be printed from
+            This document was closed in Jovrel. Its pages can no longer be printed from
             this window.
           </span>
         </div>

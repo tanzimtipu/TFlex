@@ -310,7 +310,7 @@ export function UpdatePromptDialog(
         return (
           <div className="update-prompt-body" data-update-prompt-kind="downloaded">
             <p className="update-prompt-text">
-              v{version} has downloaded. Restart TFlex to install the
+              v{version} has downloaded. Restart Jovrel to install the
               new version — any unsaved work will be lost.
             </p>
           </div>
@@ -385,7 +385,7 @@ export function UpdatePromptDialog(
         return (
           <div className="update-prompt-body" data-update-prompt-kind="checking">
             <p className="update-prompt-text">
-              Looking for the latest version of TFlex.
+              Looking for the latest version of Jovrel.
             </p>
           </div>
         );
@@ -403,7 +403,7 @@ export function UpdatePromptDialog(
             <p className="update-prompt-text">
               {state !== null && state !== undefined && state.kind === "unsupported"
                 ? state.reason
-                : "This build of TFlex doesn't support automatic updates."}
+                : "This build of Jovrel doesn't support automatic updates."}
             </p>
           </div>
         );

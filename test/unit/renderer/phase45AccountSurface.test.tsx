@@ -145,11 +145,11 @@ async function typeInto(el: HTMLElement, value: string): Promise<void> {
 const step = (container: HTMLElement): string | null =>
   must(container, "[data-accounts-auth]").getAttribute("data-accounts-step");
 
-describe("Phase 45 - the surface belongs to TFlex", () => {
-  it("renders the app wordmark (TF mark + TFlex) in the header", async () => {
+describe("Phase 45 - the surface belongs to the app (Jovrel, Phase 49)", () => {
+  it("renders the app wordmark (Jovrel mark + wordmark) in the header", async () => {
     const h = await renderDialog();
-    expect(must(h.container, ".accounts-brand-mark").textContent).toBe("TF");
-    expect(must(h.container, ".accounts-brand-name").textContent).toBe("TFlex");
+    expect(h.container.querySelector(".accounts-brand-mark[data-brand-mark]")).not.toBeNull();
+    expect(must(h.container, ".accounts-brand-name").textContent).toBe("Jovrel");
     expect(must(h.container, ".accounts-brand-sub").textContent).toContain("Account");
   });
 

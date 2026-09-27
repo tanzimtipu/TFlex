@@ -10,7 +10,7 @@ const fs = require('node:fs');
 test.describe('Installed App Verification', () => {
   let electronApp;
   let firstWindow;
-  const installedPath = path.join(process.env.LOCALAPPDATA, 'Programs', 'TFlex', 'TFlex.exe');
+  const installedPath = process.env.TFLEX_PACKAGED_EXE || 'C:\\Program Files\\Jovrel\\Jovrel.exe';
 
   test.beforeAll(async () => {
     console.log(`Launching installed app at: ${installedPath}`);

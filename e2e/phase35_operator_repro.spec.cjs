@@ -23,7 +23,7 @@ const {
 
 const SHOTS = path.resolve(__dirname, '..', 'screenshots');
 fs.mkdirSync(SHOTS, { recursive: true });
-const INSTALLED = path.join(process.env.LOCALAPPDATA || '', 'Programs', 'tflex', 'TFlex.exe');
+const INSTALLED = process.env.TFLEX_PACKAGED_EXE || 'C:\\Program Files\\Jovrel\\Jovrel.exe';
 
 let app = null;
 let win = null;

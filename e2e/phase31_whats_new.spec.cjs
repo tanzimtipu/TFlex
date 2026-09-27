@@ -1,9 +1,9 @@
 // Phase 31 — "What's New" in the About dialog (focused verification).
 //
-// Entry point: Help -> About TFlex. Electron's native menu cannot be clicked
+// Entry point: Help -> About Jovrel. Electron's native menu cannot be clicked
 // through CDP, so the spec sends the REAL `menu:action` payload
 // `{ action: 'about' }` from the main process — exactly what src/main/menu.ts
-// emits on Help -> About TFlex.
+// emits on Help -> About Jovrel.
 //
 // Offline establishment: this dev build is UNPACKAGED, so electron-updater
 // skips the startup check entirely (no feed contact), the update state stays at
@@ -58,7 +58,7 @@ test.describe("Phase 31 - About What's New", () => {
   });
 
   test('bundled notes render, sheet is contained, incoming notes are plain text', async () => {
-    // Help -> About TFlex (real main-process menu action payload).
+    // Help -> About Jovrel (real main-process menu action payload).
     await app.evaluate(({ BrowserWindow }, channel) => {
       const w = BrowserWindow.getAllWindows()[0];
       if (w) w.webContents.send(channel, { action: 'about' });

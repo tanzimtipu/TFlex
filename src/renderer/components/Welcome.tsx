@@ -3,6 +3,8 @@ import { File, FileImage, FilePlus2, FolderOpen, GitMerge, Sparkles, X } from "l
 import { useEffect, useState } from "react";
 import type { RecentFile, SampleDocument } from "../../shared/types";
 import { formatOpenedAt } from "../utils/recentPath";
+import { BrandMark } from "./BrandMark";
+import { BrandWordmark } from "./BrandWordmark";
 
 interface RecentDisplay {
   entry: RecentFile;
@@ -53,10 +55,13 @@ export function Welcome(props: WelcomeProps): ReactElement {
   return (
     <div className="welcome">
       <div className="welcome-hero">
-        <div className="welcome-eyebrow">TFlex</div>
+        <div className="welcome-brand">
+          <BrandMark size={24} className="welcome-brand-mark" />
+          <BrandWordmark className="welcome-brand-name" />
+        </div>
         <h1 className="welcome-title">A modern PDF studio for Windows.</h1>
         <p className="welcome-sub">
-          Open a document to begin, or pick one of the samples below to see TFlex
+          Open a document to begin, or pick one of the samples below to see Jovrel
           in action. Search and navigation are keyboard-driven; everything you
           need lives one click away.
         </p>

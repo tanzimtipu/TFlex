@@ -16,7 +16,8 @@ const { openFile, tmpCopy, REPORT } = require('./lib/p33_common.cjs');
 
 const SHOTS = path.resolve(__dirname, '..', 'screenshots');
 const INSTALLED = process.env.TFLEX_E2E_EXE
-  || path.join(process.env.LOCALAPPDATA || '', 'Programs', 'TFlex', 'TFlex.exe');
+  || process.env.TFLEX_PACKAGED_EXE
+  || 'C:\\Program Files\\Jovrel\\Jovrel.exe';
 
 let app = null;
 let win = null;

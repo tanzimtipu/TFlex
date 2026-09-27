@@ -42,6 +42,8 @@ import {
 } from "../accounts/validation";
 import { describeSyncReport } from "../accounts/syncStatus";
 import { AnimatedDialog } from "./AnimatedDialog";
+import { BrandMark } from "./BrandMark";
+import { BrandWordmark } from "./BrandWordmark";
 import { usePopAnimation, type MotionVariantSet } from "../hooks/useAnimations";
 
 export interface AccountsDialogProps {
@@ -461,13 +463,13 @@ export function AccountsDialog(props: AccountsDialogProps): ReactElement {
       testId="accounts-dialog"
     >
       <header className="sheet-header accounts-header">
-        {/* Phase 45 - the app's own wordmark treatment (the same "TF" mark and
-            "TFlex" name the title bar renders), so the surface reads as part of
-            TFlex rather than a bare hosted form. */}
+        {/* Phase 49 - the app's own wordmark treatment (the same JOVREL mark
+            and "Jovrel" name the title bar renders), so the surface reads as
+            part of Jovrel rather than a bare hosted form. */}
         <div className="accounts-brand">
-          <span className="brand-mark accounts-brand-mark" aria-hidden>TF</span>
+          <BrandMark size={26} className="accounts-brand-mark" />
           <span className="accounts-brand-text">
-            <span className="accounts-brand-name">TFlex</span>
+            <BrandWordmark className="accounts-brand-name" />
             <span className="accounts-brand-sub">Account and sync</span>
           </span>
         </div>
@@ -491,7 +493,7 @@ export function AccountsDialog(props: AccountsDialogProps): ReactElement {
             <p className="accounts-unconfigured-title">Accounts are not available</p>
             <p className="accounts-unconfigured-text">
               The accounts service is not configured on this install, so signing in and cloud
-              sync are turned off. Everything else in TFlex works exactly as before.
+              sync are turned off. Everything else in Jovrel works exactly as before.
             </p>
           </div>
         )}

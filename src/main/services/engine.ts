@@ -826,6 +826,7 @@ export class EngineService {
       // Serialize split doc with annotations
       // Note: split doc doesn't get signature placements (those stay with source)
       await serializeAnnotations(splitDoc, splitAnns, Array.from({ length: splitAnns.length }, (_, i) => i));
+      stampBrandMetadata(splitDoc);
       const bytes = await splitDoc.save();
       return ok(bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer);
     } catch (e) {
@@ -869,6 +870,7 @@ export class EngineService {
 
       // Serialize annotations on the extract doc
       await serializeAnnotations(extractDoc, extractAnns, Array.from({ length: extractAnns.length }, (_, i) => i));
+      stampBrandMetadata(extractDoc);
       const bytes = await extractDoc.save();
       return ok(bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer);
     } catch (e) {
@@ -1403,6 +1405,8 @@ export class EngineService {
         const page = out.addPage([dims.width, dims.height]);
         page.drawImage(image, { x: 0, y: 0, width: dims.width, height: dims.height });
       }
+      // Phase 49 — brand the newly produced PDF's Producer/Creator as Jovrel.
+      stampBrandMetadata(out);
       const bytes = await out.save();
 
       // Replace the doc entry for this docId with the newly created PDF
@@ -1474,6 +1478,8 @@ export class EngineService {
         page.drawImage(image, { x: 0, y: 0, width: dims.width, height: dims.height });
       }
 
+      // Phase 49 — brand the newly produced PDF's Producer/Creator as Jovrel.
+      stampBrandMetadata(out);
       const bytes = await out.save();
 
       const newDoc: EngineDoc = {
@@ -2145,6 +2151,8 @@ export class EngineService {
 
         const size = copied.getSize(); // Reads size after rotation is applied
 
+        // Phase 49 — brand the exported single-page PDF's Producer/Creator.
+        stampBrandMetadata(singleDoc);
         const bytes = await singleDoc.save();
         const ab = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer;
 
@@ -4261,6 +4269,26 @@ function applyOpToDoc(doc: EngineDoc, op: OpEntry): Result<void, EngineError> {
   }
 }
 
+/**
+ * Phase 49 — the product name stamped into every PDF the app produces.
+ * pdf-lib's PDFDocument constructor (`updateInfoDict`) force-sets /Producer to
+ * "pdf-lib (https://github.com/Hopding/pdf-lib)" and only fills /Creator when
+ * absent, so the output is branded explicitly here. `save()` does not re-run
+ * updateInfoDict (the constructor does), so setting both immediately before a
+ * save sticks.
+ */
+export const PDF_PRODUCER = 'Jovrel';
+
+/** Stamp the Jovrel Producer/Creator onto an output document (best-effort). */
+export function stampBrandMetadata(doc: PDFDocument): void {
+  try {
+    doc.setProducer(PDF_PRODUCER);
+    doc.setCreator(PDF_PRODUCER);
+  } catch {
+    // Metadata is cosmetic; never fail a save because of it.
+  }
+}
+
 async function serializeDoc(doc: EngineDoc): Promise<Uint8Array> {
   const out = await PDFDocument.create();
   const pageMap = new Map<number, number>(); // origIdx -> output page index
@@ -4461,6 +4489,8 @@ async function serializeDoc(doc: EngineDoc): Promise<Uint8Array> {
     }
   }
 
+  // Phase 49 — brand the produced PDF's Producer/Creator as Jovrel.
+  stampBrandMetadata(out);
   return out.save();
 }
 
@@ -4658,6 +4688,10 @@ async function serializeDocOptimized(
 
   const useObjectStreams = preset !== 'none';
 
+  // Phase 49 — brand the optimized output's Producer/Creator as Jovrel.
+  // ('max' strips metadata from the SOURCE copy above, but the products the
+  // app writes still identify Jovrel as the tool that produced them.)
+  stampBrandMetadata(out);
   return out.save({ useObjectStreams });
 }
 

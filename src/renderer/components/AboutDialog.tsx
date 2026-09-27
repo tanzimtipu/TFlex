@@ -23,6 +23,8 @@ import { X } from 'lucide-react';
 import type { AppInfo, UpdateState } from '../../shared/types';
 import { whatsNewFor, whatsNewHistory } from '../../shared/whatsNew';
 import { TfBackdrop, TfSheet } from './motion/TfMotion';
+import { BrandMark } from './BrandMark';
+import { BrandWordmark } from './BrandWordmark';
 
 /** Phase 31 — how many older changelog entries the compact history
  *  list shows. The changelog is bundled (offline) and grows by one
@@ -358,7 +360,7 @@ export function AboutDialog(props: AboutDialogProps): ReactElement | null {
             data-about-dialog
           >
             <header className="sheet-header">
-              <h2 id="about-title" className="sheet-title">About TFlex</h2>
+              <h2 id="about-title" className="sheet-title">About Jovrel</h2>
               <button
                 type="button"
                 className="sheet-close"
@@ -369,8 +371,8 @@ export function AboutDialog(props: AboutDialogProps): ReactElement | null {
               </button>
             </header>
             <div className="sheet-body">
-              <div className="about-mark" aria-hidden>TF</div>
-              <h3 className="about-name">TFlex</h3>
+              <BrandMark size={56} className="about-mark" />
+              <h3 className="about-name"><BrandWordmark /></h3>
               <p className="about-tagline">A modern PDF studio for Windows.</p>
               <div className="about-meta">
                 <div className="about-row">

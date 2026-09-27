@@ -14,7 +14,7 @@ const { openFile, tmpCopy, REPORT } = require('./lib/p33_common.cjs');
 
 const SHOTS = path.resolve(__dirname, '..', 'screenshots');
 fs.mkdirSync(SHOTS, { recursive: true });
-const INSTALLED = path.join(process.env.LOCALAPPDATA || '', 'Programs', 'tflex', 'TFlex.exe');
+const INSTALLED = process.env.TFLEX_PACKAGED_EXE || 'C:\\Program Files\\Jovrel\\Jovrel.exe';
 
 let app = null;
 let win = null;
@@ -175,18 +175,18 @@ test('P35-G2 PDF handler: read-only registry + installer state', async () => {
       return `NOT FOUND (${String(e.message).split('\n')[0]})`;
     }
   };
-  const progId = regQuery('HKCU\\Software\\Classes\\TFlex.pdf');
+  const progId = regQuery('HKCU\\Software\\Classes\\Jovrel.pdf');
   const hkcuPdf = regQuery('HKCU\\Software\\Classes\\.pdf');
   const hkcrPdf = regQuery('HKCR\\.pdf');
-  console.log(`[P35-G2] HKCU\\Software\\Classes\\TFlex.pdf => ${progId}`);
+  console.log(`[P35-G2] HKCU\\Software\\Classes\\Jovrel.pdf => ${progId}`);
   console.log(`[P35-G2] HKCU\\Software\\Classes\\.pdf => ${hkcuPdf}`);
   console.log(`[P35-G2] HKCR\\.pdf => ${hkcrPdf}`);
 
   // The config that WILL register the association is present and unit-guarded.
   const yml = fs.readFileSync(path.resolve(__dirname, '..', 'electron-builder.yml'), 'utf8');
   expect(yml).toMatch(/fileAssociations:[\s\S]*?ext:\s*pdf/);
-  expect(yml).toMatch(/name:\s*TFlex\.pdf/);
-  console.log('[P35-G2] electron-builder.yml declares the .pdf association (TFlex.pdf ProgID)');
+  expect(yml).toMatch(/name:\s*Jovrel\.pdf/);
+  console.log('[P35-G2] electron-builder.yml declares the .pdf association (Jovrel.pdf ProgID)');
 });
 // ---------------------------------------------------------------------------
 // Criterion 3 � PDF output produced inside TFlex (item 7)
@@ -338,7 +338,7 @@ test('P35-G4 standalone print window: own window, print-only UI, movable, lifecy
   expect(usable).toBeGreaterThanOrEqual(1);
 });
 
-test('P35-G4-title standalone print window OS title is "Print - TFlex"', async () => {
+test('P35-G4-title standalone print window OS title is "Print - Jovrel"', async () => {
   await openDetachedPrintWindow();
   const titles = await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().map((w) => ({
     id: w.id,
@@ -348,7 +348,7 @@ test('P35-G4-title standalone print window OS title is "Print - TFlex"', async (
   console.log(`[P35-G4-title] window titles=${JSON.stringify(titles)}`);
   const printWin = titles.find((t) => t.isPrint);
   expect(printWin).toBeTruthy();
-  expect(printWin.title).toBe('Print - TFlex');
+  expect(printWin.title).toBe('Print - Jovrel');
 });
 
 test('P35-G4b app closing closes the print window', async () => {

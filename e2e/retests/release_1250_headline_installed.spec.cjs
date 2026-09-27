@@ -18,7 +18,7 @@ const { SHOTS, twoPaneSetup } = require('../lib/p33_common.cjs');
 const EXPECTED = require('../../package.json').version;
 const INSTALLED_EXE =
   process.env.TFLEX_PACKAGED_EXE ||
-  path.join(process.env.LOCALAPPDATA || '', 'Programs', 'TFlex', 'TFlex.exe');
+  'C:\\Program Files\\Jovrel\\Jovrel.exe';
 
 let app = null;
 let win = null;

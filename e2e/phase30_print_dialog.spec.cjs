@@ -67,7 +67,7 @@ test('Phase 37 print entry points: title-bar icon + Ctrl+P + real printers + ran
     });
     console.log(`[P37-P30] standalone window=${JSON.stringify(info)}`);
     expect(info.count).toBe(2);
-    expect(info.title).toBe('Print - TFlex');
+    expect(info.title).toBe('Print - Jovrel');
 
     // --- 2. the printer dropdown is populated. ---
     const options = await printPage.$$eval('[data-print-printer] option', (opts) =>
