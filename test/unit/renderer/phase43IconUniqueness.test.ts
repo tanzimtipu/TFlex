@@ -34,6 +34,7 @@ const RENDERER = resolve(process.cwd(), "src/renderer");
 const NAMED_FILES: readonly string[] = [
   "state/toolsRegistry.ts",
   "components/AppHeader.tsx",
+  "components/AccountMenu.tsx",
   "components/TitleBar.tsx",
   "components/PageLayoutControl.tsx",
   "components/ActionDock.tsx",
@@ -148,6 +149,10 @@ const SHARED_ALLOW: Readonly<Record<string, string>> = {
   RotateCw: "rotate clockwise (registry + the rail verb + the legacy bar)",
   Save: "the save verb (registry save + the header)",
   SaveAll: "the save-a-copy verb (registry saveAs + the header)",
+  // Phase 44 (operator amendment) — the account menu repeats two verbs that
+  // already live on the signed-in account dialog: sign out and sync now.
+  LogOut: "the sign-out verb (the signed-in AccountsDialog surface + the top-bar avatar menu)",
+  RefreshCcw: "the sync-now verb (the signed-in AccountsDialog surface + the top-bar avatar menu)",
   ScanText: "the recognize-text/OCR verb (registry + the context panel)",
   Scissors: "the extract/split verb (registry + the rail verb + the legacy bar)",
   Stamp: "the stamp verb (registry stamp + its dialog)",

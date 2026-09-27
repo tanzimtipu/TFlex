@@ -41,6 +41,7 @@ import {
 import type { InspectorTextSelection } from "./components/Inspector";
 import { AboutDialog } from "./components/AboutDialog";
 import { AccountsDialog } from "./components/AccountsDialog";
+import { AccountMenu } from "./components/AccountMenu";
 import { PreferencesDialog } from "./components/PreferencesDialog";
 import { UpdateIndicator } from "./components/UpdateIndicator";
 import { UpdatePromptDialog } from "./components/UpdatePromptDialog";
@@ -631,10 +632,42 @@ export function App(): ReactElement {
   // reachable. The status/email mirror the account surface for the top-bar
   // label, reported back through `onStatusChange`.
   const [accountsOpen, setAccountsOpen] = useState(false);
-  const [accountStatus, setAccountStatus] = useState<{ signedIn: boolean; email: string | null }>({
+  const [accountStatus, setAccountStatus] = useState<{
+    signedIn: boolean;
+    email: string | null;
+    name: string | null;
+    image: string | null;
+  }>({
     signedIn: false,
     email: null,
+    name: null,
+    image: null,
   });
+  // Phase 44 (operator amendment) — read the held session once so the top-bar
+  // account section shows the signed-in avatar on boot, before any dialog
+  // opens. Local vault IPC only (no network): the encrypted session already
+  // holds the name and avatar URL, so both are available at launch.
+  // `name` / `image` are treated as "unknown" when null (legacy sessions).
+  useEffect(() => {
+    if (settings?.accountsEnabled !== true) return undefined;
+    const api = (window as unknown as {
+      tflex?: { accounts?: { getStatus?: () => Promise<{ status: string; email: string | null; name: string | null; image: string | null }> } };
+    }).tflex?.accounts;
+    if (api?.getStatus === undefined) return undefined;
+    let cancelled = false;
+    void api.getStatus().then((result) => {
+      if (cancelled) return;
+      setAccountStatus({
+        signedIn: result.status === "signed-in",
+        email: result.email,
+        name: result.name,
+        image: result.image,
+      });
+    }).catch(() => undefined);
+    return (): void => {
+      cancelled = true;
+    };
+  }, [settings?.accountsEnabled]);
   // OTA UX — the update prompt. Opens automatically when the
   // backend pushes an `available` (Update to X.Y.Z available) or
   // `downloaded` (Restart to update) UpdateState over
@@ -8402,12 +8435,28 @@ pushToast(
           onOpenToolSearch={openCommandPalette}
           onOpenFind={openFindInDocument}
           findEnabled={activeTabHasDocument}
-          // Phase 44 — the account entry point is rendered ONLY while the
-          // `accountsEnabled` settings flag is on; flipping the flag off (via
-          // the settings echo) removes the control without a restart.
-          onOpenAccounts={settings.accountsEnabled === true ? (): void => setAccountsOpen(true) : undefined}
-          accountsSignedIn={accountStatus.signedIn}
-          accountsEmail={accountStatus.email}
+          // Phase 44 (operator amendment) — the account section is built by
+          // the App and passed as a slot, so AppHeader stays presentational.
+          // It is rendered while the internal `accountsEnabled` escape hatch
+          // is on (default true); an explicit false removes it live.
+          accountSlot={settings.accountsEnabled === true ? (
+            <AccountMenu
+              signedIn={accountStatus.signedIn}
+              user={accountStatus.signedIn ? {
+                id: "",
+                email: accountStatus.email ?? "",
+                emailVerified: true,
+                name: accountStatus.name ?? undefined,
+                image: accountStatus.image,
+              } : null}
+              imageUrl={accountStatus.image}
+              onOpenSignIn={(): void => setAccountsOpen(true)}
+              onSignedOut={(): void => setAccountStatus({ signedIn: false, email: null, name: null, image: null })}
+              onProfileUpdated={(user): void => {
+                setAccountStatus((prev) => ({ ...prev, name: user.name ?? null, image: user.image ?? prev.image }));
+              }}
+            />
+          ) : null}
           // Phase 22 — the relocated Open / Save / Save As. The CommandBar
           // no longer renders them; the caption strip owns them now.
           onOpenFile={onOpenClick}
@@ -9370,8 +9419,16 @@ pushToast(
       <AccountsDialog
         open={settings.accountsEnabled === true && accountsOpen}
         onClose={(): void => setAccountsOpen(false)}
-        onStatusChange={(status, email): void => {
-          setAccountStatus({ signedIn: status === "signed-in", email });
+        onStatusChange={(status, email, name): void => {
+          const signedIn = status === "signed-in";
+          // Preserve the boot-derived avatar URL across a sign-in/status echo;
+          // a sign-out clears it. `null` name is "unknown" and flows through.
+          setAccountStatus((prev) => ({
+            signedIn,
+            email,
+            name,
+            image: signedIn ? prev.image : null,
+          }));
         }}
       />
       <AboutDialog

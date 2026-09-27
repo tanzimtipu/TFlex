@@ -32,7 +32,11 @@ import {
 import { SignatureService } from '../../../src/main/services/signature-service';
 import { createSignaturesPort } from '../../../src/main/services/accounts/ports';
 import type { AppSettings, SavedSignature } from '../../../src/shared/types';
-import type { SyncReport } from '../../../src/shared/accounts';
+import {
+  SIGNATURE_IMAGE_MAX_BYTES,
+  type ImageSignatureMeta,
+  type SyncReport,
+} from '../../../src/shared/accounts';
 import type { SyncState } from '../../../src/main/services/accounts/sync-state';
 
 const NOW = '2026-09-27T12:00:00.000Z';
@@ -64,9 +68,15 @@ function fakeSettingsPort(initial: AppSettings) {
   return { port, applied, current: () => current };
 }
 
-function fakeSignaturesPort(initial: SavedSignature[] = []) {
+function fakeSignaturesPort(
+  initial: SavedSignature[] = [],
+  initialImages: ImageSignatureMeta[] = [],
+) {
   let current = initial;
+  let images = initialImages.map((meta) => ({ ...meta }));
+  const blobs = new Map<string, Uint8Array>();
   const calls: { upserts: SavedSignature[]; removedIds: string[] }[] = [];
+  const imageCalls: { upserts: ImageSignatureMeta[]; removedIds: string[] }[] = [];
   const port: SignaturesPort = {
     list: async () => structuredClone(current),
     applyRemote: async (upserts, removedIds) => {
@@ -76,8 +86,36 @@ function fakeSignaturesPort(initial: SavedSignature[] = []) {
       for (const u of upserts) byId.set(u.id, u);
       current = [...byId.values()];
     },
+    listImages: async () =>
+      images.map((meta) => ({ ...meta, hasBytes: blobs.has(meta.id) })),
+    readImage: async (id) => blobs.get(id) ?? null,
+    writeImage: async (id, bytes) => {
+      blobs.set(id, bytes);
+    },
+    setImageStorageKey: async (id, storageKey) => {
+      images = images.map((meta) => (meta.id === id ? { ...meta, storageKey } : meta));
+    },
+    applyRemoteImages: async (upserts, removedIds) => {
+      imageCalls.push({ upserts, removedIds });
+      const removed = new Set(removedIds);
+      const byId = new Map(images.filter((m) => !removed.has(m.id)).map((m) => [m.id, m]));
+      const order = images.filter((m) => !removed.has(m.id)).map((m) => m.id);
+      for (const u of upserts) {
+        if (!byId.has(u.id)) order.push(u.id);
+        byId.set(u.id, { ...u });
+      }
+      images = order.map((id) => byId.get(id)!);
+    },
   };
-  return { port, calls, current: () => current };
+  return {
+    port,
+    calls,
+    imageCalls,
+    current: () => current,
+    images: () => images,
+    blobs,
+    setBlob: (id: string, bytes: Uint8Array) => blobs.set(id, bytes),
+  };
 }
 
 interface FakeTransport extends SyncTransport {
@@ -87,6 +125,8 @@ interface FakeTransport extends SyncTransport {
     fetchSignatures: number;
     upsertSignatures: SignaturePushRow[];
     softDelete: { id: string; deletedAt: string }[];
+    uploads: Uint8Array[];
+    downloads: string[];
   };
 }
 
@@ -95,6 +135,9 @@ function fakeTransport(options: {
   signatureRows?: SignatureCloudRow[];
   upsertSettings?: (row: SettingsPushRow) => SettingsCloudRow;
   throwOnFetch?: unknown;
+  throwOnImage?: unknown;
+  uploadKey?: string;
+  downloadBytes?: Uint8Array;
 }): FakeTransport {
   const calls: FakeTransport['calls'] = {
     fetchSettings: 0,
@@ -102,6 +145,8 @@ function fakeTransport(options: {
     fetchSignatures: 0,
     upsertSignatures: [],
     softDelete: [],
+    uploads: [],
+    downloads: [],
   };
   return {
     calls,
@@ -129,6 +174,16 @@ function fakeTransport(options: {
     async softDeleteSignature(id, deletedAt) {
       calls.softDelete.push({ id, deletedAt });
     },
+    async uploadSignatureImage(bytes) {
+      calls.uploads.push(bytes);
+      if (options.throwOnImage !== undefined) throw options.throwOnImage;
+      return options.uploadKey ?? 'signatures/user-1/uploaded.png';
+    },
+    async downloadSignatureImage(storageKey) {
+      calls.downloads.push(storageKey);
+      if (options.throwOnImage !== undefined) throw options.throwOnImage;
+      return options.downloadBytes ?? new Uint8Array([1, 2, 3]);
+    },
   };
 }
 
@@ -152,6 +207,7 @@ function makeEngine(overrides: {
   stateWrapper?: ReturnType<typeof fakeStateStore>;
   token?: string | null;
   dataApiUrl?: string | null;
+  functionApiUrl?: string | null;
   now?: () => string;
 }) {
   const settings = overrides.settings ?? fakeSettingsPort(baseSettings()).port;
@@ -163,6 +219,8 @@ function makeEngine(overrides: {
     getConfig: () => ({
       authBaseUrl: null,
       dataApiUrl: overrides.dataApiUrl === undefined ? 'https://cfg.test/rest/v1' : overrides.dataApiUrl,
+      functionApiUrl:
+        overrides.functionApiUrl === undefined ? 'https://fn.test/' : overrides.functionApiUrl,
     }),
     makeTransport: () => transport,
     state: stateWrapper.store,
@@ -390,7 +448,8 @@ describe('AccountsSyncEngine', () => {
     expect((state.state() as { signatures: Record<string, string> }).signatures).toEqual({});
   });
 
-  it('syncs image rows as metadata only (deferred) and never applies them locally', async () => {
+  it('pulls an image row: downloads the bytes and applies the metadata locally', async () => {
+    const bytes = new Uint8Array([9, 8, 7]);
     const signatures = fakeSignaturesPort([]);
     const transport = fakeTransport({
       settingsRow: null,
@@ -399,8 +458,54 @@ describe('AccountsSyncEngine', () => {
           id: 'img-1',
           label: 'Photo sig',
           kind: 'image',
-          payload: {},
-          storage_key: 'sig/img-1.png',
+          payload: { width: 40, height: 20 },
+          storage_key: 'signatures/user-1/img-1.png',
+          sort_order: 0,
+          deleted_at: null,
+          updated_at: NOW,
+        },
+      ],
+      downloadBytes: bytes,
+    });
+    const { engine } = makeEngine({ signatures: signatures.port, transport });
+
+    const report = await engine.sync();
+
+    expect(report.phase).toBe('synced');
+    expect(report.pulled).toBe(1);
+    expect(transport.calls.downloads).toEqual(['signatures/user-1/img-1.png']);
+    expect(signatures.blobs.get('img-1')).toEqual(bytes);
+    expect(signatures.imageCalls).toHaveLength(1);
+    expect(signatures.imageCalls[0].upserts[0]).toMatchObject({
+      id: 'img-1',
+      storageKey: 'signatures/user-1/img-1.png',
+      width: 40,
+      height: 20,
+    });
+    // A pulled image needs no re-push.
+    expect(transport.calls.upsertSignatures).toHaveLength(0);
+  });
+
+  it('does not re-download an image whose local bytes already exist', async () => {
+    const meta: ImageSignatureMeta = {
+      id: 'img-1',
+      label: 'Local',
+      createdAt: NOW,
+      width: 10,
+      height: 10,
+      storageKey: 'signatures/user-1/img-1.png',
+    };
+    const signatures = fakeSignaturesPort([], [meta]);
+    signatures.setBlob('img-1', new Uint8Array([1]));
+    const transport = fakeTransport({
+      settingsRow: null,
+      signatureRows: [
+        {
+          id: 'img-1',
+          label: 'Local',
+          kind: 'image',
+          payload: { width: 10, height: 10 },
+          storage_key: 'signatures/user-1/img-1.png',
           sort_order: 0,
           deleted_at: null,
           updated_at: NOW,
@@ -409,11 +514,80 @@ describe('AccountsSyncEngine', () => {
     });
     const { engine } = makeEngine({ signatures: signatures.port, transport });
 
+    await engine.sync();
+
+    expect(transport.calls.downloads).toHaveLength(0);
+  });
+
+  it('uploads local image bytes with no key, persists the returned key, and pushes metadata', async () => {
+    const bytes = new Uint8Array([5, 5, 5]);
+    const signatures = fakeSignaturesPort(
+      [],
+      [{ id: 'img-local', label: 'L', createdAt: NOW, width: 12, height: 6, storageKey: null }],
+    );
+    signatures.setBlob('img-local', bytes);
+    const transport = fakeTransport({ settingsRow: null, uploadKey: 'signatures/user-1/new.png' });
+    const { engine } = makeEngine({ signatures: signatures.port, transport });
+
     const report = await engine.sync();
 
     expect(report.phase).toBe('synced');
-    expect(signatures.calls).toHaveLength(0);
+    expect(transport.calls.uploads).toEqual([bytes]);
+    expect(signatures.images()[0].storageKey).toBe('signatures/user-1/new.png');
+    const row = transport.calls.upsertSignatures.find((r) => r.id === 'img-local');
+    expect(row).toMatchObject({
+      kind: 'image',
+      storage_key: 'signatures/user-1/new.png',
+      payload: { width: 12, height: 6 },
+      deleted_at: null,
+    });
+  });
+
+  it('enforces the 256 KB cap client-side before uploading and reports a clear error', async () => {
+    const signatures = fakeSignaturesPort(
+      [],
+      [{ id: 'img-big', label: 'Big', createdAt: NOW, width: 1, height: 1, storageKey: null }],
+    );
+    signatures.setBlob('img-big', new Uint8Array(SIGNATURE_IMAGE_MAX_BYTES + 1));
+    const transport = fakeTransport({ settingsRow: null });
+    const { engine } = makeEngine({ signatures: signatures.port, transport });
+
+    const report = await engine.sync();
+
+    expect(report.phase).toBe('error');
+    expect(report.error?.message).toContain('256 KB');
+    expect(transport.calls.uploads).toHaveLength(0);
     expect(transport.calls.upsertSignatures).toHaveLength(0);
+  });
+
+  it('maps an image transport failure to a non-blocking report and never throws', async () => {
+    const signatures = fakeSignaturesPort(
+      [],
+      [{ id: 'img-x', label: 'X', createdAt: NOW, width: 1, height: 1, storageKey: null }],
+    );
+    signatures.setBlob('img-x', new Uint8Array([1]));
+    const transport = fakeTransport({
+      settingsRow: null,
+      throwOnImage: new SyncTransportError('auth', 'not authorized'),
+    });
+    const { engine } = makeEngine({ signatures: signatures.port, transport });
+
+    await expect(engine.sync()).resolves.toMatchObject({
+      phase: 'error',
+      error: { code: 'server', message: 'not authorized' },
+    });
+  });
+
+  it('soft-deletes an image signature removed locally', async () => {
+    const signatures = fakeSignaturesPort([], []);
+    const state = fakeStateStore({ signatures: { 'img-old': 'oldhash' } });
+    const transport = fakeTransport({ settingsRow: null, signatureRows: [] });
+    const { engine } = makeEngine({ signatures: signatures.port, stateWrapper: state, transport });
+
+    await engine.sync();
+
+    expect(transport.calls.softDelete).toEqual([{ id: 'img-old', deletedAt: NOW }]);
+    expect((state.state() as { signatures: Record<string, string> }).signatures).toEqual({});
   });
 
   it('pulls a drawn signature and pushes a new local one', async () => {
@@ -518,7 +692,7 @@ describe('AccountsSyncEngine guards (no network)', () => {
     const makeTransport = vi.fn();
     const engine = new AccountsSyncEngine({
       getToken: async () => null,
-      getConfig: () => ({ authBaseUrl: null, dataApiUrl: null }),
+      getConfig: () => ({ authBaseUrl: null, dataApiUrl: null, functionApiUrl: null }),
       makeTransport,
       state: fakeStateStore().store,
       settings: fakeSettingsPort(baseSettings()).port,
@@ -534,7 +708,7 @@ describe('AccountsSyncEngine guards (no network)', () => {
     const makeTransport = vi.fn();
     const engine = new AccountsSyncEngine({
       getToken: async () => 'jwt',
-      getConfig: () => ({ authBaseUrl: null, dataApiUrl: null }),
+      getConfig: () => ({ authBaseUrl: null, dataApiUrl: null, functionApiUrl: null }),
       makeTransport,
       state: fakeStateStore().store,
       settings: fakeSettingsPort(baseSettings()).port,
@@ -642,6 +816,7 @@ describe('getAccountsConfig package.json resolution', () => {
         tflex: {
           neonAuthBaseUrl: 'https://pkg.test/auth',
           neonDataApiUrl: 'https://pkg.test/rest/v1',
+          neonFunctionApiUrl: 'https://pkg.test/fn/',
         },
       }),
       'utf8',
@@ -650,6 +825,7 @@ describe('getAccountsConfig package.json resolution', () => {
     expect(getAccountsConfig({} as NodeJS.ProcessEnv, dir)).toEqual({
       authBaseUrl: 'https://pkg.test/auth',
       dataApiUrl: 'https://pkg.test/rest/v1',
+      functionApiUrl: 'https://pkg.test/fn/',
     });
     expect(
       getAccountsConfig(
@@ -665,6 +841,7 @@ describe('getAccountsConfig package.json resolution', () => {
     expect(getAccountsConfig({} as NodeJS.ProcessEnv, empty)).toEqual({
       authBaseUrl: null,
       dataApiUrl: null,
+      functionApiUrl: null,
     });
 
     const dir = await mkdtemp(join(tmpdir(), 'tflex-cfg-'));
@@ -673,6 +850,7 @@ describe('getAccountsConfig package.json resolution', () => {
     expect(getAccountsConfig({} as NodeJS.ProcessEnv, dir)).toEqual({
       authBaseUrl: null,
       dataApiUrl: null,
+      functionApiUrl: null,
     });
   });
 });

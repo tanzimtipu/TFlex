@@ -25,5 +25,14 @@ export function createSignaturesPort(signatures: SignatureService): SignaturesPo
     applyRemote: async (upserts: SavedSignature[], removedIds: string[]) => {
       await signatures.applySynced(upserts, removedIds);
     },
+    // Phase 44 chunk 5 - the image half of the local store. Bytes are read
+    // and written here; the sync engine never touches the filesystem itself.
+    listImages: () => signatures.listImages(),
+    readImage: (id) => signatures.readImage(id),
+    writeImage: (id, bytes) => signatures.writeImage(id, bytes),
+    setImageStorageKey: (id, storageKey) => signatures.setImageStorageKey(id, storageKey),
+    applyRemoteImages: async (upserts, removedIds) => {
+      await signatures.applyImageSynced(upserts, removedIds);
+    },
   };
 }

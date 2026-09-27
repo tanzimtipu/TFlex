@@ -57,13 +57,22 @@ function fakeSafeStorage(available = true): SafeStorageLike {
 // ---------------------------------------------------------------------------
 
 describe('Phase 44 settings validation', () => {
-  it('accountsEnabled: keeps real booleans, rejects non-booleans, absent stays absent', () => {
+  it('accountsEnabled: defaults ON, keeps real booleans, rejects non-booleans to the default', () => {
+    // Default is ON: a missing key (fresh install, or a settings.json written
+    // before the flag existed) resolves to true.
+    expect(normalizeSettings({}).accountsEnabled).toBe(true);
+    expect(DEFAULT_SETTINGS.accountsEnabled).toBe(true);
+    // Explicit values win in both directions — a stored `false` is the user's
+    // opt-out and must never be flipped back to the default.
     expect(normalizeSettings({ accountsEnabled: true }).accountsEnabled).toBe(true);
     expect(normalizeSettings({ accountsEnabled: false }).accountsEnabled).toBe(false);
-    expect(normalizeSettings({ accountsEnabled: 'yes' }).accountsEnabled).toBeUndefined();
-    expect(normalizeSettings({ accountsEnabled: 1 }).accountsEnabled).toBeUndefined();
-    expect(normalizeSettings({}).accountsEnabled).toBeUndefined();
-    expect(DEFAULT_SETTINGS.accountsEnabled).toBeUndefined();
+    // A non-boolean is rejected (never stored verbatim) and resolves to the
+    // default true.
+    for (const bad of ['yes', 'false', 1, 0, null, {}, []]) {
+      const s = normalizeSettings({ accountsEnabled: bad });
+      expect(s.accountsEnabled).toBe(true);
+      expect(typeof s.accountsEnabled).toBe('boolean');
+    }
   });
 
   it('syncDeviceId: keeps a valid id, rejects empty / over-long / non-string', () => {
@@ -133,7 +142,7 @@ describe('AccountsVault', () => {
 
   it('status is signed-out with encryption available and no session', async () => {
     const vault = new AccountsVault(join(dir, 'v.bin'), fakeSafeStorage(true));
-    expect(await vault.status()).toEqual({ status: 'signed-out', email: null });
+    expect(await vault.status()).toEqual({ status: 'signed-out', email: null, name: null, image: null });
   });
 
   it('degrades to in-memory only when encryption is unavailable', async () => {
@@ -144,19 +153,24 @@ describe('AccountsVault', () => {
     expect(stored).toEqual({ persisted: false, encryptionAvailable: false });
 
     // Sign-in still works for this run...
-    expect(await vault.status()).toEqual({ status: 'signed-in', email: 'a@example.com' });
+    expect(await vault.status()).toEqual({
+      status: 'signed-in',
+      email: 'a@example.com',
+      name: 'A',
+      image: null,
+    });
     expect(await vault.getSessionToken()).toBe('jwt.secret.payload');
 
     // ...but nothing was written to disk.
     await expect(readFile(file)).rejects.toThrow();
 
     await vault.clearSession();
-    expect(await vault.status()).toEqual({ status: 'unavailable', email: null });
+    expect(await vault.status()).toEqual({ status: 'unavailable', email: null, name: null, image: null });
   });
 
   it('status is unavailable with encryption unavailable and no session', async () => {
     const vault = new AccountsVault(join(dir, 'v.bin'), fakeSafeStorage(false));
-    expect(await vault.status()).toEqual({ status: 'unavailable', email: null });
+    expect(await vault.status()).toEqual({ status: 'unavailable', email: null, name: null, image: null });
   });
 
   it('rejects malformed session payloads', async () => {
@@ -171,7 +185,71 @@ describe('AccountsVault', () => {
     await writeFile(file, Buffer.from('garbage-not-decryptable', 'utf8'));
     const vault = new AccountsVault(file, fakeSafeStorage(true));
     expect(await vault.getSession()).toBeNull();
-    expect(await vault.status()).toEqual({ status: 'signed-out', email: null });
+    expect(await vault.status()).toEqual({ status: 'signed-out', email: null, name: null, image: null });
+  });
+
+  it('serves name/image on a cold boot after a setSession round-trip', async () => {
+    // Cold boot = a fresh vault instance reading the encrypted record from
+    // disk, exactly what happens on app start with no sign-in flow.
+    const file = join(dir, 'accounts-session.bin');
+    const storage = fakeSafeStorage(true);
+    const stored: SetSessionPayload = {
+      user: {
+        id: 'user-2',
+        email: 'ada@example.com',
+        emailVerified: true,
+        name: 'Ada Lovelace',
+        image: 'https://cdn.example.test/ada.png',
+      },
+      token: 'jwt.secret.payload',
+    };
+
+    const writer = new AccountsVault(file, storage);
+    expect(await writer.setSession(stored)).toEqual({
+      persisted: true,
+      encryptionAvailable: true,
+    });
+
+    const coldBoot = new AccountsVault(file, storage);
+    expect(await coldBoot.status()).toEqual({
+      status: 'signed-in',
+      email: 'ada@example.com',
+      name: 'Ada Lovelace',
+      image: 'https://cdn.example.test/ada.png',
+    });
+  });
+
+  it('returns nulls for a legacy stored record that predates name/image', async () => {
+    // Back-compat: a record written before the avatar fields existed has no
+    // name/image keys. It must still load and serve nulls, never throw.
+    const file = join(dir, 'accounts-session.bin');
+    const storage = fakeSafeStorage(true);
+    const legacy = {
+      user: { id: 'user-3', email: 'legacy@example.com', emailVerified: false },
+      token: 'jwt.secret.payload',
+      savedAt: '2026-01-01T00:00:00.000Z',
+    };
+    await writeFile(file, storage.encryptString(JSON.stringify(legacy)));
+
+    const vault = new AccountsVault(file, storage);
+    expect(await vault.status()).toEqual({
+      status: 'signed-in',
+      email: 'legacy@example.com',
+      name: null,
+      image: null,
+    });
+  });
+
+  it('status carries no token or secret and exactly the four expected keys', async () => {
+    const file = join(dir, 'accounts-session.bin');
+    const vault = new AccountsVault(file, fakeSafeStorage(true));
+    await vault.setSession(SESSION);
+    const result = await vault.status();
+    const json = JSON.stringify(result);
+    expect(json).not.toContain('jwt.secret.payload');
+    expect(json).not.toContain('token');
+    expect(json).not.toContain('savedAt');
+    expect(Object.keys(result).sort()).toEqual(['email', 'image', 'name', 'status']);
   });
 });
 
@@ -184,22 +262,26 @@ describe('getAccountsConfig', () => {
     const cfg = getAccountsConfig({
       TFLEX_AUTH_BASE_URL: '  https://auth.example.test/base  ',
       TFLEX_DATA_API_URL: 'https://api.example.test/rest/v1',
+      TFLEX_FUNCTION_API_URL: 'https://fn.example.test/',
     } as unknown as NodeJS.ProcessEnv);
     expect(cfg.authBaseUrl).toBe('https://auth.example.test/base');
     expect(cfg.dataApiUrl).toBe('https://api.example.test/rest/v1');
+    expect(cfg.functionApiUrl).toBe('https://fn.example.test/');
   });
 
   it('returns null for a missing or blank env var (no hardcoded fallback)', () => {
     expect(getAccountsConfig({} as unknown as NodeJS.ProcessEnv)).toEqual({
       authBaseUrl: null,
       dataApiUrl: null,
+      functionApiUrl: null,
     });
     expect(
       getAccountsConfig({
         TFLEX_AUTH_BASE_URL: '   ',
         TFLEX_DATA_API_URL: undefined,
+        TFLEX_FUNCTION_API_URL: '  ',
       } as unknown as NodeJS.ProcessEnv),
-    ).toEqual({ authBaseUrl: null, dataApiUrl: null });
+    ).toEqual({ authBaseUrl: null, dataApiUrl: null, functionApiUrl: null });
   });
 });
 
@@ -241,13 +323,18 @@ describe('registerAccountsIpc', () => {
     expect(setResult).toBeUndefined();
 
     const statusResult = await capture.handlers.get(IPC.accountsGetStatus)!(null);
-    expect(statusResult).toEqual({ status: 'signed-in', email: 'a@example.com' });
+    expect(statusResult).toEqual({
+      status: 'signed-in',
+      email: 'a@example.com',
+      name: 'A',
+      image: null,
+    });
     expect(JSON.stringify(statusResult)).not.toContain('jwt.secret.payload');
 
     await capture.handlers.get(IPC.accountsClearSession)!(null);
     expect(await vault.getSessionToken()).toBeNull();
     expect(await capture.handlers.get(IPC.accountsGetStatus)!(null))
-      .toEqual({ status: 'signed-out', email: null });
+      .toEqual({ status: 'signed-out', email: null, name: null, image: null });
   });
 
   it('registers accounts:syncNow only when a coordinator is supplied and delegates to it', async () => {
@@ -285,6 +372,7 @@ describe('registerAccountsIpc', () => {
       authBaseUrl: 'https://auth.example.test',
       // Present in main config but deliberately NOT part of the response.
       dataApiUrl: 'https://data.example.test/rest/v1',
+      functionApiUrl: 'https://fn.example.test/',
     }));
 
     expect(capture.handlers.get(IPC.accountsGetConfig)!(null)).toEqual({
@@ -306,6 +394,7 @@ describe('registerAccountsIpc', () => {
     registerAccountsIpc(capture2.ipc as never, vault, null, () => ({
       authBaseUrl: null,
       dataApiUrl: null,
+      functionApiUrl: null,
     }));
     expect(capture2.handlers.get(IPC.accountsGetConfig)!(null)).toEqual({
       authBaseUrl: null,
@@ -331,6 +420,7 @@ describe('registerAccountsIpc', () => {
     registerAccountsIpc(capture.ipc as never, vault, null, () => ({
       authBaseUrl: 'https://auth.example.test',
       dataApiUrl: 'https://data.example.test/rest/v1',
+      functionApiUrl: 'https://fn.example.test/',
     }));
     const result = capture.handlers.get(IPC.accountsGetConfig)!(null);
     const json = JSON.stringify(result);

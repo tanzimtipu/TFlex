@@ -274,8 +274,8 @@ export async function start(): Promise<void> {
   const accountsSyncEngine = new AccountsSyncEngine({
     getToken: () => accountsVault.getSessionToken(),
     getConfig: () => getAccountsConfig(process.env, app.getAppPath()),
-    makeTransport: ({ dataApiUrl, getToken }) =>
-      new PostgrestSyncTransport({ dataApiUrl, getToken }),
+    makeTransport: ({ dataApiUrl, functionApiUrl, getToken }) =>
+      new PostgrestSyncTransport({ dataApiUrl, functionApiUrl, getToken }),
     state: new SyncStateStore(join(app.getPath('userData'), 'accounts-sync.json')),
     settings: createSettingsPort(settings),
     signatures: createSignaturesPort(signatures),

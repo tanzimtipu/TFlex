@@ -17,4 +17,10 @@ export const DEFAULT_SETTINGS: AppSettings = {
   // before any user interaction.
   ocrLanguage: 'eng',
   ocrDownsample: 300,
+  // Phase 44 (operator amendment) — accounts ship ENABLED by default in the
+  // main process (DEFAULT_SETTINGS.accountsEnabled === true). This field is
+  // now an INTERNAL escape hatch only (there is no Preferences row): mirror
+  // the main-process default here so a failed loadSettings behaves like a
+  // fresh install instead of silently hiding the account section.
+  accountsEnabled: true,
 };

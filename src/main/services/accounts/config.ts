@@ -23,11 +23,15 @@ import { join } from 'node:path';
 export interface AccountsConfig {
   authBaseUrl: string | null;
   dataApiUrl: string | null;
+  /** Phase 44 chunk 5 - the Neon Function base URL (the signature image
+   *  storage API). Null when not configured. */
+  functionApiUrl: string | null;
 }
 
 interface TflexBlock {
   neonAuthBaseUrl?: unknown;
   neonDataApiUrl?: unknown;
+  neonFunctionApiUrl?: unknown;
 }
 
 /**
@@ -43,6 +47,7 @@ export function getAccountsConfig(
   return {
     authBaseUrl: readEnv(env.TFLEX_AUTH_BASE_URL) ?? readString(pkg?.neonAuthBaseUrl),
     dataApiUrl: readEnv(env.TFLEX_DATA_API_URL) ?? readString(pkg?.neonDataApiUrl),
+    functionApiUrl: readEnv(env.TFLEX_FUNCTION_API_URL) ?? readString(pkg?.neonFunctionApiUrl),
   };
 }
 

@@ -119,16 +119,23 @@ export class AccountsVault {
     }
   }
 
-  /** Status + email for the renderer. No token material. */
+  /** Status + identity for the renderer. No token material. `name` / `image`
+   *  come from the stored user record; both resolve to null for a legacy
+   *  record that predates them (never throws). */
   async status(): Promise<AccountStatusResult> {
     const session = await this.getSession();
     if (session !== null) {
-      return { status: 'signed-in', email: session.user.email };
+      return {
+        status: 'signed-in',
+        email: session.user.email,
+        name: session.user.name ?? null,
+        image: session.user.image ?? null,
+      };
     }
     if (!this.safeStorage.isEncryptionAvailable()) {
-      return { status: 'unavailable', email: null };
+      return { status: 'unavailable', email: null, name: null, image: null };
     }
-    return { status: 'signed-out', email: null };
+    return { status: 'signed-out', email: null, name: null, image: null };
   }
 
   private async loadFromDisk(): Promise<AccountSession | null> {
@@ -172,6 +179,8 @@ function isAccountUser(value: unknown): value is AccountUser {
   if (typeof u.id !== 'string' || typeof u.email !== 'string') return false;
   if (typeof u.emailVerified !== 'boolean') return false;
   if (u.name !== undefined && typeof u.name !== 'string') return false;
+  // `image` is optional and nullable; a legacy record simply omits it.
+  if (u.image !== undefined && u.image !== null && typeof u.image !== 'string') return false;
   return true;
 }
 

@@ -2,7 +2,8 @@
 //
 // Drives the REAL vault through the real IPC bridge with a synthetic session
 // (no Neon account is created): setSession stores it, getStatus reports the
-// email only, the raw JWT never appears in plaintext anywhere under userData
+// identity (email + name/image, never the token), the raw JWT never appears in
+// plaintext anywhere under userData
 // (settings.json included), and clearSession signs out while leaving local
 // data (settings.json) intact.
 
@@ -49,7 +50,9 @@ test('session JWT is encrypted at rest, absent from settings.json, and clearSess
     );
 
     const status = await page.evaluate(() => window.tflex.accounts.getStatus());
-    expect(status).toEqual({ status: 'signed-in', email: 'qa@example.com' });
+    // Phase 44 (operator amendment): the status result carries the identity
+    // (name/image) for the top-bar avatar; the synthetic session has neither.
+    expect(status).toEqual({ status: 'signed-in', email: 'qa@example.com', name: null, image: null });
     expect(JSON.stringify(status)).not.toContain(SENTINEL);
 
     // The encrypted session file exists...
@@ -79,7 +82,7 @@ test('session JWT is encrypted at rest, absent from settings.json, and clearSess
     // Sign out: session dropped, local data intact.
     await page.evaluate(() => window.tflex.accounts.clearSession());
     const after = await page.evaluate(() => window.tflex.accounts.getStatus());
-    expect(after).toEqual({ status: 'signed-out', email: null });
+    expect(after).toEqual({ status: 'signed-out', email: null, name: null, image: null });
     expect(fs.existsSync(sessionFile)).toBe(false);
     expect(fs.existsSync(settingsPath)).toBe(true);
     expect(fs.readFileSync(settingsPath, 'utf8')).toBe(settingsBefore);

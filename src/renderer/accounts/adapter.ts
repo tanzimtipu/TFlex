@@ -29,8 +29,12 @@ export interface AccountsAuthAdapter {
   sendOtp(input: { email: string }): Promise<StartOutcome>;
   verifyOtp(input: { email: string; otp: string }): Promise<AuthOutcome>;
   /** Starts the provider flow. The SDK owns the popup/redirect. */
-  signInGoogle(): Promise<StartOutcome>;
+signInGoogle(): Promise<StartOutcome>;
   signOut(): Promise<void>;
+  /** Phase 44 (operator amendment) — the ONE profile field the identity
+   *  provider lets the app change (the display name). Reads the updated name
+   *  back from the session in `readUser`, so the surface stays in sync. */
+  updateName(input: { name: string }): Promise<StartOutcome>;
 }
 
 /** OTP purpose the Neon project uses for the emailed verification code. */
@@ -95,7 +99,9 @@ interface NeonSdkClient {
     sendVerificationOtp(input: { email: string; type: string }): Promise<SdkResult>;
     verifyEmail(input: { email: string; otp: string }): Promise<SdkResult>;
   };
-  signOut(): Promise<SdkResult>;
+signOut(): Promise<SdkResult>;
+  /** Better Auth's user update; the Managed provider permits `name`. */
+  updateUser(input: { name: string }): Promise<SdkResult>;
   getSession(): Promise<SdkResult>;
 }
 interface NeonInternalClient {
@@ -183,8 +189,12 @@ export function createNeonAuthAdapter(baseUrl: string): AccountsAuthAdapter {
       const res = await call(() => neon.adapter.signIn.social({ provider: "google" }));
       return res.ok ? { ok: true } : failedFrom(res.error);
     },
-    async signOut() {
+async signOut() {
       await call(() => neon.adapter.signOut());
+    },
+    async updateName(input) {
+      const res = await call(() => neon.adapter.updateUser({ name: input.name }));
+      return res.ok ? { ok: true } : failedFrom(res.error);
     },
   };
 }

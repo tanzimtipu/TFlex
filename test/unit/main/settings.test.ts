@@ -96,6 +96,9 @@ describe('SettingsService.load', () => {
       theme: 'light' as const,
       geometry: { x: 1, y: 2, width: 1000, height: 700, maximized: true },
       recentFiles: [recent],
+      // Phase 44 (operator change): the normalizer always emits this field
+      // now (default true), so the round-trip expectation includes it.
+      accountsEnabled: true,
     };
     await svc.save(settings);
     const result = await svc.load();
@@ -1182,6 +1185,62 @@ describe('Phase 23: animationsEnabled validation', () => {
       expect(result.value.saveAsLinearize).toBe(true);
       expect(result.value.pagesPanelCollapsed).toBe(false);
       expect(result.value.annotationRecentTools).toEqual(['ink', 'highlight']);
+    }
+  });
+});
+
+// Phase 44 (operator change): accountsEnabled ships ON by default, with the
+// stored value as the escape hatch. These are persistence round-trips so the
+// default cannot silently overwrite a user's opt-out on the next save.
+describe('Phase 44: accountsEnabled default ON', () => {
+  it('a settings.json with no accountsEnabled key resolves to true', async () => {
+    await writeFile(file, JSON.stringify({
+      theme: 'light',
+      geometry: DEFAULT_SETTINGS.geometry,
+      recentFiles: [],
+    }), 'utf8');
+    const svc = new SettingsService(file);
+    const result = await svc.load();
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.value.accountsEnabled).toBe(true);
+    }
+  });
+
+  it('a missing settings.json resolves to true (fresh install)', async () => {
+    const svc = new SettingsService(file);
+    const result = await svc.load();
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.value.accountsEnabled).toBe(true);
+    }
+  });
+
+  it('save/load round-trips accountsEnabled: false (opt-out is preserved)', async () => {
+    const svc = new SettingsService(file);
+    await svc.save({ ...structuredClone(DEFAULT_SETTINGS), accountsEnabled: false });
+    const result = await svc.load();
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.value.accountsEnabled).toBe(false);
+    }
+    const text = await readFile(file, 'utf8');
+    expect(JSON.parse(text).accountsEnabled).toBe(false);
+  });
+
+  it('a non-boolean accountsEnabled on disk is rejected and resolves to true', async () => {
+    await writeFile(file, JSON.stringify({
+      theme: 'light',
+      geometry: DEFAULT_SETTINGS.geometry,
+      recentFiles: [],
+      accountsEnabled: 'yes',
+    }), 'utf8');
+    const svc = new SettingsService(file);
+    const result = await svc.load();
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.value.accountsEnabled).toBe(true);
+      expect(result.value.theme).toBe('light');
     }
   });
 });

@@ -6,8 +6,8 @@
 // shape of the dialog:
 //
 //   a. the sheet mounts open with the [data-prefs-dialog] root.
-//   b. exactly three sections render, in order: Appearance,
-//      Recent files, Storage locations.
+//   b. the sections render in order: Appearance, Recent files,
+//      Storage locations.
 //   c. the theme dropdown offers exactly the four ThemeDefault
 //      options (Light, Dark, Frosted, System default).
 //   d. changing the dropdown fires onSetThemeDefault AND

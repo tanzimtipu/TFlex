@@ -3,9 +3,14 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!-- img-src is deliberately narrow: the ONLY remote image host allowed is
+         https://lh3.googleusercontent.com, the Google avatar CDN that Google
+         sign-in returns in the user's `image` field. Any future avatar host
+         (for example the app's own storage bucket) must be added here
+         explicitly - never by relaxing img-src to https:. -->
     <meta
       http-equiv="Content-Security-Policy"
-      content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; worker-src 'self' blob:; connect-src 'self' blob: data:; object-src 'self' blob:;"
+      content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://lh3.googleusercontent.com; font-src 'self' data:; worker-src 'self' blob:; connect-src 'self' blob: data:; object-src 'self' blob:;"
     />
     <title>TFlex</title>
   </head>

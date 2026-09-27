@@ -201,7 +201,7 @@ describe("Phase 44 � account surface (adapter mocked)", () => {
     });
     expect(query(h.container, "[data-accounts-signed-in]")).not.toBeNull();
     expect(must(h.container, "[data-accounts-email-shown]").textContent).toContain("ada@example.com");
-    expect(h.onStatusChange).toHaveBeenCalledWith("signed-in", "ada@example.com");
+    expect(h.onStatusChange).toHaveBeenCalledWith("signed-in", "ada@example.com", null);
   });
 
   it("a sign-up creates the account, sends the OTP, and moves to the code step", async () => {
@@ -332,7 +332,7 @@ describe("Phase 44 � signed-in surface and sync status", () => {
     expect(bridge.clearSession).toHaveBeenCalledTimes(1);
     expect(h.adapter.signOut).toHaveBeenCalledTimes(1);
     expect(query(h.container, "[data-accounts-auth]")).not.toBeNull();
-    expect(h.onStatusChange).toHaveBeenCalledWith("signed-out", null);
+    expect(h.onStatusChange).toHaveBeenCalledWith("signed-out", null, null);
   });
 
   it("Continue with Google launches the adapter provider flow", async () => {

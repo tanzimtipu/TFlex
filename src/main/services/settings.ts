@@ -264,6 +264,11 @@ export const DEFAULT_SETTINGS: AppSettings = {
   theme: 'frosted',
   geometry: { x: 100, y: 100, width: 1440, height: 900, maximized: false },
   recentFiles: [],
+  // Phase 44 (operator change): accounts ship ENABLED by default. This is the
+  // single source of the default; `normalizeSettings` falls back to it for a
+  // missing/invalid stored value, so a settings.json written before this
+  // change (no `accountsEnabled` key) resolves to ON too.
+  accountsEnabled: true,
 };
 
 /** Phase 44 — maximum persisted length of `syncDeviceId` (an install id). */
@@ -576,12 +581,16 @@ export function normalizeSettings(raw: unknown): AppSettings {
     settings.dockUnpinned = dockUnpinned;
   }
 
-  // Phase 44: accounts feature flag. Strict boolean; any non-boolean
-  // rejects the field (consumer default `false`). Stands alone so a bad
-  // value never disturbs the sync fields.
-  if (typeof rawObj.accountsEnabled === 'boolean') {
-    settings.accountsEnabled = rawObj.accountsEnabled;
-  }
+  // Phase 44 (operator change): accounts feature flag. Strict boolean,
+  // preserve-if-valid. An explicit stored value wins, so a user who turned
+  // accounts OFF keeps `false` and is never re-enabled by the default. A
+  // missing or non-boolean value is rejected and resolves to the documented
+  // default `DEFAULT_SETTINGS.accountsEnabled` (true — accounts ON). Stands
+  // alone so a bad value never disturbs the sync fields.
+  settings.accountsEnabled =
+    typeof rawObj.accountsEnabled === 'boolean'
+      ? rawObj.accountsEnabled
+      : DEFAULT_SETTINGS.accountsEnabled;
 
   // Phase 44: sync install id. Reject-if-invalid: a present value must be a
   // non-empty string of at most SYNC_DEVICE_ID_MAX chars, else the field

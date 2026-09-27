@@ -2482,10 +2482,23 @@ land:**
 
 **Features**
 
-**A. Sign in / Sign up on the top bar.** A control in the top bar opens an account surface: **Sign in** and
-**Sign up** with **email + password**, and **Continue with Google**. While signed out it offers sign-in /
-registration; while signed in it shows the account (email), **Sync now**, **Sign out**, **Export my data** and
-**Delete my account**. Everything obeys the standing animation and icon rules.
+**A. The account section in the top bar (operator amendment, 2026-09-27).** The top-RIGHT of the top bar
+carries the account, properly:
+- **Signed out:** a sign-in entry that opens the sign-in / sign-up surface (email + password, **Continue with
+  Google**).
+- **Signed in:** a **round avatar** control. It shows the user's profile IMAGE when one is set; otherwise it
+  shows their **INITIALS** (first name + last name; a single name yields one letter; with no name at all it
+  falls back to the first letter of the email). It carries an accessible name (the user's name, else the
+  email).
+- **Clicking it EXPANDS a panel** anchored to the avatar showing the user's profile (avatar, name, email) and
+  offering **Update profile** and **Sign out** (plus **Sync now** and the live sync status). **Update
+  profile** opens a form for the fields the identity provider actually allows the user to change (the
+  Managed provider permits the display name; it does NOT permit changing the email or password - the UI must
+  state that rather than offering a control that cannot work).
+- **There is NO beta toggle.** Accounts are simply ON: the `accountsEnabled` setting remains an internal
+  escape hatch with a default of true, but it is NOT exposed as a Preferences row (the operator removed
+  that), so the account section is always present.
+Everything obeys the standing animation and icon rules.
 
 **B. Email verification.** A registration with email must be verified with the **OTP code** Neon emails
 (Neon's shared sender; production may move to custom SMTP later). The UI must handle: code sent, wrong code,

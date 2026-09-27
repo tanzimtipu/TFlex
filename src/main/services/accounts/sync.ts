@@ -23,8 +23,15 @@
 import { createHash, randomUUID } from 'node:crypto';
 import type { AppSettings, SavedSignature, SignatureSource } from '../../../shared/types';
 import type { AccountsError, SyncReport } from '../../../shared/accounts';
+import {
+  SIGNATURE_IMAGE_MAX_BYTES,
+  type ImageSignatureMeta,
+  type SignatureKind,
+} from '../../../shared/accounts';
 import type { AccountsConfig } from './config';
 import type { SyncState } from './sync-state';
+
+export type { SignatureKind };
 
 // ---------------------------------------------------------------------------
 // Device-local settings exclusion
@@ -102,8 +109,6 @@ export interface SettingsPushRow {
   updated_at: string;
 }
 
-export type SignatureKind = 'drawn' | 'typed' | 'image';
-
 export interface SignatureCloudRow {
   id: string;
   label: string;
@@ -146,6 +151,12 @@ export interface SyncTransport {
   fetchSignatureRows(): Promise<SignatureCloudRow[]>;
   upsertSignatureRows(rows: SignaturePushRow[]): Promise<void>;
   softDeleteSignature(id: string, deletedAt: string): Promise<void>;
+  /** Phase 44 chunk 5 - POST the PNG bytes to the Neon Function and return the
+   *  stored object key. Throws `SyncTransportError` (never a raw error). */
+  uploadSignatureImage(bytes: Uint8Array): Promise<string>;
+  /** Phase 44 chunk 5 - resolve the object key to a presigned GET URL through
+   *  the Function, download the bytes and return them. */
+  downloadSignatureImage(storageKey: string): Promise<Uint8Array>;
 }
 
 // ---------------------------------------------------------------------------
@@ -291,7 +302,7 @@ export function hashSignature(signature: SavedSignature): string {
 }
 
 /** Convert a cloud signature row to a local `SavedSignature`, or null when it
- *  is an image row (metadata-only, not representable locally yet). */
+ *  is an image row (handled by `remoteImageToLocal` instead). */
 export function remoteSignatureToLocal(row: SignatureCloudRow): SavedSignature | null {
   if (row.kind === 'image') return null;
   const source = row.payload as SignatureSource | null;
@@ -301,6 +312,63 @@ export function remoteSignatureToLocal(row: SignatureCloudRow): SavedSignature |
     label: row.label,
     createdAt: row.updated_at,
     source,
+  };
+}
+
+/** Phase 44 chunk 5 - the user-facing message when an image signature exceeds
+ *  the upload cap. Surfaced verbatim through `SyncReport.error.message`. */
+export const SIGNATURE_IMAGE_TOO_LARGE_MESSAGE = `Signature image is too large. The limit is ${Math.round(
+  SIGNATURE_IMAGE_MAX_BYTES / 1024,
+)} KB.`;
+
+/** Content hash for an image signature (metadata + key, NOT the bytes). */
+export function hashImageSignature(meta: ImageSignatureMeta): string {
+  return createHash('sha256')
+    .update(
+      stableStringify({
+        label: meta.label,
+        width: meta.width,
+        height: meta.height,
+        storageKey: meta.storageKey,
+      }),
+    )
+    .digest('hex');
+}
+
+/** Build the cloud push row for a local image signature. */
+export function imageMetaToPushRow(
+  meta: ImageSignatureMeta,
+  storageKey: string,
+  sortOrder: number,
+  now: string,
+): SignaturePushRow {
+  return {
+    id: meta.id,
+    label: meta.label,
+    kind: 'image',
+    payload: { width: meta.width, height: meta.height },
+    storage_key: storageKey,
+    sort_order: sortOrder,
+    deleted_at: null,
+    updated_at: now,
+  };
+}
+
+/** Convert a cloud image row to local image metadata, or null when it carries
+ *  no object key (nothing to download) or is not an image row. */
+export function remoteImageToLocal(
+  row: SignatureCloudRow,
+): (ImageSignatureMeta & { storageKey: string }) | null {
+  if (row.kind !== 'image') return null;
+  if (row.storage_key === null || row.storage_key.length === 0) return null;
+  const payload = (row.payload ?? {}) as Record<string, unknown>;
+  return {
+    id: row.id,
+    label: row.label,
+    createdAt: row.updated_at,
+    width: typeof payload.width === 'number' ? payload.width : 0,
+    height: typeof payload.height === 'number' ? payload.height : 0,
+    storageKey: row.storage_key,
   };
 }
 
@@ -333,6 +401,16 @@ export interface SignaturesPort {
   list(): Promise<SavedSignature[]>;
   /** Upsert drawn/typed signatures by id and remove the given ids locally. */
   applyRemote(upserts: SavedSignature[], removedIds: string[]): Promise<void>;
+  /** Phase 44 chunk 5 - the image half of the local store. */
+  listImages(): Promise<ImageSignatureMeta[]>;
+  /** The local PNG bytes for an image signature, or null when absent. */
+  readImage(id: string): Promise<Uint8Array | null>;
+  /** Persist downloaded PNG bytes for an image signature. */
+  writeImage(id: string, bytes: Uint8Array): Promise<void>;
+  /** Record the uploaded object key against a local image signature. */
+  setImageStorageKey(id: string, storageKey: string): Promise<void>;
+  /** Upsert image metadata by id and remove the given ids locally. */
+  applyRemoteImages(upserts: ImageSignatureMeta[], removedIds: string[]): Promise<void>;
 }
 
 // ---------------------------------------------------------------------------
@@ -344,6 +422,7 @@ export interface SyncEngineDeps {
   getConfig(): AccountsConfig;
   makeTransport(opts: {
     dataApiUrl: string;
+    functionApiUrl: string | null;
     getToken: () => Promise<string | null>;
   }): SyncTransport;
   state: { load(): Promise<SyncState>; save(state: SyncState): Promise<void> };
@@ -382,6 +461,7 @@ export class AccountsSyncEngine {
 
       const transport = this.deps.makeTransport({
         dataApiUrl: config.dataApiUrl,
+        functionApiUrl: config.functionApiUrl,
         getToken: () => this.deps.getToken(),
       });
       const state = await this.deps.state.load();
@@ -472,11 +552,15 @@ export class AccountsSyncEngine {
     let pulled = 0;
 
     const local = await this.deps.signatures.list();
+    const localImages = await this.deps.signatures.listImages();
     const localById = new Map(local.map((s) => [s.id, s]));
+    const localImageById = new Map(localImages.map((m) => [m.id, m]));
 
-    // 1. Local hard-deletes: remember the ids, soft-delete them in the cloud.
+    // 1. Local hard-deletes: an id we previously synced that is now absent
+    //    from BOTH local stores was deleted locally; soft-delete it in the
+    //    cloud so the other device converges.
     for (const id of Object.keys(prevHashes)) {
-      if (localById.has(id)) continue;
+      if (localById.has(id) || localImageById.has(id)) continue;
       await transport.softDeleteSignature(id, now);
       delete state.signatures[id];
       pushed += 1;
@@ -487,10 +571,35 @@ export class AccountsSyncEngine {
     const remote = await transport.fetchSignatureRows();
     const upserts: SavedSignature[] = [];
     const removedIds: string[] = [];
+    const imageUpserts: ImageSignatureMeta[] = [];
+    const imageRemovedIds: string[] = [];
     for (const row of remote) {
+      const prevHash = prevHashes[row.id];
+
+      if (row.kind === 'image') {
+        const localMeta = localImageById.get(row.id);
+        const localHash = localMeta === undefined ? null : hashImageSignature(localMeta);
+        if (localHash !== null && prevHash !== localHash) continue; // local wins
+        if (row.deleted_at !== null) {
+          imageRemovedIds.push(row.id);
+          delete state.signatures[row.id];
+          continue;
+        }
+        const meta = remoteImageToLocal(row);
+        if (meta === null) continue; // image row with no key: nothing to pull
+        // Download the bytes when the key is set and the local blob is missing.
+        if (localMeta?.hasBytes !== true) {
+          const bytes = await transport.downloadSignatureImage(meta.storageKey);
+          await this.deps.signatures.writeImage(row.id, bytes);
+        }
+        imageUpserts.push(meta);
+        state.signatures[row.id] = hashImageSignature(meta);
+        pulled += 1;
+        continue;
+      }
+
       const localSig = localById.get(row.id);
       const localHash = localSig === undefined ? null : hashSignature(localSig);
-      const prevHash = prevHashes[row.id];
       if (localHash !== null && prevHash !== localHash) continue; // local wins
       if (row.deleted_at !== null) {
         removedIds.push(row.id);
@@ -498,7 +607,7 @@ export class AccountsSyncEngine {
         continue;
       }
       const mapped = remoteSignatureToLocal(row);
-      if (mapped === null) continue; // image metadata: deferred, not local
+      if (mapped === null) continue;
       upserts.push(mapped);
       state.signatures[row.id] = hashSignature(mapped);
       pulled += 1;
@@ -506,14 +615,38 @@ export class AccountsSyncEngine {
     if (upserts.length > 0 || removedIds.length > 0) {
       await this.deps.signatures.applyRemote(upserts, removedIds);
     }
+    if (imageUpserts.length > 0 || imageRemovedIds.length > 0) {
+      await this.deps.signatures.applyRemoteImages(imageUpserts, imageRemovedIds);
+    }
 
-    // 3. Push local signatures that are new or changed.
+    // 3. Push local drawn/typed signatures that are new or changed.
     const after = await this.deps.signatures.list();
     for (const [index, signature] of after.entries()) {
       const hash = hashSignature(signature);
       if (state.signatures[signature.id] === hash) continue;
       await transport.upsertSignatureRows([localSignatureToPushRow(signature, index, now)]);
       state.signatures[signature.id] = hash;
+      pushed += 1;
+    }
+
+    // 4. Push local image signatures. Bytes with no key are uploaded first
+    //    (the cap is enforced locally BEFORE the upload), then the metadata
+    //    row carrying the returned key is upserted.
+    const afterImages = await this.deps.signatures.listImages();
+    for (const [index, meta] of afterImages.entries()) {
+      let storageKey = meta.storageKey;
+      if (state.signatures[meta.id] === hashImageSignature(meta)) continue;
+      if (storageKey === null) {
+        const bytes = await this.deps.signatures.readImage(meta.id);
+        if (bytes === null) continue; // metadata without bytes: nothing to upload
+        if (bytes.byteLength === 0 || bytes.byteLength > SIGNATURE_IMAGE_MAX_BYTES) {
+          throw new SyncTransportError('server', SIGNATURE_IMAGE_TOO_LARGE_MESSAGE);
+        }
+        storageKey = await transport.uploadSignatureImage(bytes);
+        await this.deps.signatures.setImageStorageKey(meta.id, storageKey);
+      }
+      await transport.upsertSignatureRows([imageMetaToPushRow(meta, storageKey, index, now)]);
+      state.signatures[meta.id] = hashImageSignature({ ...meta, storageKey });
       pushed += 1;
     }
 

@@ -18,12 +18,11 @@ import { ArrowLeft, LogOut, RefreshCcw, UserPlus, X } from "lucide-react";
 import type {
   AccountStatus,
   AccountUser,
-  AccountsClientConfig,
-  SetSessionPayload,
   SyncReport,
 } from "../../shared/accounts";
 import type { AccountsAuthAdapter } from "../accounts/adapter";
 import { createNeonAuthAdapter } from "../accounts/adapter";
+import { accountsBridge } from "../accounts/bridge";
 import {
   accountsReducer,
   initialAccountsState,
@@ -39,28 +38,10 @@ export interface AccountsDialogProps {
   /** Test seam: build the adapter from the config base URL. Defaults to the
    *  real Neon SDK adapter. */
   createAdapter?: (baseUrl: string) => AccountsAuthAdapter;
-  /** Reports the coarse status + email so the host can label the top-bar
-   *  control without duplicating the bridge reads. */
-  onStatusChange?: (status: AccountStatus, email: string | null) => void;
-}
-
-/** The accounts bridge subset this dialog uses, or null when the preload does
- *  not expose it (jsdom tests / older builds) — treated as "not configured". */
-interface AccountsBridge {
-  getConfig(): Promise<AccountsClientConfig>;
-  getStatus(): Promise<{ status: AccountStatus; email: string | null }>;
-  setSession(payload: SetSessionPayload): Promise<void>;
-  clearSession(): Promise<void>;
-  syncNow(): Promise<SyncReport>;
-  onSyncReport(cb: (report: SyncReport) => void): () => void;
-}
-
-function accountsBridge(): AccountsBridge | null {
-  const w = window as unknown as { tflex?: { accounts?: AccountsBridge } };
-  const api = w.tflex?.accounts;
-  if (api === undefined) return null;
-  if (typeof api.getConfig !== "function" || typeof api.getStatus !== "function") return null;
-  return api;
+/** Reports the coarse status + email (and the display name when the adapter
+   *  returned one) so the host can label the top-bar account control without
+   *  duplicating the bridge reads. */
+  onStatusChange?: (status: AccountStatus, email: string | null, name: string | null) => void;
 }
 
 type ConfigState = "loading" | "ready" | "unconfigured";
@@ -142,7 +123,10 @@ export function AccountsDialog(props: AccountsDialogProps): ReactElement {
       if (cancelled) return;
       setStatus(result.status);
       setSignedInEmail(result.email);
-      statusCbRef.current?.(result.status, result.email);
+      // Feed the stored name through too, so opening the surface on a
+      // cold-boot session never downgrades the top-bar avatar to the email
+      // letter. `result.name` is null for a legacy session (unknown).
+      statusCbRef.current?.(result.status, result.email, result.name);
     }).catch(() => undefined);
     const unsubscribe = typeof api.onSyncReport === "function"
       ? api.onSyncReport((report) => {
@@ -162,7 +146,7 @@ export function AccountsDialog(props: AccountsDialogProps): ReactElement {
     dispatch({ type: "signed-in" });
     setStatus("signed-in");
     setSignedInEmail(user.email);
-    statusCbRef.current?.("signed-in", user.email);
+    statusCbRef.current?.("signed-in", user.email, user.name ?? null);
     if (api === null) return;
     void api.setSession({ user, token }).catch(() => {
       dispatch({ type: "info", text: "Signed in, but the session could not be saved on this device." });
@@ -237,7 +221,7 @@ export function AccountsDialog(props: AccountsDialogProps): ReactElement {
       setSignedInEmail(null);
       setSyncReport(null);
       dispatch({ type: "reset" });
-      statusCbRef.current?.("signed-out", null);
+      statusCbRef.current?.("signed-out", null, null);
     };
     if (api === null) {
       done();

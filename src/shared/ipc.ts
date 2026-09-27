@@ -686,7 +686,8 @@ setEnabled(state: import("./types").MenuEnabledState): void;
   };
   /**
    * Phase 44 — accounts session surface. `getStatus` returns the coarse
-   * account status plus the signed-in email (NEVER the session token);
+   * account status plus the signed-in identity (email, display name and
+   * avatar image — avatar/name null when unknown; NEVER the session token);
    * `setSession` hands the main process the user identity and the session
    * JWT after a successful sign-in, which the main process encrypts with
    * Electron safeStorage; `clearSession` signs out and deletes the stored

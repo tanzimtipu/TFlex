@@ -12,12 +12,17 @@
  * (see `src/main/services/accounts/vault.ts`).
  */
 
-/** The signed-in user's identity, as shown in the account surface. */
+/** The signed-in user's identity, as shown in the account surface.
+ *  `image` is an avatar URL (or data URI) supplied by the identity provider;
+ *  null/absent when the provider holds no picture. Present so the value can
+ *  round-trip through `setSession` and be served back from the vault on a
+ *  cold boot without any network read. */
 export interface AccountUser {
   id: string;
   email: string;
   emailVerified: boolean;
   name?: string;
+  image?: string | null;
 }
 
 /**
@@ -32,11 +37,16 @@ export interface AccountUser {
  */
 export type AccountStatus = 'signed-out' | 'signed-in' | 'unavailable';
 
-/** What `accounts:getStatus` resolves to. The renderer sees the status and
- *  the user's email only — never the session token. */
+/** What `accounts:getStatus` resolves to. The renderer sees the status, the
+ *  user's email, their display name and avatar image — never the session
+ *  token. `name` / `image` are null when signed out, unavailable, or when
+ *  the stored user record predates these fields; the renderer then falls
+ *  back to initials / the email letter. */
 export interface AccountStatusResult {
   status: AccountStatus;
   email: string | null;
+  name: string | null;
+  image: string | null;
 }
 
 /**
@@ -103,4 +113,43 @@ export interface SyncReport {
   pushed?: number;
   pulled?: number;
   error?: AccountsError;
+}
+
+// ---------------------------------------------------------------------------
+// Phase 44 chunk 5 - signature image storage contract
+// ---------------------------------------------------------------------------
+
+/**
+ * The hard cap on a single signature image, in bytes, matching the Neon
+ * Function's own `MAX_BYTES`. The app enforces it BEFORE uploading so an
+ * over-size image fails fast with a clear, non-blocking message instead of
+ * a wasted round trip (the Function would answer 413). Shared so the future
+ * image picker can pre-check with the same number.
+ */
+export const SIGNATURE_IMAGE_MAX_BYTES = 256 * 1024;
+
+/**
+ * The kind of a signature row: vector strokes, typed text, or a raster image
+ * whose bytes live in the private `tflex` bucket (never base64 in the DB).
+ */
+export type SignatureKind = 'drawn' | 'typed' | 'image';
+
+/**
+ * The metadata half of a locally held image signature. The PNG bytes live in
+ * a file under userData (never in `settings.json`, never in the database);
+ * `storageKey` is null until those bytes have been uploaded. This shape is
+ * main-process local state, safe to hand to the renderer as it carries no
+ * credential and no bytes; the JWT and the AWS credentials never appear in it.
+ */
+export interface ImageSignatureMeta {
+  id: string;
+  label: string;
+  createdAt: string;
+  width: number;
+  height: number;
+  /** Cloud object key, or null while the bytes are still local-only. */
+  storageKey: string | null;
+  /** True when the local store currently holds the PNG bytes for this id.
+   *  Set by the store on list; never sent to the cloud. */
+  hasBytes?: boolean;
 }
