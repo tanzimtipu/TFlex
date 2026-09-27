@@ -3998,3 +3998,57 @@ other path for a status probe. The three bundling packages (`jose`, `@aws-sdk/cl
 **Still open:** the image-signature UI surface (image rows sync but are not listed in the renderer yet); the
 live Google round-trip, OTP email and two-device sync (needs a real account); Export/Delete; the
 `.agents/**` + `skills-lock.json` housekeeping (no role may stage `.agents/`).
+
+## 2026-09-27: Release 1.38.0 - the account surface works (CSP), + seven UI corrections
+
+Release 1.38.0 is published: https://github.com/tanzimtipu/tflex-releases/releases/tag/v1.38.0 with all four
+assets, and the public feed verifies (`version: 1.38.0`, sha512 `B3kq1FEN...`, size 171,908,954). Commits:
+`129eda6` (the work, 51 files), `8274b35` (notes), `d762792` (bump), tag `v1.38.0`. Gates: `verify:full`
+437 files / **5608 tests** green; the packaged canonical spec 9/9 at 1.38.0; and the decisive packaged check:
+a BOGUS sign-in on the shipped build now returns the provider's 401 ("That email or password is not
+correct...") instead of a false "You appear to be offline".
+
+**Lesson 1 (my miss, and the most expensive one this session) - a CSP is part of the feature.** Phase 44
+shipped an account surface whose every request was blocked: `src/renderer/index.html` had
+`connect-src 'self' blob: data:`, so the auth SDK could never reach Neon and the adapter mapped the blocked
+request to `network-offline` - the operator got "You appear to be offline" from a fully online app. The
+Phase 44 work deliberately opened `img-src` for the avatar host but never touched `connect-src`. Rules:
+(a) when a phase adds ANY outbound call from the renderer, the phase must state the CSP change it needs and
+test it on the PACKAGED build - a jsdom unit test cannot see CSP, and "the unit tests pass" proved nothing
+here; (b) never map a blocked/failed request to a connectivity message without checking `navigator.onLine` -
+the error taxonomy must distinguish "offline" from "the request did not go through"; (c) `connect-src` now
+carries exactly `https://*.neon.tech` (one provider, covering auth + Data API + Function on every branch) and
+the reason is commented in place. The operator's standing instruction after this: **do not ship half-done
+surfaces** - the account dialog also lacked a Google mark, a password-reset flow and a sane layout, all fixed
+in Phase 45.
+
+**Lesson 2 - Electron 44 removed the SYNCHRONOUS clipboard API in the main process.** `clipboard.readImage`,
+`readBuffer` and `availableFormats` are `undefined`; `clipboard.read()`/`readText()` are Promises now.
+backend-dev implemented the first clipboard channel against the old API, and its unit tests passed because
+they MOCKED that shape - the runtime returned `empty` for everything. frontend-dev caught it by driving the
+real clipboard in a real Electron process. Fix: the service now uses `await clipboard.read()` (items with
+`types` + `getType(type)` -> Blob), reads a copied FILE through the `text/uri-list`/`text/plain` item, and the
+proof is a real-runtime probe (file-drop PNG/JPEG, native image, text, empty - all four reported).
+**Also learned:** a CLEARED Windows clipboard still returns one item (internal-only types), so `empty` is
+decided by "no item exposes a non-internal type AND readText is blank", not by item count. Rule: when a
+platform API is central to a chunk, verify it on the real runtime before building on it - "the mocks agree"
+is not evidence.
+
+**Lesson 3 - the release build can be blocked by a foreign handle on `release/win-unpacked`.** The 1.38.0
+dist run failed with `EBUSY` on `release/win-unpacked/resources/app.asar`; the holder was a leaked handle in
+the OpenCode harness process itself (found with Restart-Manager, validated against a known holder), not
+TFlex, OneDrive or Defender. Workaround used (recorded as a spec deviation): build with
+`electron-builder --config.directories.output=<scratch>` and copy ONLY the four artifacts into `release/`,
+then point qa's packaged checks at the new unpacked tree. The stale `release/win-unpacked` remains until the
+harness restarts. Rule for the future: keep the harness/watcher away from `release/`, and if `EBUSY` hits a
+build output, find the HOLDER before retrying.
+
+**Phase 45's other corrections:** distinct per-tab colours (Phase 40 item 14 had claimed this but the code
+never existed - tabs were painted `transparent` in every theme; now a 4-slot palette cycled by strip position
+with a chip + 8% wash, adjacency guaranteed) ; the Multi Mode activation animation (FLIP of the existing
+panes over `--motion-duration-layout`, so no remount and no PDF repaint); "Edit mode off" moved to the far
+left of the edit group AND the lead-verb styling made ink-only so it can never read as selected (that styling
+change also applies to the PAGES/REVIEW/DELIVER lead verbs); the first thumbnail no longer collides with the
+Undo row (the real bug was the Undo label wrapping over its own box in the 150px strip); the tool dialogs
+re-shaped toward square (Watermark 460x836 -> 620x620) with the content re-laid out; and the Watermark
+custom X/Y tick that disables the predefined slots and is applied to the produced output.
