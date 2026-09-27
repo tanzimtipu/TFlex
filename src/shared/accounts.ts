@@ -175,14 +175,86 @@ export interface OAuthCallbackStartResult {
 
 /**
  * Delivered over `accounts:oauthCallback` when the loopback listener is
- * reached (`ok: true`) or closes without being reached. `timeout` is the
- * 2-minute expiry, `cancelled` is a `stop` / a replaced start, `error` is a
- * listener failure after it bound.
+ * reached, or closes without being reached. `timeout` is the 2-minute expiry,
+ * `cancelled` is a `stop` / a replaced start, `error` is a listener or
+ * exchange failure.
  *
- * Deliberately carries NO OAuth `code` / `state` and no callback token: the
- * renderer's auth SDK owns the code exchange, and the loopback page never
- * touches app state.
+ * Phase 46 - `{ ok: true }` now means MAIN has COMPLETED the sign-in: the
+ * renderer runs from `file://`, so it is cross-site to the auth host and
+ * Chromium will not attach the provider's `SameSite=Lax` session cookie - its
+ * own SDK `getSession()` can never see the session the popup established.
+ * Main reads the cookie (which its session DOES hold) and completes the
+ * exchange through `session.fetch`, then stores the identity + JWT in the
+ * vault. The renderer therefore learns the outcome by re-querying
+ * `accounts:getStatus()`; it must NOT attempt its own exchange.
+ *
+ * A failure carries a NON-secret `message` with the provider's real status /
+ * message (the Phase 46 rule) so the surface never shows a generic string.
+ * Deliberately carries NO OAuth `code` / `state`, no callback token and no
+ * session token.
  */
 export type OAuthCallbackOutcome =
   | { ok: true }
-  | { ok: false; reason: 'timeout' | 'cancelled' | 'error' };
+  | { ok: false; reason: 'timeout' | 'cancelled' | 'error'; message?: string };
+
+// ---------------------------------------------------------------------------
+// Phase 46 - observable Google sign-in chain (dev-oriented trace)
+// ---------------------------------------------------------------------------
+
+/**
+ * One step of the Google sign-in popup/callback chain, emitted by main over
+ * `accounts:oauthTrace`. This exists to make a stuck or blank popup
+ * diagnosable from the renderer log without a debugger: the popup's
+ * navigation/redirect/fail-load events, the loopback listener being reached,
+ * the completion matcher firing, the popup closing, and the auth-host cookie
+ * presence afterwards.
+ *
+ * SAFETY: the payload NEVER carries an OAuth `code`, `state`, callback token
+ * or cookie value. `url` is sanitized to origin + pathname (query and hash
+ * dropped) and `path` is a pathname only; cookies are reported as NAMES and a
+ * COUNT. The trace is always on but cheap (a handful of events per sign-in).
+ */
+export type OAuthTraceKind =
+  | 'popup-open'
+  | 'popup-navigate'
+  | 'popup-redirect'
+  | 'popup-navigate-in-page'
+  | 'popup-fail-load'
+  | 'popup-complete'
+  | 'popup-closed'
+  | 'popup-cookies'
+  | 'loopback-hit'
+  // Phase 46 - the main-process session exchange after the loopback landed.
+  | 'exchange-cookies'
+  | 'exchange-get-session'
+  | 'exchange-token'
+  | 'exchange-stored'
+  | 'exchange-failed';
+
+export interface OAuthTraceEvent {
+  /** Epoch milliseconds; events order by this. */
+  at: number;
+  kind: OAuthTraceKind;
+  /** Sanitized location: scheme + host + pathname only. Query and hash are
+   *  dropped, so no OAuth code / state / loopback token can ever appear. */
+  url?: string;
+  /** Loopback pathname only, e.g. `/oauth/callback`. */
+  path?: string;
+  /** The auth hostname when known (never credentials, never a path). */
+  host?: string;
+  /** `popup-fail-load` only - Chromium's numeric net error. */
+  errorCode?: number;
+  /** `popup-fail-load` only - Chromium's net error description. */
+  errorDescription?: string;
+  /** `popup-cookies` / `exchange-cookies` only - cookie NAMES, sorted;
+   *  never values. */
+  cookieNames?: string[];
+  /** `popup-cookies` / `exchange-cookies` only - total matching cookies. */
+  cookieCount?: number;
+  /** `exchange-get-session` / `exchange-token` only - the HTTP status the auth
+   *  host answered. Never a body. */
+  status?: number;
+  /** `exchange-failed` only - a fixed machine reason code (e.g.
+   *  `no-cookie`, `session-rejected`). Never a provider message or a token. */
+  reason?: string;
+}

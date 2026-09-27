@@ -63,7 +63,7 @@ const {
   _onBeforeSendHeaders: vi.fn(),
 }));
 
-vi.mock('electron', () => ({
+vi.mock('electron', async () => ({
   app: {
     requestSingleInstanceLock: vi.fn().mockReturnValue(true),
     quit: _quit,
@@ -95,14 +95,13 @@ vi.mock('electron', () => ({
     ),
   },
   screen: { getAllDisplays: vi.fn().mockReturnValue([{ workArea: { x: 0, y: 0, width: 1920, height: 1080 } }]) },
-  // Phase 46 - start() installs the auth Origin header rule on the app's
-  // default session (src/main/index.ts:333), so the mock must expose the
-  // webRequest surface `installAuthOriginHeader` calls, mirroring index.test.ts.
-  session: {
-    defaultSession: {
-      webRequest: { onBeforeSendHeaders: _onBeforeSendHeaders },
-    },
-  },
+  // Phase 46 / DEF-364 - index.ts start() installs the auth Origin header rule
+  // on the default session and binds the exchange's fetch/cookies there too.
+  // The shared helper is the ONE place that mock shape lives, so a new
+  // `session.*` call is a one-line change instead of a recurring breakage.
+  session: (await import('./helpers/electronSessionMock')).createElectronSessionMock(
+    _onBeforeSendHeaders,
+  ),
 }));
 
 vi.mock('../../../src/main/window', () => ({

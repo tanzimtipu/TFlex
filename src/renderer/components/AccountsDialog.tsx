@@ -17,6 +17,7 @@ import { AnimatePresence, motion } from "motion/react";
 import { ArrowLeft, LogOut, RefreshCcw, UserPlus, X } from "lucide-react";
 import type {
   AccountStatus,
+  AccountStatusResult,
   AccountUser,
   AccountsErrorCode,
   SyncReport,
@@ -215,6 +216,18 @@ export function AccountsDialog(props: AccountsDialogProps): ReactElement {
     });
   }, []);
 
+  /** Phase 46 - the Google flow's completion. MAIN has already completed the
+   *  exchange and stored the session in the vault (the renderer cannot see the
+   *  SameSite=Lax cookie from `file://`), so there is nothing to hand to
+   *  `setSession`. Drive the machine to signed-in from the re-read status, the
+   *  same way the boot path seeds it, so name/image flow to the top bar. */
+  const completeGoogleSignIn = useCallback((result: AccountStatusResult): void => {
+    dispatch({ type: "signed-in" });
+    setStatus(result.status);
+    setSignedInEmail(result.email);
+    statusCbRef.current?.(result.status, result.email, result.name);
+  }, []);
+
   /** Dispatch a failure, carrying the provider's own code/message through so
    *  the banner can say WHY rather than the generic fallback. */
   const fail = useCallback(
@@ -318,11 +331,13 @@ export function AccountsDialog(props: AccountsDialogProps): ReactElement {
    * There is no absolute page origin to hand the provider (the packaged
    * renderer is `file://`), so the flow asks main for a loopback callback URL,
    * hands it to the SDK as the absolute `callbackURL`, and opens the authorize
-   * URL in a popup. The provider's redirect lands on the loopback listener,
-   * whose outcome event closes the loop: on `ok` the session cookie set on the
-   * auth host is read with the same `getSession()` + JWT path the email flow
-   * uses. Any real provider/SDK failure reaches `fail` verbatim; a local
-   * outcome (timeout, cancel) is reported as a non-blocking message.
+   * URL in a popup. The provider's redirect lands on the loopback listener;
+   * main reads the auth-host cookie (which the renderer cannot, being
+   * cross-site from `file://`), completes the exchange and stores the session,
+   * then reports `{ ok: true }`. The flow re-queries `getStatus()` and drives
+   * this surface signed-in from the result. Any real provider/main failure
+   * reaches `fail` verbatim; a local outcome (timeout, cancel) is reported as
+   * a non-blocking message.
    */
   const google = useCallback((): void => {
     const api = accountsBridge();
@@ -332,6 +347,7 @@ export function AccountsDialog(props: AccountsDialogProps): ReactElement {
     googleFlowRef.current = runGoogleSignIn({
       bridge: api,
       adapter,
+      getStatus: (): Promise<AccountStatusResult> => api.getStatus(),
       openWindow: (url): boolean => {
         const opened = window.open(url, GOOGLE_WINDOW_NAME, GOOGLE_WINDOW_FEATURES);
         googleWindowRef.current = opened;
@@ -346,11 +362,11 @@ export function AccountsDialog(props: AccountsDialogProps): ReactElement {
           // A popup the renderer may no longer reach is already gone.
         }
       },
-      onSignedIn: completeSignIn,
+      onSignedIn: completeGoogleSignIn,
       onFailure: fail,
       onInfo: (text): void => dispatch({ type: "info", text }),
     });
-  }, [adapter, completeSignIn, fail]);
+  }, [adapter, completeGoogleSignIn, fail]);
 
   /** Enter the forgot-password flow (sign-in view only). */
   const openReset = useCallback((): void => {

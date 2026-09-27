@@ -5,9 +5,32 @@
 > inspect the current `OPEN`, `FIX-READY`, and `DISPUTED` entries first; closed records are
 > historical evidence and must not be loaded wholesale.
 
+## DEF-365: the Google sign-in popup still does not close on the loopback landing - the completion rule never fires because the listener clears the active callback URL first
+
+- Status: CLOSED
+- Severity: HIGH
+- Found by: qa
+- Phase: 47
+
+Steps to reproduce:
+1. Launch the packaged 1.40.0 build (`TFLEX_PACKAGED_EXE` = the fresh win-unpacked TFlex.exe).
+2. Open the top-right account entry, then click "Continue with Google".
+3. The popup opens on the auth host and redirects to `accounts.google.com` (the natural sequence; a real account is needed to go further).
+4. Drive the popup to the flow's OWN minted loopback URL (the landing the provider's redirect produces) - e.g. `e2e/phase47_google_completion.spec.cjs` reads the `callbackURL` from the `sign-in/social` request body and calls `loadURL` on the popup.
+
+Expected: the popup closes when the flow lands on the loopback callback (the Phase 47 completion rule), and the trace records `popup-complete` + `popup-closed`.
+
+Actual: the popup stays open. The trace shows `loopback-hit` (path `/oauth/callback`), then `popup-navigate` to the exact minted loopback URL, then `exchange-cookies` / `exchange-get-session` / `exchange-failed` - but NO `popup-complete` and NO `popup-closed`. Root cause: `OAuthCallbackService.handle()` calls `respond(res, 200, SUCCESS_PAGE)` then `this.finish('ok')`, and `finish` -> `closeActive()` sets `this.active = null` synchronously. The popup's `did-navigate` fires later, so `deps.getLoopbackUrl()` (`oauthCallback.currentCallbackUrl()`) returns null and `isLoopbackCompletionUrl(url, null)` is false. The matcher only works while the flow is still active. Diagnostic proof: driving the popup to the same origin+path with a WRONG token (listener refuses 403, flow stays active) DOES close the popup and traces `popup-complete` + `popup-closed`; the correct-token path does not. This is the operator's original blocker, still present in 1.40.0.
+
+Screenshot: none (trace evidence in `e2e/phase47-completion.log`).
+
+History:
+- qa: opened (Phase 47 release-gate verification on the packaged 1.40.0 build; `e2e/phase47_google_completion.spec.cjs` test 1 fails, test 2 diagnostic passes).
+- qa: CLOSED (FIX-READY retest on the REBUILT 1.40.0 artifacts; `TFLEX_PACKAGED_EXE` = the fresh `%TEMP%\opencode\tflex-dist-1400b\win-unpacked\TFlex.exe`). `e2e/phase47_google_completion.spec.cjs` -> 2 passed. The correct-token path now traces `popup-open, popup-redirect x4, popup-navigate, loopback-hit, exchange-cookies, popup-navigate, popup-complete, popup-closed, popup-cookies, exchange-get-session, exchange-failed`; the window count returns to 1 (the popup closed on its own) and the exchange still runs. The retained minted URL (`lastCallbackUrl` + 30 s grace, cleared on popup close / new flow) is the fix. Evidence: `e2e/phase47-completion-rerun.log`.
+
 ## DEF-364: the Phase 46 auth-Origin install breaks 5 DEF-300 unit tests (their electron mock has no `session` export)
 
-- Status: FIX-READY
+- Status: CLOSED
 - Severity: MEDIUM
 - Found by: qa
 - Phase: 46
@@ -26,6 +49,8 @@ History:
 - qa: opened
 - orchestrator: FIX-READY -- relaying backend-dev: the `electron` mock in `test/unit/main/def300OpenPathRouting.test.ts` gained the `session: { defaultSession: { webRequest: { onBeforeSendHeaders } } }` shape that `src/main/index.ts` now calls, mirroring `index.test.ts`; no product code changed and no assertion weakened. The sweep the same dispatch required covered all 13 main test files that mock `electron`: only 2 of them load `src/main/index` (the only module touching `session.*`) - `index.test.ts` (already correct) and this one (fixed); the other 11 import sibling modules and cannot hit the gap. Evidence: `npm.cmd run test:unit -- test/unit/main` -> 52 files / 1497 tests passed; `npm.cmd run verify:full` -> 443 files / 5687 tests passed (was 5 failed). This is the third occurrence of the same class (DEF-304, DEF-305, DEF-364): a change that adds a call on a collaborator must sweep every test that mocks that collaborator in the same change.
 - qa: opened (Phase 46 FIX-READY verification; `verify:full` run on the final tree).
+- qa: reopened (Phase 47 release-gate retest on the 1.40.0 tree). The FIX-READY mock gained `session.defaultSession.webRequest` but the Phase 46/47 exchange wiring now also calls `session.defaultSession.fetch.bind(...)` and reads `session.defaultSession.cookies` (`src/main/index.ts:342-345`), which this mock still lacks. All 5 DEF-300 tests fail again with `TypeError: Cannot read properties of undefined (reading 'bind')` at `src/main/index.ts:342`. `npm.cmd run verify:full` -> `Test Files 1 failed | 444 passed (445)`; `Tests 5 failed | 5721 passed (5726)`. Same class, fourth occurrence: the mock must mirror `index.test.ts`'s `cookies` + `fetch` too.
+- qa: CLOSED (FIX-READY retest on the REBUILT 1.40.0 tree). The shared `test/unit/main/helpers/electronSessionMock.ts` now supplies `session.defaultSession.{webRequest.onBeforeSendHeaders, cookies.get, fetch}` to both files that load `src/main/index.ts` (`index.test.ts`, `def300OpenPathRouting.test.ts`). `npm.cmd run verify:full` -> `Test Files 446 passed (446)`; `Tests 5733 passed (5733)` (was `1 failed | 444 passed` / `5 failed | 5721 passed`). The `verify` stage (check-conventions + typecheck) also passed. Evidence: `e2e/phase47-verify-full-rerun.log`.
 
 ## DEF-363: the icon guard's import extractor drops the first icon after a preceding named import, so the app-wide sweep misses shared icons (a different-action `Hash` pair remains)
 

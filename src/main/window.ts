@@ -1,6 +1,8 @@
 import { BrowserWindow, screen, type Rectangle } from 'electron';
 import { join } from 'node:path';
 import type { AppSettings, WindowGeometry } from '../shared/types';
+import type { OAuthTraceEvent } from '../shared/accounts';
+import { cookieSummary, makeOAuthTrace, sanitizeUrlForTrace } from './services/accounts/oauth-trace';
 
 interface WindowDeps {
   rendererHtml: string;
@@ -105,16 +107,41 @@ export function deriveAuthHost(authBaseUrl: string | null): string | null {
 }
 
 /**
+ * Phase 46 - true when `url` is the exact loopback callback URL a flow minted
+ * (same scheme/host/port and pathname). The query string is deliberately
+ * ignored: the provider appends the OAuth `code`/`state` and the flow's token
+ * to the callback, so comparing the full URL would never match. Pure and
+ * exported for the unit tests.
+ */
+export function isLoopbackCompletionUrl(url: string, loopbackUrl: string | null): boolean {
+  if (loopbackUrl === null) return false;
+  let target: URL;
+  let loopback: URL;
+  try {
+    target = new URL(url);
+    loopback = new URL(loopbackUrl);
+  } catch {
+    return false;
+  }
+  return target.origin === loopback.origin && target.pathname === loopback.pathname;
+}
+
+/**
  * Phase 44 - true when the popup has landed on the flow's completion URL:
- * the auth host's `/callback` path (any suffix), or the app's own URL/origin.
- * Used to auto-close the popup so no stray window is left behind. Exported
- * for the unit tests.
+ * the auth host's `/callback` path (any suffix), the app's own URL/origin, or
+ * (Phase 46) the exact loopback callback URL this flow minted. Used to
+ * auto-close the popup so no stray window is left behind. Exported for the
+ * unit tests.
  */
 export function isAuthCompletionUrl(
   url: string,
   authHost: string | null,
   appUrl: string | null,
+  loopbackUrl: string | null = null,
 ): boolean {
+  if (isLoopbackCompletionUrl(url, loopbackUrl)) {
+    return true;
+  }
   let parsed: URL;
   try {
     parsed = new URL(url);
@@ -150,6 +177,16 @@ export interface AuthPopupDeps {
   getAuthHost: () => string | null;
   /** The app's own renderer URL, used only for completion detection. */
   getAppUrl: () => string | null;
+  /** Phase 46 - the absolute loopback URL the current flow minted, or null.
+   *  Used only to recognise the flow's completion landing so the popup can be
+   *  closed; never returned to the renderer and never allowed by the opener. */
+  getLoopbackUrl?: () => string | null;
+  /** DEF-365 - called when a popup closes, so the retained minted callback URL
+   *  (which carries the flow's token) is dropped as soon as its popup is gone. */
+  onPopupClosed?: () => void;
+  /** Phase 46 - dev-oriented trace sink for the popup chain. Payload is
+   *  redaction-safe (no token/code/cookie value). */
+  onTrace?: (event: OAuthTraceEvent) => void;
 }
 
 /**
@@ -168,6 +205,12 @@ export function installAuthPopupHandler(win: BrowserWindow, deps: AuthPopupDeps)
     if (decideAuthPopup(url, deps.getAuthHost()) === 'deny') {
       return { action: 'deny' };
     }
+    deps.onTrace?.(
+      makeOAuthTrace('popup-open', {
+        url: sanitizeUrlForTrace(url),
+        host: deps.getAuthHost() ?? undefined,
+      }),
+    );
     return {
       action: 'allow',
       overrideBrowserWindowOptions: {
@@ -185,15 +228,49 @@ export function installAuthPopupHandler(win: BrowserWindow, deps: AuthPopupDeps)
 
   win.webContents.on('did-create-window', (child) => {
     popups.add(child);
+    // Capture the shared session now: after `closed` the child's webContents
+    // is gone, but the cookie probe below still needs the session handle.
+    const childSession = child.webContents.session;
+    const authHost = deps.getAuthHost();
+
     child.on('closed', () => {
       popups.delete(child);
+      deps.onTrace?.(makeOAuthTrace('popup-closed', { host: authHost ?? undefined }));
+      // DEF-365 - the popup is gone, so the minted URL no longer needs to stay
+      // matchable; drop it (the listener itself already shut down on the hit).
+      deps.onPopupClosed?.();
+      void probeAuthHostCookies(childSession, authHost, deps.onTrace);
     });
     // Observe only, never prevent: the auth host's callback response (which
     // carries the Set-Cookie) must be allowed to commit before we close.
     child.webContents.on('did-navigate', (_event, url) => {
-      if (isAuthCompletionUrl(url, deps.getAuthHost(), deps.getAppUrl()) && !child.isDestroyed()) {
+      deps.onTrace?.(makeOAuthTrace('popup-navigate', { url: sanitizeUrlForTrace(url) }));
+      if (
+        isAuthCompletionUrl(url, authHost, deps.getAppUrl(), deps.getLoopbackUrl?.() ?? null) &&
+        !child.isDestroyed()
+      ) {
+        deps.onTrace?.(makeOAuthTrace('popup-complete', { url: sanitizeUrlForTrace(url) }));
         child.close();
       }
+    });
+    child.webContents.on('will-redirect', (_event, url) => {
+      deps.onTrace?.(makeOAuthTrace('popup-redirect', { url: sanitizeUrlForTrace(url) }));
+    });
+    child.webContents.on('did-redirect-navigation', (_event, url) => {
+      deps.onTrace?.(makeOAuthTrace('popup-redirect', { url: sanitizeUrlForTrace(url) }));
+    });
+    child.webContents.on('did-navigate-in-page', (_event, url) => {
+      deps.onTrace?.(makeOAuthTrace('popup-navigate-in-page', { url: sanitizeUrlForTrace(url) }));
+    });
+    child.webContents.on('did-fail-load', (_event, errorCode, errorDescription, validatedURL, isMainFrame) => {
+      if (!isMainFrame) return;
+      deps.onTrace?.(
+        makeOAuthTrace('popup-fail-load', {
+          errorCode,
+          errorDescription,
+          url: sanitizeUrlForTrace(validatedURL),
+        }),
+      );
     });
   });
 
@@ -206,6 +283,25 @@ export function installAuthPopupHandler(win: BrowserWindow, deps: AuthPopupDeps)
     }
     popups.clear();
   });
+}
+
+/**
+ * Phase 46 - report the auth-host cookies present in the shared session after
+ * a flow, as NAMES and a COUNT only. A `session.cookies.get` call is never
+ * rejected for a parseable URL; the catch is only for a destroyed session.
+ */
+async function probeAuthHostCookies(
+  session: { cookies: { get(filter: { url: string }): Promise<{ name?: unknown }[]> } },
+  authHost: string | null,
+  onTrace: ((event: OAuthTraceEvent) => void) | undefined,
+): Promise<void> {
+  if (authHost === null || onTrace === undefined) return;
+  try {
+    const cookies = await session.cookies.get({ url: `https://${authHost}/` });
+    onTrace(makeOAuthTrace('popup-cookies', { host: authHost, ...cookieSummary(cookies) }));
+  } catch {
+    // A session that is already gone has nothing to report.
+  }
 }
 
 function rectOnSomeDisplay(geometry: WindowGeometry): boolean {

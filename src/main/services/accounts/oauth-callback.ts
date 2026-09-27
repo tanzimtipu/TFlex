@@ -36,7 +36,8 @@
  */
 
 import { randomBytes, timingSafeEqual } from 'node:crypto';
-import type { OAuthCallbackOutcome, OAuthCallbackStartResult } from '../../../shared/accounts';
+import type { OAuthCallbackOutcome, OAuthCallbackStartResult, OAuthTraceEvent } from '../../../shared/accounts';
+import { makeOAuthTrace } from './oauth-trace';
 
 /** The interface the listener actually BINDS to. Loopback only, never
  *  configurable, never 0.0.0.0 / ::. */
@@ -48,6 +49,13 @@ export const OAUTH_CALLBACK_HOST = '127.0.0.1';
 export const OAUTH_CALLBACK_PUBLIC_HOST = 'localhost';
 export const OAUTH_CALLBACK_PATH = '/oauth/callback';
 export const OAUTH_CALLBACK_TIMEOUT_MS = 120_000;
+/**
+ * DEF-365 - how long the minted callback URL stays available to the popup's
+ * completion matcher AFTER the listener has served its one valid request.
+ * `did-navigate` fires a tick after the HTTP response flushes, so the URL must
+ * outlive `finish('ok')`; the popup's `closed` event clears it sooner.
+ */
+export const OAUTH_CALLBACK_COMPLETION_URL_GRACE_MS = 30_000;
 
 const OAUTH_CALLBACK_SCHEME = 'http';
 const TOKEN_PARAM = 'token';
@@ -74,6 +82,9 @@ interface ActiveCallback {
   server: HttpServer;
   token: string;
   timer: NodeJS.Timeout;
+  /** The absolute URL this flow minted (provider-facing, carries the token).
+   *  Never leaves main except as the invoke reply to the renderer that asked. */
+  callbackUrl: string;
 }
 
 /** The slice of the service the IPC layer needs. */
@@ -85,24 +96,76 @@ export interface OAuthCallbackController {
 export interface OAuthCallbackServiceOptions {
   /** Milliseconds an unanswered listener stays open. Default 2 minutes. */
   timeoutMs?: number;
+  /**
+   * DEF-365 - milliseconds the minted callback URL stays available to the
+   * completion matcher after the listener served its valid request. Default
+   * 30 seconds; tests use a short value.
+   */
+  completionUrlGraceMs?: number;
   /** Receives exactly one outcome per started flow. */
   onOutcome?: (outcome: OAuthCallbackOutcome) => void;
+  /** Phase 46 - dev-oriented trace sink. Receives `loopback-hit` (pathname
+   *  only) whenever a request reaches the callback path. Never a token. */
+  onTrace?: (event: OAuthTraceEvent) => void;
 }
 
 export class OAuthCallbackService implements OAuthCallbackController {
   private active: ActiveCallback | null = null;
+  /**
+   * DEF-365 - the minted URL retained for the popup's completion matcher after
+   * the listener has served its request (or closed), so `did-navigate` - which
+   * fires a tick after the response flushes - can still recognise the landing.
+   * It is NOT the listener: `handle()` still consumes `active` on the single
+   * valid request. Cleared on a new start, on `clearCompletionUrl()` (the popup
+   * closing), after the grace window, and on dispose.
+   */
+  private lastCallbackUrl: string | null = null;
+  private completionUrlTimer: NodeJS.Timeout | null = null;
   private readonly timeoutMs: number;
+  private readonly completionUrlGraceMs: number;
   private readonly onOutcome?: (outcome: OAuthCallbackOutcome) => void;
+  private readonly onTrace?: (event: OAuthTraceEvent) => void;
 
   constructor(options: OAuthCallbackServiceOptions = {}) {
     this.timeoutMs = options.timeoutMs ?? OAUTH_CALLBACK_TIMEOUT_MS;
+    this.completionUrlGraceMs =
+      options.completionUrlGraceMs ?? OAUTH_CALLBACK_COMPLETION_URL_GRACE_MS;
     this.onOutcome = options.onOutcome;
+    this.onTrace = options.onTrace;
+  }
+
+  /**
+   * Phase 46 - the absolute URL the CURRENT flow minted, or null when no flow
+   * is in flight. Used by the auth popup handler to recognise the flow's
+   * completion landing (the loopback URL) and close the popup. Never returned
+   * to the renderer from here; the URL itself is the invoke reply of `start`.
+   *
+   * DEF-365 - after a valid hit the listener clears `active` immediately, so
+   * this falls back to the retained `lastCallbackUrl` for the grace window:
+   * the popup's `did-navigate` runs after the response, not before it.
+   */
+  currentCallbackUrl(): string | null {
+    return this.active?.callbackUrl ?? this.lastCallbackUrl;
+  }
+
+  /**
+   * DEF-365 - drop the retained minted URL. Called when the popup closes, so a
+   * URL carrying the flow's token is not held past the flow's popup.
+   */
+  clearCompletionUrl(): void {
+    if (this.completionUrlTimer !== null) {
+      clearTimeout(this.completionUrlTimer);
+      this.completionUrlTimer = null;
+    }
+    this.lastCallbackUrl = null;
   }
 
   async start(): Promise<OAuthCallbackStartResult> {
     // Single-flight: replace, never leak a second bound server. The replaced
     // caller is told its flow was cancelled rather than left hanging.
     if (this.active !== null) this.finish('cancelled');
+    // DEF-365 - a new flow supersedes the previous flow's retained URL.
+    this.clearCompletionUrl();
 
     const { createServer } = await loadHttp();
     const token = defaultToken();
@@ -117,17 +180,21 @@ export class OAuthCallbackService implements OAuthCallbackController {
     }
     // Any error after the listener is up ends the flow with 'error'.
     server.on('error', () => this.finish('error'));
-    this.active = {
-      server,
-      token,
-      timer: setTimeout(() => this.finish('timeout'), this.timeoutMs),
-    };
     // Absolute URL, built from the port actually bound and the provider-trusted
     // loopback host (`localhost`), while the socket itself stays bound to
     // 127.0.0.1. There is no URL literal anywhere in this module.
     const callbackUrl =
       `${OAUTH_CALLBACK_SCHEME}://${OAUTH_CALLBACK_PUBLIC_HOST}:${address.port}` +
       `${OAUTH_CALLBACK_PATH}?${TOKEN_PARAM}=${token}`;
+    this.active = {
+      server,
+      token,
+      timer: setTimeout(() => this.finish('timeout'), this.timeoutMs),
+      callbackUrl,
+    };
+    // DEF-365 - retain the minted URL for the completion matcher independently
+    // of the listener's `active` state (which the valid hit clears).
+    this.lastCallbackUrl = callbackUrl;
     return { callbackUrl };
   }
 
@@ -139,6 +206,7 @@ export class OAuthCallbackService implements OAuthCallbackController {
   /** Close without emitting an outcome - used on app teardown. */
   dispose(): void {
     this.closeActive();
+    this.clearCompletionUrl();
   }
 
   private handle(req: HttpRequest, res: HttpResponse, token: string): void {
@@ -149,6 +217,9 @@ export class OAuthCallbackService implements OAuthCallbackController {
       respond(res, 404, NOT_FOUND_PAGE);
       return;
     }
+    // Phase 46 - observe the hit for the trace. Pathname only: the query (and
+    // therefore the token / any OAuth code) is deliberately not read here.
+    this.onTrace?.(makeOAuthTrace('loopback-hit', { path: pathname }));
     if ((req.method ?? 'GET') !== 'GET') {
       respond(res, 405, METHOD_PAGE);
       return;
@@ -169,9 +240,26 @@ export class OAuthCallbackService implements OAuthCallbackController {
     const wasActive = this.active !== null;
     this.closeActive();
     if (!wasActive) return;
+    // DEF-365 - a landing ('ok') keeps the minted URL matchable for the grace
+    // window so the popup's did-navigate can still recognise it; every other
+    // outcome means no popup is landing, so drop it now.
+    if (result === 'ok') {
+      this.armCompletionUrlGrace();
+    } else {
+      this.clearCompletionUrl();
+    }
     const outcome: OAuthCallbackOutcome =
       result === 'ok' ? { ok: true } : { ok: false, reason: result };
     this.onOutcome?.(outcome);
+  }
+
+  /** DEF-365 - keep the retained URL for a bounded window, then drop it. */
+  private armCompletionUrlGrace(): void {
+    if (this.completionUrlTimer !== null) clearTimeout(this.completionUrlTimer);
+    this.completionUrlTimer = setTimeout(() => {
+      this.completionUrlTimer = null;
+      this.lastCallbackUrl = null;
+    }, this.completionUrlGraceMs);
   }
 
   private closeActive(): void {

@@ -1,5 +1,5 @@
 import type { Result } from "./result";
-import type { AccountStatusResult, AccountsClientConfig, OAuthCallbackOutcome, OAuthCallbackStartResult, SetSessionPayload, SyncReport } from "./accounts";
+import type { AccountStatusResult, AccountsClientConfig, OAuthCallbackOutcome, OAuthCallbackStartResult, OAuthTraceEvent, SetSessionPayload, SyncReport } from "./accounts";
 import type {
   AddStampPayload,
   AddTextBoxPayload,
@@ -263,6 +263,13 @@ export const IPC = {
   accountsStartOAuthCallback: "accounts:startOAuthCallback",
   accountsStopOAuthCallback: "accounts:stopOAuthCallback",
   accountsOAuthCallbackEvent: "accounts:oauthCallback",
+  // Phase 46 - dev-oriented observability for the Google sign-in chain. Main
+  // (the popup handler and the loopback listener) broadcasts `OAuthTraceEvent`
+  // steps over this channel so the renderer can log the popup's navigation /
+  // redirect / fail-load, the loopback hit, the completion matcher firing, the
+  // popup close and the post-flow cookie names. Always on, cheap, and never
+  // carries a token, OAuth code or cookie value.
+  accountsOAuthTraceEvent: "accounts:oauthTrace",
   // Phase 45 — main-side clipboard image reader. The renderer's async
   // clipboard API cannot see a FILE copied in Explorer (the CF_HDROP /
   // text/uri-list flavour) because the renderer has no `fs`. This channel
@@ -768,6 +775,10 @@ setEnabled(state: import("./types").MenuEnabledState): void;
      *  `{ ok: true }` when the provider's redirect lands, else a reason.
      *  Returns an unsubscribe. Never carries the OAuth code or token. */
     onOAuthCallback(cb: (outcome: OAuthCallbackOutcome) => void): () => void;
+    /** Phase 46 — subscribe to dev-oriented `OAuthTraceEvent` steps of the
+     *  popup / loopback chain, for logging a stuck sign-in. Returns an
+     *  unsubscribe. Never carries a token, OAuth code or cookie value. */
+    onOAuthTrace(cb: (event: OAuthTraceEvent) => void): () => void;
   };
   /**
    * Phase 35 (DEF-295) — resolve a `File` from a drag-and-drop (or any

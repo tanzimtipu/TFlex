@@ -50,7 +50,7 @@ import type {
 import type { Result } from "../shared/result";
 import type { FdfOpenError, PdfOpenError } from "../shared/types";
 import type { SignatureSource } from "../shared/types";
-import type { AccountStatusResult, AccountsClientConfig, OAuthCallbackOutcome, OAuthCallbackStartResult, SetSessionPayload, SyncReport } from "../shared/accounts";
+import type { AccountStatusResult, AccountsClientConfig, OAuthCallbackOutcome, OAuthCallbackStartResult, OAuthTraceEvent, SetSessionPayload, SyncReport } from "../shared/accounts";
 import { normalizeArrayBuffer } from "./to-array-buffer";
 
 // The renderer's engineClient.ts declares `window.tflex?.engine` with its own
@@ -625,6 +625,15 @@ const api = {
       ipcRenderer.on(IPC.accountsOAuthCallbackEvent, listener);
       return () => {
         ipcRenderer.removeListener(IPC.accountsOAuthCallbackEvent, listener);
+      };
+    },
+    // Phase 46 - dev-oriented trace of the popup / loopback chain, for logging
+    // a stuck sign-in. Redaction-safe: no token, OAuth code or cookie value.
+    onOAuthTrace(cb: (event: OAuthTraceEvent) => void): () => void {
+      const listener = (_event: unknown, trace: OAuthTraceEvent): void => cb(trace);
+      ipcRenderer.on(IPC.accountsOAuthTraceEvent, listener);
+      return () => {
+        ipcRenderer.removeListener(IPC.accountsOAuthTraceEvent, listener);
       };
     },
   },

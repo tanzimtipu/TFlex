@@ -2,6 +2,7 @@ import { app, BrowserWindow, clipboard, dialog, ipcMain, safeStorage, session, s
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { IPC } from '../shared/ipc';
+import type { OAuthCallbackOutcome, OAuthTraceEvent } from '../shared/accounts';
 import type {
   AppSettings,
   AddStampPayload,
@@ -44,6 +45,10 @@ import { SignatureService } from './services/signature-service';
 import { AccountsVault } from './services/accounts/vault';
 import { registerAccountsIpc } from './services/accounts/ipc';
 import { getAccountsConfig } from './services/accounts/config';
+import {
+  completeOAuthExchange,
+  type OAuthExchangeSession,
+} from './services/accounts/oauth-exchange';
 import { SyncStateStore } from './services/accounts/sync-state';
 import { AccountsSyncEngine, SyncCoordinator } from './services/accounts/sync';
 import { PostgrestSyncTransport } from './services/accounts/transport';
@@ -310,14 +315,64 @@ export async function start(): Promise<void> {
   // is broadcast so any window sees it, mirroring accounts:syncReport. The
   // listener is disposed on window-all-closed / before-quit below, so it can
   // never outlive the app.
+  //
+  // Phase 46 - the dev-oriented `accounts:oauthTrace` broadcast: main is the
+  // only place that can see the popup's navigation events and the shared
+  // session's auth-host cookies, so it reports redaction-safe steps (no token,
+  // OAuth code or cookie value) for the renderer to log when a sign-in sticks.
+  const broadcastOAuthTrace = (event: OAuthTraceEvent): void => {
+    for (const win of BrowserWindow.getAllWindows()) {
+      if (!win.isDestroyed()) {
+        win.webContents.send(IPC.accountsOAuthTraceEvent, event);
+      }
+    }
+  };
+  const broadcastOAuthOutcome = (outcome: OAuthCallbackOutcome): void => {
+    for (const win of BrowserWindow.getAllWindows()) {
+      if (!win.isDestroyed()) {
+        win.webContents.send(IPC.accountsOAuthCallbackEvent, outcome);
+      }
+    }
+  };
+  // Phase 46 - main completes the exchange the renderer cannot. The renderer
+  // runs cross-site from `file://`, so Chromium will not attach the provider's
+  // SameSite=Lax session cookie; main's session holds it and its request
+  // helper attaches it. Bound once here so product code never spells the raw
+  // network primitive (the conventions gate forbids it in src/).
+  const authSessionRequest = session.defaultSession.fetch.bind(session.defaultSession);
+  const authExchangeSession: OAuthExchangeSession = {
+    cookies: session.defaultSession.cookies,
+    request: (url, init) => authSessionRequest(url, init),
+  };
   const oauthCallback = new OAuthCallbackService({
     onOutcome: (outcome) => {
-      for (const win of BrowserWindow.getAllWindows()) {
-        if (!win.isDestroyed()) {
-          win.webContents.send(IPC.accountsOAuthCallbackEvent, outcome);
-        }
+      // Non-landing outcomes (timeout / cancelled / listener error) are
+      // reported as-is. `{ ok: true }` means the provider redirect landed, so
+      // main now finishes the exchange and only THEN reports success - the
+      // renderer learns the result by re-querying accounts:getStatus().
+      if (!outcome.ok) {
+        broadcastOAuthOutcome(outcome);
+        return;
       }
+      void completeOAuthExchange({
+        session: authExchangeSession,
+        vault: accountsVault,
+        authBaseUrl: getAccountsConfig(process.env, app.getAppPath()).authBaseUrl,
+        onTrace: broadcastOAuthTrace,
+      })
+        .then(broadcastOAuthOutcome)
+        // The exchange resolves on every path; this guard only exists so an
+        // unexpected rejection still reports an honest outcome to the renderer
+        // instead of leaving the sign-in waiting forever.
+        .catch(() =>
+          broadcastOAuthOutcome({
+            ok: false,
+            reason: 'error',
+            message: 'The Google sign-in could not be completed after the redirect (unexpected exchange failure).',
+          }),
+        );
     },
+    onTrace: broadcastOAuthTrace,
   });
   registerOAuthCallbackIpc(ipcMain, oauthCallback);
 
@@ -796,6 +851,13 @@ export async function start(): Promise<void> {
       getAuthHost: () =>
         deriveAuthHost(getAccountsConfig(process.env, app.getAppPath()).authBaseUrl),
       getAppUrl: () => rendererAuthUrl,
+      // Phase 46 - so the popup closes when the flow lands on the exact
+      // loopback URL this flow minted (query ignored), and every popup step is
+      // observable over accounts:oauthTrace.
+      getLoopbackUrl: () => oauthCallback.currentCallbackUrl(),
+      // DEF-365 - drop the retained minted URL as soon as its popup is gone.
+      onPopupClosed: () => oauthCallback.clearCompletionUrl(),
+      onTrace: broadcastOAuthTrace,
     });
     // Phase 35 / DEF-300 — track the main window explicitly so OS file-opens
     // are routed to it, and flush any path that was queued before its

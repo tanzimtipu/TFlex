@@ -120,7 +120,7 @@ const {
 // Mocks — all factories reference hoisted variables only
 // ---------------------------------------------------------------------------
 
-vi.mock('electron', () => ({
+vi.mock('electron', async () => ({
   app: {
     requestSingleInstanceLock: vi.fn().mockReturnValue(true),
     quit: _quit,
@@ -168,12 +168,13 @@ vi.mock('electron', () => ({
       { workArea: { x: 0, y: 0, width: 1920, height: 1080 }, bounds: { x: 0, y: 0, width: 1920, height: 1080 } },
     ]),
   },
-  // Phase 46 - the auth Origin header rule attaches to the default session.
-  session: {
-    defaultSession: {
-      webRequest: { onBeforeSendHeaders: _onBeforeSendHeaders },
-    },
-  },
+  // Phase 46 / DEF-364 - the auth Origin rule attaches to the default session,
+  // and the main-process session exchange binds its request helper + reads the
+  // auth-host cookies from that same session. The shared helper is the ONE
+  // place the session mock shape lives.
+  session: (await import('./helpers/electronSessionMock')).createElectronSessionMock(
+    _onBeforeSendHeaders,
+  ),
 }));
 
 vi.mock('../../../src/main/window', () => ({

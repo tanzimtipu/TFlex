@@ -221,6 +221,57 @@ describe('OAuthCallbackService lifecycle', () => {
   });
 });
 
+describe('OAuthCallbackService completion URL retention (DEF-365)', () => {
+  it('keeps the minted URL available after the valid hit so the popup can match it', async () => {
+    const { service, rec, url } = await start();
+    expect(await status(url)).toBe(200);
+    expect(await rec.next()).toEqual({ ok: true });
+    // The listener consumed the flow (single-use), but did-navigate fires after
+    // the response, so the matcher must still see the minted URL.
+    expect(service.currentCallbackUrl()).toBe(url);
+  });
+
+  it('clearCompletionUrl() drops the retained URL (popup closed)', async () => {
+    const { service, rec, url } = await start();
+    expect(await status(url)).toBe(200);
+    await rec.next();
+    service.clearCompletionUrl();
+    expect(service.currentCallbackUrl()).toBeNull();
+  });
+
+  it('drops the retained URL after the grace window', async () => {
+    const { service, rec, url } = await start({ completionUrlGraceMs: 25 });
+    expect(await status(url)).toBe(200);
+    await rec.next();
+    expect(service.currentCallbackUrl()).toBe(url);
+    await new Promise((resolve) => setTimeout(resolve, 60));
+    expect(service.currentCallbackUrl()).toBeNull();
+  });
+
+  it('a new start supersedes the previous flow URL', async () => {
+    const rec = recorder();
+    const service = new OAuthCallbackService({ onOutcome: rec.onOutcome });
+    services.push(service);
+    const first = await service.start();
+    expect(await status(first.callbackUrl)).toBe(200);
+    await rec.next();
+    expect(service.currentCallbackUrl()).toBe(first.callbackUrl);
+    const second = await service.start();
+    expect(service.currentCallbackUrl()).toBe(second.callbackUrl);
+    expect(service.currentCallbackUrl()).not.toBe(first.callbackUrl);
+  });
+
+  it('clears the retained URL on timeout and on dispose', async () => {
+    const timed = await start({ timeoutMs: 30 });
+    expect(await timed.rec.next()).toEqual({ ok: false, reason: 'timeout' });
+    expect(timed.service.currentCallbackUrl()).toBeNull();
+
+    const disposed = await start();
+    disposed.service.dispose();
+    expect(disposed.service.currentCallbackUrl()).toBeNull();
+  });
+});
+
 describe('registerOAuthCallbackIpc', () => {
   it('registers the two callback channels and delegates to the service', async () => {
     const handlers = new Map<string, (event: unknown, ...args: unknown[]) => unknown>();

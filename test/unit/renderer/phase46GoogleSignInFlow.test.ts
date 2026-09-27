@@ -14,6 +14,7 @@
 // the absolute 127.0.0.1 URL main mints.
 
 import { describe, expect, it, vi } from "vitest";
+import type { AccountStatusResult } from "../../../src/shared/accounts";
 import {
   absoluteRedirectUrl,
   callbackOutcomeMessage,
@@ -25,20 +26,28 @@ import {
 
 const CALLBACK = "http://127.0.0.1:51234/oauth/callback?token=single-use";
 const AUTHORIZE = "https://auth.example.invalid/oauth2/authorize?client_id=tflex";
-const USER = { id: "u1", email: "ada@example.com", emailVerified: true };
+/** The status main reports after IT completed the Google exchange: the real
+ *  identity, with name and avatar, never a token. */
+const SIGNED_IN_STATUS = {
+  status: "signed-in" as const,
+  email: "ada@example.com",
+  name: "Ada Lovelace",
+  image: "https://cdn.example.invalid/ada.png",
+};
 
-type Outcome = { ok: true } | { ok: false; reason: "timeout" | "cancelled" | "error" };
+type Outcome = { ok: true } | { ok: false; reason: "timeout" | "cancelled" | "error"; message?: string };
 
 interface Harness {
   handle: ReturnType<typeof runGoogleSignIn>;
   calls: {
     open: string[];
-    signedIn: Array<{ user: unknown; token: string }>;
+    signedIn: Array<{ status: unknown }>;
     failure: Array<Record<string, unknown>>;
     info: string[];
   };
   bridge: GoogleSignInPorts["bridge"];
   adapter: GoogleSignInPorts["adapter"];
+  getStatus: ReturnType<typeof vi.fn>;
   emit: (outcome: Outcome) => void;
   hasListener: () => boolean;
 }
@@ -46,7 +55,7 @@ interface Harness {
 function harness(over: {
   startRejects?: boolean;
   signIn?: () => Promise<unknown>;
-  session?: () => Promise<unknown>;
+  getStatus?: () => Promise<unknown>;
   open?: (url: string) => boolean;
   noLoopback?: boolean;
 } = {}): Harness {
@@ -73,20 +82,19 @@ function harness(over: {
     signInGoogle: vi.fn(
       over.signIn ?? (async () => ({ ok: true, url: AUTHORIZE })),
     ),
-    completeWebSignIn: vi.fn(
-      over.session ?? (async () => ({ ok: true, user: USER, token: "session-jwt" })),
-    ),
   } as unknown as GoogleSignInPorts["adapter"];
+  const getStatus = vi.fn(over.getStatus ?? (async () => SIGNED_IN_STATUS));
   const handle = runGoogleSignIn({
     bridge,
     adapter,
+    getStatus: getStatus as unknown as () => Promise<AccountStatusResult>,
     openWindow: (url: string): boolean => {
       calls.open.push(url);
       return over.open === undefined ? true : over.open(url);
     },
     closeWindow: (): void => undefined,
-    onSignedIn: (user, token): void => {
-      calls.signedIn.push({ user, token });
+    onSignedIn: (status): void => {
+      calls.signedIn.push({ status });
     },
     onFailure: (failure): void => {
       calls.failure.push(failure as unknown as Record<string, unknown>);
@@ -100,6 +108,7 @@ function harness(over: {
     calls,
     bridge,
     adapter,
+    getStatus,
     emit: (outcome: Outcome): void => listener?.(outcome),
     hasListener: (): boolean => listener !== null,
   };
@@ -110,8 +119,8 @@ async function until(assert: () => void): Promise<void> {
   await vi.waitFor(assert, { timeout: 2000, interval: 10 });
 }
 
-describe("Phase 46 - Google sign-in: start -> open -> ok -> session -> signed in", () => {
-  it("mints the loopback URL, asks the SDK for the authorize URL, opens it, then completes on ok", async () => {
+describe("Phase 46 - Google sign-in: start -> open -> ok -> getStatus -> signed in", () => {
+  it("mints the loopback URL, asks the SDK for the authorize URL, opens it, then learns the identity from getStatus (no SDK session read)", async () => {
     const h = harness();
     await until(() => expect(h.calls.open).toHaveLength(1));
 
@@ -119,15 +128,17 @@ describe("Phase 46 - Google sign-in: start -> open -> ok -> session -> signed in
     expect(h.adapter.signInGoogle).toHaveBeenCalledWith({ callbackUrl: CALLBACK });
     expect(h.calls.open).toEqual([AUTHORIZE]);
     expect(h.calls.info).toContain("Finish signing in with Google in the window that opened.");
-    // Still waiting: nothing closed or cancelled before the outcome.
-    expect(h.adapter.completeWebSignIn).not.toHaveBeenCalled();
+    // Still waiting: no status re-read, nothing closed or cancelled.
+    expect(h.getStatus).not.toHaveBeenCalled();
     expect(h.bridge.stopOAuthCallback).not.toHaveBeenCalled();
 
     h.emit({ ok: true });
     await until(() => expect(h.calls.signedIn).toHaveLength(1));
 
-    expect(h.adapter.completeWebSignIn).toHaveBeenCalledTimes(1);
-    expect(h.calls.signedIn[0]).toEqual({ user: USER, token: "session-jwt" });
+    // The renderer's own SDK session read is GONE: main completed the
+    // exchange, so the identity comes from the status re-query.
+    expect(h.getStatus).toHaveBeenCalledTimes(1);
+    expect(h.calls.signedIn[0].status).toEqual(SIGNED_IN_STATUS);
     expect(h.calls.failure).toHaveLength(0);
     // The listener is released once the flow settles.
     expect(h.bridge.stopOAuthCallback).toHaveBeenCalledTimes(1);
@@ -138,7 +149,7 @@ describe("Phase 46 - Google sign-in: start -> open -> ok -> session -> signed in
     await until(() => expect(h.calls.open).toHaveLength(1));
     h.emit({ ok: false, reason: "timeout" });
     await until(() => expect(h.calls.info).toContain(callbackOutcomeMessage("timeout")));
-    expect(h.adapter.completeWebSignIn).not.toHaveBeenCalled();
+    expect(h.getStatus).not.toHaveBeenCalled();
     expect(h.calls.failure).toHaveLength(0);
     expect(h.bridge.stopOAuthCallback).toHaveBeenCalledTimes(1);
   });
@@ -158,13 +169,21 @@ describe("Phase 46 - Google sign-in: start -> open -> ok -> session -> signed in
     await until(() => expect(h.calls.info).toContain("Google sign-in could not complete. Try again."));
   });
 
-  it("the session read failing after ok surfaces the real failure, not a sign-in", async () => {
-    const h = harness({ session: async () => ({ ok: false, code: "server", providerCode: "USER_NOT_FOUND", detail: "no session" }) });
+  it("the status re-read failing after ok surfaces the real failure, not a sign-in", async () => {
+    const h = harness({ getStatus: async () => { throw new Error("status unavailable"); } });
     await until(() => expect(h.calls.open).toHaveLength(1));
     h.emit({ ok: true });
     await until(() => expect(h.calls.failure).toHaveLength(1));
     expect(h.calls.signedIn).toHaveLength(0);
-    expect(h.calls.failure[0].providerCode).toBe("USER_NOT_FOUND");
+    expect(h.getStatus).toHaveBeenCalledTimes(1);
+  });
+
+  it("main says ok but the status is not signed-in: an honest message, no silent signed-out sheet", async () => {
+    const h = harness({ getStatus: async () => ({ status: "signed-out", email: null, name: null, image: null }) });
+    await until(() => expect(h.calls.open).toHaveLength(1));
+    h.emit({ ok: true });
+    await until(() => expect(h.calls.info).toContain("Google sign-in finished, but no session was stored. Try again."));
+    expect(h.calls.signedIn).toHaveLength(0);
   });
 });
 
@@ -209,6 +228,25 @@ describe("Phase 46 - Google sign-in: the real failure reaches the user", () => {
     expect(h.adapter.signInGoogle).not.toHaveBeenCalled();
     expect(h.calls.open).toHaveLength(0);
   });
+
+  it("an ok:false outcome WITH a message shows the provider/main reason verbatim, never the generic copy", async () => {
+    const h = harness();
+    await until(() => expect(h.calls.open).toHaveLength(1));
+    const reason = "The account service returned 400 INVALID_CALLBACKURL for this Google sign-in.";
+    h.emit({ ok: false, reason: "error", message: reason });
+    await until(() => expect(h.calls.info).toContain(reason));
+    expect(h.calls.info).not.toContain(callbackOutcomeMessage("error"));
+    expect(h.calls.signedIn).toHaveLength(0);
+    expect(h.getStatus).not.toHaveBeenCalled();
+  });
+
+  it("an ok:false outcome WITHOUT a message falls back to the reason message", async () => {
+    const h = harness();
+    await until(() => expect(h.calls.open).toHaveLength(1));
+    h.emit({ ok: false, reason: "error" });
+    await until(() => expect(h.calls.info).toContain(callbackOutcomeMessage("error")));
+    expect(h.calls.signedIn).toHaveLength(0);
+  });
 });
 
 describe("Phase 46 - Google sign-in: cancel / unmount cleanup", () => {
@@ -227,7 +265,19 @@ describe("Phase 46 - Google sign-in: cancel / unmount cleanup", () => {
     await new Promise((resolve) => setTimeout(resolve, 20));
     expect(h.calls.signedIn).toHaveLength(0);
     expect(h.calls.failure).toHaveLength(0);
-    expect(h.adapter.completeWebSignIn).not.toHaveBeenCalled();
+    expect(h.getStatus).not.toHaveBeenCalled();
+  });
+
+  it("a popup closed early still ends in a clear message (the timeout path), not silence", async () => {
+    const h = harness();
+    await until(() => expect(h.calls.open).toHaveLength(1));
+    // The user closes the popup before landing on the loopback callback; main
+    // has not seen a redirect, so the listener expires and reports a timeout.
+    h.emit({ ok: false, reason: "timeout" });
+    await until(() => expect(h.calls.info).toContain(callbackOutcomeMessage("timeout")));
+    expect(h.calls.signedIn).toHaveLength(0);
+    expect(h.getStatus).not.toHaveBeenCalled();
+    expect(h.bridge.stopOAuthCallback).toHaveBeenCalledTimes(1);
   });
 
   it("cancel is idempotent", async () => {

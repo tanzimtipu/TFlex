@@ -3,8 +3,9 @@
 // Phase 46 - the account surface drives the Google loopback flow, with the
 // auth adapter and the preload bridge MOCKED:
 //
-//   - an `ok` outcome completes the sign-in exactly like the email flow
-//     (setSession -> signed-in UI) and closes the popup;
+//   - an `ok` outcome means MAIN completed the exchange: the surface re-reads
+//     getStatus() and shows the signed-in UI (no renderer session read, no
+//     setSession) and closes the popup;
 //   - a timeout shows the non-blocking message and does NOT sign anyone in;
 //   - closing/unmounting the surface cancels the flow and releases the
 //     loopback listener, so nothing outlives the dialog;
@@ -28,7 +29,6 @@ const USER: AccountUser = { id: "u1", email: "ada@example.com", emailVerified: t
 interface FakeAdapter {
   adapter: AccountsAuthAdapter;
   signInGoogle: ReturnType<typeof vi.fn>;
-  completeWebSignIn: ReturnType<typeof vi.fn>;
   requestPasswordReset: ReturnType<typeof vi.fn>;
 }
 
@@ -39,7 +39,6 @@ function fakeAdapter(over: Partial<Record<string, unknown>> = {}): FakeAdapter {
     sendOtp: vi.fn(async () => ({ ok: true })),
     verifyOtp: vi.fn(async () => ({ ok: true, user: USER, token: "jwt" })),
     signInGoogle: vi.fn(async () => ({ ok: true, url: AUTHORIZE_URL })),
-    completeWebSignIn: vi.fn(async () => ({ ok: true, user: USER, token: "session-jwt" })),
     requestPasswordReset: vi.fn(async () => ({ ok: true })),
     resetPassword: vi.fn(async () => ({ ok: true })),
     signOut: vi.fn(async () => undefined),
@@ -174,7 +173,7 @@ async function openGoogle(container: HTMLElement): Promise<void> {
 }
 
 describe("Phase 46 - the surface completes a Google sign-in", () => {
-  it("ok -> session -> setSession -> signed-in UI, and the popup is closed", async () => {
+  it("ok -> getStatus -> signed-in UI (no setSession), and the popup is closed", async () => {
     const popup = { close: vi.fn() };
     vi.spyOn(window, "open").mockReturnValue(popup as unknown as Window);
     const h = await renderDialog();
@@ -183,15 +182,41 @@ describe("Phase 46 - the surface completes a Google sign-in", () => {
     expect(h.bridge.startOAuthCallback).toHaveBeenCalledTimes(1);
     expect(h.adapter.signInGoogle).toHaveBeenCalledWith({ callbackUrl: CALLBACK_URL });
 
+    // Main completed the exchange and stored the session; the status now
+    // carries the real identity (name + image included).
+    h.bridge.getStatus.mockResolvedValue({
+      status: "signed-in",
+      email: "ada@example.com",
+      name: "Ada Lovelace",
+      image: "https://cdn.example.invalid/ada.png",
+    });
     await act(async () => {
       h.bridge.emitOAuth({ ok: true });
     });
     await flush();
 
-    expect(h.adapter.completeWebSignIn).toHaveBeenCalledTimes(1);
-    expect(h.bridge.setSession).toHaveBeenCalledWith({ user: USER, token: "session-jwt" });
+    expect(h.bridge.getStatus).toHaveBeenCalled();
+    // The renderer must NOT store a session again: main already owns it.
+    expect(h.bridge.setSession).not.toHaveBeenCalled();
     expect(must(h.container, "[data-accounts-email-shown]").textContent).toBe("ada@example.com");
     expect(popup.close).toHaveBeenCalled();
+    expect(h.bridge.stopOAuthCallback).toHaveBeenCalledTimes(1);
+  });
+
+  it("an ok:false outcome with a message shows the provider/main reason verbatim", async () => {
+    vi.spyOn(window, "open").mockReturnValue({ close: vi.fn() } as unknown as Window);
+    const h = await renderDialog();
+    await openGoogle(h.container);
+
+    const reason = "The exchange failed: no session cookie was present on the auth host.";
+    await act(async () => {
+      h.bridge.emitOAuth({ ok: false, reason: "error", message: reason });
+    });
+    await flush();
+
+    expect(bannerText(h.container)).toContain(reason);
+    expect(bannerText(h.container)).not.toContain("Google sign-in could not complete");
+    expect(h.bridge.setSession).not.toHaveBeenCalled();
     expect(h.bridge.stopOAuthCallback).toHaveBeenCalledTimes(1);
   });
 
@@ -206,7 +231,6 @@ describe("Phase 46 - the surface completes a Google sign-in", () => {
     await flush();
 
     expect(bannerText(h.container)).toContain("Google sign-in timed out. Try again.");
-    expect(h.adapter.completeWebSignIn).not.toHaveBeenCalled();
     expect(h.bridge.setSession).not.toHaveBeenCalled();
     expect(h.bridge.stopOAuthCallback).toHaveBeenCalledTimes(1);
   });
