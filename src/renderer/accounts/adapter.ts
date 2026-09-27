@@ -13,14 +13,30 @@
 import { createInternalNeonAuth } from "@neondatabase/auth";
 import { BetterAuthVanillaAdapter } from "@neondatabase/auth/vanilla";
 import type { AccountUser, AccountsErrorCode } from "../../shared/accounts";
+import type { AccountsErrorInfo } from "./machine";
+
+/** A failed auth step: the coarse code plus the provider's own diagnosis,
+ *  when it gave one. `detail` / `providerCode` are the raw `message` / `code`
+ *  from the auth service - surfaced to the user so a real failure is not
+ *  hidden behind generic copy. */
+export type AuthFailure = { ok: false; code: AccountsErrorCode } & AccountsErrorInfo;
 
 /** A completed sign-in/verify: the identity plus the JWT to hand to main. */
 export type AuthOutcome =
   | { ok: true; user: AccountUser; token: string }
-  | { ok: false; code: AccountsErrorCode };
+  | AuthFailure;
 
-/** A step that starts a flow (sign-up, OTP send, Google launch). */
-export type StartOutcome = { ok: true } | { ok: false; code: AccountsErrorCode };
+/** A step that starts a flow (sign-up, OTP send, Google launch).
+ *  `existingVerified` is true when a sign-up landed on an account whose email
+ *  is ALREADY verified - a duplicate, not a new account. The provider's
+ *  anti-enumeration response hides unverified duplicates, so only this case is
+ *  detectable; the caller must still word the OTP step honestly. */
+export type StartOutcome = { ok: true; existingVerified?: boolean } | AuthFailure;
+
+/** Phase 46 - the provider's authorize URL to open in a popup. The caller owns
+ *  the window and the loopback callback; the SDK owns the code exchange that
+ *  its redirect performs. */
+export type GoogleStartOutcome = { ok: true; url: string } | AuthFailure;
 
 /** The seam the UI depends on; mocked in unit tests. */
 export interface AccountsAuthAdapter {
@@ -28,12 +44,19 @@ export interface AccountsAuthAdapter {
   signUpEmail(input: { email: string; password: string; name?: string }): Promise<StartOutcome>;
   sendOtp(input: { email: string }): Promise<StartOutcome>;
   verifyOtp(input: { email: string; otp: string }): Promise<AuthOutcome>;
-  /** Starts the provider flow. The SDK owns the popup/redirect. */
-signInGoogle(): Promise<StartOutcome>;
+  /** Phase 46 - start the Google flow with the app's absolute loopback
+   *  `callbackUrl`. Returns the provider authorize URL for the caller to open
+   *  (the SDK does NOT navigate: `disableRedirect` keeps the redirect ours). */
+  signInGoogle(input: { callbackUrl: string }): Promise<GoogleStartOutcome>;
+  /** Phase 46 - read the session a provider redirect established (`getSession`
+   *  + JWT), the same completion path the email flow uses. */
+  completeWebSignIn(): Promise<AuthOutcome>;
   /** Phase 45 - request an emailed password-reset code (the Email OTP
    *  plugin's `/email-otp/request-password-reset`). No redirect link: the
-   *  code is entered in-app, which is what an offline desktop app needs. */
-  requestPasswordReset(input: { email: string }): Promise<StartOutcome>;
+   *  code is entered in-app, which is what an offline desktop app needs.
+   *  `redirectTo` must be an ABSOLUTE, provider-trusted URL or the provider
+   *  refuses the request (400 VALIDATION_FAILED). */
+  requestPasswordReset(input: { email: string; redirectTo?: string }): Promise<StartOutcome>;
   /** Phase 45 - complete the reset with the emailed code and a new
    *  password (`/email-otp/reset-password`). */
   resetPassword(input: { email: string; otp: string; password: string }): Promise<StartOutcome>;
@@ -61,29 +84,37 @@ export function rendererIsOnline(): boolean {
 
 /**
  * Map a transport/SDK error to the shared `AccountsErrorCode` union the UI
- * branches on. Kept pure and defensive: the SDK surfaces a `code` string and
- * an HTTP `status` on its `error` object, but the exact spelling can vary, so
- * both the code and a lowercase message are consulted.
+ * branches on, AND keep the provider's own `code` / `message` so the surface
+ * can report the real reason. Kept pure and defensive: the SDK surfaces a
+ * `code` string, an HTTP `status` and a `message` on its `error` object, and
+ * `@better-fetch` spreads the parsed JSON body onto that object, so the
+ * provider's `code`/`message` are read directly.
  *
  * `online` is injected (defaulting to the live renderer connectivity) so the
  * mapping is unit-testable without a DOM: a transport failure becomes
  * `network-offline` only when the app is genuinely offline, and `server`
- * otherwise.
+ * otherwise. A transport failure carries NO detail (there is no provider
+ * message to show); a real HTTP error carries the provider's message.
  */
-export function mapAuthError(error: unknown, online: boolean = rendererIsOnline()): AccountsErrorCode {
+export function describeAuthError(
+  error: unknown,
+  online: boolean = rendererIsOnline(),
+): { code: AccountsErrorCode } & AccountsErrorInfo {
   const rec = (error ?? {}) as { code?: unknown; status?: unknown; message?: unknown };
-  const code = typeof rec.code === "string" ? rec.code.toUpperCase() : "";
+  const providerCode = typeof rec.code === "string" ? rec.code : "";
+  const code = providerCode.toUpperCase();
   const status = typeof rec.status === "number" ? rec.status : 0;
-  const message = typeof rec.message === "string" ? rec.message.toLowerCase() : "";
+  const message = typeof rec.message === "string" ? rec.message : "";
+  const messageLower = message.toLowerCase();
 
-  if (code === "OTP_EXPIRED" || /code has expired|otp.*expired/.test(message)) {
-    return "code-expired";
+  if (code === "OTP_EXPIRED" || /code has expired|otp.*expired/.test(messageLower)) {
+    return { code: "code-expired", providerCode, detail: message };
   }
-  if (code === "INVALID_OTP" || code === "OTP_NOT_FOUND" || /invalid.*code|code.*invalid/.test(message)) {
-    return "code-invalid";
+  if (code === "INVALID_OTP" || code === "OTP_NOT_FOUND" || /invalid.*code|code.*invalid/.test(messageLower)) {
+    return { code: "code-invalid", providerCode, detail: message };
   }
-  if (code === "EMAIL_NOT_VERIFIED" || /not verified|verify your email/.test(message)) {
-    return "email-not-verified";
+  if (code === "EMAIL_NOT_VERIFIED" || /not verified|verify your email/.test(messageLower)) {
+    return { code: "email-not-verified", providerCode, detail: message };
   }
   if (
     code === "INVALID_EMAIL_OR_PASSWORD" ||
@@ -92,19 +123,26 @@ export function mapAuthError(error: unknown, online: boolean = rendererIsOnline(
     status === 401 ||
     status === 403
   ) {
-    return "invalid-credentials";
+    return { code: "invalid-credentials", providerCode, detail: message };
   }
   if (
     status === 0 ||
     code.startsWith("NETWORK_") ||
-    /network|offline|failed to connect|connection|failed to fetch/.test(`${code} ${message}`.toLowerCase())
+    /network|offline|failed to connect|connection|failed to fetch/.test(`${code} ${messageLower}`)
   ) {
     // Phase 45 - only claim "offline" when the renderer itself reports no
     // link; otherwise the transport failed for a non-connectivity reason and
-    // the honest answer is a server/reachability error.
-    return online ? "server" : "network-offline";
+    // the honest answer is a server/reachability error. No provider message
+    // exists here, so `detail` stays empty and the generic copy is used.
+    return { code: online ? "server" : "network-offline" };
   }
-  return "server";
+  // A real HTTP error from the provider: keep its message and code verbatim.
+  return { code: "server", providerCode, detail: message };
+}
+
+/** Back-compat: the coarse code only (the existing unit tests pin this). */
+export function mapAuthError(error: unknown, online: boolean = rendererIsOnline()): AccountsErrorCode {
+  return describeAuthError(error, online).code;
 }
 
 /** The loose SDK shape this adapter reads. The installed SDK types are wide
@@ -117,7 +155,13 @@ interface SdkResult {
 interface NeonSdkClient {
   signIn: {
     email(input: { email: string; password: string }): Promise<SdkResult>;
-    social(input: { provider: string; callbackURL?: string }): Promise<SdkResult>;
+    /** `disableRedirect` makes the provider return the authorize URL instead
+     *  of the SDK navigating the renderer away from the app. */
+    social(input: {
+      provider: string;
+      callbackURL?: string;
+      disableRedirect?: boolean;
+    }): Promise<SdkResult>;
   };
   signUp: {
     email(input: { email: string; password: string; name?: string }): Promise<SdkResult>;
@@ -125,8 +169,9 @@ interface NeonSdkClient {
   emailOtp: {
     sendVerificationOtp(input: { email: string; type: string }): Promise<SdkResult>;
     verifyEmail(input: { email: string; otp: string }): Promise<SdkResult>;
-    /** Phase 45 - the Email OTP plugin's password-reset endpoints. */
-    requestPasswordReset(input: { email: string }): Promise<SdkResult>;
+    /** Phase 45 - the Email OTP plugin's password-reset endpoints. The
+     *  provider's origin check requires an absolute `redirectTo`. */
+    requestPasswordReset(input: { email: string; redirectTo?: string }): Promise<SdkResult>;
     resetPassword(input: { email: string; otp: string; password: string }): Promise<SdkResult>;
   };
 signOut(): Promise<SdkResult>;
@@ -152,8 +197,8 @@ function readUser(raw: unknown): AccountUser | null {
   };
 }
 
-function failedFrom(error: unknown): { ok: false; code: AccountsErrorCode } {
-  return { ok: false, code: mapAuthError(error) };
+function failedFrom(error: unknown): AuthFailure {
+  return { ok: false, ...describeAuthError(error) };
 }
 
 /** Run one SDK call, normalising both thrown and returned errors. */
@@ -199,7 +244,14 @@ export function createNeonAuthAdapter(baseUrl: string): AccountsAuthAdapter {
     },
     async signUpEmail(input) {
       const res = await call(() => neon.adapter.signUp.email(input));
-      return res.ok ? { ok: true } : failedFrom(res.error);
+      if (!res.ok) return failedFrom(res.error);
+      // With verification required the provider answers 200 with
+      // `{ token: null, user }` for a genuinely new account. A duplicate for
+      // an address whose email is ALREADY verified is distinguishable only by
+      // `user.emailVerified === true` (unverified duplicates are synthetic and
+      // indistinguishable), so surface that one honest signal.
+      const user = readUser(res.data);
+      return { ok: true, existingVerified: user?.emailVerified === true };
     },
     async sendOtp(input) {
       const res = await call(() =>
@@ -216,9 +268,11 @@ export function createNeonAuthAdapter(baseUrl: string): AccountsAuthAdapter {
       return finishSession();
     },
     async requestPasswordReset(input) {
-      const res = await call(() =>
-        neon.adapter.emailOtp.requestPasswordReset({ email: input.email }),
-      );
+      const body: { email: string; redirectTo?: string } = { email: input.email };
+      if (typeof input.redirectTo === "string" && input.redirectTo.length > 0) {
+        body.redirectTo = input.redirectTo;
+      }
+      const res = await call(() => neon.adapter.emailOtp.requestPasswordReset(body));
       return res.ok ? { ok: true } : failedFrom(res.error);
     },
     async resetPassword(input) {
@@ -231,11 +285,31 @@ export function createNeonAuthAdapter(baseUrl: string): AccountsAuthAdapter {
       );
       return res.ok ? { ok: true } : failedFrom(res.error);
     },
-    async signInGoogle() {
-      const res = await call(() => neon.adapter.signIn.social({ provider: "google" }));
-      return res.ok ? { ok: true } : failedFrom(res.error);
+    async signInGoogle(input) {
+      // A single-use absolute loopback URL is supplied by the caller (main
+      // mints it). `disableRedirect` keeps the browser navigation in the
+      // caller's hands: without it the SDK sets window.location.href and the
+      // app renderer leaves the app.
+      const res = await call(() =>
+        neon.adapter.signIn.social({
+          provider: "google",
+          callbackURL: input.callbackUrl,
+          disableRedirect: true,
+        }),
+      );
+      if (!res.ok) return failedFrom(res.error);
+      const data = (res.data ?? {}) as { url?: unknown };
+      if (typeof data.url !== "string" || data.url.length === 0) {
+        return { ok: false, code: "server", detail: "The provider did not return a sign-in URL." };
+      }
+      return { ok: true, url: data.url };
     },
-async signOut() {
+    /** The provider redirect established a session cookie on the auth host;
+     *  read it back exactly as the email flow completes. */
+    async completeWebSignIn() {
+      return finishSession();
+    },
+    async signOut() {
       await call(() => neon.adapter.signOut());
     },
     async updateName(input) {

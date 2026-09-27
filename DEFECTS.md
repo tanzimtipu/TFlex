@@ -5,6 +5,28 @@
 > inspect the current `OPEN`, `FIX-READY`, and `DISPUTED` entries first; closed records are
 > historical evidence and must not be loaded wholesale.
 
+## DEF-364: the Phase 46 auth-Origin install breaks 5 DEF-300 unit tests (their electron mock has no `session` export)
+
+- Status: FIX-READY
+- Severity: MEDIUM
+- Found by: qa
+- Phase: 46
+
+Steps to reproduce:
+1. `npm.cmd run build` (exit 0).
+2. `npm.cmd run verify:full` (or `npx.cmd vitest run test/unit/main/def300OpenPathRouting.test.ts`).
+
+Expected: `verify:full` is green — the Phase 46 change adds the auth-Origin rule without regressing the existing main-process unit suite.
+
+Actual: `verify:full` is RED. `test/unit/main/def300OpenPathRouting.test.ts` fails all 5 tests with `[vitest] No "session" export is defined on the "electron" mock. Did you forget to return it from "vi.mock"?` thrown from `src/main/index.ts:333` (`installAuthOriginHeader(session.defaultSession, ...)`). The developer added a `session: { defaultSession: ... }` entry to the `electron` mock in `test/unit/main/index.test.ts` (lines 171-173) but did not add it to the `electron` mock in `test/unit/main/def300OpenPathRouting.test.ts` (mock at line 64), so `start()` throws before those tests can exercise DEF-300 routing. The product behaviour itself is fine (the Phase 45/46 e2e suites pass); this is a test-mock regression that blocks the `verify:full` gate.
+
+Raw: `Test Files 1 failed | 442 passed (443)`; `Tests 5 failed | 5682 passed (5687)`. Failing tests: "delivers to the main window when the print window is first and focused", "queues for a still-loading main window and flushes on did-finish-load", "queues a launch-race request fired before the main window exists, then delivers it", "recreates a main window for the document when the main window was closed", "never routes to a non-main window when no main window exists".
+
+History:
+- qa: opened
+- orchestrator: FIX-READY -- relaying backend-dev: the `electron` mock in `test/unit/main/def300OpenPathRouting.test.ts` gained the `session: { defaultSession: { webRequest: { onBeforeSendHeaders } } }` shape that `src/main/index.ts` now calls, mirroring `index.test.ts`; no product code changed and no assertion weakened. The sweep the same dispatch required covered all 13 main test files that mock `electron`: only 2 of them load `src/main/index` (the only module touching `session.*`) - `index.test.ts` (already correct) and this one (fixed); the other 11 import sibling modules and cannot hit the gap. Evidence: `npm.cmd run test:unit -- test/unit/main` -> 52 files / 1497 tests passed; `npm.cmd run verify:full` -> 443 files / 5687 tests passed (was 5 failed). This is the third occurrence of the same class (DEF-304, DEF-305, DEF-364): a change that adds a call on a collaborator must sweep every test that mocks that collaborator in the same change.
+- qa: opened (Phase 46 FIX-READY verification; `verify:full` run on the final tree).
+
 ## DEF-363: the icon guard's import extractor drops the first icon after a preceding named import, so the app-wide sweep misses shared icons (a different-action `Hash` pair remains)
 
 - Status: CLOSED

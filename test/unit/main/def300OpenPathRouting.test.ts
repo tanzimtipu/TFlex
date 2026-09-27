@@ -24,6 +24,7 @@ const {
   _quit,
   _buildAppMenu,
   _applyMenuEnabled,
+  _onBeforeSendHeaders,
 } = vi.hoisted(() => ({
   _settingsInstance: {
     load: vi.fn().mockResolvedValue({
@@ -59,6 +60,7 @@ const {
   _quit: vi.fn(),
   _buildAppMenu: vi.fn(),
   _applyMenuEnabled: vi.fn(),
+  _onBeforeSendHeaders: vi.fn(),
 }));
 
 vi.mock('electron', () => ({
@@ -93,6 +95,14 @@ vi.mock('electron', () => ({
     ),
   },
   screen: { getAllDisplays: vi.fn().mockReturnValue([{ workArea: { x: 0, y: 0, width: 1920, height: 1080 } }]) },
+  // Phase 46 - start() installs the auth Origin header rule on the app's
+  // default session (src/main/index.ts:333), so the mock must expose the
+  // webRequest surface `installAuthOriginHeader` calls, mirroring index.test.ts.
+  session: {
+    defaultSession: {
+      webRequest: { onBeforeSendHeaders: _onBeforeSendHeaders },
+    },
+  },
 }));
 
 vi.mock('../../../src/main/window', () => ({

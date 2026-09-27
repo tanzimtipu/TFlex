@@ -92,10 +92,18 @@ test('P45-1a CSP: connect-src gains exactly https://*.neon.tech, commented', asy
 // Criterion 1b — bogus credentials reach the provider: a CREDENTIAL/server
 // response, never the false "offline" text.
 // ---------------------------------------------------------------------------
-test('P45-1b bogus email+password -> credential/server error, NOT offline', async () => {
+test('P45-1b bogus email+password -> the provider reason is surfaced honestly, NOT offline', async () => {
   await launch();
   const neonRequests = [];
+  const neonResponses = [];
   win.on('request', (r) => { if (/neon\.tech/i.test(r.url())) neonRequests.push(r.url()); });
+  win.on('response', async (r) => {
+    if (/neon\.tech/i.test(r.url())) {
+      let body = '';
+      try { body = await r.text(); } catch (_) { /* body unavailable */ }
+      neonResponses.push({ url: r.url(), status: r.status(), body });
+    }
+  });
 
   await win.locator('[data-header-accounts]').click();
   await win.waitForSelector('[data-animated-dialog="accounts-dialog"]', { timeout: 10000 });
@@ -106,21 +114,36 @@ test('P45-1b bogus email+password -> credential/server error, NOT offline', asyn
   await win.locator('[data-accounts-submit]').click();
 
   await win.waitForSelector('[data-accounts-banner]', { timeout: 30000 });
+  await win.waitForTimeout(600);
   const banner = (await win.locator('[data-accounts-banner]').first().textContent()) ?? '';
   const tone = await win.locator('[data-accounts-banner]').first().getAttribute('data-accounts-banner');
   console.log(`[P45-1b banner] tone=${tone} text=${JSON.stringify(banner)}`);
   console.log(`[P45-1b neonRequests] ${JSON.stringify(neonRequests)}`);
+  console.log(`[P45-1b neonResponses] ${JSON.stringify(neonResponses.map((r) => ({ url: r.url, status: r.status, body: r.body.slice(0, 200) })))}`);
 
   // The request actually left the renderer for the provider host.
   expect(neonRequests.length, 'the renderer reached a *.neon.tech host').toBeGreaterThan(0);
   // The false offline text must NOT appear.
   expect(banner, 'no false offline text').not.toContain('offline');
-  // A server response (credential rejection or a reachability error) is the
-  // honest outcome; both prove connectivity.
+
+  // The provider's real response is the truth. A credential rejection is
+  // surfaced as the credential copy; any OTHER refusal (e.g. a 403
+  // MISSING_ORIGIN) must be surfaced verbatim, never masked as a wrong
+  // password. The old assertion hardcoded the masked copy and could not tell
+  // the two apart.
   const credential = 'That email or password is not correct. Check it and try again.';
-  const server = 'Something went wrong. Try again in a moment.';
-  expect([credential, server], `banner was ${JSON.stringify(banner)}`).toContain(banner);
-  console.log(`[P45-1b verdict] ${banner === credential ? 'CREDENTIAL error (server 401)' : 'SERVER/reachability error'}`);
+  const providerVerbatim = /^The account service returned an error:/;
+  const resp = neonResponses.find((r) => /sign-in\/email/.test(r.url)) ?? neonResponses[0];
+  const providerCode = (resp?.body.match(/"code"\s*:\s*"([^"]+)"/)?.[1] ?? '').toUpperCase();
+  const credentialCodes = ['INVALID_EMAIL_OR_PASSWORD', 'INVALID_CREDENTIALS', 'USER_NOT_FOUND'];
+  console.log(`[P45-1b providerCode] ${providerCode} status=${resp?.status}`);
+  if (credentialCodes.includes(providerCode)) {
+    expect(banner, 'a credential rejection is surfaced as the credential copy').toBe(credential);
+  } else {
+    expect(banner, 'a non-credential refusal is never masked as a wrong password').not.toBe(credential);
+    expect(banner, 'the provider reason is surfaced verbatim').toMatch(providerVerbatim);
+  }
+  console.log(`[P45-1b verdict] providerCode=${providerCode} banner=${JSON.stringify(banner)}`);
 });
 
 // ---------------------------------------------------------------------------
@@ -277,20 +300,45 @@ test('P45-2b forgot-password flow: request -> confirm', async () => {
 // ---------------------------------------------------------------------------
 test('P45-3 honest states: loading, wrong credentials, reset sent', async () => {
   await launch();
+  const neonResponses = [];
+  win.on('response', async (r) => {
+    if (/neon\.tech/i.test(r.url())) {
+      let body = '';
+      try { body = await r.text(); } catch (_) { /* body unavailable */ }
+      neonResponses.push({ url: r.url(), status: r.status(), body });
+    }
+  });
   await win.locator('[data-header-accounts]').click();
   // Loading state is transient; capture it if it is observable.
   const loadingSeen = await win.locator('[data-accounts-loading]').isVisible().catch(() => false);
   console.log(`[P45-3 loading] visible=${loadingSeen}`);
   await win.waitForSelector('[data-accounts-auth]', { timeout: 15000 });
 
-  // Wrong credentials (already proven in P45-1b; re-confirm the exact string).
+  // Wrong credentials (already proven in P45-1b; re-confirm the honest string).
   await win.locator('[data-accounts-email]').fill('qa-phase45-bogus@example.invalid');
   await win.locator('[data-accounts-password]').fill('not-a-real-password-123');
   await win.locator('[data-accounts-submit]').click();
   await win.waitForSelector('[data-accounts-banner]', { timeout: 30000 });
+  await win.waitForTimeout(600);
   const wrong = (await win.locator('[data-accounts-banner]').first().textContent()) ?? '';
   console.log(`[P45-3 wrongCreds] ${JSON.stringify(wrong)}`);
-  expect(wrong).toContain('not correct');
+  console.log(`[P45-3 neonResponses] ${JSON.stringify(neonResponses.map((r) => ({ url: r.url, status: r.status, body: r.body.slice(0, 200) })))}`);
+
+  // The provider's real response is the truth: a credential rejection is
+  // surfaced as the credential copy; any OTHER refusal must be surfaced
+  // verbatim, never masked as a wrong password.
+  const credential = 'That email or password is not correct. Check it and try again.';
+  const providerVerbatim = /^The account service returned an error:/;
+  const resp = neonResponses.find((r) => /sign-in\/email/.test(r.url)) ?? neonResponses[0];
+  const providerCode = (resp?.body.match(/"code"\s*:\s*"([^"]+)"/)?.[1] ?? '').toUpperCase();
+  const credentialCodes = ['INVALID_EMAIL_OR_PASSWORD', 'INVALID_CREDENTIALS', 'USER_NOT_FOUND'];
+  console.log(`[P45-3 providerCode] ${providerCode} status=${resp?.status}`);
+  if (credentialCodes.includes(providerCode)) {
+    expect(wrong, 'a credential rejection is surfaced as the credential copy').toBe(credential);
+  } else {
+    expect(wrong, 'a non-credential refusal is never masked as a wrong password').not.toBe(credential);
+    expect(wrong, 'the provider reason is surfaced verbatim').toMatch(providerVerbatim);
+  }
 
   // The unverified-email and OTP states need a real account; report NOT YET.
   console.log('[P45-3] unverified-email + OTP states: NOT YET VERIFIED (need a real account)');

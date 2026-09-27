@@ -8,6 +8,8 @@
 import type {
   AccountsClientConfig,
   AccountStatusResult,
+  OAuthCallbackOutcome,
+  OAuthCallbackStartResult,
   SetSessionPayload,
   SyncReport,
 } from "../../shared/accounts";
@@ -23,6 +25,13 @@ export interface AccountsBridge {
   clearSession(): Promise<void>;
   syncNow(): Promise<SyncReport>;
   onSyncReport(cb: (report: SyncReport) => void): () => void;
+  /** Phase 46 - bind the loopback callback listener and resolve its absolute
+   *  URL, or undefined on a preload that predates the loopback flow. */
+  startOAuthCallback?: () => Promise<OAuthCallbackStartResult>;
+  /** Phase 46 - cancel/release the loopback listener. */
+  stopOAuthCallback?: () => Promise<void>;
+  /** Phase 46 - the single outcome of the loopback listener. */
+  onOAuthCallback?: (cb: (outcome: OAuthCallbackOutcome) => void) => () => void;
 }
 
 /** Read the bridge off `window.tflex`, or null when it is missing / malformed. */

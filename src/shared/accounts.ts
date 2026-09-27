@@ -153,3 +153,36 @@ export interface ImageSignatureMeta {
    *  Set by the store on list; never sent to the cloud. */
   hasBytes?: boolean;
 }
+
+// ---------------------------------------------------------------------------
+// Phase 46 - Google sign-in loopback callback contract
+// ---------------------------------------------------------------------------
+
+/**
+ * What `accounts:startOAuthCallback` resolves to: the ABSOLUTE loopback URL
+ * the renderer hands to the auth SDK as `callbackURL`. The renderer runs from
+ * `file://` in the packaged app, where the page origin ("null") is not an
+ * absolute URL and the provider rejects the call (400 BAD_OAUTH_CALLBACK).
+ *
+ * `callbackUrl` is `http://127.0.0.1:<ephemeral-port>/oauth/callback?token=...`.
+ * The random single-use `token` is bound to the listener that produced it, so
+ * another local process cannot spoof the callback. It is returned ONLY to the
+ * invoking renderer over the invoke reply - never broadcast.
+ */
+export interface OAuthCallbackStartResult {
+  callbackUrl: string;
+}
+
+/**
+ * Delivered over `accounts:oauthCallback` when the loopback listener is
+ * reached (`ok: true`) or closes without being reached. `timeout` is the
+ * 2-minute expiry, `cancelled` is a `stop` / a replaced start, `error` is a
+ * listener failure after it bound.
+ *
+ * Deliberately carries NO OAuth `code` / `state` and no callback token: the
+ * renderer's auth SDK owns the code exchange, and the loopback page never
+ * touches app state.
+ */
+export type OAuthCallbackOutcome =
+  | { ok: true }
+  | { ok: false; reason: 'timeout' | 'cancelled' | 'error' };

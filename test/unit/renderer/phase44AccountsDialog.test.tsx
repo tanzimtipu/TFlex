@@ -11,10 +11,11 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { AccountsDialog, DEFERRED_REASON } from "../../../src/renderer/components/AccountsDialog";
 import type { AccountsAuthAdapter } from "../../../src/renderer/accounts/adapter";
-import type { AccountUser, SyncReport } from "../../../src/shared/accounts";
+import type { AccountUser, OAuthCallbackOutcome, SyncReport } from "../../../src/shared/accounts";
 
 const USER: AccountUser = { id: "u1", email: "ada@example.com", emailVerified: true };
 const BASE_URL = "https://example.invalid";
+const CALLBACK_URL = "http://127.0.0.1:51234/oauth/callback?token=tok";
 
 interface FakeAdapter {
   adapter: AccountsAuthAdapter;
@@ -52,11 +53,16 @@ interface FakeBridge {
   clearSession: ReturnType<typeof vi.fn>;
   syncNow: ReturnType<typeof vi.fn>;
   onSyncReport: ReturnType<typeof vi.fn>;
+  startOAuthCallback: ReturnType<typeof vi.fn>;
+  stopOAuthCallback: ReturnType<typeof vi.fn>;
+  onOAuthCallback: ReturnType<typeof vi.fn>;
   emitSync: (report: SyncReport) => void;
+  emitOAuth: (outcome: OAuthCallbackOutcome) => void;
 }
 
 function fakeBridge(over: Partial<Record<string, unknown>> = {}): FakeBridge {
   let listener: ((report: SyncReport) => void) | null = null;
+  let oauthListener: ((outcome: OAuthCallbackOutcome) => void) | null = null;
   const parts = {
     getConfig: vi.fn(async () => ({ authBaseUrl: BASE_URL, configured: true })),
     getStatus: vi.fn(async () => ({ status: "signed-out", email: null })),
@@ -69,6 +75,14 @@ function fakeBridge(over: Partial<Record<string, unknown>> = {}): FakeBridge {
         listener = null;
       };
     }),
+    startOAuthCallback: vi.fn(async () => ({ callbackUrl: CALLBACK_URL })),
+    stopOAuthCallback: vi.fn(async () => undefined),
+    onOAuthCallback: vi.fn((cb: (outcome: OAuthCallbackOutcome) => void) => {
+      oauthListener = cb;
+      return () => {
+        oauthListener = null;
+      };
+    }),
   };
   for (const [key, value] of Object.entries(over)) {
     (parts as Record<string, unknown>)[key] = vi.fn(value as () => unknown);
@@ -76,6 +90,7 @@ function fakeBridge(over: Partial<Record<string, unknown>> = {}): FakeBridge {
   return {
     ...parts,
     emitSync: (report: SyncReport): void => listener?.(report),
+    emitOAuth: (outcome: OAuthCallbackOutcome): void => oauthListener?.(outcome),
   } as FakeBridge;
 }
 
@@ -208,13 +223,14 @@ describe("Phase 44 � account surface (adapter mocked)", () => {
     const h = await renderDialog();
     await click(must(h.container, "[data-accounts-mode-signup]"));
     await typeInto(must(h.container, "[data-accounts-email]"), "ada@example.com");
+    await typeInto(must(h.container, "[data-accounts-name]"), "Ada Lovelace");
     await typeInto(must(h.container, "[data-accounts-password]"), "pw-123456");
     await click(must(h.container, "[data-accounts-submit]"));
 
     expect(h.adapter.signUpEmail).toHaveBeenCalledWith({
       email: "ada@example.com",
       password: "pw-123456",
-      name: undefined,
+      name: "Ada Lovelace",
     });
     expect(h.adapter.sendOtp).toHaveBeenCalledWith({ email: "ada@example.com" });
     expect(must(h.container, "[data-accounts-auth]").getAttribute("data-accounts-step")).toBe("otp");
@@ -225,6 +241,7 @@ describe("Phase 44 � account surface (adapter mocked)", () => {
     const h = await renderDialog();
     await click(must(h.container, "[data-accounts-mode-signup]"));
     await typeInto(must(h.container, "[data-accounts-email]"), "ada@example.com");
+    await typeInto(must(h.container, "[data-accounts-name]"), "Ada Lovelace");
     await typeInto(must(h.container, "[data-accounts-password]"), "pw-123456");
     await click(must(h.container, "[data-accounts-submit]"));
     h.adapter.verifyOtp.mockResolvedValueOnce({ ok: false, code: "code-invalid" });
@@ -243,6 +260,7 @@ describe("Phase 44 � account surface (adapter mocked)", () => {
     const h = await renderDialog();
     await click(must(h.container, "[data-accounts-mode-signup]"));
     await typeInto(must(h.container, "[data-accounts-email]"), "ada@example.com");
+    await typeInto(must(h.container, "[data-accounts-name]"), "Ada Lovelace");
     await typeInto(must(h.container, "[data-accounts-password]"), "pw-123456");
     await click(must(h.container, "[data-accounts-submit]"));
     h.adapter.verifyOtp.mockResolvedValueOnce({ ok: false, code: "code-expired" });
@@ -257,6 +275,7 @@ describe("Phase 44 � account surface (adapter mocked)", () => {
     const h = await renderDialog();
     await click(must(h.container, "[data-accounts-mode-signup]"));
     await typeInto(must(h.container, "[data-accounts-email]"), "ada@example.com");
+    await typeInto(must(h.container, "[data-accounts-name]"), "Ada Lovelace");
     await typeInto(must(h.container, "[data-accounts-password]"), "pw-123456");
     await click(must(h.container, "[data-accounts-submit]"));
     h.adapter.sendOtp.mockClear();
@@ -335,10 +354,31 @@ describe("Phase 44 � signed-in surface and sync status", () => {
     expect(h.onStatusChange).toHaveBeenCalledWith("signed-out", null, null);
   });
 
-  it("Continue with Google launches the adapter provider flow", async () => {
-    const h = await renderDialog();
-    await click(must(h.container, "[data-accounts-google]"));
-    expect(h.adapter.signInGoogle).toHaveBeenCalledTimes(1);
+  it("Continue with Google starts the loopback flow, then opens only the provider URL", async () => {
+    const openSpy = vi
+      .spyOn(window, "open")
+      .mockReturnValue({ close: vi.fn() } as unknown as Window);
+    try {
+      const h = await renderDialog({
+        adapter: fakeAdapter({
+          // The SDK hands back the provider authorize URL; opening it is ours.
+          signInGoogle: async () => ({ ok: true, url: "https://auth.example.invalid/authorize" }),
+        }),
+      });
+      await click(must(h.container, "[data-accounts-google]"));
+
+      expect(h.bridge?.startOAuthCallback).toHaveBeenCalledTimes(1);
+      expect(h.adapter.signInGoogle).toHaveBeenCalledWith({ callbackUrl: CALLBACK_URL });
+      expect(openSpy).toHaveBeenCalledWith(
+        "https://auth.example.invalid/authorize",
+        expect.any(String),
+        expect.any(String),
+      );
+      // Nothing is closed/cancelled while the user is still in the popup.
+      expect(h.bridge?.stopOAuthCallback).not.toHaveBeenCalled();
+    } finally {
+      openSpy.mockRestore();
+    }
   });
 
   it("Export / Delete are visibly disabled with the deferred reason", async () => {

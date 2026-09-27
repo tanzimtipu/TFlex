@@ -1,5 +1,5 @@
 import type { Result } from "./result";
-import type { AccountStatusResult, AccountsClientConfig, SetSessionPayload, SyncReport } from "./accounts";
+import type { AccountStatusResult, AccountsClientConfig, OAuthCallbackOutcome, OAuthCallbackStartResult, SetSessionPayload, SyncReport } from "./accounts";
 import type {
   AddStampPayload,
   AddTextBoxPayload,
@@ -250,6 +250,19 @@ export const IPC = {
   // resolves `{ authBaseUrl: string | null; configured: boolean }`; it never
   // throws and never returns the Data API URL, a token or a secret.
   accountsGetConfig: "accounts:getConfig",
+  // Phase 46 - Google sign-in loopback callback. `accounts:startOAuthCallback`
+  // (invoke, no payload) binds a 127.0.0.1-only HTTP listener on an ephemeral
+  // port and resolves `{ callbackUrl }` - the absolute URL the renderer hands
+  // the auth SDK (a `file://` origin is not absolute, which the provider
+  // rejects). `accounts:oauthCallback` (main -> renderer, broadcast) delivers
+  // `{ ok: true }` when the provider's browser redirect reaches the listener,
+  // or `{ ok: false, reason }` on timeout / cancel / error. The listener is
+  // single-use and never carries the OAuth code or the callback token back
+  // over this event. `accounts:stopOAuthCallback` (invoke, no payload)
+  // cancels and cleans up.
+  accountsStartOAuthCallback: "accounts:startOAuthCallback",
+  accountsStopOAuthCallback: "accounts:stopOAuthCallback",
+  accountsOAuthCallbackEvent: "accounts:oauthCallback",
   // Phase 45 — main-side clipboard image reader. The renderer's async
   // clipboard API cannot see a FILE copied in Explorer (the CF_HDROP /
   // text/uri-list flavour) because the renderer has no `fs`. This channel
@@ -742,6 +755,19 @@ setEnabled(state: import("./types").MenuEnabledState): void;
      *  the debounced/background runs a caller did not request. Returns an
      *  unsubscribe. */
     onSyncReport(cb: (report: SyncReport) => void): () => void;
+    /** Phase 46 — bind the loopback callback listener and resolve its
+     *  absolute URL (`{ callbackUrl }`) to hand the auth SDK as
+     *  `callbackURL`. Starting again replaces any in-flight listener.
+     *  Rejects only when the listener could not bind at all. */
+    startOAuthCallback(): Promise<OAuthCallbackStartResult>;
+    /** Phase 46 — cancel and clean up the loopback callback listener. The
+     *  matching `onOAuthCallback` event reports `{ ok: false, reason:
+     *  'cancelled' }`. Never rejects. */
+    stopOAuthCallback(): Promise<void>;
+    /** Phase 46 — subscribe to the single outcome of the loopback listener:
+     *  `{ ok: true }` when the provider's redirect lands, else a reason.
+     *  Returns an unsubscribe. Never carries the OAuth code or token. */
+    onOAuthCallback(cb: (outcome: OAuthCallbackOutcome) => void): () => void;
   };
   /**
    * Phase 35 (DEF-295) — resolve a `File` from a drag-and-drop (or any

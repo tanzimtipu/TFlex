@@ -30,7 +30,7 @@ test('packaged: bogus credentials -> CREDENTIAL error, never offline', async () 
     const version = await app.evaluate(({ app: a }) => a.getVersion());
     const execPath = await app.evaluate(() => process.execPath);
     console.log(`[p45-packaged] version=${version} execPath=${execPath}`);
-    expect(version, 'packaged build version').toBe('1.38.0');
+    expect(version, 'packaged build version').toBe('1.39.0');
     expect(execPath.toLowerCase(), 'launched the packaged exe').toContain('win-unpacked');
 
     await page.waitForSelector('.app', { timeout: 30000 });

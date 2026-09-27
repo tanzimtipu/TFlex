@@ -186,7 +186,7 @@ export function AccountMenu(props: AccountMenuProps): ReactElement {
         onProfileUpdated({ ...shownUser, name });
         setView("menu");
       } else {
-        setProfileError(messageForError(res.code));
+        setProfileError(messageForError(res.code, res));
       }
     }).catch(() => {
       setSaving(false);

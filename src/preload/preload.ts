@@ -50,7 +50,7 @@ import type {
 import type { Result } from "../shared/result";
 import type { FdfOpenError, PdfOpenError } from "../shared/types";
 import type { SignatureSource } from "../shared/types";
-import type { AccountStatusResult, AccountsClientConfig, SetSessionPayload, SyncReport } from "../shared/accounts";
+import type { AccountStatusResult, AccountsClientConfig, OAuthCallbackOutcome, OAuthCallbackStartResult, SetSessionPayload, SyncReport } from "../shared/accounts";
 import { normalizeArrayBuffer } from "./to-array-buffer";
 
 // The renderer's engineClient.ts declares `window.tflex?.engine` with its own
@@ -607,6 +607,24 @@ const api = {
       ipcRenderer.on(IPC.accountsSyncReportEvent, listener);
       return () => {
         ipcRenderer.removeListener(IPC.accountsSyncReportEvent, listener);
+      };
+    },
+    // Phase 46 — Google sign-in needs an absolute callback URL (a `file://`
+    // origin is "null", which the provider rejects). Main binds a 127.0.0.1
+    // listener and resolves its URL; the renderer passes it to the auth SDK
+    // as `callbackURL`. `stopOAuthCallback` cancels it; `onOAuthCallback`
+    // reports the single outcome (landed / timeout / cancelled / error).
+    startOAuthCallback(): Promise<OAuthCallbackStartResult> {
+      return ipcRenderer.invoke(IPC.accountsStartOAuthCallback);
+    },
+    stopOAuthCallback(): Promise<void> {
+      return ipcRenderer.invoke(IPC.accountsStopOAuthCallback);
+    },
+    onOAuthCallback(cb: (outcome: OAuthCallbackOutcome) => void): () => void {
+      const listener = (_event: unknown, outcome: OAuthCallbackOutcome): void => cb(outcome);
+      ipcRenderer.on(IPC.accountsOAuthCallbackEvent, listener);
+      return () => {
+        ipcRenderer.removeListener(IPC.accountsOAuthCallbackEvent, listener);
       };
     },
   },

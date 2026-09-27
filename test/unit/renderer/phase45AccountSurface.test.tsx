@@ -15,6 +15,7 @@ import { AccountsDialog } from "../../../src/renderer/components/AccountsDialog"
 import type { AccountsAuthAdapter } from "../../../src/renderer/accounts/adapter";
 
 const BASE_URL = "https://example.invalid";
+const CALLBACK_URL = "http://127.0.0.1:51234/oauth/callback?token=tok";
 
 interface FakeAdapter {
   adapter: AccountsAuthAdapter;
@@ -53,6 +54,9 @@ interface FakeBridge {
   clearSession: ReturnType<typeof vi.fn>;
   syncNow: ReturnType<typeof vi.fn>;
   onSyncReport: ReturnType<typeof vi.fn>;
+  startOAuthCallback: ReturnType<typeof vi.fn>;
+  stopOAuthCallback: ReturnType<typeof vi.fn>;
+  onOAuthCallback: ReturnType<typeof vi.fn>;
 }
 
 function fakeBridge(over: Partial<Record<string, unknown>> = {}): FakeBridge {
@@ -63,6 +67,9 @@ function fakeBridge(over: Partial<Record<string, unknown>> = {}): FakeBridge {
     clearSession: vi.fn(async () => undefined),
     syncNow: vi.fn(async () => ({ phase: "synced" })),
     onSyncReport: vi.fn(() => () => undefined),
+    startOAuthCallback: vi.fn(async () => ({ callbackUrl: CALLBACK_URL })),
+    stopOAuthCallback: vi.fn(async () => undefined),
+    onOAuthCallback: vi.fn(() => () => undefined),
   };
   for (const [key, value] of Object.entries(over)) {
     (parts as Record<string, unknown>)[key] = vi.fn(value as () => unknown);
@@ -164,10 +171,30 @@ describe("Phase 45 - the surface belongs to TFlex", () => {
     expect(button.querySelector("svg")?.getAttribute("aria-hidden")).toBe("true");
   });
 
-  it("still wires the Google flow to the adapter", async () => {
-    const h = await renderDialog();
-    await click(must(h.container, "[data-accounts-google]"));
-    expect(h.adapter.signInGoogle).toHaveBeenCalledTimes(1);
+  it("still wires the Google flow: loopback callback -> adapter -> popup", async () => {
+    const openSpy = vi
+      .spyOn(window, "open")
+      .mockReturnValue({ close: vi.fn() } as unknown as Window);
+    try {
+      const adapter = fakeAdapter({
+        signInGoogle: async () => ({ ok: true, url: "https://auth.example.invalid/authorize" }),
+      });
+      const h = await renderDialog(adapter);
+      await click(must(h.container, "[data-accounts-google]"));
+
+      expect(h.bridge.startOAuthCallback).toHaveBeenCalledTimes(1);
+      expect(h.adapter.signInGoogle).toHaveBeenCalledWith({ callbackUrl: CALLBACK_URL });
+      expect(openSpy).toHaveBeenCalledWith(
+        "https://auth.example.invalid/authorize",
+        expect.any(String),
+        expect.any(String),
+      );
+      expect(must(h.container, "[data-accounts-banner]").textContent).toContain(
+        "Finish signing in with Google",
+      );
+    } finally {
+      openSpy.mockRestore();
+    }
   });
 });
 
@@ -186,7 +213,15 @@ describe("Phase 45 - forgot password", () => {
     await typeInto(must(h.container, "[data-accounts-reset-email]"), "ada@example.com");
     await click(must(h.container, "[data-accounts-reset-submit]"));
 
-    expect(h.adapter.requestPasswordReset).toHaveBeenCalledWith({ email: "ada@example.com" });
+    // Phase 46 - the request carries an ABSOLUTE, trusted redirect: the app's
+    // own origin when it has one (a file:// renderer falls back to the URL
+    // main mints). The provider refuses a relative one with VALIDATION_FAILED.
+    expect(h.adapter.requestPasswordReset).toHaveBeenCalledWith({
+      email: "ada@example.com",
+      redirectTo: `${window.location.origin}/`,
+    });
+    // The app origin needs no listener at all.
+    expect(h.bridge.startOAuthCallback).not.toHaveBeenCalled();
     expect(step(h.container)).toBe("reset-confirm");
     expect(must(h.container, "[data-accounts-reset-confirm-lead]").textContent).toContain("ada@example.com");
   });

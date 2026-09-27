@@ -18,16 +18,27 @@ import { ArrowLeft, LogOut, RefreshCcw, UserPlus, X } from "lucide-react";
 import type {
   AccountStatus,
   AccountUser,
+  AccountsErrorCode,
   SyncReport,
 } from "../../shared/accounts";
 import type { AccountsAuthAdapter } from "../accounts/adapter";
 import { createNeonAuthAdapter } from "../accounts/adapter";
 import { accountsBridge } from "../accounts/bridge";
 import {
+  resetRedirectUrl,
+  runGoogleSignIn,
+  type GoogleSignInHandle,
+} from "../accounts/oauthLoopback";
+import {
   accountsReducer,
   initialAccountsState,
   type AccountsBanner,
 } from "../accounts/machine";
+import {
+  credentialsFieldError,
+  isValidEmail,
+  MIN_PASSWORD_LENGTH,
+} from "../accounts/validation";
 import { describeSyncReport } from "../accounts/syncStatus";
 import { AnimatedDialog } from "./AnimatedDialog";
 import { usePopAnimation, type MotionVariantSet } from "../hooks/useAnimations";
@@ -48,6 +59,11 @@ type ConfigState = "loading" | "ready" | "unconfigured";
 
 /** Read-only marker for the deferred data-management actions (item 6). */
 export const DEFERRED_REASON = "Coming with the sync release";
+
+/** The single popup the Google flow opens; reused across attempts so a second
+ *  click never leaves two auth windows behind. */
+const GOOGLE_WINDOW_NAME = "tflex-google-signin";
+const GOOGLE_WINDOW_FEATURES = "popup=yes,width=520,height=680";
 
 /** A non-blocking message strip; enters/exits on the shared pop tokens. */
 function Banner({ banner, variants }: { banner: AccountsBanner | null; variants: MotionVariantSet }): ReactElement {
@@ -121,6 +137,11 @@ export function AccountsDialog(props: AccountsDialogProps): ReactElement {
   // the load effect.
   const statusCbRef = useRef(onStatusChange);
   statusCbRef.current = onStatusChange;
+  // Phase 46 - the in-flight Google flow (if any) and the popup it opened, so
+  // a closing dialog or an unmount can release the loopback listener and close
+  // the window instead of leaking them.
+  const googleFlowRef = useRef<GoogleSignInHandle | null>(null);
+  const googleWindowRef = useRef<Window | null>(null);
   // The adapter is built once per config base URL (memoised so a re-render
   // never rebuilds the SDK client).
   const adapter = useMemo(
@@ -172,6 +193,11 @@ export function AccountsDialog(props: AccountsDialogProps): ReactElement {
     return (): void => {
       cancelled = true;
       unsubscribe();
+      // Phase 46 - leaving the surface (close or unmount) abandons any
+      // in-flight Google flow: the loopback listener is released and the auth
+      // popup is closed, so nothing outlives the dialog.
+      googleFlowRef.current?.cancel();
+      googleFlowRef.current = null;
     };
   }, [open]);
 
@@ -189,6 +215,20 @@ export function AccountsDialog(props: AccountsDialogProps): ReactElement {
     });
   }, []);
 
+  /** Dispatch a failure, carrying the provider's own code/message through so
+   *  the banner can say WHY rather than the generic fallback. */
+  const fail = useCallback(
+    (failure: { code: AccountsErrorCode; detail?: string; providerCode?: string }): void => {
+      dispatch({
+        type: "error",
+        code: failure.code,
+        detail: failure.detail,
+        providerCode: failure.providerCode,
+      });
+    },
+    [],
+  );
+
   const submit = useCallback((): void => {
     if (adapter === null) return;
     if (state.step === "otp") {
@@ -200,27 +240,47 @@ export function AccountsDialog(props: AccountsDialogProps): ReactElement {
       dispatch({ type: "busy", value: true });
       void adapter.verifyOtp({ email, otp: state.otp.trim() }).then((res) => {
         if (res.ok) completeSignIn(res.user, res.token);
-        else dispatch({ type: "error", code: res.code });
+        else fail(res);
       });
       return;
     }
     const email = state.email.trim();
-    if (email.length === 0 || state.password.length === 0) {
-      dispatch({ type: "info", text: "Enter your email and password." });
+    // Validate BEFORE the request: a missing name or a short password would
+    // otherwise come back as the provider's raw zod text.
+    const fieldError = credentialsFieldError(state.mode, {
+      email,
+      password: state.password,
+      name: state.name,
+    });
+    if (fieldError !== null) {
+      dispatch({ type: "info", text: fieldError });
       return;
     }
     dispatch({ type: "busy", value: true });
     if (state.mode === "sign-up") {
       void adapter
-        .signUpEmail({ email, password: state.password, name: state.name.trim() || undefined })
+        .signUpEmail({ email, password: state.password, name: state.name.trim() })
         .then((res) => {
           if (!res.ok) {
-            dispatch({ type: "error", code: res.code });
+            fail(res);
             return;
           }
+          if (res.existingVerified === true) {
+            // A duplicate of an ALREADY-verified address: no new account was
+            // created (the response is the provider's synthetic anti-
+            // enumeration one). Say so instead of claiming success.
+            dispatch({
+              type: "info",
+              text: "That email already has an account. Sign in with it instead.",
+            });
+            return;
+          }
+          // A new (or unverified-duplicate) account needs a verification code.
+          // With verification required the provider returns no session here,
+          // so the explicit OTP send below is what actually emails the code.
           void adapter.sendOtp({ email }).then((otpRes) => {
             if (otpRes.ok) dispatch({ type: "otp-sent" });
-            else dispatch({ type: "error", code: otpRes.code });
+            else fail(otpRes);
           });
         });
       return;
@@ -235,31 +295,62 @@ export function AccountsDialog(props: AccountsDialogProps): ReactElement {
         // the surface to its OTP step rather than leaving a dead banner.
         void adapter.sendOtp({ email }).then((otpRes) => {
           if (otpRes.ok) dispatch({ type: "otp-sent" });
-          else dispatch({ type: "error", code: res.code });
+          else fail(otpRes);
         });
         return;
       }
-      dispatch({ type: "error", code: res.code });
+      fail(res);
     });
-  }, [adapter, state, completeSignIn]);
+  }, [adapter, state, completeSignIn, fail]);
 
   const resend = useCallback((): void => {
     if (adapter === null) return;
     dispatch({ type: "busy", value: true });
     void adapter.sendOtp({ email: state.email.trim() }).then((res) => {
       if (res.ok) dispatch({ type: "otp-sent" });
-      else dispatch({ type: "error", code: res.code });
+      else fail(res);
     });
-  }, [adapter, state.email]);
+  }, [adapter, state.email, fail]);
 
+  /**
+   * Phase 46 - "Continue with Google".
+   *
+   * There is no absolute page origin to hand the provider (the packaged
+   * renderer is `file://`), so the flow asks main for a loopback callback URL,
+   * hands it to the SDK as the absolute `callbackURL`, and opens the authorize
+   * URL in a popup. The provider's redirect lands on the loopback listener,
+   * whose outcome event closes the loop: on `ok` the session cookie set on the
+   * auth host is read with the same `getSession()` + JWT path the email flow
+   * uses. Any real provider/SDK failure reaches `fail` verbatim; a local
+   * outcome (timeout, cancel) is reported as a non-blocking message.
+   */
   const google = useCallback((): void => {
-    if (adapter === null) return;
+    const api = accountsBridge();
+    if (adapter === null || api === null) return;
+    googleFlowRef.current?.cancel();
     dispatch({ type: "busy", value: true });
-    void adapter.signInGoogle().then((res) => {
-      if (res.ok) dispatch({ type: "info", text: "Finish signing in with Google in the window that opened." });
-      else dispatch({ type: "error", code: res.code });
+    googleFlowRef.current = runGoogleSignIn({
+      bridge: api,
+      adapter,
+      openWindow: (url): boolean => {
+        const opened = window.open(url, GOOGLE_WINDOW_NAME, GOOGLE_WINDOW_FEATURES);
+        googleWindowRef.current = opened;
+        return opened !== null;
+      },
+      closeWindow: (): void => {
+        const opened = googleWindowRef.current;
+        googleWindowRef.current = null;
+        try {
+          opened?.close();
+        } catch {
+          // A popup the renderer may no longer reach is already gone.
+        }
+      },
+      onSignedIn: completeSignIn,
+      onFailure: fail,
+      onInfo: (text): void => dispatch({ type: "info", text }),
     });
-  }, [adapter]);
+  }, [adapter, completeSignIn, fail]);
 
   /** Enter the forgot-password flow (sign-in view only). */
   const openReset = useCallback((): void => {
@@ -274,12 +365,28 @@ export function AccountsDialog(props: AccountsDialogProps): ReactElement {
       dispatch({ type: "info", text: "Enter the email for your account." });
       return;
     }
+    if (!isValidEmail(email)) {
+      dispatch({ type: "info", text: "Enter a valid email address." });
+      return;
+    }
     dispatch({ type: "busy", value: true });
-    void adapter.requestPasswordReset({ email }).then((res) => {
+    const api = accountsBridge();
+    void (async (): Promise<void> => {
+      // The provider's origin check refuses the reset request without an
+      // ABSOLUTE, trusted redirect (`VALIDATION_FAILED` / `MISSING_ORIGIN`).
+      // When the renderer has a real absolute origin (the dev build), that
+      // origin is the trusted one and is used directly. A packaged `file://`
+      // renderer has origin "null", so the absolute URL main mints is used
+      // instead. The reset code is typed in-app, so nothing needs to be
+      // listening on it.
+      const appOrigin = typeof window === "undefined" ? null : window.location.origin;
+      const redirectTo = api === null ? null : await resetRedirectUrl(api, appOrigin);
+      const input = redirectTo === null ? { email } : { email, redirectTo };
+      const res = await adapter.requestPasswordReset(input);
       if (res.ok) dispatch({ type: "reset-sent" });
-      else dispatch({ type: "error", code: res.code });
-    });
-  }, [adapter, state.email]);
+      else fail(res);
+    })();
+  }, [adapter, state.email, fail]);
 
   /** Complete the reset with the emailed code and a new password. */
   const submitResetConfirm = useCallback((): void => {
@@ -289,8 +396,8 @@ export function AccountsDialog(props: AccountsDialogProps): ReactElement {
       dispatch({ type: "info", text: "Enter the reset code from the email." });
       return;
     }
-    if (state.newPassword.length < 8) {
-      dispatch({ type: "info", text: "Choose a password of at least 8 characters." });
+    if (state.newPassword.length < MIN_PASSWORD_LENGTH) {
+      dispatch({ type: "info", text: `Choose a password of at least ${MIN_PASSWORD_LENGTH} characters.` });
       return;
     }
     dispatch({ type: "busy", value: true });
@@ -298,9 +405,9 @@ export function AccountsDialog(props: AccountsDialogProps): ReactElement {
       .resetPassword({ email, otp: state.resetCode.trim(), password: state.newPassword })
       .then((res) => {
         if (res.ok) dispatch({ type: "reset-done" });
-        else dispatch({ type: "error", code: res.code });
+        else fail(res);
       });
-  }, [adapter, state.email, state.resetCode, state.newPassword]);
+  }, [adapter, state.email, state.resetCode, state.newPassword, fail]);
 
   const signOut = useCallback((): void => {
     const api = accountsBridge();
@@ -419,7 +526,7 @@ export function AccountsDialog(props: AccountsDialogProps): ReactElement {
                 </label>
                 {state.mode === "sign-up" && (
                   <label className="accounts-field" htmlFor="accounts-name">
-                    <span className="accounts-label">Name (optional)</span>
+                    <span className="accounts-label">Name</span>
                     <input
                       id="accounts-name"
                       type="text"

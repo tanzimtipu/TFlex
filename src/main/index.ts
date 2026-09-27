@@ -1,4 +1,4 @@
-import { app, BrowserWindow, clipboard, dialog, ipcMain, safeStorage, shell } from 'electron';
+import { app, BrowserWindow, clipboard, dialog, ipcMain, safeStorage, session, shell } from 'electron';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { IPC } from '../shared/ipc';
@@ -48,6 +48,9 @@ import { SyncStateStore } from './services/accounts/sync-state';
 import { AccountsSyncEngine, SyncCoordinator } from './services/accounts/sync';
 import { PostgrestSyncTransport } from './services/accounts/transport';
 import { createSettingsPort, createSignaturesPort } from './services/accounts/ports';
+import { OAuthCallbackService } from './services/accounts/oauth-callback';
+import { registerOAuthCallbackIpc } from './services/accounts/oauth-callback-ipc';
+import { installAuthOriginHeader } from './services/accounts/origin-header';
 import { UpdateService } from './services/update-service';
 import { applyMenuEnabledState, buildAppMenu } from './menu';
 import { createMainWindow, deriveAuthHost, installAuthPopupHandler } from './window';
@@ -298,6 +301,37 @@ export async function start(): Promise<void> {
   // accounts:getConfig (env override, else the shipped package.json block).
   registerAccountsIpc(ipcMain, accountsVault, accountsSync, () =>
     getAccountsConfig(process.env, app.getAppPath()),
+  );
+
+  // Phase 46 - the loopback callback listener for Google sign-in. The
+  // renderer runs from `file://`, so its origin is not an absolute URL and the
+  // provider rejects the callback; main binds a 127.0.0.1-only listener on an
+  // ephemeral port and hands its absolute URL to the renderer. Every outcome
+  // is broadcast so any window sees it, mirroring accounts:syncReport. The
+  // listener is disposed on window-all-closed / before-quit below, so it can
+  // never outlive the app.
+  const oauthCallback = new OAuthCallbackService({
+    onOutcome: (outcome) => {
+      for (const win of BrowserWindow.getAllWindows()) {
+        if (!win.isDestroyed()) {
+          win.webContents.send(IPC.accountsOAuthCallbackEvent, outcome);
+        }
+      }
+    },
+  });
+  registerOAuthCallbackIpc(ipcMain, oauthCallback);
+
+  // Phase 46 - the packaged renderer is loaded from `file://` and therefore
+  // sends no Origin header, so the provider refuses every Origin-checked
+  // route (Google social sign-in, email sign-in, password reset). The auth
+  // branch already trusts localhost origins, so for requests to the
+  // configured auth host ONLY we present the dev origin the branch trusts,
+  // and only when the request carries no Origin of its own. The Data API and
+  // Function hosts are deliberately NOT covered - neither needs it, so no
+  // forged origin is handed out there. The host is derived from the accounts
+  // config on every request, never a literal.
+  installAuthOriginHeader(session.defaultSession, () =>
+    deriveAuthHost(getAccountsConfig(process.env, app.getAppPath()).authBaseUrl),
   );
 
   ipcMain.handle(IPC.windowMinimize, (event) => {
@@ -805,6 +839,7 @@ export async function start(): Promise<void> {
   }
 
   app.on('window-all-closed', async () => {
+    oauthCallback.dispose();
     await settings.saveCurrent();
     await ocr.terminate();
     app.quit();
@@ -812,6 +847,7 @@ export async function start(): Promise<void> {
   // Phase 35 — belt-and-braces quit path: any app.quit() (menu Exit, update
   // install) closes the print window so it can never survive the app.
   app.on('before-quit', () => {
+    oauthCallback.dispose();
     closePrintWindow();
   });
   app.on('activate', () => {

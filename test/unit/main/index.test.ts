@@ -23,6 +23,7 @@ const {
     _ipcOn,
     _applyMenuEnabled,
     _clipboard,
+    _onBeforeSendHeaders,
 } = vi.hoisted(() => {
   const engineState = { pageCount: 1, modified: false, pageOrder: [0], rotations: [0], deleted: [false] };
 
@@ -110,6 +111,8 @@ const {
       read: vi.fn().mockResolvedValue([]),
       readText: vi.fn().mockResolvedValue(''),
     },
+    // Phase 46 - the auth Origin rule attaches its listener here at start().
+    _onBeforeSendHeaders: vi.fn(),
   };
 });
 
@@ -164,6 +167,12 @@ vi.mock('electron', () => ({
     getAllDisplays: vi.fn().mockReturnValue([
       { workArea: { x: 0, y: 0, width: 1920, height: 1080 }, bounds: { x: 0, y: 0, width: 1920, height: 1080 } },
     ]),
+  },
+  // Phase 46 - the auth Origin header rule attaches to the default session.
+  session: {
+    defaultSession: {
+      webRequest: { onBeforeSendHeaders: _onBeforeSendHeaders },
+    },
   },
 }));
 
@@ -239,6 +248,12 @@ describe('main/index - start()', () => {
 
   it('builds the application menu via buildAppMenu', () => {
     expect(_buildAppMenu).toHaveBeenCalled();
+  });
+
+  // Phase 46 - the packaged renderer sends no Origin; start() must install the
+  // auth host Origin rule on the app's default session.
+  it('installs the auth Origin header rule on the default session', () => {
+    expect(_onBeforeSendHeaders).toHaveBeenCalledTimes(1);
   });
 
   it('registers window:minimize handler', () => {
