@@ -23,6 +23,14 @@ export interface WhatsNewEntry {
 /** Ordered newest first. */
 export const WHATS_NEW: WhatsNewEntry[] = [
   {
+    version: '1.41.1',
+    date: '2026-09-28',
+    highlights: [
+      'Fixed: Jovrel installed itself inside the old TFlex folder instead of its own. It now installs to C:\\Program Files\\Jovrel, and the leftover folder is cleaned up.',
+      'If you already installed 1.41.0 into the wrong folder, this update puts you in the right one.',
+    ],
+  },
+  {
     version: '1.41.0',
     date: '2026-09-27',
     highlights: [
