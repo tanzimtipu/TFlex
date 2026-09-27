@@ -23,6 +23,17 @@ export interface WhatsNewEntry {
 /** Ordered newest first. */
 export const WHATS_NEW: WhatsNewEntry[] = [
   {
+    version: '1.38.0',
+    date: '2026-09-27',
+    highlights: [
+      'Signing in works now - the account window could not reach the server before - and it looks like the rest of TFlex, with a Google button and password reset.',
+      'Every file tab has its own colour, and opening Multi View animates.',
+      'Create from images: paste an image straight from the clipboard, including a copied file, with a working preview.',
+      'Watermark can be placed at an exact X/Y position, and the long tool windows are now squarer and easier to use.',
+      "Fixes: 'Edit mode off' is the first edit tool and no longer leaves a neighbour looking selected, and the first thumbnail no longer overlaps Undo.",
+    ],
+  },
+  {
     version: '1.37.0',
     date: '2026-09-27',
     highlights: [
