@@ -1,6 +1,6 @@
 {
     "name": "tflex",
-    "version": "1.36.0",
+    "version": "1.37.0",
     "description": "TFlex - desktop PDF studio for Windows",
     "repository": "tanzimtipu/TFlex",
     "type": "module",
@@ -41,6 +41,8 @@
         "tesseract.js": "^7.0.0"
     },
     "devDependencies": {
+        "@aws-sdk/client-s3": "^3.1141.0",
+        "@aws-sdk/s3-request-presigner": "^3.1141.0",
         "@napi-rs/canvas": "^1.0.8",
         "@playwright/test": "^1.63.0",
         "@types/node": "^24.13.3",
@@ -52,6 +54,7 @@
         "electron": "^44.0.0",
         "electron-builder": "^26.15.3",
         "esbuild": "^0.28.2",
+        "jose": "^6.2.12",
         "jsdom": "^30.0.1",
         "pdfkit": "^0.20.1",
         "playwright": "^1.63.0",
