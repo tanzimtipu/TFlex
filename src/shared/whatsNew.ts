@@ -23,6 +23,14 @@ export interface WhatsNewEntry {
 /** Ordered newest first. */
 export const WHATS_NEW: WhatsNewEntry[] = [
   {
+    version: '1.40.0',
+    date: '2026-09-27',
+    highlights: [
+      'Google sign-in now finishes properly: the browser window closes by itself and the app picks up your session.',
+      'If a sign-in step fails, the app shows the real reason instead of a generic message.',
+    ],
+  },
+  {
     version: '1.39.0',
     date: '2026-09-27',
     highlights: [
