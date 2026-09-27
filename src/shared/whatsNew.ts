@@ -23,6 +23,15 @@ export interface WhatsNewEntry {
 /** Ordered newest first. */
 export const WHATS_NEW: WhatsNewEntry[] = [
   {
+    version: '1.39.0',
+    date: '2026-09-27',
+    highlights: [
+      'Sign-up and sign-in work from the installed app now: it can finally reach the account service, and it no longer hides the real reason when something is wrong.',
+      'Google sign-in opens the provider in a proper window and returns to the app.',
+      'Password reset works, and the account form tells you exactly what to fix (missing name, invalid email, short password).',
+    ],
+  },
+  {
     version: '1.38.0',
     date: '2026-09-27',
     highlights: [
