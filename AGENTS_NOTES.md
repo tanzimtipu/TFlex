@@ -4052,3 +4052,43 @@ change also applies to the PAGES/REVIEW/DELIVER lead verbs); the first thumbnail
 Undo row (the real bug was the Undo label wrapping over its own box in the 150px strip); the tool dialogs
 re-shaped toward square (Watermark 460x836 -> 620x620) with the content re-laid out; and the Watermark
 custom X/Y tick that disables the predefined slots and is applied to the produced output.
+
+## 2026-09-27: Release 1.39.0 - the installed app can finally sign in (and the third cause of the same bug)
+
+Release 1.39.0 is published: https://github.com/tanzimtipu/tflex-releases/releases/tag/v1.39.0 with all four
+assets, and the public feed verifies (`version: 1.39.0`, sha512 `K2SOo0j4...`, size 171,912,647). Commits:
+`4eb1084` (the fixes, 29 files), `37356f5` (notes), `8032aeb` (bump), tag `v1.39.0`. Gates: `verify:full`
+443 files / **5687 tests**; the packaged canonical spec 9/9; and the packaged Phase 46 evidence below.
+
+**The operator's "Something went wrong. Try again in a moment." had THREE independent causes, found one
+after another - each needed a LIVE probe, none was visible to the test suite:**
+1. **The CSP** (`connect-src 'self'`) blocked every request (fixed in 1.38.0).
+2. **The packaged renderer sends NO `Origin` header** (it is a `file://` page), and the provider refuses
+   Origin-checked routes with `MISSING_ORIGIN` - the SIGN-UP route is one of them, which is exactly why
+   registration failed no matter what the user typed. Fix: main injects `Origin: http://localhost:5173` for
+   the AUTH HOST ONLY, when it is absent (a pure, tested rule; the branch trusts localhost explicitly).
+   `/sign-in/email` has no Origin gate - only sign-up and the OAuth routes do.
+3. **The loopback callback minted `127.0.0.1`, which the branch does NOT trust** (it trusts the hostname
+   `localhost` on any port): `127.0.0.1:port` -> 403 `INVALID_CALLBACKURL`, `localhost:port` -> 200. Fix: bind
+   on 127.0.0.1 as before but MINT `http://localhost:<port>/oauth/callback?token=...`.
+Also learned from the live probes: a sign-up for an ALREADY-registered email returns a synthetic 200 with a
+user object and creates NO row (anti-enumeration) - the app must not claim an account was created; and a
+successful sign-up with verification required returns `token: null`, which the app must treat as "created ->
+verify", not as an error.
+
+**Rule worth keeping: when an auth/HTTP step fails, get the REAL provider response before touching the
+client.** Every one of the three causes above was invisible to the unit tests (mocks agree with whatever you
+wrote) and each was pinned within minutes by a direct probe (curl against the endpoint, or a CDP network
+capture of the app's own request). The generic "Something went wrong" cost the operator several rounds -
+surfacing the provider's own `code`/`message` is now contract.
+
+**Also in 1.39.0:** the Google flow is wired end-to-end (the SDK is called with `disableRedirect: true` + the
+absolute loopback URL, the returned init URL opens in a popup that main's allowlist permits for the auth host
+only, the loopback listener is single-use with a token and a 120 s timeout), password reset uses the same
+absolute redirect, and the form validates name/email/password length before sending. A COMPLETED Google
+round-trip still needs a real account (the popup reaches Google's consent page in every test).
+
+**Defect note:** DEF-364 (the `session` mock gap in `def300OpenPathRouting`) is FIX-READY; it is the THIRD
+occurrence of "a change that adds a call on a collaborator must sweep every test that mocks that
+collaborator" (after DEF-304 and DEF-305). Only two main test files load `src/main/index.ts`, so only those
+two can hit it - keep that in mind for the next `session.*`/window-level change.
