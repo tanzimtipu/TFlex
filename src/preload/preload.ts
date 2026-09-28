@@ -50,8 +50,14 @@ import type {
   WatermarkSettings,
 } from "../shared/types";
 import type { Result } from "../shared/result";
-import type { FdfOpenError, PdfOpenError } from "../shared/types";
-import type { SignatureSource } from "../shared/types";
+import type {
+  DocumentProtection,
+  EncryptDocumentOptions,
+  EngineOpenError,
+  FdfOpenError,
+  PdfOpenError,
+  SignatureSource,
+} from "../shared/types";
 import type { AccountStatusResult, AccountsClientConfig, OAuthCallbackOutcome, OAuthCallbackStartResult, OAuthTraceEvent, OpenAuthUrlResult, SetSessionPayload, SyncReport } from "../shared/accounts";
 import { normalizeArrayBuffer } from "./to-array-buffer";
 
@@ -60,15 +66,32 @@ import { normalizeArrayBuffer } from "./to-array-buffer";
 // without adding `engine` to the shared TFlexApi (which would conflict with
 // the renderer's own Window augmentation).
 const engineApi = {
-  loadDocument(docId: string, path: string): Promise<Result<ArrayBuffer, 'open-error'>> {
-    return ipcRenderer.invoke(IPC.engineLoadDocument, docId, path);
+  loadDocument(docId: string, path: string, password?: string): Promise<Result<ArrayBuffer, EngineOpenError>> {
+    return ipcRenderer.invoke(IPC.engineLoadDocument, docId, path, password);
   },
-  async loadDocumentBytes(docId: string, bytes: Uint8Array): Promise<Result<ArrayBuffer, 'open-error'>> {
-    const result = (await ipcRenderer.invoke(IPC.engineLoadDocumentBytes, docId, bytes)) as Result<ArrayBuffer, 'open-error'>;
+  async loadDocumentBytes(docId: string, bytes: Uint8Array, password?: string): Promise<Result<ArrayBuffer, EngineOpenError>> {
+    const result = (await ipcRenderer.invoke(IPC.engineLoadDocumentBytes, docId, bytes, password)) as Result<ArrayBuffer, EngineOpenError>;
     if (!result.ok) {
       return result;
     }
     return { ok: true, value: normalizeArrayBuffer(result.value) };
+  },
+  /** Phase 52 — the source document's encryption state (null when plain). */
+  getDocumentProtection(docId: string): Promise<Result<DocumentProtection, EngineError>> {
+    return ipcRenderer.invoke(IPC.engineGetDocumentProtection, docId);
+  },
+  /** Phase 52 — produce an encrypted copy of the current document; returns
+   *  the bytes for the save/export flow. The open document is unchanged. */
+  async encryptDocument(docId: string, options: EncryptDocumentOptions): Promise<Result<ArrayBuffer, EngineError>> {
+    const result = (await ipcRenderer.invoke(IPC.engineEncryptDocument, docId, options)) as Result<ArrayBuffer, EngineError>;
+    if (!result.ok) {
+      return result;
+    }
+    return { ok: true, value: normalizeArrayBuffer(result.value) };
+  },
+  /** Phase 52 — drop a document and clear its session password. */
+  closeDocument(docId: string): Promise<void> {
+    return ipcRenderer.invoke(IPC.engineCloseDocument, docId);
   },
   applyOp(docId: string, op: OpEntry): Promise<Result<EngineState, EngineError>> {
     return ipcRenderer.invoke(IPC.engineApplyOp, docId, op);

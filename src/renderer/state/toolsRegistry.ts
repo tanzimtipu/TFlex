@@ -129,6 +129,7 @@ import {
   LayoutGrid,
   List,
   ListX,
+  LockKeyhole,
   Maximize2,
   Menu,
   MessageCirclePlus,
@@ -837,6 +838,20 @@ const REGISTRY = [
     action: 'exportDocx',
     availability: 'document',
   },
+  {
+    // Phase 52 (feature D) — create a password-protected copy of the current
+    // document. Lives in the DELIVER dock; the dialog collects the password,
+    // algorithm and permissions and the host writes the bytes through the
+    // existing bytes-save flow.
+    id: 'encrypt',
+    label: 'Encrypt document',
+    description: 'Create a password-protected copy with AES-256 or AES-128.',
+    icon: LockKeyhole,
+    shortcut: '',
+    stage: 'deliver',
+    action: 'encryptDocument',
+    availability: 'document',
+  },
 
   // ---- GLOBAL --------------------------------------------------------
   // No natural stage: these live in the title bar / File menu and in the
@@ -1359,6 +1374,7 @@ const SURFACE_BY_ID: Record<ToolId, ToolSurface> = {
   exportPages: 'dock',
   exportText: 'dock',
   exportDocx: 'dock',
+  encrypt: 'dock',
   // GLOBAL — no dock verb: the title bar / File menu / palette (and the
   // floating pills for the view controls) own these.
   open: 'palette',
@@ -1459,7 +1475,7 @@ export const DOCK_STAGE_IDS: Readonly<Record<Stage, readonly string[]>> = {
     'exportComments',
     'importComments',
   ],
-  deliver: ['optimize', 'audit', 'exportPages', 'exportText', 'exportDocx', 'createFromImages'],
+  deliver: ['optimize', 'audit', 'exportPages', 'exportText', 'exportDocx', 'createFromImages', 'encrypt'],
 };
 
 /** The Phase-37 relevance rule for one entry (see `DOCK_STAGE_IDS`). */

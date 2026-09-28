@@ -7,7 +7,7 @@ import {
   PDFRadioGroup,
   PDFTextField,
   type PDFField,
-} from 'pdf-lib';
+} from '@cantoo/pdf-lib';
 import type {
   FormField,
   FormFieldKind,
@@ -125,59 +125,55 @@ function pdfFieldGetMulti(field: PDFField): boolean | undefined {
 }
 
 /**
- * Find the 0-based page index for a field by walking the page tree and
- * matching the page reference stored in the field widget's /P entry.
+ * Resolve a widget/annotation `/P` page reference to a 0-based page index by
+ * comparing it against each page's own ref. Returns -1 when the ref is absent
+ * or does not match any page.
+ */
+function pageIndexByRef(pdfDoc: PDFDocument, pageRef: unknown): number {
+  if (!pageRef || typeof (pageRef as { tag?: unknown }).tag !== 'string') return -1;
+  const tag = (pageRef as { tag: string }).tag;
+  for (let p = 0; p < pdfDoc.getPageCount(); p++) {
+    if (pdfDoc.getPage(p).ref?.tag === tag) return p;
+  }
+  return -1;
+}
+
+/**
+ * Find the 0-based page index for a field. Every widget carries its own `/P`
+ * page reference; `acroField.getWidgets()` returns the widget dicts for both
+ * field shapes pdf-lib models:
+ *   - merged field/widget: the field dict IS the widget (no `/Kids`), and
+ *     `getWidgets()` returns `[the field dict]`;
+ *   - `/Kids`-style terminal: `getWidgets()` returns the kid widgets.
+ * Resolving `/P` off those widget dicts covers both. `/Parent`-style widgets
+ * (annotation in a page's `/Annots` carrying `/Parent` instead of `/P`) are
+ * handled by the page-scan fallback below.
  */
 function findFieldPage(pdfDoc: PDFDocument, field: PDFField): number {
   const acro = field.acroField as any;
-  const doc = pdfDoc;
 
-  // Path 1: walk the Kids array to find widget annotations that have /P set.
-  // Use dict.get() instead of lookupMaybe because pdf-lib's lookupMaybe
-  // requires a type argument.
+  // Path 1: each widget's own /P reference.
   try {
-    const kidsDict = acro.dict?.get?.(PDFName.of('Kids'));
-    if (kidsDict) {
-      // Resolve indirect reference if needed
-      let kids: any = kidsDict;
-      if (typeof kidsDict.objectNumber === 'number') {
-        kids = doc.context.lookup(kidsDict);
-      }
-      if (kids && typeof kids.size === 'function') {
-        for (let i = 0; i < kids.size(); i++) {
-          const kidRef = kids.get(i);
-          if (!kidRef || typeof kidRef.tag !== 'string') continue;
-          let kidObj: any;
-          try {
-            kidObj = doc.context.lookup(kidRef);
-          } catch {
-            continue;
-          }
-          try {
-            const pageRef = kidObj?.dict?.get?.(PDFName.of('P'));
-            if (pageRef && typeof pageRef.tag === 'string') {
-              for (let p = 0; p < doc.getPageCount(); p++) {
-                if (doc.getPage(p).ref?.tag === pageRef.tag) {
-                  return p;
-                }
-              }
-            }
-          } catch {
-            continue;
-          }
-        }
+    const widgets: any[] = acro.getWidgets?.() ?? [];
+    for (const widget of widgets) {
+      try {
+        const pageRef = widget?.dict?.get?.(PDFName.of('P'));
+        const idx = pageIndexByRef(pdfDoc, pageRef);
+        if (idx >= 0) return idx;
+      } catch {
+        // Try the next widget.
       }
     }
   } catch {
-    // Fall through
+    // Fall through to the page scan.
   }
 
   // Path 2 (fallback): scan every page's /Annots for widget annotations
   // whose /Parent matches the field's ref. Use page.node.get() which
   // returns the raw PDFArray (no type argument needed).
-  for (let p = 0; p < doc.getPageCount(); p++) {
+  for (let p = 0; p < pdfDoc.getPageCount(); p++) {
     try {
-      const pageNode: any = (doc.getPage(p) as any).node;
+      const pageNode: any = (pdfDoc.getPage(p) as any).node;
       const annots = pageNode?.get?.(PDFName.of('Annots'));
       if (!annots || typeof annots.size !== 'function') continue;
       for (let i = 0; i < annots.size(); i++) {
@@ -185,7 +181,7 @@ function findFieldPage(pdfDoc: PDFDocument, field: PDFField): number {
         if (!aRef || typeof aRef.tag !== 'string') continue;
         let aObj: any;
         try {
-          aObj = doc.context.lookup(aRef);
+          aObj = pdfDoc.context.lookup(aRef);
         } catch {
           continue;
         }
@@ -208,8 +204,15 @@ function findFieldPage(pdfDoc: PDFDocument, field: PDFField): number {
  * Extract the widget rect from a field. Uses the acro field's getWidgets()
  * because widget annotations carry the actual /Rect. Returns the last
  * non-empty rect found, or a 0-rect fallback.
+ *
+ * pdf-lib reports /Rect with a BOTTOM-LEFT origin; the FormFieldRect contract
+ * is TOP-LEFT, so `y` is flipped here (`pageHeight - y - height`).
  */
-function getFieldRect(field: PDFField): FormFieldRect {
+function getFieldRect(
+  pdfDoc: PDFDocument,
+  field: PDFField,
+  pageIndex: number,
+): FormFieldRect {
   try {
     const acro = field.acroField;
 
@@ -227,7 +230,20 @@ function getFieldRect(field: PDFField): FormFieldRect {
           continue;
         }
       }
-      if (lastRect) return lastRect;
+      if (lastRect) {
+        let pageHeight = 0;
+        try {
+          pageHeight = pdfDoc.getPage(pageIndex).getHeight();
+        } catch {
+          pageHeight = 0;
+        }
+        return {
+          x: lastRect.x,
+          y: pageHeight - lastRect.y - lastRect.height,
+          width: lastRect.width,
+          height: lastRect.height,
+        };
+      }
     }
   } catch {
     // Fall through
@@ -259,7 +275,7 @@ export function getFormFields(pdfDoc: PDFDocument): FormField[] {
     const name = field.getName();
     const kind = pdfFieldToKind(field);
     const page = findFieldPage(pdfDoc, field);
-    const rect = getFieldRect(field);
+    const rect = getFieldRect(pdfDoc, field, page);
     const value = pdfFieldGetValue(field);
     const options = pdfFieldGetOptions(field);
     const multi = pdfFieldGetMulti(field);
@@ -384,7 +400,7 @@ export function snapshotAllFormFields(pdfDoc: PDFDocument): FormSnapshotEntry[] 
         const name = field.getName();
         const kind = pdfFieldToKind(field);
         const page = findFieldPage(pdfDoc, field);
-        const rect = getFieldRect(field);
+        const rect = getFieldRect(pdfDoc, field, page);
         const value = pdfFieldGetValue(field);
         const options = pdfFieldGetOptions(field);
         const multi = pdfFieldGetMulti(field);

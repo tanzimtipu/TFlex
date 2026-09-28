@@ -510,7 +510,7 @@ describe('main/index - engineLoadDocumentBytes handler', () => {
     const ab = new ArrayBuffer(8);
     await handler({}, 'doc-1', ab);
 
-    expect(_engineInstance.loadDocumentBytes).toHaveBeenCalledWith('doc-1', expect.any(Uint8Array));
+    expect(_engineInstance.loadDocumentBytes).toHaveBeenCalledWith('doc-1', expect.any(Uint8Array), undefined);
   });
 
   it('passes Uint8Array through directly', async () => {
@@ -519,7 +519,7 @@ describe('main/index - engineLoadDocumentBytes handler', () => {
     const view = new Uint8Array(8);
     await handler({}, 'doc-1', view);
 
-    expect(_engineInstance.loadDocumentBytes).toHaveBeenCalledWith('doc-1', view);
+    expect(_engineInstance.loadDocumentBytes).toHaveBeenCalledWith('doc-1', view, undefined);
   });
 });
 

@@ -15,9 +15,12 @@ import type {
   CommentThread,
   CropEntry,
   DocxImageEntry,
+  DocumentProtection,
   EditImagePayload,
   EditTextRunPayload,
+  EncryptDocumentOptions,
   EngineError,
+  EngineOpenError,
   EngineState as SharedEngineState,
   ExportPageEntry,
   ExportPagesPayload,
@@ -178,11 +181,24 @@ export interface TFlexApiEngine {
   loadDocument(
     docId: string,
     path: string,
-  ): Promise<Result<ArrayBuffer, "open-error">>;
+    password?: string,
+  ): Promise<Result<ArrayBuffer, EngineOpenError>>;
   loadDocumentBytes(
     docId: string,
     bytes: ArrayBuffer | Uint8Array,
-  ): Promise<Result<ArrayBuffer, "open-error">>;
+    password?: string,
+  ): Promise<Result<ArrayBuffer, EngineOpenError>>;
+  /** Phase 52 — the source document's encryption state (null when plain). */
+  getDocumentProtection?(
+    docId: string,
+  ): Promise<Result<DocumentProtection, EngineError>>;
+  /** Phase 52 — produce an encrypted copy of the current document. */
+  encryptDocument?(
+    docId: string,
+    options: EncryptDocumentOptions,
+  ): Promise<Result<ArrayBuffer, EngineError>>;
+  /** Phase 52 — drop a document and clear its session password. */
+  closeDocument?(docId: string): Promise<void>;
   applyOp(docId: string, op: OpEntry): Promise<Result<SharedEngineState, EngineError>>;
   undo(docId: string): Promise<Result<SharedEngineState, EngineError>>;
   redo(docId: string): Promise<Result<SharedEngineState, EngineError>>;
@@ -726,6 +742,13 @@ function missingPhase32(): Result<never, EngineError> {
   );
 }
 
+function missingPhase52(): Result<never, EngineError> {
+  return err(
+    "engine-error",
+    "encrypted-PDF support requires the Phase 52 backend update",
+  );
+}
+
 /** Map a renderer-level `EngineOp` into the IPC-shaped `OpEntry`. The
  *  IPC op index convention is 0-based against the engine's current order,
  *  matching the rest of the renderer. */
@@ -834,8 +857,9 @@ class RealEngineAdapter implements EngineApi {
   async loadDocument(
     docId: string,
     path: string,
-  ): Promise<Result<ArrayBuffer, "open-error">> {
-    const r = await this.inner.loadDocument(docId, path);
+    password?: string,
+  ): Promise<Result<ArrayBuffer, EngineOpenError>> {
+    const r = await this.inner.loadDocument(docId, path, password);
     // Opening a fresh doc resets the carry-forward cache for that
     // doc — the previous annotations, if any, are no longer
     // authoritative. The next op's normalizeState will see
@@ -847,13 +871,49 @@ class RealEngineAdapter implements EngineApi {
   async loadDocumentBytes(
     docId: string,
     bytes: ArrayBuffer | Uint8Array,
-  ): Promise<Result<ArrayBuffer, "open-error">> {
+    password?: string,
+  ): Promise<Result<ArrayBuffer, EngineOpenError>> {
     // The preload IPC channel takes a Uint8Array view (structured-cloned).
     // Normalise so the call site can hand us either shape.
     const view = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
-    const r = await this.inner.loadDocumentBytes(docId, view);
+    const r = await this.inner.loadDocumentBytes(docId, view, password);
     this.previousStates.delete(docId);
     return r;
+  }
+
+  /** Phase 52 — the opened document's encryption state. Degrades with a
+   *  friendly engine-error when the preload predates the Phase-52 channels
+   *  so the banner simply does not render. */
+  async getDocumentProtection(
+    docId: string,
+  ): Promise<Result<DocumentProtection, EngineError>> {
+    if (this.inner.getDocumentProtection === undefined) return missingPhase52();
+    return this.inner.getDocumentProtection(docId);
+  }
+
+  /** Phase 52 — produce an encrypted copy of the current document. The
+   *  returned bytes are handed to the existing save flow; the open document
+   *  is untouched, so the adapter does not refresh the state cache. */
+  async encryptDocument(
+    docId: string,
+    options: EncryptDocumentOptions,
+  ): Promise<Result<ArrayBuffer, EngineError>> {
+    if (this.inner.encryptDocument === undefined) return missingPhase52();
+    return this.inner.encryptDocument(docId, options);
+  }
+
+  /** Phase 52 — drop a document and clear its session password on tab
+   *  close. Best-effort: a missing channel / failed call never blocks the
+   *  renderer-side close. */
+  async closeDocument(docId: string): Promise<void> {
+    this.previousStates.delete(docId);
+    if (this.inner.closeDocument === undefined) return;
+    try {
+      await this.inner.closeDocument(docId);
+    } catch {
+      // The engine cleans up on its own; a failed close must not break the
+      // renderer's tab close.
+    }
   }
 
   async applyOp(

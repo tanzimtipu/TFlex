@@ -223,6 +223,13 @@ export interface CommittedTextRun {
   page: number;
   rect: { x: number; y: number; width: number; height: number };
   text: string;
+  /** Phase 52 follow-up — for a MOVE commit, the run's ORIGINAL rect that
+   *  the engine masked. The engine covers (never removes) the old text
+   *  operators, so pdf.js still returns the original item on the refreshed
+   *  page; recording the masked rect lets the UI ignore that phantom hit so
+   *  hovering the empty old spot paints no selection box. Absent for an
+   *  in-place edit (old == new, the spot still has visible text). */
+  maskedRect?: { x: number; y: number; width: number; height: number };
 }
 
 export interface PendingImage {
@@ -458,6 +465,35 @@ export function committedTextRunAt(
     }
   }
   return null;
+}
+
+/** Phase 52 follow-up — true when `rect` (a text-layer item's geometry in
+ *  top-left page points) is the masked ORIGINAL of a run that was MOVED
+ *  away. pdf.js keeps returning the old run's text item because the engine
+ *  masks it with a white rect but never removes the text operators; the
+ *  hover / re-select hit-test must ignore that phantom so the empty old
+ *  position paints no box. Geometry match (not mere overlap) keeps the
+ *  legitimate moved copy at its new rect selectable. */
+export function isMaskedRunRect(
+  commits: CommittedTextRun[] | undefined,
+  page: number,
+  rect: { x: number; y: number; width: number; height: number },
+): boolean {
+  const list = commits ?? [];
+  for (const c of list) {
+    if (c.page !== page) continue;
+    const m = c.maskedRect;
+    if (m === undefined) continue;
+    if (
+      Math.abs(rect.x - m.x) <= 2 &&
+      Math.abs(rect.y - m.y) <= 2 &&
+      Math.abs(rect.width - m.width) <= 2 &&
+      Math.abs(rect.height - m.height) <= 2
+    ) {
+      return true;
+    }
+  }
+  return false;
 }
 
 /** Clamp a rect so it stays inside the page and has a positive

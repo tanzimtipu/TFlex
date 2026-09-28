@@ -12,11 +12,13 @@
 import type {
   AppSettings,
   EditFont,
+  EncryptDefaults,
   ExportImageFormat,
   OcrLanguage,
   OptimizePreset,
   StampId,
 } from '../../shared/types';
+import { normalizeEncryptDefaults } from '../security/encrypt';
 
 export const MIN_RECENTS_CAP = 1;
 export const MAX_RECENTS_CAP = 50;
@@ -41,7 +43,8 @@ export type PreferencesAction =
   | { type: 'set-default-stamp-id'; value: StampId }
   | { type: 'set-save-as-linearize'; value: boolean }
   | { type: 'set-animations-enabled'; value: boolean }
-  | { type: 'set-annotation-recent-tools'; value: string[] };
+  | { type: 'set-annotation-recent-tools'; value: string[] }
+  | { type: 'set-encrypt-defaults'; value: EncryptDefaults };
 
 /** Default compression preset used by the Optimize dialog when the
  *  user hasn't picked one yet. Matches the backend settings.ts default
@@ -251,6 +254,28 @@ export function preferencesReducer(
         return state;
       }
       return { ...state, annotationRecentTools: next };
+    }
+    case 'set-encrypt-defaults': {
+      // Phase 52 (feature D) — the Create-encrypted dialog's remembered
+      // defaults. Normalize on the way in (unknown algorithm -> AES-256,
+      // missing toggles -> allowed) and skip the write when nothing moved.
+      const next = normalizeEncryptDefaults(action.value);
+      const current = state.encryptDefaults;
+      if (
+        current !== undefined &&
+        current.algorithm === next.algorithm &&
+        current.permissions.print === next.permissions.print &&
+        current.permissions.highResPrint === next.permissions.highResPrint &&
+        current.permissions.copy === next.permissions.copy &&
+        current.permissions.accessibleCopy === next.permissions.accessibleCopy &&
+        current.permissions.modify === next.permissions.modify &&
+        current.permissions.comment === next.permissions.comment &&
+        current.permissions.assemble === next.permissions.assemble &&
+        current.permissions.fillForms === next.permissions.fillForms
+      ) {
+        return state;
+      }
+      return { ...state, encryptDefaults: next };
     }
   }
 }

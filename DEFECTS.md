@@ -5,6 +5,52 @@
 > inspect the current `OPEN`, `FIX-READY`, and `DISPUTED` entries first; closed records are
 > historical evidence and must not be loaded wholesale.
 
+## DEF-373: the focused on-canvas run editor paints no visible border (its inline `border: ... solid transparent` overrides the `.edit-run-editor:focus` accent rule)
+
+- Status: OPEN
+- Severity: LOW
+- Found by: qa
+- Phase: 52
+
+Steps to reproduce:
+1. Launch TFlex (dev build).
+2. Open `long.pdf`, switch to the EDIT stage (Ctrl+2), arm Edit text (Ctrl+K -> "Edit text").
+3. Click a text run to select it, then double-click the selection to open the on-canvas run editor.
+4. Read `getComputedStyle(document.querySelector('.edit-run-editor')).borderTopColor` in the resting and focused states.
+
+Expected: the Phase 52 follow-up fix removes the run editor's 2px box-shadow ring and leaves exactly ONE rounded border, which the `.edit-run-editor:focus { border-color: var(--accent) }` rule turns accent on focus (the unit test `phase52TextBoxSingleBorder.test.tsx` asserts this rule textually).
+
+Actual: the computed border stays `rgba(0, 0, 0, 0)` (transparent) in BOTH the resting and focused states. The textarea's inline style `border: "var(--border-w-box) solid transparent"` (`EditOverlay.tsx` `RunCanvasEditor`) is an inline shorthand and outranks the stylesheet `:focus` rule, so the accent border-color never applies. The box-shadow ring IS gone (verified `boxShadow: "none"`), so the double-outline bug is fixed; the consequence is that the focused run editor has no visible focus outline at all (the textarea's own text-selection highlight is the only focus cue). The CSS-contract unit test passes because it reads the rule text, not the rendered cascade.
+
+Evidence: `e2e/p52fu-final.log` `[P52FU 2 run-editor focused]` -> `borderTopColor:"rgba(0, 0, 0, 0)"`, `boxShadow:"none"`, `outlineStyle:"none"`.
+
+Screenshot: none (computed-style evidence in the log).
+
+History:
+- qa: opened (Phase 52 follow-up FIX-READY verification, item 1).
+
+## DEF-372: re-opening the same encrypted file in a session re-prompts for the password (the session cache is keyed by a fresh engine doc id)
+
+- Status: OPEN
+- Severity: LOW
+- Found by: qa
+- Phase: 52
+
+Steps to reproduce:
+1. Launch TFlex (dev build).
+2. Open a synthetic AES-256 password-protected PDF (a real user password); enter the correct password at the prompt. The tab opens.
+3. Open the SAME file again through the Open dialog.
+4. Observe the password prompt appears again.
+
+Expected: the Phase 52 verification item 2 expects "a second open of the same doc in the session does not re-prompt (the session cache)". The main-process session cache (`EngineService.docPasswords`) is documented to prevent a re-prompt for a later (re)load of the same document.
+
+Actual: the UI re-prompts. The cache is keyed by the engine doc id, and the renderer mints a fresh `crypto.randomUUID()` engine doc id on every open (`App.tsx` `openFromBytes`), so the cache never matches a UI re-open. The engine-level cache itself works: reloading the SAME doc id with no password succeeds (verified in the gate spec). REQUIREMENTS.md criterion 2 does not mandate cross-open caching, so this is a usability gap, not a requirement breach.
+
+Screenshot: none
+
+History:
+- qa: opened (Phase 52 gate validation).
+
 ## DEF-371: Phase 51 leaves `verify:full` RED - the B11 OCR-suspects guard test fails on the new onOpenOcrSuspects body
 
 - Status: CLOSED

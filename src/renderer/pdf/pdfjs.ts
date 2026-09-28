@@ -7,6 +7,7 @@ import {
 import type { DocumentInitParameters } from 'pdfjs-dist/types/src/display/api';
 import workerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
 import type { PdfOpenError } from '../../shared/types';
+import { passwordKindFromPdfjsError, type PasswordPromptKind } from '../security/passwordPrompt';
 
 let configured = false;
 
@@ -69,6 +70,7 @@ export type RendererDocumentInit = Pick<
   | 'disableStream'
   | 'isEvalSupported'
   | 'verbosity'
+  | 'password'
 >;
 
 /**
@@ -103,6 +105,7 @@ export type RendererDocumentInit = Pick<
  */
 export function buildDocumentInit(
   data: ArrayBuffer | Uint8Array,
+  password?: string,
 ): RendererDocumentInit {
   const buffer = data instanceof Uint8Array ? data : new Uint8Array(data);
   return {
@@ -115,6 +118,10 @@ export function buildDocumentInit(
     disableStream: true,
     isEvalSupported: false,
     verbosity: VerbosityLevel.ERRORS,
+    // Phase 52 — an empty string (the no-password case) is falsy and pdf.js
+    // ignores it, so a document whose user password is empty still opens
+    // WITHOUT a prompt (pdf.js tries the empty password first).
+    password: password ?? '',
   };
 }
 
@@ -122,6 +129,14 @@ export function buildDocumentInit(
  * Parse raw bytes with pdf.js. The IPC sniff pre-filters, but pdf.js is the
  * real parser: encrypted/invalid/malformed bytes fail here and must surface
  * the same user-facing error vocabulary.
+ *
+ * Phase 52 — an encrypted document is not an error the caller can only
+ * toast. `openPdfDocument` classifies pdf.js's `PasswordException` into the
+ * shared prompt vocabulary (`need` / `incorrect`) and returns it in the
+ * `password` slot, so the renderer can prompt and retry. A supplied
+ * `password` that opens the document resolves normally; a document whose
+ * user password is EMPTY opens with NO prompt because pdf.js tries the
+ * empty password first.
  *
  * DEF-208 — a PDF whose page tree is broken can still resolve from
  * `getDocument` with ZERO pages (the sniff path in main only checks the
@@ -133,7 +148,12 @@ export function buildDocumentInit(
  */
 export async function openPdfDocument(
   data: ArrayBuffer,
-): Promise<{ doc: PDFDocumentProxy } | { error: PdfOpenError }> {
+  password?: string,
+): Promise<
+  | { doc: PDFDocumentProxy }
+  | { error: PdfOpenError }
+  | { password: PasswordPromptKind }
+> {
   ensurePdfjsConfigured();
   try {
     // pdf.js may transfer/detach the input buffer as it ships the bytes to
@@ -141,13 +161,17 @@ export async function openPdfDocument(
     // hand pdf.js a fresh copy.
     const copy = new Uint8Array(data.byteLength);
     copy.set(new Uint8Array(data));
-    const doc = await getDocument(buildDocumentInit(copy.buffer)).promise;
+    const doc = await getDocument(buildDocumentInit(copy.buffer, password)).promise;
     if (doc.numPages === 0) {
       void doc.destroy().catch(() => undefined);
       return { error: 'corrupt' };
     }
     return { doc };
   } catch (error) {
+    const passwordKind = passwordKindFromPdfjsError(error);
+    if (passwordKind !== null) {
+      return { password: passwordKind };
+    }
     return { error: mapPdfjsError(error) };
   }
 }

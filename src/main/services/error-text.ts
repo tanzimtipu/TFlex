@@ -61,7 +61,7 @@ export function formatErrorMessage(value: unknown): string {
 const PDF_OPEN_MESSAGES: Record<PdfOpenError, string> = {
   'not-pdf': 'This file is not a PDF. Jovrel can only open PDF files.',
   corrupt: 'This PDF is damaged or truncated and cannot be read.',
-  encrypted: 'This PDF is encrypted (password-protected). Jovrel cannot open encrypted PDFs.',
+  encrypted: 'This PDF is encrypted (password-protected) and needs its password to open.',
   io: 'The file could not be read. It may have been moved, renamed, or deleted.',
 };
 

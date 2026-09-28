@@ -23,6 +23,15 @@ export interface WhatsNewEntry {
 /** Ordered newest first. */
 export const WHATS_NEW: WhatsNewEntry[] = [
   {
+    version: '1.44.0',
+    date: '2026-09-28',
+    highlights: [
+      'Password-protected PDFs now open: Jovrel asks for the password when one is needed, and you can read and edit the document normally.',
+      'The app shows what protection a document carries (the encryption and the permissions it asks for) - it displays them honestly and does not pretend to enforce them.',
+      'You can now create password-protected PDFs: AES-256 by default or AES-128, with a choice of permissions. Saving an opened protected file removes the protection, and the app tells you that.',
+    ],
+  },
+  {
     version: '1.43.0',
     date: '2026-09-28',
     highlights: [

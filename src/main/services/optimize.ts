@@ -1,4 +1,4 @@
-import { PDFDocument, PDFName } from 'pdf-lib';
+import { PDFDocument, PDFName } from '@cantoo/pdf-lib';
 import type { OptimizePreset, SpaceAudit } from '../../shared/types';
 
 /**

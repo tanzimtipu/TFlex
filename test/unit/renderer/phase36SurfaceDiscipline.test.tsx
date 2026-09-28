@@ -137,6 +137,10 @@ const SANCTIONED: Record<Capability, { surfaces: Surface[]; why: string }> = {
     surfaces: ['dock', 'panel'],
     why: 'Phase 37 item 21 adds the DELIVER dock verb; the panel `From images…` entry stays',
   },
+  encrypt: {
+    surfaces: ['dock'],
+    why: 'Phase 52: the DELIVER dock verb opens the Create-encrypted dialog; no panel/inspector duplicate',
+  },
 
   // ---- Inspector-only, non-registry controls -------------------------
   jumpToReview: {

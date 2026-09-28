@@ -114,19 +114,13 @@ describe('open-path classification of an encrypted PDF (synthetic bytes)', () =>
     'latin1',
   );
 
-  it('sniff classifies an /Encrypt file as encrypted', () => {
+  it('Phase 52: sniff passes an /Encrypt file through (password handling is downstream)', () => {
     const result = sniff(encryptedBytes, 'synthetic-encrypted.pdf');
-    expect(result.ok).toBe(false);
-    if (!result.ok) {
-      expect(result.error.code).toBe('encrypted');
-      expect(result.error.message).toBe('file is encrypted');
-    }
+    expect(result.ok).toBe(true);
   });
 
-  it('the encrypted classification renders a readable dialog sentence', () => {
-    const result = sniff(encryptedBytes, 'synthetic-encrypted.pdf');
-    if (result.ok) throw new Error('expected encrypted sniff to fail');
-    const text = describePdfOpenError(result.error);
+  it('the encrypted code still renders a readable dialog sentence', () => {
+    const text = describePdfOpenError({ code: 'encrypted', message: 'raw detail' });
     expect(text).toContain('encrypted');
     expect(text).not.toContain('[object Object]');
   });

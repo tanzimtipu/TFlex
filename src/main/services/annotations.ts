@@ -12,7 +12,7 @@ import {
   type PDFOperator,
   type PDFPage,
   type PDFPageLeaf,
-} from 'pdf-lib';
+} from '@cantoo/pdf-lib';
 import { err, ok, type Result } from '../../shared/result';
 import { ANN_COLOR_RGB, ANNOTATION_COLOR_NAMES } from '../../shared/annotationColors';
 import { drawStyledTextLines } from './engine';

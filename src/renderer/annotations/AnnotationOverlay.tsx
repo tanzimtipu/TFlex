@@ -1868,8 +1868,11 @@ function DomAnnotation({
       fontSize: live.fontSizePx,
       lineHeight,
       padding: TEXTBOX_PAD_PT * cssScale,
-      borderColor: hex,
-      background: hexWithAlpha(hex, 0.08),
+      // Phase 52 follow-up — a SELECTED textbox changes its SINGLE rounded
+      // frame (accent border + accent wash) instead of gaining a second
+      // selection ring from the shared chrome.
+      borderColor: selected ? "var(--accent)" : hex,
+      background: selected ? "var(--accent-soft)" : hexWithAlpha(hex, 0.08),
       ...annTextBoxCss(annCss, cssScale),
     };
     return (
@@ -2131,8 +2134,11 @@ function DomAnnotation({
       fontSize: live.fontSizePx,
       lineHeight,
       padding: TEXTBOX_PAD_PT * cssScale,
-      borderColor: hex,
-      background: hexWithAlpha(hex, 0.08),
+      // Phase 52 follow-up — a SELECTED callout changes its SINGLE rounded
+      // frame (accent border + accent wash) instead of gaining a second
+      // selection ring from the shared chrome.
+      borderColor: selected ? "var(--accent)" : hex,
+      background: selected ? "var(--accent-soft)" : hexWithAlpha(hex, 0.08),
       overflow: "hidden",
       ...annTextBoxCss(annCss, cssScale),
     };
@@ -2342,6 +2348,11 @@ function SelectedContentChrome(props: SelectedContentChromeProps): ReactElement 
   // page. The comment card derives from the SAME box, so the two can
   // never collide again.
   const barBox = selectionActionBarBox(bounds, cssScale, widthPt, heightPt);
+  // Phase 52 follow-up — text boxes (textbox / callout) already paint their
+  // OWN single rounded frame; the selection is carried by that frame's
+  // border changing to the accent, so the extra 1px bounds ring would be a
+  // second, concentric outline. Every OTHER kind keeps the ring.
+  const carriesOwnFrame = ann.kind === "textbox" || ann.kind === "callout";
   return (
     <>
       {/* DEF-154 — the frame positions the ring + handles as ONE unit
@@ -2361,11 +2372,13 @@ function SelectedContentChrome(props: SelectedContentChromeProps): ReactElement 
         }}
         aria-hidden
       >
-        <div
-          className="content-selection-bounds"
-          data-content-selection-bounds
-          aria-hidden
-        />
+        {!carriesOwnFrame && (
+          <div
+            className="content-selection-bounds"
+            data-content-selection-bounds
+            aria-hidden
+          />
+        )}
         {resizable &&
           (["nw", "ne", "sw", "se"] as const).map((h) => (
             <div

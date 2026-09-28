@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { inflateSync } from 'node:zlib';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { PDFDocument, PDFName, PDFRawStream, StandardFonts } from 'pdf-lib';
+import { PDFDocument, PDFName, PDFRawStream, StandardFonts } from '@cantoo/pdf-lib';
 import { EngineService } from '../../../src/main/services/engine';
 import { embedEditFont, getBundledFontDir, setBundledFontDir } from '../../../src/main/services/fonts';
 

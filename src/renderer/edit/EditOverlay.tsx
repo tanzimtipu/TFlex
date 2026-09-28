@@ -35,6 +35,7 @@ import {
   committedTextRunAt,
   defaultEditTextStyle,
   defaultTextBoxRect,
+  isMaskedRunRect,
   type EditAction,
   type EditState,
   type EditTextStyle,
@@ -613,6 +614,21 @@ export function EditOverlay(props: EditOverlayProps): ReactElement | null {
 
   // Click on a text run (text tool) ---------------------------------------
 
+  /** Phase 52 follow-up — the text-layer items the hit-test may consider.
+   *  The engine masks a MOVED run's old rect with a white rect but leaves
+   *  its text operators in the content stream, so pdf.js still returns the
+   *  phantom item after the proxy refresh. Drop those masked originals so
+   *  neither hover nor a re-select can paint a box on the empty old spot. */
+  const textItemsForInteraction = useCallback(
+    (): TextItemGeom[] => {
+      const items = getTextItems();
+      const commits = edit.committedTextRuns;
+      if (commits === undefined || commits.length === 0) return items;
+      return items.filter((it) => !isMaskedRunRect(commits, page, it));
+    },
+    [edit.committedTextRuns, getTextItems, page],
+  );
+
   /** DEF-153 — SINGLE click on a text run SELECTS it and makes it
    *  movable (the Confirm / Edit action bar + move drag + hint);
    *  the inline editor opens on DOUBLE click (or the bar's Edit).
@@ -620,7 +636,7 @@ export function EditOverlay(props: EditOverlayProps): ReactElement | null {
    *  matching the newest committed text at the click point (DEFF-149(a)). */
   const runAtPoint = useCallback(
     (pt: { x: number; y: number }): TextItemGeom | null => {
-      const items = getTextItems();
+      const items = textItemsForInteraction();
       // Collect every run whose rect contains the click point (a
       // small tolerance keeps a click on the line's vertical center
       // forgiving). Overlapping runs (masked old + engine-committed
@@ -653,7 +669,7 @@ export function EditOverlay(props: EditOverlayProps): ReactElement | null {
       }
       return { ...chosen };
     },
-    [edit.committedTextRuns, page, getTextItems],
+    [edit.committedTextRuns, page, textItemsForInteraction],
   );
 
   // Text-run hover hint + B6 click handling. When the text tool is
@@ -682,7 +698,7 @@ export function EditOverlay(props: EditOverlayProps): ReactElement | null {
       const rect = root.getBoundingClientRect();
       const x = (e.clientX - rect.left) / cssScale;
       const y = (e.clientY - rect.top) / cssScale;
-      const items = getTextItems();
+      const items = textItemsForInteraction();
       const hit = items.find(
         (it) =>
           x >= it.x - 2 &&
@@ -784,7 +800,7 @@ export function EditOverlay(props: EditOverlayProps): ReactElement | null {
       window.removeEventListener("pointerdown", onDown, true);
       window.removeEventListener("mousedown", onDownMouse, true);
     };
-  }, [tool, cssScale, getTextItems, runAtPoint, pageWidthPt, pageHeightPt]);
+  }, [tool, cssScale, textItemsForInteraction, runAtPoint, pageWidthPt, pageHeightPt]);
 
   // Pointer handlers -----------------------------------------------------
 
@@ -1558,7 +1574,15 @@ export function EditOverlay(props: EditOverlayProps): ReactElement | null {
             }
             dispatch({
               type: "push-text-run-commit",
-              run: { page, rect: { ...p.newRect }, text: newText },
+              // Phase 52 follow-up — a MOVE records the masked ORIGINAL rect
+              // so the hit-test can ignore the phantom text item pdf.js still
+              // returns there after the refresh.
+              run: {
+                page,
+                rect: { ...p.newRect },
+                text: newText,
+                ...(moved ? { maskedRect: { ...p.oldRect } } : {}),
+              },
             });
             // Phase 51 items 7/13/15/16 — the move is committed; drop the
             // live session (the payload already carries its text) and CLEAR
@@ -1943,16 +1967,12 @@ function RunCanvasEditor(props: RunCanvasEditorProps): ReactElement {
         letterSpacing: `${(style.charSpacing ?? 0) * cssScale}px`,
         lineHeight: `${fontSizePx * lineHeight}px`,
         paddingLeft: `${(style.indent ?? 0) * cssScale}px`,
-        // Phase 51 (item 11) — the run editor is a text box too: shared
-        // thicker border + rounded corners (tokens), visible on focus via
-        // .edit-run-editor:focus.
-        border: "var(--border-w-box) solid transparent",
-        borderRadius: "var(--radius-box)",
-        outline: "none",
-        resize: "none",
-        overflow: "hidden",
-        whiteSpace: "pre-wrap",
-        margin: 0,
+        // DEF-373 — the run editor's border / radius / outline / resize /
+        // overflow / white-space live in `.edit-run-editor` (styles.css), NOT
+        // here: an inline `border: ... solid transparent` outranks the
+        // `.edit-run-editor:focus { border-color: var(--accent) }` rule, so
+        // focus never painted the accent. The stylesheet now drives exactly
+        // one rounded border (transparent at rest, accent on focus).
       }}
       onPointerDown={(e): void => {
         e.stopPropagation();

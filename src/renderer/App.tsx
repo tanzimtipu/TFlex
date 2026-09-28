@@ -3,6 +3,7 @@ import type { ReactElement } from "react";
 import type {
   AppSettings,
   DocxImageEntry,
+  DocumentProtectionState,
   EditFont,
   ExportPageEntry,
   ExportPagesPayload,
@@ -164,6 +165,26 @@ import { toArrayBuffer } from "./utils/toArrayBuffer";
 import { createDebouncer } from "./utils/debounce";
 import { formatBytes as formatBytesForToast } from "./utils/formatBytes";
 import { downloadBlob } from "./utils/exportDownload";
+import { PasswordPromptDialog } from "./components/PasswordPromptDialog";
+import { ProtectionNotice } from "./components/ProtectionNotice";
+import { EncryptDialog, type EncryptDialogConfirm } from "./components/EncryptDialog";
+import {
+  IDLE_PASSWORD_PROMPT,
+  passwordKindFromEngineError,
+  passwordPromptReducer,
+  type PasswordPromptKind,
+  type PasswordPromptState,
+} from "./security/passwordPrompt";
+import { SessionPasswordStore } from "./security/sessionPasswords";
+import {
+  DEFAULT_ENCRYPT_DEFAULTS,
+  encryptedFilename,
+  normalizeEncryptDefaults,
+} from "./security/encrypt";
+import {
+  saveAsConfirmationText,
+  saveConfirmationText,
+} from "./security/protection";
 import {
   runMergeFromScratch,
   mergeClickStartsFromScratch,
@@ -331,6 +352,17 @@ interface OpenTab {
    *  the current image-placement list, the selection, and the
    *  in-progress crop. Reset to `initialEditState` on tab close. */
   edit: EditState;
+}
+
+/** Phase 52 — the source descriptor `openFromBytes` accepts. Hoisted to a
+ *  named type so the password-prompt flow can stash a pending open in a ref
+ *  and retry it with a password. */
+interface OpenSource {
+  kind: TabMeta["kind"];
+  path: string;
+  displayName: string;
+  onDiskPath: string | null;
+  dedupePath?: boolean;
 }
 
 /** Phase 33 — Multi Mode's rail is no longer a stage-level shared rail:
@@ -535,6 +567,35 @@ export function App(): ReactElement {
   // checkbox can write through the optimizePreset persist path
   // before the OS save dialog opens.
   const [saveAsOpen, setSaveAsOpen] = useState(false);
+  // Phase 52 (feature A) — the password prompt's state machine + the
+  // pending open it is retrying. The open attempt is stashed here so a
+  // cancel simply drops it (no half-open tab).
+  const [passwordPrompt, setPasswordPrompt] =
+    useState<PasswordPromptState>(IDLE_PASSWORD_PROMPT);
+  const pendingPasswordOpenRef = useRef<{
+    bytes: ArrayBuffer;
+    source: OpenSource;
+  } | null>(null);
+  // DEF-372 — the session-only password cache that makes a password follow the
+  // FILE, not the transient engine doc id. Main's `docPasswords` is keyed by
+  // the engine doc id and is cleared by `closeDocument`, so a re-open of the
+  // same file in the same session would re-prompt. This renderer-side store is
+  // in-memory only (gone on restart), consulted before an open that would need
+  // a password, and never persisted, logged or sent over IPC.
+  const sessionPasswordsRef = useRef<SessionPasswordStore | null>(null);
+  if (sessionPasswordsRef.current === null) {
+    sessionPasswordsRef.current = new SessionPasswordStore();
+  }
+  const sessionPasswords = sessionPasswordsRef.current;
+  // Phase 52 (feature B) — per-tab protection state from
+  // `engine.getDocumentProtection`. A tab with no entry (or `null`) is a
+  // plain document.
+  const [protectionByTab, setProtectionByTab] = useState<
+    Record<string, DocumentProtectionState>
+  >({});
+  // Phase 52 (feature D) — the Encrypt dialog + its in-flight flag.
+  const [encryptOpen, setEncryptOpen] = useState(false);
+  const [encryptBusy, setEncryptBusy] = useState(false);
   // Phase 9 — Create-from-images + Export-Pages dialogs. The Create
   // dialog is reachable from the welcome screen (no doc required);
   // the Export dialog requires an active document. The dialogs own
@@ -1377,7 +1438,7 @@ export function App(): ReactElement {
         case "corrupt":
           return `The file could not be read as a PDF ("${splitRecentPath(path).name}"). It may be corrupt or truncated.`;
         case "encrypted":
-          return "Password-protected PDFs are not supported in v1.";
+          return `This PDF is encrypted and could not be opened ("${splitRecentPath(path).name}").`;
         case "io":
           return `Could not open file: ${splitRecentPath(path).name}`;
       }
@@ -1422,21 +1483,28 @@ export function App(): ReactElement {
   const openFromBytes = useCallback(
     async (
       bytes: ArrayBuffer,
-      source: {
-        kind: TabMeta["kind"];
-        path: string;
-        displayName: string;
-        onDiskPath: string | null;
-        /** DEF-170 — set false when opening a derived / in-memory result
-         *  (extract, split, optimize, create). Each one is a brand-new
-         *  document, so the reducer must not collapse it onto a previous
-         *  result tab that shares the same synthetic path. Real files and
-         *  samples keep the default (re-opening the same path refocuses
-         *  the existing tab). */
-        dedupePath?: boolean;
+      source: OpenSource,
+      options?: {
+        /** Phase 52 — a password to try on both open paths. */
+        password?: string;
+        /** Phase 52 — called instead of toasting when either open path
+         *  reports `need-password` / `incorrect-password`. The caller owns
+         *  the prompt + retry. */
+        onPasswordRequired?: (kind: PasswordPromptKind) => void;
       },
     ): Promise<{ tabId: string; engineDocId: string } | null> => {
-      const parsed = await openPdfDocument(bytes);
+      const parsed = await openPdfDocument(bytes, options?.password);
+      if ("password" in parsed) {
+        // Encrypted: hand the classification to the caller (the open flow
+        // prompts + retries); no toast, no tab. A caller with no prompt
+        // (a derived-bytes open) fails loud rather than silently.
+        if (options?.onPasswordRequired !== undefined) {
+          options.onPasswordRequired(parsed.password);
+        } else {
+          pushToast("error", `"${source.displayName}" is password-protected.`);
+        }
+        return null;
+      }
       if (!("doc" in parsed)) {
         pushToast("error", toastForPdfError(parsed.error, source.path));
         return null;
@@ -1505,12 +1573,31 @@ export function App(): ReactElement {
       //                        yet, but we still want the real engine to
       //                        drive rotate / delete / split / saveAs).
       //                        On the stub we just register the pageCount.
+      //
+      // Phase 52 — the same optional password opens an encrypted document
+      // on the edit path; a password failure is reported to the caller so
+      // it can prompt rather than toast.
+      const passwordFailure = (loadError: unknown): boolean => {
+        const kind = passwordKindFromEngineError(
+          loadError as Parameters<typeof passwordKindFromEngineError>[0],
+        );
+        if (kind === null) return false;
+        if (options?.onPasswordRequired !== undefined) {
+          options.onPasswordRequired(kind);
+        } else {
+          pushToast("error", `"${source.displayName}" is password-protected.`);
+        }
+        void parsed.doc.destroy().catch(() => undefined);
+        return true;
+      };
       if (source.onDiskPath !== null) {
         const loadResult = await engineRef.current.loadDocument(
           engineDocId,
           source.onDiskPath,
+          options?.password,
         );
         if (!loadResult.ok) {
+          if (passwordFailure(loadResult.error)) return null;
           pushToast("error", describeEngineError("open-error", source.onDiskPath));
           void parsed.doc.destroy().catch(() => undefined);
           return null;
@@ -1523,8 +1610,10 @@ export function App(): ReactElement {
           const loadResult = await engineRef.current.loadDocumentBytes(
             engineDocId,
             bytes,
+            options?.password,
           );
           if (!loadResult.ok) {
+            if (passwordFailure(loadResult.error)) return null;
             pushToast(
               "error",
               describeEngineError("open-error", source.displayName),
@@ -1591,6 +1680,16 @@ export function App(): ReactElement {
         ...prev,
         [id]: seeded,
       }));
+      // Phase 52 (feature B) — read the source document's encryption state
+      // once so the banner can report it truthfully. A backend without the
+      // channel simply leaves the tab unmarked (plain).
+      if (engineRef.current.getDocumentProtection !== undefined) {
+        const protectionResult =
+          await engineRef.current.getDocumentProtection(engineDocId);
+        if (protectionResult.ok && protectionResult.value !== null) {
+          setProtectionByTab((prev) => ({ ...prev, [id]: protectionResult.value as DocumentProtectionState }));
+        }
+      }
       dispatchTabs({ type: "open", tab: meta, dedupePath: source.dedupePath });
 
       // Phase 4 — kick off the form-field load in the background. The
@@ -1620,9 +1719,66 @@ export function App(): ReactElement {
       // opened document without racing the `openTabs` state commit
       // (`openTabsRef` is stale until React re-renders — see the
       // loadFormFields comment above).
+      //
+      // DEF-372 — a password that successfully opened a real on-disk file is
+      // remembered for the rest of the session, keyed by the file (not the
+      // transient engine doc id), so closing and re-opening that file does not
+      // re-prompt. Byte-only opens (samples, derived create/split outputs)
+      // have no stable on-disk identity and are never cached. A failed open
+      // returned before this point, so only a password that worked is stored;
+      // a later stale entry is overwritten when a retry succeeds.
+      if (
+        source.onDiskPath !== null &&
+        typeof options?.password === "string" &&
+        options.password.length > 0
+      ) {
+        sessionPasswords.remember(source.onDiskPath, options.password);
+      }
       return { tabId: effectiveId, engineDocId };
     },
-    [pushToast, toastForPdfError],
+    [pushToast, sessionPasswords, toastForPdfError],
+  );
+
+  /** Phase 52 — keep the Recents list honest after a successful open (the
+   *  plain path and the post-password retry both call it). */
+  const recordRecentOpen = useCallback(
+    async (path: string, displayName: string): Promise<void> => {
+      if (settings === null) return;
+      const recent: RecentFile = {
+        path,
+        name: displayName,
+        openedAt: new Date().toISOString(),
+      };
+      await window.tflex.addRecentFile(recent);
+    },
+    [settings],
+  );
+
+  /** Phase 52 (feature A) — one open attempt that routes password failures
+   *  into the prompt instead of a toast. The pending open is stashed so a
+   *  cancel can drop it without creating a tab. */
+  const attemptFileOpen = useCallback(
+    async (
+      bytes: ArrayBuffer,
+      source: OpenSource,
+      password: string | undefined,
+    ): Promise<{ tabId: string; engineDocId: string } | null> => {
+      return openFromBytes(bytes, source, {
+        password,
+        onPasswordRequired: (kind: PasswordPromptKind): void => {
+          pendingPasswordOpenRef.current = { bytes, source };
+          setPasswordPrompt((prev) =>
+            passwordPromptReducer(
+              prev,
+              kind === "incorrect"
+                ? { type: "incorrect" }
+                : { type: "need", target: source.displayName },
+            ),
+          );
+        },
+      });
+    },
+    [openFromBytes],
   );
 
   const openPdfFromPath = useCallback(
@@ -1644,24 +1800,69 @@ export function App(): ReactElement {
         return null;
       }
       const displayName = splitRecentPath(path).name;
-      const opened = await openFromBytes(toArrayBuffer(result.value), {
+      const source: OpenSource = {
         kind: "file",
         path,
         displayName,
         onDiskPath: path,
-      });
-      if (settings !== null) {
-        const recent: RecentFile = {
-          path,
-          name: displayName,
-          openedAt: new Date().toISOString(),
-        };
-        await window.tflex.addRecentFile(recent);
-      }
-      return opened?.tabId ?? null;
+      };
+      // DEF-372 — if this file's password is already known for the session,
+      // hand it to the open so neither pdf.js nor the engine prompts again.
+      // An absent entry (first open, a different file, or a fresh app session)
+      // falls through to the normal prompt. A stale entry fails with
+      // `incorrect-password`, which routes into the same prompt/retry.
+      const sessionPassword = sessionPasswords.recall(path);
+      const opened = await attemptFileOpen(toArrayBuffer(result.value), source, sessionPassword);
+      if (opened === null) return null;
+      await recordRecentOpen(path, displayName);
+      return opened.tabId;
     },
-    [openFromBytes, pushToast, settings, toastForPdfError, trackAndSave],
+    [
+      attemptFileOpen,
+      pushToast,
+      recordRecentOpen,
+      sessionPasswords,
+      settings,
+      toastForPdfError,
+      trackAndSave,
+    ],
   );
+
+  /** Phase 52 (feature A) — the prompt's retry. Reopens the pending file
+   *  with the submitted password; an incorrect one leaves the prompt open
+   *  with the inline sentence, a correct one opens the tab and records the
+   *  recent. A cancel never reaches here. */
+  const onPasswordPromptSubmit = useCallback(
+    async (password: string): Promise<void> => {
+      const pending = pendingPasswordOpenRef.current;
+      if (pending === null) return;
+      setPasswordPrompt((prev) => passwordPromptReducer(prev, { type: "submit" }));
+      const opened = await openFromBytes(pending.bytes, pending.source, {
+        password,
+        onPasswordRequired: (kind: PasswordPromptKind): void => {
+          setPasswordPrompt((prev) =>
+            passwordPromptReducer(
+              prev,
+              kind === "incorrect"
+                ? { type: "incorrect" }
+                : { type: "need", target: pending.source.displayName },
+            ),
+          );
+        },
+      });
+      if (opened === null) return;
+      pendingPasswordOpenRef.current = null;
+      setPasswordPrompt((prev) => passwordPromptReducer(prev, { type: "opened" }));
+      await recordRecentOpen(pending.source.path, pending.source.displayName);
+      routeOpenedTabRef.current?.show(opened.tabId);
+    },
+    [openFromBytes, recordRecentOpen],
+  );
+
+  const onPasswordPromptCancel = useCallback((): void => {
+    pendingPasswordOpenRef.current = null;
+    setPasswordPrompt((prev) => passwordPromptReducer(prev, { type: "cancel" }));
+  }, []);
 
   /** Phase 35 — the ONE renderer open path shared by the Open dialog, the
    *  OS-open listener and the OS file drop. It is exactly the dialog flow
@@ -1846,6 +2047,13 @@ export function App(): ReactElement {
     const open = openTabsRef.current[id];
     if (open !== undefined) {
       stubRendererEngine.dispose(open.session.engineDocId);
+      // Phase 52 — drop the engine document and clear its session password
+      // (a password lives only in main's per-document session).
+      // DEF-372 — the renderer's FILE-keyed session password cache is
+      // deliberately NOT cleared here: the acceptance requires that closing
+      // and re-opening the same file in one session does not re-prompt. It
+      // lives in renderer memory only and is gone when the app restarts.
+      void engineRef.current.closeDocument?.(open.session.engineDocId);
       // Phase 35 item 8 — if the standalone print window was opened for this
       // tab's document, tell it the document is gone so it shows its gone
       // state instead of stale pages (main forwards the event only when the
@@ -1853,6 +2061,13 @@ export function App(): ReactElement {
       // document is untouched).
       void window.tflex.printWindow?.notifyDocumentGone(open.session.engineDocId);
     }
+    // Phase 52 — forget the tab's protection state.
+    setProtectionByTab((prev) => {
+      if (!(id in prev)) return prev;
+      const next = { ...prev };
+      delete next[id];
+      return next;
+    });
     // DEF-166 — drop the tab's live-overlay annotation id set with it
     // so a freshly-opened tab never inherits stale live-text marks.
     liveAnnTextIdsRef.current.delete(id);
@@ -3801,9 +4016,12 @@ export function App(): ReactElement {
         canUndo: flags.canUndo,
         canRedo: flags.canRedo,
       });
-      pushToast("info", `Saved ${tab.displayName}.`);
+      pushToast(
+        "info",
+        saveConfirmationText(tab.displayName, protectionByTab[tabId] !== undefined),
+      );
     },
-    [pushToast, setEngineUiFor],
+    [protectionByTab, pushToast, setEngineUiFor],
   );
 
   // DEF-040 — Save-As is now a two-step flow: the renderer modal
@@ -3851,9 +4069,12 @@ export function App(): ReactElement {
         canUndo: flags.canUndo,
         canRedo: flags.canRedo,
       });
-      pushToast("info", `Saved a copy of ${tab.displayName}.`);
+      pushToast(
+        "info",
+        saveAsConfirmationText(tab.displayName, protectionByTab[tabId] !== undefined),
+      );
     },
-    [pushToast, setEngineUiFor],
+    [protectionByTab, pushToast, setEngineUiFor],
   );
 
   // Phase 40 item 4 — "Merge PDFs" with NO document open. The Welcome
@@ -4454,6 +4675,73 @@ const onPickMergeFile = useCallback(async (): Promise<{ path: string; bytes: Uin
     if (activeTabIdRefLocal.current === null) return;
     setAuditOpen(true);
   }, []);
+
+  // ---- Phase 52 (feature D): Encrypt document ----
+
+  const onEncryptClick = useCallback((): void => {
+    if (activeTabIdRefLocal.current === null) return;
+    setEncryptOpen(true);
+  }, []);
+
+  const onCancelEncrypt = useCallback((): void => {
+    setEncryptOpen(false);
+  }, []);
+
+  /** Produce the encrypted bytes via the engine, then write them through the
+   *  renderer's existing bytes-save flow (`downloadBlob`, the same OS save
+   *  picker the FDF / export flows use). The persisted defaults are
+   *  PASSWORD-FREE (algorithm + permissions only). */
+  const onEncryptConfirm = useCallback(
+    async (confirm: EncryptDialogConfirm): Promise<void> => {
+      const activeId = activeTabIdRefLocal.current;
+      const open = activeId === null ? undefined : openTabsRef.current[activeId];
+      if (open === undefined) {
+        setEncryptOpen(false);
+        return;
+      }
+      if (engineRef.current.encryptDocument === undefined) {
+        pushToast("error", "Encrypting requires the Phase 52 backend update.");
+        return;
+      }
+      setEncryptBusy(true);
+      try {
+        const result = await engineRef.current.encryptDocument(
+          open.session.engineDocId,
+          confirm.options,
+        );
+        if (!result.ok) {
+          pushToast(
+            "error",
+            describeEngineError(result.error.code, result.error.message),
+          );
+          return;
+        }
+        setEncryptOpen(false);
+        // Remember the defaults WITHOUT a password.
+        setSettings((prev) => {
+          if (prev === null) return prev;
+          const updated = preferencesReducer(prev, {
+            type: "set-encrypt-defaults",
+            value: confirm.defaults,
+          });
+          if (updated !== prev) trackAndSave(updated);
+          return updated;
+        });
+        const suggested = encryptedFilename(open.displayName);
+        downloadBlob(
+          new Blob([result.value], { type: "application/pdf" }),
+          suggested,
+        );
+        pushToast(
+          "info",
+          `Encrypted copy of ${open.displayName} saved. It opens with the user password.`,
+        );
+      } finally {
+        setEncryptBusy(false);
+      }
+    },
+    [pushToast, trackAndSave],
+  );
 
   const onCancelAudit = useCallback((): void => {
     setAuditOpen(false);
@@ -5778,9 +6066,13 @@ pushToast(
       const bytes = toArrayBuffer(bytesRes.value);
       const parsed = await openPdfDocument(bytes);
       if (!("doc" in parsed)) {
+        // The engine's own serialized bytes are already decrypted, so a
+        // password failure here is a corrupt/unreadable refresh rather
+        // than an interactive prompt.
+        const code = "error" in parsed ? parsed.error : "corrupt";
         pushToast(
           "error",
-          `Could not refresh document proxy: ${toastForPdfError(parsed.error, open.displayName)}`,
+          `Could not refresh document proxy: ${toastForPdfError(code, open.displayName)}`,
         );
         return false;
       }
@@ -7826,6 +8118,7 @@ pushToast(
       exportPages: onExportClick,
       exportText: onTextExportClick,
       exportDocx: onDocxExportClick,
+      encryptDocument: onEncryptClick,
       recognizeText: onOcrClick,
       batchOcr: (): void => {
         void onBatchOcr();
@@ -7870,6 +8163,7 @@ pushToast(
       onExportClick,
       onTextExportClick,
       onDocxExportClick,
+      onEncryptClick,
       onOcrClick,
       onBatchOcr,
       onOpenOcrSuspects,
@@ -8592,7 +8886,7 @@ pushToast(
             const engine = engineFor(tabId);
             const ann = annotationHandlers(tabId);
             const fs = formsAndSignaturesHandlers(tabId);
-            return (
+            const document = (
                   <DocumentView
                     doc={open.session.doc}
                     pageCount={engine.engineState.pageCount}
@@ -8879,6 +9173,26 @@ pushToast(
                         : null
                     }
                   />
+            );
+            // Phase 52 (feature B) — an encrypted document keeps every tool
+            // enabled; the banner only reports the encryption state.
+            const protection = protectionByTab[meta.id];
+            if (protection === undefined) return document;
+            return (
+              <div className="document-column" data-document-protected>
+                <ProtectionNotice
+                  protection={protection}
+                  onDismiss={(): void =>
+                    setProtectionByTab((prev) => {
+                      if (!(meta.id in prev)) return prev;
+                      const next = { ...prev };
+                      delete next[meta.id];
+                      return next;
+                    })
+                  }
+                />
+                {document}
+              </div>
             );
           }}
         />
@@ -9171,6 +9485,12 @@ pushToast(
         // silently overwrote 'max' with 'none'. The two flows now
         // share no state and never collide.
         saveAsLinearize={settings.saveAsLinearize ?? false}
+        // Phase 52 (feature C) — saving an opened encrypted document
+        // writes a decrypted copy; the dialog says so before the OS
+        // picker opens.
+        protectedDocument={
+          tabs.activeId !== null && protectionByTab[tabs.activeId] !== undefined
+        }
         onSaveAsLinearizeChange={(next): void => {
           setSettings((prev) => {
             if (prev === null) return prev;
@@ -9190,6 +9510,30 @@ pushToast(
           }
         }}
         onClose={(): void => setSaveAsOpen(false)}
+      />
+      {/* Phase 52 (feature A) — the password prompt for an encrypted open.
+          Cancel clears the pending open (no half-open tab). */}
+      <PasswordPromptDialog
+        open={passwordPrompt.phase !== "idle"}
+        target={passwordPrompt.target}
+        error={passwordPrompt.error}
+        busy={passwordPrompt.phase === "checking"}
+        attempts={passwordPrompt.attempts}
+        onSubmit={(password): void => {
+          void onPasswordPromptSubmit(password);
+        }}
+        onCancel={onPasswordPromptCancel}
+      />
+      {/* Phase 52 (feature D) — the Create-encrypted dialog. Defaults are
+          remembered WITHOUT a password. */}
+      <EncryptDialog
+        open={encryptOpen}
+        defaults={normalizeEncryptDefaults(settings.encryptDefaults ?? DEFAULT_ENCRYPT_DEFAULTS)}
+        busy={encryptBusy}
+        onConfirm={(confirm): void => {
+          void onEncryptConfirm(confirm);
+        }}
+        onClose={onCancelEncrypt}
       />
       <TextExportDialog
         open={textExportOpen}

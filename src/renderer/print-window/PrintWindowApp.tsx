@@ -56,7 +56,7 @@ function buildDefaultDeps(): PrintWindowDeps {
         return { error: bytes.error.message };
       }
       const opened = await openPdfDocument(bytes.value);
-      if ("error" in opened) {
+      if (!("doc" in opened)) {
         return { error: "This document could not be opened for printing." };
       }
       return { doc: opened.doc };

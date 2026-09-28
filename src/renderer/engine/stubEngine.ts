@@ -30,6 +30,7 @@ import type {
   EditImagePayload,
   EditTextRunPayload,
   EngineError,
+  EngineOpenError,
   ExportPageEntry,
   ExportPagesPayload,
   FillFormFieldPayload,
@@ -318,7 +319,8 @@ export class StubRendererEngine implements EngineApi {
   async loadDocument(
     _docId: string,
     _path: string,
-  ): Promise<Result<ArrayBuffer, "open-error">> {
+    _password?: string,
+  ): Promise<Result<ArrayBuffer, EngineOpenError>> {
     // The real engine reads bytes from disk; the stub has no bytes of its
     // own and the renderer never actually consumes these — PDF.js uses
     // the renderer-side `bytes` it already has. We return a small
@@ -330,7 +332,8 @@ export class StubRendererEngine implements EngineApi {
   async loadDocumentBytes(
     _docId: string,
     _bytes: ArrayBuffer | Uint8Array,
-  ): Promise<Result<ArrayBuffer, "open-error">> {
+    _password?: string,
+  ): Promise<Result<ArrayBuffer, EngineOpenError>> {
     // Same placeholder as loadDocument — the renderer keeps its own bytes
     // for PDF.js display.
     return ok(new ArrayBuffer(0));

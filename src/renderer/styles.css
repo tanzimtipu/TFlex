@@ -6500,10 +6500,17 @@ rect.ann-highlight.ann-preview {
   pointer-events: none;
 }
 
+/* Phase 52 regression fix — a form field sits ON the document, so the
+ * editor must not paint a background we do not own. An opaque fill (dark
+ * slate in dark mode) covered the page's own text and, when many fields
+ * piled up, read as solid dark blocks over the document. The affordance is
+ * the accent border; the fill stays transparent so the page shows through.
+ * Document ink is fixed dark because every PDF page is white paper,
+ * regardless of the app theme. */
 .form-editor {
   pointer-events: auto;
-  background: rgba(255, 255, 255, 0.92);
-  color: var(--fg-strong);
+  background: transparent;
+  color: #0f172a;
   border: 1px solid var(--accent);
   border-radius: var(--radius-1);
   padding: 2px 4px;
@@ -6515,9 +6522,9 @@ rect.ann-highlight.ann-preview {
 }
 
 :root[data-theme="dark"] .form-editor {
-  background: rgba(15, 23, 42, 0.85);
+  background: transparent;
   border-color: var(--accent);
-  color: var(--fg-strong);
+  color: #0f172a;
 }
 
 /* The frosted chip floats directly over the paper-white page. The
@@ -6531,6 +6538,10 @@ rect.ann-highlight.ann-preview {
 }
 
 .form-editor:focus {
+  /* Focus is the one moment the field may own a fill: the user is typing
+   * into it, so a light wash keeps the caret and text legible. Away from
+   * focus the page content stays fully visible. */
+  background: rgba(255, 255, 255, 0.92);
   border-color: var(--accent-hover);
   box-shadow: 0 0 0 1px var(--accent-soft);
 }
@@ -6556,7 +6567,10 @@ rect.ann-highlight.ann-preview {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  background: var(--bg-raised);
+  /* Same rule as .form-editor: the toggle sits on white paper, so it must
+   * not paint an app-chrome fill over the document. The border (and the
+   * check mark) is the affordance. */
+  background: transparent;
   border: 1px solid var(--border-strong);
   border-radius: var(--radius-1);
   cursor: pointer;
@@ -6611,7 +6625,8 @@ rect.ann-highlight.ann-preview {
   justify-content: center;
   border: 1.5px solid var(--border-strong);
   border-radius: 999px;
-  background: var(--bg-raised);
+  /* Transparent, like the checkbox — no chrome fill over the page. */
+  background: transparent;
   transition: border-color var(--motion-fast) var(--ease-out);
 }
 
@@ -9388,7 +9403,9 @@ rect.ann-highlight.ann-preview {
   border: 1.5px solid var(--accent);
   border-style: solid;
   border-radius: 2px;
-  box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.18);
+  /* Phase 52 follow-up — ONE selection outline. The former 2px
+   * box-shadow ring was a second concentric border; the single solid
+   * accent border carries the selection on its own. */
 }
 
 /* Box-tool drag preview: dashed rect that follows the drag. */
@@ -9831,11 +9848,25 @@ rect.ann-highlight.ann-preview {
 .edit-run-editor {
   z-index: 4;
   box-sizing: border-box;
+  /* DEF-373 — the resting/focused border lives HERE, not in the textarea's
+   * inline style: an inline `border: ... solid transparent` outranks the
+   * `.edit-run-editor:focus { border-color: ... }` rule (inline beats a
+   * stylesheet rule), so focus never painted the accent. With the resting
+   * border in the stylesheet, the more specific focus rule below wins. */
+  border: var(--border-w-box) solid transparent;
+  border-radius: var(--radius-box);
+  outline: none;
+  resize: none;
+  overflow: hidden;
+  white-space: pre-wrap;
+  margin: 0;
 }
 
 .edit-run-editor:focus {
+  /* Phase 52 follow-up — the focused run editor keeps exactly ONE rounded
+   * border: the accent border colour changes, and the former 2px
+   * box-shadow ring (a SECOND outline on top of the border) is gone. */
   border-color: var(--accent);
-  box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.18);
 }
 
 /* ---------------------------------------------------------------------------
@@ -14543,6 +14574,7 @@ cursor: pointer;
 .action-dock-verb[data-dock-verb='exportText']:not(.action-dock-verb-primary):not([aria-pressed='true']):not(:disabled) { color: var(--sem-affirmative); }
 .action-dock-verb[data-dock-verb='exportDocx']:not(.action-dock-verb-primary):not([aria-pressed='true']):not(:disabled) { color: var(--sem-affirmative); }
 .action-dock-verb[data-dock-verb='createFromImages']:not(.action-dock-verb-primary):not([aria-pressed='true']):not(:disabled) { color: var(--sem-affirmative); }
+.action-dock-verb[data-dock-verb='encrypt']:not(.action-dock-verb-primary):not([aria-pressed='true']):not(:disabled) { color: var(--sem-attention); }
 
 /* DEF-344 — the hover / pressed INK. The per-verb family rules above are
  * (0,5,0) and the old state rules were (0,3,0), so a hovered or pressed family
@@ -15994,3 +16026,138 @@ cursor: pointer;
 .accounts-google-mark {
   flex: 0 0 auto;
 }
+
+/* ==========================================================================
+ * Phase 52 — encrypted PDF support (renderer surfaces)
+ *
+ * The protection banner is a FLOW element inside the pane's document column,
+ * so it reserves space and never overlays the toolbar or the page. Motion is
+ * the centralised token set (--motion-duration-* / --motion-ease-*): a short
+ * enter lift, no bounce, identical in every theme, and reduced-motion safe
+ * because the animation collapses to the reduced duration in animations.css.
+ * ========================================================================== */
+
+.document-column {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+}
+
+/* Inside the banner column the scroller takes the REMAINING height (the
+ * banner reserves its own row) instead of the global 100%. */
+.document-column > .document-scroller {
+  flex: 1 1 auto;
+  height: auto;
+  min-height: 0;
+}
+
+.protection-notice {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--sp-2);
+  padding: var(--sp-2) var(--space-standard);
+  border-bottom: 1px solid var(--border);
+  background: var(--warning-soft);
+  color: var(--fg);
+  font-size: var(--fs-sm);
+  line-height: 1.45;
+  animation: protection-notice-in var(--motion-duration-standard) var(--motion-ease-enter) both;
+}
+
+@keyframes protection-notice-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.protection-notice-icon {
+  color: var(--warning);
+  flex: 0 0 auto;
+  margin-top: 1px;
+}
+
+.protection-notice-body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.protection-notice-title {
+  margin: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--sp-2);
+  font-weight: 600;
+  color: var(--fg-strong);
+}
+
+.protection-notice-algorithm {
+  font-weight: 500;
+  color: var(--fg-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.protection-notice-line {
+  margin: 0;
+  color: var(--fg);
+}
+
+.protection-notice-key {
+  color: var(--fg-muted);
+}
+
+.protection-notice-enforcement {
+  margin: 0;
+  color: var(--fg-muted);
+}
+
+.protection-notice-dismiss {
+  margin-left: auto;
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border: none;
+  border-radius: var(--radius-2);
+  background: transparent;
+  color: var(--fg-muted);
+  cursor: pointer;
+  transition: background-color var(--motion-duration-fast) var(--motion-ease-standard);
+}
+
+.protection-notice-dismiss:hover {
+  background: var(--warning);
+  color: var(--bg-base);
+}
+
+/* The Encrypt dialog's permission list can be tall; keep the dialog bounded
+ * and scroll the list rather than the whole sheet. */
+.encrypt-permissions {
+  max-height: 230px;
+  overflow-y: auto;
+}
+
+.modal-hint {
+  margin: 0 0 var(--sp-2);
+  color: var(--fg-muted);
+  font-size: var(--fs-xs);
+}
+
+/* The decrypted-save note in the Save-As dialog. Warning-toned so it reads
+ * as a consequence, not decoration; the single accent colour is untouched. */
+.save-as-decrypt-note {
+  color: var(--warning);
+  font-weight: 500;
+}
+

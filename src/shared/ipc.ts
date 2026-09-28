@@ -7,9 +7,12 @@ import type {
   AppSettings,
   CropEntry,
   DocxImageEntry,
+  DocumentProtection,
   EditImagePayload,
   EditTextRunPayload,
+  EncryptDocumentOptions,
   EngineState,
+  EngineOpenError,
   ExportPageEntry,
   ExportPagesPayload,
   FdfOpenError,
@@ -206,6 +209,13 @@ export const IPC = {
   engineAddWatermark: "engine:addWatermark",
   engineGetWatermarks: "engine:getWatermarks",
   engineDeleteWatermark: "engine:deleteWatermark",
+  // Phase 52 — encrypted PDF support. `engine:getDocumentProtection` returns
+  // the source document's encryption state (or null); `engine:encryptDocument`
+  // produces an encrypted copy of the current document; `engine:closeDocument`
+  // drops a document and its session password.
+  engineGetDocumentProtection: "engine:getDocumentProtection",
+  engineEncryptDocument: "engine:encryptDocument",
+  engineCloseDocument: "engine:closeDocument",
   signaturesList: "signatures:list",
   signaturesSave: "signatures:save",
   signaturesDelete: "signatures:delete",
@@ -350,11 +360,31 @@ export interface TFlexApiEngine {
   loadDocument(
     docId: string,
     path: string,
-  ): Promise<Result<ArrayBuffer, "open-error">>;
+    password?: string,
+  ): Promise<Result<ArrayBuffer, EngineOpenError>>;
   loadDocumentBytes(
     docId: string,
     bytes: ArrayBuffer | Uint8Array,
-  ): Promise<Result<ArrayBuffer, "open-error">>;
+    password?: string,
+  ): Promise<Result<ArrayBuffer, EngineOpenError>>;
+  /** Phase 52 — the opened document's encryption state (algorithm / revision
+   *  / CFM and the permission flags read from the file), or `null` for an
+   *  unencrypted document. Display-only. Optional so a pre-phase backend
+   *  degrades instead of crashing. */
+  getDocumentProtection?(
+    docId: string,
+  ): Promise<Result<DocumentProtection, import("./types").EngineError>>;
+  /** Phase 52 — produce an encrypted copy (AES-256 default / AES-128) of the
+   *  current document and return the bytes for the existing save/export flow
+   *  to write. The open document is not mutated. Optional like the other
+   *  post-phase methods. */
+  encryptDocument?(
+    docId: string,
+    options: EncryptDocumentOptions,
+  ): Promise<Result<ArrayBuffer, import("./types").EngineError>>;
+  /** Phase 52 — drop a document and clear its session password. Call on tab
+   *  close. Optional. */
+  closeDocument?(docId: string): Promise<void>;
   applyOp(
     docId: string,
     op: import("./types").OpEntry,

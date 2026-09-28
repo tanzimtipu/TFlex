@@ -1,7 +1,7 @@
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import fontkit from '@pdf-lib/fontkit';
-import { PDFDocument, StandardFonts, type PDFFont } from 'pdf-lib';
+import { PDFDocument, StandardFonts, type PDFFont } from '@cantoo/pdf-lib';
 import type { EditFont } from '../../shared/types';
 import { isBundledEditFont, type BundledEditFont } from './text-style';
 
@@ -94,6 +94,50 @@ function customNameFor(family: BundledEditFont, bold: boolean, italic: boolean):
   return `TFlex${family.replace(/[^A-Za-z0-9]/g, '')}${suffix}`;
 }
 
+/**
+ * Phase 52 — @pdf-lib/fontkit compatibility shim for @cantoo/pdf-lib.
+ *
+ * The fork's `CustomFontSubsetEmbedder.serializeFont` prefers a SYNC
+ * `subset.encode()` when present and only falls back to the Node-style
+ * `subset.encodeStream()`. `@pdf-lib/fontkit` v1 (the installed embedding
+ * engine) exposes `encode(stream)` — a different Node-stream signature — so
+ * the fork calls it with no argument and it throws
+ * (`Cannot read properties of undefined (reading 'pos')`). Wrapping the
+ * fontkit result hides `encode` on the subset, which makes the fork take its
+ * documented `encodeStream()` path and embed the subset correctly. No new
+ * dependency is added and unencrypted font behaviour is unchanged.
+ */
+function hideSubsetEncode(subset: Record<string, unknown>): Record<string, unknown> {
+  return new Proxy(subset, {
+    get(target, prop) {
+      if (prop === 'encode') return undefined;
+      const value = Reflect.get(target, prop);
+      return typeof value === 'function' ? value.bind(target) : value;
+    },
+  });
+}
+
+/** fontkit with the subset-encode shim applied, for `registerFontkit`. */
+const compatibleFontkit = {
+  create(buffer: Uint8Array, postscriptName?: string) {
+    const font = fontkit.create(buffer, postscriptName) as unknown as
+      | (Record<string, unknown> & { createSubset?: () => Record<string, unknown> })
+      | null;
+    if (!font || typeof font.createSubset !== 'function') return font;
+    return new Proxy(font, {
+      get(target, prop) {
+        if (prop === 'createSubset') {
+          const createSubset = target.createSubset?.bind(target);
+          return () => hideSubsetEncode(createSubset!());
+        }
+        const value = Reflect.get(target, prop);
+        return typeof value === 'function' ? value.bind(target) : value;
+      },
+    });
+  },
+};
+
+
 /** Map an EditFont allowlist value to the matching pdf-lib StandardFonts
  *  enum entry. All three use WinAnsiEncoding so Latin text round-trips. */
 function standardFontFor(font: EditFont): StandardFonts {
@@ -184,7 +228,9 @@ export async function embedEditFont(
         `font ${JSON.stringify(family)} (${variantLabel(bold, italic)}): cannot read bundled font file ${file} (${why})`,
       );
     }
-    doc.registerFontkit(fontkit);
+    doc.registerFontkit(
+      compatibleFontkit as unknown as Parameters<PDFDocument['registerFontkit']>[0],
+    );
     try {
       font = await doc.embedFont(bytes, {
         subset: true,

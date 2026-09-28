@@ -1,6 +1,6 @@
 {
     "name": "tflex",
-    "version": "1.43.0",
+    "version": "1.44.0",
     "description": "Jovrel - desktop PDF studio for Windows",
     "repository": "tanzimtipu/TFlex",
     "type": "module",
@@ -25,6 +25,7 @@
         "neonFunctionApiUrl": "https://br-purple-tooth-b31y4y7b-api.compute.c-4.ap-southeast-1.aws.neon.tech/"
     },
     "dependencies": {
+        "@cantoo/pdf-lib": "^2.11.1",
         "@fontsource-variable/inter": "^5.2.5",
         "@neon/config": "^1.7.2",
         "@neon/env": "^1.4.3",

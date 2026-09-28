@@ -181,6 +181,11 @@ export interface AppSettings {
    *  settings.ts. The session/JWT is NOT a settings field — it lives only
    *  in the encrypted vault (`src/main/services/accounts/vault.ts`). */
   lastSyncedAt?: string;
+  /** Phase 52 — remembered defaults for the Create-encrypted dialog:
+   *  algorithm + the eight permission toggles. No password is ever a
+   *  setting. Validated preserve-if-valid in settings.ts; a missing field
+   *  resolves to AES-256 with all permissions allowed (consumer default). */
+  encryptDefaults?: EncryptDefaults;
 }
 
 /** Phase 6 — what the renderer gets back from `app:getInfo`. The
@@ -365,6 +370,84 @@ export type EngineError =
   /** Phase 32 — the source and target of a cross-document move are the
    *  same document id (a document must never occupy both panes). */
   | 'same-document';
+
+// ---------------------------------------------------------------------------
+// Phase 52 — encrypted PDF support (engine half)
+// ---------------------------------------------------------------------------
+
+/** Phase 52 — typed password failures on the EDIT open path, mirroring
+ *  pdf.js's `PasswordResponses.NEED_PASSWORD` / `INCORRECT_PASSWORD` so the
+ *  display path (pdf.js) and the edit path (this engine) speak the same
+ *  language. `need-password` means no/empty password was supplied and the
+ *  document requires one; `incorrect-password` means the supplied password
+ *  did not open the document. */
+export type PasswordError = 'need-password' | 'incorrect-password';
+
+/** Phase 52 — the EDIT open path's error codes: `open-error` covers every
+ *  non-password failure (io/parse/0-page); the password codes are typed so
+ *  the renderer can prompt and retry rather than showing a generic failure. */
+export type EngineOpenError = 'open-error' | PasswordError;
+
+/** Phase 52 — the cipher offered when CREATING an encrypted PDF. AES-256 is
+ *  the default; AES-128 is the compatibility option. RC4 is never offered
+ *  for writing (legacy RC4 files remain openable). */
+export type EncryptAlgorithm = 'aes-256' | 'aes-128';
+
+/** Phase 52 — the eight permission toggles the Create-encrypted dialog
+ *  exposes. These are DISPLAY/WRITE metadata only: the app does not enforce
+ *  them, it records what the document asks. */
+export interface EncryptPermissions {
+  print: boolean;
+  highResPrint: boolean;
+  copy: boolean;
+  accessibleCopy: boolean;
+  modify: boolean;
+  comment: boolean;
+  assemble: boolean;
+  fillForms: boolean;
+}
+
+/** Phase 52 — the Create-encrypted dialog's remembered defaults. */
+export interface EncryptDefaults {
+  algorithm: EncryptAlgorithm;
+  permissions: EncryptPermissions;
+}
+
+/** Phase 52 — payload for `encryptDocument`. `userPassword` is required (the
+ *  file must prompt for something); `ownerPassword` is optional and defaults
+ *  to the user password; `algorithm` defaults to `aes-256`; an omitted or
+ *  partial `permissions` defaults every toggle to allowed. */
+export interface EncryptDocumentOptions {
+  userPassword: string;
+  ownerPassword?: string;
+  algorithm?: EncryptAlgorithm;
+  permissions?: Partial<EncryptPermissions>;
+}
+
+/** Phase 52 — the cipher read back from an opened encrypted document, in the
+ *  app's own vocabulary. */
+export type ProtectionAlgorithm = 'AES-256' | 'AES-128' | 'RC4-128' | 'RC4-40' | 'unknown';
+
+/** Phase 52 — the truthful protection state of an opened document: the raw
+ *  encryption dictionary values (`/V`, `/R`, `/CFM`) plus the derived
+ *  algorithm and the permission flags read from `/P`. Display-only. */
+export interface DocumentProtectionState {
+  encrypted: true;
+  /** `/V` — encryption algorithm version (1, 2, 4 or 5). */
+  v: number;
+  /** `/R` — security handler revision. */
+  r: number;
+  /** `/CFM` from `/CF`/`/StmF` (e.g. `AESV3`, `AESV2`, `V2`); '' when the
+   *  document predates crypt filters (`/V` 1-2). */
+  cfm: string;
+  algorithm: ProtectionAlgorithm;
+  permissions: EncryptPermissions;
+}
+
+/** Phase 52 — `getDocumentProtection` returns the state for an encrypted
+ *  document, `null` for an unencrypted one. */
+export type DocumentProtection = DocumentProtectionState | null;
+
 
 /**
  * Phase 32 (Multi Mode) — payload for one atomic cross-document page move

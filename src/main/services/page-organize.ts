@@ -6,7 +6,7 @@ import {
   PDFObject,
   PDFRef,
   PDFString,
-} from 'pdf-lib';
+} from '@cantoo/pdf-lib';
 import { err, ok, type Result } from '../../shared/result';
 import type { CropEntry, EngineError, PageLabelEntry } from '../../shared/types';
 

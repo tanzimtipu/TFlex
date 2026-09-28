@@ -2,7 +2,7 @@ import { mkdtemp, rm, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { PDFArray, PDFDocument, PDFName, PDFRef } from 'pdf-lib';
+import { PDFArray, PDFDocument, PDFName, PDFRef } from '@cantoo/pdf-lib';
 import { EngineService } from '../../../src/main/services/engine';
 import { parseAnnotationsFromDoc } from '../../../src/main/services/annotations';
 import type { CreateAnnotationPayload } from '../../../src/shared/types';

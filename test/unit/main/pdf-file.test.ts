@@ -57,14 +57,16 @@ describe('loadPdfFile', () => {
     }
   });
 
-  it('returns encrypted when an /Encrypt marker is present', async () => {
+  it('Phase 52: passes an /Encrypt document through (no longer rejects it)', async () => {
     const content = Buffer.from(
       '%PDF-1.4\n1 0 obj\n<< /Encrypt 2 0 R >>\nendobj\ntrailer\nstartxref\n42\n%%EOF',
     );
     const result = await loadPdfFile(await fixture('enc.pdf', content));
-    expect(result.ok).toBe(false);
-    if (!result.ok) {
-      expect(result.error.code).toBe('encrypted');
+    // The sniff only classifies header/trailer shape now; password handling
+    // belongs to the renderer (pdf.js) and the engine's password-aware load.
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.value.byteLength).toBe(content.length);
     }
   });
 

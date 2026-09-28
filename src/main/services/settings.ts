@@ -6,6 +6,9 @@ import type {
   AppSettings,
   AppTheme,
   EditColor,
+  EncryptAlgorithm,
+  EncryptDefaults,
+  EncryptPermissions,
   LoadSettingsResult,
   RecentFile,
   WatermarkPosition,
@@ -419,6 +422,75 @@ export function normalizeToolUsage(raw: unknown): Record<string, number> | null 
   return out;
 }
 
+/** Phase 52 — the two algorithm ids the Create-encrypted dialog offers. */
+export const ENCRYPT_ALGORITHMS: readonly EncryptAlgorithm[] = ['aes-256', 'aes-128'];
+
+const ENCRYPT_PERMISSION_KEYS: readonly (keyof EncryptPermissions)[] = [
+  'print',
+  'highResPrint',
+  'copy',
+  'accessibleCopy',
+  'modify',
+  'comment',
+  'assemble',
+  'fillForms',
+];
+
+/** Phase 52 — the default when `encryptDefaults` is absent: AES-256 with
+ *  every permission allowed. */
+export const DEFAULT_ENCRYPT_PERMISSIONS: EncryptPermissions = {
+  print: true,
+  highResPrint: true,
+  copy: true,
+  accessibleCopy: true,
+  modify: true,
+  comment: true,
+  assemble: true,
+  fillForms: true,
+};
+
+/**
+ * Phase 52 — normalise `encryptDefaults` (preserve-if-valid, reject-if-
+ * invalid, unknown keys dropped). An absent/empty object rejects the field
+ * (the consumer applies the AES-256/all-allowed default). A present
+ * non-boolean permission or an unknown algorithm rejects the whole field. A
+ * partial `permissions` object fills its missing keys with the default.
+ */
+export function normalizeEncryptDefaults(raw: unknown): EncryptDefaults | null {
+  if (raw === null || typeof raw !== 'object' || Array.isArray(raw)) return null;
+  const r = raw as Record<string, unknown>;
+  let algorithm: EncryptAlgorithm | undefined;
+  if (r.algorithm !== undefined) {
+    if (
+      typeof r.algorithm !== 'string' ||
+      !(ENCRYPT_ALGORITHMS as readonly string[]).includes(r.algorithm)
+    ) {
+      return null;
+    }
+    algorithm = r.algorithm as EncryptAlgorithm;
+  }
+  let permissions: EncryptPermissions | undefined;
+  if (r.permissions !== undefined) {
+    if (r.permissions === null || typeof r.permissions !== 'object' || Array.isArray(r.permissions)) {
+      return null;
+    }
+    const p = r.permissions as Record<string, unknown>;
+    const out: EncryptPermissions = { ...DEFAULT_ENCRYPT_PERMISSIONS };
+    for (const key of ENCRYPT_PERMISSION_KEYS) {
+      const value = p[key];
+      if (value === undefined) continue;
+      if (typeof value !== 'boolean') return null;
+      out[key] = value;
+    }
+    permissions = out;
+  }
+  if (algorithm === undefined && permissions === undefined) return null;
+  return {
+    algorithm: algorithm ?? 'aes-256',
+    permissions: permissions ?? { ...DEFAULT_ENCRYPT_PERMISSIONS },
+  };
+}
+
 function normalizeAnnotationColorEntry(raw: unknown): AnnotationColorPreset | null {
   if (typeof raw === 'string' && raw.length > 0) {
     return { id: raw, hex: raw };
@@ -579,6 +651,14 @@ export function normalizeSettings(raw: unknown): AppSettings {
   const dockUnpinned = normalizeDockUnpinned(rawObj.dockUnpinned);
   if (dockUnpinned !== null) {
     settings.dockUnpinned = dockUnpinned;
+  }
+
+  // Phase 52: Create-encrypted dialog defaults. Reject-if-invalid leaves the
+  // field absent (consumer default: AES-256, all permissions allowed). Only
+  // the algorithm + toggles persist — NEVER a password.
+  const encryptDefaults = normalizeEncryptDefaults(rawObj.encryptDefaults);
+  if (encryptDefaults !== null) {
+    settings.encryptDefaults = encryptDefaults;
   }
 
   // Phase 44 (operator change): accounts feature flag. Strict boolean,

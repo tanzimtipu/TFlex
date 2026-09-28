@@ -29,9 +29,11 @@ export function sniff(buffer: Buffer, filePath: string): Result<ArrayBuffer, Pdf
   if (headWindow.indexOf('%PDF-') === -1) {
     return err('not-pdf', 'file does not have a %PDF- header');
   }
-  if (buffer.indexOf('/Encrypt') !== -1) {
-    return err('encrypted', 'file is encrypted');
-  }
+  // Phase 52 — an /Encrypt marker is NOT a sniff failure: encrypted files
+  // are opened by the renderer (pdf.js prompts for the password) and by the
+  // engine's password-aware load. If the file is actually corrupt, the
+  // engine/pdf.js produces the typed failure instead. The header and
+  // trailer checks below still apply.
   if (buffer.indexOf('startxref') === -1 || buffer.indexOf('%%EOF') === -1) {
     return err('corrupt', 'file has a PDF header but no readable trailer');
   }

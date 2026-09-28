@@ -1,7 +1,7 @@
 import { readFile, writeFile } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
 import { inflateSync } from 'node:zlib';
-import { beginText, concatTransformationMatrix, degrees, drawObject, endText, fill, PDFArray, PDFCheckBox, PDFDict, PDFDocument, PDFDropdown, PDFHexString, PDFName, PDFOptionList, PDFRadioGroup, PDFRef, PDFStream, PDFTextField, rectangle, rgb, setCharacterSpacing, setFillingRgbColor, setFontAndSize, setGraphicsState, setTextMatrix, showText, StandardFonts, TextRenderingMode, setTextRenderingMode, pushGraphicsState, popGraphicsState, type PDFOperator, type PDFObject, type PDFImage, type PDFFont, type PDFPage } from 'pdf-lib';
+import { beginText, concatTransformationMatrix, degrees, drawObject, endText, fill, PDFArray, PDFCheckBox, PDFDict, PDFDocument, PDFDropdown, PDFHexString, PDFName, PDFOptionList, PDFRadioGroup, PDFRef, PDFStream, PDFTextField, rectangle, rgb, setCharacterSpacing, setFillingRgbColor, setFontAndSize, setGraphicsState, setTextMatrix, showText, StandardFonts, TextRenderingMode, setTextRenderingMode, pushGraphicsState, popGraphicsState, translate, rotateRadians, skewRadians, setLineWidth, setDashPattern, moveTo, lineTo, closePath, type PDFOperator, type PDFObject, type PDFImage, type PDFFont, type PDFPage } from '@cantoo/pdf-lib';
 import { err, ok, type Result } from '../../shared/result';
 import type {
   AddStampPayload,
@@ -13,11 +13,15 @@ import type {
   CreateAnnotationPayload,
   CropEntry,
   DocxImageEntry,
+  DocumentProtection,
+  DocumentProtectionState,
   EditAnnotationPayload,
   EditFont,
   EditImagePayload,
   EditTextRunPayload,
+  EncryptDocumentOptions,
   EngineError,
+  EngineOpenError,
   EngineState,
   ExportPageEntry,
   ExportPagesPayload,
@@ -57,6 +61,11 @@ import {
 import { exportFdf as exportFdfBytes, parseFdf } from './fdf';
 import { embedEditFont } from './fonts';
 import { formatErrorMessage } from './error-text';
+import {
+  classifyPasswordError,
+  encryptPdfBytes,
+  readProtectionState,
+} from './encryption';
 import {
   applyPageLabels,
   carryOutlines,
@@ -171,6 +180,10 @@ interface EngineDoc {
    *  Persisted into the output PDF's catalog (`/TFlexComments`) at save time
    *  and re-parsed on load, so threads survive save/reopen. */
   comments: CommentThread[];
+  /** Phase 52 — the source document's encryption state, read from the raw
+   *  bytes at load. `null` for an unencrypted document. Display-only: the
+   *  engine never enforces the permission flags. */
+  protection: DocumentProtectionState | null;
 }
 
 /** Phase 11 — a recognised word persisted on the doc for suspects. `page`
@@ -241,6 +254,16 @@ function readWatermarkMarker(contents: Uint8Array): WatermarkMarker | null {
 export class EngineService {
   private docs = new Map<string, EngineDoc>();
 
+  /**
+   * Phase 52 — session-only password cache. When a password opens an
+   * encrypted document it is remembered here, keyed by doc id, so a later
+   * (re)load for the same doc does not re-prompt. It is MAIN-process memory
+   * only: it is never written to `settings.json`, never logged or traced,
+   * never synced, and never returned over IPC. It is cleared when the
+   * document is (re)loaded and by `closeDocument`.
+   */
+  private docPasswords = new Map<string, string>();
+
   /** Phase 11 — OCR service (tesseract.js). Optional: an engine built
    *  without it simply refuses `ocrRecognize` with `engine-error`. The
    *  main process constructs one with the bundled `assets/tessdata`
@@ -284,14 +307,20 @@ export class EngineService {
   async loadDocument(
     docId: string,
     filePath: string,
-  ): Promise<Result<ArrayBuffer, 'open-error'>> {
-    return this._enqueue(docId, () => this._loadDocumentImpl(docId, filePath));
+    password?: string,
+  ): Promise<Result<ArrayBuffer, EngineOpenError>> {
+    return this._enqueue(docId, () => this._loadDocumentImpl(docId, filePath, password));
   }
 
   private async _loadDocumentImpl(
     docId: string,
     filePath: string,
-  ): Promise<Result<ArrayBuffer, 'open-error'>> {
+    password?: string,
+  ): Promise<Result<ArrayBuffer, EngineOpenError>> {
+    // A cached session password is the fallback when the caller supplies
+    // none; the cache entry is cleared as soon as the doc is replaced.
+    const effectivePassword = password ?? this.docPasswords.get(docId);
+    this.docPasswords.delete(docId);
     if (this.docs.has(docId)) {
       this.docs.delete(docId);
     }
@@ -301,21 +330,85 @@ export class EngineService {
     } catch {
       return err('open-error', `could not read: ${filePath}`);
     }
+    const bytes = buffer.buffer.slice(
+      buffer.byteOffset,
+      buffer.byteOffset + buffer.byteLength,
+    ) as ArrayBuffer;
+    const registered = await this._registerDocument(
+      docId,
+      new Uint8Array(bytes),
+      filePath,
+      effectivePassword,
+    );
+    if (!registered.ok) return registered;
+    return ok(bytes);
+  }
+
+  // -----------------------------------------------------------------------
+  // loadDocumentBytes — bytes-only, no path.  Samples use this so the real
+  // engine drives rotation/delete/undo/saveAs/annotations.  Save is disabled
+  // until saveAs because there is no on-disk origin.
+  // -----------------------------------------------------------------------
+  async loadDocumentBytes(
+    docId: string,
+    bytes: Uint8Array,
+    password?: string,
+  ): Promise<Result<ArrayBuffer, EngineOpenError>> {
+    return this._enqueue(docId, () => this._loadDocumentBytesImpl(docId, bytes, password));
+  }
+
+  private async _loadDocumentBytesImpl(
+    docId: string,
+    bytes: Uint8Array,
+    password?: string,
+  ): Promise<Result<ArrayBuffer, EngineOpenError>> {
+    const effectivePassword = password ?? this.docPasswords.get(docId);
+    this.docPasswords.delete(docId);
+    if (this.docs.has(docId)) {
+      this.docs.delete(docId);
+    }
+    const view = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
+    const registered = await this._registerDocument(docId, view, '', effectivePassword);
+    if (!registered.ok) return registered;
+    // Return the original bytes so the renderer can feed them to PDF.js.
+    const buf = view.buffer.slice(view.byteOffset, view.byteOffset + view.byteLength) as ArrayBuffer;
+    return ok(buf);
+  }
+
+  /**
+   * Phase 52 — parse `bytes` with the optional `password` (an empty string is
+   * passed when the caller has none, which the fork supports: owner-restricted
+   * files need no prompt) and register the document. Password failures are
+   * typed (`need-password` / `incorrect-password`) so the renderer can prompt
+   * and retry; every other failure is `open-error`.
+   */
+  private async _registerDocument(
+    docId: string,
+    bytes: Uint8Array,
+    filePath: string,
+    password: string | undefined,
+  ): Promise<Result<null, EngineOpenError>> {
     try {
-      const pdfDoc = await PDFDocument.load(buffer.buffer.slice(
-        buffer.byteOffset,
-        buffer.byteOffset + buffer.byteLength,
-      ) as ArrayBuffer);
+      const pdfDoc = await PDFDocument.load(bytes, { password: password ?? '' });
       const count = pdfDoc.getPageCount();
       // DEF-032: reject 0-page documents at load time
       if (count === 0) {
-        return err('open-error', `PDF has 0 pages: ${filePath}`);
+        return err(
+          'open-error',
+          filePath.length > 0 ? `PDF has 0 pages: ${filePath}` : 'PDF has 0 pages',
+        );
       }
       const annotations = parseAnnotationsFromDoc(pdfDoc);
       const placedSignatures = parseSignaturesFromDoc(pdfDoc);
       const textBoxes = parseTextBoxesFromDoc(pdfDoc);
       const comments = parseCommentsFromDoc(pdfDoc);
       const rotations = parseRotationsFromDoc(pdfDoc, count);
+      // The fork drops /Encrypt once decrypted; `isDecrypted` is the signal
+      // that the source was encrypted, at which point the raw bytes still
+      // carry the encryption dictionary we report to the UI.
+      const protection = pdfDoc.context.isDecrypted
+        ? await readProtectionState(bytes)
+        : null;
       const doc: EngineDoc = {
         pdfDoc,
         order: Array.from({ length: count }, (_, i) => i),
@@ -329,66 +422,99 @@ export class EngineService {
         placedSignatures,
         textBoxes,
         comments,
+        protection,
       };
       this.docs.set(docId, doc);
-      return ok(buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength) as ArrayBuffer);
+      if (protection !== null) {
+        this.docPasswords.set(docId, password ?? '');
+      }
+      return ok(null);
     } catch (e) {
-      return err('open-error', `could not parse PDF: ${filePath} (${formatErrorMessage(e)})`);
+      const passwordCode = classifyPasswordError(e);
+      if (passwordCode !== null) {
+        const where = filePath.length > 0 ? `: ${filePath}` : '';
+        return err(
+          passwordCode,
+          passwordCode === 'need-password'
+            ? `password required${where}`
+            : `incorrect password${where}`,
+        );
+      }
+      const detail = formatErrorMessage(e);
+      return err(
+        'open-error',
+        filePath.length > 0
+          ? `could not parse PDF: ${filePath} (${detail})`
+          : `could not parse PDF bytes (${detail})`,
+      );
     }
   }
 
   // -----------------------------------------------------------------------
-  // loadDocumentBytes — bytes-only, no path.  Samples use this so the real
-  // engine drives rotation/delete/undo/saveAs/annotations.  Save is disabled
-  // until saveAs because there is no on-disk origin.
+  // getDocumentProtection — Phase 52. The source document's encryption state
+  // read at load (algorithm/revision/CFM + permission flags), or null for an
+  // unencrypted document. Display-only; never enforced.
   // -----------------------------------------------------------------------
-  async loadDocumentBytes(
+  async getDocumentProtection(
     docId: string,
-    bytes: Uint8Array,
-  ): Promise<Result<ArrayBuffer, 'open-error'>> {
-    return this._enqueue(docId, () => this._loadDocumentBytesImpl(docId, bytes));
+  ): Promise<Result<DocumentProtection, EngineError>> {
+    return this._enqueue(docId, () => this._getDocumentProtectionImpl(docId));
   }
 
-  private async _loadDocumentBytesImpl(
+  private async _getDocumentProtectionImpl(
     docId: string,
-    bytes: Uint8Array,
-  ): Promise<Result<ArrayBuffer, 'open-error'>> {
-    if (this.docs.has(docId)) {
-      this.docs.delete(docId);
+  ): Promise<Result<DocumentProtection, EngineError>> {
+    const doc = this.docs.get(docId);
+    if (doc === undefined) {
+      return err('engine-error', `unknown document: ${docId}`);
+    }
+    return ok(doc.protection);
+  }
+
+  // -----------------------------------------------------------------------
+  // encryptDocument — Phase 52 feature D. Serialize the current document to
+  // plain bytes, then produce an encrypted copy (AES-256 default / AES-128).
+  // Returns the produced bytes for the existing save/export flow to write.
+  // The live engine document is NOT mutated and stays decrypted, so its own
+  // save remains a plain file.
+  // -----------------------------------------------------------------------
+  async encryptDocument(
+    docId: string,
+    options: EncryptDocumentOptions,
+  ): Promise<Result<ArrayBuffer, EngineError>> {
+    return this._enqueue(docId, () => this._encryptDocumentImpl(docId, options));
+  }
+
+  private async _encryptDocumentImpl(
+    docId: string,
+    options: EncryptDocumentOptions,
+  ): Promise<Result<ArrayBuffer, EngineError>> {
+    const doc = this.docs.get(docId);
+    if (doc === undefined) {
+      return err('engine-error', `unknown document: ${docId}`);
     }
     try {
-      const pdfDoc = await PDFDocument.load(bytes);
-      const count = pdfDoc.getPageCount();
-      // DEF-032: reject 0-page documents at load time
-      if (count === 0) {
-        return err('open-error', 'PDF has 0 pages');
-      }
-      const annotations = parseAnnotationsFromDoc(pdfDoc);
-      const placedSignatures = parseSignaturesFromDoc(pdfDoc);
-      const textBoxes = parseTextBoxesFromDoc(pdfDoc);
-      const comments = parseCommentsFromDoc(pdfDoc);
-      const rotations = parseRotationsFromDoc(pdfDoc, count);
-      const doc: EngineDoc = {
-        pdfDoc,
-        order: Array.from({ length: count }, (_, i) => i),
-        deleted: Array.from({ length: count }, () => false),
-        rotations,
-        annotations,
-        undoStack: [],
-        redoStack: [],
-        path: '',
-        modified: false,
-        placedSignatures,
-        textBoxes,
-        comments,
-      };
-      this.docs.set(docId, doc);
-      // Return the original bytes so the renderer can feed them to PDF.js.
-      const buf = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer;
-      return ok(buf);
+      const plainBytes = await serializeDoc(doc);
+      const encrypted = await encryptPdfBytes(plainBytes, options);
+      const ab = encrypted.buffer.slice(
+        encrypted.byteOffset,
+        encrypted.byteOffset + encrypted.byteLength,
+      ) as ArrayBuffer;
+      return ok(ab);
     } catch (e) {
-      return err('open-error', `could not parse PDF bytes (${formatErrorMessage(e)})`);
+      return err('engine-error', `encrypt failed: ${formatErrorMessage(e)}`);
     }
+  }
+
+  // -----------------------------------------------------------------------
+  // closeDocument — Phase 52. Drops the document and clears its session
+  // password so a closed document can never leave a password in memory.
+  // -----------------------------------------------------------------------
+  async closeDocument(docId: string): Promise<void> {
+    return this._enqueue(docId, async () => {
+      this.docPasswords.delete(docId);
+      this.docs.delete(docId);
+    });
   }
 
   // -----------------------------------------------------------------------
@@ -1432,6 +1558,7 @@ export class EngineService {
         placedSignatures: [],
         textBoxes: [],
         comments: [],
+        protection: null,
       };
       this.docs.set(docId, newDoc);
 
@@ -1504,6 +1631,7 @@ export class EngineService {
         placedSignatures: [],
         textBoxes: [],
         comments: [],
+        protection: null,
       };
       this.docs.set(docId, newDoc);
 
@@ -2290,13 +2418,7 @@ export class EngineService {
       const maskH = maskBottom - maskTop;
 
       // Mask the old run region with a white rectangle (PDF coords).
-      page.drawRectangle({
-        x: maskX,
-        y: pageHeight - maskBottom,
-        width: maskW,
-        height: maskH,
-        color: rgb(1, 1, 1),
-      });
+      drawClassicWhiteMaskRect(page, maskX, pageHeight - maskBottom, maskW, maskH);
 
       // Draw the new text at the (moved) rect's top-left, baseline
       // dropped by `size` from the top so glyphs sit inside the rect.
@@ -2616,13 +2738,7 @@ export class EngineService {
 
       // Mask the original placement with a white rectangle.
       const old = payload.oldRect;
-      page.drawRectangle({
-        x: old.x,
-        y: pageHeight - old.y - old.height,
-        width: old.width,
-        height: old.height,
-        color: rgb(1, 1, 1),
-      });
+      drawClassicWhiteMaskRect(page, old.x, pageHeight - old.y - old.height, old.width, old.height);
 
       // Embed the new image bytes (PNG or JPEG) and draw at newRect.
       const bytes = payload.imageBytes instanceof Uint8Array
@@ -4351,6 +4467,50 @@ export function stampBrandMetadata(doc: PDFDocument): void {
   } catch {
     // Metadata is cosmetic; never fail a save because of it.
   }
+}
+
+/**
+ * Phase 52 — emit the classic pdf-lib white-fill rectangle operator stream.
+ *
+ * @cantoo/pdf-lib rewrote `drawRectangle` to route through `drawSvgPath`, so
+ * its output is a different (visually identical) operator sequence. The
+ * DEF-151/DEF-221 masks have a pinned operator contract — a `1 1 1 rg` block
+ * whose first `cm` is the rect's bottom-left and whose path includes
+ * `\n0 <h> l` then `\n<w> 0 l` — which the engine's own tests (and any
+ * downstream byte inspection) rely on. Masking keeps the original sequence
+ * so unencrypted output is byte-shape unchanged; every other draw call still
+ * uses the library's `drawRectangle`.
+ *
+ * This is the one place the engine reaches past a high-level API: it uses
+ * the library's exported operator constructors plus PDFPage's internal
+ * `getContentStream()`, because no public API preserves the legacy sequence.
+ */
+function drawClassicWhiteMaskRect(
+  page: PDFPage,
+  x: number,
+  y: number,
+  width: number,
+  height: number,
+): void {
+  const stream = (page as unknown as {
+    getContentStream(): { push(...ops: PDFOperator[]): void };
+  }).getContentStream();
+  stream.push(
+    pushGraphicsState(),
+    setFillingRgbColor(1, 1, 1),
+    setLineWidth(0),
+    setDashPattern([], 0),
+    translate(x, y),
+    rotateRadians(0),
+    skewRadians(0, 0),
+    moveTo(0, 0),
+    lineTo(0, height),
+    lineTo(width, height),
+    lineTo(width, 0),
+    closePath(),
+    fill(),
+    popGraphicsState(),
+  );
 }
 
 async function serializeDoc(doc: EngineDoc): Promise<Uint8Array> {

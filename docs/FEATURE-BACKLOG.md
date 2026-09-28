@@ -31,6 +31,10 @@ passes roughly 500 lines, archive closed entries to `docs/FEATURE-BACKLOG-ARCHIV
 
 ## Entry format
 
+> NOTE: the entry below is an ILLUSTRATION inside this fence — its `FEA-001` number is a placeholder, not a
+> real proposal. The real ledger starts at FEA-011 (the first `feature-scout` batch). Do not re-use 001-010;
+> the next proposal takes the next free number after the last real entry.
+
 ```
 ## FEA-001: Watermark (text or image overlay)
 
@@ -178,7 +182,7 @@ History:
 
 ## FEA-010: Password protect / encrypt with permissions
 
-- Status: PROPOSED
+- Status: ACCEPTED -> Phase 52 (feature D)
 - Source: https://www.sejda.com/encrypt-pdf (Sejda)
 - Category: Edit
 - Effort: H
@@ -320,3 +324,31 @@ the research flagged it as driver-dependent, and Electron's `print(options)` has
 History:
 - orchestrator: recorded from the feature-scout print research; DEFERRED with the engine limitation as the
   reason (Phase 30 verified the limitation rather than guessing it)
+
+## FEA-017: Encrypted PDF support - open with a password (the Phase 52 research)
+
+- Status: ACCEPTED -> Phase 52 (features A-C)
+- Source: qpdf manual (crypto/version mapping + the "empty user password opens, restrictions are unenforceable"
+  semantics), Sejda's encrypt/unlock pages (the prompt + limited-permission UX), PDF24's lock page (AES-256 +
+  the 8 permission toggles), Foxit (AES-256 + a free Unlock tool), the installed `pdfjs-dist` 4.10.38 source
+  (`src/core/crypto.js` - R2-R6 handlers; `src/display/api.js` - `password`/`onPassword`/PasswordException),
+  `pdf-lib`'s README (why `ignoreEncryption` must not be used) and `@cantoo/pdf-lib` (MIT drop-in: load with
+  `{password}` incl. empty; `encrypt()` AES-256 R6 default with permissions).
+- Category: Edit
+- Effort: M (open) + S-M (create)
+- Likely new settings: yes (`encryptDefaults` - the create dialog's remembered algorithm + permission toggles)
+- Batch: the operator's encrypted-PDF research (2026-09-28)
+
+What it does: opens password-protected PDFs (pdf.js for display, a decrypting loader for editing), shows an
+honest protection/permission banner, and creates AES-256/AES-128 encrypted PDFs with permission flags.
+
+Why it matters: the operator hit a real encrypted file the app could not open at all; every desktop peer opens
+them, and creating them is the natural counterpart (FEA-010).
+
+Decision record: permission flags are DISPLAY-ONLY; no explicit remove-protection action (a save writes a
+decrypted copy and says so); AES-256 default / AES-128 optional, RC4 never WRITTEN (still readable); passwords
+live in renderer memory only (never settings, logs or sync).
+
+History:
+- orchestrator: recorded from the feature-scout encrypted-PDF research dispatch; promoted straight into
+  Phase 52 at the operator's request

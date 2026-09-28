@@ -28,6 +28,7 @@ import { X } from 'lucide-react';
 import { useBackdropClose } from './modalBackdrop';
 import { AnimatePresence } from 'motion/react';
 import { TfBackdrop, TfDialog } from './motion/TfMotion';
+import { SAVE_REMOVES_PROTECTION_TEXT } from '../security/protection';
 
 interface SaveAsDialogProps {
   open: boolean;
@@ -37,6 +38,9 @@ interface SaveAsDialogProps {
    *  AppSettings and the dialog tolerates an absent field the
    *  same way the previous `optimizePreset`-based design did. */
   saveAsLinearize: boolean | undefined;
+  /** Phase 52 (feature C) — the active document is encrypted, so saving
+   *  writes a decrypted copy. The dialog states this explicitly. */
+  protectedDocument?: boolean;
   /** Fires when the user flips the linearize checkbox. The host
    *  writes through `set-save-as-linearize` in the preferences
    *  reducer and persists via trackAndSave so the choice survives
@@ -50,7 +54,7 @@ interface SaveAsDialogProps {
 }
 
 export function SaveAsDialog(props: SaveAsDialogProps): ReactElement | null {
-  const { open, saveAsLinearize, onSaveAsLinearizeChange, onConfirm, onClose } =
+  const { open, saveAsLinearize, protectedDocument, onSaveAsLinearizeChange, onConfirm, onClose } =
     props;
 
   // Local mirror of the checkbox state, seeded from saveAsLinearize.
@@ -145,6 +149,11 @@ export function SaveAsDialog(props: SaveAsDialogProps): ReactElement | null {
             confirm; the chosen filename and destination are handled by the
             system.
           </p>
+          {protectedDocument === true && (
+            <p className="modal-help save-as-decrypt-note" data-save-as-decrypt-note>
+              {SAVE_REMOVES_PROTECTION_TEXT}
+            </p>
+          )}
 
           <fieldset className="modal-position save-as-linearize">
             <legend>Web optimisation</legend>

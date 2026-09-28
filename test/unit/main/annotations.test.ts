@@ -13,7 +13,7 @@ import {
   PDFRef,
   PDFStream,
   PDFString,
-} from 'pdf-lib';
+} from '@cantoo/pdf-lib';
 import { EngineService } from '../../../src/main/services/engine';
 import {
   ANN_COLORS,

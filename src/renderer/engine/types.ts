@@ -11,9 +11,12 @@ import type {
   CommentThread,
   CropEntry,
   DocxImageEntry,
+  DocumentProtection,
   EditImagePayload,
   EditTextRunPayload,
+  EncryptDocumentOptions,
   EngineError,
+  EngineOpenError,
   EngineState as SharedEngineState,
   ExportPageEntry,
   ExportPagesPayload,
@@ -136,19 +139,45 @@ export interface EngineApi {
   /** True when the renderer is talking to the real (main-process) engine. */
   readonly available: boolean;
 
-  /** Load a PDF from disk and register it with the engine under `docId`. */
+  /** Load a PDF from disk and register it with the engine under `docId`.
+   *  Phase 52 — an optional `password` opens an encrypted document; a
+   *  missing/empty password on such a document fails with the typed
+   *  `need-password` code so the renderer can prompt. */
   loadDocument(
     docId: string,
     path: string,
-  ): Promise<Result<ArrayBuffer, "open-error">>;
+    password?: string,
+  ): Promise<Result<ArrayBuffer, EngineOpenError>>;
 
   /** Load a PDF from raw bytes (no on-disk path). Save is disabled until
    *  saveAs; rotation/delete/undo work normally. Accepts either an
-   *  ArrayBuffer (raw PDF bytes) or a Uint8Array view. */
+   *  ArrayBuffer (raw PDF bytes) or a Uint8Array view. Phase 52 — the
+   *  optional `password` mirrors `loadDocument`. */
   loadDocumentBytes(
     docId: string,
     bytes: ArrayBuffer | Uint8Array,
-  ): Promise<Result<ArrayBuffer, "open-error">>;
+    password?: string,
+  ): Promise<Result<ArrayBuffer, EngineOpenError>>;
+
+  /** Phase 52 — the opened document's encryption state (algorithm /
+   *  revision / CFM and the permission flags read from the file), or
+   *  `null` for an unencrypted document. Display-only. Optional so a
+   *  pre-Phase-52 backend degrades instead of crashing. */
+  getDocumentProtection?(
+    docId: string,
+  ): Promise<Result<DocumentProtection, EngineError>>;
+
+  /** Phase 52 — produce an encrypted copy (AES-256 default / AES-128) of the
+   *  current document and return the bytes for the existing save flow to
+   *  write. The open document is not mutated. Optional. */
+  encryptDocument?(
+    docId: string,
+    options: EncryptDocumentOptions,
+  ): Promise<Result<ArrayBuffer, EngineError>>;
+
+  /** Phase 52 — drop a document and clear its session password. Called on
+   *  tab close. Optional. */
+  closeDocument?(docId: string): Promise<void>;
 
   /** Apply a single op (or a batched delete). */
   applyOp(docId: string, op: EngineOp): Promise<Result<EngineState, EngineError>>;

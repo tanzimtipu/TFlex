@@ -21,6 +21,7 @@ import type {
   OpenFileDialogKind,
   OcrProgress,
   OcrRecognizeOptions,
+  EncryptDocumentOptions,
   OpEntry,
   OptimizePreset,
   PageLabelEntry,
@@ -543,15 +544,15 @@ export async function start(): Promise<void> {
   ipcMain.handle(IPC.settingsAddRecent, (_event, f: RecentFile) => settings.addRecentFile(f));
 
   // Phase 2: page organization engine
-  ipcMain.handle(IPC.engineLoadDocument, (_event, docId: string, path: string) =>
-    engine.loadDocument(docId, path),
+  ipcMain.handle(IPC.engineLoadDocument, (_event, docId: string, path: string, password?: string) =>
+    engine.loadDocument(docId, path, password),
   );
-  ipcMain.handle(IPC.engineLoadDocumentBytes, (_event, docId: string, bytes: ArrayBuffer | Uint8Array) => {
+  ipcMain.handle(IPC.engineLoadDocumentBytes, (_event, docId: string, bytes: ArrayBuffer | Uint8Array, password?: string) => {
     // Electron structured-clone preserves Uint8Array vs ArrayBuffer types,
     // but we accept both for renderer flexibility. Normalise to a view
     // against the underlying buffer before handing to pdf-lib.
     const view = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
-    return engine.loadDocumentBytes(docId, view);
+    return engine.loadDocumentBytes(docId, view, password);
   });
   ipcMain.handle(IPC.engineApplyOp, (_event, docId: string, op: OpEntry) =>
     engine.applyOp(docId, op),
@@ -764,6 +765,20 @@ export async function start(): Promise<void> {
   );
   ipcMain.handle(IPC.engineDeleteWatermark, (_event, docId: string, watermarkId: string) =>
     engine.deleteWatermark(docId, watermarkId),
+  );
+
+  // Phase 52 — encrypted PDF support
+  ipcMain.handle(IPC.engineGetDocumentProtection, (_event, docId: string) =>
+    engine.getDocumentProtection(docId),
+  );
+  ipcMain.handle(
+    IPC.engineEncryptDocument,
+    (_event, docId: string, options: EncryptDocumentOptions) =>
+      engine.encryptDocument(docId, options),
+  );
+  // Drops the document and clears its session password. Fire-and-forget.
+  ipcMain.handle(IPC.engineCloseDocument, (_event, docId: string) =>
+    engine.closeDocument(docId),
   );
 
   // Phase 4: saved signatures service
