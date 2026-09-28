@@ -23,6 +23,14 @@ export interface WhatsNewEntry {
 /** Ordered newest first. */
 export const WHATS_NEW: WhatsNewEntry[] = [
   {
+    version: '1.42.0',
+    date: '2026-09-28',
+    highlights: [
+      'Sign in from your own browser now - Google opens in your default browser instead of a pop-up window, and Jovrel finishes the sign-in when you come back.',
+      "Added a 'Make Jovrel the default PDF app' button in Preferences, so PDFs can show the Jovrel icon and type.",
+    ],
+  },
+  {
     version: '1.41.2',
     date: '2026-09-28',
     highlights: [
