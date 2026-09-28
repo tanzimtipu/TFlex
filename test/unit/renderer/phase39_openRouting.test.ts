@@ -38,7 +38,7 @@ describe("open-affordance routing (Phase 39 item 2)", () => {
       APP_SOURCE.indexOf("const onOpenIntoPane ="),
       APP_SOURCE.indexOf("const onOpenIntoPane =") + 700,
     );
-    expect(block).toMatch(/window\.tflex\.openFileDialog\(\)/);
+    expect(block).toMatch(/window\.tflex\.openFileDialog\("document"\)/);
     expect(block).toMatch(/refuseOpenIntoPane\(pane, picked\)/);
     expect(block).toMatch(/assignPaneDocument\(pane, tabId\)/);
   });
@@ -46,9 +46,9 @@ describe("open-affordance routing (Phase 39 item 2)", () => {
   it("routes the title-bar Open / File > Open / Ctrl+O through the shared path", () => {
     const block = APP_SOURCE.slice(
       APP_SOURCE.indexOf("const onOpenClick ="),
-      APP_SOURCE.indexOf("const onOpenClick =") + 600,
+      APP_SOURCE.indexOf("const onOpenClick =") + 1000,
     );
-    expect(block).toMatch(/window\.tflex\.openFileDialog\(\)/);
+    expect(block).toMatch(/window\.tflex\.openFileDialog\("document"\)/);
     expect(block).toMatch(/openFromRequest\(picked\)/);
   });
 });

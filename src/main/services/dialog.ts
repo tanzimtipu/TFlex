@@ -1,10 +1,65 @@
 import { dialog } from 'electron';
 import { normalize } from 'node:path';
 import type { OpenFileDialogKind } from '../../shared/types';
+import { createDefaultRegistry } from './convert/registry';
 
 interface FilterSpec {
   title: string;
   filters: { name: string; extensions: string[] }[];
+}
+
+/** Phase 53 feature I - which group each registered format's extensions
+ *  advertise in the universal-import picker. An unknown/future format falls
+ *  back to 'Documents' so a newly registered adapter never silently disappears
+ *  from the picker. */
+const GROUP_BY_FORMAT: Record<string, string> = {
+  rtf: 'Documents',
+  text: 'Text and markup',
+  markdown: 'Text and markup',
+  html: 'Text and markup',
+  csv: 'Spreadsheets',
+};
+
+const GROUP_ORDER = ['Documents', 'Text and markup', 'Spreadsheets'];
+
+function bareExtension(extension: string): string {
+  return extension.replace(/^\./, '').toLowerCase();
+}
+
+function sortUnique(values: string[]): string[] {
+  return [...new Set(values)].sort();
+}
+
+/**
+ * The grouped filters for the universal-import picker. The advertised extension
+ * set is DERIVED from the shipped registry (`listRegistrations`) plus `pdf` -
+ * the single source of truth - never a second hardcoded list, so a newly
+ * registered adapter appears in the picker automatically.
+ */
+function documentFilters(): { name: string; extensions: string[] }[] {
+  const groups = new Map<string, string[]>();
+  const all = new Set<string>(['pdf']);
+
+  for (const registration of createDefaultRegistry().listRegistrations()) {
+    const group = GROUP_BY_FORMAT[registration.id] ?? 'Documents';
+    const list = groups.get(group) ?? [];
+    for (const extension of registration.extensions) {
+      const bare = bareExtension(extension);
+      list.push(bare);
+      all.add(bare);
+    }
+    groups.set(group, list);
+  }
+
+  const documents = groups.get('Documents') ?? [];
+  documents.unshift('pdf');
+  groups.set('Documents', documents);
+
+  const filters = GROUP_ORDER.filter(
+    (name) => (groups.get(name) ?? []).length > 0,
+  ).map((name) => ({ name, extensions: sortUnique(groups.get(name) ?? []) }));
+  filters.push({ name: 'All supported files', extensions: sortUnique([...all]) });
+  return filters;
 }
 
 function specForKind(kind: OpenFileDialogKind): FilterSpec {
@@ -15,6 +70,12 @@ function specForKind(kind: OpenFileDialogKind): FilterSpec {
       return {
         title: 'Import FDF Comments',
         filters: [{ name: 'FDF', extensions: ['fdf'] }],
+      };
+    case 'document':
+      // Phase 53 feature I — grouped universal-import filters.
+      return {
+        title: 'Open Document',
+        filters: documentFilters(),
       };
     case 'pdf':
     default:

@@ -1,0 +1,199 @@
+import { open } from 'node:fs/promises';
+import { extname } from 'node:path';
+import type {
+  ConvertFidelity,
+  ConvertFormatId,
+  ConvertResult,
+} from '../../../shared/convert';
+import { CONVERT_LIMITS, type ResolvedConvertOptions } from './limits';
+
+/**
+ * Phase 53 — the adapter registry (ruling 2).
+ *
+ * Adding a format is adding an adapter module, never editing the service. A
+ * module is imported ONLY when its format is used (`await import()` inside a
+ * loader, never at this module's top level), so an unused format costs nothing
+ * at cold start. Resolution is content-aware: the extension picks a candidate,
+ * the candidate's `sniff` confirms it, and a mismatch falls through to a
+ * content pass over every registered adapter.
+ */
+
+export interface ConvertAdapterContext {
+  path: string;
+  options: ResolvedConvertOptions;
+  /** First `CONVERT_LIMITS.sniffHeadBytes` bytes of the file. */
+  head: Buffer;
+  signal?: AbortSignal;
+  onProgress?: (phase: string, ratio?: number) => void;
+}
+
+export interface ConversionAdapter {
+  id: ConvertFormatId;
+  label: string;
+  extensions: string[];
+  capabilities: { canImport: boolean; canExport: boolean };
+  /** The fidelity this adapter declares for its output (ruling 3). */
+  fidelity: ConvertFidelity;
+  /**
+   * Phase 53 criterion 9 — resolution precedence. `'specific'` adapters win
+   * over `'generic'` ones whether the match came from the extension or the
+   * content pass. The text adapter is `'generic'`: a `.txt`-named file whose
+   * bytes are Markdown must not be captured by it just because the extension
+   * matched. Markdown and HTML are `'specific'`.
+   */
+  specificity: 'generic' | 'specific';
+  /** Byte ceiling for this format; the service returns `too-large` above it. */
+  maxBytes?: number;
+  /** True when the head (and path) look like this format. */
+  sniff(path: string, head: Buffer): boolean;
+  convert(ctx: ConvertAdapterContext): Promise<ConvertResult>;
+}
+
+export type AdapterLoader = () => Promise<ConversionAdapter>;
+
+export interface AdapterRegistration {
+  id: ConvertFormatId;
+  /** Extensions (lower-case, leading dot) used for O(1) extension routing
+   *  without loading the module. Mirrors the adapter's own list. */
+  extensions: string[];
+  load: AdapterLoader;
+}
+
+export interface ResolvedAdapter {
+  adapter: ConversionAdapter;
+  /** true when the extension candidate was confirmed; false when resolution
+   *  came from the content-sniff fall-through pass. */
+  byExtension: boolean;
+}
+
+export class ConvertRegistry {
+  private readonly registrations = new Map<ConvertFormatId, AdapterRegistration>();
+  private readonly byExtension = new Map<string, ConvertFormatId>();
+  private readonly cache = new Map<ConvertFormatId, ConversionAdapter>();
+
+  register(registration: AdapterRegistration): void {
+    this.registrations.set(registration.id, registration);
+    for (const ext of registration.extensions) {
+      this.byExtension.set(ext.toLowerCase(), registration.id);
+    }
+  }
+
+  /** Import (and cache) one adapter module on demand. */
+  async load(id: ConvertFormatId): Promise<ConversionAdapter | null> {
+    const cached = this.cache.get(id);
+    if (cached) return cached;
+    const registration = this.registrations.get(id);
+    if (!registration) return null;
+    const adapter = await registration.load();
+    this.cache.set(id, adapter);
+    return adapter;
+  }
+
+  /** Load every registered adapter; used only by the content-sniff pass. */
+  async all(): Promise<ConversionAdapter[]> {
+    const out: ConversionAdapter[] = [];
+    for (const id of this.registrations.keys()) {
+      const adapter = await this.load(id);
+      if (adapter !== null) out.push(adapter);
+    }
+    return out;
+  }
+
+  ids(): ConvertFormatId[] {
+    return [...this.registrations.keys()];
+  }
+
+  /** Phase 53 feature I - the registrations as `{ id, extensions }`, used by the
+   *  Open dialog to derive its advertised extension set from the one source of
+   *  truth instead of a second hardcoded list. No adapter module is loaded. */
+  listRegistrations(): Array<{ id: ConvertFormatId; extensions: string[] }> {
+    return [...this.registrations.values()].map((registration) => ({
+      id: registration.id,
+      extensions: [...registration.extensions],
+    }));
+  }
+
+  /** Resolution precedence (Phase 53 criterion 9), exactly:
+   *    1. the extension candidate when its `sniff` passes and it is `specific`;
+   *    2. otherwise a content pass over every `specific` adapter;
+   *    3. otherwise the extension candidate when it is `generic`;
+   *    4. otherwise a content pass over every `generic` adapter;
+   *    5. otherwise null (the caller reports `unsupported-format`).
+   *  A `.txt`-named Markdown file therefore routes to Markdown (step 2), not
+   *  to the generic text adapter whose extension matched (step 3). */
+  async resolve(path: string, head: Buffer): Promise<ResolvedAdapter | null> {
+    const ext = extname(path).toLowerCase();
+    const candidateId = this.byExtension.get(ext);
+    const candidate =
+      candidateId === undefined ? null : await this.load(candidateId);
+    const candidatePasses = candidate !== null && candidate.sniff(path, head);
+
+    if (candidatePasses && candidate.specificity === 'specific') {
+      return { adapter: candidate, byExtension: true };
+    }
+
+    const all = await this.all();
+    for (const adapter of all) {
+      if (adapter.specificity === 'specific' && adapter.sniff(path, head)) {
+        return { adapter, byExtension: false };
+      }
+    }
+
+    if (candidatePasses && candidate.specificity === 'generic') {
+      return { adapter: candidate, byExtension: true };
+    }
+
+    for (const adapter of all) {
+      if (adapter.specificity === 'generic' && adapter.sniff(path, head)) {
+        return { adapter, byExtension: false };
+      }
+    }
+
+    return null;
+  }
+}
+
+/** Read only the first `CONVERT_LIMITS.sniffHeadBytes` bytes for sniffing. */
+export async function readSniffHead(path: string): Promise<Buffer> {
+  const handle = await open(path, 'r');
+  try {
+    const buf = Buffer.alloc(CONVERT_LIMITS.sniffHeadBytes);
+    const { bytesRead } = await handle.read(buf, 0, buf.length, 0);
+    return buf.subarray(0, bytesRead);
+  } finally {
+    await handle.close();
+  }
+}
+
+/** The shipped registry: `.txt`, `.md`/`.markdown` and
+ *  `.html`/`.htm`/`.xhtml` after chunk B. Later chunks register their loaders
+ *  here without touching the service. */
+export function createDefaultRegistry(): ConvertRegistry {
+  const registry = new ConvertRegistry();
+  registry.register({
+    id: 'text',
+    extensions: ['.txt'],
+    load: () => import('./adapters/text').then((m) => m.textAdapter),
+  });
+  registry.register({
+    id: 'markdown',
+    extensions: ['.md', '.markdown'],
+    load: () => import('./adapters/markdown').then((m) => m.markdownAdapter),
+  });
+  registry.register({
+    id: 'html',
+    extensions: ['.html', '.htm', '.xhtml'],
+    load: () => import('./adapters/html').then((m) => m.htmlAdapter),
+  });
+  registry.register({
+    id: 'csv',
+    extensions: ['.csv'],
+    load: () => import('./adapters/csv').then((m) => m.csvAdapter),
+  });
+  registry.register({
+    id: 'rtf',
+    extensions: ['.rtf'],
+    load: () => import('./adapters/rtf').then((m) => m.rtfAdapter),
+  });
+  return registry;
+}

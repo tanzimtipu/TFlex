@@ -8382,6 +8382,55 @@ rect.ann-highlight.ann-preview {
 }
 .prefs-action-status { margin-top: var(--sp-2); }
 
+/* ----- Phase 53 — Fill form fields from CSV dialog ----- */
+
+.fill-csv-file {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  flex-wrap: wrap;
+}
+.fill-csv-file-name {
+  font-size: 12px;
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 320px;
+}
+.fill-csv-result {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  margin-top: var(--sp-2);
+}
+.fill-csv-filled {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+}
+.fill-csv-list-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-muted);
+  margin-bottom: 2px;
+}
+.fill-csv-list-items {
+  margin: 0;
+  padding-left: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.fill-csv-list-item {
+  font-size: 12px;
+  word-break: break-word;
+}
+.fill-csv-list-empty {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
 /* ----- Annotation color palette (single swatch + popover) ----- */
 
 .ann-color-anchor {
@@ -11404,6 +11453,8 @@ rect.ann-highlight.ann-preview {
 .tools-palette-entry[data-tool-id="exportComments"]:hover .tools-palette-entry-icon { color: var(--sem-neutral); }
 .tools-palette-entry[data-tool-id="importComments"] .tools-palette-entry-icon,
 .tools-palette-entry[data-tool-id="importComments"]:hover .tools-palette-entry-icon { color: var(--sem-neutral); }
+.tools-palette-entry[data-tool-id="fillFromCsv"] .tools-palette-entry-icon,
+.tools-palette-entry[data-tool-id="fillFromCsv"]:hover .tools-palette-entry-icon { color: var(--sem-affirmative); }
 .tools-palette-entry[data-tool-id="multi-mode"] .tools-palette-entry-icon,
 .tools-palette-entry[data-tool-id="multi-mode"]:hover .tools-palette-entry-icon { color: var(--sem-neutral); }
 
@@ -14568,6 +14619,7 @@ cursor: pointer;
 .action-dock-verb[data-dock-verb='watermark']:not(.action-dock-verb-primary):not([aria-pressed='true']):not(:disabled) { color: var(--sem-affirmative); }
 .action-dock-verb[data-dock-verb='exportComments']:not(.action-dock-verb-primary):not([aria-pressed='true']):not(:disabled) { color: var(--sem-neutral); }
 .action-dock-verb[data-dock-verb='importComments']:not(.action-dock-verb-primary):not([aria-pressed='true']):not(:disabled) { color: var(--sem-neutral); }
+.action-dock-verb[data-dock-verb='fillFromCsv']:not(.action-dock-verb-primary):not([aria-pressed='true']):not(:disabled) { color: var(--sem-affirmative); }
 .action-dock-verb[data-dock-verb='optimize']:not(.action-dock-verb-primary):not([aria-pressed='true']):not(:disabled) { color: var(--sem-affirmative); }
 .action-dock-verb[data-dock-verb='audit']:not(.action-dock-verb-primary):not([aria-pressed='true']):not(:disabled) { color: var(--sem-neutral); }
 .action-dock-verb[data-dock-verb='exportPages']:not(.action-dock-verb-primary):not([aria-pressed='true']):not(:disabled) { color: var(--sem-affirmative); }
@@ -16077,6 +16129,38 @@ cursor: pointer;
   }
 }
 
+/* The protection banner is a FLOW element at the top of the pane's document
+ * column, so its `margin-left: auto` dismiss control lands at the banner's
+ * right edge. The always-on Inspector is a fixed right panel (`position:
+ * absolute; right: 0; top: 0; bottom: 0; width: var(--tools-panel-w);
+ * z-index: 30`) that paints OVER the full-width document column, so without a
+ * reservation the dismiss control sat under the Inspector's own header control
+ * and its clicks were swallowed (`elementFromPoint` over the button returned
+ * the Inspector's `.inspector-collapse-toggle` — the DEF-357 defect class,
+ * DEF-377). The banner therefore reserves the panel's column with the SAME
+ * registered `--tf-tools-inset` token the page-view scroller, the
+ * `.canvas-overlay`, the OCR suspects bar (DEF-357) and the conversion card
+ * (DEF-375) consume: its right edge is then flush with the panel's left edge
+ * and every banner control is hit-testable.
+ *
+ * This is a SPATIAL reservation, not a `pointer-events`/z-index change. The
+ * point the dismiss click landed on is the Inspector's own INTERACTIVE child
+ * (its collapse toggle), which MUST stay clickable, so a layer-level
+ * `pointer-events: none` on `.inspector` could not resolve the collision — the
+ * interactive child would still win the hit test. Two live controls cannot
+ * share one pixel, so the flow banner yields the panel's column. */
+.document-column > .protection-notice {
+  margin-right: var(--tf-tools-inset, 0px);
+}
+
+/* Multi Mode consumes the inset ONCE, in the two pane widths (`--tf-pane-inset`
+ * capped by `--tf-multi-inset-cap`); the banner already sits inside a pane
+ * whose right edge excludes that strip, so reserving it again inside the pane
+ * would open a blank gutter. Mirrors the scroller's own Multi Mode reset. */
+.tab-stage[data-multi-mode="true"] .document-column > .protection-notice {
+  margin-right: 0;
+}
+
 .protection-notice-icon {
   color: var(--warning);
   flex: 0 0 auto;
@@ -16139,6 +16223,293 @@ cursor: pointer;
 .protection-notice-dismiss:hover {
   background: var(--warning);
   color: var(--bg-base);
+}
+
+/* Phase 53 (feature I) — the conversion card, above the canvas for an
+ * imported document: source label, fidelity in plain words, and every warning
+ * always visible. Mount motion uses the shared tokens only. */
+.conversion-notice {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--sp-2);
+  padding: var(--sp-2) var(--space-standard);
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-elevated);
+  color: var(--fg);
+  font-size: var(--fs-sm);
+  line-height: 1.45;
+  animation: conversion-notice-in var(--motion-duration-standard) var(--motion-ease-enter) both;
+}
+
+@keyframes conversion-notice-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* The conversion card is a FLOW element at the top of the pane's document
+ * column, so its `margin-left: auto` dismiss control lands at the card's right
+ * edge. The always-on Inspector is a fixed right panel (`position: absolute;
+ * right: 0; top: 0; bottom: 0; width: var(--tools-panel-w); z-index: 30`) that
+ * paints OVER the full-width document column, so without a reservation the
+ * dismiss control sat under the Inspector's own header control and its clicks
+ * were swallowed (`elementFromPoint` over the button returned the Inspector's
+ * `.inspector-collapse-toggle` — the DEF-357 defect class). The card therefore
+ * reserves the panel's column with the SAME registered `--tf-tools-inset`
+ * token the page-view scroller, the `.canvas-overlay` and the OCR suspects bar
+ * (DEF-357) consume: its right edge is then flush with the panel's left edge
+ * and every card control is hit-testable.
+ *
+ * This is a SPATIAL reservation, not a `pointer-events`/z-index change. The
+ * point the dismiss click landed on is the Inspector's own INTERACTIVE child
+ * (its collapse toggle), which MUST stay clickable, so a layer-level
+ * `pointer-events: none` on `.inspector` could not resolve the collision — the
+ * interactive child would still win the hit test. Two live controls cannot
+ * share one pixel, so the flow card yields the panel's column. */
+.document-column > .conversion-notice {
+  margin-right: var(--tf-tools-inset, 0px);
+}
+
+/* Multi Mode consumes the inset ONCE, in the two pane widths (`--tf-pane-inset`
+ * capped by `--tf-multi-inset-cap`); the card already sits inside a pane whose
+ * right edge excludes that strip, so reserving it again inside the pane would
+ * open a blank gutter. Mirrors the scroller's own Multi Mode reset. */
+.tab-stage[data-multi-mode="true"] .document-column > .conversion-notice {
+  margin-right: 0;
+}
+
+.conversion-notice-icon {
+  color: var(--accent);
+  flex: 0 0 auto;
+  margin-top: 1px;
+}
+
+.conversion-notice-body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.conversion-notice-title {
+  margin: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--sp-2);
+  font-weight: 600;
+  color: var(--fg-strong);
+}
+
+.conversion-notice-source {
+  font-weight: 500;
+  color: var(--fg-muted);
+}
+
+.conversion-notice-fidelity {
+  font-weight: 600;
+  font-size: var(--fs-xs);
+  padding: 1px var(--sp-2);
+  border-radius: var(--radius-2);
+  border: 1px solid transparent;
+}
+
+.conversion-notice-fidelity--native {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.conversion-notice-fidelity--layout {
+  background: var(--warning-soft);
+  color: var(--warning);
+  border-color: var(--warning);
+}
+
+.conversion-notice-fidelity--degraded {
+  background: var(--error-soft);
+  color: var(--error);
+  border-color: var(--error);
+}
+
+.conversion-notice-fidelity-note {
+  margin: 0;
+  color: var(--fg-muted);
+}
+
+.conversion-notice-warnings {
+  margin: var(--sp-1) 0 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+}
+
+.conversion-notice-warning {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--sp-2);
+  color: var(--fg);
+}
+
+.conversion-notice-warning::before {
+  content: "";
+  flex: 0 0 auto;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--warning);
+  align-self: center;
+}
+
+.conversion-notice-warning-message {
+  font-weight: 500;
+}
+
+.conversion-notice-warning-detail {
+  color: var(--fg-muted);
+  font-family: var(--font-mono, monospace);
+  font-size: var(--fs-xs);
+}
+
+.conversion-notice-dismiss {
+  margin-left: auto;
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border: none;
+  border-radius: var(--radius-2);
+  background: transparent;
+  color: var(--fg-muted);
+  cursor: pointer;
+  transition: background-color var(--motion-duration-fast) var(--motion-ease-standard);
+}
+
+.conversion-notice-dismiss:hover {
+  background: var(--bg-hover);
+  color: var(--fg-strong);
+}
+
+/* Phase 53 — the app-level progress affordance while a conversion runs. */
+.conversion-progress {
+  position: fixed;
+  right: var(--space-standard);
+  bottom: var(--space-standard);
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  min-width: 280px;
+  max-width: 420px;
+  padding: var(--sp-2) var(--sp-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-3);
+  background: var(--bg-elevated);
+  color: var(--fg);
+  box-shadow: var(--shadow-popover);
+  font-size: var(--fs-sm);
+  animation: conversion-progress-in var(--motion-duration-standard) var(--motion-ease-enter) both;
+}
+
+@keyframes conversion-progress-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.conversion-progress-icon {
+  color: var(--accent);
+  flex: 0 0 auto;
+  animation: conversion-progress-spin var(--motion-duration-layout) linear infinite;
+}
+
+@keyframes conversion-progress-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.conversion-progress-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.conversion-progress-phase {
+  margin: 0;
+  color: var(--fg-strong);
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.conversion-progress-track {
+  height: 4px;
+  border-radius: var(--radius-2);
+  background: var(--bg-hover);
+  overflow: hidden;
+}
+
+.conversion-progress-bar {
+  height: 100%;
+  background: var(--accent);
+  border-radius: var(--radius-2);
+  transition: width var(--motion-duration-fast) var(--motion-ease-standard);
+}
+
+/* A phase with no estimable ratio shows an indeterminate sweep, not a lie. */
+.conversion-progress-bar--indeterminate {
+  width: 40%;
+  animation: conversion-progress-sweep var(--motion-duration-flash) var(--motion-ease-standard) infinite;
+}
+
+@keyframes conversion-progress-sweep {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(250%);
+  }
+}
+
+.conversion-progress-cancel {
+  flex: 0 0 auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-2);
+  background: transparent;
+  color: var(--fg-strong);
+  padding: var(--sp-1) var(--sp-2);
+  font-size: var(--fs-xs);
+  cursor: pointer;
+  transition: background-color var(--motion-duration-fast) var(--motion-ease-standard);
+}
+
+.conversion-progress-cancel:hover {
+  background: var(--bg-hover);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .conversion-progress-icon,
+  .conversion-progress-bar--indeterminate {
+    animation: none;
+  }
 }
 
 /* The Encrypt dialog's permission list can be tall; keep the dialog bounded

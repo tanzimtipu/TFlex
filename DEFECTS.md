@@ -5,6 +5,104 @@
 > inspect the current `OPEN`, `FIX-READY`, and `DISPUTED` entries first; closed records are
 > historical evidence and must not be loaded wholesale.
 
+## DEF-377: the ProtectionNotice dismiss button is unclickable - the always-on Inspector overlaps it (DEF-357 class)
+
+- Status: CLOSED
+- Severity: MEDIUM
+- Found by: qa
+- Phase: 53 (observed during the Phase 53 gate retest; the same flow-element overlap DEF-357 fixed for the OCR suspects bar and DEF-375's fix fixed for ConversionNotice)
+
+Steps to reproduce:
+1. `npm.cmd run build` (exit 0); launch the dev app through the canonical `e2e/lib/launch.cjs` helper.
+2. Open an encrypted PDF (e.g. the synthetic AES-256 fixture built by `e2e/lib/p52_crypto.cjs`) and enter its password.
+3. Wait for the `[data-protection-notice]` banner to appear with the Inspector open (default).
+4. Read `document.elementFromPoint` at the centre of `[data-protection-dismiss]`, then click the button.
+
+Expected: the dismiss button is hit-testable and the banner dismisses (the ConversionNotice card got exactly this fix in the same tree: `.document-column > .conversion-notice { margin-right: var(--tf-tools-inset, 0px) }`).
+Actual: `elementFromPoint` over the button returns the Inspector's own interactive child (`hitInsideInspector: true`, `hitIsButton: false`); a real Playwright click times out ("locator.click: Timeout 3000ms exceeded") and the banner stays (`afterCount: 1`). `ProtectionNotice` is the same flow element in `.document-column` but has no `margin-right: var(--tf-tools-inset)` reservation, so its `margin-left: auto` dismiss control sits under the fixed right panel.
+
+Evidence: `e2e/phase53_retest_qa.spec.cjs` `P53R_PROTECT` -> `{"hit":{"found":true,"rect":{"left":2520,"top":52,"width":24,"height":24},"hitTag":"path","hitIsButton":false,"hitInsideInspector":true,"inspectorOpen":"true"},"clickOk":false,"clickError":"locator.click: Timeout 3000ms exceeded.","afterCount":1}`.
+Screenshot: screenshots/phase53-retest-protection-hittest.png (the banner's X sits under the Inspector).
+
+History:
+- qa: opened (Phase 53 gate retest; reproduced in the running app).
+- orchestrator: FIX-READY -- relaying frontend-dev: `.document-column > .protection-notice` now reserves `margin-right: var(--tf-tools-inset, 0px)` with the Multi-Mode reset -- the same spatial reservation the ConversionNotice fix used, for the same reason the developer had already established: the pixel at the banner's right edge belongs to the Inspector's live `.inspector-collapse-toggle`, which must stay clickable, so `pointer-events: none` on the Inspector layer cannot help and no z-index was used. Measured before/after by temporarily reverting the rule and rebuilding (`build:renderer`): BEFORE `elementFromPoint` at the dismiss centre hit `path < svg < button.inspector-collapse-toggle < ... < div.inspector` (`insideInspector: true`); AFTER it hits `path < svg < button.protection-notice-dismiss < div.protection-notice < div.document-column < ...` (`insideInspector: false`). Canvas geometry unchanged (`scrollerRect` identical at left 248 / right 2296 / width 2048); only the banner's right edge moved 2560 -> 2296. New sibling unit test `test/unit/renderer/phase53_protectionNoticeInspectorHitTest.test.ts` pins the CSS contract plus the AGENTS.md cross-bubbling obligation (the dismiss fires `onDismiss` and the click still reaches a document-level listener). Evidence: `npm.cmd run test:unit -- test/unit/renderer` -> 417 files / 4405 tests passed; `npm.cmd run verify` exit 0 (conventions clean, 267 files, tsc clean); `npm.cmd run build` exit 0; `npx.cmd playwright test e2e/phase53_retest_qa.spec.cjs -g "ProtectionNotice: dismiss button hit-test with the Inspector open"` -> 1 passed with `hitInsideButton: true, clickOk: true, afterCount: 0`. Not CLOSED -- it awaits qa's retest.
+- qa: CLOSED (Phase 53 gate retest on the current dev tree, after `npm.cmd run build`). `e2e/phase53_retest_qa.spec.cjs` `P53R_PROTECT` -> `{"hit":{"found":true,"rect":{"left":2256,"top":52,"width":24,"height":24},"hitTag":"path","hitIsButton":false,"hitInsideButton":true,"hitInsideInspector":false,"inspectorOpen":"true"},"clickOk":true,"clickError":null,"afterCount":0}` - the dismiss centre now hit-tests inside the button (`hitInsideButton: true`) and outside the Inspector (`hitInsideInspector: false`), a real Playwright click succeeds and the banner dismisses (`afterCount: 0`). Screenshot inspected: screenshots/phase53-retest-protection-hittest.png (the banner's right edge is flush with the Inspector's left edge; the X sits clear of the panel).
+
+## DEF-376: whitespace-only .md/.rtf/.html convert to a blank document with no partial-content warning
+
+- Status: CLOSED
+- Severity: LOW
+- Found by: qa
+- Phase: 53
+
+Steps to reproduce:
+1. `npm.cmd run build` (exit 0); launch the dev app through the canonical `e2e/lib/launch.cjs` helper.
+2. Create three whitespace-only sources: `blank.md` (`"   \n\n\t\n"`), `blank.rtf` (`"{\\rtf1   \n\n}\n"`), `blank.html` (`"<html><body>   \n\n</body></html>"`).
+3. Open each through the real Open dialog (stub `dialog.showOpenDialog` to return the path).
+4. Read the `[data-conversion-warning]` codes on the resulting conversion notice.
+
+Expected: consistent with the Phase 53 criterion-5 ruling for the text adapter - a whitespace-only source is NOT an error, it converts WITH a `partial-content` warning naming the absence of visible content (the text adapter does exactly this: `empty.txt` -> `partial-content`, "The source document had no visible content...").
+Actual: all three convert to a blank page with NO warning (`codes: []`). The text adapter warns; the markdown, rtf and html adapters do not, so the same visually-empty input is silent in three of the four adapters.
+
+Evidence: `e2e/phase53_retest_qa.spec.cjs` `P53R_WS_OTHERS` -> `[{"name":"md","ok":true,"pageCount":1,"codes":[]},{"name":"rtf","ok":true,"pageCount":1,"codes":[]},{"name":"html","ok":true,"pageCount":1,"codes":[]}]`; the text adapter's own case `P53R_WS_TXT` -> `codes:["partial-content"]`.
+Screenshot: none (warning-code evidence in the log).
+
+History:
+- qa: opened (Phase 53 gate retest; the backend-dev named these three as not-yet-consistent).
+- orchestrator: FIX-READY -- relaying backend-dev: a shared `src/main/services/convert/visible-content.ts` helper now backs the "no visible content" rule, and `markdown.ts`, `html.ts` and `rtf.ts` each emit their own `partial-content` warning when their source has no visible content (each message is format-honest about its content unit -- characters/lines/paragraphs). An `<img>` anywhere counts as content, so an image-only markdown or HTML document does NOT warn (the honest boundary), while a headings-only or whitespace-only source does. RTF's empty-content warning coexists with its existing ignored-control-word warning (asserted as a pair). `text.ts` and `csv.ts` were deliberately not touched: CSV's content unit is its cell grid and it always renders a visible table, so it is not visually empty, and a zero-byte file is already the upstream `empty-file` error -- the developer recorded that reasoning. Evidence: `npm.cmd run test:unit -- test/unit/main/convert` -> 10 files / 116 tests passed; `npm.cmd run verify` exit 0 (conventions clean, 268 files, tsc clean). Not CLOSED -- it awaits qa's retest.
+- qa: CLOSED (Phase 53 gate retest on the current dev tree, after `npm.cmd run build`). `e2e/phase53_retest_qa.spec.cjs` `P53R_WS_OTHERS` -> `[{"name":"md","ok":true,"pageCount":1,"codes":["partial-content"]},{"name":"rtf","ok":true,"pageCount":1,"codes":["partial-content"]},{"name":"html","ok":true,"pageCount":1,"codes":["partial-content"]}]` - all three whitespace-only sources now convert WITH the `partial-content` warning (no hard error). The text adapter's own case still passes unchanged: `P53R_WS_TXT` -> `codes:["partial-content"]`, warning "The source document had no visible content...". The image-only boundary was checked as a user would want it: `P53R_WS_IMAGE` -> `[{"name":"md","ok":true,"pageCount":1,"codes":[]},{"name":"html","ok":true,"pageCount":1,"codes":[]}]` - an image-only `.md` and `.html` do NOT carry the empty-content warning. The gate spec's criterion 5 was updated to the ruled behaviour (a tab IS created for `empty.txt` with the `partial-content` warning; corrupt/zero/unknown still assert a readable message and no new tab) and the whole gate spec is 12/12 green.
+
+## DEF-374: every Phase 53 non-PDF import crashes with an unhandled TypeError and creates no tab
+
+- Status: CLOSED
+- Severity: HIGH
+- Found by: qa
+- Phase: 53
+
+Steps to reproduce:
+1. Build the current tree (`npm.cmd run build`) and launch TFlex (dev build).
+2. Click the title-bar Open button (Ctrl+O) and pick any convertible non-PDF file, e.g. `test-fixtures/phase53/sample.txt` (repeat with `sample.md`, `sample.rtf`, `sample.csv`, `sample.html`).
+3. Observe the renderer.
+
+Expected: the file imports into a tab with a `[data-conversion-notice]` card (Phase 53 criterion 1).
+Actual: an unhandled renderer TypeError `Cannot read properties of undefined (reading 'inner')` fires; no tab is created, no conversion notice, no toast. The app stays on the Welcome screen. Reproduced for all five formats and for the OS-open path (which shows the hook's fallback toast "Jovrel could not open the requested file.").
+
+Root cause: `src/renderer/App.tsx` `openConvertedFromPath` extracts the engine method into a local and calls it unbound:
+`const bytesApi = engineRef.current.getDocumentBytes; ... return bytesApi(id);`
+`getDocumentBytes` is a prototype method on `RealEngineAdapter` (`src/renderer/engine/engineClient.ts`), so the unbound call loses `this` and `this.inner` throws. The unit test `phase53_convertImport.test.tsx` mocks `getDocumentBytes` as a plain function, so it never exercises this wiring.
+
+Evidence: `e2e/phase53_format_import.spec.cjs` (criteria 1/2/3/7/8/10 and rows 5/6 fail with this pageerror). Pageerror stack: `at getDocumentBytes (index-*.js) at Object.getDocumentBytes ... at async Object.openConverted`.
+Screenshot: screenshots/phase53-open-txt.png (Welcome screen, no tab after the .txt open).
+
+History:
+- qa: opened (Phase 53 phase validation).
+- orchestrator: FIX-READY -- relaying frontend-dev: `openConvertedFromPath` now calls `engineRef.current.getDocumentBytes(id)` on the object instead of extracting the method into a local alias, so `RealEngineAdapter`'s prototype method keeps its `this`. The regression that hid it is closed too: `test/unit/renderer/phase53_convertImport.test.tsx` now uses a prototype-style engine mock whose method reads `this.inner`, plus a source pin asserting the call site is `engineRef.current.getDocumentBytes(id)` and not an extracted local. The developer demonstrated the check is load-bearing by temporarily reverting the fix to the unbound form and observing the new assertion fail (`Tests 1 failed | 19 passed`, exit 1), then restoring it. Evidence: `npm.cmd run test:unit -- test/unit/renderer` -> 415 files / 4389 tests passed, exit 0; `npm.cmd run verify` -> exit 0 (conventions clean, 266 files, tsc clean); `npx.cmd playwright test e2e/phase53_format_import.spec.cjs` -> 9 passed / 3 failed, including `ok 1 criterion 1: .txt/.md/.rtf/.csv/.html each import into a tab` (the crash is gone; the 3 remaining failures are separate findings, reported by qa in the retest). Not CLOSED -- it awaits qa's retest.
+- qa: CLOSED (Phase 53 gate retest on the current dev tree). `e2e/phase53_retest_qa.spec.cjs` DEF-374 opened all five fixtures through the real Open dialog: each created a tab with `[data-conversion-notice]` and the correct source label, `pageErrors: []` for every case, `pageCount >= 1`. The gate spec's criterion 1 also passes (5/5 formats). Screenshots inspected: screenshots/phase53-retest-def374-txt.png and screenshots/phase53-retest-def374-html.png (tab + notice card + rendered content, no crash). The unbound `getDocumentBytes` call is gone (`engineRef.current.getDocumentBytes(id)`).
+
+## DEF-375: the main Open dialog does not expose the Phase 53 grouped filters
+
+- Status: CLOSED
+- Severity: MEDIUM
+- Found by: qa
+- Phase: 53
+
+Steps to reproduce:
+1. Launch TFlex (dev build).
+2. Click the title-bar Open button (or the Welcome "Open PDF" button).
+3. Capture the `filters` argument passed to `dialog.showOpenDialog`.
+
+Expected: the grouped filters "Documents", "Text and markup", "Spreadsheets", "All supported files" (Phase 53 feature I).
+Actual: `[{"name":"PDF","extensions":["pdf"]}]`. The grouped filters are implemented in `src/main/services/dialog.ts` (`documentFilters()`) but are only reachable through `openFileDialog('document')`, which is called solely by the CSV-fill picker (`pickCsvFile` in `App.tsx`). The main Open button calls `window.tflex.openFileDialog()` with no kind, so the default `'pdf'` filter is used and a user cannot select a `.txt`/`.md`/`.rtf`/`.csv`/`.html` from the main Open dialog.
+
+Evidence: `e2e/phase53_format_import.spec.cjs` `P53_OPEN_FILTERS` -> `[{"name":"PDF","extensions":["pdf"]}]`.
+Screenshot: screenshots/phase53-open-txt.png.
+
+History:
+- qa: opened (Phase 53 phase validation).
+- orchestrator: FIX-READY -- relaying frontend-dev, and recording an ORCHESTRATOR SPEC MISS: the Phase 53 chunk-D dispatch specified the grouped filters in main but never told the renderer to request the `'document'` kind on the primary Open button, which is why a filter that existed was unreachable -- the defect was caused by the task spec, not by the developer. The fix: the generic open call sites now pass the kind -- `onOpenClick` (title-bar Open; the Welcome Open routes through it) and `onOpenIntoPane` (empty-pane Open) call `window.tflex.openFileDialog("document")`. The PDF-only pickers were deliberately left unchanged and the developer reported each: `onPickMergeFile` (merge) and `pickOtherPdf` (insert-from-PDF) because those flows load via `loadPdf` only, and `pickFdfFile` which stays `'fdf'`. Evidence: the gate spec printed `P53_OPEN_FILTERS [{"name":"Documents","extensions":["pdf","rtf"]},{"name":"Text and markup",...},{"name":"Spreadsheets",...},{"name":"All supported files",...}]`; `test/unit/renderer` -> 415 files / 4389 tests passed; `verify` -> exit 0. The pin that tracked the old kind (`test/unit/renderer/phase39_openRouting.test.ts`) was updated to `"document"` with no assertion removed. Not CLOSED -- it awaits qa's retest.
+- qa: CLOSED (Phase 53 gate retest on the current dev tree). `e2e/phase53_retest_qa.spec.cjs` DEF-375 captured the actual `filters` argument: primary title-bar Open and empty-pane Open both get `[{"name":"Documents","extensions":["pdf","rtf"]},{"name":"Text and markup","extensions":["htm","html","markdown","md","txt","xhtml"]},{"name":"Spreadsheets","extensions":["csv"]},{"name":"All supported files",...}]`. The three PDF-only pickers were verified unchanged and still work: merge picker -> `[{"name":"PDF","extensions":["pdf"]}]`, insert-from-PDF picker -> `[{"name":"PDF","extensions":["pdf"]}]`, FDF import picker -> `[{"name":"FDF","extensions":["fdf"]}]`. The gate spec's `P53_OPEN_FILTERS` agrees.
+
 ## DEF-373: the focused on-canvas run editor paints no visible border (its inline `border: ... solid transparent` overrides the `.edit-run-editor:focus` accent rule)
 
 - Status: CLOSED
@@ -32,7 +130,7 @@ History:
 
 ## DEF-372: re-opening the same encrypted file in a session re-prompts for the password (the session cache is keyed by a fresh engine doc id)
 
-- Status: OPEN
+- Status: CLOSED
 - Severity: LOW
 - Found by: qa
 - Phase: 52
@@ -51,6 +149,7 @@ Screenshot: none
 
 History:
 - qa: opened (Phase 52 gate validation).
+- qa: CLOSED (Phase 53 gate retest on the current dev tree; the fix was present in the tree but had no FIX-READY record, so the ledger and the code disagreed). `e2e/phase53_retest_qa.spec.cjs` DEF-372 opened a synthetic AES-256 fixture, entered the password, then re-opened the SAME path through the real Open dialog: `P53R_DEF372 {"firstTabs":1,"second":{"promptOpen":false,"openTabs":2}}` - no re-prompt, the second open lands as a second tab. `src/renderer/App.tsx` `openPdfBytesFromPath` now consults `sessionPasswords.recall(path)` before the open (the DEF-372 comment). Screenshot: screenshots/phase53-retest-def372.png (second open, no prompt). Note: a prior run's fix was never relayed to the ledger.
 
 ## DEF-371: Phase 51 leaves `verify:full` RED - the B11 OCR-suspects guard test fails on the new onOpenOcrSuspects body
 

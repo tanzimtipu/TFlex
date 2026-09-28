@@ -89,6 +89,10 @@ interface ToolsPaletteProps {
   onExportComments?: () => void;
   /** Phase 12 — Import comments from a local FDF file. */
   onImportComments?: () => void;
+  /** Phase 53 (feature G mode 2) — fill the active document's AcroForm
+   *  fields from a CSV. Enabled only when the active document has form
+   *  fields (the registry entry's `form-fields` precondition). */
+  onFillFromCsv?: () => void;
   /** Phase 18 — Watermark (text or image overlay). Opens the
    *  watermark tool for the active document: text or image content
    *  with typography, position, opacity, tiling and page-range
@@ -151,6 +155,7 @@ export function ToolsPalette(props: ToolsPaletteProps): ReactElement {
     onFlatten,
     onExportComments,
     onImportComments,
+    onFillFromCsv,
     onWatermark,
     hasOcrSuspects,
     documentRequired,
@@ -201,6 +206,7 @@ export function ToolsPalette(props: ToolsPaletteProps): ReactElement {
     if (id === 'stamp') return onStamp !== undefined;
     if (id === 'exportComments') return onExportComments !== undefined;
     if (id === 'importComments') return onImportComments !== undefined;
+    if (id === 'fillFromCsv') return hasFormFields && onFillFromCsv !== undefined;
     if (id === 'watermark') return onWatermark !== undefined;
     return true;
   };
@@ -238,6 +244,7 @@ export function ToolsPalette(props: ToolsPaletteProps): ReactElement {
   if (onWatermark !== undefined) wired.set('watermark', { action: onWatermark });
   if (onExportComments !== undefined) wired.set('exportComments', { action: onExportComments });
   if (onImportComments !== undefined) wired.set('importComments', { action: onImportComments });
+  if (onFillFromCsv !== undefined) wired.set('fillFromCsv', { action: onFillFromCsv });
 
   // The canonical palette order comes from the registry; an id the host did
   // not wire (or a stale id) simply does not render.

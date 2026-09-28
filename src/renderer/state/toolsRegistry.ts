@@ -109,6 +109,7 @@ import {
   FileOutput,
   FilePlus2,
   FileScan,
+  FileSpreadsheet,
   FileStack,
   FileText,
   FileType,
@@ -276,7 +277,7 @@ export const PALETTE_GROUPS: ReadonlyArray<{
   {
     id: 'export',
     label: 'Export',
-    entryIds: ['exportPages', 'exportText', 'exportDocx', 'exportComments', 'importComments'],
+    entryIds: ['exportPages', 'exportText', 'exportDocx', 'exportComments', 'importComments', 'fillFromCsv'],
   },
 ];
 
@@ -621,6 +622,22 @@ const REGISTRY = [
     stage: 'review',
     action: 'importComments',
     availability: 'document',
+  },
+  {
+    // Phase 53 (feature G mode 2) — fill the active document's AcroForm
+    // fields from a CSV's columns. Chunk C owns the mapping IPC
+    // (`convert.csvToDocumentFields`); this entry makes it reachable
+    // through the Command Palette and the REVIEW dock. The `form-fields`
+    // precondition is honest: with no fields the verb is disabled with
+    // the reason "This document has no form fields", never a dead click.
+    id: 'fillFromCsv',
+    label: 'Fill form fields from CSV…',
+    description: 'Map a CSV file\u2019s columns onto the active document\u2019s form fields.',
+    icon: FileSpreadsheet,
+    shortcut: '',
+    stage: 'review',
+    action: 'fillFromCsv',
+    availability: 'form-fields',
   },
   {
     id: 'annotationsPanel',
@@ -1352,6 +1369,7 @@ const SURFACE_BY_ID: Record<ToolId, ToolSurface> = {
   watermark: 'palette',
   exportComments: 'palette',
   importComments: 'palette',
+  fillFromCsv: 'palette',
   annotationsPanel: 'panel',
   annSelect: 'flyout',
   annHighlight: 'flyout',
@@ -1474,6 +1492,7 @@ export const DOCK_STAGE_IDS: Readonly<Record<Stage, readonly string[]>> = {
     'watermark',
     'exportComments',
     'importComments',
+    'fillFromCsv',
   ],
   deliver: ['optimize', 'audit', 'exportPages', 'exportText', 'exportDocx', 'createFromImages', 'encrypt'],
 };

@@ -14,6 +14,9 @@
  * the same parser handles both the initial launch and a second launch.
  */
 
+import { extname } from 'node:path';
+import { createDefaultRegistry } from './services/convert/registry';
+
 /** Index of the first document argument once packaged (after the exe). */
 const PACKAGED_ARG_START = 1;
 /** Index of the first document argument in dev (after electron + app dir). */
@@ -41,4 +44,30 @@ export function extractFileArgument(
 /** True when the argument names a PDF file (case-insensitive extension). */
 export function looksLikePdfPath(path: string): boolean {
   return /\.pdf$/i.test(path.trim());
+}
+
+/**
+ * Phase 53 - the extension set the OS open flow must route: `pdf` plus every
+ * extension the SHIPPED conversion registry can import. Derived from the
+ * registry (the single source of truth) once at module load; never a second
+ * hardcoded list, so a newly registered adapter is routed automatically.
+ */
+const OPENABLE_EXTENSIONS: ReadonlySet<string> = (() => {
+  const set = new Set<string>(['.pdf']);
+  for (const registration of createDefaultRegistry().listRegistrations()) {
+    for (const extension of registration.extensions) {
+      set.add(extension.toLowerCase());
+    }
+  }
+  return set;
+})();
+
+/**
+ * True for a path the OS open flow hands to the renderer: a PDF (validated as
+ * before) or a convertible document (the renderer's conversion flow takes it).
+ * A genuinely unsupported path stays false so the caller fails LOUD.
+ */
+export function looksLikeOpenablePath(path: string): boolean {
+  const ext = extname(path.trim()).toLowerCase();
+  return ext.length > 1 && OPENABLE_EXTENSIONS.has(ext);
 }

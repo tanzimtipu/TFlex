@@ -120,6 +120,10 @@ const SANCTIONED: Record<Capability, { surfaces: Surface[]; why: string }> = {
     surfaces: ['dock', 'inspector'],
     why: 'Phase 37 item 21 adds the REVIEW dock verb; ruling 8 keeps the Inspector FDF import',
   },
+  fillFromCsv: {
+    surfaces: ['dock'],
+    why: 'Phase 53 (feature G mode 2): the CSV form-fill verb rides the REVIEW dock; the dialog is its only home',
+  },
 
   // ---- DELIVER -------------------------------------------------------
   optimize: {

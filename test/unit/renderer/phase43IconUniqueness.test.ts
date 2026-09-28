@@ -157,6 +157,8 @@ const SHARED_ALLOW: Readonly<Record<string, string>> = {
   Scissors: "the extract/split verb (registry + the rail verb + the legacy bar)",
   Stamp: "the stamp verb (registry stamp + its dialog)",
   Undo2: "the undo verb (registry undo + the rail verb)",
+  FileSpreadsheet: "the fill-form-fields-from-CSV verb (registry fillFromCsv + its import dialog); one concept, two surfaces",
+  Upload: "the confirm-import action (CommentImportDialog + FillFromCsvDialog) rendered identically on both import dialogs",
 };
 
 interface Usage {

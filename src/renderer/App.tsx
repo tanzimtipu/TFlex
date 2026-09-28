@@ -27,7 +27,9 @@ import type {
   WatermarkInfo,
   WatermarkSettings,
 } from "../shared/types";
-import type { TFlexApi } from "../shared/ipc";
+import type { TFlexApi, TFlexApiConvert } from "../shared/ipc";
+import type { ConvertSourceInfo, CsvFieldMappingResult } from "../shared/convert";
+import { DEFAULT_CONVERT_DEFAULTS } from "../shared/convert";
 import { Welcome } from "./components/Welcome";
 import { AppHeader } from "./components/AppHeader";
 import { Toasts, type Toast } from "./components/Toasts";
@@ -167,6 +169,15 @@ import { formatBytes as formatBytesForToast } from "./utils/formatBytes";
 import { downloadBlob } from "./utils/exportDownload";
 import { PasswordPromptDialog } from "./components/PasswordPromptDialog";
 import { ProtectionNotice } from "./components/ProtectionNotice";
+import { ConversionNotice, ConversionProgress } from "./components/ConversionNotice";
+import {
+  noticeFromResult,
+  routeOpenPath,
+  runConvertOpen,
+  toastForConvertError,
+  type ConvertNoticeState,
+  type ConvertProgressState,
+} from "./state/convert";
 import { EncryptDialog, type EncryptDialogConfirm } from "./components/EncryptDialog";
 import {
   IDLE_PASSWORD_PROMPT,
@@ -208,6 +219,10 @@ import { StampDialog } from "./components/StampDialog";
 import { WatermarkDialog } from "./components/WatermarkDialog";
 import { CommentExportDialog } from "./components/CommentExportDialog";
 import { CommentImportDialog } from "./components/CommentImportDialog";
+import {
+  FillFromCsvDialog,
+  type FillFromCsvApplied,
+} from "./components/FillFromCsvDialog";
 import { DeletePageDialog } from "./components/DeletePageDialog";
 import { CloseTabPromptDialog, type CloseTabPromptChoice } from "./components/CloseTabPromptDialog";
 import { SignatureManagerModal } from "./signatures/SignatureManagerModal";
@@ -593,6 +608,11 @@ export function App(): ReactElement {
   const [protectionByTab, setProtectionByTab] = useState<
     Record<string, DocumentProtectionState>
   >({});
+  // Phase 53 (feature I) — the import surface. `convertNotices` is the
+  // conversion card payload per tab (dismissed entries are deleted);
+  // `convertProgress` is the live affordance, null when no import runs.
+  const [convertNotices, setConvertNotices] = useState<Record<string, ConvertNoticeState>>({});
+  const [convertProgress, setConvertProgress] = useState<ConvertProgressState | null>(null);
   // Phase 52 (feature D) — the Encrypt dialog + its in-flight flag.
   const [encryptOpen, setEncryptOpen] = useState(false);
   const [encryptBusy, setEncryptBusy] = useState(false);
@@ -634,6 +654,8 @@ export function App(): ReactElement {
   const deleteInFlightRef = useRef<boolean>(false);
   const [commentExportOpen, setCommentExportOpen] = useState(false);
   const [commentImportOpen, setCommentImportOpen] = useState(false);
+  // Phase 53 (feature G mode 2) — the Fill-form-fields-from-CSV dialog.
+  const [fillFromCsvOpen, setFillFromCsvOpen] = useState(false);
   // B8 — delete pages dialog. The toolbar's Delete control opens
   // this dialog; the rail's per-thumb delete still flows through
   // the existing onDelete callback directly (no dialog) so a
@@ -1491,6 +1513,12 @@ export function App(): ReactElement {
          *  reports `need-password` / `incorrect-password`. The caller owns
          *  the prompt + retry. */
         onPasswordRequired?: (kind: PasswordPromptKind) => void;
+        /** Phase 53 — an engine doc id ALREADY registered by
+         *  `convert.toDocument`. When set, the engine-registration block is
+         *  SKIPPED (the engine holds the doc already; loading again would
+         *  re-register it and mint a phantom document) and this id is used
+         *  instead of a fresh one — the single-docId invariant. */
+        engineDocId?: string;
       },
     ): Promise<{ tabId: string; engineDocId: string } | null> => {
       const parsed = await openPdfDocument(bytes, options?.password);
@@ -1509,7 +1537,12 @@ export function App(): ReactElement {
         pushToast("error", toastForPdfError(parsed.error, source.path));
         return null;
       }
-      const engineDocId = crypto.randomUUID();
+      const doc = parsed.doc;
+      // Phase 53 — the convert route passes the docId it already registered
+      // with the engine; every other caller mints a fresh one.
+      const engineDocId = options?.engineDocId ?? crypto.randomUUID();
+      const password = options?.password;
+      const onPasswordRequired = options?.onPasswordRequired;
       // DEF-036: single-source id. Compute the tab id BEFORE we touch
       // openTabs / engineUi / dispatchTabs, so the id used for the
       // session map (openTabs[id]) and the meta dispatched to the
@@ -1540,7 +1573,7 @@ export function App(): ReactElement {
         modified: false,
       };
       const session: DocSession = {
-        doc: parsed.doc,
+        doc,
         outline: null,
         // Snapshot only the size; the bytes themselves are no longer
         // retained past this point — see DocSession.fileSize comment.
@@ -1582,47 +1615,51 @@ export function App(): ReactElement {
           loadError as Parameters<typeof passwordKindFromEngineError>[0],
         );
         if (kind === null) return false;
-        if (options?.onPasswordRequired !== undefined) {
-          options.onPasswordRequired(kind);
+        if (onPasswordRequired !== undefined) {
+          onPasswordRequired(kind);
         } else {
           pushToast("error", `"${source.displayName}" is password-protected.`);
         }
-        void parsed.doc.destroy().catch(() => undefined);
+        void doc.destroy().catch(() => undefined);
         return true;
       };
-      if (source.onDiskPath !== null) {
-        const loadResult = await engineRef.current.loadDocument(
-          engineDocId,
-          source.onDiskPath,
-          options?.password,
-        );
-        if (!loadResult.ok) {
-          if (passwordFailure(loadResult.error)) return null;
-          pushToast("error", describeEngineError("open-error", source.onDiskPath));
-          void parsed.doc.destroy().catch(() => undefined);
-          return null;
-        }
-      } else {
-        if (engineRef.current.available) {
-          // Real engine: hand it the bytes directly. Save (in-place) is
-          // intentionally disabled on the renderer side because there is
-          // no origin file — Save-As remains available for writing a copy.
-          const loadResult = await engineRef.current.loadDocumentBytes(
+      // Phase 53 — skip engine registration when the convert route already
+      // registered this docId (see the `engineDocId` option above).
+      if (options?.engineDocId === undefined) {
+        if (source.onDiskPath !== null) {
+          const loadResult = await engineRef.current.loadDocument(
             engineDocId,
-            bytes,
-            options?.password,
+            source.onDiskPath,
+            password,
           );
           if (!loadResult.ok) {
             if (passwordFailure(loadResult.error)) return null;
-            pushToast(
-              "error",
-              describeEngineError("open-error", source.displayName),
-            );
-            void parsed.doc.destroy().catch(() => undefined);
+            pushToast("error", describeEngineError("open-error", source.onDiskPath));
+            void doc.destroy().catch(() => undefined);
             return null;
           }
         } else {
-          stubRendererEngine.registerTab(engineDocId, parsed.doc.numPages);
+          if (engineRef.current.available) {
+            // Real engine: hand it the bytes directly. Save (in-place) is
+            // intentionally disabled on the renderer side because there is
+            // no origin file — Save-As remains available for writing a copy.
+            const loadResult = await engineRef.current.loadDocumentBytes(
+              engineDocId,
+              bytes,
+              password,
+            );
+            if (!loadResult.ok) {
+              if (passwordFailure(loadResult.error)) return null;
+              pushToast(
+                "error",
+                describeEngineError("open-error", source.displayName),
+              );
+              void doc.destroy().catch(() => undefined);
+              return null;
+            }
+          } else {
+            stubRendererEngine.registerTab(engineDocId, doc.numPages);
+          }
         }
       }
       // DEF-137 renderer half — the engine parses annotations,
@@ -1641,7 +1678,7 @@ export function App(): ReactElement {
       const stateResult = await engineRef.current.getState(engineDocId);
       const seeded = seededEngineUiState(
         stateResult.ok ? stateResult.value : null,
-        parsed.doc.numPages,
+        doc.numPages,
       );
       // DEF-209 — refuse documents whose per-page annotation count
       // exceeds the renderer's mirror limit (ADV-030: a synthetic
@@ -1656,7 +1693,7 @@ export function App(): ReactElement {
       // failure path.
       const overLimitPage = firstPageOverAnnotationLimit(seeded.state.annotations);
       if (overLimitPage !== null) {
-        void parsed.doc.destroy().catch(() => undefined);
+        void doc.destroy().catch(() => undefined);
         pushToast(
           "error",
           `Too many annotations on page ${overLimitPage} (${MAX_ANNOTATIONS_PER_PAGE} max). The document was not opened.`,
@@ -1701,7 +1738,7 @@ export function App(): ReactElement {
       // and avoids a race that previously left the form list empty.
       void loadFormFields(id, engineDocId);
 
-      void readOutline(parsed.doc)
+      void readOutline(doc)
         .then((outline) => {
           if (outline === null) return;
           setOpenTabs((prev) => {
@@ -1729,10 +1766,10 @@ export function App(): ReactElement {
       // a later stale entry is overwritten when a retry succeeds.
       if (
         source.onDiskPath !== null &&
-        typeof options?.password === "string" &&
-        options.password.length > 0
+        typeof password === "string" &&
+        password.length > 0
       ) {
-        sessionPasswords.remember(source.onDiskPath, options.password);
+        sessionPasswords.remember(source.onDiskPath, password);
       }
       return { tabId: effectiveId, engineDocId };
     },
@@ -1781,7 +1818,14 @@ export function App(): ReactElement {
     [openFromBytes],
   );
 
-  const openPdfFromPath = useCallback(
+  /**
+   * The unchanged PDF open path. Phase 53 only renamed this from
+   * `openPdfFromPath`: the body is byte-for-byte the pre-Phase-53 open, so a
+   * real `.pdf` (and a corrupt one) keeps today's exact behaviour, messages
+   * and error codes. `openPdfFromPath` below routes to it whenever the file
+   * is not a recognised convertible.
+   */
+  const openPdfBytesFromPath = useCallback(
     // Phase 32 — returns the opened tab's id (or null when the open
     // failed / was cancelled) so the empty pane's Open action can put the
     // new document straight into that pane. Existing callers ignore it.
@@ -1826,6 +1870,93 @@ export function App(): ReactElement {
       toastForPdfError,
       trackAndSave,
     ],
+  );
+
+  /**
+   * Phase 53 (feature I) — the convert route. `sourceInfo` already
+   * recognised the file. Mint ONE docId (the job id AND the engine doc id —
+   * never a second) and hand it to `convert.toDocument`, which registers it
+   * with the engine; read the produced bytes back under that SAME id and run
+   * the shared tab setup with `registerEngine: false` so nothing re-registers
+   * the document. The source file is NOT the tab's save target: `onDiskPath`
+   * stays null so a converted import can never overwrite its `.txt` / `.csv`
+   * / `.rtf` origin (Save is disabled, Save As writes a new PDF).
+   */
+  const openConvertedFromPath = useCallback(
+    async (
+      path: string,
+      info: ConvertSourceInfo,
+      api: TFlexApiConvert,
+    ): Promise<string | null> => {
+      const displayName = splitRecentPath(path).name;
+      const source: OpenSource = {
+        kind: "file",
+        path,
+        displayName,
+        onDiskPath: null,
+      };
+      const docId = crypto.randomUUID();
+      // A visible affordance from the first frame; runConvertOpen refines
+      // the phase as main pushes progress.
+      setConvertProgress({ docId, phase: "Preparing" });
+      const opened = await runConvertOpen({
+        path,
+        displayName,
+        api,
+        // The Phase 11 bytes hook. A backend without it cannot hand the
+        // converted bytes to PDF.js; runConvertOpen reports it once.
+        getDocumentBytes: (id) => {
+          // DEF-374 — call the method ON the engine. Extracting it into a
+          // local alias loses `this` on RealEngineAdapter's prototype method
+          // and throws `Cannot read properties of undefined (reading 'inner')`.
+          if (engineRef.current.getDocumentBytes === undefined) {
+            return Promise.resolve({ ok: false as const, error: { code: "internal", message: "no-bytes-api" } });
+          }
+          return engineRef.current.getDocumentBytes(id);
+        },
+        // The converted bytes enter the SAME tab-setup as a PDF open, with
+        // `engineDocId` set so the engine — which already holds the doc from
+        // `convert.toDocument` — is not re-registered.
+        createTab: async ({ docId: registeredId, bytes }) => {
+          const opened = await openFromBytes(bytes, source, { engineDocId: registeredId });
+          return opened === null ? null : opened.tabId;
+        },
+        onOpened: ({ tabId, result }) => {
+          setConvertNotices((prev) => ({
+            ...prev,
+            [tabId]: noticeFromResult(info.label, result),
+          }));
+        },
+        onProgress: setConvertProgress,
+        pushToast,
+        mintDocId: () => docId,
+      });
+      if (opened === null) return null;
+      await recordRecentOpen(path, displayName);
+      return opened.tabId;
+    },
+    [openFromBytes, recordRecentOpen],
+  );
+
+  const openPdfFromPath = useCallback(
+    // Phase 32 — returns the opened tab's id (or null when the open
+    // failed / was cancelled) so the empty pane's Open action can put the
+    // new document straight into that pane. Existing callers ignore it.
+    //
+    // Phase 53 — `routeOpenPath` probes `window.tflex.convert.sourceInfo`
+    // first: an absent bridge, an `unsupported-format` result, or ANY other
+    // `sourceInfo` failure falls straight through to `openPdfBytesFromPath`
+    // (the unchanged PDF path). Only a recognised convertible takes the
+    // convert route. This is the ONE place the branch lives, so the Open
+    // dialog, the OS-open listener, the OS drop and the recent list all
+    // inherit it.
+    (path: string): Promise<string | null> =>
+      routeOpenPath(path, {
+        api: window.tflex.convert,
+        openPdf: openPdfBytesFromPath,
+        openConverted: openConvertedFromPath,
+      }),
+    [openConvertedFromPath, openPdfBytesFromPath],
   );
 
   /** Phase 52 (feature A) — the prompt's retry. Reopens the pending file
@@ -1878,7 +2009,10 @@ export function App(): ReactElement {
   );
 
   const onOpenClick = useCallback(async (): Promise<void> => {
-    const picked = await window.tflex.openFileDialog();
+    // DEF-375 — the generic Open path routes non-PDF files through the
+    // conversion bridge, so the OS dialog must offer the grouped Phase 53
+    // filters (`openFileDialog('document')`), not the PDF-only default.
+    const picked = await window.tflex.openFileDialog("document");
     if (picked === null) return;
     // Phase 32 (DEF-277/DEF-278) — in Multi Mode this generic open lands in
     // the focused pane; a file that is already the OTHER pane's document is
@@ -5896,6 +6030,69 @@ pushToast(
     [pushToast],
   );
 
+  // ---- Phase 53 (feature G mode 2): Fill form fields from CSV ----------
+  //
+  // The verb is gated on the active document actually having AcroForm
+  // fields (the registry's `form-fields` precondition, read live by the
+  // dock/palette). The dialog runs `convert.csvToDocumentFields` against
+  // the ACTIVE document's engine id; a success refreshes form state
+  // through the SAME path a normal form fill uses.
+
+  const onFillFromCsvClick = useCallback((): void => {
+    const activeId = activeTabIdRefLocal.current;
+    if (activeId === null) return;
+    const open = openTabsRef.current[activeId];
+    if (open === undefined) return;
+    // Fail loud by construction: with no fields the verb is disabled (and
+    // carries this reason), so this guard only protects a direct call.
+    if (open.forms.fields.length === 0) return;
+    setFillFromCsvOpen(true);
+  }, []);
+
+  const pickCsvFile = useCallback(async (): Promise<string | null> => {
+    if (window.tflex.openFileDialog === undefined) return null;
+    // `'document'` already groups `.csv` under Spreadsheets; no new dialog
+    // kind is introduced for this feature.
+    return window.tflex.openFileDialog("document");
+  }, []);
+
+  const runCsvToFieldsForActiveTab = useCallback(
+    async (
+      path: string,
+    ): Promise<{ result: CsvFieldMappingResult } | { error: string }> => {
+      const activeId = activeTabIdRefLocal.current;
+      if (activeId === null) return { error: "No active document." };
+      const open = openTabsRef.current[activeId];
+      if (open === undefined) return { error: "No active document." };
+      const convert = window.tflex.convert;
+      if (convert?.csvToDocumentFields === undefined) {
+        return { error: "Filling form fields from CSV requires a newer build." };
+      }
+      const res = await convert.csvToDocumentFields(open.session.engineDocId, path);
+      if (!res.ok) {
+        return { error: toastForConvertError(res.error.code, path) };
+      }
+      // The values were written by the ENGINE. Refresh the active tab's
+      // form state + modified flag through the same getState -> noteOpApplied
+      // path a normal form fill uses; the engineUi mirror then re-seeds
+      // openTabs[tabId].forms via replaceFields. No React form state is
+      // hand-mutated here.
+      syncEngineStateAfterFill(activeId);
+      return { result: res.value };
+    },
+    [syncEngineStateAfterFill],
+  );
+
+  const onFillFromCsvApplied = useCallback(
+    (applied: FillFromCsvApplied): void => {
+      pushToast(
+        "info",
+        `Filled ${applied.filled} form field${applied.filled === 1 ? "" : "s"} from ${applied.path}.`,
+      );
+    },
+    [pushToast],
+  );
+
   // ---- Phase 12: Delete pages dialog (B8) ----
 
   /** Open the B8 delete pages dialog against the active tab. The
@@ -7850,7 +8047,9 @@ pushToast(
   const onOpenIntoPane = useCallback(
     (pane: PaneId): void => {
       void (async (): Promise<void> => {
-        const picked = await window.tflex.openFileDialog();
+        // DEF-375 — this feeds the generic open path (`openPdfFromPath`
+        // -> `routeOpenPath`), so it gets the grouped document filters.
+        const picked = await window.tflex.openFileDialog("document");
         if (picked === null) return;
         if (refuseOpenIntoPane(pane, picked)) return;
         const tabId = await openPdfFromPath(picked);
@@ -8112,6 +8311,7 @@ pushToast(
       watermark: onWatermarkClick,
       exportComments: onCommentExportClick,
       importComments: onCommentImportClick,
+      fillFromCsv: onFillFromCsvClick,
       optimize: onOptimizeClick,
       auditSpace: onAuditClick,
       createFromImages: onCreateClick,
@@ -8157,6 +8357,7 @@ pushToast(
       onWatermarkClick,
       onCommentExportClick,
       onCommentImportClick,
+      onFillFromCsvClick,
       onOptimizeClick,
       onAuditClick,
       onCreateClick,
@@ -9177,20 +9378,42 @@ pushToast(
             // Phase 52 (feature B) — an encrypted document keeps every tool
             // enabled; the banner only reports the encryption state.
             const protection = protectionByTab[meta.id];
-            if (protection === undefined) return document;
+            // Phase 53 (feature I) — the conversion card for an imported tab.
+            // Dismissing deletes the entry, so it never returns for that tab.
+            const conversion = convertNotices[meta.id];
+            if (protection === undefined && conversion === undefined) return document;
             return (
-              <div className="document-column" data-document-protected>
-                <ProtectionNotice
-                  protection={protection}
-                  onDismiss={(): void =>
-                    setProtectionByTab((prev) => {
-                      if (!(meta.id in prev)) return prev;
-                      const next = { ...prev };
-                      delete next[meta.id];
-                      return next;
-                    })
-                  }
-                />
+              <div
+                className="document-column"
+                data-document-protected={protection !== undefined ? true : undefined}
+                data-document-converted={conversion !== undefined ? true : undefined}
+              >
+                {conversion !== undefined && (
+                  <ConversionNotice
+                    notice={conversion}
+                    onDismiss={(): void =>
+                      setConvertNotices((prev) => {
+                        if (!(meta.id in prev)) return prev;
+                        const next = { ...prev };
+                        delete next[meta.id];
+                        return next;
+                      })
+                    }
+                  />
+                )}
+                {protection !== undefined && (
+                  <ProtectionNotice
+                    protection={protection}
+                    onDismiss={(): void =>
+                      setProtectionByTab((prev) => {
+                        if (!(meta.id in prev)) return prev;
+                        const next = { ...prev };
+                        delete next[meta.id];
+                        return next;
+                      })
+                    }
+                  />
+                )}
                 {document}
               </div>
             );
@@ -9691,6 +9914,13 @@ pushToast(
         onConfirm={onCommentImportConfirm}
         onClose={onCancelCommentImport}
       />
+      <FillFromCsvDialog
+        open={fillFromCsvOpen}
+        pickCsvFile={pickCsvFile}
+        runCsvFill={runCsvToFieldsForActiveTab}
+        onApplied={onFillFromCsvApplied}
+        onClose={(): void => setFillFromCsvOpen(false)}
+      />
       <DeletePageDialog
         open={deletePageOpen}
         totalPages={
@@ -9732,6 +9962,17 @@ pushToast(
           void onCloseTabPromptChoose(choice);
         }}
       />
+      {/* Phase 53 (feature I) — the import progress affordance. Mounted once
+       * for the whole window (a conversion runs before its tab exists), with
+       * a cancel control addressed by the job id. */}
+      {convertProgress !== null && (
+        <ConversionProgress
+          progress={convertProgress}
+          onCancel={(docId): void => {
+            window.tflex.convert?.cancel(docId);
+          }}
+        />
+      )}
       <Toasts items={errorState.toasts} onDismiss={dismissToast} />
       {/* Phase 36 (chunk 4) — the Command Palette. Mounted once for the whole
        * window (so it works on the welcome screen and never doubles up in
@@ -9838,6 +10079,15 @@ pushToast(
               type: 'set-animations-enabled',
               value: next,
             });
+            trackAndSave(updated);
+            return updated;
+          });
+        }}
+        convertDefaults={settings.convertDefaults ?? DEFAULT_CONVERT_DEFAULTS}
+        onSetConvertDefaults={(next): void => {
+          setSettings((prev) => {
+            if (prev === null) return prev;
+            const updated: AppSettings = { ...prev, convertDefaults: next };
             trackAndSave(updated);
             return updated;
           });

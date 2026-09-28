@@ -427,6 +427,7 @@ describe("Phase 36 (chunk 7) ï¿½ the ONE shared Action Dock", () => {
         "watermark",
         "exportComments",
         "importComments",
+        "fillFromCsv",
       ]);
       // The UNFOCUSED pane's stage change never leaks into the dock.
       act((): void => {
@@ -441,6 +442,7 @@ describe("Phase 36 (chunk 7) ï¿½ the ONE shared Action Dock", () => {
         "watermark",
         "exportComments",
         "importComments",
+        "fillFromCsv",
       ]);
     } finally {
       unmount();

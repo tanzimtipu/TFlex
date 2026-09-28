@@ -4387,3 +4387,62 @@ was pushed out by an unshrinkable flex label. Measure the PAINTED result and the
 **AND: a failing spec MASKS its own siblings.** `phase51_gate` showed 2 failures; after qa re-pointed them, two
 MORE of the same timing-stale class appeared (the first failure had aborted the spec early). When you fix a
 failing e2e test in a long spec, re-run the whole spec and expect the next failure to be revealed.
+
+## 2026-09-29: Phase 53 - universal file handling I (the format matrix, part 1 of 5)
+
+The operator's 2026-09-29 request (a file-format matrix for office workers, developers, creative
+professionals, legal and casual readers) was tabled as a FIVE-PHASE PROGRAM rather than one phase, because it
+is far too large for a single gate:
+
+| Phase | Scope | Status |
+| --- | --- | --- |
+| 53 | `DocumentConversionService` foundation + `.txt` `.md` `.rtf` `.csv` `.html`/`.htm`/`.xhtml` import | CLOSED (12/12 criteria PASS) |
+| 54 | imaging + print graphics (`.png` `.jpg` `.tiff` `.svg`), PDF/A + PDF/X validation, image export | contract only |
+| 55 | bidirectional office conversion (`.docx` `.doc` `.odt` `.xlsx` `.xls` `.ods` `.pptx` `.ppt`) | contract only |
+| 56 | digital publishing + reading (`.epub` `.mobi`/`.azw` `.cbz`/`.cbt`) | contract only |
+| 57 | `.pdf/E` layers + CAD metadata, `.fdf`/`.xfdf` interchange, matrix regression, packaging gate | contract only |
+
+**Architecture that made Phase 53 cheap to build and must be preserved** (the rulings are in REQUIREMENTS.md
+Phase 53 and bind Phases 54-57): every import produces PDF BYTES and then enters the EXISTING engine open path
+(one document model, no forked pipeline); a `DocumentConversionService` owns a registry of per-format adapters
+each loaded with `await import()` at convert time so an unused format costs nothing at cold start; every
+conversion returns a declared `fidelity` (`native`/`layout`/`degraded`) plus `warnings[]` and the UI must show
+both; a failed sub-format returns a typed `Result` and never throws across IPC, with a generic text/image
+fallback where the bytes allow it; HTML/CSS and Markdown render through Electron's own offscreen
+`printToPDF` (the only real CSS layout engine available offline, zero new bytes) on a DEDICATED session
+partition with JS disabled and every non-`file:` request cancelled; and pure JavaScript only - no native
+addons, because the installer/portable guarantees depend on it.
+
+**The phase's CONTROL-INDEX is recorded here because qa could not find it in a repo file** (it lived only in
+the orchestrator's dispatch, which made row 8 unverifiable until it was tied to criterion 8):
+
+| # | Control | Promised action | Proof |
+| --- | --- | --- | --- |
+| 1 | Open dialog groups "Documents" / "Text and markup" / "Spreadsheets" / "All supported files" (`openFileDialog('document')`) | a non-PDF opens as a converted document | `phase53_format_import` criterion 1 (5/5 formats) |
+| 2 | `[data-dock-verb='fillFromCsv']` (Action Dock + Command Palette) | opens the CSV fill dialog; disabled WITH a reason when the document has no fields | gate row 2 + screenshots |
+| 3 | `[data-fill-csv-pick]` | OS picker for the `.csv`, shows the chosen name | gate row 3 |
+| 4 | `[data-fill-csv-confirm]` | fills matching fields; reports matched / unmatched headers / missing fields | gate rows 3-4; the SAVED file re-parsed independently |
+| 5 | `[data-conversion-progress]` / `[data-conversion-cancel]` | progress while converting; cancel aborts, creates no tab, is quiet | gate row 5 |
+| 6 | `[data-conversion-notice]` / `[data-conversion-dismiss]` | source format + fidelity label + EVERY warning; dismissible, does not return for that tab | gate row 6 |
+| 7 | `[data-prefs-convert-section]` and its controls (`[data-prefs-convert-page-size]`, `-margin`, `-font`, `-font-size`, `-delimiter`, `-csv-mapping`, `-html-backgrounds`) | persist; numbers clamp to 5-50 mm / 6-48 pt | gate row 7 + restart persistence |
+| 8 | OS-open / Explorer drop of a convertible path | routes into the same import flow | criterion 8 (app launched with a `.md` path) |
+
+**Orchestrator mistake worth its own line (cost: one gate cycle).** The chunk-D spec put the grouped Open
+filters in MAIN (`dialog.ts`, `specForKind`) but never told the renderer to request the `'document'` kind at
+the generic Open call sites, so the filter existed and was UNREACHABLE - filed as DEF-375. **Rule for every
+UI chunk: when a spec adds a capability behind a parameter, the spec must name the CALL SITES that must pass
+that parameter, not just the code that implements it.** Anchors must include the caller, not only the callee.
+
+**Two more lesson lines from this run, both of which cost a fix cycle:**
+
+- **A dev-fixed defect had no FIX-READY record.** DEF-372 (the encrypted re-open re-prompt) was fixed in the
+  tree by an earlier run but the ledger still said OPEN, so the gate had to retest and CLOSE it from scratch.
+  **Rule: a fix that lands without an orchestrator FIX-READY relay leaves the ledger and the code disagreeing;
+  relay every fix in the same run it lands.**
+- **A unit mock that is not binding-sensitive hides a real crash.** DEF-374 (HIGH, every non-PDF import
+  crashed) lived while 18 unit tests passed, because the mocked `getDocumentBytes` was a plain function and
+  the real one is a prototype method - extracting it into a local alias lost `this`. **Rule: a mock of a
+  prototype/class method must depend on `this`, or an unbound call passes in the test and throws in the app.**
+  The same gate also showed a CSP-vs-session race: the injected CSP blocks a remote subresource BEFORE
+  `webRequest.onBeforeRequest` sees it, so the cancel hook is the hard guarantee but a useless WARNING source -
+  detection has to scan the source too.

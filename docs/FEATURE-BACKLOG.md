@@ -352,3 +352,89 @@ live in renderer memory only (never settings, logs or sync).
 History:
 - orchestrator: recorded from the feature-scout encrypted-PDF research dispatch; promoted straight into
   Phase 52 at the operator's request
+
+## FEA-018: Native 3D / CAD structure rendering for PDF/E
+
+- Status: DEFERRED - the operator's 2026-09-29 universal-format request asked for "layered 3D structural
+  data rendering" and "CAD metadata" in `.pdf/E`. Phase 57 delivers the layers panel, the CAD/engineering
+  XMP metadata surface and an announced, readable limitation for 3D content. Rendering U3D/PRC geometry
+  needs a 3D engine (three.js + a U3D/PRC decoder) that has no maintained offline pure-JS implementation;
+  shipping one is its own program. Phase 57 refuses to render 3D rather than showing a blank page.
+- Source: The operator's file-format matrix (2026-09-29); PDF/E-1 ISO 24517-1 (3D annotations, measurement,
+  geospatial)
+- Category: Viewer / Engineering
+- Effort: XL (new 3D subsystem)
+- Likely new settings: yes (viewer defaults for 3D)
+- Batch: universal file-format program (2026-09-29)
+
+What it does: renders U3D/PRC 3D annotations and CAD structural data inside `.pdf/E` documents natively.
+
+Why it matters: it is the one genuinely heavyweight capability in the request that cannot be delivered with
+pure-JS offline libraries at acceptable quality; the honest degraded path is delivered in Phase 57.
+
+## FEA-019: PDF page to SVG vector export
+
+- Status: DEFERRED - the request listed `.svg` under imaging; Phase 54 delivers SVG IMPORT (native vector
+  translation plus Chromium raster fallback). Exporting a PDF page to true SVG vector paths requires
+  translating PDF content-stream operators into SVG primitives, which is a separate interpreter; Phase 54
+  ships PNG/JPEG page export at 72-600 DPI instead, which covers the practical need.
+- Source: The operator's file-format matrix (2026-09-29)
+- Category: Export
+- Effort: L
+- Likely new settings: no
+- Batch: universal file-format program (2026-09-29)
+
+What it does: exports a PDF page as an editable SVG preserving vector paths and text.
+
+Why it matters: design and print users want vector extraction; deferred because a partial interpreter that
+silently flattens is worse than an honest raster export.
+
+## FEA-020: True CMYK / ICC colour management (PDF/X production preflight)
+
+- Status: DEFERRED in part - Phase 54 validates PDF/X (output intent, ICC presence, CMYK-only, embedding,
+  transparency rules) and enforces or refuses honestly. Actual colour-space CONVERSION engine work (RGB to
+  CMYK via ICC transforms, ICC embedding of a user-supplied profile) is deferred: it needs a CMM (Little CMS
+  or similar) which is a native binary, forbidden by the pure-JS packaging rule.
+- Source: The operator's file-format matrix (2026-09-29); PDF/X-1a:2001 and PDF/X-4 ISO 15930
+- Category: Print production
+- Effort: XL (native CMM)
+- Likely new settings: yes (profiles per intent)
+- Batch: universal file-format program (2026-09-29)
+
+What it does: converts document colours into a target CMYK ICC space and embeds the profile.
+
+Why it matters: it is the single feature that turns validation into production-grade output; blocked by the
+no-native-addon rule and by `pdf-lib`'s lack of a colour-management pipeline.
+
+## FEA-021: Faithful PDF to DOCX / XLSX layout reconstruction
+
+- Status: DEFERRED - Phase 55 ships STRUCTURAL export (text, detected headings and tables, images) with a
+  mandatory fidelity warning, verified by re-import. Reconstructing true page layout (floating frames,
+  column geometry, exact positions) in an editable Word/Excel file is a different order of problem and is
+  where commercial converters themselves fail.
+- Source: The operator's file-format matrix (2026-09-29) - "and vice-versa"
+- Category: Export / Office
+- Effort: XL
+- Likely new settings: yes (layout mode)
+- Batch: universal file-format program (2026-09-29)
+
+What it does: produces a DOCX/XLSX that visually matches the PDF page layout, not just its content.
+
+Why it matters: the operator asked for bidirectionality; Phase 55 delivers it at structural fidelity and
+this entry records that layout fidelity is knowingly not claimed.
+
+## FEA-022: DRM-protected e-book support
+
+- Status: OUT-OF-SCOPE - refuses by policy. `.azw`/`.epub` files carrying DRM protection are detected and
+  refused with a readable message. The app never attempts to decrypt protected e-books or install a
+  circumvention library; no such dependency may be added.
+- Source: The operator's file-format matrix (2026-09-29) - `.mobi` / `.azw`
+- Category: Reading
+- Effort: n/a (policy)
+- Likely new settings: no
+- Batch: universal file-format program (2026-09-29)
+
+What it does: would open DRM-protected Kindle/Adobe e-books.
+
+Why it matters: recorded so no later phase re-opens it as an oversight; the detection-and-refusal behaviour
+is a Phase 56 success criterion.

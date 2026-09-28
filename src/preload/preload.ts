@@ -51,6 +51,14 @@ import type {
 } from "../shared/types";
 import type { Result } from "../shared/result";
 import type {
+  ConvertErrorCode,
+  ConvertOpenResult,
+  ConvertOptions,
+  ConvertProgress,
+  ConvertSourceInfo,
+  CsvFieldMappingResult,
+} from "../shared/convert";
+import type {
   DocumentProtection,
   EncryptDocumentOptions,
   EngineOpenError,
@@ -404,6 +412,42 @@ const engineApi = {
   },
 };
 
+// Phase 53 — conversion surface. sourceInfo/toDocument are invoke channels
+// that always resolve a typed Result (never throw); cancel aborts an in-flight
+// job; onProgress subscribes to the shared convert:progress push.
+const convertApi = {
+  sourceInfo(
+    path: string,
+  ): Promise<Result<ConvertSourceInfo, ConvertErrorCode>> {
+    return ipcRenderer.invoke(IPC.convertSourceInfo, path);
+  },
+  toDocument(
+    docId: string,
+    path: string,
+    options?: ConvertOptions,
+  ): Promise<Result<ConvertOpenResult, ConvertErrorCode>> {
+    return ipcRenderer.invoke(IPC.convertToDocument, docId, path, options);
+  },
+  csvToDocumentFields(
+    docId: string,
+    path: string,
+    options?: ConvertOptions,
+  ): Promise<Result<CsvFieldMappingResult, ConvertErrorCode>> {
+    return ipcRenderer.invoke(IPC.convertCsvToFields, docId, path, options);
+  },
+  cancel(jobId: string): void {
+    void ipcRenderer.invoke(IPC.convertCancel, jobId);
+  },
+  onProgress(cb: (progress: ConvertProgress) => void): () => void {
+    const listener = (_event: unknown, progress: ConvertProgress): void =>
+      cb(progress);
+    ipcRenderer.on(IPC.convertProgressEvent, listener);
+    return () => {
+      ipcRenderer.removeListener(IPC.convertProgressEvent, listener);
+    };
+  },
+};
+
 const api = {
   minimizeWindow(): void {
     void ipcRenderer.invoke(IPC.windowMinimize);
@@ -587,6 +631,7 @@ const api = {
     },
   },
   engine: engineApi,
+  convert: convertApi,
   signatures: {
     list(): Promise<SavedSignaturesResult> {
       return ipcRenderer.invoke(IPC.signaturesList);

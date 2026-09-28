@@ -1,4 +1,12 @@
 import type { Result } from "./result";
+import type {
+  ConvertErrorCode,
+  ConvertOpenResult,
+  ConvertOptions,
+  ConvertProgress,
+  ConvertSourceInfo,
+  CsvFieldMappingResult,
+} from "./convert";
 import type { AccountStatusResult, AccountsClientConfig, OAuthCallbackOutcome, OAuthCallbackStartResult, OAuthTraceEvent, OpenAuthUrlResult, SetSessionPayload, SyncReport } from "./accounts";
 import type {
   AddStampPayload,
@@ -309,6 +317,20 @@ export const IPC = {
   // typed `ClipboardImageResult` — it never throws. Main only, read-only:
   // it never writes to disk.
   clipboardReadImage: "clipboard:readImage",
+  // Phase 53 — Universal file handling. `convert:sourceInfo` (invoke) reports
+  // the detected format/fidelity before conversion; `convert:toDocument`
+  // (invoke) converts and opens in the existing engine, resolving a typed
+  // `ConvertOpenResult` (never bytes, never a throw). `convert:cancel` aborts
+  // an in-flight job by id; `convert:progress` (main -> renderer) pushes
+  // `ConvertProgress` while a conversion runs.
+  convertSourceInfo: "convert:sourceInfo",
+  convertToDocument: "convert:toDocument",
+  // Phase 53 feature G mode 2 - maps a CSV's headers onto the AcroForm fields
+  // of an already-open document through the EXISTING forms reader/writer.
+  // Resolves a typed `Result<CsvFieldMappingResult, ConvertErrorCode>`.
+  convertCsvToFields: "convert:csvToFields",
+  convertCancel: "convert:cancel",
+  convertProgressEvent: "convert:progress",
 } as const;
 
 /** Result of `signatures:save` and `signatures:list`. The renderer treats
@@ -688,6 +710,34 @@ export interface TFlexApiEngine {
   ): Promise<Result<EngineState, import("./types").EngineError>>;
 }
 
+/** Phase 53 — conversion surface exposed to the renderer. Each method routes
+ *  over the matching `convert:*` channel through preload. `toDocument` never
+ *  returns bytes (the engine already holds them) and never throws: every
+ *  failure is a typed `Result` with a `ConvertErrorCode`. */
+export interface TFlexApiConvert {
+  /** Detect the format, label and declared fidelity before converting. */
+  sourceInfo(path: string): Promise<Result<ConvertSourceInfo, ConvertErrorCode>>;
+  /** Convert a file and open it in the existing engine as `docId`. */
+  toDocument(
+    docId: string,
+    path: string,
+    options?: ConvertOptions,
+  ): Promise<Result<ConvertOpenResult, ConvertErrorCode>>;
+  /** Phase 53 feature G mode 2 - fill an already-open document's AcroForm
+   *  fields from a CSV's header row. Reports matched/unmatched/missing names;
+   *  never opens a document and never throws across IPC. */
+  csvToDocumentFields(
+    docId: string,
+    path: string,
+    options?: ConvertOptions,
+  ): Promise<Result<CsvFieldMappingResult, ConvertErrorCode>>;
+  /** Abort an in-flight conversion by its job id (the docId). */
+  cancel(jobId: string): void;
+  /** Subscribe to `ConvertProgress` for a running conversion. Returns an
+   *  unsubscribe. */
+  onProgress(cb: (progress: ConvertProgress) => void): () => void;
+}
+
 export interface TFlexApi {
   minimizeWindow(): void;
   maximizeWindow(): void;
@@ -918,4 +968,8 @@ setEnabled(state: import("./types").MenuEnabledState): void;
    *  enforces per-method `engine-error` degradation when an
    *  individual engine.* method is missing. */
   engine?: TFlexApiEngine;
+  /** Phase 53 — conversion surface (matches `window.tflex.convert` at
+   *  runtime). Optional so a preload without the bridge degrades gracefully
+   *  (jsdom tests, older builds). */
+  convert?: TFlexApiConvert;
 }

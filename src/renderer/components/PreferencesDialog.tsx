@@ -26,6 +26,8 @@ import { AnimatePresence } from 'motion/react';
 import { MonitorCog, X } from 'lucide-react';
 import type { OpenDefaultAppsSettingsResult } from '../../shared/ipc';
 import type { AppInfo } from '../../shared/types';
+import { DEFAULT_CONVERT_DEFAULTS } from '../../shared/convert';
+import type { ConvertDefaults } from '../../shared/convert';
 import type { ThemeDefault } from '../state/preferences';
 import { TfBackdrop, TfSheet } from './motion/TfMotion';
 
@@ -45,6 +47,48 @@ interface PreferencesDialogProps {
    *  animation in the app to the instant path. */
   animationsEnabled: boolean;
   onSetAnimationsEnabled: (next: boolean) => void;
+  /** Phase 53 — the import/conversion defaults (Settings `convertDefaults`).
+   *  The controls persist each change through the host's settings path.
+   *  Optional so older mounts keep rendering; absent means the documented
+   *  defaults and no persist. */
+  convertDefaults?: ConvertDefaults;
+  onSetConvertDefaults?: (next: ConvertDefaults) => void;
+}
+
+/** Phase 53 — the font families the settings validator accepts for
+ *  `convertDefaults.textFontFamily`. Mirrors `CONVERT_FONT_FAMILIES` in
+ *  `src/main/services/settings.ts` (the bundled EditFont allowlist plus
+ *  `Inter`). The select may only offer values main would accept. */
+export const CONVERT_FONT_FAMILIES: readonly string[] = [
+  'Helvetica',
+  'Times',
+  'Courier',
+  'Liberation Sans',
+  'DejaVu Serif',
+  'DejaVu Sans Mono',
+  'Inter',
+];
+
+/** The validator's documented bounds for the two numeric defaults. */
+export const CONVERT_MARGIN_MIN_MM = 5;
+export const CONVERT_MARGIN_MAX_MM = 50;
+export const CONVERT_FONT_SIZE_MIN_PT = 6;
+export const CONVERT_FONT_SIZE_MAX_PT = 48;
+
+/** Clamp a margin in mm to the validator's accepted range. */
+export function clampMarginMm(value: number): number {
+  return Math.max(
+    CONVERT_MARGIN_MIN_MM,
+    Math.min(CONVERT_MARGIN_MAX_MM, Math.round(value)),
+  );
+}
+
+/** Clamp a text font size in pt to the validator's accepted range. */
+export function clampFontSizePt(value: number): number {
+  return Math.max(
+    CONVERT_FONT_SIZE_MIN_PT,
+    Math.min(CONVERT_FONT_SIZE_MAX_PT, Math.round(value)),
+  );
 }
 
 const FALLBACK_PATHS: AppInfo['storagePaths'] = {
@@ -65,8 +109,15 @@ export function PreferencesDialog(props: PreferencesDialogProps): ReactElement |
     onSetRecentsCap,
     animationsEnabled,
     onSetAnimationsEnabled,
+    convertDefaults = DEFAULT_CONVERT_DEFAULTS,
+    onSetConvertDefaults,
   } = props;
   const [capDraft, setCapDraft] = useState(String(recentsCap));
+  // Phase 53 — the two numeric conversion controls are drafts committed on
+  // blur/Enter, so a half-typed value is never persisted; the clamps below
+  // guarantee the committed value is one the settings validator accepts.
+  const [marginDraft, setMarginDraft] = useState(String(convertDefaults.marginMm));
+  const [fontSizeDraft, setFontSizeDraft] = useState(String(convertDefaults.textFontSizePt));
   const [paths, setPaths] = useState<AppInfo['storagePaths']>(FALLBACK_PATHS);
   // Phase 50 - the honest outcome line for the "default PDF app" action. Null
   // until the user clicks; the app never claims IT changed the default, only
@@ -76,6 +127,14 @@ export function PreferencesDialog(props: PreferencesDialogProps): ReactElement |
   useEffect(() => {
     setCapDraft(String(recentsCap));
   }, [recentsCap]);
+
+  useEffect(() => {
+    setMarginDraft(String(convertDefaults.marginMm));
+  }, [convertDefaults.marginMm]);
+
+  useEffect(() => {
+    setFontSizeDraft(String(convertDefaults.textFontSizePt));
+  }, [convertDefaults.textFontSizePt]);
 
   // DEF-201 — close the sheet on Escape. Every other dialog in the app
   // (DeletePageDialog, MergeDialog, OptimizeDialog, ...) installs a
@@ -118,6 +177,41 @@ export function PreferencesDialog(props: PreferencesDialogProps): ReactElement |
     } else {
       setCapDraft(String(recentsCap));
     }
+  };
+
+  const commitMargin = (): void => {
+    const n = Number(marginDraft);
+    if (Number.isFinite(n)) {
+      const clamped = clampMarginMm(n);
+      if (clamped !== convertDefaults.marginMm) {
+        onSetConvertDefaults?.({ ...convertDefaults, marginMm: clamped });
+      } else {
+        setMarginDraft(String(clamped));
+      }
+    } else {
+      setMarginDraft(String(convertDefaults.marginMm));
+    }
+  };
+
+  const commitFontSize = (): void => {
+    const n = Number(fontSizeDraft);
+    if (Number.isFinite(n)) {
+      const clamped = clampFontSizePt(n);
+      if (clamped !== convertDefaults.textFontSizePt) {
+        onSetConvertDefaults?.({ ...convertDefaults, textFontSizePt: clamped });
+      } else {
+        setFontSizeDraft(String(clamped));
+      }
+    } else {
+      setFontSizeDraft(String(convertDefaults.textFontSizePt));
+    }
+  };
+
+  const setConvert = <K extends keyof ConvertDefaults>(
+    key: K,
+    value: ConvertDefaults[K],
+  ): void => {
+    onSetConvertDefaults?.({ ...convertDefaults, [key]: value });
   };
 
   const handleOpenPath = (path: string): void => {
@@ -275,6 +369,119 @@ export function PreferencesDialog(props: PreferencesDialogProps): ReactElement |
                 {defaultAppsNotice}
               </p>
             )}
+          </section>
+
+          <section className="prefs-section" data-prefs-convert-section>
+            <h3 className="prefs-section-title">Import and conversion</h3>
+            <div className="prefs-row">
+              <label className="prefs-row-label" htmlFor="prefs-convert-page-size">Page size</label>
+              <select
+                id="prefs-convert-page-size"
+                className="prefs-select"
+                value={convertDefaults.pageSize}
+                onChange={(e): void => setConvert('pageSize', e.target.value as ConvertDefaults['pageSize'])}
+                data-prefs-convert-page-size
+              >
+                <option value="a4">A4</option>
+                <option value="letter">Letter</option>
+              </select>
+            </div>
+            <div className="prefs-row">
+              <label className="prefs-row-label" htmlFor="prefs-convert-margin">Margin (mm)</label>
+              <input
+                id="prefs-convert-margin"
+                type="number"
+                min={CONVERT_MARGIN_MIN_MM}
+                max={CONVERT_MARGIN_MAX_MM}
+                step={1}
+                className="prefs-input"
+                value={marginDraft}
+                onChange={(e): void => setMarginDraft(e.target.value)}
+                onBlur={commitMargin}
+                onKeyDown={(e): void => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    commitMargin();
+                  }
+                }}
+                data-prefs-convert-margin
+              />
+            </div>
+            <div className="prefs-row">
+              <label className="prefs-row-label" htmlFor="prefs-convert-font">Text font</label>
+              <select
+                id="prefs-convert-font"
+                className="prefs-select"
+                value={convertDefaults.textFontFamily}
+                onChange={(e): void => setConvert('textFontFamily', e.target.value)}
+                data-prefs-convert-font
+              >
+                {CONVERT_FONT_FAMILIES.map((family) => (
+                  <option key={family} value={family}>{family}</option>
+                ))}
+              </select>
+            </div>
+            <div className="prefs-row">
+              <label className="prefs-row-label" htmlFor="prefs-convert-font-size">Text font size (pt)</label>
+              <input
+                id="prefs-convert-font-size"
+                type="number"
+                min={CONVERT_FONT_SIZE_MIN_PT}
+                max={CONVERT_FONT_SIZE_MAX_PT}
+                step={1}
+                className="prefs-input"
+                value={fontSizeDraft}
+                onChange={(e): void => setFontSizeDraft(e.target.value)}
+                onBlur={commitFontSize}
+                onKeyDown={(e): void => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    commitFontSize();
+                  }
+                }}
+                data-prefs-convert-font-size
+              />
+            </div>
+            <div className="prefs-row">
+              <label className="prefs-row-label" htmlFor="prefs-convert-delimiter">CSV delimiter</label>
+              <select
+                id="prefs-convert-delimiter"
+                className="prefs-select"
+                value={convertDefaults.csvDelimiter}
+                onChange={(e): void => setConvert('csvDelimiter', e.target.value as ConvertDefaults['csvDelimiter'])}
+                data-prefs-convert-delimiter
+              >
+                <option value="auto">Auto-detect</option>
+                <option value=",">Comma (,)</option>
+                <option value=";">Semicolon (;)</option>
+                <option value={'\t'}>Tab</option>
+              </select>
+            </div>
+            <div className="prefs-row">
+              <label className="prefs-row-label" htmlFor="prefs-convert-csv-mapping">Map CSV columns to form fields</label>
+              <input
+                id="prefs-convert-csv-mapping"
+                type="checkbox"
+                className="prefs-check"
+                checked={convertDefaults.csvFormMapping}
+                onChange={(e): void => setConvert('csvFormMapping', e.target.checked)}
+                data-prefs-convert-csv-mapping
+              />
+            </div>
+            <div className="prefs-row">
+              <label className="prefs-row-label" htmlFor="prefs-convert-html-backgrounds">Print HTML backgrounds</label>
+              <input
+                id="prefs-convert-html-backgrounds"
+                type="checkbox"
+                className="prefs-check"
+                checked={convertDefaults.htmlPrintBackgrounds}
+                onChange={(e): void => setConvert('htmlPrintBackgrounds', e.target.checked)}
+                data-prefs-convert-html-backgrounds
+              />
+            </div>
+            <p className="prefs-hint">
+              Used by every file import that produces a new PDF, and by Fill form fields from CSV. Applies to the next import.
+            </p>
           </section>
 
           <section className="prefs-section">

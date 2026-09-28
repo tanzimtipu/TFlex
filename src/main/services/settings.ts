@@ -16,7 +16,11 @@ import type {
   WatermarkType,
   WindowGeometry,
 } from '../../shared/types';
-import { isEditFont } from './text-style';
+import {
+  DEFAULT_CONVERT_DEFAULTS,
+  type ConvertDefaults,
+} from '../../shared/convert';
+import { EDIT_FONTS, isEditFont } from './text-style';
 
 const RECENT_FILES_CAP = 10;
 const MIN_WINDOW_WIDTH = 640;
@@ -491,6 +495,88 @@ export function normalizeEncryptDefaults(raw: unknown): EncryptDefaults | null {
   };
 }
 
+/**
+ * Phase 53 — the font families `convertDefaults.textFontFamily` accepts: the
+ * bundled/embeddable EditFont allowlist plus `Inter`, which is the documented
+ * Phase-53 default and is bundled by the app (@fontsource-variable/inter) but
+ * has no pdf-lib TTF yet (see the chunk-A report). Being on this list is the
+ * "member of the bundled font set" rule.
+ */
+const CONVERT_FONT_FAMILIES: readonly string[] = [...EDIT_FONTS, 'Inter'];
+
+/**
+ * Phase 53 — normalise `convertDefaults` (preserve-if-valid, reject-if-
+ * invalid, unknown keys dropped), mirroring `normalizeEncryptDefaults`. An
+ * absent/empty object rejects the field (the consumer applies
+ * `DEFAULT_CONVERT_DEFAULTS`). A present invalid value rejects the WHOLE
+ * field; a partial object fills its missing keys from the default.
+ */
+export function normalizeConvertDefaults(raw: unknown): ConvertDefaults | null {
+  if (raw === null || typeof raw !== 'object' || Array.isArray(raw)) return null;
+  const r = raw as Record<string, unknown>;
+  const out: ConvertDefaults = { ...DEFAULT_CONVERT_DEFAULTS };
+  let present = 0;
+
+  if (r.pageSize !== undefined) {
+    if (r.pageSize !== 'a4' && r.pageSize !== 'letter') return null;
+    out.pageSize = r.pageSize;
+    present += 1;
+  }
+  if (r.marginMm !== undefined) {
+    if (
+      typeof r.marginMm !== 'number' ||
+      !Number.isFinite(r.marginMm) ||
+      r.marginMm < 5 ||
+      r.marginMm > 50
+    ) {
+      return null;
+    }
+    out.marginMm = r.marginMm;
+    present += 1;
+  }
+  if (r.textFontFamily !== undefined) {
+    if (
+      typeof r.textFontFamily !== 'string' ||
+      !CONVERT_FONT_FAMILIES.includes(r.textFontFamily)
+    ) {
+      return null;
+    }
+    out.textFontFamily = r.textFontFamily;
+    present += 1;
+  }
+  if (r.textFontSizePt !== undefined) {
+    if (
+      typeof r.textFontSizePt !== 'number' ||
+      !Number.isFinite(r.textFontSizePt) ||
+      r.textFontSizePt < 6 ||
+      r.textFontSizePt > 48
+    ) {
+      return null;
+    }
+    out.textFontSizePt = r.textFontSizePt;
+    present += 1;
+  }
+  if (r.csvDelimiter !== undefined) {
+    if (
+      typeof r.csvDelimiter !== 'string' ||
+      !(['auto', ',', ';', '\t'] as readonly string[]).includes(r.csvDelimiter)
+    ) {
+      return null;
+    }
+    out.csvDelimiter = r.csvDelimiter as ConvertDefaults['csvDelimiter'];
+    present += 1;
+  }
+  for (const key of ['csvFormMapping', 'htmlPrintBackgrounds'] as const) {
+    if (r[key] !== undefined) {
+      if (typeof r[key] !== 'boolean') return null;
+      out[key] = r[key];
+      present += 1;
+    }
+  }
+  if (present === 0) return null;
+  return out;
+}
+
 function normalizeAnnotationColorEntry(raw: unknown): AnnotationColorPreset | null {
   if (typeof raw === 'string' && raw.length > 0) {
     return { id: raw, hex: raw };
@@ -659,6 +745,14 @@ export function normalizeSettings(raw: unknown): AppSettings {
   const encryptDefaults = normalizeEncryptDefaults(rawObj.encryptDefaults);
   if (encryptDefaults !== null) {
     settings.encryptDefaults = encryptDefaults;
+  }
+
+  // Phase 53: import defaults for the conversion pipeline. Reject-if-invalid
+  // leaves the field absent (consumer default `DEFAULT_CONVERT_DEFAULTS`); a
+  // partial object fills its missing keys from the default.
+  const convertDefaults = normalizeConvertDefaults(rawObj.convertDefaults);
+  if (convertDefaults !== null) {
+    settings.convertDefaults = convertDefaults;
   }
 
   // Phase 44 (operator change): accounts feature flag. Strict boolean,

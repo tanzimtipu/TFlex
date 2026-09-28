@@ -1,4 +1,5 @@
 import type { Result } from './result';
+import type { ConvertDefaults } from './convert';
 
 export type PdfOpenError = 'not-pdf' | 'corrupt' | 'encrypted' | 'io';
 
@@ -12,8 +13,10 @@ export type FdfOpenError = 'not-fdf' | 'corrupt' | 'io';
 /** Phase 12 — selects which file-type filter `openFileDialog` shows. `'pdf'`
  *  (default) is the usual Open-PDF picker; `'fdf'` shows the FDF comments
  *  filter used by the Import comments (FDF) flow so users can actually pick
- *  `.fdf` files (the PDF-only filter hid them). */
-export type OpenFileDialogKind = 'pdf' | 'fdf';
+ *  `.fdf` files (the PDF-only filter hid them). Phase 53 adds `'document'`:
+ *  the grouped universal-import filter set (Documents / Text and markup /
+ *  Spreadsheets / All supported files). */
+export type OpenFileDialogKind = 'pdf' | 'fdf' | 'document';
 
 export type SaveFormat = 'nsis' | 'portable';
 
@@ -186,6 +189,11 @@ export interface AppSettings {
    *  setting. Validated preserve-if-valid in settings.ts; a missing field
    *  resolves to AES-256 with all permissions allowed (consumer default). */
   encryptDefaults?: EncryptDefaults;
+  /** Phase 53 — remembered import defaults for the conversion pipeline
+   *  (page size, margins, text font family/size, CSV delimiter/form mapping,
+   *  HTML print backgrounds). Validated preserve-if-valid in settings.ts; a
+   *  missing field resolves to `DEFAULT_CONVERT_DEFAULTS`. */
+  convertDefaults?: ConvertDefaults;
 }
 
 /** Phase 6 — what the renderer gets back from `app:getInfo`. The

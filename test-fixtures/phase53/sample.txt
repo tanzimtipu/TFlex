@@ -1,0 +1,7 @@
+TFlex Phase 53 text import fixture.
+
+This is a plain text document used to prove the .txt adapter opens a tab.
+It has several lines so the page count is at least one.
+
+Line four.
+Line five.

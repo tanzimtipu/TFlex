@@ -100,7 +100,14 @@ Deliberately left out of v1. Do not build these:
 The original v1 exclusions above describe the first release. A later numbered phase that
 explicitly adds a capability supersedes the matching exclusion for the current project.
 Therefore Phases 9–11 authorise their specified create/export, edit, and OCR work; Phase 6
-authorises the OTA release workflow. All other original exclusions remain in force.
+authorises the OTA release workflow. Phases 44–52 authorise the accounts/cloud-sync,
+digital-publishing-surface and encrypted-PDF work they specify. **Phases 53–57 authorise the
+universal file-format program: they supersede the original "No PDF creation from scratch or
+from other formats (docx, images)" exclusion and the PDF-only import assumption, for exactly
+the formats and directions those phases list and no others.** All other original exclusions
+remain in force — in particular the app remains Windows-only, still ships no login/licensing
+of its own beyond the Phase 44 accounts surface, and the conversion pipeline makes no network
+calls (Phase 53 success criterion 7 makes that testable).
 
 Where a later phase sets a visual or motion rule that differs from the general look-and-feel
 guidance, the later phase controls for that feature. In particular, Phase 14's glass motion
@@ -2974,3 +2981,401 @@ another reader.
    the phase suites stay green; the dependency swap does not change behaviour for unencrypted files.
 
 **Settings impact:** one new field - `encryptDefaults?: { algorithm: 'aes-256' | 'aes-128'; permissions: { print: boolean; highResPrint: boolean; copy: boolean; accessibleCopy: boolean; modify: boolean; comment: boolean; assemble: boolean; fillForms: boolean } }` (the Create-encrypted dialog's remembered defaults; validated in `src/main/services/settings.ts` - preserve-if-valid, reject-if-invalid, unknown keys dropped, a missing field resolving to AES-256 with all permissions allowed). **No password is ever a setting.**
+
+---
+
+## Phase 53 — Universal file handling I: DocumentConversionService foundation, text/markup/technical import
+
+**Operator request (2026-09-29):** implement a robust file-handling architecture giving the app a
+comprehensive import/export format matrix for office workers, developers, creative professionals,
+legal and casual readers. This is too large for one phase; the orchestrator has tabled it as the
+**five-phase program Phases 53–57**, in dependency order:
+
+| Phase | Scope | Depends on |
+| --- | --- | --- |
+| 53 | `DocumentConversionService` foundation + `.txt` `.md` `.rtf` `.csv` `.html`/`.htm`/`.xhtml` import | — |
+| 54 | Imaging and print graphics: `.png` `.jpg`/`.jpeg` `.tiff`/`.tif` `.svg`, PDF/A + PDF/X validation, image export | 53 |
+| 55 | Office conversion engine, bidirectional: `.docx` `.doc` `.odt` `.xlsx` `.xls` `.ods` `.pptx` `.ppt` | 53 |
+| 56 | Digital publishing and reading: `.epub` `.mobi`/`.azw` `.cbz`/`.cbt` | 53, 55 |
+| 57 | `.pdf/E` layers + CAD metadata, `.fdf`/`.xfdf` form-data interchange, full matrix regression, packaging gate | 53–56 |
+
+Each phase opens only when the previous one's success criteria are demonstrably met. Phases 54–57
+are contract now so the shared shapes in Phase 53 are designed for them, not retrofitted.
+
+**Architectural rulings (orchestrator; these bind every phase in the program):**
+
+1. **One document model, no forked pipeline.** Every import produces PDF bytes and then enters the
+   EXISTING engine open path. No second document model, no "incoming format" type that survives
+   past the conversion boundary. Editing, annotation, forms, optimize, print and save keep working
+   on an imported document with zero changes.
+2. **`DocumentConversionService` + isolated adapters.** One service owns a registry of per-format
+   adapters (`id`, `label`, `extensions`, `capabilities`, `sniff(path, head)`, `convert(ctx)`).
+   Adding a format is adding an adapter, never editing the service. Each adapter is a separate
+   module resolved by `await import()` at use time, so an unused format costs nothing at cold start
+   (the 3-second budget is contract).
+3. **Fidelity is declared, never implied.** Every conversion returns `fidelity: 'native' |
+   'layout' | 'degraded'` plus `warnings[]`. The UI shows both. A degraded conversion says which
+   capability was lost and why. Silent approximation is a defect.
+4. **Graceful degradation is the default, not an exception.** A failed sub-format never throws
+   across IPC: it returns a typed `ConvertError` (code + human message) and, where the bytes allow
+   it, attempts a generic text/image extraction with a `generic-fallback` warning. Obscure formats
+   are allowed to be unsupported; they are never allowed to crash or to no-op silently.
+5. **The layout engine is Electron itself.** HTML/CSS and Markdown render through an offscreen
+   hidden `BrowserWindow` + `webContents.printToPDF` — the only true CSS layout engine available
+   offline, and no new dependency. That window runs with JavaScript disabled and every non-`file:`
+   network request cancelled at the session, so it is also the sanitizer.
+6. **Conversion never blocks the renderer.** All decode/convert work happens in the main process
+   (and its offscreen window). The renderer only sends a path and receives progress, warnings and
+   an engine `docId`.
+7. **Streaming over buffering.** `CONVERT_LIMITS` names every ceiling (bytes per input, decoded
+   frames, rows per sheet). Formats that allow streaming (text, CSV, TIFF frames, spreadsheet
+   sheets, EPUB chapters, PDF pages) are read incrementally; a format that forces a full buffer
+   must have its ceiling enforced with a typed `too-large` error, never an OOM.
+8. **Pure JavaScript only.** No native addons and no prebuilt binaries in the installer: the
+   packaging and portable-build guarantees stay intact.
+9. **No DRM circumvention, ever.** Encrypted/protected e-books and DRM'd `.azw` are refused with a
+   readable message. The app does not decrypt what it is not licensed to decrypt.
+
+**Library selection (chosen before implementation, per the operator's instruction):**
+
+| Category | Library | Why |
+| --- | --- | --- |
+| PDF read/edit (existing) | `pdfjs-dist`, `@cantoo/pdf-lib` | Already the v1 engine; Phase 52's decrypting loader is reused |
+| HTML/CSS layout | Electron offscreen `printToPDF` | Real CSS layout, offline, already shipped, zero new bytes |
+| Markdown | `marked` | Small, standard AST/HTML output |
+| DOCX read | `mammoth` | Standard DOCX to semantic HTML |
+| XLSX/XLS/ODS read+write | `xlsx` (SheetJS) | One library for all three spreadsheet formats, read and write |
+| Containers (ODT/PPTX/EPUB/CBZ, DOCX fallback) | `fflate` | Tiny, fast, streaming-capable ZIP |
+| RTF | hand-rolled parser | No maintained pure-JS RTF layout parser; the subset needed is small and testable |
+| CSV | hand-rolled RFC 4180 parser | ~80 lines, fully unit-testable, RFC edge cases owned by us |
+| TIFF | `utif` (with a second decoder if a fixture compression is unsupported) | Pure JS, multi-page, baseline/LZW/Deflate/PackBits/CCITT |
+| SVG | hand-rolled SVG-to-pdf-lib vector translation, Chromium raster fallback | Native vector ops where possible; honest raster where not |
+| Images | `pdf-lib` embed + `pngjs` | Already present; DPI-aware page sizing |
+| DOCX write | `docx` | Pure JS DOCX generation |
+| PPTX write | `pptxgenjs` | Pure JS PPTX generation |
+| Text encodings | `iconv-lite` | UTF-8/UTF-16/CP1252/Latin-1 decoding for text, RTF and legacy formats |
+| TAR (CBT) | hand-rolled 512-byte header reader | Small, no dependency, fully testable |
+| MOBI/AZW | hand-rolled PalmDOC/LZ77 + KF8 record parser | No maintained library exists; text/images only, DRM refused |
+
+**Features**
+
+**A. The contract.** New `src/shared/convert.ts` holding every type in the program:
+`ConvertFormatId`, `ConvertFidelity`, `ConvertWarning { code; message; detail? }`,
+`ConvertSourceInfo`, `ConvertOptions`, `ConvertResult { bytes; pageCount; sourceFormat; fidelity;
+warnings; title }`, `ConvertError { code; message }`, `ConvertProgress`, `CONVERT_LIMITS`,
+`DEFAULT_CONVERT_OPTIONS`, and the shape identifiers for Phases 54–57 (image, office, publishing,
+validation options) so those phases consume a stable surface. New IPC channel block plus a
+`convert` member on `TFlexApi`: `convertSourceInfo(path)`, `convertToPdf(path, options)`,
+`convertCancel(jobId)`, `convertFormMapping(...)` (Phase 53 CSV path), and a
+`convert:progress` event.
+
+**B. The service and registry.** `src/main/services/convert/` — `index.ts`
+(`DocumentConversionService`), `registry.ts` (register/resolve/sniff, extension plus content
+sniffing so a mislabelled file routes by content), `errors.ts` (codes and the Result mapping),
+`limits.ts`, `adapters/text.ts`. Service API: `sourceInfo`, `convertToPdf`, `cancel`, and an
+internal progress emitter. `src/main/index.ts` wires the channels; `src/preload/preload.ts` exposes
+them; `src/main/open-path.ts` routes non-PDF extensions into the convert pipeline while `.pdf`
+keeps its existing path byte-for-byte.
+
+**C. Settings.** The `convertDefaults` field (below) is validated in
+`src/main/services/settings.ts` BEFORE any adapter reads it, mirroring the Phase 6/52 pattern:
+preserve-if-valid, reject-if-invalid, unknown keys dropped, missing field resolves to the
+documented defaults.
+
+**D. `.txt` import.** Encoding sniff (BOM, then UTF-8 validation, then CP1252/Latin-1 fallback),
+line-wrapped into a PDF at the configured page size, margins, font family and point size, with a
+page-number footer off by default. Streamed line by line so a 64 MB text file converts without
+buffering the whole file twice.
+
+**E. `.md` import.** `marked` to HTML, pre-styled template (H1–H6, bold, italic, links, ordered and
+unordered lists, tables, blockquotes, code blocks, horizontal rules) with a bundled print
+stylesheet, rendered through the offscreen print engine. Links are printed as text (no live
+annotation in this phase) and that is stated in a warning.
+
+**F. `.rtf` import.** Parser for the RTF subset: character formatting (bold, italic, underline,
+strike), font size, foreground colour, paragraph alignment, indents and margins, `\par` and page
+breaks, and the special-character escapes. Mapped to pdf-lib text runs at the configured page size.
+
+**G. `.csv` import, two modes.** (1) Table mode: RFC 4180 parser (quoted fields, escaped quotes,
+embedded newlines, delimiter sniffing, BOM) into a scale-to-fit paginated table PDF with a repeated
+header row. (2) Form-data mode: when the open document has AcroForm fields, map CSV header keys to
+field names and fill them, reporting matched and unmatched names — reusing the existing forms/FDF
+services rather than a parallel writer.
+
+**H. `.html`/`.htm`/`.xhtml` import.** The offscreen print engine: a pooled hidden window loading a
+sanitized temporary copy of the document with JavaScript disabled and all non-`file:` requests
+cancelled; multi-page print-ready PDF at the configured page size; each blocked subresource raises a
+warning naming it. The temp file is always deleted, including on cancel, timeout and crash.
+
+**I. Renderer surface.** Open dialog gains grouped filters ("Documents", "Text and markup",
+"Spreadsheets", "All supported files") and the unsupported-extension case is handled by content
+sniffing, not by the filter. An import runs with visible progress and a cancel affordance; the
+result opens in a tab with a dismissible **conversion card** stating source format, fidelity label
+and every warning. A failed import shows a readable message and leaves the previously open tab
+exactly as it was.
+
+**Success criteria**
+
+1. From the real Open dialog, `.txt`, `.md`, `.rtf`, `.csv` and `.html` files each import into an
+   open tab with the expected content; a screenshot of each result is captured and inspected.
+2. The Markdown fixture's H1–H6, bold, italic, ordered/unordered lists, table and blockquote are
+   all visibly distinct in the output PDF (text extraction unit test plus inspected screenshot).
+3. The CSV fixture containing quoted fields, escaped quotes and embedded newlines parses to the
+   correct cell grid (unit test); a 50,000-row CSV converts within the performance budget and
+   reports its row-count warning.
+4. CSV-to-form mapping fills the matching fields of the form fixture, reports unmatched headers by
+   name, and the saved file's field values are verifiable with a parser (not by our own UI).
+5. A corrupt fixture, an empty file, a zero-byte file with a supported extension, and an unknown
+   extension each produce a readable typed error or a `generic-fallback` warning — no crash, no
+   unhandled rejection, no silent no-op — and the app stays on its previous tab.
+6. Every `ConvertError` code has a unit test and a human-readable message; `convertToPdf` never
+   throws across IPC (`Result.err` only).
+7. HTML import makes no network call: a fixture with `<img src="http(s)://...">`, a `<script>` and
+   an `@import` produces warnings naming the blocked resources while the offscreen session records
+   zero outbound requests (asserted in a unit test over the request log).
+8. `convertSourceInfo` on a supported file reports the format, page count (where cheaply knowable)
+   and fidelity BEFORE conversion; on an unsupported file it returns `unsupported-format`.
+9. Registry resolution is content-aware: a `.txt` file whose bytes are Markdown routes to the
+   Markdown adapter, verified by a unit test.
+10. Import of a Markdown or HTML file whose output is very long (the 500-page equivalent) keeps the
+    app interactive: the renderer responds to input throughout the conversion (measured, recorded).
+11. Unit tests for the registry, sniffer, error layer, limits, `.txt`/`.md`/`.rtf`/`.csv` adapters
+    and the offscreen print engine pass; the e2e suite opens all five formats from the real Open
+    dialog; `npm run verify` is green; no regression in the existing PDF open/edit/save suites.
+12. Cold start remains under the performance budget with the new adapters present (measured and
+    recorded), proving the lazy-`import()` rule held.
+
+**Settings impact:** one new field -
+`convertDefaults?: { pageSize: 'a4' | 'letter'; marginMm: number; textFontFamily: string; textFontSizePt: number; csvDelimiter: 'auto' | ',' | ';' | '\t'; csvFormMapping: boolean; htmlPrintBackgrounds: boolean }`
+(the import defaults surfaced in Preferences; validated in `src/main/services/settings.ts` -
+preserve-if-valid, reject-if-invalid, unknown keys dropped; a missing field resolves to
+`{ pageSize: 'a4', marginMm: 20, textFontFamily: 'Inter', textFontSizePt: 11, csvDelimiter: 'auto',
+csvFormMapping: true, htmlPrintBackgrounds: true }`). `marginMm` must be finite and within 5–50,
+`textFontSizePt` finite and within 6–48, and `textFontFamily` a member of the bundled font set;
+anything else is rejected and the previous value kept.
+
+## Phase 54 — Universal file handling II: imaging, print graphics, PDF/A and PDF/X validation
+
+**Features**
+
+**A. Raster images.** `.png`, `.jpg`/`.jpeg`: DPI-aware page sizing (an image carrying 300 DPI
+metadata becomes a correctly sized page, not a 96-DPI guess), rotation, multi-image selection into
+one document, and page order matching selection order.
+
+**B. Multi-page TIFF.** `.tiff`/`.tif`: pure-JS decode, one PDF page per frame, decoded frame by
+frame so a 200-frame legal/healthcare stack does not buffer the whole stack at once. A frame that
+cannot be decoded becomes a placeholder page carrying the frame index and a warning; the remaining
+frames still convert. Baseline, LZW, Deflate, PackBits and CCITT G3/G4 are all required to decode.
+
+**C. SVG.** `.svg`: native vector translation of the static subset — `path` (via pdf-lib's SVG path
+support), `rect`, `circle`, `ellipse`, `line`, `polyline`, `polygon`, `g`, `transform`
+(matrix/translate/scale/rotate), `viewBox` scaling, fill/stroke/opacity/stroke-width, and gradients
+approximated as their dominant solid colour with a warning. Constructs outside the subset (filters,
+masks, `foreignObject`, images, animation beyond the first frame) are rasterized through the
+offscreen print engine at 300 DPI, and the warning names exactly what was rasterized.
+
+**D. PDF/A validation and preservation.** `.pdf/A` 1, 2 and 3 (a/b/u variants): read the XMP
+`pdfaid` identification, the output intent, font embedding, encryption state, transparency and
+JavaScript; report the declared level and every violation found. Export path enforcement: producing
+a PDF/A-marked file when the document violates the level is refused with the violation list, and
+the export of features forbidden by the level (encryption, transparency, non-embedded fonts,
+JavaScript, external content) is blocked or flagged per the documented rule. The validation is
+reported as "declared level plus violations", never as a certification claim.
+
+**E. PDF/X validation and enforcement.** X-1a, X-3 and X-4: output intent and ICC presence, CMYK
+only for X-1a, font embedding, transparency prohibition for X-1a; report and refuse to claim
+conformance when the document does not meet it. CMYK conversion of untagged RGB is NOT performed
+silently — it is refused with a readable reason or performed only on explicit user choice.
+
+**F. Image export.** A page or page range to PNG or JPEG at a chosen DPI (72/150/300/600), using
+the existing render path, so exported pixels match what the reader shows.
+
+**Success criteria**
+
+1. A 3-image selection of mixed PNG/JPEG produces a 3-page PDF whose page dimensions match each
+   image's own DPI metadata (unit-test assertion on the produced media box), with a screenshot.
+2. A 200-frame TIFF converts to a 200-page document with peak process memory recorded and inside
+   the recorded ceiling; a TIFF with one deliberately corrupt frame yields that frame's placeholder
+   page plus its warning while the other frames render.
+3. The CCITT G4 fixture decodes and renders legibly (inspected screenshot).
+4. A static SVG fixture (paths, curves, transforms, fills, strokes, opacity) renders crisp at 400%
+   zoom with no rasterization warning; a fixture using a filter and a mask produces the raster
+   fallback with a warning naming each rasterized construct.
+5. The PDF/A-1b fixture reports conformance and its violation-free status; a deliberately
+   non-conforming fixture reports each violation with its rule name; asking to export it as PDF/A
+   is refused with that list (not silently produced).
+6. The PDF/X-1a fixture reports the output intent and passes its CMYK/embedding checks; an RGB-only
+   fixture is reported non-conforming and is never silently converted or silently marked.
+7. Image export at 300 DPI produces a PNG whose pixel dimensions match the page size in inches
+   times 300 (unit-test assertion).
+8. No regression: the Phase 53 suites, the existing print/export paths, `verify:full`, and the
+   packaged build stay green.
+
+**Settings impact:** two new fields -
+`imageImportDefaults?: { pageSizeMode: 'image' | 'fixed'; fixedPageSize: 'a4' | 'letter'; fit: 'contain' | 'cover' | 'actual'; rotationDeg: 0 | 90 | 180 | 270 }`
+and `pdfValidationDefaults?: { target: 'none' | 'pdfa-1b' | 'pdfa-2b' | 'pdfa-3b' | 'pdfx-1a' | 'pdfx-3' | 'pdfx-4'; onViolation: 'warn' | 'block' }`,
+both validated in `src/main/services/settings.ts` with the preserve-if-valid, reject-if-invalid rule
+and unknown keys dropped; a missing field resolves to
+`{ pageSizeMode: 'image', fixedPageSize: 'a4', fit: 'contain', rotationDeg: 0 }` and
+`{ target: 'none', onViolation: 'warn' }`.
+
+## Phase 55 — Universal file handling III: bidirectional office conversion
+
+**Features**
+
+**A. Word and OpenDocument import.** `.docx` through `mammoth` to semantic HTML and then the
+offscreen print engine: headings, paragraphs, character styles, tables, lists, images, inline
+alignment. `.odt` through the ZIP container's `content.xml` mapped to the same HTML intermediate so
+one styling path serves both. Legacy `.doc` (binary Word) has no faithful pure-JS layout reader:
+it degrades to extracted text plus a `legacy-format-degraded` warning naming what was lost, and
+never pretends to be a faithful conversion.
+
+**B. Spreadsheet import.** `.xlsx`, `.xls`, `.ods` through `xlsx`: sheet-by-sheet pagination that
+repeats the header row on every page, scale-to-fit column widths, page size and orientation chosen
+to fit the used range, number/date formatting read from the cell formats, formula values read as
+their cached results, and a sheet list where each sheet starts on a new page. Gridline and
+fit-to-width options come from settings.
+
+**C. Presentation import.** `.pptx`: read slide dimensions from the presentation XML so each slide
+becomes a PDF page of exactly that aspect ratio; text boxes, images and basic shapes mapped with
+their positions and sizes; slide notes appended as a following page when the option is on.
+Transitions and animation are not rendered — a warning says so. Legacy `.ppt` degrades to text.
+
+**D. Export back out.** PDF to `.txt` (text layer, reading order), `.docx` (`docx`: paragraphs,
+headings by font size, tables detected from layout, images), `.xlsx` (`xlsx`: detected tables and
+text runs, one sheet per page plus a full-text sheet) and `.pptx` (`pptxgenjs`: each page rendered
+as a slide of matching aspect ratio). Every export carries a mandatory fidelity warning in the UI
+and writes a `conversion-fidelity` note into the produced file's metadata where the format allows.
+
+**E. Round-trip verification, not round-trip promises.** Exports are verified by parsing the
+produced file with the independent reader for that format and by re-importing it through our own
+adapter, and the two must agree on the extracted text.
+
+**Success criteria**
+
+1. The DOCX fixture (headings, styled paragraphs, a table, a list, an image) converts to a PDF whose
+   text extraction contains every heading and table cell, with the heading levels preserved as
+   distinct sizes; screenshot inspected.
+2. The ODT fixture with equivalent content produces an equivalent PDF (same extracted text set).
+3. A legacy `.doc` fixture imports as text with the `legacy-format-degraded` warning, naming the
+   lost capabilities, and the app does not crash.
+4. The XLSX fixture (3 sheets, a formula, a date, a wide table) produces a PDF with one page group
+   per sheet, the header row repeated on every page of that group, formula results as values, and
+   the date rendered in the cell's own format.
+5. A 20,000-row single-sheet XLSX converts within the recorded performance budget and reports no
+   memory ceiling breach.
+6. The PPTX fixture produces one PDF page per slide with the slide aspect ratio preserved
+   (unit-test assertion on each page's media box) and the notes page when the option is on.
+7. Each of the four exports produces a file that (a) opens in the independent parser for that
+   format and (b) re-imports through our adapter yielding the same extracted text as the source
+   PDF's text layer, with the fidelity warning present in the UI.
+8. Export of an empty or image-only page still produces a valid file (never a zero-byte or
+   corrupt one) and says which pages carried no extractable content.
+9. No regression: Phase 53/54 suites, the existing export/print paths and `verify:full` stay green;
+   the packaging budgets still hold.
+
+**Settings impact:** one new field -
+`officeConvertDefaults?: { spreadsheets: { gridlines: boolean; fitToWidth: boolean; orientation: 'auto' | 'portrait' | 'landscape' }; presentations: { includeNotes: boolean }; exports: { includeImages: boolean; docxHeadingDetection: boolean } }`
+validated in `src/main/services/settings.ts` per the standing rule, unknown keys dropped; a missing
+field resolves to
+`{ spreadsheets: { gridlines: true, fitToWidth: true, orientation: 'auto' }, presentations: { includeNotes: false }, exports: { includeImages: true, docxHeadingDetection: true } }`.
+
+## Phase 56 — Universal file handling IV: digital publishing and reading modes
+
+**Features**
+
+**A. EPUB.** `.epub` (2 and 3): ZIP container, `container.xml` to the OPF, spine order honoured,
+XHTML chapters sanitized and rendered through the offscreen print engine to a paginated PDF that
+keeps chapter order, plus the extracted chapter XHTML returned over IPC so the renderer can offer a
+genuine **Reading view**: reflowable paginated chapters with font size, line spacing, page width and
+theme controls, independent of the PDF's fixed layout. Cover image becomes the first page.
+
+**B. MOBI and AZW.** PalmDOC decompression and LZ77 record decoding for legacy Mobipocket, and KF8
+container parsing for `.azw3`, extracting text, headings and images in spine order with a
+`legacy-format-degraded` warning stating what is lost (no CSS fidelity, no positioned layout). DRM
+evidence (an encrypted/`EBOK` protection record) produces a hard, readable `drm-protected` refusal:
+the app never attempts to decrypt protected e-books.
+
+**C. Comics and archives.** `.cbz` (ZIP) and `.cbt` (TAR): entries sorted by natural order (so
+`p2` precedes `p10`), each image a PDF page, plus a **Comic viewport** reading mode: single or
+double page, fit-width or fit-height, right-to-left toggle for manga, and keyboard/click page turn.
+Non-image entries (metadata, `ComicInfo.xml`) are skipped without failing the conversion and are
+reported in a warning.
+
+**D. Reading-mode plumbing.** One shared reading-view shell used by EPUB and comic modes (page
+navigation, progress, theme), so the app gains one reading surface rather than two.
+
+**Success criteria**
+
+1. The EPUB fixture (multi-chapter, images, a heading hierarchy) converts to a PDF whose extracted
+   text follows the spine order and whose first page is the cover, with a screenshot.
+2. The Reading view opens the same EPUB, paginates chapters, and honours a font-size change and a
+   theme change, all evidenced by screenshots in two themes.
+3. The unprotected MOBI fixture extracts text and images in order with the degraded warning visible;
+   a DRM fixture is refused with the `drm-protected` message and never partially parsed.
+4. The CBZ fixture with 12 images and the CBT fixture with the same 12 images each produce a
+   12-page document; a fixture with `p1..p12` orders correctly (p10 after p9) under natural sort
+   (unit test).
+5. The comic viewport turns pages, switches single/double page, and produces screenshots in both
+   single and double page modes in at least one theme.
+6. A CBZ containing one corrupt image converts the remaining pages and warns about the damaged one.
+7. A `.cbt` whose TAR records are truncated produces a typed error and no crash (unit test).
+8. No regression: Phase 53/54/55 suites and `verify:full` stay green.
+
+**Settings impact:** one new field -
+`readingDefaults?: { epub: { fontSizePt: number; lineHeight: number; theme: 'light' | 'dark' | 'sepia' }; comics: { layout: 'single' | 'double'; fit: 'width' | 'height'; rightToLeft: boolean } }`
+validated in `src/main/services/settings.ts` per the standing rule, unknown keys dropped; a missing
+field resolves to `{ epub: { fontSizePt: 16, lineHeight: 1.5, theme: 'light' }, comics: { layout: 'single', fit: 'height', rightToLeft: false } }`.
+`fontSizePt` must be within 10–32 and `lineHeight` within 1.0–2.5.
+
+## Phase 57 — Universal file handling V: PDF/E, form-data interchange, matrix regression, packaging
+
+**Features**
+
+**A. `.pdf/E` engineering documents.** Import and render through the existing PDF.js path with the
+document's optional content groups (layers) enumerated and surfaced in an **Engineering layers**
+panel with visibility toggles, and the XMP CAD/engineering metadata (`pdfe` identification,
+measurement and geospatial entries where present) shown in the document info surface. 3D
+annotations, CAD-native structural data and 3D structural rendering are **explicitly out of scope**:
+the app must detect 3D content, announce that it cannot render it, and still render the page's other
+content — a blank page with no explanation is a defect. The reason is recorded in
+`docs/FEATURE-BACKLOG.md`.
+
+**B. `.fdf` / `.xfdf` form-data interchange.** Export the open document's form values to XFDF (XML)
+and to FDF, and import XFDF/FDF into the fields of the open document, reusing and extending the
+existing `src/main/services/fdf.ts` rather than writing a second FDF engine. The import reports
+which field names matched, which did not exist in the document, and which fields received no data.
+
+**C. Matrix regression.** One automated matrix suite that enumerates every extension the program
+supports and, for each, asserts that `convertSourceInfo` + `convertToPdf` yield either a valid PDF
+or a typed, readable error — never an unhandled rejection, never a crash, never a zero-byte result.
+The same matrix runs against the packaged build.
+
+**D. Packaging and budgets.** The installer and portable build ship every new dependency and remain
+within the installer-size budget; the cold-start, 500-page-open and idle-memory budgets are
+re-measured and recorded in `PERFORMANCE.md` alongside the new format-support matrix; the Open
+dialog's advertised extensions match exactly what the registry actually supports (a guard test, so
+the UI can never advertise a format the app cannot handle).
+
+**Success criteria**
+
+1. The engineering fixture's layers are listed with correct names and count and toggling one changes
+   the rendered page (before/after screenshots).
+2. A fixture containing a 3D annotation renders its page content and shows the announced limitation
+   naming the page and the 3D object — verified by screenshot and by the visible message.
+3. XFDF export of a filled form fixture then import into a blank copy of that form reproduces every
+   value, verified by a parser; FDF export/import does the same.
+4. Importing an XFDF entry whose field name does not exist in the document is reported in the
+   unmatched list and does not create a stray field (asserted by re-parsing the document's field
+   list).
+5. The matrix suite covers every advertised extension with zero crashes and zero zero-byte outputs;
+   the guard test proves the dialog's filter list equals the registry's supported list.
+6. The packaged build passes the same matrix smoke walkthrough, and the recorded installer size,
+   cold start, 500-page-open and idle-memory numbers are inside the budgets in this document.
+7. Every capability the program claims in Phases 53–56 has either a passing test or a documented,
+   readable degradation; every entry the program refuses has a written reason in
+   `docs/FEATURE-BACKLOG.md`.
+8. All DEF/ADV entries opened by Phases 53–57 are CLOSED or REJECTED with a written reason;
+   `verify:full` is green on the final tree.
+
+**Settings impact:** none.

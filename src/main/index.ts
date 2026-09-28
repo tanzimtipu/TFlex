@@ -33,10 +33,12 @@ import type {
   WatermarkSettings,
 } from '../shared/types';
 import type { SignatureSource } from '../shared/types';
+import type { ConvertOptions } from '../shared/convert';
 import { openPdfDialog, openPdfDialogMulti, savePdfDialog } from './services/dialog';
 import { readClipboardImage, type ClipboardLike } from './services/clipboard-image';
 import { EngineService } from './services/engine';
 import { OcrService } from './services/ocr';
+import { DocumentConversionService } from './services/convert';
 import { loadPdfFile, loadFdfFile } from './services/pdf-file';
 import { describePdfOpenError } from './services/error-text';
 import { listPrinters, printJob } from './services/print';
@@ -67,7 +69,7 @@ import { applyMenuEnabledState, buildAppMenu } from './menu';
 import { createMainWindow, deriveAuthHost, installAuthPopupHandler } from './window';
 import { planCaptionMaximize } from './window-maximize';
 import { closePrintWindow, notifyPrintDocumentGone, openPrintWindow } from './print-window';
-import { extractFileArgument, looksLikePdfPath } from './open-path';
+import { extractFileArgument, looksLikeOpenablePath, looksLikePdfPath } from './open-path';
 
 function mainModuleDir(): string {
   return __dirname;
@@ -157,20 +159,27 @@ export function sendOpenPath(path: string): void {
 
 /**
  * Phase 35 — validate an OS-supplied path and hand it to the renderer's
- * existing open flow. Fails LOUD (an error box) for a non-PDF path or a
- * file that is not a readable PDF, rather than silently ignoring the launch.
+ * existing open flow. A PDF is validated as a readable PDF exactly as before.
+ * Phase 53 adds convertible documents: a `.txt`/`.md`/`.rtf`/`.csv`/`.html`
+ * path is sent straight through `sendOpenPath` so the renderer's conversion
+ * flow imports it. A genuinely unsupported path still fails LOUD (an error
+ * box), never a silent no-op.
  */
 async function handleOsOpenPath(path: string): Promise<void> {
-  if (!looksLikePdfPath(path)) {
-    dialog.showErrorBox('Cannot open file', `Jovrel is a PDF app and cannot open:\n${path}`);
+  if (looksLikePdfPath(path)) {
+    const check = await loadPdfFile(path);
+    if (!check.ok) {
+      dialog.showErrorBox('Cannot open PDF', `Could not open:\n${path}\n\n${describePdfOpenError(check.error)}`);
+      return;
+    }
+    sendOpenPath(path);
     return;
   }
-  const check = await loadPdfFile(path);
-  if (!check.ok) {
-    dialog.showErrorBox('Cannot open PDF', `Could not open:\n${path}\n\n${describePdfOpenError(check.error)}`);
+  if (looksLikeOpenablePath(path)) {
+    sendOpenPath(path);
     return;
   }
-  sendOpenPath(path);
+  dialog.showErrorBox('Cannot open file', `Jovrel is a PDF app and cannot open:\n${path}`);
 }
 
 if (!_isVitest) {
@@ -294,6 +303,19 @@ export async function start(): Promise<void> {
   // tessdata directories above.
   setBundledFontDir(join(app.getAppPath(), 'assets', 'fonts'));
   const engine = new EngineService(ocr);
+  // Phase 53 — DocumentConversionService. Adapters are imported lazily by the
+  // registry (cold-start budget), so constructing the service is cheap.
+  // Progress is broadcast to every window; the renderer filters by jobId.
+  const convert = new DocumentConversionService({
+    engine,
+    emitProgress: (progress) => {
+      for (const window of BrowserWindow.getAllWindows()) {
+        if (!window.isDestroyed()) {
+          window.webContents.send(IPC.convertProgressEvent, progress);
+        }
+      }
+    },
+  });
   const signatures = new SignatureService(join(app.getPath('userData'), 'signatures.json'));
 
   // Phase 44 — encrypted session vault + its three IPC channels. The JWT is
@@ -533,6 +555,29 @@ export async function start(): Promise<void> {
   // read()/readText() methods and the handler awaits its Promise.
   ipcMain.handle(IPC.clipboardReadImage, () =>
     readClipboardImage(clipboard as unknown as ClipboardLike),
+  );
+  // Phase 53 — Universal file handling. sourceInfo reports the detected
+  // format/fidelity before conversion; toDocument converts, opens the result
+  // in the existing engine (same process, no ipcMain hop) and resolves a
+  // typed ConvertOpenResult; cancel aborts the in-flight job by id. None of
+  // these throw across IPC.
+  ipcMain.handle(IPC.convertSourceInfo, (_event, path: string) =>
+    convert.sourceInfo(path),
+  );
+  ipcMain.handle(
+    IPC.convertToDocument,
+    (_event, docId: string, path: string, options?: ConvertOptions) =>
+      convert.toDocument(docId, path, options),
+  );
+  // Phase 53 feature G mode 2 — CSV headers onto the open document's fields,
+  // through the engine's existing forms reader/writer.
+  ipcMain.handle(
+    IPC.convertCsvToFields,
+    (_event, docId: string, path: string, options?: ConvertOptions) =>
+      convert.csvToDocumentFields(docId, path, options),
+  );
+  ipcMain.handle(IPC.convertCancel, (_event, jobId: string) =>
+    convert.cancel(jobId),
   );
   ipcMain.handle(IPC.pdfLoad, (_event, path: string) => loadPdfFile(path));
   ipcMain.handle(IPC.fdfLoad, (_event, path: string) => loadFdfFile(path));
