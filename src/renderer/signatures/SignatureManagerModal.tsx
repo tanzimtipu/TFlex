@@ -66,10 +66,14 @@ interface SignatureManagerModalProps {
   /** Push a toast (error/info) on edge cases (empty canvas, save
    *  failure). */
   onToast?: (kind: "error" | "info", text: string) => void;
+  /** Phase 51 (item 2) — fired after a saved signature is added or deleted so
+   *  the host can request an automatic sync. The modal owns no account state;
+   *  the host decides whether a session is live. */
+  onSignaturesChanged?: () => void;
 }
 
 export function SignatureManagerModal(props: SignatureManagerModalProps): ReactElement | null {
-  const { open, onClose, onApply, savedSignatures, onToast } = props;
+  const { open, onClose, onApply, savedSignatures, onToast, onSignaturesChanged } = props;
   const [tab, setTab] = useState<Tab>("draw");
   const [saved, setSaved] = useState<SavedSignature[]>(savedSignatures);
 
@@ -111,6 +115,8 @@ export function SignatureManagerModal(props: SignatureManagerModalProps): ReactE
   const onDelete = async (id: string): Promise<void> => {
     const next = await getSignatureService().delete(id);
     setSaved(next);
+    // Phase 51 (item 2) — a signature delete is an automatic sync trigger.
+    onSignaturesChanged?.();
   };
 
   return (
@@ -163,6 +169,8 @@ export function SignatureManagerModal(props: SignatureManagerModalProps): ReactE
                       // badge stays in sync with the rendered rows.
                       setSaved(next);
                       setTab("saved");
+                      // Phase 51 (item 2) — a signature add is an automatic sync trigger.
+                      onSignaturesChanged?.();
                     }}
                   />
                 </SigTabPane>
@@ -174,6 +182,8 @@ export function SignatureManagerModal(props: SignatureManagerModalProps): ReactE
                     onSaved={(next): void => {
                       setSaved(next);
                       setTab("saved");
+                      // Phase 51 (item 2) — a signature add is an automatic sync trigger.
+                      onSignaturesChanged?.();
                     }}
                   />
                 </SigTabPane>

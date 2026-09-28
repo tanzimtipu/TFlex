@@ -1334,3 +1334,21 @@ describe("StubRendererEngine — Phase 12 (residual page-organize + annotate)", 
     expect(res.error.code).toBe("empty-range");
   });
 });
+
+describe("StubRendererEngine - Phase 51 (item 9) ocrCancel", () => {
+  it("returns { cancelled: false } for a known tab (no run in flight)", async () => {
+    const { engine, tabId } = setup(3);
+    const res = await engine.ocrCancel(tabId);
+    expect(res.ok).toBe(true);
+    if (!res.ok) return;
+    expect(res.value).toEqual({ cancelled: false });
+  });
+
+  it("degrades to engine-error for an unknown document", async () => {
+    const { engine } = setup(3);
+    const res = await engine.ocrCancel("missing-tab");
+    expect(res.ok).toBe(false);
+    if (res.ok) return;
+    expect(res.error.code).toBe("engine-error");
+  });
+});

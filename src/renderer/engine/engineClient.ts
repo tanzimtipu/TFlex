@@ -26,6 +26,7 @@ import type {
   MovePagesBetweenDocsPayload,
   MovePagesBetweenDocsResult,
   MoveSignaturePayload,
+  OcrCancelResult,
   OcrProgress,
   OcrRecognizeOptions,
   OcrSuspect,
@@ -380,6 +381,12 @@ export interface TFlexApiEngine {
   ocrSuspects?(
     docId: string,
   ): Promise<Result<OcrSuspect[], EngineError>>;
+  /** Phase 51 (item 9) — flag an in-flight `ocrRecognize` on `docId`
+   *  for cancellation. Optional so a pre-Phase-51 backend degrades with
+   *  a friendly engine-error. */
+  ocrCancel?(
+    docId: string,
+  ): Promise<Result<OcrCancelResult, EngineError>>;
   /** Phase 11 — subscribe to per-page OCR progress pushed from main
    *  while `ocrRecognize` runs. Returns an unsubscribe function.
    *  Optional because pre-Phase-11 builds don't expose the channel. */
@@ -1269,6 +1276,19 @@ class RealEngineAdapter implements EngineApi {
   ): Promise<Result<OcrSuspect[], EngineError>> {
     if (this.inner.ocrSuspects === undefined) return missingPhase11();
     return this.inner.ocrSuspects(docId);
+  }
+
+  /** Phase 51 (item 9) — forward the renderer's cancel request to the
+   *  engine. The cancel flag the engine sets is checked between pages
+   *  and before the text-layer commit, so the pending `ocrRecognize`
+   *  resolves with `error.code === 'cancelled'` and the pre-run bytes
+   *  are restored. Never throws; a pre-Phase-51 backend degrades with a
+   *  friendly engine-error. */
+  async ocrCancel(
+    docId: string,
+  ): Promise<Result<OcrCancelResult, EngineError>> {
+    if (this.inner.ocrCancel === undefined) return missingPhase11();
+    return this.inner.ocrCancel(docId);
   }
 
   /** Subscribe to per-page OCR progress pushed from main while

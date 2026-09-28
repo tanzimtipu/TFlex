@@ -157,7 +157,12 @@ describe("Phase 38 feature C — the DocumentView publishes, never mounts", () =
 
   it("seeds a selected run from its SOURCE rect (feature D)", () => {
     expect(code).toContain("runSourceTextStyle(editTextTarget.rect.height");
-    expect(code).toContain("pendingTextStyle ?? selectedRunValues ?? textPanelDefaults");
+    // Phase 51 item 14 — the same precedence (selected box > run pending/source
+    // > defaults) now lives in the pure `textPanelValuesForSelection` helper.
+    expect(code).toContain("textPanelValuesForSelection({");
+    expect(code).toContain("runValues: selectedRunValues");
+    expect(code).toContain("pending: pendingTextStyle");
+    expect(code).toContain("defaults: textPanelDefaults");
   });
 });
 

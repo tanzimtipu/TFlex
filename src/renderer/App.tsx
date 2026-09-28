@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
 import type { ReactElement } from "react";
-import { AnimatePresence } from "motion/react";
 import type {
   AppSettings,
   DocxImageEntry,
@@ -42,6 +41,7 @@ import type { InspectorTextSelection } from "./components/Inspector";
 import { AboutDialog } from "./components/AboutDialog";
 import { AccountsDialog } from "./components/AccountsDialog";
 import { AccountMenu } from "./components/AccountMenu";
+import { requestAutoSync } from "./accounts/autoSync";
 import { PreferencesDialog } from "./components/PreferencesDialog";
 import { UpdateIndicator } from "./components/UpdateIndicator";
 import { UpdatePromptDialog } from "./components/UpdatePromptDialog";
@@ -196,7 +196,6 @@ import {
   type OcrDialogConfirm,
   type OcrScope,
 } from "./components/OcrDialog";
-import { OcrSuspectsPanel } from "./components/OcrSuspectsPanel";
 import { rasterizePagesForOcr } from "./pdf/ocrRasterize";
 import { defaultPrintSettings } from "./pdf/printSettings";
 import type { EngineApi, EngineOp, EngineState } from "./engine/types";
@@ -3364,6 +3363,14 @@ export function App(): ReactElement {
     };
   }, [armedSignatureId, armedStamp]);
 
+  // Phase 51 (item 2) — a saved-signature add/delete requests an automatic
+  // sync through the existing coordinator. Only while a session is live; the
+  // coordinator guards the network itself, but skipping signed-out avoids a
+  // no-op status broadcast.
+  const onSignaturesChanged = useCallback((): void => {
+    requestAutoSync({ signedIn: accountStatus.signedIn });
+  }, [accountStatus.signedIn]);
+
   const onSigManagerApply = useCallback((signatureId: string): void => {
     // DEF-125 — the modal-confirm arm also exits Edit mode (the
     // user may have opened the manager before reaching the Edit
@@ -5861,11 +5868,19 @@ pushToast(
   /** Run engine.ocrRecognize against the active tab. Returns the
    *  engine's echo on success, OR an error string. We follow up
    *  with engine.ocrSuspects on success to populate the suspects
-   *  panel without a separate dialog interaction. */
+   *  panel without a separate dialog interaction. Phase 51 (item 9):
+   *  a cancelled run resolves as `{ cancelled: true }` — either our
+   *  abort fired or the engine returned `error.code === 'cancelled'`
+   *  after restoring the pre-run bytes — and is never an error. */
   const runOcrForActiveTab = useCallback(
     async (
       options: OcrRecognizeOptions,
-    ): Promise<{ ok: true; suspects: OcrSuspect[] } | { error: string }> => {
+      signal?: AbortSignal,
+    ): Promise<
+      | { ok: true; suspects: OcrSuspect[] }
+      | { cancelled: true }
+      | { error: string }
+    > => {
       const activeId = activeTabIdRefLocal.current;
       if (activeId === null) return { error: "No active document." };
       const open = openTabsRef.current[activeId];
@@ -5874,7 +5889,16 @@ pushToast(
         open.session.engineDocId,
         options,
       );
+      // Phase 51 (item 9) — the user cancelled while the engine call was in
+      // flight. Skip the state mirror and the suspects fetch so no partial
+      // result is applied. The engine's cancel path restores the pre-run
+      // bytes, so the document is unchanged.
+      if (signal?.aborted === true) return { cancelled: true };
       if (!result.ok) {
+        // The engine confirmed the cancellation: `ocrCancel` flagged the run
+        // and `ocrRecognize` resolved with error.code === 'cancelled' after
+        // restoring the snapshot. Expected outcome, not an error toast.
+        if (result.error.code === "cancelled") return { cancelled: true };
         return {
           error: describeEngineError(result.error.code, result.error.message),
         };
@@ -5895,6 +5919,22 @@ pushToast(
     },
     [noteOpApplied],
   );
+
+  /** Phase 51 (item 9) — flag the active tab's in-flight OCR run for
+   *  cancellation. Wired to the OCR dialog's Cancel control. Main
+   *  restores the pre-run bytes and resolves the pending `ocrRecognize`
+   *  with `error.code === 'cancelled'`, which `runOcrForActiveTab` maps
+   *  to `{ cancelled: true }`. The call never throws; a missing backend
+   *  channel is a silent no-op (the dialog still leaves its running
+   *  state). Fire-and-forget: the dialog settles its own UI immediately
+   *  and the pending run's result is discarded. */
+  const cancelOcrForActiveTab = useCallback((): void => {
+    const activeId = activeTabIdRefLocal.current;
+    if (activeId === null) return;
+    const open = openTabsRef.current[activeId];
+    if (open === undefined) return;
+    void engineRef.current.ocrCancel?.(open.session.engineDocId);
+  }, []);
 
   /** Dialog confirm: the dialog has already routed the engine
    *  call; we close the dialog and surface a toast with the
@@ -6098,6 +6138,10 @@ pushToast(
     const activeId = activeTabIdRefLocal.current;
     if (activeId === null) return;
     if (ocrRunByTabRef.current[activeId] !== true) return;
+    // Phase 51 (item 10) — the suspects view is an Inspector section now, so
+    // opening it must also make sure the panel is not collapsed; otherwise
+    // the control would look like a no-op.
+    setInspectorCollapsed(false);
     setOcrSuspectsOpen(true);
   }, []);
 
@@ -8904,31 +8948,25 @@ pushToast(
             onImportComments={onCommentImportClick}
             exportFormat={settings.exportImageFormat ?? null}
             onExport={onExportClick}
+            // Phase 51 (item 10) — the OCR suspects view is re-parented into
+            // the Inspector (the workspace's right panel). The B14 empty-tab
+            // guard is preserved verbatim: the section only materializes
+            // against a REAL document (`activeTab != null`).
+            ocrSuspects={
+              ocrSuspectsOpen && activeTab != null
+                ? {
+                    suspects:
+                      ocrSuspectsByTab[activeTabIdRefLocal.current ?? ""] ?? [],
+                    hasRun:
+                      ocrRunByTab[activeTabIdRefLocal.current ?? ""] === true,
+                    onNavigate: onSuspectNavigate,
+                    onClose: onCloseOcrSuspects,
+                  }
+                : null
+            }
           />
         )}
 
-        {/* B14 — the suspects panel must only render against a
-            REAL document. The previous guard checked
-            `activeTabIdRefLocal.current !== null`, which is true
-            on an empty tab too (empty tabs have an id but no
-            openTabs entry) — so a stale `ocrSuspectsOpen` flag
-            surfaced the panel over the welcome / empty-tab
-            screen. `activeTab` (openTabs[activeId]) is null on
-            empty tabs, so the panel can never render without a
-            document. The flag is also reset on new-tab / tab-
-            switch / close (B10 / B14). */}
-        <AnimatePresence mode="popLayout">
-        {ocrSuspectsOpen && activeTab != null && (
-          <OcrSuspectsPanel
-            suspects={
-              ocrSuspectsByTab[activeTabIdRefLocal.current ?? ""] ?? []
-            }
-            hasRun={ocrRunByTab[activeTabIdRefLocal.current ?? ""] === true}
-            onNavigate={onSuspectNavigate}
-            onClose={onCloseOcrSuspects}
-          />
-        )}
-      </AnimatePresence>
       </div>
       <MergeDialog
         open={mergeOpen}
@@ -9028,6 +9066,7 @@ pushToast(
         onApply={onSigManagerApply}
         savedSignatures={savedSignatures}
         onToast={pushToast}
+        onSignaturesChanged={onSignaturesChanged}
       />
       <FlattenConfirmDialog
         open={flattenOpen}
@@ -9115,6 +9154,7 @@ pushToast(
         resolveActiveDoc={resolveActiveDocForOcr}
         subscribeOcrProgress={subscribeOcrProgress}
         runOcr={runOcrForActiveTab}
+        cancelOcr={cancelOcrForActiveTab}
         onConfirm={(result): void => {
           onOcrConfirm(result);
         }}

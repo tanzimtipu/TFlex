@@ -29,6 +29,7 @@ import type {
   OpenFileDialogKind,
   OcrProgress,
   OcrRecognizeOptions,
+  OcrCancelResult,
   OcrSuspect,
   OpEntry,
   OptimizePreset,
@@ -315,6 +316,13 @@ const engineApi = {
     return () => {
       ipcRenderer.removeListener(IPC.engineOcrProgressEvent, listener);
     };
+  },
+  // Phase 51 — cancel an in-flight OCR run on this doc. Resolves immediately
+  // (never queued behind the run) so a cancel takes effect between pages.
+  ocrCancel(
+    docId: string,
+  ): Promise<Result<OcrCancelResult, EngineError>> {
+    return ipcRenderer.invoke(IPC.engineOcrCancel, docId);
   },
   // Phase 12: residual page-organize + annotate parity
   replacePages(

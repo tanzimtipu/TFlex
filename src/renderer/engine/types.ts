@@ -20,6 +20,7 @@ import type {
   FillFormFieldPayload,
   FormField,
   MoveSignaturePayload,
+  OcrCancelResult,
   OcrProgress,
   OcrRecognizeOptions,
   OcrSuspect,
@@ -523,6 +524,17 @@ export interface EngineApi {
   ocrSuspects(
     docId: string,
   ): Promise<Result<OcrSuspect[], EngineError>>;
+
+  /** Phase 51 (item 9) — flag an in-flight `ocrRecognize` on `docId`
+   *  for cancellation. The engine restores the pre-run bytes (no
+   *  partial text layer, no modified flag) and resolves the pending
+   *  `ocrRecognize` with `error.code === 'cancelled'`. A cancel with
+   *  no run in flight is a harmless no-op returning `{ cancelled: false }`.
+   *  Optional so a pre-Phase-51 backend degrades with a friendly
+   *  engine-error; the renderer still leaves its running state. */
+  ocrCancel?(
+    docId: string,
+  ): Promise<Result<OcrCancelResult, EngineError>>;
 
   /** Subscribe to per-page OCR progress pushed from the main process
    *  while `ocrRecognize` runs. Returns an unsubscribe function.

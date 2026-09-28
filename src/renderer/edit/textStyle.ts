@@ -141,6 +141,26 @@ export function applyPatchToValues(
   return next;
 }
 
+/** Phase 51 item 14 — resolve the Inspector's control values for the current
+ *  edit-text selection. Precedence is: a SELECTED committed box (its actual
+ *  style), else a SELECTED run (its live pending style on top of the run's
+ *  source style), else the per-tool DEFAULTS. The run branch is gated on
+ *  `runValues !== null` — a pending style composed for a run that has since
+ *  been deselected must NOT keep the formatting toggles active. With nothing
+ *  selected every control therefore reads the documented defaults (no Bold /
+ *  Italic / super / sub / align / list active). */
+export function textPanelValuesForSelection(args: {
+  selectedBoxStyle: EditTextStyle | null;
+  runValues: TextStyleValues | null;
+  pending: TextStyleValues | null;
+  defaults: TextStyleValues;
+}): TextStyleValues {
+  const { selectedBoxStyle, runValues, pending, defaults } = args;
+  if (selectedBoxStyle !== null) return textStyleValuesFromStyle(selectedBoxStyle);
+  if (runValues !== null) return pending ?? runValues;
+  return defaults;
+}
+
 /** Phase 38 feature D — the SOURCE style of a raw text run. A run carries no
  *  stored `EditTextStyle`; pdf.js reports the run's FONT SIZE as the text
  *  item's `height` (`Math.hypot(trm[2], trm[3])` in device space, i.e. the

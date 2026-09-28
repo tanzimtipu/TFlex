@@ -246,6 +246,14 @@ heightPt: number;
     /** Phase 37 (item 11) — discard the panel's live session (the action
      *  bar's Cancel) so the overlay's Cancel does not save the draft. */
     onDiscardTextEdit?: () => void;
+    /** Phase 51 item 12 — a keystroke typed in the ON-CANVAS run editor.
+     *  Routed to the SAME session as the Inspector Text field
+     *  (`handlePanelTextChange`), so typing in either surface updates the
+     *  other. */
+    onTextInput?: (text: string) => void;
+    /** Phase 51 item 12 — end the shared session (blur of the on-canvas
+     *  editor), routed to the panel's `commitTextSession`. */
+    onTextInputCommit?: (relatedTarget?: EventTarget | null) => void;
   } | null;
 }
 
@@ -1012,6 +1020,8 @@ heightPt,
           textLive={edit.textLive ?? null}
           textCommitToken={edit.textCommitToken ?? 0}
           onDiscardTextEdit={edit.onDiscardTextEdit}
+          onTextInput={edit.onTextInput}
+          onTextInputCommit={edit.onTextInputCommit}
         />
       )}
       {!ready && <div className="page-placeholder" aria-hidden />}

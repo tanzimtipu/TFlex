@@ -28,6 +28,7 @@ import type {
   MoveSignaturePayload,
   OcrProgress,
   OcrRecognizeOptions,
+  OcrCancelResult,
   OcrSuspect,
   OpEntry,
   OptimizePreset,
@@ -55,6 +56,7 @@ import {
 } from './annotations';
 import { exportFdf as exportFdfBytes, parseFdf } from './fdf';
 import { embedEditFont } from './fonts';
+import { formatErrorMessage } from './error-text';
 import {
   applyPageLabels,
   carryOutlines,
@@ -245,6 +247,13 @@ export class EngineService {
    *  langPath so recognition is fully offline. */
   constructor(private readonly ocr: OcrService | null = null) {}
 
+  /** Phase 51 — per-doc OCR cancel flag. A running `_ocrRecognizeImpl`
+   *  registers a fresh token here and removes it when it settles; `ocrCancel`
+   *  flips `cancelled` directly (never queued) so it can interrupt a run
+   *  mid-await. Because the token is run-scoped and deleted on settle, a
+   *  cancel with no in-flight run is a no-op and can never bleed into a
+   *  later run. */
+  private ocrRuns = new Map<string, { cancelled: boolean }>();
 
   // Per-document promise queue serialises every state-touching operation
   // (applyOp, undo, redo, merge, split, save, saveAs, loadDocument,
@@ -323,8 +332,8 @@ export class EngineService {
       };
       this.docs.set(docId, doc);
       return ok(buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength) as ArrayBuffer);
-    } catch {
-      return err('open-error', `could not parse PDF: ${filePath}`);
+    } catch (e) {
+      return err('open-error', `could not parse PDF: ${filePath} (${formatErrorMessage(e)})`);
     }
   }
 
@@ -377,8 +386,8 @@ export class EngineService {
       // Return the original bytes so the renderer can feed them to PDF.js.
       const buf = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer;
       return ok(buf);
-    } catch {
-      return err('open-error', 'could not parse PDF bytes');
+    } catch (e) {
+      return err('open-error', `could not parse PDF bytes (${formatErrorMessage(e)})`);
     }
   }
 
@@ -2673,6 +2682,29 @@ export class EngineService {
     return this._enqueue(docId, () => this._ocrRecognizeImpl(docId, opts, onProgress));
   }
 
+  /**
+   * Phase 51 — request cancellation of an in-flight OCR run on `docId`.
+   *
+   * Deliberately NOT enqueued on the per-doc queue: `_ocrRecognizeImpl` is
+   * usually blocked awaiting tesseract for the current page, so a queued
+   * cancel would not run until the whole run had already finished. This
+   * flips the run's shared flag (read between pages) and resolves at once.
+   *
+   * A cancel with no run in flight — before the first page, or after the run
+   * settled — is a harmless no-op returning `{ cancelled: false }`. Calling
+   * it twice is idempotent. It never throws and never touches the document.
+   */
+  async ocrCancel(
+    docId: string,
+  ): Promise<Result<OcrCancelResult, EngineError>> {
+    const run = this.ocrRuns.get(docId);
+    if (run === undefined) {
+      return ok({ cancelled: false });
+    }
+    run.cancelled = true;
+    return ok({ cancelled: true });
+  }
+
   private async _ocrRecognizeImpl(
     docId: string,
     opts: OcrRecognizeOptions,
@@ -2708,6 +2740,20 @@ export class EngineService {
     const totalPages = opts.pageImages.length;
 
     const snapshot = await snapshotDocWithPdf(doc);
+    // Phase 51 — register this run's cancel token BEFORE the first page so a
+    // cancel arriving during any page's tesseract await is observed. The
+    // token is always removed when the run settles (success, failure or
+    // cancel), which keeps cancel-after-finish a no-op and stops a stale
+    // cancel from affecting a later run.
+    const run = { cancelled: false };
+    this.ocrRuns.set(docId, run);
+    const restoreOnCancel = async (): Promise<Result<EngineState, EngineError>> => {
+      // A cancelled run leaves the document exactly as it was: reload the
+      // pre-run bytes (removing any invisible text already drawn), and do
+      // NOT record words, push undo, or flip the modified flag.
+      await tryRestorePdfBytes(doc, snapshot.pdfBytes);
+      return err('cancelled', 'ocrRecognize cancelled');
+    };
     try {
       // Embed a single standard font for the whole text layer (Latin-1 only —
       // non-Latin glyphs are dropped by sanitizeForStandardFont, the documented
@@ -2726,6 +2772,10 @@ export class EngineService {
       let written = 0;
 
       for (let i = 0; i < opts.pageImages.length; i++) {
+        // Phase 51 — cancel between pages: checked before this page's
+        // recognition starts. A cancel that arrived while the previous page
+        // was writing is observed here.
+        if (run.cancelled) return restoreOnCancel();
         const img = opts.pageImages[i];
         try {
           const pageResult = resolveVisiblePage(doc, img.page);
@@ -2754,6 +2804,10 @@ export class EngineService {
             continue;
           }
 
+          // Phase 51 — cancel after recognition, before the Tr=3 text-layer
+          // write: the current page's tesseract was just cancelled, so emit
+          // no 'writing' progress and draw nothing.
+          if (run.cancelled) return restoreOnCancel();
           onProgress?.({ docId, page: img.page, totalPages, phase: 'writing' });
           const page = doc.pdfDoc.getPage(pageResult.value);
           const pageHeight = page.getSize().height;
@@ -2826,6 +2880,11 @@ export class EngineService {
         );
       }
 
+      // Phase 51 — final cancel check before committing the run. Catches a
+      // cancel that arrived while the last page's text layer was being
+      // drawn; without it the words/undo/modified flag would leak from a
+      // run the user already cancelled.
+      if (run.cancelled) return restoreOnCancel();
       doc.lastOcrWords = storedWords;
       doc.undoStack.push(snapshot);
       doc.redoStack = [];
@@ -2838,6 +2897,11 @@ export class EngineService {
     } catch (e) {
       await tryRestorePdfBytes(doc, snapshot.pdfBytes);
       return err('engine-error', `ocrRecognize failed: ${e instanceof Error ? e.message : String(e)}`);
+    } finally {
+      // Phase 51 — always drop this run's cancel token. Only remove it if it
+      // is still the active one (a later queued run may have replaced it),
+      // so a stale cancel can never flag a fresh run.
+      if (this.ocrRuns.get(docId) === run) this.ocrRuns.delete(docId);
     }
   }
 

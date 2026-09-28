@@ -5,6 +5,67 @@
 > inspect the current `OPEN`, `FIX-READY`, and `DISPUTED` entries first; closed records are
 > historical evidence and must not be loaded wholesale.
 
+## DEF-371: Phase 51 leaves `verify:full` RED - the B11 OCR-suspects guard test fails on the new onOpenOcrSuspects body
+
+- Status: CLOSED
+- Severity: MEDIUM
+- Found by: qa
+- Phase: 51
+
+Steps to reproduce:
+1. `npm.cmd run build` (exit 0).
+2. `npm.cmd run verify:full`.
+3. Observe the unit suite: 1 failed | 5929 passed (5930), 1 failed file.
+
+Expected: `verify:full` is GREEN (Phase 51 success criterion 10: "`verify:full` and the phase suites stay green").
+
+Actual: `verify:full` exits 1. `test/unit/renderer/bugB11_ocrSuspectsEmptyTabGuard.test.ts` fails: "line 6145: setOcrSuspectsOpen(true); must be inside one of the legitimate OCR-open contexts". The Phase 51 item-10 change added a 3-line comment plus `setInspectorCollapsed(false);` inside `onOpenOcrSuspects` (App.tsx 6141-6144), which pushed the `onOpenOcrSuspects = useCallback` line (6137) outside the test's 7-line context window (lines 6139-6145). The guard itself is intact - the call IS inside the guarded handler - so this is a brittle structural test broken by the added lines, not a product regression. The phase suites (phase45_gate, phase48_gate, phase49_brand_gate) are green (23 passed).
+
+Raw evidence (`npm.cmd run verify:full` tail):
+```
+ Test Files  1 failed | 464 passed (465)
+      Tests  1 failed | 5929 passed (5930)
+ FAIL  test/unit/renderer/bugB11_ocrSuspectsEmptyTabGuard.test.ts > B11 - OCR suspects panel must not open on an empty tab > the only direct setOcrSuspectsOpen(true) calls in App.tsx are inside the guarded onOpenOcrSuspects / OCR-confirm / batch paths
+AssertionError: line 6145: setOcrSuspectsOpen(true); must be inside one of the legitimate OCR-open contexts: expected false to be true
+```
+
+Screenshot: none
+
+History:
+- qa: opened (Phase 51 gate validation; `verify:full` red on the final tree).
+- qa: CLOSED (FIX-READY retest on the packaged 1.43.0 build). The assertion is now anchored on the `onOpenOcrSuspects = useCallback` declaration (handler body lines 6137-6146) and requires the call to sit inside the body AND the body to carry both guards. Ran the spec: `bugB11_ocrSuspectsEmptyTabGuard.test.ts` 4/4 pass. Sensitivity check (read-only simulation of the assertion against App.tsx): removing the `activeId === null` guard OR the `ocrRunByTabRef.current[activeId] !== true` guard makes line 6145 `legitimate=false` (test fails); both present -> true. Not weakened. `verify:full` GREEN: 465 files / 5931 tests passed.
+
+## DEF-370: selecting a text run does not focus the Inspector Text field (Phase 51 item 6)
+
+- Status: CLOSED
+- Severity: MEDIUM
+- Found by: qa
+- Phase: 51
+
+Steps to reproduce:
+1. `npm.cmd run build`; launch the dev app (`npx playwright test e2e/phase51_gate.spec.cjs --grep=P51-F`).
+2. Open `long.pdf`, press Ctrl+2 (EDIT), arm "Edit text" (Ctrl+K -> Edit text).
+3. Click a text run on the page to select it.
+4. Read `document.activeElement`; type a character.
+
+Expected: selecting the run ARMS/FOCUSES the Inspector's Text field (Phase 51 item 6) - `document.activeElement` is the `[data-txt-text]` textarea and a keystroke lands in it.
+
+Actual: the field focuses then immediately blurs. A document-level focusin/focusout log shows `["in:textarea[txt]","out:textarea[txt]"]`; `document.activeElement` is `<body>`; typing 'X' leaves the field value unchanged. The run selection happens on `pointerdown` (EditOverlay.onPointerDown), so the focus effect runs during the pointerdown handler and the browser's default mousedown focus action then blurs the field. The annotation path (selection on `click`) focuses correctly (phase26 spec), so only the run path is affected.
+
+Raw evidence (`[P51-F item6]`):
+```
+activeIsField=false activeTag=body fieldCount=1 panelCount=1 fieldValue="Performance testing requires a significant number of pages."
+[P51-F item6 typing] before="Performance testing requires a significant number of pages." after="Performance testing requires a significant number of pages."
+[P51-F item6 probe] {"focusable":true,"tag":"textarea"}
+[P51-F focusLog] ["in:textarea[txt]","out:textarea[txt]"]
+```
+
+Screenshot: screenshots/phase51-edittext-selected.png (the run IS visibly selected; the field is not focused)
+
+History:
+- qa: opened (Phase 51 gate validation; item 6 fails in the running app).
+- qa: CLOSED (FIX-READY retest on the packaged 1.43.0 build). `e2e/phase51_gate.spec.cjs` P51-F on the packaged build: `activeIsField=true activeTag=textarea activeAttr=data-txt-text`, focusLog `["in:textarea[txt]"]` (no blur), typing lands. The narrow mousedown-capture guard does not break drag-start (item 7 drag moved the preview), disarm (item 14 Escape) or interactive controls (item 12 fill / item 13 Bold). Unit test `phase51EditTextFixes.test.tsx` 10/10: run press defaultPrevented=true, empty-page press=false, interactive control=false.
+
 ## DEF-369: Phase 50 leaves `verify:full` RED - 7 unit tests fail because the existing account/prefs test doubles were not updated for the browser flow
 
 - Status: CLOSED

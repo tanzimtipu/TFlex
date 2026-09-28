@@ -42,6 +42,7 @@ import {
   MIN_PASSWORD_LENGTH,
 } from "../accounts/validation";
 import { describeSyncReport } from "../accounts/syncStatus";
+import { requestAutoSync } from "../accounts/autoSync";
 import { AnimatedDialog } from "./AnimatedDialog";
 import { BrandMark } from "./BrandMark";
 import { BrandWordmark } from "./BrandWordmark";
@@ -209,9 +210,17 @@ export function AccountsDialog(props: AccountsDialogProps): ReactElement {
     setSignedInEmail(user.email);
     statusCbRef.current?.("signed-in", user.email, user.name ?? null);
     if (api === null) return;
-    void api.setSession({ user, token }).catch(() => {
-      dispatch({ type: "info", text: "Signed in, but the session could not be saved on this device." });
-    });
+    void api.setSession({ user, token }).then(
+      () => {
+        // Phase 51 (item 2) — sign-in completion is an automatic sync trigger;
+        // fire only after the session is stored so the coordinator sees the
+        // token in the vault.
+        requestAutoSync({ signedIn: true, bridge: api });
+      },
+      () => {
+        dispatch({ type: "info", text: "Signed in, but the session could not be saved on this device." });
+      },
+    );
   }, []);
 
   /** Phase 46 - the Google flow's completion. MAIN has already completed the
@@ -224,6 +233,9 @@ export function AccountsDialog(props: AccountsDialogProps): ReactElement {
     setStatus(result.status);
     setSignedInEmail(result.email);
     statusCbRef.current?.(result.status, result.email, result.name);
+    // Phase 51 (item 2) — main has already stored the session for the browser
+    // flow, so completion is an automatic sync trigger.
+    requestAutoSync({ signedIn: result.status === "signed-in" });
   }, []);
 
   /** Dispatch a failure, carrying the provider's own code/message through so

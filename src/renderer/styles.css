@@ -362,6 +362,15 @@
    * radius bump for modals never inflates popovers or panels. */
   --radius-dialog: 10px;
 
+  /* Phase 51 (item 11) — the text-box surface family. Every text box (canvas
+   *  text boxes, text annotations, comment boxes, the on-canvas run editor)
+   *  shares ONE thicker border and ONE rounded corner token, so the operator's
+   *  "not just a blue thin line" reads consistently. 2px is the control-frame
+   *  weight; --radius-box (5px) rounds visibly without clipping the small
+   *  text-box padding (the corner arc stays inside the 5px/6px padding). */
+  --border-w-box: 2px;
+  --radius-box: var(--radius-2);
+
   /* Light theme tokens */
   --bg-base: #ffffff;
   --bg-sunken: #f8fafc;
@@ -391,6 +400,14 @@
   --fg-soft: #475569;
   --fg-faint: #94a3b8;
   --fg-on-accent: #ffffff;
+  /* Phase 51 (item 5) — the tab strip's full-strength colour surface. Tabs now
+   *  paint the semantic token itself (no 8% wash), so the LABEL needs an ink
+   *  that clears the 4.5:1 floor on ANY of the four hues. White clears every
+   *  light/frosted token (measured: 6.29:1 worst case, ATTENTION); the soft ink
+   *  is the INACTIVE tier (measured: 5.10:1 worst case) so active vs inactive
+   *  text still differs, as the Phase-45 gate requires. */
+  --tf-tab-ink: #ffffff;
+  --tf-tab-ink-soft: #e2e8f0;
   /* DEF-340 — the dock's stage-PRIMARY verb ink. It sits on the --accent-soft
    * wash over --bg-elevated, and the plain --accent (#2563eb) only measured
    * 4.27:1 there, below the 4.5:1 interactive-text floor. blue-700 is the same
@@ -557,6 +574,13 @@
   --fg-faint: #5b626b;
   --fg-disabled: #505761;
   --fg-on-accent: #ffffff;
+  /* Phase 51 (item 5) — dark-theme tab ink. The dark palette's semantic tokens
+   *  are BRIGHT pastels, so white would fall under the 4.5:1 floor (e.g. white
+   *  on #7fbd8f is 1.9:1). The page-dark ink #0f172a clears all four (measured:
+   *  6.13:1 worst case, ATTENTION); the soft inactive tier #1e293b clears too
+   *  (measured: 5.02:1 worst case). */
+  --tf-tab-ink: #0f172a;
+  --tf-tab-ink-soft: #1e293b;
   /* DEF-340 — the dock's stage-PRIMARY verb ink on the dark --accent-soft wash
    * over --bg-elevated (#191e24). The plain --accent is far too dark there
    * (2.92:1); the bright family blue is the dark-theme counterpart and measures
@@ -761,6 +785,10 @@
   --fg-faint: var(--tf-text-disabled);
   --fg-disabled: #b6bcc6;
   --fg-on-accent: #ffffff;
+  /* Phase 51 (item 5) — frosted glass keeps the light token ladder and its four
+   *  dark hues (#1e40af / #3a4862 / #12682f / #9f1239), so white ink applies. */
+  --tf-tab-ink: #ffffff;
+  --tf-tab-ink-soft: #e2e8f0;
   /* DEF-340 — the dock's stage-PRIMARY verb ink on the frosted --accent-soft
    * wash over the translucent --bg-elevated dialog sheet. The plain --accent
    * measured 4.34:1; blue-700 (the frosted family blue) measures 5.61:1. The
@@ -1862,10 +1890,13 @@ input[type="checkbox"] {
   border-bottom: none;
   border-top-left-radius: var(--radius-2);
   border-top-right-radius: var(--radius-2);
-  /* Phase 45 — the 8% per-tab wash (see the palette block below). Falls
-   * back to the old transparent surface when a slot token is absent. */
-  background: color-mix(in srgb, var(--tf-tab-accent, transparent) 8%, var(--bg-tab));
-  color: var(--fg-muted);
+  /* Phase 51 (item 5) — FULL-STRENGTH colour. The Phase-45 8% wash read to the
+   * operator as "a shade of the colour"; the tab now paints the semantic token
+   * itself, and the label uses --tf-tab-ink (white / page-dark) so the 4.5:1
+   * text floor holds on every hue in every theme. Falls back to the neutral
+   * role only if a slot token is absent (bare harness mount). */
+  background: var(--tf-tab-accent, var(--sem-neutral));
+  color: var(--tf-tab-ink-soft);
   font-size: var(--fs-sm);
   cursor: pointer;
   white-space: nowrap;
@@ -1916,54 +1947,48 @@ input[type="checkbox"] {
 
 .tab-colour-chip {
   flex: 0 0 auto;
-  width: 9px;
-  height: 9px;
+  width: 8px;
+  height: 8px;
   border-radius: var(--radius-1);
-  background: var(--tf-tab-accent);
+  /* Phase 51 (item 5) — the whole tab is now the colour, so the chip is a
+   *  lifted tint of the SAME slot (visible on the full-strength body, and
+   *  still per-slot distinct for the adjacent-tab check). */
+  background: color-mix(in srgb, var(--tf-tab-ink) 35%, var(--tf-tab-accent, var(--sem-neutral)));
 }
 
-/* Phase 4 — tab hover uses the shared hover token (dark
- * rgba(255,255,255,0.04), the light mirror in light), exactly like
- * every other interactive surface. No bright tabs: the hover is a
- * whisper, not a highlight.
- * Phase 45 — the hover wash keeps the tab's OWN hue so colour identity
- * survives the hover; the text still brightens to `--fg`. */
+/* Phase 4 — tab hover. Phase 51 (item 5): the hover BRIGHTENS the tab's own
+ * full-strength hue (filter, not a wash) so colour identity survives and the
+ * "shade" reading is gone; the ink label is unchanged. */
 .tab:hover {
-  background: color-mix(in srgb, var(--tf-tab-accent) 14%, transparent);
-  color: var(--fg);
+  filter: brightness(1.08);
+  color: var(--tf-tab-ink);
 }
-
-/* Phase 4 — keyboard focus on a tab (the close button keeps its own
- * small ring; the whole tab surface gets one when the tab itself is
- * the focus target). The ring is drawn INSIDE the tab because the
- * caption strip clips overflow (.tab-area is overflow: hidden) —
- * an outside ring would be cut off at the strip edges. */
+/* Phase 4 — keyboard focus on a tab. Phase 51 (item 5): the ring uses the
+ * tab ink so it reads on every hue. Drawn INSIDE because .tab-area clips. */
 .tab:focus-visible {
-  outline: 2px solid rgba(37, 99, 235, 0.35);
+  outline: 2px solid var(--tf-tab-ink);
   outline-offset: -2px;
 }
 
 .tab-active {
-  color: var(--fg-strong);
-  /* Phase 45 — the active tab keeps its raised surface but carries a
-   * stronger 16% wash of its OWN hue, so the colour identity survives while
-   * the accent underline (::after) remains the selection signal. `--fg-strong`
-   * text over the mixed surface stays far above every contrast floor. */
-  background: color-mix(in srgb, var(--tf-tab-accent, transparent) 16%, var(--bg-tab-active));
-  /* Phase 2 — borderless active tab: the old `border-color:
-   * var(--border)` drew a full outline around the active tab; the
-   * borderless look keeps the 1px transparent frame (reserved space,
-   * no visible outline) and lets the 2px accent indicator below mark
-   * the active tab. */
+  /* Phase 51 (item 5) — the ACTIVE tab keeps the SAME full-strength hue; the
+   * selection signal is the raised surface (inner top highlight + elevation),
+   * the bolder label and the ink underline below. Inactive tabs are the flat
+   * full colour, so the active one reads as foreground without dimming any
+   * hue into a shade. */
+  color: var(--tf-tab-ink);
+  font-weight: 600;
+  background: var(--tf-tab-accent, var(--sem-neutral));
+  box-shadow:
+    inset 0 2px 0 color-mix(in srgb, var(--tf-tab-ink) 45%, transparent),
+    0 -2px 6px rgba(15, 23, 42, 0.08);
   border-color: transparent;
   z-index: 1;
 }
 
-/* Phase 2 — the active tab's 2px orange underline. The old seam
- * (1px strip painted in the tab background, covering the header's
- * bottom border) is replaced by a subtle accent indicator inset to
- * the tab's horizontal padding — the same "active underline" the
- * VS Code / Linear tab strips use. */
+/* Phase 2 — the active tab's indicator is inset to the tab's horizontal
+ * padding (the VS Code / Linear underline). Phase 51 (item 5): painted in the
+ * tab ink so it is visible on the colour that now fills the tab. */
 .tab-active::after {
   content: "";
   position: absolute;
@@ -1972,7 +1997,7 @@ input[type="checkbox"] {
   bottom: 0;
   height: 2px;
   border-radius: 1px 1px 0 0;
-  background: var(--accent);
+  background: var(--tf-tab-ink);
   /* Chunk 2 — the active underline fades + slides into place
    * (indicator-in @ --tf-motion-normal) instead of teleporting. */
   animation: indicator-in var(--tf-motion-normal) var(--tf-ease-standard);
@@ -1992,10 +2017,12 @@ input[type="checkbox"] {
   width: 7px;
   height: 7px;
   border-radius: 999px;
-  background: var(--accent);
+  /* Phase 51 (item 5) — the dot sits on the tab's full-strength hue now, so it
+   *  and its ring use the tab ink / hue pair to stay visible. */
+  background: var(--tf-tab-ink);
   display: inline-block;
   /* Slight outset so it reads against the active tab background. */
-  box-shadow: 0 0 0 1.5px var(--bg-tab-active);
+  box-shadow: 0 0 0 1.5px var(--tf-tab-accent, var(--sem-neutral));
   transition: opacity var(--motion-fast) var(--ease-out);
 }
 
@@ -2018,7 +2045,7 @@ input[type="checkbox"] {
 }
 
 .tab-active .tab-modified-dot {
-  box-shadow: 0 0 0 1.5px var(--bg-tab-active);
+  box-shadow: 0 0 0 1.5px var(--tf-tab-accent, var(--sem-neutral));
 }
 
 .tab:not(.tab-active) .tab-modified-dot {
@@ -2045,7 +2072,8 @@ input[type="checkbox"] {
 }
 
 .tab-close:hover {
-  background: var(--bg-active);
+  /* Phase 51 (item 5) — an ink wash reads on every tab hue. */
+  background: color-mix(in srgb, var(--tf-tab-ink) 22%, transparent);
   opacity: 1;
 }
 
@@ -4903,7 +4931,16 @@ input[type="checkbox"] {
    * them in a flex column inside .thumb-scroller. */
   position: relative;
   overflow-y: auto;
-  padding: 0 var(--sp-2) var(--sp-2);
+  /* Phase 51 (item 3) — the FIRST thumb must not sit flush at the scroller's
+     top edge. The frosted current-thumb ring is a 4px outer box-shadow
+     (`0 0 0 2px` + `0 0 0 4px`); with a 0px top padding that ring was clipped
+     at the scroller's clip boundary, so its top arched edge was cut off
+     ~8px under the Undo row and read as "running under" the bar. The scroller
+     now reserves the ring's full footprint (8px, the SAME value the rail's
+     `THUMB_OUTER_PADDING` already assumes for page 1's slot top in
+     `thumbSlotTops` / `visibleThumbRangeFromTops`), so the ring is painted
+     whole and the Undo row is never reached at any panel width. */
+  padding: var(--sp-2);
   scrollbar-width: thin;
   flex: 1 1 auto;
   min-height: 0;
@@ -5394,12 +5431,15 @@ rect.ann-highlight.ann-preview {
 
 .ann-textbox {
   position: absolute;
-  border: 1px solid var(--accent);
+  /* Phase 51 (item 11) — shared text-box frame: thicker border + rounded
+   * corners (was 1px / --radius-1). Padding widened one step so the 5px
+   * corner arc can never clip the first/last glyph. */
+  border: var(--border-w-box) solid var(--accent);
   /* Phase 2 — selection-surface tint repointed from the old blue
    * wash to the accent's hover-tint token (0.08 alpha). */
   background: var(--accent-hover-bg);
-  border-radius: var(--radius-1);
-  padding: 4px 6px;
+  border-radius: var(--radius-box);
+  padding: 6px 9px;
   white-space: pre-wrap;
   word-break: break-word;
   overflow: hidden;
@@ -5475,8 +5515,10 @@ rect.ann-highlight.ann-preview {
 .ann-editor {
   position: absolute;
   background: var(--bg-raised);
-  border: 1px solid var(--border-strong);
-  border-radius: var(--radius-2);
+  /* Phase 51 (item 11) — thicker border + rounded corners for every editor
+   *  surface (textbox / callout / note). */
+  border: var(--border-w-box) solid var(--border-strong);
+  border-radius: var(--radius-box);
   box-shadow: var(--shadow-popover);
   z-index: 3;
 }
@@ -5549,9 +5591,9 @@ rect.ann-highlight.ann-preview {
    * this fix (the base label only rendered via invalid-var fallback
    * to inherited color); the token is now defined in both themes. */
   background: var(--bg-sunken);
-  border: 1px solid var(--border-strong);
+  border: var(--border-w-box) solid var(--border-strong);
   border-bottom: none;
-  border-radius: var(--radius-1) var(--radius-1) 0 0;
+  border-radius: var(--radius-box) var(--radius-box) 0 0;
   color: var(--fg-soft);
   font-size: var(--tf-label-size);
   font-weight: 600;
@@ -5580,7 +5622,7 @@ rect.ann-highlight.ann-preview {
   flex-shrink: 0;
 }
 .ann-textbox-wrap .ann-textbox-editor {
-  border-radius: 0 0 var(--radius-1) var(--radius-1);
+  border-radius: 0 0 var(--radius-box) var(--radius-box);
   border-top: none;
   /* Grip == body — the unified sticky-note window pattern. The
    * textarea IS the editor body; it must span the same width as the
@@ -6254,6 +6296,14 @@ rect.ann-highlight.ann-preview {
 
 .ann-panel-row-jump {
   flex: 1 1 auto;
+  /* Phase 51 (item 4) — a flex item's automatic minimum is its content size,
+     so this button could not shrink below its icon + kind-label + chevron.
+     With a longer kind ("Rectangle", "Pen stroke") it pushed the 24px delete
+     button past the row's right edge, and `.ann-panel-row`'s `overflow:
+     hidden` clipped it (measured: delete right 234.3 / 237.8 vs row right
+     227). min-width: 0 lets the label ellipsize instead, keeping the delete
+     control fully inside the row for EVERY annotation kind. */
+  min-width: 0;
   display: flex;
   align-items: center;
   gap: 6px;
@@ -6311,6 +6361,9 @@ rect.ann-highlight.ann-preview {
 }
 
 .ann-panel-row-delete {
+  /* Phase 51 (item 4) — the 24px target is a fixed control: it must never be
+     the item that shrinks/clips. The label column yields space instead. */
+  flex: 0 0 auto;
   width: 24px;
   height: 24px;
   display: inline-flex;
@@ -8422,8 +8475,9 @@ rect.ann-highlight.ann-preview {
   max-height: 300px;
   padding: 8px;
   background: var(--bg-raised);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-2);
+  /* Phase 51 (item 11) — comment box shares the text-box frame. */
+  border: var(--border-w-box) solid var(--border);
+  border-radius: var(--radius-box);
   box-shadow: var(--shadow-popover);
   animation: edit-bar-in var(--motion-fast) var(--ease-out);
 }
@@ -9323,12 +9377,27 @@ rect.ann-highlight.ann-preview {
   transition: background var(--motion-fast) var(--ease-out);
 }
 
+/* Phase 51 item 7 — the SELECTED (movable) text run must LOOK selected. The
+ * white eraser cover is painted after this surface at the same rect, so the
+ * surface needs a stacking rank above the eraser (and below the preview text,
+ * which is z-index 3) or its outline is never visible. A solid accent border +
+ * a light wash + a soft ring read clearly against the page. */
+.edit-textrun-selection {
+  z-index: 1;
+  background: rgba(37, 99, 235, 0.12);
+  border: 1.5px solid var(--accent);
+  border-style: solid;
+  border-radius: 2px;
+  box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.18);
+}
+
 /* Box-tool drag preview: dashed rect that follows the drag. */
 .edit-box-preview {
   position: absolute;
   background: var(--accent-soft);
-  border: 1px dashed var(--accent);
-  border-radius: var(--radius-1);
+  /* Phase 51 (item 11) — the drag preview echoes the committed box frame. */
+  border: var(--border-w-box) dashed var(--accent);
+  border-radius: var(--radius-box);
   pointer-events: none;
 }
 
@@ -9403,8 +9472,10 @@ rect.ann-highlight.ann-preview {
  * pointer-transparent so the surface stays the drag target. */
 .edit-box {
   position: absolute;
-  border: 1px dashed var(--accent);
-  border-radius: var(--radius-1);
+  /* Phase 51 (item 11) — committed text box: thicker border + rounded corners
+   *  (shared text-box tokens). */
+  border: var(--border-w-box) dashed var(--accent);
+  border-radius: var(--radius-box);
   /* Phase 2 — committed-box selection wash: blue -> accent orange. */
   background: rgba(37, 99, 235, 0.04);
   /* DEF-153 — committed content hovers with the palm/grab cursor
@@ -9429,7 +9500,7 @@ rect.ann-highlight.ann-preview {
  * background tint (the inner layers are painted in the order the
  * JSX mounts them: fill then text). */
 .edit-box-fill {
-  border-radius: var(--radius-1);
+  border-radius: var(--radius-box);
 }
 
 /* DEF-127 — the text mirror. The inline style carries the box's
@@ -9751,6 +9822,20 @@ rect.ann-highlight.ann-preview {
   pointer-events: none;
   white-space: pre-wrap;
   overflow: hidden;
+}
+
+/* Phase 51 item 12 — the on-canvas run editor. It shares the host's single
+ * text session with the Inspector field. Ranked above the preview (z-index 3)
+ * and the selection surface (z-index 1) so the caret and selection are
+ * interactive; the run's own type style rides the inline style. */
+.edit-run-editor {
+  z-index: 4;
+  box-sizing: border-box;
+}
+
+.edit-run-editor:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.18);
 }
 
 /* ---------------------------------------------------------------------------
@@ -10518,6 +10603,62 @@ rect.ann-highlight.ann-preview {
   text-align: right;
 }
 
+/* ===========================================================================
+ * Phase 51 (item 10) — the OCR suspects INSPECTOR section.
+ *
+ * The operator saw the old top-bar layout as "scattered, overlapping". Inside
+ * the Inspector the same words render as a clean vertical section: one page
+ * group per block, each suspect a full-width row with the word left (ellipsised)
+ * and the confidence bar + percentage right. Mirrors the Inspector's section
+ * conventions (title-case header, divider-separated rows) so it reads as part of
+ * the panel rather than a foreign strip. The bar layout's own rules above are
+ * untouched.
+ * ========================================================================= */
+.ocr-suspects-panel-inline { display: flex; }
+.ocr-suspects-panel-inline .ocr-suspects-header {
+  padding: 0 0 var(--sp-2) 0;
+  border-bottom: none;
+  flex-wrap: wrap;
+  row-gap: var(--sp-1);
+}
+.ocr-suspects-panel-inline .ocr-suspects-title {
+  color: var(--fg-muted);
+  font-size: var(--fs-xs);
+}
+.ocr-suspects-panel-inline .ocr-suspects-summary { white-space: normal; }
+.ocr-suspects-panel-inline .ocr-suspects-body-inline {
+  display: block;
+  overflow: visible;
+  padding: 0;
+}
+.ocr-suspects-panel-inline .ocr-suspects-page {
+  min-width: 0;
+  width: 100%;
+  flex: none;
+  gap: 4px;
+  padding: 0;
+}
+.ocr-suspects-panel-inline .ocr-suspects-list {
+  flex-direction: column;
+  flex-wrap: nowrap;
+  max-width: none;
+  gap: 2px;
+}
+.ocr-suspects-panel-inline .ocr-suspects-entry-btn {
+  display: flex;
+  width: 100%;
+  justify-content: space-between;
+  gap: var(--sp-2);
+  white-space: normal;
+}
+.ocr-suspects-panel-inline .ocr-suspects-word {
+  flex: 1 1 auto;
+  min-width: 0;
+  max-width: none;
+}
+.ocr-suspects-panel-inline .ocr-suspects-confidence { flex: 0 0 auto; }
+
+
 /* ---------------------------------------------------------------------------
  * Phase 12 — residual page-organize + annotate parity
  *
@@ -10749,8 +10890,10 @@ rect.ann-highlight.ann-preview {
 /* -- Callout annotation rendering (page overlay) ------------------ */
 .ann-callout {
   position: absolute;
-  border: 1.5px solid;
-  border-radius: var(--radius-1);
+  /* Phase 51 (item 11) — callout is a text box: thicker border + rounded
+   * corners (colour rides the inline style, width/radius the tokens). */
+  border: var(--border-w-box) solid;
+  border-radius: var(--radius-box);
   font-weight: 500;
   white-space: pre-wrap;
   word-break: break-word;

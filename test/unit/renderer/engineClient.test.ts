@@ -2233,6 +2233,43 @@ describe("engineClient — Phase 11 OCR pass-through", () => {
     expect(r.error.code).toBe('engine-error');
   });
 
+  // Phase 51 (item 9) — the real adapter must forward the cancel call,
+  // with the doc id, to the preload surface and return its result
+  // verbatim (the engine client does not transform cancel results).
+  it("ocrCancel forwards the doc id to the backend and returns its result", async () => {
+    const calls: string[] = [];
+    const fakeEngine = {
+      ...makeBaseEngine(),
+      ocrCancel: async (docId: string) => {
+        calls.push(docId);
+        return { ok: true as const, value: { cancelled: docId === 'doc-42' } };
+      },
+    };
+    (window as unknown as { tflex: { engine: typeof fakeEngine } }).tflex = {
+      engine: fakeEngine,
+    };
+    _resetEngineForTests();
+    const e = getEngine();
+    const r = await e.ocrCancel!("doc-42");
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.value).toEqual({ cancelled: true });
+    expect(calls).toEqual(["doc-42"]);
+  });
+
+  it("ocrCancel returns engine-error when the backend predates Phase 51", async () => {
+    const fakeEngine = makeBaseEngineNoOcr();
+    (window as unknown as { tflex: { engine: typeof fakeEngine } }).tflex = {
+      engine: fakeEngine,
+    };
+    _resetEngineForTests();
+    const e = getEngine();
+    const r = await e.ocrCancel!("doc-1");
+    expect(r.ok).toBe(false);
+    if (r.ok) return;
+    expect(r.error.code).toBe('engine-error');
+  });
+
   it("onOcrProgress returns a no-op unsubscribe when the backend predates Phase 11", () => {
     const fakeEngine = makeBaseEngineNoOcr();
     (window as unknown as { tflex: { engine: typeof fakeEngine } }).tflex = {

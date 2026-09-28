@@ -965,6 +965,16 @@ export interface OcrProgress {
   phase: 'recognizing' | 'writing';
 }
 
+/** Phase 51 — result of `engine.ocrCancel`. `cancelled` is true when an
+ *  in-flight OCR run on the doc was flagged for cancellation; false when
+ *  there was no run in flight (cancel-before-start or cancel-after-finish),
+ *  which is a harmless no-op. A cancelled run makes the pending
+ *  `ocrRecognize` resolve with `error.code === 'cancelled'` after restoring
+ *  the pre-run snapshot. */
+export interface OcrCancelResult {
+  cancelled: boolean;
+}
+
 // ---- Phase 9 / DEF-060: menu enable-state ----
 
 /** DEF-065 — stable ids assigned to application menu items whose enabled

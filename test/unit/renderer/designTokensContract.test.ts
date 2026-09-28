@@ -1326,7 +1326,11 @@ describe("Phase 20 — surface motion contract", () => {
       surface: "tools palette panel",
       wrapperFile: "src/renderer/components/ToolsPalette.tsx",
       primitive: "TfPanel",
-      presenceFiles: ["src/renderer/App.tsx"],
+      // The All-tools palette was retired (the Inspector superseded it) and is
+      // no longer mounted anywhere, so there is no presence boundary to pin.
+      // The entry keeps verifying the primitive/preset contract; the empty
+      // presence list is intentional, not a gap.
+      presenceFiles: [],
       preset: "tfPanel",
     },
     {
@@ -1369,13 +1373,9 @@ describe("Phase 20 — surface motion contract", () => {
       preset: "tfBar",
     },
     {
-      surface: "OCR suspects bar",
-      wrapperFile: "src/renderer/components/OcrSuspectsPanel.tsx",
-      primitive: "TfBarTop",
-      presenceFiles: ["src/renderer/App.tsx"],
-      preset: "tfBarTop",
-    },
-    {
+      // Phase 51 (item 10) — the OCR suspects view is no longer an animated
+      // top bar mounted in App.tsx; it is a static Inspector section. The
+      // surface is therefore not part of the animated-surfaces table.
       surface: "toasts",
       wrapperFile: "src/renderer/components/Toasts.tsx",
       primitive: "TfToast",

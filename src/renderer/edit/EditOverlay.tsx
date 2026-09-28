@@ -49,7 +49,7 @@ import {
   resizeImageRect,
   type ImageResizeHandle,
 } from "./geometry";
-import { fontFamilyFor } from "./editColor";
+import { colorToHex, fontFamilyFor } from "./editColor";
 import { TfBar } from "../components/motion/TfMotion";
 import {
   ContentActionBar,
@@ -78,14 +78,29 @@ import { runSourceTextStyle } from "./textStyle";
  *  unclipped and are fully backed by the cover. */
 const RUN_COVER_DESCENT = 0.25;
 
-/** Extend a run rect to fully contain its glyph box (baseline -> descender). */
-function runCoverRect(rect: { x: number; y: number; width: number; height: number }): {
+/** Extend a run rect to fully contain its glyph box (baseline -> descender).
+ *  Phase 51 item 16 — a non-zero `baselineShift` (super/subscript, points)
+ *  raises / lowers the live preview's glyphs; the cover must follow so the
+ *  shifted text is never left straddling the cover's edge (which exposed a
+ *  second copy of the run underneath). Positive shift extends the cover UP
+ *  (smaller y), negative extends it DOWN. */
+function runCoverRect(
+  rect: { x: number; y: number; width: number; height: number },
+  baselineShift = 0,
+): {
   x: number;
   y: number;
   width: number;
   height: number;
 } {
-  return { ...rect, height: rect.height * (1 + RUN_COVER_DESCENT) };
+  const top = baselineShift > 0 ? baselineShift : 0;
+  const bottom = baselineShift < 0 ? -baselineShift : 0;
+  return {
+    x: rect.x,
+    y: rect.y - top,
+    width: rect.width,
+    height: rect.height * (1 + RUN_COVER_DESCENT) + top + bottom,
+  };
 }
 
 export interface EditOverlayProps {
@@ -210,6 +225,18 @@ export interface EditOverlayProps {
    *  live keystrokes mutated). Optional so direct-mount hosts / tests that
    *  predate it keep working (Cancel then only reverts the pending move). */
   onDiscardTextEdit?: () => void;
+  /** Phase 51 item 12 — a keystroke typed in the ON-CANVAS run editor. The
+   *  host routes it to the SAME session its Inspector Text field edits
+   *  (`handlePanelTextChange`), so typing in either surface updates the
+   *  other with no second mechanism. Optional so direct-mount hosts/tests
+   *  that predate it keep the static mirror. */
+  onTextInput?: (text: string) => void;
+  /** Phase 51 item 12 — end the shared session (the on-canvas editor's
+   *  blur), routed to the host's `commitTextSession`. `relatedTarget` is the
+   *  focus target receiving focus: when it is the Inspector field (or any
+   *  panel control) the session stays open, so moving between the two
+   *  surfaces never loses the draft. */
+  onTextInputCommit?: (relatedTarget?: EventTarget | null) => void;
 }
 
 // ---------------------------------------------------------------------------
@@ -306,6 +333,8 @@ export function EditOverlay(props: EditOverlayProps): ReactElement | null {
     textStyle,
     onTextTargetChange,
     onDiscardTextEdit,
+    onTextInput,
+    onTextInputCommit,
   } = props;
 
   // Phase 26 — the SELECTED text target (a committed box or a text run).
@@ -366,6 +395,20 @@ export function EditOverlay(props: EditOverlayProps): ReactElement | null {
     newRect: { x: number; y: number; width: number; height: number };
     text: string;
   } | null>(null);
+  /** Phase 51 item 7 — the run's rect at the START of an in-flight move drag.
+   *  The white cover must stay over this OLD baked rect while the preview / blue
+   *  box follow the cursor; `runSelection.rect` is the moving one. */
+  const [runDragFromRect, setRunDragFromRect] = useState<{
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+  } | null>(null);
+  /** Phase 51 item 12 — double-clicking a selected run lifts it into the
+   *  ON-CANVAS editor (a textarea bound to the SAME host session as the
+   *  Inspector Text field). Off by default so a single click still selects
+   *  + arms the Inspector field and the run stays draggable. */
+  const [canvasEditRun, setCanvasEditRun] = useState(false);
   // Phase 26 — the cursor-attached "Double click to edit" hint is gone
   // (there is no in-canvas editor to open).
   // True when the last box/run pointerup was a REAL drag — the
@@ -419,8 +462,10 @@ export function EditOverlay(props: EditOverlayProps): ReactElement | null {
     setCropDrag(null);
     setRunSelection(null);
     setPendingRunMove(null);
+    setRunDragFromRect(null);
     setPendingTextBoxMove(null);
     setPendingRunEdit(null);
+    setCanvasEditRun(false);
   }, [tool, page]);
 
   // DEF-149(b) / DEF-150 — every time the inline editor opens (the
@@ -669,15 +714,19 @@ export function EditOverlay(props: EditOverlayProps): ReactElement | null {
     // layer's own onPointerDown text branch stays as a fallback —
     // both paths converge on the same onClickTextRun and are
     // idempotent.
+    const interactiveSelector =
+      ".edit-inline-editor, .edit-image-toolbar, .edit-image-placement, .edit-image-crop-overlay, .content-action-bar, button, input, textarea, select, [role='button'], .ann-editor, .ann-note, .sig-action-bar, .sig-pending";
+    const isInteractiveTarget = (target: EventTarget | null): boolean => {
+      const el = target as Element | null;
+      return (
+        el !== null &&
+        typeof el.closest === "function" &&
+        el.closest(interactiveSelector) !== null
+      );
+    };
     const onDown = (e: PointerEvent): void => {
       if (e.button !== 0) return;
-      const target = e.target as Element | null;
-      if (target !== null && typeof target.closest === "function") {
-        const interactive = target.closest(
-          ".edit-inline-editor, .edit-image-toolbar, .edit-image-placement, .edit-image-crop-overlay, .content-action-bar, button, input, textarea, select, [role='button'], .ann-editor, .ann-note, .sig-action-bar, .sig-pending",
-        );
-        if (interactive !== null) return;
-      }
+      if (isInteractiveTarget(e.target)) return;
       const root = rootRef.current;
       if (root === null) return;
       const rect = root.getBoundingClientRect();
@@ -706,10 +755,34 @@ export function EditOverlay(props: EditOverlayProps): ReactElement | null {
         text: chosen.text,
       });
     };
+    // DEF-370 — selecting a run happens on pointerdown, and the panel's
+    // focus effect then focuses the Inspector Text field. The browser's
+    // DEFAULT mousedown action (which moves focus to the page/body) runs
+    // after that and immediately blurs the field, so typing does not land.
+    // Suppress the native focus steal, but ONLY when this press actually
+    // selects a run: the interactive-ancestor guard keeps every control
+    // (action bar, editor, native input) on its normal focus path, and an
+    // empty-page press still blurs + commits the session as before. This is
+    // a narrow preventDefault on the compat mousedown event, never a
+    // catch-all, so the cross-bubbling rules are preserved.
+    const onDownMouse = (e: MouseEvent): void => {
+      if (e.button !== 0) return;
+      if (isInteractiveTarget(e.target)) return;
+      const root = rootRef.current;
+      if (root === null) return;
+      const rect = root.getBoundingClientRect();
+      const x = (e.clientX - rect.left) / cssScale;
+      const y = (e.clientY - rect.top) / cssScale;
+      if (x < 0 || y < 0 || x > pageWidthPt || y > pageHeightPt) return;
+      if (runAtPoint({ x, y }) === null) return;
+      e.preventDefault();
+    };
     window.addEventListener("pointerdown", onDown, true);
+    window.addEventListener("mousedown", onDownMouse, true);
     return () => {
       window.removeEventListener("pointermove", onMove);
       window.removeEventListener("pointerdown", onDown, true);
+      window.removeEventListener("mousedown", onDownMouse, true);
     };
   }, [tool, cssScale, getTextItems, runAtPoint, pageWidthPt, pageHeightPt]);
 
@@ -719,6 +792,9 @@ export function EditOverlay(props: EditOverlayProps): ReactElement | null {
     if (e.button !== 0) return;
     // Don't start a drag from inside the editor.
     if ((e.target as HTMLElement).closest(".edit-inline-editor") !== null) return;
+    // Phase 51 item 12 — a press inside the on-canvas run editor is caret
+    // placement, never a re-select / drag.
+    if ((e.target as HTMLElement).closest("[data-edit-run-editor]") !== null) return;
     if (edit.cropping) {
       // The crop overlay handles its own pointer events; bail
       // before the main layer starts anything.
@@ -750,7 +826,10 @@ export function EditOverlay(props: EditOverlayProps): ReactElement | null {
       if (chosen !== null) {
         movedRef.current = false;
         setPendingRunMove(null);
+        // A fresh selection closes any on-canvas editor for a previous run.
+        setCanvasEditRun(false);
         setRunSelection({ rect: { ...chosen }, text: chosen.text });
+        setRunDragFromRect({ ...chosen });
         setTextTarget({
           kind: "run",
           id: "",
@@ -767,6 +846,8 @@ export function EditOverlay(props: EditOverlayProps): ReactElement | null {
       } else {
         setRunSelection(null);
         setPendingRunMove(null);
+        setRunDragFromRect(null);
+        setCanvasEditRun(false);
         setTextTarget(null);
       }
       return;
@@ -1059,10 +1140,12 @@ export function EditOverlay(props: EditOverlayProps): ReactElement | null {
       const moved = !rectsClose(newRect, d.startRect, 2);
       if (!moved) {
         movedRef.current = false;
+        setRunDragFromRect(null);
         setRunSelection((prev) => (prev === null ? prev : { ...prev, rect: { ...d.startRect } }));
         return;
       }
       movedRef.current = true;
+      setRunDragFromRect(null);
       setPendingRunMove({
         oldRect: { ...d.startRect },
         newRect,
@@ -1216,7 +1299,13 @@ export function EditOverlay(props: EditOverlayProps): ReactElement | null {
     if (textTarget !== null && textTarget.kind === "run" && textTarget.text.length > 0) {
       // Phase 38 feature D — extend below the baseline so the run's
       // descenders are covered too (no ghost ink under the live preview).
-      return runCoverRect(textTarget.rect);
+      // Phase 51 items 7/15/16 — the cover stays over the OLD baked rect
+      // while a move is in flight or pending (the preview / blue box follow
+      // the cursor instead), so no copy is left at the original position; the
+      // baseline shift extends the cover so super/subscript cannot expose one.
+      const oldRect =
+        pendingRunMove?.oldRect ?? runDragFromRect ?? textTarget.rect;
+      return runCoverRect(oldRect, textStyle?.baselineShift ?? 0);
     }
     return null;
   })();
@@ -1230,6 +1319,13 @@ export function EditOverlay(props: EditOverlayProps): ReactElement | null {
       ? textLive !== null && textLive.length > 0
         ? textLive
         : textTarget.text
+      : null;
+
+  // Phase 51 item 12 — the padded cover / editor rect for the selected run,
+  // driven by the LIVE drag rect when a move is in flight (item 7).
+  const runLiveRect =
+    tool === "text" && textTarget !== null && textTarget.kind === "run"
+      ? runCoverRect(runSelection?.rect ?? textTarget.rect, textStyle?.baselineShift ?? 0)
       : null;
 
   // Phase 48 (item 3) — the text-run action bar is placed under the run
@@ -1270,12 +1366,19 @@ export function EditOverlay(props: EditOverlayProps): ReactElement | null {
 
       {/* DEF-153 — the SELECTED (movable) text run: an outlined
           surface at the run's rect + the Confirm/Edit/Delete bar. */}
-      {tool === "text" && runSelection !== null && (
+      {tool === "text" && runSelection !== null && !canvasEditRun && (
         <div
           className="edit-text-hover edit-textrun-selection"
           data-textrun-selection
           data-textrun-text={runSelection.text}
           style={overlayRectToCss(runSelection.rect, cssScale)}
+          onDoubleClick={(e): void => {
+            // Phase 51 item 12 — a double-click lifts the run into the
+            // on-canvas editor (the Inspector Text field stays available and
+            // edits the same session).
+            e.stopPropagation();
+            setCanvasEditRun(true);
+          }}
         />
       )}
 
@@ -1407,8 +1510,13 @@ export function EditOverlay(props: EditOverlayProps): ReactElement | null {
           top={runBarPlacement?.top ?? 0}
           onConfirm={(): void => {
             if (pendingRunMove === null) {
+              // Phase 51 item 13 — a plain Confirm (no move) dismisses the
+              // selection; clearing the target lets the host commit any live
+              // panel session at the run's CURRENT rect. Never repositions.
+              setCanvasEditRun(false);
               setRunSelection(null);
               setPendingRunMove(null);
+              setTextTarget(null);
               return;
             }
             const p = pendingRunMove;
@@ -1417,15 +1525,20 @@ export function EditOverlay(props: EditOverlayProps): ReactElement | null {
             // renders, so nothing shrinks when the edit is baked.
             const style: EditTextStyle = runSourceTextStyle(p.oldRect.height, defaultFont);
             const moved = !rectsClose(p.newRect, p.oldRect, 1);
+            // Phase 51 item 12 — the move commit carries the LIVE session
+            // text (typed in the Inspector field or the on-canvas editor),
+            // falling back to the selection's text when no session is open.
+            const live = runLiveRef.current;
+            const newText = live !== null && live.length > 0 ? live : p.text;
             // Phase-C smooth commit — keep the white cover over the
             // run's ORIGINAL rect until the engine mask + proxy
             // refresh resolve (same timing contract as the editor
             // commit above). The selection closes immediately; the
             // cover releases when the host's promise lands.
-            setPendingRunEdit({ rect: { ...p.oldRect }, text: p.text });
+            setPendingRunEdit({ rect: { ...p.oldRect }, text: newText });
             const res = onCommitTextEdit({
               rect: { ...p.newRect },
-              newText: p.text,
+              newText,
               style,
               ...(moved ? { oldRect: { ...p.oldRect } } : {}),
               // DEF-232 — target the engine at THIS overlay's page.
@@ -1445,10 +1558,19 @@ export function EditOverlay(props: EditOverlayProps): ReactElement | null {
             }
             dispatch({
               type: "push-text-run-commit",
-              run: { page, rect: { ...p.newRect }, text: p.text },
+              run: { page, rect: { ...p.newRect }, text: newText },
             });
+            // Phase 51 items 7/13/15/16 — the move is committed; drop the
+            // live session (the payload already carries its text) and CLEAR
+            // the target so the eraser + run preview unmount. Otherwise the
+            // preview keeps painting the text at the OLD rect forever (the
+            // duplicate on Confirm / on a second move) and a later style
+            // patch would re-commit at that stale rect.
+            onDiscardTextEdit?.();
+            setCanvasEditRun(false);
             setRunSelection(null);
             setPendingRunMove(null);
+            setTextTarget(null);
           }}
           onDelete={(): void => {
             const style: EditTextStyle = runSourceTextStyle(runSelection.rect.height, defaultFont);
@@ -1459,8 +1581,11 @@ export function EditOverlay(props: EditOverlayProps): ReactElement | null {
               // DEF-232 — target the engine at THIS overlay's page.
               page,
             });
+            onDiscardTextEdit?.();
+            setCanvasEditRun(false);
             setRunSelection(null);
             setPendingRunMove(null);
+            setTextTarget(null);
           }}
           onCancel={(): void => {
             // Phase 37 (item 11) — Cancel reverts the renderer-local pending
@@ -1470,6 +1595,7 @@ export function EditOverlay(props: EditOverlayProps): ReactElement | null {
             onDiscardTextEdit?.();
             setPendingRunEdit(null);
             setPendingRunMove(null);
+            setCanvasEditRun(false);
             setRunSelection(null);
             setTextTarget(null);
           }}
@@ -1575,18 +1701,27 @@ export function EditOverlay(props: EditOverlayProps): ReactElement | null {
           bare selection (no panel session yet) falls back to the run's
           committed text, so the selected text stays VISIBLE instead of
           a white hole. */}
-      {runPreviewText !== null && runPreviewText.length > 0 && (
+      {runPreviewText !== null && runPreviewText.length > 0 && canvasEditRun && runLiveRect !== null ? (
+          /* Phase 51 item 12 — the run is being edited ON the canvas: the
+             textarea is the visible surface (no static preview behind it, so
+             the text is never painted twice) and it edits the SAME session as
+             the Inspector Text field. */
+          <RunCanvasEditor
+            rect={runLiveRect}
+            text={runPreviewText}
+            style={textStyle ?? defaultEditTextStyle(defaultFont)}
+            cssScale={cssScale}
+            onChange={onTextInput}
+            onCommit={onTextInputCommit}
+          />
+        ) : runPreviewText !== null && runPreviewText.length > 0 && runLiveRect !== null ? (
           <RunLivePreview
-            rect={
-              textTarget === null
-                ? { x: 0, y: 0, width: 0, height: 0 }
-                : runCoverRect(textTarget.rect)
-            }
+            rect={runLiveRect}
             text={runPreviewText}
             style={textStyle ?? defaultEditTextStyle(defaultFont)}
             cssScale={cssScale}
           />
-        )}
+        ) : null}
     </div>
   );
 }
@@ -1753,6 +1888,84 @@ function RunLivePreview(props: RunLivePreviewProps): ReactElement {
         </div>
       ))}
     </div>
+  );
+}
+
+interface RunCanvasEditorProps {
+  rect: { x: number; y: number; width: number; height: number };
+  text: string;
+  style: EditTextStyle;
+  cssScale: number;
+  onChange?: (text: string) => void;
+  onCommit?: (relatedTarget?: EventTarget | null) => void;
+}
+
+/** Phase 51 item 12 — the ON-CANVAS text editor for a selected run. It is a
+ *  second SURFACE of the SAME host text session as the Inspector Text field
+ *  (its keystrokes call the host's `handlePanelTextChange`, its blur calls
+ *  `commitTextSession`), not a second mechanism: typing in either updates the
+ *  other, and switching focus between them keeps the session alive
+ *  (`isTextPanelFocusTarget` accepts `[data-edit-run-editor]`). It paints the
+ *  run's own font / size / colour / weight / decoration over the white cover,
+ *  so the text is shown exactly once. */
+function RunCanvasEditor(props: RunCanvasEditorProps): ReactElement {
+  const { rect, text, style, cssScale, onChange, onCommit } = props;
+  const ref = useRef<HTMLTextAreaElement | null>(null);
+  useEffect(() => {
+    ref.current?.focus();
+    ref.current?.select();
+  }, []);
+  const fontSizePx = Math.max(1, style.size) * cssScale;
+  const lineHeight = style.lineHeight ?? LIVE_TEXT_DEFAULT_LINE_HEIGHT;
+  return (
+    <textarea
+      ref={ref}
+      className="edit-run-editor"
+      data-edit-run-editor
+      data-edit-run-editor-text={text}
+      aria-label="Edit text"
+      spellCheck={false}
+      value={text}
+      style={{
+        position: "absolute",
+        left: rect.x * cssScale,
+        top: rect.y * cssScale,
+        width: rect.width * cssScale,
+        height: rect.height * cssScale,
+        background: "#ffffff",
+        color: colorToHex(style.color),
+        caretColor: colorToHex(style.color),
+        fontFamily: fontFamilyFor(style.font),
+        fontSize: `${fontSizePx}px`,
+        fontWeight: style.bold === true ? 700 : 400,
+        fontStyle: style.italic === true ? "italic" : "normal",
+        textDecoration: style.underline === true ? "underline" : "none",
+        letterSpacing: `${(style.charSpacing ?? 0) * cssScale}px`,
+        lineHeight: `${fontSizePx * lineHeight}px`,
+        paddingLeft: `${(style.indent ?? 0) * cssScale}px`,
+        // Phase 51 (item 11) — the run editor is a text box too: shared
+        // thicker border + rounded corners (tokens), visible on focus via
+        // .edit-run-editor:focus.
+        border: "var(--border-w-box) solid transparent",
+        borderRadius: "var(--radius-box)",
+        outline: "none",
+        resize: "none",
+        overflow: "hidden",
+        whiteSpace: "pre-wrap",
+        margin: 0,
+      }}
+      onPointerDown={(e): void => {
+        e.stopPropagation();
+      }}
+      onChange={(e): void => onChange?.(e.target.value)}
+      onBlur={(e): void => onCommit?.(e.relatedTarget)}
+      onKeyDown={(e): void => {
+        if (e.key === "Escape") {
+          e.preventDefault();
+          (e.target as HTMLTextAreaElement).blur();
+        }
+      }}
+    />
   );
 }
 

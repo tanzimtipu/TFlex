@@ -16,8 +16,9 @@
 //
 // The dialog surfaces a per-page progress bar fed by both the
 // renderer's rasterisation step AND the engine's per-page progress
-// events. Cancel is supported via an AbortController; the host's
-// `cancelOcr` runs on demand.
+// events. Cancel is supported via an AbortController for the renderer
+// rasterizer AND the host's `cancelOcr` (engine.ocrCancel) for the
+// main-process recognition, which restores the pre-run bytes.
 //
 // The user's language + DPI choices persist in AppSettings so the
 // dialog opens with the same values on next launch (same pattern as
@@ -28,7 +29,7 @@
 // slow and the dialog is meant to feel like a one-click action on
 // the document the user is looking at.
 
-import { useEffect, useMemo, useRef, useState, type ReactElement } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactElement } from "react";
 import { X } from "lucide-react";
 import {
   DEFAULT_OCR_DOWNSAMPLE,
@@ -99,10 +100,25 @@ interface OcrDialogProps {
   subscribeOcrProgress: (cb: (p: OcrProgress) => void) => () => void;
   /** Run the OCR engine action. Returns the engine's
    *  EngineState echo, OR an error string. The host wires this
-   *  to `engine.ocrRecognize` for the active doc. */
+   *  to `engine.ocrRecognize` for the active doc. Phase 51 (item 9): the
+   *  optional `signal` lets the host skip its post-run side effects once the
+   *  user cancelled (the engine call itself is not abortable — see the
+   *  cancel note in this component). */
   runOcr: (
     options: OcrRecognizeOptions,
-  ) => Promise<{ ok: true; suspects: OcrSuspect[] } | { error: string }>;
+    signal?: AbortSignal,
+  ) => Promise<
+    | { ok: true; suspects: OcrSuspect[] }
+    | { cancelled: true }
+    | { error: string }
+  >;
+  /** Phase 51 (item 9) — flag the in-flight engine recognition for
+   *  cancellation. The host wires this to `engine.ocrCancel(docId)`.
+   *  Main restores the pre-run bytes (no partial text layer, no
+   *  modified flag) and resolves the pending `runOcr` promise with
+   *  `{ cancelled: true }`. Optional so a caller without a cancel
+   *  channel still leaves the running state cleanly. */
+  cancelOcr?: () => void;
   /** Fires when the run completes successfully. The host closes
    *  the dialog and shows the toasts list; the dialog itself has
    *  already routed the engine call. */
@@ -154,6 +170,7 @@ export function OcrDialog(props: OcrDialogProps): ReactElement | null {
     resolveActiveDoc,
     subscribeOcrProgress,
     runOcr,
+    cancelOcr,
     onConfirm,
     onClose,
   } = props;
@@ -168,9 +185,29 @@ export function OcrDialog(props: OcrDialogProps): ReactElement | null {
     phase: null,
   });
   const [error, setError] = useState<string | null>(null);
+  /** Phase 51 (item 9) — true once the user cancelled the current run. The
+   *  dialog leaves the running state IMMEDIATELY (the rasterizer stops between
+   *  pages and every post-await result is discarded) and shows a truthful
+   *  "Cancelled" notice so the next Run starts from a clean state. */
+  const [cancelled, setCancelled] = useState(false);
   const dialogRef = useRef<HTMLDivElement | null>(null);
   const abortRef = useRef<AbortController | null>(null);
   const progressUnsubRef = useRef<(() => void) | null>(null);
+
+  /** Phase 51 (item 9) — the single cancel path used by the Cancel
+   *  button, the header X while running, and Esc. It flags main's
+   *  in-flight recognition for cancellation (so the engine restores the
+   *  pre-run bytes instead of committing a partial text layer), aborts
+   *  the renderer-side rasterizer, and leaves the running state at once.
+   *  The pending `runOcr` promise is then discarded by the post-await
+   *  checks in `onConfirmClick` (or arrives as `{ cancelled: true }`),
+   *  so no result is applied and the document stays unchanged. */
+  const cancelRun = useCallback((): void => {
+    cancelOcr?.();
+    abortRef.current?.abort();
+    setRunning(false);
+    setCancelled(true);
+  }, [cancelOcr]);
 
   // Reset state every time the dialog re-opens. The language / DPI
   // mirrors persist in AppSettings; the dialog re-seeds from
@@ -185,6 +222,7 @@ export function OcrDialog(props: OcrDialogProps): ReactElement | null {
     setRunning(false);
     setProgress({ total: 0, completed: 0, currentPage: null, phase: null });
     setError(null);
+    setCancelled(false);
     // Cancel any in-flight run from a previous open (defensive —
     // the dialog should not be re-opened mid-run, but if it is,
     // we tear down the old abort controller).
@@ -247,7 +285,7 @@ export function OcrDialog(props: OcrDialogProps): ReactElement | null {
       if (e.key === 'Escape') {
         e.preventDefault();
         if (running) {
-          abortRef.current?.abort();
+          cancelRun();
         } else {
           onClose();
         }
@@ -267,7 +305,7 @@ export function OcrDialog(props: OcrDialogProps): ReactElement | null {
       first?.focus();
     });
     return () => window.removeEventListener('keydown', onKey);
-  }, [open, onClose, running]);
+  }, [open, onClose, running, cancelRun]);
 
   // Tear down the abort controller + progress subscription when
   // the dialog closes (defensive — the run-finished effect below
@@ -275,12 +313,17 @@ export function OcrDialog(props: OcrDialogProps): ReactElement | null {
   // via the X button, we want a clean teardown).
   useEffect(() => {
     if (open) return undefined;
+    // If the dialog was dismissed while a run was in flight, flag the
+    // engine so it restores the pre-run bytes rather than committing a
+    // partial text layer. `abortRef` is non-null only while a run is
+    // active, which keeps this from touching an unrelated batch run.
+    if (abortRef.current !== null) cancelOcr?.();
     abortRef.current?.abort();
     abortRef.current = null;
     progressUnsubRef.current?.();
     progressUnsubRef.current = null;
     return undefined;
-  }, [open]);
+  }, [open, cancelOcr]);
 
   const valid = useMemo<boolean>(() => {
     if (!open) return false;
@@ -308,6 +351,7 @@ export function OcrDialog(props: OcrDialogProps): ReactElement | null {
     if (!valid) return;
     setRunning(true);
     setError(null);
+    setCancelled(false);
     const ac = new AbortController();
     abortRef.current = ac;
     try {
@@ -368,12 +412,23 @@ export function OcrDialog(props: OcrDialogProps): ReactElement | null {
       // engine runs tesseract, writes the invisible text layer
       // onto each page, and pushes per-page progress events
       // through the listener we subscribed in the effect above.
-      const engineResult = await runOcr({
-        language,
-        downsample,
-        pageImages,
-      });
-      if (ac.signal.aborted) {
+      // Phase 51 (item 9): a cancelled run resolves either as our
+      // abort (signal) or as the engine's `{ cancelled: true }`
+      // (mapped from `error.code === 'cancelled'`) — both are the
+      // expected cancellation, never an error.
+      const engineResult = await runOcr(
+        {
+          language,
+          downsample,
+          pageImages,
+        },
+        ac.signal,
+      );
+      if (ac.signal.aborted || 'cancelled' in engineResult) {
+        // Expected cancellation, never an error toast: show the
+        // truthful "Cancelled" notice so the user knows the run did
+        // not apply and can Run again.
+        setCancelled(true);
         setRunning(false);
         return;
       }
@@ -406,9 +461,12 @@ export function OcrDialog(props: OcrDialogProps): ReactElement | null {
     }
   };
 
-  const onCancelRun = (): void => {
-    abortRef.current?.abort();
-  };
+  // Phase 51 (item 9) — cancel must visibly stop the run. `cancelRun`
+  // (defined above) flags main's in-flight recognition so the engine
+  // restores the pre-run bytes, aborts the renderer-side rasterizer, and
+  // leaves the running state immediately. Every post-await check in
+  // `onConfirmClick` discards a late result, so the document is unchanged
+  // and the next Run starts from a clean controller.
 
   const progressFraction = progress.total > 0
     ? Math.max(0, Math.min(1, progress.completed / progress.total))
@@ -434,7 +492,7 @@ export function OcrDialog(props: OcrDialogProps): ReactElement | null {
           <button
             type="button"
             className="modal-close"
-            onClick={running ? onCancelRun : onClose}
+            onClick={running ? cancelRun : onClose}
             aria-label={running ? 'Cancel OCR' : 'Close dialog'}
             title={running ? 'Cancel OCR' : 'Close'}
           >
@@ -557,13 +615,22 @@ export function OcrDialog(props: OcrDialogProps): ReactElement | null {
               <span>{error}</span>
             </div>
           )}
+
+          {/* Phase 51 (item 9) — a truthful "Cancelled" state: the run left the
+              running state and no result is applied, so the user knows the
+              Cancel took effect and can Run again. */}
+          {cancelled && !running && error === null && (
+            <div className="modal-status" role="status" data-ocr-cancelled>
+              <span>Cancelled. Run OCR again when you are ready.</span>
+            </div>
+          )}
         </div>
         <div className="modal-footer">
           {running ? (
             <button
               type="button"
               className="btn btn-secondary"
-              onClick={onCancelRun}
+              onClick={cancelRun}
               data-ocr-cancel
             >
               Cancel

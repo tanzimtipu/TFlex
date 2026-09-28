@@ -19,6 +19,7 @@ import type {
   OpenFileDialogKind,
   OcrProgress,
   OcrRecognizeOptions,
+  OcrCancelResult,
   OcrSuspect,
   PageLabelEntry,
   PdfOpenError,
@@ -187,6 +188,9 @@ export const IPC = {
   engineOcrRecognize: "engine:ocrRecognize",
   engineOcrSuspects: "engine:ocrSuspects",
   engineOcrProgressEvent: "engine:ocrProgress",
+  // Phase 51 — cancel an in-flight OCR run. Separate from ocrRecognize
+  // because it must take effect while that invoke is still pending.
+  engineOcrCancel: "engine:ocrCancel",
   // Phase 12: residual page-organize + annotate parity
   engineReplacePages: "engine:replacePages",
   engineRenumberPages: "engine:renumberPages",
@@ -563,6 +567,16 @@ export interface TFlexApiEngine {
     docId: string,
     options: OcrRecognizeOptions,
   ): Promise<Result<EngineState, import("./types").EngineError>>;
+  /** Phase 51 — cancel an in-flight `ocrRecognize` on this doc. Not queued
+   *  behind the per-doc operation queue: it flips a per-doc cancel flag the
+   *  recognition loop checks before each page and before the text-layer
+   *  commit, restores the pre-run snapshot, and resolves the pending
+   *  `ocrRecognize` with `error.code === 'cancelled'` (no partial text, no
+   *  modified flag). A cancel with no run in flight (before start / after
+   *  finish) is a no-op returning `{ cancelled: false }`. Never throws. */
+  ocrCancel?(
+    docId: string,
+  ): Promise<Result<OcrCancelResult, import("./types").EngineError>>;
   /** Phase 11 — return the low-confidence words from the most recent
    *  `ocrRecognize` on this doc. Read-only. */
   ocrSuspects?(

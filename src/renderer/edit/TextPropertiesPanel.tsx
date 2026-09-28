@@ -136,7 +136,11 @@ export function isTextPanelFocusTarget(target: EventTarget | null | undefined): 
   return (
     typeof Element !== "undefined" &&
     target instanceof Element &&
-    target.closest("[data-text-panel]") !== null
+    (target.closest("[data-text-panel]") !== null ||
+      // Phase 51 item 12 — the on-canvas run editor is a second surface of
+      // the SAME session, so moving focus between it and the Inspector field
+      // must keep the session alive (no commit, no lost draft).
+      target.closest("[data-edit-run-editor]") !== null)
   );
 }
 

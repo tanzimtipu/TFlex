@@ -37,6 +37,7 @@ import { readClipboardImage, type ClipboardLike } from './services/clipboard-ima
 import { EngineService } from './services/engine';
 import { OcrService } from './services/ocr';
 import { loadPdfFile, loadFdfFile } from './services/pdf-file';
+import { describePdfOpenError } from './services/error-text';
 import { listPrinters, printJob } from './services/print';
 import { setBundledFontDir } from './services/fonts';
 import { SamplesService } from './services/samples';
@@ -55,6 +56,7 @@ import { PostgrestSyncTransport } from './services/accounts/transport';
 import { createSettingsPort, createSignaturesPort } from './services/accounts/ports';
 import { OAuthCallbackService } from './services/accounts/oauth-callback';
 import { registerOAuthCallbackIpc } from './services/accounts/oauth-callback-ipc';
+import { clearAuthChallengeCookies } from './services/accounts/auth-cookies';
 import { appendOAuthTraceLine } from './services/accounts/oauth-trace-file';
 import { installAuthOriginHeader } from './services/accounts/origin-header';
 import { openAuthUrlExternally, openDefaultAppsSettings } from './services/os-links';
@@ -164,7 +166,7 @@ async function handleOsOpenPath(path: string): Promise<void> {
   }
   const check = await loadPdfFile(path);
   if (!check.ok) {
-    dialog.showErrorBox('Cannot open PDF', `Could not open:\n${path}\n\n(${check.error})`);
+    dialog.showErrorBox('Cannot open PDF', `Could not open:\n${path}\n\n${describePdfOpenError(check.error)}`);
     return;
   }
   sendOpenPath(path);
@@ -408,7 +410,24 @@ export async function start(): Promise<void> {
     },
     onTrace: broadcastOAuthTrace,
   });
-  registerOAuthCallbackIpc(ipcMain, oauthCallback);
+  // Phase 51 - a challenge cookie left over from an earlier attempt is a
+  // DIFFERENT server-side challenge, so the provider rejects the exchange with
+  // "Session challenge cookie not found" even though a cookie with that name is
+  // present. Clearing the challenge cookies when a flow STARTS (before the
+  // renderer's `signIn.social` issues a fresh one) closes that failure mode.
+  // The session token is deliberately left alone so a signed-in user is never
+  // signed out by starting a new flow.
+  const oauthCallbackController = {
+    start: async () => {
+      await clearAuthChallengeCookies(
+        session.defaultSession.cookies,
+        getAccountsConfig(process.env, app.getAppPath()).authBaseUrl,
+      );
+      return oauthCallback.start();
+    },
+    stop: () => oauthCallback.stop(),
+  };
+  registerOAuthCallbackIpc(ipcMain, oauthCallbackController);
 
   // Phase 46 - the packaged renderer is loaded from `file://` and therefore
   // sends no Origin header, so the provider refuses every Origin-checked
@@ -704,6 +723,14 @@ export async function start(): Promise<void> {
   });
   ipcMain.handle(IPC.engineOcrSuspects, (_event, docId: string) =>
     engine.ocrSuspects(docId),
+  );
+  // Phase 51 — cancel an in-flight OCR run. Deliberately NOT queued behind
+  // the per-doc operation queue: `_ocrRecognizeImpl` is mid-await on
+  // tesseract, so a queued cancel would only run after it finished. This
+  // flips the run's cancel flag and resolves immediately; the pending
+  // `ocrRecognize` then resolves with a typed `cancelled` error.
+  ipcMain.handle(IPC.engineOcrCancel, (_event, docId: string) =>
+    engine.ocrCancel(docId),
   );
 
   // Phase 12: residual page-organize + annotate parity

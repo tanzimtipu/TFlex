@@ -35,6 +35,7 @@ import type {
   FillFormFieldPayload,
   FormField,
   MoveSignaturePayload,
+  OcrCancelResult,
   OcrProgress,
   OcrRecognizeOptions,
   OcrSuspect,
@@ -1146,6 +1147,19 @@ export class StubRendererEngine implements EngineApi {
     const t = this.tabs.get(tabId);
     if (t === undefined) return undefined;
     return t.ocrCalls[t.ocrCalls.length - 1];
+  }
+
+  /** Phase 51 (item 9) — stub equivalent of `engine.ocrCancel`. The
+   *  stub runs no recognition, so there is never a run in flight to
+   *  cancel: the call is the documented harmless no-op returning
+   *  `{ cancelled: false }`. Unknown documents degrade with the same
+   *  engine-error the other OCR methods use. */
+  async ocrCancel(
+    docId: string,
+  ): Promise<Result<OcrCancelResult, EngineError>> {
+    const t = this.tabs.get(docId);
+    if (t === undefined) return err("engine-error", "unknown document");
+    return ok({ cancelled: false });
   }
 
   /** Stub equivalent of `engine.onOcrProgress`. The stub has no

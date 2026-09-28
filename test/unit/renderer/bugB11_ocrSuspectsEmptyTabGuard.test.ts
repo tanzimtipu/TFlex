@@ -83,13 +83,39 @@ describe("B11 — OCR suspects panel must not open on an empty tab", () => {
     //   - post-OCR-confirm flow (active doc, OCR just ran)
     //   - post-batch-OCR flow (active doc, batch just ran)
     // Anything else is a regression to the silent-no-op bug.
-    // We verify the total count stays at <= 3 (the three
-    // legitimate sites) AND each line's preceding context
-    // matches one of the three legitimate patterns, so a future
-    // regression that adds a fourth site — e.g. a re-introduction
-    // of the raw `setOcrSuspectsOpen(true)` in the palette
-    // wiring — fails the test.
+    //
+    // DEF-371 — the previous form matched a FIXED context window around the
+    // call, so added comment / setInspectorCollapsed lines pushed the
+    // legitimate call out of range. We now anchor on the handler itself:
+    // locate the `onOpenOcrSuspects = useCallback` declaration, compute its
+    // body bounds, and for that site require the call to sit INSIDE the
+    // handler body AND the body to still carry both empty-tab guards. The
+    // other two flows are recognised by their (generous 25-line) context.
     const lines = appSource.split(/\r?\n/);
+    const handlerStart = lines.findIndex((l) =>
+      /onOpenOcrSuspects\s*=\s*useCallback/.test(l),
+    );
+    let handlerEnd = -1;
+    if (handlerStart >= 0) {
+      for (let i = handlerStart; i < lines.length; i += 1) {
+        if (/^\s*\},\s*\[\s*\]\s*\)\s*;/.test(lines[i] ?? "")) {
+          handlerEnd = i;
+          break;
+        }
+      }
+    }
+    const handlerBody =
+      handlerStart >= 0 && handlerEnd >= 0
+        ? lines.slice(handlerStart, handlerEnd + 1).join("\n")
+        : "";
+    const insideGuardedHandler = (line: number): boolean =>
+      handlerStart >= 0 &&
+      handlerEnd >= 0 &&
+      line - 1 >= handlerStart &&
+      line - 1 <= handlerEnd &&
+      /if\s*\(\s*activeId\s*===\s*null\s*\)\s*return/.test(handlerBody) &&
+      /ocrRunByTabRef\.current\[activeId\]\s*!==\s*true/.test(handlerBody);
+
     const directCalls: { line: number; text: string; context: string }[] = [];
     for (let i = 0; i < lines.length; i += 1) {
       const line = lines[i] ?? "";
@@ -111,7 +137,7 @@ describe("B11 — OCR suspects panel must not open on an empty tab", () => {
         .join("\n");
       const ctx = call.context;
       const legitimate =
-        /onOpenOcrSuspects\s*=\s*useCallback/.test(ctx) ||
+        insideGuardedHandler(call.line) ||
         /onOcrConfirm\b/.test(widerCtx) ||
         /onBatchOcr\s*=/.test(widerCtx) ||
         /batch\s+ocr/i.test(widerCtx) ||

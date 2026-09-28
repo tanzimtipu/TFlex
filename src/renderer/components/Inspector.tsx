@@ -27,6 +27,8 @@ import { Hash, PanelRightClose, PanelRightOpen, X } from 'lucide-react';
 import { GlassSidebarBody, GlassSidebarHeader } from './GlassSidebar';
 import { TextPropertiesPanel } from '../edit/TextPropertiesPanel';
 import type { TextPropertiesPanelProps } from '../edit/TextPropertiesPanel';
+import { OcrSuspectsPanel } from './OcrSuspectsPanel';
+import type { OcrSuspectsPanelProps } from './OcrSuspectsPanel';
 import { formatBytes } from '../utils/formatBytes';
 import type { Annotation } from '../annotations/model';
 import type { TextBoxStylePatch } from '../../shared/types';
@@ -74,7 +76,8 @@ export type InspectorSectionId =
   | 'signature'
   | 'comments'
   | 'annotations'
-  | 'export';
+  | 'export'
+  | 'ocr-suspects';
 
 /** The sections a (stage, selection) pair renders, in order. Pure, so the
  *  per-stage / per-selection contract is pinned by tests without a DOM.
@@ -276,6 +279,10 @@ fileSize?: number | null;
   // --- EDIT ------------------------------------------------------------
   /** The re-parented Phase-21/25 text-properties component. */
   textPanel?: TextPropertiesPanelProps | null;
+  /** Phase 51 (item 10) — the re-parented OCR suspects view. Non-null only
+   *  while the host has the suspects panel open; it renders as an Inspector
+   *  section (the product home) instead of the retired top bar. */
+  ocrSuspects?: OcrSuspectsPanelProps | null;
 
   // --- REVIEW ----------------------------------------------------------
   signatureStyle?: string | null;
@@ -367,6 +374,7 @@ fileSize = null,
     onRenumberPages,
     onJumpToReview,
     textPanel = null,
+    ocrSuspects = null,
     signatureStyle = null,
     signatureHint = null,
     annotations = [],
@@ -578,6 +586,10 @@ const renderSignatureSection = (): ReactElement => (
         return renderAnnotationsSection();
       case 'export':
         return renderExportSection();
+      case 'ocr-suspects':
+        // Rendered separately (like the text block) so it can be absent when
+        // the host has no suspects view open; never part of `sections`.
+        return null;
     }
   };
 
@@ -650,6 +662,13 @@ const renderSignatureSection = (): ReactElement => (
             {/* Phase 37 (item 1) — the text-manipulation block leads the column,
                 with the stage sections below the divider. */}
             {renderTextBlock()}
+            {/* Phase 51 (item 10) — the OCR suspects view lives HERE now
+                (moved out of the workspace top bar / context panel). */}
+            {ocrSuspects !== null && (
+              <div className="inspector-slot" data-inspector-slot="ocr-suspects">
+                <OcrSuspectsPanel {...ocrSuspects} layout="inspector" />
+              </div>
+            )}
             {sections.map((id) => (
               <div key={id} className="inspector-slot" data-inspector-slot={id}>
                 {sectionBody(id)}

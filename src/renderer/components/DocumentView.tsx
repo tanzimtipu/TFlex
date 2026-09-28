@@ -92,6 +92,7 @@ import {
   editColorToHex,
   editTextStyleFromValues,
   runSourceTextStyle,
+  textPanelValuesForSelection,
   textStyleValuesFromStyle,
   type TextStyleValues,
 } from "../edit/textStyle";
@@ -1297,10 +1298,16 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
       runSourceTextStyle(editTextTarget.rect.height, edit?.defaultFont ?? "Helvetica"),
     );
   }, [editTextTarget, edit?.defaultFont]);
-  const textPanelTextValues =
-    selectedTextBox !== null
-      ? textStyleValuesFromStyle(selectedTextBox.style)
-      : pendingTextStyle ?? selectedRunValues ?? textPanelDefaults;
+  // Phase 51 item 14 — a committed box shows its own style; a selected run
+  // shows its live pending style over its source style; NOTHING selected shows
+  // the per-tool defaults (no formatting toggle may stay active once the run
+  // is deselected). See `textPanelValuesForSelection`.
+  const textPanelTextValues = textPanelValuesForSelection({
+    selectedBoxStyle: selectedTextBox?.style ?? null,
+    runValues: selectedRunValues,
+    pending: pendingTextStyle,
+    defaults: textPanelDefaults,
+  });
   const annotationPanelColor = hexToEditColor(
     annotationColorToCss(
       selectedAnnText && selectedAnnotation !== null ? selectedAnnotation.color : annTool.color,
@@ -2944,6 +2951,12 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
       // Phase 37 (item 11) — the edit-flow action bar's Cancel discards the
       // live session instead of committing it.
       onDiscardTextEdit: discardTextSession,
+      // Phase 51 item 12 — the on-canvas run editor is the SAME session as
+      // the Inspector Text field: a keystroke routes through the host's
+      // `handlePanelTextChange`, a blur through `commitTextSession`. No
+      // second session/mechanism exists.
+      onTextInput: handlePanelTextChange,
+      onTextInputCommit: commitTextSession,
     };
   }, [
     editModeOpen,
@@ -2953,6 +2966,8 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
     textEdit,
     textCommitToken,
     discardTextSession,
+    handlePanelTextChange,
+    commitTextSession,
   ]);
 
   // B5 / B14 â€” when Edit mode opens, force the annotation tool
