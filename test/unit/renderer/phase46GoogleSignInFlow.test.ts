@@ -14,7 +14,7 @@
 // the absolute 127.0.0.1 URL main mints.
 
 import { describe, expect, it, vi } from "vitest";
-import type { AccountStatusResult } from "../../../src/shared/accounts";
+import type { AccountStatusResult, OpenAuthUrlResult } from "../../../src/shared/accounts";
 import {
   absoluteRedirectUrl,
   callbackOutcomeMessage,
@@ -56,7 +56,8 @@ function harness(over: {
   startRejects?: boolean;
   signIn?: () => Promise<unknown>;
   getStatus?: () => Promise<unknown>;
-  open?: (url: string) => boolean;
+  open?: (url: string) => OpenAuthUrlResult;
+  openRejects?: boolean;
   noLoopback?: boolean;
 } = {}): Harness {
   let listener: ((outcome: Outcome) => void) | null = null;
@@ -88,11 +89,11 @@ function harness(over: {
     bridge,
     adapter,
     getStatus: getStatus as unknown as () => Promise<AccountStatusResult>,
-    openWindow: (url: string): boolean => {
+    openAuthUrl: async (url: string): Promise<OpenAuthUrlResult> => {
       calls.open.push(url);
-      return over.open === undefined ? true : over.open(url);
+      if (over.openRejects === true) throw new Error("bridge exploded");
+      return over.open === undefined ? { ok: true } : over.open(url);
     },
-    closeWindow: (): void => undefined,
     onSignedIn: (status): void => {
       calls.signedIn.push({ status });
     },
@@ -127,7 +128,9 @@ describe("Phase 46 - Google sign-in: start -> open -> ok -> getStatus -> signed 
     expect(h.bridge.startOAuthCallback).toHaveBeenCalledTimes(1);
     expect(h.adapter.signInGoogle).toHaveBeenCalledWith({ callbackUrl: CALLBACK });
     expect(h.calls.open).toEqual([AUTHORIZE]);
-    expect(h.calls.info).toContain("Finish signing in with Google in the window that opened.");
+    expect(h.calls.info).toContain(
+      "Finish signing in with Google in your browser - Jovrel will take it from there.",
+    );
     // Still waiting: no status re-read, nothing closed or cancelled.
     expect(h.getStatus).not.toHaveBeenCalled();
     expect(h.bridge.stopOAuthCallback).not.toHaveBeenCalled();
@@ -215,9 +218,30 @@ describe("Phase 46 - Google sign-in: the real failure reaches the user", () => {
     expect(h.calls.open).toHaveLength(0);
   });
 
-  it("a popup that will not open is reported, not left as a dead button", async () => {
-    const h = harness({ open: () => false });
-    await until(() => expect(h.calls.info).toContain("Jovrel could not open the Google sign-in window. Try again."));
+  it("a browser that will not open (failed) is reported, not left as a dead button", async () => {
+    const h = harness({ open: () => ({ ok: false, reason: "failed" }) });
+    await until(() =>
+      expect(h.calls.info).toContain("Jovrel could not open your browser for Google sign-in. Try again."),
+    );
+    expect(h.calls.signedIn).toHaveLength(0);
+    expect(h.bridge.stopOAuthCallback).toHaveBeenCalledTimes(1);
+  });
+
+  it("a refused sign-in address (invalid-url) is reported honestly and never retried", async () => {
+    const h = harness({ open: () => ({ ok: false, reason: "invalid-url" }) });
+    await until(() =>
+      expect(h.calls.info).toContain("The Google sign-in address was rejected. Try again."),
+    );
+    // Handed to main exactly once: a refusal must not silently re-open.
+    expect(h.calls.open).toEqual([AUTHORIZE]);
+    expect(h.calls.signedIn).toHaveLength(0);
+    expect(h.calls.failure).toHaveLength(0);
+    expect(h.bridge.stopOAuthCallback).toHaveBeenCalledTimes(1);
+  });
+
+  it("a bridge that rejects openAuthUrl surfaces a failure instead of hanging", async () => {
+    const h = harness({ openRejects: true });
+    await until(() => expect(h.calls.failure).toHaveLength(1));
     expect(h.calls.signedIn).toHaveLength(0);
     expect(h.bridge.stopOAuthCallback).toHaveBeenCalledTimes(1);
   });
@@ -268,11 +292,12 @@ describe("Phase 46 - Google sign-in: cancel / unmount cleanup", () => {
     expect(h.getStatus).not.toHaveBeenCalled();
   });
 
-  it("a popup closed early still ends in a clear message (the timeout path), not silence", async () => {
+  it("a browser closed early still ends in a clear message (the timeout path), not silence", async () => {
     const h = harness();
     await until(() => expect(h.calls.open).toHaveLength(1));
-    // The user closes the popup before landing on the loopback callback; main
-    // has not seen a redirect, so the listener expires and reports a timeout.
+    // The user closes the browser tab before landing on the loopback callback;
+    // main has not seen a redirect, so the listener expires and reports a
+    // timeout.
     h.emit({ ok: false, reason: "timeout" });
     await until(() => expect(h.calls.info).toContain(callbackOutcomeMessage("timeout")));
     expect(h.calls.signedIn).toHaveLength(0);

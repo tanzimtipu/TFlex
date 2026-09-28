@@ -57,6 +57,7 @@ import { OAuthCallbackService } from './services/accounts/oauth-callback';
 import { registerOAuthCallbackIpc } from './services/accounts/oauth-callback-ipc';
 import { appendOAuthTraceLine } from './services/accounts/oauth-trace-file';
 import { installAuthOriginHeader } from './services/accounts/origin-header';
+import { openAuthUrlExternally, openDefaultAppsSettings } from './services/os-links';
 import { UpdateService } from './services/update-service';
 import { LEGACY_USERDATA_DIRNAME, migrateLegacyUserData } from './services/userdata-migration';
 import { applyMenuEnabledState, buildAppMenu } from './menu';
@@ -767,6 +768,24 @@ export async function start(): Promise<void> {
       throw new Error(error);
     }
   });
+
+  // Phase 50 - browser-based sign-in. Open the provider URL the auth SDK
+  // returned in the OS DEFAULT BROWSER, but only after validating it is https
+  // on exactly the configured auth host (derived from the accounts config on
+  // every call - never a literal). A refused URL is never handed to the OS;
+  // the handler resolves a typed result and never throws.
+  ipcMain.handle(IPC.accountsOpenAuthUrl, (_event, url: unknown) =>
+    openAuthUrlExternally(
+      url,
+      deriveAuthHost(getAccountsConfig(process.env, app.getAppPath()).authBaseUrl),
+      shell,
+    ),
+  );
+
+  // Phase 50 - open Windows' Default-apps settings so the user can make Jovrel
+  // the default PDF handler. Fixed, non-user-supplied URI; the app does not
+  // change the default itself.
+  ipcMain.handle(IPC.appOpenDefaultAppsSettings, () => openDefaultAppsSettings(shell));
 
   // Phase 6: OTA updates via electron-updater
   const updateService = new UpdateService();

@@ -10,6 +10,7 @@ import type {
   AccountStatusResult,
   OAuthCallbackOutcome,
   OAuthCallbackStartResult,
+  OpenAuthUrlResult,
   SetSessionPayload,
   SyncReport,
 } from "../../shared/accounts";
@@ -32,6 +33,12 @@ export interface AccountsBridge {
   stopOAuthCallback?: () => Promise<void>;
   /** Phase 46 - the single outcome of the loopback listener. */
   onOAuthCallback?: (cb: (outcome: OAuthCallbackOutcome) => void) => () => void;
+  /** Phase 50 - open the provider sign-in URL in the OS DEFAULT BROWSER.
+   *  Main validates it (https on the configured auth host) before
+   *  `shell.openExternal`; a refused URL resolves `invalid-url` and is never
+   *  opened. Optional so a preload that predates the browser flow degrades
+   *  honestly instead of throwing. */
+  openAuthUrl?: (url: string) => Promise<OpenAuthUrlResult>;
 }
 
 /** Read the bridge off `window.tflex`, or null when it is missing / malformed. */

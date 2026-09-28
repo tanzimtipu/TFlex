@@ -2,6 +2,7 @@ import { contextBridge, ipcRenderer, webUtils } from "electron";
 import {
   IPC,
   type ClipboardImageResult,
+  type OpenDefaultAppsSettingsResult,
   type SavedSignaturesResult,
   type WindowMinimizedChange,
 } from "../shared/ipc";
@@ -50,7 +51,7 @@ import type {
 import type { Result } from "../shared/result";
 import type { FdfOpenError, PdfOpenError } from "../shared/types";
 import type { SignatureSource } from "../shared/types";
-import type { AccountStatusResult, AccountsClientConfig, OAuthCallbackOutcome, OAuthCallbackStartResult, OAuthTraceEvent, SetSessionPayload, SyncReport } from "../shared/accounts";
+import type { AccountStatusResult, AccountsClientConfig, OAuthCallbackOutcome, OAuthCallbackStartResult, OAuthTraceEvent, OpenAuthUrlResult, SetSessionPayload, SyncReport } from "../shared/accounts";
 import { normalizeArrayBuffer } from "./to-array-buffer";
 
 // The renderer's engineClient.ts declares `window.tflex?.engine` with its own
@@ -574,6 +575,12 @@ const api = {
     openPath(path: string): Promise<void> {
       return ipcRenderer.invoke(IPC.appOpenPath, path);
     },
+    // Phase 50 — open Windows' Default-apps settings (fixed URI) so the user
+    // can make Jovrel the default PDF handler. Resolves a typed ok/failed
+    // result; never throws and never touches a user-supplied URL.
+    openDefaultAppsSettings(): Promise<OpenDefaultAppsSettingsResult> {
+      return ipcRenderer.invoke(IPC.appOpenDefaultAppsSettings);
+    },
   },
   // Phase 44 — accounts session vault. The renderer calls `setSession`
   // after a successful sign-in with the user's identity + session JWT;
@@ -635,6 +642,13 @@ const api = {
       return () => {
         ipcRenderer.removeListener(IPC.accountsOAuthTraceEvent, listener);
       };
+    },
+    // Phase 50 - browser-based sign-in. Main opens this URL in the OS default
+    // browser only after validating it is https on exactly the configured auth
+    // host; a refused URL resolves { ok: false, reason: 'invalid-url' } and is
+    // never opened. Resolves a typed result; never throws.
+    openAuthUrl(url: string): Promise<OpenAuthUrlResult> {
+      return ipcRenderer.invoke(IPC.accountsOpenAuthUrl, url);
     },
   },
   // Phase 6: OTA updates

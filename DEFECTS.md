@@ -5,6 +5,43 @@
 > inspect the current `OPEN`, `FIX-READY`, and `DISPUTED` entries first; closed records are
 > historical evidence and must not be loaded wholesale.
 
+## DEF-369: Phase 50 leaves `verify:full` RED - 7 unit tests fail because the existing account/prefs test doubles were not updated for the browser flow
+
+- Status: CLOSED
+- Severity: MEDIUM
+- Found by: qa
+- Phase: 50
+
+Steps to reproduce:
+1. `npm.cmd run build` (exit 0).
+2. `npm.cmd run verify:full`.
+3. Observe the unit suite: 7 failed | 5852 passed (5859), 4 failed files.
+
+Expected: `verify:full` is GREEN (Phase 50 success criterion 5: "`verify:full` and the phase suites stay green").
+
+Actual: `verify:full` exits 1. The failures are stale test doubles that predate the Phase 50 browser flow:
+- `test/unit/renderer/phase44AccountsDialog.test.tsx` (1) - "Continue with Google starts the loopback flow..." expects `startOAuthCallback` to be called; the fake bridge has no `openAuthUrl`, so `AccountsDialog.google()` bails with "Google sign-in is not available in this build."
+- `test/unit/renderer/phase46AccountDiagnosisSurface.test.tsx` (1) - same missing `openAuthUrl` on the fake bridge.
+- `test/unit/renderer/phase46LoopbackSurface.test.tsx` (4) - same missing `openAuthUrl`; the surface reports "not available" instead of the expected outcome copy.
+- `test/unit/renderer/prefsDialogRedesign.test.tsx` (1) - expects exactly `["Appearance","Recent files","Storage locations"]`; the new "Default PDF app" section makes it four.
+
+None of the three account test files mentions `openAuthUrl` (grep: no matches), so the root cause is the test doubles, not the product path. The Phase 50 change updated `phase46GoogleSignInFlow.test.ts`, `phase45AccountSurface.test.tsx` and `phase49Brand.test.tsx` but not these four files.
+
+Raw evidence (`npm.cmd run verify:full` tail):
+```
+ Test Files  4 failed | 451 passed (455)
+      Tests  7 failed | 5852 passed (5859)
+```
+
+Screenshot: none
+
+History:
+- qa: opened (Phase 50 gate validation; `verify:full` red on the final tree).
+- qa: CLOSED (FIX-READY retest on the 1.42.0 tree; the four stale test doubles were updated to the browser-flow contract and no assertion was weakened). Evidence:
+  - `npm.cmd run test:unit -- test/unit/renderer` -> `Test Files 395 passed (395)` / `Tests 4251 passed (4251)`.
+  - `npm.cmd run verify:full` -> `Test Files 455 passed (455)` / `Tests 5861 passed (5861)` (was 4 failed | 451 passed files, 7 failed | 5852 passed tests). The +2 tests are the two NEW refusal tests added to `phase46LoopbackSurface.test.tsx`.
+  - Diff review of the four files (not just the count): `phase44AccountsDialog.test.tsx` now asserts `openAuthUrl` called once with the provider URL AND `window.open` NOT called (was: `window.open` called) - strengthened; `phase46AccountDiagnosisSurface.test.tsx` only adds the `openAuthUrl` fake (no assertion changed); `phase46LoopbackSurface.test.tsx` replaces the popup-close assertion with `openAuthUrl` called + `window.open` NOT called, adds `openAuthUrl` assertions to three more tests, and adds two NEW tests (invalid-url and failed banners) - strengthened; `prefsDialogRedesign.test.tsx` updates the exact section list from three to four to include the new "Default PDF app" section (Phase 50 feature B) - a correct contract update, still exact-equality. No assertion was weakened to pass.
+
 ## DEF-368: the first Jovrel installer (1.41.0) inherited the TFlex install location and nested itself at C:\Program Files\TFlex\Jovrel
 
 - Status: CLOSED

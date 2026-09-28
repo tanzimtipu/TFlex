@@ -2775,3 +2775,45 @@ assets go under `assets/`, website artwork is documentation.
 
 **Settings impact:** none - no new `AppSettings` field. The userData MIGRATION is a path-level one-time move of
 existing files, not a settings-shape change.
+
+## Phase 50 - Sign in from the BROWSER, and a "set as default PDF app" affordance
+
+**Operator request (2026-09-28, verbatim intent):** "d of pop up login window, have the user login from
+browser." i.e. instead of an in-app popup window, Google sign-in must open in the user's DEFAULT BROWSER and
+complete there, returning the user to the app already signed in.
+
+**Features**
+
+**A. Browser-based sign-in (replaces the in-app popup).**
+- Clicking **Continue with Google** opens the provider URL in the OPERATING SYSTEM'S DEFAULT BROWSER (not an
+  in-app popup/child window). The user completes Google in their own browser, the browser lands on the app's
+  loopback return address, and the app finishes the sign-in in the background (it already captures the
+  verifier and completes the exchange) - so the user comes back to an app that is signed in.
+- The in-app copy must say so: the sign-in surface tells the user the browser was opened and to finish there;
+  the loopback page tells them they can close the browser tab and return to the app.
+- The URL opened externally must be VALIDATED (only the configured auth host over https) - the app must never
+  hand an arbitrary URL to the OS.
+- The existing deny-by-default popup rule stays (it is a security net); the auth flow simply no longer needs
+  the popup.
+
+**B. Set as the default PDF app (the icon affordance).**
+- The app gains a clear affordance (e.g. in Preferences or About) that opens Windows' Default-apps settings so
+  the user can make Jovrel the default PDF handler - which is what makes Explorer show the Jovrel icon and
+  type name. The app must state WHY (Windows does not let an installer do it silently), and must not claim it
+  changed the default itself.
+
+**Success criteria**
+
+1. Continue with Google opens the provider in the default browser (verify the URL was handed to the OS, and
+   that no in-app popup window is created), and the flow completes: the browser lands on the loopback, the app
+   signs in and shows the account with the real name/avatar.
+2. The URL handed to the OS is validated: an auth-host https URL is opened; any other URL (another host,
+   http, malformed) is REFUSED and reported, with a test for each case.
+3. The user-facing copy in the sign-in surface and on the loopback page names the browser (not "the window"),
+   and the app is usable while the browser is open (no modal block).
+4. A visible affordance opens Windows' Default-apps settings (verified: the OS call is made; the app does not
+   claim to have changed the default) and explains that Jovrel must be chosen there for the PDF icon/type.
+5. No regression: the sign-in error surfacing, the verifier handling (single-use, never logged), the leak-free
+   diagnostics, the standing animation/icon rules, `verify:full` and the phase suites stay green.
+
+**Settings impact:** none - no new `AppSettings` field; both changes are behaviour and an OS call.

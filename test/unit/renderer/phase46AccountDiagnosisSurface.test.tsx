@@ -63,6 +63,8 @@ function fakeBridge(): Record<string, unknown> {
     startOAuthCallback: vi.fn(async () => ({ callbackUrl: "http://127.0.0.1:51234/oauth/callback?token=tok" })),
     stopOAuthCallback: vi.fn(async () => undefined),
     onOAuthCallback: vi.fn(() => () => undefined),
+    // Phase 50 - main opens the OS default browser for the provider URL.
+    openAuthUrl: vi.fn(async () => ({ ok: true })),
   };
 }
 

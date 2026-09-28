@@ -375,12 +375,16 @@ function respond(res: HttpResponse, status: number, body: string): void {
 
 // Minimal, self-contained pages: no scripts, no external resources, no app
 // state. They never echo the query string.
+//
+// Phase 50 - the browser flow lands here in the OS default browser, so the
+// success copy names the browser TAB (not "the window") and tells the user the
+// app finishes sign-in itself.
 const SUCCESS_PAGE =
   '<!doctype html><html lang="en"><head><meta charset="utf-8">' +
   '<title>Sign-in complete</title></head>' +
   '<body style="font-family:system-ui,sans-serif;margin:0;padding:2.5rem">' +
   '<h1 style="font-size:1.25rem">Sign-in complete</h1>' +
-  '<p>You can close this window and return to Jovrel.</p>' +
+  '<p>You can close this browser tab and return to Jovrel. Jovrel will finish signing you in.</p>' +
   '</body></html>';
 const FORBIDDEN_PAGE =
   '<!doctype html><html lang="en"><head><meta charset="utf-8">' +

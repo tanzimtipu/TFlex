@@ -1,5 +1,5 @@
 import type { Result } from "./result";
-import type { AccountStatusResult, AccountsClientConfig, OAuthCallbackOutcome, OAuthCallbackStartResult, OAuthTraceEvent, SetSessionPayload, SyncReport } from "./accounts";
+import type { AccountStatusResult, AccountsClientConfig, OAuthCallbackOutcome, OAuthCallbackStartResult, OAuthTraceEvent, OpenAuthUrlResult, SetSessionPayload, SyncReport } from "./accounts";
 import type {
   AddStampPayload,
   AddTextBoxPayload,
@@ -91,6 +91,14 @@ export const IPC = {
   // Phase 6 — About + preferences surface
   appGetInfo: "app:getInfo",
   appOpenPath: "app:openPath",
+  // Phase 50 — OS integration: open Windows' Default-apps settings so the user
+  // can make Jovrel the default PDF handler (which is what drives Explorer's
+  // icon/type name; Windows does not let an installer set it silently). The URI
+  // is a fixed, non-user-supplied constant in main — the renderer passes no
+  // payload. Resolves `{ ok: true }` once the OS call was made, else
+  // `{ ok: false, reason: 'failed' }`; never throws, never claims to have
+  // changed the default itself.
+  appOpenDefaultAppsSettings: "app:openDefaultAppsSettings",
   // Phase 35 — the OS asked TFlex to open a document: the app was launched
   // with a PDF path argument, a second launch handed one to the RUNNING
   // instance (single-instance), or (renderer half, separate dispatch) a PDF
@@ -263,6 +271,15 @@ export const IPC = {
   accountsStartOAuthCallback: "accounts:startOAuthCallback",
   accountsStopOAuthCallback: "accounts:stopOAuthCallback",
   accountsOAuthCallbackEvent: "accounts:oauthCallback",
+  // Phase 50 - browser-based sign-in. `accounts:openAuthUrl` (invoke) takes
+  // the provider URL the auth SDK returned and opens it in the OS DEFAULT
+  // BROWSER via `shell.openExternal` - but ONLY after validating it is
+  // `https:` on exactly the configured auth host (never a literal; derived
+  // from the accounts config). Any other URL is refused and reported as
+  // `{ ok: false, reason: 'invalid-url' }` and is NEVER opened. Resolves
+  // `{ ok: true }` on success or `{ ok: false, reason: 'failed' }` when the
+  // OS call rejects; it never throws and never carries a token.
+  accountsOpenAuthUrl: "accounts:openAuthUrl",
   // Phase 46 - dev-oriented observability for the Google sign-in chain. Main
   // (the popup handler and the loopback listener) broadcasts `OAuthTraceEvent`
   // steps over this channel so the renderer can log the popup's navigation /
@@ -311,6 +328,13 @@ export type ClipboardImageReason = "empty" | "no-image" | "too-large" | "unreada
 export type ClipboardImageResult =
   | { ok: true; bytes: Uint8Array; mime: ClipboardImageMime }
   | { ok: false; reason: ClipboardImageReason };
+
+/** Phase 50 — result of `app:openDefaultAppsSettings`. `ok: true` means the
+ *  fixed `ms-settings:defaultapps` URI was handed to the OS; `failed` means
+ *  `shell.openExternal` rejected. The handler never throws. */
+export type OpenDefaultAppsSettingsResult =
+  | { ok: true }
+  | { ok: false; reason: "failed" };
 
 /** Phase 9 — engine surface exposed to the renderer. Each method
  *  routes over the matching `engine:*` IPC channel through preload.
@@ -732,6 +756,12 @@ setEnabled(state: import("./types").MenuEnabledState): void;
   app?: {
     getInfo(): Promise<AppInfo>;
     openPath(path: string): Promise<void>;
+    /** Phase 50 — open Windows' Default-apps settings so the user can make
+     *  Jovrel the default PDF handler. Main opens the fixed
+     *  `ms-settings:defaultapps` URI; resolves `{ ok: true }` once the OS call
+     *  was made, else `{ ok: false, reason: 'failed' }`. The app does NOT
+     *  change the default itself and must not claim to. Never throws. */
+    openDefaultAppsSettings(): Promise<OpenDefaultAppsSettingsResult>;
   };
   /**
    * Phase 44 — accounts session surface. `getStatus` returns the coarse
@@ -779,6 +809,14 @@ setEnabled(state: import("./types").MenuEnabledState): void;
      *  popup / loopback chain, for logging a stuck sign-in. Returns an
      *  unsubscribe. Never carries a token, OAuth code or cookie value. */
     onOAuthTrace(cb: (event: OAuthTraceEvent) => void): () => void;
+    /** Phase 50 — open the provider sign-in URL in the OS DEFAULT BROWSER.
+     *  `url` is the provider URL the auth SDK returned. Main validates it is
+     *  `https:` on exactly the configured auth host before calling
+     *  `shell.openExternal`; any other URL is refused and never opened.
+     *  Resolves `{ ok: true }`, `{ ok: false, reason: 'invalid-url' }` (refused)
+     *  or `{ ok: false, reason: 'failed' }` (OS call rejected). Never throws;
+     *  never carries a token. */
+    openAuthUrl(url: string): Promise<OpenAuthUrlResult>;
   };
   /**
    * Phase 35 (DEF-295) — resolve a `File` from a drag-and-drop (or any

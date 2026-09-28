@@ -7,7 +7,7 @@
 //
 //   a. the sheet mounts open with the [data-prefs-dialog] root.
 //   b. the sections render in order: Appearance, Recent files,
-//      Storage locations.
+//      Default PDF app, Storage locations.
 //   c. the theme dropdown offers exactly the four ThemeDefault
 //      options (Light, Dark, Frosted, System default).
 //   d. changing the dropdown fires onSetThemeDefault AND
@@ -123,12 +123,17 @@ describe("PreferencesDialog single-panel redesign (DEF-215)", () => {
     unmount();
   });
 
-  it("renders the three sections in order: Appearance, Recent files, Storage locations", () => {
+  it("renders the four sections in order: Appearance, Recent files, Default PDF app, Storage locations", () => {
     const { host, unmount } = mountPrefs();
     const titles = Array.from(
       host.querySelectorAll<HTMLElement>("[data-prefs-dialog] .prefs-section-title"),
     ).map((el): string => el.textContent ?? "");
-    expect(titles).toEqual(["Appearance", "Recent files", "Storage locations"]);
+    expect(titles).toEqual([
+      "Appearance",
+      "Recent files",
+      "Default PDF app",
+      "Storage locations",
+    ]);
     unmount();
   });
 

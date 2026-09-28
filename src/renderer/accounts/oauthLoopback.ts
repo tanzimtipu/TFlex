@@ -6,7 +6,8 @@
 // is injected, so the whole state machine is unit-tested without a DOM, the SDK
 // or Electron:
 //
-//   start loopback listener -> signIn.social(callbackURL) -> open the popup
+//   start loopback listener -> signIn.social(callbackURL) -> open the provider
+//   in the OS DEFAULT BROWSER (Phase 50; no in-app popup)
 //   -> the browser lands on the loopback URL -> main completes the exchange
 //   and stores the session, reporting `{ ok: true }` -> re-read getStatus()
 //   -> signed in. The renderer does NOT read the SDK session itself: it runs
@@ -19,7 +20,11 @@
 // branch pre-approves localhost origins) and the browser lands there. The same
 // absolute URL is what the password-reset request needs as `redirectTo`.
 
-import type { AccountStatusResult, OAuthCallbackOutcome } from "../../shared/accounts";
+import type {
+  AccountStatusResult,
+  OAuthCallbackOutcome,
+  OpenAuthUrlResult,
+} from "../../shared/accounts";
 import type { AccountsAuthAdapter, AuthFailure } from "./adapter";
 import { describeAuthError } from "./adapter";
 
@@ -102,11 +107,11 @@ export interface GoogleSignInPorts {
    * image) from here instead of attempting its own SDK session read.
    */
   getStatus(): Promise<AccountStatusResult>;
-  /** Open the provider authorize URL in a popup. False when no window opened
-   *  (blocked by the OS, or refused by the main-process popup policy). */
-  openWindow(url: string): boolean;
-  /** Close the popup the flow opened, if any. Must never throw. */
-  closeWindow(): void;
+  /** Hand the provider authorize URL to the OS DEFAULT BROWSER through
+   *  `accounts:openAuthUrl`. Main validates it (https on exactly the
+   *  configured auth host) before `shell.openExternal`; a refused or failed
+   *  URL is reported honestly, never retried silently. Never throws. */
+  openAuthUrl(url: string): Promise<OpenAuthUrlResult>;
   /** Main completed the sign-in and stored the session; drive the account
    *  machine to its signed-in state from this status. */
   onSignedIn(status: AccountStatusResult): void;
@@ -115,15 +120,16 @@ export interface GoogleSignInPorts {
 }
 
 export interface GoogleSignInHandle {
-  /** Abandon the flow: unsubscribe, release the listener, close the popup.
-   *  No further callback fires. This is also the unmount/cancel path. */
+  /** Abandon the flow: unsubscribe and release the loopback listener. No
+   *  further callback fires. This is also the unmount/cancel path. */
   cancel(): void;
 }
 
 /**
  * Drive one "Continue with Google" attempt. Never throws: every failure ends
  * either in `onFailure` (a real provider/SDK reason, surfaced verbatim) or in
- * `onInfo` (a local outcome: timeout, cancel, a window that would not open).
+ * `onInfo` (a local outcome: timeout, cancel, a browser that would not open,
+ * or a sign-in address main refused).
  */
 export function runGoogleSignIn(ports: GoogleSignInPorts): GoogleSignInHandle {
   const { bridge, adapter } = ports;
@@ -142,7 +148,6 @@ export function runGoogleSignIn(ports: GoogleSignInPorts): GoogleSignInHandle {
   const end = (): void => {
     settled = true;
     release();
-    ports.closeWindow();
   };
 
   if (typeof bridge.startOAuthCallback !== "function" || typeof bridge.onOAuthCallback !== "function") {
@@ -205,12 +210,35 @@ export function runGoogleSignIn(ports: GoogleSignInPorts): GoogleSignInHandle {
       ports.onFailure(started);
       return;
     }
-    if (!ports.openWindow(started.url)) {
+    let opened: OpenAuthUrlResult;
+    try {
+      // Phase 50 - hand the URL to main, which validates it (https on the
+      // configured auth host) and opens the OS DEFAULT BROWSER. Never a
+      // window.open popup: the browser owns the Google session.
+      opened = await ports.openAuthUrl(started.url);
+    } catch (error) {
+      // The bridge contract is "never throws"; a foreign/older bridge might
+      // still reject, and that must surface, not hang the flow.
+      if (disposed || settled) return;
       end();
-      ports.onInfo("Jovrel could not open the Google sign-in window. Try again.");
+      ports.onFailure({ ok: false, ...describeAuthError(error) });
       return;
     }
-    ports.onInfo("Finish signing in with Google in the window that opened.");
+    if (disposed || settled) return;
+    if (!opened.ok) {
+      end();
+      // invalid-url: main REFUSED the address; do not retry silently.
+      ports.onInfo(
+        opened.reason === "invalid-url"
+          ? "The Google sign-in address was rejected. Try again."
+          : "Jovrel could not open your browser for Google sign-in. Try again.",
+      );
+      return;
+    }
+    // The browser is open. The loopback listener and the onOAuthCallback
+    // subscription stay live, so main's completion still drives the sign-in;
+    // the app stays usable in the meantime (no modal block).
+    ports.onInfo("Finish signing in with Google in your browser - Jovrel will take it from there.");
   })();
 
   return {
@@ -218,7 +246,6 @@ export function runGoogleSignIn(ports: GoogleSignInPorts): GoogleSignInHandle {
       if (disposed) return;
       disposed = true;
       release();
-      ports.closeWindow();
     },
   };
 }

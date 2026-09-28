@@ -8280,6 +8280,39 @@ rect.ann-highlight.ann-preview {
   font-size: var(--fs-xs);
   word-break: break-all;
 }
+/* Phase 50 - the "set as default PDF app" action. Same surface treatment as
+ * the storage-path buttons (input background, border, accent hover + focus
+ * ring) but laid out as one horizontal action with its glyph. Motion uses the
+ * canonical tokens only (--motion-duration-fast / --motion-ease-standard), so
+ * it is identical in light, dark and frosted and collapses under reduced
+ * motion like every other Preferences control. */
+.prefs-action {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: var(--sp-2) var(--sp-3);
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-2);
+  color: var(--fg-strong);
+  font-family: inherit;
+  font-size: var(--fs-sm);
+  cursor: pointer;
+  transition:
+    background var(--motion-duration-fast) var(--motion-ease-standard),
+    border-color var(--motion-duration-fast) var(--motion-ease-standard),
+    box-shadow var(--motion-duration-fast) var(--motion-ease-standard);
+}
+.prefs-action:hover {
+  background: var(--bg-hover);
+  border-color: var(--accent);
+}
+.prefs-action:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+  border-color: var(--accent);
+}
+.prefs-action-status { margin-top: var(--sp-2); }
 
 /* ----- Annotation color palette (single swatch + popover) ----- */
 

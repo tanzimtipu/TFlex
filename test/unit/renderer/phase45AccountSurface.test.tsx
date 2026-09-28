@@ -57,6 +57,7 @@ interface FakeBridge {
   startOAuthCallback: ReturnType<typeof vi.fn>;
   stopOAuthCallback: ReturnType<typeof vi.fn>;
   onOAuthCallback: ReturnType<typeof vi.fn>;
+  openAuthUrl: ReturnType<typeof vi.fn>;
 }
 
 function fakeBridge(over: Partial<Record<string, unknown>> = {}): FakeBridge {
@@ -70,6 +71,7 @@ function fakeBridge(over: Partial<Record<string, unknown>> = {}): FakeBridge {
     startOAuthCallback: vi.fn(async () => ({ callbackUrl: CALLBACK_URL })),
     stopOAuthCallback: vi.fn(async () => undefined),
     onOAuthCallback: vi.fn(() => () => undefined),
+    openAuthUrl: vi.fn(async () => ({ ok: true })),
   };
   for (const [key, value] of Object.entries(over)) {
     (parts as Record<string, unknown>)[key] = vi.fn(value as () => unknown);
@@ -171,10 +173,8 @@ describe("Phase 45 - the surface belongs to the app (Jovrel, Phase 49)", () => {
     expect(button.querySelector("svg")?.getAttribute("aria-hidden")).toBe("true");
   });
 
-  it("still wires the Google flow: loopback callback -> adapter -> popup", async () => {
-    const openSpy = vi
-      .spyOn(window, "open")
-      .mockReturnValue({ close: vi.fn() } as unknown as Window);
+  it("still wires the Google flow: loopback callback -> adapter -> OS browser (never window.open)", async () => {
+    const openSpy = vi.spyOn(window, "open");
     try {
       const adapter = fakeAdapter({
         signInGoogle: async () => ({ ok: true, url: "https://auth.example.invalid/authorize" }),
@@ -184,13 +184,56 @@ describe("Phase 45 - the surface belongs to the app (Jovrel, Phase 49)", () => {
 
       expect(h.bridge.startOAuthCallback).toHaveBeenCalledTimes(1);
       expect(h.adapter.signInGoogle).toHaveBeenCalledWith({ callbackUrl: CALLBACK_URL });
-      expect(openSpy).toHaveBeenCalledWith(
-        "https://auth.example.invalid/authorize",
-        expect.any(String),
-        expect.any(String),
+      // Phase 50: main opens the OS default browser; the renderer NEVER opens
+      // an in-app popup.
+      expect(h.bridge.openAuthUrl).toHaveBeenCalledWith("https://auth.example.invalid/authorize");
+      expect(openSpy).not.toHaveBeenCalled();
+      expect(must(h.container, "[data-accounts-banner]").textContent).toContain("in your browser");
+    } finally {
+      openSpy.mockRestore();
+    }
+  });
+
+  it("stays non-blocking while the browser is open: the form and close control remain", async () => {
+    const adapter = fakeAdapter({
+      signInGoogle: async () => ({ ok: true, url: "https://auth.example.invalid/authorize" }),
+    });
+    const h = await renderDialog(adapter);
+    await click(must(h.container, "[data-accounts-google]"));
+
+    // Not a modal block: the sign-in step and its controls are still there.
+    expect(step(h.container)).toBe("credentials");
+    expect(must(h.container, "[data-accounts-close]")).not.toBeNull();
+    expect(must(h.container, "[data-accounts-email]")).not.toBeNull();
+  });
+
+  it("a refused sign-in address shows the honest banner and never a popup", async () => {
+    const bridge = fakeBridge({ openAuthUrl: vi.fn(async () => ({ ok: false, reason: "invalid-url" })) });
+    (window as unknown as { tflex?: unknown }).tflex = { accounts: bridge };
+    const adapter = fakeAdapter({
+      signInGoogle: async () => ({ ok: true, url: "https://evil.example.invalid/authorize" }),
+    });
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    act(() => {
+      root.render(
+        <AccountsDialog open onClose={(): void => undefined} createAdapter={(): AccountsAuthAdapter => adapter.adapter} />,
       );
-      expect(must(h.container, "[data-accounts-banner]").textContent).toContain(
-        "Finish signing in with Google",
+    });
+    await flush();
+    mounted.push(() => {
+      act(() => root.unmount());
+      container.remove();
+    });
+
+    const openSpy = vi.spyOn(window, "open");
+    try {
+      await click(must(container, "[data-accounts-google]"));
+      expect(bridge.openAuthUrl).toHaveBeenCalledTimes(1);
+      expect(openSpy).not.toHaveBeenCalled();
+      expect(must(container, "[data-accounts-banner]").textContent).toContain(
+        "The Google sign-in address was rejected.",
       );
     } finally {
       openSpy.mockRestore();

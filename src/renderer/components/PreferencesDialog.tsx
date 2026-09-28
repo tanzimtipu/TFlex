@@ -23,7 +23,8 @@
 import type { ReactElement } from 'react';
 import { useEffect, useState } from 'react';
 import { AnimatePresence } from 'motion/react';
-import { X } from 'lucide-react';
+import { MonitorCog, X } from 'lucide-react';
+import type { OpenDefaultAppsSettingsResult } from '../../shared/ipc';
 import type { AppInfo } from '../../shared/types';
 import type { ThemeDefault } from '../state/preferences';
 import { TfBackdrop, TfSheet } from './motion/TfMotion';
@@ -67,6 +68,10 @@ export function PreferencesDialog(props: PreferencesDialogProps): ReactElement |
   } = props;
   const [capDraft, setCapDraft] = useState(String(recentsCap));
   const [paths, setPaths] = useState<AppInfo['storagePaths']>(FALLBACK_PATHS);
+  // Phase 50 - the honest outcome line for the "default PDF app" action. Null
+  // until the user clicks; the app never claims IT changed the default, only
+  // that Windows' settings were opened (or could not be).
+  const [defaultAppsNotice, setDefaultAppsNotice] = useState<string | null>(null);
 
   useEffect(() => {
     setCapDraft(String(recentsCap));
@@ -120,6 +125,36 @@ export function PreferencesDialog(props: PreferencesDialogProps): ReactElement |
     const tflex = (window as unknown as { tflex?: { app?: { openPath?: (p: string) => Promise<void> } } }).tflex;
     if (tflex?.app?.openPath === undefined) return;
     void tflex.app.openPath(path).catch(() => undefined);
+  };
+
+  /** Phase 50 - open Windows' Default-apps settings so the user can make
+   *  Jovrel the default PDF handler. Windows does not let an installer set
+   *  the default silently, which is why the app opens the settings instead of
+   *  changing anything itself. */
+  const openDefaultApps = (): void => {
+    const app = (window as unknown as {
+      tflex?: { app?: { openDefaultAppsSettings?: () => Promise<OpenDefaultAppsSettingsResult> } };
+    }).tflex?.app;
+    if (app?.openDefaultAppsSettings === undefined) {
+      setDefaultAppsNotice(
+        "This build cannot open Windows' Default-apps settings. Open Settings > Apps > Default apps yourself.",
+      );
+      return;
+    }
+    void app
+      .openDefaultAppsSettings()
+      .then((res) => {
+        setDefaultAppsNotice(
+          res.ok
+            ? "Windows' Default-apps settings are open. Choose Jovrel there."
+            : "Windows' settings could not be opened. Open Settings > Apps > Default apps yourself.",
+        );
+      })
+      .catch(() => {
+        setDefaultAppsNotice(
+          "Windows' settings could not be opened. Open Settings > Apps > Default apps yourself.",
+        );
+      });
   };
 
   return (
@@ -216,6 +251,30 @@ export function PreferencesDialog(props: PreferencesDialogProps): ReactElement |
               />
             </div>
             <p className="prefs-hint">Older entries roll off when this cap is reached. Takes effect on next launch.</p>
+          </section>
+
+          <section className="prefs-section" data-prefs-default-pdf-section>
+            <h3 className="prefs-section-title">Default PDF app</h3>
+            <div className="prefs-row">
+              <button
+                type="button"
+                className="prefs-action"
+                onClick={openDefaultApps}
+                data-prefs-default-pdf
+              >
+                <MonitorCog size={15} aria-hidden />
+                Make Jovrel the default PDF app
+              </button>
+            </div>
+            <p className="prefs-hint">
+              Windows does not let an installer change the default PDF handler silently. Choose Jovrel
+              in the settings that open, and Explorer will show the Jovrel icon and type name for PDFs.
+            </p>
+            {defaultAppsNotice !== null && (
+              <p className="prefs-hint prefs-action-status" role="status" data-prefs-default-pdf-status>
+                {defaultAppsNotice}
+              </p>
+            )}
           </section>
 
           <section className="prefs-section">

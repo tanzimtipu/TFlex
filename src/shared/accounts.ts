@@ -198,6 +198,27 @@ export type OAuthCallbackOutcome =
   | { ok: false; reason: 'timeout' | 'cancelled' | 'error'; message?: string };
 
 // ---------------------------------------------------------------------------
+// Phase 50 - open the provider sign-in URL in the OS default browser
+// ---------------------------------------------------------------------------
+
+/**
+ * Result of `accounts:openAuthUrl`. The renderer hands main the provider URL
+ * the auth SDK returned; main opens it in the OS DEFAULT BROWSER only after
+ * validating it is `https:` and its host is EXACTLY the configured auth host.
+ *
+ * `{ ok: true }`  - the URL passed validation and was handed to the OS shell.
+ * `invalid-url`   - the URL was refused (another host, a subdomain, `http:`,
+ *                   `javascript:`, `file:`, malformed, empty, or no configured
+ *                   auth host) and was NEVER opened.
+ * `failed`        - the URL was valid but `shell.openExternal` rejected.
+ *
+ * The handler never throws, so the renderer always gets this shape.
+ */
+export type OpenAuthUrlResult =
+  | { ok: true }
+  | { ok: false; reason: 'invalid-url' | 'failed' };
+
+// ---------------------------------------------------------------------------
 // Phase 46 - observable Google sign-in chain (dev-oriented trace)
 // ---------------------------------------------------------------------------
 

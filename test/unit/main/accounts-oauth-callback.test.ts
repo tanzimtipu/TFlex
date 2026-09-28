@@ -120,7 +120,11 @@ describe('OAuthCallbackService token gate', () => {
     expect(response.headers.get('content-type')).toContain('text/html');
     const body = await response.text();
     expect(body).toContain('Sign-in complete');
-    expect(body).toContain('close this window');
+    // Phase 50 - the flow now lands in the OS default browser: the copy names
+    // the browser TAB and says the app finishes sign-in itself.
+    expect(body).toContain('close this browser tab');
+    expect(body).toContain('Jovrel will finish signing you in');
+    expect(body).not.toContain('close this window');
     // Static page only: no scripts and no external resources.
     expect(body).not.toContain('<script');
     expect(body).not.toContain('http');
