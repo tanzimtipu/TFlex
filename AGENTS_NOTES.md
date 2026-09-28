@@ -4250,3 +4250,44 @@ the pattern to reuse for the next "it failed on the user's machine and I cannot 
 **Also confirmed:** the operator's install is now correctly at `C:\Program Files\Jovrel` (the 1.41.1 install
 path fix worked on their machine), and the verifier fix needs only their next real sign-in attempt to confirm
 end-to-end.
+
+## 2026-09-28: Release 1.42.0 - sign in from the BROWSER, and the "make it the default PDF app" affordance
+
+Release 1.42.0 is published: https://github.com/tanzimtipu/tflex-releases/releases/tag/v1.42.0 (title "Jovrel
+v1.42.0") with all four assets, and the public feed verifies (`version: 1.42.0`, path
+`Jovrel-Setup-1.42.0-x64.exe`, sha512 `Of0+XwY7...`, size 173,352,048). Commits: `8300848` (the feature, 24
+files), `43f250d` (notes), `c90b373` (bump), tag `v1.42.0`. Gates: `verify:full` 455 files / **5861 tests**;
+the packaged canonical spec 9/9 at 1.42.0; the packaged phase50/49/48/45 suites 26/26.
+
+**The operator's request and the design:** "have the user login from browser" - the in-app popup is GONE. The
+flow now calls `accounts:openAuthUrl`, which validates the URL (`https:` + the EXACT configured auth host,
+delegating to the same `decideAuthPopup` rule the popup allowlist uses, so the two can never drift) and hands
+it to `shell.openExternal`; the user finishes Google in their own browser, the browser lands on the app's
+loopback return address, and main completes the exchange as before. The renderer no longer calls `window.open`
+for auth (the popup allowlist stays as a security net). **Handing a URL to the OS shell is a classic abuse
+target, so it was attacked with 16 hostile payloads** (another host, a subdomain, http, `javascript:`, `file:`,
+`data:`, malformed, empty, whitespace, non-strings, `user@evil` userinfo, look-alike hosts) - every one refused
+by validation and never passed to the shell. Keep that test suite with the channel.
+
+**The second affordance - and why it must exist at all:** Explorer paints a `.pdf` with the icon of the
+DEFAULT handler, and Windows (since 10) hash-protects the per-user `UserChoice`, so **no installer can make
+itself the default**. The operator's `.pdf` was defaulted to Edge/Chrome, which is why the files showed
+Chrome's icon and type despite `Jovrel.pdf` being correctly registered (ProgID + `OpenWithProgids` +
+`DefaultIcon` + `shell\open\command` all verified in the registry). Preferences now has a "Default PDF app"
+section whose button opens `ms-settings:defaultapps` and explains that Jovrel must be chosen there - it never
+claims the app changed the default.
+
+**Operational lesson 1 - a source-repo tag is NOT a tag in the releases repo.** `gh release create --verify-tag`
+FAILS with "tag v1.42.0 doesn't exist in the repo tanzimtipu/tflex-releases": the tag lives in the private
+SOURCE repo; `tflex-releases` is a standalone asset repo, so every release there has
+`target_commitish = main` (true for v1.40.1/v1.41.1/v1.41.2 too). Create the release WITHOUT `--verify-tag`;
+the authoritative tag/commit pointer is the source repo's.
+
+**Operational lesson 2 - the push credential and the API token are DIFFERENT.** The 1.42.0 run committed,
+tagged and pushed `master` fine (git's credential helper), then `401 Bad credentials` on every API path -
+`.env`'s `GH_TOKEN`, the same token as `Authorization: token`, and the `gh` keyring token were all invalid. The
+operator supplied a fresh fine-grained PAT (scoped to `tflex-releases` with Releases: write), which was written
+into `.env` (`GH_TOKEN` + `TFLEX_GH_TOKEN`) and worked immediately. NOTE: the old token value was echoed into a
+transcript during diagnosis - it was already dead, but treat such a leak as a revoke-and-regenerate event.
+When a release blocks on 401, check the two credentials separately: a successful `git push` does NOT mean the
+API token is valid.
