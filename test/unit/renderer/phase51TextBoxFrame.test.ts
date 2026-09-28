@@ -59,11 +59,29 @@ describe("Phase 51 item 11 — the shared text-box frame tokens", () => {
   });
 
   it("gives the run editor the same tokens", () => {
+    // DEF-373 — the run editor's frame moved out of the component's inline
+    // style and into `.edit-run-editor` (styles.css). An inline resting border
+    // outranks the `.edit-run-editor:focus` rule, so focus could never paint
+    // the accent; the stylesheet now owns exactly one rounded border
+    // (transparent at rest, accent on focus). The tokens are still asserted,
+    // just at their CURRENT home.
+    const frame = ruleBody(".edit-run-editor");
+    expect(frame, ".edit-run-editor border").toMatch(
+      /border:\s*var\(--border-w-box\)\s+solid\s+transparent/,
+    );
+    expect(frame, ".edit-run-editor radius").toMatch(
+      /border-radius:\s*var\(--radius-box\)/,
+    );
+    expect(ruleBody(".edit-run-editor:focus"), ".edit-run-editor:focus").toMatch(
+      /border-color:\s*var\(--accent\)/,
+    );
+    // The removal was the fix: no inline border may creep back into the
+    // component and shadow the stylesheet focus rule.
     const overlay = readFileSync(
       resolve(ROOT, "src/renderer/edit/EditOverlay.tsx"),
       "utf8",
     );
-    expect(overlay).toMatch(/border:\s*"var\(--border-w-box\) solid transparent"/);
-    expect(overlay).toMatch(/borderRadius:\s*"var\(--radius-box\)"/);
+    expect(overlay).not.toMatch(/border:\s*"var\(--border-w-box\)[^"]*"/);
+    expect(overlay).not.toMatch(/borderRadius:\s*"var\(--radius-box\)"/);
   });
 });
