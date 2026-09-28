@@ -467,7 +467,7 @@ test('C3 legacy annotation (no stored style) keeps the Helvetica appearance', as
     expect(tb.style ?? null, 'legacy annotation carries NO stored style').toBeNull();
 
     // The file's own /DA (read from disk) is the pre-Phase-24 Helvetica 12.
-    const { PDFDocument, PDFName } = require('pdf-lib');
+    const { PDFDocument, PDFName } = require('@cantoo/pdf-lib');
     const doc = await PDFDocument.load(fs.readFileSync(legacyPath), { ignoreEncryption: true, updateMetadata: false });
     const annots = doc.getPages()[3].node.Annots();
     const da = annots ? annots.asArray().map((ref) => doc.context.lookup(ref)).map((d) => {

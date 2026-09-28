@@ -3,7 +3,7 @@
 const H = require('./harness.cjs');
 const fs = require('node:fs');
 const path = require('node:path');
-const { PDFDocument } = require(path.join(H.ROOT, 'node_modules', 'pdf-lib'));
+const { PDFDocument } = require(path.join(H.ROOT, 'node_modules', '@cantoo', 'pdf-lib'));
 
 async function fileInfo(p) {
   const d = await PDFDocument.load(fs.readFileSync(p), { updateMetadata: false });

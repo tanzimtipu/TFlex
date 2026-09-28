@@ -259,7 +259,7 @@ async function produce(app, win, index, outPath) {
 // produced-PDF inspection
 // ---------------------------------------------------------------------------
 async function inspectPdf(file) {
-  const { PDFDocument } = require('pdf-lib');
+  const { PDFDocument } = require('@cantoo/pdf-lib');
   const doc = await PDFDocument.load(fs.readFileSync(file), { ignoreEncryption: true });
   const sizes = doc.getPages().map((p) => {
     const s = p.getSize();
@@ -272,7 +272,7 @@ async function inspectPdf(file) {
 // the ordered list of `cm` matrices and the `Do` XObject names. Two sheets with
 // the same arrangement produce the same signature regardless of image bytes.
 async function placementSignature(file) {
-  const { PDFDocument, PDFName, PDFArray, PDFRawStream } = require('pdf-lib');
+  const { PDFDocument, PDFName, PDFArray, PDFRawStream } = require('@cantoo/pdf-lib');
   const crypto = require('node:crypto');
   const doc = await PDFDocument.load(fs.readFileSync(file), { ignoreEncryption: true });
   const page = doc.getPage(0);

@@ -4346,3 +4346,44 @@ untouched (`modified` false, no partial text, no undo entry), and the pending re
 funnelled into the existing coordinator; the manual control kept as backup), full-strength tab colours (the
 8% wash read as "a shade"), the OCR suspects panel moved into the Inspector, thicker rounded text-box borders,
 and a readable encrypted-PDF message.
+
+## 2026-09-28: Release 1.44.0 - encrypted PDFs (open + create), and the field-page bug that made a form unreadable
+
+Release 1.44.0 is published: https://github.com/tanzimtipu/tflex-releases/releases/tag/v1.44.0 (title "Jovrel
+v1.44.0") with all four assets and the feed verifies (`version: 1.44.0`, sha512 `xOu+9HDL...`, size
+177,890,380). Commits: `d609155` (the phase), `9696308` (a test re-point), `1b1d835` (the suite/fixture
+migration), tag `v1.44.0`. Gates: `verify:full` 476 files / **6013 tests**; the packaged canonical spec 9/9;
+the packaged 1.44.0 feature checks 11/11; the phase suites 33/33.
+
+**THE RESEARCH PAID OFF - record the split so nobody re-derives it.** `pdfjs-dist` **already decrypts** for
+DISPLAY (`getDocument({password})`, `onPassword`, `PasswordException`; `core/crypto.js` implements R2-R6), so
+only the EDIT path was blocked: upstream `pdf-lib` refuses encrypted documents and its `ignoreEncryption` is
+explicitly unsafe per its own README. The fix is **`@cantoo/pdf-lib`** - an MIT, API-compatible fork that loads
+with `{password}` (EMPTY password supported, which is what owner-restricted files need) and can WRITE AES-256
+R6 / AES-128 with permission flags. No native binary, so no packaging/code-signing cost. `muhammara` (native,
+Electron 44 prebuilt unverified) and a bundled `qpdf` exe were rejected.
+
+**Two fork incompatibilities caught by the swap** (both pinned so unencrypted output is unchanged): the fork's
+`drawRectangle` emits a different operator stream (the DEF-151/221 white masks now use
+`drawClassicWhiteMaskRect`), and it mis-detects `@pdf-lib/fontkit` v1's stream-taking `subset.encode` (wrapped
+to force the `encodeStream()` path). **Rule: a drop-in fork is not a no-op - diff its operator output on the
+paths the app depends on.**
+
+**THE FORM BUG - "the page looks all messed up" was TWO faults stacked.** (a) Our own `FormsOverlay` painted an
+app-chrome fill (`rgba(15,23,42,0.85)` + an accent border) over every field, which read as dark blocks over the
+text - the overlay must never paint a background it does not own; pdf.js renders the same file cleanly, which
+is how we proved it was ours. (b) The engine's `findFieldPage` understood only two field shapes (a `/Kids`
+field, or a `/Parent` widget) and this government form uses **MERGED widget/fields** - a field object that IS
+the widget - so **93 of 105 fields fell through to page 1** while their own `/P` said page 3. Fix: resolve each
+widget's page from ITS OWN `/P` against the page refs, and flip the rect from pdf-lib's bottom-left origin to
+the top-left contract (`pageHeight - y - height`). Result: `{3:34, 4:34, 5:27, 6:10}` and a sample rect
+matching pdf.js's annotation rect with **delta 0** on all four components. **Rule: for any form/annotation
+geometry, compare against pdf.js's own data - it is the authority for "where the thing actually is".**
+
+**ALSO RE-LEARNED (third time):** the operator's two re-reported visual bugs were both "passing" tests -
+the thumbnail ring was CLIPPED by a missing 8px gutter (element-box measurement hid it) and the delete control
+was pushed out by an unshrinkable flex label. Measure the PAINTED result and the flex sizing chain.
+
+**AND: a failing spec MASKS its own siblings.** `phase51_gate` showed 2 failures; after qa re-pointed them, two
+MORE of the same timing-stale class appeared (the first failure had aborted the spec early). When you fix a
+failing e2e test in a long spec, re-run the whole spec and expect the next failure to be revealed.

@@ -19,7 +19,7 @@ const path = require('node:path');
 const fs = require('node:fs');
 const os = require('node:os');
 const { inflateSync } = require('node:zlib');
-const { PDFDocument, PDFRawStream } = require('pdf-lib');
+const { PDFDocument, PDFRawStream } = require('@cantoo/pdf-lib');
 const { launchApp, getSamplePath } = require('../lib/launch.cjs');
 const { hardClose, armAnnotationTool, openSamplePath, toggleEditMode } = require('../lib/helpers.cjs');
 

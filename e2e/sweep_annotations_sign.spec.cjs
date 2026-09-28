@@ -8,7 +8,7 @@ const { test, expect } = require('@playwright/test');
 const path = require('node:path');
 const fs = require('node:fs');
 const os = require('node:os');
-const { PDFDocument } = require('pdf-lib');
+const { PDFDocument } = require('@cantoo/pdf-lib');
 const { launchDev, openSample, diag, shot, dumpEngine, scrollToPage, getSamplePath , hardClose, armSignTool, openAnnotationFlyout } = require('./lib/helpers.cjs');
 
 let electronApp = null;

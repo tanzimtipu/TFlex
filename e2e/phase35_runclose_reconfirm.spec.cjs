@@ -109,7 +109,7 @@ async function assertProducedPdf(outPath) {
   expect(fs.existsSync(outPath), 'produced file exists').toBe(true);
   const bytes = fs.readFileSync(outPath);
   expect(bytes.subarray(0, 5).toString('latin1'), 'produced file is a PDF').toBe('%PDF-');
-  const { PDFDocument } = require('pdf-lib');
+  const { PDFDocument } = require('@cantoo/pdf-lib');
   const pdf = await PDFDocument.load(bytes);
   expect(pdf.getPageCount(), 'produced page count matches the 1-2 range').toBe(2);
   for (const p of pdf.getPages()) {

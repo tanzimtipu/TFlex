@@ -241,7 +241,7 @@ test('B17-port: Replace pages refreshes the page count', async () => {
 // must NOT carry the v1.7.27 bug signature (an inline "0.1 ca" operator).
 // Dict-based (pdf-lib), independent of the redesign's accent color.
 test('B21-port: Saved shape fill is translucent (ExtGState ca 0.1, no inline ca token)', async () => {
-  const { PDFDocument, PDFName, PDFArray } = require('pdf-lib');
+  const { PDFDocument, PDFName, PDFArray } = require('@cantoo/pdf-lib');
   await openSample('report.pdf');
   const box = await firstPageBox();
 
@@ -440,7 +440,7 @@ test('B22-port: Textbox move + Confirm relocates text exactly once (view + saved
   // rendering - it is not DOM text, so assert the ENGINE state: exactly ONE
   // textbox annotation, at the MOVED position (not the original). The
   // screenshot records the visual evidence.
-  const { PDFDocument } = require('pdf-lib');
+  const { PDFDocument } = require('@cantoo/pdf-lib');
   const reparsed = await PDFDocument.load(fs.readFileSync(outPath), { ignoreEncryption: true });
   expect(reparsed.getPageCount(), 'the saved file must be a valid PDF').toBe(34);
 

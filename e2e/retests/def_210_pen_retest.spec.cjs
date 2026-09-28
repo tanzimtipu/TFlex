@@ -14,7 +14,7 @@ const { test, expect } = require('@playwright/test');
 const path = require('node:path');
 const fs = require('node:fs');
 const os = require('node:os');
-const { PDFDocument, PDFName, PDFDict, PDFNumber } = require('pdf-lib');
+const { PDFDocument, PDFName, PDFDict, PDFNumber } = require('@cantoo/pdf-lib');
 const { launchDev, diag, getSamplePath, hardClose, armAnnotationTool, openAnnotationFlyout, gotoStage } = require('../lib/helpers.cjs');
 
 const SHOTS = path.resolve(__dirname, '..', '..', 'screenshots');

@@ -195,7 +195,7 @@ test('Item 2: crop PAGE 1 to a small box -> pages below OVERLAP/stack; density v
   // --- DOCUMENT-SAFETY re-parse: save and check which page carries a CropBox
   const os = require('node:os');
   const fs = require('node:fs');
-  const { PDFDocument } = require('pdf-lib');
+  const { PDFDocument } = require('@cantoo/pdf-lib');
   const savePath = path.join(os.tmpdir(), `tflex-item2-saved-${Date.now()}.pdf`);
   await electronApp.evaluate(async ({ dialog }, p) => {
     dialog.showSaveDialog = async () => ({ canceled: false, filePath: p });

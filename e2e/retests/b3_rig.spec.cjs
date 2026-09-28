@@ -76,7 +76,7 @@ test('B3 rigorous: does a custom-color rect annotation survive save/reopen?', as
   // Parse the saved file with pdf-lib
   let pdfInfo = null;
   if (fileExists) {
-    const { PDFDocument } = require('pdf-lib');
+    const { PDFDocument } = require('@cantoo/pdf-lib');
     const bytes = fs.readFileSync(savePath);
     const doc = await PDFDocument.load(bytes);
     const pages = doc.getPages();

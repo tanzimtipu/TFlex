@@ -157,7 +157,7 @@ test('DEF-142 (b): window X + Save -> saves (Save As on sample) and closes the w
 
   // Document-safety: the saved file must be a valid re-parseable 34-page PDF.
   const fs = require('node:fs');
-  const { PDFDocument } = require('pdf-lib');
+  const { PDFDocument } = require('@cantoo/pdf-lib');
   if (fs.existsSync(savePath)) {
     const doc = await PDFDocument.load(fs.readFileSync(savePath));
     console.log(`[142|save] saved pageCount=${doc.getPageCount()}`);

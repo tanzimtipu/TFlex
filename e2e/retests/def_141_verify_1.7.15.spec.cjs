@@ -202,7 +202,7 @@ test('DEF-141: crop page 1 to a small box -> pages 2/3/4 stay FULL size, no stac
   // --- DOCUMENT-SAFETY re-parse: save and check which page carries a CropBox.
   const os = require('node:os');
   const fs = require('node:fs');
-  const { PDFDocument } = require('pdf-lib');
+  const { PDFDocument } = require('@cantoo/pdf-lib');
   const savePath = path.join(os.tmpdir(), `tflex-def141-1715-saved-${Date.now()}.pdf`);
   await electronApp.evaluate(async ({ dialog }, p) => {
     dialog.showSaveDialog = async () => ({ canceled: false, filePath: p });

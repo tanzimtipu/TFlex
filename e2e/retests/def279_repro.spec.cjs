@@ -18,7 +18,7 @@ const { launchApp } = require('../lib/launch.cjs');
 const { hardClose, toggleMultiModeViaPalette } = require('../lib/helpers.cjs');
 
 const ROOT = path.resolve(__dirname, '..', '..');
-const { PDFDocument } = require(path.join(ROOT, 'node_modules', 'pdf-lib'));
+const { PDFDocument } = require(path.join(ROOT, 'node_modules', '@cantoo', 'pdf-lib'));
 const SRC = path.join(ROOT, 'test-fixtures', 'report.pdf'); // 34 pages
 const TMP = path.join(os.tmpdir(), 'tflex-def279');
 

@@ -200,7 +200,7 @@ test('1.27.0 (b): virtual PDF destination produces the PDF with no Windows/Chrom
   expect(fs.existsSync(outPath), 'the produced PDF exists').toBe(true);
   const bytes = fs.readFileSync(outPath);
   expect(bytes.subarray(0, 5).toString('latin1'), 'produced file is a PDF').toBe('%PDF-');
-  const { PDFDocument } = require('pdf-lib');
+  const { PDFDocument } = require('@cantoo/pdf-lib');
   const pdf = await PDFDocument.load(bytes);
   console.log(`[release-1270-g5b] produced PDF bytes=${bytes.length} pages=${pdf.getPageCount()} -> ${outPath}`);
   expect(pdf.getPageCount()).toBeGreaterThan(0);

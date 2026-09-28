@@ -236,7 +236,7 @@ test('BUG3: per-page crop page 2 â€” which pages end up cropped (rendered +
     const buf = fs.readFileSync(savePath);
     console.log(`[BUG3] saved size=${buf.length}`);
     // Parse with a tiny pdf.js-free heuristic: use pdf-lib from node_modules.
-    const { PDFDocument } = require(path.join(__dirname, '..', '..', 'node_modules', 'pdf-lib'));
+    const { PDFDocument } = require(path.join(__dirname, '..', '..', 'node_modules', '@cantoo', 'pdf-lib'));
     const pdf = await PDFDocument.load(buf);
     const crops = [];
     for (let i = 0; i < pdf.getPageCount(); i += 1) {

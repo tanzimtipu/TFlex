@@ -178,7 +178,7 @@ async function produce(app, win, index, outPath) {
 }
 
 async function inspectPdf(file) {
-  const { PDFDocument } = require('pdf-lib');
+  const { PDFDocument } = require('@cantoo/pdf-lib');
   const doc = await PDFDocument.load(fs.readFileSync(file), { ignoreEncryption: true });
   const sizes = doc.getPages().map((p) => {
     const s = p.getSize();
@@ -190,7 +190,7 @@ async function inspectPdf(file) {
 // Page-1 image placements: each `Do` paired with the nearest preceding `cm`
 // (the image transform) plus the md5 of the image stream it resolves to.
 async function placementSignature(file) {
-  const { PDFDocument, PDFName, PDFArray, PDFRawStream } = require('pdf-lib');
+  const { PDFDocument, PDFName, PDFArray, PDFRawStream } = require('@cantoo/pdf-lib');
   const crypto = require('node:crypto');
   const doc = await PDFDocument.load(fs.readFileSync(file), { ignoreEncryption: true });
   const page = doc.getPage(0);

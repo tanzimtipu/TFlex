@@ -241,7 +241,7 @@ test('P35-G3 virtual-PDF destination produces the file inside TFlex, no print wi
   expect(fs.existsSync(outPath)).toBe(true);
   const bytes = fs.readFileSync(outPath);
   expect(bytes.subarray(0, 5).toString('latin1')).toBe('%PDF-');
-  const { PDFDocument } = require('pdf-lib');
+  const { PDFDocument } = require('@cantoo/pdf-lib');
   const pdf = await PDFDocument.load(bytes);
   const pageCount = pdf.getPageCount();
   const sizes = pdf.getPages().map((p) => p.getSize());

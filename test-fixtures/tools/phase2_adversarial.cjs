@@ -87,7 +87,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   const hugeB = path.join(TEMP, 'tflex-huge-B.pdf');
   const reportPath = path.join(APP, 'assets/samples/report.pdf');
   {
-    const { PDFDocument } = require(path.join(APP, 'node_modules/pdf-lib'));
+    const { PDFDocument } = require(path.join(APP, 'node_modules', '@cantoo', 'pdf-lib'));
     const report = await PDFDocument.load(fs.readFileSync(reportPath));
     const big = await PDFDocument.create();
     for (let i = 0; i < 30; i++) {

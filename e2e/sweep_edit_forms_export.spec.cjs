@@ -6,7 +6,7 @@ const path = require('node:path');
 const fs = require('node:fs');
 const os = require('node:os');
 const zlib = require('node:zlib');
-const { PDFDocument, PDFName } = require('pdf-lib');
+const { PDFDocument, PDFName } = require('@cantoo/pdf-lib');
 const { launchDev, openSample, diag, shot, scrollToPage, getSamplePath , hardClose, toggleEditMode, runTool } = require('./lib/helpers.cjs');
 
 let electronApp = null;

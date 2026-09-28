@@ -8,7 +8,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const napi = require('@napi-rs/canvas');
-const { PDFDocument, PDFName, PDFArray, PDFRawStream, decodePDFRawStream } = require('pdf-lib');
+const { PDFDocument, PDFName, PDFArray, PDFRawStream, decodePDFRawStream } = require('@cantoo/pdf-lib');
 
 const ROOT = path.resolve(__dirname, '..', '..');
 const FONTS = path.join(ROOT, 'node_modules', 'pdfjs-dist', 'standard_fonts') + path.sep;

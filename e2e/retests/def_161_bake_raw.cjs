@@ -2,7 +2,7 @@
 // (pdf-lib low-level objects), so we can see exactly what the engine wrote
 // for the callout (AP stream, DA, contents, rect, etc).
 const fs = require('node:fs');
-const { PDFDocument, PDFName, PDFRawStream, PDFStream } = require('pdf-lib');
+const { PDFDocument, PDFName, PDFRawStream, PDFStream } = require('@cantoo/pdf-lib');
 
 async function main() {
   const file = process.argv[2];

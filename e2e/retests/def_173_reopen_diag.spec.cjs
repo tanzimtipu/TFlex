@@ -24,7 +24,7 @@ const { test, expect } = require('@playwright/test');
 const fs = require('node:fs');
 const path = require('node:path');
 const os = require('node:os');
-const { PDFDocument, PDFDict, PDFName, PDFNumber } = require('pdf-lib');
+const { PDFDocument, PDFDict, PDFName, PDFNumber } = require('@cantoo/pdf-lib');
 const { launchDev, openSample, scrollToPage, shot, sampleCanvasPageRect, hardClose, armAnnotationTool } = require('../lib/helpers.cjs');
 
 test('DEF-174: reopened highlight renders ONCE - pale canvas wash (/CA 0.35), no overlay rect', async () => {

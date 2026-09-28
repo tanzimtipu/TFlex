@@ -44,7 +44,7 @@ const BOGUS_DEVICE = 'TFlex QA Bogus Printer';
 
 // --- produced-PDF inspection (pdf-lib) -------------------------------------
 async function inspectPdf(file) {
-  const { PDFDocument } = require('pdf-lib');
+  const { PDFDocument } = require('@cantoo/pdf-lib');
   const doc = await PDFDocument.load(fs.readFileSync(file), { ignoreEncryption: true });
   const sizes = doc.getPages().map((p) => {
     const s = p.getSize();

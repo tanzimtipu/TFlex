@@ -2,7 +2,7 @@
 // Temporary QA diagnostic; removed after the DEF-338 investigation.
 const fs = require('fs');
 const zlib = require('zlib');
-const { PDFDocument, PDFName, PDFDict, PDFArray, PDFRawStream, PDFStream } = require('pdf-lib');
+const { PDFDocument, PDFName, PDFDict, PDFArray, PDFRawStream, PDFStream } = require('@cantoo/pdf-lib');
 
 const p = process.argv[2];
 (async () => {
