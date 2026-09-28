@@ -4213,3 +4213,40 @@ Inter with `currentColor`, so it follows each surface's theme foreground.
 `Jovrel-<version>-portable-x64.exe` and `latest.yml`; the canonical installed spec points at
 `C:\Program Files\Jovrel\Jovrel.exe`; and the OTA feed's `path` is the Jovrel setup. The old `TFlex-Setup-*`
 artifacts remain in `release/` as history (never upload them).
+
+## 2026-09-28: Release 1.41.2 - Neon Auth's OAuth flow is CHALLENGE/VERIFIER based (the lesson)
+
+Release 1.41.2 is published: https://github.com/tanzimtipu/tflex-releases/releases/tag/v1.41.2 with all four
+assets, and the public feed verifies (`version: 1.41.2`, path `Jovrel-Setup-1.41.2-x64.exe`, sha512
+`1y9zzncX...`, size 173,349,727). Commits: `28ee5e4` (the fix), `32c854c` (notes), `9f6be16` (bump), tag
+`v1.41.2`. Gates: `verify:full` 453 files / **5829 tests**; the packaged canonical spec 9/9; the packaged
+phase45/48/49 suites 23/23; a NEW verifier-security spec (wrong token 403, replay 403, oversized verifier
+handled) and redaction assertions.
+
+**THE LESSON - a hosted OAuth callback in this stack returns a VERIFIER, not just a cookie.** The operator's
+Google sign-in completed in the popup, the app closed it, and the background exchange then failed with "no
+usable session". The obvious theory (the exchange's `session.fetch` calls lacked our injected `Origin`) was
+**disproven by a real-Electron probe**: the webRequest rule DOES fire for `session.fetch`, and the cookie IS
+attached. The actual mechanism, found by reading the installed `@neondatabase/auth` / better-auth routes: the
+hosted callback sets a `*.session_challenge` cookie **and appends `neon_auth_session_verifier` to the
+callbackURL**; the session token is minted only when `/get-session` is called WITH that verifier
+(`exchangeOAuthToken` requires `hasVerifier && hasSessionChallengeCookie`). Our loopback page was static (no
+scripts, by design), so the verifier was dropped on the floor. Fix: main captures the verifier from the
+validated loopback landing (the existing single-use token still gates it), consumes it ONCE, clears it on
+start/dispose, never traces it, and appends it to `/get-session`. Rule for any future hosted-auth integration:
+**read the callback the provider actually sends back - if it appends a parameter, something must consume it.**
+
+**Meta-lesson worth keeping:** the leading hypothesis was wrong and one measurement killed it. Measuring the
+`Origin`/cookie behaviour BEFORE writing the fix saved a wrong change and pointed straight at the real cause.
+When an auth step fails, probe the actual request/response (or read the provider's route table in
+`node_modules`) before touching the client.
+
+**Diagnostics added (and verified leak-free):** a compact failure line - `step=… status=… cookies=<NAMES only>
+verifier=present|absent provider="<clipped>"` - shown in the UI error AND appended to a capped
+`<userData>/oauth-trace.log` (200 lines, 300 chars/line, control characters flattened so a hostile provider
+body cannot forge a line). No token, cookie value, code or verifier value is ever written or emitted. This is
+the pattern to reuse for the next "it failed on the user's machine and I cannot reproduce it" report.
+
+**Also confirmed:** the operator's install is now correctly at `C:\Program Files\Jovrel` (the 1.41.1 install
+path fix worked on their machine), and the verifier fix needs only their next real sign-in attempt to confirm
+end-to-end.
