@@ -2,7 +2,7 @@ import { mkdtemp, rm, writeFile, readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { PDFDocument } from 'pdf-lib';
+import { PDFDocument } from '@cantoo/pdf-lib';
 import { EngineService } from '../../../src/main/services/engine';
 import type { PlaceSignaturePayload, EngineState } from '../../../src/shared/types';
 
@@ -793,7 +793,7 @@ describe('EngineService - signature metadata safety (DEF-075)', () => {
     const doc = await PDFDocument.create();
     doc.addPage([612, 792]);
     // Inject a corrupt JSON payload directly into the catalog.
-    const { PDFHexString, PDFName } = await import('pdf-lib');
+    const { PDFHexString, PDFName } = await import('@cantoo/pdf-lib');
     doc.catalog.set(PDFName.of('TFlexSig'), PDFHexString.of('not-valid-json{'));
     const badPath = join(dir, 'corrupt-sigmeta.pdf');
     await writeFile(badPath, Buffer.from(await doc.save()));

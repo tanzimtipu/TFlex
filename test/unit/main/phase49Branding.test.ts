@@ -3,7 +3,7 @@ import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { PDFDocument } from 'pdf-lib';
+import { PDFDocument } from '@cantoo/pdf-lib';
 import { EngineService, PDF_PRODUCER } from '../../../src/main/services/engine';
 import { PRINT_WINDOW_TITLE } from '../../../src/main/print-window';
 import {

@@ -2,7 +2,7 @@ import fs from 'fs';
 import path from 'path';
 import { createRequire } from 'module';
 const require = createRequire(import.meta.url);
-const { PDFDocument, StandardFonts, rgb, PDFName, PDFDict, PDFArray } = require('pdf-lib');
+const { PDFDocument, StandardFonts, rgb, PDFName, PDFDict, PDFArray } = require('@cantoo/pdf-lib');
 
 const FIXTURES_DIR = 'test-fixtures';
 

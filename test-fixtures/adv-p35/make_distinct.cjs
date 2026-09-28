@@ -2,7 +2,7 @@
 // pixel-verifiable. Also a 3-page variant.
 const fs = require('node:fs');
 const path = require('node:path');
-const { PDFDocument, StandardFonts, rgb } = require('pdf-lib');
+const { PDFDocument, StandardFonts, rgb } = require('@cantoo/pdf-lib');
 
 (async () => {
   const dir = __dirname;

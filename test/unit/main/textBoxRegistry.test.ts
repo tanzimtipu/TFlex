@@ -12,7 +12,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { inflateSync } from 'node:zlib';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { PDFDocument, PDFRawStream, StandardFonts } from 'pdf-lib';
+import { PDFDocument, PDFRawStream, StandardFonts } from '@cantoo/pdf-lib';
 import { EngineService } from '../../../src/main/services/engine';
 import type { EngineState, TextBoxModel } from '../../../src/shared/types';
 

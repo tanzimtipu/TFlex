@@ -1,7 +1,7 @@
 // Generate hostile page-size fixtures for the P30 raster-bound attack.
 const fs = require('node:fs');
 const path = require('node:path');
-const { PDFDocument, StandardFonts, rgb } = require('pdf-lib');
+const { PDFDocument, StandardFonts, rgb } = require('@cantoo/pdf-lib');
 
 const OUT = __dirname;
 

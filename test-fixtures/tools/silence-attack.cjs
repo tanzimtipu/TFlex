@@ -8,7 +8,7 @@
  * Runs against the engine API directly (node + pdf-lib).
  */
 
-const { PDFDocument, StandardFonts, rgb } = require('pdf-lib');
+const { PDFDocument, StandardFonts, rgb } = require('@cantoo/pdf-lib');
 const { writeFile, readFile, mkdir } = require('fs/promises');
 const path = require('path');
 const crypto = require('crypto');
@@ -169,7 +169,7 @@ function crc32(data, length) {
     // Fill the text field
     const tf1 = fields1.find((f) => f.getName() === 'applicant_name');
     if (tf1) {
-      const { PDFTextField } = require('pdf-lib');
+      const { PDFTextField } = require('@cantoo/pdf-lib');
       if (tf1 instanceof PDFTextField) {
         tf1.setText('Alice');
       }

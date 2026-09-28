@@ -251,7 +251,7 @@ Add-Type -TypeDefinition $src
       if (!fs.existsSync(p)) return { exists: false };
       const bytes = fs.readFileSync(p);
       const magic = bytes.subarray(0, 5).toString('latin1');
-      const { PDFDocument } = require('pdf-lib');
+      const { PDFDocument } = require('@cantoo/pdf-lib');
       let pageCount = null, sizes = null, err = null;
       try {
         return PDFDocument.load(bytes).then((pdf) => ({ exists: true, bytes: bytes.length, magic, pageCount: pdf.getPageCount(), sizes: pdf.getPages().map((x) => { const s = x.getSize(); return [Math.round(s.width), Math.round(s.height)]; }) })).catch((e) => ({ exists: true, bytes: bytes.length, magic, loadError: String(e.message).slice(0, 120) }));

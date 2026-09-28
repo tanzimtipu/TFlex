@@ -48,7 +48,7 @@ const note = (s) => { console.log(`[adv35-large] ${s}`); lines.push(`[adv35-larg
     note(`print 1-200: elapsedMs=${elapsed} success=${JSON.stringify(success)} err=${JSON.stringify(err)} workingSetMB ${before}->${after}`);
     if (fs.existsSync(outPath)) {
       const bytes = fs.readFileSync(outPath);
-      const { PDFDocument } = require('pdf-lib');
+      const { PDFDocument } = require('@cantoo/pdf-lib');
       const pdf = await PDFDocument.load(bytes);
       note(`produced: bytes=${bytes.length} pages=${pdf.getPageCount()} magic=${bytes.subarray(0, 5).toString('latin1')}`);
     } else {

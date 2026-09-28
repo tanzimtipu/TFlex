@@ -1,7 +1,7 @@
 ﻿import fs from 'fs';
 import path from 'path';
 import { createRequire } from 'module';
-import { PDFDocument as LibPDFDocument, PDFName, PDFDict, PDFArray } from 'pdf-lib';
+import { PDFDocument as LibPDFDocument, PDFName, PDFDict, PDFArray } from '@cantoo/pdf-lib';
 
 const require = createRequire(import.meta.url);
 const PDFDocument = require('pdfkit');

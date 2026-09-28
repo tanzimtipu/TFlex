@@ -82,7 +82,7 @@ async function testCorruptBytes() {
 
   // Test via pdf-lib directly (same path the engine uses)
   try {
-    const { PDFDocument } = await import('pdf-lib');
+    const { PDFDocument } = await import('@cantoo/pdf-lib');
 
     // Test pdf-lib with truncated data
     const truncatedBytes = new Uint8Array([0x25, 0x50, 0x44, 0x46, 0x2d, 0x31, 0x2e, 0x34]);
@@ -137,7 +137,7 @@ async function testMergeHuge() {
 
   // Cautiously test timing for a real merge
   try {
-    const { PDFDocument } = await import('pdf-lib');
+    const { PDFDocument } = await import('@cantoo/pdf-lib');
     const longBytes = loadSample('long.pdf');
     const reportBytes = loadSample('report.pdf');
     
@@ -352,7 +352,7 @@ async function testUndoSplit() {
   // So undo restores the snapshot. Let's verify the order of operations.
 
   try {
-    const { PDFDocument } = await import('pdf-lib');
+    const { PDFDocument } = await import('@cantoo/pdf-lib');
     const reportBytes = loadSample('report.pdf');
     const doc = await PDFDocument.load(bytesFromBuffer(reportBytes));
     const pageCount = doc.getPageCount();
@@ -360,7 +360,7 @@ async function testUndoSplit() {
 
     // Simulate engine.split logic on a separate copy
     const copyBytes = (await doc.save()).buffer;
-    const { PDFDocument: PDFDoc2 } = await import('pdf-lib');
+    const { PDFDocument: PDFDoc2 } = await import('@cantoo/pdf-lib');
     const doc2 = await PDFDoc2.load(copyBytes);
     
     // Simulate engine state

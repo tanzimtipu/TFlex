@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { inflateSync } from 'node:zlib';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { createCanvas, loadImage } from '@napi-rs/canvas';
-import { PDFDocument } from 'pdf-lib';
+import { PDFDocument } from '@cantoo/pdf-lib';
 import { EngineService } from '../../../src/main/services/engine';
 import {
   OcrService,

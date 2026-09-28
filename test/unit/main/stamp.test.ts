@@ -2,7 +2,7 @@ import { mkdtemp, rm, writeFile, readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { PDFDocument, PDFName } from 'pdf-lib';
+import { PDFDocument, PDFName } from '@cantoo/pdf-lib';
 import { EngineService } from '../../../src/main/services/engine';
 
 let dir: string;

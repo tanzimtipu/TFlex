@@ -3,7 +3,7 @@
 // distinguishable by hash for print parity checks.
 const fs = require('node:fs');
 const path = require('node:path');
-const { PDFDocument, StandardFonts, rgb } = require('pdf-lib');
+const { PDFDocument, StandardFonts, rgb } = require('@cantoo/pdf-lib');
 
 (async () => {
   const doc = await PDFDocument.create();

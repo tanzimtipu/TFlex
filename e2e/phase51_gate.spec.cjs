@@ -539,12 +539,23 @@ async function armEditText() {
   await win.waitForTimeout(700);
 }
 
-async function selectRun() {
+async function selectRun(nearRect = null) {
   const pageLoc = win.locator('.tab-pane[aria-hidden="false"] .pdf-page[data-page="1"]');
   const pg = await (await pageLoc.count() ? pageLoc.first() : win.locator('.pdf-page[data-page="1"]').first()).boundingBox();
   const fracs = [[0.5, 0.1], [0.3, 0.12], [0.5, 0.16], [0.25, 0.22], [0.5, 0.3], [0.35, 0.42], [0.55, 0.5], [0.4, 0.62]];
-  for (const [fx, fy] of fracs) {
-    await win.mouse.click(Math.round(pg.x + pg.width * fx), Math.round(pg.y + pg.height * fy));
+  const points = fracs.map(([fx, fy]) => [Math.round(pg.x + pg.width * fx), Math.round(pg.y + pg.height * fy)]);
+  // A moved run can be narrow and sit outside the fixed fractions (item 13);
+  // when the caller knows the moved rect, click the text-layer spans inside
+  // it first (the hit-test resolves the run from the span, not the rect).
+  if (nearRect) {
+    const spanPoints = await win.evaluate((r) => [...document.querySelectorAll('.textLayer span')].map((s) => {
+      const b = s.getBoundingClientRect();
+      return { x: Math.round(b.left + b.width / 2), y: Math.round(b.top + b.height / 2), w: b.width, h: b.height };
+    }).filter((p) => p.w > 0 && p.h > 0 && p.x >= r.l && p.x <= r.l + r.w && p.y >= r.t && p.y <= r.t + r.h).map((p) => [p.x, p.y]), nearRect);
+    points.unshift(...spanPoints);
+  }
+  for (const [x, y] of points) {
+    await win.mouse.click(x, y);
     await win.waitForTimeout(550);
     const active = await win.evaluate(() => {
       const root = document.querySelector('.tab-pane[aria-hidden="false"]') || document;
@@ -606,6 +617,23 @@ async function clickConfirm() {
   const btn = win.locator('[data-content-action="textrun-confirm"]').first();
   await btn.click();
   await win.waitForTimeout(900);
+}
+
+/** Wait until the pdf.js text layer carries a run whose centre falls inside
+ *  `rect` (viewport px). A move's proxy refresh is async (DEF-155), so a
+ *  click at the moved position must wait for the refreshed text layer rather
+ *  than sampling the pre-refresh one. */
+async function waitForTextLayerAt(rect) {
+  await win.waitForFunction((r) => {
+    const spans = [...document.querySelectorAll('.textLayer span')];
+    return spans.some((s) => {
+      const b = s.getBoundingClientRect();
+      if (b.width === 0 || b.height === 0) return false;
+      const cx = b.left + b.width / 2;
+      const cy = b.top + b.height / 2;
+      return cx >= r.l - 2 && cx <= r.l + r.w + 2 && cy >= r.t - 2 && cy <= r.t + r.h + 2;
+    });
+  }, rect, { timeout: 15000 }).catch(() => {});
 }
 
 test('P51-F items 6,7,12,13,14,15,16: the edit-text cluster', async () => {
@@ -700,8 +728,11 @@ test('P51-F items 6,7,12,13,14,15,16: the edit-text cluster', async () => {
   expect(afterDrag.preview.t, 'item 7: the text preview moved down').toBeGreaterThan(beforeDrag.preview.t + 10);
   expect(afterDrag.eraser.l, 'item 7: the cover holds the OLD rect').toBe(beforeDrag.eraser.l);
 
-  // (7) Confirm leaves exactly ONE copy.
+  // (7) Confirm leaves exactly ONE copy. The white eraser cover is held
+  // open until the async engine mask + pdf.js proxy refresh resolves
+  // (DEF-155), so wait for the settled state before sampling it.
   await clickConfirm();
+  await win.waitForSelector('[data-edit-box-eraser]', { state: 'detached', timeout: 15000 }).catch(() => {});
   const afterConfirm = await runState();
   console.log(`[P51-F item7 confirm] selection=${JSON.stringify(afterConfirm.selection)} preview=${JSON.stringify(afterConfirm.preview)} eraser=${JSON.stringify(afterConfirm.eraser)} previewCount=${afterConfirm.previewCount}`);
   expect(afterConfirm.selection, 'item 7: the selection closes on Confirm').toBeNull();
@@ -709,7 +740,7 @@ test('P51-F items 6,7,12,13,14,15,16: the edit-text cluster', async () => {
   expect(afterConfirm.eraser, 'item 7: no residual cover').toBeNull();
 
   // (13) applying Bold after a move keeps the box where it was moved.
-  expect(await selectRun(), 'the moved run is re-selectable').toBe(true);
+  expect(await selectRun(afterDrag.preview), 'the moved run is re-selectable').toBe(true);
   await win.waitForTimeout(600);
   const beforeBold = await runState();
   await win.locator('[data-txt-bold]').click();
@@ -749,12 +780,17 @@ test('P51-F items 15,16: a second move leaves no copy; super shows one copy', as
   const first = await runState();
   await dragSelection(50, 25);
   await clickConfirm();
+  // The proxy refresh that bakes the move is async (DEF-155): wait for the
+  // cover to release AND the refreshed text layer to carry the moved run
+  // before re-selecting at the moved position.
+  await win.waitForSelector('[data-edit-box-eraser]', { state: 'detached', timeout: 15000 }).catch(() => {});
+  const moved = { l: first.selection.l + 50, t: first.selection.t + 25, w: first.selection.w, h: first.selection.h };
+  await waitForTextLayerAt(moved);
   const afterFirst = await runState();
   console.log(`[P51-F item15 first] selection=${JSON.stringify(afterFirst.selection)} preview=${JSON.stringify(afterFirst.preview)}`);
   expect(afterFirst.preview, 'item 15: no residual copy after the first move').toBeNull();
 
   // Re-select at the moved position.
-  const moved = { l: first.selection.l + 50, t: first.selection.t + 25, w: first.selection.w, h: first.selection.h };
   await win.mouse.click(moved.l + moved.w / 2, moved.t + moved.h / 2);
   await win.waitForTimeout(600);
   const beforeSecond = await runState();
@@ -766,11 +802,16 @@ test('P51-F items 15,16: a second move leaves no copy; super shows one copy', as
   expect(afterSecond.preview.l, 'item 15: the second move moved the text').toBeGreaterThan(beforeSecond.preview.l + 10);
   expect(afterSecond.eraser.l, 'item 15: the cover holds the pre-move rect (no copy at the original)').toBe(beforeSecond.eraser.l);
   await clickConfirm();
+  // The second confirm's proxy refresh is async (DEF-155): wait for the
+  // cover to release and the refreshed text layer to carry the moved run
+  // before re-selecting at the moved position (same as item 15).
+  await win.waitForSelector('[data-edit-box-eraser]', { state: 'detached', timeout: 15000 }).catch(() => {});
+  const moved2 = { l: moved.l + 40, t: moved.t + 20, w: moved.w, h: moved.h };
+  await waitForTextLayerAt(moved2);
   const s15 = await runState();
   expect(s15.preview, 'item 15: no residual copy after the second move').toBeNull();
 
   // (16) superscript shows no second copy.
-  const moved2 = { l: moved.l + 40, t: moved.t + 20, w: moved.w, h: moved.h };
   await win.mouse.click(moved2.l + moved2.w / 2, moved2.t + moved2.h / 2);
   await win.waitForTimeout(600);
   expect((await runState()).selection, 'item 16: the run is re-selected').not.toBeNull();

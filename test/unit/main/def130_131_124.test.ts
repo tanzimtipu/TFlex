@@ -62,7 +62,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { inflateSync } from 'node:zlib';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { PDFDocument, PDFDict, PDFName, PDFRawStream, PDFRef, StandardFonts } from 'pdf-lib';
+import { PDFDocument, PDFDict, PDFName, PDFRawStream, PDFRef, StandardFonts } from '@cantoo/pdf-lib';
 import { EngineService } from '../../../src/main/services/engine';
 
 // ---------------------------------------------------------------------------

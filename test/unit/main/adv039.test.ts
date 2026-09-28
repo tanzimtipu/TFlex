@@ -9,7 +9,7 @@
 // available. Never "disk 68, memory 65, modified false, undo empty".
 
 import { describe, it, expect } from 'vitest';
-import { PDFDocument } from 'pdf-lib';
+import { PDFDocument } from '@cantoo/pdf-lib';
 import { promises as fs } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';

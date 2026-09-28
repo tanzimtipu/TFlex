@@ -63,7 +63,7 @@ async function measurePreview(win, nup, order) {
 
 // per-page image placements for a produced PDF: page s -> [{hash, cm}]
 async function pageImages(file) {
-  const { PDFDocument, PDFName, PDFArray, PDFRawStream } = require('pdf-lib');
+  const { PDFDocument, PDFName, PDFArray, PDFRawStream } = require('@cantoo/pdf-lib');
   const crypto = require('node:crypto');
   const doc = await PDFDocument.load(fs.readFileSync(file), { ignoreEncryption: true });
   const out = [];

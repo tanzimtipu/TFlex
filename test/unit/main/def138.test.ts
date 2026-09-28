@@ -9,7 +9,7 @@
 // save/reopen.
 
 import { describe, it, expect } from 'vitest';
-import { PDFDocument, degrees } from 'pdf-lib';
+import { PDFDocument, degrees } from '@cantoo/pdf-lib';
 import { promises as fs } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';

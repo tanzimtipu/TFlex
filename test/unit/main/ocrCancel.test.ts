@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { inflateSync } from 'node:zlib';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { PDFDocument } from 'pdf-lib';
+import { PDFDocument } from '@cantoo/pdf-lib';
 import { EngineService } from '../../../src/main/services/engine';
 import type { OcrService, RawOcrWord } from '../../../src/main/services/ocr';
 import { IPC } from '../../../src/shared/ipc';

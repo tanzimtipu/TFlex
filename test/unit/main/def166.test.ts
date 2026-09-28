@@ -12,7 +12,7 @@ import {
   PDFRef,
   PDFStream,
   StandardFonts,
-} from 'pdf-lib';
+} from '@cantoo/pdf-lib';
 import * as pdfjs from 'pdfjs-dist';
 import { EngineService } from '../../../src/main/services/engine';
 import type { CreateAnnotationPayload } from '../../../src/shared/types';

@@ -2,7 +2,7 @@ import { mkdtemp, rm, writeFile, readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { PDFDocument } from 'pdf-lib';
+import { PDFDocument } from '@cantoo/pdf-lib';
 import { EngineService } from '../../../src/main/services/engine';
 
 // ---------------------------------------------------------------------------
@@ -840,7 +840,7 @@ describe('EngineService - merge preserves AcroForm fields (DEF-029)', () => {
  *  the widget annotations are properly placed in the page /Annots array
  *  so findFieldPage can locate them on reload. */
 async function createTwoPageFormWithFieldOnPage2(): Promise<string> {
-  const { PDFName } = await import('pdf-lib');
+  const { PDFName } = await import('@cantoo/pdf-lib');
   const doc = await PDFDocument.create();
   const page1 = doc.addPage([612, 792]);
   const page2 = doc.addPage([612, 792]);

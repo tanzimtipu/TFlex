@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { EngineService } from '../../../src/main/services/engine';
-import { PDFDocument, PDFName, PDFArray } from 'pdf-lib';
+import { PDFDocument, PDFName, PDFArray } from '@cantoo/pdf-lib';
 import { promises as fs } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';

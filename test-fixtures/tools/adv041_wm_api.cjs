@@ -282,7 +282,7 @@ setTimeout(() => { console.log('ADV041 HARD_TIMEOUT group=' + GROUP); process.ex
       logj('MARKER_OCCURRENCES', { count: (latin.match(/%TFLEX-WATERMARK/g) || []).length });
       logj('TEXT_RESIDUE', { WM_ONE: latin.includes('WM-ONE'), WM_TWO: latin.includes('WM-TWO') });
       try {
-        const { PDFDocument } = require('pdf-lib');
+        const { PDFDocument } = require('@cantoo/pdf-lib');
         const doc = await PDFDocument.load(buf);
         logj('PDF_PARSE', { pages: doc.getPageCount() });
       } catch (e) { logj('PDF_PARSE_FAILED', { err: String(e.message).slice(0, 200) }); }

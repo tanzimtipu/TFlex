@@ -82,7 +82,7 @@ setTimeout(() => { console.log('ADV041EX HARD_TIMEOUT'); process.exit(3); }, 180
   if (exists) {
     const buf = fs.readFileSync(saved);
     logj('saved', { bytes: buf.length, markers: (buf.toString('latin1').match(/%TFLEX-WATERMARK/g) || []).length });
-    try { const { PDFDocument } = require('pdf-lib'); const d = await PDFDocument.load(buf); logj('parse', { pages: d.getPageCount() }); }
+    try { const { PDFDocument } = require('@cantoo/pdf-lib'); const d = await PDFDocument.load(buf); logj('parse', { pages: d.getPageCount() }); }
     catch (e) { logj('parse-failed', { err: String(e.message).slice(0, 160) }); }
   }
 

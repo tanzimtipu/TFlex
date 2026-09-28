@@ -7,7 +7,7 @@
 
 ## DEF-373: the focused on-canvas run editor paints no visible border (its inline `border: ... solid transparent` overrides the `.edit-run-editor:focus` accent rule)
 
-- Status: OPEN
+- Status: CLOSED
 - Severity: LOW
 - Found by: qa
 - Phase: 52
@@ -28,6 +28,7 @@ Screenshot: none (computed-style evidence in the log).
 
 History:
 - qa: opened (Phase 52 follow-up FIX-READY verification, item 1).
+- qa: CLOSED (1.44.0 release gate). Retested on the packaged tree (`release/win-unpacked/Jovrel.exe`, FileVersion 1.44.0) via `e2e/phase52_followup_verify.spec.cjs` P52FU-2: the focused `.edit-run-editor` computes `borderTopColor: rgb(37, 99, 235)` (the accent), `borderTopWidth: 2px`, `borderTopLeftRadius: 5px`, `boxShadow: none`, `outlineStyle: none` - exactly ONE rounded accent border on focus, no second ring. The unit test `def373_runEditorFocusBorder.test.tsx` (3 tests) is green in `verify:full`. Evidence: `e2e/p52-packaged-1440.log` `[P52FU 2 run-editor focused]`.
 
 ## DEF-372: re-opening the same encrypted file in a session re-prompts for the password (the session cache is keyed by a fresh engine doc id)
 

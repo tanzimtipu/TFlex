@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { inflateSync } from 'node:zlib';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { PDFDocument, PDFArray, PDFName, StandardFonts } from 'pdf-lib';
+import { PDFDocument, PDFArray, PDFName, StandardFonts } from '@cantoo/pdf-lib';
 import { EngineService } from '../../../src/main/services/engine';
 import {
   WATERMARK_POSITIONS,
