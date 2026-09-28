@@ -23,6 +23,18 @@ export interface WhatsNewEntry {
 /** Ordered newest first. */
 export const WHATS_NEW: WhatsNewEntry[] = [
   {
+    version: '1.43.0',
+    date: '2026-09-28',
+    highlights: [
+      'Editing text is much better: selecting text focuses the text field, dragging moves the text itself, Confirm leaves no duplicate behind, and bold or italic no longer jumps the box back.',
+      "The first page's thumbnail no longer runs under the Undo button, and no control is clipped at the panel edge.",
+      'PDF tabs are now shown in full colour, and text boxes have thicker rounded borders.',
+      'OCR: cancelling actually stops the scan, and the suspects list now lives in the Inspector instead of crowding the context panel.',
+      'Sign-in is more reliable: a stale sign-in attempt could block the browser flow.',
+      'Opening an encrypted PDF now explains itself clearly instead of showing an unreadable error.',
+    ],
+  },
+  {
     version: '1.42.0',
     date: '2026-09-28',
     highlights: [
