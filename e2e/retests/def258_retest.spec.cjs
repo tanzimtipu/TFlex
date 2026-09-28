@@ -83,8 +83,10 @@ async function readPayloads(app) {
 // Select the first real text-layer run through the Edit-mode text tool.
 async function selectRun(win) {
   await toggleEditMode(win);
-  await win.waitForSelector('[data-edit-toolbar]', { timeout: 8000 });
-  await win.click('[data-edit-tool="text"]');
+  // Phase 41 retired the legacy EDIT toolbar; the EDIT stage's Action Dock
+  // hosts the edit verbs now (`[data-dock-verb="editText"]`).
+  await win.waitForSelector('[data-dock-verb="editText"]', { timeout: 8000 });
+  await win.click('[data-dock-verb="editText"]');
   await win.waitForTimeout(300);
   const span = win.locator('.pdf-page[data-page="1"] .textLayer span').filter({ hasText: /[A-Za-z]/ }).first();
   await span.waitFor({ state: 'attached', timeout: 10000 });
