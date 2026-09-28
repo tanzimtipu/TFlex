@@ -40,6 +40,7 @@ import type {
   SetSessionPayload,
 } from '../../../shared/accounts';
 import { cookieSummary, makeOAuthTrace } from './oauth-trace';
+import { NEON_AUTH_SESSION_VERIFIER_PARAM } from './oauth-callback';
 
 /**
  * The slice of Electron's session the exchange needs. Structural so a fake
@@ -70,12 +71,35 @@ export interface OAuthExchangeDeps {
   /** The configured Neon Auth base URL, or null when accounts are not
    *  configured. */
   authBaseUrl: string | null;
+  /**
+   * Phase 47 - the one-time verifier the hosted OAuth callback appended to the
+   * callbackURL when its Managed session-verification flow is in use. It is
+   * presented to `/get-session` (with the challenge cookie the session holds)
+   * so the provider mints the session cookie before we read the user. Absent
+   * for flows that set the session cookie directly; the exchange then behaves
+   * exactly as before. Never a token.
+   */
+  sessionVerifier?: string | null;
   /** Dev-oriented trace sink; never receives a token or cookie value. */
   onTrace?: (event: OAuthTraceEvent) => void;
+  /**
+   * Phase 47 - receives ONE compact, secret-free diagnosis line on failure:
+   * the failing step, the HTTP status, the cookie NAMES present, verifier
+   * presence and the provider's own message clipped. The main layer appends it
+   * to `oauth-trace.log`. Never receives a token, cookie value, OAuth code or
+   * verifier.
+   */
+  onDiagnostic?: (detail: string) => void;
 }
 
 /** Longest provider message copied into a user-facing / trace payload. */
 const MESSAGE_MAX_CHARS = 300;
+
+/** Fields a failure can contribute to the compact diagnosis line. */
+interface DiagnosticFields {
+  status?: number;
+  provider?: string;
+}
 
 /**
  * Run the whole exchange once. Never throws: every path resolves to an
@@ -85,10 +109,20 @@ export async function completeOAuthExchange(
   deps: OAuthExchangeDeps,
 ): Promise<OAuthCallbackOutcome> {
   const { session, vault, authBaseUrl } = deps;
+  const providedVerifier = typeof deps.sessionVerifier === 'string' ? deps.sessionVerifier.trim() : '';
+  const verifier = providedVerifier.length > 0 ? providedVerifier : null;
+  const verifierPresent = verifier !== null;
+  let cookieNames: string[] = [];
   const trace = (event: OAuthTraceEvent): void => deps.onTrace?.(event);
-  const fail = (reason: string, message: string): OAuthCallbackOutcome => {
+  const fail = (
+    reason: string,
+    message: string,
+    fields: DiagnosticFields = {},
+  ): OAuthCallbackOutcome => {
     trace(makeOAuthTrace('exchange-failed', { reason }));
-    return { ok: false, reason: 'error', message };
+    const detail = diagnosticLine(reason, fields, cookieNames, verifierPresent);
+    deps.onDiagnostic?.(detail);
+    return { ok: false, reason: 'error', message: `${message} [${detail}]` };
   };
 
   if (authBaseUrl === null || authBaseUrl.trim().length === 0) {
@@ -105,6 +139,7 @@ export async function completeOAuthExchange(
     return fail('cookies', `Could not read the auth-host cookies to complete the sign-in: ${errorText(error)}`);
   }
   trace(makeOAuthTrace('exchange-cookies', { host, ...cookieSummary(cookies) }));
+  cookieNames = cookieSummary(cookies).cookieNames;
   if (cookies.length === 0) {
     return fail(
       'no-cookie',
@@ -113,18 +148,29 @@ export async function completeOAuthExchange(
   }
 
   // 2. /get-session (better-auth). session.request attaches the Lax cookie.
+  // Phase 47 - when the Managed flow handed us a one-time verifier, present it
+  // here: the provider mints the session cookie from the challenge cookie +
+  // verifier and then answers with `{ session, user }`. Without it the hosted
+  // route sees only the challenge cookie and answers `null` (the operator's
+  // "no usable session").
+  const getSessionUrl =
+    verifier !== null
+      ? `${base}/get-session?${NEON_AUTH_SESSION_VERIFIER_PARAM}=${encodeURIComponent(verifier)}`
+      : `${base}/get-session`;
   let sessionResponse: Response;
   try {
-    sessionResponse = await session.request(`${base}/get-session`, { method: 'GET' });
+    sessionResponse = await session.request(getSessionUrl, { method: 'GET' });
   } catch (error) {
     return fail('reach', `Could not reach Neon Auth to complete the sign-in: ${errorText(error)}`);
   }
   trace(makeOAuthTrace('exchange-get-session', { status: sessionResponse.status }));
   if (!sessionResponse.ok) {
-    const detail = await providerDetail(sessionResponse);
+    const provider = await providerMessageOf(sessionResponse);
+    const detail = provider.length > 0 ? `: ${provider}` : '';
     return fail(
       'session-rejected',
       `Neon Auth rejected the session lookup (HTTP ${sessionResponse.status})${detail}.`,
+      { status: sessionResponse.status, provider },
     );
   }
   const user = readAccountUser(await parseJson(sessionResponse));
@@ -132,6 +178,7 @@ export async function completeOAuthExchange(
     return fail(
       'no-session',
       'Neon Auth returned no usable session for the sign-in cookie (it may have expired).',
+      { status: sessionResponse.status },
     );
   }
 
@@ -144,25 +191,52 @@ export async function completeOAuthExchange(
   }
   trace(makeOAuthTrace('exchange-token', { status: tokenResponse.status }));
   if (!tokenResponse.ok) {
-    const detail = await providerDetail(tokenResponse);
+    const provider = await providerMessageOf(tokenResponse);
+    const detail = provider.length > 0 ? `: ${provider}` : '';
     return fail(
       'token-rejected',
       `Neon Auth rejected the token request (HTTP ${tokenResponse.status})${detail}.`,
+      { status: tokenResponse.status, provider },
     );
   }
   const token = readToken(await parseJson(tokenResponse));
   if (token === null) {
-    return fail('no-token', 'Neon Auth returned no session token for this sign-in.');
+    return fail('no-token', 'Neon Auth returned no session token for this sign-in.', {
+      status: tokenResponse.status,
+    });
   }
 
   // 4. Store through the vault (encrypted when safeStorage is available).
   try {
     await vault.setSession({ user, token });
   } catch (error) {
-    return fail('store', `The sign-in succeeded but the session could not be stored: ${errorText(error)}`);
+    return fail('store', `The sign-in succeeded but the session could not be stored: ${errorText(error)}`, {
+      status: tokenResponse.status,
+    });
   }
   trace(makeOAuthTrace('exchange-stored', { host }));
   return { ok: true };
+}
+
+/**
+ * Build the ONE compact, secret-free diagnosis line a failure surfaces (in the
+ * UI message) and persists (to `oauth-trace.log`): the failing step, the HTTP
+ * status, the cookie NAMES present (NEVER values), verifier presence and the
+ * provider's own clipped message. Only fixed machine codes and cookie names
+ * flow in, so no token, cookie value, OAuth code or verifier can appear.
+ */
+function diagnosticLine(
+  step: string,
+  fields: DiagnosticFields,
+  cookieNames: readonly string[],
+  verifierPresent: boolean,
+): string {
+  const status = typeof fields.status === 'number' ? String(fields.status) : 'none';
+  const cookies = cookieNames.length > 0 ? cookieNames.join(',') : 'none';
+  const provider = fields.provider !== undefined && fields.provider.length > 0 ? `"${fields.provider}"` : 'none';
+  return `step=${step} status=${status} cookies=${cookies} verifier=${
+    verifierPresent ? 'present' : 'absent'
+  } provider=${provider}`;
 }
 
 /** Build the renderer-safe identity from the `/get-session` body. */
@@ -199,15 +273,15 @@ async function parseJson(response: Response): Promise<unknown> {
 }
 
 /**
- * The provider's real, non-secret diagnosis for a rejected call, prefixed for
- * a message. Falls back to the HTTP status text, then to nothing. Clipped so
- * a hostile body cannot produce an unbounded user-facing string.
+ * The provider's real, non-secret message for a rejected call. Falls back to
+ * the HTTP status text, then to nothing. Clipped so a hostile body cannot
+ * produce an unbounded user-facing string, and secret-free by construction.
  */
-async function providerDetail(response: Response): Promise<string> {
+async function providerMessageOf(response: Response): Promise<string> {
   const message = readProviderMessage(await parseJson(response));
-  if (message.length > 0) return `: ${clip(message)}`;
+  if (message.length > 0) return clip(message);
   const statusText = response.statusText.trim();
-  return statusText.length > 0 ? `: ${clip(statusText)}` : '';
+  return statusText.length > 0 ? clip(statusText) : '';
 }
 
 /** Pull `message` (or `error` / `error.message`) out of a provider body. */

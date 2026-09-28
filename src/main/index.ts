@@ -55,6 +55,7 @@ import { PostgrestSyncTransport } from './services/accounts/transport';
 import { createSettingsPort, createSignaturesPort } from './services/accounts/ports';
 import { OAuthCallbackService } from './services/accounts/oauth-callback';
 import { registerOAuthCallbackIpc } from './services/accounts/oauth-callback-ipc';
+import { appendOAuthTraceLine } from './services/accounts/oauth-trace-file';
 import { installAuthOriginHeader } from './services/accounts/origin-header';
 import { UpdateService } from './services/update-service';
 import { LEGACY_USERDATA_DIRNAME, migrateLegacyUserData } from './services/userdata-migration';
@@ -382,7 +383,15 @@ export async function start(): Promise<void> {
         session: authExchangeSession,
         vault: accountsVault,
         authBaseUrl: getAccountsConfig(process.env, app.getAppPath()).authBaseUrl,
+        // Phase 47 - the hosted callback appends its one-time session verifier
+        // to the loopback URL; consume it now (the popup closes a tick later)
+        // so the exchange can mint the session cookie. Never logged.
+        sessionVerifier: oauthCallback.takeVerifier(),
         onTrace: broadcastOAuthTrace,
+        // Phase 47 - one compact, secret-free failure line, persisted so the
+        // operator can read the exact failing step without a debugger.
+        onDiagnostic: (detail) =>
+          appendOAuthTraceLine({ dir: app.getPath('userData'), line: detail }),
       })
         .then(broadcastOAuthOutcome)
         // The exchange resolves on every path; this guard only exists so an

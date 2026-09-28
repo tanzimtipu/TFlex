@@ -295,3 +295,51 @@ describe('registerOAuthCallbackIpc', () => {
     expect(stop).toHaveBeenCalledTimes(1);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Phase 47 - the one-time Managed session verifier.
+// ---------------------------------------------------------------------------
+
+describe('OAuthCallbackService session verifier (Phase 47)', () => {
+  const VERIFIER = 'one-time-verifier-secret';
+
+  it('captures the verifier from a valid landing and consumes it exactly once', async () => {
+    const { service, rec, url } = await start();
+    expect(await status(`${url}&neon_auth_session_verifier=${VERIFIER}`)).toBe(200);
+    expect(await rec.next()).toEqual({ ok: true });
+    expect(service.takeVerifier()).toBe(VERIFIER);
+    // Consumed: a second read gets nothing, so the secret is not retained.
+    expect(service.takeVerifier()).toBeNull();
+  });
+
+  it('returns null when the landing carried no verifier', async () => {
+    const { service, rec, url } = await start();
+    expect(await status(url)).toBe(200);
+    expect(await rec.next()).toEqual({ ok: true });
+    expect(service.takeVerifier()).toBeNull();
+  });
+
+  it('does not capture a verifier from a refused (wrong token) request', async () => {
+    const { service, url } = await start();
+    const wrong = url.replace(/token=[^&]+/, 'token=not-the-token');
+    expect(await status(`${wrong}&neon_auth_session_verifier=${VERIFIER}`)).toBe(403);
+    expect(service.takeVerifier()).toBeNull();
+  });
+
+  it('drops a previous flow verifier on a new start', async () => {
+    const { service, rec, url } = await start();
+    expect(await status(`${url}&neon_auth_session_verifier=${VERIFIER}`)).toBe(200);
+    expect(await rec.next()).toEqual({ ok: true });
+    // A new flow supersedes the old one before the verifier is consumed.
+    await service.start();
+    expect(service.takeVerifier()).toBeNull();
+  });
+
+  it('clears the verifier on dispose', async () => {
+    const { service, rec, url } = await start();
+    expect(await status(`${url}&neon_auth_session_verifier=${VERIFIER}`)).toBe(200);
+    expect(await rec.next()).toEqual({ ok: true });
+    service.dispose();
+    expect(service.takeVerifier()).toBeNull();
+  });
+});

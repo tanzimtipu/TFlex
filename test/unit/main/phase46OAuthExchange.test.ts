@@ -51,6 +51,7 @@ type Route = () => Response | Promise<Response>;
 
 interface FakeSession extends OAuthExchangeSession {
   calls: string[];
+  inits: ({ method?: string; headers?: Record<string, string> } | undefined)[];
   cookieCalls: number;
 }
 
@@ -60,8 +61,10 @@ function makeSession(options: {
   routes?: Record<string, Route>;
 }): FakeSession {
   const calls: string[] = [];
+  const inits: ({ method?: string; headers?: Record<string, string> } | undefined)[] = [];
   const session: FakeSession = {
     calls,
+    inits,
     cookieCalls: 0,
     cookies: {
       get: async (): Promise<{ name?: unknown }[]> => {
@@ -70,8 +73,9 @@ function makeSession(options: {
         return options.cookies ?? [];
       },
     },
-    request: async (url): Promise<Response> => {
+    request: async (url, init): Promise<Response> => {
       calls.push(url);
+      inits.push(init);
       const route = options.routes?.[url];
       if (route === undefined) throw new Error(`unexpected request: ${url}`);
       return route();
@@ -384,5 +388,164 @@ describe('completeOAuthExchange - robustness', () => {
       authBaseUrl: BASE,
     });
     expect(JSON.stringify(outcome)).not.toContain(SECRET_TOKEN);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Phase 47 - Managed session-verifier flow.
+// ---------------------------------------------------------------------------
+
+const VERIFIER = 'verifier-one-time-secret';
+const VERIFIER_ROUTES: Record<string, Route> = {
+  [`${BASE}/get-session?neon_auth_session_verifier=${VERIFIER}`]: () => jsonResponse(USER_BODY),
+  [`${BASE}/token`]: () => jsonResponse({ token: SECRET_TOKEN }),
+};
+
+describe('completeOAuthExchange - session verifier (Phase 47)', () => {
+  it('presents the one-time verifier on /get-session when one was captured', async () => {
+    const session = makeSession({ cookies: [{ name: COOKIE_NAME }], routes: VERIFIER_ROUTES });
+    const stored: SetSessionPayload[] = [];
+    const outcome = await completeOAuthExchange({
+      session,
+      vault: makeVault(stored),
+      authBaseUrl: BASE,
+      sessionVerifier: VERIFIER,
+    });
+    expect(outcome).toEqual({ ok: true });
+    expect(session.calls).toEqual([
+      `${BASE}/get-session?neon_auth_session_verifier=${VERIFIER}`,
+      `${BASE}/token`,
+    ]);
+    expect(stored).toHaveLength(1);
+  });
+
+  it('calls the plain /get-session when no verifier was captured', async () => {
+    const session = makeSession({ cookies: [{ name: COOKIE_NAME }], routes: HAPPY_ROUTES });
+    const outcome = await completeOAuthExchange({
+      session,
+      vault: makeVault([]),
+      authBaseUrl: BASE,
+      sessionVerifier: null,
+    });
+    expect(outcome).toEqual({ ok: true });
+    expect(session.calls[0]).toBe(`${BASE}/get-session`);
+  });
+
+  it('ignores an empty verifier string rather than sending an empty parameter', async () => {
+    const session = makeSession({ cookies: [{ name: COOKIE_NAME }], routes: HAPPY_ROUTES });
+    const outcome = await completeOAuthExchange({
+      session,
+      vault: makeVault([]),
+      authBaseUrl: BASE,
+      sessionVerifier: '   ',
+    });
+    expect(outcome).toEqual({ ok: true });
+    expect(session.calls[0]).toBe(`${BASE}/get-session`);
+  });
+
+  it('does not hand-roll an Origin header; the installed webRequest rule supplies it', async () => {
+    // The Electron probe (Phase 47) proves session.fetch passes through
+    // onBeforeSendHeaders and receives the trusted Origin. The exchange
+    // therefore sends no Origin of its own, so the rule stays the single
+    // source of that header.
+    const session = makeSession({ cookies: [{ name: COOKIE_NAME }], routes: VERIFIER_ROUTES });
+    await completeOAuthExchange({
+      session,
+      vault: makeVault([]),
+      authBaseUrl: BASE,
+      sessionVerifier: VERIFIER,
+    });
+    for (const init of session.inits) {
+      expect(init?.headers?.Origin).toBeUndefined();
+      expect(init?.headers?.origin).toBeUndefined();
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Phase 47 - compact failure diagnostics.
+// ---------------------------------------------------------------------------
+
+describe('completeOAuthExchange - diagnostics (Phase 47)', () => {
+  it('reports step, status, cookie names and verifier presence on a null session', async () => {
+    const session = makeSession({
+      cookies: [{ name: COOKIE_NAME, value: 'COOKIE-SECRET' }],
+      routes: { [`${BASE}/get-session?neon_auth_session_verifier=${VERIFIER}`]: () => jsonResponse(null) },
+    });
+    const lines: string[] = [];
+    const outcome = await completeOAuthExchange({
+      session,
+      vault: makeVault([]),
+      authBaseUrl: BASE,
+      sessionVerifier: VERIFIER,
+      onDiagnostic: (detail) => lines.push(detail),
+    });
+    expect(outcome.ok).toBe(false);
+    if (outcome.ok) throw new Error('unreachable');
+    expect(lines).toHaveLength(1);
+    expect(lines[0]).toContain('step=no-session');
+    expect(lines[0]).toContain('status=200');
+    expect(lines[0]).toContain(COOKIE_NAME);
+    expect(lines[0]).toContain('verifier=present');
+    // The UI message carries the same compact line.
+    expect(outcome.message).toContain(lines[0]);
+    // No secret ever appears.
+    expect(lines[0]).not.toContain('COOKIE-SECRET');
+    expect(lines[0]).not.toContain(SECRET_TOKEN);
+    expect(lines[0]).not.toContain(VERIFIER);
+    expect(outcome.message).not.toContain('COOKIE-SECRET');
+    expect(outcome.message).not.toContain(VERIFIER);
+  });
+
+  it('reports verifier=absent when the flow set the session cookie directly', async () => {
+    const session = makeSession({
+      cookies: [{ name: COOKIE_NAME }],
+      routes: { [`${BASE}/get-session`]: () => jsonResponse(null) },
+    });
+    const lines: string[] = [];
+    await completeOAuthExchange({
+      session,
+      vault: makeVault([]),
+      authBaseUrl: BASE,
+      onDiagnostic: (detail) => lines.push(detail),
+    });
+    expect(lines[0]).toContain('verifier=absent');
+    expect(lines[0]).toContain(`cookies=${COOKIE_NAME}`);
+  });
+
+  it('carries the clipped provider message into the diagnostic line', async () => {
+    const session = makeSession({
+      cookies: [{ name: COOKIE_NAME }],
+      routes: {
+        [`${BASE}/get-session`]: () =>
+          jsonResponse({ message: 'Invalid\nsession cookie' }, 401, 'Unauthorized'),
+      },
+    });
+    const lines: string[] = [];
+    await completeOAuthExchange({
+      session,
+      vault: makeVault([]),
+      authBaseUrl: BASE,
+      onDiagnostic: (detail) => lines.push(detail),
+    });
+    expect(lines[0]).toContain('step=session-rejected');
+    expect(lines[0]).toContain('status=401');
+    expect(lines[0]).toContain('provider="Invalid session cookie"');
+    // Flattened to one line: a hostile body cannot forge a second log entry.
+    expect(lines[0]).not.toContain('\n');
+  });
+
+  it('never calls onDiagnostic on the happy path', async () => {
+    const session = makeSession({ cookies: [{ name: COOKIE_NAME }], routes: HAPPY_ROUTES });
+    let called = 0;
+    await completeOAuthExchange({
+      session,
+      vault: makeVault([]),
+      authBaseUrl: BASE,
+      onDiagnostic: () => {
+        called += 1;
+      },
+    });
+    expect(called).toBe(0);
   });
 });

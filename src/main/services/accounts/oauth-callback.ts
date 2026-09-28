@@ -60,6 +60,17 @@ export const OAUTH_CALLBACK_COMPLETION_URL_GRACE_MS = 30_000;
 const OAUTH_CALLBACK_SCHEME = 'http';
 const TOKEN_PARAM = 'token';
 
+/**
+ * Phase 47 - the query parameter the Neon hosted OAuth callback appends to the
+ * callbackURL when its Managed session-verification flow is in use. Main must
+ * read it from the loopback redirect because the loopback page is static and
+ * cannot run the SDK; it hands it straight to the exchange, which presents it
+ * to `<auth>/get-session` so the provider mints the session cookie. The value
+ * is a one-time secret: it is never traced, logged, stored or returned to the
+ * renderer.
+ */
+export const NEON_AUTH_SESSION_VERIFIER_PARAM = 'neon_auth_session_verifier';
+
 type HttpServer = import('node:http').Server;
 type HttpRequest = import('node:http').IncomingMessage;
 type HttpResponse = import('node:http').ServerResponse;
@@ -91,6 +102,13 @@ interface ActiveCallback {
 export interface OAuthCallbackController {
   start(): Promise<OAuthCallbackStartResult>;
   stop(): Promise<void>;
+  /**
+   * Phase 47 - consume the one-time session verifier the last valid landing
+   * carried, or null when it carried none (or it was already consumed). Never
+   * returned to the renderer: the wiring layer hands it straight to the main
+   * exchange. The value is cleared on read, on a new start and on dispose.
+   */
+  takeVerifier(): string | null;
 }
 
 export interface OAuthCallbackServiceOptions {
@@ -120,6 +138,12 @@ export class OAuthCallbackService implements OAuthCallbackController {
    * closing), after the grace window, and on dispose.
    */
   private lastCallbackUrl: string | null = null;
+  /**
+   * Phase 47 - the one-time verifier the last valid landing carried, held only
+   * until `takeVerifier()` hands it to the exchange. Never traced, logged or
+   * returned to the renderer.
+   */
+  private lastVerifier: string | null = null;
   private completionUrlTimer: NodeJS.Timeout | null = null;
   private readonly timeoutMs: number;
   private readonly completionUrlGraceMs: number;
@@ -160,12 +184,25 @@ export class OAuthCallbackService implements OAuthCallbackController {
     this.lastCallbackUrl = null;
   }
 
+  /**
+   * Phase 47 - consume the one-time session verifier. The wiring layer calls
+   * this synchronously when the landing reports `ok`, so the secret lives in
+   * memory only between the redirect and the exchange that presents it.
+   */
+  takeVerifier(): string | null {
+    const verifier = this.lastVerifier;
+    this.lastVerifier = null;
+    return verifier;
+  }
+
   async start(): Promise<OAuthCallbackStartResult> {
     // Single-flight: replace, never leak a second bound server. The replaced
     // caller is told its flow was cancelled rather than left hanging.
     if (this.active !== null) this.finish('cancelled');
     // DEF-365 - a new flow supersedes the previous flow's retained URL.
     this.clearCompletionUrl();
+    // Phase 47 - and its one-time verifier, which must never carry over.
+    this.lastVerifier = null;
 
     const { createServer } = await loadHttp();
     const token = defaultToken();
@@ -207,6 +244,7 @@ export class OAuthCallbackService implements OAuthCallbackController {
   dispose(): void {
     this.closeActive();
     this.clearCompletionUrl();
+    this.lastVerifier = null;
   }
 
   private handle(req: HttpRequest, res: HttpResponse, token: string): void {
@@ -224,7 +262,8 @@ export class OAuthCallbackService implements OAuthCallbackController {
       respond(res, 405, METHOD_PAGE);
       return;
     }
-    const provided = readQueryParam(queryAt === -1 ? '' : url.slice(queryAt + 1), TOKEN_PARAM);
+    const query = queryAt === -1 ? '' : url.slice(queryAt + 1);
+    const provided = readQueryParam(query, TOKEN_PARAM);
     // Single-use: `this.active` is cleared the instant a valid callback lands,
     // so a late replay (or a wrong/missing token) is refused. A refused
     // request does NOT consume the flow.
@@ -232,6 +271,12 @@ export class OAuthCallbackService implements OAuthCallbackController {
       respond(res, 403, FORBIDDEN_PAGE);
       return;
     }
+    // Phase 47 - the hosted callback appends its one-time session verifier to
+    // the callbackURL. Capture it (value only, never traced) so the main
+    // exchange can present it to `<auth>/get-session` and have the provider
+    // mint the session cookie. Absent for flows that set the cookie directly.
+    const verifier = readQueryParam(query, NEON_AUTH_SESSION_VERIFIER_PARAM);
+    this.lastVerifier = verifier !== null && verifier.length > 0 ? verifier : null;
     respond(res, 200, SUCCESS_PAGE);
     this.finish('ok');
   }

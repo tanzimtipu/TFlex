@@ -16,7 +16,7 @@ import type { OAuthCallbackController } from './oauth-callback';
 
 export function registerOAuthCallbackIpc(
   ipcMain: Pick<IpcMain, 'handle'>,
-  service: OAuthCallbackController,
+  service: Pick<OAuthCallbackController, 'start' | 'stop'>,
 ): void {
   // Renderer -> main: bind the listener and resolve `{ callbackUrl }`. Only
   // the invoking renderer receives the URL (and therefore the one-time token).
