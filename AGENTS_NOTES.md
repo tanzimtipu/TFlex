@@ -4291,3 +4291,58 @@ into `.env` (`GH_TOKEN` + `TFLEX_GH_TOKEN`) and worked immediately. NOTE: the ol
 transcript during diagnosis - it was already dead, but treat such a leak as a revoke-and-regenerate event.
 When a release blocks on 401, check the two credentials separately: a successful `git push` does NOT mean the
 API token is valid.
+
+## 2026-09-28: Release 1.43.0 - the 16-item round, and two bugs that our MEASUREMENTS were hiding
+
+Release 1.43.0 is published: https://github.com/tanzimtipu/tflex-releases/releases/tag/v1.43.0 (title "Jovrel
+v1.43.0") with all four assets, and the public feed verifies (`version: 1.43.0`, path
+`Jovrel-Setup-1.43.0-x64.exe`, sha512 `KNHwm9OX...`, size 173,354,690). Commits: `27039bc` (the round, 41
+files), `9b89b2d` (notes), `9369bad` (bump), tag `v1.43.0`. Gates: `verify:full` 465 files / **5931 tests**;
+the packaged canonical spec 9/9; the packaged phase51/49/48/45 suites 33/33; DEF-370/371 CLOSED.
+
+**LESSON 1 (the important one) - a fix "verified" by the wrong measurement is not fixed, and the operator will
+report it AGAIN.** Two of the 16 items were RE-REPORTS, and both had passed our earlier assertions:
+- **the thumbnail ring vs the Undo bar**: the previous test measured the `.thumb` ELEMENT box and found a gap.
+  The real defect was that the scroller had NO top padding, so the selection RING (which paints OUTSIDE the
+  element box) was CLIPPED at the scroller edge - only the corner arcs showed, which reads exactly as "the
+  border runs under the Undo bar". Fix: an 8px top gutter (which the virtualizer already assumed).
+- **the clipped delete icon**: the row's label could not shrink (`min-width: auto`), so a longer kind label
+  pushed the 24px delete control past the row, where `overflow: hidden` clipped it. Fix: `min-width: 0` on the
+  label + `flex: 0 0 auto` on the control.
+**Rule: when the operator reports a visual overlap TWICE, measure the PAINTED result (element box + outline
+width/spread/blur) and the flex sizing chain (min-width/flex-shrink), never just `getBoundingClientRect` of the
+element you think is involved.** Both of these were "passing" tests while the operator could see the bug.
+
+**LESSON 2 - an error that prints `[object Object]` is a defect in its own right.** The operator's unopenable
+PDF surfaced as `Could not open: <path> ([object Object])` because `${check.error}` stringified a `{code,message}`
+object. The file itself turned out to be **encrypted** (RC4-128, owner password; pdf-lib cannot load encrypted
+documents at all - a genuine capability gap, not a parser bug), but the unreadable message cost a whole round of
+diagnosis. Fix: a shared `formatErrorMessage` (Error / string / object-with-code / null) + a specific sentence
+per open-failure code (`encrypted`, `not-pdf`, `corrupt`, `io`). Never stringify an unknown error with a template.
+
+**LESSON 3 - the sign-in failure was a STALE challenge, and the diagnosis came from the cookie ATTRIBUTES.**
+The operator's Google flow failed with `400 Session challenge cookie not found` while the app's jar DID hold both
+spellings of the challenge cookie (`...session_challange` - Neon's legacy typo - and `...session_challenge`),
+path `/`, `sameSite=none`, fresh, and `session.fetch` sends them; a `session_token` was minted minutes later, so
+the flow CAN complete. The fix clears the challenge cookies at flow START so each attempt presents a fresh one.
+**When a cookie-based auth step says "not found", print each cookie's NAME/DOMAIN/PATH/sameSite/EXPIRY (never the
+value) before touching the client.**
+
+**LESSON 4 - the edit-text cluster had four real root causes**, none of which was "the drag is broken": (a) the
+selection surface was painted UNDER the opaque white run cover, so the selection was invisible; (b) the drag
+updated the box rect while the preview followed a STALE `textTarget.rect`, so only the blue box moved; (c)
+Confirm never cleared `textTarget`, so the cover + preview kept repainting the run at the OLD rect forever - that
+was the "duplicate"; (d) the run cover ignored the baseline shift, so superscript/subscript glyphs straddled it -
+that was the "second copy". The box tool's implementation was the model to mirror.
+
+**LESSON 5 - an AbortSignal cannot cross IPC.** The OCR cancel is a `engine:ocrCancel(docId)` channel with a
+run-scoped token registered at run start and deleted in a `finally` (so a cancel after the run is a free no-op
+and a stale cancel cannot bleed into the next run). The main side checks it before each page, before each page's
+`Tr=3` write and before the final commit, and restores the pre-run bytes - a cancelled OCR leaves the document
+untouched (`modified` false, no partial text, no undo entry), and the pending recognize resolves
+`{ ok:false, error:{ code:'cancelled' } }` as its terminal state (no terminal progress phase is emitted).
+
+**Phase 51 also delivered:** automatic sync (sign-in completion, signature add/delete, settings change, all
+funnelled into the existing coordinator; the manual control kept as backup), full-strength tab colours (the
+8% wash read as "a shade"), the OCR suspects panel moved into the Inspector, thicker rounded text-box borders,
+and a readable encrypted-PDF message.
