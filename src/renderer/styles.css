@@ -11492,6 +11492,12 @@ rect.ann-highlight.ann-preview {
 .tools-palette-entry[data-tool-id="importComments"]:hover .tools-palette-entry-icon { color: var(--sem-neutral); }
 .tools-palette-entry[data-tool-id="fillFromCsv"] .tools-palette-entry-icon,
 .tools-palette-entry[data-tool-id="fillFromCsv"]:hover .tools-palette-entry-icon { color: var(--sem-affirmative); }
+.tools-palette-entry[data-tool-id="exportFormData"] .tools-palette-entry-icon,
+.tools-palette-entry[data-tool-id="exportFormData"]:hover .tools-palette-entry-icon { color: var(--sem-neutral); }
+.tools-palette-entry[data-tool-id="importFormData"] .tools-palette-entry-icon,
+.tools-palette-entry[data-tool-id="importFormData"]:hover .tools-palette-entry-icon { color: var(--sem-affirmative); }
+.tools-palette-entry[data-tool-id="engineeringLayers"]:hover .tools-palette-entry-icon { color: var(--sem-neutral); }
+.tools-palette-entry[data-tool-id="documentInfo"]:hover .tools-palette-entry-icon { color: var(--sem-neutral); }
 .tools-palette-entry[data-tool-id="multi-mode"] .tools-palette-entry-icon,
 .tools-palette-entry[data-tool-id="multi-mode"]:hover .tools-palette-entry-icon { color: var(--sem-neutral); }
 
@@ -14657,7 +14663,11 @@ cursor: pointer;
 .action-dock-verb[data-dock-verb='exportComments']:not(.action-dock-verb-primary):not([aria-pressed='true']):not(:disabled) { color: var(--sem-neutral); }
 .action-dock-verb[data-dock-verb='importComments']:not(.action-dock-verb-primary):not([aria-pressed='true']):not(:disabled) { color: var(--sem-neutral); }
 .action-dock-verb[data-dock-verb='fillFromCsv']:not(.action-dock-verb-primary):not([aria-pressed='true']):not(:disabled) { color: var(--sem-affirmative); }
+.action-dock-verb[data-dock-verb='exportFormData']:not(.action-dock-verb-primary):not([aria-pressed='true']):not(:disabled) { color: var(--sem-neutral); }
+.action-dock-verb[data-dock-verb='importFormData']:not(.action-dock-verb-primary):not([aria-pressed='true']):not(:disabled) { color: var(--sem-affirmative); }
 .action-dock-verb[data-dock-verb='validateDocument']:not(.action-dock-verb-primary):not([aria-pressed='true']):not(:disabled) { color: var(--sem-neutral); }
+.action-dock-verb[data-dock-verb='engineeringLayers']:not(.action-dock-verb-primary):not([aria-pressed='true']):not(:disabled) { color: var(--sem-neutral); }
+.action-dock-verb[data-dock-verb='documentInfo']:not(.action-dock-verb-primary):not([aria-pressed='true']):not(:disabled) { color: var(--sem-neutral); }
 .action-dock-verb[data-dock-verb='optimize']:not(.action-dock-verb-primary):not([aria-pressed='true']):not(:disabled) { color: var(--sem-affirmative); }
 .action-dock-verb[data-dock-verb='audit']:not(.action-dock-verb-primary):not([aria-pressed='true']):not(:disabled) { color: var(--sem-neutral); }
 .action-dock-verb[data-dock-verb='exportPages']:not(.action-dock-verb-primary):not([aria-pressed='true']):not(:disabled) { color: var(--sem-affirmative); }
@@ -17043,6 +17053,120 @@ cursor: pointer;
 .reading-nav-button:disabled {
   opacity: 0.45;
   cursor: default;
+}
+
+/* ---------------------------------------------------------------------------
+   Phase 57 (feature A) — the engineering layers panel, the Document info
+   dialog and the 3D limitation bar. Calm, dense and themable: neutral surfaces,
+   the one accent only for focus, no gradients. The 3D bar is a slim strip above
+   the page area, never an overlay.
+   --------------------------------------------------------------------------- */
+
+.engineering-layers-count {
+  margin: 0 0 8px;
+  font-size: 12px;
+  color: var(--fg-muted);
+}
+
+.engineering-layers-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: 320px;
+  overflow-y: auto;
+}
+
+.engineering-layer-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background var(--motion-duration-fast) var(--motion-ease-standard);
+}
+
+.engineering-layer-label:hover {
+  background: var(--bg-hover);
+}
+
+.engineering-layers-empty {
+  padding: 16px 0;
+  color: var(--fg-muted);
+}
+
+.doc-info-counts {
+  display: flex;
+  gap: 16px;
+  margin-bottom: 12px;
+  color: var(--fg-soft);
+  font-size: 12px;
+}
+
+.doc-info-section {
+  margin-bottom: 14px;
+}
+
+.doc-info-section-label {
+  margin-bottom: 4px;
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--fg-muted);
+}
+
+.doc-info-section-empty {
+  color: var(--fg-faint);
+  font-size: 12px;
+}
+
+.doc-info-pairs {
+  margin: 0;
+}
+
+.doc-info-pair {
+  display: flex;
+  gap: 10px;
+  padding: 3px 0;
+  border-bottom: 1px solid var(--divider);
+}
+
+.doc-info-key {
+  flex: 0 0 40%;
+  margin: 0;
+  color: var(--fg-muted);
+  font-size: 12px;
+}
+
+.doc-info-value {
+  flex: 1 1 auto;
+  margin: 0;
+  color: var(--fg);
+  font-size: 12px;
+  word-break: break-word;
+}
+
+.doc-info-no-cad {
+  padding: 12px 0;
+  color: var(--fg-muted);
+}
+
+.pdf3d-notice {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-raised);
+  color: var(--fg-soft);
+  font-size: 12px;
+}
+
+.pdf3d-notice-text {
+  line-height: 1.4;
 }
 
 

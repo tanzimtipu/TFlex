@@ -7,13 +7,18 @@ import type {
   EditFont,
   ExportPageEntry,
   ExportPagesPayload,
+  FdfOpenError,
   FillFormFieldPayload,
+  FormDataImportReport,
   FormField,
   OcrProgress,
   OcrRecognizeOptions,
   OcrSuspect,
   OptimizePreset,
   PageLabelEntry,
+  Pdf3dContent,
+  PdfCadMetadata,
+  PdfLayer,
   PdfOpenError,
   PdfValidationDefaults,
   PrintWindowContext,
@@ -233,8 +238,15 @@ import {
   FillFromCsvDialog,
   type FillFromCsvApplied,
 } from "./components/FillFromCsvDialog";
+import {
+  FormDataIoDialog,
+  type FormDataFormat,
+} from "./components/FormDataIoDialog";
 import { ValidateDocumentDialog } from "./components/ValidateDocumentDialog";
 import { ValidationNotice } from "./components/ValidationNotice";
+import { EngineeringLayersPanel } from "./components/EngineeringLayersPanel";
+import { DocumentInfoDialog } from "./components/DocumentInfoDialog";
+import { Pdf3dNotice } from "./components/Pdf3dNotice";
 import {
   blockedSaveMessage,
   effectiveValidationDefaults,
@@ -526,6 +538,9 @@ export interface DocumentSurfaceColumnProps {
   conversion: ConvertNoticeState | undefined;
   validation: ValidationNoticeState | undefined;
   protection: DocumentProtectionState | undefined;
+  /** Phase 57 (feature A) — 3D annotations the app cannot render. Rendered as
+   *  a non-dismissible slim bar above the page area, never an overlay. */
+  pdf3d?: readonly Pdf3dContent[];
   onDismissConversion: () => void;
   onDismissValidation: () => void;
   onDismissProtection: () => void;
@@ -561,6 +576,11 @@ export function DocumentSurfaceColumn(props: DocumentSurfaceColumnProps): ReactE
           protection={props.protection}
           onDismiss={props.onDismissProtection}
         />
+      )}
+      {/* Phase 57 (feature A) — the 3D limitation bar. Non-dismissible and
+          above the page area; it never covers or hides the canvas. */}
+      {props.pdf3d !== undefined && props.pdf3d.length > 0 && (
+        <Pdf3dNotice entries={props.pdf3d} />
       )}
       {/* Phase 56 (features A / C) — the format-gated reader entry. Gated ONLY
           on the tab's source format (non-dismissible), so dismissing the
@@ -760,12 +780,28 @@ export function App(): ReactElement {
   const [commentImportOpen, setCommentImportOpen] = useState(false);
   // Phase 53 (feature G mode 2) — the Fill-form-fields-from-CSV dialog.
   const [fillFromCsvOpen, setFillFromCsvOpen] = useState(false);
+  // Phase 57 (feature B) — the Export / Import form-data dialog. `mode`
+  // decides which half renders; the format selector lives on the dialog.
+  const [formDataIo, setFormDataIo] = useState<{
+    open: boolean;
+    mode: "export" | "import";
+  }>({ open: false, mode: "export" });
   // Phase 54 (features D + E) — the Validate-document dialog and the per-tab
   // report cards (keyed by tab id; dismissing deletes the entry for good).
   const [validateOpen, setValidateOpen] = useState(false);
   const [validationNotices, setValidationNotices] = useState<
     Record<string, ValidationNoticeState>
   >({});
+  // Phase 57 (feature A) — the per-document engineering surfaces, keyed by the
+  // engine doc id (stable for the tab's life). Fetched when the active doc
+  // changes and refreshed after a successful layer toggle. The 3D list is
+  // also rendered as a non-dismissible notice above the page area.
+  const [layersByDoc, setLayersByDoc] = useState<Record<string, PdfLayer[]>>({});
+  const [cadByDoc, setCadByDoc] = useState<Record<string, PdfCadMetadata | null>>({});
+  const [content3dByDoc, setContent3dByDoc] = useState<Record<string, Pdf3dContent[]>>({});
+  // The two feature-A dialogs.
+  const [engineeringLayersOpen, setEngineeringLayersOpen] = useState(false);
+  const [documentInfoOpen, setDocumentInfoOpen] = useState(false);
   // B8 — delete pages dialog. The toolbar's Delete control opens
   // this dialog; the rail's per-thumb delete still flows through
   // the existing onDelete callback directly (no dialog) so a
@@ -6342,6 +6378,156 @@ pushToast(
     [pushToast],
   );
 
+  // ---- Phase 57 (feature B): Export / Import form data (FDF | XFDF) -----
+  //
+  // Distinct from the Phase-12 comment FDF verbs above: this payload is the
+  // AcroForm field VALUES, not annotations. Both verbs are gated on the
+  // active document actually having form fields (the registry's
+  // `form-fields` precondition). The export flow is TWO IPC calls —
+  // `exportFormData` yields the bytes, `saveFormDataFile` writes them; the
+  // import flow is `loadFormData` then `importFormData`, and a success
+  // refreshes form state through the SAME path a normal fill uses.
+
+  const onExportFormDataClick = useCallback((): void => {
+    setFormDataIo({ open: true, mode: "export" });
+  }, []);
+
+  const onImportFormDataClick = useCallback((): void => {
+    setFormDataIo({ open: true, mode: "import" });
+  }, []);
+
+  const pickFormDataFile = useCallback(async (): Promise<string | null> => {
+    if (window.tflex.openFileDialog === undefined) return null;
+    return window.tflex.openFileDialog("formData");
+  }, []);
+
+  /** Describe an `FdfOpenError` (a load failure) in user terms. */
+  const describeFormDataLoadError = (code: FdfOpenError): string => {
+    switch (code) {
+      case "not-fdf":
+        return "That file is not an FDF or XFDF form-data file.";
+      case "corrupt":
+        return "The form-data file is corrupt or unreadable.";
+      case "io":
+        return "Could not read the form-data file.";
+    }
+  };
+
+  /** Describe an `FdfOpenError` (a save/write failure) in user terms. */
+  const describeFormDataSaveError = (code: FdfOpenError): string =>
+    code === "io"
+      ? "Could not write the form-data file."
+      : "The form-data file could not be written.";
+
+  const runFormDataExport = useCallback(
+    async (
+      format: FormDataFormat,
+    ): Promise<
+      { path: string; count: number } | { cancelled: true } | { error: string }
+    > => {
+      const activeId = activeTabIdRefLocal.current;
+      if (activeId === null) return { error: "No active document." };
+      const open = openTabsRef.current[activeId];
+      if (open === undefined) return { error: "No active document." };
+      if (engineRef.current.exportFormData === undefined) {
+        return {
+          error: describeEngineError(
+            "engine-error",
+            "Export form data requires the Phase 57 backend update.",
+          ),
+        };
+      }
+      const bytes = await engineRef.current.exportFormData(open.session.engineDocId, format);
+      if (!bytes.ok) {
+        return { error: describeEngineError(bytes.error.code, bytes.error.message) };
+      }
+      if (window.tflex.saveFormDataFile === undefined) {
+        return {
+          error: describeEngineError(
+            "engine-error",
+            "Saving form data requires the Phase 57 backend update.",
+          ),
+        };
+      }
+      const saved = await window.tflex.saveFormDataFile(
+        format,
+        new Uint8Array(bytes.value),
+        `jovrel-form-data.${format}`,
+      );
+      if (!saved.ok) {
+        return { error: describeFormDataSaveError(saved.error.code) };
+      }
+      // A null result is the user cancelling the OS save dialog: an explicit
+      // cancelled result, a silent no-op (no toast, no error text).
+      if (saved.value === null) return { cancelled: true };
+      return { path: saved.value.path, count: open.forms.fields.length };
+    },
+    [],
+  );
+
+  const runFormDataImport = useCallback(
+    async (
+      format: FormDataFormat,
+      path: string,
+    ): Promise<{ report: FormDataImportReport; path: string } | { error: string }> => {
+      const activeId = activeTabIdRefLocal.current;
+      if (activeId === null) return { error: "No active document." };
+      const open = openTabsRef.current[activeId];
+      if (open === undefined) return { error: "No active document." };
+      if (
+        window.tflex.loadFormData === undefined ||
+        engineRef.current.importFormData === undefined
+      ) {
+        return {
+          error: describeEngineError(
+            "engine-error",
+            "Import form data requires the Phase 57 backend update.",
+          ),
+        };
+      }
+      const loaded = await window.tflex.loadFormData(path);
+      if (!loaded.ok) {
+        return { error: describeFormDataLoadError(loaded.error.code) };
+      }
+      const result = await engineRef.current.importFormData(
+        open.session.engineDocId,
+        format,
+        new Uint8Array(loaded.value),
+      );
+      if (!result.ok) {
+        return { error: describeEngineError(result.error.code, result.error.message) };
+      }
+      // The values were written by the ENGINE. Refresh the active tab's form
+      // state through the same getState -> noteOpApplied path a normal form
+      // fill uses; the report carries no engine state.
+      syncEngineStateAfterFill(activeId);
+      return { report: result.value, path };
+    },
+    [syncEngineStateAfterFill],
+  );
+
+  const onFormDataIoApplied = useCallback(
+    (
+      applied:
+        | { kind: "export"; path: string; count: number }
+        | { kind: "import"; report: FormDataImportReport; path: string },
+    ): void => {
+      if (applied.kind === "export") {
+        pushToast(
+          "info",
+          `Exported ${applied.count} form field${applied.count === 1 ? "" : "s"} to ${applied.path}.`,
+        );
+        return;
+      }
+      const updated = applied.report.matched.length;
+      pushToast(
+        "info",
+        `Imported ${updated} form field${updated === 1 ? "" : "s"} from ${applied.path}.`,
+      );
+    },
+    [pushToast],
+  );
+
   // ---- Phase 54 (features D + E): validate the active document ----------
   //
   // The verb rides the REVIEW Action Dock and the Command Palette (both run
@@ -6407,6 +6593,83 @@ pushToast(
     },
     [trackAndSave],
   );
+
+  // ---- Phase 57 (feature A): engineering layers / document info ---------
+  //
+  // Two REVIEW verbs. The layers panel toggles a document's OCG visibility
+  // through the engine (undoable, marks the doc modified); the echoed state is
+  // applied and the pdf.js proxy rebuilt so the page re-renders with the layer
+  // off. The document-info dialog reports the PDF/E block, the layer count and
+  // the 3D content. A missing bridge is a declared engine-error, never a throw.
+
+  /** Re-fetch the engineering surfaces for one document (used after a toggle). */
+  const refetchEngineeringFor = useCallback((docId: string): void => {
+    const client = engineRef.current;
+    void (async () => {
+      // Call THROUGH the receiver: a detached `const f = client.getLayers`
+      // loses `this` on the real adapter (its methods read `this.inner`).
+      if (client.getLayers !== undefined) {
+        const r = await client.getLayers(docId);
+        if (r.ok) setLayersByDoc((prev) => ({ ...prev, [docId]: r.value }));
+      }
+      if (client.getCadMetadata !== undefined) {
+        const r = await client.getCadMetadata(docId);
+        if (r.ok) setCadByDoc((prev) => ({ ...prev, [docId]: r.value }));
+      }
+      if (client.get3dContent !== undefined) {
+        const r = await client.get3dContent(docId);
+        if (r.ok) setContent3dByDoc((prev) => ({ ...prev, [docId]: r.value }));
+      }
+    })();
+  }, []);
+
+  const onEngineeringLayersClick = useCallback((): void => {
+    if (activeTabIdRefLocal.current === null) return;
+    setEngineeringLayersOpen(true);
+  }, []);
+
+  const onDocumentInfoClick = useCallback((): void => {
+    if (activeTabIdRefLocal.current === null) return;
+    setDocumentInfoOpen(true);
+  }, []);
+
+  /** The engine call the layers panel drives. A bridge-absent build returns a
+   *  declared engine-error so the panel toasts it and reverts the checkbox. */
+  const runLayerToggle = useCallback(
+    async (docId: string, index: number, visible: boolean) => {
+      const client = engineRef.current;
+      if (client.setLayerVisibility === undefined) {
+        return {
+          ok: false as const,
+          error: {
+            code: "engine-error" as const,
+            message: "PDF/E layers require the Phase 57 backend update.",
+          },
+        };
+      }
+      return client.setLayerVisibility(docId, index, visible);
+    },
+    [],
+  );
+
+  /** After a successful toggle: mirror the echoed state and re-fetch the
+   *  document's engineering surfaces so the panel shows the engine's truth. */
+  const onLayerStateApplied = useCallback(
+    (state: EngineState): void => {
+      const tabId = activeTabIdRefLocal.current;
+      if (tabId !== null) noteOpApplied(tabId, state);
+      const docId = tabId === null ? undefined : openTabsRef.current[tabId]?.session.engineDocId;
+      if (docId !== undefined) refetchEngineeringFor(docId);
+    },
+    [noteOpApplied, refetchEngineeringFor],
+  );
+
+  const refreshActiveDocProxy = useCallback(async (): Promise<boolean> => {
+    const tabId = activeTabIdRefLocal.current;
+    const fn = refreshDocProxyForRef.current;
+    if (tabId === null || fn === null) return false;
+    return fn(tabId);
+  }, []);
 
   // ---- Phase 12: Delete pages dialog (B8) ----
 
@@ -8092,6 +8355,40 @@ pushToast(
   const activeTab = tabs.activeId !== null ? openTabs[tabs.activeId] : null;
   const activeEngineUi = tabs.activeId !== null ? engineUi[tabs.activeId] : null;
 
+  // Phase 57 (feature A) — fetch the active document's engineering surfaces
+  // (layers, PDF/E metadata, 3D content) whenever the active engine doc id
+  // changes. A document without layers / CAD / 3D resolves to empty results,
+  // never an error; a pre-Phase-57 build's missing methods are skipped.
+  const activeEngineDocId = activeTab?.session.engineDocId ?? null;
+  useEffect(() => {
+    if (activeEngineDocId === null) return;
+    const client = engineRef.current;
+    let cancelled = false;
+    const load = async (): Promise<void> => {
+      // Receiver calls only — a detached binding loses `this` on the real
+      // adapter whose methods read `this.inner` (DEF-106 / DEF-374 class).
+      const [layerRes, cadRes, threeRes] = await Promise.all([
+        client.getLayers === undefined ? Promise.resolve(null) : client.getLayers(activeEngineDocId),
+        client.getCadMetadata === undefined ? Promise.resolve(null) : client.getCadMetadata(activeEngineDocId),
+        client.get3dContent === undefined ? Promise.resolve(null) : client.get3dContent(activeEngineDocId),
+      ]);
+      if (cancelled) return;
+      if (layerRes !== null && layerRes.ok) {
+        setLayersByDoc((prev) => ({ ...prev, [activeEngineDocId]: layerRes.value }));
+      }
+      if (cadRes !== null && cadRes.ok) {
+        setCadByDoc((prev) => ({ ...prev, [activeEngineDocId]: cadRes.value }));
+      }
+      if (threeRes !== null && threeRes.ok) {
+        setContent3dByDoc((prev) => ({ ...prev, [activeEngineDocId]: threeRes.value }));
+      }
+    };
+    void load();
+    return (): void => {
+      cancelled = true;
+    };
+  }, [activeEngineDocId]);
+
   // Phase 36 (chunk 5) — the Inspector's visibility: a real document is open
   // (an empty placeholder tab or the welcome screen has none to inspect). The
   // panel-inset machinery below and the .app-main data attribute both read
@@ -8636,7 +8933,11 @@ pushToast(
       exportComments: onCommentExportClick,
       importComments: onCommentImportClick,
       fillFromCsv: onFillFromCsvClick,
+      exportFormData: onExportFormDataClick,
+      importFormData: onImportFormDataClick,
       validateDocument: onValidateDocumentClick,
+      engineeringLayers: onEngineeringLayersClick,
+      documentInfo: onDocumentInfoClick,
       optimize: onOptimizeClick,
       auditSpace: onAuditClick,
       createFromImages: onCreateClick,
@@ -8689,6 +8990,8 @@ pushToast(
       onCommentImportClick,
       onFillFromCsvClick,
       onValidateDocumentClick,
+      onEngineeringLayersClick,
+      onDocumentInfoClick,
       onOptimizeClick,
       onAuditClick,
       onCreateClick,
@@ -9815,11 +10118,17 @@ pushToast(
             // that ran a validation or whose save was blocked/warned. Dismissing
             // deletes the entry, so it never returns for that tab.
             const validation = validationNotices[meta.id];
+            // Phase 57 (feature A) — this tab's 3D content, keyed by its own
+            // engine doc id (so a Multi Mode background pane shows its own).
+            const tabEngineDocId = openTabs[meta.id]?.session.engineDocId;
+            const pdf3d =
+              tabEngineDocId !== undefined ? content3dByDoc[tabEngineDocId] ?? [] : [];
             if (
               protection === undefined &&
               conversion === undefined &&
               validation === undefined &&
-              sourceFormat === undefined
+              sourceFormat === undefined &&
+              pdf3d.length === 0
             ) {
               return document;
             }
@@ -9830,6 +10139,7 @@ pushToast(
                 conversion={conversion}
                 validation={validation}
                 protection={protection}
+                pdf3d={pdf3d}
                 onDismissConversion={(): void =>
                   setConvertNotices((prev) => {
                     if (!(meta.id in prev)) return prev;
@@ -10389,6 +10699,15 @@ pushToast(
         onApplied={onFillFromCsvApplied}
         onClose={(): void => setFillFromCsvOpen(false)}
       />
+      <FormDataIoDialog
+        open={formDataIo.open}
+        mode={formDataIo.mode}
+        pickFormDataFile={pickFormDataFile}
+        runExport={runFormDataExport}
+        runImport={runFormDataImport}
+        onApplied={onFormDataIoApplied}
+        onClose={(): void => setFormDataIo((s) => ({ ...s, open: false }))}
+      />
       <ValidateDocumentDialog
         open={validateOpen}
         initialTarget={validationDefaults.target}
@@ -10396,6 +10715,27 @@ pushToast(
         runValidation={runValidationForActiveTab}
         onRememberDefaults={onValidationDefaultsChange}
         onClose={(): void => setValidateOpen(false)}
+      />
+      <EngineeringLayersPanel
+        open={engineeringLayersOpen}
+        docId={activeEngineDocId ?? ""}
+        layers={activeEngineDocId !== null ? layersByDoc[activeEngineDocId] ?? [] : []}
+        setLayerVisibility={runLayerToggle}
+        onStateApplied={onLayerStateApplied}
+        refreshDocProxyFor={refreshActiveDocProxy}
+        pushToast={pushToast}
+        onClose={(): void => setEngineeringLayersOpen(false)}
+      />
+      <DocumentInfoDialog
+        open={documentInfoOpen}
+        metadata={activeEngineDocId !== null ? cadByDoc[activeEngineDocId] ?? null : null}
+        layerCount={
+          activeEngineDocId !== null ? (layersByDoc[activeEngineDocId] ?? []).length : 0
+        }
+        content3dCount={
+          activeEngineDocId !== null ? (content3dByDoc[activeEngineDocId] ?? []).length : 0
+        }
+        onClose={(): void => setDocumentInfoOpen(false)}
       />
       <DeletePageDialog
         open={deletePageOpen}

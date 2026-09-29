@@ -14,6 +14,7 @@ import type {
   EditImagePayload,
   EditTextRunPayload,
   ExportPagesPayload,
+  FdfOpenError,
   FillFormFieldPayload,
   MenuEnabledState,
   MovePagesBetweenDocsPayload,
@@ -45,7 +46,7 @@ import type {
   ValidationTarget,
 } from '../shared/validation';
 import type { ConvertOptions } from '../shared/convert';
-import { openPdfDialog, openPdfDialogMulti, savePdfDialog } from './services/dialog';
+import { openPdfDialog, openPdfDialogMulti, saveFormDataDialog, savePdfDialog } from './services/dialog';
 import { readClipboardImage, type ClipboardLike } from './services/clipboard-image';
 import { EngineService } from './services/engine';
 import { OcrService } from './services/ocr';
@@ -53,7 +54,7 @@ import { DocumentConversionService } from './services/convert';
 import { exportXlsx } from './services/export/xlsx-export';
 import { exportPptx } from './services/export/pptx-export';
 import { DocumentValidationService, runExportGuard } from './services/validation';
-import { loadPdfFile, loadFdfFile } from './services/pdf-file';
+import { loadPdfFile, loadFdfFile, loadFormDataFile, writeFormDataFile } from './services/pdf-file';
 import { describePdfOpenError } from './services/error-text';
 import { listPrinters, printJob } from './services/print';
 import { setBundledFontDir } from './services/fonts';
@@ -693,6 +694,9 @@ export async function start(): Promise<void> {
   });
   ipcMain.handle(IPC.pdfLoad, (_event, path: string) => loadPdfFile(path));
   ipcMain.handle(IPC.fdfLoad, (_event, path: string) => loadFdfFile(path));
+  // Phase 57 feature B — FDF/XFDF form-DATA load path (distinct from the
+  // Phase-12 comment FDF path above).
+  ipcMain.handle(IPC.formDataLoad, (_event, path: string) => loadFormDataFile(path));
   ipcMain.handle(IPC.samplesList, () => samples.list());
   ipcMain.handle(IPC.samplesLoad, (_event, name: string) => samples.load(name));
   ipcMain.handle(IPC.samplesRead, (_event, name: string) => samples.read(name));
@@ -930,6 +934,51 @@ export async function start(): Promise<void> {
   );
   ipcMain.handle(IPC.engineImportFdf, (_event, docId: string, fdfBytes: Uint8Array) =>
     engine.importFdf(docId, fdfBytes),
+  );
+  // Phase 57 feature B — AcroForm form-DATA interchange. exportFormData
+  // returns FDF/XFDF bytes; importFormData matches them onto existing fields
+  // and returns the matched/unmatched/empty report. formDataSave picks a
+  // destination, writes the renderer-supplied bytes, and reports the path
+  // (or null on cancel).
+  ipcMain.handle(IPC.engineExportFormData, (_event, docId: string, format: 'fdf' | 'xfdf') =>
+    engine.exportFormData(docId, format),
+  );
+  ipcMain.handle(IPC.engineImportFormData, (_event, docId: string, format: 'fdf' | 'xfdf', data: Uint8Array) =>
+    engine.importFormData(docId, format, data),
+  );
+  // Phase 57 feature A — PDF/E engineering documents: layer enumeration and
+  // visibility toggle, the XMP pdfe block, and 3D-content detection.
+  ipcMain.handle(IPC.engineGetLayers, (_event, docId: string) =>
+    engine.getLayers(docId),
+  );
+  ipcMain.handle(IPC.engineSetLayerVisibility, (_event, docId: string, index: number, visible: boolean) =>
+    engine.setLayerVisibility(docId, index, visible),
+  );
+  ipcMain.handle(IPC.engineGetCadMetadata, (_event, docId: string) =>
+    engine.getCadMetadata(docId),
+  );
+  ipcMain.handle(IPC.engineGet3dContent, (_event, docId: string) =>
+    engine.get3dContent(docId),
+  );
+  ipcMain.handle(
+    IPC.formDataSave,
+    async (
+      _event,
+      format: 'fdf' | 'xfdf',
+      bytes: Uint8Array,
+      defaultName?: string,
+    ): Promise<Result<{ path: string } | null, FdfOpenError>> => {
+      const filePath = await saveFormDataDialog(format, defaultName);
+      if (filePath === null) {
+        return { ok: true, value: null };
+      }
+      try {
+        await writeFormDataFile(filePath, bytes);
+      } catch {
+        return { ok: false, error: { code: 'io' as const, message: `could not write: ${filePath}` } };
+      }
+      return { ok: true, value: { path: filePath } };
+    },
   );
   // Phase 18 / DEF-216: watermarks — apply, list (by the marker baked
   // into each page's content stream), delete by id.

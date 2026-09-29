@@ -26,6 +26,7 @@ import type {
   ExportPageEntry,
   ExportPagesPayload,
   FillFormFieldPayload,
+  FormDataImportReport,
   FormField,
   MovePagesBetweenDocsPayload,
   MovePagesBetweenDocsResult,
@@ -38,6 +39,9 @@ import type {
   OptimizePreset,
   OcrPageFailure,
   PageLabelEntry,
+  Pdf3dContent,
+  PdfCadMetadata,
+  PdfLayer,
   PlaceSignaturePayload,
   SignaturePlacement,
   SpaceAudit,
@@ -58,7 +62,15 @@ import {
   parseAnnotationsFromDoc,
   serializeAnnotations,
 } from './annotations';
-import { exportFdf as exportFdfBytes, parseFdf } from './fdf';
+import {
+  exportFdf as exportFdfBytes,
+  exportFormFdf,
+  exportFormXfdf,
+  parseFdf,
+  parseFormFdf,
+  parseFormXfdf,
+  type FormValueEntry,
+} from './fdf';
 import { embedEditFont } from './fonts';
 import { formatErrorMessage } from './error-text';
 import {
@@ -3869,6 +3881,425 @@ export class EngineService {
     doc.modified = true;
     return ok(buildState(doc));
   }
+
+  // -----------------------------------------------------------------------
+  // Phase 57 feature B: exportFormData / importFormData - AcroForm values
+  // -----------------------------------------------------------------------
+  async exportFormData(
+    docId: string,
+    format: 'fdf' | 'xfdf',
+  ): Promise<Result<ArrayBuffer, EngineError>> {
+    return this._enqueue(docId, () => this._exportFormDataImpl(docId, format));
+  }
+
+  private async _exportFormDataImpl(
+    docId: string,
+    format: 'fdf' | 'xfdf',
+  ): Promise<Result<ArrayBuffer, EngineError>> {
+    const doc = this.docs.get(docId);
+    if (doc === undefined) {
+      return err('engine-error', `unknown document: ${docId}`);
+    }
+    try {
+      const entries = getFormFields(doc.pdfDoc).map((f) => ({
+        name: f.name,
+        value: Array.isArray(f.value) ? f.value.join(',') : f.value,
+      }));
+      const bytes =
+        format === 'xfdf'
+          ? new TextEncoder().encode(exportFormXfdf(entries))
+          : exportFormFdf(entries);
+      return ok(bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer);
+    } catch (e) {
+      return err('engine-error', `exportFormData failed: ${e instanceof Error ? e.message : String(e)}`);
+    }
+  }
+
+  async importFormData(
+    docId: string,
+    format: 'fdf' | 'xfdf',
+    data: Uint8Array,
+  ): Promise<Result<FormDataImportReport, EngineError>> {
+    return this._enqueue(docId, () => this._importFormDataImpl(docId, format, data));
+  }
+
+  private async _importFormDataImpl(
+    docId: string,
+    format: 'fdf' | 'xfdf',
+    data: Uint8Array,
+  ): Promise<Result<FormDataImportReport, EngineError>> {
+    const doc = this.docs.get(docId);
+    if (doc === undefined) {
+      return err('engine-error', `unknown document: ${docId}`);
+    }
+    const view = data instanceof Uint8Array ? data : new Uint8Array(data);
+    let entries: FormValueEntry[];
+    try {
+      entries =
+        format === 'xfdf'
+          ? parseFormXfdf(new TextDecoder('utf-8').decode(view))
+          : parseFormFdf(view);
+    } catch (e) {
+      const label = format === 'xfdf' ? 'XFDF' : 'FDF';
+      return err(
+        'engine-error',
+        `importFormData: could not parse ${label}: ${e instanceof Error ? e.message : String(e)}`,
+      );
+    }
+    // A zero-entry input applies nothing: no snapshot, no dirty flag.
+    if (entries.length === 0) {
+      return ok({ matched: [], unmatched: [], empty: [] });
+    }
+    // Snapshot BEFORE applying so undo restores the pre-import values.
+    const snapshot = snapshotDoc(doc);
+    const fields = getFormFields(doc.pdfDoc);
+    const used = new Set<string>();
+    const matched: string[] = [];
+    const unmatched: string[] = [];
+    for (const entry of entries) {
+      // The mapped-field rule documented at shared/convert.ts:204 — exact
+      // name first, then case-insensitive. An unmatched name is NEVER
+      // created as a stray field.
+      let field = fields.find((f) => f.name === entry.name && !used.has(f.id));
+      if (field === undefined) {
+        const lower = entry.name.toLowerCase();
+        field = fields.find((f) => f.name.toLowerCase() === lower && !used.has(f.id));
+      }
+      if (field === undefined) {
+        unmatched.push(entry.name);
+        continue;
+      }
+      used.add(field.id);
+      matched.push(field.name);
+      fillFormField(doc.pdfDoc, field.id, entry.value);
+    }
+    const empty = fields.filter((f) => !used.has(f.id)).map((f) => f.name);
+    doc.undoStack.push(snapshot);
+    doc.redoStack = [];
+    doc.modified = true;
+    return ok({ matched, unmatched, empty });
+  }
+
+  // -----------------------------------------------------------------------
+  // Phase 57 feature A: PDF/E engineering documents - optional content
+  // groups (layers), XMP pdfe metadata and 3D-content detection.
+  // -----------------------------------------------------------------------
+
+  async getLayers(docId: string): Promise<Result<PdfLayer[], EngineError>> {
+    return this._enqueue(docId, () => this._getLayersImpl(docId));
+  }
+
+  private async _getLayersImpl(
+    docId: string,
+  ): Promise<Result<PdfLayer[], EngineError>> {
+    const doc = this.docs.get(docId);
+    if (doc === undefined) {
+      return err('engine-error', `unknown document: ${docId}`);
+    }
+    try {
+      const config = resolveOcConfig(doc.pdfDoc);
+      if (config === undefined) {
+        return ok([]);
+      }
+      const entries = flattenOcOrder(config);
+      const off = config.lookupMaybe(PDFName.of('OFF'), PDFArray);
+      const layers: PdfLayer[] = [];
+      let unnamed = 1;
+      entries.forEach((entry, index) => {
+        const ocg = asOcDict(doc.pdfDoc, entry);
+        const name = decodePdfText(ocg?.get(PDFName.of('Name'))) ?? `Layer ${unnamed++}`;
+        layers.push({ index, name, visible: !arrayContainsEntry(off, entry) });
+      });
+      return ok(layers);
+    } catch (e) {
+      return err('engine-error', `getLayers failed: ${e instanceof Error ? e.message : String(e)}`);
+    }
+  }
+
+  async setLayerVisibility(
+    docId: string,
+    index: number,
+    visible: boolean,
+  ): Promise<Result<EngineState, EngineError>> {
+    return this._enqueue(docId, () => this._setLayerVisibilityImpl(docId, index, visible));
+  }
+
+  private async _setLayerVisibilityImpl(
+    docId: string,
+    index: number,
+    visible: boolean,
+  ): Promise<Result<EngineState, EngineError>> {
+    const doc = this.docs.get(docId);
+    if (doc === undefined) {
+      return err('engine-error', `unknown document: ${docId}`);
+    }
+    try {
+      const config = resolveOcConfig(doc.pdfDoc);
+      const entries = config === undefined ? [] : flattenOcOrder(config);
+      if (config === undefined || !Number.isInteger(index) || index < 0 || index >= entries.length) {
+        return err('out-of-range', `layer index ${index} out of range [0,${Math.max(0, entries.length - 1)}]`);
+      }
+      const entry = entries[index];
+      // /OCProperties lives in the pdfDoc, so the undo entry must capture
+      // serialized pdfDoc bytes (matching insertBlankPage:1721 and
+      // insertFromPdf:1828 — in both the snapshot precedes the mutation).
+      // Capture BEFORE the /ON//OFF edits so undo restores the exact
+      // pre-toggle visibility; the out-of-range return above already
+      // pushed nothing, keeping the undo stack untouched on rejection.
+      const snapshot = await snapshotDocWithPdf(doc);
+      // Never touch /Order. ON/OFF are the only arrays this op edits.
+      const on = config.lookupMaybe(PDFName.of('ON'), PDFArray);
+      if (on !== undefined) {
+        removeEntryFromArray(on, entry);
+      }
+      if (visible) {
+        const off = config.lookupMaybe(PDFName.of('OFF'), PDFArray);
+        if (off !== undefined) {
+          removeEntryFromArray(off, entry);
+        }
+      } else {
+        let off = config.lookupMaybe(PDFName.of('OFF'), PDFArray);
+        if (off === undefined) {
+          off = doc.pdfDoc.context.obj([]) as PDFArray;
+          config.set(PDFName.of('OFF'), off);
+        }
+        if (!arrayContainsEntry(off, entry)) {
+          off.push(entry);
+        }
+      }
+      doc.undoStack.push(snapshot);
+      doc.redoStack = [];
+      doc.modified = true;
+      return ok(buildState(doc));
+    } catch (e) {
+      return err('engine-error', `setLayerVisibility failed: ${e instanceof Error ? e.message : String(e)}`);
+    }
+  }
+
+  async getCadMetadata(
+    docId: string,
+  ): Promise<Result<PdfCadMetadata | null, EngineError>> {
+    return this._enqueue(docId, () => this._getCadMetadataImpl(docId));
+  }
+
+  private async _getCadMetadataImpl(
+    docId: string,
+  ): Promise<Result<PdfCadMetadata | null, EngineError>> {
+    const doc = this.docs.get(docId);
+    if (doc === undefined) {
+      return err('engine-error', `unknown document: ${docId}`);
+    }
+    const raw = doc.pdfDoc.catalog.get(PDFName.of('Metadata'));
+    if (raw === undefined) return ok(null);
+    const stream = doc.pdfDoc.context.lookupMaybe(raw, PDFStream);
+    if (stream === undefined) return ok(null);
+    // Refuse BEFORE decoding: a declared /Length over the ceiling is a bounded,
+    // documented refusal (the standing aggregate-budget rule), never an
+    // allocation of the whole packet.
+    const declaredLength = stream.dict.lookupMaybe(PDFName.of('Length'), PDFNumber)?.asNumber();
+    if (declaredLength !== undefined && declaredLength > METADATA_MAX_BYTES) {
+      return err('engine-error', 'getCadMetadata: XMP metadata exceeds the 4 MiB scan ceiling');
+    }
+    try {
+      const packet = decodeMetadataStream(stream);
+      return ok(extractPdfeBlocks(packet));
+    } catch {
+      // A failed decode is never an error: the document simply declares no
+      // readable pdfe block.
+      return ok(null);
+    }
+  }
+
+  async get3dContent(
+    docId: string,
+  ): Promise<Result<Pdf3dContent[], EngineError>> {
+    return this._enqueue(docId, () => this._get3dContentImpl(docId));
+  }
+
+  private async _get3dContentImpl(
+    docId: string,
+  ): Promise<Result<Pdf3dContent[], EngineError>> {
+    const doc = this.docs.get(docId);
+    if (doc === undefined) {
+      return err('engine-error', `unknown document: ${docId}`);
+    }
+    try {
+      const found: Pdf3dContent[] = [];
+      let counter = 1;
+      for (let visible = 0; visible < doc.order.length; visible++) {
+        const page = doc.pdfDoc.getPage(doc.order[visible]);
+        const annots = page.node.Annots();
+        if (annots === undefined) continue;
+        for (let i = 0; i < annots.size(); i++) {
+          const annot = doc.pdfDoc.context.lookupMaybe(annots.get(i), PDFDict);
+          if (annot === undefined) continue;
+          const subtype = annot.lookupMaybe(PDFName.of('Subtype'), PDFName);
+          if (subtype === undefined || subtype.decodeText() !== '3D') continue;
+          const name = decodePdfText(annot.get(PDFName.of('NM')))
+            ?? decodePdfText(annot.get(PDFName.of('T')))
+            ?? `3D object ${counter}`;
+          found.push({ page: visible + 1, name });
+          counter += 1;
+        }
+      }
+      return ok(found);
+    } catch (e) {
+      return err('engine-error', `get3dContent failed: ${e instanceof Error ? e.message : String(e)}`);
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Phase 57 feature A helpers - optional content groups, pdfe XMP, 3D detection
+// ---------------------------------------------------------------------------
+
+/** Phase 57 feature A - the XMP scan ceiling (4 MiB). */
+const METADATA_MAX_BYTES = 4 * 1024 * 1024;
+
+/** Phase 57 feature A - per-block cap on returned pdfe key/value pairs. */
+const PDFE_MAX_ENTRIES = 64;
+
+/**
+ * Resolve catalog /OCProperties to the config dict. The config is the /D entry
+ * when present, otherwise /OCProperties itself. Returns undefined when the
+ * document declares no optional content at all.
+ */
+function resolveOcConfig(pdfDoc: PDFDocument): PDFDict | undefined {
+  const raw = pdfDoc.catalog.get(PDFName.of('OCProperties'));
+  if (raw === undefined) return undefined;
+  const ocprops = pdfDoc.context.lookupMaybe(raw, PDFDict);
+  if (ocprops === undefined) return undefined;
+  return ocprops.lookupMaybe(PDFName.of('D'), PDFDict) ?? ocprops;
+}
+
+/**
+ * Flatten the config /Order array one level into OCG refs/dicts, keeping
+ * document order. A nested array is descended once (its direct members are
+ * considered); anything that is not a PDFRef or PDFDict is skipped.
+ */
+function flattenOcOrder(config: PDFDict): PDFObject[] {
+  const order = config.lookupMaybe(PDFName.of('Order'), PDFArray);
+  if (order === undefined) return [];
+  const out: PDFObject[] = [];
+  const consider = (value: PDFObject | undefined): void => {
+    if (value instanceof PDFRef || value instanceof PDFDict) out.push(value);
+  };
+  for (let i = 0; i < order.size(); i++) {
+    const el = order.get(i);
+    if (el instanceof PDFArray) {
+      for (let j = 0; j < el.size(); j++) consider(el.get(j));
+    } else {
+      consider(el);
+    }
+  }
+  return out;
+}
+
+/** Resolve one flattened /Order entry to its OCG dict, if any. */
+function asOcDict(pdfDoc: PDFDocument, entry: PDFObject): PDFDict | undefined {
+  if (entry instanceof PDFDict) return entry;
+  if (entry instanceof PDFRef) return pdfDoc.context.lookupMaybe(entry, PDFDict);
+  return undefined;
+}
+
+/** Decode a PDFString/PDFHexString to a plain string, or undefined. */
+function decodePdfText(value: PDFObject | undefined): string | undefined {
+  if (value instanceof PDFString || value instanceof PDFHexString) {
+    try {
+      return value.decodeText();
+    } catch {
+      return undefined;
+    }
+  }
+  return undefined;
+}
+
+/** True when the array holds the entry (same object or same ref tag). */
+function arrayContainsEntry(arr: PDFArray | undefined, entry: PDFObject): boolean {
+  if (arr === undefined) return false;
+  for (let i = 0; i < arr.size(); i++) {
+    const el = arr.get(i);
+    if (el === entry) return true;
+    if (el instanceof PDFRef && entry instanceof PDFRef && el.tag === entry.tag) return true;
+  }
+  return false;
+}
+
+/** Remove every occurrence of the entry (same object or same ref tag). */
+function removeEntryFromArray(arr: PDFArray, entry: PDFObject): void {
+  for (let i = arr.size() - 1; i >= 0; i--) {
+    const el = arr.get(i);
+    if (el === entry || (el instanceof PDFRef && entry instanceof PDFRef && el.tag === entry.tag)) {
+      arr.remove(i);
+    }
+  }
+}
+
+/**
+ * Decode a metadata stream's raw contents to text. A Flate-encoded stream is
+ * inflated with node's inflateSync; anything else is decoded as UTF-8. The
+ * caller bounds the packet by its declared /Length before calling this.
+ */
+function decodeMetadataStream(stream: PDFStream): string {
+  const raw = stream.getContents();
+  const filter = stream.dict.lookup(PDFName.of('Filter'));
+  let filterName: string | undefined;
+  if (filter instanceof PDFName) {
+    filterName = filter.decodeText();
+  } else if (filter instanceof PDFArray) {
+    filterName = filter.lookupMaybe(0, PDFName)?.decodeText();
+  }
+  const bytes = filterName === 'FlateDecode' ? inflateSync(raw) : raw;
+  return new TextDecoder('utf-8').decode(bytes);
+}
+
+/** The prefix bound to the pdfe namespace URI, defaulting to 'pdfe'. */
+function pdfePrefix(packet: string): string {
+  const match = /xmlns:([A-Za-z_][\w.-]*)\s*=\s*["']http:\/\/www\.aiim\.org\/pdfe\/ns\/["']/.exec(packet);
+  return match?.[1] ?? 'pdfe';
+}
+
+/** Extract one pdfe block's direct pdfe-prefixed child elements as pairs. */
+function extractPdfeBlock(
+  packet: string,
+  prefix: string,
+  block: string,
+): Array<{ key: string; value: string }> {
+  const open = new RegExp(`<${prefix}:${block}(?:\\s[^>]*)?>`).exec(packet);
+  if (open === null) return [];
+  const start = open.index + open[0].length;
+  const end = packet.indexOf(`</${prefix}:${block}>`, start);
+  if (end < 0) return [];
+  const inner = packet.slice(start, end);
+  const pair = new RegExp(
+    `<${prefix}:([A-Za-z_][\\w.-]*)(?:\\s[^>]*)?>([^<]*)</${prefix}:\\1>`,
+    'g',
+  );
+  const out: Array<{ key: string; value: string }> = [];
+  let match: RegExpExecArray | null;
+  while ((match = pair.exec(inner)) !== null) {
+    out.push({ key: match[1], value: match[2].trim() });
+    if (out.length >= PDFE_MAX_ENTRIES) break;
+  }
+  return out;
+}
+
+/**
+ * Find the pdfe namespace blocks in an XMP packet. Returns null when none of
+ * the three blocks is present at all; a present block with no entries yields
+ * an empty array for that block.
+ */
+function extractPdfeBlocks(packet: string): PdfCadMetadata | null {
+  const prefix = pdfePrefix(packet);
+  const present = new RegExp(
+    `<${prefix}:(Identification|Measurement|Geospatial)(?:\\s[^>]*)?>`,
+  ).test(packet);
+  if (!present) return null;
+  return {
+    identification: extractPdfeBlock(packet, prefix, 'Identification'),
+    measurement: extractPdfeBlock(packet, prefix, 'Measurement'),
+    geospatial: extractPdfeBlock(packet, prefix, 'Geospatial'),
+  };
 }
 
 /** Clamp a number into [min, max]. */
@@ -4530,9 +4961,14 @@ function drawClassicWhiteMaskRect(
  * whole-value clone cannot drag the page tree into the output context:
  *   - /Metadata, /OutputIntents        (DEF-378: XMP + ICC)
  *   - /MarkInfo, /Lang, /ViewerPreferences  (flat dicts / strings)
- *   - /OCProperties                    (optional-content configuration: OCG
- *     dicts and order arrays only — Phase 57 layers)
  *   - /Collection, /AF                 (portfolio / associated-file metadata)
+ *
+ * /OCProperties is NOT cloned here (DEF-400): a whole-value clone minted a
+ * SECOND copy of every optional-content group, distinct from the ones
+ * copyPages had already put on the output pages, so PDF.js could never match a
+ * content stream's `/OC /MCn` group to the configuration by object identity.
+ * carryOptionalContent rebuilds it against the page-used output objects
+ * instead; see that function for the carried-vs-dropped ledger.
  *
  * Page-linked entries are carried separately by carryPageLinkedEntries, which
  * REMAPS their page references through the serializer's page map instead of
@@ -4571,7 +5007,6 @@ function carryCatalogEntries(out: PDFDocument, src: PDFDocument): void {
     'MarkInfo',
     'Lang',
     'ViewerPreferences',
-    'OCProperties',
     'Collection',
     'AF',
   ] as const;
@@ -4621,6 +5056,228 @@ function carryJavaScriptNames(out: PDFDocument, src: PDFDocument): void {
     out.catalog.set(PDFName.of('Names'), out.context.register(outNames));
   } else {
     existing.set(PDFName.of('JavaScript'), cloned);
+  }
+}
+
+/**
+ * DEF-400 — carry the catalog's `/OCProperties` so the layer configuration in
+ * the OUTPUT document references the SAME output optional-content group (OCG)
+ * objects the OUTPUT pages' marked content uses.
+ *
+ * Why a dedicated pass: the page tree (and therefore every page's
+ * `/Resources /Properties << /MCn <OCG ref> >>`) is copied into the output by
+ * `copyPages`, which mints its OWN output OCG refs through pdf-lib's copier.
+ * Cloning `/OCProperties` separately (the old blind-clone entry in
+ * carryCatalogEntries) minted a SECOND, distinct copy of every OCG. PDF.js
+ * matches a content stream's `/OC /MCn` group against the `/OCProperties`
+ * configuration BY OBJECT IDENTITY, so two copies can never match: hiding a
+ * layer then cannot change the render. This pass maps the config arrays onto
+ * the page-used objects instead of re-cloning them.
+ *
+ * Carried shapes (see carryCatalogEntries for the carried-vs-dropped ledger):
+ *   - `/OCProperties /OCGs` (the master list) rebuilt in SOURCE ORDER from the
+ *     output refs already used by the pages, plus a shared-copier clone for a
+ *     layer no page references (so it still appears in the layer list);
+ *   - `/D` as a NEW dict: `/ON`, `/OFF` and `/Order` rebuilt by mapping every
+ *     source ref through the same map, preserving nested `/Order` arrays;
+ *     `/BaseState` and `/Name` copied verbatim (plain values).
+ *
+ * Deliberately NOT carried, named here so nothing is silently dropped:
+ *   - `/D /AS` (alternate configurations) — needs its own config-array remap;
+ *     documented gap, left out of scope by DEF-400 (DEF-400 spec item 4);
+ *   - an OCG referenced only from an XObject's own `/Resources /Properties`:
+ *     the page walk covers the pages' OWN resources only (recursing into
+ *     XObject resources is out of scope), so such a layer falls back to the
+ *     shared-copier clone rather than the page-used object;
+ *   - an unnamed OCG referenced by a page (no `/Name` to pair on): the config
+ *     entry is a structural clone, so identity is guaranteed only for NAMED
+ *     layers — the DEF-400 case; unnamed layers keep their previous behavior;
+ *   - mapping entries whose source ref is neither in `/OCGs`, `/Order`, `/ON`
+ *     or `/OFF` — an unmappable entry is dropped, never emitted as garbage.
+ *
+ * Failure-isolated: any throw is swallowed so a save is never blocked, exactly
+ * like the other carries. A document with no `/OCProperties` writes nothing
+ * (no spurious empty `/OCProperties`), mirroring the `/Dests` guarantee.
+ */
+function carryOptionalContent(
+  out: PDFDocument,
+  src: PDFDocument,
+  pageMap: Map<number, number>,
+): void {
+  try {
+    const srcOcPropsValue = src.catalog.get(PDFName.of('OCProperties'));
+    if (srcOcPropsValue === undefined) return; // byte-stability: nothing to carry
+    const srcOcProps = src.context.lookupMaybe(srcOcPropsValue, PDFDict);
+    if (srcOcProps === undefined) return;
+
+    // Source config dict: /D when present, else /OCProperties itself — mirrors
+    // resolveOcConfig so the arrays we rebuild are the ones the engine reads.
+    const srcConfig = srcOcProps.lookupMaybe(PDFName.of('D'), PDFDict) ?? srcOcProps;
+    const srcOcgsArr = src.context.lookupMaybe(srcOcProps.get(PDFName.of('OCGs')), PDFArray);
+
+    const sourceEntries: PDFObject[] = [];
+    const seen = new Set<PDFObject>();
+    const addSource = (value: PDFObject | undefined): void => {
+      if (!(value instanceof PDFRef || value instanceof PDFDict)) return;
+      if (seen.has(value)) return;
+      seen.add(value);
+      sourceEntries.push(value);
+    };
+    // /OCGs is the master list; it also defines the output /OCGs order.
+    const srcOcgList: PDFObject[] = [];
+    if (srcOcgsArr !== undefined) {
+      for (let i = 0; i < srcOcgsArr.size(); i++) {
+        const entry = srcOcgsArr.get(i);
+        if (entry instanceof PDFRef || entry instanceof PDFDict) srcOcgList.push(entry);
+        addSource(entry);
+      }
+    }
+    // Some producers populate only /D /Order. Fall back to it both for the
+    // master list and (below) for identity mapping.
+    for (const entry of flattenOcOrder(srcConfig)) {
+      if (srcOcgList.length === 0) srcOcgList.push(entry);
+      addSource(entry);
+    }
+    const onArr0 = src.context.lookupMaybe(srcConfig.get(PDFName.of('ON')), PDFArray);
+    if (onArr0 !== undefined) for (let i = 0; i < onArr0.size(); i++) addSource(onArr0.get(i));
+    const offArr0 = src.context.lookupMaybe(srcConfig.get(PDFName.of('OFF')), PDFArray);
+    if (offArr0 !== undefined) for (let i = 0; i < offArr0.size(); i++) addSource(offArr0.get(i));
+
+    const srcDictOf = (entry: PDFObject): PDFDict | undefined =>
+      entry instanceof PDFDict ? entry : src.context.lookupMaybe(entry, PDFDict);
+    const nameOf = (entry: PDFObject): string | undefined => {
+      const dict = srcDictOf(entry);
+      const raw = dict?.get(PDFName.of('Name'));
+      if (raw === undefined) return undefined;
+      return decodePdfText(raw) ?? raw.toString().replace(/^\//, '');
+    };
+    // A name is only usable as a join key when it is unique among the source
+    // OCGs; a duplicate name is ambiguous and falls back to a clone.
+    const nameCounts = new Map<string, number>();
+    for (const entry of sourceEntries) {
+      const name = nameOf(entry);
+      if (name !== undefined) nameCounts.set(name, (nameCounts.get(name) ?? 0) + 1);
+    }
+
+    // ---- 1. output OCG refs the pages already use, keyed by unique name ----
+    const pageEntries: Array<{ props: PDFDict; key: PDFName }> = [];
+    for (const [, outIdx] of [...pageMap.entries()].sort((a, b) => a[1] - b[1])) {
+      const resources = out.getPage(outIdx).node.Resources();
+      const props = resources?.lookupMaybe(PDFName.of('Properties'), PDFDict);
+      if (props === undefined) continue;
+      for (const [key] of props.entries()) pageEntries.push({ props, key });
+    }
+    const canonicalByName = new Map<string, PDFObject>();
+    for (const { props, key } of pageEntries) {
+      const value = props.get(key);
+      if (value === undefined) continue;
+      const dict = value instanceof PDFDict
+        ? value
+        : out.context.lookupMaybe(value, PDFDict);
+      if (dict === undefined) continue;
+      const name = decodePdfText(dict.get(PDFName.of('Name')))
+        ?? dict.get(PDFName.of('Name'))?.toString().replace(/^\//, '');
+      if (name === undefined || (nameCounts.get(name) ?? 0) !== 1) continue;
+      // Make the page reference indirect so it survives a save as one object.
+      let ref: PDFObject = value;
+      if (!(value instanceof PDFRef)) {
+        ref = out.context.register(value);
+        props.set(key, ref);
+      }
+      if (!canonicalByName.has(name)) canonicalByName.set(name, ref);
+    }
+    // Normalize: every page entry naming the same unique OCG points at the one
+    // canonical ref, so page-to-page identity holds as well as page-to-config.
+    for (const { props, key } of pageEntries) {
+      const value = props.get(key);
+      if (value === undefined) continue;
+      const dict = value instanceof PDFDict
+        ? value
+        : out.context.lookupMaybe(value, PDFDict);
+      const name = dict === undefined
+        ? undefined
+        : decodePdfText(dict.get(PDFName.of('Name')))
+          ?? dict.get(PDFName.of('Name'))?.toString().replace(/^\//, '');
+      const canonical = name === undefined ? undefined : canonicalByName.get(name);
+      if (canonical !== undefined && value !== canonical) props.set(key, canonical);
+    }
+
+    // ---- 2. source OCG -> output object -----------------------------------
+    const sharedCopier = PDFObjectCopier.for(src.context, out.context);
+    const srcRefToOut = new Map<string, PDFObject>();
+    const srcDictToOut = new Map<PDFDict, PDFObject>();
+    const record = (source: PDFObject, mapped: PDFObject): void => {
+      if (source instanceof PDFRef) srcRefToOut.set(source.tag, mapped);
+      else if (source instanceof PDFDict) srcDictToOut.set(source, mapped);
+    };
+    const mapEntry = (value: PDFObject | undefined): PDFObject | undefined => {
+      if (value === undefined) return undefined;
+      if (value instanceof PDFRef) return srcRefToOut.get(value.tag);
+      if (value instanceof PDFDict) return srcDictToOut.get(value);
+      return undefined;
+    };
+    // Pair every source OCG that a page already uses with that page's object.
+    for (const entry of sourceEntries) {
+      const name = nameOf(entry);
+      if (name === undefined) continue;
+      const canonical = canonicalByName.get(name);
+      if (canonical !== undefined) record(entry, canonical);
+    }
+    // Clone the leftovers (layers no page uses) through ONE shared copier, so a
+    // layer shared between configs is cloned once and still appears in the list.
+    for (const entry of sourceEntries) {
+      if (mapEntry(entry) !== undefined) continue;
+      try {
+        const cloned = sharedCopier.copy(entry);
+        record(entry, cloned instanceof PDFRef ? cloned : out.context.register(cloned));
+      } catch {
+        // Entry is dropped from the rebuilt arrays; never fail the save.
+      }
+    }
+
+    const remapList = (arr: PDFArray): PDFArray | undefined => {
+      const els: PDFObject[] = [];
+      for (let i = 0; i < arr.size(); i++) {
+        const el = arr.get(i);
+        if (el instanceof PDFArray) {
+          const nested = remapList(el);
+          if (nested !== undefined) els.push(nested);
+          continue;
+        }
+        const mapped = mapEntry(el);
+        if (mapped !== undefined) els.push(mapped);
+      }
+      return els.length > 0 ? (out.context.obj(els) as PDFArray) : undefined;
+    };
+
+    const outOcgs: PDFObject[] = [];
+    for (const entry of srcOcgList) {
+      const mapped = mapEntry(entry);
+      if (mapped !== undefined) outOcgs.push(mapped);
+    }
+
+    // ---- 3. NEW /OCProperties --------------------------------------------
+    const outD = out.context.obj({}) as PDFDict;
+    for (const key of ['ON', 'OFF', 'Order'] as const) {
+      const srcArr = src.context.lookupMaybe(srcConfig.get(PDFName.of(key)), PDFArray);
+      if (srcArr === undefined) continue;
+      const remapped = remapList(srcArr);
+      if (remapped !== undefined) outD.set(PDFName.of(key), remapped);
+    }
+    for (const key of ['BaseState', 'Name'] as const) {
+      const value = srcConfig.get(PDFName.of(key));
+      if (value instanceof PDFName || value instanceof PDFString) {
+        outD.set(PDFName.of(key), value);
+      }
+    }
+    // /D /AS (alternate configurations) intentionally not carried — see the
+    // out-of-scope ledger in this function's block comment.
+    const outOcProps = out.context.obj({}) as PDFDict;
+    outOcProps.set(PDFName.of('OCGs'), out.context.obj(outOcgs) as PDFArray);
+    outOcProps.set(PDFName.of('D'), out.context.register(outD));
+    out.catalog.set(PDFName.of('OCProperties'), out.context.register(outOcProps));
+  } catch {
+    // Best-effort: a save is never blocked by an un-carryable layer config.
   }
 }
 
@@ -4918,6 +5575,10 @@ async function serializeDoc(doc: EngineDoc): Promise<Uint8Array> {
   // /Names /JavaScript subtree, so a save does not lose a PDF/A or PDF/X
   // declaration, optional content, or hide JavaScript from the validator.
   carryCatalogEntries(out, doc.pdfDoc);
+
+  // DEF-400 — rebuild /OCProperties against the output pages' own OCG objects
+  // so PDF.js can match the config to the content stream by identity.
+  carryOptionalContent(out, doc.pdfDoc, pageMap);
 
   // Serialize annotations onto the output doc
   await serializeAnnotations(out, doc.annotations, doc.order);
@@ -5275,6 +5936,10 @@ async function serializeDocOptimized(
   } catch {
     // Best-effort — unresolvable destinations are simply not carried.
   }
+
+  // DEF-400 — same /OCProperties identity rebuild as serializeDoc, so an
+  // optimized save keeps layers PDF.js can match to the page content.
+  carryOptionalContent(out, doc.pdfDoc, pageMap);
 
   if (doc.pageLabels && doc.pageLabels.length > 0) {
     try {

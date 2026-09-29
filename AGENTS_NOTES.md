@@ -4726,3 +4726,55 @@ renderer typecheck error, then the frontend dispatch lands the case. Plan the pa
 **Accepted non-defect:** the reading view's `Next page`/`Previous page` aria-labels duplicate the
 pre-existing PDF page-nav toolbar; qa targets the reading controls via `data-reading-*` attributes.
 Harmless, left as-is (changing the labels would break the documented Phase 56 handle set).
+
+## 2026-09-29: Phase 57 partial run - feature G, form-data interchange (B), PDF/E engineering (A)
+
+Landing so far: `f84f535` (feature G: `/Dests` + `/OpenAction` carried with REMAPPED page refs, plus
+the form-value FDF/XFDF codec) and the run-close commit that follows this note (feature B part 2 and
+feature A). Phase 57 is NOT closed: features C/D (matrix + dialog-filter guard), the FEATURE-BACKLOG
+refusal reasons and the PACKAGING GATE (criterion 6/8 + `verify:full`) are still open.
+
+Verified in this run, with evidence: feature G remap (saved `/Dests chapter3[0]` ref `6 0 R` EQUALS
+`savedDoc.getPage(2).ref`, i.e. remapped, not cloned); feature B part 2 (XFDF+FDF export/import
+through the real UI, parser-verified values, an unmatched name reported and creating NO field);
+feature A criteria 1 and 2 (layers enumerated, toggling a layer changed the render with a measured
+canvas delta of 188,191 px; 3D notice visible naming `Page 2` / `Turbine`; CAD metadata pairs shown).
+DEF-399 and DEF-400 both CLOSED by qa.
+
+**Orchestrator miss (mine, corrected after one bounced attempt): mirroring a sibling method for the
+SNAPSHOT CHOICE is not safe.** I told backend-dev to mirror `_flattenFormsImpl` for
+`setLayerVisibility`'s undo snapshot. That method uses plain `snapshotDoc`, which does NOT capture the
+pdfDoc, so the pushed undo entry could not revert an `/OCProperties` mutation - Ctrl+Z popped the
+stack and the layer stayed off. Two rules: a pdfDoc-level mutation needs `snapshotDocWithPdf`
+(engine.ts:4598, used at 20+ sites; the defect this class caused before is recorded at engine.ts:1712)
+AND the snapshot must be captured BEFORE the mutation, or you snapshot the already-mutated state.
+Spec anchors must name the SNAPSHOT CHOICE and its ORDER, not just the method to imitate.
+**Open item for triage:** `_flattenFormsImpl` (engine.ts:1336-1353) still uses plain `snapshotDoc`
+while `flattenForm` mutates the AcroForm - the same latent class; not touched opportunistically.
+
+**DEF-400 - object IDENTITY across serializers.** `serializeDoc` copied the page-level optional-content
+refs (through the page copy) and the catalog `/OCProperties` refs (through `carryCatalogEntries`' own
+`PDFObjectCopier`) with SEPARATE copiers, so the output held two distinct copies of each OCG. PDF.js
+matches a content stream's `/OC <name>` to the `/OCProperties` config BY OBJECT IDENTITY, so the match
+was impossible: "Optional content group not found" and `isVisible` fell back to true, making a layer
+toggle a no-op on screen while every unit test passed. Fix: one pass (`carryOptionalContent`) rebuilds
+`/OCProperties` from the refs the OUTPUT PAGES already hold, plus a shared copier only for layers no
+page uses. **Rule: when a viewer must match a content-stream object to a catalog object, assert ref
+IDENTITY (`pageMC.ref === config.ocgs[i].ref`), never presence or names** - and pull the entry out of
+the blind-clone list when a dedicated remap pass takes it over. Latent bug found on the way:
+`serializeDocOptimized` had never carried `/OCProperties` at all.
+
+**DEF-399 - the unbound-method class again (DEF-106 / DEF-374 cousin).** App.tsx bound
+`const layersCall = client.getLayers;` and called it bare; `RealEngineAdapter`'s methods read
+`this.inner`, so every call threw and all three new engineering surfaces stayed empty (no rows, no
+notice, no CAD) - a report that looks like "the feature is missing" but is a lost receiver. A jsdom
+unit test with an object-literal stub cannot see it. Fix: call through the receiver; guard added as an
+App.tsx source scan. **Rule: never detach an adapter method (`const f = obj.m; f()`); for a class-based
+adapter the test double must depend on `this`.**
+
+**How qa localised it (worth copying):** faced with "the panel is empty" qa did NOT stop at the UI. It
+called the bridge directly (`getLayers` -> 2 layers, so the engine was fine), then reproduced the
+serialize path standalone with `pdfjs-dist` and read `isVisible` on the cloned bytes. That split one
+symptom into two independent root causes (renderer binding + serializer identity) with two HIGH
+defects, each carrying the exact ref tags and a measured pixel delta. A UI-only report would have sent
+one developer on a wild goose chase.

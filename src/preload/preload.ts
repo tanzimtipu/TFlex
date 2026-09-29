@@ -22,6 +22,7 @@ import type {
   ExportPageEntry,
   ExportPagesPayload,
   FillFormFieldPayload,
+  FormDataImportReport,
   FormField,
   MovePagesBetweenDocsPayload,
   MovePagesBetweenDocsResult,
@@ -34,6 +35,9 @@ import type {
   OpEntry,
   OptimizePreset,
   PageLabelEntry,
+  Pdf3dContent,
+  PdfCadMetadata,
+  PdfLayer,
   PlaceSignaturePayload,
   PrintJobPayload,
   PrintJobResult,
@@ -423,6 +427,41 @@ const engineApi = {
   ): Promise<Result<EngineState, EngineError>> {
     return ipcRenderer.invoke(IPC.engineImportFdf, docId, fdfBytes);
   },
+  // Phase 57 feature B — AcroForm form-DATA export/import (FDF or XFDF).
+  exportFormData(
+    docId: string,
+    format: 'fdf' | 'xfdf',
+  ): Promise<Result<ArrayBuffer, EngineError>> {
+    return ipcRenderer.invoke(IPC.engineExportFormData, docId, format);
+  },
+  importFormData(
+    docId: string,
+    format: 'fdf' | 'xfdf',
+    data: Uint8Array,
+  ): Promise<Result<FormDataImportReport, EngineError>> {
+    return ipcRenderer.invoke(IPC.engineImportFormData, docId, format, data);
+  },
+  // Phase 57 feature A — PDF/E engineering documents.
+  getLayers(docId: string): Promise<Result<PdfLayer[], EngineError>> {
+    return ipcRenderer.invoke(IPC.engineGetLayers, docId);
+  },
+  setLayerVisibility(
+    docId: string,
+    index: number,
+    visible: boolean,
+  ): Promise<Result<EngineState, EngineError>> {
+    return ipcRenderer.invoke(IPC.engineSetLayerVisibility, docId, index, visible);
+  },
+  getCadMetadata(
+    docId: string,
+  ): Promise<Result<PdfCadMetadata | null, EngineError>> {
+    return ipcRenderer.invoke(IPC.engineGetCadMetadata, docId);
+  },
+  get3dContent(
+    docId: string,
+  ): Promise<Result<Pdf3dContent[], EngineError>> {
+    return ipcRenderer.invoke(IPC.engineGet3dContent, docId);
+  },
 };
 
 // Phase 53 — conversion surface. sourceInfo/toDocument are invoke channels
@@ -567,6 +606,24 @@ const api = {
   // be rejected by the PDF sniff on loadPdf.
   async loadFdf(path: string): Promise<Result<ArrayBuffer, FdfOpenError>> {
     const result = (await ipcRenderer.invoke(IPC.fdfLoad, path)) as Result<ArrayBuffer, FdfOpenError>;
+    if (!result.ok) {
+      return result;
+    }
+    return { ok: true, value: normalizeArrayBuffer(result.value) };
+  },
+  // Phase 57 feature B — form-DATA file IO. `saveFormDataFile` picks a
+  // destination and writes the renderer-supplied FDF/XFDF bytes (null on
+  // cancel); `loadFormData` returns raw bytes — the engine's parse names a
+  // non-FDF/XFDF input.
+  saveFormDataFile(
+    format: 'fdf' | 'xfdf',
+    bytes: Uint8Array,
+    defaultName?: string,
+  ): Promise<Result<{ path: string } | null, FdfOpenError>> {
+    return ipcRenderer.invoke(IPC.formDataSave, format, bytes, defaultName);
+  },
+  async loadFormData(path: string): Promise<Result<ArrayBuffer, FdfOpenError>> {
+    const result = (await ipcRenderer.invoke(IPC.formDataLoad, path)) as Result<ArrayBuffer, FdfOpenError>;
     if (!result.ok) {
       return result;
     }

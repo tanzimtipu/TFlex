@@ -184,7 +184,7 @@ describe("Phase 36 chunk 5 — the retired panel's routes still resolve", () => 
 
   it("keeps the palette grouping data (the registry is the single inventory)", () => {
     expect(PALETTE_GROUPS).toHaveLength(4);
-    expect(PALETTE_TOOL_IDS).toHaveLength(27);
+    expect(PALETTE_TOOL_IDS).toHaveLength(31);
   });
 
   it("toolsPaletteLayout has no writer anywhere in the renderer", () => {

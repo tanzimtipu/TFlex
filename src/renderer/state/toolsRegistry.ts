@@ -92,6 +92,7 @@ import {
   ArrowUpFromLine,
   ArrowUpRight,
   BadgeCheck,
+  BadgeInfo,
   BookOpen,
   Brush,
   Check,
@@ -105,12 +106,14 @@ import {
   Ellipsis,
   Expand,
   FileCheck2,
+  FileCode,
   FileDown,
   FileImage,
   FileInput,
   FileOutput,
   FilePlus2,
   FileScan,
+  FileSliders,
   FileSpreadsheet,
   FileStack,
   FileText,
@@ -130,6 +133,7 @@ import {
   Images,
   Info,
   Layers,
+  Layers2,
   LayoutGrid,
   List,
   ListX,
@@ -285,7 +289,7 @@ export const PALETTE_GROUPS: ReadonlyArray<{
   {
     id: 'document',
     label: 'Document',
-    entryIds: ['sign', 'forms', 'flatten', 'optimize', 'audit', 'stamp', 'watermark', 'createFromImages', 'multi-mode'],
+    entryIds: ['sign', 'forms', 'flatten', 'optimize', 'audit', 'stamp', 'watermark', 'createFromImages', 'multi-mode', 'engineeringLayers', 'documentInfo'],
   },
   {
     id: 'recognition',
@@ -295,7 +299,7 @@ export const PALETTE_GROUPS: ReadonlyArray<{
   {
     id: 'export',
     label: 'Export',
-    entryIds: ['exportPages', 'exportText', 'exportDocx', 'exportComments', 'importComments', 'fillFromCsv'],
+    entryIds: ['exportPages', 'exportText', 'exportDocx', 'exportComments', 'importComments', 'fillFromCsv', 'exportFormData', 'importFormData'],
   },
 ];
 
@@ -658,6 +662,34 @@ const REGISTRY = [
     availability: 'form-fields',
   },
   {
+    // Phase 57 (feature B) — export the active document's AcroForm field
+    // VALUES as FDF/XFDF form DATA. Distinct from the comment FDF verbs
+    // above, which carry annotations. The `form-fields` precondition is
+    // honest: with no fields the verb is disabled with the shared reason.
+    id: 'exportFormData',
+    label: 'Export form data\u2026',
+    description: 'Save the active document\u2019s form field values as an FDF or XFDF data file.',
+    icon: FileCode,
+    shortcut: '',
+    stage: 'review',
+    action: 'exportFormData',
+    availability: 'form-fields',
+  },
+  {
+    // Phase 57 (feature B) — import FDF/XFDF form VALUES into the active
+    // document. Names match an existing field (exact, then
+    // case-insensitive); an unknown name is reported, never created. Same
+    // `form-fields` precondition as the export verb.
+    id: 'importFormData',
+    label: 'Import form data\u2026',
+    description: 'Load FDF or XFDF field values into the active document\u2019s matching form fields.',
+    icon: FileSliders,
+    shortcut: '',
+    stage: 'review',
+    action: 'importFormData',
+    availability: 'form-fields',
+  },
+  {
     // Phase 54 (features D + E) — validate the active document against a
     // PDF/A or PDF/X profile and report what the file declares plus every
     // finding. The `validation` precondition is honest: no open document (or a
@@ -671,6 +703,32 @@ const REGISTRY = [
     stage: 'review',
     action: 'validateDocument',
     availability: 'validation',
+  },
+  {
+    // Phase 57 (feature A) — list the active document's optional content
+    // groups (layers) with a visibility toggle that re-renders the page.
+    // The `document` precondition is honest: no open document disables the
+    // verb with the shared reason, never a dead click.
+    id: 'engineeringLayers',
+    label: 'Engineering layers\u2026',
+    description: 'Show the document\u2019s layers and switch each one on or off.',
+    icon: Layers2,
+    shortcut: '',
+    stage: 'review',
+    action: 'engineeringLayers',
+    availability: 'document',
+  },
+  {
+    // Phase 57 (feature A) — report the document's PDF/E engineering
+    // metadata, layer count and 3D objects. Same `document` precondition.
+    id: 'documentInfo',
+    label: 'Document info\u2026',
+    description: 'Show the document\u2019s PDF/E engineering metadata, layers and 3D content.',
+    icon: BadgeInfo,
+    shortcut: '',
+    stage: 'review',
+    action: 'documentInfo',
+    availability: 'document',
   },
   {
     id: 'annotationsPanel',
@@ -1455,7 +1513,11 @@ const SURFACE_BY_ID: Record<ToolId, ToolSurface> = {
   exportComments: 'palette',
   importComments: 'palette',
   fillFromCsv: 'palette',
+  exportFormData: 'palette',
+  importFormData: 'palette',
   validateDocument: 'dock',
+  engineeringLayers: 'palette',
+  documentInfo: 'palette',
   annotationsPanel: 'panel',
   annSelect: 'flyout',
   annHighlight: 'flyout',
@@ -1583,7 +1645,11 @@ export const DOCK_STAGE_IDS: Readonly<Record<Stage, readonly string[]>> = {
     'exportComments',
     'importComments',
     'fillFromCsv',
+    'exportFormData',
+    'importFormData',
     'validateDocument',
+    'engineeringLayers',
+    'documentInfo',
   ],
   deliver: ['optimize', 'audit', 'exportPages', 'exportText', 'exportDocx', 'exportXlsx', 'exportPptx', 'createFromImages', 'encrypt'],
 };

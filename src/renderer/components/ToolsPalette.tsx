@@ -93,6 +93,19 @@ interface ToolsPaletteProps {
    *  fields from a CSV. Enabled only when the active document has form
    *  fields (the registry entry's `form-fields` precondition). */
   onFillFromCsv?: () => void;
+  /** Phase 57 (feature B) — export the active document's AcroForm field
+   *  values as FDF/XFDF form DATA. Enabled only when the active document
+   *  has form fields (the registry entry's `form-fields` precondition). */
+  onExportFormData?: () => void;
+  /** Phase 57 (feature B) — import FDF/XFDF form values into the active
+   *  document. Shared `form-fields` precondition with the export verb. */
+  onImportFormData?: () => void;
+  /** Phase 57 (feature A) — list the active document's engineering layers
+   *  with a visibility toggle. Enabled only when a document is open. */
+  onEngineeringLayers?: () => void;
+  /** Phase 57 (feature A) — the document's PDF/E engineering info, layer
+   *  count and 3D content. Same `document` precondition. */
+  onDocumentInfo?: () => void;
   /** Phase 18 — Watermark (text or image overlay). Opens the
    *  watermark tool for the active document: text or image content
    *  with typography, position, opacity, tiling and page-range
@@ -156,6 +169,10 @@ export function ToolsPalette(props: ToolsPaletteProps): ReactElement {
     onExportComments,
     onImportComments,
     onFillFromCsv,
+    onExportFormData,
+    onImportFormData,
+    onEngineeringLayers,
+    onDocumentInfo,
     onWatermark,
     hasOcrSuspects,
     documentRequired,
@@ -207,6 +224,8 @@ export function ToolsPalette(props: ToolsPaletteProps): ReactElement {
     if (id === 'exportComments') return onExportComments !== undefined;
     if (id === 'importComments') return onImportComments !== undefined;
     if (id === 'fillFromCsv') return hasFormFields && onFillFromCsv !== undefined;
+    if (id === 'exportFormData') return hasFormFields && onExportFormData !== undefined;
+    if (id === 'importFormData') return hasFormFields && onImportFormData !== undefined;
     if (id === 'watermark') return onWatermark !== undefined;
     return true;
   };
@@ -245,6 +264,12 @@ export function ToolsPalette(props: ToolsPaletteProps): ReactElement {
   if (onExportComments !== undefined) wired.set('exportComments', { action: onExportComments });
   if (onImportComments !== undefined) wired.set('importComments', { action: onImportComments });
   if (onFillFromCsv !== undefined) wired.set('fillFromCsv', { action: onFillFromCsv });
+  if (onExportFormData !== undefined) wired.set('exportFormData', { action: onExportFormData });
+  if (onImportFormData !== undefined) wired.set('importFormData', { action: onImportFormData });
+  if (onEngineeringLayers !== undefined) {
+    wired.set('engineeringLayers', { action: onEngineeringLayers });
+  }
+  if (onDocumentInfo !== undefined) wired.set('documentInfo', { action: onDocumentInfo });
 
   // The canonical palette order comes from the registry; an id the host did
   // not wire (or a stale id) simply does not render.

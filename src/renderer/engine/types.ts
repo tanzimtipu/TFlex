@@ -21,6 +21,7 @@ import type {
   ExportPageEntry,
   ExportPagesPayload,
   FillFormFieldPayload,
+  FormDataImportReport,
   FormField,
   MoveSignaturePayload,
   OcrCancelResult,
@@ -29,6 +30,9 @@ import type {
   OcrSuspect,
   OptimizePreset,
   PageLabelEntry,
+  Pdf3dContent,
+  PdfCadMetadata,
+  PdfLayer,
   SignaturePlacement,
   SpaceAudit,
   TextPage,
@@ -638,6 +642,55 @@ export interface EngineApi {
     docId: string,
     fdfBytes: Uint8Array,
   ): Promise<Result<EngineState, EngineError>>;
+
+  /** Phase 57 feature B — export the document's AcroForm field VALUES as
+   *  FDF / XFDF form DATA (distinct from `exportFdf`, which carries
+   *  annotations). Round-trips with `importFormData`. Optional so a
+   *  pre-Phase-57 backend degrades with a friendly engine-error. */
+  exportFormData?(
+    docId: string,
+    format: "fdf" | "xfdf",
+  ): Promise<Result<ArrayBuffer, EngineError>>;
+
+  /** Phase 57 feature B — import FDF / XFDF form values into the document
+   *  and report which names matched (an unknown name is reported, never
+   *  created). The report carries no engine state, so it is returned as-is
+   *  and the host refreshes form state itself. Optional so a pre-Phase-57
+   *  backend degrades with a friendly engine-error. */
+  importFormData?(
+    docId: string,
+    format: "fdf" | "xfdf",
+    data: Uint8Array,
+  ): Promise<Result<FormDataImportReport, EngineError>>;
+
+  /** Phase 57 feature A — enumerate the document's optional content groups
+   *  (layers) with their current visibility. A document without layers is
+   *  `ok([])`, never an error. Optional so a pre-Phase-57 backend degrades
+   *  with a friendly engine-error. */
+  getLayers?(docId: string): Promise<Result<PdfLayer[], EngineError>>;
+
+  /** Phase 57 feature A — switch one layer ON/OFF by its 0-based index.
+   *  Undoable and marks the document modified; returns the full engine state
+   *  so the host can refresh its proxy. Optional so a pre-Phase-57 backend
+   *  degrades with a friendly engine-error. */
+  setLayerVisibility?(
+    docId: string,
+    index: number,
+    visible: boolean,
+  ): Promise<Result<EngineState, EngineError>>;
+
+  /** Phase 57 feature A — the XMP `pdfe:` engineering block, or `null` when
+   *  the document declares none / it cannot be decoded. A typed engine-error
+   *  is returned only when the declared /Metadata exceeds 4 MiB. Optional so a
+   *  pre-Phase-57 backend degrades with a friendly engine-error. */
+  getCadMetadata?(
+    docId: string,
+  ): Promise<Result<PdfCadMetadata | null, EngineError>>;
+
+  /** Phase 57 feature A — every 3D annotation the app cannot render, naming
+   *  its 1-based VISIBLE page and object. `ok([])` when there are none.
+   *  Optional so a pre-Phase-57 backend degrades with a friendly engine-error. */
+  get3dContent?(docId: string): Promise<Result<Pdf3dContent[], EngineError>>;
 
   /** Phase 18 — bake a text or image watermark into the content
    *  streams of the selected pages. `settings` is the shared

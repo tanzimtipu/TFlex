@@ -25,6 +25,7 @@ import type {
   ExportPageEntry,
   ExportPagesPayload,
   FillFormFieldPayload,
+  FormDataImportReport,
   FormField,
   MovePagesBetweenDocsPayload,
   MovePagesBetweenDocsResult,
@@ -36,6 +37,9 @@ import type {
   OpEntry,
   OptimizePreset,
   PageLabelEntry,
+  Pdf3dContent,
+  PdfCadMetadata,
+  PdfLayer,
   SignaturePlacement,
   SpaceAudit,
   TextPage,
@@ -467,6 +471,38 @@ export interface TFlexApiEngine {
     docId: string,
     fdfBytes: Uint8Array,
   ): Promise<Result<SharedEngineState, EngineError>>;
+  /** Phase 57 feature B — export the document's AcroForm field VALUES as
+   *  FDF / XFDF form DATA (distinct from `exportFdf`, which carries
+   *  annotations). Round-trips with `importFormData`. Optional so a
+   *  pre-Phase-57 backend degrades with a friendly engine-error. */
+  exportFormData?(
+    docId: string,
+    format: "fdf" | "xfdf",
+  ): Promise<Result<ArrayBuffer, EngineError>>;
+  /** Phase 57 feature B — import FDF / XFDF form values into the document
+   *  and report which names matched (an unknown name is reported, never
+   *  created). Returns the report; it carries no engine state, so there is
+   *  nothing to normalize here (the host refreshes form state itself).
+   *  Optional so a pre-Phase-57 backend degrades with a friendly
+   *  engine-error. */
+  importFormData?(
+    docId: string,
+    format: "fdf" | "xfdf",
+    data: Uint8Array,
+  ): Promise<Result<FormDataImportReport, EngineError>>;
+  /** Phase 57 feature A — PDF/E engineering surfaces on the raw inner engine.
+   *  Optional so a pre-Phase-57 backend degrades with a friendly
+   *  engine-error. */
+  getLayers?(docId: string): Promise<Result<PdfLayer[], EngineError>>;
+  setLayerVisibility?(
+    docId: string,
+    index: number,
+    visible: boolean,
+  ): Promise<Result<SharedEngineState, EngineError>>;
+  getCadMetadata?(
+    docId: string,
+  ): Promise<Result<PdfCadMetadata | null, EngineError>>;
+  get3dContent?(docId: string): Promise<Result<Pdf3dContent[], EngineError>>;
   /** Phase 18 — bake a text or image watermark into the content
    *  streams of the selected pages. Optional so a pre-Phase-18
    *  backend degrades with a friendly engine-error. */
@@ -746,6 +782,20 @@ function missingPhase52(): Result<never, EngineError> {
   return err(
     "engine-error",
     "encrypted-PDF support requires the Phase 52 backend update",
+  );
+}
+
+function missingPhase57(): Result<never, EngineError> {
+  return err(
+    "engine-error",
+    "form-data export/import requires the Phase 57 backend update",
+  );
+}
+
+function missingPhase57Layers(): Result<never, EngineError> {
+  return err(
+    "engine-error",
+    "PDF/E layers and 3D content require the Phase 57 backend update",
   );
 }
 
@@ -1441,6 +1491,77 @@ class RealEngineAdapter implements EngineApi {
     if (this.inner.importFdf === undefined) return missingPhase12();
     const r = await this.inner.importFdf(docId, fdfBytes);
     return r.ok ? { ok: true, value: this.normalizeAndCache(docId, r.value) } : r;
+  }
+
+  /** Phase 57 feature B — export the active document's AcroForm field
+   *  VALUES as FDF / XFDF form DATA. The bytes carry no engine state, so
+   *  this is a plain pass-through (mirrors `exportFdf`, not the cached
+   *  mutations). Optional so a pre-Phase-57 backend degrades with a
+   *  friendly engine-error. */
+  async exportFormData(
+    docId: string,
+    format: "fdf" | "xfdf",
+  ): Promise<Result<ArrayBuffer, EngineError>> {
+    if (this.inner.exportFormData === undefined) return missingPhase57();
+    const r = await this.inner.exportFormData(docId, format);
+    if (!r.ok) return r;
+    return { ok: true, value: toArrayBuffer(r.value) };
+  }
+
+  /** Phase 57 feature B — import FDF / XFDF form values. The engine
+   *  applies every match as ONE undo entry and returns the
+   *  matched/unmatched/empty report; it never creates an unmatched field.
+   *  The report carries no engine state, so it is returned as-is (no
+   *  `normalizeAndCache`); the host refreshes form state itself. Optional
+   *  so a pre-Phase-57 backend degrades with a friendly engine-error. */
+  async importFormData(
+    docId: string,
+    format: "fdf" | "xfdf",
+    data: Uint8Array,
+  ): Promise<Result<FormDataImportReport, EngineError>> {
+    if (this.inner.importFormData === undefined) return missingPhase57();
+    return this.inner.importFormData(docId, format, data);
+  }
+
+  // -- Phase 57 feature A: PDF/E engineering surfaces --
+
+  /** Enumerate the document's layers. A layerless document is `ok([])`.
+   *  Optional so a pre-Phase-57 backend degrades with a friendly
+   *  engine-error. */
+  async getLayers(docId: string): Promise<Result<PdfLayer[], EngineError>> {
+    if (this.inner.getLayers === undefined) return missingPhase57Layers();
+    return this.inner.getLayers(docId);
+  }
+
+  /** Toggle one layer. Undoable and marks the doc modified; the engine echoes
+   *  the full state, so this goes through `normalizeAndCache` like every other
+   *  state-returning mutation (mirrors `importFdf`). */
+  async setLayerVisibility(
+    docId: string,
+    index: number,
+    visible: boolean,
+  ): Promise<Result<EngineState, EngineError>> {
+    if (this.inner.setLayerVisibility === undefined) return missingPhase57Layers();
+    const r = await this.inner.setLayerVisibility(docId, index, visible);
+    return r.ok ? { ok: true, value: this.normalizeAndCache(docId, r.value) } : r;
+  }
+
+  /** The XMP `pdfe:` engineering block, or `null` when absent/undecodable.
+   *  Carries no engine state, so it is returned as-is. */
+  async getCadMetadata(
+    docId: string,
+  ): Promise<Result<PdfCadMetadata | null, EngineError>> {
+    if (this.inner.getCadMetadata === undefined) return missingPhase57Layers();
+    return this.inner.getCadMetadata(docId);
+  }
+
+  /** Every 3D annotation the app cannot render (`ok([])` when none). Carries
+   *  no engine state, so it is returned as-is. */
+  async get3dContent(
+    docId: string,
+  ): Promise<Result<Pdf3dContent[], EngineError>> {
+    if (this.inner.get3dContent === undefined) return missingPhase57Layers();
+    return this.inner.get3dContent(docId);
   }
 
   // -- Phase 18: watermark --

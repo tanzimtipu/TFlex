@@ -16,7 +16,7 @@ export type FdfOpenError = 'not-fdf' | 'corrupt' | 'io';
  *  `.fdf` files (the PDF-only filter hid them). Phase 53 adds `'document'`:
  *  the grouped universal-import filter set (Documents / Text and markup /
  *  Spreadsheets / All supported files). */
-export type OpenFileDialogKind = 'pdf' | 'fdf' | 'document';
+export type OpenFileDialogKind = 'pdf' | 'fdf' | 'formData' | 'document';
 
 export type SaveFormat = 'nsis' | 'portable';
 
@@ -822,6 +822,45 @@ export interface FormField {
 export interface FillFormFieldPayload {
   id: string;
   value: string | string[];
+}
+
+/** Phase 57 feature B - the outcome of importing FDF/XFDF form values into an
+ *  already-open document. `matched` = the name existed in the document and
+ *  received a value; `unmatched` = the name does not exist in the document (a
+ *  stray field is never created); `empty` = a document field that received no
+ *  value. Informational, never an error. */
+export interface FormDataImportReport {
+  matched: string[];
+  unmatched: string[];
+  empty: string[];
+}
+
+/** Phase 57 feature A - one optional content group (layer). */
+export interface PdfLayer {
+  /** 0-based index into the flattened /OCProperties /D /Order walk; stable within a session. */
+  index: number;
+  /** The OCG's /Name, or 'Layer N' (1-based) when the OCG is unnamed. */
+  name: string;
+  /** True when the OCG is currently switched ON (NOT listed in /D /OFF). */
+  visible: boolean;
+}
+
+/** Phase 57 feature A - the XMP pdfe engineering block, when the document declares one. */
+export interface PdfCadMetadata {
+  /** The pdfe:Identification block as string pairs (Part, Conformance, ...). */
+  identification: Array<{ key: string; value: string }>;
+  /** pdfe measurement entries as string pairs. */
+  measurement: Array<{ key: string; value: string }>;
+  /** pdfe geospatial entries (GTS_*, projection) as string pairs. */
+  geospatial: Array<{ key: string; value: string }>;
+}
+
+/** Phase 57 feature A - one 3D object the app cannot render. */
+export interface Pdf3dContent {
+  /** 1-based VISIBLE page the 3D annotation sits on. */
+  page: number;
+  /** The annotation's /NM or /T, else '3D object N' (1-based). */
+  name: string;
 }
 
 // ---- Phase 4: Signatures ----

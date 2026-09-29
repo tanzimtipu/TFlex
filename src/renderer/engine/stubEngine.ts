@@ -34,6 +34,7 @@ import type {
   ExportPageEntry,
   ExportPagesPayload,
   FillFormFieldPayload,
+  FormDataImportReport,
   FormField,
   MoveSignaturePayload,
   OcrCancelResult,
@@ -42,6 +43,9 @@ import type {
   OcrSuspect,
   OptimizePreset,
   PageLabelEntry,
+  Pdf3dContent,
+  PdfCadMetadata,
+  PdfLayer,
   SavedSignature,
   SignaturePlacement,
   SignatureSource,
@@ -1380,6 +1384,88 @@ export class StubRendererEngine implements EngineApi {
     );
   }
 
+  /** Phase 57 feature B — export the document's AcroForm field VALUES as
+   *  FDF / XFDF form DATA. The stub returns placeholder bytes so the
+   *  renderer-side save flow can run; the real engine writes proper
+   *  FDF/XFDF bytes that round-trip with importFormData. */
+  async exportFormData(
+    docId: string,
+    format: "fdf" | "xfdf",
+  ): Promise<Result<ArrayBuffer, EngineError>> {
+    const t = this.tabs.get(docId);
+    if (t === undefined) return err("engine-error", "unknown document");
+    recordPhase12(t, {
+      kind: "exportFormData",
+      payload: { format, fieldCount: stubFormFields(t).length },
+    });
+    return ok(new ArrayBuffer(0));
+  }
+
+  /** Phase 57 feature B — import FDF / XFDF form values and report which
+   *  names matched. The stub has no parser, so it records the call and
+   *  returns a deterministic report: the fixed form-data names it can
+   *  round-trip, nothing unmatched and nothing empty. Unit tests exercise
+   *  the real mapping with a dedicated engine mock. */
+  async importFormData(
+    docId: string,
+    format: "fdf" | "xfdf",
+    data: Uint8Array,
+  ): Promise<Result<FormDataImportReport, EngineError>> {
+    const t = this.tabs.get(docId);
+    if (t === undefined) return err("engine-error", "unknown document");
+    recordPhase12(t, {
+      kind: "importFormData",
+      payload: { format, dataLen: data.byteLength },
+    });
+    return ok({ matched: ["FullName", "Email"], unmatched: [], empty: [] });
+  }
+
+  /** Phase 57 feature A — the stub declares no layers (a layerless document
+   *  is `ok([])`, never an error) and records the call so unit tests can
+   *  assert the renderer asked. */
+  async getLayers(docId: string): Promise<Result<PdfLayer[], EngineError>> {
+    const t = this.tabs.get(docId);
+    if (t === undefined) return err("engine-error", "unknown document");
+    recordPhase12(t, { kind: "getLayers", payload: {} });
+    return ok([]);
+  }
+
+  /** Phase 57 feature A — the stub has no OCG graph to mutate; it records the
+   *  toggle, marks the doc modified and returns the echoed state so the
+   *  renderer refresh path is exercised. */
+  async setLayerVisibility(
+    docId: string,
+    index: number,
+    visible: boolean,
+  ): Promise<Result<EngineState, EngineError>> {
+    const t = this.tabs.get(docId);
+    if (t === undefined) return err("engine-error", "unknown document");
+    pushUndo(t);
+    recordPhase12(t, { kind: "setLayerVisibility", payload: { index, visible } });
+    t.modified = true;
+    return ok(buildState(t));
+  }
+
+  /** Phase 57 feature A — the stub declares no PDF/E engineering block. */
+  async getCadMetadata(
+    docId: string,
+  ): Promise<Result<PdfCadMetadata | null, EngineError>> {
+    const t = this.tabs.get(docId);
+    if (t === undefined) return err("engine-error", "unknown document");
+    recordPhase12(t, { kind: "getCadMetadata", payload: {} });
+    return ok(null);
+  }
+
+  /** Phase 57 feature A — the stub declares no 3D annotations. */
+  async get3dContent(
+    docId: string,
+  ): Promise<Result<Pdf3dContent[], EngineError>> {
+    const t = this.tabs.get(docId);
+    if (t === undefined) return err("engine-error", "unknown document");
+    recordPhase12(t, { kind: "get3dContent", payload: {} });
+    return ok([]);
+  }
+
   /** Test-only: read back the most recent Phase 12 call recorded for
    *  a tab. Used by unit tests to assert the renderer sent the
    *  expected payload without standing up a real engine. */
@@ -1485,7 +1571,19 @@ export type Phase12Record =
   | {
     kind: "importFdf";
     payload: { fdfBytesLen: number };
-  };
+  }
+  | {
+    kind: "exportFormData";
+    payload: { format: "fdf" | "xfdf"; fieldCount: number };
+  }
+  | {
+    kind: "importFormData";
+    payload: { format: "fdf" | "xfdf"; dataLen: number };
+  }
+  | { kind: "getLayers"; payload: Record<string, never> }
+  | { kind: "setLayerVisibility"; payload: { index: number; visible: boolean } }
+  | { kind: "getCadMetadata"; payload: Record<string, never> }
+  | { kind: "get3dContent"; payload: Record<string, never> };
 
 function recordPhase12(t: StubTab, rec: Phase12Record): void {
   t.phase12Log.push(rec);

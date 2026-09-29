@@ -71,6 +71,12 @@ function specForKind(kind: OpenFileDialogKind): FilterSpec {
         title: 'Import FDF Comments',
         filters: [{ name: 'FDF', extensions: ['fdf'] }],
       };
+    case 'formData':
+      // Phase 57 feature B — Import form data (FDF/XFDF) picker.
+      return {
+        title: 'Open Form Data',
+        filters: [{ name: 'Form data', extensions: ['fdf', 'xfdf'] }],
+      };
     case 'document':
       // Phase 53 feature I — grouped universal-import filters.
       return {
@@ -96,6 +102,26 @@ export async function savePdfDialog(): Promise<string | null> {
   const result = await dialog.showSaveDialog({
     title: 'Save PDF As',
     filters: [{ name: 'PDF', extensions: ['pdf'] }],
+  });
+  if (result.canceled || result.filePath === undefined) {
+    return null;
+  }
+  return result.filePath;
+}
+
+/**
+ * Phase 57 feature B — the "Save Form Data As" destination picker for the
+ * Export form data (FDF/XFDF) flow. Returns the chosen path, or `null` when
+ * the user dismisses it (a quiet cancel, never an error).
+ */
+export async function saveFormDataDialog(
+  format: 'fdf' | 'xfdf',
+  defaultName?: string,
+): Promise<string | null> {
+  const result = await dialog.showSaveDialog({
+    title: 'Save Form Data As',
+    filters: [{ name: format === 'xfdf' ? 'XFDF' : 'FDF', extensions: [format] }],
+    defaultPath: defaultName,
   });
   if (result.canceled || result.filePath === undefined) {
     return null;

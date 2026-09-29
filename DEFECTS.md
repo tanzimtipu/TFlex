@@ -5,6 +5,52 @@
 > inspect the current `OPEN`, `FIX-READY`, and `DISPUTED` entries first; closed records are
 > historical evidence and must not be loaded wholesale.
 
+## DEF-399: Engineering layers / 3D notice / Document info never populate - the renderer detaches the engine adapter methods before calling them
+
+- Status: CLOSED
+- Severity: HIGH
+- Found by: qa
+- Phase: 57
+
+Steps to reproduce:
+1. Build the current tree (`npm.cmd run build`) and launch the dev build through the canonical `e2e/lib/launch.cjs` helper.
+2. Open a PDF whose catalog declares `/OCProperties` with two named OCGs (the spec builds one in-spec: one page, OCGs Walls/Pipes, a red rect inside `/OC /MC0 BDC...EMC` and a blue rect inside `/OC /MC1 BDC...EMC`).
+3. Run the "Engineering layers..." verb (Ctrl+Shift+P -> row) or click the REVIEW dock verb `[data-dock-verb='engineeringLayers']`.
+4. Observe the panel: it shows the `layer-empty` state "This document declares no layers." with 0 `layer-row`s.
+5. Direct bridge probe in the same run: `window.tflex.engine.getLayers(d.engineDocId)` returns `{ok:true,value:[{index:0,name:"Walls",visible:true},{index:1,name:"Pipes",visible:true}]}`.
+6. Open a 2-page PDF whose page 2 carries a `/Subtype /3D` annot (`/NM (Turbine)`): `[data-testid=pdf3d-notice]` never mounts. Run "Document info..." on a PDF with a `pdfe` XMP block: it shows "No PDF/E engineering metadata", `doc-info-3d-count` 0, `doc-info-layer-count` 0.
+
+Expected: the panel lists Walls/Pipes with `layer-count` "2 layers"; the 3D notice appears naming page + object; Document info lists the PDF/E identification/measurement/geospatial pairs.
+Actual: all three Phase-57 engineering surfaces stay empty. The renderer logs `[ELECTRON-ERROR] Cannot read properties of undefined (reading 'inner')` on every document open. Root cause: `src/renderer/App.tsx` detaches the adapter method from its instance before calling it - `const layersCall = client.getLayers; ... await layersCall(docId)` at :6609-6619 and :8369-8371, and `const call = engineRef.current.setLayerVisibility; ... call(...)` at :6641. `RealEngineAdapter.getLayers/getCadMetadata/get3dContent/setLayerVisibility` (`src/renderer/engine/engineClient.ts:1531/1551/1560/1539`) read `this.inner`, so an unbound call has `this === undefined` and throws. The unit suites cannot catch this (they inject props / drive the engine directly); the raw engine bridge works. Prior art at App.tsx:5345 shows the same detached-method class was already fixed once for `createDocxFromDoc`.
+Screenshot: screenshots/p57a-layers-before.png (open panel, "declares no layers") and screenshots/p57a-document-info.png.
+Test: e2e/phase57a_engineering.spec.cjs (P57A_LAYERS rowCount 0; P57A_ENGINE_PROBE layersResult ok/2).
+
+History:
+- qa: opened
+- qa: CLOSED. Retested on the fixed tree rebuilt from source (`npm.cmd run build`, exit 0). `npm.cmd run test:unit -- test/unit/main/pdfEngineering` -> 16 passed; `npm.cmd run test:unit -- test/unit/renderer/engineeringSurfaces` -> 13 passed; `npm.cmd run verify` -> clean. App-level `npm.cmd run test:e2e -- --config=e2e/playwright.dev.config.js e2e/phase57a_engineering.spec.cjs` -> 1 passed (10.6s). Layers panel no longer empty: P57A_LAYERS `{rowCount:2,rowNames:["Walls","Pipes"],countText:"2 layers",emptyText:null}`; both REVIEW verbs reachable (P57A_DOCK dockHasEng/dockHasInfo true). 3D notice visible naming page + object: P57A_3D `{noticeVisible:true,noticeText:"Page 2 contains 3D content (\"Turbine\") that cannot be rendered. The rest of the page is shown.",noticeCloseCount:0,p2NonWhite:1498176}`. Document info shows the CAD lists: P57A_DOCINFO `{identPairs:[["Part","1"],["Conformance","E"]],measPairs:[["Type","Distance"],["Value","10 mm"]],geoPairs:[["GTS_Projection","EPSG:4326"]],noCad:0}`. Screenshots: screenshots/p57a-layers-before.png, p57a-layers-after.png, p57a-3d-notice.png, p57a-document-info.png.
+
+## DEF-400: Toggling an optional-content layer cannot change the rendered page - `serializeDoc` clones the page OCG refs separately from the catalog `/OCProperties` OCG refs
+
+- Status: CLOSED
+- Severity: HIGH
+- Found by: qa
+- Phase: 57
+
+Steps to reproduce:
+1. Build the current tree and launch the dev build through the canonical `e2e/lib/launch.cjs` helper.
+2. Use the raw OCG fixture built in `e2e/phase57a_engineering.spec.cjs` (OCGs Walls/Pipes; page `/Resources /Properties << /MC0 5 0 R /MC1 6 0 R >>`; catalog `/OCProperties /OCGs [5 0 R 6 0 R] /D << /ON [5 0 R 6 0 R] /OFF [] /Order [...] >>`).
+3. Serialize it through the engine's own `serializeDoc` path (`src/main/services/engine.ts:5296` -> `out.copyPages` at :5302, then `carryCatalogEntries`/`PDFObjectCopier` at :5013) - the same path `getDocumentBytes` (:1138) uses for the toggle refresh.
+4. Re-parse the serialized bytes with `pdfjs-dist` and compare the optional-content config group ids with the page's marked-content OCG ids.
+
+Expected: the page's `/OC /MC0 BDC` OCG resolves to the same object as the `/OCProperties /OCGs` entry, so moving it to `/OFF` hides its rectangle.
+Actual: `copyPages` and `carryCatalogEntries` each use a fresh `PDFObjectCopier`, so the page `/Properties` gets one clone of each OCG while the catalog `/OCProperties` gets a second clone. Measured on the fixture: ORIGINAL bytes -> config group ids `['5R','6R']` == page OC op ids `5R/6R` (both visible); AFTER the `serializeDoc`-style clone -> config group ids `['8R','9R']` vs page OC op ids `4R/5R`, and PDF.js logs `Optional content group not found: 4R/5R` with `isVisible(...) === true` for both. PDF.js keys groups by object id (`pdf.worker.mjs` `parseMarkedContentProps` uses `optionalContent.objId`; `OptionalContentConfig.isVisible` returns `true` for an unknown id), so hiding a layer has NO effect on the rendered page. This breaks REQUIREMENTS.md phase-57 criterion 1 ("toggling one changes the rendered page") and was not reachable through the UI only because DEF-399 leaves the panel empty. The fixture itself is proven correct (both rectangles render on open; PDF.js matches ids on the original bytes).
+Evidence: diagnostic commands in the QA report (both `pdfjs-dist` runs).
+Test: e2e/phase57a_engineering.spec.cjs (render-delta leg not reachable until DEF-399 is fixed).
+
+History:
+- qa: opened
+- qa: CLOSED. Retested on the fixed tree rebuilt from source. Toggle now changes the render: in the same e2e run P57A_CANVAS_DELTA `{beforeRed:186355, afterRed:0, beforeBlue:186966, afterBlue:186966, pixelDiff:188191}` - switching Walls off removed the red rectangle (186355 -> 0 red px) while the blue Pipes rectangle stayed rendered (186966 px) and the canvas changed by 188191 pixels (> 0). The spec's canvas-delta assertion (`afterCounts.diff > 0`) passed. Screenshot: screenshots/p57a-layers-after.png. Unit suite `test/unit/main/pdfEngineering` -> 16 passed.
+
 ## DEF-398: A 1.9 MB PalmDOC record makes `decompressPalmDoc` allocate ~1 GB and block the main thread ~330 ms
 
 - Status: CLOSED

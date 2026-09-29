@@ -11,7 +11,7 @@
 //   2. UNIQUENESS — no duplicate id and no duplicate command id.
 //   3. EVERY ENTRY IS USABLE — a non-empty label and description, a Lucide
 //      icon, and a stage from the five-value vocabulary.
-//   4. THE 26 PALETTE IDS KEEP THEIR TEXT — the All-tools palette's labels,
+//   4. THE 29 PALETTE IDS KEEP THEIR TEXT — the All-tools palette's labels,
 //      descriptions, order and shortcuts are byte-identical to before the
 //      registry became the source (a chunk that retires the palette must not
 //      silently reword a tool on the way).
@@ -54,7 +54,8 @@ const AUDITED: Record<string, readonly string[]> = {
   ],
   review: [
     "annotate", "sign", "forms", "flatten", "stamp", "watermark", "exportComments",
-    "importComments", "fillFromCsv", "validateDocument", "annotationsPanel", "annSelect", "annHighlight",
+    "importComments", "fillFromCsv", "exportFormData", "importFormData", "validateDocument",
+    "engineeringLayers", "documentInfo", "annotationsPanel", "annSelect", "annHighlight",
     "annUnderline", "annStrikeout", "annInk", "annTextbox", "annRect",
     "annEllipse", "annArrow", "annCallout", "annNote", "annColor",
     "annPenWidth",
@@ -104,6 +105,10 @@ const PALETTE_TEXT: Record<string, readonly [string, string]> = {
   exportComments: ["Export comments (FDF)", "Save every annotation to a local .fdf file."],
   importComments: ["Import comments (FDF)", "Merge a local .fdf file into the active document."],
   fillFromCsv: ["Fill form fields from CSV…", "Map a CSV file’s columns onto the active document’s form fields."],
+  exportFormData: ["Export form data…", "Save the active document’s form field values as an FDF or XFDF data file."],
+  importFormData: ["Import form data…", "Load FDF or XFDF field values into the active document’s matching form fields."],
+  engineeringLayers: ["Engineering layers…", "Show the document’s layers and switch each one on or off."],
+  documentInfo: ["Document info…", "Show the document’s PDF/E engineering metadata, layers and 3D content."],
 };
 
 const STAGES = ["pages", "edit", "review", "deliver", "global"];
@@ -215,7 +220,8 @@ describe("toolsRegistry — canonical surface + the curated dock sets (DEF-313)"
     ]);
     expect(dockToolsForStage("review").map((e) => e.id)).toEqual([
       "annotate", "sign", "stamp", "flatten", "forms", "watermark",
-      "exportComments", "importComments", "fillFromCsv", "validateDocument",
+      "exportComments", "importComments", "fillFromCsv", "exportFormData",
+      "importFormData", "validateDocument", "engineeringLayers", "documentInfo",
     ]);
     expect(dockToolsForStage("deliver").map((e) => e.id)).toEqual([
       "optimize", "audit", "exportPages", "exportText", "exportDocx",
@@ -306,10 +312,10 @@ describe("toolsRegistry — Phase 42: one icon per tool and one home per tool", 
   });
 });
 
-describe("toolsRegistry — the palette's 27 entries", () => {
-  it("preserves the 27 ids, their canonical order and the four groups", () => {
-    expect(PALETTE_TOOL_IDS).toHaveLength(27);
-    expect(new Set(PALETTE_TOOL_IDS).size).toBe(27);
+describe("toolsRegistry — the palette's 31 entries", () => {
+  it("preserves the 31 ids, their canonical order and the four groups", () => {
+    expect(PALETTE_TOOL_IDS).toHaveLength(31);
+    expect(new Set(PALETTE_TOOL_IDS).size).toBe(31);
     expect(PALETTE_GROUPS.map((g) => g.id)).toEqual([
       "organize",
       "document",
@@ -320,7 +326,7 @@ describe("toolsRegistry — the palette's 27 entries", () => {
   });
 
   it("keeps every palette label and description byte-identical", () => {
-    expect(Object.keys(PALETTE_TEXT)).toHaveLength(27);
+    expect(Object.keys(PALETTE_TEXT)).toHaveLength(31);
     for (const [id, [label, description]] of Object.entries(PALETTE_TEXT)) {
       expect(toolById(id)?.label, id).toBe(label);
       expect(toolById(id)?.description, id).toBe(description);
@@ -339,7 +345,7 @@ describe("toolsRegistry — the palette's 27 entries", () => {
   });
 });
 
-/** Mount the palette with EVERY optional handler wired, so all 26 registry
+/** Mount the palette with EVERY optional handler wired, so all 29 registry
  *  entries render (an unwired entry is correctly absent — see
  *  toolsPaletteOrganization.test.tsx). */
 function mountFullyWiredPalette(): HTMLElement {
@@ -378,6 +384,10 @@ function mountFullyWiredPalette(): HTMLElement {
         onExportComments={noop}
         onImportComments={noop}
         onFillFromCsv={noop}
+        onExportFormData={noop}
+        onImportFormData={noop}
+        onEngineeringLayers={noop}
+        onDocumentInfo={noop}
         onWatermark={noop}
         onMultiMode={noop}
         hasOcrSuspects
@@ -390,7 +400,7 @@ function mountFullyWiredPalette(): HTMLElement {
 }
 
 describe("ToolsPalette reads the registry", () => {
-  it("renders the registry's 27 entries, in registry order, with registry text and icons", () => {
+  it("renders the registry's 31 entries, in registry order, with registry text and icons", () => {
     const host = mountFullyWiredPalette();
     const ids = [...host.querySelectorAll("[data-tool-id]")].map((el) =>
       el.getAttribute("data-tool-id"),

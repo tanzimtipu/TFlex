@@ -1,4 +1,4 @@
-import { readFile } from 'node:fs/promises';
+import { readFile, writeFile } from 'node:fs/promises';
 import { err, ok, type Result } from '../../shared/result';
 import type { FdfOpenError, PdfOpenError } from '../../shared/types';
 
@@ -73,4 +73,40 @@ export function sniffFdf(buffer: Buffer): Result<ArrayBuffer, FdfOpenError> {
   }
   const value = buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength);
   return ok(value as ArrayBuffer);
+}
+
+/**
+ * Phase 57 feature B — Reads an FDF or XFDF form-DATA file from disk. An
+ * `.xfdf` path returns the raw bytes: the engine's `parseFormXfdf` names a
+ * non-XFDF input, and XFDF is XML with no `%FDF-` signature. Any other path
+ * keeps the `%FDF-` signature check used by the comment path.
+ */
+export async function loadFormDataFile(
+  filePath: string,
+): Promise<Result<ArrayBuffer, FdfOpenError>> {
+  let buffer: Buffer;
+  try {
+    buffer = await readFile(filePath);
+  } catch {
+    return err('io', `could not read: ${filePath}`);
+  }
+  if (filePath.toLowerCase().endsWith('.xfdf')) {
+    if (buffer.length === 0) {
+      return err('corrupt', 'file is empty');
+    }
+    const value = buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength);
+    return ok(value as ArrayBuffer);
+  }
+  return sniffFdf(buffer);
+}
+
+/**
+ * Phase 57 feature B — Write form-DATA bytes (FDF or XFDF) to disk. Throws
+ * on an io failure; the caller maps that to a typed `io` error.
+ */
+export async function writeFormDataFile(
+  filePath: string,
+  bytes: Uint8Array,
+): Promise<void> {
+  await writeFile(filePath, bytes);
 }

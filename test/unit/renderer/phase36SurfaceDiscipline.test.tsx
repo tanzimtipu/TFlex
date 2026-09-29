@@ -124,9 +124,25 @@ const SANCTIONED: Record<Capability, { surfaces: Surface[]; why: string }> = {
     surfaces: ['dock'],
     why: 'Phase 53 (feature G mode 2): the CSV form-fill verb rides the REVIEW dock; the dialog is its only home',
   },
+  exportFormData: {
+    surfaces: ['dock'],
+    why: 'Phase 57 (feature B): the form-data export verb rides the REVIEW dock; the dialog is its only home',
+  },
+  importFormData: {
+    surfaces: ['dock'],
+    why: 'Phase 57 (feature B): the form-data import verb rides the REVIEW dock; the dialog is its only home',
+  },
   validateDocument: {
     surfaces: ['dock'],
     why: 'Phase 54 (features D + E): the validate verb rides the REVIEW dock (and the palette); the dialog is its only home',
+  },
+  engineeringLayers: {
+    surfaces: ['dock'],
+    why: 'Phase 57 (feature A): the engineering-layers verb rides the REVIEW dock (and the palette); the panel is its only home',
+  },
+  documentInfo: {
+    surfaces: ['dock'],
+    why: 'Phase 57 (feature A): the document-info verb rides the REVIEW dock (and the palette); the dialog is its only home',
   },
 
   // ---- DELIVER -------------------------------------------------------

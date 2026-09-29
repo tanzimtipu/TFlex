@@ -32,6 +32,7 @@ import type {
   ExportPageEntry,
   ExportPagesPayload,
   FdfOpenError,
+  FormDataImportReport,
   LoadSettingsResult,
   MovePagesBetweenDocsPayload,
   MovePagesBetweenDocsResult,
@@ -99,6 +100,10 @@ export const IPC = {
   // Phase 12 — separate FDF load path. FDF files start with %FDF- and would
   // be rejected by the PDF sniff; this channel uses the FDF signature check.
   fdfLoad: "fdf:load",
+  // Phase 57 feature B - FDF/XFDF form-DATA interchange (distinct from the
+  // Phase-12 comment FDF path above: the payload is AcroForm field values).
+  formDataSave: "formData:save",
+  formDataLoad: "formData:load",
   samplesList: "samples:list",
   samplesLoad: "samples:load",
   samplesRead: "samples:read",
@@ -230,6 +235,17 @@ export const IPC = {
   engineAddStamp: "engine:addStamp",
   engineExportFdf: "engine:exportFdf",
   engineImportFdf: "engine:importFdf",
+  // Phase 57 feature B - export/import the open document's AcroForm field
+  // values as FDF or XFDF (the annotation FDF channels above are separate).
+  engineExportFormData: "engine:exportFormData",
+  engineImportFormData: "engine:importFormData",
+  // Phase 57 feature A - PDF/E engineering documents: enumerate the optional
+  // content groups (layers) with their visibility, toggle one, surface the XMP
+  // pdfe block, and detect 3D annotations.
+  engineGetLayers: "engine:getLayers",
+  engineSetLayerVisibility: "engine:setLayerVisibility",
+  engineGetCadMetadata: "engine:getCadMetadata",
+  engineGet3dContent: "engine:get3dContent",
   // Phase 18: watermark (text or image overlay). The engine bakes the
   // watermark into each selected page's content stream (undoable via the
   // per-doc queue). DEF-216: each application is an individually
@@ -723,6 +739,47 @@ export interface TFlexApiEngine {
     docId: string,
     fdfBytes: Uint8Array,
   ): Promise<Result<EngineState, import("./types").EngineError>>;
+  /** Phase 57 feature B — export the open document's AcroForm field values
+   *  as FDF (`'fdf'`) or XFDF (`'xfdf'`) form-DATA bytes. Distinct from
+   *  `exportFdf`, which carries annotations. */
+  exportFormData?(
+    docId: string,
+    format: "fdf" | "xfdf",
+  ): Promise<Result<ArrayBuffer, import("./types").EngineError>>;
+  /** Phase 57 feature B — import FDF/XFDF form values into the open document.
+   *  Names match an existing field (exact, then case-insensitive); an unknown
+   *  name is reported, never created. Returns the matched/unmatched/empty
+   *  report; undoable as one entry. */
+  importFormData?(
+    docId: string,
+    format: "fdf" | "xfdf",
+    data: Uint8Array,
+  ): Promise<Result<FormDataImportReport, import("./types").EngineError>>;
+  /** Phase 57 feature A — enumerate the open document's optional content
+   *  groups (layers) in /OCProperties /D /Order order. A document with no
+   *  optional content resolves `ok([])`, never an error. Optional so a
+   *  pre-Phase-57 backend degrades instead of crashing. */
+  getLayers?(
+    docId: string,
+  ): Promise<Result<import("./types").PdfLayer[], import("./types").EngineError>>;
+  /** Phase 57 feature A — switch one layer ON or OFF by its `getLayers`
+   *  index. An out-of-range index fails with 'out-of-range' and mutates
+   *  nothing; a valid toggle is one undoable entry and survives serialize. */
+  setLayerVisibility?(
+    docId: string,
+    index: number,
+    visible: boolean,
+  ): Promise<Result<EngineState, import("./types").EngineError>>;
+  /** Phase 57 feature A — the document's XMP pdfe engineering block, or null
+   *  when it declares none. */
+  getCadMetadata?(
+    docId: string,
+  ): Promise<Result<import("./types").PdfCadMetadata | null, import("./types").EngineError>>;
+  /** Phase 57 feature A — the 3D annotations the app cannot render, each
+   *  naming its 1-based visible page and the 3D object. */
+  get3dContent?(
+    docId: string,
+  ): Promise<Result<import("./types").Pdf3dContent[], import("./types").EngineError>>;
   /** Phase 18 — bake a text or image watermark into the content streams
    *  of the selected pages. Each application is an individually
    *  addressable watermark (id `wm-N`): the marker baked into each page's
@@ -886,6 +943,15 @@ export interface TFlexApi {
    *  the `%FDF-` signature and returns the raw bytes (no parsing — the
    *  engine's `importFdf` does the structural parse). */
   loadFdf(path: string): Promise<Result<ArrayBuffer, FdfOpenError>>;
+  /** Phase 57 feature B — load an FDF/XFDF form-DATA file from disk. An
+   *  `.xfdf` path returns the raw bytes (the engine names a non-XFDF input);
+   *  an FDF path keeps the `%FDF-` signature check. Returns null on cancel. */
+  saveFormDataFile?(
+    format: "fdf" | "xfdf",
+    bytes: Uint8Array,
+    defaultName?: string,
+  ): Promise<Result<{ path: string } | null, FdfOpenError>>;
+  loadFormData?(path: string): Promise<Result<ArrayBuffer, FdfOpenError>>;
   loadSample(name: string): Promise<Result<SampleDocument & { path: `samples/${string}` }, "not-found">>;
   readSample(name: string): Promise<Result<ArrayBuffer, "not-found">>;
   listSamples(): Promise<SampleDocument[]>;

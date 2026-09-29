@@ -314,6 +314,21 @@ describe('DEF-381 — serializeDoc carries layers, JS and page-safe catalog entr
     const d = doc.context.lookupMaybe(oc!.get(PDFName.of('D')), PDFDict);
     const order = doc.context.lookupMaybe(d!.get(PDFName.of('Order')), PDFArray);
     expect(order?.size()).toBe(2);
+
+    // DEF-400 identity: the config entries must BE the page-level objects, not
+    // a second copy of them, or PDF.js can never match a content stream's
+    // /OC /MCn group to the configuration.
+    const resources = doc.getPage(0).node.Resources();
+    const props = doc.context.lookupMaybe(resources?.get(PDFName.of('Properties')), PDFDict);
+    expect(props).toBeDefined();
+    const mc0 = ocRefTag(props!.get(PDFName.of('MC0')));
+    const mc1 = ocRefTag(props!.get(PDFName.of('MC1')));
+    expect(mc0).not.toBe('inline');
+    expect(mc1).not.toBe('inline');
+    expect(ocRefTag(ocgs!.get(0))).toBe(mc0);
+    expect(ocRefTag(ocgs!.get(1))).toBe(mc1);
+    expect(ocRefTag(order?.get(0))).toBe(mc0);
+    expect(ocRefTag(order?.get(1))).toBe(mc1);
   });
 
   it('round-trips /MarkInfo and /Lang structure intact', async () => {
@@ -507,23 +522,43 @@ async function buildStructTreeSource(): Promise<Uint8Array> {
 
 async function buildOcPropertiesSource(): Promise<Uint8Array> {
   const doc = await PDFDocument.create({ updateMetadata: false });
-  doc.addPage([200, 200]);
+  const page = doc.addPage([200, 200]);
   const ocg1 = doc.context.register(
     doc.context.obj({ Type: 'OCG', Name: 'LayerOne' }) as PDFDict,
   );
   const ocg2 = doc.context.register(
     doc.context.obj({ Type: 'OCG', Name: 'LayerTwo' }) as PDFDict,
   );
+  // Per-layer marked content so the page-level /OC /MCn references exist and
+  // their identity with the config entries can be asserted (DEF-400).
+  const content = doc.context.stream(
+    Buffer.from(
+      '/OC /MC0 BDC\n1 0 0 rg\n10 10 40 40 re f\nEMC\n' +
+        '/OC /MC1 BDC\n0 0 1 rg\n10 60 40 40 re f\nEMC\n',
+      'latin1',
+    ),
+    {},
+  );
+  page.node.set(PDFName.of('Contents'), doc.context.register(content));
+  page.node.set(
+    PDFName.of('Resources'),
+    doc.context.obj({ ProcSet: ['/PDF'], Properties: { MC0: ocg1, MC1: ocg2 } }) as PDFDict,
+  );
   doc.catalog.set(
     PDFName.of('OCProperties'),
     doc.context.obj({
       OCGs: [ocg1, ocg2],
-      D: { Order: [ocg1, ocg2] },
+      D: { Type: 'OCConfig', ON: [ocg1, ocg2], OFF: [], Order: [ocg1, ocg2] },
     }) as PDFDict,
   );
   doc.catalog.set(PDFName.of('MarkInfo'), doc.context.obj({ Marked: true }) as PDFDict);
   doc.catalog.set(PDFName.of('Lang'), PDFString.of('en-US'));
   return doc.save();
+}
+
+/** Ref tag of a value after a fresh load ('inline' for a direct dict). */
+function ocRefTag(value: PDFObject | undefined): string {
+  return value instanceof PDFRef ? value.tag : 'inline';
 }
 
 const JS_PROBE = 'tflex-js-probe-9f3a';
