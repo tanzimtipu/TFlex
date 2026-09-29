@@ -1,0 +1,6 @@
+<?xml version="1.0"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="200" height="200">
+ <style>@import url("https://example.invalid/evil.css"); body { background: url(https://example.invalid/bg.png); }</style>
+ <filter id="f"><feGaussianBlur stdDeviation="2"/></filter>
+ <rect width="200" height="200" fill="url(https://example.invalid/bg.png)" filter="url(#f)"/>
+</svg>

@@ -1,0 +1,9 @@
+<?xml version="1.0"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="Infinity" height="NaN" viewBox="NaN NaN 1e999 -5">
+<g transform="translate(NaN,Infinity) scale(1e999) rotate(-1e999)">
+<rect x="NaN" y="Infinity" width="1e999" height="-5" rx="NaN" ry="-Infinity" fill="blue"/>
+<circle cx="NaN" cy="1e999" r="-5" fill="red"/>
+<ellipse cx="0" cy="0" rx="-1" ry="NaN" fill="green"/>
+<path d="M NaN,Infinity L 1e999,-1e999" stroke-width="1e999" stroke="black"/>
+</g>
+</svg>
