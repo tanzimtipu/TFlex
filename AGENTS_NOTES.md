@@ -4778,3 +4778,35 @@ serialize path standalone with `pdfjs-dist` and read `isVisible` on the cloned b
 symptom into two independent root causes (renderer binding + serializer identity) with two HIGH
 defects, each carrying the exact ref tags and a measured pixel delta. A UI-only report would have sent
 one developer on a wild goose chase.
+
+## 2026-09-30 - Phase 57 completion: producer-branding triage, guard drift, parser hardening
+
+**Producer branding: NOT a defect (triage closed, nothing filed).** qa observed a real-app SAVED
+file whose `/Producer` read `pdf-lib (...)` while `engineSerializeMetadata.test.ts:232` asserts
+"Jovrel". The triage reproduced both paths and found NO divergence: `saveAs` and `getDocumentBytes`
+both stamp `{"producer":"Jovrel","creator":"Jovrel"}` on `assets/samples/report.pdf`; only a raw
+`PDFDocument.load().save()` (not a user path) leaves pdf-lib's default. `stampBrandMetadata`
+(engine.ts, re-anchor by name) has stamped since Phase 49 and no Phase 54/57 change removed it. The
+observed pdf-lib string most likely came from an export/convert/encrypt output or from reading the
+SOURCE file's XMP `<pdf:Producer>` - DEF-378 carries source XMP verbatim, so Info `/Producer` and
+the XMP producer can legitimately differ in the same file. Do not re-open without a user-path repro.
+
+**Guard drift is its own defect class - a phase that adds user-visible verbs or palette rows must
+update the guards that pin that composition in the SAME change.** Commit ea3df61 added four REVIEW
+dock verbs (`exportFormData`, `importFormData`, `engineeringLayers`, `documentInfo`) and the
+`exportFormData` palette tool, but did not update `test/unit/renderer/def330_dockDefaultSize.test.tsx`
+(pinned 10 review verbs) or `test/unit/renderer/phase36CommandPaletteModel.test.ts` (pinned a
+6-entry "export" tie). `verify:full` was therefore RED at the Phase 57 close and criterion 8 failed
+(filed DEF-401, fixed, closed). Rule: when `src/renderer/state/toolsRegistry.ts` gains a stage verb
+or a palette id, grep the renderer guards for the pinned dock/palette composition in the same commit.
+
+**A new parser gets an adversary pass before it is trusted (the DEF-402 lesson).** The `/ToUnicode`
+CMap parser looked correct, its own ceiling tests were green and the full unit suite was green - yet
+the adversary found a silent WRONG-TEXT bug on a VALID array-form CMap (ADV-112: two independent
+regex passes re-matched an array's destination list and overwrote the correct entries) plus three
+unbounded-work app freezes (ADV-113/114/116) and a reachable pre-existing quadratic (ADV-115). Two
+reusable facts: (1) a "declared extent" ceiling must bound the DECODE, not just the parsed result - a
+262 KB FlateDecode bomb inflated to 256 MB before the 1M-char ceiling applied; use
+`zlib.inflateSync(buf, { maxOutputLength })` and treat overflow as a fallback, never a crash. (2)
+Node 24 runs this code up to ~40x slower than Electron 44's V8, so a Node-measured freeze overstates
+the app risk - measure freezes in the app, and never cite a Node timing as an app-behaviour claim.
