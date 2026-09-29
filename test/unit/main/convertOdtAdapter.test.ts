@@ -13,6 +13,8 @@ import {
   openZip,
 } from '../../../src/main/services/convert/convert-zip';
 import {
+  OdfParseError,
+  OdfRenderLimitError,
   odfToHtml,
   parseOfficeStyles,
   type OdfImageMap,
@@ -104,6 +106,30 @@ function buildMisnamedDocx(): Uint8Array {
   });
 }
 
+/**
+ * DEF-393 — a depth-`depth` nest of tables where every one of the 1000 repeated
+ * cells holds the next table. The parsed node count is tiny, but a per-cell
+ * repeat cap alone still expands to 1000^depth cells; the aggregate render
+ * budget must stop it.
+ */
+function bombTable(depth: number): string {
+  let body = '<text:p>x</text:p>';
+  for (let level = 0; level < depth; level += 1) {
+    body =
+      '<table:table><table:table-row>' +
+      '<table:table-cell table:number-columns-repeated="1000">' +
+      body +
+      '</table:table-cell></table:table-row></table:table>';
+  }
+  return body;
+}
+
+function buildBombContent(depth: number): string {
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<office:document-content xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0" xmlns:text="urn:oasis:names:tc:opendocument:xmlns:text:1.0" xmlns:table="urn:oasis:names:tc:opendocument:xmlns:table:1.0">
+<office:body><office:text>${bombTable(depth)}</office:text></office:body></office:document-content>`;
+}
+
 let dir: string;
 
 beforeEach(async () => {
@@ -159,6 +185,26 @@ async function failureOf(run: () => Promise<ConvertResult>): Promise<ConvertFail
   }
   throw new Error('expected a ConvertFailure');
 }
+
+describe('DEF-393 — the ODF render budget bounds nested repeats', () => {
+  it('throws OdfRenderLimitError on a d=3 repeated-cell bomb in bounded time', () => {
+    const styles = parseOfficeStyles(STYLES_XML);
+    const started = Date.now();
+    let thrown: unknown;
+    try {
+      odfToHtml(buildBombContent(3), styles, new Map());
+    } catch (error) {
+      thrown = error;
+    }
+    const elapsedMs = Date.now() - started;
+    expect(thrown).toBeInstanceOf(OdfRenderLimitError);
+    expect(thrown).toBeInstanceOf(OdfParseError);
+    expect((thrown as Error).message.length).toBeGreaterThan(0);
+    expect(elapsedMs).toBeLessThan(5_000);
+    // eslint-disable-next-line no-console
+    process.stdout.write(`[DEF-393] d=3 odt render-bomb stop wall clock: ${elapsedMs} ms\n`);
+  });
+});
 
 describe('phase55 odf-to-html mapping', () => {
   const styles = parseOfficeStyles(STYLES_XML);

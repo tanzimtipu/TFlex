@@ -23,12 +23,21 @@ export const ODF_PARSE_LIMITS = {
   maxNodes: 200_000,
   maxDepth: 256,
   maxTextChars: 16 * 1024 * 1024,
+  /** Phase 55 (DEF-393) — aggregate render ceiling across the whole recursion.
+   *  A per-cell repeat cap alone multiplies: 1000 repeats nested three deep is
+   *  1000^3 cells, so the emitted node count carries its own budget. */
+  maxRenderNodes: 200_000,
+  /** Phase 55 (DEF-393) — aggregate emitted-character ceiling across the whole
+   *  render recursion. */
+  maxRenderChars: 16 * 1024 * 1024,
 } as const;
 
 export interface OdfParseLimits {
   maxNodes: number;
   maxDepth: number;
   maxTextChars: number;
+  maxRenderNodes: number;
+  maxRenderChars: number;
 }
 
 /** Raised when the XML is malformed or exceeds a parse cap. */
@@ -36,6 +45,16 @@ export class OdfParseError extends Error {
   constructor(message: string) {
     super(message);
     this.name = 'OdfParseError';
+  }
+}
+
+/** Phase 55 (DEF-393) — raised when the RENDER recursion exceeds its aggregate
+ *  node or character budget. A subclass of `OdfParseError`, so the adapter's
+ *  existing mapping surfaces it as a typed `corrupt` failure. */
+export class OdfRenderLimitError extends OdfParseError {
+  constructor(message: string) {
+    super(message);
+    this.name = 'OdfRenderLimitError';
   }
 }
 
@@ -309,11 +328,31 @@ export type OdfImageMap = Map<string, string>;
 interface RenderContext {
   styles: OdfStyleTable;
   images: OdfImageMap;
+  /** DEF-393 — the aggregate render budget, shared by the whole recursion. */
+  budget: { nodes: number; chars: number };
 }
 
 const LINE_SPACE = '&nbsp;';
 const TAB_SPAN = '<span class="odf-tab">&#9;</span>';
 const MAX_REPEATED_CELLS = 1000;
+
+/** Charge the shared render budget and throw the moment either ceiling is
+ *  crossed, so a nested repeat bomb fails inside the recursion instead of
+ *  expanding. */
+function chargeRender(ctx: RenderContext, nodes: number, chars: number): void {
+  ctx.budget.nodes += nodes;
+  if (ctx.budget.nodes > ODF_PARSE_LIMITS.maxRenderNodes) {
+    throw new OdfRenderLimitError(
+      `ODF render exceeds the ${ODF_PARSE_LIMITS.maxRenderNodes}-node ceiling.`,
+    );
+  }
+  ctx.budget.chars += chars;
+  if (ctx.budget.chars > ODF_PARSE_LIMITS.maxRenderChars) {
+    throw new OdfRenderLimitError(
+      `ODF render exceeds the ${ODF_PARSE_LIMITS.maxRenderChars}-character ceiling.`,
+    );
+  }
+}
 
 function clampInt(value: string | undefined, fallback: number, min: number, max: number): number {
   if (value === undefined) return fallback;
@@ -371,6 +410,7 @@ function renderInline(nodes: Array<XmlElement | string>, ctx: RenderContext): st
         break;
     }
   }
+  chargeRender(ctx, 1, out.length);
   return out;
 }
 
@@ -434,6 +474,9 @@ function renderRows(node: XmlElement, ctx: RenderContext): string {
             ? 1
             : clampInt(cell.attrs['table:number-columns-repeated'], 1, 1, MAX_REPEATED_CELLS);
         for (let n = 0; n < repeat; n += 1) {
+          // DEF-393: one node per emitted <td>, charged against the shared
+          // budget INSIDE the repeat so a nested bomb stops fast.
+          chargeRender(ctx, 1, 0);
           out += `<td>${renderCell(cell, ctx)}</td>`;
         }
       }
@@ -512,5 +555,9 @@ export function odfToHtml(
   const body = findFirst(root, 'body');
   const text = body === null ? null : findFirst(body, 'text');
   const nodes = text === null ? root.children : text.children;
-  return renderBlocks(nodes, { styles, images });
+  return renderBlocks(nodes, {
+    styles,
+    images,
+    budget: { nodes: 0, chars: 0 },
+  });
 }

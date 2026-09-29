@@ -51,6 +51,28 @@ export const PAGE_IMAGES_SHEET = 'Page images';
  *  spreadsheet cell ceiling and degrade to a truthful marker beyond it. */
 const MAX_DATA_URI_CHARS = 30_000;
 
+/** DEF-394 — the OOXML worksheet cell limit SheetJS enforces on write
+ *  (`Text length must not exceed 32767 characters`). A longer string is
+ *  truncated in-cell with a truthful marker instead of throwing across IPC. */
+const MAX_CELL_CHARS = 32_767;
+
+/** The marker appended to a truncated cell so the degradation is visible. */
+export const CELL_TRUNCATION_MARKER =
+  '... (truncated: exceeds the 32767-character spreadsheet cell limit)';
+
+/** Truncate a string cell to the spreadsheet ceiling, keeping the marker. */
+function clampCell(value: string): string {
+  if (value.length <= MAX_CELL_CHARS) return value;
+  return value.slice(0, MAX_CELL_CHARS - CELL_TRUNCATION_MARKER.length) + CELL_TRUNCATION_MARKER;
+}
+
+/** Apply the cell clamp to every string cell of a row-array. */
+function clampCells(rows: Array<Array<string | number>>): Array<Array<string | number>> {
+  return rows.map((row) =>
+    row.map((cell) => (typeof cell === 'string' ? clampCell(cell) : cell)),
+  );
+}
+
 /** The minimal engine surface the writer needs: the existing text extractor.
  *  Typed as an interface so the writer is unit-testable with no EngineService. */
 export interface ExportTextEngine {
@@ -82,12 +104,16 @@ export function buildXlsx(input: XlsxBuildInput): ExportBuild {
       pagesWithoutText.push(page.pageIndex);
       utils.book_append_sheet(
         workbook,
-        utils.aoa_to_sheet([[noTextMarker(page.pageIndex)]]),
+        utils.aoa_to_sheet(clampCells([[noTextMarker(page.pageIndex)]])),
         pageSheetName(page.pageIndex),
       );
       continue;
     }
-    utils.book_append_sheet(workbook, utils.aoa_to_sheet(rows), pageSheetName(page.pageIndex));
+    utils.book_append_sheet(
+      workbook,
+      utils.aoa_to_sheet(clampCells(rows)),
+      pageSheetName(page.pageIndex),
+    );
   }
 
   const fullTextRows: string[][] = [];
@@ -95,7 +121,11 @@ export function buildXlsx(input: XlsxBuildInput): ExportBuild {
     for (const line of page.text.split(/\r?\n/)) fullTextRows.push([line]);
   }
   if (fullTextRows.length === 0) fullTextRows.push([noTextMarker(0)]);
-  utils.book_append_sheet(workbook, utils.aoa_to_sheet(fullTextRows), FULL_TEXT_SHEET);
+  utils.book_append_sheet(
+    workbook,
+    utils.aoa_to_sheet(clampCells(fullTextRows)),
+    FULL_TEXT_SHEET,
+  );
 
   const images = input.includeImages
     ? input.images.filter((entry) => entry && typeof entry.pageNumber === 'number')
@@ -152,11 +182,22 @@ export async function exportXlsx(
   if (!extracted.ok) {
     return err('engine-error', extracted.error.message);
   }
-  return ok(
-    buildXlsx({
-      pages: extracted.value,
-      includeImages: payload.includeImages ?? true,
-      images: payload.images ?? [],
-    }),
-  );
+  try {
+    return ok(
+      buildXlsx({
+        pages: extracted.value,
+        includeImages: payload.includeImages ?? true,
+        images: payload.images ?? [],
+      }),
+    );
+  } catch (thrown) {
+    // DEF-394: a synchronous SheetJS throw must never escape as a rejected IPC
+    // promise; it is reported as a typed engine-error instead.
+    return err(
+      'engine-error',
+      `The workbook could not be written: ${
+        thrown instanceof Error ? thrown.message : String(thrown)
+      }`,
+    );
+  }
 }

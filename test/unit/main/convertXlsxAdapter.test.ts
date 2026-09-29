@@ -2,7 +2,7 @@ import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { zipSync, strToU8 } from 'fflate';
+import { zipSync, strToU8, unzipSync, strFromU8 } from 'fflate';
 import * as XLSX from 'xlsx';
 import { ok } from '../../../src/shared/result';
 import type { ConvertResult } from '../../../src/shared/convert';
@@ -15,13 +15,14 @@ import {
   looksLikeOds,
   looksLikeXls,
   looksLikeXlsx,
+  worksheetToGrid,
   type HtmlPrintFn,
 } from '../../../src/main/services/convert/adapters/xlsx';
 import {
   createDefaultRegistry,
   readSniffHead,
 } from '../../../src/main/services/convert/registry';
-import { resolveConvertOptions } from '../../../src/main/services/convert/limits';
+import { resolveConvertOptions, CONVERT_LIMITS } from '../../../src/main/services/convert/limits';
 import { SHEET_TABLE_BLOCK_ROWS } from '../../../src/main/services/convert/sheet-to-html';
 
 /**
@@ -99,6 +100,47 @@ function buildOverCeilingWorkbook(): Buffer {
   XLSX.utils.book_append_sheet(workbook, XLSX.utils.aoa_to_sheet(rows), 'Big');
   overRows = Buffer.from(XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' }));
   return overRows;
+}
+
+/**
+ * DEF-392 — a workbook whose `<dimension>` declares the whole Excel grid while
+ * only 2 rows x 2 cells exist. `XLSX.write` itself walks a huge `!ref`, so the
+ * bytes are written normally and the one `<dimension ref>` attribute is patched
+ * in the ZIP (which SheetJS reads back verbatim).
+ */
+function buildHugeDimensionWorkbook(): Buffer {
+  const workbook = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(
+    workbook,
+    XLSX.utils.aoa_to_sheet([
+      ['a', 'b'],
+      [1, 2],
+    ]),
+    'Huge',
+  );
+  const written = XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' });
+  const files = unzipSync(new Uint8Array(written));
+  const sheetPath = 'xl/worksheets/sheet1.xml';
+  const xml = strFromU8(files[sheetPath]).replace(
+    /<dimension ref="[^"]*"\/>/,
+    '<dimension ref="A1:XFD1048576"/>',
+  );
+  files[sheetPath] = strToU8(xml);
+  return Buffer.from(zipSync(files));
+}
+
+/**
+ * DEF-392 — the merge variant: `!ref` is A1:A2 but one `mergeCell` reaches the
+ * Excel maximum, so the merge fold inflates the range exactly like a patched
+ * `<dimension>`.
+ */
+function buildHugeMergeWorkbook(): Buffer {
+  const workbook = XLSX.utils.book_new();
+  const sheet = XLSX.utils.aoa_to_sheet([['a'], [1]]);
+  sheet['!ref'] = 'A1:A2';
+  sheet['!merges'] = [{ s: { r: 0, c: 0 }, e: { r: 1048575, c: 16383 } }];
+  XLSX.utils.book_append_sheet(workbook, sheet, 'Merged');
+  return Buffer.from(XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' }));
 }
 
 let dir: string;
@@ -501,6 +543,64 @@ describe('DEF-389 — an above-ceiling sheet is capped before composing, then pr
     expect(result.warnings.some((entry) => entry.code === 'row-limit')).toBe(false);
     const counts = tableRowCounts(print.htmls[0] ?? '');
     expect(counts).toEqual([20_000]);
+  });
+});
+
+describe('DEF-392 — a declared mega-extent is refused before any cell is materialised', () => {
+  it('refuses the Excel-max dimension with a readable typed too-large and never prints', async () => {
+    const path = await mkFile('huge.xlsx', buildHugeDimensionWorkbook());
+    const print = fakePrint();
+    const started = Date.now();
+    const failure = await failureOf(() => convert(path, print));
+    const elapsedMs = Date.now() - started;
+    expect(failure.code).toBe('too-large');
+    // The message names the sheet, its declared extent and the ceiling.
+    expect(failure.message).toContain('Huge');
+    expect(failure.message).toContain('1048576');
+    expect(failure.message).toContain('16384');
+    // Refused BEFORE any work: nothing was printed.
+    expect(print.calls).toBe(0);
+    expect(elapsedMs).toBeLessThan(2_000);
+    // eslint-disable-next-line no-console
+    process.stdout.write(
+      `[DEF-392] xlsx-dimension refusal wall clock: ${elapsedMs} ms\n`,
+    );
+  });
+
+  it('refuses a mega mergeCell ref exactly like a patched dimension', async () => {
+    const path = await mkFile('huge-merge.xlsx', buildHugeMergeWorkbook());
+    const print = fakePrint();
+    const started = Date.now();
+    const failure = await failureOf(() => convert(path, print));
+    const elapsedMs = Date.now() - started;
+    expect(failure.code).toBe('too-large');
+    expect(failure.message).toContain('Merged');
+    expect(failure.message).toContain('1048576');
+    expect(failure.message).toContain('16384');
+    expect(print.calls).toBe(0);
+    expect(elapsedMs).toBeLessThan(2_000);
+    // eslint-disable-next-line no-console
+    process.stdout.write(
+      `[DEF-392] xlsx-merge refusal wall clock: ${elapsedMs} ms\n`,
+    );
+  });
+
+  it('bounds a direct worksheetToGrid call on the Excel-max ref to the cell ceiling', () => {
+    const ws = XLSX.utils.aoa_to_sheet([
+      ['a', 'b'],
+      [1, 2],
+    ]);
+    ws['!ref'] = 'A1:XFD1048576';
+    const started = Date.now();
+    const grid = worksheetToGrid('Huge', ws);
+    const elapsedMs = Date.now() - started;
+    const totalCells = grid.cells.length * (grid.cells[0]?.length ?? 0);
+    expect(totalCells).toBeLessThanOrEqual(CONVERT_LIMITS.sheetCells);
+    expect(elapsedMs).toBeLessThan(5_000);
+    // eslint-disable-next-line no-console
+    process.stdout.write(
+      `[DEF-392] direct worksheetToGrid bound wall clock: ${elapsedMs} ms; cells=${totalCells}\n`,
+    );
   });
 });
 

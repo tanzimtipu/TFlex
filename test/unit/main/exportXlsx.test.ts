@@ -128,3 +128,30 @@ describe('phase55 xlsx export writer', () => {
     }
   });
 });
+
+describe('DEF-394 — a cell above the OOXML limit degrades instead of throwing', () => {
+  const LONG_PAGES: ExportTextPage[] = [{ pageIndex: 1, text: 'x'.repeat(40_000) }];
+
+  it('truncates a 40,000-character line in-cell and keeps both sheets', () => {
+    const build = buildXlsx({ pages: LONG_PAGES, includeImages: false, images: [] });
+    const wb = open(build.bytes);
+    expect(wb.SheetNames).toContain('Page 1');
+    expect(wb.SheetNames).toContain(FULL_TEXT_SHEET);
+
+    const pageCell = String(wb.Sheets['Page 1']['A1'].v);
+    expect(pageCell.length).toBeLessThanOrEqual(32_767);
+    expect(pageCell).toContain('truncated');
+    expect(pageCell).toContain('32767-character');
+
+    const fullCell = String(wb.Sheets[FULL_TEXT_SHEET]['A1'].v);
+    expect(fullCell.length).toBeLessThanOrEqual(32_767);
+    expect(fullCell).toContain('truncated');
+  });
+
+  it('exportXlsx returns ok for the over-long page rather than rejecting', async () => {
+    const engine: ExportTextEngine = { exportText: async () => ok(LONG_PAGES) };
+    const built = await exportXlsx(engine, 'doc-long');
+    expect(built.ok).toBe(true);
+    if (built.ok) expect(open(built.value.bytes).SheetNames).toContain('Page 1');
+  });
+});

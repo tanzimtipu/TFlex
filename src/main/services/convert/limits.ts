@@ -54,6 +54,18 @@ export const CONVERT_LIMITS = {
    *  warning naming the sheet and its true count; rows are never dropped
    *  silently. A 20,000-row workbook is far below it. */
   sheetRows: 100_000,
+  /** Phase 55 (DEF-392) — hard ceiling on one sheet's DECLARED cell extent
+   *  (declared rows x declared columns, from the file's `dimension` ref folded
+   *  with every `mergeCell` ref), preflighted BEFORE any cell is materialised;
+   *  above it the sheet is REFUSED with a typed `too-large`. */
+  sheetCells: 1_000_000,
+  /** Phase 55 (DEF-392) — hard ceiling on a sheet's DECLARED column extent AND
+   *  its declared total cell extent (declared rows x declared columns, from the
+   *  file's `dimension` ref folded with every `mergeCell` ref). A sheet above
+   *  either is REFUSED with a typed `too-large` before any cell is materialised.
+   *  A sheet within both keeps today's behaviour: rows capped at `sheetRows`
+   *  with the `row-limit` warning (DEF-389). */
+  sheetColumns: 1_024,
   /** Phase 55 feature C — `.pptx` byte ceiling. The ZIP container and its
    *  media are buffered/decompressed in memory before the slide XML maps. */
   pptxBytes: 256 * 1024 * 1024,

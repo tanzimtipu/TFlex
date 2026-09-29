@@ -105,6 +105,32 @@ export function cellValueText(cell: CellObject | undefined): string {
 }
 
 /**
+ * Phase 55 (DEF-392) — the DECLARED extent of one worksheet: the `!ref` range
+ * folded with every `mergeCell` range, exactly as `worksheetToGrid` folds them,
+ * but with no cell materialised. The adapter refuses a sheet whose declared
+ * extent is above the ceiling BEFORE it expands anything.
+ */
+function declaredExtent(ws: WorkSheet): { rows: number; cols: number } {
+  const ref = typeof ws['!ref'] === 'string' ? ws['!ref'] : undefined;
+  let range: Range;
+  try {
+    range = utils.decode_range(ref ?? 'A1');
+  } catch {
+    range = utils.decode_range('A1');
+  }
+  for (const merge of ws['!merges'] ?? []) {
+    range.s.r = Math.min(range.s.r, merge.s.r);
+    range.s.c = Math.min(range.s.c, merge.s.c);
+    range.e.r = Math.max(range.e.r, merge.e.r);
+    range.e.c = Math.max(range.e.c, merge.e.c);
+  }
+  return {
+    rows: range.e.r - range.s.r + 1,
+    cols: range.e.c - range.s.c + 1,
+  };
+}
+
+/**
  * Decode one worksheet into a `SheetGrid`. At most `maxRows` rows are
  * materialised (the true source row count is carried in `sourceRowCount`, so
  * the ceiling is still reported), which keeps a very large sheet from being
@@ -135,11 +161,31 @@ export function worksheetToGrid(
   }
 
   const trueRowCount = range.e.r - range.s.r + 1;
-  const renderedRowCount = Math.min(trueRowCount, maxRows);
+  // The row cap is `maxRows` (DEF-389), plus a defensive hard stop so a direct
+  // call on a mega-extent sheet cannot materialise more rows than the whole
+  // sheet-cell ceiling either.
+  const renderedRowCount = Math.min(
+    trueRowCount,
+    maxRows,
+    CONVERT_LIMITS.sheetCells,
+  );
+  // A direct call can never run unbounded: the column loop is hard-bounded by
+  // the sheet-cell ceiling, both as the declared-extent bound and as the
+  // row x column product, so a hostile `!ref` stays within the budget.
+  const lastColumn = Math.min(
+    range.e.c,
+    range.s.c + CONVERT_LIMITS.sheetCells - 1,
+    range.s.c +
+      Math.max(
+        1,
+        Math.floor(CONVERT_LIMITS.sheetCells / Math.max(1, renderedRowCount)),
+      ) -
+      1,
+  );
   const cells: string[][] = [];
   for (let r = range.s.r; r < range.s.r + renderedRowCount; r += 1) {
     const row: string[] = [];
-    for (let c = range.s.c; c <= range.e.c; c += 1) {
+    for (let c = range.s.c; c <= lastColumn; c += 1) {
       const address = utils.encode_cell({ r, c });
       row.push(cellValueText(ws[address] as CellObject | undefined));
     }
@@ -244,6 +290,18 @@ export function createSheetAdapter(config: SheetAdapterConfig): ConversionAdapte
       for (const name of sheetNames) {
         const worksheet = workbook.Sheets[name];
         if (worksheet === undefined) continue;
+        // DEF-392: refuse a sheet whose DECLARED extent is above the ceiling
+        // BEFORE any cell is materialised or any HTML is composed.
+        const declared = declaredExtent(worksheet);
+        if (
+          declared.cols > CONVERT_LIMITS.sheetColumns ||
+          declared.rows * declared.cols > CONVERT_LIMITS.sheetCells
+        ) {
+          throw new ConvertFailure(
+            'too-large',
+            `Sheet "${name}" declares ${declared.rows} rows x ${declared.cols} columns (${declared.rows * declared.cols} cells), above the ${CONVERT_LIMITS.sheetColumns}-column / ${CONVERT_LIMITS.sheetCells}-cell import ceiling; the workbook was not imported.`,
+          );
+        }
         const grid = worksheetToGrid(name, worksheet, maxRows);
         if (grid.cells.length === 0) continue;
         grids.push(grid);

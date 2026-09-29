@@ -4564,3 +4564,138 @@ different root causes: one is an infinite IFD-chain walk inside `utif`, the
 other is `String.split` over an unbounded decoded content stream inside the
 Phase 54 rule set. ADV-100 (page-size arithmetic) is a third, distinct cause.
 ADV-103 is a fourth (utif allocation before the adapter's decode guard).
+
+## ADV-106: A 5.7 KB XLSX whose declared range is the Excel maximum drives `worksheetToGrid` into ~1.6 billion cells and V8-OOM-crashes the main process
+
+- Session: phase-55 gate
+- Suggested severity: HIGH
+
+What I did:
+1. Built `test-fixtures/adv-p55/xlsx-maxrange.xlsx` (5,696 bytes): a valid SheetJS
+   workbook whose only worksheet's `<dimension ref="A1:XFD1048576"/>` was patched
+   to the Excel maximum (4 real cells: h1/h2, a/b).
+2. Launched the dev build through `e2e/lib/launch.cjs`, stubbed
+   `dialog.showOpenDialog` to return the file, clicked the real
+   `[aria-label="Open PDF document"]` Open button, and polled the main-process RSS
+   and the DOM for 180 s (`test-fixtures/adv-p55/probe/probe-hang.cjs`).
+3. Ran the same adapter code path at module level (esbuild bundle of the shipped
+   `worksheetToGrid`/`renderWorkbookHtml`, exact `CONVERT_LIMITS.sheetRows` =
+   100,000) to quantify (`probe/probe-xlsx.cjs`).
+4. Separately built `test-fixtures/adv-p55/xlsx-merge-huge.xlsx` (5,701 bytes):
+   `!ref` is a small `A1:A2` but one `mergeCell ref="A1:XFD1048576"` expands the
+   iterated range (same root cause, a second trigger that does not need a patched
+   dimension).
+
+Expected: a workbook declaring a large used range but containing almost no cells
+converts to a short PDF, or reports the documented `row-limit` warning. It must
+never allocate proportional to the declared range rather than the real data.
+
+Actual: the app's main process was pegged and, at ~195 s process uptime, V8
+aborted with `OOM error in V8: MarkCompactCollector: young object promotion
+failed Allocation failed - JavaScript heap out of memory`; the Electron window
+closed and the application died (`[probe-hang] died=window:close`, mainRSS
+sampling unreadable). The 5,696-byte file kills the app.
+Module-level numbers: `worksheetToGrid` (maxRows 100,000) materialises every
+column of the declared range for every rendered row. 1,000 rows took 5,629 ms
+and 938 MB RSS; the loop is 100,000 rows x 16,384 columns = 1,638,400,000 cell
+expansions, which extrapolates to roughly 9 minutes and ~94 GB before the ~4 GB
+V8 heap limit is hit. The merge variant reports `sourceRowCount=1048576`,
+`cols=16384` from a 5,701-byte file.
+Cause: `src/main/services/convert/adapters/xlsx.ts` `worksheetToGrid` caps the
+ROW loop with `maxRows` but the inner column loop
+`for (let c = range.s.c; c <= range.e.c; c += 1)` has no ceiling, and
+`range.e.c`/`range.e.r` come straight from the file's `dimension` ref or any
+`mergeCell` ref. `renderWorkbookHtml` then repeats the full grid again
+(`buildColgroup` + body rows), and the ~15 GB of HTML for 100,000 rows is never
+reached before the OOM.
+Screenshot: none (the window is gone by the time a shot could be taken).
+Fixtures: `test-fixtures/adv-p55/xlsx-maxrange.xlsx`,
+`test-fixtures/adv-p55/xlsx-merge-huge.xlsx`.
+Logs: probe-stdout of `probe/probe-hang.cjs` and `probe/probe-xlsx.cjs`.
+
+Disposition: ACCEPTED -> DEF-392
+
+## ADV-107: A 569-byte ODT with nested repeated table cells expands exponentially in `odfToHtml`, blocking the main process ~30 s and allocating ~3.5 GB
+
+- Session: phase-55 gate
+- Suggested severity: HIGH
+
+What I did:
+1. Built `test-fixtures/adv-p55/odt-table-bomb-d{2,3,4,6}.odt` (568-571 bytes):
+   `content.xml` nests `d` levels of
+   `<table:table><table:table-row><table:table-cell
+   table:number-columns-repeated="1000">...` around one `<text:p>x</text:p>`.
+   The parsed node count is tiny (well under `ODF_PARSE_LIMITS.maxNodes`).
+2. Ran the shipped pure parser at module level
+   (`probe/probe-xml.cjs`: `openZip` -> `parseOfficeStyles` -> `odfToHtml`).
+3. Launched the app via `e2e/lib/launch.cjs`, opened `odt-table-bomb-d3.odt`
+   through the real Open button, and polled the toast/DOM (`probe-one.cjs`); then
+   verified the app was still usable afterwards (`probe-app.cjs`).
+
+Expected: the documented ODF caps (`maxNodes` 200k, `maxDepth` 256,
+`maxTextChars` 16 MB) keep a hostile ODT bounded, so a sub-kilobyte file cannot
+allocate gigabytes. A malformed/pathological document gets a typed error.
+
+Actual: the caps bound the PARSE but not the RENDER. `renderRows` emits one
+`<td>` per `table:number-columns-repeated` (clamped to 1000) and `renderCell`
+recursively renders a nested table inside each repeated cell, so the output is
+`1000^depth` cells with no ceiling. Module results:
+- d2 (568 bytes): 10,033,024-byte HTML in 552 ms, 264 MB RSS.
+- d3 (569 bytes): `RangeError: Invalid string length` after 34,825 ms,
+  3,575 MB RSS.
+- d4/d6: same `RangeError` at ~32 s and 3,575 MB.
+In the app, opening the 569-byte d3 file blocked the main process: the
+user-facing error toast appeared at t=27 s
+("The file could not be imported (\"odt-table-bomb-d3.odt\")."), and the app was
+usable afterwards. On a machine with less free memory than this 64 GB box, the
+~3.5 GB allocation is an OOM risk of the same class as ADV-106.
+Cause: `src/main/services/convert/odf-to-html.ts` `renderRows`/`renderCell`
+recursion with `table:number-columns-repeated` clamped per cell
+(`MAX_REPEATED_CELLS = 1000`) but with no total-rendered-node or output-size
+budget across the recursion.
+Fixtures: `test-fixtures/adv-p55/odt-table-bomb-d2.odt` (through d6).
+Logs: probe-stdout of `probe/probe-xml.cjs`, `probe/probe-one.cjs`,
+`probe/probe-app.cjs`.
+
+Disposition: ACCEPTED -> DEF-393
+
+## ADV-108: `.xlsx` export throws `Text length must not exceed 32767 characters` instead of returning a typed Result, aborting the whole export on a legitimate long line
+
+- Session: phase-55 gate
+- Suggested severity: MEDIUM
+
+What I did:
+1. Built `test-fixtures/adv-p55/pdf-long-line-40000.pdf` (1,105 bytes): one page
+   whose text layer is a single 40,000-character line with no newline and no
+   two-consecutive-space run.
+2. Launched the dev build via `e2e/lib/launch.cjs`, opened the PDF, then invoked
+   exactly what the export UI invokes -
+   `window.tflex.export.xlsx(docId, {})` - and caught the result.
+3. Reproduced at module level against the shipped `buildXlsx`
+   (`probe/probe-export.cjs`): 32,767 chars -> OK; 32,768 chars -> throws.
+
+Expected: the writer's documented contract and the preload comment are
+`Promise<Result<ExportBuild, ExportErrorCode>>`, "never a throw" - a page whose
+text cannot fit a spreadsheet cell should either degrade that cell (as the
+image data URI path already does with its 30,000-char marker) or return a typed
+`err`.
+
+Actual: `XLSX.write` throws `Error: Text length must not exceed 32767
+characters` (node_modules/xlsx/xlsx.js `write_ws_xml_cell`), `buildXlsx` does
+not catch it and `exportXlsx` returns that rejected promise. In the app the call
+rejected with:
+`Error invoking remote method 'export:xlsx': Error: Text length must not exceed
+32767 characters`.
+The renderer's `OfficeExportDialog` catch surfaces a generic
+"XLSX export failed: ... Text length must not exceed 32767 characters" and the
+whole export fails; the `Page N` sheet AND the `Full text` sheet are both lost.
+This is not a crash and not data loss (the source PDF is untouched), but it is a
+violated typed-Result contract and a hard failure on input the app can produce.
+Cause: `src/main/services/export/xlsx-export.ts` `buildXlsx` passes every
+extracted line straight into `aoa_to_sheet`/`write` with no per-cell length
+guard and no try/catch; `exportXlsx` does not wrap the synchronous `buildXlsx`.
+Fixtures: `test-fixtures/adv-p55/pdf-long-line-40000.pdf`.
+Logs: probe-stdout of `probe/probe-export.cjs` and the app run of
+`probe/probe-app.cjs` for `pdf-long-line-40000.pdf`.
+
+Disposition: ACCEPTED -> DEF-394

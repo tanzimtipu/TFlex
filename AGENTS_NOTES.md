@@ -4523,3 +4523,165 @@ layers + CAD metadata, `.fdf`/`.xfdf` interchange, catalog round-trip feature G,
 the PACKAGING GATE - which also owns the deferred packaged-build leg of Phase 54 criterion 8) are all
 awaiting implementation. Nothing is pushed: both commits are local, and every push/tag/Release still needs
 explicit operator permission in the session it happens in.
+
+## 2026-09-29: Phase 55 - bidirectional office conversion (committed 83d77de)
+
+**Delivered.** DOCX (mammoth) and ODT (fflate + ODF XML) import through the offscreen print engine;
+XLSX/XLS/ODS through SheetJS with one page group per sheet, a repeated header row, cached formula VALUES
+(never the formula text) and each cell's own number/date format; PPTX with one page per slide at the
+slide's own aspect ratio and optional notes pages; legacy `.doc`/`.ppt` degrading to extracted text
+through a shared CFB walker with a `legacy-format-degraded` warning naming the losses; and the two new
+export writers (`xlsx`, `pptx`) plus the mandatory fidelity notes on all four export surfaces.
+`verify:full` ended at 520 files / 6533 tests green; the phase e2e spec 17/17.
+
+**THE LESSON OF THIS PHASE, and it is the same lesson as DEF-375 in a new costume: a setting that is
+VALIDATED but never RESOLVED is dead, and injected-option unit tests cannot see it.** `DEF-388` found that
+`officeConvertDefaults.spreadsheets` and `.presentations` were stored and never applied on the import path -
+every unit test passed because each one injected the options object straight into the adapter, so the real
+path (renderer sends nothing -> service resolves from settings) was never exercised. `DEF-391` found the
+same for Phase 54's `imageImportDefaults`, four keys dead since the previous phase. **Rule: any settings
+field that changes behaviour needs an END-TO-END assertion that drives the real service entry point with NO
+options and observes the settings taking effect; a test that injects the options proves only the adapter's
+contract, not the feature.** Both fixes were proven by temporarily disconnecting the settings port and
+watching the new assertions fail (3 failed / 2 passed for images; 2 of 5 for the office keys).
+
+**Two more findings worth carrying forward:**
+
+- **DEF-389 was a DIFFERENT root cause than the one I hypothesised, and the gate evidence is what exposed
+  it.** I guessed the ceiling was not applied before printing; the developer proved the ceiling WAS applied
+  and that Chromium's `printToPDF` simply fails on a single `<table>` above roughly 25,000 rows (20k prints
+  fine, 25k/100k fail). The fix splits the grid into block tables of <=20,000 rows, each repeating the
+  header, so every row up to the ceiling still renders: before, an opaque "Printing failed" at 6.9 s; after,
+  2326 pages with a `row-limit` warning naming 100,002 rows capped to 100,000. **Rule: a big HTML table must
+  be emitted in blocks - Chromium does not tell you why it failed, and the user-visible result was an
+  `internal` error where the contract promised a warning.**
+- **`docx` moved to `devDependencies`.** Phase 55's export does NOT use the `docx` library (the DOCX writer
+  is the hand-rolled Phase 9 builder); the library is a TEST-ONLY fixture builder (`convertDocxAdapter`'s
+  tests generate a real DOCX with it). It was sitting in `dependencies`, costing ~11 MB of installer for
+  nothing. **Rule: verify each dependency has a SHIPPED importer before it ships - `rg "from 'pkg'" src` -
+  and demote it if the only consumer is a test.**
+
+**What the phase ALSO revealed about the existing product (pre-existing, not filed as a defect):**
+`engine.exportText` garbles text extracted from a PDF that WE produced with the offscreen print engine,
+because those PDFs carry no `/ToUnicode` CMap for the text they draw; pdf.js reads them correctly because it
+has font context. It did not block Phase 55 (criterion 7's round-trip used a natively-produced source), but
+it is a real limitation of the text export for our own generated documents and should be examined in Phase
+57's matrix work or filed then.
+
+**PROCESS DEVIATION, disclosed rather than hidden: Phase 55 did NOT get its adversary pass.** Every earlier
+phase in this program ended with one, and Phase 55 added six new parsers (ZIP, OLE/CFB, ODF XML, OOXML,
+PPTX XML, XLSX) plus two writers - the highest-risk surface so far. What covered part of the gap: the gate
+spec's hostile-input basics (zip bombs -> `too-large`, truncated archives -> `corrupt`, a `.docx` that is
+really an `.odt` routing by content, a truncated slide XML degrading to a placeholder plus a warning) and
+the shared `convert-zip.ts` ceilings. **A full adversary pass over the office parsers is the FIRST thing to
+run at the start of the next session, before Phase 56 - the Phase 54 adversary found two app-killing crashes
+in a surface this size, and this one is larger.**
+
+**Also uncommitted at the time of writing:** this notes entry itself. It will ride the next run's commit.
+The two carry-overs from earlier runs also still stand: the packaged-build leg of Phase 54's criterion 8 and
+the Phase 57 packaging gate both remain open, and `test-fixtures/adv-p54/pure.cjs` is now untracked with its
+`pure.ts` source tracked in its place (`65c7a64`).
+
+## 2026-09-29: HARD RULE (operator directive) - write a handover prompt when context gets long
+
+**Operator directive, recorded verbatim in intent: "If context is becoming too long and expensive, write a
+handover prompt covering everything left to do for me to copy to a new session. Do this always without
+exception."**
+
+This is now a standing orchestration rule, not a judgement call:
+
+- **Trigger:** when the orchestrator's own session context is becoming long or expensive - in practice when
+  ledger reads and dispatch specs have filled most of the window, or when a phase boundary is reached and
+  work remains. Do NOT wait until a dispatch is truncated; a truncated dispatch is a worse failure than an
+  early handover.
+- **Always, without exception.** Do not treat it as optional because the run looks nearly finished, and do
+  not substitute a vague "I'm running low on budget" for it. That vague phrasing is itself a mistake: the
+  operator has set no budget, and reporting an external limit that does not exist is misleading. Say instead:
+  "my session context is nearly full; here is the handover."
+- **The prompt must be self-contained and copy-pasteable into a fresh session**, and must cover, at minimum:
+  1. The repository path, the shell notes (PowerShell, `npm.cmd`, `npx.cmd`) and the current HEAD commits.
+  2. What is CLOSED and committed, with hashes, and what is NOT built.
+  3. Every outstanding defect and adversary finding that is not yet closed, with its ledger ID.
+  4. The next actions IN ORDER, specific enough to dispatch immediately without re-deriving context.
+  5. The unfiled or uncommitted items (ledger entries owed, notes not committed).
+  6. The standing rules the next session must honour (the push gate, one chunk per role, the fail-loud rule,
+     and the recurring mistake classes below).
+- Put the prompt in the orchestrator's reply so the operator can copy it, and leave the durable state in the
+  ledgers plus the commits, which is how this project is designed to resume.
+
+## 2026-09-29: Phase 55 adversary pass - three findings, all accepted
+
+The adversary attacked the six new office parsers and the two writers with ~21 attack groups and found three
+defects. All three are `Disposition: ACCEPTED -> DEF-392/393/394`; **qa still owes the `DEFECTS.md` entries**
+(creating them is qa's job, not the orchestrator's), and all three are unfixed.
+
+- **ADV-106 -> DEF-392 (HIGH).** A 5.7 KB XLSX whose `<dimension ref="A1:XFD1048576"/>` drives
+  `worksheetToGrid` into **1,638,400,000** cell expansions and a V8 OOM at ~195 s that kills the app. The row
+  loop is capped at 100,000 but the COLUMN loop (`for c = range.s.c; c <= range.e.c`) is uncapped while
+  `range.e` comes from the file's own `dimension` or `mergeCell`. A second trigger is a normal `!ref` plus a
+  huge `mergeCell`. Measured: 5,629 ms and 938 MB for the first 1,000 rows alone.
+- **ADV-107 -> DEF-393 (HIGH).** A 569-byte ODT with nested repeated table cells (`table:number-columns-repeated`
+  nesting) expands exponentially in `odfToHtml`: ~30 s of blocked main process and ~3.5 GB allocated. There is
+  a per-item cap (`MAX_REPEATED_CELLS = 1000`) but **no aggregate node/output budget across the recursion**.
+- **ADV-108 -> DEF-394 (MEDIUM).** `.xlsx` export throws SheetJS's `Text length must not exceed 32767
+  characters` as an uncaught exception instead of returning a typed `Result`, aborting the whole export for a
+  legitimate long line (a 40,000-character extracted line). `exportXlsx` does not wrap the synchronous
+  `buildXlsx`.
+
+**ADV-106 and ADV-107 are ONE class, and it is the third time this class has bitten: an attacker-declared
+dimension with a per-item cap and no AGGREGATE budget.** Phase 54's version was the `.o` window / the
+`/OutputIntents` scan; Phase 55's is a declared cell range and a declared repeat count. **Rule: every loop
+whose bound comes from file content needs its own ceiling AND an aggregate budget (total items, total bytes,
+or total output size) enforced BEFORE allocation - a per-item cap alone is not a guard.** Both previous
+occurrences were fixed by a preflight check that reads the DECLARED dimensions and refuses before the
+expensive work starts; do the same here.
+
+**What the same pass verified as sound (evidence that the guards work, and worth not re-testing first):** the
+ZIP ceilings refuse a declared 4 GiB entry and a 10,000-entry archive in under 3 ms; truncation at four
+offsets across all five formats yields typed errors; the CFB walker returns a typed `CFB sector chain loops`
+in ~1 ms for a cyclic FAT (the direct analogue of Phase 54's app-killing cyclic-IFD TIFF - the lesson was
+applied in advance); ODF and PPTX entity handling neither expands a billion-laughs document nor reads a
+`file:///` external entity; OPC path traversal is contained; content sniffing routes all mislabeled
+containers without producing a wrong document; and every hostile file left the app usable afterwards.
+
+## 2026-09-29: Phase 55 adversary findings closed (DEF-392/393/394) - run-close record
+
+All three unfixed Phase 55 findings are FIXED, retested against the real app and CLOSED; the
+final full suite is green (520 files / 6539 tests, plus `e2e/phase55_office.spec.cjs` 17 passed).
+
+- **DEF-393 (CLOSED).** Aggregate render budget in `odf-to-html.ts`: `ODF_PARSE_LIMITS` gains
+  `maxRenderNodes` (200,000) / `maxRenderChars` (16 MB), charged per emitted `<td>` inside the
+  repeat loop via `chargeRender`; a d=3 bomb now throws `OdfRenderLimitError` in ~126 ms instead
+  of ~27-35 s / ~3.5 GB. The adapter needed no change (`OdfRenderLimitError extends OdfParseError`).
+- **DEF-394 (CLOSED).** `MAX_CELL_CHARS` truncation marker in `xlsx-export.ts` plus a try/catch
+  around the synchronous `buildXlsx`, so `exportXlsx` returns a typed `engine-error` instead of a
+  rejected IPC promise; a 40,000-char line now exports (82,917-byte workbook) with the cell degraded.
+- **DEF-392 (CLOSED, acceptance criterion REVISED mid-retest).** The first fix capped the grid in
+  place (column clamp + `row-limit` warning) and FAILED the real-app retest: it still materialised
+  and printed all 100,000 declared rows, the maxrange variant died at Chromium `printToPDF` with an
+  opaque `internal` error at 13,450 ms, and the merge variant took 46,721 ms. The warning was
+  assembled only AFTER a successful print, so a print failure produced no warning at all. The second
+  fix is a **preflight refusal**: `declaredExtent(ws)` folds `!ref` with every `!mergeCell` and
+  refuses (typed `too-large`, naming the sheet, declared rows x columns and the ceiling) before any
+  cell is materialised and before `print`; both specimens now refuse in ~620 ms at 156 MB RSS. New
+  documented ceilings `sheetColumns: 1_024` and `sheetCells: 1_000_000` in `limits.ts`. qa recorded
+  the criterion revision in DEF-392's History with the reason.
+
+**Lessons to carry forward.**
+- **A cap-in-place is only a fix if it also bounds the work the cap feeds.** Bounding columns while
+  still rendering and printing every declared row is not a guard; the check must run BEFORE the
+  expensive stage and its outcome (warning) must be built before that stage can fail. Preflight
+  refusal of the attacker-declared extent is the pattern this project has now validated four times
+  (Phase 54 `.o` window, `/OutputIntents` scan, TIFF frames; Phase 55 cell range).
+- **A unit test that pins a wall-clock budget under injected bounded options does not exercise the
+  real path.** The first DEF-392 test asserted `elapsed < 10_000 ms` with `maxRows = 200`, so it
+  never rendered the real 100,000 rows and passed while the app failed. Timing assertions must run
+  with the real default options, or the test proves nothing (a mock-fidelity cousin).
+- **Orchestrator spec arithmetic:** my first DEF-392 test bound (`<= 100,000` rendered `<td>`s) was
+  arithmetically impossible for the clamp formula I specified in the same spec (it yields
+  ~`sheetCells` cells whenever it reduces columns). The developer implemented the written formula
+  and said so; the bound was corrected in the retest criterion. Verify a spec's acceptance numbers
+  against its own formula before dispatch.
+- **A renderer toast is code-canned** (`toastForConvertError` maps a `ConvertErrorCode` to fixed
+  copy), so adapter detail is only visible inside the typed `Result` message. Surfacing that detail
+  in the UI is a separate fail-loud improvement, not part of this defect.

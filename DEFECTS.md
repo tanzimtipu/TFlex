@@ -5,6 +5,64 @@
 > inspect the current `OPEN`, `FIX-READY`, and `DISPUTED` entries first; closed records are
 > historical evidence and must not be loaded wholesale.
 
+## DEF-394: `.xlsx` export throws `Text length must not exceed 32767 characters` instead of returning a typed Result
+
+- Status: CLOSED
+- Severity: MEDIUM
+- Found by: adversary (ADV-108)
+- Phase: 55
+
+Steps to reproduce:
+1. Launch the dev build through the canonical `e2e/lib/launch.cjs` helper.
+2. Open `test-fixtures/adv-p55/pdf-long-line-40000.pdf` (1,105 bytes; one page whose text layer is a single 40,000-character line with no newline and no two-consecutive-space run).
+3. Invoke exactly what the export UI invokes — `window.tflex.export.xlsx(docId, {})` — and catch the result.
+
+Expected: the writer's documented contract and the preload comment are `Promise<Result<ExportBuild, ExportErrorCode>>`, "never a throw" — a page whose text cannot fit a spreadsheet cell should either degrade that cell (as the image data URI path already does with its 30,000-char marker) or return a typed `err`.
+Actual: `XLSX.write` throws `Error: Text length must not exceed 32767 characters` (node_modules/xlsx/xlsx.js `write_ws_xml_cell`); `buildXlsx` does not catch it and `exportXlsx` returns that rejected promise. In the app the call rejected with `Error invoking remote method 'export:xlsx': Error: Text length must not exceed 32767 characters`. The renderer's `OfficeExportDialog` catch surfaces a generic "XLSX export failed: ... Text length must not exceed 32767 characters" and the whole export fails; the `Page N` sheet AND the `Full text` sheet are both lost. Module-level: 32,767 chars -> OK; 32,768 chars -> throws. Not a crash and not data loss (the source PDF is untouched), but a violated typed-Result contract and a hard failure on input the app can produce.
+
+History:
+- qa: opened
+- qa: CLOSED (FIX-READY retest). `e2e/def392_393_394_retest.spec.cjs` "DEF-394: export.xlsx on a 40k-char line resolves with a typed Result" passes against the real dev build (`dist/main` rebuilt from the working tree; launched ONLY via `e2e/lib/launch.cjs`). Real Open button on `test-fixtures/adv-p55/pdf-long-line-40000.pdf`, then exactly what the export UI calls: `window.tflex.export.xlsx(docId, {})` with no options. Result: `{ resolved: true, ok: true, bytes: 82917, pagesWithoutText: [] }` in ~100 ms - a produced workbook with the 40,000-char line degraded to a cell. The raw `Text length must not exceed 32767 characters` throw is never surfaced. `clampCell` truncates any string cell to 32,767 chars with the `CELL_TRUNCATION_MARKER`, and `exportXlsx` wraps `buildXlsx` in a try/catch so a future synchronous SheetJS throw returns a typed `engine-error` err, never a rejected IPC promise. RSS 164 MB. Screenshot `screenshots/def-394.png`.
+
+## DEF-393: A 569-byte ODT with nested repeated table cells expands exponentially in `odfToHtml`, blocking the main process ~30 s and allocating ~3.5 GB
+
+- Status: CLOSED
+- Severity: HIGH
+- Found by: adversary (ADV-107)
+- Phase: 55
+
+Steps to reproduce:
+1. Launch the dev build through the canonical `e2e/lib/launch.cjs` helper.
+2. Open `test-fixtures/adv-p55/odt-table-bomb-d3.odt` (569 bytes; `content.xml` nests 3 levels of `<table:table><table:table-row><table:table-cell table:number-columns-repeated="1000">...` around one `<text:p>x</text:p>`; the parsed node count is tiny, well under `ODF_PARSE_LIMITS.maxNodes`) through the real Open button.
+3. Poll the toast/DOM, then verify the app is still usable afterwards.
+
+Expected: the documented ODF caps (`maxNodes` 200k, `maxDepth` 256, `maxTextChars` 16 MB) keep a hostile ODT bounded, so a sub-kilobyte file cannot allocate gigabytes. A malformed/pathological document gets a typed error.
+Actual: the caps bound the PARSE but not the RENDER. `renderRows` emits one `<td>` per `table:number-columns-repeated` (clamped to 1000) and `renderCell` recursively renders a nested table inside each repeated cell, so the output is `1000^depth` cells with no ceiling. Module results: d2 (568 bytes) -> 10,033,024-byte HTML in 552 ms, 264 MB RSS; d3 (569 bytes) -> `RangeError: Invalid string length` after 34,825 ms, 3,575 MB RSS; d4/d6 -> same `RangeError` at ~32 s and 3,575 MB. In the app, opening the 569-byte d3 file blocked the main process: the user-facing error toast appeared at t=27 s ("The file could not be imported (\"odt-table-bomb-d3.odt\")."), and the app was usable afterwards. On a machine with less free memory than this 64 GB box, the ~3.5 GB allocation is an OOM risk of the same class as ADV-106.
+
+History:
+- qa: opened
+- qa: CLOSED (FIX-READY retest). `e2e/def392_393_394_retest.spec.cjs` "DEF-393: odt-table-bomb-d3.odt fails fast, app stays usable" passes. Real Open button on `test-fixtures/adv-p55/odt-table-bomb-d3.odt` -> typed corrupt error toast `The file could not be read ("odt-table-bomb-d3.odt"). It may be corrupt or truncated.` at 339 ms (pre-fix ~27-35 s), peak main RSS 164 MB (pre-fix ~3.5 GB). The app stayed usable: a second real Open of `assets/samples/report.pdf` rendered (`.workspace canvas` present) and RSS settled at 166 MB. The fix adds an aggregate `maxRenderNodes` (200,000) / `maxRenderChars` (16 MB) budget; `chargeRender` is called once per emitted `<td>` inside the repeat loop, so the nested bomb throws `OdfRenderLimitError` (an `OdfParseError` subclass) before expanding, and the ODT adapter maps it to a typed `corrupt` `ConvertFailure`. Screenshot `screenshots/def-393.png`.
+
+## DEF-392: A 5.7 KB XLSX whose declared range is the Excel maximum drives `worksheetToGrid` into ~1.6 billion cells and V8-OOM-crashes the main process
+
+- Status: CLOSED
+- Severity: HIGH
+- Found by: adversary (ADV-106)
+- Phase: 55
+
+Steps to reproduce:
+1. Launch the dev build through the canonical `e2e/lib/launch.cjs` helper.
+2. Stub `dialog.showOpenDialog` to return `test-fixtures/adv-p55/xlsx-maxrange.xlsx` (5,696 bytes; a valid SheetJS workbook whose only worksheet's `<dimension ref="A1:XFD1048576"/>` was patched to the Excel maximum, with 4 real cells: h1/h2, a/b), click the real `[aria-label="Open PDF document"]` Open button, and poll the main-process RSS and the DOM for 180 s.
+3. Repeat with `test-fixtures/adv-p55/xlsx-merge-huge.xlsx` (5,701 bytes; `!ref` is a small `A1:A2` but one `mergeCell ref="A1:XFD1048576"` expands the iterated range — same root cause, a second trigger that does not need a patched dimension).
+
+Expected: a workbook declaring a large used range but containing almost no cells converts to a short PDF, or reports the documented `row-limit` warning. It must never allocate proportional to the declared range rather than the real data.
+Actual: the app's main process was pegged and, at ~195 s process uptime, V8 aborted with `OOM error in V8: MarkCompactCollector: young object promotion failed Allocation failed - JavaScript heap out of memory`; the Electron window closed and the application died (`[probe-hang] died=window:close`, mainRSS sampling unreadable). The 5,696-byte file kills the app. Module-level numbers: `worksheetToGrid` (maxRows 100,000) materialises every column of the declared range for every rendered row; 1,000 rows took 5,629 ms and 938 MB RSS; the loop is 100,000 rows x 16,384 columns = 1,638,400,000 cell expansions, extrapolating to roughly 9 minutes and ~94 GB before the ~4 GB V8 heap limit is hit. The merge variant reports `sourceRowCount=1048576`, `cols=16384` from a 5,701-byte file.
+
+History:
+- qa: opened
+- qa: retest FAILED (FIX-READY retest, working tree built to `dist/main`; launched ONLY via `e2e/lib/launch.cjs`; no injected options). `e2e/def392_393_394_retest.spec.cjs` has 2 tests, both FAIL the stated acceptance criteria. The window no longer dies and RSS stays bounded (peak 322-381 MB vs pre-fix V8 OOM at ~3.5-4 GB), so the OOM half is fixed - but neither half of the settlement criterion is met. (a) `xlsx-maxrange.xlsx` still refuses with the OPAQUE error `{code:'internal', message:'The import failed unexpectedly. Failed to generate PDF: Printing failed'}` at 13,450 ms: it names neither the sheet nor the column ceiling, because the clamp warning is assembled only AFTER a successful print and the 100,000-row x 10-column grid still fails Chromium's `printToPDF`. (b) `xlsx-merge-huge.xlsx` completes with the CORRECT readable warnings (`Sheet "Sheet1" declares 16384 columns over an extent above the 1000000-cell budget; only the first 10 columns were imported` plus the 1,048,576-row limit warning) but takes 46,721 ms. Both wall clocks are far over the 10,000 ms budget. Root cause: the clamp bounds columns by the cell budget (1,000,000 / 100,000 rendered rows = 10 columns) yet still materialises and prints all 100,000 declared rows; the unit test that pins `elapsed < 10_000 ms` runs with `BOUNDED_MAX_ROWS = 200`, so it never exercises the real 100,000-row render. Logs `e2e/def392-394-retest-final.log`; screenshots `screenshots/def-392-maxrange.png` (opaque toast, app alive), `screenshots/def-392-merge.png` (readable warning, 3,810 pages / 44.0 MB).
+- qa: CLOSED (FIX-READY retest #2; acceptance criterion REVISED by the orchestrator). The bar changed from "cap with a readable warning" to "refuse before expanding with a named typed error", because the cap still materialised and printed all 100,000 declared rows and the warning was assembled only AFTER a successful print (the retest #1 failure). `e2e/def392_393_394_retest.spec.cjs` (updated to the revised bar) passes both specimens against the real dev build (`dist/main` rebuilt from the working tree; launched ONLY via `e2e/lib/launch.cjs`; no injected options). `xlsx-maxrange.xlsx`: real Open button -> code-canned toast `The file is too large to import ("xlsx-maxrange.xlsx").` at 619 ms, peak main RSS 156 MB; the typed Result from the real convert service (no options) is `{ok:false, code:'too-large', message:'Sheet "Sheet1" declares 1048576 rows x 16384 columns (17179869184 cells), above the 1024-column / 1000000-cell import ceiling; the workbook was not imported.'}`. `xlsx-merge-huge.xlsx`: same refusal at 622 ms, peak 156 MB, same typed message (sheet `Sheet1`). Both are preflight refusals - the message says the workbook was not imported, so `print` was never reached (retest #1 reached print and failed at 13,450 ms with the opaque `internal` "Printing failed"). The app stayed usable after each (window evaluate returned 2). Screenshots `screenshots/def-392-maxrange.png`, `screenshots/def-392-merge.png`. `npx.cmd playwright test e2e/phase55_office.spec.cjs` -> 17 passed; `npm.cmd run verify:full` -> conventions clean (301 files), typecheck clean, 520 test files / 6539 tests passed, 0 failed (DEF-393/394 unit tests green, no regression).
+
 ## DEF-391: imageImportDefaults is stored but never applied on the image import path
 
 - Status: CLOSED
