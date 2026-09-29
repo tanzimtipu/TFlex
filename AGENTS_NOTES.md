@@ -4810,3 +4810,26 @@ reusable facts: (1) a "declared extent" ceiling must bound the DECODE, not just 
 `zlib.inflateSync(buf, { maxOutputLength })` and treat overflow as a fallback, never a crash. (2)
 Node 24 runs this code up to ~40x slower than Electron 44's V8, so a Node-measured freeze overstates
 the app risk - measure freezes in the app, and never cite a Node timing as an app-behaviour claim.
+
+**"verify:full green locally" is NOT the same as "CI green" when a suite reads UNTRACKED files.**
+Found on 2026-09-30 while cleaning the tree: five committed unit suites read fixtures from
+`test-fixtures/adv-p54/**` BY NAME (`convertImagesAdapter.test.ts:193`,
+`convertSvgAdapter.test.ts:255`, `convertTiffAdapter.test.ts:231`, `validatePdfA.test.ts:18`,
+`validatePdfX.test.ts:18`, plus `e2e/phase54_adv54_retest.spec.cjs:16`) and one committed comment
+points at `test-fixtures/adv-p57/probe/build-fixtures.cjs` - but the adv-p54 specimens were
+UNTRACKED. Local runs passed because the files existed on disk; a CI `actions/checkout` gives only
+tracked files, so the same tree would have failed the moment a job started. Fixed by tracking
+`test-fixtures/adv-p54/**` (commit 86758a6). Rule: when a test reads a fixture, that fixture must be
+TRACKED in the same commit; before recommending a release push, run
+`git ls-files --error-unmatch <every fixture path a test references>` (or simply `git status` with
+no untracked fixture dirs) - "green locally" is not evidence about a fresh checkout.
+
+**A repo whose CI jobs fail in 3 s with zero steps and no runner is an ACCOUNT/RUNNER condition, not
+a test failure.** On 2026-09-30 every `verify` run back to 2026-09-28 failed this way (last green
+2026-09-27, the v1.40.0 batch): the job never started, `steps: []`, no runner name, and no log blob
+(404 `BlobNotFound`). That is Actions minutes/spending-limit or Actions-disabled at the account
+level - not something a commit can cause or fix. It also means the CI signal for several releases
+(v1.42.0, v1.43.0, v1.44.0, v1.45.0) has been worthless, which is worth knowing before reading a
+release's failure mail as a code problem. Diagnose with `gh run list` + `gh run view <id>` (a
+zero-step job with `runner_name: ""` is the tell); the decisive annotation needs `checks:read`,
+which fine-grained PATs cannot hold, so a human must look at the run page.
