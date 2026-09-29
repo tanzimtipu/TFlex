@@ -11,7 +11,7 @@
       "source": "neondatabase/agent-skills",
       "sourceType": "github",
       "skillPath": "skills/neon-ai-gateway/SKILL.md",
-      "computedHash": "3bfa5210c3c7206d520348765727571708fde7363c661fbb50306da2f18715cc"
+      "computedHash": "7ff879baab63b4a83ba097408fc195ce65a2b867ef8a8c96f12d227ce4a81a90"
     },
     "neon-auth": {
       "source": "neondatabase/agent-skills",
@@ -23,7 +23,7 @@
       "source": "neondatabase/agent-skills",
       "sourceType": "github",
       "skillPath": "skills/neon-functions/SKILL.md",
-      "computedHash": "ddb236383819292f5f5899571daf29daaf9b291cd5e0368f3e8742e875443317"
+      "computedHash": "34dbacb1322267e3076fec6161c27b03aeedef960ccfd69e2e1c80d54ad0a099"
     },
     "neon-object-storage": {
       "source": "neondatabase/agent-skills",
@@ -35,13 +35,13 @@
       "source": "neondatabase/agent-skills",
       "sourceType": "github",
       "skillPath": "skills/neon-postgres/SKILL.md",
-      "computedHash": "ac5522830f97d16b0645da7a79d4b21d75e4ac7edfbfa32f7d051ad1dcbc60b9"
+      "computedHash": "2e367b4b436500b7d28aba2b4318b1a2a4f7bacd94f1c045ba62751b95b578fe"
     },
     "neon-postgres-branches": {
       "source": "neondatabase/agent-skills",
       "sourceType": "github",
       "skillPath": "skills/neon-postgres-branches/SKILL.md",
-      "computedHash": "046d5ca916e3592c32dfa6da2ea7b0a1c0c3c528ec88e36877be1eadb6fc0338"
+      "computedHash": "808eadbffb000a963949081f3ec6684d3a8943db99c2f706c2dff27d1a2aadca"
     },
     "neon-postgres-egress-optimizer": {
       "source": "neondatabase/agent-skills",
