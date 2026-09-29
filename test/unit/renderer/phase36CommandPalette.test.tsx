@@ -457,7 +457,9 @@ describe('Phase 36 — the ^/v highlight and Enter', () => {
 });
 
 describe('Phase 36 — pinning through the dock path', () => {
-  const FOUR_PINS = ['merge', 'split', 'extract', 'rotate'];
+  // Phase 58 — the cap is 200; a raw list at that length still refuses a
+  // cross-stage pin (the palette checks the RAW `dockPins` length).
+  const FULL_PINS = Array.from({ length: 200 }, (_, i) => `pin-${i}`);
 
   it('pins the highlighted row on Ctrl+Enter and keeps the palette open', () => {
     const h = renderPalette();
@@ -476,8 +478,8 @@ describe('Phase 36 — pinning through the dock path', () => {
   });
 
   it('surfaces the dock refusal at the pin cap and never calls the writer', () => {
-    expect(DOCK_MAX_PINS).toBe(4);
-    const h = renderPalette({ dockPins: FOUR_PINS });
+    expect(DOCK_MAX_PINS).toBe(200);
+    const h = renderPalette({ dockPins: FULL_PINS });
     try {
       type(input(h.host), 'sign');
       pressKey('Enter', { ctrlKey: true });

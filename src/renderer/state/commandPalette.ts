@@ -38,8 +38,9 @@ export const PALETTE_TOOL_PREFIX = 'tool:';
 export const PALETTE_RECENT_PREFIX = 'recent:';
 
 /** The dock's refusal copy, mirrored from the Action Dock's own menu so the
- *  palette and the dock tell the user the same thing (max 4 pins). */
-export const PALETTE_DOCK_FULL_MESSAGE = 'Dock is full (max 4 pins)';
+ *  palette and the dock tell the user the same thing. Phase 58: the old
+ *  "(max 4 pins)" suffix is gone — the cap is now effectively unlimited. */
+export const PALETTE_DOCK_FULL_MESSAGE = 'Dock is full';
 
 /** `toolUsage` entry cap. Mirrors the MAIN-process settings validator's
  *  `TOOL_USAGE_CAP` (src/main/services/settings.ts) — the renderer cannot

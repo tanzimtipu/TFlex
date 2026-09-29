@@ -386,6 +386,20 @@ export const IPC = {
   // (never bytes-only, never a throw across IPC).
   exportXlsx: "export:xlsx",
   exportPptx: "export:pptx",
+  // Phase 58 — detach a document tab into a SECOND app window and return it.
+  // `tab:detach` (origin renderer -> main, invoke) carries the tab's bytes and
+  // opens a new full app window parented to the sender; `tab:adopt` pushes the
+  // payload into that new window once loaded; `tab:adoptAck` reports whether
+  // the new window adopted it; `tab:detachResolved` tells the ORIGIN window the
+  // outcome (so it can drop or keep its tab); `tab:return` (detached renderer
+  // -> main) sends the payload back to the parent; `tab:empty` closes a
+  // detached window once its last tab is gone.
+  tabDetach: "tab:detach",
+  tabAdoptEvent: "tab:adopt",
+  tabAdoptAck: "tab:adoptAck",
+  tabDetachResolvedEvent: "tab:detachResolved",
+  tabReturn: "tab:return",
+  tabEmpty: "tab:empty",
 } as const;
 
 /** Result of `signatures:save` and `signatures:list`. The renderer treats
@@ -426,6 +440,30 @@ export type ClipboardImageResult =
 export type OpenDefaultAppsSettingsResult =
   | { ok: true }
   | { ok: false; reason: "failed" };
+
+/** Phase 58 — a document tab carried between app windows. The BYTES are the
+ *  document (not a file path), so a saved, unsaved or derived document can all
+ *  move. `title` is the tab label; `modified` is the origin's dirty state. */
+export interface TabTransferPayload {
+  title: string;
+  bytes: Uint8Array;
+  modified: boolean;
+}
+
+/** Phase 58 — result of `tab:detach` / `tab:return`. `ok: true` carries the
+ *  `BrowserWindow.id` the payload was handed to; `ok: false` means no window
+ *  could be created or reached (the caller keeps its tab). */
+export type TabTransferResult =
+  | { ok: true; windowId: number }
+  | { ok: false; reason: "failed" };
+
+/** Phase 58 — outcome pushed to the ORIGIN window after a detach: whether the
+ *  new (`windowId`) adopted the payload. `ok: false` means the origin must
+ *  keep its tab. */
+export interface TabDetachResolved {
+  ok: boolean;
+  windowId: number;
+}
 
 /** Phase 9 — engine surface exposed to the renderer. Each method
  *  routes over the matching `engine:*` IPC channel through preload.
@@ -1008,6 +1046,24 @@ setEnabled(state: import("./types").MenuEnabledState): void;
     open(context: PrintWindowContext): Promise<PrintWindowOpenResult>;
     notifyDocumentGone(docId: string): Promise<void>;
     onDocumentGone(cb: (docId: string) => void): () => void;
+  };
+  /** Phase 58 — detach a document tab into a SECOND app window and return it.
+   *  `detach` carries the tab's title + bytes + dirty state; main opens a new
+   *  full app window and, once loaded, pushes the payload to it, resolving the
+   *  new window id. `onAdopt` (new window) receives that payload; `adoptAck`
+   *  reports whether the new window adopted it, and `onDetachResolved` (origin
+   *  window) receives that outcome so it can drop or keep its tab.
+   *  `returnToOrigin` (detached window) sends the payload back to its parent
+   *  (or the first surviving app window) and resolves the target window id;
+   *  `notifyEmpty` closes the detached window once its last tab is gone.
+   *  Optional so a preload without the bridge degrades gracefully. */
+  tabs?: {
+    detach(payload: TabTransferPayload): Promise<TabTransferResult>;
+    onAdopt(cb: (payload: TabTransferPayload) => void): () => void;
+    adoptAck(ok: boolean): Promise<void>;
+    onDetachResolved(cb: (r: TabDetachResolved) => void): () => void;
+    returnToOrigin(payload: TabTransferPayload): Promise<TabTransferResult>;
+    notifyEmpty(): Promise<void>;
   };
   /** Phase 6 — About + preferences. Backend fills `AppInfo` from
    *  `app.getVersion()` and the user-data path so the About dialog

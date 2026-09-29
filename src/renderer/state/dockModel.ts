@@ -37,8 +37,11 @@ export const DOCK_ICON_ONLY_WIDTH = 900;
 /** At or below this canvas width the dock collapses LRU unpinned verbs. */
 export const DOCK_COMPACT_WIDTH = 640;
 
-/** The dock's pin cap (matches the settings validator's `dockPins` cap). */
-export const DOCK_MAX_PINS = 4;
+/** The dock's pin cap (mirrors the MAIN process's `DOCK_PINS_CAP = 200`; the
+ *  renderer cannot import main code, so the number is repeated here). Phase 58:
+ *  edit-mode "add" is effectively unlimited — the dock overflows and scrolls
+ *  instead of refusing a pin, so the old 4-pin cap no longer applies. */
+export const DOCK_MAX_PINS = 200;
 
 /** The State 2 bulk verbs, in order, as registry ids (so pin dedupe and the
  *  registry's own icons/labels are reused — the dock invents no list).

@@ -34,8 +34,9 @@ describe('DEF-353 — sanitizeDockCuration makes the two stores mutually exclusi
 
   it('keeps each list registry-valid, deduped and capped', () => {
     const { pins, unpinned } = sanitizeDockCuration(HOSTILE);
-    expect(pins).toEqual(['rotate', 'annotate', 'sign']);
-    expect(pins.length).toBeLessThanOrEqual(4);
+    // Phase 58 — the pin cap is 200, so `watermark` is no longer evicted.
+    expect(pins).toEqual(['rotate', 'annotate', 'sign', 'watermark']);
+    expect(pins.length).toBeLessThanOrEqual(200);
     expect(unpinned).toEqual(['merge', 'delete']);
     expect(unpinned.length).toBeLessThanOrEqual(200);
   });

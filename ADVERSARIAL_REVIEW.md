@@ -5067,3 +5067,165 @@ Disposition: ACCEPTED -> DEF-408
 - Happy path unaffected: `sanity-bfchar.pdf` app exportText "H" in ~9 ms;
   `c-simple-valid.pdf` "ABC".
 
+## Phase 58 gate — tab detach/drag-back, dock edit, home row edit, tab style
+
+Session label: `phase-58 gate`. Ran against the production build
+(`npm.cmd run build`; dist main + dist renderer, launched through
+`e2e/lib/launch.cjs` with fresh `--user-data-dir` per probe). Harnesses live in
+`test-fixtures/`: `adv-p58-tabs.cjs` (detach / drag-back sequences),
+`adv-p58-settings.cjs` (settings corruption + home/dock hand-edits),
+`adv-p58-dock.cjs` (dock edit mode). Logs: `adv_p58_*.log` at the repo root.
+
+## ADV-117: Tear-out of a document with unsaved changes loses the dirty state — the new window reports clean
+
+- Session: phase-58 gate
+- Suggested severity: HIGH
+
+What I did:
+1. Ran `test-fixtures/adv-p58-tabs.cjs s7` (open `assets/samples/report.pdf`,
+   fresh user-data-dir).
+2. Marked the document dirty by clicking the PAGES dock `rotate` verb; the
+   origin's `window.tflexDiagnostics()` then reported `modified: true`.
+3. Dragged the tab below the tab strip and released (tear-out). The origin tab
+   was removed once the new `#detached` window reported ready.
+4. Polled the detached window's `window.tflexDiagnostics()`
+   (`modified` / `tabModified`) every 250 ms for 2.5 s, then read the origin.
+
+Expected: Phase 58 success criterion 8 — a tear-out with unsaved changes either
+is refused with a readable reason OR the new window inherits the same unsaved
+state; the dirty state is never dropped silently.
+
+Actual: the origin reports `modified: true`; the detached window reports
+`modified: false` and `tabModified: false` on the very first poll and at every
+subsequent poll. The moved document is presented as clean, so the user gets no
+"unsaved changes" cue. (The origin's tab-meta `tabModified` stays `false` even
+for a dock rotate; the engine-level `modified` is `true`, which is what the
+origin's own close gate and the detach payload read.)
+Screenshot: none (state read via `tflexDiagnostics`). Log: `adv_p58_tabs_s7.log`.
+
+Disposition: ACCEPTED -> DEF-414
+
+## ADV-118: Closing a detached window silently discards unsaved edits (no close/quit gate)
+
+- Session: phase-58 gate
+- Suggested severity: HIGH
+
+What I did:
+1. Ran `test-fixtures/adv-p58-tabs.cjs s8`; opened `report.pdf`, tore the tab
+   out, and waited for the document to load in the `#detached` window
+   (pageCount 34, dock verbs present).
+2. Marked the document dirty INSIDE the detached window via the PAGES dock
+   `rotate` verb; the detached window's `tflexDiagnostics().modified` then read
+   `true`.
+3. Clicked the detached window's own titlebar close control
+   (`[data-window-close]`) and checked for the DEF-142 unsaved-changes prompt.
+
+Expected: the DEF-142 close/quit gate prompts before a window holding unsaved
+edits closes (the behaviour the main window has), or the close is refused.
+
+Actual: no prompt appears (`[data-close-tab-prompt]` count 0); the detached
+window closes immediately and the edit is discarded with no save opportunity.
+Reproduced in 2 of 2 runs where the document actually loaded. Root cause:
+`createDetachedWindow` (`src/main/window.ts:554`) is created with no
+`onCloseRequested` dependency, so its `'close'` handler never calls
+`preventDefault()` and never pushes `window:closeRequested`; the whole
+close-gate machinery (`src/main/index.ts:606-629`) is wired to the main window
+only, leaving every detached window with no unsaved-close protection. This is
+the gravest class: silent loss of a user's unsaved edits.
+Log: `adv_p58_tabs_s8.log`.
+
+Disposition: ACCEPTED -> DEF-415
+
+## ADV-119: Intermittent tear-out leaves a blank orphan `#detached` window (payload race)
+
+- Session: phase-58 gate
+- Suggested severity: MEDIUM
+
+What I did:
+1. Ran `test-fixtures/adv-p58-tabs.cjs s8` six times (fresh user-data-dir each
+   run): open `report.pdf`, tear the tab below the strip.
+2. After the new window appeared, waited up to 15 s for `[data-tab-id]`, then
+   polled `pageCount`, `.workspace`/`.welcome` and dock verb count for 20 s, and
+   read the origin's tab list.
+
+Expected: the new `#detached` window adopts the moved document (one tab, the
+document loaded, the dock rendered).
+
+Actual: in 4 of 6 runs the new `#detached` window never adopted the document —
+it shows the Welcome screen with no tab, `pageCount 0`, no dock verbs, and no
+way to recover it (`hadTabRef` stays false, so `notifyEmpty` never closes it);
+it remains as a stray blank app window until closed by hand. The origin keeps
+its tab (no adopt ack), so the document is not lost, but the tear-out visibly
+produces a dead second window. Root cause: `openDetached`
+(`src/main/services/tabWindows.ts:74-80`) calls `createWindow()` — which
+immediately runs `win.loadFile` / `loadURL` (`src/main/window.ts:588-595`) — and
+only AFTERWARDS registers `child.webContents.once('did-finish-load', ...)`. When
+the local page finishes loading before the listener attaches, the adopt payload
+is never sent and `tabAdoptAck` never fires.
+Screenshot: screenshots/adv-p58-s8-blank-detached.png. Log:
+`adv_p58_tabs_s8b.log`, `adv_p58_tabs_s8c.log`.
+
+Disposition: ACCEPTED -> DEF-416
+
+## ADV-120: Tearing out an empty placeholder tab is a silent no-op
+
+- Session: phase-58 gate
+- Suggested severity: MEDIUM
+
+What I did:
+1. Ran `test-fixtures/adv-p58-tabs.cjs s4`; opened `report.pdf`, clicked the
+   tab-strip "+" (`[data-new-tab]`) so the active tab is an empty placeholder,
+   then dragged that empty tab below the strip and released.
+
+Expected (AGENTS.md "Fail loud: no silent no-ops"): the tear-out is either
+refused with a visible reason (a tab with no document cannot be moved), or the
+tear-out affordance is not offered for a document-less tab.
+
+Actual: nothing happens — no new window (`newWindowOpened: false`), no toast, no
+error, and the tab stays put. `detachTab` (`src/renderer/App.tsx:2514-2515`)
+returns early when `openTabsRef.current[id]` is undefined with no user feedback,
+even though the tear-out affordance arms on the empty tab
+(`data-tab-tearout` sets on drag). Log: `adv_p58_tabs_s4.log`.
+
+Disposition: ACCEPTED -> DEF-417
+
+## Negative results — Phase 58 surfaces that held (no finding)
+
+- **Detach the last/only tab**: the document moves to the new window and the
+  origin drops to zero tabs (moved, not copied). Held.
+- **Hostile tab titles**: a 180-char name, a name with runs of spaces, a
+  CJK/Cyrillic name and a bare `.pdf` all detached with the title preserved in
+  the new window and no crash. Held.
+- **Detach while Multi Mode is on**: the gesture is disabled (no second window,
+  no state mutation). Held.
+- **Close the origin window while a detached window survives**: the detached
+  window keeps the document; a subsequent drag-back is refused (no target) and
+  nothing is lost. Held.
+- **Double tear-out in quick succession**: only one detached window is created;
+  the document is never duplicated. Held (the second gesture found no tab left
+  to move).
+- **Encrypted PDF**: `test-fixtures/encrypted.pdf` opens through the password
+  prompt (no workspace), so no detach path is reachable; nothing is silently
+  loaded. Held.
+- **Settings corruption** (`test-fixtures/adv-p58-settings.cjs`): wrong-typed
+  `techStyle`/`homeTools`/`dockPins`/`dockUnpinned`, an invalid `tabStyle`, and a
+  20-entry `homeTools` all launch cleanly with defaults applied (invalid
+  `tabStyle` resolves to `colorful`, a valid `standard` is honoured, `homeTools`
+  truncates to 14 and is persisted at 14, a non-array `homeTools` falls back to
+  the shipped row). Invalid JSON restores defaults and the window renders. Held.
+- **`homeTools: ['open']`**: the fixed id is dropped by the renderer, leaving
+  only the Open tile; no crash. Held.
+- **`dockPins` hand-edited to 503 entries incl. duplicates / non-strings /
+  unknown ids**: truncated to the 200 cap, unknown ids dropped by the renderer,
+  the dock renders and scrolls. Held.
+- **Home row at the 14 cap**: the row scrolls horizontally, the plus is
+  disabled with a "Home row is full (max 14 tools)" title and a visible hint, and
+  the pen stays reachable. Held.
+- **Dock edit mode**: removing every verb leaves a coherent empty/edit pill with
+  the plus and pen (and stays empty across a relaunch); adding 30 tools via the
+  picker makes the dock scroll with the plus still present; rapid edit-mode
+  toggling with a tool armed did not crash. Held.
+- **Home add then open a document**: the added tool persists in `homeTools` and
+  survives opening a document. Held.
+
+

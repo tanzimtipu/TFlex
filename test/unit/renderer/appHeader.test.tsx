@@ -23,6 +23,16 @@ function mouseDown(el: Element, button: 0 | 1 | 2 = 0): void {
   });
 }
 
+/** DEF-413 — a title mousedown defers activation to mouseup, so a test
+ *  that clicks the title must also release the button. The production
+ *  one-shot listener is on `window`, so we dispatch there. jsdom's
+ *  default selection is collapsed, so this completes an ordinary click. */
+function mouseUp(): void {
+  act((): void => {
+    window.dispatchEvent(new MouseEvent("mouseup", { bubbles: true, button: 0 }));
+  });
+}
+
 /** Flush the theme popover's exit animation. The popover closes through
  *  an AnimatePresence boundary (Pop Out), so the node leaves the DOM a
  *  frame AFTER the state flip even with skipAnimations completing the
@@ -219,14 +229,19 @@ describe("AppHeader — click on padding / gap activates the tab (DEF-041)", () 
     );
     expect(title).not.toBeNull();
     if (title === null) return;
+    // DEF-413 — a title click now resolves on release (deferred so a
+    // drag-select is not an activation); the full click still activates.
     mouseDown(title);
+    expect(onActivate).not.toHaveBeenCalled();
+    mouseUp();
     expect(onActivate).toHaveBeenCalledWith("b");
   });
 
   it("activates when the mousedown lands on the modified-dot child of the title", () => {
     // The modified-dot is the leftmost child of the title. Its
     // padding box is inside the tab, so a click on the dot must
-    // still activate the tab.
+    // still activate the tab. It is also INSIDE .tab-title, so
+    // DEF-413 defers the activation to the release.
     const onActivate = vi.fn();
     const root = renderHeader({
       tabs: [
@@ -242,6 +257,7 @@ describe("AppHeader — click on padding / gap activates the tab (DEF-041)", () 
     expect(dot).not.toBeNull();
     if (dot === null) return;
     mouseDown(dot);
+    mouseUp();
     expect(onActivate).toHaveBeenCalledWith("a");
   });
 

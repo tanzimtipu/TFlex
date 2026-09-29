@@ -5,6 +5,7 @@ import {
   useState,
   type KeyboardEvent as ReactKeyboardEvent,
   type MouseEvent as ReactMouseEvent,
+  type PointerEvent as ReactPointerEvent,
   type ReactElement,
   type ReactNode,
 } from "react";
@@ -29,6 +30,7 @@ import { AnimatePresence } from "motion/react";
 import type { Theme } from "../state/theme";
 import type { ThemeDefault } from "../state/preferences";
 import type { TabInput } from "../state/tabMouseDown";
+import type { TabStyle } from "../../shared/types";
 import { tabColourSlot } from "../state/tabColour";
 import { AnimatedTab } from "./AnimatedTab";
 import { BrandMark } from "./BrandMark";
@@ -147,6 +149,23 @@ interface AppHeaderProps {
    *  trailing edge of the title bar (the true top-right). Omitted means the
    *  account section is not rendered (harnesses / pre-Phase-44 mounts). */
   accountSlot?: ReactNode;
+  /** Phase 58 — the tab-strip style preference. 'colorful' paints each
+   *  tab with its own flat colour and the operator's reference
+   *  silhouette; 'standard' keeps the classic tab look. Rendered as
+   *  `data-tab-style` on `.tab-area` so the CSS switch is declarative.
+   *  Absent means the default ('colorful'). */
+  tabStyle?: TabStyle;
+  /** Phase 58 (chunk 5) — reorder a tab to a new strip index. Omitted
+   *  means reordering is disabled (harnesses / pre-Phase-58 mounts) — the
+   *  header never reorders without a handler, so the control is never a
+   *  silent no-op. Multi Mode shows ONE composite tab, so reorder is also
+   *  a no-op there. */
+  onMoveTab?: (id: string, toIndex: number) => void;
+  /** Phase 58 (chunk 6b) — tear a tab OUT into a new app window. Omitted
+   *  means the tear-out gesture is not available (harnesses /
+   *  pre-Phase-58 mounts); the header then treats every drag as a
+   *  reorder, never a silent no-op. The host owns the actual detach IPC. */
+  onDetachTab?: (id: string) => void;
 }
 
 /** Phase-15 — the three themes the picker offers, in display order
@@ -174,8 +193,59 @@ function themeLabel(value: ThemeDefault): string {
   return THEME_OPTIONS.find((o) => o.value === value)?.label ?? "Frosted Glass";
 }
 
+/**
+ * DEF-411 — decide whether committing a reorder must restore the
+ * pre-drag active tab. The DEF-034 activation contract fires on the
+ * pointerdown that arms the drag, so a background tab becomes active
+ * before the reorder commits. The reducer's `move` preserves `activeId`,
+ * but that separate activation path must be undone.
+ *
+ * Restore only when:
+ *   - a tab was active before the drag (startActive !== null);
+ *   - the dragged tab was NOT the active one (restoring it would be a
+ *     pointless no-op and the reducer already preserves it);
+ *   - the gesture actually reordered (target slot differs from the
+ *     tab's origin index — a same-slot release is a no-op).
+ */
+export function shouldRestoreActiveOnReorder(
+  startActive: string | null,
+  draggingId: string,
+  startIndex: number | null,
+  targetIndex: number,
+): boolean {
+  if (startActive === null) return false;
+  if (startActive === draggingId) return false;
+  if (startIndex !== null && targetIndex === startIndex) return false;
+  return true;
+}
+
+/**
+ * Phase 58 (chunk 6b) — the tear-out decision for a finished tab drag.
+ *
+ * The gesture is ONE pointer drag. A release INSIDE (or horizontally
+ * beyond) the strip is a reorder; a release more than `threshold` pixels
+ * BELOW the strip's bottom edge is a tear-out into a new window. A
+ * horizontal escape alone stays a reorder — only the vertical escape
+ * detaches, so a user dragging a tab to the far left / right never
+ * accidentally spawns a window.
+ *
+ * `hasDetach` gates the whole thing: when the host passed no
+ * `onDetachTab`, every release is a reorder (never a silent no-op).
+ */
+export function tearOutDecision(args: {
+  pointer: { x: number; y: number };
+  strip: { left: number; right: number; top: number; bottom: number };
+  hasDetach: boolean;
+  threshold?: number;
+}): "detach" | "reorder" {
+  if (!args.hasDetach) return "reorder";
+  const threshold = args.threshold ?? 24;
+  if (args.pointer.y > args.strip.bottom + threshold) return "detach";
+  return "reorder";
+}
+
 export function AppHeader(props: AppHeaderProps): ReactElement {
-  const { activeId, tabs, onActivate, onClose, theme, themeDefault, onThemeChange, onNewEmptyTab, onOpenPreferences, onPrint, printEnabled = true, onMultiModeToggle, updateIndicator = null, onOpenFile, onSave, onSaveAs, saveModified = false, saveInPlaceEnabled = true, multiModeEnabled = false, onOpenToolSearch, onOpenFind, findEnabled = false, accountSlot = null } = props;
+  const { activeId, tabs, onActivate, onClose, theme, themeDefault, onThemeChange, onNewEmptyTab, onOpenPreferences, onPrint, printEnabled = true, onMultiModeToggle, updateIndicator = null, onOpenFile, onSave, onSaveAs, saveModified = false, saveInPlaceEnabled = true, multiModeEnabled = false, onOpenToolSearch, onOpenFind, findEnabled = false, accountSlot = null, tabStyle = "colorful", onMoveTab, onDetachTab } = props;
   // Phase-15 — the embedded theme dropdown. All hooks stay at the top
   // of the component (DEF-117 hook-order contract): no early returns.
   // The picker's selection is the SAVED preference (themeDefault) —
@@ -361,6 +431,269 @@ export function AppHeader(props: AppHeaderProps): ReactElement {
     e.stopPropagation();
   }, []);
 
+  // ==========================================================================
+  // Phase 58 (chunk 5) — pointer-driven tab reorder.
+  //
+  // The gesture is deliberately NOT HTML5 drag: the tab title must stay
+  // natively selectable (the user drag-selects text inside a title), and
+  // HTML5 `draggable` would hijack that. Pointer events let us
+  // disambiguate one gesture two ways:
+  //
+  //   - `pointerdown` on a tab (target outside `.tab-close`) ARMS a pending
+  //     drag and does NOT preventDefault, so the browser can start a native
+  //     text selection exactly as before;
+  //   - the FIRST `pointermove` past a 6px threshold decides, once per
+  //     gesture: if there is a non-collapsed selection whose anchor sits
+  //     inside that tab's `.tab-title`, the user is selecting text and the
+  //     drag is CANCELLED (text selection wins); otherwise the reorder
+  //     begins;
+  //   - while reordering, the target slot is computed from pointer X against
+  //     the midpoints of the OTHER tabs and shown as a visible drop marker;
+  //   - `pointerup` commits via `onMoveTab`, `pointercancel` discards.
+  //
+  // No preventDefault / stopPropagation on these handlers (AGENTS.md
+  // cross-bubbling rule): the DEF-034 mousedown activation contract and the
+  // close button are untouched. The reducer carries activeId through, so a
+  // reorder never changes the active document.
+  // ==========================================================================
+  // DEF-412 — the ARM gate must NOT require more than one tab: a freshly
+  // detached window holds exactly one tab, and BOTH the tear-out (origin)
+  // and the drag-back (detached) gestures must be armable there. The
+  // tab-count guard now lives on the reorder COMMIT (see `finish`), so a
+  // single-tab drag can still detach but can never commit a meaningless
+  // reorder. `!multiModeEnabled` still disables the gesture entirely on the
+  // single composite workspace tab.
+  const dragGestureEnabled =
+    (onMoveTab !== undefined || onDetachTab !== undefined) &&
+    !multiModeEnabled;
+  const [draggingId, setDraggingId] = useState<string | null>(null);
+  const [drop, setDrop] = useState<{ index: number; left: number } | null>(null);
+  // Phase 58 (chunk 6b) — true while the drag is past the tear-out
+  // threshold (below the strip). Drives the `data-tab-tearout` affordance.
+  const [tearOut, setTearOut] = useState(false);
+  // Gesture source-of-truth refs: the window listeners are subscribed once
+  // per gesture window and must read the LATEST values without resubscribing.
+  const pendingDragRef = useRef<{ id: string; startX: number; startY: number; pointerId: number } | null>(null);
+  const draggingIdRef = useRef<string | null>(null);
+  const dropIndexRef = useRef<number | null>(null);
+  // DEF-411 — the pre-drag active tab + the dragged tab's origin index,
+  // captured at ARM time. The DEF-034 mousedown activation fires on the
+  // pointerdown that arms the drag, so committing a reorder must restore
+  // the tab that was active before the gesture (Phase 58 success
+  // criterion 4: after a reorder the active document is unchanged).
+  const dragStartActiveRef = useRef<string | null>(null);
+  const dragStartIndexRef = useRef<number | null>(null);
+  const onMoveTabRef = useRef(onMoveTab);
+  useEffect(() => {
+    onMoveTabRef.current = onMoveTab;
+  }, [onMoveTab]);
+  const onDetachTabRef = useRef(onDetachTab);
+  useEffect(() => {
+    onDetachTabRef.current = onDetachTab;
+  }, [onDetachTab]);
+  const onActivateRef = useRef(onActivate);
+  useEffect(() => {
+    onActivateRef.current = onActivate;
+  }, [onActivate]);
+
+  // Arm the pending drag. Delegated on `.tab-list`, so a hit on any tab's
+  // padding / title / gap arms it, while `.tab-close` hits do not.
+  const onTabListPointerDown = useCallback(
+    (e: ReactPointerEvent<HTMLUListElement>): void => {
+      if (!dragGestureEnabled) return;
+      if (e.button !== 0) return;
+      const target = e.target as HTMLElement | null;
+      if (target === null) return;
+      if (target.closest(".tab-close") !== null) return;
+      const tabEl = target.closest<HTMLElement>("[data-tab-id]");
+      if (tabEl === null) return;
+      const id = tabEl.dataset.tabId;
+      if (id === undefined) return;
+      // DEF-411 — snapshot the pre-drag active tab and the dragged tab's
+      // origin index at the moment the drag is armed, so the commit can
+      // restore the active document the DEF-034 mousedown activation
+      // overwrote.
+      const list = tabListRef.current;
+      const siblings = list === null
+        ? []
+        : Array.from(list.querySelectorAll<HTMLElement>("[data-tab-id]"));
+      dragStartIndexRef.current = siblings.findIndex((n) => n.dataset.tabId === id);
+      dragStartActiveRef.current = activeId ?? null;
+      pendingDragRef.current = { id, startX: e.clientX, startY: e.clientY, pointerId: e.pointerId };
+    },
+    [dragGestureEnabled, activeId],
+  );
+
+  useEffect(() => {
+    if (!dragGestureEnabled) return;
+
+    const clearDrag = (): void => {
+      document.body.classList.remove("tab-reordering");
+      const el = tabListRef.current;
+      if (el !== null) el.removeAttribute("data-tab-drop");
+      draggingIdRef.current = null;
+      dropIndexRef.current = null;
+      setDraggingId(null);
+      setDrop(null);
+      setTearOut(false);
+    };
+
+    // Insert position in the list WITHOUT the dragged tab: number of other
+    // tabs whose midpoint the pointer has passed. This is exactly the
+    // index `moveTab` inserts at after splicing the dragged tab out.
+    const computeDrop = (x: number): { index: number; left: number } | null => {
+      const el = tabListRef.current;
+      if (el === null) return null;
+      const dragging = draggingIdRef.current;
+      const others = Array.from(el.querySelectorAll<HTMLElement>("[data-tab-id]")).filter(
+        (n) => n.dataset.tabId !== dragging,
+      );
+      if (others.length === 0) return null;
+      const listRect = el.getBoundingClientRect();
+      let index = others.length;
+      let boundaryX = others[others.length - 1].getBoundingClientRect().right;
+      for (let i = 0; i < others.length; i += 1) {
+        const r = others[i].getBoundingClientRect();
+        if (x < r.left + r.width / 2) {
+          index = i;
+          boundaryX = r.left;
+          break;
+        }
+      }
+      return { index, left: boundaryX - listRect.left + el.scrollLeft };
+    };
+
+    const onMove = (e: PointerEvent): void => {
+      const pending = pendingDragRef.current;
+      if (pending === null || e.pointerId !== pending.pointerId) return;
+
+      if (draggingIdRef.current === null) {
+        // DEF-412 — arm on TOTAL movement, not horizontal only: the actual
+        // tear-out gesture is a straight-downward drag (near-zero dx), so a
+        // horizontal-only threshold could never arm it.
+        const dx = e.clientX - pending.startX;
+        const dy = e.clientY - pending.startY;
+        if (Math.hypot(dx, dy) <= 6) return; // not yet a drag
+        // Decide ONCE: a selection anchored in this tab's title means the
+        // user is selecting text, not dragging the tab.
+        const sel = typeof window.getSelection === "function" ? window.getSelection() : null;
+        if (sel !== null && !sel.isCollapsed) {
+          const anchor = sel.anchorNode;
+          const el = tabListRef.current;
+          const tabEl = el === null
+            ? null
+            : Array.from(el.querySelectorAll<HTMLElement>("[data-tab-id]")).find(
+                (n) => n.dataset.tabId === pending.id,
+              ) ?? null;
+          const titleEl = tabEl === null ? null : tabEl.querySelector(".tab-title");
+          if (anchor !== null && titleEl !== null && (titleEl === anchor || titleEl.contains(anchor))) {
+            pendingDragRef.current = null; // text selection wins
+            return;
+          }
+        }
+        draggingIdRef.current = pending.id;
+        setDraggingId(pending.id);
+        document.body.classList.add("tab-reordering");
+      }
+
+      const next = computeDrop(e.clientX);
+      // DEF-412 — with a single tab `computeDrop` returns null (there is no
+      // other tab to insert beside), but the tear-out affordance and the
+      // release decision are independent of the tab count, so the gesture
+      // must still track it. Only the drop marker is skipped in that case.
+      if (next !== null) {
+        dropIndexRef.current = next.index;
+        setDrop(next);
+      }
+      // Phase 58 (chunk 6b) — the tear-out affordance. The decision
+      // mirrors `tearOutDecision` at release time so the highlight only
+      // appears when a release would actually detach.
+      const list = tabListRef.current;
+      if (list !== null) {
+        const r = list.getBoundingClientRect();
+        setTearOut(
+          tearOutDecision({
+            pointer: { x: e.clientX, y: e.clientY },
+            strip: { left: r.left, right: r.right, top: r.top, bottom: r.bottom },
+            hasDetach: onDetachTabRef.current !== undefined,
+          }) === "detach",
+        );
+      }
+    };
+
+    const finish = (commit: boolean, x: number, y: number): void => {
+      pendingDragRef.current = null;
+      const dragging = draggingIdRef.current;
+      const startActive = dragStartActiveRef.current;
+      const startIndex = dragStartIndexRef.current;
+      // Clear the DEF-411 snapshot on every pointerup / pointercancel
+      // alongside the other gesture state.
+      dragStartActiveRef.current = null;
+      dragStartIndexRef.current = null;
+      if (dragging === null) return;
+      // Phase 58 (chunk 6b) — a release past the tear-out threshold below
+      // the strip detaches the tab into a new window and SKIPS the reorder
+      // commit (and its DEF-411 restore). Everything else keeps the exact
+      // Chunk-5 reorder behaviour below.
+      const detachHandler = onDetachTabRef.current;
+      if (commit && detachHandler !== undefined) {
+        const list = tabListRef.current;
+        if (list !== null) {
+          const r = list.getBoundingClientRect();
+          const decision = tearOutDecision({
+            pointer: { x, y },
+            strip: { left: r.left, right: r.right, top: r.top, bottom: r.bottom },
+            hasDetach: true,
+          });
+          if (decision === "detach") {
+            detachHandler(dragging);
+            clearDrag();
+            return;
+          }
+        }
+      }
+      const target = dropIndexRef.current;
+      const handler = onMoveTabRef.current;
+      // DEF-412 — the reorder COMMIT (not the arm) owns the tab-count guard:
+      // `onMoveTab` only fires for a real multi-tab reorder to a DIFFERENT
+      // slot. With exactly one tab `computeDrop` sees no other tabs and
+      // leaves `target` null, so a non-tear-out release is a harmless no-op
+      // (never a meaningless `onMoveTab` with a bogus index); a same-slot
+      // release was already a reducer identity. A genuine multi-tab move is
+      // unaffected, so the Phase 58 reorder behaviour is unchanged.
+      if (
+        commit &&
+        handler !== undefined &&
+        tabs.length > 1 &&
+        target !== null &&
+        target !== startIndex
+      ) {
+        handler(dragging, target);
+        // DEF-411 — the DEF-034 activation fired on the arming
+        // pointerdown, so restore the pre-drag active tab after the
+        // reorder commits. A plain click / tap never reaches here
+        // (dragging stays null), and a dragged active tab needs no
+        // restore (the reducer carries activeId through).
+        if (shouldRestoreActiveOnReorder(startActive, dragging, startIndex, target)) {
+          onActivateRef.current(startActive as string);
+        }
+      }
+      clearDrag();
+    };
+
+    const onUp = (e: PointerEvent): void => finish(true, e.clientX, e.clientY);
+    const onCancel = (): void => finish(false, 0, 0);
+
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+    window.addEventListener("pointercancel", onCancel);
+    return (): void => {
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+      window.removeEventListener("pointercancel", onCancel);
+    };
+  }, [dragGestureEnabled, tabs.length]);
+
   const currentThemeLabel = themeLabel(selected);
 
   // Phase 22 — the relocated Save control's state ladder. Identical
@@ -450,8 +783,30 @@ export function AppHeader(props: AppHeaderProps): ReactElement {
           <SaveAll size={15} aria-hidden />
         </button>
       </div>
-      <div className="tab-area" role="tablist" aria-label="Open documents">
-        <ul className="tab-list" ref={tabListRef}>
+      <div className="tab-area" role="tablist" aria-label="Open documents" data-tab-style={tabStyle}>
+        <ul
+          className="tab-list"
+          ref={tabListRef}
+          data-reorder={dragGestureEnabled ? "true" : undefined}
+          data-tab-drop={drop !== null ? String(drop.index) : undefined}
+          data-tab-tearout={tearOut ? "true" : undefined}
+          data-dragging-tab={draggingId ?? undefined}
+          onPointerDown={dragGestureEnabled ? onTabListPointerDown : undefined}
+          // Phase 58 (chunk 6b) — the tear-out affordance. Token-based
+          // inline styling (the chunk's file scope excludes styles.css):
+          // a dashed accent outline marks the strip as a "release here to
+          // detach" target while the drag is past the threshold.
+          style={
+            tearOut
+              ? {
+                  outline: "2px dashed var(--accent)",
+                  outlineOffset: "-2px",
+                  transition:
+                    "outline-color var(--motion-duration-fast, 200ms) var(--motion-ease-standard, ease)",
+                }
+              : undefined
+          }
+        >
           {/* Cross-theme animation system — one presence boundary owns
               every tab: new tabs play Tab Materialize (opacity in),
               closed tabs play Tab Dissolve (opacity out) before the li
@@ -478,6 +833,13 @@ export function AppHeader(props: AppHeaderProps): ReactElement {
               );
             })}
           </AnimatePresence>
+          {/* Phase 58 (chunk 5) — the visible drop indicator. Absolutely
+              positioned inside the (relative) `.tab-list`, so it never
+              joins the flex flow; its `left` is the boundary X in list
+              content coordinates. Purely visual + aria-hidden. */}
+          {drop !== null && (
+            <li className="tab-drop-marker" style={{ left: drop.left }} aria-hidden />
+          )}
           {/* Phase 7 — the "+ tab" affordance now sits immediately
               after the rightmost tab.
               Rendered as its own <li> so it stays on the tab strip's

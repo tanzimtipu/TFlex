@@ -1667,6 +1667,25 @@ export function dockRelevantIdsForStage(stage: Stage): readonly string[] {
   return TOOL_REGISTRY.filter((e) => isDockRelevantEntry(e, stage)).map((e) => e.id);
 }
 
+/** Phase 58 — the dock's EDIT-mode picker set: every entry relevant to the
+ *  stage's dock OR to the GLOBAL dock, in registry order, deduped. The stage's
+ *  own relevant set plus the global tools, so the "+ add" picker can offer any
+ *  tool that can live in this dock. */
+export function dockPickerIdsForStage(stage: Stage): readonly string[] {
+  const out: string[] = [];
+  for (const entry of TOOL_REGISTRY) {
+    // `'global'` is NOT a `Stage` value (it is the registry's no-stage bucket),
+    // so the global branch mirrors `isDockRelevantEntry` inline rather than
+    // passing a cast.
+    const relevant =
+      isDockRelevantEntry(entry, stage) ||
+      (entry.stage === 'global' && entry.surface !== 'panel' && entry.surface !== 'flyout');
+    if (!relevant) continue;
+    if (!out.includes(entry.id)) out.push(entry.id);
+  }
+  return out;
+}
+
 /** True when the Action Dock hosts this entry as a verb. Phase 37 (item 21):
  *  the dock renders the explicit `DOCK_STAGE_IDS` set, which now includes the
  *  palette's dialog commands; the flyout-hosted annotation tools stay off (the

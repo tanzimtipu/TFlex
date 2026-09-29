@@ -136,7 +136,8 @@
   .anim-dissolve,
   .anim-lift,
   .anim-press,
-  .anim-menu-pop {
+  .anim-menu-pop,
+  .anim-vibrate {
     animation: none !important;
     transform: none !important;
     translate: none !important;
@@ -212,6 +213,21 @@
   to   { opacity: var(--motion-opacity-visible); translate: 0 0; }
 }
 .anim-menu-pop { animation: tf-anim-menu-pop var(--motion-duration-fast) var(--motion-ease-enter) both; }
+
+/* Phase 58 — Edit-mode entry: a small translateX jitter so the dock visibly
+ * "shakes awake" when the pen arms it. It animates the INDEPENDENT `translate`
+ * property so it composes with the dock's own `transform: translate(...)`
+ * centering instead of clobbering it (same technique as tf-anim-menu-pop). */
+@keyframes tf-anim-vibrate {
+  0%   { translate: 0 0; }
+  16%  { translate: calc(-1 * var(--motion-translate-micro)) 0; }
+  33%  { translate: var(--motion-translate-micro) 0; }
+  50%  { translate: calc(-1 * var(--motion-translate-micro)) 0; }
+  67%  { translate: var(--motion-translate-micro) 0; }
+  84%  { translate: calc(-1 * var(--motion-translate-micro)) 0; }
+  100% { translate: 0 0; }
+}
+.anim-vibrate { animation: tf-anim-vibrate var(--motion-duration-fast) var(--motion-ease-standard) both; }
 
 /* Sidebars/panels — Slide In / Slide Out (full-width drawer travel). */
 @keyframes tf-anim-slide-in-left {

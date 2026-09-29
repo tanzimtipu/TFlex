@@ -281,13 +281,13 @@ describe("Phase 36 — ActionDock State 3: pins", () => {
     }
   });
 
-  it("drops unknown pin ids and caps at four", () => {
+  it("drops unknown pin ids (the Phase-58 cap is effectively unlimited)", () => {
     const { host, unmount } = renderDock({
       activeStage: "deliver",
       dockPins: ["zoomIn", "not-a-tool", "fitWidth", "find", "print", "open"],
     });
     try {
-      expect(verbIds(host, "pins")).toEqual(["zoomIn", "fitWidth", "find", "print"]);
+      expect(verbIds(host, "pins")).toEqual(["zoomIn", "fitWidth", "find", "print", "open"]);
     } finally {
       unmount();
     }
@@ -332,7 +332,7 @@ describe("Phase 36 — ActionDock State 3: pins", () => {
     }
   });
 
-  it("disables Pin when the dock already holds four", () => {
+  it("keeps Pin enabled below the effectively-unlimited Phase-58 cap", () => {
     const { host, unmount } = renderDock({
       activeStage: "pages",
       dockPins: ["zoomIn", "fitWidth", "find", "print"],
@@ -340,8 +340,10 @@ describe("Phase 36 — ActionDock State 3: pins", () => {
     try {
       contextMenuOn(verb(host, "split"));
       const pin = document.body.querySelector<HTMLButtonElement>('[data-dock-menu-item="pin"]');
-      expect(pin?.hasAttribute("disabled")).toBe(true);
-      expect(pin?.getAttribute("title")).toBe("Dock is full (max 4 pins)");
+      // The cap is 200 (and only 109 registry ids exist), so four pins is far
+      // below it: the Pin item stays enabled and carries no refusal title.
+      expect(pin?.hasAttribute("disabled")).toBe(false);
+      expect(pin?.getAttribute("title")).toBeNull();
     } finally {
       unmount();
     }

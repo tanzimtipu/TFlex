@@ -49,6 +49,10 @@ export type TabsAction =
   | { type: 'deactivate' }
   | { type: 'set-modified'; id: string; modified: boolean }
   | { type: 'rename'; id: string; title: string }
+  /** Phase 58 (chunk 5) — reorder a tab within the strip. State-driven:
+   *  the reducer only reorders the list, never the active id, so a
+   *  reorder can never change which document is focused. */
+  | { type: 'move'; id: string; toIndex: number }
   /** Phase 6 — promote an empty tab to a real document. The renderer
    *  keeps the same id but flips the kind, title, and filePath so the
    *  user opens the PDF *into* the empty tab instead of stacking a new
@@ -95,6 +99,32 @@ export function resolveOpenId(
     return { id: state.activeId, fillsEmptyId: state.activeId };
   }
   return { id: mint(), fillsEmptyId: null };
+}
+
+/**
+ * Phase 58 (chunk 5) — pure reorder helper.
+ *
+ * Moves the tab with `id` to `toIndex`, clamped to `[0, tabs.length - 1]`.
+ * Returns the SAME array reference when the id is unknown or the clamped
+ * target equals the tab's current index — an identity no-op callers can
+ * detect by reference (the reducer uses that to return the same state).
+ * Otherwise returns a new array with the tab spliced out and inserted at
+ * the target. The active id is not part of this list, so ordering and
+ * focus stay orthogonal.
+ */
+export function moveTab(
+  tabs: readonly TabMeta[],
+  id: string,
+  toIndex: number,
+): TabMeta[] {
+  const from = tabs.findIndex((t) => t.id === id);
+  if (from === -1) return tabs as TabMeta[];
+  const clamped = Math.max(0, Math.min(toIndex, tabs.length - 1));
+  if (clamped === from) return tabs as TabMeta[];
+  const next = tabs.slice();
+  const moved = next.splice(from, 1)[0];
+  next.splice(clamped, 0, moved);
+  return next;
 }
 
 /**
@@ -201,6 +231,16 @@ export function tabsReducer(state: TabsState, action: TabsAction): TabsState {
       });
       if (!changed) return state;
       return { ...state, tabs };
+    }
+    case 'move': {
+      // Phase 58 (chunk 5) — reorder only. `moveTab` returns the same
+      // array for an unknown id or a no-op move, so the reducer returns
+      // the same state (identity no-op). A real reorder returns a new
+      // array while carrying the ORIGINAL activeId through unchanged, so
+      // moving a tab never changes which document is focused.
+      const next = moveTab(state.tabs, action.id, action.toIndex);
+      if (next === state.tabs) return state;
+      return { tabs: next, activeId: state.activeId };
     }
     case 'open-empty': {
       // A brand-new empty tab. Append and activate. We deliberately

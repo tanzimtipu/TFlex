@@ -86,6 +86,10 @@ const SHARED_ALLOW: Readonly<Record<string, string>> = {
   // (a) the one universal affordance.
   X: "the close / dismiss / remove affordance, repeated verbatim on every dialog, panel, toast and window control",
   // (b) the same action rendered on more than one surface.
+  // Phase 58 (operator amendment) — the edit-mode remove-tool badge on the dock
+  // and the home edit rows is specified to be "a minus icon", so it shares the
+  // glyph with the pre-existing window-minimize caption control.
+  Minus: "the horizontal-line affordance: window minimize (caption control) plus the Phase-58 remove-tool badges on the dock and home edit rows; distinct contexts, never ambiguous",
   ChevronRight: "page paging forward (CanvasPills + CommandBar + registry nextPage); the outline disclosure uses the distinct SquareChevronRight",
   ChevronLeft: "page paging backward (CanvasPills + CommandBar + registry prevPage)",
   SquareChevronRight: "outline tree disclosure toggle (context panel outline + side rail outline tree)",
@@ -132,7 +136,6 @@ const SHARED_ALLOW: Readonly<Record<string, string>> = {
   Crop: "the crop-pages verb (registry cropPages + its dialog)",
   Ellipsis: "the more-actions overflow (registry moreActions + the dock's overflow lane)",
   FileDown: "the export-comments verb (registry exportComments + its dialog)",
-  FileImage: "the create-from-images verb (registry + the welcome entry)",
   File: "the generic document/file item glyph (Multi Mode untitled pane + welcome-recents file row); both denote an open PDF document",
   ClipboardPaste: "the create-PDF-from-clipboard verb (registry createFromClipboard + the CreateFromImagesDialog paste affordance)",
   GripVertical: "the drag-handle affordance (page drag + the Multi Mode divider)",

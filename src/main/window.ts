@@ -56,6 +56,26 @@ export function resolvePreloadPath(): string {
   return join(mainModuleDir(), '../preload/preload.cjs');
 }
 
+/**
+ * DEF-142 / DEF-415 — the ONE unsaved-changes close gate, shared by the main
+ * window and every detached document window. The `'close'` event invokes
+ * `onCloseRequested`; the caller (index.ts) uses it to `event.preventDefault()`
+ * and push `window:closeRequested` until the renderer confirms via
+ * `window:confirmClose`. `onBeforeClose` lets the main window flush its
+ * geometry first; detached windows have no geometry to persist. An omitted
+ * `onCloseRequested` keeps the pre-gate behaviour (close immediately).
+ */
+function installCloseGate(
+  win: BrowserWindow,
+  onCloseRequested?: (win: BrowserWindow, event: { preventDefault(): void }) => void,
+  onBeforeClose?: () => void,
+): void {
+  win.on('close', (event) => {
+    onBeforeClose?.();
+    onCloseRequested?.(win, event);
+  });
+}
+
 // ---------------------------------------------------------------------------
 // Phase 44 - auth popup. The renderer's social sign-in (`signIn.social`)
 // opens a provider page that must run in a REAL popup window sharing the
@@ -521,20 +541,16 @@ export function createMainWindow(settings: AppSettings, deps: WindowDeps): Brows
     deps.onMinimizedChanged?.(false);
   });
 
-  win.on('close', (event) => {
-    if (debounce !== null) {
-      clearTimeout(debounce);
-    }
-    reportGeometry();
-    // DEF-142 — give the caller a chance to preventDefault when the
-    // renderer has unsaved edits (the close/quit gate). The caller
-    // (index.ts) decides whether to abort the close and push
-    // window:closeRequested to the renderer so it can show the existing
-    // CloseTabPromptDialog; a no-op / omitted callback lets the window
-    // close immediately. The geometry report above already ran, so a
-    // prevented close still persists the last window position.
-    deps.onCloseRequested?.(win, event);
-  });
+  installCloseGate(
+    win,
+    deps.onCloseRequested,
+    () => {
+      if (debounce !== null) {
+        clearTimeout(debounce);
+      }
+      reportGeometry();
+    },
+  );
 
   if (deps.rendererDevUrl !== undefined) {
     void win.loadURL(deps.rendererDevUrl);
@@ -542,4 +558,74 @@ export function createMainWindow(settings: AppSettings, deps: WindowDeps): Brows
     void win.loadFile(deps.rendererHtml);
   }
   return win;
+}
+
+/**
+ * Phase 58 — a detached document window. Same renderer bundle and the same
+ * hardened webPreferences as `createMainWindow`, but a SEPARATE window: its
+ * own default size offset from the cursor, no geometry persistence, no
+ * main-window callbacks, and never held as THE main window. It is created by
+ * the tab-windows service and closed by `tab:empty` (or the user).
+ *
+ * DEF-416 — it does NOT load the page itself. The caller attaches the adopt
+ * `did-finish-load` listener first, then calls the returned `load()`, so the
+ * event can never fire before the listener exists.
+ *
+ * DEF-415 — `onCloseRequested` is the SAME close gate the main window uses
+ * (installCloseGate), so a detached window holding unsaved edits prompts
+ * before it closes.
+ */
+export interface DetachedWindowHandle {
+  window: BrowserWindow;
+  load: () => void;
+}
+
+export function createDetachedWindow(deps: {
+  rendererHtml: string;
+  rendererDevUrl?: string;
+  onCloseRequested?: (win: BrowserWindow, event: { preventDefault(): void }) => void;
+}): DetachedWindowHandle {
+  const cursor = screen.getCursorScreenPoint();
+  const win = new BrowserWindow({
+    width: 1100,
+    height: 800,
+    x: cursor.x + 40,
+    y: cursor.y + 40,
+    minWidth: MIN_WINDOW_WIDTH,
+    minHeight: MIN_WINDOW_HEIGHT,
+    frame: false,
+    resizable: true,
+    maximizable: true,
+    minimizable: true,
+    show: false,
+    autoHideMenuBar: false,
+    backgroundColor: '#eef1f5',
+    title: 'Jovrel',
+    hasShadow: true,
+    webPreferences: {
+      preload: resolvePreloadPath(),
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true,
+    },
+  });
+  win.once('ready-to-show', () => {
+    win.show();
+  });
+  // DEF-415 — the detached window shares the main window's close gate.
+  installCloseGate(win, deps.onCloseRequested);
+  // Phase 58 — route the renderer's tear-out to "return to the origin
+  // window" instead of "detach again" by tagging this window's load with the
+  // hash `detached`. The main window's load stays hash-free.
+  const load = (): void => {
+    if (deps.rendererDevUrl !== undefined) {
+      const detachedUrl = deps.rendererDevUrl.includes('#')
+        ? deps.rendererDevUrl
+        : `${deps.rendererDevUrl}#detached`;
+      void win.loadURL(detachedUrl);
+    } else {
+      void win.loadFile(deps.rendererHtml, { hash: 'detached' });
+    }
+  };
+  return { window: win, load };
 }

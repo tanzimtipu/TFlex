@@ -2,7 +2,7 @@ import { mkdir, mkdtemp, rm, stat, writeFile, readFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { ANNOTATION_RECENT_TOOLS_CAP, DEFAULT_SETTINGS, DOCK_PINS_CAP, DOCK_UNPINNED_CAP, TOOL_USAGE_CAP, normalizeAnnotationRecentTools, normalizeSettings, SettingsService } from '../../../src/main/services/settings';
+import { ANNOTATION_RECENT_TOOLS_CAP, DEFAULT_SETTINGS, DOCK_PINS_CAP, DOCK_UNPINNED_CAP, HOME_TOOLS_CAP, TAB_STYLES, TOOL_USAGE_CAP, normalizeAnnotationRecentTools, normalizeHomeTools, normalizeSettings, normalizeTabStyle, SettingsService } from '../../../src/main/services/settings';
 import type { AppSettings, RecentFile } from '../../../src/shared/types';
 import { DEFAULT_READING_DEFAULTS, type ReadingDefaults } from '../../../src/shared/types';
 
@@ -100,6 +100,9 @@ describe('SettingsService.load', () => {
       // Phase 44 (operator change): the normalizer always emits this field
       // now (default true), so the round-trip expectation includes it.
       accountsEnabled: true,
+      // Phase 58: same explicit-default shape — the normalizer always emits
+      // tabStyle, resolving missing/invalid to 'colorful'.
+      tabStyle: 'colorful' as const,
     };
     await svc.save(settings);
     const result = await svc.load();
@@ -1351,14 +1354,21 @@ describe('Phase 36: dockPins validation', () => {
   });
 
   it('truncates an over-long array to DOCK_PINS_CAP preserving order', () => {
-    const result = normalizeSettings({ dockPins: ['a', 'b', 'c', 'd', 'e', 'f'] });
-    expect(result.dockPins).toEqual(['a', 'b', 'c', 'd']);
+    const overLong = Array.from({ length: DOCK_PINS_CAP + 2 }, (_, i) => `t${i}`);
+    const result = normalizeSettings({ dockPins: overLong });
+    expect(result.dockPins).toEqual(
+      Array.from({ length: DOCK_PINS_CAP }, (_, i) => `t${i}`),
+    );
     expect(result.dockPins).toHaveLength(DOCK_PINS_CAP);
   });
 
   it('truncates after de-duplication, not before', () => {
-    const result = normalizeSettings({ dockPins: ['a', 'a', 'b', 'c', 'd', 'e'] });
-    expect(result.dockPins).toEqual(['a', 'b', 'c', 'd']);
+    const duped = ['a', 'a', ...Array.from({ length: DOCK_PINS_CAP + 1 }, (_, i) => `t${i}`)];
+    const result = normalizeSettings({ dockPins: duped });
+    expect(result.dockPins).toEqual([
+      'a',
+      ...Array.from({ length: DOCK_PINS_CAP - 1 }, (_, i) => `t${i}`),
+    ]);
   });
 
   it('rejects non-array values (field left absent)', () => {
@@ -1404,6 +1414,75 @@ describe('Phase 36: dockPins validation', () => {
       expect(result.value.pagesPanelCollapsed).toBe(true);
       expect(result.value.theme).toBe('light');
     }
+  });
+});
+
+describe('Phase 58: tabStyle validation', () => {
+  it('preserves the two valid tab styles', () => {
+    expect(normalizeSettings({ tabStyle: 'standard' }).tabStyle).toBe('standard');
+    expect(normalizeSettings({ tabStyle: 'colorful' }).tabStyle).toBe('colorful');
+  });
+
+  it('resolves an invalid stored value to the colorful default', () => {
+    for (const bad of ['holographic', 7, {}, null, undefined] as unknown[]) {
+      expect(normalizeSettings({ tabStyle: bad }).tabStyle).toBe('colorful');
+    }
+  });
+
+  it('normalizeTabStyle returns null for anything outside TAB_STYLES', () => {
+    expect(normalizeTabStyle('standard')).toBe('standard');
+    expect(normalizeTabStyle('colorful')).toBe('colorful');
+    expect(normalizeTabStyle('holographic')).toBeNull();
+    expect(normalizeTabStyle(7)).toBeNull();
+    expect(TAB_STYLES).toEqual(['standard', 'colorful']);
+  });
+});
+
+describe('Phase 58: homeTools validation', () => {
+  it('preserves a valid array in order', () => {
+    const result = normalizeSettings({ homeTools: ['rotate', 'delete', 'merge'] });
+    expect(result.homeTools).toEqual(['rotate', 'delete', 'merge']);
+  });
+
+  it('drops non-string entries and empty strings', () => {
+    const result = normalizeSettings({ homeTools: ['rotate', 7, null, '', 'delete', {}, 'merge'] as unknown[] });
+    expect(result.homeTools).toEqual(['rotate', 'delete', 'merge']);
+  });
+
+  it('collapses duplicates keeping the first occurrence', () => {
+    const result = normalizeSettings({ homeTools: ['rotate', 'delete', 'rotate', 'merge', 'delete'] });
+    expect(result.homeTools).toEqual(['rotate', 'delete', 'merge']);
+  });
+
+  it('truncates a 16-entry array to HOME_TOOLS_CAP preserving order', () => {
+    const overLong = Array.from({ length: 16 }, (_, i) => `t${i}`);
+    const result = normalizeSettings({ homeTools: overLong });
+    expect(result.homeTools).toHaveLength(HOME_TOOLS_CAP);
+    expect(result.homeTools).toEqual(
+      Array.from({ length: HOME_TOOLS_CAP }, (_, i) => `t${i}`),
+    );
+  });
+
+  it('rejects a non-array leaving the key absent', () => {
+    for (const bad of ['rotate', 7, null, undefined, {}, { 0: 'rotate' }] as unknown[]) {
+      const result = normalizeSettings({ homeTools: bad });
+      expect(result.homeTools).toBeUndefined();
+      expect('homeTools' in result).toBe(false);
+    }
+  });
+
+  it('normalizeHomeTools rejects non-arrays and dedupes/caps valid ones', () => {
+    expect(normalizeHomeTools('rotate')).toBeNull();
+    expect(normalizeHomeTools(7)).toBeNull();
+    expect(normalizeHomeTools(['a', 'a', 'b'])).toEqual(['a', 'b']);
+    expect(normalizeHomeTools(Array.from({ length: 20 }, (_, i) => `t${i}`))).toHaveLength(HOME_TOOLS_CAP);
+  });
+});
+
+describe('Phase 58: persisted caps', () => {
+  it('DOCK_PINS_CAP and HOME_TOOLS_CAP match the renderer mirrors', () => {
+    expect(DOCK_PINS_CAP).toBe(200);
+    expect(HOME_TOOLS_CAP).toBe(14);
   });
 });
 

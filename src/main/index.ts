@@ -2,6 +2,7 @@ import { app, BrowserWindow, clipboard, dialog, ipcMain, safeStorage, session, s
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { IPC } from '../shared/ipc';
+import type { TabTransferPayload } from '../shared/ipc';
 import type { OAuthCallbackOutcome, OAuthTraceEvent } from '../shared/accounts';
 import type {
   AppSettings,
@@ -81,9 +82,10 @@ import { openAuthUrlExternally, openDefaultAppsSettings } from './services/os-li
 import { UpdateService } from './services/update-service';
 import { LEGACY_USERDATA_DIRNAME, migrateLegacyUserData } from './services/userdata-migration';
 import { applyMenuEnabledState, buildAppMenu } from './menu';
-import { createMainWindow, deriveAuthHost, installAuthPopupHandler } from './window';
+import { createDetachedWindow, createMainWindow, deriveAuthHost, installAuthPopupHandler } from './window';
 import { planCaptionMaximize } from './window-maximize';
 import { closePrintWindow, notifyPrintDocumentGone, openPrintWindow } from './print-window';
+import { createTabWindows } from './services/tabWindows';
 import { extractFileArgument, looksLikeOpenablePath, looksLikePdfPath } from './open-path';
 
 function mainModuleDir(): string {
@@ -1116,6 +1118,38 @@ export async function start(): Promise<void> {
   );
   ipcMain.handle(IPC.printNotifyDocumentGone, (_event, docId: string) => {
     notifyPrintDocumentGone(docId);
+  });
+
+  // Phase 58 — detach a document tab into a SECOND app window and return it.
+  // The service owns the parent map + detached set; index.ts only registers
+  // the four invoke channels. The detached window is a real full app window
+  // (same preload + renderer HTML) but is never `mainWindow`, never persists
+  // geometry, and is not recreated by the main-window lifecycle.
+  const tabWindows = createTabWindows({
+    rendererHtml,
+    rendererDevUrl,
+    // DEF-415 — detached windows get the SAME close gate as the main window
+    // (one implementation in window.ts), so a detached window holding
+    // unsaved edits prompts before it closes. DEF-416 — the handle defers
+    // `load()` so the adopt listener is attached first.
+    createWindow: () =>
+      createDetachedWindow({
+        rendererHtml,
+        rendererDevUrl,
+        onCloseRequested: onWindowCloseRequested,
+      }),
+  });
+  ipcMain.handle(IPC.tabDetach, (event, payload: TabTransferPayload) =>
+    tabWindows.openDetached(event.sender, payload),
+  );
+  ipcMain.handle(IPC.tabAdoptAck, (event, ok: boolean) => {
+    tabWindows.handleAdoptAck(event.sender, ok);
+  });
+  ipcMain.handle(IPC.tabReturn, (event, payload: TabTransferPayload) =>
+    tabWindows.handleReturn(event.sender, payload),
+  );
+  ipcMain.handle(IPC.tabEmpty, (event) => {
+    tabWindows.handleEmpty(event.sender);
   });
 
   // DEF-303 — the debounced geometry persist is a DISK-ONLY write. The

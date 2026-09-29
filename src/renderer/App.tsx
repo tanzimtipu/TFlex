@@ -100,6 +100,7 @@ import {
 import { saveIntentFor } from "./state/saveGuard";
 import { collapsePreferenceAfterToggle, inspectorCollapsedFor, resolveDockLadder } from "./state/dockResponsive";
 import { dockToolsForStage, toolById, type ToolEntry } from "./state/toolsRegistry";
+import { DEFAULT_HOME_TOOLS, HOME_FIXED_TOOL_ID, sanitizeHomeTools } from "./state/homeTools";
 // Phase 36 (chunk 4) — the Command Palette. `paletteChordFor` owns the
 // Ctrl+K / legacy Ctrl+Shift+P chords (Ctrl+P is deliberately absent — it
 // stays Print) and `bumpToolUsage` is the frequency counter the palette
@@ -153,6 +154,7 @@ import {
   DEFAULT_OCR_DOWNSAMPLE,
   DEFAULT_OCR_LANGUAGE,
   DEFAULT_STAMP_ID,
+  DEFAULT_TAB_STYLE,
   clampOcrDownsample,
   preferencesReducer,
   type ThemeDefault,
@@ -522,6 +524,48 @@ export function seededEngineUiState(
  *  painted by the page canvas, so the overlay text for all of them
  *  is suppressed). */
 const EMPTY_ANN_TEXT_IDS: ReadonlySet<string> = new Set();
+
+// Phase 58 (chunk 6c) — a detached window loads with `#detached` in its
+// URL hash (packaged `loadFile(html, { hash: 'detached' })`, dev
+// `rendererDevUrl#detached`). The SAME renderer is used in both windows, so
+// the tear-out gesture must decide whether it moves the tab out (origin
+// window) or hands it back (detached window). This is the pure decision.
+const IS_DETACHED_WINDOW =
+  typeof window !== "undefined" && window.location.hash === "#detached";
+
+/** Phase 58 (chunk 6c) — a tear-out gesture in the ORIGIN window detaches
+ *  the tab into a new window; the same gesture in a DETACHED window returns
+ *  the tab to the origin. Pure so the branch is unit-tested directly. */
+export function tabExitAction(isDetachedWindow: boolean): "return" | "detach" {
+  return isDetachedWindow ? "return" : "detach";
+}
+
+/** DEF-417 — the tear-out precondition. A tab is detachable only when it
+ *  has a live document session; an empty placeholder ("Empty tab") has no
+ *  bytes to move, so tearing it out must FAIL LOUD with a visible reason and
+ *  keep the tab — never a silent no-op. Returns the warning to surface, or
+ *  `null` when the detach may proceed. Pure so the decision is unit-tested. */
+export function detachRefusal(
+  hasDocument: boolean,
+): { kind: Toast["kind"]; text: string } | null {
+  if (hasDocument) return null;
+  return { kind: "warning", text: "This tab has no document to move." };
+}
+
+/** DEF-414 — carry an adopted document's unsaved state. The origin window
+ *  reports whether the moved tab was dirty (`payload.modified`); in the
+ *  adopting window `openFromBytes` loads the bytes fresh, so the engine
+ *  reports the adopted document as CLEAN. The origin's dirty state must be
+ *  carried onto the adopted tab's meta (the modified dot + the close gate +
+ *  `tflexDiagnostics().tabModified`) AND the engineUi mirror
+ *  (`tflexDiagnostics().modified`) so the moved document is never presented
+ *  as clean. Pure so the decision is unit-tested. */
+export function adoptedModifiedPatch(
+  payloadModified: boolean | undefined,
+): { tabModified: boolean; engineModified: boolean } {
+  const dirty = payloadModified === true;
+  return { tabModified: dirty, engineModified: dirty };
+}
 
 // Phase 56 (features A / C) — the document column's flow notices plus the
 // format-gated reader entry, extracted so the reader trigger's independence
@@ -2468,6 +2512,201 @@ export function App(): ReactElement {
       return { ...prev, activeTool: null };
     });
   }, []);
+
+  // ---------------------------------------------------------------------
+  // Phase 58 (chunk 6b) — tab detach into a second app window.
+  //
+  // The origin side of the move: `detachTab` hands the tab's bytes to
+  // main, which opens (or reaches) a new window and pushes the payload
+  // to it. The origin tab stays OPEN until the new window confirms it
+  // adopted the payload (`onDetachResolved` -> `performCloseTab`); a
+  // failed adopt keeps the tab and toasts. `pendingDetachRef` maps the
+  // new window id back to the tab id so the ack can find it.
+  // ---------------------------------------------------------------------
+  const pendingDetachRef = useRef<Map<number, string>>(new Map());
+  // Phase 58 (chunk 6c) — the detached window closes itself once its last
+  // tab is gone. `hadTabRef` records that this window actually held a tab at
+  // some point (a freshly-loaded detached window starts empty and must NOT
+  // close before its adopt arrives); `notifiedEmptyRef` makes `notifyEmpty`
+  // fire exactly once.
+  const hadTabRef = useRef(false);
+  const notifiedEmptyRef = useRef(false);
+
+  const detachTab = useCallback(async (id: string): Promise<void> => {
+    const tabsApi = window.tflex.tabs;
+    if (tabsApi === undefined) {
+      pushToast("error", "Moving a tab to a new window is not available.");
+      return;
+    }
+    const open = openTabsRef.current[id];
+    if (open === undefined) {
+      // DEF-417 — an empty placeholder tab has no document to move. The
+      // tear-out affordance still arms on it, so failing loud (a readable
+      // warning, tab kept) beats the old silent early-return no-op.
+      const refusal = detachRefusal(false);
+      if (refusal !== null) pushToast(refusal.kind, refusal.text);
+      return;
+    }
+    // Read the current bytes exactly like the convert path: call the
+    // method ON the engine (DEF-374 — extracting it loses `this`).
+    const engine = engineRef.current;
+    if (engine.getDocumentBytes === undefined) {
+      pushToast("error", "Could not move the tab: the document bytes are unavailable.");
+      return;
+    }
+    let bytesResult;
+    try {
+      bytesResult = await engine.getDocumentBytes(open.session.engineDocId);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      pushToast("error", `Could not move the tab to a new window: ${msg}`);
+      return;
+    }
+    if (!bytesResult.ok) {
+      pushToast("error", describeEngineError(bytesResult.error.code, bytesResult.error.message));
+      return;
+    }
+    // The modified signal is read from BOTH mirrors, exactly like
+    // `closeTab`: the tabs reducer's meta and the engineUi state mirror
+    // (React batches the two setStates, so either can lag the other).
+    const metaModified = tabsRef.current.tabs.find((t) => t.id === id)?.modified === true;
+    const engineModified = engineUiRef.current[id]?.state.modified === true;
+    const payload = {
+      title: open.displayName,
+      bytes: new Uint8Array(bytesResult.value),
+      modified: metaModified || engineModified,
+    };
+    // Phase 58 (chunk 6c) — the same tear-out gesture means opposite things
+    // depending on the window: in the origin it detaches the tab out, in a
+    // detached window it returns the tab to the origin. `tabExitAction`
+    // owns that decision.
+    if (tabExitAction(IS_DETACHED_WINDOW) === "return") {
+      // The detached window hands the tab back; main delivers it to the
+      // origin window, which opens it through its own `onAdopt` handler.
+      // There is no ack to wait on here, so once `returnToOrigin` resolves
+      // ok the local tab is closed immediately — the bytes are already on
+      // their way to the other window.
+      let returned;
+      try {
+        returned = await tabsApi.returnToOrigin(payload);
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        pushToast("error", `Could not return the tab to the original window: ${msg}`);
+        return;
+      }
+      if (!returned.ok) {
+        pushToast("error", "Could not return the tab to the original window.");
+        return;
+      }
+      performCloseTab(id);
+      return;
+    }
+    let result;
+    try {
+      result = await tabsApi.detach(payload);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      pushToast("error", `Could not move the tab to a new window: ${msg}`);
+      return;
+    }
+    if (!result.ok) {
+      pushToast("error", "Could not move the tab to a new window.");
+      return;
+    }
+    // Leave the tab open until the new window confirms the adopt.
+    pendingDetachRef.current.set(result.windowId, id);
+  }, [performCloseTab, pushToast]);
+
+  // The origin's outcome subscription. The document already moved, so a
+  // confirmed detach uses the UNCONDITIONAL `performCloseTab` (no save
+  // prompt) — prompting would ask the user to save a document that is
+  // already alive in the other window.
+  useEffect(() => {
+    const tabsApi = window.tflex.tabs;
+    if (tabsApi === undefined) return;
+    return tabsApi.onDetachResolved((r): void => {
+      const id = pendingDetachRef.current.get(r.windowId);
+      if (id === undefined) return;
+      pendingDetachRef.current.delete(r.windowId);
+      if (r.ok) performCloseTab(id);
+      else pushToast("error", "Could not move the tab to a new window.");
+    });
+  }, [performCloseTab, pushToast]);
+
+  // The ADOPTING window's subscription: main pushes the transferred
+  // payload once this window is ready. We open it through the SAME
+  // `openFromBytes` path every other open uses, then ack main with
+  // whether a tab was actually created (a false ack makes the origin
+  // keep its tab — fail loud, never lose a document).
+  useEffect(() => {
+    const tabsApi = window.tflex.tabs;
+    if (tabsApi === undefined) return;
+    return tabsApi.onAdopt((payload): void => {
+      void (async (): Promise<void> => {
+        const buffer = payload.bytes.buffer.slice(
+          payload.bytes.byteOffset,
+          payload.bytes.byteOffset + payload.bytes.byteLength,
+        ) as ArrayBuffer;
+        const source: OpenSource = {
+          kind: "file",
+          path: `detached:${payload.title}`,
+          displayName: payload.title,
+          onDiskPath: null,
+          // A detached document is a distinct in-memory instance: never
+          // collapse it onto a same-path tab already open in this window.
+          dedupePath: false,
+        };
+        const opened = await openFromBytes(buffer, source);
+        if (opened !== null) {
+          // DEF-414 — the origin may hand us a document with UNSAVED
+          // changes. `openFromBytes` parses the bytes fresh, so both the
+          // engine and the tab meta come back clean; the origin's dirty
+          // state must be carried onto the adopted tab explicitly or the
+          // moved document is presented as clean and can be lost. Patch
+          // BOTH signals the close gate / diagnostics read: the tab meta
+          // (dot + `tabModified`) and the engineUi mirror (`modified`).
+          const patch = adoptedModifiedPatch(payload.modified);
+          if (patch.tabModified) {
+            dispatchTabs({ type: "set-modified", id: opened.tabId, modified: true });
+            setOpenTabs((prev) => {
+              const tab = prev[opened.tabId];
+              if (tab === undefined) return prev;
+              return {
+                ...prev,
+                [opened.tabId]: { ...tab, meta: { ...tab.meta, modified: true } },
+              };
+            });
+          }
+          if (patch.engineModified) {
+            setEngineUi((prev) => {
+              const ui = prev[opened.tabId];
+              if (ui === undefined) return prev;
+              return {
+                ...prev,
+                [opened.tabId]: { ...ui, state: { ...ui.state, modified: true } },
+              };
+            });
+          }
+        }
+        await tabsApi.adoptAck(opened !== null);
+      })();
+    });
+  }, [openFromBytes]);
+
+  // Phase 58 (chunk 6c) — the detached window closes itself once its last
+  // tab has gone. Track whether this window ever held a tab; on the drop to
+  // zero (returned to origin, or closed normally) tell main to close the
+  // now-empty detached window, exactly once. A fresh detached window that has
+  // not yet adopted anything is empty by design and must not close itself.
+  useEffect(() => {
+    if (tabs.tabs.length > 0) {
+      hadTabRef.current = true;
+      return;
+    }
+    if (!IS_DETACHED_WINDOW || !hadTabRef.current || notifiedEmptyRef.current) return;
+    notifiedEmptyRef.current = true;
+    void window.tflex.tabs?.notifyEmpty();
+  }, [tabs.tabs.length]);
 
   const activateTab = useCallback((id: string): void => {
     dispatchTabs({ type: "activate", id });
@@ -9396,6 +9635,53 @@ pushToast(
     ],
   );
 
+  // Phase 58 (chunk 4) — the HOME row's run map. It carries ONLY tools that
+  // genuinely run from the welcome surface (no document open): the row's fixed
+  // Open tile plus the shipped/editable tools. Every id maps to an EXISTING App
+  // handler, keyed by REGISTRY id, so the picker can offer exactly this set and
+  // a tile can never be a dead click. Document-dependent tools (rotate /
+  // annotate / export / ...) are deliberately absent.
+  const homeActions = useMemo<Record<string, () => void>>(
+    () => ({
+      [HOME_FIXED_TOOL_ID]: (): void => {
+        void onOpenClick();
+      },
+      createFromImages: onCreateClick,
+      merge: onMergeClick,
+      preferences: (): void => setPrefsOpen(true),
+      toolsPalette: openCommandPalette,
+      // The theme command: the same no-arg cycle handler the palette / the
+      // Ctrl+Shift+T accelerator runs (`onToggleTheme`). The header picker's
+      // `onThemeChange` needs a target theme, so a one-click tile uses the
+      // cycle exactly like the registry's `toggleTheme` entry does.
+      toggleTheme: onToggleTheme,
+      checkForUpdate: onCheckForUpdate,
+      about: (): void => setAboutOpen(true),
+    }),
+    [
+      onOpenClick,
+      onCreateClick,
+      onMergeClick,
+      openCommandPalette,
+      onToggleTheme,
+      onCheckForUpdate,
+    ],
+  );
+  // The picker's candidate set: the run map's ids minus the fixed Open tile.
+  const homeCandidates = useMemo(
+    () => Object.keys(homeActions).filter((id) => id !== HOME_FIXED_TOOL_ID),
+    [homeActions],
+  );
+  // The persisted row (absent -> the shipped default). Re-sanitized on read so
+  // a stale/foreign value can never render an unknown id or overflow the cap.
+  const homeToolIds = useMemo(
+    () =>
+      settings?.homeTools === undefined
+        ? [...DEFAULT_HOME_TOOLS]
+        : sanitizeHomeTools(settings.homeTools),
+    [settings?.homeTools],
+  );
+
   // The live availability gate. DEF-327 — the FOCUSED pane's published dock
   // gate answers first for every verb the dock hosts (the edit-layer tools need
   // Edit mode on, the page selection, the undo stacks): the palette cannot
@@ -9573,6 +9859,14 @@ pushToast(
     return (): void => window.removeEventListener("keydown", onKey);
   }, [commandPaletteOpen, openCommandPalette]);
 
+  // Phase 58 (chunk 5) — tab reorder. State-driven through the reducer's
+  // `move` action; the reducer preserves `activeId`, so reordering the
+  // strip never changes which document is focused. Multi Mode shows ONE
+  // composite tab, so the header's own gate disables reordering there.
+  const onMoveTab = useCallback((id: string, toIndex: number): void => {
+    dispatchTabs({ type: "move", id, toIndex });
+  }, []);
+
   if (!bootDone || settings === null) {
     return (
       <div className={isMaximized ? "app app-maximized" : "app"}>
@@ -9627,6 +9921,14 @@ pushToast(
           // per-document modified queue over BOTH pane documents; every
           // real tab keeps the unchanged `closeTab`.
           onClose={onHeaderClose}
+          // Phase 58 (chunk 5) — reorder the strip. The reducer owns the
+          // ordering and leaves the active id untouched.
+          onMoveTab={onMoveTab}
+          // Phase 58 (chunk 6b) — tear a tab out into a new app window.
+          // The drag gesture decides reorder vs detach at release time;
+          // this handler runs the detach IPC and leaves the tab open
+          // until the new window confirms the adopt.
+          onDetachTab={detachTab}
           theme={settings.theme}
           // The picker's selection state: the persisted preference
           // ('light' | 'dark' | 'frosted' | 'system'). Absent on
@@ -9634,6 +9936,9 @@ pushToast(
           // theme, the legacy behaviour.
           themeDefault={settings.themeDefault}
           onThemeChange={onThemeChange}
+          // Phase 58 — the tab-strip style preference. Absent means the
+          // default ('colorful'), which is what the reference look uses.
+          tabStyle={settings.tabStyle ?? DEFAULT_TAB_STYLE}
           onNewEmptyTab={onNewEmptyTab}
           // DEF-288 — while Multi Mode is on the strip shows ONE composite
           // workspace tab, so the "+" is disabled with a reason instead of
@@ -9754,6 +10059,17 @@ pushToast(
               onSampleClick={onSampleClick}
               onMergeClick={onMergeClick}
               onCreateFromImages={onCreateClick}
+              homeTools={homeToolIds}
+              homeCandidates={homeCandidates}
+              onRunHomeTool={(id): void => homeActions[id]?.()}
+              onSetHomeTools={(ids): void =>
+                setSettings((prev) => {
+                  if (prev === null) return prev;
+                  const updated: AppSettings = { ...prev, homeTools: sanitizeHomeTools(ids) };
+                  trackAndSave(updated);
+                  return updated;
+                })
+              }
               samplesResolver={samplesResolver}
             />
           }
@@ -10920,6 +11236,17 @@ pushToast(
           setSettings((prev) => {
             if (prev === null) return prev;
             const updated: AppSettings = { ...prev, convertDefaults: next };
+            trackAndSave(updated);
+            return updated;
+          });
+        }}
+        // Phase 58 — the tab-strip style. Mirrors the onSetThemeDefault
+        // shape: persist through the reducer, then save.
+        tabStyle={settings.tabStyle ?? DEFAULT_TAB_STYLE}
+        onSetTabStyle={(next): void => {
+          setSettings((prev) => {
+            if (prev === null) return prev;
+            const updated = preferencesReducer(prev, { type: 'set-tab-style', value: next });
             trackAndSave(updated);
             return updated;
           });

@@ -4,6 +4,9 @@ import {
   type ClipboardImageResult,
   type OpenDefaultAppsSettingsResult,
   type SavedSignaturesResult,
+  type TabDetachResolved,
+  type TabTransferPayload,
+  type TabTransferResult,
   type WindowMinimizedChange,
 } from "../shared/ipc";
 import type {
@@ -716,6 +719,40 @@ const api = {
       return () => {
         ipcRenderer.removeListener(IPC.printDocumentGoneEvent, listener);
       };
+    },
+  },
+  // Phase 58 — detach a document tab into a second app window and return it.
+  // The origin renderer calls `detach` (invoke) with the tab's bytes; the new
+  // window's renderer receives `onAdopt` and answers with `adoptAck`; the
+  // origin listens for `onDetachResolved` to drop or keep its tab. A detached
+  // window calls `returnToOrigin` to send its tab back to the parent, then
+  // `notifyEmpty` once its own last tab is gone.
+  tabs: {
+    detach(payload: TabTransferPayload): Promise<TabTransferResult> {
+      return ipcRenderer.invoke(IPC.tabDetach, payload);
+    },
+    onAdopt(cb: (payload: TabTransferPayload) => void): () => void {
+      const listener = (_event: unknown, payload: TabTransferPayload): void => cb(payload);
+      ipcRenderer.on(IPC.tabAdoptEvent, listener);
+      return () => {
+        ipcRenderer.removeListener(IPC.tabAdoptEvent, listener);
+      };
+    },
+    adoptAck(ok: boolean): Promise<void> {
+      return ipcRenderer.invoke(IPC.tabAdoptAck, ok);
+    },
+    onDetachResolved(cb: (r: TabDetachResolved) => void): () => void {
+      const listener = (_event: unknown, r: TabDetachResolved): void => cb(r);
+      ipcRenderer.on(IPC.tabDetachResolvedEvent, listener);
+      return () => {
+        ipcRenderer.removeListener(IPC.tabDetachResolvedEvent, listener);
+      };
+    },
+    returnToOrigin(payload: TabTransferPayload): Promise<TabTransferResult> {
+      return ipcRenderer.invoke(IPC.tabReturn, payload);
+    },
+    notifyEmpty(): Promise<void> {
+      return ipcRenderer.invoke(IPC.tabEmpty);
     },
   },
   // Phase 35 — OS file-open request pushed by main: a PDF path from the

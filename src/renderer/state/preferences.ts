@@ -17,6 +17,7 @@ import type {
   OcrLanguage,
   OptimizePreset,
   StampId,
+  TabStyle,
 } from '../../shared/types';
 import { normalizeEncryptDefaults } from '../security/encrypt';
 
@@ -29,6 +30,11 @@ export const DEFAULT_RECENTS_CAP = 10;
 // 'system' meta-option. Mirrors the AppSettings.themeDefault union
 // in shared/types.ts.
 export type ThemeDefault = 'light' | 'dark' | 'system' | 'frosted';
+
+/** Phase 58 — the tab-strip style. 'colorful' gives each tab its own
+ *  flat colour; 'standard' keeps the classic tab look. Mirrors the
+ *  shared `TabStyle` union and the backend's settings.ts validation. */
+export const DEFAULT_TAB_STYLE: TabStyle = 'colorful';
 
 export type PreferencesAction =
   | { type: 'set-theme-default'; value: ThemeDefault }
@@ -44,7 +50,8 @@ export type PreferencesAction =
   | { type: 'set-save-as-linearize'; value: boolean }
   | { type: 'set-animations-enabled'; value: boolean }
   | { type: 'set-annotation-recent-tools'; value: string[] }
-  | { type: 'set-encrypt-defaults'; value: EncryptDefaults };
+  | { type: 'set-encrypt-defaults'; value: EncryptDefaults }
+  | { type: 'set-tab-style'; value: TabStyle };
 
 /** Default compression preset used by the Optimize dialog when the
  *  user hasn't picked one yet. Matches the backend settings.ts default
@@ -143,6 +150,15 @@ export function preferencesReducer(
       const current: ThemeDefault = state.themeDefault ?? state.theme;
       if (current === action.value) return state;
       return { ...state, themeDefault: action.value };
+    }
+    case 'set-tab-style': {
+      // Phase 58 — allowlist guard: drop anything outside the two
+      // supported tab styles (mirrors the backend's preserve-if-valid
+      // TabStyle validation). An unchanged value is an identity no-op
+      // so a re-render doesn't churn the settings IPC.
+      if (action.value !== 'standard' && action.value !== 'colorful') return state;
+      if (state.tabStyle === action.value) return state;
+      return { ...state, tabStyle: action.value };
     }
     case 'set-recents-cap': {
       const clamped = Math.max(

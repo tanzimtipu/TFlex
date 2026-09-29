@@ -15,6 +15,7 @@ import type {
   PdfValidationDefaults,
   ReadingDefaults,
   RecentFile,
+  TabStyle,
   WatermarkPosition,
   WatermarkSettings,
   WatermarkType,
@@ -87,11 +88,12 @@ export const ANNOTATION_TOOL_IDS: readonly string[] = [
 /** Phase 19 — maximum persisted length of the annotation MRU list. */
 export const ANNOTATION_RECENT_TOOLS_CAP = 6;
 
-/** Phase 36 — maximum number of Action Dock pins persisted. The dock
- *  overflows beyond this into a "..." chip; the validator truncates an
- *  over-long array rather than rejecting it (a persisted preference is
- *  better truncated than lost — stated rule). */
-export const DOCK_PINS_CAP = 4;
+/** Phase 36 — maximum number of Action Dock pins persisted. Phase 58 raised
+ *  this from 4 to 200 so the dock edit-mode "add" is effectively unlimited
+ *  (mirroring `DOCK_UNPINNED_CAP`, which is also 200). The validator still
+ *  truncates an over-long array rather than rejecting it (a persisted
+ *  preference is better truncated than lost — stated rule). */
+export const DOCK_PINS_CAP = 200;
 
 /** Phase 36 — maximum number of `toolUsage` entries persisted, so the
  *  settings file cannot grow unbounded as tool ids accumulate counts. The
@@ -286,6 +288,10 @@ export const DEFAULT_SETTINGS: AppSettings = {
   // missing/invalid stored value, so a settings.json written before this
   // change (no `accountsEnabled` key) resolves to ON too.
   accountsEnabled: true,
+  // Phase 58 (operator default): the Action Dock tabs ship COLORFUL. Single
+  // source of the default; `normalizeSettings` resolves a missing/invalid
+  // stored value to it (explicit-default, same shape as accountsEnabled).
+  tabStyle: 'colorful',
 };
 
 /** Phase 44 — maximum persisted length of `syncDeviceId` (an install id). */
@@ -299,6 +305,17 @@ export const LAST_SYNCED_AT_MAX = 32;
  *  `normalizeSettings`; any other value is rejected (falls back to
  *  `DEFAULT_SETTINGS.theme`, which is `'frosted'` — operator-set default). */
 const THEMES: readonly AppTheme[] = ['light', 'dark', 'frosted'];
+
+/** Phase 58 — the set of accepted `TabStyle` values. `tabStyle` is validated
+ *  preserve-if-valid against this list in `normalizeSettings`; anything else
+ *  resolves to the consumer default `'colorful'`. */
+export const TAB_STYLES: readonly TabStyle[] = ['standard', 'colorful'];
+
+/** Phase 58 — maximum number of home-row tool ids persisted (`homeTools`),
+ *  excluding the fixed Open-file tile. The validator truncates an over-long
+ *  array rather than rejecting it (same preserve-a-persisted-preference rule
+ *  as `DOCK_PINS_CAP`). The renderer mirrors this as `HOME_TOOLS_MAX`. */
+export const HOME_TOOLS_CAP = 14;
 
 function normalizeGeometry(raw: unknown): WindowGeometry {
   const d = DEFAULT_SETTINGS.geometry;
@@ -401,6 +418,36 @@ export function normalizeDockUnpinned(raw: unknown): string[] | null {
     if (out.includes(entry)) continue;
     out.push(entry);
     if (out.length >= DOCK_UNPINNED_CAP) break;
+  }
+  return out;
+}
+
+/** Phase 58 — normalise a raw `tabStyle` value, preserve-if-valid. Returns
+ *  the value only when it is a string in `TAB_STYLES`, else `null` (so the
+ *  caller resolves the consumer default `'colorful'`). */
+export function normalizeTabStyle(raw: unknown): TabStyle | null {
+  if (typeof raw !== 'string') return null;
+  return (TAB_STYLES as readonly string[]).includes(raw) ? (raw as TabStyle) : null;
+}
+
+/** Phase 58 — normalise a raw `homeTools` value, preserve-if-valid /
+ *  reject-if-invalid. Mirrors `normalizeDockPins` but uses `HOME_TOOLS_CAP`.
+ *  Returns `null` when the value must be rejected (not an array), so the
+ *  field stays absent and the consumer applies the shipped home row. A valid
+ *  array keeps non-empty strings only (non-strings and '' are dropped),
+ *  de-duplicates (first occurrence wins), preserves order, and truncates to
+ *  `HOME_TOOLS_CAP` — an over-long array is truncated, never rejected.
+ *  Unknown tool ids are dropped by the consumer, which owns the tools
+ *  registry; main has no registry to validate ids against, so this function
+ *  checks shape only. */
+export function normalizeHomeTools(raw: unknown): string[] | null {
+  if (!Array.isArray(raw)) return null;
+  const out: string[] = [];
+  for (const entry of raw) {
+    if (typeof entry !== 'string' || entry.length === 0) continue;
+    if (out.includes(entry)) continue;
+    out.push(entry);
+    if (out.length >= HOME_TOOLS_CAP) break;
   }
   return out;
 }
@@ -1083,6 +1130,23 @@ export function normalizeSettings(raw: unknown): AppSettings {
   const readingDefaults = normalizeReadingDefaults(rawObj.readingDefaults);
   if (readingDefaults !== null) {
     settings.readingDefaults = readingDefaults;
+  }
+
+  // Phase 58: Action Dock tab look. Explicit default: a valid stored value
+  // survives, anything else (missing, non-string, or not in TAB_STYLES)
+  // resolves to the documented consumer default `'colorful'`. Same
+  // explicit-default shape as accountsEnabled so a valid user choice is
+  // never overwritten by the default.
+  settings.tabStyle =
+    normalizeTabStyle(rawObj.tabStyle) ?? DEFAULT_SETTINGS.tabStyle;
+
+  // Phase 58: home-row tool ids (excluding the fixed Open-file tile).
+  // Reject-if-invalid: a non-array leaves the field absent (consumer default
+  // is the shipped home row). A valid array is filtered (non-empty strings
+  // only), deduped and truncated to HOME_TOOLS_CAP.
+  const homeTools = normalizeHomeTools(rawObj.homeTools);
+  if (homeTools !== null) {
+    settings.homeTools = homeTools;
   }
 
   // Phase 44 (operator change): accounts feature flag. Strict boolean,

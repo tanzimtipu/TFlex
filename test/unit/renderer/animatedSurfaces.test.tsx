@@ -39,6 +39,16 @@ function click(el: Element): void {
   });
 }
 
+/** DEF-413 — a .tab-title mousedown defers activation to the release, so
+ *  a title click must dispatch the mouseup too. The one-shot listener is
+ *  on `window`; jsdom's default selection is collapsed (an ordinary
+ *  click). */
+function mouseUp(): void {
+  act((): void => {
+    window.dispatchEvent(new MouseEvent("mouseup", { bubbles: true, button: 0 }));
+  });
+}
+
 let roots: Root[] = [];
 let containers: HTMLElement[] = [];
 
@@ -249,7 +259,12 @@ describe("AnimatedTab", () => {
 
   it("activates on mousedown anywhere in the tab body (DEF-034)", () => {
     const { el, h } = renderTab();
+    // DEF-413 — a .tab-title hit defers activation to the release; the
+    // completed click still activates. A container (padding) hit keeps
+    // the immediate mousedown path.
     mouseDown(el.querySelector(".tab-title") as Element);
+    expect(h.activated).toEqual([]);
+    mouseUp();
     expect(h.activated).toEqual(["t1"]);
     mouseDown(el); // container padding hit
     expect(h.activated).toEqual(["t1", "t1"]);
@@ -319,9 +334,10 @@ describe("AppHeader tab strip integration", () => {
     );
     const tabs = container.querySelectorAll('[role="tab"]');
     expect(tabs.length).toBe(2);
-    // Mousedown on the second tab's title still activates it through
-    // the AnimatedTab resolver.
+    // Mousedown on the second tab's title activates it on release
+    // through the AnimatedTab resolver (DEF-413 defers the title hit).
     mouseDown(tabs[1].querySelector(".tab-title") as Element);
+    mouseUp();
     expect(h.activated).toEqual(["b"]);
     // The close button still closes without activating.
     click(tabs[0].querySelector(".tab-close") as Element);

@@ -5,6 +5,219 @@
 > inspect the current `OPEN`, `FIX-READY`, and `DISPUTED` entries first; closed records are
 > historical evidence and must not be loaded wholesale.
 
+## DEF-417: Tearing out an empty placeholder tab is a silent no-op
+
+- Status: CLOSED
+- Severity: MEDIUM
+- Found by: adversary (ADV-120)
+- Phase: 58
+
+Steps to reproduce:
+1. `npm.cmd run build`, then run the adversary harness `node test-fixtures/adv-p58-tabs.cjs s4` (it launches through `e2e/lib/launch.cjs` with a fresh user-data-dir).
+2. Open `assets/samples/report.pdf` via Open PDF so the strip holds one document tab.
+3. Click the tab-strip "+" (`[data-new-tab]`) so the active tab is an empty placeholder ("Empty tab").
+4. Press the empty tab's `.tab-colour-chip`, drag it below the tab strip's bottom edge and release.
+
+Expected: AGENTS.md "Fail loud: no silent no-ops" - the tear-out is either refused with a visible reason (a tab with no document cannot be moved), or the tear-out affordance is not offered for a document-less tab.
+
+Actual: nothing happens: no new window, no toast, no dialog, `app.windows()` stays 1, and both tabs stay put (active unchanged). `detachTab` (`src/renderer/App.tsx:2514-2515`) returns early when `openTabsRef.current[id]` is undefined with no user feedback, even though the tear-out affordance arms on the empty tab (`data-tab-tearout` sets on drag).
+
+Screenshot: none (state probed via DOM). Log: `adv_p58_tabs_s4.log`.
+
+History:
+- qa: opened (reproduced on the current build this session. `node test-fixtures/adv-p58-tabs.cjs s4` -> before={count:2,titles:["<ts>-report.pdf","Empty tab"],active:"<empty-tab-id>",toasts:[],dialogs:0}, newWindowOpened=false, after identical, windows=1. Root cause as reported: `detachTab` early-returns on an undefined `openTabsRef.current[id]` with no user feedback.)
+- orchestrator: FIX-READY (relaying frontend-dev - `detachTab` no longer early-returns silently: when the tab has no open session (empty placeholder) it calls `pushToast('warning', 'This tab has no document to move.')` and keeps the tab. Decision extracted to the pure `detachRefusal(hasDocument)`. Evidence: new `test/unit/renderer/phase58Def414_417.test.tsx` + `phase58TabReorder` 38 + `tabs` 25 = 70 passed; `verify` exit 0; `build:renderer` exit 0.)
+- qa: CLOSED (retest on the rebuilt 1.45.0 dev app; e2e/phase58_def414_417.spec.cjs DEF-417: report.pdf + empty placeholder -> tear-out of the empty tab opened NO new window (second=null) and showed a visible warning toast "This tab has no document to move."; both tabs kept, active unchanged. Screenshot: screenshots/def417-empty-tearout-toast.png. Unit phase58Def414_417 7/7 + tabWindows 9/9.)
+
+## DEF-416: Intermittent tear-out leaves a blank orphan `#detached` window (adopt-payload race)
+
+- Status: CLOSED
+- Severity: MEDIUM
+- Found by: adversary (ADV-119)
+- Phase: 58
+
+Steps to reproduce:
+1. `npm.cmd run build`, then run the adversary harness `node test-fixtures/adv-p58-tabs.cjs s8` repeatedly (fresh user-data-dir each run; it launches through `e2e/lib/launch.cjs`).
+2. Open `assets/samples/report.pdf` and drag its tab's `.tab-colour-chip` below the tab strip and release (tear-out).
+3. After the new `#detached` window appears, wait up to 15 s for `[data-tab-id]`; poll `pageCount`, `.workspace`/`.welcome` and dock verb count, and read the origin tab list.
+
+Expected: the new `#detached` window adopts the moved document (one tab, the document loaded, the dock rendered).
+
+Actual: intermittently the new window never adopts the document - it shows the Welcome screen with no tab, `pageCount 0`, no dock verbs, and no way to recover it (`hadTab` stays false, so `notifyEmpty` never closes it); it remains as a stray blank app window. The origin keeps its tab (no adopt ack), so the document is not lost, but the tear-out visibly produces a dead second window. Root cause reported by the adversary: `openDetached` (`src/main/services/tabWindows.ts:74-80`) calls `createWindow()`, which immediately runs `win.loadFile` / `loadURL` (`src/main/window.ts:588-595`), and only AFTERWARDS registers `child.webContents.once('did-finish-load', ...)`. When the local page finishes loading before the listener attaches, the adopt payload is never sent and `tabAdoptAck` never fires.
+
+Screenshot: screenshots/adv-p58-s8-blank-detached.png (refreshed this retest; shows the blank `#detached` window on the Welcome screen with no tab). Logs: `adv_p58_tabs_s8b.log`, `adv_p58_tabs_s8c.log`.
+
+History:
+- qa: opened (reproduced on the current build this session in 2 of 4 runs, matching the adversary's 4 of 6. Blank runs: hadTab=false, loaded=false, preMod={verbs:[],mod:false,tab:false,pages:0}, secondUrl=`...index.html#detached`, originWhileDetached.count=1. The other 2 runs loaded normally, so the race is intermittent.)
+- orchestrator: FIX-READY (relaying backend-dev - delivery is now race-free: `createDetachedWindow` no longer loads; it returns a `DetachedWindowHandle { window, load }` and `openDetached` attaches the `did-finish-load` listener FIRST, then calls `load()`, with a `delivered` once-guard and an `if (!webContents.isLoading()) deliver()` fast path for an already-finished load. Evidence: `test/unit/main/tabWindows.test.ts` 9 passed (2 new deterministic-delivery tests); `typecheck` exit 0; `build:node` exit 0.)
+- qa: CLOSED (retest on the rebuilt 1.45.0 dev app; 8 fresh launches, each with a fresh user-data-dir; every tear-out adopted the document: hadTab=true + pageCount=34 in 8/8 runs. Zero blank orphan windows. Screenshot (run 1): screenshots/def416-adopted-run1.png. e2e/phase58_tab_detach.spec.cjs + 4 Phase-58 specs all green; tabWindows 9/9.)
+
+## DEF-415: Detached window has no unsaved-changes close gate - its titlebar close discards edits silently
+
+- Status: CLOSED
+- Severity: HIGH
+- Found by: adversary (ADV-118)
+- Phase: 58
+
+Steps to reproduce:
+1. `npm.cmd run build`, then run the adversary harness `node test-fixtures/adv-p58-tabs.cjs s8` and repeat until the detached document actually loads (fresh user-data-dir each run; launched through `e2e/lib/launch.cjs`).
+2. Open `assets/samples/report.pdf` (34 pages) and tear its tab below the strip; wait for the `#detached` window to adopt and load the document (pageCount 34, dock verbs rotate/extract/insertPages/replacePages/split/delete/merge/cropPages present).
+3. Mark the document dirty INSIDE the detached window via the PAGES dock `rotate` verb; the detached window's `tflexDiagnostics().modified` then reads `true`.
+4. Click the detached window's own titlebar close control (`[data-window-close]`) and check for the DEF-142 unsaved-changes prompt (`[data-close-tab-prompt]`).
+
+Expected: the DEF-142 close/quit gate prompts before a window holding unsaved edits closes (the behaviour the main window has), or the close is refused.
+
+Actual: no prompt appears (`[data-close-tab-prompt]` count 0); the detached window closes immediately (windows drops to 1) and the edit is discarded with no save opportunity. Data loss. Root cause reported by the adversary: `createDetachedWindow` (`src/main/window.ts:554`) is created with no `onCloseRequested` dependency, so its `'close'` handler never calls `preventDefault()` and never pushes `window:closeRequested`; the whole close-gate machinery (`src/main/index.ts:606-629`) is wired to the main window only, leaving every detached window with no unsaved-close protection.
+
+Screenshot: none. Log: `adv_p58_tabs_s8.log`.
+
+History:
+- qa: opened (reproduced on the current build this session in 2 of 2 runs where the document actually loaded: beforeClose={mod:true,tab:false,dialogs:0}, then `[data-window-close]` click -> promptSeen=false, closed=true, closedEvt=true, surviving windows=1. In the blank/race runs the doc never loaded so the close itself could not be exercised.)
+- orchestrator: FIX-READY (relaying backend-dev - ONE shared close gate: a new `installCloseGate(win, onCloseRequested, onBeforeClose?)` in `src/main/window.ts` is used by BOTH `createMainWindow` (with its geometry flush as `onBeforeClose`) and `createDetachedWindow` (no geometry). `createDetachedWindow` gained an `onCloseRequested` dep and `index.ts` passes the existing `onWindowCloseRequested`, so a detached window's 'close' now preventDefaults and pushes `window:closeRequested`; `window:confirmClose` already resolves `BrowserWindow.fromWebContents(event.sender)`, so it targets the detached window itself. Evidence: `tabWindows.test.ts` 9 passed; `typecheck` exit 0; `build:node` exit 0.)
+- qa: CLOSED (retest on the rebuilt 1.45.0 dev app; loaded detached doc marked dirty via rotate, [data-window-close] -> [data-close-tab-prompt] appeared (promptVisible=true, window stayed open); Cancel kept it open with pageCount 34 + edits intact (modified=true); close again -> prompt -> Discard closed it (close event fired, isClosed=true). Screenshot: screenshots/def415-close-prompt.png.)
+
+## DEF-414: Tear-out of a document with unsaved changes reports the detached window as clean
+
+- Status: CLOSED
+- Severity: HIGH
+- Found by: adversary (ADV-117)
+- Phase: 58
+
+Steps to reproduce:
+1. `npm.cmd run build`, then run the adversary harness `node test-fixtures/adv-p58-tabs.cjs s7` (fresh user-data-dir; launched through `e2e/lib/launch.cjs`).
+2. Open `assets/samples/report.pdf` via Open PDF.
+3. Mark the document dirty by clicking the PAGES dock `rotate` verb; the origin's `window.tflexDiagnostics()` then reports `modified: true`.
+4. Drag the tab's `.tab-colour-chip` below the tab strip and release (tear-out); the origin tab is removed once the new `#detached` window reports ready.
+5. Poll the detached window's `window.tflexDiagnostics()` (`modified` / `tabModified`) every 250 ms for 2.5 s, then read the origin.
+
+Expected: Phase 58 success criterion 8 - a tear-out with unsaved changes either is refused with a readable reason OR the new window inherits the same unsaved state; the dirty state is never dropped silently.
+
+Actual: the origin reports `modified: true`; the detached window reports `modified: false` and `tabModified: false` on the very first poll and at every subsequent poll, so the moved document is presented as clean. (The origin's tab-meta `tabModified` stays `false` even for a dock rotate; the engine-level `modified` is `true`, which is what the origin's own close gate and the detach payload read.)
+
+Screenshot: none (state read via `tflexDiagnostics`). Log: `adv_p58_tabs_s7.log`.
+
+History:
+- qa: opened (reproduced on the current build this session: modBefore={mod:true,tab:false,dialogs:0}, tear-out succeeded, poll 10x {m:false,t:false,tabs:1}, detachedState={mod:false,tab:false,tabs:1}, originAfter.count=0. Root cause unchanged: the detach payload does not carry the engine dirty flag.)
+- orchestrator: FIX-READY (relaying frontend-dev - the adopt path now patches BOTH surfaces the diagnostics read: the pure `adoptedModifiedPatch(payload.modified)` sets the `openTabs` map meta `modified:true` AND the `engineUi` mirror `state.modified:true` (plus the existing tabs-reducer `set-modified`), so the modified dot, `tflexDiagnostics().tabModified`, `tflexDiagnostics().modified` and the close gate (tab meta OR engineUi mirror) all report dirty. The flag is never dropped. Evidence: `phase58Def414_417.test.tsx` 7 (incl. a real-App adopt integration case asserting `tabModified:true` and `modified:true`) + `phase58TabReorder` 38 + `tabs` 25 = 70 passed; `verify` exit 0; `build:renderer` exit 0.)
+- qa: CLOSED (retest on the rebuilt 1.45.0 dev app; report.pdf dirtied via the PAGES rotate verb (origin modified=true), torn out -> detached window settled at modified=true AND tabModified=true (poll[0] caught the pre-adopt {m:false,t:false,tabs:0}; poll[1..9] all {m:true,t:true,tabs:1}) with 34 pages loaded and the tab-modified dot visible (class tab-modified-dot, computed visibility/opacity visible). Screenshot: screenshots/def414-detached-modified.png. phase58Def414_417 7/7.)
+
+## DEF-413: Phase 58 drag-selecting a non-active tab's title activates that tab
+
+- Status: CLOSED
+- Severity: MEDIUM
+- Found by: qa
+- Phase: 58
+
+Steps to reproduce:
+1. `npm.cmd run build`, then launch the dev app.
+2. Open three bundled sample documents (report.pdf, long.pdf, form.pdf) so the strip has three tabs; the last opened (form.pdf) is active.
+3. Press the mouse at the left edge of the FIRST tab's title text (report.pdf, a NON-active tab) and drag right across the title to select it, then release.
+
+Expected: the title text is selected (copyable) and the active tab / displayed document stay unchanged — REQUIREMENTS.md Phase 58 feature B: "clicking the tab still activates it, so a selection gesture must not be mistaken for an activation or a drag."
+
+Actual: the title is selected correctly, but the drag-select ALSO activates the tab: the active tab id changes from the pre-gesture active tab to the selected tab and the displayed document switches to it. `AnimatedTab.onTabMouseDown` (src/renderer/components/AnimatedTab.tsx:46-59) resolves activation on MOUSEDOWN via `resolveTabMouseDown` with no text-selection guard; the Phase-58 selection guard in `AppHeader.tsx` (lines 577-592) only cancels the DRAG on the first pointermove, so the activation has already fired. The existing `e2e/phase58_tab_reorder.spec.cjs` step 4 does not catch this: its comment assumes the selected tab is active, but after the DEF-411 fix the active tab is form.pdf, so the spec asserts only the selection text and the unchanged order, never the active tab.
+
+Screenshot: screenshots/p58-tmp-selection-activation.png
+
+History:
+- qa: opened (Phase 58 phase-validation sweep; temporary harness `e2e/_tmp_p58_verify.spec.cjs` — deleted after the run. Log: order=[aadc14d6,3cad389a,0fbfc552] activeBefore=0fbfc552 (form.pdf) target=aadc14d6 (report.pdf); after the drag-select selection="report.pdf" activeAfter=aadc14d6 orderAfter unchanged. The five Phase-58 specs all pass; this is a gap in criterion 5 / feature B that the spec does not assert.)
+- orchestrator: FIX-READY (relaying frontend-dev - in `AnimatedTab.tsx` the mousedown activation is now DEFERRED when the target is inside `.tab-title`: a one-shot `window` `mouseup` listener activates ONCE only when `window.getSelection()` is collapsed/null and no non-collapsed range is inside this tab's `.tab-title`; a selection gesture therefore no longer activates. Mousedown targets OUTSIDE the title (padding, gap, colour chip, flare) keep the immediate DEF-034 activation, the already-active tab stays a no-op, and the close contract is untouched (no catch-all preventDefault/stopPropagation). Affected unit tests (appHeader, animatedSurfaces) now fire the release; evidence: `phase58TabReorder` 38 + `appHeader` 25 + `phase22` 26 + `tabs` 25 = 114 passed (plus `animatedSurfaces`+`tabMouseDown` = 138); `verify` exit 0; `build:renderer` exit 0.)
+- qa: retested and confirmed a background-tab title selection no longer activates the tab or changes the displayed document. Tightened `e2e/phase58_tab_reorder.spec.cjs` step 4 to assert the selection target is a NON-active tab and to hard-assert `window.getSelection().toString()` equals the title, the active tab id AND the displayed document (`tflexDiagnostics()` bytes/pageCount) are unchanged, and the strip order is unchanged; step 5 now also asserts the click target is a background tab before the plain click activates it (the DEF-034 path). `npm.cmd run build` exit 0. `npm.cmd run test:e2e -- e2e/phase58_tab_reorder.spec.cjs` 1 passed (11.6s): order=[form,long,report]; step-4 target did NOT equal the active tab; activeBefore=activeAfter=467654ab-57fc-457e-aab9-be40f3a5d386 (form.pdf, activeDocBytes=10722, pageCount=1) and docBefore==docAfter; selection="report.pdf" == the title; order unchanged; plain click on the background long tab activated it (a9581ed1 -> active a9581ed1). Phase-58 regression: `phase58_tab_style`+`phase58_tab_detach`+`phase58_dock_edit`+`phase58_home_tools` 4 passed (37.9s). Unit: `phase58TabReorder` 38 + `appHeader` 25 = 63 passed. Screenshot `screenshots/p58-tab-text-selected.png` shows report.pdf (background tab) title highlighted while the form.pdf tab stays active and the form document remains displayed. CLOSED.
+
+## DEF-412: Phase 58 tab tear-out is disabled when the strip holds one tab, so a detached window can never hand its tab back
+
+- Status: CLOSED
+- Severity: HIGH
+- Found by: qa
+- Phase: 58
+
+Steps to reproduce:
+1. `npm.cmd run build`, then launch: `npm.cmd run test:e2e -- e2e/phase58_tab_detach.spec.cjs`.
+2. Open one bundled document (Open PDF -> report.pdf) so the tab strip holds exactly one tab.
+3. Press the tab's `.tab-colour-chip`, drag down past the strip's bottom edge and release (measured: chip centre (354.8, 26.0), strip bottom y=43, pointer released at y=103; a 12px sideways nudge first, since AppHeader only promotes a drag after >6px horizontal movement).
+
+Expected: a new app window with `#detached` in its URL opens showing the document, and the origin tab is removed (the document MOVED, not copied). Then a tab torn out of the detached window returns to the origin and the detached window closes (REQUIREMENTS.md Phase 58 success criteria 6 and 7).
+
+Actual: no new window opens - `app.windows()` stays at 1, the origin tab count stays 1, and `.tab-list` never enters the drag state (`data-dragging-tab` and `data-tab-tearout` are absent throughout the gesture; `data-reorder` is absent even before it). Cause: `src/renderer/components/AppHeader.tsx` sets `reorderEnabled = (onMoveTab !== undefined || onDetachTab !== undefined) && !multiModeEnabled && tabs.length > 1` (lines 459-462), and the tear-out gesture is armed by that same `onTabListPointerDown` handler. With one tab the entire pointer-drag gesture is disabled, so tear-out can never start. This also makes criterion 7 unreachable: a freshly detached window holds exactly one tab (one adopt payload), so the same gate disables the return gesture there too - the round-trip can never complete.
+
+Screenshot: screenshots/p58-detach-origin.png (origin window, one tab, after the failed gesture; the new-window and returned screenshots were not reached).
+
+History:
+- qa: opened (focused Phase 58 chunk 6 verification; `e2e/phase58_tab_detach.spec.cjs` fails at step 3 - no second window / no `#detached` URL; unit `phase58TabReorder` 32 + `tabWindows` 7 passed; `npm.cmd run typecheck` exit 0)
+- orchestrator: FIX-READY (relaying frontend-dev - TWO fixes in `AppHeader.tsx`: (1) the ARM gate is now `dragGestureEnabled = (onMoveTab !== undefined || onDetachTab !== undefined) && !multiModeEnabled` - the `tabs.length > 1` clause was removed and moved onto the REORDER COMMIT only (`onMoveTab` fires only when `tabs.length > 1 && target !== null && target !== startIndex`), so a single-tab strip can tear out; (2) the arm threshold now measures TOTAL movement (`Math.hypot(dx, dy) <= 6` -> return, with `startY` captured at pointerdown) so a straight downward tear-out arms. The tear-out affordance/decision no longer early-returns on a null drop target. Evidence: `phase58TabReorder` 36 (incl. single-tab detach + no-op + vertical-arm + sub-threshold tests) + `tabs` 25 + `appHeader` 25 = 86 passed; `verify` exit 0; `build:renderer` exit 0.)
+- qa: retested and confirmed the downward tear-out opens a `#detached` window showing the moved document (origin 1 -> 0 tabs, second window `...index.html#detached`, `app.windows()` 1 -> 2) and the return round trip in the detached window closes it (`windows` back to 1) and hands the tab back to the origin (count back to 1, document showing). Spec gesture tightened to a PURELY DOWNWARD drag on `.tab-colour-chip` (mousedown, straight down to `strip.bottom + 60`, release, no sideways nudge) - the arm now fires on total movement > 6px. `npm.cmd run build` exit 0; `npm.cmd run test:e2e -- e2e/phase58_tab_detach.spec.cjs` 1 passed (5.3s): step 1 origin tabs=1 strip bottom=43; armed `data-dragging-tab=true`, midway `data-tab-tearout=true`; new window url `file:///.../dist/renderer/index.html#detached` tabs=["<ts>-report.pdf"]; origin tabs after ack=0; return gesture armed+tearout true, `detached closed event=yes windows=1`; origin tabs after return=["<ts>-report.pdf"]; surviving windows=1. Unit: `phase58TabReorder` 36 + `tabWindows` 7 = 43 passed. Screenshots: `screenshots/p58-detach-origin.png` (origin after detach, Home/0 tabs), `screenshots/p58-detach-new-window.png` (detached window, one tab, report.pdf displayed), `screenshots/p58-detach-returned.png` (origin after return, one tab, report.pdf displayed). CLOSED.
+
+## DEF-411: Phase 58 tab reorder activates the dragged tab, changing the active document
+
+- Status: CLOSED
+- Severity: MEDIUM
+- Found by: qa
+- Phase: 58
+
+Steps to reproduce:
+1. `npm.cmd run build`, then launch the dev app (`npm.cmd run test:e2e -- e2e/phase58_tab_reorder.spec.cjs`).
+2. Open three bundled sample documents so the strip has three tabs (report.pdf, long.pdf, form.pdf). The last opened (form.pdf) is active.
+3. Drag the THIRD tab (form.pdf, the active one) leftward past the FIRST tab. Order becomes [form, long, report]; active stays form.pdf (correct).
+4. Now drag a tab that is NOT first and NOT active (report.pdf, currently last) to the far right.
+
+Expected: the order updates and the ACTIVE tab id / displayed document stay unchanged (REQUIREMENTS.md Phase 58 success criterion 4: "after a reorder the active document is unchanged"; the task's step 3: "drag must not re-activate or swap documents").
+
+Actual: the order updates to [form, long, report] -> [form, report, long], but the active tab changes to the dragged tab (report.pdf). `tflexDiagnostics()` goes from `{activeTabId: <form>, activeDocBytes: 10722, pageCount: 1}` to `{activeTabId: <report>, activeDocBytes: 33028, pageCount: 34}`. Cause: the DEF-034 mousedown-activation contract fires on the pointerdown that arms the drag, so starting a drag on a non-active tab activates it before the reorder commits. The reducer's `move` action preserves `activeId`, but the activation is a separate path the reorder does not suppress/restore.
+
+Screenshot: screenshots/p58-tab-reorder.png
+
+History:
+- qa: opened (focused Phase 58 chunk 5 verification; e2e/phase58_tab_reorder.spec.cjs step 3 fails; steps 2, 4, 5 pass)
+- orchestrator: FIX-READY (relaying frontend-dev - the reorder commit now RESTORES the pre-drag active tab. In `AppHeader.tsx` the arm path snapshots `dragStartActiveRef` (the active id) and `dragStartIndexRef` (the dragged tab's origin index); on a committed reorder (`finish(true)`) it calls `onActivate(startActive)` when the new exported predicate `shouldRestoreActiveOnReorder(startActive, draggingId, startIndex, targetIndex)` is true - i.e. a tab was active pre-drag, the dragged tab was NOT that active tab, and the release slot differs from the origin index. A plain click/tap never restores (no drag), dragging the already-active tab never restores, and a same-slot release never restores. The DEF-034 mousedown activation, the reducer, the CSS and `AnimatedTab.tsx` are untouched. Evidence: `phase58TabReorder` 22 (5 predicate + 4 component restore tests) + `tabs` 25 + `appHeader` 25 + `phase58TabStyle` 14 = 86 passed; `verify` exit 0; `build:renderer` exit 0.)
+- qa: retested and confirmed a committed reorder leaves the pre-drag active tab (and its document) unchanged across both steps. `npm.cmd run build` exit 0. Tightened the two per-step active-unchanged `expect.soft` checks to hard assertions and added an explicit assertion that step 3 drags a background tab. `npm.cmd run test:e2e -- e2e/phase58_tab_reorder.spec.cjs` 1 passed (11.7s): initial order=[report,long,form] active=90ab2009 (form.pdf), doc={activeTabId:90ab2009, activeDocBytes:10722, pageCount:1}; after step 2 (drag ACTIVE form tab 3rd->1st) order=[form,report,long] active=90ab2009 doc={10722, pageCount:1}; after step 3 (drag BACKGROUND report.pdf tab to the end; asserted != active) order=[form,long,report] active=90ab2009 doc={10722, pageCount:1}. Previously the active id and doc flipped to report.pdf (33028 bytes / 34 pages). Title drag-select returned "report.pdf" == the title with the strip order unchanged; plain click-activation and close still pass. Unit: `test/unit/renderer/phase58TabReorder.test.ts` 22 + `test/unit/renderer/appHeader.test.tsx` 25 = 47 passed. Screenshot `screenshots/p58-tab-reorder.png` shows the first tab (form) active with the form document displayed after both reorders. CLOSED.
+
+## DEF-410: Phase 58 Home tool-row picker renders as a 10px sliver at the row's right edge (plus opens an unusable menu)
+
+- Status: CLOSED
+- Severity: HIGH
+- Found by: qa
+- Phase: 58
+
+Steps to reproduce:
+1. `npm.cmd run build`, then launch the dev app with a fresh profile (no document open, Welcome pane shown).
+2. Click the pen `[data-home-edit-toggle]` to enter EDIT mode.
+3. Click the plus `[data-home-plus]` at the row's right end.
+
+Expected: a visible dropdown menu of candidate tools appears below the plus (the 5 no-document tools: preferences, toolsPalette, toggleTheme, checkForUpdate, about).
+Actual: the picker `[data-home-picker]` is in the DOM with all 5 items, but it renders as a ~165x10px sliver pinned to the far right edge of the row (bounding box x=2330, y=288 in a 2560x1392 window). The items are clipped inside a 10px-tall `overflow-y:auto` box and are invisible/unusable to a user. Computed style: `position: fixed` (`.action-dock-menu`, src/renderer/styles.css:15134, wins the cascade over `.home-tools-picker`'s `position: absolute` at styles.css:2890 because it appears later), `top: 42px` and `bottom: 42px` (both `calc(100% + 6px)` resolved against the 36px-tall row, which is the containing block because the row's `anim-vibrate` animation sets `translate`), `height: 10px`. `.home-tools-picker`'s `bottom: auto` also loses to `.action-dock-menu-picker`'s `bottom: calc(100% + 6px)` (styles.css:14894, later than 2890). The dock's own picker works only because the dock's centering transform anchors it; the home override never takes effect.
+Screenshot: screenshots/p58-home-picker.png (the picker is the thin sliver at the row's right edge)
+
+Command output (from `npm.cmd run test:e2e -- e2e/phase58_home_tools.spec.cjs`):
+`[P58-home] picker box={"x":2330.96875,"y":287.796875,"width":165.03125,"height":10}`
+`[P58-home] picker diag={"viewport":[2560,1392],"position":"fixed","top":"42px","bottom":"42px","right":"0px","left":"2266.97px","height":"10px","offsetParent":"welcome-actions home-tools anim-vibrate",...}`
+
+History:
+- qa: opened
+- orchestrator: FIX-READY (relaying frontend-dev - the Home picker now renders through `createPortal` to `document.body` with its own `home-tools-picker` class and `position: fixed` positioned from the plus button's `getBoundingClientRect()` (a new pure `placeHomePicker(anchor, menuW, menuH, vw, vh, margin)` right-aligns the menu to the plus, opens 6px below, clamps to an 8px viewport gutter; measured in a `useLayoutEffect` before paint). The dock's `.action-dock-menu` / `.action-dock-menu-picker` positioning rules no longer apply to it, so the row's `anim-vibrate` transform can no longer collapse it. Escape now closes the picker first, then exits edit; outside pointerdown closes without swallowing; re-clicking the plus toggles it. Evidence: `phase58HomeTools.test.tsx` + `phase58DockEdit.test.tsx` 28 passed (HomeTools 21, incl. two `placeHomePicker` geometry tests and a parent-is-body assertion); `verify` exit 0; `build:renderer` exit 0.)
+- qa: retested and confirmed the picker renders fully and items are clickable. `npm.cmd run build` exit 0; `npm.cmd run test:e2e -- e2e/phase58_home_tools.spec.cjs` 1 passed (7.7s). Measured picker box: 150.03x160px at (521.52, 287.80) — no longer the ~165x10 sliver. All 5 items (preferences, toolsPalette, toggleTheme, checkForUpdate, about) reported `visibility:visible`, `display:flex`, 140x30px each; menu right edge aligned to the plus (dx=0.03), opens 6px below (dy=6). Clicking `preferences` added the tile (row content width 649.5 -> 794.9) and the other Chunk-4 assertions (edit vibrate, minus/plus curate, doc-tool exclusion, persistence across relaunch, fixed Open) stayed green. `npm.cmd run test:unit -- test/unit/renderer/phase58HomeTools.test.tsx` 21 passed; `npm.cmd run test:unit -- test/unit/renderer/phase43IconUniqueness.test.ts` 7 passed. Visual: `screenshots/p58-home-picker-fixed.png` shows a normal dropdown anchored to the plus listing all 5 candidate tools in a readable list. CLOSED.
+
+## DEF-409: Phase 58 colorful tab silhouette uses an inward convex bottom-right corner instead of the reference outward flare
+
+- Status: CLOSED
+- Severity: MEDIUM
+- Found by: qa
+- Phase: 58
+
+Steps to reproduce:
+1. Build the dev app (`npm.cmd run build`) and launch it.
+2. Open two bundled sample documents (report.pdf, long.pdf) so the strip has two tabs.
+3. Ensure Preferences > Tab style is "Colorful" (the default).
+4. Inspect the bottom-right corner of every tab in the strip.
+
+Expected: the reference silhouette — rounded top-left/top-right corners, straight vertical sides, and a small OUTWARD curve/flare at the bottom-right that extends toward the strip.
+Actual: the bottom-right is a convex rounded corner pulling inward. `.tab-area[data-tab-style="colorful"] .tab::before` (src/renderer/styles.css:2041) sets `border-bottom-right-radius: var(--radius-3)` (8px) with `border-bottom-left-radius: 0`. Computed `::before` radii measured in the running app: top-left 5px, top-right 5px, bottom-left 0px, bottom-right 8px. The fill curves away from the bottom-right corner instead of flaring outward toward the strip.
+Screenshot: screenshots/p58-tab-strip-colourful-light.png, screenshots/p58-tab-strip-zoom.png
+
+History:
+- qa: opened
+- orchestrator: FIX-READY (relaying frontend-dev - the colourful tab's fill body `.tab::before` now has `border-bottom-right-radius: 0` (square foot); a decorative `.tab-flare` span (6px wide, 10px tall, `right:-6px; bottom:0`, `pointer-events:none`, zero layout impact) paints the outward concave fillet with `radial-gradient(ellipse 6px 10px at 100% 0%, transparent 100%, <bottom accent stop> 100%)`, so the tab's bottom-right foot sweeps OUTWARD to 6px at the strip with no vertical seam. Uniform size kept (`height:34px; min-width:132px; max-width:200px; box-sizing:border-box`; active state no size/weight change) and `.tab-active { box-shadow:none }` still removes the reflection. Evidence: `phase58TabStyle.test.tsx` 14 passed; `phase51TabColour` + `designTokensContract` + `phase36StageTokenSourceScan` 100 passed; `verify` exit 0; `build:renderer` + `build:node` exit 0. Developer note: used a radial-gradient rather than `border-top-left-radius:100%` because the border-radius form leaves a transparent crescent notch against the body's right edge.)
+- qa: retested and confirmed the outward flare. `npm.cmd run build` exit 0; `npm.cmd run test:e2e -- e2e/phase58_tab_style.spec.cjs` 1 passed (17.5s). Added a focused assertion on the LAST tab's `.tab-flare`: body `::before` bottom-right/bottom-left radius `0px` (square foot), flare `position:absolute`, `pointer-events:none`, `background-image` radial-gradient, flare right edge 678.94 > tab right 672.94 (widens outward 6px), flare bottom 43 == tab bottom 43 (sits on strip). Uniform size (both tabs height 34px, minWidth 132px), active `box-shadow:none` (no inset reflection), and Standard-toggle persistence (`colorful` after relaunch) all still green. Visual: `screenshots/p58-tab-flare-retest.png` (4x zoom of the last tab) shows rounded top corners, straight vertical sides, and the bottom-right edge sweeping OUTWARD into a concave fillet that meets the strip with no notch/seam. CLOSED.
+
 ## DEF-408: 262 KB /ToUnicode FlateDecode bomb inflates to 256 MiB before the decoded-char ceiling is applied
 
 - Status: CLOSED

@@ -36,14 +36,15 @@ describe("Phase 36 — sanitizeDockPins", () => {
     expect(sanitizeDockPins(["merge", "not-a-tool", "rotate"])).toEqual(["merge", "rotate"]);
   });
 
-  it("de-dupes and caps at four", () => {
+  it("de-dupes (the Phase-58 cap is effectively unlimited)", () => {
     expect(sanitizeDockPins(["merge", "merge", "rotate", "split", "delete", "extract"])).toEqual([
       "merge",
       "rotate",
       "split",
       "delete",
+      "extract",
     ]);
-    expect(DOCK_MAX_PINS).toBe(4);
+    expect(DOCK_MAX_PINS).toBe(200);
   });
 
   it("reads a non-array (or non-string members) as no pins", () => {
@@ -61,7 +62,7 @@ describe("Phase 36 — pin mutation", () => {
   });
 
   it("keeps the cap rather than silently evicting a pin", () => {
-    const full = ["merge", "rotate", "split", "delete"];
+    const full = Array.from({ length: DOCK_MAX_PINS }, (_, i) => `pin-${i}`);
     expect(canPinMore(full)).toBe(false);
     expect(addDockPin(full, "extract")).toEqual(full);
   });

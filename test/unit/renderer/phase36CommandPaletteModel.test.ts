@@ -288,6 +288,6 @@ describe('Phase 36 — palette copy', () => {
   });
 
   it('mirrors the dock refusal copy verbatim', () => {
-    expect(PALETTE_DOCK_FULL_MESSAGE).toBe('Dock is full (max 4 pins)');
+    expect(PALETTE_DOCK_FULL_MESSAGE).toBe('Dock is full');
   });
 });

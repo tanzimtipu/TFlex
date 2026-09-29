@@ -74,6 +74,12 @@ export interface AnnotationColors {
  *  import the same union. */
 export type AppTheme = 'light' | 'dark' | 'frosted';
 
+/** Phase 58 — the Action Dock tab look. `'standard'` is the plain tab
+ *  chrome; `'colorful'` tints each tab. Validated preserve-if-valid against
+ *  these two values in settings.ts; a missing/invalid stored value resolves
+ *  to the consumer default `'colorful'`. */
+export type TabStyle = 'standard' | 'colorful';
+
 export interface AppSettings {
   theme: AppTheme;
   geometry: WindowGeometry;
@@ -214,6 +220,17 @@ export interface AppSettings {
    *  (layout, fit, reading direction). Validated preserve-if-valid per key in
    *  settings.ts; a missing field resolves to `DEFAULT_READING_DEFAULTS`. */
   readingDefaults?: ReadingDefaults;
+  /** Phase 58 — the Action Dock tab look. Validated preserve-if-valid in
+   *  settings.ts against `TAB_STYLES`; anything else resolves to the
+   *  consumer default `'colorful'`. */
+  tabStyle?: TabStyle;
+  /** Phase 58 — ordered home-row tool ids, EXCLUDING the fixed Open-file
+   *  tile. Validated preserve-if-valid in settings.ts: only non-empty
+   *  strings survive, duplicates are dropped (first occurrence wins), order
+   *  is preserved, an over-long array is truncated to `HOME_TOOLS_CAP = 14`,
+   *  and a non-array rejects the field (consumer default is the shipped home
+   *  row). */
+  homeTools?: string[];
 }
 
 /** Phase 6 — what the renderer gets back from `app:getInfo`. The

@@ -25,7 +25,7 @@ import {
   CommandPalette,
   type CommandPaletteProps,
 } from '../../../src/renderer/components/CommandPalette';
-import { addDockPin, removeDockPin } from '../../../src/renderer/state/dockModel';
+import { addDockPin, DOCK_MAX_PINS, removeDockPin } from '../../../src/renderer/state/dockModel';
 import { TOOL_REGISTRY } from '../../../src/renderer/state/toolsRegistry';
 
 const NO_RECENTS: readonly { path: string; label: string }[] = [];
@@ -292,7 +292,17 @@ describe('Phase 40 item 6 — a pin toggle on every palette tool row', () => {
   });
 
   it('refuses a pin at the dock cap without running the row', () => {
-    const h = renderPalette({ dockPins: ['merge', 'split', 'extract', 'rotate'] });
+    // The cap is `DOCK_MAX_PINS` (200) since Phase 58. The registry holds fewer
+    // ids than the cap, so cycle it to build a list that actually reaches the
+    // cap. Exclude the clicked cross-stage tool ('sign') so its row is not
+    // already pinned (a pinned row toggles UN-pin instead).
+    const cycle = TOOL_REGISTRY.map((entry) => entry.id).filter((id) => id !== 'sign');
+    const full = Array.from(
+      { length: DOCK_MAX_PINS },
+      (_, i): string => cycle[i % cycle.length],
+    );
+    expect(full.length).toBe(DOCK_MAX_PINS);
+    const h = renderPalette({ dockPins: full });
     try {
       click(toggle(h.host, 'sign'));
       expect(h.onPinTool).not.toHaveBeenCalled();

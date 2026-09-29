@@ -26,6 +26,7 @@ import { AnimatePresence } from 'motion/react';
 import { MonitorCog, X } from 'lucide-react';
 import type { OpenDefaultAppsSettingsResult } from '../../shared/ipc';
 import type { AppInfo } from '../../shared/types';
+import type { TabStyle } from '../../shared/types';
 import { DEFAULT_CONVERT_DEFAULTS } from '../../shared/convert';
 import type { ConvertDefaults } from '../../shared/convert';
 import type { ThemeDefault } from '../state/preferences';
@@ -53,6 +54,12 @@ interface PreferencesDialogProps {
    *  defaults and no persist. */
   convertDefaults?: ConvertDefaults;
   onSetConvertDefaults?: (next: ConvertDefaults) => void;
+  /** Phase 58 — the tab-strip style. Reflects the stored value and
+   *  persists each change through the host's settings path. Optional so
+   *  older mounts keep rendering; absent means the row is not rendered
+   *  (never a silent no-op). */
+  tabStyle?: TabStyle;
+  onSetTabStyle?: (next: TabStyle) => void;
 }
 
 /** Phase 53 — the font families the settings validator accepts for
@@ -111,6 +118,8 @@ export function PreferencesDialog(props: PreferencesDialogProps): ReactElement |
     onSetAnimationsEnabled,
     convertDefaults = DEFAULT_CONVERT_DEFAULTS,
     onSetConvertDefaults,
+    tabStyle = 'colorful',
+    onSetTabStyle,
   } = props;
   const [capDraft, setCapDraft] = useState(String(recentsCap));
   // Phase 53 — the two numeric conversion controls are drafts committed on
@@ -319,6 +328,24 @@ export function PreferencesDialog(props: PreferencesDialogProps): ReactElement |
             <p className="prefs-hint">
               Turns off every animation in the app - menus, panels and dialogs appear instantly.
             </p>
+            {onSetTabStyle !== undefined && (
+              <>
+                <div className="prefs-row">
+                  <label className="prefs-row-label" htmlFor="prefs-tab-style">Tab style</label>
+                  <select
+                    id="prefs-tab-style"
+                    className="prefs-select"
+                    value={tabStyle}
+                    onChange={(e): void => onSetTabStyle(e.target.value as TabStyle)}
+                    data-prefs-tab-style
+                  >
+                    <option value="colorful">Colorful</option>
+                    <option value="standard">Standard</option>
+                  </select>
+                </div>
+                <p className="prefs-hint">Colorful gives each tab its own flat colour; Standard keeps the classic tab look.</p>
+              </>
+            )}
           </section>
 
           <section className="prefs-section">

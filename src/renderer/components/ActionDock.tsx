@@ -30,7 +30,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import type { CSSProperties, ReactElement } from 'react';
 import type { LucideIcon } from 'lucide-react';
-import { ChevronsLeft, ChevronsRight, Ellipsis } from 'lucide-react';
+import { ChevronsLeft, ChevronsRight, Ellipsis, Minus, Pencil, Plus } from 'lucide-react';
 import {
   DOCK_AVAILABILITY_REASON,
   DOCK_BULK_IDS,
@@ -64,7 +64,7 @@ import {
   shouldLiftDock,
   type PillBox,
 } from '../state/dockFit';
-import { toolById, dockToolsForStage, isPinVisibleInStage, type ToolEntry } from '../state/toolsRegistry';
+import { toolById, dockToolsForStage, dockPickerIdsForStage, isPinVisibleInStage, type ToolEntry } from '../state/toolsRegistry';
 import {
   PAGE_COMPACT_W,
   PAGE_FULL_W,
@@ -250,6 +250,10 @@ export function ActionDock(props: ActionDockProps): ReactElement {
   const [activityTick, setActivityTick] = useState(0);
   const [menu, setMenu] = useState<PinMenuState | null>(null);
   const [overflowOpen, setOverflowOpen] = useState(false);
+  /** Phase 58 — the dock's EDIT mode: the pen arms it, every verb grows a
+   *  minus affordance, and a plus control at the row's end opens the picker. */
+  const [editMode, setEditMode] = useState(false);
+  const [plusOpen, setPlusOpen] = useState(false);
   /** DEF-315 — the MEASURED pill band: the reserve the dock must leave clear
    *  (from the pills' own inner edges) and their height for the vertical yield.
    *  DEF-330 — plus the pill-FREE band the dock actually occupies when it is
@@ -516,6 +520,17 @@ export function ActionDock(props: ActionDockProps): ReactElement {
     [dedupedPins, isToolEnabled, disabledReasonFor, onRunTool, pageSelection.length],
   );
 
+  // Phase 58 — the EDIT-mode picker: the stage + global dock tools, minus the
+  // ids already rendered (primary + pins). Registry-derived, so no unknown ids.
+  const pickerEntries = useMemo<ToolEntry[]>(() => {
+    const rendered = new Set<string>([...primaryIds, ...pinnedVerbs.map((v) => v.id)]);
+    return dockPickerIdsForStage(activeStage).flatMap((id) => {
+      if (rendered.has(id)) return [];
+      const entry = toolById(id);
+      return entry === undefined ? [] : [entry];
+    });
+  }, [activeStage, primaryIds, pinnedVerbs]);
+
   // ---- responsive overflow ---------------------------------------------
   // DEF-315 — plan on the BAND once the pills are measured, so the `...` chip
   // absorbs the overflow inside it rather than the dock growing toward a pill.
@@ -649,6 +664,20 @@ export function ActionDock(props: ActionDockProps): ReactElement {
     };
   }, [menu]);
 
+  // Phase 58 — Escape exits EDIT mode (and closes the picker). A targeted
+  // document keydown while edit mode is on; it never swallows events otherwise.
+  useEffect((): (() => void) | undefined => {
+    if (!editMode) return undefined;
+    const onKeyDown = (event: KeyboardEvent): void => {
+      if (event.key === 'Escape') {
+        setEditMode(false);
+        setPlusOpen(false);
+      }
+    };
+    document.addEventListener('keydown', onKeyDown);
+    return (): void => document.removeEventListener('keydown', onKeyDown);
+  }, [editMode]);
+
   const openMenu = (id: string, x: number, y: number): void => {
     setOverflowOpen(false);
     setMenu({ id, x, y });
@@ -702,6 +731,34 @@ export function ActionDock(props: ActionDockProps): ReactElement {
           <Icon size={20} />
         </span>
         {!iconOnly && <span className="action-dock-label">{verb.label}</span>}
+        {/* Phase 58 — EDIT mode: the minus affordance. It is a SPAN with a
+            button role, never a nested <button> (invalid HTML), and it stops
+            propagation on ITS OWN event only so the verb's own onClick does not
+            run the tool. The cross-bubbling rules (AGENTS.md) are honoured: no
+            document-level catch-all, no disarm here. */}
+        {editMode && (
+          <span
+            className="action-dock-minus"
+            role="button"
+            tabIndex={0}
+            aria-label={`Remove ${verb.label} from dock`}
+            data-dock-minus={verb.id}
+            onClick={(e): void => {
+              e.stopPropagation();
+              e.preventDefault();
+              onUnpinTool(verb.id);
+            }}
+            onKeyDown={(e): void => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                e.stopPropagation();
+                onUnpinTool(verb.id);
+              }
+            }}
+          >
+            <Minus size={12} aria-hidden />
+          </span>
+        )}
       </button>
     );
   };
@@ -711,12 +768,13 @@ export function ActionDock(props: ActionDockProps): ReactElement {
       ref={(el): void => {
         rootRef.current = el;
       }}
-      className="action-dock"
+      className={editMode ? 'action-dock anim-vibrate' : 'action-dock'}
       role="toolbar"
       aria-label="Action dock"
       aria-orientation="horizontal"
       data-action-dock
       data-dock-state={primaryState}
+      data-dock-edit={editMode ? 'true' : 'false'}
       data-dock-idle={idle ? 'true' : 'false'}
       data-dock-icon-only={iconOnly ? 'true' : 'false'}
       data-dock-compact={compact ? 'true' : 'false'}
@@ -761,6 +819,23 @@ export function ActionDock(props: ActionDockProps): ReactElement {
         setHovered(false);
       }}
     >
+      {/* Phase 58 — the EDIT-mode pen, parked at the dock's TOP-RIGHT and
+          absolutely positioned so it never joins the single verb row. Clicking
+          it toggles EDIT mode; Escape exits. */}
+      <button
+        type="button"
+        className="action-dock-edit"
+        data-dock-edit-toggle
+        aria-pressed={editMode}
+        aria-label="Edit dock tools"
+        title="Edit dock tools"
+        onClick={(): void => {
+          setEditMode((v) => !v);
+          setPlusOpen(false);
+        }}
+      >
+        <Pencil size={14} aria-hidden />
+      </button>
       {/* Phase 37 (item 21) — the Ctrl+K hint, a small themed line above the
           dock. It is absolutely positioned so it never joins the dock's single
           verb row, and it is hidden only at the ladder's smallest rung (the
@@ -853,6 +928,57 @@ export function ActionDock(props: ActionDockProps): ReactElement {
             </div>
           </>
         )}
+        {/* Phase 58 — EDIT mode: the add control stays at the row's RIGHT END
+            after every add. It opens the registry-derived picker; picking an id
+            pins it (the host's `onPinTool`) and closes the picker. */}
+        {editMode && (
+          <div className="action-dock-add">
+            <button
+              type="button"
+              className="action-dock-plus"
+              data-dock-plus
+              aria-haspopup="menu"
+              aria-expanded={plusOpen}
+              aria-label="Add a tool to the dock"
+              title="Add a tool to the dock"
+              onClick={(): void => {
+                setMenu(null);
+                setOverflowOpen(false);
+                setPlusOpen((v) => !v);
+              }}
+            >
+              <Plus size={16} aria-hidden />
+            </button>
+            {plusOpen && (
+              <div
+                className="action-dock-menu action-dock-menu-picker anim-menu-pop"
+                role="menu"
+                aria-label="Add a tool to the dock"
+                data-dock-picker
+              >
+                {pickerEntries.map((entry) => {
+                  const Icon = entry.icon;
+                  return (
+                    <button
+                      key={entry.id}
+                      type="button"
+                      role="menuitem"
+                      className="action-dock-menu-item"
+                      data-dock-picker-item={entry.id}
+                      onClick={(): void => {
+                        setPlusOpen(false);
+                        onPinTool(entry.id);
+                      }}
+                    >
+                      <Icon size={18} aria-hidden />
+                      <span>{entry.label}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        )}
       </div>
       {arrows && (
         <button
@@ -889,7 +1015,7 @@ export function ActionDock(props: ActionDockProps): ReactElement {
               className="action-dock-menu-item"
               data-dock-menu-item="pin"
               disabled={menuPinned || !canPinMore(pins)}
-              title={!menuPinned && !canPinMore(pins) ? 'Dock is full (max 4 pins)' : undefined}
+              title={!menuPinned && !canPinMore(pins) ? 'Dock is full' : undefined}
               onClick={(): void => {
                 setMenu(null);
                 onPinTool(menu.id);

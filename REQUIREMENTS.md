@@ -3432,3 +3432,163 @@ either carried or named in the serializer's block comment with the reason, and a
 the carried ones survive and that a destination-free document still serializes byte-stably.
 
 **Settings impact:** none.
+
+## Phase 58 — Tab design and behaviour, customizable docks, and the home tool row (operator request 2026-09-30)
+
+**Operator request (verbatim intent, 2026-09-30):** four numbered items, with one reference image
+(a folder-style tab: rounded top corners, straight sides, a small outward curve at the bottom-right,
+an orange-to-magenta fill, white bold label — "CSS left tab").
+
+1. **Tab design.** The file tabs "don't look good at all" with the reflective colour, and the FIRST
+   tab's size differs from the others. Implement the tabs like the reference image: coloured, with NO
+   3D or reflection effect. In Settings, let the user toggle between **standard tabs** and **colourful
+   CSS-styled tabs**.
+2. **Tab behaviour.** Tabs must be movable left/right (reorder). Tab title text must be selectable so
+   it can be copied. A tab dragged out of the bar and released must open in a NEW app window; the user
+   must be able to drag it back into the previous window like a browser.
+3. **Tool dock editing.** Add a small edit (pen) icon at the top-right of the dock. Clicking it starts
+   a "vibration" animation, shows a minus badge on each existing dock icon and a plus icon at the right.
+   The plus opens a picker of all tools relevant to that dock plus the global tools; picking one adds it
+   to the dock and the plus returns to the right. Removing and adding must both work and the dock's size
+   must adjust dynamically with animation.
+4. **Home page editing.** The same edit affordance on the Home (Welcome) page's tool row: a pen button
+   enters edit mode (vibration + minus per tile + a plus at the right); plus shows all tools usable from
+   the home page (for example, annotate cannot work there); picking adds the tool to the right of the
+   existing tiles and the plus returns to the right. Removing and adding must work and the row must
+   resize with animation. **"Open file" cannot be removed from the home page.** A maximum of **14**
+   tools may be added excluding "Open file". Tiles use the SAME icon and colour as the dock's icons but
+   keep the SHAPE of the current home-page icon boxes.
+
+**ORCHESTRATOR RULINGS (confirmed with the operator 2026-09-30; the operator may veto any later):**
+
+1. **The "Home page" is the Welcome/start surface** (`src/renderer/components/Welcome.tsx`); its current
+   "icon boxes" are the `.welcome-actions` buttons (Open PDF / Create from images / Merge PDFs). The
+   editable row replaces that action row.
+2. **Default tab style is `colorful`** when no preference is stored; the Settings toggle allows
+   reverting to `standard`.
+3. **The "colourful" tab is flat and gradient-only — no bevel, no inner highlight, no reflection.** Each
+   tab keeps its Phase-45 per-tab palette identity (adjacent tabs differ), painted as a two-stop
+   gradient of that tab's own palette colour in the reference's tab silhouette.
+4. **Added dock tools are not capped in the UI** (the dock overflows/scrolls as today). Persistence is
+   capped at a generous safety limit (`DOCK_PINS_CAP` raised; the number recorded in code) so a
+   settings file can never grow without bound — the operator's "unlimited" is honoured in behaviour.
+5. **Tear-out uses a real second app window's renderer**, reusing the print-window precedent (an
+   independent top-level `BrowserWindow`). The tab's document moves (not a copy) and the origin tab is
+   removed once the new window reports the document ready; a drag back performs the reverse. No
+   document bytes are duplicated in settings or on disk by a tear-out.
+
+**Features**
+
+**A. Tab visual design: standard vs colourful, and one uniform tab size.**
+
+- A new setting `tabStyle` (`'standard' | 'colorful'`, default `'colorful'`) with a labelled control in
+  the Preferences sheet on the existing Settings surface, persisted through the settings IPC.
+- `standard` renders the current tab appearance unchanged. `colorful` renders the reference tab
+  silhouette: equal-height tabs (identical box height and minimum width for EVERY tab, first to last,
+  active or not — the current first-tab size difference is a defect), rounded top corners, straight
+  vertical sides, and the reference's small outward bottom-right curve; flat fill / two-stop gradient of
+  the tab's own palette colour; NO inset shadow, emboss, gloss or reflection; active vs inactive still
+  distinguished without relying on the bevel (the active tab keeps its raised surface + accent cue and
+  its text-contrast floor).
+- The visual change is renderer-only; the setting is read via the existing settings load path.
+
+**B. Tab behaviour: reorder, copyable title, and browser-style tear-out / drag-back.**
+
+- **Reorder:** a tab can be dragged left/right within the strip and dropped into a new order; the tab
+  order state is the single source of truth and the active tab and its document are unaffected by a
+  reorder. The reorder works by pointer drag with a visible drop indicator, and must not break the
+  existing mousedown-activation and close contracts (DEF-034) or the cross-bubbling rules in AGENTS.md.
+- **Selectable title:** the tab's title text must be selectable with the mouse so it can be copied
+  (standard text-selection cursor and selection highlight); clicking the tab still activates it, so a
+  selection gesture must not be mistaken for an activation or a drag.
+- **Tear-out to a new window:** dragging a tab out of the tab bar and releasing outside it opens the
+  tab's document in a NEW app window. The document MOVES: the origin tab is removed once the new window
+  has loaded it, so the document is never open twice. If the document has unsaved changes, the tear-out
+  is refused with a clear reason (the close-with-unsaved-edits gate is the precedent) OR the new window
+  inherits the same unsaved state — one behaviour, chosen and documented; no silent data loss.
+- **Drag back:** a tab in the detached window can be dragged back into the original app window and is
+  re-adopted there (the reverse move), leaving the detached window and closing it if it is then empty.
+  This is the browser round-trip; it must be demonstrated in both directions.
+- New IPC (shared contract, approved by the orchestrator this phase): a `window:detachTab` request and
+  a `window:adoptTab` / drag-handoff pair with typed payloads in `src/shared/ipc.ts`, mounted following
+  the `print:openWindow` precedent.
+
+**C. Dock editing: pen → vibration → minus/plus → add/remove with animated resize.**
+
+- A small edit (pen) icon sits at the dock's top-right. Clicking it enters EDIT mode: the dock plays a
+  short vibration animation and every existing verb shows a minus badge, with a single plus control at
+  the right end of the row.
+- Clicking a minus removes that tool from THIS dock (per stage) and persists the removal;
+  clicking the plus opens a picker listing all tools relevant to the dock plus the global tools;
+  picking one appends it (and the plus control returns to the right end), persisted.
+- The dock's width/height adjust dynamically with the shared animation system (motion tokens; instant
+  path under reduced motion / Animations OFF). Removing every verb leaves a coherent empty/edit state,
+  never a broken row.
+- Persistence reuses `dockPins` (added tools) and `dockUnpinned` (removed default tools) with the
+  raised cap from ruling 4; the edit UI is the new front end for those two lists.
+
+**D. Home tool row editing.**
+
+- The Welcome page's action row gains the same pen edit affordance and the same vibration / minus / plus
+  interaction as feature C.
+- The plus picker lists only the tools that can actually run from the home surface (no document open —
+  for example, annotations are excluded), plus the global tools that make sense with no document.
+- "Open file" is the fixed first tile and CANNOT be removed (its minus control is absent/disabled).
+- The user may add up to 14 tools (excluding Open file) in addition to the shipped defaults; adding
+  beyond that is refused with a visible reason (fail-loud, not a silent no-op).
+- Tiles use the dock registry's icon and colour identity, but keep the current home icon-box SHAPE.
+- The list persists in a new `homeTools` setting field (ordered ids, excluding the fixed tile).
+- The row resizes with animation as tiles are added/removed (shared motion system).
+
+**Success criteria**
+
+1. With no stored preference, tabs render `colorful`; the Preferences toggle switches to `standard` and
+   back, the choice survives a restart, and `standard` reproduces the pre-phase tab appearance (before/
+   after screenshots in all three themes).
+2. Every tab — first, middle, last, active or inactive — has identical computed height and minimum
+   width (measured boxes, zero variance); the first-tab size difference is gone (screenshot).
+3. The `colorful` tab matches the reference silhouette (rounded top corners, straight sides, the
+   bottom-right curve) and carries NO bevel/reflection: the computed style shows no inset box-shadow and
+   no highlight band; the fill is the tab's palette colour. Adjacent tabs differ, and the text-contrast
+   floor holds in all three themes (measured + screenshots).
+4. A tab can be dragged left/right and the order changes; after a reorder the active document is
+   unchanged and the previous tab order is restored by dragging back (asserted by DOM order + a run).
+5. Tab title text is selectable: a drag-select over the label produces a visible text selection whose
+   contents equal the title, and a plain click still activates the tab.
+6. Dragging a tab out of the strip and releasing opens its document in a new app window and the origin
+   tab is gone (document moved, not copied) — verified with a real second window and a count assertion.
+7. Dragging that tab back into the original window re-adopts it and the detached window closes when
+   empty — verified in the running app, round-trip both directions.
+8. With unsaved changes, a tear-out follows the one documented behaviour (refusal with a readable
+   reason, or an inherited dirty state) and never loses edits.
+9. The dock pen icon enters edit mode with the vibration animation, minus badges on every verb and a
+   plus at the right (screenshot); removing a verb and adding a tool both change the dock and persist
+   across a restart (asserted by settings + dock contents).
+10. The dock's size changes with animation when tools are added/removed, and is instant under reduced
+    motion / Animations OFF (measured resize + screenshots).
+11. The home row pen enters edit mode with the same interaction; the plus lists only home-usable tools
+    (annotate excluded); adding a tool appends it right of the existing tiles and the plus returns to
+    the right; "Open file" shows no active minus and cannot be removed; a 15th non-Open-file tool is
+    refused with a visible reason (screenshot + assertion).
+12. Home tiles use the dock icon/colour identity while keeping the current box shape, and the row
+    resizes with animation — verified by computed style and screenshots.
+13. No regression: the standing animation/icon rules, the cross-bubbling rules, `verify` and the
+    phase suites stay green; the packaged installer and portable build still produce and launch.
+14. All DEF/ADV entries opened by Phase 58 are CLOSED or REJECTED with a written reason.
+
+**Settings impact:** TWO new `AppSettings` fields, both validated in
+`src/main/services/settings.ts` before any renderer code reads them, mirroring the Phase-6 pattern
+(preserve-if-valid, reject-if-invalid):
+
+- **`tabStyle?: 'standard' | 'colorful'`** — default `'colorful'` (consumer default when absent).
+  Validation: a present value must be a string in the allowlist, else the field is rejected (absent ->
+  consumer default). Transported by the existing settings load/save IPC (`settings:load` /
+  `settings:save`).
+- **`homeTools?: string[]`** — the ordered home-row tool ids EXCLUDING the fixed "Open file" tile; a
+  missing field means the shipped default row (Create from images, Merge PDFs). Validation mirrors
+  `normalizeDockPins` (shape only: non-empty strings, dedupe first-wins, preserve order, truncate to
+  `HOME_TOOLS_CAP = 14`; a non-array rejects the field). Unknown ids are dropped by the renderer, which
+  owns the tools registry. Transported by the existing settings load/save IPC.
+
+Dock add/remove reuses the existing `dockPins` / `dockUnpinned` fields; `DOCK_PINS_CAP` is raised per
+ruling 4 (a constant change, not a new field). No password or document bytes are added to settings.
