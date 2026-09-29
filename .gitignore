@@ -20,6 +20,9 @@ screenshots/
 /e2e/debug_*.cjs
 /e2e/check_data_tool.cjs
 /e2e/list_buttons.cjs
+# Generated e2e frame dumps - written by the committed def338 specs on every run.
+# Regenerated output, never committed.
+/e2e/def338-frames/
 
 # Root-level OTA manifest strays. The legitimate latest.yml lives under release/
 # (ignored above); these root-level copies are electron-builder/auto-update
