@@ -24,6 +24,7 @@ permission:
     "screenshots/*": deny
     "electron-builder.*": deny
     "index.html": deny
+    ".gitignore": allow
   bash:
     "*": deny
     "git *": allow
