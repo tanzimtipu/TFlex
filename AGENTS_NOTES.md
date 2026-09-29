@@ -4446,3 +4446,80 @@ that parameter, not just the code that implements it.** Anchors must include the
   The same gate also showed a CSP-vs-session race: the injected CSP blocks a remote subresource BEFORE
   `webRequest.onBeforeRequest` sees it, so the cancel hook is the hard guarantee but a useless WARNING source -
   detection has to scan the source too.
+
+## 2026-09-29: Phase 54 - imaging, print graphics and PDF/A + PDF/X validation (committed a0b1974)
+
+Phase 53 closed at `e676a53`; Phase 54 at `a0b1974` (97 files). **Phases 55, 56 and 57 are still contract
+only** - not built. The next session starts Phase 55 with its five dependencies already installed and
+verified pure-JS (`mammoth`, `xlsx`, `fflate`, `docx`, `pptxgenjs`, ~38.8 MB of node_modules, no native
+addons, no install scripts).
+
+**What Phase 54 delivered.** PNG/JPEG import with DPI-aware page sizing (`pHYs`, JFIF/EXIF, TIFF tags
+282/283/296), the four fit modes and rotation; multi-page TIFF through `utif` (frame-per-page, a placeholder
+page plus a warning for an undecodable frame, CCITT G3/G4 proven against a real Group-4 fixture); SVG with a
+native vector translation of the static subset via pdf-lib's `drawSvgPath` and an engine-rendered fallback
+for filters/masks/foreignObject/text with a warning naming each construct; a PDF/A-1b/2b/3b + PDF/X-1a/3/4
+rule set that reports a DECLARED level plus violations and enforces through an opt-in save guard; a
+validation surface in the renderer; and the create-from-images flow re-pointed at `toDocumentMany` so
+DPI-aware sizing is reachable. `verify:full` ended at 505 files / 6354 tests green.
+
+**THE BIG WIN OF THIS PHASE was not in the contract: `serializeDoc` was silently destroying data on every
+save.** It rebuilt each document from the page copies only, so XMP `/Metadata`, `/OutputIntents`,
+`/OCProperties` (layers), `/MarkInfo`, `/Lang`, `/ViewerPreferences`, `/Collection` and `/AF` were dropped -
+and because the PDF/A JavaScript rule runs on the SERIALIZED bytes, a document containing JavaScript could
+FALSELY PASS validation. Fixed by carrying those entries with pdf-lib's own `PDFObjectCopier.for(src, dst)`
+(the primitive that handles cross-context cloning with ref memoisation and cycles), plus a SELECTIVE carry of
+only the `/Names /JavaScript` subtree. **Rule: cloning `/Names` wholesale is forbidden in this repo - it
+drags page-referencing named destinations into the destination context and risks the page tree. A page-tree
+safety test now pins that.** Still dropped, with written reasons: `/StructTreeRoot` (FEA-023, accepted
+deferral), `/Dests` and `/OpenAction` (contracted as REQUIREMENTS.md Phase 57 feature G, with page-reference
+remapping through the page map `serializeDoc` already builds). **Rule: a validator must never run on a
+transformation of the document that has dropped the structures it inspects.**
+
+**THE ORCHESTRATOR'S RECURRING MISTAKE, now three occurrences in two phases (DEF-375, then the Phase 54
+multi-image gap): a capability behind a parameter with no named call site is unreachable.** The pattern is
+always the same - the spec describes the code that IMPLEMENTS the capability and never names the CALLER that
+must pass the argument or the surface that must invoke it. **Rule for every spec that adds or changes a
+capability: name the call site, the surface, and the argument in the spec, and add a reachability assertion
+to the gate's CONTROL-INDEX.** The full OPEN dialog filter set was reachable-but-empty for a whole gate
+cycle because of it.
+
+**The adversary paid for itself 8x.** Attacking Phase 54's new parsers with 26 hand-built hostile inputs
+produced eight accepted findings, including two that killed the application from tiny files: a 14-byte
+cyclic-IFD TIFF drove `utif`'s `while(true)` chain walk to a 4 GB OOM, and a 408 KB PDF whose content stream
+decoded to 200 MiB OOM'd the validator on `String.split` over ~100 million substrings. Also found: an
+unclamped page geometry (a 1-DPI claim silently produced a 1,417,322 pt page, 98x PDF's implementation limit,
+and the UI showed 308,791,459% zoom), a wrong-typed `/OutputIntents` that hard-errored instead of reporting
+"could not be determined", silent SVG parse/geometry failures presented as `native`, a 62-byte TIFF that
+blocked the main process for 26,963 ms, an impossible declared level (`pdfaid part 9`) validating as
+`conforms: true`, and missing `resource-blocked` warnings for SVG. All eight are fixed and closed; the
+before/after numbers are in the DEF entries (4 GB OOM -> a typed `corrupt` in 6 ms; 26,963 ms -> 21 ms;
+OOM at ~2.6 s -> 101 ms with a "could not be determined" warning). **Rule: hostile binaries get a preflight
+before a third-party decoder runs** - `preflightTiffIfdChain` (visited-offset set, frame ceiling, bounds)
+and the declared-frame-pixel guard exist because `try/catch` cannot catch an infinite loop or an allocation
+that happens before your guard.
+
+**Two new mistake classes recorded:**
+
+- **A third-party decoder allocates BEFORE your guard runs.** `utif`'s `decodeImage` and `toRGBA8` allocate
+  `height*width` buffers before the adapter's per-frame check can reject the frame, so the guard must read
+  the DECLARED dimensions from the IFD tags first and refuse before calling in. A per-frame `try/catch` only
+  limits the result, not the work.
+- **A validator must validate its own declared identifiers.** `parsePdfaId` accepted any integer part and any
+  conformance letter, so a file declaring `part 9 / conformance Z` was echoed as `declared: "PDF/A-9z"` WITH
+  `conforms: true` - pairing a standard that does not exist with a conformance claim. Unknown identifiers now
+  produce an "unrecognised declared level" warning and never `conforms: true`.
+
+**Hygiene item left for the next run (small):** the Phase 54 commit included
+`test-fixtures/adv-p54/pure.cjs`, a ~1.19 MB esbuild bundle whose source `pure.ts` was left untracked.
+Either commit the `.ts` source alongside it or drop the bundle; do not leave a generated bundle tracked
+without its source.
+
+**Status of the program:** Phase 53 (import foundation + text/markup/technical) CLOSED at `e676a53`;
+Phase 54 (imaging + print graphics + validation) CLOSED at `a0b1974`; Phase 55 (bidirectional office:
+`.docx` `.doc` `.odt` `.xlsx` `.xls` `.ods` `.pptx` `.ppt`, deps installed), Phase 56 (publishing and
+reading: `.epub` `.mobi`/`.azw` `.cbz`/`.cbt`, needs `fflate` which is installed) and Phase 57 (`.pdf/E`
+layers + CAD metadata, `.fdf`/`.xfdf` interchange, catalog round-trip feature G, full matrix regression and
+the PACKAGING GATE - which also owns the deferred packaged-build leg of Phase 54 criterion 8) are all
+awaiting implementation. Nothing is pushed: both commits are local, and every push/tag/Release still needs
+explicit operator permission in the session it happens in.
