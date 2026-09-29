@@ -51,7 +51,10 @@ const DOCK_LABELS: Record<Stage, string[]> = {
   review: [
     'Annotate', 'Sign', 'Stamp', 'Flatten', 'Forms', 'Watermark',
     'Export comments (FDF)', 'Import comments (FDF)', 'Fill form fields from CSV…',
-    'Validate document…',
+    // Phase 57 (feature B) adds the form-data export/import pair; feature A
+    // adds the engineering layers and document-info verbs.
+    'Export form data…', 'Import form data…', 'Validate document…',
+    'Engineering layers…', 'Document info…',
   ],
   deliver: [
     'Reduce file size', 'Audit space usage', 'Export pages as images',

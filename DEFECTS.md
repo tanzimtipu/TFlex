@@ -5,6 +5,70 @@
 > inspect the current `OPEN`, `FIX-READY`, and `DISPUTED` entries first; closed records are
 > historical evidence and must not be loaded wholesale.
 
+## DEF-403: undoing Flatten restores field values but collapses every field's rectangle to the default and leaves the flattened ink
+
+- Status: REJECTED
+- Severity: MEDIUM
+- Found by: backend-dev (Phase 57 triage, DEF-403)
+- Phase: pre-existing (forms.ts last touched Phase 52 d609155; baseline b8805ee)
+
+Steps to reproduce:
+1. Load `test-fixtures/form.pdf`.
+2. `flattenForms`.
+3. `undo`.
+4. Inspect with `getDocumentBytes`.
+
+Expected: undo restores the pre-flatten form exactly (field names, values, rectangles, and no flattened ink).
+Actual: after flatten there are 0 fields and 958 bytes of page content / 10 `FlatWidget` draws. After undo the fields return with names+values (8, "John Doe" etc.) but ALL rectangles collapse to pdf-lib's default `(-0.5, 749.5, 200x50)` (bottom-left corner), and the page content is STILL 962 bytes with 10 `FlatWidget` draws. Root cause: `_flattenFormsImpl` (`src/main/services/engine.ts:1348`) captures a pdfDoc-level mutation with plain `snapshotDoc` (:1355) instead of `snapshotDocWithPdf`; `restoreFormFieldsFromSnapshot` (`src/main/services/forms.ts:433`) rebuilds fields by calling `addToPage(page)` with no rect (:464/:470/:492/:505), so geometry is lost; DEF-028's test (`test/unit/main/forms.test.ts:663`) asserts only names/values, so the gap is unseen. Not the "dead undo entry" class - the entry fires, but the restore is lossy.
+Impact: undo after Flatten silently corrupts the form - every field jumps to the page's bottom-left corner and the flattened appearance ink remains, so recreated fields overdraw stale glyphs on any later edit.
+
+History:
+- qa: opened (filed from the Phase 57 TASK 6 triage; evidence by backend-dev)
+- orchestrator: REJECTED - will not fix at the Phase 57 gate. Reason: PRE-EXISTING, not introduced by Phases 53-57 (forms.ts last touched Phase 52 d609155; the DEF-028 restore test predates Phase 53), so it falls outside the Phase 53-57 defect scope criterion 8 covers, and the operator's standing 2026-09-30 ruling is not to fix pre-existing issues opportunistically at this gate. A confirmed real MEDIUM-HIGH undo defect - recorded so it is not lost and to be scheduled as its own fix batch.
+
+## DEF-402: exportText mis-decodes text written with an embedded (Type0/Identity-H) font
+
+- Status: REJECTED
+- Severity: MEDIUM
+- Found by: backend-dev (Phase 57 triage, DEF-402)
+- Phase: pre-existing (Phase 9 extractor, Phase 25-27 fonts)
+
+Steps to reproduce:
+1. Build a document through the engine, add a text box using an embedded edit font (`Liberation Sans`) - the engine's own `drawTextBoxes`/`embedEditFont` (`src/main/services/fonts.ts:208`).
+2. Save it.
+3. Reload and call `exportText` (`_exportTextImpl`, `src/main/services/engine.ts:2109`).
+4. Also try `Helvetica` (a StandardFont) for contrast.
+
+Expected: the extracted text equals the text that was written (for both an embedded font and a standard font).
+Actual: embedded-font text extracts as mojibake - e.g. `HELLOWORLD` extracts as `HELLOWORLD\u0000\u0001\u0000\u0002\u0003...`; the content-stream operands show glyph IDs (`<000100020003...> Tj`) versus ASCII (`<48454C4C4F574F524C44> Tj`) for Helvetica. Root cause: pdf-lib DOES emit a `/ToUnicode` CMap for the custom font (`hasToUnicode=true`), but the extractor `extractTextFromRawPdf` (:6842) / `parseContentStreamText` (:7193) ignores CMaps and windows-1252-decodes the glyph IDs in `decodeHexString` (:7251). Refs: commit 40675e3 (Phase 9 extractor), 44d4529 (Phase 25-27 bundled fonts). Pre-existing - no Phase 53-57 commit touched these symbols.
+Impact: any text laid out with an embedded font (TFlex's own Liberation Sans/DejaVu edit fonts, and third-party Type0/Identity-H PDFs) extracts wrong through Export Text and the text-first DOCX export path; standard-font documents (assets/samples/report.pdf, long.pdf) extract correctly.
+
+History:
+- qa: opened (filed from the Phase 57 TASK 6 triage; evidence by backend-dev)
+- orchestrator: REJECTED - will not fix at the Phase 57 gate. Reason: PRE-EXISTING, not introduced by Phases 53-57 (the extractor dates to Phase 9 40675e3, the bundled fonts to Phase 25-27 44d4529; no Phase 53-57 commit touched `parseContentStreamText`/`decodeHexString`), so it falls outside the Phase 53-57 defect scope criterion 8 covers, and the operator's standing 2026-09-30 ruling is not to fix pre-existing issues opportunistically at this gate. A confirmed real MEDIUM extraction defect (/ToUnicode CMap is present but ignored) - recorded so it is not lost and to be scheduled as its own fix batch.
+
+## DEF-401: Two stale renderer guards pin the pre-Phase-57 REVIEW dock and command-palette composition, failing `verify:full` (criterion 8)
+
+- Status: CLOSED
+- Severity: MEDIUM
+- Found by: qa
+- Phase: 57
+
+Steps to reproduce:
+1. On HEAD `ea3df61` run `npm.cmd run verify:full`.
+2. The run is red with 3 failing unit tests in two files.
+3. `test/unit/renderer/def330_dockDefaultSize.test.tsx` (2 tests): the guard pins `DOCK_LABELS.review` as the pre-Phase-57 10-verb list; the dock now renders 14 verbs (`Annotate`, `Sign`, `Stamp`, `Flatten`, `Forms`, `Watermark`, `Export comments (FDF)`, `Import comments (FDF)`, `Fill form fields from CSV...`, `Export form data...`, `Import form data...`, `Validate document...`, `Engineering layers...`, `Document info...`).
+4. `test/unit/renderer/phase36CommandPaletteModel.test.ts` (1 test): the guard asserts the "export" tie has `toHaveLength(6)`; commit `ea3df61` added the `exportFormData` palette tool, making the tie 7 entries.
+
+Expected: `verify:full` is green on the final tree (Phase 57 success criterion 8 - the full gate passes on the final tree).
+Actual: the two guards pinned superseded pre-Phase-57 composition (10 review-dock verbs; 6-entry palette "export" tie), so `verify:full` failed with 3 test failures. The product code is correct; only the stale guards needed updating.
+Screenshot: none (unit-guard failure, no visual surface).
+
+History:
+- qa: opened (found in the Phase 57 run-close pass)
+- orchestrator: relayed frontend-dev's fix - DOCK_LABELS.review 10 -> 14 (the four Phase 57 review verbs), palette export tie 6 -> 7
+- qa: CLOSED. Retested on the fixed tree (`npm.cmd run test:unit -- test/unit/renderer/def330_dockDefaultSize.test.tsx test/unit/renderer/phase36CommandPaletteModel.test.ts`) -> 2 files passed, 36 tests passed, 0 failed. Full gate re-run `npm.cmd run verify:full` -> 530 files passed, 6745 tests passed, 0 failed (green). Criterion 8 blocker cleared.
+
 ## DEF-399: Engineering layers / 3D notice / Document info never populate - the renderer detaches the engine adapter methods before calling them
 
 - Status: CLOSED

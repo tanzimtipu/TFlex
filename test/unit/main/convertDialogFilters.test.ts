@@ -108,6 +108,27 @@ describe('phase53 document dialog filters', () => {
     expect(advertised).toEqual(registryExtensions());
   });
 
+  it('registration mirrors the loaded adapters and the picker advertises both', async () => {
+    const registry = createDefaultRegistry();
+    const adapterExtensions = new Set<string>();
+    for (const adapter of await registry.all()) {
+      for (const extension of adapter.extensions) {
+        adapterExtensions.add(extension.replace(/^\./, '').toLowerCase());
+      }
+    }
+    const registrationExtensions = new Set<string>();
+    for (const registration of registry.listRegistrations()) {
+      for (const extension of registration.extensions) {
+        registrationExtensions.add(extension.replace(/^\./, '').toLowerCase());
+      }
+    }
+    const filters = await filtersFor('document');
+    const advertised = new Set(filters.flatMap((filter) => filter.extensions));
+
+    expect(adapterExtensions).toEqual(registrationExtensions);
+    expect(advertised).toEqual(new Set([...adapterExtensions, 'pdf']));
+  });
+
   it('leaves the PDF and FDF kinds unchanged', async () => {
     const pdf = await filtersFor('pdf');
     expect(pdf).toEqual([{ name: 'PDF', extensions: ['pdf'] }]);

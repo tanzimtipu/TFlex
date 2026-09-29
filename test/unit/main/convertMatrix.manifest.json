@@ -1,0 +1,32 @@
+{
+  "cases": [
+    { "extension": ".txt", "adapter": "text", "fixture": "test-fixtures/phase53/sample.txt" },
+    { "extension": ".md", "adapter": "markdown", "fixture": "test-fixtures/phase53/sample.md" },
+    { "extension": ".markdown", "adapter": "markdown", "fixture": "test-fixtures/phase53/sample.md" },
+    { "extension": ".html", "adapter": "html", "fixture": "test-fixtures/phase53/sample.html" },
+    { "extension": ".htm", "adapter": "html", "fixture": "test-fixtures/phase53/sample.html" },
+    { "extension": ".xhtml", "adapter": "html", "fixture": "test-fixtures/phase53/sample.html" },
+    { "extension": ".csv", "adapter": "csv", "fixture": "test-fixtures/phase53/sample.csv" },
+    { "extension": ".rtf", "adapter": "rtf", "fixture": "test-fixtures/phase53/sample.rtf" },
+    { "extension": ".png", "adapter": "png", "fixture": "test-fixtures/phase54/dpi-300.png" },
+    { "extension": ".jpg", "adapter": "jpeg", "fixture": "test-fixtures/phase54/dpi-300.jpg" },
+    { "extension": ".jpeg", "adapter": "jpeg", "fixture": "test-fixtures/phase54/dpi-300.jpg" },
+    { "extension": ".tiff", "adapter": "tiff", "fixture": "test-fixtures/phase54/frames-3.tiff" },
+    { "extension": ".tif", "adapter": "tiff", "fixture": "test-fixtures/phase54/frames-3.tiff" },
+    { "extension": ".svg", "adapter": "svg", "fixture": "test-fixtures/phase54/native.svg" },
+    { "extension": ".docx", "adapter": "docx", "fixture": "test-fixtures/phase55/sample.docx" },
+    { "extension": ".odt", "adapter": "odt", "fixture": "test-fixtures/phase55/sample.odt" },
+    { "extension": ".doc", "adapter": "doc", "fixture": "test-fixtures/phase55/legacy.doc" },
+    { "extension": ".xlsx", "adapter": "xlsx", "fixture": "test-fixtures/phase55/sample.xlsx" },
+    { "extension": ".xls", "adapter": "xls", "fixture": "test-fixtures/phase55/sample.xls" },
+    { "extension": ".ods", "adapter": "ods", "fixture": "test-fixtures/phase55/sample.ods" },
+    { "extension": ".pptx", "adapter": "pptx", "fixture": "test-fixtures/phase55/sample.pptx" },
+    { "extension": ".ppt", "adapter": "ppt", "fixture": "test-fixtures/phase55/legacy.ppt" },
+    { "extension": ".epub", "adapter": "epub", "fixture": "test-fixtures/phase56/phase56-book.epub" },
+    { "extension": ".mobi", "adapter": "mobi", "fixture": "test-fixtures/phase56/phase56-book.mobi" },
+    { "extension": ".azw", "adapter": "mobi", "fixture": "test-fixtures/phase56/phase56-book.mobi" },
+    { "extension": ".azw3", "adapter": "mobi", "fixture": "test-fixtures/phase56/phase56-book.mobi" },
+    { "extension": ".cbz", "adapter": "cbz", "fixture": "test-fixtures/phase56/phase56-comic.cbz" },
+    { "extension": ".cbt", "adapter": "cbt", "fixture": "test-fixtures/phase56/phase56-comic.cbt" }
+  ]
+}

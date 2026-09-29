@@ -486,3 +486,96 @@ tables instead of flattening everything to plain paragraphs.
 Why it matters: it is the difference between an editable Word file and a Word file that merely contains the
 words; commercial converters compete on exactly this, and the phase's fidelity notes must keep saying what
 the product really achieves until this lands.
+
+## FEA-025: HUFF/CDIC-compressed MOBI text decoding
+
+- Status: DEFERRED - the Phase 56 mobi reader implements the uncompressed and PalmDOC-compressed text
+  records but not the Huffman/Dic (HUFF/CDIC) records Kindle uses for its own repacked books. A file whose
+  text records are HUFF/CDIC is DETECTED and refused with a readable `unsupported-format` message; it is
+  never decoded wrongly. Implementing the codec (a dictionary-based Huffman decoder plus the CDIC phrase
+  tables) is a self-contained but non-trivial offline pure-JS job, deferred rather than half-built.
+- Source: Phase 56 feature B mobi adapter (`src/main/services/convert/adapters/mobi.ts`); Mobipocket format
+  documentation (PalmDOC vs HUFF/CDIC record compression)
+- Category: Reading
+- Effort: M (codec + fixtures)
+- Likely new settings: no
+- Batch: the Phase 57 refusal sweep (2026-09-29)
+
+What it does: would decode HUFF/CDIC-compressed MOBI text so those Kindle books open in the Reading view.
+
+Why it matters: recorded so a later phase re-opens it knowingly; the shipped behaviour is a readable refusal,
+not a crash or a garbled page.
+
+## FEA-026: Unbounded inlined-image extraction budget
+
+- Status: OUT-OF-SCOPE - reason: the Phase 56 e-book path inlines images as `data:` URIs, and the image
+  PREFLIGHT now refuses a declared extent above 5,000 image references or 64 MiB before doing any work
+  (the DEF-396/397/398 fix). Raising or removing that ceiling would let an attacker-declared image count
+  exhaust memory or stall the decode slot; the ceiling ships as a documented, typed refusal carrying the
+  measured extent. Unbounded extraction conflicts with the project's memory-stability rule.
+- Source: DEF-396/397/398 (the declared-extent preflight); Phase 56 EPUB inlining
+  (`src/main/services/convert/epub-parse.ts`)
+- Category: Reading / Security
+- Effort: n/a (policy)
+- Likely new settings: no
+- Batch: the Phase 57 refusal sweep (2026-09-29)
+
+What it does: would inline an arbitrarily large number of e-book images into the reading HTML.
+
+Why it matters: it documents why the app refuses big declared extents rather than trying and dying, which is
+the behaviour criterion 7 asks to be recorded.
+
+## FEA-027: Unbounded TAR / ZIP container expansion
+
+- Status: OUT-OF-SCOPE - reason: the CBZ/CBT comic and ODT/XLSX/PPTX office readers bound every archive by a
+  declared entry count and a per-entry and total uncompressed-size ceiling (Phase 56), refusing over-budget
+  archives with a typed error before extraction. An unbounded reader is a zip-bomb vector; the ceilings are a
+  security rule, not a missed feature, and they ship as documented refusals.
+- Source: Phase 56 features A-C (`src/main/services/convert/convert-zip.ts`, the comic/TAR reader and the
+  office container walker); DEF-392/393/394 (attacker-declared extents)
+- Category: Reading / Security
+- Effort: n/a (policy)
+- Likely new settings: no
+- Batch: the Phase 57 refusal sweep (2026-09-29)
+
+What it does: would extract arbitrarily many, arbitrarily large entries from a TAR or ZIP-backed document.
+
+Why it matters: it records the deliberate ceilings so no later phase reads them as an accident.
+
+## FEA-028: Unbounded XMP metadata scanning
+
+- Status: OUT-OF-SCOPE - reason: Phase 57 feature A's `getCadMetadata` scans the document for the PDF/E
+  engineering XMP packet under a 4 MiB ceiling and returns a typed refusal above it. Metadata is
+  attacker-controlled and can be padded arbitrarily; an unbounded scan would let a file stall the document
+  info surface, which conflicts with the latency budget. The ceiling is documented and reported, not silent.
+- Source: Phase 57 feature A (`engine.getCadMetadata`); the Phase 57 document-info surface
+- Category: Engineering
+- Effort: n/a (policy)
+- Likely new settings: no
+- Batch: the Phase 57 refusal sweep (2026-09-29)
+
+What it does: would scan the whole file for an XMP packet regardless of size.
+
+Why it matters: it records the ceiling as a deliberate bound, satisfying criterion 7's written-reason
+requirement for the refusal.
+
+## FEA-029: Destination shapes Phase 57 feature G deliberately drops
+
+- Status: OUT-OF-SCOPE - reason: the feature-G serializer carries `/Dests` and `/OpenAction` only when they
+  can be carried CORRECTLY - a destination whose page reference resolves through the page map, and an
+  `/OpenAction` that is an `/S /GoTo` dictionary. Two shapes are deliberately not carried: (1) a destination
+  whose page reference resolves to no source page (a dangling/inter-document reference), and (2) an
+  `/OpenAction` that is not a `/S /GoTo` dict (e.g. a JavaScript action or a non-GoTo action type). Guessing
+  a remap for a dangling reference, or rewriting a non-GoTo action, would change behaviour rather than
+  preserve it; the serializer's block comment names both drops with this reason.
+- Source: Phase 57 feature G (`serializeDoc` / `carryPageLinkedEntries`, `src/main/services/engine.ts`);
+  ISO 32000-1 12.3.2 (destinations) and 12.6.4.2 (GoTo actions)
+- Category: Archival / Catalog round-trip
+- Effort: n/a (scope boundary)
+- Likely new settings: no
+- Batch: the Phase 57 refusal sweep (2026-09-29)
+
+What it does: would carry every destination and action shape across a save without judgement.
+
+Why it matters: it names the boundary of the feature-G carry so a later phase can extend it deliberately
+rather than reading the drop as a bug.

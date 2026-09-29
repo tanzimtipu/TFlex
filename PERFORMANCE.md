@@ -132,3 +132,52 @@
 
 *Method: e2e/perf_retime.spec.cjs + e2e/panel_speed_verify.spec.cjs (S1-S8) via the standard Playwright Electron harness on a clean build of the v1.17.0 tree (HEAD 5ccedfa; dist/main + dist/renderer, electron 44.0.0). The DEF-214 re-verify spec ran in the same batch against the v1.17.0 packaged artifact (release/win-unpacked/TFlex.exe, FileVersion 1.17.0) through the canonical launchApp() and passed. Machine note: the local vision model is deliberately kept GPU-resident during agent runs; the spec's first-move latency caps (click dispatch + React commit + next rAF, NOT the tween) were recalibrated 60/45ms -> 90ms for this environment (observed floor 58-74ms across three clean runs) while the discriminating contract bounds (settle bounds, mid-frame counts, same-frame panel+page co-motion) are unchanged. Recorded by qa at the Phase 16 final gate (2026-09-16).*
 
+## Phase 57 gate re-measure (packaged build 1.44.0, 2026-09-30)
+
+| Metric | Target | Result | Status |
+| --- | --- | --- | --- |
+| Cold start to interactive | < 3000ms | 783ms | PASS |
+| Open long.pdf (520 pages) | < 3000ms | 863ms | PASS |
+| Idle memory (main process RSS) | < 400MB | 176.93MB | PASS |
+| NSIS installer size (Jovrel-Setup-1.44.0-x64.exe) | < 150 MB | 145,989,537 bytes (139.23 MiB) | PASS |
+| Portable size (Jovrel-1.44.0-portable-x64.exe) | (reference) | 145,669,175 bytes (138.92 MiB) | PASS |
+
+Other release/ artifacts for 1.44.0: Jovrel-Setup-1.44.0-x64.exe.blockmap 152,642 bytes; latest.yml 384 bytes.
+
+Format-support matrix (28 advertised extensions, adapter id):
+
+| Extension | Adapter |
+| --- | --- |
+| .txt | text |
+| .md | markdown |
+| .markdown | markdown |
+| .html | html |
+| .htm | html |
+| .xhtml | html |
+| .csv | csv |
+| .rtf | rtf |
+| .png | png |
+| .jpg | jpeg |
+| .jpeg | jpeg |
+| .tiff | tiff |
+| .tif | tiff |
+| .svg | svg |
+| .docx | docx |
+| .odt | odt |
+| .doc | doc |
+| .xlsx | xlsx |
+| .xls | xls |
+| .ods | ods |
+| .pptx | pptx |
+| .ppt | ppt |
+| .epub | epub |
+| .mobi | mobi |
+| .azw | mobi |
+| .azw3 | mobi |
+| .cbz | cbz |
+| .cbt | cbt |
+
+Packaged walkthrough: P57_PACKAGED_MATRIX total 28, covered 28, failed 0 — every advertised extension imported into the packaged app (release/win-unpacked/Jovrel.exe) with no renderer pageerror and a non-zero result (the packaged suite ran 6/6 tests green).
+
+*Method: e2e/perf_retime.spec.cjs launched against the packaged exe C:\Users\tanzi\OneDrive\App Development\TFlex\release\win-unpacked\Jovrel.exe via the canonical launchApp() with env var TFLEX_E2E_EXE set to that path; cold start = launch -> .sample-card, open = Ctrl+O (long.pdf, 520 pages) -> .workspace, idle RSS = process.memoryUsage().rss in the main process after 10s. The packaged 28-extension matrix and the installer-size check come from e2e/installed/phase57_packaged_runtime.spec.cjs run with TFLEX_PACKAGED_EXE set to the same exe and --config=e2e/installed/playwright.installed.config.js. One perf run only (every number comfortably inside budget, none within 10% of a cap). Recorded by qa at the Phase 57 packaging gate (2026-09-30).*
+

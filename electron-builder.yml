@@ -8,10 +8,153 @@ appId: com.tflex.app
 productName: Jovrel
 directories:
   output: release
+# Phase 57 — installer-size gate (REQUIREMENTS.md:82, under 150 MB). The
+# renderer-only `files:` exclusions below shrank app.asar from ~302 MB to
+# ~208 MB but the LZMA-compressed NSIS installer only dropped to ~166 MB,
+# still over budget. `maximum` switches NSIS/7z to the strongest compression
+# so the remaining app payload packs tighter. It only changes pack time, not
+# which files ship.
+compression: maximum
 files:
   - dist/**
   - assets/**
   - package.json
+  # Phase 57 — dev-only artifacts inside the packages that DO ship. Source maps
+  # and TypeScript sources are never loaded by Node at runtime (Node executes
+  # only the emitted .js/.cjs/.mjs); they were ~20 MB and ~7 MB of uncompressed
+  # app.asar respectively. Dropping them shaves the remaining bytes needed to
+  # get the installer under 150 MB without touching any runtime dependency.
+  - "!**/*.map"
+  - "!node_modules/**/*.ts"
+  - "!node_modules/**/*.cts"
+  - "!node_modules/**/*.mts"
+  - "!node_modules/**/*.tsbuildinfo"
+  # Renderer-only dependency trees — NEVER shipped in app.asar. Vite inlines
+  # every renderer import into dist/renderer at build time, so these packages
+  # are dead weight in the packaged app. Excluding them is what brings the
+  # NSIS installer under the 150 MB budget (REQUIREMENTS.md:82). Verified by
+  # grep: none is imported under src/main or src/preload. pdfjs-dist is
+  # renderer-only and its worker is copied into dist/renderer by Vite
+  # (src/renderer/pdf/pdfjs.ts:8 does `?url` on the worker module).
+  - "!node_modules/pdfjs-dist/**"
+  - "!node_modules/lucide-react/**"
+  - "!node_modules/react/**"
+  - "!node_modules/react-dom/**"
+  - "!node_modules/motion/**"
+  - "!node_modules/@fontsource-variable/**"
+  # @napi-rs/canvas is a transitive of the excluded renderer-only pdfjs-dist
+  # (pdfjs-dist@4.10.38 depends on @napi-rs/canvas@0.1.100) and of the
+  # project's own devDependency @napi-rs/canvas; src/ imports it nowhere.
+  # It is a ~36 MB win32-x64 native binary. NOTE: @napi-rs/keyring (also under
+  # @napi-rs) is a runtime dep of the MAIN process's @neondatabase/neon-js and
+  # MUST keep shipping, so only the canvas package trees are excluded.
+  - "!node_modules/@napi-rs/canvas/**"
+  - "!node_modules/@napi-rs/canvas-*/**"
+  # @neondatabase/auth (and its transitive renderer-only deps @neondatabase/auth-ui
+  # and @triplit) is imported ONLY at src/renderer/accounts/adapter.ts:13-14.
+  # The main process uses a DIFFERENT package, @neondatabase/neon-js
+  # (src/main/services/accounts/transport.ts:16), which must KEEP shipping.
+  - "!node_modules/@neondatabase/auth/**"
+  - "!node_modules/@neondatabase/auth-ui/**"
+  - "!node_modules/@triplit/**"
+  # Phase 57 — transitive leaves of the renderer-only trees above.
+  # electron-builder applies negative `files` patterns to the named directory
+  # only; it does NOT prune a package's transitive dependency closure, so the
+  # excluded roots above leave their leaves behind in app.asar. Every package
+  # below was computed to be reachable ONLY through an excluded renderer-only
+  # root (production dependency graph walked with those roots cut), and none is
+  # referenced in the built dist/main/index.js or dist/preload/preload.cjs. The
+  # main process's ONLY external node_modules require is tesseract.js (verified
+  # by scanning the built bundle), so pruning these cannot break main/preload.
+  # These are the better-auth / auth-UI / @triplit / react-email UI stacks.
+  - "!node_modules/@babel/**"
+  - "!node_modules/@better-auth/**"
+  - "!node_modules/@better-fetch/**"
+  - "!node_modules/@captchafox/**"
+  - "!node_modules/@daveyplate/**"
+  - "!node_modules/@floating-ui/**"
+  - "!node_modules/@hcaptcha/**"
+  - "!node_modules/@hexagon/**"
+  - "!node_modules/@hookform/**"
+  - "!node_modules/@levischuck/**"
+  - "!node_modules/@marsidev/**"
+  - "!node_modules/@noble/**"
+  - "!node_modules/@opentelemetry/**"
+  - "!node_modules/@peculiar/**"
+  - "!node_modules/@radix-ui/**"
+  - "!node_modules/@react-email/**"
+  - "!node_modules/@selderee/**"
+  - "!node_modules/@simplewebauthn/**"
+  - "!node_modules/@standard-schema/**"
+  - "!node_modules/@wojtekmaj/**"
+  # @supabase is a partial scope: postgrest-js is a main-process dependency of
+  # @neondatabase/neon-js and must KEEP shipping, so only auth-js is excluded.
+  - "!node_modules/@supabase/auth-js/**"
+  - "!node_modules/framer-motion/**"
+  - "!node_modules/motion-dom/**"
+  - "!node_modules/better-auth/**"
+  - "!node_modules/prismjs/**"
+  - "!node_modules/react-hook-form/**"
+  - "!node_modules/ua-parser-js/**"
+  - "!node_modules/tailwind-merge/**"
+  - "!node_modules/tailwindcss/**"
+  - "!node_modules/kysely/**"
+  - "!node_modules/better-call/**"
+  - "!node_modules/entities/**"
+  - "!node_modules/qrcode-generator/**"
+  - "!node_modules/bowser/**"
+  - "!node_modules/asn1js/**"
+  - "!node_modules/htmlparser2/**"
+  - "!node_modules/vaul/**"
+  - "!node_modules/reflect-metadata/**"
+  - "!node_modules/sonner/**"
+  - "!node_modules/html-to-text/**"
+  - "!node_modules/tsyringe/**"
+  - "!node_modules/domutils/**"
+  - "!node_modules/jose/**"
+  - "!node_modules/input-otp/**"
+  - "!node_modules/motion-utils/**"
+  - "!node_modules/prop-types/**"
+  - "!node_modules/scheduler/**"
+  - "!node_modules/react-remove-scroll/**"
+  - "!node_modules/domhandler/**"
+  - "!node_modules/hoist-non-react-statics/**"
+  - "!node_modules/react-google-recaptcha/**"
+  - "!node_modules/react-async-script/**"
+  - "!node_modules/tw-animate-css/**"
+  - "!node_modules/peberminta/**"
+  - "!node_modules/selderee/**"
+  - "!node_modules/pvtsutils/**"
+  - "!node_modules/use-callback-ref/**"
+  - "!node_modules/parseley/**"
+  - "!node_modules/use-sidecar/**"
+  - "!node_modules/sprintf-js/**"
+  - "!node_modules/pvutils/**"
+  - "!node_modules/aria-hidden/**"
+  - "!node_modules/react-is/**"
+  - "!node_modules/dom-serializer/**"
+  - "!node_modules/rou3/**"
+  - "!node_modules/nanostores/**"
+  - "!node_modules/class-variance-authority/**"
+  - "!node_modules/react-remove-scroll-bar/**"
+  - "!node_modules/set-cookie-parser/**"
+  - "!node_modules/react-qr-code/**"
+  - "!node_modules/detect-europe-js/**"
+  - "!node_modules/deepmerge/**"
+  - "!node_modules/react-style-singleton/**"
+  - "!node_modules/defu/**"
+  - "!node_modules/next-themes/**"
+  - "!node_modules/domelementtype/**"
+  - "!node_modules/leac/**"
+  - "!node_modules/loose-envify/**"
+  - "!node_modules/clsx/**"
+  - "!node_modules/is-standalone-pwa/**"
+  - "!node_modules/warning/**"
+  - "!node_modules/object-assign/**"
+  - "!node_modules/ua-is-frozen/**"
+  - "!node_modules/js-tokens/**"
+  - "!node_modules/get-nonce/**"
+  - "!node_modules/detect-node-es/**"
 win:
   # Phase 49 — the application icon (window/taskbar/executable). Resolved
   # from the project root like every other path here; the brand assets ship
