@@ -7,6 +7,7 @@ import type {
   ConvertProgress,
   ConvertSourceInfo,
   CsvFieldMappingResult,
+  EpubReadingDocument,
 } from "./convert";
 import type { AccountStatusResult, AccountsClientConfig, OAuthCallbackOutcome, OAuthCallbackStartResult, OAuthTraceEvent, OpenAuthUrlResult, SetSessionPayload, SyncReport } from "./accounts";
 import type {
@@ -355,6 +356,13 @@ export const IPC = {
   convertCsvToFields: "convert:csvToFields",
   convertCancel: "convert:cancel",
   convertProgressEvent: "convert:progress",
+  // Phase 56 feature A — the EPUB reading payload. `convert:readingDocument`
+  // (invoke) reads an `.epub` and resolves a typed
+  // `Result<EpubReadingDocument, ConvertErrorCode>`: the chapters in spine
+  // order with whitelist-sanitized XHTML (images inlined as `data:` URIs).
+  // Never a throw, never raw archive bytes; a non-EPUB input is a typed
+  // `unsupported-format`/`corrupt`.
+  convertReadingDocument: "convert:readingDocument",
   // Phase 55 feature D — PDF -> office export writers. `export:xlsx` builds a
   // workbook from the document's own extracted text and detected tables;
   // `export:pptx` builds a deck with one slide per page. Both run in main,
@@ -753,6 +761,14 @@ export interface TFlexApiEngine {
 export interface TFlexApiConvert {
   /** Detect the format, label and declared fidelity before converting. */
   sourceInfo(path: string): Promise<Result<ConvertSourceInfo, ConvertErrorCode>>;
+  /** Phase 56 feature A — the EPUB reading payload: the chapters in spine
+   *  order, each with whitelist-sanitized XHTML (images inlined as `data:`
+   *  URIs). Resolves a typed `Result`; never throws across IPC. Optional so
+   *  renderer mocks/tests that predate Phase 56 still typecheck; the shipped
+   *  preload always provides it. */
+  readingDocument?(
+    path: string,
+  ): Promise<Result<EpubReadingDocument, ConvertErrorCode>>;
   /** Convert a file and open it in the existing engine as `docId`. */
   toDocument(
     docId: string,

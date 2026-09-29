@@ -278,5 +278,13 @@ export function createDefaultRegistry(): ConvertRegistry {
     extensions: ['.doc'],
     load: () => import('./adapters/legacy-doc').then((m) => m.legacyDocAdapter),
   });
+  // Phase 56 feature A - EPUB (a ZIP container whose `mimetype` entry names
+  // the package type). Registered by content as well as extension, so a
+  // misnamed `.epub` still routes here through the content pass.
+  registry.register({
+    id: 'epub',
+    extensions: ['.epub'],
+    load: () => import('./adapters/epub').then((m) => m.epubAdapter),
+  });
   return registry;
 }

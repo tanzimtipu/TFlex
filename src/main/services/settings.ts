@@ -13,6 +13,7 @@ import type {
   LoadSettingsResult,
   OfficeConvertDefaults,
   PdfValidationDefaults,
+  ReadingDefaults,
   RecentFile,
   WatermarkPosition,
   WatermarkSettings,
@@ -27,6 +28,7 @@ import {
   DEFAULT_IMAGE_IMPORT_DEFAULTS,
   DEFAULT_OFFICE_CONVERT_DEFAULTS,
   DEFAULT_PDF_VALIDATION_DEFAULTS,
+  DEFAULT_READING_DEFAULTS,
 } from '../../shared/types';
 import { EDIT_FONTS, isEditFont } from './text-style';
 
@@ -780,6 +782,92 @@ export function normalizeOfficeConvertDefaults(
   return out;
 }
 
+/** Phase 56 feature A — the `readingDefaults` allowlists. */
+const READING_EPUB_THEMES = ['light', 'dark', 'sepia'] as const;
+const READING_COMIC_LAYOUTS = ['single', 'double'] as const;
+const READING_COMIC_FITS = ['width', 'height'] as const;
+/** `fontSizePt` must be within 10-32 and `lineHeight` within 1.0-2.5. */
+const READING_FONT_SIZE_PT_MIN = 10;
+const READING_FONT_SIZE_PT_MAX = 32;
+const READING_LINE_HEIGHT_MIN = 1.0;
+const READING_LINE_HEIGHT_MAX = 2.5;
+
+/**
+ * Phase 56 feature A — normalise `readingDefaults` (preserve-if-valid per key,
+ * reject-if-invalid per key, unknown keys dropped). Unlike the office block, an
+ * invalid value rejects only ITS key and falls back to the documented default,
+ * so a bad `fontSizePt` never discards a valid theme. An absent, empty or
+ * non-object field returns null (the consumer applies
+ * `DEFAULT_READING_DEFAULTS`).
+ */
+export function normalizeReadingDefaults(raw: unknown): ReadingDefaults | null {
+  if (raw === null || typeof raw !== 'object' || Array.isArray(raw)) return null;
+  const r = raw as Record<string, unknown>;
+  const out: ReadingDefaults = {
+    epub: { ...DEFAULT_READING_DEFAULTS.epub },
+    comics: { ...DEFAULT_READING_DEFAULTS.comics },
+  };
+  let present = 0;
+
+  if (r.epub !== undefined) {
+    present += 1;
+    if (r.epub !== null && typeof r.epub === 'object' && !Array.isArray(r.epub)) {
+      const e = r.epub as Record<string, unknown>;
+      if (
+        typeof e.fontSizePt === 'number' &&
+        Number.isFinite(e.fontSizePt) &&
+        e.fontSizePt >= READING_FONT_SIZE_PT_MIN &&
+        e.fontSizePt <= READING_FONT_SIZE_PT_MAX
+      ) {
+        out.epub.fontSizePt = e.fontSizePt;
+      }
+      if (
+        typeof e.lineHeight === 'number' &&
+        Number.isFinite(e.lineHeight) &&
+        e.lineHeight >= READING_LINE_HEIGHT_MIN &&
+        e.lineHeight <= READING_LINE_HEIGHT_MAX
+      ) {
+        out.epub.lineHeight = e.lineHeight;
+      }
+      if (
+        typeof e.theme === 'string' &&
+        (READING_EPUB_THEMES as readonly string[]).includes(e.theme)
+      ) {
+        out.epub.theme = e.theme as ReadingDefaults['epub']['theme'];
+      }
+    }
+  }
+
+  if (r.comics !== undefined) {
+    present += 1;
+    if (
+      r.comics !== null &&
+      typeof r.comics === 'object' &&
+      !Array.isArray(r.comics)
+    ) {
+      const c = r.comics as Record<string, unknown>;
+      if (
+        typeof c.layout === 'string' &&
+        (READING_COMIC_LAYOUTS as readonly string[]).includes(c.layout)
+      ) {
+        out.comics.layout = c.layout as ReadingDefaults['comics']['layout'];
+      }
+      if (
+        typeof c.fit === 'string' &&
+        (READING_COMIC_FITS as readonly string[]).includes(c.fit)
+      ) {
+        out.comics.fit = c.fit as ReadingDefaults['comics']['fit'];
+      }
+      if (typeof c.rightToLeft === 'boolean') {
+        out.comics.rightToLeft = c.rightToLeft;
+      }
+    }
+  }
+
+  if (present === 0) return null;
+  return out;
+}
+
 function normalizeAnnotationColorEntry(raw: unknown): AnnotationColorPreset | null {
   if (typeof raw === 'string' && raw.length > 0) {
     return { id: raw, hex: raw };
@@ -987,6 +1075,14 @@ export function normalizeSettings(raw: unknown): AppSettings {
   );
   if (officeConvertDefaults !== null) {
     settings.officeConvertDefaults = officeConvertDefaults;
+  }
+
+  // Phase 56 feature A: Reading-view defaults (EPUB text controls and the
+  // comic viewport). Reject-if-invalid per key; a missing/empty field leaves
+  // the field absent (consumer default `DEFAULT_READING_DEFAULTS`).
+  const readingDefaults = normalizeReadingDefaults(rawObj.readingDefaults);
+  if (readingDefaults !== null) {
+    settings.readingDefaults = readingDefaults;
   }
 
   // Phase 44 (operator change): accounts feature flag. Strict boolean,

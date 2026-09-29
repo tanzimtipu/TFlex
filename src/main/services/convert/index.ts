@@ -1,4 +1,4 @@
-import { stat } from 'node:fs/promises';
+import { readFile, stat } from 'node:fs/promises';
 import { basename } from 'node:path';
 import { PDFDocument } from '@cantoo/pdf-lib';
 import { ok, type Result } from '../../../shared/result';
@@ -11,6 +11,8 @@ import type {
   ConvertSourceInfo,
   CsvFieldMappingResult,
   ConvertWarning,
+  EpubReadingChapter,
+  EpubReadingDocument,
 } from '../../../shared/convert';
 import type {
   FillFormFieldPayload,
@@ -20,12 +22,19 @@ import type {
 } from '../../../shared/types';
 import { stampBrandMetadata } from '../engine';
 import { convertError, mapAdapterThrow, CONVERT_ERROR_MESSAGES } from './errors';
-import { resolveConvertOptions, type ResolvedConvertOptions } from './limits';
+import { resolveConvertOptions, CONVERT_LIMITS, type ResolvedConvertOptions } from './limits';
 import {
   createDefaultRegistry,
   readSniffHead,
   type ConvertRegistry,
 } from './registry';
+import { ConvertZipError, openZip } from './convert-zip';
+import {
+  chapterFragment,
+  inlineEpubImages,
+  parseEpub,
+  sanitizeEpubFragment,
+} from './epub-parse';
 
 /**
  * Phase 53 — DocumentConversionService.
@@ -117,6 +126,55 @@ export class DocumentConversionService {
         label: resolved.adapter.label,
         fidelity: resolved.adapter.fidelity,
       });
+    } catch (thrown) {
+      return mapAdapterThrow(thrown);
+    }
+  }
+
+  /**
+   * Phase 56 feature A — the Reading-view payload for an EPUB: the chapters
+   * in spine order, each with a whitelist-sanitized XHTML fragment and
+   * inlined `data:` images. Reuses chunk 1a's parser and helpers; a non-EPUB
+   * ZIP or an unreadable package resolves a typed failure and never throws.
+   */
+  async readingDocument(
+    path: string,
+  ): Promise<Result<EpubReadingDocument, ConvertErrorCode>> {
+    try {
+      const info = await stat(path);
+      if (info.size === 0) return convertError('empty-file');
+      if (info.size > CONVERT_LIMITS.epubBytes) return convertError('too-large');
+
+      const bytes = await readFile(path);
+      let archive;
+      try {
+        archive = openZip(new Uint8Array(bytes));
+      } catch (thrown) {
+        if (thrown instanceof ConvertZipError) {
+          return convertError(thrown.code, thrown.message);
+        }
+        throw thrown;
+      }
+
+      const document = parseEpub(archive);
+      const chapters: EpubReadingChapter[] = document.spine.map((item) => ({
+        id: item.id,
+        href: item.href,
+        title: chapterTitle(item.xhtml, item.id),
+        xhtml: sanitizeEpubFragment(
+          inlineEpubImages(chapterFragment(item.xhtml), item.href, document.images),
+        ),
+      }));
+
+      const warnings: ConvertWarning[] = [];
+      if (document.degraded) {
+        warnings.push({
+          code: 'legacy-format-degraded',
+          message:
+            'One or more spine items are not reflowable XHTML and were left out of the reading view.',
+        });
+      }
+      return ok({ title: document.title, chapters, warnings });
     } catch (thrown) {
       return mapAdapterThrow(thrown);
     }
@@ -401,4 +459,47 @@ async function mergePdfParts(parts: Uint8Array[]): Promise<Uint8Array> {
   }
   stampBrandMetadata(merged);
   return merged.save();
+}
+
+/** Decode the XML entities a chapter title can carry; a malformed numeric
+ *  reference is left verbatim rather than throwing. */
+function decodeEpubText(text: string): string {
+  return text.replace(
+    /&(?:#(\d+)|#x([0-9a-fA-F]+)|amp|lt|gt|quot|apos);/g,
+    (whole, dec: string | undefined, hex: string | undefined) => {
+      const code =
+        dec !== undefined ? Number(dec) : hex !== undefined ? parseInt(hex, 16) : NaN;
+      if (Number.isFinite(code) && code >= 0 && code <= 0x10ffff) {
+        return String.fromCodePoint(code);
+      }
+      switch (whole) {
+        case '&amp;':
+          return '&';
+        case '&lt;':
+          return '<';
+        case '&gt;':
+          return '>';
+        case '&quot;':
+          return '"';
+        case '&apos;':
+          return "'";
+        default:
+          return whole;
+      }
+    },
+  );
+}
+
+/** Phase 56 feature A — a chapter's display title: its `<title>` text, else
+ *  its first heading, else the manifest id. Tag-stripped and whitespace
+ *  collapsed; never throws. */
+function chapterTitle(xhtml: string, id: string): string {
+  const source =
+    /<title\b[^>]*>([\s\S]*?)<\/title\s*>/i.exec(xhtml)?.[1] ??
+    /<h[1-6]\b[^>]*>([\s\S]*?)<\/h[1-6]\s*>/i.exec(xhtml)?.[1] ??
+    '';
+  const text = decodeEpubText(source.replace(/<[^>]*>/g, ''))
+    .replace(/\s+/g, ' ')
+    .trim();
+  return text.length > 0 ? text : id;
 }

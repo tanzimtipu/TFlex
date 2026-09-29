@@ -209,6 +209,11 @@ export interface AppSettings {
    *  toggles). Validated preserve-if-valid in settings.ts; a missing field
    *  resolves to `DEFAULT_OFFICE_CONVERT_DEFAULTS`. */
   officeConvertDefaults?: OfficeConvertDefaults;
+  /** Phase 56 feature A — remembered defaults for the Reading view: EPUB
+   *  reflowable text (font size, line spacing, theme) and the comic viewport
+   *  (layout, fit, reading direction). Validated preserve-if-valid per key in
+   *  settings.ts; a missing field resolves to `DEFAULT_READING_DEFAULTS`. */
+  readingDefaults?: ReadingDefaults;
 }
 
 /** Phase 6 — what the renderer gets back from `app:getInfo`. The
@@ -471,6 +476,22 @@ export interface OfficeConvertDefaults {
   };
 }
 
+/** Phase 56 feature A — remembered defaults for the Reading view. The EPUB
+ *  block drives the reflowable text layout; the comics block drives the
+ *  viewport. `fontSizePt` is 10-32 and `lineHeight` 1.0-2.5. */
+export interface ReadingDefaults {
+  epub: {
+    fontSizePt: number;
+    lineHeight: number;
+    theme: 'light' | 'dark' | 'sepia';
+  };
+  comics: {
+    layout: 'single' | 'double';
+    fit: 'width' | 'height';
+    rightToLeft: boolean;
+  };
+}
+
 /** Phase 54 — the documented image-import defaults a missing
  *  `imageImportDefaults` resolves to. */
 export const DEFAULT_IMAGE_IMPORT_DEFAULTS: ImageImportDefaults = {
@@ -493,6 +514,13 @@ export const DEFAULT_OFFICE_CONVERT_DEFAULTS: OfficeConvertDefaults = {
   spreadsheets: { gridlines: true, fitToWidth: true, orientation: 'auto' },
   presentations: { includeNotes: false },
   exports: { includeImages: true },
+};
+
+/** Phase 56 feature A — the documented Reading-view defaults a missing
+ *  `readingDefaults` resolves to. */
+export const DEFAULT_READING_DEFAULTS: ReadingDefaults = {
+  epub: { fontSizePt: 16, lineHeight: 1.5, theme: 'light' },
+  comics: { layout: 'single', fit: 'height', rightToLeft: false },
 };
 
 /** Phase 52 — payload for `encryptDocument`. `userPassword` is required (the

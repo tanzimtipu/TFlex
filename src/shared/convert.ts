@@ -173,6 +173,27 @@ export interface ConvertManyResult {
   title: string;
 }
 
+/** Phase 56 feature A — one chapter of the reading payload. `href` is the
+ *  archive-root-relative manifest path (as chunk 1a's parser returns it);
+ *  `title` falls back to `id` when the chapter declares none; `xhtml` is the
+ *  sanitized chapter fragment (whitelist-scrubbed, images inlined as `data:`
+ *  URIs) the renderer's Reading view lays out. Never raw file bytes. */
+export interface EpubReadingChapter {
+  id: string;
+  href: string;
+  title: string;
+  xhtml: string;
+}
+
+/** Phase 56 feature A — what `convert:readingDocument` resolves: the book's
+ *  title, its chapters in spine order, and the same non-fatal warnings the
+ *  print path reports. Nothing here is fixed-layout PDF. */
+export interface EpubReadingDocument {
+  title: string;
+  chapters: EpubReadingChapter[];
+  warnings: ConvertWarning[];
+}
+
 /** Phase 53 feature G mode 2 - the outcome of mapping CSV headers onto an
  *  already-open document's AcroForm fields. `matched` and `filled` describe what
  *  happened; `unmatchedHeaders` (a header with no field) and `missingFields` (a

@@ -67,10 +67,13 @@ describe('phase53 document dialog filters', () => {
     // ungrouped formats fall back to 'Documents' by design so a new adapter
     // never disappears from the picker. Phase 55 feature B registers the
     // spreadsheet adapters (xlsx/xls/ods) and feature C the presentation
-    // adapters (pptx/ppt), which the snapshot now carries.
+    // adapters (pptx/ppt), which the snapshot now carries. Phase 56 feature A
+    // adds the EPUB adapter, which is ungrouped like the other e-book-capable
+    // formats and so appears here too.
     expect(byName.get('Documents')).toEqual([
       'doc',
       'docx',
+      'epub',
       'jpeg',
       'jpg',
       'ods',

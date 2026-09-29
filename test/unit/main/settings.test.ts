@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { ANNOTATION_RECENT_TOOLS_CAP, DEFAULT_SETTINGS, DOCK_PINS_CAP, DOCK_UNPINNED_CAP, TOOL_USAGE_CAP, normalizeAnnotationRecentTools, normalizeSettings, SettingsService } from '../../../src/main/services/settings';
 import type { AppSettings, RecentFile } from '../../../src/shared/types';
+import { DEFAULT_READING_DEFAULTS, type ReadingDefaults } from '../../../src/shared/types';
 
 let dir: string;
 let file: string;
@@ -1402,6 +1403,90 @@ describe('Phase 36: dockPins validation', () => {
       expect('dockPins' in result.value).toBe(false);
       expect(result.value.pagesPanelCollapsed).toBe(true);
       expect(result.value.theme).toBe('light');
+    }
+  });
+});
+
+describe('normalizeSettings readingDefaults (Phase 56 feature A)', () => {
+  const stored: ReadingDefaults = {
+    epub: { fontSizePt: 20, lineHeight: 2, theme: 'sepia' },
+    comics: { layout: 'double', fit: 'width', rightToLeft: true },
+  };
+
+  it('preserves a fully valid readingDefaults exactly', () => {
+    const result = normalizeSettings({ readingDefaults: stored });
+    expect(result.readingDefaults).toEqual(stored);
+  });
+
+  it('accepts the documented range boundaries', () => {
+    const low = normalizeSettings({
+      readingDefaults: { epub: { fontSizePt: 10, lineHeight: 1, theme: 'dark' } },
+    });
+    expect(low.readingDefaults?.epub).toEqual({
+      fontSizePt: 10,
+      lineHeight: 1,
+      theme: 'dark',
+    });
+    const high = normalizeSettings({
+      readingDefaults: { epub: { fontSizePt: 32, lineHeight: 2.5, theme: 'sepia' } },
+    });
+    expect(high.readingDefaults?.epub).toEqual({
+      fontSizePt: 32,
+      lineHeight: 2.5,
+      theme: 'sepia',
+    });
+  });
+
+  it('rejects each invalid key back to its default, not the whole field', () => {
+    const result = normalizeSettings({
+      readingDefaults: {
+        epub: { fontSizePt: 33, lineHeight: 0.5, theme: 'blue' },
+        comics: { layout: 'triple', fit: 'diagonal', rightToLeft: 'yes' },
+      },
+    });
+    expect(result.readingDefaults).toEqual(DEFAULT_READING_DEFAULTS);
+    expect('readingDefaults' in result).toBe(true);
+  });
+
+  it('drops unknown keys at every level', () => {
+    const result = normalizeSettings({
+      readingDefaults: {
+        epub: { fontSizePt: 18, bogus: 1 },
+        junk: 2,
+        comics: { rightToLeft: true, extra: 'x' },
+      },
+    });
+    expect(result.readingDefaults).toEqual({
+      epub: { fontSizePt: 18, lineHeight: 1.5, theme: 'light' },
+      comics: { layout: 'single', fit: 'height', rightToLeft: true },
+    });
+  });
+
+  it('fills a missing block from the documented default', () => {
+    const result = normalizeSettings({
+      readingDefaults: { comics: { rightToLeft: true } },
+    });
+    expect(result.readingDefaults).toEqual({
+      epub: { ...DEFAULT_READING_DEFAULTS.epub },
+      comics: { layout: 'single', fit: 'height', rightToLeft: true },
+    });
+  });
+
+  it('leaves a missing/invalid/empty field absent', () => {
+    expect(normalizeSettings({}).readingDefaults).toBeUndefined();
+    expect('readingDefaults' in normalizeSettings({})).toBe(false);
+    expect(normalizeSettings({ readingDefaults: 'x' }).readingDefaults).toBeUndefined();
+    expect(normalizeSettings({ readingDefaults: [] }).readingDefaults).toBeUndefined();
+    expect(normalizeSettings({ readingDefaults: {} }).readingDefaults).toBeUndefined();
+  });
+
+  it('save/load round-trips readingDefaults', async () => {
+    const svc = new SettingsService(file);
+    await svc.save({ ...structuredClone(DEFAULT_SETTINGS), readingDefaults: stored });
+    const result = await svc.load();
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.value.readingDefaults).toEqual(stored);
     }
   });
 });

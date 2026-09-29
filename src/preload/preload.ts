@@ -58,6 +58,7 @@ import type {
   ConvertProgress,
   ConvertSourceInfo,
   CsvFieldMappingResult,
+  EpubReadingDocument,
 } from "../shared/convert";
 import type {
   DocumentProtection,
@@ -432,6 +433,11 @@ const convertApi = {
     path: string,
   ): Promise<Result<ConvertSourceInfo, ConvertErrorCode>> {
     return ipcRenderer.invoke(IPC.convertSourceInfo, path);
+  },
+  readingDocument(
+    path: string,
+  ): Promise<Result<EpubReadingDocument, ConvertErrorCode>> {
+    return ipcRenderer.invoke(IPC.convertReadingDocument, path);
   },
   toDocument(
     docId: string,

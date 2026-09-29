@@ -646,6 +646,11 @@ export async function start(): Promise<void> {
   ipcMain.handle(IPC.convertSourceInfo, (_event, path: string) =>
     convert.sourceInfo(path),
   );
+  // Phase 56 feature A — the EPUB reading payload (chapters in spine order,
+  // sanitized XHTML). Always resolves a typed Result; never throws.
+  ipcMain.handle(IPC.convertReadingDocument, (_event, path: string) =>
+    convert.readingDocument(path),
+  );
   ipcMain.handle(
     IPC.convertToDocument,
     (_event, docId: string, path: string, options?: ConvertOptions) =>

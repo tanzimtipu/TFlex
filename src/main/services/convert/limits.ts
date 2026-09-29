@@ -72,6 +72,9 @@ export const CONVERT_LIMITS = {
   /** Phase 55 feature C — legacy binary `.ppt` byte ceiling. The CFB walker
    *  reads the whole container; text recovery is bounded separately. */
   pptBytes: 128 * 1024 * 1024,
+  /** Phase 56 feature A — `.epub` byte ceiling. The ZIP container and its
+   *  base64-inlined images are buffered in memory before printing. */
+  epubBytes: 128 * 1024 * 1024,
 } as const;
 
 /** `ConvertOptions` with every key resolved — what adapters receive. */
