@@ -252,7 +252,13 @@ export function parseFdf(
 /** Find the contents of the /Annots array (the text between its `[` and the
  *  matching `]`). Returns null if /Annots is absent or malformed. */
 function extractAnnotsArray(text: string): string | null {
-  const key = '/Annots';
+  return extractArrayContents(text, '/Annots');
+}
+
+/** Find the contents of the array named `key` (the text between its `[` and
+ *  the matching `]`). Returns null if the key is absent or malformed. Shared
+ *  by the annotation (/Annots) and form-value (/Fields) readers. */
+function extractArrayContents(text: string, key: string): string | null {
   const idx = text.indexOf(key);
   if (idx < 0) return null;
   // Find the next '[' after the key.
@@ -612,4 +618,368 @@ function parseFdfAnnot(dictText: string, pageHeights?: number[]): AnnModel | nul
     blendMode,
     lineEnds,
   };
+}
+
+// ---------------------------------------------------------------------------
+// Phase 57-B — form-VALUE FDF / XFDF interchange
+//
+// The helpers above interchange ANNOTATIONS (an /Annots array of annot dicts).
+// Form values are a different payload: an FDF /Fields array of
+// `<< /T (name) /V (value) >>` dicts, or the XFDF XML equivalent. Both codecs
+// live here so the app keeps a single FDF engine (Phase 57 feature B), reusing
+// splitTopLevelDicts / extractArrayContents / decodeHexString /
+// decodeStringLiteral / pdfEscape below and hand-rolling the small XFDF scan
+// (the app has no XML dependency by design).
+//
+// Bounds (documented ceiling, both writers and both parsers):
+//   FORM_DATA_MAX_ENTRIES = 10,000 field entries per document.
+//   FORM_DATA_MAX_BYTES   = 8 MiB (8,388,608). For FDF this is the encoded
+//     buffer size; for XFDF it is the string length in UTF-16 code units.
+// An input above either ceiling throws a descriptive Error and a writer whose
+// payload would exceed FORM_DATA_MAX_BYTES throws before emitting; nothing
+// scans or allocates unbounded.
+//
+// FDF string values are written ASCII-only: printable ASCII goes through the
+// existing `pdfEscape`, every other code point is emitted as the octal escapes
+// of its UTF-8 bytes, so a latin1 re-read (parseFdf's decoder) reconstructs
+// the original Unicode. XFDF uses the five predefined XML entities.
+// ---------------------------------------------------------------------------
+
+const FORM_DATA_MAX_ENTRIES = 10_000;
+const FORM_DATA_MAX_BYTES = 8 * 1024 * 1024; // 8,388,608
+
+/** One form-field name/value pair (the interchange unit both codecs carry). */
+export interface FormValueEntry {
+  name: string;
+  value: string;
+}
+
+function assertFormEntryCount(values: FormValueEntry[]): void {
+  if (values.length > FORM_DATA_MAX_ENTRIES) {
+    throw new Error(
+      `form data exceeds the ${FORM_DATA_MAX_ENTRIES}-entry ceiling`,
+    );
+  }
+}
+
+/** Escape a form string for a PDF literal `( ... )`: reuse `pdfEscape` for
+ *  printable ASCII, emit everything else as the octal escapes of its UTF-8
+ *  bytes so the value survives a latin1 read-back as original Unicode. */
+function formPdfEscape(s: string): string {
+  let out = '';
+  for (const ch of s) {
+    const code = ch.codePointAt(0)!;
+    if (code >= 32 && code <= 126) {
+      out += pdfEscape(ch);
+    } else if (ch === '\n') {
+      out += '\\n';
+    } else if (ch === '\r') {
+      out += '\\r';
+    } else if (ch === '\t') {
+      out += '\\t';
+    } else {
+      for (const b of new TextEncoder().encode(ch)) {
+        out += '\\' + b.toString(8).padStart(3, '0');
+      }
+    }
+  }
+  return out;
+}
+
+/** Decode a form string written by `formPdfEscape`: the existing
+ *  decodeStringLiteral yields the bytes as a latin1 string, which we then
+ *  UTF-8 decode back to the original text. */
+function decodeFormString(body: string): string {
+  const latin = decodeStringLiteral(body);
+  const bytes = new Uint8Array(latin.length);
+  for (let i = 0; i < latin.length; i++) bytes[i] = latin.charCodeAt(i) & 0xff;
+  return new TextDecoder('utf-8').decode(bytes);
+}
+
+/** Decode a form value token (literal, hex or bare) — mirrors `parseString`
+ *  but uses the UTF-8-aware form decoder for literal strings. */
+function parseFormString(valueText: string | null): string {
+  if (valueText === null) return '';
+  if (valueText.startsWith('(') && valueText.endsWith(')')) {
+    return decodeFormString(valueText.slice(1, -1));
+  }
+  if (valueText.startsWith('<') && valueText.endsWith('>') && !valueText.startsWith('<<')) {
+    return decodeHexString(valueText.slice(1, -1));
+  }
+  return valueText;
+}
+
+/**
+ * Serialize form values into an FDF byte buffer: `%FDF-1.2`, one indirect
+ * object whose /FDF dict holds a /Fields array of `<< /T (name) /V (value) >>`
+ * dicts, then a trailer and `%%EOF`. Names/values are PDF-escaped.
+ */
+export function exportFormFdf(values: FormValueEntry[]): Uint8Array {
+  assertFormEntryCount(values);
+  const lines: string[] = [];
+  lines.push('%FDF-1.2');
+  lines.push('1 0 obj');
+  lines.push('<<');
+  lines.push('/FDF');
+  lines.push('<<');
+  lines.push('/Fields [');
+  let size = 40;
+  for (const entry of values) {
+    const line = `<< /T (${formPdfEscape(entry.name)}) /V (${formPdfEscape(entry.value)}) >>`;
+    size += line.length + 1;
+    if (size > FORM_DATA_MAX_BYTES) {
+      throw new Error(`form data exceeds the ${FORM_DATA_MAX_BYTES}-byte ceiling`);
+    }
+    lines.push(line);
+  }
+  lines.push(']');
+  lines.push('>>');
+  lines.push('>>');
+  lines.push('endobj');
+  lines.push('trailer');
+  lines.push('<<');
+  lines.push('/Root 1 0 R');
+  lines.push('>>');
+  lines.push('startxref');
+  lines.push('0');
+  lines.push('%%EOF');
+  return new TextEncoder().encode(lines.join('\n'));
+}
+
+/** Read the value token starting at `start`, returning its raw text and the
+ *  index just past it. Understands literal strings, hex strings, arrays and
+ *  nested dicts so a container value is consumed whole. */
+function readToken(text: string, start: number): { text: string; end: number } {
+  const ch = text[start];
+  if (ch === '(') {
+    let depth = 1;
+    let i = start + 1;
+    let esc = false;
+    for (; i < text.length; i++) {
+      const c = text[i];
+      if (esc) { esc = false; continue; }
+      if (c === '\\') { esc = true; continue; }
+      if (c === '(') depth++;
+      else if (c === ')') { depth--; if (depth === 0) { i++; break; } }
+    }
+    return { text: text.slice(start, i), end: i };
+  }
+  if (ch === '<' && text[start + 1] === '<') {
+    let depth = 0;
+    let i = start;
+    for (; i < text.length; i++) {
+      if (text[i] === '<' && text[i + 1] === '<') { depth++; i++; }
+      else if (text[i] === '>' && text[i + 1] === '>') { depth--; i++; if (depth === 0) { i++; break; } }
+    }
+    return { text: text.slice(start, i), end: i };
+  }
+  if (ch === '<') {
+    const end = text.indexOf('>', start);
+    if (end < 0) return { text: text.slice(start), end: text.length };
+    return { text: text.slice(start, end + 1), end: end + 1 };
+  }
+  if (ch === '[') {
+    let depth = 0;
+    let inString = false;
+    let i = start;
+    for (; i < text.length; i++) {
+      const c = text[i];
+      if (inString) {
+        if (c === '\\') { i++; continue; }
+        if (c === ')') inString = false;
+        continue;
+      }
+      if (c === '(') inString = true;
+      else if (c === '[') depth++;
+      else if (c === ']') { depth--; if (depth === 0) { i++; break; } }
+    }
+    return { text: text.slice(start, i), end: i };
+  }
+  let i = start;
+  if (ch !== '/') {
+    while (i < text.length && !/[\s/<>\[\]()]/.test(text[i])) i++;
+  } else {
+    i++;
+    while (i < text.length && !/[\s<>\[\]()]/.test(text[i])) i++;
+  }
+  return { text: text.slice(start, i), end: i };
+}
+
+/** Read the top-level `/Key value` pairs of a `<< ... >>` dict text. Nested
+ *  containers are consumed whole so a key inside a /Kids dict is not mistaken
+ *  for a top-level key. A key whose value is absent yields an empty value. */
+function readFormDictEntries(dictText: string): Map<string, string> {
+  const out = new Map<string, string>();
+  const inner = dictText.startsWith('<<')
+    ? dictText.slice(2, dictText.length - 2)
+    : dictText;
+  let i = 0;
+  while (i < inner.length) {
+    while (i < inner.length && /\s/.test(inner[i])) i++;
+    if (i >= inner.length) break;
+    if (inner[i] !== '/') { i++; continue; }
+    let j = i + 1;
+    while (j < inner.length && !/[\s/<>\[\]()]/.test(inner[j])) j++;
+    const key = inner.slice(i + 1, j);
+    i = j;
+    while (i < inner.length && /\s/.test(inner[i])) i++;
+    if (i >= inner.length) { out.set(key, ''); break; }
+    const token = readToken(inner, i);
+    i = token.end > i ? token.end : i + 1;
+    out.set(key, token.text);
+  }
+  return out;
+}
+
+/**
+ * Parse an FDF buffer into form-name/value entries in document order. Throws
+ * when the `%FDF` header is missing; a malformed /Fields array yields `[]`.
+ * Extra keys and unknown key order are tolerated; a dict without /T is skipped
+ * and a dict without /V yields an empty value.
+ */
+export function parseFormFdf(bytes: Uint8Array): FormValueEntry[] {
+  if (bytes.length > FORM_DATA_MAX_BYTES) {
+    throw new Error(`FDF input exceeds the ${FORM_DATA_MAX_BYTES}-byte ceiling`);
+  }
+  const text = new TextDecoder('latin1').decode(bytes);
+  if (!text.includes('%FDF')) {
+    throw new Error('not an FDF file (missing %FDF header)');
+  }
+  const fieldsArray = extractArrayContents(text, '/Fields');
+  if (fieldsArray === null) return [];
+  const dictTexts = splitTopLevelDicts(fieldsArray);
+  const out: FormValueEntry[] = [];
+  for (const dictText of dictTexts) {
+    const entries = readFormDictEntries(dictText);
+    const name = entries.get('T');
+    if (name === undefined) continue;
+    const value = entries.get('V');
+    out.push({
+      name: parseFormString(name),
+      value: parseFormString(value === undefined ? null : value),
+    });
+    if (out.length > FORM_DATA_MAX_ENTRIES) {
+      throw new Error(`FDF input exceeds the ${FORM_DATA_MAX_ENTRIES}-entry ceiling`);
+    }
+  }
+  return out;
+}
+
+/** Escape XML text/attribute content for the five predefined entities. */
+function xmlEscape(s: string): string {
+  return s
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&apos;');
+}
+
+/** Decode the five predefined XML entities plus numeric character refs. */
+function decodeXmlEntities(s: string): string {
+  return s.replace(/&(#x?[0-9a-fA-F]+|[a-zA-Z]+);/g, (whole, body: string) => {
+    if (body === 'amp') return '&';
+    if (body === 'lt') return '<';
+    if (body === 'gt') return '>';
+    if (body === 'quot') return '"';
+    if (body === 'apos') return "'";
+    if (body.startsWith('#x') || body.startsWith('#X')) {
+      const n = parseInt(body.slice(2), 16);
+      return n >= 0 && n <= 0x10ffff ? String.fromCodePoint(n) : whole;
+    }
+    if (body.startsWith('#')) {
+      const n = parseInt(body.slice(1), 10);
+      return n >= 0 && n <= 0x10ffff ? String.fromCodePoint(n) : whole;
+    }
+    return whole;
+  });
+}
+
+/**
+ * Serialize form values to XFDF XML. Names and values are XML-escaped; the
+ * document declares the xfdf namespace.
+ */
+export function exportFormXfdf(values: FormValueEntry[]): string {
+  assertFormEntryCount(values);
+  const parts: string[] = [];
+  parts.push('<?xml version="1.0" encoding="UTF-8"?>');
+  parts.push('<xfdf xmlns="http://ns.adobe.com/xfdf/">');
+  parts.push('<fields>');
+  let size = 80;
+  for (const entry of values) {
+    const line =
+      `<field name="${xmlEscape(entry.name)}">` +
+      `<value>${xmlEscape(entry.value)}</value>` +
+      `</field>`;
+    size += line.length + 1;
+    if (size > FORM_DATA_MAX_BYTES) {
+      throw new Error(`form data exceeds the ${FORM_DATA_MAX_BYTES}-byte ceiling`);
+    }
+    parts.push(line);
+  }
+  parts.push('</fields>');
+  parts.push('</xfdf>');
+  return parts.join('\n');
+}
+
+/** Read the value of the named attribute from a single tag's text. */
+function readXmlAttr(tagText: string, attr: string): string | null {
+  const re = new RegExp(`\\b${attr}\\s*=\\s*("([^"]*)"|'([^']*)')`);
+  const m = re.exec(tagText);
+  if (m === null) return null;
+  return m[2] !== undefined ? m[2] : m[3];
+}
+
+/**
+ * Parse XFDF XML into form-name/value entries in document order using a small
+ * hand-rolled scanner (no XML library). Throws when the `<xfdf` root is
+ * missing. Attribute order is free; a missing or self-closing `<value>` yields
+ * an empty string; XML entities are decoded.
+ */
+export function parseFormXfdf(xml: string): FormValueEntry[] {
+  if (xml.length > FORM_DATA_MAX_BYTES) {
+    throw new Error(`XFDF input exceeds the ${FORM_DATA_MAX_BYTES}-byte ceiling`);
+  }
+  const rootIdx = xml.search(/<(?!\?|!)/);
+  if (rootIdx < 0 || xml.slice(rootIdx, rootIdx + 5).toLowerCase() !== '<xfdf') {
+    throw new Error('not an XFDF document (missing <xfdf> root)');
+  }
+  const out: FormValueEntry[] = [];
+  let i = rootIdx + 5;
+  while (i < xml.length) {
+    const fi = xml.indexOf('<field', i);
+    if (fi < 0) break;
+    const after = xml[fi + 6];
+    if (after !== undefined && !/[\s/>]/.test(after)) { i = fi + 6; continue; }
+    const tagEnd = xml.indexOf('>', fi);
+    if (tagEnd < 0) break;
+    const tagText = xml.slice(fi, tagEnd + 1);
+    const selfClosing = /\/\s*>$/.test(tagText);
+    const name = readXmlAttr(tagText, 'name');
+    let value = '';
+    let next = tagEnd + 1;
+    if (!selfClosing) {
+      const closeField = xml.indexOf('</field', tagEnd + 1);
+      const fieldEnd = closeField < 0 ? xml.length : closeField;
+      const vi = xml.indexOf('<value', tagEnd + 1);
+      const vafter = vi < 0 ? undefined : xml[vi + 6];
+      if (vi >= 0 && vi < fieldEnd && (vafter === '>' || vafter === '/' || vafter === ' ' || vafter === '\t')) {
+        const vTagEnd = xml.indexOf('>', vi);
+        if (vTagEnd >= 0) {
+          if (!/\/\s*>$/.test(xml.slice(vi, vTagEnd + 1))) {
+            const vClose = xml.indexOf('</value', vTagEnd + 1);
+            const vEnd = vClose < 0 ? fieldEnd : vClose;
+            value = decodeXmlEntities(xml.slice(vTagEnd + 1, vEnd));
+          }
+        }
+      }
+      next = closeField < 0 ? xml.length : closeField + 7;
+    }
+    if (name !== null) out.push({ name: decodeXmlEntities(name), value });
+    if (out.length > FORM_DATA_MAX_ENTRIES) {
+      throw new Error(`XFDF input exceeds the ${FORM_DATA_MAX_ENTRIES}-entry ceiling`);
+    }
+    i = next;
+  }
+  return out;
 }

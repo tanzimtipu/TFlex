@@ -351,7 +351,7 @@ describe('DEF-381 — serializeDoc carries layers, JS and page-safe catalog entr
     expect(report.value.violations.some((v) => v.rule === 'pdfa.javascript')).toBe(false);
   });
 
-  it('page-tree safety: /Names /Dests referencing a page is NOT cloned; page count/content unchanged', async () => {
+  it('page-tree safety: /Names /Dests referencing a page is REMAPPED, not cloned; page count/content unchanged', async () => {
     const src = await buildNamesWithDestsAndJsSource();
     const srcDoc = await loadOut(src);
     const srcContent = pageContentBytes(srcDoc, 0);
@@ -364,14 +364,146 @@ describe('DEF-381 — serializeDoc carries layers, JS and page-safe catalog entr
     expect(pageContentBytes(outDoc, 0).length).toBeGreaterThan(0);
     expect(Buffer.from(pageContentBytes(outDoc, 0))).toEqual(Buffer.from(srcContent));
 
-    // /Names was created (for /JavaScript) but must contain no /Dests entry
-    // and therefore no cloned page object.
+    // Phase 57-G: /Names /Dests IS now carried, with its page ref remapped to
+    // the output page object (proving no source page object was cloned in).
     const outNames = outDoc.context.lookupMaybe(outDoc.catalog.get(PDFName.of('Names')), PDFDict);
     expect(outNames).toBeDefined();
     expect(outNames!.has(PDFName.of('JavaScript'))).toBe(true);
-    expect(outNames!.has(PDFName.of('Dests'))).toBe(false);
+    expect(outNames!.has(PDFName.of('Dests'))).toBe(true);
+
+    const tree = outDoc.context.lookupMaybe(outNames!.get(PDFName.of('Dests')), PDFDict);
+    expect(tree).toBeDefined();
+    const pairs = outDoc.context.lookupMaybe(tree!.get(PDFName.of('Names')), PDFArray);
+    expect(pairs).toBeDefined();
+    const dest = outDoc.context.lookupMaybe(pairs!.get(1), PDFArray);
+    expect(dest).toBeDefined();
+    expect((dest!.get(0) as PDFRef).tag).toBe(outDoc.getPage(0).ref.tag);
   });
 });
+
+describe('Phase 57-G — serializeDoc carries /Dests and /OpenAction with remapped page refs', () => {
+  it('remaps a catalog /Dests entry and an /OpenAction GoTo to the OUTPUT page', async () => {
+    const src = await buildDestsAndOpenActionSource();
+    const out = await serializeViaEngine(src);
+    const doc = await loadOut(out);
+
+    expect(doc.getPageCount()).toBe(3);
+
+    const dests = doc.context.lookupMaybe(doc.catalog.get(PDFName.of('Dests')), PDFDict);
+    expect(dests).toBeDefined();
+    // The named destination for source page 2 must point at the OUTPUT page
+    // whose index is page 2's mapped index (1) — proving the remap.
+    const dest = doc.context.lookupMaybe(dests!.get(PDFName.of('chapter2')), PDFArray);
+    expect(dest).toBeDefined();
+    expect((dest!.get(0) as PDFRef).tag).toBe(doc.getPage(1).ref.tag);
+    // The tail (/XYZ 0 100 0) survived verbatim.
+    expect(dest!.get(1).toString()).toBe('/XYZ');
+    expect(dest!.size()).toBe(5);
+
+    const action = doc.context.lookupMaybe(doc.catalog.get(PDFName.of('OpenAction')), PDFDict);
+    expect(action).toBeDefined();
+    expect(action!.get(PDFName.of('S'))?.toString()).toBe('/GoTo');
+    const actionDest = doc.context.lookupMaybe(action!.get(PDFName.of('D')), PDFArray);
+    expect(actionDest).toBeDefined();
+    expect((actionDest!.get(0) as PDFRef).tag).toBe(doc.getPage(1).ref.tag);
+    expect(actionDest!.get(1).toString()).toBe('/Fit');
+  });
+
+  it('a document with no destinations/OpenAction writes neither entry and is byte-stable', async () => {
+    const src = await buildPlain3Page();
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date('2026-01-01T00:00:00.000Z'));
+    try {
+      const first = await serializeViaEngine(src, 'g-a');
+      const second = await serializeViaEngine(src, 'g-b');
+
+      const doc = await loadOut(first);
+      expect(doc.catalog.get(PDFName.of('Dests'))).toBeUndefined();
+      expect(doc.catalog.get(PDFName.of('OpenAction'))).toBeUndefined();
+      expect(Buffer.from(first)).toEqual(Buffer.from(second));
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('an unresolvable page ref does not fail the save and yields no garbage destination', async () => {
+    const src = await buildUnresolvableDestSource();
+    const out = await serializeViaEngine(src);
+    const doc = await loadOut(out);
+
+    // The lone /Dests entry was dropped, not kept partially.
+    const dests = doc.context.lookupMaybe(doc.catalog.get(PDFName.of('Dests')), PDFDict);
+    expect(dests).toBeUndefined();
+    // The unsupported-shape /OpenAction (a bare destination array) was not
+    // carried either.
+    expect(doc.catalog.get(PDFName.of('OpenAction'))).toBeUndefined();
+    expect(doc.getPageCount()).toBe(1);
+  });
+
+  it('does NOT carry /StructTreeRoot (FEA-023 deferral)', async () => {
+    const src = await buildStructTreeSource();
+    const out = await serializeViaEngine(src);
+    const doc = await loadOut(out);
+
+    expect(doc.catalog.get(PDFName.of('StructTreeRoot'))).toBeUndefined();
+    // A page-safe sibling entry is still carried, so the deferral is specific.
+    expect(doc.catalog.get(PDFName.of('MarkInfo'))).toBeDefined();
+  });
+});
+
+async function buildPlain3Page(): Promise<Uint8Array> {
+  const doc = await PDFDocument.create({ updateMetadata: false });
+  doc.addPage([200, 200]);
+  doc.addPage([200, 200]);
+  doc.addPage([200, 200]);
+  return doc.save();
+}
+
+async function buildDestsAndOpenActionSource(): Promise<Uint8Array> {
+  const doc = await PDFDocument.create({ updateMetadata: false });
+  doc.addPage([200, 200]);
+  const page2 = doc.addPage([200, 200]);
+  doc.addPage([200, 200]);
+
+  const dest2 = doc.context.obj([page2.ref, 'XYZ', 0, 100, 0]) as PDFArray;
+  doc.catalog.set(
+    PDFName.of('Dests'),
+    doc.context.obj({ chapter2: doc.context.register(dest2) }) as PDFDict,
+  );
+
+  const openDest = doc.context.obj([page2.ref, 'Fit']) as PDFArray;
+  doc.catalog.set(
+    PDFName.of('OpenAction'),
+    doc.context.obj({ S: 'GoTo', D: doc.context.register(openDest) }) as PDFDict,
+  );
+  return doc.save();
+}
+
+async function buildUnresolvableDestSource(): Promise<Uint8Array> {
+  const doc = await PDFDocument.create({ updateMetadata: false });
+  const page = doc.addPage([200, 200]);
+
+  // A destination whose first element is a ref to no page in this document.
+  const ghostDest = doc.context.obj([PDFRef.of(9999, 0), 'Fit']) as PDFArray;
+  doc.catalog.set(
+    PDFName.of('Dests'),
+    doc.context.obj({ ghost: doc.context.register(ghostDest) }) as PDFDict,
+  );
+  // An /OpenAction that is a bare destination array: an unsupported shape.
+  doc.catalog.set(PDFName.of('OpenAction'), doc.context.obj([page.ref, 'Fit']) as PDFArray);
+  return doc.save();
+}
+
+async function buildStructTreeSource(): Promise<Uint8Array> {
+  const doc = await PDFDocument.create({ updateMetadata: false });
+  doc.addPage([200, 200]);
+  doc.catalog.set(
+    PDFName.of('StructTreeRoot'),
+    doc.context.obj({ Type: 'StructTreeRoot' }) as PDFDict,
+  );
+  doc.catalog.set(PDFName.of('MarkInfo'), doc.context.obj({ Marked: true }) as PDFDict);
+  return doc.save();
+}
 
 async function buildOcPropertiesSource(): Promise<Uint8Array> {
   const doc = await PDFDocument.create({ updateMetadata: false });

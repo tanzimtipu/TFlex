@@ -1,7 +1,7 @@
 import { readFile, writeFile } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
 import { inflateSync } from 'node:zlib';
-import { beginText, concatTransformationMatrix, degrees, drawObject, endText, fill, PDFArray, PDFCheckBox, PDFDict, PDFDocument, PDFDropdown, PDFHexString, PDFName, PDFObjectCopier, PDFOptionList, PDFRadioGroup, PDFRef, PDFStream, PDFTextField, rectangle, rgb, setCharacterSpacing, setFillingRgbColor, setFontAndSize, setGraphicsState, setTextMatrix, showText, StandardFonts, TextRenderingMode, setTextRenderingMode, pushGraphicsState, popGraphicsState, translate, rotateRadians, skewRadians, setLineWidth, setDashPattern, moveTo, lineTo, closePath, type PDFOperator, type PDFObject, type PDFImage, type PDFFont, type PDFPage } from '@cantoo/pdf-lib';
+import { beginText, concatTransformationMatrix, degrees, drawObject, endText, fill, PDFArray, PDFCheckBox, PDFDict, PDFDocument, PDFDropdown, PDFHexString, PDFName, PDFNumber, PDFObjectCopier, PDFOptionList, PDFRadioGroup, PDFRef, PDFStream, PDFString, PDFTextField, rectangle, rgb, setCharacterSpacing, setFillingRgbColor, setFontAndSize, setGraphicsState, setTextMatrix, showText, StandardFonts, TextRenderingMode, setTextRenderingMode, pushGraphicsState, popGraphicsState, translate, rotateRadians, skewRadians, setLineWidth, setDashPattern, moveTo, lineTo, closePath, type PDFOperator, type PDFObject, type PDFImage, type PDFFont, type PDFPage } from '@cantoo/pdf-lib';
 import { err, ok, type Result } from '../../shared/result';
 import type {
   AddStampPayload,
@@ -4534,22 +4534,35 @@ function drawClassicWhiteMaskRect(
  *     dicts and order arrays only — Phase 57 layers)
  *   - /Collection, /AF                 (portfolio / associated-file metadata)
  *
- * /Names is a name tree that CAN hold page references (named destinations),
- * so it is NOT cloned wholesale — only its /JavaScript subtree is copied, by
- * carryJavaScriptNames below. That subtree's values are action dictionaries
- * holding strings/streams and never pages, and it is what the PDF/A
- * JavaScript rule inspects.
+ * Page-linked entries are carried separately by carryPageLinkedEntries, which
+ * REMAPS their page references through the serializer's page map instead of
+ * cloning them (a clone would drag the source page object into the destination
+ * context and corrupt the page tree):
+ *   - /Dests       (named destinations: catalog dict or /Names name tree)
+ *   - /OpenAction  (/S /GoTo action dict; a named /D destination is kept)
  *
- * Still deliberately dropped, each needing its own page-ref remapping:
+ * /Names is a name tree that CAN hold page references (named destinations),
+ * so it is NOT cloned wholesale — its /JavaScript subtree is copied by
+ * carryJavaScriptNames below, and its /Dests subtree is remapped by
+ * carryPageLinkedEntries. Neither subtree drags a source page object into the
+ * output: JS values are action dicts holding strings/streams, and /Dests page
+ * refs are remapped to the matching OUTPUT page object.
+ *
+ * Still deliberately dropped, each needing its own page-ref remapping pass:
  *   - /StructTreeRoot  (tagged-PDF structure references page objects; needs a
- *     real re-tagging pass)
- *   - /Names as a whole, /Dests  (named destinations reference pages)
- *   - /OpenAction  (may hold a page reference, e.g. a destination action)
+ *     real re-tagging pass — recorded as FEA-023)
+ *   - /Names as a whole  (only the /JavaScript and /Dests subtrees are carried)
  *   - /AcroForm  (the engine owns form serialization; see serializeDoc)
+ *   - destination shapes carryPageLinkedEntries cannot remap: a destination
+ *     whose page ref resolves to no source page (dropped for that entry only,
+ *     never a partial/garbage destination), and /OpenAction values that are
+ *     not a /S /GoTo dict (e.g. a URI action or a bare destination array).
  *   - /Outlines and /PageLabels are NOT dropped — carried by separate code paths.
  *
- * Failure-isolated: any clone failure is skipped so a save is never blocked by
- * an uncloneable metadata stream; the output then matches the page-only result.
+ * Failure-isolated: any clone/remap failure is skipped so a save is never
+ * blocked by an uncloneable metadata stream or an unresolvable destination; a
+ * document with no destinations/OpenAction produces the same bytes as before
+ * (no spurious empty /Dests is written).
  */
 function carryCatalogEntries(out: PDFDocument, src: PDFDocument): void {
   const names = [
@@ -4608,6 +4621,244 @@ function carryJavaScriptNames(out: PDFDocument, src: PDFDocument): void {
     out.catalog.set(PDFName.of('Names'), out.context.register(outNames));
   } else {
     existing.set(PDFName.of('JavaScript'), cloned);
+  }
+}
+
+/**
+ * Phase 57 feature G — carry the page-linked catalog entries `/Dests` (named
+ * destinations) and `/OpenAction` (the initial view) across a save, REMAPPING
+ * their page references through the serializer's page map.
+ *
+ * A whole-value clone is exactly what DEF-378/DEF-381 refused here: a
+ * destination holds the SOURCE page object, so cloning one would copy a page
+ * into the output's destination context and corrupt the page tree. Instead
+ * each destination's page reference is resolved back to its source page index
+ * and re-pointed at the matching OUTPUT page object; the rest of the
+ * destination (`/XYZ`, `/Fit`, coordinates, ...) is carried verbatim.
+ *
+ * Carried shapes (see the block comment on carryCatalogEntries for the full
+ * carried-vs-dropped ledger):
+ *   - catalog `/Dests` as a name->destination dict, or as a name tree
+ *     (`/Names` key/destination pairs, recursing `/Kids`);
+ *   - `/Names /Dests` name-tree entries;
+ *   - a destination array `[pageRef|pageDict /Fit...]`;
+ *   - a destination dict whose `/D` holds an array or a name/string;
+ *   - a named destination (name/string) kept intact;
+ *   - `/OpenAction` as a `/S /GoTo` action dict (its `/D` remapped when it is
+ *     a destination; a name `/D` is kept).
+ *
+ * Deliberately NOT carried, named here so nothing is silently dropped:
+ *   - a destination whose page ref resolves to no source page, or whose shape
+ *     is unsupported — dropped for that entry only, never a partial/garbage
+ *     destination;
+ *   - `/OpenAction` values that are not a `/S /GoTo` dict (a URI action, a
+ *     bare destination array, ...);
+ *   - `/StructTreeRoot` (FEA-023 — needs a real re-tagging pass);
+ *   - `/Names` as a whole (only /JavaScript and /Dests subtrees are carried);
+ *   - `/AcroForm` (the engine owns form serialization).
+ *
+ * Failure-isolated: every lookup/remap is guarded, and a document with no
+ * destinations/OpenAction writes nothing (no spurious empty `/Dests`), so its
+ * bytes are identical to before this change.
+ */
+function carryPageLinkedEntries(
+  out: PDFDocument,
+  src: PDFDocument,
+  pageMap: Map<number, number>,
+): void {
+  // Source page ref tag -> source page index (== origIdx, since getPages()
+  // returns pages in source order). The node map covers direct page dicts.
+  const refToOrig = new Map<string, number>();
+  const nodeToOrig = new Map<PDFDict, number>();
+  const srcPages = src.getPages();
+  for (let origIdx = 0; origIdx < srcPages.length; origIdx++) {
+    const ref = srcPages[origIdx].ref;
+    if (ref !== undefined) refToOrig.set(ref.tag, origIdx);
+    nodeToOrig.set(srcPages[origIdx].node, origIdx);
+  }
+
+  // Resolve a destination page reference (indirect ref or direct page dict) to
+  // the matching OUTPUT page ref, or undefined when it names no surviving page.
+  const resolveOutputPageRef = (value: PDFObject | undefined): PDFRef | undefined => {
+    let origIdx: number | undefined;
+    if (value instanceof PDFRef) origIdx = refToOrig.get(value.tag);
+    else if (value instanceof PDFDict) origIdx = nodeToOrig.get(value);
+    if (origIdx === undefined) return undefined;
+    const outIdx = pageMap.get(origIdx);
+    if (outIdx === undefined) return undefined;
+    return out.getPage(outIdx).ref;
+  };
+
+  // Carry one primitive destination entry into the output context, or null for
+  // shapes we do not carry (nested dicts/arrays/refs in a destination tail).
+  // PDFName/PDFNumber/PDFString are context-free immutable values, so they can
+  // be reused as-is (round-tripping them through .of() would re-escape names).
+  const carryPrimitive = (value: PDFObject | undefined): PDFObject | null => {
+    if (
+      value instanceof PDFName ||
+      value instanceof PDFNumber ||
+      value instanceof PDFString
+    ) {
+      return value;
+    }
+    return null;
+  };
+
+  // Remap a destination array `[pageRef /Fit | /XYZ x y z ...]`; the tail is
+  // preserved verbatim. Returns null when no output page can be resolved.
+  const remapDestArray = (arr: PDFArray): PDFArray | null => {
+    if (arr.size() === 0) return null;
+    const pageRef = resolveOutputPageRef(arr.get(0));
+    if (pageRef === undefined) return null;
+    const els: PDFObject[] = [pageRef];
+    for (let i = 1; i < arr.size(); i++) {
+      const prim = carryPrimitive(arr.get(i));
+      if (prim !== null) els.push(prim);
+    }
+    return out.context.obj(els) as PDFArray;
+  };
+
+  // Remap any destination shape. A name/string is a named destination and is
+  // kept intact; a dict carries its /D (array or name) plus primitive siblings.
+  // Returns null when the page ref cannot be resolved.
+  const remapDestination = (value: unknown): PDFObject | null => {
+    try {
+      if (value instanceof PDFArray) return remapDestArray(value);
+      if (value instanceof PDFName) return value;
+      if (value instanceof PDFString) return value;
+      if (value instanceof PDFDict) {
+        const d = value.get(PDFName.of('D'));
+        if (d === undefined) return null;
+        const remappedD = remapDestination(d);
+        if (remappedD === null) return null;
+        const copy = out.context.obj({}) as PDFDict;
+        for (const [key, val] of value.entries()) {
+          if (key.toString() === '/D') { copy.set(key, remappedD); continue; }
+          const prim = carryPrimitive(val);
+          if (prim !== null) copy.set(key, prim);
+        }
+        return out.context.register(copy);
+      }
+      if (value instanceof PDFRef) {
+        if (refToOrig.has(value.tag)) return resolveOutputPageRef(value) ?? null;
+        const looked = src.context.lookup(value);
+        if (looked instanceof PDFArray || looked instanceof PDFDict) {
+          return remapDestination(looked);
+        }
+        return null;
+      }
+      return null;
+    } catch {
+      return null;
+    }
+  };
+
+  // Remap a /Dests name tree node: carry each `/Names` key/destination pair
+  // (dropping unresolvable entries) and recurse `/Kids`. Returns null when the
+  // node carries nothing.
+  const remapDestsNode = (node: PDFDict): PDFDict | null => {
+    const outNode = out.context.obj({}) as PDFDict;
+    let carried = false;
+
+    const namesArr = src.context.lookupMaybe(node.get(PDFName.of('Names')), PDFArray);
+    if (namesArr !== undefined) {
+      const pairs: PDFObject[] = [];
+      for (let i = 0; i + 1 < namesArr.size(); i += 2) {
+        const remapped = remapDestination(namesArr.get(i + 1));
+        if (remapped === null) continue;
+        const key = namesArr.get(i);
+        pairs.push(key instanceof PDFString ? PDFString.of(key.asString()) : (key as PDFObject));
+        pairs.push(remapped);
+        carried = true;
+      }
+      if (pairs.length > 0) outNode.set(PDFName.of('Names'), out.context.obj(pairs) as PDFArray);
+    }
+
+    const kidsArr = src.context.lookupMaybe(node.get(PDFName.of('Kids')), PDFArray);
+    if (kidsArr !== undefined) {
+      const kids: PDFObject[] = [];
+      for (let i = 0; i < kidsArr.size(); i++) {
+        const kid = src.context.lookupMaybe(kidsArr.get(i), PDFDict);
+        if (kid === undefined) continue;
+        const mapped = remapDestsNode(kid);
+        if (mapped === null) continue;
+        kids.push(out.context.register(mapped));
+        carried = true;
+      }
+      if (kids.length > 0) outNode.set(PDFName.of('Kids'), out.context.obj(kids) as PDFArray);
+    }
+
+    return carried ? outNode : null;
+  };
+
+  const isNameTree = (node: PDFDict): boolean =>
+    node.has(PDFName.of('Names')) || node.has(PDFName.of('Kids'));
+
+  // A `/Dests` container: a name tree, or a direct name->destination dict.
+  const remapDests = (node: PDFDict): PDFDict | null => {
+    if (isNameTree(node)) return remapDestsNode(node);
+    const outDests = out.context.obj({}) as PDFDict;
+    let carried = false;
+    for (const [key, value] of node.entries()) {
+      const remapped = remapDestination(value);
+      if (remapped === null) continue;
+      outDests.set(key, remapped);
+      carried = true;
+    }
+    return carried ? outDests : null;
+  };
+
+  // Catalog /Dests (direct dict or name tree).
+  const srcDests = src.context.lookupMaybe(src.catalog.get(PDFName.of('Dests')), PDFDict);
+  if (srcDests !== undefined) {
+    const carried = remapDests(srcDests);
+    if (carried !== null) {
+      out.catalog.set(PDFName.of('Dests'), out.context.register(carried));
+    }
+  }
+
+  // /Names /Dests (always a name tree). Merge into the /Names dict the JS
+  // carry may already have created on the output.
+  const srcNames = src.context.lookupMaybe(src.catalog.get(PDFName.of('Names')), PDFDict);
+  const srcNamesDests = srcNames?.get(PDFName.of('Dests'));
+  if (srcNamesDests !== undefined) {
+    const tree = src.context.lookupMaybe(srcNamesDests, PDFDict);
+    if (tree !== undefined) {
+      const carried = remapDestsNode(tree);
+      if (carried !== null) {
+        let outNames = out.context.lookupMaybe(out.catalog.get(PDFName.of('Names')), PDFDict);
+        if (outNames === undefined) {
+          outNames = out.context.obj({}) as PDFDict;
+          out.catalog.set(PDFName.of('Names'), out.context.register(outNames));
+        }
+        outNames.set(PDFName.of('Dests'), out.context.register(carried));
+      }
+    }
+  }
+
+  // /OpenAction: remap only a /S /GoTo action dict. A non-GoTo /OpenAction or
+  // a bare destination array is deliberately out of scope (see block comment).
+  const srcOpenAction = src.context.lookupMaybe(
+    src.catalog.get(PDFName.of('OpenAction')),
+    PDFDict,
+  );
+  if (
+    srcOpenAction !== undefined &&
+    srcOpenAction.get(PDFName.of('S'))?.toString() === '/GoTo'
+  ) {
+    const d = srcOpenAction.get(PDFName.of('D'));
+    if (d !== undefined) {
+      const remappedD = remapDestination(d);
+      if (remappedD !== null) {
+        const outAction = out.context.obj({}) as PDFDict;
+        for (const [key, val] of srcOpenAction.entries()) {
+          if (key.toString() === '/D') { outAction.set(key, remappedD); continue; }
+          const prim = carryPrimitive(val);
+          if (prim !== null) outAction.set(key, prim);
+        }
+        out.catalog.set(PDFName.of('OpenAction'), out.context.register(outAction));
+      }
+    }
   }
 }
 
@@ -4808,6 +5059,15 @@ async function serializeDoc(doc: EngineDoc): Promise<Uint8Array> {
     // Outline carry is best-effort — never block a save on a malformed outline.
   }
 
+  // Phase 57 feature G — carry /Dests and /OpenAction with their page refs
+  // remapped through pageMap (no-op when the source has neither). Best-effort;
+  // a malformed destination must never block a save.
+  try {
+    carryPageLinkedEntries(out, doc.pdfDoc, pageMap);
+  } catch {
+    // Best-effort — unresolvable destinations are simply not carried.
+  }
+
   // Phase 12 — apply logical page labels to the output catalog's /PageLabels.
   if (doc.pageLabels && doc.pageLabels.length > 0) {
     try {
@@ -5006,6 +5266,16 @@ async function serializeDocOptimized(
   } catch {
     // Best-effort.
   }
+
+  // Phase 57 feature G — same /Dests + /OpenAction page-ref remap as
+  // serializeDoc, so an optimized save preserves internal links and the
+  // initial view. Best-effort.
+  try {
+    carryPageLinkedEntries(out, doc.pdfDoc, pageMap);
+  } catch {
+    // Best-effort — unresolvable destinations are simply not carried.
+  }
+
   if (doc.pageLabels && doc.pageLabels.length > 0) {
     try {
       applyPageLabels(out, doc.pageLabels);
