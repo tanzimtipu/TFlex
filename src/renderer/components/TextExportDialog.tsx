@@ -23,6 +23,12 @@ import {
 import { useBackdropClose } from "./modalBackdrop";
 import { AnimatePresence } from "motion/react";
 import { TfBackdrop, TfDialog } from "./motion/TfMotion";
+import { ExportFidelityNotes } from "./ExportFidelityNotes";
+import { ExportPagesWithoutTextNotice } from "./ExportPagesWithoutTextNotice";
+import {
+  fetchTextFreePageNumbers,
+  type TextFreePagesEngine,
+} from "../utils/exportWithoutText";
 
 export type TextExportFormat = "txt" | "rtf";
 
@@ -42,6 +48,11 @@ interface TextExportDialogProps {
   >;
   onConfirm: (result: TextExportConfirm) => void;
   sourceName: string;
+  /** The active document's engine id, or null when none is open. */
+  docId?: string | null;
+  /** The engine client the dialog reads `exportText(docId)` from, as a MEMBER
+   *  (never detached — the client reads `this.inner`; DEF-106 / DEF-374). */
+  engine?: TextFreePagesEngine;
   onClose: () => void;
 }
 
@@ -54,6 +65,8 @@ export function TextExportDialog(
     runExport,
     onConfirm,
     sourceName,
+    docId = null,
+    engine,
     onClose,
   } = props;
   const initialRange = useMemo(() => defaultPageRange(totalPages), [totalPages]);
@@ -61,6 +74,7 @@ export function TextExportDialog(
   const [format, setFormat] = useState<TextExportFormat>("txt");
   const [running, setRunning] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [pagesWithoutText, setPagesWithoutText] = useState<number[] | null>(null);
   const dialogRef = useRef<HTMLDivElement | null>(null);
   const cancelRef = useRef<{ aborted: boolean }>({ aborted: false });
 
@@ -70,8 +84,29 @@ export function TextExportDialog(
     setFormat("txt");
     setRunning(false);
     setError(null);
+    setPagesWithoutText(null);
     cancelRef.current.aborted = false;
   }, [open, totalPages]);
+
+  // DEF-390 — name the pages with no extractable text, as the xlsx/pptx
+  // surfaces do. `engine.exportText(docId)` is the same source the export
+  // reads; the call is a MEMBER call (DEF-106 / DEF-374). The read is async
+  // and NEVER blocks the dialog: the form renders immediately and the notice
+  // appears only if/when it resolves. A missing channel, a typed failure or a
+  // rejection yields null and renders no notice — the export proceeds
+  // regardless, so a slow or failed extraction never breaks it.
+  useEffect(() => {
+    if (!open) return;
+    setPagesWithoutText(null);
+    if (docId === null || engine === undefined) return;
+    let cancelled = false;
+    void fetchTextFreePageNumbers(engine, docId).then((pages): void => {
+      if (!cancelled) setPagesWithoutText(pages);
+    });
+    return (): void => {
+      cancelled = true;
+    };
+  }, [open, docId, engine]);
 
   useEffect(() => {
     if (!open) return;
@@ -227,6 +262,10 @@ export function TextExportDialog(
               <span>Rich Text Format (.rtf) — Word / WordPad / LibreOffice</span>
             </label>
           </fieldset>
+
+          <ExportFidelityNotes format="txt" />
+
+          <ExportPagesWithoutTextNotice pages={pagesWithoutText} />
 
           {running && (
             <div className="modal-status export-progress" aria-live="polite">

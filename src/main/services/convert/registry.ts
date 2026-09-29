@@ -225,5 +225,58 @@ export function createDefaultRegistry(): ConvertRegistry {
     extensions: ['.svg'],
     load: () => import('./adapters/svg').then((m) => m.svgAdapter),
   });
+  // Phase 55 feature B - spreadsheets. One SheetJS module serves all three
+  // containers; each format id is registered with its own extensions and its
+  // own content sniff (an `.xlsx` and an `.ods` are both ZIPs; `.xls` is CFB).
+  // Registered BEFORE the ODF text adapter: an `.ods` and an `.odt` are both
+  // ODF ZIPs, and the content pass must reach the spreadsheet sniff first so a
+  // misnamed `.ods` is not captured by the ODT adapter.
+  registry.register({
+    id: 'xlsx',
+    extensions: ['.xlsx'],
+    load: () => import('./adapters/xlsx').then((m) => m.xlsxAdapter),
+  });
+  registry.register({
+    id: 'xls',
+    extensions: ['.xls'],
+    load: () => import('./adapters/xlsx').then((m) => m.xlsAdapter),
+  });
+  registry.register({
+    id: 'ods',
+    extensions: ['.ods'],
+    load: () => import('./adapters/xlsx').then((m) => m.odsAdapter),
+  });
+  // Phase 55 feature C - presentations. Registered BEFORE the OOXML Word
+ // adapter: a `.pptx` and a `.docx` are both ZIPs carrying `[Content_Types].xml`,
+ // so the content pass must reach the PPTX presentation marker first. Legacy
+ // binary `.ppt` shares the extracted CFB walker with the `.doc` adapter.
+  registry.register({
+    id: 'pptx',
+    extensions: ['.pptx'],
+    load: () => import('./adapters/pptx').then((m) => m.pptxAdapter),
+  });
+  registry.register({
+    id: 'ppt',
+    extensions: ['.ppt'],
+    load: () => import('./adapters/pptx').then((m) => m.pptAdapter),
+  });
+  // Phase 55 feature A - Word and OpenDocument text import (mammoth / ODF XML
+  // into the shared HTML intermediate). Legacy binary `.doc` is a separate
+  // CFB-backed text-only degraded adapter.
+  registry.register({
+    id: 'docx',
+    extensions: ['.docx'],
+    load: () => import('./adapters/docx').then((m) => m.docxAdapter),
+  });
+  registry.register({
+    id: 'odt',
+    extensions: ['.odt'],
+    load: () => import('./adapters/odt').then((m) => m.odtAdapter),
+  });
+  registry.register({
+    id: 'doc',
+    extensions: ['.doc'],
+    load: () => import('./adapters/legacy-doc').then((m) => m.legacyDocAdapter),
+  });
   return registry;
 }

@@ -141,6 +141,8 @@ const SANCTIONED: Record<Capability, { surfaces: Surface[]; why: string }> = {
   },
   exportText: { surfaces: ['dock'], why: 'the DELIVER dock verb' },
   exportDocx: { surfaces: ['dock'], why: 'the DELIVER dock verb' },
+  exportXlsx: { surfaces: ['dock'], why: 'Phase 55: the DELIVER dock verb for the .xlsx writer' },
+  exportPptx: { surfaces: ['dock'], why: 'Phase 55: the DELIVER dock verb for the .pptx writer' },
   createFromImages: {
     surfaces: ['dock', 'panel'],
     why: 'Phase 37 item 21 adds the DELIVER dock verb; the panel `From images…` entry stays',

@@ -104,10 +104,10 @@ describe('Phase 36 — buildPaletteRows', () => {
     const bare = buildPaletteRows({ query: 'export' });
     const bareIds = bare.map((r) => (r.kind === 'tool' ? r.id : ''));
     expect(bareIds).toContain('exportText');
-    // Four entries tie on the "export" label prefix, so the corpus (registry)
+    // Six entries tie on the "export" label prefix, so the corpus (registry)
     // order decides: exportComments is declared first in the registry.
     expect(bareIds[0]).toBe('exportComments');
-    expect(bareIds.filter((id) => id.startsWith('export'))).toHaveLength(4);
+    expect(bareIds.filter((id) => id.startsWith('export'))).toHaveLength(6);
     // Seeding usage for exportText must lift it to the top of that tie.
     const seeded = buildPaletteRows({ query: 'export', usage: { exportText: 7 } });
     expect(seeded[0]?.kind === 'tool' && seeded[0].id).toBe('exportText');

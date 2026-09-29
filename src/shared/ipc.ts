@@ -10,6 +10,12 @@ import type {
 } from "./convert";
 import type { AccountStatusResult, AccountsClientConfig, OAuthCallbackOutcome, OAuthCallbackStartResult, OAuthTraceEvent, OpenAuthUrlResult, SetSessionPayload, SyncReport } from "./accounts";
 import type {
+  ExportBuild,
+  ExportErrorCode,
+  ExportPptxPayload,
+  ExportXlsxPayload,
+} from "./export";
+import type {
   AddStampPayload,
   AddTextBoxPayload,
   AppInfo,
@@ -349,6 +355,13 @@ export const IPC = {
   convertCsvToFields: "convert:csvToFields",
   convertCancel: "convert:cancel",
   convertProgressEvent: "convert:progress",
+  // Phase 55 feature D — PDF -> office export writers. `export:xlsx` builds a
+  // workbook from the document's own extracted text and detected tables;
+  // `export:pptx` builds a deck with one slide per page. Both run in main,
+  // are awaited, and resolve a typed `Result<ExportBuild, ExportErrorCode>`
+  // (never bytes-only, never a throw across IPC).
+  exportXlsx: "export:xlsx",
+  exportPptx: "export:pptx",
 } as const;
 
 /** Result of `signatures:save` and `signatures:list`. The renderer treats
@@ -792,6 +805,26 @@ export interface TFlexApiValidation {
   ): Promise<Result<ValidationReport, ValidationErrorCode>>;
 }
 
+/**
+ * Phase 55 feature D — the PDF -> office export surface (matches
+ * `window.tflex.export` at runtime). Both writers run in main and resolve a
+ * typed `Result<ExportBuild, ExportErrorCode>`: the produced bytes plus the
+ * mandatory fidelity notes. Members are OPTIONAL so a preload or renderer
+ * mock that predates Phase 55 still typechecks.
+ */
+export interface TFlexApiExport {
+  /** PDF -> `.xlsx`: one sheet per page plus a `Full text` sheet. */
+  xlsx?(
+    docId: string,
+    payload?: ExportXlsxPayload,
+  ): Promise<Result<ExportBuild, ExportErrorCode>>;
+  /** PDF -> `.pptx`: one slide per page, sized to the page box. */
+  pptx?(
+    docId: string,
+    payload?: ExportPptxPayload,
+  ): Promise<Result<ExportBuild, ExportErrorCode>>;
+}
+
 export interface TFlexApi {
   minimizeWindow(): void;
   maximizeWindow(): void;
@@ -1029,4 +1062,7 @@ setEnabled(state: import("./types").MenuEnabledState): void;
   /** Phase 54 — PDF/A + PDF/X validation surface (matches
    *  `window.tflex.validation` at runtime). Optional like the others. */
   validation?: TFlexApiValidation;
+  /** Phase 55 feature D — PDF -> office export surface (matches
+   *  `window.tflex.export` at runtime). Optional like the others. */
+  export?: TFlexApiExport;
 }

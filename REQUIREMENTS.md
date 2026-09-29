@@ -3247,11 +3247,23 @@ becomes a PDF page of exactly that aspect ratio; text boxes, images and basic sh
 their positions and sizes; slide notes appended as a following page when the option is on.
 Transitions and animation are not rendered — a warning says so. Legacy `.ppt` degrades to text.
 
-**D. Export back out.** PDF to `.txt` (text layer, reading order), `.docx` (`docx`: paragraphs,
-headings by font size, tables detected from layout, images), `.xlsx` (`xlsx`: detected tables and
-text runs, one sheet per page plus a full-text sheet) and `.pptx` (`pptxgenjs`: each page rendered
-as a slide of matching aspect ratio). Every export carries a mandatory fidelity warning in the UI
-and writes a `conversion-fidelity` note into the produced file's metadata where the format allows.
+**D. Export back out.** PDF to `.txt` (text layer, reading order), `.docx`, `.xlsx` and `.pptx`.
+**Amended during implementation (orchestrator, 2026-09-29):** `.txt` export and a TEXT-FIRST editable
+`.docx` export already existed from Phase 9 (`engine.exportText` and `engine.createDocxFromDoc` /
+DEF-060, with a per-page-image fallback for pages that carry no extractable text), so this phase REUSES
+them rather than rebuilding them, and the `.docx` promise is corrected here: headings are **not**
+detected by font size and tables are **not** reconstructed from layout in this phase, because the
+engine's text extractor returns no per-line font metrics or weights — a styled, heading-aware DOCX
+export needs a metric-aware extractor and is recorded as **FEA-024**, not silently promised. The
+settings key `docxHeadingDetection` is therefore REMOVED from this phase's Settings impact rather than
+shipped as a knob that changes nothing (a stored-but-ignored setting is a fail-loud violation).
+`.xlsx` (detected tables and text runs, one sheet per page plus a full-text sheet) and `.pptx` (each
+page rendered as a slide sized to the page box) are new in this phase. Every export carries a mandatory
+fidelity warning in the UI and writes a `conversion-fidelity` note into the produced file's metadata
+where the format allows. Two honest limits of the new writers, recorded because the fidelity notes must
+state them: SheetJS's community build has no cell-anchored image API, so exported page images live as
+base64 in a separate images sheet; and a presentation has a single slide size, so when pages differ the
+first page box wins and the note says so.
 
 **E. Round-trip verification, not round-trip promises.** Exports are verified by parsing the
 produced file with the independent reader for that format and by re-importing it through our own
@@ -3281,10 +3293,12 @@ adapter, and the two must agree on the extracted text.
    the packaging budgets still hold.
 
 **Settings impact:** one new field -
-`officeConvertDefaults?: { spreadsheets: { gridlines: boolean; fitToWidth: boolean; orientation: 'auto' | 'portrait' | 'landscape' }; presentations: { includeNotes: boolean }; exports: { includeImages: boolean; docxHeadingDetection: boolean } }`
+`officeConvertDefaults?: { spreadsheets: { gridlines: boolean; fitToWidth: boolean; orientation: 'auto' | 'portrait' | 'landscape' }; presentations: { includeNotes: boolean }; exports: { includeImages: boolean } }`
 validated in `src/main/services/settings.ts` per the standing rule, unknown keys dropped; a missing
 field resolves to
-`{ spreadsheets: { gridlines: true, fitToWidth: true, orientation: 'auto' }, presentations: { includeNotes: false }, exports: { includeImages: true, docxHeadingDetection: true } }`.
+`{ spreadsheets: { gridlines: true, fitToWidth: true, orientation: 'auto' }, presentations: { includeNotes: false }, exports: { includeImages: true } }`.
+(`docxHeadingDetection` was in this line when the phase was written and was REMOVED during
+implementation — see feature D's amendment; the work is FEA-024.)
 
 ## Phase 56 — Universal file handling IV: digital publishing and reading modes
 

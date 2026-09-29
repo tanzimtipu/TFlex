@@ -15,10 +15,12 @@ import type {
 import type {
   FillFormFieldPayload,
   FormField,
+  ImageImportDefaults,
+  OfficeConvertDefaults,
 } from '../../../shared/types';
 import { stampBrandMetadata } from '../engine';
 import { convertError, mapAdapterThrow, CONVERT_ERROR_MESSAGES } from './errors';
-import { resolveConvertOptions } from './limits';
+import { resolveConvertOptions, type ResolvedConvertOptions } from './limits';
 import {
   createDefaultRegistry,
   readSniffHead,
@@ -56,18 +58,48 @@ export interface DocumentConversionServiceOptions {
   registry?: ConvertRegistry;
   /** Progress sink; index.ts forwards it to the invoking window. */
   emitProgress?: (progress: ConvertProgress) => void;
+  /**
+   * DEF-388 — the stored `officeConvertDefaults` Settings block, read per call
+   * so a settings change takes effect on the next import. When present, the
+   * service resolves the spreadsheet/presentation import keys from it (an
+   * explicit caller option still wins). Omitting it leaves the built-in
+   * `DEFAULT_CONVERT_OPTIONS`, which keeps every pre-existing test unchanged.
+   */
+  getOfficeConvertDefaults?: () => OfficeConvertDefaults;
+  /**
+   * The stored `imageImportDefaults` Settings block (DEF-388 defect class), read
+   * per call so a settings change takes effect on the next import. When present,
+   * the service resolves `imagePageSizeMode` / `imageFixedPageSize` / `imageFit`
+   * / `imageRotationDeg` from it (an explicit caller option still wins).
+   * Omitting it leaves the built-in `DEFAULT_CONVERT_OPTIONS`.
+   */
+  getImageImportDefaults?: () => ImageImportDefaults;
 }
 
 export class DocumentConversionService {
   private readonly engine: ConvertEnginePort;
   private readonly registry: ConvertRegistry;
   private readonly emitProgress?: (progress: ConvertProgress) => void;
+  private readonly getOfficeConvertDefaults?: () => OfficeConvertDefaults;
+  private readonly getImageImportDefaults?: () => ImageImportDefaults;
   private readonly jobs = new Map<string, AbortController>();
 
   constructor(options: DocumentConversionServiceOptions) {
     this.engine = options.engine;
     this.registry = options.registry ?? createDefaultRegistry();
     this.emitProgress = options.emitProgress;
+    this.getOfficeConvertDefaults = options.getOfficeConvertDefaults;
+    this.getImageImportDefaults = options.getImageImportDefaults;
+  }
+
+  /** Resolve a caller's partial options against the built-in defaults and the
+   *  stored office/image settings (DEF-388). */
+  private resolveOptions(raw?: ConvertOptions): ResolvedConvertOptions {
+    return resolveConvertOptions(
+      raw,
+      this.getOfficeConvertDefaults?.(),
+      this.getImageImportDefaults?.(),
+    );
   }
 
   /** Format, label and declared fidelity, known before conversion. */
@@ -113,7 +145,7 @@ export class DocumentConversionService {
 
       const written = await adapter.convert({
         path,
-        options: resolveConvertOptions(options),
+        options: this.resolveOptions(options),
         head,
         signal: controller.signal,
         onProgress: (phase, ratio) => this.emit(docId, phase, ratio),
@@ -157,7 +189,7 @@ export class DocumentConversionService {
       if (paths.length === 0) {
         return convertError('empty-file', 'No files were selected for import.');
       }
-      const resolvedOptions = resolveConvertOptions(options);
+      const resolvedOptions = this.resolveOptions(options);
       const parts: Array<{
         bytes: Uint8Array;
         pageCount: number;
@@ -261,7 +293,7 @@ export class DocumentConversionService {
     options?: ConvertOptions,
   ): Promise<Result<CsvFieldMappingResult, ConvertErrorCode>> {
     try {
-      const resolved = resolveConvertOptions(options);
+      const resolved = this.resolveOptions(options);
       // Settings gate: when CSV form mapping is off, this is a deliberate no-op.
       if (!resolved.csvFormMapping) {
         return ok({

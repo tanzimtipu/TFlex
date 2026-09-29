@@ -149,6 +149,7 @@ import {
   Pencil,
   PieChart,
   Plus,
+  Presentation,
   Printer,
   Redo2,
   RefreshCw,
@@ -162,6 +163,7 @@ import {
   Search,
   SeparatorVertical,
   Settings,
+  Sheet,
   Signature,
   Slash,
   Sparkles,
@@ -218,7 +220,11 @@ export type ToolAvailability =
   /** Phase 54 — requires an open document AND the validation bridge
    *  (`window.tflex.validation`); a build without the bridge disables the verb
    *  with this declared reason instead of offering a dead click. */
-  | 'validation';
+  | 'validation'
+  /** Phase 55 (feature D) — requires an open document AND the format's
+   *  optional `window.tflex.export` bridge member (`xlsx` / `pptx`). The two
+   *  failure states carry DIFFERENT copy via `officeExportGate`. */
+  | 'office-export';
 
 /** Which surface renders this entry's own control. Exactly one surface owns
  *  a tool (one canonical home per tool):
@@ -876,6 +882,33 @@ const REGISTRY = [
     availability: 'document',
   },
   {
+    // Phase 55 (feature D) — PDF -> .xlsx. The writer runs in main
+    // (`window.tflex.export.xlsx`, OPTIONAL) and reuses the SAME per-page PNG
+    // raster the docx dialog produces. The `office-export` precondition is
+    // honest: no open document (or a build without the bridge) disables the
+    // verb with a distinct reason, never a dead click.
+    id: 'exportXlsx',
+    label: 'Export as spreadsheet (.xlsx)',
+    description: 'Detect tables and text into a single .xlsx workbook.',
+    icon: Sheet,
+    shortcut: '',
+    stage: 'deliver',
+    action: 'exportXlsx',
+    availability: 'office-export',
+  },
+  {
+    // Phase 55 (feature D) — PDF -> .pptx, one slide per page sized to the
+    // page box. Same optional bridge guard as `exportXlsx`.
+    id: 'exportPptx',
+    label: 'Export as presentation (.pptx)',
+    description: 'Render every page as one slide in a single .pptx deck.',
+    icon: Presentation,
+    shortcut: '',
+    stage: 'deliver',
+    action: 'exportPptx',
+    availability: 'office-export',
+  },
+  {
     // Phase 52 (feature D) — create a password-protected copy of the current
     // document. Lives in the DELIVER dock; the dialog collects the password,
     // algorithm and permissions and the host writes the bytes through the
@@ -1413,6 +1446,8 @@ const SURFACE_BY_ID: Record<ToolId, ToolSurface> = {
   exportPages: 'dock',
   exportText: 'dock',
   exportDocx: 'dock',
+  exportXlsx: 'dock',
+  exportPptx: 'dock',
   encrypt: 'dock',
   // GLOBAL — no dock verb: the title bar / File menu / palette (and the
   // floating pills for the view controls) own these.
@@ -1516,7 +1551,7 @@ export const DOCK_STAGE_IDS: Readonly<Record<Stage, readonly string[]>> = {
     'fillFromCsv',
     'validateDocument',
   ],
-  deliver: ['optimize', 'audit', 'exportPages', 'exportText', 'exportDocx', 'createFromImages', 'encrypt'],
+  deliver: ['optimize', 'audit', 'exportPages', 'exportText', 'exportDocx', 'exportXlsx', 'exportPptx', 'createFromImages', 'encrypt'],
 };
 
 /** The Phase-37 relevance rule for one entry (see `DOCK_STAGE_IDS`). */

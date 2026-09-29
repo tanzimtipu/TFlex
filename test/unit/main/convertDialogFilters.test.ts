@@ -63,17 +63,28 @@ describe('phase53 document dialog filters', () => {
   it('groups the currently registered formats correctly', async () => {
     const filters = await filtersFor('document');
     const byName = new Map(filters.map((filter) => [filter.name, filter.extensions]));
-    // Phase 54 registers the image adapters; ungrouped formats (png/jpeg/tiff)
-    // fall back to 'Documents' by design so a new adapter never disappears.
+    // Phase 54 registers the image adapters and Phase 55 the office adapters;
+    // ungrouped formats fall back to 'Documents' by design so a new adapter
+    // never disappears from the picker. Phase 55 feature B registers the
+    // spreadsheet adapters (xlsx/xls/ods) and feature C the presentation
+    // adapters (pptx/ppt), which the snapshot now carries.
     expect(byName.get('Documents')).toEqual([
+      'doc',
+      'docx',
       'jpeg',
       'jpg',
+      'ods',
+      'odt',
       'pdf',
       'png',
+      'ppt',
+      'pptx',
       'rtf',
       'svg',
       'tif',
       'tiff',
+      'xls',
+      'xlsx',
     ]);
     expect(new Set(byName.get('Text and markup'))).toEqual(
       new Set(['txt', 'md', 'markdown', 'html', 'htm', 'xhtml']),
@@ -103,11 +114,14 @@ describe('phase53 OS-open predicate', () => {
     for (const ext of ['txt', 'md', 'csv', 'rtf', 'html', 'htm', 'xhtml']) {
       expect(looksLikeOpenablePath(`C:\\docs\\file.${ext}`)).toBe(true);
     }
+    for (const ext of ['docx', 'odt', 'doc']) {
+      expect(looksLikeOpenablePath(`C:\\docs\\file.${ext}`)).toBe(true);
+    }
   });
 
   it('rejects an unsupported extension', () => {
     expect(looksLikeOpenablePath('C:\\docs\\setup.exe')).toBe(false);
-    expect(looksLikeOpenablePath('C:\\docs\\report.docx')).toBe(false);
+    expect(looksLikeOpenablePath('C:\\docs\\archive.zip')).toBe(false);
     expect(looksLikeOpenablePath('noextension')).toBe(false);
   });
 

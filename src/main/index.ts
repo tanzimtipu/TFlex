@@ -34,6 +34,9 @@ import type {
 } from '../shared/types';
 import type { SignatureSource } from '../shared/types';
 import { DEFAULT_PDF_VALIDATION_DEFAULTS } from '../shared/types';
+import { DEFAULT_OFFICE_CONVERT_DEFAULTS } from '../shared/types';
+import { DEFAULT_IMAGE_IMPORT_DEFAULTS } from '../shared/types';
+import type { ExportPptxPayload, ExportXlsxPayload } from '../shared/export';
 import type { EngineError } from '../shared/types';
 import type { Result } from '../shared/result';
 import type {
@@ -47,6 +50,8 @@ import { readClipboardImage, type ClipboardLike } from './services/clipboard-ima
 import { EngineService } from './services/engine';
 import { OcrService } from './services/ocr';
 import { DocumentConversionService } from './services/convert';
+import { exportXlsx } from './services/export/xlsx-export';
+import { exportPptx } from './services/export/pptx-export';
 import { DocumentValidationService, runExportGuard } from './services/validation';
 import { loadPdfFile, loadFdfFile } from './services/pdf-file';
 import { describePdfOpenError } from './services/error-text';
@@ -317,6 +322,18 @@ export async function start(): Promise<void> {
   // Progress is broadcast to every window; the renderer filters by jobId.
   const convert = new DocumentConversionService({
     engine,
+    // DEF-388 — the stored office import defaults are resolved HERE (the
+    // import entry) the same way the export handlers resolve
+    // `officeConvertDefaults.exports.includeImages`: the renderer sends no
+    // options for the spreadsheet/presentation keys, so the service must read
+    // the settings itself. A caller-supplied option still wins.
+    getOfficeConvertDefaults: () =>
+      settings.getCurrent().officeConvertDefaults ?? DEFAULT_OFFICE_CONVERT_DEFAULTS,
+    // Same wiring for the Phase 54 image import defaults: the renderer sends no
+    // options for the image keys, so the service must read the settings itself.
+    // A caller-supplied option still wins.
+    getImageImportDefaults: () =>
+      settings.getCurrent().imageImportDefaults ?? DEFAULT_IMAGE_IMPORT_DEFAULTS,
     emitProgress: (progress) => {
       for (const window of BrowserWindow.getAllWindows()) {
         if (!window.isDestroyed()) {
@@ -651,6 +668,24 @@ export async function start(): Promise<void> {
   ipcMain.handle(IPC.convertCancel, (_event, jobId: string) =>
     convert.cancel(jobId),
   );
+  // Phase 55 feature D — PDF -> office export writers. Both call the engine's
+  // existing exportText inside main (awaited, renderer never blocks) and
+  // resolve a typed Result. The includeImages default comes from the stored
+  // officeConvertDefaults.exports when the caller does not override it.
+  ipcMain.handle(IPC.exportXlsx, (_event, docId: string, payload?: ExportXlsxPayload) => {
+    const defaults = settings.getCurrent().officeConvertDefaults ?? DEFAULT_OFFICE_CONVERT_DEFAULTS;
+    return exportXlsx(engine, docId, {
+      ...payload,
+      includeImages: payload?.includeImages ?? defaults.exports.includeImages,
+    });
+  });
+  ipcMain.handle(IPC.exportPptx, (_event, docId: string, payload?: ExportPptxPayload) => {
+    const defaults = settings.getCurrent().officeConvertDefaults ?? DEFAULT_OFFICE_CONVERT_DEFAULTS;
+    return exportPptx(engine, docId, {
+      ...payload,
+      includeImages: payload?.includeImages ?? defaults.exports.includeImages,
+    });
+  });
   ipcMain.handle(IPC.pdfLoad, (_event, path: string) => loadPdfFile(path));
   ipcMain.handle(IPC.fdfLoad, (_event, path: string) => loadFdfFile(path));
   ipcMain.handle(IPC.samplesList, () => samples.list());

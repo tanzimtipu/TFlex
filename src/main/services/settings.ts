@@ -11,6 +11,7 @@ import type {
   EncryptPermissions,
   ImageImportDefaults,
   LoadSettingsResult,
+  OfficeConvertDefaults,
   PdfValidationDefaults,
   RecentFile,
   WatermarkPosition,
@@ -24,6 +25,7 @@ import {
 } from '../../shared/convert';
 import {
   DEFAULT_IMAGE_IMPORT_DEFAULTS,
+  DEFAULT_OFFICE_CONVERT_DEFAULTS,
   DEFAULT_PDF_VALIDATION_DEFAULTS,
 } from '../../shared/types';
 import { EDIT_FONTS, isEditFont } from './text-style';
@@ -689,6 +691,95 @@ export function normalizePdfValidationDefaults(
   return out;
 }
 
+/** Phase 55 — the `officeConvertDefaults.spreadsheets.orientation` allowlist. */
+const OFFICE_ORIENTATIONS = ['auto', 'portrait', 'landscape'] as const;
+
+/**
+ * Phase 55 — normalise `officeConvertDefaults` (preserve-if-valid, reject-if-
+ * invalid, unknown keys dropped), mirroring `normalizeConvertDefaults`. An
+ * absent/empty object rejects the field (the consumer applies
+ * `DEFAULT_OFFICE_CONVERT_DEFAULTS`). A present invalid value rejects the WHOLE
+ * field; a partial nested object fills its missing keys from the default.
+ * Unknown keys are dropped at every level.
+ */
+export function normalizeOfficeConvertDefaults(
+  raw: unknown,
+): OfficeConvertDefaults | null {
+  if (raw === null || typeof raw !== 'object' || Array.isArray(raw)) return null;
+  const r = raw as Record<string, unknown>;
+  const out: OfficeConvertDefaults = {
+    spreadsheets: { ...DEFAULT_OFFICE_CONVERT_DEFAULTS.spreadsheets },
+    presentations: { ...DEFAULT_OFFICE_CONVERT_DEFAULTS.presentations },
+    exports: { ...DEFAULT_OFFICE_CONVERT_DEFAULTS.exports },
+  };
+  let present = 0;
+
+  if (r.spreadsheets !== undefined) {
+    if (
+      r.spreadsheets === null ||
+      typeof r.spreadsheets !== 'object' ||
+      Array.isArray(r.spreadsheets)
+    ) {
+      return null;
+    }
+    const s = r.spreadsheets as Record<string, unknown>;
+    if (s.gridlines !== undefined) {
+      if (typeof s.gridlines !== 'boolean') return null;
+      out.spreadsheets.gridlines = s.gridlines;
+    }
+    if (s.fitToWidth !== undefined) {
+      if (typeof s.fitToWidth !== 'boolean') return null;
+      out.spreadsheets.fitToWidth = s.fitToWidth;
+    }
+    if (s.orientation !== undefined) {
+      if (
+        typeof s.orientation !== 'string' ||
+        !(OFFICE_ORIENTATIONS as readonly string[]).includes(s.orientation)
+      ) {
+        return null;
+      }
+      out.spreadsheets.orientation =
+        s.orientation as OfficeConvertDefaults['spreadsheets']['orientation'];
+    }
+    present += 1;
+  }
+
+  if (r.presentations !== undefined) {
+    if (
+      r.presentations === null ||
+      typeof r.presentations !== 'object' ||
+      Array.isArray(r.presentations)
+    ) {
+      return null;
+    }
+    const p = r.presentations as Record<string, unknown>;
+    if (p.includeNotes !== undefined) {
+      if (typeof p.includeNotes !== 'boolean') return null;
+      out.presentations.includeNotes = p.includeNotes;
+    }
+    present += 1;
+  }
+
+  if (r.exports !== undefined) {
+    if (
+      r.exports === null ||
+      typeof r.exports !== 'object' ||
+      Array.isArray(r.exports)
+    ) {
+      return null;
+    }
+    const e = r.exports as Record<string, unknown>;
+    if (e.includeImages !== undefined) {
+      if (typeof e.includeImages !== 'boolean') return null;
+      out.exports.includeImages = e.includeImages;
+    }
+    present += 1;
+  }
+
+  if (present === 0) return null;
+  return out;
+}
+
 function normalizeAnnotationColorEntry(raw: unknown): AnnotationColorPreset | null {
   if (typeof raw === 'string' && raw.length > 0) {
     return { id: raw, hex: raw };
@@ -885,6 +976,17 @@ export function normalizeSettings(raw: unknown): AppSettings {
   );
   if (pdfValidationDefaults !== null) {
     settings.pdfValidationDefaults = pdfValidationDefaults;
+  }
+
+  // Phase 55: office conversion defaults (spreadsheet pagination, presentation
+  // notes, export toggles). Reject-if-invalid leaves the field absent (consumer
+  // default `DEFAULT_OFFICE_CONVERT_DEFAULTS`); a partial nested object fills
+  // its missing keys from the default.
+  const officeConvertDefaults = normalizeOfficeConvertDefaults(
+    rawObj.officeConvertDefaults,
+  );
+  if (officeConvertDefaults !== null) {
+    settings.officeConvertDefaults = officeConvertDefaults;
   }
 
   // Phase 44 (operator change): accounts feature flag. Strict boolean,

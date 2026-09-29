@@ -204,6 +204,11 @@ export interface AppSettings {
    *  settings.ts; a missing field resolves to
    *  `DEFAULT_PDF_VALIDATION_DEFAULTS`. */
   pdfValidationDefaults?: PdfValidationDefaults;
+  /** Phase 55 — remembered defaults for the office conversion program
+   *  (spreadsheet gridlines/fit/orientation, presentation notes, export
+   *  toggles). Validated preserve-if-valid in settings.ts; a missing field
+   *  resolves to `DEFAULT_OFFICE_CONVERT_DEFAULTS`. */
+  officeConvertDefaults?: OfficeConvertDefaults;
 }
 
 /** Phase 6 — what the renderer gets back from `app:getInfo`. The
@@ -448,6 +453,24 @@ export interface PdfValidationDefaults {
   onViolation: 'warn' | 'block';
 }
 
+/** Phase 55 — remembered defaults for the bidirectional office conversion
+ *  program. Three nested blocks: spreadsheet pagination, presentation notes,
+ *  and export toggles. `orientation` drives spreadsheet page orientation;
+ *  `includeImages` drives image embedding on export. */
+export interface OfficeConvertDefaults {
+  spreadsheets: {
+    gridlines: boolean;
+    fitToWidth: boolean;
+    orientation: 'auto' | 'portrait' | 'landscape';
+  };
+  presentations: {
+    includeNotes: boolean;
+  };
+  exports: {
+    includeImages: boolean;
+  };
+}
+
 /** Phase 54 — the documented image-import defaults a missing
  *  `imageImportDefaults` resolves to. */
 export const DEFAULT_IMAGE_IMPORT_DEFAULTS: ImageImportDefaults = {
@@ -462,6 +485,14 @@ export const DEFAULT_IMAGE_IMPORT_DEFAULTS: ImageImportDefaults = {
 export const DEFAULT_PDF_VALIDATION_DEFAULTS: PdfValidationDefaults = {
   target: 'none',
   onViolation: 'warn',
+};
+
+/** Phase 55 — the documented office-conversion defaults a missing
+ *  `officeConvertDefaults` resolves to. */
+export const DEFAULT_OFFICE_CONVERT_DEFAULTS: OfficeConvertDefaults = {
+  spreadsheets: { gridlines: true, fitToWidth: true, orientation: 'auto' },
+  presentations: { includeNotes: false },
+  exports: { includeImages: true },
 };
 
 /** Phase 52 — payload for `encryptDocument`. `userPassword` is required (the

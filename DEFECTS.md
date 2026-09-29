@@ -5,6 +5,91 @@
 > inspect the current `OPEN`, `FIX-READY`, and `DISPUTED` entries first; closed records are
 > historical evidence and must not be loaded wholesale.
 
+## DEF-391: imageImportDefaults is stored but never applied on the image import path
+
+- Status: CLOSED
+- Severity: MEDIUM
+- Found by: qa
+- Phase: 54
+
+Steps to reproduce:
+1. Launch the real dev build through the canonical `e2e/lib/launch.cjs` helper.
+2. Import `test-fixtures/phase54/dpi-72.png` through the real Open button (which calls `convert.toDocument(docId, path)` with no options).
+3. Set `imageImportDefaults` through `window.tflex.saveSettings` (e.g. `pageSizeMode='fixed'`, `fixedPageSize='a4'`, `fit='contain'`, `rotationDeg=0`), then re-import and compare the produced PDF's page box; repeat with `pageSizeMode='image'` and with `rotationDeg=90`.
+
+Expected: each stored `imageImportDefaults` key changes the imported page box (Phase 54's Settings impact line requires the field to be honoured; the adapter honours the same options when passed directly).
+Actual: the output is identical for every setting. The renderer never reads `imageImportDefaults` for import: `runConvertOpen` calls `convert.toDocument(docId, path)` with no options (`src/renderer/state/convert.ts:177`), and the main convert service only resolved caller-supplied options. Every Phase 54 unit test passed because it injected the options directly, so the missing settings-to-options wiring was invisible. This is the same defect class as DEF-388, found by the orchestrator while fixing DEF-388.
+
+Evidence: `e2e/def391_image_settings_wiring.spec.cjs`.
+
+History:
+- qa: opened (Phase 55 validation; the orchestrator confirmed the fourth gap of the DEF-388 class).
+- qa: CLOSED (FIX-READY retest; the orchestrator relayed FIX-READY in the same run). `e2e/def391_image_settings_wiring.spec.cjs` drives the real Open button on `test-fixtures/phase54/dpi-72.png` and reads the produced page box back: `pageSizeMode='image'` -> 719.91 x 359.96 pt (the image's own physical size), `pageSizeMode='fixed'`/`fixedPageSize='a4'` -> 595.28 x 841.89 pt (A4 portrait), `rotationDeg=90` -> 359.96 x 719.91 pt (transposed). The stored settings now change the imported page box; the port is wired to the real settings entry point.
+
+## DEF-388: officeConvertDefaults spreadsheets/presentations settings are stored but never applied on import
+
+- Status: CLOSED
+- Severity: MEDIUM
+- Found by: qa
+- Phase: 55
+
+Steps to reproduce:
+1. Launch the real dev build through the canonical `e2e/lib/launch.cjs` helper.
+2. Import `test-fixtures/phase55/sample.xlsx` (or `sample.pptx`) through the real Open button.
+3. Set `officeConvertDefaults` through `window.tflex.saveSettings` (e.g. `spreadsheets.orientation='portrait'`, `gridlines=false`, `fitToWidth=false`; `presentations.includeNotes=true`), then re-import and compare the produced PDF's page box, border-stroke count, widest text x and page count.
+4. Run `npx.cmd playwright test e2e/phase55_office.spec.cjs --grep "settings:"`.
+
+Expected: each setting changes the output. Feature B promises "Gridline and fit-to-width options come from settings"; feature C promises the notes page "when the option is on"; the Settings impact line requires the field to be honoured.
+Actual: the output is identical for every setting. `base`, `portrait`, `noGrid`, `noFit` all produce the same page box (841.92 x 594.96), the same 588 border paths and the same widest text x (691.12); `presentations.includeNotes=true` still yields 2 pages. The renderer never reads `officeConvertDefaults` for import: `runConvertOpen` calls `convert.toDocument(docId, path)` with no options (`src/renderer/state/convert.ts:177`), and the main convert service only resolves caller-supplied options. The adapter itself honours the same options when passed directly (the "adapter options" test passes: portrait/landscape boxes differ, gridlines 588 vs 11 border paths, fit-to-width maxX 691 vs 405), so the defect is the missing settings-to-options wiring, not the adapter. `exports.includeImages` IS wired (main reads it as the export default).
+
+Evidence: `P55_SETTINGS` and `P55_ADAPTER_OPTIONS` logs from `e2e/phase55_office.spec.cjs`; the `settings:` test fails, the `adapter options` test passes.
+
+History:
+- qa: opened (Phase 55 validation).
+- qa: CLOSED (FIX-READY retest; the orchestrator relayed FIX-READY in the same run). `e2e/phase55_office.spec.cjs` "settings: officeConvertDefaults spreadsheets/presentations change the output" now passes through the real Open button (no injected options). Per-key before/after from `P55_SETTINGS`: `spreadsheets.orientation` auto -> landscape 841.92 x 594.96 pt, portrait -> 594.96 x 841.92 pt; `spreadsheets.gridlines` true -> 588 stroked border paths, false -> 11; `spreadsheets.fitToWidth` true -> widest text x 691.12, false -> 405.25; `presentations.includeNotes` false -> 2 pages, true -> 4 pages. The main convert service now resolves the stored `officeConvertDefaults` at the import entry (`getOfficeConvertDefaults`), so a stored setting is applied on the next import.
+
+## DEF-389: Above-ceiling spreadsheet import fails with an opaque "Printing failed" error instead of the row-limit warning
+
+- Status: CLOSED
+- Severity: MEDIUM
+- Found by: qa
+- Phase: 55
+
+Steps to reproduce:
+1. Launch the real dev build through the canonical `e2e/lib/launch.cjs` helper.
+2. Import `test-fixtures/phase55/rows_over_ceiling.xlsx` (single sheet "Big", 100,001 body rows; `CONVERT_LIMITS.sheetRows` is 100,000) through the real Open button, or call `window.tflex.convert.toDocument(docId, path)` directly.
+3. Observe the result.
+
+Expected: the adapter renders the sheet up to the 100,000-row ceiling and reports a `row-limit` warning naming the sheet and its true count (100,001), per the adapter's own documented contract.
+Actual: the conversion fails in ~10 s with `{ code: 'internal', message: 'The import failed unexpectedly. Failed to generate PDF: Printing failed' }` and the UI shows the opaque toast `The file could not be imported ("rows_over_ceiling.xlsx").` No `row-limit` warning is ever produced. Because the adapter always materialises 100,000 rows for any above-ceiling sheet, the print of that grid exceeds what Chromium's `printToPDF` accepts, so the documented degradation path is unreachable end-to-end. The warning logic itself is proven only at unit level with a mocked print (`test/unit/main/convertXlsxAdapter.test.ts`).
+
+Evidence: `P55_OVER_DIRECT` log from `e2e/phase55_office.spec.cjs`; screenshot `screenshots/phase55-over-ceiling.png`.
+
+History:
+- qa: opened (Phase 55 validation).
+- qa: CLOSED (FIX-READY retest; the orchestrator relayed FIX-READY in the same run). `e2e/phase55_office.spec.cjs` criterion 5b now passes. Direct `convert.toDocument` on `rows_over_ceiling.xlsx` -> `ok:true`, 2326 pages, wall clock 20,988 ms, warning `Sheet "Big" has 100002 rows; only the first 100000 were imported.` (code `row-limit`); through the real Open button the notice shows the same warning, wall clock 56,501 ms, no toast. The count is the sheet's true total row count (the fixture is a header row plus 100,001 body rows = 100,002 rows); the spec assertion was corrected from the body-row count 100,001 to the sheet's true count 100,002. The 20,000-row case is unchanged: 20,000 body rows present, no `row-limit` warning, 6,365 ms.
+
+## DEF-390: docx and txt exports do not name the pages without extractable text
+
+- Status: CLOSED
+- Severity: LOW
+- Found by: qa
+- Phase: 55
+
+Steps to reproduce:
+1. Launch the real dev build through the canonical `e2e/lib/launch.cjs` helper.
+2. Open `test-fixtures/phase55/image-only.pdf` (page 1 empty, page 2 image-only).
+3. Export to `.docx` and `.txt` through the DELIVER dock dialogs.
+
+Expected: criterion 8 says an export of an empty or image-only page "says which pages carried no extractable content".
+Actual: the `.docx` dialog states the behaviour in its fidelity notes ("Pages with no extractable text appear as page images instead of text") but does not name the page numbers; the `.txt` dialog has no such notice at all. Only the `.xlsx` and `.pptx` dialogs render `[data-export-pages-without-text]` naming pages 1 and 2. All four files are valid (non-zero, open in their independent parsers), so only the page-naming half of the criterion is unmet. Judgement: the docx case does NOT satisfy criterion 8 as written, because the criterion requires naming the pages and the docx engine channel returns no text-free page list.
+
+Evidence: `P55_CRIT8_JUDGEMENT` log from `e2e/phase55_office.spec.cjs`; screenshots `screenshots/phase55-export-docx-imageonly.png`, `screenshots/phase55-export-xlsx-imageonly.png`.
+
+History:
+- qa: opened (Phase 55 validation).
+- qa: CLOSED (FIX-READY retest; the orchestrator relayed FIX-READY in the same run). `e2e/phase55_office.spec.cjs` criterion 8 now asserts all four surfaces and passes. `P55_IMAGEONLY` notices are identical on every surface: txt, docx, xlsx and pptx each render `[data-export-pages-without-text]` with "Pages with no extractable text: 1, 2. They were exported as page images." The txt/docx surfaces derive the list from the engine's existing `exportText(docId)` channel via `src/renderer/utils/exportWithoutText.ts`; the xlsx/pptx writers report `pagesWithoutText` in their build result. All four files remain valid (non-zero, open in their independent parsers).
+
 ## DEF-387: SVG remote resources are silently dropped - the documented resource-blocked warning never appears
 
 - Status: CLOSED

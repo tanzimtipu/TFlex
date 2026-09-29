@@ -83,8 +83,8 @@ describe("DEF-313 / Phase 37 item 21 — the dock's relevant set per stage", () 
       "exportComments", "importComments", "fillFromCsv", "validateDocument",
     ]);
     expect(dockToolsForStage("deliver").map((e) => e.id)).toEqual([
-      "optimize", "audit", "exportPages", "exportText", "exportDocx", "createFromImages",
-      "encrypt",
+      "optimize", "audit", "exportPages", "exportText", "exportDocx", "exportXlsx",
+      "exportPptx", "createFromImages", "encrypt",
     ]);
     // Every listed id is uniquely owned by its stage list.
     const all = Object.values(DOCK_STAGE_IDS).flat();

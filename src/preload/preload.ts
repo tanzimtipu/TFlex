@@ -73,6 +73,12 @@ import type {
   ValidationReport,
   ValidationTarget,
 } from "../shared/validation";
+import type {
+  ExportBuild,
+  ExportErrorCode,
+  ExportPptxPayload,
+  ExportXlsxPayload,
+} from "../shared/export";
 import { normalizeArrayBuffer } from "./to-array-buffer";
 
 // The renderer's engineClient.ts declares `window.tflex?.engine` with its own
@@ -464,8 +470,7 @@ const convertApi = {
 // Phase 54 features D + E — validation bridge. Both calls resolve
 // `Result<ValidationReport, ValidationErrorCode>` from main; a report is
 // returned even when violations were found.
-const validationApi = {
-  validate(
+const validationApi = {  validate(
     docId: string,
     target?: ValidationTarget,
   ): Promise<Result<ValidationReport, ValidationErrorCode>> {
@@ -476,6 +481,23 @@ const validationApi = {
     target: ValidationTarget,
   ): Promise<Result<ValidationReport, ValidationErrorCode>> {
     return ipcRenderer.invoke(IPC.validationValidateBytes, bytes, target);
+  },
+};
+
+// Phase 55 feature D — PDF -> office export bridge. Both writers run in main
+// and resolve `Result<ExportBuild, ExportErrorCode>`; never a throw.
+const exportApi = {
+  xlsx(
+    docId: string,
+    payload?: ExportXlsxPayload,
+  ): Promise<Result<ExportBuild, ExportErrorCode>> {
+    return ipcRenderer.invoke(IPC.exportXlsx, docId, payload);
+  },
+  pptx(
+    docId: string,
+    payload?: ExportPptxPayload,
+  ): Promise<Result<ExportBuild, ExportErrorCode>> {
+    return ipcRenderer.invoke(IPC.exportPptx, docId, payload);
   },
 };
 
@@ -664,6 +686,7 @@ const api = {
   engine: engineApi,
   convert: convertApi,
   validation: validationApi,
+  export: exportApi,
   signatures: {
     list(): Promise<SavedSignaturesResult> {
       return ipcRenderer.invoke(IPC.signaturesList);

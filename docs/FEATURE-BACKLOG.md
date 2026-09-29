@@ -461,3 +461,28 @@ What it does: keeps a tagged PDF's logical structure intact across an open-and-s
 
 Why it matters: accessibility is a legal requirement in several of the audiences this program was asked to
 serve, and a save that silently strips tagging is data loss even though no visible pixel changes.
+
+## FEA-024: Styled / heading-aware DOCX export
+
+- Status: DEFERRED - found by backend-dev while implementing REQUIREMENTS.md Phase 55 feature D
+  (2026-09-29). The phase originally promised `.docx` export with "headings by font size" and a
+  `docxHeadingDetection` setting; the implementation could not honour it because the engine's text
+  extractor (`extractTextFromRawPdf` / `parseContentStreamText`, `src/main/services/engine.ts:5907/6258`)
+  returns per-page PLAIN TEXT with no per-line font size, weight or colour, and the DOCX builder
+  (`buildDocxFromDoc`, `engine.ts:6414`) consumes only `DocxDocPage { kind:'text', text }`. Heading
+  detection needs a metric-aware extractor and a styled document model behind it, which is its own change
+  to the engine's most load-bearing code path. The setting was REMOVED from the phase rather than shipped
+  as a knob that changes nothing, and the phase text was amended to match what the product actually does.
+- Source: REQUIREMENTS.md Phase 55 feature D as originally written; the DEF-060/DEF-106 docx export history
+- Category: Export / Office
+- Effort: L (a styled text-extraction pass plus a styled document model and a DOCX writer over it)
+- Likely new settings: yes (`officeConvertDefaults.exports.docxHeadingDetection` returns here when it can
+  actually be honoured)
+- Batch: the Phase 55 export implementation (2026-09-29)
+
+What it does: exports a PDF to a DOCX that preserves heading levels, bold/italic runs, colours and detected
+tables instead of flattening everything to plain paragraphs.
+
+Why it matters: it is the difference between an editable Word file and a Word file that merely contains the
+words; commercial converters compete on exactly this, and the phase's fidelity notes must keep saying what
+the product really achieves until this lands.

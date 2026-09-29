@@ -100,3 +100,34 @@ export function defaultDocxExportFilename(sourceName: string): string {
   }
   return `${safe}.docx`;
 }
+
+/** Phase 55 (feature D) — the MIME type for a `.xlsx` / `.pptx` download. */
+export function mimeForOfficeExportFormat(format: "xlsx" | "pptx"): string {
+  return format === "xlsx"
+    ? "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    : "application/vnd.openxmlformats-officedocument.presentationml.presentation";
+}
+
+/** Phase 55 (feature D) — the default filename for an office export, in the
+ *  same style as the docx/text helpers above. The extension is the format. */
+function defaultOfficeExportFilename(
+  sourceName: string,
+  format: "xlsx" | "pptx",
+): string {
+  const base = sourceName.replace(/\.pdf$/i, "");
+  const safe = base.replace(/[\\/:*?"<>|]+/g, "_").trim();
+  if (safe.length === 0 || safe === "_") {
+    return `document.${format}`;
+  }
+  return `${safe}.${format}`;
+}
+
+/** Build a sensible default filename for an exported .xlsx file. */
+export function defaultXlsxExportFilename(sourceName: string): string {
+  return defaultOfficeExportFilename(sourceName, "xlsx");
+}
+
+/** Build a sensible default filename for an exported .pptx file. */
+export function defaultPptxExportFilename(sourceName: string): string {
+  return defaultOfficeExportFilename(sourceName, "pptx");
+}

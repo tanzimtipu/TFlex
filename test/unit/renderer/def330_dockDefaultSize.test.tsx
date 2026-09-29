@@ -55,7 +55,8 @@ const DOCK_LABELS: Record<Stage, string[]> = {
   ],
   deliver: [
     'Reduce file size', 'Audit space usage', 'Export pages as images',
-    'Export text', 'Export to Word (.docx)', 'Create PDF from images',
+    'Export text', 'Export to Word (.docx)', 'Export as spreadsheet (.xlsx)',
+    'Export as presentation (.pptx)', 'Create PDF from images',
     'Encrypt document',
   ],
 };

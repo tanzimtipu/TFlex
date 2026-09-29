@@ -81,7 +81,51 @@ export const DOCK_AVAILABILITY_REASON: Record<ToolAvailability, string> = {
   'update-pending': 'No update is pending',
   selection: 'Select at least one page first',
   validation: 'Validation is not available in this build',
+  // Phase 55 (feature D) — the two office-export verbs (`export:xlsx` /
+  // `export:pptx`). This copy is the bridge-absent case; the no-document case
+  // is the shared `document` copy, and `officeExportGate` below returns the
+  // right one for the state, so the two are never confused.
+  'office-export': 'This build cannot export office files (Excel / PowerPoint)',
 };
+
+/** Phase 55 (feature D) — the reason the office-export verbs are disabled when
+ *  there is no open document (same words as every other document precondition). */
+export const OFFICE_EXPORT_NO_DOCUMENT_REASON =
+  DOCK_AVAILABILITY_REASON.document;
+
+/** The bridge-absent reason. Exported so the renderer gate, the palette copy
+ *  and the registry's declared availability all read the ONE string. */
+export const OFFICE_EXPORT_DISABLED_REASON =
+  DOCK_AVAILABILITY_REASON['office-export'];
+
+/** The live state the office-export verbs gate on. */
+export interface OfficeExportGateArgs {
+  /** An open, non-empty document is active. */
+  hasDocument: boolean;
+  /** The format's optional `window.tflex.export` member is present. */
+  bridgePresent: boolean;
+}
+
+/**
+ * Phase 55 (feature D) — the live gate for `exportXlsx` / `exportPptx`. The
+ * verb is enabled only when a document is open AND the build actually exposes
+ * the optional `export:xlsx` / `export:pptx` bridge member. Each failure has a
+ * DIFFERENT, honest reason: no document first, then the missing bridge, never a
+ * dead click. The registry's `'office-export'` availability is the dock's
+ * static fallback copy (the bridge-absent string); the App consults this
+ * function so the palette can name the no-document case distinctly.
+ */
+export function officeExportGate(
+  args: OfficeExportGateArgs,
+): { enabled: boolean; reason: string | undefined } {
+  if (!args.hasDocument) {
+    return { enabled: false, reason: OFFICE_EXPORT_NO_DOCUMENT_REASON };
+  }
+  if (!args.bridgePresent) {
+    return { enabled: false, reason: OFFICE_EXPORT_DISABLED_REASON };
+  }
+  return { enabled: true, reason: undefined };
+}
 
 /**
  * The dock's OWN half of the availability gate, used when the host supplies no

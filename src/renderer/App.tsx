@@ -28,7 +28,7 @@ import type {
   WatermarkInfo,
   WatermarkSettings,
 } from "../shared/types";
-import type { TFlexApi, TFlexApiConvert } from "../shared/ipc";
+import type { TFlexApi, TFlexApiConvert, TFlexApiExport } from "../shared/ipc";
 import type { ValidationReport, ValidationTarget } from "../shared/validation";
 import type { ConvertManyResult, ConvertSourceInfo, CsvFieldMappingResult } from "../shared/convert";
 import { DEFAULT_CONVERT_DEFAULTS } from "../shared/convert";
@@ -84,6 +84,7 @@ import { StageRail, isStageRailVisible } from "./components/StageRail";
 // Phase 36 (chunk 3a) — the Action Dock's persisted pins and the registry
 // lookup that validates them on read.
 import {
+  officeExportGate,
   pinDockTool,
   sanitizeDockCuration,
   unpinDockTool,
@@ -215,6 +216,7 @@ import { CreateFromImagesDialog } from "./components/CreateFromImagesDialog";
 import { ExportDialog } from "./components/ExportDialog";
 import { TextExportDialog } from "./components/TextExportDialog";
 import { DocxExportDialog } from "./components/DocxExportDialog";
+import { OfficeExportDialog } from "./components/OfficeExportDialog";
 import { InsertPagesDialog } from "./components/InsertPagesDialog";
 import { ReplacePagesDialog } from "./components/ReplacePagesDialog";
 import { RenumberPagesDialog } from "./components/RenumberPagesDialog";
@@ -643,6 +645,10 @@ export function App(): ReactElement {
   // host-side OS file picker for the "other" file.
   const [textExportOpen, setTextExportOpen] = useState(false);
   const [docxExportOpen, setDocxExportOpen] = useState(false);
+  // Phase 55 (feature D) — the two office-export dialogs (`export:xlsx` /
+  // `export:pptx`). They share ONE parameterised dialog component.
+  const [xlsxExportOpen, setXlsxExportOpen] = useState(false);
+  const [pptxExportOpen, setPptxExportOpen] = useState(false);
   const [insertPagesOpen, setInsertPagesOpen] = useState(false);
   // Phase 12 — residual page-organize + annotate parity. Each
   // dialog drives its own engine IPC; the host routes the result
@@ -2301,6 +2307,8 @@ export function App(): ReactElement {
     setExportOpen(false);
     setTextExportOpen(false);
     setDocxExportOpen(false);
+    setXlsxExportOpen(false);
+    setPptxExportOpen(false);
     setCommentExportOpen(false);
     setCommentImportOpen(false);
     setDeletePageOpen(false);
@@ -5256,6 +5264,49 @@ const onPickMergeFile = useCallback(async (): Promise<{ path: string; bytes: Uin
       pushToast(
         "info",
         `Exported ${result.range.length} page${result.range.length === 1 ? "" : "s"} as DOCX at ${result.dpi} DPI.`,
+      );
+    },
+    [pushToast],
+  );
+
+  // ---- Phase 55 (feature D): office export (.xlsx / .pptx) ----
+  //
+  // The two verbs ride the DELIVER Action Dock and the Command Palette. The
+  // dialogs stay OPEN after a successful export so the result's
+  // `pagesWithoutText` notice stays readable; the host only toasts.
+  const onXlsxExportClick = useCallback((): void => {
+    if (activeTabIdRefLocal.current === null) return;
+    setXlsxExportOpen(true);
+  }, []);
+
+  const onCancelXlsxExport = useCallback((): void => {
+    setXlsxExportOpen(false);
+  }, []);
+
+  const onXlsxExportConfirm = useCallback(
+    (result: { range: number[]; dpi: number }): void => {
+      pushToast(
+        "info",
+        `Exported ${result.range.length} page${result.range.length === 1 ? "" : "s"} as XLSX at ${result.dpi} DPI.`,
+      );
+    },
+    [pushToast],
+  );
+
+  const onPptxExportClick = useCallback((): void => {
+    if (activeTabIdRefLocal.current === null) return;
+    setPptxExportOpen(true);
+  }, []);
+
+  const onCancelPptxExport = useCallback((): void => {
+    setPptxExportOpen(false);
+  }, []);
+
+  const onPptxExportConfirm = useCallback(
+    (result: { range: number[]; dpi: number }): void => {
+      pushToast(
+        "info",
+        `Exported ${result.range.length} page${result.range.length === 1 ? "" : "s"} as PPTX at ${result.dpi} DPI.`,
       );
     },
     [pushToast],
@@ -8490,6 +8541,8 @@ pushToast(
       exportPages: onExportClick,
       exportText: onTextExportClick,
       exportDocx: onDocxExportClick,
+      exportXlsx: onXlsxExportClick,
+      exportPptx: onPptxExportClick,
       encryptDocument: onEncryptClick,
       recognizeText: onOcrClick,
       batchOcr: (): void => {
@@ -8537,6 +8590,8 @@ pushToast(
       onExportClick,
       onTextExportClick,
       onDocxExportClick,
+      onXlsxExportClick,
+      onPptxExportClick,
       onEncryptClick,
       onOcrClick,
       onBatchOcr,
@@ -8637,6 +8692,20 @@ pushToast(
   // instead of throwing on click.
   const hasValidationBridge = typeof window.tflex.validation?.validate === "function";
 
+  // Phase 55 (feature D) — the office-export bridge members are OPTIONAL.
+  // The presence of each format's member is a live gate: its absence disables
+  // the verb with its own reason (`officeExportGate`), never a dead click.
+  const hasExportXlsxBridge = typeof window.tflex.export?.xlsx === "function";
+  const hasExportPptxBridge = typeof window.tflex.export?.pptx === "function";
+  const officeExportBridgePresent = useCallback(
+    (action: string): boolean => {
+      if (action === "exportXlsx") return hasExportXlsxBridge;
+      if (action === "exportPptx") return hasExportPptxBridge;
+      return false;
+    },
+    [hasExportXlsxBridge, hasExportPptxBridge],
+  );
+
   // Phase 54 — the remembered validation defaults the dialog re-seeds from.
   const validationDefaults = effectiveValidationDefaults(settings);
 
@@ -8668,6 +8737,11 @@ pushToast(
           return dockHasDocument;
         case "validation":
           return hasValidationBridge && dockHasDocument;
+        case "office-export":
+          return officeExportGate({
+            hasDocument: dockHasDocument,
+            bridgePresent: officeExportBridgePresent(entry.action),
+          }).enabled;
         case "recents":
           return recentDisplays.length > 0;
         case "form-fields":
@@ -8692,6 +8766,7 @@ pushToast(
       appActionGates,
       dockHasDocument,
       hasValidationBridge,
+      officeExportBridgePresent,
       recentDisplays.length,
       activeTab,
       ocrRunByTab,
@@ -8905,6 +8980,11 @@ pushToast(
           return dockHasDocument;
         case "validation":
           return hasValidationBridge && dockHasDocument;
+        case "office-export":
+          return officeExportGate({
+            hasDocument: dockHasDocument,
+            bridgePresent: officeExportBridgePresent(entry.action),
+          }).enabled;
         case "tab":
           return tabs.activeId !== null;
         case "form-fields":
@@ -8934,6 +9014,7 @@ pushToast(
       appActionGates,
       dockHasDocument,
       hasValidationBridge,
+      officeExportBridgePresent,
       tabs.activeId,
       activeTab,
       ocrRunByTab,
@@ -8945,19 +9026,28 @@ pushToast(
 
   // DEF-327 — the disabled row's refusal copy, in the dock's own order: the
   // focused pane's live reason first ("Turn on Edit content first"), then the
-  // shared per-action copy ("Nothing to undo", "Turn on Multi Mode first"), and
-  // otherwise `undefined` so the palette falls back to the registry's declared
-  // availability ("Run Recognize text first").
+  // shared per-action copy ("Nothing to undo"), and otherwise `undefined` so
+  // the palette falls back to the registry's declared availability ("Run
+  // Recognize text first").
   const paletteDisabledReason = useCallback(
     (entry: ToolEntry): string | undefined => {
       if (paletteToolEnabled(entry)) return undefined;
+      // Phase 55 (feature D) — the office-export verbs have TWO distinct
+      // disabled states; read the ONE live gate so the no-document case reads
+      // "Open a document first" and the bridge-absent case its own copy.
+      if (entry.availability === "office-export") {
+        return officeExportGate({
+          hasDocument: dockHasDocument,
+          bridgePresent: officeExportBridgePresent(entry.action),
+        }).reason;
+      }
       return paletteDisabledReasonFor({
         entry,
         paneReason: focusedDockAvailability()?.disabledReasonFor,
         actionReasons: PALETTE_ACTION_REASONS,
       });
     },
-    [paletteToolEnabled, focusedDockAvailability],
+    [paletteToolEnabled, focusedDockAvailability, officeExportBridgePresent, dockHasDocument],
   );
 
   // Run a palette row: the view layer first (exactly like the dock's own
@@ -9972,6 +10062,8 @@ pushToast(
         runExport={runExportText}
         onConfirm={onTextExportConfirm}
         sourceName={activeTab?.displayName ?? "this document"}
+        docId={activeTab?.session.engineDocId ?? null}
+        engine={engineRef.current}
         onClose={onCancelTextExport}
       />
       <DocxExportDialog
@@ -9985,7 +10077,39 @@ pushToast(
         runAssemble={runAssembleDocx}
         onConfirm={onDocxExportConfirm}
         sourceName={activeTab?.displayName ?? "this document"}
+        docId={activeTab?.session.engineDocId ?? null}
+        engine={engineRef.current}
         onClose={onCancelDocxExport}
+      />
+      <OfficeExportDialog
+        open={xlsxExportOpen}
+        format="xlsx"
+        totalPages={
+          activeEngineUi?.state.pageCount ??
+          activeTab?.session.doc.numPages ??
+          0
+        }
+        sourceName={activeTab?.displayName ?? "this document"}
+        docId={activeTab?.session.engineDocId ?? null}
+        client={window.tflex.export as TFlexApiExport | undefined}
+        runEngineExport={runExportPages}
+        onConfirm={onXlsxExportConfirm}
+        onClose={onCancelXlsxExport}
+      />
+      <OfficeExportDialog
+        open={pptxExportOpen}
+        format="pptx"
+        totalPages={
+          activeEngineUi?.state.pageCount ??
+          activeTab?.session.doc.numPages ??
+          0
+        }
+        sourceName={activeTab?.displayName ?? "this document"}
+        docId={activeTab?.session.engineDocId ?? null}
+        client={window.tflex.export as TFlexApiExport | undefined}
+        runEngineExport={runExportPages}
+        onConfirm={onPptxExportConfirm}
+        onClose={onCancelPptxExport}
       />
       <InsertPagesDialog
         open={insertPagesOpen}

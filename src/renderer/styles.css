@@ -9392,6 +9392,43 @@ rect.ann-highlight.ann-preview {
   font-variant-numeric: tabular-nums;
 }
 
+/* Phase 55 (feature D) — the mandatory export fidelity warning shown on every
+   export surface (txt / docx / xlsx / pptx). Muted, bordered and small, the
+   same informational weight as the notices above; the warning glyph keeps it
+   from reading as decoration. */
+.export-fidelity {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 10px;
+  background: var(--bg-toolbar);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-2);
+  color: var(--fg-muted);
+}
+
+.export-fidelity-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--fg);
+  font-size: var(--fs-xs);
+  font-weight: 600;
+}
+
+.export-fidelity-list {
+  margin: 0;
+  padding-left: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.export-fidelity-list li {
+  font-size: var(--fs-xs);
+  line-height: 1.45;
+}
+
 [role="button"][data-tool-id="createFromImages"],
 [role="button"][data-tool-id="exportPages"] {
   /* Placeholder for any per-entry tweaks. The base tools-palette
@@ -14626,6 +14663,8 @@ cursor: pointer;
 .action-dock-verb[data-dock-verb='exportPages']:not(.action-dock-verb-primary):not([aria-pressed='true']):not(:disabled) { color: var(--sem-affirmative); }
 .action-dock-verb[data-dock-verb='exportText']:not(.action-dock-verb-primary):not([aria-pressed='true']):not(:disabled) { color: var(--sem-affirmative); }
 .action-dock-verb[data-dock-verb='exportDocx']:not(.action-dock-verb-primary):not([aria-pressed='true']):not(:disabled) { color: var(--sem-affirmative); }
+.action-dock-verb[data-dock-verb='exportXlsx']:not(.action-dock-verb-primary):not([aria-pressed='true']):not(:disabled) { color: var(--sem-affirmative); }
+.action-dock-verb[data-dock-verb='exportPptx']:not(.action-dock-verb-primary):not([aria-pressed='true']):not(:disabled) { color: var(--sem-affirmative); }
 .action-dock-verb[data-dock-verb='createFromImages']:not(.action-dock-verb-primary):not([aria-pressed='true']):not(:disabled) { color: var(--sem-affirmative); }
 .action-dock-verb[data-dock-verb='encrypt']:not(.action-dock-verb-primary):not([aria-pressed='true']):not(:disabled) { color: var(--sem-attention); }
 

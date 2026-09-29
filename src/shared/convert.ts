@@ -26,9 +26,16 @@ export type ConvertFormatId =
   | 'svg'
   | 'docx'
   | 'odt'
+  /** Phase 55 — legacy binary Word (OLE/CFB), text-only degraded import. */
+  | 'doc'
   | 'xlsx'
+  /** Phase 55 feature B — legacy binary Excel (BIFF/OLE-CFB). */
+  | 'xls'
   | 'ods'
   | 'pptx'
+  /** Phase 55 feature C — legacy binary PowerPoint (OLE/CFB), text-only
+   *  degraded import sharing the `.doc` CFB walker. */
+  | 'ppt'
   | 'epub'
   | 'mobi'
   | 'cbz'
@@ -115,6 +122,18 @@ export interface ConvertOptions {
   imageFixedPageSize?: 'a4' | 'letter';
   imageFit?: 'contain' | 'cover' | 'actual';
   imageRotationDeg?: 0 | 90 | 180 | 270;
+  // Phase 55 feature B — the spreadsheet import block. Mirrors the
+  // `officeConvertDefaults.spreadsheets` Settings shape one-for-one; the
+  // renderer maps a stored setting onto these per-call options. Every key
+  // optional here (resolved from `DEFAULT_CONVERT_OPTIONS` by the service).
+  spreadsheetGridlines?: boolean;
+  spreadsheetFitToWidth?: boolean;
+  spreadsheetOrientation?: 'auto' | 'portrait' | 'landscape';
+  // Phase 55 feature C — the presentation import block. Mirrors the
+  // `officeConvertDefaults.presentations` Settings shape; the renderer maps the
+  // stored setting onto this per-call option. Optional here (resolved from
+  // `DEFAULT_CONVERT_OPTIONS` by the service).
+  presentationIncludeNotes?: boolean;
 }
 
 /** What an adapter returns. `bytes` go straight to the engine, never back

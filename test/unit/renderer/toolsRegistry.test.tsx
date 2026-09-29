@@ -59,7 +59,7 @@ const AUDITED: Record<string, readonly string[]> = {
     "annEllipse", "annArrow", "annCallout", "annNote", "annColor",
     "annPenWidth",
   ],
-  deliver: ["optimize", "audit", "createFromImages", "exportPages", "exportText", "exportDocx", "encrypt"],
+  deliver: ["optimize", "audit", "createFromImages", "exportPages", "exportText", "exportDocx", "exportXlsx", "exportPptx", "encrypt"],
   global: [
     "open", "openRecent", "openSample", "removeRecent", "createFromClipboard",
     "save", "saveAs", "print", "find", "zoomIn", "zoomOut", "fitWidth",
@@ -217,8 +217,8 @@ describe("toolsRegistry — canonical surface + the curated dock sets (DEF-313)"
       "exportComments", "importComments", "fillFromCsv", "validateDocument",
     ]);
     expect(dockToolsForStage("deliver").map((e) => e.id)).toEqual([
-      "optimize", "audit", "exportPages", "exportText", "exportDocx", "createFromImages",
-      "encrypt",
+      "optimize", "audit", "exportPages", "exportText", "exportDocx",
+      "exportXlsx", "exportPptx", "createFromImages", "encrypt",
     ]);
     expect(dockToolsForStage("global")).toEqual([]);
     // The closed list must equal the derived Phase-37 relevance rule exactly, so
