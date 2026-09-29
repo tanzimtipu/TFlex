@@ -23,6 +23,20 @@ export interface WhatsNewEntry {
 /** Ordered newest first. */
 export const WHATS_NEW: WhatsNewEntry[] = [
   {
+    version: '1.45.0',
+    date: '2026-09-30',
+    highlights: [
+      'Open far more than PDFs: Word, Excel, PowerPoint and OpenDocument documents, images (PNG, JPEG, TIFF, SVG), and text, Markdown, RTF, CSV and HTML all import as PDFs.',
+      'Read e-books and comics in the app: EPUB, MOBI, AZW and CBZ/CBT open in a reading view with chapters, or as pages.',
+      'Export a PDF back out: a structural Word (.docx), spreadsheet (.xlsx) or presentation (.pptx) file, or a page or range as PNG or JPEG at 72 to 600 DPI.',
+      "Fill a document\u2019s form fields from a CSV spreadsheet in one step.",
+      'Engineering PDFs (.pdf/E) list their layers with on/off switches and show their CAD and engineering metadata; 3D content is detected and explained instead of showing a blank page.',
+      'Form data can be exported and imported as FDF or XFDF, with a clear report of which field names matched, which did not, and which received no data.',
+      'Saving keeps more of the original document: named destinations and the initial view now survive a save.',
+      'Check a document before you send it: PDF/A archival and PDF/X print validation report what a file declares and every finding.',
+    ],
+  },
+  {
     version: '1.44.0',
     date: '2026-09-28',
     highlights: [
