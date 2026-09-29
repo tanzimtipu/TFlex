@@ -80,7 +80,7 @@ describe("DEF-313 / Phase 37 item 21 — the dock's relevant set per stage", () 
     ]);
     expect(dockToolsForStage("review").map((e) => e.id)).toEqual([
       "annotate", "sign", "stamp", "flatten", "forms", "watermark",
-      "exportComments", "importComments", "fillFromCsv",
+      "exportComments", "importComments", "fillFromCsv", "validateDocument",
     ]);
     expect(dockToolsForStage("deliver").map((e) => e.id)).toEqual([
       "optimize", "audit", "exportPages", "exportText", "exportDocx", "createFromImages",

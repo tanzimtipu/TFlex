@@ -1,7 +1,7 @@
 import { readFile, writeFile } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
 import { inflateSync } from 'node:zlib';
-import { beginText, concatTransformationMatrix, degrees, drawObject, endText, fill, PDFArray, PDFCheckBox, PDFDict, PDFDocument, PDFDropdown, PDFHexString, PDFName, PDFOptionList, PDFRadioGroup, PDFRef, PDFStream, PDFTextField, rectangle, rgb, setCharacterSpacing, setFillingRgbColor, setFontAndSize, setGraphicsState, setTextMatrix, showText, StandardFonts, TextRenderingMode, setTextRenderingMode, pushGraphicsState, popGraphicsState, translate, rotateRadians, skewRadians, setLineWidth, setDashPattern, moveTo, lineTo, closePath, type PDFOperator, type PDFObject, type PDFImage, type PDFFont, type PDFPage } from '@cantoo/pdf-lib';
+import { beginText, concatTransformationMatrix, degrees, drawObject, endText, fill, PDFArray, PDFCheckBox, PDFDict, PDFDocument, PDFDropdown, PDFHexString, PDFName, PDFObjectCopier, PDFOptionList, PDFRadioGroup, PDFRef, PDFStream, PDFTextField, rectangle, rgb, setCharacterSpacing, setFillingRgbColor, setFontAndSize, setGraphicsState, setTextMatrix, showText, StandardFonts, TextRenderingMode, setTextRenderingMode, pushGraphicsState, popGraphicsState, translate, rotateRadians, skewRadians, setLineWidth, setDashPattern, moveTo, lineTo, closePath, type PDFOperator, type PDFObject, type PDFImage, type PDFFont, type PDFPage } from '@cantoo/pdf-lib';
 import { err, ok, type Result } from '../../shared/result';
 import type {
   AddStampPayload,
@@ -4513,6 +4513,104 @@ function drawClassicWhiteMaskRect(
   );
 }
 
+/**
+ * DEF-378 / DEF-381 — carry source-catalog entries onto the re-serialized
+ * output document.
+ *
+ * serializeDoc builds a fresh PDFDocument and copies only pages, so catalog
+ * entries were dropped on every save: an opened PDF/A or PDF/X document lost
+ * its declared conformance level and its ICC output intent before it was ever
+ * re-validated, and a document with optional content groups lost its layers.
+ * The source entries cannot be attached as-is because their PDFRefs belong to
+ * the source context; they are deep-cloned into the output context with
+ * pdf-lib's own PDFObjectCopier, which also memoises shared indirect objects
+ * (the same ICC stream referenced twice is copied once).
+ *
+ * Every entry carried here is known to never reference a page object, so a
+ * whole-value clone cannot drag the page tree into the output context:
+ *   - /Metadata, /OutputIntents        (DEF-378: XMP + ICC)
+ *   - /MarkInfo, /Lang, /ViewerPreferences  (flat dicts / strings)
+ *   - /OCProperties                    (optional-content configuration: OCG
+ *     dicts and order arrays only — Phase 57 layers)
+ *   - /Collection, /AF                 (portfolio / associated-file metadata)
+ *
+ * /Names is a name tree that CAN hold page references (named destinations),
+ * so it is NOT cloned wholesale — only its /JavaScript subtree is copied, by
+ * carryJavaScriptNames below. That subtree's values are action dictionaries
+ * holding strings/streams and never pages, and it is what the PDF/A
+ * JavaScript rule inspects.
+ *
+ * Still deliberately dropped, each needing its own page-ref remapping:
+ *   - /StructTreeRoot  (tagged-PDF structure references page objects; needs a
+ *     real re-tagging pass)
+ *   - /Names as a whole, /Dests  (named destinations reference pages)
+ *   - /OpenAction  (may hold a page reference, e.g. a destination action)
+ *   - /AcroForm  (the engine owns form serialization; see serializeDoc)
+ *   - /Outlines and /PageLabels are NOT dropped — carried by separate code paths.
+ *
+ * Failure-isolated: any clone failure is skipped so a save is never blocked by
+ * an uncloneable metadata stream; the output then matches the page-only result.
+ */
+function carryCatalogEntries(out: PDFDocument, src: PDFDocument): void {
+  const names = [
+    'Metadata',
+    'OutputIntents',
+    'MarkInfo',
+    'Lang',
+    'ViewerPreferences',
+    'OCProperties',
+    'Collection',
+    'AF',
+  ] as const;
+  for (const name of names) {
+    try {
+      const value = src.catalog.get(PDFName.of(name));
+      if (value === undefined) continue;
+      const cloned = PDFObjectCopier.for(src.context, out.context).copy(value);
+      out.catalog.set(PDFName.of(name), cloned);
+    } catch {
+      // Best-effort: never fail a save because a catalog entry could not be
+      // cloned. The save proceeds exactly as it did before DEF-378.
+    }
+  }
+  // Separate, failure-isolated selective step: /Names /JavaScript only.
+  try {
+    carryJavaScriptNames(out, src);
+  } catch {
+    // Same best-effort contract as the whole-entry clones above.
+  }
+}
+
+/**
+ * Selectively carry ONLY the source catalog's `/Names /JavaScript` subtree.
+ *
+ * `/Names` can reference page objects through named destinations, so cloning
+ * it wholesale could copy page objects into the destination context and
+ * corrupt the page tree. The `/JavaScript` name tree is different: its values
+ * are JavaScript action dictionaries (strings/streams), never pages, and it is
+ * exactly what the PDF/A rule set rejects. Cloning just this subtree keeps the
+ * serialized bytes the validator sees faithful to the source, closing the
+ * false-PASS hole where JavaScript was dropped before validation.
+ */
+function carryJavaScriptNames(out: PDFDocument, src: PDFDocument): void {
+  const srcNamesValue = src.catalog.get(PDFName.of('Names'));
+  if (srcNamesValue === undefined) return;
+  const srcNames = src.context.lookupMaybe(srcNamesValue, PDFDict);
+  if (srcNames === undefined) return;
+  const jsValue = srcNames.get(PDFName.of('JavaScript'));
+  if (jsValue === undefined) return;
+
+  const cloned = PDFObjectCopier.for(src.context, out.context).copy(jsValue);
+  const existing = out.context.lookupMaybe(out.catalog.get(PDFName.of('Names')), PDFDict);
+  if (existing === undefined) {
+    const outNames = out.context.obj({}) as PDFDict;
+    outNames.set(PDFName.of('JavaScript'), cloned);
+    out.catalog.set(PDFName.of('Names'), out.context.register(outNames));
+  } else {
+    existing.set(PDFName.of('JavaScript'), cloned);
+  }
+}
+
 async function serializeDoc(doc: EngineDoc): Promise<Uint8Array> {
   const out = await PDFDocument.create();
   const pageMap = new Map<number, number>(); // origIdx -> output page index
@@ -4563,6 +4661,12 @@ async function serializeDoc(doc: EngineDoc): Promise<Uint8Array> {
     out.addPage(copied);
     pageMap.set(origIdx, idx);
   }
+
+  // DEF-378 / DEF-381 — carry the source catalog entries that cannot reference
+  // a page (XMP, ICC output intents, layers, portfolio metadata, ...) plus the
+  // /Names /JavaScript subtree, so a save does not lose a PDF/A or PDF/X
+  // declaration, optional content, or hide JavaScript from the validator.
+  carryCatalogEntries(out, doc.pdfDoc);
 
   // Serialize annotations onto the output doc
   await serializeAnnotations(out, doc.annotations, doc.order);

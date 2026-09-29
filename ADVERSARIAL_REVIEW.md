@@ -4194,3 +4194,373 @@ Disposition: ACCEPTED -> DEF-359
   I did not run the app in Multi Mode (the dock is shared and driven by the
   focused pane's stage) nor in the dark/frosted themes for this icon pass -
   both are out of the phase's icon-identity scope and were reasoned only.
+
+## Phase 54 gate - imaging, print graphics, PDF/A and PDF/X validation
+
+Session label: `phase-54 gate`. Attacked the Phase 54 surface only: the image
+metadata readers (`image-meta.ts`), the image/TIFF/SVG adapters, the hand-rolled
+SVG scanner/painter, the XMP + PDF/A + PDF/X rule set, and the renderer's
+create-from-images routing. Every specimen is in `test-fixtures/adv-p54/`
+(built by `build-fixtures.cjs`); the app was launched ONLY through
+`e2e/lib/launch.cjs` and driven through the product's own bridge
+(`window.tflex.convert` / `engine.getDocumentBytes` / `validation.validateBytes`)
+by the `a*.cjs` harnesses in the same directory. Raw logs are under
+`test-fixtures/adv-p54/logs/`. The build under test was rebuilt first
+(`npm.cmd run build`) so `dist/` carried Phase 54.
+
+## ADV-098: A 14-byte cyclic-IFD TIFF drives UTIF.decode into an unbounded loop and OOM-crashes the main process
+
+- Session: phase-54 gate
+- Suggested severity: HIGH
+
+What I did:
+1. Built `test-fixtures/adv-p54/tiff-cyclic-ifd.tiff`, 14 bytes:
+   `49 49 2a 00 08 00 00 00 00 00 08 00 00 00` (little-endian header, IFD0 at
+   offset 8, zero entries, next-IFD pointer at offset 10 pointing back to 8).
+2. `node test-fixtures/adv-p54/a2-one.cjs tiff-cyclic-ifd.tiff 25000`, which
+   launches the real dev build and calls `window.tflex.convert.toDocument` on
+   the file.
+3. No result was ever returned. The Electron main process grew its V8 heap,
+   and at roughly 22 s of main-process uptime printed, repeatedly:
+   `OOM error in V8: MarkCompactCollector: young object promotion failed
+   Allocation failed - JavaScript heap out of memory` at ~4 GB. The renderer
+   IPC then rejected with `Target page, context or browser has been closed`,
+   and the app was gone (`usableAfter` dead). A second run with a 6 s deadline
+   reproduced the same OOM
+   (`test-fixtures/adv-p54/logs/cyclic.log`).
+4. Root cause (verified in `node_modules/utif/UTIF.js:93-98`): `UTIF.decode`
+   loops `while (true) { noff = _readIFD(...); ifdo = readUint(data, noff);
+   if (ifdo == 0) break; }`. With the self-referential next-IFD pointer,
+   `ifdo` is always 8, so `ifds.push(ifd)` grows without bound and the loop
+   never terminates. `src/main/services/convert/adapters/tiff.ts:135` calls
+   `UTIF.decode` inside a `try/catch` that can never fire on a loop.
+
+Expected: a typed, readable failure (e.g. `corrupt`) back across IPC; at worst
+a timeout. A malformed 14-byte file must never be able to exhaust the main
+process.
+Actual: the main process runs an unbounded allocation loop until V8 OOMs and
+the whole application dies. No typed error reaches the renderer; a restart is
+required.
+
+Screenshot: none (process death, no window to capture). Log:
+`test-fixtures/adv-p54/logs/cyclic.log`. Fixture:
+`test-fixtures/adv-p54/tiff-cyclic-ifd.tiff`.
+
+Disposition: ACCEPTED -> DEF-380
+
+## ADV-099: PDF/X validation of a sub-megabyte PDF whose content stream decodes to ~200 MB OOM-crashes the main process; validation has no timeout
+
+- Session: phase-54 gate
+- Suggested severity: HIGH
+
+What I did:
+1. Built `test-fixtures/adv-p54/val-bigcontent.pdf` (408 KB on disk) whose
+   page `/Contents` is a Flate stream that decodes to 200 MiB of
+   `0 0 0 0 k` operators (no `rg`/`RG`, so the scan cannot bail out early).
+2. `node test-fixtures/adv-p54/a4b-big.cjs`, which launches the real dev build
+   and calls `window.tflex.validation.validateBytes(bytes, 'pdfx-1a')`.
+3. Observed: about 2.6 s in, the main process printed
+   `OOM error in V8: invalid array length Allocation failed - JavaScript heap
+   out of memory` (the GC trace shows the heap at ~1 GB and climbing), the
+   renderer IPC rejected with `Target page, context or browser has been
+   closed`, and `app.evaluate` afterwards was unavailable - the app was dead
+   (`test-fixtures/adv-p54/logs/a4b.log`).
+4. Swept the size with `node test-fixtures/adv-p54/a4d-bigsteps.cjs`:
+   25 MiB decoded -> 445 ms, 50 MiB -> 1135 ms, 100 MiB -> 2155 ms, all
+   `ok:true`; 200 MiB -> OOM. So even the surviving sizes freeze the main
+   process synchronously for seconds.
+
+Root cause: `contentUsesDeviceRgb` in
+`src/main/services/validation/pdfa.ts` calls `content.split(/\s+/)` on the
+fully decoded content, materialising ~100 million substrings for 200 MiB, with
+no byte cap; `DocumentValidationService.validateBytes` runs the collection
+synchronously with no timeout and no size guard.
+
+Expected: a bounded scan (size cap or streaming tokeniser) and a typed
+`too-large`/`timeout` result; never an OOM of the main process.
+Actual: a 408 KB crafted PDF kills the application during PDF/X validation.
+
+Screenshot: none (process death). Logs:
+`test-fixtures/adv-p54/logs/a4b.log`, `test-fixtures/adv-p54/logs/a4d.log`.
+Fixture: `test-fixtures/adv-p54/val-bigcontent.pdf`.
+
+Disposition: ACCEPTED -> DEF-381
+
+## ADV-100: Image-import page size is unclamped - a 1-DPI metadata claim produces a 1,417,322 pt page, and a max-pHYs claim produces a 0.000066 pt page and a 308,791,459% zoom
+
+- Session: phase-54 gate
+- Suggested severity: MEDIUM
+
+What I did:
+1. Built genuine images with hostile resolution metadata (all valid PNGs whose
+   pixel data really is the stated size):
+   - `png-20000-1dpi.png` (20000x20000, 1-bit gray, `pHYs` 40 px/m = 1.016 DPI)
+   - `png-2000-1dpi.png` (2000x2000, `pHYs` 40 px/m)
+   - `png-phys-max.png` (100x100, `pHYs` 0xFFFFFFFF px/m = 109,092,169 DPI)
+   - `png-1x1-100000dpi.png` (1x1, `pHYs` 3,937,008 px/m = 100,000 DPI)
+2. `node test-fixtures/adv-p54/a2-one.cjs png-20000-1dpi.png 180000` and the
+   same for the others through `window.tflex.convert.toDocument`.
+3. Results (page media boxes read back from the produced PDF):
+   - `png-20000-1dpi.png`: `ok:true`, 1 page, **1,417,322.83 x 1,417,322.83
+     pt** (~19,685 in per side, about 98x PDF's 14,400 pt implementation
+     limit), `warnings: []`, 16.3 s.
+   - `png-2000-1dpi.png`: 141,732.28 pt per side, `warnings: []`.
+   - `png-phys-max.png`: 0.000065999 pt per side, `warnings: []`.
+   - `png-1x1-100000dpi.png`: 0.00072 pt per side, `warnings: []`.
+4. Opened the degenerate ones through the real Create-from-images dialog
+   (`a6b-one.cjs`): the UI enters `zoom=308791459%` for `png-phys-max.png`
+   and `zoom=283055565%` for `png-1x1-100000dpi.png`; the Inspector's `Size`
+   row shows `-` (undetermined) for every case above. Screenshots:
+   `test-fixtures/adv-p54/shots/a6-phys-max.png` (308,791,459%),
+   `a6-1x1-100k.png`, `a6-2000-1dpi.png` (1% zoom).
+
+Root cause: `computeImagePlacement` (adapters/images.ts) computes
+`points = pixels / dpi * 72` per axis with no floor or ceiling; `resolveDpi`
+only rejects `dpi <= 0`, and nothing validates the resulting media box.
+
+Expected: the app should either refuse a page size outside a sane range with a
+readable warning, or clamp it; it must not silently emit a PDF page far beyond
+the format's implementation limit (or a near-zero page that drives the UI to a
+308-million-percent zoom).
+Actual: `ok:true` with no warning in every case. The absurd page is written and
+opened; the only symptom is the unreadable zoom and the `Size: -` inspector
+row.
+
+Screenshot: `test-fixtures/adv-p54/shots/a6-phys-max.png` (zoom pill
+`308791459%`), `a6-1x1-100k.png`, `a6-2000-1dpi.png`.
+
+Disposition: ACCEPTED -> DEF-382
+
+## ADV-101: A wrong-typed /OutputIntents hard-errors the validator instead of reporting "could not be determined"
+
+- Session: phase-54 gate
+- Suggested severity: MEDIUM
+
+What I did:
+1. Built PDFs whose catalog `/OutputIntents` is the wrong type:
+   `val-oi-number.pdf` (`/OutputIntents 42`), `val-oi-nested.pdf`
+   (`/OutputIntents [[1 2] [3 4]]`), `val-oi-array-of-numbers.pdf`
+   (`/OutputIntents [1]`), and `val-oi-null.pdf` (`/OutputIntents null`).
+2. `node test-fixtures/adv-p54/a4-validation.cjs` calls the real
+   `window.tflex.validation.validateBytes(bytes, 'pdfa-1b')` on each.
+3. Observed:
+   - `val-oi-number.pdf` -> `ok:false`, `error {code:'internal', message:
+     "Validation failed: Expected instance of _PDFArray, but got instance of
+     _PDFNumber"}`.
+   - `val-oi-nested.pdf` -> same shape with `_PDFDict`/`_PDFArray`.
+   - `val-oi-array-of-numbers.pdf` -> same shape with `_PDFDict`/`_PDFNumber`.
+   - `val-oi-null.pdf` -> `ok:true`, reported as "No /OutputIntents entry".
+4. Root cause (verified in `node_modules/@cantoo/pdf-lib/cjs/core/PDFContext.js:
+   62-81`): `lookupMaybe(ref, type)` THROWS `UnexpectedObjectTypeError` when the
+   object exists but is not one of `type`; it does not return `undefined`.
+   `collectOutputIntent` relies on it for `/OutputIntents` and for each entry;
+   the same pattern is used for font resources and ExtGState in
+   `collectFontEmbedding` / `collectTransparency`.
+
+Expected: the rule set's own documented promise - "Where a check cannot be
+decided from the parsed data it is reported as a warning with the text 'could
+not be determined', never as a silent pass" - i.e. a report with an
+undetermined output-intent warning (and the other rules still evaluated).
+Actual: the entire validation aborts with a generic `internal` error and no
+rule list for a PDF whose `/OutputIntents` is merely the wrong type.
+
+Screenshot: none.
+
+Disposition: ACCEPTED -> DEF-383
+
+## ADV-102: SVG parse and geometry failures are never surfaced - truncated and all-NaN SVGs import silently
+
+- Session: phase-54 gate
+- Suggested severity: MEDIUM
+
+What I did:
+1. Built `svg-truncated-25/50/75/90.svg` (the Phase 54 `native.svg` cut at 25%,
+   50%, 75%, 90% of its bytes) and `svg-numeric-hostile2.svg` (a valid 100x100
+   SVG whose only shapes carry `NaN`, `Infinity`, `1e999` and negative
+   `x/y/width/height/rx/ry/r/cx/cy/stroke-width`).
+2. `node test-fixtures/adv-p54/a3-svg.cjs 90000 svg-truncated-25.svg
+   svg-truncated-50.svg svg-truncated-75.svg svg-truncated-90.svg
+   svg-numeric-hostile2.svg` through the real conversion bridge.
+3. Observed for all five: `ok:true`, `fidelity:'native'`, `warnings: []`.
+   The truncated files each import one partial page (the parse diagnostics
+   "Unclosed <g> element", "Unclosed <polygon> element", etc. are discarded);
+   `svg-numeric-hostile2.svg` imports one blank 75x75 pt page (`generatePaintOps`
+   returns `ops: []` because every geometry value fails `readNumber`). Opening
+   it through the real Open dialog shows a blank page with a `Native` fidelity
+   badge and zero warnings. Screenshot:
+   `test-fixtures/adv-p54/shots/a6-svg-numeric.png`.
+4. Root cause: `parseSvg` returns `diagnostics` and `generatePaintOps` carries
+   them into `PaintResult.diagnostics`, but the SVG adapter
+   (`adapters/svg.ts`) never reads `paint.diagnostics`; there is no warning for
+   dropped geometry either.
+
+Expected: a warning naming the malformed/truncated markup (or the constructs
+that could not be translated), or a fallback to the engine-rendered path; the
+user must not be shown a silently partial or blank page as `Native`.
+Actual: silent partial and silent blank imports with no warning.
+
+Screenshot: `test-fixtures/adv-p54/shots/a6-svg-numeric.png`.
+
+Disposition: ACCEPTED -> DEF-384
+
+## ADV-103: A 62-byte TIFF with absurd frame dimensions blocks the main process ~27 s and transiently allocates gigabytes
+
+- Session: phase-54 gate
+- Suggested severity: MEDIUM
+
+What I did:
+1. Built `test-fixtures/adv-p54/tiff-absurd-dims.tiff`, 62 bytes: IFD tags
+   `t256=20000`, `t257=20000`, `t273=[]` (empty StripOffsets), `t277=1`.
+2. `node test-fixtures/adv-p54/a2-one.cjs tiff-absurd-dims.tiff 90000` through
+   the real conversion bridge.
+3. Observed: the call took **26,963 ms** and then returned `ok:true` with one
+   `frame-decode-failed` placeholder page; the app was usable afterwards. No
+   progress, no cancel response during those 27 s - the main process (and so
+   the whole UI) is blocked for the duration; only then does the frame degrade.
+4. Cause (verified in `node_modules/utif/UTIF.js`): `UTIF.decodeImage`
+   allocates `new Uint8Array(height*(bipl>>>3))` (line 125) before it touches
+   the strip offset list, and `UTIF.toRGBA8` allocates `new Uint8Array(area*4)`
+   (line 986) before the adapter's own `rgba.length < width*height*4` guard can
+   reject the frame - about 50 MB and 1.6 GB respectively for these numbers,
+   plus the PNG re-encode. The adapter's per-frame `try/catch` only limits the
+   final result, not the work done to get there.
+
+Expected: a frame that cannot be decoded should fail fast with a typed error;
+a 62-byte file must not purchase tens of seconds of main-process time and
+gigabyte allocations.
+Actual: ~27 s of UI-blocking synchronous work and transient multi-gigabyte
+allocation before the placeholder page is produced.
+
+Screenshot: none. Log: `test-fixtures/adv-p54/logs/absurd-dims.log`.
+
+Disposition: ACCEPTED -> DEF-385
+
+## ADV-104: A conforming PDF that declares `pdfaid part 9 / conformance Z` validates as conforms:true with declared "PDF/A-9z"
+
+- Session: phase-54 gate
+- Suggested severity: LOW
+
+What I did:
+1. Took the known-conforming `test-fixtures/phase54/pdfa-1b-ok.pdf`, and patched
+   its XMP `pdfaid:part` from `1` to `9` and `pdfaid:conformance` from `B` to
+   `Z`, saving `test-fixtures/adv-p54/val-pdfa-conforming-bogusid.pdf`.
+2. `node test-fixtures/adv-p54/a4c-bogusid.cjs` validates it through the real
+   bridge against `pdfa-1b` and `pdfa-2b`.
+3. Observed: `ok:true`, `declared:"PDF/A-9z"`, `conforms:true`,
+   `violations: []` for both targets. The unpatched control still reports
+   `declared:"PDF/A-1b", conforms:true`. Likewise
+   `val-pdfa-unknown-conf.pdf` (part 1, conformance `X`) reports
+   `declared:"PDF/A-1x"`, and `val-pdfx-part9.pdf` reports
+   `declared:"PDF/X-99:2099"` - no rule flags the impossible identifier.
+4. Cause: `parsePdfaId` accepts any integer `part` and any non-empty
+   `conformance` string; nothing validates the pair against the known set.
+
+Expected: an unknown part or conformance letter should be reported (e.g. an
+"unrecognised declared level" warning) rather than echoed, and the report
+should not pair a standard that does not exist with `conforms:true`.
+Actual: `declared: PDF/A-9z` + `conforms: true`, no warning.
+
+Screenshot: none.
+
+Disposition: ACCEPTED -> DEF-386
+
+## ADV-105: SVG remote resources are silently dropped - the documented resource-blocked warning never appears
+
+- Session: phase-54 gate
+- Suggested severity: LOW
+
+What I did:
+1. Built `svg-remote.svg` (two `<image>` elements pointing at
+   `https://example.invalid/...` and `http://example.invalid/...`) and
+   `svg-remote-styles.svg` (a `@import url(https://...)`, an
+   `https://...`-valued `fill`, and a `filter`).
+2. `node test-fixtures/adv-p54/a3-svg.cjs 150000 svg-remote.svg
+   svg-remote-styles.svg` through the real conversion bridge.
+3. Observed: both take the engine-rendered fallback and report exactly one
+   warning, `engine-rendered`; there is NO `resource-blocked` warning. The
+   produced PDFs contain no remote content. Separately,
+   `svg-external-entity.svg` (a `SYSTEM "file:///C:/Windows/win.ini"` entity)
+   produced a PDF that contains none of win.ini's content
+   (`a3b-probe.cjs`, `containsWinIniContent:false`), and the billion-laughs
+   document produced a 26 KB PDF with no expansion.
+4. What I can prove: no remote resource reached the output and no win.ini
+   content was read/rendered. What I cannot prove from the app: whether the
+   request was attempted and cancelled by the dedicated session (which would
+   have recorded it for `blockedResourceWarnings`) or never issued because the
+   injected CSP `img-src data: file:` blocked it first. Either way the handler
+   recorded nothing, so the promised warning is absent.
+
+Expected: the Phase 53 engine path documents that every blocked http/https/ws/
+wss/ftp request is recorded and surfaced as a `resource-blocked` warning; an
+SVG whose remote image is dropped should tell the user so.
+Actual: the remote resources are dropped with only the `engine-rendered`
+warning; no `resource-blocked` warning appears. Cause not identified.
+
+Screenshot: none. Logs: `test-fixtures/adv-p54/logs/svg-remote.log`.
+
+Disposition: ACCEPTED -> DEF-387
+
+## Negative results - Phase 54 (verified correct, no finding)
+
+- **PNG `pHYs` with 0 px/m or unit 0, and JPEG JFIF density unit 0 or density
+  0** (`png-phys-zero.png`, `png-phys-unit0.png`, `jpg-jfif-unit0.jpg`,
+  `jpg-jfif-density0.jpg`): each correctly yields `dpi-assumed` and a 96 DPI
+  page (75x75 pt / 540x270 pt), never a divide-by-zero. `resolveDpi` rejects
+  only `dpi <= 0`, and the readers require `unit === 1 && ppu > 0`.
+- **Mislabeled containers**: `pdf-as-png.png` (PDF bytes named `.png`) and
+  `text-as-png.png` are refused with a readable `unsupported-format`
+  ("This file type is not supported for import. (...)"); `png-as-tiff.tiff`
+  and `tiff-as-png.png` are content-sniffed to the correct adapter. No garbage
+  is embedded.
+- **TIFF frames with no IFD / header only** (`tiff-no-ifd.tiff`,
+  `tiff-header-only.tiff`): one degraded placeholder page plus a
+  `frame-decode-failed` warning; app usable. `tiff-empty.tiff` (0 bytes) gets a
+  readable `unsupported-format`. `tiff-res-zero.tiff` (resolution tags 0) uses
+  the 96 DPI assumption.
+- **TIFF frame-count ceiling** (`tiff-frames-1200.tiff`, `tiff-frames-3000.tiff`):
+  1200/3000 pages convert with the documented advisory `frame-limit` warning
+  ("above the advisory ceiling of 1000; all frames were converted") in 3.3 s /
+  8.6 s - the contract's "warns loudly, never a silent truncation".
+- **Billion laughs and external-entity SVGs**: the hand-rolled scanner neither
+  expands entities nor reads files - the pure harness (`pure.cjs`) shows the
+  parse tree carries no expanded text, and the engine-fallback PDFs contain no
+  win.ini content and no `lol` run. `parseSvg` has no fs/network imports.
+- **Deep nesting**: 2000 nested `<g>` imports natively and fast; 100,000
+  nested `<g>` returns a typed `internal` error ("Maximum call stack size
+  exceeded") rather than crashing the app.
+- **Oversized `path` `d`** (`svg-huge-path.svg`, 200,000 segments): fails fast
+  with a typed `internal` error, no hang; the app stays usable. (Reported as
+  the observed outcome of attack 13; not filed as a defect.)
+- **`viewBox` of zero/negative size and `width`/`height` of 0**: readable
+  `decode-failed` ("declares neither a width/height nor a viewBox"); a zero
+  width/height with a valid `viewBox` correctly falls back to the viewBox.
+- **`use` loop a->b->a and a 500-deep `use` chain**: no infinite recursion;
+  both take the engine-rendered fallback with the `engine-rendered` warning
+  naming `use`.
+- **20000x20000 `filter` + `mask` engine fallback** (`svg-filter-mask-20000.svg`):
+  completed in 117 ms and produced a 15000x15000 pt page; the print timeout was
+  never needed and the app stayed usable. The offscreen engine honoured
+  `preferCSSPageSize`.
+- **`/Encrypt` plus a `pdfaid` declaration**: the validator reports both the
+  `pdfa.encryption` error and the output-intent error and does not strip or
+  rewrite anything (validation is read-only). Truncated XMP mid-packet reports
+  `declared: null` without crashing.
+- **Create-from-images error routing**: a non-image named `.png`, random bytes
+  named `.jpg`, and a file deleted between picking and confirming each produce
+  a readable error toast ("Could not create PDF: That file type cannot be
+  imported (...)" / "The file could not be imported (...)"), leave no tab open
+  and no stuck dialog.
+- **500-file selection**: the dialog rendered 500 rows in 790 ms and produced a
+  500-page document with 500 `dpi-assumed` warnings; the app remained usable.
+- **Absurd dimension underflow/overflow of the page size is documented above
+  (ADV-100); the TIFF `res-zero` 0.75 pt page and the 1x1 `png-as-tiff` 0.75 pt
+  page are the same unclamped-arithmetic class.**
+
+## ADV-098 / ADV-099 root-cause relationship
+
+ADV-098 (cyclic TIFF IFD) and ADV-099 (200 MB content-stream split) are the
+same *class* - an unbounded allocation reached from a tiny hostile file - but
+different root causes: one is an infinite IFD-chain walk inside `utif`, the
+other is `String.split` over an unbounded decoded content stream inside the
+Phase 54 rule set. ADV-100 (page-size arithmetic) is a third, distinct cause.
+ADV-103 is a fourth (utif allocation before the adapter's decode guard).

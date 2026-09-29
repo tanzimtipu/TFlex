@@ -63,7 +63,18 @@ describe('phase53 document dialog filters', () => {
   it('groups the currently registered formats correctly', async () => {
     const filters = await filtersFor('document');
     const byName = new Map(filters.map((filter) => [filter.name, filter.extensions]));
-    expect(byName.get('Documents')).toEqual(['pdf', 'rtf']);
+    // Phase 54 registers the image adapters; ungrouped formats (png/jpeg/tiff)
+    // fall back to 'Documents' by design so a new adapter never disappears.
+    expect(byName.get('Documents')).toEqual([
+      'jpeg',
+      'jpg',
+      'pdf',
+      'png',
+      'rtf',
+      'svg',
+      'tif',
+      'tiff',
+    ]);
     expect(new Set(byName.get('Text and markup'))).toEqual(
       new Set(['txt', 'md', 'markdown', 'html', 'htm', 'xhtml']),
     );

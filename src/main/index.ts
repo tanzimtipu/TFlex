@@ -33,12 +33,21 @@ import type {
   WatermarkSettings,
 } from '../shared/types';
 import type { SignatureSource } from '../shared/types';
+import { DEFAULT_PDF_VALIDATION_DEFAULTS } from '../shared/types';
+import type { EngineError } from '../shared/types';
+import type { Result } from '../shared/result';
+import type {
+  EngineSaveResult,
+  ValidationReport,
+  ValidationTarget,
+} from '../shared/validation';
 import type { ConvertOptions } from '../shared/convert';
 import { openPdfDialog, openPdfDialogMulti, savePdfDialog } from './services/dialog';
 import { readClipboardImage, type ClipboardLike } from './services/clipboard-image';
 import { EngineService } from './services/engine';
 import { OcrService } from './services/ocr';
 import { DocumentConversionService } from './services/convert';
+import { DocumentValidationService, runExportGuard } from './services/validation';
 import { loadPdfFile, loadFdfFile } from './services/pdf-file';
 import { describePdfOpenError } from './services/error-text';
 import { listPrinters, printJob } from './services/print';
@@ -317,6 +326,62 @@ export async function start(): Promise<void> {
     },
   });
   const signatures = new SignatureService(join(app.getPath('userData'), 'signatures.json'));
+  // Phase 54 features D + E — PDF/A + PDF/X validation service. Pure and
+  // stateless; one instance is enough.
+  const validation = new DocumentValidationService();
+
+  /** A short, non-certification message for a blocked save. */
+  const blockedSaveMessage = (report: ValidationReport): string => {
+    const count = report.violations.filter((v) => v.severity === 'error').length;
+    return `Save blocked: the document does not meet ${report.target} (${count} error(s)). No file was written.`;
+  };
+
+  /**
+   * Phase 54 — the export guard hook. With the default `target: 'none'` it
+   * does NOTHING but call `saveFn`: no bytes are read, no validation runs, no
+   * interception. Only when the setting names a profile does it validate the
+   * serialized document and honour `onViolation` ('warn' writes and returns the
+   * report; 'block' refuses to write and returns the report).
+   */
+  const guardedSave = async (
+    docId: string,
+    saveFn: () => Promise<Result<string, EngineError>>,
+  ): Promise<EngineSaveResult> => {
+    const defaults =
+      settings.getCurrent().pdfValidationDefaults ?? DEFAULT_PDF_VALIDATION_DEFAULTS;
+    if (defaults.target === 'none') {
+      return saveFn();
+    }
+    const bytesRes = await engine.getDocumentBytes(docId);
+    if (!bytesRes.ok) {
+      return bytesRes;
+    }
+    const guarded = await runExportGuard(
+      defaults.target,
+      defaults.onViolation,
+      new Uint8Array(bytesRes.value),
+      () => saveFn(),
+      (bytes, target) => validation.validateBytes(bytes, target),
+    );
+    if (!guarded.ok) {
+      return {
+        ok: false,
+        error: { code: 'engine-error', message: guarded.error.message },
+      };
+    }
+    if (guarded.value.action === 'blocked') {
+      return {
+        ok: false,
+        error: { code: 'engine-error', message: blockedSaveMessage(guarded.value.report) },
+        validation: guarded.value.report,
+      };
+    }
+    const saved = guarded.value.writeResult;
+    if (!saved.ok) {
+      return saved;
+    }
+    return { ...saved, validation: guarded.value.report ?? undefined };
+  };
 
   // Phase 44 — encrypted session vault + its three IPC channels. The JWT is
   // stored via Electron safeStorage under userData and never enters
@@ -569,6 +634,13 @@ export async function start(): Promise<void> {
     (_event, docId: string, path: string, options?: ConvertOptions) =>
       convert.toDocument(docId, path, options),
   );
+  // Phase 54 — N files into ONE document, in order. Rejects the whole request
+  // with `unsupported-format` when any path cannot participate.
+  ipcMain.handle(
+    IPC.convertToDocumentMany,
+    (_event, docId: string, paths: string[], options?: ConvertOptions) =>
+      convert.toDocumentMany(docId, paths, options),
+  );
   // Phase 53 feature G mode 2 — CSV headers onto the open document's fields,
   // through the engine's existing forms reader/writer.
   ipcMain.handle(
@@ -617,8 +689,10 @@ export async function start(): Promise<void> {
   ipcMain.handle(IPC.engineExtract, (_event, docId: string, pages: number[]) =>
     engine.extract(docId, pages),
   );
+  // Phase 54 — the save path runs through the export guard. `target: 'none'`
+  // (the default) short-circuits inside `guardedSave` to the unchanged save.
   ipcMain.handle(IPC.engineSave, (_event, docId: string) =>
-    engine.save(docId),
+    guardedSave(docId, () => engine.save(docId)),
   );
   ipcMain.handle(IPC.engineSaveAs, async (_event, docId: string) => {
     // Phase 35 — the Save-As destination picker is shared with the
@@ -627,7 +701,7 @@ export async function start(): Promise<void> {
     if (filePath === null) {
       return { ok: false, error: { code: 'cancelled' as const, message: 'save cancelled' } };
     }
-    return engine.saveAs(docId, filePath);
+    return guardedSave(docId, () => engine.saveAs(docId, filePath));
   });
   ipcMain.handle(IPC.engineGetState, (_event, docId: string) =>
     engine.getState(docId),
@@ -640,6 +714,25 @@ export async function start(): Promise<void> {
   );
   ipcMain.handle(IPC.engineGetDocumentBytes, (_event, docId: string) =>
     engine.getDocumentBytes(docId),
+  );
+
+  // Phase 54 features D + E — validation channels. `target` defaults to the
+  // stored `pdfValidationDefaults.target`; 'none' is not a valid target to
+  // validate against and resolves `unknown-target`.
+  ipcMain.handle(
+    IPC.validationValidate,
+    (_event, docId: string, target?: ValidationTarget) => {
+      const resolved =
+        target ?? (settings.getCurrent().pdfValidationDefaults ?? DEFAULT_PDF_VALIDATION_DEFAULTS).target;
+      return validation.validateDocument(docId, (id) => engine.getDocumentBytes(id), resolved as ValidationTarget);
+    },
+  );
+  ipcMain.handle(
+    IPC.validationValidateBytes,
+    (_event, bytes: ArrayBuffer | Uint8Array, target: ValidationTarget) => {
+      const view = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
+      return validation.validateBytes(view, target);
+    },
   );
 
   // Phase 3: annotations

@@ -3171,8 +3171,13 @@ frames still convert. Baseline, LZW, Deflate, PackBits and CCITT G3/G4 are all r
 support), `rect`, `circle`, `ellipse`, `line`, `polyline`, `polygon`, `g`, `transform`
 (matrix/translate/scale/rotate), `viewBox` scaling, fill/stroke/opacity/stroke-width, and gradients
 approximated as their dominant solid colour with a warning. Constructs outside the subset (filters,
-masks, `foreignObject`, images, animation beyond the first frame) are rasterized through the
-offscreen print engine at 300 DPI, and the warning names exactly what was rasterized.
+masks, `foreignObject`, embedded images, animation beyond the first frame) are handed to the
+offscreen print engine (Chromium) rather than translated natively, and the warning names exactly
+which constructs were not translated natively. **Amended before implementation (orchestrator,
+2026-09-29):** this originally promised a "300 DPI raster" fallback; Chromium's `printToPDF`
+preserves vector content, so the engine-rendered fallback is a BETTER result than a raster and the
+phase must not claim to have rasterised what it in fact kept as vector. The fidelity label is
+`layout` for the engine-rendered path, `native` for the pure-vector path.
 
 **D. PDF/A validation and preservation.** `.pdf/A` 1, 2 and 3 (a/b/u variants): read the XMP
 `pdfaid` identification, the output intent, font embedding, encryption state, transparency and
@@ -3199,8 +3204,9 @@ the existing render path, so exported pixels match what the reader shows.
    page plus its warning while the other frames render.
 3. The CCITT G4 fixture decodes and renders legibly (inspected screenshot).
 4. A static SVG fixture (paths, curves, transforms, fills, strokes, opacity) renders crisp at 400%
-   zoom with no rasterization warning; a fixture using a filter and a mask produces the raster
-   fallback with a warning naming each rasterized construct.
+   zoom with NO fallback warning; a fixture using a filter and a mask produces the engine-rendered
+   fallback with a warning naming each construct that was not translated natively (and the report
+   states which path each fixture took).
 5. The PDF/A-1b fixture reports conformance and its violation-free status; a deliberately
    non-conforming fixture reports each violation with its rule name; asking to export it as PDF/A
    is refused with that list (not silently produced).
@@ -3377,5 +3383,19 @@ the UI can never advertise a format the app cannot handle).
    `docs/FEATURE-BACKLOG.md`.
 8. All DEF/ADV entries opened by Phases 53–57 are CLOSED or REJECTED with a written reason;
    `verify:full` is green on the final tree.
+
+**G. Catalog round-trip completeness (added by the orchestrator 2026-09-29, from the DEF-378
+investigation).** The Phase 54 fix made `serializeDoc` carry `/Metadata`, `/OutputIntents`,
+`/MarkInfo`, `/Lang`, `/ViewerPreferences`, `/OCProperties`, `/Collection`, `/AF` and the
+`/Names /JavaScript` subtree, and proved with a page-tree safety test that cloning `/Names`
+wholesale would drag page-referencing named destinations into the destination context. What
+remains dropped is silent data loss on every save, and this feature closes the safe part of it:
+carry `/Dests` (named destinations) and `/OpenAction` (the initial view) across the rebuild by
+REMAPING their page references through the page map `serializeDoc` already builds, so an internal
+link or an initial-view setting survives a save. **`/StructTreeRoot` (tagged-PDF structure) stays
+out of scope with a written reason:** its structure elements reference page objects and re-tagging
+them correctly is its own program — recorded as FEA-023. Every entry that remains dropped must be
+either carried or named in the serializer's block comment with the reason, and a test must assert
+the carried ones survive and that a destination-free document still serializes byte-stably.
 
 **Settings impact:** none.

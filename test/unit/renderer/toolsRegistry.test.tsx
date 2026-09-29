@@ -54,7 +54,7 @@ const AUDITED: Record<string, readonly string[]> = {
   ],
   review: [
     "annotate", "sign", "forms", "flatten", "stamp", "watermark", "exportComments",
-    "importComments", "fillFromCsv", "annotationsPanel", "annSelect", "annHighlight",
+    "importComments", "fillFromCsv", "validateDocument", "annotationsPanel", "annSelect", "annHighlight",
     "annUnderline", "annStrikeout", "annInk", "annTextbox", "annRect",
     "annEllipse", "annArrow", "annCallout", "annNote", "annColor",
     "annPenWidth",
@@ -214,7 +214,7 @@ describe("toolsRegistry — canonical surface + the curated dock sets (DEF-313)"
     ]);
     expect(dockToolsForStage("review").map((e) => e.id)).toEqual([
       "annotate", "sign", "stamp", "flatten", "forms", "watermark",
-      "exportComments", "importComments", "fillFromCsv",
+      "exportComments", "importComments", "fillFromCsv", "validateDocument",
     ]);
     expect(dockToolsForStage("deliver").map((e) => e.id)).toEqual([
       "optimize", "audit", "exportPages", "exportText", "exportDocx", "createFromImages",

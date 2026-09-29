@@ -1,6 +1,7 @@
 import type { Result } from "./result";
 import type {
   ConvertErrorCode,
+  ConvertManyResult,
   ConvertOpenResult,
   ConvertOptions,
   ConvertProgress,
@@ -47,6 +48,12 @@ import type {
   UpdateState,
   WatermarkSettings,
 } from "./types";
+import type {
+  EngineSaveResult,
+  ValidationErrorCode,
+  ValidationReport,
+  ValidationTarget,
+} from "./validation";
 
 export const IPC = {
   windowMinimize: "window:minimize",
@@ -140,6 +147,13 @@ export const IPC = {
   // can refresh its PDF.js proxy after a content-stream mutation that the
   // original load bytes no longer reflect (e.g. OCR's invisible text layer).
   engineGetDocumentBytes: "engine:getDocumentBytes",
+  // Phase 54 features D + E — PDF/A and PDF/X validation. `validation:validate`
+  // validates an open docId; `validation:validateBytes` validates raw bytes.
+  // Both resolve `Result<ValidationReport, ValidationErrorCode>`: a validation
+  // that ran (even with violations) is `ok`; only one that could not be
+  // attempted at all is `err`.
+  validationValidate: "validation:validate",
+  validationValidateBytes: "validation:validateBytes",
  // Phase 3: annotations
   engineCreateAnnotation: "engine:createAnnotation",
   engineEditAnnotation: "engine:editAnnotation",
@@ -325,6 +339,10 @@ export const IPC = {
   // `ConvertProgress` while a conversion runs.
   convertSourceInfo: "convert:sourceInfo",
   convertToDocument: "convert:toDocument",
+  // Phase 54 — N files into ONE engine document, in the given order. A file
+  // whose adapter cannot participate fails the whole request with
+  // `unsupported-format` (never a partial document).
+  convertToDocumentMany: "convert:toDocumentMany",
   // Phase 53 feature G mode 2 - maps a CSV's headers onto the AcroForm fields
   // of an already-open document through the EXISTING forms reader/writer.
   // Resolves a typed `Result<CsvFieldMappingResult, ConvertErrorCode>`.
@@ -426,8 +444,13 @@ export interface TFlexApiEngine {
     docId: string,
     pages: number[],
   ): Promise<Result<ArrayBuffer, import("./types").EngineError>>;
-  save(docId: string): Promise<Result<string, import("./types").EngineError>>;
-  saveAs(docId: string): Promise<Result<string, import("./types").EngineError>>;
+  /** Phase 54 — when `pdfValidationDefaults.target` names a profile, the save
+   *  path validates first: `'warn'` writes the file and returns the report on
+   *  `validation`, `'block'` refuses to write and returns the report on a
+   *  failed result. With the default `target: 'none'` the field is absent and
+   *  the save is unchanged. */
+  save(docId: string): Promise<EngineSaveResult>;
+  saveAs(docId: string): Promise<EngineSaveResult>;
   getState(docId: string): Promise<Result<EngineState, import("./types").EngineError>>;
   /** DEF-085 (Bug 4) — cheap dirty-check used by the renderer's tab-close
    *  path to decide whether to prompt "save unsaved changes?" without
@@ -723,6 +746,16 @@ export interface TFlexApiConvert {
     path: string,
     options?: ConvertOptions,
   ): Promise<Result<ConvertOpenResult, ConvertErrorCode>>;
+  /** Phase 54 — convert several files into ONE document, in the given order.
+   *  A file whose adapter cannot participate fails the whole request with
+   *  `unsupported-format` naming the path (never a partial document).
+   *  Optional so existing renderer mocks/tests that predate Phase 54 still
+   *  typecheck; the shipped preload always provides it. */
+  toDocumentMany?(
+    docId: string,
+    paths: string[],
+    options?: ConvertOptions,
+  ): Promise<Result<ConvertManyResult, ConvertErrorCode>>;
   /** Phase 53 feature G mode 2 - fill an already-open document's AcroForm
    *  fields from a CSV's header row. Reports matched/unmatched/missing names;
    *  never opens a document and never throws across IPC. */
@@ -736,6 +769,27 @@ export interface TFlexApiConvert {
   /** Subscribe to `ConvertProgress` for a running conversion. Returns an
    *  unsubscribe. */
   onProgress(cb: (progress: ConvertProgress) => void): () => void;
+}
+
+/**
+ * Phase 54 features D + E — validation surface (matches `window.tflex.validation`
+ * at runtime). A validation that ran resolves `ok` with the report, even when
+ * it found violations; only an un-attemptable validation is `err`. Optional so
+ * a preload without the bridge degrades gracefully.
+ */
+export interface TFlexApiValidation {
+  /** Validate an already-open document by its engine docId. `target` defaults
+   *  to the stored `pdfValidationDefaults.target`; `'none'` resolves to
+   *  `unknown-target` (there is nothing to validate against). */
+  validate(
+    docId: string,
+    target?: ValidationTarget,
+  ): Promise<Result<ValidationReport, ValidationErrorCode>>;
+  /** Validate raw PDF bytes against a target. */
+  validateBytes(
+    bytes: ArrayBuffer | Uint8Array,
+    target: ValidationTarget,
+  ): Promise<Result<ValidationReport, ValidationErrorCode>>;
 }
 
 export interface TFlexApi {
@@ -972,4 +1026,7 @@ setEnabled(state: import("./types").MenuEnabledState): void;
    *  runtime). Optional so a preload without the bridge degrades gracefully
    *  (jsdom tests, older builds). */
   convert?: TFlexApiConvert;
+  /** Phase 54 — PDF/A + PDF/X validation surface (matches
+   *  `window.tflex.validation` at runtime). Optional like the others. */
+  validation?: TFlexApiValidation;
 }

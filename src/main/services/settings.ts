@@ -9,7 +9,9 @@ import type {
   EncryptAlgorithm,
   EncryptDefaults,
   EncryptPermissions,
+  ImageImportDefaults,
   LoadSettingsResult,
+  PdfValidationDefaults,
   RecentFile,
   WatermarkPosition,
   WatermarkSettings,
@@ -20,6 +22,10 @@ import {
   DEFAULT_CONVERT_DEFAULTS,
   type ConvertDefaults,
 } from '../../shared/convert';
+import {
+  DEFAULT_IMAGE_IMPORT_DEFAULTS,
+  DEFAULT_PDF_VALIDATION_DEFAULTS,
+} from '../../shared/types';
 import { EDIT_FONTS, isEditFont } from './text-style';
 
 const RECENT_FILES_CAP = 10;
@@ -577,6 +583,112 @@ export function normalizeConvertDefaults(raw: unknown): ConvertDefaults | null {
   return out;
 }
 
+/** Phase 54 — the `imageImportDefaults.pageSizeMode` allowlist. */
+const IMAGE_PAGE_SIZE_MODES = ['image', 'fixed'] as const;
+/** Phase 54 — the `imageImportDefaults.fit` allowlist. */
+const IMAGE_FITS = ['contain', 'cover', 'actual'] as const;
+/** Phase 54 — the `imageImportDefaults.rotationDeg` allowlist. */
+const IMAGE_ROTATIONS = [0, 90, 180, 270] as const;
+
+/**
+ * Phase 54 — normalise `imageImportDefaults` (preserve-if-valid, reject-if-
+ * invalid, unknown keys dropped), mirroring `normalizeConvertDefaults`. An
+ * absent/empty object rejects the field (the consumer applies
+ * `DEFAULT_IMAGE_IMPORT_DEFAULTS`). A present invalid value rejects the WHOLE
+ * field; a partial object fills its missing keys from the default.
+ */
+export function normalizeImageImportDefaults(
+  raw: unknown,
+): ImageImportDefaults | null {
+  if (raw === null || typeof raw !== 'object' || Array.isArray(raw)) return null;
+  const r = raw as Record<string, unknown>;
+  const out: ImageImportDefaults = { ...DEFAULT_IMAGE_IMPORT_DEFAULTS };
+  let present = 0;
+
+  if (r.pageSizeMode !== undefined) {
+    if (
+      typeof r.pageSizeMode !== 'string' ||
+      !(IMAGE_PAGE_SIZE_MODES as readonly string[]).includes(r.pageSizeMode)
+    ) {
+      return null;
+    }
+    out.pageSizeMode = r.pageSizeMode as ImageImportDefaults['pageSizeMode'];
+    present += 1;
+  }
+  if (r.fixedPageSize !== undefined) {
+    if (r.fixedPageSize !== 'a4' && r.fixedPageSize !== 'letter') return null;
+    out.fixedPageSize = r.fixedPageSize;
+    present += 1;
+  }
+  if (r.fit !== undefined) {
+    if (
+      typeof r.fit !== 'string' ||
+      !(IMAGE_FITS as readonly string[]).includes(r.fit)
+    ) {
+      return null;
+    }
+    out.fit = r.fit as ImageImportDefaults['fit'];
+    present += 1;
+  }
+  if (r.rotationDeg !== undefined) {
+    if (
+      typeof r.rotationDeg !== 'number' ||
+      !(IMAGE_ROTATIONS as readonly number[]).includes(r.rotationDeg)
+    ) {
+      return null;
+    }
+    out.rotationDeg = r.rotationDeg as ImageImportDefaults['rotationDeg'];
+    present += 1;
+  }
+  if (present === 0) return null;
+  return out;
+}
+
+/** Phase 54 — the `pdfValidationDefaults.target` allowlist. */
+const PDF_VALIDATION_TARGETS = [
+  'none',
+  'pdfa-1b',
+  'pdfa-2b',
+  'pdfa-3b',
+  'pdfx-1a',
+  'pdfx-3',
+  'pdfx-4',
+] as const;
+
+/**
+ * Phase 54 — normalise `pdfValidationDefaults` (preserve-if-valid, reject-if-
+ * invalid, unknown keys dropped). An absent/empty object rejects the field
+ * (the consumer applies `DEFAULT_PDF_VALIDATION_DEFAULTS`). A present invalid
+ * value rejects the WHOLE field; a partial object fills its missing keys from
+ * the default. This chunk only stores the shape — no validation runs here.
+ */
+export function normalizePdfValidationDefaults(
+  raw: unknown,
+): PdfValidationDefaults | null {
+  if (raw === null || typeof raw !== 'object' || Array.isArray(raw)) return null;
+  const r = raw as Record<string, unknown>;
+  const out: PdfValidationDefaults = { ...DEFAULT_PDF_VALIDATION_DEFAULTS };
+  let present = 0;
+
+  if (r.target !== undefined) {
+    if (
+      typeof r.target !== 'string' ||
+      !(PDF_VALIDATION_TARGETS as readonly string[]).includes(r.target)
+    ) {
+      return null;
+    }
+    out.target = r.target as PdfValidationDefaults['target'];
+    present += 1;
+  }
+  if (r.onViolation !== undefined) {
+    if (r.onViolation !== 'warn' && r.onViolation !== 'block') return null;
+    out.onViolation = r.onViolation;
+    present += 1;
+  }
+  if (present === 0) return null;
+  return out;
+}
+
 function normalizeAnnotationColorEntry(raw: unknown): AnnotationColorPreset | null {
   if (typeof raw === 'string' && raw.length > 0) {
     return { id: raw, hex: raw };
@@ -753,6 +865,26 @@ export function normalizeSettings(raw: unknown): AppSettings {
   const convertDefaults = normalizeConvertDefaults(rawObj.convertDefaults);
   if (convertDefaults !== null) {
     settings.convertDefaults = convertDefaults;
+  }
+
+  // Phase 54: image-import defaults (page-size mode, fixed size, fit,
+  // rotation). Reject-if-invalid leaves the field absent (consumer default
+  // `DEFAULT_IMAGE_IMPORT_DEFAULTS`); a partial object fills its missing keys.
+  const imageImportDefaults = normalizeImageImportDefaults(
+    rawObj.imageImportDefaults,
+  );
+  if (imageImportDefaults !== null) {
+    settings.imageImportDefaults = imageImportDefaults;
+  }
+
+  // Phase 54: PDF/A + PDF/X validation defaults. Shape only — validation
+  // behaviour is a later chunk. Reject-if-invalid leaves the field absent
+  // (consumer default `DEFAULT_PDF_VALIDATION_DEFAULTS`).
+  const pdfValidationDefaults = normalizePdfValidationDefaults(
+    rawObj.pdfValidationDefaults,
+  );
+  if (pdfValidationDefaults !== null) {
+    settings.pdfValidationDefaults = pdfValidationDefaults;
   }
 
   // Phase 44 (operator change): accounts feature flag. Strict boolean,

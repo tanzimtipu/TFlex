@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="240" height="160" viewBox="0 0 240 160">
+  <defs>
+    <filter id="blur"><feGaussianBlur stdDeviation="4"/></filter>
+    <mask id="m"><rect x="0" y="0" width="120" height="160" fill="white"/></mask>
+  </defs>
+  <rect x="10" y="10" width="220" height="140" fill="#eef2ff" stroke="#1e3a8a" stroke-width="4"/>
+  <circle cx="80" cy="80" r="40" fill="#2563eb" filter="url(#blur)"/>
+  <rect x="120" y="40" width="80" height="80" fill="#f59e0b" mask="url(#m)"/>
+</svg>

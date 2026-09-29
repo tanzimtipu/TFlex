@@ -18,6 +18,7 @@ import type {
   ConvertErrorCode,
   ConvertFidelity,
   ConvertFormatId,
+  ConvertManyResult,
   ConvertOpenResult,
   ConvertProgress,
   ConvertSourceInfo,
@@ -25,6 +26,8 @@ import type {
 } from '../../shared/convert';
 import type { TFlexApiConvert } from '../../shared/ipc';
 import type { Result } from '../../shared/result';
+import type { EngineError } from '../../shared/types';
+import { describeEngineError } from '../engine/types';
 
 /** What the ConversionNotice card renders for one tab. */
 export interface ConvertNoticeState {
@@ -192,5 +195,165 @@ export async function runConvertOpen(deps: ConvertOpenDeps): Promise<{ tabId: st
     settled = true;
     unsubscribe();
     deps.onProgress(null);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Phase 54 — DPI-aware multi-image import routing.
+//
+// The Create-from-images flow must reach `convert.toDocumentMany` when every
+// input is a real on-disk file: the conversion service sizes each page from the
+// image's OWN DPI metadata, which the legacy engine path (`createFromImages`)
+// cannot do. Clipboard images and virtual files have no on-disk path, so they
+// keep the legacy path byte-for-byte. This is the pure, App-free half so the
+// routing, the single-docId invariant and the bind-sensitive bytes read-back
+// are all unit-testable without booting the App.
+// ---------------------------------------------------------------------------
+
+/** Build the notice-card payload for a multi-file conversion. The card has no
+ *  single `sourceFormat`, so it shows the first contributing format. */
+export function noticeFromManyResult(result: ConvertManyResult): ConvertNoticeState {
+  return {
+    sourceLabel: result.title !== '' ? result.title : 'Images',
+    sourceFormat: result.sourceFormats[0] ?? 'png',
+    fidelity: result.fidelity,
+    warnings: result.warnings,
+  };
+}
+
+/** The fail-loud warning line for a multi-file conversion, or null when there
+ *  is nothing to say. Names the count AND the first message, so a DPI
+ *  assumption or a corrupt frame cannot pass silently. */
+export function convertManyWarningToast(result: ConvertManyResult): string | null {
+  if (result.warnings.length === 0) return null;
+  const count = result.warnings.length;
+  const first = result.warnings[0]?.message ?? '';
+  return `Imported with ${count} warning${count === 1 ? '' : 's'}: ${first}`;
+}
+
+export interface CreateFromImagesRouteResult {
+  bytes: ArrayBuffer;
+  size: number;
+  name: string;
+  /** Present when the multi-file conversion route ran. The caller surfaces
+   *  `warnings` (a toast) and can install the Phase 53 conversion card via
+   *  `noticeFromManyResult`. Absent on the legacy engine route. */
+  conversion?: ConvertManyResult;
+}
+
+export interface CreateFromImagesRouteDeps {
+  files: File[];
+  quality: number;
+  /** `window.tflex.webUtils?.getPathForFile` — undefined when the bridge or
+   *  the method is absent (older preload, jsdom). */
+  getPathForFile: ((file: File) => string) | undefined;
+  /** `window.tflex.convert` — undefined when the bridge is absent. */
+  convert: TFlexApiConvert | undefined;
+  /** `engine.createFromImages(docId, buffers, quality)` — the unchanged
+   *  legacy path, used whenever the on-disk conversion route is unavailable. */
+  createFromImages: (
+    docId: string,
+    buffers: Uint8Array[],
+    quality: number,
+  ) => Promise<Result<ArrayBuffer, EngineError>>;
+  /** The engine bytes hook, called BOUND by the caller
+   *  (`engineRef.current.getDocumentBytes(id)`). An extracted local alias
+   *  loses `this` on RealEngineAdapter's prototype method and throws
+   *  (DEF-374). */
+  getDocumentBytes: (docId: string) => Promise<Result<ArrayBuffer, string>>;
+  /** Warnings from a multi-file conversion surface immediately (fail-loud). */
+  pushToast: (kind: 'error' | 'info' | 'warning', text: string) => void;
+  /** Test seam; defaults to `crypto.randomUUID`. Called exactly ONCE per
+   *  invocation — a second mint would name a phantom engine document. */
+  mintDocId?: () => string;
+}
+
+/** Resolve every File to an on-disk path, or null when any one lacks a path
+ *  (clipboard images, virtual files) or the resolver is absent/throws. */
+function resolveImagePaths(
+  files: File[],
+  getPathForFile: ((file: File) => string) | undefined,
+): string[] | null {
+  if (getPathForFile === undefined) return null;
+  const paths: string[] = [];
+  for (const file of files) {
+    let resolved: string;
+    try {
+      resolved = getPathForFile(file);
+    } catch {
+      return null;
+    }
+    if (typeof resolved !== 'string' || resolved === '') return null;
+    paths.push(resolved);
+  }
+  return paths;
+}
+
+function mintCreateDocId(deps: CreateFromImagesRouteDeps): string {
+  return (deps.mintDocId ?? ((): string => `create-${crypto.randomUUID()}`))();
+}
+
+/**
+ * The Create-from-images routing. When EVERY input resolves to a non-empty
+ * on-disk path AND `toDocumentMany` exists, the conversion service produces
+ * the document (each page sized from its image's DPI metadata) and this
+ * function reads the produced bytes back under the SAME docId. Otherwise the
+ * legacy `createFromImages(docId, buffers, quality)` path runs unchanged, so
+ * clipboard images and virtual files never regress.
+ *
+ * Exactly one docId is minted per invocation; the conversion route passes it
+ * to both `toDocumentMany` and `getDocumentBytes`, and the fallback route
+ * passes it to `createFromImages`.
+ */
+export async function createFromImagesRoute(
+  deps: CreateFromImagesRouteDeps,
+): Promise<CreateFromImagesRouteResult | { error: string }> {
+  const { files } = deps;
+  if (files.length === 0) return { error: 'No images selected.' };
+  const name = files[0]?.name ?? 'new.pdf';
+  try {
+    const paths = resolveImagePaths(files, deps.getPathForFile);
+    const many = deps.convert?.toDocumentMany;
+    if (paths !== null && many !== undefined) {
+      // Conversion route: the service embeds the SOURCE bytes and sizes each
+      // page from the image's own DPI metadata.
+      const docId = mintCreateDocId(deps);
+      const converted = await many.call(deps.convert, docId, paths);
+      if (!converted.ok) {
+        return { error: toastForConvertError(converted.error.code, name) };
+      }
+      const bytesResult = await deps.getDocumentBytes(docId);
+      if (!bytesResult.ok) {
+        return { error: convertBytesUnreadableMessage(name) };
+      }
+      const warningToast = convertManyWarningToast(converted.value);
+      if (warningToast !== null) deps.pushToast('warning', warningToast);
+      return {
+        bytes: bytesResult.value,
+        size: bytesResult.value.byteLength,
+        name,
+        conversion: converted.value,
+      };
+    }
+    // Fallback route (unchanged): read the file bytes and let the engine size
+    // pages at the image's natural pixel size.
+    const buffers: Uint8Array[] = [];
+    for (const file of files) {
+      const buf = new Uint8Array(await file.arrayBuffer());
+      buffers.push(buf);
+    }
+    const docId = mintCreateDocId(deps);
+    const result = await deps.createFromImages(docId, buffers, deps.quality);
+    if (!result.ok) {
+      return { error: describeEngineError(result.error.code, result.error.message) };
+    }
+    return {
+      bytes: result.value,
+      size: result.value.byteLength,
+      name,
+    };
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    return { error: msg };
   }
 }

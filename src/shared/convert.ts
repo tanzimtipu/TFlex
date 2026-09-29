@@ -51,7 +51,17 @@ export type ConvertWarningCode =
   | 'unsupported-compression'
   | 'drm-protected'
   | 'no-text-layer'
-  | 'approx-render';
+  | 'approx-render'
+  // Phase 54 — imaging warnings.
+  | 'dpi-assumed'
+  | 'frame-decode-failed'
+  | 'frame-limit'
+  /** Phase 54 — SVG constructs outside the native subset were rendered by the
+   *  offscreen engine instead of being translated. */
+  | 'engine-rendered'
+  /** Phase 54 (DEF-382) — the image's resolution metadata produced a page
+   *  outside the documented point range, so it was clamped. */
+  | 'page-clamped';
 
 export interface ConvertWarning {
   code: ConvertWarningCode;
@@ -97,6 +107,14 @@ export interface ConvertOptions {
   csvDelimiter?: 'auto' | ',' | ';' | '\t';
   csvFormMapping?: boolean;
   htmlPrintBackgrounds?: boolean;
+  // Phase 54 — the image import block. Mirrors the `imageImportDefaults`
+  // Settings shape one-for-one; the renderer maps a stored setting onto these
+  // per-call options. Every key optional here (resolved from
+  // `DEFAULT_CONVERT_OPTIONS` by the service).
+  imagePageSizeMode?: 'image' | 'fixed';
+  imageFixedPageSize?: 'a4' | 'letter';
+  imageFit?: 'contain' | 'cover' | 'actual';
+  imageRotationDeg?: 0 | 90 | 180 | 270;
 }
 
 /** What an adapter returns. `bytes` go straight to the engine, never back
@@ -116,6 +134,21 @@ export interface ConvertOpenResult {
   docId: string;
   pageCount: number;
   sourceFormat: ConvertFormatId;
+  fidelity: ConvertFidelity;
+  warnings: ConvertWarning[];
+  title: string;
+}
+
+/** Phase 54 — result of `toDocumentMany`: N source files converted into ONE
+ *  engine document, in the given order. A dedicated shape (rather than
+ *  `ConvertOpenResult`) because a mixed selection has no single
+ *  `sourceFormat`; the per-file formats are reported in order. */
+export interface ConvertManyResult {
+  docId: string;
+  pageCount: number;
+  /** Each contributing file's format, in page order (one entry per path). */
+  sourceFormats: ConvertFormatId[];
+  /** The weakest fidelity across the parts. */
   fidelity: ConvertFidelity;
   warnings: ConvertWarning[];
   title: string;

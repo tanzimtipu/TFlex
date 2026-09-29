@@ -15,6 +15,7 @@ import type {
   OptimizePreset,
   PageLabelEntry,
   PdfOpenError,
+  PdfValidationDefaults,
   PrintWindowContext,
   RecentFile,
   SampleDocument,
@@ -28,7 +29,8 @@ import type {
   WatermarkSettings,
 } from "../shared/types";
 import type { TFlexApi, TFlexApiConvert } from "../shared/ipc";
-import type { ConvertSourceInfo, CsvFieldMappingResult } from "../shared/convert";
+import type { ValidationReport, ValidationTarget } from "../shared/validation";
+import type { ConvertManyResult, ConvertSourceInfo, CsvFieldMappingResult } from "../shared/convert";
 import { DEFAULT_CONVERT_DEFAULTS } from "../shared/convert";
 import { Welcome } from "./components/Welcome";
 import { AppHeader } from "./components/AppHeader";
@@ -171,6 +173,8 @@ import { PasswordPromptDialog } from "./components/PasswordPromptDialog";
 import { ProtectionNotice } from "./components/ProtectionNotice";
 import { ConversionNotice, ConversionProgress } from "./components/ConversionNotice";
 import {
+  createFromImagesRoute,
+  noticeFromManyResult,
   noticeFromResult,
   routeOpenPath,
   runConvertOpen,
@@ -223,6 +227,16 @@ import {
   FillFromCsvDialog,
   type FillFromCsvApplied,
 } from "./components/FillFromCsvDialog";
+import { ValidateDocumentDialog } from "./components/ValidateDocumentDialog";
+import { ValidationNotice } from "./components/ValidationNotice";
+import {
+  blockedSaveMessage,
+  effectiveValidationDefaults,
+  validationErrorText,
+  validationFromSaveResult,
+  withValidationDefaults,
+  type ValidationNoticeState,
+} from "./state/validation";
 import { DeletePageDialog } from "./components/DeletePageDialog";
 import { CloseTabPromptDialog, type CloseTabPromptChoice } from "./components/CloseTabPromptDialog";
 import { SignatureManagerModal } from "./signatures/SignatureManagerModal";
@@ -656,6 +670,12 @@ export function App(): ReactElement {
   const [commentImportOpen, setCommentImportOpen] = useState(false);
   // Phase 53 (feature G mode 2) — the Fill-form-fields-from-CSV dialog.
   const [fillFromCsvOpen, setFillFromCsvOpen] = useState(false);
+  // Phase 54 (features D + E) — the Validate-document dialog and the per-tab
+  // report cards (keyed by tab id; dismissing deletes the entry for good).
+  const [validateOpen, setValidateOpen] = useState(false);
+  const [validationNotices, setValidationNotices] = useState<
+    Record<string, ValidationNoticeState>
+  >({});
   // B8 — delete pages dialog. The toolbar's Delete control opens
   // this dialog; the rail's per-thumb delete still flows through
   // the existing onDelete callback directly (no dialog) so a
@@ -4042,6 +4062,16 @@ export function App(): ReactElement {
               // open, still modified. Stay in the prompt.
               return;
             }
+            // Phase 54 — a blocked Save-As carries the validation report.
+            const blocked = validationFromSaveResult(saved);
+            if (blocked !== null) {
+              setValidationNotices((prev) => ({
+                ...prev,
+                [id]: { report: blocked, variant: "blocked" },
+              }));
+              setPendingCloseError(blockedSaveMessage(blocked));
+              return;
+            }
             setPendingCloseError(
               describeEngineError(saved.error.code, saved.error.message),
             );
@@ -4085,6 +4115,17 @@ export function App(): ReactElement {
       try {
         const result = await engineRef.current.save(tab.session.engineDocId);
         if (!result.ok) {
+          // Phase 54 — a blocked save names the target and says no file was
+          // written; the report card carries the findings behind this prompt.
+          const blocked = validationFromSaveResult(result);
+          if (blocked !== null) {
+            setValidationNotices((prev) => ({
+              ...prev,
+              [id]: { report: blocked, variant: "blocked" },
+            }));
+            setPendingCloseError(blockedSaveMessage(blocked));
+            return;
+          }
           setPendingCloseError(
             describeEngineError(result.error.code, result.error.message),
           );
@@ -4136,8 +4177,29 @@ export function App(): ReactElement {
       if (intent === 'clean') return;
       const result = await engineRef.current.save(tab.session.engineDocId);
       if (!result.ok) {
+        // Phase 54 — a blocked save carries the report; show the card naming
+        // what blocked it and state plainly that NO file was written instead of
+        // the generic engine-error toast.
+        const blocked = validationFromSaveResult(result);
+        if (blocked !== null) {
+          setValidationNotices((prev) => ({
+            ...prev,
+            [tabId]: { report: blocked, variant: "blocked" },
+          }));
+          pushToast("info", blockedSaveMessage(blocked));
+          return;
+        }
         pushToast("error", describeEngineError(result.error.code, result.error.message));
         return;
+      }
+      // Phase 54 — with `onViolation: 'warn'` the save succeeded and the report
+      // rides along: surface it as a non-blocking notice.
+      const warned = validationFromSaveResult(result);
+      if (warned !== null) {
+        setValidationNotices((prev) => ({
+          ...prev,
+          [tabId]: { report: warned, variant: "warned" },
+        }));
       }
       const ui = engineUiRef.current[tabId];
       const nextState = ui?.state ?? tab.engine;
@@ -4188,8 +4250,26 @@ export function App(): ReactElement {
       const result = await engineRef.current.saveAs(tab.session.engineDocId);
       if (!result.ok) {
         if (result.error.code === "cancelled") return;
+        // Phase 54 — a blocked Save-As carries the validation report.
+        const blocked = validationFromSaveResult(result);
+        if (blocked !== null) {
+          setValidationNotices((prev) => ({
+            ...prev,
+            [tabId]: { report: blocked, variant: "blocked" },
+          }));
+          pushToast("info", blockedSaveMessage(blocked));
+          return;
+        }
         pushToast("error", describeEngineError(result.error.code, result.error.message));
         return;
+      }
+      // Phase 54 — a warned Save-As succeeded; surface the report non-blockingly.
+      const warned = validationFromSaveResult(result);
+      if (warned !== null) {
+        setValidationNotices((prev) => ({
+          ...prev,
+          [tabId]: { report: warned, variant: "warned" },
+        }));
       }
       const ui = engineUiRef.current[tabId];
       const nextState = ui?.state ?? tab.engine;
@@ -4891,38 +4971,46 @@ const onPickMergeFile = useCallback(async (): Promise<{ path: string; bytes: Uin
     setCreateOpen(false);
   }, []);
 
-  /** Host callback: invoke `engine.createFromImages` and route the
-   *  result into a brand-new tab. Mirrors the Optimize / Split /
-   *  Extract flow: read image bytes off disk, hand them to the
-   *  engine, open the resulting PDF in a fresh tab. */
+  /** Host callback: invoke the create-from-images routing and hand the
+   *  result to a brand-new tab. Phase 54 — when every picked input is a real
+   *  on-disk image, the conversion service's `toDocumentMany` produces the
+   *  document so each page's size comes from the image's own DPI metadata;
+   *  clipboard images and virtual files keep the legacy
+   *  `engine.createFromImages` path byte-for-byte. The routing (single docId,
+   *  bound bytes read-back, warning toast) lives in `createFromImagesRoute`
+   *  so it is unit-testable without booting the App. */
   const runCreateFromImages = useCallback(
     async (
       files: File[],
       quality: number,
-    ): Promise<{ bytes: ArrayBuffer; size: number; name: string } | { error: string }> => {
-      if (files.length === 0) return { error: "No images selected." };
-      try {
-        const buffers: Uint8Array[] = [];
-        for (const f of files) {
-          const buf = new Uint8Array(await f.arrayBuffer());
-          buffers.push(buf);
-        }
-        const docId = `create-${crypto.randomUUID()}`;
-        const result = await engineRef.current.createFromImages(docId, buffers, quality);
-        if (!result.ok) {
-          return { error: describeEngineError(result.error.code, result.error.message) };
-        }
-        return {
-          bytes: result.value,
-          size: result.value.byteLength,
-          name: files[0]?.name ?? "new.pdf",
-        };
-      } catch (e) {
-        const msg = e instanceof Error ? e.message : String(e);
-        return { error: msg };
-      }
+    ): Promise<
+      { bytes: ArrayBuffer; size: number; name: string; conversion?: ConvertManyResult } | { error: string }
+    > => {
+      const webUtils = window.tflex.webUtils;
+      const getPathForFile =
+        webUtils !== undefined && typeof webUtils.getPathForFile === "function"
+          ? (file: File): string => webUtils.getPathForFile(file)
+          : undefined;
+      return createFromImagesRoute({
+        files,
+        quality,
+        getPathForFile,
+        convert: window.tflex.convert,
+        createFromImages: (docId, buffers, q) =>
+          engineRef.current.createFromImages(docId, buffers, q),
+        getDocumentBytes: (id) => {
+          // DEF-374 — call the method ON the engine. Extracting it into a
+          // local alias loses `this` on RealEngineAdapter's prototype method
+          // and throws `Cannot read properties of undefined (reading 'inner')`.
+          if (engineRef.current.getDocumentBytes === undefined) {
+            return Promise.resolve({ ok: false as const, error: { code: "internal", message: "no-bytes-api" } });
+          }
+          return engineRef.current.getDocumentBytes(id);
+        },
+        pushToast,
+      });
     },
-    [],
+    [pushToast],
   );
 
   const onCreateConfirm = useCallback(
@@ -4945,9 +5033,26 @@ const onPickMergeFile = useCallback(async (): Promise<{ path: string; bytes: Uin
         displayName,
         onDiskPath: null,
         dedupePath: false,
+        // Phase 54 — the conversion service already registered its docId (the
+        // engine holds the merged document). Reuse it so `openFromBytes` does
+        // not re-register the same bytes and mint a phantom document; the
+        // legacy route has no registered doc and keeps its fresh id.
+        ...(result.conversion !== undefined
+          ? { engineDocId: result.conversion.docId }
+          : {}),
       });
       if (opened !== null) {
         dispatchTabs({ type: "set-modified", id: opened.tabId, modified: true });
+        // Phase 54 — a DPI-aware multi-image import carries the conversion
+        // metadata; surface the full warning set in the same per-tab card
+        // Phase 53 uses for converted imports (keyed by tab id).
+        if (result.conversion !== undefined) {
+          const conversion = result.conversion;
+          setConvertNotices((prev) => ({
+            ...prev,
+            [opened.tabId]: noticeFromManyResult(conversion),
+          }));
+        }
         pushToast("info", `Created PDF from ${files.length} image${files.length === 1 ? "" : "s"}.`);
       }
     },
@@ -6091,6 +6196,72 @@ pushToast(
       );
     },
     [pushToast],
+  );
+
+  // ---- Phase 54 (features D + E): validate the active document ----------
+  //
+  // The verb rides the REVIEW Action Dock and the Command Palette (both run
+  // through `dockAppActions`). `window.tflex.validation` is optional: its
+  // absence disables the verb with a declared reason, never a throw. A run
+  // writes the per-tab report card AND returns the report for the dialog's
+  // inline view; a blocked/warned save writes the same card from the engine's
+  // report.
+
+  const onValidateDocumentClick = useCallback((): void => {
+    if (activeTabIdRefLocal.current === null) return;
+    setValidateOpen(true);
+  }, []);
+
+  const dismissValidationNotice = useCallback((tabId: string): void => {
+    setValidationNotices((prev) => {
+      if (!(tabId in prev)) return prev;
+      const next = { ...prev };
+      delete next[tabId];
+      return next;
+    });
+  }, []);
+
+  const noteValidationReport = useCallback(
+    (
+      tabId: string,
+      report: ValidationReport,
+      variant: ValidationNoticeState["variant"],
+    ): void => {
+      setValidationNotices((prev) => ({ ...prev, [tabId]: { report, variant } }));
+    },
+    [],
+  );
+
+  const runValidationForActiveTab = useCallback(
+    async (
+      target: ValidationTarget,
+    ): Promise<{ report: ValidationReport } | { error: string }> => {
+      const activeId = activeTabIdRefLocal.current;
+      if (activeId === null) return { error: "No active document." };
+      const open = openTabsRef.current[activeId];
+      if (open === undefined) return { error: "No active document." };
+      const validation = window.tflex.validation;
+      if (validation?.validate === undefined) {
+        return { error: "Validation is not available in this build." };
+      }
+      const res = await validation.validate(open.session.engineDocId, target);
+      if (!res.ok) return { error: validationErrorText(res.error.code) };
+      noteValidationReport(activeId, res.value, "report");
+      return { report: res.value };
+    },
+    [noteValidationReport],
+  );
+
+  const onValidationDefaultsChange = useCallback(
+    (defaults: PdfValidationDefaults): void => {
+      setSettings((prev) => {
+        if (prev === null) return prev;
+        const updated = withValidationDefaults(prev, defaults);
+        if (updated !== prev) trackAndSave(updated);
+        return updated;
+      });
+    },
+    [trackAndSave],
   );
 
   // ---- Phase 12: Delete pages dialog (B8) ----
@@ -8312,6 +8483,7 @@ pushToast(
       exportComments: onCommentExportClick,
       importComments: onCommentImportClick,
       fillFromCsv: onFillFromCsvClick,
+      validateDocument: onValidateDocumentClick,
       optimize: onOptimizeClick,
       auditSpace: onAuditClick,
       createFromImages: onCreateClick,
@@ -8358,6 +8530,7 @@ pushToast(
       onCommentExportClick,
       onCommentImportClick,
       onFillFromCsvClick,
+      onValidateDocumentClick,
       onOptimizeClick,
       onAuditClick,
       onCreateClick,
@@ -8459,6 +8632,14 @@ pushToast(
   // precondition; this reads the live App state for it.
   const dockHasDocument = tabs.activeId !== null && !activeIsEmpty;
 
+  // Phase 54 (features D + E) — `window.tflex.validation` is optional. Its
+  // absence disables the validate verb with the registry's declared reason
+  // instead of throwing on click.
+  const hasValidationBridge = typeof window.tflex.validation?.validate === "function";
+
+  // Phase 54 — the remembered validation defaults the dialog re-seeds from.
+  const validationDefaults = effectiveValidationDefaults(settings);
+
   // DEF-327 — the live per-ACTION gates for the commands whose registry
   // precondition cannot express their real state: an EMPTY undo stack, Multi
   // Mode OFF. Both surfaces that can show these verbs (the dock's pins and the
@@ -8485,6 +8666,8 @@ pushToast(
           return true;
         case "document":
           return dockHasDocument;
+        case "validation":
+          return hasValidationBridge && dockHasDocument;
         case "recents":
           return recentDisplays.length > 0;
         case "form-fields":
@@ -8508,6 +8691,7 @@ pushToast(
       dockAppActions,
       appActionGates,
       dockHasDocument,
+      hasValidationBridge,
       recentDisplays.length,
       activeTab,
       ocrRunByTab,
@@ -8719,6 +8903,8 @@ pushToast(
           return true;
         case "document":
           return dockHasDocument;
+        case "validation":
+          return hasValidationBridge && dockHasDocument;
         case "tab":
           return tabs.activeId !== null;
         case "form-fields":
@@ -8747,6 +8933,7 @@ pushToast(
       focusedViewCommands,
       appActionGates,
       dockHasDocument,
+      hasValidationBridge,
       tabs.activeId,
       activeTab,
       ocrRunByTab,
@@ -9381,12 +9568,23 @@ pushToast(
             // Phase 53 (feature I) — the conversion card for an imported tab.
             // Dismissing deletes the entry, so it never returns for that tab.
             const conversion = convertNotices[meta.id];
-            if (protection === undefined && conversion === undefined) return document;
+            // Phase 54 (features D + E) — the validation report card for a tab
+            // that ran a validation or whose save was blocked/warned. Dismissing
+            // deletes the entry, so it never returns for that tab.
+            const validation = validationNotices[meta.id];
+            if (
+              protection === undefined &&
+              conversion === undefined &&
+              validation === undefined
+            ) {
+              return document;
+            }
             return (
               <div
                 className="document-column"
                 data-document-protected={protection !== undefined ? true : undefined}
                 data-document-converted={conversion !== undefined ? true : undefined}
+                data-document-validated={validation !== undefined ? true : undefined}
               >
                 {conversion !== undefined && (
                   <ConversionNotice
@@ -9399,6 +9597,12 @@ pushToast(
                         return next;
                       })
                     }
+                  />
+                )}
+                {validation !== undefined && (
+                  <ValidationNotice
+                    notice={validation}
+                    onDismiss={(): void => dismissValidationNotice(meta.id)}
                   />
                 )}
                 {protection !== undefined && (
@@ -9920,6 +10124,14 @@ pushToast(
         runCsvFill={runCsvToFieldsForActiveTab}
         onApplied={onFillFromCsvApplied}
         onClose={(): void => setFillFromCsvOpen(false)}
+      />
+      <ValidateDocumentDialog
+        open={validateOpen}
+        initialTarget={validationDefaults.target}
+        initialOnViolation={validationDefaults.onViolation}
+        runValidation={runValidationForActiveTab}
+        onRememberDefaults={onValidationDefaultsChange}
+        onClose={(): void => setValidateOpen(false)}
       />
       <DeletePageDialog
         open={deletePageOpen}

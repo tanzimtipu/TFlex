@@ -438,3 +438,26 @@ What it does: would open DRM-protected Kindle/Adobe e-books.
 
 Why it matters: recorded so no later phase re-opens it as an oversight; the detection-and-refusal behaviour
 is a Phase 56 success criterion.
+
+## FEA-023: Tagged-PDF structure preservation on save
+
+- Status: DEFERRED - found by backend-dev during the DEF-378 fix (2026-09-29): `serializeDoc` rebuilds
+  every document from the page copies, so `/StructTreeRoot` is dropped and **saving any tagged PDF
+  silently untags it** (screen readers lose the reading order and the semantic structure). Every other
+  catalog entry the rebuild dropped was carried in Phase 54's fix or is contracted into Phase 57 feature G;
+  this one is deferred with a written reason: structure elements (`StructElem`) reference PAGE objects and
+  parent links, so carrying them means remapping the page references AND validating the parent/child
+  linkage and the `/MarkInfo /Marked` flag together. Shipping a half-carried structure tree would be worse
+  than dropping it, because a file that CLAIMS to be tagged but has a broken tree is worse for assistive
+  technology than an honestly untagged file.
+- Source: `src/main/services/engine.ts` `serializeDoc`'s dropped-entry list (DEF-378 fix cycle); ISO 32000-1
+  14.7 (logical structure), PDF/UA-1
+- Category: Accessibility / Archival
+- Effort: L (structure-tree remapping plus a tagged-fixture regression set)
+- Likely new settings: no
+- Batch: the Phase 54 DEF-378 fix cycle (2026-09-29)
+
+What it does: keeps a tagged PDF's logical structure intact across an open-and-save round-trip.
+
+Why it matters: accessibility is a legal requirement in several of the audiences this program was asked to
+serve, and a save that silently strips tagging is data loss even though no visible pixel changes.

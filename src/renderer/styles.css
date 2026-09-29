@@ -14620,6 +14620,7 @@ cursor: pointer;
 .action-dock-verb[data-dock-verb='exportComments']:not(.action-dock-verb-primary):not([aria-pressed='true']):not(:disabled) { color: var(--sem-neutral); }
 .action-dock-verb[data-dock-verb='importComments']:not(.action-dock-verb-primary):not([aria-pressed='true']):not(:disabled) { color: var(--sem-neutral); }
 .action-dock-verb[data-dock-verb='fillFromCsv']:not(.action-dock-verb-primary):not([aria-pressed='true']):not(:disabled) { color: var(--sem-affirmative); }
+.action-dock-verb[data-dock-verb='validateDocument']:not(.action-dock-verb-primary):not([aria-pressed='true']):not(:disabled) { color: var(--sem-neutral); }
 .action-dock-verb[data-dock-verb='optimize']:not(.action-dock-verb-primary):not([aria-pressed='true']):not(:disabled) { color: var(--sem-affirmative); }
 .action-dock-verb[data-dock-verb='audit']:not(.action-dock-verb-primary):not([aria-pressed='true']):not(:disabled) { color: var(--sem-neutral); }
 .action-dock-verb[data-dock-verb='exportPages']:not(.action-dock-verb-primary):not([aria-pressed='true']):not(:disabled) { color: var(--sem-affirmative); }
@@ -16531,4 +16532,218 @@ cursor: pointer;
   color: var(--warning);
   font-weight: 500;
 }
+
+/* Phase 54 (features D + E) — the validation report card, above the canvas for
+ * a tab that ran a validation or whose save was blocked/warned. A FLOW element
+ * in the pane's document column; mount motion uses the shared tokens only. */
+.validation-notice {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--sp-2);
+  padding: var(--sp-2) var(--space-standard);
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-elevated);
+  color: var(--fg);
+  font-size: var(--fs-sm);
+  line-height: 1.45;
+  animation: validation-notice-in var(--motion-duration-standard) var(--motion-ease-enter) both;
+}
+
+@keyframes validation-notice-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* The card is a FLOW element at the top of the pane's document column, so its
+ * `margin-left: auto` dismiss control lands at the card's right edge. The
+ * always-on Inspector is a fixed right panel (`position: absolute; right: 0;
+ * top: 0; bottom: 0; width: var(--tools-panel-w); z-index: 30`) that paints
+ * OVER the full-width column; without a reservation the dismiss control sits
+ * under the Inspector's own header control (the DEF-357/DEF-377 class). The
+ * card therefore reserves the panel's column with the SAME registered
+ * `--tf-tools-inset` token the scroller, `.canvas-overlay`, the OCR suspects bar
+ * and the conversion/protection cards consume. This is a SPATIAL reservation,
+ * not a `pointer-events`/z-index change: the intercepting pixel is the
+ * Inspector's own LIVE interactive child, which must stay clickable. */
+.document-column > .validation-notice {
+  margin-right: var(--tf-tools-inset, 0px);
+}
+
+/* Multi Mode consumes the inset ONCE in the two pane widths; reserving it again
+ * inside the pane would open a blank gutter. Mirrors the scroller's reset. */
+.tab-stage[data-multi-mode="true"] .document-column > .validation-notice {
+  margin-right: 0;
+}
+
+.validation-notice-icon {
+  color: var(--accent);
+  flex: 0 0 auto;
+  margin-top: 1px;
+}
+
+.validation-notice-body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.validation-notice-title {
+  margin: 0;
+  font-weight: 600;
+  color: var(--fg-strong);
+}
+
+.validation-notice-blocked {
+  margin: 0;
+  font-weight: 600;
+  color: var(--danger, var(--warning));
+}
+
+.validation-notice-warned {
+  margin: 0;
+  color: var(--fg-muted);
+}
+
+.validation-notice-line {
+  margin: 0;
+  color: var(--fg);
+}
+
+.validation-notice-key {
+  color: var(--fg-muted);
+}
+
+.validation-notice-banner {
+  margin: 0;
+  font-weight: 600;
+}
+
+.validation-notice-banner--conforms {
+  color: var(--success, var(--accent));
+}
+
+.validation-notice-banner--deviates {
+  color: var(--warning);
+}
+
+.validation-notice-group {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-top: var(--sp-1);
+}
+
+.validation-notice-group-heading {
+  margin: 0;
+  font-weight: 600;
+  color: var(--fg-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-size: var(--fs-xs);
+}
+
+.validation-notice-list {
+  margin: 0;
+  padding: 0 0 0 var(--sp-3);
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.validation-notice-violation {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--sp-1);
+}
+
+.validation-notice-violation--error .validation-notice-rule {
+  color: var(--danger, var(--warning));
+  font-weight: 600;
+}
+
+.validation-notice-violation--warning .validation-notice-rule {
+  color: var(--fg-muted);
+  font-weight: 500;
+  font-style: italic;
+}
+
+.validation-notice-violation--warning .validation-notice-severity {
+  color: var(--warning);
+  font-weight: 600;
+}
+
+.validation-notice-rule {
+  font-family: var(--font-mono, monospace);
+  font-size: var(--fs-xs);
+}
+
+.validation-notice-detail {
+  color: var(--fg-muted);
+}
+
+.validation-notice-note {
+  margin: var(--sp-1) 0 0;
+  color: var(--fg-muted);
+  font-size: var(--fs-xs);
+}
+
+.validation-notice-dismiss {
+  margin-left: auto;
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border: none;
+  border-radius: var(--radius-2);
+  background: transparent;
+  color: var(--fg-muted);
+  cursor: pointer;
+  transition: background-color var(--motion-duration-fast) var(--motion-ease-standard);
+}
+
+.validation-notice-dismiss:hover {
+  background: var(--bg-hover);
+  color: var(--fg-strong);
+}
+
+/* The dialog's inline report reuses the card, so drop the column reservation
+ * (the dialog is not inside `.document-column`). */
+.validate-document-report {
+  margin-top: var(--sp-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-2);
+  overflow: hidden;
+}
+
+.validate-document-targets label,
+.validate-document-onviolation label {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+}
+
+.validate-document-remember {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  flex-direction: row;
+}
+
+.validate-document-idle {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-1);
+}
+
 

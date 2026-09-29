@@ -44,6 +44,13 @@ export interface ConversionAdapter {
   specificity: 'generic' | 'specific';
   /** Byte ceiling for this format; the service returns `too-large` above it. */
   maxBytes?: number;
+  /**
+   * Phase 54 — true when this adapter's output can be composed with others
+   * into ONE document by `toDocumentMany`. Adapters that cannot (the Phase 53
+   * text-family adapters) are rejected with `unsupported-format` by the
+   * multi-file entry rather than producing a partial document.
+   */
+  supportsMultiFile?: boolean;
   /** True when the head (and path) look like this format. */
   sniff(path: string, head: Buffer): boolean;
   convert(ctx: ConvertAdapterContext): Promise<ConvertResult>;
@@ -194,6 +201,29 @@ export function createDefaultRegistry(): ConvertRegistry {
     id: 'rtf',
     extensions: ['.rtf'],
     load: () => import('./adapters/rtf').then((m) => m.rtfAdapter),
+  });
+  // Phase 54 feature A - raster images (PNG + JPEG share one module).
+  registry.register({
+    id: 'png',
+    extensions: ['.png'],
+    load: () => import('./adapters/images').then((m) => m.pngAdapter),
+  });
+  registry.register({
+    id: 'jpeg',
+    extensions: ['.jpg', '.jpeg'],
+    load: () => import('./adapters/images').then((m) => m.jpegAdapter),
+  });
+  // Phase 54 feature B - multi-page TIFF.
+  registry.register({
+    id: 'tiff',
+    extensions: ['.tiff', '.tif'],
+    load: () => import('./adapters/tiff').then((m) => m.tiffAdapter),
+  });
+  // Phase 54 feature C - SVG (native vector with an engine-rendered fallback).
+  registry.register({
+    id: 'svg',
+    extensions: ['.svg'],
+    load: () => import('./adapters/svg').then((m) => m.svgAdapter),
   });
   return registry;
 }

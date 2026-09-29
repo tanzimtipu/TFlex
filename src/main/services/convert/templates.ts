@@ -32,6 +32,33 @@ table { border-collapse: collapse; }
 pre { white-space: pre-wrap; overflow: hidden; }
 `;
 
+/** Format a PDF-point length for a CSS `@page` `size` value without noisy
+ *  float tails (`300` not `300.0000`). */
+function formatPt(value: number): string {
+  return Number(value.toFixed(4)).toString();
+}
+
+/**
+ * Phase 54 item 0 — compose the SVG engine-fallback document with a `@page`
+ * rule carrying the SVG's own page size in PDF points and zero margin. The
+ * fallback print call passes `preferCSSPageSize: true` so Chromium honours this
+ * rule instead of its default A4/Letter paper (the same technique
+ * `print.ts:291` uses for the composited print sheet). `source` is the raw SVG
+ * markup with any XML prologue already stripped.
+ */
+export function composeSvgPrintHtml(
+  source: string,
+  widthPt: number,
+  heightPt: number,
+): string {
+  const pageCss = `@page { size: ${formatPt(widthPt)}pt ${formatPt(heightPt)}pt; margin: 0; }`;
+  return (
+    '<!doctype html><html><head><meta charset="utf-8">' +
+    `<style>${pageCss} html, body { margin: 0; padding: 0; } svg { display: block; }</style>` +
+    `</head><body>${source}</body></html>`
+  );
+}
+
 /**
  * Inject `CONVERT_CSP_META` exactly once, wherever the document's own head is:
  *  - after an existing `<head ...>` opening tag;

@@ -5,6 +5,242 @@
 > inspect the current `OPEN`, `FIX-READY`, and `DISPUTED` entries first; closed records are
 > historical evidence and must not be loaded wholesale.
 
+## DEF-387: SVG remote resources are silently dropped - the documented resource-blocked warning never appears
+
+- Status: CLOSED
+- Severity: LOW
+- Found by: adversary (ADV-105)
+- Phase: 54
+
+Steps to reproduce:
+1. Launch the real dev build through the canonical `e2e/lib/launch.cjs` helper (the specimens are built by `test-fixtures/adv-p54/build-fixtures.cjs`).
+2. From the repo root run `node test-fixtures/adv-p54/a3-svg.cjs 150000 svg-remote.svg svg-remote-styles.svg`, which drives the product's own conversion bridge (`window.tflex.convert.toDocument`) on `test-fixtures/adv-p54/svg-remote.svg` (two `<image>` elements pointing at `https://example.invalid/...` and `http://example.invalid/...`) and `test-fixtures/adv-p54/svg-remote-styles.svg` (a `@import url(https://...)`, an `https://...`-valued `fill`, and a `filter`).
+3. Read the warnings returned for each conversion.
+
+Expected: the Phase 53 engine path documents that every blocked http/https/ws/wss/ftp request is recorded and surfaced as a `resource-blocked` warning; an SVG whose remote image is dropped should tell the user so.
+Actual: both files take the engine-rendered fallback and report exactly one warning, `engine-rendered`; there is no `resource-blocked` warning. The produced PDFs contain no remote content. Separately, `svg-external-entity.svg` (a `SYSTEM "file:///C:/Windows/win.ini"` entity) produced a PDF that contains none of win.ini's content (`a3b-probe.cjs`, `containsWinIniContent:false`), and the billion-laughs document produced a 26 KB PDF with no expansion.
+
+Cause not identified: the adversary could prove only that no remote resource reached the output and no win.ini content was read or rendered. It could not determine from the app whether the request was attempted and cancelled by the dedicated session (which would have recorded it for `blockedResourceWarnings`) or never issued because the injected CSP `img-src data: file:` blocked it first. Either way the handler recorded nothing, so the promised warning is absent.
+
+Screenshot: none. Log: test-fixtures/adv-p54/logs/svg-remote.log
+
+History:
+- qa: filed from ADV-105 (Phase 54 adversary gate; accepted by the orchestrator as ACCEPTED -> DEF-387).
+- qa: CLOSED (FIX-READY retest; the orchestrator relayed FIX-READY in the same run). `node test-fixtures/adv-p54/a3-svg.cjs 150000 svg-remote.svg svg-remote-styles.svg` on the rebuilt dev tree -> each takes the engine-rendered path and now reports `resource-blocked` warnings naming the blocked URLs alongside `engine-rendered`: svg-remote.svg -> https://example.invalid/track.png and http://example.invalid/x.png; svg-remote-styles.svg -> https://example.invalid/evil.css and https://example.invalid/bg.png. The documented warning now appears.
+
+## DEF-386: A conforming PDF that declares `pdfaid part 9 / conformance Z` validates as conforms:true with declared "PDF/A-9z"
+
+- Status: CLOSED
+- Severity: LOW
+- Found by: adversary (ADV-104)
+- Phase: 54
+
+Steps to reproduce:
+1. Launch the real dev build through the canonical `e2e/lib/launch.cjs` helper.
+2. Run `node test-fixtures/adv-p54/a4c-bogusid.cjs`, which takes the known-conforming `test-fixtures/phase54/pdfa-1b-ok.pdf`, patches its XMP `pdfaid:part` from `1` to `9` and `pdfaid:conformance` from `B` to `Z` (saved as `test-fixtures/adv-p54/val-pdfa-conforming-bogusid.pdf`), and validates it through the real bridge (`window.tflex.validation.validateBytes`) against `pdfa-1b` and `pdfa-2b`.
+3. Read the report. Also validate `test-fixtures/adv-p54/val-pdfa-unknown-conf.pdf` (part 1, conformance `X`) and `test-fixtures/adv-p54/val-pdfx-part9.pdf`.
+
+Expected: an unknown part or conformance letter should be reported (e.g. an "unrecognised declared level" warning) rather than echoed, and the report should not pair a standard that does not exist with `conforms:true`.
+Actual: `ok:true`, `declared:"PDF/A-9z"`, `conforms:true`, `violations: []` for both targets. The unpatched control still reports `declared:"PDF/A-1b", conforms:true`. Likewise `val-pdfa-unknown-conf.pdf` reports `declared:"PDF/A-1x"`, and `val-pdfx-part9.pdf` reports `declared:"PDF/X-99:2099"`; no rule flags the impossible identifier.
+
+Root cause: `parsePdfaId` accepts any integer `part` and any non-empty `conformance` string; nothing validates the pair against the known set.
+
+Screenshot: none
+
+History:
+- qa: filed from ADV-104 (Phase 54 adversary gate; accepted by the orchestrator as ACCEPTED -> DEF-386).
+- qa: CLOSED (FIX-READY retest; the orchestrator relayed FIX-READY in the same run). `e2e/phase54_adv54_retest.spec.cjs` via the real validation bridge: val-pdfa-conforming-bogusid.pdf -> declared "PDF/A-9z", conforms:false, one `pdfa.declared-level` warning for both pdfa-1b and pdfa-2b; val-pdfa-unknown-conf.pdf -> `pdfa.declared-level` warning; val-pdfx-part9.pdf -> `pdfx.declared-level` warning; the valid control test-fixtures/phase54/pdfa-1b-ok.pdf still declares "PDF/A-1b", conforms:true, no declared-level warning. An impossible identifier is no longer echoed as a pass.
+
+## DEF-385: A 62-byte TIFF with absurd frame dimensions blocks the main process ~27 s and transiently allocates gigabytes
+
+- Status: CLOSED
+- Severity: MEDIUM
+- Found by: adversary (ADV-103)
+- Phase: 54
+
+Steps to reproduce:
+1. Launch the real dev build through the canonical `e2e/lib/launch.cjs` helper.
+2. `test-fixtures/adv-p54/tiff-absurd-dims.tiff` is 62 bytes, with IFD tags `t256=20000`, `t257=20000`, `t273=[]` (empty StripOffsets), `t277=1`.
+3. Run `node test-fixtures/adv-p54/a2-one.cjs tiff-absurd-dims.tiff 90000` through the real conversion bridge (`window.tflex.convert.toDocument`).
+
+Expected: a frame that cannot be decoded should fail fast with a typed error; a 62-byte file must not purchase tens of seconds of main-process time and gigabyte allocations.
+Actual: the call took 26,963 ms and then returned `ok:true` with one `frame-decode-failed` placeholder page; the app was usable afterwards. No progress, no cancel response during those 27 s - the main process (and so the whole UI) is blocked for the duration; only then does the frame degrade.
+
+Root cause (verified in `node_modules/utif/UTIF.js`): `UTIF.decodeImage` allocates `new Uint8Array(height*(bipl>>>3))` (line 125) before it touches the strip offset list, and `UTIF.toRGBA8` allocates `new Uint8Array(area*4)` (line 986) before the adapter's own `rgba.length < width*height*4` guard can reject the frame - about 50 MB and 1.6 GB respectively for these numbers, plus the PNG re-encode. The adapter's per-frame `try/catch` only limits the final result, not the work done to get there.
+
+Screenshot: none. Log: test-fixtures/adv-p54/logs/absurd-dims.log
+
+History:
+- qa: filed from ADV-103 (Phase 54 adversary gate; accepted by the orchestrator as ACCEPTED -> DEF-385).
+- qa: CLOSED (FIX-READY retest; the orchestrator relayed FIX-READY in the same run). `node test-fixtures/adv-p54/a2-one.cjs tiff-absurd-dims.tiff 90000` on the rebuilt dev tree -> `{"ms":21,"timedOut":false,"ok":true,"pageCount":1,"fidelity":"degraded","warnings":[{"code":"frame-decode-failed","message":"Frame 1 of the TIFF could not be decoded; a placeholder page was inserted."}],"usableAfter":true}`. Wall clock 21 ms versus the recorded 26,963 ms; no UI block, no gigabyte allocation, typed per-frame failure via the placeholder page and warning. `test/unit/main/convertTiffAdapter.test.ts` carries the DEF-385 specimen case (13 files / 167 tests green).
+
+## DEF-384: SVG parse and geometry failures are never surfaced - truncated and all-NaN SVGs import silently
+
+- Status: CLOSED
+- Severity: MEDIUM
+- Found by: adversary (ADV-102)
+- Phase: 54
+
+Steps to reproduce:
+1. Launch the real dev build through the canonical `e2e/lib/launch.cjs` helper.
+2. `test-fixtures/adv-p54/svg-truncated-25.svg`, `-50`, `-75` and `-90.svg` are the Phase 54 `native.svg` cut at 25%, 50%, 75% and 90% of its bytes; `test-fixtures/adv-p54/svg-numeric-hostile2.svg` is a valid 100x100 SVG whose only shapes carry `NaN`, `Infinity`, `1e999` and negative `x/y/width/height/rx/ry/r/cx/cy/stroke-width`.
+3. Run `node test-fixtures/adv-p54/a3-svg.cjs 90000 svg-truncated-25.svg svg-truncated-50.svg svg-truncated-75.svg svg-truncated-90.svg svg-numeric-hostile2.svg` through the real conversion bridge. Then open the numeric-hostile file through the real Open dialog (`a6b-one.cjs`).
+
+Expected: a warning naming the malformed/truncated markup (or the constructs that could not be translated), or a fallback to the engine-rendered path; the user must not be shown a silently partial or blank page as `Native`.
+Actual: for all five files `ok:true`, `fidelity:'native'`, `warnings: []`. The truncated files each import one partial page (the parse diagnostics "Unclosed <g> element", "Unclosed <polygon> element", etc. are discarded); `svg-numeric-hostile2.svg` imports one blank 75x75 pt page (`generatePaintOps` returns `ops: []` because every geometry value fails `readNumber`). Opening it through the real Open dialog shows a blank page with a `Native` fidelity badge and zero warnings.
+
+Root cause: `parseSvg` returns `diagnostics` and `generatePaintOps` carries them into `PaintResult.diagnostics`, but the SVG adapter (`adapters/svg.ts`) never reads `paint.diagnostics`; there is no warning for dropped geometry either.
+
+Screenshot: test-fixtures/adv-p54/shots/a6-svg-numeric.png
+
+History:
+- qa: filed from ADV-102 (Phase 54 adversary gate; accepted by the orchestrator as ACCEPTED -> DEF-384).
+- qa: CLOSED (FIX-READY retest; the orchestrator relayed FIX-READY in the same run). `node test-fixtures/adv-p54/a3-svg.cjs 90000 svg-truncated-90.svg svg-numeric-hostile2.svg` -> svg-truncated-90.svg reports `partial-content` naming "Unclosed <svg> element. Unclosed <g> element. Unclosed <polygon> element."; svg-numeric-hostile2.svg now takes fidelity `layout` (engine-rendered) with `engine-rendered` + `partial-content` warnings naming the dropped non-finite geometry. Opened through the real Open dialog it shows the "Layout preserved" badge and the warnings, not a blank page as `Native` (`e2e/phase54_adv54_retest.spec.cjs`; screenshot screenshots/phase54-adv54-def384-numeric.png inspected).
+
+## DEF-383: A wrong-typed /OutputIntents hard-errors the validator instead of reporting "could not be determined"
+
+- Status: CLOSED
+- Severity: MEDIUM
+- Found by: adversary (ADV-101)
+- Phase: 54
+
+Steps to reproduce:
+1. Launch the real dev build through the canonical `e2e/lib/launch.cjs` helper.
+2. `test-fixtures/adv-p54/val-oi-number.pdf` carries `/OutputIntents 42`; `val-oi-nested.pdf` carries `/OutputIntents [[1 2] [3 4]]`; `val-oi-array-of-numbers.pdf` carries `/OutputIntents [1]`; `val-oi-null.pdf` carries `/OutputIntents null`.
+3. Run `node test-fixtures/adv-p54/a4-validation.cjs`, which calls the real `window.tflex.validation.validateBytes(bytes, 'pdfa-1b')` on each.
+
+Expected: the rule set's own documented promise - "Where a check cannot be decided from the parsed data it is reported as a warning with the text 'could not be determined', never as a silent pass" - i.e. a report with an undetermined output-intent warning (and the other rules still evaluated).
+Actual: `val-oi-number.pdf` -> `ok:false`, `error {code:'internal', message:"Validation failed: Expected instance of _PDFArray, but got instance of _PDFNumber"}`; `val-oi-nested.pdf` -> same shape with `_PDFDict`/`_PDFArray`; `val-oi-array-of-numbers.pdf` -> same shape with `_PDFDict`/`_PDFNumber`; `val-oi-null.pdf` -> `ok:true`, reported as "No /OutputIntents entry". The entire validation aborts with a generic `internal` error and no rule list for a PDF whose `/OutputIntents` is merely the wrong type.
+
+Root cause (verified in `node_modules/@cantoo/pdf-lib/cjs/core/PDFContext.js:62-81`): `lookupMaybe(ref, type)` THROWS `UnexpectedObjectTypeError` when the object exists but is not one of `type`; it does not return `undefined`. `collectOutputIntent` relies on it for `/OutputIntents` and for each entry; the same pattern is used for font resources and ExtGState in `collectFontEmbedding` / `collectTransparency`.
+
+Screenshot: none
+
+History:
+- qa: filed from ADV-101 (Phase 54 adversary gate; accepted by the orchestrator as ACCEPTED -> DEF-383).
+- qa: CLOSED (FIX-READY retest; the orchestrator relayed FIX-READY in the same run). `node test-fixtures/adv-p54/a4-validation.cjs` on the rebuilt dev tree: val-oi-number.pdf, val-oi-null.pdf, val-oi-nested.pdf and val-oi-array-of-numbers.pdf each return `ok:true` with a `pdfa.output-intent` warning ("The /OutputIntents entry could not be determined: it is not an array of output-intent dictionaries ..."), never the previous generic `internal` error; the rest of the rule set still evaluates. `val-oi-null.pdf` now reports the undetermined warning rather than "No /OutputIntents entry".
+
+## DEF-382: Image-import page size is unclamped - a 1-DPI metadata claim produces a 1,417,322 pt page, and a max-pHYs claim produces a 0.000066 pt page and a 308,791,459% zoom
+
+- Status: CLOSED
+- Severity: MEDIUM
+- Found by: adversary (ADV-100)
+- Phase: 54
+
+Steps to reproduce:
+1. Launch the real dev build through the canonical `e2e/lib/launch.cjs` helper.
+2. The specimens are genuine images with hostile resolution metadata (valid PNGs whose pixel data really is the stated size): `test-fixtures/adv-p54/png-20000-1dpi.png` (20000x20000, 1-bit gray, `pHYs` 40 px/m = 1.016 DPI), `png-2000-1dpi.png` (2000x2000, `pHYs` 40 px/m), `png-phys-max.png` (100x100, `pHYs` 0xFFFFFFFF px/m = 109,092,169 DPI), `png-1x1-100000dpi.png` (1x1, `pHYs` 3,937,008 px/m = 100,000 DPI).
+3. Run `node test-fixtures/adv-p54/a2-one.cjs png-20000-1dpi.png 180000` and the same for the others through `window.tflex.convert.toDocument`; read the page media boxes back from the produced PDF.
+4. Open the degenerate ones through the real Create-from-images dialog (`a6b-one.cjs`) and read the zoom pill and the Inspector's `Size` row.
+
+Expected: the app should either refuse a page size outside a sane range with a readable warning, or clamp it; it must not silently emit a PDF page far beyond the format's implementation limit (or a near-zero page that drives the UI to a 308-million-percent zoom).
+Actual: `ok:true` with no warning in every case. `png-20000-1dpi.png` -> 1 page, 1,417,322.83 x 1,417,322.83 pt (~19,685 in per side, about 98x PDF's 14,400 pt implementation limit), `warnings: []`, 16.3 s; `png-2000-1dpi.png` -> 141,732.28 pt per side, `warnings: []`; `png-phys-max.png` -> 0.000065999 pt per side, `warnings: []`; `png-1x1-100000dpi.png` -> 0.00072 pt per side, `warnings: []`. The UI enters `zoom=308791459%` for `png-phys-max.png` and `zoom=283055565%` for `png-1x1-100000dpi.png`; the Inspector's `Size` row shows `-` (undetermined) for every case. The absurd page is written and opened; the only symptom is the unreadable zoom and the `Size: -` inspector row.
+
+Root cause: `computeImagePlacement` (adapters/images.ts) computes `points = pixels / dpi * 72` per axis with no floor or ceiling; `resolveDpi` only rejects `dpi <= 0`, and nothing validates the resulting media box.
+
+Screenshot: test-fixtures/adv-p54/shots/a6-phys-max.png (zoom pill `308791459%`), test-fixtures/adv-p54/shots/a6-1x1-100k.png, test-fixtures/adv-p54/shots/a6-2000-1dpi.png
+
+History:
+- qa: filed from ADV-100 (Phase 54 adversary gate; accepted by the orchestrator as ACCEPTED -> DEF-382).
+- qa: CLOSED (FIX-READY retest; the orchestrator relayed FIX-READY in the same run). `node test-fixtures/adv-p54/a2-one.cjs` on the three specimens: png-20000-1dpi.png -> 14400x14400 pt with a `page-clamped` warning naming "1417322.835 x 1417322.835 pt ... outside the supported 3-14400 pt range"; png-phys-max.png -> 3x3 pt (computed 6.600e-5); png-1x1-100000dpi.png -> 3x3 pt (computed 7.200e-4); all warnings present and the app usable. Normal control `test-fixtures/phase54/dpi-72.png` (720x360 px at 72.009 DPI) -> 719.91 x 359.96 pt with NO clamp warning (`e2e/phase54_adv54_retest.spec.cjs`; screenshot screenshots/phase54-adv54-def382-normal.png inspected).
+
+## DEF-381: PDF/X validation of a sub-megabyte PDF whose content stream decodes to ~200 MB OOM-crashes the main process; validation has no timeout
+
+- Status: CLOSED
+- Severity: HIGH
+- Found by: adversary (ADV-099)
+- Phase: 54
+
+Steps to reproduce:
+1. Launch the real dev build through the canonical `e2e/lib/launch.cjs` helper.
+2. `test-fixtures/adv-p54/val-bigcontent.pdf` is 408 KB on disk; its page `/Contents` is a Flate stream that decodes to 200 MiB of `0 0 0 0 k` operators (no `rg`/`RG`, so the scan cannot bail out early).
+3. Run `node test-fixtures/adv-p54/a4b-big.cjs`, which calls `window.tflex.validation.validateBytes(bytes, 'pdfx-1a')`.
+4. Sweep the size with `node test-fixtures/adv-p54/a4d-bigsteps.cjs`.
+
+Expected: a bounded scan (size cap or streaming tokeniser) and a typed `too-large`/`timeout` result; never an OOM of the main process.
+Actual: about 2.6 s in, the main process printed `OOM error in V8: invalid array length Allocation failed - JavaScript heap out of memory` (the GC trace shows the heap at ~1 GB and climbing), the renderer IPC rejected with `Target page, context or browser has been closed`, and `app.evaluate` afterwards was unavailable - the app was dead. The size sweep: 25 MiB decoded -> 445 ms, 50 MiB -> 1135 ms, 100 MiB -> 2155 ms, all `ok:true`; 200 MiB -> OOM. Even the surviving sizes freeze the main process synchronously for seconds. A 408 KB crafted PDF kills the application during PDF/X validation.
+
+Root cause: `contentUsesDeviceRgb` in `src/main/services/validation/pdfa.ts` calls `content.split(/\s+/)` on the fully decoded content, materialising ~100 million substrings for 200 MiB, with no byte cap; `DocumentValidationService.validateBytes` runs the collection synchronously with no timeout and no size guard.
+
+Screenshot: none (process death). Logs: test-fixtures/adv-p54/logs/a4b.log, test-fixtures/adv-p54/logs/a4d.log
+
+History:
+- qa: filed from ADV-099 (Phase 54 adversary gate; accepted by the orchestrator as ACCEPTED -> DEF-381).
+- qa: CLOSED (FIX-READY retest; the orchestrator relayed FIX-READY in the same run). `node test-fixtures/adv-p54/a4b-big.cjs` -> `{"ms":96,"timedOut":false,"ok":true,"conforms":false,"violations":["pdfx.output-intent","pdfx.device-rgb"],"rssAfterMb":289}` (previously OOM death at ~2.6 s). The device-RGB rule detail reads "The device-RGB scan could not be determined for page(s) 1: the decoded content exceeds the documented 32 MiB per-page scan cap." (severity warning) - never an OOM, never a silent pass (`e2e/phase54_adv54_retest.spec.cjs`). Size sweep `a4d-bigsteps.cjs`: 25 MiB 207 ms, 50 MiB 72 ms, 100 MiB 75 ms, all ok:true (previously 445/1135/2155 ms and 200 MiB died).
+
+## DEF-380: A 14-byte cyclic-IFD TIFF drives UTIF.decode into an unbounded loop and OOM-crashes the main process
+
+- Status: CLOSED
+- Severity: HIGH
+- Found by: adversary (ADV-098)
+- Phase: 54
+
+Steps to reproduce:
+1. Launch the real dev build through the canonical `e2e/lib/launch.cjs` helper.
+2. `test-fixtures/adv-p54/tiff-cyclic-ifd.tiff` is 14 bytes: `49 49 2a 00 08 00 00 00 00 00 08 00 00 00` (little-endian header, IFD0 at offset 8, zero entries, next-IFD pointer at offset 10 pointing back to 8).
+3. Run `node test-fixtures/adv-p54/a2-one.cjs tiff-cyclic-ifd.tiff 25000`, which launches the real dev build and calls `window.tflex.convert.toDocument` on the file.
+
+Expected: a typed, readable failure (e.g. `corrupt`) back across IPC; at worst a timeout. A malformed 14-byte file must never be able to exhaust the main process.
+Actual: no result was ever returned. The Electron main process grew its V8 heap, and at roughly 22 s of main-process uptime printed, repeatedly, `OOM error in V8: MarkCompactCollector: young object promotion failed Allocation failed - JavaScript heap out of memory` at ~4 GB. The renderer IPC then rejected with `Target page, context or browser has been closed`, and the app was gone (`usableAfter` dead). A second run with a 6 s deadline reproduced the same OOM. The main process runs an unbounded allocation loop until V8 OOMs and the whole application dies; no typed error reaches the renderer and a restart is required.
+
+Root cause (verified in `node_modules/utif/UTIF.js:93-98`): `UTIF.decode` loops `while (true) { noff = _readIFD(...); ifdo = readUint(data, noff); if (ifdo == 0) break; }`. With the self-referential next-IFD pointer, `ifdo` is always 8, so `ifds.push(ifd)` grows without bound and the loop never terminates. `src/main/services/convert/adapters/tiff.ts:135` calls `UTIF.decode` inside a `try/catch` that can never fire on a loop.
+
+Screenshot: none (process death, no window to capture). Log: test-fixtures/adv-p54/logs/cyclic.log
+
+History:
+- qa: filed from ADV-098 (Phase 54 adversary gate; accepted by the orchestrator as ACCEPTED -> DEF-380).
+- qa: CLOSED (FIX-READY retest; the orchestrator relayed FIX-READY in the same run). `node test-fixtures/adv-p54/a2-one.cjs tiff-cyclic-ifd.tiff 25000` on the rebuilt dev tree -> `{"ms":6,"timedOut":false,"ok":false,"error":{"code":"corrupt","message":"The TIFF could not be parsed. The TIFF IFD chain is cyclic: offset 8 is visited more than once."},"usableAfter":true}`. A typed, readable `corrupt` error in 6 ms; the app stayed alive and no OOM (previously death at ~4 GB). `test/unit/main/convertTiffAdapter.test.ts` carries the specimen case (13 files / 167 tests green).
+
+## DEF-379: serializeDoc still drops /StructTreeRoot, /Names wholesale, /Dests, /OpenAction and /AcroForm on every save (tagged PDFs are untagged; named destinations and the initial view are lost)
+
+- Status: REJECTED
+- Severity: MEDIUM
+- Found by: qa
+- Phase: 54 (found during the DEF-378 run-close pass; a distinct, pre-existing loss the DEF-378 fix did not reach)
+
+Steps to reproduce:
+1. `npm.cmd run build` (exit 0); launch the dev app through the canonical `e2e/lib/launch.cjs` helper.
+2. Open `test-fixtures/phase54/catalog-drops.pdf` (stub `dialog.showOpenDialog` to return the path, then click Open PDF). The fixture carries `/StructTreeRoot` (a `StructElem` whose `/Pg` references page 1), `/Dests` (a named destination `Chapter1`), `/Names` (with `/Dests` and `/JavaScript`), `/OpenAction` (a `/Fit` destination on page 1), `/AcroForm` and `/MarkInfo`.
+3. Save As to a temp path (stub `dialog.showSaveDialog`, click `[data-toolbar-save-as]`, confirm).
+4. Parse the saved file's catalog with pdf-lib.
+
+Expected: the save preserves the document's catalog entries, or carries the page-referencing ones with their page references remapped through the page map `serializeDoc` already builds - a tagged PDF stays tagged, and named destinations and the initial view survive.
+Actual: the saved catalog is `/Type /Pages /MarkInfo /Names` only. `/StructTreeRoot`, `/Dests`, `/OpenAction` and `/AcroForm` are gone; `/Names` survives but only its `/JavaScript` subtree (its `/Dests` entry is dropped). Saving a tagged PDF therefore silently untags it, and named destinations / the initial view are lost.
+
+Evidence: `e2e/phase54_retest_qa.spec.cjs` `P54R_DROPS` -> `{"srcCatalogue":["/Type","/Pages","/Dests","/Names","/OpenAction","/AcroForm","/StructTreeRoot","/MarkInfo"],"savedCatalogue":["/Type","/Pages","/MarkInfo","/Names"],"srcNamesKeys":["/Dests","/JavaScript"],"savedNamesKeys":["/JavaScript"],"savedHasStructTreeRoot":false,"savedHasDests":false,"savedHasOpenAction":false,"savedHasAcroForm":false,"savedHasMarkInfo":true,"savedNamesHasJavaScript":true,"savedNamesHasDests":false}`. The carried `/MarkInfo` and `/Names /JavaScript` prove the fixture is well-formed and the carry path ran; the dropped keys are the loss. Distinct from DEF-378 (which carried `/Metadata`, `/OutputIntents`, `/OCProperties`, `/MarkInfo`, `/Lang`, `/ViewerPreferences`, `/Collection`, `/AF` and the `/Names /JavaScript` subtree). The page-reference-remap part is contracted as REQUIREMENTS.md Phase 57 feature G; `/StructTreeRoot` is recorded as FEA-023 (accepted deferral).
+Screenshot: screenshots/phase54-retest-drops.png
+
+History:
+- qa: opened (Phase 54 DEF-378 run-close pass; reproduced in the running app on the current tree).
+- orchestrator: REJECTED as a defect, with the work CONTRACTED rather than dropped -- the entry is not "will not fix", it is "will not be fixed as a Phase 54 defect", and the reason is written here so nothing is silent. Split by item: (a) `/Dests` named destinations AND `/OpenAction` initial view ARE going to be fixed -- they are contracted as REQUIREMENTS.md **Phase 57 feature G** ("Catalog round-trip completeness"), which requires carrying them across the rebuild by REMAPPING their page references through the page map `serializeDoc` already builds, and which requires a test that a destination-free document still serializes byte-stably; qa's evidence in this entry (`/Dests` and `/OpenAction` present in the source, absent in the saved catalog) is the acceptance case that feature is written around. (b) `/StructTreeRoot` is DEFERRED with a written reason as **FEA-023** (docs/FEATURE-BACKLOG.md): structure elements reference page objects and re-tagging them correctly -- remapping the page refs, validating the parent/child linkage and the `/MarkInfo /Marked` flag together -- is its own program, and a file that CLAIMS to be tagged while carrying a broken structure tree is worse for assistive technology than an honestly untagged one. (c) `/Names` wholesale is deliberately NOT carried and MUST NOT be: the Phase 54 fix cycle proved with a page-tree safety test that cloning `/Names` wholesale drags page-referencing named destinations into the destination context and risks the page tree, which is why the fix carries only its `/JavaScript` subtree -- qa's own evidence shows exactly that (`/Names` survives with `/JavaScript` and without `/Dests`). (d) `/AcroForm` is deliberately not carried because the engine owns form serialization through its own path, and hijacking the catalog entry would double-write the form. No item is left unnamed, and Phase 57 feature G plus FEA-023 are the traceable successors.
+
+## DEF-378: PDF/A and PDF/X validation of an opened document reports "none declared" and a spurious missing-output-intent error
+
+- Status: CLOSED
+- Severity: HIGH
+- Found by: qa
+- Phase: 54
+
+Steps to reproduce:
+1. `npm.cmd run build` (exit 0); launch the dev app through the canonical `e2e/lib/launch.cjs` helper.
+2. Open `test-fixtures/phase54/pdfa-1b-ok.pdf` (stub `dialog.showOpenDialog` to return the path, then click Open PDF).
+3. REVIEW dock -> "Validate document…" -> select PDF/A-1b -> Validate.
+4. Read the inline report card.
+
+Expected: the report names the declared level `PDF/A-1b`, reports `conforms: true` and zero errors (the fixture carries an OutputIntent with an embedded ICC profile, an embedded font and a `pdfaid` XMP packet).
+Actual: the report reads `declared: "none declared"`, `conforms: false`, with one error `pdfa.output-intent` ("No /OutputIntents entry: a PDF/A target requires an OutputIntent with an embedded ICC destination profile."). The same happens for `pdfx-1a-cmyk.pdf` against PDF/X-1a: `declared: "none declared"`, one error `pdfx.output-intent`. The fixtures validate correctly when their bytes are passed straight to `validation.validateBytes` (the unit layer), so the loss happens on the app's opened-document path.
+
+Root cause: `serializeDoc` (`src/main/services/engine.ts:4516`) builds a fresh `PDFDocument.create()` and copies only the pages; it never carries the source catalog's `/Metadata` (XMP) or `/OutputIntents`. The validation IPC (`src/main/index.ts:722`) validates `engine.getDocumentBytes(docId)`, i.e. those re-serialized bytes, so the declaration and the output intent are gone before the rule set runs. This breaks Phase 54 criteria 5 and 6 for every document opened through the app.
+
+Evidence: `e2e/phase54_imaging_validation.spec.cjs` `P54_C5A` -> `{"target":"pdfa-1b","conforms":"false","declared":"none declared","rules":[{"rule":"pdfa.output-intent","severity":"error"}]}`; `P54_C6A` -> `{"target":"pdfx-1a","conforms":"false","declared":"none declared","rules":[{"rule":"pdfx.output-intent","severity":"error"}]}`. A direct copy-pages-and-save of the same fixtures drops `hasMetadata` and `hasOutputIntents` to false.
+Screenshot: screenshots/phase54-c5-pdfa-ok.png
+
+History:
+- qa: opened (Phase 54 phase validation; reproduced in the running app).
+- orchestrator: FIX-READY -- relaying backend-dev: `serializeDoc` now carries the source catalog's `/Metadata` (the XMP packet, pdfaid included) and `/OutputIntents` (the ICC output intent) into the freshly created destination document, using pdf-lib's own `PDFObjectCopier.for(src.context, out.context).copy(...)` primitive, which deep-clones the object graph into the destination context with ref memoisation and cycle handling -- a raw `PDFRef` from the source context would be invalid there. `PDFRawStream.clone` carries both the dictionary and the raw bytes, so the XMP stream and the ICC stream survive verbatim. The carry is per-entry failure-isolated: a clone failure is skipped and the save proceeds exactly as it does today, proven by a test that forces the `/Metadata` clone to throw and asserts the save still succeeds and the output is byte-equal to the page-only control. Evidence: `npm.cmd run test:unit -- test/unit/main/engine test/unit/main/validatePdfA.test.ts test/unit/main/validatePdfX.test.ts test/unit/main/validateExportGuard.test.ts` -> 5 files / 267 tests passed; new `test/unit/main/engineSerializeMetadata.test.ts` 8/8; `npm.cmd run verify` exit 0 (conventions clean, 283 files, tsc clean); `npm.cmd run build:node` exit 0. The bytes-equality assertions compare the round-tripped XMP and ICC bytes to the originals, and the Phase 54 acceptance case now reports `declared: 'PDF/A-1b'`, `conforms: true`, `violations: []`, plus PDF/X-1a CMYK `declared: 'PDF/X-1:2001'`, `conforms: true`. IMPORTANT SCOPE NOTE: this defect was the messenger for a broader bug -- because `serializeDoc` rebuilt every document from scratch, every save silently dropped the file's XMP metadata and output intent, i.e. real data loss for the archival and print audiences this program exists for, not merely a wrong validation report. Not CLOSED -- it awaits qa's retest.
+- orchestrator: NOTE (not a status change) -- the same fix cycle produced an evidenced list of catalog entries `serializeDoc` still drops, and two of them are correctness bugs in their own right: `/Names /JavaScript` was dropped (so the PDF/A JavaScript rule could FALSELY PASS on any document opened through the app -- a validator that can falsely pass is worse than no validator) and `/OCProperties` was dropped (so optional-content layers are lost on save, which REQUIREMENTS.md Phase 57's layers panel and visibility-toggle criterion depend on). Both were fixed in a follow-up by carrying `/MarkInfo`, `/Lang`, `/ViewerPreferences`, `/OCProperties`, `/Collection` and `/AF` (none capable of holding a page reference) plus a SELECTIVE carry of only the `/Names /JavaScript` subtree, because cloning `/Names` wholesale would drag page-referencing named destinations into the destination context and risk the page tree. Still dropped, with reasons: `/StructTreeRoot` (tagged-PDF structure references page objects -- needs a real re-tagging pass), `/Names` wholesale and `/Dests` (they reference pages), `/OpenAction` (may hold a page destination), `/AcroForm` (the engine owns form serialization). Evidence: 267 targeted tests pass; the JS check is asserted on BOTH sides (a JS document now reports `pdfa.javascript` on the serialized bytes, a non-JS document reports none); the page-tree safety proof asserts the destination `/Names` keeps `/JavaScript` and NOT the source's `/Dests`, with the page count and page content bytes unchanged; `/OCProperties` round-trips with its OCG names and Order array intact.
+- qa: CLOSED (Phase 54 DEF-378 run-close retest on the current dev tree, after `npm.cmd run build`). `e2e/phase54_imaging_validation.spec.cjs` `P54_C5A` -> `{"target":"pdfa-1b","conforms":"true","declared":"PDF/A-1b","rules":[]}`; `P54_C5B` -> `{"declared":"PDF/A-1b","conforms":"false","rules":[{"rule":"pdfa.output-intent","severity":"error"},{"rule":"pdfa.font-embedding","severity":"error"}]}` - both violations are REAL for this fixture (it genuinely carries no OutputIntent and a non-embedded base-14 font), and the previous run's spurious `declared: "none declared"` is gone; `P54_C5C` -> `{"variant":"blocked","rules":["pdfa.output-intent","pdfa.font-embedding"],"wrote":false}` (refused, no file written, correct list); `P54_C6A` -> `{"target":"pdfx-1a","conforms":"true","declared":"PDF/X-1:2001","rules":[]}`; `P54_C6B` -> `pdfx.device-rgb` naming `page(s) 1`, `ops {rg:1,k:0}` (no conversion). The full Phase 54 gate spec is 20/20 green. Screenshots inspected: screenshots/phase54-c5-pdfa-ok.png (Declared PDF/A-1b, "Conforms to the checked target") and screenshots/phase54-retest-js-positive.png.
+
 ## DEF-377: the ProtectionNotice dismiss button is unclickable - the always-on Inspector overlaps it (DEF-357 class)
 
 - Status: CLOSED

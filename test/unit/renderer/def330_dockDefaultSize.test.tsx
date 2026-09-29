@@ -51,6 +51,7 @@ const DOCK_LABELS: Record<Stage, string[]> = {
   review: [
     'Annotate', 'Sign', 'Stamp', 'Flatten', 'Forms', 'Watermark',
     'Export comments (FDF)', 'Import comments (FDF)', 'Fill form fields from CSV…',
+    'Validate document…',
   ],
   deliver: [
     'Reduce file size', 'Audit space usage', 'Export pages as images',

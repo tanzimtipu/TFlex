@@ -52,6 +52,7 @@ import type {
 import type { Result } from "../shared/result";
 import type {
   ConvertErrorCode,
+  ConvertManyResult,
   ConvertOpenResult,
   ConvertOptions,
   ConvertProgress,
@@ -67,6 +68,11 @@ import type {
   SignatureSource,
 } from "../shared/types";
 import type { AccountStatusResult, AccountsClientConfig, OAuthCallbackOutcome, OAuthCallbackStartResult, OAuthTraceEvent, OpenAuthUrlResult, SetSessionPayload, SyncReport } from "../shared/accounts";
+import type {
+  ValidationErrorCode,
+  ValidationReport,
+  ValidationTarget,
+} from "../shared/validation";
 import { normalizeArrayBuffer } from "./to-array-buffer";
 
 // The renderer's engineClient.ts declares `window.tflex?.engine` with its own
@@ -428,6 +434,13 @@ const convertApi = {
   ): Promise<Result<ConvertOpenResult, ConvertErrorCode>> {
     return ipcRenderer.invoke(IPC.convertToDocument, docId, path, options);
   },
+  toDocumentMany(
+    docId: string,
+    paths: string[],
+    options?: ConvertOptions,
+  ): Promise<Result<ConvertManyResult, ConvertErrorCode>> {
+    return ipcRenderer.invoke(IPC.convertToDocumentMany, docId, paths, options);
+  },
   csvToDocumentFields(
     docId: string,
     path: string,
@@ -445,6 +458,24 @@ const convertApi = {
     return () => {
       ipcRenderer.removeListener(IPC.convertProgressEvent, listener);
     };
+  },
+};
+
+// Phase 54 features D + E — validation bridge. Both calls resolve
+// `Result<ValidationReport, ValidationErrorCode>` from main; a report is
+// returned even when violations were found.
+const validationApi = {
+  validate(
+    docId: string,
+    target?: ValidationTarget,
+  ): Promise<Result<ValidationReport, ValidationErrorCode>> {
+    return ipcRenderer.invoke(IPC.validationValidate, docId, target);
+  },
+  validateBytes(
+    bytes: ArrayBuffer | Uint8Array,
+    target: ValidationTarget,
+  ): Promise<Result<ValidationReport, ValidationErrorCode>> {
+    return ipcRenderer.invoke(IPC.validationValidateBytes, bytes, target);
   },
 };
 
@@ -632,6 +663,7 @@ const api = {
   },
   engine: engineApi,
   convert: convertApi,
+  validation: validationApi,
   signatures: {
     list(): Promise<SavedSignaturesResult> {
       return ipcRenderer.invoke(IPC.signaturesList);

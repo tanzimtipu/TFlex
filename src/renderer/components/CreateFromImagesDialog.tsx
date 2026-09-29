@@ -488,8 +488,9 @@ export function CreateFromImagesDialog(
               aria-label="JPEG quality percentage (10..100)"
             />
             <span className="modal-hint">
-              Used for JPEG outputs (PNG inputs ignore this). 85 is a
-              safe default.
+              Applies when an image is re-encoded (for example a clipboard
+              image). Images added from disk keep their original quality and
+              DPI. 85 is a safe default.
             </span>
           </label>
 

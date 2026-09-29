@@ -103,6 +103,7 @@ import {
   Droplet,
   Ellipsis,
   Expand,
+  FileCheck2,
   FileDown,
   FileImage,
   FileInput,
@@ -213,7 +214,11 @@ export type ToolAvailability =
   /** Requires a pending update (available or downloaded). */
   | 'update-pending'
   /** Requires a live page/thumbnail selection. */
-  | 'selection';
+  | 'selection'
+  /** Phase 54 — requires an open document AND the validation bridge
+   *  (`window.tflex.validation`); a build without the bridge disables the verb
+   *  with this declared reason instead of offering a dead click. */
+  | 'validation';
 
 /** Which surface renders this entry's own control. Exactly one surface owns
  *  a tool (one canonical home per tool):
@@ -638,6 +643,21 @@ const REGISTRY = [
     stage: 'review',
     action: 'fillFromCsv',
     availability: 'form-fields',
+  },
+  {
+    // Phase 54 (features D + E) — validate the active document against a
+    // PDF/A or PDF/X profile and report what the file declares plus every
+    // finding. The `validation` precondition is honest: no open document (or a
+    // build without the bridge) disables the verb with a reason, never a dead
+    // click. Its live homes are the REVIEW Action Dock and the Command Palette.
+    id: 'validateDocument',
+    label: 'Validate document\u2026',
+    description: 'Check the document against PDF/A or PDF/X and list every finding.',
+    icon: FileCheck2,
+    shortcut: '',
+    stage: 'review',
+    action: 'validateDocument',
+    availability: 'validation',
   },
   {
     id: 'annotationsPanel',
@@ -1370,6 +1390,7 @@ const SURFACE_BY_ID: Record<ToolId, ToolSurface> = {
   exportComments: 'palette',
   importComments: 'palette',
   fillFromCsv: 'palette',
+  validateDocument: 'dock',
   annotationsPanel: 'panel',
   annSelect: 'flyout',
   annHighlight: 'flyout',
@@ -1493,6 +1514,7 @@ export const DOCK_STAGE_IDS: Readonly<Record<Stage, readonly string[]>> = {
     'exportComments',
     'importComments',
     'fillFromCsv',
+    'validateDocument',
   ],
   deliver: ['optimize', 'audit', 'exportPages', 'exportText', 'exportDocx', 'createFromImages', 'encrypt'],
 };

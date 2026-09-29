@@ -77,11 +77,17 @@ export interface HtmlPrintOptions {
   pageSize: 'a4' | 'letter';
   marginMm: number;
   printBackground: boolean;
+  /** Phase 54 item 0 — honour the document's own `@page` `size`/`margin`
+   *  instead of the Settings paper size (the SVG engine fallback composes an
+   *  `@page` rule from the SVG's intrinsic page size). Optional and defaults
+   *  to false, so every pre-existing caller keeps the current behaviour. */
+  preferCSSPageSize?: boolean;
 }
 
 /** The `printToPDF` option subset this engine sets. `preferCSSPageSize` is
- *  always false so the user's Settings page size and margins win over any
- *  `@page` rule in the document. */
+ *  false by default (the Settings page size and margins win over any `@page`
+ *  rule); a caller that composes its own `@page` size (the Phase 54 SVG engine
+ *  fallback) opts in via `HtmlPrintOptions.preferCSSPageSize`. */
 export interface ElectronConvertPrintToPdfOptions {
   pageSize: 'A4' | 'Letter';
   margins: { top: number; bottom: number; left: number; right: number };
@@ -102,7 +108,7 @@ export function mapHtmlPrintOptions(
     pageSize: PAGE_SIZE_NAMES[options.pageSize],
     margins: { top: inches, bottom: inches, left: inches, right: inches },
     printBackground: options.printBackground,
-    preferCSSPageSize: false,
+    preferCSSPageSize: options.preferCSSPageSize ?? false,
   };
 }
 

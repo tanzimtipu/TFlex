@@ -80,6 +80,7 @@ export const DOCK_AVAILABILITY_REASON: Record<ToolAvailability, string> = {
   'ink-tool': 'Arm the Pen tool first',
   'update-pending': 'No update is pending',
   selection: 'Select at least one page first',
+  validation: 'Validation is not available in this build',
 };
 
 /**

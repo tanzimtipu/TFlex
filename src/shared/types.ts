@@ -194,6 +194,16 @@ export interface AppSettings {
    *  HTML print backgrounds). Validated preserve-if-valid in settings.ts; a
    *  missing field resolves to `DEFAULT_CONVERT_DEFAULTS`. */
   convertDefaults?: ConvertDefaults;
+  /** Phase 54 — remembered defaults for raster/TIFF image import
+   *  (page-size mode, fixed page size, fit, rotation). Validated
+   *  preserve-if-valid in settings.ts; a missing field resolves to
+   *  `DEFAULT_IMAGE_IMPORT_DEFAULTS`. */
+  imageImportDefaults?: ImageImportDefaults;
+  /** Phase 54 — remembered defaults for PDF/A + PDF/X validation (target
+   *  level and violation handling). Validated preserve-if-valid in
+   *  settings.ts; a missing field resolves to
+   *  `DEFAULT_PDF_VALIDATION_DEFAULTS`. */
+  pdfValidationDefaults?: PdfValidationDefaults;
 }
 
 /** Phase 6 — what the renderer gets back from `app:getInfo`. The
@@ -420,6 +430,39 @@ export interface EncryptDefaults {
   algorithm: EncryptAlgorithm;
   permissions: EncryptPermissions;
 }
+
+/** Phase 54 — remembered defaults for raster/TIFF image import. Mirrors the
+ *  `ConvertOptions` image block one-for-one. */
+export interface ImageImportDefaults {
+  pageSizeMode: 'image' | 'fixed';
+  fixedPageSize: 'a4' | 'letter';
+  fit: 'contain' | 'cover' | 'actual';
+  rotationDeg: 0 | 90 | 180 | 270;
+}
+
+/** Phase 54 — remembered defaults for PDF/A and PDF/X validation. This chunk
+ *  only stores and validates the shape; the validation behaviour itself is a
+ *  later chunk. */
+export interface PdfValidationDefaults {
+  target: 'none' | 'pdfa-1b' | 'pdfa-2b' | 'pdfa-3b' | 'pdfx-1a' | 'pdfx-3' | 'pdfx-4';
+  onViolation: 'warn' | 'block';
+}
+
+/** Phase 54 — the documented image-import defaults a missing
+ *  `imageImportDefaults` resolves to. */
+export const DEFAULT_IMAGE_IMPORT_DEFAULTS: ImageImportDefaults = {
+  pageSizeMode: 'image',
+  fixedPageSize: 'a4',
+  fit: 'contain',
+  rotationDeg: 0,
+};
+
+/** Phase 54 — the documented validation defaults a missing
+ *  `pdfValidationDefaults` resolves to. */
+export const DEFAULT_PDF_VALIDATION_DEFAULTS: PdfValidationDefaults = {
+  target: 'none',
+  onViolation: 'warn',
+};
 
 /** Phase 52 — payload for `encryptDocument`. `userPassword` is required (the
  *  file must prompt for something); `ownerPassword` is optional and defaults

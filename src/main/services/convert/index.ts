@@ -1,7 +1,10 @@
 import { stat } from 'node:fs/promises';
+import { basename } from 'node:path';
+import { PDFDocument } from '@cantoo/pdf-lib';
 import { ok, type Result } from '../../../shared/result';
 import type {
   ConvertErrorCode,
+  ConvertManyResult,
   ConvertOpenResult,
   ConvertOptions,
   ConvertProgress,
@@ -13,7 +16,8 @@ import type {
   FillFormFieldPayload,
   FormField,
 } from '../../../shared/types';
-import { convertError, mapAdapterThrow } from './errors';
+import { stampBrandMetadata } from '../engine';
+import { convertError, mapAdapterThrow, CONVERT_ERROR_MESSAGES } from './errors';
 import { resolveConvertOptions } from './limits';
 import {
   createDefaultRegistry,
@@ -117,13 +121,8 @@ export class DocumentConversionService {
       if (controller.signal.aborted) return convertError('cancelled');
 
       this.emit(docId, 'opening');
-      const loaded = await this.engine.loadDocumentBytes(docId, written.bytes);
-      if (!loaded.ok) {
-        return convertError(
-          'internal',
-          `The converted document could not be opened: ${loaded.error.message}`,
-        );
-      }
+      const opened = await this.openInEngine(docId, written.bytes);
+      if (!opened.ok) return opened;
       return ok({
         docId,
         pageCount: written.pageCount,
@@ -137,6 +136,113 @@ export class DocumentConversionService {
     } finally {
       this.jobs.delete(docId);
     }
+  }
+
+  /**
+   * Phase 54 criterion 1 — convert N paths into ONE document in the given
+   * order. Each path goes through its own adapter (the same `convert` path
+   * `toDocument` uses); a file whose adapter cannot participate in a multi-file
+   * document fails the WHOLE request with `unsupported-format` naming the path,
+   * so no partial document is ever registered. The merged bytes enter the
+   * engine through the SAME `openInEngine` call `toDocument` uses.
+   */
+  async toDocumentMany(
+    docId: string,
+    paths: string[],
+    options?: ConvertOptions,
+  ): Promise<Result<ConvertManyResult, ConvertErrorCode>> {
+    const controller = new AbortController();
+    this.jobs.set(docId, controller);
+    try {
+      if (paths.length === 0) {
+        return convertError('empty-file', 'No files were selected for import.');
+      }
+      const resolvedOptions = resolveConvertOptions(options);
+      const parts: Array<{
+        bytes: Uint8Array;
+        pageCount: number;
+        format: ConvertManyResult['sourceFormats'][number];
+        fidelity: ConvertManyResult['fidelity'];
+        warnings: ConvertWarning[];
+      }> = [];
+
+      for (const path of paths) {
+        const head = await readSniffHead(path);
+        const resolved = await this.registry.resolve(path, head);
+        if (resolved === null) {
+          return convertError(
+            'unsupported-format',
+            `${CONVERT_ERROR_MESSAGES['unsupported-format']} (${basename(path)})`,
+          );
+        }
+        const adapter = resolved.adapter;
+        if (adapter.supportsMultiFile !== true) {
+          return convertError(
+            'unsupported-format',
+            `This file type cannot be combined into one document. (${basename(path)})`,
+          );
+        }
+        const info = await stat(path);
+        if (info.size === 0) return convertError('empty-file');
+        if (adapter.maxBytes !== undefined && info.size > adapter.maxBytes) {
+          return convertError('too-large');
+        }
+        const written = await adapter.convert({
+          path,
+          options: resolvedOptions,
+          head,
+          signal: controller.signal,
+          onProgress: (phase, ratio) => this.emit(docId, phase, ratio),
+        });
+        if (controller.signal.aborted) return convertError('cancelled');
+        parts.push({
+          bytes: written.bytes,
+          pageCount: written.pageCount,
+          format: written.sourceFormat,
+          fidelity: written.fidelity,
+          warnings: written.warnings,
+        });
+      }
+
+      this.emit(docId, 'opening');
+      const merged = await mergePdfParts(parts.map((part) => part.bytes));
+      const opened = await this.openInEngine(docId, merged);
+      if (!opened.ok) return opened;
+
+      const warnings = parts.flatMap((part) => part.warnings);
+      const fidelity = parts.some((part) => part.fidelity === 'degraded')
+        ? 'degraded'
+        : parts.some((part) => part.fidelity === 'layout')
+          ? 'layout'
+          : 'native';
+      return ok({
+        docId,
+        pageCount: parts.reduce((sum, part) => sum + part.pageCount, 0),
+        sourceFormats: parts.map((part) => part.format),
+        fidelity,
+        warnings,
+        title: basename(paths[0]).replace(/\.[^.]+$/, ''),
+      });
+    } catch (thrown) {
+      return mapAdapterThrow(thrown);
+    } finally {
+      this.jobs.delete(docId);
+    }
+  }
+
+  /** Hand produced bytes to the EXISTING engine (one document model). */
+  private async openInEngine(
+    docId: string,
+    bytes: Uint8Array,
+  ): Promise<Result<void, ConvertErrorCode>> {
+    const loaded = await this.engine.loadDocumentBytes(docId, bytes);
+    if (!loaded.ok) {
+      return convertError(
+        'internal',
+        `The converted document could not be opened: ${loaded.error.message}`,
+      );
+    }
+    return ok(undefined);
   }
 
   /** Abort an in-flight conversion. Safe to call for an unknown job. */
@@ -251,4 +357,16 @@ export class DocumentConversionService {
   private emit(jobId: string, phase: string, ratio?: number): void {
     this.emitProgress?.({ jobId, phase, ratio });
   }
+}
+
+/** Phase 54 — compose N adapter-produced PDFs into ONE document, in order. */
+async function mergePdfParts(parts: Uint8Array[]): Promise<Uint8Array> {
+  const merged = await PDFDocument.create();
+  for (const bytes of parts) {
+    const source = await PDFDocument.load(bytes);
+    const pages = await merged.copyPages(source, source.getPageIndices());
+    for (const page of pages) merged.addPage(page);
+  }
+  stampBrandMetadata(merged);
+  return merged.save();
 }
