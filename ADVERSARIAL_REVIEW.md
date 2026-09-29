@@ -4699,3 +4699,180 @@ Logs: probe-stdout of `probe/probe-export.cjs` and the app run of
 `probe/probe-app.cjs` for `pdf-long-line-40000.pdf`.
 
 Disposition: ACCEPTED -> DEF-394
+
+## Phase 56 gate - EPUB / Mobipocket / comic-archive parsers
+
+Session label: `phase-56 gate`. Attack ran against the uncommitted Phase-56 parsers
+built from the working tree (`npm.cmd run build`; the pure-parser probes bundle the
+TS directly with esbuild). Harnesses and all specimens live under
+`test-fixtures/adv-p56/` (`gen-p56.cjs`, `gen-epub-big.cjs`, `probe/probe-p56.cjs`,
+`probe/probe-app56.cjs`, `probe/bundle.cjs`); the app probes launch ONLY through
+`e2e/lib/launch.cjs`. Peak-RSS figures are the probe child's own
+`process.memoryUsage().rss`; the app OOM lines are Electron main stderr.
+
+## ADV-109: A 2.5 KB EPUB whose chapter references one image N times OOM-crashes the main process (no output cap in `inlineEpubImages`)
+
+- Session: phase-56 gate
+- Suggested severity: HIGH
+
+What I did:
+1. Built `test-fixtures/adv-p56/epub-img-amp-10000.epub` (2,323 bytes: one 64 KiB
+   PNG file referenced by 10,000 `<img src="pic.bin"/>` tags) and
+   `epub-img-amp-1mb.epub` (2,464 bytes: one 1 MiB PNG referenced by 5,000 tags).
+2. Module level (`probe/probe-p56.cjs epub-print` / `epub-reading`, shipped
+   functions from the bundle): `parseEpub` returned in 7 ms, then both the print
+   path (`composeEpubBody`) and the reading path
+   (`inlineEpubImages` + `chapterFragment` + `sanitizeEpubFragment`, exactly what
+   `convert.readingDocument` composes) threw `RangeError: Invalid string length`.
+   Peak RSS was 1,097 MB (10,000 x 64 KiB) and 6,768 MB (5,000 x 1 MiB), reached in
+   449 ms / 968 ms.
+3. App level (`probe/probe-app56.cjs`, only `e2e/lib/launch.cjs`): called
+   `window.tflex.convert.readingDocument()` on `epub-img-amp-1mb.epub`. The Electron
+   main process died within 622 ms with:
+   `OOM error in V8: CALL_AND_RETRY_LAST Allocation failed - JavaScript heap out of memory`
+   and the Playwright target page closed (the app crashed). The smaller
+   `epub-img-amp-10000.epub` returned the typed `internal` failure
+   ("The import failed unexpectedly. Invalid string length") after 399 ms and the
+   app stayed usable - it only survived because 1.1 GB is below the heap cap.
+
+Expected: inlining a chapter's images must be bounded (a per-document output budget,
+or a typed `too-large` refusal once the composed fragment would exceed a ceiling) -
+a 2.5 KB input must never exhaust the main process heap.
+
+Actual: `src/main/services/convert/epub-parse.ts` `inlineEpubImages` replaces every
+`<img>`/`<image>` reference with the FULL base64 `data:` URI of the referenced part;
+`collectEpubImages` stores one copy but the output repeats it once per reference, so
+output = (number of references) x (image size). Nothing caps the result; only V8's
+~512 MB string length limit stops it, after allocating hundreds of MB to tens of GB.
+The same function is reached by the print adapter (`composeEpubBody`) and by
+`readingDocument`, so opening OR reading the book crashes. Root cause: no output /
+reference-count budget in `inlineEpubImages` (and `chapterFragment` is not the limit).
+Fixtures: `test-fixtures/adv-p56/epub-img-amp-10000.epub`,
+`epub-img-amp-1mb.epub`. Logs: probe-stdout of
+`probe/probe-p56.cjs epub-print|epub-reading` and the Electron stderr in
+`probe/probe-app56.cjs`.
+
+Disposition: ACCEPTED -> DEF-396
+
+## ADV-110: A 7.8 MB MOBI whose markup references one image 300,000 times drives unbounded memory growth and kills the app (no output cap in `inlineMobiImages`)
+
+- Session: phase-56 gate
+- Suggested severity: HIGH
+
+What I did:
+1. Built `test-fixtures/adv-p56/mobi-img-amp-300k.mobi` (7,797,486 bytes): a PalmDOC
+   (uncompressed) text record whose markup is 300,000 `<img recindex="1"/>` tags
+   (5.7 M chars, well under the 32 MB text ceiling) plus one 2 MiB valid-PNG image
+   record. `parseMobi` returned in 20 ms - the parser itself is fine.
+2. Module level (`probe/probe-p56.cjs mobi-compose`): `composeMobiBody` ->
+   `inlineMobiImages` did not return; the probe was hard-killed by the supervisor
+   after 180 s with no error and no progress.
+3. Synthetic bisection of the same shipped `inlineMobiImages` (`mobi-amp-synth`):
+   5,000 refs x 1 MiB image -> `RangeError: Invalid string length` after 1,913 ms at
+   peak RSS 6,768 MB; 20,000 refs x 1 MiB -> `RangeError` after 8,186 ms at peak RSS
+   26,815 MB. Peak memory scales with references x image bytes.
+4. App level (`probe/probe-app56.cjs`): `window.tflex.convert.toDocument()` on the
+   fixture closed the whole Electron app ("Target page, context or browser has been
+   closed") in ~8.3 s - a hard crash, not a typed refusal.
+
+Expected: bound the inlined markup the same way the parser bounds text (32 MB) and
+one image (16 MB): cap the total inline output and return a typed `too-large`, and
+never allocate gigabytes for a single document.
+
+Actual: `src/main/services/convert/adapters/mobi.ts` `inlineMobiImages` replaces each
+`recindex` reference with the full base64 data URI and has no output budget;
+`composeMobiBody` calls it before printing. `mobi-parse.ts` caps the compressed text
+(32 MB) and each image (16 MB) but not (references x image bytes), so a modest file
+allocates tens of GB. The app dies from memory exhaustion / OOM. Fixture:
+`test-fixtures/adv-p56/mobi-img-amp-300k.mobi`. Logs: probe-stdout of
+`probe/probe-p56.cjs mobi-compose|mobi-amp-synth` and
+`probe/probe-app56.cjs doc:mobi-img-amp-300k.mobi`.
+
+Disposition: ACCEPTED -> DEF-397
+
+## ADV-111: A 1.9 MB PalmDOC record makes `decompressPalmDoc` allocate ~1 GB and block the main thread ~330 ms
+
+- Session: phase-56 gate
+- Suggested severity: MEDIUM
+
+What I did:
+1. Built `test-fixtures/adv-p56/mobi-lz77-bomb.mobi` (1,974,116 bytes): one PalmDOC
+   text record of repeated unit `0x009F` (length 34, distance 4) that expands to the
+   32 MB ceiling.
+2. Module level (`probe/probe-p56.cjs lz77` and `mobi`): `decompressPalmDoc` threw
+   the typed `ConvertFailure('too-large', "The decompressed e-book text exceeds the
+   32 MB decompression ceiling.")` after 312-329 ms at peak RSS 986 MB.
+3. App level (`probe/probe-app56.cjs doc:mobi-lz77-bomb.mobi`): the same typed
+   `too-large` surfaced through IPC in 219 ms with no page error, and the app stayed
+   usable.
+
+Expected: the 32 MB decompression ceiling bounds CPU/memory; a file whose declared
+expansion is 32 MB should not transiently allocate ~1 GB.
+
+Actual: `src/main/services/convert/mobi-parse.ts` `decompressPalmDoc` accumulates
+into `const out: number[]` (a packed element is ~8 bytes, so 32 M entries ~256 MB)
+and then `Uint8Array.from(out)` copies it, peaking at ~1 GB for a 1.9 MB input and
+blocking the synchronous main thread ~330 ms. It is bounded and typed (so not a
+crash), but it is a ~500x memory amplification and an OOM risk on a low-memory
+machine, and the in-flight `AbortSignal` is never observed mid-decompress. Fixture:
+`test-fixtures/adv-p56/mobi-lz77-bomb.mobi`. Logs: probe-stdout of
+`probe/probe-p56.cjs lz77|mobi` and `probe/probe-app56.cjs`.
+
+Disposition: ACCEPTED -> DEF-398
+
+## Negative results - Phase 56 (verified correct, no finding)
+
+These directions from the dispatch were exercised and found SOUND; the next pass
+should not repeat them:
+
+- EPUB OPF spine itemref count: 50,000 itemrefs parse and compose in 71 ms / 111 MB;
+  1,000,000 itemrefs are refused as typed `corrupt` by the bounded XML node ceiling
+  ("ODF node ceiling reached") - the spine is NOT an unbounded declared extent.
+  (`epub-spine-50000.epub`, `epub-spine-1000000.epub`.)
+- EPUB container/OPF malformed input: missing `META-INF/container.xml` -> typed
+  `corrupt`; a billion-laughs DOCTYPE in the OPF is tokenised without entity
+  expansion (title came back literally as `&f;`); a 10,000-deep OPF -> typed
+  `corrupt` ("ODF depth ceiling reached"). Oversized container.xml remains covered by
+  the already-verified Phase-55 ZIP ceilings (not re-tested).
+- EPUB chapter shapes: a 10,000,000-character chapter and a 10,000-deep nested
+  chapter both sanitize/inline and return linearly (10.0 M chars in 48 ms / 76 MB;
+  10 k nesting in 13 ms), no recursion overflow.
+- EPUB path resolution (`resolveEpubHref`): `../evil.xhtml` and
+  `%2e%2e%2f%2e%2e%2fevil.xhtml` normalise INSIDE the package (no filesystem
+  escape), `http:`, `file:`, `data:` and `C:\...` all return `null` (never looked up).
+- EPUB scrubber (`sanitizeEpubFragment`): 28 evasion vectors all neutralised -
+  mixed-case/entity/tab/newline/`&colon;` `javascript:`, `vbscript:`, `data:text/html`
+  embedded `<script>`, `<svg onload>`, `<iframe srcdoc>`, `<foreignObject>`,
+  `<meta http-equiv=refresh>`, `on*` handlers, slash-split attributes, namespace
+  prefixes, bare/unclosed script, quote-breakout attribute, `style` attr. The reading
+  view's renderer-side `sanitizeReadingFragment` re-sanitizes (drops `data:text/html`
+  too) and the renderer CSP has no `unsafe-inline`, so no script reaches the DOM. The
+  only retained-but-inert value is `data:image/svg+xml` in an `href`/`src`
+  (`epub-parse.ts` allows all `data:`, the renderer blocks only `data:text/html`);
+  SVG in `<img>` is static and a data: top-frame navigation is blocked by Chromium,
+  so it is noted as an inert observation, not a bypass.
+- MOBI typed refusals: `encryptionType=2` and EXTH type 504 both throw typed
+  `drm-protected` in 0 ms; a DRM file whose text record is a decompression bomb is
+  refused in 0 ms with no RSS increase (DRM is checked BEFORE any decompression); a
+  HUFF/CDIC file throws typed `unsupported-format`; a HUFF/CDIC+DRM file throws
+  `drm-protected` (DRM wins). All verified through the real IPC and the app stayed
+  usable with no tab opened.
+- MOBI PalmDB/record-table malformations: out-of-order offsets, `numRecords=65535`
+  in a 200-byte file, and a 12-byte record 0 are all typed `corrupt` in <=1 ms. A
+  KF8 BOUNDARY uid on record 0 is ignored. A huge EXTH count with a short block is
+  bounded and ignored. A truncated literal run and a back-reference before the output
+  start are typed `corrupt`.
+- TAR/CBT: octal `77777777777` -> typed `too-large`; non-octal size -> typed
+  `corrupt`; a 511-byte archive -> typed `corrupt`; a declared payload past the end ->
+  typed `corrupt`; 10,000 records -> typed `too-large` at 4,097; 1,024 zero bytes ->
+  typed `corrupt` ("no readable image entries"); a chain with no terminating zero
+  blocks ends cleanly and returns its entry; a `../../evil.png` name is only a label
+  (`readTar` never touches the filesystem); a record named `p1.png` whose payload is a
+  nested TAR is skipped with `frame-decode-failed`, not mis-read.
+- CBZ: 10,000 entries -> typed `too-large` at the 4,096-entry ZIP ceiling; a
+  signature-only truncated PNG and a 0-byte image are skipped with
+  `frame-decode-failed` while the valid pages still convert; a single 100 MB inflated
+  image peaks at 524 MB / 246 ms (bounded by the already-verified per-entry 128 MiB
+  ZIP ceiling). Duplicate entry names are collapsed by the `fflate` object map - not a
+  crash surface.
+

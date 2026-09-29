@@ -88,6 +88,8 @@ export type ConvertErrorCode =
   | 'too-large'
   | 'decode-failed'
   | 'corrupt'
+  /** Phase 56 feature B — an encrypted e-book: the app never decrypts. */
+  | 'drm-protected'
   | 'cancelled'
   | 'timeout'
   | 'internal';

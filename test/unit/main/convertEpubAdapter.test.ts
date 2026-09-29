@@ -24,7 +24,7 @@ import {
   createDefaultRegistry,
   readSniffHead,
 } from '../../../src/main/services/convert/registry';
-import { resolveConvertOptions } from '../../../src/main/services/convert/limits';
+import { resolveConvertOptions, CONVERT_LIMITS } from '../../../src/main/services/convert/limits';
 import { DocumentConversionService } from '../../../src/main/services/convert';
 
 /**
@@ -337,6 +337,72 @@ describe('phase56 epub adapter', () => {
     const path = await mkFile('remote.epub', epub);
     const result = await convertEpub(path, fakePrint());
     expect(result.warnings.some((w) => w.code === 'resource-blocked')).toBe(true);
+  });
+});
+
+/** A minimal EPUB with one chapter and one image, for the inline-budget cases. */
+function buildBudgetEpub(chapterXhtml: string, imageBytes: Uint8Array): Uint8Array {
+  const opf = `<?xml version="1.0" encoding="utf-8"?>
+<package xmlns="http://www.idpf.org/2007/opf" version="3.0" unique-identifier="bookid">
+<metadata xmlns:dc="http://purl.org/dc/elements/1.1/"><dc:title>Budget Book</dc:title></metadata>
+<manifest>
+<item id="ch1" href="text/ch.xhtml" media-type="application/xhtml+xml"/>
+<item id="pic" href="images/pic.png" media-type="image/png"/>
+</manifest>
+<spine><itemref idref="ch1"/></spine>
+</package>`;
+  return zipSync({
+    mimetype: [strToU8('application/epub+zip'), { level: 0 }],
+    'META-INF/container.xml': strToU8(CONTAINER_XML),
+    'OEBPS/content.opf': strToU8(opf),
+    'OEBPS/text/ch.xhtml': strToU8(chapterXhtml),
+    'OEBPS/images/pic.png': imageBytes,
+  });
+}
+
+describe('phase56 epub inline budget', () => {
+  it('refuses a chapter that references one image past the reference ceiling (DEF-396)', async () => {
+    const refs = CONVERT_LIMITS.inlinedImageRefs + 1;
+    const chapter = `<html><body><p>x</p>${'<img src="../images/pic.png" alt=""/>'.repeat(refs)}</body></html>`;
+    const path = await mkFile(
+      'refs.epub',
+      buildBudgetEpub(chapter, new Uint8Array(PNG_PIC)),
+    );
+    const print = fakePrint();
+    const started = Date.now();
+    const failure = await failureOf(() => convertEpub(path, print));
+    const elapsed = Date.now() - started;
+    expect(failure.code).toBe('too-large');
+    expect(failure.message).toContain(String(refs));
+    expect(failure.message).toContain('inlining ceiling');
+    expect(print.calls).toBe(0);
+    expect(elapsed).toBeLessThan(1000);
+  });
+
+  it('refuses a chapter whose projected inlined total passes the byte ceiling', async () => {
+    const refs = 49;
+    // A 1 MiB image referenced 49 times projects to ~68 MB of data URIs, above
+    // the 64 MiB ceiling, while staying under the reference ceiling.
+    const image = Buffer.concat([PNG_PIC, Buffer.alloc(1024 * 1024 - PNG_PIC.length)]);
+    const chapter = `<html><body>${'<img src="../images/pic.png" alt=""/>'.repeat(refs)}</body></html>`;
+    const path = await mkFile(
+      'bytes.epub',
+      buildBudgetEpub(chapter, new Uint8Array(image)),
+    );
+    const print = fakePrint();
+    const failure = await failureOf(() => convertEpub(path, print));
+    expect(failure.code).toBe('too-large');
+    expect(failure.message).toContain('64 MB');
+    expect(print.calls).toBe(0);
+  });
+
+  it('still converts a normal multi-image chapter under the budgets', async () => {
+    const path = await mkFile('normal.epub', buildEpub());
+    const print = fakePrint();
+    const result = await convertEpub(path, print);
+    expect(isPdfBytes(result.bytes)).toBe(true);
+    expect(print.calls).toBe(1);
+    expect(print.htmls[0]).toContain(PIC_DATA);
   });
 });
 

@@ -16785,4 +16785,264 @@ cursor: pointer;
   gap: var(--sp-1);
 }
 
+/* -------------------------------------------------------------------------
+ * Phase 56 (features A / C / D) — the shared Reading view.
+ * One shell, two modes. The reading theme lives on the SURFACE only; PDF
+ * content is never recoloured. Motion is the shared token system only.
+ * ------------------------------------------------------------------------- */
+.reading-open-button {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+  align-self: flex-start;
+  margin: var(--sp-2) var(--sp-3);
+  padding: var(--sp-1) var(--sp-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-2);
+  background: var(--bg-elevated);
+  color: var(--fg);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+  transition: background var(--motion-duration-fast) var(--motion-ease-standard),
+    border-color var(--motion-duration-fast) var(--motion-ease-standard);
+}
+
+.reading-open-button:hover {
+  background: var(--bg-hover);
+  border-color: var(--border-strong);
+}
+
+.reading-view {
+  position: fixed;
+  inset: 0;
+  z-index: 1200;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-sunken);
+  box-shadow: var(--shadow-dialog);
+}
+
+.reading-surface {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
+
+.reading-surface--light {
+  --reading-bg: #ffffff;
+  --reading-ink: #1e293b;
+  --reading-muted: #556070;
+  --reading-border: #e2e8f0;
+  --reading-chrome: #f8fafc;
+}
+
+.reading-surface--dark {
+  --reading-bg: #171b20;
+  --reading-ink: #e5e7eb;
+  --reading-muted: #9aa4b2;
+  --reading-border: #2b333d;
+  --reading-chrome: #1c2229;
+}
+
+.reading-surface--sepia {
+  --reading-bg: #f4ecd8;
+  --reading-ink: #433422;
+  --reading-muted: #6b5a41;
+  --reading-border: #e2d6ba;
+  --reading-chrome: #efe4c9;
+}
+
+.reading-view-header {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  padding: var(--sp-3) var(--sp-4);
+  background: var(--reading-chrome, var(--bg-toolbar));
+  border-bottom: 1px solid var(--reading-border, var(--border));
+  color: var(--reading-ink, var(--fg));
+}
+
+.reading-view-title {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+  font-weight: 600;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.reading-progress {
+  margin-left: auto;
+  font-size: 12px;
+  color: var(--reading-muted, var(--fg-muted));
+  font-variant-numeric: tabular-nums;
+}
+
+.reading-view-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--sp-1);
+  border: none;
+  border-radius: var(--radius-2);
+  background: transparent;
+  color: var(--reading-ink, var(--fg));
+  cursor: pointer;
+  transition: background var(--motion-duration-fast) var(--motion-ease-standard);
+}
+
+.reading-view-close:hover {
+  background: var(--bg-hover);
+}
+
+.reading-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  background: var(--reading-bg, var(--bg-base));
+  color: var(--reading-ink, var(--fg));
+}
+
+.reading-body--empty {
+  align-items: center;
+  justify-content: center;
+  color: var(--reading-muted, var(--fg-muted));
+  padding: var(--sp-6);
+}
+
+.reading-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-3);
+  padding: var(--sp-2) var(--sp-4);
+  background: var(--reading-chrome, var(--bg-toolbar));
+  border-bottom: 1px solid var(--reading-border, var(--border));
+  position: sticky;
+  top: 0;
+  z-index: 1;
+}
+
+.reading-control {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+  font-size: 12px;
+  color: var(--reading-muted, var(--fg-muted));
+}
+
+.reading-control-value {
+  font-variant-numeric: tabular-nums;
+  min-width: 3.5ch;
+}
+
+.reading-chapters {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-6);
+  padding: var(--sp-6) var(--sp-4) 25vh;
+  align-items: center;
+}
+
+.reading-chapter {
+  width: 100%;
+  max-width: 100%;
+}
+
+.reading-chapter-title {
+  margin: 0 0 var(--sp-3);
+  font-size: 1.15em;
+  color: var(--reading-muted, var(--fg-muted));
+  text-align: center;
+}
+
+.reading-chapter-content {
+  margin: 0 auto;
+  width: 100%;
+}
+
+.reading-chapter-content img {
+  max-width: 100%;
+  height: auto;
+}
+
+.reading-toggle {
+  padding: var(--sp-1) var(--sp-3);
+  border: 1px solid var(--reading-border, var(--border));
+  border-radius: var(--radius-2);
+  background: transparent;
+  color: var(--reading-ink, var(--fg));
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+  transition: background var(--motion-duration-fast) var(--motion-ease-standard);
+}
+
+.reading-toggle[aria-pressed='true'] {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.reading-comic-stage {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--sp-2);
+  padding: var(--sp-3);
+  overflow: hidden;
+}
+
+.reading-comic-page {
+  margin: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #ffffff;
+  overflow: hidden;
+}
+
+.reading-view-nav {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--sp-3);
+  padding: var(--sp-2) var(--sp-4);
+  background: var(--reading-chrome, var(--bg-toolbar));
+  border-top: 1px solid var(--reading-border, var(--border));
+}
+
+.reading-nav-button {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-1);
+  padding: var(--sp-1) var(--sp-4);
+  border: 1px solid var(--reading-border, var(--border));
+  border-radius: var(--radius-2);
+  background: var(--reading-bg, var(--bg-elevated));
+  color: var(--reading-ink, var(--fg));
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+  transition: background var(--motion-duration-fast) var(--motion-ease-standard),
+    opacity var(--motion-duration-fast) var(--motion-ease-standard);
+}
+
+.reading-nav-button:hover:not(:disabled) {
+  background: var(--bg-hover);
+}
+
+.reading-nav-button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
 

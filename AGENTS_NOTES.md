@@ -4685,3 +4685,44 @@ final full suite is green (520 files / 6539 tests, plus `e2e/phase55_office.spec
 - **A renderer toast is code-canned** (`toastForConvertError` maps a `ConvertErrorCode` to fixed
   copy), so adapter detail is only visible inside the typed `Result` message. Surfacing that detail
   in the UI is a separate fail-loud improvement, not part of this defect.
+
+## 2026-09-29: Phase 56 closed (digital publishing and reading modes)
+
+Phase 56 shipped and closed: EPUB import + reading view, MOBI/AZW/KF8, CBZ/CBT comic viewport, one
+shared reading-view shell, `readingDefaults` settings. Criteria 1-8 PASS; DEF-395/396/397/398 all
+CLOSED; ADV-109/110/111 all ACCEPTED and fixed. Commits: `ee5894b` (chunk 1) and the phase commit
+that follows this note. `e2e/phase56_reading.spec.cjs` 11 passed; `verify:full` 524 files / 6621 tests.
+
+**The declared-extent class moved out of loop bounds and into STRING INLINING (4th+5th occurrence).**
+ADV-109/110 (-> DEF-396/397) were the same class as DEF-392/393, one dimension over: no loop was
+unbounded, but the output was built by repeating a payload once per file-declared REFERENCE
+(`<img>` count x base64 image size), so a 2.5 KB EPUB and a 7.8 MB MOBI OOM-killed the main process
+(6,768 MB and 26,815 MB peaks). Fix: a preflight on `references x payload bytes` (`inlinedImageRefs`
+5,000 / `inlinedImageBytes` 64 MiB, arithmetic only — no URI built before the refusal), enforced in
+ONE helper per format so the print path and the reading path share it.
+**Rule extension: any output composed by repeating a payload once per file-declared reference needs
+a preflight budget on (reference count x payload length) — in bytes, not just items.**
+
+**ADV-111 (-> DEF-398): a bounded, typed refusal can still be a ~500x memory amplifier.** The PalmDOC
+decompression was correctly capped and typed, yet accumulated into `number[]` and then copied into a
+`Uint8Array`, peaking at ~986 MB for a 1.9 MB input, and the in-flight `AbortSignal` was never
+observed. Fix: a bounded growing `Uint8Array` with no second copy and a signal check every 16,384
+units. **A typed ceiling is necessary, not sufficient: check the ALLOCATION SHAPE and abort latency
+too, and assert a measured peak in the test.**
+
+**DEF-395: React identity churn in an effect-dep chain wedges the renderer.** `ComicPage` passed a
+new inline `onPageSize` closure every render while `PageView`'s render effect depends on it and calls
+it, and the handler stored a new `dims` object even when unchanged -> React #185 (Maximum update
+depth), which made real clicks time out. The unit tests passed because they stubbed `PageView` in
+jsdom — the same mock-fidelity trap as DEF-106/374. **Fix the identity, never suppress the dep;
+and for an effect that calls back, assert a BOUNDED callback count in the test.**
+
+**A new `ConvertErrorCode` is a three-file, two-role contract change.** `'drm-protected'` needed
+`src/shared/convert.ts` + `src/main/services/convert/errors.ts` (backend) AND the exhaustive
+`toastForConvertError` switch in `src/renderer/state/convert.ts` (frontend). There is no single-role
+atomic change, so it MUST be sequenced: backend adds the union + message and reports the one expected
+renderer typecheck error, then the frontend dispatch lands the case. Plan the pair up front.
+
+**Accepted non-defect:** the reading view's `Next page`/`Previous page` aria-labels duplicate the
+pre-existing PDF page-nav toolbar; qa targets the reading controls via `data-reading-*` attributes.
+Harmless, left as-is (changing the labels would break the documented Phase 56 handle set).

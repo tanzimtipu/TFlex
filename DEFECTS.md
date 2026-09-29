@@ -5,6 +5,91 @@
 > inspect the current `OPEN`, `FIX-READY`, and `DISPUTED` entries first; closed records are
 > historical evidence and must not be loaded wholesale.
 
+## DEF-398: A 1.9 MB PalmDOC record makes `decompressPalmDoc` allocate ~1 GB and block the main thread ~330 ms
+
+- Status: CLOSED
+- Severity: MEDIUM
+- Found by: adversary (ADV-111)
+- Phase: 56
+
+Steps to reproduce:
+1. Launch the dev build through the canonical `e2e/lib/launch.cjs` helper.
+2. Open `test-fixtures/adv-p56/mobi-lz77-bomb.mobi` (1,974,116 bytes; one PalmDOC text record of repeated unit `0x009F` (length 34, distance 4) that expands to the 32 MB ceiling) through the real Open button.
+3. Module level (`probe/probe-p56.cjs lz77` and `mobi`): `decompressPalmDoc` threw the typed `ConvertFailure('too-large', "The decompressed e-book text exceeds the 32 MB decompression ceiling.")` after 312-329 ms at peak RSS 986 MB.
+4. App level (`probe/probe-app56.cjs doc:mobi-lz77-bomb.mobi`): the same typed `too-large` surfaced through IPC in 219 ms with no page error, and the app stayed usable.
+
+Expected: the 32 MB decompression ceiling bounds CPU/memory; a file whose declared expansion is 32 MB should not transiently allocate ~1 GB.
+Actual: `src/main/services/convert/mobi-parse.ts` `decompressPalmDoc` accumulates into `const out: number[]` (a packed element is ~8 bytes, so 32 M entries ~256 MB) and then `Uint8Array.from(out)` copies it, peaking at ~1 GB for a 1.9 MB input and blocking the synchronous main thread ~330 ms. It is bounded and typed (so not a crash), but it is a ~500x memory amplification and an OOM risk on a low-memory machine, and the in-flight `AbortSignal` is never observed mid-decompress. Fixture: `test-fixtures/adv-p56/mobi-lz77-bomb.mobi`. Logs: probe-stdout of `probe/probe-p56.cjs lz77|mobi` and `probe/probe-app56.cjs`.
+
+History:
+- qa: opened
+- orchestrator: FIX-READY, relaying backend-dev verbatim. `decompressPalmDoc` (`src/main/services/convert/mobi-parse.ts:291`) now writes into a growing `Uint8Array` (starts at `min(cap, 64 KiB)`, geometric growth capped at the output cap) tracking a written length and returning a subarray — the `number[]` accumulator and the second full `Uint8Array.from(out)` copy are gone. Added an optional `AbortSignal` checked before the loop and every 16,384 units, throwing `ConvertCancelledError`; `readPartText` (`:445`) and `parseMobi` (`:483`) thread it and `adapters/mobi.ts:240` passes `ctx.signal`. Measured: `[DEF-398] LZ77 1.88 MB input -> 33554432 bytes output, heap delta 0.1 MB` (the old path held a heap `number[]`, so the new `< 200 MB` assertion fails against the old code). The bomb still returns the typed `too-large` and a pre-aborted signal throws `ConvertCancelledError`.
+- qa: CLOSED. Retested on the fixed tree (dist rebuilt from source) with the adversary's own specimen. `mobi-lz77-bomb.mobi`: real Open button -> code-canned `too-large` toast in 318 ms, peak main RSS 210 MB with a delta of 54 MB over the 156 MB baseline (pre-fix transient ~986 MB / ~330 ms block); `window.tflex.convert.toDocument()` RESOLVED `{ok:false, code:'too-large', message:'The decompressed e-book text exceeds the 32 MB decompression ceiling.'}`. App stayed usable (report.pdf opened and rendered). Screenshot: screenshots/def-398.png. Test: e2e/def396_397_398_retest.spec.cjs.
+
+## DEF-397: A 7.8 MB MOBI whose markup references one image 300,000 times drives unbounded memory growth and kills the app (no output cap in `inlineMobiImages`)
+
+- Status: CLOSED
+- Severity: HIGH
+- Found by: adversary (ADV-110)
+- Phase: 56
+
+Steps to reproduce:
+1. Launch the dev build through the canonical `e2e/lib/launch.cjs` helper.
+2. Open `test-fixtures/adv-p56/mobi-img-amp-300k.mobi` (7,797,486 bytes): a PalmDOC (uncompressed) text record whose markup is 300,000 `<img recindex="1"/>` tags (5.7 M chars, well under the 32 MB text ceiling) plus one 2 MiB valid-PNG image record. `parseMobi` returned in 20 ms - the parser itself is fine.
+3. Module level (`probe/probe-p56.cjs mobi-compose`): `composeMobiBody` -> `inlineMobiImages` did not return; the probe was hard-killed by the supervisor after 180 s with no error and no progress.
+4. Synthetic bisection of the same shipped `inlineMobiImages` (`mobi-amp-synth`): 5,000 refs x 1 MiB image -> `RangeError: Invalid string length` after 1,913 ms at peak RSS 6,768 MB; 20,000 refs x 1 MiB -> `RangeError` after 8,186 ms at peak RSS 26,815 MB. Peak memory scales with references x image bytes.
+5. App level (`probe/probe-app56.cjs`): `window.tflex.convert.toDocument()` on the fixture closed the whole Electron app ("Target page, context or browser has been closed") in ~8.3 s - a hard crash, not a typed refusal.
+
+Expected: bound the inlined markup the same way the parser bounds text (32 MB) and one image (16 MB): cap the total inline output and return a typed `too-large`, and never allocate gigabytes for a single document.
+Actual: `src/main/services/convert/adapters/mobi.ts` `inlineMobiImages` replaces each `recindex` reference with the full base64 data URI and has no output budget; `composeMobiBody` calls it before printing. `mobi-parse.ts` caps the compressed text (32 MB) and each image (16 MB) but not (references x image bytes), so a modest file allocates tens of GB. The app dies from memory exhaustion / OOM. Fixture: `test-fixtures/adv-p56/mobi-img-amp-300k.mobi`. Logs: probe-stdout of `probe/probe-p56.cjs mobi-compose|mobi-amp-synth` and `probe/probe-app56.cjs doc:mobi-img-amp-300k.mobi`.
+
+History:
+- qa: opened
+- orchestrator: FIX-READY, relaying backend-dev verbatim. Aggregate inlined-image budget enforced BEFORE any `data:` URI is constructed: documented `CONVERT_LIMITS.inlinedImageRefs: 5_000` and `inlinedImageBytes: 64 * 1024 * 1024` (`src/main/services/convert/limits.ts:96,101`) and `assertInlinedImageBudget(label, entries)` (`:113`), which sums per-image `encodedLength x refCount` as arithmetic only and throws `ConvertFailure('too-large')` when either ceiling is passed. Applied in `adapters/mobi.ts:98/104/119/145` via `mobiImageDataUriLength` (base64 length computed arithmetically), `countMobiImageRefs` and `mobiInlineEntries` (records that would be dropped anyway are excluded). Refusal reads e.g. `about 65.3 MB of data URIs, above the 5000-reference / 64 MB inlining ceiling`. Tests: synthetic PalmDBs with over-refs and over-bytes both refuse in < 1,000 ms; a normal one-image MOBI still converts; the DRM-first and HUFF/CDIC guarantees are unchanged.
+- qa: CLOSED. Retested on the fixed tree with the adversary's own specimen. `mobi-img-amp-300k.mobi`: real Open button -> code-canned `too-large` toast in 928 ms (pre-fix hung past 180 s / killed the app in ~8.3 s), peak main RSS 181 MB (base 157 MB; synthetic pre-fix 26,815 MB); `window.tflex.convert.toDocument()` RESOLVED `{ok:false, code:'too-large', message:'The Mobipocket e-book would inline 300000 image reference(s), about 800006.7 MB of data URIs, above the 5000-reference / 64 MB inlining ceiling; the document was not converted.'}`. App stayed usable (report.pdf opened and rendered). Screenshot: screenshots/def-397.png. Test: e2e/def396_397_398_retest.spec.cjs.
+
+## DEF-396: A 2.5 KB EPUB whose chapter references one image N times OOM-crashes the main process (no output cap in `inlineEpubImages`)
+
+- Status: CLOSED
+- Severity: HIGH
+- Found by: adversary (ADV-109)
+- Phase: 56
+
+Steps to reproduce:
+1. Launch the dev build through the canonical `e2e/lib/launch.cjs` helper.
+2. Open `test-fixtures/adv-p56/epub-img-amp-1mb.epub` (2,464 bytes: one 1 MiB PNG referenced by 5,000 `<img src="pic.bin"/>` tags) through the real Open button.
+3. Module level (`probe/probe-p56.cjs epub-print` / `epub-reading`, shipped functions from the bundle): `parseEpub` returned in 7 ms, then both the print path (`composeEpubBody`) and the reading path (`inlineEpubImages` + `chapterFragment` + `sanitizeEpubFragment`, exactly what `convert.readingDocument` composes) threw `RangeError: Invalid string length`. Peak RSS was 1,097 MB (10,000 x 64 KiB, `epub-img-amp-10000.epub`) and 6,768 MB (5,000 x 1 MiB), reached in 449 ms / 968 ms.
+4. App level (`probe/probe-app56.cjs`, only `e2e/lib/launch.cjs`): called `window.tflex.convert.readingDocument()` on `epub-img-amp-1mb.epub`. The Electron main process died within 622 ms with `OOM error in V8: CALL_AND_RETRY_LAST Allocation failed - JavaScript heap out of memory` and the Playwright target page closed (the app crashed). The smaller `epub-img-amp-10000.epub` returned the typed `internal` failure ("The import failed unexpectedly. Invalid string length") after 399 ms and the app stayed usable - it only survived because 1.1 GB is below the heap cap.
+
+Expected: inlining a chapter's images must be bounded (a per-document output budget, or a typed `too-large` refusal once the composed fragment would exceed a ceiling) - a 2.5 KB input must never exhaust the main process heap.
+Actual: `src/main/services/convert/epub-parse.ts` `inlineEpubImages` replaces every `<img>`/`<image>` reference with the FULL base64 `data:` URI of the referenced part; `collectEpubImages` stores one copy but the output repeats it once per reference, so output = (number of references) x (image size). Nothing caps the result; only V8's ~512 MB string length limit stops it, after allocating hundreds of MB to tens of GB. The same function is reached by the print adapter (`composeEpubBody`) and by `readingDocument`, so opening OR reading the book crashes. Root cause: no output / reference-count budget in `inlineEpubImages` (and `chapterFragment` is not the limit). Fixtures: `test-fixtures/adv-p56/epub-img-amp-10000.epub`, `epub-img-amp-1mb.epub`. Logs: probe-stdout of `probe/probe-p56.cjs epub-print|epub-reading` and the Electron stderr in `probe/probe-app56.cjs`.
+
+History:
+- qa: opened
+- orchestrator: FIX-READY, relaying backend-dev verbatim. The same aggregate inlined-image budget is enforced inside `inlineEpubImages` (`src/main/services/convert/epub-parse.ts:391`), with `countImageRefs` (`:348`) doing a cheap regex count over the chapter markup and `assertInlinedImageBudget` doing the arithmetic — no data URI is built before the refusal. Because both `composeEpubBody` (print) and `readingDocument` call this ONE function, one guard covers both paths. Refusal reads e.g. `The EPUB chapter "OEBPS/text/ch.xhtml" would inline 5001 image reference(s), about 0.6 MB of data URIs, above the 5000-reference / 64 MB inlining ceiling; the document was not converted.` Tests: an over-refs chapter refuses in < 1,000 ms with the injected print not called; an over-bytes chapter refuses; a normal 2-3 image chapter still converts byte-for-byte as before.
+- qa: CLOSED. Retested on the fixed tree with the adversary's own specimens, both paths. `epub-img-amp-1mb.epub`: real Open button -> code-canned `too-large` toast in 321 ms, peak main RSS 167 MB (base 159 MB; pre-fix 6,768 MB OOM); `window.tflex.convert.readingDocument()` RESOLVED `{ok:false, code:'too-large', message:'The EPUB chapter "OEBPS/c1.xhtml" would inline 5000 image reference(s), about 6666.8 MB of data URIs, above the 5000-reference / 64 MB inlining ceiling; the document was not converted.'}`. `epub-img-amp-10000.epub`: toast in 318 ms, peak 165 MB; readingDocument resolved `too-large` naming 10000 refs / 833.6 MB. App stayed usable after each (report.pdf opened and rendered). Screenshots: screenshots/def-396.png, screenshots/def-396-10000.png. Test: e2e/def396_397_398_retest.spec.cjs.
+
+## DEF-395: Comic reading view runs an uncaught React update loop; single/double and Close controls are not operable by a normal click
+
+- Status: CLOSED
+- Severity: HIGH
+- Found by: qa
+- Phase: 56
+
+Steps to reproduce:
+1. Launch the dev build through the canonical `e2e/lib/launch.cjs` helper.
+2. Open `test-fixtures/phase56/phase56-comic.cbz` (12 pages) through the real Open button.
+3. Click the real `[aria-label="Open comic view"]` trigger, then click `[aria-label="Comic double page"]` (and/or `[aria-label="Close reading view"]`).
+
+Expected: the comic viewport renders stably and every layout/close control responds to a normal click.
+Actual: entering the comic reading view immediately logs an uncaught renderer error `Minified React error #185` ("Maximum update depth exceeded") - no click is needed, it fires at idle in the default single-page layout. A normal Playwright click on `[aria-label="Comic double page"]` never completes (actionability timeout 30 s), and a normal click on `[aria-label="Close reading view"]` times out the same way; after a failed click the renderer is busy enough that a subsequent `win.evaluate(...)` hangs. The layout switch itself is correct when the element's own DOM `click()` is invoked: `data-comic-layout` goes single -> double and `[data-comic-page]` 1 -> 2 (`P56_CI_COMIC_ACTIONS {"before":["0","1"],"after":["1","0"]}` proves the RTL reversal too), so the handlers work and the loop is in the comic body's render/measure path. Probable cause: `ReadingView.tsx` `ComicPage` passes a fresh inline `onPageSize` callback and `setDims({width,height})` a fresh object on every render, while `PageView`'s render effect (`src/renderer/components/PageView.tsx`, deps include `onPageSize`) re-runs and calls `onPageSize` again. The EPUB reading view does not show the error. Unit tests (`readingView.test.tsx`) run in jsdom and do not exercise the real `PageView`/pdf.js path, so this was not caught.
+Screenshot: screenshots/phase56-comic-single.png, screenshots/phase56-comic-double.png
+
+History:
+- qa: opened
+- orchestrator: FIX-READY, relaying frontend-dev verbatim. Root cause found: `ReadingView.tsx` `ComicPage` handed `PageView` a fresh inline `onPageSize` closure every render, while `PageView`'s render effect lists `onPageSize` in its deps (`PageView.tsx:825`) and calls it after resolving the page (`PageView.tsx:524`); that handler did `setDims({width,height})` storing a NEW object even when the numbers were unchanged, so `ComicPage render -> new onPageSize identity -> PageView effect re-runs -> setState(new dims) -> re-render` looped (React #185), wedging the renderer so a real click never reached the handler. Two secondary churn sources: `ComicBody` built a fresh `{width,height,fit}` viewport literal per page per render, and `measure()` stored a fresh `stageSize` object on every ResizeObserver tick. Fix (renderer-only; `PageView.tsx` NOT touched): `ReadingView.tsx:603-607` `setStageSize` functional update bails out when the rect is unchanged; `:619-622` one `useMemo` viewport object per `(width,height,fit)`; `:716-717` module-scope `noopActiveHitTop`/`noopAnnotation` replace per-render inline no-ops; `:738-747` `handlePageSize = useCallback(..., [])` identity-stable with a functional `setDims` bail-out. Evidence deps are now stable, so the effect no longer re-arms. Regression proof: restoring the inline `onPageSize` made the new test HANG (the loop); reverting made it green. Tests: `readingView.test.tsx` gains 3 tests (bounded `onPageSize` call count on mount + two ticks, single<->double page via a real bubbling `MouseEvent` through React's delegated system, Close unmounts). `npm.cmd run test:unit -- test/unit/renderer` -> 423 files / 4493 tests passed; `npm.cmd run verify` -> conventions clean (308 files) + tsc clean; `npm.cmd run build:renderer` -> built.
+- qa: CLOSED (FIX-READY retest). Rebuilt the working tree (`npm.cmd run build`; renderer + main) and reproduced the filed repro in the real dev build launched ONLY via `e2e/lib/launch.cjs`; new spec `e2e/def395_retest.spec.cjs` passes. Real Open button on `test-fixtures/phase56/phase56-comic.cbz`, then real `[aria-label="Open comic view"]` click: comic view visible in 133 ms, then idle 5.14 s with NO `[pageerror]` and NO `Minified React error #185` / "Maximum update depth" entry (`openErrors:[]`). Real Playwright clicks (actionability enforced, no DOM `click()`): `[aria-label="Comic double page"]` completed, `data-comic-layout`=double with 2 `[data-comic-page]`; `[aria-label="Comic single page"]` completed, layout=single with 1 page; `[aria-label="Close reading view"]` completed and `[data-reading-view]` unmounted (count 0). Renderer not wedged: `win.evaluate(()=>2+2)` returned in 1 ms, and closing the tab then re-opening the same CBZ and re-entering the comic view worked (page 1, one page). Screenshots overwritten with the fixed build: `screenshots/phase56-comic-single.png`, `screenshots/phase56-comic-double.png`. Test corrected: `e2e/phase56_reading.spec.cjs` criterion 5 now uses real clicks for Next/Previous, single/double and Close (the DOM-click workaround is gone). Regression on the FINAL tree: `e2e/phase56_reading.spec.cjs` 11 passed (was 10 passed / 1 failed); `e2e/phase55_office.spec.cjs` 17 passed; `npm.cmd run verify:full` -> conventions clean (308 files) + tsc clean + 524 files / 6612 tests passed, exit 0.
+
 ## DEF-394: `.xlsx` export throws `Text length must not exceed 32767 characters` instead of returning a typed Result
 
 - Status: CLOSED

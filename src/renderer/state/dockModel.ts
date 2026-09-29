@@ -17,6 +17,7 @@
 // `dockPrimaryState` resolves 1-vs-2 and the component appends the pins.
 
 import type { Stage } from './stages';
+import type { ConvertFormatId } from '../../shared/convert';
 import {
   isDockHostedAction,
   toolById,
@@ -86,6 +87,9 @@ export const DOCK_AVAILABILITY_REASON: Record<ToolAvailability, string> = {
   // is the shared `document` copy, and `officeExportGate` below returns the
   // right one for the state, so the two are never confused.
   'office-export': 'This build cannot export office files (Excel / PowerPoint)',
+  // Phase 56 (features A / C) — the two reading-view verbs. The format-specific
+  // refusal is `readingViewGate` below; this is the dock's static fallback copy.
+  'reading-view': 'This document has no reading view',
 };
 
 /** Phase 55 (feature D) — the reason the office-export verbs are disabled when
@@ -123,6 +127,54 @@ export function officeExportGate(
   }
   if (!args.bridgePresent) {
     return { enabled: false, reason: OFFICE_EXPORT_DISABLED_REASON };
+  }
+  return { enabled: true, reason: undefined };
+}
+
+/** Phase 56 (features A / C) — the wrong-format refusal copy. */
+export const READING_VIEW_WRONG_FORMAT_REASON =
+  DOCK_AVAILABILITY_REASON['reading-view'];
+
+/** Phase 56 (feature A) — the bridge-absent refusal for the EPUB reader. */
+export const READING_VIEW_DISABLED_REASON =
+  'This build cannot open the EPUB reading view';
+
+/** The live state the two reading-view verbs gate on. */
+export interface ReadingViewGateArgs {
+  /** `openReadingView` (EPUB) or `openComicView` (CBZ / CBT). */
+  mode: 'epub' | 'comic';
+  /** An open, non-empty document is active. */
+  hasDocument: boolean;
+  /** The open document's conversion source format, when known. */
+  sourceFormat: ConvertFormatId | undefined;
+  /** The optional `window.tflex.convert.readingDocument` member is present. */
+  bridgePresent: boolean;
+}
+
+/**
+ * Phase 56 — the ONE live gate for `openReadingView` / `openComicView`. Each
+ * verb is enabled only for its own source format, and the EPUB reader also
+ * needs the optional bridge member (its absence is a distinct, honest reason —
+ * never a dead click). The comic reader needs no extra bridge: it reuses the
+ * open PDF's own page rendering.
+ */
+export function readingViewGate(
+  args: ReadingViewGateArgs,
+): { enabled: boolean; reason: string | undefined } {
+  if (!args.hasDocument) {
+    return { enabled: false, reason: OFFICE_EXPORT_NO_DOCUMENT_REASON };
+  }
+  if (args.mode === 'epub') {
+    if (args.sourceFormat !== 'epub') {
+      return { enabled: false, reason: READING_VIEW_WRONG_FORMAT_REASON };
+    }
+    if (!args.bridgePresent) {
+      return { enabled: false, reason: READING_VIEW_DISABLED_REASON };
+    }
+    return { enabled: true, reason: undefined };
+  }
+  if (args.sourceFormat !== 'cbz' && args.sourceFormat !== 'cbt') {
+    return { enabled: false, reason: READING_VIEW_WRONG_FORMAT_REASON };
   }
   return { enabled: true, reason: undefined };
 }

@@ -3,6 +3,7 @@ import type {
   ImageImportDefaults,
   OfficeConvertDefaults,
 } from '../../../shared/types';
+import { ConvertFailure } from './errors';
 
 /**
  * Phase 53 — every conversion ceiling lives here (ruling 7: streaming over
@@ -75,11 +76,66 @@ export const CONVERT_LIMITS = {
   /** Phase 56 feature A — `.epub` byte ceiling. The ZIP container and its
    *  base64-inlined images are buffered in memory before printing. */
   epubBytes: 128 * 1024 * 1024,
+  /** Phase 56 feature C — `.cbz` comic byte ceiling. The ZIP container and its
+   *  base64-inlined page images are buffered in memory before printing. */
+  cbzBytes: 128 * 1024 * 1024,
+  /** Phase 56 feature C — `.cbt` comic byte ceiling. The whole TAR is read in
+   *  memory; the record count and per-record/total payload ceilings live in
+   *  `tar-read.ts` (`TarLimits`), mirroring the ZIP guard in `convert-zip.ts`. */
+  cbtBytes: 128 * 1024 * 1024,
+  /** Phase 56 feature B — legacy Mobipocket (`.mobi`/`.azw`/`.azw3`) byte
+   *  ceiling. The PalmDB records are buffered and the PalmDOC text records are
+   *  decompressed in memory before printing; the decompressed text is bounded
+   *  separately at 32 MB (`mobi-parse.ts`), like the `.odt` text ceiling. */
+  mobiBytes: 128 * 1024 * 1024,
+  /** Phase 56 (DEF-396/397) — hard ceiling on the number of image references a
+   *  single chapter/composition may inline. The amplifier is references x image
+   *  bytes: a small image referenced thousands of times multiplies the output,
+   *  so a per-image cap is not a guard. Above this the inlining step is refused
+   *  with a typed `too-large` BEFORE any `data:` URI is built. */
+  inlinedImageRefs: 5_000,
+  /** Phase 56 (DEF-396/397) — hard ceiling on the projected total `data:` URI
+   *  bytes one chapter/composition may inline (`encodedLength x
+   *  referenceCount`, summed per referenced image), preflighted BEFORE any URI
+   *  is built. 64 MiB keeps the same order as the EPUB/MOBI byte ceilings. */
+  inlinedImageBytes: 64 * 1024 * 1024,
 } as const;
+
+/**
+ * Phase 56 (DEF-396/397) — preflight the projected inlined-image total for one
+ * chapter/composition BEFORE any `data:` URI is built. `entries` is one row per
+ * distinct referenced image: its encoded URI length and how many times the
+ * markup references it. The amplifier is references x bytes, so a per-image cap
+ * is not a guard. Above either ceiling the whole inlining step is refused with a
+ * typed `too-large` naming the label, the reference count, the projected MB and
+ * the ceiling. Returns the totals so callers/tests can record them.
+ */
+export function assertInlinedImageBudget(
+  label: string,
+  entries: Iterable<{ encodedLength: number; refCount: number }>,
+): { refs: number; bytes: number } {
+  let refs = 0;
+  let bytes = 0;
+  for (const entry of entries) {
+    refs += entry.refCount;
+    bytes += entry.encodedLength * entry.refCount;
+  }
+  if (
+    refs > CONVERT_LIMITS.inlinedImageRefs ||
+    bytes > CONVERT_LIMITS.inlinedImageBytes
+  ) {
+    const ceilingMb = Math.round(CONVERT_LIMITS.inlinedImageBytes / (1024 * 1024));
+    const projectedMb = Math.round((bytes / (1024 * 1024)) * 10) / 10;
+    throw new ConvertFailure(
+      'too-large',
+      `The ${label} would inline ${refs} image reference(s), about ${projectedMb} MB of data URIs, above the ${CONVERT_LIMITS.inlinedImageRefs}-reference / ${ceilingMb} MB inlining ceiling; the document was not converted.`,
+    );
+  }
+  return { refs, bytes };
+}
 
 /** `ConvertOptions` with every key resolved — what adapters receive. */
 export type ResolvedConvertOptions = Required<ConvertOptions>;
-
 /** The documented defaults a missing option resolves to; mirrors
  *  `DEFAULT_CONVERT_DEFAULTS` and is the one source adapters read. */
 export const DEFAULT_CONVERT_OPTIONS: ResolvedConvertOptions = {

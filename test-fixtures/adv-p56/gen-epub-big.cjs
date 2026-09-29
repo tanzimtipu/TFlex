@@ -1,0 +1,12 @@
+const fs=require('fs'),path=require('path'),{zipSync}=require('fflate');
+const OUT=__dirname;
+const png=Buffer.alloc(1024*1024,0x41);
+Buffer.from([0x89,0x50,0x4e,0x47,0x0d,0x0a,0x1a,0x0a]).copy(png,0);
+const ihdr=Buffer.alloc(25); ihdr.writeUInt32BE(13,0); ihdr.write('IHDR',4,'latin1'); ihdr.writeUInt32BE(1,8); ihdr.writeUInt32BE(1,12); ihdr[16]=8; ihdr[17]=6; ihdr.copy(png,8);
+const imgs='<img src="pic.png" alt=""/>'.repeat(5000);
+const opf='<?xml version="1.0"?><package xmlns="http://www.idpf.org/2007/opf" version="3.0"><metadata xmlns:dc="http://purl.org/dc/elements/1.1/"><dc:title>AmpBig</dc:title></metadata><manifest><item id="c1" href="c1.xhtml" media-type="application/xhtml+xml"/><item id="img1" href="pic.png" media-type="image/png"/></manifest><spine><itemref idref="c1"/></spine></package>';
+const xhtml=`<?xml version="1.0"?><html xmlns="http://www.w3.org/1999/xhtml"><head><title>c</title></head><body>${imgs}</body></html>`;
+const zip=zipSync({'mimetype':[new Uint8Array(Buffer.from('application/epub+zip')),{level:0}],'META-INF/container.xml':new Uint8Array(Buffer.from('<?xml version="1.0"?><container version="1.0" xmlns="urn:oasis:names:tc:opendocument:xmlns:container"><rootfiles><rootfile full-path="OEBPS/content.opf" media-type="application/oebps-package+xml"/></rootfiles></container>')),'OEBPS/content.opf':new Uint8Array(Buffer.from(opf)),'OEBPS/c1.xhtml':new Uint8Array(Buffer.from(xhtml)),'OEBPS/pic.png':new Uint8Array(png)},{level:6});
+fs.writeFileSync(path.join(OUT,'epub-img-amp-1mb.cbz.tmp'),Buffer.from(zip));
+fs.renameSync(path.join(OUT,'epub-img-amp-1mb.cbz.tmp'),path.join(OUT,'epub-img-amp-1mb.epub'));
+console.log('wrote epub-img-amp-1mb.epub',zip.length);

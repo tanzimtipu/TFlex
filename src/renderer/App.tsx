@@ -28,9 +28,10 @@ import type {
   WatermarkInfo,
   WatermarkSettings,
 } from "../shared/types";
+import { DEFAULT_READING_DEFAULTS } from "../shared/types";
 import type { TFlexApi, TFlexApiConvert, TFlexApiExport } from "../shared/ipc";
 import type { ValidationReport, ValidationTarget } from "../shared/validation";
-import type { ConvertManyResult, ConvertSourceInfo, CsvFieldMappingResult } from "../shared/convert";
+import type { ConvertFormatId, ConvertManyResult, ConvertSourceInfo, CsvFieldMappingResult } from "../shared/convert";
 import { DEFAULT_CONVERT_DEFAULTS } from "../shared/convert";
 import { Welcome } from "./components/Welcome";
 import { AppHeader } from "./components/AppHeader";
@@ -85,6 +86,7 @@ import { StageRail, isStageRailVisible } from "./components/StageRail";
 // lookup that validates them on read.
 import {
   officeExportGate,
+  readingViewGate,
   pinDockTool,
   sanitizeDockCuration,
   unpinDockTool,
@@ -173,6 +175,8 @@ import { downloadBlob } from "./utils/exportDownload";
 import { PasswordPromptDialog } from "./components/PasswordPromptDialog";
 import { ProtectionNotice } from "./components/ProtectionNotice";
 import { ConversionNotice, ConversionProgress } from "./components/ConversionNotice";
+import { ReadingView } from "./components/ReadingView";
+import { BookOpen } from "lucide-react";
 import {
   createFromImagesRoute,
   noticeFromManyResult,
@@ -507,6 +511,79 @@ export function seededEngineUiState(
  *  is suppressed). */
 const EMPTY_ANN_TEXT_IDS: ReadonlySet<string> = new Set();
 
+// Phase 56 (features A / C) — the document column's flow notices plus the
+// format-gated reader entry, extracted so the reader trigger's independence
+// from the DISMISSIBLE conversion card is pinned by a unit test. The trigger
+// reads `sourceFormat` from the tab's OWN state (`sourceFormatByTab`), never
+// from `conversion`; `onDismissConversion` removing the card must never remove
+// the capability.
+export interface DocumentSurfaceColumnProps {
+  /** The rendered document surface (the pane's DocumentView). */
+  document: ReactElement;
+  /** The tab's conversion source format, from non-dismissible tab state. */
+  sourceFormat: ConvertFormatId | undefined;
+  /** The dismissible conversion card, when this tab has one. */
+  conversion: ConvertNoticeState | undefined;
+  validation: ValidationNoticeState | undefined;
+  protection: DocumentProtectionState | undefined;
+  onDismissConversion: () => void;
+  onDismissValidation: () => void;
+  onDismissProtection: () => void;
+  onOpenReadingView: () => void;
+  onOpenComicView: () => void;
+}
+
+export function DocumentSurfaceColumn(props: DocumentSurfaceColumnProps): ReactElement {
+  const { sourceFormat } = props;
+  const showReader =
+    sourceFormat === "epub" || sourceFormat === "cbz" || sourceFormat === "cbt";
+  return (
+    <div
+      className="document-column"
+      data-document-protected={props.protection !== undefined ? true : undefined}
+      data-document-converted={props.conversion !== undefined ? true : undefined}
+      data-document-validated={props.validation !== undefined ? true : undefined}
+    >
+      {props.conversion !== undefined && (
+        <ConversionNotice
+          notice={props.conversion}
+          onDismiss={props.onDismissConversion}
+        />
+      )}
+      {props.validation !== undefined && (
+        <ValidationNotice
+          notice={props.validation}
+          onDismiss={props.onDismissValidation}
+        />
+      )}
+      {props.protection !== undefined && (
+        <ProtectionNotice
+          protection={props.protection}
+          onDismiss={props.onDismissProtection}
+        />
+      )}
+      {/* Phase 56 (features A / C) — the format-gated reader entry. Gated ONLY
+          on the tab's source format (non-dismissible), so dismissing the
+          conversion card above can never remove the capability. */}
+      {showReader && (
+        <button
+          type="button"
+          className="reading-open-button"
+          data-reading-open
+          aria-label={sourceFormat === "epub" ? "Open reading view" : "Open comic view"}
+          onClick={
+            sourceFormat === "epub" ? props.onOpenReadingView : props.onOpenComicView
+          }
+        >
+          <BookOpen size={14} aria-hidden />
+          {sourceFormat === "epub" ? "Open reading view" : "Open comic view"}
+        </button>
+      )}
+      {props.document}
+    </div>
+  );
+}
+
 export function App(): ReactElement {
   const [bootDone, setBootDone] = useState(false);
   const [bootstrap, setBootstrap] = useState<Bootstrap | null>(null);
@@ -628,6 +705,13 @@ export function App(): ReactElement {
   // conversion card payload per tab (dismissed entries are deleted);
   // `convertProgress` is the live affordance, null when no import runs.
   const [convertNotices, setConvertNotices] = useState<Record<string, ConvertNoticeState>>({});
+  // Phase 56 (features A / C) — the NON-dismissible source format per tab. The
+  // conversion card above can be dismissed; this record cannot, so the
+  // reading / comic trigger stays reachable for the tab's whole lifetime. It is
+  // the ONLY gate for the document-surface reader entry.
+  const [sourceFormatByTab, setSourceFormatByTab] = useState<
+    Record<string, ConvertFormatId>
+  >({});
   const [convertProgress, setConvertProgress] = useState<ConvertProgressState | null>(null);
   // Phase 52 (feature D) — the Encrypt dialog + its in-flight flag.
   const [encryptOpen, setEncryptOpen] = useState(false);
@@ -732,6 +816,9 @@ export function App(): ReactElement {
   // Phase 36 (chunk 4) — the Command Palette (`Ctrl+K`). Session-only; it is
   // the browse-everything surface that superseded the All-tools panel.
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
+  // Phase 56 (features A / C) — the active reading session (null = closed).
+  // One shell serves both EPUB and comic modes (feature D).
+  const [readingView, setReadingView] = useState<{ mode: "epub" | "comic" } | null>(null);
   const [aboutOpen, setAboutOpen] = useState(false);
   const [prefsOpen, setPrefsOpen] = useState(false);
   // Phase 44 — the account surface. `accountsOpen` is only ever meaningful
@@ -1952,6 +2039,8 @@ export function App(): ReactElement {
             ...prev,
             [tabId]: noticeFromResult(info.label, result),
           }));
+          // The non-dismissible tab state the reader trigger gates on.
+          setSourceFormatByTab((prev) => ({ ...prev, [tabId]: result.sourceFormat }));
         },
         onProgress: setConvertProgress,
         pushToast,
@@ -5059,6 +5148,10 @@ const onPickMergeFile = useCallback(async (): Promise<{ path: string; bytes: Uin
           setConvertNotices((prev) => ({
             ...prev,
             [opened.tabId]: noticeFromManyResult(conversion),
+          }));
+          setSourceFormatByTab((prev) => ({
+            ...prev,
+            [opened.tabId]: conversion.sourceFormats[0] ?? "png",
           }));
         }
         pushToast("info", `Created PDF from ${files.length} image${files.length === 1 ? "" : "s"}.`);
@@ -8509,6 +8602,15 @@ pushToast(
   // Nothing is reimplemented: each entry calls the SAME handler the command
   // toolbar / palette already uses. A registry entry with no handler ANYWHERE
   // is disabled by the availability gate below (never a silent no-op).
+  const openReadingView = useCallback((): void => {
+    if (activeTabIdRefLocal.current === null) return;
+    setReadingView({ mode: "epub" });
+  }, []);
+  const openComicView = useCallback((): void => {
+    if (activeTabIdRefLocal.current === null) return;
+    setReadingView({ mode: "comic" });
+  }, []);
+
   const dockAppActions = useMemo<Record<string, () => void>>(
     () => ({
       merge: onMergeClick,
@@ -8544,6 +8646,9 @@ pushToast(
       exportXlsx: onXlsxExportClick,
       exportPptx: onPptxExportClick,
       encryptDocument: onEncryptClick,
+      // Phase 56 (features A / C) — the two reading-view verbs (global).
+      openReadingView,
+      openComicView,
       recognizeText: onOcrClick,
       batchOcr: (): void => {
         void onBatchOcr();
@@ -8593,6 +8698,8 @@ pushToast(
       onXlsxExportClick,
       onPptxExportClick,
       onEncryptClick,
+      openReadingView,
+      openComicView,
       onOcrClick,
       onBatchOcr,
       onOpenOcrSuspects,
@@ -8709,6 +8816,30 @@ pushToast(
   // Phase 54 — the remembered validation defaults the dialog re-seeds from.
   const validationDefaults = effectiveValidationDefaults(settings);
 
+  // ---- Phase 56 (features A / C / D): the shared reading-view verbs -------
+  //
+  // `readingDocument` is OPTIONAL (its absence degrades the EPUB reader with
+  // its own reason). The source format comes from the tab's OWN non-dismissible
+  // state (`sourceFormatByTab`), NOT from the conversion card: a dismissed card
+  // must never make the reader unreachable. The reader is enabled only for its
+  // own format (epub vs cbz/cbt).
+  const hasReadingDocumentBridge =
+    typeof window.tflex.convert?.readingDocument === "function";
+  const activeSourceFormat =
+    tabs.activeId !== null ? sourceFormatByTab[tabs.activeId] : undefined;
+  const readingGateFor = useCallback(
+    (
+      mode: "epub" | "comic",
+    ): { enabled: boolean; reason: string | undefined } =>
+      readingViewGate({
+        mode,
+        hasDocument: dockHasDocument,
+        sourceFormat: activeSourceFormat,
+        bridgePresent: hasReadingDocumentBridge,
+      }),
+    [dockHasDocument, activeSourceFormat, hasReadingDocumentBridge],
+  );
+
   // DEF-327 — the live per-ACTION gates for the commands whose registry
   // precondition cannot express their real state: an EMPTY undo stack, Multi
   // Mode OFF. Both surfaces that can show these verbs (the dock's pins and the
@@ -8742,6 +8873,10 @@ pushToast(
             hasDocument: dockHasDocument,
             bridgePresent: officeExportBridgePresent(entry.action),
           }).enabled;
+        case "reading-view":
+          return readingGateFor(
+            entry.action === "openComicView" ? "comic" : "epub",
+          ).enabled;
         case "recents":
           return recentDisplays.length > 0;
         case "form-fields":
@@ -8767,6 +8902,7 @@ pushToast(
       dockHasDocument,
       hasValidationBridge,
       officeExportBridgePresent,
+      readingGateFor,
       recentDisplays.length,
       activeTab,
       ocrRunByTab,
@@ -8985,6 +9121,10 @@ pushToast(
             hasDocument: dockHasDocument,
             bridgePresent: officeExportBridgePresent(entry.action),
           }).enabled;
+        case "reading-view":
+          return readingGateFor(
+            entry.action === "openComicView" ? "comic" : "epub",
+          ).enabled;
         case "tab":
           return tabs.activeId !== null;
         case "form-fields":
@@ -9015,6 +9155,7 @@ pushToast(
       dockHasDocument,
       hasValidationBridge,
       officeExportBridgePresent,
+      readingGateFor,
       tabs.activeId,
       activeTab,
       ocrRunByTab,
@@ -9041,13 +9182,20 @@ pushToast(
           bridgePresent: officeExportBridgePresent(entry.action),
         }).reason;
       }
+      // Phase 56 (features A / C) — the reading-view verbs have a
+      // format-specific refusal; read the ONE live gate for the exact reason.
+      if (entry.availability === "reading-view") {
+        return readingGateFor(
+          entry.action === "openComicView" ? "comic" : "epub",
+        ).reason;
+      }
       return paletteDisabledReasonFor({
         entry,
         paneReason: focusedDockAvailability()?.disabledReasonFor,
         actionReasons: PALETTE_ACTION_REASONS,
       });
     },
-    [paletteToolEnabled, focusedDockAvailability, officeExportBridgePresent, dockHasDocument],
+    [paletteToolEnabled, focusedDockAvailability, officeExportBridgePresent, dockHasDocument, readingGateFor],
   );
 
   // Run a palette row: the view layer first (exactly like the dock's own
@@ -9658,6 +9806,11 @@ pushToast(
             // Phase 53 (feature I) — the conversion card for an imported tab.
             // Dismissing deletes the entry, so it never returns for that tab.
             const conversion = convertNotices[meta.id];
+            // Phase 56 (features A / C) — the NON-dismissible source format.
+            // It survives dismissing the card above, so the reader trigger
+            // stays reachable (standing rule 1: a capability that can be
+            // dismissed away is unreachable).
+            const sourceFormat = sourceFormatByTab[meta.id];
             // Phase 54 (features D + E) — the validation report card for a tab
             // that ran a validation or whose save was blocked/warned. Dismissing
             // deletes the entry, so it never returns for that tab.
@@ -9665,51 +9818,38 @@ pushToast(
             if (
               protection === undefined &&
               conversion === undefined &&
-              validation === undefined
+              validation === undefined &&
+              sourceFormat === undefined
             ) {
               return document;
             }
             return (
-              <div
-                className="document-column"
-                data-document-protected={protection !== undefined ? true : undefined}
-                data-document-converted={conversion !== undefined ? true : undefined}
-                data-document-validated={validation !== undefined ? true : undefined}
-              >
-                {conversion !== undefined && (
-                  <ConversionNotice
-                    notice={conversion}
-                    onDismiss={(): void =>
-                      setConvertNotices((prev) => {
-                        if (!(meta.id in prev)) return prev;
-                        const next = { ...prev };
-                        delete next[meta.id];
-                        return next;
-                      })
-                    }
-                  />
-                )}
-                {validation !== undefined && (
-                  <ValidationNotice
-                    notice={validation}
-                    onDismiss={(): void => dismissValidationNotice(meta.id)}
-                  />
-                )}
-                {protection !== undefined && (
-                  <ProtectionNotice
-                    protection={protection}
-                    onDismiss={(): void =>
-                      setProtectionByTab((prev) => {
-                        if (!(meta.id in prev)) return prev;
-                        const next = { ...prev };
-                        delete next[meta.id];
-                        return next;
-                      })
-                    }
-                  />
-                )}
-                {document}
-              </div>
+              <DocumentSurfaceColumn
+                document={document}
+                sourceFormat={sourceFormat}
+                conversion={conversion}
+                validation={validation}
+                protection={protection}
+                onDismissConversion={(): void =>
+                  setConvertNotices((prev) => {
+                    if (!(meta.id in prev)) return prev;
+                    const next = { ...prev };
+                    delete next[meta.id];
+                    return next;
+                  })
+                }
+                onDismissValidation={(): void => dismissValidationNotice(meta.id)}
+                onDismissProtection={(): void =>
+                  setProtectionByTab((prev) => {
+                    if (!(meta.id in prev)) return prev;
+                    const next = { ...prev };
+                    delete next[meta.id];
+                    return next;
+                  })
+                }
+                onOpenReadingView={openReadingView}
+                onOpenComicView={openComicView}
+              />
             );
           }}
         />
@@ -10329,6 +10469,22 @@ pushToast(
         toolUsage={settings.toolUsage}
         recentFiles={paletteRecents}
         onOpenRecent={onPaletteOpenRecent}
+      />
+      {/* Phase 56 (features A / C / D) — the ONE shared reading-view shell.
+          The stored `readingDefaults` seed the session; the user can change
+          font size / line height / theme / layout / fit / RTL in session. */}
+      <ReadingView
+        open={readingView !== null}
+        mode={readingView?.mode ?? "epub"}
+        title={activeTab?.meta.title ?? ""}
+        sourcePath={activeTab?.meta.filePath ?? ""}
+        defaults={settings.readingDefaults ?? DEFAULT_READING_DEFAULTS}
+        onNotice={(kind, text): void =>
+          pushToast(kind === "error" ? "error" : "info", text)
+        }
+        onClose={(): void => setReadingView(null)}
+        comicPageCount={activeTab?.session.doc.numPages ?? 0}
+        comicDoc={activeTab?.session.doc ?? null}
       />
       <AccountsDialog
         open={settings.accountsEnabled === true && accountsOpen}

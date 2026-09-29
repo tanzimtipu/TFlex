@@ -69,13 +69,20 @@ describe('phase53 document dialog filters', () => {
     // spreadsheet adapters (xlsx/xls/ods) and feature C the presentation
     // adapters (pptx/ppt), which the snapshot now carries. Phase 56 feature A
     // adds the EPUB adapter, which is ungrouped like the other e-book-capable
-    // formats and so appears here too.
+    // formats and so appears here too. Phase 56 feature C adds the comic
+    // adapters (cbz/cbt), also ungrouped. Phase 56 feature B adds the
+    // Mobipocket adapter (mobi/azw/azw3), also ungrouped.
     expect(byName.get('Documents')).toEqual([
+      'azw',
+      'azw3',
+      'cbt',
+      'cbz',
       'doc',
       'docx',
       'epub',
       'jpeg',
       'jpg',
+      'mobi',
       'ods',
       'odt',
       'pdf',

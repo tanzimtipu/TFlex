@@ -261,6 +261,8 @@ describe('phase53 error layer', () => {
       'too-large',
       'decode-failed',
       'corrupt',
+      // Phase 56 feature B — the DRM refusal joins the error contract.
+      'drm-protected',
       'cancelled',
       'timeout',
       'internal',

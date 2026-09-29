@@ -69,6 +69,7 @@ const AUDITED: Record<string, readonly string[]> = {
     "updateDownload", "updateInstall", "about", "appMenu", "toolsPalette",
     "panMode", "railCollapse", "stagePages", "stageEdit", "stageReview",
     "stageDeliver", "windowMinimize", "windowMaximize", "windowClose",
+    "openReadingView", "openComicView",
   ],
 };
 

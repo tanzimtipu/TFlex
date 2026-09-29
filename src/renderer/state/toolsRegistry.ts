@@ -92,6 +92,7 @@ import {
   ArrowUpFromLine,
   ArrowUpRight,
   BadgeCheck,
+  BookOpen,
   Brush,
   Check,
   ChevronLeft,
@@ -118,6 +119,7 @@ import {
   Files,
   FolderInput,
   FolderOpen,
+  GalleryHorizontalEnd,
   GitMerge,
   GripVertical,
   Hand,
@@ -224,7 +226,12 @@ export type ToolAvailability =
   /** Phase 55 (feature D) — requires an open document AND the format's
    *  optional `window.tflex.export` bridge member (`xlsx` / `pptx`). The two
    *  failure states carry DIFFERENT copy via `officeExportGate`. */
-  | 'office-export';
+  | 'office-export'
+  /** Phase 56 (features A / C) — requires an open document whose source
+   *  format owns the requested reading mode (EPUB vs CBZ/CBT), and — for EPUB —
+   *  the optional `window.tflex.convert.readingDocument` bridge member. The
+   *  live verdict comes from `readingViewGate`. */
+  | 'reading-view';
 
 /** Which surface renders this entry's own control. Exactly one surface owns
  *  a tool (one canonical home per tool):
@@ -1370,6 +1377,31 @@ const REGISTRY = [
     action: 'windowClose',
     availability: 'always',
   },
+  {
+    // Phase 56 (feature A) — open the reflowable EPUB Reading view. GLOBAL
+    // (no stage owns reading); the dock/palette host it, and the App's live
+    // `readingViewGate` enables it only while an EPUB is the active document.
+    id: 'openReadingView',
+    label: 'Open reading view',
+    description: 'Read the current e-book in a reflowable, paginated view.',
+    icon: BookOpen,
+    shortcut: '',
+    stage: 'global',
+    action: 'openReadingView',
+    availability: 'reading-view',
+  },
+  {
+    // Phase 56 (feature C) — open the comic viewport. Same shared shell as the
+    // EPUB reader; enabled only while a CBZ / CBT document is active.
+    id: 'openComicView',
+    label: 'Open comic view',
+    description: 'Read the current comic page by page in a comic viewport.',
+    icon: GalleryHorizontalEnd,
+    shortcut: '',
+    stage: 'global',
+    action: 'openComicView',
+    availability: 'reading-view',
+  },
 
 ] as const satisfies readonly ToolEntry[];
 
@@ -1493,6 +1525,8 @@ const SURFACE_BY_ID: Record<ToolId, ToolSurface> = {
   windowMinimize: 'palette',
   windowMaximize: 'palette',
   windowClose: 'palette',
+  openReadingView: 'palette',
+  openComicView: 'palette',
 };
 
 export const TOOL_REGISTRY: readonly ToolEntry[] = REGISTRY.map((entry) => ({

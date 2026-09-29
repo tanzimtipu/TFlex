@@ -1,5 +1,6 @@
 import { ConvertFailure } from './errors';
 import type { ZipArchive } from './convert-zip';
+import { assertInlinedImageBudget } from './limits';
 import { localName, parseOdfXml } from './odf-to-html';
 
 /**
@@ -338,16 +339,62 @@ const SVG_IMAGE_TAG_RE = /<image\b[^>]*>/gi;
 const SRC_ATTR_RE = /(?<![\w-])src\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'>]+))/gi;
 const HREF_ATTR_RE = /(?<![\w:-])(?:xlink:)?href\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'>]+))/gi;
 
+/**
+ * Cheap reference scan: how many times the chapter markup references each
+ * in-package image, keyed by resolved href. Only a small count map is built —
+ * no `data:` URI and no replaced markup — so a huge reference count is measured
+ * (and refused) before the amplification happens.
+ */
+function countImageRefs(
+  xhtml: string,
+  chapterHref: string,
+  images: Map<string, string>,
+): Map<string, number> {
+  const baseDir = dirOf(chapterHref);
+  const counts = new Map<string, number>();
+  const bump = (value: string | undefined): void => {
+    if (value === undefined) return;
+    const resolved = resolveEpubHref(baseDir, value);
+    if (resolved === null || !images.has(resolved)) return;
+    counts.set(resolved, (counts.get(resolved) ?? 0) + 1);
+  };
+  const scan = (tag: string, attrRe: RegExp): void => {
+    attrRe.lastIndex = 0;
+    let match: RegExpExecArray | null;
+    while ((match = attrRe.exec(tag)) !== null) {
+      bump(match[1] ?? match[2] ?? match[3]);
+    }
+  };
+  IMG_TAG_RE.lastIndex = 0;
+  let tag: RegExpExecArray | null;
+  while ((tag = IMG_TAG_RE.exec(xhtml)) !== null) scan(tag[0], SRC_ATTR_RE);
+  SVG_IMAGE_TAG_RE.lastIndex = 0;
+  while ((tag = SVG_IMAGE_TAG_RE.exec(xhtml)) !== null) scan(tag[0], HREF_ATTR_RE);
+  return counts;
+}
+
 /** Replace every in-package image reference in a chapter with its `data:`
  *  URI. A reference the image map does not hold (remote, missing) is left
  *  untouched: the CSP and session rules block it and it surfaces as a
- *  `resource-blocked` warning. */
+ *  `resource-blocked` warning. The projected inlined total (references x image
+ *  bytes) is preflighted FIRST; above `CONVERT_LIMITS.inlinedImageBytes` or
+ *  `inlinedImageRefs` the whole chapter is refused with a typed `too-large`
+ *  before any `data:` URI is built (DEF-396). Both the print path and the
+ *  Reading view call this one function, so both are covered by one guard. */
 export function inlineEpubImages(
   xhtml: string,
   chapterHref: string,
   images: Map<string, string>,
 ): string {
   if (images.size === 0) return xhtml;
+  const counts = countImageRefs(xhtml, chapterHref, images);
+  assertInlinedImageBudget(
+    `EPUB chapter "${chapterHref}"`,
+    [...counts].map(([href, refCount]) => ({
+      encodedLength: images.get(href)?.length ?? 0,
+      refCount,
+    })),
+  );
   const baseDir = dirOf(chapterHref);
   const dataFor = (value: string | undefined): string | undefined => {
     if (value === undefined) return undefined;

@@ -286,5 +286,27 @@ export function createDefaultRegistry(): ConvertRegistry {
     extensions: ['.epub'],
     load: () => import('./adapters/epub').then((m) => m.epubAdapter),
   });
+  // Phase 56 feature B - Mobipocket (`.mobi`/`.azw`) and KF8 (`.azw3`). All
+  // three extensions map to the one `mobi` format id; the sniff is the PalmDB
+  // `BOOK`/`MOBI` header (or the extension). Registered after EPUB so a
+  // misnamed office/EPUB ZIP is still claimed by its own content sniff first.
+  registry.register({
+    id: 'mobi',
+    extensions: ['.mobi', '.azw', '.azw3'],
+    load: () => import('./adapters/mobi').then((m) => m.mobiAdapter),
+  });
+  // Phase 56 feature C - comic archives. A `.cbz` is a ZIP of images and a
+  // `.cbt` a TAR of images. Registered AFTER the EPUB/ODF/OOXML adapters so a
+  // misnamed office/EPUB ZIP is still claimed by its own content sniff first.
+  registry.register({
+    id: 'cbz',
+    extensions: ['.cbz'],
+    load: () => import('./adapters/comic').then((m) => m.cbzAdapter),
+  });
+  registry.register({
+    id: 'cbt',
+    extensions: ['.cbt'],
+    load: () => import('./adapters/comic').then((m) => m.cbtAdapter),
+  });
   return registry;
 }
