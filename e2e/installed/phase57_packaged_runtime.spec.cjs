@@ -46,23 +46,30 @@ test.setTimeout(900000);
 test.describe.configure({ mode: 'serial' });
 
 // ===========================================================================
-// 2a - criterion 6: the four release artifacts exist; Setup < 150 MB.
+// 2a - criterion 6: the four release artifacts and app.asar exist. The
+// installer-size budget was WITHDRAWN (operator ruling 2026-09-30;
+// REQUIREMENTS.md, Current-scope supersession), so the sizes are RECORDED as
+// criterion-6 evidence and deliberately NOT asserted against any ceiling.
 // ===========================================================================
-test('2a ARTIFACTS: the four release artifacts exist and Setup is under 150 MB', () => {
+test('2a ARTIFACTS: the four release artifacts and app.asar exist (sizes recorded)', () => {
   console.log(`[p57] PACKAGED_EXE=${PACKAGED_EXE} version=${VERSION}`);
   const artifacts = {
     setup: path.join(RELEASE, `Jovrel-Setup-${VERSION}-x64.exe`),
     blockmap: path.join(RELEASE, `Jovrel-Setup-${VERSION}-x64.exe.blockmap`),
     portable: path.join(RELEASE, `Jovrel-${VERSION}-portable-x64.exe`),
     latest: path.join(RELEASE, 'latest.yml'),
+    asar: path.join(RELEASE, 'win-unpacked', 'resources', 'app.asar'),
   };
   const sizes = {};
   for (const [k, p] of Object.entries(artifacts)) {
     expect(fs.existsSync(p), `missing artifact ${k}: ${p}`).toBe(true);
     sizes[k] = fs.statSync(p).size;
   }
+  // The Phase 57 installer-size budget is WITHDRAWN (operator ruling
+  // 2026-09-30; REQUIREMENTS.md Current-scope supersession). There is no
+  // installer- or portable-size ceiling, so these byte sizes are recorded as
+  // criterion-6 evidence and are deliberately NOT asserted.
   log('artifacts', { version: VERSION, sizes });
-  expect(sizes.setup, 'Setup installer under the 150 MB budget').toBeLessThan(150000000);
 });
 
 // ===========================================================================

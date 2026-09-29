@@ -122,6 +122,25 @@ through the window" behaviour in favour of an opaque window whose frosted chrome
 ambient background. The frosted/glassy look and its motion rules stay in force; only the source of the
 translucency changes (the app's background instead of the desktop).
 
+**Phase 57 supersedes the installer-size budget (operator ruling, 2026-09-30).** The Performance
+budget's fifth bullet, "Installer size: under 150 MB." (the Performance budget section), is
+**WITHDRAWN**. Meeting that ceiling had required pruning renderer-only dependency trees and their
+transitive leaves out of the packaged `app.asar`; the operator judged the risk of a shipped feature
+silently missing a module to be worth more than the size constraint, and directed that the prune be
+reverted rather than tightened. There is now **no installer- or portable-size ceiling**. The builder
+must still ship every dependency the main, preload and renderer code needs, and must still produce a
+working NSIS installer and portable build (a broken or missing artifact remains a HIGH defect).
+Installer and portable byte sizes are still **recorded** in `PERFORMANCE.md` for the record, with no
+pass/fail budget. Consequently Phase 57 feature D's "remain within the installer-size budget" clause
+and Phase 57 success criterion 6's "the recorded installer size ... inside the budgets in this
+document" clause are superseded **in that one respect only**: the packaged matrix walkthrough and the
+cold-start, 500-page-open and idle-memory budgets remain in force unchanged.
+
+**Phase 57 TASK-6 triage is in scope (operator ruling, 2026-09-30).** The triage findings filed at the
+Phase 57 close are promoted from deferred to in-scope work: the `exportText` `/ToUnicode` mis-decode
+and the Flatten-undo geometry loss must be fixed and closed, not deferred, notwithstanding their
+pre-existing origin.
+
 ## Look and feel
 
 Applies to the whole app:

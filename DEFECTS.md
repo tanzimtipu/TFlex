@@ -5,9 +5,106 @@
 > inspect the current `OPEN`, `FIX-READY`, and `DISPUTED` entries first; closed records are
 > historical evidence and must not be loaded wholesale.
 
+## DEF-408: 262 KB /ToUnicode FlateDecode bomb inflates to 256 MiB before the decoded-char ceiling is applied
+
+- Status: CLOSED
+- Severity: LOW
+- Found by: adversary (ADV-116)
+- Phase: 57
+
+Steps to reproduce:
+1. Workdir `test-fixtures\adv-p57\probe`. Run `node probe-app57.cjs f-zlib-bomb-256m.pdf` (launches `dist` via `e2e/lib/launch.cjs`; the probe wraps the main process's `zlib.inflateSync`, recording input/output lengths).
+2. Read the `[app57] inflateSync calls=` line.
+
+Expected: a compressed CMap stream is size-bounded (e.g. inflate with a max-output limit) so a 262 KB file cannot force a 256 MiB allocation.
+Actual: one inflate recorded `inLen=260923` bytes -> `outLen=268435456` bytes (exactly 256 MiB). `decodeStream` inflates unbounded at `src/main/services/engine.ts:7131` and `bytesToByteString` materialises the whole buffer; only afterwards does `parseToUnicodeCMap` refuse it via `MAX_TOUNICODE_CMAP_CHARS` (`engine.ts:7202/7256`, 1,000,000 chars). exportText app wall 520 ms, renderer 256 ms - no freeze, but a transient 256 MiB buffer + string is allocated before being discarded.
+Screenshot: screenshots/adv-p57-f-zlib-bomb-256m.png
+
+History:
+- qa: opened
+- qa: CLOSED. Retested `node test-fixtures/qa-p57-bounded-inflate.cjs` -> `inflateSync inLen=260923 maxOutputLength=4000000 -> ERR_BUFFER_TOO_LARGE` (decoded 256 MiB never materialised), exportText 9 ms rssMB=69; app probe f-zlib-bomb-256m.pdf -> renderer 12 ms, main rss 159->170 MB. Discriminating assertions engine.test.ts:3108 `expect(ms).toBeLessThan(2000)` + :3112 fallback `expect(r.value[0].text).toBe('\u0000H')`.
+
+## DEF-407: Quadratic parseXref regex freezes exportText ~76 s on a 400k-hex Tj page
+
+- Status: CLOSED
+- Severity: HIGH
+- Found by: adversary (ADV-115)
+- Phase: 57
+
+Steps to reproduce:
+1. Workdir `test-fixtures\adv-p57\probe`. Module scaling: `node probe-export.cjs ..\h-hex-25000.pdf`, `..\h-hex-50000.pdf`, `..\h-hex-100000.pdf`, `..\h-hex-200000.pdf`.
+2. Full case in the app: `node probe-app57.cjs h-hex-400000.pdf` (launches `dist` via `e2e/lib/launch.cjs`; a concurrent screenshot after 400 ms measures how long the UI stays blocked).
+
+Expected: the xref scan is linear and a large hex `Tj` payload extracts in bounded time.
+Actual: the `/(\d+)\s+(\d+)\s+obj/g` scan in `parseXref` (`src/main/services/engine.ts:6931`) is quadratic over the hex payload. Module (Node 24) exportText: 25k hex=1,269 ms, 50k=5,083 ms, 100k=20,295 ms, 200k=79,516 ms (~4x per doubling). App (Electron) full case `h-hex-400000.pdf`: exportText wall 76,002 ms, renderer 75,974 ms; the concurrent UI screenshot could not complete (Playwright 30 s screenshot timeout) - the UI was blocked for the full ~76 s (adversary measured ~82 s). `h-huge-hex-tj.pdf` (2,000,000 repeats, 3.9 MB) extrapolates to ~2 h (adversary's figure; not run).
+Screenshot: screenshots/adv-p57-h-hex-400000.png
+
+History:
+- qa: opened
+- qa: CLOSED. Retested `node probe-app57.cjs h-hex-400000.pdf` -> app renderer 166 ms (was 75,974 ms), concurrent-screenshot 111 ms; module 400k 174 ms, 200k 89 ms (was 79,516 ms). Discriminating assertion engine.test.ts:3089 `expect(ms).toBeLessThan(2000)` (+ :3090 non-empty-text check).
+
+## DEF-406: exportText freezes ~30 s on a /Font dict with 200k entries (unbounded /Font resource walk)
+
+- Status: CLOSED
+- Severity: HIGH
+- Found by: adversary (ADV-114)
+- Phase: 57
+
+Steps to reproduce:
+1. Workdir `test-fixtures\adv-p57\probe`. Module scaling: `node probe-export.cjs ..\f-font-25000-entries.pdf`, `..\f-font-50000-entries.pdf`, `..\f-font-100000-entries.pdf`, `..\f-font-200k-entries.pdf`.
+2. Full case in the app: `node probe-app57.cjs f-font-200k-entries.pdf`.
+
+Expected: the /Font resource walk is bounded; extraction time does not scale with the number of font-dict entries.
+Actual: unbounded and superlinear. Module (Node 24) exportText: 25k=525 ms, 50k=1,644 ms, 100k=5,600 ms, 200k=27,635 ms (rss 311 MB). App (Electron) 200k: exportText wall 29,716 ms, renderer 29,618 ms; concurrent UI screenshot blocked 29,304 ms - a ~30 s freeze (adversary measured ~30 s). Root cause: `entryRegex` in `resolvePageFontToUnicode` (`src/main/services/engine.ts:7386`) iterates every entry of the whole /Font dict and resolves each font object.
+Screenshot: screenshots/adv-p57-f-font-200k-entries.png
+
+History:
+- qa: opened
+- qa: CLOSED. Retested `node probe-app57.cjs f-font-200k-entries.pdf` -> app renderer 71 ms (was 29,618 ms); module 200k 60 ms (was 27,635 ms), scaling 25k/50k/100k = 16/29/42 ms. Discriminating assertions engine.test.ts:3073 `expect(ms).toBeLessThan(2000)` + :3074 `expect(r.value[0].text).toBe('H')`.
+
+## DEF-405: A /ToUnicode CMap of 90,909 unclosed "beginbfchar" tokens freezes exportText ~14 s (O(n^2) lazy match)
+
+- Status: CLOSED
+- Severity: HIGH
+- Found by: adversary (ADV-113)
+- Phase: 57
+
+Steps to reproduce:
+1. Module scaling of the first regex in `parseToUnicodeCMap` (`/beginbfchar([\s\S]*?)endbfchar/g`, `src/main/services/engine.ts:7267`): `node -e "..."` over 5k/10k/20k/40k/90,909 `beginbfchar` repeats (no `endbfchar`).
+2. Full fixture through the engine bundle, workdir `test-fixtures\adv-p57\probe`: `node probe-export.cjs ..\h-bfchar-no-end.pdf`.
+3. Full case in the app: `node probe-app57.cjs h-bfchar-no-end.pdf` (launches `dist` via `e2e/lib/launch.cjs`).
+
+Expected: a malformed CMap is handled in bounded time; exportText returns without freezing the UI.
+Actual: lazy-match backtracking is O(n^2). Module (Node 24) regex match: 5,000 tokens=30 ms, 10,000=127 ms, 20,000=476 ms, 40,000=1,967 ms, 90,909=10,348 ms (~4x per doubling). Full fixture engine exportText: Node 10,197 ms. App (Electron): exportText wall 14,635 ms, renderer 14,534 ms; concurrent UI screenshot blocked 14,223 ms - a ~14 s freeze (adversary measured ~14 s). `h-bfchar-unclosed.pdf` (1 token, same malformed shape) returns in 3 ms, so the cost is the token count, not the parse result.
+Screenshot: screenshots/adv-p57-h-bfchar-no-end.png
+
+History:
+- qa: opened
+- qa: CLOSED. Retested `node probe-app57.cjs h-bfchar-no-end.pdf` -> app renderer 17 ms (was 14,534 ms), concurrent-screenshot 108 ms; module 14 ms (was 10,197 ms). Discriminating assertions engine.test.ts:3041 `expect(ms).toBeLessThan(2000)` + :3042 fallback `expect(r.value[0].text).toBe('\u0000H')`.
+
+## DEF-404: A valid bfrange array-form /ToUnicode CMap decodes to the wrong text
+
+- Status: CLOSED
+- Severity: HIGH
+- Found by: adversary (ADV-112)
+- Phase: 57
+
+Steps to reproduce:
+1. Workdir `test-fixtures\adv-p57\probe`. Run the module probe against the shipped EngineService bundle: `node probe-export.cjs ..\c-simple-valid.pdf` and `node probe-export.cjs ..\c-array-valid.pdf`.
+2. `c-simple-valid.pdf` CMap: `beginbfrange <0041> <0043> <0041> endbfrange`, content `<0041 0042 0043> Tj`.
+3. `c-array-valid.pdf` CMap: `beginbfrange <0041> <0043> [<0041> <0042> <0043>] endbfrange`, same content (array form maps 0041->A, 0042->B, 0043->C).
+
+Expected: both extract `ABC`.
+Actual: `c-simple-valid.pdf` extracts `ABC`; `c-array-valid.pdf` extracts `CDC`. After the array regex consumes `<0041> <0043> [<0041> <0042> <0043>]`, the fall-through `simpleRegex` in `parseToUnicodeCMap` (`src/main/services/engine.ts:7292`) also matches `<0041> <0042> <0043>` inside the brackets and overwrites 0041->C and 0042->D; 0043 keeps C from the array form -> `CDC`. Array-form CMaps are valid and common for Identity-H fonts, so this silently corrupts extracted text.
+Screenshot: screenshots/adv-p57-c-array-valid.png
+
+History:
+- qa: opened
+- qa: CLOSED. Retested `node probe-export.cjs ..\c-simple-valid.pdf` -> "ABC" and `..\c-array-valid.pdf` -> "ABC" (was "CDC"); app probe c-array-valid -> text "ABC". Discriminating assertion engine.test.ts:3013-3014 `expect(rs.value[0].text).toBe('ABC')` / `expect(ra.value[0].text).toBe('ABC')`.
+
 ## DEF-403: undoing Flatten restores field values but collapses every field's rectangle to the default and leaves the flattened ink
 
-- Status: REJECTED
+- Status: CLOSED
 - Severity: MEDIUM
 - Found by: backend-dev (Phase 57 triage, DEF-403)
 - Phase: pre-existing (forms.ts last touched Phase 52 d609155; baseline b8805ee)
@@ -25,10 +122,12 @@ Impact: undo after Flatten silently corrupts the form - every field jumps to the
 History:
 - qa: opened (filed from the Phase 57 TASK 6 triage; evidence by backend-dev)
 - orchestrator: REJECTED - will not fix at the Phase 57 gate. Reason: PRE-EXISTING, not introduced by Phases 53-57 (forms.ts last touched Phase 52 d609155; the DEF-028 restore test predates Phase 53), so it falls outside the Phase 53-57 defect scope criterion 8 covers, and the operator's standing 2026-09-30 ruling is not to fix pre-existing issues opportunistically at this gate. A confirmed real MEDIUM-HIGH undo defect - recorded so it is not lost and to be scheduled as its own fix batch.
+- orchestrator: reopened per operator ruling 2026-09-30 - the TASK-6 triage is promoted to in-scope work and must be fixed, notwithstanding its pre-existing origin (recorded in REQUIREMENTS.md, Current-scope supersession).
+- qa: CLOSED. Retested `npm.cmd run test:unit -- test/unit/main/forms.test.ts test/unit/main/engine.test.ts test/unit/main/exportRoundTrip.test.ts` -> 3 files / 284 tests passed. Discriminating assertion verified: the DEF-403 test asserts each restored field rect matches the captured rect within 0.01 on x/y/width/height (forms.test.ts:775-778) AND that page-0 content after undo equals the pre-flatten baseline (forms.test.ts:786), i.e. the flattened ink is gone.
 
 ## DEF-402: exportText mis-decodes text written with an embedded (Type0/Identity-H) font
 
-- Status: REJECTED
+- Status: CLOSED
 - Severity: MEDIUM
 - Found by: backend-dev (Phase 57 triage, DEF-402)
 - Phase: pre-existing (Phase 9 extractor, Phase 25-27 fonts)
@@ -46,6 +145,8 @@ Impact: any text laid out with an embedded font (TFlex's own Liberation Sans/Dej
 History:
 - qa: opened (filed from the Phase 57 TASK 6 triage; evidence by backend-dev)
 - orchestrator: REJECTED - will not fix at the Phase 57 gate. Reason: PRE-EXISTING, not introduced by Phases 53-57 (the extractor dates to Phase 9 40675e3, the bundled fonts to Phase 25-27 44d4529; no Phase 53-57 commit touched `parseContentStreamText`/`decodeHexString`), so it falls outside the Phase 53-57 defect scope criterion 8 covers, and the operator's standing 2026-09-30 ruling is not to fix pre-existing issues opportunistically at this gate. A confirmed real MEDIUM extraction defect (/ToUnicode CMap is present but ignored) - recorded so it is not lost and to be scheduled as its own fix batch.
+- orchestrator: reopened per operator ruling 2026-09-30 - the TASK-6 triage is promoted to in-scope work and must be fixed, notwithstanding its pre-existing origin (recorded in REQUIREMENTS.md, Current-scope supersession).
+- qa: CLOSED. Retested `npm.cmd run test:unit -- test/unit/main/forms.test.ts test/unit/main/engine.test.ts test/unit/main/exportRoundTrip.test.ts` -> 3 files / 284 tests passed. Discriminating assertion verified: the DEF-402 test asserts the EXACT original text for an embedded Liberation Sans text box after save/reload/exportText (`expect(res.value[0].text).toBe('HELLOWORLD')`, engine.test.ts:2844) AND that the standard-font path is unchanged (same exact assertion for Helvetica, engine.test.ts:2874) plus the no-CMap report.pdf fallback still extracts its exact cover text (engine.test.ts:2898-2900).
 
 ## DEF-401: Two stale renderer guards pin the pre-Phase-57 REVIEW dock and command-palette composition, failing `verify:full` (criterion 8)
 

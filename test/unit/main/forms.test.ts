@@ -1,8 +1,9 @@
 import { mkdtemp, rm, writeFile, readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { inflateSync } from 'node:zlib';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { PDFDocument } from '@cantoo/pdf-lib';
+import { PDFArray, PDFDocument, PDFRawStream } from '@cantoo/pdf-lib';
 import { EngineService } from '../../../src/main/services/engine';
 
 // ---------------------------------------------------------------------------
@@ -25,6 +26,34 @@ async function copyFixtureToTemp(name: string): Promise<string> {
   const destPath = join(dir, name);
   await copyFile(fixturePath, destPath);
   return destPath;
+}
+
+/** Decode page-0 /Contents from serialized bytes to latin1 text (inflating
+ *  per-stream when Flate-encoded). Mirrors the helper used by def165 so a
+ *  content-stream baseline can be compared before flatten and after undo. */
+async function decodedPage0ContentFromBytes(bytes: ArrayBuffer): Promise<string> {
+  const doc = await PDFDocument.load(bytes);
+  const contents = doc.getPage(0).node.Contents();
+  if (!contents) return '';
+  const walk = (node: unknown): string => {
+    const obj = doc.context.lookup(node as never);
+    if (obj instanceof PDFArray) {
+      let out = '';
+      for (let i = 0; i < obj.size(); i++) out += walk(obj.get(i));
+      return out;
+    }
+    if (obj instanceof PDFRawStream) {
+      const raw = obj.contents as unknown as Uint8Array;
+      if (!raw || typeof raw.length !== 'number') return '';
+      try {
+        return new TextDecoder('latin1').decode(inflateSync(raw));
+      } catch {
+        return new TextDecoder('latin1').decode(raw);
+      }
+    }
+    return '';
+  };
+  return walk(contents);
 }
 
 // ---------------------------------------------------------------------------
@@ -691,6 +720,70 @@ describe('EngineService - form fill undo/redo', () => {
       const byName = new Map(afterUndo.value.map((f) => [f.name, f]));
       expect(byName.get('applicant_name')?.value).toBe('John Doe');
       expect(byName.get('terms_agreed')?.value).toBe('true');
+    }
+  });
+
+  it('undo of flatten restores every field rect and removes the flattened ink (DEF-403)', async () => {
+    // DEF-403: flatten mutates the pdfDoc (bakes widget appearances into page
+    // content and drops the AcroForm). The pre-flatten snapshot must carry the
+    // serialized bytes so undo reloads the unflattened document — restoring
+    // both field geometry and the original page content — and the defensive
+    // rebuild path must re-add widgets at their captured rects.
+    const engine = new EngineService();
+    const path = await copyFixtureToTemp('form.pdf');
+    await engine.loadDocument('doc-1', path);
+
+    // Baseline: field geometry/values and page-0 content before flatten.
+    const before = await engine.getFormFields('doc-1');
+    expect(before.ok).toBe(true);
+    if (!before.ok) return;
+    const beforeFields = before.value;
+    expect(beforeFields.length).toBe(8);
+
+    const beforeBytes = await engine.getDocumentBytes('doc-1');
+    expect(beforeBytes.ok).toBe(true);
+    if (!beforeBytes.ok) return;
+    const beforeContent = await decodedPage0ContentFromBytes(beforeBytes.value);
+
+    await engine.flattenForms('doc-1');
+
+    // After flatten the fields are gone and widget ink is baked into content.
+    const flat = await engine.getFormFields('doc-1');
+    expect(flat.ok && flat.value.length).toBe(0);
+    const flatBytes = await engine.getDocumentBytes('doc-1');
+    expect(flatBytes.ok).toBe(true);
+    if (flatBytes.ok) {
+      const flatContent = await decodedPage0ContentFromBytes(flatBytes.value);
+      expect(flatContent).not.toBe(beforeContent);
+    }
+
+    const undo = await engine.undo('doc-1');
+    expect(undo.ok).toBe(true);
+
+    // (a) field count restored, (b) names/values restored, (c) rects match.
+    const after = await engine.getFormFields('doc-1');
+    expect(after.ok).toBe(true);
+    if (!after.ok) return;
+    expect(after.value.length).toBe(beforeFields.length);
+
+    const beforeByName = new Map(beforeFields.map((f) => [f.name, f]));
+    for (const f of after.value) {
+      const original = beforeByName.get(f.name);
+      expect(original).toBeDefined();
+      if (!original) continue;
+      expect(f.value).toEqual(original.value);
+      expect(Math.abs(f.rect.x - original.rect.x)).toBeLessThanOrEqual(0.01);
+      expect(Math.abs(f.rect.y - original.rect.y)).toBeLessThanOrEqual(0.01);
+      expect(Math.abs(f.rect.width - original.rect.width)).toBeLessThanOrEqual(0.01);
+      expect(Math.abs(f.rect.height - original.rect.height)).toBeLessThanOrEqual(0.01);
+    }
+
+    // (d) the flattened ink is gone: page-0 content is back to its baseline.
+    const undoBytes = await engine.getDocumentBytes('doc-1');
+    expect(undoBytes.ok).toBe(true);
+    if (undoBytes.ok) {
+      const afterContent = await decodedPage0ContentFromBytes(undoBytes.value);
+      expect(afterContent).toBe(beforeContent);
     }
   });
 });

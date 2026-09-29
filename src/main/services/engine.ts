@@ -1352,7 +1352,10 @@ export class EngineService {
     if (doc === undefined) {
       return err('engine-error', `unknown document: ${docId}`);
     }
-    const snapshot = snapshotDoc(doc);
+    // DEF-403: flattenForm mutates the pdfDoc (bakes widget appearances into
+    // page content and removes the AcroForm), so the snapshot MUST capture the
+    // serialized bytes for undo to reload the unflattened document.
+    const snapshot = await snapshotDocWithPdf(doc);
     try {
       flattenForm(doc.pdfDoc);
     } catch (e) {
@@ -6872,6 +6875,12 @@ function extractTextFromRawPdf(bytes: Uint8Array, targetPageIndex: number): stri
     const pageObj = resolveObject(text, pageRef, objOffsets);
     if (!pageObj) return '';
 
+    // DEF-402: resolve the page's /Resources /Font entries so hex strings can
+    // be decoded through a Type0 font's /ToUnicode CMap instead of
+    // windows-1252 (an Identity-H hex string carries glyph IDs, not codes).
+    // DEF-406: the extraction cache is shared across the document's pages.
+    const fontMaps = resolvePageFontToUnicode(text, pageObj, objOffsets, getFontExtractionCache(bytes));
+
     // Get the /Contents reference (may be a single ref or an array of refs)
     const contentsRefs = extractDictRefOrArray(pageObj, 'Contents');
     if (!contentsRefs || contentsRefs.length === 0) return '';
@@ -6885,7 +6894,7 @@ function extractTextFromRawPdf(bytes: Uint8Array, targetPageIndex: number): stri
       if (decoded) rawContent += decoded;
     }
 
-    return parseContentStreamText(rawContent);
+    return parseContentStreamText(rawContent, fontMaps);
   } catch {
     return '';
   }
@@ -6920,7 +6929,15 @@ function parseXref(raw: string): Map<number, number> {
   // PDFs from pdf-lib use cross-reference streams (PDF 1.5+).
   // The xref stream is pointed to by /XRefStm in the trailer or by startxref.
   // For a simpler approach, scan for all "obj" markers and note their numbers.
-  const objRegex = /(\d+)\s+(\d+)\s+obj/g;
+  //
+  // DEF-407: bound the numeric quantifiers and require a digit-run start. An
+  // unbounded `(\d+)\s+(\d+)\s+obj` backtracks quadratically on a long all-digit
+  // run (a legal hex string in a Tj stream), hanging the app for minutes.
+  // `(?<!\d)` skips mid-run positions (the previous match's tail is never
+  // re-scanned anyway) and `\d{1,10}` caps each backtrack, so a digit run is
+  // linear. Object/generation numbers in real PDFs never exceed 10 digits, so
+  // parsed xref semantics are unchanged for every real document.
+  const objRegex = /(?<!\d)(\d{1,10})\s+(\d{1,10})\s+obj/g;
   let match: RegExpExecArray | null;
   while ((match = objRegex.exec(raw)) !== null) {
     // match.index is the start of "obj", so the object starts before it
@@ -6950,7 +6967,11 @@ function parseTrailerRootRef(raw: string): string | null {
   // For cross-reference streams: find the last object in the file.
   // The xref stream object is typically the last object and contains
   // /Root in its dictionary.
-  const allObjMatches = [...raw.matchAll(/(\d+)\s+(\d+)\s+obj\s*<<([\s\S]*?)>>/g)];
+  //
+  // DEF-407: same bounded/lookbehind quantifiers as parseXref — this runs over
+  // the whole raw file in the same extraction path and must not backtrack on a
+  // long digit run.
+  const allObjMatches = [...raw.matchAll(/(?<!\d)(\d{1,10})\s+(\d{1,10})\s+obj\s*<<([\s\S]*?)>>/g)];
   if (allObjMatches.length > 0) {
     // Check the last few objects (xref stream is always last)
     for (let i = allObjMatches.length - 1; i >= Math.max(0, allObjMatches.length - 5); i--) {
@@ -7075,7 +7096,7 @@ function extractDictArray(dict: string, key: string): string[] {
  *
  * Handles FlateDecode and ASCII85Decode filters.
  */
-function decodeStream(raw: string, streamObjText: string): string | null {
+function decodeStream(raw: string, streamObjText: string, maxInflateBytes?: number): string | null {
   // Find the absolute offset of this object in the raw PDF text
   const objOffset = raw.indexOf(streamObjText);
   if (objOffset < 0) return null;
@@ -7118,14 +7139,28 @@ function decodeStream(raw: string, streamObjText: string): string | null {
     let decoded: Uint8Array;
     if (hasASCII85) {
       const a85 = decodeASCII85(streamBytes);
-      decoded = hasFlateDecode ? inflateSync(a85) : a85;
+      decoded = hasFlateDecode
+        ? (maxInflateBytes !== undefined
+            ? inflateSync(a85, { maxOutputLength: maxInflateBytes })
+            : inflateSync(a85))
+        : a85;
     } else if (hasFlateDecode) {
-      decoded = inflateSync(streamBytes);
+      // DEF-408: the /ToUnicode path passes MAX_TOUNICODE_CMAP_BYTES so a
+      // zlib bomb is refused by zlib itself instead of materialising hundreds
+      // of MiB before the decoded-char ceiling can reject it. A bounded inflate
+      // that overflows is treated as "ignore this CMap" (return null) rather
+      // than falling back to the raw bytes.
+      decoded = maxInflateBytes !== undefined
+        ? inflateSync(streamBytes, { maxOutputLength: maxInflateBytes })
+        : inflateSync(streamBytes);
     } else {
       decoded = streamBytes;
     }
     return bytesToByteString(decoded);
   } catch {
+    // A bounded inflate that refused an oversized stream means the caller must
+    // ignore the stream entirely; raw bytes are not a valid substitute.
+    if (maxInflateBytes !== undefined && hasFlateDecode) return null;
     // If decompression fails, return the raw bytes as text
     return bytesToByteString(streamBytes);
   }
@@ -7185,13 +7220,453 @@ function decodeASCII85(data: Uint8Array): Uint8Array {
 }
 
 /**
+ * DEF-402 — named ceilings for /ToUnicode CMap work. A CMap whose decoded
+ * text exceeds MAX_TOUNICODE_CMAP_CHARS characters, or whose parsed mapping
+ * would exceed MAX_TOUNICODE_ENTRIES entries, is IGNORED (the extractor falls
+ * back to the windows-1252 hex decoder) rather than parsed. Refuse, never
+ * stall — a hostile or corrupt CMap must not hang or exhaust memory.
+ */
+const MAX_TOUNICODE_CMAP_CHARS = 1000000;
+const MAX_TOUNICODE_ENTRIES = 65536;
+
+/**
+ * DEF-405/406/408 — additional named ceilings for the /ToUnicode path.
+ *
+ * MAX_TOUNICODE_CMAP_BYTES bounds the INFLATE itself (DEF-408): a hostile
+ * FlateDecode CMap must never be allowed to expand past this many bytes. It is
+ * 4x MAX_TOUNICODE_CMAP_CHARS so a legitimate CMap near the decoded-char
+ * ceiling (a byte-per-char text stream) still inflates, while a 256 MiB bomb
+ * is refused in zlib before it can be materialised. Note this differs from
+ * MAX_TOUNICODE_CMAP_CHARS, which is checked on the decoded STRING.
+ *
+ * MAX_PAGE_FONT_ENTRIES bounds how many `/Name N G R` entries in a page's
+ * /Font dict are examined (DEF-406); entries beyond it fall back to the
+ * windows-1252 decoder. A real page has a handful of fonts, never thousands.
+ *
+ * MAX_DOC_TOUNICODE_FONTS bounds how many DISTINCT font objects get their
+ * /ToUnicode parsed across one document extraction (DEF-406). The per-font
+ * memo cache makes repeated references to one font O(1); this ceiling caps the
+ * distinct-font shape.
+ */
+const MAX_TOUNICODE_CMAP_BYTES = 4 * MAX_TOUNICODE_CMAP_CHARS; // 4,000,000
+const MAX_PAGE_FONT_ENTRIES = 4096;
+const MAX_DOC_TOUNICODE_FONTS = 4096;
+
+/**
+ * DEF-406 — per-document extraction cache, keyed by the raw PDF byte buffer.
+ * exportText / createDocxFromDoc hand the SAME Uint8Array object to
+ * extractTextFromRawPdf for every page, so a WeakMap keyed by that object
+ * shares the font memo across the document's pages and is collected with it.
+ * `fontMaps` memoises by resolved font object number (null = a font that was
+ * examined and yielded no map), so N resource names pointing at one font cost
+ * O(1) after the first; `fontsParsed` enforces the per-document ToUnicode cap.
+ */
+interface FontExtractionCache {
+  fontMaps: Map<number, ToUnicodeMap | null>;
+  fontsParsed: number;
+}
+const fontExtractionCaches = new WeakMap<Uint8Array, FontExtractionCache>();
+
+function getFontExtractionCache(bytes: Uint8Array): FontExtractionCache {
+  let cache = fontExtractionCaches.get(bytes);
+  if (cache === undefined) {
+    cache = { fontMaps: new Map(), fontsParsed: 0 };
+    fontExtractionCaches.set(bytes, cache);
+  }
+  return cache;
+}
+
+/** A parsed /ToUnicode CMap: normalized source-code hex -> unicode string,
+ *  plus the source-code width in bytes (Identity-H uses 2-byte codes). */
+interface ToUnicodeMap {
+  map: Map<string, string>;
+  codeWidth: number;
+}
+
+/** Normalize a source-code hex token: lowercase, no leading zeros. */
+function normCode(hex: string): string {
+  const h = hex.toLowerCase().replace(/^0+/, '');
+  return h.length > 0 ? h : '0';
+}
+
+/** Format a code as a zero-padded hex token of the given digit width. */
+function srcHexFor(code: number, digits: number): string {
+  return code.toString(16).padStart(digits, '0').slice(-digits);
+}
+
+/** Decode a UTF-16BE hex destination value (CMap bfchar/bfrange target). */
+function decodeUtf16BeHex(hex: string): string {
+  let h = hex;
+  if (h.length % 2 !== 0) h += '0';
+  const bytes = new Uint8Array(h.length / 2);
+  for (let i = 0; i < h.length; i += 2) {
+    bytes[i / 2] = parseInt(h.substring(i, i + 2), 16);
+  }
+  if (bytes.length % 2 !== 0) {
+    // Not a whole UTF-16 code unit — decode as windows-1252 rather than throw.
+    return new TextDecoder('windows-1252').decode(bytes);
+  }
+  try {
+    return new TextDecoder('utf-16be').decode(bytes);
+  } catch {
+    return new TextDecoder('windows-1252').decode(bytes);
+  }
+}
+
+/** Increment the last UTF-16 code unit of a bfrange destination. */
+function incrementUtf16(dest: string, delta: number): string {
+  if (dest.length === 0 || delta === 0) return dest;
+  const next = dest.charCodeAt(dest.length - 1) + delta;
+  if (next > 0xffff) return dest;
+  return dest.slice(0, -1) + String.fromCharCode(next);
+}
+
+/** CMap whitespace, matching JS `\s` over the latin1 byte-string. */
+const CMAP_WS = /\s/;
+
+/**
+ * Read a single `<hex>` token starting at `pos`. Returns the hex body (without
+ * the angle brackets) and the index just past the closing '>', or null when no
+ * well-formed token starts there. `<<` is rejected (it opens a dictionary, not
+ * a hex string). Pure character walk, so it cannot backtrack.
+ */
+function readCmapHexToken(text: string, pos: number): { hex: string; end: number } | null {
+  if (text[pos] !== '<' || text[pos + 1] === '<') return null;
+  let i = pos + 1;
+  while (i < text.length && text[i] !== '>') {
+    const c = text.charCodeAt(i);
+    const isHex =
+      (c >= 0x30 && c <= 0x39) || // 0-9
+      (c >= 0x41 && c <= 0x46) || // A-F
+      (c >= 0x61 && c <= 0x66); // a-f
+    if (!isHex) return null;
+    i++;
+  }
+  if (i >= text.length) return null; // unterminated
+  if (i === pos + 1) return null; // empty token (`<>`) — not a CMap hex value
+  return { hex: text.slice(pos + 1, i), end: i + 1 };
+}
+
+/**
+ * Parse a decoded /ToUnicode CMap into a lookup. Supports beginbfchar and
+ * beginbfrange (simple and array forms). Returns null (caller keeps the
+ * windows-1252 fallback) for an empty, oversized or malformed CMap.
+ */
+function parseToUnicodeCMap(cmapText: string): ToUnicodeMap | null {
+  if (cmapText.length > MAX_TOUNICODE_CMAP_CHARS) return null;
+  const map = new Map<string, string>();
+  let codeWidth = 0;
+  const noteWidth = (srcHex: string): void => {
+    if (codeWidth !== 0) return;
+    const w = Math.floor(srcHex.length / 2);
+    if (w === 1 || w === 2) codeWidth = w;
+  };
+  const overCeiling = (): boolean => map.size >= MAX_TOUNICODE_ENTRIES;
+
+  // DEF-405: linear section scan. The old lazy/global regex match was O(n^2)
+  // on a CMap full of unmatched `beginbfchar` tokens (a measured hostile
+  // shape): every failed lazy match re-scanned the remainder. indexOf advances
+  // monotonically, so total work is O(n) and the decoded-char ceiling is
+  // checked before any large result is built.
+  let cursor = 0;
+  for (;;) {
+    const sectionStart = cmapText.indexOf('beginbfchar', cursor);
+    if (sectionStart < 0) break;
+    const bodyStart = sectionStart + 11; // 'beginbfchar'.length
+    const sectionEnd = cmapText.indexOf('endbfchar', bodyStart);
+    if (sectionEnd < 0) break; // unmatched opener: ignore the remainder
+    const body = cmapText.slice(bodyStart, sectionEnd);
+    cursor = sectionEnd + 9; // 'endbfchar'.length
+
+    // DEF-404: one ordered left-to-right scan over the body, so the scanner
+    // always advances past what it consumed and can never re-read an array's
+    // destination list as simple pairs.
+    let i = 0;
+    while (i < body.length) {
+      const src = readCmapHexToken(body, i);
+      if (src === null) {
+        i++;
+        continue;
+      }
+      i = src.end;
+      while (i < body.length && CMAP_WS.test(body[i])) i++;
+      const dst = readCmapHexToken(body, i);
+      if (dst === null) continue; // malformed pair; next iteration advances
+      i = dst.end;
+      if (overCeiling()) return null;
+      noteWidth(src.hex);
+      map.set(normCode(src.hex), decodeUtf16BeHex(dst.hex));
+    }
+  }
+
+  // beginbfrange: simple "<lo> <hi> <dst>" and array "<lo> <hi> [<d1> ...]"
+  cursor = 0;
+  for (;;) {
+    const sectionStart = cmapText.indexOf('beginbfrange', cursor);
+    if (sectionStart < 0) break;
+    const bodyStart = sectionStart + 12; // 'beginbfrange'.length
+    const sectionEnd = cmapText.indexOf('endbfrange', bodyStart);
+    if (sectionEnd < 0) break;
+    const body = cmapText.slice(bodyStart, sectionEnd);
+    cursor = sectionEnd + 10; // 'endbfrange'.length
+
+    let i = 0;
+    while (i < body.length) {
+      const loTok = readCmapHexToken(body, i);
+      if (loTok === null) {
+        i++;
+        continue;
+      }
+      i = loTok.end;
+      while (i < body.length && CMAP_WS.test(body[i])) i++;
+      const hiTok = readCmapHexToken(body, i);
+      if (hiTok === null) continue;
+      i = hiTok.end;
+      while (i < body.length && CMAP_WS.test(body[i])) i++;
+
+      if (body[i] === '[') {
+        // Array form. Scan the destination list inline; the enclosing loop
+        // continues after the closing ']' so no destination is re-parsed.
+        i++;
+        const dests: string[] = [];
+        while (i < body.length) {
+          while (i < body.length && CMAP_WS.test(body[i])) i++;
+          if (i >= body.length) break; // unterminated array
+          if (body[i] === ']') {
+            i++;
+            break;
+          }
+          const d = readCmapHexToken(body, i);
+          if (d === null) {
+            i++;
+            continue;
+          }
+          dests.push(d.hex);
+          i = d.end;
+          if (dests.length > MAX_TOUNICODE_ENTRIES) return null;
+        }
+        const loNum = parseInt(loTok.hex, 16);
+        noteWidth(loTok.hex);
+        for (let k = 0; k < dests.length; k++) {
+          if (overCeiling()) return null;
+          map.set(normCode(srcHexFor(loNum + k, loTok.hex.length)), decodeUtf16BeHex(dests[k]));
+        }
+      } else if (body[i] === '<') {
+        // Simple form: <lo> <hi> <dst>
+        const dstTok = readCmapHexToken(body, i);
+        if (dstTok === null) continue;
+        i = dstTok.end;
+        const loNum = parseInt(loTok.hex, 16);
+        const hiNum = parseInt(hiTok.hex, 16);
+        if (hiNum < loNum || hiNum - loNum >= MAX_TOUNICODE_ENTRIES) return null;
+        noteWidth(loTok.hex);
+        const dest = decodeUtf16BeHex(dstTok.hex);
+        for (let code = loNum; code <= hiNum; code++) {
+          if (overCeiling()) return null;
+          map.set(normCode(srcHexFor(code, loTok.hex.length)), incrementUtf16(dest, code - loNum));
+        }
+      } else {
+        // No destination token; resume one character on (loop guard).
+        continue;
+      }
+    }
+  }
+
+  if (map.size === 0 || codeWidth === 0) return null;
+  return { map, codeWidth };
+}
+
+/** Decode a hex string through a font's ToUnicode map, chunking by code
+ *  width. A code with no mapping falls back per-code to windows-1252. */
+function decodeHexWithMap(hex: string, tu: ToUnicodeMap): string {
+  let h = hex;
+  if (h.length % 2 !== 0) h += '0';
+  const width = tu.codeWidth * 2;
+  let out = '';
+  for (let i = 0; i < h.length; i += width) {
+    const chunk = h.substring(i, i + width);
+    if (chunk.length < width) {
+      out += decodeHexString(chunk);
+      continue;
+    }
+    const mapped = tu.map.get(normCode(chunk));
+    out += mapped !== undefined ? mapped : decodeHexString(chunk);
+  }
+  return out;
+}
+
+/**
+ * Extract the body of a directly-written dictionary value (`/Key << ... >>`)
+ * from a parent object text, matching nested `<< >>` pairs. Returns null when
+ * the key is absent or its value is an indirect reference instead.
+ */
+function extractDirectDictBody(parent: string, key: string): string | null {
+  const m = new RegExp(`/${key}\\s*<<`).exec(parent);
+  if (!m) return null;
+  const dictStart = m.index + m[0].length - 2;
+  let depth = 0;
+  for (let i = dictStart; i < parent.length - 1; i++) {
+    if (parent[i] === '<' && parent[i + 1] === '<') {
+      depth++;
+      i++;
+      continue;
+    }
+    if (parent[i] === '>' && parent[i + 1] === '>') {
+      depth--;
+      i++;
+      if (depth === 0) return parent.slice(dictStart + 2, i - 1);
+    }
+  }
+  return null;
+}
+
+/**
+ * DEF-402 — resolve the page's /Resources /Font entries to their /ToUnicode
+ * maps, keyed by the font's resource name. Best-effort: a malformed font tree
+ * yields no maps (extraction then keeps the windows-1252 fallback).
+ *
+ * DEF-406 — the `cache` is shared across the whole document extraction. A
+ * font's parsed map is memoised by its object number, so the realistic hostile
+ * shape (thousands of resource names pointing at one font) costs O(1) per
+ * entry after the first. In addition the page's DECLARED /Font extent is
+ * preflighted and only the first MAX_PAGE_FONT_ENTRIES entries are examined
+ * (the rest fall back), and at most MAX_DOC_TOUNICODE_FONTS distinct fonts get
+ * their /ToUnicode parsed per document.
+ */
+function resolvePageFontToUnicode(
+  raw: string,
+  pageObj: string,
+  offsets: Map<number, number>,
+  cache: FontExtractionCache,
+): Map<string, ToUnicodeMap> {
+  const result = new Map<string, ToUnicodeMap>();
+  try {
+    let resourcesDict = extractDirectDictBody(pageObj, 'Resources');
+    if (resourcesDict === null) {
+      const resRef = extractDictRef(pageObj, 'Resources');
+      if (resRef) {
+        const resObj = resolveObject(raw, resRef, offsets);
+        if (resObj) resourcesDict = resObj;
+      }
+    }
+    if (!resourcesDict) return result;
+
+    let fontDict = extractDirectDictBody(resourcesDict, 'Font');
+    if (fontDict === null) {
+      const fontRef = extractDictRef(resourcesDict, 'Font');
+      if (fontRef) {
+        const fontObj = resolveObject(raw, fontRef, offsets);
+        if (fontObj) fontDict = fontObj;
+      }
+    }
+    if (!fontDict) return result;
+
+    // Preflight the declared /Font extent, bounded so the count itself cannot
+    // walk an unbounded dict: stop counting once the ceiling is exceeded.
+    let declared = 0;
+    const countRegex = /\/([^\s/<>\[\]()]+)\s+\d{1,10}\s+\d{1,10}\s+R/g;
+    while (declared <= MAX_PAGE_FONT_ENTRIES && countRegex.exec(fontDict) !== null) {
+      declared++;
+    }
+    const examineLimit = Math.min(declared, MAX_PAGE_FONT_ENTRIES);
+
+    const entryRegex = /\/([^\s/<>\[\]()]+)\s+(\d{1,10})\s+(\d{1,10})\s+R/g;
+    let examined = 0;
+    let m: RegExpExecArray | null;
+    while ((m = entryRegex.exec(fontDict)) !== null) {
+      if (examined >= examineLimit) break;
+      examined++;
+      const name = m[1];
+      const fontObjNum = parseInt(m[2], 10);
+
+      // Memo lookup by object number — null means "examined, no map".
+      const cached = cache.fontMaps.get(fontObjNum);
+      if (cached !== undefined) {
+        if (cached !== null) result.set(name, cached);
+        continue;
+      }
+
+      const fontObj = resolveObject(raw, `${m[2]} ${m[3]} R`, offsets);
+      if (!fontObj || !/\/Subtype\s*\/Type0/.test(fontObj)) {
+        cache.fontMaps.set(fontObjNum, null);
+        continue;
+      }
+      const tuRef = extractDictRef(fontObj, 'ToUnicode');
+      if (!tuRef) {
+        cache.fontMaps.set(fontObjNum, null);
+        continue;
+      }
+      // Per-document cap on how many fonts get a ToUnicode parse.
+      if (cache.fontsParsed >= MAX_DOC_TOUNICODE_FONTS) {
+        cache.fontMaps.set(fontObjNum, null);
+        continue;
+      }
+      cache.fontsParsed++;
+      const tuObj = resolveObject(raw, tuRef, offsets);
+      if (!tuObj) {
+        cache.fontMaps.set(fontObjNum, null);
+        continue;
+      }
+      const decoded = decodeStream(raw, tuObj, MAX_TOUNICODE_CMAP_BYTES);
+      if (!decoded) {
+        cache.fontMaps.set(fontObjNum, null);
+        continue;
+      }
+      const parsed = parseToUnicodeCMap(decoded);
+      cache.fontMaps.set(fontObjNum, parsed);
+      if (parsed) result.set(name, parsed);
+    }
+  } catch {
+    // Best-effort — a malformed font tree must never break extraction.
+  }
+  return result;
+}
+
+/**
  * Parse a decoded PDF content stream and extract text from Tj, TJ, '
  * and " operators. Handles both literal strings `(text)` and hexadecimal
  * strings `<hex>`. pdf-lib uses hex strings for fonts with custom
  * encodings (WinAnsiEncoding/PDFDocEncoding).
+ *
+ * DEF-402 — hex strings are decoded through the CURRENT font's /ToUnicode
+ * map when that font has one (see `fontMaps`); a document whose fonts carry
+ * no map keeps the windows-1252 fallback byte-for-byte.
  */
-function parseContentStreamText(content: string): string {
+function parseContentStreamText(
+  content: string,
+  fontMaps: Map<string, ToUnicodeMap> = new Map(),
+): string {
   const parts: string[] = [];
+
+  // Track `/Name size Tf` by stream position so a hex string is decoded with
+  // the font in effect where it appears.
+  const tfEvents: Array<{ index: number; font: string }> = [];
+  const tfRegex = /\/([^\s/<>\[\]()]+)\s+[\d.]+\s+Tf/g;
+  let tfMatch: RegExpExecArray | null;
+  while ((tfMatch = tfRegex.exec(content)) !== null) {
+    tfEvents.push({ index: tfMatch.index, font: tfMatch[1] });
+  }
+  const fontAt = (pos: number): string | null => {
+    let lo = 0;
+    let hi = tfEvents.length - 1;
+    let found = -1;
+    while (lo <= hi) {
+      const mid = (lo + hi) >> 1;
+      if (tfEvents[mid].index <= pos) {
+        found = mid;
+        lo = mid + 1;
+      } else {
+        hi = mid - 1;
+      }
+    }
+    return found >= 0 ? tfEvents[found].font : null;
+  };
+  const decodeHexAt = (hex: string, pos: number): string => {
+    if (fontMaps.size === 0) return decodeHexString(hex);
+    const name = fontAt(pos);
+    const tu = name !== null ? fontMaps.get(name) : undefined;
+    return tu !== undefined ? decodeHexWithMap(hex, tu) : decodeHexString(hex);
+  };
 
   // Match hex-encoded text: <hex> Tj
   const hexTjRegex = /<([0-9A-Fa-f]*)>\s*Tj/g;
@@ -7199,7 +7674,7 @@ function parseContentStreamText(content: string): string {
   while ((match = hexTjRegex.exec(content)) !== null) {
     const hex = match[1];
     if (hex.length > 0) {
-      parts.push(decodeHexString(hex));
+      parts.push(decodeHexAt(hex, match.index));
     }
   }
 
@@ -7219,7 +7694,7 @@ function parseContentStreamText(content: string): string {
     while ((hexStrMatch = hexStrRegex.exec(inner)) !== null) {
       const hex = hexStrMatch[1];
       if (hex.length > 0) {
-        parts.push(decodeHexString(hex));
+        parts.push(decodeHexAt(hex, match.index + 1 + hexStrMatch.index));
       }
     }
     // Literal strings in array
@@ -7236,7 +7711,7 @@ function parseContentStreamText(content: string): string {
     if (match[1] !== undefined) {
       parts.push(decodePdfString(match[1]));
     } else if (match[2] && match[2].length > 0) {
-      parts.push(decodeHexString(match[2]));
+      parts.push(decodeHexAt(match[2], match.index));
     }
   }
 

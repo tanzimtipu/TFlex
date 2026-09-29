@@ -4876,3 +4876,194 @@ should not repeat them:
   ZIP ceiling). Duplicate entry names are collapsed by the `fflate` object map - not a
   crash surface.
 
+## Phase 57 DEF-402 parser - hostile review (session `phase-57 def-402`)
+
+Scope: the new `/ToUnicode` CMap path added by the DEF-402 fix in
+`src/main/services/engine.ts` (`parseToUnicodeCMap`, `resolvePageFontToUnicode`,
+`parseContentStreamText` hex decoding through `fontMaps`), reached through
+`EngineService.exportText` (Export Text / text-first DOCX). Fixtures live under
+`test-fixtures/adv-p57/`; module harnesses under `test-fixtures/adv-p57/probe/`
+(the `engine-bundle.cjs` bundle re-exports the shipped `EngineService`; the app
+probes launch through `e2e/lib/launch.cjs` `launchApp` and drive
+`window.tflex.engine.exportText(engineDocId)` in the renderer).
+
+Important V8 caveat discovered while measuring: the same module code + bytes are
+up to ~40x slower under Node 24 than under Electron 44's V8. All app-facing
+numbers below were measured under Electron's own V8 (and confirmed in the running
+app); Node-only numbers are labelled as such and are not the finding basis.
+
+## ADV-112: A valid bfrange array-form /ToUnicode CMap is decoded to the wrong text
+
+- Session: phase-57 def-402
+- Suggested severity: HIGH
+
+What I did:
+1. Built `test-fixtures/adv-p57/c-array-valid.pdf`: one page whose /Resources
+   /Font /F1 is a Type0/Identity-H font with `/ToUnicode 7 0 R`, CMap using the
+   standard bfrange ARRAY form with an exact destination count for the range:
+   `beginbfrange <0041> <0043> [<0041> <0042> <0043>] endbfrange`; content stream
+   draws the 3-code hex string `<004100420043> Tj`.
+2. Opened it in the app (dev build) and called
+   `window.tflex.engine.exportText(engineDocId)` from the renderer.
+3. Control `c-simple-valid.pdf` uses the equivalent SIMPLE form
+   `<0041> <0043> <0041>`. Reproduced at module level via
+   `probe/probe-export.cjs` (drives the shipped EngineService).
+
+Expected: the array form maps each code to its matching destination, so
+`<0041><0042><0043>` extracts as "ABC" (same as the simple form).
+
+Actual: array form extracts as "CDC"; simple form extracts "ABC". Inside
+`parseToUnicodeCMap` the array regex runs first, then the SIMPLE-form regex
+`/<hex>\s*<hex>\s*<hex>/g` (engine.ts ~7292) matches the array's destination
+list `<0041> <0042> <0043>` as if it were a fresh simple range
+(`lo=<0041> hi=<0042> dst=<0043>`) and overwrites the correct entries
+(41->'C', 42->'D'). Valid array-form CMaps are common in real embedded fonts, so
+this silently corrupts extracted text and the text-first DOCX export for those
+documents. Exact repro is 8 ms and deterministic.
+Screenshot: screenshots/adv-p57-c-array-valid.png
+
+Disposition: ACCEPTED -> DEF-404
+
+## ADV-113: A malformed /ToUnicode CMap (many `beginbfchar`, no `endbfchar`) freezes the app ~14 s
+
+- Session: phase-57 def-402
+- Suggested severity: HIGH
+
+What I did:
+1. Built `test-fixtures/adv-p57/h-bfchar-no-end.pdf` (1.0 MB): the page's Type0
+   `/ToUnicode` stream is `beginbfchar` repeated 90,909 times (999,999 chars)
+   with no `endbfchar`.
+2. Opened it in the app and called exportText; measured the renderer wall clock
+   and, concurrently, the time to take a screenshot (a screenshot is serviced by
+   the Electron browser process, so it cannot complete while the main process is
+   synchronously blocked).
+
+Expected: the fix declares a 1,000,000-decoded-char ceiling precisely so a
+hostile CMap is refused without stalling.
+
+Actual: `exportText` blocked 14,799 ms; the concurrent screenshot took
+14,388 ms, i.e. the window was unresponsive for the entire block (fallback text
+"\u0000H" only appears after the freeze). Root cause is in `parseToUnicodeCMap`:
+`cmapText.match(/beginbfchar([\s\S]*?)endbfchar/g)` is O(n^2) when many
+`beginbfchar` tokens have no matching `endbfchar` — each candidate start lazily
+rescans to the end of the string. Measured under Electron's V8: 5,000 tokens
+(~55 KB) 31 ms; 10,000 118 ms; 20,000 473 ms; 50,000 2,964 ms; 90,000 ~14,370 ms.
+Below Node 24 the same input is ~9,860 ms at 90,000, but the app number is the
+14 s above. The `endbfchar`-less shape is bounded only by the 1M ceiling, so
+~14 s is the ceiling worst case for it. A bfrange-array variant
+(`h-bfrange-arr-open.pdf`, 975,022 chars) measured 40.7 s under Node but only
+~1.0 s under Electron's V8, so it is NOT app-relevant and is recorded here only
+as a Node-side observation.
+Screenshot: screenshots/adv-p57-freeze-h-bfchar-no-end.png
+
+Disposition: ACCEPTED -> DEF-405
+
+## ADV-114: A page /Font dict with 200,000 entries freezes the app ~30 s in `resolvePageFontToUnicode`
+
+- Session: phase-57 def-402
+- Suggested severity: HIGH
+
+What I did:
+1. Built `test-fixtures/adv-p57/f-font-200k-entries.pdf` (2.9 MB): the page
+   /Resources /Font dict has 200,000 entries `/F0 4 0 R ... /F199999 4 0 R`, all
+   pointing at the same Type0 font (which has a tiny valid /ToUnicode).
+2. Opened it in the app and called exportText.
+3. Built 25k/50k/100k-entry variants (`f-font-N-entries.pdf`) and measured the
+   module harness under Electron's V8.
+
+Expected: a page with a large /Font dict is handled in bounded time.
+
+Actual: the 200k fixture blocked `exportText` for 30,351 ms; the concurrent
+screenshot could not be taken within 30,000 ms (Playwright timeout), i.e. the UI
+was frozen >30 s. Scaling (Electron V8): 25,000 entries (340 KB file) 532 ms;
+50,000 (690 KB) 1,734 ms; 100,000 (1.39 MB) 5,983 ms; 200,000 (2.9 MB) ~30,000 ms
+— superlinear (about 3.3-5x per doubling). `resolvePageFontToUnicode`
+(engine.ts ~7386) walks every `/Name N G R` entry with `entryRegex` and calls
+`resolveObject` per entry, so a hostile /Font dict (which every page may carry)
+scales without bound from a small file. The 200K case is only 2.9 MB on disk.
+Screenshot: screenshots/adv-p57-freeze-f-font-200k-entries.png
+
+Disposition: ACCEPTED -> DEF-406
+
+## ADV-115: A long digit run in a PDF (large all-digit hex string in `Tj`) freezes the app quadratically in `parseXref` - 82 s at 800 KB, effectively unbounded
+
+- Session: phase-57 def-402
+- Suggested severity: HIGH
+
+What I did:
+1. Built fixtures whose content stream is one hex string of repeated `41`
+   (a legal hex-encoded run that is also a long digit run): `h-hex-100000.pdf`
+   (200 KB file), `h-hex-200000.pdf` (400 KB), `h-hex-400000.pdf` (800 KB),
+   `h-huge-hex-tj.pdf` (4.0 MB file, 4,000,000 hex chars).
+2. Opened `h-hex-400000.pdf` in the app and called exportText (concurrent
+   screenshot as above).
+
+Expected: exportText bounds or completes promptly.
+
+Actual: `h-hex-400000.pdf` blocked 82,185 ms; the concurrent screenshot timed
+out at 30,000 ms (UI frozen >30 s). Scaling under Electron's V8 (also matched in
+the app): 100,000 hex chars 4.4 s; 200,000 18.0 s; 400,000 82.2 s — O(n^2).
+Root cause: `parseXref`'s `/(\d+)\s+(\d+)\s+obj/g` (engine.ts ~6931) backtracks
+from every start position through the whole digit run when no whitespace follows;
+`h-huge-hex-tj.pdf` extrapolates to ~2 h. `parseXref` predates DEF-402, but it
+runs inside the same `extractTextFromRawPdf` path, the dispatch explicitly listed
+"a single enormous hex string (megabytes) in Tj/TJ" as an attack, and the trigger
+is any long digit run anywhere in the raw file, so a legal PDF can silently pin
+the main process for an unbounded time.
+Screenshot: screenshots/adv-p57-h-hex-400000.png
+
+Disposition: ACCEPTED -> DEF-407
+
+## ADV-116: A 262 KB FlateDecode bomb in /ToUnicode inflates to 256 MB before the decoded-char ceiling is applied
+
+- Session: phase-57 def-402
+- Suggested severity: LOW
+
+What I did:
+1. Built `test-fixtures/adv-p57/f-zlib-bomb-256m.pdf` (262 KB): the Type0 font's
+   `/ToUnicode` stream is `/Filter /FlateDecode` and inflates to 256 MiB of NUL
+   bytes.
+2. Opened it in the app, called exportText, and instrumented the main process's
+   `zlib.inflateSync` to record input/output lengths.
+
+Expected: the fix's 1,000,000-decoded-char ceiling should bound the work done on
+a hostile CMap ("refuse, never stall").
+
+Actual: `inflateSync` was called with 260,923 bytes and produced 268,435,456
+bytes; the ceiling is checked on the decoded string (`cmapText.length >
+MAX_TOUNICODE_CMAP_CHARS`), i.e. after full decompression. exportText finished in
+~0.5 s with RSS peaking in the hundreds of MB — a ~1000x amplification rather
+than a hang, but the ceiling does not bound decode cost and a ~1 MB bomb (~1 GB
+out) risks OOM on a low-memory machine.
+Screenshot: screenshots/adv-p57-f-zlib-bomb-256m.png
+
+Disposition: ACCEPTED -> DEF-408
+
+## Negative results - Phase 57 DEF-402 parser (verified sound, no finding)
+
+- Char ceiling: `h-cmap-over-ceiling.pdf` (1,000,001 decoded chars) and
+  `h-cmap-exactly-1m.pdf` (1,000,000 + the stream's trailing newline =
+  1,000,001) are refused in ~11-12 ms.
+- Entry ceiling: `h-entries-over-65536.pdf` (70,000 bfchar pairs, 910,021 chars)
+  is refused at the 65,536-entry guard in 98 ms (Electron V8).
+- Malformed CMaps, all bounded and non-throwing: `h-bfchar-unclosed.pdf`
+  (unclosed `beginbfchar`, short) -> fallback 3 ms; `h-bfrange-descending.pdf`
+  (`<FFFF> <0000> <0041>`, hi<lo) -> refused, fallback 3 ms;
+  `h-bfrange-array-mismatch.pdf` (one dest for a 191-code range) maps only the
+  supplied dest and returns "A", no expansion, no crash;
+  `h-bfrange-array-extra-dests.pdf` (five dests for a 3-code range) maps the
+  first entries, no crash; `h-tounicode-dangling.pdf` (`/ToUnicode 999 0 R`)
+  -> no map, fallback 3 ms; `h-not-type0.pdf` (`/Subtype /TrueType` with a
+  ToUnicode) -> skipped, fallback 3 ms.
+- Content-stream fallbacks: `h-codes-absent.pdf` (code missing from map) decodes
+  per code via windows-1252 ("HAB"), correct; `h-codewidth-1-vs-2.pdf` (1-byte
+  CMap codes vs 2-byte content codes) falls back per chunk without throwing;
+  `h-tj-mixed.pdf` (`[<0048> -100 (AB) <4142>] TJ`) -> "HABAB", correct order;
+  `h-many-tf.pdf` (50,000 `Tf` switches, 1.0 MB) -> 33 ms, "H" x 50,000.
+- `/ToUnicode` stream abuse: `f-flate-garbage.pdf` (FlateDecode junk) inflate
+  fails, no CMap marker -> fallback 4 ms; `f-false-huge-length.pdf`
+  (`/Length 999999999`) -> `resolveObject` falls back to `endstream`, fallback
+  4 ms.
+- Happy path unaffected: `sanity-bfchar.pdf` app exportText "H" in ~9 ms;
+  `c-simple-valid.pdf` "ABC".
+

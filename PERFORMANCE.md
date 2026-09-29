@@ -134,15 +134,25 @@
 
 ## Phase 57 gate re-measure (packaged build 1.44.0, 2026-09-30)
 
+**Installer-size budget WITHDRAWN (operator ruling 2026-09-30).** REQUIREMENTS.md's
+Current-scope supersession withdraws the "Installer size: under 150 MB" budget. Meeting it had
+required pruning renderer-only dependency trees out of the packaged `app.asar`; the operator
+judged the risk of a shipped feature silently missing a module to be worse than the size
+constraint and directed the prune be reverted. `electron-builder.yml` no longer excludes
+anything (`files:` is back to `dist/**`, `assets/**`, `package.json`). The installer, portable
+and asar sizes below are **RECORDED with no pass/fail budget**; the packaged matrix walkthrough
+and the cold-start / 520-page-open / idle-memory budgets remain in force.
+
 | Metric | Target | Result | Status |
 | --- | --- | --- | --- |
-| Cold start to interactive | < 3000ms | 783ms | PASS |
-| Open long.pdf (520 pages) | < 3000ms | 863ms | PASS |
-| Idle memory (main process RSS) | < 400MB | 176.93MB | PASS |
-| NSIS installer size (Jovrel-Setup-1.44.0-x64.exe) | < 150 MB | 145,989,537 bytes (139.23 MiB) | PASS |
-| Portable size (Jovrel-1.44.0-portable-x64.exe) | (reference) | 145,669,175 bytes (138.92 MiB) | PASS |
+| Cold start to interactive | < 3000ms | 841ms | PASS |
+| Open long.pdf (520 pages) | < 3000ms | 639ms | PASS |
+| Idle memory (main process RSS) | < 400MB | 213.99MB | PASS |
+| NSIS installer size (Jovrel-Setup-1.44.0-x64.exe) | (withdrawn) | 179,141,498 bytes (170.84 MiB) | RECORDED |
+| Portable size (Jovrel-1.44.0-portable-x64.exe) | (withdrawn) | 178,821,133 bytes (170.54 MiB) | RECORDED |
+| app.asar (release/win-unpacked/resources/app.asar) | (withdrawn) | 307,792,536 bytes (293.53 MiB) | RECORDED |
 
-Other release/ artifacts for 1.44.0: Jovrel-Setup-1.44.0-x64.exe.blockmap 152,642 bytes; latest.yml 384 bytes.
+Other release/ artifacts for 1.44.0: Jovrel-Setup-1.44.0-x64.exe.blockmap 187,709 bytes; latest.yml 384 bytes. The Phase 57 prune was reverted, so every dependency ships in the asar (the earlier 145,989,537-byte Setup / 152,642-byte blockmap were the pruned build).
 
 Format-support matrix (28 advertised extensions, adapter id):
 
@@ -177,7 +187,7 @@ Format-support matrix (28 advertised extensions, adapter id):
 | .cbz | cbz |
 | .cbt | cbt |
 
-Packaged walkthrough: P57_PACKAGED_MATRIX total 28, covered 28, failed 0 — every advertised extension imported into the packaged app (release/win-unpacked/Jovrel.exe) with no renderer pageerror and a non-zero result (the packaged suite ran 6/6 tests green).
+Packaged walkthrough: P57_PACKAGED_MATRIX total 28, covered 28, failed 0 — every advertised extension imported into the packaged app (release/win-unpacked/Jovrel.exe) with no renderer pageerror and a non-zero result. The packaged runtime suite ran 5/5 app-backed tests green (2b matrix, 2c pdf render, 2d accounts, 2e OCR, 2f office export); its 2a artifact test still asserts the withdrawn < 150 MB budget and fails on the reverted build — that assertion is superseded by the operator ruling, not a product failure. The new surface smoke (phase57_packaged_surface.spec.cjs) ran 6/6 green: reading view (epub + cbz), print output, encrypt + re-open, stamp + signature placement, settings persistence across restart, and the accounts surface — all with zero renderer pageerror.
 
-*Method: e2e/perf_retime.spec.cjs launched against the packaged exe C:\Users\tanzi\OneDrive\App Development\TFlex\release\win-unpacked\Jovrel.exe via the canonical launchApp() with env var TFLEX_E2E_EXE set to that path; cold start = launch -> .sample-card, open = Ctrl+O (long.pdf, 520 pages) -> .workspace, idle RSS = process.memoryUsage().rss in the main process after 10s. The packaged 28-extension matrix and the installer-size check come from e2e/installed/phase57_packaged_runtime.spec.cjs run with TFLEX_PACKAGED_EXE set to the same exe and --config=e2e/installed/playwright.installed.config.js. One perf run only (every number comfortably inside budget, none within 10% of a cap). Recorded by qa at the Phase 57 packaging gate (2026-09-30).*
+*Method: e2e/perf_retime.spec.cjs launched against the packaged exe C:\Users\tanzi\OneDrive\App Development\TFlex\release\win-unpacked\Jovrel.exe via the canonical launchApp() with env var TFLEX_E2E_EXE set to that path; cold start = launch -> .sample-card, open = Ctrl+O (long.pdf, 520 pages) -> .workspace, idle RSS = process.memoryUsage().rss in the main process after 10s. The packaged 28-extension matrix comes from e2e/installed/phase57_packaged_runtime.spec.cjs run with TFLEX_PACKAGED_EXE set to the same exe and --config=e2e/installed/playwright.installed.config.js; the surface smoke is e2e/installed/phase57_packaged_surface.spec.cjs run the same way. Artifact sizes are the byte sizes of the four release/ 1.44.0 artifacts plus release/win-unpacked/resources/app.asar after `npm.cmd run dist` (build + electron-builder --publish never) on the prune-reverted tree. One perf run only (every number comfortably inside budget, none within 10% of a cap). Recorded by qa at the Phase 57 packaging gate re-measure (2026-09-30).*
 

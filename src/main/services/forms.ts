@@ -456,25 +456,38 @@ export function restoreFormFieldsFromSnapshot(
       try {
         const page = pdfDoc.getPage(entry.pageIndex);
         const name = entry.name;
+        // DEF-403: restore the captured widget geometry. entry.rect is in the
+        // FormFieldRect UI space (TOP-LEFT origin; see getFieldRect), while
+        // addToPage/addOptionToPage expect PDF user space (BOTTOM-LEFT), so
+        // flip y back. Keep today's default-rect behaviour when the captured
+        // rect is degenerate (a zero-size box would be rejected).
+        const box = entry.rect.width > 0 && entry.rect.height > 0
+          ? {
+              x: entry.rect.x,
+              y: page.getHeight() - entry.rect.y - entry.rect.height,
+              width: entry.rect.width,
+              height: entry.rect.height,
+            }
+          : undefined;
 
         switch (entry.kind) {
           case 'text': {
             const f = form.createTextField(name);
             f.setText(typeof entry.value === 'string' ? entry.value : '');
-            f.addToPage(page);
+            f.addToPage(page, box);
             break;
           }
           case 'checkbox': {
             const f = form.createCheckBox(name);
             if (entry.value === 'true') f.check();
-            f.addToPage(page);
+            f.addToPage(page, box);
             break;
           }
           case 'radio': {
             const f = form.createRadioGroup(name);
             if (entry.options && entry.options.length > 0) {
               for (const opt of entry.options) {
-                f.addOptionToPage(opt.value, page);
+                f.addOptionToPage(opt.value, page, box);
               }
             }
             const sel = typeof entry.value === 'string' ? entry.value
@@ -489,7 +502,7 @@ export function restoreFormFieldsFromSnapshot(
             if (entry.options && entry.options.length > 0) {
               f.addOptions(entry.options.map((o) => o.value));
             }
-            f.addToPage(page);
+            f.addToPage(page, box);
             const sel = typeof entry.value === 'string' ? entry.value
               : (Array.isArray(entry.value) && entry.value.length > 0 ? entry.value[0] : '');
             if (sel) {
@@ -502,7 +515,7 @@ export function restoreFormFieldsFromSnapshot(
             if (entry.options && entry.options.length > 0) {
               f.addOptions(entry.options.map((o) => o.value));
             }
-            f.addToPage(page);
+            f.addToPage(page, box);
             const vals = Array.isArray(entry.value) ? entry.value : [entry.value as string];
             for (const v of vals) {
               if (v) {

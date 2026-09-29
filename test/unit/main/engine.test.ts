@@ -1,7 +1,7 @@
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { inflateSync } from 'node:zlib';
+import { deflateSync, inflateSync } from 'node:zlib';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { PDFDocument, PDFName, PDFRawStream, StandardFonts } from '@cantoo/pdf-lib';
 import { EngineService } from '../../../src/main/services/engine';
@@ -36,6 +36,63 @@ async function createNPagePdf(n: number): Promise<{ path: string; bytes: Uint8Ar
   const bytes = await doc.save();
   const path = await writeFixture(`test${n}.pdf`, bytes);
   return { path, bytes };
+}
+
+// ---------------------------------------------------------------------------
+// adv-p57 helpers: hand-assembled minimal PDFs with a Type0/Identity-H font
+// and an arbitrary /ToUnicode CMap stream, so the DEF-402 parser path can be
+// driven with the hostile shapes the adversary found. Byte shapes mirror
+// test-fixtures/adv-p57/probe/build-fixtures.cjs; this test does NOT depend on
+// those untracked fixtures.
+// ---------------------------------------------------------------------------
+
+function assemblePdf(objects: string[]): Uint8Array {
+  let out = '%PDF-1.5\n%\xFF\xFF\xFF\xFF\n';
+  const offsets: number[] = [];
+  for (let i = 0; i < objects.length; i++) {
+    offsets.push(out.length);
+    out += `${i + 1} 0 obj\n${objects[i]}\nendobj\n`;
+  }
+  const xrefStart = out.length;
+  out += `xref\n0 ${objects.length + 1}\n0000000000 65535 f \n`;
+  for (const off of offsets) out += `${String(off).padStart(10, '0')} 00000 n \n`;
+  out += `trailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${xrefStart}\n%%EOF\n`;
+  return Buffer.from(out, 'latin1');
+}
+
+function pdfStream(dictExtra: string, payload: Buffer | string): string {
+  const p = typeof payload === 'string' ? Buffer.from(payload, 'latin1') : payload;
+  return `<< ${dictExtra} /Length ${p.length} >>\nstream\n${p.toString('latin1')}\nendstream`;
+}
+
+interface CmapPdfOpts {
+  cmap?: Buffer | string | null;
+  content?: string;
+  subtype?: string;
+  toUnicodeRef?: string | null;
+  fontEntries?: string;
+  cmapDictExtra?: string;
+}
+
+function buildCmapPdf(opts: CmapPdfOpts = {}): Uint8Array {
+  const cmap = opts.cmap === undefined ? null : opts.cmap;
+  const content = opts.content ?? 'BT /F1 24 Tf 72 700 Td <0048> Tj ET';
+  const subtype = opts.subtype ?? '/Type0';
+  const toUnicodeRef = opts.toUnicodeRef === undefined ? '7 0 R' : opts.toUnicodeRef;
+  const fontEntries = opts.fontEntries ?? '/F1 4 0 R';
+  const cmapDictExtra = opts.cmapDictExtra ?? '';
+  const fontDict = `<< /Type /Font /Subtype ${subtype} /BaseFont /AdvTest /Encoding /Identity-H /DescendantFonts [6 0 R]${toUnicodeRef ? ` /ToUnicode ${toUnicodeRef}` : ''} >>`;
+  const objects = [
+    '<< /Type /Catalog /Pages 2 0 R >>',
+    '<< /Type /Pages /Kids [3 0 R] /Count 1 >>',
+    `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << ${fontEntries} >> >> /Contents 5 0 R >>`,
+    fontDict,
+    pdfStream('', content),
+    '<< /Type /Font /Subtype /CIDFontType2 /BaseFont /AdvTest /CIDSystemInfo << /Registry (Adobe) /Ordering (Identity) /Supplement 0 >> /FontDescriptor 8 0 R /DW 1000 >>',
+    cmap === null ? '<< >>' : pdfStream(cmapDictExtra, cmap),
+    '<< /Type /FontDescriptor /FontName /AdvTest /Flags 4 /FontBBox [0 0 1000 1000] /ItalicAngle 0 /Ascent 800 /Descent -200 /CapHeight 700 /StemV 80 >>',
+  ];
+  return assemblePdf(objects);
 }
 
 // ---------------------------------------------------------------------------
@@ -2812,6 +2869,94 @@ describe('Phase 9: exportText', () => {
     expect(result.value[0].text).toContain('Technical Report');
   });
 
+  it('DEF-402: decodes an embedded Type0/Identity-H font through its /ToUnicode CMap', async () => {
+    const engine = new EngineService();
+    const doc = await PDFDocument.create();
+    doc.addPage([612, 792]);
+    const blank = await writeFixture('def402-embed.pdf', await doc.save());
+    await engine.loadDocument('def402-embed', blank);
+
+    const add = await engine.addTextBox('def402-embed', {
+      page: 1,
+      rect: { x: 72, y: 72, width: 400, height: 80 },
+      text: 'HELLOWORLD',
+      font: 'Liberation Sans',
+    });
+    expect(add.ok).toBe(true);
+
+    const out = join(dir, 'def402-embed-out.pdf');
+    const sr = await engine.saveAs('def402-embed', out);
+    expect(sr.ok).toBe(true);
+
+    const reopened = new EngineService();
+    const load = await reopened.loadDocument('def402-embed-2', out);
+    expect(load.ok).toBe(true);
+
+    const res = await reopened.exportText('def402-embed-2');
+    expect(res.ok).toBe(true);
+    if (res.ok) {
+      // Pre-fix this returned "\u0000\u0001\u0000\u0002\u0003..." — the
+      // Identity-H hex string carries glyph IDs (windows-1252-decoded). The
+      // /ToUnicode CMap must be honoured to recover the exact text.
+      expect(res.value[0].text).toBe('HELLOWORLD');
+    }
+  });
+
+  it('DEF-402: a standard (no /ToUnicode) font still extracts exactly', async () => {
+    const engine = new EngineService();
+    const doc = await PDFDocument.create();
+    doc.addPage([612, 792]);
+    const blank = await writeFixture('def402-std.pdf', await doc.save());
+    await engine.loadDocument('def402-std', blank);
+
+    const add = await engine.addTextBox('def402-std', {
+      page: 1,
+      rect: { x: 72, y: 72, width: 400, height: 80 },
+      text: 'HELLOWORLD',
+      font: 'Helvetica',
+    });
+    expect(add.ok).toBe(true);
+
+    const out = join(dir, 'def402-std-out.pdf');
+    const sr = await engine.saveAs('def402-std', out);
+    expect(sr.ok).toBe(true);
+
+    const reopened = new EngineService();
+    await reopened.loadDocument('def402-std-2', out);
+    const res = await reopened.exportText('def402-std-2');
+    expect(res.ok).toBe(true);
+    if (res.ok) {
+      // Standard-font documents have no CMap; the windows-1252 fallback path
+      // must be unchanged.
+      expect(res.value[0].text).toBe('HELLOWORLD');
+    }
+  });
+
+  it('DEF-402: a no-CMap fixture extracts via the unchanged fallback', async () => {
+    const engine = new EngineService();
+    const reportPath = join(process.cwd(), 'assets', 'samples', 'report.pdf');
+    const buf = await readFile(reportPath);
+    const r = await engine.loadDocumentBytes('def402-report', new Uint8Array(buf));
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+
+    const result = await engine.exportText('def402-report');
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    // Same assertion the pre-existing report.pdf test pins: 34 pages, every
+    // page non-empty, page 1 is the exact cover text. report.pdf's fonts carry
+    // no /ToUnicode, so this is the fallback path.
+    expect(result.value.length).toBe(34);
+    let nonEmpty = 0;
+    for (const p of result.value) {
+      if (p.text.trim().length > 0) nonEmpty++;
+    }
+    expect(nonEmpty).toBe(34);
+    expect(result.value[0].text).toBe(
+      'TFlex Technical ReportA study in PDF orchestration and performance.',
+    );
+  });
+
   it('returns engine-error for unknown docId', async () => {
     const engine = new EngineService();
     const result = await engine.exportText('nonexistent');
@@ -2820,7 +2965,6 @@ describe('Phase 9: exportText', () => {
       expect(result.error.code).toBe('engine-error');
     }
   });
-
   it('exportText is read-only (does not modify engine state)', async () => {
     const engine = new EngineService();
 
@@ -2840,6 +2984,132 @@ describe('Phase 9: exportText', () => {
       expect(stateAfter.value.pageCount).toBe(stateBefore.value.pageCount);
       expect(stateAfter.value.modified).toBe(stateBefore.value.modified);
     }
+  });
+
+  // -------------------------------------------------------------------------
+  // adv-p57 / DEF-404..408: /ToUnicode extraction hardening
+  // -------------------------------------------------------------------------
+
+  it('DEF-404: array-form bfrange decodes identically to the simple form', async () => {
+    // Same code range, same destinations, two CMap encodings. The simple form
+    // is the reference; the array form must not have its destination list
+    // re-read as additional simple ranges (pre-fix it yielded "CDC").
+    const content = 'BT /F1 24 Tf 72 700 Td <004100420043> Tj ET';
+    const simple = buildCmapPdf({
+      cmap: 'beginbfrange\n<0041> <0043> <0041>\nendbfrange',
+      content,
+    });
+    const array = buildCmapPdf({
+      cmap: 'beginbfrange\n<0041> <0043> [<0041> <0042> <0043>]\nendbfrange',
+      content,
+    });
+    const engine = new EngineService();
+    await engine.loadDocument('def404-simple', await writeFixture('def404-simple.pdf', simple));
+    await engine.loadDocument('def404-array', await writeFixture('def404-array.pdf', array));
+    const rs = await engine.exportText('def404-simple');
+    const ra = await engine.exportText('def404-array');
+    expect(rs.ok && ra.ok).toBe(true);
+    if (rs.ok && ra.ok) {
+      expect(rs.value[0].text).toBe('ABC');
+      expect(ra.value[0].text).toBe('ABC');
+    }
+  });
+
+  it('DEF-404: array-form multi-char destination maps one code to two chars', async () => {
+    const pdf = buildCmapPdf({
+      cmap: 'beginbfrange\n<0041> <0041> [<00410042>]\nendbfrange',
+      content: 'BT /F1 24 Tf 72 700 Td <0041> Tj ET',
+    });
+    const engine = new EngineService();
+    await engine.loadDocument('def404-multi', await writeFixture('def404-multi.pdf', pdf));
+    const r = await engine.exportText('def404-multi');
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(r.value[0].text).toBe('AB');
+  });
+
+  it('DEF-405: an unmatched-beginbfchar CMap parses in linear time and falls back', async () => {
+    const pdf = buildCmapPdf({
+      cmap: 'beginbfchar'.repeat(90909), // 999,999 chars, no endbfchar
+      content: 'BT /F1 24 Tf 72 700 Td <0048> Tj ET',
+    });
+    const engine = new EngineService();
+    await engine.loadDocument('def405-noend', await writeFixture('def405-noend.pdf', pdf));
+    const t0 = Date.now();
+    const r = await engine.exportText('def405-noend');
+    const ms = Date.now() - t0;
+    expect(r.ok).toBe(true);
+    expect(ms).toBeLessThan(2000);
+    if (r.ok) expect(r.value[0].text).toBe('\u0000H'); // 2-byte code, windows-1252 fallback
+  });
+
+  it('DEF-405: unmatched bfrange array tokens parse in linear time and fall back', async () => {
+    const pdf = buildCmapPdf({
+      cmap: 'beginbfrange' + '<0041><0042>['.repeat(75000) + 'endbfrange',
+      content: 'BT /F1 24 Tf 72 700 Td <0041> Tj ET',
+    });
+    const engine = new EngineService();
+    await engine.loadDocument('def405-arr', await writeFixture('def405-arr.pdf', pdf));
+    const t0 = Date.now();
+    const r = await engine.exportText('def405-arr');
+    const ms = Date.now() - t0;
+    expect(r.ok).toBe(true);
+    expect(ms).toBeLessThan(2000);
+    if (r.ok) expect(r.value[0].text).toBe('\u0000A'); // 2-byte code, windows-1252 fallback
+  });
+
+  it('DEF-406: a page /Font dict with 200k entries to one font extracts quickly', async () => {
+    const entries = Array.from({ length: 200000 }, (_, i) => `/F${i + 1} 4 0 R`).join(' ');
+    const pdf = buildCmapPdf({
+      cmap: 'beginbfchar\n<0048> <0048>\nendbfchar',
+      content: 'BT /F1 24 Tf 72 700 Td <0048> Tj ET',
+      fontEntries: entries,
+    });
+    const engine = new EngineService();
+    await engine.loadDocument('def406-fonts', await writeFixture('def406-fonts.pdf', pdf));
+    const t0 = Date.now();
+    const r = await engine.exportText('def406-fonts');
+    const ms = Date.now() - t0;
+    expect(r.ok).toBe(true);
+    expect(ms).toBeLessThan(2000);
+    if (r.ok) expect(r.value[0].text).toBe('H');
+  });
+
+  it('DEF-407: a large all-digit hex Tj string does not block the xref scan', async () => {
+    const hex = '41'.repeat(200000); // 400k all-digit chars in one hex string
+    const pdf = buildCmapPdf({
+      cmap: 'beginbfchar\n<0048> <0048>\nendbfchar',
+      content: `BT /F1 24 Tf 72 700 Td <${hex}> Tj ET`,
+    });
+    const engine = new EngineService();
+    await engine.loadDocument('def407-digits', await writeFixture('def407-digits.pdf', pdf));
+    const t0 = Date.now();
+    const r = await engine.exportText('def407-digits');
+    const ms = Date.now() - t0;
+    expect(r.ok).toBe(true);
+    expect(ms).toBeLessThan(2000);
+    if (r.ok) expect(r.value[0].text.length).toBeGreaterThan(0);
+  });
+
+  it('DEF-408: an oversized FlateDecode CMap is refused by a bounded inflate', async () => {
+    // 256 MiB of zeros compresses to a few hundred KB; an unbounded inflate
+    // would materialise the whole thing before the decoded-char ceiling
+    // applies.
+    const bomb = deflateSync(Buffer.alloc(256 * 1024 * 1024));
+    const pdf = buildCmapPdf({
+      cmap: bomb,
+      cmapDictExtra: '/Filter /FlateDecode',
+      content: 'BT /F1 24 Tf 72 700 Td <0048> Tj ET',
+    });
+    const engine = new EngineService();
+    await engine.loadDocument('def408-bomb', await writeFixture('def408-bomb.pdf', pdf));
+    const t0 = Date.now();
+    const r = await engine.exportText('def408-bomb');
+    const ms = Date.now() - t0;
+    expect(r.ok).toBe(true);
+    expect(ms).toBeLessThan(2000);
+    // The CMap is ignored entirely (bounded inflate refused it), so the hex
+    // string decodes through the windows-1252 fallback (NUL + 'H').
+    if (r.ok) expect(r.value[0].text).toBe('\u0000H');
   });
 });
 
