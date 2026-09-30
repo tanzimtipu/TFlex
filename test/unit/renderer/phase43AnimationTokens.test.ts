@@ -255,6 +255,17 @@ const ANIMATION_EXEMPT: Readonly<Record<string, string>> = {
     "documented indeterminate progress bar (progress feedback, not an interaction)",
 };
 
+/**
+ * Transition opt-outs the token audit deliberately does NOT require to resolve
+ * from a `--motion-*` token: `transition: none` carries no duration or easing
+ * at all, so there is nothing to tokenise — the declaration's whole purpose is
+ * the absence of a transition.
+ */
+const TRANSITION_NONE_EXEMPT: Readonly<Record<string, string>> = {
+  ".tab[data-tab-dragging=\"true\"]":
+    "documented drag opt-out (Phase 60/61): the dragged tab tracks the pointer exactly and must not ride the shared .tab transform transition; the release/settle transition is re-asserted separately",
+};
+
 describe("Phase 43 — the animation-completeness guard", () => {
   it("parses the stylesheet into rules with at-rule context", () => {
     expect(allRules.length).toBeGreaterThan(500);
@@ -277,8 +288,15 @@ describe("Phase 43 — the animation-completeness guard", () => {
       if (!isLive(rule) || rule.selector.includes("::after")) continue;
       if (rule.selector.startsWith("@keyframes")) continue;
       if (!AUDITED_SELECTORS.some((t) => selectorMatches(rule.selector, t))) continue;
+      const noneExempt = Object.keys(TRANSITION_NONE_EXEMPT).some((t) =>
+        selectorMatches(rule.selector, t),
+      );
       for (const decl of timingDeclarations(rule)) {
         checked += 1;
+        // A documented `transition: none` opt-out has no duration/easing to
+        // tokenise; any OTHER timing declaration on the exempt selector is
+        // still audited normally.
+        if (noneExempt && /:\s*none\b/.test(decl)) continue;
         if (!decl.includes("var(--")) {
           violations.push(`${rule.selector} -> ${decl} (no token)`);
           continue;
