@@ -1,0 +1,241 @@
+{
+  "s14": {
+    "merge": {
+      "ok": true
+    },
+    "afterCount": 11,
+    "fillr": {
+      "ok": true,
+      "modified": true,
+      "report": [
+        {
+          "name": "page2_field",
+          "page": 2,
+          "kind": "text",
+          "status": "filled"
+        },
+        {
+          "name": "page3_field",
+          "page": 3,
+          "kind": "text",
+          "status": "filled"
+        },
+        {
+          "name": "page2_check",
+          "page": 2,
+          "kind": "checkbox",
+          "status": "filled"
+        },
+        {
+          "name": "applicant_name",
+          "page": 4,
+          "kind": "text",
+          "status": "filled"
+        },
+        {
+          "name": "applicant_address",
+          "page": 4,
+          "kind": "text",
+          "status": "filled"
+        },
+        {
+          "name": "application_date",
+          "page": 4,
+          "kind": "text",
+          "status": "filled"
+        },
+        {
+          "name": "terms_agreed",
+          "page": 4,
+          "kind": "checkbox",
+          "status": "filled"
+        },
+        {
+          "name": "newsletter_optin",
+          "page": 4,
+          "kind": "checkbox",
+          "status": "filled"
+        },
+        {
+          "name": "experience_level",
+          "page": 4,
+          "kind": "radio",
+          "status": "filled"
+        },
+        {
+          "name": "department",
+          "page": 4,
+          "kind": "dropdown",
+          "status": "filled"
+        },
+        {
+          "name": "skills",
+          "page": 4,
+          "kind": "listbox",
+          "status": "filled"
+        }
+      ]
+    },
+    "save": {
+      "ok": true,
+      "path": "C:\\Users\\tanzi\\AppData\\Local\\Temp\\adv-p59-forms-1790765749719\\1790765750510-paginated.pdf"
+    },
+    "insp": {
+      "pageCount": 4,
+      "fieldCount": 11,
+      "acroRoots": -1,
+      "hasEncrypt": false,
+      "fields": [
+        {
+          "name": "page2_field",
+          "cls": "PDFTextField",
+          "page": 1,
+          "widgetCount": 1,
+          "value": "second page value",
+          "as": [
+            null
+          ],
+          "onVals": [
+            ""
+          ]
+        },
+        {
+          "name": "page3_field",
+          "cls": "PDFTextField",
+          "page": 2,
+          "widgetCount": 1,
+          "value": "post-merge fill",
+          "as": [
+            null
+          ],
+          "onVals": [
+            ""
+          ]
+        },
+        {
+          "name": "page2_check",
+          "cls": "PDFCheckBox",
+          "page": 1,
+          "widgetCount": 1,
+          "value": true,
+          "as": [
+            "/Yes"
+          ],
+          "onVals": [
+            "Yes"
+          ]
+        },
+        {
+          "name": "applicant_name",
+          "cls": "PDFTextField",
+          "page": 3,
+          "widgetCount": 1,
+          "value": "John Doe",
+          "as": [
+            null
+          ],
+          "onVals": [
+            ""
+          ]
+        },
+        {
+          "name": "applicant_address",
+          "cls": "PDFTextField",
+          "page": 3,
+          "widgetCount": 1,
+          "as": [
+            null
+          ],
+          "onVals": [
+            ""
+          ]
+        },
+        {
+          "name": "application_date",
+          "cls": "PDFTextField",
+          "page": 3,
+          "widgetCount": 1,
+          "as": [
+            null
+          ],
+          "onVals": [
+            ""
+          ]
+        },
+        {
+          "name": "terms_agreed",
+          "cls": "PDFCheckBox",
+          "page": 3,
+          "widgetCount": 1,
+          "value": true,
+          "as": [
+            "/Yes"
+          ],
+          "onVals": [
+            "Yes"
+          ]
+        },
+        {
+          "name": "newsletter_optin",
+          "cls": "PDFCheckBox",
+          "page": 3,
+          "widgetCount": 1,
+          "value": false,
+          "as": [
+            "/Off"
+          ],
+          "onVals": [
+            "Yes"
+          ]
+        },
+        {
+          "name": "experience_level",
+          "cls": "PDFRadioGroup",
+          "page": 3,
+          "widgetCount": 3,
+          "value": "Mid",
+          "as": [
+            "/Off",
+            "/1",
+            "/Off"
+          ],
+          "onVals": [
+            "0",
+            "1",
+            "2"
+          ]
+        },
+        {
+          "name": "department",
+          "cls": "PDFDropdown",
+          "page": 3,
+          "widgetCount": 1,
+          "value": [
+            "Engineering"
+          ],
+          "as": [
+            null
+          ],
+          "onVals": [
+            ""
+          ]
+        },
+        {
+          "name": "skills",
+          "cls": "PDFOptionList",
+          "page": 3,
+          "widgetCount": 1,
+          "value": [
+            "JavaScript"
+          ],
+          "as": [
+            null
+          ],
+          "onVals": [
+            ""
+          ]
+        }
+      ]
+    }
+  }
+}
