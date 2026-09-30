@@ -2053,24 +2053,17 @@ input[type="checkbox"] {
  *
  * The `.tab` / `.tab-active` rules above are the STANDARD look and stay
  * untouched. When `.tab-area` carries `data-tab-style="colorful"` these
- * higher-specificity overrides paint the operator's reference silhouette:
- * rounded top corners, straight vertical sides, and a small outward curve
- * at the bottom-right. The fill is a flat two-stop gradient of the tab's
- * own palette colour — no bevel, no inner highlight, no gloss. EVERY tab
- * has an identical box size (the old first-tab size difference was a
- * defect), and the active cue is a brighter/darker fill plus the existing
- * `::after` underline, never a size or font-weight change.
- *
- * DEF-409 — the bottom-right is NOT a rounded corner. The BODY fill
- * (`.tab::before`) is square at the bottom, and a separate decorative
- * `.tab-flare` element (painted only here) carries the small OUTWARD
- * flare at the foot: flush with the body's straight right edge at its
- * top, sweeping outward to the right as it falls to the strip, so the
- * tab widens at its bottom-right.
+ * higher-specificity overrides paint the colorful silhouette: a compact
+ * 26px chip with one uniform corner radius on all four corners (Phase 62,
+ * superseding the Phase 58 / DEF-409 square-foot + outward flare). The fill
+ * is a flat two-stop gradient of the tab's own palette colour — no bevel, no
+ * inner highlight, no gloss. EVERY tab has an identical box size (the old
+ * first-tab size difference was a defect), and the active cue is a
+ * brighter/darker fill, never a size or font-weight change.
  * ========================================================================= */
 
 .tab-area[data-tab-style="colorful"] .tab {
-  height: 34px;
+  height: 26px;
   min-width: 132px;
   max-width: 200px;
   box-sizing: border-box;
@@ -2083,19 +2076,16 @@ input[type="checkbox"] {
   font-weight: 400;
 }
 
-/* The tab BODY fill: rounded top corners and SQUARE bottom corners.
- * DEF-409 — the old `border-bottom-right-radius` pulled the fill away
- * from the bottom-right corner; the outward flare is the separate
- * `.tab-flare` element below, so the body's foot stays square. */
+/* The tab BODY fill. Phase 62 — all four corners carry the SAME radius
+ * (the DEF-409 square bottom and its outward flare are retired), so every
+ * colorful tab reads as a compact rounded chip. The ACTIVE tab squares its
+ * two BOTTOM corners in the override below so it can merge with the canvas. */
 .tab-area[data-tab-style="colorful"] .tab::before {
   content: "";
   position: absolute;
   inset: 0;
   z-index: 0;
-  border-top-left-radius: var(--radius-2);
-  border-top-right-radius: var(--radius-2);
-  border-bottom-left-radius: 0;
-  border-bottom-right-radius: 0;
+  border-radius: var(--radius-2);
   background: linear-gradient(
     180deg,
     color-mix(in srgb, var(--tf-tab-accent, var(--sem-neutral)) 86%, var(--tf-tab-ink)),
@@ -2109,39 +2099,6 @@ input[type="checkbox"] {
   z-index: 1;
 }
 
-/* DEF-409 — the decorative bottom-right flare. It is taken out of flow in
- * EVERY tab style (zero layout impact; the standard silhouette is
- * unchanged) and painted only by the colorful override. */
-.tab-flare {
-  position: absolute;
-  display: block;
-  width: 0;
-  height: 0;
-  pointer-events: none;
-}
-
-/* The colorful flare: a 6x10 box flush with the tab's straight right edge
- * (`right: -6px`) and sitting on the strip (`bottom: 0`). The radial
- * gradient fills everything OUTSIDE a quarter ellipse whose centre is the
- * box's own top-right corner, so at the top it is zero-width against the
- * body's right edge and it sweeps outward to the right as it falls to the
- * strip — the tab WIDENS at its bottom-right foot. The flat colour is the
- * body's bottom gradient stop, so the union has no vertical seam; the
- * under-tab overlap is painted over by the next tab (later sibling). */
-.tab-area[data-tab-style="colorful"] .tab .tab-flare {
-  position: absolute;
-  right: -6px;
-  bottom: 0;
-  width: 6px;
-  height: 10px;
-  z-index: 0;
-  background: radial-gradient(
-    ellipse 6px 10px at 100% 0%,
-    transparent 100%,
-    var(--tf-tab-accent, var(--sem-neutral)) 100%
-  );
-}
-
 /* Active: brighter/darker fill + the existing ::after underline. No inset
  * highlight, no elevation shadow, no size or weight change. */
 .tab-area[data-tab-style="colorful"] .tab-active {
@@ -2151,11 +2108,48 @@ input[type="checkbox"] {
 }
 
 .tab-area[data-tab-style="colorful"] .tab-active::before {
+  /* Phase 62 — the active tab's two BOTTOM corners are square so its fill
+   * runs continuously into the canvas; the top corners keep the chip radius. */
+  border-bottom-left-radius: 0;
+  border-bottom-right-radius: 0;
   background: linear-gradient(
     180deg,
     color-mix(in srgb, var(--tf-tab-accent, var(--sem-neutral)) 70%, var(--tf-tab-ink)),
     var(--tf-tab-accent, var(--sem-neutral))
   );
+}
+
+/* ===========================================================================
+ * Phase 62 — COLORFUL TAB RESTYLE (operator request via TFL-45).
+ *
+ * The DEF-409 outward bottom-right flare is RETIRED: the `.tab-flare` element
+ * is gone from AnimatedTab and no colorful rule paints it any more, so a
+ * colorful tab is a plain compact chip with one uniform corner radius.
+ *
+ * "The selected tab should engulf the canvas": the active tab's two BOTTOM
+ * corners go square (top corners stay rounded), the ink underline is removed,
+ * and the strip is extended down by the header's 1px bottom border so the
+ * active fill runs flush onto the canvas top with no separating line. The
+ * inactive tabs keep all four corners rounded and stay visually separate.
+ * ========================================================================= */
+
+/* No ink underline band separates the active tab from the canvas: the shared
+ * `.tab-active::after` indicator is removed WITHIN the colorful scope only
+ * (the standard style keeps its underline untouched). */
+.tab-area[data-tab-style="colorful"] .tab-active::after {
+  content: none;
+}
+
+/* Extend the colorful strip down by the header's 1px bottom border so every
+ * tab's foot lands on the canvas top (gap 0). The active tab's square-footed
+ * fill covers that border beneath it, while the rounded inactive tabs keep it
+ * visible in their corner notches and stay separate. `align-self` + the
+ * negative bottom margin pin the strip to the header's bottom edge instead of
+ * the 0.5px centring the base `align-items: center` would give a taller box. */
+.tab-area[data-tab-style="colorful"] {
+  align-self: flex-end;
+  height: calc(100% + 1px);
+  margin-bottom: -1px;
 }
 
 .tab-title {

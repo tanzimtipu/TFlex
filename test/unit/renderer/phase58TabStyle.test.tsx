@@ -8,8 +8,8 @@
 //      `onSetTabStyle` handler is supplied, and calls it with the pick.
 //   c. preferencesReducer's `set-tab-style` writes a valid value and
 //      drops an invalid one; DEFAULT_TAB_STYLE is 'colorful'.
-//   d. AnimatedTab renders the decorative `.tab-flare` (DEF-409) for the
-//      colourful bottom-right silhouette, with its contract unchanged.
+//   d. Phase 62 retired the DEF-409 decorative `.tab-flare`; AnimatedTab no
+//      longer renders it and the colorful silhouette is a rounded chip.
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 import { readFileSync } from "node:fs";
 import { describe, expect, it, vi, afterEach } from "vitest";
@@ -171,7 +171,7 @@ describe("preferencesReducer — Phase 58 set-tab-style", () => {
   });
 });
 
-describe("AnimatedTab — Phase 58 colorful bottom-right flare (DEF-409)", () => {
+describe("AnimatedTab — Phase 62 retired the DEF-409 flare", () => {
   const TABS: TabSpec[] = [
     { id: "a", title: "Alpha.pdf", modified: false },
     { id: "b", title: "Beta.pdf", modified: true },
@@ -181,25 +181,21 @@ describe("AnimatedTab — Phase 58 colorful bottom-right flare (DEF-409)", () =>
     document.body.innerHTML = "";
   });
 
-  it("every colorful tab exposes exactly one decorative .tab-flare node", () => {
+  it("no colorful tab renders a .tab-flare node any more", () => {
     const host = renderHeader("colorful", TABS);
     const tabs = [...host.querySelectorAll<HTMLElement>("[data-tab-id]")];
     expect(tabs).toHaveLength(2);
     for (const tab of tabs) {
-      expect(tab.querySelectorAll(".tab-flare")).toHaveLength(1);
+      expect(tab.querySelectorAll(".tab-flare")).toHaveLength(0);
     }
   });
 
-  it("the flare is decoration only: aria-hidden, no role, no tabindex", () => {
-    const host = renderHeader("colorful", TABS);
-    const flare = host.querySelector<HTMLElement>(".tab-flare");
-    expect(flare).not.toBeNull();
-    expect(flare?.getAttribute("aria-hidden")).toBe("true");
-    expect(flare?.getAttribute("role")).toBeNull();
-    expect(flare?.hasAttribute("tabindex")).toBe(false);
+  it("no standard tab renders a .tab-flare node either", () => {
+    const host = renderHeader("standard", TABS);
+    expect(host.querySelector(".tab-flare")).toBeNull();
   });
 
-  it("adding the flare leaves the tab contract intact (id, colour, close, dot)", () => {
+  it("retiring the flare leaves the tab contract intact (id, colour, close, dot)", () => {
     const host = renderHeader("colorful", TABS, "a");
     const tab = host.querySelector<HTMLElement>("[data-tab-id='a']");
     expect(tab?.getAttribute("role")).toBe("tab");
@@ -210,24 +206,11 @@ describe("AnimatedTab — Phase 58 colorful bottom-right flare (DEF-409)", () =>
     expect(tab?.querySelector(".tab-close")).not.toBeNull();
   });
 
-  it("the flare element is present under standard too (paint is colorful-only)", () => {
-    const host = renderHeader("standard", TABS);
-    const flare = host.querySelector<HTMLElement>(".tab-flare");
-    expect(flare).not.toBeNull();
-    expect(flare?.getAttribute("aria-hidden")).toBe("true");
-  });
-
-  it("the stylesheet carries the OUTWARD flare and dropped the INWARD radius", () => {
+  it("the stylesheet carries no colorful .tab-flare paint", () => {
     // vitest runs from the repo root; read the sheet by path (import.meta.url
     // is an http URL under the jsdom environment).
     const sheet = readFileSync("src/renderer/styles.css", "utf8");
-    // DEF-409 regression guard: the colorful body fill must no longer round
-    // its bottom-right INWARD.
-    expect(sheet).not.toContain("border-bottom-right-radius: var(--radius-3)");
-    // ...and the colorful flare override must exist with the outward geometry.
-    expect(sheet).toContain('.tab-area[data-tab-style="colorful"] .tab .tab-flare');
-    expect(sheet).toContain("radial-gradient");
-    expect(sheet).toContain("right: -6px");
+    expect(sheet).not.toContain('.tab-area[data-tab-style="colorful"] .tab .tab-flare');
   });
 });
 

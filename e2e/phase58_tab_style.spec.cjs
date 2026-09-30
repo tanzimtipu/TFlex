@@ -1,10 +1,14 @@
 // Phase 58 (chunk 2) — COLORFUL tab style + Preferences "Tab style" toggle.
+// Repointed by qa (Phase 62, TFL-63) to the Phase 62 colorful silhouette.
 //
 // Verifies the one assigned behaviour:
-//   - with tabStyle='colorful' every tab is UNIFORM size (identical height and
-//     min-width, active or not), the fill is FLAT (no inset/emboss/reflection
-//     highlight on the active tab), and the silhouette is the reference one
-//     (rounded top corners, straight sides, small outward bottom-right flare).
+//   - with tabStyle='colorful' every tab is UNIFORM size (identical 26px height
+//     and min-width, active or not), the fill is FLAT (no inset/emboss/reflection
+//     highlight on the active tab), and the silhouette is the Phase 62 chip: one
+//     uniform non-zero corner radius (--radius-2 = 5px) on all four corners of an
+//     inactive tab, while the ACTIVE tab squares its two BOTTOM corners so its
+//     fill runs flush into the canvas with no separator. The Phase 58 / DEF-409
+//     outward `.tab-flare` is retired (phase 62 supersedes it).
 //   - switching Preferences "Tab style" to Standard restores the classic tabs
 //     and the choice persists across an app relaunch.
 //
@@ -40,6 +44,33 @@ async function openPrefs(win) {
 async function closePrefs(win) {
   await win.locator('[data-prefs-dialog] .sheet-close').first().click();
   await win.waitForSelector('[data-prefs-dialog]', { state: 'hidden', timeout: 10000 });
+}
+
+// Phase 62 zoomed evidence: magnify `.tab-area` in place (transform-origin
+// top-left) so the tab's silhouette is inspectable without reflowing the app,
+// capture the indexed `[data-tab-id]` box plus a small margin that includes the
+// canvas seam under the active tab, then restore the strip.
+async function captureZoomedTab(win, index, file) {
+  await win.evaluate(() => {
+    const area = document.querySelector('.tab-area');
+    area.style.transformOrigin = 'top left';
+    area.style.transform = 'scale(4)';
+  });
+  await win.waitForTimeout(300);
+  const clip = await win.evaluate((idx) => {
+    const tabs = Array.from(document.querySelectorAll('[data-tab-id]'));
+    const r = tabs[idx].getBoundingClientRect();
+    const m = 8;
+    return { x: r.left - m, y: r.top - m, width: r.width + 2 * m, height: r.height + 2 * m };
+  }, index);
+  console.log(`[P62-tab] zoom clip ${file}=${JSON.stringify(clip)}`);
+  await win.screenshot({ path: path.join(SHOTS, file), clip });
+  await win.evaluate(() => {
+    const area = document.querySelector('.tab-area');
+    area.style.transform = '';
+    area.style.transformOrigin = '';
+  });
+  await win.waitForTimeout(150);
 }
 
 test('colorful tabs are uniform + flat with the reference silhouette; Standard toggle persists', async () => {
@@ -80,111 +111,94 @@ test('colorful tabs are uniform + flat with the reference silhouette; Standard t
       };
     });
   });
-  console.log(`[P58-tab] metrics=${JSON.stringify(metrics)}`);
+  console.log(`[P62-tab] metrics=${JSON.stringify(metrics)}`);
+
+  // Criterion 1 — every colorful tab is 26px high, measured boxes with zero
+  // variance across tabs (active and inactive alike).
+  const TAB_HEIGHT = 26;
+  for (const m of metrics) {
+    console.log(`[P62-tab] ${m.id} height=${m.height} active=${m.active}`);
+    expect(
+      Math.abs(m.height - TAB_HEIGHT),
+      `tab ${m.id} is ${TAB_HEIGHT}px high (got ${m.height})`,
+    ).toBeLessThanOrEqual(0.5);
+  }
   const heights = metrics.map((m) => m.height);
   const hMax = Math.max(...heights);
   const hMin = Math.min(...heights);
   expect(hMax - hMin, `tab heights uniform (max=${hMax} min=${hMin})`).toBeLessThanOrEqual(0.5);
+
+  // Uniform size: identical minWidth across tabs.
   const minWidths = new Set(metrics.map((m) => m.minWidth));
   expect(minWidths.size, `identical minWidth across tabs (${[...minWidths].join(',')})`).toBe(1);
 
-  // Active tab height equals an inactive tab height.
   const active = metrics.find((m) => m.active);
   const inactive = metrics.find((m) => !m.active);
   expect(active, 'an active tab exists').toBeTruthy();
   expect(inactive, 'an inactive tab exists').toBeTruthy();
   expect(Math.abs(active.height - inactive.height), 'active height == inactive height').toBeLessThanOrEqual(0.5);
 
-  // 3. No reflection: active tab box-shadow must not contain "inset".
-  console.log(`[P58-tab] active boxShadow="${active.boxShadow}"`);
-  expect(active.boxShadow.toLowerCase()).not.toContain('inset');
+  // Criterion 1 — one uniform non-zero corner radius (--radius-2 = 5px) on the
+  // body fill. The ACTIVE tab squares its two BOTTOM corners so its fill can run
+  // into the canvas; the INACTIVE tab keeps all four rounded.
+  const RADIUS = '5px';
+  console.log(`[P62-tab] active ::before radii tl=${active.beforeTopLeft} tr=${active.beforeTopRight} bl=${active.beforeBottomLeft} br=${active.beforeBottomRight}`);
+  expect(active.beforeTopLeft, 'active top-left rounded').toBe(RADIUS);
+  expect(active.beforeTopRight, 'active top-right rounded').toBe(RADIUS);
+  expect(active.beforeBottomLeft, 'active bottom-left square').toBe('0px');
+  expect(active.beforeBottomRight, 'active bottom-right square').toBe('0px');
+  console.log(`[P62-tab] inactive ::before radii tl=${inactive.beforeTopLeft} tr=${inactive.beforeTopRight} bl=${inactive.beforeBottomLeft} br=${inactive.beforeBottomRight}`);
+  expect(inactive.beforeTopLeft, 'inactive top-left rounded').toBe(RADIUS);
+  expect(inactive.beforeTopRight, 'inactive top-right rounded').toBe(RADIUS);
+  expect(inactive.beforeBottomLeft, 'inactive bottom-left rounded').toBe(RADIUS);
+  expect(inactive.beforeBottomRight, 'inactive bottom-right rounded').toBe(RADIUS);
 
-  // 3b. DEF-409 — the LAST tab's bottom-right is an OUTWARD flare, not an
-  // inward convex corner. The body fill (::before) is square at the foot and
-  // a decorative `.tab-flare` sits flush with the straight right edge at its
-  // top and sweeps OUTWARD to the right as it falls to the strip, so the
-  // flare's right edge extends BEYOND the tab's right edge.
+  // Keep the flat-fill check: active tab box-shadow must not contain "inset".
+  console.log(`[P62-tab] active boxShadow="${active.boxShadow}"`);
+  expect(active.boxShadow.toLowerCase(), 'active fill is flat (no inset)').not.toContain('inset');
+
+  // Criterion 2 — the DEF-409 outward flare is retired: no `.tab-flare` node.
   const lastTab = win.locator('[data-tab-id]').last();
-  const flare = lastTab.locator('.tab-flare');
-  await expect(flare, 'last tab has exactly one .tab-flare').toHaveCount(1);
-  const flareGeom = await win.evaluate(() => {
-    const tabs = Array.from(document.querySelectorAll('[data-tab-id]'));
-    const el = tabs[tabs.length - 1];
-    const flareEl = el.querySelector('.tab-flare');
-    const tr = el.getBoundingClientRect();
-    const fr = flareEl.getBoundingClientRect();
-    const fs = getComputedStyle(flareEl);
-    const before = getComputedStyle(el, '::before');
+  await expect(lastTab.locator('.tab-flare'), 'no .tab-flare node on the last tab').toHaveCount(0);
+
+  // Criterion 3 — the active tab is flush with the canvas and no separator is
+  // painted between them (the shared ink underline computes to `content: none`).
+  const flush = await win.evaluate(() => {
+    const activeEl = document.querySelector('[data-tab-id][aria-selected="true"]');
+    const main = document.querySelector('.app-main');
+    const after = getComputedStyle(activeEl, '::after');
     return {
-      tabRight: tr.right,
-      tabBottom: tr.bottom,
-      flareRight: fr.right,
-      flareBottom: fr.bottom,
-      flareWidth: fr.width,
-      flareHeight: fr.height,
-      position: fs.position,
-      pointerEvents: fs.pointerEvents,
-      backgroundImage: fs.backgroundImage,
-      beforeBottomRight: before.borderBottomRightRadius,
-      beforeBottomLeft: before.borderBottomLeftRadius,
+      activeBottom: activeEl.getBoundingClientRect().bottom,
+      mainTop: main.getBoundingClientRect().top,
+      afterContent: after.content,
     };
   });
-  console.log(`[P58-tab] flareGeom=${JSON.stringify(flareGeom)}`);
-  // Body foot is square (no inward convex bottom-right corner).
-  expect(flareGeom.beforeBottomRight, 'body ::before bottom-right radius is square').toBe('0px');
-  expect(flareGeom.beforeBottomLeft, 'body ::before bottom-left radius is square').toBe('0px');
-  // The flare is a real painted, out-of-flow, non-interactive element.
-  expect(flareGeom.position, 'flare is absolutely positioned').toBe('absolute');
-  expect(flareGeom.pointerEvents, 'flare is non-interactive').toBe('none');
-  expect(flareGeom.backgroundImage, 'flare paints a radial gradient').toContain('radial-gradient');
-  // It widens the tab's foot OUTWARD: flare right edge is beyond the tab's.
-  expect(flareGeom.flareRight, `flare right (${flareGeom.flareRight}) extends past tab right (${flareGeom.tabRight})`).toBeGreaterThan(flareGeom.tabRight + 1);
-  // It sits on the strip: flare bottom aligns with the tab bottom.
-  expect(Math.abs(flareGeom.flareBottom - flareGeom.tabBottom), 'flare bottom sits on the strip').toBeLessThanOrEqual(1);
+  console.log(`[P62-tab] flush=${JSON.stringify(flush)}`);
+  expect(
+    Math.abs(flush.activeBottom - flush.mainTop),
+    `active tab foot (${flush.activeBottom}) sits on the canvas top (${flush.mainTop})`,
+  ).toBeLessThanOrEqual(1);
+  expect(flush.afterContent, 'active tab ::after underline suppressed').toBe('none');
 
-  // 3c. ZOOMED evidence of a single last tab. A transform scale on the strip
-  // (transform-origin top-left) magnifies the tab without reflowing the app.
-  // The flare sits at right:-6px (outside the tab's own box), so the capture
-  // clip is the union of the tab and its flare, plus a small margin.
-  await win.evaluate(() => {
-    const area = document.querySelector('.tab-area');
-    area.style.transformOrigin = 'top left';
-    area.style.transform = 'scale(4)';
-  });
-  await win.waitForTimeout(300);
-  const clip = await win.evaluate(() => {
-    const tabs = Array.from(document.querySelectorAll('[data-tab-id]'));
-    const el = tabs[tabs.length - 1];
-    const flareEl = el.querySelector('.tab-flare');
-    const tr = el.getBoundingClientRect();
-    const fr = flareEl.getBoundingClientRect();
-    const m = 4;
-    const x = Math.min(tr.left, fr.left) - m;
-    const y = Math.min(tr.top, fr.top) - m;
-    const right = Math.max(tr.right, fr.right) + m;
-    const bottom = Math.max(tr.bottom, fr.bottom) + m;
-    return { x, y, width: right - x, height: bottom - y };
-  });
-  console.log(`[P58-tab] flareClip=${JSON.stringify(clip)}`);
-  await win.screenshot({ path: path.join(SHOTS, 'p58-tab-flare-retest.png'), clip });
-  await win.evaluate(() => {
-    const area = document.querySelector('.tab-area');
-    area.style.transform = '';
-    area.style.transformOrigin = '';
-  });
-  await win.waitForTimeout(200);
+  const activeIdx = metrics.findIndex((m) => m.active);
+  const inactiveIdx = metrics.findIndex((m) => !m.active);
 
-  // 4. Screenshots: colorful light + dark.
+  // Criterion 4 — screenshots: colorful light + strip + zoomed active/inactive.
   await switchTheme(win, 'light');
   await win.waitForTimeout(500);
-  await win.screenshot({ path: path.join(SHOTS, 'p58-tab-colourful-light.png') });
-  await win.locator('.tab-area').screenshot({ path: path.join(SHOTS, 'p58-tab-strip-colourful-light.png') });
+  await win.screenshot({ path: path.join(SHOTS, 'p62-tab-colorful-light.png') });
+  await win.locator('.tab-area').screenshot({ path: path.join(SHOTS, 'p62-tab-strip-light.png') });
+  await captureZoomedTab(win, activeIdx, 'p62-tab-zoom-active-light.png');
+  await captureZoomedTab(win, inactiveIdx, 'p62-tab-zoom-inactive-light.png');
+
+  // Criterion 3 (dark) — the same flush-into-canvas evidence in the dark theme.
   await switchTheme(win, 'dark');
   await win.waitForTimeout(500);
-  await win.screenshot({ path: path.join(SHOTS, 'p58-tab-colourful-dark.png') });
-  await win.locator('.tab-area').screenshot({ path: path.join(SHOTS, 'p58-tab-strip-colourful-dark.png') });
+  await win.screenshot({ path: path.join(SHOTS, 'p62-tab-colorful-dark.png') });
+  await win.locator('.tab-area').screenshot({ path: path.join(SHOTS, 'p62-tab-strip-dark.png') });
+  await captureZoomedTab(win, activeIdx, 'p62-tab-zoom-active-dark.png');
 
-  // 5. Preferences -> Standard restores classic tabs; screenshot in light.
+  // Criterion 5 — Preferences -> Standard restores the classic tabs; screenshot in light.
   await switchTheme(win, 'light');
   await win.waitForTimeout(400);
   await openPrefs(win);
@@ -193,8 +207,8 @@ test('colorful tabs are uniform + flat with the reference silhouette; Standard t
   expect(await win.locator('.tab-area').getAttribute('data-tab-style')).toBe('standard');
   await closePrefs(win);
   await win.waitForTimeout(400);
-  await win.screenshot({ path: path.join(SHOTS, 'p58-tab-standard-light.png') });
-  await win.locator('.tab-area').screenshot({ path: path.join(SHOTS, 'p58-tab-strip-standard-light.png') });
+  await win.screenshot({ path: path.join(SHOTS, 'p62-tab-standard-light.png') });
+  await win.locator('.tab-area').screenshot({ path: path.join(SHOTS, 'p62-tab-strip-standard-light.png') });
 
   // Set it back to colorful; the attribute returns.
   await openPrefs(win);

@@ -5398,3 +5398,63 @@ Disposition: ACCEPTED -> DEF-428
 
 
 
+## Phase 62 diff-pass - clean bill: colorful tab restyle (TFL-45)
+
+- Session: diff-pass
+- Scope: the Phase 62 colorful tab restyle only (`[data-tab-style="colorful"]`
+  rules in `src/renderer/styles.css`; the removed `<span class="tab-flare">` in
+  `src/renderer/components/AnimatedTab.tsx`). The `standard` style was verified
+  untouched. No ADV entry is filed - nothing in the change breaks.
+- Probe: `test-fixtures/adv-p62/probe.cjs` (launches the dev build via the
+  canonical `e2e/lib/launch.cjs`). Raw measurements:
+  `test-fixtures/adv-p62/results.json`. Screenshots: `screenshots/adv-p62-*.png`.
+  Every run exited 0 (no crash, no hang).
+
+Measurements that back the clean bill:
+
+1. **Active tab flush + silhouette (light / dark / frosted, 3 tabs).**
+   - Every colorful tab is 26.0px high (with 10 tabs open: all 10 measured 26.0,
+     zero variance);
+   - active `::before` radii `[5px, 5px, 0px, 0px]` (two bottom corners square),
+     inactive `::before` radii `[5px, 5px, 5px, 5px]` (`--radius-2` = 5px);
+   - active `::after` computed `content: none`;
+   - `active.bottom` 44 == `.app-main` top 44 -> **gap 0.00px** (also
+     `.app-header` bottom 44), in all three themes.
+   - **Separator held in the gaps**: the y=43 row between two inactive tabs reads
+     `#e2e8f0` (light `--border`), `#242a31` (dark `--border`), `#ecedef` against
+     the `#e2e3e6` frosted gutter - the 1px header border is NOT removed
+     everywhere. It is covered under an inactive tab's straight bottom edge
+     (the whole strip moved down 1px), but the rounded notches and the inter-tab
+     gaps keep the inactive tabs visually separate from the canvas, so
+     requirement 4 holds.
+   - No flare: `rg -n "tab-flare|flare" src` -> only explanatory comment prose;
+     no selector, component or JS node references it, and no `.tab-flare`
+     element exists in the DOM.
+
+2. **Narrow 640px, 10 open tabs.** The active tab measures 132x26 at y 8..34,
+   fully inside `.app-header` (0..44) and inside `.tab-area`; the strip is one
+   stacked row (one distinct top; per-tab visible step 34px); clicking the active
+   tab succeeded. No vertical clip and no push-below-the-header, so the Phase 59
+   item 10 shrink/stack does not regress. The foot gap here is 10px, NOT 0: the
+   cause is the pre-existing native `.tab-list` horizontal scrollbar
+   (`offsetHeight - clientHeight` = 10; `scrollbar-width: thin` disables the
+   `::-webkit-scrollbar { height: 0 }` rule). Reverting ONLY the Phase 62
+   `.tab-area` rule in-page gives an 11px gap, so the restyle moved the foot 1px
+   closer - this is not a Phase 62 regression, and is noted only because the
+   probe description asked for the 8+ tab state.
+
+3. **`standard` untouched.** After Preferences -> Tab style = standard:
+   active/inactive height 34px, `.tab-active::after` computed `content: ""`,
+   height 2px (visible ink underline); the colorful overrides stay scoped to
+   `[data-tab-style="colorful"]`. Screenshots `adv-p62-standard.png`,
+   `adv-p62-standard-zoom4.png`.
+
+4. **Reduced motion / Animations OFF.** Under `prefers-reduced-motion: reduce`
+   and `<html data-animations="off">` the `.tab` transition durations collapse to
+   1e-05s and `document.getAnimations()` reports no tab-targeted animation on tab
+   render or on a tab switch; the only tab-pane animation at rest is the
+   pre-existing `.tab-pane` crossfade. The restyle adds no `border-radius` /
+   `height` transition (`::before` transition-duration 0s).
+
+Disposition: clean bill - no ADV entry filed.
+

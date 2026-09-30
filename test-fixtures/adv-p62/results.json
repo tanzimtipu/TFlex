@@ -1,0 +1,327 @@
+{
+  "narrow": {
+    "atDefault": {
+      "listOffsetH": 44,
+      "listClientH": 34,
+      "hScrollbarThickness": 10,
+      "areaOffsetH": 44,
+      "tabLabels": [
+        {
+          "label": "n1-1790793347336-report.pdf",
+          "active": false,
+          "w": 181,
+          "l": 339
+        },
+        {
+          "label": "n2-1790793347702-long.pdf",
+          "active": false,
+          "w": 181,
+          "l": 522
+        },
+        {
+          "label": "n3-1790793347783-scanned.pdf",
+          "active": false,
+          "w": 181,
+          "l": 706
+        },
+        {
+          "label": "Empty tab",
+          "active": false,
+          "w": 181,
+          "l": 889
+        },
+        {
+          "label": "Empty tab",
+          "active": false,
+          "w": 181,
+          "l": 1072
+        },
+        {
+          "label": "Empty tab",
+          "active": false,
+          "w": 181,
+          "l": 1255
+        },
+        {
+          "label": "Empty tab",
+          "active": false,
+          "w": 181,
+          "l": 1439
+        },
+        {
+          "label": "Empty tab",
+          "active": false,
+          "w": 181,
+          "l": 1622
+        },
+        {
+          "label": "Empty tab",
+          "active": true,
+          "w": 181,
+          "l": 1805
+        }
+      ],
+      "tag": "default",
+      "vw": 2560,
+      "tabCount": 9,
+      "activeId": "f6569bcd-d75e-4eef-ba4a-34341dee6873",
+      "activeBox": {
+        "l": 1805.46875,
+        "t": 8,
+        "r": 1986.796875,
+        "b": 34,
+        "w": 181.328125,
+        "h": 26
+      },
+      "hdrBottom": 44,
+      "areaBottom": 44,
+      "areaTop": 0,
+      "mainTop": 44,
+      "activeBottom": 34,
+      "activeHeight": 26,
+      "activeInactiveHeights": [
+        "26.0",
+        "26.0",
+        "26.0",
+        "26.0",
+        "26.0",
+        "26.0",
+        "26.0",
+        "26.0",
+        "26.0"
+      ],
+      "insideHeader": true,
+      "insideArea": true,
+      "activeInViewport": true,
+      "gapActiveToCanvas": 10,
+      "rowCount": 1,
+      "distinctHeights": 1,
+      "widthsMin": 181,
+      "widthsMax": 181,
+      "listScrollWidth": 1686,
+      "listClientWidth": 1656,
+      "scrollOverflow": 30,
+      "activeWidth": 181.328125,
+      "activeClippedLeftByArea": -1470.6,
+      "activeClippedRightByArea": -4.3
+    },
+    "at640": {
+      "listOffsetH": 44,
+      "listClientH": 34,
+      "hScrollbarThickness": 10,
+      "areaOffsetH": 44,
+      "tabLabels": [
+        {
+          "label": "n1-1790793347336-report.pdf",
+          "active": false,
+          "w": 132,
+          "l": -108
+        },
+        {
+          "label": "n2-1790793347702-long.pdf",
+          "active": false,
+          "w": 132,
+          "l": -74
+        },
+        {
+          "label": "n3-1790793347783-scanned.pdf",
+          "active": false,
+          "w": 132,
+          "l": -40
+        },
+        {
+          "label": "Empty tab",
+          "active": false,
+          "w": 132,
+          "l": -6
+        },
+        {
+          "label": "Empty tab",
+          "active": false,
+          "w": 132,
+          "l": 28
+        },
+        {
+          "label": "Empty tab",
+          "active": false,
+          "w": 132,
+          "l": 62
+        },
+        {
+          "label": "Empty tab",
+          "active": false,
+          "w": 132,
+          "l": 96
+        },
+        {
+          "label": "Empty tab",
+          "active": false,
+          "w": 132,
+          "l": 130
+        },
+        {
+          "label": "Empty tab",
+          "active": true,
+          "w": 132,
+          "l": 164
+        }
+      ],
+      "tag": "640",
+      "vw": 640,
+      "tabCount": 9,
+      "activeId": "f6569bcd-d75e-4eef-ba4a-34341dee6873",
+      "activeBox": {
+        "l": 164,
+        "t": 8,
+        "r": 296,
+        "b": 34,
+        "w": 132,
+        "h": 26
+      },
+      "hdrBottom": 44,
+      "areaBottom": 44,
+      "areaTop": 0,
+      "mainTop": 44,
+      "activeBottom": 34,
+      "activeHeight": 26,
+      "activeInactiveHeights": [
+        "26.0",
+        "26.0",
+        "26.0",
+        "26.0",
+        "26.0",
+        "26.0",
+        "26.0",
+        "26.0",
+        "26.0"
+      ],
+      "insideHeader": true,
+      "insideArea": true,
+      "activeInViewport": true,
+      "gapActiveToCanvas": 10,
+      "rowCount": 1,
+      "distinctHeights": 1,
+      "widthsMin": 132,
+      "widthsMax": 132,
+      "listScrollWidth": 442,
+      "listClientWidth": 156,
+      "scrollOverflow": 286,
+      "activeWidth": 132,
+      "activeClippedLeftByArea": 10,
+      "activeClippedRightByArea": -34
+    },
+    "at900": {
+      "listOffsetH": 44,
+      "listClientH": 34,
+      "hScrollbarThickness": 10,
+      "areaOffsetH": 44,
+      "tabLabels": [
+        {
+          "label": "n1-1790793347336-report.pdf",
+          "active": false,
+          "w": 132,
+          "l": -61
+        },
+        {
+          "label": "n2-1790793347702-long.pdf",
+          "active": false,
+          "w": 132,
+          "l": -27
+        },
+        {
+          "label": "n3-1790793347783-scanned.pdf",
+          "active": false,
+          "w": 132,
+          "l": 7
+        },
+        {
+          "label": "Empty tab",
+          "active": false,
+          "w": 132,
+          "l": 41
+        },
+        {
+          "label": "Empty tab",
+          "active": false,
+          "w": 132,
+          "l": 75
+        },
+        {
+          "label": "Empty tab",
+          "active": false,
+          "w": 132,
+          "l": 109
+        },
+        {
+          "label": "Empty tab",
+          "active": false,
+          "w": 132,
+          "l": 143
+        },
+        {
+          "label": "Empty tab",
+          "active": false,
+          "w": 132,
+          "l": 177
+        },
+        {
+          "label": "Empty tab",
+          "active": true,
+          "w": 132,
+          "l": 211
+        }
+      ],
+      "tag": "900",
+      "vw": 900,
+      "tabCount": 9,
+      "activeId": "f6569bcd-d75e-4eef-ba4a-34341dee6873",
+      "activeBox": {
+        "l": 211,
+        "t": 8,
+        "r": 343,
+        "b": 34,
+        "w": 132,
+        "h": 26
+      },
+      "hdrBottom": 44,
+      "areaBottom": 44,
+      "areaTop": 0,
+      "mainTop": 44,
+      "activeBottom": 34,
+      "activeHeight": 26,
+      "activeInactiveHeights": [
+        "26.0",
+        "26.0",
+        "26.0",
+        "26.0",
+        "26.0",
+        "26.0",
+        "26.0",
+        "26.0",
+        "26.0"
+      ],
+      "insideHeader": true,
+      "insideArea": true,
+      "activeInViewport": true,
+      "gapActiveToCanvas": 10,
+      "rowCount": 1,
+      "distinctHeights": 1,
+      "widthsMin": 132,
+      "widthsMax": 132,
+      "listScrollWidth": 442,
+      "listClientWidth": 177,
+      "scrollOverflow": 265,
+      "activeWidth": 132,
+      "activeClippedLeftByArea": -11,
+      "activeClippedRightByArea": -34.1
+    },
+    "prePhase62": {
+      "hScrollbarThickness": 10,
+      "areaH": 43,
+      "activeBottom": 33,
+      "mainTop": 44,
+      "gap": 11
+    },
+    "clickOk": true
+  }
+}

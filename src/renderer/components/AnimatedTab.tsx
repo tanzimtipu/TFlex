@@ -120,10 +120,6 @@ export function AnimatedTab(props: AnimatedTabProps): ReactElement {
         draggable={false}
         onMouseDown={onTabMouseDown}
       >
-        {/* DEF-409 — the colourful style's decorative bottom-right flare.
-         *  Out of flow and unfocusable in every style; only the colorful
-         *  CSS override paints it. Purely visual, so it stays aria-hidden. */}
-        <span className="tab-flare" aria-hidden />
         {/* Phase 45 (item 2) — the per-tab colour identity. A small filled
          *  chip at the tab's leading edge, painted from the slot token. It
          *  is the ONE colour-carrying element, so the tab's TEXT colour (and

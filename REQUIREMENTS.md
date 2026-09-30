@@ -3738,3 +3738,78 @@ missed today). The findings and the chosen mechanism are recorded before the cod
 **Settings impact:** none — no new `AppSettings` field. Item 6 (Fit page on open) is a behaviour default
 per ruling 3; items 1, 2, 3, 5, 7, 8, 9 and 10 are UI/behaviour changes; item 4 changes the form-fill
 engine path only.
+
+## Phase 62 — Colorful tab restyle: compact height, four rounded corners, and the selected tab merged into the canvas (operator request via TFL-45, 2026-10-01)
+
+**Operator request (verbatim, 2026-10-01):** "The file tab doesn't look good. Make them smaller in height
+with rounded corners on all 4 corners. The selected tab should engulf the canvas."
+
+**ORCHESTRATOR RULINGS (the operator may veto or adjust any of these):**
+
+1. **Scope = the default `colorful` tab style.** `tabStyle` defaults to `'colorful'`, which is the tab the
+   operator sees and is reacting to. The `standard` style is left unchanged, so Phase 58 criterion 1
+   ("standard reproduces the pre-phase tab appearance") stays true. Applying the same restyle to
+   `standard` would be a follow-up if the operator asks.
+2. **Compact height = 26px.** The colorful tab box drops from 34px to 26px. The label, colour chip and
+   close control stay vertically centred.
+3. **All four corners rounded** on the colorful tab's body fill, with the SAME radius on every corner
+   (one existing radius token, used for all four). The Phase 58 / DEF-409 outward bottom-right flare is
+   retired.
+4. **"The selected tab should engulf the canvas"** - the active colorful tab is attached to the document
+   canvas: its foot sits flush against the canvas top with no visible separator (the header's 1px bottom
+   border does not paint beneath it, and the active tab's ink underline does not draw a separating band),
+   its two BOTTOM corners are square while its two top corners stay rounded, and its fill is continuous
+   with the document surface so the tab and the canvas read as ONE surface (the canvas appears to rise
+   into the selected tab). The inactive tabs keep all four corners rounded and stay visually separate from
+   the canvas. The active tab remains distinguishable from the inactive ones (bolder label and/or its
+   brighter fill treatment, as today).
+
+**Current-scope supersession:** this phase supersedes only the Phase 58 COLORFUL tab silhouette - the
+DEF-409 square bottom plus outward `.tab-flare`, and the "rounded top / square bottom" body. The `standard`
+style, the per-tab palette identity (Phase 45 / 51), the active-tab distinguishability requirement, every
+tab BEHAVIOUR (reorder, tear-out / drag-back, DEF-034 activation / close, DEF-411 / DEF-412, the Phase 59
+item 10 overflow plan), the standing animation / cross-bubbling rules and the `tabStyle` preference are all
+unchanged. The e2e silhouette oracle `e2e/phase58_tab_style.spec.cjs` (the square-foot / flare assertions)
+is repointed by qa to the Phase 62 silhouette.
+
+**Features**
+
+**A. Compact, four-corner-rounded colorful tab.**
+- The colorful tab box is 26px high.
+- Every colorful tab's body fill carries one uniform, non-zero corner radius on all four corners.
+- No outward bottom-right flare is painted.
+
+**B. The selected tab is merged into the canvas.**
+- The active colorful tab's foot is flush with the canvas top; no separator (header border / active
+  underline) is visible between the active tab and the canvas.
+- The active tab's bottom corners are square (top corners rounded); the inactive tabs keep all four corners
+  rounded.
+
+**C. Supersession of the Phase 58 colorful silhouette and its oracle.**
+- The `standard` style is untouched.
+- `e2e/phase58_tab_style.spec.cjs` is repointed by qa to assert the Phase 62 silhouette (one uniform corner
+  radius on the fill, the 26px height, no `.tab-flare` paint, and the active tab flush with the canvas).
+
+**Success criteria**
+
+1. Every colorful tab measures 26px high (measured boxes, zero variance across tabs) and the four
+   `border-*-radius` computed values on its fill are non-zero and equal (measured + a zoomed screenshot).
+2. No colorful tab paints the DEF-409 outward flare: no `.tab-flare` radial-gradient fill is computed and no
+   flare box extends past the tab's right edge (measured).
+3. The active colorful tab is flush with the canvas: the gap between the active tab's bottom and the canvas
+   top is <= 1px, no separator line is painted between them, and the active tab's bottom corners are square
+   while an inactive tab's are rounded (measured + a zoomed screenshot in light and dark).
+4. The tab strip stays aligned to the header bottom after the height change; the rest of the app chrome does
+   not shift or clip (before / after screenshot).
+5. `standard` still reproduces the pre-phase tab appearance (Phase 58 criterion 1 unchanged) - screenshot.
+6. No behaviour regression: mousedown activation and close (DEF-034), reorder (Phase 58), tear-out /
+   drag-back (Phase 58), the Phase 59 item 10 overflow shrink / stack, and the Phase 58 / 59 / 60 tab suites
+   stay green after the oracle repoint.
+7. `npm run verify` and the targeted unit test for this phase pass.
+8. All DEF / ADV entries opened by this phase are CLOSED or REJECTED with a written reason.
+
+**CONTROL-INDEX:** none - this phase introduces no new control; it restyles existing tab surfaces (nothing is
+added, removed or re-bound).
+
+**Settings impact:** none - no new `AppSettings` field. This is a renderer-only styling change; no IPC or
+shared-contract change.
