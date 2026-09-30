@@ -5,6 +5,61 @@
 > inspect the current `OPEN`, `FIX-READY`, and `DISPUTED` entries first; closed records are
 > historical evidence and must not be loaded wholesale.
 
+## DEF-431: verify:full release gate red — multiModeOpenAssignment oracle is stale after DEF-429 sample-open extraction
+
+- Status: CLOSED
+- Severity: MEDIUM
+- Found by: qa (TFL-28 release gate, verify:full on master HEAD 70d37d1)
+- Phase: 59
+
+Steps to reproduce:
+1. On master HEAD `70d37d1` with dependencies installed, run `npm run verify:full`.
+2. `verify` (conventions + typecheck) is clean; `test:unit` (vitest) fails one test.
+
+Expected: `verify:full` is deterministically green — it is the mandatory release gate
+(AGENTS.md PUSH GATE).
+
+Actual: exit 1. `test/unit/renderer/multiModeOpenAssignment.test.ts > onSampleClick
+(sample cards) refuses then shows the opened tab` fails at line 230. The test asserts
+the body of `onSampleClick` contains `routing.refuseFocused(samplePath)`, but DEF-429
+(TFL-19) moved the sample-open body out of `onSampleClick` into `openSampleByName`
+(`src/renderer/App.tsx:2254-2289`); `onSampleClick` is now a one-line delegate
+(`src/renderer/App.tsx:2291-2296`). The refuse/show behaviour still exists, at
+`src/renderer/App.tsx:2261` (`if (routing !== null && routing.refuseFocused(samplePath)) return;`)
+and `src/renderer/App.tsx:2274` (`routing.show(opened.tabId)`), so this is a stale or
+wrong-oracle test, not a product-behaviour regression. The oracle was not updated when
+the DEF-429 extraction landed.
+
+Repro output (verbatim, log `verify-full.log`):
+`FAIL  test/unit/renderer/multiModeOpenAssignment.test.ts > App wiring — every generic open routes through the ref > onSampleClick (sample cards) refuses then shows the opened tab`
+`AssertionError: expected 'const onSampleClick = useCallback(\r\…' to match /routing\.refuseFocused\(samplePath\)/`
+` Test Files  1 failed | 546 passed (547)`
+`      Tests  1 failed | 6983 passed (6984)`
+
+Impact: blocks the 1.45.3 release gate and every push (`.github/workflows/verify.yml`),
+with no observed product defect behind it. MEDIUM: test-only gate failure that does not
+reproduce as a product regression, but blocks the release gate.
+
+Evidence: unit-test log `verify-full.log` (full run captured under the TFL-28 run scratch).
+
+History:
+- qa: opened (TFL-28 release gate). Not HIGH: the failing assertion is a source-structure
+  oracle; the refused-then-shown behaviour is still present in `openSampleByName`. Fix
+  belongs with frontend-dev/unit-test owner: repoint the oracle to the function that now
+  owns the behaviour (or move the assertion to `openSampleByName`). QA did not edit the
+  unit test per TFL-28 scope.
+- qa: CLOSED (TFL-31 re-run on the committed fix `f6fa33f`
+  "fix(test): repoint DEF-429 sample-open oracle to openSampleByName", which repoints the
+  oracle in `test/unit/renderer/multiModeOpenAssignment.test.ts` to `openSampleByName`.
+  `npm run verify:full` exit 0 - conventions + typecheck clean, `test:unit` GREEN
+  547/547 files, 6984/6984 tests (was 1 failed / 546 passed files, 1/6983 tests).
+  Confirmation on master HEAD `f6fa33f`: `npx vitest run
+  test/unit/renderer/multiModeOpenAssignment.test.ts` exit 0 - 1 file passed, 19/19 tests
+  passed, including the formerly failing `onSampleClick (sample cards) refuses then shows
+  the opened tab`. No product source change was needed; the refused-then-shown behaviour
+  remains in `openSampleByName` (`src/renderer/App.tsx:2261`, `:2274`). Gate is green;
+  defect closed.)
+
 ## DEF-430: About dialog does not close on Escape
 
 - Status: CLOSED
