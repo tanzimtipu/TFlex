@@ -58,7 +58,7 @@ History:
 
 ## DEF-429: A sample opened from the welcome grid cannot be reopened from Recents
 
-- Status: OPEN
+- Status: CLOSED
 - Severity: MEDIUM
 - Found by: qa (Pilot 1 bug-hunt, welcome/About charter)
 - Phase: 59
@@ -93,6 +93,27 @@ Evidence: screenshots/pilot1_welcome_sample_recent_click.png (visible error toas
 
 History:
 - qa: opened (Pilot 1 bug-hunt).
+- orchestrator: FIX-READY (frontend-dev on TFL-19). Extracted the sample-open body out of
+  `onSampleClick` into `openSampleByName(name)` (`src/renderer/App.tsx:2251-2289`) and made
+  `onRecentClick` route a `splitRecentPath(entry.path).isSample` path into it
+  (`src/renderer/App.tsx:2298-2315`), so a `samples/<name>` Recent row no longer goes through
+  `openFromRequest`/`openPdfFromPath`. New unit spec
+  `test/unit/renderer/bugDEF429_recentSampleReopen.test.tsx` (4 tests) passed; `npm.cmd run
+  typecheck` exit 0. e2e left to qa; uncommitted for git-agent pending qa closure.
+- qa: CLOSED (TFL-20). `npm.cmd run build` exit 0. Strengthened the wrong-oracle
+  assertion in `e2e/pilot1_welcome_about_bughunt.spec.cjs` test `welcome sample recent
+  row reopens the sample` (added `sampleTitle` truthy, `reopened === true`, no
+  "Could not open file" toast, `pageErrors === []`). Focused e2e:
+  `npm.cmd run test:e2e -- e2e/pilot1_welcome_about_bughunt.spec.cjs --grep=reopens`
+  -> 1 passed / 1; probe `{"sampleTitle":"samples/form.pdf","toast":[],"welcome":0,"reopened":true,"pageErrors":[]}`.
+  Blast-radius neighbours: `--grep=welcome.actionable` 1 passed (sample-card open
+  `sampleOpened:true`, `pageErrors:[]`); `--grep=missing` 1 passed. Unit pin
+  `npx vitest run test/unit/renderer/bugDEF429_recentSampleReopen.test.tsx` -> 4 passed.
+  Screenshot `screenshots/pilot1_welcome_sample_recent_click.png` shows the sample
+  (`form.pdf`, "TFlex Application Form") open, no error toast. Note: the `--grep=missing`
+  neighbour currently selects the virtual `samples/form.pdf` row (a sample, not a
+  non-sample recent) as its "missing" entry, so it no longer exercises the non-sample
+  error path it was intended to guard; left unedited per task scope.
 
 ## DEF-428: With many tabs, shrinking the window leaves the active tab scrolled out of the visible strip
 

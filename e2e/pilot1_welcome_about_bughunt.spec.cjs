@@ -489,5 +489,8 @@ test('welcome sample recent row reopens the sample', async () => {
   }
   // eslint-disable-next-line no-console
   console.log('PILOT1_SAMPLERECENT ' + JSON.stringify({ sampleName, sampleTitle, toast, welcome, reopened, pageErrors }));
+  expect(sampleTitle).toBeTruthy();
+  expect(reopened).toBe(true);
+  expect((toast || []).filter((t) => /Could not open file/i.test(t))).toEqual([]);
   expect(pageErrors).toEqual([]);
 });

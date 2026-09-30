@@ -2248,31 +2248,34 @@ export function App(): ReactElement {
     onError: (message): void => pushToast("error", message),
   });
 
-  const onSampleClick = useCallback(
-    async (sample: SampleDocument): Promise<void> => {
-      const samplePath = `samples/${sample.name}`;
+  // DEF-429 — the sample-open flow, shared by the welcome-grid sample
+  // cards and a Recents row whose stored path is `samples/<name>`. The
+  // stored bytes path never touches the filesystem open.
+  const openSampleByName = useCallback(
+    async (name: string): Promise<void> => {
+      const samplePath = `samples/${name}`;
       // Phase 32 (DEF-277/DEF-278) — a sample card open in Multi Mode lands
       // in the focused pane; it is refused when it is already the other
       // pane's document (same path identity the pane Open guard uses).
       const routing = routeOpenedTabRef.current;
       if (routing !== null && routing.refuseFocused(samplePath)) return;
-      const bytesRes = await window.tflex.readSample(sample.name);
+      const bytesRes = await window.tflex.readSample(name);
       if (!bytesRes.ok) {
-        pushToast("error", `Sample file unavailable: ${sample.name}.`);
+        pushToast("error", `Sample file unavailable: ${name}.`);
         return;
       }
       try {
         const opened = await openFromBytes(toArrayBuffer(bytesRes.value), {
           kind: "sample",
           path: samplePath,
-          displayName: sample.name,
+          displayName: name,
           onDiskPath: null,
         });
         if (opened !== null && routing !== null) routing.show(opened.tabId);
         if (settings !== null) {
           const recent: RecentFile = {
             path: samplePath,
-            name: sample.name,
+            name,
             openedAt: new Date().toISOString(),
           };
           await window.tflex.addRecentFile(recent);
@@ -2285,15 +2288,30 @@ export function App(): ReactElement {
     [openFromBytes, pushToast, settings],
   );
 
+  const onSampleClick = useCallback(
+    async (sample: SampleDocument): Promise<void> => {
+      await openSampleByName(sample.name);
+    },
+    [openSampleByName],
+  );
+
   const onRecentClick = useCallback(
     async (entry: RecentFile): Promise<void> => {
+      // DEF-429 — a Recents row for a bundled sample stores the display
+      // path `samples/<name>`; reopen it through the sample flow rather
+      // than a filesystem open, which cannot resolve that path.
+      const meta = splitRecentPath(entry.path);
+      if (meta.isSample) {
+        await openSampleByName(meta.name);
+        return;
+      }
       // Phase 32 (DEF-277/DEF-278) — a recent-file open is a generic open:
       // it lands in the focused pane, or is refused when it is already the
       // other pane's document. Phase 35 — the same shared open path the
       // dialog, the OS-open listener and the OS file drop use.
       await openFromRequest(entry.path);
     },
-    [openFromRequest],
+    [openFromRequest, openSampleByName],
   );
 
   const onRemoveRecent = useCallback(
