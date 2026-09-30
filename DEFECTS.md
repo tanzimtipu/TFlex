@@ -5,6 +5,95 @@
 > inspect the current `OPEN`, `FIX-READY`, and `DISPUTED` entries first; closed records are
 > historical evidence and must not be loaded wholesale.
 
+## DEF-430: About dialog does not close on Escape
+
+- Status: CLOSED
+- Severity: LOW
+- Found by: qa (Pilot 1 bug-hunt, welcome/About charter)
+- Phase: 59
+
+Steps to reproduce:
+1. `npm.cmd run build`, then run
+   `npx playwright test e2e/pilot1_welcome_about_bughunt.spec.cjs --grep "recovery"`
+   (launches through `e2e/lib/launch.cjs`).
+2. On the welcome screen, open the About dialog (Help -> About Jovrel; the spec sends the
+   real `menu:action` `{ action: 'about' }` payload).
+3. Press Escape.
+
+Expected: Escape dismisses the About dialog, matching every other modal sheet in the app.
+`src/renderer/components/PreferencesDialog.tsx:214` (DEF-201) states the convention
+verbatim: "Every other dialog in the app ... installs a window-level keydown listener
+while open; the preferences sheet was the odd one out". `AboutDialog.tsx` has no Escape
+handler and no global App handler routes Escape to `setAboutOpen(false)`.
+
+Actual: Escape is ignored; the sheet stays open (`PILOT1_RECOVERY afterEscape=1`). The
+only ways to close it are the header X button or a backdrop click (both verified working).
+No console/page errors.
+
+Impact: a user who habitually dismisses modals with Escape gets no response from the
+About sheet - a consistency/usability defect, not a data risk. X and backdrop close work.
+
+History:
+- qa: opened (Pilot 1 bug-hunt). Evidence: screenshots/pilot1_about_escape.png;
+  `PILOT1_RECOVERY {"afterBackdrop":0,"afterEscape":1,"pageErrors":[]}`.
+- orchestrator: FIX-READY (brief assigned to frontend-dev - mirror the DEF-201 Escape
+  contract in `src/renderer/components/AboutDialog.tsx`: insert ONE `useEffect` after
+  the update-state subscription effect (line 229) that installs a window-level keydown
+  listener while `open` and calls `onClose` on Escape (pattern:
+  `PreferencesDialog.tsx:214-232`; App wiring at `App.tsx:11235-11237` already routes
+  `onClose` -> `setAboutOpen(false)`, no App change). Plus ONE new spec
+  `test/unit/renderer/bugDEF430_aboutDialogEscape.test.tsx` mirroring
+  `bugDEF201_prefsSheetEscape.test.tsx` (5 tests). Verification: named vitest spec
+  5/5 passed + `npm.cmd run verify` exit 0.)
+- qa: CLOSED (retest on the rebuilt 1.45.2 dev app. `npm.cmd run build` exit 0.
+  `npx vitest run test/unit/renderer/bugDEF430_aboutDialogEscape.test.tsx` exit 0 -
+  1 file passed, 5 tests passed, 0 failed. `npx playwright test
+  e2e/pilot1_welcome_about_bughunt.spec.cjs` exit 0 - 11 passed, 0 failed; the
+  recovery test logged `PILOT1_RECOVERY
+  {"afterBackdrop":0,"afterEscape":0,"pageErrors":[]}` (failing evidence was
+  afterEscape:1). Screenshot screenshots/pilot1_about_escape.png inspected: the
+  Welcome screen is shown and the About sheet is absent after Escape. The new
+  window-level Escape effect in `AboutDialog.tsx` closes the sheet, matching the
+  DEF-201 contract; the whole welcome/About blast-radius surface stays green.)
+
+## DEF-429: A sample opened from the welcome grid cannot be reopened from Recents
+
+- Status: OPEN
+- Severity: MEDIUM
+- Found by: qa (Pilot 1 bug-hunt, welcome/About charter)
+- Phase: 59
+
+Steps to reproduce:
+1. `npm.cmd run build`, then run
+   `npx playwright test e2e/pilot1_welcome_about_bughunt.spec.cjs --grep "sample recent row"`
+   (launches through `e2e/lib/launch.cjs`).
+2. On the welcome screen click the `form.pdf` card under "Sample documents".
+3. Wait for the document to open, then press Ctrl+W to return Home.
+4. In the "Recent" list click the new `form.pdf` row (title `samples/form.pdf`).
+
+Expected: the sample reopens in a new tab, like any other Recent entry.
+
+Actual: nothing opens; an error toast reads "Could not open file: form.pdf" and the
+welcome screen stays. `src/renderer/App.tsx` (`onSampleClick`) stores the recent as
+`path: "samples/<name>"` (a display-relative virtual path), and `onRecentClick` ->
+`openRequestedPath(entry.path)` -> `openPdfFromPath("samples/form.pdf")` resolves it as a
+filesystem path, which does not exist, so the open fails. There is no `samples/` branch
+in `openRequestedPath` or `openPdfFromPath` (only `src/renderer/utils/recentPath.ts`
+knows the path is a sample, for display).
+
+Repro output:
+`PILOT1_SAMPLERECENT {"sampleName":"form.pdf","sampleTitle":"samples/form.pdf","toast":["Could not open file: form.pdf"],"welcome":1,"reopened":false,"pageErrors":[]}`
+
+Impact: every sample the user opens is added to Recents as a row that is a dead action -
+clicking it errors instead of reopening the document. MEDIUM: it degrades a supported
+welcome-screen workflow (reopening from Recents) with a visible failure, but causes no
+data loss or corruption.
+
+Evidence: screenshots/pilot1_welcome_sample_recent_click.png (visible error toast).
+
+History:
+- qa: opened (Pilot 1 bug-hunt).
+
 ## DEF-428: With many tabs, shrinking the window leaves the active tab scrolled out of the visible strip
 
 - Status: CLOSED

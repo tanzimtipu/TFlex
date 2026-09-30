@@ -228,6 +228,26 @@ export function AboutDialog(props: AboutDialogProps): ReactElement | null {
     };
   }, [open]);
 
+  // DEF-430 — close the About sheet on Escape. Every other dialog in the app
+  // (DeletePageDialog, MergeDialog, OptimizeDialog, ...) installs a
+  // window-level keydown listener while open; the About sheet was the odd
+  // one out, so Escape only closed it via the X button or a backdrop click.
+  // The listener is installed only while `open` so it is gone as soon as
+  // the sheet closes.
+  useEffect(() => {
+    if (!open) return;
+    const handleKeyDown = (e: KeyboardEvent): void => {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        onClose();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return (): void => {
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [open, onClose]);
+
   const handleOpenPath = (path: string): void => {
     const tflex = (window as unknown as { tflex?: { app?: { openPath?: (p: string) => Promise<void> } } }).tflex;
     if (tflex?.app?.openPath === undefined) return;
