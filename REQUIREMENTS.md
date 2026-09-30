@@ -3996,3 +3996,38 @@ dock edit pen (`.action-dock-edit`).
 
 **Settings impact:** none - no new `AppSettings` field. This is a renderer-only styling change; no IPC or
 shared-contract change.
+
+## Phase 64 — Square Outline panel corner: remove the rounded bottom-right corner (operator request via TFL-50, 2026-10-01)
+
+**Operator request (verbatim intent, 2026-10-01):** "The Outline panel has rounded corner on the bottom
+right. Remove the rounded corner."
+
+**ORCHESTRATOR RULING (the operator may veto or adjust):** "the Outline panel" is the left Pages panel
+root `.context-panel` (`src/renderer/components/ContextPanel.tsx:684`) which hosts the Outline section
+(`ContextPanel.tsx:397` / `:417`). The panel root carried `border-radius: 0 0 var(--panel-radius) 0;`,
+rounding only its bottom-right corner while its other three corners are square. The correction removes
+that declaration so the bottom-right corner is square like the rest of the panel.
+
+**Features**
+
+**A. The `.context-panel` root declares no border-radius.**
+- In `src/renderer/styles.css`, the `border-radius: 0 0 var(--panel-radius) 0;` declaration is removed
+  from the `.context-panel` rule; every other declaration in that rule is unchanged.
+- No new token, palette, component or IPC is introduced: this is one declaration removed from an
+  existing rule.
+
+**Success criteria**
+
+1. The `.context-panel` rule body contains no `border-radius` declaration - asserted by the static-CSS
+   guard `test/unit/renderer/tfl50_contextPanelSquareCorner.test.ts` (mirrors the `def294` flush
+   header-corner guard).
+2. The rendered computed `border-bottom-right-radius` of the context panel resolves to `0px` - asserted
+   by the rendered oracle `e2e/tfl50_outline_corner.spec.cjs` with a before/after screenshot.
+3. No blast radius: the neighbouring `def294_flushThumbHeaderCorner.test.ts` stays green and `npm run
+   verify` (conventions + typecheck) passes.
+
+**CONTROL-INDEX:** none - this phase introduces no control and re-binds nothing; it removes a single CSS
+declaration from the existing `.context-panel` rule.
+
+**Settings impact:** none - no new `AppSettings` field. This is a renderer-only styling change; no IPC or
+shared-contract change.
