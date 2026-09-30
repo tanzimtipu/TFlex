@@ -34,6 +34,7 @@ import {
 import { BookOpen, ChevronLeft, ChevronRight, X } from 'lucide-react';
 import type { PDFDocumentProxy } from 'pdfjs-dist';
 import { AnimatedPanel } from './AnimatedPanel';
+import { BrandLoader } from './BrandLoader';
 import { PageView } from './PageView';
 import { initialAnnotationToolState } from '../annotations/model';
 import { toastForConvertError } from '../state/convert';
@@ -456,6 +457,7 @@ function EpubBody(props: EpubBodyProps): ReactElement {
   if (loading) {
     return (
       <div className="reading-body reading-body--empty" data-reading-loading>
+        <BrandLoader />
         Loading chapters…
       </div>
     );

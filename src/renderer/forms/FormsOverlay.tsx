@@ -23,6 +23,7 @@ import type { CSSProperties } from "react";
 import type {
   FormField,
   FormFieldOption,
+  FormFieldRect,
   FormFieldWidget,
   FormFillReport,
 } from "../../shared/types";
@@ -34,6 +35,13 @@ interface FormsOverlayProps {
   fields: FormField[];
   onValueChange: (id: string, value: string | string[]) => void;
   onToggleListbox: (id: string, option: string) => void;
+  /** Phase 65 item 4 (DEF-438) — the page's clockwise quarter-turn rotation
+   *  (0..3) and its UNROTATED page-point dims. Widget rects are mapped through
+   *  `mapRectForRotation` before placement so every control sits on its printed
+   *  box on a rotated page. Defaults keep the unrotated mount unchanged. */
+  rotation?: number;
+  pageWidthPt?: number;
+  pageHeightPt?: number;
 }
 
 // Minimum editor height so a 1-line text field doesn't collapse to a
@@ -46,44 +54,45 @@ const RADIO_DOT_PT = 11;
 export const READ_ONLY_REASON = "This field is read-only";
 
 export function FormsOverlay(props: FormsOverlayProps): ReactElement | null {
-  const { page, cssScale, fields, onValueChange, onToggleListbox } = props;
+  const {
+    page,
+    cssScale,
+    fields,
+    onValueChange,
+    onToggleListbox,
+    rotation = 0,
+    pageWidthPt = 0,
+    pageHeightPt = 0,
+  } = props;
   const pageFields = useMemo(() => fields.filter((f) => f.page === page), [fields, page]);
-  // Fallback auto-layout: if the engine returns zero-sized rects for a
-  // field (which happens for some AcroForm PDFs where the /Rect entry
-  // is on a child widget rather than the field itself, and pdf-lib's
-  // widget lookup doesn't reach it), stack the editors down the left
-  // margin so they don't all pile up on top of each other. The real
-  // production PDFs (form.pdf ships 0,0,0,0 from this path) still
-  // show the form, just in a vertical list rather than over the
-  // original widget positions.
-  const hasUsableRects = pageFields.every(
-    (f) => f.rect.width > 0 && f.rect.height > 0,
-  );
-  // Run the layout memo unconditionally so the hook count stays
-  // stable across renders. An early-return-when-empty path here would
-  // short-circuit a later useMemo, which the Rules of Hooks detect as
-  // "rendered fewer hooks than expected" and React-19 (correctly)
-  // reports as max-update-depth — that's exactly the cascade that
-  // blanked the UI on the flatten round-trip (DEF-020). The memo is
-  // cheap (it just iterates the already-filtered pageFields) so the
-  // unconditional call has no real cost.
-  const laidOut = useMemo(() => {
-    if (hasUsableRects) return pageFields;
-    // Stack fields vertically with a default editor size. We start
-    // 24pt below the top of the page to leave room for the toolbar /
-    // search-bar overlap.
-    let y = 24;
-    const out: { field: FormField; rect: { x: number; y: number; width: number; height: number } }[] = [];
+  // Phase 65 item 4 (DEF-436) — PER-FIELD degenerate-rect fallback. The
+  // previous heuristic looked at the whole page: if ANY field had a zero
+  // rect it restacked EVERY editor down the left margin, which piled a
+  // well-formed form's controls on top of each other. A usable rect is now
+  // rendered at its own `field.rect`; only a genuinely degenerate rect
+  // (non-finite or non-positive width/height) gets a sensible default box.
+  // Degenerate boxes are staggered by index so several of them never
+  // overlap, and each keeps a positive width/height so it always has a
+  // visible, hit-testable surface — never an invisible one.
+  //
+  // The memo runs unconditionally so the hook count stays stable across
+  // renders (an early return before a later hook is the DEF-020 "rendered
+  // fewer hooks than expected" cascade). It only iterates the already
+  // filtered pageFields, so it is cheap.
+  const fallbackRects = useMemo(() => {
+    const out = new Map<string, FormFieldRect>();
+    let degenerateIndex = 0;
     for (const f of pageFields) {
+      if (isUsableRect(f.rect)) continue;
       const height =
         f.kind === "listbox" ? 80 :
         f.kind === "radio" ? 32 :
         24;
-      out.push({ field: f, rect: { x: 36, y, width: 240, height } });
-      y += height + 8;
+      out.set(f.id, { x: 36, y: 24 + degenerateIndex * (height + 8), width: 240, height });
+      degenerateIndex += 1;
     }
     return out;
-  }, [hasUsableRects, pageFields]);
+  }, [pageFields]);
   // Early return AFTER all hooks have run. With `pageFields.length === 0`
   // (the post-flatten case where the AcroForm is gone), there's nothing
   // to render; the host still keeps the overlay mounted in the React tree
@@ -91,15 +100,23 @@ export function FormsOverlay(props: FormsOverlayProps): ReactElement | null {
   if (pageFields.length === 0) return null;
   return (
     <div className="forms-layer" data-page={page}>
-      {laidOut.map((entry) => {
-        const field = "field" in entry ? entry.field : entry;
-        const renderField: FormField = hasUsableRects
-          ? field
-          : { ...field, rect: (entry as { rect: FormField["rect"] }).rect };
+      {pageFields.map((field) => {
+        const fallback = fallbackRects.get(field.id);
+        const renderField: FormField =
+          fallback === undefined ? field : { ...field, rect: fallback };
+        // DEF-438 — ONE mapping applied here, per field AND per widget, so
+        // every editor kind below consumes an already-rotated rect. The raw
+        // rect is never read by a placement math site.
+        const mappedField = mapFieldForRotation(
+          renderField,
+          rotation,
+          pageWidthPt,
+          pageHeightPt,
+        );
         return (
           <FieldEditor
             key={field.id}
-            field={renderField}
+            field={mappedField}
             cssScale={cssScale}
             onValueChange={onValueChange}
             onToggleListbox={onToggleListbox}
@@ -110,6 +127,19 @@ export function FormsOverlay(props: FormsOverlayProps): ReactElement | null {
   );
 }
 
+/** A rect is usable when it is finite and strictly positive in both
+ *  dimensions; only then can an editor be positioned at page coords. */
+function isUsableRect(rect: FormFieldRect): boolean {
+  return (
+    Number.isFinite(rect.x) &&
+    Number.isFinite(rect.y) &&
+    Number.isFinite(rect.width) &&
+    Number.isFinite(rect.height) &&
+    rect.width > 0 &&
+    rect.height > 0
+  );
+}
+
 interface FieldEditorProps {
   field: FormField;
   cssScale: number;
@@ -117,15 +147,42 @@ interface FieldEditorProps {
   onToggleListbox: (id: string, option: string) => void;
 }
 
-function FieldEditor(props: FieldEditorProps): ReactElement {
+function FieldEditor(props: FieldEditorProps): ReactElement | null {
   const { field, cssScale, onValueChange, onToggleListbox } = props;
+  // Phase 65 chunk 2 (driver TFL-49 / DEF-436) — the SINGLE suppression gate.
+  // With `annotationMode: AnnotationMode.ENABLE_FORMS` pdf.js sets
+  // `hasOwnCanvas` — i.e. it keeps painting the widget's own /AP appearance
+  // onto the canvas — ONLY for:
+  //   - TextWidgetAnnotation (`readOnly && !noHTML`),
+  //   - the push-button branch of ButtonWidgetAnnotation,
+  //   - SignatureWidgetAnnotation.
+  // Checkbox, radio and choice widgets NEVER set `hasOwnCanvas`, so pdf.js
+  // does NOT canvas-paint them even when read-only. For those, the overlay
+  // editor is the ONLY surface (not a duplicate), and suppressing it would
+  // make a read-only control completely invisible (DEF-444).
+  //
+  //   - `kind === "signature"`: always canvas-painted -> suppress.
+  //   - `readOnly === true` on a REAL TEXT field (a real field id is never
+  //     `orphan-…`) -> canvas-painted -> suppress.
+  //   - a read-only checkbox / radio / dropdown / listbox is NOT canvas-painted
+  //     -> fall through and render its disabled overlay control.
+  //
+  // An orphan widget keeps its existing `NonFillableView` surface: its id
+  // starts with `orphan-` (the engine convention at src/main/services/forms.ts)
+  // so it is excluded here, and its canvas-paint status is not knowable — it
+  // must never become invisible. Kept at this one gate so a single place
+  // decides the surface.
+  const isRealField = !field.id.startsWith("orphan-");
+  const kind: string = field.kind;
+  if (kind === "signature" || (field.readOnly === true && isRealField && kind === "text")) {
+    return null;
+  }
   // Phase 59 (ADV-123 / ADV-124) — the SINGLE fail-safe gate. Only an
   // allow-listed, fillable kind may reach the editable editors below; a
   // signature field, an orphan widget, or any future unfillable kind renders
-  // the one non-editable surface with a truthful reason. A read-only field of
-  // a fillable kind still renders its own disabled control (that control
-  // shows the field's real state), but it can never be reached by a
-  // non-fillable kind.
+  // the one non-editable surface with a truthful reason. A read-only or
+  // signature field that pdf.js paints on the canvas was already suppressed
+  // above; every other unfillable case still reaches this fail-safe.
   const widened = field as FormField & { fillable?: boolean; unfillableReason?: string };
   if (!isFillableFieldKind(field.kind) || widened.fillable === false) {
     const reason =
@@ -649,6 +706,73 @@ function XMark({ size }: { size: number }): ReactElement {
 }
 
 // ---- helpers -------------------------------------------------------------
+
+/** A page-point rect (top-left origin) that can be mapped through a page
+ *  rotation. Structural, so `FormFieldRect` and any widget rect satisfy it. */
+export interface RotatableRect {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+/** Normalize an engine rotation to a clockwise quarter-turn count 0..3. */
+function normalizeRotation(rotation: number): number {
+  return ((Math.trunc(rotation) % 4) + 4) % 4;
+}
+
+/** DEF-438 — the ONE rotation mapping for a field/widget rect. Page-point
+ *  coords, top-left origin, unrotated page W=`pageWidthPt` x H=`pageHeightPt`,
+ *  clockwise quarter turns:
+ *    rot 1 (90 CW):  x' = H-(y+h), y' = x,       w' = h, h' = w
+ *    rot 2 (180):    x' = W-(x+w), y' = H-(y+h), w' = w, h' = h
+ *    rot 3 (270 CW): x' = y,       y' = W-(x+w), w' = h, h' = w
+ *    rot 0: unchanged
+ *  The caller multiplies the result by `cssScale` exactly as before. Exported
+ *  so the mapping is unit-testable in isolation. */
+export function mapRectForRotation(
+  rect: RotatableRect,
+  rotation: number,
+  pageWidthPt: number,
+  pageHeightPt: number,
+): RotatableRect {
+  const rot = normalizeRotation(rotation);
+  const { x, y, width: w, height: h } = rect;
+  switch (rot) {
+    case 1:
+      return { x: pageHeightPt - (y + h), y: x, width: h, height: w };
+    case 2:
+      return {
+        x: pageWidthPt - (x + w),
+        y: pageHeightPt - (y + h),
+        width: w,
+        height: h,
+      };
+    case 3:
+      return { x: y, y: pageWidthPt - (x + w), width: h, height: w };
+    default:
+      return { x, y, width: w, height: h };
+  }
+}
+
+/** Map a field's own rect AND every widget rect through the rotation, once.
+ *  At rot 0 the field is returned untouched so the unrotated path is a
+ *  zero-allocation identity. */
+function mapFieldForRotation(
+  field: FormField,
+  rotation: number,
+  pageWidthPt: number,
+  pageHeightPt: number,
+): FormField {
+  if (normalizeRotation(rotation) === 0) return field;
+  const rect = mapRectForRotation(field.rect, rotation, pageWidthPt, pageHeightPt);
+  if (field.widgets === undefined) return { ...field, rect };
+  const widgets = field.widgets.map((widget) => ({
+    ...widget,
+    rect: mapRectForRotation(widget.rect, rotation, pageWidthPt, pageHeightPt),
+  }));
+  return { ...field, rect, widgets };
+}
 
 function editorStyle(rect: { x: number; y: number; width: number; height: number }, cssScale: number): CSSProperties {
   const heightPt = Math.max(rect.height, MIN_EDITOR_HEIGHT_PT);

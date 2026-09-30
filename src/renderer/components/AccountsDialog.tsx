@@ -44,6 +44,7 @@ import {
 import { describeSyncReport } from "../accounts/syncStatus";
 import { requestAutoSync } from "../accounts/autoSync";
 import { AnimatedDialog } from "./AnimatedDialog";
+import { BrandLoader } from "./BrandLoader";
 import { BrandMark } from "./BrandMark";
 import { BrandWordmark } from "./BrandWordmark";
 import { usePopAnimation, type MotionVariantSet } from "../hooks/useAnimations";
@@ -486,7 +487,9 @@ export function AccountsDialog(props: AccountsDialogProps): ReactElement {
       </header>
       <div className="sheet-body sheet-body-accounts">
         {configState === "loading" && (
-          <p className="accounts-status" data-accounts-loading>Loading account settings...</p>
+          <p className="accounts-status" data-accounts-loading>
+            <BrandLoader /> Loading account settings...
+          </p>
         )}
         {configState === "unconfigured" && (
           <div className="accounts-unconfigured" data-accounts-unconfigured>

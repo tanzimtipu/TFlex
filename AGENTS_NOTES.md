@@ -1393,6 +1393,14 @@ pre-warn relevant entries when dispatching.
   `--grep` (CACError) and has no equivalent flag; the child had to improvise the
   documented-equivalent filter. Rule: check the installed runner's flags before
   putting a command in a brief; for vitest use file paths or `--testNamePattern`.
+- qa: opened a defect under an already-used ID (TFL-111 filed the Phase 57 e2e stale
+  oracle as DEF-436, but DEF-436 already existed for the form-field double-render).
+  Rule: before opening any DEF/ADV, grep `^## DEF-` (or ADV) and take the next FREE
+  number, never a number read from the last entry.
+- CTO: briefed `npx.cmd run test:e2e -- <spec>` (TFL-118, 2026-10-01) which failed for
+  the child with "could not determine executable to run" (npx has no `run` for npm
+  scripts). Rule: for npm scripts always write `npm.cmd run <script> -- <arg>`;
+  reserve `npx.cmd` for direct binaries (vitest, playwright, tsc).
 
 ## 2026-08-28: to-do discipline + Defects heading restored
 

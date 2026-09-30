@@ -9,7 +9,10 @@
 //       with the correct per-widget values;
 //   (b) selecting the second calls the fill with the group's second option
 //       and marks only that widget selected;
-//   (c) a read-only field renders non-editable with the truthful reason;
+//   (c) a real read-only TEXT field renders NO overlay surface (pdf.js paints
+//       it) while a read-only checkbox / radio group renders its ONE disabled
+//       overlay control per widget (pdf.js does not paint those); an orphan
+//       widget still renders the truthful non-editable reason;
 //   (d) a mixed-status formFillReport renders a summary naming each skipped
 //       field + reason;
 //   (e) a single checkbox / text field is unchanged.
@@ -20,7 +23,6 @@ import { createRoot, type Root } from "react-dom/client";
 import {
   FormsOverlay,
   FormFillReportSummary,
-  READ_ONLY_REASON,
 } from "../../../src/renderer/forms/FormsOverlay";
 import type { FormField, FormFieldKind, FormFillReport } from "../../../src/shared/types";
 
@@ -140,9 +142,9 @@ describe("Phase 59 item 4 — per-widget form editors", () => {
     m.unmount();
   });
 
-  it("(c) a read-only text field renders non-editable with the truthful reason", () => {
+  it("(c) a real read-only text field renders NO overlay surface (pdf.js paints it)", () => {
     const field: FormField = {
-      id: "f-locked",
+      id: "form-1-locked",
       name: "locked",
       page: 1,
       kind: "text",
@@ -151,37 +153,26 @@ describe("Phase 59 item 4 — per-widget form editors", () => {
       readOnly: true,
     };
     const m = mountOverlay([field]);
-    const input = m.container.querySelector<HTMLInputElement>(
-      'input[data-form-field="f-locked"]',
-    );
-    expect(input).not.toBeNull();
-    if (input === null) return m.unmount();
-    expect(input.disabled).toBe(true);
-    expect(input.title).toBe(READ_ONLY_REASON);
-    expect(input.getAttribute("data-form-readonly")).toBe("true");
-    // A disabled control never dispatches a fill.
-    act((): void => {
-      input.click();
-    });
-    expect(m.onChange).not.toHaveBeenCalled();
+    // Phase 65 chunk 2 (DEF-436): a real read-only widget is always painted on
+    // the canvas by pdf.js, so the overlay must render no second surface.
+    expect(
+      m.container.querySelectorAll('[data-form-field="form-1-locked"]').length,
+    ).toBe(0);
+    expect(m.container.querySelector("input")).toBeNull();
     m.unmount();
   });
 
-  it("(c) a read-only multi-widget radio group renders each widget non-editable", () => {
-    const m = mountOverlay([widgetRadio({ readOnly: true, value: "mr" })]);
-    const controls = m.container.querySelectorAll<HTMLButtonElement>(
-      'button[data-form-widget]',
-    );
+  it("(c) a real read-only multi-widget radio group renders one disabled control per widget", () => {
+    const group = widgetRadio({ id: "form-1-gender", readOnly: true, value: "mr" });
+    const m = mountOverlay([group]);
+    const controls = m.container.querySelectorAll<HTMLButtonElement>("button[data-form-widget]");
+    expect(controls.length).toBe(group.widgets?.length ?? 0);
     expect(controls.length).toBe(3);
-    for (const c of Array.from(controls)) {
-      expect(c.disabled).toBe(true);
-      expect(c.title).toBe(READ_ONLY_REASON);
-      expect(c.getAttribute("data-form-readonly")).toBe("true");
+    for (const control of Array.from(controls)) {
+      expect(control.disabled).toBe(true);
+      expect(control.getAttribute("data-form-readonly")).toBe("true");
     }
-    act((): void => {
-      controls[1]?.click();
-    });
-    expect(m.onChange).not.toHaveBeenCalled();
+    expect(m.container.querySelectorAll('[data-form-field="form-1-gender"]').length).toBe(3);
     m.unmount();
   });
 });
@@ -271,25 +262,16 @@ describe("Phase 59 item 4 — ADV-123 / ADV-124: non-fillable kinds never become
     };
   }
 
-  it("a signature field renders non-editable with the signature reason, not an input", () => {
+  it("a signature field renders NO overlay surface (pdf.js paints it)", () => {
     const m = mountOverlay([nonFillable("signature")]);
-    // No editable control of ANY kind is mounted for it.
+    // Phase 65 chunk 2 (DEF-436): a SignatureWidgetAnnotation is always painted
+    // on the canvas, so the overlay renders nothing for it.
+    expect(m.container.querySelectorAll('[data-form-field="f-signature"]').length).toBe(0);
     expect(m.container.querySelector("input")).toBeNull();
     expect(m.container.querySelector("textarea")).toBeNull();
     expect(m.container.querySelector("select")).toBeNull();
     expect(m.container.querySelector("button")).toBeNull();
-    const view = m.container.querySelector<HTMLElement>('[data-form-nonfillable="true"]');
-    expect(view).not.toBeNull();
-    if (view === null) return m.unmount();
-    expect(view.getAttribute("data-form-kind")).toBe("signature");
-    expect(view.getAttribute("data-form-readonly")).toBe("true");
-    expect(view.getAttribute("title")).toBe("Signature fields cannot be filled");
-    expect(view.getAttribute("aria-label")).toBe("Signature fields cannot be filled");
-    expect(view.textContent).toContain("Signature fields cannot be filled");
-    act((): void => {
-      view.click();
-    });
-    expect(m.onChange).not.toHaveBeenCalled();
+    expect(m.container.querySelector('[data-form-nonfillable="true"]')).toBeNull();
     m.unmount();
   });
 
@@ -328,7 +310,7 @@ describe("Phase 59 item 4 — ADV-123 / ADV-124: non-fillable kinds never become
     m.unmount();
   });
 
-  it("a fillable text field in the same overlay is still editable (the gate is per-kind)", () => {
+  it("a fillable text field in the same overlay is still editable while a signature is suppressed", () => {
     const m = mountOverlay([
       nonFillable("signature"),
       {
@@ -341,9 +323,10 @@ describe("Phase 59 item 4 — ADV-123 / ADV-124: non-fillable kinds never become
       },
     ]);
     expect(m.container.querySelector('input[data-form-field="f-name"]')).not.toBeNull();
+    // The signature widget is canvas-painted by pdf.js; the overlay adds none.
     expect(
       m.container.querySelector('[data-form-nonfillable="true"][data-form-field="f-signature"]'),
-    ).not.toBeNull();
+    ).toBeNull();
     m.unmount();
   });
 });

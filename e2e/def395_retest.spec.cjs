@@ -1,18 +1,17 @@
 // DEF-395 FIX-READY retest (QA). Drives the REAL dev build through the
-// canonical e2e/lib/launch.cjs helper and reproduces the filed repro exactly:
-// open test-fixtures/phase56/phase56-comic.cbz through the real Open button,
-// enter the comic reading view, then exercise the single/double/close controls
-// with REAL Playwright clicks (actionability enforced - no DOM click()).
+// canonical e2e/lib/launch.cjs helper and reproduces the filed repro on the
+// Phase 66 (chunk 1) shell: open test-fixtures/phase56/phase56-comic.cbz
+// through the real Open button, enter the canvas "Book View" (the control that
+// superseded the removed "Open comic view" trigger), then Close.
 //
-// Acceptance:
-//  - no uncaught renderer error and no React #185 / "Maximum update depth"
-//    console entry on open and while idle for >= 5 s;
-//  - real click on [aria-label="Comic double page"] completes and shows 2
-//    pages, real click on [aria-label="Comic single page"] completes and shows
-//    1 page, real click on [aria-label="Close reading view"] unmounts the
-//    reading region;
-//  - the renderer is not wedged afterwards (win.evaluate returns promptly and
-//    the same CBZ can be re-opened and re-entered).
+// The DEF-395 regression guard is unchanged in substance: the reader must open
+// and stay idle for >= 5 s with NO uncaught renderer error and NO React #185 /
+// "Maximum update depth" console entry, Close must work with a REAL click, and
+// the renderer must not be wedged.
+//
+// SUPERSEDED by Phase 66 (chunk 1): the Phase 56 comic single/double toggles
+// were removed; single/double + flip return with Book View chunks 2-3, so their
+// clicks are no longer exercised here.
 const { test, expect } = require('@playwright/test');
 const path = require('node:path');
 const fs = require('node:fs');
@@ -53,11 +52,11 @@ async function openCbzDocument() {
   await win.waitForSelector('[data-conversion-notice]', { timeout: 60000 });
 }
 
-async function enterComicView() {
-  const openBtn = win.locator('[aria-label="Open comic view"]');
+async function enterBookView() {
+  const openBtn = win.locator('[aria-label="Book View"]');
   await openBtn.waitFor({ state: 'visible', timeout: 15000 });
   await openBtn.click();
-  await win.waitForSelector('[data-reading-view][data-reading-mode="comic"]', {
+  await win.waitForSelector('[data-book-view]', {
     state: 'visible',
     timeout: 15000,
   });
@@ -77,11 +76,11 @@ async function boundedEvaluate(fn, ms) {
   ]);
 }
 
-test('DEF-395: comic view is stable and single/double/close respond to real clicks', async () => {
+test('DEF-395: Book View is stable and Close responds to a real click', async () => {
   await openCbzDocument();
   const mark = consoleLog.length;
   const tClick = Date.now();
-  await enterComicView();
+  await enterBookView();
   const visibleMs = Date.now() - tClick;
   // Idle for at least 5 s and watch for the React #185 update loop.
   await win.waitForTimeout(5000);
@@ -89,29 +88,14 @@ test('DEF-395: comic view is stable and single/double/close respond to real clic
   const openErrors = errorsSince(mark);
   console.log('DEF395_OPEN ' + JSON.stringify({ visibleMs, idleMs, openErrors }));
 
-  const progress = win.locator('[aria-label="Reading progress"]');
-  const stage = win.locator('[data-comic-stage]');
-  expect(openErrors, 'comic view raised an error on open / while idle').toEqual([]);
-  expect(await progress.getAttribute('aria-valuenow'), 'comic view did not open on page 1').toBe('1');
-  expect(await progress.innerText()).toContain('Page 1 of 12');
-  expect(await stage.getAttribute('data-comic-layout')).toBe('single');
-  expect(await win.locator('[data-comic-page]').count(), 'single layout must show one page').toBe(1);
-  await win.screenshot({ path: path.join(SHOTS, 'phase56-comic-single.png') });
+  expect(openErrors, 'Book View raised an error on open / while idle').toEqual([]);
+  expect(await win.locator('[data-book-view]').count(), 'Book View did not open').toBe(1);
+  expect(await win.locator('[data-book-page]').count(), 'Book View rendered no page').toBe(1);
+  await win.screenshot({ path: path.join(SHOTS, 'phase66-def395-book-open.png') });
 
-  // REAL click - double page: must complete and show 2 pages.
-  await win.locator('[aria-label="Comic double page"]').click();
-  await expect(stage, 'real double-page click did not apply').toHaveAttribute('data-comic-layout', 'double');
-  expect(await win.locator('[data-comic-page]').count(), 'double layout must show two pages').toBe(2);
-  await win.screenshot({ path: path.join(SHOTS, 'phase56-comic-double.png') });
-
-  // REAL click - single page: must complete and show 1 page.
-  await win.locator('[aria-label="Comic single page"]').click();
-  await expect(stage, 'real single-page click did not apply').toHaveAttribute('data-comic-layout', 'single');
-  expect(await win.locator('[data-comic-page]').count(), 'single layout must show one page').toBe(1);
-
-  // REAL click - close: reading region must unmount.
-  await win.locator('[aria-label="Close reading view"]').click();
-  await expect(win.locator('[data-reading-view]'), 'real close click did not dismiss the reader').toHaveCount(0);
+  // REAL click - close: the book surface must unmount.
+  await win.locator('[aria-label="Close book view"]').click();
+  await expect(win.locator('[data-book-view]'), 'real close click did not dismiss Book View').toHaveCount(0);
 
   // Renderer must not be wedged: CDP evaluate returns promptly.
   const tEval = Date.now();
@@ -120,18 +104,17 @@ test('DEF-395: comic view is stable and single/double/close respond to real clic
   expect(ping).toBe(4);
 
   // Subsequent real interaction: close the first tab cleanly, then re-open the
-  // same CBZ and re-enter the comic view.
+  // same CBZ and re-enter Book View.
   const closers = win.locator('[data-tab-id] .tab-close');
   while ((await closers.count()) > 0) {
     await closers.first().click();
     await win.waitForTimeout(250);
   }
   await openCbzDocument();
-  await enterComicView();
-  expect(await win.locator('[data-comic-page]').count(), 're-opened comic is not on one page').toBe(1);
-  expect(await progress.getAttribute('aria-valuenow'), 're-opened comic is not on page 1').toBe('1');
+  await enterBookView();
+  expect(await win.locator('[data-book-page]').count(), 're-opened book rendered no page').toBe(1);
 
   const finalErrors = errorsSince(mark);
   console.log('DEF395_POSTCLOSE ' + JSON.stringify({ evalMs, finalErrors }));
-  expect(finalErrors, 'comic view raised an error during the session').toEqual([]);
+  expect(finalErrors, 'Book View raised an error during the session').toEqual([]);
 });

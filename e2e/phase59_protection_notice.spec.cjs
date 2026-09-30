@@ -71,6 +71,13 @@ function overlaps(a, b) {
   return a.left < b.right && a.right > b.left && a.top < b.bottom && a.bottom > b.top;
 }
 
+// Normalize a Playwright boundingBox (x/y/width/height) to a left/top/right/bottom
+// rect so it can be compared with `overlaps` and `pageRect()`.
+function boxOf(r) {
+  if (r === null) return null;
+  return { x: r.x, y: r.y, width: r.width, height: r.height, left: r.x, top: r.y, right: r.x + r.width, bottom: r.y + r.height };
+}
+
 test('protection notice: rounded + animated, auto-collapses to the "i" after ~10s, re-expands, never overlaps the page', async () => {
   await openProtected();
   await win.waitForTimeout(400);
@@ -115,7 +122,14 @@ test('protection notice: rounded + animated, auto-collapses to the "i" after ~10
   // 4. The collapsed icon sits at the canvas's top-left and does not overlap the page.
   const icon = await win.locator('[data-protection-icon]').boundingBox();
   const page = await pageRect();
-  const canvas = await win.locator('.document-column').boundingBox();
+  // The canvas is the page scroller, not `.document-column` (which spans the whole
+  // stage from x=64, over the LEFT ContextPanel). Using `.document-column` as the
+  // basis let the original DEF-435 bug pass: an icon over the left panel was still
+  // "in the left half" of a column that starts under that panel.
+  const canvas = await win.locator('.document-scroller').boundingBox();
+  const combine = await win.locator('[data-context-panel-combine]').boundingBox();
+  const iconBox = boxOf(icon);
+  const combineBox = boxOf(combine);
   const iconHit = await win.evaluate(() => {
     const el = document.querySelector('[data-protection-icon]');
     if (el === null) return null;
@@ -131,17 +145,23 @@ test('protection notice: rounded + animated, auto-collapses to the "i" after ~10
       rect: { left: r.left, top: r.top, width: r.width, height: r.height },
     };
   });
-  console.log(`[P59-protect] icon=${JSON.stringify(icon)} page=${JSON.stringify(page)} canvas=${JSON.stringify(canvas)} iconHit=${JSON.stringify(iconHit)}`);
+  console.log(`[P59-protect] icon=${JSON.stringify(icon)} page=${JSON.stringify(page)} canvas=${JSON.stringify(canvas)} combine=${JSON.stringify(combine)} iconHit=${JSON.stringify(iconHit)}`);
   expect(icon, 'the collapsed "i" is visible').not.toBeNull();
   expect(page, 'a page is rendered').not.toBeNull();
-  // Top-left of the canvas: the icon's centre is in the canvas's top-left quadrant.
+  // Top-left of the canvas: the icon starts at or right of the page scroller's left
+  // edge (right of the left panel) and in the canvas's top half.
+  expect(icon.x, 'icon is at/right of the canvas left edge').toBeGreaterThanOrEqual(canvas.x);
   expect(icon.x, 'icon is in the left half of the canvas').toBeLessThan(canvas.x + canvas.width / 2);
   expect(icon.y, 'icon is in the top half of the canvas').toBeLessThan(canvas.y + canvas.height / 2);
-  expect(overlaps(icon, page), `collapsed icon overlaps the page (icon=${JSON.stringify(icon)} page=${JSON.stringify(page)})`).toBe(false);
+  expect(overlaps(iconBox, page), `collapsed icon overlaps the page (icon=${JSON.stringify(iconBox)} page=${JSON.stringify(page)})`).toBe(false);
+  // The icon must cover no control: the left panel's Combine control must not overlap it.
+  expect(combineBox, 'the left panel Combine control exists').not.toBeNull();
+  expect(overlaps(iconBox, combineBox), `collapsed icon overlaps the Combine control (icon=${JSON.stringify(iconBox)} combine=${JSON.stringify(combineBox)})`).toBe(false);
   // The icon must be reachable (not occluded by the left panel / page chrome).
   expect(iconHit, 'the collapsed icon hit-test resolves').not.toBeNull();
   expect(iconHit.resolves, `the collapsed icon is occluded by ${iconHit.top}`).toBe(true);
   await win.screenshot({ path: path.join(SHOTS, 'p59-protection-collapsed-icon.png') });
+  await win.screenshot({ path: path.join(SHOTS, 'tfl46-icon-fixed.png') });
   await win.screenshot({
     path: path.join(SHOTS, 'p59-protection-icon-clip.png'),
     clip: { x: Math.max(0, icon.x - 30), y: Math.max(0, icon.y - 30), width: 160, height: 120 },

@@ -3,10 +3,10 @@
 // Phase 49 (feature B) — the JOVREL in-app branding.
 //
 // The product is JOVREL (the project stays TFlex). These tests pin:
-//   1. BrandMark renders the EXACT shipped geometry: the #60A5FA -> #1E3A8A
-//      gradient stops, the squircle rx=230 tile and the three white
-//      20px round-capped stroke paths (a rendered assertion, not a string
-//      match on the asset file).
+//   1. BrandMark renders the EXACT Phase 69 "Halo" geometry: the amber ->
+//      pink -> violet gradient stops, the near-black rx=115 tile, the
+//      gradient arc path and the white r=20.4 leading dot in the 512
+//      viewBox (a rendered assertion, not a string match on the asset file).
 //   2. Every mounted mark mints a UNIQUE gradient id, so two marks never
 //      fight over one global SVG id.
 //   3. BrandWordmark shows "Jovrel".
@@ -85,15 +85,17 @@ const SOURCE_SURFACES = [
 ] as const;
 
 describe("Phase 49 — BrandMark geometry", () => {
-  it("renders the exact gradient stops from the shipped asset", () => {
+  it("renders the exact Phase 69 gradient stops from the shipped asset", () => {
     const { container } = render(<BrandMark size={18} />);
     const svg = must(container, "svg[data-brand-mark]");
     const stops = svg.querySelectorAll("linearGradient stop");
-    expect(stops.length).toBe(2);
+    expect(stops.length).toBe(3);
     expect(stops[0].getAttribute("offset")).toBe("0");
-    expect(stops[0].getAttribute("stop-color")).toBe("#60A5FA");
-    expect(stops[1].getAttribute("offset")).toBe("1");
-    expect(stops[1].getAttribute("stop-color")).toBe("#1E3A8A");
+    expect(stops[0].getAttribute("stop-color")).toBe("rgb(251, 191, 36)");
+    expect(stops[1].getAttribute("offset")).toBe("0.5");
+    expect(stops[1].getAttribute("stop-color")).toBe("rgb(236, 72, 153)");
+    expect(stops[2].getAttribute("offset")).toBe("1");
+    expect(stops[2].getAttribute("stop-color")).toBe("rgb(139, 92, 246)");
     const grad = svg.querySelector("linearGradient");
     expect(grad?.getAttribute("x1")).toBe("0");
     expect(grad?.getAttribute("y1")).toBe("0");
@@ -101,32 +103,36 @@ describe("Phase 49 — BrandMark geometry", () => {
     expect(grad?.getAttribute("y2")).toBe("1");
   });
 
-  it("renders the squircle tile wired to its own gradient", () => {
+  it("renders the rx=115 tile with the gradient arc wired to its own gradient", () => {
     const { container } = render(<BrandMark size={18} />);
     const svg = must(container, "svg[data-brand-mark]");
+    expect(svg.getAttribute("viewBox")).toBe("0 0 512 512");
     const rect = svg.querySelector("rect");
-    expect(rect?.getAttribute("width")).toBe("1024");
-    expect(rect?.getAttribute("height")).toBe("1024");
-    expect(rect?.getAttribute("rx")).toBe("230");
+    expect(rect?.getAttribute("width")).toBe("512");
+    expect(rect?.getAttribute("height")).toBe("512");
+    expect(rect?.getAttribute("rx")).toBe("115");
+    expect(rect?.getAttribute("fill")).toBe("rgb(15, 10, 20)");
     const id = svg.querySelector("linearGradient")?.getAttribute("id") ?? "";
     expect(id).not.toBe("");
-    expect(rect?.getAttribute("fill")).toBe(`url(#${id})`);
+    const arc = svg.querySelector("path");
+    expect(arc?.getAttribute("stroke")).toBe(`url(#${id})`);
   });
 
-  it("renders the three white 20px round-capped J strokes verbatim", () => {
+  it("renders the round-capped gradient arc and the white r=20.4 dot verbatim", () => {
     const { container } = render(<BrandMark size={18} />);
     const svg = must(container, "svg[data-brand-mark]");
-    const group = svg.querySelector("g");
-    expect(group?.getAttribute("fill")).toBe("none");
-    expect(group?.getAttribute("stroke")).toBe("#FFFFFF");
-    expect(group?.getAttribute("stroke-width")).toBe("20");
-    expect(group?.getAttribute("stroke-linecap")).toBe("round");
-    const paths = [...svg.querySelectorAll("path")].map((p) => p.getAttribute("d"));
-    expect(paths).toEqual([
-      "M 556 240 L 556 578 A 105 105 0 0 1 403 605",
-      "M 609 240 L 609 578 A 158 158 0 0 1 398 630",
-      "M 662 240 L 662 578 A 211 211 0 0 1 393 655",
-    ]);
+    const arc = svg.querySelector("path");
+    expect(arc?.getAttribute("fill")).toBe("none");
+    expect(arc?.getAttribute("stroke-width")).toBe("27");
+    expect(arc?.getAttribute("stroke-linecap")).toBe("round");
+    expect(arc?.getAttribute("d")).toBe(
+      "M 324.8 167.7 A 120.0 120.0 0 1 1 215.0 153.2",
+    );
+    const dot = svg.querySelector("circle");
+    expect(dot?.getAttribute("cx")).toBe("272.7");
+    expect(dot?.getAttribute("cy")).toBe("147.2");
+    expect(dot?.getAttribute("r")).toBe("20.4");
+    expect(dot?.getAttribute("fill")).toBe("#fff");
   });
 
   it("mints a unique gradient id per instance so marks never fight", () => {
@@ -139,9 +145,9 @@ describe("Phase 49 — BrandMark geometry", () => {
     const ids = [...container.querySelectorAll("linearGradient")].map((g) => g.getAttribute("id"));
     expect(ids.length).toBe(2);
     expect(ids[0]).not.toBe(ids[1]);
-    const rectFills = [...container.querySelectorAll("rect")].map((r) => r.getAttribute("fill"));
-    expect(rectFills[0]).toBe(`url(#${ids[0]})`);
-    expect(rectFills[1]).toBe(`url(#${ids[1]})`);
+    const arcStrokes = [...container.querySelectorAll("path")].map((p) => p.getAttribute("stroke"));
+    expect(arcStrokes[0]).toBe(`url(#${ids[0]})`);
+    expect(arcStrokes[1]).toBe(`url(#${ids[1]})`);
   });
 
   it("sizes via the size prop and stays square (crisp at small sizes)", () => {
@@ -149,7 +155,7 @@ describe("Phase 49 — BrandMark geometry", () => {
     const svg = must(container, "svg[data-brand-mark]");
     expect(svg.getAttribute("width")).toBe("18");
     expect(svg.getAttribute("height")).toBe("18");
-    expect(svg.getAttribute("viewBox")).toBe("0 0 1024 1024");
+    expect(svg.getAttribute("viewBox")).toBe("0 0 512 512");
   });
 
   it("is decorative by default and labelled when a title is given", () => {

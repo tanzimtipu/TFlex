@@ -184,6 +184,7 @@ import { PasswordPromptDialog } from "./components/PasswordPromptDialog";
 import { ProtectionNotice } from "./components/ProtectionNotice";
 import { ConversionNotice, ConversionProgress } from "./components/ConversionNotice";
 import { ReadingView } from "./components/ReadingView";
+import { BookView } from "./components/BookView";
 import { BookOpen } from "lucide-react";
 import {
   createFromImagesRoute,
@@ -593,13 +594,19 @@ export interface DocumentSurfaceColumnProps {
   onDismissValidation: () => void;
   onDismissProtection: () => void;
   onOpenReadingView: () => void;
+  /** Phase 66 (chunk 1) — retained on the interface for host/harness
+   *  compatibility. The cbz/cbt "Open comic view" trigger was superseded by
+   *  the canvas "Book View" entry, so it is no longer rendered here; the
+   *  prop stays so existing DocumentSurfaceColumn mounts type-check. */
   onOpenComicView: () => void;
 }
 
 export function DocumentSurfaceColumn(props: DocumentSurfaceColumnProps): ReactElement {
   const { sourceFormat } = props;
-  const showReader =
-    sourceFormat === "epub" || sourceFormat === "cbz" || sourceFormat === "cbt";
+  // Phase 66 (chunk 1) — the reader entry is EPUB ONLY now. The cbz/cbt
+  // "Open comic view" trigger is gone: the canvas "Book View" control (mounted
+  // in DocumentView) supersedes it for any open document.
+  const showReader = sourceFormat === "epub";
   return (
     <div
       className="document-column"
@@ -638,13 +645,11 @@ export function DocumentSurfaceColumn(props: DocumentSurfaceColumnProps): ReactE
           type="button"
           className="reading-open-button"
           data-reading-open
-          aria-label={sourceFormat === "epub" ? "Open reading view" : "Open comic view"}
-          onClick={
-            sourceFormat === "epub" ? props.onOpenReadingView : props.onOpenComicView
-          }
+          aria-label="Open reading view"
+          onClick={props.onOpenReadingView}
         >
           <BookOpen size={14} aria-hidden />
-          {sourceFormat === "epub" ? "Open reading view" : "Open comic view"}
+          Open reading view
         </button>
       )}
       {props.document}
@@ -909,6 +914,16 @@ export function App(): ReactElement {
   // Phase 56 (features A / C) — the active reading session (null = closed).
   // One shell serves both EPUB and comic modes (feature D).
   const [readingView, setReadingView] = useState<{ mode: "epub" | "comic" } | null>(null);
+  // Phase 66 (chunk 1) — the in-canvas read-only Book View. Session-only; the
+  // value is the tab it belongs to, so switching tabs cannot leave a stale
+  // book surface on a different document. Opens from the canvas entry and is
+  // cleared by its own close control.
+  const [bookViewTabId, setBookViewTabId] = useState<string | null>(null);
+  // True only while the Book View belongs to the ACTIVE tab. It forces the
+  // rail and Inspector collapse (derived, never persisted) and is cleared
+  // simply by the mode closing or the active tab changing.
+  const bookViewActive = bookViewTabId !== null && bookViewTabId === tabs.activeId;
+  const inspectorCollapsedForBookView = inspectorCollapsedEffective || bookViewActive;
   const [aboutOpen, setAboutOpen] = useState(false);
   const [prefsOpen, setPrefsOpen] = useState(false);
   // Phase 44 — the account surface. `accountsOpen` is only ever meaningful
@@ -9220,6 +9235,16 @@ pushToast(
     if (activeTabIdRefLocal.current === null) return;
     setReadingView({ mode: "comic" });
   }, []);
+  // Phase 66 (chunk 1) — the canvas Book View verb. It closes over no render
+  // state (only the stable setter and the active-tab ref), so the DocumentView
+  // prop identity never churns.
+  const openBookView = useCallback((): void => {
+    if (activeTabIdRefLocal.current === null) return;
+    setBookViewTabId(activeTabIdRefLocal.current);
+  }, []);
+  const closeBookView = useCallback((): void => {
+    setBookViewTabId(null);
+  }, []);
 
   const dockAppActions = useMemo<Record<string, () => void>>(
     () => ({
@@ -10107,8 +10132,8 @@ pushToast(
       <div
         className="app-main"
         data-tools-open={inspectorVisible ? "true" : "false"}
-        data-rail-collapsed={pagesPanelCollapsedEffective ? "true" : "false"}
-        data-inspector-collapsed={inspectorCollapsedEffective ? "true" : "false"}
+        data-rail-collapsed={pagesPanelCollapsedEffective || bookViewActive ? "true" : "false"}
+        data-inspector-collapsed={inspectorCollapsedForBookView ? "true" : "false"}
         // Phase 37 (item 8) — true on the welcome/home screen. Collapses the
         // rail's 44px track and lets the stage span the full frame.
         data-stage-rail-hidden={stageRailVisible ? "false" : "true"}
@@ -10217,12 +10242,79 @@ pushToast(
             const engine = engineFor(tabId);
             const ann = annotationHandlers(tabId);
             const fs = formsAndSignaturesHandlers(tabId);
-            const document = (
+            // Phase 66 (chunk 3) — the annotation palette / theme / MRU
+            // expressions handed to BookView's toolbar. Same source as the
+            // DocumentView mount below; defined here so the expressions are
+            // written once for Book View.
+            const bookAnnotationPalette =
+              settings.annotationColors === undefined
+                ? null
+                : {
+                    light: (settings.annotationColors.light ?? []).map((p) =>
+                      typeof p === 'string' ? { id: `legacy-${p}`, hex: p } : p,
+                    ),
+                    dark: (settings.annotationColors.dark ?? []).map((p) =>
+                      typeof p === 'string' ? { id: `legacy-${p}`, hex: p } : p,
+                    ),
+                  };
+            const onBookAnnotationPaletteChange = (next: {
+              light?: Array<{ id: string; hex: string }>;
+              dark?: Array<{ id: string; hex: string }>;
+            }): void => {
+              setSettings((prev) => {
+                if (prev === null) return prev;
+                const updated = applyAnnotationPaletteChange(prev, next);
+                if (updated !== prev) trackAndSave(updated);
+                return updated;
+              });
+            };
+            const bookAnnotationRecentTools = settings.annotationRecentTools ?? [];
+            const onBookAnnotationRecentToolsChange = (ids: string[]): void => {
+              setSettings((prev) => {
+                if (prev === null) return prev;
+                const updated = preferencesReducer(prev, {
+                  type: 'set-annotation-recent-tools',
+                  value: ids,
+                });
+                if (updated !== prev) trackAndSave(updated);
+                return updated;
+              });
+            };
+            // Phase 66 (chunk 1) — while Book View is on for this tab, render
+            // the read-only BookView INSTEAD of the DocumentView in the active
+            // (single-mode) pane. The rail, dock and flyout live inside
+            // DocumentView, so they vanish naturally; App separately forces the
+            // Inspector and rail track collapsed.
+            const bookViewForPane =
+              pane === null && bookViewTabId !== null && bookViewTabId === meta.id;
+            const document = bookViewForPane ? (
+              <BookView
+                doc={open.session.doc}
+                pageCount={engine.engineState.pageCount}
+                title={meta.title}
+                defaultLayout={
+                  (settings.readingDefaults ?? DEFAULT_READING_DEFAULTS).comics.layout
+                }
+                onClose={closeBookView}
+                annotations={ann.annotations}
+                liveAnnTextIds={ann.liveAnnTextIds}
+                onCreateAnnotation={ann.createAnnotation}
+                onEditAnnotation={ann.editAnnotation}
+                onDeleteAnnotation={ann.deleteAnnotation}
+                annotationPalette={bookAnnotationPalette}
+                onAnnotationPaletteChange={onBookAnnotationPaletteChange}
+                themeName={settings.theme}
+                annotationRecentTools={bookAnnotationRecentTools}
+                onAnnotationRecentToolsChange={onBookAnnotationRecentToolsChange}
+              />
+            ) : (
                   <DocumentView
                     doc={open.session.doc}
                     pageCount={engine.engineState.pageCount}
                     outline={open.session.outline}
                     initial={open.persisted}
+                    // Phase 66 (chunk 1) — the canvas Book View entry.
+                    onOpenBookView={openBookView}
                     // Phase 36 (chunk 3a) — the Action Dock. The stage is the
                     // pane's own stage in Multi Mode (the shared dock arrives
                     // with the shared-workspace chunk; per-pane docks are
@@ -10590,7 +10682,7 @@ pushToast(
         {inspectorOpen && activeTab !== null && tabs.activeId !== null && (
           <Inspector
             stage={activeStage}
-            collapsed={inspectorCollapsedEffective}
+            collapsed={inspectorCollapsedForBookView}
             // DEF-335 — the control's label follows the EFFECTIVE state, so a
             // click records the intent it shows: while the ladder forces the
             // collapse the control reads "Expand" and one click records the

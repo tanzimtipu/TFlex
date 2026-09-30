@@ -453,9 +453,9 @@ test('row 5: conversion progress shows and cancel aborts quietly', async () => {
 
 // ---------------------------------------------------------------------------
 // CONTROL-INDEX row 6 - the conversion notice shows source/fidelity/warnings
-// and dismisses for the tab.
+// and collapses for the tab.
 // ---------------------------------------------------------------------------
-test('row 6: conversion notice shows and dismisses', async () => {
+test('row 6: conversion notice shows and collapses', async () => {
   const outcome = await openFixture(F.network);
   expect(outcome.ok, `network.html import failed: ${outcome.error}`).toBe(true);
   const notice = win.locator('[data-conversion-notice]');
@@ -463,8 +463,9 @@ test('row 6: conversion notice shows and dismisses', async () => {
   const fidelity = await notice.locator('[data-conversion-fidelity-label]').innerText();
   const warningCount = await notice.locator('[data-conversion-warning]').count();
   await win.screenshot({ path: path.join(SHOTS, 'phase53-notice.png') });
-  await win.locator('[data-conversion-dismiss]').click();
+  await win.locator('[data-conversion-collapse]').click();
   await win.waitForTimeout(500);
+  expect(await win.locator('[data-conversion-icon]').count(), 'collapsed icon missing').toBe(1);
   const afterDismiss = await win.locator('[data-conversion-notice]').count();
   console.log('P53_NOTICE ' + JSON.stringify({ source, fidelity, warningCount, afterDismiss }));
   expect(source).toBe('HTML document');
@@ -484,6 +485,7 @@ test('row 7: convert preferences persist across a restart and clamp', async () =
   win = await app.firstWindow();
   await win.waitForSelector('.sample-card', { timeout: 30000 });
   await win.locator('[data-open-preferences]').first().click();
+  await win.locator('[data-prefs-category="import"]').click();
   await win.waitForSelector('[data-prefs-convert-section]', { timeout: 8000 });
 
   await win.locator('[data-prefs-convert-page-size]').selectOption('letter');
@@ -518,6 +520,7 @@ test('row 7: convert preferences persist across a restart and clamp', async () =
   win = await app.firstWindow();
   await win.waitForSelector('.sample-card', { timeout: 30000 });
   await win.locator('[data-open-preferences]').first().click();
+  await win.locator('[data-prefs-category="import"]').click();
   await win.waitForSelector('[data-prefs-convert-section]', { timeout: 8000 });
   const persisted = {
     pageSize: await win.locator('[data-prefs-convert-page-size]').inputValue(),

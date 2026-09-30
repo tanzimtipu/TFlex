@@ -114,7 +114,6 @@ const SHARED_ALLOW: Readonly<Record<string, string>> = {
   FilePlus2: "the add-document/page verb (context panel + registry insertPages; Welcome holds a hidden bundle sprite)",
   Download: "the download-update verb (update indicator + registry updateDownload)",
   RefreshCw: "the check-for-update / retry verb (indicator + update prompt + registry checkForUpdate)",
-  LoaderCircle: "the update-download progress spinner (indicator + update prompt)",
   Type: "the annotation text type glyph (annotation toolbar + list legend)",
   TextCursor: "the edit-content text item (registry editText + the context panel's edit-content text row)",
   MessageSquareText: "the annotations-rail verb (registry annotationsPanel + the rail's annotations tab)",

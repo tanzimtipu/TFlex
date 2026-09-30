@@ -1,6 +1,6 @@
 import type { PDFDocumentProxy } from "pdfjs-dist";
 import { AnimatePresence } from "motion/react";
-import { GripVertical } from "lucide-react";
+import { BookOpen, GripVertical } from "lucide-react";
 import {
   forwardRef,
   useCallback,
@@ -508,6 +508,13 @@ interface DocumentViewProps extends DocumentViewDockProps {
    *  Multi Mode's per-pane pills fade with it, exactly as single mode's pills
    *  fade with the view's own dock. */
   chromeIdle?: boolean;
+  /** Phase 66 (chunk 1) — the Book View entry. When the host supplies it, a
+   *  single-view canvas control at the overlay's TOP-LEFT toggles the host's
+   *  read-only Book View; while that mode is on the host renders BookView
+   *  INSTEAD of this DocumentView, so this control vanishes with the dock,
+   *  flyout and rail. Absent (every pre-chunk-66 mount) renders exactly as
+   *  before - no control. Multi Mode panes never show it. */
+  onOpenBookView?: () => void;
   /** Phase 32 (chunk 2d) â€” canvas page drag and drop. Present only in Multi
    *  Mode: each page grows a hover-revealed grip (`data-page-drag-handle`)
    *  that starts a document-aware drag, and every page slot accepts a drop
@@ -850,6 +857,7 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
   paneContentReady = true,
   paneFocused = false,
   chromeIdle = false,
+  onOpenBookView,
   activeStage,
   dockPins = [],
   dockUnpinned = [],
@@ -4293,6 +4301,23 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
             pixel-identical to before. The layer is pointer-inert; the pills,
             the flyout and the dock opt back in. */}
         <div className="canvas-overlay" data-canvas-overlay>
+        {/* Phase 66 (chunk 1) — the Book View entry at the overlay's
+            TOP-LEFT, the mirror of the top-right page-layout control. It
+            renders only when the host wires the verb and never in a Multi
+            Mode pane; activating it makes the host swap this whole view for
+            the read-only BookView, so it disappears along with the dock. */}
+        {onOpenBookView !== undefined && !inMultiPane && (
+          <button
+            type="button"
+            className="canvas-book-view"
+            data-book-view-open
+            aria-label="Book View"
+            onClick={onOpenBookView}
+          >
+            <BookOpen size={14} aria-hidden />
+            Book View
+          </button>
+        )}
         {/* Phase 40 (item 7) — the SINGLE-VIEW page-layout control. It sits at
             the canvas's top-right (inside the canvas-bound overlay, so the open
             Inspector's inset already keeps it off the panel) and never renders

@@ -279,8 +279,11 @@ describe("Phase 57 feature A — 3D limitation notice", () => {
       expect(notice).not.toBeNull();
       expect(notice?.textContent).toContain('Page 2 contains 3D content ("Turbine")');
       expect(notice?.textContent).toContain('Page 5 contains 3D content ("Gearbox")');
-      // Non-dismissible: no button anywhere in the notice.
-      expect(notice?.querySelector("button")).toBeNull();
+      // Phase 67 (feature C): the bar is still non-dismissible — its only
+      // control collapses it into the always-available "i" overlay.
+      const buttons = notice?.querySelectorAll("button") ?? [];
+      expect(buttons).toHaveLength(1);
+      expect(buttons[0]?.hasAttribute("data-pdf3d-collapse")).toBe(true);
     } finally {
       view.cleanup();
     }

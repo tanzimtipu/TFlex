@@ -559,6 +559,10 @@
   --bg-tab: transparent;
   --bg-tab-active: #15191e;
 
+  /* Phase 69 (feature B) - the BrandLoader leading dot: white on the dark
+   * surface (its light/frosted default is the brand violet #7C3AED). */
+  --brand-loader-dot: #fff;
+
   /* Layered surfaces (dark) */
   --bg-secondary: #15191e;
   --bg-elevated: #191e24;
@@ -1615,14 +1619,31 @@ input[type="checkbox"] {
   user-select: none;
 }
 
-/* Phase 49 - the JOVREL mark is an inline SVG (BrandMark); the tile, its
- * squircle radius and the triple-stroke J all come from the SVG, so this
- * class only owns layout. Width/height arrive from the component's `size`
- * prop (18px in the title bar), which keeps the mark crisp because the
- * 1024x1024 viewBox scales losslessly. */
+/* Phase 69 (feature B) - the JOVREL "Halo" mark is an inline SVG (BrandMark);
+ * the near-black tile, its squircle radius, the gradient arc and the leading
+ * dot all come from the SVG, so this class only owns layout. Width/height
+ * arrive from the component's `size` prop (18px in the title bar), which keeps
+ * the mark crisp because the 512x512 viewBox scales losslessly. */
 .brand-mark {
   display: block;
   flex: none;
+}
+
+/* The Phase 69 loading ring (BrandLoader): the same arc + dot geometry without
+ * the tile, so it reads on any surface. Layout only - rotation is supplied by
+ * the caller's spinner class, which reuses the shared spin keyframes. */
+.brand-loader {
+  display: block;
+  flex: none;
+}
+
+/* Inline-text loading lines (Welcome samples, the account sheet) place the
+ * ring in the text run rather than a flex row. */
+.samples-empty .brand-loader,
+.accounts-status .brand-loader {
+  display: inline-block;
+  vertical-align: -0.15em;
+  margin-right: var(--sp-1);
 }
 
 /* The wordmark is themed text (Inter), not an image: `currentColor` lets the
@@ -2004,7 +2025,7 @@ input[type="checkbox"] {
   /* Phase 51 (item 5) — the whole tab is now the colour, so the chip is a
    *  lifted tint of the SAME slot (visible on the full-strength body, and
    *  still per-slot distinct for the adjacent-tab check). */
-  background: color-mix(in srgb, var(--tf-tab-ink) 35%, var(--tf-tab-accent, var(--sem-neutral)));
+  background: var(--tf-tab-accent, var(--sem-neutral));
 }
 
 /* Phase 4 — tab hover. Phase 51 (item 5): the hover BRIGHTENS the tab's own
@@ -2072,6 +2093,7 @@ input[type="checkbox"] {
 
 .tab-area[data-tab-style="colorful"] .tab {
   height: 26px;
+  width: var(--tf-tab-width, 180px);
   min-width: 132px;
   max-width: 200px;
   box-sizing: border-box;
@@ -2080,7 +2102,7 @@ input[type="checkbox"] {
   border: none;
   border-radius: 0;
   background: transparent;
-  color: var(--tf-tab-ink);
+  color: var(--fg-strong);
   font-weight: 400;
 }
 
@@ -2094,11 +2116,7 @@ input[type="checkbox"] {
   inset: 0;
   z-index: 0;
   border-radius: var(--radius-2);
-  background: linear-gradient(
-    180deg,
-    color-mix(in srgb, var(--tf-tab-accent, var(--sem-neutral)) 86%, var(--tf-tab-ink)),
-    var(--tf-tab-accent, var(--sem-neutral))
-  );
+  background: color-mix(in srgb, var(--tf-tab-accent, var(--sem-neutral)) 18%, var(--bg-elevated));
 }
 
 /* Keep the tab's own content (chip, title, close) above the fill layer. */
@@ -2112,7 +2130,7 @@ input[type="checkbox"] {
 .tab-area[data-tab-style="colorful"] .tab-active {
   font-weight: inherit;
   box-shadow: none;
-  color: var(--tf-tab-ink);
+  color: var(--fg-strong);
 }
 
 .tab-area[data-tab-style="colorful"] .tab-active::before {
@@ -2120,11 +2138,7 @@ input[type="checkbox"] {
    * runs continuously into the canvas; the top corners keep the chip radius. */
   border-bottom-left-radius: 0;
   border-bottom-right-radius: 0;
-  background: linear-gradient(
-    180deg,
-    color-mix(in srgb, var(--tf-tab-accent, var(--sem-neutral)) 70%, var(--tf-tab-ink)),
-    var(--tf-tab-accent, var(--sem-neutral))
-  );
+  background: color-mix(in srgb, var(--tf-tab-accent, var(--sem-neutral)) 34%, var(--bg-elevated));
 }
 
 /* ===========================================================================
@@ -2292,6 +2306,23 @@ body.tab-reordering .tab-list[data-reorder="true"] .tab {
   box-shadow: 0 0 0 1.5px transparent;
 }
 
+/* DEF-441 — COLORFUL-SCOPED tab dot + close hover.
+ *
+ * The Phase 68 calm-down turned the colorful tab body into a pale
+ * `color-mix(accent 18%, --bg-elevated)` tint (34% when active). The
+ * Phase 51 dot (ink fill, accent/transparent ring) and the ink close wash
+ * were tuned for the old FULL-STRENGTH body, so on the pale tint the
+ * inactive dot's ring vanished (`transparent`) and the close hover
+ * measured ~1.07:1 (invisible). These overrides paint the colorful dot
+ * with the tab's own full-strength accent plus an `--fg-strong` ring, and
+ * the close hover with an `--fg-strong` wash, so both read on the pale body
+ * in every theme (light / dark / frosted). SCOPED to colorful: standard
+ * tabs stay byte-for-byte unchanged. */
+.tab-area[data-tab-style="colorful"] .tab-modified-dot {
+  background: var(--tf-tab-accent, var(--sem-neutral));
+  box-shadow: 0 0 0 1.5px color-mix(in srgb, var(--fg-strong) 55%, transparent);
+}
+
 .tab-close {
   display: inline-flex;
   align-items: center;
@@ -2314,6 +2345,15 @@ body.tab-reordering .tab-list[data-reorder="true"] .tab {
 .tab-close:hover {
   /* Phase 51 (item 5) — an ink wash reads on every tab hue. */
   background: color-mix(in srgb, var(--tf-tab-ink) 22%, transparent);
+  opacity: 1;
+}
+
+/* DEF-441 — the colorful close hover. The Phase 51 ink wash is white in
+ * light/frosted, so on the pale Phase 68 body it LIGHTENED the surface
+ * (~1.07:1, invisible). An --fg-strong wash darkens it in light/frosted
+ * and lightens it in dark, always clearly distinct from the body. */
+.tab-area[data-tab-style="colorful"] .tab-close:hover {
+  background: color-mix(in srgb, var(--fg-strong) 16%, transparent);
   opacity: 1;
 }
 
@@ -15200,7 +15240,7 @@ rect.ann-highlight.ann-preview {
   background: var(--bg-elevated);
   border: 1px solid var(--glass-border);
   border-radius: 6px;
-  color: var(--fg-muted);
+  color: var(--tf-stage-edit);
   cursor: pointer;
   box-shadow: var(--shadow-menu);
   transition:
@@ -17179,18 +17219,29 @@ cursor: pointer;
 
 /* Phase 53 (feature I) — the conversion card, above the canvas for an
  * imported document: source label, fidelity in plain words, and every warning
- * always visible. Mount motion uses the shared tokens only. */
+ * always visible. Mount motion uses the shared tokens only. Phase 67
+ * (feature A) gives it the same ROUNDED-BOX treatment as `.protection-notice`
+ * and the Phase 59 collapse-to-"i" behaviour. */
 .conversion-notice {
   display: flex;
   align-items: flex-start;
   gap: var(--sp-2);
+  margin: var(--sp-2) var(--space-standard);
   padding: var(--sp-2) var(--space-standard);
-  border-bottom: 1px solid var(--border);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-3);
   background: var(--bg-elevated);
   color: var(--fg);
   font-size: var(--fs-sm);
   line-height: 1.45;
+  transform-origin: top left;
   animation: conversion-notice-in var(--motion-duration-standard) var(--motion-ease-enter) both;
+}
+
+/* The collapse reverses the enter: the box recedes toward its top-left
+ * anchor (the position of the collapsed "i") over the fast/exit band. */
+.conversion-notice--leaving {
+  animation: conversion-notice-out var(--motion-duration-fast) var(--motion-ease-exit) both;
 }
 
 @keyframes conversion-notice-in {
@@ -17202,6 +17253,28 @@ cursor: pointer;
     opacity: 1;
     transform: translateY(0);
   }
+}
+
+@keyframes conversion-notice-out {
+  from {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: translateY(-4px) scale(var(--motion-scale-exit));
+  }
+}
+
+/* Phase 67 (feature A) — the flow/positioning wrapper while the card is
+ * collapsed. It sits at the top of the pane's document column; the absolute
+ * "i" overlay inside it neither pushes the page nor covers a control. z-index
+ * 8 matches the protection region (above the page scroller and its annotation
+ * layers, well under the modal sheets). */
+.conversion-notice-region {
+  position: relative;
+  flex: 0 0 auto;
+  z-index: 8;
 }
 
 /* The conversion card is a FLOW element at the top of the pane's document
@@ -17330,7 +17403,11 @@ cursor: pointer;
   font-size: var(--fs-xs);
 }
 
-.conversion-notice-dismiss {
+/* Phase 67 (feature A) — the collapse control. It REPLACES the old
+ * session-dismiss "×" (class `.conversion-notice-dismiss` is gone): the notice
+ * now stays available through the collapsed "i", so this control only closes
+ * the box. Mirrors `.protection-notice-collapse`. */
+.conversion-notice-collapse {
   margin-left: auto;
   flex: 0 0 auto;
   display: inline-flex;
@@ -17346,9 +17423,63 @@ cursor: pointer;
   transition: background-color var(--motion-duration-fast) var(--motion-ease-standard);
 }
 
-.conversion-notice-dismiss:hover {
-  background: var(--bg-hover);
-  color: var(--fg-strong);
+.conversion-notice-collapse:hover {
+  background: var(--accent);
+  color: var(--bg-base);
+}
+
+.conversion-notice-collapse:focus-visible,
+.conversion-notice-collapsed-toggle:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
+/* The collapsed "i": a small overlay pinned at the canvas's TOP-LEFT, in its
+ * own FIXED horizontal slot so it can never share a pixel with the protection
+ * (slot 0) or 3D (slot 2) icons. It is absolute inside the (zero-height when
+ * collapsed) region, so it never pushes the page. Multi Mode has no left
+ * ContextPanel and resets the rail offset below, keeping the same 36px slot
+ * pitch. */
+.conversion-notice-collapsed-toggle {
+  position: absolute;
+  top: var(--sp-2);
+  left: calc(var(--tf-rail-w, 184px) + var(--space-standard) + 36px);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-2);
+  background: var(--bg-elevated);
+  color: var(--accent);
+  cursor: pointer;
+  box-shadow: var(--shadow-popover);
+  transform-origin: top left;
+  animation: conversion-notice-icon-in var(--motion-duration-fast) var(--motion-ease-enter) both;
+}
+
+.conversion-notice-collapsed-toggle:hover {
+  background: var(--accent);
+  color: var(--bg-base);
+}
+
+@keyframes conversion-notice-icon-in {
+  from {
+    opacity: 0;
+    transform: scale(var(--motion-scale-enter));
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+/* Multi Mode consumes the inset ONCE (see the card reservation above), and has
+ * no left ContextPanel, so the collapsed "i" must not be offset by the rail
+ * track: return it to the region's own left edge plus its slot. */
+.tab-stage[data-multi-mode="true"] .conversion-notice-collapsed-toggle {
+  left: calc(var(--space-standard) + 36px);
 }
 
 /* Phase 53 — the app-level progress affordance while a conversion runs. */
@@ -18056,19 +18187,143 @@ cursor: pointer;
   color: var(--fg-muted);
 }
 
+/* Phase 57 (feature A) — the 3D limitation bar, now a ROUNDED, ANIMATED box
+ * with the Phase 67 (feature C) collapse-to-"i" behaviour, mirroring
+ * `.protection-notice`. It stays a FLOW element at the top of the pane's
+ * document column while expanded, so its `margin-left: auto` collapse control
+ * lands at the box's right edge and must reserve the fixed Inspector's column
+ * with the shared `--tf-tools-inset` token (the DEF-357 def at class). */
 .pdf3d-notice {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 6px 12px;
-  border-bottom: 1px solid var(--border);
+  margin: var(--sp-2) var(--space-standard);
+  padding: var(--sp-2) var(--space-standard);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-3);
   background: var(--bg-raised);
   color: var(--fg-soft);
   font-size: 12px;
+  transform-origin: top left;
+  animation: pdf3d-notice-in var(--motion-duration-standard) var(--motion-ease-enter) both;
+}
+
+.pdf3d-notice--leaving {
+  animation: pdf3d-notice-out var(--motion-duration-fast) var(--motion-ease-exit) both;
+}
+
+@keyframes pdf3d-notice-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes pdf3d-notice-out {
+  from {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: translateY(-4px) scale(var(--motion-scale-exit));
+  }
+}
+
+.document-column > .pdf3d-notice {
+  margin-right: var(--tf-tools-inset, 0px);
+}
+
+.tab-stage[data-multi-mode="true"] .document-column > .pdf3d-notice {
+  margin-right: 0;
+}
+
+/* Phase 67 (feature C) — the flow/positioning wrapper while the bar is
+ * collapsed; the absolute "i" overlay inside it neither pushes the page nor
+ * covers a control. z-index 8 matches the protection / conversion regions. */
+.pdf3d-notice-region {
+  position: relative;
+  flex: 0 0 auto;
+  z-index: 8;
 }
 
 .pdf3d-notice-text {
   line-height: 1.4;
+}
+
+/* Phase 67 (feature C) — the collapse control, mirroring
+ * `.protection-notice-collapse`. */
+.pdf3d-notice-collapse {
+  margin-left: auto;
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border: none;
+  border-radius: var(--radius-2);
+  background: transparent;
+  color: var(--fg-muted);
+  cursor: pointer;
+  transition: background-color var(--motion-duration-fast) var(--motion-ease-standard);
+}
+
+.pdf3d-notice-collapse:hover {
+  background: var(--accent);
+  color: var(--bg-base);
+}
+
+.pdf3d-notice-collapse:focus-visible,
+.pdf3d-notice-collapsed-toggle:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
+/* The collapsed "i": pinned at the canvas's TOP-LEFT in its own FIXED
+ * horizontal slot (slot 2, +72px), so it can never share a pixel with the
+ * protection (slot 0) and conversion (slot 1) icons. */
+.pdf3d-notice-collapsed-toggle {
+  position: absolute;
+  top: var(--sp-2);
+  left: calc(var(--tf-rail-w, 184px) + var(--space-standard) + 72px);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-2);
+  background: var(--bg-elevated);
+  color: var(--accent);
+  cursor: pointer;
+  box-shadow: var(--shadow-popover);
+  transform-origin: top left;
+  animation: pdf3d-notice-icon-in var(--motion-duration-fast) var(--motion-ease-enter) both;
+}
+
+.pdf3d-notice-collapsed-toggle:hover {
+  background: var(--accent);
+  color: var(--bg-base);
+}
+
+@keyframes pdf3d-notice-icon-in {
+  from {
+    opacity: 0;
+    transform: scale(var(--motion-scale-enter));
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.tab-stage[data-multi-mode="true"] .pdf3d-notice-collapsed-toggle {
+  left: calc(var(--space-standard) + 72px);
 }
 
 /* ---------------------------------------------------------------------------
@@ -18120,5 +18375,274 @@ cursor: pointer;
    * fully visible with a single tab and scroll into view with many. */
   .tab-area { flex: 1 1 0; min-width: 148px; }
 }
+
+/* ==========================================================================
+ * Phase 66 (chunk 1) - the in-canvas read-only Book View mode shell.
+ * The surface swaps in for the pane's DocumentView, so it owns the whole
+ * document column: a slim header, a measured page stage and a paging nav.
+ * Neutral chrome tokens only; motion is the shared fast token. PDF content is
+ * never recoloured or animated.
+ * ========================================================================== */
+.book-view {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  margin-right: var(--tf-tools-inset, 0px);
+  background: var(--bg-sunken);
+  color: var(--fg);
+}
+
+.book-view-header {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  flex: 0 0 auto;
+  padding: var(--sp-2) var(--sp-3);
+  background: var(--bg-toolbar);
+  border-bottom: 1px solid var(--border);
+}
+
+/* Phase 66 (chunk 3) - the Book View annotation toolbar row, a single
+ * horizontal non-scrolling strip between the header and the stage. */
+.book-view-tools {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  flex: 0 0 auto;
+  padding: var(--sp-1) var(--sp-3);
+  background: var(--bg-toolbar);
+  border-bottom: 1px solid var(--border);
+  overflow: hidden;
+}
+
+.book-view-title {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+  font-weight: 600;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.book-view-progress {
+  margin-left: auto;
+  font-size: 12px;
+  color: var(--fg-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.book-view-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--sp-1);
+  border: none;
+  border-radius: var(--radius-2);
+  background: transparent;
+  color: var(--fg);
+  cursor: pointer;
+  transition: background var(--motion-duration-fast) var(--motion-ease-standard);
+}
+
+.book-view-close:hover {
+  background: var(--bg-hover);
+}
+
+.book-view-stage {
+  flex: 1 1 auto;
+  min-height: 0;
+  min-width: 0;
+  overflow: auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--sp-4);
+  background: var(--bg-base);
+  /* Phase 66 (chunk 2) - the shared perspective the page-turn flip rotates
+   * into. Transform-only: the page bitmap is never recoloured or faded. */
+  perspective: 1600px;
+}
+
+.book-view-page {
+  margin: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 0;
+}
+
+/* Phase 66 (chunk 2) - the single/double layout toggle pair, top-right of the
+ * header before the close control. Neutral chrome; the pressed state uses the
+ * one accent. Matches the reading-view toggle treatment. */
+.book-view-layout-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 2px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-2);
+  background: var(--bg-elevated);
+}
+
+.book-view-layout-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--sp-1);
+  border: none;
+  border-radius: calc(var(--radius-2) - 1px);
+  background: transparent;
+  color: var(--fg-muted);
+  cursor: pointer;
+  transition: background var(--motion-duration-fast) var(--motion-ease-standard),
+    color var(--motion-duration-fast) var(--motion-ease-standard);
+}
+
+.book-view-layout-button:hover {
+  background: var(--bg-hover);
+  color: var(--fg);
+}
+
+.book-view-layout-button[aria-pressed='true'] {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+/* The double-page spread: two page figures side by side with the centre crease
+ * between them. Transform-only motion; the crease is a static visual seam. */
+.book-view-spread {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0;
+  line-height: 0;
+}
+
+.book-view-crease {
+  align-self: stretch;
+  flex: 0 0 2px;
+  margin: 0;
+  border-radius: 1px;
+  background: linear-gradient(
+    to right,
+    var(--border) 0,
+    var(--border-strong) 50%,
+    var(--border) 100%
+  );
+}
+
+/* The page-turn flip. Transform-only CSS 3D over the EXISTING PageView canvas:
+ * no WebGL/3D dependency, no recolour, no opacity fade of the bitmap. The
+ * keyframe rotates about the spine edge using the layout motion token, so the
+ * prefers-reduced-motion / data-animations="off" catch-alls collapse the
+ * duration to 0 and the page-turn becomes instant (styles.css mirrors
+ * .pdf-page-layout-flip). */
+.book-view-turn-next {
+  transform-origin: right center;
+  animation: tf-book-turn-next var(--motion-duration-layout) var(--motion-ease-layout);
+}
+
+.book-view-turn-prev {
+  transform-origin: left center;
+  animation: tf-book-turn-prev var(--motion-duration-layout) var(--motion-ease-layout);
+}
+
+@keyframes tf-book-turn-next {
+  from {
+    transform: rotateY(0deg);
+  }
+  to {
+    transform: rotateY(-180deg);
+  }
+}
+
+@keyframes tf-book-turn-prev {
+  from {
+    transform: rotateY(0deg);
+  }
+  to {
+    transform: rotateY(180deg);
+  }
+}
+
+.book-view-empty {
+  color: var(--fg-muted);
+  padding: var(--sp-6);
+}
+
+.book-view-nav {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--sp-3);
+  flex: 0 0 auto;
+  padding: var(--sp-2) var(--sp-3);
+  background: var(--bg-toolbar);
+  border-top: 1px solid var(--border);
+}
+
+.book-nav-button {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: var(--sp-1) var(--sp-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-2);
+  background: var(--bg-elevated);
+  color: var(--fg);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+  transition: background var(--motion-duration-fast) var(--motion-ease-standard),
+    border-color var(--motion-duration-fast) var(--motion-ease-standard);
+}
+
+.book-nav-button:hover:not(:disabled) {
+  background: var(--bg-hover);
+  border-color: var(--border-strong);
+}
+
+.book-nav-button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+/* Phase 66 (chunk 1) - the Book View entry, the TOP-LEFT mirror of the
+ * top-right page-layout control. It shares that control's surface treatment
+ * and sits 12px below the measured chrome stack (`--tf-chrome-y`). */
+.canvas-book-view {
+  position: absolute;
+  top: calc(var(--tf-chrome-y, 0px) + 12px);
+  left: 12px;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: 4px var(--sp-3);
+  background: var(--bg-elevated);
+  color: var(--fg);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-group);
+  box-shadow: var(--shadow-menu);
+  -webkit-backdrop-filter: var(--glass-blur);
+  backdrop-filter: var(--glass-blur);
+  -webkit-app-region: no-drag;
+  pointer-events: auto;
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+  z-index: 3;
+  transition: background var(--motion-duration-fast) var(--motion-ease-standard),
+    border-color var(--motion-duration-fast) var(--motion-ease-standard);
+}
+
+.canvas-book-view:hover {
+  background: var(--bg-hover);
+  border-color: var(--border-strong);
+}
+
 
 

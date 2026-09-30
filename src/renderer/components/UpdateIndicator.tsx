@@ -24,8 +24,9 @@
 // dialog remains the source of truth for that case.
 
 import { type ReactElement, useEffect, useState, useCallback } from "react";
-import { Check, Download, LoaderCircle, RefreshCw, X } from "lucide-react";
+import { Check, Download, RefreshCw, X } from "lucide-react";
 import type { UpdateState } from "../../shared/types";
+import { BrandLoader } from "./BrandLoader";
 import { normalizeUpdateState } from "./updateStateNormalize";
 
 /** The visual presentation of the indicator for a given `UpdateState`.
@@ -229,7 +230,7 @@ export function UpdateIndicator(props: UpdateIndicatorProps): ReactElement | nul
           aria-label={view.ariaLabel}
           title={view.ariaLabel}
         >
-          <LoaderCircle size={16} aria-hidden className="update-indicator-spin" />
+          <BrandLoader className="update-indicator-spin" />
           <span>{view.progress}%</span>
         </span>
       );

@@ -3,6 +3,100 @@
 > Read discipline: this is a historical evidence ledger. Search for the assigned `ADV-NNN`
 > or unresolved `Disposition: PENDING` entries; do not load prior campaigns wholesale.
 
+## Phase 63 diff-pass — dock edit pen colour (TFL-47)
+
+Session label: `diff-pass`. Scope: the Phase 63 working-tree change to the dock edit
+pen only — `src/renderer/styles.css` `.action-dock-edit` base rule (resting
+`color: var(--tf-stage-edit)`), with `test/unit/renderer/tfl47_dockEditIconColor.test.ts`
+(static guard) and `e2e/phase63_dock_edit_colour.spec.cjs` (rendered computed-style
+probe). Read-only: no build, no e2e, no app launch (a concurrent phase-close QA owns
+test execution). `git diff` pinned the change to ONE line: `styles.css:15196`
+`color: var(--fg-muted)` -> `color: var(--tf-stage-edit)`; the hover / pressed / focus
+rules are absent from the diff. Phase 60-62 and every other uncommitted working-tree
+change were NOT re-litigated.
+
+## ADV-131: The dock edit-pen static guard's colour assertion is an unanchored substring — it can pass on `border-color`/`background-color`/`outline-color` while the glyph itself stays un-recoloured
+
+- Session: diff-pass
+- Suggested severity: LOW
+
+What I did (attack list, all five answered):
+1. **Cascade / token-resolution exploit?** REJECTED. `styles.css:15185-15203` is the
+   only rule that sets the pen's `color`; the pen is `<button className="action-dock-edit"
+   data-dock-edit-toggle>` (`ActionDock.tsx:1157-1170`) rendering a lucide `Pencil`
+   (`ActionDock.tsx:1169`, default `stroke="currentColor"`), so it inherits the rule.
+   A full-file scan for `action-dock-edit` returns only five hits: the base rule
+   (15185), hover (15205), pressed (15210), focus (15215) and a reduced-motion
+   `transition: none` list (15708). No `[data-dock-edit-toggle]` rule exists, and the
+   generic `.action-dock-verb` colour rules (15439-15477) do not match the pen. No
+   later or more-specific declaration can win. Caveat (not an exploit): the dock
+   carries `.action-dock[data-dock-idle='true'] { opacity: 0.4 }` (`styles.css:15163-15165`),
+   so after ~3s idle the whole dock — pen included — is dimmed on screen while its
+   computed `color` is still the token. The e2e is explicitly a computed-style probe
+   (spec comment lines 1-13, assertion uses `getComputedStyle(pen).color`), so this is
+   a computed-vs-perceived nuance, not a Phase 63 colour regression.
+2. **Does `--tf-stage-edit` resolve and differ from `--sem-neutral` in all three
+   themes?** REJECTED (claim holds). `--tf-stage-edit: var(--sem-primary)` in every
+   theme block: light `:root` `styles.css:476`, dark `:root[data-theme="dark"]`
+   `styles.css:666`, frosted `:root[data-theme="frosted"]` `styles.css:893`. Resolved
+   values: light primary `#1d4ed8` (354) vs neutral `#3d4c69` (355); dark `#63a8e8`
+   (641) vs `#9aa7bd` (642); frosted `#1e40af` (854) vs `#3a4862` (855). All three
+   differ, and all three resolve.
+3. **Does the recolour leak into hover / pressed / disabled / focus?** REJECTED.
+   Hover `.action-dock-edit:hover:not(:disabled)` (15205-15208) sets
+   `color: var(--fg-strong)` at specificity 0-3-0; pressed `.action-dock-edit[aria-pressed='true']`
+   (15210-15213) sets `color: var(--accent)` at 0-2-0; both beat the 0-1-0 base and
+   both are absent from the git diff. `:focus-visible` (15215-15218) sets only an
+   `outline`, so the resting ink correctly persists through focus. Disabled is
+   unreachable: the button has no `disabled` prop (`ActionDock.tsx:1157-1170`) and no
+   `.action-dock-edit:disabled` colour rule exists — if a disabled state were ever
+   added it would paint the edit hue, but that state cannot occur as shipped.
+4. **Does the guard assert the right selector+property, or can it pass on an unrelated
+   declaration?** ACCEPTED (LOW). The selector matcher is correct — `ruleBodies`
+   (test lines 18-22) splits the selector list and requires an exact trimmed
+   `.action-dock-edit` member. The property assertion is NOT anchored: test line 28 is
+   `bodies.some((b) => b.includes("color: var(--tf-stage-edit)"))`. Because
+   `"border-color: var(--tf-stage-edit)"` (and `background-color:` / `outline-color:`)
+   contains the substring `"color: var(--tf-stage-edit)"`, a body such as
+   `.action-dock-edit { color: var(--sem-neutral); border-color: var(--tf-stage-edit); }`
+   satisfies assertion 1, and the second guard (test lines 31-37) only rejects raw
+   hex/rgb/hsl, so a sibling token declaration also satisfies it — both guard
+   assertions pass while the glyph is NOT the edit hue. Impact is bounded: the
+   rendered e2e (spec lines 86-87) compares the pen's computed colour to the token and
+   would fail, so this is a static-guard robustness gap (ESCAPE: wrong-oracle class),
+   not a product regression on the current tree.
+5. **Is Phase 63 criterion 2 (`>=4.5:1` for `--sem-primary` on `--bg-elevated`, all
+   themes) actually exercised?** REJECTED (it is exercised). `phase40SemanticPalette.test.ts:266-281`
+   loops `THEMES` (light/dark/frosted, lines 106-110) x `SURFACES` (which includes
+   `--bg-elevated`, line 145) x `ROLES` (which includes `--sem-primary`, line 112) and
+   asserts `ratio >= TEXT_FLOOR` with `TEXT_FLOOR = 4.5` (lines 146, 275). The pen's
+   own background is `var(--bg-elevated)` (`styles.css:15193`), so the resting
+   primary-on-elevated pair is the exact pair measured. It is a source-token +
+   composited-surface computation run by vitest (not a rendered probe), and Phase 63
+   added no new token, so no Phase-63-specific contrast test is needed.
+
+Expected: the Phase 63 claim — the dock edit pen rests in `--tf-stage-edit`, and only
+the glyph colour changed — to be exploitable by a cascade/token trick or a state leak.
+
+Actual: the claim holds on the current tree. The only concrete weakness found is the
+static guard's unanchored `color:` substring (attack 4), which the rendered e2e
+independently covers.
+
+Screenshot: none (read-only pass; no app launch).
+
+Disposition: ACCEPTED -> DEF-442 (LOW). CTO triage: the diff-pass holds on the product
+(the rendered computed-style e2e is correct and the glyph inherits the base rule), but the
+static guard `test/unit/renderer/tfl47_dockEditIconColor.test.ts:28` asserts an UNANCHORED
+substring (`b.includes("color: var(--tf-stage-edit)")`), so a sibling
+`border-color`/`background-color`/`outline-color: var(--tf-stage-edit)` declaration satisfies
+it while the glyph is not the edit hue; the second guard (:31-37) only rejects raw hex/rgb/hsl,
+so it also passes. Class is `wrong-oracle` (a test existed but asserted the wrong thing). This
+IS the CI-level oracle for Phase 63 criterion 1: `verify:full` = verify + test:unit and never
+runs the rendered e2e, so an imprecise unit oracle is a real (if LOW) gap in the phase's only
+automated protection. Routed to frontend-dev (owns `test/unit/renderer/`) to anchor the assertion
+and add a negative case; qa focused re-run verifies and closes DEF-442. Product behaviour on the
+current tree is correct, so this does not reopen criterion 1.
+
 ## Phase 60 diff-pass — live tab drag direct manipulation (TFL-71)
 
 Session label: `diff-pass`. Scope: the Phase 60 working-tree change only —
@@ -5656,5 +5750,234 @@ itself the strip's horizontal scroll container. Routed to frontend-dev as DEF-43
   1 window left). No new break from the Phase 61 diff. The pre-existing unsaved-changes/dirty
   and empty-tab detach findings (ADV-117, ADV-118, ADV-120) are untouched by this diff and were
   not re-filed.
+
+## Phase 67 diff-pass — notice collapse-to-"i" (TFL-104.4 / TFL-121)
+
+Session label: `diff-pass`. Scope: the Phase 67 working-tree change only (the shared
+`useNoticeCollapse` hook, the `ConversionNotice` / `Pdf3dNotice` rewrites, the Phase 67
+`styles.css` hunks, the new `phase67NoticeCollapse.test.tsx`, the four reconciled unit
+specs and the `e2e/phase57a_engineering.spec.cjs` oracle change). `ProtectionNotice.tsx`
+is the unchanged reference and was read, not edited. `git status` pinned the diff; the
+Phase 66/68 working-tree changes in the same tree were NOT re-litigated. Read-only:
+no product/spec/config file was modified; this entry is the only edit.
+
+## ADV-132: Phase 67 removed the conversion card's `data-conversion-dismiss` control but two Phase 53/56 e2e oracles still click/count it — stale-oracle drift, same class as DEF-439, unreconciled
+
+- Session: diff-pass
+- Suggested severity: MEDIUM
+
+What I did:
+1. `git diff` of `src/renderer/components/ConversionNotice.tsx` shows the guarded
+   `{onDismiss !== undefined && (<button className="conversion-notice-dismiss"
+   data-conversion-dismiss ...>)}` block is deleted and replaced by a single
+   `data-conversion-collapse` button; `onDismiss` is retained on the prop interface but
+   never invoked (confirmed by the reconciled unit specs).
+2. Scanned the whole tree for the removed hook:
+   `grep -rn "data-conversion-dismiss" src e2e test` -> zero hits under `src/`; the two
+   remaining hits are `e2e/phase53_format_import.spec.cjs:466`
+   (`await win.locator('[data-conversion-dismiss]').click();`, test "row 6: conversion
+   notice shows and dismisses") and `e2e/phase56_reading.spec.cjs:525-526`
+   (`const dismiss = win.locator('[data-conversion-dismiss]'); expect(await
+   dismiss.count()).toBe(1); await dismiss.click();`, test "control-index: the reading
+   trigger survives dismissing the conversion notice").
+3. Confirmed neither spec was reconciled by the diff: `git status` lists
+   `e2e/phase57a_engineering.spec.cjs` (the DEF-439 fix) as the only reconciled e2e, and
+   `e2e/phase53_format_import.spec.cjs` is not modified at all; `phase56_reading.spec.cjs`
+   was modified but only its comic/Book-View tests, not this dismiss test.
+4. Ran the allowed targeted runs (sequentially): `npx.cmd vitest run <phase67 test + four
+   reconciled specs + phase59ProtectionNotice>` -> `Test Files 6 passed (6)` /
+   `Tests 79 passed (79)`; `npm.cmd run verify` -> exit 0 (`conventions: clean (317
+   source file(s) scanned)`, `tsc --noEmit` clean); `npm.cmd run test:e2e --
+   e2e/phase57a_engineering.spec.cjs` -> `1 passed` with
+   `P57A_3D {"noticeVisible":true,...,"noticeCollapseCount":1}`.
+
+Expected: Phase 67 success criterion 6 (`REQUIREMENTS.md:4308-4311`) requires the Phase 53
+conversion specs and the phase's targeted e2e specs to stay green. Per the DEF-439 ruling,
+an e2e oracle that pinned the pre-Phase-67 contract must be reconciled to the collapse
+control; the Phase 67 diff did that only for `e2e/phase57a_engineering.spec.cjs`.
+
+Actual: both oracles still target the deleted control. Playwright `locator.count()` over a
+missing selector returns 0, so `phase56_reading.spec.cjs:526` fails its
+`expect(dismiss.count()).toBe(1)`; `locator.click()` over a missing selector auto-waits and
+times out on actionability, so `phase53_format_import.spec.cjs:466` fails. qa already
+observed the phase56 failure while closing DEF-437 (`DEFECTS.md:135`: "`e2e/phase56_reading.spec.cjs:526`
+`[data-conversion-dismiss]` count 0 — ... an obsolete-oracle drift of the same class as
+DEF-439") but no DEF was opened for it, and the `phase53_format_import:466` instance was
+not reported anywhere. The product behaviour is correct per Phase 67; the defect is the
+unreconciled regression oracle.
+
+Evidence: source anchors `src/renderer/components/ConversionNotice.tsx:115-123` (new
+collapse control, no `data-conversion-dismiss`), `e2e/phase53_format_import.spec.cjs:458-472`,
+`e2e/phase56_reading.spec.cjs:518-534`; `git status`/`git diff` as above. I did NOT run
+`e2e/phase53_format_import.spec.cjs` or `e2e/phase56_reading.spec.cjs` — neither is in the
+task's allowed run set — so the reproduction here is static (the selector cannot exist) plus
+qa's recorded phase56 observation, not a fresh run.
+
+Disposition: ACCEPTED -> DEF-440 (MEDIUM). Same class as DEF-439: e2e oracles pinning the removed
+`data-conversion-dismiss` control. CTO triage: the selector cannot exist (`grep` shows no
+`data-conversion-dismiss` under `src/`), `count()` returns 0 and `click()` times out, so both specs
+are stale oracles, not product bugs. Assigned to frontend-dev; qa's phase-close QA will run both
+specs after the fix.
+
+### Phase 67 diff-pass — surfaces that held (no finding)
+
+- **State-machine drift (item 1): SAFE.** `src/renderer/hooks/useNoticeCollapse.ts:34-70`
+  is a line-for-line extraction of `ProtectionNotice.tsx:55-87`: same
+  `expanded -> closing -> collapsed` phases, same `setPhase(current => current === 'expanded'
+  ? 'closing' : current)` no-op-during-exit, same `expand -> 'expanded'`, same dwell effect
+  keyed on `[phase, collapse]` (cleanup clears the timer, so every expand resets the dwell),
+  same commit effect keyed on `[phase]` firing after `MOTION_DURATION.standard` (250).
+  `NOTICE_AUTO_COLLAPSE_MS === PROTECTION_NOTICE_AUTO_COLLAPSE_MS === 10000`. No off-by-one
+  (the `phase67NoticeCollapse` tests pin `NOTICE_AUTO_COLLAPSE_MS - 1` still expanded, `+1`
+  closing), no missing dependency, and no state that can hang in `closing` (the commit timer
+  always fires; `instant` short-circuits straight to `collapsed`). Both dwell constants exist
+  in two places now (protection's inline copy and the hook) — a latent drift surface, but the
+  operator ruling (REQUIREMENTS.md:4251) keeps `ProtectionNotice` untouched, so it is a design
+  observation, not a defect.
+- **Information loss (item 2): SAFE.** All conversion warnings re-render from the persisted
+  `notice.warnings` prop after re-expand (`ConversionNotice.tsx:91-113`) and all pdf3d page/object
+  entries re-render from `entries` (`Pdf3dNotice.tsx:69`); the component is not remounted and the
+  props are not consumed. `onDismiss` is retained on both interfaces and never invoked, mirroring
+  the protection reference; pinned by `phase67NoticeCollapse.test.tsx:174-183` and
+  `phase53_convertImport.test.tsx:337-359`.
+- **Collision / occlusion (item 3): SAFE.** Slots are a 36px pitch with 28px icons: protection
+  `left: calc(var(--tf-rail-w,184px) + var(--space-standard))` (`styles.css:17141`), conversion
+  `+36px` (`17399`), pdf3d `+72px` (`18246`); the Multi Mode resets shift all three by the same
+  rail track (`17053`, `17434`, `18258`, i.e. `16 / 52 / 88px`). `--tf-rail-w` is `@property`-
+  registered (`styles.css:508-518`) and `--space-standard: 16px` is defined at `styles.css:154`,
+  so neither offset collapses to `auto` and the two new icons cannot stack. Criterion 3/4 is
+  only covered by a textual CSS scan (`phase67NoticeCollapse.test.tsx:298-333`), not a measured
+  geometry/elementFromPoint probe — noted for QA, not a product finding.
+- **Accessibility (item 4): SAFE.** Expanded boxes keep `role="note"` (conversion,
+  `ConversionNotice.tsx:66`) / `role="status"` (pdf3d, unchanged, `Pdf3dNotice.tsx:63`);
+  collapsed icons are real buttons with `aria-label` "Show conversion notice" /
+  "Show 3D content notice" and `:focus-visible` rings (`styles.css:17385-17418`). The dismiss
+  path is truly gone (no dead `×`).
+- **Test weakening (item 5): SAFE, one nuance.** The four reconciled unit specs kept their
+  load-bearing assertions and in places strengthened them (the hit-test spec now also asserts
+  `.conversion-notice--leaving` and the cross-bubbling document listener,
+  `phase53_conversionNoticeInspectorHitTest.test.ts:124-151`). The new e2e oracle
+  `[data-testid="pdf3d-notice"] [data-pdf3d-collapse]` count == 1 is meaningful (it pins the
+  collapse control's presence); its only slack is that it no longer also proves there is no
+  *other* stray button, which the old "zero buttons" oracle covered — acceptable since the
+  product has exactly one control. The `readingView.test.tsx` cbz rewrite drops the old
+  comic-view assertions, but that capability was removed by Phase 66 and the change is not a
+  Phase 67 weakening.
+- **Cross-notice regression (item 6): SAFE.** `ProtectionNotice.tsx` is not in `git status`
+  (unmodified) and `phase59ProtectionNotice.test.tsx` passes. `ValidationNotice`, `Toasts` and
+  `ExportPagesWithoutTextNotice` are untouched and out of scope per `REQUIREMENTS.md:4258-4262`.
+
+Overall verdict: the Phase 67 product diff is behaviourally sound and safe to close, EXCEPT
+the unreconciled `data-conversion-dismiss` e2e oracles in `phase53_format_import` / `phase56_reading`
+(ADV-132), which leave Phase 67 criterion 6 red until they are migrated to the collapse control.
+
+## ADV-133: Colorful-tab modified dot still paints `--tf-tab-ink`; on the new pale Phase 68 tab body the unsaved-changes dot is effectively invisible in all three themes
+
+- Session: diff-pass
+- Suggested severity: MEDIUM
+
+What I did: Static diff-pass on the Phase 68 colorful body fill (TFL-116). `git diff` shows the colorful
+`.tab::before` body changed from a saturated accent two-stop gradient to `color-mix(in srgb, var(--tf-tab-accent) 18%/34%, var(--bg-elevated))` (`styles.css:2098` inactive, `:2120` active), while the
+tab's ink-dependent marks were left unchanged. Recomputing WCAG contrast for every element that still
+paints `--tf-tab-ink` over the new body:
+- `.tab-modified-dot` background `var(--tf-tab-ink)` (`styles.css:2255`); its ring is `transparent` on
+  an inactive tab (`styles.css:2284-2285`) and the full accent on the active tab (`2280-2281`).
+- `.tab-close:hover` background `color-mix(in srgb, var(--tf-tab-ink) 22%, transparent)` (`styles.css:2309`).
+`--tf-tab-ink` is #ffffff in light (`styles.css:409`) and frosted (`790`), and #0f172a in dark (`582`),
+the ink Phase 51 chose for a FULL-STRENGTH saturated body. The dot renders for every tab with
+`modified=true`, active or not (`AppHeader.tsx:1170` -> `AnimatedTab.tsx:219`).
+
+Expected: the modified/unsaved-changes dot stays clearly visible on either tab body (its whole purpose),
+and the close-button hover reads as feedback, the same >= 3:1 non-text bar the rest of the tab surface holds.
+
+Actual: with the body now pale, the 7px dot measures 1.32-1.52:1 against an INACTIVE colorful tab and
+1.73-2.17:1 against the active one, in every theme and every slot (white dot in light/frosted, near-black
+in dark). On an inactive tab its only outline is `transparent`, so it is fully invisible; on the active tab
+a 1.5px accent ring survives but the dot fill is lost. The close-button hover wash is ~1.07:1 against the
+light body, so hover feedback is nearly imperceptible in light/frosted.
+
+Reproduction (static/rendered; no app run needed for the numbers): switch the tab strip to the colorful
+style and edit a document that is NOT the active tab. Its tab shows no visible modified dot. To confirm
+rendered: read the computed `background-color` of `.tab-modified-dot` over an inactive colorful tab and
+compare it with the `.tab::before` composite (18% accent over `--bg-elevated`).
+
+Evidence: `src/renderer/styles.css:2255` (dot ink), `:2309` (close hover wash); new body `:2098`/`:2120`;
+saturated-era ink tokens `:409`/`:582`/`:790`. Static diff/contrast math; the adversary ran no app.
+
+Disposition: ACCEPTED -> DEF-441 (MEDIUM). CTO triage: real regression introduced by the Phase 68 body-fill
+change; the unsaved-changes dot is the tab's state signal and must not vanish. Assigned to frontend-dev,
+scoped to colorful tabs so `standard` styling is untouched. qa re-verification (TFL-115) proves the dot and
+close-hover are visible on the pale body and sets CLOSED.
+
+## ADV-134: The single-suppression gate hides read-only checkbox / radio / dropdown / listbox fields entirely — pdf.js never paints them under ENABLE_FORMS, and the overlay returns null before its NonFillableView fallback
+
+- Session: diff-pass
+- Suggested severity: HIGH
+
+What I did: Static diff-pass on the Phase 65 single-layer form-field diff — `PageView.tsx:705`
+(`annotationMode: AnnotationMode.ENABLE_FORMS`) and `FormsOverlay.tsx:170-174` (the one suppression
+gate) — then traced the installed pdf.js 4.10.38 core to establish exactly which widget subclasses
+that mode leaves painted on the canvas versus which it drops. The gate's own comment asserts
+"A read-only widget is therefore ALWAYS painted on the canvas (`hasOwnCanvas = readOnly && !noHTML`)"
+(`FormsOverlay.tsx:155-159`); I tested that assertion against the dependency, not the comment.
+
+Findings from `node_modules/pdfjs-dist/legacy/build/pdf.worker.mjs`:
+1. `WidgetAnnotation.getOperatorList` (`:54759`) returns an EMPTY operator list (`separateForm: true`)
+   when `intent & RenderingIntentFlag.ANNOTATIONS_FORMS && !(this instanceof SignatureWidgetAnnotation)
+   && !this.data.noHTML && !this.data.hasOwnCanvas`. So, under this mode, a widget reaches the canvas
+   only if it is a Signature, or `noHTML` is set, or `hasOwnCanvas` is true.
+2. `hasOwnCanvas` is set to true only by `TextWidgetAnnotation` (`this.data.readOnly && !noHTML`, `:55202`),
+   the PushButton branch of `ButtonWidgetAnnotation` (`:55363`), `SignatureWidgetAnnotation`
+   (`this.data.noRotate`, `:55894`), and the markup annotations. A checkbox or radio is the SAME
+   `ButtonWidgetAnnotation` class but takes the `_processCheckBox` / `_processRadioButton` branch, which
+   never sets `hasOwnCanvas` (`:55355-55362`). `ChoiceWidgetAnnotation` (dropdown/listbox, `:55702`) never
+   sets it either.
+3. `noHTML` defaults to `isLocked && isContentLocked` — ANNOTATION flags (`:53940`) — which a field-level
+   `/Ff` ReadOnly bit does not set. So for an ordinary read-only checkbox/radio/choice, `noHTML` is false.
+
+Consequently a read-only checkbox, radio, dropdown and listbox is NOT painted onto the canvas under
+`ENABLE_FORMS`. The new gate suppresses exactly those fields: `if (kind === "signature" ||
+(field.readOnly === true && isRealField)) return null;` (`FormsOverlay.tsx:172-174`) returns before the
+`NonFillableView` branch at `:182-189`, and `PageView` renders no pdf.js `AnnotationLayer` (grep: no
+`AnnotationLayer` import anywhere in `src/`), so there is no HTML control either. Before this diff
+(default `AnnotationMode.ENABLE`) the widget was canvas-painted AND the overlay rendered a visible
+disabled control (e.g. `CheckboxEditor` `disabled={field.readOnly === true}`, `FormsOverlay.tsx:327`), so
+the field was at least visible; the gate now makes it disappear.
+
+Secondary gap, same class: a push-button field is a `PDFButton`, which `formFieldKind` (`src/main/services/forms.ts:152-166`)
+does not match, so it falls through to `kind: "text"`, `fillable`. pdf.js still paints it (`hasOwnCanvas`
+true for push buttons, `:55363`) while `FormsOverlay` mounts an editable text box over it — the exact
+double surface this phase set out to remove survives for push buttons.
+
+Expected: a read-only fillable field keeps exactly one visible, truthful surface — the native canvas
+appearance for a read-only TEXT widget (which does set `hasOwnCanvas`), and the disabled overlay control
+(or the `NonFillableView` reason) for every kind pdf.js does not paint.
+
+Actual: read-only checkbox / radio / dropdown / listbox fields render NOTHING: no overlay editor, no
+disabled control, no reason label, and no canvas appearance. The user sees a gap where the form's
+printed box is, with no affordance at all — and the read-only explanation added for ADV-123/124 is
+unreachable for these kinds. This is a regression from the pre-diff behaviour, on the high-risk
+legal/immigration form class where read-only computed/locked fields are common.
+
+Reproduction (static; no app run): take a PDF whose AcroForm has a check box with `/Ff` ReadOnly
+(bit 1) set (a read-only `/FT /Ch` dropdown behaves the same). Render it: pdf.js's
+`WidgetAnnotation.getOperatorList` returns `separateForm: true` with an empty opList (so the canvas is
+blank there), and `FormsOverlay`'s gate returns `null` (so no overlay). Confirm by instrumenting
+`page.render`'s operator list or by reading `hasOwnCanvas`/`noHTML` on the widget — both false while
+`readOnly` (field) is true.
+
+Evidence: `src/renderer/forms/FormsOverlay.tsx:170-174` (gate), `:182-189` (unreached fallback), `:327`
+(disabled control removed by the gate); `src/renderer/components/PageView.tsx:705` (ENABLE_FORMS);
+`node_modules/pdfjs-dist/legacy/build/pdf.worker.mjs:54759` (mode gate), `:55202` (text), `:55355-55365`
+(button: push button only), `:55702` (choice), `:53940` (`noHTML` default); `src/main/services/forms.ts:152-166`
+(push-button kind fall-through). Static analysis; the adversary ran no app and edited no product file.
+
+Disposition: ACCEPTED -> DEF-444 (HIGH) + DEF-445 (MEDIUM). CTO triage: the primary finding is a real
+Phase 65 regression - the overlay suppression gate assumes every read-only widget is canvas-painted, but
+`hasOwnCanvas` is set only for text / push-button / signature widgets, so read-only checkbox/radio/choice
+fields render nothing. Renderer-only fix for DEF-444 (narrow the gate to signature + read-only text),
+assigned to frontend-dev. The push-button double-surface is pre-existing and needs an engine kind flag
+plus a renderer suppression (DEF-445), sequenced after DEF-444. Phase 65 ruling 6's false premise
+corrected by ruling 7 in REQUIREMENTS.md.
 
 

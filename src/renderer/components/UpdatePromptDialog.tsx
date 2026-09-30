@@ -46,8 +46,9 @@
 import type { ReactElement } from "react";
 import { useEffect, useState } from "react";
 import { AnimatePresence } from "motion/react";
-import { Download, LoaderCircle, RefreshCw, X } from "lucide-react";
+import { Download, RefreshCw, X } from "lucide-react";
 import type { UpdateState } from "../../shared/types";
+import { BrandLoader } from "./BrandLoader";
 import { TfBackdrop, TfSheet } from "./motion/TfMotion";
 
 /** What the dialog can render. Mirrors the live backend state
@@ -340,11 +341,7 @@ export function UpdatePromptDialog(
               data-update-prompt-downloading
             >
               <p className="update-prompt-text update-prompt-downloading-text">
-                <LoaderCircle
-                  size={16}
-                  aria-hidden
-                  className="update-prompt-spinner"
-                />
+                <BrandLoader className="update-prompt-spinner" />
                 <span>
                   {indeterminate
                     ? "Downloading the update…"

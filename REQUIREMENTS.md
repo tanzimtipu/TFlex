@@ -141,6 +141,18 @@ Phase 57 close are promoted from deferred to in-scope work: the `exportText` `/T
 and the Flatten-undo geometry loss must be fixed and closed, not deferred, notwithstanding their
 pre-existing origin.
 
+**Phase 69 supersedes the ONE-ACCENT colour clause and the Phase 49 artwork (operator request via
+TFL-120, 2026-10-01).** The "Look and feel" rule below that fixes the app's single accent at
+`#2563eb` (blue 600) — and its "avoid ... purple-dominated themes" caution — is superseded by the
+operator's explicit direction to match the Jovrel "Halo" brand: the single accent becomes the brand
+**violet** family per Phase 69, implemented with restraint (one hue, the existing theme lightness
+discipline, the brand gradient reserved for the mark and the loader). Phase 69 also replaces the
+Phase 49 (blue "triple-stroke J") mark, wordmark treatment, PDF file-type icon and `.ico` set with
+the operator's final Halo kit; the Jovrel NAME, `productName`, the internal `appId: com.tflex.app`
+and the Phase 49 userData migration are unchanged. The Phase 69 regression oracles supersede the
+Phase 49 mark-geometry assertions (`test/unit/renderer/phase49Brand.test.tsx` and the mark-geometry
+half of `e2e/phase49_brand_gate.spec.cjs`).
+
 ## Look and feel
 
 Applies to the whole app:
@@ -4031,3 +4043,433 @@ declaration from the existing `.context-panel` rule.
 
 **Settings impact:** none - no new `AppSettings` field. This is a renderer-only styling change; no IPC or
 shared-contract change.
+
+## Phase 65 — Adobe-grade form field rendering: one complete, faithful field layer (operator request via TFL-49, 2026-09-30)
+
+**Operator request (verbatim):** "There are issues when opening files like
+`C:\Users\tanzi\OneDrive\Desktop\Parent visa\956.pdf`. The app tries to place fields as layer on the
+form. It misses several fields in the process. The overlapping layers can be seen. Make sure to implement
+cleanly like adobe. Make engine level changes if necessary. It looks very unpolished."
+
+**Relationship to Phase 59 item 4.** Phase 59 item 4 fixed the *fill mechanism* (values written to the
+AcroForm `/V` and widget appearances regenerated, not painted). Phase 65 fixes the *rendering* of the
+interactive field layer itself: today pdf.js paints the document's own widget appearances onto the page
+canvas AND `FormsOverlay` paints a second set of HTML editors over them, so a field appears twice and the
+two layers visibly disagree ("overlapping layers"); fields whose editor is transparent or mis-placed read
+as "missed". This phase makes the on-screen field layer single, complete and faithful, the way Adobe
+renders a form.
+
+**ORCHESTRATOR RULINGS:**
+
+1. **Research-first.** Before any code is dispatched, a research/characterisation pass must (a) document
+   how Adobe and the open-source ecosystem render AcroForm widgets without double-drawing (pdf.js
+   `annotationMode`, the annotation layer vs the canvas `beginAnnotation` path, Adobe's in-place widget
+   rendering), and (b) analyse the operator's `956.pdf` — exact field and widget counts, per-page
+   distribution, any field whose editor is missing or mis-placed today, and why. Findings are recorded in
+   the child-issue thread before the fix briefs are written.
+2. **The operator's file is inspected, never modified in place and never committed.** Any fixture derived
+   from it is synthetic or an anonymised copy placed under `test-fixtures/` (Phase 59 ruling 2 carries
+   forward).
+3. **One authoritative field layer.** A field must be drawn exactly once on screen. The page canvas and
+   the interactive controls must not both paint the same widget.
+4. **No fill regression.** The Phase 59 native-fill path (field `/V`, regenerated widget appearances,
+   fill report) stays exactly as it is; this phase changes only what is *visible* and *hit-testable*.
+5. **Engine changes are in scope only if the research proves the engine's geometry/enumeration is
+   incomplete.** Otherwise the fix is renderer-only; the contract in `src/shared/` is not broadened
+   speculatively.
+6. **Read-only and signature widgets are canvases, not editors** (CTO ruling, chunk 2, 2026-10-01). A
+   widget that pdf.js always paints on the canvas under `AnnotationMode.ENABLE_FORMS` — every read-only
+   widget (`hasOwnCanvas = readOnly && !noHTML`) and every signature widget — is rendered by that one
+   canvas appearance and gets NO overlay control; its "truthful non-editable state" (feature C) IS the
+   document's own appearance. Consequently criterion 3's "interactive control count equals widget count"
+   is scoped to FILLABLE widgets; read-only/signature widgets are represented exactly once by their
+   canvas paint (zero overlay controls). An engine-orphan widget (id `orphan-…`) is exempt from this
+   suppression and keeps its single `NonFillableView` surface. Editable fields are unchanged: overlay
+   control only, and the canvas paints no `/AP` box under them.
+
+7. **Correction to ruling 6 (CTO ruling, 2026-10-01, ADV-134 / DEF-444).** Ruling 6's
+   `hasOwnCanvas = readOnly && !noHTML` is true only for `TextWidgetAnnotation`. The checkbox/radio branch
+   of `ButtonWidgetAnnotation` and `ChoiceWidgetAnnotation` never set `hasOwnCanvas`, so under
+   `AnnotationMode.ENABLE_FORMS` pdf.js paints NO canvas appearance for those widgets (empty op list,
+   `separateForm: true`). A read-only checkbox/radio/dropdown/listbox is therefore NOT canvas-painted and
+   must render its one truthful non-editable surface as a disabled `FormsOverlay` control (with the
+   read-only reason). The suppression gate applies only to widgets pdf.js actually canvas-paints:
+   signature widgets and read-only TEXT widgets. Ruling 7 supersedes ruling 6 where they differ; criterion
+   3's control count is scoped to widgets that are NOT canvas-painted.
+
+**Features**
+
+**A. Single-layer field rendering.** Opening a form-bearing PDF does not show a field twice. The
+document's widget appearances are not painted on the page canvas beneath the interactive editors; the
+editor is the field. Non-form page content (text, vector, images, the printed form artwork) is unchanged.
+
+**B. Complete field coverage.** Every AcroForm field and every widget on a visible page has exactly one
+interactive control, at that widget's own geometry: text fields, single check boxes, every widget of a
+multi-widget button group (e.g. `mg.title` with 4 widgets, `mg.reason ex` with 6), dropdowns, list boxes
+and multi-select lists. No field is silently dropped and no field is stacked into a fallback column when
+its widget geometry is known.
+
+**C. Faithful geometry and appearance.** Each control's on-screen box matches the widget `/Rect` (x, y,
+width, height) in page points at every zoom level and page rotation, including rotated pages; the text
+size, baseline and alignment inside a text field read like the field's own appearance; check boxes and
+radio swatches are drawn inside their widget box; a read-only or signature field shows its truthful
+non-editable state and never looks editable.
+
+**D. Encrypted-form parity.** An encrypted PDF whose user password is empty (the operator's `956.pdf`)
+opens without a spurious password failure and renders its full field set; an encrypted PDF that does
+require a password keeps working through the Phase 52 password flow.
+
+**E. Native filling preserved.** Editing a control still dispatches `fillFormField`; values survive a
+save and read back from the field `/V`; the Phase 59 fill report still names any field not filled and
+why; flatten still works.
+
+**Research requirement.** Before implementation, record: how pdf.js 4.10.38 decides to paint an annotation
+appearance onto the canvas versus into an annotation layer (`AnnotationMode`, `beginAnnotation`,
+`hasOwnCanvas`), what Adobe does for an empty-user-password encrypted form, and the `956.pdf` field facts
+(field count, widget count, per-kind and per-page counts, multi-widget groups, and the currently
+missing/mis-placed editors). The chosen mechanism is recorded before the code is dispatched.
+
+**Success criteria**
+
+1. The characterisation records the `956.pdf` field facts and the missing/mis-placed editor list, and is
+   reproducible by a named script/spec that runs on the anonymised fixture.
+2. With the fixture open, no field appears twice: for a sample of fields on a visible page, the pixel
+   region of a widget shows one control, and the canvas under it does not paint a duplicate field box
+   (before/after screenshot evidence).
+3. Enumeration parity: the number of interactive controls on a page equals the number of widget boxes
+   the engine reports for that page (counted for the whole fixture); zero fields missing, zero extras.
+   The multi-widget groups render one control per widget.
+4. Geometry parity: for a sample of fields, the control's measured box equals the widget `/Rect` mapped
+   through the page scale within a small tolerance, at 100% and at a non-100% zoom, on a rotated page.
+5. The operator's `956.pdf` (empty-user-password encrypted) opens with its full field set and no
+   spurious password error; a password-required encrypted form still prompts and opens.
+6. No fill regression: editing a control fills the field, a save/reopen shows the value from the field
+   `/V` (independent-reader evidence), and the fill report still fires.
+7. No visual regression to non-form content: text selection/search highlights, the annotation layer,
+   signatures, stamps and the printed form artwork are unchanged (blast-radius checks).
+8. `npm run verify` (conventions + typecheck) is green and the phase's targeted unit/e2e specs pass; the
+   installer and portable still build and launch.
+9. All DEF/ADV entries opened by Phase 65 are CLOSED or REJECTED with a written reason.
+
+**CONTROL-INDEX:** the interactive controls are the existing `FormsOverlay` editors
+(`.form-editor`, `.form-checkbox`, `.form-radio`, `.form-listbox`) whose promised actions are unchanged
+from Phase 59 — this phase changes their placement/drawing fidelity, not their action. Each kind's e2e
+proof is the per-page control-count and geometry assertions in criterion 3 and 4.
+
+**Settings impact:** none - no new `AppSettings` field. This is a rendering-fidelity change to the form
+layer; any engine change is limited to field/widget geometry already carried by `FormField` /
+`FormFieldWidget`.
+
+## Phase 66 — Book View: the comic viewport becomes an in-canvas read-only book mode (operator request via TFL-64, 2026-10-01)
+
+**Operator request (verbatim):** "Make changes to the comic view. It should not open a separate
+window. Rename it as "Book View" and place the icon on the top left of canvas. It should work for all
+file formats. Clicking the icon should activate the book view. Enabling this should collapse both
+context and inspector panel as well as the dock should be hidden as this is a read only mode. Only
+annotation should be available for users to mark pages in this mode. The book view should have a book
+like crease in the middle. Clicking on the right hand side page should show the next page on the right
+and previous page on the left with smooth page flip animation. Clicking on the left page should do the
+opposite. Allow multiple view like single/double page with icons on the top right. Single page should
+also have the page flip animation."
+
+**Relationship to Phase 56.** Phase 56 feature C shipped the Comic viewport as a full-window overlay
+(`.reading-view` is `position: fixed; inset: 0`) offered only for `.cbz` / `.cbt`, with its trigger
+(`.reading-open-button`) sitting above the page area. This phase evolves that viewport into **Book
+View**: an in-canvas, read-only book mode available for every open document. The EPUB reflowable
+chapter Reading view (Phase 56 feature A) is unchanged and keeps its own trigger and behaviour; Book
+View presents page content, including the converted pages of an EPUB.
+
+**ORCHESTRATOR RULINGS:**
+
+1. **Same window.** Book View never opens a second Electron window; it mounts inside the existing
+   document canvas region. `BrowserWindow.getAllWindows().length` must not change when it opens.
+2. **One entry, all formats.** One canvas top-left icon toggles Book View and is present for every
+   open document (PDF and every converted format), not only `.cbz` / `.cbt`.
+3. **Read-only.** Entering Book View collapses the PAGES context rail and the Inspector and removes
+   the Action Dock; only annotation tools (for marking pages) remain. Exiting restores the
+   workspace's prior panel and dock state.
+4. **Reuse, do not duplicate.** Pages render through the existing `PageView`; annotation marking uses
+   the existing annotation model and handlers (`Annotation`, `AnnotationPatch`, `createAnnotation`,
+   `editAnnotation`, `deleteAnnotation`, `addComment`). No second PDF renderer and no second
+   annotation engine.
+5. **Motion tokens only** (`src/renderer/hooks/motionTokens.ts` / `styles/animations.css`), the
+   `prefers-reduced-motion` fallback is honoured, and PDF content is never recoloured or re-laid-out.
+6. **No regression to the EPUB Reading view or the surviving comic controls;** the phase-56 specs are
+   updated where a trigger label changed (qa owns `e2e/`).
+
+**Features**
+
+**A. Book View entry.** A canvas top-left control (`aria-label="Book View"`) is present for every
+open document and toggles Book View on and off.
+
+**B. Read-only mode.** While Book View is on, the PAGES rail is collapsed, the Inspector is collapsed
+and the Action Dock is not rendered; a clear exit control (`aria-label="Close book view"`) returns the
+workspace to its prior rail / Inspector / dock state.
+
+**C. Book spread and page turn.** A double-page spread with a book-like centre crease; clicking the
+right-hand page advances (next page appears on the right, previous on the left) and clicking the
+left-hand page reverses, both with a smooth page-flip animation.
+
+**D. Layout toggle.** Single/double toggle icons at the canvas top-right. Single-page mode also uses
+the page-flip animation. The initial layout seeds from the existing validated
+`readingDefaults.comics.layout`.
+
+**E. Annotation marking.** In Book View the user can add annotations to pages with the existing
+annotation tools and colours; page-content editing, forms and signatures are not offered.
+
+**Research requirement.** Before implementation, record how the page flip is implemented with CSS 3D
+transforms over the existing `PageView` canvas (no WebGL/3D dependency) and confirm the motion-token
+and reduced-motion pattern; findings recorded in the child-issue thread.
+
+**Success criteria**
+
+1. For a plain PDF and for a `.cbz` document, the canvas top-left shows `[aria-label="Book View"]`;
+   clicking it opens Book View in the SAME window (`BrowserWindow.getAllWindows().length` unchanged)
+   and the exit control closes it (screenshots for both formats).
+2. While Book View is on, the PAGES rail is collapsed, the Inspector is collapsed and no Action Dock
+   is present (DOM-asserted), and on exit the prior rail / Inspector / dock state is restored.
+3. Double-page Book View shows two pages with a visible centre crease (screenshot); a click on the
+   right page shows the next spread (next on the right, previous on the left) and a click on the left
+   page reverses; the flip animates and respects `prefers-reduced-motion`.
+4. Single-page Book View shows one page, exposes the top-right single/double toggle pair, and its page
+   turn uses the same flip animation.
+5. In Book View a highlight/ink annotation can be placed on a page, survives leaving and re-entering
+   Book View, and survives a save then reopen.
+6. No regression: the Phase 56 reading specs (updated for the renamed trigger),
+   `test/unit/renderer/readingView.test.tsx` and the phase's new unit/e2e specs pass; `npm run verify`
+   is green.
+7. All DEF/ADV entries opened by Phase 66 are CLOSED or REJECTED with a written reason.
+
+**CONTROL-INDEX**
+
+- `[aria-label="Book View"]` (canvas top-left) -> toggles Book View -> criterion 1.
+- `[aria-label="Close book view"]` -> exits Book View -> criterion 2.
+- `[aria-label="Book single page"]` / `[aria-label="Book double page"]` (canvas top-right) -> switch
+  layout -> criterion 4.
+- left/right page click surfaces (`[data-book-page-side="left"|"right"]`) -> turn the spread ->
+  criterion 3.
+- the existing annotation toolbar entries -> mark pages -> criterion 5.
+
+**Settings impact:** none. No new `AppSettings` field; Book View seeds its default layout / fit from
+the existing validated `readingDefaults.comics.layout` / `readingDefaults.comics.fit`.
+
+## Phase 67 — Top-of-canvas notices adopt the collapse-to-"i" behaviour (operator request via TFL-104, 2026-10-01)
+
+**Operator request (verbatim):** "Similar to TFL-46, do this for all the messages that appear on the
+top after opening certain files."
+
+**Relationship to Phase 59 feature B / TFL-46.** TFL-46 delivered the collapse behaviour for the
+document-protection notice only ("The Document protected Message ... should show up on the top in a
+rounded box with animation and then collapse into a 'i' icon on the top left of the canvas after 10
+seconds. User should be able to expand and collapse it."). This phase extends the SAME presentation
+contract (rounded animated box -> auto-collapse after ~10 s into a small "i" pinned at the canvas
+top-left -> user expand/collapse with the dwell resetting on expand) to the OTHER notices that appear
+above the canvas after OPENING a file.
+
+The open-triggered top-of-canvas messages are exactly two (the protected-document one is already
+done): the conversion/import card shown after a non-PDF is imported (Phase 53, `ConversionNotice`)
+and the 3D-content notice shown after a PDF carrying 3D annotations is opened (Phase 57,
+`Pdf3dNotice`).
+
+**ORCHESTRATOR RULINGS:**
+
+1. **The protection notice IS the reference pattern and is NOT changed.** Phase 59 feature B /
+   `ProtectionNotice.tsx` / DEF-435 stay exactly as they are; its behaviour is the template to
+   mirror, not a file to edit.
+2. **Scope is precisely the two remaining open-triggered top notices:** `ConversionNotice` (Phase 53)
+   and `Pdf3dNotice` (Phase 57). `ValidationNotice` (Phase 54) is EXPLICITLY OUT OF SCOPE: it is not
+   produced by opening a file (it appears after a validation run or a blocked/warned save), so it is
+   not one of "the messages that appear on the top after opening certain files". `Toasts` are
+   bottom-right, not top. `ExportPagesWithoutTextNotice` lives inside export dialogs, not above the
+   canvas. Neither is touched.
+3. **No information is lost.** The collapsed "i" is always present and re-expands the notice; after
+   re-expanding a conversion card its full warning set (message + detail) is readable again, and after
+   re-expanding the 3D notice every page/object entry is readable again.
+4. **Same dwell, same instant path.** The auto-collapse is the same ~10 s reading pause as the
+   protection notice; it resets on every expand. Under reduced motion / Animations OFF the collapse
+   and re-expand take the instant path (no exit animation), exactly as `ProtectionNotice` does.
+5. **Motion tokens only** (`src/renderer/hooks/motionTokens.ts` / `styles/animations.css`); the only
+   named constant is the ~10 s dwell.
+6. **Collapsed icons never collide.** When more than one notice is collapsed at once the "i" icons are
+   laid out in a ROW at the canvas top-left so no two share a pixel, and no "i" covers a canvas
+   control or the page.
+7. **The conversion card's dismiss "X" is replaced by the collapse control** (as the protection
+   notice's was), so the card stays available through its "i". Its existing `data-*` hooks and its
+   Phase 53 `--tf-tools-inset` reservation rule are preserved.
+
+**Features**
+
+**A. Conversion/import notice collapses to an "i".** The `ConversionNotice` card (shown above the
+canvas after a non-PDF file is imported) renders as a rounded box with the existing entrance
+animation, then after ~10 s collapses into a compact "i" icon at the canvas's top-left. Clicking the
+"i" re-expands it; the expanded card carries a collapse control that closes it again; the dwell resets
+on expand. The card's source label, fidelity copy and every warning remain unchanged and readable.
+
+**B. 3D-content notice collapses to an "i".** The `Pdf3dNotice` (shown above the page area for a
+document carrying 3D annotations) becomes a rounded animated box with the same auto-collapse-to-"i"
+behaviour, re-expand on click and a collapse control on the expanded box. Every page/object entry
+stays readable when expanded. It remains a flow element and never covers the page.
+
+**C. Shared collapse behaviour.** Both notices reuse ONE collapse state machine (extracted so the
+behaviour cannot drift), mirroring `ProtectionNotice.tsx`'s `expanded -> closing -> collapsed` phases,
+its dwell effect and its `useInstantMotion` fast path. `ProtectionNotice` is left behaviourally
+unchanged.
+
+**Success criteria**
+
+1. Opening a converted/imported non-PDF file shows the conversion card as a rounded animated box; after
+   ~10 s (measured) it collapses into an "i" at the canvas top-left; clicking the "i" re-expands it;
+   the expanded card's collapse control closes it again; the dwell resets on expand; every warning is
+   readable after re-expand (screenshot + DOM assertions).
+2. Opening a PDF with 3D content shows the 3D notice as a rounded animated box; it auto-collapses into
+   an "i" at the canvas top-left after ~10 s; it re-expands/collapses on demand; the page/object text
+   is readable after re-expand (screenshot + DOM assertions).
+3. When a conversion card and a 3D notice are both present and both collapsed, both "i" icons are
+   visible, laid out in a row with non-overlapping measured boxes, and neither overlaps a canvas
+   control.
+4. The collapsed "i" never covers the page content or an interactive control (`elementFromPoint` at the
+   icon centre resolves to the icon; at the page area resolves to the page).
+5. Reduced motion / Animations OFF: collapse and re-expand happen instantly (no transition), matching
+   the protection notice's instant path.
+6. No regression: the protection-notice behaviour and its specs (`phase59ProtectionNotice.test.tsx`,
+   `e2e/phase59_protection_notice.spec.cjs`, `tfl46_protection_*`), the Phase 53 conversion hit-test /
+   warning-visibility specs, the Phase 57 3D-notice specs, `npm run verify` and the phase's targeted
+   unit/e2e specs stay green; the installer and portable still build and launch.
+7. All DEF/ADV entries opened by Phase 67 are CLOSED or REJECTED with a written reason.
+
+**CONTROL-INDEX**
+
+- `[data-conversion-notice]` (expanded conversion box) -> read source/fidelity/warnings -> criterion 1.
+- `[data-conversion-collapse]` -> collapse the conversion card -> criterion 1.
+- `[data-conversion-icon]` -> re-expand the conversion card -> criterion 1.
+- `[data-pdf3d-notice]` (expanded 3D box) -> read page/object entries -> criterion 2.
+- `[data-pdf3d-collapse]` -> collapse the 3D notice -> criterion 2.
+- `[data-pdf3d-icon]` -> re-expand the 3D notice -> criterion 2.
+
+**Settings impact:** none. No new `AppSettings` field; the ~10 s dwell reuses the existing named-
+constant pattern (as `PROTECTION_NOTICE_AUTO_COLLAPSE_MS` does) and the fast path reuses
+`useInstantMotion` / the motion tokens.
+
+## Phase 68 — Tab colour calm-down and uniform tab size (operator request via TFL-105, 2026-10-01)
+
+**Operator request (verbatim):** "The tab colors are too bright. Make the color tone lighter and
+modern. Also, make sure all tabs are same size."
+
+**ORCHESTRATOR RULINGS (the operator may veto or adjust any of these):**
+
+1. **Scope = the default `colorful` tab style only.** As in Phase 62, `standard` is left
+   untouched, so Phase 58 criterion 1 ("standard reproduces the pre-phase tab appearance") stays
+   true. Applying the same calm-down to `standard` would be a follow-up if the operator asks.
+2. **"Lighter and modern" = a soft tinted surface, not a full-strength colour block.** The colorful
+   tab's body fill stops being the raw semantic token (today `--sem-primary` / `--sem-attention` /
+   `--sem-affirmative` / `--sem-neutral` at 100%) and becomes a light tint of the tab's palette hue
+   mixed into the theme surface: inactive = `color-mix(in srgb, var(--tf-tab-accent, var(--sem-neutral))
+   18%, var(--bg-elevated))`; active = the same mix at **34%**. The fill is FLAT (the Phase 58 two-stop
+   vertical gradient is retired), so no bevel/gloss reading survives. Values are stated so the
+   developer need not guess; the operator may veto the exact percentages.
+3. **Tab ink follows the surface, not the hue.** The colorful tab label uses `var(--fg-strong)` (the
+   theme's strong foreground) instead of `--tf-tab-ink`, so the label reads on the light tint in every
+   theme. The `--fg-strong`-on-fill contrast must clear the 4.5:1 text floor in light, dark and frosted.
+4. **Per-tab colour identity is preserved.** The `.tab-colour-chip` keeps the FULL accent colour
+   (`color-mix(in srgb, var(--tf-tab-ink) 35%, var(--tf-tab-accent))` is replaced by the plain full
+   accent so the chip is a saturated hue mark on the pale body), and the adjacent-tab distinctness
+   invariant (Phase 45) is unchanged.
+5. **All tabs are the SAME size = a fixed, uniform tab width.** The colorful tab currently sizes to
+   content (`width: auto` between `min-width: 132px` and `max-width: 200px`), so a long title and a
+   short title render different widths. Every colorful tab becomes a fixed **180px** wide
+   (`width: var(--tf-tab-width, 180px)`); the overflow plan may still shrink all tabs uniformly below
+   that, and the existing 132px floor is unchanged. The overflow planner's `natural` for `colorful`
+   (in `AppHeader.tsx`) is updated from 200 to 180 so the at-rest width and the shrink regime agree.
+6. **Phase 62 behaviour is retained.** The compact 26px height, the uniform corner radius, the active
+   tab flush with the canvas (square bottom corners, no ink underline, the strip extension) and every
+   tab BEHAVIOUR (activation / close, reorder, tear-out / drag-back, overflow shrink / stack) are
+   unchanged.
+
+**Features**
+
+**A. Lighter, modern colorful tab colour.** The colorful tab body paints the flat soft tint in ruling
+2; the two-stop gradient is gone; the tab label uses `--fg-strong`; the colour chip stays the full
+accent. Light, dark and frosted themes all get the calm treatment.
+
+**B. Uniform tab size.** Every colorful tab measures the same width (180px at rest) and the same 26px
+height, active or inactive, so no tab is wider or taller than another.
+
+**Current-scope supersession:** this phase supersedes only the Phase 58 / 51 COLORFUL tab COLOUR
+(full-strength semantic fill + white/dark hue ink + two-stop gradient + tinted chip) and the
+content-sized colorful width. The `standard` style, the Phase 45 per-tab palette assignment, the
+Phase 62 silhouette (26px, uniform radius, active flush with the canvas), the `tabStyle` preference
+and every tab behaviour remain in force. The e2e oracle `e2e/phase58_tab_style.spec.cjs` (its
+`minWidth` uniformity check and any full-strength-colour assertion) is repointed by qa to the Phase 68
+oracle (identical measured WIDTH, the tinted fill, `--fg-strong` ink).
+
+**Success criteria**
+
+1. Every colorful tab (active and inactive) measures an identical width (max-min <= 0.5px) and an
+   identical 26px height (max-min <= 0.5px) - measured boxes + a light and a dark screenshot.
+2. The colorful tab fill is a soft tint, not the raw semantic token: the computed inactive/active
+   `::before` background is the ruled `color-mix(... , var(--bg-elevated))` (no two-stop gradient), it
+   is measurably lighter than the full-strength token, and the `--fg-strong` label clears 4.5:1 against
+   it in all three themes.
+3. Per-tab hue identity survives: the colour chip still paints the full accent and two adjacent tabs
+   resolve different accents (Phase 45 invariant unchanged).
+4. Phase 62 retained: every colorful tab is 26px high with the uniform corner radius, the active tab
+   remains flush with the canvas (gap <= 1px, square bottom corners, no separator line), and
+   `standard` still reproduces the pre-phase appearance - screenshot + measured.
+5. No behaviour regression: mousedown activation and close (DEF-034), reorder (Phase 58), tear-out /
+   drag-back (Phase 61), the Phase 59 overflow shrink / stack, and the Phase 58 / 59 / 60 / 61 / 62 tab
+   suites stay green after the oracle repoint.
+6. `npm run verify` and the targeted unit test for this phase pass.
+7. All DEF / ADV entries opened by this phase are CLOSED or REJECTED with a written reason.
+
+**CONTROL-INDEX:** none - this phase introduces no new control; it restyles existing tab surfaces
+(nothing is added, removed or re-bound).
+
+**Settings impact:** none - no new `AppSettings` field. This is a renderer-only styling change (`src/renderer/styles.css` plus the `TAB_OVERFLOW_METRICS.colorful.natural` constant in `src/renderer/components/AppHeader.tsx`); no IPC or shared-contract change.
+
+## Phase 69 — Jovrel "Halo" brand kit: artwork, in-app mark + loader and the brand colour (operator request via TFL-120, 2026-10-01)
+
+**Operator request (verbatim):** "check C:\Users\tanzi\Documents\kimi\tasks\2026-09-22\15-22-34-c38fee44\jovrel-brand. It has all the branding resources. Implement it for all the app elements like app icon, installer icon, file icon, loading spinning ring etc. Don't miss any elements. Also make necessary changes to the app color to match this branding color. Make sure, the colors are implemented elegantly."
+
+**Operator ruling (CTO, this phase — the operator may veto or adjust any of these):**
+
+1. **The kit is the final "Halo" identity and replaces Phase 49's artwork.** Phase 49 set the Jovrel NAME and a first blue "triple-stroke J" mark. The `jovrel-brand` folder holds the final kit: a gradient ring on a near-black tile with a leading dot (the app/mark), a matching PDF file-type icon, the wordmark, the `.ico` set, the favicon, and the loader rings. Phase 69 replaces the Phase 49 artwork and repoints the Phase 49 oracles. The Jovrel name, `productName: Jovrel` and `appId: com.tflex.app` (and the userData migration) are unchanged.
+2. **Brand palette (source of truth, from the kit's SVGs, verbatim):** amber `#FBBF24` (rgb 251,191,36); pink `#EC4899` (rgb 236,72,153); violet `#8B5CF6` (rgb 139,92,246); deep violet `#7C3AED`; tile `#0F0A14` (rgb 15,10,20); file-icon page `#F5F6FA`; file-icon fold `#D0D4E0`. The mark/loader gradient runs amber -> pink -> violet; the single UI accent is the solid deep violet `#7C3AED`.
+3. **"Elegant" colour = one restrained violet accent, not a purple-dominated theme.** The whole accent FAMILY moves to the brand violet with the SAME structure and per-theme lightness discipline already in `styles.css`; the multi-hue gradient is reserved for the mark, the loader and (optionally) the conversion progress bar - never for large surfaces. The neutral zinc/slate base and the semantic affirmative/attention hues are untouched.
+4. **Contrast is contract.** Every existing contrast/legibility suite (`phase38LegibilityContrast.test.ts`, `phase40SemanticPalette.test.ts`, `designTokensContract.test.ts`) must stay GREEN after the hue swap, and white-on-accent (`--fg-on-accent: #ffffff`) must clear 4.5:1 on every solid accent fill in all three themes. Direct `color: var(--accent)` text on dark surfaces must be raised to the per-theme label token (`--sem-primary`) where it would fall below 4.5:1; the developer tunes LIGHTNESS only, never the hue.
+
+**Features**
+
+**A. Packaging + shipped assets (backend-dev).**
+- Refresh `assets/brand/` from the operator kit: replace `jovrel.ico`, `jovrel-pdf.ico`, `jovrel-mark.svg` + the four `jovrel-mark-*.png`, `jovrel-pdf-file.svg` + the two `jovrel-pdf-file-*.png`, and both `jovrel-wordmark-*-bg.png`; ADD the loader rings `jovrel-ring-256.png`, `jovrel-ring-1024.png`, `jovrel-ring-light-256.png`, `jovrel-ring-light-1024.png`.
+- Place the NON-shipped website artwork in `docs/brand/website/`: `favicon.ico`, `favicon-legibility.png`, `concept-f-halo.png`, `preview-sheet.png`, `jovrel-ring-preview.png`, `jovrel-ring-light-preview.png` (documentation only; never referenced by the app or the builder).
+- `electron-builder.yml`: `win.icon`, `nsis.installerIcon`, `nsis.uninstallerIcon` stay `assets/brand/jovrel.ico`; the `.pdf` `fileAssociations[].icon` stays `assets/brand/jovrel-pdf.ico`. No path change - only the refreshed bytes change. Confirm the `.ico` set contains the 16/24/32/48/64/128/256 size frames.
+
+**B. In-app mark, wordmark and loader (frontend-dev).**
+- `src/renderer/components/BrandMark.tsx`: replace the blue-J geometry with the Halo ring built INLINE from `assets/brand/jovrel-mark.svg` (the `#0F0A14` tile, the amber->pink->violet arc `M 324.8 167.7 A 120.0 120.0 0 1 1 215.0 153.2` at stroke-width 27 round-capped, and the white dot `circle cx=272.7 cy=147.2 r=20.4`) in the 512 viewBox. Keep the inline-SVG pattern, the unique-`useId` gradient id, and the `size`/`className`/`title`/`data-brand-mark` API.
+- `src/renderer/components/BrandWordmark.tsx`: keeps styled text "Jovrel" (no image); align weight/tracking to the kit wordmark.
+- NEW `src/renderer/components/BrandLoader.tsx`: an inline-SVG spinning ring using the kit's ring geometry, theme-aware dot colour (white on dark, `#7C3AED` on light/frosted), animated via the existing motion tokens / the shared spin keyframes; `size` + `className` + `data-brand-loader` + `aria-hidden` API. Use it for EVERY loading indicator: replace the `LoaderCircle`/`Loader` glyphs in `UpdateIndicator.tsx` (downloading), `UpdatePromptDialog.tsx` (downloading), `ConversionNotice.tsx` (`conversion-progress-icon`), and add it to the print-window loading banner (`PrintWindowApp.tsx`, currently a text-only "Loading the document..."), the Welcome samples loader and the accounts/reading loading lines. No loading spinner anywhere keeps a generic lucide glyph.
+- Per-surface CSS in `src/renderer/styles.css` for the mark/wordmark/loader (mirror the existing `.brand-mark` / `.welcome-brand*` / `.about-mark` / `.accounts-brand*` / `.print-window-brand*` rules).
+
+**C. Brand colour (frontend-dev).** In `src/renderer/styles.css`:
+- `:root` accent family hue-swap to deep violet, structure unchanged: `--accent: #7C3AED`, `--accent-hover: #8B5CF6`, `--accent-pressed: #6D28D9`, and the derived `--accent-soft` / `--accent-selected` / `--accent-pressed-soft` / `--accent-hover-bg` / `--focus-ring` / `--select-edge` triples re-based on `124, 58, 237` (alpha values unchanged).
+- `--sem-primary` per theme: light `#7C3AED`, dark `#A78BFA` (violet-400, keeps the existing dark-lightening discipline), frosted `#6D28D9`.
+- `--tf-accent` family (global frosted alias): `#7C3AED` / `#8B5CF6` / `#6D28D9`, washes on `124, 58, 237`.
+- Any direct `color: var(--accent)` used as TEXT on a dark surface that would drop below 4.5:1 is switched to `var(--sem-primary)`.
+- The mark/loader gradient uses amber `#FBBF24`, pink `#EC4899`, violet `#8B5CF6` (optionally also the conversion progress bar fill).
+
+**D. Oracle repoint (frontend-dev + qa).** `test/unit/renderer/phase49Brand.test.tsx`'s mark-geometry block is repointed by frontend-dev to the Phase 69 geometry (still inline-SVG, unique gradient id, theme-safe). The mark-geometry half of `e2e/phase49_brand_gate.spec.cjs` is repointed by qa. `test/unit/main/phase49Branding.test.ts` is untouched (it asserts config paths and PDF metadata, which do not change).
+
+**Success criteria**
+
+1. The installed product carries the Halo artwork: `assets/brand/jovrel.ico` (window + installer + uninstaller) and `assets/brand/jovrel-pdf.ico` (the `.pdf` association) are the Phase 69 kit files, the `.ico` set holds the 16-256px frames, and the build's executable/installer icon is the Halo tile (report the artifact + a screenshot of the installed icon).
+2. Every branded surface shows the Halo mark + "Jovrel": the title bar, the Welcome hero, the About dialog, the account sheet and the print window - screenshots in light, dark and frosted, with no user-visible "TFlex" in those surfaces (a grep-based assertion plus screenshots).
+3. The mark renders the Phase 69 geometry inline with a unique per-instance gradient id and reads correctly at the small title-bar size (18px) in all three themes (state the sizes); the wordmark is still the text "Jovrel".
+4. The loading spinning ring is the brand ring everywhere a loading indicator appears: the update indicator, the update prompt, the conversion notice, the print-window loading banner, the Welcome samples loader and the accounts/reading loading lines - no generic `Loader`/`LoaderCircle` glyph remains; the ring rotates (a captured animation frame pair proves motion) and its dot colour follows the theme.
+5. The single accent is the brand violet: the computed `--accent` family and `--sem-primary` resolve to the Phase 69 values in all three themes; the multi-hue gradient appears only on the mark/loader (and optionally the progress bar), never on a large surface.
+6. Contrast holds: white-on-accent clears 4.5:1 on every solid accent fill in all three themes, and `phase38LegibilityContrast.test.ts`, `phase40SemanticPalette.test.ts` and `designTokensContract.test.ts` stay green (report the measured ratios).
+7. No behaviour regression: the title-bar layout, the Phase 58/62/68 tab rules, the Phase 15 motion rules and `npm run verify` stay green; `phase49Brand.test.tsx` and `phase49_brand_gate.spec.cjs` pass repointed; all DEF/ADV entries this phase opens are CLOSED or REJECTED with a written reason.
+8. The phase ships as a MINOR bump (a brand-identity change, not a fix), committed by git-agent with no push (operator permission required for push/tag/release).
+
+**CONTROL-INDEX:** none - no new interactive control. The loader is a `role="status"`/`aria-busy` indicator replacing existing spinners; the mark and wordmark are decorative/labelled SVG.
+
+**Settings impact:** none - no new `AppSettings` field. Renderer styling (`src/renderer/styles.css`, the brand components), shipped assets (`assets/brand/`) and packaging config only; no IPC or shared-contract change.

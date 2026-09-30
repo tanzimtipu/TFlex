@@ -13,6 +13,7 @@ import { useCallback, useEffect, useMemo, useState, type ReactElement } from "re
 import { TriangleAlert } from "lucide-react";
 import type { PDFDocumentProxy } from "pdfjs-dist";
 import { PrintPanel } from "../components/PrintPanel";
+import { BrandLoader } from "../components/BrandLoader";
 import { BrandMark } from "../components/BrandMark";
 import { BrandWordmark } from "../components/BrandWordmark";
 import { usePrintControls } from "../components/usePrintControls";
@@ -241,6 +242,7 @@ function PrintWindowSurface({ context, deps }: PrintWindowSurfaceProps): ReactEl
 
       {!gone && loadError === null && doc === null && (
         <div className="print-window-banner print-window-banner-quiet" data-print-window-loading>
+          <BrandLoader />
           <span>Loading the document…</span>
         </div>
       )}

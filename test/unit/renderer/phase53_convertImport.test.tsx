@@ -334,9 +334,9 @@ describe("phase 53 — the conversion card DOM contract", () => {
     expect(el2?.hasAttribute("data-conversion-degraded")).toBe(false);
   });
 
-  it("dismiss fires and the card owns no dismiss without a handler", () => {
+  it("the collapse control replaces the dismiss and never invokes onDismiss", () => {
     const onDismiss = vi.fn();
-    const withDismiss = mount(
+    const withHandler = mount(
       createElement(ConversionNotice, {
         notice: {
           sourceLabel: "Text document",
@@ -347,24 +347,16 @@ describe("phase 53 — the conversion card DOM contract", () => {
         onDismiss,
       }),
     );
+    // Phase 67: the session-dismiss "×" is gone; a collapse control replaces it.
+    expect(withHandler.querySelector("[data-conversion-dismiss]")).toBeNull();
+    const collapse = withHandler.querySelector<HTMLElement>("[data-conversion-collapse]");
+    expect(collapse).not.toBeNull();
     act((): void => {
-      withDismiss
-        .querySelector<HTMLElement>("[data-conversion-dismiss]")
-        ?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      collapse?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     });
-    expect(onDismiss).toHaveBeenCalledTimes(1);
-
-    const noDismiss = mount(
-      createElement(ConversionNotice, {
-        notice: {
-          sourceLabel: "Text document",
-          sourceFormat: "text",
-          fidelity: "native",
-          warnings: [],
-        },
-      }),
-    );
-    expect(noDismiss.querySelector("[data-conversion-dismiss]")).toBeNull();
+    // onDismiss is retained on the interface but no longer invoked.
+    expect(onDismiss).not.toHaveBeenCalled();
+    expect(withHandler.querySelector("[data-conversion-dismiss]")).toBeNull();
   });
 });
 
@@ -440,7 +432,9 @@ describe("phase 53 — App wiring and motion tokens", () => {
   it("the card's mount animation uses the shared motion tokens", () => {
     const start = cssSource.indexOf(".conversion-notice {");
     expect(start).toBeGreaterThan(-1);
-    const block = cssSource.slice(start, start + 400);
+    // Phase 67 grows the box rule (margin / border / radius); widen the window
+    // so the shared-token animation declaration is still captured.
+    const block = cssSource.slice(start, start + 900);
     expect(block).toMatch(/animation: conversion-notice-in var\(--motion-duration-standard\) var\(--motion-ease-enter\)/);
   });
 });

@@ -427,9 +427,9 @@ test('phase57a: engineering layers toggle + 3D notice + CAD metadata through the
     noticeVisible = true;
   } catch { /* a missing notice is the observation under test */ }
   const noticeText = noticeVisible ? await win.locator('[data-testid="pdf3d-notice"]').innerText() : null;
-  const noticeCloseCount = noticeVisible
+  const noticeCollapseCount = noticeVisible
     ? await win.locator(
-      '[data-testid="pdf3d-notice"] button, [data-testid="pdf3d-notice"] [aria-label*="close" i], [data-testid="pdf3d-notice"] [data-testid*="close" i]',
+      '[data-testid="pdf3d-notice"] [data-pdf3d-collapse]',
     ).count()
     : -1;
   const p1Counts = await canvasCounts(1);
@@ -455,7 +455,7 @@ test('phase57a: engineering layers toggle + 3D notice + CAD metadata through the
   console.log('P57A_3D ' + JSON.stringify({
     noticeVisible,
     noticeText,
-    noticeCloseCount,
+    noticeCollapseCount,
     p1NonWhite: p1Counts ? p1Counts.nonWhite : null,
     p2NonWhite: p2Counts ? p2Counts.nonWhite : null,
   }));
@@ -476,7 +476,7 @@ test('phase57a: engineering layers toggle + 3D notice + CAD metadata through the
   expect.soft(noticeVisible, '3D notice visible').toBe(true);
   expect.soft(noticeText !== null && noticeText.includes('Page 2'), 'notice names the page').toBe(true);
   expect.soft(noticeText !== null && noticeText.includes('Turbine'), 'notice names the 3D object').toBe(true);
-  if (noticeVisible) expect.soft(noticeCloseCount, 'notice has no dismiss control').toBe(0);
+  if (noticeVisible) expect.soft(noticeCollapseCount, 'notice has the collapse control').toBe(1);
   expect.soft(p2Counts && p2Counts.nonWhite, 'page 2 canvas not blank').toBeGreaterThan(500);
   await win.screenshot({ path: path.join(SHOTS, 'p57a-3d-notice.png') });
 

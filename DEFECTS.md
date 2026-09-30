@@ -5,6 +5,293 @@
 > inspect the current `OPEN`, `FIX-READY`, and `DISPUTED` entries first; closed records are
 > historical evidence and must not be loaded wholesale.
 
+## DEF-438: Form field controls do not follow page rotation — the FormsOverlay editor layer stays at unrotated coordinates, so controls float off their widgets on a rotated form page
+
+- Status: CLOSED
+- Severity: MEDIUM
+- Found by: qa (TFL-110 Phase 65 close, phase validation; built tree on master HEAD d1868d4)
+- Phase: 65 (rendering fidelity; criterion 4's "on a rotated page" clause)
+
+Steps to reproduce:
+1. Launch TFlex (`launchApp`) and open `test-fixtures/phase65/form-956-anon.pdf` through the toolbar
+   Open button, stubbing `dialog.showOpenDialog`.
+2. Scroll to form page 3 and set zoom to 100%.
+3. Select the page-3 thumbnail in the rail and click the PAGES Action Dock's `[data-dock-verb="rotate"]`
+   verb (one clockwise quarter turn).
+
+Expected (Phase 65 criterion 4): the control's measured box equals the widget `/Rect` mapped through the
+page scale at the rotated orientation — the editor layer follows the page.
+
+Actual: the page rotates (engine `rotations[2] === 1`; the page wrapper swaps to 841.9 x 595.3 CSS px and
+the canvas paints the now-landscape page), but the `FormsOverlay` editors keep their UNROTATED coordinates.
+`form-2-text_p3_2` still measures `[180.5, 71.4, 121.0, 23.3]` (its rotation-0 box) where the rotated
+mapping gives `[751.5, 180.5, 19.0, 121.0]` (width should be the widget's height, 19 px). The blue text
+editors, checkboxes and radios all float horizontally over the vertically-rotated page and no longer sit on
+their printed widget boxes; only the canvas-painted read-only widget rotates with the page. Root cause:
+`editorStyle` (`src/renderer/forms/FormsOverlay.tsx:680-690`) positions by `rect.x * cssScale` /
+`rect.y * cssScale` with no rotation input, and `FormsOverlay` receives no `rotation` prop (it is not
+threaded from `PageView`, `src/renderer/components/PageView.tsx:969`). `PageView` swaps the wrapper dims for
+a quarter turn but the `pdf-page-rot-N` class it sets (`PageView.tsx:898-901`) has no CSS rule anywhere.
+
+Impact: on a rotated form page a user cannot see or hit a field where its widget is drawn; edits land in the
+wrong visual place. MEDIUM: materially degrades the supported rotate-a-form-page workflow; no document
+corruption/data loss, and the operator's `956.pdf` has zero rotated pages (all `rotations` 0), so the
+primary unrotated form workflow is unaffected. Breaks criterion 4's stated rotated-page clause, so the
+phase gate cannot close clean under criterion 4 as written.
+
+Evidence: `screenshots/p65-956-rot90.png` (page 3 rotated; printed artwork runs vertically, editors stay
+horizontal); automated assertion `e2e/phase65_form_layer.spec.cjs` test `(c2)`. Log tail:
+```
+[P65-c2] rotations after=[0,0,1,0,0,0]
+[P65-c2] wrapper=841.9x595.3 scale=1.0000
+[P65-c2] form-2-text_p3_2 measured=[180.5,71.4,121.0,23.3] rot90exp=[751.5,180.5,19.0,121.0]
+```
+Command: `npx.cmd playwright test e2e/phase65_form_layer.spec.cjs --reporter=list` -> 6 passed / 1 failed.
+
+Origin: Phase 65 criterion 4 (REQUIREMENTS.md 4120-4121) rotated-page geometry; observed by qa during the
+TFL-110 phase-close walk.
+
+History:
+- CTO: Phase 65 phase-close QA (TFL-110) returned FAIL on criterion 4's rotated-page clause and filed this
+  as the only blocker. Routed to the owning role: frontend-dev child TFL-117 - centralize one quarter-turn
+  rect mapping in `FormsOverlay` and thread `rotation` + unrotated page dims from `PageView`, so every editor
+  kind follows the page. Renderer-only per Phase 65 ruling 5. On FIX-READY, qa re-runs
+  `e2e/phase65_form_layer.spec.cjs` ((c2) must go 6 passed / 1 failed -> 7 passed / 0 failed) and only qa
+  closes this entry.
+- frontend-dev: FIX-READY (TFL-117). One exported pure helper `mapRectForRotation(rect, rotation, pageWidthPt,
+  pageHeightPt)` in `src/renderer/forms/FormsOverlay.tsx:728`; internal `mapFieldForRotation` (`:756`) maps
+  field.rect AND every widget.rect once in the overlay before `FieldEditor`, so all five editor kinds +
+  `NonFillableView` consume already-rotated rects. `FormsOverlayProps` gained optional
+  `rotation`/`pageWidthPt`/`pageHeightPt` (defaults keep unrotated mounts unchanged); `PageView` threads
+  `rotation={rotation} pageWidthPt={widthPt} pageHeightPt={heightPt}` (`PageView.tsx:973-975`). Dev evidence:
+  vitest 4 files / 46 passed; `npm run build` exit 0; `npm run verify` exit 0 (317 files);
+  `e2e/phase65_form_layer.spec.cjs` 7 passed / 0 failed with (c2) measured [751.5,180.5,19.0,121.0] ==
+  rot90exp exactly. Screenshot `screenshots/p65-956-rot90.png`. qa to re-verify before CLOSED.
+- qa: CLOSED (TFL-119 re-verification, working tree TFL-117 uncommitted). Every acceptance item green.
+  - STEP 1 `npm.cmd run build` -> exit 0.
+  - STEP 2 `npx.cmd vitest run phase65SingleLayerForms phase59FormWidgets formsOverlayFillPath
+    formsCssStacking` -> 4 files / 46 passed; `npm.cmd run verify` -> exit 0 (conventions 317 files;
+    tsc --noEmit clean).
+  - STEP 3 baseline `npx.cmd playwright test e2e/phase65_form_layer.spec.cjs --reporter=list` ->
+    7 passed / 0 failed; (c2) log `measured=[751.5,180.5,19.0,121.0] rot90exp=[751.5,180.5,19.0,121.0]`.
+  - STEP 4 spec EXTENDED with (c3): page 3 rotated to 180 then 270 at 100%, plus a 125% rotated
+    assertion. `measured` vs oracle: rot180 `[293.8,751.5,121.0,23.3]` exp `[293.8,751.5,121.0,19.0]`
+    (left/top/width exact; text-input intrinsic height floor, unasserted); rot270
+    `[71.4,293.8,19.0,121.0]` == exp; 125% rot90 `[939.4,225.6,23.8,151.3]` exp
+    `[939.4,225.6,23.7,151.2]` (scale 1.2500). All left/top/width within TOLERANCE_PX=2.
+  - STEP 5 spec EXTENDED with (c4) HIT/EDIT: at the mapped box on the rot90 page the control is
+    present, `document.activeElement === control` (focused=true), typing `ROT1` gives DOM value
+    `ROT1` and engine value `ROT1`.
+  - STEP 6 BLAST RADIUS: (a) control count, (b) single layer, (b2) signature/read-only, (c) unrotated
+    geometry at 100%/125%, (d) fill + save /V, (e) foreign annotation / read-only truthful / text
+    selection — all pass in the same run. Screenshots inspected: `p65-956-rot90.png`,
+    `p65-956-rot180.png`, `p65-956-rot270.png`, `p65-956-rot90-125.png`, `p65-956-rot90-edit.png`
+    (typed value visible), `p65-956-geometry-100.png`, `p65-956-geometry-125.png` — printed artwork
+    and the editor boxes share the rotated orientation at every turn; unrotated page 4 unchanged.
+  - Command: `npx.cmd playwright test e2e/phase65_form_layer.spec.cjs --reporter=list` -> 9 passed /
+    0 failed. No product defect observed on the frozen fix.
+
+## DEF-437: Book View's Close control is hit-test dead — the collapsed Inspector strip overlaps it, so a real click never dismisses Book View
+
+- Status: CLOSED
+- Severity: HIGH
+- Found by: qa (TFL-100 Phase 66 chunk 1 focused verification, working tree f3cd127)
+- Phase: 66 (chunk 1; the read-only Book View shell)
+
+Steps to reproduce:
+1. Launch TFlex (`launchApp`) and open `assets/samples/report.pdf` (or the cbz fixture
+   `test-fixtures/phase56/phase56-comic.cbz`) through the toolbar Open button, stubbing
+   `dialog.showOpenDialog`.
+2. Click the canvas top-left `[aria-label="Book View"]` entry. The read-only Book View opens
+   correctly (rail and Inspector collapse, the Action Dock is gone).
+3. Click the Book View header's `[aria-label="Close book view"]` (top-right X) with a real click.
+
+Expected: Book View dismisses and the prior rail/Inspector/dock state is restored.
+
+Actual: the click never reaches the Close button. The Inspector stays MOUNTED as a 44px
+absolutely-positioned collapsed strip at the right edge (`.inspector`, x=2516..2560 in a 2560px
+window, `z-index: 30`, `pointer-events: auto`) and the `.book-view` surface does not reserve the
+panel column, so the header's Close control (x=2524..2548) sits underneath it.
+`document.elementFromPoint` at the Close centre (2536,64) returns the Inspector collapse toggle's
+`<path d="m10 15-3-3 3-3">`, and Playwright's real click times out with
+`... from <div class="inspector" ... data-inspector-collapsed="true"> subtree intercepts pointer
+events`. A `{ force: true }` click still lands on the overlay and does nothing. This is the
+DEF-357 / DEF-377 collision class: a region whose right-edge control does not reserve
+`--tf-tools-inset` loses its click to the Inspector's interactive child.
+
+The close handler itself is correct: invoking `document.querySelector('[aria-label="Close book
+view"]').click()` fires it, `[data-book-view]` unmounts and the panel state restores
+(`before {rail:false, insp:false, dock:1}` -> `during {rail:true, insp:true, dock:0}` ->
+`after {rail:false, insp:false, dock:1}`). The defect is the pointer hit test only, but it makes
+the only exit control of the shell unusable with the mouse.
+
+Commands + output (verbatim):
+- `npx.cmd playwright test e2e/phase66_bookview.spec.cjs` -> `3 failed`; each failure is
+  `TimeoutError: locator.click: Timeout 30000ms exceeded` on
+  `[aria-label="Close book view"]`, with the Inspector subtree intercepting pointer events.
+  Entry/open parts pass first: `P66_PANEL {"before":{"rail":"false","inspector":"false"},
+  "during":{"rail":"true","inspector":"true"},"dockBefore":1,"dockDuring":0}`.
+- `npx.cmd playwright test e2e/phase56_reading.spec.cjs e2e/def395_retest.spec.cjs` -> the
+  re-pointed cbz shell tests fail at the same Close click for the same reason.
+- Probe geometry (temporary diagnostic spec, now removed): `bookView={"x":64,"y":44,"width":2496,
+  "height":1348}`, `close={"x":2524,"y":52,"width":24,"height":24}`,
+  `inspector={"x":2516,"y":44,"width":44,"height":1348}` `zIndex=30` `position=absolute`,
+  `hitAtClose={"tag":"path"}`.
+
+Impact: the Book View shell's Close control is not reachable by a real pointer click, so a user
+cannot leave Book View. HIGH: a stated Phase 66 criterion ("on Close the prior rail/Inspector/dock
+state is restored") cannot be exercised through the UI and the only exit control is dead; no
+document corruption.
+
+Evidence: `e2e/p66_bookview_run.log`, `e2e/p66_focused_run.log`,
+`screenshots/phase66-pdf-shell.png`. Source anchors:
+`src/renderer/components/BookView.tsx:164-172` (the Close button, right-aligned in the header),
+`src/renderer/styles.css:18131-18149` (`.book-view` / `.book-view-header` do not reserve
+`--tf-tools-inset`, unlike `.canvas-overlay` and `.protection-notice-region`),
+`src/renderer/styles.css:7904-7907` (the collapsed Inspector inset token).
+
+History:
+- qa: OPEN (TFL-100 Phase 66 chunk 1 focused verification; the entry/read-only-shell parts PASS, the real Close click times out). See the entry above for repro and geometry.
+- orchestrator: routed to frontend-dev as TFL-108 -- CSS-only fix so `.book-view` reserves the Inspector column (`margin-right: var(--tf-tools-inset, 0px)`), mirroring `.document-scroller` (styles.css:4417) and `.document-column > .validation-notice` (styles.css:17616-17618), plus a sibling hit-test unit test mirroring `phase53_protectionNoticeInspectorHitTest.test.ts`. qa re-verifies chunk 1 on completion (Focused verification) and sets CLOSED.
+- frontend-dev (TFL-108): FIX-READY (uncommitted in working tree). `.book-view` rule (selector `.book-view {`, now styles.css:18339) gained `margin-right: var(--tf-tools-inset, 0px);` (line 18345); no pointer-events/z-index change, header/nav untouched. NEW `test/unit/renderer/phase66_bookViewInspectorHitTest.test.ts` asserts the reservation against a collapsed-Inspector sibling. Verification command: build + `e2e/phase66_bookview.spec.cjs` + unit run + `npm run verify`.
+- orchestrator: dispatched qa (FIX-READY defect verification) to re-run the real-Close-click e2e for DEF-437 and set CLOSED or re-OPEN with evidence.
+- qa: CLOSED (TFL-114 FIX-READY verification). The `.book-view { margin-right: var(--tf-tools-inset, 0px); }` fix (styles.css:18345) reserves the Inspector column; the real (non-forced) Close click now lands and dismisses Book View for both formats. Commands + counts: (1) `npm.cmd run build` -> exit 0 (typecheck clean; vite 2661 modules; esbuild main/preload done). (2) `npx.cmd playwright test e2e/phase66_bookview.spec.cjs` -> `3 passed` / 0 failed; decisive assertion (real click on `[aria-label="Close book view"]`, `[data-book-view]` -> 0, `BrowserWindow.getAllWindows().length` unchanged) passed for BOTH `assets/samples/report.pdf` and `test-fixtures/phase56/phase56-comic.cbz`; P66_PANEL during `{rail:true,inspector:true,dock:0}`, P66_RESTORE after `{rail:false,inspector:false,dock:1}`. (3) `npm.cmd run test:unit -- test/unit/renderer/phase66_bookViewInspectorHitTest.test.ts` -> `5 passed` (1 file). (4) `npx.cmd playwright test e2e/phase56_reading.spec.cjs e2e/def395_retest.spec.cjs` -> `11 passed` / 1 failed; the sole failure is `e2e/phase56_reading.spec.cjs:526` `[data-conversion-dismiss]` count 0 — the uncommitted Phase 67 `ConversionNotice.tsx` collapse rewrite replaced the dismiss control, an obsolete-oracle drift of the same class as DEF-439, NOT a DEF-437 Close-click failure (the Close-click neighbours test 11 "cbz reader control ... (Phase 66 shell)" and `def395_retest` both PASS). (5) `npm.cmd run verify` -> exit 0 (conventions clean, 317 files; typecheck clean). Screenshots refreshed 07:58: `screenshots/phase66-pdf-{entry,open,shell,before-open,restored}.png`, `screenshots/phase66-cbz-{entry,open}.png`.
+
+## DEF-436: 956.pdf renders every form field twice — pdf.js paints the widget appearance on the canvas under the FormsOverlay editor, and editors are mis-placed/missed
+
+- Status: CLOSED
+- Severity: HIGH
+- Found by: operator (TFL-49 "Encrypted form issue", reported 2026-09-30)
+- Phase: post-Phase 59 (field-layer rendering; Phase 65 contract)
+
+ESCAPE: scope-excluded — Phase 59 item 4 was scoped to the native FILL mechanism (field `/V`,
+regenerated widget appearances, fill report). The rendered field LAYER (one control per widget, no
+double-draw, exact on-screen geometry) was outside that item's verification scope, so no Phase 59
+probe asserted it. CTO names the missed blast radius: every form-bearing PDF's on-screen field
+rendering. Brief standard updated: a form-fill phase must verify BOTH the written value and the
+rendered layer.
+
+Steps to reproduce:
+1. Launch TFlex at master HEAD (1.45.4) and open
+   `C:\Users\tanzi\OneDrive\Desktop\Parent visa\956.pdf` (empty-user-password encrypted AcroForm).
+2. Scroll to a form page (pages 3-6) and look at the field boxes; edit a text field, e.g. "Email
+   address".
+
+Expected (operator, "cleanly like Adobe"): each field is drawn exactly ONCE, as an interactive
+control sitting exactly on its widget box; every fillable field has a control; the page does not show
+a second, offset box under it; the result looks like an Adobe-rendered form.
+
+Actual (operator): "The app tries to place fields as layer on the form. It misses several fields in
+the process. The overlapping layers can be seen. It looks very unpolished." The page canvas already
+paints each widget's own appearance (pdf.js `PDFPageProxy.render` is called with the default
+`annotationMode = AnnotationMode.ENABLE` at `src/renderer/components/PageView.tsx:690-693`; the
+canvas path draws annotation appearances at rotation 0), and `FormsOverlay`
+(`src/renderer/forms/FormsOverlay.tsx`) paints a second transparent, accent-bordered HTML editor over
+the same box. Fields whose editor is transparent/thin-bordered read as "missing"; the field box
+painted on the canvas reads as the "overlapping layer".
+
+Read-only facts about the operator's file (verified by CTO, `@cantoo/pdf-lib`, empty password; the
+file was NOT modified):
+- 6 pages, all 841.89pt tall; `%PDF-1.5`, linearised, `/Encrypt` present, `/AcroForm` present,
+  `/XFA` absent. It loads with an empty user password (no password prompt needed).
+- 105 AcroForm fields (84 `PDFTextField`, 21 `PDFCheckBox`), 129 widgets total; fields live on pages
+  3-6 (34 / 34 / 27 / 10); every field maps to a page and every widget has a non-degenerate `/Rect`
+  (zero-rect count 0) through the engine's own `findFieldPage` / `getFieldRect`
+  (`src/main/services/forms.ts:336`, `:395`). Multi-widget button groups exist (e.g. `mg.title` 4
+  widgets, `mg.reason ex` 6 widgets).
+- So the "missed fields" and "overlapping layers" are a RENDERING fault, not an engine enumeration
+  fault: the engine reports all 105 fields with valid rects, and the renderer paints a duplicate.
+
+Evidence: `screenshots/p59-956-filled.png` (the operator's file in the app: printed form boxes and
+overlay editors both visible; the Inspector reads "Form fields 105"; `mg.*` groups and the "Title:
+Mr/Mrs/Miss/Ms/Other" row show doubled boxes). Source anchors:
+`src/renderer/components/PageView.tsx:690-693` (render call, no `annotationMode`),
+`src/renderer/forms/FormsOverlay.tsx:48-111` (overlay + zero-rect fallback stack),
+`src/renderer/styles.css:6884-6948` (`.forms-layer` / `.form-editor`, transparent fill),
+`src/main/services/forms.ts:635-709` (`getFormFields`).
+
+Impact: the flagship form-filling capability looks broken on a real government form — fields appear
+twice, some read as missing, and the user perceives the whole feature as unpolished. HIGH: a stated
+operator acceptance requirement ("fills completely, no missed fields, clean like Adobe") is not met
+on screen; no document corruption.
+
+History:
+- CTO: opened (TFL-49). Filed with ESCAPE: scope-excluded and routed to Phase 65
+  (REQUIREMENTS.md Phase 65, added 2026-10-01). Owner: renderer (frontend-dev) for the single-layer
+  field rendering; engine (backend-dev) only if the characterisation proves geometry/enumeration is
+  incomplete. qa to reproduce on the current tree, build an anonymised fixture from the operator's
+  file, and confirm closure with before/after screenshots and control-count evidence.
+- qa: retested (TFL-89 / Phase 65 chunk 1 FOCUSED VERIFICATION on the built tree). Fixture
+  `test-fixtures/phase65/form-956-anon.pdf` (generator `test-fixtures/phase65/make-fixture.cjs`) reproduces the
+  operator topology: 6 pages, 105 fields, 129 widgets, per-page widgets 42/42/35/10 on pages 3-6, 84 text +
+  21 button fields (six multi-widget groups, incl. `mg.reason ex` 6 widgets and `mg.title` 4). The operator
+  file was read only, never modified or committed. Spec: `e2e/phase65_form_layer.spec.cjs`.
+  Verdicts:
+  - (a) CONTROL COUNT — PASS. dom==engine per page (42/42/35/10); totals engine=129 dom=129 missing=0
+    extras=0; `mg.reason ex` renders 6 controls for its 6 widgets.
+  - (b) SINGLE LAYER — FAIL (partial). Fillable empty widgets: canvas grey=0/5820 (no widget /AP box under
+    the editor); with `.forms-layer` hidden (visibleControls 42 -> 0) every fillable box is gone. BUT a
+    read-only text widget is still painted on the canvas: with editors hidden its region is grey=5820/5820.
+    Cause: pdf.js marks read-only widgets `hasOwnCanvas` (`pdf.worker.mjs: this.data.hasOwnCanvas =
+    this.data.readOnly && !this.data.noHTML`), so `WidgetAnnotation.getOperatorList` is NOT suppressed under
+    `AnnotationMode.ENABLE_FORMS`; TFlex then also renders a disabled editor over it — the same
+    double-surface class as DEF-436, for read-only fields. The operator's 956.pdf has 0 read-only fields
+    (verified via @cantoo/pdf-lib), so the operator topology is clean; Phase 65 feature A/C for read-only
+    fields in general is not.
+  - (c) GEOMETRY — PASS. x/y/width within 2px and radio-widget boxes exact at 100% and 125%; the text
+    <input> height is floored by the editor's intrinsic line-height (delta 4.28px at 100%, 0.44px at 125%),
+    bounded and not introduced by chunk 1.
+  - (d) FILL — PASS. Typing a text field + toggling a check box dispatched the native fill (report "97
+    filled, 8 skipped"); diagnostics text="QA65", checkbox="true"; save re-read /V="QA65" and checked=true.
+  - (e) BLAST RADIUS — PASS. The foreign red /Square annotation still paints (red=6144/6144); the read-only
+    field is disabled with title "This field is read-only" (truthful); text selection over printed artwork
+    still works ("PRINTED FORM ARTWORK - TFLEX PHASE 65").
+  Commands: `npm.cmd run build` exit 0; `npx.cmd playwright test e2e/phase65_form_layer.spec.cjs` 4 passed /
+  1 failed (only item b read-only); `npx.cmd vitest run <4 forms specs>` 4 files / 32 tests passed;
+  `npm.cmd run verify` exit 0. Screenshots: `screenshots/p65-956-after.png`, `p65-956-canvas-only.png`
+  (editors hidden), `p65-956-fill.png`, `p65-956-geometry-100.png`, `p65-956-geometry-125.png`,
+  `p65-956-blast-annot.png`, `p65-956-blast-selection.png`.
+  NOT CLOSED: item (b) FAILS for read-only fields. Recommended follow-up (owner: frontend-dev): for a
+  read-only widget either suppress the canvas /AP paint or drop the redundant disabled editor, so exactly one
+  truthful non-editable surface shows. The chunk-1 fillable-widget behaviour (A/B/C/D/E on the operator
+  topology) is verified.
+- frontend-dev: FIX-READY (TFL-101 / Phase 65 chunk 2). `FieldEditor` (`src/renderer/forms/FormsOverlay.tsx:125-148`)
+  now returns `null` (no overlay surface) when `kind === "signature"` OR (`field.readOnly === true` AND the id is
+  not an `orphan-…`), since pdf.js canvas-paints every read-only widget (`hasOwnCanvas = readOnly && !noHTML`)
+  and every signature widget under `AnnotationMode.ENABLE_FORMS`. Orphan widgets keep their single
+  `NonFillableView` surface; fillable non-read-only fields are unchanged. CTO ruling 6 in REQUIREMENTS.md
+  scopes criterion 3 ('interactive control count equals widget count') to FILLABLE widgets.
+- qa: retested (TFL-102 / Phase 65 chunk 2 FIX-READY re-verification, built tree). Spec
+  `e2e/phase65_form_layer.spec.cjs` updated to the ruling-6 oracle; new minimal fixture
+  `test-fixtures/phase65/form-locked-anon.pdf` (generator `test-fixtures/phase65/make-locked-fixture.cjs`:
+  1 fillable text, 1 read-only text, 1 signature, each with a grey /AP) and new test `(b2)`. Main fixture
+  `form-956-anon.pdf` topology unchanged (105 fields / 129 widgets / pages 3-6). Verdicts:
+  - (a) CONTROL COUNT — PASS. Per page dom==engine FILLABLE widget count (41/42/35/9); totals engine=129
+    fillable=127 dom=127 missing=0 extras=0. Both real read-only widgets (`text_p3_1` page 3, `text_p6_76`
+    page 6) have overlayControls=0. `mg.reason ex` still renders 6 controls for 6 widgets.
+  - (b) SINGLE LAYER — PASS. Fillable empty widgets: canvas grey=0/5820 (no /AP box under the editor).
+    Read-only `text_p3_1`: overlayControls=0 and, with `.forms-layer` hidden, canvas grey=5820/5820 (one
+    truthful canvas surface). Screenshots `screenshots/p65-956-after.png` (read-only box shows one grey
+    canvas rectangle, no editor) and `screenshots/p65-956-canvas-only.png` (editors hidden: only the grey
+    read-only widget and the red /Square remain; every fillable box gone) reviewed and confirmed.
+  - (b2) SIGNATURE + READ-ONLY (new) — PASS. `form-locked-anon.pdf`: overlayControls fill=1, read-only=0,
+    signature=0; with the layer hidden canvas grey fill=0/8772, read-only=8772/8772, signature=16384/16384
+    (exactly one canvas surface each). `screenshots/p65-locked-surfaces.png` reviewed: blue fillable editor,
+    two grey canvas-only widgets, no second surface.
+  - (c) GEOMETRY — PASS. x/y/width within 2px and radio-widget boxes exact at 100% and 125%; text <input>
+    height delta 4.28px at 100%, 0.44px at 125% (intrinsic line-height floor, unchanged by chunk 2). The
+    read-only widget is excluded from the geometry sample (it has no control by design).
+  - (d) FILL — PASS. Typing a text field + toggling a check box dispatched the native fill (report "97
+    filled, 8 skipped"); diagnostics text="QA65", checkbox="true"; save re-read /V="QA65" and checked=true.
+  - (e) BLAST RADIUS — PASS. Foreign red /Square still paints (red=6144/6144); read-only `text_p3_1` has
+    overlayControls=0 with canvas grey=5820/5820; a real click on its region left its value unchanged and
+    fired no fill report; text selection over printed artwork still works.
+  Commands: `npm.cmd run build` exit 0; `npx.cmd vitest run <4 forms specs>` 4 files / 38 tests passed;
+  `npm.cmd run verify` exit 0; `npx.cmd playwright test e2e/phase65_form_layer.spec.cjs` 6 passed / 0 failed.
+  Log: `e2e/p65_chunk2_run.log`. Escape follow-up (scope-excluded) satisfied: the missing rendered-layer probe
+  now exists (`e2e/phase65_form_layer.spec.cjs`) and the brief standard records the form-fill double-check.
+  CLOSED — every item green under ruling 6.
+
 ## DEF-431: verify:full release gate red — multiModeOpenAssignment oracle is stale after DEF-429 sample-open extraction
 
 - Status: CLOSED
@@ -8801,3 +9088,296 @@ History:
   the collapsed icon does not overlap `[data-context-panel-combine]`; re-run still 2 passed.
   Evidence: `screenshots/tfl46-icon-fixed.png`, `screenshots/tfl46-icon-vs-panel-clip.png`,
   `screenshots/p59-protection-icon-clip.png`.
+
+## DEF-439: Phase 57 3D-notice e2e still asserts the obsolete "no dismiss control" contract after Phase 67 added the collapse control
+
+- Status: FIX-READY
+- Severity: MEDIUM
+- Found by: qa (TFL-111 / TFL-104.2 focused verification, Phase 67)
+- Phase: 67 (item 5; REQUIREMENTS.md:4312-4315, criterion 6)
+
+Steps to reproduce:
+1. On the current Phase 67 working tree, run
+   `npx.cmd run test:e2e -- e2e/phase57a_engineering.spec.cjs`.
+2. The spec opens the 3D fixture, waits for `[data-testid="pdf3d-notice"]`, then counts every
+   `button` inside that notice and asserts the count is 0 ("notice has no dismiss control").
+3. Phase 67 (feature B, REQUIREMENTS.md:4286-4289) intentionally adds the collapse control
+   `[data-pdf3d-collapse]` to the expanded 3D box, so the count is now 1 and the assertion fails.
+
+Expected (REQUIREMENTS.md:4286-4289): the expanded 3D box "carries a collapse control"; the
+Phase 57 3D-notice spec must be reconciled to that contract and stay green (criterion 6).
+
+Actual: the spec's oracle still encodes the pre-Phase-67 contract (a notice with NO button). The
+product behaviour is correct per Phase 67; the e2e oracle was not reconciled while the four unit
+specs listed for TFL-106 were. The 10 s auto-collapse race the task flagged did NOT occur in this
+run (notice was visible with the correct page/object text).
+
+Commands + output (verbatim):
+- `npx.cmd run test:e2e -- e2e/phase57a_engineering.spec.cjs` -> `1 failed` (9.3s); error:
+  `Error: notice has no dismiss control` / `expect(received).toBe(expected)` /
+  `Expected: 0` / `Received: 1` at `e2e\phase57a_engineering.spec.cjs:479:85`; the count is built
+  at `e2e/phase57a_engineering.spec.cjs:430-433` (any `button` inside the notice).
+
+Impact: fails the Phase 67 "no regression: the Phase 57 3D-notice specs stay green" success
+criterion. MEDIUM: an obsolete test oracle degrades the regression suite; no product behaviour or
+document content is affected. Fix belongs to the TFL-106 owner (reconcile the spec's dismiss-path
+assertion to the collapse control), not QA.
+
+Evidence: `test-results/phase57a_engineering-phase-6405e-CAD-metadata-through-the-UI/`.
+Source anchors: `e2e/phase57a_engineering.spec.cjs:430-433,479`;
+`src/renderer/components/Pdf3dNotice.tsx:70-78`.
+
+History:
+- qa: opened (TFL-111 / TFL-104.2 focused verification). Routed to frontend-dev: update
+  `e2e/phase57a_engineering.spec.cjs` so the 3D-notice check accepts the Phase 67 collapse control
+  (e.g. assert `[data-pdf3d-notice]` is present and the collapse control is
+  `[data-pdf3d-collapse]`) instead of asserting zero buttons.
+- qa: originally numbered this DEF-436; that ID was already in use (the form-field double-render
+  defect at the top of this file). CTO renumbered it to DEF-439. Rule for qa: always grep
+  `^## DEF-` and take the next free number before opening a defect.
+- CTO: triaged FIX-READY. Confirmed real (obsolete oracle, product behaviour correct per
+  REQUIREMENTS.md:4286-4289). Assigned to frontend-dev as TFL-118 to reconcile the spec only.
+- frontend-dev (TFL-118 / TFL-104.3, 2026-10-01): fixed. `e2e/phase57a_engineering.spec.cjs`
+  now counts `[data-testid="pdf3d-notice"] [data-pdf3d-collapse]` and asserts it is 1
+  ("notice has the collapse control"); lines 476-478 untouched; no product source changed.
+  Evidence: `npm.cmd run test:e2e -- e2e/phase57a_engineering.spec.cjs` -> 1 passed, 0 failed
+  (10.2s), runner log `P57A_3D noticeCollapseCount:1`. Awaits qa phase-close QA to set CLOSED.
+
+## DEF-440: Phase 53 / Phase 56 e2e oracles still click/count the removed `data-conversion-dismiss` control after Phase 67 replaced it with the collapse control
+
+- Status: FIX-READY
+- Severity: MEDIUM
+- Found by: adversary (TFL-121 / TFL-104.4 diff-pass, Phase 67); ADV-132
+- Phase: 67 (criterion 6, REQUIREMENTS.md:4312-4315)
+
+Steps to reproduce:
+1. On the Phase 67 working tree run `npm.cmd run test:e2e -- e2e/phase53_format_import.spec.cjs`
+   and `npm.cmd run test:e2e -- e2e/phase56_reading.spec.cjs`.
+2. `e2e/phase53_format_import.spec.cjs:466` clicks `[data-conversion-dismiss]` (the control Phase 67
+   deleted) -> auto-wait actionability timeout.
+3. `e2e/phase56_reading.spec.cjs:525-526` asserts `[data-conversion-dismiss]` count == 1 -> count is 0,
+   so the assertion fails.
+
+Expected (Phase 67, REQUIREMENTS.md:4274-4276): the conversion card's dismiss "X" is replaced by the
+collapse control, so these two regression oracles must be migrated to the collapse control and stay
+green (criterion 6).
+
+Actual: both oracles still target the deleted `data-conversion-dismiss` selector. `grep -rn
+"data-conversion-dismiss" src` returns zero hits, so the selector cannot exist; product behaviour is
+correct per Phase 67. qa had already observed the phase56 instance while closing DEF-437
+(DEFECTS.md DEF-437 history) but no DEF was opened; the phase53_format_import instance was unreported
+until ADV-132.
+
+Impact: Phase 67 criterion 6 ("the Phase 53 conversion specs ... stay green") is red. MEDIUM: stale
+regression oracles; no product behaviour or document content affected.
+
+Evidence: ADV-132 (ADVERSARIAL_REVIEW.md); source anchors `e2e/phase53_format_import.spec.cjs:458-473`,
+`e2e/phase56_reading.spec.cjs:522-537`; product anchors `src/renderer/components/ConversionNotice.tsx`
+(collapse control `[data-conversion-collapse]`, collapsed icon `[data-conversion-icon]`, no
+`data-conversion-dismiss`).
+
+History:
+- adversary: opened as ADV-132 (TFL-121 diff-pass, static selector non-existence + qa's recorded
+  phase56 observation; the adversary did not run either spec).
+- CTO: triaged ACCEPTED -> DEF-440, FIX-READY, MEDIUM. Assigned to frontend-dev to reconcile both
+  oracles. qa phase-close QA runs both specs and sets CLOSED.
+- frontend-dev (TFL-126 / TFL-104.5, 2026-10-01): fixed. `e2e/phase53_format_import.spec.cjs` row 6
+  now clicks `[data-conversion-collapse]` and asserts `[data-conversion-icon]` count 1;
+  `e2e/phase56_reading.spec.cjs` control-index likewise. No product source, no config, those two
+  files only. Evidence: `npm.cmd run test:e2e -- e2e/phase53_format_import.spec.cjs
+  e2e/phase56_reading.spec.cjs` -> row 6 PASS (`P53_NOTICE ... afterDismiss:0`), phase56
+  control-index PASS; 22 passed total. One unrelated pre-existing failure (row 7) filed separately
+  as DEF-443. Awaits qa phase-close QA to set CLOSED.
+
+## DEF-441: Colorful-tab modified dot uses `--tf-tab-ink` and vanishes on the new pale Phase 68 tab body; close-button hover wash is imperceptible
+
+- Status: CLOSED
+- Severity: MEDIUM
+- Found by: adversary (TFL-116 diff-pass, Phase 68); ADV-133
+- Phase: 68 (TFL-105, tab colour calm-down)
+
+Steps to reproduce:
+1. On the Phase 68 working tree set the tab strip to the colorful style.
+2. Mark a document modified that is NOT the active tab.
+3. Its `.tab-modified-dot` is invisible: `background: var(--tf-tab-ink)` (`styles.css:2255`) with a
+   `transparent` ring on inactive tabs (`styles.css:2284-2285`) over the new
+   `color-mix(... 18% accent, var(--bg-elevated))` body (`styles.css:2098`). Measured 1.32-1.52:1.
+4. Hover the close button on a colorful tab: the `--tf-tab-ink` 22% wash (`styles.css:2309`) is ~1.07:1
+   against the light body.
+
+Expected: the modified/unsaved-changes dot stays clearly visible on both the inactive and the active
+colorful tab body, and the close hover reads as feedback. Non-text contrast >= 3:1 against the tab body.
+
+Actual: Phase 68 changed the colorful body to a pale theme-surface tint but left the dot and the hover wash
+on the Phase 51 full-strength-body ink (`#ffffff` light/frosted, `#0f172a` dark). On an inactive colorful
+tab the dot is fully invisible in every theme and slot; the active tab keeps only its 1.5px accent ring.
+
+Impact: the unsaved-changes indicator is lost on inactive colorful tabs (data-loss signal), and close hover
+feedback is nearly imperceptible in light/frosted. MEDIUM: no document content affected.
+
+Evidence: ADV-133 (ADVERSARIAL_REVIEW.md); anchors `src/renderer/styles.css:2255`, `:2280-2286`, `:2309`;
+new Phase 68 body `:2098`/`:2120`; ink tokens `:409`/`:582`/`:790`.
+
+History:
+- adversary: opened as ADV-133 (TFL-116 diff-pass, static diff + contrast math; no app run).
+- CTO: triaged ACCEPTED -> DEF-441, FIX-READY, MEDIUM. Assigned to frontend-dev, scoped to the colorful
+  tab style only. qa TFL-115 re-verification confirms the dot and hover are visible and sets CLOSED.
+- qa: TFL-115 item 5 PASS. Post-fix anchors re-verified on the current tree: `.tab-area[data-tab-style="colorful"] .tab-modified-dot` background `var(--tf-tab-accent, var(--sem-neutral))` with `--fg-strong 55%` ring (styles.css:2321), and `.tab-area[data-tab-style="colorful"] .tab-close:hover` `--fg-strong 16%` wash (styles.css:2355); standard-scoped base rules unchanged. Fresh run `npx vitest run test/unit/renderer/phase68TabRestyle.test.tsx` -> Tests 8 passed (8), 0 fail. Status CLOSED (TFL-134).
+
+## DEF-442: Phase 63 dock edit-pen static guard asserts an unanchored `color:` substring, so it can pass while the glyph is not the edit hue
+
+- Status: FIX-READY
+- Severity: LOW
+- Found by: adversary (TFL-112 diff-pass, Phase 63); ADV-131
+- Phase: 63 (TFL-47, dock edit pen colour)
+
+Steps to reproduce:
+1. Open `test/unit/renderer/tfl47_dockEditIconColor.test.ts`.
+2. Read the first `it` at line 28: the property assertion is
+   `bodies.some((b) => b.includes("color: var(--tf-stage-edit)"))`.
+3. Note the second `it` (:31-37) only rejects raw hex/rgb/hsl in the same bodies.
+
+Expected: the guard fails whenever the pen's resting `color` is not `var(--tf-stage-edit)` -- i.e. the
+assertion matches a standalone `color:` declaration only.
+
+Actual: the substring `"color: var(--tf-stage-edit)"` is also contained in
+`border-color: var(--tf-stage-edit)`, `background-color: var(--tf-stage-edit)` and
+`outline-color: var(--tf-stage-edit)`. A body such as
+`.action-dock-edit { color: var(--sem-neutral); border-color: var(--tf-stage-edit); }` satisfies both guard
+assertions while the glyph is NOT the edit hue. A non-empty selector matcher (:18-22) is correct; only the
+property assertion is unanchored.
+
+Impact: LOW, no product impact on the current tree -- the rendered computed-style e2e
+(`e2e/phase63_dock_edit_colour.spec.cjs`) is the authoritative criterion-1 oracle and would fail. But
+`verify:full` = `verify` + `test:unit` and CI never runs the e2e, so this unit guard is the ONLY automated
+CI-level protection for the pen colour; an imprecise oracle leaves a narrow false-pass window where CI stays
+green while the glyph colour regresses. Class: `ESCAPE: wrong-oracle`.
+
+Evidence: ADV-131 (ADVERSARIAL_REVIEW.md); anchors `test/unit/renderer/tfl47_dockEditIconColor.test.ts:18-22`
+(selector matcher), `:28` (unanchored property assertion), `:31-37` (raw-colour guard); product anchor
+`src/renderer/styles.css:15185-15203` (base rule; only `color:` sets the glyph ink) and
+`src/renderer/components/ActionDock.tsx:1157-1170` (lucide `Pencil`, `stroke="currentColor"`).
+
+History:
+- adversary: opened ADV-131 (TFL-112 Phase 63 diff-pass; static read-only; no app/e2e run).
+- CTO: triaged ACCEPTED -> DEF-442, FIX-READY, LOW. Assigned to frontend-dev to anchor the property
+  assertion to a standalone `color:` declaration and add a negative case; qa focused re-run of the guard
+  closes this entry. Product behaviour on the tree is correct, so criterion 1 is not reopened.
+
+## DEF-443: Phase 53 e2e row 7 waits for the import Preferences panel without activating its category, so it times out after the Phase 59 rail
+
+- Status: FIX-READY
+- Severity: MEDIUM
+- Found by: frontend-dev (TFL-126 / TFL-104.5 incidental observation while fixing DEF-440)
+- Phase: 67 (blocks criterion 6, REQUIREMENTS.md:4312-4315)
+
+Steps to reproduce:
+1. On the current working tree run `npm.cmd run test:e2e -- e2e/phase53_format_import.spec.cjs`.
+2. Row 7 (` e2e/phase53_format_import.spec.cjs:481`) opens Preferences via `[data-open-preferences]`
+   then `await win.waitForSelector('[data-prefs-convert-section]', { timeout: 8000 })` at `:488`
+   (repeated at `:522` after the restart).
+3. Since Phase 59 (commit 53d0d72) `PreferencesDialog.tsx` renders a category rail
+   (`PREFS_CATEGORIES`, `:140-144`) with default category `general` (`:141`) and hides every non-active
+   panel with `hidden={!isActive}` (`:403`). The import panel `data-prefs-convert-section` sits inside
+   the `import` panel (`:143`, section at `:531`), so it is hidden until the `import` category is
+   selected -> the default-visible wait times out.
+
+Expected (Phase 53 CONTROL-INDEX row 7): the spec activates the Import & conversion category before
+reading the convert controls, so the persistence/clamp oracle runs and stays green (Phase 67 criterion 6).
+
+Actual: the spec never clicks `[data-prefs-category="import"]`; the convert section stays hidden and
+the wait fails. This is a stale-oracle defect of the same class as DEF-439/DEF-440, independent of the
+Phase 67 notice-collapse change and independent of DEF-440 (row 7 was not touched by TFL-126).
+
+Commands + output (verbatim): `npm.cmd run test:e2e -- e2e/phase53_format_import.spec.cjs
+e2e/phase56_reading.spec.cjs` -> `22 passed, 1 failed` (2.4m); the failure is
+`x 12 e2e/phase53_format_import.spec.cjs:481 row 7: convert preferences persist across a restart and clamp`
+-- `TimeoutError: page.waitForSelector 8000ms exceeded`, locator `[data-prefs-convert-section]`
+resolved to hidden at `:488`.
+
+Impact: Phase 67 criterion 6 ("the Phase 53 conversion specs ... stay green") cannot pass while row 7 is
+red, so it blocks phase-close QA. MEDIUM: obsolete regression oracle; no product behaviour or document
+content affected.
+
+Evidence: TFL-126 report (TFL-104.5); source anchors `e2e/phase53_format_import.spec.cjs:481-541`
+(the two waits at `:488` and `:522`); product anchors
+`src/renderer/components/PreferencesDialog.tsx:140-144` (categories, default `general`),
+`:403` (`hidden={!isActive}`), `:531` (`data-prefs-convert-section`).
+
+History:
+- frontend-dev: observed while fixing DEF-440 and reported it out of DEF-440's scope (not fixed there).
+- CTO: triaged FIX-READY, MEDIUM. Assigned to frontend-dev as a test-only reconciliation: click
+  `[data-prefs-category="import"]` before each `waitForSelector('[data-prefs-convert-section]')`.
+  qa phase-close QA reruns the spec and sets CLOSED.
+
+## DEF-444: Read-only checkbox / radio / dropdown / listbox fields render nothing under Phase 65's ENABLE_FORMS gate — the overlay suppression returns null and pdf.js does not paint those widget types
+
+- Status: OPEN
+- Severity: HIGH
+- Found by: adversary (TFL-130 / TFL-49.8 diff-pass, Phase 65); ADV-134
+- Phase: 65 (features A/B/C; criterion 2 "no field appears twice", criterion 3 "zero fields missing")
+
+Steps to reproduce (static; a rendered fixture is named for qa):
+1. Build a PDF whose AcroForm has a check box with /Ff ReadOnly (bit 1) set (a read-only /FT /Ch dropdown
+   or listbox behaves identically). The existing `test-fixtures/phase65/form-locked-anon.pdf` carries only
+   a read-only TEXT field, so a read-only non-text widget must be added for the rendered proof.
+2. Open it on the Phase 65 build and inspect the widget's page region.
+
+Expected (features A/B/C): the field is drawn exactly once - a truthful non-editable surface at the widget
+rect (a disabled overlay control with the read-only reason), because pdf.js does not paint it.
+
+Actual: nothing is drawn. `FieldEditor` returns null at `FormsOverlay.tsx:172`, and pdf.js's canvas op list
+for the widget is empty, so the field is INVISIBLE - a gap where the printed box is, with no affordance and
+no read-only reason.
+
+Root cause: the single suppression gate
+`if (kind === "signature" || (field.readOnly === true && isRealField)) return null;`
+(`src/renderer/forms/FormsOverlay.tsx:172`) assumes every read-only widget is canvas-painted. pdf.js only
+sets `hasOwnCanvas` for `TextWidgetAnnotation` (`readOnly && !noHTML`, `pdf.worker.mjs:55202`), the
+push-button branch of `ButtonWidgetAnnotation` (`:55363`) and `SignatureWidgetAnnotation` (`:55894`); the
+checkbox/radio branch (`:55355-55362`) and `ChoiceWidgetAnnotation` (`:55702`) never set it, and `noHTML`
+is false for a field-level /Ff ReadOnly (`:53940`). So under `annotationMode: ENABLE_FORMS`
+(`PageView.tsx:705`) pdf.js returns `separateForm: true` with an empty op list (`:54759`) for those
+widgets.
+
+Impact: HIGH - read-only checkbox/radio/dropdown/listbox fields vanish. Regression from the pre-diff
+behaviour (a disabled control was visible). On the legal/immigration form class where read-only
+computed/locked fields are common.
+
+Evidence: ADVERSARIAL_REVIEW.md ADV-134; anchors above.
+
+History:
+- adversary (TFL-130 / TFL-49.8): filed ADV-134 (diff-pass, HIGH).
+- CTO: triaged ACCEPTED -> DEF-444 (HIGH). Renderer-only fix; assigned to frontend-dev. Phase 65 ruling 6
+  carried a false premise (`hasOwnCanvas = readOnly && !noHTML` is text-only); corrected by ruling 7 in
+  REQUIREMENTS.md.
+
+## DEF-445: Push-button fields still double-surface — pdf.js paints the push button on the canvas while FormsOverlay mounts an editable text editor over it (`formFieldKind` misclassifies `PDFButton` as `text`)
+
+- Status: OPEN
+- Severity: MEDIUM
+- Found by: adversary (TFL-130 / TFL-49.8 diff-pass, Phase 65); ADV-134 (secondary)
+- Phase: 65 (feature A / criterion 2 "no field appears twice")
+
+Steps to reproduce:
+1. Build a PDF with a push button (`/FT /Btn` with the Pushbutton bit set; pdf-lib `PDFButton`).
+2. Open it on the Phase 65 build: the canvas paints the push button (pdf.js sets `hasOwnCanvas` true,
+   `pdf.worker.mjs:55363`) and `FormsOverlay` also mounts an editable text editor over it.
+
+Expected: one surface - the push button's native canvas appearance, no editable overlay.
+Actual: the editable text editor is drawn over the painted push button (double surface).
+
+Root cause: `formFieldKind` (`src/main/services/forms.ts:152-166`) matches `PDFTextField` / `PDFCheckBox` /
+`PDFRadioGroup` / `PDFDropdown` / `PDFOptionList` and falls through to `return 'text'` for a `PDFButton`,
+so the engine reports the push button as a fillable `text` field (`src/shared/types.ts:791`).
+
+Impact: MEDIUM - the duplicate box the phase set out to remove survives for push buttons. No data loss.
+Pre-existing (not introduced by Phase 65), but it violates the phase's "no field appears twice" goal.
+
+Evidence: ADVERSARIAL_REVIEW.md ADV-134; `src/main/services/forms.ts:152-166`; `src/shared/types.ts:791-796`.
+
+History:
+- adversary (TFL-130 / TFL-49.8): filed ADV-134 secondary.
+- CTO: triaged ACCEPTED -> DEF-445 (MEDIUM). Needs an engine classification (a non-breaking optional flag
+  on `FormField`, e.g. `pushButton?: boolean`) plus a renderer suppression; sequenced after DEF-444.
+  Owner: backend-dev then frontend-dev.

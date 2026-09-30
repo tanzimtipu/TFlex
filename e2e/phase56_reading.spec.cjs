@@ -365,53 +365,36 @@ test('criterion 4: CBZ and CBT each produce a 12-page document in the app', asyn
 });
 
 // ---------------------------------------------------------------------------
-// Criterion 5 — comic viewport turns pages, single/double switch, screenshots.
+// Criterion 5 — the comic open/close path (SUPERSEDED shell).
+//
+// Phase 66 (chunk 1) removed the cbz/cbt "Open comic view" trigger and the
+// comic reading-mode chrome. The canvas top-left "Book View" control supersedes
+// it for every open document. The Phase 56 comic single/double/fit/RTL
+// assertions are therefore SUPERSEDED by Phase 66 and are NOT asserted here
+// (single/double + flip return with Book View chunks 2-3). What this test keeps
+// is the shared open/close path: the cbz opens and its reader surface can be
+// entered and dismissed without an uncaught renderer error or a React #185
+// update-depth loop.
 // ---------------------------------------------------------------------------
-test('criterion 5: comic viewport turns pages and switches single/double', async () => {
+test('criterion 5: the cbz reader shell opens and closes without a renderer error', async () => {
   const outcome = await openFixture(F.cbz, 60000);
   expect(outcome.ok, `cbz import failed: ${outcome.error}`).toBe(true);
-  const openBtn = win.locator('[aria-label="Open comic view"]');
+  const openBtn = win.locator('[aria-label="Book View"]');
   await openBtn.waitFor({ state: 'visible', timeout: 15000 });
   await openBtn.click();
-  await win.waitForSelector('[data-reading-view][data-reading-mode="comic"]', { state: 'visible', timeout: 15000 });
+  await win.waitForSelector('[data-book-view]', { state: 'visible', timeout: 15000 });
   await win.waitForTimeout(800);
+  await win.screenshot({ path: path.join(SHOTS, 'phase66-comic-book-entry.png') });
 
-  const progress = win.locator('[aria-label="Reading progress"]');
-  expect(await progress.getAttribute('aria-valuenow'), 'comic view did not open on page 1').toBe('1');
-  expect(await progress.innerText()).toContain('Page 1 of 12');
-  const singlePages = await win.locator('[data-comic-page]').count();
-  expect(singlePages, 'single layout must show one page').toBe(1);
-  await win.screenshot({ path: path.join(SHOTS, 'phase56-comic-single.png') });
+  // The shell renders the read-only page surface.
+  expect(await win.locator('[data-book-page]').count(), 'book view rendered no page').toBe(1);
 
-  const stage = win.locator('[data-comic-stage]');
+  // Close with a REAL click unmounts the book surface.
+  await win.locator('[aria-label="Close book view"]').click();
+  await expect(win.locator('[data-book-view]'), 'close did not dismiss the book view').toHaveCount(0);
 
-  // Page turn with REAL clicks (actionability enforced): Next advances to page
-  // 2, Previous returns to page 1.
-  await win.locator('[data-reading-view] [data-reading-next]').click();
-  await win.waitForTimeout(400);
-  expect(await progress.getAttribute('aria-valuenow'), 'Next did not turn the comic page').toBe('2');
-  await win.locator('[data-reading-view] [data-reading-prev]').click();
-  await win.waitForTimeout(400);
-  expect(await progress.getAttribute('aria-valuenow'), 'Previous did not turn the comic page back').toBe('1');
-
-  // Layout switch with REAL clicks (DEF-395 fixed): double shows two pages.
-  await win.locator('[aria-label="Comic double page"]').click();
-  await expect(stage, 'real double-page click did not apply').toHaveAttribute('data-comic-layout', 'double');
-  expect(await win.locator('[data-comic-page]').count(), 'double layout must show two pages').toBe(2);
-  await win.screenshot({ path: path.join(SHOTS, 'phase56-comic-double.png') });
-
-  // Back to single with a REAL click: one page.
-  await win.locator('[aria-label="Comic single page"]').click();
-  await expect(stage, 'real single-page click did not apply').toHaveAttribute('data-comic-layout', 'single');
-  expect(await win.locator('[data-comic-page]').count(), 'single layout must show one page').toBe(1);
-
-  // Close with a REAL click unmounts the reading region.
-  await win.locator('[aria-label="Close reading view"]').click();
-  await expect(win.locator('[data-reading-view]'), 'close did not dismiss the comic view').toHaveCount(0);
-
-  // ACCEPTANCE: the comic viewport must render WITHOUT an uncaught renderer
-  // error or a React update-depth error (the DEF-395 render->effect->setState
-  // loop).
+  // ACCEPTANCE: the reader must render WITHOUT an uncaught renderer error or a
+  // React update-depth error (the DEF-395 render->effect->setState loop).
   const pageErrors = consoleLog.filter((l) => l.startsWith('[pageerror]'));
   const reactLoop = consoleLog.filter((l) => /#185|Maximum update depth/i.test(l));
   console.log('P56_COMIC ' + JSON.stringify({ pageErrors, reactLoop }));
@@ -508,60 +491,43 @@ test('control-index: EPUB reading controls exist, are reachable and act', async 
   expect(await win.locator('[data-reading-view]').count(), 'close did not dismiss the reading view').toBe(0);
 });
 
-test('control-index: comic controls exist, are reachable and act', async () => {
+test('control-index: the cbz reader control is reachable and acts (Phase 66 shell)', async () => {
   const outcome = await openFixture(F.cbz, 60000);
   expect(outcome.ok, `cbz import failed: ${outcome.error}`).toBe(true);
-  await win.locator('[aria-label="Open comic view"]').waitFor({ state: 'visible', timeout: 15000 });
-  await win.locator('[aria-label="Open comic view"]').click();
-  await win.waitForSelector('[data-reading-view][data-reading-mode="comic"]', { timeout: 15000 });
+  // SUPERSEDED by Phase 66 (chunk 1): the Phase 56 comic controls
+  // (Comic single/double/fit width/fit height/RTL, Reading progress) were
+  // removed with the "Open comic view" trigger. The canvas "Book View" entry
+  // supersedes it; single/double + flip return with Book View chunks 2-3, and
+  // their assertions are not run here.
+  const entry = win.locator('[aria-label="Book View"]');
+  await entry.waitFor({ state: 'visible', timeout: 15000 });
+  expect(await entry.isVisible(), 'Book View entry is missing on the cbz').toBe(true);
+  await entry.click();
+  await win.waitForSelector('[data-book-view]', { state: 'visible', timeout: 15000 });
   await win.waitForTimeout(600);
 
-  const present = {};
-  for (const label of ['Reading view', 'Reading progress', 'Comic single page', 'Comic double page', 'Comic fit width', 'Comic fit height', 'Comic right to left', 'Previous page', 'Next page', 'Close reading view']) {
-    present[label] = await win.locator(`[aria-label="${label}"]`).count();
-  }
-  console.log('P56_CI_COMIC_PRESENT ' + JSON.stringify(present));
-  for (const [label, count] of Object.entries(present)) {
-    expect(count, `${label} is missing`).toBeGreaterThan(0);
-  }
-
-  // Single is the pressed state by default; double switches and shows two pages.
-  // NOTE: the comic view runs an uncaught React #185 update loop, so normal
-  // Playwright clicks on the layout toggles hang; these use the element's own
-  // DOM click to verify the promised action (the defect is filed separately).
-  expect(await win.locator('[aria-label="Comic single page"]').getAttribute('aria-pressed')).toBe('true');
-  await win.evaluate(() => document.querySelector('[data-comic-double]').click());
-  await win.waitForTimeout(500);
-  expect(await win.locator('[aria-label="Comic double page"]').getAttribute('aria-pressed')).toBe('true');
-  expect(await win.locator('[data-comic-page]').count()).toBe(2);
-  // Fit width flips the stage class.
-  await win.evaluate(() => document.querySelector('[data-comic-fit-width]').click());
-  await win.waitForTimeout(300);
-  expect(await win.locator('[data-comic-stage]').getAttribute('class')).toContain('fit-width');
-  // RTL reverses the spread order (page numbers in reverse).
-  const before = await win.locator('[data-comic-page]').evaluateAll((els) => els.map((e) => e.getAttribute('data-comic-page')));
-  await win.evaluate(() => document.querySelector('[data-comic-rtl]').click());
-  await win.waitForTimeout(300);
-  const after = await win.locator('[data-comic-page]').evaluateAll((els) => els.map((e) => e.getAttribute('data-comic-page')));
-  console.log('P56_CI_COMIC_ACTIONS ' + JSON.stringify({ before, after }));
-  expect(after.join(','), 'RTL toggle did not reverse the spread').toBe([...before].reverse().join(','));
-  // Native close: the comic render loop makes normal Playwright clicks on the
-  // reader chrome unreliable (filed as DEF-395); the callbacks themselves fire.
-  await win.evaluate(() => document.querySelector('[data-reading-close]').click());
+  // The control-index promise for the superseding control: it exists, is
+  // reachable and acts (opens the shell), and Close acts (dismisses it).
+  expect(await win.locator('[data-book-view]').count(), 'Book View did not open').toBe(1);
+  await win.screenshot({ path: path.join(SHOTS, 'phase66-comic-book-control.png') });
+  const close = win.locator('[aria-label="Close book view"]');
+  await close.waitFor({ state: 'visible', timeout: 10000 });
+  await close.click();
   await win.waitForTimeout(600);
-  expect(await win.locator('[data-reading-view]').count(), 'close did not dismiss the comic view').toBe(0);
+  expect(await win.locator('[data-book-view]').count(), 'close did not dismiss the book view').toBe(0);
 });
 
-// The reader trigger is gated on NON-dismissible tab state: dismissing the
+// The reader trigger is gated on NON-dismissible tab state: collapsing the
 // conversion card must NOT remove the capability (standing rule 1).
-test('control-index: the reading trigger survives dismissing the conversion notice', async () => {
+test('control-index: the reading trigger survives collapsing the conversion notice', async () => {
   const outcome = await openFixture(F.epub, 60000);
   expect(outcome.ok, `epub import failed: ${outcome.error}`).toBe(true);
-  const dismiss = win.locator('[data-conversion-dismiss]');
+  const dismiss = win.locator('[data-conversion-collapse]');
   expect(await dismiss.count()).toBe(1);
   await dismiss.click();
   await win.waitForTimeout(500);
   expect(await win.locator('[data-conversion-notice]').count(), 'notice was not dismissed').toBe(0);
+  expect(await win.locator('[data-conversion-icon]').count(), 'collapsed icon missing').toBe(1);
   const trigger = win.locator('[aria-label="Open reading view"]');
   await trigger.waitFor({ state: 'visible', timeout: 10000 });
   expect(await trigger.isDisabled(), 'reading trigger disabled after dismissing the notice').toBe(false);

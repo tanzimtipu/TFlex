@@ -12,6 +12,7 @@ import {
   addHomeTool,
   removeHomeTool,
 } from "../state/homeTools";
+import { BrandLoader } from "./BrandLoader";
 import { BrandMark } from "./BrandMark";
 import { BrandWordmark } from "./BrandWordmark";
 
@@ -422,7 +423,10 @@ export function Welcome(props: WelcomeProps): ReactElement {
           </h3>
           {samples === null ? (
             <div className="samples-grid">
-              <div className="samples-empty">Loading samples…</div>
+              <div className="samples-empty">
+                <BrandLoader />
+                <span>Loading samples…</span>
+              </div>
             </div>
           ) : samples.length === 0 ? (
             <div className="samples-grid">

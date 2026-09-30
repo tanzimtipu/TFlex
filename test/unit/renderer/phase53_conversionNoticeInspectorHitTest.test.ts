@@ -124,25 +124,28 @@ describe("phase 53 — the dismiss click is not swallowed (AGENTS.md cross-bubbl
     };
   }
 
-  it("the confirm-style dismiss button fires even with a document click listener", () => {
+  it("the collapse control fires even with a document click listener", () => {
     const onDismiss = vi.fn();
     const docListener = vi.fn();
     document.addEventListener("click", docListener);
     const view = mount(createElement(ConversionNotice, { notice: NOTICE, onDismiss }));
     try {
       const card = view.host.querySelector(".conversion-notice");
-      const dismiss = view.host.querySelector<HTMLButtonElement>(
-        "[data-conversion-dismiss]",
+      const collapse = view.host.querySelector<HTMLButtonElement>(
+        "[data-conversion-collapse]",
       );
-      expect(dismiss, "the dismiss button must render").not.toBeNull();
-      expect(dismiss?.tagName).toBe("BUTTON");
+      expect(collapse, "the collapse control must render").not.toBeNull();
+      expect(collapse?.tagName).toBe("BUTTON");
       // It is the card's last child: the `margin-left: auto` control that sat
-      // under the Inspector before the fix.
-      expect(card?.lastElementChild).toBe(dismiss);
+      // under the Inspector before the Phase 53 fix.
+      expect(card?.lastElementChild).toBe(collapse);
       act((): void => {
-        dismiss?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+        collapse?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
       });
-      expect(onDismiss).toHaveBeenCalledTimes(1);
+      // Phase 67: the control collapses the card (the box plays its exit);
+      // `onDismiss` is retained on the interface but never invoked.
+      expect(onDismiss).not.toHaveBeenCalled();
+      expect(view.host.querySelector(".conversion-notice--leaving")).not.toBeNull();
       // The card must NOT stop propagation: the click still reaches document.
       expect(docListener).toHaveBeenCalledTimes(1);
     } finally {

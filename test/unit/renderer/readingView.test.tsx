@@ -481,8 +481,10 @@ describe("phase 56 reading view — the two format-gated verbs", () => {
     expect(app).toMatch(/readingViewGate\(\{/);
     expect(app).toMatch(/<ReadingView/);
     // The document-surface trigger is gated on the tab's NON-dismissible
-    // source format, never on the dismissible conversion card.
-    expect(app).toMatch(/aria-label=\{sourceFormat === "epub"/);
+    // source format, never on the dismissible conversion card. Phase 66
+    // (chunk 1): the reader entry is EPUB ONLY.
+    expect(app).toMatch(/showReader = sourceFormat === "epub"/);
+    expect(app).toMatch(/aria-label="Open reading view"/);
     expect(app).toMatch(/sourceFormatByTab\[meta\.id\]/);
   });
 });
@@ -547,7 +549,7 @@ function renderColumn(
 }
 
 describe("phase 56 follow-up — the reader trigger outlives the notice", () => {
-  it("an epub tab keeps an ENABLED reading-view trigger after the notice is dismissed", () => {
+  it("an epub tab keeps an ENABLED reading-view trigger after the notice is collapsed", () => {
     const view = renderColumn("epub", EPUB_NOTICE);
     try {
       const trigger = (): Element | null =>
@@ -555,15 +557,16 @@ describe("phase 56 follow-up — the reader trigger outlives the notice", () => 
       expect(trigger()).not.toBeNull();
       expect((trigger() as HTMLButtonElement).disabled).toBe(false);
 
-      // Dismiss the conversion card: the notice leaves, the capability stays.
-      const dismiss = view.host.querySelector<HTMLButtonElement>(
-        "[data-conversion-dismiss]",
+      // Phase 67: the conversion card only collapses (it is never dismissed),
+      // and the format-gated capability stays mounted and live.
+      const collapse = view.host.querySelector<HTMLButtonElement>(
+        "[data-conversion-collapse]",
       );
-      expect(dismiss).not.toBeNull();
+      expect(collapse).not.toBeNull();
+      expect(view.host.querySelector("[data-conversion-dismiss]")).toBeNull();
       act((): void => {
-        dismiss?.click();
+        collapse?.click();
       });
-      expect(view.host.querySelector("[data-conversion-notice]")).toBeNull();
       expect(trigger()).not.toBeNull();
       expect((trigger() as HTMLButtonElement).disabled).toBe(false);
 
@@ -577,26 +580,20 @@ describe("phase 56 follow-up — the reader trigger outlives the notice", () => 
     }
   });
 
-  it("a cbz tab keeps an ENABLED comic-view trigger after the notice is dismissed", () => {
+  it("a cbz tab renders NEITHER reader trigger after the notice is collapsed", () => {
     const view = renderColumn("cbz", { ...EPUB_NOTICE, sourceFormat: "cbz" });
     try {
-      const dismiss = view.host.querySelector<HTMLButtonElement>(
-        "[data-conversion-dismiss]",
+      const collapse = view.host.querySelector<HTMLButtonElement>(
+        "[data-conversion-collapse]",
       );
       act((): void => {
-        dismiss?.click();
+        collapse?.click();
       });
-      expect(view.host.querySelector("[data-conversion-notice]")).toBeNull();
-      const trigger = view.host.querySelector<HTMLButtonElement>(
-        '[aria-label="Open comic view"]',
-      );
-      expect(trigger).not.toBeNull();
-      expect(trigger?.disabled).toBe(false);
+      // Phase 66 (chunk 1) — the cbz/cbt "Open comic view" trigger was removed
+      // from DocumentSurfaceColumn; Book View now lives on the canvas overlay.
+      expect(view.host.querySelector("[data-reading-open]")).toBeNull();
       expect(view.host.querySelector('[aria-label="Open reading view"]')).toBeNull();
-      act((): void => {
-        trigger?.click();
-      });
-      expect(view.onOpenComicView).toHaveBeenCalledTimes(1);
+      expect(view.host.querySelector('[aria-label="Open comic view"]')).toBeNull();
     } finally {
       view.cleanup();
     }

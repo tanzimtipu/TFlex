@@ -1,4 +1,4 @@
-import { TextLayer, type PDFDocumentProxy, type PDFPageProxy } from 'pdfjs-dist';
+import { AnnotationMode, TextLayer, type PDFDocumentProxy, type PDFPageProxy } from 'pdfjs-dist';
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { useInstantMotion } from '../hooks/useAnimations';
 import { measureHitRects, type HitRect } from '../pdf/highlight';
@@ -690,6 +690,19 @@ heightPt,
       const task = pageProxy.render({
         canvasContext: scratchCtx,
         viewport: pageProxy.getViewport({ scale: cssScale, rotation: rotDeg }),
+        // Phase 65 (DEF-436) — single-layer form fields. ENABLE_FORMS is
+        // pdf.js's "render form fields as HTML" mode: a standard
+        // HTML-renderable widget's /AP appearance is left OUT of the
+        // canvas display list (WidgetAnnotation.getOperatorList returns
+        // an empty list with separateForm: true), so the FormsOverlay
+        // editor is the ONLY visible affordance drawn for a field — no
+        // duplicate box painted underneath it. Non-widget annotation
+        // appearances (embedded highlights, ink, comments, stamps) are
+        // not gated by this mode and still paint onto the canvas;
+        // AnnotationMode.DISABLE would have blanked them. Signature and
+        // noHTML / hasOwnCanvas widgets are excluded from the
+        // suppression by pdf.js and keep painting their own appearance.
+        annotationMode: AnnotationMode.ENABLE_FORMS,
       });
       renderTask = task;
       try {
@@ -957,6 +970,9 @@ heightPt,
         page={page}
         cssScale={cssScale}
         fields={formFields ?? EMPTY_FIELDS}
+        rotation={rotation}
+        pageWidthPt={widthPt}
+        pageHeightPt={heightPt}
         onValueChange={(id, v): void => onFormValueChange?.(id, v)}
         onToggleListbox={(id, opt): void => onFormListboxToggle?.(id, opt)}
       />
