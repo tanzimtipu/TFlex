@@ -23,6 +23,20 @@ export interface WhatsNewEntry {
 /** Ordered newest first. */
 export const WHATS_NEW: WhatsNewEntry[] = [
   {
+    version: '1.45.2',
+    date: '2026-09-30',
+    highlights: [
+      'Tab titles no longer get selected when you click and drag a tab, and you can now drag a tab from anywhere on it - including tearing it out into its own window.',
+      'With many tabs open they shrink and overlap like a browser instead of scrolling, so the active tab always stays visible and clickable.',
+      'A protected document\u2019s notice now appears as a rounded card and folds itself into a small "i" after a few seconds; click the "i" any time to read the details again.',
+      'Filling forms is now native: values go into the document\u2019s own fields, with proper appearances, instead of being drawn on top - so no field is missed and other readers show the values. Merging form documents no longer scrambles field positions.',
+      'Adding or removing tools in a dock or on the Home row now animates, and the dock\u2019s edit button sits inside the dock.',
+      'The Ctrl+K tool list no longer shows greyed-out entries you cannot use, and "Page thumbnails" and "Bookmarks" work from it.',
+      'Preferences now uses vertical categories with properly aligned labels, and buttons in the panels look like buttons.',
+      'Documents open at Fit page, and the outline panel no longer leaves empty space below its last row.',
+    ],
+  },
+  {
     version: '1.45.1',
     date: '2026-09-30',
     highlights: [
