@@ -880,10 +880,10 @@ describe('EngineService - merge preserves AcroForm fields (DEF-029)', () => {
     }
   });
 
-  it('merge of form.pdf into form.pdf preserves fields from both docs (duplicate names allowed)', async () => {
-    // PDF spec requires unique field names within an AcroForm dictionary.
-    // When merging the same form.pdf twice, duplicate field names cause
-    // pdf-lib to reject the second set. Only the first 8 fields survive.
+  it('merge of form.pdf into form.pdf preserves BOTH docs (colliding names renamed)', async () => {
+    // ADV-121 / DEF-421 — the merge now carries each source AcroForm and
+    // renames an incoming colliding field (name-merged-1), so BOTH sets of 8
+    // fields survive (16) instead of pdf-lib dropping the second set.
     const engine = new EngineService();
     const formPath = await copyFixtureToTemp('form.pdf');
 
@@ -894,8 +894,11 @@ describe('EngineService - merge preserves AcroForm fields (DEF-029)', () => {
     const fields = await engine.getFormFields('doc-1');
     expect(fields.ok).toBe(true);
     if (fields.ok) {
-      // 8 fields survive (duplicate names rejected by pdf-lib)
-      expect(fields.value.length).toBe(8);
+      expect(fields.value.length).toBe(16);
+      // The incoming duplicate names are renamed deterministically.
+      const names = fields.value.map((f) => f.name);
+      expect(names.filter((n) => n === 'applicant_name').length).toBe(1);
+      expect(names).toContain('applicant_name-merged-1');
     }
   });
 

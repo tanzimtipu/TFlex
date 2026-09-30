@@ -914,15 +914,22 @@ describe("ContextPanel — DEF-310 outline containment", () => {
     // inside it and can never reach the thumbnails.
     expect(body).toMatch(/overflow:\s*hidden/);
     expect(body).not.toMatch(/overflow-y:\s*auto/);
-    // While the body is mounted the section has a definite height (the
-    // `.rail-content` analogue: an auto-height parent would collapse the
-    // absolute tree to a sliver). Phase 40 (item 10) — the rule keys on the
-    // section's own `data-outline-open` state, not `:has()`.
+    // While the body is mounted the section must still bound the (now
+    // in-flow) tree. Phase 40 (item 10) — the rule keys on the section's own
+    // `data-outline-open` state, not `:has()`. Phase 59 (item 5 / DEF-419) —
+    // the section HUGS its content and keeps the old share only as an upper
+    // bound, so a short outline leaves no dead space under the last row.
     const sectionWithBody = ruleBody(
       css,
       "\\.context-panel-outline\\[data-outline-open='true'\\]",
     );
-    expect(sectionWithBody).toMatch(/height:\s*40%/);
+    expect(sectionWithBody).toMatch(/height:\s*auto/);
+    expect(sectionWithBody).toMatch(/max-height:\s*40%/);
+    // The re-parented tree joins the flow inside the section so the section
+    // can size to it, capped so a long outline still scrolls in place.
+    const scopedPanel = ruleBody(css, "\\.context-panel-outline \\.outline-panel");
+    expect(scopedPanel).toMatch(/position:\s*static/);
+    expect(scopedPanel).toMatch(/max-height:\s*100%/);
     // `.outline-panel`'s own rule is unchanged — the rail depends on it.
     const outlinePanel = ruleBody(css, "\\.outline-panel");
     expect(outlinePanel).toMatch(/position:\s*absolute/);

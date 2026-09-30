@@ -174,6 +174,7 @@ import {
   type PersistedViewer,
   type SearchIndexProgress,
 } from "./components/DocumentView";
+import type { RailTab } from "./components/SideRail";
 import { splitRecentPath } from "./utils/recentPath";
 import { toArrayBuffer } from "./utils/toArrayBuffer";
 import { createDebouncer } from "./utils/debounce";
@@ -313,8 +314,10 @@ import {
 import {
   initialFormsState,
   replaceFields,
+  sameFillReport,
   sameFormFields,
   setFieldValue,
+  setFormFillReport,
   toggleListboxValue,
   type FormsState,
 } from "./forms/model";
@@ -662,6 +665,12 @@ export function App(): ReactElement {
     initialPagesPanelState,
   );
   const pagesPanelCollapsed = pagesPanel.collapsed;
+  // Phase 59 (item 7 follow-up) — the rail's ACTIVE TAB is HOST-owned. The
+  // Pages panel's outline section and the rail's own tab strip read this one
+  // value, and the palette's "Page thumbnails" / "Bookmarks" commands write it
+  // (see `paletteAppActions`), so a command and a rail control can never
+  // disagree. Session-only state; the entity that owns the panel.
+  const [railTab, setRailTab] = useState<RailTab>("thumbs");
   // Phase 37 (items 2 + 6) — the ONE responsive controller. It keys on the
   // measured WORKSPACE width (the window content box), NOT the post-collapse
   // canvas: collapsing the Inspector/panel widens the canvas, so a ladder keyed
@@ -1781,7 +1790,11 @@ export function App(): ReactElement {
         proxyVisibleOrder: false,
       };
       const persisted: PersistedViewer = {
-        zoomMode: "fit-width",
+        // Phase 59 (item 6) — every new document opens at fit-page (the whole
+        // first page visible), not fit-width. The user's later zoom change
+        // (fit-width or a manual step) is persisted back through `onPersist`
+        // and honoured until the next open.
+        zoomMode: "fit-page",
         manualScale: 1,
         currentPage: 1,
         searchOpen: false,
@@ -3221,6 +3234,33 @@ export function App(): ReactElement {
     [noteOpApplied],
   );
 
+  // Phase 59 item 4 — a save runs the native fill pass, so the engine's
+  // post-save state carries the `formFillReport` (and the post-fill field
+  // list). Refresh the state best-effort WITHOUT touching the just-reset
+  // undo/redo counters (a save clears both stacks, so noteOpApplied would
+  // wrongly re-arm undo).
+  const refreshStateForReport = useCallback(
+    (tabId: string): void => {
+      const open = openTabsRef.current[tabId];
+      if (open === undefined) return;
+      void engineRef.current
+        .getState(open.session.engineDocId)
+        .then((stateResult) => {
+          if (!stateResult.ok) return;
+          const cur = engineUiRef.current[tabId];
+          if (cur === undefined) return;
+          setEngineUiFor(tabId, {
+            ...cur,
+            // The save just cleared the modified flag; keep it cleared even
+            // if the echoed state races back a stale value.
+            state: { ...stateResult.value, modified: false },
+          });
+        })
+        .catch(() => undefined);
+    },
+    [setEngineUiFor],
+  );
+
   // Debounced text input: we push the optimistic edit locally
   // immediately, then schedule the engine call 500ms later so the
   // payload coalesces into one IPC per quiet window. The same
@@ -4255,15 +4295,21 @@ export function App(): ReactElement {
       for (const [tabId, tab] of Object.entries(prev)) {
         const ui = engineUi[tabId];
         const fromEngine = ui?.state.formFields;
-        if (fromEngine === undefined) {
+        const report = ui?.state.formFillReport;
+        let forms = tab.forms;
+        if (fromEngine !== undefined && !sameFormFields(tab.forms.fields, fromEngine)) {
+          forms = replaceFields(forms, fromEngine);
+        }
+        // Phase 59 item 4 — mirror the native-fill report. Content-gated so a
+        // same-shape engine echo (fresh array identity) never churns openTabs.
+        if (report !== undefined && !sameFillReport(forms.report, report)) {
+          forms = setFormFillReport(forms, report);
+        }
+        if (forms === tab.forms) {
           next[tabId] = tab;
           continue;
         }
-        if (sameFormFields(tab.forms.fields, fromEngine)) {
-          next[tabId] = tab;
-          continue;
-        }
-        next[tabId] = { ...tab, forms: replaceFields(tab.forms, fromEngine) };
+        next[tabId] = { ...tab, forms };
         changed = true;
       }
       return changed ? next : prev;
@@ -4590,12 +4636,14 @@ export function App(): ReactElement {
         canUndo: flags.canUndo,
         canRedo: flags.canRedo,
       });
+      // Phase 59 item 4 — surface the native-fill report the save produced.
+      refreshStateForReport(tabId);
       pushToast(
         "info",
         saveConfirmationText(tab.displayName, protectionByTab[tabId] !== undefined),
       );
     },
-    [protectionByTab, pushToast, setEngineUiFor],
+    [protectionByTab, pushToast, refreshStateForReport, setEngineUiFor],
   );
 
   // DEF-040 — Save-As is now a two-step flow: the renderer modal
@@ -4661,12 +4709,14 @@ export function App(): ReactElement {
         canUndo: flags.canUndo,
         canRedo: flags.canRedo,
       });
+      // Phase 59 item 4 — surface the native-fill report a Save-As produced.
+      refreshStateForReport(tabId);
       pushToast(
         "info",
         saveAsConfirmationText(tab.displayName, protectionByTab[tabId] !== undefined),
       );
     },
-    [protectionByTab, pushToast, setEngineUiFor],
+    [protectionByTab, pushToast, refreshStateForReport, setEngineUiFor],
   );
 
   // Phase 40 item 4 — "Merge PDFs" with NO document open. The Welcome
@@ -9603,6 +9653,19 @@ pushToast(
       about: (): void => setAboutOpen(true),
       openCommandPalette,
       railCollapse: togglePagesPanelCollapsed,
+      // Phase 59 (item 7 follow-up) — the rail-tab commands, now WIRED rather
+      // than pruned. Each ensures the Pages panel is showing (the rail lives
+      // there) and sets the host-owned tab; re-selecting the current tab is an
+      // idempotent no-op, and neither handler reads the document, so a command
+      // fired with no document open simply switches the tab and never throws.
+      railTabThumbnails: (): void => {
+        onStageChange("pages");
+        setRailTab("thumbs");
+      },
+      railTabOutline: (): void => {
+        onStageChange("pages");
+        setRailTab("outline");
+      },
       // The clipboard-create command's UI is the Create sheet's own button
       // (the sheet reads the OS clipboard and asks for the quality), so the
       // palette row opens that same sheet rather than inventing a second flow.
@@ -9640,7 +9703,6 @@ pushToast(
       onStageChange,
     ],
   );
-
   // Phase 58 (chunk 4) — the HOME row's run map. It carries ONLY tools that
   // genuinely run from the welcome surface (no document open): the row's fixed
   // Open tile plus the shipped/editable tools. Every id maps to an EXISTING App
@@ -10357,6 +10419,12 @@ pushToast(
                     // the SideRail (the rail never owns the state).
                     pagesPanelCollapsed={pagesPanelCollapsedEffective}
                     onTogglePagesPanelCollapsed={togglePagesPanelCollapsed}
+                    // Phase 59 (item 7 follow-up) — the host-owned rail tab,
+                    // threaded to the Pages ContextPanel so the palette's
+                    // "Page thumbnails" / "Bookmarks" commands switch it and
+                    // the panel's own outline toggle writes it back.
+                    railTab={railTab}
+                    onRailTabChange={setRailTab}
                     // Phase 32 — Multi Mode suppresses each pane's OWN rail
                     // (the shared two-section rail is the next chunk); the
                     // CommandBar control reads the same App-owned state as
@@ -10534,6 +10602,7 @@ pushToast(
             }
             annotationCount={annotationHandlers(tabs.activeId).annotations.length}
             formFieldCount={activeTab.forms.fields.length}
+            formFillReport={activeTab.forms.report}
             fileSize={activeTab.session.fileSize}
             documentTitle={activeTab.displayName}
             onRenumberPages={onRenumberPagesClick}

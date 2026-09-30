@@ -5228,4 +5228,173 @@ Disposition: ACCEPTED -> DEF-417
 - **Home add then open a document**: the added tool persists in `homeTools` and
   survives opening a document. Held.
 
+## Phase 59 gate - operator correction round (tabs, protection notice, dock, native form filling, outline, default zoom, palette, preferences, panel buttons, tab overflow)
+
+Session label: `phase-59 gate`. Ran against the production build (`npm.cmd run build`; dist main + dist renderer). Harnesses: `test-fixtures/adv-p59-forms-fixtures.cjs` (hostile AcroForm specimens under `test-fixtures/adv-p59/`), `test-fixtures/adv-p59-forms.cjs` (engine form round-trips), `test-fixtures/adv-p59-ui.cjs` (tabs / protection / dock / palette / prefs / zoom), `test-fixtures/adv-p59-prot.cjs`, `test-fixtures/adv-p59-formui.cjs`, `test-fixtures/adv-p59-dock.cjs`, `test-fixtures/adv-p59-zoom.cjs`. Logs: `adv_p59_*.log`.
+
+## ADV-121: Merging a form-bearing PDF recreates every AcroForm field with pdf-lib's default box - all widget geometry is destroyed and the default-white "layer of fields" comes back
+
+- Session: phase-59 gate
+- Suggested severity: HIGH
+
+What I did:
+1. Built the production bundle (`npm.cmd run build`) and launched the app through Playwright's Electron driver.
+2. Via `window.tflex.engine`, loaded a copy of `test-fixtures/adv-p59/paginated.pdf` (3 pages; text/checkbox fields placed at real boxes on pages 2-3) and `engine.merge(docId, [copy of test-fixtures/form.pdf], 'after')` (form.pdf has 8 fields at real, varied boxes: `applicant_name` 201x21, `applicant_address` 401x21, `application_date` 101x21, checkboxes 21x21, radio widgets 21x21, `department` 151x21, `skills` 151x71).
+3. Read `getFormFields` after the merge, filled `page3_field`, saved, and re-parsed the saved bytes with `@cantoo/pdf-lib` (an independent parser) to read each widget's `/Rect`.
+4. Repeated the save WITHOUT a merge (page delete + rotate only) as a control.
+
+Expected:
+- A merge must carry form fields with their real widget geometry (positions and sizes), as item 4's save path now does (its own comment calls the recreate-with-default-box behaviour "the layer of fields the operator saw painted over the form").
+
+Actual:
+- After merge, every field in the merged document - BOTH the page-2/3 fields of the destination AND all 8 fields of the merged file - is reported at pdf-lib's default box `(-0.5, -0.5, 201, 51)` (radio widgets all 51x51), i.e. all stacked at the page origin. The saved artifact confirms it: `applicant_address` 401x21 -> 201x51, `skills` 151x71 -> 201x101, checkboxes 21x21 -> 51x51, and even the destination's own `page2_field` 301x21 -> 201x51. Values are preserved, so the data survives but the form is visually destroyed (the recreated default white+black widgets paint over the page corner) - exactly the layer bug item 4 set out to remove.
+- Root cause: `engine.merge` builds a fresh `mergedDoc` and calls `migrateFormField` (`src/main/services/engine.ts:4511`), which uses `createTextField/... + addToPage(dstPage)` with NO box, for every field of the main doc and every merged doc. The Phase-59 `carryAcroForm` fix only runs in the save paths (`serializeDoc`/`serializeDocOptimized`), so it cannot recover geometry the in-memory doc already lost.
+- Control: the same round-trip with a page delete + rotate but NO merge preserved real rects (`page2_field` 59.5,699.5 301x21; `page2_check` 17x17), so this is specific to the merge path.
+
+Fixture: `test-fixtures/adv-p59/paginated.pdf`, `test-fixtures/form.pdf`. Logs: `adv_p59_forms_s14.log`, `adv_p59_forms_all.log`.
+
+Disposition: ACCEPTED -> DEF-421
+
+## ADV-122: At the app's minimum window width (640px) the tab strip collapses to zero width - every open tab is clipped and unreachable
+
+- Session: phase-59 gate
+- Suggested severity: HIGH
+
+What I did:
+1. Launched the app, opened one document (`report.pdf`), then resized the real BrowserWindow to the app's own `MIN_WINDOW_WIDTH` (`src/main/window.ts:41`, 640x720) with `unmaximize(); setSize(640,720)`.
+2. Measured `.tab-area`, `.tab-list` and the active `.tab` boxes (`test-fixtures/adv-p59-ui.cjs` scenario u5) and captured screenshot `screenshots/adv-p59-tabs-min.png`.
+3. Repeated with 6 tabs and with 32 tabs.
+
+Expected (Phase 59 item 10 / success criterion 10): with many tabs the strip shrinks and partially stacks, and "the active tab stays fully visible and clickable"; "no clipping of the active tab". The DEF-244 CSS comment (`styles.css:1806-1831`) says this exact problem was fixed at the minimum width.
+
+Actual:
+- At 640px: `.tab-area` measures 0px wide and `.tab-list` 8px (clientWidth 8). Tabs keep their natural 200px and are clipped out of the 8px container (active tab `left` 204-4409 depending on count, `top` -1). `activeVisible=false`, `closeReachable=false`; `listScrollWidth` 238 (1 tab) to 4405 (32 tabs). The screenshot shows the open document with NO tab visible or clickable at all. This reproduces with a single open tab, so it is independent of the overflow planner (its `available <= 0` guard at `AppHeader.tsx:524` bails and leaves the resting layout). The DEF-244 fix no longer holds at 640 in this build.
+- `test-fixtures/adv-p59-ui.cjs` u5, `ADV_TABS=1`, atMin: `{"listWidth":8,"listClientW":8,"active":{"w":200,...},"activeVisible":false,"closeReachable":false}`.
+
+Screenshot: screenshots/adv-p59-tabs-min.png
+
+Disposition: ACCEPTED -> DEF-422
+
+## ADV-123: A digital-signature (/Sig) field is offered as an editable text box; typing into it is silently discarded
+
+- Session: phase-59 gate
+- Suggested severity: MEDIUM
+
+What I did:
+1. Opened `test-fixtures/adv-p59/signed.pdf` (a text field `body` plus a `/FT /Sig` field `approval` carrying a `/V` signature dict) in the running app.
+2. Read `engine.getFormFields` and the DOM editors rendered by `FormsOverlay` (`[data-form-field]`).
+3. Called `engine.fillFormField(id = form-0-approval, value = 'pretend signature text')` and read `formFillReport`, then saved and re-parsed.
+
+Expected:
+- A signature field is not fillable; item 4 says missing/unfillable fields must be reported and never silently skipped, and the fail-loud rule says a control that cannot act must not look actionable.
+
+Actual:
+- `getFormFields` returns `approval` with `kind: "text"` (the fill report correctly labels it `kind: "signature"`, `status: "skipped-signature"`, but that is computed separately). The renderer therefore mounts an enabled text `<textarea data-form-kind="text" data-form-readonly=null>` for the signature field (`test-fixtures/adv-p59-formui.cjs`, signed.pdf: `form-0-approval` TEXTAREA, disabled=false). Typing into it calls `fillFormField`, which writes nothing to the field (`value` stays `""`), so the typed value is lost on save/reload - an editable control whose action silently no-ops.
+
+Fixture: `test-fixtures/adv-p59/signed.pdf`. Logs: `adv_p59_forms_s4.log`, `adv_p59_formui.log`.
+
+Disposition: ACCEPTED -> DEF-423
+
+## ADV-124: An orphan widget is exposed as an editable text field, its id loses the `orphan-` prefix, and filling it silently no-ops
+
+- Session: phase-59 gate
+- Suggested severity: MEDIUM
+
+What I did:
+1. Opened `test-fixtures/adv-p59/orphan.pdf` (one real field `legit` plus a page `/Widget` with `/FT /Tx /T (ghost)` that is NOT referenced by the AcroForm `/Fields` tree) in the running app.
+2. Read `engine.getFormFields`, the rendered editors, called `fillFormField` on the orphan row, read `formFillReport`/`getState`, saved, and re-parsed the output.
+
+Expected:
+- An orphan widget cannot be filled; item 4 says such a field must be reported, never silently skipped; a diagnostic row must stay distinguishable from a real, fillable field.
+
+Actual:
+- `getFormFields` returns the orphan as `{"name":"ghost","kind":"text","id":"form-0-ghost"}`. The `orphan-` prefix the forms code assigns (`src/main/services/forms.ts:669`) is rewritten by `remapFormFieldPages` (`src/main/services/engine.ts`, the id becomes `form-${visibleIdx}-${name}`), so the orphan is indistinguishable from a real field by id and could collide with a real field of the same name. The renderer mounts an enabled INPUT for it (`adv-p59-formui.cjs`, orphan.pdf: `form-0-ghost` INPUT, disabled=false). Filling it returns `{ok:true, modified:true}` but writes nothing (`formFillReport` shows `orphan-unfilled`); the typed value is discarded. The widget itself survives save on the page, but the value never lands.
+
+Fixture: `test-fixtures/adv-p59/orphan.pdf`. Logs: `adv_p59_forms_s7.log`, `adv_p59_formui.log`.
+
+Disposition: ACCEPTED -> DEF-424
+
+## ADV-125: XFA-only documents are silently treated as form-less - the XFA report branch is unreachable
+
+- Session: phase-59 gate
+- Suggested severity: LOW
+
+What I did:
+1. Crafted `test-fixtures/adv-p59/xfa-only.pdf` (catalog `/AcroForm` with an `/XFA` stream and an empty `/Fields`).
+2. Loaded it in the running engine, read `getFormFields`, saved, and separately verified the loader behaviour with `@cantoo/pdf-lib`.
+
+Expected (item 4): "Missing/unfillable fields must be reported, never silently skipped." `fillFormNatively` has an explicit XFA branch that should produce a report row for an XFA-only form.
+
+Actual:
+- `getFormFields` returns `[]` and a save produces no report rows at all. `fillFormNatively` checks `form.hasXFA()` (`src/main/services/form-fill.ts:633`), but the engine loads with `PDFDocument.load(bytes, { password })` (`src/main/services/engine.ts:411`) WITHOUT `preserveXFA`, so the fork strips the `/XFA` stream at parse time and `hasXFA()` always returns false - the XFA branch (and its "cannot write XFA values" report) is dead code, and an XFA-only document is presented as having no form with no message.
+
+Fixture: `test-fixtures/adv-p59/xfa-only.pdf`. Log: `adv_p59_forms_all.log` (s5).
+
+Disposition: ACCEPTED -> DEF-425
+
+## ADV-126: A multi-widget button group fill with an unrecognized option reports "filled" while changing nothing
+
+- Session: phase-59 gate
+- Suggested severity: LOW
+
+What I did:
+1. Opened `test-fixtures/adv-p59/multiwidget.pdf` (one 3-widget `/Btn` field `shipping`) and filled its first option via `engine.fillFormField` - this round-trips correctly (`/V=/1`, one widget `/1`, the other two `/Off`; 3 widgets preserved).
+2. Then filled a value that is not one of the field's on-states (`'express'`).
+
+Expected: a fill that cannot apply must not report success.
+
+Actual:
+- `fillFormNatively` returns `status: "filled"` for the field, but `setButtonGroupValue` (`src/main/services/forms.ts:181`) returns early for an unknown option and the field is untouched (`/V` stays `/Off`). The report claims a fill that did not happen. Reachability from the UI is limited (the UI only offers the field's own options), so this is LOW; it matters for stale option lists / IPC callers.
+
+Fixture: `test-fixtures/adv-p59/multiwidget.pdf`. Log: `adv_p59_forms_s1.log`.
+
+Disposition: ACCEPTED -> DEF-426
+
+## ADV-127: The form-fill report's page numbers are the original indices, not remapped after a page delete/reorder
+
+- Session: phase-59 gate
+- Suggested severity: LOW
+
+What I did:
+1. Loaded `test-fixtures/adv-p59/paginated.pdf` (fields on pages 2-3), deleted page 1 (`applyOp { kind:'delete', page:0 }`), rotated a page, then filled `page3_field` and read `EngineState.formFillReport`.
+
+Expected: report rows should name the field's VISIBLE page, like `getFormFields`/`buildState` do.
+
+Actual:
+- The report says `page3_field` is on page 3 and `page2_field` on page 2, although after deleting page 1 they are visible pages 2 and 1 respectively. `getFormFields` remaps (`remapFormFieldPages`), but `state.formFillReport` is copied unremapped (`src/main/services/engine.ts:4783`), so the report's page numbers are wrong after any page delete/reorder.
+
+Fixture: `test-fixtures/adv-p59/paginated.pdf`. Log: `adv_p59_forms_all.log` (s9).
+
+Disposition: ACCEPTED -> DEF-427
+
+## ADV-128: With many tabs, shrinking the window leaves the active tab scrolled out of the visible strip
+
+- Session: phase-59 gate
+- Suggested severity: LOW
+
+What I did:
+1. Opened a document, added 31 more tabs via the `+` (`[data-new-tab]`), then resized the window down to 640 and back up to 1400 and measured the active tab against `.tab-list` (`test-fixtures/adv-p59-ui.cjs` u5, screenshot `screenshots/adv-p59-tabs-1400.png`).
+
+Expected (item 10): the active tab stays fully visible and clickable under overflow.
+
+Actual:
+- At the maximized default the plan works (32 tabs at 132px, 31 overlaps, active visible/clickable). After resizing, the active tab is no longer scrolled into view: at 1400px (`listWidth` 496, `shiftWidth` 1224) `activeVisible=false`, `activeInViewport=false`, `closeReachable=false`. The strip scrolls the active tab into view only when `activeId` changes (`AppHeader.tsx:500`), not on a resize, so a user who narrows the window with many tabs open loses sight of the active tab until they re-activate a tab.
+
+Screenshot: screenshots/adv-p59-tabs-1400.png
+
+Disposition: ACCEPTED -> DEF-428
+
+### Phase 59 surfaces that held
+
+- **Tab text selection (item 1)**: `.tab-title` computed `user-select: none`; a drag-select and a triple-click over a title produce `window.getSelection().toString() === ''`. Held.
+- **Whole-tab drag (item 1)**: reorder from the title, the colour chip and the tab padding all changed the order (u2/u3); tear-out from the title produced a real second window and dropped the origin tab (u4). Held.
+- **Tab overflow at usable widths (item 10)**: at the default/maximized width with 32 tabs the tabs shrink to the 132px floor with per-tab overlap (31 overlapping tabs, one row) and the active tab stays visible/clickable. Held (the 640px minimum fails - ADV-122).
+- **Protection notice (item 2)**: opens as a rounded box, auto-collapses after ~10s (measured expanded -> collapsed), re-expands on click, the collapsed "i" icon stays reachable at normal and minimum width, and opening a DIFFERENT protected document starts it expanded again (a scoped probe; the collapsed state does not leak across documents). Held. (An early unscoped measurement suggested a leak - it was measuring a hidden pane; corrected by `adv-p59-prot.cjs`.)
+- **Dock pen (item 3)**: `[data-dock-edit-toggle]` is fully inside `[data-action-dock]` at the normal width, at the 640px minimum, and in Multi Mode (u7); entering edit mode, adding 12 tools (8 -> 20 verbs) and removing down to the floor never moved the pen outside the dock or crashed (`adv-p59-dock.cjs`). Held.
+- **Command palette (item 7)**: with no document, "Page thumbnails" and "Bookmarks" are disabled with the reason "Open a document first"; with a document both are enabled and running them switches the rail (Bookmarks -> outline open, Page thumbnails -> outline closed) even on a document with NO outline - no crash, no silent no-op. 20 disabled rows with a document open all carried a plausible live reason (undo/redo empty, Edit off, no OCR run, no form, Multi Mode off, no reading doc). Held.
+- **Preferences (item 8)**: rail switch to `storage` at the 640px minimum - dialog 592px wide, panel inside the viewport, 0 of 3 controls unreachable; 10 rapid category switches produced no error. Held.
+- **Zoom on open (item 6)**: opening a second/larger document after zooming the first starts at Fit page (170%, `fitPage=true`) with the correct page total (`/520`), independent of the previous 200% zoom (focused `adv-p59-zoom.cjs`; an unscoped first pass read a hidden pane's pills and was corrected). Held.
+- **Forms - save preservation / no drops (item 4)**: `form.pdf` (8 fields) fill+save preserved all 8 fields and values, and a second consecutive save was identical; the 3-widget group kept all 3 widgets with `/V` and `/AS` consistent; 500 fields fill+save preserved 500 fields in 262ms load / 50ms read / 90ms fill / 590ms save; delete+rotate preserved page attachment and rects; an AES-256-encrypted form loaded with its password, filled, and saved (as a decrypted file, Phase-52 behaviour); fill-then-undo restored the prior value through save. Held.
+
+
 

@@ -20,8 +20,13 @@
 
 import { useEffect, useMemo, useRef, type ReactElement } from "react";
 import type { CSSProperties } from "react";
-import type { FormField, FormFieldOption } from "../../shared/types";
-import { fieldKindLabel } from "./model";
+import type {
+  FormField,
+  FormFieldOption,
+  FormFieldWidget,
+  FormFillReport,
+} from "../../shared/types";
+import { fieldKindLabel, isFillableFieldKind, nonFillableFieldReason, reportStatusReason } from "./model";
 
 interface FormsOverlayProps {
   page: number;
@@ -36,6 +41,9 @@ interface FormsOverlayProps {
 const MIN_EDITOR_HEIGHT_PT = 14;
 const CHECKBOX_BOX_PT = 12;
 const RADIO_DOT_PT = 11;
+
+// Phase 59 item 4 — the truthful reason shown on every non-editable control.
+export const READ_ONLY_REASON = "This field is read-only";
 
 export function FormsOverlay(props: FormsOverlayProps): ReactElement | null {
   const { page, cssScale, fields, onValueChange, onToggleListbox } = props;
@@ -111,6 +119,23 @@ interface FieldEditorProps {
 
 function FieldEditor(props: FieldEditorProps): ReactElement {
   const { field, cssScale, onValueChange, onToggleListbox } = props;
+  // Phase 59 (ADV-123 / ADV-124) — the SINGLE fail-safe gate. Only an
+  // allow-listed, fillable kind may reach the editable editors below; a
+  // signature field, an orphan widget, or any future unfillable kind renders
+  // the one non-editable surface with a truthful reason. A read-only field of
+  // a fillable kind still renders its own disabled control (that control
+  // shows the field's real state), but it can never be reached by a
+  // non-fillable kind.
+  const widened = field as FormField & { fillable?: boolean; unfillableReason?: string };
+  if (!isFillableFieldKind(field.kind) || widened.fillable === false) {
+    const reason =
+      widened.fillable === false && widened.unfillableReason !== undefined
+        ? widened.unfillableReason
+        : nonFillableFieldReason(field.kind);
+    return (
+      <NonFillableView field={field} cssScale={cssScale} reason={reason} />
+    );
+  }
   switch (field.kind) {
     case "text":
       return <TextEditor field={field} cssScale={cssScale} onChange={onValueChange} />;
@@ -123,6 +148,36 @@ function FieldEditor(props: FieldEditorProps): ReactElement {
     case "listbox":
       return <ListboxEditor field={field} cssScale={cssScale} onToggle={onToggleListbox} />;
   }
+}
+
+/** Phase 59 (ADV-123 / ADV-124) — the one non-editable rendering for a field
+ *  the renderer cannot fill. It is a plain labelled div (never an input /
+ *  textarea / select / button), so it offers no editable affordance and no
+ *  fill can be dispatched from it. The truthful reason rides both the visible
+ *  label and the tooltip / accessible name. */
+function NonFillableView({
+  field,
+  cssScale,
+  reason,
+}: {
+  field: FormField;
+  cssScale: number;
+  reason: string;
+}): ReactElement {
+  return (
+    <div
+      className="form-editor form-nonfillable"
+      data-form-field={field.id}
+      data-form-kind={field.kind}
+      data-form-nonfillable="true"
+      data-form-readonly="true"
+      aria-label={reason}
+      title={reason}
+      style={editorStyle(field.rect, cssScale)}
+    >
+      <span className="form-nonfillable-reason">{reason}</span>
+    </div>
+  );
 }
 
 // ---- Text editor ---------------------------------------------------------
@@ -150,6 +205,7 @@ function TextEditor({
   const style = editorStyle(field.rect, cssScale);
   const multiline = field.rect.height >= 24;
   const value = String(field.value);
+  const readOnly = field.readOnly === true;
   if (multiline) {
     return (
       <textarea
@@ -157,7 +213,10 @@ function TextEditor({
         className="form-editor form-textarea"
         data-form-field={field.id}
         data-form-kind="text"
+        data-form-readonly={readOnly ? "true" : undefined}
         aria-label={fieldKindLabel(field.kind)}
+        title={readOnly ? READ_ONLY_REASON : undefined}
+        disabled={readOnly}
         defaultValue={value}
         onChange={(e): void => onChange(field.id, e.target.value)}
         style={style}
@@ -172,7 +231,10 @@ function TextEditor({
       className="form-editor form-input"
       data-form-field={field.id}
       data-form-kind="text"
+      data-form-readonly={readOnly ? "true" : undefined}
       aria-label={fieldKindLabel(field.kind)}
+      title={readOnly ? READ_ONLY_REASON : undefined}
+      disabled={readOnly}
       defaultValue={value}
       onChange={(e): void => onChange(field.id, e.target.value)}
       style={style}
@@ -206,8 +268,11 @@ function CheckboxEditor({
       className={checked ? "form-checkbox form-checkbox-checked" : "form-checkbox"}
       data-form-field={field.id}
       data-form-kind="checkbox"
+      data-form-readonly={field.readOnly === true ? "true" : undefined}
       aria-label={fieldKindLabel(field.kind)}
       aria-pressed={checked}
+      title={field.readOnly === true ? READ_ONLY_REASON : undefined}
+      disabled={field.readOnly === true}
       onClick={(): void => onChange(field.id, checked ? "false" : "true")}
       style={wrap}
     >
@@ -254,6 +319,22 @@ function RadioEditor({
   cssScale: number;
   onChange: (id: string, value: string | string[]) => void;
 }): ReactElement {
+  // Phase 59 item 4 — a multi-widget button group ships one entry per widget
+  // position. Render one control per widget at its own rect (the group may
+  // have 6 options spread across 24 widget boxes), each showing its own
+  // on-state value. Single-control groups without per-widget data keep the
+  // options-based layout below.
+  const widgets = field.widgets;
+  if (widgets !== undefined && widgets.length > 1) {
+    return (
+      <WidgetRadioEditor
+        field={field}
+        widgets={widgets}
+        cssScale={cssScale}
+        onChange={onChange}
+      />
+    );
+  }
   const options: FormFieldOption[] = field.options ?? [];
   const current = String(field.value);
   // Lay radio options out horizontally when the rect is wide enough for
@@ -291,6 +372,9 @@ function RadioEditor({
             type="button"
             className={selected ? "form-radio form-radio-checked" : "form-radio"}
             data-form-option={opt.value}
+            data-form-readonly={field.readOnly === true ? "true" : undefined}
+            title={field.readOnly === true ? READ_ONLY_REASON : undefined}
+            disabled={field.readOnly === true}
             onClick={(): void => onChange(field.id, opt.value)}
           >
             <span
@@ -316,6 +400,81 @@ function RadioEditor({
   );
 }
 
+// ---- Radio (per-widget) --------------------------------------------------
+
+/** One control per widget of a multi-widget button group. Each control sits
+ *  at its own widget rect and shows that widget's on-state value; selecting
+ *  one sets the GROUP value (mutually exclusive — the engine deselects the
+ *  others), so exactly one control reads selected. `widgets[].selected` is
+ *  the engine's authoritative mark; the live field value takes precedence
+ *  while the optimistic local edit is in flight. */
+function WidgetRadioEditor({
+  field,
+  widgets,
+  cssScale,
+  onChange,
+}: {
+  field: FormField;
+  widgets: FormFieldWidget[];
+  cssScale: number;
+  onChange: (id: string, value: string | string[]) => void;
+}): ReactElement {
+  const current = String(Array.isArray(field.value) ? field.value[0] ?? "" : field.value);
+  const readOnly = field.readOnly === true;
+  const dotSize = RADIO_DOT_PT * cssScale;
+  return (
+    <>
+      {widgets.map((widget, index) => {
+        const selected =
+          current !== "" ? widget.value === current : widget.selected === true;
+        const style: CSSProperties = {
+          position: "absolute",
+          left: widget.rect.x * cssScale,
+          top: widget.rect.y * cssScale,
+          width: Math.max(widget.rect.width * cssScale, dotSize),
+          minHeight: Math.max(widget.rect.height * cssScale, dotSize),
+        };
+        return (
+          <button
+            key={`${widget.value}-${index}`}
+            type="button"
+            className={
+              selected
+                ? "form-radio form-radio-widget form-radio-checked"
+                : "form-radio form-radio-widget"
+            }
+            data-form-field={field.id}
+            data-form-kind="radio"
+            data-form-widget={index}
+            data-form-widget-value={widget.value}
+            data-form-readonly={readOnly ? "true" : undefined}
+            aria-label={widget.value}
+            aria-pressed={selected}
+            title={readOnly ? READ_ONLY_REASON : widget.value}
+            disabled={readOnly}
+            onClick={(): void => onChange(field.id, widget.value)}
+            style={style}
+          >
+            <span
+              className="form-radio-dot"
+              style={{ width: dotSize, height: dotSize }}
+              aria-hidden
+            >
+              {selected && (
+                <span
+                  className="form-radio-dot-inner"
+                  style={{ width: dotSize * 0.45, height: dotSize * 0.45 }}
+                />
+              )}
+            </span>
+            <span className="form-radio-label">{widget.value}</span>
+          </button>
+        );
+      })}
+    </>
+  );
+}
+
 // ---- Dropdown ------------------------------------------------------------
 
 function DropdownEditor({
@@ -329,12 +488,16 @@ function DropdownEditor({
 }): ReactElement {
   const options: FormFieldOption[] = field.options ?? [];
   const style = editorStyle(field.rect, cssScale);
+  const readOnly = field.readOnly === true;
   return (
     <select
       className="form-editor form-select"
       data-form-field={field.id}
       data-form-kind="dropdown"
+      data-form-readonly={readOnly ? "true" : undefined}
       aria-label={fieldKindLabel(field.kind)}
+      title={readOnly ? READ_ONLY_REASON : undefined}
+      disabled={readOnly}
       value={String(field.value)}
       onChange={(e): void => onChange(field.id, e.target.value)}
       style={style}
@@ -362,6 +525,7 @@ function ListboxEditor({
 }): ReactElement {
   const options: FormFieldOption[] = field.options ?? [];
   const selected = Array.isArray(field.value) ? field.value : [];
+  const readOnly = field.readOnly === true;
   const style: CSSProperties = {
     ...editorStyle(field.rect, cssScale),
     overflowY: "auto",
@@ -372,8 +536,10 @@ function ListboxEditor({
       className="form-editor form-listbox"
       data-form-field={field.id}
       data-form-kind="listbox"
+      data-form-readonly={readOnly ? "true" : undefined}
       aria-label={fieldKindLabel(field.kind)}
       aria-multiselectable={field.multi === true ? "true" : undefined}
+      title={readOnly ? READ_ONLY_REASON : undefined}
       style={style}
     >
       {options.map((opt) => {
@@ -384,6 +550,7 @@ function ListboxEditor({
               type="button"
               className={on ? "form-listbox-row form-listbox-row-on" : "form-listbox-row"}
               data-form-option={opt.value}
+              disabled={readOnly}
               onClick={(): void => onToggle(field.id, opt.value)}
             >
               <span className="form-listbox-tick" aria-hidden>
@@ -395,6 +562,89 @@ function ListboxEditor({
         );
       })}
     </ul>
+  );
+}
+
+// ---- Fill report summary -------------------------------------------------
+
+export interface FormFillReportSummaryProps {
+  report: FormFillReport[];
+  onDismiss?: () => void;
+}
+
+/** Phase 59 item 4 — a compact, dismissible summary of the native-fill
+ *  outcome. Counts the filled fields and lists each skipped field with its
+ *  kind and the plain-language reason (read-only, signature, font does not
+ *  support the text, XFA, orphan widget). Renders nothing for an empty
+ *  report, so hosts can mount it unconditionally. */
+export function FormFillReportSummary({
+  report,
+  onDismiss,
+}: FormFillReportSummaryProps): ReactElement | null {
+  if (report.length === 0) return null;
+  const filled = report.filter((r) => r.status === "filled").length;
+  const skipped = report.filter((r) => r.status !== "filled");
+  return (
+    <div className="form-fill-report" data-form-fill-report role="status" aria-live="polite">
+      <div className="form-fill-report-head">
+        <span className="form-fill-report-title">Form fill</span>
+        <span className="form-fill-report-counts" data-form-fill-counts>
+          {filled} filled
+          {skipped.length > 0 ? `, ${skipped.length} skipped` : ""}
+        </span>
+        {onDismiss !== undefined && (
+          <button
+            type="button"
+            className="form-fill-report-dismiss"
+            data-form-fill-dismiss
+            aria-label="Dismiss form fill report"
+            title="Dismiss"
+            onClick={onDismiss}
+          >
+            <XMark size={12} />
+          </button>
+        )}
+      </div>
+      {skipped.length > 0 && (
+        <ul className="form-fill-report-list">
+          {skipped.map((row, i) => (
+            <li
+              key={`${row.name}-${row.page ?? "na"}-${row.status}-${i}`}
+              className="form-fill-report-row"
+              data-form-fill-skip={row.name}
+            >
+              <span className="form-fill-report-name">{row.name}</span>
+              <span className="form-fill-report-kind">{row.kind}</span>
+              <span className="form-fill-report-reason" data-form-fill-reason={row.status}>
+                {reportStatusReason(row.status)}
+                {row.detail !== undefined ? ` \u2014 ${row.detail}` : ""}
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+// Inline Lucide-style close, mirroring CheckMark's "no extra import" rule.
+function XMark({ size }: { size: number }): ReactElement {
+  const s = String(size);
+  return (
+    <svg
+      width={s}
+      height={s}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={2.5}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden
+    >
+      <line x1="18" y1="6" x2="6" y2="18" />
+      <line x1="6" y1="6" x2="18" y2="18" />
+    </svg>
   );
 }
 

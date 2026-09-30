@@ -49,6 +49,7 @@ import { PageView } from "./PageView";
 import { SearchBar } from "./SearchBar";
 import { PaneThumbStrip } from "./PaneThumbStrip";
 import { ContextPanel, type ContextPanelEditContent } from "./ContextPanel";
+import type { RailTab } from "./SideRail";
 import { type InspectorTextSelection } from "./Inspector";
 import { ActionDock, type DockBulkActions } from "./ActionDock";
 import { prunePageSelection } from "../state/pageSelection";
@@ -417,6 +418,12 @@ interface DocumentViewProps extends DocumentViewDockProps {
    *  state. Threaded to the SideRail, whose expand/collapse button
    *  calls it; the rail never owns the value itself. */
   onTogglePagesPanelCollapsed?: () => void;
+  /** Phase 59 (item 7 follow-up) — the host-owned active rail tab (App's
+   *  `railTab`), threaded to the Pages ContextPanel so the "Page thumbnails" /
+   *  "Bookmarks" commands switch the panel's body. Optional: absent = the
+   *  legacy local behaviour. */
+  railTab?: RailTab;
+  onRailTabChange?: (tab: RailTab) => void;
   /** Phase 32 â€” the rail master switch. `false` suppresses the rail
    *  entirely and collapses the workspace grid to the page column
    *  (`data-rail="none"`), leaving no empty gutter. Defaults to `true`.
@@ -829,6 +836,8 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
   onEditModeToggle,
   pagesPanelCollapsed,
   onTogglePagesPanelCollapsed,
+  railTab,
+  onRailTabChange,
   showRail = true,
   railSide = "left",
   multiRail = null,
@@ -3832,6 +3841,11 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
       // host (App) owns the value; the panel renders it and reports toggles.
       collapsed={pagesPanelCollapsed ?? false}
       onToggleCollapsed={onTogglePagesPanelCollapsed}
+      // Phase 59 (item 7 follow-up) — the host-owned rail tab reaches the
+      // Pages body, so the palette's "Page thumbnails" / "Bookmarks" rows
+      // switch the panel and the panel's own outline toggle writes it back.
+      railTab={railTab}
+      onRailTabChange={onRailTabChange}
       // EDIT â€” the current page's modelled content + the recognition summary.
       editContent={editContent}
       onSelectEditContent={selectEditContent}

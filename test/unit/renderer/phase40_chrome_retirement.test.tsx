@@ -283,14 +283,18 @@ describe("Phase 40 item 10 — the Outline is flush when expanded", () => {
     }
   });
 
-  it("the expanded flush rule keys on data-outline-open and pins a definite height", () => {
+  it("the expanded flush rule keys on data-outline-open and caps a content-sized section", () => {
     const open = ruleBody(".context-panel-outline[data-outline-open='true']");
-    expect(open, "the expanded section has a definite height rule").toMatch(/height:\s*40%/);
-    expect(open, "the section cannot shrink off the panel bottom").toMatch(/flex:\s*0 0 40%/);
+    // Phase 59 (item 5 / DEF-419) — the section HUGS its content; the old
+    // fixed 40% height left dead space under a short outline's last row.
+    // The share is now only an upper bound (`max-height`), so the section's
+    // bottom edge is flush with the last row, and a long outline scrolls.
+    expect(open, "the expanded section is content-sized").toMatch(/height:\s*auto/);
+    expect(open, "the share survives as an upper bound").toMatch(/max-height:\s*40%/);
+    expect(open, "the section shrinks to its content").toMatch(/flex:\s*0 1 auto/);
     // The flush no longer rides on a `:has()` query.
     expect(STYLES).not.toContain(":has(.context-panel-outline-body)");
-    // The body is the bounded, definite-height box that fills to the section
-    // bottom (the panel body's last in-flow child).
+    // The body is the bounded box that frames the re-parented tree.
     const body = ruleBody(".context-panel-outline-body");
     expect(body).toMatch(/flex:\s*1 1 auto/);
     expect(body).toMatch(/overflow:\s*hidden/);

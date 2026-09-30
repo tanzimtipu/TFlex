@@ -409,9 +409,12 @@ describe("Phase 37 item 16 - flush Outline with an item-22 separator", () => {
     expect(decl(OUTLINE, "border-top")).toBe("1px solid var(--divider)");
   });
 
-  it("pins the Outline section to a definite share so its bottom is flush", () => {
-    expect(decl(OUTLINE_WITH_BODY, "height")).toBe("40%");
-    expect(decl(OUTLINE_WITH_BODY, "flex")).toBe("0 0 40%");
+  it("caps the Outline section's share so a short outline hugs its content", () => {
+    // Phase 59 (item 5 / DEF-419) — the share became an upper bound: a fixed
+    // `height: 40%` reserved dead space under a short outline's last row.
+    expect(decl(OUTLINE_WITH_BODY, "height")).toBe("auto");
+    expect(decl(OUTLINE_WITH_BODY, "max-height")).toBe("40%");
+    expect(decl(OUTLINE_WITH_BODY, "flex")).toBe("0 1 auto");
     expect(decl(ruleBody(".context-panel-thumbs"), "flex")).toBe("1 1 auto");
   });
 

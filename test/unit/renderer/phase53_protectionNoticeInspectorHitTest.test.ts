@@ -72,14 +72,14 @@ const PROTECTION: DocumentProtectionState = {
 
 describe("phase 52 — the protection banner reserves the fixed Inspector's column", () => {
   it("reserves the shared --tf-tools-inset on the banner's right edge", () => {
-    const rule = ruleBody(".document-column > .protection-notice");
+    const rule = ruleBody(".document-column > .protection-notice-region");
     expect(rule, "the DEF-377 hit-test reservation rule is missing").not.toBe("");
     expect(rule).toMatch(/margin-right:\s*var\(--tf-tools-inset,\s*0px\)/);
   });
 
   it("does not reserve the inset a second time in Multi Mode", () => {
     const rule = ruleBody(
-      '.tab-stage[data-multi-mode="true"] .document-column > .protection-notice',
+      '.tab-stage[data-multi-mode="true"] .document-column > .protection-notice-region',
     );
     expect(rule, "the Multi Mode reset is missing").not.toBe("");
     expect(rule).toMatch(/margin-right:\s*0/);
@@ -116,18 +116,22 @@ describe("phase 52 — the protection banner reserves the fixed Inspector's colu
     expect(source).not.toContain("createPortal");
   });
 
-  it("has no second interactive element competing for the reserved column", () => {
-    // The dismiss is the banner's ONLY interactive control; when it is omitted
-    // there is no control at all, so no other element can sit under the panel.
+  it("keeps exactly one interactive control inside the reserved-column banner", () => {
+    // Phase 59 (item 2): the banner's collapse control is its ONLY in-flow
+    // control. The second button in the source is the collapsed "i", which is
+    // an absolute overlay OUTSIDE the reserved flow column (see the region's
+    // own rule), so it can never compete for the pixel the Inspector owns.
     const source = readFileSync(
       resolve(__dirname, "../../../src/renderer/components/ProtectionNotice.tsx"),
       "utf8",
     );
-    expect(source.match(/<button/g)?.length ?? 0).toBe(1);
+    expect(source.match(/<button/g)?.length ?? 0).toBe(2);
+    expect(source).toContain('data-protection-collapse');
+    expect(source).toContain('data-protection-icon');
   });
 });
 
-describe("phase 52 — the dismiss click is not swallowed (AGENTS.md cross-bubbling)", () => {
+describe("phase 59 — the collapse click is not swallowed (AGENTS.md cross-bubbling)", () => {
   function mount(children: ReturnType<typeof createElement>) {
     const host = document.createElement("div");
     document.body.appendChild(host);
@@ -147,25 +151,33 @@ describe("phase 52 — the dismiss click is not swallowed (AGENTS.md cross-bubbl
     };
   }
 
-  it("the dismiss button fires even with a document click listener", () => {
+  it("the collapse control starts the collapse and the click still reaches document", () => {
     const onDismiss = vi.fn();
     const docListener = vi.fn();
     document.addEventListener("click", docListener);
     const view = mount(createElement(ProtectionNotice, { protection: PROTECTION, onDismiss }));
     try {
       const banner = view.host.querySelector(".protection-notice");
-      const dismiss = view.host.querySelector<HTMLButtonElement>(
-        "[data-protection-dismiss]",
+      const collapse = view.host.querySelector<HTMLButtonElement>(
+        "[data-protection-collapse]",
       );
-      expect(dismiss, "the dismiss button must render").not.toBeNull();
-      expect(dismiss?.tagName).toBe("BUTTON");
+      expect(collapse, "the collapse control must render").not.toBeNull();
+      expect(collapse?.tagName).toBe("BUTTON");
       // It is the banner's last child: the `margin-left: auto` control that sat
       // under the Inspector before the fix.
-      expect(banner?.lastElementChild).toBe(dismiss);
+      expect(banner?.lastElementChild).toBe(collapse);
       act((): void => {
-        dismiss?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+        collapse?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
       });
-      expect(onDismiss).toHaveBeenCalledTimes(1);
+      // Phase 59 repurposed the control: it is a collapse, not a session
+      // dismiss, so the notice stays mounted and onDismiss is not called.
+      expect(onDismiss).not.toHaveBeenCalled();
+      expect(view.host.querySelector(".protection-notice")).not.toBeNull();
+      expect(
+        view.host.querySelector(".protection-notice")?.classList.contains(
+          "protection-notice--leaving",
+        ),
+      ).toBe(true);
       // The banner must NOT stop propagation: the click still reaches document.
       expect(docListener).toHaveBeenCalledTimes(1);
     } finally {
@@ -174,16 +186,22 @@ describe("phase 52 — the dismiss click is not swallowed (AGENTS.md cross-bubbl
     }
   });
 
-  it("omitting onDismiss renders no dismiss control", () => {
-    const view = mount(createElement(ProtectionNotice, { protection: PROTECTION }));
-    try {
-      expect(view.host.querySelector("[data-protection-dismiss]")).toBeNull();
-    } finally {
-      view.cleanup();
+  it("renders the collapse control whether or not onDismiss is supplied", () => {
+    const variants: Array<{
+      protection: DocumentProtectionState;
+      onDismiss?: () => void;
+    }> = [{ protection: PROTECTION, onDismiss: vi.fn() }, { protection: PROTECTION }];
+    for (const props of variants) {
+      const view = mount(createElement(ProtectionNotice, props));
+      try {
+        expect(view.host.querySelector("[data-protection-collapse]")).not.toBeNull();
+      } finally {
+        view.cleanup();
+      }
     }
   });
 
-  it("a click on the banner body still completes and does not dismiss", () => {
+  it("a click on the banner body still completes and does not collapse", () => {
     const onDismiss = vi.fn();
     const docListener = vi.fn();
     document.addEventListener("click", docListener);
@@ -197,6 +215,7 @@ describe("phase 52 — the dismiss click is not swallowed (AGENTS.md cross-bubbl
       // The click completes (bubbles to document) and nothing was swallowed.
       expect(docListener).toHaveBeenCalledTimes(1);
       expect(onDismiss).not.toHaveBeenCalled();
+      expect(view.host.querySelector(".protection-notice--leaving")).toBeNull();
     } finally {
       document.removeEventListener("click", docListener);
       view.cleanup();

@@ -3,6 +3,7 @@ import {
   useEffect,
   useRef,
   useState,
+  type CSSProperties,
   type KeyboardEvent as ReactKeyboardEvent,
   type MouseEvent as ReactMouseEvent,
   type PointerEvent as ReactPointerEvent,
@@ -57,6 +58,95 @@ export const TOOL_SEARCH_ACCESSIBLE_NAME = "Search tools and commands (Ctrl+K)";
 
 /** Phase 40 (item 5) — the Ctrl+F find icon's accessible name. */
 export const FIND_IN_DOCUMENT_ACCESSIBLE_NAME = "Find in document (Ctrl+F)";
+
+/* -------------------------------------------------------------------------
+ * Phase 59 (item 10) — tab-strip overflow: the pure planner.
+ *
+ * The strip keeps ONE row: when the open tabs no longer fit, each tab SHRINKS
+ * toward a floor, and once the floor is reached the tabs begin to STACK
+ * (a negative inter-tab margin) so every tab keeps a visible sliver and the
+ * active tab stays fully identifiable. The plan is computed from the measured
+ * available width vs the tabs' natural width and applied to the DOM through
+ * CSS custom properties: `--tf-tab-width` on `.tab-list` (consumed by `.tab`)
+ * and `--tf-tab-overlap` on each tab's `<li>` wrapper (the real sibling,
+ * consumed by the wrapped `.tab`), so the CSS `transition` animates the change
+ * with the shared motion tokens (and the global reduced-motion / Animations-OFF
+ * catch-all makes it instant).
+ *
+ * Everything here is pure and unit-tested; the component only measures.
+ * ------------------------------------------------------------------------- */
+
+/** The tab-to-tab gap (px) that the base CSS draws between two tabs. It is
+ *  the SAME value `.tab`'s `margin-right` falls back to. */
+export const TAB_GAP = 2;
+/** The smallest pitch (width + gap − overlap) a tab may be squeezed to, so a
+ *  sliver always remains visible and clickable. */
+export const TAB_MIN_PITCH = 34;
+
+export interface TabOverflowPlan {
+  /** The width every tab takes in the overflow regime. */
+  width: number;
+  /** How far each tab over the first is pulled left (>= 0). */
+  overlap: number;
+}
+
+function clampTab(value: number, min: number, max: number): number {
+  if (max < min) return min;
+  if (value < min) return min;
+  if (value > max) return max;
+  return value;
+}
+
+/**
+ * Plan the per-tab width and inter-tab overlap for `count` tabs that want
+ * `naturalWidth` each inside `availableWidth`.
+ *
+ *  - Fits: every tab keeps its natural width, no overlap.
+ *  - Moderate overflow: the width shrinks uniformly toward `floor`, no overlap.
+ *  - Extreme overflow: the width pins at `floor` and the tabs STACK; the
+ *    overlap grows only as far as needed and never past
+ *    `floor + gap − minPitch`, so every tab (the ACTIVE tab included, which the
+ *    CSS keeps above its neighbours) keeps at least `minPitch` px of pitch.
+ */
+export function planTabOverflow(args: {
+  count: number;
+  naturalWidth: number;
+  availableWidth: number;
+  floor: number;
+  gap?: number;
+  minPitch?: number;
+}): TabOverflowPlan {
+  const count = Math.max(0, Math.floor(args.count));
+  const natural = Math.max(0, args.naturalWidth);
+  const floor = clampTab(Math.max(0, args.floor), 0, natural);
+  const gap = args.gap ?? TAB_GAP;
+  const minPitch = Math.max(1, args.minPitch ?? TAB_MIN_PITCH);
+
+  if (count <= 0) return { width: natural, overlap: 0 };
+  if (count === 1) {
+    return { width: clampTab(args.availableWidth, floor, natural), overlap: 0 };
+  }
+
+  const required = count * natural + (count - 1) * gap;
+  if (required <= args.availableWidth) return { width: natural, overlap: 0 };
+
+  // Shrink uniformly first; only stack once the floor is reached.
+  const noOverlapWidth = (args.availableWidth - (count - 1) * gap) / count;
+  if (noOverlapWidth >= floor) return { width: noOverlapWidth, overlap: 0 };
+
+  const occupiedAtFloor = count * floor + (count - 1) * gap;
+  const maxOverlap = Math.max(0, floor + gap - minPitch);
+  const needed = (occupiedAtFloor - args.availableWidth) / (count - 1);
+  return { width: floor, overlap: clampTab(needed, 0, maxOverlap) };
+}
+
+/** Per-style natural width (the tab at rest) and shrink floor. The colorful
+ *  set declares `min-width: 132px; max-width: 200px`; the standard set sizes
+ *  to content, so its natural is the softer ceiling and its floor is smaller. */
+export const TAB_OVERFLOW_METRICS: Readonly<Record<TabStyle, { natural: number; floor: number }>> = {
+  colorful: { natural: 200, floor: 132 },
+  standard: { natural: 168, floor: 96 },
+};
 
 interface AppHeaderProps {
   activeId: string | null;
@@ -398,20 +488,102 @@ export function AppHeader(props: AppHeaderProps): ReactElement {
   // Animations setting is OFF (the effective-motion gate).
   const reducedMotion = useLiveReducedMotion();
   const instantMotion = useInstantMotion(reducedMotion);
-  useEffect(() => {
-    if (activeId === null) return;
+  // DEF-428 — the active tab must stay in view when the strip itself is
+  // resized, not only when `activeId` changes. `scrollActiveIntoView` is the
+  // one scroll path, shared by the active-id effect and the strip's measure
+  // path (below). It reads the CURRENT active id / motion from refs so the
+  // long-lived ResizeObserver callback never captures a stale closure.
+  const activeIdRef = useRef<string | null>(activeId);
+  activeIdRef.current = activeId;
+  const instantMotionRef = useRef(instantMotion);
+  instantMotionRef.current = instantMotion;
+  const scrollActiveIntoView = useCallback((): void => {
+    const id = activeIdRef.current;
     const list = tabListRef.current;
-    if (list === null) return;
+    if (id === null || list === null) return;
     const tab = Array.from(list.querySelectorAll<HTMLElement>("[data-tab-id]")).find(
-      (el) => el.dataset.tabId === activeId,
+      (el) => el.dataset.tabId === id,
     );
     if (tab === undefined || typeof tab.scrollIntoView !== "function") return;
     tab.scrollIntoView({
       block: "nearest",
       inline: "nearest",
-      behavior: instantMotion ? "auto" : "smooth",
+      behavior: instantMotionRef.current ? "auto" : "smooth",
     });
-  }, [activeId, tabs.length, instantMotion]);
+  }, []);
+  useEffect(() => {
+    scrollActiveIntoView();
+  }, [activeId, tabs.length, instantMotion, scrollActiveIntoView]);
+
+  // Phase 59 (item 10) — the overflow plan. Measure the strip's content width
+  // and plan a per-tab width + overlap from the style's natural width. The
+  // plan is written to `.tab-list` as CSS custom properties; the CSS transition
+  // (shared motion token) animates the change, and the global reduced-motion /
+  // Animations-OFF catch-all collapses it to instant. Nothing is applied while
+  // the tabs fit, so the resting look (auto width) is untouched. `count` and
+  // the style drive a re-plan; a ResizeObserver re-measures on width changes.
+  const overflowMetrics = TAB_OVERFLOW_METRICS[tabStyle] ?? TAB_OVERFLOW_METRICS.colorful;
+  const [tabOverflow, setTabOverflow] = useState<TabOverflowPlan | null>(null);
+  // DEF-428 — the last measured strip width. A change (a window resize) is the
+  // signal to bring the active tab back into view; `null` before the first
+  // measurement so the mount pass is left to the active-id effect above (no
+  // double scroll on open).
+  const lastStripWidthRef = useRef<number | null>(null);
+  useEffect((): (() => void) | undefined => {
+    const list = tabListRef.current;
+    if (list === null) return undefined;
+    const measure = (): void => {
+      const computed = window.getComputedStyle(list);
+      const padding =
+        (parseFloat(computed.paddingLeft) || 0) + (parseFloat(computed.paddingRight) || 0);
+      const available = list.clientWidth - padding;
+      // DEF-428 — a width change re-asserts the active tab's visibility so a
+      // shrinking window can never scroll the active tab out of the strip.
+      const previous = lastStripWidthRef.current;
+      lastStripWidthRef.current = available;
+      if (previous !== null && previous !== available) scrollActiveIntoView();
+      // jsdom / a zero-width strip: leave the resting layout alone.
+      if (!(available > 0)) {
+        setTabOverflow(null);
+        return;
+      }
+      const next = planTabOverflow({
+        count: tabs.length,
+        naturalWidth: overflowMetrics.natural,
+        availableWidth: available,
+        floor: overflowMetrics.floor,
+      });
+      setTabOverflow((prev) =>
+        prev !== null && prev.width === next.width && prev.overlap === next.overlap ? prev : next,
+      );
+    };
+    measure();
+    const observer =
+      typeof ResizeObserver === "function" ? new ResizeObserver((): void => measure()) : null;
+    observer?.observe(list);
+    return (): void => {
+      observer?.disconnect();
+    };
+  }, [tabs.length, tabStyle, overflowMetrics.natural, overflowMetrics.floor, scrollActiveIntoView]);
+
+  // Apply the plan only when the tabs do NOT fit (a shrink or a stack). While
+  // they fit, `tabOverflow` may still be the "natural" plan — clearing the
+  // custom properties keeps the tabs' own auto sizing. The width rides
+  // `--tf-tab-width` on `.tab-list` (the `.tab` rule consumes it); the overlap
+  // is applied PER TAB as `--tf-tab-overlap` on each tab's `<li>` wrapper (the
+  // real sibling inside `.tab-list`), so the inter-tab margin lands on the
+  // wrapped `.tab` — see AnimatedTab. DEF-420: the overlap used to be written
+  // on `.tab-list` and consumed by `.tab + .tab`, a selector the wrapped tabs
+  // never matched.
+  const squeezing =
+    tabOverflow !== null &&
+    (tabOverflow.overlap > 0 || tabOverflow.width < overflowMetrics.natural - 0.5);
+  const tabOverflowStyle: CSSProperties | undefined =
+    tabOverflow !== null && squeezing
+      ? ({ "--tf-tab-width": `${tabOverflow.width}px` } as CSSProperties)
+      : undefined;
+  // 0 when the tabs fit or merely shrink; the first tab never overlaps.
+  const tabOverlapPx = tabOverflow !== null && squeezing ? tabOverflow.overlap : 0;
 
   // Tab strip interaction contract (DEF-034): activation resolves on
   // MOUSEDOWN via the shared resolveTabMouseDown classifier, so padding,
@@ -434,22 +606,23 @@ export function AppHeader(props: AppHeaderProps): ReactElement {
   // ==========================================================================
   // Phase 58 (chunk 5) — pointer-driven tab reorder.
   //
-  // The gesture is deliberately NOT HTML5 drag: the tab title must stay
-  // natively selectable (the user drag-selects text inside a title), and
-  // HTML5 `draggable` would hijack that. Pointer events let us
-  // disambiguate one gesture two ways:
+  // The gesture is deliberately NOT HTML5 drag: it would hijack the pointer
+  // and could not arm from every point on the tab. Pointer events let us run
+  // one gesture:
   //
   //   - `pointerdown` on a tab (target outside `.tab-close`) ARMS a pending
-  //     drag and does NOT preventDefault, so the browser can start a native
-  //     text selection exactly as before;
-  //   - the FIRST `pointermove` past a 6px threshold decides, once per
-  //     gesture: if there is a non-collapsed selection whose anchor sits
-  //     inside that tab's `.tab-title`, the user is selecting text and the
-  //     drag is CANCELLED (text selection wins); otherwise the reorder
-  //     begins;
+  //     drag from ANY point on the tab — padding, gap, colour chip and the
+  //     title all arm it, so a tab can be dragged from any area;
+  //   - the FIRST `pointermove` past a 6px threshold (total movement) begins
+  //     the reorder;
   //   - while reordering, the target slot is computed from pointer X against
   //     the midpoints of the OTHER tabs and shown as a visible drop marker;
   //   - `pointerup` commits via `onMoveTab`, `pointercancel` discards.
+  //
+  // Phase 59 (item 1) — the title is no longer selectable, so the old
+  // DEF-413 text-selection guard (cancel the drag when a non-collapsed
+  // selection sat inside the title) is gone: it can no longer trigger and
+  // must never block a drag that starts on the title.
   //
   // No preventDefault / stopPropagation on these handlers (AGENTS.md
   // cross-bubbling rule): the DEF-034 mousedown activation contract and the
@@ -574,23 +747,6 @@ export function AppHeader(props: AppHeaderProps): ReactElement {
         const dx = e.clientX - pending.startX;
         const dy = e.clientY - pending.startY;
         if (Math.hypot(dx, dy) <= 6) return; // not yet a drag
-        // Decide ONCE: a selection anchored in this tab's title means the
-        // user is selecting text, not dragging the tab.
-        const sel = typeof window.getSelection === "function" ? window.getSelection() : null;
-        if (sel !== null && !sel.isCollapsed) {
-          const anchor = sel.anchorNode;
-          const el = tabListRef.current;
-          const tabEl = el === null
-            ? null
-            : Array.from(el.querySelectorAll<HTMLElement>("[data-tab-id]")).find(
-                (n) => n.dataset.tabId === pending.id,
-              ) ?? null;
-          const titleEl = tabEl === null ? null : tabEl.querySelector(".tab-title");
-          if (anchor !== null && titleEl !== null && (titleEl === anchor || titleEl.contains(anchor))) {
-            pendingDragRef.current = null; // text selection wins
-            return;
-          }
-        }
         draggingIdRef.current = pending.id;
         setDraggingId(pending.id);
         document.body.classList.add("tab-reordering");
@@ -796,16 +952,17 @@ export function AppHeader(props: AppHeaderProps): ReactElement {
           // inline styling (the chunk's file scope excludes styles.css):
           // a dashed accent outline marks the strip as a "release here to
           // detach" target while the drag is past the threshold.
-          style={
-            tearOut
+          style={{
+            ...(tabOverflowStyle ?? {}),
+            ...(tearOut
               ? {
                   outline: "2px dashed var(--accent)",
                   outlineOffset: "-2px",
                   transition:
                     "outline-color var(--motion-duration-fast, 200ms) var(--motion-ease-standard, ease)",
                 }
-              : undefined
-          }
+              : {}),
+          }}
         >
           {/* Cross-theme animation system — one presence boundary owns
               every tab: new tabs play Tab Materialize (opacity in),
@@ -827,6 +984,10 @@ export function AppHeader(props: AppHeaderProps): ReactElement {
                   // POSITION's palette slot, so the assignment is
                   // deterministic and neighbours can never collide.
                   colourSlot={tabColourSlot(index)}
+                  // Phase 59 (item 10) — the overlap lands on the <li> wrapper
+                  // (the real `.tab-list` sibling); the first tab never
+                  // overlaps the tab "before" it.
+                  overlapPx={index === 0 ? 0 : tabOverlapPx}
                   onActivate={onActivate}
                   onClose={onClose}
                 />

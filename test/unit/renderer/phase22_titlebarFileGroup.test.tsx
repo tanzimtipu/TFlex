@@ -20,7 +20,7 @@
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createRoot } from "react-dom/client";
 import { act } from "react";
 import type { ReactElement } from "react";
@@ -560,6 +560,152 @@ describe("DEF-244 — the caption strip keeps a usable tab strip at 640px", () =
       expect(band).not.toContain(".tab-area");
       expect(band).not.toContain(".tab-list");
       expect(band).not.toContain(".titlebar-control");
+    }
+  });
+});
+
+
+// ---------------------------------------------------------------------------
+// ADV-122 / DEF-422 — re-assert the DEF-244 guard at the 640px minimum.
+//
+// The Phase-59 overflow planner can only plan when the strip HAS width. At the
+// app's minimum window width (640px) the fixed brand + file-action +
+// header-action clusters had consumed the strip's whole share, so `.tab-area`
+// measured 0px and every open tab (even one) was clipped and unreachable. The
+// min-rung band gives the strip a real floor and compacts/sheds only the
+// lowest-priority chrome, while every DEF-324 control stays mounted.
+// ---------------------------------------------------------------------------
+describe("DEF-422 — the caption strip keeps a usable tab strip at the 640px minimum", () => {
+  it("the min-rung band gives .tab-area a floor wide enough for the active tab + close", () => {
+    const band = mediaBlock(680);
+    expect(band, "the <=680px min-rung band exists").not.toBe("");
+    const floor = band.match(/\.tab-area\s*\{[^}]*min-width:\s*(\d+)px/);
+    expect(floor, ".tab-area has a min-width in the min-rung band").not.toBeNull();
+    // The colorful tab floor is 132px and the list adds 8px of padding; the
+    // floor must clear that so the active tab + its close button fit.
+    expect(Number(floor?.[1])).toBeGreaterThanOrEqual(140);
+    // The clusters that yield the width compact at this rung.
+    expect(band).toMatch(/\.app-header\s*\{[^}]*padding:\s*0 var\(--sp-1\)/);
+    expect(band).toMatch(/\.header-actions\s*\{[^}]*gap:\s*0/);
+    expect(band).toMatch(/\.titlebar-file\s*\{[^}]*gap:\s*0/);
+  });
+
+  it("sheds only the Ctrl+K / Ctrl+F icons and the account label, never a DEF-324 control", () => {
+    const band = mediaBlock(680);
+    // The two search icons (both keep their keyboard chord + palette/menu
+    // routes) and the account pill's text label are the only surfaces shed.
+    expect(band).toMatch(/\.header-tool-search[\s\S]*?header-find[^{]*\{[^}]*display:\s*none/);
+    expect(band).toMatch(/\.account-signin-label\s*\{[^}]*display:\s*none/);
+    // Every control the DEF-324 acceptance hit-tests at 640 stays mounted.
+    for (const sel of [
+      "\\.header-multi-mode",
+      "\\.header-print",
+      "\\.header-gear",
+      "\\.theme-toggle",
+      "\\.update-indicator",
+      "\\.tab-new",
+      "\\.tab-close",
+    ]) {
+      expect(band, `${sel} must never be display:none`).not.toMatch(
+        new RegExp(`${sel}\\s*\\{[^}]*display:\\s*none`),
+      );
+    }
+  });
+
+  it("the min-rung band keeps the strip's own scroll contract (never clips, always scrolls)", () => {
+    // The band must not touch the list's overflow/width rules; it only adds a
+    // width floor to the area, so the DEF-324 scroll behaviour is unchanged.
+    const band = mediaBlock(680);
+    expect(band).not.toContain(".tab-list");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// ADV-128 / DEF-428 — with many tabs, shrinking the window must bring the
+// active tab back into view. The scroll into view used to fire on `activeId`
+// change only; now the strip's measure/ResizeObserver path also re-asserts it
+// when the measured width changes.
+// ---------------------------------------------------------------------------
+describe("DEF-428 — a strip width change re-brings the active tab into view", () => {
+  const originalScrollIntoView = Element.prototype.scrollIntoView;
+  const originalClientWidth = Object.getOwnPropertyDescriptor(
+    HTMLElement.prototype,
+    "clientWidth",
+  );
+  const hadResizeObserver = Object.prototype.hasOwnProperty.call(globalThis, "ResizeObserver");
+  const originalResizeObserver = (globalThis as { ResizeObserver?: unknown }).ResizeObserver;
+  const RESIZE_TABS = [
+    { id: "a", title: "a.pdf", modified: false },
+    { id: "b", title: "b.pdf", modified: false },
+  ];
+  let width = 700;
+  let observed: (() => void) | null = null;
+
+  beforeEach(() => {
+    width = 700;
+    observed = null;
+    Element.prototype.scrollIntoView = vi.fn() as unknown as Element["scrollIntoView"];
+    Object.defineProperty(HTMLElement.prototype, "clientWidth", {
+      configurable: true,
+      get(this: HTMLElement): number {
+        return this.classList?.contains("tab-list") ? width : 0;
+      },
+    });
+    (globalThis as { ResizeObserver?: unknown }).ResizeObserver = class {
+      constructor(callback: () => void) {
+        observed = callback;
+      }
+      observe(): void {}
+      disconnect(): void {}
+    };
+  });
+
+  afterEach(() => {
+    if (originalScrollIntoView === undefined) {
+      delete (Element.prototype as { scrollIntoView?: unknown }).scrollIntoView;
+    } else {
+      Element.prototype.scrollIntoView = originalScrollIntoView;
+    }
+    if (originalClientWidth !== undefined) {
+      Object.defineProperty(HTMLElement.prototype, "clientWidth", originalClientWidth);
+    } else {
+      delete (HTMLElement.prototype as unknown as Record<string, unknown>).clientWidth;
+    }
+    if (hadResizeObserver) {
+      (globalThis as { ResizeObserver?: unknown }).ResizeObserver = originalResizeObserver;
+    } else {
+      delete (globalThis as { ResizeObserver?: unknown }).ResizeObserver;
+    }
+  });
+
+  it("re-scrolls the active tab into view when the strip width changes", () => {
+    const spy = Element.prototype.scrollIntoView as unknown as ReturnType<typeof vi.fn>;
+    const host = renderHeader({ activeId: "b", tabs: RESIZE_TABS });
+    try {
+      // Mount brought the active tab into view exactly once.
+      expect(spy).toHaveBeenCalledTimes(1);
+      width = 300;
+      act((): void => {
+        observed?.();
+      });
+      expect(spy).toHaveBeenCalledTimes(2);
+      expect(spy.mock.instances[1]).toBe(host.querySelector('[data-tab-id="b"]'));
+    } finally {
+      host.remove();
+    }
+  });
+
+  it("does not re-scroll when the measured width is unchanged", () => {
+    const spy = Element.prototype.scrollIntoView as unknown as ReturnType<typeof vi.fn>;
+    const host = renderHeader({ activeId: "b", tabs: RESIZE_TABS });
+    try {
+      expect(spy).toHaveBeenCalledTimes(1);
+      act((): void => {
+        observed?.();
+      });
+      expect(spy).toHaveBeenCalledTimes(1);
+    } finally {
+      host.remove();
     }
   });
 });

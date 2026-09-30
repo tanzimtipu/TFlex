@@ -1,5 +1,6 @@
 import { PDFDocument, PDFName } from '@cantoo/pdf-lib';
 import type { OptimizePreset, SpaceAudit } from '../../shared/types';
+import { carryAcroForm } from './form-fill';
 
 /**
  * Optimize a PDFDocument into a new byte buffer according to a preset.
@@ -28,22 +29,17 @@ export async function optimizePdf(
     out.addPage(page);
   }
 
-  // Migrate the AcroForm if present.
+  // Migrate the AcroForm if present. Phase 59 item 4 — carry the source form
+  // graph instead of recreating fields: recreating reset every widget's box,
+  // collapsed multi-widget button groups to one widget and repainted widgets
+  // with pdf-lib's default appearance. All pages survive an optimize, so the
+  // page map is the identity map.
+  const pageMap = new Map<number, number>();
+  for (let i = 0; i < pageIndices.length; i++) pageMap.set(pageIndices[i], i);
   try {
-    const srcForm = pdfDoc.getForm();
-    const srcFields = srcForm.getFields();
-    if (srcFields.length > 0) {
-      const dstForm = out.getForm();
-      for (const srcField of srcFields) {
-        try {
-          migrateField(srcField, dstForm, out);
-        } catch {
-          // Skip individual field migration failures.
-        }
-      }
-    }
+    carryAcroForm(pdfDoc, out, pageMap);
   } catch {
-    // No form or form migration failed — proceed without.
+    // No form or a malformed form — proceed without one.
   }
 
   // Copy document-level metadata (title, author, subject) unless max preset
@@ -180,64 +176,4 @@ function tryGetName(dict: any, key: string): string | undefined {
     // Ignore.
   }
   return undefined;
-}
-
-/**
- * Migrate a single form field from the source document to the destination.
- * A simplified version of engine.ts's migrateFormField.
- */
-function migrateField(srcField: any, dstForm: any, outDoc: PDFDocument): void {
-  // Use the constructor name for field kind detection.
-  const name = srcField.getName?.() ?? 'unknown';
-  const kind = srcField.constructor?.name ?? '';
-
-  if (kind === 'PDFTextField') {
-    const f = dstForm.createTextField(name);
-    const text = srcField.getText?.() ?? '';
-    f.setText(typeof text === 'string' ? text : '');
-    f.addToPage(outDoc.getPage(0));
-  } else if (kind === 'PDFCheckBox') {
-    const f = dstForm.createCheckBox(name);
-    try { if (srcField.isChecked?.()) f.check(); } catch {}
-    f.addToPage(outDoc.getPage(0));
-  } else if (kind === 'PDFRadioGroup') {
-    const options = srcField.getOptions?.() ?? [];
-    const f = dstForm.createRadioGroup(name);
-    for (const opt of options) {
-      f.addOptionToPage(String(opt), outDoc.getPage(0));
-    }
-    try {
-      const sel = srcField.getSelected?.();
-      if (sel) f.select(String(sel));
-    } catch {}
-  } else if (kind === 'PDFDropdown') {
-    const options = srcField.getOptions?.() ?? [];
-    const f = dstForm.createDropdown(name);
-    f.addOptions(options.map(String));
-    f.addToPage(outDoc.getPage(0));
-    try {
-      const sel = srcField.getSelected?.();
-      if (sel) {
-        const val = Array.isArray(sel) ? String(sel[0]) : String(sel);
-        f.select(val);
-      }
-    } catch {}
-  } else if (kind === 'PDFOptionList') {
-    const options = srcField.getOptions?.() ?? [];
-    const f = dstForm.createOptionList(name);
-    f.addOptions(options.map(String));
-    f.addToPage(outDoc.getPage(0));
-    try {
-      const sel = srcField.getSelected?.();
-      if (sel) {
-        if (Array.isArray(sel)) {
-          for (const v of sel) { try { f.select(String(v)); } catch {} }
-        } else {
-          try { f.select(String(sel)); } catch {}
-        }
-      }
-    } catch {}
-  } else {
-    // Unknown field kind — skip.
-  }
 }

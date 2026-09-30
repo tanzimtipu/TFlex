@@ -230,3 +230,40 @@ describe("AnimatedTab — Phase 58 colorful bottom-right flare (DEF-409)", () =>
     expect(sheet).toContain("right: -6px");
   });
 });
+
+// ---------------------------------------------------------------------------
+// Phase 59 (item 1) — the tab title is NOT selectable and the whole tab drags.
+// jsdom's getComputedStyle returns nothing useful for `user-select`, so the
+// contract is pinned directly against the stylesheet declaration block (the
+// same readFileSync approach as the DEF-409 guard above). This supersedes the
+// Phase 58 selectable-title CSS.
+// ---------------------------------------------------------------------------
+describe("Phase 59 item 1 — .tab-title is not selectable", () => {
+  const sheet = readFileSync("src/renderer/styles.css", "utf8");
+
+  /** Slice a selector's declaration block out of the sheet. */
+  function blockFor(selector: string): string {
+    const at = sheet.indexOf(selector);
+    expect(at).toBeGreaterThan(-1);
+    return sheet.slice(at, sheet.indexOf("}", at));
+  }
+
+  it("declares user-select: none (and the -webkit fallback), not text", () => {
+    const block = blockFor(".tab-title {");
+    expect(block).toContain("user-select: none");
+    expect(block).toContain("-webkit-user-select: none");
+    expect(block).not.toContain("user-select: text");
+  });
+
+  it("declares cursor: default (no text cursor on the title)", () => {
+    const block = blockFor(".tab-title {");
+    expect(block).toContain("cursor: default");
+    expect(block).not.toContain("cursor: text");
+  });
+
+  it("the reorder grab hint paints the title with the grab cursor, not text", () => {
+    const block = blockFor('.tab-list[data-reorder="true"] .tab .tab-title {');
+    expect(block).toContain("cursor: grab");
+    expect(block).not.toContain("cursor: text");
+  });
+});

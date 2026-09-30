@@ -53,6 +53,43 @@ async function dockMetrics(win) {
   });
 }
 
+// Phase 59 (item 3) — the pen must be fully CONTAINED inside the dock's box at
+// every responsive rung (it is the dock's own trailing row item now).
+async function penContainment(win) {
+  return win.evaluate(() => {
+    const dock = document.querySelector('[data-action-dock]');
+    const pen = document.querySelector('[data-dock-edit-toggle]');
+    if (dock === null || pen === null) return null;
+    const d = dock.getBoundingClientRect();
+    const p = pen.getBoundingClientRect();
+    return {
+      dock: { left: d.left, top: d.top, right: d.right, bottom: d.bottom, width: d.width, height: d.height },
+      pen: { left: p.left, top: p.top, right: p.right, bottom: p.bottom, width: p.width, height: p.height },
+      contained:
+        p.left >= d.left - 0.5 &&
+        p.right <= d.right + 0.5 &&
+        p.top >= d.top - 0.5 &&
+        p.bottom <= d.bottom + 0.5,
+      iconOnly: dock.getAttribute('data-dock-icon-only'),
+      arrows: dock.getAttribute('data-dock-arrows'),
+      arrowsLane: dock.getAttribute('data-dock-arrows-lane'),
+    };
+  });
+}
+
+async function setWidth(app, win, w) {
+  await app.evaluate(({ BrowserWindow }, s) => {
+    const bw = BrowserWindow.getAllWindows()[0];
+    if (!bw) return;
+    if (bw.isMaximized()) bw.unmaximize();
+    bw.setSize(s[0], s[1]);
+  }, [w, 900]);
+  await win.waitForTimeout(700);
+  await win.waitForFunction((t) => Math.abs(window.innerWidth - t) < 40, w, { timeout: 10000 }).catch(() => {});
+  const inner = await win.evaluate(() => window.innerWidth);
+  console.log(`[P59-dock] setWidth(${w}) -> innerWidth=${inner}`);
+}
+
 async function openReport(win) {
   await win.waitForSelector('.sample-card', { timeout: 30000 });
   await win.locator('.sample-card').filter({ hasText: 'report.pdf' }).first().click();
@@ -88,6 +125,13 @@ test('dock pen enters edit mode; minus/plus curate and persist; resize animates 
   expect(vib.animationName).toContain('tf-anim-vibrate');
   expect(oneSecond(vib.animationDuration)).toBeGreaterThan(0);
 
+  // Phase 59 (item 3) — the pen is INSIDE the dock's bounds at the default
+  // (labelled) rung.
+  const containDefault = await penContainment(win);
+  console.log(`[P59-dock] pen containment (default) ${JSON.stringify(containDefault)}`);
+  expect(containDefault, 'the pen and dock boxes are measurable').not.toBeNull();
+  expect(containDefault.contained, `pen fully inside the dock (pen=${JSON.stringify(containDefault.pen)} dock=${JSON.stringify(containDefault.dock)})`).toBe(true);
+
   // A minus badge on EVERY dock verb, and exactly one plus at the row's right.
   const verbCount = await win.locator('[data-dock-verb]').count();
   expect(verbCount).toBeGreaterThan(0);
@@ -113,7 +157,21 @@ test('dock pen enters edit mode; minus/plus curate and persist; resize animates 
 
   // 3. A minus removes exactly one verb and does NOT run the tool. `merge`
   //    opens a dialog when run, so a leak would surface as a dialog.
+  //    Phase 59 (item 3) — the removed verb is held on screen as an EXIT ghost
+  //    (`.anim-verb-out` / `[data-dock-exiting]`) before it disappears.
   await win.locator('[data-dock-minus="merge"]').click();
+  let exitObserved = false;
+  let exitClass = null;
+  try {
+    await win.waitForSelector('[data-dock-exiting="merge"]', { timeout: 2000 });
+    exitObserved = true;
+    exitClass = await win.locator('[data-dock-exiting="merge"]').getAttribute('class');
+  } catch {
+    exitObserved = false;
+  }
+  console.log(`[P59-dock] exit ghost observed=${exitObserved} class="${exitClass}"`);
+  expect(exitObserved, 'the removed verb renders an exit ghost before it disappears').toBe(true);
+  expect(exitClass, 'the exit ghost carries .anim-verb-out').toContain('anim-verb-out');
   await win.waitForTimeout(700);
   expect(await win.locator('[data-dock-verb="merge"]').count()).toBe(0);
   expect(await win.locator('[data-dock-verb]').count()).toBe(verbCount - 1);
@@ -136,12 +194,28 @@ test('dock pen enters edit mode; minus/plus curate and persist; resize animates 
   const addedId = pickerIds.find((id) => !origSet.has(id));
   expect(addedId, 'picker offers a tool not already in the dock').toBeTruthy();
   await win.locator(`[data-dock-picker-item="${addedId}"]`).click();
+  // Phase 59 (item 3) — the newly added verb BLOOMS in (`.anim-verb-in`).
+  let enterObserved = false;
+  try {
+    await win.waitForSelector(`[data-dock-verb="${addedId}"].anim-verb-in`, { timeout: 2000 });
+    enterObserved = true;
+  } catch {
+    enterObserved = false;
+  }
+  console.log(`[P59-dock] add bloom observed=${enterObserved}`);
+  expect(enterObserved, 'the newly added verb blooms in with .anim-verb-in').toBe(true);
   await win.waitForTimeout(700);
   expect(await win.locator(`[data-dock-verb="${addedId}"]`).count()).toBeGreaterThanOrEqual(1);
   expect(await win.locator('[data-dock-verb]').count()).toBe(verbCount);
   expect(await win.locator('[data-dock-plus]').count()).toBe(1);
   const afterAdd = await dockMetrics(win);
   console.log(`[P58-dock] after plus/pick "${addedId}": verbs=${verbCount} width=${afterAdd.width} scrollWidth=${afterAdd.scrollWidth}`);
+  // Phase 59 (item 3) — the dock's row width changes as the verb is added
+  // (the outer box and/or the scroll content width).
+  const addChangedWidth = Math.abs(afterAdd.width - afterRemove.width) > 0.5
+    || Math.abs(afterAdd.scrollWidth - afterRemove.scrollWidth) > 0.5;
+  console.log(`[P59-dock] width change on add: outer ${afterRemove.width}->${afterAdd.width} scroll ${afterRemove.scrollWidth}->${afterAdd.scrollWidth} changed=${addChangedWidth}`);
+  expect(addChangedWidth, 'adding a verb changes the dock row width').toBe(true);
 
   // 5. Persistence: relaunch with the SAME user-data-dir; the removal and the
   //    addition both survive.
@@ -157,6 +231,16 @@ test('dock pen enters edit mode; minus/plus curate and persist; resize animates 
   console.log(`[P58-dock] after relaunch: merge=${mergeAfter} ${addedId}=${addedAfter}`);
   expect(mergeAfter, 'removed tool stays removed across a relaunch').toBe(0);
   expect(addedAfter, 'added tool persists across a relaunch').toBeGreaterThanOrEqual(1);
+
+  // Phase 59 (item 3) — the pen stays fully inside the dock at the narrow
+  // (icon-only + arrows) rung too.
+  await setWidth(app, win, 700);
+  const narrow = await penContainment(win);
+  console.log(`[P59-dock] pen containment (narrow 700) ${JSON.stringify(narrow)}`);
+  expect(narrow, 'the pen and dock boxes are measurable at 700').not.toBeNull();
+  expect(narrow.contained, `pen fully inside the dock at 700 (pen=${JSON.stringify(narrow.pen)} dock=${JSON.stringify(narrow.dock)})`).toBe(true);
+  await win.screenshot({ path: path.join(SHOTS, 'p59-dock-pen-narrow.png') });
+  await setWidth(app, win, 1440);
 
   // 6. Animations OFF -> the dock's box transition is the instant path.
   await win.locator('[data-open-preferences]').first().click();

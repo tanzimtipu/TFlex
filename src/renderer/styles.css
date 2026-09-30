@@ -1887,6 +1887,16 @@ input[type="checkbox"] {
   align-items: center;
   gap: var(--sp-2);
   height: 34px;
+  /* Phase 59 (item 10) — the overflow plan writes a uniform width here when
+   * the tabs no longer fit; at rest this is `auto`, so the tab keeps its own
+   * content sizing. border-box makes that fixed width include the padding,
+   * flex: 0 0 auto keeps the plan authoritative (no surprise further shrink),
+   * and min-width: 0 lets the width shrink below the title's intrinsic size
+   * (the title ellipsizes). The colorful override re-imposes its 132px floor. */
+  box-sizing: border-box;
+  flex: 0 0 auto;
+  min-width: 0;
+  width: var(--tf-tab-width, auto);
   padding: 0 var(--sp-2) 0 var(--sp-3);
   margin-right: 2px;
   border: 1px solid transparent;
@@ -1910,12 +1920,38 @@ input[type="checkbox"] {
   -webkit-user-drag: none;
   /* Chunk 2 — tab switching animates the active surface + text
    * brightness over the 150-200ms band (--tf-motion-normal, 180ms)
-   * instead of snapping; the strip layout itself never moves. */
+   * instead of snapping; the strip layout itself never moves.
+   * Phase 59 (item 10) — the overflow width/overlap changes ride the SAME
+   * token so the shrink and stack animate smoothly (the global reduced-motion
+   * and Animations-OFF catch-alls collapse them to instant). */
   transition:
     background var(--motion-normal) var(--ease-out),
     color var(--motion-normal) var(--ease-out),
-    box-shadow var(--motion-normal) var(--ease-out);
+    box-shadow var(--motion-normal) var(--ease-out),
+    width var(--motion-normal) var(--ease-out),
+    margin-left var(--motion-normal) var(--ease-out);
 }
+
+/* Phase 59 (item 10) — the inter-tab overlap. Each tab after the first is
+ * pulled left by the plan's overlap (0 at rest, growing negative only once the
+ * shrink floor is reached), so the tabs PARTIALLY STACK in one row.
+ *
+ * DEF-420 — the consuming selector must match the RENDERED tree: every `.tab`
+ * is a <div> wrapped in an animated `<li>` (AnimatedTab), so the tabs are NOT
+ * siblings and the old `.tab + .tab` rule never matched. AppHeader writes the
+ * plan's overlap as the `--tf-tab-overlap` custom property on each tab's <li>
+ * (the real sibling), and this rule consumes it on the wrapped `.tab`, so the
+ * negative margin lands on the box the user sees and rides the `.tab`'s
+ * `margin-left` transition (shared motion token; instant under reduced motion /
+ * Animations OFF). The "+" new-tab <li> and the drop marker have no `.tab`
+ * child, so they are never pulled into the stack. */
+.tab-list > li:not(:first-child) > .tab {
+  margin-left: var(--tf-tab-overlap, 0px);
+}
+
+/* Phase 59 (item 10) — the ACTIVE tab paints above the neighbour that would
+ * otherwise overlap its right edge (see the `.tab-active` z-index below), so
+ * it stays fully visible and clickable however deep the stack becomes. */
 
 /* ===========================================================================
  * Phase 45 (item 2) — DISTINCT TAB COLOURS.
@@ -1990,7 +2026,9 @@ input[type="checkbox"] {
     inset 0 2px 0 color-mix(in srgb, var(--tf-tab-ink) 45%, transparent),
     0 -2px 6px rgba(15, 23, 42, 0.08);
   border-color: transparent;
-  z-index: 1;
+  /* Phase 59 (item 10) — above the overlapping neighbour, so the active tab is
+   * never hidden by the tab that stacks over its right edge. */
+  z-index: 2;
 }
 
 /* Phase 2 — the active tab's indicator is inset to the tab's horizontal
@@ -2127,28 +2165,32 @@ input[type="checkbox"] {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  /* Phase 58 (chunk 5) — the title text is selectable (and copyable) like
-   * any other label. The reorder gesture explicitly yields to an in-title
-   * selection, so this never fights the drag. */
-  user-select: text;
-  -webkit-user-select: text;
-  cursor: text;
+  /* Phase 59 (item 1) — the title text is NOT selectable (and can never be
+   * copied). This supersedes the Phase 58 selectable-title feature: the tab
+   * is dragged from ANY area, the title included, so the title must never
+   * claim the pointer with a text selection. The reorder gesture no longer
+   * yields to an in-title selection because there can never be one. */
+  user-select: none;
+  -webkit-user-select: none;
+  cursor: default;
 }
 
 /* Phase 58 (chunk 5) — tab reorder affordances.
  *
  * The `grab` hint is only shown when reordering is actually available
  * (data-reorder is set by AppHeader when a handler exists, Multi Mode is
- * off and there is more than one tab). The title keeps its text cursor
- * because it is the selectable part. During an active drag the whole strip
- * shows `grabbing`, and `user-select: none` on the body stops the native
- * selection from fighting the drag. All timing rides the motion tokens. */
+ * off and there is more than one tab). The title shares the `grab` cursor:
+ * Phase 59 (item 1) makes the whole tab draggable from any area, the title
+ * included, and the title is no longer selectable. During an active drag
+ * the whole strip shows `grabbing`, and `user-select: none` on the body
+ * stops any native selection from fighting the drag. All timing rides the
+ * motion tokens. */
 .tab-list[data-reorder="true"] .tab {
   cursor: grab;
 }
 
 .tab-list[data-reorder="true"] .tab .tab-title {
-  cursor: text;
+  cursor: grab;
 }
 
 body.tab-reordering,
@@ -6986,6 +7028,141 @@ rect.ann-highlight.ann-preview {
   color: var(--fg-strong);
 }
 
+/* Phase 59 item 4 — a per-widget radio control of a multi-widget button
+ *  group. It is absolutely positioned at its own widget rect, so it opts
+ *  back into pointer events (the wrapping .forms-layer is none) and stays
+ *  legible even inside a tight widget box. */
+.form-radio-widget {
+  pointer-events: auto;
+  gap: 4px;
+  overflow: visible;
+  white-space: nowrap;
+}
+
+.form-radio-widget .form-radio-label {
+  font-size: 11px;
+}
+
+/* Read-only AcroForm fields render visibly but are not editable. A truthful
+ *  tooltip carries the reason; the control only softens to signal the state. */
+.form-editor:disabled,
+.form-radio:disabled,
+.form-checkbox:disabled {
+  cursor: not-allowed;
+  opacity: 0.75;
+}
+
+.form-radio:disabled:hover .form-radio-dot,
+.form-checkbox:disabled:hover {
+  border-color: var(--border-strong);
+  color: var(--fg);
+}
+
+/* Phase 59 (ADV-123 / ADV-124) — a field the renderer cannot fill (a
+ * digital-signature field, an orphan widget) renders as a read-only reason
+ * label over the page, never an editable control. The dashed neutral border
+ * reads as "present, not editable"; it is a plain div, so no fill can be
+ * dispatched from it. */
+.form-nonfillable {
+  display: flex;
+  align-items: center;
+  pointer-events: auto;
+  cursor: not-allowed;
+  border-style: dashed;
+  border-color: var(--border-strong);
+  color: var(--fg-soft);
+  opacity: 0.85;
+}
+
+.form-nonfillable-reason {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ---- Phase 59 item 4: native-fill report summary ------------------------ */
+
+.form-fill-report {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-2);
+  background: var(--bg-raised);
+  color: var(--fg);
+  font-size: 12px;
+}
+
+.form-fill-report-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.form-fill-report-title {
+  font-weight: 600;
+  color: var(--fg-strong);
+}
+
+.form-fill-report-counts {
+  flex: 1;
+  color: var(--fg-muted);
+}
+
+.form-fill-report-dismiss {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: none;
+  border-radius: var(--radius-1);
+  background: transparent;
+  color: var(--fg-muted);
+  cursor: pointer;
+  transition: background var(--motion-fast) var(--ease-out);
+}
+
+.form-fill-report-dismiss:hover {
+  background: var(--bg-hover);
+  color: var(--fg-strong);
+}
+
+.form-fill-report-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.form-fill-report-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: baseline;
+  gap: 6px;
+}
+
+.form-fill-report-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--fg-strong);
+}
+
+.form-fill-report-kind {
+  color: var(--fg-muted);
+  text-transform: capitalize;
+}
+
+.form-fill-report-reason {
+  color: var(--accent);
+  white-space: nowrap;
+}
+
 .form-listbox {
   pointer-events: auto;
   list-style: none;
@@ -7824,13 +8001,16 @@ rect.ann-highlight.ann-preview {
   padding: 4px 10px;
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-2);
-  background: transparent;
+  /* Phase 59 (item 9) — the Inspector's inline actions carry the same subtle
+   * raised surface as the ContextPanel controls, so they read as buttons
+   * against the panel's body text. Tokens only; all three themes. */
+  background: var(--bg-raised);
   color: var(--fg);
   font-size: var(--fs-sm);
   cursor: pointer;
   transition: background var(--motion-duration-fast) var(--motion-ease-standard);
 }
-.inspector-action:hover:not(:disabled) { background: var(--bg-hover); }
+.inspector-action:hover:not(:disabled) { background: var(--bg-secondary); }
 .inspector-action:focus-visible { outline: none; box-shadow: var(--focus-ring); }
 .inspector-action:disabled { opacity: 0.5; cursor: default; }
 
@@ -8204,9 +8384,6 @@ rect.ann-highlight.ann-preview {
   padding: var(--sp-4);
   overflow-y: auto;
 }
-.sheet-body-prefs {
-  padding: 0;
-}
 
 /* ----- About dialog ----- */
 
@@ -8545,30 +8722,117 @@ rect.ann-highlight.ann-preview {
 
 /* ----- Preferences dialog ----- */
 
+/* Phase 59 (item 8) — Adobe-style two-pane window. A fixed, always-visible
+ *  vertical category rail on the left; a scrolling content pane on the
+ *  right. The sheet is wider than the old single column so the two-column
+ *  rows have room, and at a small window it shrinks with the viewport
+ *  (never below the app's minimum window edge) while the CONTENT scrolls
+ *  and the rail stays put. Motion is token-driven only: category switches
+ *  use the shared `.anim-tab-in` crossfade (opacity, 200ms) which collapses
+ *  to instant under prefers-reduced-motion / Animations OFF. */
+.sheet-prefs {
+  width: min(840px, calc(100vw - 48px));
+  max-height: min(700px, calc(100vh - 48px));
+  overflow: hidden;
+}
+.sheet-body-prefs {
+  padding: 0;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
+}
+.prefs-layout {
+  display: flex;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+}
+.prefs-rail {
+  flex: 0 0 auto;
+  width: 196px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: var(--sp-3);
+  background: var(--bg-rail);
+  border-right: 1px solid var(--border-subtle);
+  overflow-y: auto;
+}
+.prefs-cat {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  width: 100%;
+  padding: 8px 10px;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--radius-2);
+  color: var(--fg);
+  font-family: inherit;
+  font-size: var(--fs-sm);
+  text-align: left;
+  cursor: pointer;
+  transition:
+    background var(--motion-duration-fast) var(--motion-ease-standard),
+    color var(--motion-duration-fast) var(--motion-ease-standard);
+}
+.prefs-cat:hover { background: var(--bg-hover); }
+.prefs-cat[aria-selected="true"] {
+  background: var(--accent-selected);
+  color: var(--fg-strong);
+  font-weight: 600;
+}
+.prefs-cat-icon { flex: 0 0 auto; color: var(--fg-muted); }
+.prefs-cat[aria-selected="true"] .prefs-cat-icon { color: var(--accent); }
+.prefs-cat-label { flex: 1 1 auto; min-width: 0; }
+.prefs-cat:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+.prefs-content {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  overflow-y: auto;
+  padding: var(--sp-5) var(--sp-5) var(--sp-4);
+}
+.prefs-panel[data-active="false"] { display: none; }
+
 .prefs-section {
-  padding: var(--sp-4);
+  padding: var(--sp-4) 0;
   border-bottom: 1px solid var(--border-subtle);
 }
-.prefs-section:last-child { border-bottom: none; }
+.prefs-section:first-child { padding-top: 0; }
+.prefs-section:last-child { border-bottom: none; padding-bottom: 0; }
 .prefs-section-title {
   margin: 0 0 var(--sp-3);
   font-size: var(--fs-md);
   font-weight: 600;
   color: var(--fg-strong);
 }
+/* Phase 59 (item 8) — TWO-COLUMN ROWS. The label owns the first track (a
+ *  fixed basis that never shrinks beneath the control) and the control owns
+ *  the second, flexing track. The column gap is real layout space, so a
+ *  label can never run under or touch its control at any sheet width, and
+ *  there is no shared flex line for the two to collide on. Long hints stay
+ *  OUTSIDE the row as full-width sibling paragraphs BELOW the control. */
 .prefs-row {
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(160px, 220px) minmax(0, 1fr);
   align-items: center;
-  gap: var(--sp-3);
-  margin-bottom: var(--sp-1);
+  column-gap: var(--sp-4);
+  margin-bottom: var(--sp-2);
 }
 .prefs-row-label {
-  flex: 1 1 auto;
+  grid-column: 1;
+  min-width: 0;
   color: var(--fg);
   font-size: var(--fs-sm);
 }
 .prefs-select,
 .prefs-input {
+  grid-column: 2;
+  justify-self: start;
   font-family: inherit;
   font-size: var(--fs-sm);
   background: var(--bg-input);
@@ -8576,7 +8840,8 @@ rect.ann-highlight.ann-preview {
   border: 1px solid var(--border);
   border-radius: var(--radius-2);
   padding: 6px 10px;
-  width: 140px;
+  width: 100%;
+  max-width: 260px;
   transition: border-color var(--motion-fast) var(--ease-out);
 }
 .prefs-select:focus,
@@ -8688,6 +8953,8 @@ rect.ann-highlight.ann-preview {
  * it is identical in light, dark and frosted and collapses under reduced
  * motion like every other Preferences control. */
 .prefs-action {
+  grid-column: 2;
+  justify-self: start;
   display: inline-flex;
   align-items: center;
   gap: var(--sp-2);
@@ -11695,6 +11962,8 @@ rect.ann-highlight.ann-preview {
  * on the accent colour, sized to sit at the right edge of the shared
  * .prefs-row like the select/input controls. */
 .prefs-check {
+  grid-column: 2;
+  justify-self: start;
   width: 16px;
   height: 16px;
   margin: 0;
@@ -14270,7 +14539,7 @@ rect.ann-highlight.ann-preview {
   font: inherit;
   font-size: var(--fs-xs);
   color: var(--fg-soft);
-  background: transparent;
+  background: var(--bg-raised);
   border: 1px solid var(--border);
   border-radius: var(--radius-2);
   cursor: pointer;
@@ -14281,7 +14550,7 @@ rect.ann-highlight.ann-preview {
 }
 
 .context-panel-combine:hover {
-  background: var(--bg-hover);
+  background: var(--bg-secondary);
   border-color: var(--border-strong);
   color: var(--fg-strong);
 }
@@ -14332,20 +14601,23 @@ rect.ann-highlight.ann-preview {
   border-top: 1px solid var(--divider);
 }
 
-/* Phase 37 (item 16) — with a body the Outline claims a definite share of the
- * panel body (`height: 40%`) and `.context-panel-thumbs` (flex: 1 1 auto)
- * takes the rest, so the section's bottom edge is FLUSH with the panel's
- * bottom edge. `flex-basis` is pinned to the same share so a short body can
- * never shrink the section up off the bottom.
+/* Phase 59 (item 5 / DEF-419) — EXPANDED, the section HUGS its content
+ * instead of reserving a FIXED share of the panel body. A short outline makes
+ * the section only as tall as its rows, so the last row's bottom edge sits
+ * FLUSH on the section/panel bottom (measured gap 0 — DEF-419's 294.59px dead
+ * space is gone). `max-height: 40%` keeps the Phase-40 share as an UPPER
+ * BOUND: an outline longer than the cap scrolls INSIDE the section, and the
+ * `flex: 0 1 auto` lets the section shrink to its content height while
+ * `.context-panel-thumbs` (flex: 1 1 auto) absorbs the free space.
  *
  * Phase 40 (item 10) — the expanded state's flush is driven by the section's
- * OWN state attribute (`data-outline-open`), not by `:has()`: the section is
- * the body's last in-flow child and both the section and its body are the
- * definite-height flex boxes that pin the re-parented `.outline-panel` to the
- * panel's bottom edge. Same rule whether the outline is open or closed. */
+ * OWN state attribute (`data-outline-open`), not by `:has()`. The base rule's
+ * `overflow: hidden` still bounds the section, so DEF-310 containment is
+ * unchanged: a long outline can never paint over the thumbnail stack. */
 .context-panel-outline[data-outline-open='true'] {
-  height: 40%;
-  flex: 0 0 40%;
+  height: auto;
+  max-height: 40%;
+  flex: 0 1 auto;
 }
 
 .context-panel-section-toggle {
@@ -14377,14 +14649,19 @@ rect.ann-highlight.ann-preview {
  * `.rail-content` (`position: relative`) in the rail. The section's definite
  * height above gives this box a definite height too, so the panel's own
  * `inset: 0` + `overflow-y: auto` scroll INSIDE the section and can never
- * reach the thumbnails. `overflow: hidden` keeps the panel's scroller here;
- * the padding-bottom keeps the last link off the panel's bottom edge. */
+ * reach the thumbnails. `overflow: hidden` keeps the panel's scroller here.
+ *
+ * Phase 59 (item 5) — the body carries NO trailing padding-bottom: the panel's
+ * own bottom padding is zeroed below too, so when the section is EXPANDED the
+ * last outline row's bottom edge is FLUSH with the section/panel bottom edge
+ * (measured gap 0). The old `padding-bottom: var(--space-small)` left a dead
+ * band under the last row. */
 .context-panel-outline-body {
   position: relative;
   flex: 1 1 auto;
   min-height: 0;
   overflow: hidden;
-  padding-bottom: var(--space-small);
+  padding-bottom: 0;
   /* Phase 43 (item 1) — the Outline disclosure's body MATERIALIZES in on
    * the token band when the section is opened instead of snapping (the
    * section's own height is a layout property and must not animate, so
@@ -14399,6 +14676,21 @@ rect.ann-highlight.ann-preview {
   .context-panel-outline-body {
     animation: none !important;
   }
+}
+
+/* Phase 59 (item 5 / DEF-419) — inside the EXPANDED context-panel section the
+ * re-parented `.outline-panel` JOINS THE FLEX FLOW (the shared rule keeps it
+ * `position: absolute; inset: 0` for the rail, where `.rail-content` bounds
+ * it). In flow the section can size to the tree's content, so a short outline
+ * leaves NO dead space under the last row. `max-height: 100%` caps the tree to
+ * the bounded body and the shared `overflow-y: auto` then scrolls a long
+ * outline INSIDE the section. The bottom padding is zeroed here too, so the
+ * last row's bottom edge sits FLUSH on the section/panel bottom edge. The
+ * rail's outline tab and the collapsed ruler-strip are untouched. */
+.context-panel-outline .outline-panel {
+  position: static;
+  max-height: 100%;
+  padding-bottom: 0;
 }
 
 /* DEF-318 — the REVIEW annotations section owns a BOUNDED, scrollable body,
@@ -14566,7 +14858,11 @@ rect.ann-highlight.ann-preview {
   font: inherit;
   font-size: var(--fs-xs);
   color: var(--fg-soft);
-  background: transparent;
+  /* Phase 59 (item 9) — a visible button identity: a subtle raised surface on
+   * top of the panel background + the border + a hover surface, so the control
+   * reads as a button, never a run of body text. Tokens only; identical in all
+   * three themes. */
+  background: var(--bg-raised);
   border: 1px solid var(--border);
   border-radius: var(--radius-2);
   cursor: pointer;
@@ -14577,7 +14873,7 @@ rect.ann-highlight.ann-preview {
 }
 
 .context-panel-action:hover:not(:disabled) {
-  background: var(--bg-hover);
+  background: var(--bg-secondary);
   border-color: var(--border-strong);
   color: var(--fg-strong);
 }
@@ -14841,20 +15137,24 @@ rect.ann-highlight.ann-preview {
  *
  * The pen arms EDIT mode (the dock root then carries `data-dock-edit="true"`
  * and the entry `anim-vibrate` class). Every verb grows a minus badge, and a
- * plus control sits at the row's right end. The pen and the plus never join the
- * verb row (the pen is absolutely positioned; the plus is an in-row flex item).
+ * plus control sits at the row's right end. The pen is the dock's own trailing
+ * row item (Phase 59 item 3) and the plus is an in-row flex item; neither is
+ * absolutely positioned, so the dock's box always contains them.
  * All motion uses the canonical tokens, so reduced motion / Animations OFF make
  * every transition instant.
  * ------------------------------------------------------------------------- */
 
-/* The pen at the dock's top-right. Absolutely positioned OUT of the verb row. */
+/* Phase 59 (item 3) — the pen is a REAL dock row item: a flex child of the dock
+ * itself, so its box is always INSIDE the dock's bounds at every responsive rung
+ * (the labelled row, the icon-only rung and the arrows lane alike) and the dock
+ * grows to hold it. It carries no offsets and no translate — the containment
+ * contract asserts exactly that. It renders at the dock's trailing end, after
+ * the right arrow when the lane is on, so it never competes with a verb. */
 .action-dock-edit {
-  position: absolute;
-  top: -10px;
-  right: -10px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  flex: 0 0 auto;
   width: 22px;
   height: 22px;
   padding: 0;
@@ -16624,17 +16924,40 @@ cursor: pointer;
   min-height: 0;
 }
 
+/* Phase 59 (feature B) — the flow/positioning wrapper. It sits at the top of
+ * the pane's document column; the expanded box is its only in-flow child, so
+ * the wrapper reserves exactly the box's height. When collapsed the box is
+ * unmounted and the wrapper has no height, letting the absolute "i" overlay
+ * the canvas's top-left without pushing the page. z-index 8 keeps that icon
+ * clickable above the page scroller and its annotation/signature/stamp layers
+ * (which rank 0-6 in the same stacking context), while staying well under the
+ * modal sheets (100+). */
+.protection-notice-region {
+  position: relative;
+  flex: 0 0 auto;
+  z-index: 8;
+}
+
 .protection-notice {
   display: flex;
   align-items: flex-start;
   gap: var(--sp-2);
+  margin: var(--sp-2) var(--space-standard);
   padding: var(--sp-2) var(--space-standard);
-  border-bottom: 1px solid var(--border);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-3);
   background: var(--warning-soft);
   color: var(--fg);
   font-size: var(--fs-sm);
   line-height: 1.45;
+  transform-origin: top left;
   animation: protection-notice-in var(--motion-duration-standard) var(--motion-ease-enter) both;
+}
+
+/* The collapse reverses the enter: the box recedes toward its top-left
+ * anchor (the position of the collapsed "i") over the fast/exit band. */
+.protection-notice--leaving {
+  animation: protection-notice-out var(--motion-duration-fast) var(--motion-ease-exit) both;
 }
 
 @keyframes protection-notice-in {
@@ -16648,27 +16971,38 @@ cursor: pointer;
   }
 }
 
-/* The protection banner is a FLOW element at the top of the pane's document
- * column, so its `margin-left: auto` dismiss control lands at the banner's
- * right edge. The always-on Inspector is a fixed right panel (`position:
- * absolute; right: 0; top: 0; bottom: 0; width: var(--tools-panel-w);
- * z-index: 30`) that paints OVER the full-width document column, so without a
- * reservation the dismiss control sat under the Inspector's own header control
- * and its clicks were swallowed (`elementFromPoint` over the button returned
- * the Inspector's `.inspector-collapse-toggle` — the DEF-357 defect class,
- * DEF-377). The banner therefore reserves the panel's column with the SAME
- * registered `--tf-tools-inset` token the page-view scroller, the
+@keyframes protection-notice-out {
+  from {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: translateY(-4px) scale(var(--motion-scale-exit));
+  }
+}
+
+/* The protection banner (via its region wrapper) is a FLOW element at the top
+ * of the pane's document column, so its `margin-left: auto` collapse control
+ * lands at the banner's right edge. The always-on Inspector is a fixed right
+ * panel (`position: absolute; right: 0; top: 0; bottom: 0; width:
+ * var(--tools-panel-w); z-index: 30`) that paints OVER the full-width document
+ * column, so without a reservation the control sat under the Inspector's own
+ * header control and its clicks were swallowed (`elementFromPoint` over the
+ * button returned the Inspector's `.inspector-collapse-toggle` — the DEF-357
+ * defect class, DEF-377). The region therefore reserves the panel's column with
+ * the SAME registered `--tf-tools-inset` token the page-view scroller, the
  * `.canvas-overlay`, the OCR suspects bar (DEF-357) and the conversion card
- * (DEF-375) consume: its right edge is then flush with the panel's left edge
- * and every banner control is hit-testable.
+ * (DEF-375) consume: the box's right edge is then flush with the panel's left
+ * edge and every banner control is hit-testable.
  *
  * This is a SPATIAL reservation, not a `pointer-events`/z-index change. The
- * point the dismiss click landed on is the Inspector's own INTERACTIVE child
+ * point the collapse click lands on is the Inspector's own INTERACTIVE child
  * (its collapse toggle), which MUST stay clickable, so a layer-level
  * `pointer-events: none` on `.inspector` could not resolve the collision — the
  * interactive child would still win the hit test. Two live controls cannot
  * share one pixel, so the flow banner yields the panel's column. */
-.document-column > .protection-notice {
+.document-column > .protection-notice-region {
   margin-right: var(--tf-tools-inset, 0px);
 }
 
@@ -16676,7 +17010,7 @@ cursor: pointer;
  * capped by `--tf-multi-inset-cap`); the banner already sits inside a pane
  * whose right edge excludes that strip, so reserving it again inside the pane
  * would open a blank gutter. Mirrors the scroller's own Multi Mode reset. */
-.tab-stage[data-multi-mode="true"] .document-column > .protection-notice {
+.tab-stage[data-multi-mode="true"] .document-column > .protection-notice-region {
   margin-right: 0;
 }
 
@@ -16723,7 +17057,11 @@ cursor: pointer;
   color: var(--fg-muted);
 }
 
-.protection-notice-dismiss {
+/* Phase 59 (item 2) — the collapse control. It REPLACES the old
+ * session-dismiss "×" (class `.protection-notice-dismiss` is gone): the notice
+ * now stays available through the collapsed "i", so this control only closes
+ * the box. */
+.protection-notice-collapse {
   margin-left: auto;
   flex: 0 0 auto;
   display: inline-flex;
@@ -16739,9 +17077,54 @@ cursor: pointer;
   transition: background-color var(--motion-duration-fast) var(--motion-ease-standard);
 }
 
-.protection-notice-dismiss:hover {
+.protection-notice-collapse:hover {
   background: var(--warning);
   color: var(--bg-base);
+}
+
+.protection-notice-collapse:focus-visible,
+.protection-notice-collapsed-toggle:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
+/* The collapsed "i": a small overlay pinned at the canvas's TOP-LEFT. It is
+ * absolute inside the (zero-height when collapsed) region, so it never pushes
+ * the page. The left inset matches the box's own left margin so re-expanding
+ * reads as the box growing out of the icon's corner. */
+.protection-notice-collapsed-toggle {
+  position: absolute;
+  top: var(--sp-2);
+  left: var(--space-standard);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-2);
+  background: var(--bg-elevated);
+  color: var(--warning);
+  cursor: pointer;
+  box-shadow: var(--shadow-popover);
+  transform-origin: top left;
+  animation: protection-notice-icon-in var(--motion-duration-fast) var(--motion-ease-enter) both;
+}
+
+.protection-notice-collapsed-toggle:hover {
+  background: var(--warning);
+  color: var(--bg-base);
+}
+
+@keyframes protection-notice-icon-in {
+  from {
+    opacity: 0;
+    transform: scale(var(--motion-scale-enter));
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
 }
 
 /* Phase 53 (feature I) — the conversion card, above the canvas for an
@@ -17636,6 +18019,56 @@ cursor: pointer;
 
 .pdf3d-notice-text {
   line-height: 1.4;
+}
+
+/* ---------------------------------------------------------------------------
+ * ADV-122 / DEF-422 — the 640px minimum caption strip.
+ *
+ * Phase 59's overflow planner can only plan when the tab strip HAS a width.
+ * At the 640px minimum the fixed brand + file-action + header-action clusters
+ * consumed the strip's whole share (`.tab-area` measured 0px), so every open
+ * tab - even a single one - was clipped and unreachable: a regression of the
+ * DEF-244 fix. At this rung the lowest-priority chrome compacts and sheds:
+ * the two Phase-40 search icons drop (Ctrl+K / Ctrl+F keep their keyboard
+ * chord, the palette and the View menu as routes) and the account pill keeps
+ * its icon but drops its text label, while paddings/gaps tighten and the
+ * window controls narrow. Every DEF-324 control (Open / Save / Save As /
+ * Print / Multi Mode / gear / theme) stays MOUNTED and reachable, and
+ * `.tab-area` keeps a floor wide enough for the 132px colorful tab plus its
+ * close button, so the active tab is visible and clickable with one tab and
+ * with many (the overflow plan then stacks the rest into the same strip).
+ * ------------------------------------------------------------------------- */
+@media (max-width: 680px) {
+  .app-header { padding: 0 var(--sp-1); }
+
+  .brand { gap: 0; padding-right: var(--sp-1); }
+
+  .titlebar-file { gap: 0; margin-right: var(--sp-1); padding: 0 1px; }
+
+  .titlebar-file-open { padding: 0 5px; }
+
+  .titlebar-file-sep { margin: 0 1px; }
+
+  .header-actions { gap: 0; padding-left: var(--sp-1); }
+
+  .theme-toggle { padding: 0 3px; }
+
+  .account-signin { padding: 0 6px; }
+  .account-signin-label { display: none; }
+
+  /* Ctrl+K / Ctrl+F icons only: their chords, the command palette and the
+   * View menu keep both commands reachable; the buttons themselves stay
+   * mounted (the new-tab / close / DEF-324 controls are never shed). */
+  .header-tool-search,
+  .header-find { display: none; }
+
+  .titlebar-control { width: 36px; }
+
+  /* The strip is never allowed to collapse: the compacted clusters above
+   * yield to this floor. 148 = the 132px colorful-tab floor + the 8px list
+   * padding + the close-button pitch, so the active tab and its close are
+   * fully visible with a single tab and scroll into view with many. */
+  .tab-area { flex: 1 1 0; min-width: 148px; }
 }
 
 

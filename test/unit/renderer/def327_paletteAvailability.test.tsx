@@ -20,7 +20,7 @@ import {
   dockAvailabilityFor,
   type DockAvailability,
 } from '../../../src/renderer/state/dockModel';
-import { PALETTE_ACTION_REASONS, paletteDisabledReasonFor, paletteRowState } from '../../../src/renderer/state/commandPalette';
+import { PALETTE_ACTION_REASONS, PALETTE_UNRUNNABLE_ACTIONS, paletteDisabledReasonFor, paletteRowState } from '../../../src/renderer/state/commandPalette';
 import { toolById } from '../../../src/renderer/state/toolsRegistry';
 
 function stubObservers(): void {
@@ -229,11 +229,13 @@ describe('DEF-327 — one availability gate for the dock and the palette', () =>
     ).toBe('Turn on Multi Mode first');
     // No live copy at all: the row falls back to the registry availability.
     expect(paletteDisabledReasonFor({ entry: entry('open') })).toBeUndefined();
-    // An interactive-only entry keeps its own copy (never the availability one).
-    expect(paletteRowState(entry('pageThumbnails'), withPaneReason)).toEqual({
-      enabled: false,
-      reason: 'Switch to the Pages panel to use this',
-    });
+    // Phase 59 (item 7) follow-up — the rail-tab actions are WIRED now (App's
+    // host-owned `railTab`), so they are NO LONGER filtered out; a genuinely
+    // command-less action (the rail's annotations tab) still is.
+    expect(entry('pageThumbnails').action).toBe('railTabThumbnails');
+    expect(PALETTE_UNRUNNABLE_ACTIONS.has('railTabThumbnails')).toBe(false);
+    expect(PALETTE_UNRUNNABLE_ACTIONS.has('railTabOutline')).toBe(false);
+    expect(PALETTE_UNRUNNABLE_ACTIONS.has('railTabAnnotations')).toBe(true);
   });
 });
 

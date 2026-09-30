@@ -25,6 +25,7 @@ import {
 } from '../../../src/renderer/components/CommandPalette';
 import {
   PALETTE_DOCK_FULL_MESSAGE,
+  PALETTE_UNRUNNABLE_ACTIONS,
   buildPaletteRows,
   firstActionableIndex,
   paletteChordFor,
@@ -330,17 +331,20 @@ describe('Phase 36 — the palette surface', () => {
     }
   });
 
-  it('lists EVERY registry tool plus the recent files, each tool with a stage tag', () => {
+  it('lists every RUNNABLE registry tool plus the recent files, each tool with a stage tag', () => {
     const h = renderPalette();
     try {
       const listed = rows(h.host);
-      expect(listed).toHaveLength(TOOL_REGISTRY.length + 1);
+      // Phase 59 (item 7) — command-less registry entries are removed from the
+      // palette corpus, so the count excludes them.
+      const expected = TOOL_REGISTRY.length - PALETTE_UNRUNNABLE_ACTIONS.size;
+      expect(listed).toHaveLength(expected + 1);
       expect(listed.filter((el) => el.getAttribute('data-palette-row') === 'recent')).toHaveLength(1);
-      // Every registry id is present exactly once.
+      // Every runnable registry id is present exactly once.
       const ids = listed
         .map((el) => el.getAttribute('data-palette-tool-id'))
         .filter((id): id is string => id !== null);
-      expect(new Set(ids).size).toBe(TOOL_REGISTRY.length);
+      expect(new Set(ids).size).toBe(expected);
       // The stage tag chip names the entry's stage.
       expect(row(h.host, 'merge').querySelector('.command-palette-tag')?.textContent).toBe('Pages');
       expect(row(h.host, 'optimize').querySelector('.command-palette-tag')?.textContent).toBe(
@@ -358,6 +362,8 @@ describe('Phase 36 — fuzzy search', () => {
     const h = renderPalette();
     try {
       type(input(h.host), 'bookmarks');
+      // Phase 59 (item 7) follow-up — the Bookmarks registry entry is WIRED
+      // again (host-owned rail tab), so it is listed and now matches.
       expect(rowIds(h.host)).toEqual(['outlinePanel']);
 
       type(input(h.host), 'multi-mode');
@@ -391,12 +397,9 @@ describe('Phase 36 — fuzzy search', () => {
       pressKey('ArrowDown');
       expect(activeRowIndex(h.host)).toBeGreaterThan(0);
       type(input(h.host), 'page');
-      // The first "page" row is the command-less Page thumbnails entry, so the
-      // anchor is the next runnable row.
       const expected = firstActionableIndex(
         buildPaletteRows({ query: 'page', recents: RECENTS }),
       );
-      expect(rows(h.host).findIndex((el) => el.getAttribute('data-palette-disabled') === 'true')).toBe(0);
       expect(activeRowIndex(h.host)).toBe(expected);
     } finally {
       h.unmount();
@@ -426,16 +429,20 @@ describe('Phase 36 — the ^/v highlight and Enter', () => {
   });
 
   it('skips a disabled row while stepping', () => {
-    // Seeded usage puts the command-less `dragPage` directly after the recent
-    // row, so ↓ has to step over it.
-    const h = renderPalette({ toolUsage: { dragPage: 5 } });
+    // Phase 59 (item 7): disabled rows now come from the LIVE host gate only.
+    // Seed usage so the gated-off `merge` sits right after the recent row and
+    // ↓ has to step over it.
+    const h = renderPalette({
+      toolUsage: { merge: 5 },
+      isToolEnabled: (e): boolean => e.id !== 'merge',
+    });
     try {
-      expect(toolIdAt(h.host, 1)).toBe('dragPage');
-      const disabled = row(h.host, 'dragPage');
+      expect(toolIdAt(h.host, 1)).toBe('merge');
+      const disabled = row(h.host, 'merge');
       expect(disabled.getAttribute('data-palette-disabled')).toBe('true');
       pressKey('ArrowDown');
       expect(activeRowIndex(h.host)).toBe(2);
-      expect(toolIdAt(h.host, 2)).toBe('merge');
+      expect(toolIdAt(h.host, 2)).toBe('split');
     } finally {
       h.unmount();
     }
@@ -561,23 +568,15 @@ describe('Phase 36 — running, disabling and closing', () => {
     }
   });
 
-  it('keeps a command-less entry inert and explains why', () => {
-    // A corpus of ONE command-less entry: nothing in the list can run, so
-    // neither a click nor Enter may reach the host.
+  it('removes a command-less entry from the corpus (never a listed dead row)', () => {
+    // Phase 59 (item 7) — a corpus of ONE command-less entry filters to an
+    // empty list: there is no row to click, so there is nothing to inert.
     const h = renderPalette({ entries: [toolById('dragPage')!], recentFiles: [] });
     try {
-      const el = row(h.host, 'dragPage');
-      expect(el.getAttribute('data-palette-disabled')).toBe('true');
-      expect(el.getAttribute('aria-disabled')).toBe('true');
-      expect(el.getAttribute('title')).toBe('Drag a page onto another pane');
-      expect(el.getAttribute('data-palette-pin')).toBeNull();
-      click(el);
-      expect(h.onRunTool).not.toHaveBeenCalled();
-      expect(h.onClose).not.toHaveBeenCalled();
+      expect(rows(h.host)).toHaveLength(0);
+      expect(h.host.querySelector('[data-command-palette-empty]')).not.toBeNull();
       pressKey('Enter');
       expect(h.onRunTool).not.toHaveBeenCalled();
-      pressKey('Enter', { ctrlKey: true });
-      expect(h.onPinTool).not.toHaveBeenCalled();
     } finally {
       h.unmount();
     }
@@ -669,7 +668,9 @@ describe('Phase 36 — reduced motion', () => {
     installReducedMotionStub(true);
     const h = renderPalette();
     try {
-      expect(rows(h.host)).toHaveLength(TOOL_REGISTRY.length + 1);
+      expect(rows(h.host)).toHaveLength(
+        TOOL_REGISTRY.length - PALETTE_UNRUNNABLE_ACTIONS.size + 1,
+      );
       expect(activeRowIndex(h.host)).toBe(0);
       pressKey('ArrowDown');
       expect(activeRowIndex(h.host)).toBe(1);

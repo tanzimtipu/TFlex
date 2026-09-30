@@ -5,6 +5,229 @@
 > inspect the current `OPEN`, `FIX-READY`, and `DISPUTED` entries first; closed records are
 > historical evidence and must not be loaded wholesale.
 
+## DEF-428: With many tabs, shrinking the window leaves the active tab scrolled out of the visible strip
+
+- Status: CLOSED
+- Severity: LOW
+- Found by: adversary (ADV-128)
+- Phase: 59
+
+Steps to reproduce:
+1. `npm.cmd run build`, then run `npm.cmd run test:e2e -- e2e/phase59_adv_retest.spec.cjs --grep "DEF-428"` (launches through `e2e/lib/launch.cjs`).
+2. Open `assets/samples/report.pdf`, then add 20 more tabs via the `+` (`[data-new-tab]`).
+3. Resize the real BrowserWindow to 640x720 (`unmaximize(); setSize`), then back to 1400x900.
+4. Measure the active tab against `.tab-list`.
+
+Expected: per Phase 59 item 10, the active tab stays fully visible and clickable under overflow, including after a resize.
+Actual: at 1400px the active tab was scrolled out of the visible strip (`activeVisible=false`, `closeReachable=false`); the strip only scrolled the active tab into view when `activeId` changed, not on a resize.
+
+Screenshot: screenshots/def428-1400.png
+
+History:
+- qa: opened (reproduced from ADV-128; the active tab was not scrolled into view after a resize).
+- qa: CLOSED (retest on the current build: after the 640->1400 resize the active tab is inside `.tab-list` (active left 664.84, right 796.84; list 334.84..831.14), `activeVisible=true`, close reachable.)
+
+## DEF-427: The form-fill report's page numbers are the original indices, not remapped after a page delete/reorder
+
+- Status: CLOSED
+- Severity: LOW
+- Found by: adversary (ADV-127)
+- Phase: 59
+
+Steps to reproduce:
+1. `npm.cmd run build`, then run `npm.cmd run test:e2e -- e2e/phase59_adv_retest.spec.cjs --grep "DEF-427"` (launches through `e2e/lib/launch.cjs`).
+2. Load `test-fixtures/adv-p59/paginated.pdf` (fields on pages 2-3), delete page 1 (`applyOp { kind:'delete', page:0 }`), fill `page3_field`, and read `EngineState.formFillReport`.
+3. Delete the page carrying `page2_field` and re-read the report.
+
+Expected: report rows name the field's VISIBLE page (like `getFormFields`/`buildState`); a field on a deleted page gets `page: null`.
+Actual: the report said `page3_field` on page 3 and `page2_field` on page 2, although after deleting page 1 they are visible pages 2 and 1; `state.formFillReport` was copied unremapped.
+
+Fixture: test-fixtures/adv-p59/paginated.pdf
+
+History:
+- qa: opened (reproduced from ADV-127; the report carried original page indices).
+- qa: CLOSED (retest on the current build: after deleting page 1 the report reads `page3_field` page 2, `page2_field` page 1; after deleting the page carrying `page2_field` it reads `page2_field` page null, `page3_field` page 1.)
+
+## DEF-426: A multi-widget button group fill with an unrecognized option reports "filled" while changing nothing
+
+- Status: CLOSED
+- Severity: LOW
+- Found by: adversary (ADV-126)
+- Phase: 59
+
+Steps to reproduce:
+1. `npm.cmd run build`, then run `npm.cmd run test:e2e -- e2e/phase59_adv_retest.spec.cjs --grep "DEF-426"` (launches through `e2e/lib/launch.cjs`).
+2. Load `test-fixtures/adv-p59/multiwidget.pdf` (one 3-widget `/Btn` field `shipping`).
+3. Fill `shipping` with a value that is not one of the field's on-states (`'zzz-unknown'`) and read `formFillReport` and the field value.
+
+Expected: a fill that cannot apply must not report success; the field value is unchanged.
+Actual: `fillFormNatively` returned `status: "filled"` while `setButtonGroupValue` returned early for the unknown option and the field was untouched.
+
+Fixture: test-fixtures/adv-p59/multiwidget.pdf
+
+History:
+- qa: opened (reproduced from ADV-126; the report claimed a fill that did not happen).
+- qa: CLOSED (retest on the current build: status `option-unknown`, detail "option not found: zzz-unknown", and the field value is unchanged.)
+
+## DEF-425: XFA-only documents are silently treated as form-less - the XFA report branch is unreachable
+
+- Status: CLOSED
+- Severity: LOW
+- Found by: adversary (ADV-125)
+- Phase: 59
+
+Steps to reproduce:
+1. `npm.cmd run build`, then run `npm.cmd run test:e2e -- e2e/phase59_adv_retest.spec.cjs --grep "DEF-425"` (launches through `e2e/lib/launch.cjs`).
+2. Load `test-fixtures/adv-p59/xfa-only.pdf` (catalog `/AcroForm` with an `/XFA` stream and an empty `/Fields`).
+3. Read `getFormFields` (0 fields), then call `fillFormField` with a dummy id and read `formFillReport`.
+
+Expected: per item 4, an XFA-only form is reported (the `fillFormNatively` XFA branch produces a report row), never silently shown as form-less.
+Actual: `getFormFields` returned `[]` and a save produced no report rows; the engine loaded without `preserveXFA`, so the fork stripped `/XFA` at parse time and `hasXFA()` always returned false.
+
+Fixture: test-fixtures/adv-p59/xfa-only.pdf
+
+History:
+- qa: opened (reproduced from ADV-125; the XFA branch was dead code).
+- qa: CLOSED (retest on the current build: `getFormFields` returns 0 fields and a fill returns a report row `{name:"XFA form", page:null, kind:"xfa", status:"xfa"}`.)
+
+## DEF-424: An orphan widget is exposed as an editable text field, its id loses the `orphan-` prefix, and filling it silently no-ops
+
+- Status: CLOSED
+- Severity: MEDIUM
+- Found by: adversary (ADV-124)
+- Phase: 59
+
+Steps to reproduce:
+1. `npm.cmd run build`, then run `npm.cmd run test:e2e -- e2e/phase59_adv_retest.spec.cjs --grep "DEF-424"` (launches through `e2e/lib/launch.cjs`).
+2. Load `test-fixtures/adv-p59/orphan.pdf` (one real field `legit` plus a page `/Widget` with `/FT /Tx /T (ghost)` not referenced by the AcroForm `/Fields` tree).
+3. Read `getFormFields`, the rendered editors, call `fillFormField` on the orphan row, and read `formFillReport`/`getState`.
+
+Expected: an orphan widget cannot be filled; it must be reported, never silently skipped; a diagnostic row must stay distinguishable from a real, fillable field.
+Actual: `getFormFields` returned the orphan as `{"name":"ghost","kind":"text","id":"form-0-ghost"}` (the `orphan-` prefix was rewritten by `remapFormFieldPages`), the renderer mounted an enabled INPUT for it, and filling it returned `{ok:true, modified:true}` while writing nothing.
+
+Fixture: test-fixtures/adv-p59/orphan.pdf
+
+History:
+- qa: opened (reproduced from ADV-124; the orphan was editable, lost its id prefix, and a fill claimed success).
+- qa: CLOSED (retest on the current build: id `orphan-0-ghost` keeps the prefix, `readOnly:true`, the fill returns a report row `{name:"ghost", status:"orphan-unfilled"}` with `modified:false`, and the UI control is disabled (not editable).)
+
+## DEF-423: A digital-signature (/Sig) field is offered as an editable text box; typing into it is silently discarded
+
+- Status: CLOSED
+- Severity: MEDIUM
+- Found by: adversary (ADV-123)
+- Phase: 59
+
+Steps to reproduce:
+1. `npm.cmd run build`, then run `npm.cmd run test:e2e -- e2e/phase59_adv_retest.spec.cjs --grep "DEF-423"` (launches through `e2e/lib/launch.cjs`).
+2. Open `test-fixtures/adv-p59/signed.pdf` (a text field `body` plus a `/FT /Sig` field `approval` carrying a `/V` signature dict).
+3. Read `engine.getFormFields` and the DOM editors rendered by `FormsOverlay` (`[data-form-field]`).
+
+Expected: a signature field is not fillable; item 4 says missing/unfillable fields must be reported and never silently skipped, and the fail-loud rule says a control that cannot act must not look actionable.
+Actual: STILL FAILS on the current build. `getFormFields` returns `approval` with `kind:"text"` (the backend never exposes the `/Sig` field as a non-fillable kind or a `fillable:false` flag), so the renderer's allow-list admits it and mounts an enabled `<textarea data-form-kind="text" data-form-readonly=null disabled=false>`. The renderer's `NonFillableView` gate only fires for a kind outside the allow-list or `fillable:false`, neither of which the backend emits for a `/Sig` field. Typing into it calls `fillFormField`, which writes nothing to the field, so the typed value is lost on save/reload.
+
+Fixture: test-fixtures/adv-p59/signed.pdf
+Screenshot: screenshots/def423-signed.png
+
+History:
+- qa: opened (reproduced from ADV-123; still fails on the current build - the `/Sig` field renders an enabled textarea because the backend reports it as `kind:"text"`.)
+- qa: CLOSED (retest on the current build after `npm.cmd run build`: `getFormFields` returns `approval` as `{kind:"signature", fillable:false}` and still LISTED; `FormsOverlay` mounts a non-editable `DIV[data-form-kind="signature"][data-form-nonfillable="true"][data-form-readonly="true"]` titled "Signature fields cannot be filled" (no enabled input/textarea); a `fillFormField` against it reports `{name:"approval",status:"skipped-signature"}`. `phase59_adv_retest.spec.cjs` 8/8, the two Phase-59 unit files 19/19.)
+
+## DEF-422: At the app's minimum window width (640px) the tab strip collapses to zero width - every open tab is clipped and unreachable
+
+- Status: CLOSED
+- Severity: HIGH
+- Found by: adversary (ADV-122)
+- Phase: 59
+
+Steps to reproduce:
+1. `npm.cmd run build`, then run `npm.cmd run test:e2e -- e2e/phase59_adv_retest.spec.cjs --grep "DEF-422"` (launches through `e2e/lib/launch.cjs`).
+2. Open `assets/samples/report.pdf`, then resize the real BrowserWindow to the app's `MIN_WINDOW_WIDTH` (640x720) with `unmaximize(); setSize(640,720)`.
+3. Measure `.tab-area`, `.tab-list` and the active `.tab` boxes; repeat with 13 tabs.
+
+Expected: per Phase 59 item 10, the strip stays usable at the minimum width - `.tab-area` width > 0 and the active tab plus its close button visible and reachable.
+Actual: `.tab-area` measured 0px wide and `.tab-list` 8px; tabs kept their natural 200px and were clipped out of the 8px container (`activeVisible=false`, `closeReachable=false`), reproducing with a single open tab.
+
+Screenshot: screenshots/def422-640.png
+
+History:
+- qa: opened (reproduced from ADV-122; the strip collapsed at 640px).
+- qa: CLOSED (retest on the current build: at 640x720 `.tab-area` clientWidth=156 with 1 tab and with 13 tabs, the active tab is inside `.tab-list` and its close button is hit-testable in both cases.)
+
+## DEF-421: Merging a form-bearing PDF recreates every AcroForm field with pdf-lib's default box - all widget geometry is destroyed
+
+- Status: CLOSED
+- Severity: HIGH
+- Found by: adversary (ADV-121)
+- Phase: 59
+
+Steps to reproduce:
+1. `npm.cmd run build`, then run `npm.cmd run test:e2e -- e2e/phase59_adv_retest.spec.cjs --grep "DEF-421"` (launches through `e2e/lib/launch.cjs`).
+2. Load a copy of `test-fixtures/adv-p59/paginated.pdf` (3 pages; fields on pages 2-3) and `engine.merge(docId, [copy of test-fixtures/form.pdf], 'after')`.
+3. Save, then re-parse the saved bytes with `@cantoo/pdf-lib` (an independent parser) and read each widget's `/Rect`.
+
+Expected: a merge must carry form fields with their real widget geometry (positions and sizes) for BOTH the destination and the merged file; values survive; no widget sits at pdf-lib's default box `(-0.5,-0.5,201,51)`.
+Actual: after merge every field in the merged document - both the destination's page-2/3 fields and all 8 fields of the merged file - was reported at pdf-lib's default box `(-0.5,-0.5,201,51)`, i.e. all stacked at the page origin; the form was visually destroyed.
+
+Fixture: test-fixtures/adv-p59/paginated.pdf, test-fixtures/form.pdf
+
+History:
+- qa: opened (reproduced from ADV-121; the merge recreated every field at the default box).
+- qa: CLOSED (retest on the current build: re-parsed widget rects keep real geometry - page2_field 301x21, page3_field 301x21, page2_check 17x17, applicant_name 201x21, applicant_address 401x21, application_date 101x21, department 151x21, skills 151x71; no widget at the default box; page3_field and applicant_name values survive.)
+
+## DEF-420: Tab overflow does not stack — the `.tab + .tab` overlap rule never matches (tabs are wrapped in `<motion.li>`)
+
+- Status: CLOSED
+- Severity: MEDIUM
+- Found by: qa
+- Phase: 59
+
+Steps to reproduce:
+1. `npm.cmd run build`, then run `npm.cmd run test:e2e -- e2e/phase59_tab_overflow.spec.cjs` (launches through `e2e/lib/launch.cjs`).
+2. Launch the dev app and open 16 documents (the spec opens 16 temp copies of `assets/samples/report.pdf`).
+3. Measure the `.tab` boxes and the inter-tab margin.
+
+Expected: per Phase 59 item 10 / success criterion 10, when the tabs no longer fit the bar they "partially STACK on top of one another (browser-style)" — consecutive tab boxes overlap (a negative inter-tab margin).
+
+Actual: the tabs SHRINK correctly (every tab is 132px, below the 200px colorful natural width) and the strip stays one row, but they do NOT overlap: every consecutive pair has a 2px gap (`overlapPx=-2`). The overflow plan computes the overlap and writes `--tf-tab-overlap: -32.93333333333333px` on `.tab-list`, but the only rule that consumes it — `.tab + .tab { margin-left: var(--tf-tab-overlap, 0px) }` (styles.css:1940) — never matches, because each `.tab` is a `<div>` wrapped in a `<motion.li data-animated-tab>` (AnimatedTab.tsx:83-91), so the `.tab` elements are not siblings. The tabs' computed `margin-left` is `0px`; the strip scrolls instead of stacking.
+
+Measured (screenshots/p59-tab-overflow.png): 16 tabs, all `width=132` (natural 200), `rowCount=1`, `--tf-tab-overlap=-32.93px` on `.tab-list`, but every `.tab` `margin-left=0px` and every consecutive pair `intersect=false, overlapPx=-2`. DOM: `tabTag=DIV`, `parentTag=LI`, `parentAttrs=["data-animated-tab","style"]`, `grandparentClass=tab-list`.
+
+Note: the developer's unit test `test/unit/renderer/phase59PaletteAndTabOverflow.test.tsx` asserts the CSS SOURCE contains `.tab + .tab { margin-left: var(--tf-tab-overlap` — a source-text check that passes while the rule is dead in the rendered DOM (wrong-oracle class).
+
+Screenshot: screenshots/p59-tab-overflow.png
+
+History:
+- qa: opened (Phase 59 part-B validation, item 10. Shrink, one-row, active-tab-clickable and Animations-OFF-instant all pass; the partial stacking is absent because the overlap selector does not match the wrapped tabs.)
+- qa: CLOSED (Phase 59 part-B re-measure after the fix. `e2e/phase59_tab_overflow.spec.cjs` now passes: 16 tabs all width=132 < natural 200, every consecutive pair intersects with overlapPx=30.92, computed margin-left=-32.9333px, rowCount=1, the active tab is inside the strip and a background-tab click activates it, the `+` control is not overlapped (last tab right 1957.02 <= + left 1963.02), and Animations OFF gives transitionDuration=1e-05s. The overlap is now written per-tab on the `<li>` wrapper and consumed by `.tab-list > li:not(:first-child) > .tab`.)
+
+## DEF-419: Outline's last row is not flush with the panel bottom (295px gap) when the outline is short
+
+- Status: CLOSED
+- Severity: LOW
+- Found by: qa
+- Phase: 59
+
+Steps to reproduce:
+1. `npm.cmd run build`, then run `npm.cmd run test:e2e -- e2e/phase59_outline_flush.spec.cjs` (launches through `e2e/lib/launch.cjs`).
+2. Launch the dev app and open `assets/samples/report.pdf` (8 outline rows).
+3. Ensure the PAGES panel's Outline section is expanded (`[data-context-panel-outline][data-outline-open="true"]`).
+4. Measure the last `.outline-row`'s bottom against `[data-context-panel]`'s bottom.
+
+Expected: per Phase 59 item 5 / success criterion 5, "the outline list's last row sits flush with the panel's bottom edge (measured: zero gap)" — the last row's bottom equals the panel's bottom.
+
+Actual: the outline PANEL's bottom is flush with the panel bottom (gap 0), but the last outline row's bottom is 294.59px above the panel bottom. The outline content (8 rows, ~192px) is shorter than the fixed 40% section (~487px), so the rows sit at the top of the section and the empty space below them is not closed. The Phase 59 change only zeroed the `.outline-panel` / `.context-panel-outline-body` `padding-bottom` (an 8px band), which only affects the case where the outline content overflows the section; it does not make the last row reach the bottom for a short outline. The developer's CSS comment claims "the last outline row's bottom edge is FLUSH with the section/panel bottom edge (measured gap 0)", which the measurement contradicts.
+
+Measured (screenshots/p59-outline-flush.png): `panelBottom=1392`, `outlinePanelBottom=1392`, `outlinePanelGap=0`, `lastRowBottom=1097`, `lastRowGap=294.59`, `rowCount=8`, `scrollHeight=487`, `clientHeight=487`.
+
+Note: every outline-bearing fixture in the repo has only 8 short rows, so the "last row at the bottom" case cannot be exercised with a full outline; the requirement's literal assertion is unmet for the available fixtures. If the intended reading is the outline PANEL's bottom (the Phase 40 item-11 contract), that part passes (gap 0).
+
+Screenshot: screenshots/p59-outline-flush.png
+
+History:
+- qa: opened (Phase 59 part-A validation, item 5. The outline panel's own bottom is flush (gap 0), but the last row is 294.59px above the panel bottom because the 8-row outline is shorter than the 40% section. The Phase 59 padding change only closes the 8px band in the overflow case.)
+- qa: CLOSED (Phase 59 part-B re-measure. `e2e/phase59_outline_flush.spec.cjs` now covers both cases and both pass. SHORT (report.pdf, 8 rows): section hugs content (sectionHeight=227), lastRowGap=0, lastRowGapToSection=0, outlinePanelGap=0. OVERFLOWING (synthetic 40-row outline): scrollHeight=928 > clientHeight=487 (scrolls inside the section), scrolled to bottom lastRowGap=-0.41, lastRowGapToSection=-0.41. The 294.59px dead space is gone.)
+
 ## DEF-418: OS file-drop rejects every non-PDF with "is not a PDF. Jovrel can only open PDF files."
 
 - Status: CLOSED

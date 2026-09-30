@@ -40,7 +40,9 @@ async function openReport() {
 async function setWidth(w) {
   await app.evaluate(({ BrowserWindow }, s) => {
     const bw = BrowserWindow.getAllWindows()[0];
-    if (bw) bw.setSize(s[0], s[1]);
+    // DEF-422 retarget: a maximized window ignores setSize, so unmaximize
+    // first or the 640px minimum is never reached.
+    if (bw) { bw.unmaximize(); bw.setSize(s[0], s[1]); }
   }, [w, HEIGHT]);
   await win.waitForTimeout(650);
   await win.waitForFunction((t) => Math.abs(window.innerWidth - t) < 60, w, { timeout: 10000 });

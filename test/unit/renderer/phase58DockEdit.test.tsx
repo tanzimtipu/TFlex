@@ -12,13 +12,15 @@
 import { describe, expect, it, vi } from "vitest";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import {
   ActionDock,
   type ActionDockProps,
   type DockBulkActions,
 } from "../../../src/renderer/components/ActionDock";
 import { DOCK_MAX_PINS } from "../../../src/renderer/state/dockModel";
-import { dockPickerIdsForStage } from "../../../src/renderer/state/toolsRegistry";
+import { dockPickerIdsForStage, dockToolsForStage } from "../../../src/renderer/state/toolsRegistry";
 
 function bulk(overrides: Partial<DockBulkActions> = {}): DockBulkActions {
   return {
@@ -182,5 +184,190 @@ describe("Phase 58 — the picker set and the raised cap", () => {
 
   it("raises the dock pin cap to the main-process cap", () => {
     expect(DOCK_MAX_PINS).toBe(200);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Phase 59 (item 3) — the pen lives INSIDE the dock, and add / remove animates
+// ---------------------------------------------------------------------------
+
+const STYLES_PATH = resolve(__dirname, "../../../src/renderer/styles.css");
+
+/** Every rule body whose selector LIST contains `selector` exactly (comment
+ *  free), the same shape the stylesheet-contract suites use. */
+function ruleBodies(css: string, selector: string): string[] {
+  return [...css.matchAll(/([^{}]*)\{([^{}]*)\}/g)]
+    .filter((m) =>
+      (m[1] ?? "").split(",").some((s) => s.trim() === selector),
+    )
+    .map((m) => m[2] ?? "");
+}
+
+describe("Phase 59 (item 3) — the pen is contained by the dock", () => {
+  it("renders the pen as a real descendant of the dock root", () => {
+    const { host, unmount } = renderDock();
+    try {
+      const dock = dockRoot(host);
+      const pen = host.querySelector<HTMLElement>("[data-dock-edit-toggle]");
+      if (pen === null) throw new Error("no pen");
+      expect(dock.contains(pen)).toBe(true);
+      expect(pen.closest("[data-action-dock]")).toBe(dock);
+      // A DIRECT child: an in-row flex item, not a floating overlay.
+      expect(pen.parentElement).toBe(dock);
+    } finally {
+      unmount();
+    }
+  });
+
+  it("carries no rule that offsets the pen outside the dock's box", () => {
+    const css = readFileSync(STYLES_PATH, "utf8").replace(/\/\*[\s\S]*?\*\//g, "");
+    const bodies = ruleBodies(css, ".action-dock-edit");
+    expect(bodies.length).toBeGreaterThan(0);
+    // The base rule makes it a row item that can neither leave nor overrun.
+    const base = bodies[0] ?? "";
+    expect(base).toMatch(/display:\s*inline-flex/);
+    expect(base).toMatch(/flex:\s*0 0 auto/);
+    for (const body of bodies) {
+      // No absolute positioning and no inset offsets at all — a negative
+      // top/right is exactly what parked the pen outside the chrome.
+      expect(body).not.toMatch(/position:\s*absolute/);
+      expect(body, "the pen must declare no top/left/right/bottom").not.toMatch(
+        /(?:^|[\s;{])(?:top|left|right|bottom)\s*:/,
+      );
+      expect(body, "the pen must not translate out of its box").not.toMatch(
+        /(?:^|[\s;{])translate\s*:/,
+      );
+      expect(body).not.toMatch(/transform\s*:[^;]*translate/);
+    }
+    // Belt and braces: no `.action-dock-edit` rule anywhere uses a negative
+    // inset (the contract is global, not just the first match).
+    expect(css).not.toMatch(
+      /\.action-dock-edit[^{]*\{[^}]*(?:top|left|right|bottom)\s*:\s*-/,
+    );
+  });
+});
+
+describe("Phase 59 (item 3) — adding / removing a dock tool animates", () => {
+  it("blooms a newly added verb in, from its first paint", () => {
+    vi.useFakeTimers();
+    try {
+      const onPinTool = vi.fn();
+      const { host, rerender, unmount } = renderDock({ onPinTool });
+      try {
+        clickOn(host.querySelector("[data-dock-edit-toggle]") as Element);
+        clickOn(host.querySelector("[data-dock-plus]") as Element);
+        const item = host.querySelector<HTMLElement>("[data-dock-picker-item]");
+        if (item === null) throw new Error("no picker item");
+        const id = item.getAttribute("data-dock-picker-item") ?? "";
+        clickOn(item);
+        expect(onPinTool).toHaveBeenCalledWith(id);
+        // The host's pin lands on the next render. The id was recorded BEFORE
+        // that render, so the verb's first paint already carries the entry
+        // animation — never an un-animated flash of the new verb.
+        rerender({ dockPins: [id] });
+        const added = host.querySelector<HTMLElement>(`[data-dock-verb="${id}"]`);
+        expect(added).not.toBeNull();
+        expect(added?.classList.contains("anim-verb-in")).toBe(true);
+        expect(added?.hasAttribute("data-dock-exiting")).toBe(false);
+        // The bloom is transient: once its token window passes the class is gone.
+        act((): void => {
+          vi.advanceTimersByTime(400);
+        });
+        const settled = host.querySelector<HTMLElement>(`[data-dock-verb="${id}"]`);
+        expect(settled).not.toBeNull();
+        expect(settled?.classList.contains("anim-verb-in")).toBe(false);
+      } finally {
+        unmount();
+      }
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("holds a removed verb in its own slot behind the out animation, then drops it", () => {
+    vi.useFakeTimers();
+    try {
+      const onUnpinTool = vi.fn();
+      const onRunTool = vi.fn();
+      const { host, rerender, unmount } = renderDock({
+        dockPins: ["zoomIn", "fitWidth"],
+        onUnpinTool,
+        onRunTool,
+      });
+      try {
+        clickOn(host.querySelector("[data-dock-edit-toggle]") as Element);
+        const minus = host.querySelector('[data-dock-minus="zoomIn"]');
+        if (minus === null) throw new Error("no minus");
+        clickOn(minus);
+        // The host write is NOT delayed; the ghost only holds the slot.
+        expect(onUnpinTool).toHaveBeenCalledWith("zoomIn");
+        expect(onRunTool).not.toHaveBeenCalled();
+        // The host applies the unpin on its next render.
+        rerender({ dockPins: ["fitWidth"] });
+        const ghosts = [...host.querySelectorAll<HTMLElement>('[data-dock-exiting="zoomIn"]')];
+        expect(ghosts).toHaveLength(1);
+        const ghost = ghosts[0];
+        expect(ghost?.classList.contains("anim-verb-out")).toBe(true);
+        // Exactly ONE element for the id: the live verb is filtered out for the
+        // whole collapse, so the ghost can never be a duplicate.
+        expect(host.querySelectorAll('[data-dock-verb="zoomIn"]')).toHaveLength(1);
+        // It stays in the slot it held (index 0), before the surviving pin.
+        const survivor = host.querySelector('[data-dock-verb="fitWidth"]');
+        expect(survivor).not.toBeNull();
+        expect(
+          ((ghost?.compareDocumentPosition(survivor as Node) ?? 0) &
+            Node.DOCUMENT_POSITION_FOLLOWING) !==
+            0,
+        ).toBe(true);
+        // The ghost is inert: no minus, out of the tab order, aria-disabled.
+        expect(ghost?.querySelector("[data-dock-minus]")).toBeNull();
+        expect(ghost?.getAttribute("tabindex")).toBe("-1");
+        expect(ghost?.getAttribute("aria-disabled")).toBe("true");
+        // After the collapse window it is gone entirely.
+        act((): void => {
+          vi.advanceTimersByTime(400);
+        });
+        expect(host.querySelector('[data-dock-exiting="zoomIn"]')).toBeNull();
+        expect(host.querySelector('[data-dock-verb="zoomIn"]')).toBeNull();
+      } finally {
+        unmount();
+      }
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("removing the LAST verb still lands in the coherent empty edit state", () => {
+    vi.useFakeTimers();
+    try {
+      const allPrimary = dockToolsForStage("pages").map((t) => t.id);
+      const { host, rerender, unmount } = renderDock({
+        dockPins: ["zoomIn"],
+        dockUnpinned: allPrimary,
+      });
+      try {
+        // The pin is the only verb on screen.
+        expect(host.querySelectorAll("[data-dock-verb]")).toHaveLength(1);
+        clickOn(host.querySelector("[data-dock-edit-toggle]") as Element);
+        clickOn(host.querySelector('[data-dock-minus="zoomIn"]') as Element);
+        // The pins section stays mounted for the ghost even though the last
+        // live pin is already gone.
+        rerender({ dockPins: [] });
+        expect(host.querySelector('[data-dock-exiting="zoomIn"]')).not.toBeNull();
+        act((): void => {
+          vi.advanceTimersByTime(400);
+        });
+        expect(host.querySelectorAll("[data-dock-verb]")).toHaveLength(0);
+        // The empty EDIT state is coherent: the dock, the pen and the plus all
+        // remain, and edit mode is still armed.
+        expect(dockRoot(host).getAttribute("data-dock-edit")).toBe("true");
+        expect(host.querySelector("[data-dock-edit-toggle]")).not.toBeNull();
+        expect(host.querySelector("[data-dock-plus]")).not.toBeNull();
+      } finally {
+        unmount();
+      }
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

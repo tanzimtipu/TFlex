@@ -57,8 +57,19 @@ describe("DEF-126 — OCR suspects panel reserves space (never covers the rail /
 
   it("the bar is semi-transparent with a backdrop blur (not a fully opaque --bg-rail slab)", () => {
     const css = stylesCss();
+    // Phase 36 (chunk 5) added `.inspector .ocr-suspects-panel` (the Inspector's
+    // inline re-parent override), which contains the same substring. Anchoring to
+    // a line that STARTS with the selector keeps this slice on the bar's OWN
+    // rules: a bare indexOf found the `.inspector` occurrence and the slice then
+    // ran across ~3k lines of unrelated CSS until the dark-theme override. Phase 59
+    // (item 8) inserted the Preferences layout — whose `.prefs-rail` legitimately
+    // paints `background: var(--bg-rail)` — inside that over-wide span, tripping
+    // the "no opaque rail slab" assertion on a NEIGHBOURING rule. The assertion is
+    // unchanged: it still fails if `.ocr-suspects-panel` itself uses --bg-rail.
+    const start = css.indexOf("\n.ocr-suspects-panel {");
+    expect(start, "the .ocr-suspects-panel rule must exist").toBeGreaterThan(-1);
     const panel = css.slice(
-      css.indexOf(".ocr-suspects-panel {"),
+      start + 1,
       css.indexOf(":root[data-theme=\"dark\"] .ocr-suspects-panel"),
     );
     expect(panel).toMatch(/background:\s*rgba\(/);

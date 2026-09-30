@@ -1,10 +1,14 @@
 import {
+  PDFArray,
   PDFCheckBox,
+  PDFDict,
   PDFDocument,
   PDFDropdown,
   PDFName,
   PDFOptionList,
   PDFRadioGroup,
+  PDFRef,
+  PDFSignature,
   PDFTextField,
   type PDFField,
 } from '@cantoo/pdf-lib';
@@ -13,6 +17,7 @@ import type {
   FormFieldKind,
   FormFieldOption,
   FormFieldRect,
+  FormFieldWidget,
 } from '../../shared/types';
 
 // ---------------------------------------------------------------------------
@@ -35,17 +40,192 @@ export interface FormSnapshotEntry {
 // Helpers
 // ---------------------------------------------------------------------------
 
-function pdfFieldToKind(field: PDFField): FormFieldKind {
+/** /Ff bit 1 — the ReadOnly flag (PDF 32000-1 Table 227). */
+const READONLY_FLAG = 1;
+
+/** Number of widget annotations a field carries. A button field with more
+ *  than one widget is an option GROUP (radio-like), not a single check box. */
+export function formFieldWidgetCount(field: PDFField): number {
+  try {
+    return field.acroField.getWidgets().length;
+  } catch {
+    return 0;
+  }
+}
+
+/** True for a button field (check box OR radio group). */
+export function isButtonField(field: PDFField): boolean {
+  return field instanceof PDFCheckBox || field instanceof PDFRadioGroup;
+}
+
+/** Phase 59 item 4 — /Ff bit 1 (ReadOnly). */
+export function formFieldReadOnly(field: PDFField): boolean {
+  try {
+    return (field.acroField.getFlags() & READONLY_FLAG) !== 0;
+  } catch {
+    return false;
+  }
+}
+
+/** True for a digital signature field (/FT /Sig). */
+export function isSignatureField(field: PDFField): boolean {
+  if (field instanceof PDFSignature) return true;
+  try {
+    return (field.acroField as { FT?: () => PDFName }).FT?.()?.toString() === '/Sig';
+  } catch {
+    return false;
+  }
+}
+
+/** Decode a PDF name object to its bare token (no leading '/'). */
+export function nameToken(value: unknown): string {
+  try {
+    const text = (value as { asString?: () => string })?.asString?.();
+    if (typeof text === 'string') return text.replace(/^\//, '');
+  } catch {
+    // fall through
+  }
+  return '';
+}
+
+/** Decode a PDF number object to a JS number (0 when absent). */
+export function numberFrom(value: unknown): number {
+  try {
+    const n = (value as { asNumber?: () => number })?.asNumber?.();
+    if (typeof n === 'number') return n;
+  } catch {
+    // fall through
+  }
+  return 0;
+}
+
+/** The on-state name of one widget (the non-Off key of its /AP /N). */
+export function widgetOnValue(widget: { getOnValue?: () => unknown; dict: { get: (n: PDFName) => unknown } }): string {
+  try {
+    const on = widget.getOnValue?.();
+    const token = nameToken(on);
+    if (token !== '') return token;
+  } catch {
+    // fall through — read the /AP /N dict directly.
+  }
+  try {
+    const ap = widget.dict.get(PDFName.of('AP')) as { get: (n: PDFName) => unknown } | undefined;
+    const n = ap?.get?.(PDFName.of('N')) as { keys?: () => unknown[]; get: (n: PDFName) => unknown } | undefined;
+    const keys = n?.keys?.() ?? [];
+    for (const key of keys) {
+      const token = nameToken(key);
+      if (token !== '' && token !== 'Off') return token;
+    }
+  } catch {
+    // No on-state discoverable.
+  }
+  return '';
+}
+
+/** The field's current button value as its on-state string (or ''). */
+export function buttonGroupValue(field: PDFField): string {
+  try {
+    if (field instanceof PDFRadioGroup) return field.getSelected() ?? '';
+    const raw = (field.acroField as unknown as { V?: () => unknown }).V?.();
+    return nameToken(raw);
+  } catch {
+    return '';
+  }
+}
+
+/** The distinct on-state option values of a multi-widget button group. */
+function buttonGroupOptions(field: PDFField): FormFieldOption[] {
+  const seen = new Set<string>();
+  const options: FormFieldOption[] = [];
+  for (const widget of field.acroField.getWidgets()) {
+    const value = widgetOnValue(widget as unknown as { getOnValue?: () => unknown; dict: { get: (n: PDFName) => unknown } });
+    if (value === '' || value === 'Off' || seen.has(value)) continue;
+    seen.add(value);
+    options.push({ value, label: value });
+  }
+  return options;
+}
+
+/** Phase 59 item 4 — kind. A button field with more than one widget is a
+ *  `radio` group even when the PDF has no Radio bit set (pdf-lib models it
+ *  as a PDFCheckBox). A genuine single check box stays a `checkbox`. */
+export function formFieldKind(field: PDFField): FormFieldKind {
+  // DEF-423 — a digital-signature field (/FT /Sig) is not fillable. Classify
+  // it as its own kind so the renderer's fillable allow-list rejects it
+  // instead of mounting an editable text control whose value is discarded.
+  // `signature` is deliberately outside the `FormFieldKind` union: the
+  // renderer's `isFillableFieldKind` is an allow-list over a widened `string`
+  // and its own tests cast this kind, so an unfillable kind never needs to be
+  // in the union (adding it there would break the renderer's exhaustive
+  // switches, which are reached only for fillable kinds).
+  if (isSignatureField(field)) return 'signature' as FormFieldKind;
   if (field instanceof PDFTextField) return 'text';
-  if (field instanceof PDFCheckBox) return 'checkbox';
+  if (field instanceof PDFCheckBox) {
+    return formFieldWidgetCount(field) > 1 ? 'radio' : 'checkbox';
+  }
   if (field instanceof PDFRadioGroup) return 'radio';
   if (field instanceof PDFDropdown) return 'dropdown';
   if (field instanceof PDFOptionList) return 'listbox';
   return 'text';
 }
 
+/** The stable field id used by `getFormFields` / `fillFormField`. */
+export function formFieldId(pdfDoc: PDFDocument, field: PDFField): string {
+  const page = findFieldPage(pdfDoc, field);
+  return `form-${page}-${field.getName().replace(/[^a-zA-Z0-9]/g, '_')}`;
+}
+
+/**
+ * Phase 59 item 4 — select one option of a multi-widget button GROUP.
+ *
+ * `PDFCheckBox.check()` only ever writes the FIRST widget's on-value into
+ * /V, so every other option is unreachable through the typed API. The PDF
+ * model is field-level: `/V` names the chosen on-state and each widget's
+ * `/AS` names its own visual state. This sets `/V` on the field's acro dict
+ * and `/AS` on every widget (Off for the ones not chosen), which is what an
+ * independent reader reads back. An unknown option name leaves the field
+ * untouched. `'true'`/`'false'` are accepted as a legacy convenience: true
+ * selects the first widget's on-value, false clears every widget to Off.
+ *
+ * Returns true when the field was written and false when the option is not
+ * one of the widgets' on-states (nothing changed) — so a caller can report a
+ * truthful status instead of claiming a fill that never happened (ADV-126).
+ */
+export function setButtonGroupValue(field: PDFCheckBox, value: string): boolean {
+  const acro = field.acroField as unknown as {
+    dict: { set: (n: PDFName, v: unknown) => void };
+    getWidgets: () => Array<{ dict: { get: (n: PDFName) => unknown }; setAppearanceState?: (n: PDFName) => void }>;
+  };
+  const widgets = acro.getWidgets();
+  const onValues: string[] = [];
+  for (const widget of widgets) {
+    const on = widgetOnValue(widget);
+    if (on !== '' && on !== 'Off') onValues.push(on);
+  }
+
+  let chosen = value;
+  if (value === 'true') chosen = onValues.length > 0 ? onValues[0] : '';
+  if (value === 'false') chosen = '';
+  if (chosen !== '' && !onValues.includes(chosen)) return false;
+
+  acro.dict.set(PDFName.of('V'), PDFName.of(chosen === '' ? 'Off' : chosen));
+  for (const widget of widgets) {
+    const on = widgetOnValue(widget);
+    const state = chosen !== '' && on === chosen ? chosen : 'Off';
+    try {
+      widget.setAppearanceState?.(PDFName.of(state));
+    } catch {
+      // A widget with no appearance dictionary still keeps its /V.
+    }
+  }
+  return true;
+}
+
 function pdfFieldGetValue(field: PDFField): string | string[] {
   if (field instanceof PDFCheckBox) {
+    // A multi-widget button is an option group: report the selected on-state
+    // string rather than a boolean, so the renderer can pick any option.
+    if (formFieldWidgetCount(field) > 1) return buttonGroupValue(field);
     try {
       return field.isChecked() ? 'true' : 'false';
     } catch {
@@ -89,6 +269,10 @@ function pdfFieldGetValue(field: PDFField): string | string[] {
 }
 
 function pdfFieldGetOptions(field: PDFField): FormFieldOption[] | undefined {
+  if (field instanceof PDFCheckBox && formFieldWidgetCount(field) > 1) {
+    const options = buttonGroupOptions(field);
+    return options.length > 0 ? options : undefined;
+  }
   if (field instanceof PDFRadioGroup) {
     try {
       return field.getOptions().map((v) => ({ value: v, label: v }));
@@ -251,6 +435,188 @@ function getFieldRect(
   return { x: 0, y: 0, width: 0, height: 0 };
 }
 
+/**
+ * Phase 59 item 4 — per-widget descriptors for a multi-widget button group:
+ * every widget's own rect (top-left FormFieldRect), its on-state value and
+ * whether that on-state is the field's current /V. Returns undefined for
+ * every non-group kind so single check boxes keep their boolean value.
+ */
+function getFieldWidgets(pdfDoc: PDFDocument, field: PDFField): FormFieldWidget[] | undefined {
+  if (!isButtonField(field) || formFieldWidgetCount(field) <= 1) return undefined;
+  const current = buttonGroupValue(field);
+  const widgets: FormFieldWidget[] = [];
+  for (const widget of field.acroField.getWidgets()) {
+    let pageIndex: number;
+    try {
+      pageIndex = pageIndexByRef(pdfDoc, widget.dict.get(PDFName.of('P')));
+    } catch {
+      pageIndex = -1;
+    }
+    if (pageIndex < 0) pageIndex = findFieldPage(pdfDoc, field);
+
+    let rect: FormFieldRect = { x: 0, y: 0, width: 0, height: 0 };
+    try {
+      const r = widget.getRectangle();
+      let pageHeight = 0;
+      try {
+        pageHeight = pdfDoc.getPage(pageIndex).getHeight();
+      } catch {
+        pageHeight = 0;
+      }
+      rect = { x: r.x, y: pageHeight - r.y - r.height, width: r.width, height: r.height };
+    } catch {
+      // Degenerate widget — keep the zero rect.
+    }
+
+    const value = widgetOnValue(widget as unknown as { getOnValue?: () => unknown; dict: { get: (n: PDFName) => unknown } });
+    widgets.push({ value, rect, selected: value !== '' && value === current });
+  }
+  return widgets;
+}
+
+/** Phase 59 item 4 — a widget annotation reachable from a page /Annots but
+ *  NOT from the AcroForm /Fields tree. Orphan widgets cannot be reached by
+ *  pdf-lib's form API, so they are listed for diagnostics and reported as
+ *  `orphan-unfilled` by a native fill instead of being dropped silently. */
+export interface OrphanWidgetInfo {
+  pageIndex: number; // 0-based
+  name: string;
+  kind: FormFieldKind;
+  rect: FormFieldRect;
+  value: string;
+  readOnly: boolean;
+}
+
+/** Decode a /T or /V value (PDFString, PDFHexString or PDFName) to text. */
+function decodeTextObject(value: unknown): string {
+  if (value === undefined || value === null) return '';
+  try {
+    const text = (value as { decodeText?: () => string }).decodeText?.();
+    if (typeof text === 'string') return text;
+  } catch {
+    // fall through
+  }
+  return nameToken(value);
+}
+
+function orphanKindFor(dict: { get: (n: PDFName) => unknown }): FormFieldKind {
+  const ft = nameToken(dict.get(PDFName.of('FT')));
+  if (ft === 'Btn') return 'checkbox';
+  if (ft === 'Ch') return 'dropdown';
+  return 'text';
+}
+
+/** Scan every page /Annots for /Widget annotations not reachable from the
+ *  AcroForm /Fields tree. Order: page order, then /Annots order. */
+export function findOrphanWidgets(pdfDoc: PDFDocument): OrphanWidgetInfo[] {
+  const result: OrphanWidgetInfo[] = [];
+  let formFields: PDFField[] = [];
+  try {
+    formFields = pdfDoc.getForm().getFields();
+  } catch {
+    return result;
+  }
+  const reachable = new Set<unknown>();
+  const fieldNames = new Set<string>();
+  for (const field of formFields) {
+    try {
+      for (const widget of field.acroField.getWidgets()) reachable.add(widget.dict);
+    } catch {
+      // A malformed field contributes no reachable widgets.
+    }
+    try {
+      const partial = (field.acroField as unknown as { getPartialName?: () => string | undefined })
+        .getPartialName?.();
+      if (partial) fieldNames.add(partial);
+    } catch {
+      // fall through to the fully qualified name
+    }
+    try {
+      fieldNames.add(field.getName());
+    } catch {
+      // A field with no name cannot dedupe anything.
+    }
+  }
+
+  for (let p = 0; p < pdfDoc.getPageCount(); p++) {
+    const pageNode = (pdfDoc.getPage(p) as unknown as { node: { get: (n: PDFName) => unknown } }).node;
+    let annots: PDFArray;
+    try {
+      const raw = pdfDoc.context.lookupMaybe(pageNode.get(PDFName.of('Annots')) as never, PDFArray);
+      if (raw === undefined) continue;
+      annots = raw;
+    } catch {
+      continue;
+    }
+    for (let i = 0; i < annots.size(); i++) {
+      let dict: PDFDict;
+      try {
+        const resolved = pdfDoc.context.lookupMaybe(annots.get(i) as never, PDFDict);
+        if (resolved === undefined) continue;
+        dict = resolved;
+      } catch {
+        continue;
+      }
+      if (nameToken(dict.get(PDFName.of('Subtype'))) !== 'Widget') continue;
+      if (reachable.has(dict)) continue;
+
+      // A stale duplicate of a listed field is not an orphan: e.g. a merge
+      // copies the source page's widgets AND recreates the field, so the
+      // copied widget's /Parent still names a field that IS in the tree.
+      // Skip any widget whose own /T or /Parent /T matches a listed field.
+      const ownT = decodeTextObject(dict.get(PDFName.of('T')));
+      const parentValue = dict.get(PDFName.of('Parent'));
+      const parentDict = parentValue instanceof PDFRef
+        ? pdfDoc.context.lookupMaybe(parentValue, PDFDict)
+        : parentValue instanceof PDFDict
+          ? parentValue
+          : undefined;
+      const parentT = parentDict !== undefined ? decodeTextObject(parentDict.get(PDFName.of('T'))) : '';
+      if ((ownT !== '' && fieldNames.has(ownT)) || (parentT !== '' && fieldNames.has(parentT))) {
+        continue;
+      }
+
+      const nameText = ownT;
+      const name = nameText !== '' ? nameText : `orphan-${p + 1}-${result.length + 1}`;
+      const rect = widgetRectFromDict(pdfDoc, p, dict);
+      result.push({
+        pageIndex: p,
+        name,
+        kind: orphanKindFor(dict),
+        rect,
+        value: decodeTextObject(dict.get(PDFName.of('V'))),
+        readOnly: (numberFrom(dict.get(PDFName.of('Ff'))) & READONLY_FLAG) !== 0,
+      });
+    }
+  }
+  return result;
+}
+
+/** Rect of a raw widget dict, flipped to the top-left FormFieldRect space. */
+function widgetRectFromDict(
+  pdfDoc: PDFDocument,
+  pageIndex: number,
+  dict: { get: (n: PDFName) => unknown },
+): FormFieldRect {
+  try {
+    const arr = pdfDoc.context.lookupMaybe(dict.get(PDFName.of('Rect')) as never, PDFArray);
+    if (arr === undefined || arr.size() < 4) return { x: 0, y: 0, width: 0, height: 0 };
+    const x = numberFrom(arr.get(0));
+    const y = numberFrom(arr.get(1));
+    const x2 = numberFrom(arr.get(2));
+    const y2 = numberFrom(arr.get(3));
+    let pageHeight = 0;
+    try {
+      pageHeight = pdfDoc.getPage(pageIndex).getHeight();
+    } catch {
+      pageHeight = 0;
+    }
+    return { x, y: pageHeight - y2, width: x2 - x, height: y2 - y };
+  } catch {
+    return { x: 0, y: 0, width: 0, height: 0 };
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Public API
 // ---------------------------------------------------------------------------
@@ -273,12 +639,13 @@ export function getFormFields(pdfDoc: PDFDocument): FormField[] {
 
   for (const field of fields) {
     const name = field.getName();
-    const kind = pdfFieldToKind(field);
+    const kind = formFieldKind(field);
     const page = findFieldPage(pdfDoc, field);
     const rect = getFieldRect(pdfDoc, field, page);
     const value = pdfFieldGetValue(field);
     const options = pdfFieldGetOptions(field);
     const multi = pdfFieldGetMulti(field);
+    const widgets = getFieldWidgets(pdfDoc, field);
 
     // Generate a stable id from field name + page number
     const id = `form-${page}-${name.replace(/[^a-zA-Z0-9]/g, '_')}`;
@@ -298,8 +665,44 @@ export function getFormFields(pdfDoc: PDFDocument): FormField[] {
     if (multi !== undefined) {
       formField.multi = multi;
     }
+    if (widgets !== undefined) {
+      formField.widgets = widgets;
+    }
+    if (formFieldReadOnly(field)) {
+      formField.readOnly = true;
+    }
+    if (isSignatureField(field)) {
+      // DEF-423 — second signal alongside `kind: 'signature'`: a fill against
+      // this field silently no-ops, so it must never look fillable.
+      (formField as FormField & { fillable?: boolean }).fillable = false;
+    }
 
     result.push(formField);
+  }
+
+  // Phase 59 item 4 — orphan sweep: page widgets not reachable from the
+  // AcroForm /Fields tree are listed (not dropped silently) so diagnostics
+  // and a native fill can report them.
+  try {
+    for (const orphan of findOrphanWidgets(pdfDoc)) {
+      const id = `orphan-${orphan.pageIndex}-${orphan.name.replace(/[^a-zA-Z0-9]/g, '_')}`;
+      const formField: FormField = {
+        id,
+        name: orphan.name,
+        page: orphan.pageIndex + 1,
+        kind: orphan.kind,
+        rect: orphan.rect,
+        value: orphan.value,
+      };
+      // ADV-124 / DEF-424 — an orphan widget has no field in the AcroForm tree,
+      // so it can never be written through the form API. Expose it as
+      // read-only (never an editable control) while keeping its `orphan-` id
+      // so the UI and the fill report can tell it apart from a real field.
+      formField.readOnly = true;
+      result.push(formField);
+    }
+  } catch {
+    // Best-effort diagnostics; a malformed /Annots array is skipped.
   }
 
   return result;
@@ -319,11 +722,7 @@ export function fillFormField(
 
   // Resolve field id back to field name
   for (const field of fields) {
-    const name = field.getName();
-    const page = findFieldPage(pdfDoc, field);
-    const id = `form-${page}-${name.replace(/[^a-zA-Z0-9]/g, '_')}`;
-
-    if (id !== fieldId) continue;
+    if (formFieldId(pdfDoc, field) !== fieldId) continue;
 
     if (field instanceof PDFTextField) {
       const str = Array.isArray(value) ? value.join(', ') : value;
@@ -331,6 +730,12 @@ export function fillFormField(
       return;
     }
     if (field instanceof PDFCheckBox) {
+      // Phase 59 item 4 — a multi-widget button is an option group whose
+      // non-first options the typed check()/uncheck() API cannot reach.
+      if (formFieldWidgetCount(field) > 1) {
+        setButtonGroupValue(field, Array.isArray(value) ? value[0] : value);
+        return;
+      }
       const checked = Array.isArray(value) ? value[0] === 'true' : value === 'true';
       if (checked) {
         field.check();
@@ -398,7 +803,7 @@ export function snapshotAllFormFields(pdfDoc: PDFDocument): FormSnapshotEntry[] 
     for (const field of fields) {
       try {
         const name = field.getName();
-        const kind = pdfFieldToKind(field);
+        const kind = formFieldKind(field);
         const page = findFieldPage(pdfDoc, field);
         const rect = getFieldRect(pdfDoc, field, page);
         const value = pdfFieldGetValue(field);

@@ -21,7 +21,7 @@
 // Sections are resolved by the pure `inspectorSections(stage, kind)` so the
 // per-stage/per-selection contract is unit-testable without a DOM.
 
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import type { ReactElement, ReactNode } from 'react';
 import { Hash, PanelRightClose, PanelRightOpen, X } from 'lucide-react';
 import { GlassSidebarBody, GlassSidebarHeader } from './GlassSidebar';
@@ -31,7 +31,8 @@ import { OcrSuspectsPanel } from './OcrSuspectsPanel';
 import type { OcrSuspectsPanelProps } from './OcrSuspectsPanel';
 import { formatBytes } from '../utils/formatBytes';
 import type { Annotation } from '../annotations/model';
-import type { TextBoxStylePatch } from '../../shared/types';
+import type { TextBoxStylePatch, FormFillReport } from '../../shared/types';
+import { FormFillReportSummary } from '../forms/FormsOverlay';
 import type { TextStyleValues } from '../edit/textStyle';
 import type { Stage } from '../state/stages';
 
@@ -262,7 +263,11 @@ export interface InspectorProps {
   cropBox?: { x: number; y: number; width: number; height: number } | null;
   annotationCount?: number;
   formFieldCount?: number;
-fileSize?: number | null;
+  /** Phase 59 item 4 — the most recent native-fill report. When present and
+   *  non-empty, the Inspector renders a compact dismissible summary naming
+   *  each skipped field and the reason. */
+  formFillReport?: FormFillReport[];
+  fileSize?: number | null;
   documentTitle?: string | null;
   /** Section 3A ruling 5: File size is a READ-ONLY value here; the Optimize /
    *  Audit affordances live ONLY in the DELIVER stage (the dock + the panel's
@@ -369,6 +374,7 @@ export function Inspector(props: InspectorProps): ReactElement {
     cropBox = null,
     annotationCount = 0,
     formFieldCount = 0,
+    formFillReport,
 fileSize = null,
     documentTitle = null,
     onRenumberPages,
@@ -390,6 +396,20 @@ fileSize = null,
     () => inspectorSections(stage, selection.kind),
     [stage, selection.kind],
   );
+
+  // Phase 59 item 4 — the fill-report summary is dismissible. Dismissal is
+  // keyed by the report's content, so a NEW report re-appears even after the
+  // user dismissed the previous one.
+  const [dismissedReportKey, setDismissedReportKey] = useState<string | null>(null);
+  const reportKey =
+    formFillReport === undefined
+      ? ''
+      : formFillReport.map((r) => `${r.name}:${r.status}`).join('|');
+  const showFillReport =
+    formFillReport !== undefined &&
+    formFillReport.length > 0 &&
+    reportKey !== dismissedReportKey;
+
 
   const pageSizeText =
     pageSize === null
@@ -415,7 +435,10 @@ fileSize = null,
           <span data-inspector-value="label">{pageLabel ?? '\u2014'}</span>
           <Action
             id="renumber"
-            label={'rename\u2026'}
+            // Phase 59 (item 9) — the visible label is the bare action name
+            // (no trailing ellipsis); the dialog it opens is described by the
+            // button's own title (the action label).
+            label={'rename'}
             onClick={onRenumberPages}
             icon={<Hash size={12} aria-hidden />}
           />
@@ -527,12 +550,12 @@ const renderSignatureSection = (): ReactElement => (
       <div className="inspector-quick-actions">
         <Action
           id="export-comments"
-          label={'Export FDF\u2026'}
+          label={'Export FDF'}
           onClick={onExportComments}
         />
         <Action
           id="import-comments"
-          label={'Import FDF\u2026'}
+          label={'Import FDF'}
           onClick={onImportComments}
         />
       </div>
@@ -565,7 +588,7 @@ const renderSignatureSection = (): ReactElement => (
       <Row id="export-preset" label="Preset">
         {exportPreset ?? 'Default'}
       </Row>
-      <Action id="export" label={'Export\u2026'} onClick={onExport} />
+      <Action id="export" label={'Export'} onClick={onExport} />
     </Section>
   );
   const sectionBody = (id: InspectorSectionId): ReactElement | null => {
@@ -662,6 +685,17 @@ const renderSignatureSection = (): ReactElement => (
             {/* Phase 37 (item 1) — the text-manipulation block leads the column,
                 with the stage sections below the divider. */}
             {renderTextBlock()}
+            {/* Phase 59 item 4 — the native-fill outcome. Compact and
+                dismissible; sits above the stage sections and never covers
+                the page. */}
+            {showFillReport && formFillReport !== undefined && (
+              <div className="inspector-slot" data-inspector-slot="form-fill-report">
+                <FormFillReportSummary
+                  report={formFillReport}
+                  onDismiss={(): void => setDismissedReportKey(reportKey)}
+                />
+              </div>
+            )}
             {/* Phase 51 (item 10) — the OCR suspects view lives HERE now
                 (moved out of the workspace top bar / context panel). */}
             {ocrSuspects !== null && (

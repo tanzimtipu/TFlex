@@ -20,7 +20,7 @@ import { act, createElement } from 'react';
 import { createRoot } from 'react-dom/client';
 import { ContextPanel } from '../../../src/renderer/components/ContextPanel';
 import { dockToolsForStage, toolById } from '../../../src/renderer/state/toolsRegistry';
-import { PALETTE_INTERACTIVE_ONLY } from '../../../src/renderer/state/commandPalette';
+import { PALETTE_UNRUNNABLE_ACTIONS, buildPaletteRows } from '../../../src/renderer/state/commandPalette';
 import type { EngineState } from '../../../src/renderer/engine/types';
 
 const RENDERER = resolve(__dirname, '../../../src/renderer');
@@ -60,9 +60,14 @@ describe('Phase 41 item 2 — the legacy EDIT toolbar is gone', () => {
     expect(toolById('editImage')?.action).toBe('editToolImage');
   });
 
-  it('the Default font capability has a panel home (palette copy names it)', () => {
+  it('the Default font capability has a panel home (and is not a dead palette row)', () => {
     expect(toolById('editDefaultFont')?.surface).toBe('panel');
-    expect(PALETTE_INTERACTIVE_ONLY.editDefaultFont).toMatch(/Edit panel/i);
+    // Phase 59 (item 7) — its action has no command anywhere, so the palette
+    // REMOVED the row rather than listing it disabled with a "switch panels"
+    // refusal. Its real control is the EDIT ContextPanel (further below).
+    expect(PALETTE_UNRUNNABLE_ACTIONS.has('editDefaultFont')).toBe(true);
+    const ids = buildPaletteRows({ query: '' }).map((r) => (r.kind === 'tool' ? r.id : ''));
+    expect(ids).not.toContain('editDefaultFont');
   });
 });
 

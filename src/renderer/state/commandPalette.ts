@@ -6,8 +6,8 @@
 // matcher, the ranking, the keyboard chords and the usage counter are
 // unit-testable in isolation:
 //
-//   - the SEARCH CORPUS is three things: every registry entry, the recent
-//     files, and the view actions. The view actions (the split-view /
+//   - the SEARCH CORPUS is three things: every runnable registry entry, the
+//     recent files, and the view actions. The view actions (the split-view /
 //     Multi Mode toggle, the zoom presets, the stage switches) are registry
 //     entries like any other — listing them twice would duplicate rows, so
 //     the palette searches `TOOL_REGISTRY` once and `VIEW_ACTION_IDS` names
@@ -16,9 +16,12 @@
 //     frequency, then the registry's own order (stable).
 //   - `Ctrl+P` is PRINT and is deliberately NOT in the chord table: the
 //     palette never claims it (criterion 5 of the Phase-36 contract).
-//   - A row with no command ANYWHERE (a panel control, a pointer
-//     interaction, a per-item list) is DISABLED with the reason copy the
-//     Action Dock already uses — never a silent no-op.
+//   - Phase 59 (item 7): a registry entry whose action has no command
+//     ANYWHERE (a panel control, a pointer interaction, a per-item list) is
+//     REMOVED from the corpus (`PALETTE_UNRUNNABLE_ACTIONS`) rather than
+//     listed as a dead row. A row that remains but cannot run in the CURRENT
+//     context is DISABLED with the Action Dock's live reason copy — never a
+//     silent no-op (DEF-327).
 //
 // Nothing in this module runs a command or touches Electron: the host
 // supplies the run map, the settings writer and the availability gate.
@@ -47,28 +50,42 @@ export const PALETTE_DOCK_FULL_MESSAGE = 'Dock is full';
  *  import main code, so the number is repeated here with this note. */
 export const TOOL_USAGE_CAP = 200;
 
-/** The registry `action` ids that have NO command anywhere: their control is
- *  a panel/inspector widget, a pointer interaction or a per-item list row.
- *  They stay listed (nothing is hidden) but render DISABLED with this copy,
- *  exactly like the dock's unavailable verbs. Every id here is a
- *  `surface: 'panel' | 'flyout'` entry that some panel owns. */
-export const PALETTE_INTERACTIVE_ONLY: Readonly<Record<string, string>> = {
-  railTabThumbnails: 'Switch to the Pages panel to use this',
-  railTabOutline: 'Switch to the Pages panel to use this',
-  railTabAnnotations: 'Switch to the Review panel to use this',
-  pageContextMenu: 'Right-click a page in the Pages panel',
-  dragPageToDocument: 'Drag a page onto another pane',
-  editDefaultFont: 'Pick the font in the Edit panel',
-  annotationColor: 'Pick the colour in the annotation flyout',
-  annotationPenWidth: 'Pick the pen width in the annotation flyout',
-  pageJump: 'Type a page number in the page pill',
-  openRecent: 'Pick a recent file from the list below',
-  removeRecent: 'Pick a recent file from the list below',
-  openSample: 'Pick a sample from the welcome screen',
-  appMenu: 'Use the File menu in the title bar',
-  panePick: 'Pick a document from a Multi Mode pane',
-  paneResize: 'Drag the Multi Mode divider',
-};
+/** Phase 59 (item 7) — the registry `action` ids that have NO command in ANY
+ *  context: no host run map entry (`paletteAppActions` / `dockAppActions`), no
+ *  registered view command, and no live state that could ever make them run.
+ *  Every one of these is a `surface: 'panel' | 'flyout'` widget or a pointer
+ *  interaction (a colour swatch, a font picker, a right-click menu, a drag
+ *  gesture, the rail's own annotations tab). They used to render as
+ *  LISTED-DISABLED rows with a static "switch panels" refusal — a dead row the
+ *  operator asked us to remove ("remove any component that are not usable from
+ *  this Ctrl+K list"). They are now filtered OUT of the palette corpus, not
+ *  listed. The dock / rail / flyout still own their real controls; nothing here
+ *  is reachable from the palette by design.
+ *
+ *  Phase 59 (item 7) follow-up — `railTabThumbnails` and `railTabOutline` are
+ *  NO LONGER here: the rail's active tab is now HOST-owned (App's `railTab`
+ *  state, threaded through DocumentView/ContextPanel), so both commands have a
+ *  real handler (`paletteAppActions`) that switches the tab and ensures the
+ *  Pages panel is showing. They are listed and enabled again.
+ *
+ *  The rule for a new entry: if its `action` has no handler ANYWHERE, it does
+ *  not belong in the palette row set — add it here rather than shipping a row
+ *  that can never act. */
+export const PALETTE_UNRUNNABLE_ACTIONS: ReadonlySet<string> = new Set<string>([
+  'railTabAnnotations', // the rail's Annotations tab is SideRail-local
+  'pageContextMenu', // the per-page context menu (right-click a thumbnail)
+  'dragPageToDocument', // a click-drag gesture on a thumbnail
+  'editDefaultFont', // the Edit panel's font picker
+  'annotationColor', // the annotation flyout's colour swatch
+  'annotationPenWidth', // the annotation flyout's pen-width control
+  'pageJump', // the canvas page pill
+  'openRecent', // the palette's own recent rows already open a file
+  'removeRecent', // the recents list's own remove control
+  'openSample', // the welcome screen's sample tiles
+  'appMenu', // the title bar's File menu
+  'panePick', // the Multi Mode pane header
+  'paneResize', // the Multi Mode divider drag
+]);
 
 /** The view actions the palette must expose (the Phase-36 search corpus names
  *  them explicitly: the split-view / Multi Mode toggle, the zoom presets and
@@ -271,13 +288,14 @@ export interface PaletteRowGateArgs {
   activeStage?: Stage;
 }
 
-/** The enabled state + the reason copy for one registry row. */
+/** The enabled state + the reason copy for one registry row. Phase 59 (item
+ *  7): an entry whose action is in `PALETTE_UNRUNNABLE_ACTIONS` never reaches
+ *  this function (it is filtered out of the corpus); the only gate left is the
+ *  host's LIVE availability, exactly like the Action Dock. */
 export function paletteRowState(
   entry: ToolEntry,
   gate: PaletteRowGateArgs = {},
 ): { enabled: boolean; reason: string | undefined } {
-  const interactive = PALETTE_INTERACTIVE_ONLY[entry.action];
-  if (interactive !== undefined) return { enabled: false, reason: interactive };
   if (gate.isToolEnabled !== undefined && !gate.isToolEnabled(entry)) {
     // The dock's own order (ActionDock `reasonFor`): the host's live copy wins,
     // then the registry's declared availability ("Run Recognize text first").
@@ -305,7 +323,12 @@ export interface PaletteRowsArgs extends PaletteRowGateArgs {
  * own recent history, not an alphabetical dump.
  */
 export function buildPaletteRows(args: PaletteRowsArgs): PaletteRow[] {
-  const entries = args.entries ?? TOOL_REGISTRY;
+  // Phase 59 (item 7) — the corpus is the registry (or an explicit test
+  // corpus) MINUS every action that has no command anywhere. Those rows can
+  // never act, so they are removed rather than listed-disabled.
+  const entries = (args.entries ?? TOOL_REGISTRY).filter(
+    (entry) => !PALETTE_UNRUNNABLE_ACTIONS.has(entry.action),
+  );
   const recents = args.recents ?? [];
   const usage = args.usage;
   const pins = sanitizeDockPins(args.dockPins);

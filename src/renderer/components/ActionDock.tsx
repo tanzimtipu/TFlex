@@ -49,6 +49,8 @@ import {
 } from '../state/dockModel';
 import { resolveDockLadder, type DockLadder } from '../state/dockResponsive';
 import { useRowOverflow } from '../hooks/useRowOverflow';
+import { useInstantMotion } from '../hooks/useAnimations';
+import { MOTION_DURATION } from '../hooks/motionTokens';
 import {
   DOCK_DEFAULT_RESERVE,
   DOCK_LIFT_INSET,
@@ -168,6 +170,29 @@ const MENU_H = 76;
 
 /** Phase 37 (item 6) — how far one arrow click scrolls the dock's verb strip. */
 export const DOCK_SCROLL_STEP = 160;
+
+/** Phase 59 (item 3) — the pen's inline slot: the 22px control plus the dock's
+ *  4px row gap. The pen is the dock's own trailing row item now, so every fit
+ *  budget must charge it: the labelled row routes into the arrows lane rather
+ *  than growing toward a pill, and the dock can still never reach either pill
+ *  (the measured reserve cap owns that). */
+const DOCK_EDIT_SLOT = 26;
+
+/** Phase 59 (item 3) — one verb held on screen for its EXIT animation after the
+ *  host has already removed it (`index` is its position in the rendered group at
+ *  the moment the minus was clicked, so the ghost collapses in its own slot
+ *  instead of jumping to the row's end). */
+interface ExitingVerb {
+  verb: DockVerb;
+  group: 'primary' | 'pins';
+  index: number;
+}
+
+/** Phase 59 (item 3) — how long a bloom / collapse runs, from the TS mirror of
+ *  `--motion-duration-fast` (the duration the `.anim-verb-*` utilities use).
+ *  `useInstantMotion` collapses the ghost's whole lifetime to a single tick, so
+ *  reduced motion / Animations OFF never animate and nothing lingers. */
+const DOCK_VERB_MOTION_MS = MOTION_DURATION.fast;
 
 /** Clamp a pointer-anchored menu into the viewport (8px gutter). Mirrors the
  *  ContextPanel's clamp so both popovers behave identically. */
@@ -543,10 +568,15 @@ export function ActionDock(props: ActionDockProps): ReactElement {
   // the default band; the no-wrap guarantee is kept by preferring the arrows
   // lane over hiding labels (the re-opened DEF-330).
   const labelBand = lifted ? band : freeBand?.width ?? band;
-  const need = labelledDockNeed(
-    primaryVerbs.map((v) => v.label),
-    pinnedVerbs.map((v) => v.label),
-  );
+  // Phase 59 (item 3) — the labelled row's width ALSO carries the pen's own
+  // inline slot (`DOCK_EDIT_SLOT`): the pen is a real row item, so a labelled
+  // dock that only fits without it would otherwise grow under a pill. The
+  // measured-band path below then routes the row into the arrows lane instead.
+  const need =
+    labelledDockNeed(
+      primaryVerbs.map((v) => v.label),
+      pinnedVerbs.map((v) => v.label),
+    ) + DOCK_EDIT_SLOT;
   const iconOnly = ladder.iconOnly;
   const measuredLabelOverflow =
     !ladder.iconOnly &&
@@ -588,6 +618,102 @@ export function ActionDock(props: ActionDockProps): ReactElement {
     () => primaryVerbs.filter((v) => !visibleIds.has(v.id)),
     [primaryVerbs, visibleIds],
   );
+
+  // ---- Phase 59 (item 3): adding / removing a tool animates ---------------
+  // Adding a tool (the plus picker or the pin menu) blooms the new verb in and
+  // grows its row slot from zero; removing one (a minus, or the menu's Unpin)
+  // keeps the verb on screen in its own slot behind a `.anim-verb-out` ghost
+  // until the collapse finishes, then drops it. The host's callbacks are NEVER
+  // delayed — `onPinTool` / `onUnpinTool` fire on the click and the ghost is the
+  // dock's own copy of the verb. Under reduced motion / Animations OFF
+  // (`useInstantMotion`) the ghost is skipped outright, so the change is one
+  // instant state change with nothing lingering.
+  const instant = useInstantMotion();
+  const [enteringIds, setEnteringIds] = useState<ReadonlySet<string>>(() => new Set<string>());
+  const [exiting, setExiting] = useState<readonly ExitingVerb[]>([]);
+
+  useEffect((): (() => void) | undefined => {
+    if (enteringIds.size === 0) return undefined;
+    const timer = window.setTimeout(
+      (): void => setEnteringIds(new Set<string>()),
+      instant ? 0 : DOCK_VERB_MOTION_MS,
+    );
+    return (): void => window.clearTimeout(timer);
+  }, [enteringIds, instant]);
+
+  useEffect((): (() => void) | undefined => {
+    if (exiting.length === 0) return undefined;
+    const timer = window.setTimeout(
+      (): void => setExiting([]),
+      instant ? 0 : DOCK_VERB_MOTION_MS,
+    );
+    return (): void => window.clearTimeout(timer);
+  }, [exiting, instant]);
+
+  /** Pin a tool and bloom its verb in. The id is recorded BEFORE the host's
+   *  `dockPins` update lands, so the new verb's very first paint already
+   *  carries `.anim-verb-in` — never a flash of an un-animated verb. */
+  const addTool = useCallback(
+    (id: string): void => {
+      setEnteringIds((prev) => new Set(prev).add(id));
+      onPinTool(id);
+    },
+    [onPinTool],
+  );
+
+  /** Unpin a tool and collapse its verb out. `onUnpinTool` fires immediately;
+   *  the ghost only HOLDS THE SLOT while the verb collapses. */
+  const removeTool = useCallback(
+    (verb: DockVerb, group: 'primary' | 'pins', index: number): void => {
+      if (!instant) {
+        setExiting((prev) =>
+          prev.some((e) => e.verb.id === verb.id) ? prev : [...prev, { verb, group, index }],
+        );
+      }
+      onUnpinTool(verb.id);
+    },
+    [instant, onUnpinTool],
+  );
+
+  // An EXITING verb is rendered ONCE — as its ghost. Its live entry is filtered
+  // out for the whole collapse, so the ghost can never be a duplicate key and
+  // the row loses exactly one slot.
+  const exitingIds = useMemo(() => new Set(exiting.map((e) => e.verb.id)), [exiting]);
+  const inlineRender = useMemo(
+    () => inlineVerbs.filter((v) => !exitingIds.has(v.id)),
+    [inlineVerbs, exitingIds],
+  );
+  const pinnedRender = useMemo(
+    () => pinnedVerbs.filter((v) => !exitingIds.has(v.id)),
+    [pinnedVerbs, exitingIds],
+  );
+  /** How many pin ghosts still hold a slot (the pins section must stay mounted
+   *  for them even when the LAST pin has already left the live list). */
+  const pinGhostCount = useMemo(
+    () => exiting.filter((e) => e.group === 'pins').length,
+    [exiting],
+  );
+
+  /** Phase 59 (item 3) — the context menu's Unpin routes through the same
+   *  `removeTool` as the minus badge, so a right-click removal collapses out in
+   *  its own slot too. The verb is looked up in the rendered groups (the ghost
+   *  needs its slot); an id that is not rendered right now still unpins, just
+   *  without the collapse. */
+  const unpinFromMenu = (id: string): void => {
+    const primaryIndex = inlineVerbs.findIndex((v) => v.id === id);
+    const primaryVerb = inlineVerbs[primaryIndex];
+    if (primaryIndex >= 0 && primaryVerb !== undefined) {
+      removeTool(primaryVerb, 'primary', primaryIndex);
+      return;
+    }
+    const pinIndex = pinnedVerbs.findIndex((v) => v.id === id);
+    const pinnedVerb = pinnedVerbs[pinIndex];
+    if (pinIndex >= 0 && pinnedVerb !== undefined) {
+      removeTool(pinnedVerb, 'pins', pinIndex);
+      return;
+    }
+    onUnpinTool(id);
+  };
 
   // ---- State 4: idle ----------------------------------------------------
   const bump = useCallback((): void => {
@@ -703,23 +829,34 @@ export function ActionDock(props: ActionDockProps): ReactElement {
       : clampDockMenu(menu.x, menu.y, MENU_W, MENU_H, window.innerWidth, window.innerHeight);
   const menuPinned = menu !== null && pins.includes(menu.id);
 
-  const renderVerb = (verb: DockVerb, opts: { primary: boolean; pin: boolean }): ReactElement => {
+  const renderVerb = (
+    verb: DockVerb,
+    opts: { primary: boolean; pin: boolean; index: number; out?: boolean },
+  ): ReactElement => {
     const Icon = verb.icon;
     const pressed = activeSet.has(verb.id);
+    const group: 'primary' | 'pins' = opts.pin ? 'pins' : 'primary';
+    // Phase 59 (item 3) — the add / remove bloom rides these two utilities. An
+    // EXITING verb (a ghost held for its collapse) is inert: `pointer-events`
+    // comes from `.anim-verb-out`, it is out of the tab order and it renders no
+    // minus badge, so a click can never land on it and it can never run.
+    const classes = ['action-dock-verb'];
+    if (opts.primary) classes.push('action-dock-verb-primary');
+    if (opts.out === true) classes.push('anim-verb-out');
+    else if (enteringIds.has(verb.id)) classes.push('anim-verb-in');
     return (
       <button
         key={opts.pin ? `pin:${verb.id}` : verb.id}
         type="button"
-        className={
-          opts.primary
-            ? 'action-dock-verb action-dock-verb-primary'
-            : 'action-dock-verb'
-        }
+        className={classes.join(' ')}
         data-dock-verb={verb.id}
         data-dock-pin={opts.pin ? verb.id : undefined}
+        data-dock-exiting={opts.out === true ? verb.id : undefined}
         aria-label={verb.label}
         aria-pressed={pressed ? true : undefined}
-        disabled={!verb.enabled}
+        aria-disabled={opts.out === true ? true : undefined}
+        disabled={opts.out === true ? false : !verb.enabled}
+        tabIndex={opts.out === true ? -1 : undefined}
         title={verb.reason}
         onClick={(): void => verb.run()}
         onContextMenu={(e): void => {
@@ -736,7 +873,7 @@ export function ActionDock(props: ActionDockProps): ReactElement {
             propagation on ITS OWN event only so the verb's own onClick does not
             run the tool. The cross-bubbling rules (AGENTS.md) are honoured: no
             document-level catch-all, no disarm here. */}
-        {editMode && (
+        {editMode && opts.out !== true && (
           <span
             className="action-dock-minus"
             role="button"
@@ -746,13 +883,13 @@ export function ActionDock(props: ActionDockProps): ReactElement {
             onClick={(e): void => {
               e.stopPropagation();
               e.preventDefault();
-              onUnpinTool(verb.id);
+              removeTool(verb, group, opts.index);
             }}
             onKeyDown={(e): void => {
               if (e.key === 'Enter' || e.key === ' ') {
                 e.preventDefault();
                 e.stopPropagation();
-                onUnpinTool(verb.id);
+                removeTool(verb, group, opts.index);
               }
             }}
           >
@@ -761,6 +898,37 @@ export function ActionDock(props: ActionDockProps): ReactElement {
         )}
       </button>
     );
+  };
+
+  /** Phase 59 (item 3) — one group's verbs, with every EXITING verb spliced back
+   *  into its OWN slot so the collapse happens in place and the row never jumps.
+   *  `ghosts[gi].index` is the slot the verb held when the minus was clicked; the
+   *  live list has already lost it, so the ghost inserts before the verb now
+   *  sitting at that index (offset by the ghosts already re-inserted). */
+  const renderVerbs = (verbs: readonly DockVerb[], group: 'primary' | 'pins'): ReactElement[] => {
+    const ghosts = exiting.filter((e) => e.group === group).sort((a, b) => a.index - b.index);
+    const out: ReactElement[] = [];
+    let gi = 0;
+    const pushGhost = (): void => {
+      const ghost = ghosts[gi];
+      if (ghost === undefined) return;
+      out.push(
+        renderVerb(ghost.verb, { primary: false, pin: group === 'pins', index: -1, out: true }),
+      );
+      gi += 1;
+    };
+    verbs.forEach((verb, index): void => {
+      while (gi < ghosts.length && (ghosts[gi]?.index ?? 0) <= index + gi) pushGhost();
+      out.push(
+        renderVerb(verb, {
+          primary: index === 0 && group === 'primary',
+          pin: group === 'pins',
+          index,
+        }),
+      );
+    });
+    while (gi < ghosts.length) pushGhost();
+    return out;
   };
 
   return (
@@ -819,23 +987,6 @@ export function ActionDock(props: ActionDockProps): ReactElement {
         setHovered(false);
       }}
     >
-      {/* Phase 58 — the EDIT-mode pen, parked at the dock's TOP-RIGHT and
-          absolutely positioned so it never joins the single verb row. Clicking
-          it toggles EDIT mode; Escape exits. */}
-      <button
-        type="button"
-        className="action-dock-edit"
-        data-dock-edit-toggle
-        aria-pressed={editMode}
-        aria-label="Edit dock tools"
-        title="Edit dock tools"
-        onClick={(): void => {
-          setEditMode((v) => !v);
-          setPlusOpen(false);
-        }}
-      >
-        <Pencil size={14} aria-hidden />
-      </button>
       {/* Phase 37 (item 21) — the Ctrl+K hint, a small themed line above the
           dock. It is absolutely positioned so it never joins the dock's single
           verb row, and it is hidden only at the ladder's smallest rung (the
@@ -871,7 +1022,7 @@ export function ActionDock(props: ActionDockProps): ReactElement {
           </span>
         )}
         <div className="action-dock-group" key={primaryState} data-dock-group="primary">
-          {inlineVerbs.map((verb, index) => renderVerb(verb, { primary: index === 0, pin: false }))}
+          {renderVerbs(inlineRender, 'primary')}
         </div>
         {overflowVerbs.length > 0 && (
           <div className="action-dock-overflow">
@@ -920,17 +1071,21 @@ export function ActionDock(props: ActionDockProps): ReactElement {
             )}
           </div>
         )}
-        {pinnedVerbs.length > 0 && (
+        {/* Phase 59 (item 3) — the pins section also stays mounted while a
+            ghost is collapsing, so removing the LAST pin still animates out
+            before the empty/edit state settles. */}
+        {(pinnedRender.length > 0 || pinGhostCount > 0) && (
           <>
             <span className="action-dock-divider" role="separator" data-dock-divider />
             <div className="action-dock-group" data-dock-group="pins">
-              {pinnedVerbs.map((verb) => renderVerb(verb, { primary: false, pin: true }))}
+              {renderVerbs(pinnedRender, 'pins')}
             </div>
           </>
         )}
         {/* Phase 58 — EDIT mode: the add control stays at the row's RIGHT END
             after every add. It opens the registry-derived picker; picking an id
-            pins it (the host's `onPinTool`) and closes the picker. */}
+            pins it (the host's `onPinTool`, through `addTool` so the new verb
+            BLOOMS in) and closes the picker. */}
         {editMode && (
           <div className="action-dock-add">
             <button
@@ -967,7 +1122,7 @@ export function ActionDock(props: ActionDockProps): ReactElement {
                       data-dock-picker-item={entry.id}
                       onClick={(): void => {
                         setPlusOpen(false);
-                        onPinTool(entry.id);
+                        addTool(entry.id);
                       }}
                     >
                       <Icon size={18} aria-hidden />
@@ -992,6 +1147,27 @@ export function ActionDock(props: ActionDockProps): ReactElement {
           <ChevronsRight size={20} aria-hidden />
         </button>
       )}
+      {/* Phase 58 — the EDIT-mode pen. Phase 59 (item 3): it is now the dock's
+          own TRAILING ROW ITEM (a flex child of `[data-action-dock]`, after the
+          right arrow when the lane is on), never absolutely positioned — so its
+          box is always fully inside the dock's bounds at every responsive rung
+          and the verbs can never run under it. It is a 22px icon control; the
+          fit budgets charge `DOCK_EDIT_SLOT` for it. Clicking toggles EDIT
+          mode; Escape exits. */}
+      <button
+        type="button"
+        className="action-dock-edit"
+        data-dock-edit-toggle
+        aria-pressed={editMode}
+        aria-label="Edit dock tools"
+        title="Edit dock tools"
+        onClick={(): void => {
+          setEditMode((v) => !v);
+          setPlusOpen(false);
+        }}
+      >
+        <Pencil size={14} aria-hidden />
+      </button>
       {/* DEF-312 — the Pin/Unpin menu is portaled to `document.body`. The dock
           carries `transform: translateX(-50%)`, and a transformed ancestor is
           the containing block for `position: fixed` descendants, so the menu
@@ -1018,7 +1194,7 @@ export function ActionDock(props: ActionDockProps): ReactElement {
               title={!menuPinned && !canPinMore(pins) ? 'Dock is full' : undefined}
               onClick={(): void => {
                 setMenu(null);
-                onPinTool(menu.id);
+                addTool(menu.id);
               }}
             >
               <span>Pin to dock</span>
@@ -1030,10 +1206,12 @@ export function ActionDock(props: ActionDockProps): ReactElement {
               data-dock-menu-item="unpin"
               /* Phase 37 (item 21) — ANY rendered verb can be unpinned now: a
                  default stage verb is recorded in `dockUnpinned`, an explicit
-                 pin is dropped from `dockPins`. The host owns which list. */
+                 pin is dropped from `dockPins`. The host owns which list.
+                 Phase 59 (item 3) — it routes through `unpinFromMenu`, so the
+                 verb collapses out in its own slot like a minus click. */
               onClick={(): void => {
                 setMenu(null);
-                onUnpinTool(menu.id);
+                unpinFromMenu(menu.id);
               }}
             >
               <span>Unpin from dock</span>

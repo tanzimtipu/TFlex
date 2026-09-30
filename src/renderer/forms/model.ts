@@ -10,7 +10,12 @@
 // Coordinate space: field rects are in PAGE POINTS with a TOP-LEFT origin
 // (matching the rest of the renderer).
 
-import type { FormField, FormFieldKind } from "../../shared/types";
+import type {
+  FormField,
+  FormFieldKind,
+  FormFillReport,
+  FormFillStatus,
+} from "../../shared/types";
 
 // ---------------------------------------------------------------------------
 // Pure reducer helpers (DOM-free, unit-testable)
@@ -24,6 +29,11 @@ export interface FormsState {
    *  is still true with an empty list (so the indicator doesn't sit on
    *  "loading" forever for non-form PDFs). */
   loaded: boolean;
+  /** Phase 59 item 4 — the per-field outcome of the most recent native
+   *  fill/save, mirrored from `EngineState.formFillReport`. Absent until a
+   *  fill/save has produced a report. Content-compared (not identity) so a
+   *  same-shape engine echo never churns the per-tab state (DEF-020). */
+  report?: FormFillReport[];
 }
 
 export const initialFormsState: FormsState = {
@@ -147,7 +157,7 @@ export function replaceFields(
     changed = true;
     return existing;
   });
-  return changed ? { fields: merged, loaded: true } : state;
+  return changed ? { fields: merged, loaded: true, report: state.report } : state;
 }
 
 /** Compare two field values for equality (string or string[]). */
@@ -203,10 +213,114 @@ export function fieldKindLabel(kind: FormFieldKind): string {
   }
 }
 
+// ---------------------------------------------------------------------------
+// Phase 59 (ADV-123 / ADV-124) — field fillability
+//
+// The renderer must never mount an editable control for a field it cannot
+// write. The backend exposes unfillable kinds (a digital-signature `/Sig`
+// field, a page `/Widget` orphaned from the AcroForm `/Fields` tree); a fill
+// against them silently no-ops, so the control would be an actionable-looking
+// lie. `isFillableFieldKind` is an ALLOW-list: only the kinds the engine can
+// actually write get an editor, so any kind the backend introduces later
+// (signature, orphan, xfa, ...) falls through to the non-editable path by
+// default instead of regressing into an input.
+
+/** The field kinds the renderer can fill. */
+const FILLABLE_FIELD_KINDS: ReadonlySet<string> = new Set([
+  "text",
+  "checkbox",
+  "radio",
+  "dropdown",
+  "listbox",
+]);
+
+/** True when the kind maps to a control that can actually write a value.
+ *  Compared against a widened string so a new/unlisted kind is non-fillable
+ *  without a type change here. */
+export function isFillableFieldKind(kind: string): boolean {
+  return FILLABLE_FIELD_KINDS.has(kind);
+}
+
+/** The truthful, plain-language reason a non-fillable kind cannot be filled. */
+export function nonFillableFieldReason(kind: string): string {
+  switch (kind) {
+    case "signature":
+      return "Signature fields cannot be filled";
+    case "orphan":
+      return "Orphan widgets cannot be filled";
+    default:
+      return "This field cannot be filled";
+  }
+}
+
 /** Whether a field has any user-visible value. The renderer uses this for
  *  the "filled" indicator and to decide whether a flattened PDF still
  *  shows a placeholder dot. */
 export function fieldHasValue(f: FormField): boolean {
   if (Array.isArray(f.value)) return f.value.length > 0;
   return f.value.length > 0;
+}
+
+// ---------------------------------------------------------------------------
+// Phase 59 item 4 — native-fill report helpers
+
+/** Store a fresh `formFillReport` on the forms state. Returns the same state
+ *  reference when the incoming report is content-equal to the current one so
+ *  a same-shape engine echo never churns `openTabs` (DEF-020). */
+export function setFormFillReport(
+  state: FormsState,
+  report: FormFillReport[] | undefined,
+): FormsState {
+  if (report === undefined) return state;
+  if (sameFillReport(state.report, report)) return state;
+  return { ...state, report };
+}
+
+/** Content-equality check for two fill reports. The engine rebuilds the
+ *  report array on every `getState` (fresh identity, same content when
+ *  nothing changed), so callers must compare by content — exactly the
+ *  `sameFormFields` rationale (DEF-020). */
+export function sameFillReport(
+  a: readonly FormFillReport[] | undefined,
+  b: readonly FormFillReport[] | undefined,
+): boolean {
+  if (a === b) return true;
+  if (a === undefined || b === undefined) return false;
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i += 1) {
+    const x = a[i];
+    const y = b[i];
+    if (
+      x.name !== y.name ||
+      x.page !== y.page ||
+      x.kind !== y.kind ||
+      x.status !== y.status ||
+      x.detail !== y.detail
+    ) {
+      return false;
+    }
+  }
+  return true;
+}
+
+/** Human reason for a non-`filled` report row. `fill` rows read "filled";
+ *  every skip status maps to the plain-language reason the summary shows.
+ *  `detail` (when the engine provides one) is appended by the UI. */
+export function reportStatusReason(status: FormFillStatus): string {
+  switch (status) {
+    case "filled":
+      return "filled";
+    case "skipped-readonly":
+      return "read-only";
+    case "skipped-signature":
+      return "signature";
+    case "font-unavailable":
+      return "font does not support the text";
+    case "option-unknown":
+      return "option not available";
+    case "xfa":
+      return "XFA";
+    case "orphan-unfilled":
+      return "orphan widget";
+  }
 }

@@ -11,7 +11,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   PALETTE_DOCK_FULL_MESSAGE,
-  PALETTE_INTERACTIVE_ONLY,
+  PALETTE_UNRUNNABLE_ACTIONS,
   STAGE_TAG_LABELS,
   TOOL_USAGE_CAP,
   VIEW_ACTION_IDS,
@@ -84,12 +84,15 @@ describe('Phase 36 — matching the id, the label and the description', () => {
 describe('Phase 36 — buildPaletteRows', () => {
   const recents = [{ path: 'C:/docs/quarterly.pdf', label: 'quarterly.pdf' }];
 
-  it('lists EVERY registry entry for an empty query, recents first', () => {
+  it('lists every RUNNABLE registry entry for an empty query, recents first', () => {
+    // Phase 59 (item 7) — entries whose action has no command anywhere are
+    // removed from the corpus, so the count is the registry minus those.
+    const expected = TOOL_REGISTRY.length - PALETTE_UNRUNNABLE_ACTIONS.size;
     const rows = buildPaletteRows({ query: '', recents });
-    expect(rows).toHaveLength(TOOL_REGISTRY.length + 1);
+    expect(rows).toHaveLength(expected + 1);
     expect(rows[0]?.kind).toBe('recent');
     const ids = rows.filter((r) => r.kind === 'tool').map((r) => (r.kind === 'tool' ? r.id : ''));
-    expect(new Set(ids).size).toBe(TOOL_REGISTRY.length);
+    expect(new Set(ids).size).toBe(expected);
   });
 
   it('ranks an empty query by frequency, then by registry order', () => {
@@ -147,14 +150,18 @@ describe('Phase 36 — buildPaletteRows', () => {
 });
 
 describe('Phase 36 — row state: disabled rows are never silent no-ops', () => {
-  it('disables a panel/interaction-only entry with its reason copy', () => {
-    const entry = toolById('annColor');
-    const state = paletteRowState(entry!);
-    expect(state.enabled).toBe(false);
-    expect(state.reason).toBe(PALETTE_INTERACTIVE_ONLY.annotationColor);
+  it('Phase 59 (item 7): a command-less action is REMOVED from the corpus, not listed', () => {
+    // The old Phase-36 contract listed them disabled with a static copy; the
+    // operator asked for dead rows to be removed instead.
+    expect(PALETTE_UNRUNNABLE_ACTIONS.has('annotationColor')).toBe(true);
+    expect(PALETTE_UNRUNNABLE_ACTIONS.has('dragPageToDocument')).toBe(true);
+    const rows = buildPaletteRows({ query: '' });
+    const ids = rows.map((r) => (r.kind === 'tool' ? r.id : ''));
+    expect(ids).not.toContain('annColor');
+    expect(ids).not.toContain('dragPage');
   });
 
-  it('uses the registry availability copy when the host gate closes', () => {
+  it('keeps a RUNNABLE entry enabled and disables it only when the host gate closes', () => {
     const entry = toolById('merge')!;
     expect(paletteRowState(entry, { isToolEnabled: () => true }).enabled).toBe(true);
     const closed = paletteRowState(entry, { isToolEnabled: () => false });
@@ -162,10 +169,8 @@ describe('Phase 36 — row state: disabled rows are never silent no-ops', () => 
     expect(closed.reason).toBe('Open a document first');
   });
 
-  it('marks the interactive-only list as disabled in a real result set', () => {
-    const rows = buildPaletteRows({ query: '', dockPins: [] });
-    const drag = rows.find((r) => r.kind === 'tool' && r.id === 'dragPage');
-    expect(drag?.kind === 'tool' && drag.enabled).toBe(false);
+  it('keeps a runnable merge row listed and enabled when the corpus is unfiltered by a gate', () => {
+    const rows = buildPaletteRows({ query: 'merge', dockPins: [] });
     const merge = rows.find((r) => r.kind === 'tool' && r.id === 'merge');
     expect(merge?.kind === 'tool' && merge.enabled).toBe(true);
   });

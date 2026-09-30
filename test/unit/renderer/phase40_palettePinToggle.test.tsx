@@ -27,6 +27,7 @@ import {
 } from '../../../src/renderer/components/CommandPalette';
 import { addDockPin, DOCK_MAX_PINS, removeDockPin } from '../../../src/renderer/state/dockModel';
 import { TOOL_REGISTRY } from '../../../src/renderer/state/toolsRegistry';
+import { PALETTE_UNRUNNABLE_ACTIONS } from '../../../src/renderer/state/commandPalette';
 
 const NO_RECENTS: readonly { path: string; label: string }[] = [];
 
@@ -184,7 +185,7 @@ describe('Phase 40 item 6 — a pin toggle on every palette tool row', () => {
     });
     try {
       expect(h.host.querySelectorAll('[data-palette-pin-toggle]')).toHaveLength(
-        TOOL_REGISTRY.length,
+        TOOL_REGISTRY.length - PALETTE_UNRUNNABLE_ACTIONS.size,
       );
       expect(
         h.host.querySelector('[data-palette-row="recent"] [data-palette-pin-toggle]'),

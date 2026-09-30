@@ -87,9 +87,21 @@ interface SideRailProps {
   /** Phase 16 — asks the host (App) to toggle the collapsed state;
    *  the rail never owns the value itself. */
   onTogglePagesPanelCollapsed?: () => void;
+  /** Phase 59 (item 7 follow-up) — the rail's ACTIVE TAB is HOST-owned so a
+   *  command can switch it (the palette's "Page thumbnails" / "Bookmarks"
+   *  rows). When `tab` is supplied the rail is CONTROLLED: it renders this
+   *  value and EVERY tab button reports through `onTabChange`, so the command
+   *  and the rail can never disagree. Absent = the legacy internal state
+   *  (existing callers/tests), byte-for-byte. */
+  tab?: RailTab;
+  /** Reports a tab selection (a rail button, or the outline-gone fallback).
+   *  The host applies it; the rail never owns the value when controlled. */
+  onTabChange?: (tab: RailTab) => void;
 }
 
-type RailTab = 'thumbs' | 'outline' | 'annotations';
+/** The rail's three view tabs. Phase 59 — exported so the host can type its
+ *  own `railTab` state and thread it in. */
+export type RailTab = 'thumbs' | 'outline' | 'annotations';
 
 /**
  * Left rail with an icon tab strip. Thumbnails always exist; the bookmarks
@@ -119,8 +131,23 @@ export function SideRail(props: SideRailProps) {
     onJumpToAnnotation,
     pagesPanelCollapsed = false,
     onTogglePagesPanelCollapsed,
+    tab: tabProp,
+    onTabChange,
   } = props;
-  const [tab, setTab] = useState<RailTab>('thumbs');
+  // Phase 59 (item 7 follow-up) — the active tab is HOST-owned when `tab` is
+  // supplied (App's `railTab`); otherwise the rail keeps its legacy internal
+  // state. Every tab button routes through `selectTab`, so a controlled rail
+  // reports to the SAME host state the palette command writes.
+  const [internalTab, setInternalTab] = useState<RailTab>('thumbs');
+  const tabControlled = tabProp !== undefined;
+  const tab = tabProp ?? internalTab;
+  const selectTab = useCallback(
+    (next: RailTab): void => {
+      if (!tabControlled) setInternalTab(next);
+      onTabChange?.(next);
+    },
+    [tabControlled, onTabChange],
+  );
   // Phase 16 — the swap variants for the collapsed ruler strip vs the
   // expanded tab content (useRailSwapAnimation: opacity + slight swell,
   // entry on the 280ms panel token so the numbers appear in step with
@@ -129,9 +156,9 @@ export function SideRail(props: SideRailProps) {
 
   useEffect(() => {
     if (outline === null && tab === 'outline') {
-      setTab('thumbs');
+      selectTab('thumbs');
     }
-  }, [outline, tab]);
+  }, [outline, tab, selectTab]);
 
   const aspect = defaultHeightPt / defaultWidthPt;
 
@@ -199,15 +226,16 @@ export function SideRail(props: SideRailProps) {
             <button
               type="button"
               className={tab === 'thumbs' ? 'rail-tab rail-tab-active' : 'rail-tab'}
-              onClick={() => setTab('thumbs')}
+              onClick={() => selectTab('thumbs')}
               title="Page thumbnails"
+              data-rail-tab="thumbs"
             >
               <Images size={22} aria-hidden />
             </button>
             <button
               type="button"
               className={tab === 'annotations' ? 'rail-tab rail-tab-active' : 'rail-tab'}
-              onClick={() => setTab('annotations')}
+              onClick={() => selectTab('annotations')}
               title="Annotations"
               data-rail-tab="annotations"
             >
@@ -217,8 +245,9 @@ export function SideRail(props: SideRailProps) {
               <button
                 type="button"
                 className={tab === 'outline' ? 'rail-tab rail-tab-active' : 'rail-tab'}
-                onClick={() => setTab('outline')}
+                onClick={() => selectTab('outline')}
                 title="Bookmarks"
+                data-rail-tab="outline"
               >
                 <List size={22} aria-hidden />
               </button>

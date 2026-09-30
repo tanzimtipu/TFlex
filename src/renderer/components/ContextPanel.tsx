@@ -25,7 +25,7 @@
 // toggle. Page state, selection, edit state, signatures and engine ops all
 // belong to the host (DocumentView/App) and are threaded through.
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type { ReactElement } from 'react';
 import type { PDFDocumentProxy } from 'pdfjs-dist';
 import {
@@ -41,7 +41,7 @@ import {
   TextCursor,
 } from 'lucide-react';
 import { OutlinePanel, RulerStrip, ThumbnailRail } from './SideRail';
-import type { ThumbVerbs } from './SideRail';
+import type { RailTab, ThumbVerbs } from './SideRail';
 import { usePageThumbMenu } from './pageThumbMenu';
 import { GlassSidebarBody, GlassSidebarHeader } from './GlassSidebar';
 import { AnnotationsPanel } from '../annotations/AnnotationsPanel';
@@ -128,6 +128,19 @@ onInsertBlank?: (page: number) => void;
   collapsed?: boolean;
   /** Phase 16 — asks the host to toggle the collapsed state. */
   onToggleCollapsed?: () => void;
+
+  // --- Host-owned rail tab (Phase 59 item 7 follow-up) -------------------
+  /** The host's active rail tab (App's `railTab`). The PAGES body lives in
+   *  this panel, so the "Page thumbnails" / "Bookmarks" palette commands land
+   *  here: `'outline'` expands the outline section, `'thumbs'` collapses it
+   *  back to the thumbnail stack. Absent = the legacy local behaviour (the
+   *  panel keeps its own `outlineOpen`, default expanded) — every pre-existing
+   *  caller and test is unchanged. */
+  railTab?: RailTab;
+  /** Phase 59 (item 7 follow-up) — the outline section's toggle reports here,
+   *  so the panel's own control and the palette command write the SAME host
+   *  state and can never disagree. */
+  onRailTabChange?: (tab: RailTab) => void;
 
   // --- EDIT -------------------------------------------------------------
   /** The current page's modelled text boxes + image placements (built by the
@@ -246,6 +259,8 @@ onInsertBlank,
     onPageSelectionChange = null,
     collapsed = false,
     onToggleCollapsed,
+    railTab,
+    onRailTabChange,
     editContent = null,
     onSelectEditContent = null,
     ocrStatus = null,
@@ -271,6 +286,20 @@ onInsertBlank,
 
 const pageCount = engineState.pageCount;
   const [outlineOpen, setOutlineOpen] = useState(true);
+
+  // Phase 59 (item 7 follow-up) — the host's `railTab` drives the PAGES body's
+  // outline section. The command "Bookmarks" (`railTab: 'outline'`) expands it;
+  // "Page thumbnails" (`railTab: 'thumbs'`) collapses it back to the thumbnail
+  // stack. The panel is only CONTROLLED once the host tab actually CHANGES from
+  // its mount value, so the default (expanded) visual and every document-open
+  // flow are untouched; an explicit switch then takes effect.
+  const prevRailTabRef = useRef<RailTab | undefined>(railTab);
+  useEffect((): void => {
+    if (railTab === undefined) return;
+    if (prevRailTabRef.current === railTab) return;
+    prevRailTabRef.current = railTab;
+    setOutlineOpen(railTab === 'outline');
+  }, [railTab]);
 
   // The same visible -> source mapping and label map the rail builds, so a
   // reordered or renumbered document renders identically here.
@@ -369,7 +398,13 @@ const pageCount = engineState.pageCount;
           <button
             type="button"
             className="context-panel-section-toggle"
-            onClick={(): void => setOutlineOpen((v) => !v)}
+            onClick={(): void => {
+              const next = !outlineOpen;
+              setOutlineOpen(next);
+              // Phase 59 (item 7 follow-up) — the toggle writes the SAME host
+              // state the palette command does, so the two can never disagree.
+              onRailTabChange?.(next ? 'outline' : 'thumbs');
+            }}
             aria-expanded={outlineOpen}
             aria-controls="context-panel-outline-body"
             data-outline-toggle
@@ -486,7 +521,7 @@ const pageCount = engineState.pageCount;
             disabled={onRecognizeText === undefined}
           >
             <ScanText size={13} aria-hidden />
-            <span>Recognize text…</span>
+            <span>Recognize text</span>
           </button>
           <button
             type="button"
@@ -567,7 +602,7 @@ const pageCount = engineState.pageCount;
             disabled={onManageSignatures === null}
           >
             <FileSignature size={13} aria-hidden />
-            <span>Manage signatures…</span>
+            <span>Manage signatures</span>
           </button>
         </div>
       </section>
@@ -604,7 +639,7 @@ const pageCount = engineState.pageCount;
               onClick={(): void => onOptimize?.()}
               disabled={onOptimize === undefined}
             >
-              <span>Optimize…</span>
+              <span>Optimize</span>
             </button>
           </span>
         </div>
@@ -626,7 +661,7 @@ const pageCount = engineState.pageCount;
             disabled={onCreateFromImages === null}
           >
             <FilePlus2 size={13} aria-hidden />
-            <span>From images…</span>
+            <span>From images</span>
           </button>
         </div>
       </section>
@@ -668,7 +703,7 @@ const headerTitle = contextPanelTitle(stage, pageCount);
                 data-context-panel-combine
               >
                 <GitMerge size={12} aria-hidden />
-                <span>Combine…</span>
+                <span>Combine</span>
               </button>
             )}
             {collapseButton}

@@ -1109,19 +1109,24 @@ class RealEngineAdapter implements EngineApi {
     if (this.inner.fillFormField === undefined) return missingPhase4();
     const r = await this.inner.fillFormField(docId, payload);
     if (!r.ok) return r;
-    // The wire contract returns FormField[] (the per-field echo with
-    // the post-fill values). Re-fetch the canonical field list so the
-    // renderer always sees the engine's authoritative values — the
-    // wire echo may have omitted an unrelated field id (some backend
-    // implementations only echo the field that was just filled), and
-    // `replaceFields(existing, value)` requires the full list. After
-    // the round-trip, getState (which the App.tsx fill paths already
-    // follow up with via syncEngineStateAfterFill) carries the
-    // post-fill `modified: true` flag through normalizeAndCache into
-    // the engineUi mirror (DEF-069). The getFormFields call here
-    // only seeds the renderer's local form mirror — the modified
-    // flag lives on the separate EngineState echo that the App
-    // explicitly follow-ups with.
+    // Phase 59 item 4 — the main engine now returns the full EngineState from
+    // this wire call (the native-fill report and the post-fill field list
+    // travel together). Older fakes/backends still return a bare FormField[].
+    // Detect the shape and NEVER discard the EngineState echo: normalize +
+    // cache it (so `formFillReport`, `modified` and the authoritative field
+    // list all reach the UI via the engine-state mirror) and hand back its
+    // field list. The fallback preserves the pre-Phase-59 behavior.
+    const value: unknown = r.value;
+    if (isEngineStateLike(value)) {
+      const state = this.normalizeAndCache(docId, value);
+      return { ok: true, value: state.formFields ?? [] };
+    }
+    // The wire contract is documented as returning FormField[]; re-fetch the
+    // canonical list so the renderer always sees the engine's authoritative
+    // values (the echo may omit an unrelated field id). The App.tsx fill
+    // paths follow up with a getState round-trip that carries the post-fill
+    // `modified` flag and `formFillReport` through normalizeAndCache into the
+    // engineUi mirror (DEF-069).
     return this.getFormFields(docId);
   }
 
@@ -1682,3 +1687,17 @@ export type {
   SplitConfirm,
 };
 export { describeEngineError, defaultPageRange, parsePageRange } from "./types";
+
+/** Phase 59 item 4 — distinguish the new full-EngineState wire response from
+ *  the legacy bare FormField[] echo. The main engine's fill/save IPC now
+ *  returns an EngineState (a non-array object carrying `pageCount`), so the
+ *  adapter can normalize + cache it instead of throwing the native-fill
+ *  report away. */
+function isEngineStateLike(value: unknown): value is SharedEngineState {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    !Array.isArray(value) &&
+    typeof (value as { pageCount?: unknown }).pageCount === "number"
+  );
+}

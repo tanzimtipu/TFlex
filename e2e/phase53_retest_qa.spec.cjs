@@ -299,7 +299,7 @@ test('DEF-376 boundary: image-only .md/.html do not warn partial-content', async
 // ProtectionNotice latent overlap (DEF-357 class) � hit-test the banner's
 // dismiss button with the Inspector open.
 // ---------------------------------------------------------------------------
-test('ProtectionNotice: dismiss button hit-test with the Inspector open', async () => {
+test('ProtectionNotice: collapse control hit-test with the Inspector open; collapses to the "i" and re-expands', async () => {
   const fixture = await makeEncryptedFixture({
     name: 'p53r-protect.pdf',
     algorithm: 'AES-256',
@@ -315,7 +315,7 @@ test('ProtectionNotice: dismiss button hit-test with the Inspector open', async 
   await win.waitForTimeout(800);
 
   const hit = await win.evaluate(() => {
-    const btn = document.querySelector('[data-protection-dismiss]');
+    const btn = document.querySelector('[data-protection-collapse]');
     if (!btn) return { found: false };
     const r = btn.getBoundingClientRect();
     const cx = r.left + r.width / 2;
@@ -337,17 +337,38 @@ test('ProtectionNotice: dismiss button hit-test with the Inspector open', async 
   let clickOk = true;
   let clickError = null;
   try {
-    await win.locator('[data-protection-dismiss]').click({ timeout: 3000 });
+    await win.locator('[data-protection-collapse]').click({ timeout: 3000 });
   } catch (e) {
     clickOk = false;
     clickError = e.message.split('\n')[0];
   }
-  await win.waitForTimeout(600);
-  const afterCount = await win.locator('[data-protection-notice]').count();
-  console.log('P53R_PROTECT ' + JSON.stringify({ hit, clickOk, clickError, afterCount }));
-  expect(hit.found, 'the protection dismiss button rendered').toBe(true);
-  expect(clickOk, `the dismiss click was intercepted: ${clickError}`).toBe(true);
-  expect(afterCount, 'the banner dismissed').toBe(0);
+  await win.waitForTimeout(900);
+  const afterCollapse = await win.evaluate(() => ({
+    notice: document.querySelector('[data-protection-notice]') !== null,
+    icon: document.querySelector('[data-protection-icon]') !== null,
+    state: document.querySelector('[data-protection-notice-state]')?.getAttribute('data-protection-notice-state') ?? null,
+  }));
+
+  let expandOk = true;
+  let expandError = null;
+  try {
+    await win.locator('[data-protection-icon]').click({ timeout: 3000 });
+  } catch (e) {
+    expandOk = false;
+    expandError = e.message.split('\n')[0];
+  }
+  await win.waitForTimeout(700);
+  const afterExpand = await win.evaluate(() => ({
+    notice: document.querySelector('[data-protection-notice]') !== null,
+    icon: document.querySelector('[data-protection-icon]') !== null,
+  }));
+  console.log('P53R_PROTECT ' + JSON.stringify({ hit, clickOk, clickError, afterCollapse, expandOk, expandError, afterExpand }));
+  expect(hit.found, 'the protection collapse control rendered').toBe(true);
+  expect(clickOk, `the collapse click was intercepted: ${clickError}`).toBe(true);
+  expect(afterCollapse.notice, 'the box collapsed').toBe(false);
+  expect(afterCollapse.icon, 'the collapsed "i" persists (not a dismiss)').toBe(true);
+  expect(expandOk, `the "i" was clickable: ${expandError}`).toBe(true);
+  expect(afterExpand.notice, 'clicking the "i" re-expands the box').toBe(true);
 });
 
 // ---------------------------------------------------------------------------

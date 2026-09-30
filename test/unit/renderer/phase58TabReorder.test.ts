@@ -14,10 +14,11 @@
 // COMMIT owns that guard, and the arm threshold is TOTAL movement so a
 // straight-downward tear-out arms the drag.
 //
-// DEF-413 — also pins the title-activation timing: a mousedown inside a
-// NON-active tab's .tab-title no longer activates immediately; it defers
-// to a mouseup, and a drag-select over the title suppresses activation
-// entirely. A mousedown outside the title (padding/chip) stays immediate.
+// Phase 59 (item 1) — supersedes the Phase 58 selectable-title feature and
+// its DEF-413 deferred-activation fix. A mousedown inside a NON-active tab's
+// .tab-title ACTIVATES it immediately (no mouseup needed), the title is not
+// selectable, and the reorder / tear-out gesture arms from ANY point on the
+// tab — the title included. There is no selection-guard cancellation path.
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 import { describe, expect, it, vi } from "vitest";
 import { createElement } from "react";
@@ -314,55 +315,63 @@ describe("AppHeader reorder commit restores the pre-drag active tab (DEF-411)", 
 });
 
 // ---------------------------------------------------------------------------
-// DEF-413 — a mousedown inside a NON-active tab's .tab-title must not
-// activate immediately: it waits for the release, and a drag-select over
-// the title (a non-collapsed selection inside it) suppresses activation
-// entirely. Clicks outside the title keep the immediate DEF-034 path;
-// those are pinned by the reorder tests above and by appHeader.test.tsx.
+// Phase 59 (item 1) — the title activates IMMEDIATELY and drags. This
+// supersedes DEF-413: the title is not selectable, so a mousedown on it
+// activates the tab at once, and a drag that starts on the title reorders
+// or tears out with no selection-guard cancellation.
 // ---------------------------------------------------------------------------
-describe("AnimatedTab — title activation defers to a non-selecting mouseup (DEF-413)", () => {
+describe("AnimatedTab — title activates immediately and drags (Phase 59 item 1)", () => {
   const downOnTitle = (el: HTMLElement): void => {
     act((): void => {
       el.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, button: 0 }));
     });
   };
-  const upOnWindow = (): void => {
-    act((): void => {
-      window.dispatchEvent(new MouseEvent("mouseup", { bubbles: true, button: 0 }));
-    });
-  };
 
-  it("activates on a title mousedown followed by a collapsed-selection mouseup", () => {
+  it("activates IMMEDIATELY on a title mousedown (no deferred mouseup)", () => {
     const { root, onActivate } = renderReorderHeader("a");
-    const selection = window.getSelection();
-    selection?.removeAllRanges(); // guarantee a collapsed selection
     const title = root.querySelector<HTMLElement>("[data-tab-id='c'] .tab-title");
     expect(title).not.toBeNull();
     if (title === null) return;
     downOnTitle(title);
-    // DEF-413 — the mousedown alone must NOT activate a title hit.
-    expect(onActivate).not.toHaveBeenCalled();
-    upOnWindow();
+    // The activation fires on the mousedown alone — nothing waits for a
+    // mouseup, and no selection state is consulted.
     expect(onActivate).toHaveBeenCalledTimes(1);
     expect(onActivate).toHaveBeenCalledWith("c");
   });
 
-  it("does NOT activate when the mouseup follows a non-collapsed title selection", () => {
-    const { root, onActivate } = renderReorderHeader("a");
+  it("a drag that STARTS on the title reorders the tab (no selection guard)", () => {
+    const { root, onActivate, onMoveTab } = renderReorderHeader("a");
     const title = root.querySelector<HTMLElement>("[data-tab-id='c'] .tab-title");
     expect(title).not.toBeNull();
     if (title === null) return;
-    // A real drag-select inside the title: a non-collapsed Range whose
-    // start/end containers fall inside .tab-title.
-    const selection = window.getSelection();
-    const range = document.createRange();
-    range.selectNodeContents(title);
-    selection?.removeAllRanges();
-    selection?.addRange(range);
+    // A real gesture arms from the title: the mousedown activates (DEF-034)
+    // and the pointerdown bubbles from the title to the strip-level armer.
     downOnTitle(title);
-    upOnWindow();
-    expect(onActivate).not.toHaveBeenCalled();
-    selection?.removeAllRanges();
+    expect(onActivate).toHaveBeenCalledWith("c");
+    armDrag(title, 220);
+    movePointer(120); // past b's midpoint -> target slot 1
+    releasePointer();
+    expect(onMoveTab).toHaveBeenCalledWith("c", 1);
+    // DEF-411 — the pre-drag active tab ("a") is restored after the commit.
+    expect(onActivate).toHaveBeenLastCalledWith("a");
+  });
+
+  it("a title-anchored drag can tear out (downward release detaches)", () => {
+    const { root, onDetachTab, onMoveTab } = renderDetachHeader("a");
+    const title = root.querySelector<HTMLElement>("[data-tab-id='c'] .tab-title");
+    expect(title).not.toBeNull();
+    if (title === null) return;
+    armDrag(title, 220);
+    act((): void => {
+      window.dispatchEvent(pointerEventXY("pointermove", 120, 100));
+    });
+    const list = root.querySelector<HTMLElement>(".tab-list");
+    expect(list?.getAttribute("data-tab-tearout")).toBe("true");
+    act((): void => {
+      window.dispatchEvent(pointerEventXY("pointerup", 120, 100));
+    });
+    expect(onDetachTab).toHaveBeenCalledWith("c");
+    expect(onMoveTab).not.toHaveBeenCalled();
   });
 });
 

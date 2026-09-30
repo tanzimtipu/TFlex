@@ -16,9 +16,11 @@
 // box itself is `pointer-events: auto`.
 //
 // This component owns no command: every row's action resolves through the
-// registry's `action` in the host's run map, and an entry with no command
-// anywhere renders DISABLED with the reason copy the Action Dock already
-// shows. Nothing here is a second implementation of anything.
+// registry's `action` in the host's run map. Phase 59 (item 7): an entry whose
+// action has no command ANYWHERE is removed from the corpus entirely (a dead
+// row); a row that remains but is refused by the LIVE gate renders DISABLED
+// with the reason copy the Action Dock already shows. Nothing here is a second
+// implementation of anything.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { ChangeEvent, MouseEvent as ReactMouseEvent, ReactElement } from 'react';

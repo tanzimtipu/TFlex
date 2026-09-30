@@ -137,7 +137,9 @@
   .anim-lift,
   .anim-press,
   .anim-menu-pop,
-  .anim-vibrate {
+  .anim-vibrate,
+  .anim-verb-in,
+  .anim-verb-out {
     animation: none !important;
     transform: none !important;
     translate: none !important;
@@ -228,6 +230,38 @@
   100% { translate: 0 0; }
 }
 .anim-vibrate { animation: tf-anim-vibrate var(--motion-duration-fast) var(--motion-ease-standard) both; }
+
+/* Phase 59 (item 3) — a dock verb ENTERING / LEAVING edit mode's add / remove.
+ * Adding a tool blooms the new verb in AND grows its row slot from zero, so the
+ * verb row (and therefore the dock's own box) expands smoothly instead of
+ * snapping; removing one collapses the slot while the verb fades, so the dock
+ * shrinks smoothly and the verb is unmounted only once it is gone. The slot
+ * growth is a REAL `inline-size` tween — `interpolate-size: allow-keywords` lets
+ * it interpolate through the `auto` keyword, so no verb width is hardcoded — and
+ * scale/opacity ride the INDEPENDENT `scale` property so the verb's own hover
+ * `transform` is never clobbered (same technique as tf-anim-menu-pop's
+ * `translate`). Durations and easings are the canonical tokens, so both
+ * utilities are instant under reduced motion / Animations OFF (see the
+ * reduced-motion block above). */
+@keyframes tf-anim-verb-in {
+  from { opacity: var(--motion-opacity-hidden); scale: var(--motion-scale-enter); inline-size: 0px; }
+  to   { opacity: var(--motion-opacity-visible); scale: 1; inline-size: auto; }
+}
+@keyframes tf-anim-verb-out {
+  from { opacity: var(--motion-opacity-visible); scale: 1; inline-size: auto; }
+  to   { opacity: var(--motion-opacity-hidden); scale: var(--motion-scale-exit); inline-size: 0px; }
+}
+.anim-verb-in {
+  interpolate-size: allow-keywords;
+  overflow: hidden;
+  animation: tf-anim-verb-in var(--motion-duration-fast) var(--motion-ease-enter) both;
+}
+.anim-verb-out {
+  interpolate-size: allow-keywords;
+  overflow: hidden;
+  pointer-events: none;
+  animation: tf-anim-verb-out var(--motion-duration-fast) var(--motion-ease-exit) both;
+}
 
 /* Sidebars/panels — Slide In / Slide Out (full-width drawer travel). */
 @keyframes tf-anim-slide-in-left {

@@ -1,7 +1,7 @@
 import { readFile, writeFile } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
 import { inflateSync } from 'node:zlib';
-import { beginText, concatTransformationMatrix, degrees, drawObject, endText, fill, PDFArray, PDFCheckBox, PDFDict, PDFDocument, PDFDropdown, PDFHexString, PDFName, PDFNumber, PDFObjectCopier, PDFOptionList, PDFRadioGroup, PDFRef, PDFStream, PDFString, PDFTextField, rectangle, rgb, setCharacterSpacing, setFillingRgbColor, setFontAndSize, setGraphicsState, setTextMatrix, showText, StandardFonts, TextRenderingMode, setTextRenderingMode, pushGraphicsState, popGraphicsState, translate, rotateRadians, skewRadians, setLineWidth, setDashPattern, moveTo, lineTo, closePath, type PDFOperator, type PDFObject, type PDFImage, type PDFFont, type PDFPage } from '@cantoo/pdf-lib';
+import { beginText, concatTransformationMatrix, degrees, drawObject, endText, fill, PDFArray, PDFDict, PDFDocument, PDFHexString, PDFName, PDFNumber, PDFObjectCopier, PDFRef, PDFStream, PDFString, rectangle, rgb, setCharacterSpacing, setFillingRgbColor, setFontAndSize, setGraphicsState, setTextMatrix, showText, StandardFonts, TextRenderingMode, setTextRenderingMode, pushGraphicsState, popGraphicsState, translate, rotateRadians, skewRadians, setLineWidth, setDashPattern, moveTo, lineTo, closePath, type PDFOperator, type PDFObject, type PDFImage, type PDFFont, type PDFPage } from '@cantoo/pdf-lib';
 import { err, ok, type Result } from '../../shared/result';
 import type {
   AddStampPayload,
@@ -28,6 +28,7 @@ import type {
   FillFormFieldPayload,
   FormDataImportReport,
   FormField,
+  FormFillReport,
   MovePagesBetweenDocsPayload,
   MovePagesBetweenDocsResult,
   MoveSignaturePayload,
@@ -85,7 +86,7 @@ import {
 } from './page-organize';
 import {
   fillFormField,
-  findFieldPage,
+  findOrphanWidgets,
   flattenForm,
   getFormFields,
   restoreFormFieldsFromSnapshot,
@@ -93,6 +94,7 @@ import {
   type FormSnapshotEntry,
 } from './forms';
 import { auditSpace as auditSpacePdf } from './optimize';
+import { carryAcroForm, carryAcroFormInto, fillFormNatively } from './form-fill';
 import { OcrService, selectLowConfidence, type RawOcrWord, SUSPECT_CONFIDENCE_THRESHOLD } from './ocr';
 import {
   DEFAULT_WATERMARK_COLOR,
@@ -196,6 +198,11 @@ interface EngineDoc {
    *  bytes at load. `null` for an unencrypted document. Display-only: the
    *  engine never enforces the permission flags. */
   protection: DocumentProtectionState | null;
+  /** Phase 59 item 4 — the per-field report from the most recent native fill
+   *  (a per-field fill or the save-time pass). Attached to every built
+   *  EngineState as `formFillReport`, so the renderer can show the outcome
+   *  without a separate channel. */
+  lastFormFillReport?: FormFillReport[];
 }
 
 /** Phase 11 — a recognised word persisted on the doc for suspects. `page`
@@ -401,7 +408,13 @@ export class EngineService {
     password: string | undefined,
   ): Promise<Result<null, EngineOpenError>> {
     try {
-      const pdfDoc = await PDFDocument.load(bytes, { password: password ?? '' });
+      const pdfDoc = await PDFDocument.load(bytes, {
+        password: password ?? '',
+        // ADV-125 / DEF-425 — keep /XFA so `hasXFA()` is truthful and the
+        // XFA report branch can fire. Without this the fork strips /XFA at
+        // parse time and an XFA-only form looks form-less.
+        preserveXFA: true,
+      });
       const count = pdfDoc.getPageCount();
       // DEF-032: reject 0-page documents at load time
       if (count === 0) {
@@ -755,7 +768,7 @@ export class EngineService {
         otherDocs.push(await PDFDocument.load(buf.buffer.slice(
           buf.byteOffset,
           buf.byteOffset + buf.byteLength,
-        ) as ArrayBuffer));
+        ) as ArrayBuffer, { preserveXFA: true }));
       }
 
       const survivingIndices = doc.order.filter((_, i) => !doc.deleted[doc.order[i]]);
@@ -828,42 +841,33 @@ export class EngineService {
         }
       }
 
-      // DEF-029: migrate AcroForm fields from the main document and the
-      // merged documents into the new merged PDFDocument.
+      // ADV-121 / DEF-421 — CARRY (not recreate) the AcroForm of every source
+      // document into the merged output, exactly as the save path does.
+      // carryAcroFormInto deep-copies each source /AcroForm object graph with
+      // one page-map-seeded copier, keeps every widget's real /Rect, and
+      // appends the incoming /Fields into the destination tree (renaming a
+      // colliding field and its widgets deterministically, reported in
+      // `collisions`). Recreating fields with addToPage (the old DEF-029 path)
+      // reset every widget to pdf-lib's default box and destroyed the form.
       try {
-        const dstForm = mergedDoc.getForm();
-        const srcForm = doc.pdfDoc.getForm();
-        const srcFields = srcForm.getFields();
-        const mainDocOffset = position === 'before' ? otherPageCount : 0;
-
-        for (const srcField of srcFields) {
-          try {
-            const srcPage = findFieldPage(doc.pdfDoc, srcField);
-            const dstPageIdx = srcPage + mainDocOffset;
-            if (dstPageIdx < 0 || dstPageIdx >= mergedDoc.getPageCount()) continue;
-            migrateFormField(srcField, dstForm, mergedDoc.getPage(dstPageIdx));
-          } catch { /* skip */ }
+        const mainPageMap = new Map<number, number>();
+        for (let i = 0; i < newOrder.length; i++) {
+          if (newOrder[i] >= 0) mainPageMap.set(newOrder[i], i);
         }
+        carryAcroFormInto(doc.pdfDoc, mergedDoc, mainPageMap);
 
-        // Migrate fields from each merged document
-        let offset = position === 'before' ? 0 : doc.order.length;
+        let otherOffset = position === 'before' ? 0 : doc.order.length;
         for (const otherDoc of otherDocs) {
-          try {
-            const otherForm = otherDoc.getForm();
-            const otherFields = otherForm.getFields();
-            for (const otherField of otherFields) {
-              try {
-                const srcPage = findFieldPage(otherDoc, otherField);
-                const dstPageIdx = offset + srcPage;
-                if (dstPageIdx < 0 || dstPageIdx >= mergedDoc.getPageCount()) continue;
-                migrateFormField(otherField, dstForm, mergedDoc.getPage(dstPageIdx));
-              } catch { /* skip */ }
-            }
-          } catch { /* skip */ }
-          offset += otherDoc.getPageCount();
+          const otherPageMap = new Map<number, number>();
+          for (let i = 0; i < otherDoc.getPageCount(); i++) {
+            otherPageMap.set(i, otherOffset + i);
+          }
+          carryAcroFormInto(otherDoc, mergedDoc, otherPageMap);
+          otherOffset += otherDoc.getPageCount();
         }
       } catch {
-        // If form migration fails, proceed without form fields
+        // A malformed form must never block a merge; the merge proceeds
+        // without that source's form.
       }
 
       doc.pdfDoc = mergedDoc;
@@ -1327,9 +1331,37 @@ export class EngineService {
     if (doc === undefined) {
       return err('engine-error', `unknown document: ${docId}`);
     }
+    // ADV-124 / DEF-424 — an orphan widget is not reachable from the AcroForm
+    // /Fields tree, so a native fill can never write it. Return a truthful
+    // `orphan-unfilled` report row and leave the document UNMODIFIED (no undo
+    // entry, no `modified` flag) instead of claiming a fill that never
+    // happened.
+    if (payload.id.startsWith('orphan-')) {
+      doc.lastFormFillReport = orphanUnfilledReport(doc.pdfDoc, payload.id);
+      return ok(buildState(doc));
+    }
     const snapshot = snapshotDoc(doc);
     try {
-      fillFormField(doc.pdfDoc, payload.id, payload.value);
+      // Phase 59 item 4 — fill natively: set the field value and regenerate
+      // appearances with the bundled Unicode font, returning a per-field
+      // report. A multi-widget button group is filled at the dict level
+      // (the typed check() API cannot reach a non-first on-value).
+      const values = new Map<string, string | string[]>();
+      values.set(payload.id, payload.value);
+      let font: Awaited<ReturnType<typeof embedEditFont>>;
+      try {
+        font = await embedEditFont(doc.pdfDoc, 'DejaVu Serif', false, false);
+      } catch {
+        // No bundled Unicode font available: fall back to the typed API
+        // (groups still work through fillFormField's dict-level path).
+        fillFormField(doc.pdfDoc, payload.id, payload.value);
+        doc.lastFormFillReport = undefined;
+        doc.undoStack.push(snapshot);
+        doc.redoStack = [];
+        doc.modified = true;
+        return ok(buildState(doc));
+      }
+      doc.lastFormFillReport = fillFormNatively(doc.pdfDoc, font, values);
     } catch (e) {
       return err('engine-error', `fillFormField failed: ${e instanceof Error ? e.message : String(e)}`);
     }
@@ -1813,7 +1845,7 @@ export class EngineService {
 
     let otherDoc: PDFDocument;
     try {
-      otherDoc = await PDFDocument.load(otherBytes);
+      otherDoc = await PDFDocument.load(otherBytes, { preserveXFA: true });
     } catch (e) {
       return err('engine-error', `insertFromPdf: could not parse other PDF: ${e instanceof Error ? e.message : String(e)}`);
     }
@@ -3093,7 +3125,7 @@ export class EngineService {
 
     let otherDoc: PDFDocument;
     try {
-      otherDoc = await PDFDocument.load(otherBytes);
+      otherDoc = await PDFDocument.load(otherBytes, { preserveXFA: true });
     } catch (e) {
       return err('engine-error', `replacePages: could not parse other PDF: ${e instanceof Error ? e.message : String(e)}`);
     }
@@ -4478,106 +4510,6 @@ function wrapTextToWidth(
   return out;
 }
 
-/**
- * Migrate a single form field from a source PDFDocument to a destination
- * form, placing it on the given page. (DEF-029)
- */
-function migrateFormField(
-  srcField: any,
-  dstForm: any,
-  dstPage: any,
-): void {
-  const name = srcField.getName();
-  if (srcField instanceof PDFTextField) {
-    const f = dstForm.createTextField(name);
-    const text = srcField.getText?.() ?? '';
-    f.setText(typeof text === 'string' ? text : '');
-    f.addToPage(dstPage);
-    setWidgetPageRef(f, dstPage);
-  } else if (srcField instanceof PDFCheckBox) {
-    const f = dstForm.createCheckBox(name);
-    try { if (srcField.isChecked?.()) f.check(); } catch {}
-    f.addToPage(dstPage);
-    setWidgetPageRef(f, dstPage);
-  } else if (srcField instanceof PDFRadioGroup) {
-    const options = srcField.getOptions?.() ?? [];
-    const f = dstForm.createRadioGroup(name);
-    for (const opt of options) {
-      f.addOptionToPage(String(opt), dstPage);
-    }
-    try {
-      const sel = srcField.getSelected?.();
-      if (sel) f.select(String(sel));
-    } catch {}
-    setWidgetPageRef(f, dstPage);
-  } else if (srcField instanceof PDFDropdown) {
-    const options = srcField.getOptions?.() ?? [];
-    const f = dstForm.createDropdown(name);
-    f.addOptions(options.map(String));
-    f.addToPage(dstPage);
-    try {
-      const sel = srcField.getSelected?.();
-      if (sel) {
-        const val = Array.isArray(sel) ? String(sel[0]) : String(sel);
-        f.select(val);
-      }
-    } catch {}
-    setWidgetPageRef(f, dstPage);
-  } else if (srcField instanceof PDFOptionList) {
-    const options = srcField.getOptions?.() ?? [];
-    const f = dstForm.createOptionList(name);
-    f.addOptions(options.map(String));
-    f.addToPage(dstPage);
-    try {
-      const sel = srcField.getSelected?.();
-      if (sel) {
-        if (Array.isArray(sel)) {
-          for (const v of sel) { try { f.select(String(v)); } catch {} }
-        } else {
-          try { f.select(String(sel)); } catch {}
-        }
-      }
-    } catch {}
-    setWidgetPageRef(f, dstPage);
-  }
-}
-
-/**
- * Set the /P (page reference) on a form field's widget annotations so
- * findFieldPage can locate the field. pdf-lib's addToPage puts the widget
- * ref in the page's /Annots but does not necessarily set /P on the widget.
- *
- * Uses page.ref (PDFPage's public ref getter) and page.doc to look up the
- * widget annotation. The looked-up object is a PDFWidgetAnnotation which
- * exposes a setP(pageRef) method.
- */
-function setWidgetPageRef(field: any, page: any): void {
-  try {
-    const pageRef = page.ref;
-    if (!pageRef) return;
-    const doc = page.doc;
-    if (!doc) return;
-    const widgets = field.acroField?.getWidgets?.();
-    if (!widgets) return;
-    const widgetList: any[] = Array.isArray(widgets)
-      ? widgets
-      : (typeof widgets.size === 'function'
-        ? Array.from({ length: widgets.size() }, (_, i: number) => widgets.get(i))
-        : []);
-    if (widgetList.length === 0) return;
-    for (const wRef of widgetList) {
-      try {
-        const wObj = doc.context.lookup(wRef);
-        if (wObj && typeof wObj.setP === 'function') {
-          wObj.setP(pageRef);
-        } else if (wObj && wObj.dict && typeof wObj.dict.set === 'function') {
-          wObj.dict.set(PDFName.of('P'), pageRef);
-        }
-      } catch { /* skip */ }
-    }
-  } catch { /* skip */ }
-}
-
 function snapshotDoc(doc: EngineDoc): Snapshot {
   return {
     order: [...doc.order],
@@ -4663,7 +4595,7 @@ async function restoreSnapshot(doc: EngineDoc, snap: Snapshot): Promise<void> {
 async function tryRestorePdfBytes(doc: EngineDoc, bytes: Uint8Array | undefined): Promise<void> {
   if (!bytes) return;
   try {
-    const reloaded = await PDFDocument.load(bytes);
+    const reloaded = await PDFDocument.load(bytes, { preserveXFA: true });
     doc.pdfDoc = reloaded;
   } catch {
     // Best-effort: leave the current pdfDoc in place.
@@ -4751,6 +4683,15 @@ function buildState(doc: EngineDoc): EngineState {
   } catch {
     // Document has no form or form is corrupt — omit formFields
   }
+  // Phase 59 item 4 — surface the most recent native-fill report so the
+  // renderer can show "N filled / M skipped with reasons" from the fill/save
+  // IPC result without a new channel. Optional; absent until a fill/save ran.
+  // ADV-127 / DEF-427 — the report is stored in ORIGINAL pdfDoc page indices
+  // and remapped here to the VISIBLE page the user actually sees (a field on a
+  // deleted page gets `page: null`), matching getFormFields / buildState.
+  if (doc.lastFormFillReport !== undefined) {
+    state.formFillReport = remapFormFillReportPages(doc.lastFormFillReport, doc.order);
+  }
   // Phase 12: expose page labels set by renumberPages (visible order).
   if (doc.pageLabels && doc.pageLabels.length > 0) {
     state.pageLabels = doc.pageLabels.map((l) => ({ ...l }));
@@ -4788,13 +4729,83 @@ function remapFormFieldPages(
     const visibleIdx = order.indexOf(origIdx);
     if (visibleIdx === -1) continue; // Field on a deleted page — skip
     const newPage = visibleIdx + 1;
-    result.push({
-      ...field,
-      page: newPage,
-      id: `form-${visibleIdx}-${field.name.replace(/[^a-zA-Z0-9]/g, '_')}`,
-    });
+    // ADV-124 / DEF-424 — an orphan widget id keeps its `orphan-` prefix so
+    // the UI and report can tell it apart from a real, fillable field. Only a
+    // real field's id is rebuilt from its visible page + name.
+    const id = field.id.startsWith('orphan-')
+      ? field.id
+      : `form-${visibleIdx}-${field.name.replace(/[^a-zA-Z0-9]/g, '_')}`;
+    result.push({ ...field, page: newPage, id });
   }
   return result;
+}
+
+/**
+ * ADV-127 / DEF-427 — remap a native-fill report's page numbers from ORIGINAL
+ * pdfDoc indices to VISIBLE (1-based) positions, the same mapping
+ * `remapFormFieldPages` applies to the field list. A row whose page was
+ * deleted becomes `page: null` (the field is gone from the document). Rows
+ * that are not tied to a page already carry `page: null` and are untouched.
+ */
+function remapFormFillReportPages(
+  reports: FormFillReport[],
+  order: number[],
+): FormFillReport[] {
+  return reports.map((report) => {
+    if (report.page === null) return { ...report };
+    const origIdx = report.page - 1;
+    const visibleIdx = order.indexOf(origIdx);
+    return { ...report, page: visibleIdx === -1 ? null : visibleIdx + 1 };
+  });
+}
+
+/**
+ * ADV-127 / DEF-427 — the inverse of `remapFormFillReportPages`. The save paths
+ * run `fillFormNatively` on the freshly serialized output, whose page indices
+ * are already VISIBLE order; convert them back to original indices so the
+ * single stored report is always original-indexed and `buildState` can remap
+ * it once (this keeps a report correct even after a later page delete).
+ */
+function reportPagesToOriginal(
+  reports: FormFillReport[],
+  order: number[],
+): FormFillReport[] {
+  return reports.map((report) => {
+    if (report.page === null) return { ...report };
+    const origIdx = order[report.page - 1];
+    return { ...report, page: origIdx === undefined ? null : origIdx + 1 };
+  });
+}
+
+/**
+ * ADV-124 / DEF-424 — the truthful single-row report for a fill attempt on an
+ * orphan widget id. Matches the orphan by its getFormFields id so the row
+ * carries the widget's real name and (original-index) page; falls back to a
+ * generic `orphan-unfilled` row if the widget can no longer be found.
+ */
+function orphanUnfilledReport(pdfDoc: PDFDocument, id: string): FormFillReport[] {
+  const detail = 'widget is not referenced by the AcroForm /Fields tree';
+  try {
+    for (const orphan of findOrphanWidgets(pdfDoc)) {
+      const orphanId =
+        `orphan-${orphan.pageIndex}-${orphan.name.replace(/[^a-zA-Z0-9]/g, '_')}`;
+      if (orphanId !== id) continue;
+      return [
+        { name: orphan.name, page: orphan.pageIndex + 1, kind: 'orphan', status: 'orphan-unfilled', detail },
+      ];
+    }
+  } catch {
+    // Fall through to the generic row.
+  }
+  return [
+    {
+      name: id.replace(/^orphan-/, ''),
+      page: null,
+      kind: 'orphan',
+      status: 'orphan-unfilled',
+      detail,
+    },
+  ];
 }
 
 function applyOpToDoc(doc: EngineDoc, op: OpEntry): Result<void, EngineError> {
@@ -5522,6 +5533,21 @@ function carryPageLinkedEntries(
   }
 }
 
+/**
+ * Phase 59 item 4 — true when the output document carries at least one
+ * AcroForm field. Guards the native-fill pass so a form-less save neither
+ * embeds the Unicode font nor touches appearances (keeping its bytes
+ * unchanged).
+ */
+function outputHasFormFields(doc: PDFDocument): boolean {
+  try {
+    if (doc.catalog.get(PDFName.of('AcroForm')) === undefined) return false;
+    return doc.getForm().getFields().length > 0;
+  } catch {
+    return false;
+  }
+}
+
 async function serializeDoc(doc: EngineDoc): Promise<Uint8Array> {
   const out = await PDFDocument.create();
   const pageMap = new Map<number, number>(); // origIdx -> output page index
@@ -5586,76 +5612,43 @@ async function serializeDoc(doc: EngineDoc): Promise<Uint8Array> {
   // Serialize annotations onto the output doc
   await serializeAnnotations(out, doc.annotations, doc.order);
 
-  // Migrate form fields from source to output document.
-  // Page copying does not preserve the AcroForm structure, so we recreate
-  // fields on the output pages and restore their values.
+  // Phase 59 item 4 — CARRY the source AcroForm across the rebuild.
+  //
+  // The previous implementation RECREATED each field (createTextField /
+  // createCheckBox / ... + addToPage with no box), which reset every widget to
+  // pdf-lib's default 200x50 box at (0,0), collapsed each multi-widget button
+  // group to a single widget, and gave the recreated widgets pdf-lib's default
+  // white fill + black border — the "layer of fields" users saw over their real
+  // form. carryAcroForm deep-copies the /AcroForm object graph with one copier
+  // seeded with the output page refs and the widgets `copyPages` already placed
+  // on the output pages, so fields, kids, widgets, /DR, /DA, /Ff, /Opt and /AP
+  // survive intact and every widget /P points at the NEW page. Master switch
+  // for the carry is the source /AcroForm itself; no form means no-op.
   try {
-    const srcForm = doc.pdfDoc.getForm();
-    const srcFields = srcForm.getFields();
-    if (srcFields.length > 0) {
-      const dstForm = out.getForm();
-      for (const srcField of srcFields) {
-        const name = srcField.getName();
-        // Find the 0-based source page for this field
-        const srcPage = findFieldPage(doc.pdfDoc, srcField);
-        const dstPageIdx = pageMap.get(srcPage);
-        if (dstPageIdx === undefined) continue; // page was deleted
-
-        try {
-          if (srcField instanceof PDFTextField) {
-            const f = dstForm.createTextField(name);
-            const text = srcField.getText?.() ?? '';
-            f.setText(typeof text === 'string' ? text : '');
-            f.addToPage(out.getPage(dstPageIdx));
-          } else if (srcField instanceof PDFCheckBox) {
-            const f = dstForm.createCheckBox(name);
-            try { if (srcField.isChecked?.()) f.check(); } catch {}
-            f.addToPage(out.getPage(dstPageIdx));
-          } else if (srcField instanceof PDFRadioGroup) {
-            const options = srcField.getOptions?.() ?? [];
-            const f = dstForm.createRadioGroup(name);
-            for (const opt of options) {
-              f.addOptionToPage(String(opt), out.getPage(dstPageIdx));
-            }
-            try {
-              const sel = srcField.getSelected?.();
-              if (sel) f.select(String(sel));
-            } catch {}
-          } else if (srcField instanceof PDFDropdown) {
-            const options = srcField.getOptions?.() ?? [];
-            const f = dstForm.createDropdown(name);
-            f.addOptions(options.map(String));
-            f.addToPage(out.getPage(dstPageIdx));
-            try {
-              const sel = srcField.getSelected?.();
-              if (sel) {
-                const val = Array.isArray(sel) ? String(sel[0]) : String(sel);
-                f.select(val);
-              }
-            } catch {}
-          } else if (srcField instanceof PDFOptionList) {
-            const options = srcField.getOptions?.() ?? [];
-            const f = dstForm.createOptionList(name);
-            f.addOptions(options.map(String));
-            f.addToPage(out.getPage(dstPageIdx));
-            try {
-              const sel = srcField.getSelected?.();
-              if (sel) {
-                if (Array.isArray(sel)) {
-                  for (const v of sel) { try { f.select(String(v)); } catch {} }
-                } else {
-                  try { f.select(String(sel)); } catch {}
-                }
-              }
-            } catch {}
-          }
-        } catch {
-          // Skip fields that fail to migrate
-        }
-      }
-    }
+    carryAcroForm(doc.pdfDoc, out, pageMap);
   } catch {
-    // If form migration fails, save without form fields
+    // A malformed form must never block a save; the save simply has no form.
+  }
+
+  // Phase 59 item 4 — NATIVE fill. After the AcroForm is carried, re-apply
+  // every field's current value and regenerate each widget's appearance with
+  // the bundled Unicode font, so the values live on the FIELDS (not a painted
+  // overlay) and open correctly in an independent reader. The report is kept
+  // on the engine document and surfaced through EngineState.formFillReport.
+  // Saving with `updateFieldAppearances: false` is essential: pdf-lib's
+  // default would re-render everything with WinAnsi Helvetica, discarding the
+  // Unicode font and throwing on a non-WinAnsi value. The font is embedded
+  // ONLY when the output actually carries form fields, so a form-less save is
+  // byte-for-byte what it was before.
+  if (outputHasFormFields(out)) {
+    try {
+      const font = await embedEditFont(out, 'DejaVu Serif', false, false);
+      doc.lastFormFillReport = reportPagesToOriginal(fillFormNatively(out, font), doc.order);
+    } catch (e) {
+      console.warn(
+        `[tflex] native form fill skipped: ${e instanceof Error ? e.message : String(e)}`,
+      );
+    }
   }
 
   // Render placed signatures onto the output pages
@@ -5743,7 +5736,9 @@ async function serializeDoc(doc: EngineDoc): Promise<Uint8Array> {
 
   // Phase 49 — brand the produced PDF's Producer/Creator as Jovrel.
   stampBrandMetadata(out);
-  return out.save();
+  // Phase 59 item 4 — appearances were regenerated above with the Unicode
+  // font, so suppress pdf-lib's own (WinAnsi Helvetica) re-render on save.
+  return out.save({ updateFieldAppearances: false });
 }
 
 /**
@@ -5786,73 +5781,25 @@ async function serializeDocOptimized(
   // Serialize annotations onto the output doc
   await serializeAnnotations(out, doc.annotations, doc.order);
 
-  // Migrate form fields
+  // Phase 59 item 4 — carry the AcroForm (see serializeDoc for the rationale).
   try {
-    const srcForm = doc.pdfDoc.getForm();
-    const srcFields = srcForm.getFields();
-    if (srcFields.length > 0) {
-      const dstForm = out.getForm();
-      for (const srcField of srcFields) {
-        const name = srcField.getName();
-        const srcPage = findFieldPage(doc.pdfDoc, srcField);
-        const dstPageIdx = pageMap.get(srcPage);
-        if (dstPageIdx === undefined) continue;
-
-        try {
-          if (srcField instanceof PDFTextField) {
-            const f = dstForm.createTextField(name);
-            const text = srcField.getText?.() ?? '';
-            f.setText(typeof text === 'string' ? text : '');
-            f.addToPage(out.getPage(dstPageIdx));
-          } else if (srcField instanceof PDFCheckBox) {
-            const f = dstForm.createCheckBox(name);
-            try { if (srcField.isChecked?.()) f.check(); } catch {}
-            f.addToPage(out.getPage(dstPageIdx));
-          } else if (srcField instanceof PDFRadioGroup) {
-            const options = srcField.getOptions?.() ?? [];
-            const f = dstForm.createRadioGroup(name);
-            for (const opt of options) {
-              f.addOptionToPage(String(opt), out.getPage(dstPageIdx));
-            }
-            try {
-              const sel = srcField.getSelected?.();
-              if (sel) f.select(String(sel));
-            } catch {}
-          } else if (srcField instanceof PDFDropdown) {
-            const options = srcField.getOptions?.() ?? [];
-            const f = dstForm.createDropdown(name);
-            f.addOptions(options.map(String));
-            f.addToPage(out.getPage(dstPageIdx));
-            try {
-              const sel = srcField.getSelected?.();
-              if (sel) {
-                const val = Array.isArray(sel) ? String(sel[0]) : String(sel);
-                f.select(val);
-              }
-            } catch {}
-          } else if (srcField instanceof PDFOptionList) {
-            const options = srcField.getOptions?.() ?? [];
-            const f = dstForm.createOptionList(name);
-            f.addOptions(options.map(String));
-            f.addToPage(out.getPage(dstPageIdx));
-            try {
-              const sel = srcField.getSelected?.();
-              if (sel) {
-                if (Array.isArray(sel)) {
-                  for (const v of sel) { try { f.select(String(v)); } catch {} }
-                } else {
-                  try { f.select(String(sel)); } catch {}
-                }
-              }
-            } catch {}
-          }
-        } catch {
-          // Skip fields that fail to migrate
-        }
-      }
-    }
+    carryAcroForm(doc.pdfDoc, out, pageMap);
   } catch {
-    // If form migration fails, save without form fields
+    // A malformed form must never block a save.
+  }
+
+  // Phase 59 item 4 — native fill (see serializeDoc): re-apply the carried
+  // values and regenerate appearances with the Unicode font, reporting every
+  // field's outcome. Only when the output actually carries form fields.
+  if (outputHasFormFields(out)) {
+    try {
+      const font = await embedEditFont(out, 'DejaVu Serif', false, false);
+      doc.lastFormFillReport = reportPagesToOriginal(fillFormNatively(out, font), doc.order);
+    } catch (e) {
+      console.warn(
+        `[tflex] native form fill skipped: ${e instanceof Error ? e.message : String(e)}`,
+      );
+    }
   }
 
   // Render placed signatures onto the output pages
@@ -5958,7 +5905,9 @@ async function serializeDocOptimized(
   // ('max' strips metadata from the SOURCE copy above, but the products the
   // app writes still identify Jovrel as the tool that produced them.)
   stampBrandMetadata(out);
-  return out.save({ useObjectStreams });
+  // Phase 59 item 4 — suppress pdf-lib's WinAnsi appearance re-render (the
+  // native fill regenerated appearances with the Unicode font above).
+  return out.save({ useObjectStreams, updateFieldAppearances: false });
 }
 
 /**

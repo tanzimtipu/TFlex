@@ -356,6 +356,13 @@ export interface EngineState {
    *  Populated by buildState so the renderer can seed form editors without
    *  a separate getFormFields call. Omitted when the document has no form. */
   formFields?: FormField[];
+  /** Phase 59 item 4 — the per-field outcome of the most recent native form
+   *  fill (the save-time pass that sets each field's value and regenerates
+   *  its widget appearances). Absent until a fill/save has run, so the
+   *  renderer can report "N filled / M skipped with reasons". The wire
+   *  shape of the fill/save IPC is unchanged apart from this optional
+   *  field. */
+  formFillReport?: FormFillReport[];
   /** Phase 11 — per-page OCR failures accumulated by `ocrRecognize` when
    *  recognition/writing of individual pages failed but at least one page
    *  succeeded (partial success). Populated only on the OCR success path
@@ -832,6 +839,48 @@ export interface FormField {
   /** True for multi-select listboxes (engine sets this from
    *  pdf-lib's PDFOptionList.isMultiselect). */
   multi?: boolean;
+  /** Phase 59 item 4 — per-widget editors for a multi-widget button group
+   *  (`radio`). Absent for every other kind. `value` is the widget's
+   *  on-state name (e.g. 'mr', 'Yes'); `selected` marks the widget whose
+   *  on-state matches the field /V. */
+  widgets?: FormFieldWidget[];
+  /** Phase 59 item 4 — the field's ReadOnly flag (/Ff bit 1). Present and
+   *  true only when the field is read-only. */
+  readOnly?: boolean;
+}
+
+/** Phase 59 item 4 — one widget position of a multi-widget button GROUP
+ *  (a `radio` field). `value` is the widget's on-state name (the export
+ *  value pdf-lib writes into the field /V, e.g. 'mr', 'Yes'); `rect` is
+ *  that widget's own box in PDF points, top-left origin; `selected` is
+ *  true for the widget whose on-state matches the field's current /V. */
+export interface FormFieldWidget {
+  value: string;
+  rect: FormFieldRect;
+  selected: boolean;
+}
+
+/** Phase 59 item 4 — the per-field outcome of a native fill. */
+export type FormFillStatus =
+  | "filled"
+  | "skipped-readonly"
+  | "skipped-signature"
+  | "font-unavailable"
+  | "option-unknown"
+  | "xfa"
+  | "orphan-unfilled";
+
+/** Phase 59 item 4 — one row of the native-fill report. `name` is the
+ *  field's fully qualified name (or a synthetic label for an XFA/orphan
+ *  row); `page` is the 1-based VISIBLE page, or null when the row is not
+ *  tied to a page (XFA); `kind` is the field kind (or 'xfa'/'orphan');
+ *  `status` is the outcome; `detail` explains a non-`filled` status. */
+export interface FormFillReport {
+  name: string;
+  page: number | null;
+  kind: string;
+  status: FormFillStatus;
+  detail?: string;
 }
 
 /** Payload for `fillFormField`. The renderer sends only the field id and
