@@ -433,6 +433,24 @@ test('about actionable-element tour (check-update + path links)', async () => {
 });
 
 test('welcome recent row click on a missing file', async () => {
+  // TFL-24 oracle fix: a virtual sample recent ("samples/<name>") always sits
+  // at the top of the list and is never on disk, so it must NOT satisfy this
+  // guard. Deterministically seed a genuinely-missing NON-sample recent: open a
+  // non-sample copy of a bundled sample (its path lives under the OS temp dir),
+  // return to the welcome screen so the row is created, then delete the file so
+  // the stored recent now points at a missing non-sample path.
+  const { getSamplePath } = require('./lib/launch.cjs');
+  const seededPath = getSamplePath('form.pdf');
+  await app.evaluate(async ({ dialog }, p) => {
+    dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [p] });
+  }, seededPath);
+  await win.locator('button:has-text("Open PDF")').first().click();
+  await win.waitForSelector('.workspace', { timeout: 30000 });
+  await win.keyboard.press('Control+w');
+  await win.waitForSelector('.welcome', { timeout: 8000 });
+  await sleep(600);
+  fs.unlinkSync(seededPath);
+
   const recents = await win.locator('.recent-row').evaluateAll((rows) =>
     rows.map((r) => ({
       title: r.getAttribute('title'),
@@ -443,23 +461,34 @@ test('welcome recent row click on a missing file', async () => {
   for (const r of recents) {
     try { exists[r.title] = fs.existsSync(r.title); } catch (e) { exists[r.title] = 'err'; }
   }
-  const missing = recents.find((r) => exists[r.title] === false);
+  // Skip virtual sample recents (title/name starting with "samples/"): they are
+  // never on disk and their click path is the sample flow, not the missing-file
+  // IO error path this test guards (the sample reopen path is covered by the
+  // separate "welcome sample recent row reopens the sample" test, DEF-429).
+  const isSampleRow = (r) =>
+    (r.title && r.title.startsWith('samples/')) || (r.name && r.name.startsWith('samples/'));
+  const nonSampleRecents = recents.filter((r) => !isSampleRow(r));
+  const missing = nonSampleRecents.find((r) => exists[r.title] === false);
+
   let toast = null;
   let welcome = null;
   let clickedName = null;
+  let clickedTitle = null;
   if (missing) {
     clickedName = missing.name;
-    const row = win.locator(`.recent-row[title="${missing.title.replace(/\\/g, '\\\\')}"] .recent-row-open`);
-    const target = (await row.count()) ? row : win.locator('.recent-row .recent-row-open').first();
-    // click the row whose title matches; fall back handled above
-    await win.locator('.recent-row').filter({ hasText: missing.name }).first().locator('.recent-row-open').click();
+    clickedTitle = missing.title;
+    const idx = recents.findIndex((r) => r.title === missing.title);
+    await win.locator('.recent-row').nth(idx).locator('.recent-row-open').click();
     await sleep(1800);
     toast = await win.locator('.toast').allInnerTexts().catch(() => []);
     welcome = await win.locator('.welcome').count();
     await win.screenshot({ path: shotPath('welcome_missing_recent_click') });
   }
   // eslint-disable-next-line no-console
-  console.log('PILOT1_MISSINGRECENT ' + JSON.stringify({ exists, missingTitle: missing ? missing.title : null, clickedName, toast, welcome, pageErrors }));
+  console.log('PILOT1_MISSINGRECENT ' + JSON.stringify({ exists, missingTitle: missing ? missing.title : null, clickedName, clickedTitle, toast, welcome, pageErrors }));
+  expect(typeof clickedTitle === 'string' && !clickedTitle.startsWith('samples/')).toBe(true);
+  expect((toast || []).some((t) => /Could not open file/i.test(t))).toBe(true);
+  expect(welcome).toBe(1);
   expect(pageErrors).toEqual([]);
 });
 
