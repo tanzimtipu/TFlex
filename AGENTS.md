@@ -34,12 +34,12 @@ never grow the settings shape ad-hoc.
 - **backend-dev** — all main-process code: the PDF engine (pdf-lib), file I/O, persistence,
   IPC services, packaging — and backend unit tests.
 - **qa** — end-to-end tests, test runs, screenshots, DEFECTS.md. Does not fix code.
-  Owns all visual judgment of screenshots. Runs on the local vision model, and the local
-  server is deliberately left loaded while it works — offloading it would kill the agent
-  running the suite.
+  Owns all visual judgment of screenshots. Every task, focused or not, includes the
+  blast-radius neighbour test; bug-hunt sweeps run when dispatched. Cloud pinned model.
 - **adversary** — tries to break the running app and its PDF handling; records findings in
-  ADVERSARIAL_REVIEW.md. Runs on the local vision model, so it can judge the screenshots it
-  captures for itself.
+  ADVERSARIAL_REVIEW.md. Fires at phase gates and final, on every high-risk merge
+  (save / export / delete / settings persistence), and on a weekly sweep. Cloud pinned
+  model, vision-capable — it judges the screenshots it captures for itself.
 - **git-agent** — local git operations: initial commits, remote setup, tagging, pushes to
   origin, and verifying the OTA update release pipeline. Never edits product code,
   tests, or ledgers.
@@ -115,7 +115,7 @@ belongs in CI, which runs `verify:full` on every push.
 
 All defects live in `DEFECTS.md` at the repo root, one entry per defect, newest first.
 Writers: **qa** (create, close, reopen) and **orchestrator** (record developer responses,
-reject). Nobody else edits it, ever.
+reject, and file operator-reported defects with their escape class). Nobody else edits it, ever.
 
 Format, exactly:
 
@@ -124,7 +124,7 @@ Format, exactly:
 
 - Status: OPEN
 - Severity: HIGH | MEDIUM | LOW
-- Found by: qa | adversary (ADV-003)
+- Found by: qa | adversary (ADV-003) | operator
 - Phase: 3
 
 Steps to reproduce:
@@ -152,6 +152,24 @@ Statuses and who may set them:
 Every status change appends a History line saying who, what and why. A defect is never done
 because a developer says so — it is done when qa closes it.
 
+## Operator-found defects — mandatory escape analysis
+
+The operator finding a bug by hand is a process failure signal, not merely a defect.
+Every defect filed with `Found by: operator` must carry an escape classification,
+recorded in its History at filing time by the orchestrator and confirmed by qa at
+closure. The classes:
+
+| Class | Meaning | Mandatory follow-up |
+| --- | --- | --- |
+| `ESCAPE: no-probe` | No existing test or adversarial probe covers this behaviour | qa adds the missing regression test; the adversary adds the attack class to its matrix |
+| `ESCAPE: scope-excluded` | The area was outside the assigned verification scope | the orchestrator names the missed blast radius and updates the brief standard |
+| `ESCAPE: wrong-oracle` | A test existed but asserted the wrong thing | qa fixes the assertion and audits sibling tests for the same class |
+| `ESCAPE: dispatched-late` | qa or the adversary should have run on this change earlier | the orchestrator updates dispatch policy (high-risk merge classes) |
+
+Repeated escapes of the same class within one phase are a phase-gate blocker: the net
+gets patched before new work proceeds. Escape classes are cumulative with the status
+table above — a defect still travels OPEN → FIX-READY → CLOSED as usual.
+
 ## ADVERSARIAL_REVIEW.md — the adversary's findings
 
 All adversary findings live in `ADVERSARIAL_REVIEW.md` at the repo root.
@@ -162,7 +180,7 @@ Format, exactly:
 ```
 ## ADV-001: Short title
 
-- Session: phase-3 gate | final
+- Session: phase-3 gate | final | diff-pass | weekly-sweep
 - Suggested severity: HIGH | MEDIUM | LOW
 
 What I did: ...
@@ -206,13 +224,13 @@ orchestration harness:
   script stays in `scripts/` as fallback infrastructure only; the guard runs
   `ninfer-model.ps1 stop` at run end to keep the card clear.
 
-The orchestrator's model, `openrouter/deepseek/deepseek-v4.1-flash`, is reserved for the
-orchestrator alone — a sub-agent starting on it is a silent fallback, exactly like any
-other wrong model. SANCTIONED EXCEPTIONS (operator-approved 2026-09-17/18): the whole
-build team — backend-dev, frontend-dev, qa, the adversary and git-agent — is pinned to
-that same model deliberately. They share it by design and have a ~1M-token cloud context;
-qa and the adversary get cloud vision. Any of the five on it is correct, not a fallback;
-feature-scout on glm-5.3-flash completes the team. Any sub-agent on a model other than its pin is still a hard stop. If a sub-agent cannot load its pinned model
+The shared build model: the orchestrator, backend-dev, frontend-dev, qa, the
+adversary and git-agent ALL run on `openrouter/deepseek/deepseek-v4.1-flash` by
+operator decision (2026-09-17/18) — one shared cloud model with a ~1M-token context;
+qa and the adversary get cloud vision on it. Any of the six on it is correct, not a
+fallback; feature-scout on glm-5.3-flash completes the team. A silent fallback means
+an agent running on any model OTHER than its pinned one (today: feature-scout on the
+shared model, or any role on anything else). It is a hard stop either way. If a sub-agent cannot load its pinned model
 (provider error, account
 data-policy rejection, invalid ID) or starts on any other model, the build **stops** —
 no planning, no real task dispatch, no work on the fallback model. The orchestrator
@@ -261,7 +279,7 @@ continuation naming where it stopped. Never restart the same task from scratch b
 filled its context, and never treat it as a reason for the orchestrator to take over.
 
 An empty step — the child settles with no text and no tool calls — is also a token-limit
-stop, not a dead session: on the local model the 65536-token generation budget includes
+stop, not a dead session: on the shared cloud model the generation budget includes
 reasoning, so a resumed child can burn the whole cap silently planning. Resume the same
 session with a halved scope and the prefix "Do not deliberate — start producing output
 immediately"; never re-dispatch fresh after one or two empty steps.

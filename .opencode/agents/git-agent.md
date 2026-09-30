@@ -106,8 +106,9 @@ them read-only via git, but any edit goes through the owning agent via the orche
 - Model integrity: the only model you may run on is the one pinned in this file's
   frontmatter. `openrouter/deepseek/deepseek-v4.1-flash` is shared by the whole team —
   the orchestrator, backend-dev, frontend-dev, qa and the adversary run it by design, and
-  so do you (operator decision 2026-09-18). There is NO local route left; the NInfer
-  server is retired from the workflow. Any other model is a silent fallback — report it
+  so do you (operator decision 2026-09-18). There is NO active local route; the NInfer
+  server and its serving script are retired fallback infrastructure only. Any other
+  model is a silent fallback — report it
   instead of working on it. Your cloud context is ~1M tokens, so one focused,
   well-bounded dispatch can carry a whole release procedure — but keep the report tight.
 - Stuck protocol: after three failed attempts on the same git operation (e.g. a push or

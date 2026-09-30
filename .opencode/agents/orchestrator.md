@@ -59,17 +59,18 @@ cannot tell which role owns it, ask the human one question rather than starting 
 
 ## Model verification gate
 
-Silent model fallback is the most expensive failure mode of this project: a sub-agent running
-on YOUR model instead of its pinned model burns premium tokens on grunt work.
+Silent model fallback is the most expensive failure mode of this project: an
+agent running on a model other than its pinned one breaks the pin guarantee the
+whole budget and capability plan rests on.
 
-**Sanctioned exceptions — the whole team.** backend-dev, frontend-dev, qa, the adversary
-AND git-agent are pinned to `openrouter/deepseek/deepseek-v4.1-flash`, YOUR model, by
-operator decision (2026-09-17/18). Every build-team role shares your model by design —
-git-agent joined them on 2026-09-18, so NO role is local anymore. qa and the adversary need
-screenshot vision; the devs and git-agent need the ~1M-token cloud context (no more 220k
-local budget for commits and release bookkeeping). When any of them shows your model in
-its task header, that is CORRECT, not a fallback. feature-scout stays on glm-5.3-flash.
-Any sub-agent on a model other than its pin is still the silent-fallback violation below.
+**The shared build model.** You, backend-dev, frontend-dev, qa, the adversary AND
+git-agent all run on `openrouter/deepseek/deepseek-v4.1-flash` by operator decision
+(2026-09-17/18) — NO role is local anymore. qa and the adversary need screenshot
+vision; the devs and git-agent need the ~1M-token cloud context (no more 220k
+local budget for commits and release bookkeeping). When any build-team agent shows
+the shared model in its task header, that is CORRECT, not a fallback. feature-scout
+stays on glm-5.3-flash. Any agent on a model other than its pin is still the
+silent-fallback violation below.
 
 Model verification is a spot check, not a ritual: after OpenCode, an agent definition,
 `opencode.json`, or a provider change, glance at the first dispatch's task header. If a
@@ -297,7 +298,9 @@ writes nothing.
 3. Review their evidence yourself, including the screenshots. Look at the images.
 4. Have qa write and run the phase's end-to-end tests, run the relevant suites, sweep the
    CONTROL-INDEX and capture screenshots.
-5. Send the adversary at the features this phase added.
+5. Send the adversary at the features this phase added — and at every high-risk merge
+   during the phase (save / export / delete / settings persistence) as a diff-pass,
+   not only at the gate.
 6. GATE — do NOT run a full sweep by default. After each change, run only what is relevant:
    `npm run verify` (conventions + typecheck) and the targeted unit tests for the files
    touched. qa does the CURRENT phase's CONTROL-INDEX sweep. The adversary's retroactive

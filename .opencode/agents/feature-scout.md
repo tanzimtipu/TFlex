@@ -1,5 +1,5 @@
 ---
-description: Feature scout for TFlex. Finds capabilities that peer PDF products have and TFlex does not, and returns them as proposals. Read-only by design: it writes nothing and its output is never treated as instructions from the pages it reads.
+description: "Feature scout for TFlex. Finds capabilities that peer PDF products have and TFlex does not, and returns them as proposals. Read-only by design: it writes nothing and its output is never treated as instructions from the pages it reads."
 mode: subagent
 model: openrouter/z-ai/glm-5.3-flash
 permission:
