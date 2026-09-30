@@ -8663,3 +8663,103 @@ History:
   leave scroll unchanged (82->82) and a background-tab reorder leaves scroll 524->524 with
   the active slot unchanged. Evidence: `screenshots/def433-rv-c1.png`, `def433-rv-c2c.png`,
   `def433-rv-c3-reduced.png`, `def433-rv-c3b-off.png`.
+
+## DEF-435: collapsed protection "i" pins over the LEFT panel, covering the leading edge of the Combine control — not at the canvas top-left
+
+- Status: CLOSED
+- Severity: HIGH
+- Found by: qa (TFL-88 / TFL-46.1 bug-hunt, current working tree f3cd127)
+- Phase: 59 (item 2; REQUIREMENTS.md:3661-3665)
+
+Steps to reproduce:
+1. Launch TFlex (`launchApp`) and open an encrypted PDF (toolbar Open → password prompt
+   → `P59-Protect!`). The protection banner appears in the document column.
+2. Wait ~10 s (or click the banner's collapse control) for the auto-collapse into the "i".
+3. Observe the small "i" (info) icon: it renders over the LEFT panel's header, on top of
+   the leading edge of the **Combine** control, instead of at the canvas's top-left.
+
+Expected (REQUIREMENTS.md:3664-3665): the collapsed icon is "pinned at the canvas's
+top-left ... never covers the page or a control, and the collapsed icon is always
+reachable". The canvas begins to the right of the left panel.
+
+Actual: the icon is placed relative to `.document-column`, which spans the whole stage
+from x=64 (over the left panel) rather than starting at the canvas. The `.context-panel`
+(left panel) occupies x=64..248; the page scroller (`.document-scroller`) starts at
+x=248. Measured icon box x=80..108, y=52..80 lies inside the left panel, and the Combine
+control box x=80..170.8125, y=52.5..78.5 overlaps it. `elementFromPoint` at the icon
+centre (94,66) returns the icon's own `path` (so the icon intercepts the click), and
+`iconOverlapsCombine=true`. A click on that region re-expands the notice instead of
+activating Combine. The icon is reachable and does not cover the page, but it covers a
+control, failing the stated requirement. The existing
+`e2e/phase59_protection_notice.spec.cjs` passes because it treats `.document-column`
+(x=64, width 2496) as "the canvas", which is wider than the real canvas (scroller
+x=248..2296), so its top-left assertion is satisfied by an icon that is actually over the
+left panel.
+
+Commands + output (verbatim):
+- `npm.cmd run build` → exit 0 (built in 761ms; `dist\main\index.js 8.1mb`).
+- `npx.cmd playwright test e2e/phase59_protection_notice.spec.cjs` → `1 passed (15.2s)`;
+  lines: `[P59-protect] box={"borderRadius":"8px","animationName":"protection-notice-in","animationDuration":"0.25s","width":2200,"height":74.171875}`;
+  `[P59-protect] auto-collapse after 9503ms state=collapsed noticePresent=false`;
+  `[P59-protect] icon={"x":80,"y":52,"width":28,"height":28} page={"left":748.53,"top":44,...} canvas={"x":64,"y":44,"width":2496,"height":1348}`;
+  `[P59-protect] re-expanded={"notice":true,"icon":false,"state":"expanded"}`.
+- `npx.cmd playwright test e2e/tfl46_protection_probe.spec.cjs` → `1 passed (14.2s)`;
+  `[TFL46] icon={"x":80,"y":52,"width":28,"height":28,"right":108,"bottom":80,"cx":94,"cy":66}`;
+  `[TFL46] documentColumn={"x":64,"y":44,"width":2496,"height":1348,"right":2560,...}`;
+  `[TFL46] pageScroller={"x":248,"y":44,"width":2048,"height":1348,"right":2296,...} scrollParent={"tag":"DIV","cls":"document-scroller","left":248,...}`;
+  `[TFL46] contextPanel={"x":64,"y":44,"width":184,"height":1348,"right":248,...}`;
+  `[TFL46] combineCount=1 combine={"x":80,"y":52.5,"width":90.8125,"height":26,"right":170.8125,"bottom":78.5,"cx":125.40625,"cy":65.5}`;
+  `[TFL46] hit={"iconCentre":"path.[object SVGAnimatedString]","iconTopLeft":"BUTTON.protection-notice-collapsed-toggle","combineCentre":"SPAN.","iconBelow":"path.[object SVGAnimatedString]"}`;
+  `[TFL46] iconOverlapsCombine=true`.
+
+Impact: fails the explicit "never covers ... a control" clause of the protection-notice
+requirement and steals the click target from 28px of the Combine control (clicking there
+re-expands the notice). HIGH: a stated acceptance requirement is broken; no document
+corruption. The banner itself (rounded box, animation, auto-collapse dwell, re-expand,
+collapse control, no page overlap) works.
+
+Evidence: `screenshots/tfl46-icon-vs-panel.png` and zoomed
+`screenshots/tfl46-icon-vs-panel-clip.png` (the "i" drawn over the Combine control's
+leading glyph). Probe: `e2e/tfl46_protection_probe.spec.cjs`. Source anchors:
+`src/renderer/components/ProtectionNotice.tsx:139-149`,
+`src/renderer/styles.css:17134-17151` (`.protection-notice-collapsed-toggle { position:
+absolute; top: var(--sp-2); left: var(--space-standard) }` anchored to a
+`.document-column` that begins over the left panel), call site
+`src/renderer/App.tsx:604-627`.
+
+History:
+- qa: opened (TFL-88 / TFL-46.1 bug-hunt). The collapsed icon is anchored to
+  `.document-column`, whose left edge (x=64) sits under the left panel, instead of to the
+  canvas/page scroller (x=248). Both hit-tests and the screenshot confirm it covers the
+  leading edge of the Combine control. Routed to frontend-dev: pin the collapsed icon to
+  the canvas's top-left (right of the left panel) so it covers no control, and optionally
+  strengthen the phase59 spec's "canvas" oracle to the real page scroller.
+- orchestrator: FIX-READY (brief assigned to frontend-dev, issue TFL-93 / TFL-46.2).
+  Fix: in `src/renderer/styles.css` change `.protection-notice-collapsed-toggle`'s `left`
+  from `var(--space-standard)` to `calc(var(--tf-rail-w, 184px) + var(--space-standard))`
+  (the left ContextPanel track is `--tf-rail-w`, 184px rest / 48px collapsed), add the
+  Multi Mode reset `.tab-stage[data-multi-mode="true"] .protection-notice-collapsed-toggle
+  { left: var(--space-standard) }`, and add ONE CSS-contract unit test
+  `test/unit/renderer/tfl46_protectionIconLeftInset.test.ts` mirroring
+  `phase53_protectionNoticeInspectorHitTest.test.ts`. Verification for the child:
+  `npm.cmd run verify` exit 0; the new vitest spec green; `npm.cmd run build` exit 0;
+  `npx.cmd playwright test e2e/tfl46_protection_probe.spec.cjs
+  e2e/phase59_protection_notice.spec.cjs` with `iconOverlapsCombine=false`. Not CLOSED --
+  awaits qa's FIX-READY re-verification.
+- qa: CLOSED (TFL-99). Re-verified on the current working tree. New icon x=264 (page
+  scroller `.document-scroller` left=248; left ContextPanel `x=64..248`), so the collapsed
+  "i" now lands at the canvas top-left, right of the left panel; `iconOverlapsCombine=false`
+  and the icon no longer covers the Combine control. Commands + counts:
+  `npm.cmd run verify` -> exit 0 (conventions: clean, 316 files; typecheck clean);
+  `npx.cmd vitest run test/unit/renderer/tfl46_protectionIconLeftInset.test.ts` -> 1 file
+  passed, 4 tests passed; `npx.cmd vitest run
+  test/unit/renderer/phase53_protectionNoticeInspectorHitTest.test.ts` -> 1 file passed,
+  9 tests passed; `npm.cmd run build` -> exit 0; `npx.cmd playwright test
+  e2e/tfl46_protection_probe.spec.cjs e2e/phase59_protection_notice.spec.cjs` -> 2 passed
+  (probe `[TFL46] icon={"x":264,"y":52,...}`; `pageScroller={"x":248,...}`;
+  `iconOverlapsCombine=false`; `hit.combineCentre="SPAN."`; `hit.iconCentre` resolves to the
+  icon's `path`). Hardened the phase59 oracle: step 4 now bases "the canvas" on
+  `.document-scroller` (was `.document-column`), asserts `icon.x >= canvas.x`, and asserts
+  the collapsed icon does not overlap `[data-context-panel-combine]`; re-run still 2 passed.
+  Evidence: `screenshots/tfl46-icon-fixed.png`, `screenshots/tfl46-icon-vs-panel-clip.png`,
+  `screenshots/p59-protection-icon-clip.png`.

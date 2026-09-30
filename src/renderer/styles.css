@@ -17046,6 +17046,13 @@ cursor: pointer;
   margin-right: 0;
 }
 
+/* Multi Mode has no left ContextPanel, so the collapsed "i" must not be offset
+ * by the rail track: return it to the region's own left edge. Mirrors the
+ * region's own Multi Mode reset above. */
+.tab-stage[data-multi-mode="true"] .protection-notice-collapsed-toggle {
+  left: var(--space-standard);
+}
+
 .protection-notice-icon {
   color: var(--warning);
   flex: 0 0 auto;
@@ -17122,12 +17129,16 @@ cursor: pointer;
 
 /* The collapsed "i": a small overlay pinned at the canvas's TOP-LEFT. It is
  * absolute inside the (zero-height when collapsed) region, so it never pushes
- * the page. The left inset matches the box's own left margin so re-expanding
- * reads as the box growing out of the icon's corner. */
+ * the page. The region's containing block starts at the stage rail (`left: 64px`),
+ * so `left: var(--space-standard)` landed the icon at x=80 — over the LEFT
+ * ContextPanel and covering the leading edge of the Combine control (DEF-435).
+ * The left inset must clear that panel's track (`--tf-rail-w`, 184px, 48px when
+ * collapsed) so the icon lands at the page scroller's left edge, the canvas's
+ * top-left. Multi Mode has no left panel and resets it below. */
 .protection-notice-collapsed-toggle {
   position: absolute;
   top: var(--sp-2);
-  left: var(--space-standard);
+  left: calc(var(--tf-rail-w, 184px) + var(--space-standard));
   display: inline-flex;
   align-items: center;
   justify-content: center;
