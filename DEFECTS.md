@@ -8609,7 +8609,7 @@ History:
 
 ## DEF-433: Reordering a squeezed strip (640px min width) leaves the active tab clipped at the strip edge - no scroll-into-view after the reorder
 
-- Status: FIX-READY
+- Status: CLOSED
 - Severity: MEDIUM
 - Found by: adversary (ADV-130, Phase 60 diff-pass)
 - Phase: 60
@@ -8653,3 +8653,13 @@ History:
   the existing `scrollActiveIntoView` so the active tab is revealed in the squeezed 640px
   strip; add a narrow-width active-tab case to `e2e/phase60_tab_drag.spec.cjs` and keep
   verify + the phase60/58/59 suites green. Not the DEF-432 code path.
+- qa: CLOSED (TFL-75 re-verification of TFL-76 round 2). `npm.cmd run build` exit 0;
+  `npm.cmd run test:e2e -- e2e/phase60_tab_drag.spec.cjs` 4 passed; the three named unit
+  files 67 passed (+ the new `def433InstantActiveTabScroll` case) and `npm.cmd run verify`
+  exit 0. Independent geometry probe at 640x620 after a committed active-tab reorder:
+  animations ON active [174,306] inside list [174,330] scroll 38; `prefers-reduced-motion:
+  reduce` active [174,306] scroll 72->38 inside=true; Animations OFF (`data-animations="off"`)
+  active [174,306] scroll 72->38 inside=true. Blast radius: plain click and pointercancel
+  leave scroll unchanged (82->82) and a background-tab reorder leaves scroll 524->524 with
+  the active slot unchanged. Evidence: `screenshots/def433-rv-c1.png`, `def433-rv-c2c.png`,
+  `def433-rv-c3-reduced.png`, `def433-rv-c3b-off.png`.

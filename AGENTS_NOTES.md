@@ -1368,6 +1368,12 @@ pre-warn relevant entries when dispatching.
 
 ### Common mistakes (found classes are added here as dispatches complete)
 
+- CTO: discovered the issue-create schema by POSTing a body that could SUCCEED (field
+  probe that returned 201 and auto-started a live child run on a junk brief), burning a
+  task slot and forcing a re-brief. Rule: discover create schemas only with bodies that
+  fail validation (e.g. title only, then read the next required field); if a probe does
+  slip through, repurpose/continue that issue with the real brief — never create a
+  duplicate.
 - backend-dev: hand-rolled PDF syntax where a library call (pdf-lib API) suffices —
   burns tokens and is a round-trip risk. Rule: prefer pdf-lib API and say so when
   forced to go lower.

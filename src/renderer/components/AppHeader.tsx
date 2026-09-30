@@ -148,6 +148,26 @@ export const TAB_OVERFLOW_METRICS: Readonly<Record<TabStyle, { natural: number; 
   standard: { natural: 168, floor: 96 },
 };
 
+// DEF-433 (instant path) — the post-reorder active-tab reveal settles over
+// several frames (the strip keeps reflowing after the commit). The reveal is
+// re-applied every frame until the active tab's content position has been
+// stable this many consecutive frames, capped so it can never loop for ever.
+const ACTIVE_TAB_SETTLE_STABLE_FRAMES = 4;
+const ACTIVE_TAB_SETTLE_MAX_FRAMES = 48;
+
+/** DEF-433 — the horizontal scroll delta (px) that brings `tab` fully inside
+ *  the `viewport` box. 0 when it is already visible; the nearest violating
+ *  edge wins when the tab is wider than the viewport. Pure, so the reveal
+ *  geometry is unit-tested directly (jsdom has no layout). */
+export function activeTabScrollDelta(
+  tab: { left: number; right: number },
+  viewport: { left: number; right: number },
+): number {
+  if (tab.left < viewport.left) return tab.left - viewport.left;
+  if (tab.right > viewport.right) return tab.right - viewport.right;
+  return 0;
+}
+
 interface AppHeaderProps {
   activeId: string | null;
   tabs: AppHeaderTab[];
@@ -503,39 +523,88 @@ export function AppHeader(props: AppHeaderProps): ReactElement {
   // counter so the ONE scroll path re-runs AFTER the reducer's DOM order /
   // reflow has committed.
   const [scrollNudge, setScrollNudge] = useState(0);
-  const scrollActiveIntoView = useCallback((): void => {
+  // DEF-433 — the active tab element inside the strip, if present. Shared by
+  // the smooth/animated reveal and the instant settle path below.
+  const findActiveTab = useCallback((): HTMLElement | undefined => {
     const id = activeIdRef.current;
     const list = tabListRef.current;
-    if (id === null || list === null) return;
-    const tab = Array.from(list.querySelectorAll<HTMLElement>("[data-tab-id]")).find(
+    if (id === null || list === null) return undefined;
+    return Array.from(list.querySelectorAll<HTMLElement>("[data-tab-id]")).find(
       (el) => el.dataset.tabId === id,
     );
+  }, []);
+  const scrollActiveIntoView = useCallback((): void => {
+    const tab = findActiveTab();
     if (tab === undefined || typeof tab.scrollIntoView !== "function") return;
     tab.scrollIntoView({
       block: "nearest",
       inline: "nearest",
       behavior: instantMotionRef.current ? "auto" : "smooth",
     });
-  }, []);
+  }, [findActiveTab]);
+  // DEF-433 (instant path) — a single `scrollIntoView`, even deferred a frame
+  // or two, measures a strip that is STILL reflowing: the post-reorder layout
+  // keeps shifting for several frames, so the scroll lands on a mid-flight
+  // target and the reordered active tab settles clipped. This applies the
+  // horizontal offset DIRECTLY (deterministic; no `inline: nearest` guess over
+  // a moving box) and the settle loop below re-applies it every frame until the
+  // tab's content position has been stable for several frames.
+  const revealActiveTab = useCallback((): void => {
+    const list = tabListRef.current;
+    const tab = findActiveTab();
+    if (list === null || tab === undefined) return;
+    const listRect = list.getBoundingClientRect();
+    const tabRect = tab.getBoundingClientRect();
+    const delta = activeTabScrollDelta(tabRect, listRect);
+    if (Math.abs(delta) < 0.5) return;
+    list.scrollLeft += delta;
+  }, [findActiveTab]);
   useEffect(() => {
     scrollActiveIntoView();
   }, [activeId, tabs.length, instantMotion, scrollNudge, scrollActiveIntoView]);
 
-  // DEF-433 — a dragged tab is released while its pointer transform is still on
-  // the `.tab` box; the shared `.tab` transition then animates that transform
-  // back into the reordered slot. The effect above therefore measures a
-  // mid-flight box and no-ops, leaving the active tab clipped. Re-assert its
-  // visibility once the transform transition settles. Instant motion (reduced
-  // motion / Animations OFF) has no transition, so the first pass already
-  // measured the settled box and this listener is unnecessary.
+  // DEF-433 — the settle re-assert. The animated path waits for the `.tab`
+  // transform `transitionend` (the drag transform animating back into the
+  // reordered slot). The instant path (reduced motion / Animations OFF) has no
+  // long transition to wait on, yet the strip still reflows for many frames
+  // after the commit, so a fixed one/two-frame delay is empirically too early.
+  // Instead, re-apply `revealActiveTab` every frame and stop only once the
+  // active tab's content position has been stable for several consecutive
+  // frames (bounded so it can never loop for ever).
   useEffect((): (() => void) | undefined => {
-    if (scrollNudge === 0 || instantMotion) return undefined;
+    if (scrollNudge === 0) return undefined;
     const list = tabListRef.current;
-    const id = activeIdRef.current;
-    if (list === null || id === null) return undefined;
-    const tab = Array.from(list.querySelectorAll<HTMLElement>("[data-tab-id]")).find(
-      (el) => el.dataset.tabId === id,
-    );
+    if (list === null) return undefined;
+    if (instantMotion) {
+      let raf = 0;
+      let frames = 0;
+      let stable = 0;
+      let lastKey = Number.NaN;
+      const contentLeftKey = (): number => {
+        const tab = findActiveTab();
+        if (tab === undefined) return Number.NaN;
+        const key =
+          tab.getBoundingClientRect().left -
+          list.getBoundingClientRect().left +
+          list.scrollLeft;
+        return Math.round(key * 2) / 2;
+      };
+      const tick = (): void => {
+        revealActiveTab();
+        const key = contentLeftKey();
+        stable = key === lastKey ? stable + 1 : 0;
+        lastKey = key;
+        frames += 1;
+        if (stable < ACTIVE_TAB_SETTLE_STABLE_FRAMES && frames < ACTIVE_TAB_SETTLE_MAX_FRAMES) {
+          raf = window.requestAnimationFrame(tick);
+        }
+      };
+      raf = window.requestAnimationFrame(tick);
+      return (): void => {
+        if (raf !== 0) window.cancelAnimationFrame(raf);
+      };
+    }
+    const tab = findActiveTab();
     if (tab === undefined) return undefined;
     const onTransitionEnd = (e: TransitionEvent): void => {
       if (e.target === tab && e.propertyName === "transform") scrollActiveIntoView();
@@ -544,7 +613,7 @@ export function AppHeader(props: AppHeaderProps): ReactElement {
     return (): void => {
       tab.removeEventListener("transitionend", onTransitionEnd);
     };
-  }, [scrollNudge, instantMotion, scrollActiveIntoView]);
+  }, [scrollNudge, instantMotion, scrollActiveIntoView, revealActiveTab, findActiveTab]);
 
   // Phase 59 (item 10) — the overflow plan. Measure the strip's content width
   // and plan a per-tab width + overlap from the style's natural width. The
