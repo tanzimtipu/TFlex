@@ -21,11 +21,23 @@ function ruleBodies(css: string, selector: string): string[] {
     .map((m) => m[2] ?? "");
 }
 
+const EDIT_COLOUR = /(^|;)\s*color:\s*var\(--tf-stage-edit\)\s*(;|$)/;
+
+function hasStandaloneEditColour(body: string): boolean {
+  return EDIT_COLOUR.test(body);
+}
+
 describe("TFL-61 — the dock edit pen rests in the EDIT stage hue", () => {
   it("declares color: var(--tf-stage-edit) in the .action-dock-edit base rule", () => {
     const bodies = ruleBodies(CSS, ".action-dock-edit");
     expect(bodies.length).toBeGreaterThan(0);
-    expect(bodies.some((b) => b.includes("color: var(--tf-stage-edit)"))).toBe(true);
+    expect(bodies.some(hasStandaloneEditColour)).toBe(true);
+  });
+
+  it("rejects a sibling token that only contains the substring color: var(--tf-stage-edit)", () => {
+    const sibling = " color: var(--sem-neutral); border-color: var(--tf-stage-edit); ";
+    expect(sibling.includes("color: var(--tf-stage-edit)")).toBe(true);
+    expect(hasStandaloneEditColour(sibling)).toBe(false);
   });
 
   it("declares no raw hex/rgb/hsl colour in any .action-dock-edit rule", () => {
