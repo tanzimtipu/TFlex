@@ -1,5 +1,11 @@
 # TFlex — Build Rules
 
+> **STATUS (2026-09-30): Paperclip is the live harness; this OpenCode orchestration
+> is INACTIVE, kept as emergency GUI fallback only.** This file remains the shared
+> rules layer — it auto-loads into every Paperclip run. Do not drive TFlex from the
+> OpenCode GUI while Paperclip agents are active (single-writer rule); the GUI
+> fallback is re-marked active only by an explicit operator decision.
+
 These rules apply to every agent working on this project.
 
 ## The job
@@ -224,13 +230,16 @@ orchestration harness:
   script stays in `scripts/` as fallback infrastructure only; the guard runs
   `ninfer-model.ps1 stop` at run end to keep the card clear.
 
-The shared build model: the orchestrator, backend-dev, frontend-dev, qa, the
-adversary and git-agent ALL run on `openrouter/deepseek/deepseek-v4.1-flash` by
-operator decision (2026-09-17/18) — one shared cloud model with a ~1M-token context;
-qa and the adversary get cloud vision on it. Any of the six on it is correct, not a
-fallback; feature-scout on glm-5.3-flash completes the team. A silent fallback means
-an agent running on any model OTHER than its pinned one (today: feature-scout on the
-shared model, or any role on anything else). It is a hard stop either way. If a sub-agent cannot load its pinned model
+The split-tier build model (operator decision 2026-09-30): the **orchestrator** runs
+on `openrouter/moonshotai/kimi-k3` (strategy tier). The five build roles — backend-dev,
+frontend-dev, qa, the adversary and git-agent — ALL run on
+`openrouter/deepseek/deepseek-v4.1-flash` (tactical tier; shared since 2026-09-17/18,
+~1M-token context, cloud vision for qa and the adversary). Any role on its own tier's
+model is correct, not a fallback; feature-scout on glm-5.3-flash completes the team. A
+silent fallback means
+an agent running on any model OTHER than its pinned one (today: any build role on
+kimi-k3 or glm, the orchestrator on deepseek, feature-scout on anything else). It is a
+hard stop either way. If a sub-agent cannot load its pinned model
 (provider error, account
 data-policy rejection, invalid ID) or starts on any other model, the build **stops** —
 no planning, no real task dispatch, no work on the fallback model. The orchestrator
@@ -247,11 +256,14 @@ change, not an automatic retry. Keep it short and current:
   `openrouter/deepseek/deepseek-v4.1-flash` -> `openrouter/z-ai/glm-5.3-flash`.
   (Back to local: human repins `local-ninfer/qwen3.8-27b` AND re-adds git-agent to the
   guard's LOCAL_ROLES — the provider entry and serving script stay in place.)
-- backend-dev, frontend-dev, qa, adversary: no automatic fallback — their pin is the
-  orchestrator's cloud model; stop and ask the human.
+- backend-dev, frontend-dev, qa, adversary, git-agent: no automatic fallback —
+  their pin is `deepseek-v4.1-flash` (the tactical-tier shared model); stop and ask
+  the human.
 - feature-scout: `openrouter/z-ai/glm-5.3-flash` ->
   `openrouter/deepseek/deepseek-v4-flash`.
-- orchestrator: no fallback — stop and ask the human.
+- orchestrator: no fallback — stop and ask the human. (Pinned to
+  `openrouter/moonshotai/kimi-k3` on 2026-09-30; before that,
+  `deepseek-v4.1-flash`.)
 
 Every cloud role runs on its pinned model by design; no fallback routing between cloud
 models. Record approved
