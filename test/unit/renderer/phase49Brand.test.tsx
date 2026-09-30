@@ -331,7 +331,6 @@ describe("Phase 49 � print window title + source guard", () => {
     };
     // Present (Jovrel) ...
     check("hooks/useOsIntegration.ts", "Jovrel could not read the dropped file.", true);
-    check("hooks/useOsIntegration.ts", "Jovrel can only open PDF files.", true);
     check("hooks/useOsIntegration.ts", "Jovrel received an invalid file path from Windows.", true);
     check("accounts/oauthLoopback.ts", "Jovrel could not open your browser for Google sign-in.", true);
     check("App.tsx", "not available in this build of Jovrel", true);

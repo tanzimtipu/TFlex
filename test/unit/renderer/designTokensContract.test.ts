@@ -1135,7 +1135,7 @@ describe("Phase D — three-theme coherence + embedded theme picker license", ()
     expect(roleSelectors.length).toBe(roleUses.length);
     for (const m of roleSelectors) {
       expect(m[1] ?? "").toMatch(
-        /\[data-(?:icon|tool|edit-tool|tool-id|rail-tab|stage|dock-verb|context-panel-stage)=|tools-palette-entry-icon|action-dock-verb|titlebar-file-btn|header-|theme-toggle|tab-new|stage-rail|canvas-pill|command-palette-row-icon|inspector|context-panel|tool-btn|\.context-panel|\.inspector|\.command-palette/,
+        /\[data-(?:icon|tool|edit-tool|tool-id|rail-tab|stage|dock-verb|context-panel-stage|home-tool)=|tools-palette-entry-icon|action-dock-verb|titlebar-file-btn|header-|theme-toggle|tab-new|stage-rail|canvas-pill|command-palette-row-icon|inspector|context-panel|tool-btn|\.context-panel|\.inspector|\.command-palette/,
       );
     }
   });
