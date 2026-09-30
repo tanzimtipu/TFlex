@@ -191,6 +191,7 @@ import {
   routeOpenPath,
   runConvertOpen,
   toastForConvertError,
+  unsupportedFileMessage,
   type ConvertNoticeState,
   type ConvertProgressState,
 } from "./state/convert";
@@ -2140,18 +2141,23 @@ export function App(): ReactElement {
     //
     // Phase 53 — `routeOpenPath` probes `window.tflex.convert.sourceInfo`
     // first: an absent bridge, an `unsupported-format` result, or ANY other
-    // `sourceInfo` failure falls straight through to `openPdfBytesFromPath`
-    // (the unchanged PDF path). Only a recognised convertible takes the
-    // convert route. This is the ONE place the branch lives, so the Open
-    // dialog, the OS-open listener, the OS drop and the recent list all
-    // inherit it.
+    // `sourceInfo` failure for a `.pdf` falls straight through to
+    // `openPdfBytesFromPath` (the unchanged PDF path). Only a recognised
+    // convertible takes the convert route. DEF-418 — a NON-`.pdf` that the
+    // convert route cannot take is reported truthfully and opens nothing;
+    // the PDF loader is never handed a non-PDF. This is the ONE place the
+    // branch lives, so the Open dialog, the OS-open listener, the OS drop
+    // and the recent list all inherit it.
     (path: string): Promise<string | null> =>
       routeOpenPath(path, {
         api: window.tflex.convert,
         openPdf: openPdfBytesFromPath,
         openConverted: openConvertedFromPath,
+        onUnsupported: (unsupportedPath): void => {
+          pushToast("error", unsupportedFileMessage(splitRecentPath(unsupportedPath).name));
+        },
       }),
-    [openConvertedFromPath, openPdfBytesFromPath],
+    [openConvertedFromPath, openPdfBytesFromPath, pushToast],
   );
 
   /** Phase 52 (feature A) — the prompt's retry. Reopens the pending file

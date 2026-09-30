@@ -104,13 +104,27 @@ export function convertBytesUnreadableMessage(displayName: string): string {
   return `The converted document could not be read ("${displayName}").`;
 }
 
+/** True when the path names a `.pdf` (case-insensitive). The PDF path is the
+ *  only fallback that may run for a path the conversion route cannot take. */
+export function isPdfPath(path: string): boolean {
+  return /\.pdf$/i.test(path);
+}
+
+/** The truthful message for a dropped/requested path that is neither a
+ *  recognised convertible nor a `.pdf`. Never the misleading PDF-only copy. */
+export function unsupportedFileMessage(displayName: string): string {
+  return `"${displayName}" is not a file type Jovrel can open.`;
+}
+
 /** Phase 53 routing. Convert when the bridge is present AND `sourceInfo`
- *  recognises the file; fall through to the unchanged PDF path on an absent
- *  bridge or ANY `sourceInfo` failure (including `unsupported-format`, so a
- *  `.pdf` and a corrupt `.pdf` keep today's exact behaviour and messages). */
+ *  recognises the file. Otherwise: a `.pdf` falls through to the unchanged
+ *  PDF path (so a `.pdf` and a corrupt `.pdf` keep today's exact behaviour
+ *  and messages); a NON-`.pdf` is reported through `onUnsupported` and opens
+ *  nothing — the PDF loader is never invoked for a non-PDF (DEF-418). An
+ *  absent bridge is treated the same way. */
 export interface ConvertRouteDeps {
   api: TFlexApiConvert | undefined;
-  /** The existing PDF open path, invoked unchanged. */
+  /** The existing PDF open path, invoked unchanged (`.pdf` only). */
   openPdf: (path: string) => Promise<string | null>;
   /** The convert route; only reached when `sourceInfo` succeeds. */
   openConverted: (
@@ -118,15 +132,31 @@ export interface ConvertRouteDeps {
     info: ConvertSourceInfo,
     api: TFlexApiConvert,
   ) => Promise<string | null>;
+  /** Called with the path when a non-`.pdf` cannot be opened (absent bridge
+   *  or a failed `sourceInfo`). Nothing is opened. */
+  onUnsupported?: (path: string) => void;
 }
 
 export async function routeOpenPath(
   path: string,
   deps: ConvertRouteDeps,
 ): Promise<string | null> {
-  if (deps.api === undefined) return deps.openPdf(path);
+  const pdf = isPdfPath(path);
+  if (deps.api === undefined) {
+    if (!pdf) {
+      deps.onUnsupported?.(path);
+      return null;
+    }
+    return deps.openPdf(path);
+  }
   const info = await deps.api.sourceInfo(path);
-  if (!info.ok) return deps.openPdf(path);
+  if (!info.ok) {
+    if (!pdf) {
+      deps.onUnsupported?.(path);
+      return null;
+    }
+    return deps.openPdf(path);
+  }
   return deps.openConverted(path, info.value, deps.api);
 }
 

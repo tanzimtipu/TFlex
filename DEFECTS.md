@@ -5,6 +5,38 @@
 > inspect the current `OPEN`, `FIX-READY`, and `DISPUTED` entries first; closed records are
 > historical evidence and must not be loaded wholesale.
 
+## DEF-418: OS file-drop rejects every non-PDF with "is not a PDF. Jovrel can only open PDF files."
+
+- Status: CLOSED
+- Severity: HIGH
+- Found by: qa
+- Phase: 58
+
+Steps to reproduce:
+1. `npm.cmd run build`, then run `npm.cmd run test:e2e -- e2e/def418_nonpdf_open.spec.cjs` (launches through `e2e/lib/launch.cjs` with a fresh user-data-dir).
+2. Launch the dev app and wait for the Welcome screen.
+3. Drag any supported non-PDF document from Explorer onto the window (the spec dispatches a synthetic OS `drop` with `dataTransfer.types` including `Files`): `test-fixtures/phase53/sample.txt`, `test-fixtures/phase55/sample.docx`, `test-fixtures/phase54/dpi-300.png`, `test-fixtures/phase56/phase56-comic.cbz`, `test-fixtures/phase56/phase56-book.epub`.
+4. Observe the error toast.
+
+Expected: the drop opens the document through the same shared open path the Open dialog and the OS/double-click route use (`openFromRequest` -> `routeOpenPath` -> `convert.sourceInfo`), exactly as those two entry points already do. All five fixtures are recognised convertibles (`sourceInfo` returns `ok:true` for each) and open as converted tabs via the OS-open route.
+
+Actual: every non-PDF drop is refused with the error toast `"<name>" is not a PDF. Jovrel can only open PDF files.` and no tab opens. The drop handler still gates on `isPdfFile` and never reaches the conversion route.
+
+Layer: renderer `useOsFileDrop` (`src/renderer/hooks/useOsIntegration.ts:97-100`). It is the ONLY source of the quoted message (grep: one match in `src/`). The main `handleOsOpenPath` (`src/main/open-path.ts` `looksLikeOpenablePath`), the preload bridge (`window.tflex.convert.sourceInfo` present), and the renderer `routeOpenPath` fallback are all correct - the dialog and OS/double-click routes PASS. The drop handler was not updated when Phase 53 added universal import; it still applies the Phase 35 PDF-only rule.
+
+Evidence (screenshots/def418-evidence.json):
+- `typeof window.tflex.convert` = `object`; `typeof window.tflex.convert.sourceInfo` = `function`; `typeof window.tflex.openFileDialog` = `function`; `typeof window.tflex.onOpenPathRequest` = `function`.
+- `sourceInfo` raw Results (dev): txt `{ok:true,value:{format:"text",label:"Text document",fidelity:"native"}}`; docx `{ok:true,value:{format:"docx",label:"Word document",fidelity:"layout"}}`; png `{ok:true,value:{format:"png",label:"PNG image",fidelity:"native"}}`; cbz `{ok:true,value:{format:"cbz",label:"Comic book archive (ZIP)",fidelity:"layout"}}`; epub `{ok:true,value:{format:"epub",label:"EPUB e-book",fidelity:"layout"}}`.
+- OS/double-click route (dev, argv): txt, cbz, png each opened a document tab (`tabs:1`, no toast). Packaged `release\win-unpacked\Jovrel.exe` (mtime 2026-09-29T21:35:53Z): txt and cbz each opened a document tab (`tabs:1`, no toast).
+- Drop route (dev): txt -> `"sample.txt" is not a PDF. Jovrel can only open PDF files.`; docx -> `"sample.docx" is not a PDF. Jovrel can only open PDF files.`; png -> `"dpi-300.png" is not a PDF. Jovrel can only open PDF files.`; cbz -> `"phase56-comic.cbz" is not a PDF. Jovrel can only open PDF files.`; epub -> `"phase56-book.epub" is not a PDF. Jovrel can only open PDF files.` (renderer toast, `.toast-text`).
+
+Screenshot: screenshots/def418-dev-drop.png (toast bottom-right); screenshots/def418-dev-os-txt.png (OS-open route opened the .txt as a converted tab).
+
+History:
+- qa: opened (reproduced this session. The two entry points named in the report - File > Open and OS/double-click - both PASS: `sourceInfo` succeeds for all five fixtures and the OS-open route opens txt/cbz/png as converted tabs in dev and txt/cbz in the packaged build. The exact quoted message exists only in the OS file-drop handler, which reproduces it for all five fixtures. Failure layer: renderer `useOsFileDrop`.)
+- orchestrator: FIX-READY (relaying frontend-dev - `useOsFileDrop`'s PDF-only gate is REMOVED: every dropped file with a resolvable path now goes through the shared convert-aware `openPath` (`openFromRequest` -> `openPdfFromPath` -> `routeOpenPath`). `routeOpenPath` stays pure and gained `isPdfPath()` + `unsupportedFileMessage(name)` and an optional `onUnsupported`: an absent bridge or a failed `sourceInfo` calls `onUnsupported` for a non-`.pdf` (truthful toast `"<name>" is not a file type Jovrel can open.`, nothing opened) while a `.pdf` still falls through to the PDF loader byte-identically. `App.tsx` wires `onUnsupported` to the error toast. `isPdfFile` kept (still used by `phase35_osIntegration.test.tsx`). Evidence: new `def418_nonPdfDrop.test.tsx` 7 + updated `phase35_osIntegration.test.tsx` 15 + `phase53_convertImport.test.tsx` 20 = 42 passed; `verify` exit 0; `build:renderer` exit 0.)
+- qa: CLOSED (retest on the rebuilt 1.45.0 dev app. `npm.cmd run build` exit 0. `e2e/def418_nonpdf_open.spec.cjs` rewritten to drive the OS file-drop route with a REAL path via CDP `Input.dispatchDragEvent` (DragData.files) so Electron's `webUtils.getPathForFile` resolves the fixture exactly as an Explorer drop would (`window.tflex` is contextBridge-frozen, so a stub is impossible). 7/7 passed: txt/docx/png/cbz/epub each opened a document tab (before 0 -> after 1) with NO toast; `unknown.xyz` opened NOTHING (0 -> 0) and showed the truthful toast `"unknown.xyz" is not a file type Jovrel can open.` (no "only PDF" text); a normal `.pdf` drop still opened (0 -> 1, no toast). Screenshots: screenshots/def418-drop-txt.png (sample.txt tab, "Imported Text document Native"), screenshots/def418-drop-cbz.png (phase56-comic.cbz tab, "Imported Comic book archive (ZIP) Layout preserved", 12 pages), screenshots/def418-drop-unsupported.png (Welcome, no tab, truthful toast bottom-right). Evidence: screenshots/def418-retest-evidence.json. Unit: `def418_nonPdfDrop.test.tsx` + `phase35_osIntegration.test.tsx` = 22 passed. `npm.cmd run verify` exit 0.)
+
 ## DEF-417: Tearing out an empty placeholder tab is a silent no-op
 
 - Status: CLOSED

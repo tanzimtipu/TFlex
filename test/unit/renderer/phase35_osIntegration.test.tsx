@@ -134,7 +134,7 @@ describe("Phase 35 — OS file drop (DEF-295)", () => {
     expect(openPath).not.toHaveBeenCalled();
   });
 
-  it("fails loud on a dropped non-PDF (error toast, nothing opened)", () => {
+  it("routes a dropped non-PDF through the shared convert-aware path (DEF-418)", () => {
     const openPath = vi.fn();
     const onError = vi.fn();
     const m = mountDrop({ openPath, onError });
@@ -143,9 +143,9 @@ describe("Phase 35 — OS file drop (DEF-295)", () => {
     const ev = dragEvent("drop", ["Files"], [txt()]);
     dispatch(ev);
     expect(ev.defaultPrevented).toBe(true);
-    expect(openPath).not.toHaveBeenCalled();
-    expect(onError).toHaveBeenCalledTimes(1);
-    expect(String(onError.mock.calls[0]?.[0])).toMatch(/not a PDF/i);
+    expect(openPath).toHaveBeenCalledTimes(1);
+    expect(openPath).toHaveBeenCalledWith("C:\\docs\\dropped.pdf");
+    expect(onError).not.toHaveBeenCalled();
   });
 
   it("opens the FIRST of multiple dropped files and reports the rest", () => {

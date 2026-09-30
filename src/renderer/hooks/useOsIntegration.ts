@@ -69,9 +69,12 @@ export interface OsFileDropOptions {
 /**
  * Window-level OS file-drop handler (DEF-295).
  *
- * Rule: open the FIRST dropped file, and only when it is a PDF. A dropped
- * non-PDF fails loud through the error toast and opens nothing. Extra files
- * beyond the first are reported once with the info toast (the app opens one
+ * Rule: open the FIRST dropped file through the shared, convert-aware path
+ * (`openPath` -> `openFromRequest` -> `openPdfFromPath` -> `routeOpenPath`),
+ * exactly like the Open dialog and the OS-open listener. A file the shared
+ * path cannot open fails loud there with a truthful message; this handler
+ * only reports a dropped file it cannot read or resolve. Extra files beyond
+ * the first are reported once with the info toast (the app opens one
  * document per drop).
  */
 export function useOsFileDrop(options: OsFileDropOptions): void {
@@ -92,10 +95,6 @@ export function useOsFileDrop(options: OsFileDropOptions): void {
       const first = files[0];
       if (first === undefined) {
         onError("Jovrel could not read the dropped file.");
-        return;
-      }
-      if (!isPdfFile(first)) {
-        onError(`"${first.name}" is not a PDF. Jovrel can only open PDF files.`);
         return;
       }
       const path = resolveDroppedPath(first);
