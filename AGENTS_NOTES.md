@@ -1401,6 +1401,13 @@ pre-warn relevant entries when dispatching.
   the child with "could not determine executable to run" (npx has no `run` for npm
   scripts). Rule: for npm scripts always write `npm.cmd run <script> -- <arg>`;
   reserve `npx.cmd` for direct binaries (vitest, playwright, tsc).
+- git-agent: a phase-close commit ran `git add -A` (Phase 68 / TFL-105, commit `ab62660`,
+  2026-10-01) and swept the entire multi-phase working tree — Phase 65/66/67/68 source,
+  fixtures, e2e specs and brand assets — into one "Phase 68" commit, including a developer's
+  in-flight edit and another phase's uncommitted specs. Harm: phase boundaries and commit
+  messages lost; in-flight work committed mid-edit. Rule: a phase-close commit stages an
+  explicit ALLOWLIST of the phase's tracked paths (never `add -A`), and the CTO lets the
+  tree settle / confirms no other child is mid-write before assigning git-agent.
 
 ## 2026-08-28: to-do discipline + Defects heading restored
 

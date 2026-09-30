@@ -9091,7 +9091,7 @@ History:
 
 ## DEF-439: Phase 57 3D-notice e2e still asserts the obsolete "no dismiss control" contract after Phase 67 added the collapse control
 
-- Status: FIX-READY
+- Status: CLOSED
 - Severity: MEDIUM
 - Found by: qa (TFL-111 / TFL-104.2 focused verification, Phase 67)
 - Phase: 67 (item 5; REQUIREMENTS.md:4312-4315, criterion 6)
@@ -9140,12 +9140,17 @@ History:
 - frontend-dev (TFL-118 / TFL-104.3, 2026-10-01): fixed. `e2e/phase57a_engineering.spec.cjs`
   now counts `[data-testid="pdf3d-notice"] [data-pdf3d-collapse]` and asserts it is 1
   ("notice has the collapse control"); lines 476-478 untouched; no product source changed.
-  Evidence: `npm.cmd run test:e2e -- e2e/phase57a_engineering.spec.cjs` -> 1 passed, 0 failed
-  (10.2s), runner log `P57A_3D noticeCollapseCount:1`. Awaits qa phase-close QA to set CLOSED.
+   Evidence: `npm.cmd run test:e2e -- e2e/phase57a_engineering.spec.cjs` -> 1 passed, 0 failed
+   (10.2s), runner log `P57A_3D noticeCollapseCount:1`. Awaits qa phase-close QA to set CLOSED.
+- qa: CLOSED (TFL-138 / TFL-104.7 phase-close QA). Reran the spec on the current tree:
+  `npm.cmd run test:e2e -- e2e/phase53_format_import.spec.cjs e2e/phase56_reading.spec.cjs
+  e2e/phase57a_engineering.spec.cjs` -> 24 passed / 0 failed (2.5m); the phase57a 3D oracle logged
+  `P57A_3D {"noticeVisible":true,...,"noticeCollapseCount":1}`. The reconciled assertion (count
+  `[data-pdf3d-collapse]` == 1) now passes. Product behaviour correct per REQUIREMENTS.md:4286-4289.
 
 ## DEF-440: Phase 53 / Phase 56 e2e oracles still click/count the removed `data-conversion-dismiss` control after Phase 67 replaced it with the collapse control
 
-- Status: FIX-READY
+- Status: CLOSED
 - Severity: MEDIUM
 - Found by: adversary (TFL-121 / TFL-104.4 diff-pass, Phase 67); ADV-132
 - Phase: 67 (criterion 6, REQUIREMENTS.md:4312-4315)
@@ -9188,6 +9193,13 @@ History:
   e2e/phase56_reading.spec.cjs` -> row 6 PASS (`P53_NOTICE ... afterDismiss:0`), phase56
   control-index PASS; 22 passed total. One unrelated pre-existing failure (row 7) filed separately
   as DEF-443. Awaits qa phase-close QA to set CLOSED.
+- qa: CLOSED (TFL-138 / TFL-104.7 phase-close QA). Reran both specs on the current tree:
+  phase53 -> 12 passed / 0 failed (1.8m), row 6 logged `P53_NOTICE
+  {"source":"HTML document","fidelity":"Layout preserved","warningCount":2,"afterDismiss":0}`;
+  phase56 -> part of the 24 passed / 0 failed three-spec run, control-index test
+  "the reading trigger survives collapsing the conversion notice" green. Both oracles now exercise
+  the collapse path (`[data-conversion-collapse]` click -> `[data-conversion-icon]` count 1, no
+  `data-conversion-dismiss`). Product behaviour correct per REQUIREMENTS.md:4274-4276.
 
 ## DEF-441: Colorful-tab modified dot uses `--tf-tab-ink` and vanishes on the new pale Phase 68 tab body; close-button hover wash is imperceptible
 
@@ -9226,7 +9238,7 @@ History:
 
 ## DEF-442: Phase 63 dock edit-pen static guard asserts an unanchored `color:` substring, so it can pass while the glyph is not the edit hue
 
-- Status: FIX-READY
+- Status: CLOSED
 - Severity: LOW
 - Found by: adversary (TFL-112 diff-pass, Phase 63); ADV-131
 - Phase: 63 (TFL-47, dock edit pen colour)
@@ -9263,10 +9275,15 @@ History:
 - CTO: triaged ACCEPTED -> DEF-442, FIX-READY, LOW. Assigned to frontend-dev to anchor the property
   assertion to a standalone `color:` declaration and add a negative case; qa focused re-run of the guard
   closes this entry. Product behaviour on the tree is correct, so criterion 1 is not reopened.
+- qa: TFL-137 independent re-verification. Guard now anchors the property at :24 `/(^|;)\s*color:\s*var\(--tf-stage-edit\)\s*(;|$)/`,
+  used by `hasStandaloneEditColour` :26-28 at :34, with negative case :37-41. `npm.cmd run test:unit -- test/unit/renderer/tfl47_dockEditIconColor.test.ts`
+  -> Test Files 1 passed (1), Tests 3 passed (3); blast-radius `npm.cmd run test:unit -- test/unit/renderer/phase58DockEdit.test.tsx`
+  -> Test Files 1 passed (1), Tests 12 passed (12). Negative-case proof: sibling ` color: var(--sem-neutral); border-color: var(--tf-stage-edit); `
+  is matched by the old unanchored `includes` (:39 true) but rejected by the anchored guard (:40 false). Status CLOSED (TFL-137).
 
 ## DEF-443: Phase 53 e2e row 7 waits for the import Preferences panel without activating its category, so it times out after the Phase 59 rail
 
-- Status: FIX-READY
+- Status: CLOSED
 - Severity: MEDIUM
 - Found by: frontend-dev (TFL-126 / TFL-104.5 incidental observation while fixing DEF-440)
 - Phase: 67 (blocks criterion 6, REQUIREMENTS.md:4312-4315)
@@ -9309,10 +9326,21 @@ History:
 - CTO: triaged FIX-READY, MEDIUM. Assigned to frontend-dev as a test-only reconciliation: click
   `[data-prefs-category="import"]` before each `waitForSelector('[data-prefs-convert-section]')`.
   qa phase-close QA reruns the spec and sets CLOSED.
+- frontend-dev (TFL-132 / TFL-104.6, 2026-10-01): fixed. `e2e/phase53_format_import.spec.cjs` now
+  clicks `[data-prefs-category="import"]` immediately before each `[data-prefs-convert-section]` wait
+  (now lines 488 and 523); no assertion, locator, other test, product source or config touched.
+  Evidence: `npm.cmd run test:e2e -- e2e/phase53_format_import.spec.cjs` -> 12 passed, 0 failed
+   (1.8m); row 7 logged `P53_PREFS {"clampedMargin":"50","clampedFont":"48",...}`. Awaits qa
+   phase-close QA to set CLOSED.
+- qa: CLOSED (TFL-138 / TFL-104.7 phase-close QA). Reran phase53 on the current tree: 12 passed /
+  0 failed (1.8m); row 7 logged `P53_PREFS {"clampedMargin":"50","clampedFont":"48","persisted":
+  {"pageSize":"letter","margin":"30","fontSize":"20","delimiter":";","csvMapping":false,
+  "htmlBackgrounds":false}}`. The `[data-prefs-category="import"]` activation before each
+  `[data-prefs-convert-section]` wait works; the persistence/clamp oracle now runs and passes.
 
 ## DEF-444: Read-only checkbox / radio / dropdown / listbox fields render nothing under Phase 65's ENABLE_FORMS gate — the overlay suppression returns null and pdf.js does not paint those widget types
 
-- Status: OPEN
+- Status: CLOSED
 - Severity: HIGH
 - Found by: adversary (TFL-130 / TFL-49.8 diff-pass, Phase 65); ADV-134
 - Phase: 65 (features A/B/C; criterion 2 "no field appears twice", criterion 3 "zero fields missing")
@@ -9351,6 +9379,28 @@ History:
 - CTO: triaged ACCEPTED -> DEF-444 (HIGH). Renderer-only fix; assigned to frontend-dev. Phase 65 ruling 6
   carried a false premise (`hasOwnCanvas = readOnly && !noHTML` is text-only); corrected by ruling 7 in
   REQUIREMENTS.md.
+- CTO: triaged FIX-READY (TFL-133). frontend-dev reason recorded verbatim: "the single suppression gate now
+  suppresses the overlay ONLY for widgets pdf.js canvas-paints under `AnnotationMode.ENABLE_FORMS`:
+  `if (kind === \"signature\" || (field.readOnly === true && isRealField && kind === \"text\")) {`. The
+  comment block above it was rewritten to state the true rule... No editor or fill-path code changed."
+  Verified in the tree at FormsOverlay.tsx:177; unit tests updated (`Tests 48 passed (48)`, 4 files) and
+  `npm run verify` exit 0. Awaits qa FIX-READY verification (qa alone sets CLOSED). NOTE: the fix and its
+  test edits were swept into commit ab62660 (a concurrent Phase 68 phase-close `git add -A`), not a Phase 65
+  allowlist commit.
+- qa (TFL-139, FIX-READY verification): CLOSED. Reproduced the fix on the running Electron app and added the
+  missing rendered proof. `test-fixtures/phase65/make-locked-fixture.cjs` now appends a read-only check box,
+  a read-only 3-widget radio group, a read-only dropdown and a read-only list box (each `/Ff` ReadOnly)
+  alongside the existing read-only text and signature, and `form-locked-anon.pdf` was regenerated (9618
+  bytes, 7 engine fields). New test `(b3)` in `e2e/phase65_form_layer.spec.cjs` asserts one disabled overlay
+  control per non-text read-only widget (`data-form-readonly="true"`: 1 `.form-checkbox`, 3 `.form-radio`
+  with `data-form-widget` 0..2, 1 `select.form-select`, 1 `.form-listbox` with every row disabled), zero
+  `[data-form-field]` controls for the read-only text and signature, and the dropdown box equals the widget
+  /Rect through page scale (measured [72.8,514.6,257.8,33.6] vs expected [72.9,514.6,257.8,33.6] at
+  scale=1.6011). Evidence — `npm.cmd run build` exit 0; 4 unit files `Tests 48 passed (48)`; `npm.cmd run
+  verify` exit 0 (conventions clean, tsc 0); `npx.cmd playwright test e2e/phase65_form_layer.spec.cjs
+  --reporter=list` 10 passed in 1.5m including (a)(b)(b2)(b3)(c)(c2)(c3)(c4)(d)(e). Screenshots inspected:
+  screenshots/p65-locked-nontext.png (one checkbox, three radio dots, dropdown, listbox visible; read-only
+  text/signature remain canvas-only grey boxes).
 
 ## DEF-445: Push-button fields still double-surface — pdf.js paints the push button on the canvas while FormsOverlay mounts an editable text editor over it (`formFieldKind` misclassifies `PDFButton` as `text`)
 
@@ -9381,3 +9431,174 @@ History:
 - CTO: triaged ACCEPTED -> DEF-445 (MEDIUM). Needs an engine classification (a non-breaking optional flag
   on `FormField`, e.g. `pushButton?: boolean`) plus a renderer suppression; sequenced after DEF-444.
   Owner: backend-dev then frontend-dev.
+
+## DEF-446: Book View annotation placement also turns the book page — a placed ink/highlight mark commits to page 1 but the same gesture's terminal click fires the page-turn handler, so the view advances off the marked page
+
+- Status: CLOSED
+- Severity: MEDIUM
+- Found by: qa (TFL-136, Phase 66 chunk 3 focused verification, criterion 5; uncommitted chunk-3 tree, master HEAD)
+- Phase: 66 (feature E / success criterion 5 "annotation marking in Book View")
+
+Steps to reproduce:
+1. Launch TFlex (`launchApp`) and open `assets/samples/report.pdf` through the toolbar Open button,
+   stubbing `dialog.showOpenDialog`.
+2. Enter Book View (`[aria-label="Book View"]`).
+3. Arm ink through the Book View toolbar (`[data-book-tools]` -> `[data-ann-dropdown-toggle]` ->
+   `[data-ann-dropdown-menu] [data-tool="ink"]`) and drag on the book page exactly like
+   `e2e/phase51_gate.spec.cjs:227-238` (`mouse.move` -> `down` -> `move(+160,+90,{steps:8})` -> `up`).
+
+Expected (criterion 5): the ink stroke commits to page 1 and is rendered in `[data-annotation-layer="1"]`,
+with the view still on page 1.
+
+Actual: the engine commits the ink on page 1 (id present, `kind:"ink"`, `page:1`), but the visible book
+page advances to page 2 during the same gesture — `window.tflexDiagnostics().engineState.annotations`
+reports the page-1 stroke while `[data-book-page]` reads `"2"` and `[data-annotation-layer="1"]` is gone.
+Root cause: the Book View page `<figure>` carries the criterion-4 page-turn `onClick`
+(`src/renderer/components/BookView.tsx:467-475` single, `:425-437` spread) unconditionally; the
+annotation overlay's `pointerdown` (`e.preventDefault()`, `AnnotationOverlay.tsx:854-857`) does not
+suppress the synthesized `click` from the drag's pointerup, so placement both marks and navigates.
+Highlight behaves identically.
+
+Impact: MEDIUM — the annotation is committed and is not lost (Previous, or re-entering Book View, renders
+it), but every placement gesture immediately navigates off the marked page, so the marking workflow is
+effectively unusable. No document corruption.
+
+Evidence:
+- `e2e/phase66_bookview_annotations.spec.cjs` tests "criterion 5: toolbar present, ink placed, survives
+  leave + re-enter" and "criterion 5: highlight placed on book text, survives leave + re-enter" fail at
+  the required `[data-annotation-layer="1"] [data-annotation-id]` assertion with
+  `visiblePage:"2"` (`Received: 0`).
+- `e2e/phase66_bookview_annotations.spec.cjs` test "criterion 5 characterization" confirms the same
+  stroke renders on page 1 after `[data-book-prev]` (`onPage1: 1`) and survives leave + re-enter
+  (`rendered: 1`).
+- Screenshots: `screenshots/phase66-ann-ink.png`, `screenshots/phase66-ann-highlight.png` (post-gesture,
+  page 2); `screenshots/phase66-ann-ink-page1.png`, `screenshots/phase66-ann-ink-reenter.png` (page 1).
+
+Command: `node node_modules/@playwright/test/cli.js test e2e/phase66_bookview_annotations.spec.cjs`
+-> `2 failed / 2 passed` (the two criterion tests red; persistence tests green).
+
+History:
+- qa (TFL-136): filed from the Phase 66 chunk 3 focused verification; criterion 5 red.
+  Owner: frontend-dev (suppress the page-turn click when an annotation gesture consumed the pointer).
+- CTO (TFL-64): triaged OPEN / MEDIUM. Real and evidence-backed (qa reproduced it on the current
+  uncommitted chunk-3 tree): the mark commits but the gesture's terminal click fires the page-turn
+  `onClick`. Dispatched frontend-dev **TFL-141** (priority high) to guard the three Book View
+  page-turn handlers so a click landing inside `.annotation-layer` does not turn the page while a
+  bare select-tool page click still does (criterion 4 preserved). Awaiting the fix report; then
+  FIX-READY -> qa verification. Not the same class as DEF-439 / phase56_reading.spec.cjs:526
+  (separate tracked issue).
+- frontend-dev (TFL-141): fix ready (uncommitted, 2 files). BookView.tsx — all three page-turn
+  `<figure>` handlers now suppress the turn for a click born from an annotation gesture, via two
+  guards: (1) click target inside `.annotation-layer`, and (2) a capture-phase `onPointerDownCapture`
+  ref (the real-browser case: the one-shot commit flips the tool to `select` and re-renders the layer
+  to `pointer-events:none` before the synthesized click, so the click retargets to the page). A bare
+  select-tool click has neither guard, so it still turns the page. bookViewAnnotations.test.tsx — one
+  new case asserting (a) a click targeting `[data-annotation-layer]` does NOT change `[data-book-page]`
+  and (b) a bare page click advances 1 -> 2. Evidence: `npm.cmd run test:unit -- test/unit/renderer/bookViewAnnotations.test.tsx test/unit/renderer/bookView.test.tsx test/unit/renderer/bookViewSpread.test.tsx`
+  -> 3 files / 17 tests passed; `npm.cmd run build` exit 0; `npm.cmd run verify` exit 0;
+  `node node_modules/@playwright/test/cli.js test e2e/phase66_bookview_annotations.spec.cjs`
+  -> 3 passed / 1 failed. The 1 failure is the qa-owned "characterization" test at :282 that encoded
+  the OLD bug (it navigates back from page 2 via `[data-book-prev]`) — a stale oracle, not a product
+  defect.
+- CTO (TFL-64): set FIX-READY. Dispatched qa **TFL-143** (FIX-READY defect verification) to update
+  that stale characterization test to the post-fix contract, re-run the spec to 4/4 plus the blast
+  radius (chunk-1/chunk-2 Book View e2e, the 3 Book View unit files, readingView unit, `verify`), and
+  set CLOSED or re-OPEN with evidence. The dev-created follow-up TFL-142 is retired (folded into
+  TFL-143) so only one qa task edits the spec.
+- qa (TFL-143): CLOSED. Reproduced the FIX-READY verification on the frontend-dev TFL-141 uncommitted
+  tree (master HEAD). Updated the stale characterization test `e2e/phase66_bookview_annotations.spec.cjs`
+  (:282) to the post-fix contract: it now asserts `[data-book-page]` is still "1" immediately after the
+  placement gesture AND `[data-annotation-layer="1"] [data-annotation-id]` is present, and keeps the
+  leave/re-enter persistence assertion; the old `[data-book-prev]` page-2 navigation (the stale oracle,
+  DEF-439 class) is removed, not weakened. Commands + counts:
+  - `node node_modules/@playwright/test/cli.js test e2e/phase66_bookview_annotations.spec.cjs`
+    -> 4 passed / 0 failed. Decisive condition met: ink and highlight both commit with engine
+    `visiblePage:"1"` and the mark rendered in `[data-annotation-layer="1"]`; characterization log
+    `pageAfterGesture:"1", onPage1:1`.
+  - `npm.cmd run test:unit -- test/unit/renderer/bookViewAnnotations.test.tsx test/unit/renderer/bookView.test.tsx test/unit/renderer/bookViewSpread.test.tsx`
+    -> 3 files / 17 tests passed, 0 failed.
+  - `node node_modules/@playwright/test/cli.js test e2e/phase66_bookview.spec.cjs e2e/phase66_bookview_spread.spec.cjs`
+    -> 6 passed / 0 failed (criterion 4 bare-click page turn + spread/crease/flip/toggle intact).
+  - `npm.cmd run test:unit -- test/unit/renderer/readingView.test.tsx` -> 19 passed / 0 failed.
+  - `npm.cmd run verify` -> exit 0.
+  Refreshed screenshot `screenshots/phase66-ann-ink-page1.png` (page 1 with the committed mark,
+  post-fix). Model: `openrouter/deepseek/deepseek-v4.1-flash` (qa pinned tactical tier).
+
+## DEF-447: Collapsed top-of-canvas "i" icons overlap the canvas "Book View" control (Phase 67 criterion 3 "no 'i' covers a canvas control")
+
+- Status: CLOSED
+- Severity: MEDIUM
+- Found by: qa (TFL-138 / TFL-104.7 phase-close QA, measured geometry probe)
+- Phase: 67 (REQUIREMENTS.md:4293-4295 feature/CONTROL-INDEX "Collapsed icons never collide ... no 'i'
+  covers a canvas control"; criterion 3)
+
+Steps to reproduce:
+1. Launch TFlex (dev build via `e2e/lib/launch.cjs`).
+2. Open a document so a top-of-canvas notice can appear; let it auto-collapse (~10 s) or click its
+   collapse control.
+   - Conversion: open `test-fixtures/phase53/network.html`; the card collapses to `[data-conversion-icon]`.
+   - 3D: open a PDF carrying a `/Subtype /3D` annotation (probe builds one); collapse `[data-pdf3d-collapse]`
+     -> `[data-pdf3d-icon]`.
+   - Protection: open a password-protected PDF (`e2e/lib/p52_crypto.cjs`); collapse `[data-protection-collapse]`
+     -> `[data-protection-icon]`.
+3. Measure `getBoundingClientRect()` of the collapsed icon and of the canvas `[data-book-view-open]`
+   control (the "Book View" button at the canvas top-left).
+
+Expected (REQUIREMENTS.md:4293-4295): a collapsed "i" covers no canvas control; its box must not
+intersect any interactive control. The protection icon is the untouched reference for this promise.
+
+Actual: every collapsed icon's box intersects the Book View control. Measured on the current tree
+(window 2048x1392):
+- Book View `[data-book-view-open]` rect = { left: 260, top: 56, right: 368, bottom: 83.4 }
+- protection `i` rect = { left: 264, top: 52, right: 292, bottom: 80 }  -> overlaps (true)
+- conversion `i` rect = { left: 300, top: 52, right: 328, bottom: 80 }  -> overlaps (true)
+- 3D `i` rect = { left: 336, top: 52, right: 364, bottom: 80 }          -> overlaps (true)
+The icons (28x28, z-index 8) paint over the Book View button's left and right ends; only the middle
+"Book View" label stays hit-testable (the button centre x=314 lies between the two icon boxes). The
+phase59 protection spec only checked overlap against the left panel's Combine control
+(`[data-context-panel-combine]`, x 80-170, no overlap), so this collision is not covered by it.
+
+Impact: MEDIUM. The Book View control's clickable area is reduced (its two ends are covered by the
+collapsed icons) but the control stays operable at its centre, so the workflow is degraded, not
+blocked, and no document content is affected. It does violate criterion 3's literal "neither overlaps
+a canvas control" and the "no 'i' covers a canvas control" rule.
+
+Evidence:
+- `e2e/phase67_notice_geometry.spec.cjs` test 3 `both collapsed icons present (protection + 3D)`
+  fails the `overlapBook` / `overlapBook3d` assertions; tests 1 and 2 log `overlapBook:true` for the
+  conversion and 3D icons in their own scenarios. Runner log lines `P67_GEOM_BOTH`,
+  `P67_GEOM_CONVERSION`, `P67_GEOM_3D`.
+- Screenshots: `screenshots/phase67-both-collapsed-clip.png` (amber protection "i" and blue 3D "i"
+  painted on the "Book View" pill), `screenshots/phase67-conversion-collapsed-clip.png`,
+  `screenshots/phase67-3d-collapsed-clip.png`.
+
+Command: `npm.cmd run test:e2e -- e2e/phase67_notice_geometry.spec.cjs` -> `1 failed / 2 passed`
+(the failure is the Book View overlap assertion; all other measured criteria pass).
+
+History:
+- qa (TFL-138): filed from the Phase 67 phase-close measured geometry probe. Owner: frontend-dev
+  (keep the collapsed icons off the Book View control - e.g. offset the icon row / slots below or
+  right of `[data-book-view-open]`, or move the Book View control; must keep the protection notice
+  the untouched reference pattern). qa to re-verify by rerunning the probe.
+- CTO (TFL-104): triaged FIX-READY, MEDIUM. This is a genuine Phase 67 criterion-3 / ruling-6 violation
+  ("no 'i' covers a canvas control") and blocks phase close. Resolution chosen: keep the Book View
+  control at the canvas top-left corner (Phase 66's persistent primary control, ruling 1) and shift the
+  collapsed notice-icon ROW to its right so no "i" intersects `[data-book-view-open]`; the 28px icon
+  size and 36px slot pitch are unchanged and the DEF-435 rail clearance (`--tf-rail-w`) is retained.
+  Assigned to frontend-dev (renderer layout). qa re-verifies by rerunning
+  `npm.cmd run test:e2e -- e2e/phase67_notice_geometry.spec.cjs` (expect 3 passed / 0 failed) plus the
+  affected unit specs, then sets CLOSED.
+- frontend-dev (TFL-145 / TFL-104.8, 2026-10-01): fixed. Added ONE shared token `--tf-notice-row-clear:
+  112px` (`:root`) and wired it into all three single-source slot bases in `src/renderer/styles.css`
+  (`.protection-notice-collapsed-toggle` `left = calc(var(--tf-rail-w,184px) + var(--space-standard) +
+  var(--tf-notice-row-clear))`, conversion `+ 36px`, 3D `+ 72px`); slot pitch and the `--tf-rail-w`
+  term preserved, Multi Mode resets and the Book View control untouched. Reconciled
+  `test/unit/renderer/phase67NoticeCollapse.test.tsx` and
+  `test/unit/renderer/tfl46_protectionIconLeftInset.test.ts` to the new base. Measured (P67_GEOM,
+  2048x1392): protection 376..404, conversion 412..440, 3D 448..476, Book View 260..368, so
+  `overlapBook:false` / `overlapBook3d:false` / `overlapCombine:false`, pitch 72, hitResolves true, no
+  page overlap (page-left 593). Evidence: `npm.cmd run test:e2e -- e2e/phase67_notice_geometry.spec.cjs`
+  -> 3 passed / 0 failed; `npx.cmd vitest run phase67NoticeCollapse.test.tsx
+  tfl46_protectionIconLeftInset.test.ts phase59ProtectionNotice.test.tsx` -> 25 passed / 0 failed;
+  `npm.cmd run verify` -> exit 0 (318 files). Awaits qa FIX-READY verification to set CLOSED.
+- qa (TFL-148 / TFL-104.9, 2026-10-01): VERIFIED independently, CLOSED. `npm.cmd run build:renderer` exit 0; `npm.cmd run test:e2e -- e2e/phase67_notice_geometry.spec.cjs` -> 3 passed / 0 failed (P67_GEOM_CONVERSION, P67_GEOM_3D, P67_GEOM_BOTH all overlapBook:false / overlapBook3d:false, protection 376..404 + conversion 412..440 + 3D 448..476 vs Book View 260..368, pitch 72, no page overlap, hitResolves true); `npm.cmd run test:e2e -- e2e/phase59_protection_notice.spec.cjs` -> 1 passed / 0 failed (icon 376..404 clears combine 80..170.8, in canvas left half, page left 748.5); `npm.cmd run test:e2e -- e2e/phase53_format_import.spec.cjs e2e/phase56_reading.spec.cjs e2e/phase57a_engineering.spec.cjs` -> 24 passed / 0 failed (P53_NOTICE afterDismiss:0, P53_PREFS clampedMargin:50 / clampedFont:48, P57A_3D noticeCollapseCount:1); `npx.cmd vitest run` on the 7 named renderer specs -> 7 files / 84 tests passed / 0 failed; `npm.cmd run verify` -> exit 0 (conventions clean, 318 files, tsc 0). DEF-435 guard intact: `tfl46_protectionIconLeftInset.test.ts` still requires the `--tf-rail-w` term in the protection `left` (now plus the shared `--tf-notice-row-clear` token) and still asserts the Multi Mode reset. Model: `openrouter/deepseek/deepseek-v4.1-flash` (qa pinned tactical tier).

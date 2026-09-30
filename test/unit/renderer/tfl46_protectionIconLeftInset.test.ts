@@ -31,12 +31,16 @@ function ruleBody(selector: string): string {
 }
 
 describe("TFL-46.2 — the collapsed protection icon clears the left ContextPanel", () => {
-  it("offsets the collapsed toggle by the rail track plus the standard space", () => {
+  it("offsets the collapsed toggle by the rail track, the standard space, and the shared row clearance", () => {
     const rule = ruleBody(".protection-notice-collapsed-toggle");
     expect(rule, "the collapsed-toggle rule is missing").not.toBe("");
     expect(rule).toMatch(
-      /left:\s*calc\(var\(--tf-rail-w,\s*184px\)\s*\+\s*var\(--space-standard\)\)/,
+      /left:\s*calc\(var\(--tf-rail-w,\s*184px\)\s*\+\s*var\(--space-standard\)\s*\+\s*var\(--tf-notice-row-clear\)\)/,
     );
+  });
+
+  it("declares the shared row-clearance token used by all three slots", () => {
+    expect(CSS).toMatch(/--tf-notice-row-clear:\s*112px/);
   });
 
   it("no longer pins the collapsed toggle at a bare --space-standard", () => {

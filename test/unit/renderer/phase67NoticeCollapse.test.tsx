@@ -296,7 +296,7 @@ describe("phase 67 — Pdf3dNotice: rounded box, auto-collapse, manual toggle", 
 });
 
 describe("phase 67 — the three collapsed icons occupy distinct fixed slots", () => {
-  const RAIL = String.raw`calc\(var\(--tf-rail-w,\s*184px\)\s*\+\s*var\(--space-standard\)`;
+  const RAIL = String.raw`calc\(var\(--tf-rail-w,\s*184px\)\s*\+\s*var\(--space-standard\)\s*\+\s*var\(--tf-notice-row-clear\)`;
 
   it("keeps the protection icon in slot 0 (untouched)", () => {
     expect(ruleBody(".protection-notice-collapsed-toggle")).toMatch(

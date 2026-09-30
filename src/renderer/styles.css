@@ -155,6 +155,14 @@
   --space-section: 24px;
   --space-major: 32px;
 
+  /* Phase 67 / DEF-447 — horizontal clearance for the collapsed notice-icon
+   * ROW at the canvas top-left. The single-source base for all three fixed
+   * slots is `--tf-rail-w + --space-standard + --tf-notice-row-clear`, so the
+   * row clears the LEFT ContextPanel (DEF-435) AND the Book View control
+   * (right edge 368px at the 2048px probe; slot-0 left was 264px, so 112px
+   * leaves an 8px gap). Multi Mode resets the term per notice below. */
+  --tf-notice-row-clear: 112px;
+
   /* Phase 35 — with the window opaque, Windows itself rounds the
    * window corners (DWM, ~8px on Windows 11). The app's own clip must
    * MATCH that radius instead of the old transparent-window 20px, or
@@ -17185,7 +17193,7 @@ cursor: pointer;
 .protection-notice-collapsed-toggle {
   position: absolute;
   top: var(--sp-2);
-  left: calc(var(--tf-rail-w, 184px) + var(--space-standard));
+  left: calc(var(--tf-rail-w, 184px) + var(--space-standard) + var(--tf-notice-row-clear));
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -17443,7 +17451,7 @@ cursor: pointer;
 .conversion-notice-collapsed-toggle {
   position: absolute;
   top: var(--sp-2);
-  left: calc(var(--tf-rail-w, 184px) + var(--space-standard) + 36px);
+  left: calc(var(--tf-rail-w, 184px) + var(--space-standard) + var(--tf-notice-row-clear) + 36px);
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -18290,7 +18298,7 @@ cursor: pointer;
 .pdf3d-notice-collapsed-toggle {
   position: absolute;
   top: var(--sp-2);
-  left: calc(var(--tf-rail-w, 184px) + var(--space-standard) + 72px);
+  left: calc(var(--tf-rail-w, 184px) + var(--space-standard) + var(--tf-notice-row-clear) + 72px);
   display: inline-flex;
   align-items: center;
   justify-content: center;
