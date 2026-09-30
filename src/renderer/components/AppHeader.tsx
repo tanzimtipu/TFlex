@@ -497,6 +497,12 @@ export function AppHeader(props: AppHeaderProps): ReactElement {
   activeIdRef.current = activeId;
   const instantMotionRef = useRef(instantMotion);
   instantMotionRef.current = instantMotion;
+  // DEF-433 — a reorder changes neither `activeId`, `tabs.length` nor the
+  // motion gate, so the effect below never re-ran and a reordered active tab
+  // could sit clipped at the squeezed strip edge. The drag commit bumps this
+  // counter so the ONE scroll path re-runs AFTER the reducer's DOM order /
+  // reflow has committed.
+  const [scrollNudge, setScrollNudge] = useState(0);
   const scrollActiveIntoView = useCallback((): void => {
     const id = activeIdRef.current;
     const list = tabListRef.current;
@@ -513,7 +519,32 @@ export function AppHeader(props: AppHeaderProps): ReactElement {
   }, []);
   useEffect(() => {
     scrollActiveIntoView();
-  }, [activeId, tabs.length, instantMotion, scrollActiveIntoView]);
+  }, [activeId, tabs.length, instantMotion, scrollNudge, scrollActiveIntoView]);
+
+  // DEF-433 — a dragged tab is released while its pointer transform is still on
+  // the `.tab` box; the shared `.tab` transition then animates that transform
+  // back into the reordered slot. The effect above therefore measures a
+  // mid-flight box and no-ops, leaving the active tab clipped. Re-assert its
+  // visibility once the transform transition settles. Instant motion (reduced
+  // motion / Animations OFF) has no transition, so the first pass already
+  // measured the settled box and this listener is unnecessary.
+  useEffect((): (() => void) | undefined => {
+    if (scrollNudge === 0 || instantMotion) return undefined;
+    const list = tabListRef.current;
+    const id = activeIdRef.current;
+    if (list === null || id === null) return undefined;
+    const tab = Array.from(list.querySelectorAll<HTMLElement>("[data-tab-id]")).find(
+      (el) => el.dataset.tabId === id,
+    );
+    if (tab === undefined) return undefined;
+    const onTransitionEnd = (e: TransitionEvent): void => {
+      if (e.target === tab && e.propertyName === "transform") scrollActiveIntoView();
+    };
+    tab.addEventListener("transitionend", onTransitionEnd);
+    return (): void => {
+      tab.removeEventListener("transitionend", onTransitionEnd);
+    };
+  }, [scrollNudge, instantMotion, scrollActiveIntoView]);
 
   // Phase 59 (item 10) — the overflow plan. Measure the strip's content width
   // and plan a per-tab width + overlap from the style's natural width. The
@@ -894,6 +925,11 @@ export function AppHeader(props: AppHeaderProps): ReactElement {
         if (shouldRestoreActiveOnReorder(startActive, dragging, startIndex, target)) {
           onActivateRef.current(startActive as string);
         }
+        // DEF-433 — re-assert the active tab's visibility once the reordered
+        // DOM has committed. The nudge keys the shared scroll effect so it runs
+        // after reflow (never on a plain click / cancelled drag, which never
+        // reach this commit branch).
+        setScrollNudge((n) => n + 1);
       }
       clearDrag();
     };

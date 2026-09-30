@@ -357,3 +357,57 @@ test('criterion 6: with the strip squeezed, live follow and animated reflow stil
   expect(activeAfter.x, 'restored active tab not clipped (left)').toBeGreaterThanOrEqual(listBox2.x - 1);
   expect(activeAfter.x + activeAfter.width, 'restored active tab not clipped (right)').toBeLessThanOrEqual(listBox2.x + listBox2.width + 1);
 });
+
+// DEF-433 (from ADV-130) — reordering the ACTIVE tab in the squeezed strip used
+// to leave it clipped: neither `activeId` nor `tabs.length` changes, so the
+// shared scroll effect never re-ran. Drag the active tab across to the far
+// edge and assert the commit scrolls it back inside `.tab-list`.
+async function setWindowSize(w, h) {
+  await app.evaluate(({ BrowserWindow }, size) => {
+    const target = BrowserWindow.getAllWindows()[0];
+    if (target === undefined || target === null) return;
+    if (target.isMaximized()) target.unmaximize();
+    target.setSize(size[0], size[1]);
+  }, [w, h]);
+  await win.waitForTimeout(500);
+}
+
+test('DEF-433: at 640px, reordering the active tab scrolls it back into the squeezed strip', async () => {
+  await openThree();
+  // Resize AFTER the tabs exist: the squeezed strip overflows (156px viewport)
+  // and the active tab must stay reachable across a reorder.
+  await setWindowSize(640, 620);
+  await win.waitForTimeout(500);
+
+  // Drag the ACTIVE tab to the far (right) edge so the reorder is real and the
+  // tab is pushed past the strip edge; the strip keeps its old offset and would
+  // leave it clipped unless the commit re-asserts its visibility.
+  const activeId = await activeTabId();
+  const listBox = await win.locator('.tab-list').boundingBox();
+  const scrollBefore = await win.evaluate(() => document.querySelector('.tab-list').scrollLeft);
+  const activeBefore = await win.locator(`[data-tab-id="${activeId}"]`).boundingBox();
+  const chip = await chipBox(activeId);
+  const startX = chip.x + chip.width / 2;
+  const y = chip.y + chip.height / 2;
+  const farRight = listBox.x + listBox.width - 6;
+  console.log(`[P60-active] active=${activeId} order=${JSON.stringify(await tabOrder())} list=[${listBox.x.toFixed(1)},${(listBox.x + listBox.width).toFixed(1)}] activeBefore=[${activeBefore.x.toFixed(1)},${(activeBefore.x + activeBefore.width).toFixed(1)}] scrollBefore=${scrollBefore.toFixed(1)} startX=${startX.toFixed(1)} farRight=${farRight.toFixed(1)}`);
+
+  await win.mouse.move(startX, y);
+  await win.mouse.down();
+  await win.mouse.move(startX + 12, y, { steps: 4 });
+  await win.waitForTimeout(60);
+  await win.mouse.move(farRight, y, { steps: 14 });
+  await win.waitForTimeout(140);
+  await win.screenshot({ path: path.join(SHOTS, 'p60-tab-drag-active-640.png') });
+  await win.mouse.up();
+  await win.waitForTimeout(500);
+
+  const listBox2 = await win.locator('.tab-list').boundingBox();
+  const activeAfter = await win.locator(`[data-tab-id="${await activeTabId()}"]`).boundingBox();
+  const scrollAfter = await win.evaluate(() => document.querySelector('.tab-list').scrollLeft);
+  console.log(`[P60-active] post order=${JSON.stringify(await tabOrder())} active=[${activeAfter.x.toFixed(1)},${(activeAfter.x + activeAfter.width).toFixed(1)}] list=[${listBox2.x.toFixed(1)},${(listBox2.x + listBox2.width).toFixed(1)}] scrollAfter=${scrollAfter.toFixed(1)}`);
+  expect(await activeTabId(), 'the dragged tab is still active after the reorder').toBe(activeId);
+  expect(activeAfter.x, 'reordered active tab not clipped (left)').toBeGreaterThanOrEqual(listBox2.x - 1);
+  expect(activeAfter.x + activeAfter.width, 'reordered active tab not clipped (right)').toBeLessThanOrEqual(listBox2.x + listBox2.width + 1);
+  expect(scrollAfter, 'the strip scrolled to bring the active tab back from the right edge').toBeGreaterThan(0);
+});

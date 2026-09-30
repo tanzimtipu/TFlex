@@ -8606,3 +8606,50 @@ History:
   (<=2.5px, both axes). Evidence: screenshots/p61-tearout-overflow.png. Neighbour checks
   green: phase60 unit 8/8, phase60 e2e 3/3, phase58 detach e2e 1/1, phase59 overflow e2e
   1/1, phase62TabRestyle unit 9/9.
+
+## DEF-433: Reordering a squeezed strip (640px min width) leaves the active tab clipped at the strip edge - no scroll-into-view after the reorder
+
+- Status: FIX-READY
+- Severity: MEDIUM
+- Found by: adversary (ADV-130, Phase 60 diff-pass)
+- Phase: 60
+
+Steps to reproduce:
+1. `npm.cmd run build`, then `node test-fixtures/adv-p60/probe.cjs follow` (canonical
+   `e2e/lib/launch.cjs`; fresh `--user-data-dir`).
+2. Open `report.pdf`, `long.pdf`, `form.pdf` (3 tabs), set the window to 640x620 (the app
+   minimum) so `.tab-list` overflows (156px wide, `scrollWidth` 238, 10px scrollbar).
+3. Grab the ACTIVE tab's colour chip and drag it right to the strip edge; release.
+
+Expected (Phase 60 criterion 6 - active tab never clipped in a squeezed strip): the live
+follow and animated reflow work and the ACTIVE tab stays fully inside the strip.
+
+Actual: the reorder commits correctly and the reflow runs, but the active tab ends at
+`l=246 r=378` against the strip `[174,330]` - clipped 48px at the right edge. `scrollLeft`
+stays 0 and the app never brings it back into view. Repeats 5 runs (`follow`, `narrowclip`,
+`clip3`); `clip3-post.revealByScrolling` shows the strip COULD reveal it (`scrollLeft`
+14-18 puts it at `l=198 r=330`) but does not.
+
+Root cause: `scrollActiveIntoView` (`src/renderer/components/AppHeader.tsx:500-513`) is
+re-run only when `activeId`, `tabs.length` or `instantMotion` change (effect deps
+`AppHeader.tsx:514-516`). A reorder changes none of them, so the commit at
+`AppHeader.tsx:888-896` (`onMoveTab` + the DEF-411 active restore) moves the active tab's
+flow slot with no scroll correction. Same class as DEF-428 (resize) and DEF-422 (640px),
+but a distinct trigger - a reorder - that neither covers; the Phase 60 criterion-6 e2e
+(`e2e/phase60_tab_drag.spec.cjs:273-359`) only drags a BACKGROUND tab, so the
+active-pushed-out case is untested.
+
+Impact: breaks Phase 60 criterion 6 in the minimum-width squeezed strip after a reorder;
+the active tab sits half outside the strip until the user scrolls manually.
+
+Evidence: `test-fixtures/adv-p60/all.log`, `test-fixtures/adv-p60/results.json`;
+`screenshots/adv-p60-narrow640-clip.png`, `screenshots/adv-p60-narrowclip.png`,
+`screenshots/adv-p60-clip3.png`. Full analysis: ADVERSARIAL_REVIEW.md ADV-130.
+
+History:
+- adversary: opened (ADV-130, Phase 60 diff-pass, TFL-71).
+- CTO: ACCEPTED (TFL-43) -> DEF-433, routed to frontend-dev.
+- CTO: FIX-READY (TFL-43) - brief to frontend-dev (TFL-74): after a committed reorder, run
+  the existing `scrollActiveIntoView` so the active tab is revealed in the squeezed 640px
+  strip; add a narrow-width active-tab case to `e2e/phase60_tab_drag.spec.cjs` and keep
+  verify + the phase60/58/59 suites green. Not the DEF-432 code path.

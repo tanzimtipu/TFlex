@@ -3,6 +3,122 @@
 > Read discipline: this is a historical evidence ledger. Search for the assigned `ADV-NNN`
 > or unresolved `Disposition: PENDING` entries; do not load prior campaigns wholesale.
 
+## Phase 60 diff-pass — live tab drag direct manipulation (TFL-71)
+
+Session label: `diff-pass`. Scope: the Phase 60 working-tree change only —
+`AppHeader.tsx` (drag state 649-668, arm-time measurement 774-806, `reflowFor()` 946-960,
+render props 1074-1083), `AnimatedTab.tsx` (drag props 48-73, `dragStyle` 101-106,
+`data-tab-dragging`/`-drag-x`/`-drag-y`/`-reflow` 201-204), `styles.css` Phase 60
+`.tab[data-tab-dragging]` raise/reflow rules (~2215-2226). Phase 61 tear-out
+(ADV-129 / DEF-432) and Phase 62 restyle were NOT re-litigated. Ran against the
+freshly built current tree (`npm.cmd run build`, exit 0). Harness:
+`test-fixtures/adv-p60/probe.cjs` (standalone, launches ONLY through the canonical
+`e2e/lib/launch.cjs`, fresh `--user-data-dir` per suite; suites
+`follow|reflow|jitter|squeeze|single|commit|narrowclip|activepush|clip3|cancel|all`).
+Raw log: `test-fixtures/adv-p60/all.log`; per-suite `test-fixtures/adv-p60/results.json`.
+Every run exited 0 (no crash, no hang, no unhandled error).
+
+## ADV-130: At the 640px minimum width, reordering a squeezed strip leaves the active tab clipped at the strip edge (no scroll-into-view after a reorder)
+
+- Session: diff-pass
+- Suggested severity: MEDIUM
+
+What I did:
+1. `npm.cmd run build` (exit 0), then ran `node test-fixtures/adv-p60/probe.cjs follow`
+   (dev build through `e2e/lib/launch.cjs`, fresh `--user-data-dir`).
+2. Opened `report.pdf`, `long.pdf`, `form.pdf` (3 tabs), then set the window to
+   640x620 (the app minimum). The strip then overflows: `.tab-list` is 156px wide
+   (`list {l:174,r:330}`) with `scrollWidth` 238 and a 10px horizontal scrollbar;
+   the 3 tabs sit at the 132px floor with an overlap pitch of ~53px.
+3. Read the active tab before the gesture: id `e8f65986`, box `l=178 r=310`,
+   fully inside the strip, `scrollLeft=0` (`follow-narrow640-rest`).
+4. Pressed at the active tab's colour chip and dragged right to the strip edge
+   (pointer 198 -> 318) and released. `data-dragging-tab` was `e8f65986` for every
+   mid-drag sample — the ACTIVE tab is the one grabbed (in the overlapped strip its
+   box, z-index 2, covers the neighbour's chip at x=228).
+5. Sampled after release.
+
+Expected (Phase 60 criterion 6): "With many tabs (squeezed/stacked strip), the live
+follow and animated reflow still work and the active tab is never clipped."
+
+Actual:
+- The reorder commits correctly (order `[0968..., b342..., e8f65986]`, the active tab
+  now last) and the reflow ran, but the active tab ends at `l=246 r=378` against the
+  strip `[174,330]` — **clipped 48px at the right edge**. `scrollLeft` stays 0; the
+  app never brings the active tab back into view.
+- Root cause: `scrollActiveIntoView` (`AppHeader.tsx:500-516`) is re-run only when
+  `activeId`, `tabs.length` or `instantMotion` change (effect deps at
+  `AppHeader.tsx:514-516`). A reorder changes none of them, so the commit at
+  `AppHeader.tsx:881-897` (`onMoveTab`) moves the active tab's flow slot without any
+  scroll correction. The state is fine at rest and only breaks across the reorder.
+- Same class as DEF-428 (CLOSED: a shrink/resize did not scroll the active tab in) and
+  DEF-422 (CLOSED: 640px strip), but a distinct trigger — a reorder, not a resize —
+  that neither fix covers, and the Phase 60 criterion-6 e2e
+  (`e2e/phase60_tab_drag.spec.cjs`, 273-359) only drags a BACKGROUND tab, so the
+  active-tab-pushed-out case is untested.
+- Not reachable at the default width: `probe.cjs activepush` (14 tabs, 1656px strip,
+  scrollWidth 1686) pushed the active tab four slots right and it stayed inside
+  (`clippedRight=false`). The failure is specific to the minimum-width squeezed strip.
+- Repeats (5 runs across `follow`, `narrowclip`, `clip3`): the active tab is clipped at
+  an edge after a reorder at 640px (`clip3` shows `l=130 r=262` vs strip `[174,330]`;
+  `narrowclip` shows `l=130 r=262`). `clip3-post.revealByScrolling` also shows the strip
+  could reveal it (`scrollLeft` 14-18 puts it at `l=198 r=330`) but does not.
+
+Screenshot: `screenshots/adv-p60-narrow640-clip.png` (active tab half past the strip's
+right edge after the drag). Supporting: `screenshots/adv-p60-narrowclip.png`,
+`screenshots/adv-p60-clip3.png`.
+
+Disposition: ACCEPTED (CTO, TFL-43) -> DEF-433. Confirmed break of Phase 60 criterion 6
+with a repro, 5 repeated runs and screenshots; the reorder commit never re-runs
+`scrollActiveIntoView`, so the active tab is left clipped at the minimum width. Routed to
+frontend-dev as DEF-433.
+
+### Phase 60 diff-pass — surfaces that held (no finding)
+
+- **Criterion 1 — live follow (default width).** `probe.cjs follow`: with 3 tabs the
+  dragged tab's box tracked the pointer across 7 sampled X positions from far left
+  (`dx=-280`) to far right (`dx=+1796`) with `box.left - (resting.left + dx) = 0.0` at
+  every sample, `data-tab-drag-x` mirrored the travel, and exactly one
+  `[data-tab-dragging="true"]` tab existed. The static `.tab-drop-marker` element is
+  absent from the DOM; `data-reorder="true"` on `.tab-list` still marks reorder mode.
+- **Criterion 2 — animated reflow.** `probe.cjs reflow`: in the normal (non-overlap)
+  strip the neighbouring tab shifted by the dragged tab's width; at settle the visual
+  gap was 134.1px against a dragged width of 132.09px (the 2px is the tab's
+  `margin-right`), so gap == slot. The reflow rides the `.tab` `transform` transition
+  (`transition-duration` last entry 0.2s = `--motion-duration-fast`).
+- **Criterion 2 — reduced motion / Animations OFF.** Under
+  `prefers-reduced-motion: reduce` and under `<html data-animations="off">` the reflow
+  transform still applied but the computed `transition-duration` collapsed to
+  `1e-05s` (instant), per the global catch-all (`styles.css:11980-11988`).
+- **Criterion 3 — commit / active preservation.** `probe.cjs commit`: with 11 tabs,
+  dragging a middle tab to `data-tab-drop="0"` and releasing produced exactly the
+  reduced-frame expected order (`orderMatch=true`), and `tflexDiagnostics()`
+  (`activeTabId`, `activeDocBytes`, `pageCount`) plus the `aria-selected` tab id were
+  unchanged. `e2e` criterion 3 (drag out, drag back) passed.
+- **Criterion 6 — squeezed strip (background drag).** `probe.cjs squeeze`: 33 tabs,
+  widths all 132, pitch 47.38, strip `scrollWidth` 1686 > `clientWidth` 1656. Dragging
+  a background tab reflowed 9 tabs, the settled gap equalled the slot pitch (47.37, the
+  consistent stacked-strip slot), and the active tab stayed unclipped during and after
+  (`activeClipDuring`/`activeClip` both false). No crash.
+- **Criterion 7 — single tab.** `probe.cjs single`: a lone tab armed on the 6px
+  threshold and followed the pointer on both axes (`dragX=40`, `dragY=60`),
+  `data-tab-drop` stayed null (no insertion target), and a non-tear-out release fired
+  neither `onMoveTab` nor `onDetachTab` and cleared all drag state.
+- **Rapid midpoint crossings (jitter/oscillation).** `probe.cjs jitter`: 24 moves of
+  +/-1.5px around a neighbour's midpoint produced exactly 1 `data-tab-drop` change and
+  then a stable value (no oscillation) — the reflow moves the sampled midpoint in the
+  direction of travel, giving hysteresis rather than flip-flop.
+- **Cancel mid-reflow.** `probe.cjs cancel`: with 8 tabs and 6 tabs mid-reflow,
+  dispatching `pointercancel` on `window` cleared `data-tab-drop`, `data-dragging-tab`,
+  every `data-tab-reflow` and every non-`none` `transform`, left the order unchanged,
+  and the following physical `mouseup` was inert (no drag armed).
+- **Edge clipping during an in-strip drag** (not filed): dragging a tab past the
+  strip's left/right boundary mid-reorder clips it at the scroller edge
+  (`probe.cjs follow`, `clippedLeft/Right` true at `dx=-280` / `dx=+1796`). This is the
+  scroller's normal clip for a tab that has not left the bar (the bounding box still
+  tracks the pointer exactly); leaving the bar is Phase 61 / DEF-432 and was not
+  re-litigated.
+
 ## Phase 2 gate — page organization
 
 Session label: `phase-2 gate`. Ran against the production build

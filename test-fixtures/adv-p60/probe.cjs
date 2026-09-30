@@ -202,6 +202,7 @@ async function dragThrough(win, tabId, ys, positions, release) {
       dx: +(p.x - startX).toFixed(2),
       dy: +(p.y - startY).toFixed(2),
       drop: s.drop,
+      liveDragging: (s.tabs.find((t) => t.dragging === 'true') || {}).id ?? null,
       dragged: tabOf(s, tabId),
       gap: gapGeometry(s),
       reflowAttrs: s.tabs.filter((t) => t.reflow !== null).map((t) => ({ id: t.id, r: t.reflow })),
@@ -312,7 +313,8 @@ async function run() {
         target: { id: tz.id, hittable: hittable !== null, chipCx: tz.chipCx, chipCy: tz.chipCy },
         samples: dz.samples.map((s) => ({
           pointerX: s.pointerX,
-          dragging: s.dragged ? s.dragged.dragging : null,
+          liveDragging: s.liveDragging,
+          dragged: s.dragged ? s.dragged.dragging : null,
           dragX: s.dragged ? s.dragged.dragX : null,
           left: s.dragged ? s.dragged.box.l : null,
           expected: s.dragged ? +(dz.resting.box.l + s.dx).toFixed(2) : null,
@@ -326,6 +328,7 @@ async function run() {
       const afterNarrow = await snapshot(win);
       const activeN = afterNarrow.tabs.find((t) => t.active);
       const listN = afterNarrow.list;
+      await win.screenshot({ path: path.join(SHOTS, 'adv-p60-narrow640-clip.png') });
       R({
         scenario: 'follow-narrow640-post',
         order: orderOf(afterNarrow),
@@ -672,6 +675,192 @@ async function run() {
       R({ scenario: 'narrowclip', error: String((e && e.stack) || e) });
       results.narrowclip = 'error';
     } finally { await hardClose(app, 'narrowclip').catch(() => {}); }
+  }
+
+  // ============ ACTIVEPUSH: reorder pushes the active tab out of a squeezed strip ======
+  if (runS('activepush')) {
+    let app = null;
+    try {
+      app = await launchApp([], freshUserData('activepush'));
+      const win = await app.firstWindow();
+      await win.waitForSelector('.sample-card', { timeout: 30000 });
+      await openThreePlusEmpties(app, win, 3); // 6 tabs
+      await win.waitForTimeout(900);
+      await setWindowSize(app, 640, 620);
+      await win.waitForTimeout(700);
+      let snap = await snapshot(win);
+      R({ scenario: 'activepush-rest', tabCount: snap.tabCount, list: snap.list, listScrollWidth: snap.listScrollWidth, listClientWidth: snap.listClientWidth, listScrollbar: snap.listScrollbar, widths: Array.from(new Set(snap.tabs.map((t) => t.box.w))), pitches: snap.tabs.slice(1).map((t, i) => +(t.box.l - snap.tabs[i].box.l).toFixed(2)).slice(0, 5) });
+
+      // Activate a middle tab by clicking the topmost tab at a mid-strip point.
+      const clickInfo = await win.evaluate(() => {
+        const list = document.querySelector('.tab-list');
+        const lr = list.getBoundingClientRect();
+        const x = lr.left + lr.width * 0.22;
+        const y = lr.top + 20;
+        const el = document.elementFromPoint(x, y);
+        const tb = el ? el.closest('[data-tab-id]') : null;
+        return tb ? { id: tb.getAttribute('data-tab-id'), x, y } : null;
+      });
+      if (clickInfo) {
+        await win.mouse.click(clickInfo.x, clickInfo.y);
+        await win.waitForTimeout(600);
+      }
+      snap = await snapshot(win);
+      const activeId = (snap.tabs.find((t) => t.active) || {}).id;
+      R({ scenario: 'activepush-activated', clickInfo, activeId, activeIndex: orderOf(snap).indexOf(activeId), active: (() => { const a = snap.tabs.find((t) => t.id === activeId); return a ? { l: a.box.l, r: a.box.r } : null; })() });
+
+      // Repeatedly drag a hittable tab AFTER the active to the far LEFT, so the
+      // active tab is pushed one slot right each iteration.
+      const iterations = [];
+      for (let i = 0; i < 4; i += 1) {
+        const s = await snapshot(win);
+        const ai = s.tabs.findIndex((t) => t.active);
+        // find a hittable non-active tab at index > ai
+        let cand = null;
+        for (let j = s.tabs.length - 1; j > ai; j -= 1) {
+          const t = s.tabs[j];
+          const hit = await win.evaluate(([x, y]) => {
+            const el = document.elementFromPoint(x, y);
+            const tb = el ? el.closest('[data-tab-id]') : null;
+            return tb ? tb.getAttribute('data-tab-id') : null;
+          }, [t.chipCx, t.chipCy]);
+          if (hit === t.id && t.chipCx > s.list.l + 4 && t.chipCx < s.list.r - 4) { cand = t; break; }
+        }
+        if (!cand) { iterations.push({ i, skipped: 'no hittable tab after active' }); break; }
+        const d = await dragThrough(win, cand.id, [], [{ x: s.list.l + 12, y: cand.chipCy }], true);
+        await win.waitForTimeout(450);
+        const after = await snapshot(win);
+        const a = after.tabs.find((t) => t.active);
+        iterations.push({
+          i, movedId: cand.id,
+          activeIndex: after.tabs.findIndex((t) => t.active),
+          active: a ? { l: a.box.l, r: a.box.r } : null,
+          listL: after.list.l, listR: after.list.r, listScrollLeft: after.listScrollLeft,
+          clippedRight: a ? a.box.r > after.list.r + 0.5 : null,
+          clippedLeft: a ? a.box.l < after.list.l - 0.5 : null,
+        });
+      }
+      const final = await snapshot(win);
+      const af = final.tabs.find((t) => t.active);
+      await win.screenshot({ path: path.join(SHOTS, 'adv-p60-activepush.png') });
+      R({
+        scenario: 'activepush-post',
+        iterations,
+        finalActive: af ? { id: af.id, l: af.box.l, r: af.box.r } : null,
+        list: final.list, listScrollLeft: final.listScrollLeft,
+        clippedRight: af ? af.box.r > final.list.r + 0.5 : null,
+        clippedLeft: af ? af.box.l < final.list.l - 0.5 : null,
+      });
+      results.activepush = 'done';
+    } catch (e) {
+      R({ scenario: 'activepush', error: String((e && e.stack) || e) });
+      results.activepush = 'error';
+    } finally { await hardClose(app, 'activepush').catch(() => {}); }
+  }
+
+  // ============ CLIP3: minimal active-tab-clip repro at 640px ==================
+  if (runS('clip3')) {
+    let app = null;
+    try {
+      app = await launchApp([], freshUserData('clip3'));
+      const win = await app.firstWindow();
+      await win.waitForSelector('.sample-card', { timeout: 30000 });
+      await openThreePlusEmpties(app, win, 0);
+      await win.waitForTimeout(700);
+      await setWindowSize(app, 640, 620);
+      await win.waitForTimeout(700);
+      const rest = await snapshot(win);
+      const activeId = (rest.tabs.find((t) => t.active) || {}).id;
+      const a0 = rest.tabs.find((t) => t.id === activeId);
+      R({ scenario: 'clip3-rest', list: rest.list, listScrollLeft: rest.listScrollLeft, listScrollWidth: rest.listScrollWidth, listClientWidth: rest.listClientWidth, active: a0 ? { id: a0.id, l: a0.box.l, r: a0.box.r, clippedRight: a0.box.r > rest.list.r + 0.5, clippedLeft: a0.box.l < rest.list.l - 0.5 } : null });
+
+      // Drag the active tab rightwards to the far right of the visible strip.
+      const drag = await dragThrough(win, activeId, [], [
+        { x: rest.list.r - 10, y: a0.chipCy },
+        { x: rest.list.r - 6, y: a0.chipCy },
+      ], true);
+      await win.waitForTimeout(600);
+      const post = await snapshot(win);
+      const a1 = post.tabs.find((t) => t.active);
+      // Which scrollLeft WOULD show it fully?
+      const reveal = a1 ? await win.evaluate((id) => {
+        const list = document.querySelector('.tab-list');
+        const el = document.querySelector(`[data-tab-id="${id}"]`);
+        if (!list || !el) return null;
+        const max = list.scrollWidth - list.clientWidth;
+        const out = [];
+        for (let s = 0; s <= max; s += 2) {
+          list.scrollLeft = s;
+          const lr = list.getBoundingClientRect();
+          const ar = el.getBoundingClientRect();
+          if (ar.left >= lr.left - 0.5 && ar.right <= lr.right + 0.5) out.push({ s, l: +ar.left.toFixed(1), r: +ar.right.toFixed(1) });
+        }
+        list.scrollLeft = 0;
+        return { max, fitsAt: out.slice(0, 3) };
+      }, a1.id) : null;
+      R({
+        scenario: 'clip3-post',
+        order: orderOf(post),
+        active: a1 ? { id: a1.id, l: a1.box.l, r: a1.box.r } : null,
+        list: post.list, listScrollLeft: post.listScrollLeft,
+        clippedRight: a1 ? a1.box.r > post.list.r + 0.5 : null,
+        clippedLeft: a1 ? a1.box.l < post.list.l - 0.5 : null,
+        revealByScrolling: reveal,
+        samples: drag.samples.map((s) => ({ drop: s.drop, reflowAttrs: s.reflowAttrs })),
+      });
+      await win.screenshot({ path: path.join(SHOTS, 'adv-p60-clip3.png') });
+      results.clip3 = 'done';
+    } catch (e) {
+      R({ scenario: 'clip3', error: String((e && e.stack) || e) });
+      results.clip3 = 'error';
+    } finally { await hardClose(app, 'clip3').catch(() => {}); }
+  }
+
+  // ============ CANCEL: pointercancel mid-reflow clears every transform =========
+  if (runS('cancel')) {
+    let app = null;
+    try {
+      app = await launchApp([], freshUserData('cancel'));
+      const win = await app.firstWindow();
+      await win.waitForSelector('.sample-card', { timeout: 30000 });
+      await openThreePlusEmpties(app, win, 5);
+      await win.waitForTimeout(800);
+      const snap0 = await snapshot(win);
+      const initials = orderOf(snap0);
+      const target = snap0.tabs[1] || snap0.tabs[0];
+      // Drag to a reflow state (cursor over a later slot), then cancel via window.
+      const chip = tabOf(snap0, target.id);
+      await win.mouse.move(chip.chipCx, chip.chipCy);
+      await win.mouse.down();
+      await win.mouse.move(chip.chipCx + 10, chip.chipCy, { steps: 3 });
+      await win.waitForTimeout(60);
+      await win.mouse.move(snap0.list.r - 30, chip.chipCy, { steps: 8 });
+      await win.waitForTimeout(250);
+      const during = await snapshot(win);
+      await win.evaluate(() => window.dispatchEvent(new PointerEvent('pointercancel', { pointerId: 1, bubbles: true, cancelable: true })));
+      await win.waitForTimeout(300);
+      const afterCancel = await snapshot(win);
+      await win.mouse.up();
+      await win.waitForTimeout(250);
+      const afterUp = await snapshot(win);
+      R({
+        scenario: 'cancel',
+        targetId: target.id,
+        during: { drop: during.drop, draggingAttr: during.draggingAttr, reflowCount: during.tabs.filter((t) => t.reflow !== null).length },
+        afterCancel: {
+          drop: afterCancel.drop, draggingAttr: afterCancel.draggingAttr,
+          reflowCount: afterCancel.tabs.filter((t) => t.reflow !== null).length,
+          nonNoneTransforms: afterCancel.tabs.filter((t) => t.transform !== 'none').map((t) => ({ id: t.id, tr: t.transform })),
+          order: orderOf(afterCancel),
+        },
+        afterUp: { dragCount: afterUp.tabs.filter((t) => t.dragging === 'true').length, order: orderOf(afterUp) },
+        orderUnchanged: JSON.stringify(orderOf(afterCancel)) === JSON.stringify(initials),
+      });
+      results.cancel = 'done';
+    } catch (e) {
+      R({ scenario: 'cancel', error: String((e && e.stack) || e) });
+      results.cancel = 'error';
+    } finally { await hardClose(app, 'cancel').catch(() => {}); }
   }
 
   fs.writeFileSync(path.join(OUT_DIR, 'results.json'), JSON.stringify(results, null, 2));
