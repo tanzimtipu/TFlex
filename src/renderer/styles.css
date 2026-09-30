@@ -8843,18 +8843,25 @@ rect.ann-highlight.ann-preview {
   font-weight: 600;
   color: var(--fg-strong);
 }
-/* Phase 59 (item 8) — TWO-COLUMN ROWS. The label owns the first track (a
- *  fixed basis that never shrinks beneath the control) and the control owns
- *  the second, flexing track. The column gap is real layout space, so a
- *  label can never run under or touch its control at any sheet width, and
- *  there is no shared flex line for the two to collide on. Long hints stay
- *  OUTSIDE the row as full-width sibling paragraphs BELOW the control. */
+/* Phase 59 (item 8) — TWO-COLUMN ROWS. Track 1 is the text column: it owns
+ *  the label AND its hint, stacked, and is the flexing track. Track 2 is the
+ *  control column: a bounded track that never shrinks beneath the control. The
+ *  column gap is real layout space, so the text and the control can never
+ *  collide, and every description stays under its own label instead of
+ *  floating full-width between the control rows. */
 .prefs-row {
   display: grid;
-  grid-template-columns: minmax(160px, 220px) minmax(0, 1fr);
-  align-items: center;
-  column-gap: var(--sp-4);
+  grid-template-columns: minmax(0, 1fr) minmax(160px, 260px);
+  align-items: start;
+  column-gap: var(--sp-5);
   margin-bottom: var(--sp-2);
+}
+.prefs-row-text {
+  grid-column: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
 }
 .prefs-row-label {
   grid-column: 1;

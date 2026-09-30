@@ -407,7 +407,10 @@ export function PreferencesDialog(props: PreferencesDialogProps): ReactElement |
                         <section className="prefs-section">
                           <h3 className="prefs-section-title">Appearance</h3>
                           <div className="prefs-row">
-                            <label className="prefs-row-label" htmlFor="prefs-theme-default">Theme default</label>
+                            <div className="prefs-row-text">
+                              <label className="prefs-row-label" htmlFor="prefs-theme-default">Theme default</label>
+                              <p className="prefs-hint">Applies immediately, and is the theme the app starts in on the next launch.</p>
+                            </div>
                             <select
                               id="prefs-theme-default"
                               className="prefs-select"
@@ -428,9 +431,13 @@ export function PreferencesDialog(props: PreferencesDialogProps): ReactElement |
                               <option value="system">System default</option>
                             </select>
                           </div>
-                          <p className="prefs-hint">Applies immediately, and is the theme the app starts in on the next launch.</p>
                           <div className="prefs-row">
-                            <label className="prefs-row-label" htmlFor="prefs-animations">Animations</label>
+                            <div className="prefs-row-text">
+                              <label className="prefs-row-label" htmlFor="prefs-animations">Animations</label>
+                              <p className="prefs-hint">
+                                Turns off every animation in the app - menus, panels and dialogs appear instantly.
+                              </p>
+                            </div>
                             <input
                               id="prefs-animations"
                               type="checkbox"
@@ -440,13 +447,13 @@ export function PreferencesDialog(props: PreferencesDialogProps): ReactElement |
                               data-prefs-animations
                             />
                           </div>
-                          <p className="prefs-hint">
-                            Turns off every animation in the app - menus, panels and dialogs appear instantly.
-                          </p>
                           {onSetTabStyle !== undefined && (
                             <>
                               <div className="prefs-row">
-                                <label className="prefs-row-label" htmlFor="prefs-tab-style">Tab style</label>
+                                <div className="prefs-row-text">
+                                  <label className="prefs-row-label" htmlFor="prefs-tab-style">Tab style</label>
+                                  <p className="prefs-hint">Colorful gives each tab its own flat colour; Standard keeps the classic tab look.</p>
+                                </div>
                                 <select
                                   id="prefs-tab-style"
                                   className="prefs-select"
@@ -458,7 +465,6 @@ export function PreferencesDialog(props: PreferencesDialogProps): ReactElement |
                                   <option value="standard">Standard</option>
                                 </select>
                               </div>
-                              <p className="prefs-hint">Colorful gives each tab its own flat colour; Standard keeps the classic tab look.</p>
                             </>
                           )}
                         </section>
@@ -466,7 +472,10 @@ export function PreferencesDialog(props: PreferencesDialogProps): ReactElement |
                         <section className="prefs-section">
                           <h3 className="prefs-section-title">Recent files</h3>
                           <div className="prefs-row">
-                            <label className="prefs-row-label" htmlFor="prefs-recents-cap">Maximum entries</label>
+                            <div className="prefs-row-text">
+                              <label className="prefs-row-label" htmlFor="prefs-recents-cap">Maximum entries</label>
+                              <p className="prefs-hint">Older entries roll off when this cap is reached. Takes effect on next launch.</p>
+                            </div>
                             <input
                               id="prefs-recents-cap"
                               type="number"
@@ -486,7 +495,6 @@ export function PreferencesDialog(props: PreferencesDialogProps): ReactElement |
                               data-prefs-recents-cap
                             />
                           </div>
-                          <p className="prefs-hint">Older entries roll off when this cap is reached. Takes effect on next launch.</p>
                         </section>
                       </>
                     )}
@@ -495,6 +503,12 @@ export function PreferencesDialog(props: PreferencesDialogProps): ReactElement |
                       <section className="prefs-section" data-prefs-default-pdf-section>
                         <h3 className="prefs-section-title">Default PDF app</h3>
                         <div className="prefs-row">
+                          <div className="prefs-row-text">
+                            <p className="prefs-hint">
+                              Windows does not let an installer change the default PDF handler silently. Choose Jovrel
+                              in the settings that open, and Explorer will show the Jovrel icon and type name for PDFs.
+                            </p>
+                          </div>
                           <button
                             type="button"
                             className="prefs-action"
@@ -505,10 +519,6 @@ export function PreferencesDialog(props: PreferencesDialogProps): ReactElement |
                             Make Jovrel the default PDF app
                           </button>
                         </div>
-                        <p className="prefs-hint">
-                          Windows does not let an installer change the default PDF handler silently. Choose Jovrel
-                          in the settings that open, and Explorer will show the Jovrel icon and type name for PDFs.
-                        </p>
                         {defaultAppsNotice !== null && (
                           <p className="prefs-hint prefs-action-status" role="status" data-prefs-default-pdf-status>
                             {defaultAppsNotice}
@@ -521,7 +531,9 @@ export function PreferencesDialog(props: PreferencesDialogProps): ReactElement |
                       <section className="prefs-section" data-prefs-convert-section>
                         <h3 className="prefs-section-title">Import and conversion</h3>
                         <div className="prefs-row">
-                          <label className="prefs-row-label" htmlFor="prefs-convert-page-size">Page size</label>
+                          <div className="prefs-row-text">
+                            <label className="prefs-row-label" htmlFor="prefs-convert-page-size">Page size</label>
+                          </div>
                           <select
                             id="prefs-convert-page-size"
                             className="prefs-select"
@@ -534,7 +546,9 @@ export function PreferencesDialog(props: PreferencesDialogProps): ReactElement |
                           </select>
                         </div>
                         <div className="prefs-row">
-                          <label className="prefs-row-label" htmlFor="prefs-convert-margin">Margin (mm)</label>
+                          <div className="prefs-row-text">
+                            <label className="prefs-row-label" htmlFor="prefs-convert-margin">Margin (mm)</label>
+                          </div>
                           <input
                             id="prefs-convert-margin"
                             type="number"
@@ -555,7 +569,9 @@ export function PreferencesDialog(props: PreferencesDialogProps): ReactElement |
                           />
                         </div>
                         <div className="prefs-row">
-                          <label className="prefs-row-label" htmlFor="prefs-convert-font">Text font</label>
+                          <div className="prefs-row-text">
+                            <label className="prefs-row-label" htmlFor="prefs-convert-font">Text font</label>
+                          </div>
                           <select
                             id="prefs-convert-font"
                             className="prefs-select"
@@ -569,7 +585,9 @@ export function PreferencesDialog(props: PreferencesDialogProps): ReactElement |
                           </select>
                         </div>
                         <div className="prefs-row">
-                          <label className="prefs-row-label" htmlFor="prefs-convert-font-size">Text font size (pt)</label>
+                          <div className="prefs-row-text">
+                            <label className="prefs-row-label" htmlFor="prefs-convert-font-size">Text font size (pt)</label>
+                          </div>
                           <input
                             id="prefs-convert-font-size"
                             type="number"
@@ -590,7 +608,9 @@ export function PreferencesDialog(props: PreferencesDialogProps): ReactElement |
                           />
                         </div>
                         <div className="prefs-row">
-                          <label className="prefs-row-label" htmlFor="prefs-convert-delimiter">CSV delimiter</label>
+                          <div className="prefs-row-text">
+                            <label className="prefs-row-label" htmlFor="prefs-convert-delimiter">CSV delimiter</label>
+                          </div>
                           <select
                             id="prefs-convert-delimiter"
                             className="prefs-select"
@@ -605,7 +625,9 @@ export function PreferencesDialog(props: PreferencesDialogProps): ReactElement |
                           </select>
                         </div>
                         <div className="prefs-row">
-                          <label className="prefs-row-label" htmlFor="prefs-convert-csv-mapping">Map CSV columns to form fields</label>
+                          <div className="prefs-row-text">
+                            <label className="prefs-row-label" htmlFor="prefs-convert-csv-mapping">Map CSV columns to form fields</label>
+                          </div>
                           <input
                             id="prefs-convert-csv-mapping"
                             type="checkbox"
@@ -616,7 +638,9 @@ export function PreferencesDialog(props: PreferencesDialogProps): ReactElement |
                           />
                         </div>
                         <div className="prefs-row">
-                          <label className="prefs-row-label" htmlFor="prefs-convert-html-backgrounds">Print HTML backgrounds</label>
+                          <div className="prefs-row-text">
+                            <label className="prefs-row-label" htmlFor="prefs-convert-html-backgrounds">Print HTML backgrounds</label>
+                          </div>
                           <input
                             id="prefs-convert-html-backgrounds"
                             type="checkbox"
@@ -626,9 +650,13 @@ export function PreferencesDialog(props: PreferencesDialogProps): ReactElement |
                             data-prefs-convert-html-backgrounds
                           />
                         </div>
-                        <p className="prefs-hint">
-                          Used by every file import that produces a new PDF, and by Fill form fields from CSV. Applies to the next import.
-                        </p>
+                        <div className="prefs-row">
+                          <div className="prefs-row-text">
+                            <p className="prefs-hint">
+                              Used by every file import that produces a new PDF, and by Fill form fields from CSV. Applies to the next import.
+                            </p>
+                          </div>
+                        </div>
                       </section>
                     )}
 

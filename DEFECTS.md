@@ -8664,6 +8664,44 @@ History:
   the active slot unchanged. Evidence: `screenshots/def433-rv-c1.png`, `def433-rv-c2c.png`,
   `def433-rv-c3-reduced.png`, `def433-rv-c3b-off.png`.
 
+## DEF-434: Preferences still reads as disorganized — descriptions float between the control rows instead of occupying a text column
+
+- Status: CLOSED
+- Severity: MEDIUM
+- Found by: operator (TFL-51, "The preferences window", reported 2026-09-30)
+- Phase: post-Phase 59 (refinement of Phase 59 item 8 / success criterion 8)
+
+Steps to reproduce:
+1. Launch the app at master HEAD and open Preferences (`[data-open-preferences]`).
+2. Look at the General and the Import & conversion panels at the sheet's normal width.
+
+Expected (operator): the window is organised into columns — the setting TEXT (its label and
+its description) occupies its own column and the dropdowns/inputs/checkboxes occupy a
+separate control column; no description line floats in the gap between two control boxes;
+the result reads as a professional settings sheet.
+
+Actual: in the shipped two-pane sheet each `.prefs-row` holds only the label in column 1
+and the control in column 2, while every `.prefs-hint` description is a full-width sibling
+OUTSIDE the row (`src/renderer/components/PreferencesDialog.tsx:431`, `443-445`, `461`,
+`489`, `508-511`, `629-631`). The descriptions therefore render as loose full-width lines
+between the control rows (`src/renderer/styles.css:8852-8858` grid + `8931-8935` hint),
+which the operator reads as text sitting "in between boxes on the right". The label and
+control columns do not overlap (Phase 59 criterion 8 still passes), but the description
+text is not in its own column and the sheet does not read as organised.
+
+Evidence: `screenshots/p59-prefs-general.png`, `screenshots/p59-prefs-import.png`
+(descriptions as full-width lines between the rows). Source anchors: label/control grid
+`src/renderer/styles.css:8852-8885`, hint rule `8931-8935`, example rows
+`src/renderer/components/PreferencesDialog.tsx:409-431` and `523-631`.
+
+History:
+- CTO: opened (TFL-51) and routed to frontend-dev (TFL-87) — rebuild each setting row as a
+  two-track grid whose column 1 is the text stack (label + description) and column 2 is the
+  control, so no description floats between control rows; keep every `data-prefs-*` hook,
+  the category rail and the 640px no-overlap bar green; qa to re-verify with the updated
+  `e2e/phase59_preferences.spec.cjs` and fresh screenshots.
+- qa: CLOSED (TFL-92 Focused verification PASS). `npm.cmd run build` exit 0 (after an unrelated Book View typecheck failure cleared); `npx.cmd playwright test e2e/phase59_preferences.spec.cjs` 1 passed (overlap:false, gap 24px at normal + 640px, missing hooks []); `npm.cmd run test:unit -- test/unit/renderer/prefsDialogRedesign.test.tsx` 14 passed; `npm.cmd run verify` exit 0; independent geometry `e2e/tfl92_prefs_geometry.spec.cjs` 1 passed (12 rows, 24px hint-to-control gap at normal and 640px); screenshots `screenshots/tfl51-prefs-general.png` / `tfl51-prefs-import.png` show the text-column + control-column layout.
+
 ## DEF-435: collapsed protection "i" pins over the LEFT panel, covering the leading edge of the Combine control — not at the canvas top-left
 
 - Status: CLOSED

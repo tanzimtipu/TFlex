@@ -382,12 +382,17 @@ describe("PreferencesDialog two-column layout CSS contract (Phase 59 item 8)", (
     const css = readFileSync(STYLES_PATH, "utf8");
     const row = css.slice(css.indexOf(".prefs-row {"), css.indexOf(".prefs-row-label {"));
     expect(row).toMatch(/display:\s*grid;/);
-    // TWO explicit tracks: a fixed-basis label track + a flexing control track.
-    expect(row).toMatch(/grid-template-columns:\s*minmax\([^)]*\)\s+minmax\(0,\s*1fr\)/);
-    // Real gutter between the tracks, so a label can never touch its control.
+    // TWO explicit tracks: a flexing text track + a bounded control track.
+    expect(row).toMatch(/grid-template-columns:\s*minmax\(0,\s*1fr\)\s+minmax\(\d+px,\s*\d+px\)/);
+    // Real gutter between the tracks, so text can never touch its control.
     expect(row).toMatch(/column-gap:\s*var\(--sp-\d+\)/);
     // No absolute/overlap positioning anywhere in the row.
     expect(row).not.toMatch(/position:\s*absolute/);
+
+    // The text cell stacks the label and its hint in column 1.
+    const text = css.slice(css.indexOf(".prefs-row-text {"), css.indexOf(".prefs-row-label {"));
+    expect(text).toMatch(/grid-column:\s*1;/);
+    expect(text).toMatch(/flex-direction:\s*column/);
 
     const label = css.slice(css.indexOf(".prefs-row-label {"), css.indexOf(".prefs-select,"));
     expect(label).toMatch(/grid-column:\s*1;/);

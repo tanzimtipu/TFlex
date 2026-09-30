@@ -82,10 +82,10 @@ async function measureRows() {
     return rows
       .map((row) => {
         const label = row.querySelector('.prefs-row-label');
-        const control = Array.from(row.children).find((c) => c !== label);
-        // A row with no label (e.g. the default-apps action button) has no
-        // label box to overlap; skip it.
-        if (label === null || control === undefined) return null;
+        const control = row.querySelector('.prefs-select, .prefs-input, .prefs-check, .prefs-action');
+        // A row with no label (e.g. the import footer note) has no label box,
+        // and a row with no control (the note row) has nothing to align.
+        if (label === null || control === null) return null;
         const lr = label.getBoundingClientRect();
         const cr = control.getBoundingClientRect();
         return {
@@ -152,6 +152,14 @@ test('Preferences: vertical categories switch, no label/control overlap at norma
     }
     await win.screenshot({ path: path.join(SHOTS, `p59-prefs-${cat}.png`) });
   }
+
+  // 2b. TFL-51 layout evidence: capture the General and Import tabs.
+  await win.locator('[data-prefs-category="general"]').click();
+  await win.waitForTimeout(300);
+  await win.screenshot({ path: path.join(SHOTS, 'tfl51-prefs-general.png') });
+  await win.locator('[data-prefs-category="import"]').click();
+  await win.waitForTimeout(300);
+  await win.screenshot({ path: path.join(SHOTS, 'tfl51-prefs-import.png') });
 
   // 3. No label box overlaps its control box at the sheet's normal width.
   const normal = [];
