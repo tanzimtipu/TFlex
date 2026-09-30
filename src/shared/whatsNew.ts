@@ -23,6 +23,16 @@ export interface WhatsNewEntry {
 /** Ordered newest first. */
 export const WHATS_NEW: WhatsNewEntry[] = [
   {
+    version: '1.45.4',
+    date: '2026-10-01',
+    highlights: [
+      'Drag a tab and it now follows your pointer with the neighbouring tabs animating to open a gap at the drop slot; release outside the bar and the tab tears out translucent, drag it back to reattach.',
+      'Tabs got a colourful restyle: 26px height, four rounded corners, and the active tab merges into the canvas with no gap.',
+      'Fixed: after dragging a tab to a new position, the active tab could stay hidden at the edge of the squeezed strip - it now scrolls back into view reliably once the drag animation settles.',
+      'The Outline panel now keeps its square corner, matching the rest of the window frame.',
+    ],
+  },
+  {
     version: '1.45.3',
     date: '2026-09-30',
     highlights: [
