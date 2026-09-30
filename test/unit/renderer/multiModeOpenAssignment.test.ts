@@ -225,10 +225,11 @@ describe("App wiring — every generic open routes through the ref", () => {
     expect(body).toMatch(/openFromRequest\(picked\)/);
   });
 
-  it("onSampleClick (sample cards) refuses then shows the opened tab", () => {
-    const body = handlerBody("onSampleClick");
+  it("openSampleByName (sample cards) refuses then shows the opened tab", () => {
+    const body = handlerBody("openSampleByName");
     expect(body).toMatch(/routing\.refuseFocused\(samplePath\)/);
     expect(body).toMatch(/routing\.show\(opened\.tabId\)/);
+    expect(handlerBody("onSampleClick")).toMatch(/openSampleByName\(sample\.name\)/);
   });
 
   it("onRecentClick (recent files) routes through the shared path", () => {
