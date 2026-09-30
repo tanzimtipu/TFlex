@@ -23,6 +23,17 @@ export interface WhatsNewEntry {
 /** Ordered newest first. */
 export const WHATS_NEW: WhatsNewEntry[] = [
   {
+    version: '1.45.1',
+    date: '2026-09-30',
+    highlights: [
+      'Document tabs have a new look: a colourful style with a rounded, flat colour on each tab. A switch in Settings brings back the classic style, and every tab is now the same size.',
+      'Tabs can be rearranged by dragging, the title text on a tab can be selected and copied, and a tab can be torn out into its own window and dragged back into the tab bar.',
+      'Tool docks can be edited: a pen button on the dock lets you remove tools and add any tool that belongs on that dock with one click, and the dock resizes to fit.',
+      "The Home screen\u2019s tool row can be edited the same way, with up to 14 tools of your choosing; Open always stays.",
+      'Fixed: dragging a non-PDF file onto the window now opens it (Word, Excel, PowerPoint and OpenDocument files, images, comics and e-books were refused before).',
+    ],
+  },
+  {
     version: '1.45.0',
     date: '2026-09-30',
     highlights: [
