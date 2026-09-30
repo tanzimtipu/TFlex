@@ -8545,3 +8545,64 @@ Actual: tag exists but no GitHub Release published → update service sees no ne
 History:
 - qa: opened
 - qa: verified v1.7.0 release exists on GitHub with 3 assets (latest.yml, TFlex-Setup-1.7.0.exe, TFlex-Setup-1.7.0.exe.blockmap). Verified latest.yml contains correct version metadata (1.7.0). Verified app at v1.7.0 successfully initializes update service and starts check (status transitions to 'checking'). Fixed release publishing confirmed. CLOSED.
+
+## DEF-432: Phase 61 tear-out releases the strip's scroll container - overflowing strips jump and the dragged tab stops tracking the pointer
+
+- Status: CLOSED
+- Severity: MEDIUM
+- Found by: adversary (ADV-129, Phase 61 diff-pass)
+- Phase: 61
+
+Steps to reproduce:
+1. `npm.cmd run build`, then `node test-fixtures/adv-p61/probe.cjs spill` (canonical
+   `e2e/lib/launch.cjs`; fresh `--user-data-dir`).
+2. Open `assets/samples/report.pdf`, `long.pdf`, `form.pdf`, then add tabs via the strip
+   `+` (`[data-new-tab]`) until the strip overflows - 31 tabs gives `.tab-list`
+   `scrollWidth` 1686 vs `clientWidth` 1656 (10px scrollbar).
+3. Scroll `.tab-list` to its maximum (`scrollLeft` 30), start a drag from a visible
+   non-active tab's colour chip, and move the pointer straight DOWN (`dx` 0) past the
+   tear-out threshold (strip bottom 44 + 24).
+
+Expected (Phase 61 criterion 1): while the pointer leaves the strip the dragged tab's
+box follows the pointer on both axes, and the `overflow: visible` release only stops the
+clipping - the strip's layout stays put.
+
+Actual: when tear-out arms (`data-tab-tearout="true"` on both `.tab-area` and
+`.tab-list`), `overflow` flips `auto` -> `visible`. Because `.tab-list` is ALSO the
+strip's horizontal scroll container (`src/renderer/styles.css:1875`, `overflow-x: auto`),
+releasing overflow destroys the scroll container: `scrollLeft` snaps 30 -> 0 and the
+scrollbar thickness 10 -> 0 in the same frame. Every non-dragged tab jumps one frame
+(dx +30, dy +10), the strip snaps back on release, and the dragged tab stops tracking
+the pointer by exactly `(scrollLeft, scrollbarThickness)` (held at x 1790.7 the box
+landed at left 1754.2; held at y 104 the top landed at 101). With 3 tabs (no overflow)
+the same probe tracks within 0px, which is why `e2e/phase61_tab_tearout.spec.cjs` (3
+tabs) passes.
+
+Root cause: `src/renderer/styles.css:2236-2239` releases `overflow` on `.tab-list`, the
+same element that owns the strip's horizontal scroll. A scroll container cannot carry
+`overflow: visible`; the clip must be released on a wrapper that is not the scroller, or
+the scroll state captured and restored around the release.
+
+Impact: a visible strip jump plus a pointer-tracking error on every tear-out started
+from an overflowing (many-tab) strip - breaks Phase 61 criterion 1 in exactly the
+overflow case Phase 59 was written for. Silent in the 3-tab spec.
+
+Evidence: `adv_p61_spill.log`; `screenshots/adv-p61-spill-rest.png` and
+`screenshots/adv-p61-spill-tearing.png`. Full analysis: ADVERSARIAL_REVIEW.md ADV-129.
+
+History:
+- adversary: opened (ADV-129, Phase 61 diff-pass, TFL-67).
+- orchestrator: ACCEPTED (TFL-44) -> DEF-432, routed to frontend-dev.
+- orchestrator: FIX-READY (TFL-44) - brief to frontend-dev: stop releasing `overflow` on
+  the `.tab-list` scroller (move the un-clip to a non-scroller layer or float the dragged
+  tab out of the scroller) so an overflowing strip does not jump and the dragged tab
+  tracks the pointer; add `e2e/phase61_tearout_overflow.spec.cjs` reproducing the
+  overflow case and keep the 3-tab spec green.
+- qa: CLOSED (TFL-70, Phase 61 phase-close). `npm.cmd run build` EXIT 0; `npm.cmd run
+  test:e2e -- e2e/phase61_tearout_overflow.spec.cjs` -> 1 passed. Run log confirms
+  `afterScrollLeft=30` (unchanged from `scrolled.scrollLeft`), `afterScrollbar=10`
+  (unchanged), every non-dragged tab `dLeft=0.00 dTop=0.00` (<=2px), and the dragged tab
+  `dx=0 dy=63` with `left=492.17` vs `expectedLeft=492.17`, `top=71` vs `expectedTop=71.00`
+  (<=2.5px, both axes). Evidence: screenshots/p61-tearout-overflow.png. Neighbour checks
+  green: phase60 unit 8/8, phase60 e2e 3/3, phase58 detach e2e 1/1, phase59 overflow e2e
+  1/1, phase62TabRestyle unit 9/9.

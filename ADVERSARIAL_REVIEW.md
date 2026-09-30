@@ -5396,8 +5396,6 @@ Disposition: ACCEPTED -> DEF-428
 - **Zoom on open (item 6)**: opening a second/larger document after zooming the first starts at Fit page (170%, `fitPage=true`) with the correct page total (`/520`), independent of the previous 200% zoom (focused `adv-p59-zoom.cjs`; an unscoped first pass read a hidden pane's pills and was corrected). Held.
 - **Forms - save preservation / no drops (item 4)**: `form.pdf` (8 fields) fill+save preserved all 8 fields and values, and a second consecutive save was identical; the 3-widget group kept all 3 widgets with `/V` and `/AS` consistent; 500 fields fill+save preserved 500 fields in 262ms load / 50ms read / 90ms fill / 590ms save; delete+rotate preserved page attachment and rects; an AES-256-encrypted form loaded with its password, filled, and saved (as a decrypted file, Phase-52 behaviour); fill-then-undo restored the prior value through save. Held.
 
-
-
 ## Phase 62 diff-pass - clean bill: colorful tab restyle (TFL-45)
 
 - Session: diff-pass
@@ -5457,4 +5455,90 @@ Measurements that back the clean bill:
    `height` transition (`::before` transition-duration 0s).
 
 Disposition: clean bill - no ADV entry filed.
+
+## Phase 61 diff-pass — tab tear-out presentation (TFL-67)
+
+Session label: `diff-pass`. Scope: the Phase 61 tear-out presentation only —
+`AppHeader.tsx:990` (`.tab-area` gains `data-tab-tearout`), `styles.css:2236-2239`
+(`.tab-area/.tab-list[data-tab-tearout="true"] { overflow: visible }`) and
+`styles.css:2246-2249` (dragged-tab `opacity: 0.6`). The Phase 60 live drag and the
+Phase 58 detach semantics were exercised as the substrate but not re-litigated. Ran
+against the current production build (`dist` already newer than `src`; no rebuild).
+Harness: `test-fixtures/adv-p61/probe.cjs` (standalone, launches ONLY through the
+canonical `e2e/lib/launch.cjs`; suites `spill|cancel|opacity|hittest|detach`).
+Logs: `adv_p61_*.log` at the repo root.
+
+## ADV-129: Tab tear-out releases the strip's scroll container — with an overflowing strip every tab jumps (30px horizontal + 10px vertical) and the dragged tab stops tracking the pointer
+
+- Session: diff-pass
+- Suggested severity: MEDIUM
+
+What I did:
+1. Ran `node test-fixtures/adv-p61/probe.cjs spill` (dev build via the canonical
+   `e2e/lib/launch.cjs`; fresh `--user-data-dir`).
+2. Opened `assets/samples/report.pdf`, `long.pdf`, `form.pdf`, then added 28 empty
+   tabs via the strip `+` (`[data-new-tab]`) — 31 tabs. At the default width
+   `.tab-list` then has `scrollWidth` 1686 vs `clientWidth` 1656, so it shows its
+   thin horizontal scrollbar (`offsetHeight - clientHeight` = 10).
+3. Scrolled `.tab-list` to its maximum (`scrollLeft` 30), then started a drag from a
+   visible non-active tab's colour chip and moved the pointer straight DOWN
+   (`dx` 0) to y=104, past the tear-out threshold (strip bottom 44 + 24). Sampled
+   `.tab-area`/`.tab-list` computed `overflow`, `scrollLeft`, scrollbar thickness and
+   every tab's bounding box mid-drag; then returned inside and released. Repeated with
+   `scrollLeft` 0.
+4. Measured the dragged tab against the grab point and against the other tabs' deltas.
+
+Expected (Phase 61 criterion 1): while the pointer leaves the strip the dragged tab's
+own box follows the pointer on both axes, and the `overflow: visible` release only
+stops the clipping — the strip's layout stays put.
+
+Actual:
+- When the tear-out state arms (`data-tab-tearout="true"` on both `.tab-area` and
+  `.tab-list`), `overflow` flips `auto` -> `visible`. Because `.tab-list` is ALSO the
+  strip's horizontal scroll container (`styles.css:1875`, `overflow-x: auto`), releasing
+  the overflow destroys the scroll container: `listScrollLeft` snaps 30 -> 0 and
+  `listScrollbarThickness` 10 -> 0 in the same frame.
+- On screen every non-dragged tab jumps in one frame (measured dx = +30, dy = +10 for
+  each of the first three non-dragged tabs; first tab box t 8..34 -> 18..44); the whole
+  strip shifts right and drops 10px and snaps back on release — a visible glitch every
+  time a tear-out starts with an overflowing strip.
+- The dragged tab no longer tracks the pointer: held straight down at (1790.7, 104),
+  the dragged box landed at left 1754.2 (30px to the right of the grab point) and
+  top 101 (10px below the pointer). The follow error equals exactly
+  `(scrollLeft, scrollbarThickness)`. With 3 tabs (no overflow) the same probe tracks
+  within 0px, which is why `e2e/phase61_tab_tearout.spec.cjs` (3 tabs) passes.
+- Root cause: `styles.css:2236-2239` releases `overflow` on `.tab-list`, the same
+  element that owns the strip's horizontal scroll. A scroll container cannot carry
+  `overflow: visible`; the clip has to be released on a wrapper that is not the
+  scroller, or the scroll state captured/restored around the release.
+
+Screenshot: `screenshots/adv-p61-spill-rest.png` (rest: `scrollLeft` 30, 10px scrollbar,
+tabs t=8..34), `screenshots/adv-p61-spill-tearing.png` (tear-out: `scrollLeft` 0, no
+scrollbar, tabs t=18..44, dragged tab floating).
+
+Disposition: ACCEPTED (orchestrator, TFL-44) -> DEF-432. Confirmed break with repro,
+measurements and screenshots; the diff-pass released `overflow` on `.tab-list`, which is
+itself the strip's horizontal scroll container. Routed to frontend-dev as DEF-432.
+
+### Phase 61 diff-pass — surfaces that held (no finding)
+
+- **H2 stuck tear-out state**: dispatching `pointercancel` on `window` mid tear-out cleared
+  `data-tab-tearout` from BOTH `.tab-area` and `.tab-list` and restored `overflow: auto`
+  (`cancel` run). The detach release path also cleared both attributes on the origin once the
+  document was adopted (`detach` run); no stuck attribute observed.
+- **H3 opacity leak**: during tear-out only the dragged `.tab` computed `opacity: 0.6`; both
+  non-dragged tabs measured 1, the wrapping `<li>` 1, and the chip child 1. No non-dragged tab
+  was faded (`opacity` run).
+- **H4 hit-test / selection**: mid tear-out `document.elementFromPoint` at the below-strip point
+  resolved to the dragged tab's chip (unclipped, as intended); after release the SAME point
+  resolved to `.document-content` with no `[data-tab-id]` ancestor and `overflow` back to `auto`,
+  so nothing steals clicks from the canvas (`hittest` run).
+- **H5 detach move integrity / drag-back**: releasing past the threshold moved the document
+  exactly once (origin 3 -> 2 tabs, target gone, origin not stuck), opened a real second
+  `#detached` window with the document loaded (pageCount 34, `.workspace`), and dragging that
+  tab out re-adopted it into the origin (origin back to 3 tabs, detached window closed,
+  1 window left). No new break from the Phase 61 diff. The pre-existing unsaved-changes/dirty
+  and empty-tab detach findings (ADV-117, ADV-118, ADV-120) are untouched by this diff and were
+  not re-filed.
+
 

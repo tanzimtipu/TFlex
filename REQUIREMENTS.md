@@ -3739,6 +3739,147 @@ missed today). The findings and the chosen mechanism are recorded before the cod
 per ruling 3; items 1, 2, 3, 5, 7, 8, 9 and 10 are UI/behaviour changes; item 4 changes the form-fill
 engine path only.
 
+## Phase 60 — Live tab drag: the tab follows the pointer and the strip reflows with animation (operator request via TFL-43, 2026-10-01)
+
+**Operator request (verbatim intent, 2026-10-01):** "When dragging a file tab, the tab doesn't move
+live with the mouse, instead a line moves. Make sure, the tab moves live with the mouse and other tabs
+move to make space for the moved tab with animation."
+
+**Current-scope supersession:** Phase 58 feature B specified the reorder affordance as "a visible drop
+indicator" (the 2px `.tab-drop-marker` line) with the strip otherwise static. This phase supersedes that
+PRESENTATION only: the dragged tab itself tracks the pointer, and the neighbouring tabs animate to open a
+gap at the computed insertion slot. The reorder semantics, the tear-out / drag-back behaviour, the
+non-selectable title (Phase 59 item 1), the active-document preservation (DEF-411) and the overflow
+shrink/stack plan (Phase 59 item 10) are all unchanged.
+
+**Features**
+
+**A. The dragged tab follows the pointer live.**
+- From the moment the drag arms (the existing 6px total-movement threshold), the dragged tab is visually
+  detached from its slot in the row and tracks the pointer's X, instead of only rendering the static
+  `.tab-drop-marker` line.
+- The dragged tab renders ABOVE the other tabs (raised z-order plus a lifted shadow/scale per the shared
+  motion system) and keeps its own colour identity and width while dragging.
+- The live follow uses `transform` only (no layout thrash); the tab settles into the committed slot on
+  release.
+
+**B. The neighbouring tabs animate to make space.**
+- While the drag is live, the other tabs shift to open a gap the width of the dragged tab at the computed
+  insertion slot; the gap moves as the pointer crosses slot midpoints.
+- The reflow is animated with the shared motion system (tokens from `src/renderer/hooks/motionTokens.ts` /
+  `src/renderer/styles/animations.css`; transform or margin only), so it moves smoothly rather than
+  snapping; it is instant under `prefers-reduced-motion` and Animations OFF.
+- The `.tab-drop-marker` line is retired as the primary affordance: with the tab itself following the
+  pointer and the gap opening in the row, no standalone insertion line is shown.
+
+**C. Behaviour preserved.**
+- Release commits the order at the slot the gap was showing (existing `onMoveTab`); the active document
+  and its displayed page are unchanged; dragging back restores the order.
+- A downward release past the tear-out threshold still detaches to a new window; the drag-back / adopt
+  round trip is unchanged.
+- DEF-034 (activation on mousedown, close button closes) and the AGENTS.md cross-bubbling rules are
+  untouched.
+- The Phase 59 item 10 overflow plan still applies: a squeezed/stacked strip must reflow live without
+  clipping the active tab.
+
+**Success criteria**
+
+1. During a horizontal drag, the dragged tab's own rendered box tracks the pointer: its bounding-box left
+   changes with the pointer X across several sampled pointer positions, and a standalone drop line is no
+   longer the only motion feedback (measured + a mid-drag screenshot).
+2. While dragging, the other tabs open a gap at the computed slot and the gap moves when the pointer
+   crosses a midpoint; the change is animated (a computed transition/animation on the reflow is observed;
+   instant under reduced motion / Animations OFF) (measured + screenshots).
+3. On release the committed DOM order equals the slot the gap was showing; the active tab id and the
+   displayed document are unchanged, and dragging back restores the original order (asserted by DOM order
+   plus a run).
+4. A downward release past the tear-out threshold still detaches, and the drag-back round trip still
+   re-adopts (Phase 58 criteria 6-8 do not regress).
+5. A plain click activates the tab and the close button closes it (DEF-034 intact); no cross-bubbling
+   regression.
+6. With many tabs (squeezed/stacked strip), the live follow and animated reflow still work and the active
+   tab is never clipped (measured + screenshot).
+7. With a SINGLE tab, the drag still arms (DEF-412) and detaches as before; a non-tear-out release is a
+   harmless no-op.
+8. No regression: `verify`, the Phase 58/59 tab suites and the standing animation / cross-bubbling rules
+   stay green.
+9. All DEF/ADV entries opened by this phase are CLOSED or REJECTED with a written reason.
+
+**Settings impact:** none — no new `AppSettings` field. This is a renderer-only interaction/animation
+change; no IPC or shared-contract change.
+
+## Phase 61 — Tab tear-out drag: the tab tracks the pointer outside the bar and goes translucent (operator request via TFL-44, 2026-10-01)
+
+**Operator request (verbatim intent, 2026-10-01):** "When file tab is moved outside of the bar, the tab
+should move live with the mouse and the tab should be transparent at this time. Releasing the mouse
+button will open another window as it is now. The user should be able to restore the tab back by dragging
+and dropping to original app window."
+
+**Current-scope supersession:** Phase 60 made the dragged tab follow the pointer for the in-strip REORDER.
+This phase extends the SAME direct-manipulation presentation to the TEAR-OUT phase: once the pointer
+leaves the strip, the dragged tab itself leaves the row, tracks the pointer on both axes, and renders
+translucent. It supersedes only the tear-out PRESENTATION (today a dashed `outline` on `.tab-list`, driven
+by `data-tab-tearout`). The detach semantics (release past the threshold opens a new window), the
+drag-back / adopt round trip, DEF-411 active-document preservation, DEF-034 activation/close, the
+Phase-59 item 10 overflow plan and the AGENTS.md cross-bubbling rules are unchanged.
+
+**Features**
+
+**A. The dragged tab follows the pointer outside the bar.**
+- Once the drag arms, the dragged tab tracks the pointer on BOTH axes (X and Y) as a floating element, so
+  when the pointer leaves the tab strip the tab visibly leaves the bar with it - not just a strip
+  highlight.
+- While the pointer is past the tear-out threshold (below the strip's bottom edge), the tab renders in a
+  "tear-out" visual state: it tracks the pointer freely, is drawn above all other UI (raised z-order) and
+  is not clipped by the strip.
+- The live follow uses `transform` only (no layout thrash); the strip keeps its Phase-60 reorder reflow
+  for the in-strip case.
+
+**B. The tab is translucent while it is outside the bar.**
+- While the drag is in the tear-out state, the dragged tab renders semi-transparent (a measured
+  `opacity` below 1), so the surface behind it is visible; it returns to full opacity on release or when
+  the drag returns inside the strip.
+- The translucency rides the shared motion system (token-driven) and is instant under
+  `prefers-reduced-motion`.
+- Only the dragged tab is translucent; the other tabs are unaffected.
+
+**C. Release still detaches; drag-back still restores.**
+- Releasing the pointer outside the strip (past the existing tear-out threshold) still opens the
+  document in a new app window and removes the origin tab once adopted (Phase 58 feature B, unchanged).
+- A tab in the detached window can still be dragged out of its bar and is re-adopted by the origin
+  window, the detached window closing when empty (Phase 58 criterion 7, re-verified this phase).
+- No document bytes are duplicated; the move semantics are unchanged.
+
+**Success criteria**
+
+1. During a drag whose pointer leaves the strip, the dragged tab's own rendered box follows the pointer
+   on BOTH axes: its bounding-box left AND top change with sampled pointer X/Y (measured + a mid-drag
+   screenshot taken with the pointer outside the bar).
+2. While the pointer is outside the strip, the dragged tab is translucent: its computed opacity is
+   measurably below 1 and below the non-dragged tabs' opacity, and it returns to 1 after release
+   (measured).
+3. The dragged tab is not clipped by the strip and renders above the other tabs while outside the bar
+   (z-order / overflow measured + screenshot).
+4. Releasing past the tear-out threshold still opens the new app window and MOVES the document (origin
+   tab gone after adopt; a real second `#detached` window with the document loaded) - Phase 58 criterion
+   6 unchanged.
+5. The round trip still works: dragging the detached window's tab out of its bar re-adopts it into the
+   origin window and closes the detached window when empty (Phase 58 criterion 7 unchanged; run in both
+   directions).
+6. The in-strip reorder behaviour of Phase 60 is unchanged: a horizontal drag inside the strip reorders
+   with the tab following and the strip reflowing, and a non-tear-out release never detaches (Phase 60
+   criteria 1-3 still hold).
+7. A plain click still activates the tab and the close button still closes it (DEF-034); no
+   cross-bubbling regression.
+8. With unsaved changes, the tear-out still follows the documented behaviour (refusal with a readable
+   reason OR an inherited dirty state) and never loses edits (Phase 58 criterion 8 unchanged).
+9. No regression: `verify`, the Phase 58/59/60 tab suites and the standing animation / cross-bubbling
+   rules stay green.
+10. All DEF/ADV entries opened by this phase are CLOSED or REJECTED with a written reason.
+
+**Settings impact:** none - no new `AppSettings` field. This is a renderer-only interaction/animation
+change; no IPC or shared-contract change.
+
 ## Phase 62 — Colorful tab restyle: compact height, four rounded corners, and the selected tab merged into the canvas (operator request via TFL-45, 2026-10-01)
 
 **Operator request (verbatim, 2026-10-01):** "The file tab doesn't look good. Make them smaller in height
@@ -3810,6 +3951,48 @@ is repointed by qa to the Phase 62 silhouette.
 
 **CONTROL-INDEX:** none - this phase introduces no new control; it restyles existing tab surfaces (nothing is
 added, removed or re-bound).
+
+**Settings impact:** none - no new `AppSettings` field. This is a renderer-only styling change; no IPC or
+shared-contract change.
+
+## Phase 63 — Dock edit icon identity: the dock's edit pen carries the EDIT stage colour (operator request via TFL-47, 2026-10-01)
+
+**Operator request (verbatim intent, 2026-10-01):** "The edit icon on the dock should have its distinct
+color."
+
+**ORCHESTRATOR RULING (the operator may veto or adjust):** "the dock" is the bottom Action Dock
+(`[data-action-dock]`, `src/renderer/components/ActionDock.tsx`); "the edit icon" on it is the dock's own
+edit-mode pen toggle `[data-dock-edit-toggle]` (`.action-dock-edit`, the `Pencil` at
+`ActionDock.tsx:1158-1170`). Its distinct colour is the EDIT stage hue `--tf-stage-edit` (which resolves to
+`--sem-primary` in every theme) - the SAME token the Stage Rail's edit-stage icon
+(`.stage-rail-btn[data-stage="edit"] .stage-rail-icon`) and the command palette's edit-stage rows
+(`.command-palette-row[data-stage='edit']`) already carry. Today the pen rests at `--fg-muted`, so it reads
+as every other neutral control; it must instead read as the edit-stage identity.
+
+**Features**
+
+**A. The dock's edit pen carries the EDIT stage hue at rest.**
+- In `src/renderer/styles.css`, the `.action-dock-edit` base rule's resting `color` changes from
+  `var(--fg-muted)` to `var(--tf-stage-edit)`; the glyph and no other property change.
+- The hover ink (`--fg-strong`) and the armed/pressed ink (`--accent`) keep their existing rules, so the
+  control's state affordances are unchanged.
+- No new token, palette, component or IPC is introduced: this is one declaration using the app's existing
+  four-stage identity palette (the "one palette, not two" standard).
+
+**Success criteria**
+
+1. The resting computed `color` of `[data-dock-edit-toggle]` resolves to `--tf-stage-edit` (=
+   `--sem-primary`) in all three themes (light / dark / frosted), and is distinct from the dock's neutral
+   verb ink (`--sem-neutral`) - asserted by the new unit guard and a rendered computed-style probe.
+2. The `--tf-stage-edit` ink clears the 4.5:1 label floor on the pen's `--bg-elevated` surface in all three
+   themes (the Phase 40 semantic-palette floor already holds for `--sem-primary` on `--bg-elevated`).
+3. No dock behaviour changes: the pen still toggles EDIT mode (vibration, minus badges, plus picker) and
+   Escape still exits; `phase58DockEdit.test.tsx` stays green, including its Phase 59 "pen is contained"
+   rules (display / flex / no offsets unchanged).
+4. `npm run verify` and the new targeted unit guard pass.
+
+**CONTROL-INDEX:** none - this phase introduces no control and re-binds nothing; it recolours the existing
+dock edit pen (`.action-dock-edit`).
 
 **Settings impact:** none - no new `AppSettings` field. This is a renderer-only styling change; no IPC or
 shared-contract change.

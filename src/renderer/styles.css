@@ -1875,9 +1875,12 @@ input[type="checkbox"] {
   overflow-x: auto;
   overflow-y: hidden;
   scrollbar-width: thin;
-  /* Phase 58 (chunk 5) — containing block for the absolutely-positioned
-   * reorder drop marker (.tab-drop-marker). */
-  position: relative;
+  /* DEF-432 — `.tab-list` is the strip's horizontal SCROLL container, so it
+   * must stay `position: static`: a positioned scroll container would become
+   * the containing block for the Phase-61 floated dragged tab and re-clip it.
+   * The floated tab is instead positioned against `.tab-area`
+   * (`position: relative` above), the non-scrolling clip owner — so it escapes
+   * the scroller's clip without the scroller ever releasing `overflow-x`. */
 }
 
 .tab-list::-webkit-scrollbar { height: 0; }
@@ -1929,7 +1932,12 @@ input[type="checkbox"] {
     color var(--motion-normal) var(--ease-out),
     box-shadow var(--motion-normal) var(--ease-out),
     width var(--motion-normal) var(--ease-out),
-    margin-left var(--motion-normal) var(--ease-out);
+    margin-left var(--motion-normal) var(--ease-out),
+    /* Phase 60 — the reflow shift as the other tabs open the insertion gap.
+     * Rides the canonical --motion-duration-* / --motion-ease-* system so
+     * reduced motion (and Animations OFF) collapse it to an instant state
+     * change. No hardcoded duration / easing. */
+    transform var(--motion-duration-fast) var(--motion-ease-standard);
 }
 
 /* Phase 59 (item 10) — the inter-tab overlap. Each tab after the first is
@@ -2197,20 +2205,51 @@ body.tab-reordering .tab-list[data-reorder="true"] .tab {
   cursor: grabbing;
 }
 
-/* The visible drop indicator: a 2px accent bar at the insertion boundary,
- * positioned by AppHeader from the target tab's rect. Never interactive. */
-.tab-drop-marker {
-  position: absolute;
-  top: var(--sp-1);
-  bottom: 2px;
-  width: 2px;
-  margin: 0;
-  border-radius: 1px;
-  background: var(--accent);
-  box-shadow: 0 0 0 1px var(--accent-soft);
-  pointer-events: none;
-  list-style: none;
-  transition: left var(--motion-fast) var(--ease-out);
+/* Phase 60 — DIRECT-MANIPULATION tab drag. AppHeader computes the live
+ * pointer delta and the insertion slot; the dragged tab's box is translated
+ * by the delta (inline transform) and LIFTED above the row, while every other
+ * tab shifts by the planned reflow offset to open the gap. The reflow rides
+ * the `.tab` transform transition above; the dragged box opts OUT of the
+ * transition so it tracks the cursor exactly. The static `.tab-drop-marker`
+ * line is gone. */
+.tab-list > li[data-tab-dragging="true"] {
+  /* A flex item, so z-index applies without position: the lifted tab paints
+   * above its neighbours and the active tab (z-index 2). */
+  z-index: 60;
+}
+
+.tab[data-tab-dragging="true"] {
+  transition: none;
+  cursor: grabbing;
+  box-shadow: var(--motion-elevation-active);
+  will-change: transform;
+}
+
+/* Phase 61 — tear-out leaves the bar. While the pointer is past the tear-out
+ * threshold the dragged tab tracks the pointer on BOTH axes, so the strip must
+ * stop clipping it. DEF-432 — the clip is released on `.tab-area` ONLY, never
+ * on `.tab-list`: `.tab-list` is also the strip's horizontal SCROLL container
+ * (`overflow-x: auto`), and a scroll container cannot carry `overflow: visible`
+ * — releasing it snapped `scrollLeft` and collapsed the scrollbar thickness in
+ * one frame, jumping every non-dragged tab and breaking the dragged tab's
+ * tracking. Instead the dragged `.tab` is floated OUT of the scroller (see the
+ * inline `position: absolute` against `.tab-area` in AnimatedTab), so the
+ * scroller keeps `overflow-x: auto` and the scroll state stays put. `.tab-area`
+ * is `overflow: hidden` (the vertical clip) and is not a scroller, so releasing
+ * it here is safe. The release is gated on the tear-out attribute only, so the
+ * in-strip reorder (Phase 60 criterion 6) keeps its own overflow untouched. */
+.tab-area[data-tab-tearout="true"] {
+  overflow: visible;
+}
+
+/* Phase 61 — the dragged tab reads as "picked up": translucent while it is in
+ * the tear-out state, back to 1 on release or when the drag returns inside the
+ * strip. Only the dragged tab matches; the other tabs keep opacity 1. The fade
+ * rides the motion tokens, so the global reduced-motion catch-alls make it
+ * instant without a bespoke media query. */
+.tab-list[data-tab-tearout="true"] .tab[data-tab-dragging="true"] {
+  opacity: 0.6;
+  transition: opacity var(--motion-fast) var(--ease-out);
 }
 
 .tab-modified-dot {
@@ -14505,7 +14544,6 @@ rect.ann-highlight.ann-preview {
   overflow: hidden;
   background: var(--panel-bg);
   border-right: 1px solid var(--panel-border);
-  border-radius: 0 0 var(--panel-radius) 0;
 }
 
 .context-panel-actions {

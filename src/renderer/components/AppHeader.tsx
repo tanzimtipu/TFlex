@@ -616,7 +616,9 @@ export function AppHeader(props: AppHeaderProps): ReactElement {
   //   - the FIRST `pointermove` past a 6px threshold (total movement) begins
   //     the reorder;
   //   - while reordering, the target slot is computed from pointer X against
-  //     the midpoints of the OTHER tabs and shown as a visible drop marker;
+  //     the midpoints of the OTHER tabs; Phase 60 drives the feedback by direct
+  //     manipulation: the dragged tab follows the pointer and the other tabs
+  //     reflow to open the insertion gap (the static drop marker is retired);
   //   - `pointerup` commits via `onMoveTab`, `pointercancel` discards.
   //
   // Phase 59 (item 1) — the title is no longer selectable, so the old
@@ -644,6 +646,26 @@ export function AppHeader(props: AppHeaderProps): ReactElement {
   // Phase 58 (chunk 6b) — true while the drag is past the tear-out
   // threshold (below the strip). Drives the `data-tab-tearout` affordance.
   const [tearOut, setTearOut] = useState(false);
+  // Phase 60 — direct manipulation. `dragOffset` is the live pointer travel
+  // from the grab point: the dragged tab's `.tab` box is translated by it so
+  // the tab follows the pointer. `dragWidth` is the dragged tab's measured
+  // width — the size of the gap the OTHER tabs open at the computed slot.
+  const [dragOffset, setDragOffset] = useState<{ x: number; y: number } | null>(null);
+  const [dragWidth, setDragWidth] = useState(0);
+  // DEF-432 — the dragged tab's geometry captured ONCE at arm time, before any
+  // drag transform is applied. While the tear-out arms the tab is floated OUT
+  // of the `.tab-list` scroller: AnimatedTab positions it absolutely against
+  // `.tab-area` (the non-scrolling clip owner) at these coordinates, so the
+  // scroller never releases `overflow-x`. `reserve*` keeps the dragged `<li>`
+  // occupying its original slot so the non-dragged tabs cannot shift.
+  const [dragRect, setDragRect] = useState<{
+    left: number;
+    top: number;
+    width: number;
+    height: number;
+    reserveWidth: number;
+    reserveHeight: number;
+  } | null>(null);
   // Gesture source-of-truth refs: the window listeners are subscribed once
   // per gesture window and must read the LATEST values without resubscribing.
   const pendingDragRef = useRef<{ id: string; startX: number; startY: number; pointerId: number } | null>(null);
@@ -709,6 +731,9 @@ export function AppHeader(props: AppHeaderProps): ReactElement {
       setDraggingId(null);
       setDrop(null);
       setTearOut(false);
+      setDragOffset(null);
+      setDragWidth(0);
+      setDragRect(null);
     };
 
     // Insert position in the list WITHOUT the dragged tab: number of other
@@ -749,14 +774,50 @@ export function AppHeader(props: AppHeaderProps): ReactElement {
         if (Math.hypot(dx, dy) <= 6) return; // not yet a drag
         draggingIdRef.current = pending.id;
         setDraggingId(pending.id);
+        // Phase 60 — measure the dragged tab ONCE at arm time. Its width is
+        // the gap the other tabs must open at the insertion slot; the tab box
+        // itself then follows the pointer (see the offset below).
+        const list = tabListRef.current;
+        const draggedEl =
+          list === null
+            ? undefined
+            : Array.from(list.querySelectorAll<HTMLElement>("[data-tab-id]")).find(
+                (n) => n.dataset.tabId === pending.id,
+              );
+        setDragWidth(draggedEl?.getBoundingClientRect().width ?? 0);
+        // DEF-432 — snapshot the dragged tab's natural geometry (relative to
+        // the `.tab-area` containing block) plus its `<li>` reserve size before
+        // the first drag transform lands, so the tear-out float can be applied
+        // without a jump and the origin slot stays occupied.
+        const tabBox = draggedEl?.getBoundingClientRect();
+        const areaBox = list?.closest(".tab-area")?.getBoundingClientRect();
+        const liBox = draggedEl?.parentElement?.getBoundingClientRect();
+        setDragRect(
+          tabBox === undefined
+            ? null
+            : {
+                left: tabBox.left - (areaBox?.left ?? 0),
+                top: tabBox.top - (areaBox?.top ?? 0),
+                width: tabBox.width,
+                height: tabBox.height,
+                reserveWidth: liBox?.width ?? tabBox.width,
+                reserveHeight: liBox?.height ?? tabBox.height,
+              },
+        );
         document.body.classList.add("tab-reordering");
       }
+
+      // Phase 60 — the dragged tab tracks the pointer live. This is the raw
+      // pointer delta from the grab point, written as a transform on the tab
+      // box so the committed order / slot math below is untouched.
+      setDragOffset({ x: e.clientX - pending.startX, y: e.clientY - pending.startY });
 
       const next = computeDrop(e.clientX);
       // DEF-412 — with a single tab `computeDrop` returns null (there is no
       // other tab to insert beside), but the tear-out affordance and the
       // release decision are independent of the tab count, so the gesture
-      // must still track it. Only the drop marker is skipped in that case.
+      // must still track it. Only the insertion gap / reflow is skipped in
+      // that case.
       if (next !== null) {
         dropIndexRef.current = next.index;
         setDrop(next);
@@ -877,6 +938,27 @@ export function AppHeader(props: AppHeaderProps): ReactElement {
       ? "titlebar-file-btn titlebar-file-btn-modified"
       : "titlebar-file-btn titlebar-file-btn-modified titlebar-file-btn-readonly";
 
+  // Phase 60 — the dragged tab's origin index in the CURRENT strip order. The
+  // reflow is a pure function of (origin index, computed drop slot, dragged
+  // width): every non-dragged tab between the origin and the target slot
+  // shifts by the dragged width to close the origin hole / open the target
+  // gap, and the drop slot is still the ONE source of truth (`computeDrop`).
+  const draggingIndex = draggingId === null ? -1 : tabs.findIndex((t) => t.id === draggingId);
+  const reflowFor = (index: number): number => {
+    if (draggingId === null || dragWidth <= 0 || drop === null) return 0;
+    if (index === draggingIndex) return 0;
+    // Index in the list WITHOUT the dragged tab (the same frame `drop.index`
+    // is computed in, and the frame `moveTab` inserts at).
+    const reduced = index < draggingIndex ? index : index - 1;
+    if (drop.index > draggingIndex) {
+      return reduced >= draggingIndex && reduced < drop.index ? -dragWidth : 0;
+    }
+    if (drop.index < draggingIndex) {
+      return reduced >= drop.index && reduced < draggingIndex ? dragWidth : 0;
+    }
+    return 0;
+  };
+
   // Phase 7 — the "+ tab" button lives INSIDE the tab list as the
   // last <li>, so it renders immediately adjacent to the rightmost
   // tab (Phase 7 fix #2). The wrapper <li> keeps the button on the
@@ -939,7 +1021,7 @@ export function AppHeader(props: AppHeaderProps): ReactElement {
           <SaveAll size={15} aria-hidden />
         </button>
       </div>
-      <div className="tab-area" role="tablist" aria-label="Open documents" data-tab-style={tabStyle}>
+      <div className="tab-area" role="tablist" aria-label="Open documents" data-tab-style={tabStyle} data-tab-tearout={tearOut ? "true" : undefined}>
         <ul
           className="tab-list"
           ref={tabListRef}
@@ -973,6 +1055,7 @@ export function AppHeader(props: AppHeaderProps): ReactElement {
           <AnimatePresence initial={false}>
             {tabs.map((tab, index) => {
               const isActive = tab.id === activeId;
+              const isDragging = tab.id === draggingId;
               return (
                 <AnimatedTab
                   key={tab.id}
@@ -988,19 +1071,26 @@ export function AppHeader(props: AppHeaderProps): ReactElement {
                   // (the real `.tab-list` sibling); the first tab never
                   // overlaps the tab "before" it.
                   overlapPx={index === 0 ? 0 : tabOverlapPx}
+                  // Phase 60 — direct manipulation: the dragged tab follows
+                  // the pointer, every other tab opens the insertion gap.
+                  dragging={isDragging}
+                  dragOffset={isDragging ? dragOffset : null}
+                  // DEF-432 — while torn out the dragged tab floats out of the
+                  // `.tab-list` scroller (absolute against `.tab-area`) so the
+                  // scroller keeps its `overflow-x: auto` and scroll position.
+                  floating={isDragging && tearOut}
+                  floatRect={isDragging ? dragRect : null}
+                  reflowPx={reflowFor(index)}
                   onActivate={onActivate}
                   onClose={onClose}
                 />
               );
             })}
           </AnimatePresence>
-          {/* Phase 58 (chunk 5) — the visible drop indicator. Absolutely
-              positioned inside the (relative) `.tab-list`, so it never
-              joins the flex flow; its `left` is the boundary X in list
-              content coordinates. Purely visual + aria-hidden. */}
-          {drop !== null && (
-            <li className="tab-drop-marker" style={{ left: drop.left }} aria-hidden />
-          )}
+          {/* Phase 60 — the static `.tab-drop-marker` line is REPLACED by
+              direct manipulation: the dragged tab rides the pointer and the
+              other tabs reflow to open the insertion gap (see AnimatedTab).
+              `data-tab-drop` on `.tab-list` still exposes the slot. */}
           {/* Phase 7 — the "+ tab" affordance now sits immediately
               after the rightmost tab.
               Rendered as its own <li> so it stays on the tab strip's

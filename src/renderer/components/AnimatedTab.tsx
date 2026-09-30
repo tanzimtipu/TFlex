@@ -45,14 +45,65 @@ export interface AnimatedTabProps {
    *  to be written on `.tab-list` and consumed by `.tab + .tab`, a selector the
    *  wrapped tabs never matched.) */
   overlapPx?: number;
+  /** Phase 60 — this tab is the one currently under the pointer. It is lifted
+   *  above the row and follows the pointer via `dragOffset`. */
+  dragging?: boolean;
+  /** Phase 60 — the live pointer travel (px) from the grab point. Applied as
+   *  a transform on the tab box so the dragged tab follows the pointer. */
+  dragOffset?: { x: number; y: number } | null;
+  /** DEF-432 — while the tear-out is armed the dragged tab floats OUT of the
+   *  `.tab-list` scroller: it is positioned absolutely against `.tab-area`
+   *  (the non-scrolling clip owner) at the area-relative `left`/`top`, so the
+   *  scroller keeps its `overflow-x: auto` and scroll position. `reserve*`
+   *  pins the wrapping `<li>` to its original size so the non-dragged tabs
+   *  cannot shift when the tab leaves the scroller's flow. */
+  floating?: boolean;
+  floatRect?: {
+    left: number;
+    top: number;
+    width: number;
+    height: number;
+    reserveWidth: number;
+    reserveHeight: number;
+  } | null;
+  /** Phase 60 — how far (px) this NON-dragged tab shifts to open a gap for
+   *  the dragged tab at the computed insertion slot. 0 means no reflow. The
+   *  shift rides the `.tab` transition (shared motion tokens, so reduced
+   *  motion / Animations OFF collapse it). */
+  reflowPx?: number;
   onActivate: (id: string) => void;
   onClose: (id: string) => void;
 }
 
 export function AnimatedTab(props: AnimatedTabProps): ReactElement {
-  const { id, title, active, modified, colourSlot = 0, overlapPx = 0, onActivate, onClose } = props;
+  const {
+    id,
+    title,
+    active,
+    modified,
+    colourSlot = 0,
+    overlapPx = 0,
+    dragging = false,
+    dragOffset = null,
+    floating = false,
+    floatRect = null,
+    reflowPx = 0,
+    onActivate,
+    onClose,
+  } = props;
   const variants = useTabVariants();
   const input: TabInput = { id, title, modified };
+
+  // Phase 60 — direct manipulation. The dragged tab tracks the pointer with a
+  // translate and NO transition (it must not lag the cursor); every non-
+  // dragged tab shifts by its planned reflow offset, transitioned by the
+  // `.tab` rule.
+  const dragStyle: CSSProperties | undefined =
+    dragging && dragOffset !== null
+      ? { transform: `translate3d(${dragOffset.x}px, ${dragOffset.y}px, 0)` }
+      : reflowPx !== 0
+        ? { transform: `translateX(${reflowPx}px)` }
+        : undefined;
 
   // The overlap is declared on the <li> (the real `.tab-list` sibling) as the
   // `--tf-tab-overlap` custom property; the wrapped `.tab` consumes it in the
@@ -61,6 +112,31 @@ export function AnimatedTab(props: AnimatedTabProps): ReactElement {
   // default 0px margin. */
   const overlapStyle: CSSProperties | undefined =
     overlapPx > 0 ? ({ "--tf-tab-overlap": `${-overlapPx}px` } as CSSProperties) : undefined;
+
+  // DEF-432 — when torn out, pin the tab absolutely against `.tab-area` (the
+  // containing block; `.tab-list` is left `position: static` for exactly this)
+  // at its captured grab geometry. `.tab-area` is not a scroll container, so
+  // releasing its clip is harmless, while the `.tab-list` scroller stays
+  // intact. The live `dragOffset` transform still rides on top, so the tab
+  // tracks the pointer with no jump at the moment the float begins.
+  const floatStyle: CSSProperties | undefined =
+    floating && floatRect !== null
+      ? {
+          position: "absolute",
+          left: floatRect.left,
+          top: floatRect.top,
+          width: floatRect.width,
+          height: floatRect.height,
+          margin: 0,
+          zIndex: 60,
+        }
+      : undefined;
+  // Keep the dragged `<li>` occupying its original slot now that its `.tab`
+  // left the flow, so the non-dragged tabs cannot shift.
+  const reserveStyle: CSSProperties | undefined =
+    floating && floatRect !== null
+      ? { width: floatRect.reserveWidth, height: floatRect.reserveHeight, flex: "0 0 auto" }
+      : undefined;
 
   // Per-tab mousedown resolver: same classifier the strip-level handler
   // used, fed this tab only. A mousedown landing outside any .tab never
@@ -105,7 +181,8 @@ export function AnimatedTab(props: AnimatedTabProps): ReactElement {
       animate="animate"
       exit="exit"
       data-animated-tab={id}
-      style={overlapStyle}
+      data-tab-dragging={dragging ? "true" : undefined}
+      style={{ ...overlapStyle, ...reserveStyle }}
     >
       <div
         className={active ? "tab tab-active" : "tab"}
@@ -118,6 +195,14 @@ export function AnimatedTab(props: AnimatedTabProps): ReactElement {
         // gesture on pointer events so a tab can be dragged from ANY area,
         // title included; an HTML5 drag would hijack that gesture.
         draggable={false}
+        // Phase 60 — the live drag state, exposed for the gesture's tests and
+        // styling. The dragged tab carries its pointer delta; a reflowing tab
+        // carries the offset it is opening.
+        data-tab-dragging={dragging ? "true" : undefined}
+        data-tab-drag-x={dragging && dragOffset !== null ? String(Math.round(dragOffset.x)) : undefined}
+        data-tab-drag-y={dragging && dragOffset !== null ? String(Math.round(dragOffset.y)) : undefined}
+        data-tab-reflow={!dragging && reflowPx !== 0 ? String(Math.round(reflowPx)) : undefined}
+        style={{ ...dragStyle, ...floatStyle }}
         onMouseDown={onTabMouseDown}
       >
         {/* Phase 45 (item 2) — the per-tab colour identity. A small filled

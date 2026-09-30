@@ -1383,6 +1383,10 @@ pre-warn relevant entries when dispatching.
   no guesses.
 - git-agent: stages `.env` / screenshots / test-results despite deny-list. Rule:
   stage explicitly; unexpected files = stop and report.
+- CTO: briefed a child with `--grep` (TFL-55, 2026-10-01) — vitest 4.1.11 rejects
+  `--grep` (CACError) and has no equivalent flag; the child had to improvise the
+  documented-equivalent filter. Rule: check the installed runner's flags before
+  putting a command in a brief; for vitest use file paths or `--testNamePattern`.
 
 ## 2026-08-28: to-do discipline + Defects heading restored
 
