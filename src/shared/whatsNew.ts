@@ -23,6 +23,14 @@ export interface WhatsNewEntry {
 /** Ordered newest first. */
 export const WHATS_NEW: WhatsNewEntry[] = [
   {
+    version: '1.45.3',
+    date: '2026-09-30',
+    highlights: [
+      'The About dialog now closes when you press Escape, like every other dialog in the app.',
+      "Reopening a sample document from the Home screen's Recent list now works - it opens the sample instead of showing a 'Could not open file' error.",
+    ],
+  },
+  {
     version: '1.45.2',
     date: '2026-09-30',
     highlights: [
