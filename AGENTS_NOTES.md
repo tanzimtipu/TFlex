@@ -1,5 +1,37 @@
 # AGENTS_NOTES.md — archived operational history
 
+## 2026-09-30 (cutover): Paperclip is the live harness
+
+**Paperclip is the live orchestration harness for TFlex as of 2026-09-30, declared after
+two clean pilots.** The OpenCode GUI orchestration (this `.opencode/` directory) is
+INACTIVE, kept as emergency fallback only; do not drive TFlex from the GUI while
+Paperclip agents are active (single-writer rule). The repo rulebook (`AGENTS.md`) remains
+the shared rules layer — it auto-loads into every Paperclip run.
+
+- **Where the team lives:** Paperclip instance `paperclip-tflex` (test-drive), company
+  **TFlex** (prefix TFL), project "TFlex" with the repo as its primary workspace. Crew of
+  8: CEO, CTO, backend-dev, frontend-dev, qa, adversary, git-agent, feature-scout — same
+  duties and boundaries as the OpenCode roster. The board/dashboard is the control
+  surface; human gates are brief approval and release approval; git-agent is still the
+  sole committer; pushes/releases only on the operator's explicit word.
+- **Model pins (2026-09-30 final):** CEO on `openrouter/moonshotai/kimi-k3`; CTO, both
+  devs, qa, the adversary and git-agent on `openrouter/deepseek/deepseek-v4.1-flash`;
+  feature-scout on `openrouter/z-ai/glm-5.3-flash`. The CTO started on kimi-k3 (Phase A3)
+  and the operator moved it back to deepseek-v4.1-flash the same night (23:46). The repo
+  orchestrator pin (`kimi-k3`) governs only the GUI fallback session.
+- **Cost controls:** per-agent monthly caps (CEO/CTO $15, devs $25 each, qa $15,
+  adversary $8, git-agent $3, scout $5 — team $111/mo) with hard pause + escalation.
+  First-month telemetry showed deepseek runs cost fractions of a cent each (cache-read
+  priced); tune caps after the first full month.
+- **Verified 2026-09-30:** all 8 agents passed solo smokes (pinned model billed per
+  agent, cost trace, correct working directory, no cross-role touches). Pilot 1: qa
+  bug-hunt filed DEF-429/430; the CTO drove DEF-430 through triage -> frontend-dev fix
+  -> qa CLOSED -> commit `55b78e1`. Pilot 2: Phase 59 audited (12 criteria green,
+  packaging smoke pass, ADV-121..128 all accepted/closed), DEF-429 fixed and committed
+  as `dc3cfb9`, follow-up oracle fix as `63fd45f`; working tree clean at close.
+- **Rollback:** re-mark the GUI header active in `AGENTS.md`, close Paperclip, resume
+  the GUI. Nothing about the cutover is irreversible.
+
 > This is a chronological record, not a runtime instruction file. Do not load it wholesale
 > into agent context. Read only the entry named by a current task or an incident. Active
 > policy lives in `AGENTS.md`, agent definitions, `opencode.json`, and
