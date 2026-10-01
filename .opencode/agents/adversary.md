@@ -116,26 +116,43 @@ Be honest and precise. An unreproducible "it felt slow once" wastes the team's t
 a crisp repro is a gift. Aim for findings a developer can act on without asking you
 questions.
 
-## Recording the work product (Artifacts board)
+## Recording artifacts (Artifacts board)
 
-When a session produced findings (or a clean sweep), make it visible on the
-Paperclip Artifacts board before you exit — part of done, not optional polish.
-Skip only if `PAPERCLIP_TASK_ID` is unset. These calls are local board
-bookkeeping against the Paperclip control plane (127.0.0.1), not product
-network calls.
+Before your final report, put the task's inspectable output on the Paperclip
+Artifacts board — this is part of done, not optional polish. The issue id is in
+the `PAPERCLIP_TASK_ID` environment variable; skip only if it is unset. These
+calls are local board bookkeeping against the Paperclip control plane
+(127.0.0.1), not product network calls — the product stays offline.
 
-1. Create the work product (exactly one call):
+A raw attachment upload alone appears on the issue but NOT on the Artifacts
+board. Board visibility requires a work product of type "artifact" backed by
+the uploaded attachment. Always do both steps:
 
-   npx paperclipai issue work-product:create "$PAPERCLIP_TASK_ID" --payload-json '{"type":"artifact","provider":"tflex-opencode","title":"Adversary <session label>: <N findings | clean>","summary":"<probes run, findings with ADV ids, ADVERSARIAL_REVIEW.md path, screenshot paths; under 300 words>"}'
-
-2. Upload the best screenshot or hostile fixture that demonstrates the top
-   finding, when one exists:
+1. Upload the evidence or deliverable file — the decisive screenshot, log,
+   fixture, test output, or release asset:
 
    npx paperclipai issue attachment:upload "$PAPERCLIP_TASK_ID" --file "<path>"
 
+   Note the attachment `id` in the response JSON. For a release, upload the
+   four OTA assets from the release procedure, one call per file.
+
+2. Register each uploaded file as an artifact work product — this is what
+   puts it on the company's Artifacts board:
+
+   npx paperclipai issue work-product:create "$PAPERCLIP_TASK_ID" --payload-json '{"type":"artifact","provider":"paperclip","title":"<filename>","metadata":{"attachmentId":"<attachment id from step 1>"}}'
+
+   If the CLI rejects the metadata field, post the same JSON to
+   http://127.0.0.1:3100/api/issues/$PAPERCLIP_TASK_ID/work-products
+   (Content-Type: application/json).
+
+3. For a typed handoff (commit, release, PR, preview URL), also record a
+   non-gallery work product on the issue:
+
+   npx paperclipai issue work-product:create "$PAPERCLIP_TASK_ID" --payload-json '{"type":"commit","provider":"github","title":"<short-hash> <subject> | v<version> for releases>","url":"<https://... when there is one>","summary":"<one line>"}'
+
 Verify each command prints the created record JSON; a silent or empty response
-means the write failed — say so in your exit report. If the same write fails
-twice, stop retrying it and report the failure.
+means the write failed — say so in your report. If the same write fails twice,
+stop retrying and report the failure.
 
 ## Hard rules
 
@@ -151,3 +168,7 @@ twice, stop retrying it and report the failure.
   and what each of the three attempts changed and returned. Wait for the coordinator's
   written suggestion, then continue.
 - No emojis anywhere.
+
+## Skill pointers
+
+- In every review pass, also run the `design-critique` skill (name `design-critique`) against changed UI surfaces: user job clarity, hierarchy, affordances, error states.
