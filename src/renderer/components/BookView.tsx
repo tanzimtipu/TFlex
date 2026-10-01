@@ -98,6 +98,14 @@ const EMPTY_HITS: never[] = [];
 const EMPTY_ANNOTATIONS: never[] = [];
 const noopActiveHitTop = (): void => undefined;
 
+// DEF-448 — the annotation UI roots whose clicks must never turn the book page.
+// The colour popover is portaled to document.body (AnnColorBox.tsx), so it sits
+// outside `.annotation-layer`; the content action bar is likewise its own root.
+// Any target inside one of these is annotation UI, not a page click.
+const ANNOTATION_UI_ROOTS = '.annotation-layer, [data-content-action-bar], [data-color-popover]';
+const isAnnotationUi = (target: Element | null): boolean =>
+  target?.closest?.(ANNOTATION_UI_ROOTS) != null;
+
 /** One book page, rendered read-only with the EXISTING `PageView` and scaled
  *  to CONTAIN within the measured stage (fit both axes — a book page must
  *  never overflow the canvas). Split into its own component so the stable
@@ -237,6 +245,12 @@ export function BookView(props: BookViewProps): ReactElement {
   // never fires animation events, so the timer guarantees the class clears).
   const [turn, setTurn] = useState<{ dir: 'next' | 'prev'; key: number } | null>(null);
   const turnKeyRef = useRef(0);
+  // DEF-446 — a placement gesture commits one-shot and flips the tool back to
+  // `select` before the browser synthesizes its `click`. That re-render makes
+  // the annotation layer `pointer-events: none`, so the click retargets to the
+  // page and would turn it. We remember the pointerdown's layer membership in
+  // the capture phase (before the click) and consume it in the click handler.
+  const annLayerPressRef = useRef(false);
   const beginTurn = useCallback((dir: 'next' | 'prev'): void => {
     turnKeyRef.current += 1;
     setTurn({ dir, key: turnKeyRef.current });
@@ -417,7 +431,18 @@ export function BookView(props: BookViewProps): ReactElement {
               className={figureClass('left')}
               data-book-page={current + 1}
               data-book-page-side="left"
-              onClick={(): void => {
+              onPointerDownCapture={(e): void => {
+                annLayerPressRef.current =
+                  isAnnotationUi(e.target as Element | null);
+              }}
+              onClick={(e): void => {
+                if (
+                  annLayerPressRef.current ||
+                  isAnnotationUi(e.target as Element | null)
+                ) {
+                  annLayerPressRef.current = false;
+                  return;
+                }
                 if (!noPrev) stepBack();
               }}
               onAnimationEnd={onTurnEnd}
@@ -442,7 +467,18 @@ export function BookView(props: BookViewProps): ReactElement {
                 className={figureClass('right')}
                 data-book-page={current + 2}
                 data-book-page-side="right"
-                onClick={(): void => {
+                onPointerDownCapture={(e): void => {
+                  annLayerPressRef.current =
+                    isAnnotationUi(e.target as Element | null);
+                }}
+                onClick={(e): void => {
+                  if (
+                    annLayerPressRef.current ||
+                    isAnnotationUi(e.target as Element | null)
+                  ) {
+                    annLayerPressRef.current = false;
+                    return;
+                  }
                   if (!noNext) stepForward();
                 }}
                 onAnimationEnd={onTurnEnd}
@@ -468,7 +504,18 @@ export function BookView(props: BookViewProps): ReactElement {
             className={figureClass('single')}
             data-book-page={current + 1}
             data-book-page-side="single"
-            onClick={(): void => {
+            onPointerDownCapture={(e): void => {
+              annLayerPressRef.current =
+                isAnnotationUi(e.target as Element | null);
+            }}
+            onClick={(e): void => {
+              if (
+                annLayerPressRef.current ||
+                isAnnotationUi(e.target as Element | null)
+              ) {
+                annLayerPressRef.current = false;
+                return;
+              }
               if (!noNext) stepForward();
             }}
             onAnimationEnd={onTurnEnd}

@@ -9642,3 +9642,93 @@ History:
   tfl46_protectionIconLeftInset.test.ts phase59ProtectionNotice.test.tsx` -> 25 passed / 0 failed;
   `npm.cmd run verify` -> exit 0 (318 files). Awaits qa FIX-READY verification to set CLOSED.
 - qa (TFL-148 / TFL-104.9, 2026-10-01): VERIFIED independently, CLOSED. `npm.cmd run build:renderer` exit 0; `npm.cmd run test:e2e -- e2e/phase67_notice_geometry.spec.cjs` -> 3 passed / 0 failed (P67_GEOM_CONVERSION, P67_GEOM_3D, P67_GEOM_BOTH all overlapBook:false / overlapBook3d:false, protection 376..404 + conversion 412..440 + 3D 448..476 vs Book View 260..368, pitch 72, no page overlap, hitResolves true); `npm.cmd run test:e2e -- e2e/phase59_protection_notice.spec.cjs` -> 1 passed / 0 failed (icon 376..404 clears combine 80..170.8, in canvas left half, page left 748.5); `npm.cmd run test:e2e -- e2e/phase53_format_import.spec.cjs e2e/phase56_reading.spec.cjs e2e/phase57a_engineering.spec.cjs` -> 24 passed / 0 failed (P53_NOTICE afterDismiss:0, P53_PREFS clampedMargin:50 / clampedFont:48, P57A_3D noticeCollapseCount:1); `npx.cmd vitest run` on the 7 named renderer specs -> 7 files / 84 tests passed / 0 failed; `npm.cmd run verify` -> exit 0 (conventions clean, 318 files, tsc 0). DEF-435 guard intact: `tfl46_protectionIconLeftInset.test.ts` still requires the `--tf-rail-w` term in the protection `left` (now plus the shared `--tf-notice-row-clear` token) and still asserts the Multi Mode reset. Model: `openrouter/deepseek/deepseek-v4.1-flash` (qa pinned tactical tier).
+
+## DEF-448: Book View — changing an annotation's colour through the portaled colour popover also turns the book page (surviving DEF-446 class via a portaled annotation control)
+
+- Status: CLOSED
+- Severity: MEDIUM
+- Found by: adversary (TFL-146, Phase 66 adversarial diff-pass; ACCEPTED from ADV-135)
+- Phase: 66 (feature E / success criterion 5 "annotation marking in Book View"; high-risk merge: annotation persistence)
+
+Steps to reproduce:
+1. Launch TFlex (`launchApp`) and open `assets/samples/report.pdf`; enter Book View (`[aria-label="Book View"]`).
+2. In `[data-book-tools]` arm ink and drag on the book page to place a stroke on page 1 (the DEF-446 fix
+   keeps the view on page 1 and the stroke commits to page 1).
+3. Arm select, click the stroke (`[data-annotation-layer="1"] [data-annotation-id="<id>"]`); wait for
+   `[data-content-action-bar]`.
+4. Click `[data-content-action-bar] [data-ann-color-box]`, then
+   `[data-color-popover] [aria-label="Built-in green"]`.
+
+Expected (criterion 5): the annotation's colour changes to green and the view stays on page 1 (the
+annotation's page), exactly as the DEF-446 placement gesture keeps still.
+
+Actual: the colour IS applied (`color` `#2563eb` -> `green`) AND the book advances in the same click —
+single layout `[data-book-page]` 1 -> 2; double layout (stroke on the right page) spread [1,2] -> [3,4]
+(left-page indicator 1 -> 3). The annotation stays attached to its correct page, so this is a navigation
+bug, not data loss, but the user is thrown off the page they are editing on every recolour.
+Root cause: `AnnColorBox` mounts its `ColorPalette` via `createPortal(..., document.body)`
+(`src/renderer/annotations/AnnColorBox.tsx:119`); the React synthetic click from a swatch bubbles through
+the React tree to the Book View page `<figure>` `onClick` (`src/renderer/components/BookView.tsx:430-439`
+spread-left, `:466-475` spread-right, `:503-512` single). The DEF-446 guard suppresses a turn only when
+`(e.target).closest('.annotation-layer') != null` or the capture-phase `annLayerPressRef` is set; for the
+portaled swatch the DOM target is body-rooted, so `closest('.annotation-layer')` is null and the
+pointerdown happened on the portal (not inside the layer), so `annLayerPressRef` was set false. Both
+guards miss.
+
+Impact: MEDIUM — no data loss (the colour is applied and the annotation keeps its page), but the view
+leaves the annotated page on every recolour, so annotation editing in Book View is degraded. No document
+corruption.
+
+Evidence (adversary TFL-146, fresh probes through `e2e/lib/launch.cjs`):
+- Screenshots `screenshots/adv-135-single-before.png` / `adv-135-single-after.png` (page 1 -> page 2 with
+  the stroke recoloured green) and `screenshots/adv-135-double-before.png` / `adv-135-double-after.png`
+  (spread [1,2] -> [3,4]).
+- Probe console (single): `after-mark-click {page:"1", actionBar:1, color:"#2563eb"}` then
+  `after-pick-green {page:"2", actionBar:1, color:"green"}`; double: `beforePage:"1", afterPage:"3",
+  beforeColor:"#2563eb", afterColor:"green", pageTurned:true`. The turn first appears at the swatch click,
+  not the selection click, isolating the popover as the trigger.
+- Baseline Phase 66 specs green in the same run: `node node_modules/@playwright/test/cli.js test
+  e2e/phase66_bookview.spec.cjs e2e/phase66_bookview_spread.spec.cjs e2e/phase66_bookview_annotations.spec.cjs`
+  -> 10 passed / 0 failed; the 3 Book View unit files -> 17 tests passed.
+
+History:
+- adversary (TFL-146): filed ADV-135, MEDIUM, PENDING in ADVERSARIAL_REVIEW.md.
+- CTO (TFL-64): ACCEPTED -> DEF-448 (MEDIUM). Real, deterministic, evidence-backed; it is the DEF-446
+  class reached through a portaled annotation control, not a re-litigation of the closed placement case.
+  Blocks Phase 66 criterion 7. Dispatched frontend-dev **TFL-160** (priority high) to broaden the
+  BookView-local turn guard so a click landing inside any annotation UI root (`.annotation-layer`,
+  `[data-content-action-bar]`, `[data-color-popover]`) does not turn the page while a bare select-tool page
+  click still does (criterion 4 preserved). Scope: BookView.tsx + one unit case only; shared overlay /
+  AnnColorBox / e2e untouched. Awaiting the fix report; then FIX-READY -> qa verification -> CLOSED.
+- frontend-dev (TFL-160): fix reported done and reviewed by the CTO against the source. BookView.tsx adds
+  ONE module-scope helper `isAnnotationUi(target)` matching `.annotation-layer, [data-content-action-bar],
+  [data-color-popover]` (BookView.tsx:105-107) and wires it into BOTH the onPointerDownCapture ref
+  assignment and the onClick guard of all three page-turn `<figure>` handlers (:435-443 spread-left,
+  :471-479 spread-right, :508-516 single). The DEF-446 guard is broadened, not weakened; a bare page click
+  matches no root, so criterion 4 is preserved. One new unit case `test/unit/renderer/bookViewAnnotations.test.tsx`
+  (:254) fires a click whose target is a `[data-color-popover]` swatch subtree and asserts `[data-book-page]`
+  stays "1". Evidence: `npm.cmd run test:unit -- test/unit/renderer/bookViewAnnotations.test.tsx
+  test/unit/renderer/bookView.test.tsx test/unit/renderer/bookViewSpread.test.tsx` -> 3 files / 18 tests
+  passed / 0 failed; `npm.cmd run build` exit 0; `npm.cmd run verify` exit 0; `node
+  node_modules/@playwright/test/cli.js test e2e/phase66_bookview_annotations.spec.cjs` -> 4 passed / 0 failed.
+  TFL-160 is in_review pending the qa FIX-READY verification.
+- CTO (TFL-64): set FIX-READY. Dispatched qa **TFL-161** (task type: FIX-READY defect verification) to
+  write+RUN an e2e reproducing the ADV-135 repro against the fixed tree (colour applies AND the page does
+  not turn, single + double), plus the Phase 66 blast radius and `npm run verify`, then set DEF-448 CLOSED
+  or re-OPEN with evidence. TFL-160 stays open until qa reports.
+- qa (TFL-161, 2026-10-01): FIX-READY verification PASSED -> CLOSED. Reproduced ADV-135 against the
+  real app (dev build `dist` at 17:46 postdates the 17:41 source fix and the fix selector is in the
+  bundle) with a NEW spec `e2e/phase66_bookview_colorpopover.spec.cjs`: open `report.pdf`, enter Book
+  View, place ink, select it, open `[data-content-action-bar] [data-ann-color-box]`, pick
+  `[data-color-popover] [aria-label="Built-in green"]`. Single layout: colour `#2563eb` -> `green` AND
+  `[data-book-page]` stays `["1"]`. Double layout (stroke on the right page 2): colour -> `green` AND
+  the spread stays `["1","2"]`. Both rendered on the correct page. Commands/counts:
+  `node node_modules/@playwright/test/cli.js test e2e/phase66_bookview_colorpopover.spec.cjs` -> 2
+  passed / 0 failed; blast radius `... e2e/phase66_bookview.spec.cjs e2e/phase66_bookview_spread.spec.cjs
+  e2e/phase66_bookview_annotations.spec.cjs` -> 10 passed / 0 failed (criterion 4 bare-click turn still
+  green); `npm.cmd run test:unit -- test/unit/renderer/bookViewAnnotations.test.tsx
+  test/unit/renderer/bookView.test.tsx test/unit/renderer/bookViewSpread.test.tsx
+  test/unit/renderer/readingView.test.tsx` -> 4 files / 37 tests passed / 0 failed; `npm.cmd run verify`
+  -> exit 0. Evidence: `screenshots/adv-135-single-before.png` / `-after.png` (blue -> green, page 1) and
+  `screenshots/adv-135-double-before.png` / `-after.png` (blue -> green on right page, spread [1,2]).
+  Criterion 7's Book View blocker is cleared.

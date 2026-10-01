@@ -579,3 +579,28 @@ What it does: would carry every destination and action shape across a save witho
 
 Why it matters: it names the boundary of the feature-G carry so a later phase can extend it deliberately
 rather than reading the drop as a bug.
+
+## FEA-030: Retire the Phase 56 `openComicView` command-palette verb
+
+- Status: CANDIDATE - cleanup, not commissioned. Reason it was not folded into Phase 66: REQUIREMENTS
+  Phase 66 ruling 6 protects "the surviving comic controls", and ruling 2's "one entry" governs the
+  canvas entry point (already singular after chunk 1 retired the visible trigger). Removing the verb
+  would regress a control the ruling protects and force churn across the shared tools registry and its
+  specs (`readingView.test.tsx:410/479`, `toolsRegistry.test.tsx:73`,
+  `e2e/installed/phase57_packaged_surface.spec.cjs:166`) at phase close. ADV-136 was therefore REJECTED
+  for Phase 66 and parked here.
+- Source: ADV-136 (adversary TFL-146 diff-pass, 2026-10-01); `src/renderer/state/toolsRegistry.ts:1454-1463`,
+  App action wiring `src/renderer/App.tsx:9290/:10661`, gate `src/renderer/state/dockModel.ts:170-185`
+- Category: Renderer / commands
+- Effort: small (registry + wiring + gate branch + 3 spec updates)
+- Likely new settings: no
+- Batch: unassigned; CEO to schedule if desired
+
+What it does: `Control+K` -> "Open comic view" still mounts the pre-Phase-66
+`[data-reading-view][data-reading-mode="comic"]` overlay for a `.cbz` / `.cbt` (same in-window shell, not
+a second BrowserWindow). Phase 66 replaced that surface with Book View and retired the visible trigger but
+left the palette verb live, so a second, older comic reader survives alongside Book View.
+
+Why it matters: it is the one remaining duplicate of the comic-reading surface; if the intent is that Book
+View fully supersedes the old comic viewport, this verb should be retired in its own small change with the
+accompanying spec updates, rather than silently at a phase close.

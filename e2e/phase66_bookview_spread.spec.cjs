@@ -47,8 +47,10 @@ async function openBookView(filePath) {
   await win.locator('[aria-label="Open PDF document"]').first().click();
   await win.waitForSelector('[aria-label="Book View"]', { state: 'visible', timeout: 60000 });
   await win.waitForTimeout(400);
+  const tOpen = Date.now();
   await win.locator('[aria-label="Book View"]').click();
   await win.waitForSelector('[data-book-view]', { state: 'visible', timeout: 15000 });
+  console.log('P66_PERF openVisibleMs = ' + (Date.now() - tOpen));
   await win.waitForTimeout(400);
 }
 
@@ -65,9 +67,20 @@ async function pageNumbers() {
 // Record whether the transient flip class is ever applied to `side` after a
 // click. A MutationObserver is used because the class lives only for the turn
 // (animationend + a 400ms fallback) and can vanish before a polled read.
+// Phase 66 criterion 9 (phase-close QA) additionally records the wall-clock
+// from the click to the flip class clearing and the worst rAF frame gap in that
+// window (REQUIREMENTS.md:842 -> 16ms / 60fps). Measurement is additive.
 async function watchTurn(side) {
   await win.evaluate((s) => {
-    const state = { hit: false, cls: null };
+    const state = {
+      hit: false,
+      cls: null,
+      t0: null,
+      clearedAt: null,
+      maxGap: 0,
+      last: 0,
+      frames: 0,
+    };
     window.__p66turn = state;
     if (window.__p66turnObs) window.__p66turnObs.disconnect();
     const stage = document.querySelector('[data-book-stage]');
@@ -80,6 +93,8 @@ async function watchTurn(side) {
       ) {
         state.hit = true;
         state.cls = f.className;
+      } else if (state.hit && state.clearedAt === null) {
+        state.clearedAt = performance.now();
       }
     };
     const obs = new MutationObserver(check);
@@ -90,15 +105,43 @@ async function watchTurn(side) {
       childList: true,
     });
     window.__p66turnObs = obs;
+    const tick = (now) => {
+      if (state.hit && state.clearedAt === null) {
+        if (state.frames > 0) {
+          const gap = now - state.last;
+          if (gap > state.maxGap) state.maxGap = gap;
+        }
+        state.frames += 1;
+        state.last = now;
+      }
+      if (state.clearedAt === null) requestAnimationFrame(tick);
+    };
+    requestAnimationFrame(tick);
   }, side);
 }
 
 async function clickAndReadTurn(selector) {
+  await win.evaluate(() => {
+    if (window.__p66turn) window.__p66turn.t0 = performance.now();
+  });
   await win.locator(selector).click();
   await win.waitForFunction(() => window.__p66turn && window.__p66turn.hit, null, {
     timeout: 3000,
   });
-  return win.evaluate(() => window.__p66turn);
+  await win.waitForFunction(() => window.__p66turn && window.__p66turn.clearedAt !== null, null, {
+    timeout: 8000,
+  });
+  return win.evaluate((sel) => {
+    const s = window.__p66turn;
+    const perf = {
+      selector: sel,
+      clearMs: s.clearedAt !== null ? Math.round(s.clearedAt - s.t0) : null,
+      maxFrameGapMs: Math.round(s.maxGap * 10) / 10,
+      frames: s.frames,
+    };
+    console.log('P66_PERF turn ' + JSON.stringify(perf));
+    return { hit: s.hit, cls: s.cls, perf };
+  }, selector);
 }
 
 // ---------------------------------------------------------------------------

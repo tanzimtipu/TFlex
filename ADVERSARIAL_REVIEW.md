@@ -5980,4 +5980,129 @@ assigned to frontend-dev. The push-button double-surface is pre-existing and nee
 plus a renderer suppression (DEF-445), sequenced after DEF-444. Phase 65 ruling 6's false premise
 corrected by ruling 7 in REQUIREMENTS.md.
 
+## ADV-135: Book View — changing an annotation's colour via the colour popover also turns the book page; the popover is portaled so the DEF-446 guard's DOM check cannot see it
+
+- Session: diff-pass
+- Suggested severity: MEDIUM
+
+What I did: Drove the shipped dev build (dist built 2026-10-01 09:00, master HEAD `ab62660`
+plus the uncommitted DEF-446 guard tree) through `e2e/lib/launch.cjs`, opened
+`assets/samples/report.pdf`, entered Book View (`[aria-label="Book View"]`), armed ink through the
+`[data-book-tools]` toolbar and placed a stroke on page 1 (page stayed 1, stroke committed on page 1
+as expected), switched to the select tool, clicked the stroke so its `.ann-content-action` action bar
+appeared, then opened the action bar's colour box (`[data-content-action-bar] [data-ann-color-box]`)
+and clicked a built-in swatch in the portaled picker (`[data-color-popover] [aria-label="Built-in green"]`).
+
+Expected: the annotation's colour changes to green and the view stays on the annotation's page
+(page 1), exactly as the placement gesture keeps still (DEF-446 fix).
+
+Actual: the colour IS applied (`color` goes `#2563eb` -> `green`) AND the book advances in the same
+click. Single layout: `[data-book-page]` 1 -> 2. Double layout (stroke placed on the right page):
+the spread advances from pages [1,2] to [3,4] (left-page indicator 1 -> 3). The annotation stays
+attached to its correct page (page 1 / page 2), so this is a navigation bug, not data loss, but the
+user is thrown off the page they are editing every time they recolour an annotation.
+
+Root cause: `AnnColorBox` mounts its `ColorPalette` with `createPortal(..., document.body)`
+(`src/renderer/annotations/AnnColorBox.tsx:119`); the colour box lives inside the annotation overlay,
+so the React synthetic `click` from a swatch bubbles through the REACT tree to the Book View page
+`<figure>` `onClick` (`src/renderer/components/BookView.tsx:430-439` / `:466-475` / `:503-512`). The
+DEF-446 guard suppresses a turn only when `(e.target).closest('.annotation-layer') != null` or the
+capture-phase `annLayerPressRef` is set; for the portaled swatch the DOM target is body-rooted, so
+`closest('.annotation-layer')` is null, and the pointerdown happened on the portal (not inside the
+layer), so `annLayerPressRef` was set false. Both guards miss, and the figure turns. This is a
+surviving repro of the DEF-446 class via a different trigger (a portaled annotation control), not a
+re-litigation of the closed placement-gesture case.
+
+Evidence: `screenshots/adv-135-single-before.png` / `adv-135-single-after.png` (page 1 -> page 2 with
+the stroke recoloured green) and `screenshots/adv-135-double-before.png` / `adv-135-double-after.png`
+(spread [1,2] -> [3,4]). Observed console snapshots from the probe (single layout):
+`after-mark-click {page:"1", actionBar:1, color:"#2563eb"}` then
+`after-pick-green {page:"2", actionBar:1, color:"green"}`; double layout:
+`beforePage:"1", afterPage:"3", beforeColor:"#2563eb", afterColor:"green", pageTurned:true`.
+The page turn first appears at the swatch click, not at the selection click (which leaves the page on
+1), isolating the popover as the trigger.
+
+Reproduction steps (deterministic; launched only through `e2e/lib/launch.cjs`):
+1. `launchApp()`; stub `dialog.showOpenDialog` -> `assets/samples/report.pdf`; click
+   `[aria-label="Open PDF document"]`; wait for `[aria-label="Book View"]`.
+2. Click `[aria-label="Book View"]`; wait for `[data-book-view]`.
+3. In `[data-book-tools]`, arm ink (inline `[data-tool="ink"]`, else
+   `[data-ann-dropdown-toggle]` -> `[data-ann-dropdown-menu] [data-tool="ink"]`).
+4. Drag on the book page (`mouse.move`/`down`/`move(+140,+70,{steps:8})`/`up`).
+   Assert `[data-book-page]` is still "1" and an ink `page:1` exists.
+5. Arm select, then click `[data-annotation-layer="1"] [data-annotation-id="<id>"]`; wait for
+   `[data-content-action-bar]`.
+6. Click `[data-content-action-bar] [data-ann-color-box]`, then
+   `[data-color-popover] [aria-label="Built-in green"]`.
+7. Observe `[data-book-page]` becomes "2" (and the engine annotation's `color` becomes `green`).
+
+Ad-hoc probe run: `node "$PAPERCLIP_RUN_SCRATCH_DIR/probe-sel.cjs"` (single) and
+`probe-confirm3.cjs` (double). Baseline specs remained green (see report).
+
+Disposition: ACCEPTED -> DEF-448 (MEDIUM). CTO triage (TFL-64): real, deterministic, evidence-backed
+navigation bug — the colour popover lives in a portal, so neither DEF-446 guard (`.annotation-layer`
+DOM containment, capture-phase pointerdown ref) sees the swatch click; the React synthetic click still
+bubbles to the Book View page `<figure>` `onClick`. Not a re-litigation of the closed placement case;
+it is the same DEF-446 class reached through a portaled annotation control. Blocks Phase 66 criterion 7
+(all DEF/ADV opened by the phase CLOSED/REJECTED); assigned to frontend-dev, scoped BookView-local
+(broaden the turn guard to annotation controls outside `.annotation-layer`). qa FIX-READY verification
+then CLOSED.
+
+## ADV-136: The retired Phase 56 comic viewport is still reachable — "Open comic view" opens `[data-reading-view][data-reading-mode="comic"]` for a cbz, the surface Phase 66 replaced with Book View
+
+- Session: diff-pass
+- Suggested severity: LOW
+
+What I did: Opened `test-fixtures/phase56/phase56-comic.cbz` through the app's real Open button in
+the dev build, confirmed the canvas `[aria-label="Book View"]` entry works, then exercised the
+independent app-level comic verb: `Control+K`, typed `comic`, and clicked the command-palette row
+"Open comic view".
+
+Expected (task item 3 / operator request): the old comic viewport is gone and its capability now
+lives only in Book View, so no path should mount the pre-Phase-66 comic reader.
+
+Actual: the palette still offers "Open comic view" for a cbz and clicking it mounts the old reading
+overlay: `[data-reading-view]` count 1 with `data-reading-mode="comic"`. So a second, older comic
+reader survives alongside Book View. It is the same in-window overlay shell (not a second
+BrowserWindow), so the "same window" ruling is not violated; this is a duplicated/retired surface.
+
+Root cause (static): the visible Phase 56 trigger was correctly retired — `DocumentSurfaceColumn`
+renders the reader button only when `sourceFormat === "epub"` (`src/renderer/App.tsx:609-654`) and
+`onOpenComicView` is documented as superseded. But the registry entry `openComicView`
+(`src/renderer/state/toolsRegistry.ts:1454-1463`), its app action wiring (`src/renderer/App.tsx:9290`,
+`:10661`) and its availability gate (`readingViewGate` returns `enabled: true` for
+`sourceFormat === 'cbz' | 'cbt'`, `src/renderer/state/dockModel.ts:170-185`) were left live, so the
+palette (and any pinnable dock host) can still launch the retired `mode: "comic"` reader.
+
+Evidence: palette row text captured during the run: `"Open comic viewRead the current comic page by
+page in a comic viewport.Global"`; after clicking it, `readingViewCount: 1, readingMode: "comic"`.
+No screenshot (overlay closed immediately after the assertion).
+
+Reproduction steps:
+1. Launch via `e2e/lib/launch.cjs`; open `test-fixtures/phase56/phase56-comic.cbz` via the real Open
+   button; wait for `[aria-label="Book View"]`.
+2. Press `Control+K`; fill `[data-command-palette-input]` with `comic`; click the row containing
+   "Open comic view".
+3. Assert `[data-reading-view]` is present with `data-reading-mode="comic"`.
+
+Ad-hoc probe run: `node "$PAPERCLIP_RUN_SCRIPT_SCRATCH_DIR/probe-fmt.cjs"`.
+
+Note: REQUIREMENTS Phase 66 ruling 6 names "the surviving comic controls" without enumerating them;
+if the CTO intends `openComicView` to survive as a palette verb, this entry can be REJECTED on that
+basis. Filed because the task's item 3 states the old comic view must be gone and the Book View entry
+is to work where the old comic trigger did.
+
+Disposition: REJECTED (CTO, TFL-64) - the finding is accurate but out of Phase 66 scope. REQUIREMENTS
+Phase 66 ruling 6 explicitly protects "the surviving comic controls" and only asks for phase-56 spec
+updates "where a trigger label changed"; ruling 2's "one entry" governs the CANVAS entry point, and the
+canvas entry is singular (the retired `[aria-label="Open comic view"]` trigger is gone; `[aria-label=
+"Book View"]` is the only visible entry, App.tsx:598-654). The `openComicView` command-palette verb is
+a pre-existing Phase 56 control reached only through Control+K, it mounts the SAME in-window overlay
+shell (no second BrowserWindow, so ruling 1 holds), and it does not affect any Phase 66 success
+criterion. Retiring it would regress the controls ruling 6 protects and force churn across the shared
+tools registry and its specs (readingView.test.tsx:410/479, toolsRegistry.test.tsx:73,
+e2e/installed/phase57_packaged_surface.spec.cjs:166) at phase close. Logged as a cleanup candidate in
+docs/FEATURE-BACKLOG.md for the CEO to schedule as its own item if desired.
+
+
 

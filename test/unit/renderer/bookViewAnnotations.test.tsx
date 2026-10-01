@@ -236,4 +236,41 @@ describe("BookView — annotation marking (Phase 66 chunk 3)", () => {
       view.cleanup();
     }
   });
+
+  it("commits on the annotation layer without turning, but a bare page click still turns (DEF-446)", async () => {
+    stubObservers();
+    const view = await mount(createElement(BookView, baseProps([], (): void => undefined)));
+    try {
+      expect(view.host.querySelector("[data-book-page]")?.getAttribute("data-book-page")).toBe("1");
+      click(view.host.querySelector('[data-annotation-layer="1"]'));
+      expect(view.host.querySelector("[data-book-page]")?.getAttribute("data-book-page")).toBe("1");
+      click(view.host.querySelector("[data-book-page]"));
+      expect(view.host.querySelector("[data-book-page]")?.getAttribute("data-book-page")).toBe("2");
+    } finally {
+      view.cleanup();
+    }
+  });
+
+  it("does not turn the book page for a portaled colour-popover swatch click (DEF-448)", async () => {
+    stubObservers();
+    const view = await mount(createElement(BookView, baseProps([A1], (): void => undefined)));
+    try {
+      const page = view.host.querySelector("[data-book-page]");
+      expect(page?.getAttribute("data-book-page")).toBe("1");
+      // The real popover is portaled to document.body (AnnColorBox.tsx:119); its
+      // swatch click reaches the figure through React's synthetic tree. Here we
+      // place the swatch subtree under the figure so DOM bubbling reaches the
+      // same onClick, and the target's `closest` root is the popover, not a page.
+      const popover = document.createElement("div");
+      popover.setAttribute("data-color-popover", "");
+      const swatch = document.createElement("button");
+      swatch.setAttribute("aria-label", "Built-in green");
+      popover.appendChild(swatch);
+      page?.appendChild(popover);
+      click(swatch);
+      expect(page?.getAttribute("data-book-page")).toBe("1");
+    } finally {
+      view.cleanup();
+    }
+  });
 });
