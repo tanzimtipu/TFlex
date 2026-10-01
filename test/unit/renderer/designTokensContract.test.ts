@@ -1102,7 +1102,15 @@ describe("Phase D — three-theme coherence + embedded theme picker license", ()
     expect(frostedForm).not.toBeNull();
     if (frostedForm === null) return;
     const body = frostedForm[1] ?? "";
-    expect(body).toMatch(/background:\s*rgba\(255,\s*255,\s*255,\s*0\.94\)/);
+    // DEF-461: at rest the chip adds nothing over the page (transparent
+    // fill + border); the light wash moves to :focus so the dark text
+    // ladder stays legible only while the user is typing.
+    expect(body).toMatch(/background:\s*transparent/);
+    expect(body).toMatch(/border-color:\s*transparent/);
+    const frostedFormFocus = /:root\[data-theme="frosted"\]\s+\.form-editor:focus\s*\{([\s\S]*?)\n\}/m.exec(css);
+    expect(frostedFormFocus).not.toBeNull();
+    if (frostedFormFocus === null) return;
+    expect(frostedFormFocus[1] ?? "").toMatch(/background:\s*rgba\(255,\s*255,\s*255,\s*0\.94\)/);
     // Same for the OCR suspects bar — a dark rule would paint a dark
     // strip across the light acrylic chrome.
     const frostedBar = /:root\[data-theme="frosted"\]\s+\.ocr-suspects-panel\s*\{([\s\S]*?)\n\}/m.exec(css);

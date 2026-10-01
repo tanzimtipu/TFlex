@@ -62,6 +62,19 @@ function mount(node: ReactElement): Mounted {
   };
 }
 
+/** Phase 78 (DEF-465): the icon-first notice enter commits to the expanded
+ *  box on a double rAF after the icon paint; let those real frames run before
+ *  inspecting the mounted DOM. */
+async function settleNoticeEnter(): Promise<void> {
+  await act(async (): Promise<void> => {
+    await new Promise<void>((resolve) => {
+      window.requestAnimationFrame(() => {
+        window.requestAnimationFrame(() => resolve());
+      });
+    });
+  });
+}
+
 const LAYERS: readonly PdfLayer[] = [
   { index: 0, name: "Walls", visible: true },
   { index: 1, name: "Roof", visible: false },
@@ -268,13 +281,14 @@ describe("Phase 57 feature A — Document info dialog", () => {
 });
 
 describe("Phase 57 feature A — 3D limitation notice", () => {
-  it("names every entry's page and object", () => {
+  it("names every entry's page and object", async () => {
     const entries: readonly Pdf3dContent[] = [
       { page: 2, name: "Turbine" },
       { page: 5, name: "Gearbox" },
     ];
     const view = mount(<Pdf3dNotice entries={entries} />);
     try {
+      await settleNoticeEnter();
       const notice = view.host.querySelector("[data-testid='pdf3d-notice']");
       expect(notice).not.toBeNull();
       expect(notice?.textContent).toContain('Page 2 contains 3D content ("Turbine")');

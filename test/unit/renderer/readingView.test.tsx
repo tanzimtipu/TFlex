@@ -122,6 +122,19 @@ async function flush(): Promise<void> {
   });
 }
 
+/** Phase 78 (DEF-465): the icon-first notice enter commits to the expanded
+ *  card on a double rAF after the icon paint; let those real frames run before
+ *  inspecting the mounted column. */
+async function settleNoticeEnter(): Promise<void> {
+  await act(async (): Promise<void> => {
+    await new Promise<void>((resolve) => {
+      window.requestAnimationFrame(() => {
+        window.requestAnimationFrame(() => resolve());
+      });
+    });
+  });
+}
+
 /** RTL's `fireEvent.click` is unavailable (the package is not a dependency and
  *  adding one is forbidden); this replicates it exactly — a bubbling,
  *  cancelable MouseEvent dispatched through React's delegated listener, never
@@ -549,9 +562,10 @@ function renderColumn(
 }
 
 describe("phase 56 follow-up — the reader trigger outlives the notice", () => {
-  it("an epub tab keeps an ENABLED reading-view trigger after the notice is collapsed", () => {
+  it("an epub tab keeps an ENABLED reading-view trigger after the notice is collapsed", async () => {
     const view = renderColumn("epub", EPUB_NOTICE);
     try {
+      await settleNoticeEnter();
       const trigger = (): Element | null =>
         view.host.querySelector('[aria-label="Open reading view"]');
       expect(trigger()).not.toBeNull();
@@ -580,9 +594,10 @@ describe("phase 56 follow-up — the reader trigger outlives the notice", () => 
     }
   });
 
-  it("a cbz tab renders NEITHER reader trigger after the notice is collapsed", () => {
+  it("a cbz tab renders NEITHER reader trigger after the notice is collapsed", async () => {
     const view = renderColumn("cbz", { ...EPUB_NOTICE, sourceFormat: "cbz" });
     try {
+      await settleNoticeEnter();
       const collapse = view.host.querySelector<HTMLButtonElement>(
         "[data-conversion-collapse]",
       );

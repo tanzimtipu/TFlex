@@ -278,6 +278,19 @@ function mount(node: ReturnType<typeof createElement>): HTMLElement {
   return host;
 }
 
+/** Phase 78 (DEF-465): the icon-first notice enter commits to the expanded
+ *  card on a double rAF after the icon paint; let those real frames run before
+ *  inspecting the mounted DOM. */
+async function settleNoticeEnter(): Promise<void> {
+  await act(async (): Promise<void> => {
+    await new Promise<void>((resolve) => {
+      window.requestAnimationFrame(() => {
+        window.requestAnimationFrame(() => resolve());
+      });
+    });
+  });
+}
+
 const WARNINGS: ConvertWarning[] = [
   { code: "generic-fallback", message: "Rendered with a generic layout." },
   { code: "links-not-live", message: "Links are not clickable.", detail: "https://example.com/x" },
@@ -285,7 +298,7 @@ const WARNINGS: ConvertWarning[] = [
 ];
 
 describe("phase 53 — the conversion card DOM contract", () => {
-  it("renders every warning (message and detail), never behind a hover", () => {
+  it("renders every warning (message and detail), never behind a hover", async () => {
     const host = mount(
       createElement(ConversionNotice, {
         notice: {
@@ -296,6 +309,7 @@ describe("phase 53 — the conversion card DOM contract", () => {
         },
       }),
     );
+    await settleNoticeEnter();
     expect(host.querySelector("[data-conversion-notice]")).not.toBeNull();
     expect(host.querySelector("[data-conversion-source]")?.textContent).toBe("Text document");
     expect(host.querySelectorAll("[data-conversion-warning]")).toHaveLength(3);
@@ -304,7 +318,7 @@ describe("phase 53 — the conversion card DOM contract", () => {
     expect(host.textContent).toContain("https://example.com/x");
   });
 
-  it("renders a degraded fidelity distinguishably from layout", () => {
+  it("renders a degraded fidelity distinguishably from layout", async () => {
     const degraded = mount(
       createElement(ConversionNotice, {
         notice: {
@@ -315,6 +329,7 @@ describe("phase 53 — the conversion card DOM contract", () => {
         },
       }),
     );
+    await settleNoticeEnter();
     const el = degraded.querySelector("[data-conversion-notice]");
     expect(el?.getAttribute("data-conversion-fidelity")).toBe("degraded");
     expect(el?.hasAttribute("data-conversion-degraded")).toBe(true);
@@ -329,12 +344,13 @@ describe("phase 53 — the conversion card DOM contract", () => {
         },
       }),
     );
+    await settleNoticeEnter();
     const el2 = layout.querySelector("[data-conversion-notice]");
     expect(el2?.getAttribute("data-conversion-fidelity")).toBe("layout");
     expect(el2?.hasAttribute("data-conversion-degraded")).toBe(false);
   });
 
-  it("the collapse control replaces the dismiss and never invokes onDismiss", () => {
+  it("the collapse control replaces the dismiss and never invokes onDismiss", async () => {
     const onDismiss = vi.fn();
     const withHandler = mount(
       createElement(ConversionNotice, {
@@ -347,6 +363,7 @@ describe("phase 53 — the conversion card DOM contract", () => {
         onDismiss,
       }),
     );
+    await settleNoticeEnter();
     // Phase 67: the session-dismiss "×" is gone; a collapse control replaces it.
     expect(withHandler.querySelector("[data-conversion-dismiss]")).toBeNull();
     const collapse = withHandler.querySelector<HTMLElement>("[data-conversion-collapse]");
