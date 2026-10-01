@@ -35,3 +35,7 @@ screenshots/
 # Runtime build mutex written by agents before heavy build/test commands
 # (see SHARED WORKSPACE rules). Never committed; the watchdog reaps staleness.
 /.paperclip-build.lock
+
+# Local-only P74 real-form fixture: required by e2e/phase74_real_form.spec.cjs:37,
+# a byte copy of the operator's personal encrypted 956.pdf - NEVER commit it.
+/test-fixtures/tfl225/
