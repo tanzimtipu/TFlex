@@ -7071,8 +7071,31 @@ rect.ann-highlight.ann-preview {
   box-shadow: 0 0 0 1px var(--accent-soft);
 }
 
+/* DEF-470: the themed at-rest rules above are (0,3,0) and out-specify the
+ * base `.form-editor:hover` / `.form-editor:focus` affordances (0,2,0), so
+ * the accent edge died in dark and frosted. These higher-specificity
+ * overrides restore the same hover/focus affordance as light while the
+ * at-rest transparency stays untouched. */
+:root[data-theme="dark"] .form-editor:hover {
+  border-color: var(--accent-soft);
+}
+
+:root[data-theme="dark"] .form-editor:focus {
+  border-color: var(--accent-hover);
+  background: rgba(255, 255, 255, 0.92);
+}
+
+:root[data-theme="frosted"] .form-editor:hover {
+  border-color: var(--accent-soft);
+}
+
+/* DEF-470: kept after the frosted :hover override so that, at equal
+ * specificity (0,4,0), :focus wins while the pointer also rests over the
+ * field. The light wash stays a focus-only affordance; at-rest transparency
+ * (DEF-461) is untouched. */
 :root[data-theme="frosted"] .form-editor:focus {
   background: rgba(255, 255, 255, 0.94);
+  border-color: var(--accent-hover);
 }
 
 .form-textarea {

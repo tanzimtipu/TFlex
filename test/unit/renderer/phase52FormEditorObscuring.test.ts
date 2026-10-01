@@ -90,12 +90,61 @@ describe("styles.css — form editors do not obscure the page (Phase 52)", () =>
     expect(isNonObscuring(bg), `background was ${String(bg)}`).toBe(true);
   });
 
-  it("the editor keeps its accent affordance and stays interactive", () => {
+  it("the editor keeps its hover/focus affordance and stays interactive", () => {
     const body = findRuleBody(raw, ".form-editor");
     expect(body).not.toBeNull();
     if (body === null) return;
     expect(declarationValue(body, "pointer-events")).toBe("auto");
-    expect(declarationValue(body, "border")).toContain("var(--accent)");
+    // DEF-461: at rest the control adds NO box — the form's own printed box
+    // is the only visible surface. The accent edge appears on hover/focus.
+    expect(declarationValue(body, "border")).toContain("transparent");
+    const hover = findRuleBody(raw, ".form-editor:hover");
+    expect(hover).not.toBeNull();
+    if (hover === null) return;
+    expect(declarationValue(hover, "border-color")).toBe("var(--accent-soft)");
+    const focus = findRuleBody(raw, ".form-editor:focus");
+    expect(focus).not.toBeNull();
+    if (focus === null) return;
+    expect(declarationValue(focus, "border-color")).toBe("var(--accent-hover)");
+  });
+
+  it("dark and frosted themes keep the hover/focus affordance (DEF-470)", () => {
+    // DEF-470: the themed at-rest rules are (0,3,0) and out-specified the
+    // base (0,2,0) hover/focus rules, so the accent edge was dead in dark
+    // and frosted. The themed overrides must restore it while the at-rest
+    // transparency stays intact.
+    const darkHover = findRuleBody(raw, ':root[data-theme="dark"] .form-editor:hover');
+    expect(darkHover, "dark themed hover rule").not.toBeNull();
+    if (darkHover !== null) {
+      expect(declarationValue(darkHover, "border-color")).toBe("var(--accent-soft)");
+    }
+    const darkFocus = findRuleBody(raw, ':root[data-theme="dark"] .form-editor:focus');
+    expect(darkFocus, "dark themed focus rule").not.toBeNull();
+    if (darkFocus !== null) {
+      expect(declarationValue(darkFocus, "border-color")).toBe("var(--accent-hover)");
+      expect(declarationValue(darkFocus, "background")).toBe("rgba(255, 255, 255, 0.92)");
+    }
+    const frostedHover = findRuleBody(raw, ':root[data-theme="frosted"] .form-editor:hover');
+    expect(frostedHover, "frosted themed hover rule").not.toBeNull();
+    if (frostedHover !== null) {
+      expect(declarationValue(frostedHover, "border-color")).toBe("var(--accent-soft)");
+    }
+    const frostedFocus = findRuleBody(raw, ':root[data-theme="frosted"] .form-editor:focus');
+    expect(frostedFocus, "frosted themed focus rule").not.toBeNull();
+    if (frostedFocus !== null) {
+      expect(declarationValue(frostedFocus, "border-color")).toBe("var(--accent-hover)");
+    }
+    // DEF-461 must still hold: the at-rest themed rules stay transparent.
+    for (const selector of [
+      ':root[data-theme="dark"] .form-editor',
+      ':root[data-theme="frosted"] .form-editor',
+    ]) {
+      const body = findRuleBody(raw, selector);
+      expect(body, selector).not.toBeNull();
+      if (body === null) continue;
+      expect(declarationValue(body, "background")).toBe("transparent");
+      expect(declarationValue(body, "border-color")).toBe("transparent");
+    }
   });
 
   it("checkbox and radio toggles paint no chrome fill over the page", () => {

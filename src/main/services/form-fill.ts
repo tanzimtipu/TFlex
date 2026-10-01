@@ -737,6 +737,11 @@ function applyFieldValue(
   if (field instanceof PDFCheckBox) {
     if (formFieldWidgetCount(field) > 1) {
       const chosen = provided === undefined ? buttonGroupValue(field) : toText(provided);
+      // DEF-471 — an untouched empty group has no value to set; report a
+      // no-op, not a false "option not found: Off".
+      if (provided === undefined && (chosen === '' || chosen === 'Off')) {
+        return { status: 'filled' };
+      }
       // ADV-126 / DEF-426 — an option that is not one of the widgets'
       // on-states changes nothing; report it instead of claiming a fill.
       if (!setButtonGroupValue(field, chosen)) {
