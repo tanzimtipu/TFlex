@@ -55,3 +55,4 @@
 - `[data-page-layout-control]` -> single/two/four page layout; keeps its top-right anchor (the Book View / "i" cluster sits to its left) -> criterion 2.
 
 **Settings impact:** none. No new `AppSettings` field; the presentation is renderer-only and rides the existing `animationsEnabled` setting (via `data-animations`), `prefers-reduced-motion`, the motion tokens and the existing surface/glass tokens. No IPC and no `src/shared/` type change.
+

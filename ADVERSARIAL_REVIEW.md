@@ -3,6 +3,78 @@
 > Read discipline: this is a historical evidence ledger. Search for the assigned `ADV-NNN`
 > or unresolved `Disposition: PENDING` entries; do not load prior campaigns wholesale.
 
+## Phase 79 diff-pass — regenerated `.ico` set + packaging wiring (TFL-297, release TFL-293)
+
+Session label: `diff-pass`. Scope: the three regenerated `.ico` assets
+(`assets/brand/jovrel.ico`, `assets/brand/jovrel-pdf.ico`,
+`assets/brand/favicon.ico`) and their `electron-builder.yml` wiring only. No
+build was run (TFL-295 held `.paperclip-build.lock`); the generator was not run;
+no product code, config, test or other ledger was edited. All probing was a
+read-only byte parse. Result: **no confirmed breaks** — the full attack matrix
+passed. The zero-finding passes are listed below.
+
+Exact commands (all read-only):
+
+- `git status --porcelain -- assets scripts src`
+- `git diff --stat -- assets/brand`
+- `git status --porcelain -- electron-builder.yml src/renderer/components/BrandMark.tsx src/renderer/index.html`
+- `node <scratch>/ico-audit.cjs "<repo>"` — ICO directory / DIB / PNG structural parse of all three files
+- `node <scratch>/ico-geom.cjs "<repo>"` — per-frame decoded content and ring bounding-box geometry
+- `powershell -File <scratch>/ico-gdi-probe.ps1` — GDI+ `System.Drawing.Icon` per-size frame extraction
+- `powershell -File <scratch>/ico-shell-probe.ps1` — shell32 `PrivateExtractIcons` at 16/32/48/256 (the real Explorer path)
+
+Attack matrix, each pass:
+
+- **count / sizes.** All three files: `reserved=0`, `type=1`, `count=10`; frames
+  exactly `[16,20,24,32,40,48,64,96,128,256]`, unique and ascending. Declared
+  count matches the parsed table length.
+- **square / padded / cropped.** Every directory entry is w=h; DIB `biWidth=size`,
+  `biHeight=size*2`. Decoded content bbox `aspect=1.000` for the app mark; the
+  PDF art bbox fraction `[0.199,0.098..0.801,0.902]` equals the
+  `jovrel-pdf-file.svg` rect (102/512, 51/512, 410/512, 461/512) at every size —
+  no stretch, crop or pad shift.
+- **PNG <=128.** None. All frames 16-128 are `BMP` (`biSize=40`, `biBitCount=32`,
+  `biCompression=0`); only 256 is `PNG` in all three (allowed).
+- **directory fields / LE.** Width+height bytes = `size` (`0` for 256),
+  colorCount=0, reserved=0, planes=1, bitCount=32, `bytesInRes` == actual frame
+  length, `imageOffset` == 6+16*10 then contiguous; every integer parses as
+  little-endian.
+- **offsets / trailing.** Frames contiguous, no gap or overlap; last frame's
+  `offset+bytesInRes` equals the exact file length in all three files — zero
+  trailing/unused bytes.
+- **alpha artifacts.** No all-zero or all-opaque frame. Every <=128 BMP frame has
+  straight alpha `min=0 max=255` (jovrel.ico 16px: 12 transparent / 244 opaque;
+  128px: 669 transparent / 15 630 opaque). The 256 PNG frames decode colorType=6
+  (2702 / 34857 transparent px). GDI+ and shell32 both read `px(0,0)=A0`,
+  `px(center)=A255`.
+- **app vs .pdf distinct.** sha256 `8657f05f…` (`jovrel.ico`) != `bb526aba…`
+  (`jovrel-pdf.ico`); decoded geometry differs at every size (full-bleed tile vs
+  centred document). `favicon.ico` is byte-identical to `jovrel.ico` — expected:
+  both derive from `jovrel-mark.svg` per Phase 79 A.
+- **wiring lines 21/48/93/94.** All four resolve to the regenerated files —
+  `win.icon` + `nsis.installerIcon` + `nsis.uninstallerIcon` =
+  `assets/brand/jovrel.ico`; `fileAssociations[pdf].icon` =
+  `assets/brand/jovrel-pdf.ico`; the portable target inherits `win.icon`.
+  `electron-builder.yml` is unmodified and `assets/**` still ships the brand dir.
+- **no renderer change.** `src/renderer/components/BrandMark.tsx`,
+  `src/renderer/index.html` and `electron-builder.yml` are clean in git; the
+  favicon link `./brand/favicon.ico` still resolves via `vite.config.ts`
+  (`publicDir: assets`, `base: "./"`).
+
+Note (not a finding): GDI+ `System.Drawing.Icon` cannot see the PNG-compressed
+256 frame (it falls back to 128 when 256 is requested) — a known GDI limitation.
+The actual Explorer/shell path `PrivateExtractIcons` returns a correct 256x256
+with transparency. Recorded so a later reviewer does not mistake the GDI+
+fallback for a defect.
+
+Design critique (user = Windows user recognizing Jovrel in
+Explorer/taskbar/installer): **strengths to keep** — distinct silhouettes (tile
+vs document), consistent square geometry, real transparency at every size.
+**Nice-to-fix (informational, not a finding)** — at 16px the app mark's ring
+stroke is <1px and the leading dot ~1px, so fine detail is lost; the tile still
+reads as a distinct dark rounded square, so legibility is acceptable. No
+must-fix.
+
 ## Phase 78 diff-pass — in-canvas notices, top-right cluster, enter morph (TFL-266, phase TFL-260)
 
 Session label: `diff-pass`. Scope: the Phase 78 WORKING-TREE diff only — `App.tsx`
