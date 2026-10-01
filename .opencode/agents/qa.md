@@ -278,6 +278,25 @@ calls - never one giant write. And never imitate a tool call inside plain text
 executes nothing, and when it runs past the cap it leaves no file on disk at all.
 If a tool exists for the action, call the tool.
 
+## Recording the work product (Artifacts board)
+
+Before your required final report, make the verification visible on the Paperclip
+Artifacts board — this is part of done, not optional polish. Skip only if
+`PAPERCLIP_TASK_ID` is unset. These calls are local board bookkeeping against the
+Paperclip control plane (127.0.0.1), not product network calls.
+
+1. Create the work product (exactly one call):
+
+   npx paperclipai issue work-product:create "$PAPERCLIP_TASK_ID" --payload-json '{"type":"artifact","provider":"tflex-opencode","title":"QA <PASS|FAIL|INCONCLUSIVE|BLOCKED>: <behaviour in one line>","summary":"<scope, evidence paths (test files, screenshots), findings; under 300 words>"}'
+
+2. Upload the decisive screenshot(s) your verdict rests on, when visual:
+
+   npx paperclipai issue attachment:upload "$PAPERCLIP_TASK_ID" --file "<path>"
+
+Verify each command prints the created record JSON; a silent or empty response
+means the write failed — say so in your report. If the same write fails twice,
+stop retrying it and report the failure.
+
 ## Required final report
 
 Use this structure:

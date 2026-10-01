@@ -90,6 +90,24 @@ Follow the "Look and feel" section precisely (carried verbatim in
 When done, report: what you built, test output, screenshots you captured, and any
 assumptions you made about backend behavior that need confirming.
 
+## Recording the work product (Artifacts board)
+
+Before your final report, make the result visible on the Paperclip Artifacts
+board — this is part of done, not optional polish. Skip only if `PAPERCLIP_TASK_ID`
+is unset. These calls are local board bookkeeping against the Paperclip control
+plane (127.0.0.1), not product network calls — the product stays offline.
+
+1. Create the work product (exactly one call):
+
+   npx paperclipai issue work-product:create "$PAPERCLIP_TASK_ID" --payload-json '{"type":"artifact","provider":"tflex-opencode","title":"<one-line result>","summary":"<what was delivered, key decisions, evidence file paths; under 300 words>"}'
+
+2. If you captured screenshots, upload the decisive one:
+
+   npx paperclipai issue attachment:upload "$PAPERCLIP_TASK_ID" --file "<path>"
+
+Verify each command prints the created record JSON; a silent or empty response
+means the write failed — say so in your report. If the same write fails twice,
+stop retrying it and report the failure.
 
 ## Output budget
 

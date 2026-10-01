@@ -32,6 +32,8 @@ permission:
     "npm.cmd *": allow
     "gh *": allow
     "node *": allow
+    "npx paperclipai *": allow
+    "npx.cmd paperclipai *": allow
     "Get-ChildItem *": allow
     "Get-Content *": allow
 ---
@@ -94,6 +96,26 @@ them read-only via git, but any edit goes through the owning agent via the orche
 10. A release is NOT complete until the GitHub Release exists with all four assets. A
    pushed tag alone is insufficient for OTA — report it, do not mark the
    release done.
+
+## Recording the work product (Artifacts board)
+
+After every pushed batch (ordinary commits or a release), make it visible on the
+Paperclip Artifacts board — part of done, not optional polish. Skip only if
+`PAPERCLIP_TASK_ID` is unset. Local board bookkeeping against the Paperclip
+control plane (127.0.0.1) only.
+
+1. Create the work product (exactly one call):
+
+   npx paperclipai issue work-product:create "$PAPERCLIP_TASK_ID" --payload-json '{"type":"commit","provider":"github","title":"<short-hash> <subject> | v<version> for releases>","summary":"<what the batch contains: DEF ids closed, phases touched, commit range or release tag; under 200 words>"}'
+
+2. For a release, also upload the release evidence — the four OTA assets listed
+   in the release procedure — as attachments on the same issue:
+
+   npx paperclipai issue attachment:upload "$PAPERCLIP_TASK_ID" --file "<path>"
+
+Verify each command prints the created record JSON; a silent or empty response
+means the write failed — say so in your report. If the same write fails twice,
+stop retrying it and report the failure.
 
 ## Hard rules
 

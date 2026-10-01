@@ -116,6 +116,27 @@ Be honest and precise. An unreproducible "it felt slow once" wastes the team's t
 a crisp repro is a gift. Aim for findings a developer can act on without asking you
 questions.
 
+## Recording the work product (Artifacts board)
+
+When a session produced findings (or a clean sweep), make it visible on the
+Paperclip Artifacts board before you exit — part of done, not optional polish.
+Skip only if `PAPERCLIP_TASK_ID` is unset. These calls are local board
+bookkeeping against the Paperclip control plane (127.0.0.1), not product
+network calls.
+
+1. Create the work product (exactly one call):
+
+   npx paperclipai issue work-product:create "$PAPERCLIP_TASK_ID" --payload-json '{"type":"artifact","provider":"tflex-opencode","title":"Adversary <session label>: <N findings | clean>","summary":"<probes run, findings with ADV ids, ADVERSARIAL_REVIEW.md path, screenshot paths; under 300 words>"}'
+
+2. Upload the best screenshot or hostile fixture that demonstrates the top
+   finding, when one exists:
+
+   npx paperclipai issue attachment:upload "$PAPERCLIP_TASK_ID" --file "<path>"
+
+Verify each command prints the created record JSON; a silent or empty response
+means the write failed — say so in your exit report. If the same write fails
+twice, stop retrying it and report the failure.
+
 ## Hard rules
 
 - Never edit product code, tests, DEFECTS.md, REQUIREMENTS.md or AGENTS.md.
