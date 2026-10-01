@@ -9804,3 +9804,28 @@ History:
 - frontend-dev (TFL-171): fix reported done — every remaining UI accent blue rebased to violet (rgba(37,99,235,x)->rgba(124,58,237,x), rgba(59,130,246,x)->rgba(139,92,246,x), rgba(96,165,250,x)->rgba(167,139,250,x), #1d4ed8->#6D28D9, #63a8e8->#A78BFA); `styles.css` grep 47 -> 9 hits (8 comments + `--ann-blue`); the `designTokensContract` glow pins plus two `phase14Glass` pins repointed hue-only; verify clean, 6 files / 175 tests pass. CTO reviewed the source and the grep.
 - CTO (TFL-64): set FIX-READY. Dispatched qa **TFL-172** (task type: FIX-READY defect verification) to re-probe `--dock-primary-fg` per theme and confirm no UI accent blue remains, then CLOSED or re-OPEN with evidence.
 - qa (TFL-172): CLOSED. Static `grep -cE "#2563eb|#3b82f6|#1d4ed8|#63a8e8|#93c5fd|#1e40af|rgba\(...blue...\)"` on `styles.css` = 9 hits, all comments except `--ann-blue: #3b82f6` (annotation palette, excluded); no hard-coded UI accent blue survives in a rule body. Runtime `getComputedStyle(':root').--dock-primary-fg` = #6d28d9 light, #a78bfa dark, #6d28d9 frosted (expected). Oracle repoints verified hue-only (#2563eb->#7C3AED, rgba(37,99,235->rgba(124,58,237) in designTokensContract + phase14Glass). Blast radius: `npm run verify` clean; 6 vitest files / 175 tests pass; phase49 brand gate 5/5 (P49-5 accent #7c3aed all themes). qa spec `e2e/tfl172_violet_verify.spec.cjs`.
+
+## DEF-452: Phase 69 Halo `.ico` files carry only 4 frames (16/24/32/48) — the 64/128/256 frames Phase 49 shipped are lost (packaging regression)
+
+- Status: CLOSED
+- Severity: MEDIUM
+- Found by: backend-dev TFL-124 (raised as an unanswered "ask", Phase 69A); surfaced by the CTO audit of TFL-124's report at phase close
+- Phase: 69 (success criterion 1 "the `.ico` set holds the 16-256px frames"; operator map section 1 "multi-size 16/24/32/48/64/128/256")
+
+Steps to reproduce:
+1. Parse the ICO directory (bytes 4-5 = count): `python -c "import struct;b=open('assets/brand/jovrel.ico','rb').read();print(struct.unpack('<H',b[4:6])[0])"` -> 4.
+2. Same for `assets/brand/jovrel-pdf.ico` -> 4.
+3. Compare to the Phase 49 commit `3dc1fd6`: both files carried 7 frames (16/24/32/48/64/128/256; jovrel.ico 52643 B, jovrel-pdf.ico 25678 B).
+
+Expected: each `.ico` holds the full 16/24/32/48/64/128/256 frame set (map section 1; criterion 1), as Phase 49's files did.
+Actual: the operator Halo kit's `.ico` files hold only 16/24/32/48 (jovrel.ico 6928 B, jovrel-pdf.ico 5303 B). Windows/Alt-Tab and the installer will upscale the 48px frame for large displays (blurry icon).
+Root cause: the operator kit's `.ico` files are 4-frame; TFL-124 copied the kit bytes verbatim per the "replace with the operator's kit" instruction and raised the missing frames as an ask that was never answered. The frames are absent from the kit; they must be synthesized from the kit's own PNG masters (jovrel-mark-1024.png, jovrel-pdf-file-1024.png).
+Impact: MEDIUM — packaging/identity regression; the operator's map explicitly promised a multi-size Windows icon. No runtime/behaviour change.
+Note: no image tooling is installed (no sharp/png-to-ico/jimp, no ImageMagick); Electron's `nativeImage` is available and can resize + emit PNG frames to assemble the ICO.
+
+History:
+- backend-dev (TFL-124): copied the kit verbatim; reported the 4-frame deviation and asked for regenerated assets or authorization to synthesize. (Ask unanswered.)
+- CTO (TFL-64): at the TFL-120 phase close, audited TFL-124's report against criterion 1 and ACCEPTED this as DEF-452 (MEDIUM) — it is a regression versus Phase 49 and an unmet criterion-1 clause. Own miss: this should have been caught at the Phase 69A review, not after the phase-close commit. Dispatched backend-dev **TFL-174** to regenerate both `.ico` files with the full 16-256 frame set from the kit masters and to prove packaging via `npm run dist`. Awaiting fix; then FIX-READY -> qa verification -> CLOSED, then a follow-up git-agent commit (the 1.46.0 bump is already committed and unreleased).
+- backend-dev (TFL-174): fix reported done and reviewed by the CTO (I re-parsed both files). Regenerated both `.ico` from the kit 1024 masters via Electron `nativeImage` (resize best-quality) and a hand-assembled ICO container (PNG-embedded frames): `jovrel.ico` 6928 B/4 frames -> 61823 B/7 frames `[16,24,32,48,64,128,256]`; `jovrel-pdf.ico` 5303 B/4 -> 31529 B/7. `npm run dist` succeeded (electron 44.0.0 / builder 26.15.3) emitting `release/Jovrel-Setup-1.46.0-x64.exe` (180370066 B) + `release/Jovrel-1.46.0-portable-x64.exe` (180025726 B) + `latest.yml`; `phase49Branding.test.ts` 9/9. Artwork unchanged.
+- CTO (TFL-64): set FIX-READY. Dispatched qa **TFL-176** (task type: FIX-READY defect verification) to re-parse both ICO frame directories, confirm the 1.46.0 artifacts post-date the icon fix, re-run `phase49Branding.test.ts`, then CLOSED or re-OPEN with evidence.
+- qa (TFL-176): CLOSED. Re-parsed both ICO directories on the current tree: `jovrel.ico` 61823 B / count=7 / frames=[16,24,32,48,64,128,256]; `jovrel-pdf.ico` 31529 B / count=7 / frames=[16,24,32,48,64,128,256]. Packaging: `release/Jovrel-Setup-1.46.0-x64.exe` 180370066 B mtime 2026-10-01 18:43:15 and `release/Jovrel-1.46.0-portable-x64.exe` 180025726 B mtime 2026-10-01 18:43:21 both post-date the icons (18:41:10). Blast radius: `npm run verify` conventions clean / typecheck 0 errors (exit 0); `vitest run phase49Branding.test.ts phase49Brand.test.tsx` 2 files passed, 26 tests passed, 0 failures. Artwork unchanged. Verified by running, not by reading the fix report.
