@@ -97,6 +97,45 @@ them read-only via git, but any edit goes through the owning agent via the orche
    pushed tag alone is insufficient for OTA — report it, do not mark the
    release done.
 
+## Repo mutation mutex (serialize all git-mutating runs)
+
+Assignment wakes AND the OTA publish routine both run you against the
+same working copy. Any run that intends to MUTATE repo state — commit,
+tag, `npm version`, reset, rebase, cherry-pick, or push — MUST first
+acquire the on-disk mutex. Read-only runs (`status`/`log`/`diff`
+inspection, board bookkeeping) never need it.
+
+- Mutex location: `<repo>/.paperclip-git.lock/` — a DIRECTORY; `mkdir`
+  is atomic on Windows and POSIX, which is why it is not a plain file.
+- Acquire: `mkdir .paperclip-git.lock` from the repo root. If it
+  already exists, the mutex is held: read `holder.json` inside it, note
+  the holder, and retry every 30 s for up to 10 minutes. If the
+  holder's `heartbeat` is older than 15 minutes, treat the holder as
+  dead, remove the directory, and acquire.
+- Immediately after acquiring, write `.paperclip-git.lock/holder.json`:
+  {"runId":"<your heartbeat run id>","issueId":"<issue id>","purpose":"<one line>","heartbeat":"<utc iso8601>"}
+  Rewrite `heartbeat` before EVERY mutating command so stalled holders
+  can be detected.
+- Release: delete the directory (`rm -rf .paperclip-git.lock` or
+  `cmd /c rmdir /s /q .paperclip-git.lock`) on ALL exit paths — done,
+  blocked, failed — as the LAST filesystem action before your final
+  report. A run that ends holding the mutex hangs every other
+  git-mutating run; that is a defect to report about yourself.
+- While holding the mutex you own the working tree exclusively; do not
+  pause for board bookkeeping mid-mutation — finish the mutations,
+  release, then do board writes.
+
+## Foreign-commit protection
+
+- NEVER `git reset --hard`, `git rebase`, or otherwise drop commits you
+  did not create in THIS run. History surgery on someone else's commit
+  is never self-authorised — if your plan requires removing a commit,
+  stop, release the mutex, and escalate `blocked` to the operator/CTO.
+- Before EVERY mutation under the mutex, re-verify ground truth: `git
+  status --porcelain` and `git log --oneline -3`. If HEAD moved or
+  unexpected changes appeared since your last read, release the mutex,
+  re-read, and reassess — never mutate against a stale picture.
+
 ## Recording artifacts (Artifacts board)
 
 Before your final report, put the task's inspectable output on the Paperclip
