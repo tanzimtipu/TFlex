@@ -102,15 +102,27 @@ describe('phase 52 — PasswordPromptDialog', () => {
 
 describe('phase 52 — ProtectionNotice', () => {
   it('reports the algorithm/revision, the permissions and the no-enforcement note', () => {
-    const { container, cleanup } = mount(<ProtectionNotice protection={PROTECTION} />);
-    const text = container.textContent ?? '';
-    expect(text).toContain('AES-256');
-    expect(text).toContain('/R 6');
-    expect(text).toContain('/V 5');
-    expect(text).toContain('/CFM AESV3');
-    expect(text).toContain('Copy');
-    expect(text).toContain('does not enforce');
-    cleanup();
+    vi.useFakeTimers();
+    try {
+      const { container, cleanup } = mount(<ProtectionNotice protection={PROTECTION} />);
+      // Phase 78 (DEF-465/DEF-469): the icon-first enter commits on a double
+      // rAF. Advance both entrance frames so the expanded banner (algorithm /
+      // revision / permissions copy) is rendered for this content oracle.
+      act((): void => {
+        vi.advanceTimersToNextFrame();
+        vi.advanceTimersToNextFrame();
+      });
+      const text = container.textContent ?? '';
+      expect(text).toContain('AES-256');
+      expect(text).toContain('/R 6');
+      expect(text).toContain('/V 5');
+      expect(text).toContain('/CFM AESV3');
+      expect(text).toContain('Copy');
+      expect(text).toContain('does not enforce');
+      cleanup();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
 

@@ -23,7 +23,7 @@
 
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
 import { ConversionNotice } from "../../../src/renderer/components/ConversionNotice";
@@ -105,12 +105,27 @@ describe("phase 53 — the conversion card reserves the fixed Inspector's column
 });
 
 describe("phase 53 — the dismiss click is not swallowed (AGENTS.md cross-bubbling)", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   function mount(children: ReturnType<typeof createElement>) {
     const host = document.createElement("div");
     document.body.appendChild(host);
     const root = createRoot(host);
     act((): void => {
       root.render(children);
+    });
+    // Phase 78 (DEF-465/DEF-469): the icon-first enter commits on a double
+    // rAF. Advance both entrance frames so these hit-test / cross-bubbling
+    // oracles start from the expanded card (they assert the DEF-357/phase 53
+    // click contract, not the enter paint).
+    act((): void => {
+      vi.advanceTimersToNextFrame();
+      vi.advanceTimersToNextFrame();
     });
     return {
       host,

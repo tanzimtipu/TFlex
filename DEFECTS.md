@@ -5,6 +5,71 @@
 > inspect the current `OPEN`, `FIX-READY`, and `DISPUTED` entries first; closed records are
 > historical evidence and must not be loaded wholesale.
 
+## DEF-471: Save-time form fill report calls every untouched empty multi-widget option group `option-unknown` ("option not found: Off"), so a correctly-filled document shows "93 filled, 12 skipped" with 12 false error lines
+
+- Status: OPEN
+- Severity: LOW
+- Found by: adversary (TFL-254 / Phase 74 chunk 5 diff-pass); ADV-150
+- Phase: 74 (criterion 6 - no fill regression; report truthfulness)
+
+Steps to reproduce:
+1. Build and launch the running app; open a temp copy of the real `956.pdf` (`test-fixtures/tfl225/956-real.pdf`).
+2. Type any value into one text field, then Save.
+3. Read the post-save fill report.
+
+Expected: an option group the user never touched has no value to write and should read as a no-op / "no value set" - not an error. A filled group reports `filled`.
+
+Actual: all 12 untouched empty multi-widget groups (`mg.title`, `mg.comm`, `mg.oth mig`, `mg.app`, `mg.prov assist`, `mg.reason ex`, `mg.also ar`, `mg.ending ar`, `mg.end comm`, `cc.person rec`, `ta.assist`, `ar.also`) are reported `status: option-unknown`, `detail: "option not found: Off"`; the UI renders "option not available - option not found: Off". Summary: `93 filled, 12 skipped`. No data loss (a filled group reports `filled` and round-trips), but the report shows 12 false errors on a correct document. Root cause: at save `provided === undefined`, these pdf-lib `PDFCheckBox` multi-widget groups read `buttonGroupValue` = `Off`, `setButtonGroupValue('Off')` returns false, and the checkbox branch maps false -> `option-unknown` (`src/main/services/form-fill.ts:737-751`, `src/main/services/forms.ts:127-223`).
+
+Screenshot: none (report text). Raw: `test-fixtures/adv-p74/recon-save-report.json`.
+
+History:
+- adversary: filed ADV-150 (TFL-254 / Phase 74 chunk 5 diff-pass, LOW).
+- orchestrator: triaged ACCEPTED -> DEF-471 (LOW). Owner: backend-dev (save-time empty-group path). qa re-verification proves an untouched save reports 105 filled / 0 skipped and a filled group still reports `filled`.
+
+## DEF-470: Phase 74's `.form-editor` hover outline is dead in dark and frosted (and dark focus loses its accent border + wash) - the themed rule out-specifies `:hover`/`:focus`
+
+- Status: OPEN
+- Severity: LOW
+- Found by: adversary (TFL-254 / Phase 74 chunk 5 diff-pass); ADV-144
+- Phase: 74 (criterion 1/2 - the transparent-at-rest change must keep a visible interaction affordance)
+
+Steps to reproduce:
+1. Build and launch the running app; open any PDF with a form (or the real-file copy); switch theme to Dark, then Frosted.
+2. Hover a form text/select field and click into it (focus).
+3. Read the computed `border-color` / `background-color` of the `.form-editor` control.
+
+Expected: light/dark/frosted all show the hover accent outline and the focus accent border + light wash (Phase 74 diff-pass item 3).
+
+Actual: dark hover border stays transparent (no outline); dark focus border stays transparent and the white focus wash is absent (only the box-shadow ring remains); frosted hover border stays transparent (frosted focus wash is present). Light is correct. Cause: `:root[data-theme=dark|frosted] .form-editor` is specificity (0,3,0) and sets `border-color/background: transparent`, out-specifying `.form-editor:hover`/`:focus` (0,2,0); no themed hover/focus rules exist. Scope: `.form-editor` family (text/textarea/select/listbox); checkbox/radio hover unaffected. Confirmed dynamically on HEAD `645320f` / `dist index-B4IQBP4K.css`.
+
+Screenshot: none (computed styles). Raw: `test-fixtures/adv-p74/theme-hover.json`.
+
+History:
+- adversary: filed ADV-144 (TFL-254 / Phase 74 chunk 5 diff-pass, LOW; static then dynamically confirmed).
+- orchestrator: triaged ACCEPTED -> DEF-470 (LOW). Owner: frontend-dev (`src/renderer/styles.css` themed hover/focus rules). qa re-verification proves light/dark/frosted hover+focus computed styles.
+
+## DEF-469: Phase 78's icon-first `entering` phase leaves 6 unit oracles red - the expanded `ProtectionNotice` / `ConversionNotice` box (collapse control, banner body, algorithm text) is no longer rendered on mount, so `verify:full` is red
+
+- Status: CLOSED
+- Severity: HIGH
+- Found by: qa (TFL-255 phase-close focused pass; renderer-suite / verify:full blast radius)
+- Phase: 78 (unpushed-then-committed `645320f`, TFL-266/TFL-250)
+
+Steps to reproduce:
+1. `npm.cmd run test:unit -- test/unit/renderer/phase53_protectionNoticeInspectorHitTest.test.ts test/unit/renderer/phase53_conversionNoticeInspectorHitTest.test.ts test/unit/renderer/phase52Dialogs.test.tsx`
+2. Observe 6 failed / 17 passed (3 failed files). Repeatable 2/2 runs.
+
+Expected: all three files green; `phase22`/renderer/`verify:full` unit suite 0 failed.
+
+Actual: `phase53_protectionNoticeInspectorHitTest.test.ts` 3 failed ("the collapse control must render: expected null not to be null" x2, and the banner-body click), `phase53_conversionNoticeInspectorHitTest.test.ts` 2 failed, `phase52Dialogs.test.tsx` 1 failed (`expected '' to contain 'AES-256'`). Root cause: `645320f` added an initial `NoticePhase = 'entering'` in `src/renderer/components/ProtectionNotice.tsx`; the expanded box renders only for `phase === 'expanded' || 'closing'`, and `entering -> expanded` is deferred through a double `requestAnimationFrame` (`ProtectionNotice.tsx` enter effect). Under jsdom `useInstantMotion()` is false, so `phase` stays `entering` and the expanded box (and its `data-protection-collapse` / `.protection-notice-body` / algorithm text) is absent on mount; the rAF hand-off is not flushed synchronously. The same `entering` state machine was applied to `ConversionNotice`. Neither the unit oracles nor the production code were reconciled in `645320f`.
+
+Screenshot: none (unit test). Raw output: `test-fixtures/TFL-255-item3.txt`, `test-fixtures/TFL-255-item3-confirm.txt`, `test-fixtures/TFL-255-item4.txt`.
+
+History:
+- qa: opened (TFL-255, DEF-460/DEF-463 phase-close pass blast radius). Unrelated to TFL-230's test-only repoints (`phase22_titlebarFileGroup`, `pickImageFiles` are both green in isolation). Owner: renderer (frontend-dev) - either flush/initialize the box for the jsdom mount contract or update the frozen oracles, and reconcile `ConversionNotice` the same way. Blocks TFL-230 phase-close (item 4 `verify:full` 0-failed gate).
+- qa: CLOSED (TFL-255 re-run). frontend-dev fixed the three pre-Phase-78 oracles (TFL-284) by enabling `vi.useFakeTimers()` and flushing the icon-first enter with `vi.advanceTimersToNextFrame()` x2 before asserting; assertions unchanged (no weakening). Re-run: items 1-2 green (31/31 3x, 5/5); item 3 renderer `Test Files 455 passed (455)` / `Tests 4860 passed (4860)` 0 failed; item 4 `verify:full` conventions clean + tsc green, `Test Files 566 passed (566)` / `Tests 7137 passed (7137)` 0 failed; item 5 no `pickImageFiles.ts` / `AppHeader.tsx` in diff. Blocker cleared. Raw output: `test-fixtures/TFL-255-rerun-item1-run1.txt`..`run3.txt`, `test-fixtures/TFL-255-rerun-item2.txt`, `test-fixtures/TFL-255-rerun-item3.txt`, `test-fixtures/TFL-255-rerun-item4.txt`.
+
 ## DEF-466: Phase 78 - a tall expanded notice box is not clipped and paints past the canvas bottom, hiding the tail of long messages
 
 - Status: CLOSED
@@ -72,6 +137,28 @@ History:
 - qa: opened (TFL-258 focused verification). Measured boxes + elementFromPoint on `[data-protection-collapse]`.
 - qa: CLOSED (TFL-260 FIX-READY retest). `npx.cmd playwright test e2e/phase78_notice_in_canvas.spec.cjs` — both expanded together: protection box top 104 / bottom 212.95, 3D box top 220.95 / bottom 272.55, `overlap:false` (8px stack gap); `[data-protection-collapse]` centre `elementFromPoint` resolves into the control (`resolves:true`). Blast radius `e2e/phase59_protection_notice.spec.cjs e2e/tfl46_protection_probe.spec.cjs e2e/phase67_notice_geometry.spec.cjs` = 5 passed (phase67 both-collapsed test now green, pitch 36). Screenshot: screenshots/phase78-def464-both-expanded.png.
 
+## DEF-463: Phase 72 retired the tab-strip scroll container but missed the sibling `phase22_titlebarFileGroup.test.tsx` scroll oracles (DEF-245 / DEF-428), leaving 5 unit tests red and the CI `verify` gate red
+
+- Status: CLOSED
+- Severity: HIGH
+- Found by: qa (TFL-243 retest of DEF-460; full-suite blast radius)
+- Phase: 72 (unpushed commit 21b0922 / TFL-188) - correction batch
+
+Steps to reproduce:
+1. `npm.cmd run test:unit -- test/unit/renderer/phase22_titlebarFileGroup.test.tsx`
+2. Observe the `DEF-245 - the active tab is scrolled into view` and `DEF-428 - a strip width change re-brings the active tab into view` blocks.
+
+Expected: the file is green; its oracles match the current AppHeader tab-scroll behavior.
+
+Actual: 5 failed / 26 passed (31). `expected "vi.fn()" to be called 1 times, but got 0 times` and `expected undefined to be <div class="tab tab-active" ...>`. Phase 72 (commit 21b0922, UNPUSHED, TFL-188) retired the tab-strip scroll container: `AppHeader.tsx` no longer calls `scrollIntoView` nor writes `scrollLeft +=`; every tab is kept in one row by uniform shrink (`--tf-tab-width`), pinned by the repointed sibling `def433InstantActiveTabScroll.test.ts`. The phase22 oracles still stub `Element.prototype.scrollIntoView` and expect reveal calls, so they are stale. Same wrong-oracle family as DEF-453 / DEF-454 / DEF-457 / DEF-458 / DEF-459. Reproduced deterministically in isolation. Full `verify:full`: 1 failed file / 564 passed; 5 failed / 7109 passed.
+
+Screenshot: none (unit test). Log: `test-fixtures/TFL-243-retest-output.md`.
+
+History:
+- orchestrator: filed from qa's TFL-243 blast-radius evidence (TFL-230 correction batch). Escape class: `ESCAPE: wrong-oracle` - Phase 72 repointed the sibling `def433InstantActiveTabScroll` oracle but missed this Phase 22 sibling. Owner: frontend-dev (TFL-230C). Required to make `verify:full` green before the pickImageFiles CI fix can ship.
+- qa: retest PASS on DEF-463's own oracle, kept OPEN by the phase-close gate (TFL-255). `npm.cmd run test:unit -- test/unit/renderer/phase22_titlebarFileGroup.test.tsx` run 3x -> each `Test Files 1 passed (1)` / `Tests 31 passed (31)` / 0 failed (2.29s / 2.34s / 2.36s); 8 describes incl. the repointed DEF-245/DEF-428 retired-scroll blocks, def433 sibling present, no `.skip`/`.only`. `git diff --name-only` does NOT list `src/renderer/components/AppHeader.tsx`; source has no `scrollIntoView` / `scrollLeft +=`. Item 3 renderer suite and item 4 `verify:full` are RED on unrelated Phase 78 notice unit oracles (6 failed; see DEF-469) - the TFL-230 phase-close gate requires items 1-5 all green, so this entry remains OPEN until DEF-469 is fixed and `verify:full` is 0 failed. Raw output: `test-fixtures/TFL-255-item1-run1.txt`..`run3.txt`, `test-fixtures/TFL-255-item3.txt`, `test-fixtures/TFL-255-item4.txt`.
+- qa: CLOSED (TFL-230 retest, TFL-255 re-run after TFL-284 fixed DEF-469). phase22_titlebarFileGroup.test.tsx 31/31 3x; def433 sibling green; `verify:full` conventions clean + tsc green, `Test Files 566 passed (566)` / `Tests 7137 passed (7137)` 0 failed; renderer suite `Test Files 455 passed (455)` / `Tests 4860 passed (4860)` 0 failed; `git diff --name-only` does NOT list `src/renderer/components/AppHeader.tsx`; source has no `scrollIntoView` / `scrollLeft +=`.
+
 ## DEF-462: The Phase 73 dirty dot is 100% clipped away by `.tab-title{overflow:hidden}` at the 640px minimum; at 10 tabs the dot is neither painted nor hit-testable, and at 20 tabs it also overflows the tab body
 
 - Status: CLOSED
@@ -94,6 +181,51 @@ History:
 - qa: opened (TFL-245, adversarial finding reproduction). `npm.cmd run build:renderer` built clean (2662 modules, 834ms); `node test-fixtures/adv-p73/probe.cjs b` -> `b-verdict {tenFullyClipped:true, tenHit:"tab tab-active", twentyFullyClipped:true, twentyHit:"LI", twentyTabWidth:4, twentyTitleWidth:1}`. Confirmed. The blind oracle was hardened and the hardened spec fails on the current tree (TFL-245). Owner: renderer (frontend-dev), fix must keep the dot fully painted and hit-testable at the 640px minimum without touching the unit suite.
 - CTO: FIX-READY (TFL-248). frontend-dev took the dot out of the clip: title text wrapped in `.tab-title-text` (owns the ellipsis clip), colorful `.tab-title` is now `overflow: visible` with `min-width: 5px`, colorful `.tab` leading padding caps at the dot width, `.tab` margin-right reads `var(--tf-tab-gap)`, and `AppHeader` re-plans with gap 0 below `DOT_SAFE_TAB_WIDTH = 6`. Reported runs: hardened `e2e/phase73_dot.spec.cjs` 1 passed (10- and 20-tab 640px both `hit=tab-modified-dot`, `clippedByAncestor=false`); probe `b` both lines `fullyClipped:false`/`hitIsDot:true`; `npm.cmd run verify` exit 0; three unit files 37 tests passed. Awaiting qa retest to CLOSE.
 - qa: CLOSED (TFL-256 retest on the fixed tree; `npm.cmd run build:renderer` -> exit 0 (2662 modules); `node test-fixtures/adv-p73/probe.cjs b` -> both `10-tabs-640` and `20-tabs-640` `paint.fullyClipped:false`/`paint.hitIsDot:true`, clearances dotToTabLeft/Right 2.5/2.5 and 1/0 (>=0), `.tab-list` 156/156; `npm.cmd run test:e2e -- e2e/phase73_dot.spec.cjs` -> 1 passed/0 failed (full, 10-tab 640, 20-tab 640 all `clippedByAncestor=false`, `hitIsDot=true`); blast radius `e2e/phase58_tab_style.spec.cjs` + `e2e/phase59_tab_overflow.spec.cjs` -> 3 passed/0 failed; 5 unit files -> 53 passed/0 failed; `npm.cmd run verify` -> exit 0). ADV-143 fix confirmed; dot painted + hit-testable with no ancestor clip at both squeezed widths.
+
+## DEF-461: Overlay form editors draw their own bordered box (and a duplicated option-value label) over the form's printed boxes, so every field on the operator's real 956.pdf reads as two stacked surfaces
+
+- Status: CLOSED
+- Severity: HIGH
+- Found by: operator (TFL-185 / TFL-225 complaint; reproduced by qa, TFL-241)
+- Phase: 74 (criteria 1 and 2 - one visible surface per widget)
+
+Steps to reproduce:
+1. Build and launch the running Electron app (`npm.cmd run build`), open a faithful copy of the operator's `956.pdf` (`test-fixtures/tfl225/956-real.pdf`) via Open.
+2. Inspect form pages 3-6 (page 3 questions 7/8/10, page 6 questions 23/24).
+
+Expected: each field shows exactly one surface - the form's own printed box/field artwork. The interactive control adds no second box: it is visually transparent at rest and shows an accent outline only on hover/focus (Adobe Acrobat behaviour).
+
+Actual: every `.form-editor` and `.form-checkbox` draws its own `1px solid var(--accent)` / `var(--border-strong)` border over the printed box, and every multi-widget `.form-radio` / `.form-checkbox` control renders the raw on-state value ("No", "Yes", "reg", "close", "Application", ...) as a visible `.form-radio-label`, so a field reads as two stacked boxes (printed box + overlay box). qa reproduction on the real file: `npx.cmd playwright test e2e/phase74_real_form.spec.cjs` -> 1 failed / 0 passed; the single-layer assertion `no control shows a painted field box under the overlay` received 5; flagged controls `text:mg.title other`, `text:mg.othe mig name giv`, `checkbox:mg.dec 1`, `checkbox:mg.dec 2`, `radio:mg.comm`. Control-count parity was exact (129/129, missing 0, extra 0), so this is a visual-fidelity defect, not an enumeration defect.
+
+Screenshot: screenshots/p74-real-p3.png, screenshots/p74-real-p6.png.
+
+History:
+- orchestrator: filed from the operator's TFL-185 / TFL-225 complaint, confirmed by the qa real-file reproduction (TFL-241). Escape class: `ESCAPE: wrong-oracle` - Phase 65 verified single-layer rendering on a synthetic/anonymised fixture whose widgets carried grey `/AP` boxes, not a designed printed form, so it never exercised the printed-artwork + overlay double-box case on the operator's real file. Owner: renderer (frontend-dev).
+- orchestrator: FIX-READY (relaying frontend-dev, TFL-244). Developer reason recorded verbatim: "styles.css: .form-editor / .form-checkbox / .form-radio-dot are now transparent (fill + border) at rest so the form's own printed box is the only surface; hover shows accent (editor --accent-soft, checkbox/radio --accent); focus/checked unchanged. Frosted 0.94 wash moved to a new :root[data-theme=frosted] .form-editor:focus rule; dark/frosted rest rules transparent. .form-radio-widget .form-radio-label { display:none } hides the duplicated raw value (element kept for aria-label/title). No JSX, geometry, fill-path or engine change." Evidence: 6 vitest files / 140 tests pass; `npm run verify` exit 0 (conventions clean, tsc green). qa FIX-READY verification dispatched as TFL-249 (rebuild; repointed single-layer oracle at the overlay's computed at-rest chrome; tick and fill/save round-trips on the real file; `phase65_form_layer` blast radius). qa alone sets CLOSED.
+- qa: CLOSED (TFL-249). Rebuilt (`npm.cmd run build`) and ran the repointed focused spec `npx.cmd playwright test e2e/phase74_real_form.spec.cjs` -> 1 passed / 0 failed. At-rest-chrome oracle (overlay computed style, 9 sampled controls incl. text/checkbox/radio-dot): 0 controls show a visible at-rest border/background (`visibleAtRest=0`); hover still reveals the accent (text `rgba(124,58,237,0.12)`, checkbox `rgb(124,58,237)`). Tick round-trip on `form-5-mg_dec_1` (`mg.dec 1`, page 6): click flipped rendered `aria-pressed` false->true and engine value false->true; saved (1106186 bytes) and reopened the saved bytes -> rendered true, engine value "true" (rendered == engine). Fill round-trip `form-5-mg_dec_date` (`mg.dec date`, page 6): fill report `93 filled, 12 skipped`; reopened saved bytes -> DOM value and engine value both `TFL249`. Screenshots `screenshots/p74-fix-p3.png` ... `p74-fix-p6.png` inspected: printed boxes only, no stacked overlay box, no duplicated raw-value labels. Control parity 129/129 (missing 0, extras 0); 0 push buttons / 0 text widgets with `/AP` (informational canvas sample only). Blast radius `npx.cmd playwright test e2e/phase65_form_layer.spec.cjs` -> 11 passed / 0 failed. Evidence: test-fixtures/TFL-249-p74-run.txt, test-fixtures/TFL-249-p65-blast.txt.
+
+## DEF-460: CI `verify` is red on every push - `pickImageFiles.test.ts` focus-race test times out at 5000ms
+
+- Status: CLOSED
+- Severity: HIGH
+- Found by: operator (TFL-230; note: no `DEF-046` entry exists anywhere in this ledger, so the test's `DEF-046` label is stale)
+- Phase: correction batch (CI gate)
+
+Steps to reproduce:
+1. Push any commit to origin master; GitHub Actions `verify.yml` runs `npm run verify:full` on `windows-latest` (Node 24, jsdom 30, vitest 4.1.11).
+2. Observe `test/unit/renderer/pickImageFiles.test.ts`.
+
+Expected: the file's 5 tests pass; the picker's focus-back fallback resolves empty when focus fires and no change ever lands.
+
+Actual: `pickImageFilesInRenderer - focus-race regression (DEF-046) > resolves empty when focus fires and no change ever lands` times out at 5000ms (`Test timed out in 5000ms`). Operator run #189 (commit 773f05c, V1.46.0): 1 failed test file / 561 passed; 1 failed test / 7091 passed / 1 skipped; job `verify` exit 1. Operator reports the failure on every push.
+
+Screenshot: none (unit test). CI run #189, job `verify` exit 1.
+
+History:
+- orchestrator: filed from operator report (TFL-230). Escape class: `ESCAPE: wrong-oracle` - a test exists for the DEF-046 fallback path but is under-specified (real 800ms wall-clock timer and a pending picker whose `focus` listener leaks across tests), so it is not deterministically red locally but times out in CI. Root-cause characterization assigned to frontend-dev (TFL-234); qa verification and CLOSED to follow.
+- qa: retest FAIL, left OPEN (TFL-230 / TFL-243). Items 1-2 PASS: `npm.cmd run test:unit -- test/unit/renderer/pickImageFiles.test.ts` run 5x -> each `Test Files 1 passed (1)` / `Tests 5 passed (5)` / 0 failed (durations 1.64-1.81s); `git diff --name-only` does NOT list `src/renderer/utils/pickImageFiles.ts` (production unchanged). Items 3-4 FAIL: `npm.cmd run test:unit -- test/unit/renderer` -> `Test Files 1 failed | 453 passed (454)`; `Tests 5 failed | 4832 passed (4837)`. `npm.cmd run verify:full` -> conventions clean (319 source files), tsc green; `Test Files 1 failed | 564 passed (565)`; `Tests 5 failed | 7109 passed (7114)`. All 5 failures are deterministic in `test/unit/renderer/phase22_titlebarFileGroup.test.tsx` (DEF-245/DEF-428 tab-scroll), e.g. `AssertionError: expected "vi.fn()" to be called 1 times, but got 0 times` and `expected undefined to be <div class="tab tab-active" ...>`; reproduces running that file alone (5 failed | 26 passed, 31). Unrelated to TFL-230's test-only change: that file imports AppHeader/CommandBar/App.tsx, none modified in the working tree (only styles.css modified by other phase work); DEF-460's own test is green. Node v24.19.0 (CI Node 24). CI not re-runnable here.
+- qa: retest PASS on DEF-460's own oracle, kept OPEN by the phase-close gate (TFL-255). `npm.cmd run test:unit -- test/unit/renderer/pickImageFiles.test.ts` -> `Test Files 1 passed (1)` / `Tests 5 passed (5)` / 0 failed (1.75s). `git diff --name-only` does NOT list `src/renderer/utils/pickImageFiles.ts` (production unchanged). Item 3 renderer suite and item 4 `verify:full` are RED on unrelated Phase 78 notice unit oracles (6 failed; see DEF-469) - the TFL-230 phase-close gate requires items 1-5 all green, so this entry remains OPEN until DEF-469 is fixed and `verify:full` is 0 failed. Raw output: `test-fixtures/TFL-255-item2.txt`, `test-fixtures/TFL-255-item3.txt`, `test-fixtures/TFL-255-item4.txt`.
+- qa: CLOSED (TFL-230 retest, TFL-255 re-run after TFL-284 fixed DEF-469). pickImageFiles 5/5; phase22 31/31 3x; renderer `Test Files 455 passed (455)` / `Tests 4860 passed (4860)` 0 failed; `verify:full` conventions clean (319 source files) + tsc green, `Test Files 566 passed (566)` / `Tests 7137 passed (7137)` 0 failed; `git diff --name-only` does NOT list `src/renderer/utils/pickImageFiles.ts` (production unchanged). CI `verify` gate green locally.
 
 ## DEF-459: The Phase 72 geometry leaves the 3-tab tear-out oracle `e2e/phase61_tab_tearout.spec.cjs` stale - it samples the dragged tab's box before mousedown activation, so the follow assertion is off by the 4.5px active/inactive delta
 

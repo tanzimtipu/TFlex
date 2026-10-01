@@ -20,7 +20,7 @@
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { createRoot } from "react-dom/client";
 import { act } from "react";
 import type { ReactElement } from "react";
@@ -264,59 +264,46 @@ describe("Phase 22 — relocated Save state semantics (unchanged)", () => {
 });
 
 // ---------------------------------------------------------------------------
-// DEF-245 — the active tab must be scrolled into view. At the 640px
-// minimum width the strip is narrower than a couple of tabs, so opening a
-// document (or switching to one) near the end used to leave its tab
-// entirely off-screen with `.tab-list` still at scrollLeft 0.
+// DEF-245 (repointed by Phase 72) — the active tab is NOT scrolled into view.
+//
+// The original guard existed because `.tab-list` was a horizontal scroll
+// container, so a tab opened near the end of the strip could sit clipped
+// off-screen with the list still at scrollLeft 0. Phase 72 (commit 21b0922,
+// item 8) RETIRED the scroll container: every tab is kept in ONE row by a
+// uniform fit width (`--tf-tab-width`), so there is no `scrollLeft`, no
+// `scrollIntoView`, and no reveal to schedule. The user-facing guarantee still
+// matters — the active tab stays RENDERED and marked active inside the strip —
+// so this block now pins that instead of the removed reveal.
 // ---------------------------------------------------------------------------
-describe("DEF-245 — the active tab is scrolled into view", () => {
-  const originalScrollIntoView = Element.prototype.scrollIntoView;
-  const originalMatchMedia = window.matchMedia;
-
-  function stubScrollIntoView(): ReturnType<typeof vi.fn> {
-    const spy = vi.fn();
-    Element.prototype.scrollIntoView = spy as unknown as Element["scrollIntoView"];
-    return spy;
-  }
-
-  afterEach(() => {
-    if (originalScrollIntoView === undefined) {
-      delete (Element.prototype as { scrollIntoView?: unknown }).scrollIntoView;
-    } else {
-      Element.prototype.scrollIntoView = originalScrollIntoView;
-    }
-    if (originalMatchMedia === undefined) {
-      delete (window as { matchMedia?: unknown }).matchMedia;
-    } else {
-      window.matchMedia = originalMatchMedia;
-    }
-  });
-
-  function stubReducedMotion(matches: boolean): void {
-    const mql = {
-      matches,
-      media: "(prefers-reduced-motion: reduce)",
-      onchange: null,
-      addEventListener: NOOP,
-      removeEventListener: NOOP,
-      addListener: NOOP,
-      removeListener: NOOP,
-      dispatchEvent: (): boolean => false,
-    };
-    Object.defineProperty(window, "matchMedia", {
-      configurable: true,
-      writable: true,
-      value: (): typeof mql => mql,
-    });
-  }
-
+describe("DEF-245 — the active tab stays in the strip (Phase 72 retired the reveal)", () => {
   const TABS = [
     { id: "a", title: "a.pdf", modified: false },
     { id: "b", title: "b.pdf", modified: false },
   ];
 
-  it("scrolls the newly active tab on open, switch and close", () => {
-    const spy = stubScrollIntoView();
+  it("the AppHeader source never calls scrollIntoView / writes scrollLeft", () => {
+    const source = readFileSync("src/renderer/components/AppHeader.tsx", "utf8");
+    expect(source).not.toContain("scrollIntoView");
+    // The reorder drop-slot math keeps `el.scrollLeft` as a read term, but
+    // there is no reveal write (`list.scrollLeft +=`).
+    expect(source).not.toContain("scrollLeft +=");
+  });
+
+  it("the active tab is not scrolled: every tab is rendered in the strip", () => {
+    const host = renderHeader({ activeId: "b", tabs: TABS });
+    try {
+      const list = host.querySelector<HTMLElement>(".tab-list");
+      expect(list).not.toBeNull();
+      // Both tabs fit, so no fit width is written and the strip is not
+      // scroll-driven.
+      expect(list?.style.getPropertyValue("--tf-tab-width")).toBe("");
+      expect(host.querySelectorAll(".tab")).toHaveLength(2);
+    } finally {
+      host.remove();
+    }
+  });
+
+  it("keeps the active marker on the active tab as it switches in place", () => {
     const host = document.createElement("div");
     document.body.appendChild(host);
     const root = createRoot(host);
@@ -324,68 +311,26 @@ describe("DEF-245 — the active tab is scrolled into view", () => {
       act((): void => {
         root.render(headerElement({ activeId: "b", tabs: TABS }));
       });
-      expect(spy).toHaveBeenCalledTimes(1);
-      expect(spy.mock.instances[0]).toBe(host.querySelector('[data-tab-id="b"]'));
-      expect(spy).toHaveBeenLastCalledWith({
-        block: "nearest",
-        inline: "nearest",
-        behavior: "smooth",
-      });
+      expect(host.querySelectorAll(".tab-active")).toHaveLength(1);
+      expect(host.querySelector(".tab-active")?.getAttribute("data-tab-id")).toBe("b");
 
-      // Switch back to the first tab — that one is brought into view.
+      // Switch to the first tab — the marker moves, the strip does not.
       act((): void => {
         root.render(headerElement({ activeId: "a", tabs: TABS }));
       });
-      expect(spy).toHaveBeenCalledTimes(2);
-      expect(spy.mock.instances[1]).toBe(host.querySelector('[data-tab-id="a"]'));
-
-      // Close the active tab — the new active id is re-scrolled.
-      act((): void => {
-        root.render(headerElement({ activeId: "b", tabs: [TABS[1]] }));
-      });
-      expect(spy).toHaveBeenCalledTimes(3);
-      expect(spy.mock.instances[2]).toBe(host.querySelector('[data-tab-id="b"]'));
+      expect(host.querySelectorAll(".tab-active")).toHaveLength(1);
+      expect(host.querySelector(".tab-active")?.getAttribute("data-tab-id")).toBe("a");
     } finally {
       host.remove();
     }
   });
 
-  it("does not scroll on the welcome screen (no active document)", () => {
-    const spy = stubScrollIntoView();
+  it("shows no active marker on the welcome screen (no document)", () => {
     const host = renderHeader({ activeId: null, tabs: [] });
     try {
-      expect(spy).not.toHaveBeenCalled();
-    } finally {
-      host.remove();
-    }
-  });
-
-  it("collapses the scroll to an instant jump under prefers-reduced-motion", () => {
-    const spy = stubScrollIntoView();
-    stubReducedMotion(true);
-    const host = renderHeader({ activeId: "b", tabs: TABS });
-    try {
-      expect(spy).toHaveBeenCalledTimes(1);
-      expect(spy).toHaveBeenLastCalledWith({
-        block: "nearest",
-        inline: "nearest",
-        behavior: "auto",
-      });
-    } finally {
-      host.remove();
-    }
-  });
-
-  it("targets the active tab by its data-tab-id inside .tab-list", () => {
-    const spy = stubScrollIntoView();
-    const host = renderHeader({ activeId: "b", tabs: TABS });
-    try {
-      const list = host.querySelector(".tab-list");
-      expect(list).not.toBeNull();
-      const target = host.querySelector('[data-tab-id="b"]');
-      expect(target).not.toBeNull();
-      expect(list?.contains(target)).toBe(true);
-      expect(spy.mock.instances[0]).toBe(target);
+      expect(host.querySelector(".tab-list")).not.toBeNull();
+      expect(host.querySelectorAll(".tab")).toHaveLength(0);
+      expect(host.querySelector(".tab-active")).toBeNull();
     } finally {
       host.remove();
     }
@@ -621,89 +566,48 @@ describe("DEF-422 — the caption strip keeps a usable tab strip at the 640px mi
 });
 
 // ---------------------------------------------------------------------------
-// ADV-128 / DEF-428 — with many tabs, shrinking the window must bring the
-// active tab back into view. The scroll into view used to fire on `activeId`
-// change only; now the strip's measure/ResizeObserver path also re-asserts it
-// when the measured width changes.
+// ADV-128 / DEF-428 (repointed by Phase 72) — with many tabs, shrinking the
+// window used to re-trigger the active-tab reveal on the strip's measure /
+// ResizeObserver path. Phase 72 (commit 21b0922, item 8) RETIRED that path:
+// the ResizeObserver re-measures only to re-plan the uniform fit width
+// (`--tf-tab-width`), never to scroll. A width change must NOT produce a
+// reveal, and every tab — the active one included — stays rendered in the one
+// row.
 // ---------------------------------------------------------------------------
-describe("DEF-428 — a strip width change re-brings the active tab into view", () => {
-  const originalScrollIntoView = Element.prototype.scrollIntoView;
-  const originalClientWidth = Object.getOwnPropertyDescriptor(
-    HTMLElement.prototype,
-    "clientWidth",
-  );
-  const hadResizeObserver = Object.prototype.hasOwnProperty.call(globalThis, "ResizeObserver");
-  const originalResizeObserver = (globalThis as { ResizeObserver?: unknown }).ResizeObserver;
+describe("DEF-428 — a strip width change does not reveal (Phase 72 retired the scroll)", () => {
   const RESIZE_TABS = [
     { id: "a", title: "a.pdf", modified: false },
     { id: "b", title: "b.pdf", modified: false },
   ];
-  let width = 700;
-  let observed: (() => void) | null = null;
 
-  beforeEach(() => {
-    width = 700;
-    observed = null;
-    Element.prototype.scrollIntoView = vi.fn() as unknown as Element["scrollIntoView"];
-    Object.defineProperty(HTMLElement.prototype, "clientWidth", {
-      configurable: true,
-      get(this: HTMLElement): number {
-        return this.classList?.contains("tab-list") ? width : 0;
-      },
-    });
-    (globalThis as { ResizeObserver?: unknown }).ResizeObserver = class {
-      constructor(callback: () => void) {
-        observed = callback;
+  it("the measure path re-plans the fit width instead of scrolling", () => {
+    const source = readFileSync("src/renderer/components/AppHeader.tsx", "utf8");
+    expect(source).not.toContain("scrollIntoView");
+    expect(source).not.toContain("scrollLeft +=");
+    // The ResizeObserver re-measure writes the uniform fit custom property,
+    // never a scroll offset.
+    expect(source).toContain("ResizeObserver");
+    expect(source).toContain("--tf-tab-width");
+  });
+
+  it("keeps every tab (active included) rendered in the strip", () => {
+    const host = renderHeader({ activeId: "b", tabs: RESIZE_TABS });
+    try {
+      expect(host.querySelectorAll(".tab")).toHaveLength(2);
+      expect(host.querySelector(".tab-active")?.getAttribute("data-tab-id")).toBe("b");
+
+      // A width-stress re-render with more tabs still keeps the one row and
+      // the same active marker — nothing is orphaned off-strip.
+      const stressed = renderHeader({
+        activeId: "b",
+        tabs: [...RESIZE_TABS, { id: "c", title: "c.pdf", modified: false }],
+      });
+      try {
+        expect(stressed.querySelectorAll(".tab")).toHaveLength(3);
+        expect(stressed.querySelector(".tab-active")?.getAttribute("data-tab-id")).toBe("b");
+      } finally {
+        stressed.remove();
       }
-      observe(): void {}
-      disconnect(): void {}
-    };
-  });
-
-  afterEach(() => {
-    if (originalScrollIntoView === undefined) {
-      delete (Element.prototype as { scrollIntoView?: unknown }).scrollIntoView;
-    } else {
-      Element.prototype.scrollIntoView = originalScrollIntoView;
-    }
-    if (originalClientWidth !== undefined) {
-      Object.defineProperty(HTMLElement.prototype, "clientWidth", originalClientWidth);
-    } else {
-      delete (HTMLElement.prototype as unknown as Record<string, unknown>).clientWidth;
-    }
-    if (hadResizeObserver) {
-      (globalThis as { ResizeObserver?: unknown }).ResizeObserver = originalResizeObserver;
-    } else {
-      delete (globalThis as { ResizeObserver?: unknown }).ResizeObserver;
-    }
-  });
-
-  it("re-scrolls the active tab into view when the strip width changes", () => {
-    const spy = Element.prototype.scrollIntoView as unknown as ReturnType<typeof vi.fn>;
-    const host = renderHeader({ activeId: "b", tabs: RESIZE_TABS });
-    try {
-      // Mount brought the active tab into view exactly once.
-      expect(spy).toHaveBeenCalledTimes(1);
-      width = 300;
-      act((): void => {
-        observed?.();
-      });
-      expect(spy).toHaveBeenCalledTimes(2);
-      expect(spy.mock.instances[1]).toBe(host.querySelector('[data-tab-id="b"]'));
-    } finally {
-      host.remove();
-    }
-  });
-
-  it("does not re-scroll when the measured width is unchanged", () => {
-    const spy = Element.prototype.scrollIntoView as unknown as ReturnType<typeof vi.fn>;
-    const host = renderHeader({ activeId: "b", tabs: RESIZE_TABS });
-    try {
-      expect(spy).toHaveBeenCalledTimes(1);
-      act((): void => {
-        observed?.();
-      });
-      expect(spy).toHaveBeenCalledTimes(1);
     } finally {
       host.remove();
     }
