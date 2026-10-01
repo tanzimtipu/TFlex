@@ -1415,6 +1415,18 @@ pre-warn relevant entries when dispatching.
   messages lost; in-flight work committed mid-edit. Rule: a phase-close commit stages an
   explicit ALLOWLIST of the phase's tracked paths (never `add -A`), and the CTO lets the
   tree settle / confirms no other child is mid-write before assigning git-agent.
+- frontend-dev: opened and ran a child blocker itself (TFL-209, 2026-10-01) instead of
+  reporting the blocker to the CTO (surfaced during TFL-207). The outcome was in-role
+  and correct, but the CTO is the dispatch point. Rule: when a blocker is exposed
+  mid-task, report it to the CTO with the repro; never open or start a child issue
+  yourself.
+- CTO: briefed a fix for only the ONE failing oracle and left its identical sibling
+  stale (TFL-215 named `phase61_tearout_overflow.spec.cjs`; qa's TFL-216 blast-radius
+  then found the same pre-mousedown-baseline bug in `phase61_tab_tearout.spec.cjs`,
+  DEF-459), costing a full fix/retest cycle. Rule: when a defect is an oracle that
+  samples state before an interaction, grep the sibling specs in the same family for
+  the identical pattern and name them all in the brief (or ask for a grep-driven
+  sweep), not just the spec that happened to fail.
 
 ## 2026-08-28: to-do discipline + Defects heading restored
 

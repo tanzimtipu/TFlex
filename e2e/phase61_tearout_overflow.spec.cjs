@@ -1,17 +1,19 @@
-// Phase 61 — tab tear-out on an OVERFLOWING strip (DEF-432 / ADV-129).
+// Phase 61 — tab tear-out (DEF-432 / ADV-129), repointed to the Phase 72 contract.
 //
-// The passing 3-tab spec (phase61_tab_tearout.spec.cjs) proves the tear-out
-// presentation when the strip does not scroll. This spec widens the strip until
-// `.tab-list` overflows, scrolls the scroller to its maximum, then arms a
-// tear-out and moves the pointer straight DOWN past the threshold. It asserts
-// the two observable criteria of the DEF-432 fix:
-//   (a) releasing the strip's clip must NOT snap the scroller: every
-//       non-dragged tab's box stays within ~2px of its resting position;
-//   (b) the dragged tab's box still tracks the pointer on BOTH axes within
-//       ~2.5px.
-//
-// On the pre-fix build `.tab-list` lost `overflow-x: auto` when tear-out armed,
-// so `scrollLeft` snapped 30 -> 0 and the scrollbar collapsed; this spec fails.
+// Phase 72 (ruling 9, item 8) SUPERSEDES the DEF-432 premise: `.tab-list` stops
+// being a scroll container (`overflow-x: hidden`, no `::-webkit-scrollbar`
+// rule) and every tab shrinks UNIFORMLY to fit, so the strip never overflows and
+// `scrollLeft` is permanently 0 — there is nothing to "snap". The passing 3-tab
+// spec (phase61_tab_tearout.spec.cjs) proves the tear-out presentation; this spec
+// opens a full strip, arms a tear-out and moves the pointer straight DOWN past
+// the threshold. It asserts:
+//   (a) the tear-out still arms (`data-tab-dragging` + `data-tab-tearout`);
+//   (b) the dragged tab's box tracks the pointer on BOTH axes within ~2.5px;
+//   (c) every non-dragged tab's box stays within ~2px of its resting position;
+//   (d) `.tab-list` is non-scrolling: computed `overflow-x` is `hidden`,
+//       `scrollWidth <= clientWidth` and `scrollLeft === 0` (the retired
+//       scrollLeft-snap assertions are dropped — Phase 72 ruling 9 makes them
+//       trivially 0).
 //
 // Launches only through the canonical launchApp helper.
 const { test, expect } = require('@playwright/test');
@@ -22,6 +24,7 @@ const { hardClose } = require('./lib/helpers.cjs');
 const SHOTS = path.resolve(__dirname, '..', 'screenshots');
 const TOL_REST = 2; // px — non-dragged tabs must not move when tear-out arms
 const TOL_FOLLOW = 2.5; // px — dragged tab must track the pointer on both axes
+const TARGET_TABS = 8; // a full strip (Phase 72: it fits, uniformly)
 
 let app = null;
 let win = null;
@@ -50,7 +53,7 @@ async function listMetrics() {
       scrollWidth: list.scrollWidth,
       clientWidth: list.clientWidth,
       scrollLeft: list.scrollLeft,
-      scrollbar: list.offsetHeight - list.clientHeight,
+      overflowX: getComputedStyle(list).overflowX,
       left: +r.left.toFixed(2),
       right: +r.right.toFixed(2),
       top: +r.top.toFixed(2),
@@ -59,29 +62,20 @@ async function listMetrics() {
   });
 }
 
-// Open report.pdf, then click `+` until the strip genuinely overflows.
-async function openOverflowingStrip() {
+// Open report.pdf, then click `+` until the strip holds TARGET_TABS tabs.
+async function openFullStrip() {
   await win.locator('.sample-card').filter({ hasText: 'report.pdf' }).first().click();
   await win.waitForSelector('.workspace', { timeout: 30000 });
   await win.waitForTimeout(1200);
-  for (let i = 0; i < 45; i += 1) {
-    const m = await listMetrics();
-    if (m !== null && m.scrollWidth > m.clientWidth + 4) break;
+  for (let i = 1; i < TARGET_TABS; i += 1) {
     await win.locator('[data-new-tab]').click();
     await win.waitForTimeout(60);
   }
+  await win.waitForFunction((n) => document.querySelectorAll('[data-tab-id]').length >= n, TARGET_TABS, { timeout: 30000 });
+  await win.waitForTimeout(400);
   const m = await listMetrics();
   expect(m, '.tab-list exists').not.toBeNull();
-  expect(m.scrollWidth, 'the strip overflows horizontally').toBeGreaterThan(m.clientWidth + 4);
   return m;
-}
-
-async function scrollToMax() {
-  await win.evaluate(() => {
-    const list = document.querySelector('.tab-list');
-    if (list !== null) list.scrollLeft = list.scrollWidth;
-  });
-  await win.waitForTimeout(120);
 }
 
 async function allTabBoxes() {
@@ -98,8 +92,10 @@ async function allTabBoxes() {
   );
 }
 
-// The first non-active tab whose colour chip is fully visible in the scroller.
-async function pickVisibleNonActiveChip() {
+// The first non-active tab whose `.tab-title` is fully visible in the strip; the
+// retired `.tab-colour-chip` handle is repointed to `.tab-title` (mirrors
+// TFL-204: grab `x + min(6, w/2)`, `y + h/2`).
+async function pickVisibleNonActiveTab() {
   return win.evaluate(() => {
     const list = document.querySelector('.tab-list');
     const active = document.querySelector('[data-tab-id][aria-selected="true"]');
@@ -109,13 +105,14 @@ async function pickVisibleNonActiveChip() {
     for (const t of tabs) {
       const id = t.getAttribute('data-tab-id');
       if (id === activeId) continue;
-      const chip = t.querySelector('.tab-colour-chip');
-      if (chip === null) continue;
-      const cr = chip.getBoundingClientRect();
-      const cx = cr.left + cr.width / 2;
-      const cy = cr.top + cr.height / 2;
-      if (cx > lr.left + 6 && cx < lr.right - 6 && cr.top >= lr.top - 1 && cr.bottom <= lr.bottom + 1) {
-        return { id, x: cx, y: cy };
+      const title = t.querySelector('.tab-title');
+      if (title === null) continue;
+      const tr = title.getBoundingClientRect();
+      if (tr.width <= 0) continue;
+      const startX = tr.left + Math.min(6, tr.width / 2);
+      const startY = tr.top + tr.height / 2;
+      if (startX > lr.left + 1 && startX < lr.right - 1 && startY >= lr.top - 1 && startY <= lr.bottom + 1) {
+        return { id, startX, startY };
       }
     }
     return null;
@@ -139,26 +136,37 @@ async function sampleDragged(tabId) {
   }, tabId);
 }
 
-test('DEF-432: tear-out on an overflowing strip keeps the scroller and the non-dragged tabs still, and follows the pointer', async () => {
-  const overflow = await openOverflowingStrip();
-  console.log(`[P61-ovf] overflow metrics ${JSON.stringify(overflow)}`);
-  await scrollToMax();
-  const scrolled = await listMetrics();
-  expect(scrolled.scrollLeft, 'the scroller is scrolled past 0').toBeGreaterThan(0);
-  const stripBottom = scrolled.bottom;
+test('DEF-432 (Phase 72): tear-out on a full strip arms, follows the pointer, and keeps the strip non-scrolling', async () => {
+  const strip = await openFullStrip();
+  console.log(`[P61-ovf] strip metrics ${JSON.stringify(strip)}`);
+  const stripBottom = strip.bottom;
 
-  const pick = await pickVisibleNonActiveChip();
-  expect(pick, 'a visible non-active tab chip exists to drag').not.toBeNull();
+  // Phase 72 (ruling 9) — the strip is a clip, not a scroller.
+  expect(strip.overflowX, '.tab-list computed overflow-x is hidden').toBe('hidden');
+  expect(strip.scrollWidth, '.tab-list never overflows (scrollWidth <= clientWidth)').toBeLessThanOrEqual(strip.clientWidth);
+  expect(strip.scrollLeft, '.tab-list scrollLeft is 0 (no scroller)').toBe(0);
+
+  const pick = await pickVisibleNonActiveTab();
+  expect(pick, 'a visible non-active tab title exists to drag').not.toBeNull();
   const dragId = pick.id;
-  const startX = pick.x;
-  const startY = pick.y;
-
-  const restingAll = await allTabBoxes();
-  const restingDrag = restingAll[dragId];
-  console.log(`[P61-ovf] dragId=${dragId} start=(${startX.toFixed(2)},${startY.toFixed(2)}) scrollLeft=${scrolled.scrollLeft} restingDrag=${JSON.stringify(restingDrag)}`);
+  const startX = pick.startX;
+  const startY = pick.startY;
 
   await win.mouse.move(startX, startY);
   await win.mouse.down();
+  // DEF-453 — the mousedown runs the DEF-034 activation: the grabbed tab
+  // becomes active (drops to the strip's foot at 30px) and the ex-active tab
+  // re-centres at 26px. Let that SELECTION reflow settle before baselining, so
+  // the non-dragged tolerance below measures the TEAR-OUT reflow and not the
+  // activation. No pointer move has happened yet, so no drag transform is
+  // applied: `restingDrag` is the dragged tab's post-activation box and the
+  // follow math (restingDrag + pointer travel) stays exact.
+  await win.waitForTimeout(150);
+
+  const restingAll = await allTabBoxes();
+  const restingDrag = restingAll[dragId];
+  console.log(`[P61-ovf] dragId=${dragId} start=(${startX.toFixed(2)},${startY.toFixed(2)}) restingDrag=${JSON.stringify(restingDrag)}`);
+
   await win.mouse.move(startX, startY + 10, { steps: 4 }); // arm past the 6px total-movement threshold
   await win.waitForTimeout(80);
 
@@ -171,19 +179,20 @@ test('DEF-432: tear-out on an overflowing strip keeps the scroller and the non-d
   const tearing = await sampleDragged(dragId);
   const afterAll = await allTabBoxes();
   await win.screenshot({ path: path.join(SHOTS, 'p61-tearout-overflow.png') });
-  console.log(`[P61-ovf] tearOut=${tearing.tearOut} afterScrollLeft=${afterStrip.scrollLeft} afterScrollbar=${afterStrip.scrollbar} dragging=${tearing.dragging}`);
+  console.log(`[P61-ovf] tearOut=${tearing.tearOut} afterOverflowX=${afterStrip.overflowX} dragging=${tearing.dragging}`);
   console.log(`[P61-ovf] tearing=${JSON.stringify(tearing)}`);
 
-  // Precondition: the tear-out state actually armed.
+  // (a) Precondition: the tear-out state actually armed.
   expect(tearing, 'the dragged tab is still live').not.toBeNull();
   expect(tearing.dragging, 'the tab carries data-tab-dragging="true"').toBe('true');
   expect(tearing.tearOut, '.tab-list carries data-tab-tearout="true"').toBe('true');
 
-  // The scroller itself must be untouched — this is the DEF-432 mechanism.
-  expect(afterStrip.scrollLeft, 'scrollLeft does not snap when tear-out arms').toBe(scrolled.scrollLeft);
-  expect(afterStrip.scrollbar, 'the horizontal scrollbar thickness is unchanged').toBe(scrolled.scrollbar);
+  // (d) The strip is still a non-scrolling clip while the tear-out is armed.
+  expect(afterStrip.overflowX, 'the tear-out does not turn .tab-list into a scroller').toBe('hidden');
+  expect(afterStrip.scrollWidth, 'the tear-out keeps .tab-list clipped (scrollWidth <= clientWidth)').toBeLessThanOrEqual(afterStrip.clientWidth);
+  expect(afterStrip.scrollLeft, 'scrollLeft is 0 (Phase 72 ruling 9: no scroller)').toBe(0);
 
-  // (a) every non-dragged tab stays within ~2px of its resting position.
+  // (c) every non-dragged tab stays within ~2px of its resting position.
   for (const [id, box] of Object.entries(afterAll)) {
     if (id === dragId) continue;
     const rest = restingAll[id];

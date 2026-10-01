@@ -38,19 +38,19 @@ async function diag(page) {
   });
 }
 
-// One tear-out gesture: press the tab's colour chip, drag straight down below
+// One tear-out gesture: press the tab's title, drag straight down below
 // the strip, release. `which` selects the first or last tab in the strip.
 // Mirrors the proven gesture in e2e/phase58_tab_detach.spec.cjs (DEF-412 pure
 // downward movement).
 async function tearOut(page, which = 'first') {
-  const chips = page.locator('[data-tab-id] .tab-colour-chip');
-  const total = await chips.count();
+  const titles = page.locator('[data-tab-id] .tab-title');
+  const total = await titles.count();
   const idx = which === 'last' ? total - 1 : 0;
-  const chip = chips.nth(Math.max(0, idx));
-  const chipBox = await chip.boundingBox();
+  const title = titles.nth(Math.max(0, idx));
+  const titleBox = await title.boundingBox();
   const strip = await page.locator('.tab-list').boundingBox();
-  const sx = chipBox.x + chipBox.width / 2;
-  const sy = chipBox.y + chipBox.height / 2;
+  const sx = titleBox.x + titleBox.width / 2;
+  const sy = titleBox.y + titleBox.height / 2;
   const ty = strip.y + strip.height + 60;
   await page.mouse.move(sx, sy);
   await page.mouse.down();

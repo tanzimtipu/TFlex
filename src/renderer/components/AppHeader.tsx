@@ -38,7 +38,6 @@ import { BrandMark } from "./BrandMark";
 import { BrandWordmark } from "./BrandWordmark";
 import { TfMorph } from "./motion/TfMotion";
 import { useMorphPreset } from "./motion/useMorphPreset";
-import { useLiveReducedMotion, useInstantMotion } from "../hooks/useAnimations";
 
 export type AppHeaderTab = TabInput;
 
@@ -60,18 +59,17 @@ export const TOOL_SEARCH_ACCESSIBLE_NAME = "Search tools and commands (Ctrl+K)";
 export const FIND_IN_DOCUMENT_ACCESSIBLE_NAME = "Find in document (Ctrl+F)";
 
 /* -------------------------------------------------------------------------
- * Phase 59 (item 10) — tab-strip overflow: the pure planner.
+ * Phase 72 (item 7) — tab-strip overflow: the pure planner.
  *
- * The strip keeps ONE row: when the open tabs no longer fit, each tab SHRINKS
- * toward a floor, and once the floor is reached the tabs begin to STACK
- * (a negative inter-tab margin) so every tab keeps a visible sliver and the
- * active tab stays fully identifiable. The plan is computed from the measured
+ * The Phase 59 item 10 STACK/OVERLAP regime is RETIRED. The strip keeps ONE
+ * row by SHRINKING every tab uniformly: when the open tabs no longer fit,
+ * every tab takes the same width down toward a floor. Tabs never stack and
+ * never overlap (`overlap` is always 0 here and the per-tab overlap write
+ * is gone from the DOM and the sheet). The plan is computed from the measured
  * available width vs the tabs' natural width and applied to the DOM through
- * CSS custom properties: `--tf-tab-width` on `.tab-list` (consumed by `.tab`)
- * and `--tf-tab-overlap` on each tab's `<li>` wrapper (the real sibling,
- * consumed by the wrapped `.tab`), so the CSS `transition` animates the change
- * with the shared motion tokens (and the global reduced-motion / Animations-OFF
- * catch-all makes it instant).
+ * the `--tf-tab-width` CSS custom property on `.tab-list` (consumed by `.tab`),
+ * so the CSS `transition` animates the change with the shared motion tokens
+ * (and the global reduced-motion / Animations-OFF catch-all makes it instant).
  *
  * Everything here is pure and unit-tested; the component only measures.
  * ------------------------------------------------------------------------- */
@@ -79,14 +77,22 @@ export const FIND_IN_DOCUMENT_ACCESSIBLE_NAME = "Find in document (Ctrl+F)";
 /** The tab-to-tab gap (px) that the base CSS draws between two tabs. It is
  *  the SAME value `.tab`'s `margin-right` falls back to. */
 export const TAB_GAP = 2;
-/** The smallest pitch (width + gap − overlap) a tab may be squeezed to, so a
- *  sliver always remains visible and clickable. */
-export const TAB_MIN_PITCH = 34;
+/** Phase 72 (item 8) — the colorful per-tab shrink floor: once the uniform
+ *  fit width reaches this it may keep shrinking down to the hard floor below,
+ *  so the strip always contains every tab in one row. */
+export const MIN_TAB_WIDTH = 56;
+/** Phase 72 (item 8) — the hard per-tab floor, kept as the compactness
+ *  reference. TFL-213 (DEF-441) — it is NOT a lower bound on the fit any more:
+ *  when even this width would overflow the strip, the uniform fit drops below
+ *  it (down toward 0) so no tab ever leaves the bar and the strip never
+ *  scrolls (the title elides; the close control stays the last child). */
+export const HARD_MIN_TAB_WIDTH = 24;
 
 export interface TabOverflowPlan {
   /** The width every tab takes in the overflow regime. */
   width: number;
-  /** How far each tab over the first is pulled left (>= 0). */
+  /** How far each tab over the first is pulled left. Always 0 — the Phase 59
+   *  stack/overlap regime is retired (kept for the frozen contract shape). */
   overlap: number;
 }
 
@@ -98,15 +104,17 @@ function clampTab(value: number, min: number, max: number): number {
 }
 
 /**
- * Plan the per-tab width and inter-tab overlap for `count` tabs that want
- * `naturalWidth` each inside `availableWidth`.
+ * Plan the uniform per-tab width for `count` tabs that want `naturalWidth`
+ * each inside `availableWidth`.
  *
- *  - Fits: every tab keeps its natural width, no overlap.
- *  - Moderate overflow: the width shrinks uniformly toward `floor`, no overlap.
- *  - Extreme overflow: the width pins at `floor` and the tabs STACK; the
- *    overlap grows only as far as needed and never past
- *    `floor + gap − minPitch`, so every tab (the ACTIVE tab included, which the
- *    CSS keeps above its neighbours) keeps at least `minPitch` px of pitch.
+ *  - Fits: every tab keeps its natural width.
+ *  - Overflow: the width shrinks uniformly to the LARGEST value that still
+ *    satisfies `count * width + (count - 1) * gap <= availableWidth`. The
+ *    `floor` is applied only while it still fits — if even the floor would
+ *    overflow, the width drops below it (and below `HARD_MIN_TAB_WIDTH`, down
+ *    to 0), so the strip always contains every tab in ONE row. Tabs NEVER
+ *    stack and NEVER overlap (Phase 72 item 7 retired the Phase 59 overlap
+ *    regime), so `overlap` is always 0.
  */
 export function planTabOverflow(args: {
   count: number;
@@ -114,59 +122,61 @@ export function planTabOverflow(args: {
   availableWidth: number;
   floor: number;
   gap?: number;
-  minPitch?: number;
 }): TabOverflowPlan {
   const count = Math.max(0, Math.floor(args.count));
   const natural = Math.max(0, args.naturalWidth);
   const floor = clampTab(Math.max(0, args.floor), 0, natural);
   const gap = args.gap ?? TAB_GAP;
-  const minPitch = Math.max(1, args.minPitch ?? TAB_MIN_PITCH);
 
   if (count <= 0) return { width: natural, overlap: 0 };
-  if (count === 1) {
-    return { width: clampTab(args.availableWidth, floor, natural), overlap: 0 };
-  }
 
   const required = count * natural + (count - 1) * gap;
   if (required <= args.availableWidth) return { width: natural, overlap: 0 };
 
-  // Shrink uniformly first; only stack once the floor is reached.
-  const noOverlapWidth = (args.availableWidth - (count - 1) * gap) / count;
-  if (noOverlapWidth >= floor) return { width: noOverlapWidth, overlap: 0 };
+  // Shrink uniformly to the fit width; the compactness floor can only lift the
+  // width while it still fits. TFL-213 (DEF-441) — the fit invariant wins, so
+  // the width may legally fall below `floor` (and below HARD_MIN_TAB_WIDTH):
+  // `count * width + (count - 1) * gap <= availableWidth` always holds.
+  const fit = Math.max(0, (args.availableWidth - (count - 1) * gap) / count);
+  const lower = floor <= fit ? floor : 0;
+  return {
+    width: clampTab(fit, lower, natural),
+    overlap: 0,
+  };
+}
 
-  const occupiedAtFloor = count * floor + (count - 1) * gap;
-  const maxOverlap = Math.max(0, floor + gap - minPitch);
-  const needed = (occupiedAtFloor - args.availableWidth) / (count - 1);
-  return { width: floor, overlap: clampTab(needed, 0, maxOverlap) };
+/**
+ * Phase 72 (item 8) / TFL-209 — the width the uniform tab fit may actually
+ * use, after the strip's padding, the "+" affordance and the TRAILING gap.
+ *
+ * `planTabOverflow` reserves `(count - 1) * gap` between the tabs, but the
+ * base CSS (`styles.css` `.tab { margin-right: 2px }` and the colorful
+ * override) draws `margin-right: TAB_GAP` on EVERY `.tab` — the last one
+ * included. Because the "+" `<li>` follows the last tab, the rendered strip is
+ * exactly ONE gap wider than the plan, which pushed `scrollWidth` to
+ * `clientWidth + TAB_GAP`. Subtracting the trailing gap here makes the plan
+ * account for the full rendered width, so `scrollWidth <= clientWidth` holds
+ * on the nose (the Phase 72 item 8 invariant).
+ */
+export function tabFitAvailableWidth(args: {
+  clientWidth: number;
+  paddingLeft: number;
+  paddingRight: number;
+  plusWidth: number;
+  gap?: number;
+}): number {
+  const gap = args.gap ?? TAB_GAP;
+  return args.clientWidth - args.paddingLeft - args.paddingRight - args.plusWidth - gap;
 }
 
 /** Per-style natural width (the tab at rest) and shrink floor. The colorful
- *  set is a single uniform 180px width with a 132px shrink floor; the standard
- *  set sizes to content, so its natural is the softer ceiling and its floor is smaller. */
+ *  set is a single uniform 180px width; Phase 72 (item 8) drops its floor to
+ *  `MIN_TAB_WIDTH` so the strip always fits every tab. The standard set sizes
+ *  to content, so its natural is the softer ceiling and its floor is smaller. */
 export const TAB_OVERFLOW_METRICS: Readonly<Record<TabStyle, { natural: number; floor: number }>> = {
-  colorful: { natural: 180, floor: 132 },
+  colorful: { natural: 180, floor: MIN_TAB_WIDTH },
   standard: { natural: 168, floor: 96 },
 };
-
-// DEF-433 (instant path) — the post-reorder active-tab reveal settles over
-// several frames (the strip keeps reflowing after the commit). The reveal is
-// re-applied every frame until the active tab's content position has been
-// stable this many consecutive frames, capped so it can never loop for ever.
-const ACTIVE_TAB_SETTLE_STABLE_FRAMES = 4;
-const ACTIVE_TAB_SETTLE_MAX_FRAMES = 48;
-
-/** DEF-433 — the horizontal scroll delta (px) that brings `tab` fully inside
- *  the `viewport` box. 0 when it is already visible; the nearest violating
- *  edge wins when the tab is wider than the viewport. Pure, so the reveal
- *  geometry is unit-tested directly (jsdom has no layout). */
-export function activeTabScrollDelta(
-  tab: { left: number; right: number },
-  viewport: { left: number; right: number },
-): number {
-  if (tab.left < viewport.left) return tab.left - viewport.left;
-  if (tab.right > viewport.right) return tab.right - viewport.right;
-  return 0;
-}
 
 interface AppHeaderProps {
   activeId: string | null;
@@ -373,9 +383,8 @@ export function AppHeader(props: AppHeaderProps): ReactElement {
   const themeTriggerRef = useRef<HTMLButtonElement | null>(null);
   const themePopoverRef = useRef<HTMLDivElement | null>(null);
   const themeOptionRefs = useRef<Array<HTMLButtonElement | null>>([]);
-  // DEF-245 — the tab strip's scroll container (.tab-list). The
-  // active-tab visibility effect below reads it to bring a tab that
-  // overflows the caption strip back into view.
+  // Phase 72 (item 8) — the tab strip (.tab-list). The measure effect below
+  // reads it to size the uniform fit width; the strip is not a scroll container.
   const tabListRef = useRef<HTMLUListElement | null>(null);
   const themeMorph = useMorphPreset({
     open: themeMenuOpen,
@@ -495,162 +504,46 @@ export function AppHeader(props: AppHeaderProps): ReactElement {
     [selected, focusThemeOption, onThemeSelect],
   );
 
-  // DEF-245 — keep the ACTIVE tab visible. At the 640px minimum window
-  // width the caption strip is narrower than a couple of tabs, so a
-  // document opened (or switched to) near the end of the strip used to
-  // sit entirely off-screen with `.tab-list` still at scrollLeft 0. On
-  // every active-tab change (open / switch / new tab / close) scroll the
-  // active tab back into view. Native `inline: "nearest"` is a no-op when
-  // the tab is already fully visible, so an ordinary click on a visible
-  // tab never moves the strip. Motion rides the shared Phase-20 system:
-  // a smooth scroll normally, an instant jump under
-  // prefers-reduced-motion (no hardcoded duration) or when the Phase-23
-  // Animations setting is OFF (the effective-motion gate).
-  const reducedMotion = useLiveReducedMotion();
-  const instantMotion = useInstantMotion(reducedMotion);
-  // DEF-428 — the active tab must stay in view when the strip itself is
-  // resized, not only when `activeId` changes. `scrollActiveIntoView` is the
-  // one scroll path, shared by the active-id effect and the strip's measure
-  // path (below). It reads the CURRENT active id / motion from refs so the
-  // long-lived ResizeObserver callback never captures a stale closure.
-  const activeIdRef = useRef<string | null>(activeId);
-  activeIdRef.current = activeId;
-  const instantMotionRef = useRef(instantMotion);
-  instantMotionRef.current = instantMotion;
-  // DEF-433 — a reorder changes neither `activeId`, `tabs.length` nor the
-  // motion gate, so the effect below never re-ran and a reordered active tab
-  // could sit clipped at the squeezed strip edge. The drag commit bumps this
-  // counter so the ONE scroll path re-runs AFTER the reducer's DOM order /
-  // reflow has committed.
-  const [scrollNudge, setScrollNudge] = useState(0);
-  // DEF-433 — the active tab element inside the strip, if present. Shared by
-  // the smooth/animated reveal and the instant settle path below.
-  const findActiveTab = useCallback((): HTMLElement | undefined => {
-    const id = activeIdRef.current;
-    const list = tabListRef.current;
-    if (id === null || list === null) return undefined;
-    return Array.from(list.querySelectorAll<HTMLElement>("[data-tab-id]")).find(
-      (el) => el.dataset.tabId === id,
-    );
-  }, []);
-  const scrollActiveIntoView = useCallback((): void => {
-    const tab = findActiveTab();
-    if (tab === undefined || typeof tab.scrollIntoView !== "function") return;
-    tab.scrollIntoView({
-      block: "nearest",
-      inline: "nearest",
-      behavior: instantMotionRef.current ? "auto" : "smooth",
-    });
-  }, [findActiveTab]);
-  // DEF-433 (instant path) — a single `scrollIntoView`, even deferred a frame
-  // or two, measures a strip that is STILL reflowing: the post-reorder layout
-  // keeps shifting for several frames, so the scroll lands on a mid-flight
-  // target and the reordered active tab settles clipped. This applies the
-  // horizontal offset DIRECTLY (deterministic; no `inline: nearest` guess over
-  // a moving box) and the settle loop below re-applies it every frame until the
-  // tab's content position has been stable for several frames.
-  const revealActiveTab = useCallback((): void => {
-    const list = tabListRef.current;
-    const tab = findActiveTab();
-    if (list === null || tab === undefined) return;
-    const listRect = list.getBoundingClientRect();
-    const tabRect = tab.getBoundingClientRect();
-    const delta = activeTabScrollDelta(tabRect, listRect);
-    if (Math.abs(delta) < 0.5) return;
-    list.scrollLeft += delta;
-  }, [findActiveTab]);
-  useEffect(() => {
-    scrollActiveIntoView();
-  }, [activeId, tabs.length, instantMotion, scrollNudge, scrollActiveIntoView]);
-
-  // DEF-433 — the settle re-assert. The animated path waits for the `.tab`
-  // transform `transitionend` (the drag transform animating back into the
-  // reordered slot). The instant path (reduced motion / Animations OFF) has no
-  // long transition to wait on, yet the strip still reflows for many frames
-  // after the commit, so a fixed one/two-frame delay is empirically too early.
-  // Instead, re-apply `revealActiveTab` every frame and stop only once the
-  // active tab's content position has been stable for several consecutive
-  // frames (bounded so it can never loop for ever).
-  useEffect((): (() => void) | undefined => {
-    if (scrollNudge === 0) return undefined;
-    const list = tabListRef.current;
-    if (list === null) return undefined;
-    if (instantMotion) {
-      let raf = 0;
-      let frames = 0;
-      let stable = 0;
-      let lastKey = Number.NaN;
-      const contentLeftKey = (): number => {
-        const tab = findActiveTab();
-        if (tab === undefined) return Number.NaN;
-        const key =
-          tab.getBoundingClientRect().left -
-          list.getBoundingClientRect().left +
-          list.scrollLeft;
-        return Math.round(key * 2) / 2;
-      };
-      const tick = (): void => {
-        revealActiveTab();
-        const key = contentLeftKey();
-        stable = key === lastKey ? stable + 1 : 0;
-        lastKey = key;
-        frames += 1;
-        if (stable < ACTIVE_TAB_SETTLE_STABLE_FRAMES && frames < ACTIVE_TAB_SETTLE_MAX_FRAMES) {
-          raf = window.requestAnimationFrame(tick);
-        }
-      };
-      raf = window.requestAnimationFrame(tick);
-      return (): void => {
-        if (raf !== 0) window.cancelAnimationFrame(raf);
-      };
-    }
-    const tab = findActiveTab();
-    if (tab === undefined) return undefined;
-    const onTransitionEnd = (e: TransitionEvent): void => {
-      if (e.target === tab && e.propertyName === "transform") scrollActiveIntoView();
-    };
-    tab.addEventListener("transitionend", onTransitionEnd);
-    return (): void => {
-      tab.removeEventListener("transitionend", onTransitionEnd);
-    };
-  }, [scrollNudge, instantMotion, scrollActiveIntoView, revealActiveTab, findActiveTab]);
-
-  // Phase 59 (item 10) — the overflow plan. Measure the strip's content width
-  // and plan a per-tab width + overlap from the style's natural width. The
-  // plan is written to `.tab-list` as CSS custom properties; the CSS transition
+  // Phase 72 (item 8) — the overflow plan. Measure the strip's content width
+  // and plan ONE uniform per-tab width from the style's natural width. The
+  // plan is written to `.tab-list` as `--tf-tab-width`; the CSS transition
   // (shared motion token) animates the change, and the global reduced-motion /
   // Animations-OFF catch-all collapses it to instant. Nothing is applied while
   // the tabs fit, so the resting look (auto width) is untouched. `count` and
   // the style drive a re-plan; a ResizeObserver re-measures on width changes.
+  // The strip is no longer a scroll container, so there is no scroll path.
   const overflowMetrics = TAB_OVERFLOW_METRICS[tabStyle] ?? TAB_OVERFLOW_METRICS.colorful;
   const [tabOverflow, setTabOverflow] = useState<TabOverflowPlan | null>(null);
-  // DEF-428 — the last measured strip width. A change (a window resize) is the
-  // signal to bring the active tab back into view; `null` before the first
-  // measurement so the mount pass is left to the active-id effect above (no
-  // double scroll on open).
-  const lastStripWidthRef = useRef<number | null>(null);
   useEffect((): (() => void) | undefined => {
     const list = tabListRef.current;
     if (list === null) return undefined;
     const measure = (): void => {
       const computed = window.getComputedStyle(list);
-      const padding =
-        (parseFloat(computed.paddingLeft) || 0) + (parseFloat(computed.paddingRight) || 0);
+      const paddingLeft = parseFloat(computed.paddingLeft) || 0;
+      const paddingRight = parseFloat(computed.paddingRight) || 0;
+      const padding = paddingLeft + paddingRight;
+      // Phase 72 (item 8) — reserve the "+" new-tab button so it is never
+      // clipped by the fit width.
+      const plus =
+        (list.querySelector(".tab-list-new") as HTMLElement | null)?.offsetWidth ?? 0;
       const available = list.clientWidth - padding;
-      // DEF-428 — a width change re-asserts the active tab's visibility so a
-      // shrinking window can never scroll the active tab out of the strip.
-      const previous = lastStripWidthRef.current;
-      lastStripWidthRef.current = available;
-      if (previous !== null && previous !== available) scrollActiveIntoView();
       // jsdom / a zero-width strip: leave the resting layout alone.
       if (!(available > 0)) {
         setTabOverflow(null);
         return;
       }
+      // TFL-209 — reserve the "+" AND the trailing `.tab` margin so the plan
+      // matches the rendered `scrollWidth` (never `clientWidth + TAB_GAP`).
+      const fitWidth = tabFitAvailableWidth({
+        clientWidth: list.clientWidth,
+        paddingLeft,
+        paddingRight,
+        plusWidth: plus,
+      });
       const next = planTabOverflow({
         count: tabs.length,
         naturalWidth: overflowMetrics.natural,
-        availableWidth: available,
+        availableWidth: fitWidth,
         floor: overflowMetrics.floor,
       });
       setTabOverflow((prev) =>
@@ -664,26 +557,19 @@ export function AppHeader(props: AppHeaderProps): ReactElement {
     return (): void => {
       observer?.disconnect();
     };
-  }, [tabs.length, tabStyle, overflowMetrics.natural, overflowMetrics.floor, scrollActiveIntoView]);
+  }, [tabs.length, tabStyle, overflowMetrics.natural, overflowMetrics.floor]);
 
-  // Apply the plan only when the tabs do NOT fit (a shrink or a stack). While
+  // Apply the fit width only when the tabs do NOT fit (a uniform shrink). While
   // they fit, `tabOverflow` may still be the "natural" plan — clearing the
-  // custom properties keeps the tabs' own auto sizing. The width rides
-  // `--tf-tab-width` on `.tab-list` (the `.tab` rule consumes it); the overlap
-  // is applied PER TAB as `--tf-tab-overlap` on each tab's `<li>` wrapper (the
-  // real sibling inside `.tab-list`), so the inter-tab margin lands on the
-  // wrapped `.tab` — see AnimatedTab. DEF-420: the overlap used to be written
-  // on `.tab-list` and consumed by `.tab + .tab`, a selector the wrapped tabs
-  // never matched.
+  // custom property keeps the tabs' own auto sizing. The width rides
+  // `--tf-tab-width` on `.tab-list` (the `.tab` rule consumes it). Phase 72
+  // (item 7) retired the per-tab overlap write entirely: tabs never stack.
   const squeezing =
-    tabOverflow !== null &&
-    (tabOverflow.overlap > 0 || tabOverflow.width < overflowMetrics.natural - 0.5);
+    tabOverflow !== null && tabOverflow.width < overflowMetrics.natural - 0.5;
   const tabOverflowStyle: CSSProperties | undefined =
     tabOverflow !== null && squeezing
       ? ({ "--tf-tab-width": `${tabOverflow.width}px` } as CSSProperties)
       : undefined;
-  // 0 when the tabs fit or merely shrink; the first tab never overlaps.
-  const tabOverlapPx = tabOverflow !== null && squeezing ? tabOverflow.overlap : 0;
 
   // Tab strip interaction contract (DEF-034): activation resolves on
   // MOUSEDOWN via the shared resolveTabMouseDown classifier, so padding,
@@ -754,9 +640,9 @@ export function AppHeader(props: AppHeaderProps): ReactElement {
   const [dragWidth, setDragWidth] = useState(0);
   // DEF-432 — the dragged tab's geometry captured ONCE at arm time, before any
   // drag transform is applied. While the tear-out arms the tab is floated OUT
-  // of the `.tab-list` scroller: AnimatedTab positions it absolutely against
-  // `.tab-area` (the non-scrolling clip owner) at these coordinates, so the
-  // scroller never releases `overflow-x`. `reserve*` keeps the dragged `<li>`
+  // of the `.tab-list`: AnimatedTab positions it absolutely against `.tab-area`
+  // (the non-scrolling clip owner) at these coordinates, so the strip stays
+  // `overflow: hidden`. `reserve*` keeps the dragged `<li>`
   // occupying its original slot so the non-dragged tabs cannot shift.
   const [dragRect, setDragRect] = useState<{
     left: number;
@@ -994,11 +880,6 @@ export function AppHeader(props: AppHeaderProps): ReactElement {
         if (shouldRestoreActiveOnReorder(startActive, dragging, startIndex, target)) {
           onActivateRef.current(startActive as string);
         }
-        // DEF-433 — re-assert the active tab's visibility once the reordered
-        // DOM has committed. The nudge keys the shared scroll effect so it runs
-        // after reflow (never on a plain click / cancelled drag, which never
-        // reach this commit branch).
-        setScrollNudge((n) => n + 1);
       }
       clearDrag();
     };
@@ -1172,17 +1053,14 @@ export function AppHeader(props: AppHeaderProps): ReactElement {
                   // POSITION's palette slot, so the assignment is
                   // deterministic and neighbours can never collide.
                   colourSlot={tabColourSlot(index)}
-                  // Phase 59 (item 10) — the overlap lands on the <li> wrapper
-                  // (the real `.tab-list` sibling); the first tab never
-                  // overlaps the tab "before" it.
-                  overlapPx={index === 0 ? 0 : tabOverlapPx}
                   // Phase 60 — direct manipulation: the dragged tab follows
                   // the pointer, every other tab opens the insertion gap.
                   dragging={isDragging}
                   dragOffset={isDragging ? dragOffset : null}
                   // DEF-432 — while torn out the dragged tab floats out of the
-                  // `.tab-list` scroller (absolute against `.tab-area`) so the
-                  // scroller keeps its `overflow-x: auto` and scroll position.
+                  // `.tab-list` (absolute against `.tab-area`), which clips its
+                  // own overflow (`overflow: hidden`) and keeps the strip from
+                  // scrolling.
                   floating={isDragging && tearOut}
                   floatRect={isDragging ? dragRect : null}
                   reflowPx={reflowFor(index)}

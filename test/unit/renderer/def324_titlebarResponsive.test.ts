@@ -54,7 +54,9 @@ const WIDTHS = [1440, 1100, 900, 760, 640] as const;
 describe("DEF-324 — title bar keeps the tab strip usable at every supported width", () => {
   it.each(WIDTHS)("the tab strip contract is present at %ipx", () => {
     // The strip itself is width-independent: it always absorbs the leftover
-    // space and scrolls its own overflow.
+    // space. Phase 72 (item 8) retired its horizontal scroll: it clips
+    // (`overflow: hidden`) and every tab is kept in one row by the uniform
+    // fit width instead.
     const area = ruleBody(".tab-area");
     expect(area).not.toBeNull();
     expect(area).toMatch(/flex:\s*1 1 0/);
@@ -63,7 +65,8 @@ describe("DEF-324 — title bar keeps the tab strip usable at every supported wi
 
     const list = ruleBody(".tab-list");
     expect(list).not.toBeNull();
-    expect(list).toMatch(/overflow-x:\s*auto/);
+    expect(list).toMatch(/overflow:\s*hidden/);
+    expect(list).not.toMatch(/overflow-x:\s*auto/);
     expect(list).toMatch(/width:\s*100%/);
   });
 

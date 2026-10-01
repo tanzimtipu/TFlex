@@ -74,7 +74,7 @@ async function activeTabId() {
 }
 
 async function chipBox(tabId) {
-  return win.locator(`[data-tab-id="${tabId}"] .tab-colour-chip`).boundingBox();
+  return win.locator(`[data-tab-id="${tabId}"] .tab-title`).boundingBox();
 }
 
 async function stripState() {
@@ -143,15 +143,17 @@ test('criteria 1-3: past the threshold the dragged tab leaves the bar on both ax
 
   const strip = await stripState();
   const sb = strip.bottom;
-  const resting = await sampleDragged(dragId);
   const chip = await chipBox(dragId);
   const startX = chip.x + chip.width / 2;
   const startY = chip.y + chip.height / 2;
   const nonDragged = order.find((id) => id !== dragId);
-  console.log(`[P61] dragId=${dragId} active=${active0} stripBottom=${sb} resting=${JSON.stringify(resting)}`);
 
   await win.mouse.move(startX, startY);
   await win.mouse.down();
+  await win.waitForTimeout(150); // let the DEF-034 activation reflow settle
+  const resting = await sampleDragged(dragId); // post-activation baseline, no drag yet
+  console.log(`[P61] dragId=${dragId} active=${active0} stripBottom=${sb} resting=${JSON.stringify(resting)}`);
+
   await win.mouse.move(startX, startY + 10, { steps: 4 }); // arm past the 6px total-movement threshold
   await win.waitForTimeout(80);
 

@@ -35,16 +35,6 @@ export interface AnimatedTabProps {
    *  `data-tab-colour`; optional so a bare harness mount defaults to slot 0
    *  rather than an undefined colour. */
   colourSlot?: number;
-  /** Phase 59 (item 10) — how far (px, >= 0) this tab is pulled LEFT over the
-   *  previous one when the strip's overflow plan stacks the tabs. 0 / omitted
-   *  means "not overlapped" (the first tab, and every strip that still fits).
-   *  The value is declared as the `--tf-tab-overlap` custom property on the
-   *  `<li>` wrapper — the element that is a REAL sibling inside `.tab-list` —
-   *  and consumed by the wrapped `.tab`'s inter-tab margin rule, so the
-   *  negative margin lands on the box the user sees. (DEF-420: the value used
-   *  to be written on `.tab-list` and consumed by `.tab + .tab`, a selector the
-   *  wrapped tabs never matched.) */
-  overlapPx?: number;
   /** Phase 60 — this tab is the one currently under the pointer. It is lifted
    *  above the row and follows the pointer via `dragOffset`. */
   dragging?: boolean;
@@ -52,11 +42,11 @@ export interface AnimatedTabProps {
    *  a transform on the tab box so the dragged tab follows the pointer. */
   dragOffset?: { x: number; y: number } | null;
   /** DEF-432 — while the tear-out is armed the dragged tab floats OUT of the
-   *  `.tab-list` scroller: it is positioned absolutely against `.tab-area`
-   *  (the non-scrolling clip owner) at the area-relative `left`/`top`, so the
-   *  scroller keeps its `overflow-x: auto` and scroll position. `reserve*`
-   *  pins the wrapping `<li>` to its original size so the non-dragged tabs
-   *  cannot shift when the tab leaves the scroller's flow. */
+   *  `.tab-list`: it is positioned absolutely against `.tab-area` (the
+   *  non-scrolling clip owner) at the area-relative `left`/`top`, so the strip
+   *  keeps its `overflow: hidden` and never scrolls. `reserve*` pins the
+   *  wrapping `<li>` to its original size so the non-dragged tabs cannot shift
+   *  when the tab leaves the strip's flow. */
   floating?: boolean;
   floatRect?: {
     left: number;
@@ -82,7 +72,6 @@ export function AnimatedTab(props: AnimatedTabProps): ReactElement {
     active,
     modified,
     colourSlot = 0,
-    overlapPx = 0,
     dragging = false,
     dragOffset = null,
     floating = false,
@@ -105,20 +94,10 @@ export function AnimatedTab(props: AnimatedTabProps): ReactElement {
         ? { transform: `translateX(${reflowPx}px)` }
         : undefined;
 
-  // The overlap is declared on the <li> (the real `.tab-list` sibling) as the
-  // `--tf-tab-overlap` custom property; the wrapped `.tab` consumes it in the
-  // `.tab-list > li:not(:first-child) > .tab` margin rule. Only a positive
-  // overlap writes it, so the first tab and a non-overflowing strip keep the
-  // default 0px margin. */
-  const overlapStyle: CSSProperties | undefined =
-    overlapPx > 0 ? ({ "--tf-tab-overlap": `${-overlapPx}px` } as CSSProperties) : undefined;
-
   // DEF-432 — when torn out, pin the tab absolutely against `.tab-area` (the
   // containing block; `.tab-list` is left `position: static` for exactly this)
   // at its captured grab geometry. `.tab-area` is not a scroll container, so
-  // releasing its clip is harmless, while the `.tab-list` scroller stays
-  // intact. The live `dragOffset` transform still rides on top, so the tab
-  // tracks the pointer with no jump at the moment the float begins.
+  // releasing its clip is harmless, while `.tab-list` keeps `overflow: hidden`.
   const floatStyle: CSSProperties | undefined =
     floating && floatRect !== null
       ? {
@@ -182,7 +161,12 @@ export function AnimatedTab(props: AnimatedTabProps): ReactElement {
       exit="exit"
       data-animated-tab={id}
       data-tab-dragging={dragging ? "true" : undefined}
-      style={{ ...overlapStyle, ...reserveStyle }}
+      // TFL-213 (DEF-440) — the ACTIVE colorful tab must drop to the strip's
+      // foot. The flex item of `.tab-list` is this wrapping `<li>`, not the
+      // inner `.tab` div, so the row alignment is driven from here (the CSS
+      // `align-self` on `.tab-active` was inert on an inner block).
+      data-tab-active={active ? "true" : undefined}
+      style={reserveStyle}
     >
       <div
         className={active ? "tab tab-active" : "tab"}
@@ -205,13 +189,10 @@ export function AnimatedTab(props: AnimatedTabProps): ReactElement {
         style={{ ...dragStyle, ...floatStyle }}
         onMouseDown={onTabMouseDown}
       >
-        {/* Phase 45 (item 2) — the per-tab colour identity. A small filled
-         *  chip at the tab's leading edge, painted from the slot token. It
-         *  is the ONE colour-carrying element, so the tab's TEXT colour (and
-         *  therefore every contrast floor) is untouched by the colour rule —
-         *  the ACTIVE state still reads from the raised surface + accent
-         *  underline + strong text, never from the chip. */}
-        <span className="tab-colour-chip" aria-hidden />
+        {/* Phase 72 (item 3) — the always-on per-tab colour-identity chip is
+         *  RETIRED. `data-tab-colour` still drives `--tf-tab-accent` for the
+         *  tab body tint; the ONLY dot a tab may paint is `.tab-modified-dot`,
+         *  and only when `modified === true` (the conditional below). */}
         <span className="tab-title" title={title}>
           <span
             className={

@@ -527,6 +527,7 @@ async function readTabs() {
     };
     return [...document.querySelectorAll('.tab')].map((t) => {
       const cs = getComputedStyle(t);
+      const before = getComputedStyle(t, '::before');
       const chip = t.querySelector('.tab-colour-chip');
       const chipCs = chip ? getComputedStyle(chip) : null;
       const fg = parse(cs.color);
@@ -538,6 +539,12 @@ async function readTabs() {
         bg: cs.backgroundColor,
         color: cs.color,
         chip: chipCs ? chipCs.backgroundColor : null,
+        // Phase 72 (ruling 4, item 3) — the `.tab-colour-chip` is RETIRED; the
+        // only body-fill signal is the colorful `::before` mix (22% inactive /
+        // 41% active) with its 1px border.
+        chipCount: t.querySelectorAll('.tab-colour-chip').length,
+        beforeBg: before.backgroundColor,
+        beforeBorderWidth: before.borderTopWidth,
         contrast: fg ? +ratio(fg, bg).toFixed(2) : null,
       };
     });
@@ -559,16 +566,27 @@ test('P45-5 three adjacent tabs differ in all three themes; contrast floors', as
     const tabs = await readTabs();
     console.log(`[P45-5 ${theme}] ${JSON.stringify(tabs)}`);
     expect(tabs.length).toBe(3);
-    // Adjacent tabs carry different palette slots and different chip colours.
+    // Adjacent tabs carry different palette slots. Phase 72 (ruling 4, item 3)
+    // SUPERSEDES the Phase 45 colour-identity chip: `.tab-colour-chip` is
+    // deleted, `data-tab-colour` / `--tf-tab-accent` remain, and the active cue
+    // is the brighter `::before` body fill (41% mix vs the inactive 22%).
     expect(tabs[0].slot, `${theme}: tab0 vs tab1 slot`).not.toBe(tabs[1].slot);
     expect(tabs[1].slot, `${theme}: tab1 vs tab2 slot`).not.toBe(tabs[2].slot);
-    expect(tabs[0].chip, `${theme}: tab0 vs tab1 chip colour`).not.toBe(tabs[1].chip);
-    expect(tabs[1].chip, `${theme}: tab1 vs tab2 chip colour`).not.toBe(tabs[2].chip);
-    // The active tab is obvious: exactly one active, with the strong text tier.
+    for (const t of tabs) {
+      expect(t.chipCount, `${theme}: ${t.id} paints no retired .tab-colour-chip`).toBe(0);
+    }
+    // The active tab is obvious: exactly one active, brighter body fill, and the
+    // same 1px colorful body border on every tab.
     const active = tabs.filter((t) => t.active);
     expect(active.length, `${theme}: exactly one active tab`).toBe(1);
     const inactive = tabs.filter((t) => !t.active);
-    expect(active[0].color, `${theme}: active text is the strong tier`).not.toBe(inactive[0].color);
+    expect(
+      active[0].beforeBg,
+      `${theme}: active ::before fill (41% mix) differs from inactive (22% mix)`,
+    ).not.toBe(inactive[0].beforeBg);
+    for (const t of tabs) {
+      expect(t.beforeBorderWidth, `${theme}: ${t.id} ::before body border is 1px`).toBe('1px');
+    }
     // Text contrast floors on the tinted tabs (>= 4.5:1).
     for (const t of tabs) {
       console.log(`[P45-5 ${theme}] tab ${t.id} active=${t.active} contrast=${t.contrast}`);
@@ -780,7 +798,24 @@ test('P45-7 EDIT dock: Edit mode off is leftmost and the only pressed verb', asy
   // The armed verb carries the pressed treatment (accent wash + inset ring).
   const lead = state1.inline[0];
   console.log(`[P45-7 lead armed] bg=${lead.bg} color=${lead.color} shadow=${lead.boxShadow}`);
-  expect(lead.bg, 'the armed verb carries the accent wash').toContain('37, 99, 235');
+  // Phase 69C/70 (TFL-120) swapped the brand accent from the Phase-13 blue to
+  // the Jovrel violet. `.action-dock-verb[aria-pressed='true']` paints
+  // `background: var(--accent-soft)`, whose rgb equals `--accent`, so resolve
+  // the LIVE token instead of freezing a hex — the oracle then cannot go stale
+  // on the next brand hue change.
+  const accentRgb = await win.evaluate(() => {
+    const probe = document.createElement('span');
+    probe.style.color = 'var(--accent)';
+    document.body.appendChild(probe);
+    const resolved = getComputedStyle(probe).color;
+    probe.remove();
+    const m = /rgba?\(([^)]+)\)/.exec(resolved);
+    if (m === null) return null;
+    return m[1].split(',').map((s) => s.trim()).slice(0, 3).join(', ');
+  });
+  console.log(`[P45-7] live --accent rgb=${accentRgb}`);
+  expect(accentRgb, 'the live --accent token resolves to an rgb triple').not.toBeNull();
+  expect(lead.bg, `the armed verb carries the accent wash (${accentRgb})`).toContain(accentRgb);
   expect(lead.boxShadow, 'the armed verb carries the inset ring').toContain('inset');
 
   // Arm "Edit text": only editText is pressed; editToolOff is not.

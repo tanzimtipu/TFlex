@@ -1904,30 +1904,28 @@ input[type="checkbox"] {
   margin: 0;
   padding: 0 4px 0 4px;
   list-style: none;
-  overflow-x: auto;
-  overflow-y: hidden;
-  scrollbar-width: thin;
-  /* DEF-432 — `.tab-list` is the strip's horizontal SCROLL container, so it
-   * must stay `position: static`: a positioned scroll container would become
-   * the containing block for the Phase-61 floated dragged tab and re-clip it.
-   * The floated tab is instead positioned against `.tab-area`
-   * (`position: relative` above), the non-scrolling clip owner — so it escapes
-   * the scroller's clip without the scroller ever releasing `overflow-x`. */
+  /* Phase 72 (item 8) — the strip is NOT a scroll container: every tab is kept
+   * in one row by the uniform fit width, so the strip only ever clips.
+   *
+   * DEF-432 — `.tab-list` must stay `position: static`: a positioned clip
+   * container would become the containing block for the Phase-61 floated
+   * dragged tab and re-clip it. The floated tab is instead positioned against
+   * `.tab-area` (`position: relative` above), the clip owner — so it escapes
+   * the strip's clip without the strip scrolling. */
+  overflow: hidden;
 }
-
-.tab-list::-webkit-scrollbar { height: 0; }
 
 .tab {
   display: flex;
   align-items: center;
   gap: var(--sp-2);
   height: 34px;
-  /* Phase 59 (item 10) — the overflow plan writes a uniform width here when
-   * the tabs no longer fit; at rest this is `auto`, so the tab keeps its own
+  /* Phase 72 (item 7) — the overflow plan writes a uniform width here when the
+   * tabs no longer fit; at rest this is `auto`, so the tab keeps its own
    * content sizing. border-box makes that fixed width include the padding,
    * flex: 0 0 auto keeps the plan authoritative (no surprise further shrink),
    * and min-width: 0 lets the width shrink below the title's intrinsic size
-   * (the title ellipsizes). The colorful override re-imposes its 132px floor. */
+   * (the title ellipsizes). */
   box-sizing: border-box;
   flex: 0 0 auto;
   min-width: 0;
@@ -1956,9 +1954,10 @@ input[type="checkbox"] {
   /* Chunk 2 — tab switching animates the active surface + text
    * brightness over the 150-200ms band (--tf-motion-normal, 180ms)
    * instead of snapping; the strip layout itself never moves.
-   * Phase 59 (item 10) — the overflow width/overlap changes ride the SAME
-   * token so the shrink and stack animate smoothly (the global reduced-motion
-   * and Animations-OFF catch-alls collapse them to instant). */
+   * Phase 59 (item 10) — the overflow width changes ride the SAME
+   * token so the uniform shrink animates smoothly (the global reduced-motion
+   * and Animations-OFF catch-alls collapse them to instant). Phase 72 (item 7)
+   * retired the inter-tab overlap, so only the width animates. */
   transition:
     background var(--motion-normal) var(--ease-out),
     color var(--motion-normal) var(--ease-out),
@@ -1972,26 +1971,9 @@ input[type="checkbox"] {
     transform var(--motion-duration-fast) var(--motion-ease-standard);
 }
 
-/* Phase 59 (item 10) — the inter-tab overlap. Each tab after the first is
- * pulled left by the plan's overlap (0 at rest, growing negative only once the
- * shrink floor is reached), so the tabs PARTIALLY STACK in one row.
- *
- * DEF-420 — the consuming selector must match the RENDERED tree: every `.tab`
- * is a <div> wrapped in an animated `<li>` (AnimatedTab), so the tabs are NOT
- * siblings and the old `.tab + .tab` rule never matched. AppHeader writes the
- * plan's overlap as the `--tf-tab-overlap` custom property on each tab's <li>
- * (the real sibling), and this rule consumes it on the wrapped `.tab`, so the
- * negative margin lands on the box the user sees and rides the `.tab`'s
- * `margin-left` transition (shared motion token; instant under reduced motion /
- * Animations OFF). The "+" new-tab <li> and the drop marker have no `.tab`
- * child, so they are never pulled into the stack. */
-.tab-list > li:not(:first-child) > .tab {
-  margin-left: var(--tf-tab-overlap, 0px);
-}
-
-/* Phase 59 (item 10) — the ACTIVE tab paints above the neighbour that would
- * otherwise overlap its right edge (see the `.tab-active` z-index below), so
- * it stays fully visible and clickable however deep the stack becomes. */
+/* Phase 72 (item 7) — the Phase 59 inter-tab overlap rule is RETIRED: tabs
+ * never stack. They shrink UNIFORMLY instead (see `planTabOverflow` and
+ * `--tf-tab-width` on `.tab-list`). */
 
 /* ===========================================================================
  * Phase 45 (item 2) — DISTINCT TAB COLOURS.
@@ -2004,14 +1986,13 @@ input[type="checkbox"] {
  * two ADJACENT tabs always land on different slots — including after a close,
  * where the remaining indices re-flow.
  *
- * The colour is carried by the `.tab-colour-chip` (a filled leading chip) and
- * a WHISPER-soft 8% background wash. The wash is deliberately capped at 8%:
- * measured against the real header surfaces, the worst-case `--fg-muted`
- * inactive-text contrast is 5.32:1 (light, over ATTENTION) and 4.70:1 (dark,
- * over AFFIRMATIVE) — both above the 4.5:1 text floor. The chip itself is a
- * non-text mark (>= 3:1 against every header surface in every theme). The
- * ACTIVE tab keeps its raised surface + accent underline + `--fg-strong` text,
- * so a coloured tab can never read as selected.
+ * Phase 68 carried the colour as a soft flat `color-mix(...)` body tint; Phase
+ * 72 brightened it (22% inactive / 41% active) and RETIRED the always-on
+ * `.tab-colour-chip` identity mark (see item 3 below). `data-tab-colour` and
+ * `--tf-tab-accent` remain the single colour data path; the ONLY dot a tab may
+ * paint is `.tab-modified-dot`, painted iff `modified === true`. The ACTIVE tab
+ * is the brighter tint with a square foot, so a coloured tab can never read as
+ * selected by a per-tab mark.
  *
  * Palette slots (declared semantic tokens; no invented values):
  *   0 PRIMARY blue | 1 ATTENTION red | 2 AFFIRMATIVE green | 3 NEUTRAL slate
@@ -2028,16 +2009,8 @@ input[type="checkbox"] {
 .tab[data-tab-colour="2"] { --tf-tab-accent: var(--sem-affirmative); }
 .tab[data-tab-colour="3"] { --tf-tab-accent: var(--sem-neutral); }
 
-.tab-colour-chip {
-  flex: 0 0 auto;
-  width: 8px;
-  height: 8px;
-  border-radius: var(--radius-1);
-  /* Phase 51 (item 5) — the whole tab is now the colour, so the chip is a
-   *  lifted tint of the SAME slot (visible on the full-strength body, and
-   *  still per-slot distinct for the adjacent-tab check). */
-  background: var(--tf-tab-accent, var(--sem-neutral));
-}
+/* Phase 72 (item 3) — the `.tab-colour-chip` identity mark is RETIRED. The
+ * only tab dot is `.tab-modified-dot`, painted iff `modified === true`. */
 
 /* Phase 4 — tab hover. Phase 51 (item 5): the hover BRIGHTENS the tab's own
  * full-strength hue (filter, not a wash) so colour identity survives and the
@@ -2066,8 +2039,9 @@ input[type="checkbox"] {
     inset 0 2px 0 color-mix(in srgb, var(--tf-tab-ink) 45%, transparent),
     0 -2px 6px rgba(15, 23, 42, 0.08);
   border-color: transparent;
-  /* Phase 59 (item 10) — above the overlapping neighbour, so the active tab is
-   * never hidden by the tab that stacks over its right edge. */
+  /* Phase 59 (item 10) / Phase 72 (item 7) — the active tab paints above its
+   * neighbours (the Phase 59 stack is retired, but the active tab still leads
+   * the row and the floated drag tab rides above). */
   z-index: 2;
 }
 
@@ -2105,10 +2079,15 @@ input[type="checkbox"] {
 .tab-area[data-tab-style="colorful"] .tab {
   height: 26px;
   width: var(--tf-tab-width, 180px);
-  min-width: 132px;
-  max-width: 200px;
   box-sizing: border-box;
-  padding: 0 var(--sp-2) 0 var(--sp-3);
+  /* TFL-213 (DEF-441) — the horizontal padding yields when the uniform fit
+   * width is squeezed below the normal chrome, so the border-box width can
+   * actually reach the planned `--tf-tab-width`. At rest the 180px fallback
+   * keeps the normal sp-3 / sp-2 padding; without this the padding sum (20px)
+   * floored the rendered width and forced the 10-tab / 640px strip to
+   * overflow (scrollWidth 256 > clientWidth 156). */
+  padding: 0 min(var(--sp-2), calc(var(--tf-tab-width, 180px) * 0.25)) 0
+    min(var(--sp-3), calc(var(--tf-tab-width, 180px) * 0.25));
   margin-right: 2px;
   border: none;
   border-radius: 0;
@@ -2120,14 +2099,19 @@ input[type="checkbox"] {
 /* The tab BODY fill. Phase 62 — all four corners carry the SAME radius
  * (the DEF-409 square bottom and its outward flare are retired), so every
  * colorful tab reads as a compact rounded chip. The ACTIVE tab squares its
- * two BOTTOM corners in the override below so it can merge with the canvas. */
+ * two BOTTOM corners in the override below so it can merge with the canvas.
+ * Phase 72 (item 5) — every colorful body paints the subtle 1px border
+ * (drawn inside the border-box via the global `box-sizing: border-box`, so
+ * the tab's measured size is unchanged). Phase 72 (item 6) — the tint is
+ * the Phase 68 mix raised 20% relative: 18% -> 22%. */
 .tab-area[data-tab-style="colorful"] .tab::before {
   content: "";
   position: absolute;
   inset: 0;
   z-index: 0;
   border-radius: var(--radius-2);
-  background: color-mix(in srgb, var(--tf-tab-accent, var(--sem-neutral)) 18%, var(--bg-elevated));
+  border: 1px solid color-mix(in srgb, var(--tf-tab-accent, var(--sem-neutral)) 30%, var(--border-subtle));
+  background: color-mix(in srgb, var(--tf-tab-accent, var(--sem-neutral)) 22%, var(--bg-elevated));
 }
 
 /* Keep the tab's own content (chip, title, close) above the fill layer. */
@@ -2137,11 +2121,25 @@ input[type="checkbox"] {
 }
 
 /* Active: brighter/darker fill + the existing ::after underline. No inset
- * highlight, no elevation shadow, no size or weight change. */
+ * highlight, no elevation shadow, no size or weight change.
+ * Phase 72 (items 1-2) — the inactive row is vertically centred; ONLY the
+ * active tab leaves the centred row and drops to the strip's foot with the
+ * taller 30px box, so its fill reaches the canvas top while every inactive
+ * 26px chip stays clear of both edges. TFL-213 (DEF-440) — the row alignment
+ * lives on the wrapping `<li>` (the actual flex item of `.tab-list`), not on
+ * this inner `.tab` block, where `align-self` is inert. */
 .tab-area[data-tab-style="colorful"] .tab-active {
   font-weight: inherit;
   box-shadow: none;
   color: var(--fg-strong);
+  height: 30px;
+}
+
+/* TFL-213 (DEF-440) — the active colorful tab's `<li>` is the flex item of
+ * `.tab-list`, so the foot alignment is applied here: `flex-end` pins the
+ * active box's bottom to the strip's foot, flush with the canvas top. */
+.tab-area[data-tab-style="colorful"] .tab-list > li[data-tab-active="true"] {
+  align-self: flex-end;
 }
 
 .tab-area[data-tab-style="colorful"] .tab-active::before {
@@ -2149,7 +2147,7 @@ input[type="checkbox"] {
    * runs continuously into the canvas; the top corners keep the chip radius. */
   border-bottom-left-radius: 0;
   border-bottom-right-radius: 0;
-  background: color-mix(in srgb, var(--tf-tab-accent, var(--sem-neutral)) 34%, var(--bg-elevated));
+  background: color-mix(in srgb, var(--tf-tab-accent, var(--sem-neutral)) 41%, var(--bg-elevated));
 }
 
 /* ===========================================================================
@@ -2161,9 +2159,10 @@ input[type="checkbox"] {
  *
  * "The selected tab should engulf the canvas": the active tab's two BOTTOM
  * corners go square (top corners stay rounded), the ink underline is removed,
- * and the strip is extended down by the header's 1px bottom border so the
- * active fill runs flush onto the canvas top with no separating line. The
- * inactive tabs keep all four corners rounded and stay visually separate.
+ * and only the active tab reaches the strip's foot so its fill runs flush onto
+ * the canvas top with no separating line. The inactive tabs keep all four
+ * corners rounded, stay 26px high and centre in the strip. (Phase 72 retired
+ * the Phase-62 strip-level extension; see items 1-2 below.)
  * ========================================================================= */
 
 /* No ink underline band separates the active tab from the canvas: the shared
@@ -2173,16 +2172,20 @@ input[type="checkbox"] {
   content: none;
 }
 
-/* Extend the colorful strip down by the header's 1px bottom border so every
- * tab's foot lands on the canvas top (gap 0). The active tab's square-footed
- * fill covers that border beneath it, while the rounded inactive tabs keep it
- * visible in their corner notches and stay separate. `align-self` + the
- * negative bottom margin pin the strip to the header's bottom edge instead of
- * the 0.5px centring the base `align-items: center` would give a taller box. */
+/* Phase 72 (items 1-2) — the Phase 62 strip extension is RETIRED. The strip
+ * no longer reaches past the header's border: `.tab-area` fills the header's
+ * content box (`align-self: stretch; height: 100%; margin-bottom: 0`) and the
+ * base `align-items: end` is overridden on the colorful `.tab-list` so the
+ * INACTIVE tabs sit vertically centred (>= 2px clear of both strip edges).
+ * Only the active tab drops to the foot via `align-self: flex-end` above. */
 .tab-area[data-tab-style="colorful"] {
-  align-self: flex-end;
-  height: calc(100% + 1px);
-  margin-bottom: -1px;
+  align-self: stretch;
+  height: 100%;
+  margin-bottom: 0;
+}
+
+.tab-area[data-tab-style="colorful"] .tab-list {
+  align-items: center;
 }
 
 .tab-title {
@@ -2253,13 +2256,11 @@ body.tab-reordering .tab-list[data-reorder="true"] .tab {
 /* Phase 61 — tear-out leaves the bar. While the pointer is past the tear-out
  * threshold the dragged tab tracks the pointer on BOTH axes, so the strip must
  * stop clipping it. DEF-432 — the clip is released on `.tab-area` ONLY, never
- * on `.tab-list`: `.tab-list` is also the strip's horizontal SCROLL container
- * (`overflow-x: auto`), and a scroll container cannot carry `overflow: visible`
- * — releasing it snapped `scrollLeft` and collapsed the scrollbar thickness in
- * one frame, jumping every non-dragged tab and breaking the dragged tab's
- * tracking. Instead the dragged `.tab` is floated OUT of the scroller (see the
- * inline `position: absolute` against `.tab-area` in AnimatedTab), so the
- * scroller keeps `overflow-x: auto` and the scroll state stays put. `.tab-area`
+ * on `.tab-list`: Phase 72 (item 8) makes `.tab-list` a plain `overflow: hidden`
+ * clip (it is no longer a scroll container), but releasing its clip would still
+ * let the float reflow the row. Instead the dragged `.tab` is floated OUT of
+ * the strip (see the inline `position: absolute` against `.tab-area` in
+ * AnimatedTab), so `.tab-list` keeps `overflow: hidden`. `.tab-area`
  * is `overflow: hidden` (the vertical clip) and is not a scroller, so releasing
  * it here is safe. The release is gated on the tear-out attribute only, so the
  * in-strip reorder (Phase 60 criterion 6) keeps its own overflow untouched. */
@@ -2366,6 +2367,20 @@ body.tab-reordering .tab-list[data-reorder="true"] .tab {
 .tab-area[data-tab-style="colorful"] .tab-close:hover {
   background: color-mix(in srgb, var(--fg-strong) 16%, transparent);
   opacity: 1;
+}
+
+/* Phase 72 (item 4) — the close control is pinned to the tab's trailing edge.
+ * `margin-left: auto` pushes it right; the title is relaxed from its 180px cap
+ * (`min-width: 0`, shrinkable) so it yields the space and ellipsizes instead
+ * of crowding the close control off the edge. Standard tabs are untouched. */
+.tab-area[data-tab-style="colorful"] .tab-close {
+  margin-left: auto;
+}
+
+.tab-area[data-tab-style="colorful"] .tab-title {
+  max-width: none;
+  min-width: 0;
+  flex: 0 1 auto;
 }
 
 /* Phase 4 — the close chip shows its focus state as the orange ring

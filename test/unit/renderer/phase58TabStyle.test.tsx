@@ -215,6 +215,58 @@ describe("AnimatedTab — Phase 62 retired the DEF-409 flare", () => {
 });
 
 // ---------------------------------------------------------------------------
+// Phase 72 (item 3) — the ONLY tab dot is the dirty dot. The always-on
+// `.tab-colour-chip` is gone; `.tab-modified-dot` is painted iff `modified`
+// is true, so an unmodified tab's dot is not visible. jsdom does not run the
+// real cascade for us, so the visibility oracle injects the sheet's own
+// `.tab-modified-dot-hidden` rule and reads `getComputedStyle` (this repo has
+// no jest-dom, so `not.toBeVisible()` is expressed through this helper).
+// ---------------------------------------------------------------------------
+function isVisible(el: HTMLElement): boolean {
+  const s = getComputedStyle(el);
+  return s.visibility !== "hidden" && s.opacity !== "0" && s.display !== "none";
+}
+
+describe("Phase 72 — the only tab dot is the dirty dot", () => {
+  const TABS: TabSpec[] = [
+    { id: "clean", title: "clean.pdf", modified: false },
+    { id: "dirty", title: "dirty.pdf", modified: true },
+  ];
+
+  afterEach((): void => {
+    document.body.innerHTML = "";
+  });
+
+  it("an unmodified tab's .tab-modified-dot is hidden; a modified tab's is visible", () => {
+    const host = renderHeader("colorful", TABS, "clean");
+    const clean = host.querySelector<HTMLElement>("[data-tab-id='clean'] .tab-modified-dot");
+    const dirty = host.querySelector<HTMLElement>("[data-tab-id='dirty'] .tab-modified-dot");
+    expect(clean, "unmodified tab still renders the dot slot").not.toBeNull();
+    expect(dirty, "modified tab renders the dot").not.toBeNull();
+    expect(clean?.classList.contains("tab-modified-dot-hidden")).toBe(true);
+    expect(dirty?.classList.contains("tab-modified-dot-hidden")).toBe(false);
+
+    const sheet = readFileSync("src/renderer/styles.css", "utf8");
+    const at = sheet.indexOf(".tab-modified-dot-hidden {");
+    expect(at, "the hidden rule exists in the sheet").toBeGreaterThan(-1);
+    const style = document.createElement("style");
+    style.textContent = sheet.slice(at, sheet.indexOf("}", at) + 1);
+    document.head.appendChild(style);
+    try {
+      expect(isVisible(clean as HTMLElement), "unmodified dot hidden").toBe(false);
+      expect(isVisible(dirty as HTMLElement), "modified dot visible").toBe(true);
+    } finally {
+      style.remove();
+    }
+  });
+
+  it("no colorful tab renders an identity chip any more", () => {
+    const host = renderHeader("colorful", TABS, "clean");
+    expect(host.querySelector(".tab-colour-chip")).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Phase 59 (item 1) — the tab title is NOT selectable and the whole tab drags.
 // jsdom's getComputedStyle returns nothing useful for `user-select`, so the
 // contract is pinned directly against the stylesheet declaration block (the

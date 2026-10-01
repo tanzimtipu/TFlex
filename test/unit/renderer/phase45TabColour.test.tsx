@@ -89,7 +89,7 @@ describe("Phase 45 item 2 — the rendered tab strip", () => {
     { id: "c", title: "Gamma.pdf", modified: false },
   ];
 
-  it("every tab carries its own colour slot and a colour chip", () => {
+  it("every tab carries its own colour slot and NO identity chip (Phase 72)", () => {
     const host = renderHeader(TABS, "a");
     const tabs = [...host.querySelectorAll<HTMLElement>("[data-tab-id]")];
     expect(tabs).toHaveLength(3);
@@ -97,7 +97,9 @@ describe("Phase 45 item 2 — the rendered tab strip", () => {
     expect(slots).toEqual(["0", "1", "2"]);
     expect(new Set(slots).size).toBe(3);
     for (const t of tabs) {
-      expect(t.querySelector(".tab-colour-chip"), "colour chip present").not.toBeNull();
+      // Phase 72 (item 3) — the always-on `.tab-colour-chip` is retired;
+      // `data-tab-colour` still drives `--tf-tab-accent`.
+      expect(t.querySelector(".tab-colour-chip"), "colour chip gone").toBeNull();
     }
   });
 
@@ -118,9 +120,9 @@ describe("Phase 45 item 2 — the rendered tab strip", () => {
     expect(active?.classList.contains("tab-active")).toBe(true);
     expect(active?.getAttribute("aria-selected")).toBe("true");
     expect(inactive?.classList.contains("tab-active")).toBe(false);
-    // The colour chip is present on BOTH — the selection signal is the
-    // surface + underline, never the chip.
-    expect(active?.querySelector(".tab-colour-chip")).not.toBeNull();
-    expect(inactive?.querySelector(".tab-colour-chip")).not.toBeNull();
+    // Phase 72 (item 3) — no identity chip on either tab; the selection signal
+    // is the surface tint + `.tab-active`, never a per-tab mark.
+    expect(active?.querySelector(".tab-colour-chip")).toBeNull();
+    expect(inactive?.querySelector(".tab-colour-chip")).toBeNull();
   });
 });

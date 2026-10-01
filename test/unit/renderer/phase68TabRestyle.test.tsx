@@ -76,17 +76,20 @@ describe("AppHeader — Phase 68 colorful render seam", () => {
 });
 
 describe("Phase 68 — colorful tab stylesheet", () => {
-  it("the colorful .tab::before is a flat 18% tint with no gradient", () => {
+  it("Phase 72 — the colorful .tab::before is a flat 22% tint with the 1px border and no gradient", () => {
     const block = blockFor('.tab-area[data-tab-style="colorful"] .tab::before {');
     expect(block).toContain("color-mix(");
-    expect(block).toContain("18%");
+    expect(block).toContain("22%");
     expect(block).toContain("var(--bg-elevated)");
     expect(block).not.toContain("linear-gradient");
+    expect(block).toContain(
+      "border: 1px solid color-mix(in srgb, var(--tf-tab-accent, var(--sem-neutral)) 30%, var(--border-subtle))",
+    );
   });
 
-  it("the active .tab::before is a flat 34% tint and keeps the square bottom corners", () => {
+  it("Phase 72 — the active .tab::before is a flat 41% tint and keeps the square bottom corners", () => {
     const block = blockFor('.tab-area[data-tab-style="colorful"] .tab-active::before {');
-    expect(block).toContain("34%");
+    expect(block).toContain("41%");
     expect(block).toContain("var(--bg-elevated)");
     expect(block).not.toContain("linear-gradient");
     expect(block).toContain("border-bottom-left-radius: 0");
@@ -107,10 +110,16 @@ describe("Phase 68 — colorful tab stylesheet", () => {
     );
   });
 
-  it("the .tab-colour-chip background is the full accent, not a tint", () => {
-    const block = blockFor(".tab-colour-chip {");
-    expect(block).toContain("background: var(--tf-tab-accent, var(--sem-neutral))");
-    expect(block).not.toContain("color-mix");
+  it("Phase 72 — the .tab-colour-chip identity mark is removed from the sheet", () => {
+    expect(SHEET).not.toContain(".tab-colour-chip {");
+  });
+
+  it("Phase 72 — the colorful close control is pinned right and the title ellipsizes", () => {
+    const closeBlock = blockFor('.tab-area[data-tab-style="colorful"] .tab-close {');
+    expect(closeBlock).toContain("margin-left: auto");
+    const titleBlock = blockFor('.tab-area[data-tab-style="colorful"] .tab-title {');
+    expect(titleBlock).toContain("max-width: none");
+    expect(titleBlock).toContain("min-width: 0");
   });
 
   it("DEF-441 — the colorful modified dot uses the full accent fill and an --fg-strong ring", () => {

@@ -11,8 +11,8 @@
 //
 // GESTURE NOTE (DEF-412): the arm threshold now measures TOTAL movement
 // (`Math.hypot(dx, dy) <= 6`), so the acceptance gesture is a PURELY DOWNWARD
-// drag - no sideways nudge. The spec presses the tab's `.tab-colour-chip`,
-// moves straight down to `stripRect.bottom + 60` and releases; a failure can no
+// drag - no sideways nudge. The spec presses the tab's `.tab-title`, moves
+// straight down to `stripRect.bottom + 60` and releases; a failure can no
 // longer be masked by a horizontal pre-move arming a gesture that the real
 // tear-out path would never arm.
 const { test, expect } = require('@playwright/test');
@@ -69,14 +69,14 @@ async function stripState(page) {
 
 // Perform one tear-out gesture on the first tab of `page`.
 async function tearOutTab(page) {
-  const chip = page.locator('[data-tab-id] .tab-colour-chip').first();
-  const chipBox = await chip.boundingBox();
+  const title = page.locator('[data-tab-id] .tab-title').first();
+  const titleBox = await title.boundingBox();
   const strip = await page.locator('.tab-list').boundingBox();
-  const startX = chipBox.x + chipBox.width / 2;
-  const startY = chipBox.y + chipBox.height / 2;
+  const startX = titleBox.x + Math.min(6, titleBox.width / 2);
+  const startY = titleBox.y + titleBox.height / 2;
   const targetY = strip.y + strip.height + 60;
   const desc =
-    `chipCenter=(${startX.toFixed(1)},${startY.toFixed(1)}) ` +
+    `titleStart=(${startX.toFixed(1)},${startY.toFixed(1)}) ` +
     `stripBottom=${(strip.y + strip.height).toFixed(1)} targetY=${targetY.toFixed(1)}`;
   await page.mouse.move(startX, startY);
   await page.mouse.down();

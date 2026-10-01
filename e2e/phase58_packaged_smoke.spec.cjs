@@ -8,7 +8,7 @@
 // not a silent skip.
 //
 // The detach gesture mirrors e2e/phase58_tab_detach.spec.cjs: press the tab's
-// `.tab-colour-chip`, move straight down (the DEF-412 total-movement arm
+// `.tab-title`, move straight down (the DEF-412 total-movement arm
 // threshold) past the strip, release -> a NEW `#detached` window adopts the
 // document and the origin drops a tab. Tearing back returns it and closes the
 // detached window.
@@ -66,13 +66,13 @@ async function windowReport(electronApp) {
 
 
 // Perform the tear-out gesture on the first tab of `page`: straight down from
-// the colour chip past the bottom of the strip, then release.
+// the title past the bottom of the strip, then release.
 async function tearOutTab(page) {
-  const chip = page.locator('[data-tab-id] .tab-colour-chip').first();
-  const chipBox = await chip.boundingBox();
+  const title = page.locator('[data-tab-id] .tab-title').first();
+  const titleBox = await title.boundingBox();
   const strip = await page.locator('.tab-list').boundingBox();
-  const startX = chipBox.x + chipBox.width / 2;
-  const startY = chipBox.y + chipBox.height / 2;
+  const startX = titleBox.x + titleBox.width / 2;
+  const startY = titleBox.y + titleBox.height / 2;
   const targetY = strip.y + strip.height + 60;
   await page.mouse.move(startX, startY);
   await page.mouse.down();

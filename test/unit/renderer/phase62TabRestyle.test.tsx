@@ -114,9 +114,25 @@ describe("Phase 62 — colorful tab stylesheet", () => {
     expect(block).toContain("content: none");
   });
 
-  it("the colorful strip is extended down by the header border (engulf the canvas)", () => {
-    const block = blockFor('.tab-area[data-tab-style="colorful"] {');
-    expect(block).toContain("height: calc(100% + 1px)");
-    expect(block).toContain("margin-bottom: -1px");
+  it("Phase 72 — the strip is centred, not extended: only the active tab reaches the foot", () => {
+    // The Phase 62 strip extension is retired; the colorful strip fills the
+    // header content box and centres its row.
+    const stripBlock = blockFor('.tab-area[data-tab-style="colorful"] {');
+    expect(stripBlock).toContain("align-self: stretch");
+    expect(stripBlock).toContain("height: 100%");
+    expect(stripBlock).toContain("margin-bottom: 0");
+    expect(stripBlock).not.toContain("calc(100% + 1px)");
+    expect(stripBlock).not.toContain("margin-bottom: -1px");
+    const listBlock = blockFor('.tab-area[data-tab-style="colorful"] .tab-list {');
+    expect(listBlock).toContain("align-items: center");
+    // TFL-213 (DEF-440) moved the foot alignment off the inner `.tab-active`
+    // block — where `align-self` is inert — onto the wrapping `<li>`, the flex
+    // item `.tab-list` actually lays out. Assert the live selector.
+    const activeItemBlock = blockFor(
+      '.tab-area[data-tab-style="colorful"] .tab-list > li[data-tab-active="true"] {',
+    );
+    expect(activeItemBlock).toContain("align-self: flex-end");
+    const activeBlock = blockFor('.tab-area[data-tab-style="colorful"] .tab-active {');
+    expect(activeBlock).toContain("height: 30px");
   });
 });

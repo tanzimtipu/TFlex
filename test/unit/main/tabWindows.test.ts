@@ -15,6 +15,7 @@ vi.mock('electron', () => ({
 import { BrowserWindow, type WebContents } from 'electron';
 import { createTabWindows } from '../../../src/main/services/tabWindows';
 import { resolveReturnTarget } from '../../../src/main/services/tabWindows';
+import { createAdoptBuffer } from '../../../src/preload/adoptBuffer';
 import type { DetachedWindowHandle } from '../../../src/main/window';
 import { IPC } from '../../../src/shared/ipc';
 import type {
@@ -177,5 +178,45 @@ describe('Phase 58 deterministic detached delivery (DEF-416)', () => {
     // A later did-finish-load must not send a second payload.
     child.fire();
     expect(child.send).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('Phase 58 preload adopt buffer (DEF-416 late-subscription delivery)', () => {
+  const first: TabTransferPayload = {
+    title: 'a.pdf',
+    bytes: new Uint8Array([1]),
+    modified: false,
+  };
+  const second: TabTransferPayload = {
+    title: 'b.pdf',
+    bytes: new Uint8Array([2]),
+    modified: true,
+  };
+  const third: TabTransferPayload = {
+    title: 'c.pdf',
+    bytes: new Uint8Array([3]),
+    modified: false,
+  };
+
+  it('replays a payload pushed before subscribe exactly once, then streams straight through', () => {
+    const buffer = createAdoptBuffer<TabTransferPayload>();
+
+    // Main's `tab:adopt` can arrive before the renderer's useEffect runs.
+    buffer.push(first);
+    const seen: TabTransferPayload[] = [];
+    const unsubscribe = buffer.subscribe((p) => seen.push(p));
+    expect(seen).toEqual([first]); // replayed, exactly once
+
+    // Subsequent pushes go straight to the live consumer, no replay.
+    buffer.push(second);
+    expect(seen).toEqual([first, second]);
+
+    // A gap without a consumer buffers again and replays once on resubscribe.
+    unsubscribe();
+    buffer.push(third);
+    expect(seen).toEqual([first, second]);
+    const resubscribed: TabTransferPayload[] = [];
+    buffer.subscribe((p) => resubscribed.push(p));
+    expect(resubscribed).toEqual([third]);
   });
 });

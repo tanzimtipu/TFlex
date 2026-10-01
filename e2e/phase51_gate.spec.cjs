@@ -376,6 +376,7 @@ async function readTabs() {
     };
     return [...document.querySelectorAll('.tab')].map((t) => {
       const cs = getComputedStyle(t);
+      const before = getComputedStyle(t, '::before');
       const chip = t.querySelector('.tab-colour-chip');
       const chipCs = chip ? getComputedStyle(chip) : null;
       const fg = parse(cs.color);
@@ -387,6 +388,12 @@ async function readTabs() {
         bg: cs.backgroundColor,
         color: cs.color,
         chip: chipCs ? chipCs.backgroundColor : null,
+        // Phase 72 (ruling 4, item 3) — the `.tab-colour-chip` is RETIRED; the
+        // only body-fill signal is the colorful `::before` mix (22% inactive /
+        // 41% active) with its 1px border.
+        chipCount: t.querySelectorAll('.tab-colour-chip').length,
+        beforeBg: before.backgroundColor,
+        beforeBorderWidth: before.borderTopWidth,
         contrast: fg ? +ratio(fg, bg).toFixed(2) : null,
       };
     });
@@ -406,14 +413,25 @@ test('P51-E item 5: tab colours are full-strength, adjacent differ, contrast flo
     const tabs = await readTabs();
     console.log(`[P51-E ${theme}] ${JSON.stringify(tabs)}`);
     expect(tabs.length).toBe(3);
+    // Phase 72 (ruling 4, item 3) SUPERSEDES the Phase 45/51 colour-identity
+    // chip: `.tab-colour-chip` is deleted, `data-tab-colour` / `--tf-tab-accent`
+    // remain, and the active cue is the brighter `::before` body fill (41% mix
+    // vs the inactive 22%), not a chip or a per-tab text colour.
     expect(tabs[0].slot, `${theme}: tab0 vs tab1 slot`).not.toBe(tabs[1].slot);
     expect(tabs[1].slot, `${theme}: tab1 vs tab2 slot`).not.toBe(tabs[2].slot);
-    expect(tabs[0].chip, `${theme}: tab0 vs tab1 chip`).not.toBe(tabs[1].chip);
-    expect(tabs[1].chip, `${theme}: tab1 vs tab2 chip`).not.toBe(tabs[2].chip);
+    for (const t of tabs) {
+      expect(t.chipCount, `${theme}: ${t.id} paints no retired .tab-colour-chip`).toBe(0);
+    }
     const active = tabs.filter((t) => t.active);
     expect(active.length, `${theme}: exactly one active tab`).toBe(1);
     const inactive = tabs.filter((t) => !t.active);
-    expect(active[0].color, `${theme}: active text differs from inactive`).not.toBe(inactive[0].color);
+    expect(
+      active[0].beforeBg,
+      `${theme}: active ::before fill (41% mix) differs from inactive (22% mix)`,
+    ).not.toBe(inactive[0].beforeBg);
+    for (const t of tabs) {
+      expect(t.beforeBorderWidth, `${theme}: ${t.id} ::before body border is 1px`).toBe('1px');
+    }
     for (const t of tabs) {
       console.log(`[P51-E ${theme}] tab ${t.id} active=${t.active} bg=${t.bg} color=${t.color} contrast=${t.contrast}`);
       expect(t.contrast, `${theme}: tab ${t.id} contrast >= 4.5`).toBeGreaterThanOrEqual(4.5);

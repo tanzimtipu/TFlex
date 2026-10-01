@@ -29,17 +29,21 @@ async function tabState(win) {
 }
 
 async function tearOut(win, which) {
-  const chips = win.locator('[data-tab-id] .tab-colour-chip');
-  const idx = which === 'last' ? (await chips.count()) - 1 : 0;
-  const chip = chips.nth(Math.max(0, idx));
-  const cb = await chip.boundingBox();
+  // DEF-439 repoint: .tab-colour-chip was deleted by Phase 72 item 3. Grab the
+  // tab by its .tab-title instead (same gesture as e2e/phase58_tab_reorder.spec.cjs
+  // and e2e/phase58_def414_417.spec.cjs); keep the which === 'last' branch by
+  // counting the title locator exactly as the retired chip locator did.
+  const titles = win.locator('[data-tab-id] .tab-title');
+  const idx = which === 'last' ? (await titles.count()) - 1 : 0;
+  const title = titles.nth(Math.max(0, idx));
+  const tb = await title.boundingBox();
   const strip = await win.locator('.tab-list').boundingBox();
-  if (!cb || !strip) return { error: 'no chip/strip' };
-  const sx = cb.x + cb.width / 2, sy = cb.y + cb.height / 2;
-  const ty = strip.y + strip.height + 70;
+  if (!tb || !strip) return { error: 'no chip/strip' };
+  const sx = tb.x + Math.min(6, tb.width / 2), sy = tb.y + tb.height / 2;
+  const ty = strip.y + strip.height + 60;
   await win.mouse.move(sx, sy);
   await win.mouse.down();
-  await win.mouse.move(sx, sy + 12, { steps: 4 });
+  await win.mouse.move(sx, sy + 10, { steps: 4 });
   await win.mouse.move(sx, ty, { steps: 12 });
   await win.mouse.up();
   return { sx, sy, ty };

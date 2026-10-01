@@ -1,14 +1,17 @@
 // Phase 58 (chunk 2) — COLORFUL tab style + Preferences "Tab style" toggle.
-// Repointed by qa (Phase 62, TFL-63) to the Phase 62 colorful silhouette.
+// Repointed by qa (Phase 62, TFL-63) to the Phase 62 silhouette, then by
+// frontend-dev (TFL-207) to the Phase 72 silhouette.
 //
-// Verifies the one assigned behaviour:
-//   - with tabStyle='colorful' every tab is UNIFORM size (identical 26px height
-//     and min-width, active or not), the fill is FLAT (no inset/emboss/reflection
-//     highlight on the active tab), and the silhouette is the Phase 62 chip: one
-//     uniform non-zero corner radius (--radius-2 = 5px) on all four corners of an
-//     inactive tab, while the ACTIVE tab squares its two BOTTOM corners so its
-//     fill runs flush into the canvas with no separator. The Phase 58 / DEF-409
-//     outward `.tab-flare` is retired (phase 62 supersedes it).
+// Verifies the one assigned behaviour against the Phase 72 contract:
+//   - with tabStyle='colorful' the INACTIVE tabs are uniform 26px centred chips
+//     (--radius-2 = 5px on all four corners), while ONLY the ACTIVE tab drops to
+//     the foot-flush 30px box with its two BOTTOM corners squared so its fill
+//     runs into the canvas with no separator. The fill is FLAT (no inset /
+//     emboss / reflection on the active tab): the body `::before` is the flat
+//     `color-mix(... --tf-tab-accent 22% ...)` tint inactive and `41%` active,
+//     with a 1px `color-mix(... 30% ...)` border. The `.tab-colour-chip`
+//     identity mark is RETIRED (Phase 72 ruling 4, item 3) and the Phase 58 /
+//     DEF-409 outward `.tab-flare` is retired (Phase 62 supersedes it).
 //   - switching Preferences "Tab style" to Standard restores the classic tabs
 //     and the choice persists across an app relaunch.
 //
@@ -90,7 +93,7 @@ test('colorful tabs are uniform + flat with the reference silhouette; Standard t
   // Colorful is the default style.
   expect(await win.locator('.tab-area').getAttribute('data-tab-style')).toBe('colorful');
 
-  // 2. Uniform size: identical height (max-min <= 0.5px) and identical minWidth.
+  // 2. Uniform size: identical minWidth; the inactive chips share one height.
   const metrics = await win.evaluate(() => {
     const tabs = Array.from(document.querySelectorAll('[data-tab-id]'));
     return tabs.map((el) => {
@@ -108,35 +111,42 @@ test('colorful tabs are uniform + flat with the reference silhouette; Standard t
         beforeTopRight: before.borderTopRightRadius,
         beforeBottomLeft: before.borderBottomLeftRadius,
         beforeBottomRight: before.borderBottomRightRadius,
+        // Phase 72 (items 3/5/6) — chip retired; 1px body border; 22%/41% mix.
+        chipCount: el.querySelectorAll('.tab-colour-chip').length,
+        beforeBackground: before.backgroundColor,
+        beforeBorderWidth: before.borderTopWidth,
       };
     });
   });
   console.log(`[P62-tab] metrics=${JSON.stringify(metrics)}`);
 
-  // Criterion 1 — every colorful tab is 26px high, measured boxes with zero
-  // variance across tabs (active and inactive alike).
+  // Criterion 1 (Phase 72 items 1-2) — the INACTIVE colorful tabs are the 26px
+  // centred chip; ONLY the ACTIVE tab drops to the 30px foot-flush box so its
+  // fill reaches the canvas. Every inactive tab is therefore identical.
   const TAB_HEIGHT = 26;
-  for (const m of metrics) {
-    console.log(`[P62-tab] ${m.id} height=${m.height} active=${m.active}`);
-    expect(
-      Math.abs(m.height - TAB_HEIGHT),
-      `tab ${m.id} is ${TAB_HEIGHT}px high (got ${m.height})`,
-    ).toBeLessThanOrEqual(0.5);
-  }
-  const heights = metrics.map((m) => m.height);
-  const hMax = Math.max(...heights);
-  const hMin = Math.min(...heights);
-  expect(hMax - hMin, `tab heights uniform (max=${hMax} min=${hMin})`).toBeLessThanOrEqual(0.5);
-
-  // Uniform size: identical minWidth across tabs.
-  const minWidths = new Set(metrics.map((m) => m.minWidth));
-  expect(minWidths.size, `identical minWidth across tabs (${[...minWidths].join(',')})`).toBe(1);
-
+  const ACTIVE_TAB_HEIGHT = 30;
   const active = metrics.find((m) => m.active);
   const inactive = metrics.find((m) => !m.active);
   expect(active, 'an active tab exists').toBeTruthy();
   expect(inactive, 'an inactive tab exists').toBeTruthy();
-  expect(Math.abs(active.height - inactive.height), 'active height == inactive height').toBeLessThanOrEqual(0.5);
+  for (const m of metrics) {
+    const expected = m.active ? ACTIVE_TAB_HEIGHT : TAB_HEIGHT;
+    console.log(`[P62-tab] ${m.id} height=${m.height} active=${m.active} expected=${expected}`);
+    expect(
+      Math.abs(m.height - expected),
+      `tab ${m.id} is ${expected}px high (got ${m.height})`,
+    ).toBeLessThanOrEqual(0.5);
+  }
+  const inactiveHeights = metrics.filter((m) => !m.active).map((m) => m.height);
+  expect(
+    Math.max(...inactiveHeights) - Math.min(...inactiveHeights),
+    'inactive tab heights are uniform',
+  ).toBeLessThanOrEqual(0.5);
+  expect(active.height, 'active tab is the taller foot-flush box').toBeGreaterThan(inactive.height);
+
+  // Uniform size: identical minWidth across tabs.
+  const minWidths = new Set(metrics.map((m) => m.minWidth));
+  expect(minWidths.size, `identical minWidth across tabs (${[...minWidths].join(',')})`).toBe(1);
 
   // Criterion 1 — one uniform non-zero corner radius (--radius-2 = 5px) on the
   // body fill. The ACTIVE tab squares its two BOTTOM corners so its fill can run
@@ -157,26 +167,48 @@ test('colorful tabs are uniform + flat with the reference silhouette; Standard t
   console.log(`[P62-tab] active boxShadow="${active.boxShadow}"`);
   expect(active.boxShadow.toLowerCase(), 'active fill is flat (no inset)').not.toContain('inset');
 
+  // Criterion 1 (Phase 72 items 3/5/6) — the `.tab-colour-chip` identity mark is
+  // RETIRED; every colorful body paints the 1px border; and the active body fill
+  // (41% mix) differs from the inactive body fill (22% mix).
+  for (const m of metrics) {
+    expect(m.chipCount, `tab ${m.id} paints no retired .tab-colour-chip`).toBe(0);
+    expect(m.beforeBorderWidth, `tab ${m.id} ::before body border is 1px`).toBe('1px');
+  }
+  console.log(`[P62-tab] active ::before bg=${active.beforeBackground} inactive ::before bg=${inactive.beforeBackground}`);
+  expect(
+    active.beforeBackground,
+    'active ::before fill (41% mix) differs from inactive (22% mix)',
+  ).not.toBe(inactive.beforeBackground);
+
   // Criterion 2 — the DEF-409 outward flare is retired: no `.tab-flare` node.
   const lastTab = win.locator('[data-tab-id]').last();
   await expect(lastTab.locator('.tab-flare'), 'no .tab-flare node on the last tab').toHaveCount(0);
 
-  // Criterion 3 — the active tab is flush with the canvas and no separator is
-  // painted between them (the shared ink underline computes to `content: none`).
+  // Criterion 2 (TFL-213 / DEF-440) — the ACTIVE colorful tab reaches the
+  // canvas foot: its box bottom sits within 1px of the canvas top, so the fill
+  // runs flush onto the canvas with no separating band. The active tab is the
+  // taller 30px box whose foot still runs lower than the 26px inactive chips,
+  // and the shared ink underline stays suppressed.
   const flush = await win.evaluate(() => {
     const activeEl = document.querySelector('[data-tab-id][aria-selected="true"]');
+    const inactiveEl = document.querySelector('[data-tab-id][aria-selected="false"]');
     const main = document.querySelector('.app-main');
     const after = getComputedStyle(activeEl, '::after');
     return {
       activeBottom: activeEl.getBoundingClientRect().bottom,
+      inactiveBottom: inactiveEl === null ? null : inactiveEl.getBoundingClientRect().bottom,
       mainTop: main.getBoundingClientRect().top,
       afterContent: after.content,
     };
   });
   console.log(`[P62-tab] flush=${JSON.stringify(flush)}`);
   expect(
-    Math.abs(flush.activeBottom - flush.mainTop),
-    `active tab foot (${flush.activeBottom}) sits on the canvas top (${flush.mainTop})`,
+    flush.activeBottom,
+    'the active tab foot runs lower than the inactive chip foot',
+  ).toBeGreaterThan(flush.inactiveBottom);
+  expect(
+    flush.mainTop - flush.activeBottom,
+    `the active tab foot reaches the canvas (foot ${flush.activeBottom}, canvas top ${flush.mainTop})`,
   ).toBeLessThanOrEqual(1);
   expect(flush.afterContent, 'active tab ::after underline suppressed').toBe('none');
 

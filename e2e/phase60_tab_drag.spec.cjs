@@ -90,7 +90,7 @@ function reorder(order, movedId, target) {
 }
 
 async function chipBox(tabId) {
-  return win.locator(`[data-tab-id="${tabId}"] .tab-colour-chip`).boundingBox();
+  return win.locator(`[data-tab-id="${tabId}"] .tab-title`).boundingBox();
 }
 
 async function sampleDragged(tabId) {
@@ -361,7 +361,13 @@ test('criterion 6: with the strip squeezed, live follow and animated reflow stil
 // DEF-433 (from ADV-130) — reordering the ACTIVE tab in the squeezed strip used
 // to leave it clipped: neither `activeId` nor `tabs.length` changes, so the
 // shared scroll effect never re-ran. Drag the active tab across to the far
-// edge and assert the commit scrolls it back inside `.tab-list`.
+// edge and assert the commit keeps it inside `.tab-list`.
+//
+// Phase 72 (rulings 8/9) SUPERSEDES the DEF-433 scroll remedy: `.tab-list` is no
+// longer a scroll container (`overflow-x: hidden`) and every tab shrinks
+// UNIFORMLY to fit, so `scrollLeft` is permanently 0. The real criterion-6
+// guarantee is the no-clip assertion (kept); the scroll assertion is repointed
+// to the Phase 72 no-scroll contract.
 async function setWindowSize(w, h) {
   await app.evaluate(({ BrowserWindow }, size) => {
     const target = BrowserWindow.getAllWindows()[0];
@@ -372,10 +378,10 @@ async function setWindowSize(w, h) {
   await win.waitForTimeout(500);
 }
 
-test('DEF-433: at 640px, reordering the active tab scrolls it back into the squeezed strip', async () => {
+test('DEF-433 (Phase 72): at 640px, reordering the active tab keeps it inside the uniform-fit strip', async () => {
   await openThree();
-  // Resize AFTER the tabs exist: the squeezed strip overflows (156px viewport)
-  // and the active tab must stay reachable across a reorder.
+  // Resize AFTER the tabs exist: the strip shrinks the tabs uniformly and the
+  // active tab must stay inside `.tab-list` across a reorder.
   await setWindowSize(640, 620);
   await win.waitForTimeout(500);
 
@@ -409,5 +415,8 @@ test('DEF-433: at 640px, reordering the active tab scrolls it back into the sque
   expect(await activeTabId(), 'the dragged tab is still active after the reorder').toBe(activeId);
   expect(activeAfter.x, 'reordered active tab not clipped (left)').toBeGreaterThanOrEqual(listBox2.x - 1);
   expect(activeAfter.x + activeAfter.width, 'reordered active tab not clipped (right)').toBeLessThanOrEqual(listBox2.x + listBox2.width + 1);
-  expect(scrollAfter, 'the strip scrolled to bring the active tab back from the right edge').toBeGreaterThan(0);
+  // Phase 72 (rulings 8/9) — the strip is not a scroll container, so the
+  // DEF-433 scroll remedy is retired; the no-clip assertion above is the
+  // criterion-6 guarantee and `scrollLeft` is permanently 0.
+  expect(scrollAfter, 'the strip is not a scroll container (Phase 72 ruling 9), so scrollLeft stays 0').toBe(0);
 });

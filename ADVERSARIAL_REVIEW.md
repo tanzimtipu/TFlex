@@ -6196,4 +6196,112 @@ Reproduction steps:
 Disposition: ACCEPTED -> DEF-451 (MEDIUM). Real and impactful: the 69C hue swap is materially incomplete. `--dock-primary-fg` plus the remaining hard-coded blue washes/glows (`--hit`/`--hit-active`, `--glass-selected-*`, `--sample-card-border-hover`, dark `.crop-editor-mask`, the frosted accent glows pinned blue by `designTokensContract.test.ts:1044/1053`) still render blue against the violet accent. Fix owned by frontend-dev (TFL-171).
 
 
+## ADV-140: The active colorful tab never reaches the strip foot / canvas — it floats 6.5px above the strip bottom (7.5px above the canvas top) in all three themes, so Phase 72 item 2's "engulf" is absent
+
+- Session: diff-pass (TFL-212, Phase 72 tab surfaces)
+- Suggested severity: HIGH
+
+What I did: launched the dev build (`npm.cmd run build`, then `node test-fixtures/adv-p72-probe.cjs a`), opened two bundled documents so one colorful tab is ACTIVE and one is INACTIVE, and measured the tab/strip geometry from `getBoundingClientRect()` and `getComputedStyle()` in light, dark and frosted.
+
+The strip content box is 43px high (`--chrome-titlebar-h: 44px` minus the header's 1px bottom border). The ACTIVE colorful tab measures 30px high with `align-self: flex-end` (styles.css:2126), yet its measured box is `topGap = 6.5px` and `bottomGap = 6.5px` to `.tab-list` in every theme — i.e. it is vertically CENTRED, not dropped. Its foot sits at y=36.5 while `.tab-list` ends at y=43 and the canvas top (`.app-header` bottom) is y=44, so the fill stops 6.5px short of the strip bottom and 7.5px short of the canvas.
+
+Expected: Phase 72 operator item 2 and success criterion 2 (`docs/phase-specs/phase-72.md:24,61`): the active colorful tab extends DOWN to the strip's bottom edge / canvas top, bottom gap <= 1px, no separator line, its fill continuous with the canvas. Inactive tabs are the only ones that float (>= 2px clear of both edges).
+
+Actual: the active tab is the same centred chip as the inactive tabs, only 4px taller; it does not reach the strip foot, does not touch the canvas, and the strip's own 1px border still separates it from the canvas. The `align-self: flex-end` never takes effect: the flex item of `.tab-list` is the wrapping `<li>` (`motion.li` in `src/renderer/components/AnimatedTab.tsx:157-165`), whose computed `display` is `list-item` and `align-self` is `auto`; the property is declared on the inner `.tab` div, so it is ignored. Measured `parentTag: "LI"`, `parentDisplay: "list-item"`, `parentAlignSelf: "auto"` on every active tab.
+
+Reproduction steps:
+1. `npm.cmd run build`
+2. `node test-fixtures/adv-p72-probe.cjs a`
+3. Read the `themes.{light,dark,frosted}.tabs[]` entries with `"active":true`: `topGap` and `bottomGap` are both `6.5`; `alignSelf` is `"flex-end"` but `parentDisplay` is `"list-item"`.
+4. Zoomed light capture: `screenshots/adv-p72-a-zoom-active-light.png` (active "Empty tab"; a lighter strip band is visible below the rounded chip). Full strip: `screenshots/adv-p72-a-header-light.png`, `-dark.png`, `-frosted.png`.
+
+Fixture: `test-fixtures/adv-p72-probe.cjs` (scenario `a`).
+
+Disposition: ACCEPTED -> DEF-455 (HIGH). CTO triage: reproducible and real - the active
+colorful tab is centred (topGap = bottomGap = 6.5px) and never reaches the strip foot or
+the canvas, so operator item 2 / success criterion 2 ("engulf") is not met. Root cause is
+exact: `align-self: flex-end` is declared on the inner `.tab` div (`styles.css:2122-2128`)
+but the flex item of `.tab-list` is the wrapping `<li>` (`AnimatedTab.tsx:157-165`, computed
+`display: list-item`, `align-self: auto`), so the declaration is inert. Renderer fix,
+routed to frontend-dev (TFL-213). qa retests and closes.
+
+
+## ADV-141: At the 640px minimum window with 10 tabs the strip overflows by 140px — 5 tabs' right edges and the "+" control lie past the strip's right edge and are clipped (unreachable), violating Phase 72 items 7-8
+
+- Session: diff-pass (TFL-212, Phase 72 tab surfaces)
+- Suggested severity: HIGH
+
+What I did: launched the dev build, opened 10 bundled documents, then resized the main window to the 640x800 minimum and measured the strip (`node test-fixtures/adv-p72-probe.cjs b`).
+
+At 1280x800 the fit works (`.tab-list` clientWidth 376, scrollWidth 376, 10 tabs uniform 32px, no clipping). At the 640x800 minimum the measured result is:
+
+- `.tab-list` clientWidth = **156**, scrollWidth = **296** (horizontal overflow = **140px**)
+- 10 colorful tabs all clamp to the hard floor of 24px (`HARD_MIN_TAB_WIDTH`), width spread 0
+- **5** tabs have `right > strip.right` — the rightmost tab's right edge is at x=436 while the strip's right edge is x=330
+- the `.tab-new` "+" button's left edge is x=442, i.e. entirely past the strip's right edge (strip right 330)
+
+`overflow-x` computes to `hidden`, so the overflowing tabs and the "+" control are clipped out of the bar and unreachable.
+
+Expected: Phase 72 item 8 and success criterion 7 (`docs/phase-specs/phase-72.md:30,50,66`): with 10 tabs at the 640px minimum window every tab keeps the SAME width, NO tab's right edge exceeds the strip's right edge, `.tab-list` `scrollWidth <= clientWidth`, and the strip contains every tab without scrolling.
+
+Actual: the uniform width applies (width spread 0.0), but the `HARD_MIN_TAB_WIDTH = 24` floor cannot fit 10 tabs in a 156px strip, so the row overflows by 140px and the tail tabs (plus the new-tab affordance) are clipped away. The Phase 72 claim that the hard floor "still contains every tab" is false at the required 640px state. This is the same surface as ADV-122 / ADV-128 (tabs unreachable at the 640px minimum), which the Phase 72 sizing change did not close.
+
+Reproduction steps:
+1. `npm.cmd run build`
+2. `node test-fixtures/adv-p72-probe.cjs b`
+3. Read `min640`: `list.clientWidth=156`, `list.scrollWidth=296`, `horizOverflow=140`, `clipped=5`, `rightMost=436` vs `list.right=330`, `plus.left=442`.
+4. Capture: `screenshots/adv-p72-b-overflow-640.png` (the squeezed tab row is cut at the strip's right edge, before the toolbar icons).
+
+Fixture: `test-fixtures/adv-p72-probe.cjs` (scenario `b`).
+
+Disposition: ACCEPTED -> DEF-456 (HIGH). CTO triage: reproducible and real - at the 640px
+minimum with 10 tabs the row overflows 140px and 5 tabs plus the "+" control are clipped out
+of the bar, violating operator item 8 / success criterion 7. Root cause is a code/comment
+contradiction in `planTabOverflow`: the comment (`AppHeader.tsx:84-87`) says the hard floor
+"is exceeded if the tabs cannot fit", but the implementation clamps the fit width UP to
+`HARD_MIN_TAB_WIDTH = 24` (`AppHeader.tsx:138-142`), which forces the overflow. Contract
+criterion 7 is achievable once the width is allowed to satisfy the fit inequality, so no
+contract change is needed; routed to frontend-dev (TFL-213). qa retests and closes.
+
+
+## ADV-142: The Phase 72 repoint of `e2e/phase58_tab_style.spec.cjs` asserts the OPPOSITE of success criterion 2, so the oracle now certifies the ADV-140 active-tab regression instead of catching it
+
+- Session: diff-pass (TFL-212, Phase 72 tab surfaces)
+- Suggested severity: MEDIUM
+
+What I did: read the Phase 72-repointed oracle `e2e/phase58_tab_style.spec.cjs` (uncommitted, TFL-207) against the phase contract while investigating the active-tab silhouette.
+
+The spec's "Criterion 3" block (lines 187-212) now asserts:
+
+```
+expect(flush.activeBottom, 'the active tab foot runs lower than the inactive chip foot')
+  .toBeGreaterThan(flush.inactiveBottom);
+expect(flush.activeBottom,
+  `the retired Phase 62 strip extension no longer reaches the canvas (foot ${flush.activeBottom} < canvas top ${flush.mainTop})`)
+  .toBeLessThan(flush.mainTop);
+```
+
+`docs/phase-specs/phase-72.md:24,61` requires the exact opposite: the active colorful tab "extends DOWN from the centred row to the strip's bottom edge / canvas top", "reaches the canvas: its bottom gap ... <= 1px with no separator line". The old Phase 58/62 assertion that the foot reaches the canvas was replaced by one that only requires it to sit BELOW the inactive chip and ABOVE the canvas — which the current (broken) geometry satisfies.
+
+Expected: an oracle that fails while the active tab floats 6.5px above the strip bottom (ADV-140). This is the same "stale/mis-repointed oracle certifies a broken surface" class as the task's own DEF-458.
+
+Actual: the repointed oracle passes on the shipped geometry (the probe measures the same `activeBottom=36.5 < mainTop=44`), so criterion 2 is green in `npm run test:e2e` while the operator's "engulf the canvas" requirement is not met. The comment on the block states the intent ("the strip no longer reaches past the header's border") but that strips-level change does not license the ACTIVE tab failing to reach the row foot — `align-self: flex-end` was meant to drop it and is inert (ADV-140).
+
+Reproduction steps:
+1. Read `e2e/phase58_tab_style.spec.cjs:187-213`.
+2. Read `docs/phase-specs/phase-72.md:24` (ruling item 2) and `:61` (success criterion 2).
+3. Compare with the ADV-140 probe result (`test-fixtures/adv-p72-probe.cjs a`): `activeBottom=36.5`, `mainTop=44`.
+
+Disposition: ACCEPTED -> DEF-457 (MEDIUM). CTO triage: real wrong-oracle - the Phase 72
+repoint asserts `activeBottom < mainTop`, the opposite of success criterion 2, so the oracle
+certifies the ADV-140 regression instead of catching it (same class as DEF-458). The
+corrected oracle asserts criterion 2 (`mainTop - activeBottom <= 1`, with
+`activeBottom > inactiveBottom` still true); it can only go green once DEF-455 lands. Routed
+to frontend-dev with the DEF-455/456 fix (TFL-213; Phase 72 permits developer oracle repoints
+to this contract). qa verifies and closes.
+
+
+
+
+
 

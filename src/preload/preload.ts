@@ -88,6 +88,7 @@ import type {
   ExportXlsxPayload,
 } from "../shared/export";
 import { normalizeArrayBuffer } from "./to-array-buffer";
+import { createAdoptBuffer } from "./adoptBuffer";
 
 // The renderer's engineClient.ts declares `window.tflex?.engine` with its own
 // TFlexApiEngine type. We expose the engine methods at runtime under that key
@@ -549,6 +550,15 @@ const exportApi = {
   },
 };
 
+// DEF-416 — register the adopt listener at preload load time, before the page
+// (and React) runs, so main's `tab:adopt` push can never land before a
+// listener exists. The payload is buffered until the renderer calls `onAdopt`
+// (see `adoptBuffer.ts`); `onAdopt` below replays anything queued.
+const adoptBuffer = createAdoptBuffer<TabTransferPayload>();
+ipcRenderer.on(IPC.tabAdoptEvent, (_event: unknown, payload: TabTransferPayload) => {
+  adoptBuffer.push(payload);
+});
+
 const api = {
   minimizeWindow(): void {
     void ipcRenderer.invoke(IPC.windowMinimize);
@@ -732,11 +742,7 @@ const api = {
       return ipcRenderer.invoke(IPC.tabDetach, payload);
     },
     onAdopt(cb: (payload: TabTransferPayload) => void): () => void {
-      const listener = (_event: unknown, payload: TabTransferPayload): void => cb(payload);
-      ipcRenderer.on(IPC.tabAdoptEvent, listener);
-      return () => {
-        ipcRenderer.removeListener(IPC.tabAdoptEvent, listener);
-      };
+      return adoptBuffer.subscribe(cb);
     },
     adoptAck(ok: boolean): Promise<void> {
       return ipcRenderer.invoke(IPC.tabAdoptAck, ok);

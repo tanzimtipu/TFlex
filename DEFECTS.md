@@ -5,6 +5,153 @@
 > inspect the current `OPEN`, `FIX-READY`, and `DISPUTED` entries first; closed records are
 > historical evidence and must not be loaded wholesale.
 
+## DEF-459: The Phase 72 geometry leaves the 3-tab tear-out oracle `e2e/phase61_tab_tearout.spec.cjs` stale - it samples the dragged tab's box before mousedown activation, so the follow assertion is off by the 4.5px active/inactive delta
+
+- Status: CLOSED
+- Severity: MEDIUM
+- Found by: qa (TFL-216 DEF-453 retest blast-radius check)
+- Phase: 72 (criterion 10 - "tear-out / drag-back (Phase 58 / 61) stay green")
+
+Steps to reproduce:
+1. `npm.cmd run build`, then `npm.cmd run test:e2e -- e2e/phase61_tab_tearout.spec.cjs`.
+
+Expected: the 3-tab tear-out oracle passes (Phase 61 criterion 1; Phase 72 criterion 10 keeps it green).
+
+Actual: 1 failed / 0 passed. `e2e/phase61_tab_tearout.spec.cjs:184` (`box.top 74.51 follows pointer dy 61.51`) expects `|s.top - (resting.top + s.dy)| <= 2.5` and measures 4.5. The spec samples `resting` (line 146) BEFORE `mouse.down()` (line 154); the mousedown runs the DEF-034 activation, which under the Phase 72 geometry grows the dragged (previously inactive, `top=8.5`, 26px) tab to the active 30px bottom-flush box (`top=13`) - a 4.5px base shift - before any drag transform. The pointer follow itself is correct (`dragY 62` vs `dy 61.51`, <=2; box.left tracks). Same wrong-oracle family as DEF-453: TFL-215 repointed only `e2e/phase61_tearout_overflow.spec.cjs`, not this sibling; reproduced 2/2 runs deterministically.
+
+Screenshot: none (measurement). Error context: `test-results/phase61_tab_tearout-criter-c898b--un-clipped-and-translucent/error-context.md`.
+
+History:
+- qa: opened (TFL-216, DEF-453 retest blast-radius check - nearest Phase 61 tear-out neighbour sharing the DEF-453 path).
+- orchestrator: FIX-READY (relaying the TFL-217/TFL-218 handoff - `e2e/phase61_tab_tearout.spec.cjs:144-158` now calls `mouse.move`/`mouse.down()` first, settles 150ms for the DEF-034 activation reflow, then samples the post-activation `resting` before the arm move; chip-derived `startX`/`startY`, positions, `dy` and the 2/2.5 tolerances unchanged. Evidence: `npm run test:e2e -- e2e/phase61_tab_tearout.spec.cjs` 1 passed / 0 failed with each sample `top == resting.top + dy`; sibling `phase61_tearout_overflow.spec.cjs` 1 passed. qa retests before CLOSED.)
+- qa: CLOSED (TFL-219 focused retest, FIX-READY). `npm.cmd run test:e2e -- e2e/phase61_tab_tearout.spec.cjs` -> 1 passed / 0 failed (8.8s); post-activation `resting.top=13`, each sample `top == resting.top + dy` exactly (74.51/104.51/134.51/164.51 for dy 61.51/91.51/121.51/151.51; left tracked dx -45/-5/40/75 exactly), all within the 2.5 tolerance; `[P61-opacity] outside=0.6 other=1`, `[P61-unclip] elementFromPoint=<dragId>`, release restores opacity 1. Blast-radius sibling `npm.cmd run test:e2e -- e2e/phase61_tearout_overflow.spec.cjs` -> 1 passed / 0 failed (5.9s), dragged box top=74.51 == expectedTop=74.51 and all 7 non-dragged tabs `dLeft=0.00 dTop=0.00`. Raw logs `test-output-tfl219-tearout.log` / `test-output-tfl219-overflow.log`. Phase 72 criterion 10 PASS; criterion 12 = all phase DEF/ADV entries CLOSED, phase-close commit pending.)
+
+## DEF-454: The Phase 72 repoint of `test/unit/renderer/phase62TabRestyle.test.tsx` still asserts `align-self: flex-end` on `.tab-active`, which DEF-455 moved to the wrapping `<li>`, so the unit suite is red
+
+- Status: CLOSED
+- Severity: MEDIUM
+- Found by: qa (TFL-214 Phase 72 phase-close validation; criterion 10 / 11)
+- Phase: 72 (criterion 10 names the repointed Phase 62 tab suite; criterion 11 requires targeted units for every changed renderer file)
+
+Steps to reproduce:
+1. `npm.cmd run build`, then `npm.cmd run test:unit -- test/unit/renderer/phase62TabRestyle.test.tsx`.
+
+Expected: the repointed Phase 62 tab suite passes (criterion 10 explicitly lists `phase62TabRestyle`).
+
+Actual: 1 failed / 8 passed / 9 total. `test/unit/renderer/phase62TabRestyle.test.tsx:129` (`Phase 72 — the strip is centred, not extended: only the active tab reaches the foot`) expects `blockFor('.tab-area[data-tab-style="colorful"] .tab-active {')` to contain `align-self: flex-end`. TFL-213 (DEF-455) moved that declaration off the inner `.tab-active` block to the wrapping flex item `.tab-list > li[data-tab-active="true"]` (`styles.css:2141-2143`), so the `.tab-active` block no longer contains it. The repoint updated the strip block (lines 120-125) and the list block (126-127) but left the active-block assertion (128-130) stale. Wrong-oracle class, same family as DEF-458 / DEF-457.
+
+Screenshot: none (unit assertion). Log: `test-output` run captured in the TFL-214 report (`cmd3b` unit run, 1 failed | 28 passed over the four tab suites).
+
+History:
+- qa: opened (TFL-214 Phase 72 phase-close validation).
+- orchestrator: FIX-READY (relaying frontend-dev, TFL-215 - `test/unit/renderer/phase62TabRestyle.test.tsx:128-136` now asserts `align-self: flex-end` on the live `.tab-area[data-tab-style="colorful"] .tab-list > li[data-tab-active="true"] {` block and keeps `height: 30px` on the `.tab-active` block. Evidence: `npm run test:unit -- test/unit/renderer/phase62TabRestyle.test.tsx` 9 passed / 0 failed; `verify` clean (319 files) + tsc green. qa retests before CLOSED.)
+- qa: CLOSED (TFL-216 focused retest). `npm.cmd run test:unit -- test/unit/renderer/phase62TabRestyle.test.tsx` -> 1 file passed, 9 passed / 0 failed. Blast-radius neighbour `npm.cmd run test:unit -- test/unit/renderer/phase59PaletteAndTabOverflow.test.tsx` -> 26 passed / 0 failed. `npm.cmd run verify` -> conventions clean (319 files) + tsc green. The stale `.tab-active` assertion is gone; the live `li[data-tab-active="true"]` block carries `align-self: flex-end`.
+
+## DEF-453: The Phase 72 repoint of `e2e/phase61_tearout_overflow.spec.cjs` compares tab boxes across the mousedown activation, so it fails deterministically on the Phase 72 active-tab geometry
+
+- Status: CLOSED
+- Severity: MEDIUM
+- Found by: qa (TFL-214 Phase 72 phase-close validation; command 4)
+- Phase: 72 (criterion 10 / the repointed Phase 61 tear-out suite)
+
+Steps to reproduce:
+1. `npm.cmd run build`, then `npm.cmd run test:e2e -- e2e/phase61_tearout_overflow.spec.cjs` (fresh user-data-dir; canonical `launchApp`).
+2. The spec opens 8 tabs, snapshots `restingAll` BEFORE mouse down, arms a tear-out on a non-active tab and samples `afterAll` during the drag.
+
+Expected (spec line 194, `TOL_REST = 2`): every non-dragged tab's box stays within 2px of its resting position when the tear-out arms.
+
+Actual: the previously-active tab sits 4.5px higher during the drag (`dTop=4.5 > 2`) and the test fails. Root cause is a stale oracle, not a product regression: the mousedown that starts the drag ACTIVATES the dragged tab (DEF-034 mousedown activation, required by criterion 10), so under the Phase 72 geometry the newly-active tab grows to 30px / `align-self: flex-end` while the de-selected tab shrinks to 26px and re-centres. Measured (fresh probe): dragged tab `restActive=false -> duringActive=true`, `liH 26 -> 30`; ex-active tab `restActive=true -> duringActive=false`, `liH 30 -> 26`, top 13 -> 8.5. `restingAll` is sampled before that activation, so the oracle measures an intended selection reflow. Reproduced 2/2 runs (deterministic).
+
+Screenshot: `test-results/phase61_tearout_overflow-D-e0483-.../error-context.md`; measurement line `[P61-ovf-rest] <ex-active-id> dTop=4.50`.
+
+History:
+- qa: opened (TFL-214 Phase 72 phase-close validation).
+- orchestrator: FIX-READY (relaying frontend-dev, TFL-215 - `e2e/phase61_tearout_overflow.spec.cjs:155-171` now calls `mouse.down()` first, waits 150ms for the DEF-034 activation reflow to settle, then samples `restingAll`/`restingDrag` with no drag transform, so the non-dragged loop measures the tear-out reflow only; `TOL_REST`/`TOL_FOLLOW` unchanged. Evidence: `npm run test:e2e -- e2e/phase61_tearout_overflow.spec.cjs` 1 passed / 0 failed with `[P61-ovf-rest] dTop=0.00` on all 7 non-dragged tabs; `verify` clean + tsc green. qa retests before CLOSED.)
+- qa: CLOSED (TFL-216 focused retest). `npm.cmd run test:e2e -- e2e/phase61_tearout_overflow.spec.cjs` -> 1 passed / 0 failed; every `[P61-ovf-rest]` line `dLeft=0.00 dTop=0.00` on all 7 non-dragged tabs (<=2), and the dragged box `tearing.top=74.51` vs `expectedTop=74.51`. Blast-radius neighbour `e2e/phase61_tab_tearout.spec.cjs` is red on the same activation-delta pattern -> filed as DEF-459 (see below).
+
+## DEF-457: The Phase 72 repoint of `e2e/phase58_tab_style.spec.cjs` asserts the OPPOSITE of success criterion 2, so the oracle certifies the active-tab regression
+
+- Status: CLOSED
+- Severity: MEDIUM
+- Found by: adversary (ADV-142)
+- Phase: 72 (criterion 2)
+
+Steps to reproduce:
+1. Read `e2e/phase58_tab_style.spec.cjs:187-212` (uncommitted, repointed by TFL-207) and compare with `docs/phase-specs/phase-72.md:24,61`.
+
+Expected: an oracle that fails while the active colorful tab floats 6.5px above the strip bottom (the "engulf the canvas" rule of item 2 / criterion 2).
+
+Actual: the "Criterion 3" block asserts `activeBottom < mainTop` (the foot sits ABOVE the canvas top) and only requires `activeBottom > inactiveBottom`, so it passes on the shipped broken geometry (`activeBottom=36.5 < mainTop=44`) and certifies the DEF-455 regression. Wrong-oracle class, same as DEF-458.
+
+Screenshot: none (read-only oracle comparison).
+
+History:
+- orchestrator: opened (accepted from ADV-142). Owner frontend-dev (Phase 72 permits developer repoints of the tab-style oracle; TFL-207 authored this assertion). Corrected assertion: criterion 2 (`mainTop - activeBottom <= 1`, `activeBottom > inactiveBottom`); routed with the DEF-455/456 fix (TFL-213). qa verifies and closes.
+- orchestrator: FIX-READY (relaying frontend-dev, TFL-213 - `e2e/phase58_tab_style.spec.cjs:205-213` now asserts `mainTop - activeBottom <= 1` while keeping `activeBottom > inactiveBottom`. Evidence: `npm run test:e2e -- e2e/phase58_tab_style.spec.cjs e2e/phase59_tab_overflow.spec.cjs` 3 passed; measured flush `activeBottom=43, mainTop=44` = 1px gap. qa retests before CLOSED.)
+- qa: CLOSED (TFL-214 Phase 72 phase-close). `npm.cmd run test:e2e -- ... e2e/phase58_tab_style.spec.cjs` passed ("colorful tabs are uniform + flat with the reference silhouette; Standard toggle persists"); the criterion-2 assertion `mainTop - activeBottom <= 1` is now live. Independently corroborated by `node test-fixtures/adv-p72-probe.cjs a` (active `bottomGap:0` to `.tab-list`, header bottom 44 - tab bottom 43 = 1px to the canvas).
+
+## DEF-456: At the 640px minimum window with 10 tabs the strip overflows by 140px - tail tabs and the "+" control are clipped
+
+- Status: CLOSED
+- Severity: HIGH
+- Found by: adversary (ADV-141)
+- Phase: 72 (operator item 8 / criterion 7)
+
+Steps to reproduce:
+1. `npm.cmd run build`, then `node test-fixtures/adv-p72-probe.cjs b` - opens 10 bundled documents, resizes the window to 640x800.
+
+Expected (criterion 7): with 10 tabs at the 640px minimum, every colorful tab is the SAME width, NO tab's right edge exceeds the strip's right edge, and `.tab-list` `scrollWidth <= clientWidth` (no horizontal overflow, `overflow-x` hidden).
+
+Actual: `.tab-list` clientWidth 156, scrollWidth 296 (overflow 140px); all 10 tabs clamp to the 24px hard floor; 5 tabs' right edges (rightmost 436) exceed the strip's right edge (330) and the `.tab-new` "+" control's left edge is 442 - all clipped out of the bar and unreachable. Root cause: `planTabOverflow` clamps the computed fit width UP to `HARD_MIN_TAB_WIDTH = 24` (`AppHeader.tsx:138-142`), contradicting its own comment (`AppHeader.tsx:84-87`, "Even this is exceeded if the tabs cannot fit"). The unit oracle encodes the bug (`phase59PaletteAndTabOverflow.test.tsx:311,324,337` assert `>= HARD_MIN_TAB_WIDTH`).
+
+Screenshot: screenshots/adv-p72-b-overflow-640.png.
+
+History:
+- orchestrator: opened (accepted from ADV-141). Owner frontend-dev (TFL-213). Fix: the plan must always satisfy `count*width + (count-1)*gap <= available` - the width may shrink below the 24px compactness threshold (title elides; close stays last child) and/or the inter-tab gap collapses toward 0 - so the 640px/10-tab state never overflows; repoint the unit assertions to the fit invariant. Goal confirmed achievable, so criterion 7 stands unchanged.
+- orchestrator: FIX-READY (relaying frontend-dev, TFL-213 - `planTabOverflow` (`AppHeader.tsx:84-152`) now returns the largest width satisfying `count*width + (count-1)*gap <= available`, applying the compactness floor only while it fits; the colorful `.tab` padding yields to `--tf-tab-width` (`styles.css:2079-2099`) so a >20px tab is renderable; the unit assertions were repointed to the fit invariant (`phase59PaletteAndTabOverflow.test.tsx:302-352,383-401`) and the 640px e2e now opens 10 tabs. Evidence: unit 26 passed; e2e 3 passed; measured 640px/10-tab `scrollWidth=156 == clientWidth=156`, uniform width, every tab and the "+" inside the strip; default 16-tab `scrollWidth=1656 == clientWidth=1656`. qa retests before CLOSED.)
+- qa: CLOSED (TFL-214 Phase 72 phase-close). `node test-fixtures/adv-p72-probe.cjs b` -> at 640x800 with 10 tabs: `.tab-list` clientWidth 156 == scrollWidth 156, horizOverflow 0, clipped 0, uniform width 10 (widthSpread 0), "+" right edge 326 inside the strip right edge 330; default window uniform width 160, overflow 0. `npm.cmd run test:e2e -- ... e2e/phase59_tab_overflow.spec.cjs` passed, including the 640px minimum case.
+
+## DEF-455: The active colorful tab never reaches the strip foot / canvas - it floats 6.5px above the strip bottom in all three themes
+
+- Status: CLOSED
+- Severity: HIGH
+- Found by: adversary (ADV-140)
+- Phase: 72 (operator item 2 / criterion 2)
+
+Steps to reproduce:
+1. `npm.cmd run build`, then `node test-fixtures/adv-p72-probe.cjs a` - two documents open so one colorful tab is active and one inactive.
+
+Expected (criterion 2): the active tab extends DOWN to the strip's bottom edge / canvas top - bottom gap <= 1px, no separator line, its fill continuous with the canvas; only inactive tabs float (>= 2px gaps).
+
+Actual: the active tab measures topGap = bottomGap = 6.5px to `.tab-list` (7.5px to the canvas top) in light, dark and frosted - it is vertically centred like the inactive chips, only 4px taller. Root cause: `align-self: flex-end` (`styles.css:2126`) is declared on the inner `.tab` div, but the flex item of `.tab-list` is the wrapping `<li>` (`AnimatedTab.tsx:157-165`, computed `display: list-item`, `align-self: auto`), so the property is inert.
+
+Screenshot: screenshots/adv-p72-a-zoom-active-light.png.
+
+History:
+- orchestrator: opened (accepted from ADV-140). Owner frontend-dev (TFL-213). Fix: apply the flex-row alignment to the `<li>` flex item (e.g. an active hook on `motion.li` + `align-self: flex-end` in the colorful scope), keeping the active top corners rounded and bottom corners square with no separator. qa retests and closes.
+- orchestrator: FIX-READY (relaying frontend-dev, TFL-213 - `data-tab-active` added to the wrapping `<motion.li>` (`AnimatedTab.tsx:164-168`) and `.tab-area[data-tab-style="colorful"] .tab-list > li[data-tab-active="true"] { align-self: flex-end }` added, retiring the inert rule on `.tab-active` (`styles.css:2125-2143`). Evidence: `npm run build` green; e2e 3 passed with measured flush `activeBottom=43, inactiveBottom=34.5, mainTop=44` -> canvas gap 1px (<=1), underline `afterContent:"none"`; verify clean (319 files) + tsc green. qa retests before CLOSED.)
+- qa: CLOSED (TFL-214 Phase 72 phase-close). `node test-fixtures/adv-p72-probe.cjs a` -> active tab `bottomGap:0` to `.tab-list` (tab bottom 43, header bottom 44 -> 1px to the canvas, <=1) and `beforeRadii:[5,5,0,0]` (top corners rounded, bottom square) in light, dark and frosted; inactive `topGap/bottomGap 8.5`; `.tab-active::after` separator removed. Zoomed screenshots `screenshots/qa-p72-dirty-light.png` and `adv-p72-a-zoom-active-light.png` show the flush foot. `e2e/phase58_tab_style.spec.cjs` criterion 2 passes.
+
+## DEF-458: Adversary tear-out probe `test-fixtures/adv-p58-tabs.cjs` is stale - it still targets the retired `.tab-colour-chip`, so its s8 run cannot execute
+
+- Status: CLOSED
+- Severity: LOW
+- Found by: adversary (probe rot; surfaced by backend-dev during TFL-210)
+- Phase: 72 (item 3 / ruling 4 retired the always-on chip)
+
+Steps to reproduce:
+1. `npm.cmd run build`, then `node test-fixtures/adv-p58-tabs.cjs s8` (fresh user-data-dir; launches through `e2e/lib/launch.cjs`).
+
+Expected: the probe drives the tear-out gesture (drag the tab below the strip) and reports the DEF-416 blank-window result.
+
+Actual: the probe errors before any data - `tearOut` waits for `[data-tab-id] .tab-colour-chip` (`test-fixtures/adv-p58-tabs.cjs:35`), an element Phase 72 item 3 deleted from `AnimatedTab.tsx`, so the wait times out and no blank-window measurement is produced. This is test-harness rot, not a product regression: the canonical regression `e2e/phase58_def414_417.spec.cjs` already uses the current `.tab-title` selector and is 8/8 green.
+
+Impact: LOW - the DEF-416 attack class can no longer be reproduced through the adversary's own probe, so its independent evidence path is dark until repointed. The e2e oracle still covers the class.
+
+History:
+- orchestrator: opened (surfaced during TFL-210's named verification: command 3 could not run. Owner adversary - `test-fixtures/` probes are adversary/qa-owned, and the probe is the adversary's DEF-416 attack artifact. The repoint is a one-selector fix mirroring the `.tab-title` grab already in `phase58_tab_reorder.spec.cjs:218-245`. Dispatched with the Phase 72 adversarial diff-pass so the probe is validated in the same task.)
+- qa: CLOSED (TFL-214 Phase 72 phase-close). The repoint took: `node test-fixtures/adv-p58-tabs.cjs s8` runs end-to-end to `DONE s8` (no selector timeout). Result `hadTab:true`, `loaded:true`, `pages:34`, verbs `[rotate,extract,insertPages,replacePages,split,delete,merge,cropPages]`, zero blank orphan. The probe's tear-out gesture now grabs `.tab-title`.
+
 ## DEF-438: Form field controls do not follow page rotation — the FormsOverlay editor layer stays at unrotated coordinates, so controls float off their widgets on a rotated form page
 
 - Status: CLOSED
@@ -741,7 +888,7 @@ History:
 - Status: CLOSED
 - Severity: MEDIUM
 - Found by: adversary (ADV-119)
-- Phase: 58
+- Phase: 58 (reopened during Phase 72, TFL-204)
 
 Steps to reproduce:
 1. `npm.cmd run build`, then run the adversary harness `node test-fixtures/adv-p58-tabs.cjs s8` repeatedly (fresh user-data-dir each run; it launches through `e2e/lib/launch.cjs`).
@@ -758,6 +905,9 @@ History:
 - qa: opened (reproduced on the current build this session in 2 of 4 runs, matching the adversary's 4 of 6. Blank runs: hadTab=false, loaded=false, preMod={verbs:[],mod:false,tab:false,pages:0}, secondUrl=`...index.html#detached`, originWhileDetached.count=1. The other 2 runs loaded normally, so the race is intermittent.)
 - orchestrator: FIX-READY (relaying backend-dev - delivery is now race-free: `createDetachedWindow` no longer loads; it returns a `DetachedWindowHandle { window, load }` and `openDetached` attaches the `did-finish-load` listener FIRST, then calls `load()`, with a `delivered` once-guard and an `if (!webContents.isLoading()) deliver()` fast path for an already-finished load. Evidence: `test/unit/main/tabWindows.test.ts` 9 passed (2 new deterministic-delivery tests); `typecheck` exit 0; `build:node` exit 0.)
 - qa: CLOSED (retest on the rebuilt 1.45.0 dev app; 8 fresh launches, each with a fresh user-data-dir; every tear-out adopted the document: hadTab=true + pageCount=34 in 8/8 runs. Zero blank orphan windows. Screenshot (run 1): screenshots/def416-adopted-run1.png. e2e/phase58_tab_detach.spec.cjs + 4 Phase-58 specs all green; tabWindows 9/9.)
+- orchestrator: REOPENED (during Phase 72 TFL-204 packaged proof the recurrence was observed again: 2/8 runs of the phase58_def414_417 oracle produced a blank orphan `#detached` on the PACKAGED payload, while the DEF-416 main-side delivery fix stayed intact. Residual isolated to the main -> renderer adopt-delivery handshake: main emits `tabAdoptEvent` on `did-finish-load` but the renderer subscribes only in a React useEffect, so an event that arrives first is delivered to no listener. Routed to backend-dev as TFL-210; renderer React explicitly out of scope.)
+- orchestrator: FIX-READY (relaying backend-dev, TFL-210 - delivery is now buffered in the PRELOAD, independent of React mount timing. New pure `src/preload/adoptBuffer.ts` (`createAdoptBuffer`) queues `tab:adopt` payloads until `onAdopt` subscribes, replays them in order exactly once, then streams later payloads through; unsubscribe resumes buffering. `src/preload/preload.ts` now registers ONE persistent `ipcRenderer.on(IPC.tabAdoptEvent)` at preload load (before the page/React runs) and `tabs.onAdopt(cb)` returns `adoptBuffer.subscribe(cb)`. No renderer change; onAdopt contract unchanged. Evidence: `npm run build` green; `npm run test:e2e -- e2e/phase58_def414_417.spec.cjs` 4 passed / 0 failed with the DEF-416 oracle 8/8 adopted (every run hadTab=true pageCount=34; bad=[]); `test/unit/main/tabWindows.test.ts` 10 passed (9 prior + 1 new deterministic pre-subscribe replay test); `npm run verify` clean (319 files) + tsc green. qa to retest before CLOSED. NOTE: the sibling adversary harness `test-fixtures/adv-p58-tabs.cjs` could not run - its tearOut still grabs the retired `.tab-colour-chip` (filed as DEF-439, adversary-owned); the e2e oracle above is the primary regression and is 8/8 green.)
+- qa: CLOSED (TFL-214 Phase 72 phase-close, rebuilt 1.46.0 dev tree). `npm.cmd run test:e2e -- ... e2e/phase58_def414_417.spec.cjs` -> the DEF-416 oracle 8/8 adopted (every run `hadTab:true`, `pageCount:34`, `beforeTabs:1`; no blank orphan). Independent adversary path now also green (DEF-439 repoint): `node test-fixtures/adv-p58-tabs.cjs s8` -> `hadTab:true`, `loaded:true`, `pages:34`, reached `DONE s8`. Zero blank `#detached` windows across 9 launch runs total.
 
 ## DEF-415: Detached window has no unsaved-changes close gate - its titlebar close discards edits silently
 
@@ -8950,6 +9100,14 @@ History:
   leave scroll unchanged (82->82) and a background-tab reorder leaves scroll 524->524 with
   the active slot unchanged. Evidence: `screenshots/def433-rv-c1.png`, `def433-rv-c2c.png`,
   `def433-rv-c3-reduced.png`, `def433-rv-c3b-off.png`.
+- CTO: SUPERSEDED (Phase 72, ruling 9, TFL-202). Phase 72 retires the tab-strip scroll
+  container: `.tab-list` is `overflow: hidden` and the uniform fit width always keeps every
+  tab inside the strip, so the `scrollActiveIntoView` / DEF-428 / DEF-433 reveal machinery was
+  removed entirely. A squeezed strip can no longer overflow, so no scroll correction is
+  possible or needed; the no-clip guarantees (`phase60_tab_drag.spec.cjs:410-411`) are the
+  real criterion-6 invariant and stay. The `scrollAfter > 0` assertion at
+  `phase60_tab_drag.spec.cjs:412` is repointed to the Phase 72 no-scroll contract by the Phase
+  72 oracle-repoint chunk. No product fix owed - the retire IS the fix.
 
 ## DEF-434: Preferences still reads as disorganized — descriptions float between the control rows instead of occupying a text column
 

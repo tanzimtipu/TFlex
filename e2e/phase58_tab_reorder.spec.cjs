@@ -61,10 +61,11 @@ async function docIdentity() {
   });
 }
 
-// Drag a tab by its leading colour chip (outside .tab-title, so the native
-// text-selection guard is not engaged) to an absolute viewport X.
+// Drag a tab by its title (the whole tab is the drag surface; the title is
+// user-select: none, so the native text-selection guard is not engaged) to an
+// absolute viewport X.
 async function dragTabByChip(tabId, targetX) {
-  const chip = win.locator(`[data-tab-id="${tabId}"] .tab-colour-chip`);
+  const chip = win.locator(`[data-tab-id="${tabId}"] .tab-title`);
   const box = await chip.boundingBox();
   const startX = box.x + box.width / 2;
   const y = box.y + box.height / 2;
