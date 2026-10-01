@@ -23,6 +23,19 @@ export interface WhatsNewEntry {
 /** Ordered newest first. */
 export const WHATS_NEW: WhatsNewEntry[] = [
   {
+    version: '1.46.0',
+    date: '2026-10-01',
+    highlights: [
+      'The app is now Jovrel: the accent across buttons, selection and focus rings is the Jovrel violet, with a matching app icon and favicon.',
+      'New Book View: open any document in a clean, read-only, in-canvas book mode that hides the side rails and action dock so you can read straight through.',
+      "Form fields render as a single Adobe-grade layer: values land in the document's own fields with proper appearances, so nothing is drawn on top and other readers show the values.",
+      'All colorful tabs now share one size and a calmer colour, so the active tab stays legible and merged into the canvas.',
+      'The conversion and 3D notices fold into a small "i" you can click to read again.',
+      'Fixed: Preferences aligns each setting\'s label and control in their own columns, and the collapsed protection notice stays pinned to the canvas top-left.',
+      "The dock's edit pen now uses the Edit stage colour.",
+    ],
+  },
+  {
     version: '1.45.4',
     date: '2026-10-01',
     highlights: [
