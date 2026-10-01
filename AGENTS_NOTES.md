@@ -1389,6 +1389,13 @@ pre-warn relevant entries when dispatching.
   no guesses.
 - git-agent: stages `.env` / screenshots / test-results despite deny-list. Rule:
   stage explicitly; unexpected files = stop and report.
+- frontend-dev: committed its own chunk (TFL-165, commit `676edcd`, 2026-10-01) instead
+  of leaving the tree for git-agent. Rule: developers never commit — git-agent is the
+  only committer; a dev's finished, verified edit is left uncommitted in the tree.
+- retry convention (operator note, corrected 2026-10-01): the LOAD-FLAKE convention was
+  recorded as `describe.retry(2)`, which does not exist on Vitest's SuiteAPI (TS2339).
+  Rule: the supported form is `describe(name, { retry: 2 }, fn)`; verify against the
+  installed `node_modules/vitest` typings before pinning an API in a convention/brief.
 - CTO: briefed a child with `--grep` (TFL-55, 2026-10-01) — vitest 4.1.11 rejects
   `--grep` (CACError) and has no equivalent flag; the child had to improvise the
   documented-equivalent filter. Rule: check the installed runner's flags before
@@ -4903,4 +4910,13 @@ when a chunk changes an exported metric, a CSS width/token, or adds a selector t
 `--sem-*`/`--tf-stage-*`, update every contract test that pins the old value in the SAME chunk - a
 targeted spec for the new behaviour passing does not prove the old contract spec was updated. If
 `verify:full` is red only in committed contract tests, fix the oracle (wrong-oracle escape), not the
-implementation.
+implementation.2026-10-01 (operator): LOAD-FLAKE retry convention. `verify:full` runs 560+
+files in parallel; on a saturated host, timing-sensitive suites that
+re-import real modules or drive React through `act()` can fail with no code
+fault — three consecutive operator runs failed three DIFFERENT timing tests
+(`def300OpenPathRouting` x2, `bugDEF098_jumpTargetSticky`), each green in
+isolation and green on the same tree in a quiet run. Convention: mark such
+suites `describe.retry(2)` with a comment naming the load-flake class, so an
+environmental hiccup costs a re-run instead of a false defect cycle, while a
+consistent double failure still surfaces as a real bug. Never add retry to
+cover a deterministic failure — diagnose those properly.

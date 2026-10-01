@@ -31,3 +31,7 @@ screenshots/
 /latest_gh.yml
 /dev-app-update.yml
 .neon
+
+# Runtime build mutex written by agents before heavy build/test commands
+# (see SHARED WORKSPACE rules). Never committed; the watchdog reaps staleness.
+/.paperclip-build.lock
