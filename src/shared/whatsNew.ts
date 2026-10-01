@@ -23,6 +23,18 @@ export interface WhatsNewEntry {
 /** Ordered newest first. */
 export const WHATS_NEW: WhatsNewEntry[] = [
   {
+    version: '1.47.0',
+    date: '2026-10-02',
+    highlights: [
+      'Windows now shows the Jovrel icon correctly in every Explorer folder view - Extra large, Large, Medium, Tiles and Content - with crisp native frames instead of stretched or stale art.',
+      'Book View reads like a real book: a spine-hinged page flip, spread-aware page numbers, and an animated entry, with a single/two-page layout toggle.',
+      'Conversion and 3D notices now render inside the canvas beside Book View and fold away to a small "i" you can reopen.',
+      `Encrypted forms render as one Adobe-grade field layer: tick boxes persist reliably and the save report tells the truth about what was skipped.`,
+      'Tabs share one calmer size and stronger colours, with a smaller dirty dot that stays visible at the squeezed width.',
+      'Dock edit-mode now uses an iOS-style jiggle instead of a vibration.',
+    ],
+  },
+  {
     version: '1.46.0',
     date: '2026-10-01',
     highlights: [
