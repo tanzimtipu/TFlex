@@ -847,6 +847,10 @@ export interface FormField {
   /** Phase 59 item 4 — the field's ReadOnly flag (/Ff bit 1). Present and
    *  true only when the field is read-only. */
   readOnly?: boolean;
+  /** DEF-445 - true for a push button (/FT /Btn with the Pushbutton bit; pdf-lib PDFButton). pdf.js
+   *  canvas-paints a push button under AnnotationMode.ENABLE_FORMS, so the renderer suppresses its
+   *  overlay editor. Absent for every other field. */
+  pushButton?: boolean;
 }
 
 /** Phase 59 item 4 — one widget position of a multi-widget button GROUP

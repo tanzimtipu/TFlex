@@ -1,5 +1,6 @@
 import {
   PDFArray,
+  PDFButton,
   PDFCheckBox,
   PDFDict,
   PDFDocument,
@@ -670,6 +671,9 @@ export function getFormFields(pdfDoc: PDFDocument): FormField[] {
     }
     if (formFieldReadOnly(field)) {
       formField.readOnly = true;
+    }
+    if (field instanceof PDFButton) {
+      formField.pushButton = true;
     }
     if (isSignatureField(field)) {
       // DEF-423 — second signal alongside `kind: 'signature'`: a fill against

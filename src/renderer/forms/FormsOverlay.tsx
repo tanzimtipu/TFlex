@@ -162,6 +162,8 @@ function FieldEditor(props: FieldEditorProps): ReactElement | null {
   // make a read-only control completely invisible (DEF-444).
   //
   //   - `kind === "signature"`: always canvas-painted -> suppress.
+  //   - push buttons (`field.pushButton`): the push-button branch of
+  //     ButtonWidgetAnnotation is canvas-painted -> suppress.
   //   - `readOnly === true` on a REAL TEXT field (a real field id is never
   //     `orphan-…`) -> canvas-painted -> suppress.
   //   - a read-only checkbox / radio / dropdown / listbox is NOT canvas-painted
@@ -174,7 +176,11 @@ function FieldEditor(props: FieldEditorProps): ReactElement | null {
   // decides the surface.
   const isRealField = !field.id.startsWith("orphan-");
   const kind: string = field.kind;
-  if (kind === "signature" || (field.readOnly === true && isRealField && kind === "text")) {
+  if (
+    kind === "signature" ||
+    field.pushButton === true ||
+    (field.readOnly === true && isRealField && kind === "text")
+  ) {
     return null;
   }
   // Phase 59 (ADV-123 / ADV-124) — the SINGLE fail-safe gate. Only an

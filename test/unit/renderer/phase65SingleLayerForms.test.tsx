@@ -312,6 +312,18 @@ describe("Phase 65 chunk 2 — overlay only where pdf.js does NOT paint the widg
     m.unmount();
   });
 
+  it("suppresses a push button entirely (canvas paints it)", () => {
+    const m = mountOverlay([
+      {
+        ...textField("form-1-go", { x: 10, y: 20, width: 90, height: 24 }, ""),
+        pushButton: true,
+      },
+    ]);
+    expect(m.container.querySelectorAll('[data-form-field="form-1-go"]').length).toBe(0);
+    expect(m.container.querySelector('[data-form-nonfillable="true"]')).toBeNull();
+    m.unmount();
+  });
+
   it("renders one disabled control per widget of a read-only radio group", () => {
     const group = { ...widgetRadio(), readOnly: true, value: "mr" };
     const m = mountOverlay([group]);

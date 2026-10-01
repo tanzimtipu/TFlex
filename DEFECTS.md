@@ -9404,7 +9404,7 @@ History:
 
 ## DEF-445: Push-button fields still double-surface — pdf.js paints the push button on the canvas while FormsOverlay mounts an editable text editor over it (`formFieldKind` misclassifies `PDFButton` as `text`)
 
-- Status: OPEN
+- Status: CLOSED
 - Severity: MEDIUM
 - Found by: adversary (TFL-130 / TFL-49.8 diff-pass, Phase 65); ADV-134 (secondary)
 - Phase: 65 (feature A / criterion 2 "no field appears twice")
@@ -9431,6 +9431,46 @@ History:
 - CTO: triaged ACCEPTED -> DEF-445 (MEDIUM). Needs an engine classification (a non-breaking optional flag
   on `FormField`, e.g. `pushButton?: boolean`) plus a renderer suppression; sequenced after DEF-444.
   Owner: backend-dev then frontend-dev.
+- CTO (2026-10-01, watchdog resume of TFL-49): DEF-444 is CLOSED (qa TFL-139), but DEF-445 was never
+  dispatched — Phase 65 criterion 9 stays OPEN until it closes. Dispatched the engine half to backend-dev
+  as child **TFL-151** (`src/shared/types.ts` + `src/main/services/forms.ts`: add `pushButton?: boolean`,
+  set it for `PDFButton`, keep `formFieldKind` unchanged). Recorded ORCHESTRATOR RULING 8 in REQUIREMENTS.md
+  Phase 65. Renderer suppression (frontend-dev) follows the engine flag; qa then verifies; Phase 65
+  phase-close commit after DEF-445 closes.
+- backend-dev (TFL-151): engine chunk done and reviewed. `src/shared/types.ts:850-853` adds the optional
+  `pushButton?: boolean` (FormFieldKind unchanged); `src/main/services/forms.ts:3` imports `PDFButton` and
+  `:675-676` sets `formField.pushButton = true` only for a `PDFButton` (mirrors the readOnly wiring); new
+  `test/unit/main/formsPushButton.test.ts`. Evidence: `npx.cmd vitest run formsPushButton.test.ts
+  forms.test.ts` -> 2 files / 41 tests passed; `npm.cmd run verify` exit 0. Not committed.
+  Dispatched the renderer half to frontend-dev as child **TFL-152** (extend the single `FieldEditor` gate
+  to `field.pushButton === true`; one new unit case; 4 focused specs + verify). qa FIX-READY verification
+  follows TFL-152 to cover the complete DEF-445 fix in one rendered push-button proof.
+- frontend-dev (TFL-152): renderer chunk done and reviewed — `src/renderer/forms/FormsOverlay.tsx:178-181`
+  gate now `kind === "signature" || field.pushButton === true || (field.readOnly === true && isRealField &&
+  kind === "text")`; one new case in `phase65SingleLayerForms.test.tsx` at :319 ("suppresses a push button
+  entirely"). Evidence: 4 renderer specs / 49 tests passed; `npm.cmd run verify` exit 0. Dispatched qa
+  FIX-READY verification as child **TFL-153** (build; 5 unit files incl. formsPushButton; verify; a new
+  synthetic push-button fixture + e2e `(b4)` proving the button reports `pushButton === true` with zero
+  overlay surfaces and one canvas paint; the full phase65 spec as blast radius; qa alone CLOSES).
+- qa (TFL-153, 2026-10-01): FIX-READY verification PASS — CLOSED. Defect behaviour no longer reproduces.
+  - `npm.cmd run build` -> exit 0.
+  - `npx.cmd vitest run test/unit/renderer/phase65SingleLayerForms.test.tsx
+    test/unit/renderer/phase59FormWidgets.test.tsx test/unit/renderer/formsOverlayFillPath.test.tsx
+    test/unit/renderer/formsCssStacking.test.ts test/unit/main/formsPushButton.test.ts`
+    -> 5 files passed, 0 failed, 51 tests passed.
+  - `npm.cmd run verify` -> exit 0 (conventions clean, 318 source files scanned; tsc 0).
+  - New synthetic fixture `test-fixtures/phase65/make-pushbutton-fixture.cjs` ->
+    `test-fixtures/phase65/form-pushbutton-anon.pdf` (fillable text control + `PDFButton`, both with a
+    visible grey /AP /N). New e2e test `(b4)` at `e2e/phase65_form_layer.spec.cjs:571`.
+  - `npx.cmd playwright test e2e/phase65_form_layer.spec.cjs --reporter=list` -> 11 passed, 0 failed
+    (blast radius green: (a) control count, (b)/(b2) single-layer, (b3) read-only non-text,
+    (c)/(c2)/(c3)/(c4) geometry/rotation, (d) fill, (e) foreign annotations/selection; plus new (b4)).
+  - `(b4)` evidence: engine reports `form-0-push_button` with `pushButton=true` and `kind=text`
+    (classification unchanged); zero `.forms-layer [data-form-field]` surfaces and zero
+    `[data-form-nonfillable="true"]` surfaces; canvas paints the widget rect once
+    (grey=8640/8640). Screenshot: `screenshots/p65-pushbutton.png` (fillable text editor visible,
+    push button = single grey canvas box, no overlay editor).
+  - Not committed (git-agent is the only committer).
 
 ## DEF-446: Book View annotation placement also turns the book page — a placed ink/highlight mark commits to page 1 but the same gesture's terminal click fires the page-turn handler, so the view advances off the marked page
 

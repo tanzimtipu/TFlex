@@ -32,6 +32,7 @@ const { PDFDocument } = require('@cantoo/pdf-lib');
 const SHOTS = path.resolve(__dirname, '..', 'screenshots');
 const FIXTURE = path.resolve(__dirname, '..', 'test-fixtures', 'phase65', 'form-956-anon.pdf');
 const LOCKED_FIXTURE = path.resolve(__dirname, '..', 'test-fixtures', 'phase65', 'form-locked-anon.pdf');
+const PUSHBUTTON_FIXTURE = path.resolve(__dirname, '..', 'test-fixtures', 'phase65', 'form-pushbutton-anon.pdf');
 const PAGE_W = 595.28; // pt — must match make-fixture.cjs
 const PAGE_H = 841.89;
 const PAGE_FIELDS = [3, 4, 5, 6];
@@ -459,6 +460,167 @@ test('(b2) SIGNATURE + READ-ONLY — canvas-only surface, zero overlay controls'
   expect(px[ro.id].grey, 'read-only field paints exactly one canvas surface').toBeGreaterThan(0);
   expect(px[sig.id].grey, 'signature field paints exactly one canvas surface').toBeGreaterThan(0);
   await win.screenshot({ path: path.join(SHOTS, 'p65-locked-surfaces.png') });
+});
+
+// ---- (b3) read-only NON-TEXT widgets (DEF-444) ----------------------------
+
+test('(b3) READ-ONLY NON-TEXT — checkbox/radio/dropdown/listbox render exactly one disabled overlay surface; text/signature stay canvas-only', async () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'tflex-p65-locked-'));
+  const copy = path.join(tmp, 'form-locked-anon.pdf');
+  fs.copyFileSync(LOCKED_FIXTURE, copy);
+  await openPdfGeneric(copy, 7);
+  await win.waitForSelector('.pdf-page[data-page="1"]', { timeout: 20000 });
+  await win.waitForTimeout(700);
+
+  const d = await win.evaluate(() => window.tflexDiagnostics());
+  const fields = d.formFields || [];
+  const fillText = fields.find((f) => f.kind === 'text' && f.readOnly !== true);
+  const roText = fields.find((f) => f.kind === 'text' && f.readOnly === true);
+  const sig = fields.find((f) => f.kind === 'signature');
+  const cb = fields.find((f) => f.kind === 'checkbox' && f.readOnly === true);
+  const radio = fields.find((f) => f.kind === 'radio' && f.readOnly === true);
+  const dd = fields.find((f) => f.kind === 'dropdown' && f.readOnly === true);
+  const lb = fields.find((f) => f.kind === 'listbox' && f.readOnly === true);
+  expect(fillText, 'the fixture reports a fillable text field').toBeTruthy();
+  expect(roText, 'the fixture reports a read-only text field').toBeTruthy();
+  expect(sig, 'the fixture reports a signature field').toBeTruthy();
+  expect(cb, 'the fixture reports a read-only checkbox').toBeTruthy();
+  expect(radio, 'the fixture reports a read-only radio group').toBeTruthy();
+  expect(dd, 'the fixture reports a read-only dropdown').toBeTruthy();
+  expect(lb, 'the fixture reports a read-only listbox').toBeTruthy();
+  expect(radio.widgets && radio.widgets.length, 'the radio group carries multiple widgets').toBeGreaterThan(1);
+  console.log(
+    `[P65-b3] ids fillText=${fillText.id} roText=${roText.id} sig=${sig.id} cb=${cb.id} ` +
+    `radio=${radio.id}(widgets=${radio.widgets.length}) dd=${dd.id} lb=${lb.id}`,
+  );
+
+  const page1 = '.pdf-page[data-page="1"] .forms-layer';
+  const countOf = (sel) => win.locator(`${page1} ${sel}`).count();
+
+  // 1. Check box: exactly one disabled .form-checkbox at its widget rect.
+  const cbSel = `.form-checkbox[data-form-field="${cb.id}"]`;
+  expect(await countOf(cbSel), 'exactly one read-only checkbox overlay control').toBe(1);
+  const cbEl = win.locator(`${page1} ${cbSel}`).first();
+  expect(await cbEl.getAttribute('data-form-readonly'), 'checkbox marked read-only').toBe('true');
+  expect(await cbEl.isDisabled(), 'checkbox overlay control is disabled').toBe(true);
+
+  // 2. Radio group: exactly one disabled .form-radio per widget of the group.
+  const radioSel = `.form-radio[data-form-field="${radio.id}"]`;
+  expect(await countOf(radioSel), 'one read-only radio control per widget').toBe(radio.widgets.length);
+  for (let i = 0; i < radio.widgets.length; i += 1) {
+    const el = win.locator(`${page1} .form-radio[data-form-field="${radio.id}"][data-form-widget="${i}"]`);
+    expect(await el.count(), `radio widget ${i} has exactly one control`).toBe(1);
+    expect(await el.getAttribute('data-form-readonly'), `radio widget ${i} marked read-only`).toBe('true');
+    expect(await el.isDisabled(), `radio widget ${i} control is disabled`).toBe(true);
+  }
+
+  // 3. Dropdown: exactly one disabled select.form-select.
+  const ddSel = `select.form-select[data-form-field="${dd.id}"]`;
+  expect(await countOf(ddSel), 'exactly one read-only dropdown overlay control').toBe(1);
+  const ddEl = win.locator(`${page1} ${ddSel}`).first();
+  expect(await ddEl.getAttribute('data-form-readonly'), 'dropdown marked read-only').toBe('true');
+  expect(await ddEl.isDisabled(), 'dropdown overlay control is disabled').toBe(true);
+
+  // 4. List box: exactly one .form-listbox, every row control disabled.
+  const lbSel = `.form-listbox[data-form-field="${lb.id}"]`;
+  expect(await countOf(lbSel), 'exactly one read-only listbox overlay control').toBe(1);
+  const lbEl = win.locator(`${page1} ${lbSel}`).first();
+  expect(await lbEl.getAttribute('data-form-readonly'), 'listbox marked read-only').toBe('true');
+  const lbRows = win.locator(`${page1} ${lbSel} .form-listbox-row`);
+  expect(await lbRows.count(), 'the listbox renders its option rows').toBeGreaterThan(0);
+  const lbAllDisabled = await lbRows.evaluateAll((els) => els.every((e) => e.disabled === true));
+  expect(lbAllDisabled, 'every listbox row control is disabled').toBe(true);
+
+  // 5. Read-only TEXT and signature stay canvas-only: zero overlay controls.
+  expect(
+    await countOf(`[data-form-field="${roText.id}"]`),
+    'read-only text field still has zero overlay controls',
+  ).toBe(0);
+  expect(
+    await countOf(`[data-form-field="${sig.id}"]`),
+    'signature field still has zero overlay controls',
+  ).toBe(0);
+
+  // 6. Geometry: measure the read-only dropdown box against its widget /Rect.
+  const m = await measurePage(1);
+  expect(m, 'page 1 measured').toBeTruthy();
+  const scale = m.pageWidth / PAGE_W;
+  const c = (m.out || []).find((x) => x.id === dd.id && x.widget === null);
+  expect(c, 'the read-only dropdown control is measured').toBeTruthy();
+  const exp = {
+    left: dd.rect.x * scale,
+    top: dd.rect.y * scale,
+    width: dd.rect.width * scale,
+    height: Math.max(dd.rect.height, 14) * scale,
+  };
+  console.log(
+    `[P65-b3] dropdown measured=[${c.left.toFixed(1)},${c.top.toFixed(1)},${c.width.toFixed(1)},${c.height.toFixed(1)}] ` +
+    `expected=[${exp.left.toFixed(1)},${exp.top.toFixed(1)},${exp.width.toFixed(1)},${exp.height.toFixed(1)}] scale=${scale.toFixed(4)}`,
+  );
+  expect(Math.abs(c.left - exp.left), 'dropdown left').toBeLessThanOrEqual(TOLERANCE_PX);
+  expect(Math.abs(c.top - exp.top), 'dropdown top').toBeLessThanOrEqual(TOLERANCE_PX);
+  expect(Math.abs(c.width - exp.width), 'dropdown width').toBeLessThanOrEqual(TOLERANCE_PX);
+  expect(c.height, 'dropdown not shorter than its widget').toBeGreaterThanOrEqual(exp.height - TOLERANCE_PX);
+  expect(c.height - exp.height, 'dropdown editor overflow bounded').toBeLessThanOrEqual(6);
+
+  await win.screenshot({ path: path.join(SHOTS, 'p65-locked-nontext.png') });
+});
+
+// ---- (b4) push button (DEF-445) -------------------------------------------
+
+test('(b4) PUSH BUTTON — engine flags it (kind unchanged), zero overlay surfaces, canvas paints it once', async () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'tflex-p65-push-'));
+  const copy = path.join(tmp, 'form-pushbutton-anon.pdf');
+  fs.copyFileSync(PUSHBUTTON_FIXTURE, copy);
+  await openPdfGeneric(copy, 2);
+  await win.waitForSelector('.pdf-page[data-page="1"]', { timeout: 20000 });
+  await win.waitForTimeout(700);
+
+  const d = await win.evaluate(() => window.tflexDiagnostics());
+  const fields = d.formFields || [];
+
+  // 1. The engine reports the push button: the DEF-445 flag is set and the
+  //    classification is unchanged (`kind === 'text'`, flag added).
+  const btn = fields.find((f) => f.pushButton === true);
+  expect(btn, 'the engine reports a field with pushButton === true').toBeTruthy();
+  expect(btn.kind, 'push button classification is unchanged (kind === text)').toBe('text');
+  console.log(`[P65-b4] push button id=${btn.id} name=${btn.name} kind=${btn.kind} readOnly=${btn.readOnly}`);
+
+  const page1 = '.pdf-page[data-page="1"] .forms-layer';
+  const countOf = (sel) => win.locator(`${page1} ${sel}`).count();
+
+  // 2. ZERO overlay surfaces for the push button on page 1 — it must not be
+  //    double-surfaced by an editable text editor over the canvas paint.
+  expect(
+    await countOf(`[data-form-field="${btn.id}"]`),
+    'push button has zero overlay controls',
+  ).toBe(0);
+  expect(
+    await countOf('[data-form-nonfillable="true"]'),
+    'push button renders no non-fillable overlay surface either',
+  ).toBe(0);
+
+  // 3. The canvas paints it (the one truthful surface): grey pixels > 0 in the
+  //    widget rect, mirroring (b2).
+  const scale = await win.evaluate(() => {
+    const el = document.querySelector('.pdf-page[data-page="1"]');
+    return el ? el.getBoundingClientRect().width / 595.28 : 0;
+  });
+  await win.evaluate(() => {
+    document.querySelectorAll('.forms-layer').forEach((e) => { e.style.visibility = 'hidden'; });
+  });
+  await win.waitForTimeout(350);
+  const px = await sampleCanvas(1, {
+    x: btn.rect.x * scale, y: btn.rect.y * scale, w: btn.rect.width * scale, h: btn.rect.height * scale,
+  });
+  await win.evaluate(() => {
+    document.querySelectorAll('.forms-layer').forEach((e) => { e.style.visibility = ''; });
+  });
+  await win.waitForTimeout(250);
+  console.log(`[P65-b4] canvas grey push button=${px.grey}/${px.total} rect=[${btn.rect.x},${btn.rect.y},${btn.rect.width},${btn.rect.height}]`);
+  expect(px.grey, 'push button is painted exactly once on the canvas').toBeGreaterThan(0);
+
+  await win.screenshot({ path: path.join(SHOTS, 'p65-pushbutton.png') });
 });
 
 // ---- (c) geometry --------------------------------------------------------

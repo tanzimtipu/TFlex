@@ -4097,6 +4097,16 @@ renders a form.
    signature widgets and read-only TEXT widgets. Ruling 7 supersedes ruling 6 where they differ; criterion
    3's control count is scoped to widgets that are NOT canvas-painted.
 
+8. **Push buttons are canvas-painted too (CTO ruling, 2026-10-01, ADV-134 secondary / DEF-445).** pdf.js's
+   push-button branch of `ButtonWidgetAnnotation` sets `hasOwnCanvas` (`pdf.worker.mjs:55363`), so a push
+   button IS canvas-painted under `AnnotationMode.ENABLE_FORMS`. `formFieldKind`
+   (`src/main/services/forms.ts:152-169`) currently misclassifies a `PDFButton` as `text`, so the overlay
+   mounts an editable text editor over the painted button (a double surface). The engine therefore reports
+   a non-breaking optional `pushButton?: boolean` on `FormField` (true for a `PDFButton`), and the
+   renderer's single suppression gate suppresses the overlay for `field.pushButton === true`. A push button
+   then has exactly one surface — its native canvas appearance — consistent with rulings 3 and 7, and its
+   overlay control count is zero. No fill-path change.
+
 **Features**
 
 **A. Single-layer field rendering.** Opening a form-bearing PDF does not show a field twice. The
