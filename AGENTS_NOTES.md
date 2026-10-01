@@ -1396,6 +1396,17 @@ pre-warn relevant entries when dispatching.
   recorded as `describe.retry(2)`, which does not exist on Vitest's SuiteAPI (TS2339).
   Rule: the supported form is `describe(name, { retry: 2 }, fn)`; verify against the
   installed `node_modules/vitest` typings before pinning an API in a convention/brief.
+- backend-dev: an edit rewrote the entire file's line endings (Phase 74 DEF-471,
+  `src/main/services/form-fill.ts`, 2026-10-01) - an 885-line diff for a 5-line guard,
+  which would have polluted the phase-close commit and risked cross-phase conflicts.
+  Rule: preserve the file's existing EOL; a source edit's diff must be the intended
+  lines only - run `git diff --ignore-all-space --numstat` and, if whitespace dwarfs the
+  change, normalize the file before reporting.
+- repo hazard (found 2026-10-01): `test-fixtures/*.pdf` is NOT matched by `.gitignore`,
+  so a byte copy of the operator's personal `956.pdf` (Phase 74) sat untracked in the
+  tree at real risk of a `git add -A` sweep. Rule: stage by explicit path only in any
+  task touching `test-fixtures/`; never stage `test-fixtures/tfl225/956-real.pdf`; treat
+  operator-derived files as personal data.
 - CTO: briefed a child with `--grep` (TFL-55, 2026-10-01) — vitest 4.1.11 rejects
   `--grep` (CACError) and has no equivalent flag; the child had to improvise the
   documented-equivalent filter. Rule: check the installed runner's flags before
