@@ -21,6 +21,21 @@ import { BrandWordmark } from "./BrandWordmark";
 export const HOME_PICKER_W = 200;
 export const HOME_PICKER_H = 168;
 
+/** Phase 75 (item A) — the edit-mode jiggle's period, mirroring the
+ *  `--motion-duration-layout` (350ms) token the `.anim-jiggle` utility uses. */
+const JIGGLE_PERIOD_MS = 350;
+
+/** A deterministic, stable per-icon phase for the jiggle, keyed on the tool id
+ *  (not the render index) so no two tiles share a phase and it is stable across
+ *  renders. Returns a NEGATIVE animation-delay inside one jiggle period. */
+function jiggleDelayMs(seed: string): number {
+  let h = 0;
+  for (let i = 0; i < seed.length; i += 1) {
+    h = (h * 31 + seed.charCodeAt(i)) | 0;
+  }
+  return Math.abs(h) % JIGGLE_PERIOD_MS;
+}
+
 /**
  * DEF-410 — place the Home picker against the plus button's viewport box. The
  * portal lives on `document.body`, so the box is positioned with
@@ -226,7 +241,7 @@ export function Welcome(props: WelcomeProps): ReactElement {
             picker. Tiles keep the home box shape (`.btn`, 36px) and borrow the
             dock registry's icon/colour per id. */}
         <div
-          className={editMode ? "welcome-actions home-tools anim-vibrate" : "welcome-actions home-tools"}
+          className="welcome-actions home-tools"
           data-home-tools
           data-home-edit={editMode ? "true" : "false"}
         >
@@ -236,7 +251,13 @@ export function Welcome(props: WelcomeProps): ReactElement {
             data-home-tool={HOME_FIXED_TOOL_ID}
             onClick={onOpenFile}
           >
-            <OpenIcon size={16} aria-hidden /> Open PDF
+            <span
+              className={editMode ? "home-tool-icon anim-jiggle" : "home-tool-icon"}
+              style={editMode ? { animationDelay: `-${jiggleDelayMs(HOME_FIXED_TOOL_ID)}ms` } : undefined}
+            >
+              <OpenIcon size={16} aria-hidden />
+            </span>{" "}
+            Open PDF
             <span className="kbd" style={{ marginLeft: 8 }}>Ctrl O</span>
           </button>
           {tools.map((id) => {
@@ -254,7 +275,13 @@ export function Welcome(props: WelcomeProps): ReactElement {
                 title={run === undefined ? "Not available on the Home screen" : entry.description}
                 onClick={(): void => run?.()}
               >
-                <Icon size={16} aria-hidden /> {entry.label}
+                <span
+                  className={editMode ? "home-tool-icon anim-jiggle" : "home-tool-icon"}
+                  style={editMode ? { animationDelay: `-${jiggleDelayMs(id)}ms` } : undefined}
+                >
+                  <Icon size={16} aria-hidden />
+                </span>{" "}
+                {entry.label}
                 {editMode && (
                   <span
                     className="home-tool-minus"
@@ -297,11 +324,11 @@ export function Welcome(props: WelcomeProps): ReactElement {
               >
                 <Plus size={16} aria-hidden />
               </button>
-              {/* DEF-410 — the picker is PORTALED to document.body. The row's
-                  `anim-vibrate` sets `translate`, and a transformed ancestor is
-                  the containing block for `position: fixed` descendants, so an
-                  in-row fixed popover collapsed to a sliver against the 36px
-                  row. On the body it is positioned against the viewport from the
+              {/* DEF-410 — the picker is PORTALED to document.body. A
+                  transformed ancestor is the containing block for
+                  `position: fixed` descendants, so an in-row fixed popover
+                  collapsed to a sliver against the 36px row. On the body it is
+                  positioned against the viewport from the
                   plus's getBoundingClientRect() (same class of fix as the dock's
                   portaled Pin/Unpin menu). */}
               {pickerOpen &&

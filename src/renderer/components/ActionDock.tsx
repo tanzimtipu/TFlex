@@ -194,6 +194,22 @@ interface ExitingVerb {
  *  reduced motion / Animations OFF never animate and nothing lingers. */
 const DOCK_VERB_MOTION_MS = MOTION_DURATION.fast;
 
+/** Phase 75 (item A) — the EDIT-mode jiggle's period. Mirrors the
+ *  `--motion-duration-layout` (350ms) token the `.anim-jiggle` utility uses. */
+export const JIGGLE_PERIOD_MS = 350;
+
+/** A deterministic, stable per-icon phase for the jiggle. A small string hash of
+ *  the tool id (not the render index, so it does not shift when icons are added
+ *  or removed) maps to a NEGATIVE animation-delay inside one jiggle period, so
+ *  no two glyphs share a phase and the phase is identical across renders. */
+export function jiggleDelayMs(seed: string): number {
+  let h = 0;
+  for (let i = 0; i < seed.length; i += 1) {
+    h = (h * 31 + seed.charCodeAt(i)) | 0;
+  }
+  return Math.abs(h) % JIGGLE_PERIOD_MS;
+}
+
 /** Clamp a pointer-anchored menu into the viewport (8px gutter). Mirrors the
  *  ContextPanel's clamp so both popovers behave identically. */
 export function clampDockMenu(
@@ -844,6 +860,9 @@ export function ActionDock(props: ActionDockProps): ReactElement {
     if (opts.primary) classes.push('action-dock-verb-primary');
     if (opts.out === true) classes.push('anim-verb-out');
     else if (enteringIds.has(verb.id)) classes.push('anim-verb-in');
+    // Phase 75 (item A) — only a live curated glyph jiggles; an exiting ghost
+    // and the pen / plus controls never do.
+    const jiggle = editMode && opts.out !== true;
     return (
       <button
         key={opts.pin ? `pin:${verb.id}` : verb.id}
@@ -864,7 +883,11 @@ export function ActionDock(props: ActionDockProps): ReactElement {
           openMenu(verb.id, e.clientX, e.clientY);
         }}
       >
-        <span className="action-dock-icon" aria-hidden>
+        <span
+          className={jiggle ? 'action-dock-icon anim-jiggle' : 'action-dock-icon'}
+          style={jiggle ? { animationDelay: `-${jiggleDelayMs(verb.id)}ms` } : undefined}
+          aria-hidden
+        >
           <Icon size={20} />
         </span>
         {!iconOnly && <span className="action-dock-label">{verb.label}</span>}
@@ -936,7 +959,7 @@ export function ActionDock(props: ActionDockProps): ReactElement {
       ref={(el): void => {
         rootRef.current = el;
       }}
-      className={editMode ? 'action-dock anim-vibrate' : 'action-dock'}
+      className="action-dock"
       role="toolbar"
       aria-label="Action dock"
       aria-orientation="horizontal"

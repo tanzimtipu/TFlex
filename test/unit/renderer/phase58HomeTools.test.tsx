@@ -197,16 +197,22 @@ describe("Phase 58 � Welcome home tool row", () => {
     }
   });
 
-  it("the pen toggles EDIT mode and the vibrate entry class", () => {
+  it("the pen toggles EDIT mode and a per-tile jiggle", () => {
     const { host, unmount } = renderWelcome({ homeTools: ["merge"], homeCandidates: ["merge", "sign"] });
     try {
       expect(row(host).getAttribute("data-home-edit")).toBe("false");
       clickOn(host.querySelector("[data-home-edit-toggle]") as Element);
       expect(row(host).getAttribute("data-home-edit")).toBe("true");
-      expect(row(host).classList.contains("anim-vibrate")).toBe(true);
+      expect(row(host).classList.contains("anim-vibrate")).toBe(false);
+      const icons = [...row(host).querySelectorAll(".home-tool-icon")];
+      expect(icons.length).toBeGreaterThan(0);
+      for (const icon of icons) {
+        expect(icon.classList.contains("anim-jiggle")).toBe(true);
+      }
       pressEscape();
       expect(row(host).getAttribute("data-home-edit")).toBe("false");
       expect(row(host).classList.contains("anim-vibrate")).toBe(false);
+      expect(row(host).querySelector(".home-tool-icon.anim-jiggle")).toBeNull();
     } finally {
       unmount();
     }
@@ -287,7 +293,7 @@ describe("Phase 58 � Welcome home tool row", () => {
     }
   });
 
-  it("portals the picker to document.body, never inside the vibrating row", () => {
+  it("portals the picker to document.body, never inside the tool row", () => {
     const { host, unmount } = renderWelcome({
       homeTools: ["merge"],
       homeCandidates: ["createFromImages", "merge", "preferences"],
@@ -298,7 +304,7 @@ describe("Phase 58 � Welcome home tool row", () => {
       const picker = document.querySelector("[data-home-picker]");
       expect(picker).not.toBeNull();
       // DEF-410 — a transformed ancestor is the containing block for fixed
-      // descendants, so the picker MUST NOT live inside the `anim-vibrate` row.
+      // descendants, so the picker MUST NOT live inside the tool row.
       expect(row(host).contains(picker as Node)).toBe(false);
       expect(host.contains(picker as Node)).toBe(false);
       expect(picker?.parentElement).toBe(document.body);

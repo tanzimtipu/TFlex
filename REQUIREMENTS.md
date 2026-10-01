@@ -4673,6 +4673,92 @@ oracle (identical measured WIDTH, the tinted fill, `--fg-strong` ink).
 
 **Settings impact:** none - no new `AppSettings` field. Renderer-only changes (`src/renderer/components/AnimatedTab.tsx` only if the markup needs the leading guard, and `src/renderer/styles.css`); no new IPC or shared-contract change.
 
+## Phase 74 — Encrypted form parity: Adobe-grade single-surface fields and correct tick boxes on the operator's real 956.pdf (operator request via TFL-185 / TFL-225, 2026-10-01)
+
+**Operator request (verbatim, TFL-185):** "The encrypted form still doesn't work properly after your last run. I asked you to make engine level changes if necessary to implement adobe like experience. This is highly important. Do it properly this time. I don't want to see any layered field boxes, incorrect tick boxes anymore."
+
+**Relationship to Phase 65 (TFL-49).** Phase 65 fixed the synthetic-fixture single-layer path and closed its defects (DEF-444 / DEF-445), but every Phase 65 oracle ran on `test-fixtures/phase65/form-956-anon.pdf` - a synthetic generator (`make-fixture.cjs`) that reproduces only the anon fixture's *field topology*, not the operator file's encryption, widget-dictionary shape, appearance state model or geometry. The operator's `C:\Users\tanzi\OneDrive\Desktop\Parent visa\956.pdf` still shows layered field boxes and incorrect tick boxes. This phase makes the on-screen and saved field layer correct **on the real file**, and closes the verification gap that let Phase 65 pass while the operator's file stayed broken.
+
+**ORCHESTRATOR RULINGS (the operator may veto or adjust any of these):**
+
+1. **Real-file verification, faithful copy only.** A byte-identical copy of the operator's `956.pdf` may be placed under `test-fixtures/tfl225/` (gitignored by the existing `test-fixtures/*.pdf` rule; never committed, never modified in place) and is the mandatory verification oracle for criteria 1-6. A synthetic/anonymised stand-in alone is NOT acceptable evidence for this phase. The operator's original file is read-only and must never be altered or committed.
+2. **Root cause over symptom.** The characterisation must first establish, from the real file and the installed pdf.js 4.10.38 + `@cantoo/pdf-lib` behaviour, exactly why widgets are layered, missing or mis-ticked (enumeration, `/P` page resolution, widget `/Rect`, `/AP` / `/AS` on-values, `NeedAppearances`, encryption with empty user password, XFA/hybrid forms, field/widget hierarchy). Engine changes are in scope when the research proves the engine's geometry/enumeration/classification is incomplete. No renderer-only cosmetic patch and no fallback column may stand in for a real field's own widget geometry.
+3. **One authoritative surface per widget (carries Phase 65 rulings 3, 7, 8 forward).** A widget is drawn exactly once on screen: canvas paint OR overlay control, never both, and never neither. Read-only/on-canvas kinds keep the Phase 65 gate semantics; every kind pdf.js does not canvas-paint gets exactly one truthful overlay surface.
+4. **Tick state is read from the document, not guessed.** A checked box/radio shows a tick iff the field `/V` and the widget `/AS` name the widget's non-Off on-state; a click toggles `/V` + `/AS` so the rendered state always matches the stored value after reopen. The on-value lookup must work for the real file's on-state names (which may differ from the synthetic `Yes`/`No` set).
+5. **Complete coverage.** Enumeration parity holds on the real file: every field and every widget on a visible page yields exactly one control at its own `/Rect`; no field is dropped into a fallback column, none is duplicated, none is extra (orphan widgets keep their single `NonFillableView` surface per ADV-124).
+6. **The operator's running build carries the fix.** Whether the operator's installed build predates the Phase 65 commit or the fix is genuinely insufficient, the phase is not done until a build that demonstrably contains the fix is produced and the operator can run it. Any push/tag/release still requires explicit operator authorisation in the session (PUSH GATE); a local build artefact is not enough on its own.
+7. **No fill regression.** The Phase 59 native-fill path (field `/V`, regenerated widget appearances, fill report) stays exactly as it is; fill/save/reopen round-trips on the real file.
+
+**Features**
+
+**A. Characterisation of the real file (backend-dev).** A named, reproducible diagnostic enumerates `956.pdf` through the actual engine (`getFormFields`, `findOrphanWidgets`, `findFieldPage`) plus a raw pdf-lib walk: field count, widget count, per-kind and per-page distribution, per-field widget lists and `/Rect`s, `/P` presence and resolution, `/Ff` flags, `/V` and per-widget `/AS`/on-values, `/AP` presence, `NeedAppearances`, encryption dictionary (filter, empty-user-password), and any overlapping/duplicate rects. It records the exact list of fields that are layered, missing or mis-ticked today, and the root cause for each class. Findings are recorded in the child-issue thread before any fix brief is written.
+
+**B. Single-surface field layer on the real file (frontend-dev; backend-dev where the root cause is enumeration/geometry).** No field appears twice on the operator's file: the canvas under a control paints no duplicate widget box, and every widget pdf.js does not canvas-paint has exactly one overlay surface.
+
+**C. Correct tick boxes (backend-dev + frontend-dev).** A checked box/radio shows a tick that matches `/V` + `/AS`; clicking reliably toggles; the rendered state matches the stored value after a save/reopen; the checkbox on-value lookup is correct for the real file's naming.
+
+**D. Complete, correctly-positioned coverage (backend-dev engine if required; frontend-dev).** Every widget of the real form is present, editable (or truthfully read-only), and positioned at its own mapped `/Rect`, at every zoom and page rotation.
+
+**E. Real-file QA proof (qa).** A focused e2e/QA pass runs the running Electron build against the faithful copy (and the real file where the harness allows): per-page control-count vs engine widget-count parity, no duplicate surface (pixel/region sampling), checkbox state round-trip, geometry vs `/Rect` at 100% and non-100% zoom, plus screenshots inspected.
+
+**F. Running-build parity and packaging (git-agent / backend-dev).** Confirm which version the operator runs; ensure the fix is present in the built artefact the operator can install (installer + portable still build and launch). Push/tag/release only on explicit operator authorisation.
+
+**Current-scope supersession:** this phase supersedes the Phase 65 verification premise that an anonymised synthetic fixture is sufficient evidence for the operator's encrypted-form complaint. It does not otherwise change Phase 65's rendering rules (rulings 3, 7, 8 and the single suppression gate), the Phase 59 fill path, or any other phase.
+
+**Success criteria**
+
+1. On the faithful copy of the operator's `956.pdf`, no layered / duplicate field boxes exist anywhere: for each widget region on a visible page the pixel area shows exactly one surface, and the canvas paints no duplicate field box under an overlay control (before/after screenshots on the real-file copy).
+2. Every widget type on the real file renders correctly: text, checkbox, radio, dropdown, listbox, signature and push button each show exactly one truthful surface.
+3. Tick boxes are visually and functionally correct on the real file: a checked box/radio shows a tick, clicking toggles it reliably, and the rendered state always matches the underlying `/V` + widget `/AS` after a save/reopen (no "incorrect tick box").
+4. Complete coverage on the real file: the number of interactive surfaces on each page equals the number of widget boxes the engine reports for that page; no widget missing, none extra, none stacked into a fallback column; multi-widget groups render one surface per widget.
+5. Geometry parity on the real file: each control's measured box equals its widget `/Rect` mapped through page scale within tolerance, at 100% and at a non-100% zoom, including a rotated page.
+6. No fill regression on the real file: editing a control fills the field, a save/reopen shows the value from the field `/V` (independent-reader evidence), and the Phase 59 fill report still fires.
+7. No visual regression: non-form annotations still paint, read-only and signature fields render truthfully, text selection/search still works (blast-radius checks on the rebuilt specs).
+8. The result is demonstrably visible in the build the operator actually runs; if the installed build did not carry the Phase 65 fix, the gap is named and the fixed build is produced.
+9. `npm run verify` (conventions + typecheck) is green and the phase's targeted unit/e2e specs pass; the installer and portable still build and launch.
+10. All DEF / ADV entries opened by this phase are CLOSED or REJECTED with a written reason; the phase-close commit stages every Phase 74 change as ONE local commit by git-agent with no push and no version bump.
+
+**CONTROL-INDEX:** no new interactive control is introduced. The controls are the existing `FormsOverlay` editors (`.form-editor`, `.form-checkbox`, `.form-radio`, `.form-select`, `.form-listbox`) and their promised actions are unchanged from Phase 59/65 - this phase changes enumeration, placement and tick fidelity. The per-kind e2e proof is the control-count/geometry/state assertions in criteria 2-5 on the real-file copy.
+
+**Settings impact:** none - no new `AppSettings` field. Any engine change is limited to field/widget data already carried by `FormField` / `FormFieldWidget` in `src/shared/`; a non-breaking optional flag is permitted only if the research proves it necessary (as with `pushButton` in Phase 65) and must be recorded here before the renderer consumes it.
+
+## Phase 75 — Dock/App-home edit mode: remove the entry vibration, add a continuous iOS-style jiggle (operator correction via TFL-205 / TFL-228, 2026-10-02)
+
+**Operator request (verbatim, TFL-228):** "On both the dock and the App home page, entering edit mode must feel like iOS. The icon 'vibration' currently played when the edit icon is clicked is removed, and while edit mode is active the icons continuously animate with the iOS-style jiggle/wiggle. The animation runs for as long as edit mode is active and stops cleanly on exit."
+
+**Relationship to Phase 58 / Phase 63.** Phase 58 feature C built the dock pen and gave EDIT-mode entry a one-shot `anim-vibrate` shake on the dock ROOT (`ActionDock.tsx`), and feature D did the same on the home tool row (`Welcome.tsx`). Phase 63 restyled the pen's colour only. This phase removes the entry shake entirely and replaces it with a continuous per-icon jiggle that lasts the whole time EDIT mode is active. Curation (minus/plus), persistence (`dockPins` / `dockUnpinned` / `homeTools`), the animated resize, the pen identity and every other Phase 58/63 behaviour are unchanged.
+
+**Features**
+
+**A. Remove the entry vibration (frontend-dev).** Drop the `anim-vibrate` class from the dock root (`ActionDock.tsx`) and the home row (`Welcome.tsx`) so entering EDIT mode is not itself a shake. The `tf-anim-vibrate` keyframes and `.anim-vibrate` utility (and every reduced-motion / Animations-OFF reference to it) are removed as dead code.
+
+**B. Continuous per-icon iOS jiggle (frontend-dev).** While EDIT mode is active, each curated icon jiggles continuously: a small rotation plus translation wobble, transform-only (no layout shift), on the edit-mode surface only, using the centralized motion system. The jiggle is desynchronised per icon (a deterministic per-icon phase offset), never in lockstep. It runs for the full duration of EDIT mode and stops cleanly on exit, returning each icon to its exact resting transform. It covers both the dock verbs and the home tool tiles consistently. The controls (pen, plus) are not icons being curated and do not jiggle.
+
+**C. Motion gating (frontend-dev).** The jiggle obeys the existing `prefers-reduced-motion` catch-all and the `data-animations="off"` (Phase 23) gate: with either set, no jiggle is painted and EDIT mode still functions (minus/plus curation). The removed vibration stays removed under both.
+
+**D. Focused QA (qa).** Repointed unit + e2e oracles prove: no entry vibration, a running per-icon jiggle while EDIT mode is active, per-icon desync, clean stop and exact resting transform on exit, parity on dock and home, no layout shift / dropped clicks, reduced-motion + Animations-OFF no-jiggle, and a coarse frame-rate sanity check.
+
+**E. Adversarial diff-pass (adversary).** A read-only adversarial pass over the phase diff attacks the interaction edges: enter/exit flapping, clicking a jiggling icon (tool still runs), the plus/minus while jiggling, reduced-motion, and Escape-to-exit.
+
+**Current-scope supersession:** this phase supersedes ONLY the Phase 58 EDIT-mode entry "vibration animation" - feature C ("the dock plays a short vibration animation", `REQUIREMENTS.md` Phase 58 line 3530), feature D ("the same vibration / minus / plus interaction", line 3544), success criterion 9 ("enters edit mode with the vibration animation", line 3576) and success criterion 11 ("enters edit mode with the same interaction", line 3581) - the entry shake is replaced by the continuous per-icon jiggle described here. It does NOT change the minus/plus curation, the persistence lists, the animated resize, the pen's identity/colour (Phase 63), or any other phase. The oracles `test/unit/renderer/phase58DockEdit.test.tsx`, `test/unit/renderer/phase58HomeTools.test.tsx`, `e2e/phase58_dock_edit.spec.cjs` and `e2e/phase58_home_tools.spec.cjs` are repointed by frontend-dev / qa from the entry vibration to the jiggle contract.
+
+**Success criteria**
+
+1. Clicking the edit icon no longer plays the current vibration/shake animation; entering EDIT mode is not itself an animated shake (computed `animation-name` on the dock root and home row carries no vibrate keyframe).
+2. While dock / App-home EDIT mode is active, the curated icons animate with an iOS-like jiggle: a small, continuous rotation + translation wobble (measured computed `animation-name` / transform change over time on each icon).
+3. The wobble is desynchronised across icons - each has its own phase/offset, so at any instant they are not all at the same pose (sampled per-icon transforms differ at a fixed timestamp).
+4. The animation continues for the full duration of EDIT mode and stops immediately and cleanly on exit; each icon returns exactly to its resting transform (post-exit computed transform equals the pre-entry/resting value, no residual offset).
+5. Behaviour is consistent on both the dock and the App home page (same jiggle contract proven on both surfaces).
+6. No layout shift (icon/getBoundingClientRect positions unchanged by the jiggle), no dropped or blocked clicks on icons/controls (a click on a jiggling icon still runs the tool; minus/plus still fire), and no measurable frame-rate regression while EDIT mode is active.
+7. Respects `prefers-reduced-motion`: with it set, icons do not jiggle (and the removed vibration stays removed), while EDIT mode still functions. The `data-animations="off"` gate behaves the same.
+8. The motion is modelled on iOS icon edit-mode jiggle behaviour; the behavioural reference used (timing/amplitude/rotation) is cited in the phase evidence.
+9. `npm run verify` (conventions + typecheck) is green and the phase's targeted unit/e2e specs pass; the installer and portable still build and launch.
+10. All DEF / ADV entries opened by this phase are CLOSED or REJECTED with a written reason; the phase-close commit stages every Phase 75 change as ONE local commit by git-agent with no push and no version bump.
+
+**CONTROL-INDEX:** no new interactive control is introduced. The controls are the existing dock pen `[data-dock-edit-toggle]`, dock minus/plus (`[data-dock-minus]`, `[data-dock-plus]`) and home pen/minus/plus (`[data-home-edit-toggle]`, `[data-home-minus]`, `[data-home-plus]`); their promised actions are unchanged from Phase 58/63 and remain proven by the repointed Phase 58 e2e specs. This phase changes only the EDIT-mode motion.
+
+**Settings impact:** none - no new `AppSettings` field. The jiggle is renderer-only and gated by the existing `animationsEnabled` setting (via `data-animations`) and `prefers-reduced-motion`; no `src/shared/` type changes.
+
 ## Phase 76 — Opaque tab colours across all themes (operator request via TFL-208 / TFL-233, 2026-10-02)
 
 **Operator request (verbatim, TFL-208):** "The tab color looks like, the color is transparent and is on top of a background. Remove the transparency, so it looks good on every theme."
@@ -4705,3 +4791,93 @@ oracle (identical measured WIDTH, the tinted fill, `--fg-strong` ink).
 
 **Settings impact:** none - no new `AppSettings` field. This is a renderer-only styling change (`src/renderer/styles.css` plus its repointed unit oracle); no IPC or `src/shared/` change.
 
+## Phase 77 — Book View correction: page-flip quality, spread-aware current-page indicator and mode transitions (TFL-238 issue label "Phase 75"; operator correction via TFL-183, 2026-10-02)
+
+**Operator request (verbatim, TFL-183 items 2-6):** "2. Activating book view doesn't have any animation. 3. There's no current page number shown. 4. The single page flip animation looks very laggy and opposite. 5. Single to double page transition doesn't have any animation. 6. Double page flip doesn't look like a page flip on a real book. The page is flipping outside of the canvas."
+
+**Relationship to Phase 66 / TFL-237.** Phase 66 ([TFL-90](/TFL/issues/TFL-90), chunks TFL-122 / TFL-131) built the baseline Book View: an in-canvas read-only shell over the existing `PageView`, a double spread with a centre crease, a CSS 3D `rotateY` page turn and a single/double toggle (`src/renderer/components/BookView.tsx`, `src/renderer/styles.css:18441-18703`). TFL-237 ([TFL-237](/TFL/issues/TFL-237)) recorded how industry-standard readers implement book view, page-flip and spreads and identified the code-grounded deviations: the forward turn hinges the right page on its FREE edge instead of the spine (`.book-view-turn-next { transform-origin: right center; rotateY -180 }`, `styles.css:18599-18616`), there is no back-face content, the turning unit is the already-advanced page rather than the outgoing leaf, the stage (`overflow: auto`, `styles.css:18514`) does not clip the leaf, the progress label is not spread-aware (`BookView.tsx:350-352`), and the mode swap is instant (`chooseLayout`, `BookView.tsx:270-273`). This phase corrects the mechanics on those findings. The Phase 66 read-only shell, annotation marking, entry control and panel restoration are unchanged.
+
+**Features**
+
+**A. Spine-hinged two-face page turn (frontend-dev).** The forward turn is a single leaf hinged at the spine (centre fold) of the spread, not the free edge: the front face carries the OUTGOING page and the back face carries the INCOMING page, with `backface-visibility` so the reverse of the flip shows the incoming page, never a mirror of the outgoing one. Direction is correct for LTR: a next turn swings the right page inboard across the spine (hinge on its left/spine edge); a back turn swings the left page inboard (hinge on its right/spine edge). Single-page mode mirrors the same inboard motion. The turn remains transform-only CSS 3D over the existing `PageView` canvas with no WebGL/3D dependency and no recolour of the page bitmap.
+
+**B. Bounded flip (frontend-dev).** While a turn is in flight the leaf is clipped to the spread/book rect and the stage cannot scroll under it, so no part of the turning page renders or flips outside the canvas bounds at any point in the animation.
+
+**C. Deliberate entry animation (frontend-dev).** Entering Book View plays a short one-shot entry animation (a settle, not an instant swap) driven by the centralized motion tokens; `prefers-reduced-motion` and `:root[data-animations="off"]` collapse it to an instant entry.
+
+**D. Animated single/double (portrait/spread) transition (frontend-dev).** Toggling single/double plays a bounded animated transition (cross-fade and/or scale on the container over the layout motion token) with the current page anchored as the left page of the new spread; reduced motion collapses it to instant. The spread is not folded page-by-page.
+
+**E. Spread-aware current-page indicator (frontend-dev).** The header progress label shows the visible page or pages: single mode "Page N of T"; double mode "Page N-M of T" for the visible pair (M = min(N+1, T), clamped at the last page); empty document keeps "No pages". The label is a readable fixed-chrome element (existing `[data-book-progress]`).
+
+**F. Focused QA (qa).** A focused render/frame-time pass proves each corrected behaviour on the running build with named assertions and screenshots: entry animation vs instant, spread-aware label in both modes, flip direction (hinge/spine side and outgoing front page), flip frame-time budget, clipped bounds throughout the turn, animated mode transition, and no regression of the Phase 66 shell / annotation / reduced-motion paths.
+
+**G. Adversarial diff-pass (adversary).** A read-only adversarial pass over the phase diff attacks the motion/bounds edges: rapid repeat turns, turning at the first/last spread, turning while the stage is scrolled or zoomed, toggling layout mid-turn, reduced motion, single-page flips at both ends, and annotation clicks not turning the page.
+
+**Current-scope supersession:** this phase supersedes ONLY the Phase 66 page-turn keyframe/origin pair (`styles.css:18599-18625`), the instant `chooseLayout` swap and the non-spread-aware progress label (`BookView.tsx:270-273`, `350-352`). It does NOT change the Phase 66 rulings 1-6 (same window, one entry, read-only, reuse `PageView`/annotation engine, motion-tokens-only, no EPUB/comic regression), the entry control, panel restoration or annotation marking. Oracles repointed: `test/unit/renderer/bookViewSpread.test.tsx` and `test/unit/renderer/bookView.test.tsx` (frontend-dev); `e2e/phase66_bookview_spread.spec.cjs` plus the new phase spec (qa, who owns `e2e/`).
+
+**Success criteria**
+
+1. Research input incorporated: the TFL-237 findings (spine-hinged two-face leaf, correct LTR handedness, clip to the spread rect, spread-aware indicator, animated entry/mode) inform the implementation; the mechanism is named in the phase evidence.
+2. Entering Book View plays a deliberate animation rather than an instant swap (a non-none `animation-name` with a positive duration on `[data-book-view]` in the running app; instant under `prefers-reduced-motion` / `data-animations="off"`).
+3. A current page number is shown while reading and is spread-aware where two pages are visible: single "Page N of T", double "Page N-M of T" (before/after screenshots).
+4. The single-page flip animates smoothly with no visible lag (frame-time budget met, matching the existing phase-66 turn measurement) and turns in the correct direction (single-mode next hinges inboard at the spine; the outgoing page is the one that leaves).
+5. The single<->double (portrait<->spread) mode transition is animated (a non-none animation with a positive duration on the container; instant under reduced motion), with the current page anchored across the toggle.
+6. The double-page flip reads as a real book page turn: the leaf is hinged at the spine, carries the outgoing page on its front and the incoming page on its back, and the flipping page never renders/flips outside the canvas bounds during the turn (screen recording or per-frame bounds check + screenshots).
+7. `npm run verify` (conventions + typecheck) is green and the phase's targeted unit/e2e specs pass; the installer and portable still build and launch.
+8. All DEF / ADV entries opened by this phase are CLOSED or REJECTED with a written reason; the phase-close commit stages every Phase 77 change as ONE local commit by git-agent with no push and no version bump.
+
+**CONTROL-INDEX:** no new interactive control is introduced. The changed surfaces are the existing page-click surfaces `[data-book-page-side="single"|"left"|"right"]` (their promised action is unchanged - turn the spread - but the turn now animates correctly), the existing single/double toggle pair `[aria-label="Book single page"]` / `[aria-label="Book double page"]` (the mode swap now animates), and the existing progress label `[data-book-progress]` (now spread-aware). New stable test hooks for QA: during a turn `[data-book-turn]` with `data-book-turn-dir="next"|"prev"`, carrying `[data-book-turn-front="<page>"]` and `[data-book-turn-back="<page>"]`; a one-shot `book-view-enter` animation on `[data-book-view]`; a transient `book-view-relayout` animation on the spread/stage on a mode toggle.
+
+**Settings impact:** none - no new `AppSettings` field. The entry animation, mode transition, indicator and flip are renderer-only and gated by the existing `animationsEnabled` setting (via `data-animations`) and `prefers-reduced-motion`; no IPC or `src/shared/` type change.
+
+## Phase 78 - Information message: the top-of-canvas notices render inside the canvas, anchored at the top-right beside Book View (operator request via TFL-187, 2026-10-01)
+
+**Operator request (verbatim, TFL-187):** "The information message task you done earlier was mostly correct. However, the message shouldn't show up outside of the canvas. The message should be in rounded, slightly transparent box within the canvas. The appearing animation should work like this. The "i" icon appears on the top right (on the left of book view icon. Don't leave too much space between these icons), and immediately the "i" icon expands into the message box smoothly. After 10 seconds, it will collapse into the "i" icon."
+
+**Resolved placement decision (operator confirmed 2026-10-01 via question card, answer option `move_book_view`):** MOVE the Book View control to the canvas TOP-RIGHT, then place the information "i" icon immediately to its LEFT with tight spacing. Book View is currently at the canvas top-left (`.canvas-book-view { left: 12px }`, `styles.css:18689`).
+
+**Relationship to Phase 59 feature B / TFL-46 and Phase 67 / TFL-104.** TFL-46 gave the document-protection notice (`ProtectionNotice`) the collapse-to-"i" behaviour; TFL-104 / Phase 67 extended the SAME behaviour to `ConversionNotice` (Phase 53) and `Pdf3dNotice` (Phase 57) through the shared `useNoticeCollapse` hook. Those notices are FLOW elements in the pane's `.document-column` ABOVE the canvas (`App.tsx` `DocumentSurfaceColumn:604-658`), and their collapsed "i" sits at the canvas TOP-LEFT (`.protection-notice-collapsed-toggle`, `.conversion-notice-collapsed-toggle`, `.pdf3d-notice-collapsed-toggle`). This phase moves the whole notice PRESENTATION inside the canvas and moves the collapsed "i" row to the TOP-RIGHT immediately left of Book View. The operator's "information message" is the TFL-104 notice family ("all the messages that appear on the top after opening certain files").
+
+**CTO RULINGS:**
+
+1. **Scope is the open-triggered top-of-canvas notice family built by TFL-46 + TFL-104:** `ProtectionNotice` (Phase 59), `ConversionNotice` (Phase 53) and `Pdf3dNotice` (Phase 57). `ValidationNotice` stays OUT (Phase 67 ruling 2: not produced by opening a file); `Toasts` (bottom-right) and `ExportPagesWithoutTextNotice` (inside export dialogs) are untouched. Their copy, information content and state-machine semantics are unchanged; only the presentation location and enter sequence change.
+2. **The notices are RE-PARENTED into the canvas-bound overlay** `.canvas-overlay` (`DocumentView.tsx:4303`), the same coordinate system as the Book View entry and the page-layout control. No notice box or collapsed icon may remain a flow sibling above the `.document-scroller` inside `.document-column`. This is what guarantees "never outside the canvas bounds" and consumes the open Inspector inset (`--tf-tools-inset`) automatically.
+3. **Book View control moves to the canvas top-right, immediately LEFT of the page-layout control** (`.canvas-page-layout { right: 12px }`, `styles.css:15924`). The collapsed notice "i" row sits immediately LEFT of Book View with minimal spacing. Right-to-left order at the top-right: page-layout control, Book View, then the notice icons. The page-layout control keeps its current position.
+4. **The enter sequence gains a morph.** On appear the collapsed "i" is rendered FIRST, then immediately transitions (morph/scale from the icon) into the fully expanded message box. After the existing ~10 s dwell the box collapses smoothly back into the "i"; the dwell resets on every user expand. The `useNoticeCollapse` semantics (`expanded | closing | collapsed`, `NOTICE_AUTO_COLLAPSE_MS = 10000`, instant path under reduced motion / Animations OFF) are preserved; the morph is an added enter leg on top of that machine.
+5. **No regression to Phase 67 ruling 6 / criteria 3-4 or DEF-447.** When more than one notice is collapsed at once the "i" icons lay out in a row, non-overlapping, and no icon covers a canvas control (Book View, the page-layout control) or the page; each icon centre hit-resolves to the icon. The row now yields from the RIGHT instead of the left.
+6. **Motion tokens only** (`src/renderer/hooks/motionTokens.ts`, `styles/animations.css`); the "slightly transparent" box uses the existing surface/glass tokens (`--bg-elevated` / `--glass-*` / `backdrop-filter`), never a hardcoded colour. Same timing in every theme.
+7. **Hooks preserved.** The existing `role` / `aria-label` / `data-*` hooks stay: `[data-protection-notice]`, `[data-protection-collapse]`, `[data-protection-icon]`, `[data-conversion-notice]`, `[data-conversion-collapse]`, `[data-conversion-icon]`, `[data-pdf3d-notice]`, `[data-pdf3d-collapse]`, `[data-pdf3d-icon]`, `[data-book-view-open]`, `[data-canvas-overlay]`. Existing Phase 53/57/59/66/67 oracles are repointed where they asserted the old top-left / flow placement (qa owns `e2e/`).
+
+**Features**
+
+**A. Re-parent the notice family into the canvas overlay (frontend-dev).** `DocumentSurfaceColumn` stops rendering the notice boxes/regions above the canvas; the notices render inside `DocumentView`'s `.canvas-overlay` (a new optional prop carrying the notice elements, or an equivalent move of the mount). The notices share the canvas-bound overlay so their right edge respects `--tf-tools-inset` and they are clipped to the canvas. `.document-column` no longer reserves a notice row.
+
+**B. Book View and the "i" row at the canvas top-right (frontend-dev).** `.canvas-book-view` moves from `left: 12px` to the right side immediately left of `.canvas-page-layout`. The collapsed notice "i" row (`[data-protection-icon]`, `[data-conversion-icon]`, `[data-pdf3d-icon]`) is pinned at the canvas top-right immediately left of Book View with tight spacing. Both use the same measured chrome top (`--tf-chrome-y`) and motion treatment as the existing canvas controls.
+
+**C. In-canvas translucent rounded box and the enter morph (frontend-dev).** The expanded box is a rounded, slightly translucent surface anchored at the canvas top-right, inside the canvas, clipped to its bounds. On appear the "i" shows first and immediately expands (morph/scale from the icon origin) into the box; after the 10 s dwell it collapses back to the "i"; reduced motion / Animations OFF take the instant path with no morph.
+
+**D. Focused QA (qa).** A focused render/geometry pass on the running build proves, per notice (`protection`, `conversion`, `3D`): the box renders inside `[data-canvas-overlay]` and never outside the canvas; Book View and the "i" are at the canvas top-right with a measured minimal gap; the enter morph plays icon -> box and the 10 s dwell collapses box -> icon; the multiple-collapsed-icon row is non-overlapping and hit-testable; and the Phase 67 / DEF-447 / reduced-motion paths are unregressed. Named screenshots + measured boxes + `elementFromPoint`.
+
+**E. Adversarial diff-pass (adversary).** A read-only adversarial pass over the phase diff attacks the presentation edges: all three notices present at once, notice toggled while Book View is open/closed, window narrowed so the top-right cluster meets the pills/chrome, Inspector open (inset), Multi Mode pane, reduced motion, and rapid expand/collapse.
+
+**Current-scope supersession:** this phase supersedes ONLY the Phase 67 collapsed-icon PLACEMENT (the canvas top-left "i" row) and the flow-above-canvas presentation of `ProtectionNotice` / `ConversionNotice` / `Pdf3dNotice` (Phase 59 feature B + Phase 67). It does NOT change their copy, information content, state-machine semantics (`useNoticeCollapse`), the instant path, the Phase 67 non-collision rule, the Phase 66 Book View shell, or the Phase 77 Book View corrections. Oracles repointed: `test/unit/renderer/tfl46_protectionIconLeftInset.test.ts`, the Phase 67 notice-collapse specs, and the Phase 53/57 notice e2e specs (qa owns `e2e/`).
+
+**Success criteria**
+
+1. Each of the three notices (`ProtectionNotice`, `ConversionNotice`, `Pdf3dNotice`) renders only within the canvas as a rounded, slightly translucent box; a geometry probe measures the expanded box inside the canvas bounds and `elementFromPoint`/screenshots show it never shows outside the canvas (per notice).
+2. The Book View control sits at the canvas top-right immediately left of the page-layout control, and the notice "i" icon sits immediately left of Book View with a measured minimal gap (e.g. ~8px), at the geometry probe window 2048x1392 (measured boxes + screenshot).
+3. On appear the "i" icon is shown then immediately expands smoothly into the full message box: a non-none enter animation with the collapsed icon as the morph origin; instant under `prefers-reduced-motion` / `data-animations="off"`.
+4. After ~10 s (measured) the box collapses smoothly back into the "i" icon; the dwell resets on every expand; both legs take the instant path under reduced motion / Animations OFF.
+5. No regression to Phase 67 (multiple collapsed icons non-overlapping, each icon centre hit-resolves to the icon, no icon covers a canvas control or the page) or the standing animation rules (TFL-189 / TFL-190); the Phase 53/57/59/66/67 targeted specs and the repointed oracles stay green.
+6. `npm run verify` (conventions + typecheck) is green and the phase's targeted unit/e2e specs pass; the installer and portable still build and launch.
+7. All DEF / ADV entries opened by this phase are CLOSED or REJECTED with a written reason; the phase-close commit stages every Phase 78 change as ONE local commit by git-agent, no push and no version bump.
+
+**CONTROL-INDEX**
+
+- `[data-protection-notice]` / `[data-conversion-notice]` / `[data-pdf3d-notice]` (expanded box) -> read the message; now inside the canvas -> criteria 1, 3.
+- `[data-protection-icon]` / `[data-conversion-icon]` / `[data-pdf3d-icon]` (collapsed "i") -> expand the message; now at the canvas top-right, left of Book View -> criteria 2, 3.
+- `[data-protection-collapse]` / `[data-conversion-collapse]` / `[data-pdf3d-collapse]` -> collapse the box back to the "i" -> criterion 4.
+- `[data-book-view-open]` -> opens Book View; now at the canvas top-right -> criterion 2.
+- `[data-page-layout-control]` -> single/two/four page layout; keeps its top-right anchor (the Book View / "i" cluster sits to its left) -> criterion 2.
+
+**Settings impact:** none. No new `AppSettings` field; the presentation is renderer-only and rides the existing `animationsEnabled` setting (via `data-animations`), `prefers-reduced-motion`, the motion tokens and the existing surface/glass tokens. No IPC and no `src/shared/` type change.

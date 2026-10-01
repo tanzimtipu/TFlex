@@ -103,16 +103,19 @@ describe("Phase 58 — ActionDock edit mode", () => {
     }
   });
 
-  it("clicking the pen arms edit mode, the vibrate entry class and a minus per verb", () => {
+  it("clicking the pen arms edit mode, a per-icon jiggle and a minus per verb", () => {
     const { host, unmount } = renderDock();
     try {
       clickOn(host.querySelector("[data-dock-edit-toggle]") as Element);
       expect(dockRoot(host).getAttribute("data-dock-edit")).toBe("true");
-      expect(dockRoot(host).classList.contains("anim-vibrate")).toBe(true);
+      expect(dockRoot(host).classList.contains("anim-vibrate")).toBe(false);
       const verbs = [...host.querySelectorAll("[data-dock-verb]")];
       expect(verbs.length).toBeGreaterThan(0);
       for (const verb of verbs) {
         expect(verb.querySelector("[data-dock-minus]")).not.toBeNull();
+        const icon = verb.querySelector(".action-dock-icon");
+        expect(icon).not.toBeNull();
+        expect(icon?.classList.contains("anim-jiggle")).toBe(true);
       }
     } finally {
       unmount();
@@ -162,6 +165,7 @@ describe("Phase 58 — ActionDock edit mode", () => {
       pressEscape();
       expect(dockRoot(host).getAttribute("data-dock-edit")).toBe("false");
       expect(dockRoot(host).classList.contains("anim-vibrate")).toBe(false);
+      expect(host.querySelector(".action-dock-icon.anim-jiggle")).toBeNull();
     } finally {
       unmount();
     }

@@ -3002,6 +3002,14 @@ body.tab-reordering .tab-list[data-reorder="true"] .tab {
   position: relative;
 }
 
+/* The tile glyph box. It wraps the lucide icon so the edit-mode jiggle
+ * (Phase 75) rotates around the glyph centre without moving the label. */
+.home-tool-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
 /* Colour identity — mirrors the Action Dock's per-id mapping for the candidate
  * set (the dock's own attribute is NOT reused). Ids without a dock colour keep
  * the secondary-button foreground. */
@@ -7013,18 +7021,18 @@ rect.ann-highlight.ann-preview {
   pointer-events: none;
 }
 
-/* Phase 52 regression fix — a form field sits ON the document, so the
- * editor must not paint a background we do not own. An opaque fill (dark
- * slate in dark mode) covered the page's own text and, when many fields
- * piled up, read as solid dark blocks over the document. The affordance is
- * the accent border; the fill stays transparent so the page shows through.
- * Document ink is fixed dark because every PDF page is white paper,
- * regardless of the app theme. */
+/* Phase 74 (DEF-461) — a form field sits ON the document, whose own
+ * printed box is the only surface the user should see. The overlay must
+ * add NO box at rest: transparent fill AND transparent border, so the
+ * printed AcroForm box is the single visible surface (Adobe-like). Hover
+ * reveals a subtle accent outline; focus keeps the clear accent border
+ * and a light wash under the caret. Document ink is fixed dark because
+ * every PDF page is white paper, regardless of the app theme. */
 .form-editor {
   pointer-events: auto;
   background: transparent;
   color: #0f172a;
-  border: 1px solid var(--accent);
+  border: 1px solid transparent;
   border-radius: var(--radius-1);
   padding: 2px 4px;
   font-family: inherit;
@@ -7034,19 +7042,23 @@ rect.ann-highlight.ann-preview {
   transition: border-color var(--motion-fast) var(--ease-out), background var(--motion-fast) var(--ease-out);
 }
 
+.form-editor:hover {
+  border-color: var(--accent-soft);
+}
+
 :root[data-theme="dark"] .form-editor {
   background: transparent;
-  border-color: var(--accent);
+  border-color: transparent;
   color: #0f172a;
 }
 
-/* The frosted chip floats directly over the paper-white page. The
- * light material keeps a LIGHT chip with dark text (identical to the
- * light theme's white wash) — the accent border carries the state; a
- * dark chip would fight the light frosted chrome. */
+/* The frosted chip floats directly over the paper-white page. At rest it
+ * is fully transparent (like light/dark); the light wash appears only on
+ * focus so the caret and dark text stay legible. A dark chip would fight
+ * the light frosted chrome. */
 :root[data-theme="frosted"] .form-editor {
-  background: rgba(255, 255, 255, 0.94);
-  border-color: var(--accent);
+  background: transparent;
+  border-color: transparent;
   color: var(--fg-strong);
 }
 
@@ -7057,6 +7069,10 @@ rect.ann-highlight.ann-preview {
   background: rgba(255, 255, 255, 0.92);
   border-color: var(--accent-hover);
   box-shadow: 0 0 0 1px var(--accent-soft);
+}
+
+:root[data-theme="frosted"] .form-editor:focus {
+  background: rgba(255, 255, 255, 0.94);
 }
 
 .form-textarea {
@@ -7080,11 +7096,13 @@ rect.ann-highlight.ann-preview {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  /* Same rule as .form-editor: the toggle sits on white paper, so it must
-   * not paint an app-chrome fill over the document. The border (and the
-   * check mark) is the affordance. */
+  /* Same rule as .form-editor (Phase 74 / DEF-461): the toggle sits on
+   * white paper, so at rest it adds no box — transparent fill AND border.
+   * The printed widget box is the only visible surface; hover reveals the
+   * accent outline, checked keeps its accent-soft fill + accent border and
+   * the check mark is the affordance. */
   background: transparent;
-  border: 1px solid var(--border-strong);
+  border: 1px solid transparent;
   border-radius: var(--radius-1);
   cursor: pointer;
   color: var(--accent-text);
@@ -7136,9 +7154,10 @@ rect.ann-highlight.ann-preview {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  border: 1.5px solid var(--border-strong);
+  /* Transparent at rest, like the checkbox (Phase 74 / DEF-461): no chrome
+   * fill AND no chrome border over the page until hover/checked. */
+  border: 1.5px solid transparent;
   border-radius: 999px;
-  /* Transparent, like the checkbox — no chrome fill over the page. */
   background: transparent;
   transition: border-color var(--motion-fast) var(--ease-out);
 }
@@ -7178,7 +7197,10 @@ rect.ann-highlight.ann-preview {
 }
 
 .form-radio-widget .form-radio-label {
-  font-size: 11px;
+  /* Phase 74 (DEF-461) — the widget's raw option value would print a second
+   * label on top of the form's own printed label. The button's aria-label /
+   * title still carry the value; the element stays in the DOM for those. */
+  display: none;
 }
 
 /* Read-only AcroForm fields render visibly but are not editable. A truthful
@@ -12015,6 +12037,15 @@ rect.ann-highlight.ann-preview {
   .command-palette-pin-toggle,
   .command-palette-pin-toggle:active:not([disabled]) {
     transform: none !important;
+  }
+
+  /* Phase 75 (item A) — the edit-mode jiggle is continuous movement, so
+   * reduced motion removes it outright: the glyph rests, still, with no
+   * keyframe `from` pose ever painted. */
+  .anim-jiggle {
+    animation: none !important;
+    rotate: none !important;
+    translate: none !important;
   }
 
   /* Phase 20 (criterion 6, DEF-234) — the edit inline editor's legacy CSS
@@ -17107,11 +17138,11 @@ cursor: pointer;
 @keyframes protection-notice-in {
   from {
     opacity: 0;
-    transform: translateY(-4px);
+    transform: scale(var(--motion-scale-enter));
   }
   to {
     opacity: 1;
-    transform: translateY(0);
+    transform: scale(1);
   }
 }
 
@@ -17312,11 +17343,11 @@ cursor: pointer;
 @keyframes conversion-notice-in {
   from {
     opacity: 0;
-    transform: translateY(-4px);
+    transform: scale(var(--motion-scale-enter));
   }
   to {
     opacity: 1;
-    transform: translateY(0);
+    transform: scale(1);
   }
 }
 
@@ -18280,11 +18311,11 @@ cursor: pointer;
 @keyframes pdf3d-notice-in {
   from {
     opacity: 0;
-    transform: translateY(-4px);
+    transform: scale(var(--motion-scale-enter));
   }
   to {
     opacity: 1;
-    transform: translateY(0);
+    transform: scale(1);
   }
 }
 
@@ -18459,6 +18490,26 @@ cursor: pointer;
   color: var(--fg);
 }
 
+/* Phase 77 (chunk B) - the one-shot Book View entrance: opacity + a slight
+ * scale, transform/opacity only (no layout shift), no `forwards` fill so the
+ * marker's removal simply leaves the settled root. The reduced-motion and
+ * data-animations="off" token catch-alls collapse `--motion-duration-layout`
+ * to 0ms, making the entry instant while the state change remains. */
+.book-view[data-book-enter='true'] {
+  animation: tf-book-view-enter var(--motion-duration-layout) var(--motion-ease-layout);
+}
+
+@keyframes tf-book-view-enter {
+  from {
+    opacity: 0;
+    transform: scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
 .book-view-header {
   display: flex;
   align-items: center;
@@ -18528,8 +18579,41 @@ cursor: pointer;
   padding: var(--sp-4);
   background: var(--bg-base);
   /* Phase 66 (chunk 2) - the shared perspective the page-turn flip rotates
-   * into. Transform-only: the page bitmap is never recoloured or faded. */
+   * into. Transform-only: the page bitmap is never recoloured or faded.
+   * Phase 77 (chunk A) - `position: relative` makes the stage the containing
+   * block for the single-mode turning leaf (the double-mode leaf is contained
+   * by `.book-view-spread`). */
+  position: relative;
   perspective: 1600px;
+}
+
+/* Phase 77 (chunk A) - while a leaf is turning the stage must not scroll
+ * under it, and the 3D transform is clipped to the stage rect. Toggled by the
+ * `data-book-turning` attribute so the resting stage keeps its normal
+ * `overflow: auto` for large documents. */
+.book-view-stage[data-book-turning='true'] {
+  overflow: hidden;
+}
+
+/* Phase 77 (chunk B) - the one-shot single<->double relayout on the stage: a
+ * bounded opacity + small-scale cross-fade over the re-flowed spread (the
+ * current page stays anchored as the new left page by the step-aware index
+ * logic, untouched here). Transform/opacity only - no page-by-page fold, no
+ * bitmap recolour, no `forwards` fill. Collapses to instant under the same
+ * reduced-motion / data-animations="off" token catch-alls as the turn. */
+.book-view-stage[data-book-relayout='true'] {
+  animation: tf-book-relayout var(--motion-duration-layout) var(--motion-ease-layout);
+}
+
+@keyframes tf-book-relayout {
+  from {
+    opacity: 0.55;
+    transform: scale(0.992);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
 }
 
 .book-view-page {
@@ -18578,13 +18662,18 @@ cursor: pointer;
 }
 
 /* The double-page spread: two page figures side by side with the centre crease
- * between them. Transform-only motion; the crease is a static visual seam. */
+ * between them. Transform-only motion; the crease is a static visual seam.
+ * Phase 77 (chunk A) - `position: relative` is the containing block for the
+ * spine-hinged turning leaf, and `transform-style: preserve-3d` carries the
+ * stage's perspective down to that leaf. */
 .book-view-spread {
   display: flex;
   align-items: center;
   justify-content: center;
   gap: 0;
   line-height: 0;
+  position: relative;
+  transform-style: preserve-3d;
 }
 
 .book-view-crease {
@@ -18600,19 +18689,80 @@ cursor: pointer;
   );
 }
 
-/* The page-turn flip. Transform-only CSS 3D over the EXISTING PageView canvas:
- * no WebGL/3D dependency, no recolour, no opacity fade of the bitmap. The
- * keyframe rotates about the spine edge using the layout motion token, so the
- * prefers-reduced-motion / data-animations="off" catch-alls collapse the
- * duration to 0 and the page-turn becomes instant (styles.css mirrors
- * .pdf-page-layout-flip). */
-.book-view-turn-next {
+/* Phase 77 (chunk A) - the page-turn leaf. ONE leaf hinged at the SPINE (the
+ * centre fold), carrying two faces: the front is the OUTGOING page and the
+ * back the INCOMING page. Transform-only CSS 3D over the EXISTING PageView
+ * canvas: no WebGL/3D dependency, no recolour, no opacity fade of the bitmap.
+ * `backface-visibility: hidden` on each face (with the back face pre-rotated
+ * `rotateY(180deg)`) shows the incoming page on the reverse of the swing,
+ * never a mirrored outgoing page.
+ *
+ * Geometry (LTR):
+ *   double next -> leaf over the RIGHT half, origin at its LEFT (spine) edge,
+ *                  rotateY 0 -> +180 (swings inboard over the left half);
+ *   double prev -> leaf over the LEFT half, origin at its RIGHT (spine) edge,
+ *                  rotateY 0 -> -180;
+ *   single next/prev -> the whole page area, origin left/right respectively.
+ * The duration/easing come from the layout tokens, so the reduced-motion /
+ * data-animations="off" catch-alls collapse the turn to instant while the
+ * spread still advances (pageIndex commits independently). Mirror of
+ * `.pdf-page-layout-flip`. */
+.book-view-turn {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  z-index: 2;
+  transform-style: preserve-3d;
+  /* The leaf is decorative motion; page clicks belong to the static figures. */
+  pointer-events: none;
+}
+
+.book-view-turn.book-view-turn-right {
+  left: 50%;
+  width: 50%;
+  transform-origin: left center;
+}
+
+.book-view-turn.book-view-turn-left {
+  right: 50%;
+  width: 50%;
   transform-origin: right center;
+}
+
+.book-view-turn.book-view-turn-single {
+  left: 0;
+  right: 0;
+  width: 100%;
+}
+
+.book-view-turn.book-view-turn-single.book-view-turn-next {
+  transform-origin: left center;
+}
+
+.book-view-turn.book-view-turn-single.book-view-turn-prev {
+  transform-origin: right center;
+}
+
+.book-view-turn-face {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 0;
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+}
+
+.book-view-turn-face-back {
+  transform: rotateY(180deg);
+}
+
+.book-view-turn-next {
   animation: tf-book-turn-next var(--motion-duration-layout) var(--motion-ease-layout);
 }
 
 .book-view-turn-prev {
-  transform-origin: left center;
   animation: tf-book-turn-prev var(--motion-duration-layout) var(--motion-ease-layout);
 }
 
@@ -18621,7 +18771,7 @@ cursor: pointer;
     transform: rotateY(0deg);
   }
   to {
-    transform: rotateY(-180deg);
+    transform: rotateY(180deg);
   }
 }
 
@@ -18630,7 +18780,7 @@ cursor: pointer;
     transform: rotateY(0deg);
   }
   to {
-    transform: rotateY(180deg);
+    transform: rotateY(-180deg);
   }
 }
 
@@ -18676,13 +18826,12 @@ cursor: pointer;
   cursor: default;
 }
 
-/* Phase 66 (chunk 1) - the Book View entry, the TOP-LEFT mirror of the
- * top-right page-layout control. It shares that control's surface treatment
- * and sits 12px below the measured chrome stack (`--tf-chrome-y`). */
+/* Phase 66 (chunk 1) - the Book View entry. It shares the page-layout
+ * control's surface treatment. Phase 78 moved it from the overlay's TOP-LEFT
+ * (`left: 12px`) to the canvas TOP-RIGHT, where it is the middle control of
+ * the `.canvas-top-right` cluster (immediately LEFT of the page-layout control
+ * and immediately RIGHT of the notice "i" row). */
 .canvas-book-view {
-  position: absolute;
-  top: calc(var(--tf-chrome-y, 0px) + 12px);
-  left: 12px;
   display: inline-flex;
   align-items: center;
   gap: var(--sp-2);
@@ -18699,7 +18848,6 @@ cursor: pointer;
   font: inherit;
   font-size: 12px;
   cursor: pointer;
-  z-index: 3;
   transition: background var(--motion-duration-fast) var(--motion-ease-standard),
     border-color var(--motion-duration-fast) var(--motion-ease-standard);
 }
@@ -18708,6 +18856,102 @@ cursor: pointer;
   background: var(--bg-hover);
   border-color: var(--border-strong);
 }
+
+/* ==========================================================================
+ * Phase 78 — the top-of-canvas notices render INSIDE the canvas.
+ *
+ * Operator request (TFL-187): the open-triggered information messages must sit
+ * in a rounded, slightly translucent box WITHIN the canvas, at the top-right
+ * beside Book View, not as flow bars above the scroller. The three notices
+ * (`.protection-notice`, `.conversion-notice`, `.pdf3d-notice`) are re-parented
+ * into `.canvas-overlay`; Book View and the page-layout control join them in
+ * the `.canvas-top-right` cluster, and each box grows out of its collapsed "i"
+ * origin. Presentation only: the copy, content, roles, aria-labels, data-*
+ * hooks and the Phase 67 auto-collapse machine are unchanged. Motion is the
+ * shared token set (identical in every theme; the reduced-motion /
+ * Animations-OFF block collapses the duration to 0).
+ * ========================================================================== */
+
+/* The canvas TOP-RIGHT control cluster. Flex-wrapped: the collapsed notice
+ * "i" icons, the Book View entry and the page-layout control share the first
+ * line (right-aligned), while every EXPANDED notice box is a full-width item
+ * that wraps onto its own line BELOW them. Concurrent boxes therefore stack
+ * vertically in DOM order with the cluster's 8px gap and can never overlap
+ * (DEF-464). The width is capped so the stack stays inside the canvas, whose
+ * `.canvas-overlay` already consumes the open Inspector's `--tf-tools-inset`.
+ * The ink is pointer-inert; every control opts back in. */
+.canvas-top-right {
+  position: absolute;
+  top: calc(var(--tf-chrome-y, 0px) + 12px);
+  right: 12px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  width: min(440px, calc(100% - 24px));
+  z-index: 3;
+  pointer-events: none;
+}
+
+/* The cluster owns the placement now, so its controls flow inside it instead
+ * of anchoring themselves absolutely. `order` keeps them on the first line,
+ * left of nothing and right of the notice "i" row. */
+.canvas-top-right .canvas-book-view,
+.canvas-top-right .canvas-page-layout {
+  position: static;
+  order: -1;
+}
+
+/* The notice holder dissolves so each region's child — the collapsed "i" or
+ * the expanded box — becomes a DIRECT flex item of the cluster and takes part
+ * in the wrap; the collapsed icons then sit on the first line, immediately
+ * LEFT of Book View. */
+.canvas-notices {
+  display: contents;
+}
+
+.canvas-notices .protection-notice-region,
+.canvas-notices .conversion-notice-region,
+.canvas-notices .pdf3d-notice-region {
+  display: contents;
+}
+
+.canvas-notices .protection-notice-collapsed-toggle,
+.canvas-notices .conversion-notice-collapsed-toggle,
+.canvas-notices .pdf3d-notice-collapsed-toggle {
+  position: static;
+  order: -2;
+  pointer-events: auto;
+}
+
+/* Each expanded box is a rounded, slightly translucent surface. It is a
+ * full-width wrapped item, so it always occupies its own line below the
+ * control row: two expanded boxes stack vertically (never overlap) and every
+ * box's collapse control stays hit-testable. The top-right box keeps the
+ * canvas top-right anchor; `transform-origin: top right` keeps the enter
+ * morph growing from the collapsed "i" origin. */
+.canvas-top-right .protection-notice,
+.canvas-top-right .conversion-notice,
+.canvas-top-right .pdf3d-notice {
+  position: static;
+  flex: 0 0 100%;
+  margin: 0;
+  width: auto;
+  max-width: none;
+  background: var(--bg-elevated);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-3);
+  box-shadow: var(--shadow-menu);
+  -webkit-backdrop-filter: var(--glass-blur);
+  backdrop-filter: var(--glass-blur);
+  pointer-events: auto;
+  transform-origin: top right;
+}
+
+/* Enter morph — the Phase 59/67 `*-notice-in` keyframes are redefined below to
+ * scale out of the box's top-right corner (the collapsed "i" origin), so the
+ * computed `animation-name` and its token-based duration are unchanged. */
 
 
 

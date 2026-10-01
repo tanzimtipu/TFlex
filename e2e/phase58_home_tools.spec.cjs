@@ -1,7 +1,8 @@
 // Phase 58 (chunk 4) — the HOME (Welcome) page's editable tool row.
 //
 // Verifies the ONE assigned behaviour:
-//   pen -> edit mode (vibration + a minus on every non-fixed tile + a plus at
+//   pen -> edit mode (a continuous per-icon jiggle + a minus on every non-fixed
+//   tile + a plus at
 //   the row's right); the plus opens a picker that offers ONLY tools usable with
 //   no document open (annotate / rotate / exportPages are absent); picking
 //   appends a tile; a minus removes one WITHOUT running it; the FIXED Open tile
@@ -41,7 +42,7 @@ async function openWelcome(win) {
   await win.waitForTimeout(400);
 }
 
-test('home tool row: pen/edit/vibrate, minus/plus curate, picker excludes doc tools, persists, resizes', async () => {
+test('home tool row: pen/edit/jiggle, minus/plus curate, picker excludes doc tools, persists, resizes', async () => {
   // ---- Launch 1 ---------------------------------------------------------
   let app = await launchApp([], USER_DATA);
   let win = await app.firstWindow();
@@ -53,18 +54,30 @@ test('home tool row: pen/edit/vibrate, minus/plus curate, picker excludes doc to
   expect(await win.locator(ROW).getAttribute('data-home-edit')).toBe('false');
   expect(await win.locator('[data-home-tool="open"]').count()).toBe(1);
 
-  // 2. The pen arms EDIT mode with the vibrate entry animation.
+  // 2. The pen arms EDIT mode with the continuous, per-icon-desynchronised
+  //    jiggle — never the retired entry vibration.
   await win.locator('[data-home-edit-toggle]').click();
   await win.waitForTimeout(400);
   expect(await win.locator(ROW).getAttribute('data-home-edit')).toBe('true');
   const vib = await win.evaluate(() => {
     const row = document.querySelector('[data-home-tools]');
     const cs = getComputedStyle(row);
-    return { className: String(row.className), animationName: cs.animationName, animationDuration: cs.animationDuration };
+    const icons = Array.from(document.querySelectorAll('.home-tool-icon'));
+    return {
+      className: String(row.className),
+      animationName: cs.animationName,
+      count: icons.length,
+      names: icons.map((el) => getComputedStyle(el).animationName),
+      delays: icons.map((el) => getComputedStyle(el).animationDelay),
+    };
   });
-  console.log(`[P58-home] edit-on className="${vib.className}" animationName="${vib.animationName}" animationDuration="${vib.animationDuration}"`);
-  expect(vib.className).toContain('anim-vibrate');
-  expect(vib.animationName).toContain('tf-anim-vibrate');
+  console.log(`[P58-home] edit-on className="${vib.className}" animationName="${vib.animationName}" jiggle icons=${vib.count} names=${JSON.stringify(vib.names)} delays=${JSON.stringify(vib.delays)}`);
+  expect(vib.className).not.toContain('anim-vibrate');
+  expect(vib.animationName).not.toContain('tf-anim-vibrate');
+  expect(vib.count).toBeGreaterThan(1);
+  for (const name of vib.names) expect(name).toContain('tf-anim-jiggle');
+  for (const name of vib.names) expect(name).not.toContain('tf-anim-vibrate');
+  expect(new Set(vib.delays).size).toBeGreaterThan(1);
 
   // Every non-fixed tile grows a minus; the fixed Open tile never does.
   const minusAudit = await win.evaluate(() => {

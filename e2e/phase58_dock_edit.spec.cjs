@@ -1,8 +1,9 @@
 // Phase 58 (chunk 3) — Action Dock EDIT MODE.
 //
 // Verifies the ONE assigned behaviour:
-//   pen -> edit mode (vibration + a minus badge on every verb + a plus at the
-//   row's right); a minus removes that tool WITHOUT running it; the plus opens a
+//   pen -> edit mode (a continuous per-icon jiggle + a minus badge on every verb
+//   + a plus at the row's right); a minus removes that tool WITHOUT running it;
+//   the plus opens a
 //   picker of stage-relevant + global tools and adding one appends it (the plus
 //   returns); the removal and the addition both persist across a relaunch; the
 //   dock's box transition is non-zero normally and collapses to the app's
@@ -104,7 +105,7 @@ async function closePrefs(win) {
   await win.waitForTimeout(300);
 }
 
-test('dock pen enters edit mode; minus/plus curate and persist; resize animates then goes instant', async () => {
+test('dock pen enters edit mode with a desynchronised jiggle; minus/plus curate and persist; resize animates then goes instant', async () => {
   // ---- Launch 1 ---------------------------------------------------------
   let app = await launchApp([], USER_DATA);
   let win = await app.firstWindow();
@@ -118,12 +119,26 @@ test('dock pen enters edit mode; minus/plus curate and persist; resize animates 
   await win.waitForTimeout(400);
   expect(await win.locator(DOCK).getAttribute('data-dock-edit')).toBe('true');
 
-  // Vibration: the entry class is present and the animation is live/non-zero.
+  // Phase 75 (item A) — EDIT mode is NOT a shake. The retired entry vibration
+  // is gone from the dock root, and every curated glyph carries the continuous,
+  // per-icon-desynchronised jiggle instead.
   const vib = await dockMetrics(win);
   console.log(`[P58-dock] edit-on className="${vib.className}" animationName="${vib.animationName}" animationDuration="${vib.animationDuration}"`);
-  expect(vib.className).toContain('anim-vibrate');
-  expect(vib.animationName).toContain('tf-anim-vibrate');
-  expect(oneSecond(vib.animationDuration)).toBeGreaterThan(0);
+  expect(vib.className).not.toContain('anim-vibrate');
+  expect(vib.animationName).not.toContain('tf-anim-vibrate');
+  const jiggle = await win.evaluate(() => {
+    const icons = Array.from(document.querySelectorAll('[data-dock-verb] .action-dock-icon'));
+    return {
+      count: icons.length,
+      names: icons.map((el) => getComputedStyle(el).animationName),
+      delays: icons.map((el) => getComputedStyle(el).animationDelay),
+    };
+  });
+  console.log(`[P58-dock] edit-on jiggle icons=${jiggle.count} names=${JSON.stringify(jiggle.names)} delays=${JSON.stringify(jiggle.delays)}`);
+  expect(jiggle.count).toBeGreaterThan(1);
+  for (const name of jiggle.names) expect(name).toContain('tf-anim-jiggle');
+  for (const name of jiggle.names) expect(name).not.toContain('tf-anim-vibrate');
+  expect(new Set(jiggle.delays).size).toBeGreaterThan(1);
 
   // Phase 59 (item 3) — the pen is INSIDE the dock's bounds at the default
   // (labelled) rung.

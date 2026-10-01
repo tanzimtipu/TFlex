@@ -3,6 +3,191 @@
 > Read discipline: this is a historical evidence ledger. Search for the assigned `ADV-NNN`
 > or unresolved `Disposition: PENDING` entries; do not load prior campaigns wholesale.
 
+## Phase 78 diff-pass — in-canvas notices, top-right cluster, enter morph (TFL-266, phase TFL-260)
+
+Session label: `diff-pass`. Scope: the Phase 78 WORKING-TREE diff only — `App.tsx`
+`DocumentSurfaceColumn` notice re-parent (`canvasNotices` via `cloneElement`),
+`DocumentView.tsx` `.canvas-top-right` cluster + `canvasNotices` prop, `styles.css`
+`.canvas-top-right` / `.canvas-notices` / in-canvas box rules and the redefined
+`*-notice-in` keyframes, `useNoticeCollapse.ts` `entering` + double-rAF commit, and
+the `entering` icon-first render in `ProtectionNotice` / `ConversionNotice` /
+`Pdf3dNotice`. Read-only: no product code, test, config or DEFECTS.md edited. One
+ADV filed (ADV-145). Prior-phase and unrelated working-tree changes (Phase 74
+forms, Phase 75 jiggle, Phase 77 Book View) were NOT re-litigated.
+
+Probe: `test-fixtures/adv-p78/probe.cjs` (standalone; launches only through
+`e2e/lib/launch.cjs`). Renderer rebuilt once (`npm.cmd run build:renderer`) so the
+dist under test matches the tree. Logs: `test-fixtures/adv-p78/probe-*.txt`,
+`e2e-phase78.txt`, `e2e-geometry.txt`; screenshots `screenshots/adv-p78-*.png`.
+
+Exact probe commands:
+
+- `npm.cmd run build:renderer`
+- `node test-fixtures/adv-p78/probe.cjs multi 30 2048 1392`
+- `node test-fixtures/adv-p78/probe.cjs multi 30 640 1392`
+- `node test-fixtures/adv-p78/probe.cjs multi 30 1024 768`
+- `node test-fixtures/adv-p78/probe.cjs multi 20 1024 768`
+- `node test-fixtures/adv-p78/probe.cjs multi 30 900 600`
+- `node test-fixtures/adv-p78/probe.cjs book`
+- `node test-fixtures/adv-p78/probe.cjs races`
+- `node test-fixtures/adv-p78/probe.cjs hit`
+- `node test-fixtures/adv-p78/probe.cjs conversion`
+- `npx.cmd playwright test phase67_notice_geometry.spec.cjs phase59_protection_notice.spec.cjs tfl46_protection_probe.spec.cjs --reporter=line` -> 5 passed
+- `npx.cmd playwright test phase78_notice_in_canvas.spec.cjs --reporter=line` -> 2 passed
+
+Surfaces that held (all other attacks passed):
+
+- Hypothesis 1 (multi-notice): protection + 3D expanded together at 2048x1392 do
+  not overlap (prot bottom 212.95, 3D top 220.95), do not cover Book View
+  (top 62-90) or the page-layout control, and the 440px cluster stays inside the
+  overlay. At 640px width the 440px cluster still fits the control row. No
+  off-screen control. (The tall-box vertical overflow is ADV-145.)
+- Hypothesis 2 (Book View interplay): with protection+3D expanded, opening Book
+  View unmounts the notices (0 notice nodes while Book View is shown); closing
+  Book View remounts exactly ONE protection box + ONE 3D box (no duplicate
+  region), no console error / pageerror (`errors: []`).
+- Hypothesis 3 (enter/exit races): 40 synchronous expand/collapse clicks through
+  the enter leg settled cleanly (0 duplicate boxes, 1 icon, `errors: []`);
+  `data-animations="off"` takes the instant path (`animation-duration: 1e-05s`,
+  box direct, no icon leg).
+- Hypothesis 4 (hit tests): `elementFromPoint` at each collapsed "i" centre
+  (protection, 3D), at Book View, at the page-layout buttons, and at the page
+  centre all resolve to the intended element; cluster focusables are
+  [protection "i", 3D "i", Book View, One/Two/Four pages] in DOM order.
+- Hypothesis 5 (a11y): `aria-label`s present on the "i" (Show document protection
+  details / Show 3D content notice) and Book View. (Auto-collapse still drops
+  focus to BODY, but that is the unchanged Phase 67 machine, not this diff.)
+- Hypothesis 6 (oracles): the repointed phase67 / phase59 / tfl46 specs (5
+  passed) and the new phase78 spec (2 passed) stay green; measured icon pitch
+  36px, gap to Book View 8px, page-layout right inset 12px, morph origin
+  top-right (`440px 0px`), reduced-motion instant.
+
+Design-critique (changed surface: canvas top-right notice cluster):
+
+- Must-fix: long-content overflow (ADV-145) — a tall expanded notice runs past
+  the canvas bottom; cap it and let the box scroll.
+- Strengths to keep: the collapsed row reads as a tight sibling cluster (8px
+  gap), not four unrelated buttons; the expanded box is a legible translucent
+  surface with the collapse chevron at its top-right; the instant path under
+  reduced motion / Animations OFF preserves meaning without movement; the
+  icon-first enter signals "more information lives here".
+
+## ADV-145: A tall expanded notice box paints past the canvas bottom and is not clipped, so the tail of a long 3D (or conversion) message is unreachable
+
+- Session: diff-pass
+- Suggested severity: MEDIUM
+
+What I did: built an encrypted PDF carrying 30 synthetic `/Subtype /3D`
+annotations on page 2 (`probe.cjs` `buildEncrypted3d`) so `ProtectionNotice` and
+`Pdf3dNotice` both mount expanded, opened it with
+`node test-fixtures/adv-p78/probe.cjs multi 30 <w> <h>`, and measured
+`getBoundingClientRect()` of `[data-pdf3d-notice]` and `[data-canvas-overlay]`
+plus `elementFromPoint` at the box top.
+
+Expected: the expanded 3D box measured inside the canvas overlay (Phase 78
+feature A: the notices "are clipped to the canvas"; success criterion 1: the box
+is "inside the canvas bounds and ... never shows outside the canvas"), with every
+entry's sentence readable.
+
+Actual: at 1024x768 the 3D box is top 220.95, bottom 1062 (height 841) while the
+overlay bottom is 768, so it paints 294px below the canvas/window bottom
+(`insideCanvas:false`). At 900x600 the escape is 462px. Even 20 entries at
+1024x768 escape by 25px. At the spec geometry window 2048x1392 (30 entries) it
+stays inside. The box has no `max-height`/`overflow`, and `.canvas-overlay` has
+no overflow clip, so there is no scroll: the text below the window bottom is
+unreachable while expanded. The collapse chevron stays at the box top and is
+hit-testable, so the user can collapse — but the omitted entries are hidden, and
+the 3D notice's contract is to name every entry.
+
+Root cause: `src/renderer/styles.css:15904` `.canvas-overlay` (inset:0, no
+`overflow`); `src/renderer/styles.css:18842` `.canvas-top-right` (no max-height /
+overflow); `src/renderer/styles.css:18893` expanded-box rule
+(`flex: 0 0 100%`, no max-height / overflow); rendering at
+`src/renderer/components/Pdf3dNotice.tsx:71` (`pdf3dNoticeText(entries)` joined
+into one unbounded span). Suggested (for the developer): cap the expanded box
+with `max-height` relative to the cluster's remaining canvas height and set
+`overflow: auto`, or clip the overlay — this report does not implement it.
+
+Screenshot: `screenshots/adv-p78-multi-1024x768.png` (30 entries; the 3D box's
+lower half is below the window), `screenshots/adv-p78-multi-900x600.png`.
+Fixture/log: `test-fixtures/adv-p78/probe-multi-1024x768.txt`,
+`probe-multi-short.txt`, `probe-multi-768.txt` (the encrypted fixtures are built
+into a temp dir by the probe and not committed).
+
+Disposition: ACCEPTED -> DEF-466 (MEDIUM). CTO triage (TFL-250): real break of Phase 78 success criterion 1 - a tall expanded notice box is not clipped and paints past the canvas bottom. Reproduced; filed as DEF-466 (owner frontend-dev).
+
+## Phase 75 diff-pass — dock/App-home edit-mode jiggle (TFL-264, phase TFL-228)
+
+Session label: `diff-pass`. Scope: the Phase 75 working-tree diff only —
+`ActionDock.tsx` (`jiggleDelayMs` / `JIGGLE_PERIOD_MS`, the `jiggle` predicate in
+`renderVerb`, `anim-jiggle` + inline negative `animationDelay` on the live
+`.action-dock-icon`, dock root no longer `anim-vibrate`), `Welcome.tsx` (same on
+the fixed Open tile and removable tiles via `.home-tool-icon`), `styles/animations.css`
+(`tf-anim-jiggle` / `.anim-jiggle` / `--motion-jiggle-rotate` / reduced-motion list),
+`styles.css` (`.home-tool-icon` base at 3007, reduced-motion `.anim-jiggle` at 12045).
+Read-only: no product code edited. No ADV filed — every attack below passed. Static
+finding candidates checked and rejected (see observation at the end).
+
+Command:
+`node test-fixtures/adv-p75/probe.cjs home|dock|motion` after
+`npm.cmd run build:renderer`; app launched only through `e2e/lib/launch.cjs`
+`launchApp`. Probe: `test-fixtures/adv-p75/probe.cjs`; JSON log
+`test-fixtures/adv-p75/probe-log.json`. Screenshots inspected:
+`screenshots/adv-p75-home-edit.png`, `adv-p75-home-rest.png`, `adv-p75-dock-edit.png`,
+`adv-p75-dock-rest.png`, `adv-p75-dock-narrow.png`, `adv-p75-reduced.png`,
+`adv-p75-animoff.png` (tilted glyphs, minus badges, plus and pen all contained and
+legible; no layout break).
+
+Numeric results:
+
+- Attack 1 (enter/exit flapping). Home: 6 pen toggles ending OFF -> `data-home-edit=false`,
+  residual `[]` (every glyph `animationName`/`rotate`/`translate`/`transform` = `none`,
+  `jiggleAnywhere=0`); 11 toggles ending ON -> 3/3 glyphs `tf-anim-jiggle`, distinct
+  delays 3. Dock: same, ending OFF residual `[]`; ending ON 7/7 glyphs jiggle, distinct
+  delays 7. No stuck jiggle either parity.
+- Attack 2 (click-through). Home fixed/hosted: a plain click at the glyph edge
+  (`{x:1,y:1}`) of the jiggling `preferences` tile opened the Preferences sheet
+  (`prefsOpened=true`); `[data-home-plus]` opened its 5-item picker; a minus removed a
+  tile (4->3) with no dialog leak. Dock: glyph-edge click on the jiggling `merge` verb
+  opened its dialog (`dialogOpened=true`); plus opened a 31-item picker; minus removed a
+  verb (8->7). Motion never swallowed a click.
+- Attack 3 (Escape). Home and dock: edit `true` -> Escape -> `false`, then residual `[]`.
+- Attack 4 (excluded controls). Home pen `glyphJiggle=false`, plus `glyphJiggle=false`.
+  Dock `otherIcons` (overflow `More` glyph) empty at full width; the removed verb's exit
+  ghost `[data-dock-exiting="rotate"]` had `iconClass="action-dock-icon"` (no
+  `anim-jiggle`) and `animationName=none`. `vibrateAnywhere=0` everywhere.
+- Attack 5 (reduced motion, `emulateMedia reducedMotion:reduce`). edit arms (`true`),
+  `animationName=none`, `rotate/translate=none`, 0 glyphs with non-none rotation; plus
+  picker 31 items and minus still removed a verb (8->7). The retired vibration did not
+  reappear.
+- Attack 6 (Animations OFF, `data-animations="off"`). edit `true`; per the shared
+  catch-all the icon keeps class `anim-jiggle` but `animation-duration=1e-05s`,
+  `animation-iteration-count=1`, and `rotate/translate=none` (no visible jiggle);
+  `vibrateAnywhere=0`; plus picker 32 items. Function preserved.
+- Attack 7 (rest leak). Home and dock: during edit the glyphs carry non-`none`
+  `rotate`/`translate`; immediately after exit AND after a 1s wait residual `[]`
+  (`none`/identity on every glyph, `jiggleAnywhere=0`). No residual offset.
+- Attack 8 (layout). Measured by isolating the jiggle: reduced-motion forces the resting
+  rect with edit state unchanged, then motion on gives the jiggling rect; per-icon centre
+  displacement. Home max 1.99px (id `preferences`), rest rotations `none`, 3 live
+  non-`none`. Dock at 2560px max 1.98px (id `insertPages`), `outsideDock=0`, 7 live
+  non-`none`; at the 640px minimum dockRect=[180,714,348,44] inside innerWidth 640, max
+  1.99px (id `replacePages`), `outsideDock=0`. All within the ~2px rotation+translation
+  tolerance; no glyph pushed out of the dock box.
+- Attack 9 (stress). Dock (8 icons): 73 rAF frames / 1200ms, max 16.8ms, avg 16.45ms,
+  p95 16.7ms, 8 distinct per-icon delays. Home (3 icons): 61 frames / 1000ms, max
+  16.8ms, avg 16.46ms, p95 16.7ms, 3 distinct delays. No gross stall; delays distinct.
+
+Observation (not an ADV finding, no functional impact): two stale explanatory comments
+still mention the removed vibration — `styles.css:3135` ("the row's `anim-vibrate`
+translate made the 36px row the containing block") and `styles.css:15314` ("the dock
+root then carries `data-dock-edit='true'` and the entry `anim-vibrate` class"). Both are
+prose describing superseded Phase 58 behaviour; the live `anim-vibrate` utility, keyframes
+and every reduced-motion / Animations-OFF code reference are gone. Recorded for the
+developer's discretion only.
+
+Disposition: no entries to dispose (all attacks passed).
+
 ## Phase 63 diff-pass — dock edit pen colour (TFL-47)
 
 Session label: `diff-pass`. Scope: the Phase 63 working-tree change to the dock edit
@@ -6298,7 +6483,7 @@ certifies the ADV-140 regression instead of catching it (same class as DEF-458).
 corrected oracle asserts criterion 2 (`mainTop - activeBottom <= 1`, with
 `activeBottom > inactiveBottom` still true); it can only go green once DEF-455 lands. Routed
 to frontend-dev with the DEF-455/456 fix (TFL-213; Phase 72 permits developer oracle repoints
-to this contract). qa verifies and closes.
+  to this contract). qa verifies and closes.
 
 ## ADV-143: Phase 73 dirty dot is 100% clipped away at the 640px minimum with 10 tabs; the qa containment oracle cannot see it
 
@@ -6338,6 +6523,52 @@ Same probe, scenario `a` (`node test-fixtures/adv-p73/probe.cjs a`), on 2 tabs a
 - Surface 5 (layout/padding-left 1px): an injected probe-only `padding-left: 0` A/B produced byte-identical tab widths `[180,180]`, close lefts `[492.84,674.84]`, title widths `[134,134]` and clip text - no width/uniformity/close shift. Holds.
 - Surface 6 (mousedown on the dot): mousedown at the dot centre changed the active id from the clean tab to the dirty tab, so the dot does not swallow activation. Holds.
 - Surfaces 1/2 at squeezed widths are the ADV-143 failure, not a separate close-collision finding: at 10 tabs `dot.right (186.5) < close.left (189.5)`, so there is no dot/close overlap (the close itself overflows the 10px tab, which is the pre-existing Phase 72 area, outside this pass).
+
+## ADV-144: Phase 74's hover accent outline on `.form-editor` is dead in the dark and frosted themes (and dark focus loses its wash/border) - the themed rule out-specifies `:hover`/`:focus`
+
+- Session: diff-pass
+- Suggested severity: LOW
+
+What I did: static diff-pass on the Phase 74 (DEF-461) CSS change, plus a static `@cantoo/pdf-lib` walk of the real `956.pdf` copy. I read the working-tree diff of `src/renderer/styles.css` (the Phase 74 block is uncommitted; HEAD `d8fff9c`, tree dirty) and the built stylesheet the running app serves, `dist/renderer/assets/index-X0hu2dAG.css`, and computed the CSS cascade by selector specificity for the themed `.form-editor` rules. No Electron launch (the shared `.paperclip-build.lock` is held fresh by frontend-dev for TFL-248; see the pending-dynamic note below).
+
+The shipped rules, in source order (verbatim from `dist/renderer/assets/index-X0hu2dAG.css`):
+
+```
+.form-editor:hover{border-color:var(--accent-soft)}
+:root[data-theme=dark] .form-editor{color:#0f172a;background:0 0;border-color:#0000}
+:root[data-theme=frosted] .form-editor{color:var(--fg-strong);background:0 0;border-color:#0000}
+.form-editor:focus{border-color:var(--accent-hover);box-shadow:0 0 0 1px var(--accent-soft);background:#ffffffeb}
+:root[data-theme=frosted] .form-editor:focus{background:#fffffff0}
+```
+
+Specificity: `.form-editor:hover` and `.form-editor:focus` are `(0,2,0)` (one class + one pseudo-class). `:root[data-theme=...] .form-editor` is `(0,3,0)` (`:root` pseudo-class + `[data-theme=...]` attribute + `.form-editor` class). Higher specificity wins regardless of source order, so in the dark and frosted themes the themed `.form-editor` declaration sets `border-color:#0000` (transparent) and there is no `:root[data-theme="..."] .form-editor:hover` rule to restore it: the border is `transparent` on hover. This governs every `.form-editor` control - text `<input>`, `<textarea>`, dropdown `<select>` and listbox `<ul>`.
+
+Expected (Phase 74 block comment, `src/renderer/styles.css:7000-7006`, and this diff-pass probe item 3): "Hover reveals a subtle accent outline; focus keeps the clear accent border and a light wash under the caret" - in light, dark AND frosted.
+
+Actual:
+- Light theme: hover outline `--accent-soft`, focus wash + `--accent-hover` border. Holds.
+- Dark theme: hover border stays `transparent` (no outline). Focus border stays `transparent`, and focus's `background:#ffffffeb` (`(0,2,0)`) is also beaten by `:root[data-theme=dark] .form-editor{background:0 0}` (`(0,3,0)`), so the dark focus wash is absent too; only the non-overridden `box-shadow:0 0 0 1px var(--accent-soft)` remains as a faint ring. The dark focus border regressed from `var(--accent)` (pre-Phase-74 dark base set `border-color:var(--accent)`) to transparent.
+- Frosted theme: hover border stays `transparent` (no outline). Focus wash is present because `:root[data-theme=frosted] .form-editor:focus` (`(0,3,0)`, later) sets `background:#fffffff0`; focus border still resolves to transparent (no themed focus border rule).
+
+Scope note (not a finding): `.form-checkbox:hover{border-color:var(--accent)}` and `.form-radio:hover .form-radio-dot{border-color:var(--accent)}` have no themed `.form-editor`-style override (`:root[data-theme=...] .form-checkbox/.form-radio-dot` do not exist), so checkbox and radio-group hover still work in all three themes. The regression is confined to the `.form-editor` family.
+
+Reproduction (static - deterministic, no Electron needed):
+1. `git rev-parse HEAD` -> `d8fff9c966fab3995b2cdf457ba9a1790762c3e2` (dirty tree).
+2. Read `dist/renderer/assets/index-X0hu2dAG.css` (offset ~100768): the four rules above are byte-adjacent in that order.
+3. `Select-String -Path src/renderer/styles.css -Pattern 'form-editor'` -> only lines 7007/7021/7025/7035/7041/7050 (no `:root[data-theme="dark"] .form-editor:hover` or `:root[data-theme="dark"] .form-editor:focus`).
+4. Specificity `(0,3,0) > (0,2,0)` -> `border-color`/`background` from the themed rule win on `:hover`/`:focus`. Dynamic confirmation (a computed-style read on a hovered `.form-editor` per theme) is queued in `test-fixtures/adv-p74/probe.cjs overlay` and is pending the build lock.
+
+Screenshot: pending the dynamic probe (`screenshots/adv-p74-*.png`); the cascade above is theme-independent and already decisive on the shipped `dist` bytes.
+
+Disposition: PENDING
+
+### Phase 74 chunk 5 diff-pass - classes that did NOT reproduce statically (dynamic confirmation queued)
+
+Same pass, static-only because the build lock blocked the Electron launch. These are NOT findings; they are recorded so the phase ledger shows what was covered.
+
+- **Group save-branch data-loss probe (`node test-fixtures/adv-p74/as-walk.cjs`): clean.** The save-time pass calls `fillFormNatively(pdf, font)` with `values === undefined`, so for a multi-widget group it takes `chosen = buttonGroupValue(field)` (field `/V` only) and rewrites every widget `/AS` via `setButtonGroupValue`. I walked all 12 groups of the real copy: every widget is `/AS /Off` and every field `/V` is empty (`flaggedCount: 0`), so the save pass writes `/V /Off` + `/AS /Off` consistently - there is no `/AS`-only selection for it to silently destroy. Raw: `test-fixtures/adv-p74/as-walk.json`.
+- **"93 filled, 12 skipped" report (probe item 2): predicted NOT to reproduce on the current tree, pending dynamic confirmation.** Static `@cantoo/pdf-lib` walk (`test-fixtures/adv-p74/fixture-walk.json`, sha256 `37a51c4f...792fe`): 105 fields, all 12 multi-widget groups empty, `getFieldRect`/read-only/signature/orphan counts 0. `applyFieldValue` (`src/main/services/form-fill.ts:737-751`) takes the empty-group branch with `buttonGroupValue=''`, which `setButtonGroupValue('')` (`src/main/services/forms.ts:195-223`) accepts and returns `true`, yielding `filled`. Predicted statuses: 105 filled / 0 skipped. The historical "93 filled, 12 skipped" is consistent with the pre-ADV-126/DEF-426 branch. The dynamic `probe.cjs report`/`recon` run will confirm the actual `formFillReport` row statuses.
+- **Group tick round-trip (probe item 1), blast radius (probe item 4), encrypted reopen (probe item 5): NOT YET RUN.** `test-fixtures/adv-p74/probe.cjs` (commands `group`/`report`/`overlay`/`blast`/`encrypted`/`readonly`) is written and launches only through `e2e/lib/launch.cjs`; it is blocked by the same fresh `.paperclip-build.lock` (owner frontend-dev, TFL-248, acquired `2026-10-01T16:16:52Z`).
 
 
 
