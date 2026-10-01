@@ -68,7 +68,7 @@ export const SAVE_REMOVES_PROTECTION_TEXT =
 
 /** The banner's honest disclaimer: what the document asks vs what we do. */
 export const PROTECTION_ENFORCEMENT_TEXT =
-  'TFlex displays these permissions but does not enforce them.';
+  'Jovrel displays these permissions but does not enforce them.';
 
 /** Human label for the cipher read from an opened document. The raw `/R`,
  *  `/V` and `/CFM` values are appended by `protectionSummary`. */

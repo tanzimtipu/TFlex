@@ -84,7 +84,7 @@ export function toastForConvertError(code: ConvertErrorCode, displayName: string
     case 'too-large':
       return `The file is too large to import ("${displayName}").`;
     case 'drm-protected':
-      return `This e-book is DRM-protected and cannot be imported ("${displayName}"). TFlex never decrypts protected e-books.`;
+      return `This e-book is DRM-protected and cannot be imported ("${displayName}"). Jovrel never decrypts protected e-books.`;
     case 'decode-failed':
       return `The file could not be decoded ("${displayName}"). It may be damaged or an unsupported variant.`;
     case 'corrupt':

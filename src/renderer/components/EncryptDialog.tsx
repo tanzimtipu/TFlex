@@ -168,7 +168,7 @@ export function EncryptDialog(props: EncryptDialogProps): ReactElement | null {
                 <legend>Permissions</legend>
                 <p className="modal-hint">
                   These flags are written into the file. Some readers ignore
-                  them; TFlex itself does not enforce them.
+                  them; Jovrel itself does not enforce them.
                 </p>
                 {PERMISSION_FIELDS.map((field) => (
                   <label key={field.key}>
