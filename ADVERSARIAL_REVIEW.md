@@ -6105,4 +6105,95 @@ e2e/installed/phase57_packaged_surface.spec.cjs:166) at phase close. Logged as a
 docs/FEATURE-BACKLOG.md for the CEO to schedule as its own item if desired.
 
 
+## ADV-137: Phase 70C swapped `--accent` -> `--accent-text` on a rule whose own background is white, so the multi-pane divider grip drops to 2.72:1 in dark theme (below the 3:1 icon floor)
+
+- Session: diff-pass (TFL-170, Phase 69C/70 brand + export-string diff)
+- Suggested severity: LOW
+
+What I did: read the uncommitted 70C swap set in `src/renderer/styles.css` and checked every swapped rule against the background it paints. One swapped rule sets its OWN background to `var(--fg-on-accent)` (which is `#ffffff` in all three themes, styles.css:411/589/801):
+
+```
+.src/renderer/styles.css:14000  .multi-divider:hover .multi-divider-grip,
+.src/renderer/styles.css:14001  .multi-divider:active .multi-divider-grip {
+.src/renderer/styles.css:14002    background: var(--fg-on-accent);   /* #ffffff */
+.src/renderer/styles.css:14003    color: var(--accent-text);         /* was var(--accent) */
+```
+
+The grip's content is the Lucide `GripVertical` icon (`src/renderer/components/MultiPane.tsx:205-207`), so `color` is an icon foreground, not text.
+
+Expected: the swap target `--accent-text` is tuned for a DARK surface (dark `#A78BFA`, frosted `#6D28D9`, light `#7C3AED`). On this rule's fixed WHITE capsule, the pre-swap token was correct in every theme: `--accent` `#7C3AED` on `#ffffff` = 5.70:1. After the swap, dark theme renders `#A78BFA` on `#ffffff` = **2.72:1**, under the 3:1 non-text/icon floor (Phase 69 criterion 4 and the look-and-feel contrast discipline). Frosted (7.10:1) and light (5.70:1) are unaffected, so the regression is dark-theme only.
+
+Actual: dark theme, multi-pane mode, hover/focus the divider grip -> light-violet icon on a white capsule at 2.72:1. Before the 70C swap the same rule rendered 5.70:1.
+
+Root cause (static): the swap was applied by matching `color: var(--accent)` blanket-style; this rule is a background/foreground pair (white capsule + accent glyph) that should have KEPT `var(--accent)` (dark `#7C3AED` = 5.70:1 on white), or moved to a token that is dark in every theme. `--accent-text` is the wrong token because the surface here is light in all three themes. This is exactly the "swapped rule that now clashes on its own background" class in the task's vector 2.
+
+Reproduction steps:
+1. Read `src/renderer/styles.css:14000-14005` and confirm `background: var(--fg-on-accent)` + `color: var(--accent-text)`.
+2. Confirm `--fg-on-accent: #ffffff` in all three theme blocks (styles.css:411, 589, 801).
+3. Contrast `#A78BFA` on `#ffffff` = 2.72:1 (below 3:1), vs pre-swap `#7C3AED` on `#ffffff` = 5.70:1.
+   (`node -e` luminance/contrast probe; no runtime app needed for the arithmetic.)
+
+Disposition: ACCEPTED -> DEF-449 (LOW). Real dark-theme contrast regression on a fixed-white surface; the blanket `--accent` -> `--accent-text` swap used a surface-tuned token on a light capsule. Fix owned by frontend-dev (TFL-171).
+
+
+## ADV-138: The dark-theme `.crop-editor-label` override still pins `color: var(--accent)`, nullifying the 70C swap in exactly the theme it was added for — dark text measures 2.94:1 (below the 4.5:1 floor)
+
+- Session: diff-pass (TFL-170, Phase 69C/70 brand + export-string diff)
+- Suggested severity: MEDIUM
+
+What I did: checked the ~40 swapped `color: var(--accent)` -> `var(--accent-text)` text rules for any later/more-specific rule that re-pins `--accent`. Found that the base rule was swapped but its dark-theme override was not:
+
+```
+.src/renderer/styles.css:11559  .crop-editor-label { ... color: var(--accent-text); }   /* 70C swap at :11564 */
+.src/renderer/styles.css:11569  :root[data-theme="dark"] .crop-editor-label { color: var(--accent); }
+```
+
+Because the dark selector has higher specificity (attribute + class vs class), in dark theme the label resolves to `var(--accent)` (`#7C3AED`), not `var(--accent-text)` (`#A78BFA`). The crop label is real text (`font-size: var(--fs-xs); font-weight: 500`).
+
+Expected: Phase 69 criterion 4 (dark-surface accent text raised to >= 4.5:1) and Phase 70 criterion 4 ("Every `color: var(--accent)` text rule on a dark surface resolves to `--accent-text` and clears 4.5:1 in all three themes"). The intended dark resolution `#A78BFA` on the dark dialog surface `--bg-elevated` (`#191e24`) = 6.16:1.
+
+Actual: dark theme `--accent` `#7C3AED` on `#191e24` = **2.94:1**, far below 4.5:1. So the crop-editor label is the one label the 70C token was added to fix, and it is the one that does not get the fix in dark theme.
+
+Root cause (static): the blanket swap matched the base `.crop-editor-label` rule only; the theme-scoped override at styles.css:11569 was left untouched, so it continues to override the swapped declaration in dark theme. The `--sem-primary` route Phase 69 originally specified would have avoided this (dark `--sem-primary` is also `#A78BFA`), but the literal `--accent` override defeats either approach.
+
+Reproduction steps:
+1. Read `src/renderer/styles.css:11559-11569`.
+2. Confirm the dark override at :11569 is `color: var(--accent)` and has higher specificity than the swapped base rule.
+3. Contrast `#7C3AED` on `#191e24` = 2.94:1 vs the intended `#A78BFA` on `#191e24` = 6.16:1.
+
+Disposition: ACCEPTED -> DEF-450 (MEDIUM). Real: a higher-specificity dark override re-pins `--accent`, so the 70C token does not reach the very label it targets in dark. Fix owned by frontend-dev (TFL-171).
+
+
+## ADV-139: The accent-family "on-wash" ink `--dock-primary-fg` was not rebased by the violet hue swap — pressed titlebar buttons and the active page-layout icon render blue (blue-700 / #63a8e8) on a violet accent wash
+
+- Session: diff-pass (TFL-170, Phase 69C/70 brand + export-string diff)
+- Suggested severity: MEDIUM
+
+What I did: after the 69C hue swap moved the accent family to violet, grepped every accent-derived token for a leftover blue hue. `--dock-primary-fg` is explicitly documented in-code as the SAME accent family one step deeper ("blue-700 is the same accent family one step deeper", styles.css:420-425; "the bright family blue is the dark-theme counterpart", styles.css:597-601; "blue-700 (the frosted family blue)", styles.css:808-810) but its value is still blue in all three themes:
+
+```
+.src/renderer/styles.css:425   --dock-primary-fg: #1d4ed8;   (light,  blue-700)
+.src/renderer/styles.css:601   --dock-primary-fg: #63a8e8;   (dark,   bright blue)
+.src/renderer/styles.css:810   --dock-primary-fg: #1d4ed8;   (frosted, blue-700)
+```
+
+It is `color` ink on the accent wash at:
+- `.titlebar-file-btn:active:not([disabled])` (styles.css:1741-1747) — pressed titlebar Open/Save button glyph,
+- `.canvas-page-layout .tool-btn-active` (styles.css:4271-4278) — the ACTIVE page-layout option icon,
+- `color: var(--stage-hue, var(--dock-primary-fg))` (styles.css:16376) — the stage primary verb.
+
+Expected: a single brand violet accent (Phase 69 criterion 5; look-and-feel "ONE accent color used consistently for primary actions and selections"), and the in-code comment's own promise that this token is the accent family one step deeper. The accent wash it sits on is now `rgba(124,58,237,0.20)` over the surface (`#2d244c` on dark `--bg-elevated`).
+
+Actual: the pressed titlebar button and the active page-layout icon paint blue (`#63a8e8` dark / `#1d4ed8` light) on top of that violet wash. It is not a contrast failure (measured 5.65:1 dark, 4.83:1 light) but it is a visible two-hue clash: a blue control on a violet accent surface, contradicting the hue swap the rest of the accent family received.
+
+Root cause (static): the 69C swap only rebased the enumerated Phase 69 tokens (`--accent*`, `--sem-primary`, `--tf-accent*`, `--select-edge`) and the 70C text rules; `--dock-primary-fg` is an accent-family derived token that was left at its pre-swap blue value, so its hue no longer tracks the brand. (Same class, lower visibility, in the remaining hard-coded blue washes: `--hit` / `--hit-active` styles.css:469-470/849-850, `--glass-selected-bg` / `--glass-selected-border` styles.css:216-217, `--sample-card-border-hover` styles.css:452/833, `:root[data-theme="dark"] .crop-editor-mask` background styles.css:11555, and the frosted accent-glow box-shadows styles.css:14346/5459 that `designTokensContract.test.ts:1044/1053` still pins at `rgba(37, 99, 235`, i.e. blue.)
+
+Reproduction steps:
+1. Read `src/renderer/styles.css:425`, `:601`, `:810` and confirm `--dock-primary-fg` is blue in all three themes.
+2. Read its consumers at `:1746`, `:4277`, `:16376`.
+3. In the dev build (dark theme), press the titlebar Open button or select a page-layout option and observe the blue ink against the violet wash. Static proof is sufficient; no runtime measurement needed for the hue.
+
+Disposition: ACCEPTED -> DEF-451 (MEDIUM). Real and impactful: the 69C hue swap is materially incomplete. `--dock-primary-fg` plus the remaining hard-coded blue washes/glows (`--hit`/`--hit-active`, `--glass-selected-*`, `--sample-card-border-hover`, dark `.crop-editor-mask`, the frosted accent glows pinned blue by `designTokensContract.test.ts:1044/1053`) still render blue against the violet accent. Fix owned by frontend-dev (TFL-171).
+
+
 

@@ -17,7 +17,7 @@ export const CONVERT_ERROR_MESSAGES: Record<ConvertErrorCode, string> = {
   'decode-failed': 'The file could not be decoded with a supported text encoding.',
   corrupt: 'The file appears to be corrupt and could not be read.',
   'drm-protected':
-    'This e-book is DRM-protected; TFlex never decrypts protected e-books.',
+    'This e-book is DRM-protected; Jovrel never decrypts protected e-books.',
   cancelled: 'The import was cancelled.',
   timeout: 'The conversion took too long and was stopped.',
   internal: 'The import failed unexpectedly.',

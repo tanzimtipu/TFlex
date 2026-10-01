@@ -61,7 +61,7 @@ async function readBrand(containerSel, markSel, wordSel) {
     const svg = mark && mark.tagName.toLowerCase() === 'svg' ? mark : null;
     const grad = svg ? svg.querySelector('linearGradient') : null;
     const rect = svg ? svg.querySelector('rect') : null;
-    const group = svg ? svg.querySelector('g') : null;
+    const arc = svg ? svg.querySelector('path') : null;
     return {
       containerText: container ? (container.textContent ?? '') : null,
       markIsSvg: svg !== null,
@@ -70,8 +70,8 @@ async function readBrand(containerSel, markSel, wordSel) {
       stops: svg ? [...svg.querySelectorAll('linearGradient stop')].map((s) => s.getAttribute('stop-color')) : [],
       rectFill: rect ? rect.getAttribute('fill') : null,
       paths: svg ? [...svg.querySelectorAll('path')].map((p) => p.getAttribute('d')) : [],
-      stroke: group ? group.getAttribute('stroke') : null,
-      strokeWidth: group ? group.getAttribute('stroke-width') : null,
+      stroke: arc ? arc.getAttribute('stroke') : null,
+      strokeWidth: arc ? arc.getAttribute('stroke-width') : null,
       word: word ? (word.textContent ?? '').trim() : null,
     };
   }, { containerSel, markSel, wordSel });
@@ -96,8 +96,8 @@ test('P49-1 title bar + Welcome: mark + Jovrel, asset match, unique ids, three t
   // Asset match: gradient stops + the three J strokes.
   expect(bar.stops, 'gradient stops match the asset').toEqual(ASSET_STOPS);
   expect(bar.paths, 'the three J strokes match the asset').toEqual(ASSET_PATHS);
-  expect(bar.stroke).toBe('#FFFFFF');
-  expect(bar.strokeWidth).toBe('20');
+  expect(bar.stroke).toBe('url(#' + bar.gradientId + ')');
+  expect(bar.strokeWidth).toBe('27');
 
   // Welcome hero.
   const welcome = await readBrand('.welcome-brand', '.welcome-brand svg[data-brand-mark]', '.welcome-brand .brand-wordmark');
@@ -112,13 +112,13 @@ test('P49-1 title bar + Welcome: mark + Jovrel, asset match, unique ids, three t
   const marks = await win.evaluate(() =>
     [...document.querySelectorAll('svg[data-brand-mark]')].map((svg) => ({
       id: svg.querySelector('linearGradient')?.getAttribute('id') ?? null,
-      fill: svg.querySelector('rect')?.getAttribute('fill') ?? null,
+      gradientRef: svg.querySelector('path')?.getAttribute('stroke') ?? null,
     })),
   );
   console.log(`[P49-1 marks] ${JSON.stringify(marks)}`);
   expect(marks.length, 'title bar + welcome marks both mounted').toBeGreaterThanOrEqual(2);
   expect(new Set(marks.map((m) => m.id)).size, 'every mark mints a distinct gradient id').toBe(marks.length);
-  for (const m of marks) expect(m.fill, 'each tile references its own gradient').toBe(`url(#${m.id})`);
+  for (const m of marks) expect(m.gradientRef, 'each tile references its own gradient').toBe(`url(#${m.id})`);
 
   // Three themes, one title-bar screenshot each.
   for (const theme of ['light', 'dark', 'frosted']) {
@@ -200,4 +200,33 @@ test('P49-4 print window: mark + Jovrel, no TFlex', async () => {
   expect(print.containerText, 'no user-visible TFlex in the print window brand').not.toContain('TFlex');
   await printPage.screenshot({ path: path.join(SHOTS, 'phase49-print-window.png') });
   await closeStandalonePrintWindow(app, printPage);
+});
+
+test('P49-5 accent + accent-text resolve per theme', async () => {
+  await launch();
+  const expected = {
+    light: { accent: '#7C3AED', semPrimary: '#7C3AED', accentText: '#7C3AED' },
+    dark: { accent: '#7C3AED', semPrimary: '#A78BFA', accentText: '#A78BFA' },
+    frosted: { accent: '#7C3AED', semPrimary: '#6D28D9', accentText: '#6D28D9' },
+  };
+  const OLD_BLUE = ['#2563eb', '#3b82f6', '#1d4ed8'];
+  for (const theme of ['light', 'dark', 'frosted']) {
+    await setTheme(theme);
+    const v = await win.evaluate(() => {
+      const cs = getComputedStyle(document.documentElement);
+      return {
+        accent: cs.getPropertyValue('--accent').trim(),
+        semPrimary: cs.getPropertyValue('--sem-primary').trim(),
+        accentText: cs.getPropertyValue('--accent-text').trim(),
+      };
+    });
+    console.log(`[P49-5 ${theme}] ${JSON.stringify(v)}`);
+    const exp = expected[theme];
+    expect(v.accent.toUpperCase(), `${theme}: --accent`).toBe(exp.accent.toUpperCase());
+    expect(v.semPrimary.toUpperCase(), `${theme}: --sem-primary`).toBe(exp.semPrimary.toUpperCase());
+    expect(v.accentText.toUpperCase(), `${theme}: --accent-text`).toBe(exp.accentText.toUpperCase());
+    for (const [k, val] of Object.entries(v)) {
+      expect(OLD_BLUE.includes(val.toLowerCase()), `${theme}: ${k} is not the old blue`).toBe(false);
+    }
+  }
 });

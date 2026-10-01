@@ -9732,3 +9732,75 @@ History:
   -> exit 0. Evidence: `screenshots/adv-135-single-before.png` / `-after.png` (blue -> green, page 1) and
   `screenshots/adv-135-double-before.png` / `-after.png` (blue -> green on right page, spread [1,2]).
   Criterion 7's Book View blocker is cleared.
+
+## DEF-449: Phase 70C swapped `--accent` -> `--accent-text` on the multi-pane divider grip, whose own background is white, dropping the dark-theme icon to 2.72:1 (below the 3:1 floor)
+
+- Status: CLOSED
+- Severity: LOW
+- Found by: adversary (TFL-170, Phase 69C/70 adversarial diff-pass; ACCEPTED from ADV-137)
+- Phase: 69C/70 (success criterion 69.4 / 70.4 "colors implemented elegantly"; icon contrast floor)
+
+Steps to reproduce:
+1. Read `src/renderer/styles.css:14000-14005` — `.multi-divider:hover/:active .multi-divider-grip` sets `background: var(--fg-on-accent)` and `color: var(--accent-text)`.
+2. Confirm `--fg-on-accent: #ffffff` in all three theme blocks (styles.css:411/589/801).
+3. Contrast the grip glyph: dark `--accent-text` `#A78BFA` on `#ffffff` = 2.72:1, below the 3:1 non-text/icon floor.
+
+Expected: an icon on a fixed-white capsule keeps a dark accent ink in every theme (pre-swap `--accent` `#7C3AED` on `#ffffff` = 5.70:1).
+Actual: in dark theme the grip renders light violet on white at 2.72:1. Light (5.70:1) and frosted (7.10:1) are unaffected.
+Root cause: the 70C swap matched `color: var(--accent)` blanket-style; this rule is a white-capsule + accent-glyph pair and should keep `var(--accent)` (or a token dark in every theme). `--accent-text` is the wrong token here because the surface is light in all three themes.
+Impact: LOW — dark-theme only, one small drag affordance; no behaviour change.
+
+History:
+- adversary (TFL-170): filed ADV-137, LOW, PENDING.
+- CTO (TFL-64): ACCEPTED -> DEF-449 (LOW); real regression against the fix's own contrast goal. Dispatched frontend-dev **TFL-171** together with DEF-450/451 (one CSS chunk). Awaiting fix; then FIX-READY -> qa verification -> CLOSED.
+- frontend-dev (TFL-171): fix reported done — the grip rule's `color` reverted to `var(--accent)` (styles.css:14003); verify clean, 6 files / 175 tests pass. CTO reviewed the source.
+- CTO (TFL-64): set FIX-READY. Dispatched qa **TFL-172** (task type: FIX-READY defect verification) to re-probe the rule's computed colour and the 5.70:1 dark contrast, then CLOSED or re-OPEN with evidence.
+- qa (TFL-172): CLOSED. Static `styles.css:14000-14005` shows `background: var(--fg-on-accent)` + `color: var(--accent)`. Runtime dark-theme `getComputedStyle('.multi-divider-grip')` hovered: `color` rgb(124,58,237) = #7C3AED on `background` rgb(255,255,255); contrast 5.7:1 (>= 3:1). Blast radius: `npm run verify` clean (conventions 318 files, tsc 0 errors); 6 vitest files / 175 tests pass; `npm run build` + `playwright e2e/phase49_brand_gate.spec.cjs` 5/5 pass. qa spec `e2e/tfl172_violet_verify.spec.cjs`.
+
+## DEF-450: The dark-theme `.crop-editor-label` override still pins `color: var(--accent)`, so the 70C token does not reach it in dark (2.94:1, below 4.5:1)
+
+- Status: CLOSED
+- Severity: MEDIUM
+- Found by: adversary (TFL-170, Phase 69C/70 adversarial diff-pass; ACCEPTED from ADV-138)
+- Phase: 69C/70 (success criterion 70.4 "every `color: var(--accent)` text rule on a dark surface resolves to `--accent-text` and clears 4.5:1")
+
+Steps to reproduce:
+1. Read `src/renderer/styles.css:11559-11569` — the base `.crop-editor-label` rule was swapped to `color: var(--accent-text)` (11564) but `:root[data-theme="dark"] .crop-editor-label { color: var(--accent); }` (11569) was not.
+2. The dark selector has higher specificity (attribute + class), so in dark theme the label resolves to `--accent` `#7C3AED`, not `--accent-text` `#A78BFA`.
+3. Contrast `#7C3AED` on the dark dialog surface `--bg-elevated` `#191e24` = 2.94:1 (below 4.5:1) vs the intended `#A78BFA` = 6.16:1.
+
+Expected: the label clears 4.5:1 in dark (the token the 70C work added is exactly for this).
+Actual: dark theme 2.94:1; the one label the token was added to fix is the one that does not get it.
+Root cause: the blanket swap matched the base rule only; the theme-scoped override was left untouched and continues to override the swapped declaration in dark.
+Impact: MEDIUM — legibility failure on real text in dark theme.
+
+History:
+- adversary (TFL-170): filed ADV-138, MEDIUM, PENDING.
+- CTO (TFL-64): ACCEPTED -> DEF-450 (MEDIUM). Dispatched frontend-dev **TFL-171** (with DEF-449/451). Awaiting fix; then FIX-READY -> qa verification -> CLOSED.
+- frontend-dev (TFL-171): fix reported done — `:root[data-theme="dark"] .crop-editor-label` swapped to `var(--accent-text)` (styles.css:11569); verify clean, 6 files / 175 tests pass. CTO reviewed.
+- CTO (TFL-64): set FIX-READY. Dispatched qa **TFL-172** (task type: FIX-READY defect verification) to re-probe the dark computed colour and the 6.16:1 contrast, then CLOSED or re-OPEN with evidence.
+- qa (TFL-172): CLOSED. Static `styles.css:11569` `:root[data-theme="dark"] .crop-editor-label { color: var(--accent-text); }`. Runtime dark theme, crop tool armed (`cropPages` -> per-page editor mounted): `getComputedStyle('.crop-editor-label').color` rgb(167,139,250) = #A78BFA on `--bg-elevated` #191e24; contrast 6.16:1 (>= 4.5:1). Blast radius: `npm run verify` clean; 6 vitest files / 175 tests pass; phase49 brand gate 5/5 pass. qa spec `e2e/tfl172_violet_verify.spec.cjs`.
+
+## DEF-451: The 69C violet hue swap is incomplete — accent-family tokens and hard-coded blue washes/glows still render blue against the violet accent
+
+- Status: CLOSED
+- Severity: MEDIUM
+- Found by: adversary (TFL-170, Phase 69C/70 adversarial diff-pass; ACCEPTED from ADV-139)
+- Phase: 69C (success criterion 69.5 "the single accent is the brand violet"; look-and-feel "ONE accent color used consistently")
+
+Steps to reproduce:
+1. Read `src/renderer/styles.css:425`, `:601`, `:810` — `--dock-primary-fg` is still blue in all three themes (`#1d4ed8` light/frosted, `#63a8e8` dark) though its in-code comment calls it "the same accent family one step deeper".
+2. Read its consumers: `.titlebar-file-btn:active:not([disabled])` (`:1746`, pressed titlebar Open/Save glyph), `.canvas-page-layout .tool-btn-active` (`:4277`, active page-layout icon), `color: var(--stage-hue, var(--dock-primary-fg))` (`:16376`, stage primary verb).
+3. Observe (or reason statically) a blue control on the violet accent wash (`rgba(124,58,237,0.20)`).
+
+Expected: a single violet accent hue throughout (the swap the rest of the family got).
+Actual: blue ink on violet washes (not a contrast failure — 5.65:1 dark / 4.83:1 light — but a visible two-hue clash).
+Root cause: the 69C swap only rebased the enumerated tokens (`--accent*`, `--sem-primary`, `--tf-accent*`, `--select-edge`) and the 70C text rules. Same class, lower visibility, remains in the hard-coded blue washes/glows: `--hit`/`--hit-active` (styles.css:469-470/634-635/849-850), `--glass-selected-bg`/`--glass-selected-border` (216-217), `--sample-card-border-hover` (452/833), `:root[data-theme="dark"] .crop-editor-mask` background (11555), and the frosted accent-glow box-shadows (5459/14346) that `designTokensContract.test.ts:1044/1053` still pins at `rgba(37, 99, 235)`.
+Impact: MEDIUM — the app ships a mixed violet/blue accent, contradicting the operator's "colors match the branding, elegantly" requirement; no functional change.
+
+History:
+- adversary (TFL-170): filed ADV-139, MEDIUM, PENDING.
+- CTO (TFL-64): ACCEPTED -> DEF-451 (MEDIUM); the biggest of the three. Dispatched frontend-dev **TFL-171** to finish the hue swap (tokens + hard-coded blue washes/glows, excluding the annotation palette) and repoint the `designTokensContract.test.ts` glow pins. Awaiting fix; then FIX-READY -> qa verification -> CLOSED.
+- frontend-dev (TFL-171): fix reported done — every remaining UI accent blue rebased to violet (rgba(37,99,235,x)->rgba(124,58,237,x), rgba(59,130,246,x)->rgba(139,92,246,x), rgba(96,165,250,x)->rgba(167,139,250,x), #1d4ed8->#6D28D9, #63a8e8->#A78BFA); `styles.css` grep 47 -> 9 hits (8 comments + `--ann-blue`); the `designTokensContract` glow pins plus two `phase14Glass` pins repointed hue-only; verify clean, 6 files / 175 tests pass. CTO reviewed the source and the grep.
+- CTO (TFL-64): set FIX-READY. Dispatched qa **TFL-172** (task type: FIX-READY defect verification) to re-probe `--dock-primary-fg` per theme and confirm no UI accent blue remains, then CLOSED or re-OPEN with evidence.
+- qa (TFL-172): CLOSED. Static `grep -cE "#2563eb|#3b82f6|#1d4ed8|#63a8e8|#93c5fd|#1e40af|rgba\(...blue...\)"` on `styles.css` = 9 hits, all comments except `--ann-blue: #3b82f6` (annotation palette, excluded); no hard-coded UI accent blue survives in a rule body. Runtime `getComputedStyle(':root').--dock-primary-fg` = #6d28d9 light, #a78bfa dark, #6d28d9 frosted (expected). Oracle repoints verified hue-only (#2563eb->#7C3AED, rgba(37,99,235->rgba(124,58,237) in designTokensContract + phase14Glass). Blast radius: `npm run verify` clean; 6 vitest files / 175 tests pass; phase49 brand gate 5/5 (P49-5 accent #7c3aed all themes). qa spec `e2e/tfl172_violet_verify.spec.cjs`.

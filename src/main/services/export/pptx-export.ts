@@ -90,9 +90,9 @@ export async function buildPptx(input: PptxBuildInput): Promise<ExportBuild> {
   const primaryWidthIn = primary.widthPt / 72;
   const primaryHeightIn = primary.heightPt / 72;
   const pptx = new PptxGenJS();
-  pptx.author = 'TFlex';
-  pptx.company = 'TFlex';
-  pptx.title = 'TFlex export (pptx)';
+  pptx.author = 'Jovrel';
+  pptx.company = 'Jovrel';
+  pptx.title = 'Jovrel export (pptx)';
   const layoutName = `TFLEX_PAGE_${Math.round(primary.widthPt)}x${Math.round(primary.heightPt)}`;
   pptx.defineLayout({ name: layoutName, width: primaryWidthIn, height: primaryHeightIn });
   pptx.layout = layoutName;

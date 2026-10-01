@@ -335,9 +335,9 @@ describe("Phase 14 — docked glass shell (the panels behave like light/dark)", 
     // rgba(126,178,250) (B-R +124) appears in no rule body (comments
     // documenting the old defect are allowed to mention it).
     expect(stripCssComments(css)).not.toMatch(/rgba\(126,\s*178,\s*250/);
-    // The blue accent survives ONLY as the accent (selected/active/
-    // focus/primary): the accent tokens stay blue.
-    expect(css).toMatch(/--accent:\s*#2563eb/);
+    // The violet accent survives ONLY as the accent (selected/active/
+    // focus/primary): the accent tokens are the Phase 69 brand violet.
+    expect(css).toMatch(/--accent:\s*#7C3AED/);
   });
 });
 
@@ -476,7 +476,7 @@ describe("Phase 14 — spring tool motion", () => {
     const hover = findRuleBodies(css, ".tools-palette-entry:hover:not(:disabled)")
       .find((b) => /transform:\s*scale\(1\.02\)/.test(b));
     expect(hover).toBeDefined();
-    expect(hover ?? "").toMatch(/rgba\(37,\s*99,\s*235,\s*0\.14\)/);
+    expect(hover ?? "").toMatch(/rgba\(124,\s*58,\s*237,\s*0\.14\)/);
     // The transition rides the iOS overshoot curve, 220ms (inside the
     // spec's 200-400ms band), transform + box-shadow only.
     const transition = findRuleBodies(css, ".tools-palette-entry")
@@ -591,7 +591,7 @@ describe("Phase 14.1 — standardized chrome heights + glass material components
     expect(selected ?? "").toMatch(/box-shadow:\s*inset 0 0 0 1px var\(--select-edge\)/);
     expect(selected ?? "").toMatch(/background:\s*var\(--select-fill\)/);
     expect(selected ?? "").not.toMatch(/var\(--glass-selected-bg\)/);
-    expect(selected ?? "").not.toMatch(/background:\s*rgba\(37,\s*99,\s*235,\s*0\.1[24]\)/);
+    expect(selected ?? "").not.toMatch(/background:\s*rgba\(124,\s*58,\s*237,\s*0\.1[24]\)/);
   });
 
   it("the design-token ladder (spacing / radii / control sizes) is declared", () => {

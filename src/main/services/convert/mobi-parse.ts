@@ -31,7 +31,7 @@ export const MAX_MOBI_IMAGE_BYTES = 16 * 1024 * 1024;
 
 /** The readable refusal every DRM path throws. */
 export const MOBI_DRM_MESSAGE =
-  'This e-book is DRM-protected; TFlex never decrypts protected e-books.';
+  'This e-book is DRM-protected; Jovrel never decrypts protected e-books.';
 
 const PALMDB_HEADER_BYTES = 78;
 const PALMDB_RECORD_INFO_BYTES = 8;
@@ -514,7 +514,7 @@ export function parseMobi(bytes: Uint8Array, signal?: AbortSignal): MobiDocument
   if (part.palmdoc.compression === MOBI_COMPRESSION_HUFFCDIC) {
     throw new ConvertFailure(
       'unsupported-format',
-      'This e-book uses HUFF/CDIC compression, which TFlex does not support; the file was not parsed.',
+      'This e-book uses HUFF/CDIC compression, which Jovrel does not support; the file was not parsed.',
     );
   }
   if (!isSupportedCompression(part.palmdoc.compression)) {

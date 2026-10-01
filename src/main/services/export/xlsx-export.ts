@@ -152,10 +152,10 @@ export function buildXlsx(input: XlsxBuildInput): ExportBuild {
     noteParts.push(`Pages with no extractable text: ${pagesWithoutText.join(', ')}.`);
   }
   workbook.Props = {
-    Title: 'TFlex export (xlsx)',
+    Title: 'Jovrel export (xlsx)',
     Subject: FIDELITY_PROPERTY_MARKER,
-    Author: 'TFlex',
-    Company: 'TFlex',
+    Author: 'Jovrel',
+    Company: 'Jovrel',
     Comments: noteParts.join(' | '),
   };
 

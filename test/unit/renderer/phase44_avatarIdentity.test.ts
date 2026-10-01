@@ -122,12 +122,12 @@ describe("avatar contrast pair", () => {
     return (Math.max(la, lb) + 0.05) / (Math.min(la, lb) + 0.05);
   }
 
-  it("white ink on the #2563eb accent clears the 4.5:1 text floor (all themes)", () => {
+  it("white ink on the #7C3AED accent clears the 4.5:1 text floor (all themes)", () => {
     // The accent token is identical in light / dark / frosted and --fg-on-accent
     // is #ffffff in each, so one pair covers all three themes.
-    const r = ratio("#ffffff", "#2563eb");
+    const r = ratio("#ffffff", "#7C3AED");
     expect(r).toBeGreaterThanOrEqual(4.5);
-    expect(r).toBeCloseTo(5.17, 1);
+    expect(r).toBeCloseTo(5.7, 1);
   });
 
   it("the avatar CSS uses the accent background + on-accent ink tokens", () => {

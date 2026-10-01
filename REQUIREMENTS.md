@@ -4483,3 +4483,40 @@ oracle (identical measured WIDTH, the tinted fill, `--fg-strong` ink).
 **CONTROL-INDEX:** none - no new interactive control. The loader is a `role="status"`/`aria-busy` indicator replacing existing spinners; the mark and wordmark are decorative/labelled SVG.
 
 **Settings impact:** none - no new `AppSettings` field. Renderer styling (`src/renderer/styles.css`, the brand components), shipped assets (`assets/brand/`) and packaging config only; no IPC or shared-contract change.
+
+## Phase 70 — Jovrel brand-map completion: shipped favicon, user-visible string sweep and the accent-text token (operator request via TFL-120 map, 2026-10-01)
+
+**Operator request (verbatim):** "Check the instructions on the implementation of branding" + the `jovrel-brand-implementation-map.txt` attachment on TFL-120 (comment 8873bab5).
+
+**Operator ruling (CTO, this phase — the operator may veto or adjust any of these):**
+
+1. **The `jovrel-brand` implementation map is the authority for the rebrand's completeness.** Phase 49 shipped the Jovrel NAME and packaging; Phase 69 shipped the Halo artwork, the inline mark/wordmark, the loader and the brand-violet accent. This phase closes the map's two remaining gaps (its acceptance checks 2 and 4) plus the one contrast clause Phase 69 left open.
+2. **Internal identity is frozen.** Do NOT rename `appId: com.tflex.app`, IPC channel names, the `window.tflex` bridge, the `/TFlexColor` / `/TFlexSig` / `/TFlexBox` / `/TFlexComments` PDF keys, the `TFlexApi*` type names, the font family prefix, file paths or the userData folder. Only USER-VISIBLE strings change.
+3. **Favicon is shipped artwork in Phase 70.** Phase 69 filed `favicon.ico` under `docs/brand/website/` as non-shipped art; the map requires it in `assets/brand/` and linked from the renderer entry, so Phase 70 promotes it. `vite.config.ts` already sets `publicDir` to the repo `assets/` root with `base: "./"`, so `assets/brand/*` are served (dev) and copied to `dist/renderer/brand/*` (build).
+4. **The accent-as-text contrast clause is honoured with a dedicated token.** Phase 69 criterion 6 required dark-surface `color: var(--accent)` text be raised to >= 4.5:1, but the `designTokensContract.test.ts` allowlist reserves `var(--sem-*)` for tool/icon selectors. Phase 70 adds a per-theme `--accent-text` token so the text rules clear 4.5:1 without violating that contract.
+
+**Features**
+
+**A. Shipped favicon (backend-dev asset + frontend-dev link).**
+- backend-dev: copy the kit's `favicon.ico` to `assets/brand/favicon.ico` (leave the `docs/brand/website/` copy in place as documentation).
+- frontend-dev: add `<link rel="icon" href="./brand/favicon.ico" />` to the `<head>` of `src/renderer/index.html`.
+
+**B. User-visible "TFlex" string sweep (backend-dev + frontend-dev).** Replace the remaining user-visible "TFlex" with "Jovrel" in:
+- backend-dev (main): `src/main/services/export/pptx-export.ts` (`author`/`company`/`title`), `src/main/services/export/xlsx-export.ts` (`Title`/`Author`/`Company`), `src/main/services/convert/errors.ts` (the `drm-protected` message), `src/main/services/convert/mobi-parse.ts` (`MOBI_DRM_MESSAGE` and the HUFF/CDIC message).
+- frontend-dev (renderer): `src/renderer/security/protection.ts` (`PROTECTION_ENFORCEMENT_TEXT`), `src/renderer/state/convert.ts` (the DRM notice), `src/renderer/components/EncryptDialog.tsx` (the permissions hint).
+- Do NOT touch code comments or internal identifiers; only strings a user can see.
+
+**C. Accent-text contrast token (frontend-dev, sequenced after A/B).** Add a per-theme `--accent-text` token (light `#7C3AED`, dark `#A78BFA`, frosted `#6D28D9`) and switch the ~40 `color: var(--accent)` text rules to `var(--accent-text)`; extend the `designTokensContract.test.ts` allowlist to permit `--accent-text` on those text selectors (never `--sem-*`).
+
+**Success criteria**
+
+1. `src/renderer/index.html` declares the favicon; `assets/brand/favicon.ico` exists (kit bytes) and a production build emits `dist/renderer/brand/favicon.ico` (report the emitted path).
+2. No user-visible "TFlex" string remains: a grep-based assertion over `src/` with an explicit internal-identifier allowlist returns zero user-visible matches, and the Office export metadata + the reader protection/DRM text read "Jovrel" (report the grep output).
+3. The existing oracles stay green: `test/unit/renderer/phase52Protection.test.ts`, `test/unit/main/phase52Encryption.test.ts` and `e2e/phase52_gate.spec.cjs` pass (their `does not enforce` substring assertions survive the swap); any spec that hard-pins a full "TFlex" string is repointed by qa.
+4. Every `color: var(--accent)` text rule on a dark surface resolves to `--accent-text` and clears 4.5:1 in all three themes; `designTokensContract.test.ts`, `phase38LegibilityContrast.test.ts` and `phase40SemanticPalette.test.ts` stay green (report the measured ratios).
+5. `npm run verify` (conventions + typecheck) is green, and the Phase 69 e2e oracles (`phase49_brand_gate.spec.cjs` mark-geometry half) pass repointed.
+6. No behaviour regression: no layout, navigation, IPC or file-format change; the phase-close commit is a MINOR bump by git-agent with no push.
+
+**CONTROL-INDEX:** none - no new interactive control.
+
+**Settings impact:** none - no new `AppSettings` field. Shipped assets (`assets/brand/`), the renderer HTML head, user-visible strings and renderer styling only; no IPC or shared-contract change.

@@ -1041,7 +1041,7 @@ describe("Phase D — three-theme coherence + embedded theme picker license", ()
       /:root\[data-theme="frosted"\]\s+\.tool-btn-active\s*\{([\s\S]*?)\n\}/.exec(cssClean);
     expect(activeGlow).not.toBeNull();
     if (activeGlow !== null) {
-      expect(activeGlow[1] ?? "").toMatch(/\d+px\s+rgba\(37,\s*99,\s*235/);
+      expect(activeGlow[1] ?? "").toMatch(/\d+px\s+rgba\(124,\s*58,\s*237/);
     }
     // Phase 41 (item 3) split .thumb-selected out of the frosted accent-halo
     // rule: the CURRENT-page marker keeps the frosted-scoped accent halo; the
@@ -1050,7 +1050,7 @@ describe("Phase D — three-theme coherence + embedded theme picker license", ()
       /:root\[data-theme="frosted"\]\s+\.thumb-current\s*\{([\s\S]*?)\n\}/.exec(cssClean);
     expect(thumbGlow).not.toBeNull();
     if (thumbGlow !== null) {
-      expect(thumbGlow[1] ?? "").toMatch(/\d+px\s+rgba\(37,\s*99,\s*235/);
+      expect(thumbGlow[1] ?? "").toMatch(/\d+px\s+rgba\(124,\s*58,\s*237/);
     }
     // 3) No PDF content surface may ever carry a background-image.
     for (const cls of ["pdf-page", "page-slot", "textLayer", "pdf-page-canvas", "thumb-canvas"]) {
