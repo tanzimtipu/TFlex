@@ -202,7 +202,7 @@ describe("DEF-373 — the focused run editor paints exactly ONE accent border", 
     // value is the real rule body with its tokens resolved. qa's Electron e2e
     // reads the live focused computed value.
     expect(borderColorOf(ruleBody(".edit-run-editor:focus")), "focus resolves to the accent").toBe(
-      "#2563eb",
+      resolveTokens("var(--accent)"),
     );
 
     const style = document.createElement("style");
