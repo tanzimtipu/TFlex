@@ -303,6 +303,28 @@ describe("Welcome — samplesResolver identity contract (DEF-077 / DEF-078)", ()
 
     handle.cleanup();
   });
+
+  it("a rejected samplesResolver settles to the empty state instead of loading forever", async () => {
+    // Bug sweep (Sweep 1) — the samples list comes from an IPC call that can
+    // reject. Before the fix the `.then` had no rejection handler, so the grid
+    // stayed on "Loading samples..." for the whole session and the rejection
+    // surfaced as an unhandled promise rejection. The fix catches and settles
+    // the grid to its empty state.
+    const resolver = vi.fn(
+      (): Promise<SampleDocument[]> => Promise.reject(new Error("samples IPC failed")),
+    );
+    const handle = renderWelcome({ samplesResolver: resolver });
+    await act(async (): Promise<void> => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    const empty = handle.container.querySelector(".samples-empty");
+    expect(empty).not.toBeNull();
+    expect(empty?.textContent).not.toContain("Loading");
+    expect(empty?.textContent).toContain("No bundled samples");
+    expect(handle.container.querySelectorAll(".sample-card").length).toBe(0);
+    handle.cleanup();
+  });
 });
 
 describe("DEF-078 — App.tsx samplesResolver call site identity contract", () => {

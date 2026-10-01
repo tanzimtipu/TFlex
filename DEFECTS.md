@@ -5,6 +5,53 @@
 > inspect the current `OPEN`, `FIX-READY`, and `DISPUTED` entries first; closed records are
 > historical evidence and must not be loaded wholesale.
 
+## DEF-473: Home plus picker does not re-clamp when the window is resized while open - it detaches from the plus and clips its item labels
+
+- Status: CLOSED
+- Severity: LOW
+- Found by: qa (TFL-311, Sweep 1 bug-hunt; new - not reported by TFL-310)
+- Phase: 80 (Sweep 1 - Home / Welcome)
+
+Steps to reproduce:
+1. `npm.cmd run build`, then launch the app through the canonical `launchApp`; wait for the Home / Welcome screen.
+2. Arm edit mode (`[data-home-edit-toggle]`), then open the picker at a wide window (2560x1392) via `[data-home-plus]`.
+3. Without closing the picker, shrink the window to the 640px minimum (`BrowserWindow.setSize(640,720)`).
+
+Expected: the picker stays clamped inside the viewport and anchored to the plus (the DEF-410 open-time clamp re-applied on resize), so every item is fully visible and clickable.
+
+Actual: the portaled picker keeps its open-time viewport coords. Measured before resize left=522 right=672 (vw 2560); after shrink vw=640, x=522 right=670 (30px past the right edge) while the plus has moved to x=210 - the menu detaches from its anchor and its labels clip ("Browse all tool", "Check for Update" cut). Closing and reopening the picker re-clamps correctly (x=96 right=246). Root cause: the clamp `useLayoutEffect` in `src/renderer/components/Welcome.tsx:179-190` depends only on `[pickerOpen, pickerAnchor]`; no `resize` listener re-measures (same class as DEF-283's dialog resize re-clamp).
+
+Screenshot: `screenshots/bug-sweep-2026-10-02/home-plus-picker-640-resize.png` (spill) vs `screenshots/bug-sweep-2026-10-02/home-plus-picker-640.png` (fresh open, correctly clamped).
+
+Command: `npm.cmd run test:e2e -- e2e/tfl311_home_welcome_bughunt.spec.cjs` -> 3 passed; probe `TFL311_B` `resizeSpill:{vw:640,x:522,right:670}` vs `clamp640:{vw:640,x:96,right:246}`.
+
+History:
+- qa (TFL-311, 2026-10-02): filed LOW from the Sweep 1 bug-hunt. Not fixed by the developer sweep (TFL-310); routed to the CTO for triage.
+- qa (TFL-313, 2026-10-02): retested PASS on frontend-dev's TFL-312 fix - CLOSED. Root cause was the `useLayoutEffect` clamp depending only on `[pickerOpen, pickerAnchor]`; the fix adds a `resize` listener (`src/renderer/components/Welcome.tsx:197-205`) that refreshes the plus anchor so the layout effect re-clamps. Rebuilt (`npm.cmd run build` exit 0); reran the original probe: `TFL311_B.resizeSpill` now `{vw:640,x:98,right:248,bottom:518}` vs the pre-fix spill `{vw:640,x:522,right:670}` - the picker stays inside the viewport (right 248 <= vw 640) and re-anchors to the plus (`plusX:210,plusRight:246`; picker right 248 ~ plus right 246), matching the fresh-open `clamp640 {x:96,right:246}`. All 5 item labels fully visible. Screenshot `screenshots/bug-sweep-2026-10-02/home-plus-picker-640-resize.png`. Command: `npm.cmd run test:e2e -- e2e/tfl311_home_welcome_bughunt.spec.cjs` 3 passed (spec now asserts the re-clamp).
+
+## DEF-472: Welcome samples loading ring does not spin - BrandLoader is rendered without a spin class
+
+- Status: CLOSED
+- Severity: LOW
+- Found by: qa (TFL-311, Sweep 1 bug-hunt; verified from TFL-310's proposed DEF)
+- Phase: 80 (Sweep 1 - Home / Welcome)
+
+Steps to reproduce:
+1. `npm.cmd run build`; in the running app stub the samples IPC to never resolve (`ipcMain.handle('samples:list', () => new Promise(() => {}))`) and reload the window.
+2. Observe the Sample documents section while it shows "Loading samples…"; read `getComputedStyle` on the ring.
+
+Expected: the loading ring animates (the component's own contract: "Rotation is owned by the caller's class"), so the surface reads as actively loading.
+
+Actual: the ring is static. `getComputedStyle('.samples-empty .brand-loader').animationName === "none"`, `animationDuration === "0s"`, `hasSpinClass === false`. `Welcome.tsx:470` renders `<BrandLoader />` with no spinner class; `.samples-empty .brand-loader` (`styles.css:1656-1661`) only sets inline-block/vertical-align, and `.brand-loader` (`styles.css:1649-1652`) has no animation. Every other call site passes a spin class (`.update-indicator-spin`, `.update-prompt-spinner`, `.conversion-progress-icon`).
+
+Screenshot: `screenshots/bug-sweep-2026-10-02/home-samples-loading.png` (static ring beside "Loading samples…").
+
+Command: `npm.cmd run test:e2e -- e2e/tfl311_home_welcome_bughunt.spec.cjs` -> 3 passed; probe `TFL311_C.loading:{animationName:"none",animationDuration:"0s",hasSpinClass:false}`.
+
+History:
+- qa (TFL-311, 2026-10-02): filed LOW. TFL-310 reported it as a proposed out-of-scope DEF; this is its first durable DEF record. A token-correct fix needs a spin class on the samples BrandLoader (the only existing spin keyframe hardcodes 1.4s).
+- qa (TFL-313, 2026-10-02): retested PASS on frontend-dev's TFL-312 fix - CLOSED. Fix adds `className="update-indicator-spin"` to the samples `<BrandLoader />` (`src/renderer/components/Welcome.tsx:485`), reusing the existing 1.4s keyframe. Rebuilt (`npm.cmd run build` exit 0); reran the original probe: `TFL311_C.loading` now `{animationName:"update-indicator-spin",animationDuration:"1.4s",hasSpinClass:true}` vs the pre-fix `{animationName:"none",animationDuration:"0s",hasSpinClass:false}` - the ring animates and reads as actively loading. Screenshot `screenshots/bug-sweep-2026-10-02/home-samples-loading.png`. Command: `npm.cmd run test:e2e -- e2e/tfl311_home_welcome_bughunt.spec.cjs` 3 passed (spec now asserts the spin).
+
 ## DEF-471: Save-time form fill report calls every untouched empty multi-widget option group `option-unknown` ("option not found: Off"), so a correctly-filled document shows "93 filled, 12 skipped" with 12 false error lines
 
 - Status: CLOSED

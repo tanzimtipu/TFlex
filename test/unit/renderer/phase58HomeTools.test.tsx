@@ -393,6 +393,27 @@ describe("Phase 58 � Welcome home tool row", () => {
     }
   });
 
+  it("disables the plus and opens no picker when every candidate is already on the row", () => {
+    // Bug sweep (Sweep 1) — with all candidates present but fewer than the
+    // 14-tool cap, the plus used to stay enabled and open an EMPTY popover
+    // (a dead-end). It must now disable with a reason and open nothing.
+    const { host, unmount } = renderWelcome({
+      homeTools: ["merge", "sign"],
+      homeCandidates: ["merge", "sign"],
+    });
+    try {
+      clickOn(host.querySelector("[data-home-edit-toggle]") as Element);
+      const plus = host.querySelector("[data-home-plus]") as HTMLButtonElement;
+      expect(plus).not.toBeNull();
+      expect(plus.disabled).toBe(true);
+      expect(plus.getAttribute("title")).toContain("Every available tool");
+      clickOn(plus);
+      expect(document.querySelector("[data-home-picker]")).toBeNull();
+    } finally {
+      unmount();
+    }
+  });
+
   it("a tile runs its registry id via onRunHomeTool", () => {
     const onRunHomeTool = vi.fn();
     const { host, unmount } = renderWelcome({

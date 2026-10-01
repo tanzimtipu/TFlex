@@ -123,9 +123,16 @@ export function Welcome(props: WelcomeProps): ReactElement {
 
   useEffect(() => {
     let cancelled = false;
-    void samplesResolver().then((list) => {
-      if (!cancelled) setSamples(list);
-    });
+    void samplesResolver()
+      .then((list) => {
+        if (!cancelled) setSamples(list);
+      })
+      .catch(() => {
+        // A failed list (the samples IPC can reject) must settle the grid to
+        // the empty state instead of leaving "Loading samples..." forever and
+        // emitting an unhandled rejection.
+        if (!cancelled) setSamples([]);
+      });
     return (): void => {
       cancelled = true;
     };
@@ -182,6 +189,21 @@ export function Welcome(props: WelcomeProps): ReactElement {
     );
   }, [pickerOpen, pickerAnchor]);
 
+  // DEF-473 — while the picker is open, re-anchor it to the plus and re-clamp
+  // on every window resize (the same class of fix as the DEF-283 dialog
+  // re-clamp). The listener only refreshes the raw plus rect; the layout effect
+  // above recomputes the clamped `pickerPos` from the new anchor, so the
+  // portaled menu stays attached and fully inside a shrinking viewport.
+  useEffect((): (() => void) | undefined => {
+    if (!pickerOpen) return undefined;
+    const onResize = (): void => {
+      const r = plusRef.current?.getBoundingClientRect();
+      setPickerAnchor({ right: r?.right ?? 0, bottom: r?.bottom ?? 0 });
+    };
+    window.addEventListener("resize", onResize);
+    return (): void => window.removeEventListener("resize", onResize);
+  }, [pickerOpen]);
+
   const openPicker = (): void => {
     const r = plusRef.current?.getBoundingClientRect();
     setPickerAnchor({ right: r?.right ?? 0, bottom: r?.bottom ?? 0 });
@@ -205,6 +227,8 @@ export function Welcome(props: WelcomeProps): ReactElement {
       const entry = toolById(id);
       return entry === undefined ? [] : [entry];
     });
+  // Nothing left to offer: the plus must not open an empty popover.
+  const noCandidates = pickerEntries.length === 0;
 
   const recentCount = recentFiles.length;
   const sampleCount = samples?.length ?? 0;
@@ -318,8 +342,14 @@ export function Welcome(props: WelcomeProps): ReactElement {
                 aria-haspopup="menu"
                 aria-expanded={pickerOpen}
                 aria-label="Add a tool to the home row"
-                title={full ? "Home row is full (max 14 tools)" : "Add a tool to the home row"}
-                disabled={full}
+                title={
+                  full
+                    ? "Home row is full (max 14 tools)"
+                    : noCandidates
+                      ? "Every available tool is already on the home row"
+                      : "Add a tool to the home row"
+                }
+                disabled={full || noCandidates}
                 onClick={togglePicker}
               >
                 <Plus size={16} aria-hidden />
@@ -333,6 +363,7 @@ export function Welcome(props: WelcomeProps): ReactElement {
                   portaled Pin/Unpin menu). */}
               {pickerOpen &&
                 !full &&
+                !noCandidates &&
                 createPortal(
                   <div
                     ref={pickerRef}
@@ -451,7 +482,7 @@ export function Welcome(props: WelcomeProps): ReactElement {
           {samples === null ? (
             <div className="samples-grid">
               <div className="samples-empty">
-                <BrandLoader />
+                <BrandLoader className="update-indicator-spin" />
                 <span>Loading samples…</span>
               </div>
             </div>

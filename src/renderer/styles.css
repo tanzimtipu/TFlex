@@ -2979,6 +2979,11 @@ body.tab-reordering .tab-list[data-reorder="true"] .tab {
   display: flex;
   align-items: center;
   gap: var(--sp-3);
+  /* At the 640px minimum window width the fixed Open tile plus the shipped
+   * tools exceed the hero's content box; without wrapping the row is clipped
+   * by `.welcome { overflow: hidden }` and the pen/plus become unreachable.
+   * Wrapping keeps every control visible on a second line. */
+  flex-wrap: wrap;
 }
 
 /* ---------------------------------------------------------------------------

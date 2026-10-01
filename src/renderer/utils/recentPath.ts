@@ -10,13 +10,19 @@ export function splitRecentPath(path: string): PathMeta {
   if (path.startsWith("samples/")) {
     return { name: path.slice("samples/".length), dir: "samples", isSample: true };
   }
-  // Strip both Windows (\\) and POSIX (/) separators.
-  const idxWin = path.lastIndexOf("\\");
-  const idxPos = path.lastIndexOf("/");
+  // Strip both Windows (\\) and POSIX (/) separators. Trailing separators are
+  // dropped first so a path that ends in one (or a bare drive root like "C:\")
+  // resolves to its last real segment instead of rendering the whole path as
+  // the file name.
+  const trimmed = path.replace(/[\\/]+$/, "");
+  const idxWin = trimmed.lastIndexOf("\\");
+  const idxPos = trimmed.lastIndexOf("/");
   const cut = Math.max(idxWin, idxPos);
-  if (cut < 0) return { name: path, dir: "", isSample: false };
-  const name = path.slice(cut + 1);
-  const dir = path.slice(0, cut);
+  if (cut < 0) {
+    return { name: trimmed.length > 0 ? trimmed : path, dir: "", isSample: false };
+  }
+  const name = trimmed.slice(cut + 1);
+  const dir = trimmed.slice(0, cut);
   return { name: name.length > 0 ? name : path, dir, isSample: false };
 }
 
