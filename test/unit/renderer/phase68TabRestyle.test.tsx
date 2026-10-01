@@ -76,21 +76,23 @@ describe("AppHeader — Phase 68 colorful render seam", () => {
 });
 
 describe("Phase 68 — colorful tab stylesheet", () => {
-  it("Phase 72 — the colorful .tab::before is a flat 22% tint with the 1px border and no gradient", () => {
+  it("Phase 76 — the colorful .tab::before is a flat opaque 22% tint with the 1px border and no gradient", () => {
     const block = blockFor('.tab-area[data-tab-style="colorful"] .tab::before {');
     expect(block).toContain("color-mix(");
     expect(block).toContain("22%");
-    expect(block).toContain("var(--bg-elevated)");
+    expect(block).toContain("var(--tf-tab-surface)");
+    expect(block).not.toContain("var(--bg-elevated)");
     expect(block).not.toContain("linear-gradient");
     expect(block).toContain(
-      "border: 1px solid color-mix(in srgb, var(--tf-tab-accent, var(--sem-neutral)) 30%, var(--border-subtle))",
+      "border: 1px solid color-mix(in srgb, var(--tf-tab-accent, var(--sem-neutral)) 30%, var(--tf-tab-surface))",
     );
   });
 
-  it("Phase 72 — the active .tab::before is a flat 41% tint and keeps the square bottom corners", () => {
+  it("Phase 76 — the active .tab::before is a flat opaque 41% tint and keeps the square bottom corners", () => {
     const block = blockFor('.tab-area[data-tab-style="colorful"] .tab-active::before {');
     expect(block).toContain("41%");
-    expect(block).toContain("var(--bg-elevated)");
+    expect(block).toContain("var(--tf-tab-surface)");
+    expect(block).not.toContain("var(--bg-elevated)");
     expect(block).not.toContain("linear-gradient");
     expect(block).toContain("border-bottom-left-radius: 0");
     expect(block).toContain("border-bottom-right-radius: 0");
@@ -122,13 +124,14 @@ describe("Phase 68 — colorful tab stylesheet", () => {
     expect(titleBlock).toContain("min-width: 0");
   });
 
-  it("DEF-441 — the colorful modified dot uses the full accent fill and an --fg-strong ring", () => {
+  it("Phase 73 — the colorful modified dot keeps the full accent fill and a CONTAINED --fg-strong ring", () => {
     const block = blockFor('.tab-area[data-tab-style="colorful"] .tab-modified-dot {');
     expect(block).toContain("background: var(--tf-tab-accent, var(--sem-neutral))");
     expect(block).not.toContain("var(--tf-tab-ink)");
     expect(block).toContain(
-      "box-shadow: 0 0 0 1.5px color-mix(in srgb, var(--fg-strong) 55%, transparent)",
+      "border-color: color-mix(in srgb, var(--fg-strong) 55%, transparent)",
     );
+    expect(block).not.toContain("box-shadow: 0 0 0 1.5px");
   });
 
   it("DEF-441 — the colorful close hover paints an --fg-strong wash", () => {

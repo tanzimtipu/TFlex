@@ -399,6 +399,7 @@
   --bg-input: #ffffff;
   --bg-tab: transparent;
   --bg-tab-active: #ffffff;
+  --tf-tab-surface: #fbfcfd;
 
   --fg-strong: #0f172a;
   --fg: #1e293b;
@@ -567,6 +568,7 @@
   --bg-input: #111419;
   --bg-tab: transparent;
   --bg-tab-active: #15191e;
+  --tf-tab-surface: #191e24;
 
   /* Phase 69 (feature B) - the BrandLoader leading dot: white on the dark
    * surface (its light/frosted default is the brand violet #7C3AED). */
@@ -783,6 +785,7 @@
   --bg-input: rgba(255, 255, 255, 0.92);
   --bg-tab: transparent;
   --bg-tab-active: var(--tf-surface-tab-active);
+  --tf-tab-surface: #ffffff;
 
   /* Layered acrylic surfaces */
   --bg-secondary: var(--tf-surface-panel);
@@ -2110,8 +2113,8 @@ input[type="checkbox"] {
   inset: 0;
   z-index: 0;
   border-radius: var(--radius-2);
-  border: 1px solid color-mix(in srgb, var(--tf-tab-accent, var(--sem-neutral)) 30%, var(--border-subtle));
-  background: color-mix(in srgb, var(--tf-tab-accent, var(--sem-neutral)) 22%, var(--bg-elevated));
+  border: 1px solid color-mix(in srgb, var(--tf-tab-accent, var(--sem-neutral)) 30%, var(--tf-tab-surface));
+  background: color-mix(in srgb, var(--tf-tab-accent, var(--sem-neutral)) 22%, var(--tf-tab-surface));
 }
 
 /* Keep the tab's own content (chip, title, close) above the fill layer. */
@@ -2147,7 +2150,7 @@ input[type="checkbox"] {
    * runs continuously into the canvas; the top corners keep the chip radius. */
   border-bottom-left-radius: 0;
   border-bottom-right-radius: 0;
-  background: color-mix(in srgb, var(--tf-tab-accent, var(--sem-neutral)) 41%, var(--bg-elevated));
+  background: color-mix(in srgb, var(--tf-tab-accent, var(--sem-neutral)) 41%, var(--tf-tab-surface));
 }
 
 /* ===========================================================================
