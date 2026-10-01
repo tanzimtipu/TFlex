@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
-import type { ReactElement } from "react";
+import { cloneElement, useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
+import type { ReactElement, ReactNode } from "react";
 import type {
   AppSettings,
   DocxImageEntry,
@@ -607,6 +607,49 @@ export function DocumentSurfaceColumn(props: DocumentSurfaceColumnProps): ReactE
   // "Open comic view" trigger is gone: the canvas "Book View" control (mounted
   // in DocumentView) supersedes it for any open document.
   const showReader = sourceFormat === "epub";
+  // Phase 78 (feature A) — the open-triggered notice family (protection,
+  // conversion, 3D) is RE-PARENTED out of this flow column and into the
+  // document element's canvas-bound overlay (DocumentView's `.canvas-overlay`,
+  // via the `canvasNotices` prop). They no longer occupy a row above the
+  // scroller and can never paint outside the canvas. `ValidationNotice` stays
+  // here in flow: it is not produced by opening a file (Phase 67 ruling 2) and
+  // Phase 78 explicitly leaves it untouched.
+  const notices: ReactNode =
+    props.protection !== undefined ||
+    props.conversion !== undefined ||
+    (props.pdf3d !== undefined && props.pdf3d.length > 0) ? (
+      <>
+        {props.protection !== undefined && (
+          <ProtectionNotice
+            protection={props.protection}
+            onDismiss={props.onDismissProtection}
+          />
+        )}
+        {props.conversion !== undefined && (
+          <ConversionNotice
+            notice={props.conversion}
+            onDismiss={props.onDismissConversion}
+          />
+        )}
+        {props.pdf3d !== undefined && props.pdf3d.length > 0 && (
+          <Pdf3dNotice entries={props.pdf3d} />
+        )}
+      </>
+    ) : undefined;
+  // A component document element (DocumentView) takes the notices through the
+  // `canvasNotices` prop and mounts them inside `.canvas-overlay`. A string
+  // host element (a unit-test harness stand-in for the document surface)
+  // renders them as children instead, so its DOM contract is unchanged; the
+  // production mount is always DocumentView or BookView.
+  const documentElement =
+    notices === undefined
+      ? props.document
+      : typeof props.document.type === "string"
+        ? cloneElement(props.document, {}, notices)
+        : cloneElement(
+            props.document as ReactElement<{ canvasNotices?: ReactNode }>,
+            { canvasNotices: notices },
+          );
   return (
     <div
       className="document-column"
@@ -614,32 +657,12 @@ export function DocumentSurfaceColumn(props: DocumentSurfaceColumnProps): ReactE
       data-document-converted={props.conversion !== undefined ? true : undefined}
       data-document-validated={props.validation !== undefined ? true : undefined}
     >
-      {props.conversion !== undefined && (
-        <ConversionNotice
-          notice={props.conversion}
-          onDismiss={props.onDismissConversion}
-        />
-      )}
       {props.validation !== undefined && (
         <ValidationNotice
           notice={props.validation}
           onDismiss={props.onDismissValidation}
         />
       )}
-      {props.protection !== undefined && (
-        <ProtectionNotice
-          protection={props.protection}
-          onDismiss={props.onDismissProtection}
-        />
-      )}
-      {/* Phase 57 (feature A) — the 3D limitation bar. Non-dismissible and
-          above the page area; it never covers or hides the canvas. */}
-      {props.pdf3d !== undefined && props.pdf3d.length > 0 && (
-        <Pdf3dNotice entries={props.pdf3d} />
-      )}
-      {/* Phase 56 (features A / C) — the format-gated reader entry. Gated ONLY
-          on the tab's source format (non-dismissible), so dismissing the
-          conversion card above can never remove the capability. */}
       {showReader && (
         <button
           type="button"
@@ -652,7 +675,7 @@ export function DocumentSurfaceColumn(props: DocumentSurfaceColumnProps): ReactE
           Open reading view
         </button>
       )}
-      {props.document}
+      {documentElement}
     </div>
   );
 }

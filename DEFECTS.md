@@ -5,6 +5,73 @@
 > inspect the current `OPEN`, `FIX-READY`, and `DISPUTED` entries first; closed records are
 > historical evidence and must not be loaded wholesale.
 
+## DEF-466: Phase 78 - a tall expanded notice box is not clipped and paints past the canvas bottom, hiding the tail of long messages
+
+- Status: CLOSED
+- Severity: MEDIUM
+- Found by: adversary (ADV-145)
+- Phase: 78 (success criterion 1 - the message never shows outside the canvas bounds)
+
+Steps to reproduce:
+1. `npm.cmd run build:renderer`
+2. `node test-fixtures/adv-p78/probe.cjs multi 30 1024 768` (opens an encrypted PDF carrying 30 `/Subtype /3D` annotations, so the 3D notice lists 30 entries).
+3. Measure the expanded notice box against the `[data-canvas-overlay]` rect.
+
+Expected: the message renders only within the canvas; the box never shows outside the canvas bounds, and all of a long message is reachable.
+
+Actual: at 1024x768 the 3D box (top 220.95, height 841) paints 294px below the overlay bottom 768 (`insideCanvas:false`); with 20 entries it escapes by 25px; at 900x600 by 462px. Root cause: `.canvas-overlay` (`src/renderer/styles.css:15904`) applies no `overflow` clip, and the `.canvas-top-right` expanded-box rules (`styles.css:18842`/`18893`) set no `max-height`/`overflow`; `Pdf3dNotice.tsx:71` renders an unbounded entry list. A conversion card with many warnings can do the same.
+
+Screenshot: screenshots/adv-p78-multi-1024x768.png. Fixture/log: test-fixtures/adv-p78/probe-multi-1024x768.txt.
+
+History:
+- adversary: filed as ADV-145 (TFL-266 Phase 78 diff-pass, MEDIUM). Evidence + probe commands in ADVERSARIAL_REVIEW.md ADV-145.
+- CTO: ACCEPTED -> DEF-466 (TFL-250 triage). Owner frontend-dev; the fix must keep the expanded box inside the canvas (bounded height + internal scroll or clip) without changing notice content, roles, hooks or the state machine.
+- qa: retested FAIL (TFL-272 FIX-READY retest, attempt 1) -- remains OPEN. Product acceptance green: `npm.cmd run build:renderer` exit 0; `npm.cmd run verify` exit 0; `node test-fixtures/adv-p78/probe.cjs multi 30 1024 768|900 600|640 1392` -> both boxes `insideCanvas:true`, `overlap:false`, no console/page errors, 3D box `overflowY:auto`; at the two height-capped sizes 3D `scrollHeight 856 > clientHeight 522/354` (`scrolledBy` 334/502, `scrollable:true`; at 640x1392 the canvas is tall enough so `839==839`, fully visible). `npx.cmd playwright test e2e/phase78_notice_in_canvas.spec.cjs` 2 passed; blast radius A (`phase59_protection_notice` + `tfl46_protection_probe` + `phase67_notice_geometry`) 5 passed; criteria 2/3/4 unchanged (iconPitch 36, gapBookIcon 8.15, dwell 8482ms, reduced-motion 1e-05s). BLOCKER: the `.canvas-overlay` single-mode `container-type: inline-size -> size` change (TFL-268) breaks two frozen unit oracles that pin the old value -- `test/unit/renderer/phase40_multiPillsHorizontal.test.ts:239` and `test/unit/renderer/def315_dockPillClearance.test.tsx:893` -- so step-7 unit = 2 failed / 56 passed. (The phase36 e2e also fails 5/7, but pre-existing/unrelated: the window launches maximized and the spec calls `setSize` without `unmaximize()`, so `innerWidth` stays 2560 and the resize wait times out; the rail is now 64px vs the stale `<=46` oracle. With a corrected resize the DEF-322 pill-ladder invariants still hold at 1440/1100/900/760/640 -- no intersection, every control hit-testable.) frontend-dev must update the two oracles (or the fix) before closure. Evidence: test-fixtures/TFL-272-def466-retest.md.
+- qa: retested PASS (TFL-272 FIX-READY retest, attempt 2; TFL-274 updated the two frozen oracles to the fix value) -- CLOSED. `npm.cmd run build:renderer` exit 0; `npm.cmd run verify` exit 0; step-3 unit 6 files / 84 passed; step-7 unit 3 files / 58 passed (oracles now `container-type: size`); decisive probe `multi 30 1024 768|900 600|640 1392` -> both boxes `insideCanvas:true`, `overlap:false`, no errors, 3D `escapeBottomPx -23/-23/-330`, `overflowY:auto`, `scrollHeight 856 > clientHeight 522/354` (`scrolledBy` 334/502), `839==839` at 640x1392; `e2e/phase78_notice_in_canvas.spec.cjs` 2 passed; blast A 5 passed; criteria 2/3/4 unchanged (iconPitch 36, gapBookIcon 8, dwell 8976/10031ms, reduced-motion 1e-05s). Step-7 e2e (`phase36_*`) still 2 passed / 5 failed -- pre-existing/unrelated (maximized launch + `setSize` without `unmaximize` -> `innerWidth` timeout; stale rail `<=46` oracle), unchanged by this fix. Evidence: test-fixtures/TFL-272-def466-retest-attempt2.md.
+
+## DEF-465: Phase 78 enter morph - the collapsed "i" glyph is never shown during the entry; only the box scales in at the icon corner
+
+- Status: CLOSED
+- Severity: MEDIUM
+- Found by: qa (TFL-258; failed Phase 78 success criterion 3)
+- Phase: 78 (criterion 3)
+
+Steps to reproduce:
+1. `npm.cmd run build:renderer` then launch the built app and open a document that shows a top-of-canvas notice (e.g. an encrypted PDF for the protection notice).
+2. Sample the entry frame-by-frame (rAF) and count frames in which the collapsed "i" glyph `[data-protection-icon]` / `[data-conversion-icon]` / `[data-pdf3d-icon]` is rendered.
+
+Expected (operator TFL-187 / Phase 78 criterion 3): the collapsed "i" icon is shown, then immediately expands/morphs smoothly into the full message box.
+
+Actual: `iconFrames: 0` for protection, conversion and 3D - the "i" glyph is never rendered at any frame of the entry; only the box scales `matrix(0.95) -> matrix(1)` over 250ms from the top-right origin. Root cause: `useNoticeCollapse()` starts at `phase = 'expanded'` (`src/renderer/hooks/useNoticeCollapse.ts:36`), so `[data-*-icon]` only mounts on collapse. The entry reads as "the box scales in at the icon corner", not "the i shows then morphs into the box".
+
+Screenshot: screenshots/phase78-protection-expanded.png. Findings: test-fixtures/phase78-verification-findings.md.
+
+History:
+- qa: opened (TFL-258 focused verification; Phase 78 criteria 3 and 5 FAIL). rAF enter timeline `iconFrames: 0` for all three notices.
+- qa: retested FAIL (TFL-260 FIX-READY retest) — remains OPEN. `npx.cmd playwright test e2e/phase78_notice_in_canvas.spec.cjs` (rAF frame sampling): `protIconFrames=0`, `convIconFrames=0`; first sampled frame is already the box at `matrix(0.95)` opacity 0 with `animationName: protection-notice-in/0.25s`, so the collapsed "i" is never painted for the user-triggered protection and conversion notices (3D showed a racy 2 frames). Cause: the `entering -> expanded` `useEffect` in `useNoticeCollapse.ts` / `ProtectionNotice.tsx` commits synchronously before paint on click-triggered mounts. Instant/reduced-motion path and all other criteria (1/2/4) pass.
+- qa: CLOSED (TFL-263 FIX-READY retest, attempt 2). `npm.cmd run verify` exit 0; `npm.cmd run test:unit` (6 files) 83 passed; `npx.cmd playwright test e2e/phase78_notice_in_canvas.spec.cjs` run twice = 2 passed each, deterministic `protIconFrames=2`, `pdf3dIconFrames=3`, `convIconFrames=2` (>0, icon painted before the box). Blast radius `e2e/phase59_protection_notice.spec.cjs e2e/tfl46_protection_probe.spec.cjs e2e/phase67_notice_geometry.spec.cjs` = 5 passed. Criteria 1/2/4 unchanged: boxes inside canvas (`insideCanvas:true`), top-right gaps 8px, dwell 8.5-10.0s then collapse to "i", reduced-motion enter instant (`1e-05s`). Screenshots: screenshots/phase78-enter-early.png, screenshots/phase78-def464-both-expanded.png.
+
+## DEF-464: Phase 78 - expanded protection + 3D notice boxes share one top-right anchor and overlap, so the later box blocks the other's collapse control
+
+- Status: CLOSED
+- Severity: MEDIUM
+- Found by: qa (TFL-258; failed Phase 78 success criterion 5 - Phase 67 ruling 6)
+- Phase: 78 (criterion 5 regression)
+
+Steps to reproduce:
+1. Launch the built app at 2048x1392 and open a document that is BOTH encrypted and carries 3D annotations (protection notice + 3D notice present together), or otherwise force both notices expanded at once.
+2. Measure both expanded boxes and hit-test the protection box's collapse control.
+
+Expected: no two notice boxes overlap; each box's collapse control is hit-testable; no notice covers another notice or a control (Phase 67 ruling 6).
+
+Actual: both boxes share `.canvas-top-right .protection-notice / .conversion-notice / .pdf3d-notice { position:absolute; top:calc(100% + var(--sp-2)); right:0 }` (`src/renderer/styles.css:18805-18822`), so they stack on the SAME anchor: protection left 1332 / top 104 / right 1772 / bottom 212.95; 3D left 1332 / top 104 / right 1772 / bottom 155.59. The later-painted 3D box covers the protection box and intercepts pointer events on `[data-protection-collapse]`. Self-resolves after the ~10s auto-collapse; no data loss. Collapsed multi-icon geometry is unregressed (non-overlapping, pitch 36px, each icon centre hit-resolves).
+
+Screenshot: screenshots/phase78-protection-expanded.png. Findings: test-fixtures/phase78-verification-findings.md.
+
+History:
+- qa: opened (TFL-258 focused verification). Measured boxes + elementFromPoint on `[data-protection-collapse]`.
+- qa: CLOSED (TFL-260 FIX-READY retest). `npx.cmd playwright test e2e/phase78_notice_in_canvas.spec.cjs` — both expanded together: protection box top 104 / bottom 212.95, 3D box top 220.95 / bottom 272.55, `overlap:false` (8px stack gap); `[data-protection-collapse]` centre `elementFromPoint` resolves into the control (`resolves:true`). Blast radius `e2e/phase59_protection_notice.spec.cjs e2e/tfl46_protection_probe.spec.cjs e2e/phase67_notice_geometry.spec.cjs` = 5 passed (phase67 both-collapsed test now green, pitch 36). Screenshot: screenshots/phase78-def464-both-expanded.png.
+
 ## DEF-462: The Phase 73 dirty dot is 100% clipped away by `.tab-title{overflow:hidden}` at the 640px minimum; at 10 tabs the dot is neither painted nor hit-testable, and at 20 tabs it also overflows the tab body
 
 - Status: CLOSED

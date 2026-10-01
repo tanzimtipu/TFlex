@@ -3,10 +3,10 @@
 // The assigned behaviour:
 //   - the notice renders as a ROUNDED box with an ENTRANCE animation;
 //   - after ~10 s it collapses on its own into a small "i" (info) icon pinned
-//     at the canvas's TOP-LEFT;
+//     at the canvas's TOP-RIGHT, immediately LEFT of Book View (Phase 78);
 //   - clicking the "i" re-expands the box; the expanded box carries a collapse
 //     control that collapses it again;
-//   - the collapsed icon never overlaps the page.
+//   - the collapsed icon never overlaps the page or a canvas control.
 //
 // Launches only through the canonical launchApp helper. The encrypted fixture
 // is synthetic (e2e/lib/p52_crypto.cjs), never an operator document.
@@ -119,17 +119,21 @@ test('protection notice: rounded + animated, auto-collapses to the "i" after ~10
   expect(elapsed, `auto-collapse dwell ~10s (measured ${elapsed}ms)`).toBeGreaterThanOrEqual(8000);
   expect(elapsed, `auto-collapse dwell ~10s (measured ${elapsed}ms)`).toBeLessThanOrEqual(14000);
 
-  // 4. The collapsed icon sits at the canvas's top-left and does not overlap the page.
+  // 4. The collapsed icon sits at the canvas's TOP-RIGHT (Phase 78: immediately
+  //    left of Book View at the canvas top-right) and does not overlap the page.
   const icon = await win.locator('[data-protection-icon]').boundingBox();
   const page = await pageRect();
-  // The canvas is the page scroller, not `.document-column` (which spans the whole
-  // stage from x=64, over the LEFT ContextPanel). Using `.document-column` as the
-  // basis let the original DEF-435 bug pass: an icon over the left panel was still
-  // "in the left half" of a column that starts under that panel.
-  const canvas = await win.locator('.document-scroller').boundingBox();
+  // Phase 78 repoint — the icon is anchored inside the canvas-bound overlay
+  // (`.canvas-overlay`), at its top-right, immediately left of Book View. The
+  // old top-left / `.document-scroller` basis is retired.
+  const canvas = await win.locator('[data-canvas-overlay]').boundingBox();
+  const bookView = await win.locator('[data-book-view-open]').boundingBox();
+  const pageLayout = await win.locator('[data-page-layout-control]').boundingBox();
   const combine = await win.locator('[data-context-panel-combine]').boundingBox();
   const iconBox = boxOf(icon);
   const combineBox = boxOf(combine);
+  const bookBox = boxOf(bookView);
+  const layoutBox = boxOf(pageLayout);
   const iconHit = await win.evaluate(() => {
     const el = document.querySelector('[data-protection-icon]');
     if (el === null) return null;
@@ -145,18 +149,28 @@ test('protection notice: rounded + animated, auto-collapses to the "i" after ~10
       rect: { left: r.left, top: r.top, width: r.width, height: r.height },
     };
   });
-  console.log(`[P59-protect] icon=${JSON.stringify(icon)} page=${JSON.stringify(page)} canvas=${JSON.stringify(canvas)} combine=${JSON.stringify(combine)} iconHit=${JSON.stringify(iconHit)}`);
+  console.log(`[P59-protect] icon=${JSON.stringify(icon)} page=${JSON.stringify(page)} canvas=${JSON.stringify(canvas)} bookView=${JSON.stringify(bookView)} pageLayout=${JSON.stringify(pageLayout)} combine=${JSON.stringify(combine)} iconHit=${JSON.stringify(iconHit)}`);
   expect(icon, 'the collapsed "i" is visible').not.toBeNull();
   expect(page, 'a page is rendered').not.toBeNull();
-  // Top-left of the canvas: the icon starts at or right of the page scroller's left
-  // edge (right of the left panel) and in the canvas's top half.
+  // Top-right of the canvas: the icon is inside the canvas overlay, in its
+  // right half, and at its top.
   expect(icon.x, 'icon is at/right of the canvas left edge').toBeGreaterThanOrEqual(canvas.x);
-  expect(icon.x, 'icon is in the left half of the canvas').toBeLessThan(canvas.x + canvas.width / 2);
-  expect(icon.y, 'icon is in the top half of the canvas').toBeLessThan(canvas.y + canvas.height / 2);
+  expect(icon.x + icon.width, 'icon is at/left of the canvas right edge').toBeLessThanOrEqual(canvas.x + canvas.width + 0.5);
+  expect(icon.x, 'icon is in the right half of the canvas').toBeGreaterThan(canvas.x + canvas.width / 2);
+  expect(icon.y, 'icon is at the canvas top').toBeLessThan(canvas.y + 160);
   expect(overlaps(iconBox, page), `collapsed icon overlaps the page (icon=${JSON.stringify(iconBox)} page=${JSON.stringify(page)})`).toBe(false);
-  // The icon must cover no control: the left panel's Combine control must not overlap it.
+  // The icon must cover no control: the left panel's Combine control, Book View
+  // and the page-layout control must not overlap it.
   expect(combineBox, 'the left panel Combine control exists').not.toBeNull();
   expect(overlaps(iconBox, combineBox), `collapsed icon overlaps the Combine control (icon=${JSON.stringify(iconBox)} combine=${JSON.stringify(combineBox)})`).toBe(false);
+  expect(bookBox, 'the Book View control exists').not.toBeNull();
+  expect(overlaps(iconBox, bookBox), `collapsed icon overlaps Book View (icon=${JSON.stringify(iconBox)} book=${JSON.stringify(bookBox)})`).toBe(false);
+  expect(layoutBox, 'the page-layout control exists').not.toBeNull();
+  expect(overlaps(iconBox, layoutBox), `collapsed icon overlaps the page-layout control (icon=${JSON.stringify(iconBox)} layout=${JSON.stringify(layoutBox)})`).toBe(false);
+  // Phase 78 — the "i" sits immediately left of Book View with a tight gap.
+  const gapIconBook = bookBox.left - iconBox.right;
+  expect(gapIconBook, `the "i" is immediately left of Book View (gap ${gapIconBook}px)`).toBeGreaterThanOrEqual(0);
+  expect(gapIconBook, `the "i" is immediately left of Book View (gap ${gapIconBook}px)`).toBeLessThanOrEqual(16);
   // The icon must be reachable (not occluded by the left panel / page chrome).
   expect(iconHit, 'the collapsed icon hit-test resolves').not.toBeNull();
   expect(iconHit.resolves, `the collapsed icon is occluded by ${iconHit.top}`).toBe(true);

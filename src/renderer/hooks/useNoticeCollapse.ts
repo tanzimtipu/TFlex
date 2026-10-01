@@ -20,8 +20,9 @@ import { MOTION_DURATION } from '../hooks/motionTokens';
  *  motion duration, so it is a named constant rather than a motion token. */
 export const NOTICE_AUTO_COLLAPSE_MS = 10000;
 
-/** Expanded -> closing (playing the exit) -> collapsed (the "i" icon). */
-export type NoticePhase = 'expanded' | 'closing' | 'collapsed';
+/** The icon-first enter (`entering` -> `expanded`) -> closing (playing the
+ *  exit) -> collapsed (the "i" icon). */
+export type NoticePhase = 'entering' | 'expanded' | 'closing' | 'collapsed';
 
 export interface NoticeCollapse {
   phase: NoticePhase;
@@ -33,7 +34,13 @@ export interface NoticeCollapse {
 
 export function useNoticeCollapse(): NoticeCollapse {
   const instant = useInstantMotion();
-  const [phase, setPhase] = useState<NoticePhase>('expanded');
+  // Phase 78 (DEF-465) — the animated enter shows the collapsed "i" for the
+  // first frame, then commits to `expanded`, whose `*-notice-in` scale grows
+  // from the icon's top-right origin. The instant path skips the icon leg and
+  // opens straight on the box (reduced motion / Animations OFF).
+  const [phase, setPhase] = useState<NoticePhase>(() =>
+    instant ? 'expanded' : 'entering',
+  );
 
   const collapse = useCallback((): void => {
     if (instant) {
@@ -48,6 +55,26 @@ export function useNoticeCollapse(): NoticeCollapse {
   const expand = useCallback((): void => {
     setPhase('expanded');
   }, []);
+
+  // Phase 78 (DEF-465) — commit the icon-first enter. A passive effect can
+  // run in the SAME tick as the `entering` commit, so React flushes the box
+  // before the collapsed "i" ever paints (the measured bug: the first rAF
+  // sample was already the box). Defer the commit by a DOUBLE rAF: the first
+  // frame lets the "i" commit and paint, the second mounts the box, whose
+  // token-based `*-notice-in` scale then grows from that painted origin.
+  // This is a paint hand-off, not a motion band, so it carries no duration
+  // token: the instant path never enters this phase (it starts `expanded`).
+  useEffect(() => {
+    if (phase !== 'entering') return undefined;
+    let second = 0;
+    const first = window.requestAnimationFrame(() => {
+      second = window.requestAnimationFrame(() => setPhase('expanded'));
+    });
+    return (): void => {
+      window.cancelAnimationFrame(first);
+      window.cancelAnimationFrame(second);
+    };
+  }, [phase]);
 
   // Collapse ~10 s after the notice appears OR re-expands. Depending on
   // `phase` means every cleanup resets the dwell: expanding schedules a fresh

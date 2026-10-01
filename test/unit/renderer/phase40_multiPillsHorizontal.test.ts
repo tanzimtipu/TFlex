@@ -236,7 +236,7 @@ describe("Phase 40 item 1 — Multi Mode's pills are HORIZONTAL per pane", () =>
     expect(STYLES).toMatch(/\.canvas-pill-page\s*\{\s*left:\s*12px;/);
     expect(STYLES).toMatch(/\.canvas-pill-zoom\s*\{\s*right:\s*12px;/);
     expect(STYLES).toMatch(
-      /\.tab-stage\[data-multi-mode='false'\] \.canvas-overlay\s*\{\s*container-type:\s*inline-size;\s*container-name:\s*canvas-pills;/,
+      /\.tab-stage\[data-multi-mode='false'\] \.canvas-overlay\s*\{\s*container-type:\s*size;\s*container-name:\s*canvas-pills;/,
     );
     expect(STYLES).toMatch(
       /@container canvas-pills \(max-width: 307px\)\s*\{\s*\.canvas-pill-zoom\s*\{\s*bottom:\s*60px;/,

@@ -12,6 +12,7 @@ import {
   useRef,
   useState,
   type PointerEvent as ReactPointerEvent,
+  type ReactNode,
 } from "react";
 import {
   accumulateWheel,
@@ -515,6 +516,12 @@ interface DocumentViewProps extends DocumentViewDockProps {
    *  flyout and rail. Absent (every pre-chunk-66 mount) renders exactly as
    *  before - no control. Multi Mode panes never show it. */
   onOpenBookView?: () => void;
+  /** Phase 78 (feature A) — the open-triggered notice family
+   *  (`ProtectionNotice` / `ConversionNotice` / `Pdf3dNotice`), re-parented
+   *  here by the host so they mount INSIDE the canvas-bound `.canvas-overlay`
+   *  at the top-right instead of as flow siblings above the scroller. Absent
+   *  (every pre-Phase-78 mount) renders exactly as before - no notice layer. */
+  canvasNotices?: ReactNode;
   /** Phase 32 (chunk 2d) â€” canvas page drag and drop. Present only in Multi
    *  Mode: each page grows a hover-revealed grip (`data-page-drag-handle`)
    *  that starts a document-aware drag, and every page slot accepts a drop
@@ -858,6 +865,7 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
   paneFocused = false,
   chromeIdle = false,
   onOpenBookView,
+  canvasNotices,
   activeStage,
   dockPins = [],
   dockUnpinned = [],
@@ -4301,11 +4309,23 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
             pixel-identical to before. The layer is pointer-inert; the pills,
             the flyout and the dock opt back in. */}
         <div className="canvas-overlay" data-canvas-overlay>
-        {/* Phase 66 (chunk 1) — the Book View entry at the overlay's
-            TOP-LEFT, the mirror of the top-right page-layout control. It
-            renders only when the host wires the verb and never in a Multi
-            Mode pane; activating it makes the host swap this whole view for
-            the read-only BookView, so it disappears along with the dock. */}
+        {/* Phase 78 (feature B) — the canvas TOP-RIGHT control cluster, the
+            single anchor for the open-triggered notice "i" row, the Book View
+            entry and the page-layout control. Phase 66 put Book View at the
+            overlay's TOP-LEFT; Phase 78 moves it immediately LEFT of the
+            page-layout control and parks the notice family immediately LEFT of
+            Book View with a tight ~8px gap. The cluster is pointer-inert; each
+            control opts back in (the buttons below and the notice icons in
+            styles.css). It renders only when there is a control to show. */}
+        <div className="canvas-top-right">
+        {canvasNotices !== undefined && (
+          <div className="canvas-notices">{canvasNotices}</div>
+        )}
+        {/* Phase 66 (chunk 1) — the Book View entry. It renders only when the
+            host wires the verb and never in a Multi Mode pane; activating it
+            makes the host swap this whole view for the read-only BookView, so
+            it disappears along with the dock. Phase 78 moves it to the canvas
+            top-right (immediately left of the page-layout control). */}
         {onOpenBookView !== undefined && !inMultiPane && (
           <button
             type="button"
@@ -4323,10 +4343,13 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
             Inspector's inset already keeps it off the panel) and never renders
             in a Multi Mode pane — the requirement is single-view only, and
             Multi Mode's layout is untouched. The pills live at the bottom and
-            the dock is Multi Mode only, so the three surfaces cannot overlap. */}
+            the dock is Multi Mode only, so the three surfaces cannot overlap.
+            Phase 78 anchors it as the rightmost control of the top-right
+            cluster. */}
         {!inMultiPane && (
           <PageLayoutControl value={pageLayout} onChange={onChangePageLayout} />
         )}
+        </div>
         {/* Phase 36 (chunk 3b / chunk 7) â€” the floating page + zoom pills.
             SINGLE mode keeps their unchanged placement (page bottom-left, zoom
             bottom-right of the canvas). In MULTI MODE each pane carries its OWN

@@ -60,6 +60,13 @@ function mount(node: ReactElement) {
   act((): void => {
     root.render(node);
   });
+  // Phase 78 (DEF-465): the icon-first enter commits on a double rAF. Advance
+  // both entrance frames so these state-machine tests start from `expanded`
+  // (they assert the collapse dwell, not the enter paint).
+  act((): void => {
+    vi.advanceTimersToNextFrame();
+    vi.advanceTimersToNextFrame();
+  });
   return {
     host,
     root,

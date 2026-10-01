@@ -7,8 +7,8 @@
 //   - collapsed "i" icons never overlap each other or a control (criterion 3);
 //   - elementFromPoint at the "i" centre resolves to the icon, and over the
 //     page area resolves to the page (criterion 4);
-//   - the conversion icon is one slot (+36px) and the 3D icon two slots
-//     (+72px) right of the protection icon (slot 0), per the reserved CSS.
+//   - the collapsed "i" icons flow in a tight row at the canvas TOP-RIGHT
+//     (Phase 78: the old fixed horizontal slots are retired; pitch ~36px).
 //
 // This spec drives the REAL Electron app through launchApp and MEASURES those
 // promises with getBoundingClientRect() + elementFromPoint(). It also measures
@@ -184,10 +184,13 @@ async function boxStyle(selector) {
   }, selector);
 }
 
-async function scrollerLeft() {
+// Phase 78 repoint — the collapsed "i" row is anchored at the canvas
+// TOP-RIGHT now, so the meaningful edge is the canvas-bound overlay's RIGHT
+// edge (the old `.document-scroller` LEFT edge measured the top-left row).
+async function canvasRight() {
   return win.evaluate(() => {
-    const el = document.querySelector('.document-scroller');
-    return el ? el.getBoundingClientRect().left : null;
+    const el = document.querySelector('[data-canvas-overlay]') || document.querySelector('.document-scroller');
+    return el ? el.getBoundingClientRect().right : null;
   });
 }
 
@@ -223,12 +226,12 @@ test('conversion notice: measured auto-collapse, collapsed "i" geometry + hit-te
     document.querySelector('[data-conversion-notice-state]')?.getAttribute('data-conversion-notice-state') ?? null);
   const icon = await iconMetrics('[data-conversion-icon]');
   const page = await pageHit();
-  const sl = await scrollerLeft();
-  const relLeft = icon && sl !== null ? icon.rect.left - sl : null;
+  const sl = await canvasRight();
+  const relRight = icon && sl !== null ? sl - icon.rect.right : null;
   await clipShot('phase67-conversion-collapsed-clip.png', [icon.rect]);
   const controls = await controlRects();
   const overlapBook = icon && controls.bookView ? overlaps(icon.rect, controls.bookView) : null;
-  console.log('P67_GEOM_CONVERSION ' + JSON.stringify({ elapsedMs: elapsed, seconds: +(elapsed / 1000).toFixed(2), state, scrollerLeft: sl, relLeft, icon, page, controls, overlapBook }));
+  console.log('P67_GEOM_CONVERSION ' + JSON.stringify({ elapsedMs: elapsed, seconds: +(elapsed / 1000).toFixed(2), state, canvasRight: sl, relRight, icon, page, controls, overlapBook }));
 
   expect(state, 'the region reports the collapsed state').toBe('collapsed');
   expect(elapsed, `auto-collapse ~10 s (measured ${elapsed}ms)`).toBeGreaterThanOrEqual(8000);
@@ -276,12 +279,12 @@ test('3D notice: measured auto-collapse, collapsed "i" geometry + hit-test', asy
     document.querySelector('[data-pdf3d-notice-state]')?.getAttribute('data-pdf3d-notice-state') ?? null);
   const icon = await iconMetrics('[data-pdf3d-icon]');
   const page = await pageHit();
-  const sl = await scrollerLeft();
-  const relLeft = icon && sl !== null ? icon.rect.left - sl : null;
+  const sl = await canvasRight();
+  const relRight = icon && sl !== null ? sl - icon.rect.right : null;
   await clipShot('phase67-3d-collapsed-clip.png', [icon.rect]);
   const controls = await controlRects();
   const overlapBook = icon && controls.bookView ? overlaps(icon.rect, controls.bookView) : null;
-  console.log('P67_GEOM_3D ' + JSON.stringify({ elapsedMs: elapsed, seconds: +(elapsed / 1000).toFixed(2), state, scrollerLeft: sl, relLeft, icon, page, controls, overlapBook }));
+  console.log('P67_GEOM_3D ' + JSON.stringify({ elapsedMs: elapsed, seconds: +(elapsed / 1000).toFixed(2), state, canvasRight: sl, relRight, icon, page, controls, overlapBook }));
 
   expect(state, 'the region reports the collapsed state').toBe('collapsed');
   expect(elapsed, `auto-collapse ~10 s (measured ${elapsed}ms)`).toBeGreaterThanOrEqual(8000);
@@ -302,8 +305,8 @@ test('3D notice: measured auto-collapse, collapsed "i" geometry + hit-test', asy
 
 // ---------------------------------------------------------------------------
 // Test 3 — the nearest REACHABLE both-collapsed scenario: a password-protected
-// PDF that also carries 3D content shows the protection notice (slot 0) and
-// the 3D notice (slot 2) together; collapse BOTH and measure real geometry
+// PDF that also carries 3D content shows the protection notice and
+// the 3D notice together; collapse BOTH and measure real geometry
 // (criterion 3). The literal conversion+3D pair is unreachable (see header).
 // ---------------------------------------------------------------------------
 test('both collapsed icons present (protection + 3D): measured non-overlap + slots', async () => {
@@ -335,7 +338,7 @@ test('both collapsed icons present (protection + 3D): measured non-overlap + slo
     const prot = await iconMetrics('[data-protection-icon]');
     const threeD = await iconMetrics('[data-pdf3d-icon]');
     const controls = await controlRects();
-    const sl = await scrollerLeft();
+    const sl = await canvasRight();
     const pitch = prot && threeD ? threeD.rect.left - prot.rect.left : null;
     const overlapBook = prot && controls.bookView ? overlaps(prot.rect, controls.bookView) : null;
     const overlapBook3d = threeD && controls.bookView ? overlaps(threeD.rect, controls.bookView) : null;
@@ -343,12 +346,12 @@ test('both collapsed icons present (protection + 3D): measured non-overlap + slo
     await clipShot('phase67-both-collapsed-clip.png', [prot.rect, threeD.rect]);
     const metrics = {
       reachable: true,
-      scrollerLeft: sl,
+      canvasRight: sl,
       protection: prot,
       pdf3d: threeD,
       controls,
-      protectionRelLeft: prot && sl !== null ? prot.rect.left - sl : null,
-      pdf3dRelLeft: threeD && sl !== null ? threeD.rect.left - sl : null,
+      protectionRelRight: prot && sl !== null ? sl - prot.rect.right : null,
+      pdf3dRelRight: threeD && sl !== null ? sl - threeD.rect.right : null,
       pitch,
       overlapBook,
       overlapBook3d,
@@ -359,7 +362,9 @@ test('both collapsed icons present (protection + 3D): measured non-overlap + slo
     expect(prot.visible, 'protection "i" visible').toBe(true);
     expect(threeD.visible, '3D "i" visible').toBe(true);
     expect(overlaps(prot.rect, threeD.rect), 'the two collapsed "i" boxes do not overlap').toBe(false);
-    expect(pitch, '3D icon sits 72px right of the protection icon (slot 2 vs slot 0)').toBeCloseTo(72, 0);
+    // Phase 78 repoint — the reserved 72px slot pitch is retired; the "i" row
+    // now flows with a tight ~8px flex gap (icon width 28 + gap 8 = 36px pitch).
+    expect(pitch, `the "i" icons use the tight flex pitch (measured ${pitch}px)`).toBeCloseTo(36, 0);
     expect(overlapBook, 'protection "i" does not overlap the Book View control').toBe(false);
     expect(overlapBook3d, '3D "i" does not overlap the Book View control').toBe(false);
     expect(overlapCombine, 'protection "i" does not overlap the Combine control').toBe(false);

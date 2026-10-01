@@ -1,0 +1,356 @@
+﻿diff --git a/src/renderer/App.tsx b/src/renderer/App.tsx
+index 908255f..18ffccc 100644
+--- a/src/renderer/App.tsx
++++ b/src/renderer/App.tsx
+@@ -1,5 +1,5 @@
+-import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
+-import type { ReactElement } from "react";
++import { cloneElement, useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
++import type { ReactElement, ReactNode } from "react";
+ import type {
+   AppSettings,
+   DocxImageEntry,
+@@ -607,6 +607,49 @@ export function DocumentSurfaceColumn(props: DocumentSurfaceColumnProps): ReactE
+   // "Open comic view" trigger is gone: the canvas "Book View" control (mounted
+   // in DocumentView) supersedes it for any open document.
+   const showReader = sourceFormat === "epub";
++  // Phase 78 (feature A) ΓÇö the open-triggered notice family (protection,
++  // conversion, 3D) is RE-PARENTED out of this flow column and into the
++  // document element's canvas-bound overlay (DocumentView's `.canvas-overlay`,
++  // via the `canvasNotices` prop). They no longer occupy a row above the
++  // scroller and can never paint outside the canvas. `ValidationNotice` stays
++  // here in flow: it is not produced by opening a file (Phase 67 ruling 2) and
++  // Phase 78 explicitly leaves it untouched.
++  const notices: ReactNode =
++    props.protection !== undefined ||
++    props.conversion !== undefined ||
++    (props.pdf3d !== undefined && props.pdf3d.length > 0) ? (
++      <>
++        {props.protection !== undefined && (
++          <ProtectionNotice
++            protection={props.protection}
++            onDismiss={props.onDismissProtection}
++          />
++        )}
++        {props.conversion !== undefined && (
++          <ConversionNotice
++            notice={props.conversion}
++            onDismiss={props.onDismissConversion}
++          />
++        )}
++        {props.pdf3d !== undefined && props.pdf3d.length > 0 && (
++          <Pdf3dNotice entries={props.pdf3d} />
++        )}
++      </>
++    ) : undefined;
++  // A component document element (DocumentView) takes the notices through the
++  // `canvasNotices` prop and mounts them inside `.canvas-overlay`. A string
++  // host element (a unit-test harness stand-in for the document surface)
++  // renders them as children instead, so its DOM contract is unchanged; the
++  // production mount is always DocumentView or BookView.
++  const documentElement =
++    notices === undefined
++      ? props.document
++      : typeof props.document.type === "string"
++        ? cloneElement(props.document, {}, notices)
++        : cloneElement(
++            props.document as ReactElement<{ canvasNotices?: ReactNode }>,
++            { canvasNotices: notices },
++          );
+   return (
+     <div
+       className="document-column"
+@@ -614,32 +657,12 @@ export function DocumentSurfaceColumn(props: DocumentSurfaceColumnProps): ReactE
+       data-document-converted={props.conversion !== undefined ? true : undefined}
+       data-document-validated={props.validation !== undefined ? true : undefined}
+     >
+-      {props.conversion !== undefined && (
+-        <ConversionNotice
+-          notice={props.conversion}
+-          onDismiss={props.onDismissConversion}
+-        />
+-      )}
+       {props.validation !== undefined && (
+         <ValidationNotice
+           notice={props.validation}
+           onDismiss={props.onDismissValidation}
+         />
+       )}
+-      {props.protection !== undefined && (
+-        <ProtectionNotice
+-          protection={props.protection}
+-          onDismiss={props.onDismissProtection}
+-        />
+-      )}
+-      {/* Phase 57 (feature A) ΓÇö the 3D limitation bar. Non-dismissible and
+-          above the page area; it never covers or hides the canvas. */}
+-      {props.pdf3d !== undefined && props.pdf3d.length > 0 && (
+-        <Pdf3dNotice entries={props.pdf3d} />
+-      )}
+-      {/* Phase 56 (features A / C) ΓÇö the format-gated reader entry. Gated ONLY
+-          on the tab's source format (non-dismissible), so dismissing the
+-          conversion card above can never remove the capability. */}
+       {showReader && (
+         <button
+           type="button"
+@@ -652,7 +675,7 @@ export function DocumentSurfaceColumn(props: DocumentSurfaceColumnProps): ReactE
+           Open reading view
+         </button>
+       )}
+-      {props.document}
++      {documentElement}
+     </div>
+   );
+ }
+diff --git a/src/renderer/components/ConversionNotice.tsx b/src/renderer/components/ConversionNotice.tsx
+index 723680d..2dd9a55 100644
+--- a/src/renderer/components/ConversionNotice.tsx
++++ b/src/renderer/components/ConversionNotice.tsx
+@@ -38,11 +38,13 @@ export function ConversionNotice(props: ConversionNoticeProps): ReactElement {
+   const { warnings } = notice;
+   const { phase, collapse, expand } = useNoticeCollapse();
+ 
+-  if (phase === 'collapsed') {
++  // Phase 78 (DEF-465) ΓÇö `entering` is the icon-first frame: it renders the
++  // collapsed "i" exactly like `collapsed`, then the hook commits `expanded`.
++  if (phase === 'collapsed' || phase === 'entering') {
+     return (
+       <div
+         className="conversion-notice-region"
+-        data-conversion-notice-state="collapsed"
++        data-conversion-notice-state={phase}
+       >
+         <button
+           type="button"
+diff --git a/src/renderer/components/DocumentView.tsx b/src/renderer/components/DocumentView.tsx
+index 8337e52..86c58f4 100644
+--- a/src/renderer/components/DocumentView.tsx
++++ b/src/renderer/components/DocumentView.tsx
+@@ -12,6 +12,7 @@ import {
+   useRef,
+   useState,
+   type PointerEvent as ReactPointerEvent,
++  type ReactNode,
+ } from "react";
+ import {
+   accumulateWheel,
+@@ -515,6 +516,12 @@ interface DocumentViewProps extends DocumentViewDockProps {
+    *  flyout and rail. Absent (every pre-chunk-66 mount) renders exactly as
+    *  before - no control. Multi Mode panes never show it. */
+   onOpenBookView?: () => void;
++  /** Phase 78 (feature A) ΓÇö the open-triggered notice family
++   *  (`ProtectionNotice` / `ConversionNotice` / `Pdf3dNotice`), re-parented
++   *  here by the host so they mount INSIDE the canvas-bound `.canvas-overlay`
++   *  at the top-right instead of as flow siblings above the scroller. Absent
++   *  (every pre-Phase-78 mount) renders exactly as before - no notice layer. */
++  canvasNotices?: ReactNode;
+   /** Phase 32 (chunk 2d) ├óΓé¼ΓÇ¥ canvas page drag and drop. Present only in Multi
+    *  Mode: each page grows a hover-revealed grip (`data-page-drag-handle`)
+    *  that starts a document-aware drag, and every page slot accepts a drop
+@@ -858,6 +865,7 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
+   paneFocused = false,
+   chromeIdle = false,
+   onOpenBookView,
++  canvasNotices,
+   activeStage,
+   dockPins = [],
+   dockUnpinned = [],
+@@ -4301,11 +4309,23 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
+             pixel-identical to before. The layer is pointer-inert; the pills,
+             the flyout and the dock opt back in. */}
+         <div className="canvas-overlay" data-canvas-overlay>
+-        {/* Phase 66 (chunk 1) ΓÇö the Book View entry at the overlay's
+-            TOP-LEFT, the mirror of the top-right page-layout control. It
+-            renders only when the host wires the verb and never in a Multi
+-            Mode pane; activating it makes the host swap this whole view for
+-            the read-only BookView, so it disappears along with the dock. */}
++        {/* Phase 78 (feature B) ΓÇö the canvas TOP-RIGHT control cluster, the
++            single anchor for the open-triggered notice "i" row, the Book View
++            entry and the page-layout control. Phase 66 put Book View at the
++            overlay's TOP-LEFT; Phase 78 moves it immediately LEFT of the
++            page-layout control and parks the notice family immediately LEFT of
++            Book View with a tight ~8px gap. The cluster is pointer-inert; each
++            control opts back in (the buttons below and the notice icons in
++            styles.css). It renders only when there is a control to show. */}
++        <div className="canvas-top-right">
++        {canvasNotices !== undefined && (
++          <div className="canvas-notices">{canvasNotices}</div>
++        )}
++        {/* Phase 66 (chunk 1) ΓÇö the Book View entry. It renders only when the
++            host wires the verb and never in a Multi Mode pane; activating it
++            makes the host swap this whole view for the read-only BookView, so
++            it disappears along with the dock. Phase 78 moves it to the canvas
++            top-right (immediately left of the page-layout control). */}
+         {onOpenBookView !== undefined && !inMultiPane && (
+           <button
+             type="button"
+@@ -4323,10 +4343,13 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
+             Inspector's inset already keeps it off the panel) and never renders
+             in a Multi Mode pane ΓÇö the requirement is single-view only, and
+             Multi Mode's layout is untouched. The pills live at the bottom and
+-            the dock is Multi Mode only, so the three surfaces cannot overlap. */}
++            the dock is Multi Mode only, so the three surfaces cannot overlap.
++            Phase 78 anchors it as the rightmost control of the top-right
++            cluster. */}
+         {!inMultiPane && (
+           <PageLayoutControl value={pageLayout} onChange={onChangePageLayout} />
+         )}
++        </div>
+         {/* Phase 36 (chunk 3b / chunk 7) ├óΓé¼ΓÇ¥ the floating page + zoom pills.
+             SINGLE mode keeps their unchanged placement (page bottom-left, zoom
+             bottom-right of the canvas). In MULTI MODE each pane carries its OWN
+diff --git a/src/renderer/components/Pdf3dNotice.tsx b/src/renderer/components/Pdf3dNotice.tsx
+index d759832..e56be78 100644
+--- a/src/renderer/components/Pdf3dNotice.tsx
++++ b/src/renderer/components/Pdf3dNotice.tsx
+@@ -39,9 +39,11 @@ export function Pdf3dNotice(props: Pdf3dNoticeProps): ReactElement | null {
+   const { phase, collapse, expand } = useNoticeCollapse();
+   if (entries.length === 0) return null;
+ 
+-  if (phase === 'collapsed') {
++  // Phase 78 (DEF-465) ΓÇö `entering` is the icon-first frame: it renders the
++  // collapsed "i" exactly like `collapsed`, then the hook commits `expanded`.
++  if (phase === 'collapsed' || phase === 'entering') {
+     return (
+-      <div className="pdf3d-notice-region" data-pdf3d-notice-state="collapsed">
++      <div className="pdf3d-notice-region" data-pdf3d-notice-state={phase}>
+         <button
+           type="button"
+           className="pdf3d-notice-collapsed-toggle"
+diff --git a/src/renderer/components/ProtectionNotice.tsx b/src/renderer/components/ProtectionNotice.tsx
+index 31076c8..6eb0980 100644
+--- a/src/renderer/components/ProtectionNotice.tsx
++++ b/src/renderer/components/ProtectionNotice.tsx
+@@ -43,8 +43,9 @@ export interface ProtectionNoticeProps {
+  *  a motion duration, so it is a named constant rather than a motion token. */
+ export const PROTECTION_NOTICE_AUTO_COLLAPSE_MS = 10000;
+ 
+-/** Expanded -> closing (playing the exit) -> collapsed (the "i" icon). */
+-type NoticePhase = 'expanded' | 'closing' | 'collapsed';
++/** The icon-first enter (`entering` -> `expanded`) -> closing (playing the
++ *  exit) -> collapsed (the "i" icon). */
++type NoticePhase = 'entering' | 'expanded' | 'closing' | 'collapsed';
+ 
+ export function ProtectionNotice(props: ProtectionNoticeProps): ReactElement {
+   const { protection } = props;
+@@ -53,7 +54,13 @@ export function ProtectionNotice(props: ProtectionNoticeProps): ReactElement {
+   const denied = rows.filter((r) => !r.allowed).map((r) => r.label);
+ 
+   const instant = useInstantMotion();
+-  const [phase, setPhase] = useState<NoticePhase>('expanded');
++  // Phase 78 (DEF-465) ΓÇö the animated enter shows the collapsed "i" for the
++  // first frame, then commits to `expanded`, whose `protection-notice-in`
++  // scale grows from the icon's top-right origin. The instant path skips the
++  // icon leg and opens straight on the box (reduced motion / Animations OFF).
++  const [phase, setPhase] = useState<NoticePhase>(() =>
++    instant ? 'expanded' : 'entering',
++  );
+ 
+   const collapse = useCallback((): void => {
+     if (instant) {
+@@ -69,6 +76,24 @@ export function ProtectionNotice(props: ProtectionNoticeProps): ReactElement {
+     setPhase('expanded');
+   }, []);
+ 
++  // Phase 78 (DEF-465) ΓÇö commit the icon-first enter after the collapsed "i"
++  // has PAINTED. A passive effect can run in the same tick as the `entering`
++  // commit, so the box would mount before the icon ever painted; deferring by
++  // a DOUBLE rAF guarantees the icon frame first, then the morph. A paint
++  // hand-off, not a motion band, so it carries no duration; the instant path
++  // never enters this phase.
++  useEffect(() => {
++    if (phase !== 'entering') return undefined;
++    let second = 0;
++    const first = window.requestAnimationFrame(() => {
++      second = window.requestAnimationFrame(() => setPhase('expanded'));
++    });
++    return (): void => {
++      window.cancelAnimationFrame(first);
++      window.cancelAnimationFrame(second);
++    };
++  }, [phase]);
++
+   // Collapse ~10 s after the banner appears OR re-expands. Depending on
+   // `phase` means every cleanup resets the dwell: expanding schedules a fresh
+   // timer, and collapsing clears the pending one.
+@@ -89,9 +114,11 @@ export function ProtectionNotice(props: ProtectionNoticeProps): ReactElement {
+   return (
+     <div
+       className="protection-notice-region"
+-      data-protection-notice-state={phase === 'collapsed' ? 'collapsed' : 'expanded'}
++      data-protection-notice-state={
++        phase === 'expanded' || phase === 'closing' ? 'expanded' : 'collapsed'
++      }
+     >
+-      {phase !== 'collapsed' && (
++      {(phase === 'expanded' || phase === 'closing') && (
+         <div
+           className={
+             phase === 'closing'
+@@ -136,7 +163,7 @@ export function ProtectionNotice(props: ProtectionNoticeProps): ReactElement {
+           </button>
+         </div>
+       )}
+-      {phase === 'collapsed' && (
++      {(phase === 'collapsed' || phase === 'entering') && (
+         <button
+           type="button"
+           className="protection-notice-collapsed-toggle"
+diff --git a/src/renderer/hooks/useNoticeCollapse.ts b/src/renderer/hooks/useNoticeCollapse.ts
+index aee4b08..d122175 100644
+--- a/src/renderer/hooks/useNoticeCollapse.ts
++++ b/src/renderer/hooks/useNoticeCollapse.ts
+@@ -20,8 +20,9 @@ import { MOTION_DURATION } from '../hooks/motionTokens';
+  *  motion duration, so it is a named constant rather than a motion token. */
+ export const NOTICE_AUTO_COLLAPSE_MS = 10000;
+ 
+-/** Expanded -> closing (playing the exit) -> collapsed (the "i" icon). */
+-export type NoticePhase = 'expanded' | 'closing' | 'collapsed';
++/** The icon-first enter (`entering` -> `expanded`) -> closing (playing the
++ *  exit) -> collapsed (the "i" icon). */
++export type NoticePhase = 'entering' | 'expanded' | 'closing' | 'collapsed';
+ 
+ export interface NoticeCollapse {
+   phase: NoticePhase;
+@@ -33,7 +34,13 @@ export interface NoticeCollapse {
+ 
+ export function useNoticeCollapse(): NoticeCollapse {
+   const instant = useInstantMotion();
+-  const [phase, setPhase] = useState<NoticePhase>('expanded');
++  // Phase 78 (DEF-465) ΓÇö the animated enter shows the collapsed "i" for the
++  // first frame, then commits to `expanded`, whose `*-notice-in` scale grows
++  // from the icon's top-right origin. The instant path skips the icon leg and
++  // opens straight on the box (reduced motion / Animations OFF).
++  const [phase, setPhase] = useState<NoticePhase>(() =>
++    instant ? 'expanded' : 'entering',
++  );
+ 
+   const collapse = useCallback((): void => {
+     if (instant) {
+@@ -49,6 +56,26 @@ export function useNoticeCollapse(): NoticeCollapse {
+     setPhase('expanded');
+   }, []);
+ 
++  // Phase 78 (DEF-465) ΓÇö commit the icon-first enter. A passive effect can
++  // run in the SAME tick as the `entering` commit, so React flushes the box
++  // before the collapsed "i" ever paints (the measured bug: the first rAF
++  // sample was already the box). Defer the commit by a DOUBLE rAF: the first
++  // frame lets the "i" commit and paint, the second mounts the box, whose
++  // token-based `*-notice-in` scale then grows from that painted origin.
++  // This is a paint hand-off, not a motion band, so it carries no duration
++  // token: the instant path never enters this phase (it starts `expanded`).
++  useEffect(() => {
++    if (phase !== 'entering') return undefined;
++    let second = 0;
++    const first = window.requestAnimationFrame(() => {
++      second = window.requestAnimationFrame(() => setPhase('expanded'));
++    });
++    return (): void => {
++      window.cancelAnimationFrame(first);
++      window.cancelAnimationFrame(second);
++    };
++  }, [phase]);
++
+   // Collapse ~10 s after the notice appears OR re-expands. Depending on
+   // `phase` means every cleanup resets the dwell: expanding schedules a fresh
+   // timer, and collapsing clears the pending one.

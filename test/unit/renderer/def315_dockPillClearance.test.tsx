@@ -890,7 +890,7 @@ describe("DEF-322/323 — the stylesheet and the dock carry the fix", () => {
 
   it("makes the SINGLE-mode canvas overlay the query container", () => {
     expect(css).toMatch(
-      /\.tab-stage\[data-multi-mode='false'\]\s+\.canvas-overlay\s*\{[^}]*container-type:\s*inline-size/s,
+      /\.tab-stage\[data-multi-mode='false'\]\s+\.canvas-overlay\s*\{[^}]*container-type:\s*size/s,
     );
     expect(css).toMatch(
       /\.tab-stage\[data-multi-mode='false'\]\s+\.canvas-overlay\s*\{[^}]*container-name:\s*canvas-pills/s,

@@ -1,0 +1,376 @@
+﻿diff --git a/e2e/phase59_protection_notice.spec.cjs b/e2e/phase59_protection_notice.spec.cjs
+index 4fcc28e..a59ece9 100644
+--- a/e2e/phase59_protection_notice.spec.cjs
++++ b/e2e/phase59_protection_notice.spec.cjs
+@@ -3,10 +3,10 @@
+ // The assigned behaviour:
+ //   - the notice renders as a ROUNDED box with an ENTRANCE animation;
+ //   - after ~10 s it collapses on its own into a small "i" (info) icon pinned
+-//     at the canvas's TOP-LEFT;
++//     at the canvas's TOP-RIGHT, immediately LEFT of Book View (Phase 78);
+ //   - clicking the "i" re-expands the box; the expanded box carries a collapse
+ //     control that collapses it again;
+-//   - the collapsed icon never overlaps the page.
++//   - the collapsed icon never overlaps the page or a canvas control.
+ //
+ // Launches only through the canonical launchApp helper. The encrypted fixture
+ // is synthetic (e2e/lib/p52_crypto.cjs), never an operator document.
+@@ -119,17 +119,21 @@ test('protection notice: rounded + animated, auto-collapses to the "i" after ~10
+   expect(elapsed, `auto-collapse dwell ~10s (measured ${elapsed}ms)`).toBeGreaterThanOrEqual(8000);
+   expect(elapsed, `auto-collapse dwell ~10s (measured ${elapsed}ms)`).toBeLessThanOrEqual(14000);
+ 
+-  // 4. The collapsed icon sits at the canvas's top-left and does not overlap the page.
++  // 4. The collapsed icon sits at the canvas's TOP-RIGHT (Phase 78: immediately
++  //    left of Book View at the canvas top-right) and does not overlap the page.
+   const icon = await win.locator('[data-protection-icon]').boundingBox();
+   const page = await pageRect();
+-  // The canvas is the page scroller, not `.document-column` (which spans the whole
+-  // stage from x=64, over the LEFT ContextPanel). Using `.document-column` as the
+-  // basis let the original DEF-435 bug pass: an icon over the left panel was still
+-  // "in the left half" of a column that starts under that panel.
+-  const canvas = await win.locator('.document-scroller').boundingBox();
++  // Phase 78 repoint ΓÇö the icon is anchored inside the canvas-bound overlay
++  // (`.canvas-overlay`), at its top-right, immediately left of Book View. The
++  // old top-left / `.document-scroller` basis is retired.
++  const canvas = await win.locator('[data-canvas-overlay]').boundingBox();
++  const bookView = await win.locator('[data-book-view-open]').boundingBox();
++  const pageLayout = await win.locator('[data-page-layout-control]').boundingBox();
+   const combine = await win.locator('[data-context-panel-combine]').boundingBox();
+   const iconBox = boxOf(icon);
+   const combineBox = boxOf(combine);
++  const bookBox = boxOf(bookView);
++  const layoutBox = boxOf(pageLayout);
+   const iconHit = await win.evaluate(() => {
+     const el = document.querySelector('[data-protection-icon]');
+     if (el === null) return null;
+@@ -145,18 +149,28 @@ test('protection notice: rounded + animated, auto-collapses to the "i" after ~10
+       rect: { left: r.left, top: r.top, width: r.width, height: r.height },
+     };
+   });
+-  console.log(`[P59-protect] icon=${JSON.stringify(icon)} page=${JSON.stringify(page)} canvas=${JSON.stringify(canvas)} combine=${JSON.stringify(combine)} iconHit=${JSON.stringify(iconHit)}`);
++  console.log(`[P59-protect] icon=${JSON.stringify(icon)} page=${JSON.stringify(page)} canvas=${JSON.stringify(canvas)} bookView=${JSON.stringify(bookView)} pageLayout=${JSON.stringify(pageLayout)} combine=${JSON.stringify(combine)} iconHit=${JSON.stringify(iconHit)}`);
+   expect(icon, 'the collapsed "i" is visible').not.toBeNull();
+   expect(page, 'a page is rendered').not.toBeNull();
+-  // Top-left of the canvas: the icon starts at or right of the page scroller's left
+-  // edge (right of the left panel) and in the canvas's top half.
++  // Top-right of the canvas: the icon is inside the canvas overlay, in its
++  // right half, and at its top.
+   expect(icon.x, 'icon is at/right of the canvas left edge').toBeGreaterThanOrEqual(canvas.x);
+-  expect(icon.x, 'icon is in the left half of the canvas').toBeLessThan(canvas.x + canvas.width / 2);
+-  expect(icon.y, 'icon is in the top half of the canvas').toBeLessThan(canvas.y + canvas.height / 2);
++  expect(icon.x + icon.width, 'icon is at/left of the canvas right edge').toBeLessThanOrEqual(canvas.x + canvas.width + 0.5);
++  expect(icon.x, 'icon is in the right half of the canvas').toBeGreaterThan(canvas.x + canvas.width / 2);
++  expect(icon.y, 'icon is at the canvas top').toBeLessThan(canvas.y + 160);
+   expect(overlaps(iconBox, page), `collapsed icon overlaps the page (icon=${JSON.stringify(iconBox)} page=${JSON.stringify(page)})`).toBe(false);
+-  // The icon must cover no control: the left panel's Combine control must not overlap it.
++  // The icon must cover no control: the left panel's Combine control, Book View
++  // and the page-layout control must not overlap it.
+   expect(combineBox, 'the left panel Combine control exists').not.toBeNull();
+   expect(overlaps(iconBox, combineBox), `collapsed icon overlaps the Combine control (icon=${JSON.stringify(iconBox)} combine=${JSON.stringify(combineBox)})`).toBe(false);
++  expect(bookBox, 'the Book View control exists').not.toBeNull();
++  expect(overlaps(iconBox, bookBox), `collapsed icon overlaps Book View (icon=${JSON.stringify(iconBox)} book=${JSON.stringify(bookBox)})`).toBe(false);
++  expect(layoutBox, 'the page-layout control exists').not.toBeNull();
++  expect(overlaps(iconBox, layoutBox), `collapsed icon overlaps the page-layout control (icon=${JSON.stringify(iconBox)} layout=${JSON.stringify(layoutBox)})`).toBe(false);
++  // Phase 78 ΓÇö the "i" sits immediately left of Book View with a tight gap.
++  const gapIconBook = bookBox.left - iconBox.right;
++  expect(gapIconBook, `the "i" is immediately left of Book View (gap ${gapIconBook}px)`).toBeGreaterThanOrEqual(0);
++  expect(gapIconBook, `the "i" is immediately left of Book View (gap ${gapIconBook}px)`).toBeLessThanOrEqual(16);
+   // The icon must be reachable (not occluded by the left panel / page chrome).
+   expect(iconHit, 'the collapsed icon hit-test resolves').not.toBeNull();
+   expect(iconHit.resolves, `the collapsed icon is occluded by ${iconHit.top}`).toBe(true);
+diff --git a/e2e/phase66_bookview_spread.spec.cjs b/e2e/phase66_bookview_spread.spec.cjs
+index 892a001..7aa83d6 100644
+--- a/e2e/phase66_bookview_spread.spec.cjs
++++ b/e2e/phase66_bookview_spread.spec.cjs
+@@ -64,14 +64,17 @@ async function pageNumbers() {
+   );
+ }
+ 
+-// Record whether the transient flip class is ever applied to `side` after a
+-// click. A MutationObserver is used because the class lives only for the turn
++// Record whether the transient turn leaf is ever mounted (with direction
++// `dir`) after a click. Phase 77 (chunk A) moved the turn to its own
++// `[data-book-turn]` overlay carrying `data-book-turn-dir="next"|"prev"`; the
++// `book-view-turn-next|prev` class now lives on that leaf, not on the page
++// figures. A MutationObserver is used because the leaf lives only for the turn
+ // (animationend + a 400ms fallback) and can vanish before a polled read.
+ // Phase 66 criterion 9 (phase-close QA) additionally records the wall-clock
+-// from the click to the flip class clearing and the worst rAF frame gap in that
++// from the click to the leaf clearing and the worst rAF frame gap in that
+ // window (REQUIREMENTS.md:842 -> 16ms / 60fps). Measurement is additive.
+-async function watchTurn(side) {
+-  await win.evaluate((s) => {
++async function watchTurn(dir) {
++  await win.evaluate((d) => {
+     const state = {
+       hit: false,
+       cls: null,
+@@ -85,12 +88,8 @@ async function watchTurn(side) {
+     if (window.__p66turnObs) window.__p66turnObs.disconnect();
+     const stage = document.querySelector('[data-book-stage]');
+     const check = () => {
+-      const f = document.querySelector(`[data-book-page-side="${s}"]`);
+-      if (
+-        f &&
+-        (f.classList.contains('book-view-turn-next') ||
+-          f.classList.contains('book-view-turn-prev'))
+-      ) {
++      const f = document.querySelector(`[data-book-turn][data-book-turn-dir="${d}"]`);
++      if (f) {
+         state.hit = true;
+         state.cls = f.className;
+       } else if (state.hit && state.clearedAt === null) {
+@@ -117,7 +116,7 @@ async function watchTurn(side) {
+       if (state.clearedAt === null) requestAnimationFrame(tick);
+     };
+     requestAnimationFrame(tick);
+-  }, side);
++  }, dir);
+ }
+ 
+ async function clickAndReadTurn(selector) {
+@@ -173,7 +172,7 @@ test('criterion 4: single mode, toggle pair top-right, single page turns by one'
+ 
+   const before = await pageNumbers();
+   expect(before, 'single opens on page 1').toEqual(['1']);
+-  await watchTurn('single');
++  await watchTurn('next');
+   const turn = await clickAndReadTurn('[data-book-page-side="single"]');
+   expect(turn.cls, 'single turn did not carry book-view-turn-next').toContain('book-view-turn-next');
+   const after = await pageNumbers();
+@@ -211,14 +210,14 @@ test('criterion 3: double spread, centre crease, +2 next and -2 prev with flip',
+ 
+   const before = await pageNumbers();
+   expect(before, 'double spread does not start at 1,2').toEqual(['1', '2']);
+-  await watchTurn('right');
++  await watchTurn('next');
+   const next = await clickAndReadTurn('[data-book-page-side="right"]');
+   expect(next.cls, 'right turn did not carry book-view-turn-next').toContain('book-view-turn-next');
+   const afterNext = await pageNumbers();
+   await win.screenshot({ path: path.join(SHOTS, 'phase66-spread-double-after-next.png') });
+   expect(afterNext, 'right click did not advance the spread by two').toEqual(['3', '4']);
+ 
+-  await watchTurn('left');
++  await watchTurn('prev');
+   const prev = await clickAndReadTurn('[data-book-page-side="left"]');
+   expect(prev.cls, 'left turn did not carry book-view-turn-prev').toContain('book-view-turn-prev');
+   const afterPrev = await pageNumbers();
+@@ -251,7 +250,7 @@ test('reduced motion: --motion-duration-layout resolves to 0 and the spread stil
+ 
+   const before = await pageNumbers();
+   expect(before).toEqual(['1', '2']);
+-  await watchTurn('right');
++  await watchTurn('next');
+   await clickAndReadTurn('[data-book-page-side="right"]');
+   const after = await pageNumbers();
+   await win.screenshot({ path: path.join(SHOTS, 'phase66-spread-reduced-motion.png') });
+diff --git a/e2e/phase67_notice_geometry.spec.cjs b/e2e/phase67_notice_geometry.spec.cjs
+index 30ed702..74e4965 100644
+--- a/e2e/phase67_notice_geometry.spec.cjs
++++ b/e2e/phase67_notice_geometry.spec.cjs
+@@ -7,8 +7,8 @@
+ //   - collapsed "i" icons never overlap each other or a control (criterion 3);
+ //   - elementFromPoint at the "i" centre resolves to the icon, and over the
+ //     page area resolves to the page (criterion 4);
+-//   - the conversion icon is one slot (+36px) and the 3D icon two slots
+-//     (+72px) right of the protection icon (slot 0), per the reserved CSS.
++//   - the collapsed "i" icons flow in a tight row at the canvas TOP-RIGHT
++//     (Phase 78: the old fixed horizontal slots are retired; pitch ~36px).
+ //
+ // This spec drives the REAL Electron app through launchApp and MEASURES those
+ // promises with getBoundingClientRect() + elementFromPoint(). It also measures
+@@ -184,10 +184,13 @@ async function boxStyle(selector) {
+   }, selector);
+ }
+ 
+-async function scrollerLeft() {
++// Phase 78 repoint ΓÇö the collapsed "i" row is anchored at the canvas
++// TOP-RIGHT now, so the meaningful edge is the canvas-bound overlay's RIGHT
++// edge (the old `.document-scroller` LEFT edge measured the top-left row).
++async function canvasRight() {
+   return win.evaluate(() => {
+-    const el = document.querySelector('.document-scroller');
+-    return el ? el.getBoundingClientRect().left : null;
++    const el = document.querySelector('[data-canvas-overlay]') || document.querySelector('.document-scroller');
++    return el ? el.getBoundingClientRect().right : null;
+   });
+ }
+ 
+@@ -223,12 +226,12 @@ test('conversion notice: measured auto-collapse, collapsed "i" geometry + hit-te
+     document.querySelector('[data-conversion-notice-state]')?.getAttribute('data-conversion-notice-state') ?? null);
+   const icon = await iconMetrics('[data-conversion-icon]');
+   const page = await pageHit();
+-  const sl = await scrollerLeft();
+-  const relLeft = icon && sl !== null ? icon.rect.left - sl : null;
++  const sl = await canvasRight();
++  const relRight = icon && sl !== null ? sl - icon.rect.right : null;
+   await clipShot('phase67-conversion-collapsed-clip.png', [icon.rect]);
+   const controls = await controlRects();
+   const overlapBook = icon && controls.bookView ? overlaps(icon.rect, controls.bookView) : null;
+-  console.log('P67_GEOM_CONVERSION ' + JSON.stringify({ elapsedMs: elapsed, seconds: +(elapsed / 1000).toFixed(2), state, scrollerLeft: sl, relLeft, icon, page, controls, overlapBook }));
++  console.log('P67_GEOM_CONVERSION ' + JSON.stringify({ elapsedMs: elapsed, seconds: +(elapsed / 1000).toFixed(2), state, canvasRight: sl, relRight, icon, page, controls, overlapBook }));
+ 
+   expect(state, 'the region reports the collapsed state').toBe('collapsed');
+   expect(elapsed, `auto-collapse ~10 s (measured ${elapsed}ms)`).toBeGreaterThanOrEqual(8000);
+@@ -276,12 +279,12 @@ test('3D notice: measured auto-collapse, collapsed "i" geometry + hit-test', asy
+     document.querySelector('[data-pdf3d-notice-state]')?.getAttribute('data-pdf3d-notice-state') ?? null);
+   const icon = await iconMetrics('[data-pdf3d-icon]');
+   const page = await pageHit();
+-  const sl = await scrollerLeft();
+-  const relLeft = icon && sl !== null ? icon.rect.left - sl : null;
++  const sl = await canvasRight();
++  const relRight = icon && sl !== null ? sl - icon.rect.right : null;
+   await clipShot('phase67-3d-collapsed-clip.png', [icon.rect]);
+   const controls = await controlRects();
+   const overlapBook = icon && controls.bookView ? overlaps(icon.rect, controls.bookView) : null;
+-  console.log('P67_GEOM_3D ' + JSON.stringify({ elapsedMs: elapsed, seconds: +(elapsed / 1000).toFixed(2), state, scrollerLeft: sl, relLeft, icon, page, controls, overlapBook }));
++  console.log('P67_GEOM_3D ' + JSON.stringify({ elapsedMs: elapsed, seconds: +(elapsed / 1000).toFixed(2), state, canvasRight: sl, relRight, icon, page, controls, overlapBook }));
+ 
+   expect(state, 'the region reports the collapsed state').toBe('collapsed');
+   expect(elapsed, `auto-collapse ~10 s (measured ${elapsed}ms)`).toBeGreaterThanOrEqual(8000);
+@@ -302,8 +305,8 @@ test('3D notice: measured auto-collapse, collapsed "i" geometry + hit-test', asy
+ 
+ // ---------------------------------------------------------------------------
+ // Test 3 ΓÇö the nearest REACHABLE both-collapsed scenario: a password-protected
+-// PDF that also carries 3D content shows the protection notice (slot 0) and
+-// the 3D notice (slot 2) together; collapse BOTH and measure real geometry
++// PDF that also carries 3D content shows the protection notice and
++// the 3D notice together; collapse BOTH and measure real geometry
+ // (criterion 3). The literal conversion+3D pair is unreachable (see header).
+ // ---------------------------------------------------------------------------
+ test('both collapsed icons present (protection + 3D): measured non-overlap + slots', async () => {
+@@ -335,7 +338,7 @@ test('both collapsed icons present (protection + 3D): measured non-overlap + slo
+     const prot = await iconMetrics('[data-protection-icon]');
+     const threeD = await iconMetrics('[data-pdf3d-icon]');
+     const controls = await controlRects();
+-    const sl = await scrollerLeft();
++    const sl = await canvasRight();
+     const pitch = prot && threeD ? threeD.rect.left - prot.rect.left : null;
+     const overlapBook = prot && controls.bookView ? overlaps(prot.rect, controls.bookView) : null;
+     const overlapBook3d = threeD && controls.bookView ? overlaps(threeD.rect, controls.bookView) : null;
+@@ -343,12 +346,12 @@ test('both collapsed icons present (protection + 3D): measured non-overlap + slo
+     await clipShot('phase67-both-collapsed-clip.png', [prot.rect, threeD.rect]);
+     const metrics = {
+       reachable: true,
+-      scrollerLeft: sl,
++      canvasRight: sl,
+       protection: prot,
+       pdf3d: threeD,
+       controls,
+-      protectionRelLeft: prot && sl !== null ? prot.rect.left - sl : null,
+-      pdf3dRelLeft: threeD && sl !== null ? threeD.rect.left - sl : null,
++      protectionRelRight: prot && sl !== null ? sl - prot.rect.right : null,
++      pdf3dRelRight: threeD && sl !== null ? sl - threeD.rect.right : null,
+       pitch,
+       overlapBook,
+       overlapBook3d,
+@@ -359,7 +362,9 @@ test('both collapsed icons present (protection + 3D): measured non-overlap + slo
+     expect(prot.visible, 'protection "i" visible').toBe(true);
+     expect(threeD.visible, '3D "i" visible').toBe(true);
+     expect(overlaps(prot.rect, threeD.rect), 'the two collapsed "i" boxes do not overlap').toBe(false);
+-    expect(pitch, '3D icon sits 72px right of the protection icon (slot 2 vs slot 0)').toBeCloseTo(72, 0);
++    // Phase 78 repoint ΓÇö the reserved 72px slot pitch is retired; the "i" row
++    // now flows with a tight ~8px flex gap (icon width 28 + gap 8 = 36px pitch).
++    expect(pitch, `the "i" icons use the tight flex pitch (measured ${pitch}px)`).toBeCloseTo(36, 0);
+     expect(overlapBook, 'protection "i" does not overlap the Book View control').toBe(false);
+     expect(overlapBook3d, '3D "i" does not overlap the Book View control').toBe(false);
+     expect(overlapCombine, 'protection "i" does not overlap the Combine control').toBe(false);
+diff --git a/e2e/tfl46_protection_probe.spec.cjs b/e2e/tfl46_protection_probe.spec.cjs
+index 9416257..48ff3a5 100644
+--- a/e2e/tfl46_protection_probe.spec.cjs
++++ b/e2e/tfl46_protection_probe.spec.cjs
+@@ -1,12 +1,14 @@
+ // TFL-46.1 ΓÇö QA probe: where does the collapsed protection "i" actually sit,
+-// and does it cover a control? Opened by qa while reproducing the operator's
+-// "document-protection notice not working" report. Read-only probe: it drives
+-// the real app through the same openProtected() flow as
+-// e2e/phase59_protection_notice.spec.cjs and measures, after auto-collapse:
++// and does it cover a control? Read-only probe: it drives the real app through
++// the same openProtected() flow as e2e/phase59_protection_notice.spec.cjs and
++// measures, after auto-collapse:
+ //   (a) the collapsed icon bounding box;
+-//   (b) the .document-column box and the page scroller's left edge;
++//   (b) the canvas-bound overlay box and the page scroller's box;
+ //   (c) document.elementFromPoint at the icon centre and at the Combine centre;
+ //   (d) whether the icon rect overlaps the Combine control rect.
++// Phase 78 repoint: the icon is at the canvas TOP-RIGHT immediately left of
++// Book View now (it was the canvas top-left before this phase), so the probe
++// also asserts the top-right anchor and the tight gap to Book View.
+ // Launches only through the canonical launchApp helper.
+ const { test, expect } = require('@playwright/test');
+ const path = require('node:path');
+@@ -64,7 +66,7 @@ function overlaps(a, b) {
+   return a.x < b.right && a.right > b.x && a.y < b.bottom && a.bottom > b.y;
+ }
+ 
+-test('TFL-46.1 probe: collapsed "i" position relative to left panel, page scroller and Combine control', async () => {
++test('TFL-46.1 probe: collapsed "i" position relative to canvas overlay, page scroller and controls', async () => {
+   await openProtected();
+ 
+   // Auto-collapse into the "i".
+@@ -72,9 +74,11 @@ test('TFL-46.1 probe: collapsed "i" position relative to left panel, page scroll
+   await win.waitForTimeout(400);
+ 
+   const iconBox = boxOf(await win.locator('[data-protection-icon]').boundingBox());
+-  const columnBox = boxOf(await win.locator('.document-column').boundingBox());
++  const overlayBox = boxOf(await win.locator('[data-canvas-overlay]').boundingBox());
+   const scrollerBox = boxOf(await win.locator('.document-scroller').boundingBox());
+   const panelBox = boxOf(await win.locator('.context-panel').boundingBox().catch(() => null));
++  const bookBox = boxOf(await win.locator('[data-book-view-open]').boundingBox().catch(() => null));
++  const layoutBox = boxOf(await win.locator('[data-page-layout-control]').boundingBox().catch(() => null));
+ 
+   // The element that actually scrolls .pdf-page (walk up the DOM).
+   const scrollParent = await win.evaluate(() => {
+@@ -100,30 +104,45 @@ test('TFL-46.1 probe: collapsed "i" position relative to left panel, page scroll
+     out.iconCentre = describe(document.elementFromPoint(icon.cx, icon.cy));
+     out.iconTopLeft = describe(document.elementFromPoint(icon.x + 2, icon.y + 2));
+     if (combo) out.combineCentre = describe(document.elementFromPoint(combo.cx, combo.cy));
+-    // What is under the icon's rect corner where it would cover a panel control?
+     out.iconBelow = describe(document.elementFromPoint(icon.cx, icon.cy));
+     return out;
+   }, { icon: iconBox, combo: combineBox });
+ 
+   const overlap = combineBox !== null ? overlaps(iconBox, combineBox) : null;
++  const overlapBook = bookBox !== null ? overlaps(iconBox, bookBox) : null;
++  const overlapLayout = layoutBox !== null ? overlaps(iconBox, layoutBox) : null;
++  const gapIconBook = bookBox !== null ? bookBox.x - iconBox.right : null;
+ 
+   console.log(`[TFL46] icon=${JSON.stringify(iconBox)}`);
+-  console.log(`[TFL46] documentColumn=${JSON.stringify(columnBox)}`);
++  console.log(`[TFL46] canvasOverlay=${JSON.stringify(overlayBox)}`);
+   console.log(`[TFL46] pageScroller=${JSON.stringify(scrollerBox)} scrollParent=${JSON.stringify(scrollParent)}`);
+   console.log(`[TFL46] contextPanel=${JSON.stringify(panelBox)}`);
++  console.log(`[TFL46] bookView=${JSON.stringify(bookBox)} pageLayout=${JSON.stringify(layoutBox)}`);
+   console.log(`[TFL46] combineCount=${combineCount} combine=${JSON.stringify(combineBox)}`);
+   console.log(`[TFL46] hit=${JSON.stringify(hit)}`);
+-  console.log(`[TFL46] iconOverlapsCombine=${overlap}`);
++  console.log(`[TFL46] iconOverlapsCombine=${overlap} iconOverlapsBook=${overlapBook} iconOverlapsLayout=${overlapLayout} gapIconBook=${gapIconBook}`);
+ 
+   await win.screenshot({ path: path.join(SHOTS, 'tfl46-icon-vs-panel.png') });
+-  // Zoomed crop of the icon over the left panel for visual inspection.
++  // Zoomed crop of the icon at the canvas top-right for visual inspection.
+   await win.screenshot({
+     path: path.join(SHOTS, 'tfl46-icon-vs-panel-clip.png'),
+-    clip: { x: 40, y: 30, width: 320, height: 120 },
++    clip: {
++      x: Math.max(0, iconBox.x - 140),
++      y: Math.max(0, iconBox.y - 30),
++      width: 320,
++      height: 120,
++    },
+   });
+ 
+-  // Probe assertions are informational only for measurements; the real
+-  // deliverable is the logged evidence above + the screenshot.
++  // Phase 78 repoint ΓÇö the real deliverable stays the logged evidence above +
++  // the screenshots, but the top-right anchor is now asserted.
+   expect(iconBox, 'the collapsed "i" is present after auto-collapse').not.toBeNull();
+   expect(combineBox, 'the Combine control exists on the Pages stage').not.toBeNull();
++  expect(overlayBox, 'the canvas overlay exists').not.toBeNull();
++  expect(iconBox.x, 'the "i" is in the right half of the canvas').toBeGreaterThan(overlayBox.x + overlayBox.width / 2);
++  expect(iconBox.right, 'the "i" is inside the canvas right edge').toBeLessThanOrEqual(overlayBox.right + 0.5);
++  expect(overlapBook, 'the "i" does not overlap Book View').toBe(false);
++  expect(overlapLayout, 'the "i" does not overlap the page-layout control').toBe(false);
++  expect(gapIconBook, `the "i" is immediately left of Book View (gap ${gapIconBook}px)`).toBeGreaterThanOrEqual(0);
++  expect(gapIconBook, `the "i" is immediately left of Book View (gap ${gapIconBook}px)`).toBeLessThanOrEqual(16);
+ });

@@ -1,0 +1,27 @@
+
+> tflex@1.46.0 build:renderer
+> vite build
+
+[36mvite v8.2.2 [32mbuilding client environment for production...[36m[39m
+transforming...
+G£ô 2662 modules transformed.
+rendering chunks...
+computing gzip size...
+dist/renderer/index.html                                                1.75 kB Göé gzip:   0.91 kB
+dist/renderer/assets/inter-vietnamese-wght-normal-CBcvBZtf.woff2       10.25 kB
+dist/renderer/assets/inter-greek-ext-wght-normal-DlzME5K_.woff2        11.23 kB
+dist/renderer/assets/inter-cyrillic-wght-normal-DqGufNeO.woff2         18.74 kB
+dist/renderer/assets/inter-greek-wght-normal-CkhJZR-_.woff2            18.99 kB
+dist/renderer/assets/inter-cyrillic-ext-wght-normal-BOeWTOD4.woff2     25.96 kB
+dist/renderer/assets/inter-latin-wght-normal-Dx4kXJAl.woff2            48.25 kB
+dist/renderer/assets/inter-latin-ext-wght-normal-DO1Apj_S.woff2        85.06 kB
+dist/renderer/assets/pdf.worker.min-yatZIOMy.mjs                    1,375.83 kB
+dist/renderer/assets/index-B4IQBP4K.css                               273.95 kB Göé gzip:  41.07 kB
+dist/renderer/assets/index-Bea-7Uqx.js                              1,818.93 kB Göé gzip: 502.08 kB
+
+[32mG£ô built in 800ms[39m
+[33m[plugin builtin:vite-reporter] 
+(!) Some chunks are larger than 500 kB after minification. Consider:
+- Using dynamic import() to code-split the application
+- Use build.rolldownOptions.output.codeSplitting to improve chunking: https://rolldown.rs/reference/OutputOptions.codeSplitting
+- Adjust chunk size limit for this warning via build.chunkSizeWarningLimit.[39m

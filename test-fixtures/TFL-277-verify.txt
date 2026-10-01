@@ -1,0 +1,9 @@
+
+> tflex@1.46.0 verify
+> node scripts/check-conventions.mjs && npm run typecheck
+
+conventions: clean (319 source file(s) scanned)
+
+> tflex@1.46.0 typecheck
+> tsc --noEmit -p tsconfig.json
+

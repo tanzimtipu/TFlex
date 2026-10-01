@@ -43,8 +43,9 @@ export interface ProtectionNoticeProps {
  *  a motion duration, so it is a named constant rather than a motion token. */
 export const PROTECTION_NOTICE_AUTO_COLLAPSE_MS = 10000;
 
-/** Expanded -> closing (playing the exit) -> collapsed (the "i" icon). */
-type NoticePhase = 'expanded' | 'closing' | 'collapsed';
+/** The icon-first enter (`entering` -> `expanded`) -> closing (playing the
+ *  exit) -> collapsed (the "i" icon). */
+type NoticePhase = 'entering' | 'expanded' | 'closing' | 'collapsed';
 
 export function ProtectionNotice(props: ProtectionNoticeProps): ReactElement {
   const { protection } = props;
@@ -53,7 +54,13 @@ export function ProtectionNotice(props: ProtectionNoticeProps): ReactElement {
   const denied = rows.filter((r) => !r.allowed).map((r) => r.label);
 
   const instant = useInstantMotion();
-  const [phase, setPhase] = useState<NoticePhase>('expanded');
+  // Phase 78 (DEF-465) — the animated enter shows the collapsed "i" for the
+  // first frame, then commits to `expanded`, whose `protection-notice-in`
+  // scale grows from the icon's top-right origin. The instant path skips the
+  // icon leg and opens straight on the box (reduced motion / Animations OFF).
+  const [phase, setPhase] = useState<NoticePhase>(() =>
+    instant ? 'expanded' : 'entering',
+  );
 
   const collapse = useCallback((): void => {
     if (instant) {
@@ -68,6 +75,24 @@ export function ProtectionNotice(props: ProtectionNoticeProps): ReactElement {
   const expand = useCallback((): void => {
     setPhase('expanded');
   }, []);
+
+  // Phase 78 (DEF-465) — commit the icon-first enter after the collapsed "i"
+  // has PAINTED. A passive effect can run in the same tick as the `entering`
+  // commit, so the box would mount before the icon ever painted; deferring by
+  // a DOUBLE rAF guarantees the icon frame first, then the morph. A paint
+  // hand-off, not a motion band, so it carries no duration; the instant path
+  // never enters this phase.
+  useEffect(() => {
+    if (phase !== 'entering') return undefined;
+    let second = 0;
+    const first = window.requestAnimationFrame(() => {
+      second = window.requestAnimationFrame(() => setPhase('expanded'));
+    });
+    return (): void => {
+      window.cancelAnimationFrame(first);
+      window.cancelAnimationFrame(second);
+    };
+  }, [phase]);
 
   // Collapse ~10 s after the banner appears OR re-expands. Depending on
   // `phase` means every cleanup resets the dwell: expanding schedules a fresh
@@ -89,9 +114,11 @@ export function ProtectionNotice(props: ProtectionNoticeProps): ReactElement {
   return (
     <div
       className="protection-notice-region"
-      data-protection-notice-state={phase === 'collapsed' ? 'collapsed' : 'expanded'}
+      data-protection-notice-state={
+        phase === 'expanded' || phase === 'closing' ? 'expanded' : 'collapsed'
+      }
     >
-      {phase !== 'collapsed' && (
+      {(phase === 'expanded' || phase === 'closing') && (
         <div
           className={
             phase === 'closing'
@@ -136,7 +163,7 @@ export function ProtectionNotice(props: ProtectionNoticeProps): ReactElement {
           </button>
         </div>
       )}
-      {phase === 'collapsed' && (
+      {(phase === 'collapsed' || phase === 'entering') && (
         <button
           type="button"
           className="protection-notice-collapsed-toggle"

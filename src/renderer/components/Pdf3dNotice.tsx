@@ -39,9 +39,11 @@ export function Pdf3dNotice(props: Pdf3dNoticeProps): ReactElement | null {
   const { phase, collapse, expand } = useNoticeCollapse();
   if (entries.length === 0) return null;
 
-  if (phase === 'collapsed') {
+  // Phase 78 (DEF-465) — `entering` is the icon-first frame: it renders the
+  // collapsed "i" exactly like `collapsed`, then the hook commits `expanded`.
+  if (phase === 'collapsed' || phase === 'entering') {
     return (
-      <div className="pdf3d-notice-region" data-pdf3d-notice-state="collapsed">
+      <div className="pdf3d-notice-region" data-pdf3d-notice-state={phase}>
         <button
           type="button"
           className="pdf3d-notice-collapsed-toggle"

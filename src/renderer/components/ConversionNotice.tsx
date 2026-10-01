@@ -38,11 +38,13 @@ export function ConversionNotice(props: ConversionNoticeProps): ReactElement {
   const { warnings } = notice;
   const { phase, collapse, expand } = useNoticeCollapse();
 
-  if (phase === 'collapsed') {
+  // Phase 78 (DEF-465) — `entering` is the icon-first frame: it renders the
+  // collapsed "i" exactly like `collapsed`, then the hook commits `expanded`.
+  if (phase === 'collapsed' || phase === 'entering') {
     return (
       <div
         className="conversion-notice-region"
-        data-conversion-notice-state="collapsed"
+        data-conversion-notice-state={phase}
       >
         <button
           type="button"

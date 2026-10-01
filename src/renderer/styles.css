@@ -15906,6 +15906,13 @@ cursor: pointer;
   inset: 0;
   right: var(--tf-tools-inset, 0px);
   pointer-events: none;
+  /* DEF-466 — a SIZE query container (the layer is `inset:0`, so its box is
+   * definite). The expanded notice boxes cap their height against `100cqh`
+   * (the real CANVAS height, not the window) so a long message can never paint
+   * past the canvas bottom. Size containment only affects how the layer is
+   * sized from its contents, and the layer is absolutely sized already, so the
+   * geometry of its children is unchanged. */
+  container-type: size;
 }
 
 .canvas-pill {
@@ -15988,7 +15995,7 @@ cursor: pointer;
  * pane's pills at that pane's outer edge (a later block) and must not inherit
  * this container. */
 .tab-stage[data-multi-mode='false'] .canvas-overlay {
-  container-type: inline-size;
+  container-type: size;
   container-name: canvas-pills;
 }
 
@@ -18960,6 +18967,18 @@ cursor: pointer;
   backdrop-filter: var(--glass-blur);
   pointer-events: auto;
   transform-origin: top right;
+  /* DEF-466 — bound the expanded box to the CANVAS (`.canvas-overlay` is the
+   * `100cqh` size container), not the window, so a long message can never paint
+   * past the canvas bottom. The reserve covers the cluster's top offset (12px),
+   * the first control row (Book View / page layout), the two 8px cluster gaps
+   * and the box stacked above (the expanded protection notice, ~109px at the
+   * capped 440px width) with margin to spare for a narrower wrap. The body then
+   * scrolls INSIDE the box, so every line stays reachable. `align-items:
+   * flex-start` is required: with the old `center` alignment a body taller than
+   * the bounded box overflows both edges and the top lines become unscrollable. */
+  align-items: flex-start;
+  max-height: calc(100cqh - var(--tf-chrome-y, 0px) - 200px);
+  overflow: auto;
 }
 
 /* Enter morph — the Phase 59/67 `*-notice-in` keyframes are redefined below to
