@@ -375,7 +375,7 @@ describe('Phase 59 item 10 — planTabOverflow', () => {
   });
 
   it('exposes natural/floor metrics for both tab styles', () => {
-    expect(TAB_OVERFLOW_METRICS.colorful).toEqual({ natural: 200, floor: 132 });
+    expect(TAB_OVERFLOW_METRICS.colorful).toEqual({ natural: 180, floor: 132 });
     expect(TAB_OVERFLOW_METRICS.standard.floor).toBeLessThan(TAB_OVERFLOW_METRICS.colorful.floor);
   });
 });

@@ -4890,3 +4890,17 @@ level - not something a commit can cause or fix. It also means the CI signal for
 release's failure mail as a code problem. Diagnose with `gh run list` + `gh run view <id>` (a
 zero-step job with `runner_name: ""` is the tell); the decisive annotation needs `checks:read`,
 which fine-grained PATs cannot hold, so a human must look at the run page.
+
+**A contract test left unchanged after a later phase deliberately changes the implementation is
+test-vs-code DRIFT, not a regression - and only the operator's full suite catches it.** Found
+2026-10-01 (TFL-155): `verify:full` was red on master with exactly 2 failures, both stale oracles.
+(1) `phase59PaletteAndTabOverflow.test.tsx:378` still asserted colorful `natural:200` after Phase 68
+(ab62660) made colorful tabs a uniform 180px (`.tab-area[data-tab-style="colorful"] .tab { width:
+var(--tf-tab-width, 180px) }`, pinned by `phase68TabRestyle.test.tsx:96-99`). (2)
+`designTokensContract.test.ts:1138`'s allowlist rejected `.action-dock-edit` (`color:
+var(--tf-stage-edit)`), added by Phase 63 (0e4a554) but never added to the Phase 40 allowlist. Rule:
+when a chunk changes an exported metric, a CSS width/token, or adds a selector that uses
+`--sem-*`/`--tf-stage-*`, update every contract test that pins the old value in the SAME chunk - a
+targeted spec for the new behaviour passing does not prove the old contract spec was updated. If
+`verify:full` is red only in committed contract tests, fix the oracle (wrong-oracle escape), not the
+implementation.

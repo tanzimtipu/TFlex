@@ -141,8 +141,8 @@ export function planTabOverflow(args: {
 }
 
 /** Per-style natural width (the tab at rest) and shrink floor. The colorful
- *  set declares `min-width: 132px; max-width: 200px`; the standard set sizes
- *  to content, so its natural is the softer ceiling and its floor is smaller. */
+ *  set is a single uniform 180px width with a 132px shrink floor; the standard
+ *  set sizes to content, so its natural is the softer ceiling and its floor is smaller. */
 export const TAB_OVERFLOW_METRICS: Readonly<Record<TabStyle, { natural: number; floor: number }>> = {
   colorful: { natural: 180, floor: 132 },
   standard: { natural: 168, floor: 96 },
