@@ -90,6 +90,29 @@ const SPREAD_CREASE_PX = 24;
  *  runs, this timer prevents a stale class from hanging forever. */
 const TURN_FALLBACK_MS = 400;
 
+/** Phase 77 (chunk B) — the fallback that clears the one-shot Book View
+ *  ENTRY marker. Mirrors `TURN_FALLBACK_MS`: in a browser `animationend`
+ *  clears it first; in jsdom, where no animation runs, this timer prevents a
+ *  stale marker from hanging forever. */
+const ENTER_FALLBACK_MS = 400;
+
+/** Phase 77 (chunk B) — the fallback that clears the one-shot single/double
+ *  RELAYOUT marker. Same timer-vs-event contract as `TURN_FALLBACK_MS`. */
+const RELAYOUT_FALLBACK_MS = 400;
+
+/** Phase 77 (chunk A) — the in-flight page-turn leaf. It snapshots the
+ *  outgoing/incoming page pair at the moment the turn starts, so the leaf's
+ *  front face always animates the OUTGOING page even though `pageIndex`
+ *  advances immediately (the spread underneath is already the destination). */
+interface BookTurn {
+  dir: 'next' | 'prev';
+  key: number;
+  /** 1-based page number carried by the front (outgoing) face. */
+  front: number;
+  /** 1-based page number carried by the back (incoming) face. */
+  back: number;
+}
+
 // DEF-395 — module-scope no-op callbacks and empty arrays keep every prop
 // handed to `PageView` identity-stable, so its render effect (which depends on
 // `onPageSize`) cannot re-run itself into the render -> effect -> setState
@@ -240,36 +263,54 @@ export function BookView(props: BookViewProps): ReactElement {
   const maxIndex = Math.max(total - step, 0);
   const current = total === 0 ? 0 : Math.min(Math.max(pageIndex, 0), maxIndex);
 
-  // The transient page-turn. `dir` picks the keyframe; `key` restarts it on a
-  // rapid repeat. Cleared on `animationend` and by a fallback timer (jsdom
-  // never fires animation events, so the timer guarantees the class clears).
-  const [turn, setTurn] = useState<{ dir: 'next' | 'prev'; key: number } | null>(null);
+  // The transient page-turn leaf. `dir` picks the keyframe (and the spine
+  // origin); `key` restarts it on a rapid repeat. `front`/`back` snapshot the
+  // outgoing/incoming pair so the animated front face is the OUTGOING page even
+  // though `pageIndex` advances in the same commit. Cleared on `animationend`
+  // and by a fallback timer (jsdom never fires animation events, so the timer
+  // guarantees the leaf unmounts).
+  const [turn, setTurn] = useState<BookTurn | null>(null);
   const turnKeyRef = useRef(0);
+  // Phase 77 (chunk B) — the one-shot Book View entrance, live from mount until
+  // its `animationend` or the fallback timer. Seeded `true` so the first paint
+  // already carries `[data-book-enter="true"]`.
+  const [entering, setEntering] = useState(true);
+  // Phase 77 (chunk B) — the one-shot single<->double relayout, started by
+  // `chooseLayout` and cleared on the stage's `animationend` / fallback timer.
+  const [relayout, setRelayout] = useState(false);
   // DEF-446 — a placement gesture commits one-shot and flips the tool back to
   // `select` before the browser synthesizes its `click`. That re-render makes
   // the annotation layer `pointer-events: none`, so the click retargets to the
   // page and would turn it. We remember the pointerdown's layer membership in
   // the capture phase (before the click) and consume it in the click handler.
   const annLayerPressRef = useRef(false);
-  const beginTurn = useCallback((dir: 'next' | 'prev'): void => {
-    turnKeyRef.current += 1;
-    setTurn({ dir, key: turnKeyRef.current });
-  }, []);
+  const beginTurn = useCallback(
+    (dir: 'next' | 'prev', front: number, back: number): void => {
+      turnKeyRef.current += 1;
+      setTurn({ dir, key: turnKeyRef.current, front, back });
+    },
+    [],
+  );
   const endTurn = useCallback((): void => {
     setTurn(null);
   }, []);
 
   const stepForward = useCallback((): void => {
+    beginTurn(
+      'next',
+      layout === 'double' ? current + 2 : current + 1,
+      layout === 'double' ? current + 3 : current + 2,
+    );
     setPageIndex((i) => Math.min(Math.max(total - step, 0), i + step));
-    beginTurn('next');
-  }, [total, step, beginTurn]);
+  }, [total, step, layout, current, beginTurn]);
   const stepBack = useCallback((): void => {
+    beginTurn('prev', current + 1, current);
     setPageIndex((i) => Math.max(0, i - step));
-    beginTurn('prev');
-  }, [step, beginTurn]);
+  }, [step, current, beginTurn]);
   const chooseLayout = useCallback((next: ReadingDefaults['comics']['layout']): void => {
     setLayout(next);
     setTurn(null);
+    setRelayout(true);
   }, []);
 
   useEffect(() => {
@@ -277,6 +318,22 @@ export function BookView(props: BookViewProps): ReactElement {
     const timer = window.setTimeout(endTurn, TURN_FALLBACK_MS);
     return (): void => window.clearTimeout(timer);
   }, [turn, endTurn]);
+
+  // Phase 77 (chunk B) — the entry marker is transient: the root's own
+  // `animationend` clears it first, this timer guarantees it in jsdom (which
+  // never fires animation events).
+  useEffect(() => {
+    const timer = window.setTimeout((): void => setEntering(false), ENTER_FALLBACK_MS);
+    return (): void => window.clearTimeout(timer);
+  }, []);
+
+  // Phase 77 (chunk B) — clear the relayout marker the same way; only armed
+  // while a relayout is actually in flight.
+  useEffect(() => {
+    if (!relayout) return;
+    const timer = window.setTimeout((): void => setRelayout(false), RELAYOUT_FALLBACK_MS);
+    return (): void => window.clearTimeout(timer);
+  }, [relayout]);
 
   const noPrev = total === 0 || current <= 0;
   const noNext = total === 0 || current >= maxIndex;
@@ -317,21 +374,74 @@ export function BookView(props: BookViewProps): ReactElement {
   const pageWidth =
     layout === 'double' ? Math.max((stage.width - SPREAD_CREASE_PX) / 2, 0) : stage.width;
 
-  // The turning figure carries the one-shot flip class: in a double spread the
-  // right page turns on next and the left page on back (a real book leaf);
-  // single mode turns its one page. Descendant `animationend` events (from
-  // PageView internals) are filtered out by the target check below.
-  const figureClass = (side: 'single' | 'left' | 'right'): string => {
-    if (turn === null) return 'book-view-page';
-    const turningSide: 'single' | 'left' | 'right' =
-      layout === 'double' ? (turn.dir === 'next' ? 'right' : 'left') : 'single';
-    if (side !== turningSide) return 'book-view-page';
-    return `book-view-page ${
-      turn.dir === 'next' ? 'book-view-turn-next' : 'book-view-turn-prev'
-    }`;
-  };
+  // The leaf's own `animationend` clears it. Descendant events (from PageView
+  // internals) are filtered out by the target check.
   const onTurnEnd = (event: { target: EventTarget | null; currentTarget: EventTarget | null }): void => {
     if (event.target === event.currentTarget) endTurn();
+  };
+
+  // Phase 77 (chunk B) — self-target guards identical to `onTurnEnd`: only the
+  // element that owns the animation clears its marker, never a bubbling
+  // descendant (the turn leaf, PageView internals).
+  const onEnterEnd = (event: { target: EventTarget | null; currentTarget: EventTarget | null }): void => {
+    if (event.target === event.currentTarget) setEntering(false);
+  };
+  const onRelayoutEnd = (event: { target: EventTarget | null; currentTarget: EventTarget | null }): void => {
+    if (event.target === event.currentTarget) setRelayout(false);
+  };
+
+  // Phase 77 (chunk A) — the turning leaf is its own overlay, NOT one of the
+  // static `[data-book-page]` figures (which always show the destination
+  // spread). ONE leaf hinged at the spine carries two faces: the front is the
+  // OUTGOING page, the back the INCOMING page. `backface-visibility: hidden` on
+  // each face plus the back face's pre-rotation show the incoming page on the
+  // reverse of the swing, never a mirrored outgoing page.
+  const renderTurnLeaf = (): ReactElement | null => {
+    if (turn === null || total === 0) return null;
+    const leafSide =
+      layout === 'double' ? (turn.dir === 'next' ? 'right' : 'left') : 'single';
+    // DEF-467 - the leaf is decorative motion. Its faces get the NEUTRAL tool
+    // state, so `AnnotationOverlay` computes `interactive = false`: a stroke
+    // begun mid-turn can never commit to the outgoing page and the leaf is
+    // never a hit-test target. The static spread underneath keeps the armed
+    // tool; only this transient duplicate is inert.
+    const face = (index: number): ReactElement => (
+      <BookPage
+        doc={doc}
+        index={index}
+        stageWidth={pageWidth}
+        stageHeight={stage.height}
+        annotations={annotationsByPage.get(index + 1) ?? EMPTY_ANNOTATIONS}
+        annotationTool={initialAnnotationToolState}
+        liveAnnTextIds={liveAnnTextIds}
+        onCreateAnnotation={onCreateAnnotation}
+        onFinishedOneShot={onFinishedOneShot}
+        onEditAnnotation={onEditAnnotation}
+        onDeleteAnnotation={onDeleteAnnotation}
+      />
+    );
+    return (
+      <div
+        key={turn.key}
+        className={`book-view-turn book-view-turn-${leafSide} book-view-turn-${turn.dir}`}
+        data-book-turn
+        data-book-turn-dir={turn.dir}
+        onAnimationEnd={onTurnEnd}
+      >
+        <div
+          className="book-view-turn-face book-view-turn-face-front"
+          data-book-turn-front={turn.front}
+        >
+          {face(turn.front - 1)}
+        </div>
+        <div
+          className="book-view-turn-face book-view-turn-face-back"
+          data-book-turn-back={turn.back}
+        >
+          {face(turn.back - 1)}
+        </div>
+      </div>
+    );
   };
 
   return (
@@ -341,6 +451,8 @@ export function BookView(props: BookViewProps): ReactElement {
       aria-label="Book view"
       data-book-view
       data-book-title={title}
+      data-book-enter={entering ? 'true' : undefined}
+      onAnimationEnd={onEnterEnd}
     >
       <header className="book-view-header">
         <span className="book-view-title" data-book-title-label>
@@ -348,7 +460,13 @@ export function BookView(props: BookViewProps): ReactElement {
           {title}
         </span>
         <div className="book-view-progress" data-book-progress>
-          {total === 0 ? 'No pages' : `Page ${current + 1} of ${total}`}
+          {total === 0
+            ? 'No pages'
+            : layout === 'double'
+              ? Math.min(current + 2, total) === current + 1
+                ? `Page ${current + 1} of ${total}`
+                : `Page ${current + 1}-${Math.min(current + 2, total)} of ${total}`
+              : `Page ${current + 1} of ${total}`}
         </div>
         <div
           className="book-view-layout-toggle"
@@ -418,6 +536,9 @@ export function BookView(props: BookViewProps): ReactElement {
         className="book-view-stage"
         data-book-stage
         data-book-layout={layout}
+        data-book-turning={turn === null ? undefined : 'true'}
+        data-book-relayout={relayout ? 'true' : undefined}
+        onAnimationEnd={onRelayoutEnd}
       >
         {total === 0 ? (
           <figure className="book-view-page" data-book-page-side="single">
@@ -428,7 +549,7 @@ export function BookView(props: BookViewProps): ReactElement {
         ) : layout === 'double' ? (
           <div className="book-view-spread" data-book-spread>
             <figure
-              className={figureClass('left')}
+              className="book-view-page"
               data-book-page={current + 1}
               data-book-page-side="left"
               onPointerDownCapture={(e): void => {
@@ -464,7 +585,7 @@ export function BookView(props: BookViewProps): ReactElement {
             <span data-book-crease className="book-view-crease" aria-hidden />
             {current + 1 < total && (
               <figure
-                className={figureClass('right')}
+                className="book-view-page"
                 data-book-page={current + 2}
                 data-book-page-side="right"
                 onPointerDownCapture={(e): void => {
@@ -498,42 +619,46 @@ export function BookView(props: BookViewProps): ReactElement {
                 />
               </figure>
             )}
+            {renderTurnLeaf()}
           </div>
         ) : (
-          <figure
-            className={figureClass('single')}
-            data-book-page={current + 1}
-            data-book-page-side="single"
-            onPointerDownCapture={(e): void => {
-              annLayerPressRef.current =
-                isAnnotationUi(e.target as Element | null);
-            }}
-            onClick={(e): void => {
-              if (
-                annLayerPressRef.current ||
-                isAnnotationUi(e.target as Element | null)
-              ) {
-                annLayerPressRef.current = false;
-                return;
-              }
-              if (!noNext) stepForward();
-            }}
-            onAnimationEnd={onTurnEnd}
-          >
-            <BookPage
-              doc={doc}
-              index={current}
-              stageWidth={stage.width}
-              stageHeight={stage.height}
-              annotations={annotationsByPage.get(current + 1) ?? EMPTY_ANNOTATIONS}
-              annotationTool={annTool}
-              liveAnnTextIds={liveAnnTextIds}
-              onCreateAnnotation={onCreateAnnotation}
-              onFinishedOneShot={onFinishedOneShot}
-              onEditAnnotation={onEditAnnotation}
-              onDeleteAnnotation={onDeleteAnnotation}
-            />
-          </figure>
+          <>
+            <figure
+              className="book-view-page"
+              data-book-page={current + 1}
+              data-book-page-side="single"
+              onPointerDownCapture={(e): void => {
+                annLayerPressRef.current =
+                  isAnnotationUi(e.target as Element | null);
+              }}
+              onClick={(e): void => {
+                if (
+                  annLayerPressRef.current ||
+                  isAnnotationUi(e.target as Element | null)
+                ) {
+                  annLayerPressRef.current = false;
+                  return;
+                }
+                if (!noNext) stepForward();
+              }}
+              onAnimationEnd={onTurnEnd}
+            >
+              <BookPage
+                doc={doc}
+                index={current}
+                stageWidth={stage.width}
+                stageHeight={stage.height}
+                annotations={annotationsByPage.get(current + 1) ?? EMPTY_ANNOTATIONS}
+                annotationTool={annTool}
+                liveAnnTextIds={liveAnnTextIds}
+                onCreateAnnotation={onCreateAnnotation}
+                onFinishedOneShot={onFinishedOneShot}
+                onEditAnnotation={onEditAnnotation}
+                onDeleteAnnotation={onDeleteAnnotation}
+              />
+            </figure>
+            {renderTurnLeaf()}
+          </>
         )}
       </div>
 

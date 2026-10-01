@@ -9,7 +9,7 @@
 // component applies; the keyframe/token wiring lives in styles.css.
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
 import type { PDFDocumentProxy } from "pdfjs-dist";
@@ -232,19 +232,154 @@ describe("BookView page turn — flip and step (Phase 66 chunk 2)", () => {
       view.cleanup();
     }
   });
+});
 
-  it("advances a single page by one and marks the turning figure", async () => {
+// Phase 77 (chunk A) - the turning unit is ONE spine-hinged leaf with two
+// faces: front = OUTGOING page, back = INCOMING page. jsdom has no CSS engine,
+// so the leaf is asserted through the DOM contract the component renders while
+// a turn is in flight.
+describe("BookView page turn — spine-hinged leaf (Phase 77 chunk A)", () => {
+  it("snapshots the outgoing/incoming pair on a next turn and advances the spread", async () => {
+    const view = await mountBook(6, "double");
+    try {
+      expect(pageNumbers(view.host)).toEqual(["1", "2"]);
+      act((): void => {
+        view.host
+          .querySelector<HTMLElement>('[data-book-page-side="right"]')
+          ?.click();
+      });
+      const leaf = view.host.querySelector(
+        '[data-book-turn][data-book-turn-dir="next"]',
+      );
+      expect(leaf).not.toBeNull();
+      expect(leaf?.querySelector('[data-book-turn-front="2"]')).not.toBeNull();
+      expect(leaf?.querySelector('[data-book-turn-back="3"]')).not.toBeNull();
+      expect(pageNumbers(view.host)).toEqual(["3", "4"]);
+    } finally {
+      view.cleanup();
+    }
+  });
+
+  it("renders a prev leaf with the outgoing front 3 and incoming back 2", async () => {
+    const view = await mountBook(6, "double");
+    try {
+      act((): void => {
+        view.host
+          .querySelector<HTMLElement>('[data-book-page-side="right"]')
+          ?.click();
+      });
+      expect(pageNumbers(view.host)).toEqual(["3", "4"]);
+      act((): void => {
+        view.host
+          .querySelector<HTMLElement>('[data-book-page-side="left"]')
+          ?.click();
+      });
+      const leaf = view.host.querySelector(
+        '[data-book-turn][data-book-turn-dir="prev"]',
+      );
+      expect(leaf).not.toBeNull();
+      expect(leaf?.querySelector('[data-book-turn-front="3"]')).not.toBeNull();
+      expect(leaf?.querySelector('[data-book-turn-back="2"]')).not.toBeNull();
+      expect(pageNumbers(view.host)).toEqual(["1", "2"]);
+    } finally {
+      view.cleanup();
+    }
+  });
+
+  it("unmounts the turning leaf once the fallback clears", async () => {
+    vi.useFakeTimers();
+    const view = await mountBook(6, "double");
+    try {
+      act((): void => {
+        view.host
+          .querySelector<HTMLElement>('[data-book-page-side="right"]')
+          ?.click();
+      });
+      expect(view.host.querySelector("[data-book-turn]")).not.toBeNull();
+      act((): void => {
+        vi.advanceTimersByTime(450);
+      });
+      expect(view.host.querySelector("[data-book-turn]")).toBeNull();
+    } finally {
+      view.cleanup();
+      vi.useRealTimers();
+    }
+  });
+
+  it("renders a next leaf in single mode and advances the page", async () => {
     const view = await mountBook(6, "single");
     try {
       expect(pageNumbers(view.host)).toEqual(["1"]);
       act((): void => {
         view.host.querySelector<HTMLElement>("[data-book-page]")?.click();
       });
+      const leaf = view.host.querySelector(
+        '[data-book-turn][data-book-turn-dir="next"]',
+      );
+      expect(leaf).not.toBeNull();
+      expect(leaf?.querySelector('[data-book-turn-front="1"]')).not.toBeNull();
+      expect(leaf?.querySelector('[data-book-turn-back="2"]')).not.toBeNull();
       expect(pageNumbers(view.host)).toEqual(["2"]);
-      const figure = view.host.querySelector("[data-book-page]");
-      expect(figure?.classList.contains("book-view-turn-next")).toBe(true);
     } finally {
       view.cleanup();
+    }
+  });
+});
+
+// Phase 77 (chunk B) — the spread-aware indicator and the one-shot
+// single<->double relayout. jsdom has no CSS engine, so the relayout is
+// asserted through the transient marker the component renders; the keyframe
+// and token wiring lives in styles.css.
+describe("BookView indicator + relayout (Phase 77 chunk B)", () => {
+  it("labels a double spread with its page range and follows the turn", async () => {
+    const view = await mountBook(6, "double");
+    try {
+      expect(view.host.querySelector("[data-book-progress]")?.textContent).toBe(
+        "Page 1-2 of 6",
+      );
+      act((): void => {
+        view.host
+          .querySelector<HTMLElement>('[data-book-page-side="right"]')
+          ?.click();
+      });
+      expect(view.host.querySelector("[data-book-progress]")?.textContent).toBe(
+        "Page 3-4 of 6",
+      );
+    } finally {
+      view.cleanup();
+    }
+  });
+
+  it("collapses the redundant one-page range label in double mode (DEF-468)", async () => {
+    const view = await mountBook(1, "double");
+    try {
+      expect(view.host.querySelector("[data-book-progress]")?.textContent).toBe(
+        "Page 1 of 1",
+      );
+    } finally {
+      view.cleanup();
+    }
+  });
+
+  it("starts a one-shot relayout marker on the layout toggle and clears it", async () => {
+    vi.useFakeTimers();
+    const view = await mountBook(6, "single");
+    try {
+      act((): void => {
+        view.host
+          .querySelector<HTMLButtonElement>("[data-book-double]")
+          ?.click();
+      });
+      expect(
+        view.host.querySelector('[data-book-stage][data-book-relayout="true"]'),
+      ).not.toBeNull();
+      act((): void => {
+        vi.advanceTimersByTime(450);
+      });
+      expect(view.host.querySelector('[data-book-relayout="true"]')).toBeNull();
+    } finally {
+      view.cleanup();
+      vi.useRealTimers();
     }
   });
 });

@@ -18717,6 +18717,19 @@ cursor: pointer;
   pointer-events: none;
 }
 
+/* DEF-467 - the leaf is decorative motion and MUST never be a hit target, not
+ * even through a page descendant that opts itself back in with an explicit
+ * `pointer-events: auto` (`.textLayer` at styles.css:4882, or
+ * `.annotation-layer-active .annotation-svg`). Making the whole subtree inert
+ * with `!important` is the only rule that beats those regardless of
+ * specificity, so `elementFromPoint` over the outgoing page falls through to
+ * the static `[data-book-page]` figures underneath. The static figures are NOT
+ * inside `.book-view-turn`, so their text selection is untouched. */
+.book-view-turn,
+.book-view-turn * {
+  pointer-events: none !important;
+}
+
 .book-view-turn.book-view-turn-right {
   left: 50%;
   width: 50%;

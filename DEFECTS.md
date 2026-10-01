@@ -10010,3 +10010,53 @@ History:
 - backend-dev (TFL-174): fix reported done and reviewed by the CTO (I re-parsed both files). Regenerated both `.ico` from the kit 1024 masters via Electron `nativeImage` (resize best-quality) and a hand-assembled ICO container (PNG-embedded frames): `jovrel.ico` 6928 B/4 frames -> 61823 B/7 frames `[16,24,32,48,64,128,256]`; `jovrel-pdf.ico` 5303 B/4 -> 31529 B/7. `npm run dist` succeeded (electron 44.0.0 / builder 26.15.3) emitting `release/Jovrel-Setup-1.46.0-x64.exe` (180370066 B) + `release/Jovrel-1.46.0-portable-x64.exe` (180025726 B) + `latest.yml`; `phase49Branding.test.ts` 9/9. Artwork unchanged.
 - CTO (TFL-64): set FIX-READY. Dispatched qa **TFL-176** (task type: FIX-READY defect verification) to re-parse both ICO frame directories, confirm the 1.46.0 artifacts post-date the icon fix, re-run `phase49Branding.test.ts`, then CLOSED or re-OPEN with evidence.
 - qa (TFL-176): CLOSED. Re-parsed both ICO directories on the current tree: `jovrel.ico` 61823 B / count=7 / frames=[16,24,32,48,64,128,256]; `jovrel-pdf.ico` 31529 B / count=7 / frames=[16,24,32,48,64,128,256]. Packaging: `release/Jovrel-Setup-1.46.0-x64.exe` 180370066 B mtime 2026-10-01 18:43:15 and `release/Jovrel-1.46.0-portable-x64.exe` 180025726 B mtime 2026-10-01 18:43:21 both post-date the icons (18:41:10). Blast radius: `npm run verify` conventions clean / typecheck 0 errors (exit 0); `vitest run phase49Branding.test.ts phase49Brand.test.tsx` 2 files passed, 26 tests passed, 0 failures. Artwork unchanged. Verified by running, not by reading the fix report.
+
+## DEF-467: Book View turn leaf is a live annotation hit surface - an armed-tool stroke begun during a turn commits to the OUTGOING page (and the destination layer is duplicated)
+
+- Status: CLOSED
+- Severity: MEDIUM (escalation to HIGH defensible - the wrong page is persisted on save)
+- Found by: adversary (TFL-271, Phase 77 adversarial diff-pass; ACCEPTED from ADV-146 / ADV-147)
+- Phase: 77 (Book View correction; success criteria 4 and 6 - the turning leaf must be decorative and bounded)
+
+Steps to reproduce:
+1. Launch TFlex via `e2e/lib/launch.cjs`, open a 16-page PDF, enter Book View (`[aria-label="Book View"]`), switch to double.
+2. Arm `ink` in the Book View toolbar (`[data-book-tools]`).
+3. Click Next (`[data-book-next]`) and pause the turn leaf early (`document.querySelector('[data-book-turn]').getAnimations()[0].pause(); ...currentTime = 55`).
+4. `document.elementFromPoint(<page centre>)`, then a short real mouse drag there; let the turn settle.
+
+Expected: the transient turning leaf is decorative - it must never accept pointer/animation input; a stroke started after a turn begins marks the visible destination page or is ignored, and only one interactive annotation layer per page exists at a time.
+
+Actual: `elementFromPoint` resolves to the leaf's `[data-annotation-layer]` for the OUTGOING page (`pointer-events: auto`), and the drag commits ink to the outgoing page (double: label `Page 3-4 of 16`, static `[3,4]`, ink on page 2; single: `Page 2 of 16`, static `[2]`, ink on page 1). The mark is invisible after the flip and would be saved to the wrong page with no warning. `[data-annotation-layer="3"]` also exists twice mid-turn.
+
+Root cause: `renderTurnLeaf` passes the armed `annotationTool` to the leaf faces (`BookView.tsx:399-437`, tool at `:410`); `.book-view-turn { pointer-events: none }` (`styles.css:18717-18725`) is overridden for descendants by `.annotation-layer-active { pointer-events: auto }` (`styles.css:5862`), set by `AnnotationOverlay` when a tool is armed or an annotation is selected.
+
+Impact: MEDIUM - a silent wrong-page annotation write that persists on save; narrow ~350ms window and an armed tool required. The duplicate non-interactive layer is a hit-test/oracle hazard.
+
+History:
+- adversary (TFL-271): filed ADV-146 (MEDIUM) and ADV-147 (LOW).
+- CTO (TFL-238): ACCEPTED -> DEF-467; dispatched frontend-dev **TFL-273** (priority high) to make the turn leaf non-interactive (pass `initialAnnotationToolState` to the leaf faces at `BookView.tsx:410`; scoped `.book-view-turn .annotation-layer { pointer-events: none }`) with a unit assertion that no `.annotation-layer-active` exists inside `[data-book-turn]`. Awaiting fix; then FIX-READY -> qa FIX-READY verification -> CLOSED.
+- qa (TFL-275, 2026-10-01): FIX-READY verification **FAILED criterion (b)** - remains OPEN. Commands: `npm run test:e2e -- phase77_bookview_correction phase66_bookview_spread phase66_bookview_annotations phase66_bookview_colorpopover phase77_fix_def467` = 20 passed / 2 failed (only the two DEF-467 attack tests); `npm run test:unit -- bookView bookViewSpread bookViewAnnotations` = 3 files / 27 tests, 0 failed; `npm run verify` exit 0. Criterion (a) PASS: no `.annotation-layer-active` inside `[data-book-turn]`. Criterion (c) PASS: the mid-turn drag committed no annotation to the outgoing page (double: before=[] after=[], beforeOut=afterOut=0; single likewise). Criterion (b) FAIL: the mid-turn `elementFromPoint` at the outgoing page centre (double x=0.75*stage width, single x=0.5*stage width) resolves to the leaf's `.textLayer` (`pointer-events: auto`, `styles.css:4882` overrides the leaf's inherited `none`) which is INSIDE `[data-book-turn]` - the decorative leaf is still a live (text-selectable) hit surface. Probe points: double {(0.5,0.5) textLayer inTurn, (0.65,0.3) textLayer inTurn, (0.75,0.5) textLayer inTurn, (0.85,0.7) svg inTurn=false, (0.6,0.7) textLayer inTurn}; single {(0.5,0.5) textLayer inTurn, (0.65,0.3) svg false, (0.75,0.5) stage false, (0.85,0.7) stage false, (0.6,0.7) textLayer inTurn}. Residual routed to frontend-dev: make the leaf's `.textLayer` (and other page hit surfaces) inert inside `.book-view-turn`. Spec: `e2e/phase77_fix_def467.spec.cjs`; evidence log under the run scratch dir.
+- qa (TFL-278, 2026-10-02): FIX-READY re-check **PASS** -> **CLOSED**. Residual fix TFL-276 adds `.book-view-turn, .book-view-turn * { pointer-events: none !important; }` (`styles.css:18735-18738`), which beats the descendant `.textLayer`/`.annotation-layer-active .annotation-svg` opt-ins by specificity. Command `npm.cmd run test:e2e -- e2e/phase77_bookview_correction.spec.cjs e2e/phase77_fix_def467.spec.cjs e2e/phase66_bookview_spread.spec.cjs e2e/phase66_bookview_annotations.spec.cjs e2e/phase66_bookview_colorpopover.spec.cjs` = **22 passed / 0 failed**. Criterion (b) PASS: double x=0.75 resolves `svg` `.annotation-svg` with `elementInsideTurn=false`, all five probes `inTurn=false` (0.5,0.5 `book-view-crease`; 0.65/0.75/0.85/0.6,0.7 `svg`/`book-view-stage`), `activeLayerInsideTurn=false`; single x=0.5 resolves `svg` `.annotation-svg` `elementInsideTurn=false`, probes `inTurn=false`. Criterion (a) PASS: no `.annotation-layer-active` in the leaf. Criterion (c) PASS: mid-turn drag committed to the destination page only (double after=`[{kind:"ink",page:4}]`, outgoing page 2 beforeOut=afterOut=0; single after=`[{kind:"ink",page:2}]`, outgoing page 1 beforeOut=afterOut=0). Also `npm.cmd run test:unit -- bookView bookViewSpread bookViewAnnotations` = 3 files / 27 tests, 0 failed; `npm.cmd run verify` exit 0; `npm.cmd run dist` exit 0 -> `release/Jovrel-Setup-1.46.0-x64.exe` (180,368,737 B) + `release/Jovrel-1.46.0-portable-x64.exe` (180,024,481 B). Spec: `e2e/phase77_fix_def467.spec.cjs`.
+
+## DEF-468: Book View double-mode label prints the redundant range "Page 1-1 of 1" for a one-page document
+
+- Status: CLOSED
+- Severity: LOW
+- Found by: adversary (TFL-271, Phase 77 adversarial diff-pass; ACCEPTED from ADV-149)
+- Phase: 77 (Book View correction; success criterion 3 - spread-aware current-page indicator)
+
+Steps to reproduce:
+1. Open a 1-page PDF, enter Book View, switch to double.
+
+Expected: a single visible page shows `Page 1 of 1`.
+
+Actual: `Page 1-1 of 1` (redundant range). Single mode `Page 1 of 1` and 2-page double `Page 1-2 of 2` are correct.
+
+Root cause: the double branch (`BookView.tsx:457-462`) always formats `Page ${current + 1}-${Math.min(current + 2, total)} of ${total}` without collapsing the case where the pair is one page.
+
+Impact: LOW - cosmetic; no functional change.
+
+History:
+- adversary (TFL-271): filed ADV-149 (LOW).
+- CTO (TFL-238): ACCEPTED -> DEF-468; bundled with DEF-467 in frontend-dev **TFL-273** (collapse to `Page N of T` when `min(current+2,total) === current+1`). Awaiting fix; then FIX-READY -> qa FIX-READY verification -> CLOSED.
+- qa (TFL-275, 2026-10-01): FIX-READY verification **PASS** -> CLOSED. 1-page PDF double label = `Page 1 of 1` (single also `Page 1 of 1`); 16-page no-regression: single `Page 1 of 16`, double `Page 1-2 of 16`. Commands: `npm run test:e2e -- phase77_bookview_correction phase66_bookview_spread phase66_bookview_annotations phase66_bookview_colorpopover phase77_fix_def467` = 20 passed / 2 failed (the two DEF-467 criterion-(b) attacks, unrelated to this defect); `npm run test:unit -- bookView bookViewSpread bookViewAnnotations` = 3 files / 27 tests, 0 failed; `npm run verify` exit 0. Spec: `e2e/phase77_fix_def467.spec.cjs`.

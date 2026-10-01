@@ -180,6 +180,81 @@ describe("BookView — the read-only mode shell (Phase 66 chunk 1)", () => {
   });
 });
 
+// Phase 77 (chunk B) — the deliberate entry animation and the spread-aware
+// current-page indicator. jsdom has no CSS engine, so the entry is asserted
+// through the transient marker the component renders; the keyframe/token
+// wiring lives in styles.css.
+describe("BookView entry animation + page indicator (Phase 77 chunk B)", () => {
+  it("plays a one-shot entry marker from mount and clears it after the fallback", async () => {
+    stubObservers();
+    vi.useFakeTimers();
+    const view = await mount(
+      createElement(BookView, {
+        doc: makeDocStub(3),
+        pageCount: 3,
+        title: "Novel.pdf",
+        defaultLayout: "single",
+        annotations: [],
+        onCreateAnnotation: (): void => undefined,
+        onClose: (): void => undefined,
+      }),
+    );
+    try {
+      expect(
+        view.host.querySelector('[data-book-view][data-book-enter="true"]'),
+      ).not.toBeNull();
+      act((): void => {
+        vi.advanceTimersByTime(450);
+      });
+      expect(view.host.querySelector('[data-book-enter="true"]')).toBeNull();
+    } finally {
+      view.cleanup();
+      vi.useRealTimers();
+    }
+  });
+
+  it("labels a single page as Page N of T and an empty document as No pages", async () => {
+    stubObservers();
+    const view = await mount(
+      createElement(BookView, {
+        doc: makeDocStub(3),
+        pageCount: 3,
+        title: "Novel.pdf",
+        defaultLayout: "single",
+        annotations: [],
+        onCreateAnnotation: (): void => undefined,
+        onClose: (): void => undefined,
+      }),
+    );
+    try {
+      expect(
+        view.host.querySelector("[data-book-progress]")?.textContent,
+      ).toBe("Page 1 of 3");
+    } finally {
+      view.cleanup();
+    }
+
+    const empty = await mount(
+      createElement(BookView, {
+        doc: makeDocStub(0),
+        pageCount: 0,
+        title: "Empty.pdf",
+        defaultLayout: "single",
+        annotations: [],
+        onCreateAnnotation: (): void => undefined,
+        onClose: (): void => undefined,
+      }),
+    );
+    try {
+      expect(empty.host.querySelector("[data-book-progress]")?.textContent).toBe(
+        "No pages",
+      );
+    } finally {
+      empty.cleanup();
+    }
+  });
+});
+
 describe("DocumentView — the Book View entry (Phase 66 chunk 1)", () => {
   async function mountDocument(onOpenBookView?: () => void): Promise<{
     host: HTMLElement;

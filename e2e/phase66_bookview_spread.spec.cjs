@@ -64,14 +64,17 @@ async function pageNumbers() {
   );
 }
 
-// Record whether the transient flip class is ever applied to `side` after a
-// click. A MutationObserver is used because the class lives only for the turn
+// Record whether the transient turn leaf is ever mounted (with direction
+// `dir`) after a click. Phase 77 (chunk A) moved the turn to its own
+// `[data-book-turn]` overlay carrying `data-book-turn-dir="next"|"prev"`; the
+// `book-view-turn-next|prev` class now lives on that leaf, not on the page
+// figures. A MutationObserver is used because the leaf lives only for the turn
 // (animationend + a 400ms fallback) and can vanish before a polled read.
 // Phase 66 criterion 9 (phase-close QA) additionally records the wall-clock
-// from the click to the flip class clearing and the worst rAF frame gap in that
+// from the click to the leaf clearing and the worst rAF frame gap in that
 // window (REQUIREMENTS.md:842 -> 16ms / 60fps). Measurement is additive.
-async function watchTurn(side) {
-  await win.evaluate((s) => {
+async function watchTurn(dir) {
+  await win.evaluate((d) => {
     const state = {
       hit: false,
       cls: null,
@@ -85,12 +88,8 @@ async function watchTurn(side) {
     if (window.__p66turnObs) window.__p66turnObs.disconnect();
     const stage = document.querySelector('[data-book-stage]');
     const check = () => {
-      const f = document.querySelector(`[data-book-page-side="${s}"]`);
-      if (
-        f &&
-        (f.classList.contains('book-view-turn-next') ||
-          f.classList.contains('book-view-turn-prev'))
-      ) {
+      const f = document.querySelector(`[data-book-turn][data-book-turn-dir="${d}"]`);
+      if (f) {
         state.hit = true;
         state.cls = f.className;
       } else if (state.hit && state.clearedAt === null) {
@@ -117,7 +116,7 @@ async function watchTurn(side) {
       if (state.clearedAt === null) requestAnimationFrame(tick);
     };
     requestAnimationFrame(tick);
-  }, side);
+  }, dir);
 }
 
 async function clickAndReadTurn(selector) {
@@ -173,7 +172,7 @@ test('criterion 4: single mode, toggle pair top-right, single page turns by one'
 
   const before = await pageNumbers();
   expect(before, 'single opens on page 1').toEqual(['1']);
-  await watchTurn('single');
+  await watchTurn('next');
   const turn = await clickAndReadTurn('[data-book-page-side="single"]');
   expect(turn.cls, 'single turn did not carry book-view-turn-next').toContain('book-view-turn-next');
   const after = await pageNumbers();
@@ -211,14 +210,14 @@ test('criterion 3: double spread, centre crease, +2 next and -2 prev with flip',
 
   const before = await pageNumbers();
   expect(before, 'double spread does not start at 1,2').toEqual(['1', '2']);
-  await watchTurn('right');
+  await watchTurn('next');
   const next = await clickAndReadTurn('[data-book-page-side="right"]');
   expect(next.cls, 'right turn did not carry book-view-turn-next').toContain('book-view-turn-next');
   const afterNext = await pageNumbers();
   await win.screenshot({ path: path.join(SHOTS, 'phase66-spread-double-after-next.png') });
   expect(afterNext, 'right click did not advance the spread by two').toEqual(['3', '4']);
 
-  await watchTurn('left');
+  await watchTurn('prev');
   const prev = await clickAndReadTurn('[data-book-page-side="left"]');
   expect(prev.cls, 'left turn did not carry book-view-turn-prev').toContain('book-view-turn-prev');
   const afterPrev = await pageNumbers();
@@ -251,7 +250,7 @@ test('reduced motion: --motion-duration-layout resolves to 0 and the spread stil
 
   const before = await pageNumbers();
   expect(before).toEqual(['1', '2']);
-  await watchTurn('right');
+  await watchTurn('next');
   await clickAndReadTurn('[data-book-page-side="right"]');
   const after = await pageNumbers();
   await win.screenshot({ path: path.join(SHOTS, 'phase66-spread-reduced-motion.png') });

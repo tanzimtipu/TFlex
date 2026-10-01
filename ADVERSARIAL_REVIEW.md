@@ -6570,6 +6570,58 @@ Same pass, static-only because the build lock blocked the Electron launch. These
 - **"93 filled, 12 skipped" report (probe item 2): predicted NOT to reproduce on the current tree, pending dynamic confirmation.** Static `@cantoo/pdf-lib` walk (`test-fixtures/adv-p74/fixture-walk.json`, sha256 `37a51c4f...792fe`): 105 fields, all 12 multi-widget groups empty, `getFieldRect`/read-only/signature/orphan counts 0. `applyFieldValue` (`src/main/services/form-fill.ts:737-751`) takes the empty-group branch with `buttonGroupValue=''`, which `setButtonGroupValue('')` (`src/main/services/forms.ts:195-223`) accepts and returns `true`, yielding `filled`. Predicted statuses: 105 filled / 0 skipped. The historical "93 filled, 12 skipped" is consistent with the pre-ADV-126/DEF-426 branch. The dynamic `probe.cjs report`/`recon` run will confirm the actual `formFillReport` row statuses.
 - **Group tick round-trip (probe item 1), blast radius (probe item 4), encrypted reopen (probe item 5): NOT YET RUN.** `test-fixtures/adv-p74/probe.cjs` (commands `group`/`report`/`overlay`/`blast`/`encrypted`/`readonly`) is written and launches only through `e2e/lib/launch.cjs`; it is blocked by the same fresh `.paperclip-build.lock` (owner frontend-dev, TFL-248, acquired `2026-10-01T16:16:52Z`).
 
+## ADV-146: Book View turn leaf is a live annotation hit surface - an armed-tool stroke begun during a page turn commits to the OUTGOING page
+
+- Session: diff-pass
+- Suggested severity: MEDIUM (silent wrong-page write; ~350ms window; an armed tool is required)
+
+What I did: launched the app through `e2e/lib/launch.cjs`, opened a 16-page PDF, entered Book View, armed `ink` (`[data-book-tools]`), clicked Next (`[data-book-next]`), paused the turn leaf mid-swing (`document.querySelector('[data-book-turn]').getAnimations()[0].pause(); ...currentTime = 55`), read `document.elementFromPoint` at the page centre, drove a short real mouse drag there, and let the turn settle.
+
+Expected: once the turn has begun the static spread and label already show the destination, so a stroke started then should mark the destination page - or the transient leaf should be non-interactive and the stroke ignored.
+
+Actual: `elementFromPoint` resolves to the turn leaf's own `[data-annotation-layer]` for the OUTGOING page with `pointer-events: auto`, and the drag commits ink to the outgoing page. Double: label `Page 3-4 of 16`, static `[3,4]`, element layer page 2, ink on page 2. Single: label `Page 2 of 16`, static `[2]`, element layer page 1, ink on page 1. The mark is not visible after the flip and would be saved to the wrong page with no warning.
+
+Root cause (static): `renderTurnLeaf` wires the leaf faces to the armed `annotationTool` (`BookView.tsx:399-437`, tool at `:410`); `.book-view-turn { pointer-events: none }` (`styles.css:18717-18725`) is overridden for descendants by `.annotation-layer-active { pointer-events: auto }` (`styles.css:5862`), which `AnnotationOverlay` sets when a tool is armed or an annotation is selected.
+
+Evidence: `test-fixtures/adv-tfl271/` (`cw.spec.cjs`, `probe.spec.cjs`, `cw-double-*.png`, `cw-single-*.png`, run logs).
+
+Disposition: ACCEPTED -> DEF-467 (MEDIUM; owning frontend-dev via TFL-273).
+
+## ADV-147: Book View turn leaf duplicates the destination page's interactive annotation layer during the turn
+
+- Session: diff-pass
+- Suggested severity: LOW (hit-test/oracle hazard; same root as ADV-146)
+
+What I did: mid Next turn (double) counted `document.querySelectorAll('[data-annotation-layer="3"]').length` while the static spread was `[3,4]`.
+
+Actual: length 2 - page 3 exists both as the static left figure and as the leaf's back face; with a tool armed or an annotation selected both copies compute `pointer-events: auto`, so duplicate `[data-annotation-id]` nodes can confuse hit-testing and any one-layer-per-page oracle.
+
+Evidence: `test-fixtures/adv-tfl271/` `CW_RESULT dupLayer3: 2`.
+
+Disposition: ACCEPTED -> DEF-467 (same fix: make the leaf non-interactive; the non-interactive duplicate is acceptable).
+
+## ADV-148: Odd page count in Book View double mode repeats a page (3 pages -> last spread [2,3], not [3])
+
+- Session: diff-pass
+- Suggested severity: LOW, pre-existing
+
+What I did: opened 3-page and 2-page PDFs in Book View double.
+
+Actual: 3-page double starts `[1,2]`, Next -> `[2,3]` (page 2 appears in two consecutive spreads) rather than a final single-page spread `[3]`; the 2-page `[1,2]` case is correct.
+
+Disposition: REJECTED for this phase - the window semantics mirror the shipped `ReadingView` comic view (`BookView.tsx` step logic) and are not changed by the Phase 77 correction. A cover/parity change is a separate feature (TFL-237 recommended an explicit cover option; not commissioned here). Recorded so the ledger is explicit.
+
+## ADV-149: One-page document in Book View double mode shows the redundant range "Page 1-1 of 1"
+
+- Session: diff-pass
+- Suggested severity: LOW
+
+What I did: opened a 1-page PDF in Book View double.
+
+Actual: label `Page 1-1 of 1` (redundant range); single `Page 1 of 1` and 2-page double `Page 1-2 of 2` are correct.
+
+Disposition: ACCEPTED -> DEF-468 (LOW; owning frontend-dev via TFL-273) - collapse the range to `Page N of T` when the visible pair is a single page.
+
 
 
 

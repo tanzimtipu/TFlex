@@ -206,14 +206,24 @@ describe("BookView — annotation marking (Phase 66 chunk 3)", () => {
       createElement(BookView, baseProps([A1, A2], (): void => undefined)),
     );
     try {
+      vi.useFakeTimers();
       expect(view.host.querySelector('[data-annotation-layer="1"]')).not.toBeNull();
       click(view.host.querySelector("[data-book-next]"));
       expect(
         view.host.querySelector('[data-annotation-layer="2"] [data-annotation-id="a2"]'),
       ).not.toBeNull();
+      // Phase 77 (chunk A) - the spine-hinged leaf keeps the OUTGOING page 1
+      // mounted on its front face for the turn window, so layer 1 is expected
+      // to survive the synchronous advance and only unmount once the turn
+      // clears (animationend / the fallback timer).
+      expect(view.host.querySelector("[data-book-turn]")).not.toBeNull();
+      act((): void => {
+        vi.advanceTimersByTime(450);
+      });
       expect(view.host.querySelector('[data-annotation-layer="1"]')).toBeNull();
     } finally {
       view.cleanup();
+      vi.useRealTimers();
     }
   });
 
@@ -232,6 +242,26 @@ describe("BookView — annotation marking (Phase 66 chunk 3)", () => {
       const created = onCreateAnnotation.mock.calls[0]?.[0] as Annotation;
       expect(created.kind).toBe("ink");
       expect(created.page).toBe(1);
+    } finally {
+      view.cleanup();
+    }
+  });
+
+  it("keeps the transient turn leaf non-interactive while a tool is armed (DEF-467)", async () => {
+    stubObservers();
+    const view = await mount(createElement(BookView, baseProps([], (): void => undefined)));
+    try {
+      click(view.host.querySelector('[data-tool="ink"]'));
+      expect(
+        view.host.querySelector('[data-annotation-layer="1"].annotation-layer-active'),
+      ).not.toBeNull();
+      click(view.host.querySelector("[data-book-next]"));
+      const turn = view.host.querySelector("[data-book-turn]");
+      expect(turn).not.toBeNull();
+      // DEF-467 - the decorative leaf renders the page bitmap/annotations but
+      // must never be a hit surface: with the tool still armed, no face of the
+      // transient leaf may carry the active-layer class.
+      expect(turn?.querySelector(".annotation-layer-active")).toBeNull();
     } finally {
       view.cleanup();
     }
