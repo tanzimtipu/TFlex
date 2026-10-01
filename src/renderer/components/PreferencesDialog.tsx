@@ -47,6 +47,7 @@ import { DEFAULT_CONVERT_DEFAULTS } from '../../shared/convert';
 import type { ConvertDefaults } from '../../shared/convert';
 import type { ThemeDefault } from '../state/preferences';
 import { TfBackdrop, TfSheet } from './motion/TfMotion';
+import { TfResize } from './motion/TfResize';
 
 interface PreferencesDialogProps {
   open: boolean;
@@ -389,6 +390,7 @@ export function PreferencesDialog(props: PreferencesDialogProps): ReactElement |
               })}
             </nav>
             <div className="prefs-content">
+              <TfResize axes="height">
               {PREFS_CATEGORIES.map((cat) => {
                 const isActive = category === cat.id;
                 return (
@@ -697,6 +699,7 @@ export function PreferencesDialog(props: PreferencesDialogProps): ReactElement |
                   </div>
                 );
               })}
+              </TfResize>
             </div>
           </div>
         </div>

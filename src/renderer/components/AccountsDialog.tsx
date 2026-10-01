@@ -44,6 +44,7 @@ import {
 import { describeSyncReport } from "../accounts/syncStatus";
 import { requestAutoSync } from "../accounts/autoSync";
 import { AnimatedDialog } from "./AnimatedDialog";
+import { TfResize } from "./motion/TfResize";
 import { BrandLoader } from "./BrandLoader";
 import { BrandMark } from "./BrandMark";
 import { BrandWordmark } from "./BrandWordmark";
@@ -508,6 +509,7 @@ export function AccountsDialog(props: AccountsDialogProps): ReactElement {
                 survive a restart.
               </p>
             )}
+            <TfResize axes="height">
             {state.step === "credentials" ? (
               <>
                 <div className="accounts-mode" role="tablist" aria-label="Sign in or create an account">
@@ -746,6 +748,7 @@ export function AccountsDialog(props: AccountsDialogProps): ReactElement {
                 </div>
               </>
             )}
+          </TfResize>
           </div>
         )}
         {configState === "ready" && signedIn && (

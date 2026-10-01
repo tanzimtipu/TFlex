@@ -90,6 +90,21 @@ describe("CropPagesDialog — render contract", () => {
     cleanup();
   });
 
+  it("wraps the per-page picker in a TfResize height frame (Phase 71)", () => {
+    const { container, cleanup } = renderDialog();
+    const frame = container.querySelector<HTMLElement>('[data-tf-resize="height"]');
+    expect(frame).not.toBeNull();
+    // allPages mode shows no picker inside the frame.
+    expect(frame?.querySelector("[data-crop-page-select]")).toBeNull();
+    const perPageRadio = container.querySelector<HTMLInputElement>("[data-crop-mode='perPage']");
+    act((): void => {
+      perPageRadio?.click();
+    });
+    // The swapped-in picker is the frame's content, so the reveal tweens.
+    expect(frame?.querySelector("[data-crop-page-select]")).not.toBeNull();
+    cleanup();
+  });
+
   it("emits one crop entry per page in allPages mode", () => {
     const onConfirm = vi.fn();
     const { container, cleanup } = renderDialog({

@@ -22,6 +22,7 @@ import {
 import { useBackdropClose } from "./modalBackdrop";
 import { AnimatePresence } from "motion/react";
 import { TfBackdrop, TfDialog } from "./motion/TfMotion";
+import { TfResize } from "./motion/TfResize";
 
 export type InsertMode = "blank" | "fromPdf";
 
@@ -325,6 +326,7 @@ export function InsertPagesDialog(
             <span className="modal-hint">{positionHint}</span>
           </label>
 
+          <TfResize axes="height">
           {mode === "blank" && (
             <fieldset className="modal-position">
               <legend>Page size</legend>
@@ -372,6 +374,7 @@ export function InsertPagesDialog(
               </div>
             </div>
           )}
+          </TfResize>
 
           {error !== null && (
             <div className="modal-status optimize-error" role="alert">

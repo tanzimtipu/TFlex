@@ -239,6 +239,17 @@ describe("Phase 44 � account surface (adapter mocked)", () => {
     expect(must(h.container, "[data-accounts-otp-lead]").textContent).toContain("ada@example.com");
   });
 
+  it("wraps the sign-in step content in a TfResize height frame (Phase 71)", async () => {
+    const h = await renderDialog();
+    const frame = must(h.container, "[data-accounts-auth] [data-tf-resize='height']");
+    // The credentials step's submit lives inside the animated frame.
+    expect(frame.querySelector("[data-accounts-submit]")).not.toBeNull();
+    // Stepping to the reset-request view swaps content inside the SAME frame.
+    await click(must(h.container, "[data-accounts-forgot]"));
+    expect(must(h.container, "[data-accounts-auth] [data-tf-resize='height']")).toBe(frame);
+    expect(frame.querySelector("[data-accounts-reset-submit]")).not.toBeNull();
+  });
+
   it("a WRONG code shows the code-invalid message without blocking the form", async () => {
     const h = await renderDialog();
     await click(must(h.container, "[data-accounts-mode-signup]"));

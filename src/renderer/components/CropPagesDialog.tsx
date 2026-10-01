@@ -21,6 +21,7 @@ import type { CropEntry } from "../../shared/types";
 import { useBackdropClose } from "./modalBackdrop";
 import { AnimatePresence } from "motion/react";
 import { TfBackdrop, TfDialog } from "./motion/TfMotion";
+import { TfResize } from "./motion/TfResize";
 
 export type CropMode = "allPages" | "perPage";
 
@@ -265,6 +266,7 @@ export function CropPagesDialog(
             </label>
           </fieldset>
 
+          <TfResize axes="height">
           {mode === "perPage" && (
             <label className="modal-field">
               <span>Editing page</span>
@@ -282,6 +284,7 @@ export function CropPagesDialog(
               </select>
             </label>
           )}
+          </TfResize>
 
           <div className="crop-editor-wrap">
             {/* DEF-115 — the key must NOT embed the box coordinates.

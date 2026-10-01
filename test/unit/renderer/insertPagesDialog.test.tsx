@@ -131,6 +131,21 @@ describe("InsertPagesDialog — render contract", () => {
     }
     cleanup();
   });
+
+  it("wraps the blank / fromPdf branch in a TfResize height frame (Phase 71)", () => {
+    const { container, cleanup } = renderDialog();
+    const frame = container.querySelector<HTMLElement>('[data-tf-resize="height"]');
+    expect(frame).not.toBeNull();
+    // Blank mode's size fieldset lives inside the animated frame.
+    expect(frame?.querySelector("[data-insert-preset='letter']")).not.toBeNull();
+    const fromPdf = container.querySelector<HTMLInputElement>("[data-insert-mode='fromPdf']");
+    act((): void => {
+      fromPdf?.click();
+    });
+    // The swapped-in pick row stays inside the same frame.
+    expect(frame?.querySelector("[data-insert-pick]")).not.toBeNull();
+    cleanup();
+  });
 });
 
 describe("InsertPagesDialog — close paths", () => {

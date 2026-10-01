@@ -368,6 +368,17 @@ describe("PreferencesDialog vertical category rail (Phase 59 item 8)", () => {
     expect(host.querySelector<HTMLElement>('[data-prefs-panel="general"]')?.className).not.toContain("anim-tab-in");
     unmount();
   });
+
+  it("wraps the category panels in a TfResize height frame inside the sheet (Phase 71)", () => {
+    const { host, unmount } = mountFull();
+    const frame = host.querySelector<HTMLElement>('[data-prefs-dialog] [data-tf-resize="height"]');
+    expect(frame).not.toBeNull();
+    // The frame is the animated sheet body: every category panel lives inside
+    // it, so a category switch tweens the sheet height instead of jumping.
+    const panels = frame?.querySelectorAll("[data-prefs-panel]") ?? [];
+    expect(panels.length).toBe(CATEGORY_IDS.length);
+    unmount();
+  });
 });
 
 /* ----------------------------------------------------------------------- */
