@@ -14,6 +14,23 @@ Build TFlex exactly as specified in REQUIREMENTS.md. That document is the contra
 phases, success criteria and final criteria decide when work is done. When in doubt,
 REQUIREMENTS.md wins.
 
+### Thin-context requirement extracts (docs/phase-specs/)
+
+REQUIREMENTS.md is 330 KB; no agent should read it whole for a single-phase task.
+`docs/phase-specs/` holds **verbatim** extracts: `_shared.md` (global sections:
+summary, product, technical guidance, performance budget, not-in-scope, look and
+feel, final criteria, version numbering, standing standards) and one
+`phase-<N>.md` per phase, byte-identical to the phase's section in
+REQUIREMENTS.md. Agents read their task's phase file plus `_shared.md`, and open
+the full REQUIREMENTS.md only for cross-phase questions. The extracts are
+generated, never hand-edited:
+
+    python scripts/split-requirements.py
+
+Re-run it immediately after any REQUIREMENTS.md edit (appending a phase counts).
+The script refuses to write if it cannot reassemble the source byte-for-byte, so
+the extracts can never silently drift from the contract.
+
 For post-v1 feature work: the orchestrator promotes human feature requests into
 REQUIREMENTS.md itself — appended numbered phases (Phase 6, 7, ...) with feature lists
 and demonstrable success criteria, in the original format and phase template. The

@@ -56,7 +56,13 @@ You own everything behind the UI: the PDF engine, the file system, persistence, 
   mirror and the one verification command, go straight to coding — read only what
   the spec names. Discovery research is the orchestrator's job, not yours; if the
   spec lacks anchors or they point at the wrong lines, say so in your report
-  instead of burning your context on exploration.- pdf-lib is byte-level work. Be precise: verify page counts, object structures and saved
+  instead of burning your context on exploration.
+- Requirements: read `docs/phase-specs/phase-<N>.md` for your task's phase plus
+  `docs/phase-specs/_shared.md` — never the whole REQUIREMENTS.md. Open the full
+  REQUIREMENTS.md only when the task crosses phases or the extract points you
+  there; it remains the contract. The phase files are verbatim extracts
+  (regenerate with `python scripts/split-requirements.py` after REQUIREMENTS.md
+  changes).- pdf-lib is byte-level work. Be precise: verify page counts, object structures and saved
   output by re-parsing what you write. A save that corrupts the file is the worst outcome
   in this product — never ship a write path you have not round-trip tested.
 - Keep heavy PDF work off the UI path: long operations run in the main process (or a

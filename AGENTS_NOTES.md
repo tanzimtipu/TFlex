@@ -4920,3 +4920,26 @@ suites `describe.retry(2)` with a comment naming the load-flake class, so an
 environmental hiccup costs a re-run instead of a false defect cycle, while a
 consistent double failure still surfaces as a real bug. Never add retry to
 cover a deterministic failure — diagnose those properly.
+
+## 2026-10-01: TFL-189 - the ANIMATION HARD RULE is standing and per-element (operator reaffirmation)
+
+The operator filed TFL-189 to restate that EVERY element of the app must animate smoothly and that this
+must hold for EVERY future task, not only at a phase gate. The requirement already exists as contract and
+is reaffirmed here so no future run treats it as optional:
+- REQUIREMENTS.md "Standing standards" (line 2472) - the ANIMATION HARD RULE;
+- AGENTS.md "Animation System (Phase 15)" (line 333) - the tokens (`src/renderer/styles/animations.css`,
+  `src/renderer/hooks/motionTokens.ts`) and the `AnimatedDialog` / `AnimatedPanel` / `AnimatedTab` wrappers;
+- the Phase-43 animation audit record above (43 surfaces swept, eleven fixed).
+
+**CTO brief rule (the mechanism that makes "always" true).** Every developer brief that adds or changes
+ANY element - any surface that appears, disappears, moves, changes state or responds to input - must state,
+in its "exact outcome", that surface AND the motion TOKEN it animates through: token-only (no hardcoded
+durations/easings), transform/opacity only (never width/height/margin), identical timing in light/dark/
+frosted, a `prefers-reduced-motion` fallback, and PDF page pixels never recoloured or cross-faded. A brief
+that omits the animation line is incomplete and must be rewritten before assigning. qa's focused
+verification and the phase-close sweep must confirm the animation-guard test covers the new/changed surface.
+A new or changed surface with no token-based animation is a DEFECT filed in DEFECTS.md, not a polish item.
+
+**Scope of "always" - deliberately-static surfaces stay exempt.** The only exemptions remain those already
+documented (separators, native controls, always-mounted chrome, the loading/indeterminate spinners, the
+frosted ambient sheen). Everything else animates, and the PDF page content never does.

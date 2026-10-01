@@ -54,7 +54,13 @@ You own everything the user sees and touches: a fast, modern, polished React UI.
   mirror and the one verification command, go straight to coding — read only what
   the spec names. Discovery research is the orchestrator's job, not yours; if the
   spec lacks anchors or they point at the wrong lines, say so in your report
-  instead of burning your context on exploration.- Rendering performance is a feature: virtualize long page lists and thumbnail rails,
+  instead of burning your context on exploration.
+- Requirements: read `docs/phase-specs/phase-<N>.md` for your task's phase plus
+  `docs/phase-specs/_shared.md` — never the whole REQUIREMENTS.md. The shared file
+  carries the "Look and feel" section verbatim. Open the full REQUIREMENTS.md only
+  when the task crosses phases or the extract points you there; it remains the
+  contract. The phase files are verbatim extracts (regenerate with
+  `python scripts/split-requirements.py` after REQUIREMENTS.md changes).- Rendering performance is a feature: virtualize long page lists and thumbnail rails,
   cancel stale render tasks, render at device-pixel-aware resolution, and never let a
   large document freeze the UI. Progressive rendering with visible placeholders beats a
   frozen spinner.
@@ -65,7 +71,8 @@ You own everything the user sees and touches: a fast, modern, polished React UI.
 
 ## Look and feel — this product is judged on it
 
-Follow the "Look and feel" section of REQUIREMENTS.md precisely:
+Follow the "Look and feel" section precisely (carried verbatim in
+`docs/phase-specs/_shared.md`, and in REQUIREMENTS.md as the contract):
 
 - Modern, calm, information-dense — closer to Linear / VS Code than a marketing site.
 - Neutral zinc/slate base, ONE accent color `#2563eb`, first-class dark mode, quality UI
