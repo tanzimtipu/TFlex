@@ -2091,7 +2091,16 @@ input[type="checkbox"] {
    * overflow (scrollWidth 256 > clientWidth 156). */
   padding: 0 min(var(--sp-2), calc(var(--tf-tab-width, 180px) * 0.25)) 0
     min(var(--sp-3), calc(var(--tf-tab-width, 180px) * 0.25));
-  margin-right: 2px;
+  /* TFL-248 (DEF-462) — at degenerate fit widths the leading padding yields so
+   * the 5px dirty dot (the title's first paint) can never exceed the tab's
+   * border box. The 25% term wins at normal widths, so the resting look is
+   * unchanged. */
+  padding-left: min(
+    var(--sp-3),
+    calc(var(--tf-tab-width, 180px) * 0.25),
+    max(0px, calc(var(--tf-tab-width, 180px) - 5px))
+  );
+  margin-right: var(--tf-tab-gap, 2px);
   border: none;
   border-radius: 0;
   background: transparent;
@@ -2208,6 +2217,18 @@ input[type="checkbox"] {
   cursor: default;
 }
 
+/* TFL-248 (DEF-462) — the title TEXT owns the ellipsis clip. The dirty dot
+ * (`.tab-modified-dot`) is the title's first child, OUTSIDE this span, so the
+ * overflow clip that ellipsizes the label can never cut the dot. */
+.tab-title-text {
+  display: block;
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 /* Phase 58 (chunk 5) — tab reorder affordances.
  *
  * The `grab` hint is only shown when reordering is actually available
@@ -2283,15 +2304,21 @@ body.tab-reordering .tab-list[data-reorder="true"] .tab {
 
 .tab-modified-dot {
   flex: 0 0 auto;
-  width: 7px;
-  height: 7px;
+  /* Phase 73 (A) — the Phase 72 7px box plus 1.5px OUTSET ring (~10px painted)
+   *  is retired. The box shrinks to 5px and the ring is drawn INSIDE it: a
+   *  border under `box-sizing: border-box` makes the 1.5px part of the 5px, so
+   *  the painted extent can never exceed the dot's own box and no ancestor clip
+   *  can cut it. The ring stays (DEF-441 legibility contract). */
+  width: 5px;
+  height: 5px;
+  box-sizing: border-box;
   border-radius: 999px;
   /* Phase 51 (item 5) — the dot sits on the tab's full-strength hue now, so it
    *  and its ring use the tab ink / hue pair to stay visible. */
   background: var(--tf-tab-ink);
   display: inline-block;
-  /* Slight outset so it reads against the active tab background. */
-  box-shadow: 0 0 0 1.5px var(--tf-tab-accent, var(--sem-neutral));
+  /* Phase 73 (A) — contained ring (was the outset box-shadow). */
+  border: 1.5px solid var(--tf-tab-accent, var(--sem-neutral));
   transition: opacity var(--motion-fast) var(--ease-out);
 }
 
@@ -2314,11 +2341,11 @@ body.tab-reordering .tab-list[data-reorder="true"] .tab {
 }
 
 .tab-active .tab-modified-dot {
-  box-shadow: 0 0 0 1.5px var(--tf-tab-accent, var(--sem-neutral));
+  border-color: var(--tf-tab-accent, var(--sem-neutral));
 }
 
 .tab:not(.tab-active) .tab-modified-dot {
-  box-shadow: 0 0 0 1.5px transparent;
+  border-color: transparent;
 }
 
 /* DEF-441 — COLORFUL-SCOPED tab dot + close hover.
@@ -2335,7 +2362,9 @@ body.tab-reordering .tab-list[data-reorder="true"] .tab {
  * tabs stay byte-for-byte unchanged. */
 .tab-area[data-tab-style="colorful"] .tab-modified-dot {
   background: var(--tf-tab-accent, var(--sem-neutral));
-  box-shadow: 0 0 0 1.5px color-mix(in srgb, var(--fg-strong) 55%, transparent);
+  /* Phase 73 (A) — the ring's colour is unchanged; it is now painted INSIDE the
+   *  5px border-box dot (via `border-color`) instead of as an outset shadow. */
+  border-color: color-mix(in srgb, var(--fg-strong) 55%, transparent);
 }
 
 .tab-close {
@@ -2382,8 +2411,15 @@ body.tab-reordering .tab-list[data-reorder="true"] .tab {
 
 .tab-area[data-tab-style="colorful"] .tab-title {
   max-width: none;
-  min-width: 0;
+  /* The title never shrinks below the 5px dirty dot: the dot keeps its slot and
+   * the TEXT ellipsizes first. This also keeps the dot inside the title's own
+   * box (never flush with a clip edge) at the degenerate fit widths. */
+  min-width: 5px;
   flex: 0 1 auto;
+  /* TFL-248 (DEF-462) — the title box no longer clips; only the inner
+   * `.tab-title-text` does. That keeps the leading dirty dot outside every
+   * `overflow: hidden` clip so it is painted and hit-testable at any width. */
+  overflow: visible;
 }
 
 /* Phase 4 — the close chip shows its focus state as the orange ring

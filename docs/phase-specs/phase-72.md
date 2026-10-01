@@ -73,3 +73,4 @@
 **CONTROL-INDEX:** none - this phase introduces no new interactive control. It restyles existing tab surfaces and changes the tab strip's sizing/overflow strategy; activation / close / reorder / tear-out bindings are unchanged.
 
 **Settings impact:** none - no new `AppSettings` field. Renderer-only changes (`src/renderer/components/AnimatedTab.tsx`, `src/renderer/components/AppHeader.tsx`, `src/renderer/styles.css`) plus, only if item 9's root cause is in main, a later backend-dev chunk; no new IPC or shared-contract change.
+

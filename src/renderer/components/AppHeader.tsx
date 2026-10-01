@@ -87,6 +87,11 @@ export const MIN_TAB_WIDTH = 56;
  *  it (down toward 0) so no tab ever leaves the bar and the strip never
  *  scrolls (the title elides; the close control stays the last child). */
 export const HARD_MIN_TAB_WIDTH = 24;
+/** TFL-248 (DEF-462) — the smallest tab that can still contain the 5px dirty
+ *  dot (5px + its leading pixel of tab padding). When the normal gapped fit
+ *  would drop below this, the plan re-runs with NO inter-tab gap so the tabs
+ *  stay dot-safe without ever overflowing the strip. */
+export const DOT_SAFE_TAB_WIDTH = 6;
 
 export interface TabOverflowPlan {
   /** The width every tab takes in the overflow regime. */
@@ -514,6 +519,7 @@ export function AppHeader(props: AppHeaderProps): ReactElement {
   // The strip is no longer a scroll container, so there is no scroll path.
   const overflowMetrics = TAB_OVERFLOW_METRICS[tabStyle] ?? TAB_OVERFLOW_METRICS.colorful;
   const [tabOverflow, setTabOverflow] = useState<TabOverflowPlan | null>(null);
+  const [tabGap, setTabGap] = useState<number>(TAB_GAP);
   useEffect((): (() => void) | undefined => {
     const list = tabListRef.current;
     if (list === null) return undefined;
@@ -540,12 +546,38 @@ export function AppHeader(props: AppHeaderProps): ReactElement {
         paddingRight,
         plusWidth: plus,
       });
-      const next = planTabOverflow({
+      let next = planTabOverflow({
         count: tabs.length,
         naturalWidth: overflowMetrics.natural,
         availableWidth: fitWidth,
         floor: overflowMetrics.floor,
       });
+      // TFL-248 (DEF-462) — a tab narrower than DOT_SAFE_TAB_WIDTH cannot paint
+      // or hit-test the 5px dirty dot. When the gapped fit drops below it,
+      // re-plan with the inter-tab margin collapsed to 0 so every tab still
+      // fits AND stays dot-safe. `.tab` reads the gap from `--tf-tab-gap`.
+      let nextGap = TAB_GAP;
+      if (next.width < DOT_SAFE_TAB_WIDTH) {
+        const tightFit = tabFitAvailableWidth({
+          clientWidth: list.clientWidth,
+          paddingLeft,
+          paddingRight,
+          plusWidth: plus,
+          gap: 0,
+        });
+        const tight = planTabOverflow({
+          count: tabs.length,
+          naturalWidth: overflowMetrics.natural,
+          availableWidth: tightFit,
+          floor: overflowMetrics.floor,
+          gap: 0,
+        });
+        if (tight.width > next.width) {
+          next = tight;
+          nextGap = 0;
+        }
+      }
+      setTabGap((prev) => (prev === nextGap ? prev : nextGap));
       setTabOverflow((prev) =>
         prev !== null && prev.width === next.width && prev.overlap === next.overlap ? prev : next,
       );
@@ -568,7 +600,7 @@ export function AppHeader(props: AppHeaderProps): ReactElement {
     tabOverflow !== null && tabOverflow.width < overflowMetrics.natural - 0.5;
   const tabOverflowStyle: CSSProperties | undefined =
     tabOverflow !== null && squeezing
-      ? ({ "--tf-tab-width": `${tabOverflow.width}px` } as CSSProperties)
+      ? ({ "--tf-tab-width": `${tabOverflow.width}px`, "--tf-tab-gap": `${tabGap}px` } as CSSProperties)
       : undefined;
 
   // Tab strip interaction contract (DEF-034): activation resolves on

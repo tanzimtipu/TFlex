@@ -44,3 +44,4 @@
 **CONTROL-INDEX:** none - no new interactive control (visual motion only; every existing prefs control keeps its behaviour).
 
 **Settings impact:** none - no new `AppSettings` field. Renderer-only motion wrappers (`TfResize`) over existing surfaces; no IPC or shared-contract change.
+

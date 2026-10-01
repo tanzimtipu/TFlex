@@ -6300,6 +6300,45 @@ corrected oracle asserts criterion 2 (`mainTop - activeBottom <= 1`, with
 to frontend-dev with the DEF-455/456 fix (TFL-213; Phase 72 permits developer oracle repoints
 to this contract). qa verifies and closes.
 
+## ADV-143: Phase 73 dirty dot is 100% clipped away at the 640px minimum with 10 tabs; the qa containment oracle cannot see it
+
+- Session: diff-pass
+- Suggested severity: HIGH
+
+What I did: rebuilt the renderer so the working-tree CSS is served (`npm.cmd run build:renderer`) and ran one adversarial probe, `node test-fixtures/adv-p73/probe.cjs b`, which opens 10 then 20 real documents at the 640px minimum window, dirties tab 0 (`report.pdf`) through the real Rotate control (`runTool(win,'rotate')`), and for each tab measures the dirty dot's `getBoundingClientRect()` / computed style, `.tab-title`'s padding-box clip rect (`overflow: hidden`), and a `document.elementFromPoint()` hit-test at the dot centre. Baseline `npm.cmd run test:e2e -- e2e/phase73_dot.spec.cjs` is 1 passed / 0 failed.
+
+Expected (Phase 73 ruling 6, success criteria 1/5/6 - `docs/phase-specs/phase-73.md:19,35,39`): "the dot must remain fully painted ... if the title is squeezed to the point where a reserved dot plus close cannot fit, the dot still wins its full box (the title ellipsizes first) and is never cut." The dot should be painted and hit-testable at every squeezed width.
+
+Actual: at 10 tabs / 640px the strip is a uniform 10px per tab (`--tf-tab-width: 10px`, list clientWidth 156 == scrollWidth 156), but `.tab-title` is squeezed to a 1px border-box (clip box x[180.5, 181.5]). The dot's 5px box lays out at x[181.5, 186.5] - its left edge exactly on the title's clip right edge - so `.tab-title { overflow: hidden }` clips 100% of it. `elementFromPoint` at the dot centre returns `tab tab-active`, not the dot: it is neither painted nor hit-testable. Pushing harder to 20 tabs / 640px (4px tabs), the dot (x[180, 185]) also overflows the tab body itself (tab right x182, `dotToTabRight = -3`). In both cases the dot retains computed `visibility: visible`, `opacity: 1`, `box-shadow: none`, `offsetWidth 5` - the `tab-modified-dot-hidden` state is NOT applied - so every static/computed assertion stays green while the user sees a bare tab. This is the operator's original "partially cut-out" complaint reproduced as total removal, and it falsifies the diff's own comment ("so ... no ancestor clip can cut it"): the dot's own box is contained, but the `.tab-title` that contains it is narrower than the dot, so the title's clip still cuts it.
+
+The qa spec cannot catch this by construction: `e2e/phase73_dot.spec.cjs:95-112` (`assertContained`) checks only `dot.left - title.left >= 0` (here exactly +1, passes) and compares `getBoundingClientRect()`s, which ignore an ancestor's `overflow: hidden`. The spec's own green log prints `[P73 squeezed] tabWidths=[10,...]` and `[P73 squeezed-640] ... title={"width":1}` while reporting the state as contained. The dot is the only unsaved-changes signal, so at the supported minimum window width with 10+ open tabs a user can close a modified document with no visible warning.
+
+Raw probe output (decisive fields):
+```
+### {"scenario":"b","label":"10-tabs-640","summary":{"count":10,"list":{"clientWidth":156,"scrollWidth":156},"widths":[10,10,10,10,10,10,10,10,10,10],"widthMin":10},"dirtyTab0":{"active":true,"tab":{"left":178,"right":188,"width":10},"title":{"left":180.5,"right":181.5,"width":1,"paddingLeft":1,"clipLeft":180.5,"clipRight":181.5,"overflow":"hidden"},"close":{"left":189.5},"dot":{"left":181.5,"right":186.5,"width":5,"offsetWidth":5,"visibility":"visible","opacity":"1","className":"tab-modified-dot"},"hit":"tab tab-active","paint":{"rightOfClip":true,"leftOfClip":false,"fullyClipped":true,"hitIsDot":false}}}
+### {"scenario":"b","label":"20-tabs-640","summary":{"count":20,"list":{"clientWidth":156,"scrollWidth":156},"widths":[4,...],"widthMin":4},"dirtyTab0":{"tab":{"left":178,"right":182,"width":4},"title":{"left":179,"right":180,"width":1},"dot":{"left":180,"right":185,"width":5},"hit":"LI","paint":{"rightOfClip":true,"fullyClipped":true,"hitIsDot":false},"clearance":{"dotToTabLeft":2,"dotToTabRight":-3,"dotToCloseLeft":3}}}
+### {"scenario":"b-verdict","tenFullyClipped":true,"tenHit":"tab tab-active","twentyFullyClipped":true,"twentyHit":"LI","twentyTabWidth":4,"twentyTitleWidth":1}
+```
+
+Reproduction steps:
+1. `npm.cmd run build:renderer`
+2. `node test-fixtures/adv-p73/probe.cjs b`
+3. Read the `10-tabs-640` line: `dot.left (181.5) == title.clipRight (181.5)`, `paint.fullyClipped: true`, `hit: "tab tab-active"`.
+4. Cross-check the green `e2e/phase73_dot.spec.cjs`: it logs the same `tab width 10` / `title width 1` and its `assertContained` still passes.
+
+Screenshot: screenshots/adv-p73-b-zoom-dirty-tab0-10tabs.png (8x-zoomed dirty tab 0: no dot painted); screenshots/adv-p73-b-10tabs-640.png (header: the dirty tab is a bare sliver); screenshots/adv-p73-b-zoom-dirty-tab0-20tabs.png (20-tab sliver, no dot).
+
+Disposition: ACCEPTED -> DEF-462 (qa reproduced and filed, TFL-245; qa hardened `e2e/phase73_dot.spec.cjs` with a hit-test + ancestor-clip oracle, which now FAILS on the unfixed tree). Real product defect: the Phase 73 dot is fully clipped by `.tab-title{overflow:hidden}` at the supported squeezed width, and the Phase 73 e2e oracle was blind to ancestor clips. Fix routed to frontend-dev; qa retests and closes DEF-462.
+
+### Phase 73 diff-pass - surfaces that SURVIVED (no ADV filed)
+
+Same probe, scenario `a` (`node test-fixtures/adv-p73/probe.cjs a`), on 2 tabs at full width, all three themes:
+- Surface 3 (dirty-only): clean tab dot computes `visibility:hidden, opacity:0` and `elementFromPoint` at its centre returns `tab-title`; dirty tab dot is `visible, opacity:1` and hit-tests as `tab-modified-dot`. Holds.
+- Surface 4 (ring legibility): ring present (`border-top: 1px solid`, Chromium floors 1.5px at DPR 1), resolves to `--fg-strong` 55% and differs from the fill in light (`fill rgb(124,58,237)`), dark (`fill rgb(167,139,250)`) and frosted (`fill rgb(109,40,217)`); `box-shadow: none`. Zoom screenshot adv-p73-a-zoom-dirty-tab0.png shows a clearly legible ringed dot. Holds.
+- Surface 5 (layout/padding-left 1px): an injected probe-only `padding-left: 0` A/B produced byte-identical tab widths `[180,180]`, close lefts `[492.84,674.84]`, title widths `[134,134]` and clip text - no width/uniformity/close shift. Holds.
+- Surface 6 (mousedown on the dot): mousedown at the dot centre changed the active id from the clean tab to the dirty tab, so the dot does not swallow activation. Holds.
+- Surfaces 1/2 at squeezed widths are the ADV-143 failure, not a separate close-collision finding: at 10 tabs `dot.right (186.5) < close.left (189.5)`, so there is no dot/close overlap (the close itself overflows the 10px tab, which is the pre-existing Phase 72 area, outside this pass).
+
 
 
 

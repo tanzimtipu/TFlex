@@ -5,6 +5,29 @@
 > inspect the current `OPEN`, `FIX-READY`, and `DISPUTED` entries first; closed records are
 > historical evidence and must not be loaded wholesale.
 
+## DEF-462: The Phase 73 dirty dot is 100% clipped away by `.tab-title{overflow:hidden}` at the 640px minimum; at 10 tabs the dot is neither painted nor hit-testable, and at 20 tabs it also overflows the tab body
+
+- Status: CLOSED
+- Severity: HIGH
+- Found by: adversary (ADV-143; reproduced by qa, TFL-245)
+- Phase: 73 (success criterion: the modified dot is fully visible and hit-testable inside its tab at every squeezed width)
+
+Steps to reproduce:
+1. `npm.cmd run build:renderer`
+2. `node test-fixtures/adv-p73/probe.cjs b` (opens real documents, dirties tab 0, opens 10 then 20 tabs, squeezes the window to the 640px minimum).
+
+Expected: at every squeezed width the 5px dirty dot is fully painted and hit-testable within its tab - the dot's rect lies inside every ancestor clip box and `document.elementFromPoint` at the dot centre returns the dot.
+
+Actual: ADV-143 reproduces. At `10-tabs-640`: `dot.left 181.5 == title.clipRight 181.5` (`paint.rightOfClip true`, `paint.fullyClipped true`), so 100% of the dot is clipped by `.tab-title{overflow:hidden}` (styles.css:2193); `document.elementFromPoint` at the dot centre returns `tab tab-active`, not the dot (`paint.hitIsDot false`). At `20-tabs-640`: `dot.left 180 == title.clipRight 180` (`paint.fullyClipped true`, hit `LI`), and the dot also overflows the tab body (`dotToTabRight -3`; tab width 4px vs dot width 5px). The dot's computed `visibility` is `visible` and `opacity` 1, so it is silently painted-away, not hidden - which is why the existing `assertContained` oracle (bounding-rect only, `dot.left - title.left >= 0`) reported 1 passed / 0 failed and could not see the clip. Raw probe evidence: `test-fixtures/adv-p73/probe-b-tfl245.log`; probe `test-fixtures/adv-p73/probe.cjs`.
+
+Screenshot: screenshots/adv-p73-b-zoom-dirty-tab0-10tabs.png
+
+History:
+- adversary: filed as ADV-143 (TFL-240 diff-pass, HIGH). Evidence in `ADVERSARIAL_REVIEW.md` ADV-143 with raw probe output and `screenshots/adv-p73-*.png`.
+- qa: opened (TFL-245, adversarial finding reproduction). `npm.cmd run build:renderer` built clean (2662 modules, 834ms); `node test-fixtures/adv-p73/probe.cjs b` -> `b-verdict {tenFullyClipped:true, tenHit:"tab tab-active", twentyFullyClipped:true, twentyHit:"LI", twentyTabWidth:4, twentyTitleWidth:1}`. Confirmed. The blind oracle was hardened and the hardened spec fails on the current tree (TFL-245). Owner: renderer (frontend-dev), fix must keep the dot fully painted and hit-testable at the 640px minimum without touching the unit suite.
+- CTO: FIX-READY (TFL-248). frontend-dev took the dot out of the clip: title text wrapped in `.tab-title-text` (owns the ellipsis clip), colorful `.tab-title` is now `overflow: visible` with `min-width: 5px`, colorful `.tab` leading padding caps at the dot width, `.tab` margin-right reads `var(--tf-tab-gap)`, and `AppHeader` re-plans with gap 0 below `DOT_SAFE_TAB_WIDTH = 6`. Reported runs: hardened `e2e/phase73_dot.spec.cjs` 1 passed (10- and 20-tab 640px both `hit=tab-modified-dot`, `clippedByAncestor=false`); probe `b` both lines `fullyClipped:false`/`hitIsDot:true`; `npm.cmd run verify` exit 0; three unit files 37 tests passed. Awaiting qa retest to CLOSE.
+- qa: CLOSED (TFL-256 retest on the fixed tree; `npm.cmd run build:renderer` -> exit 0 (2662 modules); `node test-fixtures/adv-p73/probe.cjs b` -> both `10-tabs-640` and `20-tabs-640` `paint.fullyClipped:false`/`paint.hitIsDot:true`, clearances dotToTabLeft/Right 2.5/2.5 and 1/0 (>=0), `.tab-list` 156/156; `npm.cmd run test:e2e -- e2e/phase73_dot.spec.cjs` -> 1 passed/0 failed (full, 10-tab 640, 20-tab 640 all `clippedByAncestor=false`, `hitIsDot=true`); blast radius `e2e/phase58_tab_style.spec.cjs` + `e2e/phase59_tab_overflow.spec.cjs` -> 3 passed/0 failed; 5 unit files -> 53 passed/0 failed; `npm.cmd run verify` -> exit 0). ADV-143 fix confirmed; dot painted + hit-testable with no ancestor clip at both squeezed widths.
+
 ## DEF-459: The Phase 72 geometry leaves the 3-tab tear-out oracle `e2e/phase61_tab_tearout.spec.cjs` stale - it samples the dragged tab's box before mousedown activation, so the follow assertion is off by the 4.5px active/inactive delta
 
 - Status: CLOSED

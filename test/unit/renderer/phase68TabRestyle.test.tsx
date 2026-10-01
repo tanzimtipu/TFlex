@@ -121,7 +121,9 @@ describe("Phase 68 — colorful tab stylesheet", () => {
     expect(closeBlock).toContain("margin-left: auto");
     const titleBlock = blockFor('.tab-area[data-tab-style="colorful"] .tab-title {');
     expect(titleBlock).toContain("max-width: none");
-    expect(titleBlock).toContain("min-width: 0");
+    // TFL-248 (DEF-462) — the floor is now the 5px dirty dot: the title still
+    // yields space and ellipsizes, but never below the dot it must carry.
+    expect(titleBlock).toContain("min-width: 5px");
   });
 
   it("Phase 73 — the colorful modified dot keeps the full accent fill and a CONTAINED --fg-strong ring", () => {

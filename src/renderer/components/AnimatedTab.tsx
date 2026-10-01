@@ -202,7 +202,10 @@ export function AnimatedTab(props: AnimatedTabProps): ReactElement {
             }
             aria-hidden
           />
-          {title}
+          {/* TFL-248 (DEF-462) — only the TEXT carries the ellipsis clip. The
+           *  title's leading dirty dot is a sibling of this span, so the clip
+           *  can never eat it at the squeezed fit width. */}
+          <span className="tab-title-text">{title}</span>
         </span>
         <button
           type="button"
