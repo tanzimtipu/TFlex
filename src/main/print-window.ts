@@ -7,7 +7,7 @@ import type {
 import type { Result } from '../shared/result';
 import { err } from '../shared/result';
 import { IPC } from '../shared/ipc';
-import { resolvePreloadPath } from './window';
+import { resolveAppIconPath, resolvePreloadPath } from './window';
 
 /**
  * Phase 35 - the standalone print window.
@@ -150,6 +150,7 @@ function createPrintWindow(
     minWidth: PRINT_WINDOW_MIN_WIDTH,
     minHeight: PRINT_WINDOW_MIN_HEIGHT,
     title: PRINT_WINDOW_TITLE,
+    icon: resolveAppIconPath(),
     // A standard, fully framed top-level window: the native title bar is what
     // lets the user drag it anywhere on the desktop, including clear of the
     // app window. Not a child/modal, so no parent clamps its bounds.

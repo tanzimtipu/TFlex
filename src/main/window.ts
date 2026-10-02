@@ -1,4 +1,4 @@
-import { BrowserWindow, screen, type Rectangle } from 'electron';
+import { app, BrowserWindow, screen, type Rectangle } from 'electron';
 import { join } from 'node:path';
 import type { AppSettings, WindowGeometry } from '../shared/types';
 import type { OAuthTraceEvent } from '../shared/accounts';
@@ -54,6 +54,10 @@ function mainModuleDir(): string {
 
 export function resolvePreloadPath(): string {
   return join(mainModuleDir(), '../preload/preload.cjs');
+}
+
+export function resolveAppIconPath(): string {
+  return join(app.getAppPath(), 'assets', 'brand', 'jovrel.ico');
 }
 
 /**
@@ -455,6 +459,7 @@ export function createMainWindow(settings: AppSettings, deps: WindowDeps): Brows
     // window list) is the product name. The renderer's own document title
     // takes over once the page loads.
     title: 'Jovrel',
+    icon: resolveAppIconPath(),
     hasShadow: true,
     webPreferences: {
       preload: resolvePreloadPath(),
@@ -601,6 +606,7 @@ export function createDetachedWindow(deps: {
     autoHideMenuBar: false,
     backgroundColor: '#eef1f5',
     title: 'Jovrel',
+    icon: resolveAppIconPath(),
     hasShadow: true,
     webPreferences: {
       preload: resolvePreloadPath(),

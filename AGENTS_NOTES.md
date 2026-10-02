@@ -1402,6 +1402,12 @@ pre-warn relevant entries when dispatching.
   Rule: preserve the file's existing EOL; a source edit's diff must be the intended
   lines only - run `git diff --ignore-all-space --numstat` and, if whitespace dwarfs the
   change, normalize the file before reporting.
+  RECURRENCE (TFL-427, 2026-10-02): the same developer stored THREE edited files as CRLF
+  (`src/main/window.ts` 637 CRLF lines, `src/main/print-window.ts` 245,
+  `test/unit/main/phase35PrintWindow.test.ts` 348) - a ~1230-line diff for a 19-line
+  change. Rule restated to backend-dev in the brief: before reporting FIX READY, run
+  `git diff --numstat` over the files you changed and normalize EOL to the file's
+  existing style; a whole-file count on a small change is a self-caught defect.
 - repo hazard (found 2026-10-01): `test-fixtures/*.pdf` is NOT matched by `.gitignore`,
   so a byte copy of the operator's personal `956.pdf` (Phase 74) sat untracked in the
   tree at real risk of a `git add -A` sweep. Rule: stage by explicit path only in any
@@ -1411,6 +1417,11 @@ pre-warn relevant entries when dispatching.
   `--grep` (CACError) and has no equivalent flag; the child had to improvise the
   documented-equivalent filter. Rule: check the installed runner's flags before
   putting a command in a brief; for vitest use file paths or `--testNamePattern`.
+- CTO: briefed qa to assert `BrowserWindow.getIcon()` (TFL-430, 2026-10-02) — Electron
+  44 has NO window-icon getter (only `setIcon`; `git grep getIcon node_modules/electron/electron.d.ts`
+  = 0), so qa could not run the oracle and proved the icon via a `WM_GETICON` probe on
+  the real print-window HWND instead. Rule: verify an Electron API exists in
+  `node_modules/electron/electron.d.ts` before putting it in a brief.
 - qa: opened a defect under an already-used ID (TFL-111 filed the Phase 57 e2e stale
   oracle as DEF-436, but DEF-436 already existed for the form-field double-render).
   Rule: before opening any DEF/ADV, grep `^## DEF-` (or ADV) and take the next FREE

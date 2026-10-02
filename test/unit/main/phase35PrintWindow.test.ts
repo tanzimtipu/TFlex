@@ -1,4 +1,5 @@
 import { vi, describe, it, expect, beforeEach } from 'vitest';
+import { join } from 'node:path';
 
 // ---------------------------------------------------------------------------
 // Phase 35 - standalone print window (backend half).
@@ -57,6 +58,7 @@ vi.mock('electron', () => {
   }
 
   return {
+    app: { getAppPath: () => process.cwd() },
     BrowserWindow: MockBrowserWindow,
     screen: { getAllDisplays: () => [] },
   };
@@ -232,6 +234,12 @@ describe('Phase 35 - openPrintWindow', () => {
     expect(prefs.contextIsolation).toBe(true);
     expect(prefs.nodeIntegration).toBe(false);
     expect(prefs.sandbox).toBe(true);
+  });
+
+  it('sets the shipped Jovrel app icon on the print window', () => {
+    openPrintWindow(CONTEXT, DEV_SOURCE);
+    const opts = last()._opts as Record<string, unknown>;
+    expect(opts.icon).toBe(join(process.cwd(), 'assets', 'brand', 'jovrel.ico'));
   });
 
   it('loads the dev URL including the context query', () => {

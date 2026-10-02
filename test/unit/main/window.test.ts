@@ -1,4 +1,5 @@
 import { vi, describe, it, expect, beforeEach } from 'vitest';
+import { join } from 'node:path';
 import type { AppSettings } from '../../../src/shared/types';
 
 // ---------------------------------------------------------------------------
@@ -78,6 +79,7 @@ vi.mock('electron', () => {
   }
 
   return {
+    app: { getAppPath: () => process.cwd() },
     BrowserWindow: MockBrowserWindow,
     screen: {
       getAllDisplays: _getAllDisplays,
@@ -129,6 +131,16 @@ describe('createMainWindow', () => {
     // Phase 35 — y is clamped so the window bottom (300 + 800 = 1100) stays
     // inside the 1080-tall work area: 1080 - 800 = 280.
     expect(win._opts).toMatchObject({ width: 1200, height: 800, x: 200, y: 280 });
+  });
+
+  it('sets the shipped Jovrel app icon on the window', () => {
+    createMainWindow(defaultSettings, {
+      rendererHtml: '/app/renderer/index.html',
+      onGeometryChanged: vi.fn(),
+    });
+
+    const opts = lastWindow()._opts as Record<string, unknown>;
+    expect(opts.icon).toBe(join(process.cwd(), 'assets', 'brand', 'jovrel.ico'));
   });
 
   it('maximizes the window when geometry.maximized is true', () => {
