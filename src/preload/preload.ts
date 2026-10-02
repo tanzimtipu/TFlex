@@ -14,6 +14,7 @@ import type {
   AppSettings,
   AddStampPayload,
   AddTextBoxPayload,
+  ApplyRedactionsPayload,
   CreateAnnotationPayload,
   CropEntry,
   DocxImageEntry,
@@ -48,6 +49,7 @@ import type {
   PrintWindowContext,
   PrintWindowOpenResult,
   RecentFile,
+  RedactionApplyResult,
   SampleDocument,
   SpaceAudit,
   SpellCheckLanguage,
@@ -312,6 +314,14 @@ const engineApi = {
     payload: EditTextRunPayload,
   ): Promise<Result<EngineState, EngineError>> {
     return ipcRenderer.invoke(IPC.engineEditTextRun, docId, payload);
+  },
+  // Phase 84 (True redaction) — permanently remove the glyphs covered by the
+  // marks, then draw the opaque mark rectangles in the resolved colour.
+  applyRedactions(
+    docId: string,
+    payload: ApplyRedactionsPayload,
+  ): Promise<Result<RedactionApplyResult, EngineError>> {
+    return ipcRenderer.invoke(IPC.engineApplyRedactions, docId, payload);
   },
   addTextBox(
     docId: string,

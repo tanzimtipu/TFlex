@@ -34,6 +34,8 @@ import type {
   WatermarkSettings,
 } from "../shared/types";
 import { DEFAULT_READING_DEFAULTS } from "../shared/types";
+import { err } from "../shared/result";
+import type { ApplyRedactions } from "./redaction/RedactionOverlay";
 import type { TFlexApi, TFlexApiConvert, TFlexApiExport } from "../shared/ipc";
 import type { ValidationReport, ValidationTarget } from "../shared/validation";
 import type { ConvertFormatId, ConvertManyResult, ConvertSourceInfo, CsvFieldMappingResult } from "../shared/convert";
@@ -1068,6 +1070,10 @@ export function App(): ReactElement {
     pngWidth: number;
     pngHeight: number;
   } | null>(null);
+  /** Phase 84 (True redaction) — the Redact tool is armed. While true,
+   *  every PageView mounts the RedactionOverlay so the user can drag a
+   *  region into a pending mark and Apply it through the engine. */
+  const [redactArmed, setRedactArmed] = useState(false);
   /** B10 / DEF-101 — per-tab record of successfully placed stamps.
    *  The engine bakes the stamp into the page bitmap; this mirror
    *  list drives the `.stamp-annotation` DOM surfaces so a placement
@@ -1258,6 +1264,20 @@ export function App(): ReactElement {
     settingsPersistedRef.current = s;
     void window.tflex.saveSettings(s);
   }, []);
+
+  // Phase 84 — persist the chosen redaction mark colour through the same
+  // settings write path every other preference uses.
+  const onMarkColorChange = useCallback(
+    (hex: string): void => {
+      setSettings((prev) => {
+        if (prev === null) return prev;
+        const next = { ...prev, redactionColor: hex };
+        trackAndSave(next);
+        return next;
+      });
+    },
+    [trackAndSave],
+  );
 
   useEffect(() => {
     let cancelled = false;
@@ -2494,6 +2514,7 @@ export function App(): ReactElement {
     // to every dialog that was scoped to the now-closed tab.
     setArmedSignatureId(null);
     setArmedStamp(null);
+    setRedactArmed(false);
     if (editModeOpenRef.current) {
       setEditModeOpen(false);
     }
@@ -2797,6 +2818,7 @@ export function App(): ReactElement {
     // meta.id and is untouched by this reset.
     setArmedSignatureId(null);
     setArmedStamp(null);
+    setRedactArmed(false);
     setEditModeOpen(false);
     setOcrSuspectsOpen(false);
   }, []);
@@ -2830,6 +2852,7 @@ export function App(): ReactElement {
     // it can't surface against a doc-less tab (B14).
     setArmedSignatureId(null);
     setArmedStamp(null);
+    setRedactArmed(false);
     setEditModeOpen(false);
     setOcrSuspectsOpen(false);
   }, [multiMode.enabled]);
@@ -3583,6 +3606,7 @@ export function App(): ReactElement {
       // Cross-disarm — mirror of the Sign ↔ Stamp guards above.
       setArmedSignatureId(null);
       setArmedStamp(null);
+      setRedactArmed(false);
     }
     if (!open) {
       // Reset the tool on every open tab so a stray "text" tool
@@ -6464,6 +6488,44 @@ pushToast(
     [activePageSizes, noteOpApplied, pushToast],
   );
 
+  /** Phase 84 (True redaction) — commit one page's pending redaction marks
+   *  through the active engine client. The overlay supplies a docId, but the
+   *  host binds the ACTIVE document so the call can never target a stale
+   *  tab. On success the state is mirrored (noteOpApplied) and the pdf.js
+   *  proxy is refreshed so the rewritten content stream is visible without
+   *  a save+reopen cycle. */
+  const onApplyRedactions = useCallback<ApplyRedactions>(
+    async (_docId, payload) => {
+      const activeId = activeTabIdRefLocal.current;
+      if (activeId === null) {
+        return err("engine-error", "No active document.");
+      }
+      const open = openTabsRef.current[activeId];
+      if (open === undefined) {
+        return err("engine-error", "No active document.");
+      }
+      const res = await engineRef.current.applyRedactions?.(
+        open.session.engineDocId,
+        payload,
+      );
+      if (res === undefined) {
+        return err(
+          "engine-error",
+          "Redaction requires the Phase 84 backend update.",
+        );
+      }
+      if (res.ok) {
+        noteOpApplied(activeId, res.value.state as EngineState);
+        const refreshFn = refreshDocProxyForRef.current;
+        if (refreshFn !== null) {
+          void refreshFn(activeId).catch(() => undefined);
+        }
+      }
+      return res;
+    },
+    [noteOpApplied],
+  );
+
   /** Bug 6 — MOVE / RESIZE a placed stamp. The engine bakes stamps
    *  into the page bitmap with no registry, so the only lever is the
    *  Phase 10 `editImage` contract: mask the OLD rect with white and
@@ -9290,6 +9352,7 @@ pushToast(
       forms: (): void => setFlattenOpen(true),
       flatten: (): void => setFlattenOpen(true),
       stamp: onStampClick,
+      redact: (): void => setRedactArmed(true),
       watermark: onWatermarkClick,
       exportComments: onCommentExportClick,
       importComments: onCommentImportClick,
@@ -10024,6 +10087,10 @@ pushToast(
   );
   const showWelcomeEffective = !stageRailVisible;
 
+  // Phase 84 — the persisted redaction mark colour (six-digit hex, main
+  // process normalizes; absent field means the documented default black).
+  const redactionColor = settings?.redactionColor ?? "#000000";
+
   return (
     <div className={isMaximized ? "app app-maximized" : "app"}>
       {/* Phase 14 — the frosted theme's ambient backdrop. Paints the
@@ -10483,6 +10550,10 @@ pushToast(
                     // B10 — armed stamp ghost + click-to-embed.
                     armedStamp={armedStamp}
                     onPlaceStamp={onPlaceStamp}
+                    redactArmed={redactArmed}
+                    onApplyRedactions={onApplyRedactions}
+                    markColor={redactionColor}
+                    onMarkColorChange={onMarkColorChange}
                     // B10 / DEF-101 — placed-stamp DOM surfaces for
                     // this tab (mirror of successful addStamp ops).
                     stampAnnotations={placedStampsByTab[meta.id] ?? []}

@@ -8,6 +8,7 @@ import type {
   AppSettings,
   AddStampPayload,
   AddTextBoxPayload,
+  ApplyRedactionsPayload,
   CreateAnnotationPayload,
   CropEntry,
   DocxImageEntry,
@@ -872,6 +873,10 @@ export async function start(): Promise<void> {
   // Phase 10: edit content (text run, text box, image)
   ipcMain.handle(IPC.engineEditTextRun, (_event, docId: string, payload: EditTextRunPayload) =>
     engine.editTextRun(docId, payload),
+  );
+  // Phase 84 (True redaction) — remove the covered glyphs and draw the marks.
+  ipcMain.handle(IPC.engineApplyRedactions, (_event, docId: string, payload: ApplyRedactionsPayload) =>
+    engine.applyRedactions(docId, payload),
   );
   ipcMain.handle(IPC.engineAddTextBox, (_event, docId: string, payload: AddTextBoxPayload) =>
     engine.addTextBox(docId, payload),

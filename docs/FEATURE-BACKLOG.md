@@ -608,3 +608,343 @@ left the palette verb live, so a second, older comic reader survives alongside B
 Why it matters: it is the one remaining duplicate of the comic-reading surface; if the intent is that Book
 View fully supersedes the old comic viewport, this verb should be retired in its own small change with the
 accompanying spec updates, rather than silently at a phase close.
+
+## FEA-031: True redaction (permanent content removal)
+
+- Status: ACCEPTED -> Phase 84
+- Source: https://tools.pdf24.org/en/redact-pdf (PDF24); https://www.foxit.com/pdf-editor/ (Foxit "Redact Information - Permanently remove sensitive content")
+- Category: Edit
+- Effort: M
+- Likely new settings: maybe (redaction defaults: mark colour, apply-on-save)
+- Batch: 4 (feature-scout TFL-377, 2026-10-02)
+
+What it does: mark text/regions and permanently strip the underlying content on save, unlike the shipped
+Phase-10 delete which is documented visual redact-and-redraw (original text remains extractable).
+
+Why it matters: confidentiality workflows are unusable when "redacted" text survives copy/paste; every
+desktop peer ships real redaction.
+
+History:
+- orchestrator: recorded from feature-scout batch FEA-031..FEA-040 (TFL-377)
+- orchestrator: accepted on CEO commission TFL-315, iteration 4; promoted to Phase 84
+
+## FEA-032: Compare two documents (side-by-side diff)
+
+- Status: PROPOSED
+- Source: https://tools.pdf24.org/en/compare-pdf (PDF24); https://stirlingpdf.io/ (Stirling "Compare PDF Files"); https://www.foxit.com/pdf-editor/ (Foxit "Compare two PDF versions")
+- Category: Edit
+- Effort: L
+- Likely new settings: maybe (default diff mode: text vs pixel)
+- Batch: 4 (feature-scout TFL-377, 2026-10-02)
+
+What it does: open two versions and highlight inserted/deleted/changed text, and optionally pixel
+differences, page by page.
+
+Why it matters: revision review is a top Acrobat/Foxit Pro capability TFlex cannot answer at all.
+
+History:
+- orchestrator: recorded from feature-scout batch FEA-031..FEA-040 (TFL-377)
+
+## FEA-033: Bates numbering
+
+- Status: PROPOSED
+- Source: https://www.sejda.com/bates-numbering-pdf (Sejda, "Bates stamp multiple files at once")
+- Category: Annotate
+- Effort: M
+- Likely new settings: maybe (batesDefaults: prefix, start number, padding, position)
+- Batch: 4 (feature-scout TFL-377, 2026-10-02)
+
+What it does: stamp sequential case/file numbers across selected pages of one or more documents, with
+prefix/suffix and position options.
+
+Why it matters: legal and accounting workflows expect Bates stamps; plain page numbering does not cover
+them.
+
+History:
+- orchestrator: recorded from feature-scout batch FEA-031..FEA-040 (TFL-377)
+
+## FEA-034: Certificate-based digital signature (sign and validate)
+
+- Status: PROPOSED
+- Source: https://stirlingpdf.io/ (Stirling "Sign PDF with a Certificate", "Validate PDF Signature"); https://www.foxit.com/pdf-editor/signing-digitally/ (Foxit)
+- Category: Edit
+- Effort: H
+- Likely new settings: no (certificate material and its password must never persist in settings)
+- Batch: 4 (feature-scout TFL-377, 2026-10-02)
+
+What it does: sign with a local .pfx/.p12 certificate (PKCS#7 over the signed byte range) and show a
+validity notice for existing /Sig fields instead of treating them as dead unfillable widgets.
+
+Why it matters: the one peer signing capability TFlex structurally lacks; the form code already detects
+/FT /Sig fields and classifies them unfillable.
+
+History:
+- orchestrator: recorded from feature-scout batch FEA-031..FEA-040 (TFL-377)
+
+## FEA-035: Create and edit bookmarks (outline tree)
+
+- Status: ACCEPTED -> Phase 85
+- Source: https://stirlingpdf.io/ (Stirling "Edit PDF Bookmarks"); https://www.sejda.com/pdf-bookmarks (Sejda "Create Bookmarks")
+- Category: Organize
+- Effort: M
+- Likely new settings: no
+- Batch: 4 (feature-scout TFL-377, 2026-10-02)
+
+What it does: add, rename, retarget, nest and delete outline entries; today the outline panel is view-only
+navigation.
+
+Why it matters: merged or reorganized documents (Phases 2/32) end up with stale or missing bookmarks;
+peers fix that in the same panel.
+
+History:
+- orchestrator: recorded from feature-scout batch FEA-031..FEA-040 (TFL-377)
+- orchestrator: accepted on CEO commission TFL-315, iteration 4; promoted to Phase 85
+
+## FEA-036: Embed file attachments plus an attachments panel
+
+- Status: PROPOSED
+- Source: https://stirlingpdf.io/ (Stirling "Add Attachments to PDF")
+- Category: Create
+- Effort: M
+- Likely new settings: no
+- Batch: 4 (feature-scout TFL-377, 2026-10-02)
+
+What it does: attach files into the document's /EmbeddedFiles name tree with a panel to open, save and
+remove them; PDF/A validation already detects embedded files but there is no management surface.
+
+Why it matters: attaching source material to a PDF is a standard desktop-peer capability TFlex can
+currently only detect, not manage.
+
+History:
+- orchestrator: recorded from feature-scout batch FEA-031..FEA-040 (TFL-377)
+
+## FEA-037: Sanitize PDF (strip active content)
+
+- Status: PROPOSED
+- Source: https://stirlingpdf.io/ (Stirling "Sanitize PDF")
+- Category: Optimize
+- Effort: M
+- Likely new settings: yes (sanitize options: JavaScript, embedded files, external launch actions, metadata)
+- Batch: 4 (feature-scout TFL-377, 2026-10-02)
+
+What it does: remove JavaScript, launch and embedded-file actions and other executable metadata from a
+document, reporting what was stripped.
+
+Why it matters: fits the Audit/verify stage and the app's documented attacker-controlled-content posture;
+peers expose it as a one-click safety action.
+
+History:
+- orchestrator: recorded from feature-scout batch FEA-031..FEA-040 (TFL-377)
+
+## FEA-038: Search and replace text across the document
+
+- Status: PROPOSED
+- Source: https://www.sejda.com/pdf-editor (Sejda, "Easily find and replace all occurrences of words in a PDF")
+- Category: Edit
+- Effort: M
+- Likely new settings: no
+- Batch: 4 (feature-scout TFL-377, 2026-10-02)
+
+What it does: find every occurrence of a term and replace it, one-by-one confirm or replace-all, using the
+existing search index and text-edit machinery.
+
+Why it matters: search exists today but stops at finding; renaming a term through a long document is
+manual page-by-page work.
+
+History:
+- orchestrator: recorded from feature-scout batch FEA-031..FEA-040 (TFL-377)
+
+## FEA-039: Remove blank pages
+
+- Status: PROPOSED
+- Source: https://stirlingpdf.io/ (Stirling "Remove Blank Pages from PDF")
+- Category: Organize
+- Effort: S
+- Likely new settings: maybe (ink-coverage threshold for what counts as blank)
+- Batch: 4 (feature-scout TFL-377, 2026-10-02)
+
+What it does: detect pages with no renderable content, or only scanner noise below a threshold, and delete
+them in one pass.
+
+Why it matters: the cheapest scan-cleanup win; complements OCR (Phase 11) for paper workflows.
+
+History:
+- orchestrator: recorded from feature-scout batch FEA-031..FEA-040 (TFL-377)
+
+## FEA-040: Repair damaged PDF (salvage import)
+
+- Status: PROPOSED
+- Source: https://stirlingpdf.io/ (Stirling "Repair PDF"); https://www.sejda.com/repair-pdf (Sejda)
+- Category: Optimize
+- Effort: M
+- Likely new settings: no
+- Batch: 4 (feature-scout TFL-377, 2026-10-02)
+
+What it does: attempt recovery of a corrupted file (rebuild the cross-reference table from scanned objects,
+salvage readable pages) and open the salvageable subset with an honest report of what was lost.
+
+Why it matters: today a damaged file is simply refused; peers can often recover its pages, and the engine
+already rebuilds documents from page objects on save.
+
+History:
+- orchestrator: recorded from feature-scout batch FEA-031..FEA-040 (TFL-377)
+
+## FEA-041: Deskew + auto-rotate scanned pages
+
+- Status: PROPOSED
+- Source: https://www.sejda.com/deskew-pdf (Sejda); https://stirlingpdf.io/ (Stirling "Auto Rotate")
+- Category: Optimize
+- Effort: M
+- Likely new settings: maybe (scanCleanupDefaults: max deskew angle, auto-rotate on/off)
+- Batch: 5 (feature-scout TFL-389, 2026-10-02)
+
+What it does: detect and remove page skew and wrong orientation on scanned pages, straightening the raster before save (reuses the existing OCR raster pipeline).
+
+Why it matters: every desktop peer ships scan cleanup; today manual rotate is the only fix and OCR quality depends on straight pages.
+
+History:
+- orchestrator: recorded from feature-scout batch FEA-041..FEA-050 (TFL-389); CEO disposition: PROPOSED
+
+## FEA-042: Flip / mirror pages horizontally or vertically
+
+- Status: PROPOSED
+- Source: https://www.sejda.com/flip-pdf (Sejda "Flip - Mirror pages horizontally or vertically")
+- Category: Organize
+- Effort: M
+- Likely new settings: no
+- Batch: 5 (feature-scout TFL-389, 2026-10-02)
+
+What it does: apply a horizontal or vertical mirror transform to selected pages and save it into the file.
+
+Why it matters: mirrored scans and specialty print workflows need true mirroring; the shipped rotate ops (rotate-cw/ccw only) cannot produce it.
+
+History:
+- orchestrator: recorded from feature-scout batch FEA-041..FEA-050 (TFL-389); CEO disposition: PROPOSED
+
+## FEA-043: Alternate & Mix merge (interleave two documents)
+
+- Status: PROPOSED
+- Source: https://www.sejda.com/alternate-mix-pdf (Sejda "Mixes pages from 2 or more documents, alternating between them")
+- Category: Organize
+- Effort: S
+- Likely new settings: no
+- Batch: 5 (feature-scout TFL-389, 2026-10-02)
+
+What it does: merge two documents by interleaving their pages (A1,B1,A2,B2...; with reverse and step options) into one file.
+
+Why it matters: the classic two-sided-scan reunite workflow is today only manual page-by-page reordering.
+
+History:
+- orchestrator: recorded from feature-scout batch FEA-041..FEA-050 (TFL-389); CEO disposition: PROPOSED
+
+## FEA-044: Resize pages (scale content to a target size, add margins/padding)
+
+- Status: PROPOSED
+- Source: https://www.sejda.com/resize-pdf (Sejda "Add page margins and padding, Change PDF page size"); https://stirlingpdf.io/ (Stirling "Resize PDF Pages")
+- Category: Edit
+- Effort: M
+- Likely new settings: maybe (resizeDefaults: default target page size)
+- Batch: 5 (feature-scout TFL-389, 2026-10-02)
+
+What it does: change a page's media size (A5 to A4) scaling the content, or pad with margins onto a larger sheet - distinct from shipped crop, which only clips.
+
+Why it matters: print and form workflows need uniform page geometry; crop alone cannot enlarge or rescale.
+
+History:
+- orchestrator: recorded from feature-scout batch FEA-041..FEA-050 (TFL-389); CEO disposition: PROPOSED
+
+## FEA-045: Add and edit hyperlink annotations
+
+- Status: PROPOSED
+- Source: https://www.sejda.com/pdf-editor (Sejda editor: "Add new links to web URLs or pages in the document. Easily edit existing hyperlinks in the PDF")
+- Category: Edit
+- Effort: M
+- Likely new settings: no
+- Batch: 5 (feature-scout TFL-389, 2026-10-02)
+
+What it does: draw a link rectangle over text or an area and set an internal GoTo destination, a file link or a URL; edit or remove existing links.
+
+Why it matters: the engine carries existing /Link annots untouched but users cannot create or fix links in a reorganized document.
+
+History:
+- orchestrator: recorded from feature-scout batch FEA-041..FEA-050 (TFL-389); CEO disposition: PROPOSED
+
+## FEA-046: Place an image on a page (image stamp tool)
+
+- Status: PROPOSED
+- Source: https://stirlingpdf.io/ (Stirling "Add Image to PDF"); https://www.sejda.com/pdf-editor (Sejda: "Add images to the page. Click and drag to move, resize or rotate the image")
+- Category: Edit
+- Effort: M
+- Likely new settings: no
+- Batch: 5 (feature-scout TFL-389, 2026-10-02)
+
+What it does: insert a PNG/JPEG anywhere on a page as a movable, resizable, deletable object (logo, photo, exhibit), written as real page content.
+
+Why it matters: create-from-images only builds NEW PDFs and watermark overlays whole documents; there is no way to place one image object on an existing page.
+
+History:
+- orchestrator: recorded from feature-scout batch FEA-041..FEA-050 (TFL-389); CEO disposition: PROPOSED
+
+## FEA-047: Remove images from a PDF
+
+- Status: PROPOSED
+- Source: https://stirlingpdf.io/ (Stirling "Remove Images from PDF")
+- Category: Optimize
+- Effort: M
+- Likely new settings: maybe (removeImages: keep-images-below-size threshold)
+- Batch: 5 (feature-scout TFL-389, 2026-10-02)
+
+What it does: strip embedded images from selected pages or the whole document (optionally keeping small ones), shrinking the file.
+
+Why it matters: complements shipped Reduce file size and text export when only the text matters; peers expose it as a one-click action.
+
+History:
+- orchestrator: recorded from feature-scout batch FEA-041..FEA-050 (TFL-389); CEO disposition: PROPOSED
+
+## FEA-048: Adjust / replace / invert page colours
+
+- Status: PROPOSED
+- Source: https://stirlingpdf.io/ (Stirling "Adjust PDF Colors and Contrast", "Replace and Invert PDF Colors")
+- Category: Optimize
+- Effort: M
+- Likely new settings: maybe (remember the last adjust preset)
+- Batch: 5 (feature-scout TFL-389, 2026-10-02)
+
+What it does: adjust brightness/contrast/saturation or replace one color with another / invert colors, applied to page rasters on save - the file-level sibling of FEA-006 grayscale.
+
+Why it matters: low-contrast scans and inverted reading copies are common reader asks; grayscale is the only color transform shipped.
+
+History:
+- orchestrator: recorded from feature-scout batch FEA-041..FEA-050 (TFL-389); CEO disposition: PROPOSED
+
+## FEA-049: Split scanned photos by detected image boundaries
+
+- Status: PROPOSED (low priority)
+- Source: https://stirlingpdf.io/ (Stirling "Split Scanned Photos")
+- Category: Organize
+- Effort: L
+- Likely new settings: maybe (minimum detected-photo size)
+- Batch: 5 (feature-scout TFL-389, 2026-10-02)
+
+What it does: take a flatbed scan containing several photos and split it into separate pages at the detected photo boundaries.
+
+Why it matters: photo-digitization sessions otherwise need manual crop-and-extract per photo; complements Phase 11 OCR in the scan pipeline.
+
+History:
+- orchestrator: recorded from feature-scout batch FEA-041..FEA-050 (TFL-389); CEO disposition: PROPOSED
+
+## FEA-050: Auto-rename from page text on save
+
+- Status: PROPOSED
+- Source: https://www.sejda.com/rename-pdf (Sejda "Change document filename based on text from the PDF pages"); https://stirlingpdf.io/ (Stirling "Auto Rename PDF Files")
+- Category: Create
+- Effort: S
+- Likely new settings: maybe (autoRename pattern template)
+- Batch: 5 (feature-scout TFL-389, 2026-10-02)
+
+What it does: propose a filename derived from the document's first-page text (user-editable pattern) in the Save dialog.
+
+Why it matters: scanned/merged output defaults to useless names; the engine already extracts first-page text.
+
+History:
+- orchestrator: recorded from feature-scout batch FEA-041..FEA-050 (TFL-389); CEO disposition: PROPOSED

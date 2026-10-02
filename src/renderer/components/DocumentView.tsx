@@ -47,6 +47,7 @@ import {
   type FlipKind,
 } from "./zoomFlip";
 import { PageView } from "./PageView";
+import type { ApplyRedactions } from "../redaction/RedactionOverlay";
 import { SearchBar } from "./SearchBar";
 import { PaneThumbStrip } from "./PaneThumbStrip";
 import { ContextPanel, type ContextPanelEditContent } from "./ContextPanel";
@@ -375,6 +376,15 @@ interface DocumentViewProps extends DocumentViewDockProps {
     page: number;
     atPt: { x: number; y: number };
   }) => Promise<void> | void;
+  /** Phase 84 — the Redact tool is armed; every PageView mounts the
+   *  RedactionOverlay so the user can drag a region into a pending mark. */
+  redactArmed?: boolean;
+  /** Phase 84 — apply hook threaded to every PageView's RedactionOverlay. */
+  onApplyRedactions?: ApplyRedactions;
+  /** Phase 84 — fill colour for pending redaction marks (settings-backed). */
+  markColor?: string;
+  /** Phase 84 — persist a chosen redaction mark colour. */
+  onMarkColorChange?: (hex: string) => void;
   /** Place a saved signature on a specific page at the given rect. The
    *  page number is threaded through so the host doesn't have to track
    *  which page the click landed on; SignaturesOverlay already knows
@@ -838,6 +848,10 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
   onTextSelectionChange,
   armedStamp = null,
   onPlaceStamp,
+  redactArmed = false,
+  onApplyRedactions,
+  markColor,
+  onMarkColorChange,
   stampAnnotations = [],
   onMoveStamp,
   onDeleteStamp,
@@ -4395,6 +4409,10 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
                       // the click point.
                       armedStamp={armedStamp}
                       onPlaceStamp={onPlaceStamp}
+                      redactArmed={redactArmed}
+                      onApplyRedactions={onApplyRedactions}
+                      markColor={markColor}
+                      onMarkColorChange={onMarkColorChange}
                       stampAnnotations={stampAnnotations.filter(
                         (s) => s.page === visiblePage,
                       )}

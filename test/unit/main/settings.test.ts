@@ -103,6 +103,9 @@ describe('SettingsService.load', () => {
       // Phase 58: same explicit-default shape — the normalizer always emits
       // tabStyle, resolving missing/invalid to 'colorful'.
       tabStyle: 'colorful' as const,
+      // Phase 84: same explicit-default shape — the normalizer always emits
+      // redactionColor, resolving missing/invalid to '#000000'.
+      redactionColor: '#000000' as const,
     };
     await svc.save(settings);
     const result = await svc.load();

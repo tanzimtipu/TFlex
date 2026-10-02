@@ -11,6 +11,10 @@ import { FormsOverlay } from '../forms/FormsOverlay';
 import { SignaturesOverlay } from '../signatures/SignaturesOverlay';
 import { EditOverlay } from '../edit/EditOverlay';
 import { StampOverlay } from '../annotations/StampOverlay';
+import {
+  RedactionOverlay,
+  type ApplyRedactions,
+} from '../redaction/RedactionOverlay';
 import type {
   CommentThread,
   FormField,
@@ -161,7 +165,7 @@ heightPt: number;
     stampId: import('../../shared/types').StampId;
     pngBytes: Uint8Array;
     pngWidth: number;
-    pngHeight: number;
+pngHeight: number;
   } | null;
   onPlaceStamp?: (args: {
     stampId: import('../../shared/types').StampId;
@@ -171,6 +175,17 @@ heightPt: number;
     page: number;
     atPt: { x: number; y: number };
   }) => void;
+  // -- Phase 84: True redaction --
+  /** When true, the page mounts the RedactionOverlay so the user can drag
+   *  a region and see a pending mark. */
+  redactArmed?: boolean;
+  /** Apply hook threaded to the RedactionOverlay (bound to the active
+   *  engine client by the host). */
+  onApplyRedactions?: ApplyRedactions;
+  /** Fill colour for pending redaction marks (settings-backed). */
+  markColor?: string;
+  /** Persist a chosen redaction mark colour. */
+  onMarkColorChange?: (hex: string) => void;
   // -- Phase 10: Edit-content overlay --
   /** Edit mode is open. The EditOverlay is mounted only when this
    *  is true; with it false the layer is invisible and pointer-
@@ -363,10 +378,14 @@ heightPt,
     armedSignatureId,
     onPlaceSignature,
     onMoveSignature,
-    onDeleteSignature,
+onDeleteSignature,
     onCancelSignatureArm,
     armedStamp = null,
     onPlaceStamp,
+redactArmed = false,
+    onApplyRedactions,
+    markColor,
+    onMarkColorChange,
     editModeOpen = false,
     edit = null,
     rotation = 0,
@@ -1014,6 +1033,22 @@ heightPt,
           }
         }}
       />
+      {/* Phase 84 — region redaction. Mounted only while the Redact tool
+          is armed; drag a region and it becomes a pending mark that the
+          overlay commits through the host's engine `applyRedactions`. */}
+      {redactArmed && (
+        <RedactionOverlay
+          page={page}
+          pageWidthPt={widthPt}
+          pageHeightPt={heightPt}
+          cssScale={cssScale}
+          armed={redactArmed}
+          applyRedactions={onApplyRedactions}
+          markColor={markColor}
+          onMarkColorChange={onMarkColorChange}
+          getTextItems={getTextItems}
+        />
+      )}
       {editModeOpen && edit !== null && (
         <EditOverlay
           page={page}

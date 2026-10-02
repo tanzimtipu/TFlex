@@ -296,6 +296,10 @@ export const DEFAULT_SETTINGS: AppSettings = {
   // source of the default; `normalizeSettings` resolves a missing/invalid
   // stored value to it (explicit-default, same shape as accountsEnabled).
   tabStyle: 'colorful',
+  // Phase 84 (True redaction) default mark colour. Single source of the
+  // default; `normalizeSettings` resolves a missing/invalid stored value to
+  // it (explicit-default, same shape as tabStyle).
+  redactionColor: '#000000',
 };
 
 /** Phase 44 — maximum persisted length of `syncDeviceId` (an install id). */
@@ -442,6 +446,17 @@ export function normalizeDockUnpinned(raw: unknown): string[] | null {
 export function normalizeTabStyle(raw: unknown): TabStyle | null {
   if (typeof raw !== 'string') return null;
   return (TAB_STYLES as readonly string[]).includes(raw) ? (raw as TabStyle) : null;
+}
+
+/** Phase 84 (True redaction) — a valid six-digit hex mark colour. */
+export const REDACTION_COLOR_PATTERN = /^#[0-9a-fA-F]{6}$/;
+
+/** Phase 84 — normalise a raw `redactionColor` value, preserve-if-valid.
+ *  Returns the value only when it is a six-digit hex string, else `null` (so
+ *  the caller resolves the shipped default `'#000000'`). */
+export function normalizeRedactionColor(raw: unknown): string | null {
+  if (typeof raw !== 'string') return null;
+  return REDACTION_COLOR_PATTERN.test(raw) ? raw : null;
 }
 
 /** Phase 58 — normalise a raw `homeTools` value, preserve-if-valid /
@@ -1304,6 +1319,14 @@ export function normalizeSettings(raw: unknown): AppSettings {
   // never overwritten by the default.
   settings.tabStyle =
     normalizeTabStyle(rawObj.tabStyle) ?? DEFAULT_SETTINGS.tabStyle;
+
+  // Phase 84 (True redaction): the applied-mark fill colour. Explicit default:
+  // a valid six-digit hex survives; anything else (missing, non-string, or a
+  // malformed hex) resolves to the shipped default `'#000000'`. Same
+  // explicit-default shape as tabStyle so a valid user choice is never
+  // overwritten by the default.
+  settings.redactionColor =
+    normalizeRedactionColor(rawObj.redactionColor) ?? DEFAULT_SETTINGS.redactionColor;
 
   // Phase 58: home-row tool ids (excluding the fixed Open-file tile).
   // Reject-if-invalid: a non-array leaves the field absent (consumer default

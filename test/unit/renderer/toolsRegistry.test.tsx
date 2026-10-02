@@ -53,7 +53,7 @@ const AUDITED: Record<string, readonly string[]> = {
     "editDefaultFont", "recognizeText", "batchOcr", "ocrSuspects",
   ],
   review: [
-    "annotate", "sign", "forms", "flatten", "stamp", "watermark", "exportComments",
+    "annotate", "sign", "forms", "flatten", "stamp", "watermark", "redact", "exportComments",
     "importComments", "fillFromCsv", "exportFormData", "importFormData", "validateDocument",
     "engineeringLayers", "documentInfo", "annotationsPanel", "annSelect", "annHighlight",
     "annUnderline", "annStrikeout", "annInk", "annTextbox", "annRect",

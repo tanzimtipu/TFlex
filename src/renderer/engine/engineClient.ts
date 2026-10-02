@@ -12,6 +12,7 @@ import { err } from "../../shared/result";
 import type {
   AddStampPayload,
   AddTextBoxPayload,
+  ApplyRedactionsPayload,
   CommentThread,
   CropEntry,
   DocxImageEntry,
@@ -40,6 +41,7 @@ import type {
   Pdf3dContent,
   PdfCadMetadata,
   PdfLayer,
+  RedactionApplyResult,
   SignaturePlacement,
   SpaceAudit,
   TextPage,
@@ -523,6 +525,13 @@ addWatermark?(
     docId: string,
     watermarkId: string,
   ): Promise<Result<SharedEngineState, EngineError>>;
+  /** Phase 84 (True redaction) — remove the glyphs covered by the marks on
+   *  one page and draw an opaque fill. Optional so a pre-Phase-84 backend
+   *  degrades with a friendly engine-error. */
+  applyRedactions?(
+    docId: string,
+    payload: ApplyRedactionsPayload,
+  ): Promise<Result<RedactionApplyResult, EngineError>>;
 }
 
 /** Normalize a wire EngineState into the renderer's EngineState: the Phase 3
@@ -1317,6 +1326,24 @@ class RealEngineAdapter implements EngineApi {
     if (this.inner.editTextRun === undefined) return missingPhase10();
     const r = await this.inner.editTextRun(docId, payload);
     return r.ok ? { ok: true, value: this.normalizeAndCache(docId, r.value) } : r;
+  }
+
+  /** Phase 84 (True redaction) — apply the pending marks on one page through
+   *  the real engine. The engine result embeds its own `state`, so normalize
+   *  that state through the cache while preserving `removedGlyphs` / the
+   *  warning list. Mirrors the `editTextRun` adapter shape. */
+  async applyRedactions(
+    docId: string,
+    payload: ApplyRedactionsPayload,
+  ): Promise<Result<RedactionApplyResult, EngineError>> {
+    if (this.inner.applyRedactions === undefined) return missingPhase10();
+    const r = await this.inner.applyRedactions(docId, payload);
+    return r.ok
+      ? {
+          ok: true,
+          value: { ...r.value, state: this.normalizeAndCache(docId, r.value.state) },
+        }
+      : r;
   }
 
   async addTextBox(

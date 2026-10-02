@@ -8,6 +8,7 @@ import type { Result } from "../../shared/result";
 import type {
   AddStampPayload,
   AddTextBoxPayload,
+  ApplyRedactionsPayload,
   CommentThread,
   CropEntry,
   DocxImageEntry,
@@ -33,6 +34,7 @@ import type {
   Pdf3dContent,
   PdfCadMetadata,
   PdfLayer,
+  RedactionApplyResult,
   SignaturePlacement,
   SpaceAudit,
   TextPage,
@@ -724,6 +726,18 @@ export interface EngineApi {
     docId: string,
     watermarkId: string,
   ): Promise<Result<EngineState, EngineError>>;
+
+  /** Phase 84 (True redaction) — permanently remove the glyphs covered by
+   *  each pending mark on one page and draw an opaque fill over the region.
+   *  `payload.page` is the 1-based VISIBLE page; each mark's `rect` is page
+   *  points with a TOP-LEFT origin. The engine echoes the updated state and
+   *  reports how many glyphs were dropped plus any non-fatal warnings.
+   *  Optional so a pre-Phase-84 backend degrades with a friendly
+   *  engine-error. */
+  applyRedactions?(
+    docId: string,
+    payload: ApplyRedactionsPayload,
+  ): Promise<Result<RedactionApplyResult, EngineError>>;
 
   /** Peek the renderer's most-recent normalized EngineState for `docId`
    *  without doing an IPC round-trip. The real-engine adapter populates

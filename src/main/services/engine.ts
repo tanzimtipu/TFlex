@@ -1,13 +1,19 @@
 import { readFile, writeFile } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
 import { inflateSync } from 'node:zlib';
-import { beginText, concatTransformationMatrix, degrees, drawObject, endText, fill, PDFArray, PDFDict, PDFDocument, PDFHexString, PDFName, PDFNumber, PDFObjectCopier, PDFRef, PDFStream, PDFString, rectangle, rgb, setCharacterSpacing, setFillingRgbColor, setFontAndSize, setGraphicsState, setTextMatrix, showText, StandardFonts, TextRenderingMode, setTextRenderingMode, pushGraphicsState, popGraphicsState, translate, rotateRadians, skewRadians, setLineWidth, setDashPattern, moveTo, lineTo, closePath, type PDFOperator, type PDFObject, type PDFImage, type PDFFont, type PDFPage } from '@cantoo/pdf-lib';
+import { beginText, concatTransformationMatrix, decodePDFRawStream, degrees, drawObject, endText, fill, PDFArray, PDFDict, PDFDocument, PDFHexString, PDFName, PDFNumber, PDFObjectCopier, PDFRawStream, PDFRef, PDFStream, PDFString, rectangle, rgb, setCharacterSpacing, setFillingRgbColor, setFontAndSize, setGraphicsState, setTextMatrix, showText, StandardFontEmbedder, StandardFonts, TextRenderingMode, setTextRenderingMode, pushGraphicsState, popGraphicsState, translate, rotateRadians, skewRadians, setLineWidth, setDashPattern, moveTo, lineTo, closePath, type PDFOperator, type PDFObject, type PDFImage, type PDFFont, type PDFPage } from '@cantoo/pdf-lib';
 import { err, ok, type Result } from '../../shared/result';
+import {
+  RedactionUnsupportedError,
+  removeRedactedGlyphs,
+  type RedactionAdvanceResolver,
+} from '../../shared/redaction';
 import type {
   AddStampPayload,
   AddTextBoxPayload,
   AnnModel,
   AnnRect,
+  ApplyRedactionsPayload,
   CommentEntry,
   CommentThread,
   CreateAnnotationPayload,
@@ -44,6 +50,7 @@ import type {
   PdfCadMetadata,
   PdfLayer,
   PlaceSignaturePayload,
+  RedactionApplyResult,
   SignaturePlacement,
   SpaceAudit,
   TextAlign,
@@ -97,11 +104,13 @@ import { auditSpace as auditSpacePdf } from './optimize';
 import { carryAcroForm, carryAcroFormInto, fillFormNatively } from './form-fill';
 import { OcrService, selectLowConfidence, type RawOcrWord, SUSPECT_CONFIDENCE_THRESHOLD } from './ocr';
 import {
+  DEFAULT_SETTINGS,
   DEFAULT_WATERMARK_COLOR,
   DEFAULT_WATERMARK_OPACITY,
   DEFAULT_WATERMARK_TEXT_SIZE,
   MAX_WATERMARK_PLACEMENTS_PER_PAGE,
   MAX_WATERMARKS_PER_DOC,
+  normalizeRedactionColor,
   OCR_LANGUAGES,
   STAMP_IDS,
   normalizeWatermarkSettings,
@@ -2514,6 +2523,125 @@ export class EngineService {
       // half-applied white rectangle behind.
       await tryRestorePdfBytes(doc, snapshot.pdfBytes);
       return err('engine-error', `editTextRun failed: ${e instanceof Error ? e.message : String(e)}`);
+    }
+  }
+
+  /**
+   * Phase 84 (True redaction) — permanently remove the glyphs covered by
+   * `payload.marks` from the target page's content stream, then draw an
+   * opaque rectangle for every mark in the resolved colour. Enqueued
+   * through `_enqueue` like every other mutating op; ONE undo snapshot is
+   * taken before the mutation so undo restores the pre-redaction bytes.
+   *
+   * Refuses loudly with a typed `redaction-unsupported` error (and leaves
+   * the document byte-for-byte unchanged) when the page content stream
+   * cannot be decoded or a marked run's font advances cannot be resolved.
+   * A mark that covers no removable text contributes a readable warning
+   * rather than a silent no-op.
+   */
+  async applyRedactions(
+    docId: string,
+    payload: ApplyRedactionsPayload,
+  ): Promise<Result<RedactionApplyResult, EngineError>> {
+    return this._enqueue(docId, () => this._applyRedactionsImpl(docId, payload));
+  }
+
+  private async _applyRedactionsImpl(
+    docId: string,
+    payload: ApplyRedactionsPayload,
+  ): Promise<Result<RedactionApplyResult, EngineError>> {
+    const doc = this.docs.get(docId);
+    if (doc === undefined) {
+      return err('engine-error', `unknown document: ${docId}`);
+    }
+    const marks = Array.isArray(payload.marks) ? payload.marks : [];
+    if (marks.length === 0) {
+      return err('empty-range', 'applyRedactions: no redaction marks provided');
+    }
+    const pageResult = resolveVisiblePage(doc, payload.page);
+    if (!pageResult.ok) return pageResult;
+
+    // One snapshot BEFORE mutating: undo restores the pre-redaction bytes.
+    const snapshot = await snapshotDocWithPdf(doc);
+    try {
+      const page = doc.pdfDoc.getPage(pageResult.value);
+      const pageHeight = page.getSize().height;
+
+      // Decode the page content stream(s); an unsupported filter refuses.
+      const content = decodePageContentStreams(doc.pdfDoc, page);
+
+      // Convert each top-left page-point mark into content-stream user space
+      // (origin bottom-left, y up) — the same convention editTextRun uses.
+      const resolver = buildRedactionAdvanceResolver(page);
+      const userMarks = marks.map((mark) => ({
+        rect: {
+          x: mark.rect.x,
+          y: pageHeight - (mark.rect.y + mark.rect.height),
+          width: mark.rect.width,
+          height: mark.rect.height,
+        },
+      }));
+
+      // Per-mark notice: a mark under which no removable text was found is
+      // reported, never silent. The all-marks call below does the rewrite.
+      const warnings: string[] = [];
+      for (let i = 0; i < userMarks.length; i += 1) {
+        const perMark = removeRedactedGlyphs(content, [userMarks[i]], resolver);
+        if (perMark.removedGlyphs === 0) {
+          warnings.push(
+            `Redaction mark ${i + 1} on page ${payload.page} covered no removable ` +
+              `text (images and vector content are not removed).`,
+          );
+        }
+      }
+
+      const result = removeRedactedGlyphs(content, userMarks, resolver);
+      const color =
+        normalizeRedactionColor(payload.color) ??
+        DEFAULT_SETTINGS.redactionColor ??
+        '#000000';
+
+      // REPLACE the page /Contents with ONE raw FlateDecode stream carrying
+      // the rewritten text plus the opaque mark rectangles. Appending via
+      // getContentStream cannot remove glyphs, so the stream is replaced.
+      const rectOps = userMarks
+        .map((mark) => redactionRectOperators(mark.rect, color))
+        .join('\n');
+      const finalContent = `${result.content}\n${rectOps}\n`;
+      const streamRef = doc.pdfDoc.context.register(
+        doc.pdfDoc.context.flateStream(Buffer.from(finalContent, 'latin1')),
+      );
+      page.node.set(PDFName.of('Contents'), streamRef);
+
+      doc.undoStack.push(snapshot);
+      doc.redoStack = [];
+      doc.modified = true;
+      return ok({
+        state: buildState(doc),
+        removedGlyphs: result.removedGlyphs,
+        warnings,
+      });
+    } catch (e) {
+      // Restore the pre-change bytes exactly (mirrors _editTextRunImpl).
+      await tryRestorePdfBytes(doc, snapshot.pdfBytes);
+      if (e instanceof RedactionUnsupportedError) {
+        // Phase 84 — typed refusal. The code is not yet a member of the
+        // shared `EngineError` union (chunk A omission); it is cast so this
+        // op typechecks without widening the union and breaking the
+        // renderer-owned exhaustive `describeEngineError` switch (chunk C
+        // owns adding the union member + its case). The runtime code is the
+        // exact string contract the renderer matches.
+        return err(
+          'redaction-unsupported' as EngineError,
+          `applyRedactions: page ${payload.page} ${e.reason}${
+            e.fontName ? ` (font ${e.fontName})` : ''
+          }`,
+        );
+      }
+      return err(
+        'engine-error',
+        `applyRedactions failed: ${e instanceof Error ? e.message : String(e)}`,
+      );
     }
   }
 
@@ -4956,6 +5084,183 @@ function drawClassicWhiteMaskRect(
     fill(),
     popGraphicsState(),
   );
+}
+
+// ---------------------------------------------------------------------------
+// Phase 84 (True redaction) — page content-stream rewrite helpers
+// ---------------------------------------------------------------------------
+
+/** The standard-14 base font names pdf-lib can measure without an embedded
+ *  metrics table (pdf-lib's own standard fonts carry no /Widths). */
+const REDACTION_STANDARD_FONT_NAMES = new Set<string>(Object.values(StandardFonts));
+
+/** Parse a six-digit hex colour (`#rrggbb`) into 0..1 rgb components. An
+ *  unparseable value falls back to black; callers validate first. */
+function hexToUnitRgb(hex: string): { r: number; g: number; b: number } {
+  if (!/^#[0-9a-fA-F]{6}$/.test(hex)) return { r: 0, g: 0, b: 0 };
+  return {
+    r: parseInt(hex.slice(1, 3), 16) / 255,
+    g: parseInt(hex.slice(3, 5), 16) / 255,
+    b: parseInt(hex.slice(5, 7), 16) / 255,
+  };
+}
+
+/** Raw operator text for one opaque mark rectangle in content-stream user
+ *  space. Mirrors `drawClassicWhiteMaskRect` but in the configured colour and
+ *  appended to the (already rewritten) stream instead of pushed onto a live
+ *  content stream. */
+function redactionRectOperators(rect: AnnRect, colorHex: string): string {
+  const { r, g, b } = hexToUnitRgb(colorHex);
+  const x2 = rect.x + rect.width;
+  const y2 = rect.y + rect.height;
+  return [
+    pushGraphicsState(),
+    setFillingRgbColor(r, g, b),
+    setLineWidth(0),
+    setDashPattern([], 0),
+    moveTo(rect.x, rect.y),
+    lineTo(rect.x, y2),
+    lineTo(x2, y2),
+    lineTo(x2, rect.y),
+    closePath(),
+    fill(),
+    popGraphicsState(),
+  ]
+    .map((op) => op.toString())
+    .join('\n');
+}
+
+/** Decode every page /Contents entry (single ref or array) to a latin1 string,
+ *  in order. Throws `RedactionUnsupportedError` when an entry is not a stream
+ *  or its filter chain cannot be decoded — the engine maps that to a typed
+ *  `redaction-unsupported` refusal before mutating anything. */
+function decodePageContentStreams(pdfDoc: PDFDocument, page: PDFPage): string {
+  const contents = page.node.Contents();
+  if (!contents) return '';
+  const entries: unknown[] = contents instanceof PDFArray ? contents.asArray() : [contents];
+  let out = '';
+  for (const entry of entries) {
+    let decoded: Uint8Array;
+    try {
+      const obj = pdfDoc.context.lookup(entry as PDFRef);
+      if (!(obj instanceof PDFStream)) {
+        throw new Error('page /Contents entry is not a stream');
+      }
+      const raw = PDFRawStream.of(
+        obj.dict,
+        obj.getContents(),
+        obj instanceof PDFRawStream ? obj.transform : undefined,
+      );
+      decoded = decodePDFRawStream(raw).decode();
+    } catch {
+      throw new RedactionUnsupportedError('content-stream-undecodable');
+    }
+    out += new TextDecoder('latin1').decode(decoded);
+  }
+  return out;
+}
+
+/**
+ * Build a `RedactionAdvanceResolver` from a page's font resources: a `Tf`
+ * resource name maps to the font dict, then to per-code glyph advances in
+ * thousandths of an em. Simple fonts use `/FirstChar` + `/Widths` (with a
+ * `/FontDescriptor /MissingWidth` fallback); standard-14 base fonts are
+ * measured with pdf-lib's `StandardFontEmbedder`. Type0/Type3 and any font
+ * whose metrics cannot be read return `null`, which makes the shared remover
+ * refuse loudly rather than guess. Never returns a guessed advance.
+ */
+function buildRedactionAdvanceResolver(page: PDFPage): RedactionAdvanceResolver {
+  const embedders = new Map<string, StandardFontEmbedder>();
+  let fontDict: PDFDict | undefined;
+  try {
+    const resources = page.node.Resources();
+    if (resources) fontDict = resources.lookup(PDFName.of('Font'), PDFDict);
+  } catch {
+    fontDict = undefined;
+  }
+
+  return (fontName, _size, showText) => {
+    if (showText.length === 0) return [];
+    if (!fontDict) return null;
+    let font: PDFDict | undefined;
+    try {
+      font = fontDict.lookupMaybe(PDFName.of(fontName), PDFDict);
+    } catch {
+      return null;
+    }
+    if (!font) return null;
+
+    let subtype = '';
+    try {
+      subtype = font.get(PDFName.of('Subtype'))?.toString() ?? '';
+    } catch {
+      subtype = '';
+    }
+    if (subtype === '/Type0' || subtype === '/Type3') return null;
+
+    let firstChar: number | undefined;
+    let widths: PDFArray | undefined;
+    let missingWidth: number | undefined;
+    try {
+      firstChar = font.lookupMaybe(PDFName.of('FirstChar'), PDFNumber)?.asNumber();
+      widths = font.lookupMaybe(PDFName.of('Widths'), PDFArray);
+      const descriptor = font.lookupMaybe(PDFName.of('FontDescriptor'), PDFDict);
+      missingWidth = descriptor?.lookupMaybe(PDFName.of('MissingWidth'), PDFNumber)?.asNumber();
+    } catch {
+      // Fall through to the base-font / MissingWidth paths below.
+    }
+
+    if (widths && firstChar !== undefined) {
+      const out: number[] = [];
+      for (let i = 0; i < showText.length; i += 1) {
+        const code = showText.charCodeAt(i) & 0xff;
+        const index = code - firstChar;
+        const entry = index >= 0 && index < widths.size() ? widths.get(index) : undefined;
+        if (entry instanceof PDFNumber) {
+          out.push(entry.asNumber());
+        } else if (missingWidth !== undefined) {
+          out.push(missingWidth);
+        } else {
+          return null;
+        }
+      }
+      return out;
+    }
+
+    let baseFont = '';
+    try {
+      baseFont = font.get(PDFName.of('BaseFont'))?.toString().replace(/^\//, '') ?? '';
+    } catch {
+      baseFont = '';
+    }
+    if (REDACTION_STANDARD_FONT_NAMES.has(baseFont)) {
+      let embedder = embedders.get(baseFont);
+      if (!embedder) {
+        try {
+          embedder = StandardFontEmbedder.for(
+            baseFont as Parameters<typeof StandardFontEmbedder.for>[0],
+          );
+        } catch {
+          return null;
+        }
+        embedders.set(baseFont, embedder);
+      }
+      const out: number[] = [];
+      for (let i = 0; i < showText.length; i += 1) {
+        try {
+          out.push(embedder.widthOfTextAtSize(showText[i], 1) * 1000);
+        } catch {
+          return null;
+        }
+      }
+      return out;
+    }
+
+    if (missingWidth !== undefined) {
+      return showText.split('').map(() => missingWidth as number);
+    }
+    return null;
+  };
 }
 
 /**

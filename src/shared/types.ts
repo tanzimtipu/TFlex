@@ -116,6 +116,12 @@ export interface AppSettings {
   /** Phase 6 — per-theme annotation color overrides. See
    *  `AnnotationColors`. The picker reads + writes this list. */
   annotationColors?: AnnotationColors;
+  /** Phase 84 — fill colour for applied redaction marks, a six-digit hex
+   *  string (`^#[0-9a-fA-F]{6}$`). Used by the renderer swatch and the
+   *  engine's opaque mark rectangle. Default `'#000000'`; the settings
+   *  validator preserves a valid value and falls back to the default for an
+   *  invalid one. */
+  redactionColor?: string;
   /** Phase 8 — optimize preset for file size reduction. Controls
    *  compression level when the engine.optimize action is called.
    *  'none' = linearized no compression, 'compact' = moderate
@@ -1104,6 +1110,38 @@ export interface EditTextRunPayload extends TextStyleFields {
    *  the engine masks `oldRect` (not `rect`) and draws `newText` at
    *  `rect`. Omit for a plain in-place edit. */
   oldRect?: AnnRect;
+}
+
+/** Phase 84 (True redaction) — one region the user marked for removal on a
+ *  page. `rect` is in PAGE POINTS with a TOP-LEFT origin (the same
+ *  convention as `AnnRect` / `EditTextRunPayload.rect`). Marks are session
+ *  state in the renderer until applied; the engine converts each rect into
+ *  the page content stream's user space before removing covered glyphs. */
+export interface RedactionMark {
+  rect: AnnRect;
+}
+
+/** Phase 84 — payload for `engine.applyRedactions`. `page` is the 1-based
+ *  VISIBLE page index (same as `EditTextRunPayload.page`); `rect` on each
+ *  mark is page points with a TOP-LEFT origin. `color` is an optional
+ *  six-digit hex fill for the opaque mark rectangle; absent means the
+ *  persisted `AppSettings.redactionColor` (default `'#000000'`). */
+export interface ApplyRedactionsPayload {
+  page: number;
+  marks: RedactionMark[];
+  color?: string;
+}
+
+/** Phase 84 — result of `engine.applyRedactions`. `state` is the updated
+ *  `EngineState` after the content-stream rewrite + mark draw; `removedGlyphs`
+ *  is the number of glyphs dropped from the page content stream; `warnings`
+ *  is a readable list of non-fatal notices (e.g. a mark that covered no
+ *  removable text). An unsupported page refuses loudly instead of returning
+ *  here. */
+export interface RedactionApplyResult {
+  state: EngineState;
+  removedGlyphs: number;
+  warnings: string[];
 }
 
 /** Phase 10 — payload for `engine.addTextBox`. As of Phase 14 / DEF-135 /

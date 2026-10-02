@@ -23,6 +23,7 @@ import { err, ok } from "../../shared/result";
 import type {
   AddStampPayload,
   AddTextBoxPayload,
+  ApplyRedactionsPayload,
   CommentEntry,
   CommentThread,
   CropEntry,
@@ -46,6 +47,7 @@ import type {
   Pdf3dContent,
   PdfCadMetadata,
   PdfLayer,
+  RedactionApplyResult,
   SavedSignature,
   SignaturePlacement,
   SignatureSource,
@@ -921,6 +923,26 @@ export class StubRendererEngine implements EngineApi {
     recordEdit(t, { kind: "editTextRun", payload });
     t.modified = true;
     return ok(buildState(t));
+  }
+
+  /** Phase 84 (True redaction) — the stub has no pdf-lib, so it cannot
+   *  rewrite the page content stream. It validates the call, records the
+   *  undo point and reports zero removed glyphs with no warnings so the
+   *  renderer's pending-mark -> apply flow can be exercised end-to-end
+   *  before the backend lands. A mark list is required; an empty list is
+   *  refused loudly rather than silently no-op'ing. */
+  async applyRedactions(
+    docId: string,
+    payload: ApplyRedactionsPayload,
+  ): Promise<Result<RedactionApplyResult, EngineError>> {
+    const t = this.tabs.get(docId);
+    if (t === undefined) return err("engine-error", "unknown document");
+    if (payload.marks.length === 0) {
+      return err("empty-range", "applyRedactions: no marks provided");
+    }
+    pushUndo(t);
+    t.modified = true;
+    return ok({ state: buildState(t), removedGlyphs: 0, warnings: [] });
   }
 
   /** Phase 10 — add a new text box. Same shape as editTextRun.

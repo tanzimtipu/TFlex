@@ -19080,5 +19080,107 @@ cursor: pointer;
  * scale out of the box's top-right corner (the collapsed "i" origin), so the
  * computed `animation-name` and its token-based duration are unchanged. */
 
+/* ---------------------------------------------------------------------------
+ * Phase 84 - Redaction overlay (DEF-490)
+ *
+ * The RedactionOverlay markup carries these class names but previously had
+ * no stylesheet rules, so the layer computed `position: static` and sat at
+ * the page bottom instead of covering it (a real drag marked nothing).
+ *
+ * Layer geometry mirrors `.edit-layer` (above): absolute inset:0 at z-index
+ * 4 (below the forms layer 5 and stamp layer 6), pointer-transparent by
+ * default and armed to `auto` while a redact tool is active. The floating
+ * action bar reuses `.content-action-bar`'s raised chrome so it reads as a
+ * real control surface inside the page. Marks and the draft stay
+ * pointer-transparent so drags always reach the layer.
+ * ------------------------------------------------------------------------- */
+
+.redact-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 4;
+  pointer-events: none;
+}
+
+.redact-layer[data-redact-tool] {
+  pointer-events: auto;
+  cursor: crosshair;
+}
+
+.redact-marks {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.redact-mark {
+  pointer-events: none;
+}
+
+.redact-draft {
+  pointer-events: none;
+  border: 1px dashed var(--accent);
+  background: var(--accent-soft);
+}
+
+.redact-actions {
+  position: absolute;
+  left: 8px;
+  top: 8px;
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  max-width: calc(100% - 16px);
+  padding: 4px 6px;
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-2);
+  box-shadow: var(--shadow-popover);
+  pointer-events: auto;
+}
+
+.redact-actions button {
+  pointer-events: auto;
+}
+
+.redact-modes {
+  display: inline-flex;
+  gap: 4px;
+}
+
+.redact-mode,
+.redact-swatch {
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 1px solid var(--border-strong);
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.redact-swatch {
+  border-radius: 50%;
+}
+
+.redact-mode[aria-pressed="true"] {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.redact-warning,
+.redact-error {
+  position: absolute;
+  left: 8px;
+  bottom: 8px;
+  max-width: calc(100% - 16px);
+  padding: 4px 8px;
+  border-radius: var(--radius-2);
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-popover);
+  pointer-events: none;
+}
+
 
 

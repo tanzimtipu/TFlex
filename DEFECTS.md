@@ -5,6 +5,55 @@
 > inspect the current `OPEN`, `FIX-READY`, and `DISPUTED` entries first; closed records are
 > historical evidence and must not be loaded wholesale.
 
+## DEF-491: Redaction over-removes a glyph when a mark touches the axis-aligned bounding box of a ROTATED glyph but not the glyph itself
+
+- Status: CLOSED
+- Severity: LOW
+- Found by: adversary (ADV-164, Phase 84 diff-pass)
+- Phase: 84 (True redaction)
+- Escape: over-approximation (AABB) accepted by the specified test matrix, which had no rotated-glyph case
+
+Steps to reproduce (pure module, deterministic):
+1. Content stream: `q 0.7071067811865476 0.7071067811865476 -0.7071067811865476 0.7071067811865476 200 200 cm BT /F1 10 Tf 1 0 0 1 0 0 Tm (A) Tj ET Q`.
+2. Call `removeRedactedGlyphs(content, [{ rect: { x: 194.0, y: 207.0, width: 0.5, height: 2.0 } }], fixedAdvance500)`.
+3. The mark rect lies entirely OUTSIDE the glyph's true 45-degree quad, but touches the AABB.
+
+Expected: 0 glyphs removed (content unchanged), because the mark visually covers no part of the glyph.
+
+Actual: 1 glyph removed (output `... Tm [-500] TJ ...`). `glyphBox` (`src/shared/redaction.ts:602-631`) transforms the four glyph-cell corners and returns their axis-aligned bounding box; the hit test at `:672-673` uses `rectsIntersect` (`:492-499`) against that AABB. For a rotation that is not a multiple of 90 degrees the AABB is strictly larger than the true rotated quad, so a mark can remove an unmarked neighbouring character. Confidentiality-safe (over-removal, never under-removal), reachable for content-stream-rotated text (watermarks, vertical table headers/labels, imported rotated-text PDFs) - the app's Rotate verb sets page `/Rotate` (`engine.ts:2121`), which does not rotate content-stream text.
+
+Screenshot: none (pure-geometry repro; `e2e/phase84_redaction_adversary.spec.cjs` test `ADV84-A`, probe `A2c-over-removal`).
+
+History:
+- CTO (TFL-382, 2026-10-02): ACCEPTED from ADV-164 (LOW). Owner backend-dev (`src/shared/redaction.ts`): replace the AABB hit test with a true rect-vs-quad intersection (keep the rotated cell corners instead of reducing to min/max) and add the deterministic 45-degree case to `test/unit/main/redaction.test.ts`. Dispatched as TFL-409. qa FIX-READY retest follows.
+- backend-dev (TFL-409, 2026-10-02): FIX-READY. `glyphBox` -> `glyphQuad` now returns the four page-space corners (`src/shared/redaction.ts:639`); new pure `rectIntersectsQuad` (`:495`) does a separating-axis test on the rect axes + the quad edge normals; the `planString` hit test uses it (`:697-698`); the now-unused `rectsIntersect` removed. Unrotated glyphs reduce to the same strict overlap as before. `test/unit/main/redaction.test.ts` +2 cases (rotated 45-degree glyph: AABB-only touch keeps the glyph with byte-identical content; a centroid mark removes it). Evidence: `npm run test:unit -- test/unit/main/redaction.test.ts` -> 10 passed (10); `npm run typecheck` -> exit 0; attachment 0ef11bf8-f0b1-415a-ba63-881221b89e28. qa retest pending.
+- qa (TFL-410, 2026-10-02): CLOSED. Independent retest spec `test/unit/main/def491_retest.test.ts` (new, 3 cases) re-encodes the ADV-164 repro from scratch: NEGATIVE mark `{x:194.0,y:207.0,w:0.5,h:2.0}` on the 45-degree glyph's AABB -> `removedGlyphs === 0` and content byte-identical; POSITIVE centroid mark `{x:199.65,y:203.89,w:0.5,h:0.5}` -> `removedGlyphs === 1`; REGRESSION unrotated fully-covered glyph -> exactly 1. Evidence: `npm.cmd run test:unit -- test/unit/main/def491_retest.test.ts` -> 3 passed (3); blast radius `npm.cmd run test:unit -- test/unit/main/redaction.test.ts test/unit/main/redactionEngine.test.ts` -> 16 passed (16) = 10 + 6; `npm.cmd run verify` -> conventions clean (327 files), typecheck exit 0. No source or existing spec touched; work uncommitted for git-agent.
+
+## DEF-490: Redact overlay has no CSS, so `.redact-layer` is position:static — a real page drag creates no marks and the control bar overlaps the action dock
+
+- Status: CLOSED
+- Severity: HIGH
+- Found by: qa (TFL-405, Phase 84 phase validation)
+- Phase: 84 (True redaction)
+- Escape: missing-verification (unit-only coverage; the gate had no real-layout drag assertion)
+
+Steps to reproduce:
+1. `npm.cmd run build`; open a text PDF through `e2e/lib/launch.cjs`; arm the Redact tool from the dock.
+2. Inspect `[data-redact-layer]`: computed `position` is `static` and its bounding box is `top: 1392` (the page bottom, in page flow), not the page area.
+3. Drag a real mouse region across the page over a known term.
+
+Expected: `[data-redact-layer]` overlays the page (`position:absolute; inset:0`), captures the drag, and one `[data-redact-mark]` appears; the controls sit inside the page, not over the action dock.
+
+Actual: the layer does not cover the page, so a real drag creates 0 pending marks (`[p84|real-mouse-page-drag-marks] 0`), and the control bar renders over the action dock at the window bottom. Region marking is inoperable in the real app even though `redactionOverlay.test.tsx` passes (jsdom applies no stylesheet). Root cause: `RedactionOverlay.tsx` sets `className="redact-layer"` and the child classes `.redact-marks` / `.redact-mark` / `.redact-draft` / `.redact-actions` / `.redact-modes` / `.redact-mode` / `.redact-swatches` / `.redact-swatch` / `.redact-warning` / `.redact-error`, but `src/renderer/styles.css` has no rules for any of them; the Phase 10 `.edit-layer` pattern (`styles.css:10305-10322`) was not copied.
+
+Screenshots: screenshots/p84-pending-mark.png, screenshots/p84-probe-armed.png.
+
+History:
+- CTO (TFL-382, 2026-10-02): filed from the qa TFL-405 Phase 84 phase-validation verdict (criteria 1-6 PASS, criterion 7 INCONCLUSIVE pending ledgers/commit). Owner frontend-dev: add the missing `.redact-layer` + child layout CSS mirroring `.edit-layer` (`styles.css:10305-10322`), and add a styles.css textual-scan unit pin. Dispatched as TFL-406. qa FIX-READY retest follows on the rebuilt app (real mouse drag must create one `[data-redact-mark]`).
+- frontend-dev (TFL-406, 2026-10-02): FIX-READY. Appended a labelled Phase 84 redaction block to `src/renderer/styles.css` (`.redact-layer { position:absolute; inset:0; z-index:4; pointer-events:none; }`, `.redact-layer[data-redact-tool] { pointer-events:auto; cursor:crosshair; }`, `.redact-actions { position:absolute; ...; pointer-events:auto; }` + `.redact-actions button`, `.redact-modes/.redact-mode/.redact-swatch`, `.redact-warning/.redact-error`; marks and draft stay pointer-transparent). `RedactionOverlay.tsx` untouched (class names already present). New stylesheet-pin test `test/unit/renderer/phase84_redactionCss.test.ts`. Evidence: `vitest run test/unit/renderer/redactionOverlay.test.tsx test/unit/renderer/phase84_redactionCss.test.ts` -> 2 files passed, 19 tests passed; conventions clean (327 files); typecheck exit 0. No build/e2e run by the developer (qa owns the real-mouse retest). Uncommitted for git-agent. qa retest pending.
+- qa (TFL-407, 2026-10-02): CLOSED. Rebuilt first (`npm.cmd run build`), then added a hard REAL-mouse regression `P84-DEF490-REAL-MOUSE` to `e2e/phase84_redaction.spec.cjs` (page.mouse move/down/move/up over SECRET-ALPHA; asserts one `[data-redact-mark]`, non-static computed position, layer box == page box, controls inside the page rect). `npm.cmd run test:e2e -- e2e/phase84_redaction.spec.cjs` -> 7 passed (53.4s). Raw DEF-490 proof: `[p84|def490-geometry] {"position":"absolute","layerBox":{"x":751.1875,"y":44,"width":1041.625,"height":1348},"pageBox":{"x":751.1875,"y":44,"width":1041.625,"height":1348},"barBox":{"x":759.1875,"y":52,"width":623.71875,"height":35.84375},"applyBox":{"x":1001.84375,"y":58.921875,"width":119.75,"height":22},"swatchBox":{"x":820.1875,"y":57,"width":22,"height":22},"viewport":{"w":2560,"h":1392}}` and `[p84|real-mouse-page-drag-marks] 1` (pre-fix 0); bar bottom 87.84 is >20px above the 1392px window bottom and inside the page. Also corrected the pre-existing `P84-CONTROL-INDEX` assertion (the now-working real drag yields one mark, so it is cleared before the synthetic region-drag proof) rather than weakening it. Focused units `npm.cmd run test:unit -- test/unit/renderer/redactionOverlay.test.tsx test/unit/renderer/phase84_redactionCss.test.ts` -> 2 files / 19 tests passed. `npm.cmd run verify` -> conventions clean (327 files), typecheck exit 0. Screenshot: screenshots/p84-def490-fixed-mark.png (armed overlay, blue pending mark over the term, control bar inside the page). Escape follow-up complete: the missing real-layout drag test now exists in the gate. Environment note: this harness exports `ELECTRON_RUN_AS_NODE=1`; the spec deletes it before launch (launchApp spreads process.env) or Electron exits as Node ("Process failed to launch!"). Decisive screenshot uploaded to the Artifacts board (attachment f3ccc099-2f8c-452a-8190-c6013eaf1045). Work left uncommitted for git-agent.
+- qa (TFL-407 re-verify, 2026-10-02): CLOSED reconfirmed on an independent run after the issue was reopened. Rebuilt (`npm.cmd run build` -> typecheck + vite renderer + esbuild main/preload exit 0), then `npm.cmd run test:e2e -- e2e/phase84_redaction.spec.cjs --reporter=line` -> 7 passed (53.9s) with the hard REAL-mouse test `P84-DEF490-REAL-MOUSE`. Raw proof reproduced identically: `[p84|def490-geometry] {"position":"absolute","layerBox":{"x":751.1875,"y":44,"width":1041.625,"height":1348},"pageBox":{"x":751.1875,"y":44,"width":1041.625,"height":1348},"barBox":{"x":759.1875,"y":52,"width":623.71875,"height":35.84375},"applyBox":{"x":1001.84375,"y":58.921875,"width":119.75,"height":22},"swatchBox":{"x":820.1875,"y":57,"width":22,"height":22},"viewport":{"w":2560,"h":1392}}`; `[p84|real-mouse-page-drag-marks] 1` (pre-fix 0). Focused units -> 2 files / 19 tests passed. `npm.cmd run verify` -> conventions clean (327 files), typecheck exit 0. Fresh screenshot `screenshots/p84-def490-fixed-mark.png` inspected: blue pending mark over the term, control bar inside the page. Blast radius: `P84-CONTROL-INDEX` (control row) and `P84-REGRESSION` (Phase-10 erase/save-export neighbour) both pass in the same run.
+
 ## DEF-488: Installed app silently reports "up-to-date" and shows no OTA notification because an invalid ambient GH token turns the public feed into a swallowed 401
 
 - Status: CLOSED

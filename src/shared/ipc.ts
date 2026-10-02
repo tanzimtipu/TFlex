@@ -20,6 +20,7 @@ import type {
   AddStampPayload,
   AddTextBoxPayload,
   AppInfo,
+  ApplyRedactionsPayload,
   AppSettings,
   CropEntry,
   DocxImageEntry,
@@ -49,6 +50,7 @@ import type {
   PrintWindowContext,
   PrintWindowOpenResult,
   RecentFile,
+  RedactionApplyResult,
   SampleDocument,
   SavedSignature,
   SignatureSource,
@@ -210,6 +212,11 @@ export const IPC = {
   engineCreateDocxFromDoc: "engine:createDocxFromDoc",
   // Phase 10: edit content
   engineEditTextRun: "engine:editTextRun",
+  // Phase 84 (True redaction) — remove the glyphs covered by the supplied
+  // page-space marks from the page content stream, then draw the opaque mark
+  // rectangles. Refuses loudly (`redaction-unsupported`) for a page whose
+  // content cannot be decoded or whose font advances cannot be resolved.
+  engineApplyRedactions: "engine:applyRedactions",
   engineAddTextBox: "engine:addTextBox",
   engineEditImage: "engine:editImage",
   // Phase 14 / DEF-135 / DEF-136 — text-box placement registry (move/delete).
@@ -667,6 +674,17 @@ export interface TFlexApiEngine {
     docId: string,
     payload: EditTextRunPayload,
   ): Promise<Result<EngineState, import("./types").EngineError>>;
+  /** Phase 84 (True redaction) — permanently remove the glyphs covered by
+   *  `payload.marks` from the given page's content stream, then draw the
+   *  opaque mark rectangles in `payload.color` (falling back to the persisted
+   *  `AppSettings.redactionColor`). Returns the updated state, the removed
+   *  glyph count and readable warnings. Refuses loudly with a typed
+   *  `redaction-unsupported` error when a marked page cannot be decoded or a
+   *  font's advances cannot be resolved; nothing is applied to that page. */
+  applyRedactions?(
+    docId: string,
+    payload: ApplyRedactionsPayload,
+  ): Promise<Result<RedactionApplyResult, import("./types").EngineError>>;
   /** Phase 10 — add a new text box with wrapping inside `rect`. As of
    *  Phase 14 / DEF-135 / DEF-136 this pushes a `TextBoxModel` into the
    *  engine-side placement registry (NO immediate draw); the box is drawn
