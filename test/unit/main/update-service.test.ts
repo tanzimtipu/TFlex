@@ -188,10 +188,10 @@ describe('UpdateService — no token (public feed)', () => {
 });
 
 // ---------------------------------------------------------------------------
-// UpdateService — GH_TOKEN fallback (optional token attached to public feed)
+// UpdateService — ambient tokens are ignored (public feed)
 // ---------------------------------------------------------------------------
 
-describe('UpdateService — GH_TOKEN fallback', () => {
+describe('UpdateService — ambient tokens are ignored (public feed)', () => {
   beforeEach(() => {
     clearEnv();
     _mockReadFileSync.mockReturnValue(JSON.stringify({ repository: 'tanzimtipu/TFlex' }));
@@ -206,7 +206,7 @@ describe('UpdateService — GH_TOKEN fallback', () => {
     clearEnv();
   });
 
-  it('attaches GH_TOKEN to the public feed when TFLEX_GH_TOKEN is not set', () => {
+  it('does not attach GH_TOKEN to the public feed', () => {
     process.env.GH_TOKEN = 'gh-fallback-token';
     const svc = new UpdateService();
     svc.init();
@@ -215,11 +215,10 @@ describe('UpdateService — GH_TOKEN fallback', () => {
       owner: 'tanzimtipu',
       repo: 'tflex-releases',
       private: false,
-      token: 'gh-fallback-token',
     });
   });
 
-  it('prefers TFLEX_GH_TOKEN over GH_TOKEN for the feed token', () => {
+  it('does not attach TFLEX_GH_TOKEN (nor GH_TOKEN) to the public feed', () => {
     process.env.TFLEX_GH_TOKEN = 'primary-token';
     process.env.GH_TOKEN = 'fallback-token';
     const svc = new UpdateService();
@@ -229,7 +228,6 @@ describe('UpdateService — GH_TOKEN fallback', () => {
       owner: 'tanzimtipu',
       repo: 'tflex-releases',
       private: false,
-      token: 'primary-token',
     });
   });
 });
@@ -276,7 +274,6 @@ describe('UpdateService — initialised', () => {
       owner: 'tanzimtipu',
       repo: 'tflex-releases',
       private: false,
-      token: 'test-token',
     });
   });
 
@@ -803,17 +800,16 @@ describe('UpdateService — OTA fallback', () => {
       expect(_checkForUpdates).toHaveBeenCalledTimes(1);
     });
 
-    it('reports a clean up-to-date state when the check promise rejects', async () => {
+    it('surfaces a latest-version lookup failure as error (not up-to-date)', async () => {
       const svc = new UpdateService();
       svc.init();
       _checkForUpdates.mockClear();
-      _checkForUpdates.mockRejectedValueOnce(
-        new Error('Unable to find latest version on GitHub (tanzimtipu/tflex-releases), please ensure a production release exists'),
-      );
+      const message = 'Unable to find latest version on GitHub (tanzimtipu/tflex-releases), please ensure a production release exists';
+      _checkForUpdates.mockRejectedValueOnce(new Error(message));
       const result = await svc.checkForUpdates();
-      expect(result.kind).toBe('up-to-date');
-      if (result.kind === 'up-to-date') {
-        expect(result.version).toBe('1.5.0');
+      expect(result.kind).toBe('error');
+      if (result.kind === 'error') {
+        expect(result.message).toBe(message);
       }
       // No fallback exists (no token), so no retry was started.
       expect(_checkForUpdates).toHaveBeenCalledTimes(1);

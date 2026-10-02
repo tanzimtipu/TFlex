@@ -7,7 +7,7 @@
 
 ## DEF-488: Installed app silently reports "up-to-date" and shows no OTA notification because an invalid ambient GH token turns the public feed into a swallowed 401
 
-- Status: FIX-READY
+- Status: CLOSED
 - Severity: HIGH
 - Found by: operator (board report, 2026-10-02)
 - Phase: 82 (OTA updater regression)
@@ -28,10 +28,11 @@ History:
 - CTO (TFL-362, 2026-10-02): filed from the board report with escape class ESCAPE: wrong-oracle - the unit test `UpdateService - OTA fallback` ("reports a clean up-to-date state when the check promise rejects") asserted the swallowed 401 wrapper as the DESIRED up-to-date behavior, so the oracle pinned the bug; the packaged ambient-token path also had no probe. Fix dispatched as TFL-363 (backend-dev): stop attaching ambient `TFLEX_GH_TOKEN`/`GH_TOKEN` to the public feed and narrow `isNoReleasesError` so ERR_UPDATER_LATEST_VERSION_NOT_FOUND surfaces as `error`. FIX-READY pending qa closure.
 - CTO (TFL-365, 2026-10-02): focused verification PASS - `e2e/installed/ota_stale_token.spec.cjs` 3 passed (CASE A fixed 1.46.0 build + bad token -> available + prompt; CASE B fixed 1.47.0 build + bad token -> up-to-date no error; CASE C pre-fix installed 1.46.0 + bad token -> up-to-date, the reproduced failure mode); neighbour renderer update tests 71/71; qa to CLOSE at phase close.
 - qa (TFL-371, 2026-10-02): renumbered DEF-484 -> DEF-488 during the Phase 83 phase-close ledger-integrity review. The Phase 83 ADV-158 disposition (ADVERSARIAL_REVIEW.md:7432) and the developer fix comments (`src/main/services/print.ts:446`, `test/unit/main/print.test.ts:675`) already claimed DEF-484 for the booklet-creep fix, so the phase-close instruction assigned the Phase 83 set DEF-484..487. No source or test references this OTA entry by number; only this ledger line changed. CTO owns the disposition of the OTA defect itself.
+- qa (TFL-378, 2026-10-02): CLOSED at phase close. `e2e/installed/ota_stale_token.spec.cjs` via `npx playwright test --config=e2e/installed/playwright.installed.config.js ota_stale_token.spec.cjs` -> 3 passed: CASE A fixed 1.46.0 + bad token -> available 1.47.0 + visible prompt + check() available; CASE B fixed 1.47.0 + bad token -> up-to-date no error; CASE C pre-fix installed 1.46.0 + bad token -> up-to-date (swallowed 401 reproduced, screenshots/tfl365_caseC_prefix_swallowed.png no-notification vs screenshots/tfl365_caseA_available_prompt.png prompt). `npm run test:unit -- test/unit/main/update-service.test.ts` -> 57 passed (ambient token ignored + latest-version wrapper surfaces as error); `npm run verify` -> conventions clean + typecheck clean. Feed confirmed live: latest.yml at tanzimtipu/tflex-releases version 1.47.0.
 
 ## DEF-489: OTA error state shows a "Retry" toolbar button that silently does nothing (it calls download() while state.kind='error')
 
-- Status: OPEN
+- Status: CLOSED
 - Severity: MEDIUM
 - Found by: adversary (ADV-162)
 - Phase: 82 (OTA updater regression)
@@ -49,6 +50,7 @@ Screenshot: none (proven by source plus the probe `adv162-retry-noop-result.json
 
 History:
 - CTO (TFL-362, 2026-10-02): ACCEPTED from ADV-162 triage (MEDIUM). Owner frontend-dev: the error branch's Retry must call `update.check()` instead of `update.download()`, plus a unit assertion that an error-chip click invokes check (not download).
+- qa (TFL-378, 2026-10-02): CLOSED at phase close. `npm run test:unit -- test/unit/renderer/updateIndicator.test.tsx` -> 27 passed, including "clicking 'error' retries by calling update.check(), not download() (DEF-489)" (check called once, download zero) and the older-preload fallback (download when check absent). Source wiring confirmed: UpdateIndicator.tsx:186-189 onRetry->check with download fallback, error chip onClick=onRetry (:273). `npm run verify` -> conventions clean + typecheck clean.
 
 ## DEF-478: Format Painter consumes the captured format when a just-placed box is committed while the painter is armed
 

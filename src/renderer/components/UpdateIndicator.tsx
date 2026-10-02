@@ -88,6 +88,7 @@ export function indicatorView(state: UpdateState | null | undefined): IndicatorV
  *  absent (older build, jsdom test environment). */
 interface UpdateApi {
   getStatus?: () => Promise<UpdateState>;
+  check?: () => Promise<UpdateState>;
   download?: () => Promise<UpdateState>;
   install?: () => Promise<void>;
   onStatusChanged?: (cb: (state: UpdateState) => void) => () => void;
@@ -178,6 +179,16 @@ export function UpdateIndicator(props: UpdateIndicatorProps): ReactElement | nul
     void api.download().catch(() => undefined);
   }, []);
 
+  // DEF-489 — the error chip's "Retry" must re-run the update check.
+  // `download()` is a backend no-op unless the state is 'available',
+  // so retrying from 'error' via download() silently did nothing.
+  // Fall back to download() only when `check` is absent (older preload).
+  const onRetry = useCallback((): void => {
+    const api = readUpdateApi();
+    if (api?.check !== undefined) { void api.check().catch(() => undefined); return; }
+    if (api?.download !== undefined) { void api.download().catch(() => undefined); }
+  }, []);
+
   const onInstall = useCallback((): void => {
     const api = readUpdateApi();
     if (api?.install === undefined) return;
@@ -259,7 +270,7 @@ export function UpdateIndicator(props: UpdateIndicatorProps): ReactElement | nul
           data-update-indicator-kind="error"
           aria-label={view.ariaLabel}
           title={view.ariaLabel}
-          onClick={onDownload}
+          onClick={onRetry}
         >
           <X size={16} aria-hidden />
           <span>Retry</span>

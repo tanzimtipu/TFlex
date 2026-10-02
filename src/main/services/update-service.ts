@@ -64,12 +64,12 @@ const RELEASES_REPO = 'tflex-releases';
 /**
  * GitHub feed configuration passed to `autoUpdater.setFeedURL`.
  *
- * electron-updater v6 selects the provider by TOKEN, not by the `private`
- * flag: whenever a token is present it uses the API-based
- * PrivateGitHubProvider (Authorization: token), which can read releases in
- * BOTH public and private repositories. `private: false` plus an explicit
- * token keeps the documented TFLEX_GH_TOKEN > GH_TOKEN precedence and stops
- * the provider factory from substituting a raw GH_TOKEN env value.
+ * The feed repository is PUBLIC, so the updater queries it UNAUTHENTICATED.
+ * electron-updater v6 selects its provider by TOKEN: if any token is present
+ * it switches to the API-based PrivateGitHubProvider, which can turn a stale
+ * or invalid ambient token into a hard 401 on the public feed. We therefore
+ * deliberately attach NO token and ignore TFLEX_GH_TOKEN / GH_TOKEN at
+ * runtime, so an ambient token can never change which provider is used.
  */
 
 /**
@@ -81,18 +81,20 @@ const RELEASES_REPO = 'tflex-releases';
  *   feed at github.com/{owner}/{repo}/releases.atom is an empty <feed>
  *   with no <entry> elements, and the provider throws
  *   (ERR_XML_MISSED_ELEMENT).
- * - "Unable to find latest version on GitHub (...), please ensure a
- *   production release exists" — the same empty state via the
- *   releases/latest lookup.
  * - "Cannot read properties of undefined (reading 'assets')" — feed WITH
  *   a token: the API releases list is an empty array and
  *   PrivateGitHubProvider (electron-updater v6) dereferences `assets` on
  *   the missing first element instead of reporting a friendly error.
+ *
+ * NOTE: the "please ensure a production release exists" text is NOT treated
+ * as empty here. electron-updater throws ERR_UPDATER_LATEST_VERSION_NOT_FOUND
+ * with that wording for ANY getLatestTagName failure (401, network, DNS), so
+ * matching it would swallow real check failures. Those must surface as
+ * `error`.
  */
 function isNoReleasesError(message: string): boolean {
   return (
     /no published versions/i.test(message) ||
-    /ensure a production release exists/i.test(message) ||
     /cannot read properties of undefined \(reading 'assets'\)/i.test(message)
   );
 }
@@ -189,14 +191,14 @@ export class UpdateService {
     //
     // Because the feed repo is public, NO token is required to check for or
     // download updates — this is what makes OTA work for every user, not
-    // just the developer's machine. A token is still OPTIONAL: when
-    // TFLEX_GH_TOKEN / GH_TOKEN is present in the environment it is attached
-    // to the feed so the GitHub API calls are authenticated (higher rate
-    // limit). Users never set it; the developer may, for convenience.
+    // just the developer's machine. The feed is queried UNAUTHENTICATED and
+    // ambient GH tokens are deliberately ignored: TFLEX_GH_TOKEN / GH_TOKEN
+    // are NOT read here. electron-updater picks its provider by token, so
+    // attaching an ambient (possibly stale or invalid) token would switch the
+    // public feed to the authenticated API path and turn it into a 401.
     //
     // `private: false` tells electron-updater's GitHubProvider to make
-    // unauthenticated requests by default (and to send `Authorization` only
-    // when a token is supplied below). Release assets on a public repo are
+    // unauthenticated requests. Release assets on a public repo are
     // downloadable without auth — the 404-on-private-asset problem that the
     // old `private: true` + mandatory-token path worked around is gone.
     //
@@ -221,20 +223,11 @@ export class UpdateService {
     // updater re-runs the installer elevated via resources/elevate.exe.
     // The portable builds (Jovrel-<version>-portable-<arch>.exe) are NOT listed
     // in latest.yml and are gated by isPortableBuild() above.
-    //
-    // Token env vars (read at RUNTIME from the process environment, never
-    // committed to source):
-    //   TFLEX_GH_TOKEN  — primary (TFlex-specific; avoids clashing with
-    //                    other tooling that reads GH_TOKEN)
-    //   GH_TOKEN        — fallback (matches electron-builder / gh CLI)
-    const token = process.env.TFLEX_GH_TOKEN ?? process.env.GH_TOKEN ?? '';
-
     autoUpdater.setFeedURL({
       provider: 'github',
       owner: repoInfo.owner,
       repo: RELEASES_REPO,
       private: false,
-      ...(token ? { token } : {}),
     });
     this._activeFeed = { owner: repoInfo.owner, repo: RELEASES_REPO };
     this._feedConfigured = true;

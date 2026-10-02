@@ -23,7 +23,7 @@ import type { UpdateState } from "../../../src/shared/types";
  *      fetches initial state via getStatus, unsubscribes on
  *      unmount.
  *   3. The click routing: 'available' clicks download,
- *      'downloaded' clicks install, 'error' clicks download
+ *      'downloaded' clicks install, 'error' clicks check
  *      (retry).
  *   4. The hidden behaviour for 'unsupported' and 'up-to-date'.
  *   5. Defensive degradation: when the IPC channel is absent,
@@ -34,6 +34,7 @@ interface WindowWithTflex {
   tflex?: {
     update?: {
       getStatus?: () => Promise<UpdateState>;
+      check?: () => Promise<UpdateState>;
       download?: () => Promise<UpdateState>;
       install?: () => Promise<void>;
       onStatusChanged?: (cb: (state: UpdateState) => void) => () => void;
@@ -436,22 +437,57 @@ describe("UpdateIndicator â€” click routing (DEF-077)", () => {
     cleanup();
   });
 
-  it("clicking 'error' retries by calling update.download()", async () => {
+  it("clicking 'error' retries by calling update.check(), not download() (DEF-489)", async () => {
+    const check = vi.fn(async (): Promise<UpdateState> => ({
+      kind: "checking",
+    }));
     const download = vi.fn(async (): Promise<UpdateState> => ({
       kind: "downloading",
       progress: 0,
     }));
-    setTflex({
-      update: {
-        getStatus: async (): Promise<UpdateState> => ({
-          kind: "error",
-          message: "network unreachable",
-        }),
-        download,
-        onStatusChanged: (): (() => void) => (): void => undefined,
-      },
+    setTflex({ update: { check, download } });
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    act((): void => {
+      root.render(
+        <UpdateIndicator externalState={{ kind: "error", message: "Bad credentials" }} />,
+      );
     });
-    const { container, cleanup } = renderIndicator({});
+    await act(async (): Promise<void> => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    const btn = container.querySelector<HTMLButtonElement>(
+      'button[data-update-indicator-kind="error"]',
+    );
+    expect(btn).not.toBeNull();
+    expect(btn?.textContent).toContain("Retry");
+    act((): void => {
+      btn?.click();
+    });
+    expect(check).toHaveBeenCalledTimes(1);
+    expect(download).not.toHaveBeenCalled();
+    act((): void => {
+      root.unmount();
+    });
+    container.remove();
+  });
+
+  it("clicking 'error' falls back to download() when check is absent (older preload)", async () => {
+    const download = vi.fn(async (): Promise<UpdateState> => ({
+      kind: "downloading",
+      progress: 0,
+    }));
+    setTflex({ update: { download } });
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    act((): void => {
+      root.render(
+        <UpdateIndicator externalState={{ kind: "error", message: "Bad credentials" }} />,
+      );
+    });
     await act(async (): Promise<void> => {
       await Promise.resolve();
       await Promise.resolve();
@@ -464,7 +500,10 @@ describe("UpdateIndicator â€” click routing (DEF-077)", () => {
       btn?.click();
     });
     expect(download).toHaveBeenCalledTimes(1);
-    cleanup();
+    act((): void => {
+      root.unmount();
+    });
+    container.remove();
   });
 
   it("'downloading' is non-interactive (no clickable button)", async () => {
