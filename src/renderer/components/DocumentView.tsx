@@ -96,6 +96,7 @@ import {
   runSourceTextStyle,
   textPanelValuesForSelection,
   textStyleValuesFromStyle,
+  valuesToPatch,
   type TextStyleValues,
 } from "../edit/textStyle";
 import {
@@ -957,6 +958,11 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
   // a selected committed box shows its ACTUAL values, otherwise the
   // per-tool defaults (with any not-yet-committed tweaks kept locally).
   const [pendingTextStyle, setPendingTextStyle] = useState<TextStyleValues | null>(null);
+  /** Phase 80 (F1) — the Format Painter. `formatPainter` holds the captured
+   *  full style while armed; `painterHint` tells the user why a non-applicable
+   *  selection did not apply. Both are renderer-local and never persisted. */
+  const [formatPainter, setFormatPainter] = useState<TextBoxStylePatch | null>(null);
+  const [painterHint, setPainterHint] = useState<string | null>(null);
   const textPanelDefaults = useMemo(
     () => defaultTextStyleValues(edit?.defaultFont ?? "Helvetica"),
     [edit?.defaultFont],
@@ -1415,6 +1421,134 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
       textPanelDefaults,
     ],
   );
+  // Phase 80 (F1) — Format Painter. A pick-up needs a source text target to
+  // read the full format from; with nothing selected the button is disabled.
+  const canPickUpPainter = textTarget !== null;
+  const painterArmedKeyRef = useRef<string | null>(null);
+  // Phase 80 (F2 / DEF-478) — box ids CREATED while the painter is armed. The
+  // transient guard (`isNew`) only covers the uncommitted window; on commit the
+  // engine echo clears `isNew`, the box key changes, and the apply pass would
+  // otherwise consume the captured format against the just-created box. This
+  // set remembers those ids for the whole armed session so the commit
+  // transition stays a hint (armed) and only a DIFFERENT, pre-existing
+  // committed box can apply. Cleared on arm/disarm.
+  const painterCreatedIdsRef = useRef<Set<string>>(new Set());
+  // Phase 80 (F2 / DEF-474) — the painter's apply target is the AUTHORITATIVE
+  // selection (the engine's selected box under the box tool, or the reported
+  // selected annotation), not only the per-page overlay's last report. The
+  // panel's values already come from `selectedTextBox`, so reading the target
+  // identity from the same source is what makes a cross-page box selection
+  // visible to the apply pass in ONE action. A run reported by the text tool
+  // stays the reported target (a run is non-applicable).
+  const painterTarget = useMemo<TextTarget | null>(
+    () =>
+      resolvePainterTarget({
+        selectedAnnText,
+        selectedAnnotationId: selectedAnnotation?.id ?? null,
+        boxToolActive: edit?.state.tool === "box",
+        selectedBoxId: selectedTextBox?.id ?? null,
+        reported: editTextTarget,
+      }),
+    [
+      selectedAnnText,
+      selectedAnnotation,
+      edit?.state.tool,
+      selectedTextBox,
+      editTextTarget,
+    ],
+  );
+  const painterTargetKeyNow = textTargetKey(painterTarget);
+  // Phase 80 (F2 / DEF-476) — a box the placement verb just created exists only
+  // in the renderer registry until committed; it must never consume the
+  // captured format. The marker is read from the AUTHORITATIVE reducer mirror
+  // (`selectedTextBox`), which updates on the SAME render as the selection,
+  // never from the per-page overlay's report (that report is delivered in a
+  // post-commit effect and lags the reducer by one render — the DEF-476 root
+  // cause). The overlay report is kept only as a defensive fallback.
+  const painterTargetIsTransient = painterTargetIsTransientBox({
+    target: painterTarget,
+    selectedBoxId: selectedTextBox?.id ?? null,
+    selectedBoxIsNew: selectedTextBox?.isNew === true,
+    reported: editTextTarget,
+    createdWhileArmed: painterCreatedIdsRef.current,
+  });
+  // Remember any transient box seen during the armed session (the placement
+  // verb sets `isNew` on the same render as the selection). Recording it here
+  // is what keeps the DEF-478 commit transition transient after the engine
+  // echo clears `isNew`.
+  const painterTargetBoxId = painterTarget?.kind === "box" ? painterTarget.id : null;
+  useEffect((): void => {
+    if (formatPainter === null || painterTargetBoxId === null) return;
+    if (
+      selectedTextBox !== null &&
+      selectedTextBox.id === painterTargetBoxId &&
+      selectedTextBox.isNew === true
+    ) {
+      painterCreatedIdsRef.current.add(painterTargetBoxId);
+    }
+  }, [formatPainter, painterTargetBoxId, selectedTextBox]);
+  const handleCancelPainter = useCallback((): void => {
+    setFormatPainter(null);
+    setPainterHint(null);
+    painterArmedKeyRef.current = null;
+    painterCreatedIdsRef.current = new Set();
+  }, []);
+  const handleArmPainter = useCallback((): void => {
+    if (formatPainter !== null) {
+      handleCancelPainter();
+      return;
+    }
+    if (textTarget === null) return;
+    painterArmedKeyRef.current = painterTargetKeyNow;
+    painterCreatedIdsRef.current = new Set();
+    setPainterHint(null);
+    setFormatPainter(valuesToPatch(textPanelValues));
+  }, [
+    formatPainter,
+    handleCancelPainter,
+    textTarget,
+    painterTargetKeyNow,
+    textPanelValues,
+  ]);
+  // The apply pass is keyed on the STABLE target key so a new selection is the
+  // trigger. The target that armed the painter is never re-applied to (its key
+  // is remembered in `painterArmedKeyRef`) — but returning to it clears any
+  // stale hint, so a raw-run hint recovers when the user re-selects an
+  // applicable source (DEF-475). An applicable new target takes the whole
+  // captured patch in ONE call, then the painter disarms. A non-applicable
+  // selection (a raw run, nothing, or the placement verb's transient box)
+  // keeps the painter armed and surfaces the hint instead of silently doing
+  // nothing.
+  useEffect((): void => {
+    if (formatPainter === null) return;
+    const decision = resolveFormatPainterApply({
+      armed: true,
+      targetKey: painterTargetKeyNow,
+      armedKey: painterArmedKeyRef.current,
+      targetKind: painterTarget?.kind ?? null,
+      targetIsTransient: painterTargetIsTransient,
+    });
+    if (decision.kind === "idle") return;
+    if (decision.kind === "clear-hint") {
+      setPainterHint(null);
+      return;
+    }
+    if (decision.kind === "hint") {
+      setPainterHint(decision.hint);
+      return;
+    }
+    handleTextPanelPatch(formatPainter);
+    setFormatPainter(null);
+    setPainterHint(null);
+    painterArmedKeyRef.current = null;
+    painterCreatedIdsRef.current = new Set();
+  }, [
+    formatPainter,
+    painterTarget,
+    painterTargetKeyNow,
+    painterTargetIsTransient,
+    handleTextPanelPatch,
+  ]);
   // Phase 38 feature D — a NEW run target starts from ITS OWN source size; a
   // pending style composed for a previous run (or for the armed tool) must
   // not bleed across. Clear the renderer-local pending set when the run
@@ -3521,6 +3655,11 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
       onTextChange: handlePanelTextChange,
       onTextCommit: commitTextSession,
       focusToken: textFocusToken,
+      painterArmed: formatPainter !== null,
+      painterHint,
+      canPickUpPainter,
+      onArmPainter: handleArmPainter,
+      onCancelPainter: handleCancelPainter,
     };
     // `textPanelValues` is rebuilt each render by design (it merges the live
     // annotation style), so the snapshot identity is not the publish signal â€”
@@ -3538,6 +3677,11 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
     handlePanelTextChange,
     commitTextSession,
     textFocusToken,
+    formatPainter,
+    painterHint,
+    canPickUpPainter,
+    handleArmPainter,
+    handleCancelPainter,
   ]);
 
   const onTextSelectionChangeRef = useRef(onTextSelectionChange);
@@ -3555,6 +3699,8 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
           textSelection.focusToken,
           textSelection.text ?? '',
           JSON.stringify(textSelection.values),
+          textSelection.painterArmed ? 'armed' : 'idle',
+          textSelection.painterHint ?? '',
         ].join('\u0000');
   const lastTextSelectionKeyRef = useRef<string | null>(null);
   // DEF-321 â€” a LAYOUT effect: the floating pop-out closes on the same commit
@@ -4491,16 +4637,109 @@ export type EditTextTarget =
     };
 
 /** Everything the panel's Text field can edit. */
-type TextTarget = EditTextTarget | { kind: "annotation"; id: string };
+export type TextTarget = EditTextTarget | { kind: "annotation"; id: string };
 
-/** Stable identity for a text target â€” used to tell "same target, next
+/** Stable identity for a text target — used to tell "same target, next
  *  keystroke" (same session) from "new target" (commit the old session). */
-function textTargetKey(t: TextTarget | null): string | null {
+export function textTargetKey(t: TextTarget | null): string | null {
   if (t === null) return null;
   if (t.kind === "run") {
     return `run:${t.page}:${t.rect.x}:${t.rect.y}:${t.rect.width}:${t.rect.height}`;
   }
   return `${t.kind}:${t.id}`;
+}
+
+// ---- Phase 80 (F2) — Format Painter target + apply decision ----------------
+/** Phase 80 (F2 / DEF-474) — pick the Format Painter's apply target from the
+ *  authoritative selection. Under the box tool the engine's selected box wins
+ *  over the per-page overlay's last report, so a cross-page selection reads as
+ *  a target change and applies in ONE action. A selected annotation wins;
+ *  otherwise the reported target (a box or a raw run) is used. */
+export function resolvePainterTarget(args: {
+  selectedAnnText: boolean;
+  selectedAnnotationId: string | null;
+  boxToolActive: boolean;
+  selectedBoxId: string | null;
+  reported: EditTextTarget | null;
+}): TextTarget | null {
+  if (args.selectedAnnText && args.selectedAnnotationId !== null) {
+    return { kind: "annotation", id: args.selectedAnnotationId };
+  }
+  if (args.boxToolActive && args.selectedBoxId !== null) {
+    return { kind: "box", id: args.selectedBoxId };
+  }
+  return args.reported;
+}
+
+/** Phase 80 (F2 / DEF-476) — is the painter's box target a freshly placed
+ *  box that exists only in the renderer registry? Derived from the
+ *  AUTHORITATIVE reducer mirror (`selectedBoxId` + `selectedBoxIsNew`),
+ *  which advances on the same render as the selection. The per-page
+ *  overlay's `reported` target is consulted only as a defensive fallback:
+ *  it lags the reducer by one commit (its effect runs after commit), so
+ *  relying on it alone let a just-placed box slip through as an `apply`
+ *  and consume the captured format against a box the engine never had. */
+export function painterTargetIsTransientBox(args: {
+  target: TextTarget | null;
+  selectedBoxId: string | null;
+  selectedBoxIsNew: boolean;
+  reported: EditTextTarget | null;
+  createdWhileArmed?: ReadonlySet<string>;
+}): boolean {
+  if (args.target === null || args.target.kind !== "box") return false;
+  // Phase 80 (F2 / DEF-478) — a box created during this armed session stays
+  // transient for the WHOLE session, including after commit clears `isNew`
+  // and changes the key.
+  if (args.createdWhileArmed?.has(args.target.id)) return true;
+  if (
+    args.selectedBoxId !== null &&
+    args.selectedBoxId === args.target.id &&
+    args.selectedBoxIsNew
+  ) {
+    return true;
+  }
+  return (
+    args.reported !== null &&
+    args.reported.kind === "box" &&
+    args.reported.id === args.target.id &&
+    args.reported.isNew === true
+  );
+}
+
+/** The fail-loud hint shown while the painter is armed but the selection is
+ *  not an applicable target. */
+export const FORMAT_PAINTER_HINT =
+  "Format Painter armed: select a text box or text annotation to apply.";
+
+/** Phase 80 (F2) — the Format Painter apply decision, extracted so the
+ *  DEF-474/475/476 behaviours are unit-testable without mounting the view. */
+export type FormatPainterApplyDecision =
+  | { kind: "idle" }
+  | { kind: "clear-hint" }
+  | { kind: "hint"; hint: string }
+  | { kind: "apply" };
+
+export function resolveFormatPainterApply(input: {
+  armed: boolean;
+  targetKey: string | null;
+  armedKey: string | null;
+  targetKind: "box" | "run" | "annotation" | null;
+  targetIsTransient: boolean;
+}): FormatPainterApplyDecision {
+  if (!input.armed) return { kind: "idle" };
+  // Back on (or still on) the arming source: never re-apply to it, but clear
+  // any stale hint so a raw-run hint recovers (DEF-475).
+  if (input.targetKey !== null && input.targetKey === input.armedKey) {
+    return { kind: "clear-hint" };
+  }
+  if (
+    input.targetKind === null ||
+    input.targetKind === "run" ||
+    input.targetIsTransient
+  ) {
+    return { kind: "hint", hint: FORMAT_PAINTER_HINT };
+  }
+  return { kind: "apply" };
 }
 const EMPTY_FIELDS: FormField[] = [];
 const EMPTY_PLACEMENTS: SignaturePlacement[] = [];

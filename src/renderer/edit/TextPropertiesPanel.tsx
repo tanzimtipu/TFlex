@@ -21,7 +21,7 @@
 // (`data-text-panel-mode`) and to label the colour control — it must never
 // gate a control again.
 
-import { useCallback, useEffect, useRef, type ReactElement } from "react";
+import { useCallback, useEffect, useRef, type ReactElement, type ReactNode } from "react";
 import {
   AlignCenter,
   AlignJustify,
@@ -36,6 +36,7 @@ import {
   List,
   ListOrdered,
   PaintBucket,
+  Paintbrush,
   RemoveFormatting,
   Subscript,
   Superscript,
@@ -100,6 +101,16 @@ export interface TextPropertiesPanelProps {
    *  ended. */
   onTextCommit?: (relatedTarget?: EventTarget | null) => void;
   focusToken?: number;
+  /** Phase 80 (F1) — the Format Painter toggle. `painterArmed` reflects
+   *  whether a picked-up format is currently waiting for a target;
+   *  `canPickUpPainter` is false when no source text object is selected, so
+   *  the button renders disabled-with-tooltip. The panel stays pure: it
+   *  reports the arm / cancel gesture and renders the host's hint. */
+  painterArmed?: boolean;
+  painterHint?: string | null;
+  canPickUpPainter?: boolean;
+  onArmPainter?: () => void;
+  onCancelPainter?: () => void;
 }
 
 /** Phase 27 — the font dropdown. The three base-14 families sit in the
@@ -145,7 +156,7 @@ export function isTextPanelFocusTarget(target: EventTarget | null | undefined): 
 }
 
 /** A titled control group. */
-function Group(props: { title: string; children: ReactElement | ReactElement[] }): ReactElement {
+function Group(props: { title: string; children: ReactNode }): ReactElement {
   return (
     <section className="text-props-group" aria-label={props.title}>
       <div className="text-props-group-title">{props.title}</div>
@@ -158,6 +169,9 @@ export function TextPropertiesPanel(props: TextPropertiesPanelProps): ReactEleme
   const { open, values, defaults } = props;
   const annotationMode = props.mode === "annotation";
   const text = props.text ?? null;
+  const painterArmed = props.painterArmed ?? false;
+  const painterHint = props.painterHint ?? null;
+  const canPickUpPainter = props.canPickUpPainter ?? false;
 
   // Phase 26 — focus + select-on-demand for the Text field. The token
   // is consumed ONLY once the field actually has a value to show: a
@@ -368,7 +382,33 @@ export function TextPropertiesPanel(props: TextPropertiesPanelProps): ReactEleme
             >
               <Subscript size={14} />
             </button>
+            <button
+              type="button"
+              data-txt-format-painter
+              className={painterArmed ? "text-props-btn text-props-btn-active" : "text-props-btn"}
+              aria-label="Format Painter"
+              aria-pressed={painterArmed}
+              disabled={!canPickUpPainter && !painterArmed}
+              title={
+                !canPickUpPainter && !painterArmed
+                  ? "Format Painter: select a text object first to pick up its format."
+                  : painterArmed
+                    ? "Format Painter: click to cancel. Select a text box or text annotation to apply."
+                    : "Format Painter: pick up this text's format, then select a text box or text annotation to apply."
+              }
+              onClick={(): void => {
+                if (painterArmed) props.onCancelPainter?.();
+                else props.onArmPainter?.();
+              }}
+            >
+              <Paintbrush size={14} />
+            </button>
           </div>
+          {painterHint !== null ? (
+            <p className="text-props-hint" data-txt-format-painter-hint>
+              {painterHint}
+            </p>
+          ) : null}
           <label className="text-props-row">
             <span className="text-props-label">Colour</span>
             <input

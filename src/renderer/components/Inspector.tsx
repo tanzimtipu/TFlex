@@ -67,6 +67,14 @@ export interface InspectorTextSelection {
   onTextChange: (text: string) => void;
   onTextCommit: (relatedTarget?: EventTarget | null) => void;
   focusToken: number;
+  /** Phase 80 (F1) — the Format Painter state + gestures published by the
+   *  DocumentView that owns the text session. Optional so existing snapshot
+   *  builders and tests stay valid. */
+  painterArmed?: boolean;
+  painterHint?: string | null;
+  canPickUpPainter?: boolean;
+  onArmPainter?: () => void;
+  onCancelPainter?: () => void;
 }
 
 export type InspectorSectionId =
@@ -182,6 +190,11 @@ export function inspectorTextPanelFor(
     onTextChange: text.onTextChange,
     onTextCommit: text.onTextCommit,
     focusToken: text.focusToken,
+    painterArmed: text.painterArmed,
+    painterHint: text.painterHint,
+    canPickUpPainter: text.canPickUpPainter,
+    onArmPainter: text.onArmPainter,
+    onCancelPainter: text.onCancelPainter,
   };
 }
 

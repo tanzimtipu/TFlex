@@ -212,6 +212,15 @@ export interface TextBoxPlacement {
   text: string;
   style: EditTextStyle;
   background: "white" | "none";
+  /** Phase 80 (F2 / DEF-476) — true while the box exists ONLY in the
+   *  renderer registry (a freshly placed box the placement verb created
+   *  but the engine has not confirmed through `addTextBox` yet). The
+   *  reducer mirror carries the marker so the Format Painter's apply pass
+   *  can recognize a transient box on the SAME render as the selection,
+   *  without waiting for the per-page overlay's one-commit-late report.
+   *  The engine echo rehydrates the mirror through `replace-text-boxes`,
+   *  which never sets this flag, so it clears on commit. */
+  isNew?: boolean;
 }
 
 /** DEF-149 — a text-run edit the renderer committed through
@@ -625,6 +634,11 @@ export function sameTextBoxes(
     if ((x.style.baselineShift ?? 0) !== (y.style.baselineShift ?? 0)) return false;
     if ((x.style.indent ?? 0) !== (y.style.indent ?? 0)) return false;
     if (!sameOptionalColor(x.style.highlight, y.style.highlight)) return false;
+    // Phase 80 (F2 / DEF-476) — a renderer-only placement must not compare
+    // equal to the engine's committed entry for the same box, else the
+    // mirror effect would skip the `replace-text-boxes` that clears the
+    // transient marker once the engine echo lands.
+    if ((x.isNew ?? false) !== (y.isNew ?? false)) return false;
   }
   return true;
 }

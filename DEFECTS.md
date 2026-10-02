@@ -5,6 +5,104 @@
 > inspect the current `OPEN`, `FIX-READY`, and `DISPUTED` entries first; closed records are
 > historical evidence and must not be loaded wholesale.
 
+## DEF-478: Format Painter consumes the captured format when a just-placed box is committed while the painter is armed
+
+- Status: CLOSED
+- Severity: MEDIUM
+- Found by: adversary (ADV-155)
+- Phase: 80 (Format Painter)
+
+Steps to reproduce:
+1. `npm.cmd run build`, open `assets/samples/report.pdf` through `e2e/lib/launch.cjs`.
+2. Arm the Edit text-box verb (`[data-dock-verb="editTextBox"]`), drag+type a committed box `P80F-SRC`, set it to Times/18/bold/#3366cc/charSpacing 2, select it and click `[data-txt-format-painter]` (`aria-pressed="true"`).
+3. With the painter armed, drag a NEW box on empty canvas (~55%, 12%) - it is renderer-only. At this point the painter stays armed, the hint is visible, and `tflexDiagnostics().engineState.textBoxes` is unchanged (the DEF-476 guard holds at placement).
+4. Type `P2-PLACED` into the new box and blur the panel Text field to commit it; capture the engine model and painter state, then press Ctrl+Z twice.
+
+Expected: per the fix's contract (`DocumentView.tsx:1447-1449`, `resolveFormatPainterApply`) a box the placement verb just created is non-applicable; it must keep showing the hint until the user deliberately selects a committed box as the target. Completing the create gesture (typing + commit) must not silently consume the painter.
+
+Actual: on commit the painter applies the captured format to the just-created box as a SEPARATE engine op and disarms, with no target-selection gesture. `P2-PLACED`'s engine model became exactly the source format (Times/18/bold/#3366cc/charSpacing 2); the painter went `aria-pressed="true"` -> `false`, hint null. Undo archaeology: after the first Ctrl+Z the box still exists with its creation style (Helvetica/12/#000000); a second Ctrl+Z removes it - proving the apply was a distinct op. Root cause: `painterTargetIsTransientBox` reads `selectedTextBox.isNew`, which is cleared when the engine echo lands (`replace-text-boxes`); on that same render the committed box's key (`box:P2-PLACED`) differs from `painterArmedKeyRef` (`box:P80F-SRC`), so `resolveFormatPainterApply` returns `apply`; the transient guard covers only the uncommitted window, not the commit transition.
+
+Screenshots: screenshots/adv-p80fix-p2-transient.png, screenshots/adv-p80fix-p2-committed.png, screenshots/adv-p80fix-place-committed.png
+
+History:
+- orchestrator: filed from ADV-155 triage (ACCEPTED)
+- orchestrator: FIX-READY from frontend-dev TFL-336. Fix: a `painterCreatedIdsRef` set records the ids of boxes created while the painter is armed; `painterTargetIsTransientBox` now takes an optional `createdWhileArmed` set and returns transient for any such id, so a placed box stays non-applicable through the commit transition; only a different pre-existing committed box applies. The set is cleared on arm/disarm/apply. Unit spec adds the DEF-478 commit-transition case and a "pre-existing committed box still applies" case. Reported: 3 unit files / 57 tests pass, `verify` clean, `build:renderer` exit 0.
+- qa TFL-337: retested on the rebuilt fixed build (`npm.cmd run build` exit 0; `npm.cmd run test:e2e -- e2e/phase80_format_painter.spec.cjs`, 7 tests / 7 passed; `npm.cmd run test:unit -- --run test/unit/renderer/phase80_formatPainter.test.tsx test/unit/renderer/phase80_formatPainter_fixes.test.tsx test/unit/renderer/phase21_textPropertiesPanel.test.tsx`, 3 files / 57 tests passed; `npm.cmd run verify` exit 0). DEF-478 regression PASS. Added the DEF-478 e2e regression (`DEF-478 commit transition keeps the painter armed; only a different committed box applies`). With the painter armed on committed `P80F-SRC` (Times/18/bold/#3366cc/charSpacing 2) and the placement verb still armed, dragging a NEW box, typing `P80F-PLACED` and blurring the panel Text field to COMMIT left `[data-txt-format-painter]` `aria-pressed="true"` with `[data-txt-format-painter-hint]` ("Format Painter armed: select a text box or text annotation to apply.") visible; the committed box's engine model stayed its OWN creation style (`Helvetica/12/#000000`, no apply op). Selecting a DIFFERENT pre-existing committed box (`P80F-TGT`, Helvetica/12) then took the full captured format in ONE action and the painter disarmed; `P80F-PLACED` stayed untouched. Evidence: screenshots/def477-armed-hint-after-commit.png, screenshots/def477-applied-different-box.png. Blast-radius neighbours DEF-474/475/476 stayed green in the same run. Status CLOSED.
+- CTO (TFL-339, 2026-10-02): renumber ruling - this Phase 80 defect was filed as DEF-477 and collided with the Phase 81 print-preset defect DEF-477 already committed in 16034a2. Renumbered to DEF-478; Phase 81's DEF-477 keeps its number. Traceability references in `DocumentView.tsx` and the two Phase 80 specs are renamed to DEF-478 by frontend-dev TFL-340.
+
+## DEF-476: Format Painter silently loses the picked-up format on an empty-canvas click while the placement verb is armed
+
+- Status: CLOSED
+- Severity: LOW
+- Found by: adversary (ADV-153)
+- Phase: 80 (Format Painter)
+
+Steps to reproduce:
+1. `npm.cmd run build`, open `report.pdf` through `e2e/lib/launch.cjs`.
+2. In Edit mode create a committed text box `P80-A` and set it to Times/18 through the FORMAT TEXT panel.
+3. Select `P80-A`, click `[data-txt-format-painter]` (`aria-pressed="true"`).
+4. Single-click an empty area of page 1 at ~(85%, 85%) while the Edit text-box placement verb is still armed; poll `window.tflexDiagnostics().engineState.textBoxes` and `aria-pressed` every 40ms for 3s.
+
+Expected: per the diff contract (`DocumentView.tsx:1447-1449`) a non-applicable / no-target selection keeps the painter armed and surfaces `[data-txt-format-painter-hint]`; the captured format is not consumed.
+
+Actual: the painter held `aria-pressed="true"` for ~220ms after the click, then flipped to `false` with no apply, no hint, and no engine text-box change (the box list stayed `["P80-A:Times"]`). The still-armed placement verb creates a transient uncommitted text box that the apply effect treats as a target, applies the captured patch to and disarms; the target-change cleanup then drops the empty box - net, the picked-up format is silently lost.
+
+Screenshot: screenshots/adv-p80-pageclick2.png
+
+History:
+- orchestrator: filed from ADV-153 triage (ACCEPTED)
+- orchestrator: FIX-READY from frontend-dev TFL-323. Root cause: a placement-verb box (renderer-only, `isNew`) was treated as an apply target. Fix: `targetIsTransient` makes the apply decision return the hint, so the painter stays armed and the format is not consumed.
+- qa TFL-326: retested on the fixed build (`npm.cmd run build`; `npm.cmd run test:e2e -- e2e/phase80_format_painter.spec.cjs`, 6 tests / 5 passed). DEF-476 regression FAILED. With the editTextBox placement verb armed (`aria-pressed="true"`) and the painter armed on P80-SRC, a single click inside page 1 at 85%/10% left `[data-txt-format-painter]` `aria-pressed="false"`, `[data-txt-format-painter-hint]` absent, and `engineState.textBoxes` unchanged (no apply); the click spawned a transient uncommitted "Type text..." box and an `Engine error: updateTextBox: text box ... not found` toast. The captured format is still silently consumed (see screenshots/def476-canvas-click.png). Fix incomplete: the unit-level `resolveFormatPainterApply({ targetIsTransient: true })` returns the hint, but the live apply path does not keep the painter armed or surface the hint. Reopened FIX-READY -> OPEN.
+- orchestrator: FIX-READY (attempt 2) from frontend-dev TFL-328. Root cause confirmed: `painterTargetIsTransient` read the EditOverlay's post-commit `editTextTarget` report, which lags the authoritative reducer selection by one render, so it was false at the apply tick. Fix: added `TextBoxPlacement.isNew` (set by `placeNewTextBox`, cleared when the engine echo rehydrates the mirror via `replace-text-boxes`), a new pure helper `painterTargetIsTransientBox`, and the live apply pass now derives transience from the same-render authoritative mirror (`selectedTextBox.id === painterTarget.id && selectedTextBox.isNew`) with the overlay report only as a fallback. The unit spec now covers the LIVE derivation with a lagging report. Reported: 3 unit files / 55 tests pass, `verify` clean, `build:renderer` exit 0.
+- qa TFL-333: retested on the rebuilt fixed build (`npm.cmd run build` exit 0; `npm.cmd run test:e2e -- e2e/phase80_format_painter.spec.cjs`, 6 tests / 6 passed; `npm.cmd run test:unit -- --run test/unit/renderer/phase80_formatPainter.test.tsx test/unit/renderer/phase80_formatPainter_fixes.test.tsx test/unit/renderer/phase21_textPropertiesPanel.test.tsx`, 3 files / 55 tests passed; `npm.cmd run verify` exit 0). DEF-476 regression PASS. With the editTextBox placement verb armed (`aria-pressed="true"`) and the painter armed on P80-SRC, a single click inside page 1 at 85%/10% left `[data-txt-format-painter]` `aria-pressed="true"`, showed `[data-txt-format-painter-hint]` ("Format Painter armed: select a text box or text annotation to apply."), and left `engineState.textBoxes` unchanged (`["P80-SRC:1:Times","P80-TGT:1:Helvetica"]`; no apply, no `updateTextBox: ... not found` toast). A different committed box (P80-TGT, Helvetica/12) then took the full captured format in one action (font/size/bold/italic/underline/color/align/lineHeight/list/indent/charSpacing/highlight) and the painter disarmed. Evidence: screenshots/def476-canvas-click.png (armed + hint), screenshots/def476-applied-after.png (apply). Status CLOSED. Blast-radius neighbours DEF-474 and DEF-475 stayed green in the same run.
+
+## DEF-475: Format Painter hint stays stale after re-selecting the arming source
+
+- Status: CLOSED
+- Severity: LOW
+- Found by: adversary (ADV-152)
+- Phase: 80 (Format Painter)
+
+Steps to reproduce:
+1. `npm.cmd run build`, open `report.pdf` through `e2e/lib/launch.cjs`.
+2. Select committed box `P80-A` and arm the painter (`aria-pressed="true"`).
+3. Select a raw text-layer run with the Edit-text verb (the hint appears and the painter correctly stays armed).
+4. Switch back to the text-box verb and click `P80-A` again (the arming source - the target key does not change).
+
+Expected: `P80-A` is a valid applicable target and the arming source, so the "select a text box or text annotation to apply" hint must clear (the painter may stay armed; it must not re-apply to its own source).
+
+Actual: the raw-run hint remained visible on `[data-txt-format-painter-hint]` while `P80-A` was selected and the painter stayed armed. The apply effect early-returns at `textTargetKeyNow === painterArmedKeyRef.current` (`DocumentView.tsx:1452`) before the hint-clearing branch, so the stale hint is never cleared.
+
+Screenshot: screenshots/adv-p80-stale-hint.png
+
+History:
+- orchestrator: filed from ADV-152 triage (ACCEPTED)
+- orchestrator: FIX-READY from frontend-dev TFL-323. Root cause: the apply effect early-returned on `key === armedKey` before the hint branch. Fix: the decision returns `clear-hint` when the target returns to the arming source (box/annotation), clearing the hint while staying armed and never re-applying to the source.
+- qa TFL-326: retested on the fixed build (`npm.cmd run test:e2e -- e2e/phase80_format_painter.spec.cjs`). PASS: after arming on P80-SRC and selecting a raw text run (hint visible), re-selecting P80-SRC cleared `[data-txt-format-painter-hint]`, the painter stayed `aria-pressed="true"`, and the source engine style was unchanged (no re-apply). Evidence: screenshots/def475-hint-cleared.png. Status CLOSED.
+
+## DEF-474: Cross-page Format Painter silently fails (arm on page 1, target a box on page 2)
+
+- Status: CLOSED
+- Severity: MEDIUM
+- Found by: adversary (ADV-151)
+- Phase: 80 (Format Painter)
+
+Steps to reproduce:
+1. `npm.cmd run build`, open `report.pdf` through `e2e/lib/launch.cjs`.
+2. In Edit mode create `SRC1` (Times/18) on page 1 and `TGT2` (default Helvetica/12) on page 2.
+3. Select `SRC1`, arm the painter (`aria-pressed="true"`), then select `TGT2` (panel Text field updates to "TGT2"; both pages mounted, `[data-edit-box-toolbar]` present).
+
+Expected: the captured format applies to `TGT2` in one action, `TGT2`'s engine style matches `SRC1`, `SRC1` is untouched, and the painter disarms.
+
+Actual: `TGT2`'s engine style stayed Helvetica/12 and `SRC1` stayed Times/18; the painter stayed `aria-pressed="true"` with no hint. Same-page page1->page1, cross-page page2->page1 and same-page page2->page2 all apply; only page1 source -> page2 target fails, reproduced in two independent runs. Root cause: the panel Text field reads `selectedTextBox` while the painter's target key derives from `editTextTarget` (`DocumentView.tsx:1037-1043`, `:1452`), so a cross-page target change is not recognised by the apply effect.
+
+Screenshots: screenshots/adv-p80-crosspage2.png, screenshots/adv-p80-crosspage3.png
+
+History:
+- orchestrator: filed from ADV-151 triage (ACCEPTED)
+- orchestrator: FIX-READY from frontend-dev TFL-323. Root cause: the panel read the authoritative `selectedTextBox` while the painter key came only from the per-page overlay's last `editTextTarget` report, so a stale report kept the key on the source box. Fix: `resolvePainterTarget` returns the engine's selected box when the box tool is active (annotation wins; otherwise the reported target), so a page-2 selection is a new key and applies in one action.
+- qa TFL-326: retested on the fixed build (`npm.cmd run test:e2e -- e2e/phase80_format_painter.spec.cjs`). PASS: page-1 P80-SRC armed (Times/18, full format set), page-2 P80-TGT (Helvetica/12) took the full captured format in one action (font/size/bold/italic/underline/color/align/lineHeight/list/indent/charSpacing/highlight matched the source), the source was unchanged, and the painter disarmed. Evidence: screenshots/def474-crosspage-applied.png. Status CLOSED.
+
 ## DEF-473: Home plus picker does not re-clamp when the window is resized while open - it detaches from the plus and clips its item labels
 
 - Status: CLOSED

@@ -3,6 +3,223 @@
 > Read discipline: this is a historical evidence ledger. Search for the assigned `ADV-NNN`
 > or unresolved `Disposition: PENDING` entries; do not load prior campaigns wholesale.
 
+## Phase 80 Format Painter FIX-DELTA diff-pass (TFL-335) - isNew marker + mirror coupling
+
+Session label: `diff-pass`. Scope: the Phase 80 Format Painter fix delta only
+(F4 TFL-323 + F6 TFL-328): `src/renderer/edit/model.ts` (`TextBoxPlacement.isNew`,
+`sameTextBoxes`), `src/renderer/edit/EditOverlay.tsx` (`placeNewTextBox` sets
+`isNew`), `src/renderer/components/DocumentView.tsx` (`resolvePainterTarget`,
+`painterTargetIsTransientBox`, `resolveFormatPainterApply`, the same-render
+authoritative `selectedBoxIsNew` mirror). DEF-474/475/476 were exercised as
+regressions only - not re-litigated. Product code, the qa e2e spec and the unit
+tests were read but not modified. `dist/renderer` (12:17:39) and `dist/main`
+(12:17:40) post-date the changed sources (12:09-12:10), so the dev build launched
+through `e2e/lib/launch.cjs` was the shipped fix.
+
+Exact commands (each a scratch node script requiring `e2e/lib/launch.cjs`;
+scripts live in the run scratch dir, never under `e2e/`):
+
+- `node <scratch>/adv_p80fix_probe.cjs` - classes 1/2/3/6a/7: 11/11 checks pass.
+- `node <scratch>/adv_p80fix_probe2.cjs` - instrumented class-6 boundary, class 5,
+  undo archaeology.
+- `node <scratch>/adv_p80fix_probe3.cjs` - classes 4/8: 8/9 checks pass; the single
+  miss is a harness gap (Edit mode not re-armed after reopen), not a product path -
+  class 8's format-survives-reload assertion itself passed.
+
+Pass/fail: 1 confirmed break (ADV-155) in the class-6 boundary; every other class
+is a pass. Page errors observed in every run: 0.
+
+Per-class verdict (one line each):
+
+1. Stale `isNew` (place, commit, arm on it, apply to another box): no break - the
+   committed box applies in ONE action and is not treated as transient (probe1).
+2. `isNew` never clearing: no break - after commit the engine echo clears the
+   marker and the box applies (probe1); on reload `engineTextBoxesToPlacements`
+   never sets `isNew`, so no marker can persist (source review).
+3. `isNew` leaking: no break - a committed box selected as a target applies in one
+   action after any place/commit/select sequence (probe1).
+4. DEF-474 regression (cross-page both directions): no break - page1->page2 and
+   page2->page1 both apply in one action, source untouched (probe3).
+5. DEF-476 regression (empty-canvas click + placement verb): no break - painter
+   stays armed, hint shown, engine bytes unchanged; a different committed box still
+   applies (probe2 class5, probe1 class6a).
+6. Rapid place -> cancel/commit -> arm -> select; place -> arm on the new box: no
+   break for the transient-hint legs (probe2 `armOnTransient`: stays armed, no
+   apply; probe1 class6a: placement leaves the engine unchanged and shows the
+   hint). BREAK for the "then commit the placed box" leg - see ADV-155.
+7. Undo/redo after an apply to a committed target: no break - ONE Ctrl+Z restores
+   the target, the source is untouched, Ctrl+Y re-applies (probe1).
+8. Save/reload after the new-marker flow: no break - the applied format survives
+   save + reopen; no transient marker can persist (probe3).
+9. Annotation as source/target: no break by source review - `resolvePainterTarget`
+   still prefers a selected annotation and `painterTargetIsTransientBox` returns
+   false for a non-box target; the fix does not touch the annotation apply path.
+
+## ADV-155: Format Painter consumes the captured format when a just-placed box is committed while armed (the DEF-476 guard lapses on commit)
+
+- Session: diff-pass
+- Suggested severity: MEDIUM
+
+What I did: launched the dev build through `e2e/lib/launch.cjs` and opened
+`assets/samples/report.pdf`; armed Edit mode's text-box verb
+(`[data-dock-verb="editTextBox"]`) and dragged+typed a committed box `P80F-SRC`,
+then set it to Times / 18 / bold / #3366cc / charSpacing 2 through the panel;
+selected it and clicked `[data-txt-format-painter]` (`aria-pressed="true"`). With
+the painter armed I dragged a NEW box on empty canvas at ~(55%, 12%) - it exists
+only in the renderer registry. Polled at that point: painter still
+`aria-pressed="true"`, `[data-txt-format-painter-hint]` visible, and
+`tflexDiagnostics().engineState.textBoxes` byte-identical (the DEF-476 fix HOLDS
+at placement). I then typed `P2-PLACED` into the new box and blurred the panel
+Text field to commit it, captured the engine model and painter state, then pressed
+Ctrl+Z twice, capturing state after each.
+
+Expected: per the fix's own contract (`DocumentView.tsx:1447-1449`,
+`resolveFormatPainterApply`) a box the placement verb just created is a
+non-applicable target and must not consume the captured format; it should keep
+showing the hint until the user deliberately selects a committed box as the
+target. Completing the create gesture (typing + commit) must not silently consume
+the painter.
+
+Actual: on commit the painter applies the captured format to the just-created box
+as a SEPARATE engine op and disarms, with no target-selection gesture. The engine
+model for `P2-PLACED` became exactly the source format
+(`Times / 18 / bold / #3366cc / charSpacing 2`); the painter went
+`aria-pressed="true"` (after placement) -> `false` (after commit), hint null.
+Undo archaeology proves the apply was distinct from the creation: after the first
+Ctrl+Z the box still exists with its creation style (Helvetica / 12 / #000000);
+a second Ctrl+Z removes it. Root cause from source: `painterTargetIsTransientBox`
+reads `selectedTextBox.isNew`, which is cleared when the engine echo lands
+(`replace-text-boxes`); on that same render the newly committed box's key
+(`box:P2-PLACED`) differs from `painterArmedKeyRef` (`box:P2-SRC`), so
+`resolveFormatPainterApply` returns `apply` and the effect calls
+`handleTextPanelPatch(formatPainter)` then disarms. The transient guard only
+covers the uncommitted window, not the commit transition.
+
+Screenshot: screenshots/adv-p80fix-p2-transient.png (armed, hint visible, engine
+unchanged after placement); screenshots/adv-p80fix-p2-committed.png (after commit:
+source format applied, painter disarmed); screenshots/adv-p80fix-place-committed.png.
+
+Disposition: ACCEPTED -> DEF-478 (Phase 80 Format Painter defect; renumbered from DEF-477 by CTO TFL-339 to avoid collision with the already-committed Phase 81 print-preset DEF-477)
+
+## Phase 80 Format Painter diff-pass (TFL-321) - renderer painter apply path + save/reload
+
+Session label: `diff-pass`. Scope: the Phase 80 Format Painter change only -
+`src/renderer/edit/TextPropertiesPanel.tsx` (button `[data-txt-format-painter]`,
+hint `[data-txt-format-painter-hint]`), `src/renderer/components/DocumentView.tsx`
+(arm `:1433-1442`, apply effect `:1450-1463`, snapshot `:3567-3615`),
+`src/renderer/components/Inspector.tsx` forwarding. Product code, the qa e2e spec
+and the unit tests were read but not modified. The registered `dist/` already
+contained the change (renderer built 11:15, sources 11:07-11:09), so the dev
+build launched through `e2e/lib/launch.cjs` was the shipped change.
+
+Exact commands (each a scratch node script that requires `e2e/lib/launch.cjs`;
+scripts live in the run scratch dir, never under `e2e/`):
+
+- `node <scratch>/adv_p80_boxes.cjs` - classes 1/3/5/6 (+ state-leak tail, aborted on the tab-close save gate).
+- `node <scratch>/adv_p80_p2.cjs` - class 3 no-target, class 8 annotations, class 9, annotation save/reload.
+- `node <scratch>/adv_p80_p4.cjs` and `adv_p80_p5.cjs` - annotation-vs-box mix, plus a no-painter control.
+- `node <scratch>/adv_p80_p6.cjs` - 40ms poll of the empty-canvas click disarm.
+- `node <scratch>/adv_p80_p7.cjs` - class 2 cross-page, class 7 baselineShift save/reload, class 10 (aborted).
+- `node <scratch>/adv_p80_p8.cjs` - cross-page panel/selection state capture.
+- `node <scratch>/adv_p80_p9.cjs` - cross-page both directions vs same-page, one session.
+
+Pass/fail: 4 confirmed breaks across 3 distinct defects (ADV-151, ADV-152,
+ADV-153); every executed class is itemised below. Page errors observed in every
+run: 0.
+
+Per-class verdict (one line each):
+
+1. source==target: no break - re-selecting the arming source does not re-apply; a different same-page box applies (P1 class 1). The residual stale hint is ADV-152.
+2. cross-page: BREAK - a page-1 source applied to a page-2 target silently does not apply and stays armed; page2->page1 and both same-page directions apply (P9 A/C/D, P8). ADV-151.
+3. arm/cancel/arm churn: no break; no-source button disabled: no break; arm then click empty canvas: BREAK (silent disarm, ADV-153); stale hint on source re-select: BREAK (ADV-152).
+4. non-applicable targets: raw text run -> hint and stays armed (no break); empty-canvas/page click -> silent disarm (ADV-153); annotation-vs-box mix is blocked by a pre-existing annotation/Edit-stage selection stall that reproduces with the painter absent (P5 control), so it is not a break of this diff.
+5. highlight removal (`null`) vs colour: no break - null removes the band, a colour sets it (P1).
+6. undo/redo: no break - ONE Ctrl+Z restored the target in one entry, a second Ctrl+Z did not modify the source, Ctrl+Y re-applied the format (P1).
+7. save/reload all fields: no break for same-page (qa C3); the cross-page target never received the format, so its persistence could not be exercised (see ADV-151); `baselineShift=6` persisted and applied same-page (P7, beyond the e2e field set).
+8. annotation as source and target: no break - annotation->annotation applied every captured field and survived save/reload (P2).
+9. state leakage on tab close / new document: no break - the painter was disarmed in the new document (P2).
+10. extreme size: NOT COMPLETED - the probe aborted on a post-reload helper visibility issue before the apply; source review shows `clampFontSize(1..2000)` on capture and engine validation, so no confirmed break. No page errors in any run.
+
+## ADV-153: The Format Painter silently disarms on an empty-canvas click, losing the picked-up format with no hint
+
+- Session: diff-pass
+- Suggested severity: LOW
+
+What I did: opened `report.pdf` through `e2e/lib/launch.cjs`; created a committed
+Edit-mode text box `P80-A` and set it to Times/18; clicked the box to select it;
+clicked `[data-txt-format-painter]` (`aria-pressed="true"`); then single-clicked an
+empty area of page 1 at ~(85%, 85%) while the Edit text-box placement verb was
+still armed. In the same page I polled `window.tflexDiagnostics().engineState.textBoxes`
+and the button's `aria-pressed` every 40ms for 3s.
+
+Expected: per the diff's own contract (`DocumentView.tsx:1447-1449`) a
+non-applicable / no-target selection keeps the painter armed and surfaces
+`[data-txt-format-painter-hint]`; the captured format is not consumed.
+
+Actual: the painter kept `aria-pressed="true"` for ~220ms after the click, then
+flipped to `false` with no apply, no hint element, and no engine text-box change
+(the box list stayed `["P80-A:Times"]` for every sample). The still-armed
+placement verb creates a transient uncommitted text box that the apply effect
+treats as a target, applies the captured patch to and disarms; the target-change
+cleanup then drops the empty box. Net: the picked-up format is silently lost.
+
+Screenshot: screenshots/adv-p80-pageclick2.png
+
+Disposition: ACCEPTED -> DEF-476
+
+## ADV-152: The Format Painter hint stays stale after re-selecting the arming source
+
+- Session: diff-pass
+- Suggested severity: LOW
+
+What I did: selected committed box `P80-A`, armed the painter
+(`aria-pressed="true"`), then selected a raw text-layer run with the Edit-text verb
+(the hint appeared and the painter correctly stayed armed). Switched back to the
+text-box verb and clicked `P80-A` again - the arming source, so the target key did
+not change.
+
+Expected: `P80-A` is a valid applicable target and the arming source, so the
+"select a text box or text annotation to apply" hint must clear (the painter may
+stay armed, and must not re-apply to its own source).
+
+Actual: the raw-run hint remained visible on `[data-txt-format-painter-hint]`
+while `P80-A` was selected and the painter stayed armed. The apply effect
+early-returns at `textTargetKeyNow === painterArmedKeyRef.current`
+(`DocumentView.tsx:1452`) before the hint-clearing branch, so the stale hint is
+never cleared.
+
+Screenshot: screenshots/adv-p80-stale-hint.png
+
+Disposition: ACCEPTED -> DEF-475
+
+## ADV-151: Cross-page Format Painter silently fails (arm on page 1, target on page 2)
+
+- Session: diff-pass
+- Suggested severity: MEDIUM
+
+What I did: opened `report.pdf` through `e2e/lib/launch.cjs`; created `SRC1`
+(Times/18) on page 1 and `TGT2` (default Helvetica/12) on page 2; selected `SRC1`;
+armed the painter (`aria-pressed="true"`); then selected `TGT2` (the panel Text
+field updated to "TGT2", `data-text-panel-mode` stayed "text", both pages were
+mounted and `[data-edit-box-toolbar]` was present). Repeated in one session
+against same-page controls and the reverse direction (`adv_p80_p9.cjs`).
+
+Expected: the captured format applies to `TGT2` in one action, `TGT2`'s engine
+style matches `SRC1`, `SRC1` is untouched, and the painter disarms.
+
+Actual: `TGT2`'s engine style stayed Helvetica/12 - unchanged; `SRC1` stayed
+Times/18; the painter stayed `aria-pressed="true"` and no hint appeared. The same
+session showed same-page page1->page1 apply, cross-page page2->page1 apply, and
+same-page page2->page2 apply all working - only page1 source -> page2 target
+fails, reproduced in two independent runs (P8 and P9 case B). The panel Text field
+reads the target's own text (`selectedTextBox`) while the painter's target key is
+derived from `editTextTarget` (`DocumentView.tsx:1037-1043`, `:1452`), so a
+cross-page target change is not recognised by the apply effect.
+
+Screenshots: screenshots/adv-p80-crosspage2.png, screenshots/adv-p80-crosspage3.png
+
+Disposition: ACCEPTED -> DEF-474
+
 ## Phase 79 diff-pass — regenerated `.ico` set + packaging wiring (TFL-297, release TFL-293)
 
 Session label: `diff-pass`. Scope: the three regenerated `.ico` assets

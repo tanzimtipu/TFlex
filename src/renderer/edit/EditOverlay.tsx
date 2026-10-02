@@ -516,7 +516,7 @@ export function EditOverlay(props: EditOverlayProps): ReactElement | null {
       const style = textStyle ?? defaultEditTextStyle(defaultFont);
       dispatch({
         type: "upsert-text-box",
-        placement: { id, page, rect: { ...rect }, text: "", style: { ...style }, background: "white" },
+        placement: { id, page, rect: { ...rect }, text: "", style: { ...style }, background: "white", isNew: true },
       });
       dispatch({ type: "select-text-box", textBoxId: id });
       setTextTarget({ kind: "box", id, page, rect: { ...rect }, text: "", isNew: true });
