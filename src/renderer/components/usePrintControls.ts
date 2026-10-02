@@ -41,6 +41,7 @@ import type {
   PrintJobPayload,
   PrintJobResult,
   PrintPageOrder,
+  PrintPreset,
   PrintScaling,
   PrinterInfo,
   PrintSettings,
@@ -49,6 +50,9 @@ import type {
 /** Preview raster resolution - deliberately low; the preview is a live
  *  layout sketch, not a proof print. */
 export const PREVIEW_DPI = 48;
+
+/** Phase 81 - mirror of `PRINT_PRESETS_CAP` in the main settings service. */
+const PRINT_PRESETS_CAP = 30;
 
 /** Phase 35 - human copy for the typed print-failure reasons the print
  *  service reports. An unknown reason (e.g. an OS `failureReason` string)
@@ -82,6 +86,10 @@ export interface UsePrintControlsArgs {
   seed?: PrintSettings | null;
   /** Standalone window: a human message while the document is gone. */
   blockedReason?: string | null;
+  /** Phase 81 - read the persisted named print presets. */
+  loadPresets: () => Promise<PrintPreset[]>;
+  /** Phase 81 - persist the named print presets (read-modify-write host). */
+  savePresets: (presets: PrintPreset[]) => Promise<void>;
 }
 
 export interface PrintControls {
@@ -127,6 +135,16 @@ export interface PrintControls {
   setReverse: (v: boolean) => void;
   printAnnotations: boolean;
   setPrintAnnotations: (v: boolean) => void;
+  // Phase 81 - named print presets
+  presets: PrintPreset[];
+  selectedPreset: string;
+  presetName: string;
+  setPresetName: (n: string) => void;
+  presetError: string | null;
+  presetNotice: string | null;
+  applyPreset: (name: string) => void;
+  savePreset: () => Promise<void>;
+  deletePreset: () => Promise<void>;
   // run state
   running: boolean;
   progress: PrintProgress;
@@ -160,6 +178,8 @@ export function usePrintControls(args: UsePrintControlsArgs): PrintControls {
     onClose,
     seed,
     blockedReason,
+    loadPresets,
+    savePresets,
   } = args;
 
   const [printers, setPrinters] = useState<PrinterInfo[]>([]);
@@ -190,6 +210,13 @@ export function usePrintControls(args: UsePrintControlsArgs): PrintControls {
   const [oddEven, setOddEven] = useState<PrintOddEven>("all");
   const [reverse, setReverse] = useState(false);
   const [printAnnotations, setPrintAnnotations] = useState(true);
+
+  // Phase 81 - named print presets loaded from settings on activation.
+  const [presets, setPresets] = useState<PrintPreset[]>([]);
+  const [selectedPreset, setSelectedPreset] = useState("");
+  const [presetName, setPresetName] = useState("");
+  const [presetError, setPresetError] = useState<string | null>(null);
+  const [presetNotice, setPresetNotice] = useState<string | null>(null);
 
   const [running, setRunning] = useState(false);
   const [progress, setProgress] = useState<PrintProgress>({
@@ -303,6 +330,19 @@ export function usePrintControls(args: UsePrintControlsArgs): PrintControls {
     abortRef.current?.abort();
     abortRef.current = null;
   }, [active, seed]);
+
+  // Phase 81 - load the persisted named presets on every activation and
+  // reset the preset editing state. Never load while inactive.
+  useEffect(() => {
+    if (!active) return;
+    setPresetName("");
+    setSelectedPreset("");
+    setPresetError(null);
+    setPresetNotice(null);
+    void loadPresets()
+      .then((list) => setPresets(list))
+      .catch(() => setPresets([]));
+  }, [active, loadPresets]);
 
   // Load the printer list on activation. DEF-301 - the resolution must
   // NEVER clobber a live selection. A re-resolve (reopen while this hook's
@@ -418,6 +458,79 @@ export function usePrintControls(args: UsePrintControlsArgs): PrintControls {
     oddEven,
     reverse,
     printAnnotations,
+  };
+
+  // Phase 81 - apply a named preset to the visible controls. The printer
+  // (deviceName), page scope and custom range are deliberately untouched:
+  // a preset is an option snapshot, not a routing or page-selection choice.
+  const applyPreset = (name: string): void => {
+    setSelectedPreset(name);
+    if (name === "") return;
+    const preset = presets.find((p) => p.name === name);
+    if (preset === undefined) return;
+    const s = seedPrintDialogState(preset.settings);
+    setCopies(s.copies);
+    setCollate(s.collate);
+    setScaling(s.scaling);
+    setScalePercent(s.scalePercent);
+    setOrientation(s.orientation);
+    setDuplex(s.duplex);
+    setColor(s.color);
+    setPagesPerSheet(s.pagesPerSheet);
+    setPageOrder(s.pageOrder);
+    setOddEven(s.oddEven);
+    setReverse(s.reverse);
+    setPrintAnnotations(s.printAnnotations);
+    setPresetNotice(`Applied preset "${name}".`);
+    setPresetError(null);
+  };
+
+  // Phase 81 - snapshot the current options under a trimmed name. The
+  // device is NOT stored (a preset must never silently re-route a job); the
+  // snapshot comes from the same mapper the print run uses.
+  const savePreset = async (): Promise<void> => {
+    const name = presetName.trim();
+    if (name === "") {
+      setPresetError("Enter a preset name.");
+      setPresetNotice(null);
+      return;
+    }
+    if (!presets.some((p) => p.name === name) && presets.length >= PRINT_PRESETS_CAP) {
+      setPresetError("Preset limit reached (30). Delete one to save a new preset.");
+      setPresetNotice(null);
+      return;
+    }
+    const settings = { ...buildPrintSettings(dialogState) };
+    delete settings.deviceName;
+    const next = presets.some((p) => p.name === name)
+      ? presets.map((p) => (p.name === name ? { name, settings } : p))
+      : [...presets, { name, settings }];
+    try {
+      await savePresets(next);
+      setPresets(next);
+      setSelectedPreset(name);
+      setPresetName("");
+      setPresetError(null);
+      setPresetNotice(`Preset "${name}" saved.`);
+    } catch {
+      setPresetError("Could not save the preset.");
+    }
+  };
+
+  // Phase 81 - delete the selected preset.
+  const deletePreset = async (): Promise<void> => {
+    if (selectedPreset === "") return;
+    const name = selectedPreset;
+    const next = presets.filter((p) => p.name !== name);
+    try {
+      await savePresets(next);
+      setPresets(next);
+      setSelectedPreset("");
+      setPresetError(null);
+      setPresetNotice(`Deleted preset "${name}".`);
+    } catch {
+      setPresetError("Could not delete the preset.");
+    }
   };
 
   const onConfirmPrint = async (): Promise<void> => {
@@ -559,6 +672,15 @@ export function usePrintControls(args: UsePrintControlsArgs): PrintControls {
     setReverse,
     printAnnotations,
     setPrintAnnotations,
+    presets,
+    selectedPreset,
+    presetName,
+    setPresetName,
+    presetError,
+    presetNotice,
+    applyPreset,
+    savePreset,
+    deletePreset,
     running,
     progress,
     progressPercent,

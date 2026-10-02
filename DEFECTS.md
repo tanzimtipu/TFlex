@@ -10311,3 +10311,29 @@ History:
 - adversary (TFL-271): filed ADV-149 (LOW).
 - CTO (TFL-238): ACCEPTED -> DEF-468; bundled with DEF-467 in frontend-dev **TFL-273** (collapse to `Page N of T` when `min(current+2,total) === current+1`). Awaiting fix; then FIX-READY -> qa FIX-READY verification -> CLOSED.
 - qa (TFL-275, 2026-10-01): FIX-READY verification **PASS** -> CLOSED. 1-page PDF double label = `Page 1 of 1` (single also `Page 1 of 1`); 16-page no-regression: single `Page 1 of 16`, double `Page 1-2 of 16`. Commands: `npm run test:e2e -- phase77_bookview_correction phase66_bookview_spread phase66_bookview_annotations phase66_bookview_colorpopover phase77_fix_def467` = 20 passed / 2 failed (the two DEF-467 criterion-(b) attacks, unrelated to this defect); `npm run test:unit -- bookView bookViewSpread bookViewAnnotations` = 3 files / 27 tests, 0 failed; `npm run verify` exit 0. Spec: `e2e/phase77_fix_def467.spec.cjs`.
+
+## DEF-477: At the 30-preset cap a newly-saved print preset is silently dropped on disk while the picker shows it as saved - a phantom entry that vanishes on reopen
+
+- Status: CLOSED
+- Severity: MEDIUM (silent loss of a user-created preset at the cap boundary; the success notice asserts a save the disk did not take; the in-session picker diverges from disk without bound)
+- Found by: adversary (TFL-325, Phase 81 named-print-presets settings-persistence diff-pass; ACCEPTED from ADV-154)
+- Phase: 81 (named print presets; success criterion 3 - the list is capped - and criterion 4 - no silent no-op)
+
+Steps to reproduce:
+1. Seed a fresh temp user-data `settings.json` with 30+ valid distinct-name `printPresets` (for example `p00`..`p49`), launch the dev build via `e2e/lib/launch.cjs`, open `report.pdf`, then the standalone print window.
+2. Confirm the picker lists exactly 30 (`p00`..`p29`).
+3. Save a NEW name via the real controls (`fill [data-print-preset-name] = "extra"` -> click `[data-print-preset-save]`), wait for the `[data-print-preset-notice]` success text, then read `settings.json` back.
+
+Expected: the success notice, the picker and the persisted list agree. Per the phase contract `cap 30` is a persisted-list ceiling: saving a 31st distinct name is refused with a visible `[data-print-preset-error]` (writing nothing), or evicted predictably - but notice, picker and disk must never disagree, and the notice must not assert a save the disk did not take.
+
+Actual: `savePreset` appends to its in-memory `presets` list and calls `savePresets(next)` without enforcing the cap; main's `normalizePrintPresets` truncates the written list to its first 30 entries, so the newest name never reaches disk. Measured after the first save: disk list = 30 (`extra` absent), picker = 31 (`extra` present), notice "Preset \"extra\" saved.". A second new name makes disk = 30 (both absent) and picker = 32. Every new preset saved while at the cap reports success, shows in the picker for the rest of the session, and is gone on the next launch - silent loss of user-created data with no page error.
+
+Root cause: `src/renderer/components/usePrintControls.ts:488-510` (`savePreset`) has no `PRINT_PRESETS_CAP` guard before it appends/builds `next`; `src/main/services/settings.ts:1024` (`normalizePrintPresets`) then silently truncates the written list at `PRINT_PRESETS_CAP` (`src/main/services/settings.ts:326`, value 30). The renderer already mirrors the main cap literals (`PrintPanel.tsx:123` hard-codes `maxLength={40}` for `PRINT_PRESET_NAME_MAX`), so the guard belongs in the renderer.
+
+Impact: MEDIUM - at the cap, every new preset save falsely reports success, silently losing a user-created preset and diverging the picker from disk without bound in-session. Narrow (30 presets already saved) but a genuine data-loss/no-silent-no-op violation of success criteria 3 and 4.
+
+History:
+- adversary (TFL-325, 2026-10-02): filed ADV-154 (suggested LOW).
+- CTO (TFL-317, 2026-10-02): ACCEPTED -> DEF-477, severity raised to MEDIUM. Dispatched frontend-dev **TFL-327**: enforce `PRINT_PRESETS_CAP` in `savePreset` - refuse a NEW name at the cap with `[data-print-preset-error]` and write nothing (upsert of an existing name stays allowed), with a unit test; then qa FIX-READY verification via the adversary probe -> CLOSED.
+- frontend-dev (TFL-327, 2026-10-02): fix delivered, FIX-READY. `usePrintControls.ts:55` adds `const PRINT_PRESETS_CAP = 30;`; `savePreset` (`:498-502`) refuses a new name at the cap with `[data-print-preset-error]` "Preset limit reached (30). Delete one to save a new preset.", clearing the notice and returning before `savePresets`/state mutation; existing-name upsert still allowed. Test added `test/unit/renderer/printPresets.test.tsx:173` "refuses a new name when the preset list is at the cap" (savePresets not called, picker stays 30). Evidence: `npm.cmd run test:unit -- test/unit/renderer/printPresets.test.tsx` = 7 passed / 0 failed; `npm.cmd run verify` exit 0. CTO reviewed the diff in-tree. qa phase-close verification via the adversary cap attack -> CLOSED.
+- qa (TFL-332, 2026-10-02): FIX-READY retest PASS -> CLOSED. Command: `cmd /c "npx playwright test e2e/phase81_print_presets_adversary.spec.cjs --reporter=line"` = 8 passed / 0 failed. Cap attack (spec test B): seeding 50 distinct names loads 30 (`p00`..`p29`); a 31st distinct-name save shows `[data-print-preset-error]` ("Preset limit reached"), shows NO `[data-print-preset-notice]`, and leaves disk=30 and picker=30 (extra/extra2 absent on both). Repro of the original phantom is gone. NOTE (test-implementation correction, not product): the adversary spec's test B still encoded the PRE-FIX contract (it waited for the success notice at the cap), so it failed 7/1 on the first run; qa corrected the stale assertion to the fixed contract (error shown, no notice, disk+picker stay 30) and reran to 8/0. All six preset controls re-verified (CONTROL-INDEX sweep) and `npm.cmd run verify` exit 0.

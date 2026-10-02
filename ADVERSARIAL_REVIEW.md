@@ -6746,6 +6746,154 @@ User: a migration agent / applicant completing the official Form 956 (PDF). Job 
 - Nice-to-fix - **Affordance (read-only):** read-only controls are signalled only by `opacity: 0.75` and the `disabled` attribute, with no tooltip naming why (cf. `skipped-readonly`); a title/`aria-description` would explain it.
 - Strengths to keep: the transparent-at-rest overlay makes the form's own printed box the single visible surface (the operator's core DEF-461 complaint); groups render one tick at a time with per-widget hit targets; a filled group is truthfully reported `filled` and survives save/reopen; the save report clearly separates filled from skipped.
 
+## Phase 81 printPresets settings-persistence diff-pass (TFL-325)
+
+Session label: `diff-pass`. Scope: the Phase 81 named-print-presets change only -
+`src/shared/types.ts` (`PrintPreset`, `AppSettings.printPresets`),
+`src/main/services/settings.ts` (`normalizePrintPresetSettings`,
+`normalizePrintPresets`, `PRINT_PRESETS_CAP=30`, `PRINT_PRESET_NAME_MAX=40`, wired
+into `normalizeSettings`), `src/renderer/components/usePrintControls.ts`
+(`applyPreset`/`savePreset`/`deletePreset` + the `loadPresets`/`savePresets`
+seam), `src/renderer/components/PrintPanel.tsx` (the `[data-print-preset*]`
+controls) and `src/renderer/print-window/PrintWindowApp.tsx` (the
+`loadSettings` -> `saveSettings` read-modify-write). Product code, qa's
+`e2e/phase81_print_presets.spec.cjs` and the unit tests were read but not
+modified. The registered `dist/` already contained the change (main + renderer
+built 11:43; sources uncommitted), so the dev build launched through
+`e2e/lib/launch.cjs` was the shipped change.
+
+Probe spec: `e2e/phase81_print_presets_adversary.spec.cjs` (adversary-written; it
+does not re-run qa's spec). Each attack launches the dev build with a fresh
+`--user-data-dir` seeded with a hostile `settings.json`, opens `report.pdf`, then
+the standalone print window.
+
+Exact command:
+
+    cmd /c "npx playwright test e2e/phase81_print_presets_adversary.spec.cjs --reporter=line"
+
+Pass/fail: 7 attacks passed, 1 confirmed break (ADV-154). Renderer page errors:
+0 in every attack.
+
+## ADV-154: At the 30-preset cap a newly-saved preset is silently dropped from disk while the picker shows it as saved - a phantom entry that vanishes on reopen
+
+- Session: diff-pass
+- Suggested severity: LOW
+
+What I did: launched the dev build through `e2e/lib/launch.cjs` with a fresh
+temp user-data dir seeded with `printPresets` = 50 valid distinct-name entries
+(`p00`..`p49`), then opened `report.pdf`, opened the standalone print window, and
+confirmed the picker lists exactly 30 (`p00`..`p29`). I then saved a NEW name
+`extra` via the real control (`fill [data-print-preset-name] = "extra"` ->
+click `[data-print-preset-save]`), waited for the success notice, read
+`settings.json` back, and repeated with a second new name `extra2`. Command:
+`cmd /c "npx playwright test e2e/phase81_print_presets_adversary.spec.cjs -g \"B cap\""`.
+
+Expected: per the phase contract `cap 30` is a persisted-list ceiling. Saving a
+31st distinct name should either be refused with a visible error or replace/
+evict predictably, but whichever way it resolves, the picker and the persisted
+list must agree. The success notice must not assert a save the disk did not take.
+
+Actual: the renderer's `savePreset` appends to its in-memory `presets` list and
+calls `savePresets(next)` without applying the cap; the main-process
+`normalizePrintPresets` then truncates the written list to its first 30 entries,
+so the newest name is dropped. Measured after the first save: disk list = 30
+(`extra` absent), picker = 31 (`extra` present), notice "Preset \"extra\"
+saved.". After the second save: disk = 30 (`extra` and `extra2` both absent),
+picker = 32 (both present). So every new preset saved while at the cap reports
+success, appears in the picker for the rest of the session, and is gone on the
+next launch - silent loss of user-created data plus a UI/disk divergence that
+grows without bound in-session. No page error was raised.
+
+Evidence:
+- `screenshots/adv-154-phantom-presets.png` (picker showing 32 options after the two phantom saves).
+- `test-fixtures/phase81-presets/adv-154-persisted-after-phantom-saves.json` (the on-disk settings.json after both saves: exactly 30 presets, neither `extra` nor `extra2`).
+
+Affected file: `src/renderer/components/usePrintControls.ts` (`savePreset`
+does not enforce `PRINT_PRESETS_CAP`) with `src/main/services/settings.ts`
+(`normalizePrintPresets` silently truncates).
+
+Disposition: ACCEPTED -> DEF-477 (CTO, TFL-317, 2026-10-02; severity MEDIUM - silent
+loss of a user-created preset at the cap boundary plus a success notice that asserts a
+save the disk did not take)
+
+### Phase 81 printPresets diff-pass - attacks that did NOT reproduce (defended)
+
+Every attack below was executed against the shipped dev build; the outcome is
+recorded so a silent pass is not mistaken for coverage.
+
+- **A1 non-array `printPresets`**: seeded `printPresets: "not-an-array"` with a
+  distinctive `recentsCap: 7` and `theme: "dark"`. The app booted on the STORED
+  settings (`recentsCap` 7 - not the default 10), so the whole-file recovery path
+  was NOT taken; the picker listed zero presets (field absent, consumer default
+  `[]`); no page error. Defended.
+- **A2 hostile entry list**: seeded `[null, 7, "x", {name:"   "},` two `ok1`
+  entries with different settings, a 41-char name, `{name:"ok2",settings:[1,2]}`,
+  `{name:"ok3",settings:null}`, and an `ok4` whose known values were all invalid
+  (`copies:500`, `scaling:"bogus"`, `pagesPerSheet:3`, `duplex:"nope"`) with
+  injected `deviceName`/`pageRanges`/`paperSource`/`bogusUnknown``]`. The picker
+  listed exactly `ok1, ok4, ok5`; `ok1` upserted to the later settings
+  `{copies:3, duplex:"shortEdge"}`; `ok4` normalized to `{}` with
+  `deviceName`/`pageRanges`/`paperSource`/unknown keys all dropped; the 41-char
+  and non-object entries were skipped. `recentsCap` 7 survived (no recovery), no
+  page error. Defended.
+- **B cap on load**: 50 valid distinct-name entries -> exactly the first 30
+  survived the load, in order, and the persisted file stayed at 30 across both
+  saves (the cap itself holds; the renderer/disk divergence is ADV-154).
+- **C same-name upsert**: saving `Alpha` again with later options left exactly
+  one `Alpha` at the FIRST position carrying the later settings (`copies:3`).
+  Defended.
+- **D read-modify-write clobber**: seeded non-default `theme`, `recentsCap`,
+  `recentFiles`, `homeTools`, `tabStyle` and `geometry`, captured the normalized
+  baseline after the print window settled, then saved a preset, saved a second,
+  and deleted one. After each write the disk's non-`printPresets` fields were
+  byte-for-byte equal to the baseline - no clobber or loss. (The seam reads main's
+  live in-memory `current`, and `save` updates `current` synchronously before its
+  write queue, so the read-modify-write sees concurrent settings changes.)
+  Defended.
+- **E rapid double-save in one task**: two programmatic `[data-print-preset-save]`
+  clicks in a single `page.evaluate`. Exactly one `Rapid` entry on disk and one
+  option in the picker; the pre-existing `Seed` entry was not lost. Defended.
+- **F disabled while running / apply safe**: with the document loaded and a real
+  printer selected, stub `window.tflex.printJob` to a never-resolving promise and
+  click Print; all four preset controls (`[data-print-preset]`,
+  `[data-print-preset-name]`, `[data-print-preset-save]`,
+  `[data-print-preset-delete]`) reported `disabled: true` while `running`. Applying
+  a preset on the loaded surface re-seeded the controls (`duplex` -> `longEdge`)
+  with no page error. Defended.
+- **G name edges**: whitespace-only name showed `[data-print-preset-error]` and
+  wrote nothing to disk or the picker; exactly 40 chars persisted; a 41-char
+  `fill` was truncated to 40 at entry by `maxLength={40}` (the field visibly held
+  40 chars) and the main-process normalizer independently rejects >40, so no
+  wrong-name write could reach disk silently; a duplicate name replaced rather
+  than appended. Defended.
+- **H offline**: `printPage.on('request')` recorded zero http(s) requests across
+  opening the print window and saving a preset. The new path adds no network call.
+  Defended.
+
+### Phase 81 printPresets diff-pass - design critique of the changed surface (skill: design-critique)
+
+User: someone who prints PDFs and wants to reuse a set of print options. Job on
+this surface: pick a saved option snapshot, or save the current options under a
+name. Success: the right options reload and stay available next time.
+
+- Must-fix - **States (ADV-154):** the success notice claims a save the disk did
+  not take at the cap boundary; the picker then carries entries that disappear on
+  reopen. Try: enforce the 30 cap in `savePreset` (refuse a 31st with the
+  existing `[data-print-preset-error]` wording, or evict the oldest) so notice,
+  picker and disk always agree.
+- Should-fix - **Inputs:** the name field offers no overwrite signal before
+  replacing an existing preset; `Save preset` silently upserts a duplicate name.
+  Try: when the typed name matches an existing preset, change the button to
+  "Overwrite preset" (or add a hint) before the click.
+- Nice-to-fix - **States:** when a preset is selected and a control is then
+  changed, the select still reads as that preset with no "modified" cue. Try: a
+  subtle dirty marker on the select, matching how the app marks unsaved tabs.
+- Strengths to keep: the snapshot deliberately excludes `deviceName`/page scope
+  so applying a preset never silently re-routes a job; the controls disable
+  cleanly while a print runs; a blank name fails loud; same-name upsert keeps its
+  original position; the preset row renders before the printer list so it is
+  reachable even when no printer is installed.
+
 
 
 

@@ -79,12 +79,92 @@ export function PrintPanel({ print }: PrintPanelProps): ReactElement {
     onCancelClick,
     totalPages,
     currentPage,
+    presets,
+    selectedPreset,
+    presetName,
+    setPresetName,
+    presetError,
+    presetNotice,
+    applyPreset,
+    savePreset,
+    deletePreset,
   } = print;
 
   return (
     <>
       <div className="modal-body print-body">
         <div className="print-controls">
+          {/* Phase 81 - named print presets. The first block in the surface:
+              pick a saved option snapshot, or save the current one. */}
+          <div className="print-row print-row-selects print-preset-row">
+            <label className="modal-field">
+              <span>Preset</span>
+              <select
+                className="modal-input"
+                value={selectedPreset}
+                onChange={(e): void => applyPreset(e.target.value)}
+                disabled={running}
+                data-print-preset
+                aria-label="Print preset"
+              >
+                <option value="">Custom</option>
+                {presets.map((p) => (
+                  <option key={p.name} value={p.name}>
+                    {p.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="modal-field">
+              <span>Preset name</span>
+              <input
+                type="text"
+                className="modal-input"
+                maxLength={40}
+                placeholder="e.g. Duplex greyscale"
+                value={presetName}
+                onChange={(e): void => setPresetName(e.target.value)}
+                disabled={running}
+                data-print-preset-name
+                aria-label="Preset name"
+              />
+            </label>
+          </div>
+          <div className="print-row print-preset-actions">
+            <button
+              type="button"
+              className="btn btn-secondary"
+              data-print-preset-save
+              onClick={(): void => {
+                void savePreset();
+              }}
+              disabled={running}
+            >
+              Save preset
+            </button>
+            <button
+              type="button"
+              className="btn btn-secondary"
+              data-print-preset-delete
+              onClick={(): void => {
+                void deletePreset();
+              }}
+              disabled={running || selectedPreset === ""}
+            >
+              Delete
+            </button>
+            {presetError !== null && (
+              <span className="modal-hint" role="alert" data-print-preset-error>
+                {presetError}
+              </span>
+            )}
+            {presetNotice !== null && (
+              <span className="modal-help" role="status" data-print-preset-notice>
+                {presetNotice}
+              </span>
+            )}
+          </div>
+
           {printersLoading && (
             <p className="modal-help">Loading printers…</p>
           )}

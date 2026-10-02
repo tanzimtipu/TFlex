@@ -229,7 +229,7 @@ History:
 
 ## FEA-012: Format Painter (copy formatting from one text object to another)
 
-- Status: PROPOSED
+- Status: ACCEPTED -> Phase 80
 - Source: https://support.microsoft.com/en-us/word/training/add-and-edit-text (Microsoft Word, Font group)
 - Category: Edit
 - Effort: M
@@ -244,6 +244,7 @@ is the most common bulk action; peers ship it and the panel is the natural home 
 
 History:
 - orchestrator: recorded from feature-scout research dispatch (deferred candidate after Phase 21)
+- orchestrator: accepted on CEO commission TFL-315; promoted to Phase 80
 
 ## FEA-013: Spell check inside the text editor
 
@@ -285,7 +286,7 @@ History:
 
 ## FEA-015: Named print presets persisted across sessions
 
-- Status: PROPOSED
+- Status: ACCEPTED -> Phase 81
 - Source: https://helpx.adobe.com/acrobat/using/printing-pdfs.html (Acrobat: print presets you can save and reuse)
 - Category: Print
 - Effort: S
@@ -302,6 +303,7 @@ the smallest follow-on with a real daily benefit and it is the only print item t
 
 History:
 - orchestrator: recorded from the feature-scout print research that produced Phase 30
+- orchestrator: accepted on CEO commission TFL-315; promoted to Phase 81
 
 ## FEA-016: Paper source / tray selection by page size
 

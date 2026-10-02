@@ -4922,3 +4922,83 @@ oracle (identical measured WIDTH, the tinted fill, `--fg-strong` ink).
 **CONTROL-INDEX:** none - no interactive control is introduced. The changed surface is a set of shipped icon assets (`assets/brand/*.ico`) and their `electron-builder.yml` references.
 
 **Settings impact:** none - no new `AppSettings` field. This is an asset/packaging change (`assets/brand/*.ico` + `electron-builder.yml`); no renderer, IPC or `src/shared/` change.
+
+## Phase 80 - Format Painter: apply one text object's formatting to another (FEA-012, commissioned via TFL-315 / TFL-316, 2026-10-02)
+
+**Operator request (product terms, TFL-316):** give TFlex users a Format Painter - select a text object, pick up its formatting (the Phase-21 FORMAT TEXT set: font family, size, colour, bold/italic/underline, alignment, line spacing, list style), and apply that combination to another text object in one action. Offline only.
+
+**Relationship to Phase 21 (docked FORMAT TEXT panel) / Phase 27 (character spacing) / FEA-012.** Phase 21 shipped the docked text-properties panel and its full control set; Phase 27 made character spacing live (the engine now emits the `Tc` operator), leaving horizontal scaling as the only disabled-with-tooltip control (no `Tz` operator). FEA-012 identified re-applying a font/colour/size combination to many objects as the most common bulk action once the panel exists. This phase adds the Word "Format Painter" affordance on top of the existing style-application path; it adds no new engine capability.
+
+**CTO RULINGS:**
+
+1. **Scope is the renderer's text-format application path only.** The feature captures a selected text object's panel values and re-applies them to another text object through the SAME engine style route the panel controls already use (text box -> `updateTextBox` patch; text annotation -> `editAnnotation` `style` payload). No new engine op, no new IPC channel, no `src/shared/` change, no settings field, no network.
+2. **The painter's home is the docked FORMAT TEXT panel** (`src/renderer/edit/TextPropertiesPanel.tsx`), the accepted natural home per FEA-012. It is one new button in the panel's Font group; no dock verb, no toolbar change, no new panel.
+3. **Source is any current panel text target** (committed text box, text annotation, or edited text run) - its full panel value set is captured. **Target is a committed text box or a text annotation**, the two object kinds whose style the engine persists in place. A raw text run is NOT an applicable target (applying to it would mean re-baking the run through `editTextRun`); a run selected while the painter is armed must fail loud with a visible hint, never silently no-op.
+4. **The captured format is exactly the engine-honoured set:** font family, size, colour, bold, italic, underline, alignment, line spacing, list style, highlight, baseline shift (super/sub), indent, and character spacing. Horizontal scaling is NOT part of the captured format and its panel control stays disabled-with-tooltip exactly as today (the engine has no `Tz` operator). The painter must never attempt an operator the engine cannot honour.
+5. **Single-shot, one undo step.** The painter arms on click, applies on the next applicable text-object selection as ONE style write (one undo entry), then disarms. It never applies to the object it was picked up from (a same-target selection is not a new target).
+6. **No regression** to text edit, save/export, settings persistence, or the Phase-21 panel behaviour; the feature is fully offline.
+
+**Features**
+
+**A. Format Painter control in the FORMAT TEXT panel (frontend-dev).** Add one button to the Font group of `TextPropertiesPanel.tsx`, test hook `[data-txt-format-painter]`, `aria-label="Format Painter"`, `aria-pressed` reflecting armed state, paintbrush icon from the existing lucide icon set, tooltip explaining pick-up then apply. The control is disabled-with-tooltip when no text source is currently selected (nothing to pick up). Clicking it captures the current selection's full value set (via the existing `valuesToPatch` from `textStyle.ts`) and arms the painter.
+
+**B. Apply to target in one action (frontend-dev).** While armed, the next committed text box or text annotation the user selects receives the captured format as ONE style application through the same host route the panel controls use (`DocumentView.handleTextPanelPatch`: box -> `edit.onTextStylePatch`; annotation -> `onEditAnnotation`), then the painter disarms. The applied change is a single undo step and uses the persisted style path, so it survives save/reload. The host (`DocumentView.tsx`) owns the armed state; the panel stays a pure controlled component.
+
+**C. Fail-loud scope and state (frontend-dev).** While armed, selecting a non-applicable target (a raw text run, an image, a page) keeps the painter armed and shows a readable hint (test hook `[data-txt-format-painter-hint]`), never a silent no-op. Escape or a second click on the armed button cancels the painter. The armed state is reflected on the button (`aria-pressed`) and cleared when the document/tab closes.
+
+**D. Focused QA + adversarial diff-pass (qa, adversary).** qa proves the feature end to end with a run that applies a source object's formatting to a target (font family, size, colour, bold/italic/underline, alignment, line spacing, list style), then saves and reloads and re-asserts the target's formatting; plus a no-silent-no-op check for a raw-run target and a no-regression check on text edit, save/export and settings persistence. The adversary runs a diff-pass on the format-apply path (a high-risk style-write merge): arming with no source, applying across pages/objects, undo/redo behaviour, the raw-run and image target cases, and the save/reload durability, filing ADV entries for confirmed breaks.
+
+**Current-scope supersession:** none - this phase adds a new renderer affordance and changes no earlier phase's contract. It extends FEA-012 (previously PROPOSED) into a delivered feature and relies on the Phase-21/27 control set and engine paths unchanged.
+
+**Success criteria**
+
+1. With a text object selected, ONE click on `[data-txt-format-painter]` arms the painter and the button reflects the armed state (`aria-pressed`); with no text source selected the control is disabled-with-tooltip.
+2. With the painter armed, selecting a second committed text box or text annotation applies the source object's formatting to it in ONE action (one undo step); the on-screen result and the panel's reflected values both show the applied format.
+3. The applied formatting survives save + reload: qa applies the painter, saves, reopens, and re-asserts the target's font family, size, colour, bold/italic/underline, alignment, line spacing and list style against the source.
+4. Horizontal scaling stays disabled-with-tooltip and is never part of the captured format; the painter never attempts an operator the engine cannot honour; a non-applicable target (raw text run) shows the visible hint `[data-txt-format-painter-hint]` instead of silently no-opping.
+5. No regression to text edit, save/export, or settings persistence; offline-only preserved (no network call added).
+6. Unit tests cover the capture (full value set -> patch), the arm/apply/disarm reducer or state transitions, and the non-applicable-target hint; e2e covers arm -> apply -> save/reload and the fail-loud target case.
+7. All DEF/ADV opened by the phase are CLOSED or REJECTED; phase-close QA returns a verdict per criterion; the phase-close commit stages every Phase 80 change as ONE local commit by git-agent with no push and no version bump.
+
+**CONTROL-INDEX:** one new control - `[data-txt-format-painter]` (button in the FORMAT TEXT panel Font group, `aria-pressed` armed state). Promised action: click picks up the selected text object's formatting (disabled-with-tooltip when no source is selected) and the next committed text box / text annotation selection applies it in one action; a non-applicable target shows `[data-txt-format-painter-hint]`. Proven by the Phase 80 e2e spec: arm -> apply to target -> assert target formatting equals source -> save/reload re-assert; plus the raw-run fail-loud case.
+
+**Settings impact:** none - the picked-up format is session/UI state held in the renderer, not persisted; no new `AppSettings` field, no settings IPC, no `src/shared/` change.
+
+## Phase 81 - Named print presets persisted across sessions (FEA-015, commissioned via TFL-315 / TFL-317, 2026-10-02)
+
+**Operator request (product terms, TFL-317):** let TFlex users save the current print settings under a name and re-apply that named preset across app restarts (for example duplex + greyscale + fit), so a repeated print job does not re-enter the same controls every time. Offline only; no network feature.
+
+**Relationship to Phase 30 (print with advanced options).** Phase 30 shipped the full option set and session-level presets, but declared `Settings impact: none`, and the session list did not survive the Phase 35/37 move to the standalone print window - there is no preset control in today's print surface at all. FEA-015 is the only print item that needs a persisted settings field. This phase adds named, persisted presets on top of the SAME `PrintSettings` shape Phase 30 defines; it adds no engine capability and no print-behaviour change.
+
+**CTO RULINGS:**
+
+1. **Scope is the shared contract, the main settings validator and the renderer print surface.** One new `AppSettings` field (`printPresets`), its preserve-if-valid / reject-if-invalid normalizer in `src/main/services/settings.ts`, and the preset controls in the standalone print window's shared surface (`PrintPanel.tsx` + `usePrintControls.ts`, hosted by `PrintWindowApp.tsx`). No new IPC channel (reuse `loadSettings` / `saveSettings`), no new window, no dock/toolbar verb, no Preferences entry, no engine op, no network.
+2. **A preset snapshots the OPTION SET, not the printer.** `PrintPreset.settings` excludes `deviceName`: a printer is environment-specific and a preset that names a device which is gone would fight the existing printer fallback. Applying a preset never changes the selected printer. The snapshot is the option set Phase 30 defines (copies, collate, scaling + scalePercent, orientation, duplex, colour, pagesPerSheet, pageOrder, oddEven, reverse, printAnnotations).
+3. **Capture and apply use the existing pure mappers.** Saving calls the same `buildPrintSettings(dialogState)` the print run uses, minus `deviceName`. Applying seeds the controls through `seedPrintDialogState` (the existing pure inverse), so capture and apply can never drift from the print path. Page range (`scope` / `customInput`) is per-document and is NOT part of a preset (Phase 30 deliberately leaves `pageRanges` unset).
+4. **Persist through the Phase-6 preserve-if-valid pattern.** `src/shared/types.ts` gains `PrintPreset` and `AppSettings.printPresets?`. `src/main/services/settings.ts` gains `normalizePrintPresets` (a non-array rejects the field; each entry must be an object with a non-empty trimmed string name within `PRINT_PRESET_NAME_MAX` and a plain-object settings snapshot whose known keys survive per-key validation, unknown keys dropped), a cap (`PRINT_PRESETS_CAP`), and same-name upsert (a later entry with an existing name replaces the earlier one). A corrupt or oversized stored list can never fail the whole settings load.
+5. **No silent no-op.** A save with an empty/whitespace name fails loud with an inline error (`[data-print-preset-error]`) and writes nothing. A save or delete that persists shows a readable status (`[data-print-preset-notice]`). The list is manageable: the selected preset can be deleted, also persisted.
+6. **No regression** to the print option set, printing, settings persistence for other fields, or the offline-only rule.
+
+**Features**
+
+**A. Persisted print-preset contract + validation (backend-dev).** Add `PrintPreset` and `AppSettings.printPresets?` to `src/shared/types.ts`; add `PRINT_PRESETS_CAP`, `PRINT_PRESET_NAME_MAX`, `normalizePrintPresets`, and the `normalizeSettings` wiring to `src/main/services/settings.ts`. Unit tests cover preserve-if-valid, reject-if-invalid, per-key settings validation, the cap, same-name upsert and unknown-key dropping.
+
+**B. Preset controls in the print surface (frontend-dev).** Add a preset picker, a name field, Save and Delete to `PrintPanel.tsx` (`[data-print-preset]`, `[data-print-preset-name]`, `[data-print-preset-save]`, `[data-print-preset-delete]`, `[data-print-preset-notice]`, `[data-print-preset-error]`). Extend `usePrintControls.ts` with preset state and actions, fed by injected `loadPresets` / `savePresets` seams; wire `PrintWindowApp.tsx` to the real `window.tflex.loadSettings` / `saveSettings` (read-modify-write the full settings object so other fields survive). Save snapshots the current dialog state via `buildPrintSettings` minus `deviceName`; apply re-seeds the controls via `seedPrintDialogState`; save and delete persist.
+
+**C. Focused QA + adversarial diff-pass (qa, adversary).** qa proves save -> restart -> apply end to end in the standalone print window (duplex + greyscale + scaling survive a window close/reopen and re-apply to the controls), the empty-name fail-loud, and no-regression on printing and other settings fields. The adversary runs a diff-pass on the settings-persistence merge: corrupt/oversized/duplicate stored presets, a preset with invalid settings keys, applying while a print runs, and whether saving presets clobbers other settings fields.
+
+**Current-scope supersession:** none - this phase extends FEA-015 (previously PROPOSED) into a delivered feature and relies on the Phase-30 `PrintSettings` shape and the Phase-35/37 print surface unchanged.
+
+**Success criteria**
+
+1. With the print surface open, saving the current option set under a name lists that preset immediately; reopening the print window (a fresh app session) still lists it and applying it re-seeds the option controls (duplex, greyscale, scaling and the rest) to the saved values.
+2. The preset survives an app restart: qa saves a preset, closes the print window, reloads settings, and re-asserts the stored `printPresets` entry and the applied control values.
+3. Settings persist and validate per the Phase-6 preserve-if-valid / reject-if-invalid pattern: a non-array `printPresets` rejects the field; an invalid entry is dropped; an invalid settings key is dropped; the list is capped; a corrupt list never fails the whole settings load. Unit tests cover each case.
+4. No silent no-op: saving with an empty name shows `[data-print-preset-error]` and writes nothing; save/delete shows `[data-print-preset-notice]`; applying a preset always changes the visible controls.
+5. No regression to the print option set, printing, settings persistence for other fields, or offline-only behaviour (no network call added).
+6. Unit tests cover the capture (dialog state -> snapshot minus `deviceName`), the apply (snapshot -> seeded controls), the empty-name error and the validator; e2e covers save -> close -> reopen -> apply plus the empty-name case.
+7. All DEF/ADV opened by the phase are CLOSED or REJECTED; phase-close QA returns a verdict per criterion; the phase-close commit stages every Phase 81 change as ONE local commit by git-agent with no push and no version bump.
+
+**CONTROL-INDEX:** new controls in the print surface - `[data-print-preset]` (preset picker, lists saved names; selecting one applies it), `[data-print-preset-name]` (name field), `[data-print-preset-save]` (saves the current option set under the typed name; empty name -> `[data-print-preset-error]`), `[data-print-preset-delete]` (deletes the selected preset). Promised actions proven by the Phase 81 e2e spec: save -> assert the preset is listed and persisted; close/reopen -> assert it is still listed; apply -> assert the option controls change to the saved values; empty name -> assert the error and no write.
+
+**Settings impact:** yes - a new `AppSettings.printPresets?: PrintPreset[]` field (`{ name: string; settings: PrintSettings }`), validated preserve-if-valid / reject-if-invalid in `src/main/services/settings.ts` (per-entry validation, same-name upsert, `PRINT_PRESETS_CAP`, `PRINT_PRESET_NAME_MAX`), persisted through the existing settings IPC (`loadSettings` / `saveSettings`) with no new channel. Offline only; no password or credential is ever stored.

@@ -231,6 +231,9 @@ export interface AppSettings {
    *  and a non-array rejects the field (consumer default is the shipped home
    *  row). */
   homeTools?: string[];
+  /** Phase 81 - named print presets (option snapshot per name). Validated
+   *  preserve-if-valid / reject-if-invalid in src/main/services/settings.ts. */
+  printPresets?: PrintPreset[];
 }
 
 /** Phase 6 — what the renderer gets back from `app:getInfo`. The
@@ -1474,6 +1477,14 @@ export interface PrintSettings {
   reverse?: boolean;
   printAnnotations?: boolean;
   paperSource?: string;
+}
+
+/** Phase 81 - one named print preset: a user-chosen name plus the print
+ *  dialog's option snapshot (PrintSettings minus deviceName). Persisted in
+ *  AppSettings.printPresets and re-applied by the print surface. */
+export interface PrintPreset {
+  name: string;
+  settings: PrintSettings;
 }
 
 /** Phase 30 — one print request. `images` are data URLs (one per composed

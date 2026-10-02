@@ -13,6 +13,8 @@ import type {
   LoadSettingsResult,
   OfficeConvertDefaults,
   PdfValidationDefaults,
+  PrintPreset,
+  PrintSettings,
   ReadingDefaults,
   RecentFile,
   TabStyle,
@@ -316,6 +318,16 @@ export const TAB_STYLES: readonly TabStyle[] = ['standard', 'colorful'];
  *  array rather than rejecting it (same preserve-a-persisted-preference rule
  *  as `DOCK_PINS_CAP`). The renderer mirrors this as `HOME_TOOLS_MAX`. */
 export const HOME_TOOLS_CAP = 14;
+
+/** Phase 81 - maximum number of named print presets persisted
+ *  (`printPresets`). An over-long list is truncated to the first
+ *  `PRINT_PRESETS_CAP` entries after same-name upsert (preserve-a-persisted-
+ *  preference rule, same as `HOME_TOOLS_CAP`). */
+export const PRINT_PRESETS_CAP = 30;
+
+/** Phase 81 - maximum length of a print preset name (trimmed). A longer or
+ *  blank name rejects its entry. */
+export const PRINT_PRESET_NAME_MAX = 40;
 
 function normalizeGeometry(raw: unknown): WindowGeometry {
   const d = DEFAULT_SETTINGS.geometry;
@@ -915,6 +927,105 @@ export function normalizeReadingDefaults(raw: unknown): ReadingDefaults | null {
   return out;
 }
 
+const PRINT_SCALINGS = ['fit', 'actual', 'shrink', 'custom'] as const;
+const PRINT_DUPLEXES = ['simplex', 'longEdge', 'shortEdge'] as const;
+const PRINT_PAGES_PER_SHEET = [1, 2, 4, 6, 9, 16] as const;
+const PRINT_PAGE_ORDERS = [
+  'horizontal',
+  'horizontalReversed',
+  'vertical',
+  'verticalReversed',
+] as const;
+const PRINT_ODD_EVEN = ['all', 'odd', 'even'] as const;
+
+/** Phase 81 - build a fresh `PrintSettings` from a raw preset settings
+ *  object carrying ONLY the known, valid keys. Unknown keys (`deviceName`,
+ *  `pageRanges`, `paperSource` and any future/unknown key) are dropped;
+ *  an invalid value for a known key drops only that key. Returns `null`
+ *  when `raw` is not a plain object (the caller skips the whole entry). */
+function normalizePrintPresetSettings(raw: unknown): PrintSettings | null {
+  if (raw === null || typeof raw !== 'object' || Array.isArray(raw)) return null;
+  const r = raw as Record<string, unknown>;
+  const out: PrintSettings = {};
+  if (
+    typeof r.copies === 'number' &&
+    Number.isInteger(r.copies) &&
+    r.copies >= 1 &&
+    r.copies <= 99
+  ) {
+    out.copies = r.copies;
+  }
+  for (const key of ['collate', 'landscape', 'color', 'reverse', 'printAnnotations'] as const) {
+    if (typeof r[key] === 'boolean') out[key] = r[key];
+  }
+  if (typeof r.scaling === 'string' && (PRINT_SCALINGS as readonly string[]).includes(r.scaling)) {
+    out.scaling = r.scaling as PrintSettings['scaling'];
+  }
+  if (
+    typeof r.scalePercent === 'number' &&
+    Number.isFinite(r.scalePercent) &&
+    r.scalePercent >= 1 &&
+    r.scalePercent <= 500
+  ) {
+    out.scalePercent = r.scalePercent;
+  }
+  if (typeof r.duplex === 'string' && (PRINT_DUPLEXES as readonly string[]).includes(r.duplex)) {
+    out.duplex = r.duplex as PrintSettings['duplex'];
+  }
+  if (
+    typeof r.pagesPerSheet === 'number' &&
+    (PRINT_PAGES_PER_SHEET as readonly number[]).includes(r.pagesPerSheet)
+  ) {
+    out.pagesPerSheet = r.pagesPerSheet;
+  }
+  if (
+    typeof r.pageOrder === 'string' &&
+    (PRINT_PAGE_ORDERS as readonly string[]).includes(r.pageOrder)
+  ) {
+    out.pageOrder = r.pageOrder as PrintSettings['pageOrder'];
+  }
+  if (
+    typeof r.oddEven === 'string' &&
+    (PRINT_ODD_EVEN as readonly string[]).includes(r.oddEven)
+  ) {
+    out.oddEven = r.oddEven as PrintSettings['oddEven'];
+  }
+  return out;
+}
+
+/**
+ * Phase 81 - normalise a raw `printPresets` value. Returns `null` when `raw`
+ * is not an array (the field stays absent; consumer default `[]`). Each entry
+ * must be a plain object with a name string whose trimmed length is 1..
+ * `PRINT_PRESET_NAME_MAX` and a settings plain object; otherwise the entry is
+ * skipped. Settings keys are rebuilt from the known `PrintSettings` keys only
+ * (unknown keys and invalid values dropped per key). Same-name entries upsert:
+ * a later entry replaces the earlier one but keeps the first position. The
+ * result is capped at `PRINT_PRESETS_CAP` entries.
+ */
+export function normalizePrintPresets(raw: unknown): PrintPreset[] | null {
+  if (!Array.isArray(raw)) return null;
+  const order: string[] = [];
+  const byName = new Map<string, PrintSettings>();
+  for (const entry of raw) {
+    if (entry === null || typeof entry !== 'object' || Array.isArray(entry)) continue;
+    const e = entry as Record<string, unknown>;
+    if (typeof e.name !== 'string') continue;
+    const name = e.name.trim();
+    if (name.length === 0 || name.length > PRINT_PRESET_NAME_MAX) continue;
+    const settings = normalizePrintPresetSettings(e.settings);
+    if (settings === null) continue;
+    if (!byName.has(name)) order.push(name);
+    byName.set(name, settings);
+  }
+  const out: PrintPreset[] = [];
+  for (const name of order) {
+    out.push({ name, settings: byName.get(name)! });
+    if (out.length >= PRINT_PRESETS_CAP) break;
+  }
+  return out;
+}
+
 function normalizeAnnotationColorEntry(raw: unknown): AnnotationColorPreset | null {
   if (typeof raw === 'string' && raw.length > 0) {
     return { id: raw, hex: raw };
@@ -1147,6 +1258,13 @@ export function normalizeSettings(raw: unknown): AppSettings {
   const homeTools = normalizeHomeTools(rawObj.homeTools);
   if (homeTools !== null) {
     settings.homeTools = homeTools;
+  }
+
+  // Phase 81: named print presets. Reject-if-invalid leaves the field absent
+  // (consumer default []).
+  const printPresets = normalizePrintPresets(rawObj.printPresets);
+  if (printPresets !== null) {
+    settings.printPresets = printPresets;
   }
 
   // Phase 44 (operator change): accounts feature flag. Strict boolean,

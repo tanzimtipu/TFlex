@@ -24,6 +24,7 @@ import type { RendererEntry } from "./context";
 import type {
   PrintJobPayload,
   PrintJobResult,
+  PrintPreset,
   PrinterInfo,
   PrintWindowContext,
 } from "../../shared/types";
@@ -33,12 +34,21 @@ import type {
 export interface PrintWindowDeps {
   listPrinters: () => Promise<PrinterInfo[]>;
   printJob: (payload: PrintJobPayload) => Promise<PrintJobResult>;
-  onDocumentGone: (cb: (docId: string) => void) => () => void;
+onDocumentGone: (cb: (docId: string) => void) => () => void;
   loadDocument: (
     docId: string,
   ) => Promise<{ doc: PDFDocumentProxy } | { error: string }>;
   closeWindow: () => void;
+  /** Phase 81 - optional so partial test stubs stay valid; the real window
+   *  always supplies them via `buildDefaultDeps`. */
+  loadPresets?: () => Promise<PrintPreset[]>;
+  savePresets?: (presets: PrintPreset[]) => Promise<void>;
 }
+
+/** Stable no-op preset seams for partial deps: the hook's load effect is
+ *  keyed on the `loadPresets` identity, so these must not be inline. */
+const NO_PRESETS = async (): Promise<PrintPreset[]> => [];
+const NOOP_SAVE_PRESETS = async (): Promise<void> => undefined;
 
 function buildDefaultDeps(): PrintWindowDeps {
   return {
@@ -61,8 +71,17 @@ function buildDefaultDeps(): PrintWindowDeps {
         return { error: "This document could not be opened for printing." };
       }
       return { doc: opened.doc };
-    },
+},
     closeWindow: (): void => window.tflex.closeWindow(),
+    loadPresets: async (): Promise<PrintPreset[]> => {
+      const r = await window.tflex.loadSettings();
+      return r.ok ? (r.value.printPresets ?? []) : [];
+    },
+    savePresets: async (presets: PrintPreset[]): Promise<void> => {
+      const r = await window.tflex.loadSettings();
+      if (!r.ok) throw new Error("settings-unavailable");
+      await window.tflex.saveSettings({ ...r.value, printPresets: presets });
+    },
   };
 }
 
@@ -200,9 +219,11 @@ function PrintWindowSurface({ context, deps }: PrintWindowSurfaceProps): ReactEl
     resolveActiveDoc,
     listPrinters: deps.listPrinters,
     printJob: deps.printJob,
-    onClose: closeWindow,
+onClose: closeWindow,
     seed,
     blockedReason,
+    loadPresets: deps.loadPresets ?? NO_PRESETS,
+    savePresets: deps.savePresets ?? NOOP_SAVE_PRESETS,
   });
 
   return (
