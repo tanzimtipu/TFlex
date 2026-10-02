@@ -3,6 +3,171 @@
 > Read discipline: this is a historical evidence ledger. Search for the assigned `ADV-NNN`
 > or unresolved `Disposition: PENDING` entries; do not load prior campaigns wholesale.
 
+## Phase 85 outline diff-pass (TFL-420) - /Outlines rewrite + save path
+
+Session label: `diff-pass`. Scope: the Phase-85 final diff as named by the CTO -
+`src/shared/outline.ts`, `src/main/services/page-organize.ts` (`writeOutline`,
+`remapDest`, `clonePrimitive`, `copyOutlineChain`/`copyOutlineNode`),
+`src/main/services/engine.ts:3456-3527` (`setOutline`/`_setOutlineImpl`),
+`src/renderer/state/outlineEditor.ts` and the UI surfaces. Product code, the qa
+e2e spec and the unit tests were read but not modified. The probes live at
+`test-fixtures/adv-p85-probe/adv85.test.ts` (+ `make-fixtures.cjs`, specimens in
+`test-fixtures/adv-p85/`).
+
+Exact commands:
+
+- Probe suite (scratch vitest config, `include: test-fixtures/adv-p85-probe/**`):
+  `node node_modules/vitest/vitest.mjs run --config "<run-scratch>/vitest.adv.config.mjs"`
+  - result: 16 tests / 11 passed / 5 failed (4 distinct root-cause breaks below;
+    `case4/7a` and `case7a` are the same root cause).
+- Specimen generator: `node test-fixtures/adv-p85-probe/make-fixtures.cjs`.
+- Phase-85 oracles (baseline, all green): `node node_modules/vitest/vitest.mjs run test/unit/main/phase85Outline.test.ts test/unit/shared/outline.test.ts test/unit/renderer/phase85OutlineEditor.test.tsx` -> 3 files, 53 tests passed.
+
+Attack-surface results (1-8):
+
+1. Outline-less doc -> first bookmark -> save/reload, and emptied tree: HOLDS.
+   `case1a` passes: no stray /Outlines before, valid `[pageRef /XYZ null null null]`
+   after, pdf.js `getOutline()` resolves page 2, and `setOutline([])` + save leaves
+   no catalog /Outlines key.
+2. Entry targeting a deleted page: HOLDS. `case2a` passes: after deleting the
+   targeted visible page, a payload mixing a valid and an out-of-range target is
+   refused `out-of-range` and `getDocumentBytes` is byte-identical to the pre-call
+   bytes; a valid surviving target still applies.
+3. indent/outdent at root and depth: HOLDS. `case3a`/`case3b` pass: node multiset
+   preserved at every probed path (including no-op root cases), persisted per-node
+   /Count correct ('1' on the B node).
+4. Malformed pre-existing /Outlines: 3 breaks (ADV-166, ADV-167, ADV-168). Cyclic
+   /Next, missing /Parent, a non-dict /First and odd-arity/named/null /Dest values
+   did NOT throw or hang (`case4/7d`, `case4/7e`, `case4/7f` pass) - those are
+   negative results, not breaks.
+5. Undo byte round-trip: HOLDS. `case5a` passes: `edit A -> edit B -> undo` restores
+   bytes byte-identical to the post-A bytes; redo re-applies B.
+6. Phase 2/32 merge/reorder: reorder HOLDS (`case6b` remaps BM1/BM2/BM3 to the new
+   visible 3/1/2); MERGE BREAKS - see ADV-165 (`case6a`: merged outline is empty).
+7. Cross-document ref/name handling: `replacePages` per-source map HOLDS (`case7b`:
+   two docs with colliding ref numbers land targets on [1,2,3,4], not aliased); the
+   `clonePrimitive` raw-ref leak BREAKS - see ADV-166 (`case4/7a`, `case7a`).
+8. Offline: HOLDS. `grep -rniE "fetch\\(|axios|XMLHttpRequest|https?://|WebSocket|
+   electron-updater|net\\.request"` over every Phase-85-touched file
+   (`src/shared/outline.ts`, `src/main/services/page-organize.ts`,
+   `src/renderer/state/outlineEditor.ts`, `src/renderer/components/SideRail.tsx`,
+   `src/renderer/components/ContextPanel.tsx`, `src/renderer/App.tsx`,
+   `engine.ts:3453-3528`) returns no match; no network call was added.
+
+Could not run: the Electron e2e oracle
+(`npm run test:e2e -- e2e/phase85_outline_edit.spec.cjs`, DEF-494 clickability)
+was not executed in this environment; the account/harness here has no working
+Electron GUI launch path and the agent's tool surface does not guarantee a
+display. DEF-494's empty-outline toolbar-Add clickability was therefore not
+re-driven by a live click; it is covered by the qa spec's own hit-test assertion
+and is not re-litigated here.
+
+## ADV-165: merge silently discards every source document's /Outlines
+
+- Session: diff-pass
+- Suggested severity: HIGH
+
+What I did: ran `test-fixtures/adv-p85-probe/adv85.test.ts` case `case6a`. Built a
+3-page PDF whose catalog carries an /Outlines tree (BM1->p1, BM2->p2, BM3->p3) and
+a 2-page PDF with its own /Outlines; `engine.loadDocument('main', a)` then
+`engine.merge('main', [b], 'after')`; then `engine.getDocumentBytes` and
+`engine.save`, reloaded the saved bytes and walked catalog /Outlines.
+
+Expected: the merged 5-page document carries both source outlines, remapped to the
+new visible pages - the same carry `replacePages` performs
+(`engine.ts:3336` `carryOutlines(out, [current, other])`) and the Phase-85 target
+("copyOutlineChain/copyOutlineNode carry a pre-existing outline through
+merge/reorder").
+
+Actual: the merged output has NO /Outlines at all - `ADV85 case6a-outline []` and
+`ADV85 case6a-saved-outline []`. `_mergeImpl` (`src/main/services/engine.ts:764-897`)
+copies pages and carries the AcroForm but never calls `carryOutlines`; once
+`doc.pdfDoc = mergedDoc` (line 884) the source catalogs - and every bookmark - are
+gone. Silent bookmark loss on a normal user merge.
+
+Screenshot: none (engine-level); fixture `test-fixtures/adv-p85/adv-165-merge-a.pdf`,
+`test-fixtures/adv-p85/adv-165-merge-b.pdf`.
+
+Disposition: ACCEPTED -> DEF-495
+
+## ADV-166: carryOutlines copies /Prev (and any other ref-valued key) as a raw source-document ref
+
+- Session: diff-pass
+- Suggested severity: MEDIUM
+
+What I did: ran `case4/7a` and `case7a`. (a) Built a 2-page PDF with outline
+siblings BM1, BM2 where BM2 carries the standard `/Prev BM1ref`; loaded it and
+called `engine.getDocumentBytes` (the exact serialize path `save` uses), reloaded
+and resolved output BM2's /Prev. (b) Built a node with a custom
+`/SE <source StructElem ref>` (tagged-PDF outline shape) and did the same.
+
+Expected: this writer never emits /Prev, so a carried /Prev must be either absent
+or point at the sibling node in the OUTPUT document; /SE must point at a copied
+structure element or be dropped - never at a raw source object number.
+
+Actual: `ADV85 case4-7a-nodes` shows BM2 `/Prev` serialized as `7 0 R`, which in the
+output resolves back to the BM2 node itself (self-referential /Prev); `case7a`
+shows `/SE` `6 0 R` resolving to the outline item node itself instead of the
+structure element. Root cause: `copyOutlineNode`
+(`src/main/services/page-organize.ts:136-159`) only special-cases
+`/Parent /First /Next /Last /Dest /A`; any other `PDFRef` value falls through to
+`clonePrimitive` (lines 317-342), which returns the SOURCE `PDFRef` verbatim
+(line 324), injecting a source-document object number into the destination
+context. This affects any real-world bookmarked PDF (every sibling after the first
+carries /Prev), corrupting the outline's /Prev structure on every save; /SE
+corruption is a tagged-PDF accessibility concern.
+
+Screenshot: none; fixture `test-fixtures/adv-p85/adv-166-outline-prev.pdf`,
+`test-fixtures/adv-p85/adv-166-outline-se.pdf`.
+
+Disposition: ACCEPTED -> DEF-496
+
+## ADV-167: an inline-dict sibling chain loses every sibling after the first
+
+- Session: diff-pass
+- Suggested severity: LOW
+
+What I did: ran `case4/7b`. Built a PDF whose outline root /First points at an
+INLINE (direct, non-indirect) dict `InlineA`, chained `/Next` to a second inline
+dict `InlineB`; loaded, `getDocumentBytes`, reloaded and read the outline.
+
+Expected: both siblings survive the save.
+
+Actual: `ADV85 case4-7b-titles ["InlineA"]` - `InlineB` is dropped. Root cause:
+`copyOutlineChain`'s cycle guard (`src/main/services/page-organize.ts:184-186`)
+keys on `ref ? ref.tag : 'inline'`; the second inline sibling repeats the literal
+`'inline'` tag, so `seen.has(tag)` breaks the loop after the first node. Exotic
+input (the PDF spec expects outline items as indirect objects), so severity LOW,
+but it is silent data loss when it occurs.
+
+Screenshot: none; fixture `test-fixtures/adv-p85/adv-167-outline-inline.pdf`.
+
+Disposition: ACCEPTED -> DEF-497
+
+## ADV-168: an indirect /Dest (and indirect GoTo /D) is silently dropped on save
+
+- Session: diff-pass
+- Suggested severity: MEDIUM
+
+What I did: ran `case4/7g`. Built a PDF with one node whose `/Dest` is an indirect
+reference to the dest array, and a second node whose `/A` is an indirect GoTo whose
+`/D` is an indirect reference to the dest array (both legal), then loaded,
+`getDocumentBytes`, resolved the output /Dest and /A./D.
+
+Expected: both targets survive, pointing at pages 1 and 2.
+
+Actual: `ADV85 case4-7g [{"title":"IndirectDest","page":null,...},
+{"title":"IndirectAction","actionPage":null}]` - both bookmark targets are gone.
+Root cause: `remapDest` (`src/main/services/page-organize.ts:244-274`) only handles
+a direct array (`value.size`), a `PDFName`, or a `PDFString`; a `PDFRef` falls to
+`return null`, so `/Dest` and `/A./D` are dropped. The bookmark rows survive with
+no target, so the failure is silent (matches neither DEF-493's arity concern nor
+the named-dest keep path).
+
+Screenshot: none (engine-level). Repro fixture built in-process by `case4/7g`.
+
+Disposition: ACCEPTED -> DEF-498
+
 ## Phase 80 Format Painter FIX-DELTA diff-pass (TFL-335) - isNew marker + mirror coupling
 
 Session label: `diff-pass`. Scope: the Phase 80 Format Painter fix delta only

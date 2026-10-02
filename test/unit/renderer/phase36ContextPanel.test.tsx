@@ -24,7 +24,9 @@ import {
   clampMenuPosition,
 } from "../../../src/renderer/components/ContextPanel";
 import { THUMB_WIDTH } from "../../../src/renderer/components/thumbGeometry";
+import type { OutlineEditorConfig } from "../../../src/renderer/components/SideRail";
 import type { EngineState } from "../../../src/renderer/engine/types";
+import { ok } from "../../../src/shared/result";
 import type { OutlineNode } from "../../../src/renderer/pdf/pdfjs";
 
 function stubObservers(): void {
@@ -126,6 +128,7 @@ interface PanelOptions extends PanelHandlers {
   currentPage?: number;
   engineState?: EngineState;
   outline?: OutlineNode[] | null;
+  outlineEditor?: OutlineEditorConfig | null;
   doc?: PDFDocumentProxy;
 }
 
@@ -156,6 +159,7 @@ function renderPanel(
           onUndo={(): void => undefined}
           onJump={current.onJump ?? ((): void => undefined)}
           outline={current.outline === undefined ? null : current.outline}
+          outlineEditor={current.outlineEditor ?? null}
           onMerge={current.onMerge}
           onExtractPages={current.onExtractPages}
           onInsertBlank={current.onInsertBlank}
@@ -793,6 +797,71 @@ describe("ContextPanel — the outline section", () => {
       expect(host.querySelector("[data-outline-toggle]")).toBeNull();
       // The stack still renders.
       expect(host.querySelectorAll(".thumb-item").length).toBe(3);
+    } finally {
+      unmount();
+    }
+  });
+
+  // DEF-492 — an outline-less document (catalog has no /Outlines) must still
+  // expose the editable outline so the very first bookmark can be created.
+  // The render gate keys on the editor config, not on a non-null tree.
+  it("offers the add control when outline is null but an editor config is present (DEF-492)", () => {
+    const editor: OutlineEditorConfig = {
+      docId: "d",
+      entries: [],
+      visiblePageCount: 3,
+      commit: async () => ok(makeEngineState(3)),
+    };
+    const editable = renderPanel({ pageCount: 3, outline: null, outlineEditor: editor });
+    try {
+      expect(editable.host.querySelector("[data-context-panel-outline]")).not.toBeNull();
+      expect(editable.host.querySelector("[data-outline-editable]")).not.toBeNull();
+      expect(editable.host.querySelector("[data-outline-add]")).not.toBeNull();
+    } finally {
+      editable.unmount();
+    }
+
+    // View-only path unchanged: no editor and a null tree stays hidden.
+    const viewOnly = renderPanel({ pageCount: 3, outline: null, outlineEditor: null });
+    try {
+      expect(viewOnly.host.querySelector("[data-context-panel-outline]")).toBeNull();
+    } finally {
+      viewOnly.unmount();
+    }
+  });
+
+  // DEF-494 — with no row selected the toolbar must fit the narrow panel, so it
+  // renders ONLY the enabled add control. The six-verb set overflowed left
+  // under the always-on stage rail, making [data-outline-add] un-hittable and
+  // blocking the first-bookmark path (DEF-492).
+  it("shows ONLY the add control in the no-selection toolbar (DEF-494)", async () => {
+    const commit = vi.fn(async () => ok(makeEngineState(3)));
+    const editor: OutlineEditorConfig = {
+      docId: "d",
+      entries: [],
+      visiblePageCount: 3,
+      commit,
+    };
+    const { host, unmount } = renderPanel({
+      pageCount: 3,
+      outline: null,
+      outlineEditor: editor,
+    });
+    try {
+      const toolbar = host.querySelector("[data-outline-toolbar]");
+      expect(toolbar).not.toBeNull();
+      expect(toolbar?.querySelector("[data-outline-add]")).not.toBeNull();
+      expect(toolbar?.querySelector("[data-outline-rename]")).toBeNull();
+      expect(toolbar?.querySelector("[data-outline-retarget]")).toBeNull();
+      expect(toolbar?.querySelector("[data-outline-indent]")).toBeNull();
+      expect(toolbar?.querySelector("[data-outline-outdent]")).toBeNull();
+      expect(toolbar?.querySelector("[data-outline-delete]")).toBeNull();
+      // The lone add control still creates the first row.
+      clickOn(toolbar?.querySelector("[data-outline-add]") as Element);
+      await flushRenders();
+      expect(commit).toHaveBeenCalledTimes(1);
+      const payload = (commit.mock.calls[0] as unknown as [string, Array<{ title: string }>])[1];
+      expect(payload.map((entry) => entry.title)).toEqual(["New bookmark"]);
     } finally {
       unmount();
     }

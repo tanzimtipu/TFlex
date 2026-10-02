@@ -42,6 +42,7 @@ import type {
   OcrRecognizeOptions,
   OcrCancelResult,
   OcrSuspect,
+  OutlineEntry,
   PageLabelEntry,
   PdfOpenError,
   PrintJobPayload,
@@ -243,6 +244,11 @@ export const IPC = {
   engineReplacePages: "engine:replacePages",
   engineRenumberPages: "engine:renumberPages",
   engineCropPages: "engine:cropPages",
+  // Phase 85 - replace the document outline (bookmarks) with an edited tree.
+  // `page` is 1-based VISIBLE (null = no target); the engine validates every
+  // page against the current visible page set and refuses the whole edit on
+  // any out-of-range target.
+  engineSetOutline: "engine:setOutline",
   engineAddStamp: "engine:addStamp",
   engineExportFdf: "engine:exportFdf",
   engineImportFdf: "engine:importFdf",
@@ -779,6 +785,14 @@ export interface TFlexApiEngine {
   cropPages?(
     docId: string,
     entries: CropEntry[],
+  ): Promise<Result<EngineState, import("./types").EngineError>>;
+  /** Phase 85 — replace the document outline (bookmarks) with `entries`.
+   *  `page` is a 1-based VISIBLE page or null for an untargeted entry. The
+   *  engine validates the whole tree first and applies nothing on any
+   *  out-of-range page or empty title. */
+  setOutline?(
+    docId: string,
+    entries: OutlineEntry[],
   ): Promise<Result<EngineState, import("./types").EngineError>>;
   /** Phase 12 — embed a renderer-drawn stamp raster (`pngBytes`) at `rect`
    *  on `page`. `stampId` is validated against the built-in allowlist. The

@@ -443,7 +443,10 @@ export type EngineError =
   | 'not-found'
   /** Phase 32 — the source and target of a cross-document move are the
    *  same document id (a document must never occupy both panes). */
-  | 'same-document';
+  | 'same-document'
+  /** Phase 85 — the outline payload is not a valid tree: a non-array value,
+   *  or an entry whose title is missing/empty after trim. */
+  | 'invalid-outline';
 
 // ---------------------------------------------------------------------------
 // Phase 52 — encrypted PDF support (engine half)
@@ -1625,3 +1628,8 @@ export interface PrintWindowContext {
 export type PrintWindowOpenResult =
   | { ok: true; /** true when a new window was created, false when focused. */ created: boolean }
   | { ok: false; /** human-readable validation/creation failure. */ reason: string };
+
+/** Phase 85 — the shared outline (bookmark) tree model lives in its own pure
+ *  module (`outline.ts`); re-exported here so consumers have one contract
+ *  entry point. */
+export type { OutlineEntry } from './outline';

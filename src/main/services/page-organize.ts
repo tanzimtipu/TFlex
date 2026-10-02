@@ -2,12 +2,14 @@ import {
   PDFDict,
   PDFDocument,
   PDFName,
+  PDFNull,
   PDFNumber,
   PDFObject,
   PDFRef,
   PDFString,
 } from '@cantoo/pdf-lib';
 import { err, ok, type Result } from '../../shared/result';
+import { countOutline, normalizeOutline, type OutlineEntry } from '../../shared/outline';
 import type { CropEntry, EngineError, PageLabelEntry } from '../../shared/types';
 
 // ---------------------------------------------------------------------------
@@ -137,12 +139,19 @@ function copyOutlineNode(
       if (parentRef !== null) dstDict.set(key, parentRef);
       continue;
     }
-    if (kn === '/First' || kn === '/Next' || kn === '/Last') {
-      // Handled by copyOutlineChain — do not duplicate nodes here.
+    if (
+      kn === '/First' ||
+      kn === '/Next' ||
+      kn === '/Last' ||
+      kn === '/Prev'
+    ) {
+      // Handled by copyOutlineChain — do not duplicate nodes here. /Prev is
+      // included because a copied /Prev would carry a SOURCE-document object
+      // number; copyOutlineChain rewires /Prev to the OUTPUT previous sibling.
       continue;
     }
     if (kn === '/Dest') {
-      const remapped = remapDest(value, dstDoc, map);
+      const remapped = remapDest(value, srcDoc, dstDoc, map);
       if (remapped !== null) dstDict.set(key, remapped);
       continue;
     }
@@ -176,13 +185,16 @@ function copyOutlineChain(
   let prevDst: PDFRef | null = null;
   let count = 0;
   let curRef: PDFObject | null = firstSrcRef;
-  // Guard against a cyclic /Next chain (malformed outlines).
-  const seen = new Set<string>();
+  // Guard against a cyclic /Next chain (malformed outlines). Key indirect
+  // nodes on their ref tag (so a ref cycle is caught) and inline dicts on
+  // object identity: two distinct inline siblings are distinct objects and
+  // must both survive, whereas a shared `'inline'` tag would drop the second.
+  const seen = new Set<unknown>();
 
   while (curRef !== null) {
-    const tag = curRef instanceof PDFRef ? curRef.tag : 'inline';
-    if (seen.has(tag)) break;
-    seen.add(tag);
+    const key: unknown = curRef instanceof PDFRef ? curRef.tag : curRef;
+    if (seen.has(key)) break;
+    seen.add(key);
 
     let srcDict: PDFDict | null = null;
     if (curRef instanceof PDFDict) srcDict = curRef;
@@ -212,11 +224,18 @@ function copyOutlineChain(
       }
     }
 
-    // Wire /Next from the previous sibling to this node.
+    // Wire /Next from the previous sibling to this node, and this node's
+    // /Prev back to the previous sibling. The source /Prev is never copied
+    // (see copyOutlineNode), so this is the only place /Prev is set and it
+    // always targets an OUTPUT object, never a source object number.
     if (prevDst !== null) {
       const prevDict = dstDoc.context.lookup(prevDst);
       if (prevDict instanceof PDFDict) {
         prevDict.set(PDFName.of('Next'), dstRef);
+      }
+      const curDict = dstDoc.context.lookup(dstRef);
+      if (curDict instanceof PDFDict) {
+        curDict.set(PDFName.of('Prev'), prevDst);
       }
     } else {
       firstDst = dstRef;
@@ -241,29 +260,39 @@ function copyOutlineChain(
  */
 function remapDest(
   value: unknown,
+  srcDoc: PDFDocument,
   dstDoc: PDFDocument,
   map: Map<string, PDFRef>,
 ): PDFObject | null {
   try {
-    const arr = value as { size(): number; get(i: number): unknown } | undefined;
+    // DEF-498: a /Dest (or /A./D) may itself be an indirect ref to the dest
+    // array. Resolve it in the SOURCE context first, then remap the resolved
+    // value; only the source context can dereference the source ref.
+    let resolved: unknown = value;
+    if (resolved instanceof PDFRef) {
+      resolved = srcDoc.context.lookup(resolved);
+    }
+    if (resolved === undefined || resolved === null) return null;
+    const arr = resolved as { size(): number; get(i: number): unknown } | undefined;
     if (arr && typeof arr.size === 'function' && arr.size() > 0) {
       const firstEl = arr.get(0);
       if (firstEl instanceof PDFRef) {
         const remapped = map.get(firstEl.tag);
         if (remapped === undefined) return null;
-        const out: Array<PDFRef | PDFName | PDFNumber | PDFString> = [remapped];
+        const out: Array<PDFObject> = [remapped];
         for (let i = 1; i < arr.size(); i++) {
           const el = arr.get(i);
-          if (el instanceof PDFName) out.push(PDFName.of(el.asString()));
+          if (el instanceof PDFName) out.push(el);
           else if (el instanceof PDFNumber) out.push(PDFNumber.of(el.asNumber()));
           else if (el instanceof PDFString) out.push(PDFString.of(el.asString()));
+          else if (el === PDFNull) out.push(PDFNull);
         }
         return dstDoc.context.obj(out);
       }
       return null;
     }
-    if (value instanceof PDFName) return PDFName.of(value.asString());
-    if (value instanceof PDFString) return PDFString.of(value.asString());
+    if (resolved instanceof PDFName) return resolved;
+    if (resolved instanceof PDFString) return PDFString.of(resolved.asString());
     return null;
   } catch {
     return null;
@@ -293,7 +322,7 @@ function copyAction(
     for (const [key, val] of actionDict.entries()) {
       const kn = key.toString();
       if (kn === '/D') {
-        const remapped = remapDest(val, dstDoc, map);
+        const remapped = remapDest(val, srcDoc, dstDoc, map);
         if (remapped !== null) out.set(key, remapped);
         continue;
       }
@@ -310,15 +339,20 @@ function copyAction(
  * Clone a primitive PDF value (PDFName, PDFString, PDFNumber, PDFArray of
  * primitives) into `dstDoc`'s context. Returns null for values this does not
  * handle (PDFDict/PDFRef — those are handled by the callers above).
+ *
+ * DEF-496: a bare PDFRef is dropped (returns null) rather than copied
+ * verbatim. Copying it would inject a SOURCE-document object number into the
+ * output and alias an unrelated output object. A ref element inside an array
+ * is dropped for the same reason.
  */
 function clonePrimitive(
   value: unknown,
   dstDoc: PDFDocument,
 ): PDFObject | null {
-  if (value instanceof PDFName) return PDFName.of(value.asString());
+  if (value instanceof PDFName) return value;
   if (value instanceof PDFString) return PDFString.of(value.asString());
   if (value instanceof PDFNumber) return PDFNumber.of(value.asNumber());
-  if (value instanceof PDFRef) return value;
+  if (value instanceof PDFRef) return null;
   if (Array.isArray(value)) {
     return dstDoc.context.obj(value as Array<PDFObject | number | string>);
   }
@@ -327,10 +361,9 @@ function clonePrimitive(
     const out: Array<PDFObject | number | string> = [];
     for (let i = 0; i < arr.size(); i++) {
       const el = arr.get(i);
-      if (el instanceof PDFName) out.push(PDFName.of(el.asString()));
+      if (el instanceof PDFName) out.push(el);
       else if (el instanceof PDFNumber) out.push(PDFNumber.of(el.asNumber()));
       else if (el instanceof PDFString) out.push(PDFString.of(el.asString()));
-      else if (el instanceof PDFRef) out.push(el);
       else if (typeof el === 'number' || typeof el === 'string') out.push(el);
     }
     return dstDoc.context.obj(out);
@@ -423,4 +456,92 @@ export function cropPagesInDoc(
     p.setTrimBox(llx, lly, box.width, box.height);
   }
   return ok(undefined);
+}
+
+// ---------------------------------------------------------------------------
+// Phase 85 — outline write (replace catalog /Outlines from an edited tree)
+// ---------------------------------------------------------------------------
+
+/**
+ * Replace `dstDoc`'s catalog `/Outlines` with the given `entries` tree.
+ *
+ * `entries` is normalized first (see `normalizeOutline`). Every node gets
+ * `/Title`, `/Parent`, and — when it has children — `/First`, `/Last` and a
+ * positive `/Count` (the open descendant count). Siblings are wired through
+ * `/Next`. A node whose `page` is set and whose `pageRef` resolves gets
+ * `/Dest = [pageRef /XYZ null null null]`; a null page or an unresolved ref
+ * leaves the node without a `/Dest`. An empty tree removes the catalog key.
+ *
+ * `resolvePageRef(page)` maps a 1-based VISIBLE page number to that page's
+ * PDFRef in `dstDoc`, or null when it cannot be resolved.
+ */
+export function writeOutline(
+  dstDoc: PDFDocument,
+  entries: OutlineEntry[],
+  resolvePageRef: (page: number) => PDFRef | null,
+): void {
+  const ctx = dstDoc.context;
+  const clean = normalizeOutline(entries);
+  if (clean.length === 0) {
+    dstDoc.catalog.delete(PDFName.of('Outlines'));
+    return;
+  }
+
+  const root = ctx.obj({}) as PDFDict;
+  const rootRef = ctx.register(root);
+
+  // Build one chain of siblings under `parentRef`; returns [first, last, total]
+  // where total is the number of nodes in the whole subtree.
+  function buildChain(
+    list: OutlineEntry[],
+    parentRef: PDFRef,
+  ): [PDFRef, PDFRef, number] {
+    let first: PDFRef | null = null;
+    let prev: PDFRef | null = null;
+    let last: PDFRef | null = null;
+    let total = 0;
+    for (const entry of list) {
+      const ref = buildNode(entry, parentRef);
+      total += 1 + countOutline(entry.children);
+      if (prev !== null) {
+        const prevDict = ctx.lookup(prev);
+        if (prevDict instanceof PDFDict) prevDict.set(PDFName.of('Next'), ref);
+      } else {
+        first = ref;
+      }
+      prev = ref;
+      last = ref;
+    }
+    return [first as PDFRef, last as PDFRef, total];
+  }
+
+  function buildNode(entry: OutlineEntry, parentRef: PDFRef): PDFRef {
+    const node = ctx.obj({}) as PDFDict;
+    const ref = ctx.register(node);
+    node.set(PDFName.of('Title'), PDFString.of(entry.title));
+    node.set(PDFName.of('Parent'), parentRef);
+    if (entry.page !== null) {
+      const pageRef = resolvePageRef(entry.page);
+      if (pageRef !== null) {
+        node.set(
+          PDFName.of('Dest'),
+          ctx.obj([pageRef, PDFName.of('XYZ'), PDFNull, PDFNull, PDFNull]),
+        );
+      }
+    }
+    if (entry.children.length > 0) {
+      const [first, last] = buildChain(entry.children, ref);
+      node.set(PDFName.of('First'), first);
+      node.set(PDFName.of('Last'), last);
+      node.set(PDFName.of('Count'), PDFNumber.of(countOutline(entry.children)));
+    }
+    return ref;
+  }
+
+  const [first, last, total] = buildChain(clean, rootRef);
+  root.set(PDFName.of('Type'), PDFName.of('Outlines'));
+  root.set(PDFName.of('First'), first);
+  root.set(PDFName.of('Last'), last);
+  root.set(PDFName.of('Count'), PDFNumber.of(total));
+  dstDoc.catalog.set(PDFName.of('Outlines'), rootRef);
 }

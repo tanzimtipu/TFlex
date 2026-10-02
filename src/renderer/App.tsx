@@ -169,7 +169,7 @@ import {
   type MenuActionContext,
 } from "./state/menuActions";
 import { shouldApplyEcho } from "./state/settingsEcho";
-import { openPdfDocument, readOutline, type OutlineNode } from "./pdf/pdfjs";
+import { openPdfDocument, readOutline, resolveOutlinePage, type OutlineNode } from "./pdf/pdfjs";
 import {
   DocumentView,
   type DocDiagnostics,
@@ -177,6 +177,12 @@ import {
   type SearchIndexProgress,
 } from "./components/DocumentView";
 import type { RailTab } from "./components/SideRail";
+import { OutlineEditorContext } from "./components/SideRail";
+import {
+  seedOutlineEntries,
+  type OutlineEntry,
+  type SetOutlineFn,
+} from "./state/outlineEditor";
 import { splitRecentPath } from "./utils/recentPath";
 import { toArrayBuffer } from "./utils/toArrayBuffer";
 import { createDebouncer } from "./utils/debounce";
@@ -368,6 +374,11 @@ declare global {
 interface DocSession {
   doc: import("pdfjs-dist").PDFDocumentProxy;
   outline: OutlineNode[] | null;
+  /** Phase 85 — the editable outline model seeded from `outline`, each node's
+   *  destination resolved to a 1-based VISIBLE page (null for no target).
+   *  Re-seeded on every bytes refresh (open / save + reload / undo / redo) so
+   *  a committed edit reappears after reload. */
+  outlineEntries: OutlineEntry[] | null;
   /** The original PDF's byte length. Held only for the diagnostics
    *  surface (`tflexDiagnostics().activeDocBytes`); the bytes themselves
    *  are dropped as soon as the document is open + parsed, freeing
@@ -1763,6 +1774,32 @@ export function App(): ReactElement {
     [setEngineUiFor],
   );
 
+  /** Phase 85 — commit an edited outline tree through the engine and mirror
+   *  the resulting state (modified flag / undo availability) into the owning
+   *  tab. Shared by every pane via the OutlineEditorContext. */
+  const commitOutline = useCallback<SetOutlineFn>(
+    async (docId, entries) => {
+      const engine = engineRef.current;
+      if (engine.setOutline === undefined) {
+        return err(
+          "engine-error",
+          "Outline editing requires the Phase 85 backend update.",
+        );
+      }
+      const result = await engine.setOutline(docId, entries);
+      if (result.ok) {
+        const tabId = Object.keys(openTabsRef.current).find(
+          (candidate) =>
+            openTabsRef.current[candidate]?.session.engineDocId === docId,
+        );
+        if (tabId !== undefined) noteOpApplied(tabId, result.value);
+      }
+      return result;
+    },
+    [noteOpApplied],
+  );
+
+
   const openFromBytes = useCallback(
     async (
       bytes: ArrayBuffer,
@@ -1836,6 +1873,7 @@ export function App(): ReactElement {
       const session: DocSession = {
         doc,
         outline: null,
+        outlineEntries: null,
         // Snapshot only the size; the bytes themselves are no longer
         // retained past this point — see DocSession.fileSize comment.
         fileSize: bytes.byteLength,
@@ -2004,14 +2042,23 @@ export function App(): ReactElement {
       void loadFormFields(id, engineDocId);
 
       void readOutline(doc)
-        .then((outline) => {
-          if (outline === null) return;
+        .then(async (outline) => {
+          // Phase 85 — seed the editable model with each node's destination
+          // resolved to a 1-based VISIBLE page. An outline-less document
+          // seeds an empty (non-null) model so the panel can add a first
+          // entry.
+          const entries = await seedOutlineEntries(outline ?? [], (dest) =>
+            resolveOutlinePage(doc, dest),
+          );
           setOpenTabs((prev) => {
             const existing = prev[id];
             if (existing === undefined) return prev;
             return {
               ...prev,
-              [id]: { ...existing, session: { ...existing.session, outline } },
+              [id]: {
+                ...existing,
+                session: { ...existing.session, outline, outlineEntries: entries },
+              },
             };
           });
         })
@@ -7306,6 +7353,33 @@ pushToast(
       // live overlay text: drop the tab's live set (the next create /
       // edit re-seeds it). A fresh open tab has no entry at all.
       liveAnnTextIdsRef.current.delete(tabId);
+      // Phase 85 — the refreshed bytes carry the engine's CURRENT outline
+      // (setOutline writes catalog /Outlines before serialization). Re-read
+      // it and re-seed the editable model so a committed edit reappears
+      // after save + reload / undo / redo, and a refused edit can never
+      // linger.
+      void readOutline(parsed.doc)
+        .then(async (freshOutline) => {
+          const entries = await seedOutlineEntries(freshOutline ?? [], (dest) =>
+            resolveOutlinePage(parsed.doc, dest),
+          );
+          setOpenTabs((prev) => {
+            const existing = prev[tabId];
+            if (existing === undefined) return prev;
+            return {
+              ...prev,
+              [tabId]: {
+                ...existing,
+                session: {
+                  ...existing.session,
+                  outline: freshOutline,
+                  outlineEntries: entries,
+                },
+              },
+            };
+          });
+        })
+        .catch(() => undefined);
       return true;
     },
     [pushToast, toastForPdfError],
@@ -10377,7 +10451,18 @@ pushToast(
             // Inspector and rail track collapsed.
             const bookViewForPane =
               pane === null && bookViewTabId !== null && bookViewTabId === meta.id;
-            const document = bookViewForPane ? (
+            const outlineEditorConfig =
+              open.session.outlineEntries === null
+                ? null
+                : {
+                    docId: open.session.engineDocId,
+                    entries: open.session.outlineEntries,
+                    visiblePageCount: engine.engineState.pageCount,
+                    commit: commitOutline,
+                  };
+            const document = (
+              <OutlineEditorContext.Provider value={outlineEditorConfig}>
+                {bookViewForPane ? (
               <BookView
                 doc={open.session.doc}
                 pageCount={engine.engineState.pageCount}
@@ -10711,6 +10796,8 @@ pushToast(
                         : null
                     }
                   />
+                )}
+              </OutlineEditorContext.Provider>
             );
             // Phase 52 (feature B) — an encrypted document keeps every tool
             // enabled; the banner only reports the encryption state.

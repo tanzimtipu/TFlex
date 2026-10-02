@@ -30,6 +30,7 @@ import type {
   OcrRecognizeOptions,
   OcrSuspect,
   OptimizePreset,
+  OutlineEntry,
   PageLabelEntry,
   Pdf3dContent,
   PdfCadMetadata,
@@ -623,6 +624,18 @@ export interface EngineApi {
     entries: CropEntry[],
   ): Promise<Result<EngineState, EngineError>>;
 
+  /** Phase 85 — replace the document outline (bookmarks) with `entries`.
+   *  Each `page` is a 1-based VISIBLE page in `[1, visibleCount]` or null.
+   *  The engine validates the whole tree first and applies nothing on a typed
+   *  failure: `out-of-range` for a page outside the visible range (or
+   *  deleted), `invalid-outline` for a non-string / empty title or a
+   *  malformed tree. Optional so a pre-Phase-85 backend degrades with a
+   *  friendly engine-error. */
+  setOutline?(
+    docId: string,
+    entries: OutlineEntry[],
+  ): Promise<Result<EngineState, EngineError>>;
+
   /** Phase 12 — embed a renderer-drawn stamp raster (`pngBytes`) at
    *  `rect` on `page`. `stampId` is validated against the built-in
    *  allowlist. Optional so a pre-Phase-12 backend degrades with a
@@ -780,6 +793,8 @@ export function describeEngineError(code: EngineError, context?: string): string
       return "Item not found.";
     case "same-document":
       return "Source and target must be different documents.";
+    case "invalid-outline":
+      return "The bookmark outline is not valid.";
   }
 }
 

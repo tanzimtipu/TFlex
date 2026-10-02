@@ -27,6 +27,7 @@ import type {
   EncryptDocumentOptions,
   OpEntry,
   OptimizePreset,
+  OutlineEntry,
   PageLabelEntry,
   PlaceSignaturePayload,
   PrintJobPayload,
@@ -938,6 +939,9 @@ export async function start(): Promise<void> {
   );
   ipcMain.handle(IPC.engineCropPages, (_event, docId: string, entries: CropEntry[]) =>
     engine.cropPages(docId, entries),
+  );
+  ipcMain.handle(IPC.engineSetOutline, (_event, docId: string, entries: OutlineEntry[]) =>
+    engine.setOutline(docId, entries),
   );
   ipcMain.handle(IPC.engineAddStamp, (_event, docId: string, payload: AddStampPayload) =>
     engine.addStamp(docId, payload),

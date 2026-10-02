@@ -37,6 +37,7 @@ import type {
   OcrSuspect,
   OpEntry,
   OptimizePreset,
+  OutlineEntry,
   PageLabelEntry,
   Pdf3dContent,
   PdfCadMetadata,
@@ -454,6 +455,13 @@ export interface TFlexApiEngine {
     docId: string,
     entries: CropEntry[],
   ): Promise<Result<SharedEngineState, EngineError>>;
+  /** Phase 85 — replace the document outline with `entries`. Optional like
+   *  the other post-Phase-12 methods so a preload without the channel
+   *  degrades with a friendly engine-error. */
+  setOutline?(
+    docId: string,
+    entries: OutlineEntry[],
+  ): Promise<Result<SharedEngineState, EngineError>>;
   /** Phase 12 — embed a renderer-drawn stamp raster (`pngBytes`) at
    *  `rect` on `page`. `stampId` is validated against the built-in
    *  allowlist. Optional so a pre-Phase-12 backend degrades with a
@@ -770,6 +778,13 @@ function missingPhase12(): Result<never, EngineError> {
   return err(
     "engine-error",
     "replacePages / renumberPages / cropPages / addStamp / exportFdf / importFdf require the Phase 12 backend update",
+  );
+}
+
+function missingPhase85(): Result<never, EngineError> {
+  return err(
+    "engine-error",
+    "outline editing requires the Phase 85 backend update",
   );
 }
 
@@ -1495,6 +1510,20 @@ class RealEngineAdapter implements EngineApi {
   ): Promise<Result<EngineState, EngineError>> {
     if (this.inner.cropPages === undefined) return missingPhase12();
     const r = await this.inner.cropPages(docId, entries);
+    return r.ok ? { ok: true, value: this.normalizeAndCache(docId, r.value) } : r;
+  }
+
+  /** Phase 85 — replace the document outline (bookmarks). The engine
+   *  applies nothing on a typed failure (`out-of-range` /
+   *  `invalid-outline`), so a rejected edit leaves the previous outline
+   *  intact. Optional so a pre-Phase-85 backend degrades with a friendly
+   *  engine-error (mirrors the Phase 12 block above). */
+  async setOutline(
+    docId: string,
+    entries: OutlineEntry[],
+  ): Promise<Result<EngineState, EngineError>> {
+    if (this.inner.setOutline === undefined) return missingPhase85();
+    const r = await this.inner.setOutline(docId, entries);
     return r.ok ? { ok: true, value: this.normalizeAndCache(docId, r.value) } : r;
   }
 

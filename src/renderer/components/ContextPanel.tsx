@@ -25,7 +25,7 @@
 // toggle. Page state, selection, edit state, signatures and engine ops all
 // belong to the host (DocumentView/App) and are threaded through.
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useContext, useEffect, useMemo, useRef, useState } from 'react';
 import type { ReactElement } from 'react';
 import type { PDFDocumentProxy } from 'pdfjs-dist';
 import {
@@ -40,8 +40,8 @@ import {
   SquareChevronRight,
   TextCursor,
 } from 'lucide-react';
-import { OutlinePanel, RulerStrip, ThumbnailRail } from './SideRail';
-import type { RailTab, ThumbVerbs } from './SideRail';
+import { OutlinePanel, OutlineEditorContext, RulerStrip, ThumbnailRail } from './SideRail';
+import type { OutlineEditorConfig, RailTab, ThumbVerbs } from './SideRail';
 import { usePageThumbMenu } from './pageThumbMenu';
 import { GlassSidebarBody, GlassSidebarHeader } from './GlassSidebar';
 import { AnnotationsPanel } from '../annotations/AnnotationsPanel';
@@ -95,6 +95,12 @@ export interface ContextPanelProps {
   onJump: (page: number) => void;
   outline: OutlineNode[] | null;
   onError?: (message: string) => void;
+  /** Phase 85 — the editable outline configuration (doc id, seeded entries,
+   *  visible page count, commit). Normally published through
+   *  `OutlineEditorContext` by App; an explicit value lets a harness (or a
+   *  future direct mount) supply it without a provider. `null` keeps the
+   *  outline view-only. */
+  outlineEditor?: OutlineEditorConfig | null;
   /** Header — the EXISTING merge entry (the CommandBar's handler). */
   onMerge?: () => void;
   /** Right-click menu verbs — the host's EXISTING surfaces for each. Each
@@ -249,6 +255,7 @@ export function ContextPanel(props: ContextPanelProps): ReactElement {
     onJump,
     outline,
     onError,
+    outlineEditor = null,
     onMerge,
     onExtractPages,
 onInsertBlank,
@@ -286,6 +293,11 @@ onInsertBlank,
 
 const pageCount = engineState.pageCount;
   const [outlineOpen, setOutlineOpen] = useState(true);
+
+  // Phase 85 — an explicit `outlineEditor` prop wins, else the config App
+  // publishes through the context. Null keeps the outline view-only.
+  const contextOutlineEditor = useContext(OutlineEditorContext);
+  const effectiveOutlineEditor = outlineEditor ?? contextOutlineEditor;
 
   // Phase 59 (item 7 follow-up) — the host's `railTab` drives the PAGES body's
   // outline section. The command "Bookmarks" (`railTab: 'outline'`) expands it;
@@ -393,7 +405,7 @@ const pageCount = engineState.pageCount;
           onPageSelectionChange={onPageSelectionChange}
         />
       </div>
-      {outline !== null && (
+      {(outline !== null || effectiveOutlineEditor !== null) && (
         <section className="context-panel-outline" data-context-panel-outline aria-label="Outline" data-outline-open={outlineOpen ? 'true' : 'false'}>
           <button
             type="button"
@@ -414,7 +426,7 @@ const pageCount = engineState.pageCount;
           </button>
           {outlineOpen && (
             <div className="context-panel-outline-body" id="context-panel-outline-body" data-context-panel-outline-body>
-              <OutlinePanel doc={doc} outline={outline} onJump={onJump} onError={onError} />
+              <OutlinePanel doc={doc} outline={outline ?? []} onJump={onJump} onError={onError} editor={effectiveOutlineEditor} />
             </div>
           )}
         </section>

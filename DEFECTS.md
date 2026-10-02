@@ -5,6 +5,178 @@
 > inspect the current `OPEN`, `FIX-READY`, and `DISPUTED` entries first; closed records are
 > historical evidence and must not be loaded wholesale.
 
+## DEF-495: merge silently discards every source document's /Outlines
+
+- Status: CLOSED
+- Severity: HIGH
+- Found by: adversary (ADV-165, Phase 85 diff-pass)
+- Phase: 85 (editable outline tree; /Outlines carry path)
+
+Steps to reproduce:
+1. Build a 3-page PDF whose catalog carries /Outlines (BM1->p1, BM2->p2, BM3->p3) and a 2-page PDF with its own /Outlines (`test-fixtures/adv-p85/adv-165-merge-a.pdf`, `adv-165-merge-b.pdf`).
+2. `engine.loadDocument` then `engine.merge('main', [b], 'after')`, then `engine.getDocumentBytes` / `engine.save`, reload and walk catalog /Outlines.
+
+Expected: the merged 5-page document carries both source outlines remapped to the new visible pages, exactly as `replacePages` does via `carryOutlines` (`engine.ts:3335-3342`).
+
+Actual: the merged output has NO /Outlines (`case6a-outline []`, `case6a-saved-outline []`). `_mergeImpl` (`src/main/services/engine.ts:764-897`) copies pages and carries the AcroForm but never calls `carryOutlines`; once `doc.pdfDoc = mergedDoc` (line 884) the source catalogs - and every bookmark - are gone.
+
+Evidence: ADVERSARIAL_REVIEW.md ADV-165; probe `test-fixtures/adv-p85-probe/adv85.test.ts` case6a; probe log `test-fixtures/adv-p85/adv85-probe.log`.
+
+Impact: HIGH - silent bookmark loss on a normal user merge. Owner: backend-dev.
+
+History:
+- CTO (TFL-383, 2026-10-03): ADV-165 accepted; filed; assigned to backend-dev as TFL-421.
+- qa (TFL-422, 2026-10-02): CLOSED - fix confirmed. Rebuilt (`npm.cmd run build`, exit 0). Adversary probe suite ran UNEDITED (`test-fixtures/adv-p85-probe/adv85.test.ts`, scratch config) 16 passed / 0 failed (baseline 11 passed / 5 failed); previously failing case6a now passes (`case6a-outline` and `case6a-saved-outline` each carry all 5 source bookmarks). Phase e2e `e2e/phase85_outline_edit.spec.cjs` 4 passed / 0 failed; Phase 85 unit specs 57 passed / 3 files; `npm.cmd run verify` exit 0. Code: `engine.ts:884-917` now calls `carryOutlines(mergedDoc, outlineSources)` in `_mergeImpl`.
+
+## DEF-496: carryOutlines copies /Prev (and any other ref-valued key) as a raw source-document ref
+
+- Status: CLOSED
+- Severity: MEDIUM
+- Found by: adversary (ADV-166, Phase 85 diff-pass)
+- Phase: 85 (editable outline tree; /Outlines carry path)
+
+Steps to reproduce:
+1. Build a 2-page PDF with outline siblings BM1, BM2 where BM2 carries the standard `/Prev BM1ref` (`test-fixtures/adv-p85/adv-166-outline-prev.pdf`); load and call `engine.getDocumentBytes` (the serialize path save uses), reload and resolve output BM2's /Prev.
+2. Repeat with a node carrying a custom `/SE <source StructElem ref>` (`adv-166-outline-se.pdf`).
+
+Expected: the output /Prev is either absent or points at the sibling node in the OUTPUT document; /SE points at a copied structure element or is dropped - never at a raw source object number.
+
+Actual: output BM2 `/Prev` serializes as `7 0 R`, which in the output resolves to the BM2 node itself (self-referential /Prev); `/SE` `6 0 R` resolves to the outline item node. Root cause: `copyOutlineNode` (`src/main/services/page-organize.ts:136-159`) only special-cases `/Parent /First /Next /Last /Dest /A`; any other `PDFRef` falls through to `clonePrimitive` (`page-organize.ts:317-345`), which returns the SOURCE `PDFRef` verbatim (line 324).
+
+Evidence: ADVERSARIAL_REVIEW.md ADV-166; probe case4/7a and case7a.
+
+Impact: MEDIUM - corrupts the outline /Prev structure on every save of any real bookmarked PDF (every sibling after the first carries /Prev); /SE corruption is a tagged-PDF accessibility concern. Owner: backend-dev.
+
+History:
+- CTO (TFL-383, 2026-10-03): ADV-166 accepted; filed; assigned to backend-dev as TFL-421.
+- qa (TFL-422, 2026-10-02): CLOSED - fix confirmed. Probe suite 16 passed / 0 failed (baseline 11/5); previously failing cases case4/7a (`case4-7a-nodes`) and case7a (`case7a`) now pass: BM2 `/Prev` resolves to the output BM1 node, and the custom `/SE` source ref no longer aliases an output object. Rebuild exit 0; e2e 4/0; unit 57 passed; verify exit 0. Code: `page-organize.ts:118-159` (`copyOutlineNode`) no longer clones arbitrary refs verbatim; `/Prev` is rewired by `copyOutlineChain` (`page-organize.ts:177-235`).
+
+## DEF-497: an inline-dict sibling chain loses every sibling after the first
+
+- Status: CLOSED
+- Severity: LOW
+- Found by: adversary (ADV-167, Phase 85 diff-pass)
+- Phase: 85 (editable outline tree; /Outlines carry path)
+
+Steps to reproduce:
+1. Build a PDF whose outline root /First points at an INLINE (direct) dict `InlineA`, chained `/Next` to a second inline dict `InlineB` (`test-fixtures/adv-p85/adv-167-outline-inline.pdf`).
+2. Load, `getDocumentBytes`, reload and read the outline titles.
+
+Expected: both siblings survive the save.
+Actual: `case4-7b-titles ["InlineA"]` - `InlineB` is dropped. Root cause: `copyOutlineChain`'s cycle guard (`src/main/services/page-organize.ts:182-187`) keys on `ref ? ref.tag : 'inline'`; the second inline sibling repeats the literal `'inline'` tag, so `seen.has(tag)` breaks the loop after the first node.
+
+Evidence: ADVERSARIAL_REVIEW.md ADV-167; probe case4/7b.
+
+Impact: LOW - exotic input (the PDF spec expects outline items as indirect objects), but silent data loss when it occurs. Owner: backend-dev.
+
+History:
+- CTO (TFL-383, 2026-10-03): ADV-167 accepted; filed; assigned to backend-dev as TFL-421.
+- qa (TFL-422, 2026-10-02): CLOSED - fix confirmed. Probe suite 16 passed / 0 failed (baseline 11/5); previously failing case4/7b now passes: `case4-7b-titles ["InlineA","InlineB"]` (both inline siblings survive). Rebuild exit 0; e2e 4/0; unit 57 passed; verify exit 0. Code: `copyOutlineChain` (`page-organize.ts:177-235`) cycle guard now keys on object identity for inline dicts instead of the literal `'inline'` tag.
+
+## DEF-498: an indirect /Dest (and indirect GoTo /D) is silently dropped on save
+
+- Status: CLOSED
+- Severity: MEDIUM
+- Found by: adversary (ADV-168, Phase 85 diff-pass)
+- Phase: 85 (editable outline tree; /Outlines carry path)
+
+Steps to reproduce:
+1. Build a PDF with one node whose `/Dest` is an indirect reference to the dest array, and a second node whose `/A` is an indirect GoTo whose `/D` is an indirect reference to the dest array (both legal).
+2. Load, `getDocumentBytes`, resolve the output /Dest and /A./D.
+
+Expected: both targets survive, pointing at pages 1 and 2.
+Actual: `case4-7g` - both bookmark targets are gone (`page:null`, `actionPage:null`). Root cause: `remapDest` (`src/main/services/page-organize.ts:244-274`) only handles a direct array, a `PDFName`, or a `PDFString`; a `PDFRef` falls to `return null`, so `/Dest` and `/A./D` are dropped. The rows survive with no target, so the failure is silent.
+
+Evidence: ADVERSARIAL_REVIEW.md ADV-168; probe case4/7g.
+
+Impact: MEDIUM - silent target loss for legal, real PDFs that use indirect destinations. Owner: backend-dev.
+
+History:
+- CTO (TFL-383, 2026-10-03): ADV-168 accepted; filed; assigned to backend-dev as TFL-421.
+- qa (TFL-422, 2026-10-02): CLOSED - fix confirmed. Probe suite 16 passed / 0 failed (baseline 11/5); previously failing case4/7g now passes: `case4-7g` shows `IndirectDest` -> page 1 and `IndirectAction` -> page 2 (indirect `/Dest` and indirect GoTo `/A./D` targets both survive). Rebuild exit 0; e2e 4/0; unit 57 passed; verify exit 0. Code: `remapDest` (`page-organize.ts:261-345`) now resolves a `PDFRef` to its array instead of returning null.
+
+## DEF-493: The saved /Outlines destinations are malformed (`remapDest` strips the `/XYZ` nulls), so reloaded or undo-refreshed outline rows lose every page target
+
+- Status: CLOSED
+- Severity: HIGH
+- Found by: qa (Phase 85 phase validation, TFL-414)
+- Phase: 85 (editable outline tree; FEA-035)
+
+Steps to reproduce:
+1. Rebuild (`npm.cmd run build`) then open a 3-page PDF carrying 3 top-level bookmarks targeting visible pages 1, 2 and 2 (built in-spec with `@cantoo/pdf-lib`, mirroring `e2e/phase59_outline_flush.spec.cjs`).
+2. Expand the Outline section; edit it through the panel so the accepted tree is `Bookmark 1 -> 1`, `Added -> 3` with child `Bookmark 3 -> 2` (add/rename/retarget/indent/delete).
+3. Save-As to a temp `.pdf`, then reopen that file in the app (the app is the compliant reader).
+
+Expected (Phase 85 criterion 3): the re-read `/Outlines` matches the edited shape and the app shows the page badges `1 / 3 / 2`, and navigation to an edited bookmark jumps to its page. Criterion 2 also requires navigation after editing to keep working.
+
+Actual: titles and nesting survive, but every row's `[data-outline-page]` shows `–` (no target) and `resolveOutlinePage` returns null, so navigation reports "Bookmark has no page target". The SAVED file's `/Dest` is malformed: a raw pdf-lib dump of `p85-saved.pdf` shows each node's `/Dest` is `size 2` `[PDFRef, PDFName]` (i.e. `[pageRef /XYZ]`). `writeOutline` (`src/main/services/page-organize.ts:495-499`) writes `[pageRef /XYZ null null null]`, but the serialize-path `remapDest` (`src/main/services/page-organize.ts:244-273`) rebuilds the destination array and copies only `PDFName`/`PDFNumber`/`PDFString` elements, silently dropping the three `PDFNull` coordinates. pdf.js rejects the resulting XYZ destination without coordinates, so the target is lost. The same happens after an in-session undo: one `setOutline` edit + Ctrl+Z re-reads the refreshed engine bytes and every row's page badge is `–`.
+
+Evidence:
+- Raw `/Dest` dump: `[{"title":"Bookmark 1","dest":{"size":2,"els":["PDFRef","PDFName"]}}, ...]` (coordinates gone).
+- `[p85|reload-rows] [{"path":"0","title":"Bookmark 1","page":"–",...},{"path":"1","title":"Added","page":"–",...},{"path":"1/0","title":"Bookmark 3","page":"–",...}]`.
+- `[p85|rows-after-undo] [{"path":"0","title":"Bookmark 1","page":"–",...},...]`.
+- Screenshot `screenshots/phase85_saved_reload.png`: the reloaded outline shows `Bookmark 1  –`, `Added  –`, `Bookmark 3  –`.
+- Failing e2e assertions verbatim: `DEF-493: the reloaded outline must keep its page targets (1,3,2)` Expected `["1","3","2"]`, Received `["–","–","–"]`; and `DEF-493: the post-undo reseed must keep the outline page targets (1,2,2)` Expected `["1","2","2"]`, Received `["–","–","–"]`.
+
+Impact: HIGH - bookmark page targets are silently lost for the app's own reader and any compliant reader after save/reload or undo, breaking Phase 85 criteria 3 and 2-after-reload. The lenient unit oracle (`test/unit/main/phase85Outline.test.ts` `readOutlineTree`) resolves `dest[0]` regardless of XYZ arity, which is why the unit tests pass. Fix owner: backend-dev (`remapDest` must preserve the full destination array including `PDFNull`, or `writeOutline`'s XYZ form must survive the serialize remap without losing its fit arguments).
+
+History:
+- qa (TFL-414, 2026-10-03): filed from the Phase 85 phase validation (FAIL); the two DEF-493 e2e assertions failed.
+- CTO (TFL-383, 2026-10-03): accepted; assigned to backend-dev as TFL-415 (FIX-READY). qa re-validation is TFL-417 (with TFL-416).
+- qa (TFL-417, 2026-10-03): RE-VALIDATION FAIL - still OPEN. Rebuilt (`npm.cmd run build`, exit 0, dist includes TFL-415) and re-ran `npm.cmd run test:e2e -- e2e/phase85_outline_edit.spec.cjs` (2 passed / 2 failed). Failing assertions verbatim: `DEF-493: the reloaded outline must keep its page targets (1,3,2)` Expected `["1","3","2"]`, Received `["–","–","–"]`; and `DEF-493: the post-undo reseed must keep the outline page targets (1,2,2)` Expected `["1","2","2"]`, Received `["–","–","–"]`. TFL-415 preserved the `PDFNull` XYZ coordinates so the saved `/Dest` is now a 5-element array, but it is still malformed: the saved object stream literally contains `/Dest [ 4 0 R /#2FXYZ null null null ]`. `remapDest` (`src/main/services/page-organize.ts:259`) calls `PDFName.of(el.asString())`, but `@cantoo/pdf-lib` `PDFName.asString()` returns the name WITH its leading slash (`"/XYZ"`), so `PDFName.of("/XYZ")` yields the name `"//XYZ"` (serialized `/#2FXYZ`). pdf.js `isValidExplicitDest` rejects the fit keyword (`"/XYZ"` != `XYZ`) and drops the destination, so reload and undo rows show `–`. The in-spec persistence oracle (`readOutlineTree`) passed only because it checks `Dest[0]` (the page ref), never `Dest[1]`; the "strict" unit oracle (`test/unit/main/phase85Outline.test.ts:372-409`) also omits a `Dest[1] === /XYZ` assertion. Fix: in `remapDest` reuse the `PDFName` (`out.push(el)`) or strip the leading slash before `PDFName.of`. Screenshot `screenshots/phase85_saved_reload.png`: `Bookmark 1 –`, `Added –`, `Bookmark 3 –`.
+- qa (TFL-417 re-run, 2026-10-03): CLOSED - Phase 85 re-validation PASS after TFL-419. Rebuilt (`npm.cmd run build`, exit 0, dist includes TFL-415 + TFL-419) and re-ran `npm.cmd run test:e2e -- e2e/phase85_outline_edit.spec.cjs`: 4 passed / 0 failed (P85-CORE, P85-FAIL-LOUD, P85-DEF492-EMPTY, P85-BLAST-UNDO). `src/main/services/page-organize.ts` now reuses the immutable `PDFName` at all four sites (lines 259, 268, 321, 333), so `Dest[1]` serializes as the Name `/XYZ`. The prior failing assertions now pass: `DEF-493: the reloaded outline must keep its page targets (1,3,2)` Expected `["1","3","2"]` Received `["1","3","2"]` and `DEF-493: the post-undo reseed must keep the outline page targets (1,2,2)` Expected `["1","2","2"]` Received `["1","2","2"]`. Evidence lines: `[p85|reload-rows] Bookmark 1 -> 1, Added -> 3, Bookmark 3 -> 2`; `[p85|rows-after-undo] Bookmark 1 -> 1, Bookmark 2 -> 2, Bookmark 3 -> 2`; `[p85|persisted-tree] 1/3/2`. Screenshot `screenshots/phase85_saved_reload.png` hung on the reloaded edited tree showing badges 1 / 3 / 2.
+
+## DEF-494: `[data-outline-add]` in the no-selection toolbar overflows left out of the panel and lands under the stage rail - the empty-outline first-bookmark path (DEF-492) is not clickable
+
+- Status: CLOSED
+- Severity: MEDIUM
+- Found by: qa (Phase 85 phase validation, TFL-414)
+- Phase: 85 (editable outline tree; FEA-035)
+
+Steps to reproduce:
+1. Open a PDF whose catalog has no `/Outlines` (built in-spec, e.g. `e2e/phase85_outline_edit.spec.cjs` `buildPlainPdf`).
+2. Expand the Outline section (the DEF-492 gate fix now renders it with the empty-state toolbar) and try to click `[data-outline-toolbar] [data-outline-add]`.
+
+Expected (DEF-492 contract / Phase 85 CONTROL-INDEX): the toolbar Add control is reachable and creates the first bookmark.
+Actual: the no-selection toolbar renders all six verbs (add, rename, disabled retarget select, indent, outdent, delete), which total roughly 216px in the 183px-wide toolbar; with `justify-content: flex-end` the overflow spills to the LEFT, pushing the leftmost add button to `x=50` while its own panel starts at `x=64`. The always-on `.stage-rail` occupies `x=0..64` and is on top, so the button's centre (`x=61`) hit-tests to `NAV.stage-rail` and Playwright's click is intercepted for the full 30s.
+
+Evidence:
+- `[p85|def492-add-geometry] {"add":{"x":50,"y":1341,"w":22,"h":22},"rail":{"x":0,"y":44,"w":64,"h":1348},"toolbar":{"x":64,"y":1339,"w":183,"h":28},"section":{"x":64,...},"panel":{"x":64,...},"atCenter":"NAV[stage-rail]"}`.
+- Failing e2e assertion verbatim: `DEF-492: [data-outline-add] must be hit-testable at its centre; got NAV[stage-rail]` (`e2e/phase85_outline_edit.spec.cjs`, test `P85-DEF492-EMPTY`).
+
+Impact: MEDIUM - the primary add-bookmark affordance shown when no row is selected (and the ONLY one on an outline-less document, the DEF-492 motivating case) is mostly hidden under the stage rail and not reachable at its centre; the user must click an 8px exposed sliver. Fix owner: frontend-dev (the toolbar must not overflow left out of the panel - wrap/fit the verbs, or hide the disabled verbs when nothing is selected).
+
+History:
+- qa (TFL-414, 2026-10-03): filed from the Phase 85 phase validation (FAIL); the P85-DEF492-EMPTY hit-test assertion failed.
+- CTO (TFL-383, 2026-10-03): accepted; assigned to frontend-dev as TFL-416 (FIX-READY). qa re-validation is TFL-417 (with TFL-415).
+- qa (TFL-417, 2026-10-03): RE-VALIDATION PASS (product fix confirmed) but left OPEN because the DEF-493 confirmation failed and the ledger rule closes DEF-492/493/494 together. Rebuilt (dist includes TFL-416) and re-ran the e2e. The no-selection toolbar now renders only the enabled Add control (`renderVerbs(null, true)`), the control sits inside the panel, and the first row is created on the outline-less fixture. `[p85|def492-add-geometry] {"add":{"x":217,"y":1341,"w":22,"h":22},"rail":{"x":0,"y":44,"w":64,"h":1348},"toolbar":{"x":64,...},"atCenterIsAdd":true,"atCenter":"path[]"}`; test `P85-DEF492-EMPTY` passes (overall 2 passed / 2 failed). The prior `toContain('data-outline-add')` assertion was over-strict: the element at the button's centre is the button's own `<Plus>` SVG icon (a legitimate descendant), not the button node itself. qa corrected only that assertion to `add.contains(document.elementFromPoint(centre))` (no product code, no other test change); the real click + first-row-created + persisted assertions in that test are unchanged and pass.
+- qa (TFL-417 re-run, 2026-10-03): CLOSED - Phase 85 re-validation PASS with the DEF-493 fix also in the dist. Re-ran the e2e: 4 passed / 0 failed, including P85-DEF492-EMPTY. `[p85|def492-add-geometry] {"add":{"x":217,"y":1341,"w":22,"h":22},"rail":{"x":0,"y":44,"w":64,"h":1348},"toolbar":{"x":64,"y":1339,"w":183,"h":28},"atCenterIsAdd":true,"atCenter":"path[]"}` (Add is inside the panel, centre hit-tests to the button).
+
+## DEF-492: A document with no existing outline cannot be given its first bookmark - the Outline section is hidden whenever `readOutline` returns null, so `[data-outline-add]` is unreachable
+
+- Status: CLOSED
+- Severity: HIGH
+- Found by: CTO code review (Phase 85, before qa)
+- Phase: 85 (editable outline tree; FEA-035)
+
+Steps to reproduce:
+1. Open any PDF whose catalog has no `/Outlines` (e.g. `assets/samples/report.pdf`), or a merged/reorganized document that lost its bookmarks (the FEA-035 motivating case).
+2. Expand the left Pages rail and look for the Outline section and its `[data-outline-add]` verb.
+
+Expected (Phase 85 contract): the outline panel is available for an outline-less document and `[data-outline-add]` creates the first entry - `docs/phase-specs/phase-85.md` Feature C and the CONTROL-INDEX both state "add a sibling entry to the selected row, or a first entry when the outline is empty", and `src/renderer/App.tsx:2046-2049` states "An outline-less document seeds an empty (non-null) model so the panel can add a first entry."
+
+Actual: the section never renders. `readOutline` returns `null` when `getOutline()` yields no items (`src/renderer/pdf/pdfjs.ts:191-195`); App stores that as `open.session.outline` and forwards it (`src/renderer/App.tsx:10489`); and `ContextPanel` gates the whole Outline section on `outline !== null` (`src/renderer/components/ContextPanel.tsx:408`). Because the section is skipped, `OutlinePanel` (and its editable `data-outline-toolbar` / `[data-outline-add]`) never mounts, even though `effectiveOutlineEditor` is non-null (entries = [], `App.tsx:10454-10462`).
+
+Evidence: `src/renderer/components/ContextPanel.tsx:408,429`; `src/renderer/pdf/pdfjs.ts:191-195`; `src/renderer/App.tsx:10454-10462,10489`.
+
+Impact: HIGH - the primary FEA-035 use case (add bookmarks to a document or merged result that has none) is impossible from the UI. The panel's model-level empty-add works in isolation (`test/unit/renderer/phase85OutlineEditor.test.tsx`), which is why the unit tests did not catch the unmounting gate. Fix owner: frontend-dev.
+
+History:
+- CTO (TFL-383, 2026-10-03): filed from code review before qa; assigned to frontend-dev.
+- qa (TFL-414, 2026-10-03): PARTIALLY VERIFIED - the gate fixed. On an outline-less fixture (`e2e/phase85_outline_edit.spec.cjs` test `P85-DEF492-EMPTY`) the Outline section now renders (`[data-context-panel-outline]` count 1, `[data-outline-editable]` present, `[data-outline-add]` visible) and the empty model is seeded. However the first-bookmark creation is still not possible by mouse because the toolbar Add control is pushed under the stage rail; filed as DEF-494 (frontend-dev). DEF-492 stays OPEN until DEF-494 is fixed and the empty add is proven end to end.
+- qa (TFL-417, 2026-10-03): RE-VALIDATION PASS (empty-outline first-bookmark path now works end to end) but left OPEN with the ledger rule above. On the outline-less fixture the Outline section renders, `[data-outline-toolbar] [data-outline-add]` is hit-testable and creates the first row (`[p85|empty-rows-after-add] {"path":"0","title":"New bookmark","page":"–"}`), which retargets to page 1 and persists (`[p85|empty-persisted-tree] [{"title":"New bookmark","page":1,"children":[]}]`); test `P85-DEF492-EMPTY` passes. The DEF-494 gate (TFL-416) resolved the remaining blocker.
+- qa (TFL-417 re-run, 2026-10-03): CLOSED - Phase 85 re-validation PASS (e2e 4 passed / 0 failed). With DEF-493 (TFL-419) and DEF-494 (TFL-416) both fixed, the outline-less first-bookmark path is proven end to end: `[p85|empty-rows-before] []` -> `[p85|empty-rows-after-add] {"path":"0","title":"New bookmark","page":"–"}` -> `[p85|empty-persisted-tree] [{"title":"New bookmark","page":1,"children":[]}]`, and navigation works after retarget.
+
 ## DEF-491: Redaction over-removes a glyph when a mark touches the axis-aligned bounding box of a ROTATED glyph but not the glyph itself
 
 - Status: CLOSED

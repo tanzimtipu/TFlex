@@ -4247,6 +4247,112 @@ body.tab-reordering .tab-list[data-reorder="true"] .tab {
   box-shadow: var(--focus-ring);
 }
 
+/* Phase 85 — editable outline rows. The base `.outline-row` flex layout is
+ * unchanged; these rules add only the editing affordances: the selected
+ * background, the resolved-page badge, the inline verbs, the rename input
+ * and the error surface. */
+.outline-row-selected {
+  background: var(--bg-hover);
+  border-radius: var(--radius-1);
+}
+
+.outline-page {
+  flex: 0 0 auto;
+  min-width: 1.8em;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+  font-size: var(--fs-xs);
+  color: var(--fg-faint);
+  background: var(--bg-secondary);
+  border-radius: var(--radius-1);
+  padding: 1px 4px;
+}
+
+.outline-verbs {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  margin-left: auto;
+  flex: 0 0 auto;
+}
+
+.outline-verb {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-1);
+  color: var(--fg-muted);
+  cursor: pointer;
+  transition: background var(--motion-fast) var(--ease-out), color var(--motion-fast) var(--ease-out);
+}
+
+.outline-verb:hover:not(:disabled) {
+  background: var(--bg-hover);
+  color: var(--fg-strong);
+}
+
+.outline-verb:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.outline-verb:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
+.outline-verb-danger:hover:not(:disabled) {
+  color: var(--error);
+}
+
+.outline-retarget {
+  width: auto;
+  max-width: 96px;
+  height: 22px;
+  font-size: var(--fs-xs);
+  color: var(--fg);
+}
+
+.outline-rename-input {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 3px 6px;
+  font-size: var(--fs-sm);
+  color: var(--fg-strong);
+  background: var(--bg-input);
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-1);
+}
+
+.outline-editor-toolbar {
+  display: flex;
+  justify-content: flex-end;
+  padding: 2px 8px 4px;
+}
+
+.outline-empty {
+  padding: 4px 12px;
+  font-size: var(--fs-sm);
+  color: var(--fg-faint);
+}
+
+.outline-error {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0 8px 4px;
+  padding: 5px 8px;
+  font-size: var(--fs-xs);
+  color: var(--error);
+  background: var(--error-soft);
+  border-radius: var(--radius-1);
+}
+
 .toolbar {
   display: flex;
   align-items: center;

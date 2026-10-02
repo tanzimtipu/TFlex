@@ -38,6 +38,7 @@ import type {
   OcrSuspect,
   OpEntry,
   OptimizePreset,
+  OutlineEntry,
   PageLabelEntry,
   Pdf3dContent,
   PdfCadMetadata,
@@ -406,6 +407,13 @@ const engineApi = {
     entries: CropEntry[],
   ): Promise<Result<EngineState, EngineError>> {
     return ipcRenderer.invoke(IPC.engineCropPages, docId, entries);
+  },
+  // Phase 85 — replace the document outline (bookmarks) with an edited tree.
+  setOutline(
+    docId: string,
+    entries: OutlineEntry[],
+  ): Promise<Result<EngineState, EngineError>> {
+    return ipcRenderer.invoke(IPC.engineSetOutline, docId, entries);
   },
   addStamp(
     docId: string,

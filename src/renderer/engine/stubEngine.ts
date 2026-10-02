@@ -43,6 +43,7 @@ import type {
   OcrRecognizeOptions,
   OcrSuspect,
   OptimizePreset,
+  OutlineEntry,
   PageLabelEntry,
   Pdf3dContent,
   PdfCadMetadata,
@@ -58,6 +59,7 @@ import type {
   TextPage,
 } from "../../shared/types";
 import { applyPatch, type Annotation, type AnnotationPatch } from "../annotations/model";
+import { cloneOutline, normalizeOutline } from "../../shared/outline";
 import { colorToHex } from "../edit/editColor";
 import type {
   EngineApi,
@@ -123,6 +125,10 @@ interface StubTab {
    *  first call and appends a reply thereafter; deleting an annotation
    *  drops its thread. */
   comments: CommentThread[];
+  /** Phase 85 — the current outline (bookmarks) tree, or null before any
+   *  `setOutline` call. The stub has no pdf-lib catalog, so it stores the
+   *  accepted tree itself so undo / redo and tests can observe it. */
+  outline: OutlineEntry[] | null;
 }
 
 interface Snapshot {
@@ -155,6 +161,9 @@ interface Snapshot {
    *  restores the threads that existed at snapshot time (the backend
    *  snapshots the threads too). */
   comments: CommentThread[];
+  /** Phase 85 — the outline captured by value so undo / redo restores the
+   *  tree that was accepted at snapshot time. */
+  outline: OutlineEntry[] | null;
 }
 
 function snap(t: StubTab): Snapshot {
@@ -179,6 +188,8 @@ function snap(t: StubTab): Snapshot {
       annotationId: thread.annotationId,
       entries: thread.entries.slice(),
     })),
+    // Phase 85 — outline by value.
+    outline: t.outline === null ? null : cloneOutline(t.outline),
   };
 }
 
@@ -208,6 +219,8 @@ function restore(t: StubTab, s: Snapshot): void {
     annotationId: thread.annotationId,
     entries: thread.entries.slice(),
   }));
+  // Phase 85 — restore the outline tree.
+  t.outline = s.outline === null ? null : cloneOutline(s.outline);
 }
 
 function buildState(t: StubTab): EngineState {
@@ -286,6 +299,7 @@ export class StubRendererEngine implements EngineApi {
         phase12Log: [],
         textBoxes: [],
         comments: [],
+        outline: null,
       };
       this.tabs.set(docId, t);
     }
@@ -1329,6 +1343,40 @@ export class StubRendererEngine implements EngineApi {
     return ok(buildState(t));
   }
 
+  /** Phase 85 — replace the document outline (bookmarks). Mirrors the real
+   *  engine's contract: the WHOLE tree is validated before anything is
+   *  stored, so a typed failure (`invalid-outline` / `out-of-range`) applies
+   *  nothing. On success the tree is stored (undo/redo snapshot it) and the
+   *  payload is recorded for tests. */
+  async setOutline(
+    docId: string,
+    entries: OutlineEntry[],
+  ): Promise<Result<EngineState, EngineError>> {
+    const t = this.tabs.get(docId);
+    if (t === undefined) return err("engine-error", "unknown document");
+    if (!Array.isArray(entries)) {
+      return err("invalid-outline", "setOutline: entries must be an array");
+    }
+    if (outlineHasEmptyTitle(entries)) {
+      return err(
+        "invalid-outline",
+        "setOutline: outline titles must be non-empty strings",
+      );
+    }
+    const clean = normalizeOutline(entries);
+    const visible = buildState(t).pageOrder;
+    const rangeError = findOutlineRangeError(clean, visible.length);
+    if (rangeError !== null) return err("out-of-range", rangeError);
+    pushUndo(t);
+    t.outline = clean;
+    recordPhase12(t, {
+      kind: "setOutline",
+      payload: { entries: cloneOutline(clean) },
+    });
+    t.modified = true;
+    return ok(buildState(t));
+  }
+
   /** Phase 12 — embed a renderer-drawn stamp raster. The stub
    *  validates `stampId` against the built-in allowlist and records
    *  the PNG byte length so unit tests can assert the renderer sent
@@ -1503,6 +1551,13 @@ export class StubRendererEngine implements EngineApi {
     if (t === undefined) return [];
     return t.phase12Log.slice();
   }
+
+  /** Test-only: the current outline tree for a tab (null when none was set). */
+  getOutline(tabId: string): OutlineEntry[] | null {
+    const t = this.tabs.get(tabId);
+    if (t === undefined || t.outline === null) return null;
+    return cloneOutline(t.outline);
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -1605,10 +1660,46 @@ export type Phase12Record =
   | { kind: "getLayers"; payload: Record<string, never> }
   | { kind: "setLayerVisibility"; payload: { index: number; visible: boolean } }
   | { kind: "getCadMetadata"; payload: Record<string, never> }
-  | { kind: "get3dContent"; payload: Record<string, never> };
+  | { kind: "get3dContent"; payload: Record<string, never> }
+  | { kind: "setOutline"; payload: { entries: OutlineEntry[] } };
 
 function recordPhase12(t: StubTab, rec: Phase12Record): void {
   t.phase12Log.push(rec);
+}
+
+/** Phase 85 — true when any raw entry has a non-string or empty (after trim)
+ *  title. Matches the real engine, which refuses the edit rather than letting
+ *  `normalizeOutline` silently drop the node. */
+function outlineHasEmptyTitle(list: OutlineEntry[]): boolean {
+  for (const entry of list) {
+    if (entry === null || typeof entry !== "object") return true;
+    if (typeof entry.title !== "string" || entry.title.trim() === "") {
+      return true;
+    }
+    if (outlineHasEmptyTitle(entry.children)) return true;
+  }
+  return false;
+}
+
+/** Phase 85 — the first out-of-range page in a normalized tree, or null. */
+function findOutlineRangeError(
+  list: OutlineEntry[],
+  visibleCount: number,
+): string | null {
+  for (const entry of list) {
+    if (entry.page !== null) {
+      if (
+        !Number.isInteger(entry.page) ||
+        entry.page < 1 ||
+        entry.page > visibleCount
+      ) {
+        return `outline: page ${entry.page} out of range [1,${visibleCount}]`;
+      }
+    }
+    const childError = findOutlineRangeError(entry.children, visibleCount);
+    if (childError !== null) return childError;
+  }
+  return null;
 }
 
 // Stub-only: returns the form fields the renderer last seeded via

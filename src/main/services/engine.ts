@@ -90,7 +90,9 @@ import {
   applyPageLabels,
   carryOutlines,
   cropPagesInDoc,
+  writeOutline,
 } from './page-organize';
+import { normalizeOutline, MAX_OUTLINE_DEPTH, type OutlineEntry } from '../../shared/outline';
 import {
   fillFormField,
   findOrphanWidgets,
@@ -877,6 +879,44 @@ export class EngineService {
       } catch {
         // A malformed form must never block a merge; the merge proceeds
         // without that source's form.
+      }
+
+      // ADV-165 / DEF-495 — CARRY the outline of every source into the merged
+      // output. Object-number ref tags are NOT unique across PDFDocuments
+      // (each context numbers objects from 1), so build one map per source
+      // (source page ref tag -> merged page ref) and let carryOutlines remap
+      // only within that source's own outline. Mirrors the replacePages carry
+      // below. Best-effort: a malformed outline must never block a merge.
+      try {
+        const mainMap = new Map<string, PDFRef>();
+        for (let i = 0; i < newOrder.length; i++) {
+          if (newOrder[i] >= 0) {
+            mainMap.set(
+              doc.pdfDoc.getPage(newOrder[i]).ref.tag,
+              mergedDoc.getPage(i).ref,
+            );
+          }
+        }
+        const outlineSources: Array<{ doc: PDFDocument; map: Map<string, PDFRef> }> = [
+          { doc: doc.pdfDoc, map: mainMap },
+        ];
+        // Other docs occupy merged indices starting at 0 for 'before' and at
+        // the surviving-main-page count for 'after' (mirrors carryAcroFormInto).
+        let otherOffset = position === 'before' ? 0 : surviving.length;
+        for (const otherDoc of otherDocs) {
+          const otherMap = new Map<string, PDFRef>();
+          for (let i = 0; i < otherDoc.getPageCount(); i++) {
+            otherMap.set(
+              otherDoc.getPage(i).ref.tag,
+              mergedDoc.getPage(otherOffset + i).ref,
+            );
+          }
+          outlineSources.push({ doc: otherDoc, map: otherMap });
+          otherOffset += otherDoc.getPageCount();
+        }
+        carryOutlines(mergedDoc, outlineSources);
+      } catch {
+        // Outline carry is best-effort — never block a merge on it.
       }
 
       doc.pdfDoc = mergedDoc;
@@ -3449,6 +3489,82 @@ export class EngineService {
   }
 
   // -----------------------------------------------------------------------
+  // Phase 85: setOutline — replace catalog /Outlines from an edited tree
+  // -----------------------------------------------------------------------
+  async setOutline(
+    docId: string,
+    entries: OutlineEntry[],
+  ): Promise<Result<EngineState, EngineError>> {
+    return this._enqueue(docId, () => this._setOutlineImpl(docId, entries));
+  }
+
+  private async _setOutlineImpl(
+    docId: string,
+    entries: OutlineEntry[],
+  ): Promise<Result<EngineState, EngineError>> {
+    const doc = this.docs.get(docId);
+    if (doc === undefined) {
+      return err('engine-error', `unknown document: ${docId}`);
+    }
+    if (!Array.isArray(entries)) {
+      return err('invalid-outline', 'setOutline: entries must be an array');
+    }
+    // Titles are validated against the RAW payload: normalizeOutline silently
+    // DROPS empty titles, but the contract is to refuse the edit instead.
+    if (outlineHasEmptyTitle(entries)) {
+      return err('invalid-outline', 'setOutline: outline titles must be non-empty strings');
+    }
+    const clean = normalizeOutline(entries);
+    const visibleCount = doc.order.length;
+
+    // Validate every page BEFORE touching the document; any failure applies
+    // nothing. A normalized page is either null or a positive integer, so the
+    // only range failure left is an integer past the visible page set or one
+    // pointing at a deleted slot.
+    const findRangeError = (list: OutlineEntry[]): string | null => {
+      for (const entry of list) {
+        if (entry.page !== null) {
+          const origIdx = entry.page <= visibleCount ? doc.order[entry.page - 1] : undefined;
+          if (
+            entry.page < 1 ||
+            entry.page > visibleCount ||
+            origIdx === undefined ||
+            origIdx < 0 ||
+            origIdx >= doc.pdfDoc.getPageCount() ||
+            doc.deleted[origIdx] === true
+          ) {
+            return `outline: page ${entry.page} out of range [1,${visibleCount}]`;
+          }
+        }
+        const childError = findRangeError(entry.children);
+        if (childError !== null) return childError;
+      }
+      return null;
+    };
+    const rangeError = findRangeError(clean);
+    if (rangeError !== null) {
+      return err('out-of-range', rangeError);
+    }
+
+    const snapshot = await snapshotDocWithPdf(doc);
+    try {
+      const resolvePageRef = (page: number): PDFRef | null => {
+        const origIdx = doc.order[page - 1];
+        if (origIdx === undefined) return null;
+        return doc.pdfDoc.getPage(origIdx).ref;
+      };
+      writeOutline(doc.pdfDoc, clean, resolvePageRef);
+    } catch (e) {
+      await tryRestorePdfBytes(doc, snapshot.pdfBytes);
+      return err('engine-error', `setOutline: ${e instanceof Error ? e.message : String(e)}`);
+    }
+    doc.undoStack.push(snapshot);
+    doc.redoStack = [];
+    doc.modified = true;
+    return ok(buildState(doc));
+  }
+
+  // -----------------------------------------------------------------------
   // Phase 12: addStamp — embed a renderer-drawn stamp raster
   // -----------------------------------------------------------------------
   async addStamp(
@@ -4549,6 +4665,23 @@ function resolveVisiblePage(
     return err('out-of-range', `page ${page1} resolves to invalid original index ${origIdx}`);
   }
   return ok(origIdx);
+}
+
+/** Phase 85 — true when the RAW outline payload contains an entry whose title
+ *  is not a non-empty (after trim) string, so `_setOutlineImpl` can refuse the
+ *  edit rather than let `normalizeOutline` silently drop it. Non-object entries
+ *  are treated as invalid too. Nesting beyond the normalized depth clamp is
+ *  ignored, matching what `normalizeOutline` would keep. */
+function outlineHasEmptyTitle(input: unknown, depth = 0): boolean {
+  if (!Array.isArray(input)) return false;
+  if (depth >= MAX_OUTLINE_DEPTH) return false;
+  for (const item of input) {
+    if (item === null || typeof item !== 'object') return true;
+    const rec = item as { title?: unknown; children?: unknown };
+    if (typeof rec.title !== 'string' || rec.title.trim().length === 0) return true;
+    if (outlineHasEmptyTitle(rec.children, depth + 1)) return true;
+  }
+  return false;
 }
 
 /**

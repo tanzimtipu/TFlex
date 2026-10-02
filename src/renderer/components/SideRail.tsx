@@ -1,9 +1,26 @@
-import { Images, List, MessageSquareText, PanelLeftClose, PanelRightOpen, SquareChevronRight, Undo2, RotateCw, Scissors, Trash2 } from 'lucide-react';
+import { AlertCircle, Images, IndentDecrease, IndentIncrease, List, MessageSquareText, PanelLeftClose, PanelRightOpen, Pencil, Plus, SquareChevronRight, Undo2, RotateCw, Scissors, Trash2 } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
 import type { ReactElement } from 'react';
 import type { PDFDocumentProxy, PDFPageProxy } from 'pdfjs-dist';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { resolveOutlinePage, isInvalidPageRequest, type OutlineNode } from '../pdf/pdfjs';
+import {
+  cloneEntries,
+  commitOutlineEdit,
+  editAdd,
+  editDelete,
+  editIndent,
+  editOutdent,
+  editRename,
+  editRetarget,
+  entryAt,
+  isFirstChild,
+  isRootRow,
+  type OutlineEditOutcome,
+  type OutlineEntry,
+  type OutlinePath,
+  type SetOutlineFn,
+} from '../state/outlineEditor';
 import { useLiftAnimation, useRailSwapAnimation } from '../hooks/useAnimations';
 import { computeThumbGeometry, THUMB_WIDTH } from './thumbGeometry';
 import { deferWork } from '../state/renderSuspend';
@@ -1604,19 +1621,71 @@ function Thumb({
 // ---------------------------------------------------------------------------
 // Outline
 
+/** Phase 85 — the host-supplied outline editor configuration. App publishes
+ *  one per pane through `OutlineEditorContext`; ContextPanel also forwards it
+ *  explicitly to the re-parented panel. */
+export interface OutlineEditorConfig {
+  docId: string;
+  entries: OutlineEntry[] | null;
+  visiblePageCount: number;
+  commit: SetOutlineFn;
+}
+
+/** Phase 85 — the outline editor config, published by App around a pane's
+ *  DocumentView. A panel outside the provider (and every pre-Phase-85 mount)
+ *  sees null and stays view-only. */
+export const OutlineEditorContext = createContext<OutlineEditorConfig | null>(null);
+
 interface OutlinePanelProps {
   doc: PDFDocumentProxy;
   outline: OutlineNode[];
   onJump: (page: number) => void;
   onError?: (message: string) => void;
+  /** Phase 85 — edit configuration. Absent falls back to the context (App),
+   *  then to view-only. */
+  editor?: OutlineEditorConfig | null;
+}
+
+function samePath(a: OutlinePath | null, b: OutlinePath | null): boolean {
+  if (a === null || b === null) return a === b;
+  return a.length === b.length && a.every((value, i) => value === b[i]);
 }
 
 /** Phase 36 (chunk 2) — exported so the PAGES ContextPanel can re-parent the
- *  same tree (REQUIREMENTS: surfaces are re-parented, never rewritten). The
- *  render, collapse state and bookmark navigation are byte-identical to the
- *  rail's outline tab; only the framing around it changes. */
-export function OutlinePanel({ doc, outline, onJump, onError }: OutlinePanelProps) {
+ *  same tree (REQUIREMENTS: surfaces are re-parented, never rewritten).
+ *  Phase 85 adds an editable mode gated on the OutlineEditorContext (or the
+ *  explicit `editor` prop): rows select, the selected row exposes the verbs,
+ *  and every edit is committed through `engine.setOutline`. Without an editor
+ *  the render is byte-identical to the original view-only tree. */
+export function OutlinePanel({ doc, outline, onJump, onError, editor = null }: OutlinePanelProps) {
+  const contextEditor = useContext(OutlineEditorContext);
+  const config = editor ?? contextEditor;
+  const editable = config !== null;
+  const docId = config?.docId ?? null;
+  const seedEntries = config?.entries ?? null;
+  const visiblePageCount = config?.visiblePageCount ?? 0;
+
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
+  const [model, setModel] = useState<OutlineEntry[]>(() => cloneEntries(config?.entries ?? []));
+  const [selected, setSelected] = useState<OutlinePath | null>(null);
+  const [editingPath, setEditingPath] = useState<OutlinePath | null>(null);
+  const [draftTitle, setDraftTitle] = useState('');
+  const [error, setError] = useState<string | null>(null);
+  const modelRef = useRef(model);
+  modelRef.current = model;
+  const skipBlurCommitRef = useRef(false);
+
+  // Re-seed whenever the host publishes a freshly read tree (open, save +
+  // reload, undo / redo) or the pane switches documents. The panel's own
+  // successful edit does not change the host seed, so it is preserved.
+  useEffect((): void => {
+    if (!editable) return;
+    setModel(cloneEntries(seedEntries ?? []));
+    setSelected(null);
+    setEditingPath(null);
+    setError(null);
+  }, [docId, seedEntries, editable]);
+
   const toggle = (key: string): void => {
     setCollapsed((prev) => {
       const next = new Set(prev);
@@ -1638,6 +1707,68 @@ export function OutlinePanel({ doc, outline, onJump, onError }: OutlinePanelProp
       }
     });
   };
+
+  const goEntry = (entry: OutlineEntry): void => {
+    if (entry.page !== null) {
+      onJump(entry.page);
+    } else {
+      onError?.('Bookmark has no page target');
+    }
+  };
+
+  const selectRow = useCallback((path: OutlinePath): void => {
+    setSelected(path);
+    setError(null);
+  }, []);
+
+  const runEdit = useCallback(
+    async (outcome: OutlineEditOutcome): Promise<void> => {
+      if (config === null) return;
+      if (outcome.kind === 'invalid') {
+        setError(outcome.error);
+        onError?.(outcome.error);
+        return;
+      }
+      const result = await commitOutlineEdit({
+        docId: config.docId,
+        current: modelRef.current,
+        outcome,
+        setOutline: config.commit,
+      });
+      setModel(result.entries);
+      setEditingPath(null);
+      if (result.error === null) {
+        setSelected(outcome.selection);
+        setError(null);
+      } else {
+        setError(result.error);
+        onError?.(result.error);
+      }
+    },
+    [config, onError],
+  );
+
+  const startRename = useCallback((path: OutlinePath): void => {
+    const node = entryAt(modelRef.current, path);
+    if (node === null) return;
+    skipBlurCommitRef.current = false;
+    setSelected(path);
+    setEditingPath(path);
+    setDraftTitle(node.title);
+    setError(null);
+  }, []);
+
+  const commitRename = useCallback(
+    (path: OutlinePath): void => {
+      if (skipBlurCommitRef.current) {
+        skipBlurCommitRef.current = false;
+        return;
+      }
+      setEditingPath(null);
+      void runEdit(editRename(modelRef.current, path, draftTitle));
+    },
+    [draftTitle, runEdit],
+  );
 
   const renderNodes = (nodes: OutlineNode[], path: string, depth: number): React.ReactNode => (
     <ul className="outline-list">
@@ -1672,5 +1803,203 @@ export function OutlinePanel({ doc, outline, onJump, onError }: OutlinePanelProp
     </ul>
   );
 
-  return <div className="outline-panel">{renderNodes(outline, '', 0)}</div>;
+  const renderVerbs = (target: OutlinePath | null, addOnly = false): React.ReactNode => {
+    const firstChild = target !== null && isFirstChild(target);
+    const atRoot = target !== null && isRootRow(target);
+    const disabled = target === null;
+    const targetEntry = target === null ? null : entryAt(modelRef.current, target);
+    const pages: number[] = [];
+    for (let p = 1; p <= visiblePageCount; p += 1) pages.push(p);
+    return (
+      <span className="outline-verbs">
+        <button
+          type="button"
+          className="outline-verb"
+          data-outline-add
+          title="Add bookmark"
+          aria-label="Add bookmark"
+          onClick={(): void => {
+            void runEdit(editAdd(modelRef.current, target));
+          }}
+        >
+          <Plus size={13} aria-hidden />
+        </button>
+        {!addOnly && (
+          <>
+            <button
+              type="button"
+              className="outline-verb"
+              data-outline-rename
+              title="Rename"
+              aria-label="Rename bookmark"
+              disabled={disabled}
+              onClick={(): void => {
+                if (target !== null) startRename(target);
+              }}
+            >
+              <Pencil size={13} aria-hidden />
+            </button>
+            <select
+              className="outline-verb outline-retarget"
+              data-outline-retarget
+              title="Page target"
+              aria-label="Bookmark page target"
+              disabled={disabled}
+              value={targetEntry?.page == null ? '' : String(targetEntry.page)}
+              onClick={(e): void => e.stopPropagation()}
+              onChange={(e): void => {
+                if (target !== null) {
+                  void runEdit(editRetarget(modelRef.current, target, e.target.value, visiblePageCount));
+                }
+              }}
+            >
+              <option value="">No page</option>
+              {pages.map((p) => (
+                <option key={p} value={String(p)}>{`Page ${p}`}</option>
+              ))}
+            </select>
+            <button
+              type="button"
+              className="outline-verb"
+              data-outline-indent
+              title={firstChild ? 'The first bookmark cannot be indented' : 'Indent'}
+              aria-label="Indent bookmark"
+              disabled={disabled || firstChild}
+              onClick={(): void => {
+                if (target !== null) void runEdit(editIndent(modelRef.current, target));
+              }}
+            >
+              <IndentIncrease size={13} aria-hidden />
+            </button>
+            <button
+              type="button"
+              className="outline-verb"
+              data-outline-outdent
+              title={disabled || atRoot ? 'Already at the top level' : 'Outdent'}
+              aria-label="Outdent bookmark"
+              disabled={disabled || atRoot}
+              onClick={(): void => {
+                if (target !== null) void runEdit(editOutdent(modelRef.current, target));
+              }}
+            >
+              <IndentDecrease size={13} aria-hidden />
+            </button>
+            <button
+              type="button"
+              className="outline-verb outline-verb-danger"
+              data-outline-delete
+              title="Delete bookmark"
+              aria-label="Delete bookmark"
+              disabled={disabled}
+              onClick={(): void => {
+                if (target !== null) void runEdit(editDelete(modelRef.current, target));
+              }}
+            >
+              <Trash2 size={13} aria-hidden />
+            </button>
+          </>
+        )}
+      </span>
+    );
+  };
+
+  const renderEntries = (nodes: OutlineEntry[], parentPath: OutlinePath, depth: number): React.ReactNode => (
+    <ul className="outline-list">
+      {nodes.map((entry, i) => {
+        const path = [...parentPath, i];
+        const key = path.join('/');
+        const isCollapsed = collapsed.has(key);
+        const rowSelected = samePath(selected, path);
+        const isEditing = samePath(editingPath, path);
+        return (
+          <li key={key}>
+            <div
+              className={rowSelected ? 'outline-row outline-row-selected' : 'outline-row'}
+              style={{ paddingLeft: 8 + depth * 14 }}
+              data-outline-row
+              data-outline-path={key}
+              data-outline-selected={rowSelected ? 'true' : 'false'}
+              onClick={(): void => selectRow(path)}
+            >
+              {entry.children.length > 0 ? (
+                <button
+                  type="button"
+                  className="outline-toggle"
+                  onClick={(e): void => {
+                    e.stopPropagation();
+                    toggle(key);
+                  }}
+                  aria-label={isCollapsed ? 'Expand' : 'Collapse'}
+                >
+                  <span className={isCollapsed ? 'chevron chevron-closed' : 'chevron'}>
+                    <SquareChevronRight size={22} aria-hidden />
+                  </span>
+                </button>
+              ) : (
+                <span className="outline-toggle outline-toggle-empty" aria-hidden />
+              )}
+              {isEditing ? (
+                <input
+                  className="outline-rename-input"
+                  data-outline-rename-input
+                  value={draftTitle}
+                  autoFocus
+                  onClick={(e): void => e.stopPropagation()}
+                  onChange={(e): void => setDraftTitle(e.target.value)}
+                  onKeyDown={(e): void => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      e.currentTarget.blur();
+                    } else if (e.key === 'Escape') {
+                      skipBlurCommitRef.current = true;
+                      setEditingPath(null);
+                    }
+                  }}
+                  onBlur={(): void => commitRename(path)}
+                />
+              ) : (
+                <button type="button" className="outline-link" onClick={(): void => goEntry(entry)}>
+                  {entry.title}
+                </button>
+              )}
+              <span
+                className="outline-page"
+                data-outline-page
+                title={entry.page === null ? 'No page target' : `Page ${entry.page}`}
+              >
+                {entry.page === null ? '\u2013' : entry.page}
+              </span>
+              {rowSelected && renderVerbs(path)}
+            </div>
+            {!isCollapsed && entry.children.length > 0 && renderEntries(entry.children, path, depth + 1)}
+          </li>
+        );
+      })}
+    </ul>
+  );
+
+  if (!editable) {
+    return <div className="outline-panel">{renderNodes(outline, '', 0)}</div>;
+  }
+
+  return (
+    <div className="outline-panel" data-outline-editable>
+      {error !== null && (
+        <div className="outline-error" data-outline-error role="alert">
+          <AlertCircle size={13} aria-hidden />
+          <span>{error}</span>
+        </div>
+      )}
+      {selected === null && (
+        <div className="outline-editor-toolbar" data-outline-toolbar>
+          {renderVerbs(null, true)}
+        </div>
+      )}
+      {model.length === 0 ? (
+        <div className="outline-empty">No bookmarks yet.</div>
+      ) : (
+        renderEntries(model, [], 0)
+      )}
+    </div>
+  );
 }
