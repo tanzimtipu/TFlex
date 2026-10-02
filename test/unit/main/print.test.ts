@@ -35,6 +35,7 @@ import {
 } from '../../../src/main/services/print';
 import { buildAppMenu } from '../../../src/main/menu';
 import { printSheetLayout } from '../../../src/shared/printLayout';
+import { bookletSideOffset } from '../../../src/shared/printImposition';
 import type { PrintJobPayload, PrintSettings } from '../../../src/shared/types';
 
 // DEF-270 — a real 1x1 PNG; the old placeholder `data:image/png;base64,AAAA`
@@ -122,7 +123,6 @@ describe('Phase 30: validatePrintPayload', () => {
       'data:image/gif;base64,R0lGODlhAQABAAAAACw=',
       'data:image/png,notbase64',
       'data:image/png;base64,',
-      '',
     ]) {
       expect(validatePrintPayload(payload([image]))).toEqual({ ok: false, reason: 'bad-image' });
     }
@@ -215,6 +215,106 @@ describe('Phase 30: validatePrintPayload', () => {
       ok: false,
       reason: 'bad-scale-percent',
     });
+  });
+
+  // Phase 83 — '' is an explicit blank slot, not an invalid image.
+  it('accepts payloads whose images include blank slots', () => {
+    expect(validatePrintPayload(payload([IMG, '', IMG]))).toEqual({ ok: true });
+    expect(validatePrintPayload(payload(['', '']))).toEqual({ ok: true });
+  });
+
+  it('still rejects a non-empty invalid image next to a blank slot', () => {
+    expect(validatePrintPayload(payload([IMG, '', 'not-a-data-url']))).toEqual({
+      ok: false,
+      reason: 'bad-image',
+    });
+  });
+
+  it('accepts every valid Phase 83 imposition option', () => {
+    expect(
+      validatePrintPayload(
+        payload([IMG], {
+          layoutMode: 'booklet',
+          bookletSubset: 'front',
+          bookletGutterPt: 72,
+          bookletCreepPt: 36,
+          posterRows: 10,
+          posterCols: 1,
+          posterOverlapPt: 72,
+          posterScalePercent: 500,
+          posterCutMarks: true,
+        }),
+      ),
+    ).toEqual({ ok: true });
+  });
+
+  it('rejects an unknown layoutMode with bad-layout-mode', () => {
+    expect(
+      validatePrintPayload(payload([IMG], { layoutMode: 'zigzag' as unknown as 'single' })),
+    ).toEqual({ ok: false, reason: 'bad-layout-mode' });
+  });
+
+  it('rejects an invalid bookletSubset with bad-booklet-option', () => {
+    expect(
+      validatePrintPayload(payload([IMG], { bookletSubset: 'middle' as unknown as 'both' })),
+    ).toEqual({ ok: false, reason: 'bad-booklet-option' });
+  });
+
+  it('rejects bookletGutterPt outside 0..72 / non-finite with bad-booklet-option', () => {
+    for (const value of [-1, 73, Number.NaN, Number.POSITIVE_INFINITY]) {
+      expect(validatePrintPayload(payload([IMG], { bookletGutterPt: value }))).toEqual({
+        ok: false,
+        reason: 'bad-booklet-option',
+      });
+    }
+  });
+
+  it('rejects bookletCreepPt outside 0..36 with bad-booklet-option', () => {
+    expect(validatePrintPayload(payload([IMG], { bookletCreepPt: -1 }))).toEqual({
+      ok: false,
+      reason: 'bad-booklet-option',
+    });
+    expect(validatePrintPayload(payload([IMG], { bookletCreepPt: 37 }))).toEqual({
+      ok: false,
+      reason: 'bad-booklet-option',
+    });
+  });
+
+  it('rejects a non-integer / out-of-range poster grid with bad-poster-option', () => {
+    for (const value of [0, 11, 2.5, Number.NaN]) {
+      expect(validatePrintPayload(payload([IMG], { posterRows: value }))).toEqual({
+        ok: false,
+        reason: 'bad-poster-option',
+      });
+      expect(validatePrintPayload(payload([IMG], { posterCols: value }))).toEqual({
+        ok: false,
+        reason: 'bad-poster-option',
+      });
+    }
+  });
+
+  it('rejects posterOverlapPt outside 0..72 with bad-poster-option', () => {
+    for (const value of [-1, 73, Number.NaN]) {
+      expect(validatePrintPayload(payload([IMG], { posterOverlapPt: value }))).toEqual({
+        ok: false,
+        reason: 'bad-poster-option',
+      });
+    }
+  });
+
+  it('rejects posterScalePercent outside 10..500 with bad-poster-option', () => {
+    for (const value of [9, 501, Number.NaN]) {
+      expect(validatePrintPayload(payload([IMG], { posterScalePercent: value }))).toEqual({
+        ok: false,
+        reason: 'bad-poster-option',
+      });
+    }
+  });
+
+  it('rejects a non-boolean posterCutMarks with bad-poster-option', () => {
+    expect(
+      validatePrintPayload(payload([IMG], { posterCutMarks: 'yes' as unknown as boolean })),
+    ).toEqual({ ok: false, reason: 'bad-poster-option' });
   });
 });
 
@@ -495,6 +595,188 @@ describe('Phase 30: composePrintHtml', () => {
     );
     expect(orderOf(html)).toEqual(['A', 'C', 'B']);
     expect(html.split('<div class="page"></div>').length - 1).toBe(1);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Phase 83: booklet / poster composition + single-path regression guard
+// ---------------------------------------------------------------------------
+
+/** The exact 1-up single output (scaling fit, portrait). A guard that Phase 83
+ *  left the historical path byte-identical. */
+const SINGLE_1UP_HTML = `<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Jovrel Print</title>
+<style>
+@page { size: portrait; margin: 0; }
+html, body { margin: 0; padding: 0; }
+.sheet { width: 100vw; height: 100vh; box-sizing: border-box; overflow: hidden; page-break-after: always; }
+.sheet:last-child { page-break-after: auto; }
+.page { width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; overflow: hidden; }
+.page img { display: block; }
+.page img { width: 100%; height: 100%; object-fit: contain; }
+
+</style>
+</head>
+<body>
+<div class="sheet"><div class="page"><img src="${IMG}" alt=""></div></div>
+</body>
+</html>`;
+
+describe('Phase 83: composePrintHtml single regression guard', () => {
+  it('keeps an absent layoutMode byte-identical to the explicit single output', () => {
+    expect(composePrintHtml(payload([IMG]))).toBe(SINGLE_1UP_HTML);
+    expect(composePrintHtml(payload([IMG], { layoutMode: 'single' }))).toBe(SINGLE_1UP_HTML);
+  });
+});
+
+describe('Phase 83: composePrintHtml booklet', () => {
+  // N=8 saddle-stitch order with '#2' replaced by a blank slot.
+  const BOOKLET_IMAGES = ['#8', '#1', '', '#7', '#6', '#3', '#4', '#5'];
+  const BOOKLET_SETTINGS: PrintSettings = {
+    layoutMode: 'booklet',
+    pagesPerSheet: 2,
+    bookletGutterPt: 10,
+    bookletCreepPt: 6,
+  };
+
+  it('pairs the saddle-stitch order into 4 landscape sheets with the blank cell', () => {
+    const html = composePrintHtml(payload(BOOKLET_IMAGES, BOOKLET_SETTINGS));
+    // 8 slots / 2-up = 4 sheets, ignoring the passed pagesPerSheet value.
+    expect(count(html, '<div class="sheet">')).toBe(4);
+    // The blank slot renders an empty, padded page cell (and no <img>).
+    expect(html).toContain('<div class="page" style="padding-left:5pt; padding-right:5pt;"></div>');
+    expect(count(html, '<img ')).toBe(7);
+    expect(orderOf(html)).toEqual(['#8', '#1', '#7', '#6', '#3', '#4', '#5']);
+    // Booklet forces landscape regardless of the settings flag.
+    expect(html).toContain('@page { size: landscape;');
+    // 2-up grid from the shared printSheetLayout rule.
+    expect(html).toContain('grid-template-columns: repeat(2, 1fr)');
+    expect(html).toContain('grid-template-rows: repeat(1, 1fr)');
+  });
+
+  it('applies the shared bookletSideOffset by physical sheet for the both subset', () => {
+    const html = composePrintHtml(payload(BOOKLET_IMAGES, BOOKLET_SETTINGS));
+    // 8 sides = 4 physical sheets; the default subset is 'both', so the two
+    // sides 2k / 2k+1 share physical sheet k's offset. With only 2 physical
+    // sheets there is no creep distance, so every margin is gutter / 2.
+    const offsets = Array.from({ length: 4 }, (_v, i) =>
+      bookletSideOffset(Math.floor(i / 2), 2, 10, 6),
+    );
+    expect(offsets.map((offset) => offset.leftPt)).toEqual([5, 5, 5, 5]);
+    for (const offset of offsets) {
+      expect(offset.leftPt).toBe(offset.rightPt);
+      expect(html).toContain(`padding-left:${offset.leftPt}pt; padding-right:${offset.rightPt}pt;`);
+    }
+  });
+
+  // ADV-158 / DEF-484 — subset `both` must offset by PHYSICAL sheet, exactly
+  // as the renderer `bookletSides` preview does.
+  it('matches the renderer preview creep for subset both', () => {
+    const images = Array.from({ length: 16 }, (_v, i) => `#${i + 1}`);
+    const html = composePrintHtml(
+      payload(images, {
+        layoutMode: 'booklet',
+        pagesPerSheet: 2,
+        bookletSubset: 'both',
+        bookletGutterPt: 0,
+        bookletCreepPt: 10,
+      }),
+    );
+    const perCell = [...html.matchAll(/padding-left:([0-9.]+)pt/g)].map((m) => Number(m[1]));
+    // 16 cells = 8 sides; both cells of a side share the margin.
+    const perSide = perCell.filter((_v, i) => i % 2 === 0);
+    expect(perSide).toEqual([0, 0, 10, 10, 10, 10, 0, 0]);
+  });
+
+  // The front/back subsets carry one side per physical sheet, so their offset
+  // is already physical-sheet based (the adversary's creep-front/creep-back).
+  it('keeps front/back creep on the physical-sheet offset', () => {
+    const images = Array.from({ length: 8 }, (_v, i) => `#${i + 1}`);
+    for (const subset of ['front', 'back'] as const) {
+      const html = composePrintHtml(
+        payload(images, {
+          layoutMode: 'booklet',
+          pagesPerSheet: 2,
+          bookletSubset: subset,
+          bookletGutterPt: 0,
+          bookletCreepPt: 10,
+        }),
+      );
+      const perCell = [...html.matchAll(/padding-left:([0-9.]+)pt/g)].map((m) => Number(m[1]));
+      const perSide = perCell.filter((_v, i) => i % 2 === 0);
+      expect(perSide).toEqual([0, 10, 10, 0]);
+    }
+  });
+
+  // ADV-159 / DEF-485 — booklet is a fixed horizontal 2-up; a stale pageOrder
+  // from a Single/N-up surface must not rotate or mirror the imposition.
+  it('ignores a stale pageOrder and stays a fixed 2-column 2-up', () => {
+    for (const pageOrder of ['vertical', 'verticalReversed', 'horizontalReversed'] as const) {
+      const html = composePrintHtml(
+        payload(['A', 'B'], { layoutMode: 'booklet', pagesPerSheet: 2, pageOrder }),
+      );
+      expect(html).toContain('grid-template-columns: repeat(2, 1fr)');
+      expect(html).toContain('grid-template-rows: repeat(1, 1fr)');
+      expect(html).not.toContain('grid-template-columns: repeat(1, 1fr)');
+      expect(orderOf(html)).toEqual(['A', 'B']);
+    }
+  });
+
+  it('adds no padding and no marks when gutter/creep are omitted', () => {
+    const html = composePrintHtml(
+      payload(BOOKLET_IMAGES, { layoutMode: 'booklet', pagesPerSheet: 2 }),
+    );
+    expect(html).toContain('padding-left:0pt; padding-right:0pt;');
+    expect(html).not.toContain('cut-mark');
+  });
+});
+
+describe('Phase 83: composePrintHtml poster', () => {
+  const TILES = ['tile0', 'tile1', 'tile2', 'tile3'];
+
+  it('emits one sheet per tile and no tile grid', () => {
+    const html = composePrintHtml(payload(TILES, { layoutMode: 'poster' }));
+    expect(count(html, '<div class="sheet')).toBe(4);
+    expect(orderOf(html)).toEqual(TILES);
+  });
+
+  it('adds cut marks and the poster-cut-marks class iff posterCutMarks is true', () => {
+    const on = composePrintHtml(payload(TILES, { layoutMode: 'poster', posterCutMarks: true }));
+    const off = composePrintHtml(payload(TILES, { layoutMode: 'poster', posterCutMarks: false }));
+    expect(count(on, 'class="sheet')).toBe(4);
+    expect(on).toContain('poster-cut-marks');
+    // Four corner marks on each of the four tile sheets.
+    expect(count(on, 'class="cut-mark')).toBe(16);
+    expect(on).toContain('.cut-mark {');
+    expect(off).not.toContain('cut-mark');
+  });
+
+  it('forces 1-up even when pagesPerSheet is passed', () => {
+    const html = composePrintHtml(
+      payload(TILES, { layoutMode: 'poster', pagesPerSheet: 4 }),
+    );
+    expect(count(html, '<div class="sheet')).toBe(4);
+    expect(html).not.toContain('grid-template-columns');
+  });
+});
+
+// ADV-160 / DEF-486 — '' is a blank slot in EVERY mode, not only booklet/poster.
+describe('Phase 83: composePrintHtml blank slots outside booklet/poster', () => {
+  it('renders an empty .page and no <img src=""> for a single blank slot', () => {
+    const html = composePrintHtml(payload(['', IMG]));
+    expect(html).toContain('<div class="page"></div>');
+    expect(html).not.toContain('<img src=""');
+    expect(count(html, '<img ')).toBe(1);
+  });
+
+  it('renders an empty cell for a blank slot in an N-up sheet', () => {
+    const html = composePrintHtml(payload(['', IMG], { pagesPerSheet: 4 }));
+    expect(html).toContain('<div class="page"></div>');
+    expect(html).not.toContain('<img src=""');
+    expect(count(html, '<img ')).toBe(1);
   });
 });
 

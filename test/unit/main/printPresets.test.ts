@@ -99,6 +99,94 @@ describe('Phase 81: normalizePrintPresets', () => {
   });
 });
 
+describe('Phase 83: normalizePrintPresets imposition keys', () => {
+  it('round-trips every valid booklet/poster key', () => {
+    const settings = {
+      layoutMode: 'booklet' as const,
+      bookletGutterPt: 12,
+      bookletCreepPt: 4,
+      bookletSubset: 'front' as const,
+      posterRows: 3,
+      posterCols: 5,
+      posterOverlapPt: 6,
+      posterScalePercent: 150,
+      posterCutMarks: true,
+    };
+    expect(normalizePrintPresets([{ name: 'imposed', settings }])).toEqual([
+      { name: 'imposed', settings },
+    ]);
+  });
+
+  it('keeps each key at its inclusive boundary', () => {
+    const settings = {
+      layoutMode: 'poster' as const,
+      bookletGutterPt: 72,
+      bookletCreepPt: 36,
+      bookletSubset: 'back' as const,
+      posterRows: 10,
+      posterCols: 1,
+      posterOverlapPt: 72,
+      posterScalePercent: 500,
+      posterCutMarks: false,
+    };
+    expect(normalizePrintPresets([{ name: 'p', settings }])).toEqual([
+      { name: 'p', settings },
+    ]);
+    const minimum = {
+      layoutMode: 'single' as const,
+      bookletGutterPt: 0,
+      bookletCreepPt: 0,
+      bookletSubset: 'both' as const,
+      posterRows: 1,
+      posterCols: 10,
+      posterOverlapPt: 0,
+      posterScalePercent: 10,
+      posterCutMarks: true,
+    };
+    expect(normalizePrintPresets([{ name: 'p', settings: minimum }])).toEqual([
+      { name: 'p', settings: minimum },
+    ]);
+  });
+
+  it('drops each invalid key but keeps the valid siblings', () => {
+    const result = normalizePrintPresets([
+      {
+        name: 'p',
+        settings: {
+          layoutMode: 'tri-fold',
+          bookletGutterPt: 100,
+          bookletCreepPt: -1,
+          bookletSubset: 'middle',
+          posterRows: 0,
+          posterCols: 11,
+          posterOverlapPt: 73,
+          posterScalePercent: 9,
+          posterCutMarks: 'yes',
+          copies: 2,
+        },
+      },
+    ]);
+    expect(result).toEqual([{ name: 'p', settings: { copies: 2 } }]);
+  });
+
+  it('drops non-integer poster rows/cols and non-numeric values', () => {
+    const result = normalizePrintPresets([
+      {
+        name: 'p',
+        settings: {
+          posterRows: 2.5,
+          posterCols: '4',
+          bookletGutterPt: '10',
+          posterScalePercent: Number.NaN,
+          bookletSubset: 7,
+          layoutMode: null,
+        },
+      },
+    ]);
+    expect(result).toEqual([{ name: 'p', settings: {} }]);
+  });
+});
+
 describe('Phase 81: normalizeSettings printPresets', () => {
   it('round-trips a valid list', () => {
     const stored = [

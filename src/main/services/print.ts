@@ -13,6 +13,7 @@ import type {
   PrintSettings,
 } from '../../shared/types';
 import { printSheetLayout } from '../../shared/printLayout';
+import { bookletSideOffset } from '../../shared/printImposition';
 import { savePdfDialog } from './dialog';
 
 /**
@@ -55,6 +56,10 @@ export type PrintErrorReason =
   | 'bad-page-range'
   | 'bad-pages-per-sheet'
   | 'bad-scale-percent'
+  // Phase 83 — imposition layout keys.
+  | 'bad-layout-mode'
+  | 'bad-booklet-option'
+  | 'bad-poster-option'
   | 'print-timeout'
   | 'print-failed'
   // Phase 35 — the virtual-PDF (produce-inside-TFlex) path.
@@ -154,6 +159,10 @@ export function validatePrintPayload(
     return { ok: false, reason: 'empty-images' };
   }
   for (const image of images) {
+    // Phase 83 — '' is an explicit BLANK page slot (booklet padding, single
+    // sided subsets), not an image. Any other value must still be a valid
+    // decodable image data URL.
+    if (image === '') continue;
     if (!isValidPageImage(image)) {
       return { ok: false, reason: 'bad-image' };
     }
@@ -204,6 +213,67 @@ export function validatePrintPayload(
       settings.scalePercent > 500)
   ) {
     return { ok: false, reason: 'bad-scale-percent' };
+  }
+  // Phase 83 — imposition options. Every key is optional and only validated
+  // when present; an omitted key keeps today's behaviour.
+  if (
+    settings.layoutMode !== undefined &&
+    !['single', 'booklet', 'poster'].includes(settings.layoutMode)
+  ) {
+    return { ok: false, reason: 'bad-layout-mode' };
+  }
+  if (
+    settings.bookletSubset !== undefined &&
+    !['both', 'front', 'back'].includes(settings.bookletSubset)
+  ) {
+    return { ok: false, reason: 'bad-booklet-option' };
+  }
+  if (
+    settings.bookletGutterPt !== undefined &&
+    (typeof settings.bookletGutterPt !== 'number' ||
+      !Number.isFinite(settings.bookletGutterPt) ||
+      settings.bookletGutterPt < 0 ||
+      settings.bookletGutterPt > 72)
+  ) {
+    return { ok: false, reason: 'bad-booklet-option' };
+  }
+  if (
+    settings.bookletCreepPt !== undefined &&
+    (typeof settings.bookletCreepPt !== 'number' ||
+      !Number.isFinite(settings.bookletCreepPt) ||
+      settings.bookletCreepPt < 0 ||
+      settings.bookletCreepPt > 36)
+  ) {
+    return { ok: false, reason: 'bad-booklet-option' };
+  }
+  const badPosterInt = (value: number | undefined): boolean =>
+    value !== undefined && (!Number.isInteger(value) || value < 1 || value > 10);
+  if (badPosterInt(settings.posterRows) || badPosterInt(settings.posterCols)) {
+    return { ok: false, reason: 'bad-poster-option' };
+  }
+  if (
+    settings.posterOverlapPt !== undefined &&
+    (typeof settings.posterOverlapPt !== 'number' ||
+      !Number.isFinite(settings.posterOverlapPt) ||
+      settings.posterOverlapPt < 0 ||
+      settings.posterOverlapPt > 72)
+  ) {
+    return { ok: false, reason: 'bad-poster-option' };
+  }
+  if (
+    settings.posterScalePercent !== undefined &&
+    (typeof settings.posterScalePercent !== 'number' ||
+      !Number.isFinite(settings.posterScalePercent) ||
+      settings.posterScalePercent < 10 ||
+      settings.posterScalePercent > 500)
+  ) {
+    return { ok: false, reason: 'bad-poster-option' };
+  }
+  if (
+    settings.posterCutMarks !== undefined &&
+    typeof settings.posterCutMarks !== 'boolean'
+  ) {
+    return { ok: false, reason: 'bad-poster-option' };
   }
   return { ok: true };
 }
@@ -327,6 +397,15 @@ function scalingCss(settings: PrintSettings): string {
   }
 }
 
+/** Phase 83 — poster trim marks: one corner mark (`class="cut-mark"`) per
+ *  sheet corner, positioned by the poster-only CSS that `composePrintHtml`
+ *  emits when `posterCutMarks` is on. */
+const POSTER_CUT_MARKS =
+  '<span class="cut-mark cut-mark-tl"></span>' +
+  '<span class="cut-mark cut-mark-tr"></span>' +
+  '<span class="cut-mark cut-mark-bl"></span>' +
+  '<span class="cut-mark cut-mark-br"></span>';
+
 /**
  * Compose the print document. One sheet per printed page (`page-break-after:
  * always`), each sheet holding `pagesPerSheet` images in a CSS grid when N-up
@@ -340,38 +419,100 @@ function scalingCss(settings: PrintSettings): string {
  */
 export function composePrintHtml(payload: PrintJobPayload): string {
   const settings = payload.settings ?? {};
-  const perSheet = settings.pagesPerSheet ?? 1;
-  const landscape = settings.landscape === true;
+  const mode = settings.layoutMode ?? 'single';
+  // Phase 83 — booklet forces 2-up (saddle-stitch sides), poster forces 1-up
+  // (one tile per sheet); `single` keeps the Phase-30 pagesPerSheet behaviour.
+  const perSheet = mode === 'booklet' ? 2 : mode === 'poster' ? 1 : (settings.pagesPerSheet ?? 1);
+  // Booklet is a landscape 2-up layout by definition.
+  const landscape = mode === 'booklet' ? true : settings.landscape === true;
 
   const sheets: string[][] = [];
   for (let i = 0; i < payload.images.length; i += perSheet) {
     sheets.push(payload.images.slice(i, i + perSheet));
   }
 
-  const layout = printSheetLayout(perSheet, settings.pageOrder);
+  // ADV-159 / DEF-485 — booklet is a FIXED 2-column landscape imposition; a
+  // stale `pageOrder` from a Single/N-up surface must not rotate or mirror it.
+  // Every other mode keeps the shared `printSheetLayout` rule.
+  const layout =
+    mode === 'booklet'
+      ? { cols: 2, rows: 1, slots: [0, 1] }
+      : printSheetLayout(perSheet, settings.pageOrder);
   const sheetsHtml = sheets
-    .map((images) => {
+    .map((images, sheetIndex) => {
+      if (mode === 'booklet') {
+        // The images already arrive in saddle-stitch order (with '' blanks);
+        // pair them into sheets and inset each side by the shared gutter/creep
+        // offset for this PHYSICAL sheet. ADV-158 / DEF-484 — the renderer
+        // preview offsets by physical sheet (bookletPageCount / 4), so subset
+        // `both` (the default) must halve the side count/index, while
+        // front/back already carry one side per physical sheet.
+        const subset = settings.bookletSubset ?? 'both';
+        const offset = bookletSideOffset(
+          subset === 'both' ? Math.floor(sheetIndex / 2) : sheetIndex,
+          subset === 'both' ? sheets.length / 2 : sheets.length,
+          settings.bookletGutterPt ?? 0,
+          settings.bookletCreepPt ?? 0,
+        );
+        const pad = `padding-left:${offset.leftPt}pt; padding-right:${offset.rightPt}pt;`;
+        const cells = layout.slots
+          .map((slot) => {
+            const src = images[slot];
+            return src === undefined || src === ''
+              ? `<div class="page" style="${pad}"></div>`
+              : `<div class="page" style="${pad}"><img src="${src}" alt=""></div>`;
+          })
+          .join('');
+        return `<div class="sheet">${cells}</div>`;
+      }
+      if (mode === 'poster') {
+        // One already-cropped tile per sheet; optional trim marks on the sheet.
+        const src = images[0];
+        const cell =
+          src === undefined || src === ''
+            ? '<div class="page"></div>'
+            : `<div class="page"><img src="${src}" alt=""></div>`;
+        return settings.posterCutMarks === true
+          ? `<div class="sheet poster-cut-marks">${POSTER_CUT_MARKS}${cell}</div>`
+          : `<div class="sheet">${cell}</div>`;
+      }
       // Emit one cell per grid slot in DOM order; empty cells keep the grid shape.
       const cells =
         perSheet > 1
           ? layout.slots
               .map((slot) => {
                 const src = images[slot];
-                return src === undefined
+                return src === undefined || src === ''
                   ? '<div class="page"></div>'
                   : `<div class="page"><img src="${src}" alt=""></div>`;
               })
               .join('')
-          : `<div class="page"><img src="${images[0] ?? ''}" alt=""></div>`;
+          : images[0] === undefined || images[0] === ''
+            ? '<div class="page"></div>'
+            : `<div class="page"><img src="${images[0]}" alt=""></div>`;
       return `<div class="sheet">${cells}</div>`;
     })
     .join('\n');
 
-  const gridCss =
+  let gridCss =
     perSheet > 1
       ? `.sheet { display: grid; grid-template-columns: repeat(${layout.cols}, 1fr);` +
         ` grid-template-rows: repeat(${layout.rows}, 1fr); }`
       : '';
+  // Phase 83 — booklet cells are inset by padding, so keep them inside their
+  // grid track; poster trim marks are absolutely positioned on the sheet.
+  if (mode === 'booklet') {
+    gridCss += '.page { box-sizing: border-box; }';
+  }
+  if (mode === 'poster' && settings.posterCutMarks === true) {
+    gridCss +=
+      '.sheet { position: relative; }' +
+      '.cut-mark { position: absolute; width: 14pt; height: 14pt; }' +
+      '.cut-mark-tl { top: 0; left: 0; border-top: 1pt solid #000; border-left: 1pt solid #000; }' +
+      '.cut-mark-tr { top: 0; right: 0; border-top: 1pt solid #000; border-right: 1pt solid #000; }' +
+      '.cut-mark-bl { bottom: 0; left: 0; border-bottom: 1pt solid #000; border-left: 1pt solid #000; }' +
+      '.cut-mark-br { bottom: 0; right: 0; border-bottom: 1pt solid #000; border-right: 1pt solid #000; }';
+  }
 
   return `<!doctype html>
 <html>

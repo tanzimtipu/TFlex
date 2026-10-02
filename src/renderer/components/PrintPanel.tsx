@@ -6,11 +6,20 @@
 // here; the only difference between the two hosts is the chrome they wrap it
 // in (modal backdrop + draggable header vs. a plain window layout).
 
-import type { ReactElement } from "react";
+import type { CSSProperties, ReactElement } from "react";
 import type { PrintPageImage } from "../pdf/printRaster";
-import { PRINT_ALLOWED_NUP, type PrintOrientation } from "../pdf/printSettings";
+import {
+  clampPosterGrid,
+  PRINT_ALLOWED_NUP,
+  type PrintOrientation,
+} from "../pdf/printSettings";
 import type { PrintOddEven } from "../pdf/printSelection";
-import type { PrintDuplex, PrintPageOrder } from "../../shared/types";
+import type {
+  BookletSubset,
+  PrintDuplex,
+  PrintLayoutMode,
+  PrintPageOrder,
+} from "../../shared/types";
 import type { PrintControls } from "./usePrintControls";
 
 /** Build a lookup from page number to its cached preview raster. */
@@ -88,7 +97,43 @@ export function PrintPanel({ print }: PrintPanelProps): ReactElement {
     applyPreset,
     savePreset,
     deletePreset,
+    layoutMode,
+    setLayoutMode,
+    bookletGutterPt,
+    setBookletGutterPt,
+    bookletCreepPt,
+    setBookletCreepPt,
+    bookletSubset,
+    setBookletSubset,
+    posterRows,
+    setPosterRows,
+    posterCols,
+    setPosterCols,
+    posterOverlapPt,
+    setPosterOverlapPt,
+    posterScalePercent,
+    setPosterScalePercent,
+    posterCutMarks,
+    setPosterCutMarks,
+    layoutError,
+    bookletSides,
+    posterTiles,
   } = print;
+
+  // Phase 83 - switching to Booklet or Poster disables the Phase-30 ordering
+  // controls (page order, odd/even, reverse, N-up) rather than silently
+  // ignoring them; 'single' restores them.
+  const orderingLocked = layoutMode !== "single";
+  const nupDisabled = running || orderingLocked;
+  const orderDisabled = running || orderingLocked || pagesPerSheet <= 1;
+  const oddEvenDisabled = running || orderingLocked;
+  const reverseDisabled = running || orderingLocked;
+  const posterRowsShown = clampPosterGrid(posterRows);
+  const posterColsShown = clampPosterGrid(posterCols);
+  const posterGridStyle: CSSProperties = {
+    gridTemplateColumns: `repeat(${posterColsShown}, 1fr)`,
+    gridTemplateRows: `repeat(${posterRowsShown}, 1fr)`,
+  };
 
   return (
     <>
@@ -210,6 +255,161 @@ export function PrintPanel({ print }: PrintPanelProps): ReactElement {
             >
               {printerNotice}
             </p>
+          )}
+
+          {/* Phase 83 - top-level imposition layout. Single / N-up keeps the
+              Phase-30 controls; Booklet and Poster swap in their own block. */}
+          <label className="modal-field">
+            <span>Layout</span>
+            <select
+              className="modal-input"
+              value={layoutMode}
+              onChange={(e): void => setLayoutMode(e.target.value as PrintLayoutMode)}
+              disabled={running}
+              data-print-layout
+              aria-label="Print layout"
+            >
+              <option value="single">Single / N-up</option>
+              <option value="booklet">Booklet</option>
+              <option value="poster">Poster</option>
+            </select>
+          </label>
+
+          {layoutError !== null && (
+            <p className="modal-hint print-range-error" role="alert" data-print-layout-error>
+              {layoutError}
+            </p>
+          )}
+
+          {layoutMode === "booklet" && (
+            <>
+              <div className="print-row print-row-selects">
+                <label className="modal-field">
+                  <span>Gutter (pt)</span>
+                  <input
+                    type="number"
+                    className="modal-input"
+                    min={0}
+                    max={72}
+                    value={bookletGutterPt}
+                    onChange={(e): void => setBookletGutterPt(Number.parseFloat(e.target.value))}
+                    disabled={running}
+                    data-print-booklet-gutter
+                    aria-label="Booklet gutter points"
+                  />
+                </label>
+                <label className="modal-field">
+                  <span>Creep (pt)</span>
+                  <input
+                    type="number"
+                    className="modal-input"
+                    min={0}
+                    max={36}
+                    value={bookletCreepPt}
+                    onChange={(e): void => setBookletCreepPt(Number.parseFloat(e.target.value))}
+                    disabled={running}
+                    data-print-booklet-creep
+                    aria-label="Booklet creep points"
+                  />
+                </label>
+              </div>
+              <label className="modal-field">
+                <span>Sides</span>
+                <select
+                  className="modal-input"
+                  value={bookletSubset}
+                  onChange={(e): void => setBookletSubset(e.target.value as BookletSubset)}
+                  disabled={running}
+                  data-print-booklet-subset
+                  aria-label="Booklet sides"
+                >
+                  <option value="both">Both sides</option>
+                  <option value="front">Front side only</option>
+                  <option value="back">Back side only</option>
+                </select>
+              </label>
+            </>
+          )}
+
+          {layoutMode === "poster" && (
+            <>
+              <div className="print-row print-row-selects">
+                <label className="modal-field">
+                  <span>Rows</span>
+                  <select
+                    className="modal-input"
+                    value={posterRowsShown}
+                    onChange={(e): void => setPosterRows(Number.parseInt(e.target.value, 10))}
+                    disabled={running}
+                    data-print-poster-rows
+                    aria-label="Poster rows"
+                  >
+                    {Array.from({ length: 10 }, (_v, i) => i + 1).map((n) => (
+                      <option key={n} value={n}>
+                        {n}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="modal-field">
+                  <span>Columns</span>
+                  <select
+                    className="modal-input"
+                    value={posterColsShown}
+                    onChange={(e): void => setPosterCols(Number.parseInt(e.target.value, 10))}
+                    disabled={running}
+                    data-print-poster-cols
+                    aria-label="Poster columns"
+                  >
+                    {Array.from({ length: 10 }, (_v, i) => i + 1).map((n) => (
+                      <option key={n} value={n}>
+                        {n}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              </div>
+              <div className="print-row print-row-selects">
+                <label className="modal-field">
+                  <span>Overlap (pt)</span>
+                  <input
+                    type="number"
+                    className="modal-input"
+                    min={0}
+                    max={72}
+                    value={posterOverlapPt}
+                    onChange={(e): void => setPosterOverlapPt(Number.parseFloat(e.target.value))}
+                    disabled={running}
+                    data-print-poster-overlap
+                    aria-label="Poster overlap points"
+                  />
+                </label>
+                <label className="modal-field">
+                  <span>Scale (%)</span>
+                  <input
+                    type="number"
+                    className="modal-input"
+                    min={10}
+                    max={500}
+                    value={posterScalePercent}
+                    onChange={(e): void => setPosterScalePercent(Number.parseFloat(e.target.value))}
+                    disabled={running}
+                    data-print-poster-scale
+                    aria-label="Poster scale percent"
+                  />
+                </label>
+              </div>
+              <label className="print-check">
+                <input
+                  type="checkbox"
+                  checked={posterCutMarks}
+                  onChange={(e): void => setPosterCutMarks(e.target.checked)}
+                  disabled={running}
+                  data-print-poster-cut-marks
+                />
+                <span>Cut marks</span>
+              </label>
+            </>
           )}
 
           <div className="print-row">
@@ -394,7 +594,7 @@ export function PrintPanel({ print }: PrintPanelProps): ReactElement {
                 className="modal-input"
                 value={pagesPerSheet}
                 onChange={(e): void => setPagesPerSheet(Number.parseInt(e.target.value, 10))}
-                disabled={running}
+                disabled={nupDisabled}
                 data-print-nup
                 aria-label="Pages per sheet"
               >
@@ -411,7 +611,7 @@ export function PrintPanel({ print }: PrintPanelProps): ReactElement {
                 className="modal-input"
                 value={pageOrder}
                 onChange={(e): void => setPageOrder(e.target.value as PrintPageOrder)}
-                disabled={running || pagesPerSheet <= 1}
+                disabled={orderDisabled}
                 data-print-page-order
                 aria-label="Page order"
               >
@@ -430,7 +630,7 @@ export function PrintPanel({ print }: PrintPanelProps): ReactElement {
                 className="modal-input"
                 value={oddEven}
                 onChange={(e): void => setOddEven(e.target.value as PrintOddEven)}
-                disabled={running}
+                disabled={oddEvenDisabled}
                 data-print-odd-even
                 aria-label="Odd or even pages"
               >
@@ -444,7 +644,7 @@ export function PrintPanel({ print }: PrintPanelProps): ReactElement {
                 type="checkbox"
                 checked={reverse}
                 onChange={(e): void => setReverse(e.target.checked)}
-                disabled={running}
+                disabled={reverseDisabled}
                 data-print-reverse
               />
               <span>Reverse order</span>
@@ -497,43 +697,166 @@ export function PrintPanel({ print }: PrintPanelProps): ReactElement {
 
         <div className="print-preview" data-print-preview>
           <div className="print-preview-title">Preview</div>
-          <div
-            className="print-preview-sheet"
-            data-print-preview-sheet
-            data-landscape={effectiveLandscape}
-            style={gridStyle}
-          >
-            {layout.slots.map((imageIndex, cellIndex) => {
-              const page = previewPages[imageIndex];
-              if (page === undefined) {
+          {layoutMode === "booklet" ? (
+            bookletSides.length === 0 ? (
+              <div
+                className="print-preview-sheet"
+                data-print-preview-sheet
+                data-landscape="true"
+                style={{ gridTemplateColumns: "repeat(2, 1fr)", gridTemplateRows: "repeat(1, 1fr)" }}
+              />
+            ) : (
+              bookletSides.map((side) => (
+                <div
+                  key={side.index}
+                  className="print-preview-sheet"
+                  data-print-preview-sheet
+                  data-print-preview-side={side.index}
+                  data-landscape="true"
+                  style={{ gridTemplateColumns: "repeat(2, 1fr)", gridTemplateRows: "repeat(1, 1fr)" }}
+                >
+                  {side.cells.map((cell, cellIndex) => {
+                    const cellStyle: CSSProperties = {
+                      paddingLeft: `${cell.leftPt}pt`,
+                      paddingRight: `${cell.rightPt}pt`,
+                    };
+                    if (cell.page === null) {
+                      return (
+                        <div
+                          key={cellIndex}
+                          className="print-preview-cell print-preview-blank"
+                          data-print-preview-cell={cellIndex}
+                          style={cellStyle}
+                        />
+                      );
+                    }
+                    const src = previewFor(previewImages, cell.page);
+                    return (
+                      <div
+                        key={cellIndex}
+                        className="print-preview-cell"
+                        data-print-preview-cell={cellIndex}
+                        data-print-preview-page={cell.page}
+                        style={cellStyle}
+                      >
+                        {src !== null ? (
+                          <img src={src} alt={`Page ${cell.page}`} />
+                        ) : (
+                          <span className="print-preview-placeholder" aria-hidden />
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              ))
+            )
+          ) : layoutMode === "poster" ? (
+            <div
+              className="print-preview-sheet"
+              data-print-preview-sheet
+              data-landscape={effectiveLandscape}
+              style={posterGridStyle}
+            >
+              {posterTiles.map((tile, cellIndex) => {
+                const page = selectionPages[0];
+                const src = page === undefined ? null : previewFor(previewImages, page);
+                const cellStyle: CSSProperties = {
+                  position: "relative",
+                };
+                if (src !== null && tile.sourceW > 0 && tile.sourceH > 0) {
+                  cellStyle.backgroundImage = `url(${src})`;
+                  cellStyle.backgroundSize = `${(1 / tile.sourceW) * 100}% ${(1 / tile.sourceH) * 100}%`;
+                  cellStyle.backgroundPosition = `${
+                    tile.sourceW < 1 ? (tile.sourceX / (1 - tile.sourceW)) * 100 : 0
+                  }% ${
+                    tile.sourceH < 1 ? (tile.sourceY / (1 - tile.sourceH)) * 100 : 0
+                  }%`;
+                  cellStyle.backgroundRepeat = "no-repeat";
+                }
                 return (
                   <div
                     key={cellIndex}
-                    className="print-preview-cell print-preview-blank"
+                    className="print-preview-cell"
                     data-print-preview-cell={cellIndex}
-                  />
+                    data-print-preview-tile={cellIndex}
+                    style={cellStyle}
+                  >
+                    {src === null && <span className="print-preview-placeholder" aria-hidden />}
+                    {posterCutMarks && (
+                      <>
+                        <span
+                          className="print-preview-cut-mark"
+                          data-print-cut-mark
+                          style={{ position: "absolute", top: 0, left: 0, width: 8, height: 1, background: "#2563eb" }}
+                          aria-hidden
+                        />
+                        <span
+                          className="print-preview-cut-mark"
+                          data-print-cut-mark
+                          style={{ position: "absolute", top: 0, left: 0, width: 1, height: 8, background: "#2563eb" }}
+                          aria-hidden
+                        />
+                        <span
+                          className="print-preview-cut-mark"
+                          data-print-cut-mark
+                          style={{ position: "absolute", bottom: 0, right: 0, width: 8, height: 1, background: "#2563eb" }}
+                          aria-hidden
+                        />
+                        <span
+                          className="print-preview-cut-mark"
+                          data-print-cut-mark
+                          style={{ position: "absolute", bottom: 0, right: 0, width: 1, height: 8, background: "#2563eb" }}
+                          aria-hidden
+                        />
+                      </>
+                    )}
+                  </div>
                 );
-              }
-              const src = previewFor(previewImages, page);
-              return (
-                <div
-                  key={cellIndex}
-                  className="print-preview-cell"
-                  data-print-preview-cell={cellIndex}
-                  data-print-preview-page={page}
-                >
-                  {src !== null ? (
-                    <img src={src} alt={`Page ${page}`} />
-                  ) : (
-                    <span className="print-preview-placeholder" aria-hidden />
-                  )}
-                </div>
-              );
-            })}
-          </div>
+              })}
+            </div>
+          ) : (
+            <div
+              className="print-preview-sheet"
+              data-print-preview-sheet
+              data-landscape={effectiveLandscape}
+              style={gridStyle}
+            >
+              {layout.slots.map((imageIndex, cellIndex) => {
+                const page = previewPages[imageIndex];
+                if (page === undefined) {
+                  return (
+                    <div
+                      key={cellIndex}
+                      className="print-preview-cell print-preview-blank"
+                      data-print-preview-cell={cellIndex}
+                    />
+                  );
+                }
+                const src = previewFor(previewImages, page);
+                return (
+                  <div
+                    key={cellIndex}
+                    className="print-preview-cell"
+                    data-print-preview-cell={cellIndex}
+                    data-print-preview-page={page}
+                  >
+                    {src !== null ? (
+                      <img src={src} alt={`Page ${page}`} />
+                    ) : (
+                      <span className="print-preview-placeholder" aria-hidden />
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
           <div className="print-preview-meta" data-print-preview-meta>
             {selection.ok
-              ? `${selectionPages.length} page${selectionPages.length === 1 ? "" : "s"} · ${sheetCount} sheet${sheetCount === 1 ? "" : "s"}`
+              ? layoutMode === "booklet"
+                ? `${selectionPages.length} page${selectionPages.length === 1 ? "" : "s"} · ${bookletSides.length} side${bookletSides.length === 1 ? "" : "s"}`
+                : layoutMode === "poster"
+                  ? `1 page · ${sheetCount} tile${sheetCount === 1 ? "" : "s"}`
+                  : `${selectionPages.length} page${selectionPages.length === 1 ? "" : "s"} · ${sheetCount} sheet${sheetCount === 1 ? "" : "s"}`
               : selection.error}
           </div>
         </div>

@@ -7324,6 +7324,287 @@ Suggested fix (for the developer, not applied by me): in `handleContextMenu`,
 when the computed `suggestions` array is empty, return before `preventDefault`
 so the native menu shows, or render a single disabled "No suggestions" row.
 
+## Phase 83 Booklet + Poster imposition diff-pass (TFL-364 / TFL-344 C6) - settings/preset persistence + compose + poster-scale merge
+
+Session label: `diff-pass`. Scope: the uncommitted Phase 83 diff named in the
+issue - `src/shared/printImposition.ts`, `src/shared/types.ts` (new keys),
+`src/main/services/settings.ts` (`normalizePrintPresetSettings`),
+`src/main/services/print.ts` (`validatePrintPayload` blank slots + layout bounds,
+`composePrintHtml` booklet/poster), `src/renderer/pdf/printSettings.ts`
+(`posterTileRects`/`posterTileCanvasBox`), `src/renderer/components/
+usePrintControls.ts` and `PrintPanel.tsx`. Product code, tests, e2e and every
+other ledger were read but not modified. The `update-service.ts` change visible in
+`git status` is another task's work and was not reviewed.
+
+Method: source review; pure-function probes bundled from `src` with the repo's
+esbuild and run under Node (`PROBE`/`PROBE2`/`PROBE3`); one scratch Playwright
+spec (`adv364.spec.cjs`) that requires `e2e/lib/launch.cjs` from the run scratch
+dir and never touches `e2e/**`; plus the three mandated commands.
+
+Important build note: the first e2e run measured a STALE `dist/` (renderer
+`index-*.js` built 19:51, `src/renderer/pdf/printSettings.ts` modified 20:05), so
+it reported `scaleAffectsOutput:false`. After `npm.cmd run build` (20:1x) the same
+spec reported `scaleAffectsOutput:true` and the poster payloads genuinely differ
+between scale 100 and 500. The FALSE reading was stale dist, not a product break.
+
+Exact commands (output verbatim in the run report):
+
+- `npm.cmd run verify` -> `conventions: clean (325 source file(s) scanned)`; `tsc --noEmit` clean (no output).
+- `npm.cmd run test:unit -- test/unit/main/printImposition.test.ts test/unit/main/print.test.ts test/unit/main/printPresets.test.ts test/unit/renderer/printSettings.test.ts test/unit/renderer/printDialog.test.tsx` -> `Test Files 5 passed (5)`, `Tests 172 passed (172)`.
+- `npm.cmd run build` -> renderer + main built (required for a faithful e2e).
+- `npm.cmd run test:e2e -- e2e/phase83_imposition.spec.cjs` -> `2 passed (19.6s)`; post-build log `[p83|poster-scale-probe] {"scale100":100,"scale500":500,"scaleAffectsOutput":true}`; booklet/poster preview, fail-loud and print-path proofs all passed.
+- `node <scratch>/probe.cjs` (P1/P2/P3/P4/P5).
+- `node <scratch>/probe2.cjs` (creep per subset; `buildPrintSettings`/`seedPrintDialogState`).
+- `node <scratch>/probe3.cjs` (full `normalizeSettings` with corrupt + valid presets).
+- `playwright test --config <scratch>/pw.config.cjs` (adv364 poster scale + 1x1@500).
+
+Pass/fail: 3 confirmed product breaks (ADV-158 HIGH, ADV-159 HIGH, ADV-160 LOW)
+and 1 verification gap (ADV-161 LOW). Renderer page errors observed: 0 in every run.
+
+Per-class verdict (one line each):
+
+1. Settings persistence (HIGH-RISK merge): PASS - `normalizePrintPresets`/
+   `normalizeSettings` preserve valid keys per-key and drop only the invalid key;
+   a non-array leaves the field absent; a 100-entry list caps at 30; other fields
+   (`recentsCap`) survive (probe3). The renderer preset save spreads the settings
+   it read from disk (`PrintWindowApp.tsx:83`), so no other field is clobbered.
+2. Blank-slot payloads: PARTIAL - validator accepts `''` and rejects non-empty
+   garbage with `bad-image` (unit tests + by construction). But `composePrintHtml`
+   only special-cases `''` in booklet/poster; in `single`/omitted mode a blank
+   becomes a broken `<img src="">` (ADV-160).
+3. Poster extremes: NO BREAK OBSERVED - 1x1/10x10 x overlap 0/72 x scale 10/500:
+   no crash, no zero/NaN crop. `posterTileCanvasBox` clamps every rect to >= 1 px.
+   1x1 @ 500% does allocate a 12750x16500 px (210.4 MP) transient canvas but
+   completed in 1180 ms and produced a 1.8 MB tile on this machine (adv364);
+   recorded as residual risk, not a confirmed break.
+4. DEF-483 fix: PASS post-build - scale 100 vs 500 produce DIFFERENT payload
+   images (`imgsIdentical:false`; sig lengths 42786/45970/24234 vs 471610 x4) and
+   `scaleAffectsOutput:true`. Scale 10/500 do not invert or zero the crop
+   (`sx/sy/sw/sh` clamped >= 1; unit test asserts `dw` grows with S). See ADV-161
+   for the stale-dist / missing-assertion caveat.
+5. Layout switch state leak: BREAK - switching Single -> Booklet does NOT reset a
+   non-horizontal `pageOrder`; it is retained and applied by the booklet compose,
+   producing a 1x2 stacked sheet (vertical) or a mirrored page pair (reversed)
+   while the UI shows the control disabled and the preview is always 2-column
+   (ADV-159). The reverse direction is clean: switching back to `single` restores
+   the controls (e2e) and the `single` settings path is byte-identical (unit test).
+6. `composePrintHtml` booklet shape: NO BREAK - more/fewer images than the plan,
+   a non-multiple-of-4 count and a lone image all chunk without crashing and keep
+   every page; a missing slot renders an empty `.page` cell (no dropped page).
+   The creep formula inside it is ADV-158.
+
+## ADV-158: Booklet creep under subset 'both' (the default) is derived from the side count in the main compose but from the physical-sheet count in the preview, so the printed creep disagrees with the preview
+
+- Session: diff-pass
+- Suggested severity: MEDIUM
+
+What I did: pure probe `probe2.cjs` (bundled from `src` with esbuild, run under
+Node). For a 16-page selection, `subset='both'`, `bookletGutterPt=0`,
+`bookletCreepPt=10`, I (a) extracted the `padding-left` values from
+`composePrintHtml` (the real main compose) and (b) recomputed the renderer
+preview exactly as `usePrintControls.bookletSides` does - `sheetCount =
+bookletPageCount(pages)/4` (physical sheets = 4), `sheetIndex =
+floor(sideIndex/2)` - using the same shared `bookletSideOffset`.
+
+Expected: byte-for-byte the same margins in preview and compose (CTO ruling 2:
+the shared module is "consumed by BOTH the renderer preview and the main compose
+so they can never disagree"; e2e for 16 pages expects `[0,10,10,0]` per physical
+sheet).
+
+Actual: `compose` = `[0,0,3.333,3.333,6.667,6.667,10,10,10,10,6.667,6.667,3.333,3.333,0,0]`
+(16 cells = 8 sides), `preview` = `[0,0,10,10,10,10,0,0]` (8 cells), `match:false`.
+Cause: `src/main/services/print.ts:441-446` calls
+`bookletSideOffset(sheetIndex, sheets.length, ...)` where `sheets.length` is the
+SIDE count (2 x physical sheets for `both`) and `sheetIndex` is the side index;
+the preview calls it with the physical-sheet count/index
+(`usePrintControls.ts` `bookletSides`). For subset `front`/`back` the two agree
+(probe2 `creep-front`/`creep-back` first-cell values `[0,10,10,0]` match). Only
+the default `both` disagrees.
+
+Evidence: `<scratch>/probe2.ts` line `creep-both`; `src/main/services/print.ts:441-446`;
+`src/renderer/components/usePrintControls.ts` (`bookletSides`).
+
+Suggested fix (not applied): in `composePrintHtml`, derive the physical sheet
+count/index for `both` (e.g. pass `sheets.length / (settings.bookletSubset === 'both' ? 2 : 1)`
+and, for `both`, `sheetIndex = floor(sheetIndex/2)`), or have the preview call
+`bookletSideOffset` with the side count.
+
+Disposition: ACCEPTED -> DEF-484 (MEDIUM). CTO triage: real break of the shared-source-of-truth rule (Phase 83 CTO ruling 2) - the preview and the main compose disagree on booklet creep for the default subset `both`. Owner: backend-dev. Fix in `composePrintHtml` (derive the physical-sheet count/index for `both`) so both consumers match.
+
+## ADV-159: A Page order set under Single/N-up leaks into Booklet: compose stacks the 2-up sheet 1x2 or mirrors the page pair, while the control is shown disabled and the preview is always two columns
+
+- Session: diff-pass
+- Suggested severity: HIGH
+
+What I did: pure probe `probe2.cjs`. Built a `PrintDialogState` with
+`layoutMode:'booklet'` and `pageOrder:'verticalReversed'` (reachable: set N-up to
+4 and Page order to Vertical reversed while in Single, then switch Layout to
+Booklet - the select is disabled but its value is retained).
+`buildPrintSettings(state)` returned `{pageOrder:'verticalReversed',
+pagesPerSheet:2, landscape:true, layoutMode:'booklet'}`. Then
+`composePrintHtml({images:[A,B], settings:{layoutMode:'booklet', pagesPerSheet:2,
+pageOrder:<order>}})` was run for each order and the emitted grid and image DOM
+order inspected.
+
+Expected: Booklet is a fixed 2-column landscape imposition; the disabled Page
+order control must not affect it (ruling 7: non-applicable controls are disabled,
+not silently applied; ruling 2: preview and compose cannot disagree).
+
+Actual: for `vertical`/`verticalReversed` the composed grid becomes
+`grid-template-columns: repeat(1,...); grid-template-rows: repeat(2,...)` - a
+1x2 stacked portrait sheet, not 2-up. For `horizontalReversed`/`verticalReversed`
+the two page images swap in the DOM (`A_first:false`) - the saddle-stitch side is
+mirrored. The preview ignores `pageOrder` entirely and always draws 2 columns
+(`PrintPanel.tsx` booklet branch), so preview and print disagree. `seedPrintDialogState`
+also carries the stale `pageOrder` into the Booklet surface.
+
+Evidence: `<scratch>/probe2.ts` `P3-pageorder-grid`/`P3-pageorder-order` (probe.cjs)
+and `build-settings-booklet-stale-pageOrder`/`seed-booklet-stale-pageOrder`;
+`src/renderer/pdf/printSettings.ts:204-238` (`base.pageOrder = state.pageOrder`
+is spread into the booklet settings); `src/main/services/print.ts:434`
+(`printSheetLayout(perSheet, settings.pageOrder)` for booklet).
+
+Suggested fix (not applied): force `pageOrder:'horizontal'` on the booklet/poster
+settings build (or have `composePrintHtml` use the horizontal layout for booklet),
+so the disabled control cannot change the imposition.
+
+Disposition: ACCEPTED -> DEF-485 (HIGH). CTO triage: real break of ruling 7 (non-applicable controls are disabled, not silently applied) and ruling 2 (preview/compose agreement) - a stale `pageOrder` from Single/N-up silently changes the booklet imposition to a stacked/mirrored sheet. Owner: backend-dev. Force the fixed horizontal 2-up layout in booklet compose; the renderer must not carry a stale pageOrder.
+
+## ADV-160: An empty-string blank slot in a non-booklet layout renders a broken `<img src="">` even though the validator accepts it as a blank placeholder
+
+- Session: diff-pass
+- Suggested severity: LOW
+
+What I did: pure probe `probe.cjs` P1. Called `validatePrintPayload({images:['',
+<real png>], settings:{deviceName:'x'}})` and `composePrintHtml` on the same
+payload (no `layoutMode`, i.e. the historical single/N-up path).
+
+Expected: CTO ruling 4 says `''` is a blank page slot in general and
+`composePrintHtml` "renders an empty `.page` cell for it"; the blank must never
+be sent to the driver as a broken `<img>`.
+
+Actual: `validate` returns `{ok:true}`, and the composed HTML contains
+`<img src=""` (`hasEmptyImgSrc:true`) from the `perSheet === 1` branch
+(`src/main/services/print.ts:480`) and from the N-up branch at `:475-477` (which
+tests `src === undefined` but not `src === ''`). Only the booklet/poster branches
+guard `src === ''`. Reachability through the shipped UI is low (the renderer only
+emits `''` for booklet, which is handled), but the contract the validator
+advertises is not honoured for the single path.
+
+Evidence: `<scratch>/probe.ts` `P1-single-blank`; `src/main/services/print.ts:448-481`.
+
+Suggested fix (not applied): extend the single/N-up cell guard to
+`src === undefined || src === ''` so every mode renders an empty `.page`.
+
+Disposition: ACCEPTED -> DEF-486 (LOW). CTO triage: the validator advertises `''` as a blank placeholder in every mode, but the single/N-up compose renders a broken `<img src="">`. Owner: backend-dev. Extend the empty-cell guard to all modes.
+
+## ADV-161: The Phase 83 e2e never asserts the DEF-483 `scaleAffectsOutput` criterion, and the dev e2e silently runs a stale `dist/` after the fix
+
+- Session: diff-pass
+- Suggested severity: LOW (verification gap, not a product break)
+
+What I did: ran `npm.cmd run test:e2e -- e2e/phase83_imposition.spec.cjs` as the
+first mandated command (no rebuild). The log printed
+`[p83|poster-scale-probe] {"scale100":100,"scale500":500,"scaleAffectsOutput":false}`
+and the spec still PASSED. `dist/renderer/assets/index-*.js` was timestamped
+19:51 while `src/renderer/pdf/printSettings.ts` (the DEF-483 fix) was modified at
+20:05. After `npm.cmd run build`, the same log became `scaleAffectsOutput:true`.
+
+Expected: the phase gate should prove DEF-483 (scale changes the composed
+output), so the spec should assert `scaleAffectsOutput === true` - it only calls
+`log(...)` (`e2e/phase83_imposition.spec.cjs:516-521`).
+
+Actual: the criterion is logged, never asserted, so a stale build (or a genuine
+regression of the fix) passes the suite silently. This is a QA-assertion gap;
+the DEF-483 fix itself is correct against a current build.
+
+Evidence: e2e stdout above; file mtimes; `e2e/phase83_imposition.spec.cjs:516-521`.
+
+Suggested fix (not applied): add `expect(scaleAffectsOutput).toBe(true)` in the
+print-path test, and ensure the phase gate rebuilds `dist/` before the e2e run.
+
+Disposition: ACCEPTED -> DEF-487 (LOW, verification gap). CTO triage: the phase e2e logs the DEF-483 criterion instead of asserting it, so a stale `dist/` (or a fix regression) passes silently. Owner: qa (assert `scaleAffectsOutput === true` and require a fresh build in the phase gate). No product code change.
+
+### Phase 83 diff-pass - design critique of the changed print surface (skill: design-critique)
+
+User: a person imposing a document who wants a booklet or a tiled poster and then
+sends it to a printer. Job: pick a layout, see exactly what will print, and print
+it. Success: the preview is a trustworthy proof of the output and the primary
+action is never blocked by an unexplained state.
+
+- Must-fix - **Consistency / truthfulness (ADV-159):** under Booklet/Poster the
+  Page order, Odd/even, Reverse and Pages-per-sheet controls are visibly disabled,
+  but a value set earlier under Single still silently changes the booklet output.
+  A disabled control must be inert. Try: reset the non-applicable ordering values
+  to their defaults in `buildPrintSettings` when the layout is booklet/poster, so
+  what is shown disabled cannot reach the printer.
+- Should-fix - **Affordance:** disabled ordering controls give no reason. Try: one
+  inline hint near the layout selector ("Page order, odd/even, reverse and N-up do
+  not apply to Booklet or Poster") so the disable state is explained, matching the
+  fail-loud philosophy of `[data-print-layout-error]`.
+- Should-fix - **Inputs / consistency:** the poster grid uses two `<select>`s for
+  Rows/Columns (1..10) but number `<input>`s for Overlap/Scale with min/max. Try:
+  use the same numeric-input pattern for Rows/Columns (with clamping on commit) so
+  the fail-loud inline error catches out-of-range typing instead of a select that
+  cannot show an invalid value.
+- Nice-to-fix - **States:** the preview meta line is the only success/empty signal;
+  for an empty selection under Booklet it shows an empty sheet plus a 0-side count.
+  Try: a one-line empty-state message ("Select pages to preview the booklet").
+- Strengths to keep: the `[data-print-layout-error]` `role="alert"` inline error
+  is readable and blocks Print (verified); the preview meta correctly switches to
+  "sides"/"tiles" wording; every CONTROL-INDEX selector introduced by the phase is
+  exercised (11/11) with zero page errors.
+
+## ADV-162: The newly-surfaced error state shows a "Retry" toolbar button that calls `download()`, a backend no-op while the state is `error` - clicking it does nothing
+
+- Session: diff-pass
+- Suggested severity: MEDIUM
+
+What I did: adversarial diff-pass on the OTA updater fix (`src/main/services/update-service.ts`: `init()` no longer reads `TFLEX_GH_TOKEN`/`GH_TOKEN` and attaches no token to `setFeedURL`; `isNoReleasesError()` no longer matches `/ensure a production release exists/i`). All six mandated attacks were run; per-attack results:
+
+1. Stale-token break-out - PASS. qa's `e2e/installed/ota_stale_token.spec.cjs` (3 passed) with `TFLEX_GH_TOKEN=GH_TOKEN=invalid-stale-token`: fixed 1.46.0 -> `{"kind":"available","version":"1.47.0"}`; fixed 1.47.0 -> `{"kind":"up-to-date","version":"1.47.0"}`; pre-fix installed 1.46.0 -> `{"kind":"up-to-date","version":"1.46.0"}` (the swallowed-401 failure mode reproduced, no false error).
+2. No-token path - PASS. Scratch launch of both packaged builds with `TFLEX_GH_TOKEN`/`GH_TOKEN` unset (verified unset in the child): 1.46.0 -> `available 1.47.0`; 1.47.0 -> `up-to-date`.
+3. Error surfacing - PASS. `npm.cmd run test:unit -- test/unit/main/update-service.test.ts` -> `57 passed`. A read-only probe driving the REAL `UpdateService` (stubbed `electron`/`electron-updater`) returned `{"kind":"error","message":"Bad credentials"}` for `Bad credentials`, `error` (message preserved) for the `Unable to find latest version on GitHub (...), please ensure a production release exists: HttpError: 401` wrapper, and `up-to-date` for both genuine empty-feed signatures (`No published versions on GitHub`; `Cannot read properties of undefined (reading 'assets')`).
+4. Credential-leak check - PASS. Extracted `dist/main/index.js` from `release/win-unpacked/resources/app.asar`: zero `TFLEX_GH_TOKEN` occurrences; the only `GH_TOKEN`/`GITHUB_TOKEN` reads are electron-updater's own `providerFactory` gated behind `githubOptions.private`; the TFlex `setFeedURL` call is `{provider:"github",owner,repo:"tflex-releases",private:false}` with no token.
+5. Regression - PASS. Unit suite: portable build -> `unsupported` with no `checkForUpdates`; `autoDownload` stays `false` (launch auto-check in attack 1 stopped at `available`, never `downloading`).
+6. Classifier enumeration - one bypass found (see ADV-163).
+
+Then I inspected the immediate consumer of the new `kind:'error'`: `UpdateIndicator.tsx:77-82` maps it to `{kind:"error", ariaLabel:"Update error: ... Click to retry."}` and the error branch (`UpdateIndicator.tsx:253-267`) renders a **Retry** button with `onClick={onDownload}`; `onDownload` (`UpdateIndicator.tsx:172-179`) calls `api.download()`. A probe against the real service confirmed that after a check error, `download()` returns the same `{kind:"error"}` and issues zero further `checkForUpdates()` calls (`checkCallsBefore 23 == checkCallsAfter 23`).
+
+Expected: a control that advertises "Retry" (aria-label "... Click to retry.") must re-run the check. `update.check()` already exists (`preload.ts:910-913`, `IPC.updateCheck`, used by Help > Check for Update), so the error branch should call `check()`, not `download()`.
+
+Actual: on error, clicking Retry calls `download()`, which is a no-op unless `state.kind === 'available'` (`update-service.ts:358-360`). No check is started, no state change, no error - a silent no-op. The fix makes this control newly reachable in practice (previously a stale-token 401 / network failure was swallowed as `up-to-date` and the error chip never appeared), so the diff exposes a broken recovery affordance to real users. The only working recovery is the Help menu's Check for Update.
+
+Screenshot: screenshots/adv-162-available-1470-badtoken.png, screenshots/adv-162-uptodate-badtoken.png (the states the fix now reaches under an invalid token). The error-state no-op is proven by source plus the probe output `adv162-retry-noop-result.json` rather than a screenshot (a controlled failing feed is needed to render it).
+
+Disposition: ACCEPTED -> DEF-489 (MEDIUM). The fix makes kind:'error' newly reachable, so the broken Retry affordance is now a real user-visible defect. Owner: frontend-dev (UpdateIndicator error branch must call update.check(), not update.download()).
+
+## ADV-163: Classifier bypass - a malformed-feed error whose embedded XML contains the literal phrase "No published versions on GitHub" is still misread as up-to-date
+
+- Session: diff-pass
+- Suggested severity: LOW
+
+What I did: enumerated the error strings reachable from electron-updater 6.8.9 `GitHubProvider.getLatestTagName`/`getLatestVersion` and drove each through the REAL `isNoReleasesError` classifier via the real `UpdateService` (read-only probe; output `adv162-classifier-result.json`). `Bad credentials`, the wrapped 401, a channel-file 404, a plain malformed feed, DNS/offline failures and an HTTP 403 rate-limit all mapped to `error` correctly.
+
+Expected: only the genuine empty-feed signatures map to `up-to-date`: `No published versions on GitHub` (thrown by `feed.element("entry", false, ...)`, `GitHubProvider.js:48`) and the `Cannot read properties of undefined (reading 'assets')` TypeError (`PrivateGitHubProvider.js:26`). Every auth/network/parse failure must surface as `error`.
+
+Actual: `ERR_UPDATER_INVALID_RELEASE_FEED` (`GitHubProvider.js:107-109`) wraps the raw feed body: `Cannot parse releases feed: ${e.stack || e.message},\nXML:\n${feedXml}`. Because the matcher is an unanchored substring test (`/no published versions/i`, `update-service.ts:97`), a malformed feed whose XML body contains that phrase is classified as empty. Probe: the fabricated message `Cannot parse releases feed: Error: Unexpected close tag,\nXML:\n<feed><title>No published versions on GitHub</title></feed>` returned `{"kind":"up-to-date"}` instead of `error`. Reachability is low (the feed URL is fixed to the operator-controlled public repo `tanzimtipu/tflex-releases`, and the response body would have to carry the literal phrase while failing to parse), but it contradicts the fix's stated intent that a real failure must never be swallowed. This is an informational bypass, not likely exploitable by a remote attacker.
+
+Screenshot: none (probe output `adv162-classifier-result.json`).
+
+Disposition: REJECTED - informational hardening candidate, not reachable by any actor the product defends against. The feed URL is fixed to the operator-controlled public repo tanzimtipu/tflex-releases over HTTPS, and the bypass needs that repo's response body to carry the literal phrase "No published versions on GitHub" while failing to parse; a MITM is out of threat model for a signed HTTPS feed. A genuine empty feed still correctly maps to up-to-date. No fix in this phase; the raw-body substring risk is noted for future hardening (e.g. match electron-updater error codes, not message substrings).
+
+### OTA updater fix diff-pass - design critique of the changed update-state surface (skill: design-critique)
+
+User: an installed-build user whose app checks for updates on launch or via the toolbar/About surface. Job: know truthfully whether a newer version exists and install it. Success: the check result is never a lie, and a failure offers a recovery action that actually works.
+
+- Must-fix - **States (ADV-162):** the error state offers a "Retry" control that silently does nothing because it calls `download()` instead of `check()`. An error state must state what went wrong and the action it offers must work. Try: wire the error branch's Retry to `update.check()`.
+- Should-fix - **Copy:** the error body renders the raw electron-updater string verbatim (`state.message`), e.g. "Unable to find latest version on GitHub (https://github.com/...) ... HttpError: Response code 401". Try: a friendly first line ("Couldn't check for updates. Check your connection and try again.") with the raw text behind an expandable details.
+- Should-fix - **Affordance:** the error chip's `aria-label` promises "Click to retry." while the visible label is only "Retry"; once wired, keep label and behaviour in sync.
+- Nice-to-fix - **Consistency:** the About dialog's error state offers only OK (dismiss) while the toolbar offers Retry. After fixing Retry, offer it on both surfaces so they agree.
+- Strengths to keep: the state machine is exhaustive (`assertNever`), `error` is a first-class `UpdateState` with the message preserved end-to-end, and the classifier now truthfully surfaces real failures instead of demoting them to up-to-date - the truthful-state rule is the strongest part of this change.
+
+
 
 
 

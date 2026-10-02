@@ -29,17 +29,30 @@ import {
 import {
   buildPrintSettings,
   clampCopies,
+  clampPosterGrid,
+  clampPosterOverlapPt,
+  clampPosterScalePercent,
   clampScalePercent,
   isCancelReason,
+  posterTileCanvasBox,
+  posterTileRects,
   seedPrintDialogState,
   type PrintDialogState,
   type PrintOrientation,
 } from "../pdf/printSettings";
 import { printSheetLayout } from "../../shared/printLayout";
+import {
+  bookletPageCount,
+  bookletSideOffset,
+  saddleStitchSequence,
+  type PosterTile,
+} from "../../shared/printImposition";
 import type {
+  BookletSubset,
   PrintDuplex,
   PrintJobPayload,
   PrintJobResult,
+  PrintLayoutMode,
   PrintPageOrder,
   PrintPreset,
   PrintScaling,
@@ -50,6 +63,25 @@ import type {
 /** Preview raster resolution - deliberately low; the preview is a live
  *  layout sketch, not a proof print. */
 export const PREVIEW_DPI = 48;
+
+/** Phase 83 - one page cell of a booklet preview side (`null` page = blank). */
+export interface BookletPreviewCell {
+  page: number | null;
+  leftPt: number;
+  rightPt: number;
+}
+
+/** Phase 83 - one saddle-stitch side (two page cells) of the booklet preview. */
+export interface BookletPreviewSide {
+  index: number;
+  cells: BookletPreviewCell[];
+}
+
+/** Phase 83 - fallback page width (US Letter, points) used only to turn
+ *  `posterOverlapPt` into a fraction before the preview raster is available.
+ *  Once the page raster arrives the real point width replaces it, so preview
+ *  and crop use the same normalised geometry. */
+const POSTER_FALLBACK_PAGE_WIDTH_PT = 612;
 
 /** Phase 81 - mirror of `PRINT_PRESETS_CAP` in the main settings service. */
 const PRINT_PRESETS_CAP = 30;
@@ -65,6 +97,92 @@ const PRINT_FAILURE_MESSAGES: Record<string, string> = {
 
 export function printFailureMessage(reason: string): string {
   return PRINT_FAILURE_MESSAGES[reason] ?? reason;
+}
+
+/** Phase 83 - decode a raster data URL into an image element (no network). */
+function loadPrintImage(dataUrl: string): Promise<HTMLImageElement> {
+  return new Promise<HTMLImageElement>((resolve, reject) => {
+    const img = new Image();
+    img.onload = (): void => resolve(img);
+    img.onerror = (): void =>
+      reject(new Error("Could not decode the page for the poster tiles."));
+    img.src = dataUrl;
+  });
+}
+
+/** Phase 83 - a canvas for one poster tile (OffscreenCanvas when available). */
+function createTileCanvas(width: number, height: number): OffscreenCanvas | HTMLCanvasElement {
+  if (typeof OffscreenCanvas !== "undefined") return new OffscreenCanvas(width, height);
+  const canvas = document.createElement("canvas");
+  canvas.width = width;
+  canvas.height = height;
+  return canvas;
+}
+
+/** Phase 83 - encode a tile canvas to a PNG data URL. */
+async function tileToDataUrl(canvas: OffscreenCanvas | HTMLCanvasElement): Promise<string> {
+  const offscreen = canvas as OffscreenCanvas;
+  if (typeof offscreen.convertToBlob === "function") {
+    const blob = await offscreen.convertToBlob({ type: "image/png" });
+    return await new Promise<string>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = (): void => {
+        if (typeof reader.result === "string") resolve(reader.result);
+        else reject(new Error("poster-tile-crop-failed"));
+      };
+      reader.onerror = (): void => reject(new Error("poster-tile-crop-failed"));
+      reader.readAsDataURL(blob);
+    });
+  }
+  return (canvas as HTMLCanvasElement).toDataURL("image/png");
+}
+
+/**
+ * Phase 83 - crop one rasterised page into the shared poster tile grid,
+ * row-major, one PNG data URL per tile. The tiles are the SAME normalised
+ * rectangles the preview renders, scaled to the raster's pixel box, so the
+ * preview and the printed tiles cannot disagree. Sequential by design: the
+ * renderer must never block on a burst of canvas work.
+ *
+ * DEF-483 - `scale` (1 = 100%) magnifies the tile content: the source rect is
+ * the ORIGINAL-page region the tile samples (already divided by the scale in
+ * `posterTileRects`) and the draw target is enlarged so the composed sheet
+ * shows S-times-magnified content. At `scale = 1` this is byte-identical to
+ * the pre-fix crop.
+ */
+async function cropPosterTiles(
+  image: PrintPageImage,
+  tiles: PosterTile[],
+  scale: number,
+): Promise<string[]> {
+  if (tiles.length === 0) return [];
+  const source = await loadPrintImage(image.dataUrl);
+  const out: string[] = [];
+  for (const tile of tiles) {
+    const box = posterTileCanvasBox(tile, image.widthPx, image.heightPx, scale);
+    const canvas = createTileCanvas(box.dw, box.dh);
+    const ctx = canvas.getContext("2d", { alpha: false }) as {
+      fillStyle: string;
+      fillRect: (x: number, y: number, w: number, h: number) => void;
+      drawImage: (
+        image: CanvasImageSource,
+        sx: number,
+        sy: number,
+        sw: number,
+        sh: number,
+        dx: number,
+        dy: number,
+        dw: number,
+        dh: number,
+      ) => void;
+    } | null;
+    if (ctx === null) throw new Error("poster-tile-crop-failed");
+    ctx.fillStyle = "#ffffff";
+    ctx.fillRect(0, 0, box.dw, box.dh);
+    ctx.drawImage(source, box.sx, box.sy, box.sw, box.sh, 0, 0, box.dw, box.dh);
+    out.push(await tileToDataUrl(canvas));
+  }
+  return out;
 }
 
 export interface PrintProgress {
@@ -135,6 +253,25 @@ export interface PrintControls {
   setReverse: (v: boolean) => void;
   printAnnotations: boolean;
   setPrintAnnotations: (v: boolean) => void;
+  // Phase 83 - imposition layout state
+  layoutMode: PrintLayoutMode;
+  setLayoutMode: (m: PrintLayoutMode) => void;
+  bookletGutterPt: number;
+  setBookletGutterPt: (n: number) => void;
+  bookletCreepPt: number;
+  setBookletCreepPt: (n: number) => void;
+  bookletSubset: BookletSubset;
+  setBookletSubset: (s: BookletSubset) => void;
+  posterRows: number;
+  setPosterRows: (n: number) => void;
+  posterCols: number;
+  setPosterCols: (n: number) => void;
+  posterOverlapPt: number;
+  setPosterOverlapPt: (n: number) => void;
+  posterScalePercent: number;
+  setPosterScalePercent: (n: number) => void;
+  posterCutMarks: boolean;
+  setPosterCutMarks: (v: boolean) => void;
   // Phase 81 - named print presets
   presets: PrintPreset[];
   selectedPreset: string;
@@ -160,6 +297,10 @@ export interface PrintControls {
   effectiveLandscape: boolean;
   sheetCount: number;
   gridStyle: { gridTemplateColumns: string; gridTemplateRows: string };
+  // Phase 83 - layout-derived preview data
+  layoutError: string | null;
+  bookletSides: BookletPreviewSide[];
+  posterTiles: PosterTile[];
   // actions
   valid: boolean;
   dialogState: PrintDialogState;
@@ -211,6 +352,19 @@ export function usePrintControls(args: UsePrintControlsArgs): PrintControls {
   const [reverse, setReverse] = useState(false);
   const [printAnnotations, setPrintAnnotations] = useState(true);
 
+  // Phase 83 - imposition layout. Values are stored as typed (not clamped on
+  // entry) so an out-of-range poster value can fail loud through
+  // `layoutError`; the clamps are applied when settings are built or seeded.
+  const [layoutMode, setLayoutMode] = useState<PrintLayoutMode>("single");
+  const [bookletGutterPt, setBookletGutterPt] = useState(0);
+  const [bookletCreepPt, setBookletCreepPt] = useState(0);
+  const [bookletSubset, setBookletSubset] = useState<BookletSubset>("both");
+  const [posterRows, setPosterRows] = useState(2);
+  const [posterCols, setPosterCols] = useState(2);
+  const [posterOverlapPt, setPosterOverlapPt] = useState(0);
+  const [posterScalePercent, setPosterScalePercent] = useState(100);
+  const [posterCutMarks, setPosterCutMarks] = useState(false);
+
   // Phase 81 - named print presets loaded from settings on activation.
   const [presets, setPresets] = useState<PrintPreset[]>([]);
   const [selectedPreset, setSelectedPreset] = useState("");
@@ -255,10 +409,97 @@ export function usePrintControls(args: UsePrintControlsArgs): PrintControls {
   );
   const selectionPages = selection.ok ? selection.pages : [];
 
-  const previewPages = useMemo(
-    () => selectionPages.slice(0, Math.max(1, pagesPerSheet)),
-    [selectionPages, pagesPerSheet],
-  );
+  // Phase 83 - the poster grid/ovelap/scale/subset validity. Non-null only
+  // for an actually-invalid combination; the Print action is blocked while set.
+  const layoutError = useMemo((): string | null => {
+    if (layoutMode === "poster") {
+      const badGrid = (v: number): boolean =>
+        !Number.isInteger(v) || v < 1 || v > 10;
+      if (badGrid(posterRows) || badGrid(posterCols)) {
+        return "Poster grid must be 1 to 10 rows and columns.";
+      }
+      if (!Number.isFinite(posterOverlapPt) || posterOverlapPt < 0 || posterOverlapPt > 72) {
+        return "Poster overlap must be between 0 and 72 pt.";
+      }
+      if (
+        !Number.isFinite(posterScalePercent) ||
+        posterScalePercent < 10 ||
+        posterScalePercent > 500
+      ) {
+        return "Poster scale must be between 10 and 500 percent.";
+      }
+    }
+    if (layoutMode === "booklet" && !["both", "front", "back"].includes(bookletSubset)) {
+      return "Booklet side selection is invalid.";
+    }
+    return null;
+  }, [layoutMode, posterRows, posterCols, posterOverlapPt, posterScalePercent, bookletSubset]);
+
+  // Phase 83 - booklet preview: the saddle-stitch sides, each a pair of page
+  // cells (`null` = blank padding) with the shared `bookletSideOffset` margin.
+  const bookletSides = useMemo((): BookletPreviewSide[] => {
+    if (layoutMode !== "booklet" || selectionPages.length === 0) return [];
+    const seq = saddleStitchSequence(selectionPages.length, bookletSubset);
+    if (seq.length === 0) return [];
+    const sheetCount = Math.max(1, bookletPageCount(selectionPages.length) / 4);
+    const sides: BookletPreviewSide[] = [];
+    for (let offset = 0; offset < seq.length; offset += 2) {
+      const sideIndex = offset / 2;
+      // `both` interleaves front/back per sheet; front/back emit one side per
+      // physical sheet, so the side index IS the sheet index there.
+      const sheetIndex = bookletSubset === "both" ? Math.floor(sideIndex / 2) : sideIndex;
+      const margins = bookletSideOffset(sheetIndex, sheetCount, bookletGutterPt, bookletCreepPt);
+      const cell = (entry: number | null): BookletPreviewCell => ({
+        page: entry === null ? null : selectionPages[entry - 1] ?? null,
+        leftPt: margins.leftPt,
+        rightPt: margins.rightPt,
+      });
+      sides.push({ index: sideIndex, cells: [cell(seq[offset]), cell(seq[offset + 1] ?? null)] });
+    }
+    return sides;
+  }, [layoutMode, selectionPages, bookletSubset, bookletGutterPt, bookletCreepPt]);
+
+  // Phase 83 / DEF-483 - poster preview grid: the page normalised to a unit
+  // square with the overlap expressed as a fraction of the page width. The
+  // tile rects are divided by the poster scale (S = percent / 100), so the
+  // preview zooms with the SAME `S` the print crop uses - the composed sheet
+  // and the preview cannot disagree.
+  const posterTiles = useMemo((): PosterTile[] => {
+    if (layoutMode !== "poster") return [];
+    const first = selectionPages[0];
+    const raster = first === undefined ? undefined : previewImages[first];
+    const pageWidthPt =
+      raster === undefined ? POSTER_FALLBACK_PAGE_WIDTH_PT : (raster.widthPx * 72) / PREVIEW_DPI;
+    const overlapFraction = pageWidthPt > 0 ? clampPosterOverlapPt(posterOverlapPt) / pageWidthPt : 0;
+    return posterTileRects(
+      clampPosterScalePercent(posterScalePercent) / 100,
+      clampPosterGrid(posterRows),
+      clampPosterGrid(posterCols),
+      overlapFraction,
+    );
+  }, [
+    layoutMode,
+    selectionPages,
+    previewImages,
+    posterRows,
+    posterCols,
+    posterOverlapPt,
+    posterScalePercent,
+  ]);
+
+  const previewPages = useMemo((): number[] => {
+    if (layoutMode === "booklet") {
+      const seen = new Set<number>();
+      for (const side of bookletSides) {
+        for (const cell of side.cells) {
+          if (cell.page !== null) seen.add(cell.page);
+        }
+      }
+      return Array.from(seen);
+    }
+    if (layoutMode === "poster") return selectionPages.slice(0, 1);
+    return selectionPages.slice(0, Math.max(1, pagesPerSheet));
+  }, [layoutMode, bookletSides, selectionPages, pagesPerSheet]);
   const previewKey = previewPages.join(",");
 
   const printer = useMemo(
@@ -278,7 +519,8 @@ export function usePrintControls(args: UsePrintControlsArgs): PrintControls {
     blocked === null &&
     printers.length > 0 &&
     deviceName !== null &&
-    selection.ok === true;
+    selection.ok === true &&
+    layoutError === null;
 
   // ---- lifecycle ---------------------------------------------------------
   /** Apply a device without clearing the notice - the resolve path uses
@@ -320,6 +562,15 @@ export function usePrintControls(args: UsePrintControlsArgs): PrintControls {
     setOddEven(s?.oddEven ?? "all");
     setReverse(s?.reverse ?? false);
     setPrintAnnotations(s?.printAnnotations ?? true);
+    setLayoutMode(s?.layoutMode ?? "single");
+    setBookletGutterPt(s?.bookletGutterPt ?? 0);
+    setBookletCreepPt(s?.bookletCreepPt ?? 0);
+    setBookletSubset(s?.bookletSubset ?? "both");
+    setPosterRows(s?.posterRows ?? 2);
+    setPosterCols(s?.posterCols ?? 2);
+    setPosterOverlapPt(s?.posterOverlapPt ?? 0);
+    setPosterScalePercent(s?.posterScalePercent ?? 100);
+    setPosterCutMarks(s?.posterCutMarks ?? false);
     setRunning(false);
     setProgress({ total: 0, done: 0, currentPage: null });
     setError(null);
@@ -458,6 +709,15 @@ export function usePrintControls(args: UsePrintControlsArgs): PrintControls {
     oddEven,
     reverse,
     printAnnotations,
+    layoutMode,
+    bookletGutterPt,
+    bookletCreepPt,
+    bookletSubset,
+    posterRows,
+    posterCols,
+    posterOverlapPt,
+    posterScalePercent,
+    posterCutMarks,
   };
 
   // Phase 81 - apply a named preset to the visible controls. The printer
@@ -481,6 +741,15 @@ export function usePrintControls(args: UsePrintControlsArgs): PrintControls {
     setOddEven(s.oddEven);
     setReverse(s.reverse);
     setPrintAnnotations(s.printAnnotations);
+    setLayoutMode(s.layoutMode);
+    setBookletGutterPt(s.bookletGutterPt);
+    setBookletCreepPt(s.bookletCreepPt);
+    setBookletSubset(s.bookletSubset);
+    setPosterRows(s.posterRows);
+    setPosterCols(s.posterCols);
+    setPosterOverlapPt(s.posterOverlapPt);
+    setPosterScalePercent(s.posterScalePercent);
+    setPosterCutMarks(s.posterCutMarks);
     setPresetNotice(`Applied preset "${name}".`);
     setPresetError(null);
   };
@@ -534,7 +803,7 @@ export function usePrintControls(args: UsePrintControlsArgs): PrintControls {
   };
 
   const onConfirmPrint = async (): Promise<void> => {
-    if (!valid || !selection.ok) return;
+    if (!valid || !selection.ok || layoutError !== null) return;
     // DEF-272 - synchronous same-task guard, set before any await so a
     // second activation in the same task cannot start a second job. The
     // render-state `running` flag still drives the disabled UI.
@@ -544,9 +813,27 @@ export function usePrintControls(args: UsePrintControlsArgs): PrintControls {
     setError(null);
     setSuccess(null);
     const pages = selection.pages;
+    // The pages that will actually be rasterised (booklet resends the padded
+    // slot order; poster only the first page). Drives the progress counter so
+    // it never lies about a run.
+    const plannedPages =
+      layoutMode === "booklet"
+        ? saddleStitchSequence(pages.length, bookletSubset).filter(
+            (entry): entry is number => entry !== null,
+          )
+        : layoutMode === "poster"
+          ? pages.slice(0, 1)
+          : pages;
     const ac = new AbortController();
     abortRef.current = ac;
-    setProgress({ total: pages.length, done: 0, currentPage: pages[0] ?? null });
+    setProgress({ total: plannedPages.length, done: 0, currentPage: plannedPages[0] ?? null });
+    const onProgress = (page: number): void => {
+      setProgress((prev) => ({
+        ...prev,
+        currentPage: page,
+        done: Math.min(prev.done + 1, prev.total),
+      }));
+    };
     try {
       const doc = resolveActiveDoc();
       if (doc === null) {
@@ -554,25 +841,72 @@ export function usePrintControls(args: UsePrintControlsArgs): PrintControls {
         setRunning(false);
         return;
       }
-      const images = await rasterizePagesForPrint({
-        doc,
-        pages,
-        includeAnnotations: printAnnotations,
-        onProgress: (page): void => {
-          setProgress((prev) => ({
-            ...prev,
-            currentPage: page,
-            done: Math.min(prev.done + 1, prev.total),
-          }));
-        },
-        signal: ac.signal,
-      });
-      if (ac.signal.aborted) {
-        setRunning(false);
-        return;
+      let images: string[];
+      let sentCount: number;
+      if (layoutMode === "booklet") {
+        // Phase 83 - saddle stitch. Rasterise only the real pages, then
+        // assemble the payload in EXACT slot order with '' for blanks.
+        const seq = saddleStitchSequence(pages.length, bookletSubset);
+        const realPages = Array.from(
+          new Set(seq.filter((entry): entry is number => entry !== null).map((e) => pages[e - 1])),
+        );
+        const rasters = await rasterizePagesForPrint({
+          doc,
+          pages: realPages,
+          includeAnnotations: printAnnotations,
+          onProgress,
+          signal: ac.signal,
+        });
+        if (ac.signal.aborted) {
+          setRunning(false);
+          return;
+        }
+        const byPage = new Map(rasters.map((r) => [r.page, r.dataUrl]));
+        images = seq.map((entry) =>
+          entry === null ? "" : byPage.get(pages[entry - 1]) ?? "",
+        );
+        sentCount = images.filter((image) => image !== "").length;
+      } else if (layoutMode === "poster") {
+        // Phase 83 - rasterise the selected page once at print DPI, then crop
+        // it into the shared tile grid (row-major), one image per tile.
+        const rasters = await rasterizePagesForPrint({
+          doc,
+          pages: pages.slice(0, 1),
+          includeAnnotations: printAnnotations,
+          onProgress,
+          signal: ac.signal,
+        });
+        if (ac.signal.aborted) {
+          setRunning(false);
+          return;
+        }
+        images = await cropPosterTiles(
+          rasters[0],
+          posterTiles,
+          clampPosterScalePercent(posterScalePercent) / 100,
+        );
+        if (ac.signal.aborted) {
+          setRunning(false);
+          return;
+        }
+        sentCount = images.length;
+      } else {
+        const rasters = await rasterizePagesForPrint({
+          doc,
+          pages,
+          includeAnnotations: printAnnotations,
+          onProgress,
+          signal: ac.signal,
+        });
+        if (ac.signal.aborted) {
+          setRunning(false);
+          return;
+        }
+        images = rasters.map((img) => img.dataUrl);
+        sentCount = images.length;
       }
       const result = await printJob({
-        images: images.map((img) => img.dataUrl),
+        images,
         settings: buildPrintSettings(dialogState),
       });
       if (ac.signal.aborted) {
@@ -588,7 +922,7 @@ export function usePrintControls(args: UsePrintControlsArgs): PrintControls {
         } else {
           // Printed (explicit `outcome: 'printed'` or absent) - unchanged.
           const label = printer?.displayName ?? deviceName ?? "the printer";
-          setSuccess(`Sent ${images.length} page${images.length === 1 ? "" : "s"} to ${label}.`);
+          setSuccess(`Sent ${sentCount} page${sentCount === 1 ? "" : "s"} to ${label}.`);
         }
       } else if (isCancelReason(result.reason)) {
         // User cancellation (the OS dialog for a real printer, or the
@@ -622,11 +956,17 @@ export function usePrintControls(args: UsePrintControlsArgs): PrintControls {
   // with, so preview and print can never disagree.
   const layout = printSheetLayout(pagesPerSheet, pageOrder);
   const effectiveLandscape =
-    orientation === "landscape" || (orientation === "auto" && autoLandscape);
+    layoutMode === "booklet"
+      ? true
+      : orientation === "landscape" || (orientation === "auto" && autoLandscape);
   const sheetCount =
-    selection.ok && selectionPages.length > 0
-      ? Math.ceil(selectionPages.length / pagesPerSheet)
-      : 0;
+    layoutMode === "booklet"
+      ? bookletSides.length
+      : layoutMode === "poster"
+        ? clampPosterGrid(posterRows) * clampPosterGrid(posterCols)
+        : selection.ok && selectionPages.length > 0
+          ? Math.ceil(selectionPages.length / pagesPerSheet)
+          : 0;
   const gridStyle = {
     gridTemplateColumns: `repeat(${layout.cols}, 1fr)`,
     gridTemplateRows: `repeat(${layout.rows}, 1fr)`,
@@ -672,6 +1012,31 @@ export function usePrintControls(args: UsePrintControlsArgs): PrintControls {
     setReverse,
     printAnnotations,
     setPrintAnnotations,
+    // Phase 83 - imposition state. Booklet numeric fields coerce a non-finite
+    // entry to their default; poster fields keep an out-of-range/NaN value so
+    // `layoutError` can fail loud rather than silently clamping it away.
+    layoutMode,
+    setLayoutMode,
+    bookletGutterPt,
+    setBookletGutterPt: (n: number): void =>
+      setBookletGutterPt(Number.isFinite(n) ? n : 0),
+    bookletCreepPt,
+    setBookletCreepPt: (n: number): void =>
+      setBookletCreepPt(Number.isFinite(n) ? n : 0),
+    bookletSubset,
+    setBookletSubset,
+    posterRows,
+    setPosterRows,
+    posterCols,
+    setPosterCols,
+    posterOverlapPt,
+    setPosterOverlapPt: (n: number): void =>
+      setPosterOverlapPt(Number.isFinite(n) ? n : 0),
+    posterScalePercent,
+    setPosterScalePercent: (n: number): void =>
+      setPosterScalePercent(Number.isFinite(n) ? n : 100),
+    posterCutMarks,
+    setPosterCutMarks,
     presets,
     selectedPreset,
     presetName,
@@ -698,5 +1063,8 @@ export function usePrintControls(args: UsePrintControlsArgs): PrintControls {
     dialogState,
     onConfirmPrint,
     onCancelClick,
+    layoutError,
+    bookletSides,
+    posterTiles,
   };
 }

@@ -1461,6 +1461,16 @@ export type PrintScaling = 'fit' | 'actual' | 'shrink' | 'custom';
 /** Phase 30 — duplex mode mapped to Electron's `duplexMode`. */
 export type PrintDuplex = 'simplex' | 'shortEdge' | 'longEdge';
 
+/** Phase 83 — the top-level imposition layout. `single` is the historical
+ *  one-image-per-sheet behaviour (N-up/page-order still apply); `booklet` is
+ *  saddle-stitch 2-up and `poster` is one page tiled across a rows x cols grid. */
+export type PrintLayoutMode = 'single' | 'booklet' | 'poster';
+
+/** Phase 83 — which saddle-stitch sides a booklet run emits. `both` interleaves
+ *  front then back per sheet (duplex); `front`/`back` emit one side per sheet
+ *  for manual reload. */
+export type BookletSubset = 'both' | 'front' | 'back';
+
 /** Phase 30 — N-up page order within a sheet. */
 export type PrintPageOrder =
   | 'horizontal'
@@ -1473,7 +1483,8 @@ export type PrintPageOrder =
  *  Electron's `pageRanges`. `oddEven` / `reverse` / `printAnnotations` /
  *  `pageOrder` are applied by the RENDERER when it composes the ordered image
  *  list; `paperSource` is carried for the driver but has no Electron print
- *  option (see print.ts). */
+ *  option (see print.ts). Phase 83 adds the optional imposition keys below;
+ *  every one is optional and an omitted key means today's behaviour. */
 export interface PrintSettings {
   deviceName?: string;
   copies?: number;
@@ -1490,6 +1501,24 @@ export interface PrintSettings {
   reverse?: boolean;
   printAnnotations?: boolean;
   paperSource?: string;
+  /** Phase 83 — top-level layout; omitted means 'single'. */
+  layoutMode?: PrintLayoutMode;
+  /** Phase 83 — booklet binding gap in points (0..72); default 0. */
+  bookletGutterPt?: number;
+  /** Phase 83 — booklet per-sheet creep in points (0..36); default 0. */
+  bookletCreepPt?: number;
+  /** Phase 83 — booklet sides to emit; omitted means 'both'. */
+  bookletSubset?: BookletSubset;
+  /** Phase 83 — poster tile rows (1..10); default 2. */
+  posterRows?: number;
+  /** Phase 83 — poster tile columns (1..10); default 2. */
+  posterCols?: number;
+  /** Phase 83 — poster tile overlap in points (0..72); default 0. */
+  posterOverlapPt?: number;
+  /** Phase 83 — poster per-tile scale percent (10..500); default 100. */
+  posterScalePercent?: number;
+  /** Phase 83 — draw poster trim marks; default false. */
+  posterCutMarks?: boolean;
 }
 
 /** Phase 81 - one named print preset: a user-chosen name plus the print
@@ -1503,7 +1532,10 @@ export interface PrintPreset {
 /** Phase 30 — one print request. `images` are data URLs (one per composed
  *  page), already ordered/selected by the renderer (page range, odd/even,
  *  reverse and N-up order applied there). Main composes them into a print
- *  document and sends it to the chosen device. */
+ *  document and sends it to the chosen device. Phase 83: an EMPTY STRING `''`
+ *  denotes a BLANK page slot (booklet padding / single-sided subset), NOT an
+ *  image; it is a valid placeholder. Every non-empty entry is an image data
+ *  URL. */
 export interface PrintJobPayload {
   images: string[];
   settings: PrintSettings;

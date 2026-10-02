@@ -13,9 +13,15 @@ import { usePrintControls } from "../../../src/renderer/components/usePrintContr
 import type {
   PrintJobPayload,
   PrintJobResult,
+  PrintPreset,
   PrinterInfo,
   PrintSettings,
 } from "../../../src/shared/types";
+
+/** Stable no-op preset seams: the hook's load effect is keyed on the
+ *  `loadPresets` identity, so a fresh inline default each render would loop. */
+const NO_PRESETS = async (): Promise<PrintPreset[]> => [];
+const NOOP_SAVE_PRESETS = async (): Promise<void> => undefined;
 
 export interface PrintSurfaceProps {
   active: boolean;
@@ -27,6 +33,8 @@ export interface PrintSurfaceProps {
   onClose: () => void;
   seed?: PrintSettings | null;
   blockedReason?: string | null;
+  loadPresets?: () => Promise<PrintPreset[]>;
+  savePresets?: (presets: PrintPreset[]) => Promise<void>;
 }
 
 /** The shared control surface, exactly as the standalone window renders it. */
@@ -41,6 +49,8 @@ export function PrintSurface(props: PrintSurfaceProps): ReactElement {
     onClose: props.onClose,
     seed: props.seed,
     blockedReason: props.blockedReason,
+    loadPresets: props.loadPresets ?? NO_PRESETS,
+    savePresets: props.savePresets ?? NOOP_SAVE_PRESETS,
   });
   return <PrintPanel print={print} />;
 }

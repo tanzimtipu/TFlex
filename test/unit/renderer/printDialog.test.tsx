@@ -347,6 +347,104 @@ describe("PrintSurface — print run (Phase 30)", () => {
   });
 });
 
+// Phase 83 — the layout selector, the layout-specific controls, the
+// enable/disable matrix, the fail-loud invalid poster grid and the
+// saddle-stitch preview sides.
+describe("PrintSurface — Phase 83 layout controls", () => {
+  it("shows booklet controls and disables the ordering controls", async () => {
+    const { container, cleanup } = renderDialog({ totalPages: 6 });
+    await flush();
+    setValue(container, "[data-print-layout]", "booklet");
+    await flush();
+    expect(container.querySelector("[data-print-booklet-gutter]")).not.toBeNull();
+    expect(container.querySelector("[data-print-booklet-creep]")).not.toBeNull();
+    expect(container.querySelector("[data-print-booklet-subset]")).not.toBeNull();
+    expect(container.querySelector<HTMLSelectElement>("[data-print-nup]")?.disabled).toBe(true);
+    expect(container.querySelector<HTMLSelectElement>("[data-print-page-order]")?.disabled).toBe(true);
+    expect(container.querySelector<HTMLSelectElement>("[data-print-odd-even]")?.disabled).toBe(true);
+    expect(container.querySelector<HTMLInputElement>("[data-print-reverse]")?.disabled).toBe(true);
+    cleanup();
+  });
+
+  it("shows the poster controls and disables the ordering controls", async () => {
+    const { container, cleanup } = renderDialog({ totalPages: 6 });
+    await flush();
+    setValue(container, "[data-print-layout]", "poster");
+    await flush();
+    for (const selector of [
+      "[data-print-poster-rows]",
+      "[data-print-poster-cols]",
+      "[data-print-poster-overlap]",
+      "[data-print-poster-scale]",
+      "[data-print-poster-cut-marks]",
+    ]) {
+      expect(container.querySelector(selector), selector).not.toBeNull();
+    }
+    expect(container.querySelector<HTMLSelectElement>("[data-print-nup]")?.disabled).toBe(true);
+    expect(container.querySelector<HTMLSelectElement>("[data-print-page-order]")?.disabled).toBe(true);
+    cleanup();
+  });
+
+  it("restores the ordering controls when switching back to single", async () => {
+    const { container, cleanup } = renderDialog({ totalPages: 6 });
+    await flush();
+    setValue(container, "[data-print-layout]", "booklet");
+    await flush();
+    setValue(container, "[data-print-layout]", "single");
+    await flush();
+    expect(container.querySelector<HTMLSelectElement>("[data-print-nup]")?.disabled).toBe(false);
+    setValue(container, "[data-print-nup]", "4");
+    expect(container.querySelector<HTMLSelectElement>("[data-print-page-order]")?.disabled).toBe(false);
+    cleanup();
+  });
+
+  it("fails loud on an invalid poster grid and blocks Print", async () => {
+    const { container, cleanup } = renderDialog({ totalPages: 6 });
+    await flush();
+    setValue(container, "[data-print-layout]", "poster");
+    await flush();
+    // A value outside the 1..10 option set collapses the select to "", which
+    // parses to NaN — exactly the invalid input the inline error must catch.
+    setValue(container, "[data-print-poster-rows]", "0");
+    await flush();
+    expect(container.querySelector("[data-print-layout-error]")).not.toBeNull();
+    expect(container.querySelector<HTMLButtonElement>("[data-print-confirm]")?.disabled).toBe(true);
+    cleanup();
+  });
+
+  it("renders one saddle-stitch sheet per side with the padded cells", async () => {
+    const { container, cleanup } = renderDialog({ totalPages: 6 });
+    await flush();
+    setValue(container, "[data-print-layout]", "booklet");
+    await flush();
+    const sheets = container.querySelectorAll("[data-print-preview-sheet]");
+    // 6 pages pad to 8 -> 2 physical sheets -> 4 sides (both sides).
+    expect(sheets).toHaveLength(4);
+    const cells = Array.from(
+      container.querySelectorAll<HTMLElement>("[data-print-preview-cell]"),
+    ).map((cell) => {
+      const raw = cell.getAttribute("data-print-preview-page");
+      return raw === null ? null : Number.parseInt(raw, 10);
+    });
+    expect(cells).toEqual([null, 1, 2, null, 6, 3, 4, 5]);
+    cleanup();
+  });
+
+  it("shows poster cut marks only when the checkbox is on", async () => {
+    const { container, cleanup } = renderDialog({ totalPages: 6 });
+    await flush();
+    setValue(container, "[data-print-layout]", "poster");
+    await flush();
+    expect(container.querySelector("[data-print-cut-mark]")).toBeNull();
+    const marks = container.querySelector<HTMLInputElement>("[data-print-poster-cut-marks]");
+    act((): void => {
+      marks?.click();
+    });
+    expect(container.querySelector("[data-print-cut-mark]")).not.toBeNull();
+    cleanup();
+  });
+});
+
 // Phase 35 item 7 — the virtual-PDF destination result states: a saved PDF
 // names its path in the existing success region, a printed/absent outcome
 // keeps today's success copy, a save-cancel stays silent, and each new typed

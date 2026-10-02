@@ -44,3 +44,4 @@
 **CONTROL-INDEX:** none - no interactive control is introduced. The changed surface is a set of shipped icon assets (`assets/brand/*.ico`) and their `electron-builder.yml` references.
 
 **Settings impact:** none - no new `AppSettings` field. This is an asset/packaging change (`assets/brand/*.ico` + `electron-builder.yml`); no renderer, IPC or `src/shared/` change.
+

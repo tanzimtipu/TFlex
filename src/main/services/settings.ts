@@ -940,11 +940,18 @@ const PRINT_PAGE_ORDERS = [
 ] as const;
 const PRINT_ODD_EVEN = ['all', 'odd', 'even'] as const;
 
+/** Phase 83 - allowlists for the new imposition keys on a saved preset. */
+const PRINT_LAYOUT_MODES = ['single', 'booklet', 'poster'] as const;
+const BOOKLET_SUBSETS = ['both', 'front', 'back'] as const;
+
 /** Phase 81 - build a fresh `PrintSettings` from a raw preset settings
  *  object carrying ONLY the known, valid keys. Unknown keys (`deviceName`,
  *  `pageRanges`, `paperSource` and any future/unknown key) are dropped;
  *  an invalid value for a known key drops only that key. Returns `null`
- *  when `raw` is not a plain object (the caller skips the whole entry). */
+ *  when `raw` is not a plain object (the caller skips the whole entry).
+ *  Phase 83 adds the nine imposition keys (layout mode, booklet gutter /
+ *  creep / subset, poster rows / cols / overlap / scale / cut marks) with
+ *  the same preserve-if-valid / reject-if-invalid per-key rule. */
 function normalizePrintPresetSettings(raw: unknown): PrintSettings | null {
   if (raw === null || typeof raw !== 'object' || Array.isArray(raw)) return null;
   const r = raw as Record<string, unknown>;
@@ -991,6 +998,37 @@ function normalizePrintPresetSettings(raw: unknown): PrintSettings | null {
     (PRINT_ODD_EVEN as readonly string[]).includes(r.oddEven)
   ) {
     out.oddEven = r.oddEven as PrintSettings['oddEven'];
+  }
+  if (
+    typeof r.layoutMode === 'string' &&
+    (PRINT_LAYOUT_MODES as readonly string[]).includes(r.layoutMode)
+  ) {
+    out.layoutMode = r.layoutMode as PrintSettings['layoutMode'];
+  }
+  if (typeof r.bookletSubset === 'string' && (BOOKLET_SUBSETS as readonly string[]).includes(r.bookletSubset)) {
+    out.bookletSubset = r.bookletSubset as PrintSettings['bookletSubset'];
+  }
+  if (typeof r.posterCutMarks === 'boolean') out.posterCutMarks = r.posterCutMarks;
+  for (const key of ['bookletGutterPt', 'bookletCreepPt', 'posterOverlapPt'] as const) {
+    const max = key === 'bookletCreepPt' ? 36 : 72;
+    const value = r[key];
+    if (typeof value === 'number' && Number.isFinite(value) && value >= 0 && value <= max) {
+      out[key] = value;
+    }
+  }
+  if (
+    typeof r.posterScalePercent === 'number' &&
+    Number.isFinite(r.posterScalePercent) &&
+    r.posterScalePercent >= 10 &&
+    r.posterScalePercent <= 500
+  ) {
+    out.posterScalePercent = r.posterScalePercent;
+  }
+  for (const key of ['posterRows', 'posterCols'] as const) {
+    const value = r[key];
+    if (typeof value === 'number' && Number.isInteger(value) && value >= 1 && value <= 10) {
+      out[key] = value;
+    }
   }
   return out;
 }

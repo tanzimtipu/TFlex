@@ -5,6 +5,51 @@
 > inspect the current `OPEN`, `FIX-READY`, and `DISPUTED` entries first; closed records are
 > historical evidence and must not be loaded wholesale.
 
+## DEF-488: Installed app silently reports "up-to-date" and shows no OTA notification because an invalid ambient GH token turns the public feed into a swallowed 401
+
+- Status: FIX-READY
+- Severity: HIGH
+- Found by: operator (board report, 2026-10-02)
+- Phase: 82 (OTA updater regression)
+- Escape: wrong-oracle
+
+Steps to reproduce:
+1. Install/launch a packaged Jovrel build older than the latest published release (installed base here: 1.46.0). Ensure the environment carries an invalid `TFLEX_GH_TOKEN` (User-scope var on the reporting machine).
+2. Let the app finish its launch auto-check, then use Help -> "Check for Update..." (or `window.tflex.update.check()`).
+3. Read `window.tflex.update.getStatus()`.
+
+Expected: criterion 2/3 - the launch check surfaces an in-app "update available" prompt, and the manual check finds the newer published release and offers download/install/restart; a build already current reports "up to date" with no error.
+
+Actual: getStatus() reports `{ kind: "up-to-date", version: "1.46.0" }` although v1.47.0 is published; no notification appears and the manual check shows nothing. electron-updater selected PrivateGitHubProvider because a token was present, called `https://api.github.com/repos/tanzimtipu/tflex-releases/releases/latest`, and got HTTP 401 "Bad credentials". `isNoReleasesError()` matched the wrapper text "Unable to find latest version on GitHub (...), please ensure a production release exists" and silently downgraded the 401 to up-to-date. Runtime proof: WITH `TFLEX_GH_TOKEN` set -> up-to-date 1.46.0; WITHOUT it -> available 1.47.0 (feed healthy: v1.47.0 with latest.yml + installer + blockmap).
+
+Screenshot: screenshots/tfl365_caseC_prefix_swallowed.png (pre-fix swallowed 401) vs screenshots/tfl365_caseA_available_prompt.png (fixed build with the same bad token -> Update available / v1.47.0 prompt).
+
+History:
+- CTO (TFL-362, 2026-10-02): filed from the board report with escape class ESCAPE: wrong-oracle - the unit test `UpdateService - OTA fallback` ("reports a clean up-to-date state when the check promise rejects") asserted the swallowed 401 wrapper as the DESIRED up-to-date behavior, so the oracle pinned the bug; the packaged ambient-token path also had no probe. Fix dispatched as TFL-363 (backend-dev): stop attaching ambient `TFLEX_GH_TOKEN`/`GH_TOKEN` to the public feed and narrow `isNoReleasesError` so ERR_UPDATER_LATEST_VERSION_NOT_FOUND surfaces as `error`. FIX-READY pending qa closure.
+- CTO (TFL-365, 2026-10-02): focused verification PASS - `e2e/installed/ota_stale_token.spec.cjs` 3 passed (CASE A fixed 1.46.0 build + bad token -> available + prompt; CASE B fixed 1.47.0 build + bad token -> up-to-date no error; CASE C pre-fix installed 1.46.0 + bad token -> up-to-date, the reproduced failure mode); neighbour renderer update tests 71/71; qa to CLOSE at phase close.
+- qa (TFL-371, 2026-10-02): renumbered DEF-484 -> DEF-488 during the Phase 83 phase-close ledger-integrity review. The Phase 83 ADV-158 disposition (ADVERSARIAL_REVIEW.md:7432) and the developer fix comments (`src/main/services/print.ts:446`, `test/unit/main/print.test.ts:675`) already claimed DEF-484 for the booklet-creep fix, so the phase-close instruction assigned the Phase 83 set DEF-484..487. No source or test references this OTA entry by number; only this ledger line changed. CTO owns the disposition of the OTA defect itself.
+
+## DEF-489: OTA error state shows a "Retry" toolbar button that silently does nothing (it calls download() while state.kind='error')
+
+- Status: OPEN
+- Severity: MEDIUM
+- Found by: adversary (ADV-162)
+- Phase: 82 (OTA updater regression)
+
+Steps to reproduce:
+1. Launch a packaged build and force a check failure so the update state becomes `kind:'error'` (the adversary drove the real UpdateService with a failing check; a controlled failing feed is needed to render it in the UI).
+2. Observe the toolbar `UpdateIndicator` error chip (visible label "Retry").
+3. Click Retry.
+
+Expected: the advertised action re-runs the update check - the error chip's aria-label says "Update error: ... Click to retry.", and `window.tflex.update.check()` already exists (`IPC.updateCheck`, the Help > Check for Update path).
+
+Actual: clicking Retry calls `window.tflex.update.download()` (`UpdateIndicator.tsx:172-179` and the error branch `:253-267`), which is a backend no-op unless `state.kind==='available'` (`update-service.ts:358-360`): no check starts and no state changes. Probe evidence `adv162-retry-noop-result.json` (checkCalls before == after, state stays `error`). Newly user-visible because the OTA fix makes `kind:'error'` reachable (previously a stale-token 401 / network failure was swallowed as up-to-date and the chip never appeared).
+
+Screenshot: none (proven by source plus the probe `adv162-retry-noop-result.json`; the error state requires a controlled failing feed to render).
+
+History:
+- CTO (TFL-362, 2026-10-02): ACCEPTED from ADV-162 triage (MEDIUM). Owner frontend-dev: the error branch's Retry must call `update.check()` instead of `update.download()`, plus a unit assertion that an error-chip click invokes check (not download).
+
 ## DEF-478: Format Painter consumes the captured format when a just-placed box is committed while the painter is armed
 
 - Status: CLOSED
@@ -10514,3 +10559,119 @@ Expected: when the computed `suggestions` array is empty, return before `prevent
 Evidence: `test/unit/renderer/adv_phase82_settingsEcho.test.ts` ("ADV-157 repro"); `src/renderer/spell/SpellCheckTextarea.tsx:201-231,317-340`; `src/shared/spell.ts:160-186`.
 
 Fix owner: frontend-dev. Suggested fix: in `handleContextMenu`, when `suggestions` is empty either return before `preventDefault` (native menu) or render a disabled "No suggestions" row, never an empty listbox.
+
+## DEF-483: `[data-print-poster-scale]` is a silent no-op - changing Scale (%) never affects the poster preview or the composed/printed output
+
+- Status: CLOSED
+- Severity: MEDIUM (a Phase-83 CONTROL-INDEX control whose promised action - "(per-tile scale percent)" - is never applied; the preview, the tile crop and the composed PDF are byte-identical at 100% and 500%, so the control silently does nothing rather than fail loud)
+- Found by: qa (TFL-359, Phase 83 phase validation; observed during the CONTROL-INDEX sweep while probing the poster path)
+- Phase: 83 (Booklet + Poster imposition; CONTROL-INDEX `[data-print-poster-scale]` / CTO ruling 6 "One selected page is scaled to `posterScalePercent`")
+
+Steps to reproduce (from application launch):
+1. Open `report.pdf`, open the print window, set Layout = Poster, page range Custom `1`, Rows = 2, Columns = 2, Cut marks on, Scale (%) = 100. Click Print (virtual-PDF destination).
+2. Re-run the same with Scale (%) = 500. Compare the two composed sheet documents / produced PDFs.
+
+Expected: the composed/printed tiles scale with `posterScalePercent` (100% -> 500% is visibly different), per the CONTROL-INDEX promise and CTO ruling 6.
+
+Actual: the two composed documents are identical - `scaleAffectsOutput: false`; the renderer's `posterTiles`/`cropPosterTiles` derive only the grid+overlap rectangles, `composePrintHtml` never reads `settings.posterScalePercent`, and `mapPrintToPdfOptions` sets `scale` only from the `single`-path `scaling: 'custom'` `scalePercent`. The value is validated (`print.ts:264`), clamped/seeded (`printSettings.ts:170,273`) and persisted (`settings.ts:1020`), but never consumed by any compose/crop/preview path (grep of `src/**` shows no read outside validation/seed/persist).
+
+Evidence: `e2e/phase83_imposition.spec.cjs` test 2 log `[p83|poster-scale-probe] {"scale100":100,"scale500":500,"scaleAffectsOutput":false}` (identical `composed.imgs` for both runs); both produced PDFs 4 portrait pages. Source: `src/renderer/components/usePrintControls.ts:459-467` (`posterTiles`), `:145-180` (`cropPosterTiles`), `src/main/services/print.ts:420-525` (`composePrintHtml`), `:356-372` (`mapPrintToPdfOptions`).
+
+Impact: MEDIUM - the poster feature cannot be scaled from the UI; a promised control is inert. Does not corrupt output. Fix owner: frontend-dev (apply `posterScalePercent` to the poster tile crop and/or the composed sheet, and to the preview).
+
+History:
+- qa: opened (TFL-359, Phase 83 phase validation)
+- orchestrator: FIX-READY - frontend-dev (TFL-360) reports: added the ONE shared pure derivation `posterTileRects(scale, rows, cols, overlapFraction)` (unit grid rects divided by S = the ORIGINAL-page region each tile samples) and `posterTileCanvasBox(tile, wPx, hPx, scale)` (pixel sample box + draw target enlarged by S) in `src/renderer/pdf/printSettings.ts`; `usePrintControls.ts` now derives `posterTiles` and `cropPosterTiles` from them and passes the same S in `onConfirmPrint`; `PrintPanel.tsx` preview zooms from the same derived rects (preview/print cannot disagree); test `printSettings - DEF-483 poster scale magnifies the tile derivation` added. verify clean (tsc 0); 3 files / 47 tests passed / 0 failed. Awaiting qa re-verification.
+- qa (TFL-371, 2026-10-02): FIX-READY retest PASS -> CLOSED. Fresh `npm.cmd run build` (exit 0), then `npm.cmd run test:e2e -- e2e/phase83_imposition.spec.cjs` = 2 passed / 0 failed; the print-path scale probe printed `[p83|poster-scale-probe] {"scale100":100,"scale500":500,"scaleAffectsOutput":true}` and the new hard assertion `expect(scaleAffectsOutput).toBe(true)` passed. `posterTileRects`/`posterTileCanvasBox` are also covered by `printSettings.test.ts` in the 5-file / 183-test phase unit set (0 failed).
+
+## DEF-484: Booklet creep under subset `both` (the default) is derived from the side count in the main compose but from the physical-sheet count in the preview, so printed creep disagrees with the preview
+
+- Status: CLOSED
+- Severity: MEDIUM (real break of the shared-source-of-truth rule, Phase 83 CTO ruling 2 - the preview and the main compose disagree on booklet creep for the default subset `both`)
+- Found by: adversary (ADV-158, Phase 83 diff-pass; accepted by CTO)
+- Phase: 83 (Booklet + Poster imposition; compose `bookletSideOffset` vs renderer preview)
+
+Steps to reproduce (from application launch):
+1. Open a 16-page selection in the print window; set Layout = Booklet, Subset = Both sides, Gutter (pt) = 0, Creep (pt) = 10.
+2. In the preview read the per-side `padding-left` values; and run the same settings through the main compose (`composePrintHtml`) and read its per-cell `padding-left`.
+
+Expected: byte-for-byte the same margins in preview and compose (CTO ruling 2: the shared `bookletSideOffset` is consumed by BOTH so they can never disagree; e2e for 16 pages expects `[0,10,10,0]` per physical sheet).
+
+Actual: compose = `[0,0,3.333,3.333,6.667,6.667,10,10,10,10,6.667,6.667,3.333,3.333,0,0]` (16 cells = 8 sides), preview = `[0,0,10,10,10,10,0,0]` (8 cells), `match:false`. Cause: `src/main/services/print.ts:441-446` called `bookletSideOffset(sheetIndex, sheets.length, ...)` with the SIDE count/index, while the preview used the physical-sheet count/index. Subsets `front`/`back` agreed; only the default `both` disagreed.
+
+Evidence: ADVERSARIAL_REVIEW.md ADV-158; `src/main/services/print.ts:441-446`; `src/renderer/components/usePrintControls.ts` (`bookletSides`).
+
+Impact: MEDIUM - the printed creep is wrong for the default booklet subset and disagrees with the preview. Fix owner: backend-dev (derive the physical-sheet count/index for `both` in `composePrintHtml`).
+
+History:
+- qa: filed from ADV-158
+- qa (TFL-371, 2026-10-02): CLOSED. Phase unit set `npm.cmd run test:unit -- test/unit/main/printImposition.test.ts test/unit/main/print.test.ts test/unit/main/printPresets.test.ts test/unit/renderer/printSettings.test.ts test/unit/renderer/printDialog.test.tsx` = 5 files / 183 tests passed / 0 failed, after a fresh `npm.cmd run build`. `test/unit/main/print.test.ts:677` "matches the renderer preview creep for subset both" asserts 16 pages, gutter 0, creep 10 -> per-side `[0,0,10,10,10,10,0,0]`, matching the renderer `bookletSides`; `print.ts:450-456` now offsets by PHYSICAL sheet for `both` (`sheetIndex = floor(i/2)`, `sheetCount = sheets.length/2`).
+
+## DEF-485: A Page order set under Single/N-up leaks into Booklet - the compose stacks the 2-up sheet 1x2 or mirrors the page pair, while the control is shown disabled and the preview is always two columns
+
+- Status: CLOSED
+- Severity: HIGH (real break of ruling 7 "non-applicable controls are disabled, not silently applied" AND ruling 2 preview/compose agreement - a disabled control changes the output)
+- Found by: adversary (ADV-159, Phase 83 diff-pass; accepted by CTO)
+- Phase: 83 (Booklet + Poster imposition; stale `pageOrder` carried into booklet settings)
+
+Steps to reproduce (from application launch):
+1. In Single layout set N-up = 4 and Page order = Vertical reversed, then switch Layout to Booklet (the Page order select is now disabled but retains its value).
+2. Compose a booklet payload (`images:[A,B]`, `settings:{layoutMode:'booklet', pagesPerSheet:2, pageOrder:'verticalReversed'}`) and inspect the emitted grid and image DOM order. Vary the order across `vertical`/`verticalReversed`/`horizontalReversed`.
+
+Expected: Booklet is a fixed 2-column landscape imposition; the disabled Page order control must not affect it (rulings 7 and 2).
+
+Actual: for `vertical`/`verticalReversed` the composed grid became `grid-template-columns: repeat(1,...); grid-template-rows: repeat(2,...)` - a 1x2 stacked sheet. For `horizontalReversed`/`verticalReversed` the two page images swapped in the DOM. The preview ignored `pageOrder` and always drew 2 columns, so preview and print disagreed. `seedPrintDialogState` also carried the stale `pageOrder` into the booklet surface.
+
+Evidence: ADVERSARIAL_REVIEW.md ADV-159; `src/renderer/pdf/printSettings.ts:204-238`; `src/main/services/print.ts:434`.
+
+Impact: HIGH - the booklet imposition can be silently wrong (stacked/mirrored) while the UI claims the ordering controls are disabled. Fix owner: backend-dev (force the fixed horizontal 2-up layout in booklet compose; renderer must not carry a stale `pageOrder`).
+
+History:
+- qa: filed from ADV-159
+- qa (TFL-371, 2026-10-02): CLOSED. `test/unit/main/print.test.ts:716` "ignores a stale pageOrder and stays a fixed 2-column 2-up" asserts that for `vertical`/`verticalReversed`/`horizontalReversed` the compose keeps `grid-template-columns: repeat(2, 1fr)` / `grid-template-rows: repeat(1, 1fr)` and image order `['A','B']`; `print.ts:437-440` forces the fixed booklet `{cols:2,rows:1,slots:[0,1]}` layout and `printSettings.ts:244-246,338-349` force `pageOrder:'horizontal'` in both `buildPrintSettings` and `seedPrintDialogState`. Phase unit set 5 files / 183 tests passed; the e2e booklet preview (`screenshots/phase83-booklet-preview.png`) shows the fixed 2-up sides.
+
+## DEF-486: An empty-string blank slot in a non-booklet layout renders a broken `<img src="">` even though the validator accepts it as a blank placeholder
+
+- Status: CLOSED
+- Severity: LOW (the contract the validator advertises - `''` is a blank placeholder in every mode - is not honoured by the single/N-up compose; reachability through the shipped UI is low because the renderer only emits `''` for booklet, which is handled)
+- Found by: adversary (ADV-160, Phase 83 diff-pass; accepted by CTO)
+- Phase: 83 (Booklet + Poster imposition; `composePrintHtml` empty-cell guard)
+
+Steps to reproduce (from application launch):
+1. Call `validatePrintPayload({images:['', <real png>], settings:{deviceName:'x'}})` and `composePrintHtml` on the same payload with no `layoutMode` (the historical single/N-up path).
+2. Search the composed HTML for `<img src=""`.
+
+Expected: CTO ruling 4 - `''` is a blank page slot in general and `composePrintHtml` "renders an empty `.page` cell for it"; the blank must never be sent to the driver as a broken `<img>`.
+
+Actual: `validate` returned `{ok:true}`, but the composed HTML contained `<img src=""` from the `perSheet === 1` branch (`src/main/services/print.ts:480`) and from the N-up branch at `:475-477` (which tested `src === undefined` but not `src === ''`). Only the booklet/poster branches guarded `src === ''`.
+
+Evidence: ADVERSARIAL_REVIEW.md ADV-160; `src/main/services/print.ts:448-481`.
+
+Impact: LOW - a blank slot in single/N-up mode emits a broken image reference. Fix owner: backend-dev (extend the empty-cell guard to `src === undefined || src === ''` in all modes).
+
+History:
+- qa: filed from ADV-160
+- qa (TFL-371, 2026-10-02): CLOSED. `test/unit/main/print.test.ts:766` "renders an empty .page and no <img src=""> for a single blank slot" passes; `print.ts:461,485,490` now guard `src === undefined || src === ''` in the booklet, N-up and `perSheet === 1` branches. Phase unit set 5 files / 183 tests passed / 0 failed.
+
+## DEF-487: The Phase 83 e2e never asserts the DEF-483 `scaleAffectsOutput` criterion, and the dev e2e silently runs a stale `dist/` after the fix
+
+- Status: CLOSED
+- Severity: LOW (verification gap, not a product break - the DEF-483 fix itself is correct against a current build)
+- Found by: adversary (ADV-161, Phase 83 diff-pass; accepted by CTO)
+- Phase: 83 (Booklet + Poster imposition; qa-owned e2e / phase gate)
+
+Steps to reproduce (from application launch):
+1. Run `npm.cmd run test:e2e -- e2e/phase83_imposition.spec.cjs` with no rebuild.
+2. Read the `[p83|poster-scale-probe]` log line; confirm the spec still PASSES.
+
+Expected: the phase gate should prove DEF-483 (scale changes the composed output), so the spec should assert `scaleAffectsOutput === true`, and the gate should rebuild `dist/` before the e2e run.
+
+Actual: the spec only called `log(...)` (`e2e/phase83_imposition.spec.cjs:516-521`); the run printed `{"scale100":100,"scale500":500,"scaleAffectsOutput":false}` on a stale `dist/` (renderer bundle timestamped before the `printSettings.ts` fix) and still PASSED. After `npm.cmd run build` the same log became `scaleAffectsOutput:true`.
+
+Evidence: ADVERSARIAL_REVIEW.md ADV-161; e2e stdout; file mtimes; `e2e/phase83_imposition.spec.cjs:516-521`.
+
+Impact: LOW - a stale bundle or a regression of the scale fix passes the suite silently. Fix owner: qa (assert `scaleAffectsOutput === true`; require a fresh build in the phase gate). No product code change.
+
+History:
+- qa: filed from ADV-161
+- qa (TFL-371, 2026-10-02): CLOSED. Added the hard assertion `expect(scaleAffectsOutput).toBe(true)` to the print-path test and documented the build-first phase-gate procedure in the spec header (`e2e/phase83_imposition.spec.cjs`). On a fresh `npm.cmd run build` (exit 0) the e2e printed `scaleAffectsOutput:true` and passed (2 passed / 0 failed), so the DEF-483 criterion is asserted rather than logged.

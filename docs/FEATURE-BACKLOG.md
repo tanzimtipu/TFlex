@@ -266,7 +266,7 @@ History:
 
 ## FEA-014: Booklet and poster printing (imposition layouts)
 
-- Status: PROPOSED
+- Status: ACCEPTED -> Phase 83
 - Source: https://helpx.adobe.com/acrobat/using/printing-pdfs.html (Adobe Acrobat print dialog: Booklet / Poster / Multiple pages per sheet)
 - Category: Print
 - Effort: L
@@ -284,6 +284,7 @@ render, so the phase left the cheapest possible seam for it.
 History:
 - orchestrator: recorded from the feature-scout print research that produced Phase 30 (booklet/poster were
   named in the research but deliberately left out of the Phase 30 feature list as the L-effort tier)
+- orchestrator: accepted on CEO commission TFL-315; promoted to Phase 83
 
 ## FEA-015: Named print presets persisted across sessions
 
