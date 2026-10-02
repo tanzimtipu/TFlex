@@ -10353,6 +10353,21 @@ pushToast(
                     toolUsage={settings.toolUsage}
                     onDockToolAction={onDockToolAction}
                     isDockToolEnabled={dockAppToolEnabled}
+                    // Phase 82 — the offline spell-check preference for the
+                    // text-edit surfaces. The flip persists through
+                    // `trackAndSave` (the sole settings write path).
+                    spellCheckEnabled={settings.spellCheck?.enabled ?? true}
+                    onSpellCheckEnabledChange={(enabled): void =>
+                      setSettings((prev) => {
+                        if (!prev) return prev;
+                        const updated: AppSettings = {
+                          ...prev,
+                          spellCheck: { enabled, language: 'en-US' },
+                        };
+                        trackAndSave(updated);
+                        return updated;
+                      })
+                    }
                     onPersist={persistFor(meta.id)}
                     onDiagnostics={diagnosticsFor(meta.id)}
                     onSearchIndexProgress={searchIndexProgressFor(meta.id)}

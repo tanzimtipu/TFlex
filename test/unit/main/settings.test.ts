@@ -1807,3 +1807,38 @@ describe('Phase 37: dockUnpinned validation', () => {
     }
   });
 });
+
+describe('normalizeSettings spellCheck (Phase 82)', () => {
+  it('preserves a valid spellCheck object', () => {
+    const result = normalizeSettings({
+      spellCheck: { enabled: false, language: 'en-US' },
+    });
+    expect(result.spellCheck).toEqual({ enabled: false, language: 'en-US' });
+  });
+
+  it('drops a non-object spellCheck', () => {
+    for (const bad of ['yes', 42, null, ['en-US']] as unknown[]) {
+      const result = normalizeSettings({ spellCheck: bad });
+      expect('spellCheck' in result).toBe(false);
+    }
+  });
+
+  it('coerces a non-boolean enabled to true', () => {
+    const result = normalizeSettings({
+      spellCheck: { enabled: 'no', language: 'en-US' },
+    });
+    expect(result.spellCheck).toEqual({ enabled: true, language: 'en-US' });
+  });
+
+  it('coerces an unknown language to en-US', () => {
+    const result = normalizeSettings({
+      spellCheck: { enabled: true, language: 'fr-FR' },
+    });
+    expect(result.spellCheck).toEqual({ enabled: true, language: 'en-US' });
+  });
+
+  it('leaves spellCheck absent when not stored', () => {
+    const result = normalizeSettings({});
+    expect('spellCheck' in result).toBe(false);
+  });
+});

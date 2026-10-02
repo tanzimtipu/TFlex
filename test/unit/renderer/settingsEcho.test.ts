@@ -923,6 +923,7 @@ describe("DEF-072 — sameSettings covers every optional AppSettings field", () 
     { field: "ocrDownsample", hint: "Phase 11 OCR downsample" },
     { field: "defaultStampId", hint: "Phase 12 default stamp id" },
     { field: "saveAsLinearize", hint: "Phase 13 Save-As linearize" },
+    { field: "spellCheck", hint: "Phase 82 offline spell-check preference" },
   ];
 
   for (const { field, hint } of requiredFields) {

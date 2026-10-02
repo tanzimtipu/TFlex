@@ -52,6 +52,7 @@ import type {
   SampleDocument,
   SavedSignature,
   SignatureSource,
+  SpellCheckLanguage,
   TextPage,
   UpdateState,
   WatermarkSettings,
@@ -108,6 +109,9 @@ export const IPC = {
   samplesLoad: "samples:load",
   samplesRead: "samples:read",
   settingsLoad: "settings:load",
+  // Phase 82 — load the bundled offline spell-check word list. Returns the
+  // raw dictionary text (parsed by the shared spell helper).
+  dictionaryLoad: "dictionary:load",
   settingsSave: "settings:save",
   settingsAddRecent: "settings:addRecent",
   settingsChangedEvent: "settings:changed",
@@ -936,6 +940,9 @@ export interface TFlexApiExport {
   ): Promise<Result<ExportBuild, ExportErrorCode>>;
 }
 
+/** Phase 82 — failure modes for loading the bundled spell-check dictionary. */
+export type DictionaryLoadError = "not-found" | "read-failed";
+
 export interface TFlexApi {
   minimizeWindow(): void;
   maximizeWindow(): void;
@@ -994,6 +1001,8 @@ export interface TFlexApi {
   readSample(name: string): Promise<Result<ArrayBuffer, "not-found">>;
   listSamples(): Promise<SampleDocument[]>;
   loadSettings(): Promise<LoadSettingsResult>;
+  /** Phase 82 — load the bundled offline spell-check dictionary text. */
+  loadDictionary(language: SpellCheckLanguage): Promise<Result<{ language: SpellCheckLanguage; words: string }, DictionaryLoadError>>;
   saveSettings(s: AppSettings): Promise<void>;
   addRecentFile(f: RecentFile): Promise<void>;
   settings: {

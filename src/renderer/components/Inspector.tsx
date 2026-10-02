@@ -27,6 +27,7 @@ import { Hash, PanelRightClose, PanelRightOpen, X } from 'lucide-react';
 import { GlassSidebarBody, GlassSidebarHeader } from './GlassSidebar';
 import { TextPropertiesPanel } from '../edit/TextPropertiesPanel';
 import type { TextPropertiesPanelProps } from '../edit/TextPropertiesPanel';
+import type { SpellCheckState } from '../spell/useSpellCheck';
 import { OcrSuspectsPanel } from './OcrSuspectsPanel';
 import type { OcrSuspectsPanelProps } from './OcrSuspectsPanel';
 import { formatBytes } from '../utils/formatBytes';
@@ -75,6 +76,10 @@ export interface InspectorTextSelection {
   canPickUpPainter?: boolean;
   onArmPainter?: () => void;
   onCancelPainter?: () => void;
+  /** Phase 82 — the offline spell-check state carried from the DocumentView
+   *  that owns the text session, so the re-parented text panel renders the
+   *  underline toggle. Optional so existing snapshot builders stay valid. */
+  spellCheck?: SpellCheckState;
 }
 
 export type InspectorSectionId =
@@ -195,6 +200,7 @@ export function inspectorTextPanelFor(
     canPickUpPainter: text.canPickUpPainter,
     onArmPainter: text.onArmPainter,
     onCancelPainter: text.onCancelPainter,
+    spellCheck: text.spellCheck,
   };
 }
 

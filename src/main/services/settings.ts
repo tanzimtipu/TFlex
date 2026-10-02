@@ -17,6 +17,8 @@ import type {
   PrintSettings,
   ReadingDefaults,
   RecentFile,
+  SpellCheckLanguage,
+  SpellCheckSettings,
   TabStyle,
   WatermarkPosition,
   WatermarkSettings,
@@ -1026,6 +1028,20 @@ export function normalizePrintPresets(raw: unknown): PrintPreset[] | null {
   return out;
 }
 
+/**
+ * Phase 82 - normalise a raw `spellCheck` value. Returns `null` when `raw` is
+ * not a plain object (the field stays absent). A present object keeps a
+ * boolean `enabled` (anything non-boolean resolves to `true`); `language` is
+ * coerced to the only bundled value `'en-US'`.
+ */
+export function normalizeSpellCheck(raw: unknown): SpellCheckSettings | null {
+  if (raw === null || typeof raw !== 'object' || Array.isArray(raw)) return null;
+  const obj = raw as Record<string, unknown>;
+  const enabled = typeof obj.enabled === 'boolean' ? obj.enabled : true;
+  const language: SpellCheckLanguage = obj.language === 'en-US' ? 'en-US' : 'en-US';
+  return { enabled, language };
+}
+
 function normalizeAnnotationColorEntry(raw: unknown): AnnotationColorPreset | null {
   if (typeof raw === 'string' && raw.length > 0) {
     return { id: raw, hex: raw };
@@ -1265,6 +1281,14 @@ export function normalizeSettings(raw: unknown): AppSettings {
   const printPresets = normalizePrintPresets(rawObj.printPresets);
   if (printPresets !== null) {
     settings.printPresets = printPresets;
+  }
+
+  // Phase 82: offline spell-check preference. Reject-if-invalid leaves the
+  // field absent; a present object is preserved with a boolean `enabled`
+  // (default true) and language coerced to 'en-US'.
+  const spellCheck = normalizeSpellCheck(rawObj.spellCheck);
+  if (spellCheck !== null) {
+    settings.spellCheck = spellCheck;
   }
 
   // Phase 44 (operator change): accounts feature flag. Strict boolean,

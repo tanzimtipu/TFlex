@@ -38,11 +38,14 @@ import {
   PaintBucket,
   Paintbrush,
   RemoveFormatting,
+  SpellCheck,
   Subscript,
   Superscript,
 } from "lucide-react";
 import type { EditFont, TextBoxStylePatch, TextAlign, TextListStyle } from "../../shared/types";
 import { AnimatedPanel } from "../components/AnimatedPanel";
+import { SpellCheckTextarea } from "../spell/SpellCheckTextarea";
+import type { SpellCheckState } from "../spell/useSpellCheck";
 import { fontFamilyFor } from "./editColor";
 import { hexToEditColor } from "./model";
 import {
@@ -111,6 +114,10 @@ export interface TextPropertiesPanelProps {
   canPickUpPainter?: boolean;
   onArmPainter?: () => void;
   onCancelPainter?: () => void;
+  /** Phase 82 — the offline spell-check state + the enable toggle. Optional so
+   *  a direct-mount host / test without the spell layer still renders the
+   *  field (spell check then reads as off). */
+  spellCheck?: SpellCheckState;
 }
 
 /** Phase 27 — the font dropdown. The three base-14 families sit in the
@@ -172,6 +179,11 @@ export function TextPropertiesPanel(props: TextPropertiesPanelProps): ReactEleme
   const painterArmed = props.painterArmed ?? false;
   const painterHint = props.painterHint ?? null;
   const canPickUpPainter = props.canPickUpPainter ?? false;
+  // Phase 82 — the spell-check surface state. With no host wiring the field
+  // renders with spell check off (never a blank status).
+  const spellCheck = props.spellCheck;
+  const spellState: Omit<SpellCheckState, "setEnabled"> =
+    spellCheck ?? { enabled: false, status: "off", dictionary: null, error: null };
 
   // Phase 26 — focus + select-on-demand for the Text field. The token
   // is consumed ONLY once the field actually has a value to show: a
@@ -239,21 +251,45 @@ export function TextPropertiesPanel(props: TextPropertiesPanelProps): ReactEleme
             keystroke is reported live (the host paints it on the page
             immediately) and the session commits ONE engine op on blur. */}
         <Group title="Text">
-          <textarea
-            ref={textRef}
-            className="text-props-text"
-            data-txt-text
-            rows={3}
-            spellCheck={false}
+          <SpellCheckTextarea
             value={text ?? ""}
+            spellCheck={spellState}
+            className="text-props-text"
+            textareaAttrs={{ "data-txt-text": "" }}
+            rows={3}
             disabled={text === null}
             placeholder={
               text === null ? "Select a text element to edit" : "Type text..."
             }
-            aria-label="Element text"
-            onChange={(e): void => props.onTextChange?.(e.target.value)}
-            onBlur={(e): void => props.onTextCommit?.(e.relatedTarget)}
+            ariaLabel="Element text"
+            inputRef={textRef}
+            onChange={(next): void => props.onTextChange?.(next)}
+            onCommit={(relatedTarget): void => props.onTextCommit?.(relatedTarget)}
           />
+          <div className="text-props-btn-row" role="group" aria-label="Spell check">
+            <button
+              type="button"
+              data-txt-spellcheck
+              className={
+                spellState.enabled
+                  ? "text-props-btn text-props-btn-active"
+                  : "text-props-btn"
+              }
+              aria-label="Spell check"
+              aria-pressed={spellState.enabled}
+              disabled={spellCheck === undefined}
+              title={
+                spellCheck === undefined
+                  ? "Spell check is unavailable."
+                  : spellState.enabled
+                    ? "Spell check on: misspellings are underlined."
+                    : "Spell check off."
+              }
+              onClick={(): void => spellCheck?.setEnabled(!spellState.enabled)}
+            >
+              <SpellCheck size={14} />
+            </button>
+          </div>
         </Group>
         <Group title="Font">
           {/* Phase 27 — a one-line live preview. It mirrors the chosen

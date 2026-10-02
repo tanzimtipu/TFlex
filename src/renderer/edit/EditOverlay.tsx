@@ -69,6 +69,8 @@ import {
   liveTextLineStyle,
 } from "./liveText";
 import { runSourceTextStyle } from "./textStyle";
+import { SpellCheckTextarea } from "../spell/SpellCheckTextarea";
+import type { SpellCheckState } from "../spell/useSpellCheck";
 
 /** Phase 38 feature D — the descent pad (fraction of the run rect's height)
  *  by which the run cover is extended BELOW the run rect. `textItemsToGeom`
@@ -238,6 +240,10 @@ export interface EditOverlayProps {
    *  panel control) the session stays open, so moving between the two
    *  surfaces never loses the draft. */
   onTextInputCommit?: (relatedTarget?: EventTarget | null) => void;
+  /** Phase 82 — the offline spell-check state shared with the Inspector text
+   *  field, threaded to the on-canvas run editor. Optional so direct-mount
+   *  hosts/tests without the spell layer render with it off. */
+  spellCheck?: SpellCheckState;
 }
 
 // ---------------------------------------------------------------------------
@@ -336,6 +342,7 @@ export function EditOverlay(props: EditOverlayProps): ReactElement | null {
     onDiscardTextEdit,
     onTextInput,
     onTextInputCommit,
+    spellCheck,
   } = props;
 
   // Phase 26 — the SELECTED text target (a committed box or a text run).
@@ -1737,6 +1744,7 @@ export function EditOverlay(props: EditOverlayProps): ReactElement | null {
             cssScale={cssScale}
             onChange={onTextInput}
             onCommit={onTextInputCommit}
+            spellCheck={spellCheck}
           />
         ) : runPreviewText !== null && runPreviewText.length > 0 && runLiveRect !== null ? (
           <RunLivePreview
@@ -1922,6 +1930,7 @@ interface RunCanvasEditorProps {
   cssScale: number;
   onChange?: (text: string) => void;
   onCommit?: (relatedTarget?: EventTarget | null) => void;
+  spellCheck?: SpellCheckState;
 }
 
 /** Phase 51 item 12 — the ON-CANVAS text editor for a selected run. It is a
@@ -1931,9 +1940,10 @@ interface RunCanvasEditorProps {
  *  other, and switching focus between them keeps the session alive
  *  (`isTextPanelFocusTarget` accepts `[data-edit-run-editor]`). It paints the
  *  run's own font / size / colour / weight / decoration over the white cover,
- *  so the text is shown exactly once. */
+ *  so the text is shown exactly once. Phase 82 — it also carries the shared
+ *  offline spell-check surface. */
 function RunCanvasEditor(props: RunCanvasEditorProps): ReactElement {
-  const { rect, text, style, cssScale, onChange, onCommit } = props;
+  const { rect, text, style, cssScale, onChange, onCommit, spellCheck } = props;
   const ref = useRef<HTMLTextAreaElement | null>(null);
   useEffect(() => {
     ref.current?.focus();
@@ -1941,15 +1951,16 @@ function RunCanvasEditor(props: RunCanvasEditorProps): ReactElement {
   }, []);
   const fontSizePx = Math.max(1, style.size) * cssScale;
   const lineHeight = style.lineHeight ?? LIVE_TEXT_DEFAULT_LINE_HEIGHT;
+  const spellState: Omit<SpellCheckState, "setEnabled"> =
+    spellCheck ?? { enabled: false, status: "off", dictionary: null, error: null };
   return (
-    <textarea
-      ref={ref}
+    <SpellCheckTextarea
       className="edit-run-editor"
-      data-edit-run-editor
-      data-edit-run-editor-text={text}
-      aria-label="Edit text"
-      spellCheck={false}
+      textareaAttrs={{ "data-edit-run-editor": "", "data-edit-run-editor-text": text }}
+      ariaLabel="Edit text"
       value={text}
+      spellCheck={spellState}
+      inputRef={ref}
       style={{
         position: "absolute",
         left: rect.x * cssScale,
@@ -1977,8 +1988,8 @@ function RunCanvasEditor(props: RunCanvasEditorProps): ReactElement {
       onPointerDown={(e): void => {
         e.stopPropagation();
       }}
-      onChange={(e): void => onChange?.(e.target.value)}
-      onBlur={(e): void => onCommit?.(e.relatedTarget)}
+      onChange={(next): void => onChange?.(next)}
+      onCommit={(relatedTarget): void => onCommit?.(relatedTarget)}
       onKeyDown={(e): void => {
         if (e.key === "Escape") {
           e.preventDefault();

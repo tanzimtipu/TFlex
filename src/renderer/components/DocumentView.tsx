@@ -87,6 +87,7 @@ import {
 import { AnnotationFlyout } from "./AnnotationFlyout";
 import { AnnotationToolbar } from "../annotations/AnnotationToolbar";
 import { isTextPanelFocusTarget } from "../edit/TextPropertiesPanel";
+import { useSpellCheck } from "../spell/useSpellCheck";
 import {
   annotationStyleFromPanelPatch,
   applyPatchToValues,
@@ -338,6 +339,11 @@ interface DocumentViewProps extends DocumentViewDockProps {
    *  `resolvePaneSelection` guard keeps only the FOCUSED pane's publish, so the
    *  ONE shared Inspector follows the pane the user is working in. */
   onTextSelectionChange?: (selection: InspectorTextSelection | null) => void;
+  /** Phase 82 — the offline spell-check preference for the text surfaces
+   *  (Inspector Text field + on-canvas run editor). Optional so direct-mount
+   *  hosts/tests without the spell layer render with it off. */
+  spellCheckEnabled?: boolean;
+  onSpellCheckEnabledChange?: (enabled: boolean) => void;
   /** B10 â€” armed stamp. When non-null, every PageView shows a
    *  ghost preview following the cursor; clicking a page embeds
    *  the stamp at the click point. */
@@ -876,6 +882,8 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
   dockLadder,
   onDockToolAction,
   isDockToolEnabled,
+  spellCheckEnabled = false,
+  onSpellCheckEnabledChange,
 }: DocumentViewProps,
   ref,
 ) {
@@ -1060,6 +1068,18 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
       : textEdit !== null && textEditKey === textTargetKeyNow
         ? textEdit.text
         : textTargetBase;
+  // Phase 82 — the offline spell-check state for both text surfaces. The
+  // dictionary loads once (lazily) while enabled; the host persists the flip.
+  const handleSpellCheckEnabledChange = useCallback(
+    (enabled: boolean): void => {
+      onSpellCheckEnabledChange?.(enabled);
+    },
+    [onSpellCheckEnabledChange],
+  );
+  const spellCheck = useSpellCheck({
+    enabled: spellCheckEnabled,
+    onEnabledChange: handleSpellCheckEnabledChange,
+  });
   // Phase 26 â€” the Edit overlay reported its selected text target (a
   // committed box or a text run). The report arrives through the editProp
   // memo below; it focuses the panel field so clicking a text element in
@@ -3116,6 +3136,7 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
       // second session/mechanism exists.
       onTextInput: handlePanelTextChange,
       onTextInputCommit: commitTextSession,
+      spellCheck,
     };
   }, [
     editModeOpen,
@@ -3127,6 +3148,7 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
     discardTextSession,
     handlePanelTextChange,
     commitTextSession,
+    spellCheck,
   ]);
 
   // B5 / B14 â€” when Edit mode opens, force the annotation tool
@@ -3660,6 +3682,7 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
       canPickUpPainter,
       onArmPainter: handleArmPainter,
       onCancelPainter: handleCancelPainter,
+      spellCheck,
     };
     // `textPanelValues` is rebuilt each render by design (it merges the live
     // annotation style), so the snapshot identity is not the publish signal â€”
@@ -3682,6 +3705,7 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
     canPickUpPainter,
     handleArmPainter,
     handleCancelPainter,
+    spellCheck,
   ]);
 
   const onTextSelectionChangeRef = useRef(onTextSelectionChange);
@@ -3701,6 +3725,8 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
           JSON.stringify(textSelection.values),
           textSelection.painterArmed ? 'armed' : 'idle',
           textSelection.painterHint ?? '',
+          (textSelection.spellCheck?.enabled ?? false) ? 'spell-on' : 'spell-off',
+          textSelection.spellCheck?.status ?? 'off',
         ].join('\u0000');
   const lastTextSelectionKeyRef = useRef<string | null>(null);
   // DEF-321 â€” a LAYOUT effect: the floating pop-out closes on the same commit

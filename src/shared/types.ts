@@ -80,6 +80,17 @@ export type AppTheme = 'light' | 'dark' | 'frosted';
  *  to the consumer default `'colorful'`. */
 export type TabStyle = 'standard' | 'colorful';
 
+/** Phase 82 — the bundled offline spell-check dictionary language. Only the
+ *  US-English list ships in v1. */
+export type SpellCheckLanguage = 'en-US';
+
+/** Phase 82 — offline spell-check preference: whether the text-edit flow
+ *  underlines misspellings and which bundled dictionary to load. */
+export interface SpellCheckSettings {
+  enabled: boolean;
+  language: SpellCheckLanguage;
+}
+
 export interface AppSettings {
   theme: AppTheme;
   geometry: WindowGeometry;
@@ -234,6 +245,8 @@ export interface AppSettings {
   /** Phase 81 - named print presets (option snapshot per name). Validated
    *  preserve-if-valid / reject-if-invalid in src/main/services/settings.ts. */
   printPresets?: PrintPreset[];
+  /** Phase 82 — offline spell-check preference (enabled + language). */
+  spellCheck?: SpellCheckSettings;
 }
 
 /** Phase 6 — what the renderer gets back from `app:getInfo`. The

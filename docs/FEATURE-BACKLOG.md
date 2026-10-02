@@ -248,7 +248,7 @@ History:
 
 ## FEA-013: Spell check inside the text editor
 
-- Status: PROPOSED
+- Status: ACCEPTED -> Phase 82
 - Source: https://helpx.adobe.com/acrobat/using/edit-text-pdfs.html (Adobe: spell check as part of Add/Edit text)
 - Category: Edit
 - Effort: M
@@ -262,6 +262,7 @@ bundled dictionary without any network call, which keeps it inside the v1 offlin
 
 History:
 - orchestrator: recorded from feature-scout research dispatch (deferred candidate after Phase 21)
+- orchestrator: accepted on CEO commission TFL-315; promoted to Phase 82
 
 ## FEA-014: Booklet and poster printing (imposition layouts)
 

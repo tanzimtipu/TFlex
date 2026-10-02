@@ -51,6 +51,7 @@ import { openPdfDialog, openPdfDialogMulti, saveFormDataDialog, savePdfDialog } 
 import { readClipboardImage, type ClipboardLike } from './services/clipboard-image';
 import { EngineService } from './services/engine';
 import { OcrService } from './services/ocr';
+import { DictionaryService } from './services/dictionary';
 import { DocumentConversionService } from './services/convert';
 import { exportXlsx } from './services/export/xlsx-export';
 import { exportPptx } from './services/export/pptx-export';
@@ -314,6 +315,9 @@ export async function start(): Promise<void> {
   // The directory is resolved from the app root (`assets/tessdata`) in both
   // dev and packaged builds (electron-builder ships `assets/**`).
   const ocr = new OcrService(join(app.getAppPath(), 'assets', 'tessdata'));
+  // Phase 82 — offline spell-check word list, read from the bundled
+  // `assets/dictionary` directory (electron-builder ships `assets/**`).
+  const dictionary = new DictionaryService(join(app.getAppPath(), 'assets', 'dictionary'));
   // Phase 27 — the bundled OFL font families are read from `assets/fonts`
   // (electron-builder ships `assets/**`) and embedded on demand. Resolved
   // from the app root in both dev and packaged builds, like the samples and
@@ -703,6 +707,8 @@ export async function start(): Promise<void> {
   ipcMain.handle(IPC.samplesLoad, (_event, name: string) => samples.load(name));
   ipcMain.handle(IPC.samplesRead, (_event, name: string) => samples.read(name));
   ipcMain.handle(IPC.settingsLoad, () => settings.load());
+  // Phase 82 — bundled offline spell-check dictionary.
+  ipcMain.handle(IPC.dictionaryLoad, (_event, language) => dictionary.load(language));
   ipcMain.handle(IPC.settingsSave, (_event, s: AppSettings) => settings.save(s));
   ipcMain.handle(IPC.settingsAddRecent, (_event, f: RecentFile) => settings.addRecentFile(f));
 

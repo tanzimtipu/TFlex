@@ -10435,3 +10435,82 @@ History:
 - CTO (TFL-317, 2026-10-02): ACCEPTED -> DEF-477, severity raised to MEDIUM. Dispatched frontend-dev **TFL-327**: enforce `PRINT_PRESETS_CAP` in `savePreset` - refuse a NEW name at the cap with `[data-print-preset-error]` and write nothing (upsert of an existing name stays allowed), with a unit test; then qa FIX-READY verification via the adversary probe -> CLOSED.
 - frontend-dev (TFL-327, 2026-10-02): fix delivered, FIX-READY. `usePrintControls.ts:55` adds `const PRINT_PRESETS_CAP = 30;`; `savePreset` (`:498-502`) refuses a new name at the cap with `[data-print-preset-error]` "Preset limit reached (30). Delete one to save a new preset.", clearing the notice and returning before `savePresets`/state mutation; existing-name upsert still allowed. Test added `test/unit/renderer/printPresets.test.tsx:173` "refuses a new name when the preset list is at the cap" (savePresets not called, picker stays 30). Evidence: `npm.cmd run test:unit -- test/unit/renderer/printPresets.test.tsx` = 7 passed / 0 failed; `npm.cmd run verify` exit 0. CTO reviewed the diff in-tree. qa phase-close verification via the adversary cap attack -> CLOSED.
 - qa (TFL-332, 2026-10-02): FIX-READY retest PASS -> CLOSED. Command: `cmd /c "npx playwright test e2e/phase81_print_presets_adversary.spec.cjs --reporter=line"` = 8 passed / 0 failed. Cap attack (spec test B): seeding 50 distinct names loads 30 (`p00`..`p29`); a 31st distinct-name save shows `[data-print-preset-error]` ("Preset limit reached"), shows NO `[data-print-preset-notice]`, and leaves disk=30 and picker=30 (extra/extra2 absent on both). Repro of the original phantom is gone. NOTE (test-implementation correction, not product): the adversary spec's test B still encoded the PRE-FIX contract (it waited for the success notice at the cap), so it failed 7/1 on the first run; qa corrected the stale assertion to the fixed contract (error shown, no notice, disk+picker stay 30) and reran to 8/0. All six preset controls re-verified (CONTROL-INDEX sweep) and `npm.cmd run verify` exit 0.
+
+## DEF-482: `[data-txt-spellcheck]` is inert in the panel - clicking it does not flip `aria-pressed`, does not hide the underlines, and never persists `spellCheck.enabled`
+
+- Status: CLOSED (qa TFL-354, 2026-10-02)
+- CTO (TFL-343, 2026-10-02): renumbered DEF-478 -> DEF-482 during the phase-close ledger review - DEF-478 was already held by the Phase 80 Format Painter defect (`DEFECTS.md:8`, CLOSED, itself renumbered from DEF-477 by CTO TFL-339). No source or test traceability referenced this entry's number; only the Phase 82 ledger/ADV cross-references were updated.
+- Severity: HIGH (breaks the stated CONTROL-INDEX promise for the feature's only control, and phase success criteria 2 - `spellCheck` persists across a reload - and 3 - the toggle always changes a persisted state; the control visibly does nothing until the panel is remounted)
+- Found by: qa (TFL-348, Phase 82 phase validation)
+- qa (TFL-354, 2026-10-02): FIX-READY retest PASS -> CLOSED. Command: `npm.cmd run test:e2e -- e2e/phase82_spellcheck.spec.cjs --workers=1` = 5 passed / 0 failed. T3 in the EDIT-mode panel now logs `T3-toggle-off-evidence {"ariaAfter":"false","spansAfter":[],"statusOff":"Spell check off","persistedOff":false}` (aria flips, underlines clear immediately, readable status, `settings.json` persists false) and T5 on the annotation-textbox surface logs `ariaAfter:"false"` / `persistedValue:false` / `aria-pressed` back to `true` on re-enable. Fixes confirmed in tree: `src/renderer/App.tsx:10359-10369` (flip routed through `trackAndSave`) and `src/renderer/components/DocumentView.tsx:3728-3729` (`spellCheck` in `textSelectionKey`).
+- Phase: 82 (offline spell check; CONTROL-INDEX `[data-txt-spellcheck]` / `[data-spell-status]`)
+
+Steps to reproduce (from application launch):
+1. `npm.cmd run build`, then launch the dev build through `e2e/lib/launch.cjs` (fresh temp user-data dir; the operator's settings.json is untouched).
+2. Open `report.pdf`; enter Edit mode; arm "Add a text box"; drag to place it; the panel Text field `[data-txt-text]` is enabled and spell check is on by default.
+3. Fill `[data-txt-text]` with `teh world`; wait for a `[data-spell-misspelled]` (the "teh" squiggle).
+4. Click `[data-txt-spellcheck]`; wait 1.5s; read `aria-pressed`, the `[data-spell-misspelled]` set, `[data-spell-status]` text, and `settings.json`.
+
+Expected: `aria-pressed` flips to `false`; the underlines disappear immediately; `[data-spell-status]` shows a readable "Spell check off"; `settings.json` gains `spellCheck.enabled=false`; a reload keeps it off.
+
+Actual: `aria-pressed` stays `"true"`, the `"teh"` underline stays, `[data-spell-status]` is blank/absent, and `settings.json` never gains a `spellCheck` field (still `null` after an 8s poll). The in-memory preference DID change: after deselecting and reselecting the text target (panel remount) the same control reads `aria-pressed="false"`, no underlines, status `"Spell check off"`. Reproduced on both the Edit-mode board and the annotation-textbox (floating-card) surface: T5 shows the same inert click, then `ariaAfterRemount:"false"` / `spansAfterRemount:[]`.
+
+Root cause (from source): the published Inspector snapshot key `textSelectionKey` (`src/renderer/components/DocumentView.tsx:3716-3728`) does not include `spellCheck`, so the `useLayoutEffect` that republishes the snapshot (`:3734-3738`) never fires on a spell-check flip - the re-parented text panel keeps the stale `spellCheck` object (`Inspector.tsx:203` -> `<TextPropertiesPanel {...textPanel}/>`) until it remounts. Separately, App's `onSpellCheckEnabledChange` (`src/renderer/App.tsx:10359-10365`) calls `setSettings` without `trackAndSave` (there is no generic settings-persist effect), so the flip is never written to `settings.json`.
+
+Evidence: `e2e/phase82_spellcheck.spec.cjs` T3 (`T3-toggle-off-evidence {"ariaAfter":"true","spansAfter":["teh"],"statusOff":"","persistedOff":null}`) and T5 (`T5-toggle-evidence {...ariaAfter:"true"...persistedValue:null...}` / `T5-remount-probe {"ariaAfterRemount":"false","spansAfterRemount":[]}`); screenshots `screenshots/phase82-spell-status-editmode.png` (edit-mode, click did nothing) and `screenshots/phase82-spell-status.png` (status only appears after remount).
+
+Impact: HIGH - the feature cannot be turned off from the UI (the underlines never hide until the panel remounts) and the preference never survives a restart, violating phase criteria 2 and 3 and the CONTROL-INDEX `[data-txt-spellcheck]` promised action.
+
+## DEF-479: The bundled dictionary lacks very common words, so correctly spelled common words are underlined as misspelled
+
+- Status: CLOSED (qa TFL-354, 2026-10-02)
+- Severity: MEDIUM (false-positive squiggles on everyday vocabulary materially degrade the feature and violate the CONTROL-INDEX promise that "a known word is not [underlined]")
+- Found by: qa (TFL-348, Phase 82 phase validation; observed while executing the task's literal scenario 2a phrase "teh cat sat")
+- qa (TFL-354, 2026-10-02): FIX-READY retest PASS -> CLOSED. Command: `npm.cmd run test:unit -- test/unit/main/spellCommonWords.test.ts` (green within `npm.cmd run test:unit -- <phase 82 set>` = 9 files / 281 tests passed) and `npm.cmd run test:e2e -- e2e/phase82_spellcheck.spec.cjs --workers=1` (5 passed). The bundled `assets/dictionary/en-us.txt` now holds 65,456 words and contains cat/sat/dog/run/file/page/word/hello/blue/pdf; e2e T2 logs `T2-spans ["teh"]` for "teh cat sat" and T1 logs `T1-spans ["teh"]` for "teh world".
+- Phase: 82 (offline spell check; feature A dictionary + CONTROL-INDEX `[data-spell-misspelled]`)
+
+Steps to reproduce (from application launch):
+1. Open `report.pdf`; enter Edit mode; place a text box; type `teh cat sat` in `[data-txt-text]`.
+2. Wait for the squiggles.
+
+Expected (the task's literal 2a expectation and the CONTROL-INDEX promise "a known misspelling is underlined, a known word is not"): only `teh` is underlined.
+
+Actual: `[data-spell-misspelled]` = `["teh","cat","sat"]` - every word is flagged. The bundled list is the zxcvbn `english_wikipedia` frequency list (`assets/dictionary/LICENSE.txt`); a 20-word sample of common English shows 10 absent: `cat`, `sat`, `dog`, `run`, `file`, `page`, `word`, `spell`, `check`, `hello`, `blue`, `pdf`. Words that ARE present (`the`, `world`, `text`, `document`, `red`, `house`) behave correctly.
+
+Evidence: `e2e/phase82_spellcheck.spec.cjs` T2 (`T2-spans ["teh","cat","sat"]`, hard assertion "only `teh` should be flagged" fails) and T1 (with dictionary words `teh world` the misspelled set is exactly `["teh"]`, proving the mechanism itself).
+
+Impact: MEDIUM - users editing ordinary prose see widespread spurious underlines; the CONTROL-INDEX `[data-spell-misspelled]` "a known word is not [underlined]" action does not hold for common vocabulary. Fix is a data/coverage decision for the CTO (augment the bundled list or curate it), not a code change qa may make.
+
+## DEF-480: `settings.changed` echo filter ignores `spellCheck`, so a stale echo can revert the user's spell-check toggle (DEF-072 class reopen)
+
+- Status: CLOSED (qa TFL-354, 2026-10-02)
+- Severity: MEDIUM (a stale echo whose only drift is `spellCheck` passes the filter and reverts the user's latest toggle; reopens the DEF-072 invariant the `settingsEcho.ts` header declares closed)
+- Found by: adversary (TFL-352, Phase 82 diff-pass; ADV-156 accepted by CTO on triage)
+- qa (TFL-354, 2026-10-02): FIX-READY retest PASS -> CLOSED. Command: `npm.cmd run test:unit -- test/unit/renderer/adv_phase82_settingsEcho.test.ts test/unit/renderer/settingsEcho.test.ts` = 2 files / 83 tests passed. The adv spec now pins the FIXED behaviour: `sameSettings({spellCheck:on},{spellCheck:off}) === false` and `shouldApplyEcho(staleEcho(spellCheck:off), writeSeq=2, persisted(spellCheck:on)) === false`. Fixes confirmed: `src/renderer/state/settingsEcho.ts` guards `spellCheck` in `sameSettings` (:98), `differsOnlyInRecentFiles` (:134) and `differsOnlyInGeometry` (:244); `settingsEcho.test.ts` DEF-072 field-coverage guard passes with `spellCheck` present.
+- Phase: 82 (offline spell check; C1 contract + DEF-482 fix delta)
+- Source: ADVERSARIAL_REVIEW.md ADV-156
+
+Root cause: `src/renderer/state/settingsEcho.ts` compares every `AppSettings` field in `sameSettings` (:81-98), `differsOnlyInRecentFiles` (:111-138) and `differsOnlyInGeometry` (:212-233) - except the new `AppSettings.spellCheck` (`src/shared/types.ts:249`). `App.tsx:1310-1319` calls `shouldApplyEcho` on every `settings.changed` payload and on `true` runs `setSettings(echo)` wholesale. Repro pinned by `test/unit/renderer/adv_phase82_settingsEcho.test.ts` (5 passed): `sameSettings({spellCheck:on},{spellCheck:off}) === true` and `shouldApplyEcho(staleEcho(spellCheck:off), writeSeq=2, persisted(spellCheck:on)) === true`. The DEF-072 coverage guard (`settingsEcho.test.ts:905-957`) lists every optional field but not `spellCheck`, so it passes silently.
+
+Expected: `sameSettings` returns false when only `spellCheck` differs; `shouldApplyEcho` discards a stale echo whose only drift is `spellCheck`, so the user's latest flip survives.
+
+Evidence: `test/unit/renderer/adv_phase82_settingsEcho.test.ts`; `src/renderer/state/settingsEcho.ts`; `src/renderer/App.tsx:1256-1260,1310-1319`.
+
+Fix owner: frontend-dev. Suggested fix: add a `spellCheck` comparison (`enabled` and `language`) to `sameSettings`, `differsOnlyInRecentFiles` and `differsOnlyInGeometry`, and add `spellCheck` to the DEF-072 `requiredFields` coverage list in `settingsEcho.test.ts`.
+
+## DEF-481: a misspelled token with no suggestions opens an empty suggestion popover
+
+- Status: CLOSED (qa TFL-354, 2026-10-02)
+- Severity: LOW (a context-menu action opens a `[data-spell-suggest]` listbox with zero options and no message; violates the "never an empty popover" rule)
+- Found by: adversary (TFL-352, Phase 82 diff-pass; ADV-157 accepted by CTO on triage)
+- qa (TFL-354, 2026-10-02): FIX-READY retest PASS -> CLOSED. Command: `npm.cmd run test:unit -- test/unit/renderer/spellCheckTextarea.test.tsx` = 1 file / 5 tests passed. The spec "does not open an empty suggestion popover when there are no candidates" asserts a 46-char `q` run is flagged misspelled (`[data-spell-misspelled]` length 1) yet `[data-spell-suggest]` is null. Fix confirmed: `src/renderer/spell/SpellCheckTextarea.tsx:223` returns before `preventDefault`. e2e T1 additionally asserts no blank popover on a correctly spelled word.
+- Phase: 82 (offline spell check; C2 UI, SpellCheckTextarea)
+- Source: ADVERSARIAL_REVIEW.md ADV-157
+
+Root cause: `SpellCheckTextarea.handleContextMenu` (`src/renderer/spell/SpellCheckTextarea.tsx:201-231`) calls `e.preventDefault()` and opens the popover whenever the token is misspelled, regardless of `suggestions.length`. A misspelled token with zero candidates (e.g. a 46-char run of `q`, under `SPELL_WORD_MAX = 48`) therefore paints `[data-spell-suggest]` with zero `[data-spell-suggestion]` children (:317-340).
+
+Expected: when the computed `suggestions` array is empty, return before `preventDefault` so the native menu shows, or render a single disabled "No suggestions" row.
+
+Evidence: `test/unit/renderer/adv_phase82_settingsEcho.test.ts` ("ADV-157 repro"); `src/renderer/spell/SpellCheckTextarea.tsx:201-231,317-340`; `src/shared/spell.ts:160-186`.
+
+Fix owner: frontend-dev. Suggested fix: in `handleContextMenu`, when `suggestions` is empty either return before `preventDefault` (native menu) or render a disabled "No suggestions" row, never an empty listbox.

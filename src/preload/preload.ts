@@ -50,6 +50,7 @@ import type {
   RecentFile,
   SampleDocument,
   SpaceAudit,
+  SpellCheckLanguage,
   TextBoxStylePatch,
   TextPage,
   UpdateState,
@@ -657,6 +658,9 @@ const api = {
   },
   loadSettings() {
     return ipcRenderer.invoke(IPC.settingsLoad);
+  },
+  loadDictionary(language: SpellCheckLanguage) {
+    return ipcRenderer.invoke(IPC.dictionaryLoad, language);
   },
   saveSettings(s: AppSettings): Promise<void> {
     return ipcRenderer.invoke(IPC.settingsSave, s);

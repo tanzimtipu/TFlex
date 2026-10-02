@@ -7111,6 +7111,219 @@ name. Success: the right options reload and stay available next time.
   original position; the preset row renders before the printer list so it is
   reachable even when no printer is installed.
 
+## Phase 82 offline spell-check DIFF-PASS (TFL-352 / TFL-343 C4) - settings persistence + dictionary load + suggestion apply
+
+Session label: `diff-pass`. Scope: the uncommitted Phase 82 offline spell-check
+delta only, with the CTO's five named attack surfaces. Product code, the phase
+unit tests and `e2e/phase82_spellcheck.spec.cjs` were read but not modified. One
+new focused repro spec was written (`test/unit/renderer/adv_phase82_settingsEcho.test.ts`).
+All Electron work ran serially, one instance at a time.
+
+Exact commands (run from the repo root, serial):
+
+- `npm.cmd run test:e2e -- e2e/phase82_spellcheck.spec.cjs --workers=1`
+  -> **5 passed (28.4s)**; T1 (underline/suggest/accept/no-empty-popover on a
+  correctly spelled word), T2 (dictionary-coverage discrepancy, documented),
+  T3 (toggle persistence + debounce perf: 158 ms for 199 chars), T4
+  (correction persists Save-As/reopen), T5 (annotation-textbox toggle off/on +
+  persistence). Zero page errors in the logs.
+- `npm.cmd run test:unit -- test/unit/main/spell.test.ts test/unit/main/settings.test.ts test/unit/renderer/spellCheckTextarea.test.tsx`
+  -> **187 passed**.
+- `npm.cmd run test:unit -- test/unit/renderer/adv_phase82_settingsEcho.test.ts`
+  -> **5 passed** (the OBSERVED-DEFECT repro; see ADV-156/157).
+- `npm.cmd run test:unit -- test/unit/main/spellDictionary.test.ts test/unit/main/spellCommonWords.test.ts test/unit/renderer/spellClient.test.ts test/unit/renderer/textPanelSpellToggle.test.tsx test/unit/renderer/settingsEcho.test.ts`
+  -> **87 passed**.
+- Offline probe: `rg -n "fetch\(|https?://|XMLHttpRequest|net\.request|axios|WebSocket"` over
+  every C1/C2 source file -> exit 1 (no matches).
+
+Pass/fail per attack surface:
+
+1. **SETTINGS PERSISTENCE MERGE - FAIL (ADV-156).**
+   `normalizeSpellCheck` defends (settings.ts:1037-1043: non-object/array ->
+     null/field-absent; non-boolean `enabled` -> true; any `language` -> 'en-US';
+     never throws, `normalizeSettings` still returns - so a single bad field can
+     never fail the whole load). The toggle handler (App.tsx:10359-10370) spreads
+     `...prev` and writes only `spellCheck`, so it cannot clobber sibling fields
+     locally. **But the `settings.changed` echo filter never compares
+     `spellCheck`** - `sameSettings` (settingsEcho.ts:81-98),
+     `differsOnlyInRecentFiles` (:111-138) and `differsOnlyInGeometry` (:212-233)
+     all omit it. That is exactly the DEF-072 class the file's own header
+     (:51-60) declares closed. A stale echo whose only drift is `spellCheck`
+     passes the filter and `setSettings(echo)` (App.tsx:1319) reverts the user's
+     latest toggle. See ADV-156 for the repro.
+2. **DICTIONARY LOAD - PASS.**
+   `DictionaryService.load` (dictionary.ts:20-35) maps ENOENT -> `not-found`,
+     any other throw -> `read-failed`, and only returns `ok`; it never rejects.
+     `spellClient.loadSpellDictionary` try/catches the IPC/absent bridge and
+     resolves `{dictionary:null, error}` (spellClient.ts:33-45), so the renderer
+     can never see an unhandled rejection. The wrapper renders
+     `[data-spell-status]` for the off/loading/error states
+     (SpellCheckTextarea.tsx:263-270,341-345) and computes `ready` only on
+     `enabled && status==='ready' && dictionary!==null` (:189), so a failed load
+     yields no underlines, no popover and an honest status. Pinned by
+     spellDictionary.test.ts (missing dir, dir-in-place-of-file) and
+     spellClient.test.ts. `language` is only ever 'en-US' from the renderer and
+     the filename is `${language.toLowerCase()}.txt`; no traversal is reachable
+     through the shipped call path.
+3. **SUGGESTION APPLY / TEXT-EDIT INTEGRITY - PASS, one LOW break (ADV-157).**
+   `applySuggestion` (SpellCheckTextarea.tsx:252-261) calls the same
+     `onChange(value.slice(0,start)+suggestion+value.slice(end))` the textarea
+     uses; TextPropertiesPanel routes it to `onTextChange` and the blur to
+     `onTextCommit` (:266-267), so single-commit-on-blur is preserved and no
+     engine op fires (undo/redo remain the host session's). The popover container
+     `onMouseDown preventDefault` (:324) keeps the textarea focused so accepting
+     does not blur prematurely. The 150 ms debounce gates tokenising on
+     `effectiveText != null` (:190-195), so keystrokes are never blocked; the
+     mirror renders the debounced text so offsets stay aligned. Right-click on a
+     correctly spelled token returns before `preventDefault` (:216) -> native
+     menu. Composition/IME is untouched because the wrapper still owns a single
+     real `<textarea>`. The one break: a misspelled token whose first letter has
+     no dictionary candidate within +/-2 length opens a `[data-spell-suggest]`
+     listbox with zero options - an empty popover (ADV-157).
+4. **FIX DELTA (DEF-482) - PASS.**
+   App.tsx:10359-10370 persists the flip through the single `trackAndSave`
+     settings write path (App.tsx:1256-1260 bumps `settingsWriteSeqRef` and sets
+     `settingsPersistedRef` in the same synchronous step, so the snapshot cannot
+     lag the seq). DocumentView.tsx:3716-3730 adds
+     `spellCheck.enabled` + `spellCheck.status` to `textSelectionKey`; every
+     pre-existing key component is retained, so no other selection publish is
+     dropped. The only extra publishes are the loading->ready transition, which
+     is a bounded one-per-load and is required so the Inspector receives the
+     resolved spell state. The persist handler does not fight the echo for
+     `spellCheck` **only because the echo filter ignores it** - which is ADV-156,
+     not a defence. The fix's own behaviour is otherwise correct (T5 pass).
+5. **OFFLINE RULE - PASS.**
+   No `fetch`/`http(s)`/`XMLHttpRequest`/`net.request`/`axios`/`WebSocket`
+     reference exists anywhere in the delta (grep exit 1). The dictionary is read
+     from `assets/dictionary/` by `DictionaryService` and shipped by
+     electron-builder; the load path never touches the network.
+
+### Phase 82 spell-check diff-pass - design critique of the changed surface (skill: design-critique)
+
+User: someone editing text in a PDF who wants typos surfaced and fixed without
+leaving the document. Job on this surface: see misspellings while typing, and
+replace one with a correction in place. Success: the underline is trustworthy and
+the fix lands where the user pointed, in one action, without breaking the edit
+session.
+
+- Must-fix - **States (ADV-157):** right-clicking a misspelled token with no
+  candidate suggestions paints an empty suggestion listbox - a control that
+  promises choices and offers none. Try: when `suggestions.length === 0`, do not
+  open the popover (fall through to the native menu) or show a single
+  "No suggestions" disabled row, so the popover is never an empty box.
+- Should-fix - **States / consistency (ADV-156):** the spell-check toggle's
+  persisted value can be reverted by a stale settings echo, so the switch and
+  the underlines can disagree with what the user last chose. Try: add
+  `spellCheck` to `sameSettings` / `differsOnlyInRecentFiles` /
+  `differsOnlyInGeometry` and to the DEF-072 coverage guard so the toggle the
+  user sees is the toggle that survives.
+- Nice-to-fix - **Affordance:** the toggle is an icon-only button; its state is
+  carried by `aria-pressed` + an active class + a `title`, but there is no
+  visible text label. Sighted keyboard users relying on the title only see it on
+  hover. Try: keep the icon but expose "Spell check on/off" in the row, matching
+  the surrounding text-panel controls.
+- Strengths to keep: the status line is honest ("Loading dictionary...",
+  "Spell check unavailable - dictionary could not be loaded", "Spell check
+  off") rather than a blank; the mirror is `aria-hidden` and pointer-transparent
+  so the single `<textarea>` keeps all real interaction and accessibility; the
+  debounce keeps tokenising off the keystroke path; the toggle disables with an
+  explanatory title when no spell host is wired.
+
+## ADV-156: `settings.changed` echo filter ignores `spellCheck`, so a stale echo reverts the user's spell-check toggle (DEF-072 class reopen)
+
+- Session: diff-pass
+- Suggested severity: MEDIUM
+- Affected phase: 82 (offline spell-check; C1 contract + DEF-482 fix delta)
+- Disposition: ACCEPTED -> DEF-480 (MEDIUM) - filed by CTO on ADV triage, 2026-10-02; assigned to frontend-dev
+
+What I did: read the CTO-named echo path and reproduced the decision function the
+App calls. `src/renderer/state/settingsEcho.ts` compares every `AppSettings` field
+in `sameSettings` (:81-98), `differsOnlyInRecentFiles` (:111-138) and
+`differsOnlyInGeometry` (:212-233) - except the new `AppSettings.spellCheck`
+(types.ts:249). `App.tsx:169` imports `shouldApplyEcho` and `App.tsx:1310-1319`
+calls it on every `settings.changed` payload; on `true` it runs `setSettings(echo)`
+wholesale. `trackAndSave` (App.tsx:1256-1260) advances `settingsWriteSeqRef`,
+snapshots `settingsPersistedRef` and fires `window.tflex.saveSettings`; main
+(`settings.save` in services/settings.ts:1374-1416) normalises, writes, and
+broadcasts the full normalised settings including `spellCheck` via `broadcast`
+(index.ts:288-291). I wrote `test/unit/renderer/adv_phase82_settingsEcho.test.ts`
+and ran `npm.cmd run test:unit -- test/unit/renderer/adv_phase82_settingsEcho.test.ts`
+-> 5 passed, pinning the observed behaviour:
+`sameSettings({spellCheck:on},{spellCheck:off}) === true` and
+`shouldApplyEcho(staleEcho(spellCheck:off), writeSeq=2, persisted(spellCheck:on)) === true`.
+I also confirmed the DEF-072 coverage guard (`settingsEcho.test.ts:905-957`)
+lists every optional field but not `spellCheck`, so the "every optional
+AppSettings field" guard passes while the new field is uncovered.
+
+Expected: `sameSettings` must return false when only `spellCheck` differs (the
+DEF-072 invariant, stated verbatim in the settingsEcho.ts header at :51-60), and
+`shouldApplyEcho` must discard a stale echo whose only drift is `spellCheck`, so
+the user's latest flip survives.
+
+What happened: with every other field equal, a `spellCheck`-only difference is
+invisible to the filter. Concretely: user toggles spell check OFF (write 1),
+then ON (write 2) - or toggles once while any second settings write is in
+flight. The renderer's local state is already write 2 (ON) before the echo for
+write 1 lands. That stale echo carries `spellCheck:{enabled:false}`; `sameSettings`
+ignores the field, finds every other field equal, returns true, and
+`App.tsx:1319 setSettings(staleEcho)` writes the toggle back to OFF. If echo
+delivery is ordered, echo 2 then restores ON and the reversal is transient; if
+writes interleave at main's `await writeFile` and echo 2 arrives before echo 1
+(DEF-037 exists precisely because that reordering happens), the wrong value
+persists until the user toggles again. The same omission lets a
+recent-files-only or geometry-only echo that also carries an outdated
+`spellCheck` apply and revert the toggle.
+
+Evidence: `test/unit/renderer/adv_phase82_settingsEcho.test.ts` (green while the
+defects stand; invert the assertions to guard the fix);
+`src/renderer/state/settingsEcho.ts`; `src/renderer/App.tsx:1256-1260,1310-1319`;
+`src/shared/types.ts:249`; `test/unit/renderer/settingsEcho.test.ts:905-957`.
+
+Suggested fix (for the developer, not applied by me): add a `spellCheck`
+comparison (`enabled` and `language`) to `sameSettings`,
+`differsOnlyInRecentFiles` and `differsOnlyInGeometry`, and add `spellCheck` to
+the DEF-072 `requiredFields` coverage list in settingsEcho.test.ts.
+
+## ADV-157: a misspelled token with no suggestions opens an empty suggestion popover
+
+- Session: diff-pass
+- Suggested severity: LOW
+- Affected phase: 82 (offline spell-check; C2 UI, SpellCheckTextarea)
+- Disposition: ACCEPTED -> DEF-481 (LOW) - filed by CTO on ADV triage, 2026-10-02; assigned to frontend-dev
+
+What I did: inspected `SpellCheckTextarea.handleContextMenu`
+(src/renderer/spell/SpellCheckTextarea.tsx:201-231) and `suggestSpellCorrections`
+(src/shared/spell.ts:160-186), then reproduced the candidate filter against the
+shipped dictionary in
+`test/unit/renderer/adv_phase82_settingsEcho.test.ts` (run
+`npm.cmd run test:unit -- test/unit/renderer/adv_phase82_settingsEcho.test.ts`
+-> 5 passed). A 46-character run of `q` (under `SPELL_WORD_MAX = 48`) is tokenised
+as one token, `isSpellMisspelled` returns true, and `suggestSpellCorrections`
+returns `[]` because the double loop requires a candidate sharing the first
+letter with a length within two - there is no `q` word of length 44..48 in the
+bundled list.
+
+Expected: per the task's own rule, a context-menu action must never open an empty
+popover. `handleContextMenu` already returns early (native menu) for a correctly
+spelled word or a non-token offset; a misspelled token with zero candidates must
+do the same (or show a "No suggestions" row).
+
+What happened: `handleContextMenu` calls `e.preventDefault()` and
+`setPopover({token, suggestions: suggestSpellCorrections(...).slice(0,LIMIT), ...})`
+whenever the token is misspelled, regardless of `suggestions.length`
+(:216-228). The render then paints the `[data-spell-suggest]` `role="listbox"`
+with an `aria-label="Spelling suggestions"` and zero `[data-spell-suggestion]`
+children (:317-340) - a control that offers no options and no "no suggestions"
+message.
+
+Evidence: `test/unit/renderer/adv_phase82_settingsEcho.test.ts`
+("ADV-157 repro"); `src/renderer/spell/SpellCheckTextarea.tsx:201-231,317-340`;
+`src/shared/spell.ts:160-186`.
+
+Suggested fix (for the developer, not applied by me): in `handleContextMenu`,
+when the computed `suggestions` array is empty, return before `preventDefault`
+so the native menu shows, or render a single disabled "No suggestions" row.
+
 
 
 

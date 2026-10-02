@@ -65,6 +65,7 @@ import type {
   AppSettings,
   ExportImageFormat,
   RecentFile,
+  SpellCheckSettings,
   WindowGeometry,
 } from '../../shared/types';
 
@@ -94,6 +95,7 @@ export function sameSettings(a: AppSettings, b: AppSettings): boolean {
   if (a.saveAsLinearize !== b.saveAsLinearize) return false;
   if (!sameGeometry(a.geometry, b.geometry)) return false;
   if (!sameRecentFiles(a.recentFiles, b.recentFiles)) return false;
+  if (!sameSpellCheck(a.spellCheck, b.spellCheck)) return false;
   return sameAnnotationColors(a.annotationColors, b.annotationColors);
 }
 
@@ -129,6 +131,7 @@ export function differsOnlyInRecentFiles(
   if (a.saveAsLinearize !== b.saveAsLinearize) return false;
   if (!sameGeometry(a.geometry, b.geometry)) return false;
   if (!sameAnnotationColors(a.annotationColors, b.annotationColors)) return false;
+  if (!sameSpellCheck(a.spellCheck, b.spellCheck)) return false;
   // All other fields agree; recentFiles must ACTUALLY differ for
   // this branch to apply. (sameRecentFiles returning true means
   // the recents are identical — in which case sameSettings above
@@ -152,6 +155,18 @@ function sameGeometry(a: WindowGeometry, b: WindowGeometry): boolean {
     a.height === b.height &&
     a.maximized === b.maximized
   );
+}
+
+/** Compare two optional spell-check settings blocks. `undefined` is
+ *  treated consistently on both sides: both absent match, but an
+ *  absent-vs-present pair is a real difference (a write that dropped
+ *  the field must not be mistaken for one that changed preference). */
+function sameSpellCheck(
+  a: SpellCheckSettings | undefined,
+  b: SpellCheckSettings | undefined,
+): boolean {
+  if (a === undefined || b === undefined) return a === b;
+  return a.enabled === b.enabled && a.language === b.language;
 }
 
 function sameRecentFiles(a: RecentFile[], b: RecentFile[]): boolean {
@@ -226,6 +241,7 @@ export function differsOnlyInGeometry(a: AppSettings, b: AppSettings): boolean {
   if (a.saveAsLinearize !== b.saveAsLinearize) return false;
   if (!sameRecentFiles(a.recentFiles, b.recentFiles)) return false;
   if (!sameAnnotationColors(a.annotationColors, b.annotationColors)) return false;
+  if (!sameSpellCheck(a.spellCheck, b.spellCheck)) return false;
   // All other fields agree; geometry must ACTUALLY differ for this
   // branch to apply (sameSettings would have caught identical
   // geometry — we're here because sameSettings returned false).

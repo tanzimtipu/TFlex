@@ -3760,6 +3760,73 @@ body.tab-reordering .tab-list[data-reorder="true"] .tab {
   outline-offset: 1px;
 }
 
+/* Phase 82 — the spell-check text surface. The wrapper supplies the input
+ * background (the real textarea is transparent so the mirror can sit under
+ * it), the mirror paints only the wavy underlines, and the popover reuses the
+ * menu surface tokens. */
+.spell-text-wrap {
+  position: relative;
+  display: block;
+  width: 100%;
+  background: var(--bg-input);
+  border-radius: var(--radius-2);
+}
+
+/* The on-canvas run editor is lifted onto the wrapper with its own rect and
+ * sits over a white page cover, so the wrapper stays page-white. */
+.spell-text-wrap:has(> .edit-run-editor) {
+  background: #ffffff;
+}
+
+.spell-text-mirror {
+  user-select: none;
+}
+
+.spell-text-suggest {
+  position: absolute;
+  z-index: 40;
+  min-width: 96px;
+  max-width: 240px;
+  padding: 4px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-2);
+  background: var(--menu-bg);
+  box-shadow: var(--shadow-popover);
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.spell-text-suggestion {
+  display: block;
+  width: 100%;
+  padding: 4px 8px;
+  border: none;
+  border-radius: var(--radius-1);
+  background: transparent;
+  color: var(--fg-strong);
+  font-family: inherit;
+  font-size: var(--fs-xs);
+  text-align: left;
+  cursor: pointer;
+  transition: background 160ms ease-out;
+}
+
+.spell-text-suggestion:hover {
+  background: var(--bg-elevated);
+}
+
+.spell-text-suggestion:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -1px;
+}
+
+.spell-text-status {
+  margin-top: 4px;
+  font-size: var(--fs-xs);
+  color: var(--fg);
+}
+
 .text-props-select:focus-visible,
 .text-props-input:focus-visible,
 .text-props-btn:focus-visible,
