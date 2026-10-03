@@ -1,4 +1,4 @@
-import { ArrowDown, ArrowUp, X } from 'lucide-react';
+import { ArrowDown, ArrowUp, Replace, X } from 'lucide-react';
 import { useEffect, useRef } from 'react';
 import { useIsPresent } from 'motion/react';
 import { TfBar } from './motion/TfMotion';
@@ -12,11 +12,41 @@ interface SearchBarProps {
   onNext: () => void;
   onPrev: () => void;
   onClose: () => void;
+  /** Phase 86 (FEA-038) — the replace row is open. */
+  replaceMode: boolean;
+  /** Phase 86 — the current replacement text. */
+  replacement: string;
+  /** Phase 86 — the readable result of the last replace ("N replaced, M
+   *  skipped" plus the first skip reason when any). */
+  replaceReport: string;
+  /** Phase 86 — toggle the replace row without touching the query. */
+  onToggleReplace: () => void;
+  /** Phase 86 — the replacement input changed. */
+  onReplacement: (s: string) => void;
+  /** Phase 86 — replace the ACTIVE occurrence. */
+  onReplaceOne: () => void;
+  /** Phase 86 — replace ALL occurrences in one call. */
+  onReplaceAll: () => void;
 }
 
 export function SearchBar(props: SearchBarProps) {
-  const { query, onQuery, resultCount, activeIndex, searching, onNext, onPrev, onClose } =
-    props;
+  const {
+    query,
+    onQuery,
+    resultCount,
+    activeIndex,
+    searching,
+    onNext,
+    onPrev,
+    onClose,
+    replaceMode,
+    replacement,
+    replaceReport,
+    onToggleReplace,
+    onReplacement,
+    onReplaceOne,
+    onReplaceAll,
+  } = props;
   const inputRef = useRef<HTMLInputElement | null>(null);
   // Phase 20 / DEF-238 — while the bar EXITS it is inert, so the input
   // cannot keep DOM focus and Tab / assistive tech cannot reach the
@@ -51,13 +81,30 @@ export function SearchBar(props: SearchBarProps) {
     }
   };
 
+  const handleReplaceKey = (e: React.KeyboardEvent): void => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      onReplaceOne();
+    } else if (e.key === 'Escape') {
+      onClose();
+    }
+  };
+
+  const canReplace = resultCount > 0;
+
   return (
     // Phase 20 — the search bar is a conditional chrome row of the same
     // floating-bar family as the edit toolbar (TfBar): token-driven
     // enter/exit (y -2 rise / reverse) with the exit frame pinning
     // pointer-events: none. Mounted inside an AnimatePresence in
     // DocumentView so the close actually animates.
-    <TfBar className="search-bar" inert={!isPresent}>
+    <TfBar
+      className="search-bar"
+      inert={!isPresent}
+      // Phase 86 — the replace row and report wrap onto their own full-width
+      // lines; the bar grows to fit them only while the replace row is open.
+      style={replaceMode ? { height: 'auto', flexWrap: 'wrap' } : undefined}
+    >
       <input
         ref={inputRef}
         className="search-input"
@@ -68,6 +115,16 @@ export function SearchBar(props: SearchBarProps) {
         aria-label="Search query"
       />
       <span className="search-status">{status}</span>
+      <button
+        type="button"
+        className="tool-btn"
+        data-search-replace-toggle
+        onClick={onToggleReplace}
+        aria-pressed={replaceMode}
+        title="Toggle replace"
+      >
+        <Replace size={16} aria-hidden />
+      </button>
       <button
         type="button"
         className="tool-btn"
@@ -89,6 +146,52 @@ export function SearchBar(props: SearchBarProps) {
       <button type="button" className="tool-btn" onClick={onClose} title="Close search (Esc)">
         <X size={16} aria-hidden />
       </button>
+      {replaceMode && (
+        <div
+          className="search-replace-row"
+          style={{ flexBasis: '100%', display: 'flex', alignItems: 'center', gap: 6 }}
+        >
+          <input
+            className="search-input"
+            data-search-replace-input
+            placeholder="Replace with"
+            value={replacement}
+            onChange={(e) => onReplacement(e.target.value)}
+            onKeyDown={handleReplaceKey}
+            aria-label="Replacement text"
+          />
+          <button
+            type="button"
+            className="tool-btn search-replace-btn"
+            data-search-replace-one
+            onClick={onReplaceOne}
+            disabled={!canReplace}
+            title="Replace the active match"
+          >
+            Replace
+          </button>
+          <button
+            type="button"
+            className="tool-btn search-replace-btn"
+            data-search-replace-all
+            onClick={onReplaceAll}
+            disabled={!canReplace}
+            title="Replace all matches"
+          >
+            Replace all
+          </button>
+        </div>
+      )}
+      {replaceMode && (
+        <div
+          className="search-status"
+          data-search-replace-report
+          role="status"
+          style={{ flexBasis: '100%', textAlign: 'left', minWidth: 0 }}
+        >
+          {replaceReport}
+        </div>
+      )}
     </TfBar>
   );
 }

@@ -32,6 +32,7 @@ import type {
   PlaceSignaturePayload,
   PrintJobPayload,
   RecentFile,
+  ReplaceTextPayload,
   TextBoxStylePatch,
   WatermarkInfo,
   WatermarkSettings,
@@ -874,6 +875,11 @@ export async function start(): Promise<void> {
   // Phase 10: edit content (text run, text box, image)
   ipcMain.handle(IPC.engineEditTextRun, (_event, docId: string, payload: EditTextRunPayload) =>
     engine.editTextRun(docId, payload),
+  );
+  // Phase 86 (FEA-038) — search-and-replace: remove the matched glyphs and
+  // draw the replacement in one op (one undo entry).
+  ipcMain.handle(IPC.engineReplaceText, (_event, docId: string, payload: ReplaceTextPayload) =>
+    engine.replaceText(docId, payload),
   );
   // Phase 84 (True redaction) — remove the covered glyphs and draw the marks.
   ipcMain.handle(IPC.engineApplyRedactions, (_event, docId: string, payload: ApplyRedactionsPayload) =>

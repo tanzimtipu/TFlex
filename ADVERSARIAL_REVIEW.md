@@ -3,6 +3,205 @@
 > Read discipline: this is a historical evidence ledger. Search for the assigned `ADV-NNN`
 > or unresolved `Disposition: PENDING` entries; do not load prior campaigns wholesale.
 
+## Phase 86 search-and-replace diff-pass (TFL-449) - content-stream rewrite + save path
+
+Session label: `diff-pass`. Scope: the Phase-86 uncommitted change set on
+`src/shared/searchReplace.ts` (new), `src/main/services/engine.ts`
+(`_replaceTextImpl` + the `replace-unsupported` path), the shared contract
+`src/shared/types.ts` / `ipc.ts`, the `main/index.ts` + `preload/preload.ts`
+wiring, and the renderer Replace surface (`SearchBar.tsx`, `DocumentView.tsx`,
+`App.tsx`, `engine/{engineClient,types,stubEngine}.ts`, `styles.css`). Product
+code, tests and REQUIREMENTS.md were read but not modified. Probes live at
+`test-fixtures/adv449/` (own vitest config; not part of the shipped suite).
+
+Exact commands:
+
+- Build: `npm.cmd run build` -> exit 0.
+- Baseline e2e: `npm.cmd run test:e2e -- e2e/phase86_search_replace.spec.cjs`
+  -> 7 passed / 0 failed.
+- Probe suite (scratch config, `include: test-fixtures/adv449/**`):
+  `node node_modules/vitest/vitest.mjs run --config test-fixtures/adv449/vitest.probe.config.ts`
+  -> 18 tests / 12 passed / 6 failed (the six failures are ADV-171..175; B2 is
+  a second repro of ADV-175).
+- `npm.cmd run verify` -> exit 0 (conventions clean, 333 source files scanned;
+  typecheck clean).
+
+Attack-surface results (task brief attacks 1-13):
+
+1. Substring inside a longer run: HOLDS. Probe A8 and the shipped unit test
+   keep the untouched prefix/suffix and the following line; no shift.
+2. Match spanning a `TJ` array or split by a `Tf` switch: BREAKS - ADV-175
+   (always skipped, never replaced).
+3. Match inside a `q`/`Q`/`cm` transform: HOLDS. Probe B3 removes only `ELL`
+   from a 0.5-scaled `HELLO` (`[<48> -1500 <4F>] TJ`), bounded to the match.
+4. Type0 / unresolvable-advance font: HOLDS. Reported skipped with no text
+   removed and the rest of the page intact (e2e P86-SKIP, probe).
+5. Empty replacement (delete) and longer/shorter replacement: HOLDS.
+6. Sequential and overlapping `replaceText` calls: sequential HOLDS (DEF-499
+   e2e + unit); two distinct overlapping hits on one line HOLDS (probe A12);
+   a DUPLICATE occurrence payload BREAKS - ADV-171.
+7. Undo/redo round-trip: HOLDS. Probe A4: undo restores the pre-replace text,
+   redo re-applies it.
+8. Replace-all across pages, one undo entry: HOLDS (unit test + e2e
+   P86-UNDO; probe A5).
+9. Save/reload byte integrity on a no-match op: BREAKS - ADV-172 (the full
+   serialized document changes even though `replaced` is 0).
+10. Undecodable page -> all-or-nothing: HOLDS. Probe A5 (page 1 valid + page 2
+    undecodable) returns `replace-unsupported`, page 1 unchanged,
+    `modified:false`.
+11. Interaction with Phase-10 `editTextRun` / Phase-84 `applyRedactions`:
+    redact-after-replace HOLDS (probe A14); edit-after-replace BREAKS in-session
+    `exportText` - ADV-173.
+12. Find navigation / highlight after replace, DEF-500 Inspector surface: e2e
+    P86-REGRESSION covers Find navigation + Phase-10 edit and passed; no new
+    break found in this pass (the read-only inspector-click paths were not
+    re-driven here).
+13. Encrypted / open-prefix document: not reachable through this diff (the
+    phase adds no decryption path); not attempted.
+
+## ADV-171: A duplicate occurrence in one `replaceText` payload draws the replacement twice and reports `replaced: 2`
+
+- Session: diff-pass
+- Suggested severity: MEDIUM
+
+What I did: `test-fixtures/adv449/adv449_replace.probe.test.ts` A1. Open a page
+carrying `SECRET` (y 700) and `SIBLING` (y 600), then call
+`engine.replaceText(doc, { occurrences: [SECRET_OCC, SECRET_OCC], replacement: 'PUBLIC' })`
+- the same occurrence object passed twice - and read back `engine.exportText`.
+
+Expected: A duplicate (or overlapping) occurrence is idempotent, or is rejected
+as a typed error. One physical `SECRET` becomes exactly one `PUBLIC`, and
+`replaced` reflects the number of physical occurrences rewritten.
+
+Actual: `replaced: 2`, `skipped: []`, and the extracted page text is
+"SIBLINGPUBLICPUBLIC" - `PUBLIC` is drawn twice at the same baseline. Each
+duplicate is resolved independently into an anchor and the engine issues one
+`page.drawText` per anchor, while `removeRedactedGlyphs` counts the shared
+glyphs once. The op has no duplicate/overlap guard and never checks that the
+anchors are distinct.
+
+Screenshot: n/a - probe output `[A1] replaced= 2 skipped= 0 PUBLIC-count= 2`.
+
+Disposition: REJECTED - a duplicate occurrence payload is not reachable from the shipped UI: the renderer builds `occurrences` 1:1 from distinct search hits (`DocumentView.tsx` `occurrenceForHit` / `occurrencesForHits`), so no user path sends the same occurrence twice; overlapping-but-distinct hits are handled (probe A12 HOLDS). The engine op is an internal contract that trusts its caller (repo "no defensive programming" rule). Recorded as a hardening candidate, not a product defect.
+
+## ADV-172: A fully-skipped replace still mutates the serialized document (embeds an unused StandardFont)
+
+- Session: diff-pass
+- Suggested severity: LOW
+
+What I did: `adv449_replace.probe.test.ts` A3. Capture
+`engine.getDocumentBytes(doc)` before and after
+`engine.replaceText(doc, { occurrences: [{ page:1, rect: runRect(700), find:'WRONG' }], replacement:'PUBLIC' })`
+(a `find` the covered glyphs do not spell, so nothing is replaced), and compare
+the two byte buffers.
+
+Expected: Nothing was replaced, so the serialized document is unchanged; the
+shipped unit test for this case is even named "skips a mismatched find and
+leaves the document bytes unchanged".
+
+Actual: The bytes differ: 1411 -> 1444, an extra embedded `Helvetica` font
+object, while `engine.getState(...).modified` stays false. `_replaceTextImpl`
+calls `embedEditFont(doc.pdfDoc, fontName, false, false)` before any occurrence
+is matched, so a no-op replace still registers a font that `serializeDoc` then
+emits. The shipped test only compares page-0 content-stream text, so it does not
+catch the whole-document change; the renderer's `getDocumentBytes` proxy
+refresh and any later save therefore carry an unreferenced font.
+
+Screenshot: n/a - probe output `[A3] bytes equal= false len before/after= 1411 1444`.
+
+Disposition: ACCEPTED -> DEF-504 - a no-op replace must not mutate the document (the shipped unit test asserts the bytes are unchanged).
+
+## ADV-173: A Phase-10 `editTextRun` committed after a replace is present after save+reopen but omitted by in-session `exportText`
+
+- Session: diff-pass
+- Suggested severity: MEDIUM
+
+What I did: `adv449_replace.probe.test.ts` A9. Replace `SECRET` -> `PUBLIC` on
+page 1, then `engine.editTextRun(doc, { page:1, rect: runRect(600), newText:'EDITED' })`
+(the `SIBLING` line), then read `engine.exportText` in-session, then `save` +
+reopen into a second engine + `exportText`, then replace `PUBLIC` -> `FINAL`
+and read `exportText` again.
+
+Expected: `exportText` (the user-facing text export, and the oracle the Phase-86
+unit tests use) reflects every committed edit in the session.
+
+Actual: `editTextRun` returns `ok:true`, and after save+reopen the page text is
+"SIBLINGPUBLICEDITED" - the edit IS persisted. But the in-session
+`exportText` returns "SIBLINGPUBLIC": the just-committed `EDITED` is missing.
+`getDocumentBytes` (the `serializeDoc` copy path, probe A13) DOES contain the
+`EDITED` operator in the page's appended stream, and a subsequent replace of
+`PUBLIC` -> `FINAL` works - so the live document has the edit; only
+`exportText`'s direct `doc.pdfDoc.save({ useObjectStreams:false })`
+(`engine.ts:2290`) fails to surface it after a replace has installed its own
+single-entry `/Contents` array. A user who replaces text, edits text, then
+exports text gets stale/missing content with no warning.
+
+Screenshot: n/a - probe output
+`[A9] after edit= "SIBLINGPUBLIC"` / `[A9] after save+reopen= "SIBLINGPUBLICEDITED"`.
+
+Disposition: ACCEPTED -> DEF-505 - in-session `exportText` must reflect a committed edit; the replace op's single-entry `/Contents` install is the trigger.
+
+## ADV-174: A partially-drawable replacement silently loses its undrawable characters and still reports success
+
+- Session: diff-pass
+- Suggested severity: MEDIUM
+
+What I did: `adv449_replace.probe.test.ts` A11. On a page carrying `SECRET`,
+call `engine.replaceText(doc, { occurrences: [SECRET_OCC], replacement: 'A\u4e2dB' })`
+(an ASCII char, a CJK char the StandardFont cannot encode, then an ASCII char)
+and read `engine.exportText` and the result.
+
+Expected: The op is fail-loud. `_replaceTextImpl` already refuses when a
+non-empty replacement has NO drawable characters
+(`engine.ts:2824-2829`); a mixed replacement must likewise be reported (refused,
+or skip/warn naming the dropped characters) so the user knows the drawn text is
+not what they typed.
+
+Actual: `replaced: 1`, `skipped: []`, and the page text is "SIBLINGAB" - the CJK
+character was silently dropped by `sanitizeForStandardFont` and the op reported
+unqualified success with no warning. The renderer's report line shows
+"1 replaced, 0 skipped" and the user's replacement text is silently altered.
+
+Screenshot: n/a - probe output
+`[A11] result= {"replaced":1,"skipped":[]} text= "SIBLINGAB"`.
+
+Disposition: ACCEPTED -> DEF-506 - severity HIGH: a partially-drawable replacement is silently altered, violating success criterion 3 (fail-loud, never silently dropped).
+
+## ADV-175: A term rendered across more than one show run is found by Find but can never be replaced (TJ array / Tf split)
+
+- Session: diff-pass
+- Suggested severity: MEDIUM
+
+What I did: `adv449_replace.probe.test.ts` B1/B2 (pure `planReplace`).
+B1: content `BT /F1 12 Tf 10 20 Td [(HEL) -20 (LO)] TJ ET` with a rect covering
+the whole array and `find:'HELLO'` - one visual word split into two show strings
+of a single `TJ` (the common kerning/word-splitting shape). B2: content
+`BT /F1 12 Tf 10 20 Td (HEL) Tj /F2 12 Tf (LO) Tj ET` with `find:'HELLO'` - a
+word split by a `Tf` font switch.
+
+Expected: A term the Find bar reports as an occurrence can be replaced. The
+renderer's `hitToOccurrence` (`DocumentView.tsx:243-285`) explicitly builds a
+rect for a multi-item hit and hands it to the engine; success criterion 1
+promises "replace all occurrences across the document".
+
+Actual: Both cases are always returned in `skipped`, removing nothing:
+`reason: "the covered glyphs span more than one text run"` and, for B2, a
+second repro of the same rule. `resolveOccurrence`
+(`src/shared/searchReplace.ts:524-527`) rejects any occurrence whose covered
+glyphs do not all live in exactly ONE show run. Because pdf.js `getTextContent`
+splits a visible word across items/runs whenever the producer emits kerning or
+a font switch, Find lists such terms as hits while Replace-all can never change
+them; the report does name them skipped, but the promised replace is silently
+incomplete for a large class of real PDFs. The shipped unit test named "replaces
+inside a TJ array" only covers a match that is fully contained in ONE array
+element, so the spec's "a replace across a `TJ` array" coverage is not actually
+exercised.
+
+Screenshot: n/a - probe output
+`[B1] removed= 0 skipped= [{"find":"HELLO","reason":"the covered glyphs span more than one text run"}]`.
+
+Disposition: ACCEPTED -> DEF-507 - a large class of real occurrences (kerning/Tf-split words) is found by Find but can never be replaced; the spec's "replace across a TJ array" coverage is not exercised by the shipped test.
+
 ## Phase 85 outline diff-pass (TFL-420) - /Outlines rewrite + save path
 
 Session label: `diff-pass`. Scope: the Phase-85 final diff as named by the CTO -

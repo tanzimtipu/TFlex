@@ -36,6 +36,8 @@ import type {
   PdfCadMetadata,
   PdfLayer,
   RedactionApplyResult,
+  ReplaceTextPayload,
+  ReplaceTextResult,
   SignaturePlacement,
   SpaceAudit,
   TextPage,
@@ -752,6 +754,16 @@ export interface EngineApi {
     payload: ApplyRedactionsPayload,
   ): Promise<Result<RedactionApplyResult, EngineError>>;
 
+  /** Phase 86 (FEA-038) — replace the glyphs covered by each occurrence with
+   *  `payload.replacement` (an empty string is a legal delete) and echo the
+   *  updated state plus how many occurrences were rewritten vs skipped. One
+   *  call covers every page and is ONE undo entry. Optional so a pre-Phase-86
+   *  backend degrades with a friendly engine-error. */
+  replaceText?(
+    docId: string,
+    payload: ReplaceTextPayload,
+  ): Promise<Result<ReplaceTextResult, EngineError>>;
+
   /** Peek the renderer's most-recent normalized EngineState for `docId`
    *  without doing an IPC round-trip. The real-engine adapter populates
    *  this cache on every successful state-returning op
@@ -795,6 +807,8 @@ export function describeEngineError(code: EngineError, context?: string): string
       return "Source and target must be different documents.";
     case "invalid-outline":
       return "The bookmark outline is not valid.";
+    case "replace-unsupported":
+      return "Some text on a page could not be replaced safely; nothing was changed.";
   }
 }
 

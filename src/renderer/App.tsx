@@ -5,6 +5,7 @@ import type {
   DocxImageEntry,
   DocumentProtectionState,
   EditFont,
+  EngineError,
   ExportPageEntry,
   ExportPagesPayload,
   FdfOpenError,
@@ -23,6 +24,8 @@ import type {
   PdfValidationDefaults,
   PrintWindowContext,
   RecentFile,
+  ReplaceTextPayload,
+  ReplaceTextResult,
   SampleDocument,
   SavedSignature,
   SignaturePlacement,
@@ -35,6 +38,7 @@ import type {
 } from "../shared/types";
 import { DEFAULT_READING_DEFAULTS } from "../shared/types";
 import { err } from "../shared/result";
+import type { Result } from "../shared/result";
 import type { ApplyRedactions } from "./redaction/RedactionOverlay";
 import type { TFlexApi, TFlexApiConvert, TFlexApiExport } from "../shared/ipc";
 import type { ValidationReport, ValidationTarget } from "../shared/validation";
@@ -6573,6 +6577,44 @@ pushToast(
     [noteOpApplied],
   );
 
+  /** Phase 86 (FEA-038) — replace the glyphs covered by the Find bar's
+   *  occurrences. Bound to the pane's OWN tab id so a Multi Mode replace can
+   *  never target the wrong document. On success the echoed state is
+   *  mirrored (noteOpApplied) and the pdf.js proxy is rebuilt in place —
+   *  the same lever `handleEditTextRun` uses — so the rewritten text is
+   *  visible without a save/reopen. */
+  const handleReplaceText = useCallback(
+    async (
+      tabId: string,
+      payload: ReplaceTextPayload,
+    ): Promise<Result<ReplaceTextResult, EngineError>> => {
+      const open = openTabsRef.current[tabId];
+      if (open === undefined) {
+        return err("engine-error", "No active document.");
+      }
+      const result = await engineRef.current.replaceText?.(
+        open.session.engineDocId,
+        payload,
+      );
+      if (result === undefined) {
+        return err(
+          "engine-error",
+          "Replace requires the Phase 86 backend update.",
+        );
+      }
+      if (!result.ok) {
+        return result;
+      }
+      noteOpApplied(tabId, result.value.state as EngineState);
+      const refreshFn = refreshDocProxyForRef.current;
+      if (refreshFn !== null) {
+        await refreshFn(tabId).catch(() => undefined);
+      }
+      return result;
+    },
+    [noteOpApplied],
+  );
+
   /** Bug 6 — MOVE / RESIZE a placed stamp. The engine bakes stamps
    *  into the page bitmap with no registry, so the only lever is the
    *  Phase 10 `editImage` contract: mask the OLD rect with white and
@@ -10637,6 +10679,9 @@ pushToast(
                     onPlaceStamp={onPlaceStamp}
                     redactArmed={redactArmed}
                     onApplyRedactions={onApplyRedactions}
+                    onReplaceText={(payload): Promise<Result<ReplaceTextResult, EngineError>> =>
+                      handleReplaceText(meta.id, payload)
+                    }
                     markColor={redactionColor}
                     onMarkColorChange={onMarkColorChange}
                     // B10 / DEF-101 — placed-stamp DOM surfaces for

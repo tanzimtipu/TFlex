@@ -738,7 +738,7 @@ History:
 
 ## FEA-038: Search and replace text across the document
 
-- Status: PROPOSED
+- Status: ACCEPTED -> Phase 86
 - Source: https://www.sejda.com/pdf-editor (Sejda, "Easily find and replace all occurrences of words in a PDF")
 - Category: Edit
 - Effort: M
@@ -753,6 +753,7 @@ manual page-by-page work.
 
 History:
 - orchestrator: recorded from feature-scout batch FEA-031..FEA-040 (TFL-377)
+- orchestrator: accepted on CEO commission TFL-315, iteration 5; promoted to Phase 86 (phase issue TFL-425)
 
 ## FEA-039: Remove blank pages
 

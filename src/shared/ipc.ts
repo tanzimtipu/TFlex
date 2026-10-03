@@ -52,6 +52,8 @@ import type {
   PrintWindowOpenResult,
   RecentFile,
   RedactionApplyResult,
+  ReplaceTextPayload,
+  ReplaceTextResult,
   SampleDocument,
   SavedSignature,
   SignatureSource,
@@ -213,6 +215,12 @@ export const IPC = {
   engineCreateDocxFromDoc: "engine:createDocxFromDoc",
   // Phase 10: edit content
   engineEditTextRun: "engine:editTextRun",
+  // Phase 86 (FEA-038) — search-and-replace: remove the glyphs covered by the
+  // supplied occurrences (verifying each spells its `find`) and draw the
+  // replacement as real glyphs. One call covers every occurrence and is ONE
+  // undo entry. Refuses the whole op (`replace-unsupported`) when a target
+  // page's content stream cannot be decoded.
+  engineReplaceText: "engine:replaceText",
   // Phase 84 (True redaction) — remove the glyphs covered by the supplied
   // page-space marks from the page content stream, then draw the opaque mark
   // rectangles. Refuses loudly (`redaction-unsupported`) for a page whose
@@ -691,6 +699,19 @@ export interface TFlexApiEngine {
     docId: string,
     payload: ApplyRedactionsPayload,
   ): Promise<Result<RedactionApplyResult, import("./types").EngineError>>;
+  /** Phase 86 (FEA-038) — replace a set of search occurrences in one call.
+   *  For each occurrence the engine removes the covered glyphs from the page
+   *  content stream (only when they spell `find` case-insensitively) and
+   *  draws `replacement` as real glyphs; an empty replacement is a delete.
+   *  The op groups by page and takes exactly ONE undo snapshot, so replace-all
+   *  is one undo entry. Occurrences that cannot be safely replaced are
+   *  returned in `skipped` with readable reasons; a page whose content stream
+   *  cannot be decoded refuses the whole op with `replace-unsupported` and
+   *  applies nothing. */
+  replaceText?(
+    docId: string,
+    payload: ReplaceTextPayload,
+  ): Promise<Result<ReplaceTextResult, import("./types").EngineError>>;
   /** Phase 10 — add a new text box with wrapping inside `rect`. As of
    *  Phase 14 / DEF-135 / DEF-136 this pushes a `TextBoxModel` into the
    *  engine-side placement registry (NO immediate draw); the box is drawn

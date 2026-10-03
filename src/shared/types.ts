@@ -446,7 +446,11 @@ export type EngineError =
   | 'same-document'
   /** Phase 85 — the outline payload is not a valid tree: a non-array value,
    *  or an entry whose title is missing/empty after trim. */
-  | 'invalid-outline';
+  | 'invalid-outline'
+  /** Phase 86 — search-and-replace refused the whole op: a target page's
+   *  content stream cannot be decoded, so no occurrence on it can be safely
+   *  rewritten. Nothing is applied (all-or-nothing). */
+  | 'replace-unsupported';
 
 // ---------------------------------------------------------------------------
 // Phase 52 — encrypted PDF support (engine half)
@@ -1145,6 +1149,54 @@ export interface RedactionApplyResult {
   state: EngineState;
   removedGlyphs: number;
   warnings: string[];
+}
+
+/** Phase 86 (FEA-038) — one occurrence the renderer wants replaced. `page` is
+ *  the 1-based VISIBLE page index (same as `RedactionMark`'s page);
+ *  `rect` is in PAGE POINTS with a TOP-LEFT origin (the `AnnRect`
+ *  convention) and is expected to bound exactly the glyphs spelling
+ *  `find`. The engine converts it to the page content stream's user space,
+ *  verifies the covered glyphs actually spell `find` (case-insensitively)
+ *  and skips the occurrence when they do not. */
+export interface ReplaceOccurrence {
+  page: number;
+  rect: AnnRect;
+  find: string;
+}
+
+/** Phase 86 — payload for `engine.replaceText`. `replacement` is the drawn
+ *  text; an empty string is a legal delete (covered glyphs removed, nothing
+ *  drawn). `font`/`size`/`color` are per-call overrides; absent values fall
+ *  back to `AppSettings.editDefaultFont` / the covered run's size / black. */
+export interface ReplaceTextPayload {
+  occurrences: ReplaceOccurrence[];
+  replacement: string;
+  font?: EditFont;
+  size?: number;
+  color?: EditColor;
+}
+
+/** Phase 86 — one occurrence the engine could not safely replace. `rect` is
+ *  in the renderer's TOP-LEFT page-point convention (echoing the occurrence)
+ *  and `reason` is a readable, page-naming explanation. Nothing is removed
+ *  for a skipped occurrence. */
+export interface ReplaceSkip {
+  page: number;
+  rect: AnnRect;
+  find: string;
+  reason: string;
+}
+
+/** Phase 86 — result of `engine.replaceText`. `state` is the updated
+ *  `EngineState`; `replaced` counts occurrences rewritten in one call
+ *  (deletes included); `skipped` lists the occurrences left untouched with
+ *  reasons; `substitutedFonts` names every source font the replacement could
+ *  not match (the replacement is drawn in a StandardFont substitution). */
+export interface ReplaceTextResult {
+  state: EngineState;
+  replaced: number;
+  skipped: ReplaceSkip[];
+  substitutedFonts: string[];
 }
 
 /** Phase 10 — payload for `engine.addTextBox`. As of Phase 14 / DEF-135 /

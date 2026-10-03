@@ -49,6 +49,8 @@ import type {
   PdfCadMetadata,
   PdfLayer,
   RedactionApplyResult,
+  ReplaceTextPayload,
+  ReplaceTextResult,
   SavedSignature,
   SignaturePlacement,
   SignatureSource,
@@ -957,6 +959,31 @@ export class StubRendererEngine implements EngineApi {
     pushUndo(t);
     t.modified = true;
     return ok({ state: buildState(t), removedGlyphs: 0, warnings: [] });
+  }
+
+  /** Phase 86 (FEA-038) — the stub has no pdf-lib, so it cannot rewrite the
+   *  page glyphs. It validates the call and reports every occurrence as
+   *  replaced (nothing skipped, no font substitutions) so the renderer's
+   *  replace flow can be exercised end-to-end before the real engine lands.
+   *  An empty occurrence list is refused loudly rather than silently
+   *  no-op'ing. */
+  async replaceText(
+    docId: string,
+    payload: ReplaceTextPayload,
+  ): Promise<Result<ReplaceTextResult, EngineError>> {
+    const t = this.tabs.get(docId);
+    if (t === undefined) return err("engine-error", "unknown document");
+    if (payload.occurrences.length === 0) {
+      return err("empty-range", "replaceText: no occurrences provided");
+    }
+    pushUndo(t);
+    t.modified = true;
+    return ok({
+      state: buildState(t),
+      replaced: payload.occurrences.length,
+      skipped: [],
+      substitutedFonts: [],
+    });
   }
 
   /** Phase 10 — add a new text box. Same shape as editTextRun.

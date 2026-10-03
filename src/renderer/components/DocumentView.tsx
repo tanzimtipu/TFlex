@@ -109,6 +109,8 @@ import {
 } from "../edit/model";
 import type { TextBoxStylePatch } from "../../shared/types";
 import type { EngineState } from "../engine/types";
+import { describeEngineError } from "../engine/types";
+import type { Result } from "../../shared/result";
 import {
   annotationColorToCss,
   annotationToolReducer,
@@ -144,10 +146,16 @@ import {
 import { waitForRenderActive } from "../state/renderSuspend";
 import type {
   AppTheme,
+  EngineError,
   FormField,
+  ReplaceOccurrence,
+  ReplaceSkip,
+  ReplaceTextPayload,
+  ReplaceTextResult,
   SavedSignature,
   SignaturePlacement,
 } from "../../shared/types";
+import type { TextItemGeom } from "../annotations/geometry";
 import type { PaneId } from "../state/multiMode";
 import type {
   PaneDockContext,
@@ -187,6 +195,134 @@ export interface DocDiagnostics {
   // the key entirely â€” left harnesses with an `undefined` they had to
   // special-case.
   activeTool: AnnotationTool | null;
+}
+
+/** Phase 86 (FEA-038) — the host hook that rewrites covered glyphs through
+ *  `engine.replaceText`. App binds the active tab's `engineDocId`, mirrors
+ *  the echoed state (untouched by the brief's App DO-NOTs) and refreshes the
+ *  pdf.js proxy on success. */
+export type ReplaceTextHook = (
+  payload: ReplaceTextPayload,
+) => Promise<Result<ReplaceTextResult, EngineError>>;
+
+/** Convert pdf.js text items into top-left-origin page points, preserving the
+ *  array indices so a `SearchHit`'s item indices (which address
+ *  `PageTextIndex.items`) line up exactly. This mirrors `PageView.tsx`'s
+ *  private `textItemsToGeom` — kept index-aligned (one slot per source item,
+ *  `undefined` where that converter would skip) because the hit boundaries
+ *  address the uncompacted `items` array. */
+export function textItemsToGeomAligned(
+  items: ReadonlyArray<unknown>,
+  pageHeightPt: number,
+): Array<TextItemGeom | undefined> {
+  return items.map((raw) => {
+    const item = raw as {
+      str?: string;
+      transform?: number[];
+      width?: number;
+      height?: number;
+    };
+    if (typeof item.str !== "string") return undefined;
+    if (!Array.isArray(item.transform)) return undefined;
+    const t = item.transform;
+    if (t.length < 6) return undefined;
+    const e = t[4] ?? 0;
+    const f = t[5] ?? 0;
+    const w = typeof item.width === "number" ? item.width : 0;
+    const h = typeof item.height === "number" ? item.height : 0;
+    if (w <= 0 || h <= 0) return undefined;
+    return { x: e, y: pageHeightPt - f - h, width: w, height: h, text: item.str };
+  });
+}
+
+/** Phase 86 — map one `SearchHit` to a page-space `ReplaceOccurrence`. The
+ *  rect is derived from the existing per-item text geometry plus a
+ *  per-character width (`item.width / item.str.length`) over the hit's
+ *  start/end boundaries, exactly what the Find bar matched. Returns null when
+ *  the hit's geometry is unavailable (page not indexed / a skipped item). */
+export function hitToOccurrence(
+  hit: SearchHit,
+  index: PageTextIndex | undefined,
+  geom: ReadonlyArray<TextItemGeom | undefined> | undefined,
+): ReplaceOccurrence | null {
+  if (index === undefined || geom === undefined) return null;
+  const startGeom = geom[hit.start.item];
+  const endGeom = geom[hit.end.item];
+  if (startGeom === undefined || endGeom === undefined) return null;
+  const startCharW =
+    startGeom.text.length > 0 ? startGeom.width / startGeom.text.length : startGeom.width;
+  const endCharW =
+    endGeom.text.length > 0 ? endGeom.width / endGeom.text.length : endGeom.width;
+  const startX = startGeom.x + startCharW * hit.start.offset;
+  const endX = endGeom.x + endCharW * hit.end.offset;
+  const startPos = index.offsets[hit.start.item] + hit.start.offset;
+  const endPos = index.offsets[hit.end.item] + hit.end.offset;
+  const find = index.text.slice(startPos, endPos);
+  if (find.length === 0) return null;
+  if (hit.start.item === hit.end.item) {
+    const width = Math.max(endX - startX, startCharW);
+    return {
+      page: hit.page,
+      rect: { x: startX, y: startGeom.y, width, height: startGeom.height },
+      find,
+    };
+  }
+  // Multi-item hit (a match that wraps across pdf.js runs): span the union of
+  // the start/end item boxes. The engine verifies the covered glyphs against
+  // `find` and skips when they do not match.
+  const left = Math.min(startX, endGeom.x);
+  const right = Math.max(startGeom.x + startGeom.width, endX);
+  const top = Math.min(startGeom.y, endGeom.y);
+  const bottom = Math.max(
+    startGeom.y + startGeom.height,
+    endGeom.y + endGeom.height,
+  );
+  return {
+    page: hit.page,
+    rect: { x: left, y: top, width: Math.max(right - left, startCharW), height: bottom - top },
+    find,
+  };
+}
+
+/** Phase 86 — map every hit to its occurrence, dropping any hit whose
+ *  geometry is unavailable (never emitting a rect the engine would have to
+ *  reject). */
+export function occurrencesForHits(
+  hits: readonly SearchHit[],
+  indexes: ReadonlyMap<number, PageTextIndex>,
+  geoms: ReadonlyMap<number, ReadonlyArray<TextItemGeom | undefined>>,
+): ReplaceOccurrence[] {
+  const out: ReplaceOccurrence[] = [];
+  for (const hit of hits) {
+    const occ = hitToOccurrence(hit, indexes.get(hit.page), geoms.get(hit.page));
+    if (occ !== null) out.push(occ);
+  }
+  return out;
+}
+
+/** Phase 86 — assemble the engine payload. One occurrence list covers all
+ *  pages and is ONE undo entry for replace-all. */
+export function buildReplacePayload(
+  occurrences: ReplaceOccurrence[],
+  replacement: string,
+): ReplaceTextPayload {
+  return { occurrences, replacement };
+}
+
+/** Phase 86 — the readable replace report: always "N replaced, M skipped",
+ *  naming the first skip reason when any (plus any font substitutions). */
+export function formatReplaceReport(
+  replaced: number,
+  skipped: readonly ReplaceSkip[],
+  substitutedFonts: readonly string[] = [],
+): string {
+  const head = `${replaced} replaced, ${skipped.length} skipped`;
+  const notes: string[] = [];
+  if (skipped.length > 0) notes.push(skipped[0].reason);
+  if (substitutedFonts.length > 0) {
+    notes.push(`substituted font: ${substitutedFonts.join(", ")}`);
+  }
+  return notes.length > 0 ? `${head}. ${notes.join("; ")}.` : `${head}.`;
 }
 
 interface DocumentViewProps extends DocumentViewDockProps {
@@ -381,6 +517,12 @@ interface DocumentViewProps extends DocumentViewDockProps {
   redactArmed?: boolean;
   /** Phase 84 — apply hook threaded to every PageView's RedactionOverlay. */
   onApplyRedactions?: ApplyRedactions;
+  /** Phase 86 (FEA-038) — rewrite the glyphs covered by a search occurrence
+   *  through `engine.replaceText`. The host binds the active tab's engine doc,
+   *  mirrors the echoed state and refreshes the pdf.js proxy on success.
+   *  Optional: an absent hook leaves the replace verbs inert (their report
+   *  names the missing backend update). */
+  onReplaceText?: ReplaceTextHook;
   /** Phase 84 — fill colour for pending redaction marks (settings-backed). */
   markColor?: string;
   /** Phase 84 — persist a chosen redaction mark colour. */
@@ -850,6 +992,7 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
   onPlaceStamp,
   redactArmed = false,
   onApplyRedactions,
+  onReplaceText,
   markColor,
   onMarkColorChange,
   stampAnnotations = [],
@@ -1658,6 +1801,14 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
   const [searchIndexProgress, setSearchIndexProgress] = useState<SearchIndexProgress | null>(null);
   const searchTokenRef = useRef(0);
   const indexesRef = useRef(new Map<number, PageTextIndex>());
+  // Phase 86 (FEA-038) — per-page text geometry snapshot, index-aligned with
+  // `PageTextIndex.items`, captured in the same search walk. It maps a
+  // SearchHit to the page-space occurrence `engine.replaceText` consumes.
+  const pageGeomRef = useRef(new Map<number, Array<TextItemGeom | undefined>>());
+  // Phase 86 — the replace-row state, owned beside the existing search state.
+  const [replaceMode, setReplaceMode] = useState(false);
+  const [replacement, setReplacement] = useState("");
+  const [replaceReport, setReplaceReport] = useState("");
 
   // Phase 13 â€” Hand (pan) mode. Transient viewer state (never persisted):
   // when armed, the scroller handles pointer drags as grab-and-drag
@@ -1700,6 +1851,15 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
   // latest value and registers exactly once.
   const registerSearchIndexInvalidatorRef = useRef(registerSearchIndexInvalidator);
   registerSearchIndexInvalidatorRef.current = registerSearchIndexInvalidator;
+  // Phase 86 — the single invalidation action: drop the cached page indexes
+  // AND their aligned geometry, then bump the tick so the search effect
+  // re-runs even when `query` / `doc` / `pageCount` are unchanged. Shared by
+  // the host's OCR invalidator and the post-replace refresh below.
+  const invalidateSearchIndex = useCallback((): void => {
+    indexesRef.current = new Map();
+    pageGeomRef.current = new Map();
+    setSearchInvalidationTick((prev) => prev + 1);
+  }, []);
   const hasRegisteredInvalidatorRef = useRef(false);
   useEffect(() => {
     if (hasRegisteredInvalidatorRef.current) {
@@ -1712,16 +1872,15 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
     const invalidate = (): void => {
       // Drop every cached page index so the next search re-fetches
       // getTextContent() from pdf.js. Clearing the map alone is not
-      // enough â€” the search effect's deps (`query`, `doc`,
+      // enough — the search effect's deps (`query`, `doc`,
       // `pageCount`) are unchanged after OCR, so React would not
       // re-run the effect. Bumping `searchInvalidationTick` is the
       // explicit "kick" that forces a rebuild.
-      indexesRef.current = new Map();
-      setSearchInvalidationTick((prev) => prev + 1);
+      invalidateSearchIndex();
     };
     register(invalidate);
     hasRegisteredInvalidatorRef.current = true;
-  }, []);
+  }, [invalidateSearchIndex]);
 
   // ---- Phase C â€” frosted chrome-over-document measurement ----------------
   //
@@ -1745,15 +1904,21 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
   // paints; every scroll-geometry helper reads this ref so a future
   // padding change can never drift from the math.
   const contentTopPadRef = useRef(CONTENT_PADDING_PX);
+  // DEF-500 - the chrome stack is DYNAMIC: the search bar grows when the
+  // Phase 86 replace row (and its report line) wrap in, and the command
+  // toolbar wraps as the window narrows. A window-resize listener alone
+  // misses the replace-row growth, so --tf-chrome-y went stale and the
+  // .canvas-page-layout control (top: calc(--tf-chrome-y + 12px)) landed on
+  // the replace buttons. Observe the measured rows directly so any size
+  // change re-publishes the token and the control stays clear of the bar.
   useEffect(() => {
+    const CHROME_SELECTOR = ".toolbar, .search-bar";
     const recompute = (): void => {
       const main = mainRef.current;
       if (main === null) return;
       let chromePx = 0;
       for (const el of Array.from(
-        main.querySelectorAll<HTMLElement>(
-          ".toolbar, .search-bar",
-        ),
+        main.querySelectorAll<HTMLElement>(CHROME_SELECTOR),
       )) {
         chromePx += el.offsetHeight;
       }
@@ -1761,15 +1926,29 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
       // theme, so the scroll math never adds a chrome offset.
       contentTopPadRef.current = CONTENT_PADDING_PX;
       if (chromePx > 0) {
-        main.style.setProperty("--tf-chrome-y", `${chromePx}px`);
+        const next = `${chromePx}px`;
+        if (main.style.getPropertyValue("--tf-chrome-y") !== next) {
+          main.style.setProperty("--tf-chrome-y", next);
+        }
       }
     };
     recompute();
-    // The toolbar wraps (grows) when the window narrows; re-measure
-    // on resize so the content padding tracks the real stack.
+    const main = mainRef.current;
+    let observer: ResizeObserver | null = null;
+    if (main !== null && typeof ResizeObserver === "function") {
+      observer = new ResizeObserver(recompute);
+      for (const el of Array.from(
+        main.querySelectorAll<HTMLElement>(CHROME_SELECTOR),
+      )) {
+        observer.observe(el);
+      }
+    }
+    // The toolbar wraps (grows) when the window narrows; keep the direct
+    // resize listener as the path for engines without ResizeObserver.
     window.addEventListener("resize", recompute);
     return (): void => {
       window.removeEventListener("resize", recompute);
+      observer?.disconnect();
     };
   }, [editModeOpen, searchOpen, themeName]);
 
@@ -2932,6 +3111,13 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
             );
             index = buildPageIndex(items);
             indexesRef.current.set(page, index);
+            // Phase 86 — snapshot the page geometry in the SAME walk, keyed
+            // and index-aligned so hitToOccurrence can address it.
+            const pageHeightPt = pdfPage.view[3] - pdfPage.view[1];
+            pageGeomRef.current.set(
+              page,
+              textItemsToGeomAligned(textContent.items, pageHeightPt),
+            );
             built += 1;
           }
           collected.push(...findPageHits(index, page, q));
@@ -3000,6 +3186,7 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
   // reference). The `doc` identity changes whenever a new PDF is opened.
   useEffect(() => {
     indexesRef.current = new Map();
+    pageGeomRef.current = new Map();
   }, [doc]);
 
   // ---- idle document cleanup -----------------------------------------------
@@ -3235,6 +3422,70 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
     },
     [hits.length],
   );
+
+  // ---- Phase 86 (FEA-038) — replace flow -----------------------------------
+  //
+  // The replace row reuses the SAME hits and nav; it only adds a rewrite pass.
+  // Occurrences are built from the cached per-page index + aligned geometry
+  // (both populated by the search walk above), then sent to the host hook in
+  // ONE call for replace-all (one undo entry) or a single-occurrence call for
+  // replace-one. On success the cached search text is stale, so the shared
+  // invalidation tick forces the hits to rebuild.
+  const occurrenceForHit = useCallback(
+    (hit: SearchHit): ReplaceOccurrence | null =>
+      hitToOccurrence(hit, indexesRef.current.get(hit.page), pageGeomRef.current.get(hit.page)),
+    [],
+  );
+
+  const runReplace = useCallback(
+    async (occurrences: ReplaceOccurrence[]): Promise<void> => {
+      if (occurrences.length === 0) {
+        setReplaceReport("No matches to replace.");
+        return;
+      }
+      if (onReplaceText === undefined) {
+        setReplaceReport("Replace requires the Phase 86 backend update.");
+        onToast?.("error", "Replace requires the Phase 86 backend update.");
+        return;
+      }
+      const result = await onReplaceText(buildReplacePayload(occurrences, replacement));
+      if (!result.ok) {
+        const message = describeEngineError(result.error.code, result.error.message);
+        setReplaceReport(message);
+        onToast?.("error", message);
+        return;
+      }
+      setReplaceReport(
+        formatReplaceReport(
+          result.value.replaced,
+          result.value.skipped,
+          result.value.substitutedFonts,
+        ),
+      );
+      // The engine rewrote the page text; the cached index holds the
+      // pre-replace glyphs. Drop it so the next pass re-reads pdf.js.
+      invalidateSearchIndex();
+    },
+    [onReplaceText, onToast, replacement, invalidateSearchIndex],
+  );
+
+  const handleReplaceOne = useCallback((): void => {
+    const hit = activeHit;
+    if (hit === null) {
+      setReplaceReport("No active match to replace.");
+      return;
+    }
+    const occ = occurrenceForHit(hit);
+    if (occ === null) {
+      setReplaceReport("Could not locate the active match's text.");
+      return;
+    }
+    void runReplace([occ]);
+  }, [activeHit, occurrenceForHit, runReplace]);
+
+  const handleReplaceAll = useCallback((): void => {
+    void runReplace(occurrencesForHits(hits, indexesRef.current, pageGeomRef.current));
+  }, [hits, runReplace]);
 
   const onActiveHitTop = useCallback(
     (page: number, cssTop: number) => {
@@ -4207,6 +4458,13 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
               onNext={(): void => cycleHits(1)}
               onPrev={(): void => cycleHits(-1)}
               onClose={(): void => setSearchOpen(false)}
+              replaceMode={replaceMode}
+              replacement={replacement}
+              replaceReport={replaceReport}
+              onToggleReplace={(): void => setReplaceMode((v) => !v)}
+              onReplacement={setReplacement}
+              onReplaceOne={handleReplaceOne}
+              onReplaceAll={handleReplaceAll}
             />
           )}
         </AnimatePresence>

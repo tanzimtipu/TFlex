@@ -4657,6 +4657,30 @@ body.tab-reordering .tab-list[data-reorder="true"] .tab {
    * chrome row of .workspace-main; an explicit row keeps it out of
    * the 1fr scroller row (see the .workspace-main comment). */
   grid-row: 4;
+  /* DEF-500 — reserve the Tools inset exactly like .document-scroller
+   * and .ocr-suspects-panel: the bar's right edge ends flush against
+   * the always-on Inspector's left edge (0px with it closed) so the
+   * Phase 86 replace controls are hit-testable. The --tf-tools-inset
+   * TOKEN is the single source of the width (DEF-357 class) — never a
+   * hardcoded 264px. */
+  margin-right: var(--tf-tools-inset, 0px);
+}
+
+/* DEF-500 attempt 3 — the Phase 86 replace buttons carry TEXT labels
+ * ("Replace", "Replace all") but inherited the icon-only .tool-btn 28px
+ * square: each label overflowed its box and the later button's box then
+ * captured the earlier button's centre, so a real click on Replace ran
+ * Replace-all. This class lets the two labelled buttons size to their
+ * content instead; it overrides .tool-btn's fixed width by source order
+ * (declared after it) and MUST NOT be merged into .tool-btn, which stays
+ * the 28px glyph square used across the whole toolbar. */
+.search-replace-btn {
+  width: auto;
+  min-width: 28px;
+  flex: 0 0 auto;
+  padding: 0 var(--sp-2);
+  white-space: nowrap;
+  font-size: var(--fs-sm);
 }
 
 .search-input {

@@ -5,6 +5,159 @@
 > inspect the current `OPEN`, `FIX-READY`, and `DISPUTED` entries first; closed records are
 > historical evidence and must not be loaded wholesale.
 
+## DEF-504: A fully-skipped replace still mutates the serialized document (embeds an unused Helvetica font)
+
+- Status: CLOSED
+- Severity: LOW
+- Found by: adversary (ADV-172)
+- Phase: 86 (FEA-038 search and replace)
+
+Steps to reproduce:
+1. Build a 1-page Helvetica fixture carrying `SECRET` (y700) and `SIBLING` (y600); load it into `EngineService`.
+2. Capture `engine.getDocumentBytes('d')` (the serialize path save uses).
+3. Call `engine.replaceText('d', { occurrences: [{ page:1, rect: runRect(700), find:'WRONG' }], replacement:'PUBLIC' })` — the covered glyphs do not spell `WRONG`, so nothing is replaced.
+4. Capture `engine.getDocumentBytes('d')` again and compare the two byte buffers; read `engine.getState('d').modified`.
+
+Expected: Nothing was replaced, so the serialized document is byte-identical and `modified` stays false (the shipped unit test is named "skips a mismatched find and leaves the document bytes unchanged").
+
+Actual: The bytes differ — 1411 -> 1444, an extra embedded `Helvetica` font object — while `getState().modified` stays false. `_replaceTextImpl` calls `embedEditFont(doc.pdfDoc, fontName, false, false)` before any occurrence is matched, so a no-op replace registers a font that `serializeDoc` then emits. The shipped test only compares one page's content-stream text, so it misses the whole-document change; the renderer's `getDocumentBytes` proxy refresh and any later save carry an unreferenced font.
+
+Evidence: `node node_modules/vitest/vitest.mjs run --config test-fixtures/adv449/vitest.probe.config.ts` -> A3 FAIL at line 141 (`expected false to be true`); `[A3] bytes equal= false len before/after= 1411 1444`. Log `test-fixtures/TFL-450-p86-adv-probe.log`.
+
+History:
+- qa: opened (reproduced from ADV-172, TFL-449)
+- CTO (TFL-425): FIX-READY - backend-dev TFL-451: deferred `embedEditFont` to the first anchor and made `snapshotDocWithPdf` save with `updateFieldAppearances:false` (the default save lazily created an empty /AcroForm; new `docHasAcroForm` guard). `getDocumentBytes` is byte-identical after a fully-skipped replace (1410 -> 1410). Unit 25/25, typecheck exit 0. Awaiting qa retest.
+- qa (TFL-452): CLOSED - probe A3 passes: `[A3] bytes equal= true len before/after= 1411 1411` and `modified=false` after a fully-skipped replace. Probe suite 17 passed / 1 failed (A1 by design); phase unit 25/25 (2 files); blast-radius 274/274 (26 form/redaction/serialize files); e2e 7/7; `npm run verify` exit 0.
+
+## DEF-505: In-session `exportText` omits a Phase-10 `editTextRun` committed after a replace
+
+- Status: CLOSED
+- Severity: MEDIUM
+- Found by: adversary (ADV-173)
+- Phase: 86 (FEA-038 search and replace)
+
+Steps to reproduce:
+1. Build the 1-page Helvetica fixture (page 1 `SECRET` y700, `SIBLING` y600) and load it.
+2. `engine.replaceText('d', { occurrences: [SECRET_OCC], replacement:'PUBLIC' })`.
+3. `engine.editTextRun('d', { page:1, rect: runRect(600), newText:'EDITED' })` (the SIBLING line); note `ok:true`.
+4. Read `engine.exportText('d')` in-session.
+5. `engine.save('d')`, load into a second engine and read `exportText` again; then replace `PUBLIC` -> `FINAL` and read `exportText` once more.
+
+Expected: in-session `exportText` reflects every committed edit in the session, matching the save+reopen text.
+
+Actual: after step 4 the page text is `SIBLINGPUBLIC` — the just-committed `EDITED` is missing. After save+reopen (step 5) it is `SIBLINGPUBLICEDITED`, so the edit IS persisted. `getDocumentBytes` (probe A13) contains the `EDITED` operator and the later `PUBLIC` -> `FINAL` replace works, so the live document holds the edit; only `exportText`'s direct `doc.pdfDoc.save({ useObjectStreams:false })` (`engine.ts:2290`) fails to surface it after a replace installed its own single-entry `/Contents` array. A user who replaces text, edits text, then exports text gets stale/missing content with no warning.
+
+Evidence: probe A9 FAIL at line 261 (`expected 'SIBLINGPUBLIC' to contain 'EDITED'`); observations `[A9] after edit= "SIBLINGPUBLIC"`, `[A9] after save+reopen= "SIBLINGPUBLICEDITED"`, `[A9] again= {"replaced":1,"skipped":[]}`, `[A9] after again= "SIBLINGFINAL"`. Log `test-fixtures/TFL-450-p86-adv-probe.log`.
+
+History:
+- qa: opened (reproduced from ADV-173, TFL-449)
+- CTO (TFL-425): FIX-READY - backend-dev TFL-451: pdf-lib's `PDFFlateStream` cached encoded bytes on the first `getContents()` and `PDFContentStream.push` never invalidated it; added `refreshPageContentStream` / `refreshDocumentContentStreams` (re-encode from live operators) after the replace anchors and after `editTextRun` draws, and before `exportText`'s raw save. In-session `exportText` now contains the post-replace edit. Awaiting qa retest.
+- qa (TFL-452): CLOSED - probe A9 passes: in-session `[A9] after edit= "SIBLINGPUBLICEDITED"` matches the save+reopen extraction `[A9] after save+reopen= "SIBLINGPUBLICEDITED"`, and the later PUBLIC -> FINAL replace still applies. Probe suite 17 passed / 1 failed (A1 by design); phase unit 25/25 (2 files); blast-radius 274/274 (26 files); e2e 7/7; `npm run verify` exit 0.
+
+## DEF-506: A partially-drawable replacement silently drops its undrawable characters and reports success
+
+- Status: CLOSED
+- Severity: HIGH
+- Found by: adversary (ADV-174)
+- Phase: 86 (FEA-038 search and replace)
+
+Steps to reproduce:
+1. Build the 1-page Helvetica fixture with a drawable `SECRET` run; load it.
+2. `engine.replaceText('d', { occurrences: [SECRET_OCC], replacement: 'A\u4e2dB' })` — an ASCII char, a CJK char the StandardFont cannot encode, then an ASCII char.
+3. Read `engine.exportText('d')` and the result report.
+
+Expected: the op is fail-loud. `_replaceTextImpl` already refuses when a non-empty replacement has NO drawable characters (`engine.ts:2824-2829`); a mixed replacement must likewise be reported (refused, or skip/warn naming the dropped characters) so the user knows the drawn text is not what they typed.
+
+Actual: `replaced: 1`, `skipped: []`, page text `SIBLINGAB` — the CJK character was silently dropped by `sanitizeForStandardFont` and the op reported unqualified success with no warning. The renderer's report line reads "1 replaced, 0 skipped" while the replacement text is silently altered. Violates Phase 86 success criterion 3 (fail-loud, never silently dropped); the CTO raised the suggested MEDIUM to HIGH on that basis.
+
+Evidence: probe A11 FAIL at line 290 (`expected 'SIBLINGAB' to contain '\u4e2d'`); `[A11] result= {"replaced":1,"skipped":[]} text= "SIBLINGAB"`. Log `test-fixtures/TFL-450-p86-adv-probe.log`.
+
+History:
+- qa: opened (reproduced from ADV-174, TFL-449)
+- CTO (TFL-425): FIX-READY - backend-dev TFL-451: chose the refuse-loudly path; `_replaceTextImpl` now compares `sanitizeForStandardFont(replacement)` with the original and returns `engine-error` naming the undrawable characters before any mutation (new `undrawableStandardFontChars` helper). Test: `A中B` is refused, the page text is unchanged. Awaiting qa retest (the adversary probe A11 asserts the CJK char is DRAWN, which contradicts this accepted outcome - qa must correct that assertion to refusal/unchanged).
+- qa (TFL-452): CLOSED - corrected ONLY the probe A11 oracle assertion to the accepted refuse-loudly behaviour (it now expects `ok:false` / typed `engine-error` and an unchanged page). Probe A11 passes: `[A11] result= {"ok":false,"error":{"code":"engine-error","message":"replaceText: the replacement contains characters the StandardFont cannot draw: \"中\""}} text= "SECRETSIBLING"` - refused loudly, no mutation. Probe suite 17 passed / 1 failed (A1 by design); phase unit 25/25 (2 files); blast-radius 274/274 (26 files); e2e 7/7; `npm run verify` exit 0.
+
+## DEF-507: A term split across more than one show run is found by Find but always skipped by Replace
+
+- Status: CLOSED
+- Severity: MEDIUM
+- Found by: adversary (ADV-175)
+- Phase: 86 (FEA-038 search and replace)
+
+Steps to reproduce:
+1. Run pure `planReplace` probe B1: content `BT /F1 12 Tf 10 20 Td [(HEL) -20 (LO)] TJ ET` with a rect covering the whole array and `find:'HELLO'` — a visual word split into two show strings of one `TJ` (common kerning/word-splitting).
+2. Run probe B2: content `BT /F1 12 Tf 10 20 Td (HEL) Tj /F2 12 Tf (LO) Tj ET` with `find:'HELLO'` — a word split by a `Tf` font switch.
+
+Expected: a term the Find bar reports as an occurrence can be replaced (the renderer's `hitToOccurrence`, `DocumentView.tsx:243-285`, builds a rect for a multi-item hit and hands it to the engine; success criterion 1 promises "replace all occurrences across the document").
+
+Actual: both cases are always returned in `skipped`, removing nothing: `reason: "the covered glyphs span more than one text run"`. `resolveOccurrence` (`src/shared/searchReplace.ts:524-527`) rejects any occurrence whose covered glyphs do not all live in exactly ONE show run, so Replace-all can never change such a term although Find lists it. The shipped "replaces inside a TJ array" unit test only covers a match fully contained in ONE array element, so the intended TJ-array coverage is not actually exercised.
+
+Evidence: probe B1 FAIL at line 369 and B2 FAIL at line 376 (`expected 1 to be +0`); `[B1]`/`[B2] removed= 0 skipped= [{"page":1,"rect":{"x":8,"y":15,"width":40,"height":18},"find":"HELLO","reason":"the covered glyphs span more than one text run"}]`. Log `test-fixtures/TFL-450-p86-adv-probe.log`.
+
+History:
+- qa: opened (reproduced from ADV-175, TFL-449)
+- CTO (TFL-425): FIX-READY - backend-dev TFL-451: `resolveOccurrence` now groups the covered glyphs by run in reading order, skips runs contributing no covered glyph, requires each run's covered indices to be contiguous, concatenates them to match `find`, and emits ONE anchor at the FIRST covered glyph using the first covered run's font; the single-run veto is removed. Probes B1/B2 now pass. Awaiting qa retest.
+- qa (TFL-452): CLOSED - probes B1/B2 pass: `[B1] removed= 5 skipped= []` (TJ-split) and `[B2] removed= 5 skipped= []` (Tf switch), one anchor at the first covered glyph, no skip. Probe suite 17 passed / 1 failed (A1 by design); phase unit 25/25 (2 files); blast-radius 274/274 (26 files); e2e 7/7; `npm run verify` exit 0.
+
+## DEF-499: replace-one then replace-all silently loses a replaced occurrence (content loss)
+
+- Status: CLOSED
+- Severity: HIGH
+- Found by: qa
+- Phase: 86 (FEA-038 search and replace)
+
+Steps to reproduce:
+1. Build a 2-page Helvetica fixture: page 1 `SECRET`(y700) `SECRET`(y620) `SIBLING`(y540); page 2 `SECRET`(y700) `OTHERPAGE`(y620). (The Phase 86 e2e spec builds this in-process.)
+2. Launch the app, open the fixture, press Ctrl+F, type `SECRET` (3 hits), open the replace row, set replacement `PUBLIC`.
+3. Trigger Replace (replace-one): the report reads `1 replaced, 0 skipped`; page 1 now shows `PUBLIC` at y700, `SECRET` at y620, `SIBLING`.
+4. Trigger Replace all (2 hits remain): the report reads `2 replaced, 0 skipped`.
+5. Save and reopen the file.
+
+Expected: extracted text for page 1 is `SIBLING` + `PUBLIC` + `PUBLIC` (both page-1 occurrences replaced), page 2 is `OTHERPAGE` + `PUBLIC`; three `PUBLIC`, zero `SECRET`, `SIBLING`/`OTHERPAGE` unchanged, and the result survives save/reload.
+
+Actual: page 1 extraction is `SIBLINGPUBLIC` - only ONE `PUBLIC`; the y620 occurrence is gone entirely (the old `SECRET` glyphs were removed and the replacement was NOT drawn). Page 2 is `OTHERPAGEPUBLIC`. Two `PUBLIC` total, and the loss persists after save/reload. A screenshot shows the y620 line of page 1 blank. A FRESH `replace-all` on the same fixture (no prior replace-one) correctly writes all three `PUBLIC` and survives reload (`P86-REPLACEALL-FRESH` passes), so the loss is specific to a second `engine.replaceText` on a page that already had a prior `replaceText`.
+
+Evidence: `e2e/phase86_search_replace.spec.cjs` test `P86-CORE` fails at `count(reopened,'PUBLIC')===3` (got 2); `P86-REPLACEALL-FRESH` passes. Run log `test-fixtures/TFL-432-p86-e2e.log`. Screenshots `screenshots/p86-02-replace-one.png` (line1 PUBLIC, line2 SECRET, SIBLING) and `screenshots/p86-03-replace-all.png` (line1 PUBLIC, line2 BLANK, SIBLING; report `2 replaced, 0 skipped`).
+
+History:
+- qa: opened (TFL-432 Phase 86 validation; criterion 1/2 FAIL)
+- CTO (TFL-425): assigned to backend-dev as TFL-434 (sequential-replace content loss).
+- CTO (TFL-425): FIX-READY - backend-dev TFL-434: root cause was pdf-lib's cached page.contentStream left stale by the previous replace, so the next drawText appended to an orphaned stream; fixed by resetting the cache and installing /Contents as a one-entry array. phase86ReplaceEngine + searchReplace 19 tests pass (incl. new sequential replace-one-then-replace-all case), typecheck exit 0, sequential result persists through serialize + reopen. Awaiting qa retest.
+- qa (TFL-438, 2026-10-02): RETEST BLOCKED at e2e level. `npm.cmd run test:e2e -- e2e/phase86_search_replace.spec.cjs` P86-CORE dies at the first real pointer click on `[data-search-replace-one]` (intercepted by `.canvas-overlay`), so the DEF-499 sequential replace-one-then-replace-all UI assertion never ran. Unit evidence is green: `phase86ReplaceEngine` 9/9 incl. "sequential replace-one then replace-all keeps every replacement (DEF-499)", `searchReplace` 10/10 (35 passed / 4 files). Left FIX-READY pending a green e2e once DEF-500's pointer collision is resolved. Log `test-fixtures/TFL-438-p86-e2e-retest.log`.
+- CTO (TFL-425): stays FIX-READY; the unit-level sequential proof is green but the e2e proof cannot run until DEF-500's pointer collision (TFL-440) is fixed. A qa fix-retest will re-run the e2e and close on PASS.
+- qa (TFL-443, 2026-10-03): RETEST STILL BLOCKED at e2e level (attempt 2). Unit evidence remains green, but the sequential P86-CORE proof cannot run: the Replace (one) control is intercepted by the Replace-all control's overflowing text label (see DEF-500 attempt-2 retest), so a real click on `[data-search-replace-one]` executes Replace-all. Evidence: `P86-UNDO` fails at `waitHits(2)` for 30s after the Replace click (the click replaced all 3), and `P86-CORE` fails on the DEF-500 hit-test before the sequential flow. Command `npm.cmd run test:e2e -- e2e/phase86_search_replace.spec.cjs` -> 5 passed / 2 failed (P86-CORE, P86-UNDO). Left OPEN, pending a Replace-button layout fix.
+- CTO (TFL-425): stays OPEN, blocked by the same layout cause as DEF-500. The backend unit fix is green (38 phase-86 unit tests pass); the sequential e2e proof (P86-CORE) cannot run until a real Replace click performs replace-one (TFL-444).
+- qa (TFL-448, 2026-10-03): CLOSED (attempt 3). Rebuilt (`npm.cmd run build`, exit 0) and ran `npm.cmd run test:e2e -- e2e/phase86_search_replace.spec.cjs`: 7 passed / 0 failed (41.6s). P86-CORE proves the sequential flow with real pointer clicks - replace-one reports `1 replaced, 0 skipped` (one PUBLIC), then replace-all reports `2 replaced, 0 skipped`, ending with 3 PUBLIC / 0 SECRET, SIBLING and OTHERPAGE intact, and the result survives save + reload (`count(reopened,'PUBLIC')===3`). Focused unit specs `phase86ReplaceEngine` + `searchReplace` + `phase86SearchReplace` + `phase86SearchReplaceCss` 42 passed / 4 files; `npm.cmd run verify` exit 0. Log `test-fixtures/TFL-448-p86-e2e.log`.
+
+## DEF-500: Find bar / Phase 86 replace controls sit under the always-on Inspector and are not clickable
+
+- Status: CLOSED
+- Severity: HIGH
+- Found by: qa
+- Phase: 86 (FEA-038 search and replace)
+
+Steps to reproduce:
+1. Launch the app and open any document (the Inspector is open and expanded by default).
+2. Press Ctrl+F to open the Find bar.
+3. Note the Find bar spans the full workspace width and its right-side controls sit inside the Inspector's 264px right strip. Toggle the replace row and try to click `[data-search-replace-one]` / `[data-search-replace-all]` with the mouse.
+
+Expected: every Find-bar control, including the Phase 86 `[data-search-replace-toggle]`, `[data-search-replace-one]` and `[data-search-replace-all]`, is hit-testable and performs its promised action.
+
+Actual: `document.elementFromPoint` over the toggle's centre returns the Inspector header (`HEADER` / `glass-sidebar-header inspector-header`, inside `[data-inspector="true"]`); a real Playwright pointer click is intercepted and times out. The Phase 86 replace controls cannot be reached by pointer in the default document view. `.search-bar` (grid-row 4 of `.workspace-main`) does not reserve `--tf-tools-inset`, unlike the page-view scroller, the `.canvas-overlay`, the OCR suspects bar and the notice cards (the DEF-357 collision class).
+
+Evidence: `[p86|replace-toggle-hit-test] {"toggleBox":{"x":2418,"y":47.5,"w":28,"h":32},"inspectorBox":{"x":2296,"w":264},"hitTag":"HEADER","hitInInspector":true,"hitClass":"glass-sidebar-header inspector-header"}`. Screenshots `screenshots/p86-00-inspector-overlap.png` (controls hidden behind the Inspector), `screenshots/p86-02-replace-one.png`. The e2e spec drives the covered buttons via `dispatchEvent('click')` so the underlying feature can still be verified; real pointer clicks time out. Workaround: collapse the Inspector first.
+
+History:
+- qa: opened (TFL-432 Phase 86 validation; criterion 1 CONTROL-INDEX FAIL)
+- CTO (TFL-425): assigned to frontend-dev as TFL-435 (reserve --tf-tools-inset on .search-bar).
+- CTO (TFL-425): FIX-READY - frontend-dev TFL-435: .search-bar base rule now declares `margin-right: var(--tf-tools-inset, 0px)` (`styles.css:4666`), mirroring .document-scroller/.ocr-suspects-panel; no theme override and no SearchBar.tsx change needed. New `test/unit/renderer/phase86SearchReplaceCss.test.ts` 3/3, renderer tests 16/16, typecheck exit 0. Awaiting qa retest with real pointer clicks.
+- qa (TFL-438, 2026-10-02): RETEST FAIL — fix incomplete. Rebuilt (`npm.cmd run build` exit 0) and ran the e2e with the `dispatchEvent` workaround removed (real pointer clicks, Inspector left OPEN). The TOGGLE is fixed: `document.elementFromPoint` over its centre returns the toggle (`{"toggleBox":{"x":2154,"y":47.5,"w":28,"h":32},"inspectorBox":{"x":2296,"w":264},"hitTag":"svg","hitInInspector":false,"hitIsToggle":true}`), no longer the Inspector header. But `[data-search-replace-one]` and `[data-search-replace-all]` are STILL not real-pointer-reachable: a `.canvas-overlay` page-layout button (`data-page-layout-option="two"/"four"`) intercepts pointer events, so Playwright's click times out (5 failed / 1 passed; only P86-REGRESSION, which does not touch the replace controls, passed). The `.search-bar` inset reservation moved the replace controls out from under the Inspector and into the `.canvas-overlay` top-right layout-button strip — the DEF-357 collision class, a different occluder. Evidence: `test-fixtures/TFL-438-p86-e2e-retest.log`, screenshots `screenshots/p86-00-inspector-overlap.png`, `screenshots/p86-06-replace-fixed.png`. Owner: frontend-dev — the replace one/all controls must clear the `.canvas-overlay` layout button strip.
+- CTO (TFL-425): re-assigned to frontend-dev as TFL-440 (attempt 2). Required outcome: with the Inspector open, a REAL pointer click reaches `[data-search-replace-one]`/`-all`; the page-layout control stays functional. Anchors: `.search-bar` (styles.css:4647-4667, no position/z-index) vs `.canvas-page-layout` (styles.css:16163-16180, `z-index: 3` in the same stacking context) and the `--tf-chrome-y` measure (DocumentView.tsx:1894-1923).
+- CTO (TFL-425): FIX-READY - frontend-dev TFL-440 (attempt 2): root cause was the stale `--tf-chrome-y` measure when the replace row grew `.search-bar`; DocumentView now ResizeObserver-observes `.toolbar`/`.search-bar` and re-publishes the token (`DocumentView.tsx:1911-1957`), so the page-layout control is pushed below the real chrome. phase86SearchReplace + Css 19 passed (13+6), typecheck exit 0. Awaiting qa real-pointer retest.
+- qa (TFL-443, 2026-10-03): RETEST FAIL (attempt 2) - fix incomplete. Rebuilt (`npm.cmd run build` exit 0) and ran `npm.cmd run test:e2e -- e2e/phase86_search_replace.spec.cjs` with real pointer clicks, Inspector OPEN. The page-layout collision IS fixed: `document.elementFromPoint` over the replace controls no longer returns `[data-page-layout-option]`, and the Inspector no longer covers them. But the two replace controls now overlap EACH OTHER: both render as `.tool-btn` 28px wide while their text labels ("Replace" / "Replace all") overflow, so the centre of `[data-search-replace-one]` (`box {x:2222,y:88,w:28,h:32}`) hit-tests to the `[data-search-replace-all]` button - `{"hitTag":"BUTTON","hitClass":"tool-btn","hitText":"Replace all","hitTitle":"Replace all matches","hitReplaceAll":true,"hitIsSelf":false}`. Consequence: a real click on Replace performs Replace-all (P86-UNDO: 3 replaced, `waitHits(2)` times out 30s). Result 5 passed / 2 failed (P86-CORE, P86-UNDO; P86-BLAST-RADIUS page-layout switch passes). Owner: frontend-dev - the replace one/all controls must not overlap (give the labelled buttons a width that fits their text, or prevent label overflow capturing pointer events). Left OPEN. Evidence: run log `test-fixtures/TFL-443-p86-e2e.log`, screenshots `screenshots/p86-06-replace-fixed.png`, `screenshots/p86-08-layout-blast-radius.png`.
+- CTO (TFL-425): re-assigned to frontend-dev as TFL-444 (attempt 3). Written hypothesis: the two labelled buttons reuse the fixed 28px `.tool-btn` (`styles.css:4418-4463`: `width:28px; flex-shrink:0; padding:0; white-space:nowrap`, no overflow clip), so each label overflows its box and `[data-search-replace-all]` captures the centre of `[data-search-replace-one]`; fix = a scoped content-fitting class for the two replace buttons, never a global `.tool-btn` change.
+- qa (TFL-448, 2026-10-03): CLOSED (attempt 3). The `.search-replace-btn` class (`styles.css:4677`) makes both labelled buttons content-fit (`width:auto`), so they no longer overlap. With the Inspector OPEN, `document.elementFromPoint` at the centre of each control returns that control: `[data-search-replace-one]` box `{x:2135.3,w:63.4}` -> `hitText:"Replace"`, `hitReplaceOne:true`, `hitIsSelf:true`; `[data-search-replace-all]` box `{x:2204.7,w:79.3}` -> `hitText:"Replace all"`, `hitReplaceAll:true`, `hitIsSelf:true`; neither hits `[data-page-layout-option]`. Real Playwright `click()` on both succeeds under `npm.cmd run test:e2e -- e2e/phase86_search_replace.spec.cjs` (7 passed / 0 failed). Blast radius: P86-BLAST-RADIUS real-clicks `[data-page-layout-option="four"]` with Find closed and the layout switches to `four` (aria-pressed true). Screenshot `screenshots/p86-07-replace-reachable.png`; log `test-fixtures/TFL-448-p86-e2e.log`.
+
 ## DEF-495: merge silently discards every source document's /Outlines
 
 - Status: CLOSED

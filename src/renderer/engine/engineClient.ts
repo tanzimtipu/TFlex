@@ -43,6 +43,8 @@ import type {
   PdfCadMetadata,
   PdfLayer,
   RedactionApplyResult,
+  ReplaceTextPayload,
+  ReplaceTextResult,
   SignaturePlacement,
   SpaceAudit,
   TextPage,
@@ -540,6 +542,14 @@ addWatermark?(
     docId: string,
     payload: ApplyRedactionsPayload,
   ): Promise<Result<RedactionApplyResult, EngineError>>;
+  /** Phase 86 (FEA-038) — rewrite the glyphs covered by each occurrence with
+   *  `payload.replacement`, echoing the updated state and a replaced/skipped
+   *  report. Optional so a pre-Phase-86 backend degrades with a friendly
+   *  engine-error. */
+  replaceText?(
+    docId: string,
+    payload: ReplaceTextPayload,
+  ): Promise<Result<ReplaceTextResult, EngineError>>;
 }
 
 /** Normalize a wire EngineState into the renderer's EngineState: the Phase 3
@@ -788,6 +798,12 @@ function missingPhase85(): Result<never, EngineError> {
   );
 }
 
+function missingPhase86(): Result<never, EngineError> {
+  return err(
+    "engine-error",
+    "search replace requires the Phase 86 backend update",
+  );
+}
 function missingPhase18(): Result<never, EngineError> {
   return err(
     "engine-error",
@@ -1353,6 +1369,24 @@ class RealEngineAdapter implements EngineApi {
   ): Promise<Result<RedactionApplyResult, EngineError>> {
     if (this.inner.applyRedactions === undefined) return missingPhase10();
     const r = await this.inner.applyRedactions(docId, payload);
+    return r.ok
+      ? {
+          ok: true,
+          value: { ...r.value, state: this.normalizeAndCache(docId, r.value.state) },
+        }
+      : r;
+  }
+
+  /** Phase 86 (FEA-038) — rewrite the covered glyphs through the real engine.
+   *  The result embeds its own `state`, so normalize that through the cache
+   *  while preserving the replaced/skipped report. Mirrors the
+   *  `applyRedactions` adapter shape. */
+  async replaceText(
+    docId: string,
+    payload: ReplaceTextPayload,
+  ): Promise<Result<ReplaceTextResult, EngineError>> {
+    if (this.inner.replaceText === undefined) return missingPhase86();
+    const r = await this.inner.replaceText(docId, payload);
     return r.ok
       ? {
           ok: true,

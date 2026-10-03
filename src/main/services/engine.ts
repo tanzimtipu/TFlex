@@ -8,6 +8,7 @@ import {
   removeRedactedGlyphs,
   type RedactionAdvanceResolver,
 } from '../../shared/redaction';
+import { planReplace } from '../../shared/searchReplace';
 import type {
   AddStampPayload,
   AddTextBoxPayload,
@@ -51,6 +52,10 @@ import type {
   PdfLayer,
   PlaceSignaturePayload,
   RedactionApplyResult,
+  ReplaceOccurrence,
+  ReplaceSkip,
+  ReplaceTextPayload,
+  ReplaceTextResult,
   SignaturePlacement,
   SpaceAudit,
   TextAlign,
@@ -2216,6 +2221,12 @@ export class EngineService {
       // FlateDecode stream -> Tj/TJ text operators. createDocxFromDoc
       // already used `useObjectStreams: false` for the same reason; this
       // brings exportText in line.
+      //
+      // DEF-505 — a Phase-10 op that snapshots the pdfDoc (save) before drawing
+      // leaves pdf-lib's per-page content-stream byte cache stale for the
+      // operators it pushed afterwards. Re-encode from the live operators so the
+      // raw save below reads the CURRENT page content, not the pre-draw bytes.
+      refreshDocumentContentStreams(doc.pdfDoc);
       const bytes = await doc.pdfDoc.save({ useObjectStreams: false });
       const pages: TextPage[] = [];
       const pageCount = doc.pdfDoc.getPageCount();
@@ -2293,6 +2304,8 @@ export class EngineService {
       // user actually sees (deleted pages dropped, reorders honoured). The
       // renderer's DocxImageEntry.pageNumber is 1-based VISIBLE, matching the
       // exportText / EngineState.pageOrder convention.
+      // DEF-505 — same stale-content-stream-cache read path as exportText.
+      refreshDocumentContentStreams(doc.pdfDoc);
       const bytes = await doc.pdfDoc.save({ useObjectStreams: false });
       const visibleCount = doc.order.length;
       const entryByPage = new Map<number, DocxImageEntry>();
@@ -2554,6 +2567,11 @@ export class EngineService {
         );
       }
 
+      // DEF-505 — re-encode this page's content-stream cache from the live
+      // operators (mask + drawn text) so a later snapshot or raw read path
+      // (`exportText`) sees the edit instead of the pre-draw bytes.
+      refreshPageContentStream(page);
+
       doc.undoStack.push(snapshot);
       doc.redoStack = [];
       doc.modified = true;
@@ -2681,6 +2699,215 @@ export class EngineService {
       return err(
         'engine-error',
         `applyRedactions failed: ${e instanceof Error ? e.message : String(e)}`,
+      );
+    }
+  }
+
+  /**
+   * Phase 86 (FEA-038) — search-and-replace. Permanently remove the glyphs
+   * covered by every occurrence from the target page's content stream (only
+   * when they spell the occurrence's `find` case-insensitively) and draw the
+   * replacement as real glyphs at each covered run's baseline. ONE undo
+   * snapshot is taken before any mutation, so replacing any number of
+   * occurrences across any number of pages is ONE undo entry. Enqueued
+   * through `_enqueue` like every other mutating op.
+   *
+   * Refuses the whole op with a typed `replace-unsupported` error (and leaves
+   * the document byte-for-byte unchanged) when a target page's content stream
+   * cannot be decoded. Occurrences that cannot be positively matched, or
+   * whose font advances cannot be measured, are reported in `skipped` and
+   * remove nothing.
+   */
+  async replaceText(
+    docId: string,
+    payload: ReplaceTextPayload,
+  ): Promise<Result<ReplaceTextResult, EngineError>> {
+    return this._enqueue(docId, () => this._replaceTextImpl(docId, payload));
+  }
+
+  private async _replaceTextImpl(
+    docId: string,
+    payload: ReplaceTextPayload,
+  ): Promise<Result<ReplaceTextResult, EngineError>> {
+    const doc = this.docs.get(docId);
+    if (doc === undefined) {
+      return err('engine-error', `unknown document: ${docId}`);
+    }
+    const occurrences = Array.isArray(payload.occurrences) ? payload.occurrences : [];
+    if (occurrences.length === 0) {
+      return err('engine-error', 'replaceText: no occurrences provided');
+    }
+    for (const occ of occurrences) {
+      if (typeof occ.find !== 'string' || occ.find.length === 0) {
+        return err('engine-error', 'replaceText: every occurrence requires a non-empty find');
+      }
+    }
+    // Resolve every occurrence's page BEFORE mutating; an out-of-range page
+    // refuses the whole op with nothing applied.
+    for (const occ of occurrences) {
+      const pageResult = resolveVisiblePage(doc, occ.page);
+      if (!pageResult.ok) return pageResult;
+    }
+    // Phase 86 Ruling 8 — the replacement font: payload override, else the
+    // persisted default, else Helvetica; validated by the Phase-27 allowlist.
+    const fontName = payload.font ?? DEFAULT_SETTINGS.editDefaultFont ?? 'Helvetica';
+    if (!isEditFont(fontName)) {
+      return err(
+        'engine-error',
+        `replaceText: unsupported font ${JSON.stringify(fontName)}; supported families are ${EDIT_FONTS.join(', ')}`,
+      );
+    }
+    const replacement = typeof payload.replacement === 'string' ? payload.replacement : '';
+    // The replacement is drawn with a StandardFont (WinAnsiEncoding). Refuse
+    // loud BEFORE mutating when a non-empty replacement has no drawable
+    // characters, so the op can never remove the old glyphs and draw nothing.
+    const safeReplacement = sanitizeForStandardFont(replacement);
+    if (replacement.length > 0 && safeReplacement.length === 0) {
+      return err(
+        'engine-error',
+        'replaceText: the replacement has no characters the StandardFont can draw',
+      );
+    }
+    // DEF-506 — a partially-drawable replacement must be reported loudly, never
+    // silently truncated (`A\u4e2dB` would otherwise draw only `AB`). Refuse the
+    // whole op before mutating, naming the characters the StandardFont cannot
+    // draw, mirroring the empty-replacement refusal above.
+    if (safeReplacement !== replacement) {
+      const undrawable = undrawableStandardFontChars(replacement);
+      return err(
+        'engine-error',
+        `replaceText: the replacement contains characters the StandardFont cannot draw: ${undrawable
+          .map((ch) => JSON.stringify(ch))
+          .join(', ')}`,
+      );
+    }
+    const color = payload.color ?? { r: 0, g: 0, b: 0 };
+
+    // ONE snapshot before any mutation: replace-all is ONE undo entry.
+    const snapshot = await snapshotDocWithPdf(doc);
+    try {
+      // DEF-504 — the replacement font is embedded LAZILY, at the first anchor
+      // only, so a call with no anchors registers no font.
+      let font: Awaited<ReturnType<typeof embedEditFont>> | undefined;
+
+      // Group occurrences by VISIBLE page, preserving input order.
+      const byPage = new Map<number, ReplaceOccurrence[]>();
+      for (const occ of occurrences) {
+        const list = byPage.get(occ.page);
+        if (list) list.push(occ);
+        else byPage.set(occ.page, [occ]);
+      }
+
+      let replaced = 0;
+      const skipped: ReplaceSkip[] = [];
+      const substitutedFonts = new Set<string>();
+
+      for (const [pageNo, occs] of byPage) {
+        const pageResult = resolveVisiblePage(doc, pageNo);
+        if (!pageResult.ok) return pageResult;
+        const page = doc.pdfDoc.getPage(pageResult.value);
+        const pageHeight = page.getSize().height;
+
+        // Decode the content stream(s); an unsupported filter throws
+        // RedactionUnsupportedError, mapped to replace-unsupported below.
+        const content = decodePageContentStreams(doc.pdfDoc, page);
+
+        // Convert each top-left page-point rect into content-stream user space
+        // exactly like _applyRedactionsImpl.
+        const userOccurrences: ReplaceOccurrence[] = occs.map((occ) => ({
+          page: occ.page,
+          find: occ.find,
+          rect: {
+            x: occ.rect.x,
+            y: pageHeight - (occ.rect.y + occ.rect.height),
+            width: occ.rect.width,
+            height: occ.rect.height,
+          },
+        }));
+
+        const resolver = buildRedactionAdvanceResolver(page);
+        const plan = planReplace(content, userOccurrences, replacement, resolver);
+
+        // Write the rewritten stream back ONCE. Install it as a one-entry
+        // ARRAY so pdf-lib's `addContentStream` (called by `drawText` below)
+        // can append the replacement stream, and reset the library's cached
+        // page content stream first so the next op starts a fresh stream
+        // instead of appending to a now-orphaned one (DEF-499).
+        if (plan.removedGlyphs > 0) {
+          const streamRef = doc.pdfDoc.context.register(
+            doc.pdfDoc.context.flateStream(Buffer.from(plan.content, 'latin1')),
+          );
+          resetPageContentStreamCache(page);
+          page.node.set(PDFName.of('Contents'), doc.pdfDoc.context.obj([streamRef]));
+        }
+
+        // Draw every anchor at its baseline origin in stream user space.
+        for (const anchor of plan.anchors) {
+          if (font === undefined) {
+            font = await embedEditFont(doc.pdfDoc, fontName, false, false);
+          }
+          const size =
+            typeof payload.size === 'number' && payload.size > 0
+              ? payload.size
+              : anchor.fontSize > 0
+                ? anchor.fontSize
+                : 12;
+          page.drawText(safeReplacement, {
+            x: anchor.pageX,
+            y: anchor.pageYBaseline,
+            size,
+            font,
+            color: rgb(color.r, color.g, color.b),
+          });
+          if (anchor.substituted) substitutedFonts.add(anchor.fontName);
+        }
+
+        // DEF-505 — pdf-lib freezes a page content stream's encoded bytes the
+        // first time they are read (a snapshot/save) and `push` never
+        // invalidates that cache; re-encode from the live operators so the
+        // replacement anchors are visible to a later `pdfDoc.save()` read path.
+        if (plan.anchors.length > 0) refreshPageContentStream(page);
+
+        replaced += occs.length - plan.skipped.length;
+        for (const s of plan.skipped) {
+          skipped.push({
+            page: s.page,
+            rect: {
+              x: s.rect.x,
+              y: pageHeight - (s.rect.y + s.rect.height),
+              width: s.rect.width,
+              height: s.rect.height,
+            },
+            find: s.find,
+            reason: s.reason,
+          });
+        }
+      }
+
+      // A call where every occurrence was skipped changed nothing: keep the
+      // document unmodified and add no undo entry. Otherwise ONE snapshot
+      // covers every page's rewrite, so replace-all is ONE undo entry.
+      if (replaced > 0) {
+        doc.undoStack.push(snapshot);
+        doc.redoStack = [];
+        doc.modified = true;
+      }
+      return ok({
+        state: buildState(doc),
+        replaced,
+        skipped,
+        substitutedFonts: [...substitutedFonts],
+      });
+    } catch (e) {
+      // Restore the pre-change bytes exactly (mirrors _applyRedactionsImpl):
+      // all-or-nothing on a page-decode refusal.
+      await tryRestorePdfBytes(doc, snapshot.pdfBytes);
+      if (e instanceof RedactionUnsupportedError) {
+        return err('replace-unsupported', `replaceText: ${e.reason}`);
+      }
+      return err(
+        'engine-error',
+        `replaceText failed: ${e instanceof Error ? e.message : String(e)}`,
       );
     }
   }
@@ -4714,6 +4941,24 @@ function sanitizeForStandardFont(text: string): string {
 }
 
 /**
+ * DEF-506 — the distinct characters in `text` that `sanitizeForStandardFont`
+ * cannot draw as written (non-Latin-1 code points, or control characters it
+ * would replace with a space). Used to name them in the refusal message so a
+ * partially-drawable replacement is never silently truncated.
+ */
+function undrawableStandardFontChars(text: string): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const ch of text) {
+    if (sanitizeForStandardFont(ch) === ch) continue;
+    if (seen.has(ch)) continue;
+    seen.add(ch);
+    out.push(ch);
+  }
+  return out;
+}
+
+/**
  * Wrap text to fit a max width, breaking on word boundaries. Long words
  * that exceed the width are hard-broken across lines. Newlines in the
  * input are honoured as explicit line breaks.
@@ -4800,7 +5045,12 @@ function snapshotDoc(doc: EngineDoc): Snapshot {
 async function snapshotDocWithPdf(doc: EngineDoc): Promise<Snapshot> {
   const snap = snapshotDoc(doc);
   try {
-    const bytes = await doc.pdfDoc.save();
+    // DEF-504 — `updateFieldAppearances: false` keeps the snapshot a pure
+    // capture. The default `true` makes `prepareForSave` call
+    // `formCache.getValue()`, which LAZILY CREATES an empty /AcroForm on a
+    // formless catalog and changes the serialized bytes of an op that
+    // replaces nothing. A snapshot must never mutate the document.
+    const bytes = await doc.pdfDoc.save({ updateFieldAppearances: false });
     snap.pdfBytes = bytes;
   } catch {
     // If serialization fails, proceed without a pdf snapshot — undo of
@@ -4863,8 +5113,24 @@ async function tryRestorePdfBytes(doc: EngineDoc, bytes: Uint8Array | undefined)
   }
 }
 
+/**
+ * DEF-504 — true only when the document's catalog already carries an
+ * /AcroForm. pdf-lib's `getForm()` LAZILY CREATES an empty /AcroForm on a
+ * formless catalog, so every read-only snapshot/state build would otherwise
+ * mutate the document and change its serialized bytes. Guard all form reads
+ * on this so an op that changes nothing stays a true no-op.
+ */
+function docHasAcroForm(pdfDoc: PDFDocument): boolean {
+  try {
+    return Boolean(pdfDoc.catalog.get(PDFName.of('AcroForm')));
+  } catch {
+    return false;
+  }
+}
+
 function tryGetFormFields(doc: EngineDoc): FormField[] | undefined {
   try {
+    if (!docHasAcroForm(doc.pdfDoc)) return undefined;
     return getFormFields(doc.pdfDoc);
   } catch {
     return undefined;
@@ -4873,6 +5139,7 @@ function tryGetFormFields(doc: EngineDoc): FormField[] | undefined {
 
 function trySnapshotAllFormFields(doc: EngineDoc): FormSnapshotEntry[] | undefined {
   try {
+    if (!docHasAcroForm(doc.pdfDoc)) return undefined;
     return snapshotAllFormFields(doc.pdfDoc);
   } catch {
     return undefined;
@@ -4934,12 +5201,19 @@ function buildState(doc: EngineDoc): EngineState {
   // comments). Always present (empty array when none) so the renderer can
   // decide the comment-icon visibility without a separate call.
   state.comments = doc.comments.map(cloneCommentThread);
-  // Attach form fields with remapped page numbers (DEF-031)
+  // Attach form fields with remapped page numbers (DEF-031).
+  // DEF-504 — read the form only when the catalog actually carries an
+  // /AcroForm. pdf-lib's `getForm()` lazily CREATES an empty /AcroForm on a
+  // formless document, which mutates the catalog and grows the serialized
+  // bytes even for an op that changes nothing. A document with no /AcroForm
+  // has no fields, so skipping the read is behaviour-preserving.
   try {
-    const rawFields = getFormFields(doc.pdfDoc);
-    const remapped = remapFormFieldPages(rawFields, doc.order);
-    if (remapped.length > 0) {
-      state.formFields = remapped;
+    if (doc.pdfDoc.catalog.get(PDFName.of('AcroForm'))) {
+      const rawFields = getFormFields(doc.pdfDoc);
+      const remapped = remapFormFieldPages(rawFields, doc.order);
+      if (remapped.length > 0) {
+        state.formFields = remapped;
+      }
     }
   } catch {
     // Document has no form or form is corrupt — omit formFields
@@ -5217,6 +5491,70 @@ function drawClassicWhiteMaskRect(
     fill(),
     popGraphicsState(),
   );
+}
+
+/**
+ * DEF-499 — discard pdf-lib's cached page content stream after search-and-
+ * replace has installed a rewritten /Contents. `page.drawText` reuses the
+ * cached `PDFContentStream` whenever one exists and only registers a NEW
+ * stream into /Contents when it does not (`PDFPage.getContentStream`); the
+ * prior op's drawn glyphs are baked into the rewritten stream, so keeping the
+ * cache would append the next op's replacement glyphs to a stream that is no
+ * longer referenced by the page and they would be lost on save.
+ *
+ * Reaches into the same private surface `drawClassicWhiteMaskRect` already
+ * uses; there is no public API to reset it.
+ */
+function resetPageContentStreamCache(page: PDFPage): void {
+  const internals = page as unknown as {
+    contentStream?: unknown;
+    contentStreamRef?: unknown;
+  };
+  internals.contentStream = undefined;
+  internals.contentStreamRef = undefined;
+}
+
+/**
+ * DEF-505 — pdf-lib's `PDFFlateStream` computes and caches the encoded stream
+ * bytes the first time `getContents()` runs (any `pdfDoc.save()`), and
+ * `PDFContentStream.push()` mutates only the live `operators` array without
+ * invalidating that cache. A Phase-10 op snapshots the document (which calls
+ * `save()`) BEFORE drawing, so the operators it pushes afterwards are invisible
+ * to `pdfDoc.save()` — the read path `exportText` uses — while the copy-based
+ * `serializeDoc` path (real save / getDocumentBytes) reads live operators and
+ * sees them. Re-encode each page's cached content stream from its current
+ * operators so a subsequent `save()` reflects the current page content.
+ */
+function refreshPageContentStream(page: PDFPage): void {
+  const internals = page as unknown as {
+    contentStream?: {
+      computeContents?: () => Uint8Array;
+      updateContents?: (contents: Uint8Array) => void;
+    };
+  };
+  const stream = internals.contentStream;
+  if (
+    !stream ||
+    typeof stream.computeContents !== 'function' ||
+    typeof stream.updateContents !== 'function'
+  ) {
+    return;
+  }
+  try {
+    stream.updateContents(stream.computeContents());
+  } catch {
+    // Best-effort: leave the existing cache in place if re-encoding fails.
+  }
+}
+
+/** DEF-505 — refresh every page's cached content stream before a raw
+ *  `pdfDoc.save()` read path so the saved bytes reflect the current operators. */
+function refreshDocumentContentStreams(pdfDoc: PDFDocument): void {
+  try {
+    for (const page of pdfDoc.getPages()) refreshPageContentStream(page);
+  } catch {
+    // Best-effort: a document whose pages cannot be enumerated is left as-is.
+  }
 }
 
 // ---------------------------------------------------------------------------

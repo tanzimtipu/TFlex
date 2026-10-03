@@ -51,6 +51,8 @@ import type {
   PrintWindowOpenResult,
   RecentFile,
   RedactionApplyResult,
+  ReplaceTextPayload,
+  ReplaceTextResult,
   SampleDocument,
   SpaceAudit,
   SpellCheckLanguage,
@@ -323,6 +325,14 @@ const engineApi = {
     payload: ApplyRedactionsPayload,
   ): Promise<Result<RedactionApplyResult, EngineError>> {
     return ipcRenderer.invoke(IPC.engineApplyRedactions, docId, payload);
+  },
+  // Phase 86 (FEA-038) — replace search occurrences with real saved text (one
+  // call covers every occurrence and is one undo entry).
+  replaceText(
+    docId: string,
+    payload: ReplaceTextPayload,
+  ): Promise<Result<ReplaceTextResult, EngineError>> {
+    return ipcRenderer.invoke(IPC.engineReplaceText, docId, payload);
   },
   addTextBox(
     docId: string,
