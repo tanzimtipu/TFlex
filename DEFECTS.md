@@ -7,7 +7,7 @@
 
 ## DEF-514: v1.48.0 release gate is red - Phases 87/88/89 added dock/panel controls without updating the control-index registries (6 failures in 5 specs)
 
-- Status: FIX-READY
+- Status: CLOSED
 - Severity: HIGH
 - Found by: qa (TFL-500)
 - Phase: release batch 1.47.1 -> 1.48.0 (Phases 87, 88, 89)
@@ -31,6 +31,7 @@ Evidence: `verify:full` log attachment `ba6269dd-108f-4f69-b707-9fcaff690399` (a
 History:
 - qa (TFL-500): opened - release gate FAIL at `0917254`; 6 failures in 5 renderer specs; version consistency confirmed (all three `1.48.0`).
 - CTO (TFL-495): FIX-READY - frontend-dev assigned the registry-reconciliation fix (register `sanitize` and `bates` on the dock, add `bates` to `SANCTIONED`, add the two dock colour rules, add the five icon-allow-list entries, strip the ellipsis from `ContextPanel.tsx:420`, refresh the DEF-330 dock oracle); then qa re-runs `verify:full` to close.
+- qa (TFL-506 smoke): CLOSED - packaged v1.48.0 smoke passed (`e2e/release_smoke_1480.spec.cjs`: 1 passed; `app.getVersion()=1.48.0`; visible titled window `Jovrel`; 0 page errors, 0 console errors; screenshot `test-fixtures/release-smoke-1.48.0/release-smoke-1.48.0.png` fully rendered); verify:full 606/7562 passed (TFL-503).
 
 ## DEF-504: A fully-skipped replace still mutates the serialized document (embeds an unused Helvetica font)
 
