@@ -11272,7 +11272,7 @@ History:
 
 ## DEF-512: The Bates stamp ignores `AppSettings.editDefaultFont` - every UI-driven run draws the label in Helvetica (ADV-179)
 
-- Status: OPEN
+- Status: CLOSED
 - Severity: LOW
 - Found by: adversary (ADV-179)
 - Phase: 89 (FEA-033 Bates numbering; phase issue TFL-464)
@@ -11292,10 +11292,11 @@ Fix owner: frontend-dev. Suggested direction: seed the live `editDefaultFont` in
 
 History:
 - CTO (TFL-464, 2026-10-03): ACCEPTED from ADV-179 (adversary diff-pass TFL-484). Assigned frontend-dev (renderer seeds the live edit font into the addBates payload).
+- qa (TFL-492, 2026-10-03): CLOSED. Independent phase-close verification. Source: `BatesDialog` carries `defaultFont?: EditFont` and builds `font: defaultFont ?? "Helvetica"` (`src/renderer/components/BatesDialog.tsx:57,234`); `App.tsx:11750` passes `defaultFont={settings?.editDefaultFont ?? "Helvetica"}`. `npm.cmd run test:unit -- test/unit/renderer/phase89BatesDialog.test.tsx` -> Test Files 1 passed / Tests 9 passed, including the new assertion at `phase89BatesDialog.test.tsx:144-150` that mounts `defaultFont: "Times"` and asserts the payload `font === "Times"`.
 
 ## DEF-513: The Bates encodability pre-check is font-agnostic - a bundled font over-refuses Latin-Extended/Greek labels it can actually draw (ADV-180)
 
-- Status: OPEN
+- Status: CLOSED
 - Severity: LOW
 - Found by: adversary (ADV-180)
 - Phase: 89 (FEA-033 Bates numbering; phase issue TFL-464)
@@ -11314,4 +11315,6 @@ Fix owner: backend-dev. Suggested direction: make the pre-check use the font tha
 
 History:
 - CTO (TFL-464, 2026-10-03): ACCEPTED from ADV-180 (adversary diff-pass TFL-484). Assigned backend-dev (font-aware encodability pre-check).
+- qa (TFL-492, 2026-10-03): CLOSED. Independent phase-close verification. Source: `_addBatesImpl` resolves `fontFamily = settings.font ?? DEFAULT_SETTINGS.editDefaultFont ?? 'Helvetica'`, validates `isEditFont`, keeps the WinAnsi check for StandardFont families, and for a bundled family probes a throwaway `PDFDocument.create()` for real glyph coverage (`src/main/services/engine.ts:4370-4399`, helper `bundledFontUnencodableChars` :5284). `npm.cmd run test:unit -- test/unit/shared/bates.test.ts test/unit/main/phase89BatesSettings.test.ts test/unit/main/phase89BatesEngine.test.ts` -> Test Files 3 passed / Tests 26 passed, including the two new DEF-513 cases (`phase89BatesEngine.test.ts:194` U+03A9 and `:219` U+0101) and the unchanged `:243` default-font U+6587 refusal (engine-error, bytes byte-for-byte unchanged, no undo entry).
+
 
