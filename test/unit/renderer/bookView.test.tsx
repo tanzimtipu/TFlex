@@ -157,6 +157,7 @@ describe("BookView — the read-only mode shell (Phase 66 chunk 1)", () => {
 
   it("steps to the next page in place", async () => {
     stubObservers();
+    vi.useFakeTimers();
     const view = await mount(
       createElement(BookView, {
         doc: makeDocStub(3),
@@ -173,9 +174,16 @@ describe("BookView — the read-only mode shell (Phase 66 chunk 1)", () => {
       act((): void => {
         view.host.querySelector<HTMLButtonElement>("[data-book-next]")?.click();
       });
+      // Phase 93 (TFL-515) - the base spread holds the outgoing page for the
+      // turn window and commits the destination when the turn settles.
+      expect(view.host.querySelector("[data-book-page]")?.getAttribute("data-book-page")).toBe("1");
+      act((): void => {
+        vi.advanceTimersByTime(450);
+      });
       expect(view.host.querySelector("[data-book-page]")?.getAttribute("data-book-page")).toBe("2");
     } finally {
       view.cleanup();
+      vi.useRealTimers();
     }
   });
 });

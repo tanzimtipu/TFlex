@@ -197,6 +197,7 @@ describe("BookView toggle — single/double (Phase 66 chunk 2)", () => {
 
 describe("BookView page turn — flip and step (Phase 66 chunk 2)", () => {
   it("advances and retreats a double spread by two pages", async () => {
+    vi.useFakeTimers();
     const view = await mountBook(6, "double");
     try {
       expect(pageNumbers(view.host)).toEqual(["1", "2"]);
@@ -205,31 +206,46 @@ describe("BookView page turn — flip and step (Phase 66 chunk 2)", () => {
           .querySelector<HTMLElement>('[data-book-page-side="right"]')
           ?.click();
       });
+      // Phase 93 (TFL-515) - the outgoing spread holds until the turn settles.
+      expect(pageNumbers(view.host)).toEqual(["1", "2"]);
+      act((): void => {
+        vi.advanceTimersByTime(450);
+      });
       expect(pageNumbers(view.host)).toEqual(["3", "4"]);
       act((): void => {
         view.host
           .querySelector<HTMLElement>('[data-book-page-side="left"]')
           ?.click();
       });
+      expect(pageNumbers(view.host)).toEqual(["3", "4"]);
+      act((): void => {
+        vi.advanceTimersByTime(450);
+      });
       expect(pageNumbers(view.host)).toEqual(["1", "2"]);
     } finally {
       view.cleanup();
+      vi.useRealTimers();
     }
   });
 
   it("clamps the last double spread to the final two pages", async () => {
+    vi.useFakeTimers();
     const view = await mountBook(6, "double");
     try {
-      act((): void => {
-        for (let i = 0; i < 5; i += 1) {
+      for (let i = 0; i < 5; i += 1) {
+        act((): void => {
           view.host
             .querySelector<HTMLElement>('[data-book-page-side="right"]')
             ?.click();
-        }
-      });
+        });
+        act((): void => {
+          vi.advanceTimersByTime(450);
+        });
+      }
       expect(pageNumbers(view.host)).toEqual(["5", "6"]);
     } finally {
       view.cleanup();
+      vi.useRealTimers();
     }
   });
 });
@@ -240,6 +256,7 @@ describe("BookView page turn — flip and step (Phase 66 chunk 2)", () => {
 // a turn is in flight.
 describe("BookView page turn — spine-hinged leaf (Phase 77 chunk A)", () => {
   it("snapshots the outgoing/incoming pair on a next turn and advances the spread", async () => {
+    vi.useFakeTimers();
     const view = await mountBook(6, "double");
     try {
       expect(pageNumbers(view.host)).toEqual(["1", "2"]);
@@ -254,19 +271,29 @@ describe("BookView page turn — spine-hinged leaf (Phase 77 chunk A)", () => {
       expect(leaf).not.toBeNull();
       expect(leaf?.querySelector('[data-book-turn-front="2"]')).not.toBeNull();
       expect(leaf?.querySelector('[data-book-turn-back="3"]')).not.toBeNull();
+      // Phase 93 (TFL-515) - the live spread is still the outgoing pair.
+      expect(pageNumbers(view.host)).toEqual(["1", "2"]);
+      act((): void => {
+        vi.advanceTimersByTime(450);
+      });
       expect(pageNumbers(view.host)).toEqual(["3", "4"]);
     } finally {
       view.cleanup();
+      vi.useRealTimers();
     }
   });
 
   it("renders a prev leaf with the outgoing front 3 and incoming back 2", async () => {
+    vi.useFakeTimers();
     const view = await mountBook(6, "double");
     try {
       act((): void => {
         view.host
           .querySelector<HTMLElement>('[data-book-page-side="right"]')
           ?.click();
+      });
+      act((): void => {
+        vi.advanceTimersByTime(450);
       });
       expect(pageNumbers(view.host)).toEqual(["3", "4"]);
       act((): void => {
@@ -280,9 +307,14 @@ describe("BookView page turn — spine-hinged leaf (Phase 77 chunk A)", () => {
       expect(leaf).not.toBeNull();
       expect(leaf?.querySelector('[data-book-turn-front="3"]')).not.toBeNull();
       expect(leaf?.querySelector('[data-book-turn-back="2"]')).not.toBeNull();
+      expect(pageNumbers(view.host)).toEqual(["3", "4"]);
+      act((): void => {
+        vi.advanceTimersByTime(450);
+      });
       expect(pageNumbers(view.host)).toEqual(["1", "2"]);
     } finally {
       view.cleanup();
+      vi.useRealTimers();
     }
   });
 
@@ -307,6 +339,7 @@ describe("BookView page turn — spine-hinged leaf (Phase 77 chunk A)", () => {
   });
 
   it("renders a next leaf in single mode and advances the page", async () => {
+    vi.useFakeTimers();
     const view = await mountBook(6, "single");
     try {
       expect(pageNumbers(view.host)).toEqual(["1"]);
@@ -319,9 +352,15 @@ describe("BookView page turn — spine-hinged leaf (Phase 77 chunk A)", () => {
       expect(leaf).not.toBeNull();
       expect(leaf?.querySelector('[data-book-turn-front="1"]')).not.toBeNull();
       expect(leaf?.querySelector('[data-book-turn-back="2"]')).not.toBeNull();
+      // Phase 93 (TFL-515) - still the outgoing page until the turn settles.
+      expect(pageNumbers(view.host)).toEqual(["1"]);
+      act((): void => {
+        vi.advanceTimersByTime(450);
+      });
       expect(pageNumbers(view.host)).toEqual(["2"]);
     } finally {
       view.cleanup();
+      vi.useRealTimers();
     }
   });
 });

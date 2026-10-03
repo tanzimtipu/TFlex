@@ -8356,3 +8356,130 @@ User: a legal/accounting user who must apply sequential Bates numbers to selecte
 
 
 
+## Phase 93 Book View page-turn diff-pass (TFL-535) - adversarial probe
+
+Session label: `diff-pass`. Scope: the renderer-only Book View page-turn rework
+(TFL-519): `src/renderer/components/BookView.tsx` plus the Book View CSS block
+(`src/renderer/styles.css` ~`19057-19290`, the `tf-book-turn-*` keyframes and the
+`data-book-turn-cycle` restart selectors). Product code, tests, `REQUIREMENTS.md`
+and `AGENTS.md` were read but not modified. Spec:
+`e2e/phase93_adversarial_flip_probe.spec.cjs`; screenshots
+`screenshots/phase93/adv-*.png`; run logs
+`test-fixtures/TFL-535-phase93-adversary-run{1,2,3,4}.log`.
+
+Exact command (Electron build must exist first; `dist/renderer` was rebuilt from
+source with `npm.cmd run build:renderer` because the checked-in bundle predated the
+Phase 93 CSS; `ELECTRON_RUN_AS_NODE` unset per the qa note):
+
+- `npm.cmd run test:e2e -- phase93_adversarial_flip_probe.spec.cjs --reporter=line`
+  -> **8 passed (1.6m)**, exit 0 (run4, the final run; run3 also 8 passed).
+
+Attack-surface results (all PASS against the shipped build):
+
+- **A. One-tick and ~30ms-spaced bursts forward/backward at both clamps -
+  HOLDS.** A 6-click one-tick burst coalesces to exactly two steps (`1 -> 3`);
+  a 14-click 30ms spaced burst lands on page 6, clean; a next burst at page 12
+  stays on 12 with Next disabled; a Previous-nav burst at page 1 stays on 1 with
+  Previous disabled; a plain next still advances afterwards. Watch: `maxLeaves = 1`,
+  `turningNoLeaf = false`.
+- **B. Direction reversal and a queued clamp step - HOLDS.** At `[5,6]`, 3x next +
+  3x prev in one tick returns to `[5,6]`. At `[9,10]`, a 4-click one-tick burst
+  (turn + queued next) lands exactly `[11,12]`, Next disabled, no residual.
+- **C. Single/double toggled mid-turn - HOLDS.** Double->single and
+  single->double while a leaf is mid-swing both leave `leaves = 0`,
+  `data-book-turning` cleared, no `book-view-page-turning` class, and the surface
+  turns normally afterwards.
+- **D. Close Book View mid-turn then re-enter - HOLDS.** Closing mid-swing unmounts
+  the view with no surviving turning figure; re-entry starts on page 1 with a clean
+  single committed surface (`1` canvas), no ghost, and Next advances. (The layout
+  resets to the stored comic default on re-entry - by design, Phase 66 feature D.)
+- **E. Page-zone clicks at both spread edges and over the crease during a turn -
+  HOLDS.** Right (next), left (prev) and a 2px-crease-centre click fired mid-swing
+  all settle clean; both edge zones still act afterwards (the crease seam shares
+  the page-zone edges, so a dead-centre crease click is a page-zone click, not a
+  separate control - expected).
+- **F. Reduced motion flipped MID-SESSION then back - HOLDS.** After a live CDP
+  `prefers-reduced-motion: reduce`, the next turn mounts no leaf, sets no
+  `data-book-turning`, commits `[3,4]` instantly with no half transform; clearing
+  the preference live restores the animated leaf on the next turn (`[5,6]`).
+- **G. Animations OFF via Preferences MID-SESSION - HOLDS.** Toggling
+  `[data-prefs-animations]` off while Book View is open leaves Book View mounted and
+  usable; the next turn mounts no leaf, sets no turning state, and commits `[3,4]`.
+- **H. Storm audit - HOLDS.** 12 alternating page-zone/nav turns, then 6
+  open/close Book View cycles: no residual leaf, no stuck `data-book-turning`, no
+  ghost canvas (idle single = 1 canvas, idle double = 2), `anyTurningClass = 0`, the
+  armed `arrow` annotation tool survives every turn, and nav still advances after
+  the cycles.
+
+Watch invariant across every sequence: `maxLeaves <= 1` and
+`turningNoLeaf = false` (the stage never claimed turning with zero leaf mounted).
+
+Verdict: **no break confirmed.** Every named hostile attack class held against the
+shipped build; no crash, hang, residual turning state, stale committed page, doubled
+canvas, lost armed tool, or stalled control was produced. No ADV entry is filed.
+
+### Reproduced non-findings (probe iteration notes)
+
+The first probe run (`run2`) failed 4 assertions that were **probe-assumption
+errors, not product breaks**, and were corrected before the passing runs:
+
+1. In single layout the whole page figure's click action is always `next`; the
+   backward clamp can only be driven through the Previous nav. The corrected test A
+   uses `[data-book-prev]` for the first-page clamp.
+2. The reversal test originally started on `[1,2]`, where the left page zone is
+   clamped (`noPrev`), so the reverse clicks were correct no-ops and the turn
+   coalesced forward. Corrected test B starts on `[5,6]`.
+3. Re-entering Book View re-seeds the layout from the stored comic default (single
+   here), so the re-entry layout is not the in-session toggle. Corrected test D
+   asserts page 1 + a valid layout and drives advancement via Next.
+4. The 2px crease seam shares the page-zone edges, so a dead-centre crease click at
+   rest lands on the adjacent page zone. Corrected test E asserts clean state and a
+   valid spread instead of no movement.
+
+### Run-1 environment note (not a product finding, not filed as ADV)
+
+The first `npm.cmd run build:renderer` (needed to refresh the stale checked-in
+bundle) picked up another in-flight task's transiently broken source state and the
+dev app booted with `ReferenceError: useBackdropClose is not defined`, so all 8
+tests failed at `waitForSelector('.sample-card')`. A second build minutes later, after
+the concurrent dialog-shell edit settled, produced a bootable bundle and the run
+above. This is the shared-workspace build-race hazard, not a Phase 93 defect:
+`DeletePageDialog.tsx`/`DialogShell.tsx` were being edited concurrently and no longer
+reference the unbound symbol. The `.paperclip-build.lock` was held by this adversary
+for the rebuild and released afterwards.
+
+## Phase 93 Book View page-turn - design critique of the changed UI surface (skill: design-critique)
+
+User: a reader who opens a PDF or comic and wants to page through it in a book-like
+spread. Job: turn pages forward/back without flicker, at a glance knowing what page
+they are on. Success: the spread always shows the page the indicator names once the
+turn settles, and both directions are reachable. Context: a read-only overlay opened
+from the DocumentView canvas; closing restores the document view.
+
+- Should-fix - **Clarity (indicator vs. content):** the progress label leads the turn
+  (`displayIndex = turn.target`) while the spread holds the outgoing index for the
+  ~350ms swing, so the header can read "Page 5-6" over a spread still showing `[3,4]`.
+  This is deliberate and short, but on a slow turn or a chained turn it is the one
+  moment header and page disagree. **Try:** keep the lead, but only after the first
+  rAF of the turn, or dim the label by the same transient class until commit.
+- Nice-to-fix - **Consistency (layout persistence):** toggling to single (or double)
+  is session-only; closing and reopening Book View returns to the stored default
+  (`ADV` probe D: double -> re-entry single). A reader who set their preferred layout
+  must re-set it each entry. **Try:** remember the last-used Book View layout for the
+  session (or write it back as the comic reading default) - if that is inside Phase
+  66 feature D scope.
+- Nice-to-fix - **Affordance (single-mode back):** in single layout the page body
+  turns only forward; going back needs the Previous nav button, while double layout
+  gives both edge zones. **Try:** a left-edge back zone in single mode for parity.
+- Nice-to-fix - **Affordance (crease hit):** the 2px crease has no hit area of its
+  own and shares the page-zone edges, so a click on the seam page-turns. Not harmful,
+  but it is a visible "dead-looking" strip that is actually active. **Try:** give the
+  crease `pointer-events: none` so the zones are the only hit targets.
+- Strengths to keep: transform-only turn over the already-painted outgoing canvas (no
+  blank pre-paint frame); the reduced-motion / Animations-OFF path mounts no leaf and
+  commits synchronously with no half transform; the single queued step and the
+  `animationend`-then-400ms-fallback commit leave no residual leaf or stuck
+  `data-book-turning` under any burst tested; nav buttons disable at both clamps; the
+  armed annotation tool survives turns and the read-only surface never doubles a
+  canvas.
+

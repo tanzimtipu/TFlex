@@ -18923,94 +18923,71 @@ cursor: pointer;
   );
 }
 
-/* Phase 77 (chunk A) - the page-turn leaf. ONE leaf hinged at the SPINE (the
- * centre fold), carrying two faces: the front is the OUTGOING page and the
- * back the INCOMING page. Transform-only CSS 3D over the EXISTING PageView
- * canvas: no WebGL/3D dependency, no recolour, no opacity fade of the bitmap.
- * `backface-visibility: hidden` on each face (with the back face pre-rotated
- * `rotateY(180deg)`) shows the incoming page on the reverse of the swing,
- * never a mirrored outgoing page.
+/* Phase 93 (TFL-515) - the page-turn reuses the ALREADY-MOUNTED outgoing
+ * figure instead of mounting a fresh duplicate. The figure rotates in place,
+ * so its own painted `PageView` canvas is the front face and a turn can never
+ * flash a freshly mounted white page. The destination (back) face mounts once,
+ * hidden by `backface-visibility` until the swing passes the spine, so it is
+ * painted before it is revealed. Transform-only CSS 3D over the EXISTING
+ * PageView canvas: no WebGL/3D dependency, no recolour, no opacity fade.
  *
  * Geometry (LTR):
- *   double next -> leaf over the RIGHT half, origin at its LEFT (spine) edge,
+ *   double next -> the RIGHT figure, origin at its LEFT (spine) edge,
  *                  rotateY 0 -> +180 (swings inboard over the left half);
- *   double prev -> leaf over the LEFT half, origin at its RIGHT (spine) edge,
+ *   double prev -> the LEFT figure, origin at its RIGHT (spine) edge,
  *                  rotateY 0 -> -180;
  *   single next/prev -> the whole page area, origin left/right respectively.
  * The duration/easing come from the layout tokens, so the reduced-motion /
- * data-animations="off" catch-alls collapse the turn to instant while the
- * spread still advances (pageIndex commits independently). Mirror of
- * `.pdf-page-layout-flip`. */
-.book-view-turn {
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  z-index: 2;
+ * data-animations="off" catch-alls collapse the turn to instant; on that path
+ * the component mounts NO leaf and commits synchronously. */
+.book-view-page.book-view-page-turning {
+  position: relative;
   transform-style: preserve-3d;
-  /* The leaf is decorative motion; page clicks belong to the static figures. */
-  pointer-events: none;
+  z-index: 2;
+  will-change: transform;
 }
 
-/* DEF-467 - the leaf is decorative motion and MUST never be a hit target, not
- * even through a page descendant that opts itself back in with an explicit
- * `pointer-events: auto` (`.textLayer` at styles.css:4882, or
- * `.annotation-layer-active .annotation-svg`). Making the whole subtree inert
- * with `!important` is the only rule that beats those regardless of
- * specificity, so `elementFromPoint` over the outgoing page falls through to
- * the static `[data-book-page]` figures underneath. The static figures are NOT
- * inside `.book-view-turn`, so their text selection is untouched. */
-.book-view-turn,
-.book-view-turn * {
-  pointer-events: none !important;
-}
-
-.book-view-turn.book-view-turn-right {
-  left: 50%;
-  width: 50%;
+.book-view-page-turning.book-view-page-turn-next {
   transform-origin: left center;
+  animation: tf-book-turn-next var(--motion-duration-layout) var(--motion-ease-layout);
 }
 
-.book-view-turn.book-view-turn-left {
-  right: 50%;
-  width: 50%;
+.book-view-page-turning.book-view-page-turn-prev {
   transform-origin: right center;
+  animation: tf-book-turn-prev var(--motion-duration-layout) var(--motion-ease-layout);
 }
 
-.book-view-turn.book-view-turn-single {
-  left: 0;
-  right: 0;
-  width: 100%;
+/* A queued step that chains straight into a new turn reuses the SAME figure
+ * (never remounting its painted canvas), so alternate the animation-name by
+ * turn parity to restart the swing instead of reusing the finished one. */
+.book-view-page-turning[data-book-turn-cycle='b'].book-view-page-turn-next {
+  animation-name: tf-book-turn-next-b;
 }
 
-.book-view-turn.book-view-turn-single.book-view-turn-next {
-  transform-origin: left center;
+.book-view-page-turning[data-book-turn-cycle='b'].book-view-page-turn-prev {
+  animation-name: tf-book-turn-prev-b;
 }
 
-.book-view-turn.book-view-turn-single.book-view-turn-prev {
-  transform-origin: right center;
-}
-
-.book-view-turn-face {
-  position: absolute;
-  inset: 0;
+/* A page face. The front face stays in flow (it sizes the rotating figure);
+ * the back face is overlaid and pre-rotated. Both hide their reverse side so
+ * the incoming page shows on the reverse of the swing, never a mirrored
+ * outgoing page. */
+.book-view-face {
   display: flex;
   align-items: center;
   justify-content: center;
   line-height: 0;
+}
+
+.book-view-page-turning > .book-view-face {
   backface-visibility: hidden;
   -webkit-backface-visibility: hidden;
 }
 
-.book-view-turn-face-back {
+.book-view-page-turning > .book-view-face-back {
+  position: absolute;
+  inset: 0;
   transform: rotateY(180deg);
-}
-
-.book-view-turn-next {
-  animation: tf-book-turn-next var(--motion-duration-layout) var(--motion-ease-layout);
-}
-
-.book-view-turn-prev {
-  animation: tf-book-turn-prev var(--motion-duration-layout) var(--motion-ease-layout);
 }
 
 @keyframes tf-book-turn-next {
@@ -19022,7 +18999,25 @@ cursor: pointer;
   }
 }
 
+@keyframes tf-book-turn-next-b {
+  from {
+    transform: rotateY(0deg);
+  }
+  to {
+    transform: rotateY(180deg);
+  }
+}
+
 @keyframes tf-book-turn-prev {
+  from {
+    transform: rotateY(0deg);
+  }
+  to {
+    transform: rotateY(-180deg);
+  }
+}
+
+@keyframes tf-book-turn-prev-b {
   from {
     transform: rotateY(0deg);
   }

@@ -269,15 +269,24 @@ describe("BookView — annotation marking (Phase 66 chunk 3)", () => {
 
   it("commits on the annotation layer without turning, but a bare page click still turns (DEF-446)", async () => {
     stubObservers();
+    vi.useFakeTimers();
     const view = await mount(createElement(BookView, baseProps([], (): void => undefined)));
     try {
       expect(view.host.querySelector("[data-book-page]")?.getAttribute("data-book-page")).toBe("1");
       click(view.host.querySelector('[data-annotation-layer="1"]'));
       expect(view.host.querySelector("[data-book-page]")?.getAttribute("data-book-page")).toBe("1");
       click(view.host.querySelector("[data-book-page]"));
+      // Phase 93 (TFL-515) - the bare click starts a turn; the base spread
+      // holds page 1 until the turn settles and commits exactly once.
+      expect(view.host.querySelector("[data-book-turn]")).not.toBeNull();
+      expect(view.host.querySelector("[data-book-page]")?.getAttribute("data-book-page")).toBe("1");
+      act((): void => {
+        vi.advanceTimersByTime(450);
+      });
       expect(view.host.querySelector("[data-book-page]")?.getAttribute("data-book-page")).toBe("2");
     } finally {
       view.cleanup();
+      vi.useRealTimers();
     }
   });
 
