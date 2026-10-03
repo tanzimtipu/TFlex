@@ -5,6 +5,51 @@
 > inspect the current `OPEN`, `FIX-READY`, and `DISPUTED` entries first; closed records are
 > historical evidence and must not be loaded wholesale.
 
+## DEF-518: The dock edit-mode remove badge is partially clipped on hover in the arrows lane
+
+- Status: CLOSED
+- Severity: MEDIUM
+- Found by: adversary (ADV-182)
+- Phase: 95
+
+Steps to reproduce:
+1. Launch the real app via `e2e/lib/launch.cjs` `launchApp`; open `report.pdf` from the welcome grid.
+2. Enter dock EDIT mode (`[data-dock-edit-toggle]`).
+3. Resize the window to 700x900 so the dock engages the arrows lane (`[data-action-dock][data-dock-arrows-lane="true"]`).
+4. Hover a leading verb (`rotate`) and a middle verb (`split`); with each hovered, measure every `[data-dock-minus]` against the active clip ancestor `[data-dock-scroll]`.
+
+Expected: every remove badge is fully contained in the clip box (the Phase 95 partial-clip contract), at rest and while any verb is hovered.
+
+Actual: at rest `topEscape=0`; on hover `verbTop=799 clipTop=801 badgeTop=798.04 topEscape=+2.96 partial=true` - the lane scroller's computed `overflow-y:auto` clips vertically, and a hovered verb lifts `--motion-translate-micro` (2px) + its hover scale, so its top:0 badge is cut by ~3px. Reproduced for all 8 lane verbs (`rotate`, `extract`, `insertPages`, `replacePages`, `split`, `delete`, `merge`, `cropPages`); each hovered badge reports `partial=true` with `top=2.96`. Screenshots `screenshots/p95-lanehover-rotate.png`, `screenshots/p95-lanehover-split.png`.
+
+Evidence:
+- Probe `test-fixtures/phase95-adversary/adv546_lane_hover.cjs` (read-only) -> `== LANE HOVER RESULT == partial-clipped-on-hover: CONFIRMED`; log `test-fixtures/phase95-adversary/adv546_lane_hover.log`.
+- Extended oracle `e2e/phase95_dock_edit_overflow.spec.cjs` (hover sweep at the lane-700 rung): `npm.cmd run build:renderer` then `npm.cmd run test:e2e -- phase95_dock_edit_overflow --reporter=line` -> `1 failed`; resting rungs PASS, hover rung prints `lane-700 hover rotate badgeTop=798.04 clipTop=801 topEscape=2.96 partial=true` (and every other lane verb), offenders `badge "<id>" PARTIALLY clipped by [data-dock-scroll] on top +2.96`.
+
+History:
+- qa: opened (from ADV-182)
+- qa (TFL-562): independently verified - `npm.cmd run build:renderer` (exit 0, 746ms) then `npm.cmd run test:e2e -- phase95_dock_edit_overflow --reporter=line` -> `1 passed (10.2s)`, `[P95] TOTAL OFFENDERS (0): none`; the lane-700 hover sweep over all 8 verbs now reports `[P95 lane-700 hover <verb>] badgeTop=798.04 clipTop=798 topEscape=-0.04 partial=false` (pre-fix `topEscape=2.96 partial=true`), every hovered badge `contained=true partial=false` and `hitTestable=true`; CLOSED.
+
+## DEF-517: The Phase 95 recurrence guard is a first-match source scan - a later CSS rule that re-introduces a negative badge overhang is not caught
+
+- Status: CLOSED
+- Severity: LOW
+- Found by: adversary (ADV-181)
+- Phase: 95
+
+Steps to reproduce:
+1. From the repo root run `node test-fixtures/phase95-adversary/adv546_guard_defeat.cjs` (read-only; it replicates the guard's own parsing helpers from `test/unit/renderer/phase95_dockMinusContainment.test.ts` and feeds the shipped stylesheet plus hostile mutations through them).
+
+Expected: the recurrence guard fails when a later CSS rule re-introduces a negative badge overhang.
+
+Actual: all four guard assertions pass for all five hostile mutations - a later duplicate unscoped rule, an EDIT-scoped higher-specificity override, the `inset` shorthand, an `!important` negative offset, and a `var()` negative custom property. The guard reads only the FIRST matching rule body (`ruleBody` uses `indexOf`), so later rules win the cascade yet the guard still reports `PASS` (e.g. M1 reports `effective cascade .action-dock-minus top="-5px" right="-5px"` with `guard: MISSES`). The recurrence oracle therefore cannot catch a re-introduced overhang.
+
+Evidence: `node test-fixtures/phase95-adversary/adv546_guard_defeat.cjs` -> for M1-M5 `guard: MISSES (all tests pass)` while the effective cascade re-introduces the negative top/right; log `test-fixtures/phase95-adversary/adv546_guard_defeat.log`.
+
+History:
+- qa: opened (from ADV-181)
+- qa (TFL-562): independently verified - `npm.cmd run test:unit -- phase95_dockMinusContainment` -> `Test Files 1 passed (1)`, `Tests 5 passed (5)`; the 5th test feeds `badgeInsets(SHIPPED_CSS + mutation)` through the guard's OWN predicate for baseline + M1-M5, asserting `baseline.some((n) => n < 0) === false` (no false positive) and, for each mutation, `insets.some((n) => n < 0) === true` (negative inset caught) - all five mutations are caught; CLOSED.
+
 ## DEF-514: v1.48.0 release gate is red - Phases 87/88/89 added dock/panel controls without updating the control-index registries (6 failures in 5 specs)
 
 - Status: CLOSED

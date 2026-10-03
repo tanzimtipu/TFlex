@@ -1,0 +1,7 @@
+[lane 700 idle] lane=true useScroll=true overflowX=auto overflowY=auto clipTop=801
+  rest badge topEscape: ["rotate:0","extract:0","insertPages:0","replacePages:0","split:0","delete:0","merge:0","cropPages:0"]
+  rest partial: []
+[hover rotate] verbTop=799 clipTop=801 badgeTop=798.04 topEscape=2.96 partial=true
+[hover split] verbTop=799 clipTop=801 badgeTop=798.04 topEscape=2.96 partial=true
+
+== LANE HOVER RESULT == partial-clipped-on-hover: CONFIRMED

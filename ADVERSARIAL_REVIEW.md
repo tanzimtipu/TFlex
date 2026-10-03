@@ -8483,3 +8483,190 @@ from the DocumentView canvas; closing restores the document view.
   armed annotation tool survives turns and the read-only surface never doubles a
   canvas.
 
+## Phase 95-D dock minus-badge geometry + recurrence guard diff-pass (TFL-546) - adversarial probe
+
+Session label: `diff-pass`. Scope: the Phase 95-B behaviour-preserving layout fix
+`src/renderer/styles.css` `.action-dock-minus` (`top:-5px; right:-5px` ->
+`top:0; right:0`), its recurrence guard
+`test/unit/renderer/phase95_dockMinusContainment.test.ts`, and its oracles
+`e2e/phase95_dock_edit_overflow.spec.cjs` / `e2e/phase95_home_tool_overflow.spec.cjs`
+(the same-class `.home-tool-minus` at `top:-6px; right:-6px`). Product code, tests,
+`REQUIREMENTS.md` and `AGENTS.md` were read but not modified. Probe/fixtures: `test-fixtures/phase95-adversary/adv546_guard_defeat.cjs` (+ `.log`),
+`adv546_badge_hammer.cjs`, `adv546_lane_hover.cjs`.
+
+### Runtime baseline (second heartbeat — lock acquired after TFL-545 completed)
+
+The first heartbeat was blocked by the shared build mutex (`.paperclip-build.lock`
+held by qa on TFL-545); on the `issue_blockers_resolved` wake the lock was gone, this
+adversary acquired it (`owner 77636bb1-...`, `task TFL-546`, `acquired_at
+2026-10-03T10:01:23Z`), ran the baseline, and released it.
+
+Exact commands and results:
+
+- `npm.cmd run build:renderer` -> exit 0, vite built in 799ms.
+- `npm.cmd run test:unit -- phase95_dockMinusContainment` -> **1 file, 4 tests / 4
+  passed** (576ms).
+- `npm.cmd run test:e2e -- phase95_dock_edit_overflow phase95_home_tool_overflow
+  --reporter=line` -> **2 passed (10.2s)**; dock oracle `TOTAL OFFENDERS (0)`, home
+  oracle `TOTAL OFFENDERS (0)`.
+- `node test-fixtures/phase95-adversary/adv546_badge_hammer.cjs` -> **17/18 checks
+  passed** (see the probe list below; the one failure is ADV-183).
+- `node test-fixtures/phase95-adversary/adv546_lane_hover.cjs` -> arrows-lane hover
+  partial clip **CONFIRMED** (ADV-182).
+
+### Attacks that did NOT break (runtime + static)
+
+1. Shipped geometry is non-negative: `.action-dock-minus` reads
+   `position:absolute; top:0; right:0`, and `.action-dock-verb` is `position:relative`
+   with no `overflow`, so the 16px badge is contained in the verb's border box
+   (`styles.css:15759-15778`, `15879-15890`). The dock oracle measures every badge
+   fully contained and hit-testable at 640x480, 1440x900, interface zoom 2x and the
+   arrows lane; `TOTAL OFFENDERS (0)`. HOLDS.
+2. No EDIT-scoped dock rule clips: no `.action-dock[data-dock-edit='true'] ...` rule
+   sets `overflow`; the lane scroller still owns `overflow-x:auto` with
+   `justify-content:flex-start` and `flex:0 0 auto` children (`styles.css:16138-16165`).
+   HOLDS (guard T3/T4).
+3. Badge pointer/keyboard activation intact and propagation-safe: clicking any badge
+   removes exactly its own verb and opens no dialog/panel (hammer: `cropPages` removed,
+   `after=6`, `dialogs=0`; idle `rotate` removed at 40% opacity; home
+   `createFromImages` removed, `dialogs=0`). Enter and Space on a programmatically
+   focused badge both remove it. HOLDS. (Tab reachability is separate - ADV-183.)
+4. Accessible names unchanged: `aria-label={verb.label}` on the verb
+   (`ActionDock.tsx:874`) and `Remove <label> from dock` on the badge (`:904`) are
+   untouched by the CSS-only diff. HOLDS.
+5. Idle opacity does not disable the badge: with the pointer away,
+   `data-dock-idle=true` after 3s and every badge is still contained and
+   hit-testable at `opacity:0.4`; a click removes the verb. HOLDS.
+6. Home-row `.home-tool-minus` (`top:-6px; right:-6px`, `styles.css:3076-3089`) is
+   unchanged by this diff and its -6px overhang stays inside `.welcome`
+   (`overflow:hidden`). The home oracle passes at 640x480 and 1440x900
+   (`TOTAL OFFENDERS (0)`; at 640 the `createFromImages` badge is disjoint/partial
+   against `.home-tools`, which is `overflow:visible` and not a clipper, but fully
+   contained in `.welcome` and hit-testable). HOLDS; home badge click removes the
+   right tile with no dialog.
+7. Hovered-verb containment in the arrows lane: **BREAKS** - ADV-182. At rest every
+   badge is flush with the scroll strip's clip top (`topEscape=0`); on hover the verb
+   lifts `--motion-translate-micro` (2px) and the badge at `top:0` paints ~3px above
+   the scroller's clip box (`overflow-y` computes to `auto` from `overflow-x:auto`),
+   so the top of the badge is PARTIALLY clipped again - the exact defect class the
+   phase set out to remove. The oracle never hovers, so it does not catch it.
+
+Verdict: three findings filed - ADV-181 (weak recurrence guard), ADV-182 (lane hover
+partial clip, in-scope Phase 95 recurrence), ADV-183 (badge not Tab-reachable;
+pre-existing Phase 58 markup, surfaced by the assigned keyboard probe, explicitly not
+caused by this geometry diff). The shipped geometry fix holds in every non-hover
+state tested.
+
+### Design critique: the dock/home EDIT-mode remove badge (skill: design-critique)
+
+User: someone curating their action dock / home launcher. Job: remove a tool from the
+row in edit mode. Success: the badge is obviously the verb's remove control and one
+press removes the right tool.
+
+- Nice-to-fix - **Consistency:** the dock badge is now contained at `top:0; right:0`
+  while the same control on the home row still overhangs at `top:-6px; right:-6px`; the
+  two same-class controls now rely on different containment stories (verb padding vs
+  `.welcome` padding). **Try:** a shared badge-containment contract so one fix does not
+  silently diverge from the other.
+- Nice-to-fix - **Affordance (target size):** the badge is 16x16 px, below the 24px
+  desktop minimum; it now sits flush in the verb's top-right corner and overlaps the
+  verb glyph's corner. **Try:** keep `top:0; right:0` but consider a 1-2px inset that is
+  still non-negative, so the glyph corner stays readable.
+- Strengths to keep: the badge reads as the verb's corner control (z-index 1, themed
+  `--sem-attention`); it is a `role="button"` span, never a nested `<button>`; it stops
+  propagation on its own events and has an explicit Enter/Space path plus a specific
+  accessible name; the pen/plus stay real in-row flex items, so this diff moved only
+  the badge.
+
+## ADV-181: The Phase 95-B recurrence guard is a first-match source scan - a later `.action-dock-minus` rule, an `inset` shorthand, `!important` or a custom property re-introduces the negative badge overhang while the guard still reports all-pass
+
+- Session: diff-pass
+- Suggested severity: LOW
+
+What I did: ran `node test-fixtures/phase95-adversary/adv546_guard_defeat.cjs`
+(read-only). It loads the shipped `src/renderer/styles.css`, replicates the guard's
+exact `ruleBody` / `allBodies` / `decl` helpers from
+`test/unit/renderer/phase95_dockMinusContainment.test.ts`, and evaluates the four
+guard predicates against the shipped sheet plus five hostile cascade mutations:
+M1 appends a second `.action-dock-minus { top:-5px; right:-5px }`; M2 appends the
+higher-specificity `.action-dock[data-dock-edit='true'] .action-dock-minus { top:-5px;
+right:-5px }`; M3 appends `.action-dock-minus { inset:-5px -5px auto auto }`; M4
+appends `top:-5px !important; right:-5px !important`; M5 appends
+`top: var(--adv-badge-overhang)` with `--adv-badge-overhang:-5px`.
+
+Expected: the guard, whose stated purpose (`...test.ts:1-16`) is to prevent recurrence
+of the `top:-5px; right:-5px` overhang, fails when a later cascade rule re-introduces a
+negative inset.
+
+Actual: all four guard assertions PASS for every mutation M1-M5 (log:
+`test-fixtures/phase95-adversary/adv546_guard_defeat.log`). `ruleBody(".action-dock-minus {")`
+returns only the FIRST matching rule, so a later duplicate rule that wins the cascade
+(M1 computes effective `top=-5px; right=-5px`) is invisible to test 1; `allBodies` is
+consulted only for the verb-overflow selector, never for the badge, so the higher-
+specificity M2 override is never seen either. M3/M4/M5 additionally bypass `decl`,
+which only reads `top`/`right` longhands terminated by `;` (an `inset` shorthand, an
+`!important` value and a `var()` value are not parsed). The guard pins the shipped
+literal only: any future stylesheet edit that restores the exact defect passes CI.
+
+Screenshot: n/a - console run; the full output is in the session report above and in
+`test-fixtures/phase95-adversary/adv546_guard_defeat.log`.
+
+Disposition: ACCEPTED -> DEF-517 (Phase 95; recurrence-guard hardening, routed to frontend-dev on TFL-531). The runtime oracle is the stronger guard, but the unit source-scan must also resist a later duplicate `.action-dock-minus` rule, an `inset` shorthand, `!important` and a `var()` overhang.
+
+## ADV-182: In the dock's arrows lane the remove badge is partially clipped again the moment a verb is hovered
+
+- Session: diff-pass
+- Suggested severity: MEDIUM
+
+What I did: `node test-fixtures/phase95-adversary/adv546_lane_hover.cjs`. Launch the
+shipped dev app through `e2e/lib/launch.cjs` `launchApp`, open `report.pdf`, enter dock
+EDIT mode, resize the window to 700x900 (the rung where the dock engages its arrows
+lane: `data-dock-arrows-lane="true"`), then measure every `[data-dock-minus]` against
+the ACTIVE clip ancestor - the lane scroller `[data-dock-scroll]`, whose computed
+`overflow-x`/`overflow-y` are both `auto` - before and after hovering a leading verb
+(`rotate`) and a middle verb (`split`).
+
+Expected: the Phase 95 ruling 2 containment contract - the badge lives inside its
+verb's border box at `top:0; right:0`, so the lane scroller can never PARTIALLY clip it
+(the same PARTIAL-CLIP contract `e2e/phase95_dock_edit_overflow.spec.cjs` asserts).
+
+Actual: at rest every badge is flush with the scroller's clip top (`topEscape=0`,
+contained within the 0.5px tolerance). On hover the verb lifts by
+`--motion-translate-micro` (2px, `styles/animations.css:73`), so the verb top moves
+from `clipTop` to `clipTop-2` and the badge (which rides the verb) paints above the
+scroller's top edge: measured `verbTop=799 clipTop=801 badgeTop=798.04 topEscape=+2.96
+partial=true` for both hovered verbs. The lane's `overflow-y:auto` then cuts the top
+~3px of the badge (and the verb's top edge). The oracle measures only the resting
+state, so it never sees this.
+
+Screenshot: `screenshots/p95-lanehover-rotate.png`, `screenshots/p95-lanehover-split.png`.
+
+Disposition: ACCEPTED -> DEF-518 (Phase 95; in-scope recurrence, routed to frontend-dev on TFL-531). Hovering a verb in the arrows lane re-clips the badge top by ~3px. The fix plus the extended hover oracle are required before the phase can close.
+
+## ADV-183: The dock remove badge is not reachable with the keyboard (Tab skips it)
+
+- Session: diff-pass
+- Suggested severity: LOW (pre-existing Phase 58 markup; NOT caused by the Phase 95
+  geometry diff - recorded because the assigned probe explicitly tests the keyboard path)
+
+What I did: `node test-fixtures/phase95-adversary/adv546_badge_hammer.cjs`, check
+`dock keyboard: a badge is reachable by Tab from the dock chrome`. Enter dock EDIT
+mode, focus `[data-dock-edit-toggle]`, press Tab up to 60 times and inspect
+`document.activeElement` after each press for the `.action-dock-minus` class. As a
+control, focus a badge with `.focus()` and press Enter, then Space.
+
+Expected: a keyboard-only user can Tab to each visible remove badge and activate it
+(the badge declares `tabIndex=0` and `role="button"`).
+
+Actual: after 60 Tab presses `document.activeElement` is never the badge
+(`{tabIndex:0, tag:"SPAN", role:"button"}` reported by the probe); the badge is a
+`tabIndex=0` span nested inside the verb `<button>` (`ActionDock.tsx:899-921`), and
+Chromium does not expose a button's descendants as sequential tab stops. Programmatic
+focus plus Enter and Space both work correctly (the badge removes the right verb), so
+only the Tab path is missing. This is a Phase 58 markup trait; the Phase 95 CSS-only
+change did not alter it.
+
+Screenshot: n/a - console run; probe output in the session report above.
+
+Disposition: REJECTED - out of scope for Phase 95. Pre-existing Phase 58 `tabIndex`-inside-`<button>` markup, explicitly NOT caused by this geometry diff; the badge is activatable by Enter/Space once focused (probe-confirmed), and the reported defect (clipping / visibility / clickability) is addressed. A sequential tab-order fix belongs to a dedicated accessibility pass, not this clipping phase.
+

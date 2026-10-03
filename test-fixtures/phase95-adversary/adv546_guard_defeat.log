@@ -1,0 +1,51 @@
+== TFL-546 guard-defeat static probe ==
+CSS: C:\Users\tanzi\OneDrive\App Development\TFlex\src\renderer\styles.css
+
+[baseline] shipped sheet:
+      PASS T1 no negative badge inset (first rule)
+      PASS T2 verb relative + non-clipping (first rule)
+      PASS T3 dock root + EDIT-scoped verb non-clipping
+      PASS T4 lane scroller owns the clip
+
+[M1 append duplicate unscoped rule { top:-5px; right:-5px }]
+      guard: MISSES (all tests pass)
+      effective cascade .action-dock-minus top="-5px" right="-5px"
+      PASS T1 no negative badge inset (first rule)
+      PASS T2 verb relative + non-clipping (first rule)
+      PASS T3 dock root + EDIT-scoped verb non-clipping
+      PASS T4 lane scroller owns the clip
+
+[M2 append EDIT-scoped override (higher specificity)]
+      guard: MISSES (all tests pass)
+      effective cascade .action-dock-minus top="0" right="0"
+      PASS T1 no negative badge inset (first rule)
+      PASS T2 verb relative + non-clipping (first rule)
+      PASS T3 dock root + EDIT-scoped verb non-clipping
+      PASS T4 lane scroller owns the clip
+
+[M3 append later rule using the `inset` shorthand]
+      guard: MISSES (all tests pass)
+      effective cascade .action-dock-minus top="0" right="0"
+      PASS T1 no negative badge inset (first rule)
+      PASS T2 verb relative + non-clipping (first rule)
+      PASS T3 dock root + EDIT-scoped verb non-clipping
+      PASS T4 lane scroller owns the clip
+
+[M4 append later rule with !important negative offset]
+      guard: MISSES (all tests pass)
+      effective cascade .action-dock-minus top="-5px !important" right="-5px !important"
+      PASS T1 no negative badge inset (first rule)
+      PASS T2 verb relative + non-clipping (first rule)
+      PASS T3 dock root + EDIT-scoped verb non-clipping
+      PASS T4 lane scroller owns the clip
+
+[M5 append later rule using a negative custom property]
+      guard: MISSES (all tests pass)
+      effective cascade .action-dock-minus top="var(--adv-badge-overhang)" right="0"
+      PASS T1 no negative badge inset (first rule)
+      PASS T2 verb relative + non-clipping (first rule)
+      PASS T3 dock root + EDIT-scoped verb non-clipping
+      PASS T4 lane scroller owns the clip
+
+== ADVERSARIAL_REVIEW.md ==
+max ADV-NNN: 180

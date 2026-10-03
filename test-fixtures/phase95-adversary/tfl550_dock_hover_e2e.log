@@ -1,0 +1,52 @@
+TFL-550 Phase 95-E1 - dock hover recurrence: extended-oracle e2e evidence
+=======================================================================
+
+Commands (repo root C:\Users\tanzi\OneDrive\App Development\TFlex):
+  npm.cmd run build:renderer
+  npm.cmd run test:e2e -- phase95_dock_edit_overflow --reporter=line
+
+Build: vite build OK (index-B7OdYVT5.js, index-CVwTjZid.css).
+
+Result: 1 failed (1 test; 0 passed). The single spec case fails ONLY on the new
+hover rung; every pre-existing resting assertion still PASSES (no resting
+offenders at min-640x480, typical-1440x900, zoom-2x, or lane-700).
+
+Hover sweep (lane-700, arrows lane engaged, clip = [data-dock-scroll]):
+  [P95] lane-700 hover sweep over 8 visible verbs: rotate, extract, insertPages, replacePages, split, delete, merge, cropPages
+  [P95 lane-700 hover rotate]       badgeTop=798.04 clipTop=801 topEscape=2.96 partial=true
+  [P95 lane-700 hover extract]      badgeTop=798.04 clipTop=801 topEscape=2.96 partial=true
+  [P95 lane-700 hover insertPages]  badgeTop=798.04 clipTop=801 topEscape=2.96 partial=true
+  [P95 lane-700 hover replacePages] badgeTop=798.04 clipTop=801 topEscape=2.96 partial=true
+  [P95 lane-700 hover split]        badgeTop=798.04 clipTop=801 topEscape=2.96 partial=true
+  [P95 lane-700 hover delete]       badgeTop=798.04 clipTop=801 topEscape=2.96 partial=true
+  [P95 lane-700 hover merge]        badgeTop=798.04 clipTop=801 topEscape=2.96 partial=true
+  [P95 lane-700 hover cropPages]    badgeTop=798.04 clipTop=801 topEscape=2.96 partial=true
+
+Representative per-badge row for the hovered verb (rotate):
+  [P95 lane-700-hover-rotate] clip=[data-dock-scroll]{"left":199.5,"top":801,"right":542.5,"bottom":831} edit=true lane=true iconOnly=true
+  [P95 lane-700-hover-rotate] badge=rotate box={"left":218.54,"top":798.04,"right":236.46,"bottom":815.96,"width":17.92,"height":17.92} contained=false disjoint=false partial=true clipEscape={"left":-19.04,"right":-306.04,"top":2.96,"bottom":-15.04} hitTestable=null
+
+TOTAL OFFENDERS (8):
+  lane-700-hover-rotate: badge "rotate" PARTIALLY clipped by [data-dock-scroll] on top +2.96
+  lane-700-hover-extract: badge "extract" PARTIALLY clipped by [data-dock-scroll] on top +2.96
+  lane-700-hover-insertPages: badge "insertPages" PARTIALLY clipped by [data-dock-scroll] on top +2.96
+  lane-700-hover-replacePages: badge "replacePages" PARTIALLY clipped by [data-dock-scroll] on top +2.96
+  lane-700-hover-split: badge "split" PARTIALLY clipped by [data-dock-scroll] on top +2.96
+  lane-700-hover-delete: badge "delete" PARTIALLY clipped by [data-dock-scroll] on top +2.96
+  lane-700-hover-merge: badge "merge" PARTIALLY clipped by [data-dock-scroll] on top +2.96
+  lane-700-hover-cropPages: badge "cropPages" PARTIALLY clipped by [data-dock-scroll] on top +2.96
+
+Failure (Playwright, soft assertion then aggregate):
+  Error: [lane-700-hover-rotate] every remove badge is fully contained (and hit-testable) or fully scrolled out - never partially clipped
+    expect(received).toEqual(expected)
+    - Expected  - 1
+    + Received  + 3
+    - Array []
+    + Array [ "lane-700-hover-rotate: badge \"rotate\" PARTIALLY clipped by [data-dock-scroll] on top +2.96" ]
+    at softAssert (e2e/phase95_dock_edit_overflow.spec.cjs:255:152)
+
+  1 failed
+    e2e\phase95_dock_edit_overflow.spec.cjs:249:1 › every dock edit-mode remove badge is either fully visible or fully scrolled out - never partially clipped (minimum size, typical size, maximum interface zoom, arrows lane)
+
+Conclusion: pre-fix repro of DEF-518 confirmed. Resting contract unchanged and green;
+the extended oracle RUNS and FAILS on the hover case with topEscape about +2.96.

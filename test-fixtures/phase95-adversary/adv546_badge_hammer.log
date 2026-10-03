@@ -1,0 +1,27 @@
+== TFL-546 Phase 95-D badge hammer ==
+  [PASS] dock: edit mode arms
+    idle: lane=false clip=dock@1319.81 badges=8 partial=0 notHit=0 topEscape=[-7,-7,-7,-7,-7,-7,-7,-7]
+  [PASS] dock idle: data-dock-idle=true observed with pointer away :: idle=true
+  [PASS] dock idle: every badge contained + hit-testable at 40% opacity
+  [PASS] dock idle: a badge click still removes its verb at 40% opacity :: id=rotate
+    hover-delete: lane=false clip=dock@1319.81 badges=7 partial=0 notHit=0 topEscape=[-7,-7,-7,-7,-5,-7,-7]
+  [PASS] dock hover: hovered verb badge not partially clipped by its clip ancestor :: partial=false topEscape=-5
+  [PASS] dock: badge click removes exactly its own verb :: before=7 after=6
+  [PASS] dock: badge click did NOT run the verb (no dialog/panel opened) :: dialogs=0
+  [FAIL] dock keyboard: a badge is reachable by Tab from the dock chrome :: {"tabIndex":0,"tag":"SPAN","role":"button"}
+  [PASS] dock keyboard: programmatic focus lands on a badge and Enter removes it :: id=extract focused=true
+  [PASS] dock keyboard: Space on a focused badge removes it :: id=insertPages
+  [PASS] dock: pen toggles edit off (badges hidden) then on :: off=false badgesOff=0 on=true
+  [PASS] dock: plus picker opens and adds a verb :: items=35 added=extract n0=4 n1=5
+    many-pins: lane=false clip=dock@1319.81 badges=13 partial=0 notHit=0 topEscape=[-7,-7,-7,-7,-7,-7,-7,-7,-7,-7,-7,-7,-7]
+  [PASS] dock many-pins/overflow: every rendered badge contained + hit-testable :: edit=true lane=false badges=13
+    scrolled-end: lane=false clip=dock@1319.81 badges=13 partial=0 notHit=0 topEscape=[-7,-7,-7,-7,-7,-7,-7,-7,-7,-7,-7,-7,-7]
+  [PASS] dock scrolled-to-end: badges not partially clipped at the trailing edge
+  [PASS] dock: context-menu Unpin available on a pinned verb :: no enabled pinned verb present (informational)
+  [PASS] home: edit mode arms
+  [PASS] home: every badge contained in .welcome + viewport + hit-testable :: [{"id":"createFromImages","inWelcome":true,"inViewport":true,"hit":true},{"id":"merge","inWelcome":true,"inViewport":true,"hit":true}]
+  [PASS] home: badge click removes exactly its own tile, no dialog :: before=["createFromImages","merge"] after=["merge"] dialogs=0
+
+== SUMMARY: 17/18 checks passed ==
+FAILURES:
+ - dock keyboard: a badge is reachable by Tab from the dock chrome :: {"tabIndex":0,"tag":"SPAN","role":"button"}

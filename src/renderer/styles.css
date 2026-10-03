@@ -15586,11 +15586,17 @@ rect.ann-highlight.ann-preview {
 }
 
 /* The minus badge: top-right of its verb, themed, pointer cursor, and visible
- * ONLY while the dock is in EDIT mode. */
+ * ONLY while the dock is in EDIT mode. Phase 95 (ruling 2) — the badge is
+ * STRUCTURALLY contained inside its verb's border box (`top:0; right:0`, no
+ * negative overhang). The old `top:-5px; right:-5px` parked a 5px strip
+ * outside the verb, which the lane scroller's computed `overflow-y:auto` cut
+ * off every badge and left the trailing badge over the dock's right edge. The
+ * badge still reads as the verb's top-right corner control; nothing outside the
+ * dock was widened or disabled to hide the overhang. */
 .action-dock-minus {
   position: absolute;
-  top: -5px;
-  right: -5px;
+  top: 0;
+  right: 0;
   display: none;
   align-items: center;
   justify-content: center;
@@ -15982,6 +15988,19 @@ cursor: pointer;
   flex: 1 1 auto;
   min-width: 0;
   overflow-x: auto;
+  /* DEF-518 — `overflow-x: auto` forces the computed `overflow-y` to `auto`, so
+   * this scroller is the VERTICAL clip box for the verbs' edit-mode badges. At
+   * rest a `top: 0` badge sits flush with the scroller's top edge, fully
+   * contained; on hover the verb lifts `--motion-translate-micro` (2px) and the
+   * badge's own `:hover` `scale(1.12)` grows it ~0.96px above its layout top, so
+   * the badge paints ~2.96px above the clip box and is clipped again — the same
+   * partial-clip defect Phase 95 removes, re-introduced by the hover motion.
+   * This 3px of top padding is the headroom the lift (2px) plus the badge
+   * scale's half-growth (~1px) need (the padding box is the clip box, so the
+   * badge stays inside it), and the bottom-anchored dock simply grows upward to
+   * absorb the extra height. The hover affordance and the clipped-at-the-lane
+   * horizontal contract are untouched. */
+  padding-top: 3px;
   overscroll-behavior-x: contain;
   scrollbar-width: none;
 }
