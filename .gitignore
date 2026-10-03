@@ -39,3 +39,6 @@ screenshots/
 # Local-only P74 real-form fixture: required by e2e/phase74_real_form.spec.cjs:37,
 # a byte copy of the operator's personal encrypted 956.pdf - NEVER commit it.
 /test-fixtures/tfl225/
+
+# Spent build-mutex files (watchdog reaps; never committed).
+/.paperclip-build.lock.spent-*

@@ -23,6 +23,19 @@ export interface WhatsNewEntry {
 /** Ordered newest first. */
 export const WHATS_NEW: WhatsNewEntry[] = [
   {
+    version: '1.48.0',
+    date: '2026-10-03',
+    highlights: [
+      'True redaction permanently removes whatever you mark, text or a region, from the saved file so it cannot be copied or recovered by text extraction, with a configurable mark colour that is remembered and an honest refusal when it cannot remove something.',
+      'The document outline is now editable: add, rename, retarget, nest or un-nest and delete bookmark entries, and your edited outline is saved into the PDF so other readers show it.',
+      'Search and replace works across the whole document: replace a single occurrence or every one with real saved text, and the report states exactly what changed and what was skipped.',
+      'Remove blank pages by scanning for blank or near-blank pages with an adjustable ink threshold, then delete the confirmed pages in one pass.',
+      'Sanitize a PDF to strip active content such as JavaScript, embedded files and launch or open actions, producing a safer file.',
+      'Apply sequential Bates numbering with a configurable prefix, suffix, start number, padding and position to the pages you select, and the labels survive save.',
+      'Fixed: the Jovrel app icon on the print window.',
+    ],
+  },
+  {
     version: '1.47.0',
     date: '2026-10-02',
     highlights: [

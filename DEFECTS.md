@@ -11159,6 +11159,7 @@ Impact: HIGH. With no renderer bundle, the Phase 89 e2e/packaging gate cannot ru
 History:
 - qa (TFL-473, 2026-10-03): filed from the Phase 89 frontend focused verification (item 5 / verdict f). The four unit/verify commands passed (2/2 files 27 tests, 4/4 files 56 tests, watermark 1/1 8 tests, verify exit 0); only the renderer build fails.
 - qa (TFL-478, 2026-10-03): CLOSED on the Phase 89 phase-validation gate. The TFL-474 fix landed (`vite.config.ts` and `vitest.config.ts` carry `resolve.preserveSymlinks: true`) and `npm.cmd run build` now exits 0 on a clean tree: typecheck + `vite build` (renderer bundle produced, `dist/renderer/assets/index-*.js` + `index-*.css`) + `build:node`, EXIT=0. Regression: `npm.cmd run verify` exit 0. (Note: there is a pre-existing duplicate DEF-504 id for a closed Phase 86 entry above; this closure targets the Phase 89 build entry.)
+- CTO (TFL-463, 2026-10-03): Phase 88 phase-close commit `4629c4f458ada2a69477782e6fd81275d0073f32` carried the `vite.config.ts` half of this fix (needed to unblock Phase 88's TFL-471 renderer build). The still-uncommitted `vitest.config.ts` sibling change stays with this Phase 89 entry and must ride the Phase 89 close commit - it is not Phase 88 work.
 
 ## DEF-508: Bates dialog resets `[data-bates-report]` to "Not applied yet." (and the page scope) right after an apply that persists changed defaults
 

@@ -1389,6 +1389,12 @@ pre-warn relevant entries when dispatching.
   no guesses.
 - git-agent: stages `.env` / screenshots / test-results despite deny-list. Rule:
   stage explicitly; unexpected files = stop and report.
+- git-agent: a phase-close commit swept foreign-phase files into the wrong phase
+  (TFL-493's Phase 88 commit 4629c4f already contained the Phase 89 shared/main/
+  renderer edits + ledger/doc entries), splitting a phase across commits. Rule: a
+  phase-close commit stages ONLY the phase's declared paths; for shared files
+  (ledgers, docs, engine.ts, settings.ts, App.tsx, config) stage by path AND hunk,
+  and if a foreign-phase hunk is pending, exclude it and report the bleed.
 - frontend-dev: committed its own chunk (TFL-165, commit `676edcd`, 2026-10-01) instead
   of leaving the tree for git-agent. Rule: developers never commit — git-agent is the
   only committer; a dev's finished, verified edit is left uncommitted in the tree.
