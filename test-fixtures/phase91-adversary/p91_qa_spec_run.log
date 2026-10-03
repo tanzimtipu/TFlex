@@ -1,0 +1,67 @@
+
+Running 1 test using 1 worker
+
+[P91] home edit toggle aria-label="Edit home tools" title="Edit home tools"
+[P91] theme=light via theme-toggle
+[P91] screenshot C:\Users\tanzi\OneDrive\App Development\TFlex\screenshots\phase91-home-light.png
+[P91] theme=dark via theme-toggle
+[P91] screenshot C:\Users\tanzi\OneDrive\App Development\TFlex\screenshots\phase91-home-dark.png
+[P91] theme=light via theme-toggle
+[P91] focus ring {"tag":"BUTTON","cls":["btn","btn-ghost","recent-row-open"],"text":"form.pdfsamples6d agoPDF","fv":true,"bs":"rgba(124, 58, 237, 0.35) 0px 0px 0px 2px","ol":"none","ring":"0 0 0 2px #7c3aed59","tabs":1}
+[P91] PASS home
+[P91] PASS open report
+[P91] rendered .tool-btn classes: [["btn","btn-toolbar","btn-toggle","tool-btn","tool-btn-active"],["btn","btn-toolbar","btn-toggle","tool-btn"],["btn","btn-toolbar","btn-toggle","tool-btn"],["btn","btn-toolbar","tool-btn"],["btn","btn-toolbar","tool-btn"],["btn","btn-toolbar","tool-btn"],["btn","btn-toolbar","tool-btn"],["btn","btn-toolbar","btn-toggle","tool-btn"],["btn","btn-toolbar","btn-toggle","tool-btn","tool-btn-active"],["btn","btn-toolbar","btn-toggle","tool-btn"],["btn","btn-toolbar","btn-toggle","tool-btn","ann-tool-btn"],["btn","btn-toolbar","btn-toggle","tool-btn","ann-tool-btn"],["btn","btn-toolbar","btn-toggle","tool-btn","ann-tool-btn"],["btn","btn-toolbar","btn-toggle","tool-btn","ann-tool-btn"],["btn","btn-toolbar","btn-toggle","tool-btn","ann-tool-btn"],["btn","btn-toolbar","tool-btn","ann-dropdown-toggle"]]
+[P91] activeTool after highlight = highlight
+[P91] theme=light via theme-toggle
+[P91] screenshot C:\Users\tanzi\OneDrive\App Development\TFlex\screenshots\phase91-toolbar-light.png
+[P91] theme=dark via theme-toggle
+[P91] screenshot C:\Users\tanzi\OneDrive\App Development\TFlex\screenshots\phase91-toolbar-dark.png
+[P91] theme=light via theme-toggle
+[P91] PASS toolbar
+[P91] non-canonical .tool-btn []
+[P91] PASS tool-btn-all-canonical
+[P91] theme=light via theme-toggle
+[P91] sheet close aria-label="Close preferences" title="Close preferences"
+[P91] screenshot C:\Users\tanzi\OneDrive\App Development\TFlex\screenshots\phase91-sheet-light.png
+[P91] PASS sheet-close
+[P91] theme=light via theme-toggle
+[P91] search-bar .tool-btn total=6 non-canonical []
+[P91] screenshot C:\Users\tanzi\OneDrive\App Development\TFlex\screenshots\phase91-search-bar-light.png
+[P91] PASS search-bar-tool-btn
+[P91] theme=light via theme-toggle
+[P91] screenshot C:\Users\tanzi\OneDrive\App Development\TFlex\screenshots\phase91-context-panel-light.png
+[P91] theme=dark via theme-toggle
+[P91] screenshot C:\Users\tanzi\OneDrive\App Development\TFlex\screenshots\phase91-context-panel-dark.png
+[P91] theme=light via theme-toggle
+[P91] PASS context-panel
+[P91] theme=light via theme-toggle
+[P91] screenshot C:\Users\tanzi\OneDrive\App Development\TFlex\screenshots\phase91-inspector-light.png
+[P91] theme=dark via theme-toggle
+[P91] screenshot C:\Users\tanzi\OneDrive\App Development\TFlex\screenshots\phase91-inspector-dark.png
+[P91] theme=light via theme-toggle
+[P91] PASS inspector
+[P91] theme=light via theme-toggle
+[P91] dialog close aria-label="Close dialog" title="Close dialog"
+[P91] screenshot C:\Users\tanzi\OneDrive\App Development\TFlex\screenshots\phase91-dialog-light.png
+[P91] theme=dark via theme-toggle
+[P91] screenshot C:\Users\tanzi\OneDrive\App Development\TFlex\screenshots\phase91-dialog-dark.png
+[P91] theme=light via theme-toggle
+[P91] PASS dialog
+[P91] theme=light via theme-toggle
+[P91] screenshot C:\Users\tanzi\OneDrive\App Development\TFlex\screenshots\phase91-menu-light.png
+[P91] theme=dark via theme-toggle
+[P91] screenshot C:\Users\tanzi\OneDrive\App Development\TFlex\screenshots\phase91-menu-dark.png
+[P91] rotations before=[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0] after=[1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
+[P91] theme=light via theme-toggle
+[P91] PASS menu
+[P91] theme=light via theme-toggle
+[P91] screenshot C:\Users\tanzi\OneDrive\App Development\TFlex\screenshots\phase91-segmented-light.png
+[P91] theme=dark via theme-toggle
+[P91] screenshot C:\Users\tanzi\OneDrive\App Development\TFlex\screenshots\phase91-segmented-dark.png
+[P91] theme=light via theme-toggle
+[P91] PASS segmented
+[P91] RESULTS [{"name":"home","ok":true,"detail":""},{"name":"open report","ok":true,"detail":""},{"name":"toolbar","ok":true,"detail":""},{"name":"tool-btn-all-canonical","ok":true,"detail":""},{"name":"sheet-close","ok":true,"detail":""},{"name":"search-bar-tool-btn","ok":true,"detail":""},{"name":"context-panel","ok":true,"detail":""},{"name":"inspector","ok":true,"detail":""},{"name":"dialog","ok":true,"detail":""},{"name":"menu","ok":true,"detail":""},{"name":"segmented","ok":true,"detail":""}]
+[p91-buttons +185ms] closed normally in 185ms
+  ok 1 e2e\phase91_button_system.spec.cjs:192:1 › Phase 91 button system sweep: Home, toolbar, ContextPanel, Inspector, dialog, menu, segmented + both themes (40.1s)
+
+  1 passed (40.5s)

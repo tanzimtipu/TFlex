@@ -6,10 +6,11 @@
 // label painted `--icon-blue` ON the solid `--accent` fill — 1.00:1 in light —
 // and only became legible on hover (the operator's report).
 //
-// Item 13: the Open / Save controls lose their background box in EVERY theme —
-// the group's glass capsule film/hairline and Open's solid accent fill are
-// retired at rest, while the hover / focus affordance and the disabled
-// distinction survive.
+// Item 13: the Open / Save controls used to lose their background box in
+// EVERY theme. Phase 91 supersedes that: the three file controls are now
+// canonical `.btn-secondary` controls (visible raised affordance), and the
+// retired legacy colour/state rules were folded into the canonical variant,
+// which this spec now pins.
 //
 // This spec resolves the REAL theme tokens out of styles.css (the Phase 38
 // legibility sweep's method: translucent frosted surfaces composited over the
@@ -188,32 +189,38 @@ describe("Phase 40 items 2 + 13 — the caption strip's Open / Save controls", (
     expect(capsule).toContain("-webkit-app-region: no-drag");
   });
 
-  it("item 13: Open has no resting fill or border in any theme", () => {
-    const open = block(CSS_NO_COMMENTS, /\.titlebar-file-open\s*\{/);
-    expect(open).toMatch(/background:\s*transparent/);
-    expect(open).toMatch(/border-color:\s*transparent/);
+  it("item 13: the file controls compose the canonical secondary variant", () => {
+    // Phase 91 — Open is a canonical `.btn-secondary` now; the legacy class
+    // keeps only its wider padding (layout).
+    const open = block(CSS_NO_COMMENTS, /\.btn\.titlebar-file-open\s*\{/);
+    expect(open).toMatch(/padding:\s*0 9px/);
     expect(open).not.toContain("var(--accent)");
     expect(open).not.toContain("--fg-on-accent");
     // No Open-specific hover / active rule survives to repaint an accent box.
     expect(CSS_NO_COMMENTS).not.toMatch(/\.titlebar-file-open:hover/);
     expect(CSS_NO_COMMENTS).not.toMatch(/\.titlebar-file-open:active/);
-    // The three controls rest transparent (Save / Save As ride the base rule).
-    const btn = block(CSS_NO_COMMENTS, /\.titlebar-file-btn\s*\{/);
-    expect(btn).toMatch(/background:\s*transparent/);
-    expect(btn).toMatch(/border:\s*1px solid transparent/);
+    // The visible button identity is the canonical secondary variant.
+    const secondary = block(CSS_NO_COMMENTS, /\.btn-secondary\s*\{/);
+    expect(secondary).toMatch(/background:\s*var\(--bg-raised\)/);
+    expect(secondary).toMatch(/border-color:\s*var\(--border\)/);
+    // The three controls keep the title-bar ladder geometry as a layout alias.
+    const btn = block(CSS_NO_COMMENTS, /\.btn\.titlebar-file-btn\s*\{/);
+    expect(btn).toMatch(/height:\s*28px/);
+    expect(btn).toMatch(/border-radius:\s*var\(--radius-2\)/);
   });
 
-  it("item 13: the hover / focus affordance and the disabled distinction survive", () => {
-    const hover = block(CSS_NO_COMMENTS, /\.titlebar-file-btn:hover:not\(\[disabled\]\)\s*\{/);
-    expect(hover).toMatch(/background:\s*var\(--bg-hover\)/);
-    expect(hover).toMatch(/color:\s*var\(--fg-strong\)/);
-    const active = block(CSS_NO_COMMENTS, /\.titlebar-file-btn:active:not\(\[disabled\]\)\s*\{/);
-    expect(active).toMatch(/background:\s*var\(--accent-pressed-soft\)/);
-    const focus = block(CSS_NO_COMMENTS, /\.titlebar-file-btn:focus-visible\s*\{/);
-    expect(focus).toMatch(/box-shadow:\s*var\(--focus-ring\)/);
-    const disabled = block(CSS_NO_COMMENTS, /\.titlebar-file-btn\[disabled\]\s*\{/);
-    expect(disabled).toMatch(/opacity:\s*0\.45/);
-    expect(disabled).toMatch(/cursor:\s*not-allowed/);
+  it("item 13: the hover / focus affordance and the disabled distinction come from the canonical variant", () => {
+    expect(CSS_NO_COMMENTS).toMatch(
+      /\.btn-secondary:hover:not\(\[disabled\]\):not\(\[aria-disabled="true"\]\)\s*\{\s*background:\s*var\(--bg-hover\)/,
+    );
+    expect(CSS_NO_COMMENTS).toMatch(
+      /\.btn-secondary:active:not\(\[disabled\]\):not\(\[aria-disabled="true"\]\)\s*\{\s*background:\s*var\(--accent-pressed-soft\)/,
+    );
+    expect(CSS_NO_COMMENTS).toMatch(
+      /\.btn-secondary:focus-visible,[\s\S]*?box-shadow:\s*var\(--focus-ring\)/,
+    );
+    expect(CSS_NO_COMMENTS).toMatch(/\.btn\[disabled\],[\s\S]{0,80}?opacity:\s*0\.55/);
+    expect(CSS_NO_COMMENTS).toMatch(/\.btn\[disabled\],[\s\S]{0,80}?cursor:\s*not-allowed/);
   });
 
   it("item 13: the neutral resting ink still applies to the header file controls", () => {

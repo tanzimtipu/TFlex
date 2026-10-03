@@ -282,30 +282,85 @@ describe("Phase 59 item 9 - Inspector labels carry no trailing ellipsis", () => 
 // Item 9 � interactive controls read as buttons, not body text.
 // ---------------------------------------------------------------------------
 
-describe("Phase 59 item 9 - panel controls carry a visible button identity", () => {
+describe("Phase 91 - panel controls compose the canonical button classes", () => {
   const css = readStyles();
 
-  it.each([
-    [".context-panel-action"],
-    [".context-panel-combine"],
-    [".inspector-action"],
-  ])("%s paints a raised surface (not transparent) and keeps a border", (selector) => {
-    const body = ruleBody(css, selector.replace(/\./g, "\\."));
+  it("the canonical secondary variant is the visible button identity", () => {
+    const body = ruleBody(css, "\\.btn-secondary");
     expect(body).not.toBe("");
-    const background = /background:\s*([^;]+);/.exec(body)?.[1]?.trim() ?? "";
-    expect(background).not.toBe("");
-    expect(background).not.toBe("transparent");
-    expect(background).not.toBe("none");
-    expect(body).toMatch(/border:\s*1px solid var\(--border/);
+    expect(body).toMatch(/background:\s*var\(--bg-raised\)/);
+    expect(body).toMatch(/border-color:\s*var\(--border\)/);
   });
 
-  it("hover moves to a distinct surface tone on both panels", () => {
-    const actionHover = ruleBody(css, "\\.context-panel-action:hover:not\\(:disabled\\)");
-    expect(actionHover).toMatch(/background:\s*var\(--bg-secondary\)/);
-    const inspectorHover = ruleBody(css, "\\.inspector-action:hover:not\\(:disabled\\)");
-    expect(inspectorHover).toMatch(/background:\s*var\(--bg-secondary\)/);
-    const combineHover = ruleBody(css, "\\.context-panel-combine:hover");
-    expect(combineHover).toMatch(/background:\s*var\(--bg-secondary\)/);
+  it("the canonical secondary hover moves to a distinct surface tone", () => {
+    expect(css).toMatch(
+      /\.btn-secondary:hover:not\(\[disabled\]\):not\(\[aria-disabled="true"\]\)\s*\{[^}]*background:\s*var\(--bg-hover\)/,
+    );
+  });
+
+  it("the ContextPanel controls add the canonical classes to the legacy hooks", () => {
+    const pages = renderContextPanel({
+      stage: "pages",
+      onMerge: vi.fn(),
+      onRemoveBlankPages: vi.fn(),
+      outline: [],
+    });
+    try {
+      const combine = pages.host.querySelector("[data-context-panel-combine]");
+      expect(combine?.classList.contains("btn")).toBe(true);
+      expect(combine?.classList.contains("btn-secondary")).toBe(true);
+      const blank = pages.host.querySelector("[data-blank-scan-open]");
+      expect(blank?.classList.contains("btn-secondary")).toBe(true);
+      expect(blank?.classList.contains("btn-sm")).toBe(true);
+      const toggle = pages.host.querySelector("[data-outline-toggle]");
+      expect(toggle?.classList.contains("btn")).toBe(true);
+      expect(toggle?.classList.contains("btn-ghost")).toBe(true);
+      expect(toggle?.getAttribute("aria-expanded")).not.toBeNull();
+    } finally {
+      pages.unmount();
+    }
+    const edit = renderContextPanel({
+      stage: "edit",
+      onRecognizeText: vi.fn(),
+      onOpenOcrSuspects: vi.fn(),
+    });
+    try {
+      const recognize = edit.host.querySelector('[data-context-panel-action="recognize"]');
+      expect(recognize?.classList.contains("btn-secondary")).toBe(true);
+      expect(recognize?.classList.contains("btn-sm")).toBe(true);
+      const suspects = edit.host.querySelector('[data-context-panel-action="suspects"]');
+      expect(suspects?.classList.contains("btn-sm")).toBe(true);
+    } finally {
+      edit.unmount();
+    }
+  });
+
+  it("the Inspector controls add the canonical classes to the legacy hooks", () => {
+    const { host, unmount } = mountInspector({
+      stage: "pages",
+      selection: { kind: "page", page: 1 },
+      onRenumberPages: vi.fn(),
+      onJumpToReview: vi.fn(),
+      onClose: vi.fn(),
+    });
+    try {
+      const renumber = host.querySelector('[data-inspector-action="renumber"]');
+      expect(renumber?.classList.contains("btn")).toBe(true);
+      expect(renumber?.classList.contains("btn-secondary")).toBe(true);
+      const jump = host.querySelector('[data-inspector-action="jump-to-review"]');
+      expect(jump?.classList.contains("btn-ghost")).toBe(true);
+      expect(jump?.classList.contains("btn-sm")).toBe(true);
+      const collapse = host.querySelector("[data-inspector-collapse]");
+      expect(collapse?.classList.contains("btn-ghost")).toBe(true);
+      expect(collapse?.getAttribute("aria-expanded")).not.toBeNull();
+      const close = host.querySelector("[data-inspector-close]");
+      expect(close?.classList.contains("btn-ghost")).toBe(true);
+      expect(close?.classList.contains("btn-icon")).toBe(true);
+      expect(close?.getAttribute("aria-label")).toBe("Close inspector");
+      expect(close?.getAttribute("title")).toBe("Close");
+    } finally {
+      unmount();
+    }
   });
 });
 

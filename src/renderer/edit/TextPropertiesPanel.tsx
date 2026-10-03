@@ -273,8 +273,8 @@ export function TextPropertiesPanel(props: TextPropertiesPanelProps): ReactEleme
               data-txt-spellcheck
               className={
                 spellState.enabled
-                  ? "text-props-btn text-props-btn-active"
-                  : "text-props-btn"
+                  ? "btn btn-ghost text-props-btn text-props-btn-active"
+                  : "btn btn-ghost text-props-btn"
               }
               aria-label="Spell check"
               aria-pressed={spellState.enabled}
@@ -357,7 +357,7 @@ export function TextPropertiesPanel(props: TextPropertiesPanelProps): ReactEleme
             <button
               type="button"
               data-txt-bold
-              className={values.bold ? "text-props-btn text-props-btn-active" : "text-props-btn"}
+              className={values.bold ? "btn btn-ghost text-props-btn text-props-btn-active" : "btn btn-ghost text-props-btn"}
               aria-label="Bold"
               aria-pressed={values.bold}
               title="Bold"
@@ -368,7 +368,7 @@ export function TextPropertiesPanel(props: TextPropertiesPanelProps): ReactEleme
             <button
               type="button"
               data-txt-italic
-              className={values.italic ? "text-props-btn text-props-btn-active" : "text-props-btn"}
+              className={values.italic ? "btn btn-ghost text-props-btn text-props-btn-active" : "btn btn-ghost text-props-btn"}
               aria-label="Italic"
               aria-pressed={values.italic}
               title="Italic"
@@ -380,7 +380,7 @@ export function TextPropertiesPanel(props: TextPropertiesPanelProps): ReactEleme
               type="button"
               data-txt-underline
               className={
-                values.underline ? "text-props-btn text-props-btn-active" : "text-props-btn"
+                values.underline ? "btn btn-ghost text-props-btn text-props-btn-active" : "btn btn-ghost text-props-btn"
               }
               aria-label="Underline"
               aria-pressed={values.underline}
@@ -393,7 +393,7 @@ export function TextPropertiesPanel(props: TextPropertiesPanelProps): ReactEleme
               type="button"
               data-txt-super
               className={
-                values.baselineShift > 0 ? "text-props-btn text-props-btn-active" : "text-props-btn"
+                values.baselineShift > 0 ? "btn btn-ghost text-props-btn text-props-btn-active" : "btn btn-ghost text-props-btn"
               }
               aria-label="Superscript"
               aria-pressed={values.baselineShift > 0}
@@ -408,7 +408,7 @@ export function TextPropertiesPanel(props: TextPropertiesPanelProps): ReactEleme
               type="button"
               data-txt-sub
               className={
-                values.baselineShift < 0 ? "text-props-btn text-props-btn-active" : "text-props-btn"
+                values.baselineShift < 0 ? "btn btn-ghost text-props-btn text-props-btn-active" : "btn btn-ghost text-props-btn"
               }
               aria-label="Subscript"
               aria-pressed={values.baselineShift < 0}
@@ -422,7 +422,7 @@ export function TextPropertiesPanel(props: TextPropertiesPanelProps): ReactEleme
             <button
               type="button"
               data-txt-format-painter
-              className={painterArmed ? "text-props-btn text-props-btn-active" : "text-props-btn"}
+              className={painterArmed ? "btn btn-ghost text-props-btn text-props-btn-active" : "btn btn-ghost text-props-btn"}
               aria-label="Format Painter"
               aria-pressed={painterArmed}
               disabled={!canPickUpPainter && !painterArmed}
@@ -471,7 +471,7 @@ export function TextPropertiesPanel(props: TextPropertiesPanelProps): ReactEleme
               <button
                 type="button"
                 data-txt-highlight-clear
-                className="text-props-mini-btn"
+                className="btn btn-secondary btn-sm text-props-mini-btn"
                 title="No highlight"
                 aria-label="No highlight"
                 onClick={(): void => onPatch({ highlight: null })}
@@ -483,7 +483,7 @@ export function TextPropertiesPanel(props: TextPropertiesPanelProps): ReactEleme
           <button
             type="button"
             data-txt-clear
-            className="text-props-wide-btn"
+            className="btn btn-secondary text-props-wide-btn"
             title="Clear formatting"
             onClick={(): void => onPatch(clearFormattingPatch(defaults))}
           >
@@ -507,7 +507,7 @@ export function TextPropertiesPanel(props: TextPropertiesPanelProps): ReactEleme
                 type="button"
                 {...{ [`data-txt-align-${align}`]: "true" }}
                 className={
-                  values.align === align ? "text-props-btn text-props-btn-active" : "text-props-btn"
+                  values.align === align ? "btn btn-ghost text-props-btn text-props-btn-active" : "btn btn-ghost text-props-btn"
                 }
                 aria-label={label}
                 aria-pressed={values.align === align}
@@ -548,7 +548,7 @@ export function TextPropertiesPanel(props: TextPropertiesPanelProps): ReactEleme
                 type="button"
                 {...{ [`data-txt-list-${list}`]: "true" }}
                 className={
-                  values.list === list ? "text-props-btn text-props-btn-active" : "text-props-btn"
+                  values.list === list ? "btn btn-ghost text-props-btn text-props-btn-active" : "btn btn-ghost text-props-btn"
                 }
                 aria-label={label}
                 aria-pressed={values.list === list}
@@ -565,7 +565,7 @@ export function TextPropertiesPanel(props: TextPropertiesPanelProps): ReactEleme
               <button
                 type="button"
                 data-txt-indent-dec
-                className="text-props-btn"
+                className="btn btn-ghost btn-icon text-props-btn"
                 aria-label="Decrease indent"
                 title="Decrease indent"
                 disabled={values.indent <= 0}
@@ -579,7 +579,7 @@ export function TextPropertiesPanel(props: TextPropertiesPanelProps): ReactEleme
               <button
                 type="button"
                 data-txt-indent-inc
-                className="text-props-btn"
+                className="btn btn-ghost btn-icon text-props-btn"
                 aria-label="Increase indent"
                 title="Increase indent"
                 disabled={values.indent >= 200}
@@ -617,7 +617,7 @@ export function TextPropertiesPanel(props: TextPropertiesPanelProps): ReactEleme
           <button
             type="button"
             data-txt-horizontal-scaling
-            className="text-props-wide-btn"
+            className="btn btn-secondary text-props-wide-btn"
             disabled
             title="Horizontal scaling is not available: the PDF engine has no Tz operator."
           >

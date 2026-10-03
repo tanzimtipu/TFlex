@@ -138,7 +138,11 @@ export function StageRail(props: StageRailProps): ReactElement {
             <button
               key={stage}
               type="button"
-              className={active ? 'stage-rail-btn stage-rail-btn-active' : 'stage-rail-btn'}
+              className={
+                active
+                  ? 'btn btn-toggle stage-rail-btn stage-rail-btn-active'
+                  : 'btn btn-toggle stage-rail-btn'
+              }
               onClick={(): void => onStageChange(stage)}
               aria-pressed={active}
               aria-label={`${STAGE_LABELS[stage]} stage`}
@@ -158,7 +162,7 @@ export function StageRail(props: StageRailProps): ReactElement {
       <div className="stage-rail-foot">
         <button
           type="button"
-          className="stage-rail-btn stage-rail-gear"
+          className="btn btn-ghost stage-rail-btn stage-rail-gear"
           onClick={onOpenPreferences}
           aria-haspopup="dialog"
           aria-label="Open preferences"

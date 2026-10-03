@@ -1,0 +1,185 @@
+
+Running 1 test using 1 worker
+
+
+[DISC] welcome tools sel=[data-home-tool] count=3
+   {"tag":"BUTTON","data":["data-home-tool=open"],"cls":["btn","btn-primary","home-tool","home-tool-fixed"],"ariaLabel":null,"title":null,"pressed":null,"disabled":false,"text":"Open PDFCtrl O","visible":true}
+   {"tag":"BUTTON","data":["data-home-tool=createFromImages"],"cls":["btn","btn-secondary","home-tool"],"ariaLabel":null,"title":"Combine picked images into a new PDF document.","pressed":null,"disabled":false,"text":"Create PDF from images","visible":true}
+   {"tag":"BUTTON","data":["data-home-tool=merge"],"cls":["btn","btn-secondary","home-tool"],"ariaLabel":null,"title":"Combine another PDF with the active document.","pressed":null,"disabled":false,"text":"Merge PDFs","visible":true}
+
+[DISC] home edit toggle sel=[data-home-edit-toggle] count=1
+   {"tag":"BUTTON","data":["data-home-edit-toggle=true"],"cls":["btn","btn-toggle","btn-icon","home-tools-edit"],"ariaLabel":"Edit home tools","title":"Edit home tools","pressed":"false","disabled":false,"text":"","visible":true}
+
+[DISC] welcome region btns sel=[data-home-tools] button count=4
+   {"tag":"BUTTON","data":["data-home-tool=open"],"cls":["btn","btn-primary","home-tool","home-tool-fixed"],"ariaLabel":null,"title":null,"pressed":null,"disabled":false,"text":"Open PDFCtrl O","visible":true}
+   {"tag":"BUTTON","data":["data-home-tool=createFromImages"],"cls":["btn","btn-secondary","home-tool"],"ariaLabel":null,"title":"Combine picked images into a new PDF document.","pressed":null,"disabled":false,"text":"Create PDF from images","visible":true}
+   {"tag":"BUTTON","data":["data-home-tool=merge"],"cls":["btn","btn-secondary","home-tool"],"ariaLabel":null,"title":"Combine another PDF with the active document.","pressed":null,"disabled":false,"text":"Merge PDFs","visible":true}
+   {"tag":"BUTTON","data":["data-home-edit-toggle=true"],"cls":["btn","btn-toggle","btn-icon","home-tools-edit"],"ariaLabel":"Edit home tools","title":"Edit home tools","pressed":"false","disabled":false,"text":"","visible":true}
+[DISC] diag {"keys":["pageCount","currentPage","zoom","mode","theme","openTabs","activeTabId","activeDocBytes","searchQuery","searchHits","searchIndexProgress","sampleCount","recovered","engineAvailable","modified","engineState","canUndo","canRedo","formFields","signatures","hasFormFields","formFieldsLoaded","engineDocId","optimizeDialogOpen","auditDialogOpen","optimizePreset","exportImageFormat","exportImageDpi","createImageQuality","tabModified","activeTool"],"engineKeys":null,"pageCount":0,"currentPage":0}
+
+[DISC] command bar btns sel=.toolbar button count=0
+
+[DISC] app header toolbar sel=[data-toolbar-open], [data-toolbar-save], [data-toolbar-save-as], [data-new-tab], [data-header-multi-mode], [data-header-find] count=6
+   {"tag":"BUTTON","data":["data-toolbar-open=true"],"cls":["btn","btn-secondary","titlebar-file-btn","titlebar-file-open"],"ariaLabel":"Open PDF document","title":"Open PDF (Ctrl+O)","pressed":null,"disabled":false,"text":"Open","visible":true}
+   {"tag":"BUTTON","data":["data-toolbar-save=true"],"cls":["btn","btn-secondary","titlebar-file-btn","titlebar-file-btn-clean"],"ariaLabel":"Save","title":"Saved — no changes to save","pressed":null,"disabled":true,"text":"","visible":true}
+   {"tag":"BUTTON","data":["data-toolbar-save-as=true"],"cls":["btn","btn-secondary","titlebar-file-btn"],"ariaLabel":"Save a copy","title":"Save a copy (Ctrl+Shift+S)","pressed":null,"disabled":false,"text":"","visible":true}
+   {"tag":"BUTTON","data":["data-new-tab=true"],"cls":["btn","btn-ghost","btn-icon","tab-new"],"ariaLabel":"New empty tab","title":"New empty tab","pressed":null,"disabled":false,"text":"","visible":true}
+   {"tag":"BUTTON","data":["data-header-find=true"],"cls":["btn","btn-ghost","btn-icon","header-find"],"ariaLabel":"Find in document (Ctrl+F)","title":"Find in document (Ctrl+F)","pressed":null,"disabled":false,"text":"","visible":true}
+   {"tag":"BUTTON","data":["data-header-multi-mode=true","data-multi-mode-active=false"],"cls":["btn","btn-ghost","btn-icon","btn-toggle","header-multi-mode"],"ariaLabel":"Multi Mode: view/edit two documents side by side","title":"Multi Mode: view/edit two documents side by side in one workspace","pressed":"false","disabled":false,"text":"","visible":true}
+
+[DISC] titlebar menus sel=[data-menu-button] count=1
+   {"tag":"BUTTON","data":["data-menu-button=true"],"cls":["btn","btn-ghost","titlebar-menu-button","titlebar-menu-file"],"ariaLabel":"File menu","title":"File menu","pressed":null,"disabled":false,"text":"File","visible":true}
+[DISC] stage 1 active=pages toolbarVisible=false
+
+[DISC] stage-1 context panel actions sel=[data-context-panel-action] count=0
+
+[DISC] stage-1 dock verbs sel=[data-dock-verb] count=8
+   {"tag":"BUTTON","data":["data-dock-verb=rotate"],"cls":["btn","btn-ghost","btn-toggle","action-dock-verb","action-dock-verb-primary"],"ariaLabel":"Rotate pages","title":"Rotate the selected page clockwise or counter-clockwise.","pressed":null,"disabled":false,"text":"Rotate pages","visible":true}
+   {"tag":"BUTTON","data":["data-dock-verb=extract"],"cls":["btn","btn-ghost","btn-toggle","action-dock-verb"],"ariaLabel":"Extract pages","title":"Pull specific pages into a new document.","pressed":null,"disabled":false,"text":"Extract pages","visible":true}
+   {"tag":"BUTTON","data":["data-dock-verb=insertPages"],"cls":["btn","btn-ghost","btn-toggle","action-dock-verb"],"ariaLabel":"Insert pages","title":"Insert a blank page, or import pages from another PDF.","pressed":null,"disabled":false,"text":"Insert pages","visible":true}
+   {"tag":"BUTTON","data":["data-dock-verb=replacePages"],"cls":["btn","btn-ghost","btn-toggle","action-dock-verb"],"ariaLabel":"Replace pages","title":"Swap a contiguous range with another PDF; outline and links survive.","pressed":null,"disabled":false,"text":"Replace pages","visible":true}
+   {"tag":"BUTTON","data":["data-dock-verb=split"],"cls":["btn","btn-ghost","btn-toggle","action-dock-verb"],"ariaLabel":"Split pages","title":"Split a range of pages into a new document.","pressed":null,"disabled":false,"text":"Split pages","visible":true}
+   {"tag":"BUTTON","data":["data-dock-verb=delete"],"cls":["btn","btn-ghost","btn-toggle","action-dock-verb"],"ariaLabel":"Delete pages","title":"Remove the selected page from the document.","pressed":null,"disabled":false,"text":"Delete pages","visible":true}
+   {"tag":"BUTTON","data":["data-dock-verb=merge"],"cls":["btn","btn-ghost","btn-toggle","action-dock-verb"],"ariaLabel":"Merge PDFs","title":"Combine another PDF with the active document.","pressed":null,"disabled":false,"text":"Merge PDFs","visible":true}
+   {"tag":"BUTTON","data":["data-dock-verb=cropPages"],"cls":["btn","btn-ghost","btn-toggle","action-dock-verb"],"ariaLabel":"Crop pages","title":"Set the CropBox/TrimBox for every page.","pressed":null,"disabled":false,"text":"Crop pages","visible":true}
+
+[DISC] stage-1 rail tabs sel=[data-rail-tab] count=0
+[DISC] stage 2 active=edit toolbarVisible=false
+
+[DISC] stage-2 context panel actions sel=[data-context-panel-action] count=2
+   {"tag":"BUTTON","data":["data-context-panel-action=recognize"],"cls":["btn","btn-secondary","btn-sm","context-panel-action"],"ariaLabel":null,"title":null,"pressed":null,"disabled":false,"text":"Recognize text","visible":true}
+   {"tag":"BUTTON","data":["data-context-panel-action=suspects"],"cls":["btn","btn-secondary","btn-sm","context-panel-action"],"ariaLabel":null,"title":"Run Recognize text first","pressed":null,"disabled":true,"text":"Review suspects","visible":true}
+
+[DISC] stage-2 dock verbs sel=[data-dock-verb] count=7
+   {"tag":"BUTTON","data":["data-dock-verb=editToolOff"],"cls":["btn","btn-ghost","btn-toggle","action-dock-verb","action-dock-verb-primary"],"ariaLabel":"Edit mode off","title":"Return the edit layer to the plain viewer.","pressed":"true","disabled":false,"text":"Edit mode off","visible":true}
+   {"tag":"BUTTON","data":["data-dock-verb=editText"],"cls":["btn","btn-ghost","btn-toggle","action-dock-verb"],"ariaLabel":"Edit text","title":"Click a text run to replace it.","pressed":null,"disabled":false,"text":"Edit text","visible":true}
+   {"tag":"BUTTON","data":["data-dock-verb=editImage"],"cls":["btn","btn-ghost","btn-toggle","action-dock-verb"],"ariaLabel":"Edit images","title":"Click an image to select it, or drag a rectangle to place a new one.","pressed":null,"disabled":false,"text":"Edit images","visible":true}
+   {"tag":"BUTTON","data":["data-dock-verb=editTextBox"],"cls":["btn","btn-ghost","btn-toggle","action-dock-verb"],"ariaLabel":"Add a text box","title":"Drag on the page to place a new text box.","pressed":null,"disabled":false,"text":"Add a text box","visible":true}
+   {"tag":"BUTTON","data":["data-dock-verb=recognizeText"],"cls":["btn","btn-ghost","btn-toggle","action-dock-verb"],"ariaLabel":"Recognize text (OCR)","title":"Add a searchable text layer to a scanned PDF.","pressed":null,"disabled":false,"text":"Recognize text (OCR)","visible":true}
+   {"tag":"BUTTON","data":["data-dock-verb=batchOcr"],"cls":["btn","btn-ghost","btn-toggle","action-dock-verb"],"ariaLabel":"Batch OCR all tabs","title":"Open a second document first","pressed":null,"disabled":true,"text":"Batch OCR all tabs","visible":true}
+   {"tag":"BUTTON","data":["data-dock-verb=ocrSuspects"],"cls":["btn","btn-ghost","btn-toggle","action-dock-verb"],"ariaLabel":"OCR suspects","title":"Run Recognize text first","pressed":null,"disabled":true,"text":"OCR suspects","visible":true}
+
+[DISC] stage-2 rail tabs sel=[data-rail-tab] count=0
+[DISC] stage 3 active=review toolbarVisible=false
+
+[DISC] stage-3 context panel actions sel=[data-context-panel-action] count=1
+   {"tag":"BUTTON","data":["data-context-panel-action=manage-signatures"],"cls":["btn","btn-secondary","context-panel-action"],"ariaLabel":null,"title":null,"pressed":null,"disabled":false,"text":"Manage signatures","visible":true}
+
+[DISC] stage-3 dock verbs sel=[data-dock-verb] count=16
+   {"tag":"BUTTON","data":["data-dock-verb=annotate"],"cls":["btn","btn-ghost","btn-toggle","action-dock-verb","action-dock-verb-primary"],"ariaLabel":"Annotate","title":"Show the annotation tools: markup, shapes, ink and notes.","pressed":null,"disabled":false,"text":"Annotate","visible":true}
+   {"tag":"BUTTON","data":["data-dock-verb=sign"],"cls":["btn","btn-ghost","btn-toggle","action-dock-verb"],"ariaLabel":"Sign","title":"Draw, type, or place a saved signature.","pressed":null,"disabled":false,"text":"Sign","visible":true}
+   {"tag":"BUTTON","data":["data-dock-verb=stamp"],"cls":["btn","btn-ghost","btn-toggle","action-dock-verb"],"ariaLabel":"Stamp","title":"Drop an APPROVED, DRAFT, CONFIDENTIAL or FINAL stamp.","pressed":null,"disabled":false,"text":"Stamp","visible":true}
+   {"tag":"BUTTON","data":["data-dock-verb=flatten"],"cls":["btn","btn-ghost","btn-toggle","action-dock-verb"],"ariaLabel":"Flatten","title":"This document has no form fields","pressed":null,"disabled":true,"text":"Flatten","visible":true}
+   {"tag":"BUTTON","data":["data-dock-verb=forms"],"cls":["btn","btn-ghost","btn-toggle","action-dock-verb"],"ariaLabel":"Forms","title":"This document has no form fields","pressed":null,"disabled":true,"text":"Forms","visible":true}
+   {"tag":"BUTTON","data":["data-dock-verb=watermark"],"cls":["btn","btn-ghost","btn-toggle","action-dock-verb"],"ariaLabel":"Watermark","title":"Overlay text or an image across the selected pages.","pressed":null,"disabled":false,"text":"Watermark","visible":true}
+   {"tag":"BUTTON","data":["data-dock-verb=bates"],"cls":["btn","btn-ghost","btn-toggle","action-dock-verb"],"ariaLabel":"Bates numbering…","title":"Stamp sequential Bates numbers on the selected pages.","pressed":null,"disabled":false,"text":"Bates numbering…","visible":true}
+   {"tag":"BUTTON","data":["data-dock-verb=exportComments"],"cls":["btn","btn-ghost","btn-toggle","action-dock-verb"],"ariaLabel":"Export comments (FDF)","title":"Save every annotation to a local .fdf file.","pressed":null,"disabled":false,"text":"Export comments (FDF)","visible":true}
+   {"tag":"BUTTON","data":["data-dock-verb=importComments"],"cls":["btn","btn-ghost","btn-toggle","action-dock-verb"],"ariaLabel":"Import comments (FDF)","title":"Merge a local .fdf file into the active document.","pressed":null,"disabled":false,"text":"Import comments (FDF)","visible":true}
+   {"tag":"BUTTON","data":["data-dock-verb=fillFromCsv"],"cls":["btn","btn-ghost","btn-toggle","action-dock-verb"],"ariaLabel":"Fill form fields from CSV…","title":"This document has no form fields","pressed":null,"disabled":true,"text":"Fill form fields from CSV…","visible":true}
+   {"tag":"BUTTON","data":["data-dock-verb=exportFormData"],"cls":["btn","btn-ghost","btn-toggle","action-dock-verb"],"ariaLabel":"Export form data…","title":"This document has no form fields","pressed":null,"disabled":true,"text":"Export form data…","visible":true}
+   {"tag":"BUTTON","data":["data-dock-verb=importFormData"],"cls":["btn","btn-ghost","btn-toggle","action-dock-verb"],"ariaLabel":"Import form data…","title":"This document has no form fields","pressed":null,"disabled":true,"text":"Import form data…","visible":true}
+   {"tag":"BUTTON","data":["data-dock-verb=validateDocument"],"cls":["btn","btn-ghost","btn-toggle","action-dock-verb"],"ariaLabel":"Validate document…","title":"Check the document against PDF/A or PDF/X and list every finding.","pressed":null,"disabled":false,"text":"Validate document…","visible":true}
+   {"tag":"BUTTON","data":["data-dock-verb=sanitize"],"cls":["btn","btn-ghost","btn-toggle","action-dock-verb"],"ariaLabel":"Sanitize document…","title":"Strip JavaScript, launch actions, embedded files and metadata, with a per-class report.","pressed":null,"disabled":false,"text":"Sanitize document…","visible":true}
+   {"tag":"BUTTON","data":["data-dock-verb=engineeringLayers"],"cls":["btn","btn-ghost","btn-toggle","action-dock-verb"],"ariaLabel":"Engineering layers…","title":"Show the document’s layers and switch each one on or off.","pressed":null,"disabled":false,"text":"Engineering layers…","visible":true}
+   {"tag":"BUTTON","data":["data-dock-verb=documentInfo"],"cls":["btn","btn-ghost","btn-toggle","action-dock-verb"],"ariaLabel":"Document info…","title":"Show the document’s PDF/E engineering metadata, layers and 3D content.","pressed":null,"disabled":false,"text":"Document info…","visible":true}
+
+[DISC] stage-3 rail tabs sel=[data-rail-tab] count=0
+[DISC] stage 4 active=deliver toolbarVisible=false
+
+[DISC] stage-4 context panel actions sel=[data-context-panel-action] count=2
+   {"tag":"BUTTON","data":["data-context-panel-action=optimize"],"cls":["btn","btn-secondary","context-panel-action"],"ariaLabel":null,"title":null,"pressed":null,"disabled":false,"text":"Optimize","visible":true}
+   {"tag":"BUTTON","data":["data-context-panel-action=from-images"],"cls":["btn","btn-secondary","context-panel-action"],"ariaLabel":null,"title":null,"pressed":null,"disabled":false,"text":"From images","visible":true}
+
+[DISC] stage-4 dock verbs sel=[data-dock-verb] count=9
+   {"tag":"BUTTON","data":["data-dock-verb=optimize"],"cls":["btn","btn-ghost","btn-toggle","action-dock-verb","action-dock-verb-primary"],"ariaLabel":"Reduce file size","title":"Re-serialise the document with a compression preset.","pressed":null,"disabled":false,"text":"Reduce file size","visible":true}
+   {"tag":"BUTTON","data":["data-dock-verb=audit"],"cls":["btn","btn-ghost","btn-toggle","action-dock-verb"],"ariaLabel":"Audit space usage","title":"See a per-element breakdown of the file size.","pressed":null,"disabled":false,"text":"Audit space usage","visible":true}
+   {"tag":"BUTTON","data":["data-dock-verb=exportPages"],"cls":["btn","btn-ghost","btn-toggle","action-dock-verb"],"ariaLabel":"Export pages as images","title":"Save selected pages as PNG, JPEG, or TIFF files.","pressed":null,"disabled":false,"text":"Export pages as images","visible":true}
+   {"tag":"BUTTON","data":["data-dock-verb=exportText"],"cls":["btn","btn-ghost","btn-toggle","action-dock-verb"],"ariaLabel":"Export text","title":"Save extracted text as .txt or .rtf.","pressed":null,"disabled":false,"text":"Export text","visible":true}
+   {"tag":"BUTTON","data":["data-dock-verb=exportDocx"],"cls":["btn","btn-ghost","btn-toggle","action-dock-verb"],"ariaLabel":"Export to Word (.docx)","title":"Render every page to a single .docx document.","pressed":null,"disabled":false,"text":"Export to Word (.docx)","visible":true}
+   {"tag":"BUTTON","data":["data-dock-verb=exportXlsx"],"cls":["btn","btn-ghost","btn-toggle","action-dock-verb"],"ariaLabel":"Export as spreadsheet (.xlsx)","title":"Detect tables and text into a single .xlsx workbook.","pressed":null,"disabled":false,"text":"Export as spreadsheet (.xlsx)","visible":true}
+   {"tag":"BUTTON","data":["data-dock-verb=exportPptx"],"cls":["btn","btn-ghost","btn-toggle","action-dock-verb"],"ariaLabel":"Export as presentation (.pptx)","title":"Render every page as one slide in a single .pptx deck.","pressed":null,"disabled":false,"text":"Export as presentation (.pptx)","visible":true}
+   {"tag":"BUTTON","data":["data-dock-verb=createFromImages"],"cls":["btn","btn-ghost","btn-toggle","action-dock-verb"],"ariaLabel":"Create PDF from images","title":"Combine picked images into a new PDF document.","pressed":null,"disabled":false,"text":"Create PDF from images","visible":true}
+   {"tag":"BUTTON","data":["data-dock-verb=encrypt"],"cls":["btn","btn-ghost","btn-toggle","action-dock-verb"],"ariaLabel":"Encrypt document","title":"Create a password-protected copy with AES-256 or AES-128.","pressed":null,"disabled":false,"text":"Encrypt document","visible":true}
+
+[DISC] stage-4 rail tabs sel=[data-rail-tab] count=0
+
+[DISC] blank scan open sel=[data-blank-scan-open] count=1
+   {"tag":"BUTTON","data":["data-blank-scan-open=true"],"cls":["btn","btn-secondary","btn-sm","context-panel-action"],"ariaLabel":"Remove blank pages","title":null,"pressed":null,"disabled":false,"text":"Remove blank pages","visible":true}
+
+[DISC] context panel combine sel=[data-context-panel-combine] count=1
+   {"tag":"BUTTON","data":["data-context-panel-combine=true"],"cls":["btn","btn-secondary","context-panel-combine"],"ariaLabel":"Combine with another PDF","title":"Combine with another PDF","pressed":null,"disabled":false,"text":"Combine","visible":true}
+
+[DISC] page layout options sel=[data-page-layout-option] count=3
+   {"tag":"BUTTON","data":["data-page-layout-option=one"],"cls":["btn","btn-toolbar","btn-toggle","tool-btn","tool-btn-active"],"ariaLabel":"One page","title":"One page","pressed":"true","disabled":false,"text":"","visible":true}
+   {"tag":"BUTTON","data":["data-page-layout-option=two"],"cls":["btn","btn-toolbar","btn-toggle","tool-btn"],"ariaLabel":"Two pages side by side","title":"Two pages side by side","pressed":"false","disabled":false,"text":"","visible":true}
+   {"tag":"BUTTON","data":["data-page-layout-option=four"],"cls":["btn","btn-toolbar","btn-toggle","tool-btn"],"ariaLabel":"Four pages in two rows","title":"Four pages in two rows","pressed":"false","disabled":false,"text":"","visible":true}
+
+[DISC] canvas pills sel=[data-page-pill] button, [data-zoom-pill] button count=7
+   {"tag":"BUTTON","data":[],"cls":["btn","btn-toolbar","tool-btn"],"ariaLabel":"Previous page","title":"Previous page","pressed":null,"disabled":true,"text":"","visible":true}
+   {"tag":"BUTTON","data":[],"cls":["btn","btn-toolbar","tool-btn"],"ariaLabel":"Next page","title":"Next page","pressed":null,"disabled":false,"text":"","visible":true}
+   {"tag":"BUTTON","data":[],"cls":["btn","btn-toolbar","tool-btn"],"ariaLabel":"Zoom out","title":"Zoom out","pressed":null,"disabled":false,"text":"","visible":true}
+   {"tag":"BUTTON","data":[],"cls":["btn","btn-toolbar","tool-btn"],"ariaLabel":"Zoom in","title":"Zoom in","pressed":null,"disabled":false,"text":"","visible":true}
+   {"tag":"BUTTON","data":[],"cls":["btn","btn-toolbar","btn-toggle","tool-btn"],"ariaLabel":"Fit width","title":"Fit width","pressed":"false","disabled":false,"text":"","visible":true}
+   {"tag":"BUTTON","data":[],"cls":["btn","btn-toolbar","btn-toggle","tool-btn","tool-btn-active"],"ariaLabel":"Fit page","title":"Fit page","pressed":"true","disabled":false,"text":"","visible":true}
+   {"tag":"BUTTON","data":["data-hand-toggle=true","data-hand-active=false"],"cls":["btn","btn-toolbar","btn-toggle","tool-btn"],"ariaLabel":"Pan mode","title":"Pan mode: drag anywhere to scroll the document","pressed":"false","disabled":false,"text":"","visible":true}
+
+[DISC] inspector sel=[data-inspector] count=1
+   {"tag":"DIV","data":["data-inspector=true","data-inspector-stage=pages","data-inspector-selection=page","data-inspector-collapsed=false"],"cls":["inspector"],"ariaLabel":"Inspector","title":null,"pressed":null,"disabled":false,"text":"Inspector · Page 1PageSize—Rot","visible":true}
+
+[DISC] inspector actions sel=[data-inspector-action] count=2
+   {"tag":"BUTTON","data":["data-inspector-action=renumber"],"cls":["btn","btn-secondary","inspector-action"],"ariaLabel":null,"title":"rename","pressed":null,"disabled":false,"text":"rename","visible":true}
+   {"tag":"BUTTON","data":["data-inspector-action=jump-to-review"],"cls":["btn","btn-ghost","btn-sm","inspector-link"],"ariaLabel":null,"title":"Show the annotations list in the REVIEW panel","pressed":null,"disabled":false,"text":"0","visible":true}
+
+[DISC] rail tabs attrs sel=[data-rail-tab] count=0
+
+[DISC] stage rail buttons sel=[data-stage] count=4
+   {"tag":"BUTTON","data":["data-stage=pages"],"cls":["btn","btn-toggle","stage-rail-btn","stage-rail-btn-active"],"ariaLabel":"Pages stage","title":"Pages (Ctrl+1)","pressed":"true","disabled":false,"text":"Pages","visible":true}
+   {"tag":"BUTTON","data":["data-stage=edit"],"cls":["btn","btn-toggle","stage-rail-btn"],"ariaLabel":"Edit stage","title":"Edit (Ctrl+2)","pressed":"false","disabled":false,"text":"Edit","visible":true}
+   {"tag":"BUTTON","data":["data-stage=review"],"cls":["btn","btn-toggle","stage-rail-btn"],"ariaLabel":"Review stage","title":"Review (Ctrl+3)","pressed":"false","disabled":false,"text":"Review","visible":true}
+   {"tag":"BUTTON","data":["data-stage=deliver"],"cls":["btn","btn-toggle","stage-rail-btn"],"ariaLabel":"Deliver stage","title":"Deliver (Ctrl+4)","pressed":"false","disabled":false,"text":"Deliver","visible":true}
+
+[DISC] search bar sel=.search-bar button count=4
+   {"tag":"BUTTON","data":["data-search-replace-toggle=true"],"cls":["btn","btn-toolbar","btn-toggle","tool-btn"],"ariaLabel":"Toggle replace","title":"Toggle replace","pressed":"false","disabled":false,"text":"","visible":true}
+   {"tag":"BUTTON","data":[],"cls":["btn","btn-toolbar","tool-btn"],"ariaLabel":"Previous hit","title":"Previous hit (Shift+Enter)","pressed":null,"disabled":true,"text":"","visible":true}
+   {"tag":"BUTTON","data":[],"cls":["btn","btn-toolbar","tool-btn"],"ariaLabel":"Next hit","title":"Next hit (Enter)","pressed":null,"disabled":true,"text":"","visible":true}
+   {"tag":"BUTTON","data":[],"cls":["btn","btn-toolbar","tool-btn"],"ariaLabel":"Close search","title":"Close search (Esc)","pressed":null,"disabled":false,"text":"","visible":true}
+
+[DISC] ann flyout controls sel=[data-annotation-flyout] button count=6
+   {"tag":"BUTTON","data":["data-tool=arrow"],"cls":["btn","btn-toolbar","btn-toggle","tool-btn","ann-tool-btn"],"ariaLabel":"Arrow","title":"Arrow","pressed":"false","disabled":false,"text":"","visible":true}
+   {"tag":"BUTTON","data":["data-tool=rect"],"cls":["btn","btn-toolbar","btn-toggle","tool-btn","ann-tool-btn"],"ariaLabel":"Rectangle","title":"Rectangle","pressed":"false","disabled":false,"text":"","visible":true}
+   {"tag":"BUTTON","data":["data-tool=textbox"],"cls":["btn","btn-toolbar","btn-toggle","tool-btn","ann-tool-btn"],"ariaLabel":"Text box","title":"Text box","pressed":"false","disabled":false,"text":"","visible":true}
+   {"tag":"BUTTON","data":["data-tool=callout"],"cls":["btn","btn-toolbar","btn-toggle","tool-btn","ann-tool-btn"],"ariaLabel":"Callout","title":"Callout","pressed":"false","disabled":false,"text":"","visible":true}
+   {"tag":"BUTTON","data":["data-tool=highlight"],"cls":["btn","btn-toolbar","btn-toggle","tool-btn","ann-tool-btn"],"ariaLabel":"Highlight","title":"Highlight","pressed":"false","disabled":false,"text":"","visible":true}
+   {"tag":"BUTTON","data":["data-ann-dropdown-toggle=true"],"cls":["btn","btn-toolbar","tool-btn","ann-dropdown-toggle"],"ariaLabel":"All annotation tools","title":"All annotation tools","pressed":null,"disabled":false,"text":"","visible":true}
+
+[DISC] ann tools visible sel=[data-ann-tools-visible] button count=5
+   {"tag":"BUTTON","data":["data-tool=arrow"],"cls":["btn","btn-toolbar","btn-toggle","tool-btn","ann-tool-btn"],"ariaLabel":"Arrow","title":"Arrow","pressed":"false","disabled":false,"text":"","visible":true}
+   {"tag":"BUTTON","data":["data-tool=rect"],"cls":["btn","btn-toolbar","btn-toggle","tool-btn","ann-tool-btn"],"ariaLabel":"Rectangle","title":"Rectangle","pressed":"false","disabled":false,"text":"","visible":true}
+   {"tag":"BUTTON","data":["data-tool=textbox"],"cls":["btn","btn-toolbar","btn-toggle","tool-btn","ann-tool-btn"],"ariaLabel":"Text box","title":"Text box","pressed":"false","disabled":false,"text":"","visible":true}
+   {"tag":"BUTTON","data":["data-tool=callout"],"cls":["btn","btn-toolbar","btn-toggle","tool-btn","ann-tool-btn"],"ariaLabel":"Callout","title":"Callout","pressed":"false","disabled":false,"text":"","visible":true}
+   {"tag":"BUTTON","data":["data-tool=highlight"],"cls":["btn","btn-toolbar","btn-toggle","tool-btn","ann-tool-btn"],"ariaLabel":"Highlight","title":"Highlight","pressed":"false","disabled":false,"text":"","visible":true}
+
+[DISC] ann dropdown toggle sel=[data-ann-dropdown-toggle] count=1
+   {"tag":"BUTTON","data":["data-ann-dropdown-toggle=true"],"cls":["btn","btn-toolbar","tool-btn","ann-dropdown-toggle"],"ariaLabel":"All annotation tools","title":"All annotation tools","pressed":null,"disabled":false,"text":"","visible":true}
+
+[DISC] redact modes sel=.redact-modes .redact-mode count=6
+   {"tag":"BUTTON","data":["data-redact-mode=true","data-mode=region"],"cls":["btn","btn-toggle","btn-segmented-item","redact-mode"],"ariaLabel":null,"title":null,"pressed":"true","disabled":false,"text":"Region","visible":true}
+   {"tag":"BUTTON","data":["data-redact-mode=true","data-mode=text"],"cls":["btn","btn-toggle","btn-segmented-item","redact-mode"],"ariaLabel":null,"title":null,"pressed":"false","disabled":false,"text":"Text","visible":true}
+   {"tag":"BUTTON","data":["data-redact-mode=true","data-mode=region"],"cls":["btn","btn-toggle","btn-segmented-item","redact-mode"],"ariaLabel":null,"title":null,"pressed":"true","disabled":false,"text":"Region","visible":true}
+   {"tag":"BUTTON","data":["data-redact-mode=true","data-mode=text"],"cls":["btn","btn-toggle","btn-segmented-item","redact-mode"],"ariaLabel":null,"title":null,"pressed":"false","disabled":false,"text":"Text","visible":true}
+   {"tag":"BUTTON","data":["data-redact-mode=true","data-mode=region"],"cls":["btn","btn-toggle","btn-segmented-item","redact-mode"],"ariaLabel":null,"title":null,"pressed":"true","disabled":false,"text":"Region","visible":true}
+   {"tag":"BUTTON","data":["data-redact-mode=true","data-mode=text"],"cls":["btn","btn-toggle","btn-segmented-item","redact-mode"],"ariaLabel":null,"title":null,"pressed":"false","disabled":false,"text":"Text","visible":true}
+
+[DISC] context menu items sel=[data-context-menu] [data-menu-item] count=6
+   {"tag":"BUTTON","data":["data-menu-item=rotate-cw"],"cls":["btn","btn-ghost","context-menu-item"],"ariaLabel":null,"title":null,"pressed":null,"disabled":false,"text":"Rotate CW","visible":true}
+   {"tag":"BUTTON","data":["data-menu-item=rotate-ccw"],"cls":["btn","btn-ghost","context-menu-item"],"ariaLabel":null,"title":null,"pressed":null,"disabled":false,"text":"Rotate CCW","visible":true}
+   {"tag":"BUTTON","data":["data-menu-item=extract"],"cls":["btn","btn-ghost","context-menu-item"],"ariaLabel":null,"title":null,"pressed":null,"disabled":false,"text":"Extract…","visible":true}
+   {"tag":"BUTTON","data":["data-menu-item=insert-blank"],"cls":["btn","btn-ghost","context-menu-item"],"ariaLabel":null,"title":null,"pressed":null,"disabled":false,"text":"Insert blank after","visible":true}
+   {"tag":"BUTTON","data":["data-menu-item=replace"],"cls":["btn","btn-ghost","context-menu-item"],"ariaLabel":null,"title":null,"pressed":null,"disabled":false,"text":"Replace…","visible":true}
+   {"tag":"BUTTON","data":["data-menu-item=delete"],"cls":["btn","btn-ghost","context-menu-item","context-menu-item-danger"],"ariaLabel":null,"title":null,"pressed":null,"disabled":false,"text":"Delete…","visible":true}
+
+[DISC] DONE
+[p91-discovery +167ms] closed normally in 167ms
+  ok 1 test-fixtures\phase91-adversary\phase91_discovery.spec.cjs:44:1 › P91 discovery (9.3s)
+
+  1 passed (9.7s)

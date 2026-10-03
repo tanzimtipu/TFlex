@@ -7,6 +7,12 @@
 // same token -- and that no .action-dock-edit rule hard-codes a raw colour, so
 // the identity survives the theme swap (light / dark / frosted) rather than
 // freezing one theme's value.
+//
+// Phase 91 (Feature C1) migrated the pen onto the canonical button chrome while
+// keeping the legacy `.action-dock-edit` hook: the base ink now lives on the
+// scoped canonical alias `.btn.action-dock-edit` (the retired
+// `.action-dock-edit:not(.btn)` hook remains for the stale class). Both are
+// checked here, and neither may freeze a theme with a raw colour.
 
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
@@ -21,6 +27,14 @@ function ruleBodies(css: string, selector: string): string[] {
     .map((m) => m[2] ?? "");
 }
 
+/** The pen's base ink rules: the C1 canonical alias and the retired hook. */
+function editBodies(css: string): string[] {
+  return [
+    ...ruleBodies(css, ".btn.action-dock-edit"),
+    ...ruleBodies(css, ".action-dock-edit:not(.btn)"),
+  ];
+}
+
 const EDIT_COLOUR = /(^|;)\s*color:\s*var\(--tf-stage-edit\)\s*(;|$)/;
 
 function hasStandaloneEditColour(body: string): boolean {
@@ -29,7 +43,7 @@ function hasStandaloneEditColour(body: string): boolean {
 
 describe("TFL-61 — the dock edit pen rests in the EDIT stage hue", () => {
   it("declares color: var(--tf-stage-edit) in the .action-dock-edit base rule", () => {
-    const bodies = ruleBodies(CSS, ".action-dock-edit");
+    const bodies = editBodies(CSS);
     expect(bodies.length).toBeGreaterThan(0);
     expect(bodies.some(hasStandaloneEditColour)).toBe(true);
   });
@@ -41,7 +55,7 @@ describe("TFL-61 — the dock edit pen rests in the EDIT stage hue", () => {
   });
 
   it("declares no raw hex/rgb/hsl colour in any .action-dock-edit rule", () => {
-    const bodies = ruleBodies(CSS, ".action-dock-edit");
+    const bodies = editBodies(CSS);
     const raw = /#[0-9a-f]{3,8}\b|\brgba?\(|\bhsla?\(/i;
     for (const body of bodies) {
       expect(body).not.toMatch(raw);

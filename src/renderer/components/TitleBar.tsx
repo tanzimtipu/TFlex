@@ -262,7 +262,10 @@ export function TitleBar(props: TitleBarProps): ReactElement {
           <button
             ref={menuButtonRef}
             type="button"
-            className={menuOpen ? "titlebar-menu-button titlebar-menu-file titlebar-menu-button-active" : "titlebar-menu-button titlebar-menu-file"}
+            // Phase 91 — canonical control (`btn btn-ghost`); the legacy
+            // classes stay as layout/e2e aliases. `titlebar-menu-button-active`
+            // remains the joined-corner open alias.
+            className={menuOpen ? "btn btn-ghost titlebar-menu-button titlebar-menu-file titlebar-menu-button-active" : "btn btn-ghost titlebar-menu-button titlebar-menu-file"}
             onClick={(): void => setMenuOpen((v) => !v)}
             aria-haspopup="menu"
             aria-expanded={menuOpen}
@@ -315,7 +318,7 @@ export function TitleBar(props: TitleBarProps): ReactElement {
                   <button
                     key={item.key}
                     type="button"
-                    className="titlebar-menu-row"
+                    className="btn btn-ghost titlebar-menu-row"
                     role="menuitem"
                     onClick={(): void => onMenuEntry(entry)}
                     data-menu-action={entry.action ?? entry.id}
@@ -345,7 +348,7 @@ export function TitleBar(props: TitleBarProps): ReactElement {
       <div className="titlebar-controls" data-titlebar-controls>
         <button
           type="button"
-          className="titlebar-control titlebar-control-min"
+          className="btn btn-ghost btn-icon titlebar-control titlebar-control-min"
           onClick={onMinimize}
           aria-label="Minimize window"
           title="Minimize"
@@ -355,7 +358,7 @@ export function TitleBar(props: TitleBarProps): ReactElement {
         </button>
         <button
           type="button"
-          className="titlebar-control titlebar-control-max"
+          className="btn btn-ghost btn-icon titlebar-control titlebar-control-max"
           onClick={onMaximize}
           aria-label={maximizeLabel}
           title={maximizeLabel}
@@ -365,7 +368,7 @@ export function TitleBar(props: TitleBarProps): ReactElement {
         </button>
         <button
           type="button"
-          className="titlebar-control titlebar-control-close"
+          className="btn btn-ghost btn-icon titlebar-control titlebar-control-close"
           onClick={onClose}
           aria-label="Close window"
           title="Close"

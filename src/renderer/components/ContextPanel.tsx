@@ -425,7 +425,7 @@ const pageCount = engineState.pageCount;
       <div className="context-panel-actions-row">
         <button
           type="button"
-          className="context-panel-action"
+          className="btn btn-secondary btn-sm context-panel-action"
           data-blank-scan-open
           onClick={(): void => onRemoveBlankPages?.()}
           aria-label="Remove blank pages"
@@ -437,7 +437,7 @@ const pageCount = engineState.pageCount;
         <section className="context-panel-outline" data-context-panel-outline aria-label="Outline" data-outline-open={outlineOpen ? 'true' : 'false'}>
           <button
             type="button"
-            className="context-panel-section-toggle"
+            className="btn btn-ghost context-panel-section-toggle"
             onClick={(): void => {
               const next = !outlineOpen;
               setOutlineOpen(next);
@@ -555,7 +555,7 @@ const pageCount = engineState.pageCount;
         <div className="context-panel-actions-row">
           <button
             type="button"
-            className="context-panel-action"
+            className="btn btn-secondary btn-sm context-panel-action"
             data-context-panel-action="recognize"
             onClick={(): void => onRecognizeText?.()}
             disabled={onRecognizeText === undefined}
@@ -565,7 +565,7 @@ const pageCount = engineState.pageCount;
           </button>
           <button
             type="button"
-            className="context-panel-action"
+            className="btn btn-secondary btn-sm context-panel-action"
             data-context-panel-action="suspects"
             onClick={(): void => onOpenOcrSuspects?.()}
             // DEF-328 — the SAME gate as the palette's `ocrSuspects` row and
@@ -636,7 +636,7 @@ const pageCount = engineState.pageCount;
         <div className="context-panel-actions-row">
           <button
             type="button"
-            className="context-panel-action"
+            className="btn btn-secondary context-panel-action"
             data-context-panel-action="manage-signatures"
             onClick={(): void => onManageSignatures?.()}
             disabled={onManageSignatures === null}
@@ -674,7 +674,7 @@ const pageCount = engineState.pageCount;
           <span className="context-panel-row-value">
             <button
               type="button"
-              className="context-panel-action"
+              className="btn btn-secondary context-panel-action"
               data-context-panel-action="optimize"
               onClick={(): void => onOptimize?.()}
               disabled={onOptimize === undefined}
@@ -695,7 +695,7 @@ const pageCount = engineState.pageCount;
         <div className="context-panel-actions-row">
           <button
             type="button"
-            className="context-panel-action"
+            className="btn btn-secondary context-panel-action"
             data-context-panel-action="from-images"
             onClick={(): void => onCreateFromImages?.()}
             disabled={onCreateFromImages === null}
@@ -736,7 +736,7 @@ const headerTitle = contextPanelTitle(stage, pageCount);
             {!collapsed && stage === 'pages' && (
               <button
                 type="button"
-                className="context-panel-combine"
+                className="btn btn-secondary context-panel-combine"
                 onClick={(): void => onMerge?.()}
                 title="Combine with another PDF"
                 aria-label="Combine with another PDF"

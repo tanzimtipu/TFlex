@@ -580,9 +580,10 @@ export function UpdatePromptDialog(
           {renderHeader()}
           <button
             type="button"
-            className="sheet-close"
+            className="btn btn-ghost btn-icon sheet-close"
             onClick={onClose}
             aria-label="Close update prompt"
+            title="Close update prompt"
           >
             <Icon icon={X} size="sm" />
           </button>

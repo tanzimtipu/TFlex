@@ -1,0 +1,46 @@
+
+Running 1 test using 1 worker
+
+[ADV91] PASS A5.welcome hooks: data-home-tool present + carry .btn
+[ADV91] PASS A6.welcome no-op: edit toggle flips data-home-edit
+[ADV91][reach] welcome expected=4 seen=4 disabled=0 missing=[] ringOk=true
+[ADV91] PASS A1.welcome keyboard reach + ring
+[ADV91] PASS A2.canvas-pills Previous page is disabled + inert
+[ADV91] PASS A2.dock disabled verb is inert
+[ADV91] PASS A4.blank "Remove N selected" disabled with no scan + inert
+[ADV91][reach] app-header expected=9 seen=9 disabled=1 missing=[] ringOk=true
+[ADV91] PASS A1.app-header keyboard reach + ring
+[ADV91][reach] context-panel expected=12 seen=12 disabled=1 missing=[] ringOk=true
+[ADV91] PASS A1.context-panel keyboard reach + ring
+[ADV91][reach] stamp-dialog expected=3 seen=3 disabled=0 missing=[] ringOk=true
+[ADV91] PASS A1.dialog keyboard reach + ring (stamp)
+[ADV91] PASS A3.stage-rail toggle round-trip + re-render survival
+[ADV91] PASS A3.canvas-pills fit-width/fit-page round-trip
+[ADV91] PASS A3.annotation tool toggle round-trip
+[ADV91] PASS A3.page-layout toggle round-trip
+[ADV91][hooks] [data-dock-verb]=8 | [data-context-panel-action]=0 | [data-page-layout-option]=3 | [data-page-pill] button=2 | [data-zoom-pill] button=5 | [data-stage]=4 | [data-context-panel-action]=2 | [data-inspector-action]=2 | [data-ann-tools-visible] button[data-tool]=5 | [data-blank-scan-confirm]=1 | [data-stamp-confirm]=1 | [data-menu-item="rotate-cw"]=1 | [data-search-replace-one]=1
+[ADV91] PASS A5.hooks resolve per surface
+[ADV91] PASS A6.top-bar: header Find opens the search bar
+[ADV91] PASS A6.context-panel: From images opens its dialog
+[ADV91] PASS A6.inspector: renumber opens its dialog
+[ADV91] PASS A6.action-dock: annotate opens the flyout
+[ADV91] PASS A6.stage-rail: Edit stage switches the stage
+[ADV91] PASS A6.annotation toolbar: underline arms the tool
+[ADV91] PASS A6.search-bar: replace toggle reveals replace controls
+[ADV91] PASS A6.canvas-pills: Zoom in changes the zoom level
+[ADV91] PASS A6.redaction: text mode flips aria-pressed
+[ADV91] PASS A6.menu row: rotate-cw mutates rotations
+[ADV91] PASS A6.dialog: Stamp Cancel closes the dialog
+[ADV91] PASS A4b.delete-pages: range-empty gating + current confirm deletes
+[ADV91] PASS A6.colour palette: built-in swatch applies the colour
+[ADV91][flyout] N/A: no overflow arrows rendered (strip fits)
+[ADV91] PASS A6.annotation flyout scroll arrow scrolls the strip
+[ADV91][rail] rail-tabs single=0 multiMode=0
+[ADV91][rail] N/A: [data-rail-tab] renders in neither single nor Multi Mode (SideRail not mounted)
+[ADV91] PASS A5/A6.side-rail rail tabs reachability
+
+[ADV91] RESULTS [{"name":"A5.welcome hooks: data-home-tool present + carry .btn","ok":true,"detail":""},{"name":"A6.welcome no-op: edit toggle flips data-home-edit","ok":true,"detail":""},{"name":"A1.welcome keyboard reach + ring","ok":true,"detail":""},{"name":"A2.canvas-pills Previous page is disabled + inert","ok":true,"detail":""},{"name":"A2.dock disabled verb is inert","ok":true,"detail":""},{"name":"A4.blank \"Remove N selected\" disabled with no scan + inert","ok":true,"detail":""},{"name":"A1.app-header keyboard reach + ring","ok":true,"detail":""},{"name":"A1.context-panel keyboard reach + ring","ok":true,"detail":""},{"name":"A1.dialog keyboard reach + ring (stamp)","ok":true,"detail":""},{"name":"A3.stage-rail toggle round-trip + re-render survival","ok":true,"detail":""},{"name":"A3.canvas-pills fit-width/fit-page round-trip","ok":true,"detail":""},{"name":"A3.annotation tool toggle round-trip","ok":true,"detail":""},{"name":"A3.page-layout toggle round-trip","ok":true,"detail":""},{"name":"A5.hooks resolve per surface","ok":true,"detail":""},{"name":"A6.top-bar: header Find opens the search bar","ok":true,"detail":""},{"name":"A6.context-panel: From images opens its dialog","ok":true,"detail":""},{"name":"A6.inspector: renumber opens its dialog","ok":true,"detail":""},{"name":"A6.action-dock: annotate opens the flyout","ok":true,"detail":""},{"name":"A6.stage-rail: Edit stage switches the stage","ok":true,"detail":""},{"name":"A6.annotation toolbar: underline arms the tool","ok":true,"detail":""},{"name":"A6.search-bar: replace toggle reveals replace controls","ok":true,"detail":""},{"name":"A6.canvas-pills: Zoom in changes the zoom level","ok":true,"detail":""},{"name":"A6.redaction: text mode flips aria-pressed","ok":true,"detail":""},{"name":"A6.menu row: rotate-cw mutates rotations","ok":true,"detail":""},{"name":"A6.dialog: Stamp Cancel closes the dialog","ok":true,"detail":""},{"name":"A4b.delete-pages: range-empty gating + current confirm deletes","ok":true,"detail":""},{"name":"A6.colour palette: built-in swatch applies the colour","ok":true,"detail":""},{"name":"A6.annotation flyout scroll arrow scrolls the strip","ok":true,"detail":""},{"name":"A5/A6.side-rail rail tabs reachability","ok":true,"detail":""}]
+[p91-adversary +167ms] closed normally in 167ms
+  ok 1 test-fixtures\phase91-adversary\phase91_adversary.spec.cjs:181:1 › P91 adversarial behaviour probe (42.9s)
+
+  1 passed (43.4s)

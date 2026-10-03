@@ -118,33 +118,36 @@ export function SearchBar(props: SearchBarProps) {
       <span className="search-status">{status}</span>
       <button
         type="button"
-        className="tool-btn"
+        className="btn btn-toolbar btn-toggle tool-btn"
         data-search-replace-toggle
         onClick={onToggleReplace}
         aria-pressed={replaceMode}
+        aria-label="Toggle replace"
         title="Toggle replace"
       >
         <Icon icon={Replace} size="sm" />
       </button>
       <button
         type="button"
-        className="tool-btn"
+        className="btn btn-toolbar tool-btn"
         onClick={onPrev}
         disabled={resultCount === 0}
         title="Previous hit (Shift+Enter)"
+        aria-label="Previous hit"
       >
         <Icon icon={ArrowUp} size="sm" />
       </button>
       <button
         type="button"
-        className="tool-btn"
+        className="btn btn-toolbar tool-btn"
         onClick={onNext}
         disabled={resultCount === 0}
         title="Next hit (Enter)"
+        aria-label="Next hit"
       >
         <Icon icon={ArrowDown} size="sm" />
       </button>
-      <button type="button" className="tool-btn" onClick={onClose} title="Close search (Esc)">
+      <button type="button" className="btn btn-toolbar tool-btn" onClick={onClose} aria-label="Close search" title="Close search (Esc)">
         <Icon icon={X} size="sm" />
       </button>
       {replaceMode && (
@@ -163,7 +166,7 @@ export function SearchBar(props: SearchBarProps) {
           />
           <button
             type="button"
-            className="tool-btn search-replace-btn"
+            className="btn btn-toolbar tool-btn search-replace-btn"
             data-search-replace-one
             onClick={onReplaceOne}
             disabled={!canReplace}
@@ -173,7 +176,7 @@ export function SearchBar(props: SearchBarProps) {
           </button>
           <button
             type="button"
-            className="tool-btn search-replace-btn"
+            className="btn btn-toolbar tool-btn search-replace-btn"
             data-search-replace-all
             onClick={onReplaceAll}
             disabled={!canReplace}

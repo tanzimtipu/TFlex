@@ -425,7 +425,7 @@ const ColorPalette = forwardRef<ColorPaletteHandle, ColorPaletteProps>(
                   />
                   <button
                     type="button"
-                    className="color-swatch-remove"
+                    className="btn btn-ghost btn-sm color-swatch-remove"
                     onClick={(): void => onRemove(p.id)}
                     aria-label={`Delete ${p.hex}`}
                     title="Delete color"
@@ -555,7 +555,7 @@ onPointerDown={onSliderPointerDown}
             </label>
 <button
               type="button"
-              className="color-palette-add"
+              className="btn btn-ghost btn-icon color-palette-add"
               onClick={onAdd}
               title="Add to palette"
               aria-label="Add to palette"

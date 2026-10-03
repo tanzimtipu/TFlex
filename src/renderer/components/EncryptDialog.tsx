@@ -104,9 +104,10 @@ export function EncryptDialog(props: EncryptDialogProps): ReactElement | null {
               </h2>
               <button
                 type="button"
-                className="modal-close"
+                className="btn btn-ghost btn-icon modal-close"
                 onClick={onClose}
                 aria-label="Close dialog"
+                title="Close dialog"
                 disabled={busy}
               >
                 <Icon icon={X} size="sm" />

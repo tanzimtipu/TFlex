@@ -509,7 +509,7 @@ export function AnnotationToolbar(props: AnnotationToolbarProps): ReactElement {
       <button
         key={tool}
         type="button"
-        className={active ? "tool-btn tool-btn-active ann-tool-btn" : "tool-btn ann-tool-btn"}
+        className={active ? "btn btn-toolbar btn-toggle tool-btn tool-btn-active ann-tool-btn" : "btn btn-toolbar btn-toggle tool-btn ann-tool-btn"}
         onClick={(): void => armTool(tool)}
         disabled={isDisabled}
         aria-pressed={active}
@@ -631,8 +631,8 @@ export function AnnotationToolbar(props: AnnotationToolbarProps): ReactElement {
         type="button"
         className={
           menuOpen
-            ? "tool-btn ann-dropdown-toggle ann-dropdown-toggle-open"
-            : "tool-btn ann-dropdown-toggle"
+            ? "btn btn-toolbar tool-btn ann-dropdown-toggle ann-dropdown-toggle-open"
+            : "btn btn-toolbar tool-btn ann-dropdown-toggle"
         }
         onClick={(): void => setMenuOpen((v) => !v)}
         onKeyDown={onToggleKeyDown}
@@ -684,8 +684,8 @@ export function AnnotationToolbar(props: AnnotationToolbarProps): ReactElement {
                         aria-checked={active}
                         className={
                           highlighted
-                            ? "ann-tool-menu-row ann-tool-menu-row-highlight"
-                            : "ann-tool-menu-row"
+                            ? "btn btn-ghost ann-tool-menu-row ann-tool-menu-row-highlight"
+                            : "btn btn-ghost ann-tool-menu-row"
                         }
                         onClick={(): void => selectFromMenu(tool)}
                         disabled={isDisabled}

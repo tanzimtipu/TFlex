@@ -106,7 +106,7 @@ export function AnnotationFlyout(props: AnnotationFlyoutProps): ReactElement {
               {arrows && (
                 <button
                   type="button"
-                  className="annotation-flyout-arrow"
+                  className="btn btn-ghost btn-icon annotation-flyout-arrow"
                   data-flyout-arrow="left"
                   aria-label="Scroll annotation tools left"
                   title="Scroll left"
@@ -125,7 +125,7 @@ export function AnnotationFlyout(props: AnnotationFlyoutProps): ReactElement {
               {arrows && (
                 <button
                   type="button"
-                  className="annotation-flyout-arrow"
+                  className="btn btn-ghost btn-icon annotation-flyout-arrow"
                   data-flyout-arrow="right"
                   aria-label="Scroll annotation tools right"
                   title="Scroll right"

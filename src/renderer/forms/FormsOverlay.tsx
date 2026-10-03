@@ -646,7 +646,7 @@ export function FormFillReportSummary({
         {onDismiss !== undefined && (
           <button
             type="button"
-            className="form-fill-report-dismiss"
+            className="btn btn-ghost btn-icon form-fill-report-dismiss"
             data-form-fill-dismiss
             aria-label="Dismiss form fill report"
             title="Dismiss"

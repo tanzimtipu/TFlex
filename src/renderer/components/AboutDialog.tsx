@@ -384,9 +384,10 @@ export function AboutDialog(props: AboutDialogProps): ReactElement | null {
               <h2 id="about-title" className="sheet-title">About Jovrel</h2>
               <button
                 type="button"
-                className="sheet-close"
+                className="btn btn-ghost btn-icon sheet-close"
                 onClick={onClose}
                 aria-label="Close about dialog"
+                title="Close about dialog"
               >
                 <Icon icon={X} size="sm" />
               </button>

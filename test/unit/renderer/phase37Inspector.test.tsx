@@ -245,19 +245,53 @@ describe('DEF-335 — the collapse control never latches the ladder collapse', (
   });
 });
 
-describe('Phase 37 item 10 — professional affordance sizing', () => {
-  it('the action buttons hit 28px with a legible 12px label', () => {
-    const action = ruleBody('.inspector-action');
-    expect(action).toMatch(/min-height:\s*28px/);
-    expect(action).toMatch(/font-size:\s*var\(--fs-sm\)/);
-    expect(action).toMatch(/padding:\s*4px 10px/);
-    expect(action).toMatch(/border-radius:\s*var\(--radius-2\)/);
+describe('Phase 91 — the migrated Inspector controls consume the canonical button system', () => {
+  it('the inline action composes btn + btn-secondary', () => {
+    const { host, unmount } = mount({
+      stage: 'deliver',
+      selection: { kind: 'none' },
+      onExport: vi.fn(),
+    });
+    try {
+      const action = host.querySelector<HTMLButtonElement>(
+        '[data-inspector-slot="export"] [data-inspector-action="export"]',
+      );
+      expect(action).not.toBeNull();
+      expect(action?.classList.contains('btn')).toBe(true);
+      expect(action?.classList.contains('btn-secondary')).toBe(true);
+      expect(action?.classList.contains('inspector-action')).toBe(true);
+    } finally {
+      unmount();
+    }
   });
 
-  it('the inline link gets a comfortable target too', () => {
-    const link = ruleBody('.inspector-link');
-    expect(link).toMatch(/min-height:\s*24px/);
-    expect(link).toMatch(/font-size:\s*var\(--fs-sm\)/);
+  it('the jump-to-review link composes btn + btn-ghost + btn-sm and keeps the accent affordance', () => {
+    const { host, unmount } = mount({
+      stage: 'pages',
+      selection: { kind: 'page', page: 1 },
+      onJumpToReview: vi.fn(),
+    });
+    try {
+      const link = host.querySelector<HTMLButtonElement>('[data-inspector-action="jump-to-review"]');
+      expect(link).not.toBeNull();
+      expect(link?.classList.contains('btn')).toBe(true);
+      expect(link?.classList.contains('btn-ghost')).toBe(true);
+      expect(link?.classList.contains('btn-sm')).toBe(true);
+      expect(link?.classList.contains('inspector-link')).toBe(true);
+    } finally {
+      unmount();
+    }
+    // The Section 3A accent-link affordance survives via tokens.
+    const linkRule = ruleBody('.inspector-link');
+    expect(linkRule).toMatch(/color:\s*var\(--accent-text\)/);
+    const linkHover = ruleBody('.inspector-link:hover:not(:disabled)');
+    expect(linkHover).toMatch(/color:\s*var\(--accent-hover\)/);
+  });
+
+  it('the canonical secondary variant supplies the hit-target geometry', () => {
+    const base = ruleBody('.btn');
+    expect(base).toMatch(/height:\s*var\(--btn-h\)/);
+    expect(base).toMatch(/border-radius:\s*var\(--btn-radius\)/);
   });
 });
 

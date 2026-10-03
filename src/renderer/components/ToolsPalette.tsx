@@ -322,10 +322,15 @@ export function ToolsPalette(props: ToolsPaletteProps): ReactElement {
         className="tools-palette-header"
         actions={
           <>
-            <div className="tools-palette-toggle" role="group" aria-label="Layout">
+            {/* Phase 91 C3 — the canonical segmented group (`btn-segmented`)
+              * takes over the border/radius/surface; the legacy
+              * `.tools-palette-toggle` stays as a layout alias. Each item is a
+              * canonical `.btn-toggle` segmented item; the selected state rides
+              * `aria-pressed` (per-surface `-active` is a DOM marker only). */}
+            <div className="tools-palette-toggle btn-segmented" role="group" aria-label="Layout">
               <button
                 type="button"
-                className={layout === 'list' ? 'tools-palette-toggle-btn tools-palette-toggle-active' : 'tools-palette-toggle-btn'}
+                className={layout === 'list' ? 'btn btn-toggle btn-segmented-item tools-palette-toggle-btn tools-palette-toggle-active' : 'btn btn-toggle btn-segmented-item tools-palette-toggle-btn'}
                 onClick={(): void => onLayoutChange('list')}
                 aria-pressed={layout === 'list'}
                 aria-label="List layout"
@@ -336,7 +341,7 @@ export function ToolsPalette(props: ToolsPaletteProps): ReactElement {
               </button>
               <button
                 type="button"
-                className={layout === 'grid' ? 'tools-palette-toggle-btn tools-palette-toggle-active' : 'tools-palette-toggle-btn'}
+                className={layout === 'grid' ? 'btn btn-toggle btn-segmented-item tools-palette-toggle-btn tools-palette-toggle-active' : 'btn btn-toggle btn-segmented-item tools-palette-toggle-btn'}
                 onClick={(): void => onLayoutChange('grid')}
                 aria-pressed={layout === 'grid'}
                 aria-label="Grid layout"
@@ -348,7 +353,7 @@ export function ToolsPalette(props: ToolsPaletteProps): ReactElement {
             </div>
             <button
               type="button"
-              className="tools-palette-close"
+              className="btn btn-ghost btn-icon tools-palette-close"
               onClick={onClose}
               aria-label="Close tools palette"
               title="Close"
@@ -395,9 +400,10 @@ export function ToolsPalette(props: ToolsPaletteProps): ReactElement {
                     key={entry.id}
                     type="button"
                     className={
-                      layout === 'grid'
-                        ? 'tools-palette-entry tools-palette-entry-grid'
-                        : 'tools-palette-entry tools-palette-entry-list'
+                      'btn btn-ghost tools-palette-entry ' +
+                      (layout === 'grid'
+                        ? 'tools-palette-entry-grid'
+                        : 'tools-palette-entry-list')
                     }
                     disabled={!isEntryEnabled(entry.id)}
                     onClick={action}

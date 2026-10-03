@@ -2204,7 +2204,7 @@ function TextBoxToolbar(props: TextBoxToolbarProps): ReactElement {
     >
       <button
         type="button"
-        className="toolbox-action-btn toolbox-action-btn--confirm edit-box-toolbar-btn"
+        className="btn btn-primary toolbox-action-btn toolbox-action-btn--confirm edit-box-toolbar-btn"
         onClick={onConfirm}
         data-edit-box-action="confirm"
         aria-label="Confirm move"
@@ -2214,7 +2214,7 @@ function TextBoxToolbar(props: TextBoxToolbarProps): ReactElement {
       </button>
       <button
         type="button"
-        className="toolbox-action-btn toolbox-action-btn--delete edit-box-toolbar-btn edit-box-toolbar-btn-danger"
+        className="btn btn-danger toolbox-action-btn toolbox-action-btn--delete edit-box-toolbar-btn edit-box-toolbar-btn-danger"
         onClick={onDelete}
         data-edit-box-action="delete"
         aria-label="Delete text box"
@@ -2224,7 +2224,7 @@ function TextBoxToolbar(props: TextBoxToolbarProps): ReactElement {
       </button>
       <button
         type="button"
-        className="toolbox-action-btn toolbox-action-btn--cancel edit-box-toolbar-btn"
+        className="btn btn-secondary toolbox-action-btn toolbox-action-btn--cancel edit-box-toolbar-btn"
         onClick={onCancel}
         data-edit-box-action="cancel"
         aria-label="Cancel text box changes"
@@ -2259,7 +2259,7 @@ function PlacementToolbar(props: PlacementToolbarProps): ReactElement {
     >
       <button
         type="button"
-        className="toolbox-action-btn edit-image-toolbar-btn"
+        className="btn btn-secondary toolbox-action-btn edit-image-toolbar-btn"
         onClick={onReplace}
         aria-label="Replace image"
         title="Replace image"
@@ -2268,17 +2268,18 @@ function PlacementToolbar(props: PlacementToolbarProps): ReactElement {
       </button>
       <button
         type="button"
-        className={cropping ? "toolbox-action-btn edit-image-toolbar-btn edit-image-toolbar-btn-active" : "toolbox-action-btn edit-image-toolbar-btn"}
+        className={cropping ? "btn btn-toggle toolbox-action-btn edit-image-toolbar-btn edit-image-toolbar-btn-active" : "btn btn-toggle toolbox-action-btn edit-image-toolbar-btn"}
         onClick={onCrop}
         aria-label="Crop image"
         title="Crop image"
+        aria-pressed={cropping}
         data-crop-toggle
       >
         Crop
       </button>
       <button
         type="button"
-        className="toolbox-action-btn toolbox-action-btn--delete edit-image-toolbar-btn edit-image-toolbar-btn-danger"
+        className="btn btn-danger toolbox-action-btn toolbox-action-btn--delete edit-image-toolbar-btn edit-image-toolbar-btn-danger"
         onClick={onDelete}
         aria-label="Remove image"
         title="Remove from edit list"

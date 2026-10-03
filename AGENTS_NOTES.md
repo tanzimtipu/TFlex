@@ -1466,6 +1466,33 @@ pre-warn relevant entries when dispatching.
   control-index regression specs in its close sweep (phase36 surface, phase40
   colour roles, phase43 icon identity, DEF-330 dock equality, phase59 ellipsis) -
   not just its own phase tests.
+- DEF-id numbering collision RECURRENCE (2026-10-03, Phase 91 vs Phase 95): while two
+  phases ran in parallel, the Phase 91 driver filed DEF-517/DEF-518 for its own defects
+  and the Phase 94/95 work independently filed DEF-517/DEF-518 too (and DEF-504 is
+  duplicated as well). `grep -E '^## DEF-'` now returns two entries for 504/517/518, so a
+  bare id is ambiguous. Rule (restating TFL-111): before filing, take `max(def)+1` over
+  the WHOLE ledger, not the number read from the last entry; when parallel phases may be
+  filing, re-grep immediately before the write and, if a collision already exists, carry
+  the phase name in the heading so the entry is unambiguous, and flag it to the CTO.
+- frontend-dev: ran the FULL `npm run test:unit` suite during a per-chunk Phase 91 task
+  (2026-10-03) and correctly surfaced a red `phase89BatesEngine.test.ts` - but that red
+  is another phase's in-flight `src/main/services/engine.ts` refactor (Phase 90 / TFL-509),
+  not this chunk; the prior chunk in the same tree had passed the full suite minutes
+  earlier. Harm: a red full-suite log that belongs to no one on this task, plus an
+  ~82s/74k-line artefact. Rule: a per-chunk developer task verifies with `npm run verify`
+  plus its NAMED targeted suites only; the full suite is a CI/release-gate run the CTO
+  requests explicitly, never a per-chunk habit - and running it while another phase is
+  mid-edit on shared main-process files reports that phase's half-finished state.
+- CTO: scoped Phase 91 Feature D by the contract's surface-group list and missed the
+  bare legacy-class CONSUMERS outside it (TFL-511, 2026-10-03) - `CanvasPills.tsx`,
+  `PageLayoutControl.tsx` and `SearchBar.tsx` still rendered bare `.tool-btn` (DEF-523),
+  and the D4 brief said keep the closes' `aria-label` without requiring the `title` the
+  a11y contract mandates (DEF-522); both escaped to the Feature E phase verification.
+  Rule: when the contract says "no legacy class remains" or states an attribute contract,
+  grep the WHOLE `src/renderer` tree for the class/attribute first and put every consumer
+  (and its exact lines) in the chunk plan - a surface list in the prose is a hint, not the
+  inventory; and an a11y "aria-label + title" contract means the brief must name BOTH
+  attributes, not just the one the code happens to have.
 
 ## 2026-08-28: to-do discipline + Defects heading restored
 

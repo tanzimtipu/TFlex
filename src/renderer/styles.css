@@ -189,6 +189,22 @@
   --control-height-large: 44px;
   --hit-target: 40px;
 
+  /* Phase 91 — the button system's geometry/rhythm tokens. ONE block feeds
+   * every .btn variant (docs/BUTTON-SYSTEM.md) so a surface sizes a control
+   * by token and the taxonomy cannot drift from the shipped CSS. Colours stay
+   * on the existing token layer; these are geometry only. */
+  --btn-h: var(--control-height);
+  --btn-h-sm: 28px;
+  --btn-toolbar-size: var(--btn-h-sm);
+  --btn-icon-size: var(--tf-icon-size);
+  --btn-radius: var(--radius-control);
+  --btn-gap: var(--sp-2);
+  /* Phase 91 — the destructive hover tone used to be a fallback literal in
+   * .btn-danger:hover. It is now a real token DERIVED from --error, so the
+   * later colour-refresh phase moves one value and every destructive hover
+   * follows. */
+  --error-hover: color-mix(in srgb, var(--error) 82%, black);
+
   --chrome-titlebar-h: 44px;
   --chrome-commandbar-h: 52px;
   --chrome-contextbar-h: 40px;
@@ -1429,17 +1445,15 @@ input[type="checkbox"] {
   padding: 0 var(--sp-1) 0 var(--sp-2);
 }
 
-.titlebar-menu-button {
+/* Phase 91 — migrated to the canonical button system (`btn btn-ghost`). The
+ * legacy class is a LAYOUT alias only: geometry and motion live here, while
+ * colour / border / hover / active / focus all resolve to `.btn-ghost`
+ * (docs/BUTTON-SYSTEM.md). The open state keeps its `-active` alias (the
+ * joined-corner material is defined with the Phase-20 morph block below). */
+.btn.titlebar-menu-button {
   width: 28px;
   height: 22px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
   border-radius: var(--radius-2);
-  background: transparent;
-  border: 1px solid transparent;
-  color: var(--fg-muted);
-  cursor: pointer;
   transition:
     background var(--motion-fast) var(--ease-out),
     color var(--motion-fast) var(--ease-out),
@@ -1448,27 +1462,19 @@ input[type="checkbox"] {
     transform var(--motion-fast) var(--ease-in-out);
 }
 
-.titlebar-menu-button:hover {
-  background: var(--bg-hover);
-  color: var(--fg-strong);
-}
-
 /* Phase 4 — the open menu button is an "active/selected" control:
- * the shared orange wash, not a neutral tint. */
+ * the shared orange wash, not a neutral tint. Phase 91: retained as the
+ * alias the joined-corner rule keys off. */
 .titlebar-menu-button-active {
   background: var(--accent-selected);
   color: var(--fg-strong);
 }
 
-.titlebar-menu-button:focus-visible {
-  outline: none;
-  box-shadow: var(--focus-ring);
-}
-
 /* Phase 36 (chunk 6) — the trigger reads as an explicit "File" label (the
  * hamburger face retired). The icon-sized box widens to fit the word; the
- * popover, its groups and every entry are untouched. */
-.titlebar-menu-file {
+ * popover, its groups and every entry are untouched. Phase 91 — layout
+ * alias only; the canonical `.btn-ghost` supplies the visual treatment. */
+.btn.titlebar-menu-file {
   width: auto;
   min-width: 28px;
   padding: 0 var(--space-small);
@@ -1526,21 +1532,18 @@ input[type="checkbox"] {
   margin: 4px 6px;
 }
 
-.titlebar-menu-row {
-  display: flex;
-  align-items: center;
+/* Phase 91 — migrated to the canonical button system (`btn btn-ghost`). The
+ * legacy class is a LAYOUT alias only: full-width row flow, icon/label/kbd
+ * rhythm; hover / focus / colour come from `.btn-ghost`. */
+.btn.titlebar-menu-row {
   justify-content: space-between;
   gap: var(--sp-3);
   width: 100%;
   /* Phase 4 — menu item height 30px (spec band 30-34px). */
   min-height: 30px;
   padding: 6px var(--sp-2) 6px var(--sp-2);
-  background: transparent;
-  border: 1px solid transparent;
   border-radius: var(--radius-1);
-  color: var(--fg);
   font-size: var(--fs-sm);
-  cursor: pointer;
   text-align: left;
   transition:
     background var(--motion-fast) var(--ease-out),
@@ -1549,20 +1552,7 @@ input[type="checkbox"] {
     transform var(--motion-fast) var(--ease-in-out);
 }
 
-/* Phase 4 — menu item hover: the shared accent selected wash
- * (rgba(37,99,235,0.10)); keyboard focus adds the accent ring. */
-.titlebar-menu-row:hover,
-.titlebar-menu-row:focus-visible {
-  outline: none;
-  background: var(--accent-selected);
-  color: var(--fg-strong);
-}
-
-.titlebar-menu-row:focus-visible {
-  box-shadow: var(--focus-ring);
-}
-
-/* Phase 4 — "selected / checked" reads as an orange icon: the row's
+/* Phase 4 — "selected / checked" reads as an accent icon: the row's
  * leading icon tints accent on hover/focus. */
 .titlebar-menu-row:hover .titlebar-menu-row-icon,
 .titlebar-menu-row:focus-visible .titlebar-menu-row-icon {
@@ -1595,38 +1585,24 @@ input[type="checkbox"] {
   flex: 0 0 auto;
 }
 
-.titlebar-control {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
+/* Phase 91 — migrated to the canonical button system (`btn btn-ghost
+ * btn-icon`). The legacy class is a LAYOUT alias only: the window controls
+ * stay full-height squares, colour / hover / focus come from the variant. */
+.btn.titlebar-control {
   width: 46px;
   height: 100%;
-  background: transparent;
-  border: none;
-  color: var(--fg-muted);
-  cursor: pointer;
+  border-radius: 0;
   transition:
     background var(--motion-fast) var(--ease-out),
     color var(--motion-fast) var(--ease-out);
 }
 
-.titlebar-control:hover {
-  background: var(--bg-hover);
-  color: var(--fg-strong);
-}
-
-.titlebar-control:focus-visible {
-  outline: none;
-  background: var(--bg-active);
-  color: var(--fg-strong);
-  /* Phase 4 — visible orange focus ring on every window control. */
-  box-shadow: var(--focus-ring);
-}
-
-.titlebar-control-close:hover,
-.titlebar-control-close:focus-visible {
+/* The close control's destructive hover is kept (token-based), strengthened
+ * past the canonical ghost hover's guarded specificity. */
+.btn.titlebar-control-close:hover:not([disabled]):not([aria-disabled="true"]),
+.btn.titlebar-control-close:focus-visible {
   background: var(--error);
-  color: #ffffff;
+  color: var(--fg-on-accent);
 }
 
 .brand {
@@ -1719,23 +1695,20 @@ input[type="checkbox"] {
   -webkit-app-region: no-drag;
 }
 
-.titlebar-file-btn {
+/* Phase 91 — migrated to the canonical button system (`btn btn-secondary`).
+ * The legacy class is a LAYOUT alias only: geometry and motion here, while
+ * colour / border / hover / active / focus / disabled come from the canonical
+ * variant (docs/BUTTON-SYSTEM.md). */
+.btn.titlebar-file-btn {
   position: relative;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
   gap: 5px;
   height: 28px;
   min-width: 28px;
   padding: 0 6px;
   flex-shrink: 0;
-  background: transparent;
-  border: 1px solid transparent;
   border-radius: var(--radius-2);
-  color: var(--fg-muted);
   font-size: var(--fs-sm);
   font-weight: 500;
-  cursor: pointer;
   white-space: nowrap;
   transition:
     background var(--motion-fast) var(--ease-out),
@@ -1745,42 +1718,19 @@ input[type="checkbox"] {
     transform var(--motion-fast) var(--ease-in-out);
 }
 
-.titlebar-file-btn:hover:not([disabled]) {
-  background: var(--bg-hover);
-  color: var(--fg-strong);
-}
-
-.titlebar-file-btn:active:not([disabled]) {
-  background: var(--accent-pressed-soft);
-  /* DEF-355 — the plain --accent measured 3.75 / 3.01 / 3.89 on the pressed
-   * wash (below the 4.5:1 text floor). The accent-family on-wash ink clears
-   * 4.86 / 6.15 / 5.05 in all three themes. */
-  color: var(--dock-primary-fg);
-}
-
-.titlebar-file-btn:focus-visible {
-  outline: none;
-  box-shadow: var(--focus-ring);
-}
-
-.titlebar-file-btn[disabled] {
-  opacity: 0.45;
-  cursor: not-allowed;
-}
-
-/* Phase 40 (items 2 + 13) — the Open action is a GHOST control now: its
- * solid accent fill and its accent border are retired in every theme, so it
- * carries no background box at rest. The label keeps the header's NEUTRAL role
- * (`--sem-neutral`, applied by the semantic-map rule below), which is
- * measured at >= 4.5:1 against the real caption-strip surface in all three
- * themes; the previous resting pair was a family hue ON `--accent` (1.0:1
- * light) and only became readable on hover — the operator's report. The hover
- * / pressed affordance is the shared ghost treatment the two save controls
- * already use (`.titlebar-file-btn:hover` / `:active`), so no state is lost. */
-.titlebar-file-open {
+/* Phase 91 — Open carries `btn btn-secondary`; the legacy class keeps only
+ * its wider padding (layout). */
+.btn.titlebar-file-open {
   padding: 0 9px;
-  background: transparent;
-  border-color: transparent;
+}
+
+/* DEF-517 — the migrated file controls re-pin the DEF-355 on-wash contract:
+ * pressed, the label resolves to the on-wash ink token so it clears the 4.5:1
+ * floor on the shared accent-pressed wash in all three themes. A scoped alias
+ * only; the canonical `.btn-secondary` state stays the single base rule set. */
+.btn.titlebar-file-btn:active:not([disabled]) {
+  background: var(--accent-pressed-soft);
+  color: var(--dock-primary-fg);
 }
 
 .titlebar-file-label {
@@ -1878,7 +1828,7 @@ input[type="checkbox"] {
     display: none;
   }
 
-  .titlebar-file-open {
+  .btn.titlebar-file-open {
     padding: 0 6px;
   }
 
@@ -2463,136 +2413,55 @@ body.tab-reordering .tab-list[data-reorder="true"] .tab {
  * ring on keyboard focus. It sits inside .header-actions (already
  * no-drag via the AppHeader rules) so clicks never start a window
  * drag. */
-.header-gear {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
+/* Phase 91 — migrated to the canonical button system (`btn btn-ghost
+ * btn-icon`). The legacy class is a LAYOUT alias only; hover / active /
+ * focus / colour resolve to the canonical variant. It sits inside
+ * .header-actions (already no-drag via the AppHeader rules) so clicks never
+ * start a window drag. */
+.btn.header-gear {
   width: 28px;
+  min-width: 28px;
   height: 28px;
   flex-shrink: 0;
-  background: transparent;
-  border: 1px solid transparent;
   border-radius: var(--radius-2);
-  color: var(--fg-muted);
-  cursor: pointer;
-  transition:
-    background var(--motion-fast) var(--ease-out),
-    color var(--motion-fast) var(--ease-out),
-    border-color var(--motion-fast) var(--ease-out),
-    box-shadow var(--motion-fast) var(--ease-out),
-    transform var(--motion-fast) var(--ease-in-out);
 }
 
-.header-gear:hover {
-  background: var(--bg-hover);
-  color: var(--fg-strong);
-}
-
-.header-gear:active {
-  background: var(--accent-pressed-soft);
-  color: var(--accent-text);
-}
-
-.header-gear:focus-visible {
-  outline: none;
-  box-shadow: var(--focus-ring);
-}
-
-/* Phase 30 — the Print chrome control sits immediately left of the gear
- * and shares its sizing / hover / focus treatment so the trailing cluster
- * reads as one group. */
-.header-print {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
+/* Phase 30 — Print, immediately left of the gear. Phase 91 — canonical
+ * `btn btn-ghost btn-icon`; the legacy class is a LAYOUT alias only. */
+.btn.header-print {
   width: 28px;
+  min-width: 28px;
   height: 28px;
   flex-shrink: 0;
-  background: transparent;
-  border: 1px solid transparent;
   border-radius: var(--radius-2);
-  color: var(--fg-muted);
-  cursor: pointer;
-  transition:
-    background var(--motion-fast) var(--ease-out),
-    color var(--motion-fast) var(--ease-out),
-    border-color var(--motion-fast) var(--ease-out),
-    box-shadow var(--motion-fast) var(--ease-out),
-    transform var(--motion-fast) var(--ease-in-out);
 }
 
-.header-print:hover:not([disabled]) {
-  background: var(--bg-hover);
-  color: var(--fg-strong);
-}
-
-.header-print:active:not([disabled]) {
-  background: var(--accent-pressed-soft);
-  color: var(--accent-text);
-}
-
-.header-print:focus-visible {
-  outline: none;
-  box-shadow: var(--focus-ring);
-}
-
-/* DEF-271 — the same disabled affordance as .titlebar-file-btn so the
- * Print control reads as unavailable on the welcome screen. */
-.header-print[disabled] {
-  opacity: 0.45;
-  cursor: not-allowed;
-}
-
-/* Phase 36 (chunk 6) — the Multi Mode toggle in the title bar. Same chrome
- * ladder as .header-print / .header-gear (28px icon control); the active
- * state uses the shared accent wash, mirroring the retired CommandBar control. */
-.header-multi-mode {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
+/* Phase 36 (chunk 6) — the Multi Mode toggle in the title bar. Phase 91 —
+ * canonical `btn btn-ghost btn-icon btn-toggle`; the selected state is driven
+ * by `[aria-pressed="true"]`, so the legacy state rule is retired. */
+.btn.header-multi-mode {
   width: 28px;
+  min-width: 28px;
   height: 28px;
   flex-shrink: 0;
-  background: transparent;
-  border: 1px solid transparent;
   border-radius: var(--radius-2);
-  color: var(--fg-muted);
-  cursor: pointer;
-  transition:
-    background var(--motion-fast) var(--ease-out),
-    color var(--motion-fast) var(--ease-out),
-    border-color var(--motion-fast) var(--ease-out),
-    box-shadow var(--motion-fast) var(--ease-out),
-    transform var(--motion-fast) var(--ease-in-out);
 }
 
-.header-multi-mode:hover {
-  background: var(--bg-hover);
-  color: var(--fg-strong);
+/* Phase 40 (item 5) — the two top-bar search affordances. Phase 91 —
+ * canonical `btn btn-ghost btn-icon`; the legacy classes are LAYOUT aliases
+ * (28px icon control) so the trailing cluster reads as one group. They lead
+ * the cluster: the Ctrl+K command glyph first, the Ctrl+F magnifier second. */
+.btn.header-tool-search,
+.btn.header-find {
+  width: 28px;
+  min-width: 28px;
+  height: 28px;
+  flex-shrink: 0;
+  border-radius: var(--radius-2);
 }
 
-.header-multi-mode:active {
-  background: var(--accent-pressed-soft);
-  color: var(--accent-text);
-}
-
-.header-multi-mode:focus-visible {
-  outline: none;
-  box-shadow: var(--focus-ring);
-}
-
-.header-multi-mode[data-multi-mode-active="true"],
-.header-multi-mode[aria-pressed="true"] {
-  background: var(--accent-selected);
-  color: var(--fg-strong);
-}
-
-/* Phase 40 (item 5) — the two top-bar search affordances. Same chrome ladder
- * as .header-print / .header-gear (28px icon control) so the trailing cluster
- * reads as one group. They lead the cluster: the Ctrl+K command glyph first,
- * the Ctrl+F magnifier second — different glyphs, different surfaces. */
-.header-tool-search,
-.header-find,
+/* The account control belongs to a separate chunk; its bespoke chrome is
+ * unchanged. */
 .header-accounts {
   display: inline-flex;
   align-items: center;
@@ -2613,22 +2482,16 @@ body.tab-reordering .tab-list[data-reorder="true"] .tab {
     transform var(--motion-fast) var(--ease-in-out);
 }
 
-.header-tool-search:hover,
-.header-find:hover:not([disabled]),
 .header-accounts:hover {
   background: var(--bg-hover);
   color: var(--fg-strong);
 }
 
-.header-tool-search:active,
-.header-find:active:not([disabled]),
 .header-accounts:active {
   background: var(--accent-pressed-soft);
   color: var(--accent-text);
 }
 
-.header-tool-search:focus-visible,
-.header-find:focus-visible,
 .header-accounts:focus-visible {
   outline: none;
   box-shadow: var(--focus-ring);
@@ -2893,13 +2756,6 @@ body.tab-reordering .tab-list[data-reorder="true"] .tab {
   justify-content: flex-end;
 }
 
-/* DEF-271 ladder — the find control is document-scoped, so it dims on the
- * welcome screen like Print. */
-.header-find[disabled] {
-  opacity: 0.45;
-  cursor: not-allowed;
-}
-
 .tab-stage {
   flex: 1 1 auto;
   position: relative;
@@ -3012,6 +2868,10 @@ body.tab-reordering .tab-list[data-reorder="true"] .tab {
   transition: gap var(--motion-duration-fast) var(--motion-ease-standard);
 }
 
+/* Phase 91 D3 — the tiles already carry the canonical classes (`btn btn-primary`
+ * for the fixed Open tile, `btn btn-secondary` for the rest); this class is a
+ * LAYOUT alias only, the minus badge's containing block. The per-id tint
+ * selectors below stay. */
 .home-tool {
   position: relative;
 }
@@ -3064,39 +2924,20 @@ body.tab-reordering .tab-list[data-reorder="true"] .tab {
   outline-offset: 1px;
 }
 
-/* The pen at the row's right end. */
-.home-tools-edit {
+/* The pen at the row's right end. Phase 91 D3 — canonical `btn btn-toggle
+ * btn-icon`; this legacy class is a LAYOUT alias only, keeping the 30px box,
+ * centring and corner. Resting/hover/selected ink comes from `.btn-toggle` and
+ * `[aria-pressed="true"]` (docs/BUTTON-SYSTEM.md). */
+.btn.home-tools-edit {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   flex: 0 0 auto;
   width: 30px;
+  min-width: 30px;
   height: 30px;
   padding: 0;
-  background: transparent;
-  border: 1px solid var(--border);
   border-radius: var(--radius-2);
-  color: var(--fg-muted);
-  cursor: pointer;
-  transition:
-    background-color var(--motion-duration-fast) var(--motion-ease-standard),
-    color var(--motion-duration-fast) var(--motion-ease-standard),
-    border-color var(--motion-duration-fast) var(--motion-ease-standard);
-}
-
-.home-tools-edit:hover:not(:disabled) {
-  background: var(--bg-hover);
-  color: var(--fg-strong);
-}
-
-.home-tools-edit[aria-pressed='true'] {
-  color: var(--accent-text);
-  border-color: var(--accent);
-}
-
-.home-tools-edit:focus-visible {
-  outline: 2px solid var(--tf-accent-focus);
-  outline-offset: -2px;
 }
 
 /* The plus: an in-row item after the last tile; its picker anchors to it. */
@@ -3107,38 +2948,19 @@ body.tab-reordering .tab-list[data-reorder="true"] .tab {
   flex: 0 0 auto;
 }
 
-.home-tools-plus {
+/* Phase 91 D3 — canonical `btn btn-ghost btn-icon`; this legacy class is a
+ * LAYOUT alias only, keeping the 36px box (the width/min-width pair pins it
+ * against `.btn-icon`). Colour, hover, disabled and focus come from the
+ * canonical ghost icon control (docs/BUTTON-SYSTEM.md). */
+.btn.home-tools-plus {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   width: 36px;
+  min-width: 36px;
   height: 36px;
   padding: 0;
-  background: transparent;
-  border: 1px dashed var(--border);
   border-radius: var(--radius-2);
-  color: var(--fg-muted);
-  cursor: pointer;
-  transition:
-    background-color var(--motion-duration-fast) var(--motion-ease-standard),
-    color var(--motion-duration-fast) var(--motion-ease-standard),
-    border-color var(--motion-duration-fast) var(--motion-ease-standard);
-}
-
-.home-tools-plus:hover:not(:disabled) {
-  background: var(--bg-hover);
-  color: var(--fg-strong);
-  border-color: var(--accent);
-}
-
-.home-tools-plus:disabled {
-  opacity: 0.45;
-  cursor: not-allowed;
-}
-
-.home-tools-plus:focus-visible {
-  outline: 2px solid var(--tf-accent-focus);
-  outline-offset: -2px;
 }
 
 /* DEF-410 — the Home picker is portaled to `document.body` and positioned with
@@ -3174,19 +2996,21 @@ body.tab-reordering .tab-list[data-reorder="true"] .tab {
 .btn {
   display: inline-flex;
   align-items: center;
-  gap: var(--sp-2);
-  padding: 0 var(--sp-4);
-  height: 36px;
-  border-radius: var(--radius-2);
+  gap: var(--btn-gap);
+  padding: 0 var(--space-control);
+  height: var(--btn-h);
+  border-radius: var(--btn-radius);
   border: 1px solid transparent;
   font-weight: 500;
   font-size: var(--fs-md);
   cursor: pointer;
+  user-select: none;
   transition:
-    background var(--motion-fast) var(--ease-out),
-    border-color var(--motion-fast) var(--ease-out),
-    box-shadow var(--motion-fast) var(--ease-out),
-    transform var(--motion-fast) var(--ease-in-out);
+    background var(--motion-duration-fast) var(--motion-ease-standard),
+    border-color var(--motion-duration-fast) var(--motion-ease-standard),
+    color var(--motion-duration-fast) var(--motion-ease-standard),
+    box-shadow var(--motion-duration-fast) var(--motion-ease-standard),
+    transform var(--motion-duration-fast) var(--motion-ease-standard);
   white-space: nowrap;
 }
 
@@ -3211,7 +3035,7 @@ body.tab-reordering .tab-list[data-reorder="true"] .tab {
   border-color: var(--accent);
 }
 
-.btn-primary:hover {
+.btn-primary:hover:not([disabled]):not([aria-disabled="true"]) {
   background: var(--accent-hover);
   border-color: var(--accent-hover);
 }
@@ -3219,7 +3043,7 @@ body.tab-reordering .tab-list[data-reorder="true"] .tab {
 /* Phase 2 — pressed state for the primary (accent) button. The
  * header's compact Open button and every modal confirm ride this
  * lifecycle: accent -> accent-hover -> accent-pressed, white text. */
-.btn-primary:active {
+.btn-primary:active:not([disabled]):not([aria-disabled="true"]) {
   background: var(--accent-pressed);
   border-color: var(--accent-pressed);
 }
@@ -3279,16 +3103,16 @@ body.tab-reordering .tab-list[data-reorder="true"] .tab {
  * crossing into alarm-red. */
 .btn-danger {
   background: var(--error);
-  color: #ffffff;
+  color: var(--fg-on-accent);
   border-color: var(--error);
 }
-.btn-danger:hover:not([disabled]) {
-  background: var(--error-hover, #b91c1c);
-  border-color: var(--error-hover, #b91c1c);
+.btn-danger:hover:not([disabled]):not([aria-disabled="true"]) {
+  background: var(--error-hover);
+  border-color: var(--error-hover);
 }
-.btn-danger[disabled] {
-  cursor: not-allowed;
-  opacity: 0.55;
+.btn-danger:active:not([disabled]):not([aria-disabled="true"]) {
+  background: var(--error);
+  border-color: var(--error);
 }
 
 .btn-secondary {
@@ -3297,13 +3121,126 @@ body.tab-reordering .tab-list[data-reorder="true"] .tab {
   border-color: var(--border);
 }
 
-.btn-secondary:hover { background: var(--bg-hover); }
+.btn-secondary:hover:not([disabled]):not([aria-disabled="true"]) { background: var(--bg-hover); }
 
 /* Phase 4 — secondary dialog buttons press with the shared orange
  * wash (the primary keeps its solid accent-pressed). */
-.btn-secondary:active { background: var(--accent-pressed-soft); }
+.btn-secondary:active:not([disabled]):not([aria-disabled="true"]) { background: var(--accent-pressed-soft); }
 
-.btn[disabled] {
+/* Phase 91 — TERTIARY / GHOST. Transparent fill + border at rest; a neutral
+ * hover film; the accent-soft wash on press. The default low-emphasis action
+ * and the base of the icon/toolbar controls. */
+.btn-ghost {
+  background: transparent;
+  color: var(--fg-strong);
+  border-color: transparent;
+}
+.btn-ghost:hover:not([disabled]):not([aria-disabled="true"]) {
+  background: var(--bg-hover);
+}
+.btn-ghost:active:not([disabled]):not([aria-disabled="true"]) {
+  background: var(--accent-pressed-soft);
+}
+
+/* Phase 91 — ICON-ONLY. Square: width follows the variant height, zero gap,
+ * glyph centred. Never carries a text label; requires an accessible name
+ * (use IconButton). */
+.btn-icon {
+  padding: 0;
+  gap: 0;
+  width: var(--btn-h);
+  min-width: var(--btn-h);
+  justify-content: center;
+}
+
+/* Phase 91 — TOOLBAR. Compact square control for the command bar, the
+ * annotation toolbar and in-canvas overlay toolbars. Sized by token. */
+.btn-toolbar {
+  padding: 0;
+  gap: 0;
+  width: var(--btn-toolbar-size);
+  min-width: var(--btn-toolbar-size);
+  height: var(--btn-toolbar-size);
+  justify-content: center;
+  font-size: var(--fs-sm);
+}
+
+/* Phase 91 — TOGGLE. Neutral at rest; the selected state is driven ONLY by
+ * [aria-pressed="true"], never a per-surface -active class. */
+.btn-toggle {
+  background: transparent;
+  color: var(--fg-strong);
+  border-color: transparent;
+}
+.btn-toggle:hover:not([disabled]):not([aria-disabled="true"]) {
+  background: var(--bg-hover);
+}
+.btn-toggle:active:not([disabled]):not([aria-disabled="true"]) {
+  background: var(--accent-pressed-soft);
+}
+.btn-toggle[aria-pressed="true"] {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.btn-toggle[aria-pressed="true"]:hover:not([disabled]):not([aria-disabled="true"]) {
+  border-color: var(--accent-hover);
+  color: var(--accent-hover);
+}
+
+/* Phase 91 — SIZE MODIFIER. */
+.btn-sm {
+  height: var(--btn-h-sm);
+  padding: 0 var(--sp-3);
+  font-size: var(--fs-sm);
+}
+.btn-icon.btn-sm {
+  width: var(--btn-h-sm);
+  min-width: var(--btn-h-sm);
+  padding: 0;
+}
+
+/* Phase 91 — SEGMENTED group. The container (role="group") owns the single
+ * outer radius and border; items are flat and only the selected item takes
+ * the .btn-toggle treatment (so state colour is defined once). */
+.btn-segmented {
+  display: inline-flex;
+  align-items: stretch;
+  border: 1px solid var(--border);
+  border-radius: var(--btn-radius);
+  background: var(--bg-raised);
+  overflow: hidden;
+}
+.btn-segmented-item {
+  height: var(--btn-h);
+  padding: 0 var(--space-control);
+  border-radius: 0;
+  border-color: transparent;
+  background: transparent;
+  color: var(--fg-strong);
+}
+
+/* Phase 91 — keyboard focus is always visible through the shared ring on
+ * every canonical variant (the base .btn:focus-visible rule covers the
+ * family; this list makes each variant's focus state explicit). */
+.btn-primary:focus-visible,
+.btn-secondary:focus-visible,
+.btn-ghost:focus-visible,
+.btn-danger:focus-visible,
+.btn-icon:focus-visible,
+.btn-toolbar:focus-visible,
+.btn-toggle:focus-visible,
+.btn-segmented-item:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
+/* Phase 91 — disabled is explicit for the whole family: native [disabled]
+ * and the [aria-disabled="true"] fallback, visible dim, not-allowed cursor.
+ * Every hover/active rule above is guarded so a disabled control stays
+ * inert through the whole state ladder. */
+.btn[disabled],
+.btn[aria-disabled="true"] {
   cursor: not-allowed;
   opacity: 0.55;
 }
@@ -3379,6 +3316,10 @@ body.tab-reordering .tab-list[data-reorder="true"] .tab {
 :root[data-theme="dark"] .recent-row:hover { background: rgba(255, 255, 255, 0.035); }
 :root[data-theme="frosted"] .recent-row:hover { background: rgba(15, 23, 42, 0.035); }
 
+/* Phase 91 D3 — canonical `btn btn-ghost`; this legacy class is a LAYOUT alias
+ * only. The full-width grid row keeps its own rhythm (`height: auto` so the
+ * two-line name/path box holds its natural height); colour, hover and focus
+ * come from `.btn-ghost` (docs/BUTTON-SYSTEM.md). */
 .recent-row-open {
   flex: 1 1 auto;
   display: grid;
@@ -3387,13 +3328,10 @@ body.tab-reordering .tab-list[data-reorder="true"] .tab {
   gap: var(--sp-3);
   /* Phase 4 — compact row (10px -> 8px vertical). */
   padding: 8px var(--sp-3);
-  border: none;
-  background: transparent;
   font: inherit;
-  color: inherit;
-  cursor: pointer;
   text-align: left;
   min-width: 0;
+  height: auto;
   /* Chunk 2 — the open action lifts on hover and settles on press
    * like every other row-level control. */
   transition:
@@ -3401,11 +3339,6 @@ body.tab-reordering .tab-list[data-reorder="true"] .tab {
     color var(--motion-fast) var(--ease-out),
     box-shadow var(--motion-fast) var(--ease-out),
     transform var(--motion-fast) var(--ease-in-out);
-}
-
-.recent-row-open:focus-visible {
-  outline: none;
-  box-shadow: var(--focus-ring);
 }
 
 .recent-row-text {
@@ -3417,26 +3350,26 @@ body.tab-reordering .tab-list[data-reorder="true"] .tab {
 .recent-row .doc-path { color: var(--fg-faint); font-size: var(--fs-xs); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 360px; }
 .recent-row .doc-when { color: var(--fg-faint); font-size: var(--fs-xs); font-variant-numeric: tabular-nums; }
 
+/* Phase 91 D3 — canonical `btn btn-ghost btn-icon`; this legacy class is a
+ * LAYOUT alias only, keeping the 26px box, the right-edge margin and the
+ * hover/focus reveal. The width/min-width pair pins the box against
+ * `.btn-icon`'s 36px floor; colour and the focus ring come from the canonical
+ * variant (docs/BUTTON-SYSTEM.md). */
 .recent-row-remove {
   flex: 0 0 auto;
   display: grid;
   place-items: center;
   width: 26px;
+  min-width: 26px;
+  height: auto;
   margin: 6px var(--sp-3) 6px 0;
-  border: 1px solid transparent;
-  background: transparent;
   border-radius: var(--radius-1);
-  color: var(--fg-faint);
-  cursor: pointer;
   opacity: 0;
-  transition: opacity var(--motion-fast) var(--ease-out), color var(--motion-fast) var(--ease-out), border-color var(--motion-fast) var(--ease-out), background var(--motion-fast) var(--ease-out);
+  transition: opacity var(--motion-fast) var(--ease-out);
 }
 
 .recent-row:hover .recent-row-remove,
 .recent-row-remove:focus-visible { opacity: 1; }
-
-.recent-row-remove:hover { color: var(--fg); border-color: var(--border); background: var(--bg-hover); }
-.recent-row-remove:focus-visible { outline: none; border-color: var(--accent); box-shadow: var(--focus-ring); }
 
 .samples-grid {
   display: grid;
@@ -3444,35 +3377,24 @@ body.tab-reordering .tab-list[data-reorder="true"] .tab {
   gap: var(--sp-3);
 }
 
+/* Phase 91 D3 — canonical `btn btn-ghost`; this legacy class is a LAYOUT alias
+ * only, keeping the stacked card flow (stretch + zero gap so the thumb and the
+ * labels keep their own rhythm), the 10px padding, corner and natural height.
+ * Colour, hover, active and focus come from `.btn-ghost` (docs/BUTTON-SYSTEM.md). */
 .sample-card {
   display: flex;
   flex-direction: column;
+  align-items: stretch;
+  gap: 0;
+  height: auto;
   text-align: left;
-  /* Phase 4 — compact sample cards: dedicated card tokens (#15191E
-   * dark), smaller thumb, focused hover = orange-tinted border. */
-  background: var(--sample-card-bg);
-  border: 1px solid var(--sample-card-border);
   border-radius: var(--radius-3);
   padding: 10px;
-  cursor: pointer;
   transition:
     border-color var(--motion-fast) var(--ease-out),
     background var(--motion-fast) var(--ease-out),
     box-shadow var(--motion-fast) var(--ease-out),
     transform var(--motion-fast) var(--ease-in-out);
-  color: var(--fg);
-}
-
-.sample-card:hover {
-  border-color: var(--sample-card-border-hover);
-  background: var(--sample-card-bg-hover);
-}
-
-.sample-card:active { transform: translateY(1px) scale(var(--motion-scale-press)); }
-
-.sample-card:focus-visible {
-  outline: none;
-  box-shadow: var(--focus-ring);
 }
 
 .sample-thumb {
@@ -3836,11 +3758,11 @@ body.tab-reordering .tab-list[data-reorder="true"] .tab {
   color: var(--fg);
 }
 
+/* Phase 91 D2 — the canonical button family owns focus for the migrated
+ * text-props buttons (`.btn:focus-visible`); only the non-button controls
+ * keep the local ring here. */
 .text-props-select:focus-visible,
-.text-props-input:focus-visible,
-.text-props-btn:focus-visible,
-.text-props-wide-btn:focus-visible,
-.text-props-mini-btn:focus-visible {
+.text-props-input:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 1px;
 }
@@ -3875,6 +3797,9 @@ body.tab-reordering .tab-list[data-reorder="true"] .tab {
   gap: 4px;
 }
 
+/* Phase 91 D2 — layout alias for the canonical `btn btn-ghost` toggle
+ * (`btn btn-ghost btn-icon` for the indent verbs). Colour, hover, focus and
+ * disabled come from the family; only the box stays here. */
 .text-props-btn {
   display: inline-flex;
   align-items: center;
@@ -3882,20 +3807,7 @@ body.tab-reordering .tab-list[data-reorder="true"] .tab {
   width: 28px;
   height: 26px;
   padding: 0;
-  border: 1px solid var(--border);
   border-radius: var(--radius-2);
-  background: var(--bg-input);
-  color: var(--fg);
-  cursor: pointer;
-  transition:
-    background var(--motion-duration-fast) var(--motion-ease-standard),
-    color var(--motion-duration-fast) var(--motion-ease-standard),
-    border-color var(--motion-duration-fast) var(--motion-ease-standard);
-}
-
-.text-props-btn:hover:not(:disabled) {
-  background: var(--bg-hover);
-  color: var(--fg-strong);
 }
 
 /* Phase 41 (item 3) — SUPERSEDES the solid accent slab. The active align /
@@ -3914,12 +3826,11 @@ body.tab-reordering .tab-list[data-reorder="true"] .tab {
   color: var(--select-glyph);
 }
 
-.text-props-btn:disabled,
-.text-props-wide-btn:disabled,
+/* Phase 91 D2 — the migrated text-props buttons take disabled from
+ * `.btn[disabled]`; only the native selects / inputs / colour wells remain. */
 .text-props-select:disabled,
 .text-props-input:disabled,
-.text-props-color:disabled,
-.text-props-mini-btn:disabled {
+.text-props-color:disabled {
   opacity: 0.5;
   cursor: not-allowed;
 }
@@ -3932,6 +3843,8 @@ body.tab-reordering .tab-list[data-reorder="true"] .tab {
   color: var(--fg-soft);
 }
 
+/* Phase 91 D2 — layout alias for the canonical `btn btn-secondary` variant;
+ * colour, border, hover, focus and disabled come from the family. */
 .text-props-wide-btn {
   display: inline-flex;
   align-items: center;
@@ -3940,20 +3853,8 @@ body.tab-reordering .tab-list[data-reorder="true"] .tab {
   height: 28px;
   width: 100%;
   padding: 0 8px;
-  border: 1px solid var(--border);
   border-radius: var(--radius-2);
-  background: var(--bg-input);
-  color: var(--fg);
   font-size: var(--fs-xs);
-  cursor: pointer;
-  transition:
-    background var(--motion-duration-fast) var(--motion-ease-standard),
-    color var(--motion-duration-fast) var(--motion-ease-standard);
-}
-
-.text-props-wide-btn:hover:not(:disabled) {
-  background: var(--bg-hover);
-  color: var(--fg-strong);
 }
 
 .text-props-color-wrap {
@@ -3976,21 +3877,13 @@ body.tab-reordering .tab-list[data-reorder="true"] .tab {
   cursor: pointer;
 }
 
+/* Phase 91 D2 — layout alias for the canonical `btn btn-secondary btn-sm`
+ * variant; colour, hover, focus and disabled come from the family. */
 .text-props-mini-btn {
   height: 24px;
   padding: 0 8px;
-  border: 1px solid var(--border);
   border-radius: var(--radius-1);
-  background: var(--bg-input);
-  color: var(--fg-soft);
   font-size: var(--fs-xs);
-  cursor: pointer;
-  transition: background var(--motion-duration-fast) var(--motion-ease-standard);
-}
-
-.text-props-mini-btn:hover {
-  background: var(--bg-hover);
-  color: var(--fg-strong);
 }
 
 /* DEF-185 — the rail's title header. Phase 14.1: the header is the
@@ -4015,40 +3908,18 @@ body.tab-reordering .tab-list[data-reorder="true"] .tab {
    * transparent strip with an underline indicator) is retired. */
 }
 
+/* Phase 91 C2 — migrated to the canonical button system
+ * (`btn btn-ghost btn-icon btn-toggle`). The legacy class is a LAYOUT alias
+ * only: the resting/hover/focus ink and the selected `--accent-*` fill all
+ * come from the canonical variant and `[aria-pressed="true"]`
+ * (docs/BUTTON-SYSTEM.md). The conditional `rail-tab-active` class stays on
+ * the element as the e2e selector marker, no longer a colour source. */
 .rail-tab {
   width: 38px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  background: transparent;
-  border: none;
-  color: var(--fg-muted);
-  cursor: pointer;
   position: relative;
-  transition:
-    color var(--motion-fast) var(--ease-out),
-    background var(--motion-fast) var(--ease-out),
-    box-shadow var(--motion-fast) var(--ease-out),
-    transform var(--motion-fast) var(--ease-in-out);
-}
-
-.rail-tab:hover { color: var(--fg-strong); background: var(--bg-hover); }
-
-.rail-tab:focus-visible {
-  outline: none;
-  box-shadow: var(--focus-ring);
-}
-
-/* Phase 16 — the active view tab inside the glass capsule is a
- * SELECTION FILL (the shared 0.10 accent wash, the same treatment
- * the command-bar capsule buttons and the thumb selection use)
- * instead of the pre-capsule underline: the underline floated on
- * the pill's lower edge and read as a stray accent bar. The wash
- * rides the .rail-tab background transition (token-driven). */
-.rail-tab-active {
-  color: var(--fg-strong);
-  background: var(--accent-selected);
-  border-radius: var(--radius-2);
 }
 
 .rail-content {
@@ -4194,16 +4065,14 @@ body.tab-reordering .tab-list[data-reorder="true"] .tab {
   font-size: var(--fs-sm);
 }
 
+/* Phase 91 C2 — layout alias for the canonical `btn btn-ghost btn-icon`
+ * variant; colour, hover, focus and disabled come from the family. */
 .outline-toggle {
   width: 18px;
   height: 22px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  background: transparent;
-  border: none;
-  color: var(--fg-faint);
-  cursor: pointer;
   flex-shrink: 0;
 }
 
@@ -4224,36 +4093,16 @@ body.tab-reordering .tab-list[data-reorder="true"] .tab {
 
 .chevron-closed { transform: rotate(0deg); }
 
+/* Phase 91 C2 — layout alias for the canonical `btn btn-ghost btn-sm`
+ * variant; colour/hover/focus come from the family. */
 .outline-link {
   flex: 1 1 auto;
   text-align: left;
-  background: transparent;
-  border: none;
   padding: 4px 6px;
-  border-radius: var(--radius-1);
-  color: var(--fg);
-  cursor: pointer;
   font-size: var(--fs-sm);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  transition: background var(--motion-fast) var(--ease-out), color var(--motion-fast) var(--ease-out);
-}
-
-.outline-link:hover {
-  background: var(--bg-hover);
-  color: var(--fg-strong);
-}
-
-.outline-link:focus-visible {
-  outline: none;
-  box-shadow: var(--focus-ring);
-  color: var(--fg-strong);
-}
-
-.outline-toggle:focus-visible {
-  outline: none;
-  box-shadow: var(--focus-ring);
 }
 
 /* Phase 85 — editable outline rows. The base `.outline-row` flex layout is
@@ -4285,6 +4134,9 @@ body.tab-reordering .tab-list[data-reorder="true"] .tab {
   flex: 0 0 auto;
 }
 
+/* Phase 91 C2 — layout alias; the tree verbs are canonical `btn btn-ghost
+ * btn-icon` (the delete verb `btn btn-danger`), so colour/hover/focus/disabled
+ * all come from the family. */
 .outline-verb {
   display: inline-flex;
   align-items: center;
@@ -4292,31 +4144,16 @@ body.tab-reordering .tab-list[data-reorder="true"] .tab {
   width: 22px;
   height: 22px;
   padding: 0;
+}
+
+/* The native page-target <select> shares the layout class but is not a
+ * canonical `.btn`, so it keeps its own neutral reset (its colour comes from
+ * `.outline-retarget` below). */
+.outline-verb.outline-retarget {
   background: transparent;
   border: none;
   border-radius: var(--radius-1);
-  color: var(--fg-muted);
   cursor: pointer;
-  transition: background var(--motion-fast) var(--ease-out), color var(--motion-fast) var(--ease-out);
-}
-
-.outline-verb:hover:not(:disabled) {
-  background: var(--bg-hover);
-  color: var(--fg-strong);
-}
-
-.outline-verb:disabled {
-  opacity: 0.4;
-  cursor: default;
-}
-
-.outline-verb:focus-visible {
-  outline: none;
-  box-shadow: var(--focus-ring);
-}
-
-.outline-verb-danger:hover:not(:disabled) {
-  color: var(--error);
 }
 
 .outline-retarget {
@@ -4424,97 +4261,19 @@ body.tab-reordering .tab-list[data-reorder="true"] .tab {
  * The .glass-control-group rule lives in the Phase 14.1 glass-material
  * block at the end of this file, next to its sibling primitives. */
 
-.tool-btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 28px;
-  /* Phase 14.1 — visual height 32px (spec band 32-38px) inside the
-   * 36px capsule; the capsule's padding lifts the effective hit row
-   * to ~40px (spec hit target 36-44px). Width stays 28px so the dense
-   * tool capsules keep their rhythm. */
-  height: 32px;
-  /* Buttons never shrink below 28px; this stops the navigation
-   * cluster (page input, zoom percent) from compressing into
-   * illegibility when the toolbar is narrow. */
+/* Phase 91 (Feature B3) — every control that used to ride the legacy bare
+ * `.tool-btn` fork now carries the canonical `btn btn-toolbar tool-btn`
+ * classes (Phase 91 DEF-523), so the fork base / state rules were retired:
+ * sizing, colour, hover, press, focus and disabled all come from the
+ * canonical `.btn` family. `.tool-btn` remains a DOM/e2e alias. */
+
+/* Phase 91 (Feature B3) — migrated command-bar buttons carry BOTH the canonical
+ * `btn btn-toolbar` classes and the legacy `.tool-btn` hook. The canonical
+ * `.btn-toolbar` does not set flex-shrink, so the legacy `.tool-btn` no-shrink
+ * contract is re-stated here as a layout alias; colour / border /
+ * hover / active / focus / disabled all come from the canonical variant. */
+.btn.tool-btn {
   flex-shrink: 0;
-  background: transparent;
-  border: 1px solid transparent;
-  border-radius: var(--radius-2);
-  /* DEF-194 — zero the UA button padding (Chromium ships 1px 6px on
-   * every button): under border-box it crushed this 28px box's inner
-   * row to 14px and flex-shrank the 22px glyph into it (~14.7px,
-   * measured by qa). The full 26px inner row lets every icon render
-   * at its declared size, centered. (.ann-tool-btn already carried
-   * its own padding: 0 — this fixes the whole class at the root.) */
-  padding: 0;
-  /* Phase 6 — default icon sits at --fg-muted (the shared icon
-   * default across the header, title bar, rail and toolbar — spec
-   * "default #9299A2/--fg-muted") so the dense toolbar reads as a
-   * quiet, even field of glyphs that LIGHT UP on hover (spec hover
-   * #E7E9EC/--fg-strong). The old --fg default made every resting
-   * button feel pre-lit; muted-default + hover-strong keeps the
-   * resting toolbar calm and the active/pressed states (below)
-   * unmistakable. */
-  color: var(--fg-muted);
-  cursor: pointer;
-  /* Phase 13 — the toolbar is fully icon-only: every action is a
-   * 28px square glyph with its promise in `title` + `aria-label`.
-   * (The old icon+label buttons carried `tool-btn-with-label`; the
-   * class is pruned with the labels.) */
-  white-space: nowrap;
-  transition:
-    background var(--motion-fast) var(--ease-out),
-    color var(--motion-fast) var(--ease-out),
-    border-color var(--motion-fast) var(--ease-out),
-    box-shadow var(--motion-fast) var(--ease-out),
-    transform var(--motion-fast) var(--ease-in-out);
-}
-
-/* Phase 2 + Phase 6 — toolbar button states, tokenized and
- * motion-driven. Default: transparent, --fg-muted icon (Phase 6
- * icon ladder). Hover: neutral wash + strong icon. Pressed: the
- * instant the button goes down, a stronger accent tint. Armed/
- * active: accent tint + accent icon. Keyboard focus: a subtle
- * orange ring. The accent appears ONLY here, on the
- * active/pressed/focused control — never on the resting toolbar. */
-.tool-btn:hover:not([disabled]) {
-  background: var(--bg-hover);
-  color: var(--fg-strong);
-}
-
-.tool-btn:active:not([disabled]) {
-  /* Phase 4 — pressed state is the shared 0.20 accent wash. */
-  background: var(--accent-pressed-soft);
-  color: var(--accent-text);
-}
-
-.tool-btn[disabled] {
-  opacity: 0.4;
-  cursor: not-allowed;
-}
-
-/* Phase 4 — active/selected toolbar buttons (armed tools, fit modes,
- * open palettes) use the shared 0.10 orange wash. Chunk 2 — the
- * selection change animates over the 140-180ms band
- * (--tf-motion-normal, 180ms) instead of snapping: the transition
- * list comes from the NEW state, so arming a tool fades the
- * background/icon/indicator in while releasing stays on the base
- * 120ms ease. */
-.tool-btn-active {
-  background: var(--accent-selected);
-  color: var(--accent-text);
-  border-color: transparent;
-  transition:
-    background var(--tf-motion-normal) var(--tf-ease-standard),
-    color var(--tf-motion-normal) var(--tf-ease-standard),
-    border-color var(--tf-motion-normal) var(--tf-ease-standard),
-    box-shadow var(--tf-motion-normal) var(--tf-ease-standard);
-}
-
-.tool-btn:focus-visible {
-  outline: none;
-  box-shadow: var(--focus-ring);
 }
 
 /* DEF-355 — the ACTIVE page-layout option's ICON. The shared active rule's
@@ -4530,12 +4289,10 @@ body.tab-reordering .tab-list[data-reorder="true"] .tab {
  * chrome control (the toolbar buttons get theirs in
  * .tool-btn:active above; solid-accent buttons keep their solid
  * pressed color). Pressing any of these flashes the shared 0.20
- * orange wash, so the whole app presses identically. */
-.theme-toggle:active,
+ * orange wash, so the whole app presses identically. Phase 91 — the
+ * migrated top-chrome controls take their press wash from the canonical
+ * `.btn-*` variants, so they are no longer listed here. */
 .tab-close:active,
-.tab-new:active,
-.titlebar-menu-button:active:not(.titlebar-menu-button-active),
-.titlebar-menu-row:active,
 .rail-tab:active,
 .rail-action-btn:active:not([disabled]),
 .toolbox-action-btn:active,
@@ -4676,14 +4433,15 @@ body.tab-reordering .tab-list[data-reorder="true"] .tab {
 }
 
 /* DEF-500 attempt 3 — the Phase 86 replace buttons carry TEXT labels
- * ("Replace", "Replace all") but inherited the icon-only .tool-btn 28px
- * square: each label overflowed its box and the later button's box then
+ * ("Replace", "Replace all") but must not inherit the icon-only toolbar
+ * square: each label would overflow its box and the later button's box then
  * captured the earlier button's centre, so a real click on Replace ran
  * Replace-all. This class lets the two labelled buttons size to their
- * content instead; it overrides .tool-btn's fixed width by source order
- * (declared after it) and MUST NOT be merged into .tool-btn, which stays
- * the 28px glyph square used across the whole toolbar. */
-.search-replace-btn {
+ * content instead. Phase 91 (Feature B3) — paired with the canonical
+ * `.btn-toolbar` it is (0,2,0) versus (0,1,0), so it wins the sizing
+ * cascade and MUST NOT be merged into `.tool-btn`, which stays the glyph
+ * square alias used across the whole toolbar. */
+.tool-btn.search-replace-btn {
   width: auto;
   min-width: 28px;
   flex: 0 0 auto;
@@ -5275,20 +5033,17 @@ body.tab-reordering .tab-list[data-reorder="true"] .tab {
   align-items: center;
 }
 
+/* Phase 91 — migrated to the canonical button system (`btn btn-ghost`). The
+ * legacy class is a LAYOUT alias only: geometry, typography and motion here;
+ * colour / border / hover / focus come from `.btn-ghost`. The open state's
+ * joined-corner material stays keyed off `[aria-expanded="true"]` below. */
 .theme-toggle {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
   gap: 5px;
   height: 28px;
   padding: 0 8px;
   border-radius: var(--radius-2);
-  background: transparent;
-  border: 1px solid transparent;
-  color: var(--fg-muted);
   font-size: var(--fs-sm);
   font-weight: 500;
-  cursor: pointer;
   white-space: nowrap;
   transition:
     background var(--motion-fast) var(--ease-out),
@@ -5298,22 +5053,12 @@ body.tab-reordering .tab-list[data-reorder="true"] .tab {
     transform var(--motion-fast) var(--ease-in-out);
 }
 
-.theme-toggle:hover {
-  background: var(--bg-hover);
-  color: var(--fg-strong);
-}
-
 /* The open trigger reads as an active control (shared orange wash),
  * so the dropdown visibly belongs to it (DEF rhythm: selected/active
  * wash is the single state system). */
 .theme-toggle-trigger[aria-expanded="true"] {
   background: var(--accent-selected);
   color: var(--fg-strong);
-}
-
-.theme-toggle:focus-visible {
-  outline: none;
-  box-shadow: var(--focus-ring);
 }
 
 .theme-toggle-label {
@@ -5594,6 +5339,13 @@ body.tab-reordering .tab-list[data-reorder="true"] .tab {
   flex: 0 0 auto;
 }
 
+/* Phase 91 C2 — migrated to the canonical button system (`btn btn-ghost`).
+ * The legacy class keeps the Undo band's measured geometry (the 24px
+ * non-wrapping control and the ellipsized label); colour, hover and focus come
+ * from the canonical variant. The DEF-188 disabled INK override stays below:
+ * the frosted readability contract pins the faint-ink label and forbids the
+ * whole-button fade, so the canonical `.btn[disabled]` opacity is neutralised
+ * here. */
 .rail-action-btn {
   display: inline-flex;
   align-items: center;
@@ -5602,10 +5354,6 @@ body.tab-reordering .tab-list[data-reorder="true"] .tab {
   height: 24px;
   min-width: 24px;
   padding: 0 8px;
-  background: transparent;
-  border: 1px solid transparent;
-  border-radius: var(--radius-1);
-  color: var(--fg-muted);
   font-size: var(--fs-xs);
   cursor: pointer;
   /* Phase 45 (item 5) — the label stays on ONE line and is clipped by the
@@ -5615,12 +5363,6 @@ body.tab-reordering .tab-list[data-reorder="true"] .tab {
      the 24px band, so the control and the thumbnail can never intersect. */
   white-space: nowrap;
   overflow: hidden;
-  transition:
-    background var(--motion-fast) var(--ease-out),
-    color var(--motion-fast) var(--ease-out),
-    border-color var(--motion-fast) var(--ease-out),
-    box-shadow var(--motion-fast) var(--ease-out),
-    transform var(--motion-fast) var(--ease-in-out);
 }
 
 /* The label shrinks and ellipsizes instead of wrapping. */
@@ -5631,16 +5373,6 @@ body.tab-reordering .tab-list[data-reorder="true"] .tab {
   white-space: nowrap;
 }
 
-.rail-action-btn:hover:not([disabled]) {
-  background: var(--bg-hover);
-  color: var(--fg-strong);
-}
-
-.rail-action-btn:focus-visible {
-  outline: none;
-  box-shadow: var(--focus-ring);
-}
-
 .rail-action-btn[disabled] {
   /* DEF-188 — the old whole-button 0.45 fade sank the disabled
    * "Undo last change" label into the rail glass (qa measured spread
@@ -5648,8 +5380,10 @@ body.tab-reordering .tab-list[data-reorder="true"] .tab {
    * (the fade multiplies toward the glass), so the disabled state now
    * reads through the FAINT ink tier (a real, legible step below the
    * enabled muted ink) while the decorative icon still fades to signal
-   * "off" — plus no hover response and the not-allowed cursor. */
+   * "off" — plus no hover response and the not-allowed cursor. The
+   * canonical `.btn[disabled]` opacity is cancelled so this contract holds. */
   color: var(--fg-faint);
+  opacity: 1;
   cursor: not-allowed;
 }
 
@@ -6588,9 +6322,11 @@ rect.ann-highlight.ann-preview {
  *   toolbox-action-btn--delete           danger red text
  * The per-family classes (.sig-action-btn, .ann-textbox-action-btn,
  * .edit-inline-btn, .edit-box-toolbar-btn, .edit-image-toolbar-btn)
- * remain on the buttons purely as stable selectors for tests / e2e —
- * this block owns the visual style. */
-.toolbox-action-btn {
+ * remain on the buttons purely as stable selectors for tests / e2e.
+ * Phase 91 (Feature D) — every selector below is scoped with :not(.btn),
+ * so this block styles only un-migrated consumers; migrated buttons take
+ * the canonical `.btn-*` variant and keep the legacy hook as an alias. */
+.toolbox-action-btn:not(.btn) {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -6615,39 +6351,50 @@ rect.ann-highlight.ann-preview {
     box-shadow var(--motion-fast) var(--ease-out),
     transform var(--motion-fast) var(--ease-in-out);
 }
-.toolbox-action-btn:hover {
+.toolbox-action-btn:not(.btn):hover {
   background: var(--bg-hover);
   color: var(--fg-strong);
 }
-.toolbox-action-btn:focus-visible {
+.toolbox-action-btn:not(.btn):focus-visible {
   outline: none;
   box-shadow: var(--focus-ring);
 }
-.toolbox-action-btn--confirm {
+.toolbox-action-btn--confirm:not(.btn) {
   background: var(--accent);
   color: var(--fg-on-accent);
   border-color: var(--accent);
 }
-.toolbox-action-btn--confirm:hover {
+.toolbox-action-btn--confirm:not(.btn):hover {
   background: var(--accent-hover);
   color: var(--fg-on-accent);
   border-color: var(--accent-hover);
 }
-.toolbox-action-btn--cancel {
+.toolbox-action-btn--cancel:not(.btn) {
   background: transparent;
   color: var(--fg);
   border-color: transparent;
 }
-.toolbox-action-btn--cancel:hover {
+.toolbox-action-btn--cancel:not(.btn):hover {
   background: var(--bg-hover);
   color: var(--fg-strong);
 }
-.toolbox-action-btn--delete {
+.toolbox-action-btn--delete:not(.btn) {
   color: var(--error);
 }
-.toolbox-action-btn--delete:hover {
+.toolbox-action-btn--delete:not(.btn):hover {
   background: var(--error-soft);
   color: var(--error);
+}
+
+/* Phase 91 (Feature D1) — migrated action-bar buttons carry BOTH the canonical
+ * `btn btn-*` classes and the legacy `.toolbox-action-btn` hook. The canonical
+ * variant owns colour / border / hover / press / focus / disabled; this alias
+ * re-states only the layout contract the canonical `.btn` does not own
+ * (pointer-events auto), so the buttons stay real hit targets on the floating
+ * bars while un-migrated consumers keep the `:not(.btn)` block above. */
+.btn.toolbox-action-btn {
+  pointer-events: auto;
+  white-space: nowrap;
 }
 
 .ann-textbox-actions {
@@ -6831,6 +6578,9 @@ rect.ann-highlight.ann-preview {
   letter-spacing: 0.04em;
 }
 
+/* Phase 91 D2 — layout alias for the canonical `btn btn-ghost` menu row.
+ * Colour, border and disabled come from the family; the Phase-19 motion pair
+ * (base transition + hover wash) stays here as the motion oracle. */
 .ann-tool-menu-row {
   display: flex;
   align-items: center;
@@ -6838,22 +6588,14 @@ rect.ann-highlight.ann-preview {
   width: 100%;
   height: 30px;
   padding: 0 8px;
-  background: transparent;
-  border: 1px solid transparent;
   border-radius: var(--radius-2);
-  color: var(--fg);
   font-size: var(--fs-sm);
-  cursor: pointer;
   text-align: left;
   transition: background var(--motion-duration-fast) var(--motion-ease-standard);
 }
 .ann-tool-menu-row:hover:not([disabled]),
 .ann-tool-menu-row-highlight:not([disabled]) {
   background: var(--bg-hover);
-}
-.ann-tool-menu-row[disabled] {
-  opacity: 0.4;
-  cursor: not-allowed;
 }
 .ann-tool-menu-row[aria-checked="true"] {
   color: var(--accent-text);
@@ -7514,24 +7256,20 @@ rect.ann-highlight.ann-preview {
   color: var(--fg-muted);
 }
 
+/* Phase 91 D3 — canonical `btn btn-ghost btn-icon`; this legacy class is a
+ * LAYOUT alias only, keeping the 18px box and corner. The width/min-width pair
+ * pins it against `.btn-icon`'s 36px floor; colour, hover and focus come from
+ * the canonical variant (docs/BUTTON-SYSTEM.md). */
 .form-fill-report-dismiss {
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  flex: 0 0 auto;
   width: 18px;
+  min-width: 18px;
   height: 18px;
   padding: 0;
-  border: none;
   border-radius: var(--radius-1);
-  background: transparent;
-  color: var(--fg-muted);
-  cursor: pointer;
-  transition: background var(--motion-fast) var(--ease-out);
-}
-
-.form-fill-report-dismiss:hover {
-  background: var(--bg-hover);
-  color: var(--fg-strong);
 }
 
 .form-fill-report-list {
@@ -8093,29 +7831,20 @@ rect.ann-highlight.ann-preview {
 }
 
 .tab-new {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
   /* Match .tab exactly so the "+ tab" affordance sits on the same
    * baseline as the rightmost tab — previously a 24px button against
    * a 34px tab left a 10px visual offset that read as a misalignment
    * (DEF: tab + button height mismatch). Width stays smaller so the
    * affordance still reads as a compact plus button next to the
-   * title text, not as a duplicate tab. */
+   * title text, not as a duplicate tab.
+   * Phase 91 — canonical `btn btn-ghost btn-icon`; the legacy class is a
+   * LAYOUT alias only (geometry + motion). */
   width: 24px;
+  min-width: 24px;
   height: 34px;
   margin-left: 4px;
   padding: 0;
-  background: transparent;
-  border: 1px solid transparent;
-  /* Phase 2 — borderless strip: the seam line under the "+" button
-   * (and the old active-tab outline it matched) is gone; the row is
-   * one continuous caption surface and only the active tab's accent
-   * underline marks state. */
-  border-bottom: none;
   border-radius: var(--radius-1);
-  color: var(--fg-muted);
-  cursor: pointer;
   transition:
     background var(--motion-fast) var(--ease-out),
     color var(--motion-fast) var(--ease-out),
@@ -8123,31 +7852,6 @@ rect.ann-highlight.ann-preview {
     box-shadow var(--motion-fast) var(--ease-out),
     transform var(--motion-fast) var(--ease-in-out);
   flex-shrink: 0;
-}
-.tab-new:hover {
-  background: var(--bg-hover);
-  color: var(--fg-strong);
-  border-color: var(--border-strong);
-}
-
-/* DEF-288 — the "+" is visibly disabled while Multi Mode is on (the strip
-   shows ONE composite workspace tab, so a new empty tab could not be seen).
-   Neutralise the hover/press affordances so it reads as inert, not broken. */
-.tab-new:disabled,
-.tab-new:disabled:hover,
-.tab-new:disabled:active {
-  opacity: 0.4;
-  cursor: not-allowed;
-  background: transparent;
-  color: var(--fg-muted);
-  border-color: transparent;
-}
-
-.tab-new:focus-visible {
-  /* Inset ring — see .tab:focus-visible (the strip clips overflow). */
-  outline: 2px solid rgba(124, 58, 237, 0.35);
-  outline-offset: -2px;
-  color: var(--fg-strong);
 }
 
 /* ----- Tools palette ----- */
@@ -8290,22 +7994,12 @@ rect.ann-highlight.ann-preview {
   gap: var(--sp-1);
 }
 
+/* Phase 91 — migrated to the canonical button system (`btn btn-ghost`). The
+ * legacy class survives as a LAYOUT alias only: colour, border, hover, active,
+ * focus and disabled all come from `.btn-ghost` (docs/BUTTON-SYSTEM.md). */
 .inspector-collapse-toggle {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 28px;
-  height: 28px;
-  border: none;
-  border-radius: var(--radius-control);
-  background: transparent;
-  color: var(--fg-muted);
-  cursor: pointer;
-  transition: background var(--motion-duration-fast) var(--motion-ease-standard);
+  flex: 0 0 auto;
 }
-.inspector-collapse-toggle:hover:not(:disabled) { background: var(--bg-hover); color: var(--fg-strong); }
-.inspector-collapse-toggle:focus-visible { outline: none; box-shadow: var(--focus-ring); }
-.inspector-collapse-toggle:disabled { opacity: 0.5; cursor: default; }
 
 /* Phase 37 (item 1) — the text-manipulation block at the TOP of the body,
  * followed by the subtle divider and the stage sections. The body is the ONE
@@ -8333,21 +8027,12 @@ rect.ann-highlight.ann-preview {
   gap: var(--sp-3);
 }
 
+/* Phase 91 — migrated to the canonical button system (`btn btn-ghost
+ * btn-icon`). The class is a LAYOUT alias only; the canonical icon control
+ * owns its square sizing and every state. */
 .inspector-close {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 26px;
-  height: 26px;
-  border: none;
-  border-radius: var(--radius-control);
-  background: transparent;
-  color: var(--fg-muted);
-  cursor: pointer;
-  transition: background var(--motion-duration-fast) var(--motion-ease-standard);
+  flex: 0 0 auto;
 }
-.inspector-close:hover { background: var(--bg-hover); color: var(--fg-strong); }
-.inspector-close:focus-visible { outline: none; box-shadow: var(--focus-ring); }
 
 .inspector-section { display: flex; flex-direction: column; gap: var(--sp-2); }
 .inspector-section-title {
@@ -8374,49 +8059,20 @@ rect.ann-highlight.ann-preview {
 /* Section 3A ruling 6 — the read-only "Annotations: N" count is the ONE
  * inspector value that is clickable: it JUMPS to the REVIEW stage. Styled as
  * an inline accent link (no button chrome), tokens only. */
+/* Phase 91 — migrated to the canonical button system (`btn btn-ghost
+ * btn-sm`). The Section 3A ruling 6 accent-link affordance survives via
+ * tokens; every other state comes from the canonical variant. */
 .inspector-link {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--sp-1);
-  /* Phase 37 (item 10) — legible label size + a comfortable hit target. */
-  min-height: 24px;
-  padding: 2px 4px;
-  border: none;
-  background: transparent;
   color: var(--accent-text);
-  font: inherit;
-  font-size: var(--fs-sm);
-  cursor: pointer;
-  border-radius: var(--radius-control);
-  transition: color var(--motion-duration-fast) var(--motion-ease-standard);
 }
 .inspector-link:hover:not(:disabled) { color: var(--accent-hover); text-decoration: underline; }
-.inspector-link:focus-visible { outline: none; box-shadow: var(--focus-ring); }
-.inspector-link:disabled { opacity: 0.5; cursor: default; }
 
+/* Phase 91 — migrated to the canonical button system (`btn btn-secondary`).
+ * The legacy class is a LAYOUT alias only; colour, border and every state
+ * come from the canonical variant (docs/BUTTON-SYSTEM.md). */
 .inspector-action {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  /* Phase 37 (item 10) — professional affordance sizing: a 28px comfortable
-   * hit target with a legible 12px label (the app's --fs-sm body scale),
-   * consistent 4x10 padding and the shared control radius. No tiny text. */
-  min-height: 28px;
-  padding: 4px 10px;
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-2);
-  /* Phase 59 (item 9) — the Inspector's inline actions carry the same subtle
-   * raised surface as the ContextPanel controls, so they read as buttons
-   * against the panel's body text. Tokens only; all three themes. */
-  background: var(--bg-raised);
-  color: var(--fg);
-  font-size: var(--fs-sm);
-  cursor: pointer;
-  transition: background var(--motion-duration-fast) var(--motion-ease-standard);
+  flex: 0 0 auto;
 }
-.inspector-action:hover:not(:disabled) { background: var(--bg-secondary); }
-.inspector-action:focus-visible { outline: none; box-shadow: var(--focus-ring); }
-.inspector-action:disabled { opacity: 0.5; cursor: default; }
 
 .inspector-disclosure { padding: 2px var(--sp-1); }
 
@@ -8495,57 +8151,41 @@ rect.ann-highlight.ann-preview {
  * .tools-palette-header class stays on the element for the CSS/e2e
  * contracts. The .tools-palette-title rule is gone — the title renders
  * through .glass-sidebar-title now. */
+/* Phase 91 C3 — the palette's layout toggle is the canonical segmented group
+ * (`btn-segmented`). The legacy class is a LAYOUT alias only: the flex row and
+ * the clip stay here, while the border, radius and raised surface come from the
+ * canonical group (docs/BUTTON-SYSTEM.md). */
 .tools-palette-toggle {
   display: inline-flex;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-1);
-  background: var(--bg-base);
   overflow: hidden;
 }
 .tools-palette-toggle-btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  /* Phase 14.2 FIX 6 — 26x24 box for the 22px sidebar glyphs. */
+  /* Phase 14.2 FIX 6 — 26x24 box for the 22px sidebar glyphs. Phase 91 C3 —
+   * LAYOUT alias only: colour, border, hover, selected and focus all come from
+   * the canonical `.btn-toggle` / `.btn-segmented-item` (docs/BUTTON-SYSTEM.md).
+   * The `.tools-palette-toggle-active` class stays on the element as a DOM
+   * marker; the selected wash is driven by `aria-pressed="true"` alone. */
   width: 26px;
   height: 24px;
-  background: transparent;
   border: none;
-  color: var(--fg-muted);
-  cursor: pointer;
-  transition:
-    background var(--motion-fast) var(--ease-out),
-    color var(--motion-fast) var(--ease-out),
-    box-shadow var(--motion-fast) var(--ease-out),
-    transform var(--motion-fast) var(--ease-in-out);
 }
-.tools-palette-toggle-btn:hover { background: var(--bg-hover); color: var(--fg-strong); }
-.tools-palette-toggle-active {
-  /* Phase 4 — toggle selected state = the shared orange wash. */
-  background: var(--accent-selected);
-  color: var(--accent-text);
-}
-.tools-palette-toggle-btn:focus-visible { outline: none; box-shadow: var(--focus-ring); }
 .tools-palette-close {
-  /* Phase 14.2 FIX 6 — 28px box for the 22px close glyph. */
+  /* Phase 14.2 FIX 6 — 28px box for the 22px close glyph. Phase 91 C3 —
+   * LAYOUT alias only: colour, hover and focus come from the canonical
+   * `.btn-ghost` / `.btn-icon` (docs/BUTTON-SYSTEM.md). The width + min-width
+   * pair pins the 28px box against `.btn-icon`'s 36px floor. */
   width: 28px;
+  min-width: 28px;
   height: 28px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   border-radius: var(--radius-1);
   border: none;
-  background: transparent;
-  color: var(--fg-muted);
-  cursor: pointer;
-  transition:
-    background var(--motion-fast) var(--ease-out),
-    color var(--motion-fast) var(--ease-out),
-    box-shadow var(--motion-fast) var(--ease-out),
-    transform var(--motion-fast) var(--ease-in-out);
 }
-.tools-palette-close:hover { background: var(--bg-hover); color: var(--fg-strong); }
-.tools-palette-close:focus-visible { outline: none; box-shadow: var(--focus-ring); }
 
 .tools-palette-body {
   flex: 1 1 auto;
@@ -8603,31 +8243,16 @@ rect.ann-highlight.ann-preview {
 }
 
 .tools-palette-entry {
+  /* Phase 91 C3 — migrated to the canonical button system (`btn btn-ghost`).
+   * The legacy class keeps only the layout (row flow, gap, padding, radius);
+   * colour, border, hover, focus and disabled all come from the canonical
+   * `.btn-ghost` (docs/BUTTON-SYSTEM.md). The Phase-14 spring identity block
+   * further down the sheet stays on this selector untouched. */
   display: flex;
   align-items: center;
   gap: var(--sp-2);
   padding: 0 var(--sp-3);
-  background: transparent;
-  border: 1px solid transparent;
   border-radius: var(--radius-2);
-  color: var(--fg);
-  cursor: pointer;
-  transition:
-    background var(--motion-fast) var(--ease-out),
-    border-color var(--motion-fast) var(--ease-out),
-    box-shadow var(--motion-fast) var(--ease-out),
-    transform var(--motion-fast) var(--ease-in-out);
-}
-.tools-palette-entry:hover:not(:disabled) {
-  background: var(--bg-hover);
-}
-.tools-palette-entry:focus-visible {
-  outline: none;
-  box-shadow: var(--focus-ring);
-}
-.tools-palette-entry:disabled {
-  opacity: 0.45;
-  cursor: not-allowed;
 }
 .tools-palette-entry-list {
   flex-direction: row;
@@ -8764,7 +8389,7 @@ rect.ann-highlight.ann-preview {
   font-weight: 600;
   color: var(--fg-strong);
 }
-.sheet-close {
+.sheet-close:not(.btn) {
   width: 28px;
   height: 28px;
   display: inline-flex;
@@ -8781,8 +8406,19 @@ rect.ann-highlight.ann-preview {
     box-shadow var(--motion-fast) var(--ease-out),
     transform var(--motion-fast) var(--ease-in-out);
 }
-.sheet-close:hover { background: var(--bg-hover); color: var(--fg-strong); }
-.sheet-close:focus-visible { outline: none; box-shadow: var(--focus-ring); }
+.sheet-close:not(.btn):hover { background: var(--bg-hover); color: var(--fg-strong); }
+.sheet-close:not(.btn):focus-visible { outline: none; box-shadow: var(--focus-ring); }
+
+/* Phase 91 D4 — layout alias for the canonical close: colour, hover, focus
+ * and disabled come from `btn btn-ghost btn-icon`; this pins the 28px sheet
+ * box and corner. */
+.btn.sheet-close {
+  width: 28px;
+  min-width: 28px;
+  height: 28px;
+  padding: 0;
+  border-radius: var(--radius-1);
+}
 
 .sheet-body {
   padding: var(--sp-4);
@@ -9357,39 +8993,17 @@ rect.ann-highlight.ann-preview {
   font-size: var(--fs-xs);
   word-break: break-all;
 }
-/* Phase 50 - the "set as default PDF app" action. Same surface treatment as
- * the storage-path buttons (input background, border, accent hover + focus
- * ring) but laid out as one horizontal action with its glyph. Motion uses the
- * canonical tokens only (--motion-duration-fast / --motion-ease-standard), so
- * it is identical in light, dark and frosted and collapses under reduced
- * motion like every other Preferences control. */
-.prefs-action {
+/* Phase 50 / Phase 91 D4 — the "set as default PDF app" action is canonical
+ * `btn btn-secondary`; this class is a layout alias only (grid placement,
+ * padding, corner, type). Colour, hover, focus and disabled come from the
+ * canonical secondary control (docs/BUTTON-SYSTEM.md). */
+.btn.prefs-action {
   grid-column: 2;
   justify-self: start;
-  display: inline-flex;
-  align-items: center;
   gap: var(--sp-2);
   padding: var(--sp-2) var(--sp-3);
-  background: var(--bg-input);
-  border: 1px solid var(--border);
   border-radius: var(--radius-2);
-  color: var(--fg-strong);
-  font-family: inherit;
   font-size: var(--fs-sm);
-  cursor: pointer;
-  transition:
-    background var(--motion-duration-fast) var(--motion-ease-standard),
-    border-color var(--motion-duration-fast) var(--motion-ease-standard),
-    box-shadow var(--motion-duration-fast) var(--motion-ease-standard);
-}
-.prefs-action:hover {
-  background: var(--bg-hover);
-  border-color: var(--accent);
-}
-.prefs-action:focus-visible {
-  outline: none;
-  box-shadow: var(--focus-ring);
-  border-color: var(--accent);
 }
 .prefs-action-status { margin-top: var(--sp-2); }
 
@@ -9780,44 +9394,29 @@ rect.ann-highlight.ann-preview {
   border-color: var(--accent);
   box-shadow: 0 0 0 2px var(--accent-soft);
 }
+/* Phase 91 D2 — layout alias for the canonical `btn btn-ghost btn-sm`; the
+ * absolute reveal/position stays here, colour and state come from the family. */
 .color-swatch-remove {
   position: absolute;
   top: calc(100% + 2px);
   left: 50%;
   transform: translateX(-50%);
-  height: 16px;
-  padding: 0 6px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  background: var(--bg-raised);
-  border: 1px solid var(--border);
+  height: 16px;
+  padding: 0 6px;
   border-radius: var(--radius-1);
-  cursor: pointer;
-  color: var(--error);
-  font-size: var(--tf-label-size);
-  font-weight: 600;
-  line-height: 1;
   white-space: nowrap;
   opacity: 0;
   pointer-events: none;
-  transition: opacity var(--motion-fast) var(--ease-out), background var(--motion-fast) var(--ease-out);
+  transition: opacity var(--motion-fast) var(--ease-out);
   z-index: 2;
 }
 .color-swatch-wrap:hover .color-swatch-remove,
 .color-swatch-remove:focus-visible {
   opacity: 1;
   pointer-events: auto;
-}
-.color-swatch-remove:hover {
-  background: var(--error-soft);
-  color: var(--error);
-}
-
-.color-swatch-remove:focus-visible {
-  opacity: 1;
-  pointer-events: auto;
-  box-shadow: var(--focus-ring);
 }
 
 .color-palette-form {
@@ -9851,31 +9450,16 @@ rect.ann-highlight.ann-preview {
   outline: none;
   border-color: var(--accent);
 }
+/* Phase 91 D2 — layout alias for the canonical `btn btn-ghost btn-icon`;
+ * colour, hover, focus and disabled come from the family. */
 .color-palette-add {
   display: inline-flex;
   align-items: center;
   gap: 4px;
   height: 28px;
   padding: 0 10px;
-  background: var(--accent);
-  color: var(--fg-on-accent);
-  border: 1px solid var(--accent);
   border-radius: var(--radius-2);
   font-size: var(--fs-xs);
-  font-weight: 500;
-  cursor: pointer;
-  transition:
-    background var(--motion-fast) var(--ease-out),
-    box-shadow var(--motion-fast) var(--ease-out),
-    transform var(--motion-fast) var(--ease-in-out);
-}
-.color-palette-add:hover {
-  background: var(--accent-hover);
-}
-
-.color-palette-add:focus-visible {
-  outline: none;
-  box-shadow: var(--focus-ring);
 }
 .color-palette-error {
   color: #ef4444;
@@ -10320,32 +9904,15 @@ rect.ann-highlight.ann-preview {
   color: var(--fg-strong);
 }
 
-.create-image-remove {
+/* Phase 91 D4 — canonical `btn btn-ghost btn-icon`; layout alias only.
+ * Colour, hover, focus and disabled come from the canonical ghost icon. */
+.btn.create-image-remove {
   width: 22px;
+  min-width: 22px;
   height: 22px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  background: transparent;
-  border: 1px solid transparent;
-  color: var(--fg-muted);
+  padding: 0;
+  gap: 0;
   border-radius: var(--radius-1);
-  cursor: pointer;
-  transition:
-    background var(--motion-fast) var(--ease-out),
-    color var(--motion-fast) var(--ease-out),
-    box-shadow var(--motion-fast) var(--ease-out),
-    transform var(--motion-fast) var(--ease-in-out);
-}
-
-.create-image-remove:hover {
-  background: var(--bg-hover);
-  color: var(--fg-strong);
-}
-
-.create-image-remove:focus-visible {
-  outline: none;
-  box-shadow: var(--focus-ring);
 }
 
 /* Phase 40 item 3 — the Create-from-images dialog is responsive: it
@@ -10672,7 +10239,11 @@ rect.ann-highlight.ann-preview {
    * block above); these classes remain as stable selectors. */
 }
 
-.edit-image-toolbar-btn-active {
+/* Phase 91 (Feature D1) — the crop-active class stays on the toggle as a
+ * stable marker; the migrated crop button takes its selected fill from the
+ * canonical `.btn-toggle[aria-pressed="true"]`, so this legacy visual is
+ * scoped to un-migrated consumers only. */
+.edit-image-toolbar-btn-active:not(.btn) {
   background: var(--accent-soft);
   color: var(--accent-text);
 }
@@ -12163,6 +11734,7 @@ rect.ann-highlight.ann-preview {
 .btn:active:not([disabled]),
 .tool-btn:active:not([disabled]),
 .rail-action-btn:active:not([disabled]),
+.stage-rail-btn:active,
 .toolbox-action-btn:active,
 .titlebar-menu-row:active,
 .recent-row-open:active,
@@ -12416,22 +11988,22 @@ rect.ann-highlight.ann-preview {
  * ------------------------------------------------------------------------- */
 
 /* ---- Primary command toolbar (role per tool) ---- */
-.tool-btn[data-icon="merge"],
-.tool-btn[data-icon="merge"]:hover { color: var(--sem-affirmative); }
-.tool-btn[data-icon="split"],
-.tool-btn[data-icon="split"]:hover { color: var(--sem-neutral); }
-.tool-btn[data-icon="sign"],
-.tool-btn[data-icon="sign"]:hover { color: var(--sem-affirmative); }
-.tool-btn[data-icon="flatten"],
-.tool-btn[data-icon="flatten"]:hover { color: var(--sem-attention); }
-.tool-btn[data-icon="optimize"],
-.tool-btn[data-icon="optimize"]:hover { color: var(--sem-affirmative); }
-.tool-btn[data-icon="audit"],
-.tool-btn[data-icon="audit"]:hover { color: var(--sem-neutral); }
-.tool-btn[data-icon="edit"],
-.tool-btn[data-icon="edit"]:hover { color: var(--sem-primary); }
-.tool-btn[data-icon="delete"],
-.tool-btn[data-icon="delete"]:hover { color: var(--sem-attention); }
+.btn.tool-btn[data-icon="merge"],
+.btn.tool-btn[data-icon="merge"]:hover { color: var(--sem-affirmative); }
+.btn.tool-btn[data-icon="split"],
+.btn.tool-btn[data-icon="split"]:hover { color: var(--sem-neutral); }
+.btn.tool-btn[data-icon="sign"],
+.btn.tool-btn[data-icon="sign"]:hover { color: var(--sem-affirmative); }
+.btn.tool-btn[data-icon="flatten"],
+.btn.tool-btn[data-icon="flatten"]:hover { color: var(--sem-attention); }
+.btn.tool-btn[data-icon="optimize"],
+.btn.tool-btn[data-icon="optimize"]:hover { color: var(--sem-affirmative); }
+.btn.tool-btn[data-icon="audit"],
+.btn.tool-btn[data-icon="audit"]:hover { color: var(--sem-neutral); }
+.btn.tool-btn[data-icon="edit"],
+.btn.tool-btn[data-icon="edit"]:hover { color: var(--sem-primary); }
+.btn.tool-btn[data-icon="delete"],
+.btn.tool-btn[data-icon="delete"]:hover { color: var(--sem-attention); }
 
 /* ---- Annotation toolbar (per data-tool). Category: markup that ADDS
  *      content to the review -> AFFIRMATIVE; the plain Select tool is
@@ -14785,6 +14357,12 @@ rect.ann-highlight.ann-preview {
   padding-top: var(--sp-1);
 }
 
+/* Phase 91 C2 — migrated to the canonical button system
+ * (`btn btn-toggle` / `btn btn-ghost`). The legacy class keeps the vertical
+ * rail geometry (column stack, full-width, `height: auto` so the canonical
+ * `.btn` height does not clip the icon+label); colour/hover/press/focus come
+ * from the canonical variant. The active stage keeps its own accent-soft wash
+ * and accent indicator below, and the per-stage icon hue is untouched. */
 .stage-rail-btn {
   position: relative;
   display: flex;
@@ -14793,35 +14371,12 @@ rect.ann-highlight.ann-preview {
   justify-content: center;
   gap: 3px;
   width: 100%;
+  height: auto;
   padding: 7px 0;
-  background: transparent;
   border: 0;
   /* Phase 37 (item 9) — the control's own surface is inset from the rail's
    * edges, so its hover/active wash never grazes the window edge. */
   border-radius: var(--radius-2);
-  color: var(--fg-muted);
-  cursor: pointer;
-  /* Phase 43 (item 1) — the stage buttons gain the token press compression
-   * and hover elevation on top of the colour wash. */
-  transition:
-    background-color var(--motion-duration-fast) var(--motion-ease-standard),
-    color var(--motion-duration-fast) var(--motion-ease-standard),
-    transform var(--motion-duration-micro) var(--motion-ease-standard),
-    box-shadow var(--motion-duration-micro) var(--motion-ease-standard);
-}
-
-.stage-rail-btn:hover {
-  background: var(--accent-soft);
-  color: var(--fg-strong);
-}
-
-.stage-rail-btn:active {
-  transform: scale(var(--motion-scale-press));
-}
-
-.stage-rail-btn:focus-visible {
-  outline: 2px solid var(--tf-accent-focus);
-  outline-offset: -2px;
 }
 
 .stage-rail-btn-active {
@@ -14949,35 +14504,15 @@ rect.ann-highlight.ann-preview {
   min-width: 0;
 }
 
-/* The header's merge entry: a ghost control at the panel's trailing edge. */
+/* The header's merge entry — Phase 91: migrated to the canonical button
+ * system (`btn btn-secondary`). The legacy class is a LAYOUT alias only. */
 .context-panel-combine {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-micro);
-  padding: 3px var(--space-small);
-  font: inherit;
-  font-size: var(--fs-xs);
-  color: var(--fg-soft);
-  background: var(--bg-raised);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-2);
-  cursor: pointer;
-  transition:
-    background-color var(--motion-duration-fast) var(--motion-ease-standard),
-    color var(--motion-duration-fast) var(--motion-ease-standard),
-    border-color var(--motion-duration-fast) var(--motion-ease-standard);
+  flex: 0 0 auto;
 }
 
-.context-panel-combine:hover {
-  background: var(--bg-secondary);
-  border-color: var(--border-strong);
-  color: var(--fg-strong);
-}
-
-.context-panel-combine:focus-visible,
-.thumb-verb:focus-visible,
-.context-panel-section-toggle:focus-visible,
-.context-menu-item:focus-visible {
+/* Phase 91 D2 — the migrated context-menu rows take focus from
+ * `.btn:focus-visible`; the thumbnail verb keeps its local ring. */
+.thumb-verb:focus-visible {
   outline: 2px solid var(--tf-accent-focus);
   outline-offset: 1px;
 }
@@ -15039,29 +14574,17 @@ rect.ann-highlight.ann-preview {
   flex: 0 1 auto;
 }
 
+/* Phase 91 — migrated to the canonical button system (`btn btn-ghost`). The
+ * disclosure keeps only its own layout + section-label typography; colour,
+ * border, hover, active, focus and disabled come from `.btn-ghost`. */
 .context-panel-section-toggle {
-  display: flex;
-  align-items: center;
-  gap: var(--space-micro);
   width: 100%;
+  justify-content: flex-start;
   padding: var(--space-small) var(--space-control);
-  font: inherit;
   font-size: var(--fs-xs);
   font-weight: 600;
   letter-spacing: 0.04em;
   text-transform: uppercase;
-  color: var(--fg-muted);
-  background: transparent;
-  border: 0;
-  cursor: pointer;
-  transition:
-    background-color var(--motion-duration-fast) var(--motion-ease-standard),
-    color var(--motion-duration-fast) var(--motion-ease-standard);
-}
-
-.context-panel-section-toggle:hover {
-  background: var(--bg-hover);
-  color: var(--fg-strong);
 }
 
 /* The positioning context for the re-parented `.outline-panel`, mirroring
@@ -15269,36 +14792,13 @@ rect.ann-highlight.ann-preview {
   gap: var(--space-micro);
 }
 
+/* Phase 91 — migrated to the canonical button system (`btn btn-secondary`,
+ * with `btn-sm` in the compact recognition and page-actions rows). The legacy
+ * class is a LAYOUT alias only; colour, border, hover, disabled and focus all
+ * come from the canonical variant (docs/BUTTON-SYSTEM.md). */
 .context-panel-action {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-micro);
-  padding: 3px var(--space-small);
-  font: inherit;
-  font-size: var(--fs-xs);
-  color: var(--fg-soft);
-  /* Phase 59 (item 9) — a visible button identity: a subtle raised surface on
-   * top of the panel background + the border + a hover surface, so the control
-   * reads as a button, never a run of body text. Tokens only; identical in all
-   * three themes. */
-  background: var(--bg-raised);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-2);
-  cursor: pointer;
-  transition:
-    background-color var(--motion-duration-fast) var(--motion-ease-standard),
-    color var(--motion-duration-fast) var(--motion-ease-standard),
-    border-color var(--motion-duration-fast) var(--motion-ease-standard);
+  flex: 0 0 auto;
 }
-
-.context-panel-action:hover:not(:disabled) {
-  background: var(--bg-secondary);
-  border-color: var(--border-strong);
-  color: var(--fg-strong);
-}
-
-.context-panel-action:disabled { opacity: 0.5; cursor: default; }
-.context-panel-action:focus-visible { outline: 2px solid var(--tf-accent-focus); outline-offset: 1px; }
 
 .context-panel-collapse { margin-left: auto; }
 
@@ -15401,32 +14901,24 @@ rect.ann-highlight.ann-preview {
   color: var(--fg-muted);
 }
 
-.context-menu-item {
+/* Phase 91 D2 — layout alias for the canonical `btn btn-ghost` menu row
+ * (mirrors `.btn.action-dock-menu-item`). Colour, hover, focus and disabled
+ * come from the family; the danger red-ink alias is kept below. */
+.btn.context-menu-item {
   display: block;
   width: 100%;
+  height: auto;
   padding: 5px var(--space-control);
   font: inherit;
   font-size: var(--fs-sm);
   text-align: left;
-  color: var(--fg);
-  background: transparent;
-  border: 0;
-  cursor: pointer;
-  transition:
-    background-color var(--motion-duration-micro) var(--motion-ease-standard),
-    color var(--motion-duration-micro) var(--motion-ease-standard);
-}
-
-.context-menu-item:hover {
-  background: var(--accent-soft);
-  color: var(--fg-strong);
 }
 
 .context-menu-item-danger {
   color: var(--error);
 }
 
-.context-menu-item-danger:hover {
+.context-menu-item-danger:hover:not([disabled]):not([aria-disabled="true"]) {
   background: var(--error-soft);
   color: var(--error);
 }
@@ -15569,7 +15061,70 @@ rect.ann-highlight.ann-preview {
  * grows to hold it. It carries no offsets and no translate — the containment
  * contract asserts exactly that. It renders at the dock's trailing end, after
  * the right arrow when the lane is on, so it never competes with a verb. */
-.action-dock-edit {
+/* Phase 91 (Feature C1) — the migrated ACTION DOCK controls carry BOTH the
+ * canonical `btn btn-ghost ...` classes and their legacy `.action-dock-*` hook.
+ * These aliases keep the measured geometry (width / height / min-width / flex /
+ * padding plus the verb's badge containing block) and, for the EDIT pen, its
+ * Phase 63 stage-hue INK; every other colour, border, active, focus and disabled
+ * state resolves to the canonical variants (docs/BUTTON-SYSTEM.md, "Rules for
+ * surfaces"). Placed after the canonical `.btn` block so the equal-specificity
+ * aliases win by source order. */
+.btn.action-dock-verb {
+  position: relative;
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  flex: 0 0 auto;
+  height: auto;
+  padding: 5px 8px;
+}
+
+.btn.action-dock-edit {
+  flex: 0 0 auto;
+  width: 22px;
+  min-width: 22px;
+  height: 22px;
+  padding: 0;
+  color: var(--tf-stage-edit);
+}
+
+/* Phase 63 identity preserved through the C1 migration: the pen rests in the
+ * EDIT stage hue (outranking the canonical `.btn-ghost` / `.btn-toggle` rest
+ * ink) and lifts to the strong foreground on hover, exactly as it shipped
+ * before C1. Icon fill uses `stroke: currentColor`, so only ink is restored. */
+.btn.action-dock-edit:hover:not([disabled]):not([aria-disabled="true"]) {
+  color: var(--fg-strong);
+}
+
+.btn.action-dock-plus {
+  flex: 0 0 auto;
+  width: 30px;
+  min-width: 30px;
+  height: 30px;
+  padding: 0;
+}
+
+.btn.action-dock-menu-item {
+  display: flex;
+  gap: 6px;
+  width: 100%;
+  height: auto;
+  padding: 6px 8px;
+  font-size: var(--fs-xs);
+  text-align: left;
+}
+
+.btn.action-dock-arrow {
+  flex: 0 0 auto;
+  width: 26px;
+  min-width: 26px;
+  height: 26px;
+  padding: 0;
+}
+
+.action-dock-edit:not(.btn) {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -15589,17 +15144,17 @@ rect.ann-highlight.ann-preview {
     border-color var(--motion-duration-fast) var(--motion-ease-standard);
 }
 
-.action-dock-edit:hover:not(:disabled) {
+.action-dock-edit:hover:not(:disabled):not(.btn) {
   background: var(--bg-hover);
   color: var(--fg-strong);
 }
 
-.action-dock-edit[aria-pressed='true'] {
+.action-dock-edit[aria-pressed='true']:not(.btn) {
   color: var(--accent-text);
   border-color: var(--accent);
 }
 
-.action-dock-edit:focus-visible {
+.action-dock-edit:focus-visible:not(.btn) {
   outline: 2px solid var(--tf-accent-focus);
   outline-offset: -2px;
 }
@@ -15650,7 +15205,7 @@ rect.ann-highlight.ann-preview {
   flex: 0 0 auto;
 }
 
-.action-dock-plus {
+.action-dock-plus:not(.btn) {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -15669,13 +15224,13 @@ rect.ann-highlight.ann-preview {
     border-color var(--motion-duration-fast) var(--motion-ease-standard);
 }
 
-.action-dock-plus:hover:not(:disabled) {
+.action-dock-plus:hover:not(:disabled):not(.btn) {
   background: var(--bg-hover);
   color: var(--fg-strong);
   border-color: var(--accent);
 }
 
-.action-dock-plus:focus-visible {
+.action-dock-plus:focus-visible:not(.btn) {
   outline: 2px solid var(--tf-accent-focus);
   outline-offset: -2px;
 }
@@ -15732,7 +15287,7 @@ rect.ann-highlight.ann-preview {
   background: var(--border);
 }
 
-.action-dock-verb {
+.action-dock-verb:not(.btn) {
   position: relative;
   display: inline-flex;
   flex-direction: column;
@@ -15761,19 +15316,19 @@ cursor: pointer;
     box-shadow var(--motion-duration-micro) var(--motion-ease-standard);
 }
 
-.action-dock-verb:hover:not(:disabled) {
+.action-dock-verb:hover:not(:disabled):not(.btn) {
   background: var(--bg-hover);
   color: var(--fg-strong);
   transform: translateY(calc(-1 * var(--motion-translate-micro)));
   box-shadow: var(--motion-elevation-hover);
 }
 
-.action-dock-verb:active:not(:disabled) {
+.action-dock-verb:active:not(:disabled):not(.btn) {
   background: var(--bg-active);
   transform: scale(var(--motion-scale-press));
 }
 
-.action-dock-verb:focus-visible {
+.action-dock-verb:focus-visible:not(.btn) {
   outline: 2px solid var(--tf-accent-focus);
   outline-offset: -2px;
 }
@@ -15800,7 +15355,7 @@ cursor: pointer;
   color: var(--fg-strong);
 }
 
-.action-dock-verb:disabled {
+.action-dock-verb:disabled:not(.btn) {
   color: var(--fg-disabled);
   cursor: not-allowed;
 }
@@ -15808,7 +15363,7 @@ cursor: pointer;
 /* DEF-314 — a toggle verb that is currently ON (Edit content while Edit mode
  * is active) keeps the accent wash plus a hairline accent ring, so its ON
  * state is unmistakable and distinct from the first verb's primary wash. */
-.action-dock-verb[aria-pressed='true']:not(:disabled) {
+.action-dock-verb[aria-pressed='true']:not(:disabled):not(.btn) {
   background: var(--accent-soft);
   color: var(--dock-primary-fg, var(--accent));
   box-shadow: inset 0 0 0 1px var(--accent);
@@ -15881,11 +15436,21 @@ cursor: pointer;
  * position and the state ink is `--fg-strong` in every theme. Measured by
  * phase38LegibilityContrast.test.ts: --fg-strong clears 4.5:1 on both
  * --bg-hover and --bg-active over --bg-elevated in light/dark/frosted. */
-.action-dock-verb:hover:not(:disabled):not(.action-dock-verb-primary):not([aria-pressed='true']) {
+.action-dock-verb:hover:not(:disabled):not(.action-dock-verb-primary):not([aria-pressed='true']):not(.btn) {
   color: var(--fg-strong);
 }
 
-.action-dock-verb:active:not(:disabled):not(.action-dock-verb-primary):not([aria-pressed='true']) {
+.action-dock-verb:active:not(:disabled):not(.action-dock-verb-primary):not([aria-pressed='true']):not(.btn) {
+  color: var(--fg-strong);
+}
+
+/* DEF-344 (Phase 91 C1) — the same hover / pressed ink fix re-pinned for the
+ * migrated verbs. The two rules above are scoped to non-`.btn` controls, so
+ * this canonical-class alias restates the `--fg-strong` state ink AFTER the
+ * per-verb family block (equal specificity wins by source position) and holds
+ * the 4.5:1 floor on `--bg-hover` / `--bg-active` in light / dark / frosted. */
+.btn.action-dock-verb:hover:not(:disabled):not(.action-dock-verb-primary):not([aria-pressed='true']),
+.btn.action-dock-verb:active:not(:disabled):not(.action-dock-verb-primary):not([aria-pressed='true']) {
   color: var(--fg-strong);
 }
 
@@ -15944,7 +15509,7 @@ cursor: pointer;
   transform: translateX(-50%);
 }
 
-.action-dock-menu-item {
+.action-dock-menu-item:not(.btn) {
   display: flex;
   align-items: center;
   gap: 6px;
@@ -15961,17 +15526,17 @@ cursor: pointer;
   transition: background-color var(--motion-duration-micro) var(--motion-ease-standard);
 }
 
-.action-dock-menu-item:hover:not(:disabled) {
+.action-dock-menu-item:hover:not(:disabled):not(.btn) {
   background: var(--bg-hover);
   color: var(--fg-strong);
 }
 
-.action-dock-menu-item:focus-visible {
+.action-dock-menu-item:focus-visible:not(.btn) {
   outline: 2px solid var(--tf-accent-focus);
   outline-offset: -2px;
 }
 
-.action-dock-menu-item:disabled {
+.action-dock-menu-item:disabled:not(.btn) {
   color: var(--fg-disabled);
   cursor: not-allowed;
 }
@@ -16045,7 +15610,7 @@ cursor: pointer;
 
 /* Phase 37 (item 6) — the ladder's left/right scroll controls. A comfortable
  * 26px hit target, themed from the same verb tokens as the row they drive. */
-.action-dock-arrow {
+.action-dock-arrow:not(.btn) {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -16067,19 +15632,19 @@ cursor: pointer;
     box-shadow var(--motion-duration-micro) var(--motion-ease-standard);
 }
 
-.action-dock-arrow:hover:not(:disabled) {
+.action-dock-arrow:hover:not(:disabled):not(.btn) {
   background: var(--bg-hover);
   color: var(--fg-strong);
   transform: translateY(calc(-1 * var(--motion-translate-micro)));
   box-shadow: var(--motion-elevation-hover);
 }
 
-.action-dock-arrow:active:not(:disabled) {
+.action-dock-arrow:active:not(:disabled):not(.btn) {
   background: var(--bg-active);
   transform: scale(var(--motion-scale-press));
 }
 
-.action-dock-arrow:focus-visible {
+.action-dock-arrow:focus-visible:not(.btn) {
   outline: 2px solid var(--tf-accent-focus);
   outline-offset: -2px;
 }
@@ -16395,25 +15960,25 @@ cursor: pointer;
 }
 
 .annotation-flyout-arrow {
+  /* Phase 91 C3 — LAYOUT alias only: the 26x26 box, centring and the
+   * min-width pin (against `.btn-icon`'s 36px floor) stay here, while colour
+   * and hover come from the canonical `.btn-ghost` (docs/BUTTON-SYSTEM.md). */
   display: inline-flex;
   align-items: center;
   justify-content: center;
   flex: 0 0 auto;
   width: 26px;
+  min-width: 26px;
   height: 26px;
   padding: 0;
   border: none;
   border-radius: var(--radius-2);
-  background: transparent;
-  color: var(--fg-muted);
-  cursor: pointer;
   /* Phase 43 (item 1) — the flyout's scroll arrows carry the token press
    * compression alongside the colour wash (transform/opacity only). */
   transition:
     background-color var(--motion-duration-fast) var(--motion-ease-standard),
     transform var(--motion-duration-micro) var(--motion-ease-standard);
 }
-.annotation-flyout-arrow:hover { background: var(--bg-hover); color: var(--fg-strong); }
 .annotation-flyout-arrow:active:not(:disabled) { transform: scale(var(--motion-scale-press)); }
 .annotation-flyout-arrow:focus-visible { outline: 2px solid var(--tf-accent-focus); outline-offset: -2px; }
 
@@ -16621,45 +16186,33 @@ cursor: pointer;
   align-items: center;
   justify-content: center;
   width: 22px;
+  min-width: 22px;
   height: 22px;
   flex: 0 0 auto;
   padding: 0;
-  background: transparent;
-  border: 1px solid transparent;
   border-radius: var(--radius-2);
-  color: var(--fg-muted);
-  cursor: pointer;
-  /* Phase 43 (item 1) — the pin toggle also compresses on press, on the
-   * token band, alongside its colour wash. */
+  /* Phase 91 (Feature B3) — the legacy class is a LAYOUT alias only: geometry
+   * and motion here, while colour / border / hover / active / focus / disabled
+   * all come from the canonical `.btn` / `.btn-toggle` classes
+   * (docs/BUTTON-SYSTEM.md). The width + min-width pair mirrors the landed B1
+   * aliases so `.btn-icon`'s 36px min-width cannot widen this 22px row pin. */
   transition:
     background-color var(--motion-duration-fast) var(--motion-ease-standard),
     color var(--motion-duration-fast) var(--motion-ease-standard),
     transform var(--motion-duration-micro) var(--motion-ease-standard);
 }
 
-.command-palette-pin-toggle:hover:not([disabled]) {
-  background: var(--bg-hover);
-  color: var(--fg-strong);
-}
-
+/* Phase 43 (item 1) — the pin toggle keeps its press COMPRESS (motion only):
+ * the colour/background wash comes from the canonical `.btn-toggle`, but the
+ * press scale stays on this legacy selector so the reduced-motion opt-out
+ * below still neutralises it and the Phase-43 motion-token pin keeps
+ * resolving. No colour is declared here. */
 .command-palette-pin-toggle:active:not([disabled]) {
-  background: var(--accent-pressed-soft);
-  color: var(--accent-text);
   transform: scale(var(--motion-scale-press));
 }
 
-.command-palette-pin-toggle:focus-visible {
-  outline: none;
-  box-shadow: var(--focus-ring);
-}
-
-.command-palette-pin-toggle-on {
+.btn.command-palette-pin-toggle-on {
   color: var(--stage-hue, var(--accent));
-}
-
-.command-palette-pin-toggle[disabled] {
-  opacity: 0.4;
-  cursor: not-allowed;
 }
 
 .command-palette-pin-glyph {
@@ -16928,7 +16481,7 @@ cursor: pointer;
 
 /* Floating canvas pills reuse .tool-btn; the resting glyph carries the NEUTRAL
  * role, the active fit/pan states keep their accent treatment. */
-.canvas-pill .tool-btn:not(.tool-btn-active) {
+.canvas-pill .btn.tool-btn:not(.tool-btn-active) {
   color: var(--sem-neutral);
 }
 
@@ -18735,7 +18288,7 @@ cursor: pointer;
   .header-tool-search,
   .header-find { display: none; }
 
-  .titlebar-control { width: 36px; }
+  .btn.titlebar-control { width: 36px; }
 
   /* The strip is never allowed to collapse: the compacted clusters above
    * yield to this floor. 148 = the 132px colorful-tab floor + the 8px list
@@ -19309,28 +18862,30 @@ cursor: pointer;
   pointer-events: auto;
 }
 
+/* Phase 91 D3 — the mode group is the canonical `btn-segmented`; the legacy
+ * class is a LAYOUT alias only, the group border/radius/clip come from
+ * `.btn-segmented` (docs/BUTTON-SYSTEM.md). */
 .redact-modes {
   display: inline-flex;
-  gap: 4px;
 }
 
-.redact-mode,
+/* Phase 91 D3 — `.redact-mode` is canonical `btn btn-toggle btn-segmented-item`;
+ * only the centring stays here, the box/radius/border come from the segmented
+ * family. `.redact-swatch` is the EXEMPT round colour chip and keeps its full
+ * domain styling. */
+.redact-mode {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
 .redact-swatch {
   width: 22px;
   height: 22px;
   padding: 0;
   border: 1px solid var(--border-strong);
-  border-radius: 4px;
-  cursor: pointer;
-}
-
-.redact-swatch {
   border-radius: 50%;
-}
-
-.redact-mode[aria-pressed="true"] {
-  outline: 2px solid var(--accent);
-  outline-offset: 1px;
+  cursor: pointer;
 }
 
 .redact-warning,

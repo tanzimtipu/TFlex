@@ -243,8 +243,13 @@ export function SideRail(props: SideRailProps) {
               <>
             <button
               type="button"
-              className={tab === 'thumbs' ? 'rail-tab rail-tab-active' : 'rail-tab'}
+              className={
+                tab === 'thumbs'
+                  ? 'btn btn-ghost btn-icon btn-toggle rail-tab rail-tab-active'
+                  : 'btn btn-ghost btn-icon btn-toggle rail-tab'
+              }
               onClick={() => selectTab('thumbs')}
+              aria-pressed={tab === 'thumbs'}
               title="Page thumbnails"
               data-rail-tab="thumbs"
             >
@@ -252,8 +257,13 @@ export function SideRail(props: SideRailProps) {
             </button>
             <button
               type="button"
-              className={tab === 'annotations' ? 'rail-tab rail-tab-active' : 'rail-tab'}
+              className={
+                tab === 'annotations'
+                  ? 'btn btn-ghost btn-icon btn-toggle rail-tab rail-tab-active'
+                  : 'btn btn-ghost btn-icon btn-toggle rail-tab'
+              }
               onClick={() => selectTab('annotations')}
+              aria-pressed={tab === 'annotations'}
               title="Annotations"
               data-rail-tab="annotations"
             >
@@ -262,8 +272,13 @@ export function SideRail(props: SideRailProps) {
             {outline !== null && (
               <button
                 type="button"
-                className={tab === 'outline' ? 'rail-tab rail-tab-active' : 'rail-tab'}
+                className={
+                  tab === 'outline'
+                    ? 'btn btn-ghost btn-icon btn-toggle rail-tab rail-tab-active'
+                    : 'btn btn-ghost btn-icon btn-toggle rail-tab'
+                }
                 onClick={() => selectTab('outline')}
+                aria-pressed={tab === 'outline'}
                 title="Bookmarks"
                 data-rail-tab="outline"
               >
@@ -274,8 +289,9 @@ export function SideRail(props: SideRailProps) {
             )}
             <button
               type="button"
-              className="rail-tab rail-tab-collapse"
+              className="btn btn-ghost btn-icon rail-tab rail-tab-collapse"
               onClick={() => onTogglePagesPanelCollapsed?.()}
+              aria-label={pagesPanelCollapsed ? 'Expand panel' : 'Collapse panel'}
               title={pagesPanelCollapsed ? 'Expand panel' : 'Collapse panel'}
               data-rail-collapse
             >
@@ -990,7 +1006,7 @@ const onDragStart = (page: number) => (e: React.DragEvent<HTMLElement>): void =>
         <div className="rail-actions">
           <button
             type="button"
-            className="rail-action-btn"
+            className="btn btn-ghost rail-action-btn"
             onClick={() => onUndo?.()}
             disabled={!canUndo}
             title={canUndo ? 'Undo last change' : 'Nothing to undo'}
@@ -1782,9 +1798,10 @@ export function OutlinePanel({ doc, outline, onJump, onError, editor = null }: O
               {node.children.length > 0 ? (
                 <button
                   type="button"
-                  className="outline-toggle"
+                  className="btn btn-ghost btn-icon outline-toggle"
                   onClick={() => toggle(key)}
                   aria-label={isCollapsed ? 'Expand' : 'Collapse'}
+                  title={isCollapsed ? 'Expand' : 'Collapse'}
                 >
                   <span className={isCollapsed ? 'chevron chevron-closed' : 'chevron'}>
                     <Icon icon={SquareChevronRight} size="xl" />
@@ -1793,7 +1810,7 @@ export function OutlinePanel({ doc, outline, onJump, onError, editor = null }: O
               ) : (
                 <span className="outline-toggle outline-toggle-empty" aria-hidden />
               )}
-              <button type="button" className="outline-link" onClick={() => go(node)}>
+              <button type="button" className="btn btn-ghost btn-sm outline-link" onClick={() => go(node)}>
                 {node.title}
               </button>
             </div>
@@ -1815,7 +1832,7 @@ export function OutlinePanel({ doc, outline, onJump, onError, editor = null }: O
       <span className="outline-verbs">
         <button
           type="button"
-          className="outline-verb"
+          className="btn btn-ghost btn-icon outline-verb"
           data-outline-add
           title="Add bookmark"
           aria-label="Add bookmark"
@@ -1829,7 +1846,7 @@ export function OutlinePanel({ doc, outline, onJump, onError, editor = null }: O
           <>
             <button
               type="button"
-              className="outline-verb"
+              className="btn btn-ghost btn-icon outline-verb"
               data-outline-rename
               title="Rename"
               aria-label="Rename bookmark"
@@ -1861,7 +1878,7 @@ export function OutlinePanel({ doc, outline, onJump, onError, editor = null }: O
             </select>
             <button
               type="button"
-              className="outline-verb"
+              className="btn btn-ghost btn-icon outline-verb"
               data-outline-indent
               title={firstChild ? 'The first bookmark cannot be indented' : 'Indent'}
               aria-label="Indent bookmark"
@@ -1874,7 +1891,7 @@ export function OutlinePanel({ doc, outline, onJump, onError, editor = null }: O
             </button>
             <button
               type="button"
-              className="outline-verb"
+              className="btn btn-ghost btn-icon outline-verb"
               data-outline-outdent
               title={disabled || atRoot ? 'Already at the top level' : 'Outdent'}
               aria-label="Outdent bookmark"
@@ -1887,7 +1904,7 @@ export function OutlinePanel({ doc, outline, onJump, onError, editor = null }: O
             </button>
             <button
               type="button"
-              className="outline-verb outline-verb-danger"
+              className="btn btn-danger btn-icon outline-verb outline-verb-danger"
               data-outline-delete
               title="Delete bookmark"
               aria-label="Delete bookmark"
@@ -1925,12 +1942,13 @@ export function OutlinePanel({ doc, outline, onJump, onError, editor = null }: O
               {entry.children.length > 0 ? (
                 <button
                   type="button"
-                  className="outline-toggle"
+                  className="btn btn-ghost btn-icon outline-toggle"
                   onClick={(e): void => {
                     e.stopPropagation();
                     toggle(key);
                   }}
                   aria-label={isCollapsed ? 'Expand' : 'Collapse'}
+                  title={isCollapsed ? 'Expand' : 'Collapse'}
                 >
                   <span className={isCollapsed ? 'chevron chevron-closed' : 'chevron'}>
                     <Icon icon={SquareChevronRight} size="xl" />
@@ -1959,7 +1977,7 @@ export function OutlinePanel({ doc, outline, onJump, onError, editor = null }: O
                   onBlur={(): void => commitRename(path)}
                 />
               ) : (
-                <button type="button" className="outline-link" onClick={(): void => goEntry(entry)}>
+                <button type="button" className="btn btn-ghost btn-sm outline-link" onClick={(): void => goEntry(entry)}>
                   {entry.title}
                 </button>
               )}

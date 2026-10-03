@@ -819,7 +819,7 @@ export function SignatureActionBar(props: {
     >
       <button
         type="button"
-        className="toolbox-action-btn toolbox-action-btn--confirm sig-action-btn sig-action-btn-confirm"
+        className="btn btn-primary toolbox-action-btn toolbox-action-btn--confirm sig-action-btn sig-action-btn-confirm"
         onClick={onConfirm}
         data-sig-action="confirm"
         aria-label="Confirm"
@@ -830,7 +830,7 @@ export function SignatureActionBar(props: {
       </button>
       <button
         type="button"
-        className="toolbox-action-btn toolbox-action-btn--cancel sig-action-btn sig-action-btn-cancel"
+        className="btn btn-secondary toolbox-action-btn toolbox-action-btn--cancel sig-action-btn sig-action-btn-cancel"
         onClick={onCancel}
         data-sig-action="cancel"
         aria-label="Cancel"
@@ -841,7 +841,7 @@ export function SignatureActionBar(props: {
       </button>
         <button
           type="button"
-          className="toolbox-action-btn toolbox-action-btn--delete sig-action-btn sig-action-btn-delete"
+          className="btn btn-danger toolbox-action-btn toolbox-action-btn--delete sig-action-btn sig-action-btn-delete"
           onClick={onDelete}
           data-sig-action="delete"
           aria-label="Delete"

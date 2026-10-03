@@ -268,13 +268,13 @@ export function RedactionOverlay({
         )}
       </div>
       <div className="redact-actions">
-        <div className="redact-modes" role="group" aria-label="Marking mode">
+        <div className="redact-modes btn-segmented" role="group" aria-label="Marking mode">
           <button
             type="button"
             data-redact-mode
             data-mode="region"
             aria-pressed={mode === "region"}
-            className="redact-mode"
+            className="btn btn-toggle btn-segmented-item redact-mode"
             onClick={() => setMode("region")}
           >
             Region
@@ -284,7 +284,7 @@ export function RedactionOverlay({
             data-redact-mode
             data-mode="text"
             aria-pressed={mode === "text"}
-            className="redact-mode"
+            className="btn btn-toggle btn-segmented-item redact-mode"
             onClick={() => setMode("text")}
           >
             Text
@@ -307,17 +307,25 @@ export function RedactionOverlay({
         </div>
         <button
           type="button"
+          className="btn btn-secondary"
           data-redact-clear
           onClick={clear}
           disabled={marks.length === 0 && warnings.length === 0 && error === null}
         >
           Clear
         </button>
-        <button type="button" data-redact-undo onClick={undo} disabled={marks.length === 0}>
+        <button
+          type="button"
+          className="btn btn-secondary"
+          data-redact-undo
+          onClick={undo}
+          disabled={marks.length === 0}
+        >
           Undo
         </button>
         <button
           type="button"
+          className="btn btn-primary"
           data-redact-apply
           onClick={() => void commit()}
           disabled={marks.length === 0 || busy}
@@ -326,6 +334,7 @@ export function RedactionOverlay({
         </button>
         <button
           type="button"
+          className="btn btn-ghost"
           data-redact-unsupported
           disabled
           title="Removing images and vector objects is not supported in this version."

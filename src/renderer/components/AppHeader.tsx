@@ -969,10 +969,10 @@ export function AppHeader(props: AppHeaderProps): ReactElement {
       ? "Unsaved changes — Save now (Ctrl+S)"
       : "Read-only document — use Save As to save a copy";
   const saveClass = !saveModified
-    ? "titlebar-file-btn titlebar-file-btn-clean"
+    ? "btn btn-secondary titlebar-file-btn titlebar-file-btn-clean"
     : saveInPlaceEnabled
-      ? "titlebar-file-btn titlebar-file-btn-modified"
-      : "titlebar-file-btn titlebar-file-btn-modified titlebar-file-btn-readonly";
+      ? "btn btn-secondary titlebar-file-btn titlebar-file-btn-modified"
+      : "btn btn-secondary titlebar-file-btn titlebar-file-btn-modified titlebar-file-btn-readonly";
 
   // Phase 60 — the dragged tab's origin index in the CURRENT strip order. The
   // reflow is a pure function of (origin index, computed drop slot, dragged
@@ -1018,7 +1018,7 @@ export function AppHeader(props: AppHeaderProps): ReactElement {
       <div className="titlebar-file" role="group" aria-label="File actions">
         <button
           type="button"
-          className="titlebar-file-btn titlebar-file-open"
+          className="btn btn-secondary titlebar-file-btn titlebar-file-open"
           onClick={onOpenFile}
           aria-label="Open PDF document"
           title="Open PDF (Ctrl+O)"
@@ -1047,7 +1047,7 @@ export function AppHeader(props: AppHeaderProps): ReactElement {
         </button>
         <button
           type="button"
-          className="titlebar-file-btn"
+          className="btn btn-secondary titlebar-file-btn"
           onClick={onSaveAs}
           disabled={activeId === null}
           title="Save a copy (Ctrl+Shift+S)"
@@ -1144,7 +1144,7 @@ export function AppHeader(props: AppHeaderProps): ReactElement {
             >
               <button
                 type="button"
-                className="tab-new"
+                className="btn btn-ghost btn-icon tab-new"
                 onMouseDown={onNewTabMouseDown}
                 onClick={onNewEmptyTab}
                 // DEF-288 — while Multi Mode is on the strip shows ONE
@@ -1179,7 +1179,7 @@ export function AppHeader(props: AppHeaderProps): ReactElement {
         {onOpenToolSearch !== undefined && (
           <button
             type="button"
-            className="header-tool-search"
+            className="btn btn-ghost btn-icon header-tool-search"
             onClick={onOpenToolSearch}
             aria-haspopup="dialog"
             aria-label={TOOL_SEARCH_ACCESSIBLE_NAME}
@@ -1192,7 +1192,7 @@ export function AppHeader(props: AppHeaderProps): ReactElement {
         {onOpenFind !== undefined && (
           <button
             type="button"
-            className="header-find"
+            className="btn btn-ghost btn-icon header-find"
             onClick={onOpenFind}
             disabled={!findEnabled}
             aria-label={FIND_IN_DOCUMENT_ACCESSIBLE_NAME}
@@ -1209,7 +1209,7 @@ export function AppHeader(props: AppHeaderProps): ReactElement {
         {onMultiModeToggle !== undefined && (
           <button
             type="button"
-            className="header-multi-mode"
+            className="btn btn-ghost btn-icon btn-toggle header-multi-mode"
             onClick={onMultiModeToggle}
             aria-pressed={multiModeEnabled}
             // Phase 40 (item 8) — the tooltip and the accessible name both
@@ -1233,7 +1233,7 @@ export function AppHeader(props: AppHeaderProps): ReactElement {
             a11y contract. */}
         <button
           type="button"
-          className="header-print"
+          className="btn btn-ghost btn-icon header-print"
           onClick={onPrint}
           disabled={activeId === null || !printEnabled}
           aria-haspopup="dialog"
@@ -1248,7 +1248,7 @@ export function AppHeader(props: AppHeaderProps): ReactElement {
             opens the Preferences sheet. */}
         <button
           type="button"
-          className="header-gear"
+          className="btn btn-ghost btn-icon header-gear"
           onClick={onOpenPreferences}
           aria-haspopup="dialog"
           aria-label="Open preferences"
@@ -1266,7 +1266,7 @@ export function AppHeader(props: AppHeaderProps): ReactElement {
           <button
             ref={themeTriggerRef}
             type="button"
-            className="theme-toggle theme-toggle-trigger"
+            className="btn btn-ghost theme-toggle theme-toggle-trigger"
             data-theme-toggle
             onClick={onThemeTriggerClick}
             onKeyDown={onThemeTriggerKeyDown}

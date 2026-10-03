@@ -225,7 +225,14 @@ describe("Phase 59 (item 3) — the pen is contained by the dock", () => {
 
   it("carries no rule that offsets the pen outside the dock's box", () => {
     const css = readFileSync(STYLES_PATH, "utf8").replace(/\/\*[\s\S]*?\*\//g, "");
-    const bodies = ruleBodies(css, ".action-dock-edit");
+    // Phase 91 (Feature C1) — the pen now carries `btn btn-ghost btn-icon
+    // btn-toggle`; its measured geometry lives on the `.btn.action-dock-edit`
+    // alias while the scoped legacy rule remains for the un-migrated hook. The
+    // containment contract is asserted across both.
+    const bodies = [
+      ...ruleBodies(css, ".action-dock-edit:not(.btn)"),
+      ...ruleBodies(css, ".btn.action-dock-edit"),
+    ];
     expect(bodies.length).toBeGreaterThan(0);
     // The base rule makes it a row item that can neither leave nor overrun.
     const base = bodies[0] ?? "";

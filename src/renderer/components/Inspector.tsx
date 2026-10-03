@@ -347,7 +347,7 @@ function Action(props: {
   return (
     <button
       type="button"
-      className="inspector-action"
+      className="btn btn-secondary inspector-action"
       data-inspector-action={props.id}
       onClick={props.onClick}
       disabled={props.onClick === undefined}
@@ -475,7 +475,7 @@ fileSize = null,
       <Row id="annotations" label="Annotations">
         <button
           type="button"
-          className="inspector-link"
+          className="btn btn-ghost btn-sm inspector-link"
           data-inspector-action="jump-to-review"
           onClick={onJumpToReview}
           disabled={onJumpToReview === undefined}
@@ -644,7 +644,7 @@ const renderSignatureSection = (): ReactElement => (
   const collapseControl = (
     <button
       type="button"
-      className="inspector-collapse-toggle"
+      className="btn btn-ghost inspector-collapse-toggle"
       data-inspector-collapse
       onClick={onToggleCollapsed}
       disabled={onToggleCollapsed === undefined}
@@ -689,7 +689,7 @@ const renderSignatureSection = (): ReactElement => (
                 {onClose !== undefined ? (
                   <button
                     type="button"
-                    className="inspector-close"
+                    className="btn btn-ghost btn-icon inspector-close"
                     data-inspector-close
                     onClick={onClose}
                     aria-label="Close inspector"

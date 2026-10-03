@@ -338,7 +338,7 @@ export function Welcome(props: WelcomeProps): ReactElement {
               <button
                 ref={plusRef}
                 type="button"
-                className="home-tools-plus"
+                className="btn btn-ghost btn-icon home-tools-plus"
                 data-home-plus
                 aria-haspopup="menu"
                 aria-expanded={pickerOpen}
@@ -385,7 +385,7 @@ export function Welcome(props: WelcomeProps): ReactElement {
                           key={entry.id}
                           type="button"
                           role="menuitem"
-                          className="action-dock-menu-item"
+                          className="btn btn-ghost action-dock-menu-item"
                           data-home-picker-item={entry.id}
                           onClick={(): void => {
                             setPickerOpen(false);
@@ -404,7 +404,7 @@ export function Welcome(props: WelcomeProps): ReactElement {
           )}
           <button
             type="button"
-            className="home-tools-edit"
+            className="btn btn-toggle btn-icon home-tools-edit"
             data-home-edit-toggle
             aria-pressed={editMode}
             aria-label="Edit home tools"
@@ -447,7 +447,7 @@ export function Welcome(props: WelcomeProps): ReactElement {
                 >
                   <button
                     type="button"
-                    className="recent-row-open"
+                    className="btn btn-ghost recent-row-open"
                     onClick={(): void => onOpenRecent(row.entry)}
                     title={`Open ${row.entry.path}`}
                   >
@@ -463,7 +463,7 @@ export function Welcome(props: WelcomeProps): ReactElement {
                   </button>
                   <button
                     type="button"
-                    className="recent-row-remove"
+                    className="btn btn-ghost btn-icon recent-row-remove"
                     onClick={(): void => onRemoveRecent(row.entry)}
                     aria-label={`Remove ${row.entry.name} from Recents`}
                     title="Remove from Recents"
@@ -499,7 +499,7 @@ export function Welcome(props: WelcomeProps): ReactElement {
                 <button
                   key={sample.path}
                   type="button"
-                  className="sample-card"
+                  className="btn btn-ghost sample-card"
                   onClick={(): void => onSampleClick(sample)}
                 >
                   <div className="sample-thumb">

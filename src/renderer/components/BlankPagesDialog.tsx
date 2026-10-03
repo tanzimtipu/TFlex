@@ -162,9 +162,10 @@ export function BlankPagesDialog(
               </h2>
               <button
                 type="button"
-                className="modal-close"
+                className="btn btn-ghost btn-icon modal-close"
                 onClick={onClose}
                 aria-label="Close dialog"
+                title="Close dialog"
               >
                 <Icon icon={X} size="sm" />
               </button>
@@ -266,7 +267,7 @@ export function BlankPagesDialog(
               </button>
               <button
                 type="button"
-                className="btn btn-primary btn-danger"
+                className="btn btn-danger"
                 data-blank-scan-confirm
                 onClick={onConfirmClick}
                 disabled={running || effectiveChecked.size === 0}

@@ -146,7 +146,7 @@ export function CanvasPills(props: CanvasPillsProps): ReactElement {
       <div className="canvas-pill canvas-pill-page" role="group" aria-label="Page navigation" data-page-pill>
         <button
           type="button"
-          className="tool-btn"
+          className="btn btn-toolbar tool-btn"
           disabled={page <= 1}
           onClick={(): void => onJump(String(page - 1))}
           aria-label="Previous page"
@@ -192,7 +192,7 @@ export function CanvasPills(props: CanvasPillsProps): ReactElement {
         </div>
         <button
           type="button"
-          className="tool-btn"
+          className="btn btn-toolbar tool-btn"
           disabled={page >= pageCount}
           onClick={(): void => onJump(String(page + 1))}
           aria-label="Next page"
@@ -204,18 +204,18 @@ export function CanvasPills(props: CanvasPillsProps): ReactElement {
 
       {/* Zoom pill — bottom-RIGHT. */}
       <div className="canvas-pill canvas-pill-zoom" role="group" aria-label="Zoom" data-zoom-pill>
-        <button type="button" className="tool-btn" onClick={onZoomOut} aria-label="Zoom out" title="Zoom out">
+        <button type="button" className="btn btn-toolbar tool-btn" onClick={onZoomOut} aria-label="Zoom out" title="Zoom out">
           <Icon icon={PILL_GLYPHS.zoomOut.icon} size="lg" aria-hidden />
         </button>
         <span className="zoom-percent" title="Current zoom">
           {zoomPercent}%
         </span>
-        <button type="button" className="tool-btn" onClick={onZoomIn} aria-label="Zoom in" title="Zoom in">
+        <button type="button" className="btn btn-toolbar tool-btn" onClick={onZoomIn} aria-label="Zoom in" title="Zoom in">
           <Icon icon={PILL_GLYPHS.zoomIn.icon} size="lg" aria-hidden />
         </button>
         <button
           type="button"
-          className={zoomMode === 'fit-width' ? 'tool-btn tool-btn-active' : 'tool-btn'}
+          className={zoomMode === 'fit-width' ? "btn btn-toolbar btn-toggle tool-btn tool-btn-active" : "btn btn-toolbar btn-toggle tool-btn"}
           onClick={onFitWidth}
           aria-pressed={zoomMode === 'fit-width'}
           aria-label="Fit width"
@@ -225,7 +225,7 @@ export function CanvasPills(props: CanvasPillsProps): ReactElement {
         </button>
         <button
           type="button"
-          className={zoomMode === 'fit-page' ? 'tool-btn tool-btn-active' : 'tool-btn'}
+          className={zoomMode === 'fit-page' ? "btn btn-toolbar btn-toggle tool-btn tool-btn-active" : "btn btn-toolbar btn-toggle tool-btn"}
           onClick={onFitPage}
           aria-pressed={zoomMode === 'fit-page'}
           aria-label="Fit page"
@@ -236,7 +236,7 @@ export function CanvasPills(props: CanvasPillsProps): ReactElement {
         {onHandToggle !== undefined && (
           <button
             type="button"
-            className={handActive ? 'tool-btn tool-btn-active' : 'tool-btn'}
+            className={handActive ? "btn btn-toolbar btn-toggle tool-btn tool-btn-active" : "btn btn-toolbar btn-toggle tool-btn"}
             onClick={onHandToggle}
             aria-pressed={handActive}
             title={

@@ -8784,3 +8784,34 @@ Screenshot: n/a - console run; probe output in the session report above.
 
 Disposition: REJECTED - out of scope for Phase 95. Pre-existing Phase 58 `tabIndex`-inside-`<button>` markup, explicitly NOT caused by this geometry diff; the badge is activatable by Enter/Space once focused (probe-confirmed), and the reported defect (clipping / visibility / clickability) is addressed. A sequential tab-order fix belongs to a dedicated accessibility pass, not this clipping phase.
 
+## ADV-185: Phase 91 button-system migration — clean adversarial diff-pass (no behaviour break found)
+
+- Session: diff-pass
+- Suggested severity: LOW (informational — no defect; recorded because the task requires an explicit clean result and the phase-gate claim is "visual-only, no behaviour change")
+
+What I did: attacked the Phase 91 renderer-only button migration (`git diff -- src/renderer/components src/renderer/styles.css` plus the untracked `src/renderer/components/Button.tsx`) as a behaviour-preserving change. Built `npm run build:renderer` (exit 0) and ran a Playwright probe (`test-fixtures/phase91-adversary/phase91_adversary.spec.cjs`, config `test-fixtures/phase91-adversary/playwright.config.cjs`, launched only through `e2e/lib/launch.cjs`) that exercises attacks 1-6 against the real app in one launch, after a discovery pass (`test-fixtures/phase91-adversary/phase91_discovery.spec.cjs`) mapped the live DOM. Coverage:
+
+1. Keyboard traversal + focus order (Tab and Shift-Tab), plus `:focus-visible` painting `--focus-ring` (`rgb(124, 58, 237)`): the Welcome tools (4/4 enabled `.btn` reached, ring OK), `.app-header` (9/9, ring OK), `[data-context-panel]` (12/12, ring OK) and the Stamp dialog (3/3, ring OK). No control unreachable, no focus trap.
+2. Disabled control stays non-interactive: CanvasPills Previous page (page 1) is `disabled` and a force-click does not move the page; a disabled Action-Dock verb (`ocrSuspects` with no OCR run) does not open a dialog; the Blank-pages destructive confirm is disabled and inert before a scan.
+3. Toggle `aria-pressed` round-trip and re-render survival: stage rail (`data-stage`), CanvasPills fit-width/fit-page, annotation tools (highlight/arrow/underline), and page-layout one/two all flip `aria-pressed` and the selected state follows, surviving a re-render.
+4. Destructive confirm not easier to trigger: `[data-blank-scan-confirm]` is disabled with no scan and a stray click does not mutate the document; the `[data-delete-confirm]` dialog is disabled and inert for an empty custom range, and on the golden path still deletes exactly one page (34 -> 33), so the DialogShell-adopted danger action is wired, not silently detached.
+5. `data-*` hook survival: every named hook resolves on the shipped app — `data-home-tool`, `data-dock-verb`, `data-context-panel-action`, `data-inspector-action`, `data-ann-tools-visible [data-tool]`, `data-blank-scan-confirm`, `data-stamp-confirm`, `data-menu-item`, `data-search-replace-one`, `data-page-layout-option`, `data-page-pill`/`data-zoom-pill`, `data-stage`.
+6. The no-op class: representative controls on every reachable migrated surface fire their shipped action — header Find opens the search bar; ContextPanel From-images and Inspector renumber open their dialogs; the dock Annotate verb opens the flyout; the Edit stage switches; the annotation underline tool arms; the search replace toggle reveals the replace row; CanvasPills Zoom-in changes the zoom; redaction text mode flips `aria-pressed`; the thumbnail menu rotate-cw mutates the engine rotations; Stamp Cancel closes; a colour-palette built-in swatch applies a new colour; the Welcome edit toggle flips `data-home-edit`.
+
+Static corroboration: a whole-diff audit found zero `data-*` attribute names lost across every changed file and zero `on*` callback identifiers lost (the only `onKey` losses are the retired local Esc-handler closures, whose behaviour `DialogShell` now owns). The phase's own `e2e/phase91_button_system.spec.cjs` also passes (1 passed; all 11 per-surface guards PASS).
+
+Exact commands:
+- `npm run build:renderer` -> exit 0 (`test-fixtures/phase91-adversary/p91_build_renderer.log`)
+- `npx playwright test --config=test-fixtures/phase91-adversary/playwright.config.cjs phase91_adversary.spec.cjs` -> 29 PASS / 0 FAIL (`test-fixtures/phase91-adversary/p91_adversary_run3.log`)
+- `npx playwright test e2e/phase91_button_system.spec.cjs` -> 1 passed, 11/11 guards PASS (`test-fixtures/phase91-adversary/p91_qa_spec_run.log`)
+- discovery: `npx playwright test --config=... phase91_discovery.spec.cjs` (`test-fixtures/phase91-adversary/p91_discovery_run.log`)
+
+Expected: the migration is visual-only — identical handlers, hooks, disabled gating, keyboard reach and toggle semantics.
+
+Actual: no behaviour change observed on any reachable migrated surface. Two informational observations, neither a defect:
+(a) `Button`/`IconButton` (src/renderer/components/Button.tsx) are exported but imported by no file; the migration was implemented with raw canonical class strings, so the documented composer components are dead code today (doc/impl drift only).
+(b) `[data-rail-tab]` (SideRail.tsx) and `[data-tool-id]` (ToolsPalette.tsx) never render in single or Multi Mode because neither component is mounted anywhere in the shipped tree; their migrated classes are therefore unobservable dynamically. This is not a break, but it means the "every button surface" claim cannot be dynamically verified for those two surfaces.
+
+Screenshot: screenshots/phase91-adv-opened.png, screenshots/phase91-adv-blank-dialog.png, screenshots/phase91-adv-final.png. Evidence: the probe script, the four logs above, and the discovery dump under `test-fixtures/phase91-adversary/`.
+
+Disposition: REJECTED (no defect) — CTO triage (TFL-511, 2026-10-03). No confirmed behaviour break; the 29/29 probe + the phase e2e corroborate "visual-only". The two informational observations are not defects: (a) `Button`/`IconButton` unused — Ruling 6 explicitly permits migrating onto raw canonical classes "where a component would fight an existing ref/DOM contract", so class-based migration is contract-compliant, and the component remains the documented, unit-tested contract; (b) `[data-rail-tab]` (the `SideRail` default export) and `[data-tool-id]` (`ToolsPalette`) are not mounted in the shipped tree (App.tsx routes `showToolsPalette` to the Command Palette; ContextPanel imports only SideRail's `ThumbnailRail`/`OutlinePanel`/`RulerStrip`), so those two migrations are inert but harmless — no shipped surface is affected. No DEF filed.

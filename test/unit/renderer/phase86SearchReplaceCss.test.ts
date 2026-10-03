@@ -163,7 +163,7 @@ describe("styles.css - content-fitting replace buttons (DEF-500)", () => {
 
   it(".search-replace-btn sizes to its content instead of a fixed 28px box", () => {
     const rule = collectRules(raw).find(
-      (r) => r.selector === ".search-replace-btn",
+      (r) => r.selector === ".tool-btn.search-replace-btn",
     );
     expect(rule).toBeDefined();
     const body = rule?.body ?? "";
@@ -176,19 +176,33 @@ describe("styles.css - content-fitting replace buttons (DEF-500)", () => {
     expect(declarationValue(body, "padding")).toContain("var(--sp-2)");
   });
 
-  it(".search-replace-btn is declared after .tool-btn so it wins by source order", () => {
+  it("retires the legacy bare .tool-btn fork (Phase 91 DEF-523)", () => {
+    // Every control that used to ride the bare `.tool-btn` fork now carries
+    // the canonical `btn btn-toolbar tool-btn` classes, so the fork rules are
+    // gone and the canonical .btn / .btn-toolbar family owns geometry + state.
     const styles = readStyles();
-    const toolBtnAt = styles.indexOf(".tool-btn {");
-    const replaceBtnAt = styles.indexOf(".search-replace-btn {");
-    expect(toolBtnAt).toBeGreaterThan(-1);
-    expect(replaceBtnAt).toBeGreaterThan(toolBtnAt);
+    expect(styles).not.toContain(".tool-btn:not(.btn)");
+    expect(styles).not.toContain(".tool-btn-active:not(.btn)");
   });
 
-  it("leaves the shared .tool-btn fixed 28px square untouched", () => {
-    const toolBtn = collectRules(raw).find((r) => r.selector === ".tool-btn");
-    expect(toolBtn).toBeDefined();
-    expect(declarationValue(toolBtn?.body ?? "", "width")).toBe("28px");
-    expect(declarationValue(toolBtn?.body ?? "", "flex-shrink")).toBe("0");
+  it(".tool-btn.search-replace-btn out-specifies the canonical .btn-toolbar geometry", () => {
+    // The two-class replace selector (0,2,0) beats the single-class
+    // .btn-toolbar (0,1,0), so the labelled replace buttons keep their
+    // content width without relying on source order.
+    const replaceBtn = collectRules(raw).find(
+      (r) => r.selector === ".tool-btn.search-replace-btn",
+    );
+    expect(replaceBtn).toBeDefined();
+    expect(declarationValue(replaceBtn?.body ?? "", "width")).toBe("auto");
+    expect(readStyles()).toContain(".btn-toolbar {");
+  });
+
+  it("keeps the .btn.tool-btn no-shrink layout alias", () => {
+    const alias = collectRules(raw).find((r) => r.selector === ".btn.tool-btn");
+    expect(alias).toBeDefined();
+    // .btn-toolbar does not set flex-shrink; the alias stops the navigation
+    // cluster from compressing into illegibility when the toolbar is narrow.
+    expect(declarationValue(alias?.body ?? "", "flex-shrink")).toBe("0");
   });
 
   it("applies search-replace-btn to both labelled replace buttons", () => {

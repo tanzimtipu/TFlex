@@ -11438,5 +11438,107 @@ Fix owner: backend-dev. Suggested direction: make the pre-check use the font tha
 History:
 - CTO (TFL-464, 2026-10-03): ACCEPTED from ADV-180 (adversary diff-pass TFL-484). Assigned backend-dev (font-aware encodability pre-check).
 - qa (TFL-492, 2026-10-03): CLOSED. Independent phase-close verification. Source: `_addBatesImpl` resolves `fontFamily = settings.font ?? DEFAULT_SETTINGS.editDefaultFont ?? 'Helvetica'`, validates `isEditFont`, keeps the WinAnsi check for StandardFont families, and for a bundled family probes a throwaway `PDFDocument.create()` for real glyph coverage (`src/main/services/engine.ts:4370-4399`, helper `bundledFontUnencodableChars` :5284). `npm.cmd run test:unit -- test/unit/shared/bates.test.ts test/unit/main/phase89BatesSettings.test.ts test/unit/main/phase89BatesEngine.test.ts` -> Test Files 3 passed / Tests 26 passed, including the two new DEF-513 cases (`phase89BatesEngine.test.ts:194` U+03A9 and `:219` U+0101) and the unchanged `:243` default-font U+6587 refusal (engine-error, bytes byte-for-byte unchanged, no undo entry).
+## DEF-517: Phase 91 B2 removed the pressed titlebar-file control's on-wash ink rule, leaving `phase38LegibilityContrast` red (DEF-355 regression)
+
+- Status: CLOSED
+- Severity: MEDIUM
+- Found by: frontend-dev (TFL-561 B3 report, collateral check)
+- Phase: 91 (phase issue TFL-511; introduced by B2 / TFL-555)
+
+Steps to reproduce:
+1. From the repo root run `npm run test:unit -- phase38LegibilityContrast`.
+2. Inspect the two DEF-355 cases that scan `.titlebar-file-btn:active:not([disabled])`.
+
+Expected: the pressed Open/Save controls keep the DEF-355 on-wash ink contract - the active rule resolves `background: var(--accent-pressed-soft)` and `color: var(--dock-primary-fg)` so the label clears 4.5:1 on the pressed wash.
+
+Actual: B2 migrated `AppHeader`'s file controls to `btn btn-secondary` and deleted the legacy `.titlebar-file-btn:active:not([disabled])` colour rule; only the transform-only entry in the shared press group (`styles.css:12156`) remains, which is followed by a comma, not `{`. The test's `block(CSS, /\.titlebar-file-btn:active:not\(\[disabled\]\)\s*\{/)` therefore throws `selector not found` (`test/unit/renderer/phase38LegibilityContrast.test.ts:425-429`). The canonical `.btn-secondary:active` sets only the wash background, so the pressed ink is now `--fg-strong` instead of the on-wash token.
+
+Evidence: `test/unit/renderer/phase38LegibilityContrast.test.ts:425-429` asserts the two declarations; `styles.css` now has no such block (`--dock-primary-fg` appears only at 4520, 15750, 16658). B3 did not touch `.titlebar-file-btn`.
+
+Fix owner: frontend-dev. Suggested direction: restore the DEF-355 pressed-file contract without re-introducing a duplicated state rule - either re-add a layout-scoped `.btn.titlebar-file-btn:active:not([disabled])` rule carrying the on-wash ink (`--accent-pressed-soft` / `--dock-primary-fg`), or move the oracle onto the canonical class only after confirming the applied ink still clears 4.5:1 in all three themes.
+
+History:
+- CTO (TFL-511, 2026-10-03): OPEN. Caught during B3 review; predates B3 (B2/TFL-555 miss; B2's named test set did not include `phase38LegibilityContrast`). Assigned frontend-dev.
+- frontend-dev (TFL-566, 2026-10-03): FIX-READY. Implementation A - added the scoped alias `src/renderer/styles.css:1754` `.btn.titlebar-file-btn:active:not([disabled]) { background: var(--accent-pressed-soft); color: var(--dock-primary-fg); }` directly after the `.btn.titlebar-file-open` layout alias. Canonical `.btn-secondary:active` untouched; no test edits. Evidence: `npm run test:unit -- phase38LegibilityContrast phase40_headerGhostContrast appHeader` -> 3 files / 50 tests passed; `npm run verify` conventions clean (341 files), tsc exit 0.
+- CTO (TFL-511, 2026-10-03): FIX-READY recorded (developer's reason above). Not CLOSED - qa sets CLOSED; route to phase-close QA (Feature G).
+- qa (TFL-598, 2026-10-03): CLOSED. Oracle green on the current tree: `npm run test:unit -- <Phase 91 batch>` -> Test Files 82 passed (82) / Tests 974 passed (974), 0 failed (includes `phase38LegibilityContrast`); `npm run verify` -> `conventions: clean (341 source file(s) scanned)`, `tsc --noEmit` exit 0.
+
+## DEF-518: Phase 91 C1 dropped the dock edit pen's Phase 63 edit-stage hue - the shipped phase63 e2e colour oracle now fails
+
+- Status: CLOSED
+- Severity: MEDIUM
+- Found by: CTO review (TFL-570 C1 report, flagged assumption)
+- Phase: 91 (TFL-511 C1, delivered as TFL-570). Note: this Phase 91 id collides with the Phase 95 DEF-518 at the top of this ledger (a numbering collision, not the same defect).
+
+Steps to reproduce:
+1. Run the Phase 63 rendered oracle: `npm run test:e2e -- e2e/phase63_dock_edit_colour.spec.cjs`.
+2. Inspect the dock edit pen's resting computed `color` in each theme.
+
+Expected: `e2e/phase63_dock_edit_colour.spec.cjs:86` - in light/dark/frosted the pen's resting `getComputedStyle(pen).color` equals the theme's `--tf-stage-edit` and differs from `--sem-neutral`.
+
+Actual: C1 scoped the legacy `.action-dock-edit` base rule to `:not(.btn)` and rewrote `test/unit/renderer/tfl47_dockEditIconColor.test.ts` to expect the canonical `.btn-toggle` ink (`--fg-strong`). The migrated pen (`btn btn-ghost btn-icon btn-toggle action-dock-edit`) now rests in `--fg-strong`, so the Phase 63 e2e assertion (`pen === --tf-stage-edit`) will fail in all three themes. Phase 75 (`REQUIREMENTS.md` Phase 75 "Current-scope supersession") explicitly preserves "the pen's identity/colour (Phase 63)", and the Phase 91 contract does not supersede it.
+
+Evidence: `e2e/phase63_dock_edit_colour.spec.cjs:86-87` (rendered probe); the retired stage-hue rule and the rewritten `tfl47_dockEditIconColor.test.ts:46-55`; C1's own report flagged the supersession as an unconfirmed assumption.
+
+Fix owner: frontend-dev. Suggested direction: restore the pen's resting ink to `var(--tf-stage-edit)` through a scoped canonical alias (e.g. `.btn.action-dock-edit { color: var(--tf-stage-edit); }` placed to outrank `.btn-ghost`/`.btn-toggle` rest colour), restore `tfl47_dockEditIconColor.test.ts` to assert the theme-token contract, and prove it with the phase63 rendered e2e.
+
+History:
+- CTO (TFL-511, 2026-10-03): OPEN. Caught at C1 review; the edit-pen stage hue is an intentional Phase 63 identity, not legacy "plain text", so Phase 91 must preserve it (Ruling 8 no-regression). Assigned frontend-dev.
+- frontend-dev (TFL-575, 2026-10-03): FIX-READY. Restored the Phase 63 ink on the C1 canonical alias: `src/renderer/styles.css:15538` `.btn.action-dock-edit { ...; color: var(--tf-stage-edit); }` plus `:15551` `.btn.action-dock-edit:hover:not([disabled]):not([aria-disabled="true"]) { color: var(--fg-strong); }`; the rest ink outranks `.btn-ghost`/`.btn-toggle`, hover returns to `--fg-strong` as shipped pre-C1, no raw colour literal. Reverted `test/unit/renderer/tfl47_dockEditIconColor.test.ts` to the theme-token contract (removed the C1 `.btn-toggle` ink-pinning case); doc-maintenance note added to `docs/BUTTON-SYSTEM.md` "Rules for surfaces". Evidence: `npm run test:unit -- tfl47_dockEditIconColor phase58DockEdit` -> 2 files / 15 tests passed; `npm run verify` conventions clean (341 files), tsc exit 0; `npm run test:e2e -- e2e/phase63_dock_edit_colour.spec.cjs` -> 1 passed (pen === `--tf-stage-edit` and != `--sem-neutral` in light/dark/frosted).
+- CTO (TFL-511, 2026-10-03): FIX-READY recorded (developer's reason above). Not CLOSED - qa sets CLOSED; route to phase-close QA (Feature G).
+- qa (TFL-598, 2026-10-03): CLOSED. Oracle green on the current tree: `npm run test:e2e -- e2e/phase63_dock_edit_colour.spec.cjs` -> `1 passed (4.9s)`; pen resting colour equals `--tf-stage-edit` and differs from `--sem-neutral` in light (`rgb(124,58,237)`), dark (`rgb(167,139,250)`) and frosted (`rgb(109,40,217)`).
 
 
+
+
+## DEF-522: Phase 91 - the canonical icon-only dialog/sheet close omits the required `title` (aria-label only)
+
+- Status: CLOSED
+- Severity: HIGH - breaks the Phase 91 stated accessibility requirement that every icon-only control exposes `aria-label` + `title` (REQUIREMENTS.md Phase 91 criterion 3; `docs/BUTTON-SYSTEM.md` "Accessibility contract"), across the whole shipped dialog family.
+- Found by: qa (TFL-598 Feature E phase verification)
+- Phase: 91 (TFL-511 / verification TFL-598)
+
+Steps to reproduce:
+1. Launch the real app via `e2e/lib/launch.cjs` `launchApp`; open `report.pdf`.
+2. Enter REVIEW and open the Stamp dialog (`[data-dock-verb="stamp"]`, or Ctrl+K -> Stamp).
+3. Read the header close button's attributes: `document.querySelector('[aria-labelledby="stamp-dialog-title"] .modal-close')`.
+
+Expected: the close is a canonical icon-only control (`btn btn-ghost btn-icon`) and carries BOTH `aria-label` and `title` (the `IconButton` contract writes both from `label`).
+
+Actual: `aria-label="Close dialog"`, `title=null`. The `title` attribute is absent on every hand-written dialog close (`StampDialog.tsx:216-223`, `InsertPagesDialog.tsx:280`, `WatermarkDialog.tsx:426`, `AuditSpaceDialog.tsx:149`, `BatesDialog.tsx:283`, `BlankPagesDialog.tsx:165`, `EncryptDialog.tsx:107`, `FillFromCsvDialog.tsx:217`, `FormDataIoDialog.tsx:243`) and every `sheet-close` (`AboutDialog.tsx:387`, `AccountsDialog.tsx:482`, `PreferencesDialog.tsx:352`, `UpdatePromptDialog.tsx:583`); the shared `DialogShell.tsx:182` close (`.modal-close`) is also aria-label-only. The home edit toggle and the command-bar tool buttons (which use/emulate `IconButton`) correctly carry both, so the gap is specific to the dialog/sheet closes.
+
+Evidence: `npm run test:e2e -- phase91_button_system --reporter=line` -> guard `dialog` FAIL `dialog close title`; log `[P91] dialog close aria-label="Close dialog" title=null`; spec `e2e/phase91_button_system.spec.cjs`; screenshot `screenshots/phase91-dialog-light.png`.
+
+Fix owner: frontend-dev. Suggested direction: give each dialog/sheet close a `title` (e.g. `title="Close dialog"`) or route it through `IconButton` so `label` writes both attributes.
+
+History:
+- qa (TFL-598, 2026-10-03): FILED from the Feature E phase verification; guard `dialog` FAIL.
+- CTO (TFL-511, 2026-10-03): assigned to frontend-dev as TFL-600 (with DEF-523); fix must add `title` to all 13 dialog/sheet closes + the shared `DialogShell.tsx:182` close and re-run the phase e2e so the `dialog` guard passes.
+- frontend-dev (TFL-600, 2026-10-03): FIX-READY. Added `title` (matching each `aria-label`) to all 13 dialog/sheet closes plus the `DialogShell.tsx` close (single attribute, no other DialogShell property touched). Evidence: unit batch 22 files / 376 tests passed, 0 failed; `npm run verify` conventions clean (341 files), tsc exit 0; `npm run test:e2e -- phase91_button_system` 1 passed (the `dialog` close aria-label+title guard now ok). Not CLOSED - qa retest TFL-603.
+- qa (TFL-603, 2026-10-03): CLOSED. `npm run build:renderer` exit 0; `npm run test:e2e -- phase91_button_system --reporter=line` 1 passed with guards `dialog` PASS (`dialog close aria-label="Close dialog" title="Close dialog"`) and `tool-btn-all-canonical` PASS (0 offenders). Extended `e2e/phase91_button_system.spec.cjs` with a `sheet-close` guard (real Preferences sheet): `.sheet-close` exposes `aria-label="Close preferences" title="Close preferences"` PASS. Blast radius `npm run test:unit --` named 21 suites: 22 files / 378 tests passed, 0 failed. `npm run verify`: conventions clean (341 files), tsc exit 0. Both DEF-522 and DEF-523 closed on the same evidence set.
+
+## DEF-523: Phase 91 - the floating CanvasPills and page-layout `.tool-btn` controls remain bare legacy forks (no canonical `.btn` base)
+
+- Status: CLOSED
+- Severity: HIGH - Phase 91 Ruling 6 lists `.tool-btn (+-active/...)` as legacy classes to retire or alias; criterion 4 requires no legacy "plain" class to remain on a shipped surface. Ten rendered `.tool-btn` controls carry no canonical `.btn` base and still use the per-surface `tool-btn-active` state class.
+- Found by: qa (TFL-598 Feature E phase verification)
+- Phase: 91 (TFL-511 / verification TFL-598)
+
+Steps to reproduce:
+1. Launch the real app via `e2e/lib/launch.cjs` `launchApp`; open `report.pdf` (single mode).
+2. The floating pills `[data-canvas-pills]` (bottom-left page, bottom-right zoom) and the page-layout options (`.canvas-page-layout`) render.
+3. Enumerate `document.querySelectorAll('.tool-btn')` and read each `classList`.
+
+Expected: every `.tool-btn` carries the canonical `.btn` base plus `.btn-toolbar`/`.btn-toggle` per `docs/BUTTON-SYSTEM.md` (Ruling 6: retire or alias `.tool-btn`, never fork a parallel class).
+
+Actual: 10 bare `.tool-btn` without `.btn` - 7 inside `[data-canvas-pills]` (`Previous page`, `Next page`, `Zoom out`, `Zoom in`, `Fit width`, `Fit page`, `Pan mode`; two also carry the legacy `tool-btn-active` state class instead of `.btn-toggle`), and 3 page-layout options (`One page`, `Two pages side by side`, `Four pages in two rows`). `src/renderer/components/CanvasPills.tsx:149,195,207,213,218,228,239` renders `className="tool-btn"` / `'tool-btn tool-btn-active'` with no `.btn`; the CSS keeps a parallel `.tool-btn:not(.btn)` fork (`src/renderer/styles.css:4287-4375`). By contrast the migrated AnnotationToolbar `.tool-btn` controls DO carry `btn btn-toolbar btn-toggle`.
+
+Evidence: `npm run test:e2e -- phase91_button_system --reporter=line` -> guard `tool-btn-all-canonical` FAIL, 10 offenders; log `[P91] non-canonical .tool-btn [...]`; spec `e2e/phase91_button_system.spec.cjs`; screenshots `screenshots/phase91-toolbar-light.png` / `-dark.png`.
+
+Fix owner: frontend-dev. Suggested direction: migrate `CanvasPills.tsx`'s controls and the page-layout options onto `btn btn-toolbar`/`btn btn-toggle` + `aria-pressed`, and drop the per-surface `tool-btn-active` class.
+
+History:
+- qa (TFL-598, 2026-10-03): FILED from the Feature E phase verification; guard `tool-btn-all-canonical` FAIL (10 offenders). Scope extended by the CTO to include `SearchBar.tsx`'s 6 bare `.tool-btn` (not rendered during qa's sweep) so criterion 4 holds across all shipped surfaces.
+- CTO (TFL-511, 2026-10-03): assigned to frontend-dev as TFL-600 (with DEF-522); after the migration, retire the `.tool-btn:not(.btn)` fork if zero bare consumers remain, and update the `.canvas-pill .tool-btn` semantic-tint selector to match the migrated buttons.
+- frontend-dev (TFL-600, 2026-10-03): FIX-READY. Migrated `CanvasPills.tsx` (7), `PageLayoutControl.tsx` (3) and `SearchBar.tsx` (6) bare `.tool-btn` controls to `btn btn-toolbar tool-btn` (toggles `btn btn-toolbar btn-toggle tool-btn`, keeping `tool-btn-active` + `aria-pressed`); added `aria-label` to the SearchBar icon-only controls; ZERO bare `.tool-btn` consumers remain in `src/renderer`; retired the `.tool-btn:not(.btn)` / `.tool-btn-active:not(.btn)` fork and retargeted the `.canvas-pill` / `.btn.tool-btn[data-icon]` semantic selectors. Evidence: unit batch 22 files / 376 tests passed, 0 failed; `npm run verify` conventions clean (341 files), tsc exit 0; `npm run test:e2e -- phase91_button_system` 1 passed (`tool-btn-all-canonical` now ok). Not CLOSED - qa retest TFL-603.
+- qa (TFL-603, 2026-10-03): CLOSED. `npm run build:renderer` exit 0; `npm run test:e2e -- phase91_button_system --reporter=line` 1 passed with guard `tool-btn-all-canonical` PASS (0 offenders; rendered set all `btn`-based). Extended `e2e/phase91_button_system.spec.cjs` with a `search-bar-tool-btn` guard: opened find, expanded the replace row, enumerated 6 `.search-bar .tool-btn` with 0 non-canonical. Blast radius `npm run test:unit --` named 21 suites: 22 files / 378 tests passed, 0 failed. `npm run verify`: conventions clean (341 files), tsc exit 0. Both DEF-522 and DEF-523 closed on the same evidence set.

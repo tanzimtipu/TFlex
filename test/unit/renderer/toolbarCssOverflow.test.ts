@@ -135,30 +135,41 @@ describe("styles.css — toolbar overflow regression (P9 fix #1)", () => {
     expect(declarationValue(body, "margin-left")).toBe("auto");
   });
 
-  it(".tool-btn keeps a fixed 28px width but never shrinks below it", () => {
-    const body = findRuleBody(stripCssComments(readStyles()), ".tool-btn");
+  it(".btn-toolbar keeps the canonical fixed square geometry", () => {
+    // Phase 91 (Feature B3) — the bare `.tool-btn` fork was retired once every
+    // control migrated to `btn btn-toolbar tool-btn` (DEF-523); the canonical
+    // `.btn-toolbar` token now owns the fixed square size.
+    const body = findRuleBody(stripCssComments(readStyles()), ".btn-toolbar");
     expect(body).not.toBeNull();
     if (body === null) return;
-    expect(declarationValue(body, "width")).toBe("28px");
-    // flex-shrink: 0 stops the navigation cluster from compressing
-    // into illegibility when the toolbar is narrow (DEF-042 follow-up
-    // regression pre-fix).
-    expect(declarationValue(body, "flex-shrink")).toBe("0");
-    expect(declarationValue(body, "white-space")).toBe("nowrap");
+    expect(declarationValue(body, "width")).toBe("var(--btn-toolbar-size)");
+    expect(declarationValue(body, "min-width")).toBe("var(--btn-toolbar-size)");
+    expect(declarationValue(body, "height")).toBe("var(--btn-toolbar-size)");
   });
 
-  it("DEF-194 — .tool-btn zeroes the UA button padding so glyphs render full-size", () => {
-    const body = findRuleBody(stripCssComments(readStyles()), ".tool-btn");
+  it(".btn.tool-btn keeps the no-shrink layout alias", () => {
+    const body = findRuleBody(stripCssComments(readStyles()), ".btn.tool-btn");
     expect(body).not.toBeNull();
     if (body === null) return;
+    // flex-shrink: 0 stops the navigation cluster from compressing into
+    // illegibility when the toolbar is narrow (DEF-042 follow-up pre-fix).
+    expect(declarationValue(body, "flex-shrink")).toBe("0");
+  });
+
+  it("DEF-194 — .btn-toolbar zeroes the UA button padding so glyphs render full-size", () => {
+    const toolbar = findRuleBody(stripCssComments(readStyles()), ".btn-toolbar");
+    expect(toolbar).not.toBeNull();
+    if (toolbar === null) return;
     // Chromium's UA stylesheet gives every button `padding: 1px 6px`;
-    // under border-box that crushed the 28px box's inner row to 14px
-    // and flex-shrank the 22px glyph into it (~14.7px, measured by qa).
-    // Zero padding + centered flex keeps the declared icon size.
-    expect(declarationValue(body, "padding")).toBe("0");
-    expect(declarationValue(body, "display")).toBe("inline-flex");
-    expect(declarationValue(body, "align-items")).toBe("center");
-    expect(declarationValue(body, "justify-content")).toBe("center");
+    // under border-box that crushed the inner row and flex-shrank the glyph.
+    // The canonical .btn-toolbar zeroes padding and centres the glyph.
+    expect(declarationValue(toolbar, "padding")).toBe("0");
+    expect(declarationValue(toolbar, "justify-content")).toBe("center");
+    const base = findRuleBody(stripCssComments(readStyles()), ".btn");
+    expect(base).not.toBeNull();
+    if (base === null) return;
+    expect(declarationValue(base, "display")).toBe("inline-flex");
+    expect(declarationValue(base, "align-items")).toBe("center");
   });
 
   it("Phase 13 — no label-width opt-out survives (the toolbar is icon-only)", () => {

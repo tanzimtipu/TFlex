@@ -226,7 +226,7 @@ export function ContentActionBar(props: ContentActionBarProps): ReactElement {
   const cancelButton = onCancel !== undefined && (
     <button
       type="button"
-      className="toolbox-action-btn toolbox-action-btn--cancel content-action-btn"
+      className="btn btn-secondary toolbox-action-btn toolbox-action-btn--cancel content-action-btn"
       onClick={onCancel}
       data-content-action={`${prefix}-cancel`}
       aria-label={cancelAria ?? cancelLabel}
@@ -249,7 +249,7 @@ export function ContentActionBar(props: ContentActionBarProps): ReactElement {
       {onConfirm !== undefined && (
         <button
           type="button"
-          className="toolbox-action-btn toolbox-action-btn--confirm content-action-btn"
+          className="btn btn-primary toolbox-action-btn toolbox-action-btn--confirm content-action-btn"
           onClick={onConfirm}
           data-content-action={`${prefix}-confirm`}
           {...(dataActions?.confirm !== undefined ? { "data-edit-box-action": dataActions.confirm } : {})}
@@ -262,7 +262,7 @@ export function ContentActionBar(props: ContentActionBarProps): ReactElement {
       {showEdit && onEdit !== undefined && (
         <button
           type="button"
-          className="toolbox-action-btn content-action-btn"
+          className="btn btn-secondary toolbox-action-btn content-action-btn"
           onClick={onEdit}
           data-content-action={`${prefix}-edit`}
           {...(dataActions?.edit !== undefined ? { "data-edit-box-action": dataActions.edit } : {})}
@@ -277,7 +277,7 @@ export function ContentActionBar(props: ContentActionBarProps): ReactElement {
       {showDelete && onDelete !== undefined && (
         <button
           type="button"
-          className="toolbox-action-btn toolbox-action-btn--delete content-action-btn"
+          className="btn btn-danger toolbox-action-btn toolbox-action-btn--delete content-action-btn"
           onClick={onDelete}
           data-content-action={`${prefix}-delete`}
           {...(dataActions?.delete !== undefined ? { "data-edit-box-action": dataActions.delete } : {})}

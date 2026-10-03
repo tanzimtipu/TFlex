@@ -349,9 +349,10 @@ export function PreferencesDialog(props: PreferencesDialogProps): ReactElement |
           <h2 id="prefs-title" className="sheet-title">Preferences</h2>
           <button
             type="button"
-            className="sheet-close"
+            className="btn btn-ghost btn-icon sheet-close"
             onClick={onClose}
             aria-label="Close preferences"
+            title="Close preferences"
           >
             <Icon icon={X} size="sm" />
           </button>
@@ -514,7 +515,7 @@ export function PreferencesDialog(props: PreferencesDialogProps): ReactElement |
                           </div>
                           <button
                             type="button"
-                            className="prefs-action"
+                            className="btn btn-secondary prefs-action"
                             onClick={openDefaultApps}
                             data-prefs-default-pdf
                           >

@@ -479,9 +479,10 @@ export function AccountsDialog(props: AccountsDialogProps): ReactElement {
         <h2 className="visually-hidden">Account</h2>
         <button
           type="button"
-          className="sheet-close"
+          className="btn btn-ghost btn-icon sheet-close"
           onClick={onClose}
           aria-label="Close account dialog"
+          title="Close account dialog"
           data-accounts-close
         >
           <Icon icon={X} size="sm" />

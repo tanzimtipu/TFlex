@@ -522,8 +522,8 @@ function PaletteRowItem(props: PaletteRowItemProps): ReactElement {
         type="button"
         className={
           pinOn
-            ? 'command-palette-pin-toggle command-palette-pin-toggle-on'
-            : 'command-palette-pin-toggle'
+            ? 'btn btn-icon btn-toggle command-palette-pin-toggle command-palette-pin-toggle-on'
+            : 'btn btn-icon btn-toggle command-palette-pin-toggle'
         }
         data-palette-pin-toggle
         data-palette-pin-state={pinState}

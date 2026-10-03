@@ -53,7 +53,7 @@ export function PageLayoutControl(props: PageLayoutControlProps): ReactElement {
           <button
             key={mode}
             type="button"
-            className={active ? "tool-btn tool-btn-active" : "tool-btn"}
+            className={active ? "btn btn-toolbar btn-toggle tool-btn tool-btn-active" : "btn btn-toolbar btn-toggle tool-btn"}
             data-page-layout-option={mode}
             aria-pressed={active}
             aria-label={label}

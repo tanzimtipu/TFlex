@@ -867,7 +867,7 @@ export function ActionDock(props: ActionDockProps): ReactElement {
     // EXITING verb (a ghost held for its collapse) is inert: `pointer-events`
     // comes from `.anim-verb-out`, it is out of the tab order and it renders no
     // minus badge, so a click can never land on it and it can never run.
-    const classes = ['action-dock-verb'];
+    const classes = ['btn', 'btn-ghost', 'btn-toggle', 'action-dock-verb'];
     if (opts.primary) classes.push('action-dock-verb-primary');
     if (opts.out === true) classes.push('anim-verb-out');
     else if (enteringIds.has(verb.id)) classes.push('anim-verb-in');
@@ -1040,7 +1040,7 @@ export function ActionDock(props: ActionDockProps): ReactElement {
       {arrows && (
         <button
           type="button"
-          className="action-dock-arrow"
+          className="btn btn-ghost btn-icon action-dock-arrow"
           data-dock-arrow="left"
           aria-label="Scroll dock tools left"
           title="Scroll left"
@@ -1062,7 +1062,7 @@ export function ActionDock(props: ActionDockProps): ReactElement {
           <div className="action-dock-overflow">
             <button
               type="button"
-              className="action-dock-verb action-dock-more"
+              className="btn btn-ghost action-dock-verb action-dock-more"
               data-dock-overflow
               aria-label="More actions"
               aria-expanded={overflowOpen}
@@ -1087,7 +1087,7 @@ export function ActionDock(props: ActionDockProps): ReactElement {
                       key={verb.id}
                       type="button"
                       role="menuitem"
-                      className="action-dock-menu-item"
+                      className="btn btn-ghost action-dock-menu-item"
                       data-dock-overflow-item={verb.id}
                       disabled={!verb.enabled}
                       title={verb.reason}
@@ -1124,7 +1124,7 @@ export function ActionDock(props: ActionDockProps): ReactElement {
           <div className="action-dock-add">
             <button
               type="button"
-              className="action-dock-plus"
+              className="btn btn-ghost btn-icon action-dock-plus"
               data-dock-plus
               aria-haspopup="menu"
               aria-expanded={plusOpen}
@@ -1152,7 +1152,7 @@ export function ActionDock(props: ActionDockProps): ReactElement {
                       key={entry.id}
                       type="button"
                       role="menuitem"
-                      className="action-dock-menu-item"
+                      className="btn btn-ghost action-dock-menu-item"
                       data-dock-picker-item={entry.id}
                       onClick={(): void => {
                         setPlusOpen(false);
@@ -1172,7 +1172,7 @@ export function ActionDock(props: ActionDockProps): ReactElement {
       {arrows && (
         <button
           type="button"
-          className="action-dock-arrow"
+          className="btn btn-ghost btn-icon action-dock-arrow"
           data-dock-arrow="right"
           aria-label="Scroll dock tools right"
           title="Scroll right"
@@ -1190,7 +1190,7 @@ export function ActionDock(props: ActionDockProps): ReactElement {
           mode; Escape exits. */}
       <button
         type="button"
-        className="action-dock-edit"
+        className="btn btn-ghost btn-icon btn-toggle action-dock-edit"
         data-dock-edit-toggle
         aria-pressed={editMode}
         aria-label="Edit dock tools"
@@ -1222,7 +1222,7 @@ export function ActionDock(props: ActionDockProps): ReactElement {
             <button
               type="button"
               role="menuitem"
-              className="action-dock-menu-item"
+              className="btn btn-ghost action-dock-menu-item"
               data-dock-menu-item="pin"
               disabled={menuPinned || !canPinMore(pins)}
               title={!menuPinned && !canPinMore(pins) ? 'Dock is full' : undefined}
@@ -1236,7 +1236,7 @@ export function ActionDock(props: ActionDockProps): ReactElement {
             <button
               type="button"
               role="menuitem"
-              className="action-dock-menu-item"
+              className="btn btn-ghost action-dock-menu-item"
               data-dock-menu-item="unpin"
               /* Phase 37 (item 21) — ANY rendered verb can be unpinned now: a
                  default stage verb is recorded in `dockUnpinned`, an explicit

@@ -145,8 +145,12 @@ describe("Phase 45 item 4 — the EDIT dock order and highlight", () => {
   });
 
   it("the pressed/selected treatment still owns the accent wash + inset ring", () => {
+    // Phase 91 (Feature C1) — the legacy pressed rule is scoped to non-`.btn`
+    // controls; the migrated verb's selected state is the canonical
+    // `.btn-toggle[aria-pressed="true"]` treatment. This pins the retained
+    // legacy rule (which still serves the un-migrated hook).
     const pressed = cssBlock(
-      /\.action-dock-verb\[aria-pressed='true'\]\s*:not\(:disabled\)\s*\{[^}]*\}/,
+      /\.action-dock-verb\[aria-pressed='true'\]\s*:not\(:disabled\)\s*:not\(\.btn\)\s*\{[^}]*\}/,
     );
     expect(pressed).toMatch(/background:\s*var\(--accent-soft\)/);
     expect(pressed).toMatch(/box-shadow:\s*inset/);

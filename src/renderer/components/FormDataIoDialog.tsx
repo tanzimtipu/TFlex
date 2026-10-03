@@ -240,9 +240,10 @@ export function FormDataIoDialog(
               </h2>
               <button
                 type="button"
-                className="modal-close"
+                className="btn btn-ghost btn-icon modal-close"
                 onClick={onClose}
                 aria-label="Close dialog"
+                title="Close dialog"
               >
                 <Icon icon={X} size="sm" />
               </button>

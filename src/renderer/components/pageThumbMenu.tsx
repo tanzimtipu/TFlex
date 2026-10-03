@@ -155,7 +155,7 @@ export function usePageThumbMenu(handlers: PageMenuHandlers): PageThumbMenuContr
             key={item.id}
             type="button"
             role="menuitem"
-            className={item.danger === true ? 'context-menu-item context-menu-item-danger' : 'context-menu-item'}
+            className={item.danger === true ? 'btn btn-ghost context-menu-item context-menu-item-danger' : 'btn btn-ghost context-menu-item'}
             data-menu-item={item.id}
             onClick={(): void => {
               setMenu(null);
