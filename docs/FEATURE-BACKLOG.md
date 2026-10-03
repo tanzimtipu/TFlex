@@ -951,3 +951,163 @@ Why it matters: scanned/merged output defaults to useless names; the engine alre
 
 History:
 - orchestrator: recorded from feature-scout batch FEA-041..FEA-050 (TFL-389); CEO disposition: PROPOSED
+
+## FEA-051: Protect / Security program (permissions, encryption lifecycle, redaction, sanitize)
+
+- Status: PROPOSED
+- Source: operator roadmap (Paperclip TFL-372, 2026-10-03); extends FEA-010, FEA-017, FEA-031, FEA-037
+- Category: Security
+- Effort: L
+- Likely new settings: yes (security defaults: algorithm, permission matrix, redaction appearance and codes)
+- Batch: operator roadmap (TFL-372, 2026-10-03)
+
+What it does: a full protect workflow over the Phase 52 encryption base - passwords, a permissions matrix (print/copy/modify/annotate/form-fill/accessibility/extract), encryption levels (AES-256 via bundled qpdf default, AES-128), remove/change security on an already-protected file, true redaction (mark, apply, search-and-redact, partial-scope text and image rectangles, redaction codes), and sanitize (strip metadata, scripts, optional-content layers). `[Std+Pro]`. Certificate encryption is the hard, optional tier.
+
+Why it matters: FEA-010/FEA-017/Phase 52 shipped create/open plus display-only permission flags; the remaining confidential-document workflow (change/remove protection, real redaction with search and image scopes, sanitize) is what desktop peers ship and what confidentiality users need.
+
+History:
+- orchestrator: recorded from operator roadmap TFL-372; PROPOSED for the next Routine triage
+
+## FEA-052: Digital IDs and certificate signing
+
+- Status: PROPOSED
+- Source: operator roadmap (Paperclip TFL-372, 2026-10-03); extends FEA-034
+- Category: Security / Identity
+- Effort: L
+- Likely new settings: no (certificate material and its password must never persist in settings)
+- Batch: operator roadmap (TFL-372, 2026-10-03)
+
+What it does: mint self-signed digital IDs as local PKCS#12 (node-forge/WebCrypto, storage on the local machine), sign and certify with a visible appearance, and add a signature validation panel that reports integrity plus a local trust store only (CRL/OCSP is an offline skim, not a network check).
+
+Why it matters: extends FEA-034 from signing with an existing certificate to the full identity lifecycle a desktop user expects; certificate encryption (FEA-051's hard optional tier) builds on the same PKCS#12 material.
+
+History:
+- orchestrator: recorded from operator roadmap TFL-372; PROPOSED for the next Routine triage
+
+## FEA-053: Assembly and polish pack (headers/footers, watermarks, backgrounds, Bates, dynamic stamps, metadata, initial view)
+
+- Status: PROPOSED (operator recommendation: FIRST - highest value-to-effort on the roadmap)
+- Source: operator roadmap (Paperclip TFL-372, 2026-10-03); extends FEA-001, FEA-002, FEA-003, FEA-033
+- Category: Edit / Annotate
+- Effort: S-M
+- Likely new settings: maybe (per-tool defaults for header/footer, watermark, background, Bates, initial view)
+- Batch: operator roadmap (TFL-372, 2026-10-03)
+
+What it does: headers/footers and page numbers, watermarks, page backgrounds, Bates numbering (a pdf-lib drawText loop over the page set), dynamic stamps plus reusable identities, a metadata editor, and initial-view settings written to `/OpenAction` and `/ViewerPreferences`.
+
+Why it matters: the operator marks this the highest value-to-effort pack and recommends it first; the individual pieces already exist as accepted or proposed FEAs (FEA-001/002/003/033), and the new items (backgrounds, dynamic stamps + identities, initial view) complete a cohesive document-polish set.
+
+History:
+- orchestrator: recorded from operator roadmap TFL-372; PROPOSED for the next Routine triage
+
+## FEA-054: Forms authoring program
+
+- Status: PROPOSED
+- Source: operator roadmap (Paperclip TFL-372, 2026-10-03); extends FEA-009
+- Category: Create
+- Effort: M
+- Likely new settings: yes (form defaults: field appearance, tab order, calculation auto-run)
+- Batch: operator roadmap (TFL-372, 2026-10-03)
+
+What it does: create and edit every field type (text/check/radio/drop/list/button/signature), a properties dialog (tooltip, required, multiline, comb, default value), field calculations (sum/product/average/min/max plus simplified field notation; custom JavaScript needs a small sandbox), tab-order editing, button actions, and form-data import/export as FDF/XFDF/CSV. Barcode fields are a stretch goal.
+
+Why it matters: FEA-009 covers the field basics that make a flat PDF fillable; this program is the authoring depth (properties, calculations, tab order, actions, data exchange) that matches Acrobat's form editor.
+
+History:
+- orchestrator: recorded from operator roadmap TFL-372; PROPOSED for the next Routine triage
+
+## FEA-055: Measure and present tools
+
+- Status: PROPOSED
+- Source: operator roadmap (Paperclip TFL-372, 2026-10-03)
+- Category: View / Measure
+- Effort: S-M
+- Likely new settings: maybe (measurement scale ratios, presentation defaults)
+- Batch: operator roadmap (TFL-372, 2026-10-03)
+
+What it does: distance/perimeter/area measurement with snap-to-content and a scale ratio plus CSV export; rulers, grids and guides; a snapshot tool (copy a page region as an image); full-screen presentation with `/Trans` and `/Dur` transitions and auto-advance. Geospatial measurement is a stretch goal.
+
+Why it matters: measurement and presentation are standard desktop-reader capabilities TFlex lacks entirely; the PDF.js render seam makes both easy-to-moderate.
+
+History:
+- orchestrator: recorded from operator roadmap TFL-372; PROPOSED for the next Routine triage
+
+## FEA-056: Structure navigation editing (bookmarks, links, layers)
+
+- Status: PROPOSED
+- Source: operator roadmap (Paperclip TFL-372, 2026-10-03); extends FEA-035, FEA-045; builds on the shipped layers panel
+- Category: Organize
+- Effort: M-L
+- Likely new settings: no
+- Batch: operator roadmap (TFL-372, 2026-10-03)
+
+What it does: edit the outline (create/edit/drag-nest bookmarks, where v1 was read-only), edit links and their destinations, and manage optional-content groups (OCG layers) with default-state toggles and titles. Merge/flatten of layers is a stretch goal.
+
+Why it matters: FEA-035 and FEA-045 cover bookmarks and links individually; this groups the navigation-structure surface with layer editing, which the shipped layers panel only reads. The operator notes v1 called the outline read-only, so this deliberately supersedes that restriction.
+
+History:
+- orchestrator: recorded from operator roadmap TFL-372; PROPOSED for the next Routine triage
+
+## FEA-057: Search and batch automation
+
+- Status: PROPOSED
+- Source: operator roadmap (Paperclip TFL-372, 2026-10-03); extends FEA-038, FEA-014, FEA-050 and the Phase 30 N-up base
+- Category: Search / Automation
+- Effort: M (the preset tier alone is S)
+- Likely new settings: yes (custom commands and exportable `.json` presets; index location)
+- Batch: operator roadmap (TFL-372, 2026-10-03)
+
+What it does: advanced multi-file search (whole words, case, proximity, boolean across a folder), a TFlex-native folder index (SQLite FTS5 - Acrobat's `.pdx` is proprietary and not compatible), an Action-Wizard-style batch runner over sequences of TFlex's own operations, custom commands with exportable `.json` presets, batch booklet/N-up imposition, and PDF-to-HTML export.
+
+Why it matters: search today stops at find; batch automation is the largest remaining gap against Acrobat's Action Wizard, and the preset/export tier is cheap enough to land first.
+
+History:
+- orchestrator: recorded from operator roadmap TFL-372; PROPOSED for the next Routine triage
+
+## FEA-058: Compare and accessibility
+
+- Status: PROPOSED
+- Source: operator roadmap (Paperclip TFL-372, 2026-10-03); extends FEA-032, FEA-036
+- Category: Edit / Accessibility
+- Effort: M-L
+- Likely new settings: maybe (accessibility-check rule profile)
+- Batch: operator roadmap (TFL-372, 2026-10-03)
+
+What it does: compare two PDFs (text diff plus side-by-side; visual pixel compare is a stretch), an attachments panel to embed/extract `/EmbeddedFiles`, an accessibility check (rule engine with a report), alt-text editing, and metadata quick fixes (document language, title, tab order). Autotag is a stretch goal.
+
+Why it matters: FEA-032 and FEA-036 are the compare and attachment halves; pairing them with accessibility checking and alt-text editing forms a review-and-remediate workflow, and FEA-023 already records that saves currently drop tagging.
+
+History:
+- orchestrator: recorded from operator roadmap TFL-372; PROPOSED for the next Routine triage
+
+## FEA-059: Preflight and print production
+
+- Status: PROPOSED
+- Source: operator roadmap (Paperclip TFL-372, 2026-10-03); extends FEA-020 and the Phase 54 PDF/X validation
+- Category: Print production
+- Effort: L-XL
+- Likely new settings: yes (output intent / ICC profile per intent, preflight rule set)
+- Batch: operator roadmap (TFL-372, 2026-10-03)
+
+What it does: create PDF/A and PDF/A-basic output with font embedding (via a fontkit-based project), verify against a curated ~30-rule standards checker, set output intents (ICC), and draw printer marks (crop/trim/registration/colour bars) and hairlines. Convert-colors is a stretch that needs a Little CMS WebAssembly build. Explicitly DROPPED as not feasible on the PDF.js stack: output preview, transparency flattening, trapping, separation printing.
+
+Why it matters: production PDF needs its own standards/ink pipeline; the operator scopes the deliverable to what the stack can honestly do and names the dropped items so they are not re-opened as oversights.
+
+History:
+- orchestrator: recorded from operator roadmap TFL-372; PROPOSED for the next Routine triage
+
+## FEA-060: Advanced / optional PDF capabilities
+
+- Status: PROPOSED
+- Source: operator roadmap (Paperclip TFL-372, 2026-10-03); overlaps FEA-018, FEA-022
+- Category: Advanced
+- Effort: L-XL
+- Likely new settings: maybe (document-JS preservation policy, reading-order/tag defaults)
+- Batch: operator roadmap (TFL-372, 2026-10-03)
+
+What it does: rich-media embed via Screen annotations (embed/extract only, with a "plays in Acrobat" caveat), a document-level JavaScript editor (storage/preserve only - executing browser-side JS is out of scope), a reading-order/tags panel (alt-text only at first), PDF Portfolios view/extract (create is hard), an autotag heuristic, and preflight droplets (depends on FEA-059).
+
+Why it matters: these are the long-tail PDF features the operator wants on record without committing them; several carry explicit caveats or dependencies, so they are captured as optional work rather than promised scope.
+
+History:
+- orchestrator: recorded from operator roadmap TFL-372; PROPOSED for the next Routine triage
