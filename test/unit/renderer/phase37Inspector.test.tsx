@@ -101,7 +101,7 @@ describe('Phase 37 item 1 — the text panel leads the Inspector column', () => 
       expect(kids[0]?.getAttribute('data-inspector-text-panel')).not.toBeNull();
       expect(kids[1]?.getAttribute('data-inspector-divider')).not.toBeNull();
       expect(kids[2]?.getAttribute('data-inspector-slot')).toBe('comments');
-      expect(kids[3]?.getAttribute('data-inspector-slot')).toBe('annotations');
+      expect(kids[3]?.getAttribute('data-inspector-slot')).toBe('review-elements');
     } finally {
       unmount();
     }

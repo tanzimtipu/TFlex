@@ -18,6 +18,16 @@ export const MIN_BATES_SIZE = 4;
 export const MAX_BATES_SIZE = 144;
 export const DEFAULT_BATES_SIZE = 10;
 
+/** Phase 90 — upper bound (points) for an explicit Bates placement
+ *  coordinate, mirroring the Phase 45 watermark `MAX_WATERMARK_COORD`. A
+ *  coordinate outside 0..MAX_BATES_COORD (or non-finite) refuses the op. */
+export const MAX_BATES_COORD = 14400;
+
+/** Phase 90 — true only for a finite number in `0..MAX_BATES_COORD`. */
+export function isBatesCoord(v: unknown): v is number {
+  return typeof v === 'number' && Number.isFinite(v) && v >= 0 && v <= MAX_BATES_COORD;
+}
+
 /** Phase 89 — padding (minimum digit width) bounds. */
 const MIN_BATES_PADDING = 1;
 const MAX_BATES_PADDING = 64;
@@ -155,6 +165,17 @@ export function validateBatesSettings(raw: unknown): BatesSettings | null {
     const c = r.color;
     if (!validColor(c)) return null;
     out.color = { r: c.r, g: c.g, b: c.b };
+  }
+  // Phase 90 — explicit placement. Each coordinate is validated independently
+  // when present, so a partial pair (one present, one absent) is accepted and
+  // falls back to the 3x3 slot at draw time; an invalid one rejects the op.
+  if (r.x !== undefined) {
+    if (!isBatesCoord(r.x)) return null;
+    out.x = r.x;
+  }
+  if (r.y !== undefined) {
+    if (!isBatesCoord(r.y)) return null;
+    out.y = r.y;
   }
   return out;
 }

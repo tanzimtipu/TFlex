@@ -14794,6 +14794,139 @@ rect.ann-highlight.ann-preview {
   overflow: hidden;
 }
 
+/* ---- Phase 90 (TFL-509-C1) — the unified review-element list ----
+ *
+ * One renderer re-parented by both the REVIEW ContextPanel and the REVIEW
+ * Inspector. The category sections reuse the existing context-panel rhythm;
+ * the Annotations category keeps `.context-panel-annotations` as its bounded
+ * box so the re-parented `.ann-panel` (position: absolute; inset: 0) scrolls
+ * inside it. Colours, spacing and radii are existing tokens only. */
+.review-elements {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.review-elements-category {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+  padding: var(--space-small) var(--space-control);
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.review-elements-category[data-review-category="annotations"] {
+  flex: 1 1 auto;
+  min-height: 240px;
+  overflow: hidden;
+}
+
+.review-elements-category-title {
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  color: var(--fg-strong);
+}
+
+.review-elements-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.review-elements-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 4px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-2);
+  background: var(--bg-raised);
+}
+
+.review-elements-row-select {
+  flex: 1 1 auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-2);
+  min-width: 0;
+  padding: 4px 6px;
+  border: none;
+  border-radius: var(--radius-2);
+  background: transparent;
+  color: var(--fg);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.review-elements-row-select:hover {
+  background: var(--bg-hover);
+  color: var(--fg-strong);
+}
+
+.review-elements-row-select:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.review-elements-row-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.review-elements-row-page {
+  flex: 0 0 auto;
+  font-size: var(--fs-xs);
+  color: var(--fg-muted);
+}
+
+.review-elements-row-edit,
+.review-elements-row-delete {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: none;
+  border-radius: var(--radius-2);
+  background: transparent;
+  color: var(--fg-muted);
+  cursor: pointer;
+}
+
+.review-elements-row-edit:hover,
+.review-elements-row-delete:hover {
+  background: var(--bg-hover);
+  color: var(--fg-strong);
+}
+
+.review-elements-row-delete:hover {
+  color: var(--error);
+}
+
+.review-elements-row-edit:disabled,
+.review-elements-row-delete:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.review-elements-row-error {
+  flex: 1 1 100%;
+  margin: 0;
+  padding: 2px 6px 4px;
+  font-size: var(--fs-xs);
+  color: var(--error);
+}
+
 /* ---- Phase 36 (chunk 6) — the EDIT / REVIEW / DELIVER stage bodies ----
  *
  * One shared vocabulary for the three non-PAGES panels: a section (title +

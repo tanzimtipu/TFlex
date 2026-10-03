@@ -9,6 +9,7 @@ import type {
   AddStampPayload,
   AddTextBoxPayload,
   ApplyRedactionsPayload,
+  BatesInfo,
   BatesResult,
   BatesSettings,
   CommentThread,
@@ -740,6 +741,28 @@ export interface EngineApi {
     settings: BatesSettings,
   ): Promise<Result<BatesResult, EngineError>>;
 
+  /** Phase 90 (TFL-509) — list every applied Bates run (grouped by marker id,
+   *  pages/labels parallel in visible-page order). Optional so a pre-Phase-90
+   *  backend degrades with a friendly engine-error. */
+  getBates?(docId: string): Promise<Result<BatesInfo[], EngineError>>;
+
+  /** Phase 90 (TFL-509) — re-bake an applied Bates run (position and/or
+   *  numbering parameters) in ONE undo entry. Optional so a pre-Phase-90
+   *  backend degrades with a friendly engine-error. */
+  updateBates?(
+    docId: string,
+    id: string,
+    settings: BatesSettings,
+  ): Promise<Result<BatesResult, EngineError>>;
+
+  /** Phase 90 (TFL-509) — delete an applied Bates run by id in ONE undo
+   *  entry. Optional so a pre-Phase-90 backend degrades with a friendly
+   *  engine-error. */
+  deleteBates?(
+    docId: string,
+    id: string,
+  ): Promise<Result<EngineState, EngineError>>;
+
   /** Phase 18 — report the watermarks applied to the document: one
    *  record per applied watermark (ids like `wm-1`, in first-seen
    *  order), each listing the 1-based visible page numbers that carry
@@ -755,6 +778,15 @@ export interface EngineApi {
   deleteWatermark?(
     docId: string,
     watermarkId: string,
+  ): Promise<Result<EngineState, EngineError>>;
+
+  /** Phase 90 (TFL-509) — re-bake an applied watermark with new settings in
+   *  ONE undo entry (remove the run's streams, then re-bake). Optional so a
+   *  pre-Phase-90 backend degrades with a friendly engine-error. */
+  updateWatermark?(
+    docId: string,
+    id: string,
+    settings: WatermarkSettings,
   ): Promise<Result<EngineState, EngineError>>;
 
   /** Phase 84 (True redaction) — permanently remove the glyphs covered by

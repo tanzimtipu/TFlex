@@ -22,6 +22,7 @@ import type {
   AppInfo,
   ApplyRedactionsPayload,
   AppSettings,
+  BatesInfo,
   BatesResult,
   CropEntry,
   DocxImageEntry,
@@ -243,6 +244,15 @@ export const IPC = {
   // validated first and refused all-or-nothing (`empty-range` /
   // `out-of-range` / `engine-error`).
   engineAddBates: "engine:addBates",
+  // Phase 90 (TFL-509) — list, edit and delete applied Bates runs. Each run is
+  // addressable through its `%TFLEX-BATES ` content-stream marker; a run baked
+  // at explicit page coordinates carries them in that marker's `settings`.
+  engineGetBates: "engine:getBates",
+  engineUpdateBates: "engine:updateBates",
+  engineDeleteBates: "engine:deleteBates",
+  // Phase 90 — edit an applied watermark in place (remove the run's streams
+  // and re-bake with the new settings in ONE undo entry).
+  engineUpdateWatermark: "engine:updateWatermark",
   engineAddTextBox: "engine:addTextBox",
   engineEditImage: "engine:editImage",
   // Phase 14 / DEF-135 / DEF-136 — text-box placement registry (move/delete).
@@ -759,6 +769,38 @@ export interface TFlexApiEngine {
     docId: string,
     settings: import("./types").BatesSettings,
   ): Promise<Result<BatesResult, import("./types").EngineError>>;
+  /** Phase 90 (TFL-509) — report every applied Bates run, grouped by marker
+   *  id: `pages` and `labels` are parallel arrays in visible-page order and
+   *  the run's settings come from the first marker of the group. A legacy
+   *  Phase 89 marker (no `settings`) still lists with the available fields. */
+  getBates?(
+    docId: string,
+  ): Promise<Result<BatesInfo[], import("./types").EngineError>>;
+  /** Phase 90 (TFL-509) — re-bake an applied Bates run with new settings in
+   *  ONE undo entry: every content stream of `id` is removed and the run is
+   *  re-stamped with the validated payload. An unknown `id`, an invalid
+   *  coordinate or a legacy (settings-less) run is a typed `engine-error` and
+   *  mutates nothing. */
+  updateBates?(
+    docId: string,
+    id: string,
+    settings: import("./types").BatesSettings,
+  ): Promise<Result<BatesResult, import("./types").EngineError>>;
+  /** Phase 90 (TFL-509) — delete an applied Bates run (every content stream
+   *  of `id`) in ONE undo entry. An unknown `id` is a typed `engine-error`. */
+  deleteBates?(
+    docId: string,
+    id: string,
+  ): Promise<Result<EngineState, import("./types").EngineError>>;
+  /** Phase 90 (TFL-509) — re-bake an applied watermark with new settings in
+   *  ONE undo entry: the run's content streams are removed and re-baked via
+   *  the same path `addWatermark` uses. An unknown `id` or an invalid payload
+   *  is a typed `engine-error` and mutates nothing. */
+  updateWatermark?(
+    docId: string,
+    id: string,
+    settings: WatermarkSettings,
+  ): Promise<Result<EngineState, import("./types").EngineError>>;
   /** Phase 10 — add a new text box with wrapping inside `rect`. As of
    *  Phase 14 / DEF-135 / DEF-136 this pushes a `TextBoxModel` into the
    *  engine-side placement registry (NO immediate draw); the box is drawn

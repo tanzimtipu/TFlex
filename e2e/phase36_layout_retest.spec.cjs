@@ -17,6 +17,12 @@ const path = require('node:path');
 const { launchApp } = require('./lib/launch.cjs');
 const { hardClose, gotoStage } = require('./lib/helpers.cjs');
 
+// The Paperclip/kimi runtime exports ELECTRON_RUN_AS_NODE=1 for its own Node
+// shim; launchApp spreads process.env, so Electron would exit immediately as
+// plain Node. Drop it before any launch so the real GUI starts (same guard as
+// phase89/phase90 specs).
+delete process.env.ELECTRON_RUN_AS_NODE;
+
 const ROOT = path.resolve(__dirname, '..');
 const REPORT = path.join(ROOT, 'test-fixtures', 'report.pdf');
 
@@ -190,10 +196,13 @@ test('page-pill clearance at 900px: every page-pill control is hit-testable', as
 });
 
 // ---------------------------------------------------------------------------
-// DEF-318 — the annotations list is contained; the Signatures action row is
-// clickable.
+// DEF-318 — the annotations list is contained; the signatures category below
+// it is not covered by the re-parented annotations panel. Phase 90 (chunk C2)
+// retired the `[data-context-panel-action="manage-signatures"]` hook; the
+// surviving surface is the unified review list's signatures category
+// (re-pointed, not deleted).
 // ---------------------------------------------------------------------------
-test('DEF-318: the REVIEW annotations list is contained and Manage signatures is clickable', async () => {
+test('DEF-318: the REVIEW annotations list is contained and the signatures category is not covered', async () => {
   await openReport();
   await gotoStage(win, 3);
   await win.waitForTimeout(500);
@@ -204,25 +213,23 @@ test('DEF-318: the REVIEW annotations list is contained and Manage signatures is
       return { x: Math.round(b.x), y: Math.round(b.y), w: Math.round(b.width), h: Math.round(b.height), bottom: Math.round(b.bottom) };
     };
     const wrap = document.querySelector('[data-context-panel-annotations]');
-    const btn = document.querySelector('[data-context-panel-action="manage-signatures"]');
-    const bb = btn ? btn.getBoundingClientRect() : null;
+    const cat = document.querySelector('[data-context-panel] [data-review-category="signatures"]');
+    const title = cat ? cat.querySelector('.review-elements-category-title') : null;
+    const bb = title ? title.getBoundingClientRect() : null;
     const top = bb ? document.elementFromPoint(Math.round(bb.x + bb.width / 2), Math.round(bb.y + bb.height / 2)) : null;
     return {
       wrapper: r(wrap),
-      button: r(btn),
+      signatures: r(cat),
+      title: r(title),
       topEl: top ? `${top.tagName}.${String(top.className)}` : null,
-      buttonHit: !!(top && btn && (top === btn || btn.contains(top))),
+      titleHit: !!(top && title && (top === title || title.contains(top))),
     };
   });
-  console.log(`[DEF318] wrapper=${JSON.stringify(diag.wrapper)} button=${JSON.stringify(diag.button)} topEl=${diag.topEl} hit=${diag.buttonHit}`);
+  console.log(`[DEF318] wrapper=${JSON.stringify(diag.wrapper)} signatures=${JSON.stringify(diag.signatures)} title=${JSON.stringify(diag.title)} topEl=${diag.topEl} hit=${diag.titleHit}`);
   expect(diag.wrapper, 'the annotations wrapper renders').not.toBeNull();
   expect(diag.wrapper.h, 'DEF-318: the annotations wrapper has real height').toBeGreaterThan(0);
-  expect(diag.buttonHit, 'DEF-318: Manage signatures is the top element at its centre').toBe(true);
-  await win.locator('[data-context-panel-action="manage-signatures"]').click();
-  await win.waitForSelector('.sig-manager', { state: 'visible', timeout: 8000 });
-  console.log('[DEF318] Manage signatures opened the manager');
-  await win.keyboard.press('Escape');
-  await win.waitForTimeout(400);
+  expect(diag.signatures, 'the signatures category renders').not.toBeNull();
+  expect(diag.titleHit, 'DEF-318: the signatures category title is the top element at its centre').toBe(true);
 });
 
 // ---------------------------------------------------------------------------

@@ -24,6 +24,7 @@ import type {
   AddStampPayload,
   AddTextBoxPayload,
   ApplyRedactionsPayload,
+  BatesInfo,
   BatesResult,
   BatesSettings,
   CommentEntry,
@@ -65,11 +66,13 @@ import type {
   TextBoxModel,
   TextBoxStylePatch,
   TextPage,
+  WatermarkInfo,
+  WatermarkSettings,
 } from "../../shared/types";
 import { applyPatch, type Annotation, type AnnotationPatch } from "../annotations/model";
 import { cloneOutline, normalizeOutline } from "../../shared/outline";
 import { summarizeSanitize } from "../../shared/sanitize";
-import { formatBatesSeries } from "../../shared/bates";
+import { DEFAULT_BATES_SIZE, formatBatesSeries } from "../../shared/bates";
 import { colorToHex } from "../edit/editColor";
 import type {
   EngineApi,
@@ -139,6 +142,10 @@ interface StubTab {
    *  `setOutline` call. The stub has no pdf-lib catalog, so it stores the
    *  accepted tree itself so undo / redo and tests can observe it. */
   outline: OutlineEntry[] | null;
+  /** Phase 90 — in-memory applied Bates runs (mirrors the real engine's
+   *  marker scan) and an in-memory watermark list. */
+  batesRuns: BatesInfo[];
+  watermarks: WatermarkInfo[];
 }
 
 interface Snapshot {
@@ -174,6 +181,9 @@ interface Snapshot {
   /** Phase 85 — the outline captured by value so undo / redo restores the
    *  tree that was accepted at snapshot time. */
   outline: OutlineEntry[] | null;
+  /** Phase 90 — applied Bates runs and watermark records, by value. */
+  batesRuns: BatesInfo[];
+  watermarks: WatermarkInfo[];
 }
 
 function snap(t: StubTab): Snapshot {
@@ -200,6 +210,9 @@ function snap(t: StubTab): Snapshot {
     })),
     // Phase 85 — outline by value.
     outline: t.outline === null ? null : cloneOutline(t.outline),
+    // Phase 90 — Bates runs and watermarks by value.
+    batesRuns: t.batesRuns.map((b) => ({ ...b, pages: b.pages.slice(), labels: b.labels.slice() })),
+    watermarks: t.watermarks.map((w) => ({ ...w, pages: w.pages.slice() })),
   };
 }
 
@@ -231,6 +244,9 @@ function restore(t: StubTab, s: Snapshot): void {
   }));
   // Phase 85 — restore the outline tree.
   t.outline = s.outline === null ? null : cloneOutline(s.outline);
+  // Phase 90 — restore the Bates runs and watermarks.
+  t.batesRuns = s.batesRuns.map((b) => ({ ...b, pages: b.pages.slice(), labels: b.labels.slice() }));
+  t.watermarks = s.watermarks.map((w) => ({ ...w, pages: w.pages.slice() }));
 }
 
 function buildState(t: StubTab): EngineState {
@@ -310,6 +326,8 @@ export class StubRendererEngine implements EngineApi {
         textBoxes: [],
         comments: [],
         outline: null,
+        batesRuns: [],
+        watermarks: [],
       };
       this.tabs.set(docId, t);
     }
@@ -1083,11 +1101,127 @@ export class StubRendererEngine implements EngineApi {
     }
     pushUndo(t);
     t.modified = true;
+    const labels = formatBatesSeries(settings);
+    const id = `bates-stub-${t.batesRuns.length + 1}`;
+    t.batesRuns.push({
+      id,
+      prefix: settings.prefix,
+      suffix: settings.suffix,
+      startNumber: settings.startNumber,
+      padding: settings.padding,
+      position: settings.position,
+      ...(settings.x !== undefined ? { x: settings.x } : {}),
+      ...(settings.y !== undefined ? { y: settings.y } : {}),
+      ...(settings.font !== undefined ? { font: settings.font } : {}),
+      size: settings.size ?? DEFAULT_BATES_SIZE,
+      ...(settings.color !== undefined ? { color: settings.color } : {}),
+      pages: [...settings.pages],
+      labels,
+    });
     return ok({
       state: buildState(t),
       stamped: [...settings.pages],
-      labels: formatBatesSeries(settings),
+      labels,
     });
+  }
+
+  /** Phase 90 (TFL-509) — the stub has no pdf-lib, so it lists the runs it
+   *  recorded in memory (mirroring the real engine's marker scan). */
+  async getBates(docId: string): Promise<Result<BatesInfo[], EngineError>> {
+    const t = this.tabs.get(docId);
+    if (t === undefined) return err("engine-error", "unknown document");
+    return ok(t.batesRuns.map((b) => ({ ...b, pages: b.pages.slice(), labels: b.labels.slice() })));
+  }
+
+  /** Phase 90 (TFL-509) — re-bake a recorded run in place: validate the new
+   *  payload, then replace the record. One undo entry. */
+  async updateBates(
+    docId: string,
+    id: string,
+    settings: BatesSettings,
+  ): Promise<Result<BatesResult, EngineError>> {
+    const t = this.tabs.get(docId);
+    if (t === undefined) return err("engine-error", "unknown document");
+    const idx = t.batesRuns.findIndex((b) => b.id === id);
+    if (idx === -1) {
+      return err("engine-error", `updateBates: no Bates run with id ${id} found`);
+    }
+    if (settings.pages.length === 0) {
+      return err("empty-range", "updateBates: no pages provided");
+    }
+    const pageCount = buildState(t).pageOrder.length;
+    const seen = new Set<number>();
+    for (const p of settings.pages) {
+      if (!Number.isInteger(p) || p < 1 || p > pageCount || seen.has(p)) {
+        return err("out-of-range", `updateBates: page ${p} is out of range`);
+      }
+      seen.add(p);
+    }
+    pushUndo(t);
+    t.modified = true;
+    const labels = formatBatesSeries(settings);
+    t.batesRuns[idx] = {
+      id,
+      prefix: settings.prefix,
+      suffix: settings.suffix,
+      startNumber: settings.startNumber,
+      padding: settings.padding,
+      position: settings.position,
+      ...(settings.x !== undefined ? { x: settings.x } : {}),
+      ...(settings.y !== undefined ? { y: settings.y } : {}),
+      ...(settings.font !== undefined ? { font: settings.font } : {}),
+      size: settings.size ?? DEFAULT_BATES_SIZE,
+      ...(settings.color !== undefined ? { color: settings.color } : {}),
+      pages: [...settings.pages],
+      labels,
+    };
+    return ok({
+      state: buildState(t),
+      stamped: [...settings.pages],
+      labels,
+    });
+  }
+
+  /** Phase 90 (TFL-509) — delete a recorded run by id. Unknown id refuses. */
+  async deleteBates(
+    docId: string,
+    id: string,
+  ): Promise<Result<EngineState, EngineError>> {
+    const t = this.tabs.get(docId);
+    if (t === undefined) return err("engine-error", "unknown document");
+    const idx = t.batesRuns.findIndex((b) => b.id === id);
+    if (idx === -1) {
+      return err("engine-error", `deleteBates: no Bates run with id ${id} found`);
+    }
+    pushUndo(t);
+    t.batesRuns.splice(idx, 1);
+    t.modified = true;
+    return ok(buildState(t));
+  }
+
+  /** Phase 90 (TFL-509) — the stub has no watermark bake, but it records the
+   *  update against an in-memory watermark list so the renderer flow is
+   *  exercisable. Unknown id refuses. */
+  async updateWatermark(
+    docId: string,
+    id: string,
+    settings: WatermarkSettings,
+  ): Promise<Result<EngineState, EngineError>> {
+    const t = this.tabs.get(docId);
+    if (t === undefined) return err("engine-error", "unknown document");
+    const idx = t.watermarks.findIndex((w) => w.id === id);
+    if (idx === -1) {
+      return err("engine-error", `updateWatermark: no watermark with id ${id} found`);
+    }
+    pushUndo(t);
+    t.watermarks[idx] = {
+      id,
+      type: settings.type,
+      text: settings.type === "text" ? (settings.text ?? "") : "",
+      pages: t.watermarks[idx].pages.slice(),
+    };
+    t.modified = true;
+    return ok(buildState(t));
   }
 
   /** Phase 10 — add a new text box. Same shape as editTextRun.

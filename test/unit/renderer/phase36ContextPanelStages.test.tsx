@@ -4,11 +4,12 @@
 //
 // These tests pin the re-parenting contract: the EDIT panel shows the current
 // page's modelled content plus the recognition SUMMARY (the row + badge + the
-// EXISTING batch / suspects entries), the REVIEW panel hosts the annotations
-// LIST (ONE home) plus the saved-signatures section, and the DELIVER panel
-// shows the pre-flight checklist (read-only, from the existing state) plus the
-// "New document: From images" entry. Every control asserts the handler it
-// calls; a handler the host did not wire renders disabled (never a no-op).
+// EXISTING batch / suspects entries), the REVIEW panel renders the unified
+// review-element LIST (ONE home for the annotations list; Phase 90 TFL-509-C1),
+// and the DELIVER panel shows the pre-flight checklist (read-only, from the
+// existing state) plus the "New document: From images" entry. Every control
+// asserts the handler it calls; a handler the host did not wire renders
+// disabled (never a no-op).
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -20,7 +21,7 @@ import { ContextPanel } from '../../../src/renderer/components/ContextPanel';
 import type { ContextPanelProps } from '../../../src/renderer/components/ContextPanel';
 import type { EngineState } from '../../../src/renderer/engine/types';
 import type { Annotation } from '../../../src/renderer/annotations/model';
-import type { SavedSignature } from '../../../src/shared/types';
+import type { SignaturePlacement } from '../../../src/shared/types';
 
 function makeDocStub(numPages: number): PDFDocumentProxy {
   return {
@@ -107,11 +108,17 @@ const sections = (host: HTMLElement): string[] =>
     (el) => el.getAttribute('data-context-panel-section') ?? '',
   );
 
-const DRAW_SIG: SavedSignature = {
-  id: 'sig-1',
-  label: 'Ada Lovelace',
-  createdAt: '2026-09-01T00:00:00.000Z',
-  source: { kind: 'drawn', points: [], width: 100, height: 40 },
+const reviewCategories = (host: HTMLElement): string[] =>
+  [...host.querySelectorAll<HTMLElement>('[data-review-category]')].map(
+    (el) => el.getAttribute('data-review-category') ?? '',
+  );
+
+const PLACED_SIG: SignaturePlacement = {
+  id: 'sig-place-1',
+  signatureId: 'saved-1',
+  page: 7,
+  rect: { x: 0, y: 0, width: 10, height: 10 },
+  pngBytes: new Uint8Array(),
 };
 
 const ANNOTATION: Annotation = {
@@ -227,7 +234,7 @@ describe('Phase 36 chunk 6 — the EDIT stage panel', () => {
 });
 
 describe('Phase 36 chunk 6 — the REVIEW stage panel', () => {
-  it('hosts the annotations LIST (the ONE home) and wires its handlers', () => {
+  it('hosts the unified review LIST (the ONE home for annotations) and wires its handlers', () => {
     const onJumpToAnnotation = vi.fn();
     const onEditAnnotation = vi.fn();
     const onDeleteAnnotation = vi.fn();
@@ -239,50 +246,57 @@ describe('Phase 36 chunk 6 — the REVIEW stage panel', () => {
       onDeleteAnnotation,
     });
     try {
-      expect(sections(host)).toEqual(['annotations', 'signatures']);
-      // The re-parented component keeps its own selector.
-      expect(host.querySelector('[data-context-panel-annotations]')).not.toBeNull();
-      expect(host.querySelector('[data-annotation-panel]')).not.toBeNull();
+      // Phase 90 (TFL-509-C1) — the REVIEW body is the unified list; its four
+      // categories render in the fixed Ruling 6 order.
+      expect(reviewCategories(host)).toEqual([
+        'annotations',
+        'bates',
+        'watermarks',
+        'signatures',
+      ]);
+      // The re-parented component keeps its own selectors, inside the
+      // annotations category (the ONE home for the list).
+      const category = host.querySelector('[data-review-category="annotations"]');
+      expect(category?.querySelector('[data-context-panel-annotations]')).not.toBeNull();
+      expect(category?.querySelector('[data-annotation-panel]')).not.toBeNull();
     } finally {
       unmount();
     }
   });
 
-  it('lists the saved signatures, arms one on click and opens the manager', () => {
-    const onSignSignature = vi.fn();
-    const onManageSignatures = vi.fn();
+  it('lists the placed signatures in the Signatures category and selects one on click', () => {
+    const onSelectReviewElement = vi.fn();
     const { host, unmount } = renderPanel({
       stage: 'review',
-      savedSignatures: [DRAW_SIG],
-      armedSignatureId: 'sig-1',
-      onSignSignature,
-      onManageSignatures,
+      signatures: [PLACED_SIG],
+      onSelectReviewElement,
     });
     try {
-      const row = host.querySelector('[data-saved-signature="sig-1"]');
+      const row = host.querySelector('[data-review-element-type="signature"]');
       expect(row).not.toBeNull();
-      expect(row?.textContent).toContain('Ada Lovelace');
-      // The armed signature is marked.
-      expect(row?.getAttribute('aria-pressed')).toBe('true');
-      expect(row?.className).toContain('context-panel-item-selected');
-      click(host, '[data-saved-signature="sig-1"]');
-      expect(onSignSignature).toHaveBeenCalledWith('sig-1');
-      click(host, '[data-context-panel-action="manage-signatures"]');
-      expect(onManageSignatures).toHaveBeenCalledTimes(1);
+      expect(row?.getAttribute('data-review-element-id')).toBe('sig-place-1');
+      expect(row?.textContent).toContain('Signature p7');
+      click(host, '[data-review-element-type="signature"] [data-review-element-select]');
+      expect(onSelectReviewElement).toHaveBeenCalledWith({
+        type: 'signature',
+        id: 'sig-place-1',
+        page: 7,
+        label: 'Signature p7',
+      });
     } finally {
       unmount();
     }
   });
 
-  it('shows the signatures empty state and disables the unwired controls', () => {
-    const { host, unmount } = renderPanel({ stage: 'review', savedSignatures: [] });
+  it('shows a readable empty state for each empty review category', () => {
+    const { host, unmount } = renderPanel({ stage: 'review' });
     try {
-      expect(host.querySelector('[data-signatures-empty]')).not.toBeNull();
-      expect(
-        host.querySelector<HTMLButtonElement>(
-          '[data-context-panel-action="manage-signatures"]',
-        )?.disabled,
-      ).toBe(true);
+      // One empty state per non-annotation category (annotations has its own
+      // in-panel empty state).
+      expect(host.querySelectorAll('[data-review-empty]')).toHaveLength(3);
+      // The retired saved-signature manager no longer renders; the REVIEW body
+      // is the unified list.
+      expect(host.querySelector('[data-context-panel-action="manage-signatures"]')).toBeNull();
     } finally {
       unmount();
     }

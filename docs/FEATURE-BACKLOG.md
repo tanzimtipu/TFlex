@@ -647,7 +647,7 @@ History:
 
 ## FEA-033: Bates numbering
 
-- Status: ACCEPTED -> Phase 89
+- Status: ACCEPTED -> Phase 89, correction -> Phase 90
 - Source: https://www.sejda.com/bates-numbering-pdf (Sejda, "Bates stamp multiple files at once")
 - Category: Annotate
 - Effort: M
@@ -664,6 +664,10 @@ History:
 - orchestrator: recorded from feature-scout batch FEA-031..FEA-040 (TFL-377)
 - orchestrator: accepted on CEO commission TFL-315, iteration 6; promoted to Phase 89 (phase issue TFL-464);
   prefix/suffix/startNumber/padding/position persist as `AppSettings.batesDefaults`
+- orchestrator (CTO, TFL-509): operator report TFL-508 filed a follow-up correction; appended as Phase 90
+  (free page placement, graphical preview, edit/delete an applied run, unified review-element inspector for
+  annotations / Bates / watermarks / signatures). Phase 89 stays in force; Phase 90 supersedes only its
+  "no explicit x/y override" and "no list/delete ops for Bates markers" clauses.
 
 ## FEA-034: Certificate-based digital signature (sign and validate)
 

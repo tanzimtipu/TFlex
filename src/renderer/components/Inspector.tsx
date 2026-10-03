@@ -32,8 +32,16 @@ import type { SpellCheckState } from '../spell/useSpellCheck';
 import { OcrSuspectsPanel } from './OcrSuspectsPanel';
 import type { OcrSuspectsPanelProps } from './OcrSuspectsPanel';
 import { formatBytes } from '../utils/formatBytes';
-import type { Annotation } from '../annotations/model';
-import type { TextBoxStylePatch, FormFillReport } from '../../shared/types';
+import type { Annotation, AnnotationPatch } from '../annotations/model';
+import type {
+  BatesInfo,
+  SignaturePlacement,
+  TextBoxStylePatch,
+  FormFillReport,
+  WatermarkInfo,
+} from '../../shared/types';
+import { ReviewElementsPanel } from './ReviewElementsPanel';
+import type { ReviewElementRef } from './ReviewElementsPanel';
 import { FormFillReportSummary } from '../forms/FormsOverlay';
 import type { TextStyleValues } from '../edit/textStyle';
 import type { Stage } from '../state/stages';
@@ -91,6 +99,7 @@ export type InspectorSectionId =
   | 'signature'
   | 'comments'
   | 'annotations'
+  | 'review-elements'
   | 'export'
   | 'ocr-suspects';
 
@@ -127,7 +136,7 @@ export function inspectorSections(
       // hosts the comments + the re-parented annotations list. Phase 37
       // (item 1): a selected TEXT object keeps those same below-sections and
       // lifts the text panel to the top.
-      return kind === 'signature' ? ['signature'] : ['comments', 'annotations'];
+      return kind === 'signature' ? ['signature'] : ['comments', 'review-elements'];
     case 'deliver':
       return ['export', 'document'];
   }
@@ -312,9 +321,22 @@ export interface InspectorProps {
   // --- REVIEW ----------------------------------------------------------
   signatureStyle?: string | null;
   signatureHint?: string | null;
-  /** The annotations list, REFERENCED here as a read-only count (the list's one
-   *  home is the REVIEW panel; section 3A ruling 6). */
+  /** The active document's annotations. Phase 90 (TFL-509-C1) — the REVIEW
+   *  stage re-parents the unified `ReviewElementsPanel`, whose Annotations
+   *  category consumes this list plus the three handlers below. */
   annotations?: readonly Annotation[];
+  onJumpToAnnotation?: ((page: number, id: string) => void) | null;
+  onEditAnnotation?: ((id: string, patch: AnnotationPatch) => void) | null;
+  onDeleteAnnotation?: ((id: string) => void) | null;
+  /** Phase 90 (TFL-509-C1) — the unified review list's non-annotation sources
+   *  and handlers (Ruling 6: BOTH panels render it). */
+  bates?: readonly BatesInfo[];
+  watermarks?: readonly WatermarkInfo[];
+  signatures?: readonly SignaturePlacement[];
+  onSelectReviewElement?: ((el: ReviewElementRef) => void) | null;
+  onEditReviewElement?: ((el: ReviewElementRef) => void) | null;
+  onDeleteReviewElement?: ((el: ReviewElementRef) => void) | null;
+  reviewErrorFor?: ((el: ReviewElementRef) => string | null) | null;
   onExportComments?: () => void;
   onImportComments?: () => void;
 
@@ -404,6 +426,16 @@ fileSize = null,
     signatureStyle = null,
     signatureHint = null,
     annotations = [],
+    onJumpToAnnotation = null,
+    onEditAnnotation = null,
+    onDeleteAnnotation = null,
+    bates = [],
+    watermarks = [],
+    signatures = [],
+    onSelectReviewElement = null,
+    onEditReviewElement = null,
+    onDeleteReviewElement = null,
+    reviewErrorFor = null,
     onExportComments,
     onImportComments,
     exportFormat = null,
@@ -597,6 +629,26 @@ const renderSignatureSection = (): ReactElement => (
     </Section>
   );
 
+  const renderReviewElementsSection = (): ReactElement => (
+    // Phase 90 (TFL-509-C1/C2) — Ruling 6: the Inspector's REVIEW stage renders
+    // the SAME unified list as the ContextPanel; edit dispatches to the host.
+    <Section id="review-elements" title="Review elements">
+      <ReviewElementsPanel
+        annotations={annotations}
+        onJumpToAnnotation={onJumpToAnnotation}
+        onEditAnnotation={onEditAnnotation}
+        onDeleteAnnotation={onDeleteAnnotation}
+        bates={bates}
+        watermarks={watermarks}
+        signatures={signatures}
+        onSelect={onSelectReviewElement}
+        onEdit={onEditReviewElement}
+        onDelete={onDeleteReviewElement}
+        errorFor={reviewErrorFor}
+      />
+    </Section>
+  );
+
   const renderExportSection = (): ReactElement => (
     <Section id="export" title="Export">
       <Row id="export-format" label="Format">
@@ -627,6 +679,8 @@ const renderSignatureSection = (): ReactElement => (
         return renderCommentsSection();
       case 'annotations':
         return renderAnnotationsSection();
+      case 'review-elements':
+        return renderReviewElementsSection();
       case 'export':
         return renderExportSection();
       case 'ocr-suspects':

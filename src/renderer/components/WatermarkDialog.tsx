@@ -93,9 +93,16 @@ interface WatermarkDialogProps {
   /** 1-based visible page the user is on; seeds the range start when
    *  the user picks a custom range. */
   currentPage: number;
+  /** Phase 90 (TFL-509-C2) — when set, the dialog runs in update mode: it
+   *  seeds the content + page scope from this applied watermark and emits its
+   *  `id` as the second `onConfirm` argument so the host can call
+   *  `engine.updateWatermark`. `WatermarkInfo` carries no typography, so the
+   *  remaining fields keep their defaults (never invented). */
+  editTarget?: WatermarkInfo;
   /** Fires when the user confirms. The host calls
-   *  `engine.addWatermark` with the shared settings payload. */
-  onConfirm: (settings: WatermarkSettings) => void;
+   *  `engine.addWatermark` (or `engine.updateWatermark` when `editId` is
+   *  supplied) with the shared settings payload. */
+  onConfirm: (settings: WatermarkSettings, editId?: string) => void;
   onClose: () => void;
   /** The watermarks the engine reports for the active document
    *  (one record per applied watermark, ids like `wm-1`). Rendered
@@ -181,6 +188,7 @@ export function WatermarkDialog(props: WatermarkDialogProps): ReactElement {
     open,
     totalPages,
     currentPage,
+    editTarget,
     onConfirm,
     onClose,
     watermarks,
@@ -211,9 +219,12 @@ export function WatermarkDialog(props: WatermarkDialogProps): ReactElement {
 
   // Re-seed on open: fresh defaults, range seeds from the current page
   // (the natural pick is "watermark the page I'm on" when the user
-  // narrows the range).
+  // narrows the range). Phase 90 (TFL-509-C2) — in update mode the content
+  // and the page scope seed from the applied record; `WatermarkInfo` carries
+  // no font/size/color/position, so those keep their defaults (never invented).
   useEffect(() => {
     if (!open) return;
+    const clampedPage = Math.max(1, Math.min(currentPage, Math.max(1, totalPages)));
     setType("text");
     setText("CONFIDENTIAL");
     setFont("Helvetica");
@@ -228,11 +239,26 @@ export function WatermarkDialog(props: WatermarkDialogProps): ReactElement {
     setXInput("");
     setYInput("");
     setTile(false);
-    setRangeAll(true);
-    setRangeFrom(Math.max(1, Math.min(currentPage, Math.max(1, totalPages))));
-    setRangeTo(Math.max(1, Math.min(currentPage, Math.max(1, totalPages))));
+    if (editTarget !== undefined) {
+      setType(editTarget.type);
+      setText(editTarget.text);
+      const pages = editTarget.pages;
+      if (pages.length > 0) {
+        setRangeAll(false);
+        setRangeFrom(pages[0]);
+        setRangeTo(pages[pages.length - 1]);
+      } else {
+        setRangeAll(true);
+        setRangeFrom(clampedPage);
+        setRangeTo(clampedPage);
+      }
+    } else {
+      setRangeAll(true);
+      setRangeFrom(clampedPage);
+      setRangeTo(clampedPage);
+    }
     setError(null);
-  }, [open, currentPage, totalPages]);
+  }, [open, currentPage, totalPages, editTarget]);
 
   // Revoke the object URL for the picked image on replace / unmount.
   useEffect(() => {
@@ -357,24 +383,25 @@ export function WatermarkDialog(props: WatermarkDialogProps): ReactElement {
       if (size > 0) settings.size = size;
     }
     if (range !== undefined) settings.range = range;
-    onConfirm(settings);
+    onConfirm(settings, editTarget?.id);
   };
 
   return (
     <DialogShell
       open={open}
-      title="Watermark"
+      title={editTarget !== undefined ? "Update watermark" : "Watermark"}
       titleId="watermark-dialog-title"
       onClose={onClose}
       size="tool"
       data-watermark-dialog
+      data-watermark-mode={editTarget !== undefined ? "update" : "apply"}
       draggable={{ controlsSelector: "button, input, select, textarea, [role='button']" }}
       actions={[
         { key: "cancel", label: "Cancel", variant: "secondary", onClick: onClose },
         Object.assign(
           {
             key: "confirm",
-            label: "Apply watermark",
+            label: editTarget !== undefined ? "Update watermark" : "Apply watermark",
             variant: "primary" as const,
             onClick: onConfirmClick,
             default: true,

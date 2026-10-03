@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 //
 // DEF-318 — the REVIEW annotations list must be CONTAINED by its own section,
-// so it can never cover the Signatures section below it.
+// so it can never cover the sections below it.
 //
 // The defect: `[data-context-panel-annotations]` was a static wrapper, so the
 // re-parented `AnnotationsPanel` (`.ann-panel { position: absolute; inset: 0 }`
@@ -14,6 +14,13 @@
 // The fix mirrors DEF-310: the annotations SECTION owns a bounded share of the
 // panel body and its wrapper is a `.rail-content`-style positioning context,
 // so `.ann-panel-list`'s own `overflow-y: auto` scrolls INSIDE it.
+//
+// Phase 90 (TFL-509-C1) replaced the annotations-only section with the unified
+// review-element list: the bounded region is now the annotations CATEGORY
+// (`[data-review-category="annotations"]`), a sibling of the Bates / Watermarks
+// / Signatures categories, and the `.context-panel-annotations` wrapper still
+// lives inside it. The containment intent is unchanged — these tests are
+// re-pointed to the new structure.
 //
 // jsdom has no layout engine, so the containment chain is pinned against the
 // real stylesheet (the same static-CSS-guard pattern the DEF-310/DEF-315
@@ -53,7 +60,8 @@ function decl(block: string, prop: string): string | null {
   return match === null ? null : match[1].trim().replace(/\s+/g, ' ');
 }
 
-const ANN_SECTION = rule('.context-panel-section[data-context-panel-section="annotations"]');
+const ANN_CATEGORY = rule('.review-elements-category[data-review-category="annotations"]');
+const ANN_CATEGORY_BASE = rule('.review-elements-category');
 const ANN_WRAPPER = rule('.context-panel-annotations');
 const ANN_PANEL = rule('.ann-panel');
 const ANN_LIST = rule('.ann-panel-list');
@@ -105,15 +113,17 @@ function mountReview(overrides: Partial<ContextPanelProps> = {}): {
 // 1. The containment chain in the real stylesheet.
 // ---------------------------------------------------------------------------
 
-describe('DEF-318 — the annotations section owns a bounded, scrollable body', () => {
-  it('bounds the section to the panel body (the outline section is the model)', () => {
+describe('DEF-318 — the annotations category owns a bounded, scrollable body', () => {
+  it('bounds the category to the panel body (the outline section is the model)', () => {
     // The outline's DEF-310 treatment: flex-bounded, clipped, min-height 0.
     expect(decl(OUTLINE_SECTION, 'min-height')).toBe('0');
     expect(decl(OUTLINE_SECTION, 'overflow')).toBe('hidden');
-    expect(decl(ANN_SECTION, 'flex')).toBe('1 1 auto');
-    expect(decl(ANN_SECTION, 'min-height')).toBe('0');
-    expect(decl(ANN_SECTION, 'overflow')).toBe('hidden');
-    expect(decl(ANN_SECTION, 'flex-direction')).toBe('column');
+    // Phase 90: the annotations CATEGORY is the bounded region inside the
+    // unified list; it keeps a definite, clipped box so the list scrolls.
+    expect(decl(ANN_CATEGORY, 'flex')).toBe('1 1 auto');
+    expect(decl(ANN_CATEGORY, 'min-height')).toBe('240px');
+    expect(decl(ANN_CATEGORY, 'overflow')).toBe('hidden');
+    expect(decl(ANN_CATEGORY_BASE, 'flex-direction')).toBe('column');
   });
 
   it('makes the wrapper the positioning context (the .rail-content role)', () => {
@@ -137,37 +147,35 @@ describe('DEF-318 — the annotations section owns a bounded, scrollable body', 
 });
 
 // ---------------------------------------------------------------------------
-// 2. The rendered REVIEW structure: the wrapper exists, the Signatures action
-//    is a SIBLING of the annotations section, and it is enabled.
+// 2. The rendered REVIEW structure: the wrapper exists inside the annotations
+//    CATEGORY, which is a SIBLING of the other review categories, so the list
+//    can never paint over them.
 // ---------------------------------------------------------------------------
 
-describe('DEF-318 — the rendered REVIEW body keeps the Signatures action reachable', () => {
-  it('renders the annotations wrapper and the signatures action as siblings', () => {
+describe('DEF-318 — the rendered REVIEW body keeps the sibling categories reachable', () => {
+  it('renders the annotations wrapper inside its category, a sibling of the others', () => {
     const { host, unmount } = mountReview();
     try {
       const wrapper = host.querySelector<HTMLElement>('[data-context-panel-annotations]');
       expect(wrapper).not.toBeNull();
       expect(wrapper?.className).toBe('context-panel-annotations');
 
-      const annSection = wrapper?.closest<HTMLElement>('[data-context-panel-section="annotations"]');
-      const sigSection = host.querySelector<HTMLElement>('[data-context-panel-section="signatures"]');
-      expect(annSection).not.toBeNull();
-      expect(sigSection).not.toBeNull();
-      // Same parent (the panel body) — the sections are siblings, so the
-      // bounded annotations section can never be painted over by the sibling.
-      expect(annSection?.parentElement).toBe(sigSection?.parentElement);
-      expect(annSection?.parentElement?.className).toContain('context-panel-body');
-      // The annotations section comes FIRST; signatures follows it.
-      const order = [...(annSection?.parentElement?.children ?? [])];
-      expect(order.indexOf(annSection as Element)).toBeLessThan(
-        order.indexOf(sigSection as Element),
-      );
+      const annCategory = wrapper?.closest<HTMLElement>('[data-review-category="annotations"]');
+      const list = host.querySelector<HTMLElement>('[data-review-elements]');
+      expect(annCategory).not.toBeNull();
+      expect(list).not.toBeNull();
+      // The annotations category is a direct child of the unified list.
+      expect(annCategory?.parentElement).toBe(list);
 
-      const manage = host.querySelector<HTMLButtonElement>(
-        '[data-context-panel-action="manage-signatures"]',
+      // A following category is a SIBLING of the annotations category inside
+      // the list — the bounded annotations category cannot be painted over it.
+      const nextCategory = host.querySelector<HTMLElement>('[data-review-category="bates"]');
+      expect(nextCategory).not.toBeNull();
+      expect(nextCategory?.parentElement).toBe(list);
+      const order = [...(list?.children ?? [])];
+      expect(order.indexOf(annCategory as Element)).toBeLessThan(
+        order.indexOf(nextCategory as Element),
       );
-      expect(manage).not.toBeNull();
-      expect(manage?.disabled, 'the Signatures action is enabled').toBe(false);
     } finally {
       unmount();
     }
@@ -186,14 +194,21 @@ describe('DEF-318 — the rendered REVIEW body keeps the Signatures action reach
     }
   });
 
-  it('renders the empty-state hint inside the wrapper (never over the sibling)', () => {
+  it('renders the empty-state hint inside the wrapper, never over a sibling category', () => {
     const { host, unmount } = mountReview();
     try {
       const wrapper = host.querySelector('[data-context-panel-annotations]');
       const hint = wrapper?.querySelector('.hint');
       expect(hint, 'the hint is inside the annotations wrapper').not.toBeNull();
-      const sigSection = host.querySelector('[data-context-panel-section="signatures"]');
-      expect(sigSection?.contains(hint as Node), 'the hint is NOT inside Signatures').toBe(false);
+      // The hint belongs to the annotations category, never another one.
+      expect(
+        wrapper?.closest('[data-review-category]')?.getAttribute('data-review-category'),
+      ).toBe('annotations');
+      const nextCategory = host.querySelector('[data-review-category="bates"]');
+      expect(
+        nextCategory?.contains(hint as Node),
+        'the hint is NOT inside a sibling category',
+      ).toBe(false);
     } finally {
       unmount();
     }

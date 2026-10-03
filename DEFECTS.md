@@ -5,6 +5,33 @@
 > inspect the current `OPEN`, `FIX-READY`, and `DISPUTED` entries first; closed records are
 > historical evidence and must not be loaded wholesale.
 
+## DEF-527: The Bates update dialog defaults the page scope to All pages, so editing a partial run silently re-stamps every page
+
+- Status: CLOSED
+- Severity: MEDIUM
+- Found by: adversary (ADV-188, Phase 90 diff-pass TFL-632)
+- Phase: 90 (TFL-630 replacement driver)
+
+Steps to reproduce:
+1. Apply a Bates run covering only pages 1-2 of a 5-page document.
+2. Open the unified REVIEW list, select that Bates row, press its edit control (`[data-review-element-edit]`) to open `BatesDialog` in update mode.
+3. Change X/Y or padding and click `[data-bates-apply]` ("Update numbering") without touching the page-scope control.
+
+Expected: the update keeps the run on its OWN pages (1-2). The same phase's watermark update does exactly that - `WatermarkDialog` seeds `rangeAll=false`, `rangeFrom=pages[0]`, `rangeTo=pages[pages.length-1]` from `WatermarkInfo.pages` (`src/renderer/components/WatermarkDialog.tsx:242-254`).
+
+Actual: the dialog emits `settings.pages = [1,2,3,4,5]`. The update-mode re-seed block sets `setRangeAll(true)` unconditionally (`src/renderer/components/BatesDialog.tsx:233`), and `batesPagesForScope(true, ...)` returns every page (`BatesDialog.tsx:150-152`). `onBatesConfirm` forwards that payload to `engine.updateBates` (`src/renderer/App.tsx:6444-6451`), which removes every stream of the run then re-bakes the handed `settings.pages` (`src/main/services/engine.ts:4794-4798`). A two-page run therefore becomes document-wide. Recoverable with one undo, and the "All pages" radio is visible, but the default is wrong and inconsistent with the sibling watermark edit.
+
+Evidence: ADV-188 (`ADVERSARIAL_REVIEW.md`); probe log `[p90adv|SCOPE] run pages=[1,2] emitted pages=[1,2,3,4,5] editId=bates-1`; `npm.cmd run test:unit -- test/unit/renderer/phase90BatesDialogScopeAdversary.test.tsx --reporter=verbose` -> 1 passed / 1 passed exit 0. Engine fidelity of `updateBates` to the handed `pages` proven by `test/unit/main/phase90BatesAdversary.test.ts` E7. The shipped `test/unit/renderer/phase90BatesDialog.test.tsx:249-276` covers update mode but never asserts `settings.pages`.
+
+Fix owner: frontend-dev. Direction (CTO-ruled): in `BatesDialog`'s update-mode branch, when `editTarget.pages.length > 0` seed `rangeAll=false`, `rangeFrom=editTarget.pages[0]`, `rangeTo=editTarget.pages[editTarget.pages.length-1]` exactly as `WatermarkDialog.tsx:242-254` does; keep `rangeAll=true` on the apply path and for an empty `pages`. Add the missing page-scope assertion to `test/unit/renderer/phase90BatesDialog.test.tsx`.
+
+History:
+- adversary (TFL-632): filed ADV-188.
+- CTO triage (2026-10-03): ACCEPTED -> DEF-527 (MEDIUM); assigned frontend-dev as TFL-633. Blocks Phase 90 phase-close (no close while an OPEN defect remains).
+- frontend-dev (TFL-633, 2026-10-03): FIX READY. `BatesDialog.tsx` update-mode re-seed now seeds `rangeAll=false`, `rangeFrom=editTarget.pages[0]`, `rangeTo=editTarget.pages[last]` when `editTarget.pages.length > 0`; empty `pages` and the apply path fall back to `rangeAll=true` + `clampedPage`, mirroring `WatermarkDialog.tsx:242-254`. `phase90BatesDialog.test.tsx:271-277` now asserts `settings.pages === [1,2]` for the partial run. Evidence: `npm.cmd run test:unit -- test/unit/renderer/phase90BatesDialog.test.tsx --reporter=verbose` -> 11 passed / 11; scope probe -> 1 passed with log now `emitted pages=[1,2]` (not edited); `npm.cmd run verify` conventions clean (342 files), tsc exit 0. Non-contiguous after-reorder run seeds first..last as the watermark does (noted, out of scope). doc-maintenance: no changes required.
+- CTO (2026-10-03): DEF-527 -> FIX-READY; phase-close QA (TFL-634) to confirm and CLOSE.
+- qa (TFL-634, 2026-10-03): CLOSED. Source `BatesDialog.tsx:224-232` seeds `rangeAll=false`, `rangeFrom=runPages[0]`, `rangeTo=runPages[last]` when `editTarget.pages.length > 0`, else `rangeAll=true`; apply path (`:242`) keeps `rangeAll=true`. `phase90BatesDialog.test.tsx:274-275` asserts `settings.pages` equals the partial run and not `[1,2,3,4,5]`. Named green runs: unit 11 files / 120 tests; `phase90BatesDialogScopeAdversary` probe log now `emitted pages=[1,2]` (was `[1,2,3,4,5]`); e2e `phase90_bates_inspector` 7 passed. `npm.cmd run verify` conventions clean (342 files), tsc exit 0.
+
 ## DEF-526: Three adopted dialogs lost their custom close-X accessible name to the shell default
 
 - Status: CLOSED

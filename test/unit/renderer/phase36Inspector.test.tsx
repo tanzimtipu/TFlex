@@ -6,8 +6,9 @@
 // (stage, selection) pair renders, the DOCUMENT fallback when nothing is
 // selected, that every affordance calls the host's EXISTING handler, and that
 // the re-parented text-properties component renders with its own selectors
-// intact. The annotations section is the reference-only count + the jump, and
-// the suspects view is NOT mounted here at all (3A ruling 4).
+// intact. Phase 90 (TFL-509-C1) replaced the reference-only annotations
+// section with the unified `review-elements` section, and the suspects view is
+// NOT mounted here at all (3A ruling 4).
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -63,7 +64,7 @@ describe("Phase 36 chunk 5 — inspectorSections resolves the per-stage contract
     ["edit", "page", ["cropbox"]],
     ["edit", "none", ["document"]],
     ["review", "signature", ["signature"]],
-    ["review", "none", ["comments", "annotations"]],
+    ["review", "none", ["comments", "review-elements"]],
     ["deliver", "none", ["export", "document"]],
   ] as const)("%s + %s renders %j", (stage, kind, expected) => {
     expect(inspectorSections(stage, kind)).toEqual(expected);
@@ -303,7 +304,7 @@ it("EDIT + a page shows ONLY the CropBox values (no OCR status — ruling 4)", (
     }
   });
 
-  it("REVIEW + the document re-parents the comments rows and REFERENCES the annotations list", () => {
+  it("REVIEW + the document renders the unified review list and wires the FDF actions", () => {
     const onExportComments = vi.fn();
     const onImportComments = vi.fn();
     const { host, unmount } = mount({
@@ -314,13 +315,18 @@ it("EDIT + a page shows ONLY the CropBox values (no OCR status — ruling 4)", (
       onImportComments,
     });
     try {
-      expect(slots(host)).toEqual(["comments", "annotations"]);
-      // Phase 36 (chunk 6) — the annotations LIST has exactly ONE home (the
-      // REVIEW panel); the Inspector shows a reference, never a second copy.
-      expect(host.querySelector("[data-annotation-panel]")).toBeNull();
-      expect(host.querySelector("[data-inspector-annotations-reference]")).not.toBeNull();
-      // The 3A cleanup: no per-annotation verbs here either — the section is the
-      // count + the jump link only, so the host wires no row callbacks.
+      expect(slots(host)).toEqual(["comments", "review-elements"]);
+      // Phase 90 (TFL-509-C1) — Ruling 6: the unified list IS rendered here,
+      // and its Annotations category re-parents the ONE real AnnotationsPanel.
+      expect(host.querySelector("[data-review-elements]")).not.toBeNull();
+      expect(
+        host.querySelector('[data-review-category="annotations"] [data-annotation-panel]'),
+      ).not.toBeNull();
+      // The superseded reference-only section is gone — the list is rendered
+      // once, never duplicated.
+      expect(host.querySelector("[data-inspector-annotations-reference]")).toBeNull();
+      // The 3A cleanup: no per-annotation verbs here either — the list owns
+      // them, so the Inspector adds no separate row callbacks.
       expect(host.querySelector('[data-inspector-action="annotation-jump"]')).toBeNull();
       expect(host.querySelector('[data-inspector-action="annotation-edit"]')).toBeNull();
       expect(host.querySelector('[data-inspector-action="annotation-delete"]')).toBeNull();

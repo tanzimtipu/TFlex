@@ -8867,4 +8867,72 @@ Attack-item results:
 
 Accepted non-findings NOT re-filed: DEF-516/519/521/524 hook relocations; the `AccountsDialog` shell exception; `.dlg-*` grid expressed via `.modal-field`; shell Esc-live-while-busy (Ruling 3).
 
+## ADV-188: The Bates update dialog defaults the page scope to All pages, so editing a partial run silently re-stamps every page (a 2-page run becomes all pages)
+
+- Session: phase-90 gate (diff-pass)
+- Suggested severity: MEDIUM
+
+What I did: exercised the Phase 90 update path in isolation. Mounted the shipped `BatesDialog` in update mode (`test/unit/renderer/phase90BatesDialogScopeAdversary.test.tsx`) with an applied run that covers only pages 1-2 of a 5-page document (`editTarget.pages = [1,2]`, `totalPages = 5`), then clicked `[data-bates-apply]` (the "Update numbering" action) without touching the page-scope control, and captured the `settings` the dialog emits to `onConfirm`.
+
+Expected: editing an applied run's position/formatting keeps the run on its OWN pages. The same phase's watermark update mode does exactly that: `WatermarkDialog` seeds `rangeAll = false`, `rangeFrom = pages[0]`, `rangeTo = pages[pages.length - 1]` from `WatermarkInfo.pages` (`src/renderer/components/WatermarkDialog.tsx:242-250`).
+
+Actual: the dialog emits `settings.pages = [1,2,3,4,5]`. The update-mode re-seed block sets `setRangeAll(true)` unconditionally (`src/renderer/components/BatesDialog.tsx:233`), and `batesPagesForScope(true, ...)` returns every page (`BatesDialog.tsx:150-152`). `onBatesConfirm` forwards that payload unchanged to `engine.updateBates(docId, editId, settings)` (`src/renderer/App.tsx:6444-6451`), and `_updateBatesImpl` removes every stream of the run then re-bakes the handed `settings.pages` (`src/main/services/engine.ts:4794-4798`). So a user who opens the REVIEW list, picks a two-page Bates run, nudges its X/Y or padding and presses "Update numbering" gets the number stamped on every page - a document-wide content change they did not request (recoverable with one undo, and the "All pages" radio is visible, but the default is wrong and inconsistent with the sibling watermark edit).
+
+Reproducibility: deterministic. Probe log:
+`[p90adv|SCOPE] run pages=[1,2] emitted pages=[1,2,3,4,5] editId=bates-1`
+Command: `npm.cmd run test:unit -- test/unit/renderer/phase90BatesDialogScopeAdversary.test.tsx --reporter=verbose` -> Test Files 1 passed / Tests 1 passed, exit 0. The shipped `test/unit/renderer/phase90BatesDialog.test.tsx:249-276` covers update mode but never asserts `settings.pages`, so the suite does not catch it. Engine proof that `updateBates` faithfully applies the `pages` it is handed: `test/unit/main/phase90BatesAdversary.test.ts` E7. Chunk D's own report records the same effect from the other side: its Phase 90 e2e had to "set the edit scope explicitly (the update dialog honestly defaults to All pages)", which worked around the default rather than fixing it.
+
+Fix (not applied - the adversary does not patch): seed the Bates update mode from `editTarget.pages` exactly as the watermark update mode does (when `pages.length > 0`: `rangeAll = false`, `rangeFrom = pages[0]`, `rangeTo = pages[pages.length - 1]`), and add the missing page-scope assertion to `phase90BatesDialog.test.tsx`.
+
+Screenshot: n/a - probe + log (paths above).
+
+Disposition: ACCEPTED -> DEF-527 (MEDIUM). CTO triage (2026-10-03): confirmed Phase 90 defect (criterion 3 - editing an applied run must apply the intended change, not a document-wide one); inconsistent with the sibling `WatermarkDialog` update mode. Fix assigned to frontend-dev as TFL-633; blocks Phase 90 phase-close. Design-critique Should-fix #2 (the signature row's edit pencil performs select) is REJECTED for this phase - Phase 90 Ruling 7 defines a signature row's "edit" as the on-canvas move/resize reached by selecting the row, so the behaviour matches the contract; the glyph-label polish is out of scope here.
+
+## Phase 90 (TFL-632) adversarial diff-pass — named-attack results
+
+Session: phase-90 gate (diff-pass). Scope: the Phase 90 diff only - explicit Bates x/y placement, the addressable Bates run (`getBates`/`updateBates`/`deleteBates`), the unified review list, and `updateWatermark`. Product code was read but never modified. Probes: `test/unit/main/phase90BatesAdversary.test.ts` (E1..E9) and `test/unit/renderer/phase90BatesDialogScopeAdversary.test.tsx`.
+
+Exact commands and results (build mutex held by this adversary and released afterwards):
+- `npm.cmd run build` -> exit 0 (typecheck + `dist/renderer` vite build + `dist/main`/`dist/preload` esbuild).
+- `npm.cmd run test:unit -- test/unit/main/phase90BatesAdversary.test.ts --reporter=verbose` -> **Test Files 1 passed (1) / Tests 9 passed (9)** (2.25s), exit 0.
+- `npm.cmd run test:unit -- test/unit/renderer/phase90BatesDialogScopeAdversary.test.tsx --reporter=verbose` -> 1 passed; log `[p90adv|SCOPE] run pages=[1,2] emitted pages=[1,2,3,4,5] editId=bates-1` (the ADV-188 confirmation).
+
+Attack-item results:
+
+1. **E1 edit a run after a reorder - HOLDS.** `addBates([2,4])`, then `applyOp {kind:'reorder',page:4,param:0}` (ECHO to front). `getBates` reports the run at the new visible pages `[3,5]` with labels `['A1-001','A1-002']`; `updateBates` to `[1,2]` removes both old markers (pages 3 and 5 clear) and bakes exactly one marker on each new page, and ONE undo restores the post-reorder, pre-edit state.
+2. **E2 delete one of two runs sharing a prefix - HOLDS.** Two runs both prefix `S-` on `[1,2]` and `[4,5]`; deleting the first by id leaves the second's `pages`/`labels` intact and clears pages 1-2. Deletion is keyed on the marker `id`, never the prefix.
+3. **E3 update to each page edge - HOLDS.** Updated a one-page run through `(0,0)`, `(PW,0)`, `(0,PH)`, `(PW,PH)` and `(14400,14400)`. The drawn `Tm` clamps only to the page bounds: right edge `x = PW - w`, bottom edge `y = 0.2h`; all `Tm` values are inside the page. An out-of-bounds update (`x=-5`) is refused and leaves the run and the bytes intact.
+4. **E4 a Phase 89 marker (no `settings`) listed + refused-on-edit + deletable - HOLDS.** A hand-baked `%TFLEX-BATES {id,page,label}` marker lists with the shipped defaults, `updateBates` refuses with the readable "older version" message and mutates nothing, and `deleteBates` removes exactly it. A Phase-90-shaped marker whose `settings` fails validation (`{pages:'nope'}`) is treated identically (E4b observation: it lists as a legacy run).
+5. **E5 Bates-then-watermark-then-`updateWatermark` interference - HOLDS.** After `addBates` + `addWatermark`, `updateWatermark` re-bakes only the watermark (pages `[1,2]`, new text); the Bates labels and markers survive. ONE undo reverts only the watermark text; deleting the watermark leaves the Bates run fully intact, and the two marker prefixes never cross-read.
+6. **E6 two runs on overlapping pages - HOLDS.** Runs `O1-` on `[1,2,3]` and `O2-` on `[2,3,4]`: pages 2 and 3 carry two interleaved markers each. Deleting run 1 removes only its streams (pages 2-3 drop to one marker, page 1 clears) while run 2 survives; updating run 2 to page 5 afterwards does not resurrect run 1.
+7. **E7 undo/save byte round-trip after update and after delete - HOLDS.** A six-page run on `[1,3]` updated to padding 2/start 7/x30/y40 gives a new serialized SHA; ONE undo restores the pre-update SHA byte-for-byte, ONE redo restores the post-update SHA. Save + reopen returns `B-07`/`B-08` on pages 1 and 3 and a `getBates` record with padding 2, x 30, y 40. `deleteBates` likewise round-trips byte-for-byte through one undo/redo, and a save + reopen returns an empty `getBates` and no labels.
+8. **E8 (extra) a non-finite UPDATE refuses before removing the existing run.** For `x = NaN, Infinity, -1, 14401` the update is a typed `engine-error`, the run's labels are unchanged and the serialized bytes are hash-identical - the validate-before-remove ordering holds, so no partial edit is possible.
+9. **E9 (extra) repeated update/delete storm stays stable.** Six alternating updates (including an out-of-order page list) leave exactly one marker per selected page and one run in `getBates`; deleting a run added repeatedly empties every page with no resurrection.
+
+Engine verdict: **no engine break confirmed.** No content-stream, marker, undo, save-round-trip, overlap or Bates/watermark-interference break was produced; no crash, hang, data loss or document corruption. The only confirmed break this pass is renderer-only (ADV-188, the update dialog's page-scope default).
+
+## Phase 90 residual e2e-failure triage (TFL-632) — regression vs pre-existing
+
+Chunk D ran the two C1-touched specs and left six residual failures. Method: inspect the C1/C2 diff (the Inspector `review-elements` slot, the ContextPanel unified list, the App wiring) and the Phase 90 file set, then check whether each failing assertion executes Phase 90-changed code. The two C1/C2-RE-POINTED assertions themselves (`chunk456` P6/P8: `[data-inspector-slot="review-elements"]`, `[data-review-category="signatures"]`; layout_retest DEF-318: the signatures category title is hit-testable) **PASS** per Chunk D's counts (11/2 and 1/4), so the unified-list change did not regress the surfaces it re-pointed.
+
+All six residual failures are pre-existing / unrelated to the Phase 90 diff - none is a Phase 90/C1 regression:
+
+1. `phase36_chunk456_gate` **P4, dock full-refusal text** (notice reads "Pinned Zoom out to the dock" where the spec expects the "Dock is full" refusal). Not Phase 90. The dock-pin limit lives in `CommandPalette`/`dockModel`/`commandPalette`/`toolsRegistry`, and `git status` shows NONE of those files modified in the working tree - the palette pin contract is byte-identical to HEAD, so the failure exists at HEAD. The working-tree `CommandBar.tsx` diff is a Phase 91/94 glyph-and-button migration only and does not touch pinning or the palette notice (`PADock`/`PALETTE_DOCK_FULL_MESSAGE` are unchanged).
+2. `phase36_chunk456_gate` **P7b, armed typed-signature Inspector title** (title reads "Signature 1" where the spec expects the typed name "Ada Lovelace"). Not Phase 90. The Phase 90 `Inspector.tsx` diff only ADDS the `review-elements` section and its branch; it does not touch the signature section, `inspectorSections`' `kind === 'signature' ? ['signature']` branch, `inspectorSelectionFor`, or `renderSignatureSection`. `App.tsx` still passes `selection`, `signatureStyle` and `signatureLabel` from `armedSignature` (`App.tsx:11501-11510`, `9937-9942`). The signature-manager save/arm path is outside the Phase 90 change.
+3. `phase36_layout_retest` **DEF-320, rail 64px** (spec asserts 42-46px). Not Phase 90. The rail width is the pre-existing token `--tf-stage-rail-w: 64px` (`src/renderer/styles.css:65`, used at `:1284`,`:14463`). The Phase 90 `styles.css` diff adds only the `.review-elements*` block; a diff search for `tf-stage-rail-w`/`stage-rail` in the Phase 90 stylesheet change returns zero hits.
+4. `phase36_layout_retest` **DEF-319, `setSize` no-op** and 5. **page-pill clearance** (same root cause): the specs resize via `BrowserWindow.getAllWindows()[0].setSize(...)`, which does not take effect in this harness (maximized window). Not Phase 90 - the Phase 90 diff touches no window-management, layout-ladder or pill code.
+6. `phase36_layout_retest` **DEF-321, retired `editMode` verb**: the spec clicks `[data-dock-verb="editMode"]`, retired in Phase 37 item 13 (entering the EDIT stage is the switch; `toolsRegistry.ts:1679`, `dockModel.ts:228`). Not Phase 90 - the Phase 90 diff does not touch the dock registry or the verb set.
+
+No ADV entry is filed for any of the six; each is a pre-existing condition in code the Phase 90 diff does not modify.
+
+## Phase 90 Bates update + unified review list - design critique of the changed UI surface (skill: design-critique)
+
+User: a legal/accounting user who must keep a Bates series correct across a filing. Job: see every applied review element in one place, jump to it, change an applied run's position/numbering without disturbing the rest of the document, and delete what is no longer needed. Success: an edit changes only what the user intended, and every row is reachable and legible.
+
+- Should-fix - **Error prevention (edit scope):** the Bates update dialog defaults the page scope to "All pages" instead of the run's own pages (ADV-188), while the sibling watermark update seeds the run's scope. A user nudging X/Y on a 2-page run silently stamps every page. Try: seed `rangeFrom`/`rangeTo` from `editTarget.pages` (and set `rangeAll=false`) exactly as `WatermarkDialog` does; keep "All pages" a deliberate user choice.
+- Should-fix - **Consistency (row actions):** for a signature row, `[data-review-element-edit]` performs the same action as select (jump to the placement) and the pencil glyph promises an editor that does not open (`App.tsx` `onEditReviewElement` returns after `onSelectReviewElement`). The tooltip says "Edit <label>" but no editing surface appears. Try: label the signature row's action "Move/Resize on page" (or hide the pencil for signatures) so the affordance matches the outcome.
+- Nice-to-fix - **Clarity (row labels):** a Bates row shows `first - last` labels and a watermark row shows `type · text`; both are good, but the signature row reads only `Signature p<page>`, so two placements on one page are indistinguishable. Try: include a short id suffix or placement time.
+- Nice-to-fix - **Affordance (empty categories):** each category keeps its heading with a `No ... applied.` line, which is honest; consider collapsing the three empty categories to a single "No Bates numbering, watermarks or signatures applied." line to cut REVIEW-panel length when only annotations exist.
+- Strengths to keep: the list is one component re-parented by both panels (no second copy); every row is a real `<button>` with a stable `data-review-*` hook and an explicit `aria-label`; select/edit/delete are disabled (not hidden) when the host supplies no handler, and a per-row `[data-review-element-error]` slot carries a loud, readable refusal; the update dialogs carry `data-bates-mode="apply"|"update"` / `data-watermark-mode="apply"|"update"` so the mode is observable.
+
 

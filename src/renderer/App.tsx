@@ -3,6 +3,7 @@ import type { ReactElement, ReactNode } from "react";
 import type {
   AppSettings,
   BatesDefaults,
+  BatesInfo,
   BatesSettings,
   BlankPageMeasurement,
   DocxImageEntry,
@@ -43,6 +44,7 @@ import { DEFAULT_READING_DEFAULTS } from "../shared/types";
 import { err } from "../shared/result";
 import type { Result } from "../shared/result";
 import type { ApplyRedactions } from "./redaction/RedactionOverlay";
+import type { ReviewElementRef } from "./components/ReviewElementsPanel";
 import type { TFlexApi, TFlexApiConvert, TFlexApiExport } from "../shared/ipc";
 import type { ValidationReport, ValidationTarget } from "../shared/validation";
 import type { ConvertFormatId, ConvertManyResult, ConvertSourceInfo, CsvFieldMappingResult } from "../shared/convert";
@@ -894,6 +896,17 @@ export function App(): ReactElement {
   // not read a stale state value when two clicks land in one tick.
   const [deletingWatermarkId, setDeletingWatermarkId] = useState<string | null>(null);
   const deleteInFlightRef = useRef<boolean>(false);
+  // Phase 90 (TFL-509-C1) — applied-Bates list for the active doc, fetched
+  // from `engine.getBates` (feeds the unified review list's Bates category).
+  const [batesList, setBatesList] = useState<BatesInfo[]>([]);
+  // Phase 90 (TFL-509-C2) — the run / watermark a review-list edit is updating.
+  // Null means the dialogs open in APPLY mode; a target switches them to UPDATE.
+  const [batesEditTarget, setBatesEditTarget] = useState<BatesInfo | null>(null);
+  const [watermarkEditTarget, setWatermarkEditTarget] = useState<WatermarkInfo | null>(null);
+  // Phase 90 (TFL-509-C1) — per-row fail-loud messages for the unified review
+  // list, keyed by `<type>:<id>`. A failed delete sets the row's message; a
+  // successful one clears it (Ruling 9: never silently hidden).
+  const [reviewElementErrors, setReviewElementErrors] = useState<Record<string, string>>({});
   const [commentExportOpen, setCommentExportOpen] = useState(false);
   const [commentImportOpen, setCommentImportOpen] = useState(false);
   // Phase 53 (feature G mode 2) — the Fill-form-fields-from-CSV dialog.
@@ -6333,17 +6346,36 @@ pushToast(
     setWatermarkList(res.value);
   }, []);
 
+  /** Phase 90 (TFL-509-C1) — fetch the applied-Bates list for the active doc
+   *  (feeds the unified review list's Bates category). A failure — or a
+   *  pre-Phase-90 backend without `getBates` — just clears the list; no toast,
+   *  the list is not a user action. */
+  const refreshBatesList = useCallback(async (): Promise<void> => {
+    const activeId = activeTabIdRefLocal.current;
+    if (activeId === null) return;
+    const open = openTabsRef.current[activeId];
+    if (open === undefined) return;
+    const res = await engineRef.current.getBates?.(open.session.engineDocId);
+    if (res === undefined || !res.ok) {
+      setBatesList([]);
+      return;
+    }
+    setBatesList(res.value);
+  }, []);
+
   /** Phase 18 — open the Watermark dialog from the toolbar / tools
    *  palette. The palette entry is disabled on doc-less tabs, so the
    *  guard here is a safety net for the other entry points. */
   const onWatermarkClick = useCallback((): void => {
     if (activeTabIdRefLocal.current === null) return;
+    setWatermarkEditTarget(null);
     setWatermarkOpen(true);
     void refreshWatermarkList();
   }, [refreshWatermarkList]);
 
   const onCancelWatermark = useCallback((): void => {
     setWatermarkOpen(false);
+    setWatermarkEditTarget(null);
   }, []);
 
   /** Phase 89 (FEA-033) — open the Bates-numbering dialog from the REVIEW
@@ -6351,11 +6383,14 @@ pushToast(
    *  guard here is a safety net for the other entry points. */
   const onBatesClick = useCallback((): void => {
     if (activeTabIdRefLocal.current === null) return;
+    setBatesEditTarget(null);
     setBatesOpen(true);
-  }, []);
+    void refreshBatesList();
+  }, [refreshBatesList]);
 
   const onCancelBates = useCallback((): void => {
     setBatesOpen(false);
+    setBatesEditTarget(null);
   }, []);
 
   /** Phase 89 (FEA-033) — persist the dialog's defaults through the existing
@@ -6391,7 +6426,10 @@ pushToast(
    *  returned to the dialog's report. A failure returns the readable error
    *  text for the same report (the toast is pushed here too). */
   const onBatesConfirm = useCallback(
-    async (settings: BatesSettings): Promise<BatesConfirmOutcome | void> => {
+    async (
+      settings: BatesSettings,
+      editId?: string,
+    ): Promise<BatesConfirmOutcome | void> => {
       const activeId = activeTabIdRefLocal.current;
       if (activeId === null) return { error: "No active document." };
       const open = openTabsRef.current[activeId];
@@ -6403,12 +6441,19 @@ pushToast(
         padding: settings.padding,
         position: settings.position,
       });
-      const res = await engineRef.current.addBates?.(
-        open.session.engineDocId,
-        settings,
-      );
+      const res =
+        editId === undefined
+          ? await engineRef.current.addBates?.(open.session.engineDocId, settings)
+          : await engineRef.current.updateBates?.(
+              open.session.engineDocId,
+              editId,
+              settings,
+            );
       if (res === undefined) {
-        const message = "Bates numbering requires the Phase 89 backend update.";
+        const message =
+          editId === undefined
+            ? "Bates numbering requires the Phase 89 backend update."
+            : "Bates numbering update requires the Phase 90 backend update.";
         pushToast("error", describeEngineError("engine-error", message));
         return { error: message };
       }
@@ -6422,10 +6467,14 @@ pushToast(
       if (refreshFn !== null) {
         void refreshFn(activeId).catch(() => undefined);
       }
-      pushToast("info", "Bates numbers applied.");
+      pushToast(
+        "info",
+        editId === undefined ? "Bates numbers applied." : "Bates numbering updated.",
+      );
+      void refreshBatesList();
       return { stamped: res.value.stamped, labels: res.value.labels };
     },
-    [noteOpApplied, pushToast, onBatesDefaultsChange],
+    [noteOpApplied, pushToast, onBatesDefaultsChange, refreshBatesList],
   );
 
   /** Phase 18 — apply the configured watermark to the active document
@@ -6435,16 +6484,24 @@ pushToast(
    *  proxy is reloaded so the baked watermark is visible without a
    *  save+reopen cycle (same pattern as stamp / crop / OCR). */
   const onWatermarkConfirm = useCallback(
-    async (settings: WatermarkSettings): Promise<void> => {
+    async (settings: WatermarkSettings, editId?: string): Promise<void> => {
       const activeId = activeTabIdRefLocal.current;
       if (activeId === null) return;
       const open = openTabsRef.current[activeId];
       if (open === undefined) return;
       setWatermarkOpen(false);
-      const res = await engineRef.current.addWatermark?.(
-        open.session.engineDocId,
-        settings,
-      );
+      setWatermarkEditTarget(null);
+      const res =
+        editId === undefined
+          ? await engineRef.current.addWatermark?.(
+              open.session.engineDocId,
+              settings,
+            )
+          : await engineRef.current.updateWatermark?.(
+              open.session.engineDocId,
+              editId,
+              settings,
+            );
       if (res === undefined) {
         pushToast(
           "error",
@@ -6461,7 +6518,10 @@ pushToast(
       if (refreshFn !== null) {
         void refreshFn(activeId).catch(() => undefined);
       }
-      pushToast("info", "Watermark applied.");
+      pushToast(
+        "info",
+        editId === undefined ? "Watermark applied." : "Watermark updated.",
+      );
     },
     [noteOpApplied, pushToast],
   );
@@ -6515,6 +6575,179 @@ pushToast(
       }
     },
     [noteOpApplied, pushToast, refreshWatermarkList],
+  );
+
+  /** Phase 90 (TFL-509-C1) — jump the workspace to a review element's page
+   *  through the existing rail-jump path (the same `jumpRequest` mechanism a
+   *  page drop reveal uses; `seq` makes a repeat click land). */
+  const jumpToReviewPage = useCallback((page: number): void => {
+    const activeId = activeTabIdRefLocal.current;
+    if (activeId === null) return;
+    railJumpSeqRef.current += 1;
+    setRailJump({
+      tabId: activeId,
+      page: Math.max(1, Math.floor(page)),
+      seq: railJumpSeqRef.current,
+    });
+  }, []);
+
+  /** Phase 90 (TFL-509-C1) — the unified review list's select. */
+  const onSelectReviewElement = useCallback(
+    (el: ReviewElementRef): void => {
+      jumpToReviewPage(el.page);
+    },
+    [jumpToReviewPage],
+  );
+
+  /** Phase 90 (TFL-509-C2) — the unified review list's edit. Annotations edit
+   *  through their own panel; Bates / Watermarks open their dialog in update
+   *  mode seeded from the row's record; a signature's "edit" is the existing
+   *  on-canvas move/resize reached by selecting the row (Ruling 7). A row whose
+   *  record vanished fails loud (never a silent no-op). */
+  const onEditReviewElement = useCallback(
+    (el: ReviewElementRef): void => {
+      if (el.type === 'annotation') return;
+      if (el.type === 'signature') {
+        onSelectReviewElement(el);
+        return;
+      }
+      if (el.type === 'bates') {
+        const info = batesList.find((b) => b.id === el.id);
+        if (info === undefined) {
+          pushToast(
+            'error',
+            describeEngineError('engine-error', 'This Bates run is no longer in the document.'),
+          );
+          return;
+        }
+        setBatesEditTarget(info);
+        setBatesOpen(true);
+        return;
+      }
+      const info = watermarkList.find((w) => w.id === el.id);
+      if (info === undefined) {
+        pushToast(
+          'error',
+          describeEngineError('engine-error', 'This watermark is no longer in the document.'),
+        );
+        return;
+      }
+      setWatermarkEditTarget(info);
+      setWatermarkOpen(true);
+    },
+    [batesList, watermarkList, onSelectReviewElement, pushToast],
+  );
+
+  /** Phase 90 (TFL-509-C1) — the unified review list's delete: exactly ONE
+   *  engine call for the row's type, then refresh the doc proxy + the list.
+   *  A refusal pushes an error toast AND sets the row's fail-loud message
+   *  (Ruling 9). Single-flight, mirroring `onDeleteWatermark`. */
+  const onDeleteReviewElement = useCallback(
+    async (el: ReviewElementRef): Promise<void> => {
+      const key = `${el.type}:${el.id}`;
+      if (deleteInFlightRef.current) return;
+      const activeId = activeTabIdRefLocal.current;
+      if (activeId === null) return;
+      const open = openTabsRef.current[activeId];
+      if (open === undefined) return;
+      deleteInFlightRef.current = true;
+      const setRowError = (message: string): void => {
+        setReviewElementErrors((prev) => ({ ...prev, [key]: message }));
+      };
+      const clearRowError = (): void => {
+        setReviewElementErrors((prev) => {
+          if (prev[key] === undefined) return prev;
+          const next = { ...prev };
+          delete next[key];
+          return next;
+        });
+      };
+      try {
+        const docId = open.session.engineDocId;
+        if (el.type === 'annotation') {
+          await onDeleteAnnotation(activeId, el.id);
+          return;
+        }
+        if (el.type === 'signature') {
+          const res = await engineRef.current.deleteSignature(docId, el.id);
+          if (!res.ok) {
+            const message = describeEngineError(res.error.code, res.error.message);
+            pushToast('error', message);
+            setRowError(message);
+            return;
+          }
+          clearRowError();
+          setOpenTabs((prev) => {
+            const existing = prev[activeId];
+            if (existing === undefined) return prev;
+            return {
+              ...prev,
+              [activeId]: {
+                ...existing,
+                placements: res.value.signatures ?? existing.placements,
+              },
+            };
+          });
+          noteOpApplied(activeId, res.value);
+          const refreshFn = refreshDocProxyForRef.current;
+          if (refreshFn !== null) {
+            void refreshFn(activeId).catch(() => undefined);
+          }
+          pushToast('info', 'Signature deleted.');
+          return;
+        }
+        const res =
+          el.type === 'bates'
+            ? await engineRef.current.deleteBates?.(docId, el.id)
+            : await engineRef.current.deleteWatermark?.(docId, el.id);
+        if (res === undefined) {
+          const message = describeEngineError(
+            'engine-error',
+            el.type === 'bates'
+              ? 'Bates numbering requires the Phase 90 backend update.'
+              : 'Watermark requires the Phase 18 backend update.',
+          );
+          pushToast('error', message);
+          setRowError(message);
+          return;
+        }
+        if (!res.ok) {
+          const message = describeEngineError(res.error.code, res.error.message);
+          pushToast('error', message);
+          setRowError(message);
+          return;
+        }
+        clearRowError();
+        noteOpApplied(activeId, res.value);
+        const refreshFn = refreshDocProxyForRef.current;
+        if (refreshFn !== null) {
+          void refreshFn(activeId).catch(() => undefined);
+        }
+        if (el.type === 'bates') {
+          pushToast('info', 'Bates numbering deleted.');
+          void refreshBatesList();
+        } else {
+          pushToast('info', 'Watermark deleted.');
+          void refreshWatermarkList();
+        }
+      } finally {
+        deleteInFlightRef.current = false;
+      }
+    },
+    [
+      noteOpApplied,
+      pushToast,
+      refreshBatesList,
+      refreshWatermarkList,
+      onDeleteAnnotation,
+    ],
+  );
+
+  /** The unified review list's row-level fail-loud lookup (Ruling 9). */
+  const reviewErrorFor = useCallback(
+    (el: ReviewElementRef): string | null =>
+      reviewElementErrors[`${el.type}:${el.id}`] ?? null,
+    [reviewElementErrors],
   );
 
   const onStampConfirm = useCallback(
@@ -9208,10 +9441,15 @@ pushToast(
       }
     };
     void load();
+    // Phase 90 (TFL-509-C1) — keep the unified review list's Bates / Watermark
+    // categories in step with a newly active document (the annotations mirror
+    // refreshes through the same active-doc change).
+    void refreshWatermarkList();
+    void refreshBatesList();
     return (): void => {
       cancelled = true;
     };
-  }, [activeEngineDocId]);
+  }, [activeEngineDocId, refreshWatermarkList, refreshBatesList]);
 
   // Phase 36 (chunk 5) — the Inspector's visibility: a real document is open
   // (an empty placeholder tab or the welcome screen has none to inspect). The
@@ -10983,6 +11221,15 @@ pushToast(
                     onFormListboxToggle={fs.onFormListboxToggle}
                     signatures={fs.signatures}
                     savedSignatures={fs.savedSignatures}
+                    // Phase 90 (TFL-509-C1) — the unified review list's
+                    // non-annotation sources + handlers (reaches the REVIEW
+                    // ContextPanel through DocumentView).
+                    bates={batesList}
+                    watermarks={watermarkList}
+                    onSelectReviewElement={onSelectReviewElement}
+                    onEditReviewElement={onEditReviewElement}
+                    onDeleteReviewElement={onDeleteReviewElement}
+                    reviewErrorFor={reviewErrorFor}
                     armedSignatureId={fs.armedSignatureId}
                     onPlaceSignature={fs.onPlaceSignature}
                     onMoveSignature={fs.onMoveSignature}
@@ -11283,6 +11530,26 @@ pushToast(
             // delete verbs and every other handler live in the REVIEW panel, so
             // the Inspector is handed no per-annotation callbacks at all.
             annotations={annotationHandlers(tabs.activeId).annotations}
+            // Phase 90 (TFL-509-C1) — Ruling 6: the Inspector's REVIEW stage
+            // re-parents the SAME unified review list. The annotations
+            // handlers and the non-annotation sources/handlers are threaded
+            // straight from App (the Inspector owns no command).
+            onJumpToAnnotation={(page): void => jumpToReviewPage(page)}
+            onEditAnnotation={(id, patch): void => {
+              const tabId = activeTabIdRefLocal.current;
+              if (tabId !== null) void onEditAnnotation(tabId, id, patch);
+            }}
+            onDeleteAnnotation={(id): void => {
+              const tabId = activeTabIdRefLocal.current;
+              if (tabId !== null) void onDeleteAnnotation(tabId, id);
+            }}
+            bates={batesList}
+            watermarks={watermarkList}
+            signatures={activeTab?.engine.signatures ?? []}
+            onSelectReviewElement={onSelectReviewElement}
+            onEditReviewElement={onEditReviewElement}
+            onDeleteReviewElement={onDeleteReviewElement}
+            reviewErrorFor={reviewErrorFor}
             onExportComments={onCommentExportClick}
             onImportComments={onCommentImportClick}
             exportFormat={settings.exportImageFormat ?? null}
@@ -11724,8 +11991,8 @@ pushToast(
           const tab = openTabsRef.current[id];
           return tab ? Math.max(1, Math.floor(tab.persisted.currentPage)) : 1;
         })()}
-        onConfirm={(s): void => {
-          void onWatermarkConfirm(s);
+        onConfirm={(s, editId): void => {
+          void onWatermarkConfirm(s, editId);
         }}
         onClose={onCancelWatermark}
         watermarks={watermarkList}
@@ -11733,6 +12000,7 @@ pushToast(
         onDeleteWatermark={(id): void => {
           void onDeleteWatermark(id);
         }}
+        editTarget={watermarkEditTarget ?? undefined}
       />
       <BatesDialog
         open={batesOpen}
@@ -11751,6 +12019,7 @@ pushToast(
         defaultFont={settings?.editDefaultFont ?? "Helvetica"}
         onConfirm={onBatesConfirm}
         onClose={onCancelBates}
+        editTarget={batesEditTarget ?? undefined}
       />
       <CommentExportDialog
         open={commentExportOpen}

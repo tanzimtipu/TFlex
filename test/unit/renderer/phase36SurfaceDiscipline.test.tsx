@@ -828,7 +828,7 @@ describe('Phase 36 / 3A � the nine rulings', () => {
     }
   });
 
-  it('ruling 7: the saved-signature LIST is the REVIEW panel; the Inspector edits the armed one', () => {
+  it('ruling 7: the signature rows live in the REVIEW panel list; the Inspector edits the armed one', () => {
     const panel = mountPanel('review', [
       {
         id: 's1',
@@ -838,7 +838,12 @@ describe('Phase 36 / 3A � the nine rulings', () => {
       },
     ]);
     try {
-      expect(panel.host.querySelector('[data-saved-signatures-list]')).not.toBeNull();
+      // Phase 90 (TFL-509-C1) — the saved-signature section was folded into the
+      // unified review list: its signature rows render in the signatures
+      // category, never a second list.
+      expect(panel.host.querySelector('[data-review-elements]')).not.toBeNull();
+      expect(panel.host.querySelector('[data-review-category="signatures"]')).not.toBeNull();
+      expect(panel.host.querySelector('[data-saved-signatures-list]')).toBeNull();
     } finally {
       panel.unmount();
     }
@@ -851,6 +856,7 @@ describe('Phase 36 / 3A � the nine rulings', () => {
       }),
     );
     try {
+      expect(host.querySelector('[data-review-elements]')).toBeNull();
       expect(host.querySelector('[data-saved-signatures-list]')).toBeNull();
       expect(host.querySelector('[data-saved-signature]')).toBeNull();
       expect(host.querySelector('[data-inspector-row="signature-style"]')?.textContent).toContain(

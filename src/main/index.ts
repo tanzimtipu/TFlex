@@ -9,6 +9,7 @@ import type {
   AddStampPayload,
   AddTextBoxPayload,
   ApplyRedactionsPayload,
+  BatesInfo,
   BatesResult,
   BatesSettings,
   CreateAnnotationPayload,
@@ -17,6 +18,7 @@ import type {
   EditAnnotationPayload,
   EditImagePayload,
   EditTextRunPayload,
+  EngineState,
   ExportPagesPayload,
   FdfOpenError,
   FillFormFieldPayload,
@@ -1033,6 +1035,28 @@ export async function start(): Promise<void> {
   );
   ipcMain.handle(IPC.engineDeleteWatermark, (_event, docId: string, watermarkId: string) =>
     engine.deleteWatermark(docId, watermarkId),
+  );
+  // Phase 90 (TFL-509) — list, edit and delete applied Bates runs, plus edit
+  // an applied watermark in place. All four are one-op / one-undo-entry.
+  ipcMain.handle(
+    IPC.engineGetBates,
+    (_event, docId: string): Promise<Result<BatesInfo[], EngineError>> =>
+      engine.getBates(docId),
+  );
+  ipcMain.handle(
+    IPC.engineUpdateBates,
+    (_event, docId: string, id: string, settings: BatesSettings): Promise<Result<BatesResult, EngineError>> =>
+      engine.updateBates(docId, id, settings),
+  );
+  ipcMain.handle(
+    IPC.engineDeleteBates,
+    (_event, docId: string, id: string): Promise<Result<EngineState, EngineError>> =>
+      engine.deleteBates(docId, id),
+  );
+  ipcMain.handle(
+    IPC.engineUpdateWatermark,
+    (_event, docId: string, id: string, settings: WatermarkSettings): Promise<Result<EngineState, EngineError>> =>
+      engine.updateWatermark(docId, id, settings),
   );
 
   // Phase 52 — encrypted PDF support

@@ -1,7 +1,7 @@
 import { readFile, writeFile } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
 import { inflateSync } from 'node:zlib';
-import { beginText, concatTransformationMatrix, decodePDFRawStream, degrees, drawObject, endText, fill, PDFArray, PDFDict, PDFDocument, PDFHexString, PDFName, PDFNumber, PDFObjectCopier, PDFRawStream, PDFRef, PDFStream, PDFString, rectangle, rgb, setCharacterSpacing, setFillingRgbColor, setFontAndSize, setGraphicsState, setTextMatrix, showText, StandardFontEmbedder, StandardFonts, TextRenderingMode, setTextRenderingMode, pushGraphicsState, popGraphicsState, translate, rotateRadians, skewRadians, setLineWidth, setDashPattern, moveTo, lineTo, closePath, type PDFOperator, type PDFObject, type PDFImage, type PDFFont, type PDFPage } from '@cantoo/pdf-lib';
+import { beginText, concatTransformationMatrix, decodePDFRawStream, degrees, drawObject, endText, fill, PDFArray, PDFDict, PDFDocument, PDFHexString, PDFName, PDFNumber, PDFObjectCopier, PDFRawStream, PDFRef, PDFStream, PDFString, rectangle, rgb, setCharacterSpacing, setFillingRgbColor, setFontAndSize, setGraphicsState, setTextMatrix, showText, StandardFontEmbedder, StandardFonts, TextRenderingMode, setTextRenderingMode, pushGraphicsState, popGraphicsState, translate, rotateRadians, skewRadians, setLineWidth, setDashPattern, moveTo, lineTo, closePath, type PDFOperator, type PDFObject, type PDFImage, type PDFFont, type PDFPage, type RGB } from '@cantoo/pdf-lib';
 import { err, ok, type Result } from '../../shared/result';
 import {
   RedactionUnsupportedError,
@@ -10,7 +10,7 @@ import {
 } from '../../shared/redaction';
 import { planReplace } from '../../shared/searchReplace';
 import { normalizeSanitizeOptions } from '../../shared/sanitize';
-import { DEFAULT_BATES_SIZE, formatBatesSeries, validateBatesSettings } from '../../shared/bates';
+import { DEFAULT_BATES_DEFAULTS, DEFAULT_BATES_SIZE, formatBatesSeries, isBatesCoord, validateBatesSettings } from '../../shared/bates';
 import { stripActiveContent } from './sanitize';
 import type {
   AddStampPayload,
@@ -18,6 +18,7 @@ import type {
   AnnModel,
   AnnRect,
   ApplyRedactionsPayload,
+  BatesInfo,
   BatesResult,
   BatesSettings,
   CommentEntry,
@@ -297,11 +298,47 @@ function readWatermarkMarker(contents: Uint8Array): WatermarkMarker | null {
 // ---------------------------------------------------------------------------
 
 /** First line of every Bates content stream (a PDF comment, invisible to
- *  renderers): `%TFLEX-BATES ` + base64url JSON `{ id, page, label }`. This
- *  phase adds no list/delete ops, so the marker exists to make "exactly the
- *  selected pages were stamped" directly verifiable and to keep Bates distinct
- *  from the Phase 18 `%TFLEX-WATERMARK ` marker. */
+ *  renderers): `%TFLEX-BATES ` + base64url JSON `{ id, page, label, settings }`.
+ *  The marker is the single source of truth for "what was applied": Phase 90
+ *  makes each run listable/editable/deletable through it, and a marker written
+ *  by Phase 89 (no `settings`) still lists and is deletable but refuses edit. */
 const BATES_MARKER_PREFIX = '%TFLEX-BATES ';
+
+interface BatesMarker {
+  id: string;
+  /** 1-based visible page this stream was baked onto. */
+  page: number;
+  label: string;
+  /** The validated settings that produced the run, or null for a legacy
+   *  Phase 89 marker that carried no settings record. */
+  settings: BatesSettings | null;
+}
+
+/** Parse the Bates marker from a content stream's raw bytes. Returns null
+ *  when the stream carries no (or an undecodable) marker. Mirrors
+ *  `readWatermarkMarker`. */
+function readBatesMarker(contents: Uint8Array): BatesMarker | null {
+  const text = Buffer.from(contents).toString('latin1');
+  if (!text.startsWith(BATES_MARKER_PREFIX)) return null;
+  const rest = text.slice(BATES_MARKER_PREFIX.length);
+  const newline = rest.indexOf('\n');
+  const payload = newline === -1 ? rest : rest.slice(0, newline);
+  let parsed: Record<string, unknown>;
+  try {
+    parsed = JSON.parse(Buffer.from(payload, 'base64url').toString('utf8')) as Record<string, unknown>;
+  } catch {
+    return null;
+  }
+  if (typeof parsed.id !== 'string' || parsed.id.length === 0) return null;
+  return {
+    id: parsed.id,
+    page: typeof parsed.page === 'number' ? parsed.page : 0,
+    label: typeof parsed.label === 'string' ? parsed.label : '',
+    // A malformed/absent settings record is treated like a legacy marker: it
+    // still lists (with defaults) and is deletable, but edit is refused.
+    settings: validateBatesSettings(parsed.settings),
+  };
+}
 
 // ---------------------------------------------------------------------------
 // Engine
@@ -4047,18 +4084,72 @@ export class EngineService {
       );
     }
 
+    // Phase 90 — the bake body lives in `_bakeWatermarkInto` so `updateWatermark`
+    // reuses it exactly. It validates the text encoding and the tiling
+    // placement cap fail-loud before it touches the document, so the checks
+    // below are no longer duplicated here.
+    //
+    // DEF-216 — assign the next watermark id by scanning the markers already
+    // baked into the pages (never an in-memory counter, so ids cannot collide
+    // after an undo/restore resurrects older watermarks).
+    let maxSuffix = 0;
+    for (const info of this._scanWatermarkMarkers(doc)) {
+      const suffix = Number.parseInt(info.id.replace(/^wm-/, ''), 10);
+      if (Number.isFinite(suffix) && suffix > maxSuffix) maxSuffix = suffix;
+    }
+    const watermarkId = `wm-${maxSuffix + 1}`;
+
+    const snapshot = await snapshotDocWithPdf(doc);
+    try {
+      const baked = await this._bakeWatermarkInto(
+        doc, settings, watermarkId, maxSuffix + 1, 'addWatermark',
+      );
+      if (!baked.ok) {
+        await tryRestorePdfBytes(doc, snapshot.pdfBytes);
+        return baked;
+      }
+
+      doc.undoStack.push(snapshot);
+      doc.redoStack = [];
+      doc.modified = true;
+      return ok(buildState(doc));
+    } catch (e) {
+      await tryRestorePdfBytes(doc, snapshot.pdfBytes);
+      return err('engine-error', `addWatermark failed: ${e instanceof Error ? e.message : String(e)}`);
+    }
+  }
+
+  /** Phase 18/90 — the watermark bake body shared by `addWatermark` and
+   *  `updateWatermark`: sanitize/validate the payload, judge the tiling
+   *  placement cap, embed the font/image once and emit one marker-bearing
+   *  content stream per selected page. Mutates `doc.pdfDoc` only; the caller
+   *  owns the snapshot and the undo push. */
+  private async _bakeWatermarkInto(
+    doc: EngineDoc,
+    settings: WatermarkSettings,
+    watermarkId: string,
+    tagBase: number,
+    opName: string,
+  ): Promise<Result<void, EngineError>> {
+    const pageCount = doc.order.length;
+    const start = settings.range ? settings.range[0] : 1;
+    const end = settings.range ? settings.range[1] : pageCount;
+    if (start < 1 || end > pageCount || start > end) {
+      return err('out-of-range', `${opName}: range [${start},${end}] out of bounds for ${pageCount} pages`);
+    }
+
     const isText = settings.type === 'text';
     const opacity = clamp(settings.opacity ?? DEFAULT_WATERMARK_OPACITY, 0, 1);
     const c = settings.color ?? DEFAULT_WATERMARK_COLOR;
     const color = rgb(c.r, c.g, c.b);
 
     // Sanitize the text up front (does not touch the document) so a
-    // fully-non-Latin string is rejected before any state is snapshotted.
+    // fully-non-Latin string is rejected before the bake runs.
     let text = '';
     if (isText) {
       text = sanitizeForStandardFont(settings.text ?? '');
       if (text.length === 0) {
-        return err('engine-error', 'addWatermark: text is empty after encoding');
+        return err('engine-error', `${opName}: text is empty after encoding`);
       }
     }
 
@@ -4089,12 +4180,12 @@ export class EngineService {
           imageAspect = probeImage.width / probeImage.height;
         }
       } catch (e) {
-        return err('engine-error', `addWatermark failed: ${e instanceof Error ? e.message : String(e)}`);
+        return err('engine-error', `${opName} failed: ${e instanceof Error ? e.message : String(e)}`);
       }
       for (let vi = start - 1; vi < end; vi++) {
         const origIdx = doc.order[vi];
         if (origIdx === undefined || origIdx < 0 || origIdx >= doc.pdfDoc.getPageCount()) {
-          return err('out-of-range', `addWatermark: page ${vi + 1} resolves to invalid original index ${origIdx}`);
+          return err('out-of-range', `${opName}: page ${vi + 1} resolves to invalid original index ${origIdx}`);
         }
         const { width: pw, height: ph } = doc.pdfDoc.getPage(origIdx).getSize();
         let w: number;
@@ -4117,196 +4208,177 @@ export class EngineService {
         if (placements > MAX_WATERMARK_PLACEMENTS_PER_PAGE) {
           return err(
             'engine-error',
-            `addWatermark: tiling at this size would place more than ${MAX_WATERMARK_PLACEMENTS_PER_PAGE} copies on page ${vi + 1} (increase the size or turn tiling off)`,
+            `${opName}: tiling at this size would place more than ${MAX_WATERMARK_PLACEMENTS_PER_PAGE} copies on page ${vi + 1} (increase the size or turn tiling off)`,
           );
         }
       }
     }
 
-    const snapshot = await snapshotDocWithPdf(doc);
-    try {
-      // Embed the font / image once (after the snapshot, like addStamp) and
-      // reuse it on every page.
-      let font: PDFFont | null = null;
-      let image: PDFImage | null = null;
-      if (isText) {
-        font = await embedEditFont(
-          doc.pdfDoc, settings.font ?? 'Helvetica', !!settings.bold, !!settings.italic,
-        );
-      } else {
-        const imageBytes = settings.imageBytes as Uint8Array;
-        image = detectImageFormat(imageBytes) === 'png'
-          ? await doc.pdfDoc.embedPng(imageBytes)
-          : await doc.pdfDoc.embedJpg(imageBytes);
-      }
-
-      const size = isText ? (settings.size ?? DEFAULT_WATERMARK_TEXT_SIZE) : 0;
-
-      // DEF-216 — assign the next watermark id by scanning the markers
-      // already baked into the pages (never an in-memory counter, so ids
-      // cannot collide after an undo/restore resurrects older watermarks).
-      let maxSuffix = 0;
-      for (const info of this._scanWatermarkMarkers(doc)) {
-        const suffix = Number.parseInt(info.id.replace(/^wm-/, ''), 10);
-        if (Number.isFinite(suffix) && suffix > maxSuffix) maxSuffix = suffix;
-      }
-      const watermarkId = `wm-${maxSuffix + 1}`;
-
-      for (let vi = start - 1; vi < end; vi++) {
-        const origIdx = doc.order[vi];
-        if (origIdx === undefined || origIdx < 0 || origIdx >= doc.pdfDoc.getPageCount()) {
-          return err('out-of-range', `addWatermark: page ${vi + 1} resolves to invalid original index ${origIdx}`);
-        }
-        const page = doc.pdfDoc.getPage(origIdx);
-        const { width: pw, height: ph } = page.getSize();
-
-        // Watermark box dimensions (PDF points).
-        let w: number;
-        let h: number;
-        if (isText && font !== null) {
-          w = font.widthOfTextAtSize(text, size);
-          // The font's line height bounds the box; the baseline sits 80%
-          // down the box (the ascent for all three standard families is
-          // ~0.72-0.78 of the line height, so this centers the glyphs
-          // visually without per-family metrics).
-          h = font.heightAtSize(size);
-        } else if (image !== null) {
-          // `size` is the drawn HEIGHT; the width scales to the image's
-          // aspect ratio. Default height: 33% of the page's shorter side.
-          h = settings.size ?? Math.min(pw, ph) * 0.33;
-          w = h * (image.width / image.height);
-        } else {
-          return err('engine-error', 'addWatermark: internal error (missing font or image)');
-        }
-
-        // DEF-216: collect the placements first (the geometry below is
-        // unchanged from the old drawAt), then emit ONE dedicated,
-        // UNCOMPRESSED content stream per (watermark, page). The stream's
-        // first line is the identity marker; the operators mirror
-        // pdf-lib's own drawText/drawImage emission (q / GS / BT ... ET /
-        // Q, or q / GS / cm cm / Do / Q) so the baked output renders
-        // exactly like the old page.drawText/drawImage path.
-        const tag = `${maxSuffix + 1}p${vi + 1}`;
-        const gsName = page.node.newExtGState(
-          `GSwm${tag}`,
-          doc.pdfDoc.context.obj({ Type: 'ExtGState', ca: opacity, CA: opacity }),
-        );
-        const fontName = isText && font !== null
-          ? page.node.newFontDictionary(`TFwm${tag}`, font.ref)
-          : null;
-        const imgName = image !== null
-          ? page.node.newXObject(`Imwm${tag}`, image.ref)
-          : null;
-
-        // A placement is { x, y } in bottom-left page space: for text, x
-        // is the glyph box's LEFT edge and y the baseline; for image,
-        // (x, y) is the image rect's bottom-left corner.
-        const placements: { x: number; y: number }[] = [];
-        const placeAt = (cx: number, cy: number): void => {
-          if (isText) {
-            // The box's CENTER is (cx, cy) in top-left page space; the
-            // baseline converts to bottom-left space with the font's 0.8
-            // factor (same convention as the old page.drawText call).
-            placements.push({ x: cx - w / 2, y: ph - (cy - h / 2) - h * 0.8 });
-          } else {
-            placements.push({ x: cx - w / 2, y: ph - cy - h / 2 });
-          }
-        };
-
-        if (settings.tile) {
-          // Staggered grid: rows step 1.5x the watermark height, columns
-          // 1.5x the width; odd rows shift half a column so the pattern
-          // reads as a diagonal field (classic "CONFIDENTIAL" look).
-          const stepX = w * 1.5;
-          const stepY = h * 1.5;
-          let row = 0;
-          for (let cy = h / 2; cy <= ph + h / 2; cy += stepY, row++) {
-            const shift = row % 2 === 1 ? stepX / 2 : 0;
-            for (let cx = w / 2 + shift; cx <= pw + w / 2; cx += stepX) {
-              placeAt(cx, cy);
-            }
-          }
-        } else if (settings.x !== undefined && settings.y !== undefined) {
-          // Explicit placement: x/y is the box's TOP-LEFT (top-left origin,
-          // PDF points — same convention as annotation rects).
-          placeAt(settings.x + w / 2, settings.y + h / 2);
-        } else {
-          // Predefined slot: the box is centered on the grid point
-          // (10% page-margin inset from the edges).
-          const slot = settings.position ?? 'center';
-          const [slotRow, slotCol] = slot.split('-');
-          const mx = pw * 0.1;
-          const my = ph * 0.1;
-          const cx = slotCol === 'left' ? mx + w / 2 : slotCol === 'right' ? pw - mx - w / 2 : pw / 2;
-          const cy = slotRow === 'top' ? my + h / 2 : slotRow === 'bottom' ? ph - my - h / 2 : ph / 2;
-          placeAt(cx, cy);
-        }
-
-        const body: PDFOperator[] = [];
-        if (isText && font !== null && fontName !== null) {
-          // Mirror drawText's own encoding: font.encodeText produces the
-          // font's real (single-byte for the standard fonts) byte string.
-          // PDFHexString.fromText would emit UTF-16B (BOM + 2-byte code
-          // units), which standard fonts cannot render.
-          const hexText = font.encodeText(text);
-          for (const p of placements) {
-            body.push(
-              beginText(),
-              setFontAndSize(fontName, size),
-              setFillingRgbColor(color.red, color.green, color.blue),
-              setTextMatrix(1, 0, 0, 1, p.x, p.y),
-              showText(hexText),
-              endText(),
-            );
-            if (settings.underline === true) {
-              // Underline rule under the glyph box (same fill color),
-              // its own q/Q so the color state cannot leak.
-              body.push(
-                pushGraphicsState(),
-                setFillingRgbColor(color.red, color.green, color.blue),
-                rectangle(p.x, p.y - Math.max(1, size * 0.12), w, Math.max(1, size * 0.06)),
-                fill(),
-                popGraphicsState(),
-              );
-            }
-          }
-        } else if (image !== null && imgName !== null) {
-          for (const p of placements) {
-            body.push(
-              concatTransformationMatrix(1, 0, 0, 1, p.x, p.y),
-              concatTransformationMatrix(w, 0, 0, h, 0, 0),
-              drawObject(imgName),
-            );
-          }
-        } else {
-          return err('engine-error', 'addWatermark: internal error (missing font or image)');
-        }
-
-        const marker = WATERMARK_MARKER_PREFIX + Buffer.from(JSON.stringify({
-          id: watermarkId,
-          type: isText ? 'text' : 'image',
-          text: isText ? text : '',
-          page: vi + 1,
-          ...(fontName !== null ? { font: fontName.asString().replace(/^\//, '') } : {}),
-          ...(imgName !== null ? { img: imgName.asString().replace(/^\//, '') } : {}),
-          gs: gsName.asString().replace(/^\//, ''),
-        }), 'utf8').toString('base64url');
-
-        const ops = [pushGraphicsState(), setGraphicsState(gsName), ...body, popGraphicsState()];
-        const bytes = new TextEncoder().encode([marker, ...ops.map((o) => o.toString())].join('\n'));
-        const stream = doc.pdfDoc.context.stream(bytes);
-        const ref = doc.pdfDoc.context.register(stream);
-        page.node.addContentStream(ref);
-      }
-
-      doc.undoStack.push(snapshot);
-      doc.redoStack = [];
-      doc.modified = true;
-      return ok(buildState(doc));
-    } catch (e) {
-      await tryRestorePdfBytes(doc, snapshot.pdfBytes);
-      return err('engine-error', `addWatermark failed: ${e instanceof Error ? e.message : String(e)}`);
+    // Embed the font / image once (after the snapshot, like addStamp) and
+    // reuse it on every page.
+    let font: PDFFont | null = null;
+    let image: PDFImage | null = null;
+    if (isText) {
+      font = await embedEditFont(
+        doc.pdfDoc, settings.font ?? 'Helvetica', !!settings.bold, !!settings.italic,
+      );
+    } else {
+      const imageBytes = settings.imageBytes as Uint8Array;
+      image = detectImageFormat(imageBytes) === 'png'
+        ? await doc.pdfDoc.embedPng(imageBytes)
+        : await doc.pdfDoc.embedJpg(imageBytes);
     }
+
+    const size = isText ? (settings.size ?? DEFAULT_WATERMARK_TEXT_SIZE) : 0;
+
+    for (let vi = start - 1; vi < end; vi++) {
+      const origIdx = doc.order[vi];
+      if (origIdx === undefined || origIdx < 0 || origIdx >= doc.pdfDoc.getPageCount()) {
+        return err('out-of-range', `${opName}: page ${vi + 1} resolves to invalid original index ${origIdx}`);
+      }
+      const page = doc.pdfDoc.getPage(origIdx);
+      const { width: pw, height: ph } = page.getSize();
+
+      // Watermark box dimensions (PDF points).
+      let w: number;
+      let h: number;
+      if (isText && font !== null) {
+        w = font.widthOfTextAtSize(text, size);
+        // The font's line height bounds the box; the baseline sits 80%
+        // down the box (the ascent for all three standard families is
+        // ~0.72-0.78 of the line height, so this centers the glyphs
+        // visually without per-family metrics).
+        h = font.heightAtSize(size);
+      } else if (image !== null) {
+        // `size` is the drawn HEIGHT; the width scales to the image's
+        // aspect ratio. Default height: 33% of the page's shorter side.
+        h = settings.size ?? Math.min(pw, ph) * 0.33;
+        w = h * (image.width / image.height);
+      } else {
+        return err('engine-error', `${opName}: internal error (missing font or image)`);
+      }
+
+      // DEF-216: collect the placements first (the geometry below is
+      // unchanged from the old drawAt), then emit ONE dedicated,
+      // UNCOMPRESSED content stream per (watermark, page). The stream's
+      // first line is the identity marker; the operators mirror
+      // pdf-lib's own drawText/drawImage emission (q / GS / BT ... ET /
+      // Q, or q / GS / cm cm / Do / Q) so the baked output renders
+      // exactly like the old page.drawText/drawImage path.
+      const tag = `${tagBase}p${vi + 1}`;
+      const gsName = page.node.newExtGState(
+        `GSwm${tag}`,
+        doc.pdfDoc.context.obj({ Type: 'ExtGState', ca: opacity, CA: opacity }),
+      );
+      const fontName = isText && font !== null
+        ? page.node.newFontDictionary(`TFwm${tag}`, font.ref)
+        : null;
+      const imgName = image !== null
+        ? page.node.newXObject(`Imwm${tag}`, image.ref)
+        : null;
+
+      // A placement is { x, y } in bottom-left page space: for text, x
+      // is the glyph box's LEFT edge and y the baseline; for image,
+      // (x, y) is the image rect's bottom-left corner.
+      const placements: { x: number; y: number }[] = [];
+      const placeAt = (cx: number, cy: number): void => {
+        if (isText) {
+          // The box's CENTER is (cx, cy) in top-left page space; the
+          // baseline converts to bottom-left space with the font's 0.8
+          // factor (same convention as the old page.drawText call).
+          placements.push({ x: cx - w / 2, y: ph - (cy - h / 2) - h * 0.8 });
+        } else {
+          placements.push({ x: cx - w / 2, y: ph - cy - h / 2 });
+        }
+      };
+
+      if (settings.tile) {
+        // Staggered grid: rows step 1.5x the watermark height, columns
+        // 1.5x the width; odd rows shift half a column so the pattern
+        // reads as a diagonal field (classic "CONFIDENTIAL" look).
+        const stepX = w * 1.5;
+        const stepY = h * 1.5;
+        let row = 0;
+        for (let cy = h / 2; cy <= ph + h / 2; cy += stepY, row++) {
+          const shift = row % 2 === 1 ? stepX / 2 : 0;
+          for (let cx = w / 2 + shift; cx <= pw + w / 2; cx += stepX) {
+            placeAt(cx, cy);
+          }
+        }
+      } else if (settings.x !== undefined && settings.y !== undefined) {
+        // Explicit placement: x/y is the box's TOP-LEFT (top-left origin,
+        // PDF points — same convention as annotation rects).
+        placeAt(settings.x + w / 2, settings.y + h / 2);
+      } else {
+        // Predefined slot: the box is centered on the grid point
+        // (10% page-margin inset from the edges).
+        const slot = settings.position ?? 'center';
+        const [slotRow, slotCol] = slot.split('-');
+        const mx = pw * 0.1;
+        const my = ph * 0.1;
+        const cx = slotCol === 'left' ? mx + w / 2 : slotCol === 'right' ? pw - mx - w / 2 : pw / 2;
+        const cy = slotRow === 'top' ? my + h / 2 : slotRow === 'bottom' ? ph - my - h / 2 : ph / 2;
+        placeAt(cx, cy);
+      }
+
+      const body: PDFOperator[] = [];
+      if (isText && font !== null && fontName !== null) {
+        // Mirror drawText's own encoding: font.encodeText produces the
+        // font's real (single-byte for the standard fonts) byte string.
+        // PDFHexString.fromText would emit UTF-16B (BOM + 2-byte code
+        // units), which standard fonts cannot render.
+        const hexText = font.encodeText(text);
+        for (const p of placements) {
+          body.push(
+            beginText(),
+            setFontAndSize(fontName, size),
+            setFillingRgbColor(color.red, color.green, color.blue),
+            setTextMatrix(1, 0, 0, 1, p.x, p.y),
+            showText(hexText),
+            endText(),
+          );
+          if (settings.underline === true) {
+            // Underline rule under the glyph box (same fill color),
+            // its own q/Q so the color state cannot leak.
+            body.push(
+              pushGraphicsState(),
+              setFillingRgbColor(color.red, color.green, color.blue),
+              rectangle(p.x, p.y - Math.max(1, size * 0.12), w, Math.max(1, size * 0.06)),
+              fill(),
+              popGraphicsState(),
+            );
+          }
+        }
+      } else if (image !== null && imgName !== null) {
+        for (const p of placements) {
+          body.push(
+            concatTransformationMatrix(1, 0, 0, 1, p.x, p.y),
+            concatTransformationMatrix(w, 0, 0, h, 0, 0),
+            drawObject(imgName),
+          );
+        }
+      } else {
+        return err('engine-error', `${opName}: internal error (missing font or image)`);
+      }
+
+      const marker = WATERMARK_MARKER_PREFIX + Buffer.from(JSON.stringify({
+        id: watermarkId,
+        type: isText ? 'text' : 'image',
+        text: isText ? text : '',
+        page: vi + 1,
+        ...(fontName !== null ? { font: fontName.asString().replace(/^\//, '') } : {}),
+        ...(imgName !== null ? { img: imgName.asString().replace(/^\//, '') } : {}),
+        gs: gsName.asString().replace(/^\//, ''),
+      }), 'utf8').toString('base64url');
+
+      const ops = [pushGraphicsState(), setGraphicsState(gsName), ...body, popGraphicsState()];
+      const bytes = new TextEncoder().encode([marker, ...ops.map((o) => o.toString())].join('\n'));
+      const stream = doc.pdfDoc.context.stream(bytes);
+      const ref = doc.pdfDoc.context.register(stream);
+      page.node.addContentStream(ref);
+    }
+
+    return ok(undefined);
   }
 
   // -----------------------------------------------------------------------
@@ -4328,8 +4400,46 @@ export class EngineService {
     if (doc === undefined) {
       return err('engine-error', `unknown document: ${docId}`);
     }
+    const validated = await this._validateBatesPayload(doc, rawSettings, 'addBates');
+    if (!validated.ok) return validated;
+    const { settings, labels, size, color, fontFamily } = validated.value;
+
+    const snapshot = await snapshotDocWithPdf(doc);
+    try {
+      const runId = randomUUID().replace(/-/g, '').slice(0, 12);
+      const baked = await this._bakeBatesInto(
+        doc, settings, labels, `bates-${runId}`, runId, size, color, fontFamily, 'addBates',
+      );
+      if (!baked.ok) {
+        await tryRestorePdfBytes(doc, snapshot.pdfBytes);
+        return baked;
+      }
+
+      doc.undoStack.push(snapshot);
+      doc.redoStack = [];
+      doc.modified = true;
+      return ok({ state: buildState(doc), stamped: baked.value, labels });
+    } catch (e) {
+      await tryRestorePdfBytes(doc, snapshot.pdfBytes);
+      return err('engine-error', `addBates failed: ${e instanceof Error ? e.message : String(e)}`);
+    }
+  }
+
+  /** Phase 89/90 — validate a raw Bates payload against the live document and
+   *  fail-loud on the font's real glyph coverage BEFORE any mutation. Returns
+   *  the validated settings, the per-page labels, the resolved size/colour and
+   *  the resolved font family, or a typed error. Shared by addBates and
+   *  updateBates so both enforce the SAME contract. */
+  private async _validateBatesPayload(
+    doc: EngineDoc,
+    rawSettings: unknown,
+    opName: string,
+  ): Promise<Result<
+    { settings: BatesSettings; labels: string[]; size: number; color: RGB; fontFamily: EditFont },
+    EngineError
+  >> {
     if (rawSettings === null || typeof rawSettings !== 'object') {
-      return err('engine-error', 'addBates: settings must be an object');
+      return err('engine-error', `${opName}: settings must be an object`);
     }
 
     // Validate the page list against the live document FIRST, so an empty list
@@ -4337,26 +4447,37 @@ export class EngineService {
     // engine-error a null settings value would return.
     const rawPages = (rawSettings as { pages?: unknown }).pages;
     if (!Array.isArray(rawPages)) {
-      return err('engine-error', 'addBates: pages must be an array');
+      return err('engine-error', `${opName}: pages must be an array`);
     }
     if (rawPages.length === 0) {
-      return err('empty-range', 'addBates: select at least one page to stamp');
+      return err('empty-range', `${opName}: select at least one page to stamp`);
     }
     const pageCount = doc.order.length;
     const seen = new Set<number>();
     for (const p of rawPages) {
       if (typeof p !== 'number' || !Number.isInteger(p) || p < 1 || p > pageCount) {
-        return err('out-of-range', `addBates: page ${String(p)} is not an integer in 1..${pageCount}`);
+        return err('out-of-range', `${opName}: page ${String(p)} is not an integer in 1..${pageCount}`);
       }
       if (seen.has(p)) {
-        return err('out-of-range', `addBates: page ${p} is listed more than once`);
+        return err('out-of-range', `${opName}: page ${p} is listed more than once`);
       }
       seen.add(p);
     }
 
     const settings = validateBatesSettings(rawSettings);
     if (settings === null) {
-      return err('engine-error', 'addBates: settings are invalid');
+      return err('engine-error', `${opName}: settings are invalid`);
+    }
+
+    // Phase 90 — explicit placement coordinates, when present, must be finite
+    // and within 0..MAX_BATES_COORD. Rejected all-or-nothing before any
+    // mutation (the pure validator already enforces this; this is the engine's
+    // own fail-loud guard on the settings it is about to draw).
+    if (settings.x !== undefined && !isBatesCoord(settings.x)) {
+      return err('engine-error', `${opName}: x is not a finite coordinate in 0..14400`);
+    }
+    if (settings.y !== undefined && !isBatesCoord(settings.y)) {
+      return err('engine-error', `${opName}: y is not a finite coordinate in 0..14400`);
     }
 
     const labels = formatBatesSeries(settings);
@@ -4371,30 +4492,15 @@ export class EngineService {
     if (!isEditFont(fontFamily)) {
       return err(
         'engine-error',
-        `addBates: unsupported font ${JSON.stringify(fontFamily)}; supported families are ${EDIT_FONTS.join(', ')}`,
+        `${opName}: unsupported font ${JSON.stringify(fontFamily)}; supported families are ${EDIT_FONTS.join(', ')}`,
       );
     }
-    let unencodable: string[];
-    if (isBundledEditFont(fontFamily)) {
-      try {
-        const probe = await PDFDocument.create();
-        const probeFont = await embedEditFont(probe, fontFamily, false, false);
-        unencodable = bundledFontUnencodableChars(labels, probeFont);
-      } catch (e) {
-        return err('engine-error', `addBates: ${e instanceof Error ? e.message : String(e)}`);
-      }
-    } else {
-      unencodable = [];
-      for (const label of labels) {
-        for (const ch of undrawableStandardFontChars(label)) {
-          if (!unencodable.includes(ch)) unencodable.push(ch);
-        }
-      }
-    }
-    if (unencodable.length > 0) {
+    const unencodable = await this._batesUnencodable(labels, fontFamily, opName);
+    if (!unencodable.ok) return unencodable;
+    if (unencodable.value.length > 0) {
       return err(
         'engine-error',
-        `addBates: the ${fontFamily} font cannot encode ${unencodable.map((c) => JSON.stringify(c)).join(', ')} in the stamp label`,
+        `${opName}: the ${fontFamily} font cannot encode ${unencodable.value.map((c) => JSON.stringify(c)).join(', ')} in the stamp label`,
       );
     }
 
@@ -4404,40 +4510,91 @@ export class EngineService {
       settings.color?.g ?? 0,
       settings.color?.b ?? 0,
     );
-    const position = settings.position;
+    return ok({ settings, labels, size, color, fontFamily });
+  }
 
-    const snapshot = await snapshotDocWithPdf(doc);
-    try {
-      // Embed the font once and reuse it on every selected page. This is the
-      // same resolved family the DEF-513 encodability pre-check judged.
-      const font = await embedEditFont(doc.pdfDoc, fontFamily, false, false);
-      const runId = randomUUID().replace(/-/g, '').slice(0, 12);
-      const stamped: number[] = [];
+  /** Phase 89/90 — the font-specific part of the DEF-513 encodability probe:
+   *  the characters of `labels` the resolved family cannot draw. */
+  private async _batesUnencodable(
+    labels: string[],
+    fontFamily: EditFont,
+    opName: string,
+  ): Promise<Result<string[], EngineError>> {
+    if (isBundledEditFont(fontFamily)) {
+      try {
+        const probe = await PDFDocument.create();
+        const probeFont = await embedEditFont(probe, fontFamily, false, false);
+        return ok(bundledFontUnencodableChars(labels, probeFont));
+      } catch (e) {
+        return err('engine-error', `${opName}: ${e instanceof Error ? e.message : String(e)}`);
+      }
+    }
+    const unencodable: string[] = [];
+    for (const label of labels) {
+      for (const ch of undrawableStandardFontChars(label)) {
+        if (!unencodable.includes(ch)) unencodable.push(ch);
+      }
+    }
+    return ok(unencodable);
+  }
 
-      for (let k = 0; k < settings.pages.length; k++) {
-        const page1 = settings.pages[k];
-        const origIdx = doc.order[page1 - 1];
-        if (origIdx === undefined || origIdx < 0 || origIdx >= doc.pdfDoc.getPageCount()) {
-          await tryRestorePdfBytes(doc, snapshot.pdfBytes);
-          return err('out-of-range', `addBates: page ${page1} resolves to invalid original index ${origIdx}`);
-        }
-        const page = doc.pdfDoc.getPage(origIdx);
-        const { width: pw, height: ph } = page.getSize();
-        const label = labels[k];
+  /** Phase 89/90 — embed the font and bake one `%TFLEX-BATES ` content stream
+   *  per selected page, each carrying the full run record `{ id, page, label,
+   *  settings }`. Mutates `doc.pdfDoc` only; the caller owns the snapshot and
+   *  the undo push. Returns the stamped 1-based visible pages. */
+  private async _bakeBatesInto(
+    doc: EngineDoc,
+    settings: BatesSettings,
+    labels: string[],
+    batesId: string,
+    tagBase: string,
+    size: number,
+    color: RGB,
+    fontFamily: EditFont,
+    opName: string,
+  ): Promise<Result<number[], EngineError>> {
+    // Embed the font once and reuse it on every selected page. This is the
+    // same resolved family the DEF-513 encodability pre-check judged.
+    const font = await embedEditFont(doc.pdfDoc, fontFamily, false, false);
+    const stamped: number[] = [];
 
-        const w = font.widthOfTextAtSize(label, size);
-        const h = font.heightAtSize(size);
+    for (let k = 0; k < settings.pages.length; k++) {
+      const page1 = settings.pages[k];
+      const origIdx = doc.order[page1 - 1];
+      if (origIdx === undefined || origIdx < 0 || origIdx >= doc.pdfDoc.getPageCount()) {
+        return err('out-of-range', `${opName}: page ${page1} resolves to invalid original index ${origIdx}`);
+      }
+      const page = doc.pdfDoc.getPage(origIdx);
+      const { width: pw, height: ph } = page.getSize();
+      const label = labels[k];
 
-        const tag = `${runId}p${page1}`;
-        const gsName = page.node.newExtGState(
-          `GSbates${tag}`,
-          doc.pdfDoc.context.obj({ Type: 'ExtGState', ca: 1, CA: 1 }),
-        );
-        const fontName = page.node.newFontDictionary(`TFbates${tag}`, font.ref);
+      const w = font.widthOfTextAtSize(label, size);
+      const h = font.heightAtSize(size);
 
+      const tag = `${tagBase}p${page1}`;
+      const gsName = page.node.newExtGState(
+        `GSbates${tag}`,
+        doc.pdfDoc.context.obj({ Type: 'ExtGState', ca: 1, CA: 1 }),
+      );
+      const fontName = page.node.newFontDictionary(`TFbates${tag}`, font.ref);
+
+      // Phase 90 — explicit placement when BOTH x and y are finite: the glyph
+      // box's TOP-LEFT goes at (x, y) in top-left page space, clamped only to
+      // the page bounds (no 10% margin), so edge/corner/gutter are reachable.
+      // Otherwise the Phase 89 3x3 slot maths is unchanged.
+      let x: number;
+      let y: number;
+      if (settings.x !== undefined && settings.y !== undefined) {
+        const left = Math.min(Math.max(settings.x, 0), Math.max(0, pw - w));
+        const top = Math.min(Math.max(settings.y, 0), Math.max(0, ph - h));
+        // Convert the box's top-left (top-left space) to the baseline
+        // (bottom-left space), matching the slot branch's 0.8 factor.
+        x = left;
+        y = ph - top - h * 0.8;
+      } else {
         // Predefined slot: the glyph box is centered on the grid point, inset
         // by the same 10% page margin the Phase 18 watermark uses.
-        const slot = position;
+        const slot = settings.position;
         const [slotRow, slotCol] = slot.split('-');
         const mx = pw * 0.1;
         const my = ph * 0.1;
@@ -4445,44 +4602,247 @@ export class EngineService {
         const cy = slotRow === 'top' ? my + h / 2 : slotRow === 'bottom' ? ph - my - h / 2 : ph / 2;
         // Convert the box center (top-left space) to the baseline (bottom-left
         // space), matching the watermark's 0.8 factor.
-        const x = cx - w / 2;
-        const y = ph - (cy - h / 2) - h * 0.8;
+        x = cx - w / 2;
+        y = ph - (cy - h / 2) - h * 0.8;
+      }
 
-        const hexText = font.encodeText(label);
-        const ops: PDFOperator[] = [
-          pushGraphicsState(),
-          setGraphicsState(gsName),
-          beginText(),
-          setFontAndSize(fontName, size),
-          setFillingRgbColor(color.red, color.green, color.blue),
-          setTextMatrix(1, 0, 0, 1, x, y),
-          showText(hexText),
-          endText(),
-          popGraphicsState(),
-        ];
+      const hexText = font.encodeText(label);
+      const ops: PDFOperator[] = [
+        pushGraphicsState(),
+        setGraphicsState(gsName),
+        beginText(),
+        setFontAndSize(fontName, size),
+        setFillingRgbColor(color.red, color.green, color.blue),
+        setTextMatrix(1, 0, 0, 1, x, y),
+        showText(hexText),
+        endText(),
+        popGraphicsState(),
+      ];
 
-        const marker = BATES_MARKER_PREFIX + Buffer.from(JSON.stringify({
-          id: `bates-${runId}`,
-          page: page1,
-          label,
-        }), 'utf8').toString('base64url');
+      const marker = BATES_MARKER_PREFIX + Buffer.from(JSON.stringify({
+        id: batesId,
+        page: page1,
+        label,
+        settings,
+      }), 'utf8').toString('base64url');
 
-        const bytes = new TextEncoder().encode([marker, ...ops.map((o) => o.toString())].join('\n'));
-        const stream = doc.pdfDoc.context.stream(bytes);
-        const ref = doc.pdfDoc.context.register(stream);
-        page.node.addContentStream(ref);
-        stamped.push(page1);
+      const bytes = new TextEncoder().encode([marker, ...ops.map((o) => o.toString())].join('\n'));
+      const stream = doc.pdfDoc.context.stream(bytes);
+      const ref = doc.pdfDoc.context.register(stream);
+      page.node.addContentStream(ref);
+      stamped.push(page1);
+    }
+
+    return ok(stamped);
+  }
+
+  // -----------------------------------------------------------------------
+  // Phase 90 (TFL-509): getBates / updateBates / deleteBates — run identity
+  // -----------------------------------------------------------------------
+
+  /** Phase 90 — walk every visible page's content streams in `doc.order` and
+   *  invoke `visit(marker, pageNumber)` for each `%TFLEX-BATES ` marker. */
+  private _forEachBatesMarker(
+    doc: EngineDoc,
+    visit: (marker: BatesMarker, pageNumber: number) => void,
+  ): void {
+    for (let vi = 0; vi < doc.order.length; vi++) {
+      const origIdx = doc.order[vi];
+      if (origIdx === undefined || origIdx < 0 || origIdx >= doc.pdfDoc.getPageCount()) continue;
+      const page = doc.pdfDoc.getPage(origIdx);
+      // DEF-515: read `/Contents` without `normalizedEntries()`. Normalizing
+      // lazily rewrites a single-stream /Contents into an array, which makes a
+      // pure read change the serialized byte image. `Contents()` only looks up.
+      const contents = page.node.Contents();
+      if (!contents) continue;
+      const elements: PDFObject[] = contents instanceof PDFArray
+        ? Array.from({ length: contents.size() }, (_, i) => contents.get(i))
+        : [contents];
+      for (const el of elements) {
+        const stream = doc.pdfDoc.context.lookupMaybe(el, PDFStream);
+        if (!stream) continue;
+        let marker: BatesMarker | null = null;
+        try {
+          marker = readBatesMarker(stream.getContents());
+        } catch {
+          continue;
+        }
+        if (marker !== null) visit(marker, vi + 1);
+      }
+    }
+  }
+
+  /** Phase 90 — every marker of one run, in page order. */
+  private _batesMarkersFor(doc: EngineDoc, batesId: string): BatesMarker[] {
+    const out: BatesMarker[] = [];
+    this._forEachBatesMarker(doc, (marker) => {
+      if (marker.id === batesId) out.push(marker);
+    });
+    return out;
+  }
+
+  /** Phase 90 — scan every visible page's content streams for Bates markers
+   *  and group them by run id (first-seen order over the visible pages).
+   *  `pages` and `labels` are parallel arrays in visible-page order; the
+   *  settings come from the first marker of the group. A legacy Phase 89
+   *  marker (no settings) lists with the shipped defaults and no x/y. */
+  private _scanBatesMarkers(doc: EngineDoc): BatesInfo[] {
+    const byId = new Map<string, BatesInfo>();
+    this._forEachBatesMarker(doc, (marker, pageNumber) => {
+      let info = byId.get(marker.id);
+      if (info === undefined) {
+        const s = marker.settings;
+        info = {
+          id: marker.id,
+          prefix: s?.prefix ?? DEFAULT_BATES_DEFAULTS.prefix,
+          suffix: s?.suffix ?? DEFAULT_BATES_DEFAULTS.suffix,
+          startNumber: s?.startNumber ?? DEFAULT_BATES_DEFAULTS.startNumber,
+          padding: s?.padding ?? DEFAULT_BATES_DEFAULTS.padding,
+          position: s?.position ?? DEFAULT_BATES_DEFAULTS.position,
+          size: s?.size ?? DEFAULT_BATES_SIZE,
+          pages: [],
+          labels: [],
+        };
+        if (s?.x !== undefined) info.x = s.x;
+        if (s?.y !== undefined) info.y = s.y;
+        if (s?.font !== undefined) info.font = s.font;
+        if (s?.color !== undefined) info.color = s.color;
+        byId.set(marker.id, info);
+      }
+      if (!info.pages.includes(pageNumber)) {
+        info.pages.push(pageNumber);
+        info.labels.push(marker.label);
+      }
+    });
+    return [...byId.values()];
+  }
+
+  /** Phase 90 — remove every content stream of one Bates run, in place. The
+   *  caller owns the snapshot/undo. */
+  private _removeBatesStreams(doc: EngineDoc, batesId: string): void {
+    for (let vi = 0; vi < doc.order.length; vi++) {
+      const origIdx = doc.order[vi];
+      if (origIdx === undefined || origIdx < 0 || origIdx >= doc.pdfDoc.getPageCount()) continue;
+      const page = doc.pdfDoc.getPage(origIdx);
+      const contents = page.node.normalizedEntries().Contents;
+      if (!contents || !(contents instanceof PDFArray)) continue;
+      // Iterate backwards: removal shifts the indices after it.
+      for (let i = contents.size() - 1; i >= 0; i--) {
+        const stream = doc.pdfDoc.context.lookupMaybe(contents.get(i), PDFStream);
+        if (!stream) continue;
+        let marker: BatesMarker | null = null;
+        try {
+          marker = readBatesMarker(stream.getContents());
+        } catch {
+          continue;
+        }
+        if (marker !== null && marker.id === batesId) contents.remove(i);
+      }
+    }
+  }
+
+  async getBates(docId: string): Promise<Result<BatesInfo[], EngineError>> {
+    return this._enqueue(docId, () => this._getBatesImpl(docId));
+  }
+
+  private async _getBatesImpl(docId: string): Promise<Result<BatesInfo[], EngineError>> {
+    const doc = this.docs.get(docId);
+    if (doc === undefined) {
+      return err('engine-error', `unknown document: ${docId}`);
+    }
+    return ok(this._scanBatesMarkers(doc));
+  }
+
+  async updateBates(
+    docId: string,
+    id: string,
+    settings: BatesSettings,
+  ): Promise<Result<BatesResult, EngineError>> {
+    return this._enqueue(docId, () => this._updateBatesImpl(docId, id, settings));
+  }
+
+  private async _updateBatesImpl(
+    docId: string,
+    batesId: string,
+    rawSettings: BatesSettings,
+  ): Promise<Result<BatesResult, EngineError>> {
+    const doc = this.docs.get(docId);
+    if (doc === undefined) {
+      return err('engine-error', `unknown document: ${docId}`);
+    }
+    if (typeof batesId !== 'string' || batesId.length === 0) {
+      return err('engine-error', 'updateBates: id must be a non-empty string');
+    }
+
+    // Unknown id refuses; a legacy (settings-less) run refuses with a readable
+    // message but stays deletable. Both mutate nothing.
+    const found = this._batesMarkersFor(doc, batesId);
+    if (found.length === 0) {
+      return err('engine-error', `updateBates: no Bates run with id ${batesId} found`);
+    }
+    if (found[0].settings === null) {
+      return err('engine-error', 'this Bates run was applied by an older version; delete and reapply');
+    }
+
+    const validated = await this._validateBatesPayload(doc, rawSettings, 'updateBates');
+    if (!validated.ok) return validated;
+    const { settings, labels, size, color, fontFamily } = validated.value;
+
+    // ONE snapshot backs both the removal and the re-bake (one undo entry).
+    const snapshot = await snapshotDocWithPdf(doc);
+    try {
+      this._removeBatesStreams(doc, batesId);
+      const tagBase = batesId.replace(/^bates-/, '').replace(/[^a-zA-Z0-9]/g, '') || 'run';
+      const baked = await this._bakeBatesInto(
+        doc, settings, labels, batesId, tagBase, size, color, fontFamily, 'updateBates',
+      );
+      if (!baked.ok) {
+        await tryRestorePdfBytes(doc, snapshot.pdfBytes);
+        return baked;
       }
 
       doc.undoStack.push(snapshot);
       doc.redoStack = [];
       doc.modified = true;
-      return ok({ state: buildState(doc), stamped, labels });
+      return ok({ state: buildState(doc), stamped: baked.value, labels });
     } catch (e) {
       await tryRestorePdfBytes(doc, snapshot.pdfBytes);
-      return err('engine-error', `addBates failed: ${e instanceof Error ? e.message : String(e)}`);
+      return err('engine-error', `updateBates failed: ${e instanceof Error ? e.message : String(e)}`);
     }
   }
+
+  async deleteBates(docId: string, id: string): Promise<Result<EngineState, EngineError>> {
+    return this._enqueue(docId, () => this._deleteBatesImpl(docId, id));
+  }
+
+  private async _deleteBatesImpl(
+    docId: string,
+    batesId: string,
+  ): Promise<Result<EngineState, EngineError>> {
+    const doc = this.docs.get(docId);
+    if (doc === undefined) {
+      return err('engine-error', `unknown document: ${docId}`);
+    }
+    if (typeof batesId !== 'string' || batesId.length === 0) {
+      return err('engine-error', 'deleteBates: id must be a non-empty string');
+    }
+    if (this._batesMarkersFor(doc, batesId).length === 0) {
+      return err('engine-error', `deleteBates: no Bates run with id ${batesId} found`);
+    }
+
+    const snapshot = await snapshotDocWithPdf(doc);
+    try {
+      this._removeBatesStreams(doc, batesId);
+      doc.undoStack.push(snapshot);
+      doc.redoStack = [];
+      doc.modified = true;
+      return ok(buildState(doc));
+    } catch (e) {
+      await tryRestorePdfBytes(doc, snapshot.pdfBytes);
+      return err('engine-error', `deleteBates failed: ${e instanceof Error ? e.message : String(e)}`);
+    }
+  }
+
 
   // -----------------------------------------------------------------------
   // Phase 18 / DEF-216: getWatermarks / deleteWatermark — watermark identity
@@ -4499,7 +4859,9 @@ export class EngineService {
       const origIdx = doc.order[vi];
       if (origIdx === undefined || origIdx < 0 || origIdx >= doc.pdfDoc.getPageCount()) continue;
       const page = doc.pdfDoc.getPage(origIdx);
-      const contents = page.node.normalizedEntries().Contents;
+      // DEF-515: pure read — see `_forEachBatesMarker`. `normalizedEntries()`
+      // rewrites a single-stream /Contents into an array; `Contents()` does not.
+      const contents = page.node.Contents();
       if (!contents) continue;
       const elements: PDFObject[] = contents instanceof PDFArray
         ? Array.from({ length: contents.size() }, (_, i) => contents.get(i))
@@ -4544,19 +4906,12 @@ export class EngineService {
     return this._enqueue(docId, () => this._deleteWatermarkImpl(docId, watermarkId));
   }
 
-  private async _deleteWatermarkImpl(
-    docId: string,
+  /** Phase 18/90 — find every page that carries a marker of `watermarkId`,
+   *  with the markers found on it. */
+  private _watermarkTargets(
+    doc: EngineDoc,
     watermarkId: string,
-  ): Promise<Result<EngineState, EngineError>> {
-    const doc = this.docs.get(docId);
-    if (doc === undefined) {
-      return err('engine-error', `unknown document: ${docId}`);
-    }
-    if (typeof watermarkId !== 'string' || watermarkId.length === 0) {
-      return err('engine-error', 'deleteWatermark: watermarkId must be a non-empty string');
-    }
-
-    // Find every page whose content carries a marker for this id.
+  ): { origIdx: number; markers: WatermarkMarker[] }[] {
     const targets: { origIdx: number; markers: WatermarkMarker[] }[] = [];
     for (let vi = 0; vi < doc.order.length; vi++) {
       const origIdx = doc.order[vi];
@@ -4578,47 +4933,73 @@ export class EngineService {
       }
       if (markers.length > 0) targets.push({ origIdx, markers });
     }
+    return targets;
+  }
+
+  /** Phase 18/90 — remove the run's content streams (and best-effort resource
+   *  entries) from every target page, in place. The caller owns the undo. */
+  private _removeWatermarkStreams(
+    doc: EngineDoc,
+    watermarkId: string,
+    targets: { origIdx: number; markers: WatermarkMarker[] }[],
+  ): void {
+    for (const { origIdx, markers } of targets) {
+      const page = doc.pdfDoc.getPage(origIdx);
+      const contents = page.node.normalizedEntries().Contents;
+      if (contents && contents instanceof PDFArray) {
+        // Iterate backwards: removal shifts the indices after it.
+        for (let i = contents.size() - 1; i >= 0; i--) {
+          const stream = doc.pdfDoc.context.lookupMaybe(contents.get(i), PDFStream);
+          if (!stream) continue;
+          let marker: WatermarkMarker | null = null;
+          try {
+            marker = readWatermarkMarker(stream.getContents());
+          } catch {
+            continue;
+          }
+          if (marker !== null && marker.id === watermarkId) {
+            contents.remove(i);
+          }
+        }
+      }
+      // Best-effort resource cleanup: drop the marker's font/XObject/
+      // ExtGState names from the page's resource dicts (skip a missing
+      // key — another op may have removed it first).
+      const resources = page.node.Resources();
+      const removeResource = (dictKey: string, name: string | undefined): void => {
+        if (!name || !resources) return;
+        const sub = doc.pdfDoc.context.lookupMaybe(resources.get(PDFName.of(dictKey)), PDFDict);
+        const key = PDFName.of(name);
+        if (sub && sub.has(key)) sub.delete(key);
+      };
+      for (const marker of markers) {
+        removeResource('Font', marker.font);
+        removeResource('XObject', marker.img);
+        removeResource('ExtGState', marker.gs);
+      }
+    }
+  }
+
+  private async _deleteWatermarkImpl(
+    docId: string,
+    watermarkId: string,
+  ): Promise<Result<EngineState, EngineError>> {
+    const doc = this.docs.get(docId);
+    if (doc === undefined) {
+      return err('engine-error', `unknown document: ${docId}`);
+    }
+    if (typeof watermarkId !== 'string' || watermarkId.length === 0) {
+      return err('engine-error', 'deleteWatermark: watermarkId must be a non-empty string');
+    }
+
+    const targets = this._watermarkTargets(doc, watermarkId);
     if (targets.length === 0) {
       return err('engine-error', `deleteWatermark: no watermark with id ${watermarkId} found`);
     }
 
     const snapshot = await snapshotDocWithPdf(doc);
     try {
-      for (const { origIdx, markers } of targets) {
-        const page = doc.pdfDoc.getPage(origIdx);
-        const contents = page.node.normalizedEntries().Contents;
-        if (contents && contents instanceof PDFArray) {
-          // Iterate backwards: removal shifts the indices after it.
-          for (let i = contents.size() - 1; i >= 0; i--) {
-            const stream = doc.pdfDoc.context.lookupMaybe(contents.get(i), PDFStream);
-            if (!stream) continue;
-            let marker: WatermarkMarker | null = null;
-            try {
-              marker = readWatermarkMarker(stream.getContents());
-            } catch {
-              continue;
-            }
-            if (marker !== null && marker.id === watermarkId) {
-              contents.remove(i);
-            }
-          }
-        }
-        // Best-effort resource cleanup: drop the marker's font/XObject/
-        // ExtGState names from the page's resource dicts (skip a missing
-        // key — another op may have removed it first).
-        const resources = page.node.Resources();
-        const removeResource = (dictKey: string, name: string | undefined): void => {
-          if (!name || !resources) return;
-          const sub = doc.pdfDoc.context.lookupMaybe(resources.get(PDFName.of(dictKey)), PDFDict);
-          const key = PDFName.of(name);
-          if (sub && sub.has(key)) sub.delete(key);
-        };
-        for (const marker of markers) {
-          removeResource('Font', marker.font);
-          removeResource('XObject', marker.img);
-          removeResource('ExtGState', marker.gs);
-        }
-      }
+      this._removeWatermarkStreams(doc, watermarkId, targets);
       doc.undoStack.push(snapshot);
       doc.redoStack = [];
       doc.modified = true;
@@ -4626,6 +5007,62 @@ export class EngineService {
     } catch (e) {
       await tryRestorePdfBytes(doc, snapshot.pdfBytes);
       return err('engine-error', `deleteWatermark failed: ${e instanceof Error ? e.message : String(e)}`);
+    }
+  }
+
+  async updateWatermark(
+    docId: string,
+    id: string,
+    settings: WatermarkSettings,
+  ): Promise<Result<EngineState, EngineError>> {
+    return this._enqueue(docId, () => this._updateWatermarkImpl(docId, id, settings));
+  }
+
+  private async _updateWatermarkImpl(
+    docId: string,
+    watermarkId: string,
+    rawSettings: WatermarkSettings,
+  ): Promise<Result<EngineState, EngineError>> {
+    const doc = this.docs.get(docId);
+    if (doc === undefined) {
+      return err('engine-error', `unknown document: ${docId}`);
+    }
+    if (typeof watermarkId !== 'string' || watermarkId.length === 0) {
+      return err('engine-error', 'updateWatermark: id must be a non-empty string');
+    }
+    const settings = normalizeWatermarkSettings(rawSettings);
+    if (settings === null) {
+      return err('engine-error', 'updateWatermark: settings are invalid');
+    }
+    const targets = this._watermarkTargets(doc, watermarkId);
+    if (targets.length === 0) {
+      return err('engine-error', `updateWatermark: no watermark with id ${watermarkId} found`);
+    }
+
+    // Reuse the run's numeric suffix for resource naming so the re-baked
+    // streams keep the same identity.
+    const suffix = Number.parseInt(watermarkId.replace(/^wm-/, ''), 10);
+    const tagBase = Number.isFinite(suffix) ? suffix : 0;
+
+    // ONE snapshot backs both the removal and the re-bake (one undo entry).
+    const snapshot = await snapshotDocWithPdf(doc);
+    try {
+      this._removeWatermarkStreams(doc, watermarkId, targets);
+      const baked = await this._bakeWatermarkInto(
+        doc, settings, watermarkId, tagBase, 'updateWatermark',
+      );
+      if (!baked.ok) {
+        await tryRestorePdfBytes(doc, snapshot.pdfBytes);
+        return baked;
+      }
+
+      doc.undoStack.push(snapshot);
+      doc.redoStack = [];
+      doc.modified = true;
+      return ok(buildState(doc));
+    } catch (e) {
+      await tryRestorePdfBytes(doc, snapshot.pdfBytes);
+      return err('engine-error', `updateWatermark failed: ${e instanceof Error ? e.message : String(e)}`);
     }
   }
 

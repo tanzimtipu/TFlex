@@ -60,6 +60,7 @@ import type {
   SanitizeResult,
   SpaceAudit,
   SpellCheckLanguage,
+  BatesInfo,
   BatesResult,
   BatesSettings,
   TextBoxStylePatch,
@@ -473,6 +474,33 @@ const engineApi = {
     settings: BatesSettings,
   ): Promise<Result<BatesResult, EngineError>> {
     return ipcRenderer.invoke(IPC.engineAddBates, docId, settings);
+  },
+  // Phase 90 (TFL-509) — list, edit and delete applied Bates runs, plus edit
+  // an applied watermark in place.
+  getBates(
+    docId: string,
+  ): Promise<Result<BatesInfo[], EngineError>> {
+    return ipcRenderer.invoke(IPC.engineGetBates, docId);
+  },
+  updateBates(
+    docId: string,
+    id: string,
+    settings: BatesSettings,
+  ): Promise<Result<BatesResult, EngineError>> {
+    return ipcRenderer.invoke(IPC.engineUpdateBates, docId, id, settings);
+  },
+  deleteBates(
+    docId: string,
+    id: string,
+  ): Promise<Result<EngineState, EngineError>> {
+    return ipcRenderer.invoke(IPC.engineDeleteBates, docId, id);
+  },
+  updateWatermark(
+    docId: string,
+    id: string,
+    settings: WatermarkSettings,
+  ): Promise<Result<EngineState, EngineError>> {
+    return ipcRenderer.invoke(IPC.engineUpdateWatermark, docId, id, settings);
   },
   exportFdf(
     docId: string,

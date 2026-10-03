@@ -147,6 +147,7 @@ import {
 import { waitForRenderActive } from "../state/renderSuspend";
 import type {
   AppTheme,
+  BatesInfo,
   EngineError,
   FormField,
   ReplaceOccurrence,
@@ -155,7 +156,9 @@ import type {
   ReplaceTextResult,
   SavedSignature,
   SignaturePlacement,
+  WatermarkInfo,
 } from "../../shared/types";
+import type { ReviewElementRef } from "./ReviewElementsPanel";
 import type { TextItemGeom } from "../annotations/geometry";
 import type { PaneId } from "../state/multiMode";
 import type {
@@ -446,6 +449,16 @@ interface DocumentViewProps extends DocumentViewDockProps {
   onCreateAnnotation?: (annotation: Annotation) => void;
   onEditAnnotation?: (id: string, patch: AnnotationPatch) => void;
   onDeleteAnnotation?: (id: string) => void;
+  /** Phase 90 (TFL-509-C1) — the unified review list's non-annotation sources
+   *  and handlers, threaded to the REVIEW ContextPanel. The existing
+   *  `signatures` prop below is the placed-signature list the same panel
+   *  consumes, so it is reused rather than duplicated. */
+  bates?: readonly BatesInfo[];
+  watermarks?: readonly WatermarkInfo[];
+  onSelectReviewElement?: ((el: ReviewElementRef) => void) | null;
+  onEditReviewElement?: ((el: ReviewElementRef) => void) | null;
+  onDeleteReviewElement?: ((el: ReviewElementRef) => void) | null;
+  reviewErrorFor?: ((el: ReviewElementRef) => string | null) | null;
   /** Phase 28 â€” append a comment / reply to an annotation's thread. The
    *  host (App) routes it to the engine and mirrors the echoed state,
    *  which refreshes the comment box's list and flips the annotation's
@@ -969,6 +982,12 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
   onCreateAnnotation,
   onEditAnnotation,
   onDeleteAnnotation,
+  bates = [],
+  watermarks = [],
+  onSelectReviewElement = null,
+  onEditReviewElement = null,
+  onDeleteReviewElement = null,
+  reviewErrorFor = null,
   onAddComment,
   /** DEF-166 â€” annotation ids whose overlay text must be drawn LIVE
    *  (created / edited since the current page-canvas bytes were
@@ -4324,6 +4343,13 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
       onJumpToAnnotation={onAnnJump}
       onEditAnnotation={onEditAnnotation}
       onDeleteAnnotation={onDeleteAnnotation}
+      bates={bates}
+      watermarks={watermarks}
+      signatures={signatures}
+      onSelectReviewElement={onSelectReviewElement}
+      onEditReviewElement={onEditReviewElement}
+      onDeleteReviewElement={onDeleteReviewElement}
+      reviewErrorFor={reviewErrorFor}
       savedSignatures={savedSignatures}
       armedSignatureId={armedSignatureId}
       onSignSignature={onSignSignature}

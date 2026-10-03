@@ -561,6 +561,12 @@ export interface BatesSettings {
   startNumber: number;
   padding: number;
   position: WatermarkPosition;
+  /** Phase 90 — explicit top-left placement in PDF points (top-left origin).
+   *  When BOTH `x` and `y` are finite the stamp's top-left goes there (clamped
+   *  only to the page bounds, no margin); when either is absent the 3x3 slot
+   *  maths is used. Validated finite and within 0..MAX_BATES_COORD. */
+  x?: number;
+  y?: number;
   font?: EditFont;
   size?: number;
   color?: EditColor;
@@ -571,6 +577,27 @@ export interface BatesSettings {
 export interface BatesResult {
   state: EngineState;
   stamped: number[];
+  labels: string[];
+}
+
+/** Phase 90 — one applied Bates run as reported by `engine.getBates`.
+ *  Grouped by the marker `id`: `pages` and `labels` are parallel arrays in
+ *  visible-page order, and the settings come from the first marker of the
+ *  group. `x`/`y` are absent for a run placed in a 3x3 slot, or for a legacy
+ *  Phase 89 marker that carried no settings. */
+export interface BatesInfo {
+  id: string;
+  prefix: string;
+  suffix: string;
+  startNumber: number;
+  padding: number;
+  position: WatermarkPosition;
+  x?: number;
+  y?: number;
+  font?: EditFont;
+  size: number;
+  color?: EditColor;
+  pages: number[];
   labels: string[];
 }
 

@@ -13,6 +13,7 @@ import type {
   AddStampPayload,
   AddTextBoxPayload,
   ApplyRedactionsPayload,
+  BatesInfo,
   BatesResult,
   BatesSettings,
   CommentThread,
@@ -581,6 +582,25 @@ addWatermark?(
     docId: string,
     settings: BatesSettings,
   ): Promise<Result<BatesResult, EngineError>>;
+  /** Phase 90 (TFL-509) — list applied Bates runs / re-bake one / delete one.
+   *  Optional so a pre-Phase-90 backend degrades with a friendly engine-error. */
+  getBates?(docId: string): Promise<Result<BatesInfo[], EngineError>>;
+  updateBates?(
+    docId: string,
+    id: string,
+    settings: BatesSettings,
+  ): Promise<Result<BatesResult, EngineError>>;
+  deleteBates?(
+    docId: string,
+    id: string,
+  ): Promise<Result<SharedEngineState, EngineError>>;
+  /** Phase 90 (TFL-509) — re-bake an applied watermark in place. Optional so a
+   *  pre-Phase-90 backend degrades with a friendly engine-error. */
+  updateWatermark?(
+    docId: string,
+    id: string,
+    settings: WatermarkSettings,
+  ): Promise<Result<SharedEngineState, EngineError>>;
 }
 
 /** Normalize a wire EngineState into the renderer's EngineState: the Phase 3
@@ -854,6 +874,13 @@ function missingPhase89(): Result<never, EngineError> {
   return err(
     "engine-error",
     "Bates numbering requires the Phase 89 backend update.",
+  );
+}
+
+function missingPhase90(): Result<never, EngineError> {
+  return err(
+    "engine-error",
+    "This operation requires the Phase 90 backend update.",
   );
 }
 
@@ -1502,6 +1529,44 @@ class RealEngineAdapter implements EngineApi {
       : r;
   }
 
+  // -- Phase 90: apply-run management --
+
+  /** Phase 90 (TFL-509) — list every applied Bates run. The list carries no
+   *  engine state, so the raw engine result is returned as-is. */
+  async getBates(docId: string): Promise<Result<BatesInfo[], EngineError>> {
+    if (this.inner.getBates === undefined) return missingPhase90();
+    return this.inner.getBates(docId);
+  }
+
+  /** Phase 90 (TFL-509) — re-bake an applied Bates run through the real
+   *  engine. The result embeds its own `state`, normalized through the cache
+   *  while preserving the stamped pages and labels (mirrors `addBates`). */
+  async updateBates(
+    docId: string,
+    id: string,
+    settings: BatesSettings,
+  ): Promise<Result<BatesResult, EngineError>> {
+    if (this.inner.updateBates === undefined) return missingPhase90();
+    const r = await this.inner.updateBates(docId, id, settings);
+    return r.ok
+      ? {
+          ok: true,
+          value: { ...r.value, state: this.normalizeAndCache(docId, r.value.state) },
+        }
+      : r;
+  }
+
+  /** Phase 90 (TFL-509) — delete an applied Bates run. The engine echoes the
+   *  new state so the renderer mirror refreshes through `normalizeAndCache`. */
+  async deleteBates(
+    docId: string,
+    id: string,
+  ): Promise<Result<EngineState, EngineError>> {
+    if (this.inner.deleteBates === undefined) return missingPhase90();
+    const r = await this.inner.deleteBates(docId, id);
+    return r.ok ? { ok: true, value: this.normalizeAndCache(docId, r.value) } : r;
+  }
+
   async addTextBox(
     docId: string,
     payload: AddTextBoxPayload,
@@ -1802,6 +1867,19 @@ class RealEngineAdapter implements EngineApi {
   ): Promise<Result<EngineState, EngineError>> {
     if (this.inner.deleteWatermark === undefined) return missingPhase18();
     const r = await this.inner.deleteWatermark(docId, watermarkId);
+    return r.ok ? { ok: true, value: this.normalizeAndCache(docId, r.value) } : r;
+  }
+
+  /** Phase 90 (TFL-509) — re-bake an applied watermark with new settings.
+   *  The engine echoes the new state so the renderer's mirror refreshes
+   *  through the standard `normalizeAndCache` path. */
+  async updateWatermark(
+    docId: string,
+    id: string,
+    settings: WatermarkSettings,
+  ): Promise<Result<EngineState, EngineError>> {
+    if (this.inner.updateWatermark === undefined) return missingPhase90();
+    const r = await this.inner.updateWatermark(docId, id, settings);
     return r.ok ? { ok: true, value: this.normalizeAndCache(docId, r.value) } : r;
   }
 }

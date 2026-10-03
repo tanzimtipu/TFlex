@@ -14,6 +14,12 @@ const path = require('node:path');
 const { launchApp } = require('./lib/launch.cjs');
 const { hardClose, gotoStage, closeStandalonePrintWindow } = require('./lib/helpers.cjs');
 
+// The Paperclip/kimi runtime exports ELECTRON_RUN_AS_NODE=1 for its own Node
+// shim; launchApp spreads process.env, so Electron would exit immediately as
+// plain Node. Drop it before any launch so the real GUI starts (same guard as
+// phase89/phase90 specs).
+delete process.env.ELECTRON_RUN_AS_NODE;
+
 const ROOT = path.resolve(__dirname, '..');
 const REPORT = path.join(ROOT, 'test-fixtures', 'report.pdf');
 const SHOTS = path.join(ROOT, 'screenshots');
@@ -269,7 +275,7 @@ const inspectorSlots = () =>
   win.$$eval('[data-inspector-slot]', (els) => els.map((e) => e.getAttribute('data-inspector-slot')));
 
 test.describe('Phase 36 chunk 5 — the Inspector', () => {
-  test('P6 the four stages and a page selection render the right sections; the annotations list has ONE home', async () => {
+  test('P6 the four stages and a page selection render the right sections; the unified review list is re-parented by both panels', async () => {
     await openReport();
 
     const seen = {};
@@ -289,17 +295,22 @@ test.describe('Phase 36 chunk 5 — the Inspector', () => {
 
     expect(seen.pages.slots).toEqual(['page', 'on-page', 'document']);
     expect(seen.edit.slots).toEqual(['cropbox']);
-    expect(seen.review.slots).toEqual(['comments', 'annotations']);
+    // Phase 90 (chunk C1/C2) — the Inspector REVIEW slot moved from the
+    // retired `annotations` section to the re-parented unified review list.
+    expect(seen.review.slots).toEqual(['comments', 'review-elements']);
     expect(seen.deliver.slots).toEqual(['export', 'document']);
     expect(seen.pages.title).toContain('Page 1');
 
-    // REVIEW: the annotations LIST has exactly ONE home (the ContextPanel
-    // body); the Inspector shows only a reference, never a second copy.
+    // Phase 90 (Ruling 6) supersedes the Phase 36 "ONE home" rule for the
+    // annotations category: the REVIEW ContextPanel AND the Inspector both
+    // re-parent the ONE unified ReviewElementsPanel. Re-pointed (not deleted).
     await gotoStage(win, 3);
-    expect(await win.locator('[data-inspector] [data-annotation-panel]').count(), 'no second annotations list in the Inspector').toBe(0);
-    expect(await win.locator('[data-inspector] [data-inspector-annotations-reference]').count()).toBe(1);
-    expect(await win.locator('[data-context-panel="review"] [data-annotation-panel]').count(), 'the list lives in the REVIEW panel').toBe(1);
-    console.log('[P36C456-P6] annotations list has one home (REVIEW panel); Inspector references it');
+    expect(await win.locator('[data-context-panel="review"] [data-review-elements]').count()).toBe(1);
+    expect(await win.locator('[data-inspector] [data-review-elements]').count()).toBe(1);
+    expect(await win.locator('[data-context-panel="review"] [data-review-category="annotations"]').count()).toBe(1);
+    expect(await win.locator('[data-inspector] [data-review-category="annotations"]').count()).toBe(1);
+    expect(await win.locator('[data-context-panel="review"] [data-annotation-panel]').count(), 'the annotations list lives in the REVIEW panel').toBe(1);
+    console.log('[P36C456-P6] the unified review list is re-parented by both panels (Phase 90 Ruling 6)');
 
     // Section 3A ruling 4 — the EDIT page section is the CropBox ONLY; the OCR
     // status is the EDIT ContextPanel's Recognition section, never repeated in
@@ -438,41 +449,43 @@ test.describe('Phase 36 chunk 6 — the promotion and the stage panels', () => {
 
     // REVIEW — annotations list + signatures (the ONE annotations home)
     await gotoStage(win, 3);
-    expect(await win.locator('[data-context-panel-section="annotations"]').count()).toBe(1);
-    expect(await win.locator('[data-context-panel-section="signatures"]').count()).toBe(1);
-    expect(await win.locator('[data-context-panel-annotations] [data-annotation-panel]').count()).toBe(1);
-    // DEF-318 — the re-parented annotations panel escapes its section and
-    // overlays the signatures action row, blocking "Manage signatures".
-    // Measure it and assert the button is present + enabled; the click itself
-    // is covered by the defect (its own record carries the proof).
+    // Phase 90 (chunk C1/C2) — the retired `[data-context-panel-section="annotations"]`
+    // section is replaced by the unified review list's annotations category.
+    expect(await win.locator('[data-context-panel] [data-review-category="annotations"]').count()).toBe(1);
+    // Phase 90 (chunk C2) — the retired `[data-context-panel-section="signatures"]`
+    // / "Manage signatures" affordance is gone. Re-pointed (not deleted) to the
+    // surviving unified review list's signatures category.
+    expect(await win.locator('[data-context-panel] [data-review-category="signatures"]').count()).toBe(1);
+    // Phase 90 (Ruling 6) — the unified list also renders in the Inspector, so
+    // scope the "one annotations list" assertion to the REVIEW ContextPanel.
+    expect(await win.locator('[data-context-panel="review"] [data-context-panel-annotations] [data-annotation-panel]').count()).toBe(1);
+    // DEF-318 — the re-parented annotations panel must be contained so the
+    // signatures category below it is not covered; measure it and hit-test the
+    // category title.
     const sigDiag = await win.evaluate(() => {
       const r = (el) => {
         if (!el) return null;
         const b = el.getBoundingClientRect();
         return { x: Math.round(b.x), y: Math.round(b.y), w: Math.round(b.width), h: Math.round(b.height), bottom: Math.round(b.bottom) };
       };
-      const btn = document.querySelector('[data-context-panel-action="manage-signatures"]');
-      const bb = btn ? btn.getBoundingClientRect() : null;
+      const wrap = document.querySelector('[data-context-panel-annotations]');
+      const cat = document.querySelector('[data-context-panel] [data-review-category="signatures"]');
+      const title = cat ? cat.querySelector('.review-elements-category-title') : null;
+      const bb = title ? title.getBoundingClientRect() : null;
       const top = bb ? document.elementFromPoint(Math.round(bb.x + bb.width / 2), Math.round(bb.y + bb.height / 2)) : null;
       return {
-        annotations: r(document.querySelector('[data-context-panel-annotations]')),
-        signatures: r(document.querySelector('[data-context-panel-section="signatures"]')),
-        button: r(btn),
+        annotations: r(wrap),
+        signatures: r(cat),
+        title: r(title),
         topEl: top ? `${top.tagName}.${String(top.className)}` : null,
-        buttonHit: !!(top && btn && (top === btn || btn.contains(top))),
+        titleHit: !!(top && title && (top === title || title.contains(top))),
       };
     });
-    console.log(`[P36C456-P8] signatures affordance hit-test: ${JSON.stringify(sigDiag)}`);
-    expect(await win.locator('[data-context-panel-action="manage-signatures"]').count()).toBe(1);
-    expect(await win.locator('[data-context-panel-action="manage-signatures"]').isEnabled()).toBe(true);
-    if (sigDiag.buttonHit) {
-      await win.locator('[data-context-panel-action="manage-signatures"]').click();
-      await win.waitForSelector('.sig-manager', { state: 'visible', timeout: 8000 });
-      console.log('[P36C456-P8] REVIEW panel: Manage signatures opened the manager');
-      await closeDialog('.sig-manager');
-    } else {
-      console.log('[P36C456-P8] REVIEW panel: Manage signatures is covered by the annotations panel (DEF-318) — click deferred to the defect record');
-    }
+    console.log(`[P36C456-P8] signatures category hit-test: ${JSON.stringify(sigDiag)}`);
+    expect(sigDiag.annotations, 'the annotations wrapper renders').not.toBeNull();
+    expect(sigDiag.annotations.h, 'DEF-318: the annotations wrapper has real height').toBeGreaterThan(0);
+    expect(sigDiag.signatures, 'the signatures category renders').not.toBeNull();
+    expect(sigDiag.titleHit, 'DEF-318: the signatures category title is the top element at its centre').toBe(true);
 
     // DELIVER — pre-flight + from-images
     await gotoStage(win, 4);

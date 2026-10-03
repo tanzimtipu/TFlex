@@ -46,7 +46,8 @@ import { OutlinePanel, OutlineEditorContext, RulerStrip, ThumbnailRail } from '.
 import type { OutlineEditorConfig, RailTab, ThumbVerbs } from './SideRail';
 import { usePageThumbMenu } from './pageThumbMenu';
 import { GlassSidebarBody, GlassSidebarHeader } from './GlassSidebar';
-import { AnnotationsPanel } from '../annotations/AnnotationsPanel';
+import { ReviewElementsPanel } from './ReviewElementsPanel';
+import type { ReviewElementRef } from './ReviewElementsPanel';
 import type { Annotation, AnnotationPatch } from '../annotations/model';
 import { buildPageLabelMap } from './pageGeometry';
 import { formatBytes } from '../utils/formatBytes';
@@ -55,7 +56,13 @@ import type { OutlineNode } from '../pdf/pdfjs';
 import type { PageDropOp } from '../state/pageDrag';
 import type { Stage } from '../state/stages';
 import { EDIT_DEFAULT_FONTS } from '../state/preferences';
-import type { EditFont, SavedSignature } from '../../shared/types';
+import type {
+  BatesInfo,
+  EditFont,
+  SavedSignature,
+  SignaturePlacement,
+  WatermarkInfo,
+} from '../../shared/types';
 
 /** The panel's migrated glyphs. Declared with an `icon:` property so the Phase 43
  *  icon-identity guard still attributes each glyph to this surface. */
@@ -196,6 +203,16 @@ onInsertBlank?: (page: number) => void;
   onJumpToAnnotation?: ((page: number, id: string) => void) | null;
   onEditAnnotation?: ((id: string, patch: AnnotationPatch) => void) | null;
   onDeleteAnnotation?: ((id: string) => void) | null;
+  /** Phase 90 (TFL-509-C1) — the unified review list's non-annotation sources
+   *  and handlers. The annotation fields above feed its Annotations category;
+   *  `signatures` is the PLACED-signature list (`EngineState.signatures`). */
+  bates?: readonly BatesInfo[];
+  watermarks?: readonly WatermarkInfo[];
+  signatures?: readonly SignaturePlacement[];
+  onSelectReviewElement?: ((el: ReviewElementRef) => void) | null;
+  onEditReviewElement?: ((el: ReviewElementRef) => void) | null;
+  onDeleteReviewElement?: ((el: ReviewElementRef) => void) | null;
+  reviewErrorFor?: ((el: ReviewElementRef) => string | null) | null;
   /** The saved signatures mirror (App state). */
   savedSignatures?: readonly SavedSignature[];
   /** The currently armed signature id, if any (App state). */
@@ -298,10 +315,13 @@ onInsertBlank,
     onJumpToAnnotation = null,
     onEditAnnotation = null,
     onDeleteAnnotation = null,
-    savedSignatures = [],
-    armedSignatureId = null,
-    onSignSignature = null,
-    onManageSignatures = null,
+    bates = [],
+    watermarks = [],
+    signatures = [],
+    onSelectReviewElement = null,
+    onEditReviewElement = null,
+    onDeleteReviewElement = null,
+    reviewErrorFor = null,
     fileSize = null,
     formFieldCount = 0,
     onOptimize,
@@ -583,70 +603,25 @@ const pageCount = engineState.pageCount;
   );
 
   // ---- REVIEW ----------------------------------------------------------
-  // The annotations LIST has exactly ONE home: this panel's REVIEW body — it
-  // re-parents the SAME AnnotationsPanel the rail's annotations tab rendered
-  // (the rail leaves the single-mode slot with this chunk). The Inspector's
-  // REVIEW section shows only a read-only reference to the count, never a
-  // second copy of the list. The saved-signatures section follows.
+  // Phase 90 (TFL-509-C1) — the unified review-element list has exactly ONE
+  // renderer (`ReviewElementsPanel`), re-parented here AND by the Inspector's
+  // REVIEW section (Ruling 6). Its Annotations category re-parents the shipped
+  // AnnotationsPanel unchanged; the Bates / Watermarks / Signatures categories
+  // read the host's lists and dispatch select / edit / delete back to the host.
   const renderReview = (): ReactElement => (
-    <>
-      <section className="context-panel-section" data-context-panel-section="annotations" aria-label="Annotations">
-        <div className="context-panel-section-title">Annotations</div>
-        <div className="context-panel-annotations" data-context-panel-annotations>
-          <AnnotationsPanel
-            annotations={[...annotations]}
-            onJumpTo={(page, id): void => onJumpToAnnotation?.(page, id)}
-            onEdit={(id, patch): void => onEditAnnotation?.(id, patch)}
-            onDelete={(id): void => onDeleteAnnotation?.(id)}
-          />
-        </div>
-      </section>
-      <section className="context-panel-section" data-context-panel-section="signatures" aria-label="Signatures">
-        <div className="context-panel-section-title">Signatures</div>
-        {savedSignatures.length === 0 ? (
-          <p className="context-panel-empty" data-signatures-empty>
-            No saved signatures yet.
-          </p>
-        ) : (
-          <div className="context-panel-list" data-saved-signatures-list>
-            {savedSignatures.map((sig) => {
-              const armed = armedSignatureId === sig.id;
-              return (
-                <button
-                  key={sig.id}
-                  type="button"
-                  className={
-                    armed
-                      ? 'context-panel-item context-panel-item-selected'
-                      : 'context-panel-item'
-                  }
-                  aria-pressed={armed}
-                  data-saved-signature={sig.id}
-                  onClick={(): void => onSignSignature?.(sig.id)}
-                  disabled={onSignSignature === null}
-                  title={armed ? 'Placing this signature' : 'Click a page to place this signature'}
-                >
-                  <Icon icon={CONTEXT_PANEL_GLYPHS.signature.icon} size="md" aria-hidden />
-                  <span className="context-panel-item-label">{sig.label}</span>
-                </button>
-              );
-            })}
-          </div>
-        )}
-        <div className="context-panel-actions-row">
-          <button
-            type="button"
-            className="btn btn-secondary context-panel-action"
-            data-context-panel-action="manage-signatures"
-            onClick={(): void => onManageSignatures?.()}
-            disabled={onManageSignatures === null}
-          >
-            <Icon icon={CONTEXT_PANEL_GLYPHS.signature.icon} size="md" aria-hidden />
-            <span>Manage signatures</span>
-          </button>
-        </div>
-      </section>
-    </>
+    <ReviewElementsPanel
+      annotations={annotations}
+      onJumpToAnnotation={onJumpToAnnotation}
+      onEditAnnotation={onEditAnnotation}
+      onDeleteAnnotation={onDeleteAnnotation}
+      bates={bates}
+      watermarks={watermarks}
+      signatures={signatures}
+      onSelect={onSelectReviewElement}
+      onEdit={onEditReviewElement}
+      onDelete={onDeleteReviewElement}
+      errorFor={reviewErrorFor}
+    />
   );
 
   // ---- DELIVER ---------------------------------------------------------
