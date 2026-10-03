@@ -42,6 +42,7 @@ import {
   Subscript,
   Superscript,
 } from "lucide-react";
+import { Icon } from "../icons/Icon";
 import type { EditFont, TextBoxStylePatch, TextAlign, TextListStyle } from "../../shared/types";
 import { AnimatedPanel } from "../components/AnimatedPanel";
 import { SpellCheckTextarea } from "../spell/SpellCheckTextarea";
@@ -287,7 +288,7 @@ export function TextPropertiesPanel(props: TextPropertiesPanelProps): ReactEleme
               }
               onClick={(): void => spellCheck?.setEnabled(!spellState.enabled)}
             >
-              <SpellCheck size={14} />
+              <Icon icon={SpellCheck} size="xs" />
             </button>
           </div>
         </Group>
@@ -362,7 +363,7 @@ export function TextPropertiesPanel(props: TextPropertiesPanelProps): ReactEleme
               title="Bold"
               onClick={(): void => onPatch({ bold: !values.bold })}
             >
-              <Bold size={14} />
+              <Icon icon={Bold} size="xs" />
             </button>
             <button
               type="button"
@@ -373,7 +374,7 @@ export function TextPropertiesPanel(props: TextPropertiesPanelProps): ReactEleme
               title="Italic"
               onClick={(): void => onPatch({ italic: !values.italic })}
             >
-              <Italic size={14} />
+              <Icon icon={Italic} size="xs" />
             </button>
             <button
               type="button"
@@ -386,7 +387,7 @@ export function TextPropertiesPanel(props: TextPropertiesPanelProps): ReactEleme
               title="Underline"
               onClick={(): void => onPatch({ underline: !values.underline })}
             >
-              <Baseline size={14} />
+              <Icon icon={Baseline} size="xs" />
             </button>
             <button
               type="button"
@@ -401,7 +402,7 @@ export function TextPropertiesPanel(props: TextPropertiesPanelProps): ReactEleme
                 onPatch({ baselineShift: values.baselineShift > 0 ? 0 : TEXT_SUPER_SHIFT })
               }
             >
-              <Superscript size={14} />
+              <Icon icon={Superscript} size="xs" />
             </button>
             <button
               type="button"
@@ -416,7 +417,7 @@ export function TextPropertiesPanel(props: TextPropertiesPanelProps): ReactEleme
                 onPatch({ baselineShift: values.baselineShift < 0 ? 0 : TEXT_SUB_SHIFT })
               }
             >
-              <Subscript size={14} />
+              <Icon icon={Subscript} size="xs" />
             </button>
             <button
               type="button"
@@ -437,7 +438,7 @@ export function TextPropertiesPanel(props: TextPropertiesPanelProps): ReactEleme
                 else props.onArmPainter?.();
               }}
             >
-              <Paintbrush size={14} />
+              <Icon icon={Paintbrush} size="xs" />
             </button>
           </div>
           {painterHint !== null ? (
@@ -459,7 +460,7 @@ export function TextPropertiesPanel(props: TextPropertiesPanelProps): ReactEleme
           <label className="text-props-row">
             <span className="text-props-label">Highlight</span>
             <span className="text-props-color-wrap">
-              <PaintBucket size={13} className="text-props-inline-icon" />
+              <Icon icon={PaintBucket} size="xs" className="text-props-inline-icon" />
               <input
                 className="text-props-color"
                 data-txt-highlight
@@ -486,7 +487,7 @@ export function TextPropertiesPanel(props: TextPropertiesPanelProps): ReactEleme
             title="Clear formatting"
             onClick={(): void => onPatch(clearFormattingPatch(defaults))}
           >
-            <Eraser size={13} />
+            <Icon icon={Eraser} size="xs" />
             <span>Clear formatting</span>
           </button>
         </Group>
@@ -500,7 +501,7 @@ export function TextPropertiesPanel(props: TextPropertiesPanelProps): ReactEleme
                 ["right", AlignRight, "Align right"],
                 ["justify", AlignJustify, "Justify"],
               ] as const
-            ).map(([align, Icon, label]) => (
+            ).map(([align, Glyph, label]) => (
               <button
                 key={align}
                 type="button"
@@ -513,7 +514,7 @@ export function TextPropertiesPanel(props: TextPropertiesPanelProps): ReactEleme
                 title={label}
                 onClick={(): void => onPatch({ align: align as TextAlign })}
               >
-                <Icon size={14} />
+                <Icon icon={Glyph} size="xs" />
               </button>
             ))}
           </div>
@@ -541,7 +542,7 @@ export function TextPropertiesPanel(props: TextPropertiesPanelProps): ReactEleme
                 ["bullet", List, "Bulleted list"],
                 ["number", ListOrdered, "Numbered list"],
               ] as const
-            ).map(([list, Icon, label]) => (
+            ).map(([list, Glyph, label]) => (
               <button
                 key={list}
                 type="button"
@@ -554,7 +555,7 @@ export function TextPropertiesPanel(props: TextPropertiesPanelProps): ReactEleme
                 title={label}
                 onClick={(): void => onPatch({ list: list as TextListStyle })}
               >
-                <Icon size={14} />
+                <Icon icon={Glyph} size="xs" />
               </button>
             ))}
           </div>
@@ -570,7 +571,7 @@ export function TextPropertiesPanel(props: TextPropertiesPanelProps): ReactEleme
                 disabled={values.indent <= 0}
                 onClick={(): void => onPatch({ indent: clampIndent(values.indent - TEXT_INDENT_STEP) })}
               >
-                <IndentDecrease size={14} />
+                <Icon icon={IndentDecrease} size="xs" />
               </button>
               <span className="text-props-indent-value" data-txt-indent-value>
                 {values.indent}
@@ -584,7 +585,7 @@ export function TextPropertiesPanel(props: TextPropertiesPanelProps): ReactEleme
                 disabled={values.indent >= 200}
                 onClick={(): void => onPatch({ indent: clampIndent(values.indent + TEXT_INDENT_STEP) })}
               >
-                <IndentIncrease size={14} />
+                <Icon icon={IndentIncrease} size="xs" />
               </button>
             </div>
           </div>

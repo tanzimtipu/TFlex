@@ -15,6 +15,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ReactElement } from "react";
 import { AnimatePresence, motion } from "motion/react";
 import { LogOut, RefreshCcw, UserCog, UserRound } from "lucide-react";
+import { Icon } from "../icons/Icon";
 import type { AccountUser, SyncReport } from "../../shared/accounts";
 import type { AccountsAuthAdapter } from "../accounts/adapter";
 import { createNeonAuthAdapter } from "../accounts/adapter";
@@ -71,7 +72,7 @@ function AvatarFace({ user, imageUrl }: { user: AccountUser; imageUrl?: string |
     );
   }
   const text = avatarText(user);
-  if (text.length === 0) return <UserRound size={16} aria-hidden />;
+  if (text.length === 0) return <Icon icon={UserRound} size="sm" />;
   return <span className="account-avatar-text" aria-hidden>{text}</span>;
 }
 
@@ -208,7 +209,7 @@ export function AccountMenu(props: AccountMenuProps): ReactElement {
         title="Sign in or create an account"
         data-header-accounts="signed-out"
       >
-        <UserRound size={16} aria-hidden />
+        <Icon icon={UserRound} size="sm" />
         <span className="account-signin-label">Sign in</span>
       </button>
     );
@@ -262,7 +263,7 @@ export function AccountMenu(props: AccountMenuProps): ReactElement {
                   onClick={(): void => { setView("profile"); setProfileError(null); setDraftName(shownUser.name ?? ""); }}
                   data-account-update-profile
                 >
-                  <UserCog size={15} aria-hidden />
+                  <Icon icon={UserCog} size="sm" />
                   Update profile
                 </button>
                 <button
@@ -273,7 +274,7 @@ export function AccountMenu(props: AccountMenuProps): ReactElement {
                   disabled={syncing}
                   data-account-sync-now
                 >
-                  <RefreshCcw size={15} aria-hidden />
+                  <Icon icon={RefreshCcw} size="sm" />
                   {syncing ? "Syncing" : "Sync now"}
                 </button>
                 <div
@@ -293,7 +294,7 @@ export function AccountMenu(props: AccountMenuProps): ReactElement {
                   onClick={signOut}
                   data-account-signout
                 >
-                  <LogOut size={15} aria-hidden />
+                  <Icon icon={LogOut} size="sm" />
                   Sign out
                 </button>
               </>

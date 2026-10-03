@@ -201,6 +201,7 @@ import { ConversionNotice, ConversionProgress } from "./components/ConversionNot
 import { ReadingView } from "./components/ReadingView";
 import { BookView } from "./components/BookView";
 import { BookOpen } from "lucide-react";
+import { Icon } from "./icons/Icon";
 import {
   createFromImagesRoute,
   noticeFromManyResult,
@@ -702,7 +703,7 @@ export function DocumentSurfaceColumn(props: DocumentSurfaceColumnProps): ReactE
           aria-label="Open reading view"
           onClick={props.onOpenReadingView}
         >
-          <BookOpen size={14} aria-hidden />
+          <Icon icon={BookOpen} size="xs" />
           Open reading view
         </button>
       )}

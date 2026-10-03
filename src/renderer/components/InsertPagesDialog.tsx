@@ -16,6 +16,7 @@
 
 import { useEffect, useMemo, useRef, useState, type ReactElement } from "react";
 import { FilePlus2, X } from "lucide-react";
+import { Icon } from "../icons/Icon";
 import {
   defaultInsertPosition,
 } from "../engine/types";
@@ -280,7 +281,7 @@ export function InsertPagesDialog(
             onClick={onClose}
             aria-label="Close dialog"
           >
-            <X size={16} aria-hidden />
+            <Icon icon={X} size="sm" />
           </button>
         </div>
         <div className="modal-body">
@@ -358,7 +359,7 @@ export function InsertPagesDialog(
                 disabled={picking}
                 data-insert-pick
               >
-                <FilePlus2 size={16} aria-hidden />
+                <Icon icon={FilePlus2} size="sm" />
                 {picking
                   ? "Picking…"
                   : pickedPath === null

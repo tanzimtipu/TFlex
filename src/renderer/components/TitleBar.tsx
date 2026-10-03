@@ -57,10 +57,18 @@ import {
   type ReactNode,
 } from "react";
 import { AnimatePresence } from "motion/react";
+import { Icon } from "../icons/Icon";
 import { dispatchMenuAction, type MenuActionContext } from "../state/menuActions";
 import { TfMorph } from "./motion/TfMotion";
 import { useMorphPreset } from "./motion/useMorphPreset";
 import { GlassChromeBar } from "./GlassChrome";
+
+/** The caption strip's migrated glyphs. Declared with an `icon:` property so the
+ *  Phase 43 icon-identity guard still attributes each glyph to this surface. */
+const TITLEBAR_GLYPHS = {
+  chevronDown: { icon: ChevronDown },
+  minimize: { icon: Minus },
+} as const satisfies Record<string, { icon: LucideIcon }>;
 
 /** The shape of a menu entry. Two kinds: a top-level group heading
  *  (rendered as a non-interactive row) or an action row. The
@@ -267,7 +275,7 @@ export function TitleBar(props: TitleBarProps): ReactElement {
                 only the trigger's face changed. `data-menu-button` stays so
                 the existing selectors keep resolving. */}
             <span className="titlebar-menu-label">File</span>
-            <ChevronDown size={12} aria-hidden />
+            <Icon icon={TITLEBAR_GLYPHS.chevronDown.icon} size="md" aria-hidden />
           </button>
           <AnimatePresence>
             {menuOpen && (
@@ -302,7 +310,7 @@ export function TitleBar(props: TitleBarProps): ReactElement {
                   );
                 }
                 const entry = item.entry;
-                const Icon = entry.icon;
+                const Glyph = entry.icon;
                 return (
                   <button
                     key={item.key}
@@ -313,8 +321,8 @@ export function TitleBar(props: TitleBarProps): ReactElement {
                     data-menu-action={entry.action ?? entry.id}
                   >
                     <span className="titlebar-menu-row-label">
-                      {Icon !== undefined && (
-                        <Icon size={16} aria-hidden className="titlebar-menu-row-icon" />
+                      {Glyph !== undefined && (
+                        <Icon icon={Glyph} size="md" aria-hidden className="titlebar-menu-row-icon" />
                       )}
                       <span>{entry.label}</span>
                     </span>
@@ -343,7 +351,7 @@ export function TitleBar(props: TitleBarProps): ReactElement {
           title="Minimize"
           data-window-minimize
         >
-          <Minus size={16} aria-hidden />
+          <Icon icon={TITLEBAR_GLYPHS.minimize.icon} size="md" aria-hidden />
         </button>
         <button
           type="button"
@@ -353,7 +361,7 @@ export function TitleBar(props: TitleBarProps): ReactElement {
           title={maximizeLabel}
           data-window-maximize
         >
-          <MaximizeIcon size={16} aria-hidden />
+          <Icon icon={MaximizeIcon} size="md" aria-hidden />
         </button>
         <button
           type="button"
@@ -363,7 +371,7 @@ export function TitleBar(props: TitleBarProps): ReactElement {
           title="Close"
           data-window-close
         >
-          <X size={16} aria-hidden />
+          <Icon icon={X} size="md" aria-hidden />
         </button>
       </div>
     </GlassChromeBar>

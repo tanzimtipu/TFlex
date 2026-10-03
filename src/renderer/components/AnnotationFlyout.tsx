@@ -19,6 +19,7 @@
 // (cross-bubbling rules), so a page placement click is never swallowed.
 
 import { ChevronsLeft, ChevronsRight } from 'lucide-react';
+import { Icon } from '../icons/Icon';
 import { AnimatePresence, motion } from 'motion/react';
 import { useEffect, useRef } from 'react';
 import type { ReactElement, ReactNode } from 'react';
@@ -111,7 +112,7 @@ export function AnnotationFlyout(props: AnnotationFlyoutProps): ReactElement {
                   title="Scroll left"
                   onClick={(): void => scrollRow(-1)}
                 >
-                  <ChevronsLeft size={16} aria-hidden />
+                  <Icon icon={ChevronsLeft} size="sm" />
                 </button>
               )}
               <div
@@ -130,7 +131,7 @@ export function AnnotationFlyout(props: AnnotationFlyoutProps): ReactElement {
                   title="Scroll right"
                   onClick={(): void => scrollRow(1)}
                 >
-                  <ChevronsRight size={16} aria-hidden />
+                  <Icon icon={ChevronsRight} size="sm" />
                 </button>
               )}
             </div>

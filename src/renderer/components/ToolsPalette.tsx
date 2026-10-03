@@ -17,6 +17,7 @@
 
 import type { ReactElement } from 'react';
 import { LayoutGrid, LayoutList, X } from 'lucide-react';
+import { Icon } from '../icons/Icon';
 import { TfPanel } from './motion/TfMotion';
 import { GlassSidebarBody, GlassSidebarHeader } from './GlassSidebar';
 // Phase 36 (chunk 1b) — the palette no longer owns its own tool list: the
@@ -331,7 +332,7 @@ export function ToolsPalette(props: ToolsPaletteProps): ReactElement {
                 title="List layout"
                 data-tools-layout="list"
               >
-                <LayoutList size={22} aria-hidden />
+                <Icon icon={LayoutList} size="xl" />
               </button>
               <button
                 type="button"
@@ -342,7 +343,7 @@ export function ToolsPalette(props: ToolsPaletteProps): ReactElement {
                 title="Grid layout"
                 data-tools-layout="grid"
               >
-                <LayoutGrid size={22} aria-hidden />
+                <Icon icon={LayoutGrid} size="xl" />
               </button>
             </div>
             <button
@@ -352,7 +353,7 @@ export function ToolsPalette(props: ToolsPaletteProps): ReactElement {
               aria-label="Close tools palette"
               title="Close"
             >
-              <X size={22} aria-hidden />
+              <Icon icon={X} size="xl" />
             </button>
           </>
         }
@@ -388,7 +389,7 @@ export function ToolsPalette(props: ToolsPaletteProps): ReactElement {
                   // wiring is local. The icon renders at the palette's
                   // established 22px ladder.
                   const { entry, action, pressed } = tool;
-                  const Icon = entry.icon;
+                  const EntryGlyph = entry.icon;
                   return (
                   <button
                     key={entry.id}
@@ -408,7 +409,7 @@ export function ToolsPalette(props: ToolsPaletteProps): ReactElement {
                       : { 'aria-pressed': pressed })}
                   >
                     <span className="tools-palette-entry-icon">
-                      <Icon size={22} aria-hidden />
+                      <Icon icon={EntryGlyph} size="xl" />
                     </span>
                     <span className="tools-palette-entry-text">
                       <span className="tools-palette-entry-label">{entry.label}</span>

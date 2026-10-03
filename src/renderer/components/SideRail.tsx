@@ -1,4 +1,5 @@
 import { AlertCircle, Images, IndentDecrease, IndentIncrease, List, MessageSquareText, PanelLeftClose, PanelRightOpen, Pencil, Plus, SquareChevronRight, Undo2, RotateCw, Scissors, Trash2 } from 'lucide-react';
+import { Icon } from '../icons/Icon';
 import { AnimatePresence, motion } from 'motion/react';
 import type { ReactElement } from 'react';
 import type { PDFDocumentProxy, PDFPageProxy } from 'pdfjs-dist';
@@ -247,7 +248,7 @@ export function SideRail(props: SideRailProps) {
               title="Page thumbnails"
               data-rail-tab="thumbs"
             >
-              <Images size={22} aria-hidden />
+              <Icon icon={Images} size="xl" />
             </button>
             <button
               type="button"
@@ -256,7 +257,7 @@ export function SideRail(props: SideRailProps) {
               title="Annotations"
               data-rail-tab="annotations"
             >
-              <MessageSquareText size={22} aria-hidden />
+              <Icon icon={MessageSquareText} size="xl" />
             </button>
             {outline !== null && (
               <button
@@ -266,7 +267,7 @@ export function SideRail(props: SideRailProps) {
                 title="Bookmarks"
                 data-rail-tab="outline"
               >
-                <List size={22} aria-hidden />
+                <Icon icon={List} size="xl" />
               </button>
             )}
             </>
@@ -278,7 +279,7 @@ export function SideRail(props: SideRailProps) {
               title={pagesPanelCollapsed ? 'Expand panel' : 'Collapse panel'}
               data-rail-collapse
             >
-              {pagesPanelCollapsed ? <PanelRightOpen size={22} aria-hidden /> : <PanelLeftClose size={22} aria-hidden />}
+              {pagesPanelCollapsed ? <Icon icon={PanelRightOpen} size="xl" /> : <Icon icon={PanelLeftClose} size="xl" />}
             </button>
           </div>
         }
@@ -995,7 +996,7 @@ const onDragStart = (page: number) => (e: React.DragEvent<HTMLElement>): void =>
             title={canUndo ? 'Undo last change' : 'Nothing to undo'}
             aria-label="Undo last change"
           >
-            <Undo2 size={22} aria-hidden />
+            <Icon icon={Undo2} size="xl" />
             <span>Undo last change</span>
           </button>
         </div>
@@ -1578,7 +1579,7 @@ function Thumb({
               { id: 'extract', title: 'Extract this page', aria: `Extract page ${label}`, Icon: Scissors },
               { id: 'delete', title: 'Delete this page', aria: `Delete page ${label}`, Icon: Trash2 },
             ] as const
-          ).map(({ id, title, aria, Icon }) => {
+          ).map(({ id, title, aria, Icon: Glyph }) => {
             const run = (): void => {
               if (id === 'rotate-cw') thumbVerbs.onRotateCw(label);
               else if (id === 'extract') thumbVerbs.onExtract(label);
@@ -1605,7 +1606,7 @@ function Thumb({
                   run();
                 }}
               >
-                <Icon size={12} aria-hidden />
+                <Icon icon={Glyph} size="xs" />
               </span>
             );
           })}
@@ -1786,7 +1787,7 @@ export function OutlinePanel({ doc, outline, onJump, onError, editor = null }: O
                   aria-label={isCollapsed ? 'Expand' : 'Collapse'}
                 >
                   <span className={isCollapsed ? 'chevron chevron-closed' : 'chevron'}>
-                    <SquareChevronRight size={22} aria-hidden />
+                    <Icon icon={SquareChevronRight} size="xl" />
                   </span>
                 </button>
               ) : (
@@ -1822,7 +1823,7 @@ export function OutlinePanel({ doc, outline, onJump, onError, editor = null }: O
             void runEdit(editAdd(modelRef.current, target));
           }}
         >
-          <Plus size={13} aria-hidden />
+          <Icon icon={Plus} size="xs" />
         </button>
         {!addOnly && (
           <>
@@ -1837,7 +1838,7 @@ export function OutlinePanel({ doc, outline, onJump, onError, editor = null }: O
                 if (target !== null) startRename(target);
               }}
             >
-              <Pencil size={13} aria-hidden />
+              <Icon icon={Pencil} size="xs" />
             </button>
             <select
               className="outline-verb outline-retarget"
@@ -1869,7 +1870,7 @@ export function OutlinePanel({ doc, outline, onJump, onError, editor = null }: O
                 if (target !== null) void runEdit(editIndent(modelRef.current, target));
               }}
             >
-              <IndentIncrease size={13} aria-hidden />
+              <Icon icon={IndentIncrease} size="xs" />
             </button>
             <button
               type="button"
@@ -1882,7 +1883,7 @@ export function OutlinePanel({ doc, outline, onJump, onError, editor = null }: O
                 if (target !== null) void runEdit(editOutdent(modelRef.current, target));
               }}
             >
-              <IndentDecrease size={13} aria-hidden />
+              <Icon icon={IndentDecrease} size="xs" />
             </button>
             <button
               type="button"
@@ -1895,7 +1896,7 @@ export function OutlinePanel({ doc, outline, onJump, onError, editor = null }: O
                 if (target !== null) void runEdit(editDelete(modelRef.current, target));
               }}
             >
-              <Trash2 size={13} aria-hidden />
+              <Icon icon={Trash2} size="xs" />
             </button>
           </>
         )}
@@ -1932,7 +1933,7 @@ export function OutlinePanel({ doc, outline, onJump, onError, editor = null }: O
                   aria-label={isCollapsed ? 'Expand' : 'Collapse'}
                 >
                   <span className={isCollapsed ? 'chevron chevron-closed' : 'chevron'}>
-                    <SquareChevronRight size={22} aria-hidden />
+                    <Icon icon={SquareChevronRight} size="xl" />
                   </span>
                 </button>
               ) : (
@@ -1986,7 +1987,7 @@ export function OutlinePanel({ doc, outline, onJump, onError, editor = null }: O
     <div className="outline-panel" data-outline-editable>
       {error !== null && (
         <div className="outline-error" data-outline-error role="alert">
-          <AlertCircle size={13} aria-hidden />
+          <Icon icon={AlertCircle} size="xs" />
           <span>{error}</span>
         </div>
       )}

@@ -17,6 +17,7 @@
 
 import { useEffect, useRef, useState, type CSSProperties, type ReactElement } from "react";
 import { ImagePlus, X } from "lucide-react";
+import { Icon } from "../icons/Icon";
 import { useBackdropClose } from "./modalBackdrop";
 import { AnimatePresence } from "motion/react";
 import { TfBackdrop, TfDialog } from "./motion/TfMotion";
@@ -426,7 +427,7 @@ export function WatermarkDialog(props: WatermarkDialogProps): ReactElement {
                 onClick={onClose}
                 aria-label="Close dialog"
               >
-                <X size={16} aria-hidden />
+                <Icon icon={X} size="sm" />
               </button>
             </div>
             <div className="modal-body">
@@ -565,7 +566,7 @@ export function WatermarkDialog(props: WatermarkDialogProps): ReactElement {
                       onClick={onPickImage}
                       data-watermark-image-pick
                     >
-                      <ImagePlus size={16} aria-hidden />
+                      <Icon icon={ImagePlus} size="sm" />
                       {imageName !== "" ? "Change image" : "Choose image"}
                     </button>
                     {imageName !== "" && (

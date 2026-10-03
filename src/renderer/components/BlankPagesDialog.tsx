@@ -8,6 +8,7 @@
 import { useEffect, useMemo, useRef, useState, type ReactElement } from "react";
 import { AnimatePresence } from "motion/react";
 import { X } from "lucide-react";
+import { Icon } from "../icons/Icon";
 import { classifyPages } from "../../shared/blankPages";
 import type { BlankPageMeasurement } from "../../shared/types";
 import { useBackdropClose } from "./modalBackdrop";
@@ -165,7 +166,7 @@ export function BlankPagesDialog(
                 onClick={onClose}
                 aria-label="Close dialog"
               >
-                <X size={16} aria-hidden />
+                <Icon icon={X} size="sm" />
               </button>
             </div>
             <div className="modal-body">

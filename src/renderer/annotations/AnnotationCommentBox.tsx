@@ -20,6 +20,7 @@
 import { useMemo, useRef, useState } from 'react';
 import type { CSSProperties, ReactElement } from 'react';
 import { MessageSquare, Send } from 'lucide-react';
+import { Icon } from '../icons/Icon';
 import { annotationBounds, overlayRectToCss } from './geometry';
 import { CONTROL_BAR_HEIGHT, placeControlNearAnchor } from '../components/controlPlacement';
 import type { Annotation, PageRect } from './model';
@@ -231,7 +232,7 @@ export default function AnnotationCommentBox(props: AnnotationCommentBoxProps): 
       onClick={(e): void => e.stopPropagation()}
     >
       <div className="ann-comment-head">
-        <MessageSquare size={13} aria-hidden />
+          <Icon icon={MessageSquare} size="xs" />
         <span className="ann-comment-title">Comments</span>
         {entries.length > 0 && (
           <span className="ann-comment-count" data-comment-count>
@@ -293,7 +294,7 @@ export default function AnnotationCommentBox(props: AnnotationCommentBoxProps): 
           aria-label={entries.length === 0 ? 'Add comment' : 'Add reply'}
           onClick={submit}
         >
-          <Send size={13} aria-hidden />
+          <Icon icon={Send} size="xs" />
           <span>{entries.length === 0 ? 'Comment' : 'Reply'}</span>
         </button>
       </div>

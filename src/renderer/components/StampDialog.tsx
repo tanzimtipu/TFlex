@@ -19,6 +19,7 @@
 
 import { useEffect, useRef, useState, type ReactElement } from "react";
 import { X, Stamp } from "lucide-react";
+import { Icon } from "../icons/Icon";
 import { useBackdropClose } from "./modalBackdrop";
 import { AnimatePresence } from "motion/react";
 import { TfBackdrop, TfDialog } from "./motion/TfMotion";
@@ -218,7 +219,7 @@ export function StampDialog(
             onClick={onClose}
             aria-label="Close dialog"
           >
-            <X size={16} aria-hidden />
+            <Icon icon={X} size="sm" />
           </button>
         </div>
         <div className="modal-body">
@@ -300,7 +301,7 @@ export function StampDialog(
             onClick={onConfirmClick}
             data-stamp-confirm
           >
-            <Stamp size={16} aria-hidden />
+            <Icon icon={Stamp} size="sm" />
             Place on page
           </button>
         </div>

@@ -34,6 +34,7 @@ import {
   Trash2,
   MessageCirclePlus,
 } from "lucide-react";
+import { Icon } from "../icons/Icon";
 
 export interface AnnotationsPanelProps {
   annotations: Annotation[];
@@ -50,28 +51,27 @@ interface RowProps {
 }
 
 function rowIcon(a: Annotation): ReactElement {
-  const size = 16;
   switch (a.kind) {
     case "highlight":
-      return <Highlighter size={size} aria-hidden />;
+      return <Icon icon={Highlighter} size="sm" />;
     case "underline":
-      return <Underline size={size} aria-hidden />;
+      return <Icon icon={Underline} size="sm" />;
     case "strikeout":
-      return <Strikethrough size={size} aria-hidden />;
+      return <Icon icon={Strikethrough} size="sm" />;
     case "ink":
-      return <Pen size={size} aria-hidden />;
+      return <Icon icon={Pen} size="sm" />;
     case "textbox":
-      return <Type size={size} aria-hidden />;
+      return <Icon icon={Type} size="sm" />;
     case "rect":
-      return <Square size={size} aria-hidden />;
+      return <Icon icon={Square} size="sm" />;
     case "ellipse":
-      return <Circle size={size} aria-hidden />;
+      return <Icon icon={Circle} size="sm" />;
     case "arrow":
-      return <ArrowUpRight size={size} aria-hidden />;
+      return <Icon icon={ArrowUpRight} size="sm" />;
     case "note":
-      return <StickyNote size={size} aria-hidden />;
+      return <Icon icon={StickyNote} size="sm" />;
     case "callout":
-      return <MessageCirclePlus size={size} aria-hidden />;
+      return <Icon icon={MessageCirclePlus} size="sm" />;
   }
 }
 
@@ -107,7 +107,7 @@ function AnnotationRow(props: RowProps): ReactElement {
             <span className="ann-panel-row-kind">{kindLabel(a.kind)}</span>
             <span className="ann-panel-row-page">Page {a.page}</span>
           </span>
-          <ChevronRight size={16} aria-hidden />
+          <Icon icon={ChevronRight} size="sm" />
         </button>
         <button
           type="button"
@@ -116,7 +116,7 @@ function AnnotationRow(props: RowProps): ReactElement {
           aria-label={`Delete ${kindLabel(a.kind)} on page ${a.page}`}
           title="Delete annotation"
         >
-          <Trash2 size={16} aria-hidden />
+          <Icon icon={Trash2} size="sm" />
         </button>
       </div>
 

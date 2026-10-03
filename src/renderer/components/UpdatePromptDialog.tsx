@@ -47,6 +47,7 @@ import type { ReactElement } from "react";
 import { useEffect, useState } from "react";
 import { AnimatePresence } from "motion/react";
 import { Download, RefreshCw, X } from "lucide-react";
+import { Icon } from "../icons/Icon";
 import type { UpdateState } from "../../shared/types";
 import { BrandLoader } from "./BrandLoader";
 import { TfBackdrop, TfSheet } from "./motion/TfMotion";
@@ -464,7 +465,7 @@ export function UpdatePromptDialog(
               disabled={busy}
               data-update-prompt-update
             >
-              <Download size={16} aria-hidden />
+              <Icon icon={Download} size="sm" />
               Update
             </button>
           </div>
@@ -488,7 +489,7 @@ export function UpdatePromptDialog(
               disabled={busy}
               data-update-prompt-restart
             >
-              <RefreshCw size={16} aria-hidden />
+              <Icon icon={RefreshCw} size="sm" />
               Restart
             </button>
           </div>
@@ -583,7 +584,7 @@ export function UpdatePromptDialog(
             onClick={onClose}
             aria-label="Close update prompt"
           >
-            <X size={16} aria-hidden />
+            <Icon icon={X} size="sm" />
           </button>
         </header>
         <div className="sheet-body sheet-body-update-prompt">

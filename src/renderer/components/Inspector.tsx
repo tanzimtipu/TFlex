@@ -24,6 +24,7 @@
 import { useMemo, useState } from 'react';
 import type { ReactElement, ReactNode } from 'react';
 import { Hash, PanelRightClose, PanelRightOpen, X } from 'lucide-react';
+import { Icon } from '../icons/Icon';
 import { GlassSidebarBody, GlassSidebarHeader } from './GlassSidebar';
 import { TextPropertiesPanel } from '../edit/TextPropertiesPanel';
 import type { TextPropertiesPanelProps } from '../edit/TextPropertiesPanel';
@@ -459,7 +460,7 @@ fileSize = null,
             // button's own title (the action label).
             label={'rename'}
             onClick={onRenumberPages}
-            icon={<Hash size={12} aria-hidden />}
+            icon={<Icon icon={Hash} size="xs" />}
           />
         </span>
       </Row>
@@ -652,9 +653,9 @@ const renderSignatureSection = (): ReactElement => (
       title={collapsed ? 'Expand inspector' : 'Collapse inspector'}
     >
       {collapsed ? (
-        <PanelRightOpen size={16} aria-hidden />
+        <Icon icon={PanelRightOpen} size="sm" />
       ) : (
-        <PanelRightClose size={16} aria-hidden />
+        <Icon icon={PanelRightClose} size="sm" />
       )}
     </button>
   );
@@ -694,7 +695,7 @@ const renderSignatureSection = (): ReactElement => (
                     aria-label="Close inspector"
                     title="Close"
                   >
-                    <X size={16} aria-hidden />
+                    <Icon icon={X} size="sm" />
                   </button>
                 ) : null}
               </div>

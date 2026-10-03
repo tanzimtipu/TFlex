@@ -40,6 +40,7 @@ import {
   X,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
+import { Icon } from '../icons/Icon';
 import type { OpenDefaultAppsSettingsResult } from '../../shared/ipc';
 import type { AppInfo } from '../../shared/types';
 import type { TabStyle } from '../../shared/types';
@@ -352,7 +353,7 @@ export function PreferencesDialog(props: PreferencesDialogProps): ReactElement |
             onClick={onClose}
             aria-label="Close preferences"
           >
-            <X size={16} aria-hidden />
+            <Icon icon={X} size="sm" />
           </button>
         </header>
         <div className="sheet-body sheet-body-prefs">
@@ -366,7 +367,7 @@ export function PreferencesDialog(props: PreferencesDialogProps): ReactElement |
             >
               {PREFS_CATEGORIES.map((cat) => {
                 const isActive = category === cat.id;
-                const Icon = cat.icon;
+                const CategoryIcon = cat.icon;
                 return (
                   <button
                     key={cat.id}
@@ -383,7 +384,7 @@ export function PreferencesDialog(props: PreferencesDialogProps): ReactElement |
                     }}
                     onClick={(): void => selectCategory(cat.id)}
                   >
-                    <Icon className="prefs-cat-icon" size={16} aria-hidden />
+                    <Icon className="prefs-cat-icon" icon={CategoryIcon} size="sm" />
                     <span className="prefs-cat-label">{cat.label}</span>
                   </button>
                 );
@@ -517,7 +518,7 @@ export function PreferencesDialog(props: PreferencesDialogProps): ReactElement |
                             onClick={openDefaultApps}
                             data-prefs-default-pdf
                           >
-                            <MonitorCog size={15} aria-hidden />
+                            <Icon icon={MonitorCog} size="sm" />
                             Make Jovrel the default PDF app
                           </button>
                         </div>

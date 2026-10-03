@@ -31,6 +31,8 @@ import {
   ChevronDown,
   Check,
 } from "lucide-react";
+import type { LucideIcon } from "lucide-react";
+import { Icon, type IconSize } from "../icons/Icon";
 import type { KeyboardEvent as ReactKeyboardEvent, ReactElement } from "react";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
@@ -202,30 +204,39 @@ function focusedMenuRowTool(target: EventTarget | null): AnnotationTool | null {
   return MENU_TOOLS.find((t) => t === id) ?? null;
 }
 
-function toolIcon(tool: AnnotationTool, size: number): ReactElement {
+/** The toolbar's migrated glyphs that need Phase 43 attribution. Declared with an
+ *  `icon:` property so the icon-identity guard still attributes each glyph to
+ *  this surface. */
+const ANNOTATION_GLYPHS = {
+  select: { icon: MousePointer2 },
+  type: { icon: Type },
+  more: { icon: ChevronDown },
+} as const satisfies Record<string, { icon: LucideIcon }>;
+
+function toolIcon(tool: AnnotationTool, size: IconSize): ReactElement {
   switch (tool) {
     case "select":
-      return <MousePointer2 size={size} aria-hidden />;
+      return <Icon icon={ANNOTATION_GLYPHS.select.icon} size={size} aria-hidden />;
     case "highlight":
-      return <Highlighter size={size} aria-hidden />;
+      return <Icon icon={Highlighter} size={size} aria-hidden />;
     case "underline":
-      return <Underline size={size} aria-hidden />;
+      return <Icon icon={Underline} size={size} aria-hidden />;
     case "strikeout":
-      return <Strikethrough size={size} aria-hidden />;
+      return <Icon icon={Strikethrough} size={size} aria-hidden />;
     case "ink":
-      return <Pen size={size} aria-hidden />;
+      return <Icon icon={Pen} size={size} aria-hidden />;
     case "textbox":
-      return <Type size={size} aria-hidden />;
+      return <Icon icon={ANNOTATION_GLYPHS.type.icon} size={size} aria-hidden />;
     case "rect":
-      return <Square size={size} aria-hidden />;
+      return <Icon icon={Square} size={size} aria-hidden />;
     case "ellipse":
-      return <Circle size={size} aria-hidden />;
+      return <Icon icon={Circle} size={size} aria-hidden />;
     case "arrow":
-      return <ArrowUpRight size={size} aria-hidden />;
+      return <Icon icon={ArrowUpRight} size={size} aria-hidden />;
     case "callout":
-      return <MessageCirclePlus size={size} aria-hidden />;
+      return <Icon icon={MessageCirclePlus} size={size} aria-hidden />;
     case "note":
-      return <StickyNote size={size} aria-hidden />;
+      return <Icon icon={StickyNote} size={size} aria-hidden />;
   }
 }
 
@@ -507,7 +518,7 @@ export function AnnotationToolbar(props: AnnotationToolbarProps): ReactElement {
         title={toolTitle(tool, isBlocked, isHandBlocked)}
         data-tool={tool}
       >
-        {toolIcon(tool, 22)}
+        {toolIcon(tool, "xl")}
       </button>
     );
   };
@@ -631,7 +642,7 @@ export function AnnotationToolbar(props: AnnotationToolbarProps): ReactElement {
         title="All annotation tools"
         data-ann-dropdown-toggle
       >
-        <ChevronDown size={22} aria-hidden />
+        <Icon icon={ANNOTATION_GLYPHS.more.icon} size="xl" aria-hidden />
       </button>
 
       {createPortal(
@@ -683,9 +694,9 @@ export function AnnotationToolbar(props: AnnotationToolbarProps): ReactElement {
                         title={toolTitle(tool, isBlocked, isHandBlocked)}
                         data-tool={tool}
                       >
-                        <span className="ann-tool-menu-icon">{toolIcon(tool, 18)}</span>
+                        <span className="ann-tool-menu-icon">{toolIcon(tool, "md")}</span>
                         <span className="ann-tool-menu-text">{TOOL_LABELS[tool]}</span>
-                        {active && <Check size={14} aria-hidden className="ann-tool-menu-check" />}
+                        {active && <Icon icon={Check} size="md" aria-hidden className="ann-tool-menu-check" />}
                       </button>
                     );
                   })}

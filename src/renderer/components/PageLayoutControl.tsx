@@ -16,6 +16,7 @@
 
 import { Columns2, Grid2x2, RectangleVertical } from "lucide-react";
 import type { ReactElement } from "react";
+import { Icon } from "../icons/Icon";
 import { PAGE_LAYOUT_MODES, type PageLayoutMode } from "./pageLayoutMode";
 
 export interface PageLayoutControlProps {
@@ -46,7 +47,7 @@ export function PageLayoutControl(props: PageLayoutControlProps): ReactElement {
       aria-label="Page layout"
     >
       {PAGE_LAYOUT_MODES.map((mode) => {
-        const { label, title, Icon } = OPTION_META[mode];
+        const { label, title, Icon: glyph } = OPTION_META[mode];
         const active = mode === value;
         return (
           <button
@@ -59,7 +60,7 @@ export function PageLayoutControl(props: PageLayoutControlProps): ReactElement {
             title={title}
             onClick={(): void => onChange(mode)}
           >
-            <Icon size={18} aria-hidden />
+            <Icon icon={glyph} size="md" aria-hidden />
           </button>
         );
       })}

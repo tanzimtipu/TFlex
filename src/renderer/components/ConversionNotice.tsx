@@ -15,6 +15,7 @@
 
 import type { ReactElement } from 'react';
 import { ChevronUp, FileText, Info } from 'lucide-react';
+import { Icon } from '../icons/Icon';
 import { BrandLoader } from './BrandLoader';
 import { useNoticeCollapse } from '../hooks/useNoticeCollapse';
 import {
@@ -53,7 +54,7 @@ export function ConversionNotice(props: ConversionNoticeProps): ReactElement {
           aria-label="Show conversion notice"
           data-conversion-icon
         >
-          <Info size={16} aria-hidden />
+          <Icon icon={Info} size="sm" />
         </button>
       </div>
     );
@@ -74,7 +75,7 @@ export function ConversionNotice(props: ConversionNoticeProps): ReactElement {
       data-conversion-degraded={notice.fidelity === 'degraded' ? '' : undefined}
       data-conversion-warning-count={warnings.length}
     >
-      <FileText size={18} aria-hidden className="conversion-notice-icon" />
+      <Icon icon={FileText} size="md" className="conversion-notice-icon" />
       <div className="conversion-notice-body">
         <p className="conversion-notice-title">
           Imported
@@ -122,7 +123,7 @@ export function ConversionNotice(props: ConversionNoticeProps): ReactElement {
         aria-label="Collapse conversion notice"
         data-conversion-collapse
       >
-        <ChevronUp size={14} aria-hidden />
+        <Icon icon={ChevronUp} size="xs" />
       </button>
     </div>
   );

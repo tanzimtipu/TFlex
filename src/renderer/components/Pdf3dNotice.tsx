@@ -15,6 +15,7 @@
 
 import type { ReactElement } from 'react';
 import { ChevronUp, Cuboid, Info } from 'lucide-react';
+import { Icon } from '../icons/Icon';
 import type { Pdf3dContent } from '../../shared/types';
 import { useNoticeCollapse } from '../hooks/useNoticeCollapse';
 
@@ -51,7 +52,7 @@ export function Pdf3dNotice(props: Pdf3dNoticeProps): ReactElement | null {
           aria-label="Show 3D content notice"
           data-pdf3d-icon
         >
-          <Info size={16} aria-hidden />
+          <Icon icon={Info} size="sm" />
         </button>
       </div>
     );
@@ -67,7 +68,7 @@ export function Pdf3dNotice(props: Pdf3dNoticeProps): ReactElement | null {
       data-pdf3d-notice
       data-pdf3d-notice-state={phase}
     >
-      <Cuboid size={14} aria-hidden />
+      <Icon icon={Cuboid} size="xs" />
       <span className="pdf3d-notice-text">{pdf3dNoticeText(entries)}</span>
       <button
         type="button"
@@ -76,7 +77,7 @@ export function Pdf3dNotice(props: Pdf3dNoticeProps): ReactElement | null {
         aria-label="Collapse 3D content notice"
         data-pdf3d-collapse
       >
-        <ChevronUp size={14} aria-hidden />
+        <Icon icon={ChevronUp} size="xs" />
       </button>
     </div>
   );

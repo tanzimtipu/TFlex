@@ -14,6 +14,7 @@
 
 import { useEffect, useRef, useState, type ReactElement } from 'react';
 import { RefreshCw, X } from 'lucide-react';
+import { Icon } from '../icons/Icon';
 import type { SpaceAudit } from '../../shared/types';
 import { formatBytes } from '../utils/formatBytes';
 import { useBackdropClose } from './modalBackdrop';
@@ -149,7 +150,7 @@ export function AuditSpaceDialog(props: AuditSpaceDialogProps): ReactElement | n
             onClick={onClose}
             aria-label="Close dialog"
           >
-            <X size={16} aria-hidden />
+            <Icon icon={X} size="sm" />
           </button>
         </div>
         <div className="modal-body">
@@ -211,7 +212,7 @@ export function AuditSpaceDialog(props: AuditSpaceDialogProps): ReactElement | n
             disabled={loading}
             data-audit-refresh
           >
-            <RefreshCw size={16} aria-hidden />
+            <Icon icon={RefreshCw} size="sm" />
             <span style={{ marginLeft: 6 }}>{loading ? 'Refreshing…' : 'Refresh'}</span>
           </button>
           <button type="button" className="btn btn-primary" onClick={onClose}>

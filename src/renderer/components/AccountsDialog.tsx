@@ -15,6 +15,7 @@ import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "r
 import type { ReactElement } from "react";
 import { AnimatePresence, motion } from "motion/react";
 import { ArrowLeft, LogOut, RefreshCcw, UserPlus, X } from "lucide-react";
+import { Icon } from "../icons/Icon";
 import type {
   AccountStatus,
   AccountStatusResult,
@@ -483,7 +484,7 @@ export function AccountsDialog(props: AccountsDialogProps): ReactElement {
           aria-label="Close account dialog"
           data-accounts-close
         >
-          <X size={16} aria-hidden />
+          <Icon icon={X} size="sm" />
         </button>
       </header>
       <div className="sheet-body sheet-body-accounts">
@@ -531,7 +532,7 @@ export function AccountsDialog(props: AccountsDialogProps): ReactElement {
                     onClick={(): void => dispatch({ type: "set-mode", mode: "sign-up" })}
                     data-accounts-mode-signup
                   >
-                    <UserPlus size={14} aria-hidden />
+                    <Icon icon={UserPlus} size="xs" />
                     Create account
                   </button>
                 </div>
@@ -651,7 +652,7 @@ export function AccountsDialog(props: AccountsDialogProps): ReactElement {
                     onClick={(): void => dispatch({ type: "back" })}
                     data-accounts-back
                   >
-                    <ArrowLeft size={14} aria-hidden />
+                    <Icon icon={ArrowLeft} size="xs" />
                     Back
                   </button>
                 </div>
@@ -690,7 +691,7 @@ export function AccountsDialog(props: AccountsDialogProps): ReactElement {
                     onClick={(): void => dispatch({ type: "back" })}
                     data-accounts-back
                   >
-                    <ArrowLeft size={14} aria-hidden />
+                    <Icon icon={ArrowLeft} size="xs" />
                     Back to sign in
                   </button>
                 </div>
@@ -742,7 +743,7 @@ export function AccountsDialog(props: AccountsDialogProps): ReactElement {
                     onClick={(): void => dispatch({ type: "back" })}
                     data-accounts-back
                   >
-                    <ArrowLeft size={14} aria-hidden />
+                    <Icon icon={ArrowLeft} size="xs" />
                     Back to sign in
                   </button>
                 </div>
@@ -765,7 +766,7 @@ export function AccountsDialog(props: AccountsDialogProps): ReactElement {
                 disabled={syncing}
                 data-accounts-sync-now
               >
-                <RefreshCcw size={14} aria-hidden />
+                <Icon icon={RefreshCcw} size="xs" />
                 {syncing ? "Syncing..." : "Sync now"}
               </button>
               <AnimatePresence mode="wait" initial={false}>
@@ -811,7 +812,7 @@ export function AccountsDialog(props: AccountsDialogProps): ReactElement {
                 onClick={signOut}
                 data-accounts-signout
               >
-                <LogOut size={14} aria-hidden />
+                <Icon icon={LogOut} size="xs" />
                 Sign out
               </button>
             </div>

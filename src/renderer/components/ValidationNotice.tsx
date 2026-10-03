@@ -13,6 +13,7 @@
 
 import type { ReactElement } from 'react';
 import { FileCheck2, X } from 'lucide-react';
+import { Icon } from '../icons/Icon';
 import {
   VALIDATION_BLOCKED_TEXT,
   VALIDATION_BLOCKED_TITLE,
@@ -59,7 +60,7 @@ export function ValidationNotice(props: ValidationNoticeProps): ReactElement {
       data-validation-conforms={report.conforms ? 'true' : 'false'}
       data-validation-violation-count={report.violations.length}
     >
-      <FileCheck2 size={18} aria-hidden className="validation-notice-icon" />
+      <Icon icon={FileCheck2} size="md" className="validation-notice-icon" />
       <div className="validation-notice-body">
         <p className="validation-notice-title" data-validation-title>
           {title}
@@ -159,7 +160,7 @@ export function ValidationNotice(props: ValidationNoticeProps): ReactElement {
           aria-label="Dismiss validation report"
           data-validation-dismiss
         >
-          <X size={14} aria-hidden />
+          <Icon icon={X} size="xs" />
         </button>
       )}
     </div>

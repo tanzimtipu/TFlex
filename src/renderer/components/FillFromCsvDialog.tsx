@@ -14,6 +14,7 @@
 import { useEffect, useRef, useState, type ReactElement } from "react";
 import { AnimatePresence } from "motion/react";
 import { FileSpreadsheet, Upload, X } from "lucide-react";
+import { Icon } from "../icons/Icon";
 import type { CsvFieldMappingResult } from "../../shared/convert";
 import { useBackdropClose } from "./modalBackdrop";
 import { TfBackdrop, TfDialog } from "./motion/TfMotion";
@@ -217,7 +218,7 @@ export function FillFromCsvDialog(
                 onClick={onClose}
                 aria-label="Close dialog"
               >
-                <X size={16} aria-hidden />
+                <Icon icon={X} size="sm" />
               </button>
             </div>
             <div className="modal-body">
@@ -238,7 +239,7 @@ export function FillFromCsvDialog(
                   }}
                   data-fill-csv-pick
                 >
-                  <FileSpreadsheet size={16} aria-hidden />
+                  <Icon icon={FileSpreadsheet} size="sm" />
                   Choose CSV file…
                 </button>
                 {path !== null && (
@@ -278,7 +279,7 @@ export function FillFromCsvDialog(
                   }}
                   data-fill-csv-confirm
                 >
-                  <Upload size={16} aria-hidden />
+                  <Icon icon={Upload} size="sm" />
                   {running ? "Filling…" : "Fill form fields"}
                 </button>
               ) : (

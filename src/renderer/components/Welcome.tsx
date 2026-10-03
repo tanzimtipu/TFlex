@@ -1,5 +1,6 @@
 import type { ReactElement } from "react";
 import { File, FilePlus2, FolderOpen, Minus, Pencil, Plus, Sparkles, X } from "lucide-react";
+import { Icon } from "../icons/Icon";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import type { RecentFile, SampleDocument } from "../../shared/types";
@@ -243,7 +244,7 @@ export function Welcome(props: WelcomeProps): ReactElement {
   };
   const runnerFor = (id: string): (() => void) | undefined =>
     onRunHomeTool === undefined ? legacyRuns[id] : (): void => onRunHomeTool(id);
-  const OpenIcon = toolById(HOME_FIXED_TOOL_ID)?.icon ?? FolderOpen;
+  const OpenGlyph = toolById(HOME_FIXED_TOOL_ID)?.icon ?? FolderOpen;
 
   return (
     <div className="welcome">
@@ -279,7 +280,7 @@ export function Welcome(props: WelcomeProps): ReactElement {
               className={editMode ? "home-tool-icon anim-jiggle" : "home-tool-icon"}
               style={editMode ? { animationDelay: `-${jiggleDelayMs(HOME_FIXED_TOOL_ID)}ms` } : undefined}
             >
-              <OpenIcon size={16} aria-hidden />
+              <Icon icon={OpenGlyph} size="sm" />
             </span>{" "}
             Open PDF
             <span className="kbd" style={{ marginLeft: 8 }}>Ctrl O</span>
@@ -287,7 +288,7 @@ export function Welcome(props: WelcomeProps): ReactElement {
           {tools.map((id) => {
             const entry = toolById(id);
             if (entry === undefined) return null;
-            const Icon = entry.icon;
+            const EntryGlyph = entry.icon;
             const run = runnerFor(id);
             return (
               <button
@@ -303,7 +304,7 @@ export function Welcome(props: WelcomeProps): ReactElement {
                   className={editMode ? "home-tool-icon anim-jiggle" : "home-tool-icon"}
                   style={editMode ? { animationDelay: `-${jiggleDelayMs(id)}ms` } : undefined}
                 >
-                  <Icon size={16} aria-hidden />
+                  <Icon icon={EntryGlyph} size="sm" />
                 </span>{" "}
                 {entry.label}
                 {editMode && (
@@ -326,7 +327,7 @@ export function Welcome(props: WelcomeProps): ReactElement {
                       }
                     }}
                   >
-                    <Minus size={12} aria-hidden />
+                    <Icon icon={Minus} size="xs" />
                   </span>
                 )}
               </button>
@@ -352,7 +353,7 @@ export function Welcome(props: WelcomeProps): ReactElement {
                 disabled={full || noCandidates}
                 onClick={togglePicker}
               >
-                <Plus size={16} aria-hidden />
+                <Icon icon={Plus} size="sm" />
               </button>
               {/* DEF-410 — the picker is PORTALED to document.body. A
                   transformed ancestor is the containing block for
@@ -378,7 +379,7 @@ export function Welcome(props: WelcomeProps): ReactElement {
                     }
                   >
                     {pickerEntries.map((entry) => {
-                      const Icon = entry.icon;
+                      const EntryGlyph = entry.icon;
                       return (
                         <button
                           key={entry.id}
@@ -391,7 +392,7 @@ export function Welcome(props: WelcomeProps): ReactElement {
                             onSetHomeTools?.(addHomeTool(tools, entry.id));
                           }}
                         >
-                          <Icon size={18} aria-hidden />
+                          <Icon icon={EntryGlyph} size="md" />
                           <span>{entry.label}</span>
                         </button>
                       );
@@ -413,7 +414,7 @@ export function Welcome(props: WelcomeProps): ReactElement {
               setPickerOpen(false);
             }}
           >
-            <Pencil size={14} aria-hidden />
+            <Icon icon={Pencil} size="xs" />
           </button>
         </div>
         {editMode && full && (
@@ -451,7 +452,7 @@ export function Welcome(props: WelcomeProps): ReactElement {
                     title={`Open ${row.entry.path}`}
                   >
                     <span className="doc-icon" aria-hidden>
-                      <File size={16} />
+                      <Icon icon={File} size="sm" />
                     </span>
                     <span className="recent-row-text">
                       <div className="doc-name">{row.meta.name}</div>
@@ -467,7 +468,7 @@ export function Welcome(props: WelcomeProps): ReactElement {
                     aria-label={`Remove ${row.entry.name} from Recents`}
                     title="Remove from Recents"
                   >
-                    <X size={16} aria-hidden />
+                    <Icon icon={X} size="sm" />
                   </button>
                 </div>
               ))}
@@ -502,7 +503,7 @@ export function Welcome(props: WelcomeProps): ReactElement {
                   onClick={(): void => onSampleClick(sample)}
                 >
                   <div className="sample-thumb">
-                    <Sparkles size={20} />
+                    <Icon icon={Sparkles} size="lg" />
                   </div>
                   <div className="sample-name">{sample.name}</div>
                   <div className="sample-sub">Click to open · PDF</div>
@@ -513,7 +514,7 @@ export function Welcome(props: WelcomeProps): ReactElement {
         </section>
       </div>
       <span hidden>
-        <FilePlus2 />
+        <Icon icon={FilePlus2} size="sm" />
       </span>
     </div>
   );

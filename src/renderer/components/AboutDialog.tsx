@@ -20,6 +20,7 @@ import type { ReactElement } from 'react';
 import { useEffect, useState } from 'react';
 import { AnimatePresence } from 'motion/react';
 import { X } from 'lucide-react';
+import { Icon } from '../icons/Icon';
 import type { AppInfo, UpdateState } from '../../shared/types';
 import { whatsNewFor, whatsNewHistory } from '../../shared/whatsNew';
 import { TfBackdrop, TfSheet } from './motion/TfMotion';
@@ -387,7 +388,7 @@ export function AboutDialog(props: AboutDialogProps): ReactElement | null {
                 onClick={onClose}
                 aria-label="Close about dialog"
               >
-                <X size={16} aria-hidden />
+                <Icon icon={X} size="sm" />
               </button>
             </header>
             <div className="sheet-body">

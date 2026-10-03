@@ -20,6 +20,9 @@
 
 import { useEffect, useMemo, useRef, type ReactElement } from "react";
 import type { CSSProperties } from "react";
+import { Check, X } from "lucide-react";
+import type { LucideIcon } from "lucide-react";
+import { Icon } from "../icons/Icon";
 import type {
   FormField,
   FormFieldOption,
@@ -49,6 +52,15 @@ interface FormsOverlayProps {
 const MIN_EDITOR_HEIGHT_PT = 14;
 const CHECKBOX_BOX_PT = 12;
 const RADIO_DOT_PT = 11;
+
+/** Phase 94 — the two marks this overlay draws, routed through the shared
+ *  `Icon` wrapper (no hand-declared inline SVG element). Declared as a typed
+ *  record of Lucide components, mirroring `STAGE_ICONS` in
+ *  `components/StageRail.tsx`. */
+const MARK_ICONS: Record<"check" | "close", LucideIcon> = {
+  check: Check,
+  close: X,
+};
 
 // Phase 59 item 4 — the truthful reason shown on every non-editable control.
 export const READ_ONLY_REASON = "This field is read-only";
@@ -339,35 +351,11 @@ function CheckboxEditor({
       onClick={(): void => onChange(field.id, checked ? "false" : "true")}
       style={wrap}
     >
-      {checked && <CheckMark size={box * cssScale * 0.7} strokeWidth={3} />}
+      {/* The tick must scale with the rendered field. `.form-checkbox svg`
+          sizes the glyph to 70% of this `box * cssScale` button, so the `xs`
+          token is only the attribute-level base and CSS tracks page zoom. */}
+      {checked && <Icon icon={MARK_ICONS.check} size="xs" variant="bold" />}
     </button>
-  );
-}
-
-// Inline Lucide-style check so we don't have to import the icon here;
-// the Forms layer only needs a single check shape.
-function CheckMark({
-  size,
-  strokeWidth,
-}: {
-  size: number;
-  strokeWidth: number;
-}): ReactElement {
-  const s = String(size);
-  return (
-    <svg
-      width={s}
-      height={s}
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth={strokeWidth}
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden
-    >
-      <polyline points="20 6 9 17 4 12" />
-    </svg>
   );
 }
 
@@ -664,7 +652,7 @@ export function FormFillReportSummary({
             title="Dismiss"
             onClick={onDismiss}
           >
-            <XMark size={12} />
+            <Icon icon={MARK_ICONS.close} size="md" />
           </button>
         )}
       </div>
@@ -687,27 +675,6 @@ export function FormFillReportSummary({
         </ul>
       )}
     </div>
-  );
-}
-
-// Inline Lucide-style close, mirroring CheckMark's "no extra import" rule.
-function XMark({ size }: { size: number }): ReactElement {
-  const s = String(size);
-  return (
-    <svg
-      width={s}
-      height={s}
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth={2.5}
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden
-    >
-      <line x1="18" y1="6" x2="6" y2="18" />
-      <line x1="6" y1="6" x2="18" y2="18" />
-    </svg>
   );
 }
 

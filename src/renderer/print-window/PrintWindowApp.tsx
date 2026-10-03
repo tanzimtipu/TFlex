@@ -11,6 +11,7 @@
 
 import { useCallback, useEffect, useMemo, useState, type ReactElement } from "react";
 import { TriangleAlert } from "lucide-react";
+import { Icon } from "../icons/Icon";
 import type { PDFDocumentProxy } from "pdfjs-dist";
 import { PrintPanel } from "../components/PrintPanel";
 import { BrandLoader } from "../components/BrandLoader";
@@ -131,7 +132,7 @@ function PrintWindowError({ reason }: { reason: string }): ReactElement {
   };
   return (
     <div className="print-window print-window-error" data-print-window-error>
-      <TriangleAlert size={28} aria-hidden className="print-window-error-icon" />
+      <Icon icon={TriangleAlert} size="hero" className="print-window-error-icon" />
       <h1 className="print-window-error-title">Print window unavailable</h1>
       <p className="print-window-error-text" role="alert">
         {reason}
@@ -246,7 +247,7 @@ onClose: closeWindow,
 
       {gone && (
         <div className="print-window-banner" role="alert" data-print-document-gone>
-          <TriangleAlert size={16} aria-hidden />
+          <Icon icon={TriangleAlert} size="sm" />
           <span>
             This document was closed in Jovrel. Its pages can no longer be printed from
             this window.
@@ -256,7 +257,7 @@ onClose: closeWindow,
 
       {!gone && loadError !== null && (
         <div className="print-window-banner" role="alert" data-print-window-load-error>
-          <TriangleAlert size={16} aria-hidden />
+          <Icon icon={TriangleAlert} size="sm" />
           <span>{loadError}</span>
         </div>
       )}

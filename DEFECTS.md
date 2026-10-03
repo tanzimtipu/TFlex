@@ -5,6 +5,54 @@
 > inspect the current `OPEN`, `FIX-READY`, and `DISPUTED` entries first; closed records are
 > historical evidence and must not be loaded wholesale.
 
+## DEF-520: The destructive "Delete pages" confirm button lost its Trash2 glyph after the DialogShell adoption
+
+- Status: CLOSED
+- Severity: LOW
+- Found by: adversary (ADV-184, Phase 94E diff-pass)
+- Phase: 94 (icon sweep; the loss is a side effect of the Phase 92/95 DialogShell adoption, but Phase 94 owns the icon language)
+
+Steps to reproduce:
+1. Open the Delete pages dialog and inspect the destructive confirm (`data-delete-confirm`).
+
+Expected: the destructive confirm renders the trash glyph before its label (as at HEAD: `<Trash2 size={16} aria-hidden /> Delete pages`).
+
+Actual: `DialogShell.DialogAction` has no `icon` field (`src/renderer/components/DialogShell.tsx:25-34`), so `DeletePageDialog`'s confirm action (`src/renderer/components/DeletePageDialog.tsx:141-152`) renders label-only and the Trash2 affordance is gone.
+
+Evidence: ADV-184 (`ADVERSARIAL_REVIEW.md`); per-file glyph audit shows `Trash2: 1 -> 0` only in DeletePageDialog.
+
+History:
+- adversary (TFL-573, Phase 94E): opened as ADV-184.
+- CTO triage (2026-10-03): ACCEPTED -> DEF-520; frontend-dev to restore the glyph.
+- frontend-dev (TFL-576, Phase 94 DEF-520 fix): FIX-READY. `DeletePageDialog.tsx:18,149` now imports `Trash2` and passes `icon: <Icon icon={Trash2} size="sm" />` on the `confirm` `DialogAction`; label/variant/onClick/disabled/`data-delete-confirm` unchanged. `DialogShell.tsx:29` already declares `icon?: ReactNode` and renders it at `:212`, so no shell change was needed; the glyph routes through the central `Icon` wrapper (no raw `<Trash2 size=...>`). CTO source-reviewed both files. Evidence: `test:unit -- bugB08 dialogShell phase45DialogSquare bugB13 phase94_noAdHocIcons` -> 5 files / 62 tests passed; `npm run verify` -> `conventions: clean (341 files)`, 0 type errors; doc-maintenance: no changes required (`docs/phase-specs/phase-92.md:19` already documents `DialogAction.icon`). qa to confirm and CLOSE at Phase 94F.
+- qa (TFL-587, Phase 94F phase-close): PASS, CLOSED. Confirmed `DeletePageDialog.tsx:149` passes `icon: <Icon icon={Trash2} size="sm" />` on the `confirm` action and `DialogShell.tsx:212` renders `{icon}{label}`; `data-delete-confirm` (line 154), label `Delete`, `variant: "danger"` and `disabled: !valid` wiring unchanged. Neighbour suite `npm.cmd run test:unit -- bugB08 dialogShell bugB13` -> `Test Files 5 passed (5)`, `Tests 40 passed (40)`. Guard suite green: `test:unit -- phase94_noAdHocIcons phase94_iconSystem phase43IconUniqueness def339_iconFloor` -> `Test Files 4 passed (4)`, `Tests 31 passed (31)`. Independent renderer scan found the direct `Trash2` render gone (only the three documented exceptions remain). `npm run verify` -> `conventions: clean (341 file(s) scanned)`, 0 type errors.
+
+## DEF-519: `bugB13_focusedOnceDialogs` is stale after the Phase 92 DialogShell adoption of DeletePageDialog - the renderer sweep is red
+
+- Status: CLOSED
+- Severity: LOW
+- Found by: qa (TFL-569, Phase 94D focused verification)
+- Phase: 92 (regression surfaced by the Phase 94D renderer-wide sweep; not caused by the Phase 94 icon diff)
+- Fix (TFL-572, frontend-dev): broadened ONLY the focus-call regex in `test/unit/renderer/bugB13_focusedOnceDialogs.test.ts:86-88` to `/queueMicrotask\([\s\S]*?(?:first\?\.focus|firstControlRef\.current\?\.focus)/`, accepting both source forms; no source file changed, `DeletePageDialog.tsx` untouched. Evidence: `bugB13_focusedOnceDialogs` 1 file / 4 tests passed; renderer sweep 480 files / 5138 tests passed, 0 failed; `verify` clean, 0 type errors.
+
+Steps to reproduce:
+1. From the repo root run `npm.cmd run test:unit -- renderer`.
+
+Expected: 0 failed (the Phase 94D renderer-wide sweep expectation).
+
+Actual: `Test Files 1 failed | 479 passed (480)`, `Tests 1 failed | 5136 passed (5137)`. The failing case is `test/unit/renderer/bugB13_focusedOnceDialogs.test.ts > B13 - focus stability ... > DeletePageDialog gates focus on a focusedOnceRef and defers via queueMicrotask`: `AssertionError: DeletePageDialog: focus call uses queueMicrotask: expected '// Phase 12 / B8 - Delete pages dialo...' to match /queueMicrotask\([\s\S]*?first\?\.focus/`.
+
+Attribution: `src/renderer/components/DeletePageDialog.tsx` was migrated to `DialogShell` in the uncommitted Phase 92 work in the shared tree. The focus effect now runs `firstControlRef.current?.focus()` (the first radio) inside `queueMicrotask` with deps `[open]`, and the Escape listener moved into DialogShell, so the stale B13 source-scan (which asserts `first?.focus` and the old `[open, onClose]` shape) no longer matches. Focus still lands on a control, so no user-facing regression was observed. The Phase 94 icon diff for this file only swaps `<X size={16} />`/`<Trash2 ... />` for the wrapper; it does not touch the focus effect.
+
+Evidence:
+- `npm.cmd run test:unit -- renderer` -> the counts above; renderer sweep log at the run scratch `suite2.log`.
+- Focused Phase 94 suites remain green: `npm.cmd run test:unit -- phase94_noAdHocIcons phase94_iconSystem phase43IconUniqueness def339_iconFloor` -> `Test Files 4 passed (4)`, `Tests 31 passed (31)`.
+
+History:
+- qa (TFL-569): opened.
+- qa (TFL-579): retest FAIL, defect NOT closed. TFL-572's regex broadening is test-only and the DeletePageDialog case now passes, but the file is still red: `node node_modules/vitest/vitest.mjs run bugB13_focusedOnceDialogs` -> `Test Files 1 failed (1)`, `Tests 1 failed | 3 passed (4)`; the failing case is now `ReplacePagesDialog gates focus on a focusedOnceRef and defers via queueMicrotask` (`focusedOnceRef useRef exists`). Cause: `src/renderer/components/ReplacePagesDialog.tsx` was migrated to `DialogShell` (uncommitted shared-tree change, mtime 2026-10-03 23:05, after the 22:48 fix) and lost its `focusedOnceRef` gate, so the same staleness class recurs on that dialog. `deletePageDialog` spec passes (`Test Files 1 passed (1)`, `Tests 8 passed (8)`). Log: run scratch `cmd1.log` / `cmd2.log`.
+- qa (TFL-579, retest after TFL-580): PASS, CLOSED. TFL-580 realigned the two stale source-scans to the migrated shape (ReplacePagesDialog now asserted as a `DialogShell` delegating surface plus a shell `defaultActionRef` once-per-open case; `phase94_noAdHocIcons` RenumberPagesDialog `Icon` expectation). Commands: `npm run test:unit -- bugB13_focusedOnceDialogs` -> `Test Files 1 passed (1)`, `Tests 5 passed (5)` (the previously failing `DeletePageDialog` case passes; count rose 4->5 from the added `DialogShell owns the once-per-open focus for its adopters` case); `npm run test:unit -- deletePageDialog` -> `Test Files 1 passed (1)`, `Tests 8 passed (8)`; blast-radius neighbour `npm run test:unit -- phase94_noAdHocIcons` -> `Test Files 1 passed (1)`, `Tests 5 passed (5)`. Fix remains test-only: the `bugB13_focusedOnceDialogs.test.ts` diff broadens the focus-call regex to accept both `first?.focus` and `firstControlRef.current?.focus` with no assertion removed/weakened; `DeletePageDialog.tsx` is unchanged by the fix (its uncommitted diff is the pre-existing Phase 92 DialogShell adoption, which uses `queueMicrotask` + `firstControlRef.current?.focus()`). Full renderer sweep not re-run (targeted commands green).
+
 ## DEF-518: The dock edit-mode remove badge is partially clipped on hover in the arrows lane
 
 - Status: CLOSED

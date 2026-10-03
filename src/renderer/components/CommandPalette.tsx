@@ -26,6 +26,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { ChangeEvent, MouseEvent as ReactMouseEvent, ReactElement } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import { Pin, TextSearch } from 'lucide-react';
+import { Icon } from '../icons/Icon';
 import {
   PALETTE_DOCK_FULL_MESSAGE,
   STAGE_TAG_LABELS,
@@ -369,7 +370,7 @@ export function CommandPalette(props: CommandPaletteProps): ReactElement {
             exit="exit"
           >
             <div className="command-palette-search">
-              <TextSearch size={15} aria-hidden />
+              <Icon icon={TextSearch} size="md" aria-hidden />
               <input
                 ref={inputRef}
                 className="command-palette-input"
@@ -475,7 +476,7 @@ function PaletteRowItem(props: PaletteRowItemProps): ReactElement {
     );
   }
 
-  const Icon = row.entry.icon;
+  const Glyph = row.entry.icon;
   // DEF-359 — the toggle reflects the dock the user is looking at: a pin that
   // lives in another stage renders as "pinned-elsewhere" and its copy names
   // that stage, so the marker never disagrees with the visible dock.
@@ -509,7 +510,7 @@ function PaletteRowItem(props: PaletteRowItemProps): ReactElement {
       onClick={actionable ? (): void => onRun(row) : undefined}
     >
       <span className="command-palette-row-icon" aria-hidden>
-        <Icon size={15} />
+        <Icon icon={Glyph} size="md" />
       </span>
       <span className="command-palette-row-label">{row.entry.label}</span>
       <span className="command-palette-row-desc">{row.reason ?? row.entry.description}</span>

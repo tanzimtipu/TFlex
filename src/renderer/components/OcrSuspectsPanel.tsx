@@ -19,6 +19,7 @@
 
 import type { ReactElement } from 'react';
 import { ScanText, X } from 'lucide-react';
+import { Icon } from '../icons/Icon';
 import type { OcrSuspect } from '../../shared/types';
 import { SUSPECT_CONFIDENCE_THRESHOLD } from '../../shared/types';
 import { TfBarTop } from './motion/TfMotion';
@@ -46,7 +47,7 @@ export function OcrSuspectsPanel(props: OcrSuspectsPanelProps): ReactElement {
   const header = (
     <header className="ocr-suspects-header">
       <span className="ocr-suspects-title">
-        <ScanText size={16} aria-hidden />
+        <Icon icon={ScanText} size="sm" />
         OCR suspects
       </span>
       <div className="ocr-suspects-summary" aria-live="polite">
@@ -71,7 +72,7 @@ export function OcrSuspectsPanel(props: OcrSuspectsPanelProps): ReactElement {
         aria-label="Close OCR suspects panel"
         title="Close"
       >
-        <X size={16} aria-hidden />
+        <Icon icon={X} size="sm" />
       </button>
     </header>
   );

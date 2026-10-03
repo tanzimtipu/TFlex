@@ -12,6 +12,7 @@
 
 import type { ReactElement } from "react";
 import { TriangleAlert } from "lucide-react";
+import { Icon } from "../icons/Icon";
 import { EXPORT_FIDELITY_NOTES, type ExportFormat } from "../../shared/export";
 
 export interface ExportFidelityNotesProps {
@@ -33,7 +34,7 @@ export function ExportFidelityNotes(
       aria-label="Export fidelity limits"
     >
       <div className="export-fidelity-head">
-        <TriangleAlert size={14} aria-hidden />
+        <Icon icon={TriangleAlert} size="xs" />
         <span>Fidelity limits</span>
       </div>
       <ul className="export-fidelity-list">

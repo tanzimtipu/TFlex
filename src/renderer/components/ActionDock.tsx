@@ -31,6 +31,7 @@ import { createPortal } from 'react-dom';
 import type { CSSProperties, ReactElement } from 'react';
 import type { LucideIcon } from 'lucide-react';
 import { ChevronsLeft, ChevronsRight, Ellipsis, Minus, Pencil, Plus } from 'lucide-react';
+import { Icon } from '../icons/Icon';
 import {
   DOCK_AVAILABILITY_REASON,
   DOCK_BULK_IDS,
@@ -77,6 +78,16 @@ import {
   pillMode,
 } from '../state/pillFit';
 import type { Stage } from '../state/stages';
+
+/** The dock chrome glyphs (scroll arrows, overflow, remove badge). Declared with
+ *  an `icon:` property so the Phase 43 icon-identity guard still attributes each
+ *  glyph to this surface. */
+const DOCK_CHROME_GLYPHS = {
+  scrollLeft: { icon: ChevronsLeft },
+  scrollRight: { icon: ChevronsRight },
+  more: { icon: Ellipsis },
+  remove: { icon: Minus },
+} as const satisfies Record<string, { icon: LucideIcon }>;
 
 /** The State 2 bulk verbs, reusing the EXISTING multi-page engine/dialog
  *  paths. The host owns them; the dock only passes the selected page array.
@@ -849,7 +860,7 @@ export function ActionDock(props: ActionDockProps): ReactElement {
     verb: DockVerb,
     opts: { primary: boolean; pin: boolean; index: number; out?: boolean },
   ): ReactElement => {
-    const Icon = verb.icon;
+    const Glyph = verb.icon;
     const pressed = activeSet.has(verb.id);
     const group: 'primary' | 'pins' = opts.pin ? 'pins' : 'primary';
     // Phase 59 (item 3) — the add / remove bloom rides these two utilities. An
@@ -888,7 +899,7 @@ export function ActionDock(props: ActionDockProps): ReactElement {
           style={jiggle ? { animationDelay: `-${jiggleDelayMs(verb.id)}ms` } : undefined}
           aria-hidden
         >
-          <Icon size={20} />
+          <Icon icon={Glyph} size="lg" />
         </span>
         {!iconOnly && <span className="action-dock-label">{verb.label}</span>}
         {/* Phase 58 — EDIT mode: the minus affordance. It is a SPAN with a
@@ -916,7 +927,7 @@ export function ActionDock(props: ActionDockProps): ReactElement {
               }
             }}
           >
-            <Minus size={12} aria-hidden />
+            <Icon icon={DOCK_CHROME_GLYPHS.remove.icon} size="lg" aria-hidden />
           </span>
         )}
       </button>
@@ -1035,7 +1046,7 @@ export function ActionDock(props: ActionDockProps): ReactElement {
           title="Scroll left"
           onClick={(): void => scrollVerbs(-1)}
         >
-          <ChevronsLeft size={20} aria-hidden />
+          <Icon icon={DOCK_CHROME_GLYPHS.scrollLeft.icon} size="lg" aria-hidden />
         </button>
       )}
       <div className="action-dock-scroll" ref={scrollRef} data-dock-scroll>
@@ -1063,14 +1074,14 @@ export function ActionDock(props: ActionDockProps): ReactElement {
               }}
             >
               <span className="action-dock-icon" aria-hidden>
-                <Ellipsis size={20} />
+                <Icon icon={DOCK_CHROME_GLYPHS.more.icon} size="lg" />
               </span>
               {!iconOnly && <span className="action-dock-label">More</span>}
             </button>
             {overflowOpen && (
               <div className="action-dock-menu action-dock-menu-overflow anim-menu-pop" role="menu" data-dock-overflow-menu>
                 {overflowVerbs.map((verb) => {
-                  const Icon = verb.icon;
+                  const Glyph = verb.icon;
                   return (
                     <button
                       key={verb.id}
@@ -1085,7 +1096,7 @@ export function ActionDock(props: ActionDockProps): ReactElement {
                         verb.run();
                       }}
                     >
-                      <Icon size={18} aria-hidden />
+                      <Icon icon={Glyph} size="lg" aria-hidden />
                       <span>{verb.label}</span>
                     </button>
                   );
@@ -1125,7 +1136,7 @@ export function ActionDock(props: ActionDockProps): ReactElement {
                 setPlusOpen((v) => !v);
               }}
             >
-              <Plus size={16} aria-hidden />
+              <Icon icon={Plus} size="lg" aria-hidden />
             </button>
             {plusOpen && (
               <div
@@ -1135,7 +1146,7 @@ export function ActionDock(props: ActionDockProps): ReactElement {
                 data-dock-picker
               >
                 {pickerEntries.map((entry) => {
-                  const Icon = entry.icon;
+                  const Glyph = entry.icon;
                   return (
                     <button
                       key={entry.id}
@@ -1148,7 +1159,7 @@ export function ActionDock(props: ActionDockProps): ReactElement {
                         addTool(entry.id);
                       }}
                     >
-                      <Icon size={18} aria-hidden />
+                      <Icon icon={Glyph} size="lg" aria-hidden />
                       <span>{entry.label}</span>
                     </button>
                   );
@@ -1167,7 +1178,7 @@ export function ActionDock(props: ActionDockProps): ReactElement {
           title="Scroll right"
           onClick={(): void => scrollVerbs(1)}
         >
-          <ChevronsRight size={20} aria-hidden />
+          <Icon icon={DOCK_CHROME_GLYPHS.scrollRight.icon} size="lg" aria-hidden />
         </button>
       )}
       {/* Phase 58 — the EDIT-mode pen. Phase 59 (item 3): it is now the dock's
@@ -1189,7 +1200,7 @@ export function ActionDock(props: ActionDockProps): ReactElement {
           setPlusOpen(false);
         }}
       >
-        <Pencil size={14} aria-hidden />
+        <Icon icon={Pencil} size="lg" aria-hidden />
       </button>
       {/* DEF-312 — the Pin/Unpin menu is portaled to `document.body`. The dock
           carries `transform: translateX(-50%)`, and a transformed ancestor is

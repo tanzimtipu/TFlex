@@ -20,6 +20,7 @@ import type {
   ReactNode,
 } from "react";
 import { File, FolderOpen, GripVertical, PanelLeftDashed, X } from "lucide-react";
+import { Icon } from "../icons/Icon";
 import { paneTabId, type MultiModeState, type PaneId } from "../state/multiMode";
 import { useInstantMotion } from "../hooks/useAnimations";
 import { MOTION_DURATION } from "../hooks/motionTokens";
@@ -122,7 +123,7 @@ export function MultiPaneHeader(props: {
         aria-label={`Clear pane ${pane}`}
         title={`Clear pane ${pane} and choose another document`}
       >
-        <X size={16} aria-hidden />
+        <Icon icon={X} size="sm" />
       </button>
     </div>
   );
@@ -139,7 +140,7 @@ export function MultiPaneEmpty(props: {
   return (
     <div className="multi-pane-empty anim-materialize">
       <div className="multi-pane-empty-inner">
-        <PanelLeftDashed size={28} aria-hidden className="multi-pane-empty-icon" />
+        <Icon icon={PanelLeftDashed} size="hero" className="multi-pane-empty-icon" />
         <p className="multi-pane-empty-title">Pane {pane} is empty</p>
         <p className="multi-pane-empty-hint">
           Pick one of the open documents, or open a PDF into this pane.
@@ -156,7 +157,7 @@ export function MultiPaneEmpty(props: {
                   aria-label={`Show ${option.title} in pane ${pane}`}
                   title={`Show ${option.title} in pane ${pane}`}
                 >
-                  <File size={16} aria-hidden />
+                  <Icon icon={File} size="sm" />
                   <span className="multi-pane-pick-title">{option.title}</span>
                   <span className="multi-pane-pick-count">
                     {option.pageCount} {option.pageCount === 1 ? "page" : "pages"}
@@ -174,7 +175,7 @@ export function MultiPaneEmpty(props: {
           aria-label={`Open a PDF into pane ${pane}`}
           title={`Open a PDF into pane ${pane}`}
         >
-          <FolderOpen size={16} aria-hidden />
+          <Icon icon={FolderOpen} size="sm" />
           <span>Open a PDF</span>
         </button>
       </div>
@@ -203,7 +204,7 @@ export function MultiDivider(props: {
       onPointerCancel={onPointerUp}
     >
       <span className="multi-divider-grip" aria-hidden>
-        <GripVertical size={14} />
+        <Icon icon={GripVertical} size="xs" />
       </span>
     </div>
   );

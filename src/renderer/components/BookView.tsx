@@ -21,6 +21,7 @@ import {
   type ReactElement,
 } from 'react';
 import { BookOpen, ChevronLeft, ChevronRight, Columns2, Square, X } from 'lucide-react';
+import { Icon } from '../icons/Icon';
 import type { PDFDocumentProxy } from 'pdfjs-dist';
 import { PageView } from './PageView';
 import { useInstantMotion } from '../hooks/useAnimations';
@@ -561,7 +562,7 @@ export function BookView(props: BookViewProps): ReactElement {
     >
       <header className="book-view-header">
         <span className="book-view-title" data-book-title-label>
-          <BookOpen size={16} aria-hidden />
+          <Icon icon={BookOpen} size="sm" />
           {title}
         </span>
         <div className="book-view-progress" data-book-progress>
@@ -586,7 +587,7 @@ export function BookView(props: BookViewProps): ReactElement {
             aria-pressed={layout === 'single'}
             data-book-single
           >
-            <Square size={16} aria-hidden />
+            <Icon icon={Square} size="sm" />
           </button>
           <button
             type="button"
@@ -596,7 +597,7 @@ export function BookView(props: BookViewProps): ReactElement {
             aria-pressed={layout === 'double'}
             data-book-double
           >
-            <Columns2 size={16} aria-hidden />
+            <Icon icon={Columns2} size="sm" />
           </button>
         </div>
         <button
@@ -606,7 +607,7 @@ export function BookView(props: BookViewProps): ReactElement {
           aria-label="Close book view"
           data-book-close
         >
-          <X size={16} aria-hidden />
+          <Icon icon={X} size="sm" />
         </button>
       </header>
 
@@ -671,7 +672,7 @@ export function BookView(props: BookViewProps): ReactElement {
           aria-label="Previous page"
           data-book-prev
         >
-          <ChevronLeft size={16} aria-hidden />
+          <Icon icon={ChevronLeft} size="sm" />
           Previous
         </button>
         <button
@@ -683,7 +684,7 @@ export function BookView(props: BookViewProps): ReactElement {
           data-book-next
         >
           Next
-          <ChevronRight size={16} aria-hidden />
+          <Icon icon={ChevronRight} size="sm" />
         </button>
       </nav>
     </div>

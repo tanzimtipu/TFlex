@@ -14,6 +14,7 @@
 import { useEffect, useState, type ReactElement } from 'react';
 import { AnimatePresence } from 'motion/react';
 import { Lock, X } from 'lucide-react';
+import { Icon } from '../icons/Icon';
 import type {
   EncryptDefaults,
   EncryptDocumentOptions,
@@ -99,7 +100,7 @@ export function EncryptDialog(props: EncryptDialogProps): ReactElement | null {
           >
             <div className="modal-header">
               <h2 id="encrypt-dialog-title" className="modal-title">
-                <Lock size={16} aria-hidden /> Encrypt document
+                <Icon icon={Lock} size="sm" /> Encrypt document
               </h2>
               <button
                 type="button"
@@ -108,7 +109,7 @@ export function EncryptDialog(props: EncryptDialogProps): ReactElement | null {
                 aria-label="Close dialog"
                 disabled={busy}
               >
-                <X size={16} aria-hidden />
+                <Icon icon={X} size="sm" />
               </button>
             </div>
             <div className="modal-body">
@@ -206,7 +207,7 @@ export function EncryptDialog(props: EncryptDialogProps): ReactElement | null {
                 disabled={busy}
                 data-encrypt-confirm
               >
-                <Lock size={16} aria-hidden />
+                <Icon icon={Lock} size="sm" />
                 {busy ? 'Encrypting\u2026' : 'Encrypt'}
               </button>
             </div>

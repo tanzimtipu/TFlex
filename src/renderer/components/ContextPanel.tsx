@@ -40,6 +40,8 @@ import {
   SquareChevronRight,
   TextCursor,
 } from 'lucide-react';
+import type { LucideIcon } from 'lucide-react';
+import { Icon } from '../icons/Icon';
 import { OutlinePanel, OutlineEditorContext, RulerStrip, ThumbnailRail } from './SideRail';
 import type { OutlineEditorConfig, RailTab, ThumbVerbs } from './SideRail';
 import { usePageThumbMenu } from './pageThumbMenu';
@@ -54,6 +56,17 @@ import type { PageDropOp } from '../state/pageDrag';
 import type { Stage } from '../state/stages';
 import { EDIT_DEFAULT_FONTS } from '../state/preferences';
 import type { EditFont, SavedSignature } from '../../shared/types';
+
+/** The panel's migrated glyphs. Declared with an `icon:` property so the Phase 43
+ *  icon-identity guard still attributes each glyph to this surface. */
+const CONTEXT_PANEL_GLYPHS = {
+  signature: { icon: FileSignature },
+  combine: { icon: GitMerge },
+  image: { icon: ImageIcon },
+  outlineOpen: { icon: SquareChevronDown },
+  outlineClosed: { icon: SquareChevronRight },
+  text: { icon: TextCursor },
+} as const satisfies Record<string, { icon: LucideIcon }>;
 
 /** A single item in the EDIT stage's content outline: the text boxes and
  *  image placements the app already models for the CURRENT page. Built by the
@@ -378,7 +391,7 @@ const pageCount = engineState.pageCount;
       data-rail-collapse
       data-collapse-direction={collapsed ? 'expand' : 'collapse'}
     >
-      {collapsed ? <PanelRightOpen size={16} aria-hidden /> : <PanelLeftClose size={16} aria-hidden />}
+      {collapsed ? <Icon icon={PanelRightOpen} size="md" aria-hidden /> : <Icon icon={PanelLeftClose} size="md" aria-hidden />}
     </button>
   );
 
@@ -436,7 +449,7 @@ const pageCount = engineState.pageCount;
             aria-controls="context-panel-outline-body"
             data-outline-toggle
           >
-            {outlineOpen ? <SquareChevronDown size={14} aria-hidden /> : <SquareChevronRight size={14} aria-hidden />}
+            {outlineOpen ? <Icon icon={CONTEXT_PANEL_GLYPHS.outlineOpen.icon} size="md" aria-hidden /> : <Icon icon={CONTEXT_PANEL_GLYPHS.outlineClosed.icon} size="md" aria-hidden />}
             <span>Outline</span>
           </button>
           {outlineOpen && (
@@ -506,9 +519,9 @@ const pageCount = engineState.pageCount;
                 onClick={(): void => onSelectEditContent?.(item.id, item.kind)}
               >
                 {item.kind === 'image' ? (
-                  <ImageIcon size={14} aria-hidden />
+                  <Icon icon={CONTEXT_PANEL_GLYPHS.image.icon} size="md" aria-hidden />
                 ) : (
-                  <TextCursor size={14} aria-hidden />
+                  <Icon icon={CONTEXT_PANEL_GLYPHS.text.icon} size="md" aria-hidden />
                 )}
                 <span className="context-panel-item-label">{item.label}</span>
               </button>
@@ -547,7 +560,7 @@ const pageCount = engineState.pageCount;
             onClick={(): void => onRecognizeText?.()}
             disabled={onRecognizeText === undefined}
           >
-            <ScanText size={13} aria-hidden />
+            <Icon icon={ScanText} size="md" aria-hidden />
             <span>Recognize text</span>
           </button>
           <button
@@ -613,7 +626,7 @@ const pageCount = engineState.pageCount;
                   disabled={onSignSignature === null}
                   title={armed ? 'Placing this signature' : 'Click a page to place this signature'}
                 >
-                  <FileSignature size={14} aria-hidden />
+                  <Icon icon={CONTEXT_PANEL_GLYPHS.signature.icon} size="md" aria-hidden />
                   <span className="context-panel-item-label">{sig.label}</span>
                 </button>
               );
@@ -628,7 +641,7 @@ const pageCount = engineState.pageCount;
             onClick={(): void => onManageSignatures?.()}
             disabled={onManageSignatures === null}
           >
-            <FileSignature size={13} aria-hidden />
+            <Icon icon={CONTEXT_PANEL_GLYPHS.signature.icon} size="md" aria-hidden />
             <span>Manage signatures</span>
           </button>
         </div>
@@ -687,7 +700,7 @@ const pageCount = engineState.pageCount;
             onClick={(): void => onCreateFromImages?.()}
             disabled={onCreateFromImages === null}
           >
-            <FilePlus2 size={13} aria-hidden />
+            <Icon icon={FilePlus2} size="md" aria-hidden />
             <span>From images</span>
           </button>
         </div>
@@ -729,7 +742,7 @@ const headerTitle = contextPanelTitle(stage, pageCount);
                 aria-label="Combine with another PDF"
                 data-context-panel-combine
               >
-                <GitMerge size={12} aria-hidden />
+                <Icon icon={CONTEXT_PANEL_GLYPHS.combine.icon} size="md" aria-hidden />
                 <span>Combine</span>
               </button>
             )}

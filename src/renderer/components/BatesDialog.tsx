@@ -11,6 +11,7 @@
 import { useEffect, useRef, useState, type CSSProperties, type ReactElement } from "react";
 import { AnimatePresence } from "motion/react";
 import { Hash, X } from "lucide-react";
+import { Icon } from "../icons/Icon";
 import { useBackdropClose } from "./modalBackdrop";
 import { TfBackdrop, TfDialog } from "./motion/TfMotion";
 import {
@@ -275,7 +276,7 @@ export function BatesDialog(props: BatesDialogProps): ReactElement {
           >
             <div className="modal-header">
               <h2 id="bates-dialog-title" className="modal-title">
-                <Hash size={16} aria-hidden /> Bates numbering
+                <Icon icon={Hash} size="sm" /> Bates numbering
               </h2>
               <button
                 type="button"
@@ -283,7 +284,7 @@ export function BatesDialog(props: BatesDialogProps): ReactElement {
                 onClick={onClose}
                 aria-label="Close dialog"
               >
-                <X size={16} aria-hidden />
+                <Icon icon={X} size="sm" />
               </button>
             </div>
             <div className="modal-body">

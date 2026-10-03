@@ -46,6 +46,15 @@
   --tf-icon-size: 18px;
   --tf-icon-size-md: 20px;
   --tf-icon-size-lg: 22px;
+  /* Phase 94 — the full Phase-94 icon token scale, mirroring `ICON_SIZES` in
+   * src/renderer/icons/Icon.tsx. `sm`/`xs` are non-chrome marks only (the
+   * on-page comment badge); `hero` is the empty-state/brand size. `-stroke` is
+   * the one normalized stroke width, mirrored from `ICON_STROKE`. The existing
+   * 18px floor tokens above are unchanged. */
+  --tf-icon-size-sm: 16px;
+  --tf-icon-size-xs: 14px;
+  --tf-icon-size-hero: 32px;
+  --tf-icon-stroke: 2;
   --tf-label-size: 12px;
   --tf-label-size-md: 13px;
   /* Phase 38 (feature B) — the Stage Rail's width. Was a hardcoded 44px; the
@@ -7361,6 +7370,16 @@ rect.ann-highlight.ann-preview {
 
 .form-radio-group {
   pointer-events: auto;
+/* Phase 94A correction — the tick scales with the RENDERED widget box. The
+ * button is `CHECKBOX_BOX_PT * cssScale` square, so this rule fills 70% of it
+ * (the retired inline markup's `* 0.7` ratio); the SVG therefore tracks page
+ * zoom and viewport, while the `Icon` wrapper still owns the glyph, stroke and
+ * accessible defaults. A CSS length overrides lucide's width/height attrs. */
+.form-checkbox svg {
+  width: 70%;
+  height: 70%;
+}
+
 }
 
 .form-radio {

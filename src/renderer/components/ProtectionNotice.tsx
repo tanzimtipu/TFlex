@@ -21,6 +21,7 @@
 
 import { useCallback, useEffect, useState, type ReactElement } from 'react';
 import { ChevronUp, Info, ShieldAlert } from 'lucide-react';
+import { Icon } from '../icons/Icon';
 import type { DocumentProtectionState } from '../../shared/types';
 import { useInstantMotion } from '../hooks/useAnimations';
 import { MOTION_DURATION } from '../hooks/motionTokens';
@@ -129,7 +130,7 @@ export function ProtectionNotice(props: ProtectionNoticeProps): ReactElement {
           aria-label="Document protection"
           data-protection-notice
         >
-          <ShieldAlert size={18} aria-hidden className="protection-notice-icon" />
+          <Icon icon={ShieldAlert} size="md" className="protection-notice-icon" />
           <div className="protection-notice-body">
             <p className="protection-notice-title">
               Protected document
@@ -159,7 +160,7 @@ export function ProtectionNotice(props: ProtectionNoticeProps): ReactElement {
             aria-label="Collapse document protection notice"
             data-protection-collapse
           >
-            <ChevronUp size={14} aria-hidden />
+            <Icon icon={ChevronUp} size="xs" />
           </button>
         </div>
       )}
@@ -171,7 +172,7 @@ export function ProtectionNotice(props: ProtectionNoticeProps): ReactElement {
           aria-label="Show document protection details"
           data-protection-icon
         >
-          <Info size={16} aria-hidden />
+          <Icon icon={Info} size="sm" />
         </button>
       )}
     </div>

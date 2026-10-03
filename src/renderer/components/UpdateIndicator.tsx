@@ -25,6 +25,7 @@
 
 import { type ReactElement, useEffect, useState, useCallback } from "react";
 import { Check, Download, RefreshCw, X } from "lucide-react";
+import { Icon } from "../icons/Icon";
 import type { UpdateState } from "../../shared/types";
 import { BrandLoader } from "./BrandLoader";
 import { normalizeUpdateState } from "./updateStateNormalize";
@@ -212,7 +213,7 @@ export function UpdateIndicator(props: UpdateIndicatorProps): ReactElement | nul
           aria-label="Checking for updates"
           title="Checking for updates"
         >
-          <RefreshCw size={16} aria-hidden />
+          <Icon icon={RefreshCw} size="sm" />
         </span>
       );
     case "available":
@@ -227,7 +228,7 @@ export function UpdateIndicator(props: UpdateIndicatorProps): ReactElement | nul
           title={view.ariaLabel}
           onClick={onDownload}
         >
-          <Download size={16} aria-hidden />
+          <Icon icon={Download} size="sm" />
           <span>Update v{view.version}</span>
         </button>
       );
@@ -257,7 +258,7 @@ export function UpdateIndicator(props: UpdateIndicatorProps): ReactElement | nul
           title={view.ariaLabel}
           onClick={onInstall}
         >
-          <Check size={16} aria-hidden />
+          <Icon icon={Check} size="sm" />
           <span>Restart to update</span>
         </button>
       );
@@ -272,7 +273,7 @@ export function UpdateIndicator(props: UpdateIndicatorProps): ReactElement | nul
           title={view.ariaLabel}
           onClick={onRetry}
         >
-          <X size={16} aria-hidden />
+          <Icon icon={X} size="sm" />
           <span>Retry</span>
         </button>
       );

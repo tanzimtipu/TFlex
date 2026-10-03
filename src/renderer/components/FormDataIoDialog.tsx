@@ -14,6 +14,7 @@
 import { useEffect, useRef, useState, type ReactElement } from "react";
 import { AnimatePresence } from "motion/react";
 import { FileDown, Upload, X } from "lucide-react";
+import { Icon } from "../icons/Icon";
 import type { FormDataImportReport } from "../../shared/types";
 import { useBackdropClose } from "./modalBackdrop";
 import { TfBackdrop, TfDialog } from "./motion/TfMotion";
@@ -243,7 +244,7 @@ export function FormDataIoDialog(
                 onClick={onClose}
                 aria-label="Close dialog"
               >
-                <X size={16} aria-hidden />
+                <Icon icon={X} size="sm" />
               </button>
             </div>
             <div className="modal-body">
@@ -297,7 +298,7 @@ export function FormDataIoDialog(
                     }}
                     data-testid="form-data-import-pick"
                   >
-                  <Upload size={16} aria-hidden />
+                  <Icon icon={Upload} size="sm" />
                     Choose form-data file{"\u2026"}
                   </button>
                   {path !== null && (
@@ -352,7 +353,7 @@ export function FormDataIoDialog(
                   }}
                   data-testid="form-data-export-run"
                 >
-                  <FileDown size={16} aria-hidden />
+                  <Icon icon={FileDown} size="sm" />
                   {running ? "Exporting\u2026" : "Export form data"}
                 </button>
               ) : (
@@ -365,7 +366,7 @@ export function FormDataIoDialog(
                   }}
                   data-testid="form-data-import-run"
                 >
-                  <Upload size={16} aria-hidden />
+                  <Icon icon={Upload} size="sm" />
                   {running ? "Importing\u2026" : `Import form data`}
                 </button>
               )}

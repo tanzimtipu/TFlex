@@ -208,12 +208,17 @@ function usagesIn(file: string, text: string): Usage[] {
   const out: Usage[] = [];
   lines.forEach((line, i) => {
     for (const icon of names) {
-      // A glyph is "used" when it is rendered (`<Icon` JSX) or assigned as a
+      // A glyph is "used" when it is rendered (`<Icon` JSX), assigned as a
       // control's icon (`icon: Icon` in the registry, `Icon: Icon` in the
-      // page-layout option table).
+      // page-layout option table), or passed to the Phase 94 central wrapper
+      // (`icon={Icon}` — including the DialogShell `icon={<Icon icon={Icon}>`
+      // form, whose inner expression the same pattern matches). Phase 94C1
+      // migrated the dialog chrome onto the wrapper, so without this third form
+      // a migrated dialog would contribute no usage and read as dead.
       const used =
         new RegExp(`<${icon}(?![A-Za-z0-9])`).test(line) ||
-        new RegExp(`(?:^|[\\s{(])[iI]con:\\s*${icon}\\b`).test(line);
+        new RegExp(`(?:^|[\\s{(])[iI]con:\\s*${icon}\\b`).test(line) ||
+        new RegExp(`[iI]con=\\{\\s*${icon}\\b`).test(line);
       if (used) {
         out.push({ file, icon, line: i + 1 });
       }
@@ -318,7 +323,11 @@ describe("Phase 43 — app-wide icon identity", () => {
     const four = control.match(/four:\s*\{[^}]*Icon:\s*([A-Za-z0-9]+)/)?.[1];
 
     const header = readFileSync(resolve(RENDERER, "components/AppHeader.tsx"), "utf8");
-    const headerIcon = header.match(/data-header-multi-mode[\s\S]{0,220}?<([A-Za-z0-9]+)/)?.[1];
+    // Phase 94B correction — read the REAL render source: the header toggle's
+    // glyph is the `APP_HEADER_GLYPHS.multiMode` map entry. Matching a `<Name`
+    // token (or worse, a comment naming the glyph) would let the mapping regress
+    // to Columns2 while this guard still passed.
+    const headerIcon = header.match(/multiMode:\s*\{\s*icon:\s*([A-Za-z0-9]+)/)?.[1];
     const registry = readFileSync(resolve(RENDERER, "state/toolsRegistry.ts"), "utf8");
     const registryIcon = registry.match(/id:\s*'multi-mode'[\s\S]{0,220}?icon:\s*([A-Za-z0-9]+)/)?.[1];
 
@@ -333,6 +342,9 @@ describe("Phase 43 — app-wide icon identity", () => {
     expect(two).not.toBe(registryIcon);
     // The Multi Mode verb uses ONE glyph everywhere it is offered.
     expect(headerIcon).toBe(registryIcon);
+    // Pin the actual glyph: the header toggle and the registry entry both use
+    // PanelsLeftRight (a real source oracle, not a comment or a `<Name` token).
+    expect(headerIcon, "header multi-mode glyph").toBe("PanelsLeftRight");
     // The three layout options are mutually distinct.
     expect(new Set([one, two, four]).size).toBe(3);
   });

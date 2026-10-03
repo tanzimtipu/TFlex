@@ -24,6 +24,7 @@
 // zero-duration swap.
 
 import { PenLine, Trash2 } from "lucide-react";
+import { Icon } from "../icons/Icon";
 import {
   useCallback,
   useEffect,
@@ -549,7 +550,7 @@ function SavedTab({
   if (saved.length === 0) {
     return (
       <div className="sig-empty">
-        <PenLine size={20} aria-hidden />
+        <Icon icon={PenLine} size="lg" />
         <p>No saved signatures yet.</p>
         <p className="hint">
           Draw or type a signature in the other tabs, then Save it. Saved
@@ -580,7 +581,7 @@ function SavedTab({
             aria-label={`Delete ${signatureLabel(sig)}`}
             title="Delete"
           >
-            <Trash2 size={16} aria-hidden />
+            <Icon icon={Trash2} size="sm" />
           </button>
         </li>
       ))}

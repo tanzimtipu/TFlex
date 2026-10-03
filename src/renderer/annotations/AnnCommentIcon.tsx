@@ -15,6 +15,8 @@
 
 import type { CSSProperties, ReactElement } from 'react';
 import { MessageSquare } from 'lucide-react';
+import type { LucideIcon } from 'lucide-react';
+import { Icon } from '../icons/Icon';
 import { annotationBounds, overlayRectToCss } from './geometry';
 import type { Annotation } from './model';
 
@@ -26,8 +28,14 @@ export interface AnnCommentIconProps {
   count: number;
 }
 
-/** Badge box size in CSS px (matches the annotation note marker scale). */
-const BADGE_PX = 16;
+/** Badge box size in CSS px: the xs (14px) glyph plus the 3px horizontal
+ *  padding on each side, so the comment mark is legible at 14px and no longer
+ *  clips inside the old 10px glyph / 16px box. */
+const BADGE_PX = 20;
+
+/** The badge's single glyph. Declared with an `icon:` property so the Phase 43
+ *  icon-identity guard still attributes `MessageSquare` to this surface. */
+const ANN_COMMENT_BADGE: { icon: LucideIcon } = { icon: MessageSquare };
 
 export default function AnnCommentIcon(props: AnnCommentIconProps): ReactElement {
   const { ann, cssScale, count } = props;
@@ -46,7 +54,7 @@ export default function AnnCommentIcon(props: AnnCommentIconProps): ReactElement
       style={style}
       aria-hidden
     >
-      <MessageSquare size={10} aria-hidden />
+      <Icon icon={ANN_COMMENT_BADGE.icon} size="xs" />
       {count > 1 && <span className="ann-comment-icon-count">{count}</span>}
     </span>
   );

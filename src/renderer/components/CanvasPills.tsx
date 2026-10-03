@@ -27,10 +27,24 @@ import {
   ZoomIn,
   ZoomOut,
 } from 'lucide-react';
+import type { LucideIcon } from 'lucide-react';
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { ReactElement } from 'react';
+import { Icon } from '../icons/Icon';
 import type { PaneId } from '../state/multiMode';
 import type { ZoomMode } from '../state/zoom';
+
+/** The pills' migrated glyphs. Declared with an `icon:` property so the Phase 43
+ *  icon-identity guard still attributes each glyph to this surface. */
+const PILL_GLYPHS = {
+  prev: { icon: ChevronLeft },
+  next: { icon: ChevronRight },
+  zoomOut: { icon: ZoomOut },
+  zoomIn: { icon: ZoomIn },
+  fitWidth: { icon: MoveHorizontal },
+  fitPage: { icon: Expand },
+  pan: { icon: Hand },
+} as const satisfies Record<string, { icon: LucideIcon }>;
 
 export interface CanvasPillsProps {
   page: number;
@@ -138,7 +152,7 @@ export function CanvasPills(props: CanvasPillsProps): ReactElement {
           aria-label="Previous page"
           title="Previous page"
         >
-          <ChevronLeft size={20} aria-hidden />
+          <Icon icon={PILL_GLYPHS.prev.icon} size="lg" aria-hidden />
         </button>
         <div className="page-indicator">
           <input
@@ -184,20 +198,20 @@ export function CanvasPills(props: CanvasPillsProps): ReactElement {
           aria-label="Next page"
           title="Next page"
         >
-          <ChevronRight size={20} aria-hidden />
+          <Icon icon={PILL_GLYPHS.next.icon} size="lg" aria-hidden />
         </button>
       </div>
 
       {/* Zoom pill — bottom-RIGHT. */}
       <div className="canvas-pill canvas-pill-zoom" role="group" aria-label="Zoom" data-zoom-pill>
         <button type="button" className="tool-btn" onClick={onZoomOut} aria-label="Zoom out" title="Zoom out">
-          <ZoomOut size={20} aria-hidden />
+          <Icon icon={PILL_GLYPHS.zoomOut.icon} size="lg" aria-hidden />
         </button>
         <span className="zoom-percent" title="Current zoom">
           {zoomPercent}%
         </span>
         <button type="button" className="tool-btn" onClick={onZoomIn} aria-label="Zoom in" title="Zoom in">
-          <ZoomIn size={20} aria-hidden />
+          <Icon icon={PILL_GLYPHS.zoomIn.icon} size="lg" aria-hidden />
         </button>
         <button
           type="button"
@@ -207,7 +221,7 @@ export function CanvasPills(props: CanvasPillsProps): ReactElement {
           aria-label="Fit width"
           title="Fit width"
         >
-          <MoveHorizontal size={20} aria-hidden />
+          <Icon icon={PILL_GLYPHS.fitWidth.icon} size="lg" aria-hidden />
         </button>
         <button
           type="button"
@@ -217,7 +231,7 @@ export function CanvasPills(props: CanvasPillsProps): ReactElement {
           aria-label="Fit page"
           title="Fit page"
         >
-          <Expand size={20} aria-hidden />
+          <Icon icon={PILL_GLYPHS.fitPage.icon} size="lg" aria-hidden />
         </button>
         {onHandToggle !== undefined && (
           <button
@@ -234,7 +248,7 @@ export function CanvasPills(props: CanvasPillsProps): ReactElement {
             data-hand-toggle
             data-hand-active={handActive ? 'true' : 'false'}
           >
-            <Hand size={20} aria-hidden />
+            <Icon icon={PILL_GLYPHS.pan.icon} size="lg" aria-hidden />
           </button>
         )}
       </div>
