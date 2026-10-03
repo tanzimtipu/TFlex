@@ -9,6 +9,8 @@ import type {
   AddStampPayload,
   AddTextBoxPayload,
   ApplyRedactionsPayload,
+  BatesResult,
+  BatesSettings,
   CreateAnnotationPayload,
   CropEntry,
   DocxImageEntry,
@@ -34,6 +36,7 @@ import type {
   RecentFile,
   RemoveBlankPagesPayload,
   ReplaceTextPayload,
+  SanitizePayload,
   TextBoxStylePatch,
   WatermarkInfo,
   WatermarkSettings,
@@ -733,6 +736,10 @@ export async function start(): Promise<void> {
   ipcMain.handle(IPC.engineRemoveBlankPages, (_event, docId: string, payload: RemoveBlankPagesPayload) =>
     engine.removeBlankPages(docId, payload),
   );
+  // Phase 88 (FEA-037) — strip selected active-content classes in one op.
+  ipcMain.handle(IPC.engineSanitize, (_event, docId: string, payload: SanitizePayload) =>
+    engine.sanitizeDoc(docId, payload),
+  );
   ipcMain.handle(IPC.engineUndo, (_event, docId: string) =>
     engine.undo(docId),
   );
@@ -1011,6 +1018,13 @@ export async function start(): Promise<void> {
   // into each page's content stream), delete by id.
   ipcMain.handle(IPC.engineAddWatermark, (_event, docId: string, settings: WatermarkSettings) =>
     engine.addWatermark(docId, settings),
+  );
+  // Phase 89 (FEA-033): Bates numbering — bake sequential stamps onto the
+  // listed pages in one op / one undo entry.
+  ipcMain.handle(
+    IPC.engineAddBates,
+    (_event, docId: string, settings: BatesSettings): Promise<Result<BatesResult, EngineError>> =>
+      engine.addBates(docId, settings),
   );
   ipcMain.handle(
     IPC.engineGetWatermarks,

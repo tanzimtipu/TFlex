@@ -17,6 +17,11 @@ export default defineConfig({
   // file:// contexts and 404.)
   base: "./",
   plugins: [react()],
+  // Vite 8's resolver returns null for bare specifiers on this Windows/OneDrive
+  // checkout unless symlinks are preserved; without it the CSS @import
+  // "@fontsource-variable/inter/index.css" resolves project-root-relative and
+  // postcss-import ENOENTs, failing the renderer build (mirrors vitest.config.ts).
+  resolve: { preserveSymlinks: true },
   server: { port: 5173, strictPort: true },
   build: { outDir: "../../dist/renderer", emptyOutDir: true },
 });

@@ -9,6 +9,8 @@ import type {
   AddStampPayload,
   AddTextBoxPayload,
   ApplyRedactionsPayload,
+  BatesResult,
+  BatesSettings,
   CommentThread,
   CropEntry,
   DocxImageEntry,
@@ -40,6 +42,8 @@ import type {
   RemoveBlankPagesResult,
   ReplaceTextPayload,
   ReplaceTextResult,
+  SanitizePayload,
+  SanitizeResult,
   SignaturePlacement,
   SpaceAudit,
   TextPage,
@@ -727,6 +731,15 @@ export interface EngineApi {
     settings: WatermarkSettings,
   ): Promise<Result<EngineState, EngineError>>;
 
+  /** Phase 89 (FEA-033) — bake sequential Bates numbers onto the listed
+   *  1-based visible pages (array order is the numbering order), echoing the
+   *  updated state plus the stamped pages and their labels. Optional so a
+   *  pre-Phase-89 backend degrades with a friendly engine-error. */
+  addBates?(
+    docId: string,
+    settings: BatesSettings,
+  ): Promise<Result<BatesResult, EngineError>>;
+
   /** Phase 18 — report the watermarks applied to the document: one
    *  record per applied watermark (ids like `wm-1`, in first-seen
    *  order), each listing the 1-based visible page numbers that carry
@@ -775,6 +788,17 @@ export interface EngineApi {
     docId: string,
     payload: RemoveBlankPagesPayload,
   ): Promise<Result<RemoveBlankPagesResult, EngineError>>;
+
+  /** Phase 88 (FEA-037) — strip the selected active-content classes from the
+   *  open document in ONE undoable op, echoing the updated state plus an
+   *  honest per-class report (selected / removedByClass / findings) and a
+   *  readable warning for every object that could not be processed. An
+   *  all-false selection is refused with the typed `no-op`. Optional so a
+   *  pre-Phase-88 backend degrades with a friendly engine-error. */
+  sanitizeDoc?(
+    docId: string,
+    payload: SanitizePayload,
+  ): Promise<Result<SanitizeResult, EngineError>>;
 
   /** Peek the renderer's most-recent normalized EngineState for `docId`
    *  without doing an IPC round-trip. The real-engine adapter populates

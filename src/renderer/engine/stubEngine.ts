@@ -24,6 +24,8 @@ import type {
   AddStampPayload,
   AddTextBoxPayload,
   ApplyRedactionsPayload,
+  BatesResult,
+  BatesSettings,
   CommentEntry,
   CommentThread,
   CropEntry,
@@ -53,6 +55,8 @@ import type {
   RemoveBlankPagesResult,
   ReplaceTextPayload,
   ReplaceTextResult,
+  SanitizePayload,
+  SanitizeResult,
   SavedSignature,
   SignaturePlacement,
   SignatureSource,
@@ -64,6 +68,8 @@ import type {
 } from "../../shared/types";
 import { applyPatch, type Annotation, type AnnotationPatch } from "../annotations/model";
 import { cloneOutline, normalizeOutline } from "../../shared/outline";
+import { summarizeSanitize } from "../../shared/sanitize";
+import { formatBatesSeries } from "../../shared/bates";
 import { colorToHex } from "../edit/editColor";
 import type {
   EngineApi,
@@ -1025,6 +1031,63 @@ export class StubRendererEngine implements EngineApi {
     t.modified = true;
     const removed = [...payload.pages].sort((a, b) => a - b);
     return ok({ state: buildState(t), removed, skipped: [] });
+  }
+
+  /** Phase 88 (FEA-037) — the stub has no pdf-lib, so it cannot rewrite the
+   *  catalog to strip active content. It validates the call and echoes a
+   *  minimal, honest report (the selected classes with zero removals and no
+   *  findings/warnings) so the renderer's sanitize flow can be exercised
+   *  end-to-end before the real engine lands. An all-false selection is
+   *  refused loudly with the typed `no-op` rather than silently no-op'ing. */
+  async sanitizeDoc(
+    docId: string,
+    payload: SanitizePayload,
+  ): Promise<Result<SanitizeResult, EngineError>> {
+    const t = this.tabs.get(docId);
+    if (t === undefined) return err("engine-error", "unknown document");
+    const { javascript, launchActions, embeddedFiles, metadata } = payload.options;
+    if (!javascript && !launchActions && !embeddedFiles && !metadata) {
+      return err("no-op", "sanitizeDoc: no classes selected");
+    }
+    pushUndo(t);
+    t.modified = true;
+    return ok({
+      state: buildState(t),
+      report: summarizeSanitize([], payload.options),
+      warnings: [],
+    });
+  }
+
+  /** Phase 89 (FEA-033) — the stub has no pdf-lib, so it cannot bake real
+   *  page content. It validates the call (known doc, non-empty unique in-range
+   *  pages) and echoes an honest report: the stamped pages and their labels
+   *  derived from the shared series model, with the state marked modified so
+   *  the renderer's addBates flow can be exercised end-to-end before the real
+   *  engine lands. */
+  async addBates(
+    docId: string,
+    settings: BatesSettings,
+  ): Promise<Result<BatesResult, EngineError>> {
+    const t = this.tabs.get(docId);
+    if (t === undefined) return err("engine-error", "unknown document");
+    if (settings.pages.length === 0) {
+      return err("empty-range", "addBates: no pages provided");
+    }
+    const pageCount = buildState(t).pageOrder.length;
+    const seen = new Set<number>();
+    for (const p of settings.pages) {
+      if (!Number.isInteger(p) || p < 1 || p > pageCount || seen.has(p)) {
+        return err("out-of-range", `addBates: page ${p} is out of range`);
+      }
+      seen.add(p);
+    }
+    pushUndo(t);
+    t.modified = true;
+    return ok({
+      state: buildState(t),
+      stamped: [...settings.pages],
+      labels: formatBatesSeries(settings),
+    });
   }
 
   /** Phase 10 — add a new text box. Same shape as editTextRun.

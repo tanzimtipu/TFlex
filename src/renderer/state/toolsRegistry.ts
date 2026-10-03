@@ -127,6 +127,7 @@ import {
   GitMerge,
   GripVertical,
   Hand,
+  Hash,
   Highlighter,
   History,
   Image,
@@ -171,6 +172,7 @@ import {
   SeparatorVertical,
   Settings,
   Sheet,
+  Shield,
   Signature,
   Slash,
   Sparkles,
@@ -627,6 +629,20 @@ const REGISTRY = [
     availability: 'document',
   },
   {
+    // Phase 89 (FEA-033) — stamp sequential Bates numbers on the selected
+    // pages. The `document` precondition is honest: no open document disables
+    // the verb with the shared reason, never a dead click. Its live homes are
+    // the REVIEW Action Dock and the Command Palette.
+    id: 'bates',
+    label: 'Bates numbering\u2026',
+    description: 'Stamp sequential Bates numbers on the selected pages.',
+    icon: Hash,
+    shortcut: '',
+    stage: 'review',
+    action: 'bates',
+    availability: 'document',
+  },
+  {
     id: 'redact',
     label: 'Redact',
     description: 'Permanently remove the content under a marked region.',
@@ -714,6 +730,22 @@ const REGISTRY = [
     stage: 'review',
     action: 'validateDocument',
     availability: 'validation',
+  },
+  {
+    // Phase 88 (FEA-037) — strip the active-content classes the user selects
+    // (JavaScript, launch/open actions, embedded files, metadata) from the
+    // active document and report, per class, exactly what was removed. The
+    // `document` precondition is honest: no open document disables the verb
+    // with the shared reason, never a dead click. Its live homes are the
+    // REVIEW Action Dock and the Command Palette.
+    id: 'sanitize',
+    label: 'Sanitize document\u2026',
+    description: 'Strip JavaScript, launch actions, embedded files and metadata, with a per-class report.',
+    icon: Shield,
+    shortcut: '',
+    stage: 'review',
+    action: 'sanitize',
+    availability: 'document',
   },
   {
     // Phase 57 (feature A) — list the active document's optional content
@@ -1521,6 +1553,7 @@ const SURFACE_BY_ID: Record<ToolId, ToolSurface> = {
   flatten: 'dock',
   stamp: 'dock',
   watermark: 'palette',
+  bates: 'palette',
   redact: 'panel',
   exportComments: 'palette',
   importComments: 'palette',
@@ -1528,6 +1561,7 @@ const SURFACE_BY_ID: Record<ToolId, ToolSurface> = {
   exportFormData: 'palette',
   importFormData: 'palette',
   validateDocument: 'dock',
+  sanitize: 'dock',
   engineeringLayers: 'palette',
   documentInfo: 'palette',
   annotationsPanel: 'panel',
@@ -1654,12 +1688,14 @@ export const DOCK_STAGE_IDS: Readonly<Record<Stage, readonly string[]>> = {
     'flatten',
     'forms',
     'watermark',
+    'bates',
     'exportComments',
     'importComments',
     'fillFromCsv',
     'exportFormData',
     'importFormData',
     'validateDocument',
+    'sanitize',
     'engineeringLayers',
     'documentInfo',
   ],

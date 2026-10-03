@@ -13,6 +13,8 @@ import type {
   AddStampPayload,
   AddTextBoxPayload,
   ApplyRedactionsPayload,
+  BatesResult,
+  BatesSettings,
   CommentThread,
   CropEntry,
   DocxImageEntry,
@@ -47,6 +49,8 @@ import type {
   RemoveBlankPagesResult,
   ReplaceTextPayload,
   ReplaceTextResult,
+  SanitizePayload,
+  SanitizeResult,
   SignaturePlacement,
   SpaceAudit,
   TextPage,
@@ -560,6 +564,23 @@ addWatermark?(
     docId: string,
     payload: RemoveBlankPagesPayload,
   ): Promise<Result<RemoveBlankPagesResult, EngineError>>;
+  /** Phase 88 (FEA-037) — strip the selected active-content classes from the
+   *  open document and echo the updated state plus an honest per-class
+   *  report and warnings for objects the sanitizer could not interpret.
+   *  Optional so a pre-Phase-88 backend degrades with a friendly
+   *  engine-error. */
+  sanitizeDoc?(
+    docId: string,
+    payload: SanitizePayload,
+  ): Promise<Result<SanitizeResult, EngineError>>;
+  /** Phase 89 (FEA-033) — bake sequential Bates numbers onto the listed
+   *  1-based visible pages, echoing the updated state plus the stamped pages
+   *  and their labels. Optional so a pre-Phase-89 backend degrades with a
+   *  friendly engine-error. */
+  addBates?(
+    docId: string,
+    settings: BatesSettings,
+  ): Promise<Result<BatesResult, EngineError>>;
 }
 
 /** Normalize a wire EngineState into the renderer's EngineState: the Phase 3
@@ -819,6 +840,20 @@ function missingPhase87(): Result<never, EngineError> {
   return err(
     "engine-error",
     "Remove blank pages requires the Phase 87 backend update.",
+  );
+}
+
+function missingPhase88(): Result<never, EngineError> {
+  return err(
+    "engine-error",
+    "Sanitize requires the Phase 88 backend update.",
+  );
+}
+
+function missingPhase89(): Result<never, EngineError> {
+  return err(
+    "engine-error",
+    "Bates numbering requires the Phase 89 backend update.",
   );
 }
 
@@ -1423,6 +1458,42 @@ class RealEngineAdapter implements EngineApi {
   ): Promise<Result<RemoveBlankPagesResult, EngineError>> {
     if (this.inner.removeBlankPages === undefined) return missingPhase87();
     const r = await this.inner.removeBlankPages(docId, payload);
+    return r.ok
+      ? {
+          ok: true,
+          value: { ...r.value, state: this.normalizeAndCache(docId, r.value.state) },
+        }
+      : r;
+  }
+
+  /** Phase 88 (FEA-037) — strip the selected active-content classes through
+   *  the real engine. The result embeds its own `state`, so normalize that
+   *  through the cache while preserving the per-class report and warnings.
+   *  Mirrors the `removeBlankPages` adapter shape. */
+  async sanitizeDoc(
+    docId: string,
+    payload: SanitizePayload,
+  ): Promise<Result<SanitizeResult, EngineError>> {
+    if (this.inner.sanitizeDoc === undefined) return missingPhase88();
+    const r = await this.inner.sanitizeDoc(docId, payload);
+    return r.ok
+      ? {
+          ok: true,
+          value: { ...r.value, state: this.normalizeAndCache(docId, r.value.state) },
+        }
+      : r;
+  }
+
+  /** Phase 89 (FEA-033) — bake sequential Bates numbers onto the listed pages
+   *  through the real engine. The result embeds its own `state`, so normalize
+   *  that through the cache while preserving the stamped pages and labels.
+   *  Mirrors the `sanitizeDoc` adapter shape. */
+  async addBates(
+    docId: string,
+    settings: BatesSettings,
+  ): Promise<Result<BatesResult, EngineError>> {
+    if (this.inner.addBates === undefined) return missingPhase89();
+    const r = await this.inner.addBates(docId, settings);
     return r.ok
       ? {
           ok: true,

@@ -11123,3 +11123,195 @@ History:
 - adversary (TFL-442, 2026-10-03): filed as ADV-170, suggested MEDIUM; CTO accepted it as DEF-503 and routed to backend-dev.
 - qa (TFL-447, 2026-10-03): CLOSED. `buildState` now rewrites each flattened annotation's `page` to its current visible page (`vi + 1`). Engine spec `DEF-503: after a delete, flattened annotations carry the current visible page` passes: annotation, text box and placed signature created on visible page 3 all report page 2 after removing visible page 1, pageCount 3; the spec-coverage gap (no annotation case) is now covered. 4/4 e2e, 307/307 unit, verify exit 0.
 
+## DEF-504: `npm run build:renderer` fails: postcss cannot resolve the `@fontsource-variable/inter` CSS import, so no renderer bundle is produced
+
+- Status: CLOSED
+- Severity: HIGH (a broken renderer build produces no bundle, so the Phase 89 e2e and packaging/release gate cannot run against a fresh build)
+- Found by: qa
+- Phase: 89 (FEA-033 Bates numbering; focused frontend verification TFL-473)
+
+Steps to reproduce (from repository root):
+1. Run `npm.cmd run build:renderer`.
+2. Observe exit 1 and the postcss `@import` resolution error.
+
+Expected: exit 0 and a renderer bundle produced under the build output (the phase e2e/packaging gate requires a fresh renderer bundle).
+
+Actual (verbatim, excerpt):
+```
+vite v8.2.2 building client environment for production...
+transforming...
+Unable to resolve `@import "@fontsource-variable/inter/index.css"` from C:/Users/tanzi/OneDrive/App Development/TFlex/src/renderer
+233 modules transformed.
+Build failed in 154ms
+error during build:
+Build failed with 1 error:
+
+[plugin vite:css] C:/Users/tanzi/OneDrive/App Development/TFlex/src/renderer/styles.css:undefined:NaN
+Error: [postcss] ENOENT: no such file or directory, open 'C:\Users\tanzi\OneDrive\App Development\TFlex\@fontsource-variable\inter\index.css'
+```
+
+The package IS installed (`node_modules/@fontsource-variable/inter/index.css` exists; declared in `package.json:29` as `"@fontsource-variable/inter": "^5.2.5"`), but `postcss-import` resolves the bare specifier against the project root (`<root>\@fontsource-variable\inter\index.css`) instead of `node_modules`. The renderer TEST toolchain was fixed for the same class of resolver problem via `vitest.config.ts` `resolve: { preserveSymlinks: true }`; the production `vite build` CSS path has no equivalent fix. `src/renderer/styles.css:9` (`@import url("@fontsource-variable/inter/index.css");`) is pre-existing (not touched by the Phase 89/88 diffs), so this is a pre-existing build gap surfaced by the phase gate, not a Bates regression.
+
+Evidence: `npm.cmd run build:renderer` exit 1 (full output in the TFL-473 artifact); contrast item 4 `npm.cmd run verify` exit 0.
+
+Impact: HIGH. With no renderer bundle, the Phase 89 e2e/packaging gate cannot run on a fresh build. Fix owner: frontend-dev / frontend toolchain owner (resolve the font import for the production CSS pipeline, e.g. import the CSS from TS or adjust the resolver). The QA task that found this must not edit config to make it pass.
+
+History:
+- qa (TFL-473, 2026-10-03): filed from the Phase 89 frontend focused verification (item 5 / verdict f). The four unit/verify commands passed (2/2 files 27 tests, 4/4 files 56 tests, watermark 1/1 8 tests, verify exit 0); only the renderer build fails.
+- qa (TFL-478, 2026-10-03): CLOSED on the Phase 89 phase-validation gate. The TFL-474 fix landed (`vite.config.ts` and `vitest.config.ts` carry `resolve.preserveSymlinks: true`) and `npm.cmd run build` now exits 0 on a clean tree: typecheck + `vite build` (renderer bundle produced, `dist/renderer/assets/index-*.js` + `index-*.css`) + `build:node`, EXIT=0. Regression: `npm.cmd run verify` exit 0. (Note: there is a pre-existing duplicate DEF-504 id for a closed Phase 86 entry above; this closure targets the Phase 89 build entry.)
+
+## DEF-508: Bates dialog resets `[data-bates-report]` to "Not applied yet." (and the page scope) right after an apply that persists changed defaults
+
+- Status: CLOSED
+- Severity: MEDIUM (the stamp/refusal is correct and a toast reports it, but the dialog's promised report is wrong after any apply that changes the remembered defaults - the normal first-use case - breaking the phase's report acceptance criterion; no document corruption or data loss)
+- Found by: qa
+- Phase: 89 (FEA-033 Bates numbering; phase validation TFL-478)
+
+Steps to reproduce (from application launch, clean profile):
+1. Launch TFlex and open a multi-page PDF (4-page fixture, one large word per page).
+2. Press Ctrl+3 (REVIEW) and click the Action Dock verb "Bates numbering..." (`[data-dock-verb="bates"]`).
+3. Set Prefix `BATES-`, Start 7, Padding 5; uncheck "All pages", set From 2 To 3; click "Apply numbering".
+4. Expected: `[data-bates-report]` shows `2 pages stamped: BATES-00007, BATES-00008`.
+   Actual: it briefly shows that text, then resets to `Not applied yet.`; the Pages scope also re-seeds to "All pages" / From 1 / To 1.
+5. Refusal variant: set Prefix to an unencodable character (`漢`) and Apply.
+   Expected: the report keeps the readable `... cannot encode "漢" ...` error.
+   Actual: the error appears then resets to `Not applied yet.`.
+
+Observed report transitions (MutationObserver on `[data-bates-report]`):
+```
+["Not applied yet.", "2 pages stamped: BATES-00007, BATES-00008", "Not applied yet."]
+["Not applied yet.", "Engine error: addBates: the Helvetica font cannot encode \"漢\" in the stamp label", "Not applied yet."]
+```
+
+Expected (CONTROL-INDEX): "`[data-bates-report]` - readable 'N pages stamped' plus the labels, or the refusal text - never blank after a run."
+
+Actual: the report is not blank, it is reset to the pre-apply placeholder `Not applied yet.` after the apply settles, so the promised success/refusal text cannot be read in the dialog.
+
+Root cause (read-only inspection): `onBatesConfirm` (`src/renderer/App.tsx:6392`) calls `onBatesDefaultsChange` before returning, which writes the changed defaults to `AppSettings.batesDefaults`; that changes the `batesDefaults` useMemo identity (`App.tsx:9971`) and therefore the `initialDefaults` prop. `BatesDialog`'s re-seed `useEffect` keyed on `[open, initialDefaults, currentPage, totalPages]` (`src/renderer/components/BatesDialog.tsx:163-177`) then re-runs and calls `setReport(null)`, `setReportError(false)`, `setApplying(false)`, `setRangeAll(true)`. When the chosen values already equal the remembered defaults (e.g. a second identical apply) no settings write occurs and the report stays.
+
+Evidence:
+- `e2e/phase89_bates.spec.cjs` test `P89-REPORT` FAILs on `expect.soft(current).toContain('2 pages stamped')` and on the refusal text (`current === "Not applied yet."`).
+- Live engine content IS correct: `exportText` page 2 = `"BRAVOBATES-00007"`, page 3 = `"CHARLIEBATES-00008"`; pages 1 and 4 unchanged (so the defect is the report, not the stamp).
+- Screenshot: `screenshots/phase89_report_after_apply.png` (dialog re-seeded to All pages; only the toast "Bates numbers applied." visible).
+
+Fix owner: frontend-dev. Suggested direction: seed the dialog only on the `open` rising edge (do not re-seed on `initialDefaults` identity changes while open), or do not persist defaults synchronously inside the confirm path.
+
+History:
+- qa (TFL-483, 2026-10-03): CLOSED. Fix authored by frontend-dev on TFL-480 (`src/renderer/components/BatesDialog.tsx` re-seed effect now runs only on the rising edge of `open` via a new `seededForOpenRef` edge guard; new unit assertion in `test/unit/renderer/phase89BatesDialog.test.tsx`). Independent re-run of the fix-verify commands: `npm.cmd run build` exit 0 (typecheck + `vite build` renderer bundle `dist/renderer/assets/index-Bf0viocg.js` + `index-P70DfLll.css` + `build:node`); `npm.cmd run test:e2e -- e2e/phase89_bates.spec.cjs` 7 passed / 0 failed (P89-REPORT now PASS: report-current = `2 pages stamped: BATES-00007, BATES-00008`, refusal-current = `Engine error: addBates: the Helvetica font cannot encode "漢" in the stamp label`); `npm.cmd run test:unit -- test/unit/renderer/phase89BatesDialog.test.tsx` 1 file / 8 tests passed; `npm.cmd run verify` conventions clean (338 source files) + tsc clean, exit 0. Fix is minimal (`seededForOpenRef` present only in BatesDialog.tsx; no src/main, src/shared, src/preload, config or e2e/spec edits in the fix) and the fresh-open re-seed is preserved (unit close->reopen assertion restores the `Not applied yet.` placeholder + all-pages scope).
+
+## DEF-509: A page `/AA` JavaScript action with an INDIRECT `/S` survives sanitize and save
+
+- Status: CLOSED
+- Severity: MEDIUM
+- Found by: adversary (ADV-176)
+- Phase: 88 (FEA-037 sanitize PDF active content; phase issue TFL-463)
+
+Steps to reproduce:
+1. Build a one-page PDF whose page node carries `/AA << /O << /S <12 0 R> /JS (app.alert("indirect")) >> >>` (the action type name is written indirectly; the action dict, `/JS` and payload are otherwise normal).
+2. Open it in the shipping app and run `engine.sanitizeDoc` with all four classes.
+3. Read the raw catalog/page object graph of the serialized output (`engine.getDocumentBytes`, the same bytes a save writes) with `@cantoo/pdf-lib`.
+
+Expected: the `javascript` class removes a JavaScript additional action whether its `/S` is a direct or an indirect name; if it cannot, it appends a readable warning (REQUIREMENTS Phase 88 Ruling 3/6, fail loud).
+
+Actual: `removedByClass.javascript = 0`, `warnings = []`, and the serialized output still carries `page 1 /AA /O` with `/S /JavaScript` + the `/JS` payload (`pageAaHasJs: true`). Root cause: `nameString` (`src/main/services/sanitize.ts:39-41`) accepts only a direct `PDFName`, and `removeAdditionalActions` (`:86-100`) calls it on `dict.get(/S)` without resolving an indirect value. The page leaf `/AA` is copied verbatim by `serializeDoc`'s `copyPages` (`src/main/services/engine.ts:6610`), so the JavaScript persists. The validator cannot catch it either: `collectJavaScript` / `collectExternalContent` (`validation/pdfa.ts:316-361`) never read page `/AA`, so `validation.validate` reports the saved file clean while it still carries executable JavaScript. The direct-`/S` control (ADV88-X1) removes correctly.
+
+Evidence: `e2e/phase88_sanitize_adversary.spec.cjs` ADV88-X2 (line 832); run log `[adv88|X2-serialized] {"reportJs":0,"pageAaHasJs":true,"warnings":[]}`; pure probe vector `indirect_pageAA`.
+
+History:
+- CTO (TFL-463, 2026-10-03): ACCEPTED from ADV-176 (adversary diff-pass TFL-477). Assigned backend-dev TFL-482 (resolve indirect `/S` names in all three action branches; warn when unreadable).
+- backend-dev (TFL-482, 2026-10-03): FIX READY - `/S` now resolved via `doc.context.lookup` in all three action branches (`src/main/services/sanitize.ts`); the indirect-`/S` page `/AA` JavaScript is removed and reported. Evidence: `npm run verify` (338 files, tsc 0 errors); unit 2 files / 16 tests passed; `build` ok; adversary e2e 13 passed / 0 failed (ADV88-X2 green). Working tree left uncommitted for git-agent.
+- CTO (TFL-463, 2026-10-03): FIX-READY set; independent retest assigned to qa TFL-488. DEFECTS.md status remains FIX-READY until qa sets CLOSED.
+- qa (TFL-488, 2026-10-03): CLOSED. Independent retest of the uncommitted backend-dev fix (TFL-482). `npm.cmd run test:e2e -- e2e/phase88_sanitize_adversary.spec.cjs` 13 passed / 0 failed, decisive ADV88-X2 log `[adv88|X2-serialized] {"reportJs":1,"pageAaHasJs":false,"warnings":[]}`. `npm.cmd run test:unit -- test/unit/main/sanitize.test.ts test/unit/main/phase88SanitizeEngine.test.ts` 2 files / 16 tests passed (sanitize.test.ts:151 indirect `/S`). `npm.cmd run verify` conventions clean (338 files) + tsc 0 errors, exit 0.
+
+## DEF-510: Unreadable action objects are silently skipped with no warning (fail-loud gap)
+
+- Status: CLOSED
+- Severity: LOW
+- Found by: adversary (ADV-177)
+- Phase: 88 (FEA-037 sanitize PDF active content; phase issue TFL-463)
+
+Steps to reproduce:
+1. Build a PDF carrying (a) a catalog `/OpenAction` dict whose `/S` is a number, (b) a page `/AA` action dict whose `/S` is a number, and (c) a `/Link` annotation whose `/A` is a string rather than an action dictionary.
+2. Run `engine.sanitizeDoc` with all four classes and read `warnings` (and `stripActiveContent` directly in the pure probe).
+
+Expected: REQUIREMENTS Phase 88 Ruling 3/6 - every object the service cannot interpret appends a readable `warnings` entry naming the location; never a silent skip. The wrong-typed `/Names` control does warn, so the mechanism exists.
+
+Actual: `warnings = []` for all three carriers. The catalog `/OpenAction` branch (`src/main/services/sanitize.ts:166-186`) only warns when the resolved value is not a dictionary; a dict with a non-name `/S` falls through silently. `removeAdditionalActions` (`:86-100`) does the same. The annotation `/A` branch (`:222-228`) guards removal on `s !== null`, so a wrong-typed `/A` is silently left with no warning. Reporting/honesty defect, not data loss.
+
+Evidence: `e2e/phase88_sanitize_adversary.spec.cjs` ADV88-2b (line 568); run log `[adv88|2b-warnings] {"hasOpenActionWarning":false,"hasAaWarning":false,"hasAWarning":false,"warnings":[]}`; pure probe vectors `openAction_noS`, `pageAA_noS`, `annotA_wrongType`.
+
+History:
+- CTO (TFL-463, 2026-10-03): ACCEPTED from ADV-177 (adversary diff-pass TFL-477). Assigned backend-dev TFL-482 (warn on every unreadable action carrier).
+- backend-dev (TFL-482, 2026-10-03): FIX READY - an absent or wrong-typed `/S` now appends a readable warning naming the location in the `/OpenAction`, page `/AA` and annotation `/A` branches (`src/main/services/sanitize.ts`); no silent skip. Evidence: adversary e2e 13 passed / 0 failed (ADV88-2b green); unit 2 files / 16 tests passed.
+- CTO (TFL-463, 2026-10-03): FIX-READY set; independent retest assigned to qa TFL-488. DEFECTS.md status remains FIX-READY until qa sets CLOSED.
+- qa (TFL-488, 2026-10-03): CLOSED. Independent retest of the uncommitted backend-dev fix (TFL-482). `npm.cmd run test:e2e -- e2e/phase88_sanitize_adversary.spec.cjs` 13 passed / 0 failed, decisive ADV88-2b log `[adv88|2b-warnings] {"hasOpenActionWarning":true,"hasAaWarning":true,"hasAWarning":true,...}`. Unit `sanitize.test.ts:173,190` pass in the 16/16 run. `npm.cmd run verify` conventions clean (338 files) + tsc 0 errors, exit 0.
+
+## DEF-511: A sanitize that removes nothing still marks the document modified and pushes an undo entry
+
+- Status: CLOSED
+- Severity: LOW
+- Found by: adversary (ADV-178)
+- Phase: 88 (FEA-037 sanitize PDF active content; phase issue TFL-463)
+
+Steps to reproduce:
+1. Build a document carrying one `/Names /JavaScript` tree; run `engine.sanitizeDoc` with `{ javascript: true }`.
+2. Run it a second time with the same options; confirm `removedByClass` is all-zero.
+3. Call `engine.undo` twice and read each Result.
+
+Expected: a sanitize that removes nothing behaves like a no-op - it mutates nothing, so the undo stack does not grow and the document is not flagged dirty.
+
+Actual: both `undo` calls succeed (`{"first":{"ok":true},"second":{"ok":true}}`), proving the second no-removal sanitize pushed a second undo entry. `_sanitizeDocImpl` (`src/main/services/engine.ts:688-707`) takes a `snapshotDocWithPdf` and sets `doc.modified = true` unconditionally for any selection that is not all-false, regardless of whether a removal finding exists. Effect: re-running Sanitize (or sanitizing a document with no active content) adds an empty undo step and marks the document unsaved.
+
+Evidence: `e2e/phase88_sanitize_adversary.spec.cjs` ADV88-8 (line 731); run log `[adv88|8-undo-depth] {"first":{"ok":true},"second":{"ok":true}}`.
+
+History:
+- CTO (TFL-463, 2026-10-03): ACCEPTED from ADV-178 (adversary diff-pass TFL-477). Assigned backend-dev TFL-482 (skip snapshot/modified when the removal count is zero; keep the all-false typed no-op).
+- backend-dev (TFL-482, 2026-10-03): FIX READY - `_sanitizeDocImpl` (`src/main/services/engine.ts`) probes `stripActiveContent` with `apply=false`; when total removed is 0 it returns the all-zero report with no pdf snapshot, no undo entry and `modified` untouched (all-false typed no-op unchanged). Evidence: adversary e2e 13 passed / 0 failed (ADV88-8 green); unit 2 files / 16 tests passed.
+- CTO (TFL-463, 2026-10-03): FIX-READY set; independent retest assigned to qa TFL-488. DEFECTS.md status remains FIX-READY until qa sets CLOSED.
+- qa (TFL-488, 2026-10-03): CLOSED. Independent retest of the uncommitted backend-dev fix (TFL-482). `npm.cmd run test:e2e -- e2e/phase88_sanitize_adversary.spec.cjs` 13 passed / 0 failed, decisive ADV88-8 log `[adv88|8-undo-depth] {"first":{"ok":true},"second":{"ok":false,"code":"nothing-to-undo",...}}` (second no-removal sanitize adds no undo entry). Unit `phase88SanitizeEngine.test.ts:177,203` pass in the 16/16 run; ADV88-7 typed no-op unchanged in the same suite. `npm.cmd run verify` conventions clean (338 files) + tsc 0 errors, exit 0.
+
+## DEF-512: The Bates stamp ignores `AppSettings.editDefaultFont` - every UI-driven run draws the label in Helvetica (ADV-179)
+
+- Status: OPEN
+- Severity: LOW
+- Found by: adversary (ADV-179)
+- Phase: 89 (FEA-033 Bates numbering; phase issue TFL-464)
+
+Steps to reproduce:
+1. Set `editDefaultFont: "Times"` in settings.json (or any valid non-Helvetica EditFont).
+2. Open a multi-page document, open the Bates dialog and apply with any prefix.
+3. Read the payload `font` reaching `engine.addBates`, or inspect the baked `TFbates*` font resource.
+
+Expected: REQUIREMENTS.md:5333 (Phase 89 item 6) - the label is drawn with `settings.font ?? AppSettings.editDefaultFont ?? 'Helvetica'`; a user whose Edit default font is Times gets Times in the Bates label.
+
+Actual: `_addBatesImpl` embeds `settings.font ?? 'Helvetica'` (`src/main/services/engine.ts:4385`); `BatesDialog` builds its payload with no `font` key (`src/renderer/components/BatesDialog.tsx:218`) and `onBatesConfirm` forwards it unchanged (`src/renderer/App.tsx:6405-6408`). `AppSettings.editDefaultFont` is never consulted on the Bates path, so the label is Helvetica for every UI-driven run.
+
+Evidence: adversary diff-pass TFL-484 (ADVERSARIAL_REVIEW.md ADV-179); source trace above; adversary's executed probe suite A1-A8 all pass, which hides the missing fallback.
+
+Fix owner: frontend-dev. Suggested direction: seed the live `editDefaultFont` into the payload (e.g. add a `defaultFont?: EditFont` prop to `BatesDialog` set from `App.tsx` as `settings?.editDefaultFont ?? "Helvetica"`, and write `font: defaultFont` in the built `BatesSettings`), then assert the seeded font in `test/unit/renderer/phase89BatesDialog.test.tsx`.
+
+History:
+- CTO (TFL-464, 2026-10-03): ACCEPTED from ADV-179 (adversary diff-pass TFL-484). Assigned frontend-dev (renderer seeds the live edit font into the addBates payload).
+
+## DEF-513: The Bates encodability pre-check is font-agnostic - a bundled font over-refuses Latin-Extended/Greek labels it can actually draw (ADV-180)
+
+- Status: OPEN
+- Severity: LOW
+- Found by: adversary (ADV-180)
+- Phase: 89 (FEA-033 Bates numbering; phase issue TFL-464)
+
+Steps to reproduce:
+1. Build a one-page fixture; call `engine.addBates` with `{ pages: [1], font: "DejaVu Serif", prefix: "\u03a9" }` (or `prefix: "\u0101"`).
+2. Inspect the Result.
+
+Expected: REQUIREMENTS.md:5333 (Phase 89 item 6) - the refusal is for a character the **chosen** font cannot encode; a bundled family that embeds as a real TTF should accept the characters it can draw.
+
+Actual: the pre-check calls `undrawableStandardFontChars(label)` (`src/main/services/engine.ts:4364-4372`), built on `sanitizeForStandardFont` (`:5208-5246`), which unconditionally drops every code point > 0xFF. It refuses `\u03a9`/`\u0101` with DejaVu Serif even though the embedded font draws both (verified glyph ids 1/2; `\u4e16` -> .notdef). Over-refusal only - the op is all-or-nothing and leaves the bytes unchanged. Reachable through the IPC channel; no font control exists in the shipped dialog.
+
+Evidence: adversary diff-pass TFL-484 (ADVERSARIAL_REVIEW.md ADV-180); `test/unit/main/phase89BatesAdversary.test.ts` A4b/A5c (observation-only) logs.
+
+Fix owner: backend-dev. Suggested direction: make the pre-check use the font that will actually be embedded - keep the WinAnsi check for a StandardFont family, and for a bundled family probe the font's real glyph coverage (`.notdef`/throw = unencodable) before any mutation, then refuse only the truly-undrawable characters.
+
+History:
+- CTO (TFL-464, 2026-10-03): ACCEPTED from ADV-180 (adversary diff-pass TFL-484). Assigned backend-dev (font-aware encodability pre-check).
+

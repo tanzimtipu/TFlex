@@ -2,6 +2,8 @@ import { cloneElement, useCallback, useEffect, useMemo, useReducer, useRef, useS
 import type { ReactElement, ReactNode } from "react";
 import type {
   AppSettings,
+  BatesDefaults,
+  BatesSettings,
   BlankPageMeasurement,
   DocxImageEntry,
   DocumentProtectionState,
@@ -250,6 +252,7 @@ import { RenumberPagesDialog } from "./components/RenumberPagesDialog";
 import { CropPagesDialog } from "./components/CropPagesDialog";
 import { StampDialog } from "./components/StampDialog";
 import { WatermarkDialog } from "./components/WatermarkDialog";
+import { BatesDialog, type BatesConfirmOutcome } from "./components/BatesDialog";
 import { CommentExportDialog } from "./components/CommentExportDialog";
 import { CommentImportDialog } from "./components/CommentImportDialog";
 import {
@@ -261,6 +264,7 @@ import {
   type FormDataFormat,
 } from "./components/FormDataIoDialog";
 import { ValidateDocumentDialog } from "./components/ValidateDocumentDialog";
+import { SanitizeDialog } from "./components/SanitizeDialog";
 import { ValidationNotice } from "./components/ValidationNotice";
 import { EngineeringLayersPanel } from "./components/EngineeringLayersPanel";
 import { DocumentInfoDialog } from "./components/DocumentInfoDialog";
@@ -273,6 +277,12 @@ import {
   withValidationDefaults,
   type ValidationNoticeState,
 } from "./state/validation";
+import {
+  normalizeSanitizeOptions,
+  type SanitizeOptions,
+  type SanitizeReport,
+} from "../shared/sanitize";
+import { normalizeBatesDefaults } from "../shared/bates";
 import { DeletePageDialog } from "./components/DeletePageDialog";
 import { BlankPagesDialog } from "./components/BlankPagesDialog";
 import { CloseTabPromptDialog, type CloseTabPromptChoice } from "./components/CloseTabPromptDialog";
@@ -870,6 +880,10 @@ export function App(): ReactElement {
   // the toolbar / tools palette entry; the dialog drives its own
   // engine IPC through onWatermarkConfirm.
   const [watermarkOpen, setWatermarkOpen] = useState(false);
+  // Phase 89 (FEA-033) — Bates-numbering dialog. Opened from the REVIEW
+  // dock / palette entry; the dialog drives its own engine IPC through
+  // onBatesConfirm.
+  const [batesOpen, setBatesOpen] = useState(false);
   // Phase 18 — applied-watermark list for the active doc, fetched from
   // `engine.getWatermarks` each time the dialog opens (informational
   // only: the dialog's list also drives per-id delete).
@@ -892,6 +906,9 @@ export function App(): ReactElement {
   // Phase 54 (features D + E) — the Validate-document dialog and the per-tab
   // report cards (keyed by tab id; dismissing deletes the entry for good).
   const [validateOpen, setValidateOpen] = useState(false);
+  // Phase 88 (FEA-037) — the Sanitize-document dialog. The op runs through the
+  // engine client; the per-class report renders inline in the dialog.
+  const [sanitizeOpen, setSanitizeOpen] = useState(false);
   const [validationNotices, setValidationNotices] = useState<
     Record<string, ValidationNoticeState>
   >({});
@@ -6328,6 +6345,88 @@ pushToast(
     setWatermarkOpen(false);
   }, []);
 
+  /** Phase 89 (FEA-033) — open the Bates-numbering dialog from the REVIEW
+   *  dock / palette. The registry verb is disabled on doc-less tabs, so the
+   *  guard here is a safety net for the other entry points. */
+  const onBatesClick = useCallback((): void => {
+    if (activeTabIdRefLocal.current === null) return;
+    setBatesOpen(true);
+  }, []);
+
+  const onCancelBates = useCallback((): void => {
+    setBatesOpen(false);
+  }, []);
+
+  /** Phase 89 (FEA-033) — persist the dialog's defaults through the existing
+   *  settings path (mirrors `onSanitizeOptionsChange`), so the next open
+   *  re-seeds from what the user last chose. */
+  const onBatesDefaultsChange = useCallback(
+    (defaults: BatesDefaults): void => {
+      setSettings((prev) => {
+        if (prev === null) return prev;
+        const current = prev.batesDefaults;
+        if (
+          current !== undefined &&
+          current.prefix === defaults.prefix &&
+          current.suffix === defaults.suffix &&
+          current.startNumber === defaults.startNumber &&
+          current.padding === defaults.padding &&
+          current.position === defaults.position
+        ) {
+          return prev;
+        }
+        const updated: AppSettings = { ...prev, batesDefaults: defaults };
+        trackAndSave(updated);
+        return updated;
+      });
+    },
+    [trackAndSave],
+  );
+
+  /** Phase 89 (FEA-033) — bake the configured Bates numbers into the active
+   *  document through `engine.addBates`. On success the mirror refreshes via
+   *  `noteOpApplied`, the pdf.js proxy reloads so the baked numbers are
+   *  visible without a save+reopen cycle, and the stamped count + labels are
+   *  returned to the dialog's report. A failure returns the readable error
+   *  text for the same report (the toast is pushed here too). */
+  const onBatesConfirm = useCallback(
+    async (settings: BatesSettings): Promise<BatesConfirmOutcome | void> => {
+      const activeId = activeTabIdRefLocal.current;
+      if (activeId === null) return { error: "No active document." };
+      const open = openTabsRef.current[activeId];
+      if (open === undefined) return { error: "No active document." };
+      onBatesDefaultsChange({
+        prefix: settings.prefix,
+        suffix: settings.suffix,
+        startNumber: settings.startNumber,
+        padding: settings.padding,
+        position: settings.position,
+      });
+      const res = await engineRef.current.addBates?.(
+        open.session.engineDocId,
+        settings,
+      );
+      if (res === undefined) {
+        const message = "Bates numbering requires the Phase 89 backend update.";
+        pushToast("error", describeEngineError("engine-error", message));
+        return { error: message };
+      }
+      if (!res.ok) {
+        const message = describeEngineError(res.error.code, res.error.message);
+        pushToast("error", message);
+        return { error: message };
+      }
+      noteOpApplied(activeId, res.value.state as EngineState);
+      const refreshFn = refreshDocProxyForRef.current;
+      if (refreshFn !== null) {
+        void refreshFn(activeId).catch(() => undefined);
+      }
+      pushToast("info", "Bates numbers applied.");
+      return { stamped: res.value.stamped, labels: res.value.labels };
+    },
+    [noteOpApplied, pushToast, onBatesDefaultsChange],
+  );
+
   /** Phase 18 — apply the configured watermark to the active document
    *  through `engine.addWatermark` (the engine bakes it into the
    *  selected pages' content streams, one-way like stamps). On
@@ -7108,6 +7207,71 @@ pushToast(
         if (prev === null) return prev;
         const updated = withValidationDefaults(prev, defaults);
         if (updated !== prev) trackAndSave(updated);
+        return updated;
+      });
+    },
+    [trackAndSave],
+  );
+
+  // ---- Phase 88 (FEA-037): sanitize the active document -----------------
+  //
+  // The verb rides the REVIEW Action Dock and the Command Palette (both run
+  // through `dockAppActions`). The renderer client's `sanitizeDoc` is
+  // optional: its absence degrades with a readable reason, never a throw. A
+  // successful run mirrors the echoed state, rebuilds the pdf.js proxy and
+  // returns the per-class report for the dialog's inline view.
+
+  const onSanitizeClick = useCallback((): void => {
+    if (activeTabIdRefLocal.current === null) return;
+    setSanitizeOpen(true);
+  }, []);
+
+  const runSanitizeForActiveTab = useCallback(
+    async (
+      options: SanitizeOptions,
+    ): Promise<
+      { report: SanitizeReport; warnings: string[] } | { error: string }
+    > => {
+      const activeId = activeTabIdRefLocal.current;
+      if (activeId === null) return { error: "No active document." };
+      const open = openTabsRef.current[activeId];
+      if (open === undefined) return { error: "No active document." };
+      const client = engineRef.current;
+      if (client.sanitizeDoc === undefined) {
+        return { error: "Sanitize requires the Phase 88 backend update." };
+      }
+      const res = await client.sanitizeDoc(open.session.engineDocId, { options });
+      if (!res.ok) {
+        return { error: describeEngineError(res.error.code, res.error.message) };
+      }
+      noteOpApplied(activeId, res.value.state as EngineState);
+      // The engine rewrote the working document; rebuild the pdf.js proxy so
+      // the live view paints the sanitized bytes (DEF-108 refresh hook).
+      const refreshFn = refreshDocProxyForRef.current;
+      if (refreshFn !== null) {
+        await refreshFn(activeId).catch(() => undefined);
+      }
+      return { report: res.value.report, warnings: res.value.warnings };
+    },
+    [noteOpApplied],
+  );
+
+  const onSanitizeOptionsChange = useCallback(
+    (options: SanitizeOptions): void => {
+      setSettings((prev) => {
+        if (prev === null) return prev;
+        const current = prev.sanitizeOptions;
+        if (
+          current !== undefined &&
+          current.javascript === options.javascript &&
+          current.launchActions === options.launchActions &&
+          current.embeddedFiles === options.embeddedFiles &&
+          current.metadata === options.metadata
+        ) {
+          return prev;
+        }
+        const updated: AppSettings = { ...prev, sanitizeOptions: options };
+        trackAndSave(updated);
         return updated;
       });
     },
@@ -9600,12 +9764,14 @@ pushToast(
       stamp: onStampClick,
       redact: (): void => setRedactArmed(true),
       watermark: onWatermarkClick,
+      bates: onBatesClick,
       exportComments: onCommentExportClick,
       importComments: onCommentImportClick,
       fillFromCsv: onFillFromCsvClick,
       exportFormData: onExportFormDataClick,
       importFormData: onImportFormDataClick,
       validateDocument: onValidateDocumentClick,
+      sanitize: onSanitizeClick,
       engineeringLayers: onEngineeringLayersClick,
       documentInfo: onDocumentInfoClick,
       optimize: onOptimizeClick,
@@ -9656,10 +9822,12 @@ pushToast(
       setEditMode,
       onStampClick,
       onWatermarkClick,
+      onBatesClick,
       onCommentExportClick,
       onCommentImportClick,
       onFillFromCsvClick,
       onValidateDocumentClick,
+      onSanitizeClick,
       onEngineeringLayersClick,
       onDocumentInfoClick,
       onOptimizeClick,
@@ -9788,6 +9956,22 @@ pushToast(
 
   // Phase 54 — the remembered validation defaults the dialog re-seeds from.
   const validationDefaults = effectiveValidationDefaults(settings);
+
+  // Phase 88 (FEA-037) — the remembered sanitize selection the dialog
+  // re-seeds from; absent settings fall back to DEFAULT_SANITIZE_OPTIONS
+  // (all four true). Memoized so the dialog's re-seed effect is stable.
+  const sanitizeOptions = useMemo(
+    () => normalizeSanitizeOptions(settings?.sanitizeOptions),
+    [settings?.sanitizeOptions],
+  );
+
+  // Phase 89 (FEA-033) — the remembered Bates defaults the dialog re-seeds
+  // from; absent settings fall back to DEFAULT_BATES_DEFAULTS. Memoized so
+  // the dialog's re-seed effect is stable.
+  const batesDefaults = useMemo(
+    () => normalizeBatesDefaults(settings?.batesDefaults),
+    [settings?.batesDefaults],
+  );
 
   // ---- Phase 56 (features A / C / D): the shared reading-view verbs -------
   //
@@ -11549,6 +11733,24 @@ pushToast(
           void onDeleteWatermark(id);
         }}
       />
+      <BatesDialog
+        open={batesOpen}
+        totalPages={
+          activeEngineUi?.state.pageCount ??
+          activeTab?.session.doc.numPages ??
+          0
+        }
+        currentPage={(() => {
+          const id = activeTabIdRefLocal.current;
+          if (id === null) return 1;
+          const tab = openTabsRef.current[id];
+          return tab ? Math.max(1, Math.floor(tab.persisted.currentPage)) : 1;
+        })()}
+        initialDefaults={batesDefaults}
+        defaultFont={settings?.editDefaultFont ?? "Helvetica"}
+        onConfirm={onBatesConfirm}
+        onClose={onCancelBates}
+      />
       <CommentExportDialog
         open={commentExportOpen}
         annotationCount={activeTab?.engine.annotations.length ?? 0}
@@ -11588,6 +11790,13 @@ pushToast(
         runValidation={runValidationForActiveTab}
         onRememberDefaults={onValidationDefaultsChange}
         onClose={(): void => setValidateOpen(false)}
+      />
+      <SanitizeDialog
+        open={sanitizeOpen}
+        initialOptions={sanitizeOptions}
+        runSanitize={runSanitizeForActiveTab}
+        onOptionsChange={onSanitizeOptionsChange}
+        onClose={(): void => setSanitizeOpen(false)}
       />
       <EngineeringLayersPanel
         open={engineeringLayersOpen}

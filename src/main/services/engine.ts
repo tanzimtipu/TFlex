@@ -9,12 +9,17 @@ import {
   type RedactionAdvanceResolver,
 } from '../../shared/redaction';
 import { planReplace } from '../../shared/searchReplace';
+import { normalizeSanitizeOptions } from '../../shared/sanitize';
+import { DEFAULT_BATES_SIZE, formatBatesSeries, validateBatesSettings } from '../../shared/bates';
+import { stripActiveContent } from './sanitize';
 import type {
   AddStampPayload,
   AddTextBoxPayload,
   AnnModel,
   AnnRect,
   ApplyRedactionsPayload,
+  BatesResult,
+  BatesSettings,
   CommentEntry,
   CommentThread,
   CreateAnnotationPayload,
@@ -58,6 +63,8 @@ import type {
   ReplaceSkip,
   ReplaceTextPayload,
   ReplaceTextResult,
+  SanitizePayload,
+  SanitizeResult,
   SignaturePlacement,
   SpaceAudit,
   TextAlign,
@@ -127,6 +134,7 @@ import {
 import {
   DEFAULT_TEXT_LINE_HEIGHT,
   EDIT_FONTS,
+  isBundledEditFont,
   isEditFont,
   validateTextBoxStylePatch,
   validateTextStyleFields,
@@ -283,6 +291,17 @@ function readWatermarkMarker(contents: Uint8Array): WatermarkMarker | null {
     gs: typeof parsed.gs === 'string' ? parsed.gs : undefined,
   };
 }
+
+// ---------------------------------------------------------------------------
+// Phase 89 (FEA-033) — Bates identity
+// ---------------------------------------------------------------------------
+
+/** First line of every Bates content stream (a PDF comment, invisible to
+ *  renderers): `%TFLEX-BATES ` + base64url JSON `{ id, page, label }`. This
+ *  phase adds no list/delete ops, so the marker exists to make "exactly the
+ *  selected pages were stamped" directly verifiable and to keep Bates distinct
+ *  from the Phase 18 `%TFLEX-WATERMARK ` marker. */
+const BATES_MARKER_PREFIX = '%TFLEX-BATES ';
 
 // ---------------------------------------------------------------------------
 // Engine
@@ -651,6 +670,55 @@ export class EngineService {
       removed: [...pages].sort((a, b) => a - b),
       skipped: [],
     });
+  }
+
+  // -----------------------------------------------------------------------
+  // sanitizeDoc — Phase 88 (FEA-037). Strips the caller-selected active-content
+  // classes from the working document in ONE op with ONE undo entry and returns
+  // an honest per-class report. An all-false selection is the existing typed
+  // `no-op` and mutates nothing; a document whose objects cannot be interpreted
+  // still sanitizes and reports each unreadable object in `warnings`.
+  // -----------------------------------------------------------------------
+  async sanitizeDoc(
+    docId: string,
+    payload: SanitizePayload,
+  ): Promise<Result<SanitizeResult, EngineError>> {
+    return this._enqueue(docId, () => this._sanitizeDocImpl(docId, payload));
+  }
+
+  private async _sanitizeDocImpl(
+    docId: string,
+    payload: SanitizePayload,
+  ): Promise<Result<SanitizeResult, EngineError>> {
+    const doc = this.docs.get(docId);
+    if (doc === undefined) {
+      return err('engine-error', `unknown document: ${docId}`);
+    }
+    const options = normalizeSanitizeOptions(payload && payload.options);
+    if (!options.javascript && !options.launchActions && !options.embeddedFiles && !options.metadata) {
+      return err('no-op', 'sanitizeDoc: no content class selected');
+    }
+    // DEF-511: probe first (stripActiveContent with apply=false mutates nothing)
+    // so a sanitize that removes NOTHING is a true no-op — no pdf snapshot, no
+    // undo entry, no modified flag, redo stack preserved. Only when at least one
+    // carrier is actually removed do we pay for the snapshot and re-run for
+    // real, keeping sanitize ONE undo entry.
+    const probe = stripActiveContent(doc.pdfDoc, options, false);
+    const totalRemoved =
+      probe.report.removedByClass.javascript +
+      probe.report.removedByClass.launchActions +
+      probe.report.removedByClass.embeddedFiles +
+      probe.report.removedByClass.metadata;
+    if (totalRemoved === 0) {
+      return ok({ state: buildState(doc), report: probe.report, warnings: probe.warnings });
+    }
+    // ONE snapshot before any mutation: sanitize is ONE undo entry.
+    const snapshot = await snapshotDocWithPdf(doc);
+    const { report, warnings } = stripActiveContent(doc.pdfDoc, options, true);
+    doc.undoStack.push(snapshot);
+    doc.redoStack = [];
+    doc.modified = true;
+    return ok({ state: buildState(doc), report, warnings });
   }
 
   // -----------------------------------------------------------------------
@@ -4242,6 +4310,181 @@ export class EngineService {
   }
 
   // -----------------------------------------------------------------------
+  // Phase 89 (FEA-033): addBates — bake sequential Bates numbers onto pages
+  // -----------------------------------------------------------------------
+
+  async addBates(
+    docId: string,
+    settings: BatesSettings,
+  ): Promise<Result<BatesResult, EngineError>> {
+    return this._enqueue(docId, () => this._addBatesImpl(docId, settings));
+  }
+
+  private async _addBatesImpl(
+    docId: string,
+    rawSettings: BatesSettings,
+  ): Promise<Result<BatesResult, EngineError>> {
+    const doc = this.docs.get(docId);
+    if (doc === undefined) {
+      return err('engine-error', `unknown document: ${docId}`);
+    }
+    if (rawSettings === null || typeof rawSettings !== 'object') {
+      return err('engine-error', 'addBates: settings must be an object');
+    }
+
+    // Validate the page list against the live document FIRST, so an empty list
+    // and a bad entry map to their typed errors rather than the generic
+    // engine-error a null settings value would return.
+    const rawPages = (rawSettings as { pages?: unknown }).pages;
+    if (!Array.isArray(rawPages)) {
+      return err('engine-error', 'addBates: pages must be an array');
+    }
+    if (rawPages.length === 0) {
+      return err('empty-range', 'addBates: select at least one page to stamp');
+    }
+    const pageCount = doc.order.length;
+    const seen = new Set<number>();
+    for (const p of rawPages) {
+      if (typeof p !== 'number' || !Number.isInteger(p) || p < 1 || p > pageCount) {
+        return err('out-of-range', `addBates: page ${String(p)} is not an integer in 1..${pageCount}`);
+      }
+      if (seen.has(p)) {
+        return err('out-of-range', `addBates: page ${p} is listed more than once`);
+      }
+      seen.add(p);
+    }
+
+    const settings = validateBatesSettings(rawSettings);
+    if (settings === null) {
+      return err('engine-error', 'addBates: settings are invalid');
+    }
+
+    const labels = formatBatesSeries(settings);
+    // DEF-513 — fail-loud BEFORE any mutation, judging the font that will
+    // actually be embedded (payload override, else the persisted default, else
+    // Helvetica; the same resolution the embed below uses). A StandardFont is
+    // limited to WinAnsi; a bundled EditFont is probed for its REAL glyph
+    // coverage so a character it can draw is accepted and one it cannot is
+    // refused, naming the offending characters. The probe embeds into a
+    // throwaway document so a refusal never mutates the real one.
+    const fontFamily = settings.font ?? DEFAULT_SETTINGS.editDefaultFont ?? 'Helvetica';
+    if (!isEditFont(fontFamily)) {
+      return err(
+        'engine-error',
+        `addBates: unsupported font ${JSON.stringify(fontFamily)}; supported families are ${EDIT_FONTS.join(', ')}`,
+      );
+    }
+    let unencodable: string[];
+    if (isBundledEditFont(fontFamily)) {
+      try {
+        const probe = await PDFDocument.create();
+        const probeFont = await embedEditFont(probe, fontFamily, false, false);
+        unencodable = bundledFontUnencodableChars(labels, probeFont);
+      } catch (e) {
+        return err('engine-error', `addBates: ${e instanceof Error ? e.message : String(e)}`);
+      }
+    } else {
+      unencodable = [];
+      for (const label of labels) {
+        for (const ch of undrawableStandardFontChars(label)) {
+          if (!unencodable.includes(ch)) unencodable.push(ch);
+        }
+      }
+    }
+    if (unencodable.length > 0) {
+      return err(
+        'engine-error',
+        `addBates: the ${fontFamily} font cannot encode ${unencodable.map((c) => JSON.stringify(c)).join(', ')} in the stamp label`,
+      );
+    }
+
+    const size = settings.size ?? DEFAULT_BATES_SIZE;
+    const color = rgb(
+      settings.color?.r ?? 0,
+      settings.color?.g ?? 0,
+      settings.color?.b ?? 0,
+    );
+    const position = settings.position;
+
+    const snapshot = await snapshotDocWithPdf(doc);
+    try {
+      // Embed the font once and reuse it on every selected page. This is the
+      // same resolved family the DEF-513 encodability pre-check judged.
+      const font = await embedEditFont(doc.pdfDoc, fontFamily, false, false);
+      const runId = randomUUID().replace(/-/g, '').slice(0, 12);
+      const stamped: number[] = [];
+
+      for (let k = 0; k < settings.pages.length; k++) {
+        const page1 = settings.pages[k];
+        const origIdx = doc.order[page1 - 1];
+        if (origIdx === undefined || origIdx < 0 || origIdx >= doc.pdfDoc.getPageCount()) {
+          await tryRestorePdfBytes(doc, snapshot.pdfBytes);
+          return err('out-of-range', `addBates: page ${page1} resolves to invalid original index ${origIdx}`);
+        }
+        const page = doc.pdfDoc.getPage(origIdx);
+        const { width: pw, height: ph } = page.getSize();
+        const label = labels[k];
+
+        const w = font.widthOfTextAtSize(label, size);
+        const h = font.heightAtSize(size);
+
+        const tag = `${runId}p${page1}`;
+        const gsName = page.node.newExtGState(
+          `GSbates${tag}`,
+          doc.pdfDoc.context.obj({ Type: 'ExtGState', ca: 1, CA: 1 }),
+        );
+        const fontName = page.node.newFontDictionary(`TFbates${tag}`, font.ref);
+
+        // Predefined slot: the glyph box is centered on the grid point, inset
+        // by the same 10% page margin the Phase 18 watermark uses.
+        const slot = position;
+        const [slotRow, slotCol] = slot.split('-');
+        const mx = pw * 0.1;
+        const my = ph * 0.1;
+        const cx = slotCol === 'left' ? mx + w / 2 : slotCol === 'right' ? pw - mx - w / 2 : pw / 2;
+        const cy = slotRow === 'top' ? my + h / 2 : slotRow === 'bottom' ? ph - my - h / 2 : ph / 2;
+        // Convert the box center (top-left space) to the baseline (bottom-left
+        // space), matching the watermark's 0.8 factor.
+        const x = cx - w / 2;
+        const y = ph - (cy - h / 2) - h * 0.8;
+
+        const hexText = font.encodeText(label);
+        const ops: PDFOperator[] = [
+          pushGraphicsState(),
+          setGraphicsState(gsName),
+          beginText(),
+          setFontAndSize(fontName, size),
+          setFillingRgbColor(color.red, color.green, color.blue),
+          setTextMatrix(1, 0, 0, 1, x, y),
+          showText(hexText),
+          endText(),
+          popGraphicsState(),
+        ];
+
+        const marker = BATES_MARKER_PREFIX + Buffer.from(JSON.stringify({
+          id: `bates-${runId}`,
+          page: page1,
+          label,
+        }), 'utf8').toString('base64url');
+
+        const bytes = new TextEncoder().encode([marker, ...ops.map((o) => o.toString())].join('\n'));
+        const stream = doc.pdfDoc.context.stream(bytes);
+        const ref = doc.pdfDoc.context.register(stream);
+        page.node.addContentStream(ref);
+        stamped.push(page1);
+      }
+
+      doc.undoStack.push(snapshot);
+      doc.redoStack = [];
+      doc.modified = true;
+      return ok({ state: buildState(doc), stamped, labels });
+    } catch (e) {
+      await tryRestorePdfBytes(doc, snapshot.pdfBytes);
+      return err('engine-error', `addBates failed: ${e instanceof Error ? e.message : String(e)}`);
+    }
+  }
+
+  // -----------------------------------------------------------------------
   // Phase 18 / DEF-216: getWatermarks / deleteWatermark — watermark identity
   // -----------------------------------------------------------------------
 
@@ -5026,6 +5269,38 @@ function undrawableStandardFontChars(text: string): string[] {
     if (seen.has(ch)) continue;
     seen.add(ch);
     out.push(ch);
+  }
+  return out;
+}
+
+/**
+ * DEF-513 — the distinct characters across `labels` that a bundled EditFont's
+ * embedded subset cannot actually draw. The decision uses the embedded font's
+ * REAL coverage: a code point absent from its cmap-derived character set, or
+ * one whose glyph lays out as `.notdef` (glyph id 0, encoded `<0000>`) /
+ * whose encoding throws, is unencodable. This judges the font that will be
+ * embedded rather than the hardcoded StandardFont WinAnsi table.
+ */
+function bundledFontUnencodableChars(labels: string[], font: PDFFont): string[] {
+  const coverage = new Set(font.getCharacterSet());
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const label of labels) {
+    for (const ch of label) {
+      if (seen.has(ch)) continue;
+      seen.add(ch);
+      const cp = ch.codePointAt(0) ?? 0;
+      if (!coverage.has(cp)) {
+        out.push(ch);
+        continue;
+      }
+      try {
+        const encoded = font.encodeText(ch).toString().replace(/[<>]/g, '');
+        if (encoded.length === 0 || /^0+$/.test(encoded)) out.push(ch);
+      } catch {
+        out.push(ch);
+      }
+    }
   }
   return out;
 }

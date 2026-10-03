@@ -647,7 +647,7 @@ History:
 
 ## FEA-033: Bates numbering
 
-- Status: PROPOSED
+- Status: ACCEPTED -> Phase 89
 - Source: https://www.sejda.com/bates-numbering-pdf (Sejda, "Bates stamp multiple files at once")
 - Category: Annotate
 - Effort: M
@@ -662,6 +662,8 @@ them.
 
 History:
 - orchestrator: recorded from feature-scout batch FEA-031..FEA-040 (TFL-377)
+- orchestrator: accepted on CEO commission TFL-315, iteration 6; promoted to Phase 89 (phase issue TFL-464);
+  prefix/suffix/startNumber/padding/position persist as `AppSettings.batesDefaults`
 
 ## FEA-034: Certificate-based digital signature (sign and validate)
 
@@ -720,7 +722,7 @@ History:
 
 ## FEA-037: Sanitize PDF (strip active content)
 
-- Status: PROPOSED
+- Status: ACCEPTED -> Phase 88
 - Source: https://stirlingpdf.io/ (Stirling "Sanitize PDF")
 - Category: Optimize
 - Effort: M
@@ -735,6 +737,8 @@ peers expose it as a one-click safety action.
 
 History:
 - orchestrator: recorded from feature-scout batch FEA-031..FEA-040 (TFL-377)
+- orchestrator: accepted on CEO commission TFL-315, iteration 6; promoted to Phase 88 (phase issue TFL-463);
+  the four class booleans persist as `AppSettings.sanitizeOptions`
 
 ## FEA-038: Search and replace text across the document
 

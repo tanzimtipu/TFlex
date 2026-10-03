@@ -1,5 +1,13 @@
 import type { Result } from './result';
 import type { ConvertDefaults } from './convert';
+import type { SanitizeOptions, SanitizeReport } from './sanitize';
+
+export type {
+  SanitizeClass,
+  SanitizeFinding,
+  SanitizeOptions,
+  SanitizeReport,
+} from './sanitize';
 
 export type PdfOpenError = 'not-pdf' | 'corrupt' | 'encrypted' | 'io';
 
@@ -258,6 +266,16 @@ export interface AppSettings {
    *  src/main/services/settings.ts; when absent the consumer uses
    *  DEFAULT_BLANK_INK_THRESHOLD. */
   blankPageInkThreshold?: number;
+  /** Phase 88 (FEA-037) — the sanitize class selection (JavaScript, launch
+   *  actions, embedded files, metadata). Validated preserve-if-valid per key in
+   *  src/main/services/settings.ts; when absent the consumer uses
+   *  DEFAULT_SANITIZE_OPTIONS (all four true). */
+  sanitizeOptions?: SanitizeOptions;
+  /** Phase 89 (FEA-033) — the remembered Bates-numbering defaults (prefix,
+   *  suffix, start number, padding, position). Validated preserve-if-valid per
+   *  key in src/main/services/settings.ts; when absent the consumer uses
+   *  DEFAULT_BATES_DEFAULTS. */
+  batesDefaults?: BatesDefaults;
 }
 
 /** Phase 6 — what the renderer gets back from `app:getInfo`. The
@@ -499,6 +517,61 @@ export interface RemoveBlankPagesResult {
   state: EngineState;
   removed: number[];
   skipped: BlankPageSkip[];
+}
+
+// ---------------------------------------------------------------------------
+// Phase 88 (FEA-037) — sanitize: strip active content
+// ---------------------------------------------------------------------------
+
+/** The class selection the renderer sends to `engine:sanitize`. */
+export interface SanitizePayload {
+  options: SanitizeOptions;
+}
+
+/** The post-sanitize state plus the honest per-class report and any warnings
+ *  for objects the sanitizer could not interpret. */
+export interface SanitizeResult {
+  state: EngineState;
+  report: SanitizeReport;
+  warnings: string[];
+}
+
+// ---------------------------------------------------------------------------
+// Phase 89 (FEA-033) — Bates numbering
+// ---------------------------------------------------------------------------
+
+/** Phase 89 — the remembered Bates-numbering defaults persisted in
+ *  `AppSettings.batesDefaults` and re-seeded into the Bates dialog. */
+export interface BatesDefaults {
+  prefix: string;
+  suffix: string;
+  startNumber: number;
+  padding: number;
+  position: WatermarkPosition;
+}
+
+/** Phase 89 — payload for `engine.addBates`. Each `pages` entry is a 1-based
+ *  VISIBLE page and the array order is the numbering order (the k-th entry
+ *  receives `startNumber + k`). The stamp is real page content (not an
+ *  annotation) and is one undo entry. */
+export interface BatesSettings {
+  pages: number[];
+  prefix: string;
+  suffix: string;
+  startNumber: number;
+  padding: number;
+  position: WatermarkPosition;
+  font?: EditFont;
+  size?: number;
+  color?: EditColor;
+}
+
+/** Phase 89 — the post-stamp state plus the stamped pages and their labels
+ *  (parallel arrays, in numbering order). */
+export interface BatesResult {
+  state: EngineState;
+  stamped: number[];
+  labels: string[];
 }
 
 // ---------------------------------------------------------------------------

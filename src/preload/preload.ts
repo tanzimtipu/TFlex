@@ -56,8 +56,12 @@ import type {
   ReplaceTextPayload,
   ReplaceTextResult,
   SampleDocument,
+  SanitizePayload,
+  SanitizeResult,
   SpaceAudit,
   SpellCheckLanguage,
+  BatesResult,
+  BatesSettings,
   TextBoxStylePatch,
   TextPage,
   UpdateState,
@@ -339,6 +343,14 @@ const engineApi = {
   ): Promise<Result<ReplaceTextResult, EngineError>> {
     return ipcRenderer.invoke(IPC.engineReplaceText, docId, payload);
   },
+  // Phase 88 (FEA-037) — strip the selected active-content classes in one op
+  // and return the honest per-class report plus any unreadable-object warnings.
+  sanitizeDoc(
+    docId: string,
+    payload: SanitizePayload,
+  ): Promise<Result<SanitizeResult, EngineError>> {
+    return ipcRenderer.invoke(IPC.engineSanitize, docId, payload);
+  },
   addTextBox(
     docId: string,
     payload: AddTextBoxPayload,
@@ -453,6 +465,14 @@ const engineApi = {
     watermarkId: string,
   ): Promise<Result<EngineState, EngineError>> {
     return ipcRenderer.invoke(IPC.engineDeleteWatermark, docId, watermarkId);
+  },
+  // Phase 89 (FEA-033): Bates numbering — bake sequential stamps onto the
+  // listed pages in one op / one undo entry.
+  addBates(
+    docId: string,
+    settings: BatesSettings,
+  ): Promise<Result<BatesResult, EngineError>> {
+    return ipcRenderer.invoke(IPC.engineAddBates, docId, settings);
   },
   exportFdf(
     docId: string,

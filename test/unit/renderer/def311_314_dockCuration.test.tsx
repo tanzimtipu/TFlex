@@ -79,8 +79,9 @@ describe("DEF-313 / Phase 37 item 21 — the dock's relevant set per stage", () 
       "editToolOff", "editText", "editImage", "editTextBox", "recognizeText", "batchOcr", "ocrSuspects",
     ]);
     expect(dockToolsForStage("review").map((e) => e.id)).toEqual([
-      "annotate", "sign", "stamp", "flatten", "forms", "watermark",
+      "annotate", "sign", "stamp", "flatten", "forms", "watermark", "bates",
       "exportComments", "importComments", "fillFromCsv", "exportFormData", "importFormData", "validateDocument",
+      "sanitize",
       "engineeringLayers", "documentInfo",
     ]);
     expect(dockToolsForStage("deliver").map((e) => e.id)).toEqual([

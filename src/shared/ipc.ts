@@ -22,6 +22,7 @@ import type {
   AppInfo,
   ApplyRedactionsPayload,
   AppSettings,
+  BatesResult,
   CropEntry,
   DocxImageEntry,
   DocumentProtection,
@@ -57,6 +58,8 @@ import type {
   ReplaceTextPayload,
   ReplaceTextResult,
   SampleDocument,
+  SanitizePayload,
+  SanitizeResult,
   SavedSignature,
   SignatureSource,
   SpellCheckLanguage,
@@ -229,6 +232,17 @@ export const IPC = {
   // rectangles. Refuses loudly (`redaction-unsupported`) for a page whose
   // content cannot be decoded or whose font advances cannot be resolved.
   engineApplyRedactions: "engine:applyRedactions",
+  // Phase 88 (FEA-037) — strip selected active-content classes (JavaScript,
+  // launch/open actions, embedded files, metadata) from the working document
+  // in one op / one undo entry and return an honest per-class report plus a
+  // warning per object that could not be interpreted.
+  engineSanitize: "engine:sanitize",
+  // Phase 89 (FEA-033) — bake sequential Bates numbers onto the selected
+  // pages as real page content. One op / one undo entry; a distinct
+  // `%TFLEX-BATES ` marker names each stamped page. The whole payload is
+  // validated first and refused all-or-nothing (`empty-range` /
+  // `out-of-range` / `engine-error`).
+  engineAddBates: "engine:addBates",
   engineAddTextBox: "engine:addTextBox",
   engineEditImage: "engine:editImage",
   // Phase 14 / DEF-135 / DEF-136 — text-box placement registry (move/delete).
@@ -725,6 +739,26 @@ export interface TFlexApiEngine {
     docId: string,
     payload: RemoveBlankPagesPayload,
   ): Promise<Result<RemoveBlankPagesResult, import("./types").EngineError>>;
+  /** Phase 88 (FEA-037) — strip the selected active-content classes from the
+   *  open document in ONE op with ONE undo entry, returning the post-sanitize
+   *  state plus an honest per-class report and a readable warning for every
+   *  object that could not be interpreted. An all-false selection is refused
+   *  with the typed `no-op` and mutates nothing. */
+  sanitizeDoc?(
+    docId: string,
+    payload: SanitizePayload,
+  ): Promise<Result<SanitizeResult, import("./types").EngineError>>;
+  /** Phase 89 (FEA-033) — bake sequential Bates numbers onto the listed
+   *  1-based visible pages (list order = numbering order) in ONE op with ONE
+   *  undo entry and a distinct `%TFLEX-BATES ` marker per stamped page. The
+   *  whole payload is validated first: an empty list is `empty-range`, a
+   *  non-integer/out-of-range/duplicate page is `out-of-range`, and an invalid
+   *  option or an unencodable label is `engine-error`; nothing is mutated on
+   *  refusal. Returns the stamped pages and their labels. */
+  addBates?(
+    docId: string,
+    settings: import("./types").BatesSettings,
+  ): Promise<Result<BatesResult, import("./types").EngineError>>;
   /** Phase 10 — add a new text box with wrapping inside `rect`. As of
    *  Phase 14 / DEF-135 / DEF-136 this pushes a `TextBoxModel` into the
    *  engine-side placement registry (NO immediate draw); the box is drawn

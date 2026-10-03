@@ -3,6 +3,157 @@
 > Read discipline: this is a historical evidence ledger. Search for the assigned `ADV-NNN`
 > or unresolved `Disposition: PENDING` entries; do not load prior campaigns wholesale.
 
+## Phase 88 sanitize + save merge diff-pass (TFL-477) - stripActiveContent + serializeDoc
+
+Session label: `diff-pass`. Scope: the Phase-88 sanitize path (`src/shared/sanitize.ts`,
+`src/main/services/sanitize.ts`, the `sanitizeDoc` / `_sanitizeDocImpl` branches in
+`src/main/services/engine.ts`) and its interaction with the save path
+(`serializeDoc` / `carryCatalogEntries` / `carryJavaScriptNames` /
+`carryPageLinkedEntries`). Product code, tests and REQUIREMENTS.md were read but not
+modified. Spec: `e2e/phase88_sanitize_adversary.spec.cjs`; fixtures/specimens
+`test-fixtures/phase88-adversary/`; light lock-free service probe
+`test-fixtures/phase88-adversary/adv88_pure_probe.cjs`.
+
+Exact commands:
+
+- Build: `npm.cmd run build` -> exit 0 (typecheck clean; renderer + main + preload built).
+- Adversarial spec: `npm.cmd run test:e2e -- e2e/phase88_sanitize_adversary.spec.cjs --reporter=line`
+  -> **13 tests / 11 passed / 2 failed** (ADV88-2b, ADV88-X2) in 44.6 s.
+- Light pure-service probe (no electron, no build lock):
+  `node test-fixtures/phase88-adversary/adv88_pure_probe.cjs` -> confirms the same two
+  breaks against the shipped `stripActiveContent` and shows the controls HOLD.
+
+Attack-surface results (task attack cases 1-10; `file:line` = the spec test):
+
+1. Benign `/GoTo` `/OpenAction` survives sanitize and save: **HOLDS** -
+   `e2e/phase88_sanitize_adversary.spec.cjs:521` (saved catalog still `/S /GoTo`).
+2. Wrong-typed `/Names` + non-dict `/OpenAction` -> readable warnings, no throw,
+   other classes byte-intact: **HOLDS** -
+   `...:550` (both warnings present; metadata survived the javascript-only run).
+3. AcroForm field `/AA` JavaScript removed; benign field + value survive: **HOLDS** -
+   `...:590` (field 1 `/AA` gone after save; `KEEP-ONE` / `KEEP-TWO` intact).
+4. `/Names /EmbeddedFiles` + `/FileAttachment` annotation removed whole; ordinary
+   text annotation survives: **HOLDS** - `...:612` (remaining annot `Text`; JS tree,
+   unselected, carried).
+5. Undo/save byte round-trip: **HOLDS** - `...:634` (undo restored the JS tree and
+   the XMP `/Metadata`; save+reload removed them). Note: a non-`/GoTo` `/OpenAction`
+   (any JS/URI/Launch action) is dropped by the serializer on EVERY save by design
+   (`carryPageLinkedEntries` carries only `/S /GoTo`), so its post-undo return is not
+   observable in serialized bytes; the JS tree + metadata are the observable carriers.
+6. Sanitize-then-validate: **HOLDS** - `...:671` (validator reported
+   `pdfa.javascript` + `pdfa.external-content` before; only `pdfa.output-intent` /
+   `pdfa.font-embedding` after save+reload).
+7. All-false selection -> typed no-op, bytes unchanged, no undo entry: **HOLDS** -
+   `...:702` (`no-op`, 1308 == 1308 bytes, `nothing-to-undo`).
+8. Partial/javascript-only + second identical sanitize: **HOLDS** for the required
+   behaviour - `...:731` (javascript-only left metadata; second run 0 per class, no
+   warning). Beyond the brief, the second run still adds an undo entry and marks the
+   document modified - see ADV-178.
+9. `/Names` carrying `/Dests` but no `/JavaScript`: **HOLDS** - `...:764`
+   (`/Dests` tree and `destA` survived save; the GoTo OpenAction survived).
+10. `/Launch` with `/FS`: **HOLDS** - `...:794` and the pure probe (launchActions
+    removes the whole action; embeddedFiles keeps the action but drops `/FS`).
+X1. Direct `/S /JavaScript` page `/AA` removed (positive control): **HOLDS** -
+    `...:820`.
+X2. A page `/AA` JavaScript whose `/S` is an INDIRECT name survives sanitize AND
+    save: **BREAKS** - ADV-176, `...:832`.
+
+## ADV-176: A page `/AA` JavaScript action with an INDIRECT `/S` survives sanitize and save
+
+- Session: diff-pass
+- Suggested severity: MEDIUM
+
+What I did: `e2e/phase88_sanitize_adversary.spec.cjs` ADV88-X2 (line 832) and
+`test-fixtures/phase88-adversary/adv88_pure_probe.cjs` (vector `indirect_pageAA`).
+Build a one-page PDF whose page node carries
+`/AA << /O << /S <12 0 R> /JS (app.alert("indirect")) >> >>` (the action type name is
+written indirectly; the action dict, `/JS` and JavaScript payload are otherwise
+normal). Open it in the shipping app, run `engine.sanitizeDoc` with all four classes,
+then read the raw catalog/page object graph of the serialized output
+(`engine.getDocumentBytes` -> the same bytes a save writes) with `@cantoo/pdf-lib`.
+
+Expected: the `javascript` class removes a JavaScript additional action whether its
+`/S` is a direct or an indirect name; if it cannot, it appends a readable warning
+("Fail loud", REQUIREMENTS Phase 88 Ruling 3/6).
+
+Actual: `removedByClass.javascript = 0`, `warnings = []`, and the serialized output
+still carries `page 1 /AA /O` with `/S /JavaScript` + the `/JS` payload
+(`pageAaHasJs: true`). Root cause: `nameString` (`src/main/services/sanitize.ts:39-41`)
+accepts only a direct `PDFName`, and `removeAdditionalActions`
+(`src/main/services/sanitize.ts:86-100`) calls it on `dict.get(/S)` without resolving
+an indirect value, so an indirect `/S` reads as `null` and the action is neither
+removed nor warned. The page leaf `/AA` is then copied verbatim into the output by
+`serializeDoc`'s `copyPages` (`src/main/services/engine.ts:6610`), so the JavaScript is
+persisted. The validator cannot catch it either: `collectJavaScript` /
+`collectExternalContent` (`src/main/services/validation/pdfa.ts:316-361`) inspect only
+the catalog `/Names /JavaScript`, a JavaScript `/OpenAction` and page `/Annots` - they
+never read page `/AA` - so `validation.validate` reports the sanitized, saved file
+clean while it still carries executable JavaScript. The direct-`/S` control
+(ADV88-X1) is removed correctly, so this is specifically the indirect-name hole.
+
+Screenshot: n/a - run log `[adv88|X2-serialized] {"reportJs":0,"pageAaHasJs":true,"warnings":[]}`.
+
+Disposition: ACCEPTED -> DEF-509 (CTO, TFL-463, 2026-10-03); fix assigned to backend-dev TFL-482.
+
+## ADV-177: Unreadable action objects are silently skipped with no warning (fail-loud gap)
+
+- Session: diff-pass
+- Suggested severity: LOW
+
+What I did: `e2e/phase88_sanitize_adversary.spec.cjs` ADV88-2b (line 568) and
+`test-fixtures/phase88-adversary/adv88_pure_probe.cjs` (vectors `openAction_noS`,
+`pageAA_noS`, `annotA_wrongType`). Build a PDF carrying (a) a catalog `/OpenAction`
+dict whose `/S` is a number, (b) a page `/AA` action dict whose `/S` is a number, and
+(c) a `/Link` annotation whose `/A` is a string rather than an action dictionary; run
+`engine.sanitizeDoc` with all four classes and inspect the returned `warnings` (and
+the shipped `stripActiveContent` directly in the probe).
+
+Expected: REQUIREMENTS Phase 88 Ruling 3/6 - every object the service cannot
+interpret (wrong-typed value, an action dict with no readable `/S`) appends a readable
+`warnings` entry naming the location; never a silent skip. The wrong-typed `/Names`
+control does warn (`catalog /Names is not a dictionary...`), so the mechanism exists.
+
+Actual: `warnings = []` for all three carriers. The catalog `/OpenAction` branch
+(`src/main/services/sanitize.ts:166-186`) only warns when the resolved value is not a
+dictionary; a dict with a non-name `/S` falls through both removal branches silently.
+`removeAdditionalActions` (`:86-100`) does the same for a `/AA` action with no
+readable `/S`. The annotation `/A` branch (`:222-228`) guards removal on
+`s !== null`, so a wrong-typed `/A` is silently left with no warning. These objects
+are not executable JavaScript, so this is a reporting/honesty defect, not a
+data-loss or removal hole.
+
+Screenshot: n/a - run log `[adv88|2b-warnings] {"hasOpenActionWarning":false,"hasAaWarning":false,"hasAWarning":false,"warnings":[]}`.
+
+Disposition: ACCEPTED -> DEF-510 (CTO, TFL-463, 2026-10-03); fix assigned to backend-dev TFL-482.
+
+## ADV-178: A sanitize that removes nothing still marks the document modified and pushes an undo entry
+
+- Session: diff-pass
+- Suggested severity: LOW
+
+What I did: `e2e/phase88_sanitize_adversary.spec.cjs` ADV88-8 (line 731).
+Run `engine.sanitizeDoc` twice with `{ javascript: true }` only on a document that
+carries one `/Names /JavaScript` tree; confirm the second run reports
+`removedByClass` all-zero and the document still holds exactly the first run's changes;
+then call `engine.undo` twice and read each Result.
+
+Expected: a sanitize that removes nothing should behave like the documented typed
+no-op - mutate nothing, so the undo stack does not grow and the document is not
+flagged dirty. (The required ADV88-8 behaviour - 0 per class, no throw - HELDS.)
+
+Actual: both `undo` calls succeed (`{"first":{"ok":true},"second":{"ok":true}}`),
+proving the second no-removal sanitize pushed a second undo entry. Source confirms the
+mechanism: `_sanitizeDocImpl` (`src/main/services/engine.ts:688-707`) takes a
+`snapshotDocWithPdf` and sets `doc.modified = true` unconditionally for any selection
+that is not all-false, regardless of whether a removal finding exists. Effect: a
+user re-running Sanitize (or sanitizing a document with no active content) gets an
+undo step that changes nothing and a document now considered unsaved, which can
+trigger the modified/close guard for no change.
+
+Screenshot: n/a - run log `[adv88|8-undo-depth] {"first":{"ok":true},"second":{"ok":true}}`.
+
+Disposition: ACCEPTED -> DEF-511 (CTO, TFL-463, 2026-10-03); fix assigned to backend-dev TFL-482.
+
 ## Phase 86 search-and-replace diff-pass (TFL-449) - content-stream rewrite + save path
 
 Session label: `diff-pass`. Scope: the Phase-86 uncommitted change set on
@@ -8127,6 +8278,76 @@ User: a TFlex user who must permanently remove confidential text (a name, an acc
 - Nice-to-fix - **Accessibility (targets):** the swatches and mode buttons are 22x22 px, below the 44x44 px touch target. Try: keep the visual size but pad the hit area.
 - Nice-to-fix - **States (success):** a successful apply only clears the pending marks and shows warnings; there is no positive confirmation that the glyphs were removed. Try: a short `role="status"` line ("Redacted N characters on page X").
 - Strengths to keep: every verb is a real `<button>` with a stable `data-redact-*` hook; the fail-loud `[data-redact-warning]` (`role="alert"`/`role="status"`) makes a no-text mark non-silent; the typed `redaction-unsupported` refusal leaves the document byte-for-byte unchanged; the enabled/disabled states of Apply/Clear/Undo correctly track the pending-mark count.
+
+## ADV-179: The Bates stamp ignores `AppSettings.editDefaultFont` - the label is always drawn in Helvetica even when the user's default edit font is Times, Courier or a bundled family (REQUIREMENTS.md:5333)
+
+- Session: diff-pass (phase 89 gate)
+- Suggested severity: LOW
+
+What I did: adversarial diff-pass on the Phase 89 Bates diff. Statically traced the font that `engine.addBates` actually uses from every caller. `_addBatesImpl` embeds `settings.font ?? 'Helvetica'` (`src/main/services/engine.ts:4385`, and the same expression selects the label font again for the encodability pre-check at `:4365`/`:4369`). The only product caller is the renderer: `BatesDialog` builds `settings` without a `font` key (`src/renderer/components/BatesDialog.tsx:218`), and `onBatesConfirm` forwards that payload unchanged to `engineRef.current.addBates?.(...)` (`src/renderer/App.tsx:6405-6408`). Nothing between the dialog and the engine injects `AppSettings.editDefaultFont`. Compare the established engine pattern for the text-edit op, which does consult it: `payload.font ?? DEFAULT_SETTINGS.editDefaultFont ?? 'Helvetica'` (`src/main/services/engine.ts:2892`).
+
+Expected: REQUIREMENTS.md:5333 (Phase 89, item 6) - "The op embeds `settings.font ?? AppSettings.editDefaultFont ?? 'Helvetica'` via the existing `embedEditFont`". A user whose Edit default font is `Times` (or `Courier`, or a bundled family) should get that font in the Bates label.
+
+Actual: the label is drawn in Helvetica for every UI-driven run, regardless of the persisted `editDefaultFont`. The fallback chain in the op stops at `'Helvetica'`; `editDefaultFont` is never consulted on the Bates path.
+
+Reproducibility: deterministic. Confirmed by source trace plus the executed probe suite (below): the engine-level attacks A1-A8 all pass, which is exactly why this defect hides - it is a missing fallback, not a wrong stamp. To observe: set `editDefaultFont: 'Times'` in settings.json, open the Bates dialog, apply with any prefix; the run succeeds but the baked stamp is Helvetica (the `TFbates*` font resource resolves to the Helvetica standard font). The probe would need one added assertion that the payload reaching `engine.addBates` carries a `font` (the renderer test `phase89BatesDialog.test.tsx` currently asserts the payload shape without `editDefaultFont`). Fix is renderer-side: seed `font: settings?.editDefaultFont ?? 'Helvetica'` into the payload in `onBatesConfirm`, or have the op read the live default.
+
+Disposition: ACCEPTED -> DEF-512 (CTO, TFL-464, 2026-10-03)
+
+## ADV-180: The Bates encodability pre-check is font-agnostic - a bundled font that CAN draw a Latin-Extended/Greek prefix is refused anyway (over-refusal), because the check hardcodes StandardFont/WinAnsi semantics (REQUIREMENTS.md:5333)
+
+- Session: diff-pass (phase 89 gate)
+- Suggested severity: LOW
+
+What I did: read the pre-check that gates the whole op before any mutation. `_addBatesImpl` calls `undrawableStandardFontChars(label)` for every label (`src/main/services/engine.ts:4364-4372`), and that helper is built on `sanitizeForStandardFont` (`src/main/services/engine.ts:5236-5246`, `:5208-5228`), which unconditionally drops every code point `> 0xFF` and replaces controls with a space. This runs for every `settings.font`, including the bundled families that `embedEditFont` actually embeds as real TTFs (`src/main/services/fonts.ts:208-250`): `Liberation Sans` and `DejaVu Serif` cover U+0100..U+FFFF ranges (Latin Extended-A, Greek, Cyrillic) that the embedded font can draw but WinAnsi cannot.
+
+Expected: REQUIREMENTS.md:5333 says the refusal is for "a prefix/suffix character the **chosen** standard font cannot encode"; the check should reflect `settings.font` (or, at minimum, accept what the font that will actually be embedded can encode).
+
+Actual: any prefix/suffix containing a single code point above U+00FF is refused with `engine-error` even when the chosen bundled font can encode it. The op never reaches `embedEditFont`, so the decision is made against the wrong font.
+
+Reproducibility: executed and deterministic. `npm.cmd run test:unit -- test/unit/main/phase89BatesAdversary.test.ts` A4b/A5c log:
+`[p89adv|A4b] bundled Greek font=DejaVu Serif ok=false code=engine-error msg=addBates: the DejaVu Serif font cannot encode "Ω" in the stamp label`
+`[p89adv|A5c] Latin-Extended-A font=DejaVu Serif ok=false code=engine-error msg=addBates: the DejaVu Serif font cannot encode "ā" in the stamp label`
+Independent confirmation that the chosen font CAN draw both: embedding `assets/fonts/DejaVuSerif.ttf` via `@cantoo/pdf-lib` + `@pdf-lib/fontkit` and calling `font.encodeText` returns real glyph ids (`Ω -> <0001>`, `ā -> <0002>`, `Я -> <0003>`), while `世 -> <0000>` (`.notdef`). So the CJK refusal is correct, but the blanket `> 0xFF` rule over-refuses every bundled-encodable non-Latin-1 character. Reachability note: the shipped `BatesDialog` exposes no font control, so this is reachable only through the IPC channel directly (a buggy/hostile caller or a future font picker), not through the current UI. No corruption: the refusal is all-or-nothing and leaves the bytes unchanged.
+
+Disposition: ACCEPTED -> DEF-513 (CTO, TFL-464, 2026-10-03)
+
+## Phase 89 diff-pass - named-attack results (session: diff-pass, phase 89 gate)
+
+The Phase 89 diff was attacked with an engine-level probe, `test/unit/main/phase89BatesAdversary.test.ts` (A1..A11 plus A4b/A5c observations). It mirrors the dev engine test's fixtures and adds the named hostile sequences. The probe was EXECUTED against the shipped engine once the build mutex freed:
+
+`npm.cmd run test:unit -- test/unit/main/phase89BatesAdversary.test.ts --reporter=verbose` -> `Test Files 1 passed (1) / Tests 13 passed (13)` (duration 1.81s), exit 0. The only log lines were the two A4b/A5c observations quoted in ADV-180.
+
+Did NOT reproduce - EXECUTED and PASSED:
+
+1. **First + last page** (`engine.ts:4344-4354`, `:4389-4397`): `pageCount = doc.order.length`; `origIdx = doc.order[page1-1]` maps the 1-based visible page through the live order, so page 1 and page `pageCount` both resolve. Probe A1.
+2. **Out-of-order `[3,1,2]`** (`engine.ts:4361`, `:4389-4398`): `formatBatesSeries` and the stamp loop both iterate `settings.pages` in list order; the k-th listed page gets `startNumber + k`. Probe A2.
+3. **Padding smaller than the number** (`src/shared/bates.ts:54`): `String(number).padStart(padding,'0')` pads to a MINIMUM width and never truncates; padding 1 with number 12 yields `12`. Probe A3.
+4. **Font substitution** (StandardFont + bundled paths, `fonts.ts:208-250`): `embedEditFont(..., false, false)` is exercised for `Times`/`Liberation Sans`/`DejaVu Serif`; no crash path located in the metric/encode calls. Probe A4 (observed A4b/A5c are ADV-180).
+5. **Unencodable CJK prefix** (`engine.ts:4364-4372`): the label check runs before `snapshotDocWithPdf`, so the whole op is refused before any mutation and no undo entry is pushed. Probe A5.
+6. **Repeated apply** (`engine.ts:4386`, `:4449-4451`): each run mints a fresh random `runId` for its resource names and markers and pushes its own snapshot, so run 2's undo restores run 2's pre-state (which already contains run 1). Probe A6.
+7. **Undo/save round-trip** (`engine.ts:4382`, `:4449-4452`): one `snapshotDocWithPdf` per run => one undo entry; only listed pages get `addContentStream(ref)`, so unselected page content objects are not rewritten. Probe A7 also compares raw unselected content bytes across a serialize + reopen.
+8. **Bates-then-watermark** (`engine.ts:4468-4489` watermark scan vs `:303` Bates marker): the two markers use distinct prefixes and `readWatermarkMarker` returns null for a Bates stream; `deleteWatermark` (`:4557-4593`) removes only streams whose marker id matches, and cleans only the watermark's own resource names. Probe A8 asserts the watermark list/pages and that Bates labels and markers survive a watermark delete.
+
+Confirmed breaks (filed above): ADV-179 (editDefaultFont ignored), ADV-180 (font-agnostic encodability pre-check).
+
+Extra stress vectors, also EXECUTED and PASSED (beyond the eight named attacks):
+
+9. **Reorder before stamp** (A9): `applyOp {kind:'reorder', page:2, param:0}` then `addBates([1])` stamps the moved original page (CHARLIE) and leaves visible pages 2-5 unlabelled - the `doc.order` mapping is honoured after a reorder.
+10. **AcroForm document** (A10): `addBates` + `undo` restores the form-bearing bytes and the `fullname` field; re-apply + save + reopen keeps both the field and the `AF-001` label. No AcroForm loss on the content-stream bake.
+11. **User-password AES-256 document** (A11): open with the user password, stamp, save; the output reopens with the same password and returns `E-001` alongside `SECRET-DOC`. The bake does not corrupt an encrypted save.
+
+Verdict: **FAIL** - two confirmed requirement deviations (ADV-179, ADV-180), both LOW severity. Attacks 1-11 all PASS against the shipped engine: no content-stream bake, undo, save-round-trip, marker-collision or Bates/watermark-interference break was found, and no crash, hang, data loss or document corruption was produced. The fail is not a data-integrity failure; it is two unmet REQUIREMENTS.md:5333 clauses (the `editDefaultFont` fallback and the chosen-font encodability semantics) plus the design-critique Should-fix items above.
+
+## Phase 89 Bates dialog - design critique of the changed UI surface (skill: design-critique)
+
+User: a legal/accounting user who must apply sequential Bates numbers to selected pages of a document before filing. Job: configure prefix/suffix/start/padding/position, choose the pages, and apply a stamp that survives save. Success: the applied labels are correct, sequential and visible, and any refusal is legible and changes nothing.
+
+- Should-fix - **Validation timing (inputs):** `Apply` is enabled for an invalid `padding` (e.g. the user types `0` or `2.5`): `valid` checks only `pages.length` and `startNumber` (`BatesDialog.tsx:215-216`), so the engine's generic "settings are invalid" is only surfaced after the click. Try: validate `padding` in `valid` (1..64) and show the inline hint before apply, matching the range hint already present.
+- Should-fix - **Copy (error states):** a bad option shows the engine's bare `engine-error` text (e.g. "addBates: settings are invalid") in `[data-bates-report]`; it names no field. Try: map known refusals to field-level copy ("Padding must be a whole number from 1 to 64.").
+- Nice-to-fix - **Affordance (preview):** the preview frame shows only the first/last label in a text hint and the next label floating in the slot; it does not visualize the chosen page set, so a narrowed range is only legible from the hint. Try: label the hint with the actual page numbers, not just the count.
+- Nice-to-fix - **Accessibility:** the nine position buttons are ~22px swatches (same `watermark-slot` class as Phase 18); below the 44x44 target. Try: pad the hit area.
+- Strengths to keep: every control is a real `<button>`/`<input>` with a stable `data-bates-*` hook; `aria-pressed`/`aria-label` on the position grid; the rising-edge re-seed guard keeps the post-apply report and the user's page scope while persisting defaults; the Apply button disables while busy and the report is `role="alert"` on error / `role="status"` on success.
 
 
 

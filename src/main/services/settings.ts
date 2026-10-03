@@ -36,6 +36,8 @@ import {
   DEFAULT_READING_DEFAULTS,
 } from '../../shared/types';
 import { EDIT_FONTS, isEditFont } from './text-style';
+import { DEFAULT_SANITIZE_OPTIONS, normalizeSanitizeOptions } from '../../shared/sanitize';
+import { DEFAULT_BATES_DEFAULTS, normalizeBatesDefaults } from '../../shared/bates';
 
 const RECENT_FILES_CAP = 10;
 const MIN_WINDOW_WIDTH = 640;
@@ -300,6 +302,14 @@ export const DEFAULT_SETTINGS: AppSettings = {
   // default; `normalizeSettings` resolves a missing/invalid stored value to
   // it (explicit-default, same shape as tabStyle).
   redactionColor: '#000000',
+  // Phase 88 (FEA-037) sanitize class selection. Single source of the default;
+  // `normalizeSettings` resolves a missing/invalid stored value to it
+  // (explicit-default, same shape as redactionColor).
+  sanitizeOptions: { ...DEFAULT_SANITIZE_OPTIONS },
+  // Phase 89 (FEA-033) Bates-numbering defaults. Single source of the default;
+  // `normalizeSettings` resolves a missing/invalid stored value to it
+  // (explicit-default, same shape as sanitizeOptions).
+  batesDefaults: { ...DEFAULT_BATES_DEFAULTS },
 };
 
 /** Phase 44 — maximum persisted length of `syncDeviceId` (an install id). */
@@ -1184,6 +1194,20 @@ export function normalizeSettings(raw: unknown): AppSettings {
   // DEFAULT_BLANK_INK_THRESHOLD.
   if (typeof rawObj.blankPageInkThreshold === 'number' && Number.isFinite(rawObj.blankPageInkThreshold) && rawObj.blankPageInkThreshold >= 0 && rawObj.blankPageInkThreshold <= 1) {
     settings.blankPageInkThreshold = rawObj.blankPageInkThreshold;
+  }
+
+  // Phase 88 (FEA-037): preserve the sanitize class selection, validating each
+  // of the four keys preserve-if-valid. A missing/invalid key resolves to its
+  // default (true) via the shared normaliser.
+  if (rawObj.sanitizeOptions !== undefined) {
+    settings.sanitizeOptions = normalizeSanitizeOptions(rawObj.sanitizeOptions);
+  }
+
+  // Phase 89 (FEA-033): preserve the Bates-numbering defaults, validating
+  // each key preserve-if-valid. A missing/invalid key resolves to its default
+  // via the shared normaliser.
+  if (rawObj.batesDefaults !== undefined) {
+    settings.batesDefaults = normalizeBatesDefaults(rawObj.batesDefaults);
   }
 
   // Phase 10 / Phase 27: preserve editDefaultFont if it is a valid EditFont

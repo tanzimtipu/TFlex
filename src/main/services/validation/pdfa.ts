@@ -115,7 +115,7 @@ function lookupAs<T extends PDFObject>(
     : undefined;
 }
 
-const EXTERNAL_ACTIONS = new Set([
+export const EXTERNAL_ACTIONS = new Set([
   'Launch',
   'URI',
   'GoToR',

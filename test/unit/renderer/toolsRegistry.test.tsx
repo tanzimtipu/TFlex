@@ -53,8 +53,9 @@ const AUDITED: Record<string, readonly string[]> = {
     "editDefaultFont", "recognizeText", "batchOcr", "ocrSuspects",
   ],
   review: [
-    "annotate", "sign", "forms", "flatten", "stamp", "watermark", "redact", "exportComments",
+    "annotate", "sign", "forms", "flatten", "stamp", "watermark", "bates", "redact", "exportComments",
     "importComments", "fillFromCsv", "exportFormData", "importFormData", "validateDocument",
+    "sanitize",
     "engineeringLayers", "documentInfo", "annotationsPanel", "annSelect", "annHighlight",
     "annUnderline", "annStrikeout", "annInk", "annTextbox", "annRect",
     "annEllipse", "annArrow", "annCallout", "annNote", "annColor",
@@ -219,9 +220,9 @@ describe("toolsRegistry — canonical surface + the curated dock sets (DEF-313)"
       "editToolOff", "editText", "editImage", "editTextBox", "recognizeText", "batchOcr", "ocrSuspects",
     ]);
     expect(dockToolsForStage("review").map((e) => e.id)).toEqual([
-      "annotate", "sign", "stamp", "flatten", "forms", "watermark",
+      "annotate", "sign", "stamp", "flatten", "forms", "watermark", "bates",
       "exportComments", "importComments", "fillFromCsv", "exportFormData",
-      "importFormData", "validateDocument", "engineeringLayers", "documentInfo",
+      "importFormData", "validateDocument", "sanitize", "engineeringLayers", "documentInfo",
     ]);
     expect(dockToolsForStage("deliver").map((e) => e.id)).toEqual([
       "optimize", "audit", "exportPages", "exportText", "exportDocx",
