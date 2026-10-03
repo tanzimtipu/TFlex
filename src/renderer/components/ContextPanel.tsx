@@ -417,7 +417,7 @@ const pageCount = engineState.pageCount;
           onClick={(): void => onRemoveBlankPages?.()}
           aria-label="Remove blank pages"
         >
-          Remove blank pages…
+          Remove blank pages
         </button>
       </div>
       {(outline !== null || effectiveOutlineEditor !== null) && (

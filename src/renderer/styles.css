@@ -15826,12 +15826,14 @@ cursor: pointer;
 .action-dock-verb[data-dock-verb='flatten']:not(.action-dock-verb-primary):not([aria-pressed='true']):not(:disabled) { color: var(--sem-attention); }
 .action-dock-verb[data-dock-verb='forms']:not(.action-dock-verb-primary):not([aria-pressed='true']):not(:disabled) { color: var(--sem-affirmative); }
 .action-dock-verb[data-dock-verb='watermark']:not(.action-dock-verb-primary):not([aria-pressed='true']):not(:disabled) { color: var(--sem-affirmative); }
+.action-dock-verb[data-dock-verb='bates']:not(.action-dock-verb-primary):not([aria-pressed='true']):not(:disabled) { color: var(--sem-affirmative); }
 .action-dock-verb[data-dock-verb='exportComments']:not(.action-dock-verb-primary):not([aria-pressed='true']):not(:disabled) { color: var(--sem-neutral); }
 .action-dock-verb[data-dock-verb='importComments']:not(.action-dock-verb-primary):not([aria-pressed='true']):not(:disabled) { color: var(--sem-neutral); }
 .action-dock-verb[data-dock-verb='fillFromCsv']:not(.action-dock-verb-primary):not([aria-pressed='true']):not(:disabled) { color: var(--sem-affirmative); }
 .action-dock-verb[data-dock-verb='exportFormData']:not(.action-dock-verb-primary):not([aria-pressed='true']):not(:disabled) { color: var(--sem-neutral); }
 .action-dock-verb[data-dock-verb='importFormData']:not(.action-dock-verb-primary):not([aria-pressed='true']):not(:disabled) { color: var(--sem-affirmative); }
 .action-dock-verb[data-dock-verb='validateDocument']:not(.action-dock-verb-primary):not([aria-pressed='true']):not(:disabled) { color: var(--sem-neutral); }
+.action-dock-verb[data-dock-verb='sanitize']:not(.action-dock-verb-primary):not([aria-pressed='true']):not(:disabled) { color: var(--sem-attention); }
 .action-dock-verb[data-dock-verb='engineeringLayers']:not(.action-dock-verb-primary):not([aria-pressed='true']):not(:disabled) { color: var(--sem-neutral); }
 .action-dock-verb[data-dock-verb='documentInfo']:not(.action-dock-verb-primary):not([aria-pressed='true']):not(:disabled) { color: var(--sem-neutral); }
 .action-dock-verb[data-dock-verb='optimize']:not(.action-dock-verb-primary):not([aria-pressed='true']):not(:disabled) { color: var(--sem-affirmative); }

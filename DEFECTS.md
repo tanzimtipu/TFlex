@@ -5,6 +5,33 @@
 > inspect the current `OPEN`, `FIX-READY`, and `DISPUTED` entries first; closed records are
 > historical evidence and must not be loaded wholesale.
 
+## DEF-514: v1.48.0 release gate is red - Phases 87/88/89 added dock/panel controls without updating the control-index registries (6 failures in 5 specs)
+
+- Status: FIX-READY
+- Severity: HIGH
+- Found by: qa (TFL-500)
+- Phase: release batch 1.47.1 -> 1.48.0 (Phases 87, 88, 89)
+
+Steps to reproduce:
+1. At HEAD `0917254` (v1.48.0), in `C:\Users\tanzi\OneDrive\App Development\TFlex`, run `npm.cmd run verify:full`.
+
+Expected: green (conventions + `tsc --noEmit` + `vitest run`).
+
+Actual: `Test Files 5 failed | 601 passed (606)`, `Tests 6 failed | 7556 passed (7562)`.
+1. `test/unit/renderer/def330_dockDefaultSize.test.tsx` - REVIEW dock renders 16 labels while the test-local `DOCK_LABELS.review` (lines 51-58) still lists 14; the two unregistered additions are "Bates numbering…" and "Sanitize document…" (`toolsRegistry.ts` `DOCK_STAGE_IDS.review` lines 1684-1701 now has 16).
+2. `test/unit/renderer/phase36SurfaceDiscipline.test.tsx` - `unknown capability "bates" on dock`: `SANCTIONED` (lines 56-180) has no `bates` key.
+3. `test/unit/renderer/phase40SemanticPalette.test.ts` - `dock verb bates: no colour rule; dock verb sanitize: no colour rule`: no `[data-dock-verb='bates']` / `[data-dock-verb='sanitize']` rules in `src/renderer/styles.css` (per-verb block lines 15807-15845).
+4. `test/unit/renderer/phase43IconUniqueness.test.ts` - un-allow-listed shared icons: `Hash` (BatesDialog/Inspector/toolsRegistry), `Eraser` (TextPropertiesPanel/toolsRegistry, Phase-84 redact), `Shield` (SanitizeDialog/toolsRegistry), `IndentIncrease` + `IndentDecrease` (SideRail/TextPropertiesPanel).
+5. `test/unit/renderer/phase59PanelButtons.test.tsx` - `ContextPanel [pages]` renders the ellipsis control `["Remove blank pages…"]` (Phase 87) against the Phase-59 blanket no-ellipsis ban, which has no exemption list.
+
+Root cause: Phases 87/88/89 added a panel button and two REVIEW dock verbs without updating the cross-cutting control-index registries (surface-discipline, semantic colour roles, icon-identity allow-list, dock-equality) and regressed the Phase-59 ellipsis contract; the phase-close sweeps ran only phase-local tests so the drift survived to the release gate.
+
+Evidence: `verify:full` log attachment `ba6269dd-108f-4f69-b707-9fcaff690399` (artifact `d00c7bab-f610-4bab-b737-1852ce625f00`); qa FAIL report on TFL-500 (comment `23dfa15f-599b-4c22-9eeb-6792a5631e28`), HEAD `09172544e68f8d13a14c1d2cfaae1bd6a6769e0c`.
+
+History:
+- qa (TFL-500): opened - release gate FAIL at `0917254`; 6 failures in 5 renderer specs; version consistency confirmed (all three `1.48.0`).
+- CTO (TFL-495): FIX-READY - frontend-dev assigned the registry-reconciliation fix (register `sanitize` and `bates` on the dock, add `bates` to `SANCTIONED`, add the two dock colour rules, add the five icon-allow-list entries, strip the ellipsis from `ContextPanel.tsx:420`, refresh the DEF-330 dock oracle); then qa re-runs `verify:full` to close.
+
 ## DEF-504: A fully-skipped replace still mutates the serialized document (embeds an unused Helvetica font)
 
 - Status: CLOSED

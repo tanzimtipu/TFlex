@@ -161,6 +161,19 @@ const SHARED_ALLOW: Readonly<Record<string, string>> = {
   Undo2: "the undo verb (registry undo + the rail verb)",
   FileSpreadsheet: "the fill-form-fields-from-CSV verb (registry fillFromCsv + its import dialog); one concept, two surfaces",
   Upload: "the confirm-import action (CommentImportDialog + FillFromCsvDialog) rendered identically on both import dialogs",
+  // Phase 88 (FEA-037) — the sanitize verb renders the same Shield glyph on the
+  // REVIEW dock (registry) and the SanitizeDialog it opens.
+  Shield: "the sanitize-document verb (SanitizeDialog + the registry's sanitize entry); one concept, two surfaces",
+  // Phase 89 (FEA-033) — the Bates-numbering verb renders the same Hash glyph
+  // on the registry dock entry, its dialog, and the Inspector's Bates row.
+  Hash: "the Bates-numbering verb (BatesDialog + Inspector's Bates row + the registry's bates entry); one concept, the same glyph",
+  // Phase 84 — the redact verb renders Eraser on the registry entry and the
+  // edit TextPropertiesPanel's redact control.
+  Eraser: "the redact-marked-region verb (the edit TextPropertiesPanel's redact control + the registry's redact entry)",
+  // Phase 88 (FEA-037) — the two list-indent controls share their directional
+  // glyphs between the SideRail edit controls and the TextPropertiesPanel.
+  IndentIncrease: "the increase-list-indent control (SideRail edit controls + TextPropertiesPanel); one direction, two surfaces",
+  IndentDecrease: "the decrease-list-indent control (SideRail edit controls + TextPropertiesPanel); one direction, two surfaces",
 };
 
 interface Usage {

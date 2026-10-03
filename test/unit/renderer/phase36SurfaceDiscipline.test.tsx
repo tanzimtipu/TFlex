@@ -140,6 +140,10 @@ const SANCTIONED: Record<Capability, { surfaces: Surface[]; why: string }> = {
     surfaces: ['dock'],
     why: 'Phase 88 (FEA-037): the sanitize verb rides the REVIEW dock (and the palette); the dialog is its only home',
   },
+  bates: {
+    surfaces: ['dock'],
+    why: 'Phase 89 (FEA-033): the Bates-numbering verb rides the REVIEW dock (and the palette); the dialog is its only home',
+  },
   engineeringLayers: {
     surfaces: ['dock'],
     why: 'Phase 57 (feature A): the engineering-layers verb rides the REVIEW dock (and the palette); the panel is its only home',

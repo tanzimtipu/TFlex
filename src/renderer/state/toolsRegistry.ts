@@ -1553,7 +1553,7 @@ const SURFACE_BY_ID: Record<ToolId, ToolSurface> = {
   flatten: 'dock',
   stamp: 'dock',
   watermark: 'palette',
-  bates: 'palette',
+  bates: 'dock',
   redact: 'panel',
   exportComments: 'palette',
   importComments: 'palette',

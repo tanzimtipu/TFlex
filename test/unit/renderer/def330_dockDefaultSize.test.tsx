@@ -50,10 +50,14 @@ const DOCK_LABELS: Record<Stage, string[]> = {
   ],
   review: [
     'Annotate', 'Sign', 'Stamp', 'Flatten', 'Forms', 'Watermark',
+    // Phase 89 (FEA-033) adds the Bates-numbering verb to the REVIEW dock.
+    'Bates numbering…',
     'Export comments (FDF)', 'Import comments (FDF)', 'Fill form fields from CSV…',
     // Phase 57 (feature B) adds the form-data export/import pair; feature A
     // adds the engineering layers and document-info verbs.
     'Export form data…', 'Import form data…', 'Validate document…',
+    // Phase 88 (FEA-037) adds the sanitize verb to the REVIEW dock.
+    'Sanitize document…',
     'Engineering layers…', 'Document info…',
   ],
   deliver: [

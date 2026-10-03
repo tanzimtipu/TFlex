@@ -1455,6 +1455,17 @@ pre-warn relevant entries when dispatching.
   samples state before an interaction, grep the sibling specs in the same family for
   the identical pattern and name them all in the brief (or ask for a grep-driven
   sweep), not just the spec that happened to fail.
+- frontend-dev / phase-close (2026-10-03, TFL-495 / DEF-514): Phases 87/88/89 closed
+  on phase-local tests, but the controls they added were never registered in the
+  cross-cutting control-index registries - `bates` missing from `SANCTIONED`, no
+  semantic colour rules for `bates`/`sanitize`, five shared icons un-allow-listed,
+  the DEF-330 dock-equality oracle left at 14 labels, and the Phase-59 ellipsis ban
+  regressed ("Remove blank pages…"). Only the 1.48.0 release-gate `verify:full`
+  (TFL-500) caught it, forcing a fix cycle before the build. Rule: any phase that
+  adds, renames or removes a dock verb, panel button or icon MUST run the
+  control-index regression specs in its close sweep (phase36 surface, phase40
+  colour roles, phase43 icon identity, DEF-330 dock equality, phase59 ellipsis) -
+  not just its own phase tests.
 
 ## 2026-08-28: to-do discipline + Defects heading restored
 
