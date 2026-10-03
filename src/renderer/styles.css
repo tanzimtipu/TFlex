@@ -396,6 +396,29 @@
    * radius bump for modals never inflates popovers or panels. */
   --radius-dialog: 10px;
 
+  /* Phase 92 (TFL-513-A) — the canonical dialog token block. Every adopted
+   * dialog consumes these instead of per-dialog spacing / typography /
+   * control-height literals, so the header, body and footer padding, the
+   * control height, the corner radius and the label / help type scale stay
+   * identical across the whole dialog inventory. Motion remains on the
+   * Phase-15 --motion-* tokens; no duration or easing lives here. */
+  --dlg-pad-x: var(--sp-4);
+  --dlg-pad-y: var(--sp-3);
+  --dlg-gap: var(--sp-3);
+  --dlg-radius: var(--radius-dialog);
+  --dlg-control-h: var(--control-height);
+  --dlg-icon: 16px;
+  --dlg-title-fs: var(--fs-lg);
+  --dlg-label-fs: var(--fs-sm);
+  --dlg-help-fs: var(--fs-xs);
+  --dlg-w-sm: 380px;
+  --dlg-w-md: 460px;
+  --dlg-w-lg: 720px;
+  --dlg-w-tool: 620px;
+  --dlg-h-tool: 620px;
+  --dlg-h-tool-wide: 680px;
+  --dlg-max-h: calc(100vh - 64px);
+
   /* Phase 51 (item 11) — the text-box surface family. Every text box (canvas
    *  text boxes, text annotations, comment boxes, the on-canvas run editor)
    *  shares ONE thicker border and ONE rounded corner token, so the operator's
@@ -5582,14 +5605,14 @@ body.tab-reordering .tab-list[data-reorder="true"] .tab {
 }
 
 .modal-dialog {
-  width: min(460px, calc(100vw - 32px));
-  max-height: calc(100vh - 64px);
+  width: min(var(--dlg-w-md), calc(100vw - 32px));
+  max-height: var(--dlg-max-h);
   overflow: auto;
   background: var(--bg-raised);
   border: 1px solid var(--border);
-  /* Phase B — dialogs use the dedicated dialog radius (10px, the
-   * bottom of the 10-12px dialog band) instead of the panel token. */
-  border-radius: var(--radius-dialog);
+  /* Phase 92 (TFL-513-A) — the base 460px box is the `md` size; every size
+   * modifier below resolves from the --dlg-* width/height tokens. */
+  border-radius: var(--dlg-radius);
   box-shadow: var(--shadow-popover);
   display: grid;
   grid-template-rows: auto 1fr auto;
@@ -5603,11 +5626,16 @@ body.tab-reordering .tab-list[data-reorder="true"] .tab {
   pointer-events: auto;
 }
 
+/* Phase 92 (TFL-513-A) — the small dialog size. */
+.dialog-shell-sm {
+  width: min(var(--dlg-w-sm), calc(100vw - 32px));
+}
+
 /* Phase 12 — wider modal for the Crop / Renumber / Stamp dialogs.
  * Used by any dialog whose layout needs more horizontal real
  * estate than the standard 460 px. */
 .modal-dialog-wide {
-  width: min(720px, calc(100vw - 32px));
+  width: min(var(--dlg-w-lg), calc(100vw - 32px));
 }
 
 /* Phase 45 item 6 — square tool dialogs.
@@ -5622,8 +5650,8 @@ body.tab-reordering .tab-list[data-reorder="true"] .tab {
  * confirm/alert dialogs keep the base 460 px box, and the `.sheet`
  * surfaces (Preferences / About / Accounts) already ship 560x640. */
 .modal-dialog.modal-dialog-tool {
-  width: min(620px, calc(100vw - 32px));
-  max-height: min(calc(100vh - 64px), 620px);
+  width: min(var(--dlg-w-tool), calc(100vw - 32px));
+  max-height: min(var(--dlg-max-h), var(--dlg-h-tool));
   grid-template-rows: auto minmax(0, 1fr) auto;
 }
 
@@ -5631,8 +5659,8 @@ body.tab-reordering .tab-list[data-reorder="true"] .tab {
  * gain the same height cap so the pair reads landscape-to-square, not
  * a slab. */
 .modal-dialog.modal-dialog-tool.modal-dialog-wide {
-  width: min(720px, calc(100vw - 32px));
-  max-height: min(calc(100vh - 64px), 680px);
+  width: min(var(--dlg-w-lg), calc(100vw - 32px));
+  max-height: min(var(--dlg-max-h), var(--dlg-h-tool-wide));
 }
 
 .modal-dialog.modal-dialog-tool > .modal-body {
@@ -5644,22 +5672,29 @@ body.tab-reordering .tab-list[data-reorder="true"] .tab {
 .modal-header {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  padding: var(--sp-3) var(--sp-4);
+  gap: var(--dlg-gap);
+  padding: var(--dlg-pad-y) var(--dlg-pad-x);
   border-bottom: 1px solid var(--border);
 }
 
 .modal-title {
   margin: 0;
-  font-size: var(--fs-lg);
+  /* The title grows so the close button is pushed to the trailing edge even
+   * when an optional leading icon is present. */
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: var(--dlg-title-fs);
   font-weight: 600;
   color: var(--fg-strong);
   letter-spacing: -0.005em;
 }
 
-.modal-close {
-  width: 28px;
-  height: 28px;
+/* Phase 91 D4 — the modal-header close is now canonical
+ * `btn btn-ghost btn-icon`; the base rule is scoped with :not(.btn) so the
+ * un-migrated DialogShell close keeps the legacy look. */
+.modal-close:not(.btn) {
+  width: var(--dlg-control-h);
+  height: var(--dlg-control-h);
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -5675,21 +5710,32 @@ body.tab-reordering .tab-list[data-reorder="true"] .tab {
     transform var(--motion-fast) var(--ease-in-out);
 }
 
-.modal-close:hover {
+.modal-close:not(.btn):hover {
   background: var(--bg-hover);
   color: var(--fg-strong);
 }
 
-.modal-close:focus-visible {
+.modal-close:not(.btn):focus-visible {
   outline: none;
   box-shadow: var(--focus-ring);
 }
 
+/* Phase 91 D4 — layout alias for the canonical close: colour, hover, focus
+ * and disabled come from `btn btn-ghost btn-icon`; this pins the legacy
+ * control box and corner so the migrated dialog closes match the shell. */
+.btn.modal-close {
+  width: var(--dlg-control-h);
+  min-width: var(--dlg-control-h);
+  height: var(--dlg-control-h);
+  padding: 0;
+  border-radius: var(--radius-1);
+}
+
 .modal-body {
-  padding: var(--sp-4);
+  padding: var(--dlg-pad-y) var(--dlg-pad-x);
   display: flex;
   flex-direction: column;
-  gap: var(--sp-3);
+  gap: var(--dlg-gap);
   color: var(--fg);
   font-size: var(--fs-sm);
 }
@@ -5697,6 +5743,7 @@ body.tab-reordering .tab-list[data-reorder="true"] .tab {
 .modal-help {
   margin: 0;
   color: var(--fg-muted);
+  font-size: var(--dlg-help-fs);
   line-height: 1.5;
 }
 
@@ -5723,14 +5770,14 @@ body.tab-reordering .tab-list[data-reorder="true"] .tab {
 .modal-field {
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  font-size: var(--fs-sm);
+  gap: var(--sp-1);
+  font-size: var(--dlg-label-fs);
   color: var(--fg-muted);
 }
 
 .modal-input {
-  height: 32px;
-  padding: 0 10px;
+  height: var(--dlg-control-h);
+  padding: 0 var(--sp-3);
   background: var(--bg-input);
   border: 1px solid var(--border);
   border-radius: var(--radius-2);
@@ -5782,9 +5829,93 @@ body.tab-reordering .tab-list[data-reorder="true"] .tab {
   display: flex;
   justify-content: flex-end;
   gap: var(--sp-2);
-  padding: var(--sp-3) var(--sp-4);
+  padding: var(--dlg-pad-y) var(--dlg-pad-x);
   border-top: 1px solid var(--border);
   background: var(--bg-toolbar);
+}
+
+/* Phase 92 (TFL-513-A) — the canonical dialog content grid.
+ *
+ * `.dlg-grid` is a two-column label/field grid: labels align on the first
+ * column and controls on the second. `.dlg-field` is the label + control +
+ * help + error stack used inside a field cell. `.dlg-error` reserves its line
+ * so a validation message never reflows the dialog. Every value resolves from
+ * the --dlg-* tokens; no per-dialog spacing or type literal. */
+.dlg-field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+  min-width: 0;
+}
+
+.dlg-grid {
+  display: grid;
+  grid-template-columns: minmax(0, max-content) minmax(0, 1fr);
+  column-gap: var(--dlg-gap);
+  row-gap: var(--dlg-gap);
+  align-items: start;
+}
+
+.dlg-label {
+  font-size: var(--dlg-label-fs);
+  color: var(--fg-muted);
+  /* Sit the label on the control's baseline: the label box is one control
+   * tall so its text centres against the control beside it. */
+  line-height: var(--dlg-control-h);
+  padding: 0;
+}
+
+.dlg-help {
+  margin: 0;
+  font-size: var(--dlg-help-fs);
+  color: var(--fg-muted);
+  line-height: 1.5;
+}
+
+.dlg-error {
+  margin: 0;
+  /* Reserve one help line so an error message appears without moving the
+   * dialog. Empty string renders the slot at its reserved height. */
+  min-height: calc(var(--dlg-help-fs) * 1.5);
+  font-size: var(--dlg-help-fs);
+  color: var(--error);
+  line-height: 1.5;
+}
+
+.dlg-input,
+.dlg-select,
+.dlg-textarea {
+  width: 100%;
+  padding: 0 var(--sp-3);
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-2);
+  color: var(--fg-strong);
+  font-size: var(--fs-md);
+  outline: none;
+  transition: border-color var(--motion-fast) var(--ease-out);
+}
+
+.dlg-input,
+.dlg-select {
+  height: var(--dlg-control-h);
+}
+
+.dlg-select {
+  cursor: pointer;
+}
+
+.dlg-textarea {
+  /* Multi-line: the token sets the minimum, not the fixed height. */
+  min-height: var(--dlg-control-h);
+  padding: var(--sp-2) var(--sp-3);
+  resize: vertical;
+}
+
+.dlg-input:focus,
+.dlg-select:focus,
+.dlg-textarea:focus {
+  border-color: var(--accent);
 }
 
 @keyframes modal-in {
@@ -9922,7 +10053,7 @@ rect.ann-highlight.ann-preview {
  * Mirrors the DEF-219 watermark containment pattern: scoped through
  * the backdrop's data hook so the shared `.modal-dialog` /
  * `.modal-body` rules every other dialog depends on stay untouched. */
-[data-create-from-images-dialog] .modal-dialog {
+[data-create-from-images-dialog].modal-dialog {
   /* Width tracks the viewport between a small floor and a large cap;
    * height does the same vertically. At 900x600 this resolves to
    * ~558x432, at 1920x1080 to 760x760, both inside the viewport. */
@@ -10412,7 +10543,7 @@ rect.ann-highlight.ann-preview {
   cursor: grab;
   user-select: none;
 }
-[data-stamp-dialog] .modal-dialog-dragging {
+[data-stamp-dialog].modal-dialog-dragging {
   cursor: grabbing;
 }
 
@@ -13280,7 +13411,7 @@ rect.ann-highlight.ann-preview {
  *    body lets the body itself own the vertical scroll instead.
  *    Measured before: dialog scrollWidth 544 > clientWidth 443, footer
  *    bottom 1470 at a 1440x900 viewport. */
-[data-watermark-dialog] .modal-dialog {
+[data-watermark-dialog].modal-dialog {
   grid-template-rows: auto minmax(0, 1fr) auto;
 }
 

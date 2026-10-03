@@ -19,14 +19,11 @@
 // optimised bytes. Both are surfaced in the dialog so the user
 // can see the win at a glance before they Save-As the new tab.
 
-import { useEffect, useMemo, useRef, useState, type ReactElement } from 'react';
-import { X } from 'lucide-react';
+import { useEffect, useMemo, useState, type ReactElement } from 'react';
 import type { OptimizePreset, SpaceAudit } from '../../shared/types';
 import { DEFAULT_OPTIMIZE_PRESET, OPTIMIZE_PRESETS } from '../state/preferences';
 import { formatBytes } from '../utils/formatBytes';
-import { useBackdropClose } from './modalBackdrop';
-import { AnimatePresence } from 'motion/react';
-import { TfBackdrop, TfDialog } from './motion/TfMotion';
+import { DialogShell, type DialogAction } from './DialogShell';
 
 interface OptimizeDialogProps {
   open: boolean;
@@ -106,7 +103,6 @@ export function OptimizeDialog(props: OptimizeDialogProps): ReactElement | null 
   const [audit, setAudit] = useState<SpaceAudit | null>(null);
   const [auditError, setAuditError] = useState<string | null>(null);
   const [engineError, setEngineError] = useState<string | null>(null);
-  const dialogRef = useRef<HTMLDivElement | null>(null);
 
   // Reset state every time the dialog re-opens. The optimised-size
   // result must NOT survive across opens — the active doc may have
@@ -121,22 +117,9 @@ export function OptimizeDialog(props: OptimizeDialogProps): ReactElement | null 
     setEngineError(null);
   }, [open, initialPreset]);
 
-  // Esc closes; focus the first interactive control on open.
-  useEffect(() => {
-    if (!open) return;
-    const onKey = (e: KeyboardEvent): void => {
-      if (e.key === 'Escape') {
-        e.preventDefault();
-        onClose();
-      }
-    };
-    window.addEventListener('keydown', onKey);
-    const first = dialogRef.current?.querySelector<HTMLElement>(
-      'input, button, [tabindex]',
-    );
-    first?.focus();
-    return () => window.removeEventListener('keydown', onKey);
-  }, [open, onClose]);
+  // Esc-to-close, the backdrop drag guard and initial focus are owned by
+  // DialogShell. The primary confirm action is marked `default` so it
+  // receives focus on open.
 
   // Best-effort audit fetch on open so the "biggest category" hint
   // appears before the user even picks a preset. Errors are
@@ -187,12 +170,8 @@ export function OptimizeDialog(props: OptimizeDialogProps): ReactElement | null 
     return { name: top.name, bytes: top.bytes, percent: (top.bytes / audit.totalBytes) * 100 };
   }, [audit]);
 
-  // B3/B6 — backdrop close only when the interaction started on the
-  // backdrop (a drag from the preset picker / inputs must not
-  // dismiss).
-  const backdrop = useBackdropClose(onClose);
-
-  
+  // The backdrop is ungated for this dialog (the shipped Optimize
+  // behavior); DialogShell owns the drag guard, focus and Esc.
 
   const onConfirmClick = async (): Promise<void> => {
     setRunning(true);
@@ -214,157 +193,143 @@ export function OptimizeDialog(props: OptimizeDialogProps): ReactElement | null 
     }
   };
 
+  const actions: DialogAction[] = [
+    {
+      key: 'cancel',
+      label: 'Cancel',
+      variant: 'secondary' as const,
+      onClick: onClose,
+    },
+    Object.assign(
+      {
+        key: 'confirm',
+        label: running ? 'Reducing…' : 'Reduce and open as new tab',
+        variant: 'primary' as const,
+        onClick: (): void => {
+          void onConfirmClick();
+        },
+        disabled: running,
+        default: true,
+      },
+      { 'data-optimize-confirm': true },
+    ),
+  ];
+
   return (
-    <AnimatePresence>
-      {open && (
-        <TfBackdrop className="modal-backdrop" {...backdrop}>
-      <TfDialog
-        className="modal-dialog dialog optimize-dialog modal-dialog-tool"
-        ref={dialogRef}
-        onClick={(e): void => e.stopPropagation()}
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="optimize-dialog-title"
+    <DialogShell
+      open={open}
+      title="Reduce file size"
+      titleId="optimize-dialog-title"
+      size="tool"
+      className="optimize-dialog"
+      onClose={onClose}
+      actions={actions}
+    >
+      <p className="modal-help">
+        Re-serialises the document with a chosen compression preset and opens the
+        result as a new tab so you can inspect it before saving. The original tab is
+        not modified.
+      </p>
+
+      <fieldset
+        className="modal-position optimize-preset"
+        role="radiogroup"
+        aria-label="Optimization preset"
       >
-        <div className="modal-header">
-          <h2 id="optimize-dialog-title" className="modal-title">
-            Reduce file size
-          </h2>
-          <button
-            type="button"
-            className="modal-close"
-            onClick={onClose}
-            aria-label="Close dialog"
-          >
-            <X size={16} aria-hidden />
-          </button>
-        </div>
-        <div className="modal-body">
-          <p className="modal-help">
-            Re-serialises the document with a chosen compression preset and opens the
-            result as a new tab so you can inspect it before saving. The original tab is
-            not modified.
-          </p>
+        <legend>Optimization preset</legend>
+        {PRESET_OPTIONS.map((opt) => (
+          <label key={opt.preset} className="optimize-preset-option">
+            <input
+              type="radio"
+              name="optimize-preset"
+              value={opt.preset}
+              checked={preset === opt.preset}
+              onChange={(): void => {
+                setPreset(opt.preset);
+                // DEF-039 — surface the new choice to the host so
+                // the host can persist it through the preferences
+                // reducer. We fire on every radio toggle (not
+                // just on confirm) so the choice survives even if
+                // the user dismisses the dialog without clicking
+                // "Reduce and open as new tab". The reducer's
+                // equality guard short-circuits no-op writes, so
+                // toggling back to the existing preset is a
+                // constant-time operation.
+                onOptimizePresetChange?.(opt.preset);
+              }}
+              data-optimize-preset={opt.preset}
+              aria-label={describePreset(opt.preset).label}
+            />
+            <span className="optimize-preset-text">
+              <span className="optimize-preset-label">{opt.label}</span>
+              <span className="optimize-preset-desc">{opt.description}</span>
+            </span>
+          </label>
+        ))}
+      </fieldset>
 
-          <fieldset
-            className="modal-position optimize-preset"
-            role="radiogroup"
-            aria-label="Optimization preset"
-          >
-            <legend>Optimization preset</legend>
-            {PRESET_OPTIONS.map((opt) => (
-              <label key={opt.preset} className="optimize-preset-option">
-                <input
-                  type="radio"
-                  name="optimize-preset"
-                  value={opt.preset}
-                  checked={preset === opt.preset}
-                  onChange={(): void => {
-                    setPreset(opt.preset);
-                    // DEF-039 — surface the new choice to the host so
-                    // the host can persist it through the preferences
-                    // reducer. We fire on every radio toggle (not
-                    // just on confirm) so the choice survives even if
-                    // the user dismisses the dialog without clicking
-                    // "Reduce and open as new tab". The reducer's
-                    // equality guard short-circuits no-op writes, so
-                    // toggling back to the existing preset is a
-                    // constant-time operation.
-                    onOptimizePresetChange?.(opt.preset);
-                  }}
-                  data-optimize-preset={opt.preset}
-                  aria-label={describePreset(opt.preset).label}
-                />
-                <span className="optimize-preset-text">
-                  <span className="optimize-preset-label">{opt.label}</span>
-                  <span className="optimize-preset-desc">{opt.description}</span>
-                </span>
-              </label>
-            ))}
-          </fieldset>
-
-          {audit !== null && (
-            <div className="optimize-audit-hint" aria-live="polite">
-              {biggestCategory !== null && (
-                <span>
-                  Largest category: <strong>{biggestCategory.name}</strong>{' '}
-                  ({formatBytes(biggestCategory.bytes)}, {biggestCategory.percent.toFixed(1)}%
-                  of {formatBytes(audit.totalBytes)})
-                </span>
-              )}
-            </div>
-          )}
-          {audit === null && auditError !== null && (
-            <div className="optimize-audit-hint" aria-live="polite">
-              <span className="hint">Audit unavailable: {auditError}</span>
-            </div>
-          )}
-
-          <section className="optimize-fft" aria-label="File size comparison">
-            <header className="optimize-fft-header">
-              <span className="optimize-fft-title">File size comparison</span>
-            </header>
-            <div className="optimize-fft-rows">
-              <div className="optimize-fft-row" data-fft="before">
-                <span className="optimize-fft-label">Before</span>
-                <span className="optimize-fft-value" data-optimize-fft-before>
-                  {originalBytes > 0 ? formatBytes(originalBytes) : '—'}
-                </span>
-              </div>
-              <div className="optimize-fft-row" data-fft="after">
-                <span className="optimize-fft-label">After ({describePreset(preset).label})</span>
-                <span className="optimize-fft-value" data-optimize-fft-after>
-                  {optimizedSize === null ? '—' : formatBytes(optimizedSize)}
-                </span>
-              </div>
-              <div className="optimize-fft-row" data-fft="delta">
-                <span className="optimize-fft-label">Reduction</span>
-                <span
-                  className={
-                    reduction.percent === null
-                      ? 'optimize-fft-value optimize-fft-muted'
-                      : reduction.delta > 0
-                        ? 'optimize-fft-value optimize-fft-positive'
-                        : reduction.delta < 0
-                          ? 'optimize-fft-value optimize-fft-negative'
-                          : 'optimize-fft-value optimize-fft-muted'
-                  }
-                  data-optimize-fft-delta
-                >
-                  {reduction.percent === null
-                    ? 'Run to see reduction'
-                    : `${formatBytes(Math.abs(reduction.delta))} (${reduction.percent.toFixed(1)}%)`}
-                </span>
-              </div>
-            </div>
-          </section>
-
-          {engineError !== null && (
-            <div className="modal-status optimize-error" role="alert">
-              <span>Engine error: {engineError}</span>
-            </div>
+      {audit !== null && (
+        <div className="optimize-audit-hint" aria-live="polite">
+          {biggestCategory !== null && (
+            <span>
+              Largest category: <strong>{biggestCategory.name}</strong>{' '}
+              ({formatBytes(biggestCategory.bytes)}, {biggestCategory.percent.toFixed(1)}%
+              of {formatBytes(audit.totalBytes)})
+            </span>
           )}
         </div>
-        <div className="modal-footer">
-          <button type="button" className="btn btn-secondary" onClick={onClose}>
-            Cancel
-          </button>
-          <button
-            type="button"
-            className="btn btn-primary"
-            onClick={(): void => {
-              void onConfirmClick();
-            }}
-            disabled={running}
-            data-optimize-confirm
-          >
-            {running ? 'Reducing…' : 'Reduce and open as new tab'}
-          </button>
-        </div>
-      </TfDialog>
-        </TfBackdrop>
       )}
-    </AnimatePresence>
+      {audit === null && auditError !== null && (
+        <div className="optimize-audit-hint" aria-live="polite">
+          <span className="hint">Audit unavailable: {auditError}</span>
+        </div>
+      )}
+
+      <section className="optimize-fft" aria-label="File size comparison">
+        <header className="optimize-fft-header">
+          <span className="optimize-fft-title">File size comparison</span>
+        </header>
+        <div className="optimize-fft-rows">
+          <div className="optimize-fft-row" data-fft="before">
+            <span className="optimize-fft-label">Before</span>
+            <span className="optimize-fft-value" data-optimize-fft-before>
+              {originalBytes > 0 ? formatBytes(originalBytes) : '—'}
+            </span>
+          </div>
+          <div className="optimize-fft-row" data-fft="after">
+            <span className="optimize-fft-label">After ({describePreset(preset).label})</span>
+            <span className="optimize-fft-value" data-optimize-fft-after>
+              {optimizedSize === null ? '—' : formatBytes(optimizedSize)}
+            </span>
+          </div>
+          <div className="optimize-fft-row" data-fft="delta">
+            <span className="optimize-fft-label">Reduction</span>
+            <span
+              className={
+                reduction.percent === null
+                  ? 'optimize-fft-value optimize-fft-muted'
+                  : reduction.delta > 0
+                    ? 'optimize-fft-value optimize-fft-positive'
+                    : reduction.delta < 0
+                      ? 'optimize-fft-value optimize-fft-negative'
+                      : 'optimize-fft-value optimize-fft-muted'
+              }
+              data-optimize-fft-delta
+            >
+              {reduction.percent === null
+                ? 'Run to see reduction'
+                : `${formatBytes(Math.abs(reduction.delta))} (${reduction.percent.toFixed(1)}%)`}
+            </span>
+          </div>
+        </div>
+      </section>
+
+      {engineError !== null && (
+        <div className="modal-status optimize-error" role="alert">
+          <span>Engine error: {engineError}</span>
+        </div>
+      )}
+    </DialogShell>
   );
 }
 

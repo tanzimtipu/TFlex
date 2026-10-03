@@ -12,14 +12,12 @@
 // (the retry button is shown when the engine returns an error).
 // It does not modify the document — audit is purely informational.
 
-import { useEffect, useRef, useState, type ReactElement } from 'react';
-import { RefreshCw, X } from 'lucide-react';
+import { useEffect, useState, type ReactElement } from 'react';
+import { RefreshCw } from 'lucide-react';
 import { Icon } from '../icons/Icon';
 import type { SpaceAudit } from '../../shared/types';
 import { formatBytes } from '../utils/formatBytes';
-import { useBackdropClose } from './modalBackdrop';
-import { AnimatePresence } from 'motion/react';
-import { TfBackdrop, TfDialog } from './motion/TfMotion';
+import { DialogShell, type DialogAction } from './DialogShell';
 
 interface AuditSpaceDialogProps {
   open: boolean;
@@ -57,7 +55,6 @@ export function AuditSpaceDialog(props: AuditSpaceDialogProps): ReactElement | n
   const [loading, setLoading] = useState(false);
   const [audit, setAudit] = useState<SpaceAudit | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const dialogRef = useRef<HTMLDivElement | null>(null);
 
   const refresh = async (): Promise<void> => {
     setLoading(true);
@@ -92,29 +89,6 @@ export function AuditSpaceDialog(props: AuditSpaceDialogProps): ReactElement | n
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 
-  // Esc closes; focus first interactive control on open.
-  useEffect(() => {
-    if (!open) return;
-    const onKey = (e: KeyboardEvent): void => {
-      if (e.key === 'Escape') {
-        e.preventDefault();
-        onClose();
-      }
-    };
-    window.addEventListener('keydown', onKey);
-    const first = dialogRef.current?.querySelector<HTMLElement>(
-      'button, [tabindex]',
-    );
-    first?.focus();
-    return () => window.removeEventListener('keydown', onKey);
-  }, [open, onClose]);
-
-  // B3/B6 — backdrop close only when the interaction started on the
-  // backdrop (a drag from the retry button / body must not dismiss).
-  const backdrop = useBackdropClose(onClose);
-
-  
-
   const total = audit?.totalBytes ?? 0;
   const rows = audit === null
     ? CATEGORIES.map((c) => ({
@@ -128,101 +102,86 @@ export function AuditSpaceDialog(props: AuditSpaceDialogProps): ReactElement | n
         percent: total > 0 ? (audit.breakdown[c.key] / total) * 100 : 0,
       }));
 
+  const actions: DialogAction[] = [
+    Object.assign(
+      {
+        key: 'refresh',
+        label: loading ? 'Refreshing…' : 'Refresh',
+        variant: 'secondary' as const,
+        icon: <Icon icon={RefreshCw} size="sm" />,
+        onClick: (): void => {
+          void refresh();
+        },
+        disabled: loading,
+      },
+      { 'data-audit-refresh': true },
+    ),
+    {
+      key: 'close',
+      label: 'Close',
+      variant: 'primary',
+      onClick: onClose,
+      default: true,
+    },
+  ];
+
   return (
-    <AnimatePresence>
-      {open && (
-        <TfBackdrop className="modal-backdrop" {...backdrop}>
-      <TfDialog
-        className="modal-dialog dialog audit-dialog modal-dialog-tool"
-        ref={dialogRef}
-        onClick={(e): void => e.stopPropagation()}
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="audit-dialog-title"
-      >
-        <div className="modal-header">
-          <h2 id="audit-dialog-title" className="modal-title">
-            Audit space usage
-          </h2>
-          <button
-            type="button"
-            className="btn btn-ghost btn-icon modal-close"
-            onClick={onClose}
-            aria-label="Close dialog"
-            title="Close dialog"
+    <DialogShell
+      open={open}
+      title="Audit space usage"
+      titleId="audit-dialog-title"
+      size="tool"
+      className="audit-dialog"
+      onClose={onClose}
+      actions={actions}
+    >
+      <p className="modal-help">
+        Breakdown of the active document by element type. Read-only.
+      </p>
+
+      <section className="audit-summary" aria-label="Total size">
+        <span className="audit-summary-label">Total</span>
+        <span className="audit-summary-value" data-audit-total>
+          {audit !== null ? formatBytes(total) : loading ? 'Counting…' : '—'}
+        </span>
+      </section>
+
+      <div className="audit-bars" role="list">
+        {rows.map((row) => (
+          <div
+            className="audit-bar"
+            role="listitem"
+            key={row.key}
+            data-audit-category={row.key}
           >
-            <Icon icon={X} size="sm" />
-          </button>
-        </div>
-        <div className="modal-body">
-          <p className="modal-help">
-            Breakdown of the active document by element type. Read-only.
-          </p>
-
-          <section className="audit-summary" aria-label="Total size">
-            <span className="audit-summary-label">Total</span>
-            <span className="audit-summary-value" data-audit-total>
-              {audit !== null ? formatBytes(total) : loading ? 'Counting…' : '—'}
-            </span>
-          </section>
-
-          <div className="audit-bars" role="list">
-            {rows.map((row) => (
-              <div
-                className="audit-bar"
-                role="listitem"
-                key={row.key}
-                data-audit-category={row.key}
-              >
-                <div className="audit-bar-header">
-                  <span className="audit-bar-label">{row.label}</span>
-                  <span className="audit-bar-values">
-                    <span className="audit-bar-bytes">{formatBytes(row.bytes)}</span>
-                    <span className="audit-bar-percent" data-audit-percent={row.key}>
-                      {audit !== null ? `${row.percent.toFixed(1)}%` : '—'}
-                    </span>
-                  </span>
-                </div>
-                <div className="audit-bar-track" aria-hidden>
-                  <div
-                    className="audit-bar-fill"
-                    style={{
-                      width: `${audit === null ? 0 : Math.min(100, Math.max(0, row.percent))}%`,
-                      background: ACCENT_BY_KEY[row.key],
-                    }}
-                  />
-                </div>
-                <p className="audit-bar-hint">{row.hint}</p>
-              </div>
-            ))}
-          </div>
-
-          {error !== null && (
-            <div className="modal-status optimize-error" role="alert">
-              <span>Audit failed: {error}</span>
+            <div className="audit-bar-header">
+              <span className="audit-bar-label">{row.label}</span>
+              <span className="audit-bar-values">
+                <span className="audit-bar-bytes">{formatBytes(row.bytes)}</span>
+                <span className="audit-bar-percent" data-audit-percent={row.key}>
+                  {audit !== null ? `${row.percent.toFixed(1)}%` : '—'}
+                </span>
+              </span>
             </div>
-          )}
+            <div className="audit-bar-track" aria-hidden>
+              <div
+                className="audit-bar-fill"
+                style={{
+                  width: `${audit === null ? 0 : Math.min(100, Math.max(0, row.percent))}%`,
+                  background: ACCENT_BY_KEY[row.key],
+                }}
+              />
+            </div>
+            <p className="audit-bar-hint">{row.hint}</p>
+          </div>
+        ))}
+      </div>
+
+      {error !== null && (
+        <div className="modal-status optimize-error" role="alert">
+          <span>Audit failed: {error}</span>
         </div>
-        <div className="modal-footer">
-          <button
-            type="button"
-            className="btn btn-secondary"
-            onClick={(): void => {
-              void refresh();
-            }}
-            disabled={loading}
-            data-audit-refresh
-          >
-            <Icon icon={RefreshCw} size="sm" />
-            <span style={{ marginLeft: 6 }}>{loading ? 'Refreshing…' : 'Refresh'}</span>
-          </button>
-          <button type="button" className="btn btn-primary" onClick={onClose}>
-            Close
-          </button>
-        </div>
-        </TfDialog>
-        </TfBackdrop>
       )}
-    </AnimatePresence>
+    </DialogShell>
   );
 }

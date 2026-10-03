@@ -18,12 +18,9 @@
 // same id on next launch (same pattern as Optimize / OCR).
 
 import { useEffect, useRef, useState, type ReactElement } from "react";
-import { X, Stamp } from "lucide-react";
+import { Stamp } from "lucide-react";
 import { Icon } from "../icons/Icon";
-import { useBackdropClose } from "./modalBackdrop";
-import { AnimatePresence } from "motion/react";
-import { TfBackdrop, TfDialog } from "./motion/TfMotion";
-import { useDragWindow } from "./useDragWindow";
+import { DialogShell } from "./DialogShell";
 import type { StampId } from "../../shared/types";
 import {
   DEFAULT_STAMP_ID,
@@ -80,23 +77,6 @@ export function StampDialog(
   const [stampId, setStampId] = useState<StampId>(initialStampId);
   const [page, setPage] = useState<number>(currentPage);
   const [error, setError] = useState<string | null>(null);
-  const dialogRef = useRef<HTMLDivElement | null>(null);
-  // DEF-147 — the stamp dialog is a floating window: the whole
-  // dialog is the drag handle (press the title bar, the help text,
-  // the preview frame, the footer margins — any chrome that is NOT
-  // a button/input/select), clamped within the viewport, exactly
-  // like the DEF-140 inline editor. The drag handle was previously
-  // attached ONLY to `.modal-header`, so a chrome press anywhere
-  // else in the dialog (the retest's chrome-point scan samples the
-  // body, never the 40px header strip) had no handler and the
-  // dialog stayed put (dx=0). The dialog's inline `transform`
-  // moves the whole dialog without disturbing the backdrop's
-  // centering layout; the header's close button keeps its own
-  // press (excluded by the hook's controls selector).
-  const drag = useDragWindow({
-    controlsSelector: "button, input, select, textarea, [role='button']",
-  });
-
   // Reset on open / initialStampId change. Re-seed `page` from
   // currentPage so the user lands on their natural pick.
   useEffect(() => {
@@ -105,43 +85,6 @@ export function StampDialog(
     setPage(currentPage);
     setError(null);
   }, [open, initialStampId, currentPage]);
-
-  // B13 — focus the first interactive control ONLY on the rising
-  // edge of `open`. The previous effect also fired on every
-  // `onClose` identity change, which can shift focus to the
-  // language / page-number `<select>` and dismiss the popup the
-  // user is actively hovering. Same microtask deferral as the
-  // OCR dialog so the focus lands cleanly after React's commit
-  // phase.
-  const focusedOnceRef = useRef<boolean>(false);
-  useEffect(() => {
-    if (!open) {
-      focusedOnceRef.current = false;
-      return;
-    }
-    if (focusedOnceRef.current) return;
-    focusedOnceRef.current = true;
-    const onKey = (e: KeyboardEvent): void => {
-      if (e.key === "Escape") {
-        e.preventDefault();
-        onClose();
-      }
-    };
-    window.addEventListener("keydown", onKey);
-    queueMicrotask((): void => {
-      const first = dialogRef.current?.querySelector<HTMLElement>(
-        "button, input, [tabindex]",
-      );
-      first?.focus();
-    });
-    return (): void => window.removeEventListener("keydown", onKey);
-  }, [open, onClose]);
-
-  // B3/B6 — backdrop close only when the interaction started on the
-  // backdrop (a drag from the stamp picker must not dismiss).
-  const backdrop = useBackdropClose(onClose);
-
-  
 
   const onConfirmClick = (): void => {
     setError(null);
@@ -179,50 +122,29 @@ export function StampDialog(
   };
 
   return (
-    <AnimatePresence>
-      {open && (
-        <TfBackdrop className="modal-backdrop" {...backdrop} data-stamp-dialog>
-      <TfDialog
-        ref={(el): void => {
-          dialogRef.current = el;
-          drag.windowRef(el);
-        }}
-        className={drag.dragging ? "modal-dialog dialog modal-dialog-dragging modal-dialog-tool" : "modal-dialog dialog modal-dialog-tool"}
-        onClick={(e): void => e.stopPropagation()}
-        // DEF-147 — the dialog is the drag handle (whole-window
-        // chrome). stopPropagation keeps the press from reaching
-        // ancestor surfaces; the drag hook's controls selector bails
-        // on buttons/inputs/selects BEFORE preventDefault, so the
-        // close button and the dialog's own controls keep their
-        // clicks.
-        onPointerDown={(e): void => {
-          e.stopPropagation();
-          drag.handleProps.onPointerDown(e);
-        }}
-        // Phase C — the drag offset folds into motion x/y so the
-        // enter spring and the drag never fight (an inline
-        // `transform:` would be overridden by motion's own
-        // composed transform). The exit pins the drag position too.
-        animate={{ x: drag.offset.x, y: drag.offset.y }}
-        exit={{ x: drag.offset.x, y: drag.offset.y + 5 }}
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="stamp-dialog-title"
-      >
-        <div className="modal-header">
-          <h2 id="stamp-dialog-title" className="modal-title">
-            Stamp
-          </h2>
-          <button
-            type="button"
-            className="modal-close"
-            onClick={onClose}
-            aria-label="Close dialog"
-          >
-            <Icon icon={X} size="sm" />
-          </button>
-        </div>
-        <div className="modal-body">
+    <DialogShell
+      open={open}
+      title="Stamp"
+      titleId="stamp-dialog-title"
+      onClose={onClose}
+      size="tool"
+      data-stamp-dialog
+      draggable={{ controlsSelector: "button, input, select, textarea, [role='button']" }}
+      actions={[
+        { key: "cancel", label: "Cancel", variant: "secondary", onClick: onClose },
+        Object.assign(
+          {
+            key: "confirm",
+            label: "Place on page",
+            variant: "primary" as const,
+            icon: <Icon icon={Stamp} size="sm" />,
+            onClick: onConfirmClick,
+            default: true,
+          },
+          { "data-stamp-confirm": true },
+        ),
+      ]}
+    >
           <p className="modal-help">
             Pick a built-in stamp. After confirming, the next click on a
             page drops the stamp at that location. Stamps are baked into
@@ -290,25 +212,7 @@ export function StampDialog(
               <span>{error}</span>
             </div>
           )}
-        </div>
-        <div className="modal-footer">
-          <button type="button" className="btn btn-secondary" onClick={onClose}>
-            Cancel
-          </button>
-          <button
-            type="button"
-            className="btn btn-primary"
-            onClick={onConfirmClick}
-            data-stamp-confirm
-          >
-            <Icon icon={Stamp} size="sm" />
-            Place on page
-          </button>
-        </div>
-      </TfDialog>
-        </TfBackdrop>
-      )}
-    </AnimatePresence>
+    </DialogShell>
   );
 }
 

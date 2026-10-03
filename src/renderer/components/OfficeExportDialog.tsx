@@ -19,10 +19,7 @@
 // `EXPORT_FIDELITY_NOTES` rather than retyping the warning text.
 
 import { useEffect, useMemo, useRef, useState, type ReactElement } from "react";
-import { X } from "lucide-react";
-import { useBackdropClose } from "./modalBackdrop";
-import { AnimatePresence } from "motion/react";
-import { TfBackdrop, TfDialog } from "./motion/TfMotion";
+import { DialogShell, type DialogAction } from "./DialogShell";
 import { defaultPageRange, parsePageRange } from "../engine/types";
 import {
   clampExportImageDpi,
@@ -143,7 +140,6 @@ export function OfficeExportDialog(
   }>({ current: 0, total: 0, pageIndex: null });
   const [error, setError] = useState<string | null>(null);
   const [pagesWithoutText, setPagesWithoutText] = useState<number[] | null>(null);
-  const dialogRef = useRef<HTMLDivElement | null>(null);
   const cancelRef = useRef<{ aborted: boolean }>({ aborted: false });
 
   useEffect(() => {
@@ -156,22 +152,6 @@ export function OfficeExportDialog(
     setPagesWithoutText(null);
     cancelRef.current.aborted = false;
   }, [open, totalPages, format]);
-
-  useEffect(() => {
-    if (!open) return;
-    const onKey = (e: KeyboardEvent): void => {
-      if (e.key === "Escape") {
-        e.preventDefault();
-        onClose();
-      }
-    };
-    window.addEventListener("keydown", onKey);
-    const first = dialogRef.current?.querySelector<HTMLElement>(
-      "button, input, [tabindex]",
-    );
-    first?.focus();
-    return (): void => window.removeEventListener("keydown", onKey);
-  }, [open, onClose]);
 
   const parsed = useMemo(
     () => parsePageRange(rangeText, totalPages),
@@ -186,7 +166,9 @@ export function OfficeExportDialog(
   const valid =
     parsed !== null && parsed.length > 0 && !running && ready;
 
-  const backdrop = useBackdropClose(onClose, running);
+  // Esc-to-close, the backdrop drag guard and initial focus are owned by
+  // DialogShell. The primary Export action is marked `default` so it
+  // receives focus on open.
 
   const onConfirmClick = async (): Promise<void> => {
     if (!valid || parsed === null) return;
@@ -289,141 +271,123 @@ export function OfficeExportDialog(
     setRunning(false);
   };
 
+  // The exit action swaps label/hook with the running gate; the primary
+  // Export action carries the shipped `data-office-export-confirm` hook.
+  const actions: DialogAction[] = [
+    running
+      ? Object.assign(
+          {
+            key: "cancel",
+            label: "Cancel export",
+            variant: "secondary" as const,
+            onClick: onCancelRun,
+          },
+          { "data-office-export-cancel": true },
+        )
+      : Object.assign(
+          {
+            key: "close",
+            label: "Close",
+            variant: "secondary" as const,
+            onClick: onClose,
+          },
+          { "data-office-export-close": true },
+        ),
+    Object.assign(
+      {
+        key: "confirm",
+        label: running ? "Exporting…" : "Export",
+        variant: "primary" as const,
+        onClick: (): void => {
+          void onConfirmClick();
+        },
+        disabled: !valid,
+        default: true,
+      },
+      { "data-office-export-confirm": true },
+    ),
+  ];
+
   return (
-    <AnimatePresence>
-      {open && (
-        <TfBackdrop
-          className="modal-backdrop"
-          {...backdrop}
-          data-office-export-dialog={format}
-        >
-          <TfDialog
-            className="modal-dialog dialog modal-dialog-tool"
-            ref={dialogRef}
-            onClick={(e): void => e.stopPropagation()}
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="office-export-dialog-title"
-          >
-            <div className="modal-header">
-              <h2 id="office-export-dialog-title" className="modal-title">
-                {copy.title}
-              </h2>
-              <button
-                type="button"
-                className="modal-close"
-                onClick={onClose}
-                disabled={running}
-                aria-label="Close dialog"
-              >
-                <X size={16} aria-hidden />
-              </button>
-            </div>
-            <div className="modal-body">
-              <p className="modal-help">
-                {copy.blurb} Source: <strong>{sourceName}</strong> ({totalPages}{" "}
-                pages).
-              </p>
+    <DialogShell
+      open={open}
+      title={copy.title}
+      titleId="office-export-dialog-title"
+      size="tool"
+      onClose={onClose}
+      blockBackdropClose={running}
+      closeDisabled={running}
+      actions={actions}
+      data-office-export-dialog={format}
+    >
+      <p className="modal-help">
+        {copy.blurb} Source: <strong>{sourceName}</strong> ({totalPages}{" "}
+        pages).
+      </p>
 
-              <label className="modal-field">
-                <span>Page range</span>
-                <input
-                  type="text"
-                  className="modal-input"
-                  value={rangeText}
-                  onChange={(e): void => setRangeText(e.target.value)}
-                  placeholder={defaultPageRange(totalPages)}
-                  spellCheck={false}
-                  autoCorrect="off"
-                  autoCapitalize="off"
-                  data-office-export-range
-                  disabled={running}
-                />
-                <span className="modal-hint">
-                  Examples: <code>10-20</code>, <code>1,3,5-7</code>.
-                </span>
-              </label>
+      <label className="modal-field">
+        <span>Page range</span>
+        <input
+          type="text"
+          className="modal-input"
+          value={rangeText}
+          onChange={(e): void => setRangeText(e.target.value)}
+          placeholder={defaultPageRange(totalPages)}
+          spellCheck={false}
+          autoCorrect="off"
+          autoCapitalize="off"
+          data-office-export-range
+          disabled={running}
+        />
+        <span className="modal-hint">
+          Examples: <code>10-20</code>, <code>1,3,5-7</code>.
+        </span>
+      </label>
 
-              <label className="modal-field">
-                <span>Resolution (DPI)</span>
-                <input
-                  type="number"
-                  min={72}
-                  max={600}
-                  step={1}
-                  className="modal-input"
-                  value={dpi}
-                  onChange={(e): void => {
-                    const next = Number.parseInt(e.target.value, 10);
-                    if (Number.isFinite(next)) setDpi(clampExportImageDpi(next));
-                  }}
-                  onBlur={(): void => {
-                    setDpi(clampExportImageDpi(dpi));
-                  }}
-                  data-office-export-dpi
-                  disabled={running}
-                  aria-label="Resolution in DPI"
-                />
-                <span className="modal-hint">
-                  Applies to the page images the writer embeds (scans). 150 is
-                  a balanced default.
-                </span>
-              </label>
+      <label className="modal-field">
+        <span>Resolution (DPI)</span>
+        <input
+          type="number"
+          min={72}
+          max={600}
+          step={1}
+          className="modal-input"
+          value={dpi}
+          onChange={(e): void => {
+            const next = Number.parseInt(e.target.value, 10);
+            if (Number.isFinite(next)) setDpi(clampExportImageDpi(next));
+          }}
+          onBlur={(): void => {
+            setDpi(clampExportImageDpi(dpi));
+          }}
+          data-office-export-dpi
+          disabled={running}
+          aria-label="Resolution in DPI"
+        />
+        <span className="modal-hint">
+          Applies to the page images the writer embeds (scans). 150 is
+          a balanced default.
+        </span>
+      </label>
 
-              <ExportFidelityNotes format={format} />
+      <ExportFidelityNotes format={format} />
 
-              {running && (
-                <div className="modal-status export-progress" aria-live="polite">
-                  <span>
-                    Rendering page {progress.pageIndex ?? "—"} of{" "}
-                    {progress.total}…
-                  </span>
-                </div>
-              )}
-
-              {error !== null && (
-                <div className="modal-status optimize-error" role="alert">
-                  <span>{error}</span>
-                </div>
-              )}
-
-              <ExportPagesWithoutTextNotice pages={pagesWithoutText} />
-            </div>
-            <div className="modal-footer">
-              {running ? (
-                <button
-                  type="button"
-                  className="btn btn-secondary"
-                  onClick={onCancelRun}
-                  data-office-export-cancel
-                >
-                  Cancel export
-                </button>
-              ) : (
-                <button
-                  type="button"
-                  className="btn btn-secondary"
-                  onClick={onClose}
-                  data-office-export-close
-                >
-                  Close
-                </button>
-              )}
-              <button
-                type="button"
-                className="btn btn-primary"
-                disabled={!valid}
-                onClick={(): void => {
-                  void onConfirmClick();
-                }}
-                data-office-export-confirm
-              >
-                {running ? "Exporting…" : "Export"}
-              </button>
-            </div>
-          </TfDialog>
-        </TfBackdrop>
+      {running && (
+        <div className="modal-status export-progress" aria-live="polite">
+          <span>
+            Rendering page {progress.pageIndex ?? "—"} of{" "}
+            {progress.total}…
+          </span>
+        </div>
       )}
-    </AnimatePresence>
+
+      {error !== null && (
+        <div className="modal-status optimize-error" role="alert">
+          <span>{error}</span>
+        </div>
+      )}
+
+      <ExportPagesWithoutTextNotice pages={pagesWithoutText} />
+    </DialogShell>
   );
 }

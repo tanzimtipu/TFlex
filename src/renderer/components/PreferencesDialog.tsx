@@ -30,14 +30,12 @@
 
 import type { KeyboardEvent as ReactKeyboardEvent, ReactElement } from 'react';
 import { useEffect, useRef, useState } from 'react';
-import { AnimatePresence } from 'motion/react';
 import {
   FileType2,
   FolderOpen,
   Import,
   MonitorCog,
   SlidersHorizontal,
-  X,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { Icon } from '../icons/Icon';
@@ -47,7 +45,7 @@ import type { TabStyle } from '../../shared/types';
 import { DEFAULT_CONVERT_DEFAULTS } from '../../shared/convert';
 import type { ConvertDefaults } from '../../shared/convert';
 import type { ThemeDefault } from '../state/preferences';
-import { TfBackdrop, TfSheet } from './motion/TfMotion';
+import { DialogShell } from './DialogShell';
 import { TfResize } from './motion/TfResize';
 
 interface PreferencesDialogProps {
@@ -213,26 +211,6 @@ export function PreferencesDialog(props: PreferencesDialogProps): ReactElement |
     setFontSizeDraft(String(convertDefaults.textFontSizePt));
   }, [convertDefaults.textFontSizePt]);
 
-  // DEF-201 — close the sheet on Escape. Every other dialog in the app
-  // (DeletePageDialog, MergeDialog, OptimizeDialog, ...) installs a
-  // window-level keydown listener while open; the preferences sheet was
-  // the odd one out, so Escape only closed it via the X button or a
-  // backdrop click. The listener is installed only while `open` so it
-  // is gone as soon as the sheet closes.
-  useEffect(() => {
-    if (!open) return;
-    const handleKeyDown = (e: KeyboardEvent): void => {
-      if (e.key === 'Escape') {
-        e.preventDefault();
-        onClose();
-      }
-    };
-    window.addEventListener('keydown', handleKeyDown);
-    return (): void => {
-      window.removeEventListener('keydown', handleKeyDown);
-    };
-  }, [open, onClose]);
-
   useEffect(() => {
     if (!open) return;
     let cancelled = false;
@@ -329,36 +307,18 @@ export function PreferencesDialog(props: PreferencesDialogProps): ReactElement |
   };
 
   return (
-    <AnimatePresence>
-      {open && (
-        <TfBackdrop
-          className="sheet-backdrop"
-          role="presentation"
-          onClick={(e): void => {
-            if (e.target === e.currentTarget) onClose();
-          }}
-        >
-          <TfSheet
-            className="sheet sheet-prefs"
-            role="dialog"
-            aria-labelledby="prefs-title"
-            aria-modal="true"
-            data-prefs-dialog
-          >
-        <header className="sheet-header">
-          <h2 id="prefs-title" className="sheet-title">Preferences</h2>
-          <button
-            type="button"
-            className="btn btn-ghost btn-icon sheet-close"
-            onClick={onClose}
-            aria-label="Close preferences"
-            title="Close preferences"
-          >
-            <Icon icon={X} size="sm" />
-          </button>
-        </header>
-        <div className="sheet-body sheet-body-prefs">
-          <div className="prefs-layout">
+    <DialogShell
+      surface="sheet"
+      open={open}
+      title="Preferences"
+      titleId="prefs-title"
+      onClose={onClose}
+      closeAriaLabel="Close preferences"
+      className="sheet-prefs"
+      data-prefs-dialog
+      bodyClassName="sheet-body-prefs"
+    >
+      <div className="prefs-layout">
             <nav
               className="prefs-rail"
               role="tablist"
@@ -704,10 +664,6 @@ export function PreferencesDialog(props: PreferencesDialogProps): ReactElement |
               </TfResize>
             </div>
           </div>
-        </div>
-        </TfSheet>
-        </TfBackdrop>
-      )}
-    </AnimatePresence>
+    </DialogShell>
   );
 }

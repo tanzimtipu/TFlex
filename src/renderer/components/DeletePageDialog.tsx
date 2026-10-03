@@ -15,11 +15,10 @@
 // only opens for the explicit "Delete" toolbar action).
 
 import { useEffect, useMemo, useRef, useState, type ReactElement } from "react";
-import { AnimatePresence } from "motion/react";
-import { Trash2, X } from "lucide-react";
+import { Trash2 } from "lucide-react";
 import { parsePageRange } from "../engine/types";
-import { useBackdropClose } from "./modalBackdrop";
-import { TfBackdrop, TfDialog } from "./motion/TfMotion";
+import { Icon } from "../icons/Icon";
+import { DialogShell, type DialogAction } from "./DialogShell";
 
 export type DeletePageMode = "current" | "range";
 
@@ -50,7 +49,7 @@ export function DeletePageDialog(
     currentPage > 0 ? String(currentPage) : "1",
   );
   const [error, setError] = useState<string | null>(null);
-  const dialogRef = useRef<HTMLDivElement | null>(null);
+  const firstControlRef = useRef<HTMLInputElement | null>(null);
 
   // Reset every time we re-open so stale state from a previous
   // open doesn't leak in. Re-seed from `currentPage` so the user
@@ -76,21 +75,10 @@ export function DeletePageDialog(
     }
     if (focusedOnceRef.current) return;
     focusedOnceRef.current = true;
-    const onKey = (e: KeyboardEvent): void => {
-      if (e.key === "Escape") {
-        e.preventDefault();
-        onClose();
-      }
-    };
-    window.addEventListener("keydown", onKey);
     queueMicrotask((): void => {
-      const first = dialogRef.current?.querySelector<HTMLElement>(
-        "button, input, [tabindex]",
-      );
-      first?.focus();
+      firstControlRef.current?.focus();
     });
-    return (): void => window.removeEventListener("keydown", onKey);
-  }, [open, onClose]);
+  }, [open]);
 
   const parsedRange = useMemo<{
     pages: number[];
@@ -137,10 +125,6 @@ export function DeletePageDialog(
   const displayError =
     error ?? parsedRange.error ?? (currentValid.valid ? null : currentValid.error);
 
-  // B3/B6 — backdrop close only when the interaction started on the
-  // backdrop (a drag from the range input must not dismiss).
-  const backdrop = useBackdropClose(onClose);
-
   const onConfirmClick = (): void => {
     if (!valid) return;
     if (mode === "current") {
@@ -152,107 +136,87 @@ export function DeletePageDialog(
     }
   };
 
+  // Actions render in order (cancel then confirm, primary right-most). The
+  // confirm action corrects the old `btn btn-primary btn-danger` to the
+  // single destructive variant; the extra hyphenated key is the pre-Phase-92
+  // e2e hook carried through Object.assign at runtime.
+  const actions: DialogAction[] = [
+    { key: "cancel", label: "Cancel", variant: "secondary", onClick: onClose },
+    Object.assign(
+      {
+        key: "confirm",
+        label: "Delete",
+        icon: <Icon icon={Trash2} size="sm" />,
+        variant: "danger" as const,
+        onClick: onConfirmClick,
+        disabled: !valid,
+      },
+      { "data-delete-confirm": true },
+    ),
+  ];
+
   return (
-    <AnimatePresence>
-      {open && (
-        <TfBackdrop
-          className="modal-backdrop"
-          {...backdrop}
-          data-delete-pages-dialog
-        >
-          <TfDialog
-            className="modal-dialog dialog"
-            ref={dialogRef}
-            onClick={(e): void => e.stopPropagation()}
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="delete-pages-dialog-title"
-          >
-        <div className="modal-header">
-          <h2 id="delete-pages-dialog-title" className="modal-title">
-            Delete pages
-          </h2>
-          <button
-            type="button"
-            className="modal-close"
-            onClick={onClose}
-            aria-label="Close dialog"
-          >
-            <X size={16} aria-hidden />
-          </button>
-        </div>
-        <div className="modal-body">
-          <p className="modal-help">
-            Delete the current page or a custom range. Deletions are
-            undoable and the document must keep at least one page.
-          </p>
+    <DialogShell
+      open={open}
+      title="Delete pages"
+      titleId="delete-pages-dialog-title"
+      onClose={onClose}
+      actions={actions}
+      data-delete-pages-dialog
+    >
+      <p className="modal-help">
+        Delete the current page or a custom range. Deletions are
+        undoable and the document must keep at least one page.
+      </p>
 
-          <fieldset className="modal-position">
-            <legend>What to delete</legend>
-            <label>
-              <input
-                type="radio"
-                name="delete-page-mode"
-                checked={mode === "current"}
-                onChange={(): void => setMode("current")}
-                data-delete-mode="current"
-              />
-              <span>Current page ({currentPage})</span>
-            </label>
-            <label>
-              <input
-                type="radio"
-                name="delete-page-mode"
-                checked={mode === "range"}
-                onChange={(): void => setMode("range")}
-                data-delete-mode="range"
-              />
-              <span>Custom range</span>
-            </label>
-          </fieldset>
+      <fieldset className="modal-position">
+        <legend>What to delete</legend>
+        <label>
+          <input
+            ref={firstControlRef}
+            type="radio"
+            name="delete-page-mode"
+            checked={mode === "current"}
+            onChange={(): void => setMode("current")}
+            data-delete-mode="current"
+          />
+          <span>Current page ({currentPage})</span>
+        </label>
+        <label>
+          <input
+            type="radio"
+            name="delete-page-mode"
+            checked={mode === "range"}
+            onChange={(): void => setMode("range")}
+            data-delete-mode="range"
+          />
+          <span>Custom range</span>
+        </label>
+      </fieldset>
 
-          {mode === "range" && (
-            <label className="modal-field">
-              <span>Pages to delete</span>
-              <input
-                type="text"
-                className="modal-input"
-                value={rangeText}
-                onChange={(e): void => setRangeText(e.target.value)}
-                placeholder={String(currentPage)}
-                data-delete-range
-              />
-              <span className="modal-hint">
-                Contiguous range (e.g. <code>2-5</code>) or comma list
-                (e.g. <code>3,5,7-9</code>). Pages are 1-based.
-              </span>
-            </label>
-          )}
-
-          {displayError !== null && (
-            <div className="modal-status optimize-error" role="alert">
-              <span>{displayError}</span>
-            </div>
-          )}
-        </div>
-        <div className="modal-footer">
-          <button type="button" className="btn btn-secondary" onClick={onClose}>
-            Cancel
-          </button>
-          <button
-            type="button"
-            className="btn btn-primary btn-danger"
-            onClick={onConfirmClick}
-            disabled={!valid}
-            data-delete-confirm
-          >
-            <Trash2 size={16} aria-hidden />
-            Delete
-</button>
-            </div>
-          </TfDialog>
-        </TfBackdrop>
+      {mode === "range" && (
+        <label className="modal-field">
+          <span>Pages to delete</span>
+          <input
+            type="text"
+            className="modal-input"
+            value={rangeText}
+            onChange={(e): void => setRangeText(e.target.value)}
+            placeholder={String(currentPage)}
+            data-delete-range
+          />
+          <span className="modal-hint">
+            Contiguous range (e.g. <code>2-5</code>) or comma list
+            (e.g. <code>3,5,7-9</code>). Pages are 1-based.
+          </span>
+        </label>
       )}
-    </AnimatePresence>
+
+      {displayError !== null && (
+        <div className="modal-status optimize-error" role="alert">
+          <span>{displayError}</span>
+        </div>
+      )}
+    </DialogShell>
   );
 }

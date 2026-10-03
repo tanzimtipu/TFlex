@@ -45,12 +45,11 @@
 
 import type { ReactElement } from "react";
 import { useEffect, useState } from "react";
-import { AnimatePresence } from "motion/react";
-import { Download, RefreshCw, X } from "lucide-react";
+import { Download, RefreshCw } from "lucide-react";
 import { Icon } from "../icons/Icon";
 import type { UpdateState } from "../../shared/types";
 import { BrandLoader } from "./BrandLoader";
-import { TfBackdrop, TfSheet } from "./motion/TfMotion";
+import { DialogShell } from "./DialogShell";
 
 /** What the dialog can render. Mirrors the live backend state
  *  mapped to a presentational kind so the dialog can never show
@@ -218,70 +217,39 @@ export function UpdatePromptDialog(
   // for the backend's first progress event to arrive.
   const kind = dialogKind(state, pendingVersion);
 
-  const renderHeader = (): ReactElement => {
+  const headerTitle = (): string => {
     // Exhaustive switch over UpdatePromptKind. New kinds added
     // to the union will surface as a TS error here, which is
     // exactly what we want — the dialog never silently
-    // misrenders an unknown state.
+    // misrenders an unknown state. DialogShell renders the
+    // `.sheet-title` heading (id `update-prompt-title`).
     switch (kind) {
       case "available":
-        return (
-          <h2 id="update-prompt-title" className="sheet-title">
-            Update available
-          </h2>
-        );
+        return "Update available";
       case "downloaded":
-        return (
-          <h2 id="update-prompt-title" className="sheet-title">
-            Restart to update
-          </h2>
-        );
+        return "Restart to update";
       case "downloading":
         // Immediate feedback on the Update click. `pendingVersion`
         // is normally set (the user just clicked Update); fall back
         // to a generic label if the dialog somehow renders this kind
         // without a committed version.
-        return (
-          <h2 id="update-prompt-title" className="sheet-title">
-            {pendingVersion !== null
-              ? `Downloading update to v${pendingVersion}`
-              : "Downloading update…"}
-          </h2>
-        );
+        return pendingVersion !== null
+          ? `Downloading update to v${pendingVersion}`
+          : "Downloading update…";
       case "checking":
         // Headline for the passive "Looking for the latest version"
         // copy below. Reached only when no post-click version is
         // pending (a manual re-check); the post-click path renders
         // the "downloading" kind instead (see `dialogKind`).
-        return (
-          <h2 id="update-prompt-title" className="sheet-title">
-            Checking for updates
-          </h2>
-        );
+        return "Checking for updates";
       case "up-to-date":
-        return (
-          <h2 id="update-prompt-title" className="sheet-title">
-            You're up to date
-          </h2>
-        );
+        return "You're up to date";
       case "unsupported":
-        return (
-          <h2 id="update-prompt-title" className="sheet-title">
-            Updates not available
-          </h2>
-        );
+        return "Updates not available";
       case "error":
-        return (
-          <h2 id="update-prompt-title" className="sheet-title">
-            Update check failed
-          </h2>
-        );
+        return "Update check failed";
       case "none":
-        return (
-          <h2 id="update-prompt-title" className="sheet-title">
-            Update
-          </h2>
-        );
+        return "Update";
       default:
         return assertNever(kind);
     }
@@ -555,46 +523,20 @@ export function UpdatePromptDialog(
   };
 
   return (
-    <AnimatePresence>
-      {open && (
-        <TfBackdrop
-          className="sheet-backdrop"
-          role="presentation"
-          onClick={(e): void => {
-            if (e.target === e.currentTarget) onClose();
-          }}
-          onKeyDown={(e): void => {
-            if (e.key === "Escape") onClose();
-          }}
-          tabIndex={-1}
-        >
-          <TfSheet
-            className="sheet sheet-update-prompt"
-            role="dialog"
-            aria-labelledby="update-prompt-title"
-            aria-modal="true"
-            data-update-prompt
-            data-update-prompt-kind={kind}
-          >
-        <header className="sheet-header">
-          {renderHeader()}
-          <button
-            type="button"
-            className="btn btn-ghost btn-icon sheet-close"
-            onClick={onClose}
-            aria-label="Close update prompt"
-            title="Close update prompt"
-          >
-            <Icon icon={X} size="sm" />
-          </button>
-        </header>
-        <div className="sheet-body sheet-body-update-prompt">
-          {renderBody()}
-          {renderActions()}
-        </div>
-        </TfSheet>
-        </TfBackdrop>
-      )}
-    </AnimatePresence>
+    <DialogShell
+      surface="sheet"
+      open={open}
+      title={headerTitle()}
+      titleId="update-prompt-title"
+      onClose={onClose}
+      closeAriaLabel="Close update prompt"
+      className="sheet-update-prompt"
+      data-update-prompt
+      data-update-prompt-kind={kind}
+      bodyClassName="sheet-body-update-prompt"
+    >
+      {renderBody()}
+      {renderActions()}
+    </DialogShell>
   );
 }

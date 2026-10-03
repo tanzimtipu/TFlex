@@ -5,6 +5,116 @@
 > inspect the current `OPEN`, `FIX-READY`, and `DISPUTED` entries first; closed records are
 > historical evidence and must not be loaded wholesale.
 
+## DEF-526: Three adopted dialogs lost their custom close-X accessible name to the shell default
+
+- Status: CLOSED
+- Severity: LOW
+- Found by: adversary (ADV-187, Phase 92 gate diff-pass TFL-513-G)
+- Phase: 92 (DialogShell adoption)
+
+Steps to reproduce:
+1. Inspect the header close X on `PasswordPromptDialog`, `CloseTabPromptDialog` and `OcrDialog` (running).
+
+Expected (behaviour preservation, Ruling 8): each keeps its shipped close-X accessible name. HEAD: `PasswordPromptDialog.tsx:100` `aria-label="Cancel"`; `CloseTabPromptDialog.tsx:120` `aria-label="Cancel close"`; `OcrDialog.tsx:496-497` `aria-label={running ? 'Cancel OCR' : 'Close dialog'}` / `title={running ? 'Cancel OCR' : 'Close'}`.
+
+Actual: all three omit `closeAriaLabel`, so the shell emits its default "Close dialog"; OcrDialog's X no longer announces that it cancels the running OCR (its `onClose` is `running ? cancelRun : onClose`).
+
+Evidence: ADV-187 (`ADVERSARIAL_REVIEW.md`).
+
+Fix: pass `closeAriaLabel` on each shell - `PasswordPromptDialog` "Cancel", `CloseTabPromptDialog` "Cancel close", `OcrDialog` dynamic `running ? 'Cancel OCR' : 'Close dialog'` (its title follows).
+
+History:
+- adversary (TFL-513-G): filed ADV-187.
+- CTO triage (2026-10-03): ACCEPTED -> DEF-526 (LOW); frontend-dev to pass `closeAriaLabel`.
+- frontend-dev (TFL-623): fix delivered - `closeAriaLabel="Cancel"` (PasswordPromptDialog), `"Cancel close"` (CloseTabPromptDialog), `running ? "Cancel OCR" : "Close dialog"` (OcrDialog). Evidence: `dialogShell dialogShellClass ocrDialog bugB8_closeTabSavePrompt bugDEF128_closePromptSaveAs bugDEF117_hooksAboveEarlyReturn phase52Dialogs` -> 7 files / 106 tests pass; `verify` clean, tsc exit 0. Left uncommitted.
+- CTO (2026-10-03): DEF-526 -> FIX-READY; phase-close QA (TFL-624) to confirm and CLOSE.
+- qa (this issue, TFL-624): CLOSED. Source confirms `closeAriaLabel="Cancel"` (PasswordPromptDialog.tsx:108), `"Cancel close"` (CloseTabPromptDialog.tsx:107), `running ? "Cancel OCR" : "Close dialog"` (OcrDialog.tsx:469); the shell applies it to both `aria-label`/`title` (DialogShell.tsx:232-233) and the `closeAriaLabel` unit case passes (dialogShell.test.tsx:532). Commands: unit set (12 files / 212 tests) pass; `npm run test:e2e -- phase92_dialog_shell` 74/74; `npm run verify` conventions clean + tsc exit 0.
+
+## DEF-525: Two stacked DialogShell surfaces both dismiss on one Escape (no top-most guard)
+
+- Status: CLOSED
+- Severity: MEDIUM
+- Found by: adversary (ADV-186, Phase 92 gate diff-pass TFL-513-G)
+- Phase: 92 (DialogShell ownership of Esc)
+
+Steps to reproduce:
+1. Open the About sheet, then trigger the Update prompt without closing About (the Command Palette `about` entry, then an `update:statusChanged {kind:"available"}`); both are open (`[data-dialog-shell]` count = 2).
+2. Press Escape once.
+
+Expected: the top surface owns Esc - one Escape dismisses only the Update prompt, leaving About open.
+
+Actual: one Escape dismisses BOTH (`{about:false, update:false, shells:0}`). Cause: `DialogShell.tsx:146-156` adds an independent `window` keydown listener per open shell; `preventDefault()` does not stop the other listeners, so every open shell's `onClose` fires on the same keydown. Pre-Phase-92 this pair only both-closed when focus sat inside the update backdrop (UpdatePromptDialog's Esc was scoped to its backdrop's React `onKeyDown` = HEAD `UpdatePromptDialog.tsx:566-568`); post-adoption it closes both unconditionally.
+
+Evidence: ADV-186 (`ADVERSARIAL_REVIEW.md`); probe `test-fixtures/phase92-adversary/probe_stacking.cjs` / `.log`.
+
+Fix (proposed): add a top-most guard in `DialogShell` - a module-level stack of open shell ids; only the last-opened (topmost) open shell handles Esc (and releases its entry on close). Keep `onClose`-omitted must-answer behaviour. Add a unit case stacking two shells and asserting one Esc closes only the top.
+
+History:
+- adversary (TFL-513-G): filed ADV-186.
+- CTO triage (2026-10-03): ACCEPTED -> DEF-525 (MEDIUM); frontend-dev to add the top-most Esc guard.
+- frontend-dev (TFL-623): fix delivered - `DialogShell.tsx` gains a module-level `openShellStack` + per-instance `shellToken`; the Esc effect pushes on open / removes on cleanup and only the stack tail handles Esc; must-answer/backdrop/focus/drag untouched. New stacked-Esc unit case in `dialogShell.test.tsx` (A then B: one Esc fires only B; unmount B then Esc fires A). Evidence: `dialogShell dialogShellClass ocrDialog bugB8_closeTabSavePrompt bugDEF128_closePromptSaveAs bugDEF117_hooksAboveEarlyReturn phase52Dialogs` -> 7 files / 106 tests pass; `verify` clean, tsc exit 0. Left uncommitted.
+- CTO (2026-10-03): DEF-525 -> FIX-READY; phase-close QA (TFL-624) to confirm and CLOSE.
+- qa (this issue, TFL-624): CLOSED. `DialogShell.tsx:115-169` holds the module-level `openShellStack` + per-instance `shellToken`; only the stack tail handles Esc; the stacked-Esc case (dialogShell.test.tsx:594-624: mount A then B, one Esc fires only B, unmount B then Esc fires A) passes, and the shell's must-answer/backdrop/focus/drag cases in the same file all pass. Commands: unit set (12 files / 212 tests) pass; `npm run test:e2e -- phase92_dialog_shell` 74/74; `npm run verify` conventions clean + tsc exit 0.
+
+## DEF-524: EncryptDialog's header close X is no longer disabled while an encryption is busy
+
+- Status: CLOSED
+- Severity: MEDIUM
+- Found by: frontend-dev (TFL-610, Phase 92 chunk E1) - flagged as an assumption against a wrong CTO DO-NOT; CTO-triaged to a defect
+- Phase: 92 (DialogShell adoption)
+
+Steps to reproduce:
+1. Open `EncryptDialog`, enter a password and click Encrypt so the dialog is busy.
+2. Click the header close X.
+
+Expected: the close X is `disabled` while busy (pre-adoption behavior: the header close button carried `disabled={busy}`), so the user cannot dismiss the dialog mid-encrypt.
+
+Actual: after the E1 adoption the shell renders the close X enabled while busy; only the backdrop is blocked (`blockBackdropClose={busy}`). The user can unmount the dialog mid-operation and lose the encrypt result/feedback.
+
+Attribution: the E1 brief's DO-NOT said "Do not add `closeDisabled` - no E1 dialog disabled its header close X", which was wrong for EncryptDialog (its shipped header close did carry `disabled={busy}`, verified at the pre-adoption file). The dev followed the brief, so this is a CTO brief error that produced a real regression against Phase 92 Ruling 7 ("adopters must not remove an existing disabled reason") and Ruling 8 ("every dialog keeps its ... disabled logic").
+
+Evidence:
+- Pre-adoption `EncryptDialog.tsx` header close carried `disabled={busy}` (the first `disabled={busy}` after the `<h2>`/`aria-labelledby`, before the body controls).
+- Post-adoption `EncryptDialog.tsx` passes `blockBackdropClose={busy}` but not `closeDisabled`; frontend-dev's TFL-610 report records the assumption.
+
+Fix: add `closeDisabled={busy}` to `EncryptDialog`'s `DialogShell`. No other E1 dialog disabled its close X (AuditSpace/FillFromCsv/FormDataIo/InsertPages/Bates/BlankPages/SignatureManager), so no other change.
+
+History:
+- frontend-dev (TFL-610): observed and flagged as an assumption against the brief's DO-NOT.
+- CTO triage (2026-10-03): ACCEPTED -> DEF-524 (MEDIUM); frontend-dev to add `closeDisabled={busy}`.
+- frontend-dev (TFL-614): fix delivered - one prop `closeDisabled={busy}` added to `EncryptDialog`'s `DialogShell` (after `blockBackdropClose={busy}`); nothing else changed. Evidence: `phase52Dialogs phase94_noAdHocIcons dialogShell dialogShellClass` -> 4 files / 39 tests pass; `verify` clean (341 files), tsc exit 0. Left uncommitted.
+- CTO (2026-10-03): DEF-524 -> FIX-READY; E1 focused-verification QA dispatched (TFL-615) to confirm and CLOSE.
+- qa (TFL-615, 2026-10-03): CLOSED. Source confirms `EncryptDialog.tsx:119` passes `closeDisabled={busy}` alongside `blockBackdropClose={busy}`; `DialogShell.tsx:222` renders the header close X `disabled={closeDisabled}` and the shipped dual size classes are retained (`size="tool"` -> `modal-dialog-tool` + `className="encrypt-dialog modal-dialog-wide"`). Encrypt's action hooks/labels/disabled logic preserved (`data-encrypt-confirm`). Retest command `node node_modules/vitest/vitest.mjs run phase52Dialogs phase94_noAdHocIcons dialogShell dialogShellClass` -> 4 files / 39 tests passed; blockBackdropClose/closeDisabled shell coverage in `dialogShell.test.tsx:336-377`.
+
+## DEF-521: DialogShell focuses a disabled default action, leaving no control focused on open
+
+- Status: CLOSED
+- Severity: LOW
+- Found by: qa (TFL-590, Phase 92 chunk D2b focused verification) as an observation; CTO-triaged to a defect
+- Phase: 92 (the shell's once-per-open focus contract)
+
+Steps to reproduce:
+1. Open `CreateFromImagesDialog` (Welcome -> Create from images; root hook `data-create-from-images-dialog`).
+
+Expected: a control is focused on open (a visible focus state). Pre-adoption the dialog focused the first interactive control (`dialogRef.current?.querySelector("button, input, [tabindex]")?.focus()`, now deleted), i.e. the header close X.
+
+Actual: `DialogShell`'s once-per-open focus effect (`src/renderer/components/DialogShell.tsx:125-131`) always calls `defaultActionRef.current?.focus()`; `CreateFromImagesDialog`'s default action ("Create PDF") is `disabled={!valid}` and disabled until an image is picked, so `.focus()` is a no-op on a disabled button and `document.activeElement` stays on `<body>` - no visible focus on open. The effect deps are `[open]`, so it never re-focuses once the image list makes the action enabled.
+
+Attribution: shell-level, not specific to CreateFromImagesDialog. Any adopted dialog whose marked default action is disabled at open loses initial focus the same way (e.g. `ValidateDocumentDialog` Run when `runDisabled`). Affects Phase 92 success criterion 5 (preserved keyboard navigation and focus order).
+
+Evidence:
+- qa TFL-590 verdict: "initial focus now targets the default action ('Create PDF'), which is disabled until an image is added, so on open no control is focused".
+- `DialogShell.tsx:125-131` (focus effect), `:209` (`ref={isDefault ? defaultActionRef : undefined}`); `CreateFromImagesDialog.tsx` action `disabled: !valid`.
+
+Fix (proposed): in the shell's once-per-open focus effect, when the default action is disabled, fall back to the first enabled control in the dialog (`button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])`), so open always lands a visible focus. Keep focusing the default action when it is enabled.
+
+History:
+- qa (TFL-590): observed; classified LOW, non-blocking.
+- CTO triage (2026-10-03): ACCEPTED -> DEF-521; frontend-dev to add the shell focus fallback plus a unit test in `dialogShell.test.tsx`.
+- frontend-dev (TFL-591): fix delivered. `DialogShell.tsx` gains `dialogRef` on the `TfDialog` root and the once-per-open focus effect falls back to the first enabled control when the marked default is disabled; new case `focuses the first enabled control when the default action is disabled` in `dialogShell.test.tsx:261-280`, existing enabled-default case unchanged. Evidence: `node node_modules/vitest/vitest.mjs run dialogShell dialogShellClass createFromImagesDialog createFromImagesResponsive validateDocumentDialog phase52Dialogs bugDEF117_hooksAboveEarlyReturn` -> 6 files / 91 tests pass; `verify` clean (341 files), tsc exit 0. No doc drift (Ruling 7 / phase-92 criterion 5 already require it). Left uncommitted.
+- CTO (2026-10-03): DEF-521 -> FIX-READY; qa retest dispatched (TFL-596) to independently verify and CLOSE.
+- qa (TFL-596, 2026-10-03): retest PASS, CLOSED. First pass was red only on a stale `bugB13_focusedOnceDialogs` source-scan left by the fix (the DEF-519 class, not a product regression), so the close was delegated to [TFL-597] (frontend-dev, test-only regex realignment); after it landed both required commands are green. Command 1 `node node_modules/vitest/vitest.mjs run dialogShell dialogShellClass createFromImagesDialog createFromImagesResponsive validateDocumentDialog phase52Dialogs bugDEF117_hooksAboveEarlyReturn` -> 6 files / 91 tests passed. Command 2 `node node_modules/vitest/vitest.mjs run bugB13_focusedOnceDialogs def197_canonicalLayerWired bugB12_mergeAfterPageAndModalBlock bugB18_insertReplaceModalBlock phase45DialogSquare` -> 5 files / 53 tests passed. Items 1-4 all PASS: fix confined to `DialogShell.tsx` + one `dialogShell.test.tsx` case; enabled-default path unchanged; new fallback case asserts the header close X is focused when the default is disabled; `createFromImagesDialog.test.tsx` primary stays disabled until an image is added. Evidence: `tfl596_evidence.log` / `tfl596_retest.log` artifacts.
+
 ## DEF-520: The destructive "Delete pages" confirm button lost its Trash2 glyph after the DialogShell adoption
 
 - Status: CLOSED
@@ -97,6 +207,37 @@ Evidence: `node test-fixtures/phase95-adversary/adv546_guard_defeat.cjs` -> for 
 History:
 - qa: opened (from ADV-181)
 - qa (TFL-562): independently verified - `npm.cmd run test:unit -- phase95_dockMinusContainment` -> `Test Files 1 passed (1)`, `Tests 5 passed (5)`; the 5th test feeds `badgeInsets(SHIPPED_CSS + mutation)` through the guard's OWN predicate for baseline + M1-M5, asserting `baseline.some((n) => n < 0) === false` (no false positive) and, for each mutation, `insets.some((n) => n < 0) === true` (negative inset caught) - all five mutations are caught; CLOSED.
+
+## DEF-515: A read-only Bates/watermark list scan mutates the serialized document bytes
+
+- Status: CLOSED
+- Severity: MEDIUM
+- Found by: qa (TFL-521)
+- Phase: 90 (TFL-509 chunk A, contract + engine ops)
+
+Steps to reproduce:
+1. Build a 3-page 612x792 Helvetica fixture (one drawn `PAGE-N` per page); load it into `EngineService` as `doc-1`.
+2. Capture `engine.getDocumentBytes('doc-1')` -> hash A.
+3. Call `engine.getBates('doc-1')` (a read-only list op; returns `[]` on this fresh doc).
+4. Capture `engine.getDocumentBytes('doc-1')` -> hash B, and `engine.isModified('doc-1')`, then `engine.undo('doc-1')`.
+5. Repeat step 3-4 for `engine.getWatermarks('doc-1')` on a fresh load, and for `getBates` after one `addBates`.
+
+Expected: A read-only list op must not alter the saved byte image; hash B === hash A, `modified` stays false and no undo entry is created (Phase 90 chunk A QA item 6; the developer explicitly flagged that scans normalize page entries).
+
+Actual: hash B !== hash A on the first scan of every page (both `getBates` and the pre-existing `getWatermarks`); `modified` stays false and no undo entry is pushed. The mutation is idempotent: a second scan leaves the bytes at hash B. Root cause: `_forEachBatesMarker` (`engine.ts:4653`) and `_scanWatermarkMarkers` (`engine.ts:4859`) call `page.node.normalizedEntries().Contents`, which lazily rewrites a page whose `/Contents` is a single stream into a `/Contents` array; `serializeDoc`'s `copyPages` then emits the array form, so an otherwise-unmodified document serializes differently after merely being listed. No page content is lost; the byte stream, and therefore any later save, silently churns.
+
+Evidence:
+- Probe `test/unit/main/phase90BatesOpsQa.test.ts` (qa-owned), command `npm.cmd run test:unit -- test/unit/main/phase90BatesOpsQa.test.ts` -> `Test Files 1 failed (1)`, `Tests 3 failed | 4 passed (7)`.
+- getBates on a fresh doc: before `3a7e54e7673ec7f1e01bb77874b77c7916f7e89dfbf698bd8c74f5881ad63449` -> after `4ec7c5378bf0027c2a7c0b688729368f65b2fead4d280f3862e37e9a229c0161`; after2 `4ec7c5378bf0027c2a7c0b688729368f65b2fead4d280f3862e37e9a229c0161`; `modified=false`, `undoOk=false`.
+- getWatermarks on a fresh doc: before `3a7e54e7...` -> after `4ec7c537...`; `modified=false`, `undoOk=false`.
+- getBates after one `addBates` ([1,2], x30/y40): before `10a9fabd59aa2098533171659982e711726be004519f8cdf583835229f91adcd` -> after `bf460adad4e43e60e0f002022df61ec993fe5843e68e46406806ca7d8bfdcda7`.
+
+History:
+- qa (TFL-521): opened - independent probe for the TFL-512 chunk A verification; byte-image purity rule violated by the first marker scan, `modified`/undo rules hold. Follow-up fix routing is the CTO's.
+- CTO (TFL-511, 2026-10-04): routed as TFL-526 to backend-dev (Phase 90 fix).
+- backend-dev (TFL-526, 2026-10-03): FIX-READY, reason recorded verbatim: "`_forEachBatesMarker` (engine.ts:4656) and `_scanWatermarkMarkers` (engine.ts:4864) now read `page.node.Contents()` (a pure lookup) instead of `page.node.normalizedEntries().Contents`, which called `normalize()` and rewrote `/Contents` into an array plus the autoNormalizeCTM q/Q wrapper. Apply paths (engine.ts:4727, :4920, :4948) left unchanged; no `modified`/undo/save side effect added." Companion test-baseline correction disclosed: `test/unit/main/watermark.test.ts` "deleteWatermark removes the stream and the Contents array is back to pre-apply size" now establishes its normalized baseline with a warm-up add+delete round trip (its setup had depended on DEF-515); `preLen` and every assertion unchanged; qa's probe `phase90BatesOpsQa.test.ts` not edited. Dev evidence: `npm run verify` conventions clean (340 files), tsc exit 0; `npm.cmd run test:unit -- test/unit/main/phase90BatesOpsQa.test.ts` -> Test Files 1 passed (1) / Tests 7 passed (7) (was 3 failed | 4 passed); 6-file regression suite 87 passed.
+- CTO (TFL-511, 2026-10-04): FIX-READY recorded with the developer's reason above. Not CLOSED - qa alone sets CLOSED; independent retest dispatched as [TFL-594](/TFL/issues/TFL-594) (FIX-READY defect retest).
+- qa (TFL-594, 2026-10-03): CLOSED - independent retest. `npm.cmd run test:unit -- test/unit/main/phase90BatesOpsQa.test.ts` -> Test Files 1 passed (1) / Tests 7 passed (7) (was 3 failed | 4 passed); all three read-op purity cases green with hash pairs identical (getBates fresh: before=after=after2=`57a6abe...89bb9c`, `modified=false`, `undoOk=false`; getWatermarks fresh: before=after=`57a6abe...89bb9c`; getBates-after-add: before=after=`c036b67...ffd6f9`; getWatermarks-after-add: before=after=`323f38b...3ac6d`). Blast radius `npm.cmd run test:unit -- test/unit/main/watermark.test.ts` -> Test Files 1 passed (1) / Tests 37 passed (37); `git diff` of that file shows only the disclosed warm-up add+delete baseline swap, `preLen` and every assertion (`preLen+1`, `preLen`, `preLen`) unchanged - no relaxation. `npm run verify` -> `conventions: clean (341 source file(s) scanned)`, tsc exit 0 (341 not 340: the qa probe and other untracked Phase 90/94 files are now counted; no convention violation). On-disk anchors confirmed: read paths `engine.ts:4656` / `:4864` use `page.node.Contents()`; apply paths `engine.ts:4727` / `:4920` / `:4948` still use `normalizedEntries().Contents`. qa probe not edited; no `src/` edits.
 
 ## DEF-514: v1.48.0 release gate is red - Phases 87/88/89 added dock/panel controls without updating the control-index registries (6 failures in 5 specs)
 
@@ -11438,6 +11579,31 @@ Fix owner: backend-dev. Suggested direction: make the pre-check use the font tha
 History:
 - CTO (TFL-464, 2026-10-03): ACCEPTED from ADV-180 (adversary diff-pass TFL-484). Assigned backend-dev (font-aware encodability pre-check).
 - qa (TFL-492, 2026-10-03): CLOSED. Independent phase-close verification. Source: `_addBatesImpl` resolves `fontFamily = settings.font ?? DEFAULT_SETTINGS.editDefaultFont ?? 'Helvetica'`, validates `isEditFont`, keeps the WinAnsi check for StandardFont families, and for a bundled family probes a throwaway `PDFDocument.create()` for real glyph coverage (`src/main/services/engine.ts:4370-4399`, helper `bundledFontUnencodableChars` :5284). `npm.cmd run test:unit -- test/unit/shared/bates.test.ts test/unit/main/phase89BatesSettings.test.ts test/unit/main/phase89BatesEngine.test.ts` -> Test Files 3 passed / Tests 26 passed, including the two new DEF-513 cases (`phase89BatesEngine.test.ts:194` U+03A9 and `:219` U+0101) and the unchanged `:243` default-font U+6587 refusal (engine-error, bytes byte-for-byte unchanged, no undo entry).
+
+## DEF-516: Phase 92 chunk-B DialogShell adoption leaves `phase45DialogSquare` red - the stale source-scan asserts the literal `modal-dialog-tool` in SaveAsDialog
+
+- Status: CLOSED
+- Severity: MEDIUM
+- Found by: qa (TFL-540)
+- Phase: 92 (TFL-513 chunk B, delivered as TFL-532)
+
+Steps to reproduce:
+1. From the repo root run `npm run test:unit -- phase45DialogSquare`.
+2. Inspect the one failing case.
+
+Expected: the blast-radius command in TFL-540 expects every listed suite green; `SaveAsDialog` should still carry the Phase-45 tool-box class.
+
+Actual: 1 failed / 21 passed. Failing case: `Phase 45 item 6 - the square tool-dialog rule > components/SaveAsDialog.tsx carries the modal-dialog-tool class` at `test/unit/renderer/phase45DialogSquare.test.tsx:93` (`expect(read(rel)).toContain("modal-dialog-tool")`). Chunk B moved `SaveAsDialog` onto `DialogShell` with `size="tool"` (`src/renderer/components/SaveAsDialog.tsx:114`); the shell only adds `modal-dialog-tool` at runtime (`src/renderer/components/DialogShell.tsx:69-74,139-145`), so the literal string no longer appears in the source file the test reads. `PasswordPromptDialog` has the same shape but is not in `TOOL_DIALOG_FILES`. The rendered class contract is therefore intact; only the source-text oracle is stale.
+
+Evidence: `npm run test:unit -- phase45DialogSquare` -> Test Files 1 failed / Tests 1 failed | 21 passed; failing assertion at `phase45DialogSquare.test.tsx:93`.
+
+Fix owner: frontend-dev. Suggested direction: assert the rendered class (mount `SaveAsDialog` / `PasswordPromptDialog` and query `.modal-dialog.modal-dialog-tool`) or resolve `DialogShell`'s `size` -> class map, instead of scanning the component source text.
+
+History:
+- qa (TFL-540, 2026-10-03): FILED. Focused verification of TFL-532 (chunk B). Item 1 (7 files / 73 tests) PASS; item 2 blast-radius FAIL on this case; chunk-A adopters (`bugDEF100_flattenDialogConfirm`, `designTokensContract`, `def197_canonicalLayerWired`, `dialogShell`) unaffected.
+- CTO (TFL-542, 2026-10-03): FIX-READY. Relaying frontend-dev: changed only `test/unit/renderer/phase45DialogSquare.test.tsx` - the `it.each(TOOL_DIALOG_FILES)` oracle now accepts either a direct `modal-dialog-tool` literal or a DialogShell `size="tool"` opt-in, and a rendered-DOM case mounts `SaveAsDialog` and asserts `.modal-dialog.modal-dialog-tool`. No production file touched. Evidence: `npm run test:unit -- phase45DialogSquare dialogShell saveAsDialog` -> 4 files / 58 tests passed; `npm run verify` conventions clean, tsc exit 0.
+- qa (TFL-553, 2026-10-03): CLOSED. FIX-READY retest. `npm run test:unit -- phase45DialogSquare dialogShell saveAsDialog` -> 4 files / 58 passed; original repro `npm run test:unit -- phase45DialogSquare` -> 1 file / 23 passed; blast-radius `npm run test:unit -- dialogShell bugDEF100_flattenDialogConfirm phase45DialogSquare designTokensContract def197_canonicalLayerWired` -> 6 files / 150 passed. Oracle contract inspected and intact: `it.each(TOOL_DIALOG_FILES)` still present with all 15 files, each must satisfy `ownsClass || optsIntoToolSize` (opt-in neither -> fail), and the new SaveAsDialog case asserts the rendered DOM class via `container.querySelector(".modal-dialog.modal-dialog-tool")`. Production untouched by the fix: `SaveAsDialog.tsx:114` still delegates via `size="tool"` and `DialogShell.tsx:73` still maps `tool -> "modal-dialog-tool"`; the test-only diff matches the fix summary and no `modal-dialog-tool` literal was inserted into production to satisfy the old scan.
+
 ## DEF-517: Phase 91 B2 removed the pressed titlebar-file control's on-wash ink rule, leaving `phase38LegibilityContrast` red (DEF-355 regression)
 
 - Status: CLOSED
@@ -11542,3 +11708,29 @@ History:
 - CTO (TFL-511, 2026-10-03): assigned to frontend-dev as TFL-600 (with DEF-522); after the migration, retire the `.tool-btn:not(.btn)` fork if zero bare consumers remain, and update the `.canvas-pill .tool-btn` semantic-tint selector to match the migrated buttons.
 - frontend-dev (TFL-600, 2026-10-03): FIX-READY. Migrated `CanvasPills.tsx` (7), `PageLayoutControl.tsx` (3) and `SearchBar.tsx` (6) bare `.tool-btn` controls to `btn btn-toolbar tool-btn` (toggles `btn btn-toolbar btn-toggle tool-btn`, keeping `tool-btn-active` + `aria-pressed`); added `aria-label` to the SearchBar icon-only controls; ZERO bare `.tool-btn` consumers remain in `src/renderer`; retired the `.tool-btn:not(.btn)` / `.tool-btn-active:not(.btn)` fork and retargeted the `.canvas-pill` / `.btn.tool-btn[data-icon]` semantic selectors. Evidence: unit batch 22 files / 376 tests passed, 0 failed; `npm run verify` conventions clean (341 files), tsc exit 0; `npm run test:e2e -- phase91_button_system` 1 passed (`tool-btn-all-canonical` now ok). Not CLOSED - qa retest TFL-603.
 - qa (TFL-603, 2026-10-03): CLOSED. `npm run build:renderer` exit 0; `npm run test:e2e -- phase91_button_system --reporter=line` 1 passed with guard `tool-btn-all-canonical` PASS (0 offenders; rendered set all `btn`-based). Extended `e2e/phase91_button_system.spec.cjs` with a `search-bar-tool-btn` guard: opened find, expanded the replace row, enumerated 6 `.search-bar .tool-btn` with 0 non-canonical. Blast radius `npm run test:unit --` named 21 suites: 22 files / 378 tests passed, 0 failed. `npm run verify`: conventions clean (341 files), tsc exit 0. Both DEF-522 and DEF-523 closed on the same evidence set.
+
+## DEF-524: Phase 92 chunk-E1 EncryptDialog adoption dropped the shipped busy guard on the header close X; Esc now dismisses the encrypt dialog while encryption is in flight
+
+- Status: CLOSED (duplicate of the canonical DEF-524 entry at the top of this ledger; closed there via TFL-615)
+- Severity: MEDIUM - a shipped disabled/busy condition was dropped (TFL-610 brief line 44: "Preserve every disabled/busy condition"). The busy document-operation dialog can now be dismissed via two paths (header X and Esc); the encrypt still completes, so there is no corruption or data loss.
+- Found by: qa (TFL-611)
+- Phase: 92 (TFL-513 chunk E1, delivered as TFL-610)
+
+Steps to reproduce:
+1. Launch the dev app and open `report.pdf`.
+2. Deliver stage -> Encrypt document (or Ctrl+K -> "Encrypt document").
+3. Observe the header close X while `busy` is true (or inspect the adopted source).
+
+Expected: the header close X is disabled while busy (pre-adoption shipped `disabled={busy}`), and Esc does not close while busy (TFL-610's self-flagged assumption a; TFL-611 asks to confirm it).
+
+Actual: `src/renderer/components/EncryptDialog.tsx:110-121` passes `blockBackdropClose={busy}` but NOT `closeDisabled={busy}`; the shell header X (`src/renderer/components/DialogShell.tsx:215-227`) is therefore enabled during busy. `DialogShell`'s Esc effect (`DialogShell.tsx:136-146`) fires whenever `onClose` is set, so Esc closes the encrypt dialog while busy. Pre-adoption HEAD had `disabled={busy}` on the close button and no Esc handler of its own. Live harness read: `[TFL611 encrypt] closeDisabled:false` (the prop is never bound to busy, so the X stays enabled in every state).
+
+Root cause: the TFL-610 brief's DO-NOT "Do not add `closeDisabled` - no E1 dialog disabled its header close X" is factually wrong for EncryptDialog (its close X did carry `disabled={busy}`). The developer followed the DO-NOT and disclosed the deviation in the TFL-610 report; the CTO must reconcile the brief DO-NOT with the preserve-busy-condition requirement.
+
+Evidence: focused commands 1-3 green (tfl611_cmd1.log / tfl611_cmd2.log / tfl611_verify.log); live spec `e2e/tfl611_dialogshell_screens.spec.cjs` -> 1 passed (tfl611_screens.log); screenshot `screenshots/tfl611-encrypt-dialog.png`.
+
+Fix owner: frontend-dev (pending CTO disposition). Direction: pass `closeDisabled={busy}` to DialogShell; if Esc must also be gated while busy, wrap `onClose` with a `busy` check, because the shell deliberately keeps Esc live regardless of `blockBackdropClose`/`closeDisabled`.
+
+History:
+- qa (TFL-611, 2026-10-03): FILED during focused verification of TFL-610 (chunk E1). All three prescribed commands PASS; chunk does not reach the E2 gate as-is until this is adjudicated.
+- CTO (2026-10-03): duplicate DEF number (canonical DEF-524 is at the top, CLOSED via TFL-615 with the `closeDisabled={busy}` fix). The Esc aspect raised here is RULED intended, not a defect: Phase 92 Ruling 3 makes the shell own Esc-to-close for every adopter and states explicitly that `blockBackdropClose`/`closeDisabled` leave Esc unaffected; the pre-adoption EncryptDialog had no Esc handler of its own, so no shipped Esc gate was lost, and dismissing the progress modal does not abort or corrupt the in-flight encrypt. Any future dialog that must gate Esc while busy wraps its `onClose` at the call site (a per-dialog decision, not a shell change). No further action.

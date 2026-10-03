@@ -14,6 +14,7 @@ import { resolve } from "node:path";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { OptimizeDialog } from "../../../src/renderer/components/OptimizeDialog";
+import { SaveAsDialog } from "../../../src/renderer/components/SaveAsDialog";
 
 const RENDERER = resolve(process.cwd(), "src/renderer");
 
@@ -48,8 +49,10 @@ describe("Phase 45 item 6 — the square tool-dialog rule", () => {
   it("declares the shared tool-dialog box with a width and a matching height cap", () => {
     expect(css).toContain(".modal-dialog.modal-dialog-tool {");
     // Width floor of 620 and height capped at the same 620 -> square.
+    // Phase 92 (TFL-513-A) — the values now resolve from the --dlg-* tokens
+    // (--dlg-w-tool / --dlg-h-tool, both 620px).
     expect(css).toMatch(
-      /\.modal-dialog\.modal-dialog-tool \{[\s\S]*?width: min\(620px,[\s\S]*?max-height: min\(calc\(100vh - 64px\), 620px\)/,
+      /\.modal-dialog\.modal-dialog-tool \{[\s\S]*?width: min\(var\(--dlg-w-tool\),[\s\S]*?max-height: min\(var\(--dlg-max-h\), var\(--dlg-h-tool\)\)/,
     );
   });
 
@@ -60,8 +63,10 @@ describe("Phase 45 item 6 — the square tool-dialog rule", () => {
   });
 
   it("keeps wide-by-design tools (Crop / Renumber) at 720 but capped", () => {
+    // Phase 92 (TFL-513-A) — token form: --dlg-w-lg (720px) with the taller
+    // --dlg-h-tool-wide (680px) cap.
     expect(css).toMatch(
-      /\.modal-dialog\.modal-dialog-tool\.modal-dialog-wide \{[\s\S]*?width: min\(720px,[\s\S]*?max-height: min\(calc\(100vh - 64px\), 680px\)/,
+      /\.modal-dialog\.modal-dialog-tool\.modal-dialog-wide \{[\s\S]*?width: min\(var\(--dlg-w-lg\),[\s\S]*?max-height: min\(var\(--dlg-max-h\), var\(--dlg-h-tool-wide\)\)/,
     );
   });
 
@@ -82,11 +87,17 @@ describe("Phase 45 item 6 — the square tool-dialog rule", () => {
   });
 
   it("leaves the Create-from-images dialog's own responsive sizing in place", () => {
-    expect(css).toContain("[data-create-from-images-dialog] .modal-dialog {");
+    expect(css).toContain("[data-create-from-images-dialog].modal-dialog {");
   });
 
   it.each(TOOL_DIALOG_FILES)("%s carries the modal-dialog-tool class", (rel) => {
-    expect(read(rel)).toContain("modal-dialog-tool");
+    const source = read(rel);
+    // The class may be applied directly, or delegated to the shared
+    // DialogShell via its `size="tool"` prop, which maps to
+    // `.modal-dialog-tool` at render time (DialogShell SIZE_CLASS.tool).
+    const ownsClass = source.includes("modal-dialog-tool");
+    const optsIntoToolSize = /size\s*=\s*["'{]+tool["'}]+/.test(source);
+    expect(ownsClass || optsIntoToolSize).toBe(true);
   });});
 
 describe("Phase 45 item 6 — the class actually renders", () => {
@@ -101,6 +112,28 @@ describe("Phase 45 item 6 — the class actually renders", () => {
           initialPreset="compact"
           originalBytes={1000}
           runOptimize={async () => ({ error: "engine-error" })}
+          onConfirm={(): void => undefined}
+          onClose={(): void => undefined}
+        />,
+      );
+    });
+    expect(container.querySelector(".modal-dialog.modal-dialog-tool")).not.toBeNull();
+    act((): void => {
+      root.unmount();
+    });
+    container.remove();
+  });
+
+  it("SaveAsDialog's box carries modal-dialog-tool via the shell size prop", () => {
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    act((): void => {
+      root.render(
+        <SaveAsDialog
+          open={true}
+          saveAsLinearize={false}
+          onSaveAsLinearizeChange={(): void => undefined}
           onConfirm={(): void => undefined}
           onClose={(): void => undefined}
         />,

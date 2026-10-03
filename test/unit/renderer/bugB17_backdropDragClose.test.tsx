@@ -70,7 +70,7 @@ function mountInsert(): {
       />,
     );
   });
-  const backdrop = host.querySelector<HTMLElement>("[data-insert-pages-dialog]");
+  const backdrop = host.querySelector<HTMLElement>(".modal-backdrop");
   const input = host.querySelector<HTMLInputElement>("[data-insert-position]");
   if (backdrop === null || input === null) throw new Error("dialog parts not found");
   return {
@@ -216,7 +216,7 @@ describe("B3/B6 — DocxExportDialog backdrop drag-guard", () => {
       );
     });
     try {
-      const backdrop = host.querySelector<HTMLElement>("[data-docx-export-dialog]");
+      const backdrop = host.querySelector<HTMLElement>(".modal-backdrop");
       const input = host.querySelector<HTMLInputElement>("[data-docx-export-range]");
       expect(backdrop).not.toBeNull();
       expect(input).not.toBeNull();
@@ -249,7 +249,7 @@ describe("B3/B6 — CropPagesDialog backdrop drag-guard", () => {
       );
     });
     try {
-      const backdrop = host.querySelector<HTMLElement>("[data-crop-pages-dialog]");
+      const backdrop = host.querySelector<HTMLElement>(".modal-backdrop");
       const dialog = host.querySelector<HTMLElement>(".modal-dialog");
       expect(backdrop).not.toBeNull();
       expect(dialog).not.toBeNull();

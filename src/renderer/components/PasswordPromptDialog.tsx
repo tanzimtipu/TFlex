@@ -11,10 +11,9 @@
 // (--motion-duration-* / --motion-ease-*, see hooks/motionTokens.ts).
 
 import { useEffect, useRef, useState, type ReactElement } from 'react';
-import { AnimatePresence } from 'motion/react';
-import { KeyRound, X } from 'lucide-react';
-import { useBackdropClose } from './modalBackdrop';
-import { TfBackdrop, TfDialog } from './motion/TfMotion';
+import { KeyRound } from 'lucide-react';
+import { Icon } from '../icons/Icon';
+import { DialogShell, type DialogAction } from './DialogShell';
 import { PASSWORD_PROMPT_COPY } from '../security/passwordPrompt';
 
 export interface PasswordPromptDialogProps {
@@ -37,7 +36,6 @@ export function PasswordPromptDialog(
   const { open, target, error, busy, attempts, onSubmit, onCancel } = props;
   const [value, setValue] = useState('');
   const inputRef = useRef<HTMLInputElement | null>(null);
-  const backdrop = useBackdropClose(onCancel, busy);
 
   // Clear the field whenever the dialog opens or a failed attempt lands, so
   // a wrong password is never left on screen to be resubmitted or read.
@@ -68,86 +66,73 @@ export function PasswordPromptDialog(
     onSubmit(password);
   };
 
+  const onKeyDown = (e: React.KeyboardEvent<HTMLDivElement>): void => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      submit();
+    }
+  };
+
+  // Actions render in order (cancel then confirm, primary right-most). The
+  // extra hyphenated key is the pre-Phase-92 e2e hook; Object.assign keeps
+  // it typed as the canonical DialogAction while carrying it at runtime.
+  const actions: DialogAction[] = [
+    {
+      key: 'cancel',
+      label: PASSWORD_PROMPT_COPY.cancel,
+      variant: 'secondary',
+      onClick: onCancel,
+      disabled: busy,
+    },
+    Object.assign(
+      {
+        key: 'confirm',
+        label: busy ? PASSWORD_PROMPT_COPY.checking : PASSWORD_PROMPT_COPY.open,
+        variant: 'primary' as const,
+        onClick: submit,
+        disabled: busy || value.length === 0,
+      },
+      { 'data-password-submit': true },
+    ),
+  ];
+
   return (
-    <AnimatePresence>
-      {open && (
-        <TfBackdrop
-          className="modal-backdrop"
-          {...backdrop}
-          data-password-prompt
-        >
-          <TfDialog
-            className="modal-dialog dialog modal-dialog-tool password-prompt"
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="password-prompt-title"
-            onClick={(e): void => e.stopPropagation()}
-            onKeyDown={(e): void => {
-              if (e.key === 'Enter') {
-                e.preventDefault();
-                submit();
-              }
-            }}
-          >
-            <div className="modal-header">
-              <h2 id="password-prompt-title" className="modal-title">
-                <KeyRound size={16} aria-hidden /> {PASSWORD_PROMPT_COPY.title}
-              </h2>
-              <button
-                type="button"
-                className="modal-close"
-                onClick={onCancel}
-                aria-label="Cancel"
-                disabled={busy}
-              >
-                <X size={16} aria-hidden />
-              </button>
-            </div>
-            <div className="modal-body">
-              <p className="modal-help">{PASSWORD_PROMPT_COPY.body(target)}</p>
-              <label className="modal-field">
-                <span>{PASSWORD_PROMPT_COPY.label}</span>
-                <input
-                  ref={inputRef}
-                  className="modal-input"
-                  type="password"
-                  autoComplete="off"
-                  spellCheck={false}
-                  placeholder={PASSWORD_PROMPT_COPY.placeholder}
-                  value={value}
-                  disabled={busy}
-                  onChange={(e): void => setValue(e.target.value)}
-                  data-password-input
-                />
-              </label>
-              {error !== null && (
-                <div className="modal-status optimize-error" role="alert" data-password-error>
-                  <span>{error}</span>
-                </div>
-              )}
-            </div>
-            <div className="modal-footer">
-              <button
-                type="button"
-                className="btn btn-secondary"
-                onClick={onCancel}
-                disabled={busy}
-              >
-                {PASSWORD_PROMPT_COPY.cancel}
-              </button>
-              <button
-                type="button"
-                className="btn btn-primary"
-                onClick={submit}
-                disabled={busy || value.length === 0}
-                data-password-submit
-              >
-                {busy ? PASSWORD_PROMPT_COPY.checking : PASSWORD_PROMPT_COPY.open}
-              </button>
-            </div>
-          </TfDialog>
-        </TfBackdrop>
+    <DialogShell
+      open={open}
+      title={PASSWORD_PROMPT_COPY.title}
+      titleId="password-prompt-title"
+      size="tool"
+      className="password-prompt"
+      icon={<Icon icon={KeyRound} size="sm" />}
+      onClose={onCancel}
+      closeAriaLabel="Cancel"
+      blockBackdropClose={busy}
+      closeDisabled={busy}
+      onKeyDown={onKeyDown}
+      actions={actions}
+      data-password-prompt
+    >
+      <p className="modal-help">{PASSWORD_PROMPT_COPY.body(target)}</p>
+      <label className="modal-field">
+        <span>{PASSWORD_PROMPT_COPY.label}</span>
+        <input
+          ref={inputRef}
+          className="modal-input"
+          type="password"
+          autoComplete="off"
+          spellCheck={false}
+          placeholder={PASSWORD_PROMPT_COPY.placeholder}
+          value={value}
+          disabled={busy}
+          onChange={(e): void => setValue(e.target.value)}
+          data-password-input
+        />
+      </label>
+      {error !== null && (
+        <div className="modal-status optimize-error" role="alert" data-password-error>
+          <span>{error}</span>
+        </div>
       )}
-    </AnimatePresence>
+    </DialogShell>
   );
 }

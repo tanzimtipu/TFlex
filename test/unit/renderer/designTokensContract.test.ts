@@ -1283,23 +1283,28 @@ describe("Phase 20 — surface motion contract", () => {
   const SURFACES: SurfaceContract[] = [
     {
       surface: "modal dialog",
-      wrapperFile: "src/renderer/components/ConfirmDialog.tsx",
+      // Phase 92 (TFL-513-A) — the shared DialogShell owns the modal dialog
+      // root now; ConfirmDialog and every adopter mount through it.
+      wrapperFile: "src/renderer/components/DialogShell.tsx",
       primitive: "TfDialog",
-      presenceFiles: ["src/renderer/components/ConfirmDialog.tsx"],
+      presenceFiles: ["src/renderer/components/DialogShell.tsx"],
       preset: "tfDialog",
     },
     {
       surface: "dialog backdrop",
-      wrapperFile: "src/renderer/components/ConfirmDialog.tsx",
+      wrapperFile: "src/renderer/components/DialogShell.tsx",
       primitive: "TfBackdrop",
-      presenceFiles: ["src/renderer/components/ConfirmDialog.tsx"],
+      presenceFiles: ["src/renderer/components/DialogShell.tsx"],
       preset: "tfBackdrop",
     },
     {
       surface: "sheet dialog",
-      wrapperFile: "src/renderer/components/AboutDialog.tsx",
+      // TFL-513-E2b — the sheet surface is now owned by the shared shell's
+      // `surface="sheet"` mode (TfBackdrop .sheet-backdrop > TfSheet), so the
+      // primitive and its AnimatePresence boundary live in DialogShell.
+      wrapperFile: "src/renderer/components/DialogShell.tsx",
       primitive: "TfSheet",
-      presenceFiles: ["src/renderer/components/AboutDialog.tsx"],
+      presenceFiles: ["src/renderer/components/DialogShell.tsx"],
       preset: "tfDialog",
     },
     {
@@ -1943,8 +1948,10 @@ describe("Phase 22 — radius ladder + surface families", () => {
   });
 
   it("the floating surface families keep their ladder corners", () => {
+    // Phase 92 (TFL-513-A) — the dialog radius is now consumed through the
+    // canonical --dlg-radius token, which resolves to --radius-dialog.
     expect(bodyWith(".modal-dialog", /border-radius/)).toMatch(
-      /border-radius:\s*var\(--radius-dialog\)/,
+      /border-radius:\s*var\(--dlg-radius\)/,
     );
     expect(bodyWith(".color-popover", /border-radius/)).toMatch(
       /border-radius:\s*var\(--radius-3\)/,

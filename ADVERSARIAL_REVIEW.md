@@ -8349,127 +8349,6 @@ User: a legal/accounting user who must apply sequential Bates numbers to selecte
 - Nice-to-fix - **Accessibility:** the nine position buttons are ~22px swatches (same `watermark-slot` class as Phase 18); below the 44x44 target. Try: pad the hit area.
 - Strengths to keep: every control is a real `<button>`/`<input>` with a stable `data-bates-*` hook; `aria-pressed`/`aria-label` on the position grid; the rising-edge re-seed guard keeps the post-apply report and the user's page scope while persisting defaults; the Apply button disables while busy and the report is `role="alert"` on error / `role="status"` on success.
 
-## Phase 94 icon migration diff-pass (TFL-573) - `icons/Icon.tsx` + the ~66 migrated renderer files
-
-Session label: `diff-pass`. Scope: the Phase 94 icon diff only - the central
-`src/renderer/icons/Icon.tsx` wrapper, the migrated renderer files (`grep -rl "icons/Icon"
-src/renderer`), the three documented direct-render exceptions (CommandPalette `Pin`,
-AnnotationToolbar `Slash`, AnnotationOverlay `StickyNote`) and the guard specs
-`test/unit/renderer/phase94_noAdHocIcons.test.ts`, `phase94_iconSystem.test.tsx`,
-`phase43IconUniqueness.test.ts`. Product code, tests and ledgers were read but not
-modified. Other uncommitted phases (Phase 92/95 DialogShell, button system, engine
-bates, settings) were not audited except where an icon render sits inside them.
-
-Exact commands:
-
-- Blast-radius source diff: `git diff HEAD -- src/renderer` (11750-line diff written to
-  the run scratch; per-file glyph and size analysis scripts in
-  `test-fixtures/phase94-adversary/`).
-- Targeted guards (build lock held + released):
-  `node node_modules/vitest/vitest.mjs run test/unit/renderer/phase94_noAdHocIcons.test.ts
-  test/unit/renderer/phase94_iconSystem.test.tsx
-  test/unit/renderer/phase43IconUniqueness.test.ts` -> **3 files / 28 tests passed**, 1.72 s.
-
-Attack-surface result (issue items 1-6):
-
-1. Dropped props: NONE. No removed glyph in the diff carried `onClick`, `style`,
-   `data-*`, `fill`, `color` or a `title`; every removed `className` is forwarded on the
-   replacement wrapper (`PaintBucket`, `Check` -> `ann-tool-menu-check`, `FileText`,
-   `PanelLeftDashed`, `ShieldAlert`, `Toast`, `TriangleAlert`, `FileCheck2`,
-   `titlebar-menu-row-icon`). The only `strokeWidth`/dynamic-size site that had to move
-   was FormsOverlay's custom `CheckMark`/`XMark`, both correctly converted
-   (`variant="bold"` preserves stroke 3; `.form-checkbox svg { width:70%; height:70% }`
-   preserves the old `* 0.7` zoom tracking).
-2. Accessibility: NONE. The wrapper defaults `aria-hidden` true, but every pre-migration
-   glyph either already declared `aria-hidden` or was inside an `aria-hidden` container
-   or a labelled control; no removed glyph carried a `title`/`aria-label`, and no
-   migrated control became icon-only. The `icon={X}` prop sites
-   (`Inspector.tsx:463`, `DialogShell.tsx:174`) both sit on labelled/`aria-label`ed
-   controls and the wrapper is used inside them.
-3. Hit-testing/layout: HOLDS. The wrapper renders exactly one SVG root (Lucide) with no
-   extra element; `className` is forwarded to that root, so no wrapper element was
-   introduced to capture clicks or change flex sizing.
-4. Silent size deltas: all audited. Numeric -> token changes exist (e.g. `15->md(18)`,
-   `16->sm(16)`, `13->xs(14)`, `28->hero(32)`, `12->xs(14)`), but every chrome surface is
-   governed by the pre-existing context SVG sizing layer (`.app-header svg`,
-   `.titlebar svg`, `.context-panel svg`, `.side-rail svg`, `.inspector svg`,
-   `.command-palette svg`, `.ann-toolbar svg` = 18px; `.action-dock svg`/`.canvas-pill
-   svg` = 20px; `.stage-rail svg` = 22px), which overrides the SVG `width`/`height`
-   attributes - so those were already painted at the token size before the migration.
-   The uncovered deltas are cosmetic (+1..+4px: `TextPropertiesPanel`, `AnnotationCommentBox`,
-   `PreferencesDialog`, `Welcome`, `MultiPane`, `PrintWindow`) and the one fixed-size
-   container that changed (`AnnCommentIcon`, badge box 16->20, glyph 10->14) was itself
-   resized to match the pre-existing `.ann-comment-icon { min-width:20px; height:20px }`
-   CSS, so the glyph now FITS where it previously clipped. No hit-area or alignment
-   regression.
-5. Exceptions: HOLD. `Pin` still encodes state via `fill` (`CommandPalette.tsx:538-543`);
-   `Slash` still renders dynamic size/stroke (`AnnotationToolbar.tsx:727-731`); `StickyNote`
-   still scales with zoom (`AnnotationOverlay.tsx:2075`). The direct-render census over the
-   changed files finds exactly these two live exceptions in-file (the third is in the
-   unchanged AnnotationOverlay), so the migration is complete and consistent.
-6. High-risk surfaces: labels and handlers unchanged on all nine (DeletePageDialog,
-   SaveAsDialog, ExportDialog, FlattenConfirmDialog, PasswordPromptDialog,
-   CommandPalette, AppHeader, SideRail, Inspector). One visual regression is recorded as
-   ADV-184 (a dropped action glyph on Delete).
-
-Verdict: no functional or behavioural regression caused by the Phase 94 `Icon` wrapper
-diff. The only adverse observation is ADV-184 (a dropped icon, itself a side effect of
-the DialogShell adoption, not the wrapper).
-
-## ADV-184: The destructive "Delete pages" confirm button lost its Trash2 glyph in the Phase 94 dialog sweep
-
-- Session: diff-pass
-- Suggested severity: LOW (a dropped icon render observed while diffing DeletePageDialog
-  against HEAD; the loss is a side effect of the Phase 92/95 DialogShell adoption, not of
-  the `Icon` wrapper itself - recorded because issue item 6 names DeletePageDialog
-  explicitly and item 1 asks for dropped renders)
-
-What I did: diffed the Phase 94 working tree against HEAD for the nine high-risk surfaces
-(`git diff HEAD -- src/renderer/components/DeletePageDialog.tsx`, etc.). At HEAD the
-destructive confirm rendered
-`<button className="btn btn-primary btn-danger" ...><Trash2 size={16} aria-hidden /> Delete</button>`.
-The migrated file now delegates its footer to `DialogShell` with no icon:
-`{ key: "confirm", label: "Delete", variant: "danger", onClick: onConfirmClick, disabled: !valid }`
-(`src/renderer/components/DeletePageDialog.tsx:141-152`). `DialogShell`'s `DialogAction`
-has no `icon` field (`src/renderer/components/DialogShell.tsx:25-34`), so the trash glyph
-cannot be expressed and is gone.
-
-Expected: issue item 6 asks that DeletePageDialog's behaviour, labels and handlers be
-unchanged across the migration. The label ("Delete"), the handler (`onConfirmClick`), the
-disabled gating and the `data-delete-confirm` hook are all preserved; the visible
-destructive glyph is not.
-
-Actual: the trash affordance is dropped. A whole-diff glyph-count pass (per changed file,
-HEAD vs working tree) shows DeletePageDialog is the ONLY migrated file whose non-close
-glyph count falls (`Trash2: 1 -> 0`); every other file's `X: 1 -> 0` is the
-`DialogShell`-owned close button, which still renders through the wrapper
-(`DialogShell.tsx:174`). No control becomes handler-less and no other icon is silently
-lost across the ~66 migrated files.
-
-Screenshot: n/a - source diff. Evidence: run-scratch per-file glyph audit (dropped-glyph
-and size-delta tables) listed in the section above.
-
-Disposition: ACCEPTED -> DEF-520 (LOW). CTO triage 2026-10-03: valid finding - the
-destructive "Delete pages" confirm is a user-visible icon surface and Phase 94 owns the
-icon language, so the dropped Trash2 glyph is fixed here by adding an optional action
-`icon` to DialogShell and restoring it, rather than deferred to the Phase 92/95
-DialogShell workstream. Not a wrapper regression (the wrapper itself is clean).
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 ## Phase 93 Book View page-turn diff-pass (TFL-535) - adversarial probe
 
 Session label: `diff-pass`. Scope: the renderer-only Book View page-turn rework
@@ -8784,6 +8663,122 @@ Screenshot: n/a - console run; probe output in the session report above.
 
 Disposition: REJECTED - out of scope for Phase 95. Pre-existing Phase 58 `tabIndex`-inside-`<button>` markup, explicitly NOT caused by this geometry diff; the badge is activatable by Enter/Space once focused (probe-confirmed), and the reported defect (clipping / visibility / clickability) is addressed. A sequential tab-order fix belongs to a dedicated accessibility pass, not this clipping phase.
 
+## Phase 94 icon migration diff-pass (TFL-573) - `icons/Icon.tsx` + the ~66 migrated renderer files
+
+Session label: `diff-pass`. Scope: the Phase 94 icon diff only - the central
+`src/renderer/icons/Icon.tsx` wrapper, the migrated renderer files (`grep -rl "icons/Icon"
+src/renderer`), the three documented direct-render exceptions (CommandPalette `Pin`,
+AnnotationToolbar `Slash`, AnnotationOverlay `StickyNote`) and the guard specs
+`test/unit/renderer/phase94_noAdHocIcons.test.ts`, `phase94_iconSystem.test.tsx`,
+`phase43IconUniqueness.test.ts`. Product code, tests and ledgers were read but not
+modified. Other uncommitted phases (Phase 92/95 DialogShell, button system, engine
+bates, settings) were not audited except where an icon render sits inside them.
+
+Exact commands:
+
+- Blast-radius source diff: `git diff HEAD -- src/renderer` (11750-line diff written to
+  the run scratch; per-file glyph and size analysis scripts in
+  `test-fixtures/phase94-adversary/`).
+- Targeted guards (build lock held + released):
+  `node node_modules/vitest/vitest.mjs run test/unit/renderer/phase94_noAdHocIcons.test.ts
+  test/unit/renderer/phase94_iconSystem.test.tsx
+  test/unit/renderer/phase43IconUniqueness.test.ts` -> **3 files / 28 tests passed**, 1.72 s.
+
+Attack-surface result (issue items 1-6):
+
+1. Dropped props: NONE. No removed glyph in the diff carried `onClick`, `style`,
+   `data-*`, `fill`, `color` or a `title`; every removed `className` is forwarded on the
+   replacement wrapper (`PaintBucket`, `Check` -> `ann-tool-menu-check`, `FileText`,
+   `PanelLeftDashed`, `ShieldAlert`, `Toast`, `TriangleAlert`, `FileCheck2`,
+   `titlebar-menu-row-icon`). The only `strokeWidth`/dynamic-size site that had to move
+   was FormsOverlay's custom `CheckMark`/`XMark`, both correctly converted
+   (`variant="bold"` preserves stroke 3; `.form-checkbox svg { width:70%; height:70% }`
+   preserves the old `* 0.7` zoom tracking).
+2. Accessibility: NONE. The wrapper defaults `aria-hidden` true, but every pre-migration
+   glyph either already declared `aria-hidden` or was inside an `aria-hidden` container
+   or a labelled control; no removed glyph carried a `title`/`aria-label`, and no
+   migrated control became icon-only. The `icon={X}` prop sites
+   (`Inspector.tsx:463`, `DialogShell.tsx:174`) both sit on labelled/`aria-label`ed
+   controls and the wrapper is used inside them.
+3. Hit-testing/layout: HOLDS. The wrapper renders exactly one SVG root (Lucide) with no
+   extra element; `className` is forwarded to that root, so no wrapper element was
+   introduced to capture clicks or change flex sizing.
+4. Silent size deltas: all audited. Numeric -> token changes exist (e.g. `15->md(18)`,
+   `16->sm(16)`, `13->xs(14)`, `28->hero(32)`, `12->xs(14)`), but every chrome surface is
+   governed by the pre-existing context SVG sizing layer (`.app-header svg`,
+   `.titlebar svg`, `.context-panel svg`, `.side-rail svg`, `.inspector svg`,
+   `.command-palette svg`, `.ann-toolbar svg` = 18px; `.action-dock svg`/`.canvas-pill
+   svg` = 20px; `.stage-rail svg` = 22px), which overrides the SVG `width`/`height`
+   attributes - so those were already painted at the token size before the migration.
+   The uncovered deltas are cosmetic (+1..+4px: `TextPropertiesPanel`, `AnnotationCommentBox`,
+   `PreferencesDialog`, `Welcome`, `MultiPane`, `PrintWindow`) and the one fixed-size
+   container that changed (`AnnCommentIcon`, badge box 16->20, glyph 10->14) was itself
+   resized to match the pre-existing `.ann-comment-icon { min-width:20px; height:20px }`
+   CSS, so the glyph now FITS where it previously clipped. No hit-area or alignment
+   regression.
+5. Exceptions: HOLD. `Pin` still encodes state via `fill` (`CommandPalette.tsx:538-543`);
+   `Slash` still renders dynamic size/stroke (`AnnotationToolbar.tsx:727-731`); `StickyNote`
+   still scales with zoom (`AnnotationOverlay.tsx:2075`). The direct-render census over the
+   changed files finds exactly these two live exceptions in-file (the third is in the
+   unchanged AnnotationOverlay), so the migration is complete and consistent.
+6. High-risk surfaces: labels and handlers unchanged on all nine (DeletePageDialog,
+   SaveAsDialog, ExportDialog, FlattenConfirmDialog, PasswordPromptDialog,
+   CommandPalette, AppHeader, SideRail, Inspector). One visual regression is recorded as
+   ADV-184 (a dropped action glyph on Delete).
+
+Verdict: no functional or behavioural regression caused by the Phase 94 `Icon` wrapper
+diff. The only adverse observation is ADV-184 (a dropped icon, itself a side effect of
+the DialogShell adoption, not the wrapper).
+
+## ADV-184: The destructive "Delete pages" confirm button lost its Trash2 glyph in the Phase 94 dialog sweep
+
+- Session: diff-pass
+- Suggested severity: LOW (a dropped icon render observed while diffing DeletePageDialog
+  against HEAD; the loss is a side effect of the Phase 92/95 DialogShell adoption, not of
+  the `Icon` wrapper itself - recorded because issue item 6 names DeletePageDialog
+  explicitly and item 1 asks for dropped renders)
+
+What I did: diffed the Phase 94 working tree against HEAD for the nine high-risk surfaces
+(`git diff HEAD -- src/renderer/components/DeletePageDialog.tsx`, etc.). At HEAD the
+destructive confirm rendered
+`<button className="btn btn-primary btn-danger" ...><Trash2 size={16} aria-hidden /> Delete</button>`.
+The migrated file now delegates its footer to `DialogShell` with no icon:
+`{ key: "confirm", label: "Delete", variant: "danger", onClick: onConfirmClick, disabled: !valid }`
+(`src/renderer/components/DeletePageDialog.tsx:141-152`). `DialogShell`'s `DialogAction`
+has no `icon` field (`src/renderer/components/DialogShell.tsx:25-34`), so the trash glyph
+cannot be expressed and is gone.
+
+Expected: issue item 6 asks that DeletePageDialog's behaviour, labels and handlers be
+unchanged across the migration. The label ("Delete"), the handler (`onConfirmClick`), the
+disabled gating and the `data-delete-confirm` hook are all preserved; the visible
+destructive glyph is not.
+
+Actual: the trash affordance is dropped. A whole-diff glyph-count pass (per changed file,
+HEAD vs working tree) shows DeletePageDialog is the ONLY migrated file whose non-close
+glyph count falls (`Trash2: 1 -> 0`); every other file's `X: 1 -> 0` is the
+`DialogShell`-owned close button, which still renders through the wrapper
+(`DialogShell.tsx:174`). No control becomes handler-less and no other icon is silently
+lost across the ~66 migrated files.
+
+Screenshot: n/a - source diff. Evidence: run-scratch per-file glyph audit (dropped-glyph
+and size-delta tables) listed in the section above.
+
+Disposition: ACCEPTED -> DEF-520 (LOW). CTO triage 2026-10-03: valid finding - the
+destructive "Delete pages" confirm is a user-visible icon surface and Phase 94 owns the
+icon language, so the dropped Trash2 glyph is fixed here by adding an optional action
+`icon` to DialogShell and restoring it, rather than deferred to the Phase 92/95
+DialogShell workstream. Not a wrapper regression (the wrapper itself is clean).
+
+
+
+
+
+
+
+
+
+
+
 ## ADV-185: Phase 91 button-system migration — clean adversarial diff-pass (no behaviour break found)
 
 - Session: diff-pass
@@ -8815,3 +8810,61 @@ Actual: no behaviour change observed on any reachable migrated surface. Two info
 Screenshot: screenshots/phase91-adv-opened.png, screenshots/phase91-adv-blank-dialog.png, screenshots/phase91-adv-final.png. Evidence: the probe script, the four logs above, and the discovery dump under `test-fixtures/phase91-adversary/`.
 
 Disposition: REJECTED (no defect) — CTO triage (TFL-511, 2026-10-03). No confirmed behaviour break; the 29/29 probe + the phase e2e corroborate "visual-only". The two informational observations are not defects: (a) `Button`/`IconButton` unused — Ruling 6 explicitly permits migrating onto raw canonical classes "where a component would fight an existing ref/DOM contract", so class-based migration is contract-compliant, and the component remains the documented, unit-tested contract; (b) `[data-rail-tab]` (the `SideRail` default export) and `[data-tool-id]` (`ToolsPalette`) are not mounted in the shipped tree (App.tsx routes `showToolsPalette` to the Command Palette; ContextPanel imports only SideRail's `ThumbnailRail`/`OutlinePanel`/`RulerStrip`), so those two migrations are inert but harmless — no shipped surface is affected. No DEF filed.
+
+## ADV-186: Two stacked DialogShell surfaces both dismiss on ONE Escape — the shell has no top-most Esc guard
+
+- Session: phase-92 gate (TFL-513-G diff-pass)
+- Suggested severity: MEDIUM
+
+What I did: ran a Playwright probe through the canonical launcher only (`test-fixtures/phase92-adversary/probe_stacking.cjs`, launched via `e2e/lib/launch.cjs`). Opened the About sheet from the Command Palette (`[data-palette-tool-id="about"]`), then injected `update:statusChanged` `{kind:"available"}` (App.tsx:1715-1726 `onCheckForUpdate` opens the Update prompt without closing About, so `aboutOpen` and `updatePromptOpen` are both true). Verified the stack: `[data-about-dialog]` = true, `[data-update-prompt]` = true, `[data-dialog-shell]` count = 2. Then pressed Escape once.
+
+Expected: per TFL-513-G attack item 6, the top surface owns Esc — one Escape dismisses only the Update prompt and leaves About open (no double-close).
+
+Actual: one Escape dismissed BOTH surfaces. After the keypress: `{ about: false, update: false, shells: 0 }` (`test-fixtures/phase92-adversary/probe_stacking.log`). Cause: `DialogShell.tsx:146-156` adds an independent `window.addEventListener("keydown", onKey)` for every open shell, and `e.preventDefault()` does not stop the other listeners, so every open shell's `onClose` fires on the same keydown. There is no owner/stack guard. This widened UpdatePromptDialog's Esc, which pre-Phase-92 was scoped to its backdrop's React `onKeyDown` (HEAD `UpdatePromptDialog.tsx:566-568`), to a global window listener; AboutDialog already had a window listener at HEAD (`AboutDialog.tsx:241-248`), so the pair previously only both-closed when focus sat inside the update backdrop. Post-adoption it closes both unconditionally.
+
+Screenshot: n/a (probe). Fixture/evidence: `test-fixtures/phase92-adversary/probe_stacking.cjs`, `test-fixtures/phase92-adversary/probe_stacking.log`.
+
+Disposition: ACCEPTED -> DEF-525 (MEDIUM). CTO triage (2026-10-03): real, reachable via Update prompt stacked over About; frontend-dev to add a top-most guard so only the topmost open `DialogShell` handles Esc. Fix-linked below.
+
+## ADV-187: Three adopted dialogs lost their custom close-X accessible name to the shell default "Close dialog"
+
+- Session: phase-92 gate (TFL-513-G diff-pass)
+- Suggested severity: LOW
+
+What I did: for every adopted surface, compared the pre-Phase-92 `.modal-close` `aria-label`/`title` (from `git show HEAD:...`) with the current DialogShell close button, and checked which adopters pass the additive `closeAriaLabel` prop (only `AboutDialog.tsx:350`, `PreferencesDialog.tsx:316`, `UpdatePromptDialog.tsx:532`). The shell default is `closeAriaLabel = "Close dialog"` (`DialogShell.tsx:125`, emitted at `DialogShell.tsx:219-220`).
+
+Expected: behaviour-preservation (Ruling 8; TFL-513-G attack item 5's aria-label pins) — each dialog keeps its shipped close-X accessible name/tooltip.
+
+Actual: three adopters omit `closeAriaLabel` and now render the default, losing their shipped name:
+- `PasswordPromptDialog.tsx:100-109` — X is now `aria-label`/`title` "Close dialog"; HEAD `PasswordPromptDialog.tsx:100` was `aria-label="Cancel"` (no title). The click still cancels.
+- `CloseTabPromptDialog.tsx:101-107` — X is now "Close dialog"; HEAD `CloseTabPromptDialog.tsx:120` was `aria-label="Cancel close"`. The click still chooses "cancel".
+- `OcrDialog.tsx:462-470` — X is now "Close dialog"/title "Close dialog" even during an active run, although `onClose` is `running ? cancelRun : onClose` (`OcrDialog.tsx:468`). HEAD `OcrDialog.tsx:496-497` was `aria-label={running ? 'Cancel OCR' : 'Close dialog'}` / `title={running ? 'Cancel OCR' : 'Close'}` — i.e. while OCR is running the header X no longer announces that it cancels the run.
+
+Fix: pass `closeAriaLabel` on those shells; OcrDialog needs the dynamic `running ? 'Cancel OCR' : 'Close dialog'` value (and its `title` follows).
+
+Screenshot: n/a (source diff, `git show HEAD:<file>` vs working tree).
+
+Disposition: ACCEPTED -> DEF-526 (LOW). CTO triage (2026-10-03): frontend-dev to pass `closeAriaLabel` on the three adopters (PasswordPromptDialog "Cancel", CloseTabPromptDialog "Cancel close", OcrDialog dynamic `running ? 'Cancel OCR' : 'Close dialog'`). Fix-linked below.
+
+## Phase 92 (TFL-513-G) adversarial diff-pass — attack-item results
+
+Session: phase-92 gate (diff-pass). Scope: `DialogShell.tsx` and all 37 adopted surfaces, plus `styles.css` tokens/grid/selector rework. Findings filed above: ADV-186 (MEDIUM, stacked-Esc double-close), ADV-187 (LOW, close-X accessible-name loss). Recorded here so the whole-diff verdict is explicit; the two are the only confirmed breaks.
+
+Probes run (exact commands):
+- `node node_modules/vitest/vitest.mjs run dialogShell dialogShellClass bugB13_focusedOnceDialogs bugB17_backdropDragClose bugB18_insertReplaceModalBlock phase52Dialogs designTokensContract phase94_noAdHocIcons bugDEF117_hooksAboveEarlyReturn` -> 9 files, 173 tests, all PASS (`test-fixtures/phase92-adversary/vitest_targeted.log`).
+- `node node_modules/@playwright/test/cli.js test phase92_dialog_shell --reporter=line` -> 1 passed, `SUMMARY pass=74 fail=0 total=74` (`test-fixtures/phase92-adversary/e2e_phase92.log`).
+- Adversary probes via `e2e/lib/launch.cjs`: `test-fixtures/phase92-adversary/probe_stacking.cjs`, `test-fixtures/phase92-adversary/probe_drag.cjs`.
+
+Attack-item results:
+1. Must-answer dialog closeable — HELD. All 37 adopters pass `onClose` (extracted from every `<DialogShell>` opening tag); the shell renders no X, no Esc and no backdrop close when `onClose` is omitted (`DialogShell.tsx:147,180-183,214`; unit `dialogShell.test.tsx:227-245`, PASS). No live adopted surface is must-answer-by-omission.
+2. Drag-inside/release-on-backdrop; Watermark/Stamp drag — HELD. `useBackdropClose` (`modalBackdrop.ts:34-43`) only closes when both mousedown and click target the backdrop; probe confirmed a chrome drag released at (5,5) left the Stamp dialog open; the drag clamp kept it inside the viewport at an off-screen release; a control (`input[type=radio]`) press did NOT set `modal-dialog-dragging`; a genuine backdrop click still closed it. Watermark/Stamp keep the identical `controlsSelector` and drag wiring as HEAD (`WatermarkDialog.tsx:371`, `StampDialog.tsx:125`) and the CSS selectors were correctly re-based from backdrop-descendant to root-compound (`styles.css:10056,10546,13414`).
+3. Keyboard traversal / focus order — HELD (no new break). The shell focuses the `default` action and the DEF-521 fallback focuses the first enabled control (sanctioned); adopters that kept their own first-control focus (Merge/Delete/Password/Preferences) still win the microtask race or match the pre-adoption target. Disabled actions render `disabled` (`DialogShell.tsx:259`). Probe/e2e focus checks pass.
+4. Destructive action / busy gate — HELD. `blockBackdropClose`/`closeDisabled` were compared per dialog against HEAD `useBackdropClose(onClose, <gate>)`: all 16 gated dialogs preserve the gate and all 8 HEAD X-disables are preserved (`Docx/Export/Merge/Office/Password/Sanitize/TextExport/Validate`). Delete-page (`disabled:!valid`, danger), Blank-pages (`disabled: running||size===0`, danger) and Sanitize (`runDisabled`) confirms remain gated; exactly one primary per row.
+5. `data-*` hook survival — HELD. A whole-diff audit of every changed renderer file found ZERO `data-*` attribute names lost. Sheet adopters keep their `data-about-dialog`/`data-prefs-dialog`/`data-update-prompt` root hooks, `.sheet-*` chrome and custom close labels. Only the close-X accessible-name values regressed on three dialog surfaces (ADV-187).
+6. Two dialogs stacked — BROKEN (ADV-186): one Escape closes both.
+7. `surface="sheet"` vs modal chrome — HELD. Probe on Preferences: `.sheet` + `.sheet-backdrop` present, `.modal-dialog`/`.modal-backdrop` absent, close class `btn btn-ghost btn-icon sheet-close`, label "Close preferences". Unit `dialogShell.test.tsx:476-590` pins both directions and the no-leak default.
+8. `.print-window` / AccountsDialog exceptions — HELD. `styles.css` changed only `.modal-*`/`.dlg-*`; `.sheet`, `.sheet-accounts` and `.print-window*` rules are untouched, so the exception surfaces are unaffected (`.print-window-panel .modal-body` inherits the token-driven `.modal-body` padding, an intended Ruling-9 token adoption).
+
+Accepted non-findings NOT re-filed: DEF-516/519/521/524 hook relocations; the `AccountsDialog` shell exception; `.dlg-*` grid expressed via `.modal-field`; shell Esc-live-while-busy (Ruling 3).
+
+

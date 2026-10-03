@@ -1,9 +1,6 @@
-import { useEffect, useMemo, useRef, useState, type ReactElement } from "react";
-import { X } from "lucide-react";
+import { useEffect, useMemo, useState, type ReactElement } from "react";
 import { defaultPageRange, parsePageRange } from "../engine/types";
-import { useBackdropClose } from "./modalBackdrop";
-import { AnimatePresence } from "motion/react";
-import { TfBackdrop, TfDialog } from "./motion/TfMotion";
+import { DialogShell, type DialogAction } from "./DialogShell";
 
 export type SplitMode = "extract" | "split";
 
@@ -23,7 +20,6 @@ export function SplitDialog(props: SplitDialogProps): ReactElement | null {
   const { open, totalPages, onClose, onConfirm } = props;
   const [text, setText] = useState<string>(defaultPageRange(totalPages));
   const [mode, setMode] = useState<SplitMode>("extract");
-  const dialogRef = useRef<HTMLDivElement | null>(null);
 
   // Reset text when reopened.
   useEffect(() => {
@@ -33,58 +29,35 @@ export function SplitDialog(props: SplitDialogProps): ReactElement | null {
     }
   }, [open, totalPages]);
 
-  useEffect(() => {
-    if (!open) return;
-    const onKey = (e: KeyboardEvent): void => {
-      if (e.key === "Escape") {
-        e.preventDefault();
-        onClose();
-      }
-    };
-    window.addEventListener("keydown", onKey);
-    const first = dialogRef.current?.querySelector<HTMLElement>(
-      "input, button, [tabindex]",
-    );
-    first?.focus();
-    return () => window.removeEventListener("keydown", onKey);
-  }, [open, onClose]);
-
   const parsed = useMemo(() => parsePageRange(text, totalPages), [text, totalPages]);
   const valid = parsed !== null && parsed.length > 0;
 
-  // B3/B6 — backdrop close only when the interaction started on the
-  // backdrop (a drag from the range input must not dismiss).
-  const backdrop = useBackdropClose(onClose);
-
-  
+  // The primary Extract/Split action is marked `default`; DialogShell owns
+  // Esc-to-close, the backdrop drag guard and initial focus.
+  const actions: DialogAction[] = [
+    { key: "cancel", label: "Cancel", variant: "secondary", onClick: onClose },
+    {
+      key: "confirm",
+      label: mode === "extract" ? "Extract" : "Split",
+      variant: "primary",
+      onClick: (): void => {
+        if (parsed !== null) onConfirm({ range: parsed, mode });
+      },
+      disabled: !valid,
+      default: true,
+    },
+  ];
 
   return (
-    <AnimatePresence>
-      {open && (
-        <TfBackdrop className="modal-backdrop" {...backdrop}>
-      <TfDialog
-        className="modal-dialog dialog modal-dialog-tool"
-        ref={dialogRef}
-        onClick={(e): void => e.stopPropagation()}
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="split-dialog-title"
-      >
-        <div className="modal-header">
-          <h2 id="split-dialog-title" className="modal-title">
-            Extract or split pages
-          </h2>
-          <button
-            type="button"
-            className="modal-close"
-            onClick={onClose}
-            aria-label="Close dialog"
-          >
-            <X size={16} aria-hidden />
-          </button>
-        </div>
-        <div className="modal-body">
-          <p className="modal-help">
+    <DialogShell
+      open={open}
+      title="Extract or split pages"
+      titleId="split-dialog-title"
+      size="tool"
+      onClose={onClose}
+      actions={actions}
+    >
+      <p className="modal-help">
             Specify which pages to keep. Examples: <code>10-20</code>,
             <code>1,3,5-7</code>. The source has <strong>{totalPages}</strong>{" "}
             page{totalPages === 1 ? "" : "s"}.
@@ -130,25 +103,6 @@ export function SplitDialog(props: SplitDialogProps): ReactElement | null {
               <span>Split — selected pages go to a new document, the rest stay here.</span>
             </label>
           </fieldset>
-        </div>
-        <div className="modal-footer">
-          <button type="button" className="btn btn-secondary" onClick={onClose}>
-            Cancel
-          </button>
-          <button
-            type="button"
-            className="btn btn-primary"
-            disabled={!valid}
-            onClick={(): void => {
-              if (parsed !== null) onConfirm({ range: parsed, mode });
-            }}
-          >
-            {mode === "extract" ? "Extract" : "Split"}
-          </button>
-        </div>
-      </TfDialog>
-        </TfBackdrop>
-      )}
-    </AnimatePresence>
+    </DialogShell>
   );
 }

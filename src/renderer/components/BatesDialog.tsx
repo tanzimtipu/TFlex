@@ -9,11 +9,9 @@
 // never reaches around the host callback.
 
 import { useEffect, useRef, useState, type CSSProperties, type ReactElement } from "react";
-import { AnimatePresence } from "motion/react";
-import { Hash, X } from "lucide-react";
+import { Hash } from "lucide-react";
 import { Icon } from "../icons/Icon";
-import { useBackdropClose } from "./modalBackdrop";
-import { TfBackdrop, TfDialog } from "./motion/TfMotion";
+import { DialogShell, type DialogAction } from "./DialogShell";
 import {
   buildBatesLabel,
   formatBatesSeries,
@@ -164,8 +162,6 @@ export function BatesDialog(props: BatesDialogProps): ReactElement {
   const [report, setReport] = useState<string | null>(null);
   const [reportError, setReportError] = useState(false);
   const [applying, setApplying] = useState(false);
-  const dialogRef = useRef<HTMLDivElement | null>(null);
-  const focusedOnceRef = useRef<boolean>(false);
   const seededForOpenRef = useRef<boolean>(false);
 
   // Re-seed on the rising edge of `open` from the remembered defaults; the
@@ -195,31 +191,6 @@ export function BatesDialog(props: BatesDialogProps): ReactElement {
     setReportError(false);
     setApplying(false);
   }, [open, initialDefaults, currentPage, totalPages]);
-
-  // Focus the first interactive control on the rising edge of `open` and
-  // wire Escape-to-close (same contract as the other dialogs).
-  useEffect(() => {
-    if (!open) {
-      focusedOnceRef.current = false;
-      return;
-    }
-    if (focusedOnceRef.current) return;
-    focusedOnceRef.current = true;
-    const onKey = (e: KeyboardEvent): void => {
-      if (e.key === "Escape") {
-        e.preventDefault();
-        onClose();
-      }
-    };
-    window.addEventListener("keydown", onKey);
-    queueMicrotask((): void => {
-      const first = dialogRef.current?.querySelector<HTMLElement>("button, input, [tabindex]");
-      first?.focus();
-    });
-    return (): void => window.removeEventListener("keydown", onKey);
-  }, [open, onClose]);
-
-  const backdrop = useBackdropClose(onClose, busy);
 
   const pages = batesPagesForScope(rangeAll, rangeFrom, rangeTo, totalPages);
   const valid = pages.length > 0 && Number.isInteger(startNumber) && startNumber >= 1;
@@ -259,36 +230,40 @@ export function BatesDialog(props: BatesDialogProps): ReactElement {
     );
   };
 
+  const actions: DialogAction[] = [
+    {
+      key: "cancel",
+      label: "Cancel",
+      variant: "secondary",
+      onClick: onClose,
+    },
+    Object.assign(
+      {
+        key: "apply",
+        label: applying || busy ? "Applying…" : "Apply numbering",
+        variant: "primary" as const,
+        onClick: (): void => {
+          void onApply();
+        },
+        disabled: applyDisabled,
+        default: true,
+      },
+      { "data-bates-apply": true },
+    ),
+  ];
+
   return (
-    <AnimatePresence>
-      {open && (
-        <TfBackdrop className="modal-backdrop" {...backdrop} data-bates-dialog>
-          <TfDialog
-            ref={(el): void => {
-              dialogRef.current = el;
-            }}
-            className="modal-dialog dialog modal-dialog-tool"
-            onClick={(e): void => e.stopPropagation()}
-            onPointerDown={(e): void => e.stopPropagation()}
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="bates-dialog-title"
-          >
-            <div className="modal-header">
-              <h2 id="bates-dialog-title" className="modal-title">
-                <Icon icon={Hash} size="sm" /> Bates numbering
-              </h2>
-              <button
-                type="button"
-                className="btn btn-ghost btn-icon modal-close"
-                onClick={onClose}
-                aria-label="Close dialog"
-                title="Close dialog"
-              >
-                <Icon icon={X} size="sm" />
-              </button>
-            </div>
-            <div className="modal-body">
+    <DialogShell
+      open={open}
+      title="Bates numbering"
+      titleId="bates-dialog-title"
+      icon={<Icon icon={Hash} size="sm" />}
+      size="tool"
+      onClose={onClose}
+      blockBackdropClose={busy}
+      actions={actions}
+      data-bates-dialog
+    >
               <p className="modal-help">
                 Stamp sequential Bates numbers across the selected pages. The
                 numbers are baked into the page content (undo removes them).
@@ -438,26 +413,6 @@ export function BatesDialog(props: BatesDialogProps): ReactElement {
               >
                 {report ?? "Not applied yet."}
               </div>
-            </div>
-            <div className="modal-footer">
-              <button type="button" className="btn btn-secondary" onClick={onClose}>
-                Cancel
-              </button>
-              <button
-                type="button"
-                className="btn btn-primary"
-                onClick={(): void => {
-                  void onApply();
-                }}
-                disabled={applyDisabled}
-                data-bates-apply
-              >
-                {applying || busy ? "Applying\u2026" : "Apply numbering"}
-              </button>
-            </div>
-          </TfDialog>
-        </TfBackdrop>
-      )}
-    </AnimatePresence>
+    </DialogShell>
   );
 }

@@ -63,11 +63,11 @@ const RAW_SIZE_SCAN_FILES: readonly string[] = [
   // OfficeExportDialog / OptimizeDialog joined that DialogShell-delegating set,
   // and RenumberPagesDialog followed after its DialogShell migration (it now
   // renders no glyph in-file), so none of them are listed here either.
-  "components/AboutDialog.tsx",
+  // TFL-513-E2b: AboutDialog joined that set too — its only direct glyph was the
+  // header close X, now owned by DialogShell, so it renders no glyph in-file.
   "components/AccountsDialog.tsx",
   "components/AuditSpaceDialog.tsx",
   "components/BatesDialog.tsx",
-  "components/BlankPagesDialog.tsx",
   "components/CommentExportDialog.tsx",
   "components/CommentImportDialog.tsx",
   "components/CreateFromImagesDialog.tsx",

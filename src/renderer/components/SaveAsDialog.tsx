@@ -23,11 +23,8 @@
 // persist the choice, and then fire the existing engine.saveAs
 // call as before. The OS dialog still handles the path + filename.
 
-import { useEffect, useRef, useState, type ReactElement } from 'react';
-import { X } from 'lucide-react';
-import { useBackdropClose } from './modalBackdrop';
-import { AnimatePresence } from 'motion/react';
-import { TfBackdrop, TfDialog } from './motion/TfMotion';
+import { useEffect, useState, type ReactElement } from 'react';
+import { DialogShell, type DialogAction } from './DialogShell';
 import { SAVE_REMOVES_PROTECTION_TEXT } from '../security/protection';
 
 interface SaveAsDialogProps {
@@ -61,7 +58,6 @@ export function SaveAsDialog(props: SaveAsDialogProps): ReactElement | null {
   // `undefined` -> false default so the dialog handles the
   // optional-field case gracefully on first open.
   const [linearize, setLinearize] = useState<boolean>(() => saveAsLinearize ?? false);
-  const dialogRef = useRef<HTMLDivElement | null>(null);
 
   // Re-seed on every open + every saveAsLinearize change so the
   // checkbox tracks the persisted value. Without this, opening the
@@ -70,30 +66,6 @@ export function SaveAsDialog(props: SaveAsDialogProps): ReactElement | null {
     if (!open) return;
     setLinearize(saveAsLinearize ?? false);
   }, [open, saveAsLinearize]);
-
-  // Esc closes; focus the first interactive control on open so the
-  // keyboard user can tab through immediately.
-  useEffect(() => {
-    if (!open) return;
-    const onKey = (e: KeyboardEvent): void => {
-      if (e.key === 'Escape') {
-        e.preventDefault();
-        onClose();
-      }
-    };
-    window.addEventListener('keydown', onKey);
-    const first = dialogRef.current?.querySelector<HTMLElement>(
-      'input, button, [tabindex]',
-    );
-    first?.focus();
-    return () => window.removeEventListener('keydown', onKey);
-  }, [open, onClose]);
-
-  // B3/B6 — backdrop close only when the interaction started on the
-  // backdrop (a drag from the linearize checkbox must not dismiss).
-  const backdrop = useBackdropClose(onClose);
-
-  
 
   const onToggleLinearize = (e: React.ChangeEvent<HTMLInputElement>): void => {
     const next = e.target.checked;
@@ -117,83 +89,66 @@ export function SaveAsDialog(props: SaveAsDialogProps): ReactElement | null {
     onConfirm();
   };
 
-  return (
-    <AnimatePresence>
-      {open && (
-        <TfBackdrop className="modal-backdrop" {...backdrop}>
-      <TfDialog
-        className="modal-dialog dialog modal-dialog-tool"
-        ref={dialogRef}
-        onClick={(e): void => e.stopPropagation()}
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="save-as-dialog-title"
-        data-save-as-dialog
-      >
-        <div className="modal-header">
-          <h2 id="save-as-dialog-title" className="modal-title">
-            Save a copy
-          </h2>
-          <button
-            type="button"
-            className="modal-close"
-            onClick={onClose}
-            aria-label="Close dialog"
-          >
-            <X size={16} aria-hidden />
-          </button>
-        </div>
-        <div className="modal-body">
-          <p className="modal-help">
-            Pick where to write the file. The OS save dialog opens after you
-            confirm; the chosen filename and destination are handled by the
-            system.
-          </p>
-          {protectedDocument === true && (
-            <p className="modal-help save-as-decrypt-note" data-save-as-decrypt-note>
-              {SAVE_REMOVES_PROTECTION_TEXT}
-            </p>
-          )}
+  // Actions render in order (cancel then confirm, primary right-most). The
+  // extra hyphenated key is the pre-Phase-92 e2e hook; Object.assign keeps
+  // it typed as the canonical DialogAction while carrying it at runtime.
+  const actions: DialogAction[] = [
+    { key: 'cancel', label: 'Cancel', variant: 'secondary', onClick: onClose },
+    Object.assign(
+      {
+        key: 'confirm',
+        label: 'Choose location…',
+        variant: 'primary' as const,
+        onClick: onConfirmClick,
+        default: true,
+      },
+      { 'data-save-as-confirm': true },
+    ),
+  ];
 
-          <fieldset className="modal-position save-as-linearize">
-            <legend>Web optimisation</legend>
-            <label className="save-as-linearize-option">
-              <input
-                type="checkbox"
-                checked={linearize}
-                onChange={onToggleLinearize}
-                data-save-as-linearize
-                aria-label="Fast web view (linearize)"
-              />
-              <span className="save-as-linearize-text">
-                <span className="save-as-linearize-label">
-                  Fast web view (linearize)
-                </span>
-                <span className="save-as-linearize-desc">
-                  Rewrites the PDF so the first page is available before the
-                  rest of the file finishes downloading. Browsers and
-                  web-viewers can start rendering immediately.
-                </span>
-              </span>
-            </label>
-          </fieldset>
-        </div>
-        <div className="modal-footer">
-          <button type="button" className="btn btn-secondary" onClick={onClose}>
-            Cancel
-          </button>
-          <button
-            type="button"
-            className="btn btn-primary"
-            onClick={onConfirmClick}
-            data-save-as-confirm
-          >
-            Choose location…
-          </button>
-        </div>
-      </TfDialog>
-        </TfBackdrop>
+  return (
+    <DialogShell
+      open={open}
+      title="Save a copy"
+      titleId="save-as-dialog-title"
+      size="tool"
+      onClose={onClose}
+      actions={actions}
+      data-save-as-dialog
+    >
+      <p className="modal-help">
+        Pick where to write the file. The OS save dialog opens after you
+        confirm; the chosen filename and destination are handled by the
+        system.
+      </p>
+      {protectedDocument === true && (
+        <p className="modal-help save-as-decrypt-note" data-save-as-decrypt-note>
+          {SAVE_REMOVES_PROTECTION_TEXT}
+        </p>
       )}
-    </AnimatePresence>
+
+      <fieldset className="modal-position save-as-linearize">
+        <legend>Web optimisation</legend>
+        <label className="save-as-linearize-option">
+          <input
+            type="checkbox"
+            checked={linearize}
+            onChange={onToggleLinearize}
+            data-save-as-linearize
+            aria-label="Fast web view (linearize)"
+          />
+          <span className="save-as-linearize-text">
+            <span className="save-as-linearize-label">
+              Fast web view (linearize)
+            </span>
+            <span className="save-as-linearize-desc">
+              Rewrites the PDF so the first page is available before the
+              rest of the file finishes downloading. Browsers and
+              web-viewers can start rendering immediately.
+            </span>
+          </span>
+        </label>
+      </fieldset>
+    </DialogShell>
   );
 }

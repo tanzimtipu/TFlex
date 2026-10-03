@@ -27,11 +27,8 @@
 // docs and in-memory tabs (e.g. samples, fresh Optimize output)
 // close silently.
 
-import { useEffect, useRef, type ReactElement } from "react";
-import { X } from "lucide-react";
-import { useBackdropClose } from "./modalBackdrop";
-import { AnimatePresence } from "motion/react";
-import { TfBackdrop, TfDialog } from "./motion/TfMotion";
+import { type ReactElement } from "react";
+import { DialogShell, type DialogAction } from "./DialogShell";
 
 export type CloseTabPromptChoice = "save" | "discard" | "cancel";
 
@@ -61,111 +58,67 @@ export function CloseTabPromptDialog(
   props: CloseTabPromptDialogProps,
 ): ReactElement | null {
   const { open, tabTitle, saving, saveError, saveAsMode = false, onChoose } = props;
-  const dialogRef = useRef<HTMLDivElement | null>(null);
 
-  // Esc cancels the close — the same afford every other modal
-  // has. We focus the first button on open so keyboard users
-  // land on the natural default ("Save").
-  useEffect(() => {
-    if (!open) return;
-    const onKey = (e: KeyboardEvent): void => {
-      if (e.key === "Escape") {
-        e.preventDefault();
-        onChoose("cancel");
-      }
-    };
-    window.addEventListener("keydown", onKey);
-    queueMicrotask((): void => {
-      const first = dialogRef.current?.querySelector<HTMLElement>(
-        "button[data-close-prompt-default]",
-      );
-      first?.focus();
-    });
-    return (): void => window.removeEventListener("keydown", onKey);
-  }, [open, onChoose]);
-
-  // B3/B6 — backdrop close only when the interaction started on the
-  // backdrop. Clicking the backdrop cancels the close (keeps the
-  // tab open); a drag that started on a button and released over
-  // the backdrop must not fire it.
-  const backdrop = useBackdropClose(() => onChoose("cancel"));
-
-  
+  // Actions render in order (cancel, discard then save, primary right-most).
+  // The extra hyphenated keys are the pre-Phase-92 e2e hooks; Object.assign
+  // keeps them typed as the canonical DialogAction while carrying them at
+  // runtime.
+  const actions: DialogAction[] = [
+    Object.assign(
+      {
+        key: "cancel",
+        label: "Cancel",
+        variant: "secondary" as const,
+        onClick: (): void => onChoose("cancel"),
+        disabled: saving,
+      },
+      { "data-close-prompt-action": "cancel" },
+    ),
+    Object.assign(
+      {
+        key: "discard",
+        label: "Don't save",
+        variant: "secondary" as const,
+        onClick: (): void => onChoose("discard"),
+        disabled: saving,
+      },
+      { "data-close-prompt-action": "discard" },
+    ),
+    Object.assign(
+      {
+        key: "save",
+        label: saving ? "Saving…" : saveAsMode ? "Save As…" : "Save",
+        variant: "primary" as const,
+        onClick: (): void => onChoose("save"),
+        disabled: saving,
+        default: true,
+      },
+      { "data-close-prompt-action": "save", "data-close-prompt-default": true },
+    ),
+  ];
 
   return (
-<AnimatePresence>
-      {open && (
-        <TfBackdrop
-          className="modal-backdrop"
-          {...backdrop}
-          data-close-tab-prompt
-          data-close-prompt
-        >
-      <TfDialog
-        ref={dialogRef}
-        className="modal-dialog dialog close-tab-prompt-dialog"
-        role="alertdialog"
-        aria-modal="true"
-        aria-labelledby="close-tab-prompt-title"
-        aria-describedby="close-tab-prompt-body"
-      >
-        <div className="modal-header">
-          <h2 id="close-tab-prompt-title" className="modal-title">
-            Unsaved changes
-          </h2>
-          <button
-            type="button"
-            className="modal-close"
-            onClick={(): void => onChoose("cancel")}
-            aria-label="Cancel close"
-          >
-            <X size={16} aria-hidden />
-          </button>
+    <DialogShell
+      open={open}
+      title="Unsaved changes"
+      titleId="close-tab-prompt-title"
+      role="alertdialog"
+      onClose={(): void => onChoose("cancel")}
+      closeAriaLabel="Cancel close"
+      actions={actions}
+      aria-describedby="close-tab-prompt-body"
+      data-close-tab-prompt
+      data-close-prompt
+    >
+      <p id="close-tab-prompt-body" className="modal-help">
+        <strong>{tabTitle}</strong> has unsaved changes. Save before
+        closing to keep your edits, or discard them.
+      </p>
+      {saveError !== null && (
+        <div className="modal-status optimize-error" role="alert" data-close-prompt-error>
+          <span>{saveError}</span>
         </div>
-        <div className="modal-body">
-          <p id="close-tab-prompt-body" className="modal-help">
-            <strong>{tabTitle}</strong> has unsaved changes. Save before
-            closing to keep your edits, or discard them.
-          </p>
-          {saveError !== null && (
-            <div className="modal-status optimize-error" role="alert" data-close-prompt-error>
-              <span>{saveError}</span>
-            </div>
-          )}
-        </div>
-        <div className="modal-footer">
-          <button
-            type="button"
-            className="btn btn-secondary"
-            onClick={(): void => onChoose("cancel")}
-            disabled={saving}
-            data-close-prompt-action="cancel"
-          >
-            Cancel
-          </button>
-          <button
-            type="button"
-            className="btn btn-secondary"
-            onClick={(): void => onChoose("discard")}
-            disabled={saving}
-            data-close-prompt-action="discard"
-          >
-            Don't save
-          </button>
-          <button
-            type="button"
-            className="btn btn-primary"
-            onClick={(): void => onChoose("save")}
-            disabled={saving}
-            data-close-prompt-action="save"
-            data-close-prompt-default
-          >
-            {saving ? "Saving…" : saveAsMode ? "Save As…" : "Save"}
-          </button>
-        </div>
-      </TfDialog>
-        </TfBackdrop>
       )}
-    </AnimatePresence>
+    </DialogShell>
   );
 }

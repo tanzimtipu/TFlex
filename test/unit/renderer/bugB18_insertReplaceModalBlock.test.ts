@@ -65,23 +65,31 @@ const mergeSource = fs.readFileSync(mergePath, "utf8");
 
 describe("B18 — Insert / Replace dialogs are modal-blocked while the OS file picker is open", () => {
   it("MergeDialog backdrop is modal-blocked while picking (regression guard)", () => {
-    expect(mergeSource).toMatch(/useBackdropClose\(onClose,\s*picking\)/);
+    // Phase 92 chunk C1 — MergeDialog adopts DialogShell, which owns the
+    // backdrop close guard. The picking gate is now expressed as the shell's
+    // `blockBackdropClose` prop; the capture-phase Esc-swallow stays local.
+    expect(mergeSource).toMatch(/<DialogShell/);
+    expect(mergeSource).toMatch(/blockBackdropClose=\{picking\}/);
     expect(mergeSource).toMatch(/addEventListener\("keydown",\s*onKey,\s*true\)/);
   });
 
   it("InsertPagesDialog backdrop is modal-blocked while picking AND drag-safe (B3/B6)", () => {
-    // B18: while picking, the backdrop close is a no-op (the hook
-    // is gated on `picking`).
-    expect(insertSource).toMatch(/useBackdropClose\(onClose,\s*picking\)/);
+    // TFL-513-E1 — InsertPagesDialog adopts DialogShell, which owns the
+    // backdrop close guard. The picking gate is now expressed as the shell's
+    // `blockBackdropClose` prop; the capture-phase Esc-swallow stays local.
+    expect(insertSource).toMatch(/<DialogShell/);
+    expect(insertSource).toMatch(/blockBackdropClose=\{picking\}/);
     expect(insertSource).toMatch(/addEventListener\("keydown",\s*onKey,\s*true\)/);
-    // The hook is spread onto the backdrop element itself.
-    expect(insertSource).toMatch(/\{\.\.\.backdrop\}/);
   });
 
   it("ReplacePagesDialog backdrop is modal-blocked while picking AND drag-safe (B3/B6)", () => {
-    expect(replaceSource).toMatch(/useBackdropClose\(onClose,\s*picking\)/);
+    // Phase 92 chunk D1 — ReplacePagesDialog adopts DialogShell, which owns
+    // the backdrop close guard. The picking gate is now expressed as the
+    // shell's `blockBackdropClose` prop; the capture-phase Esc-swallow stays
+    // local (asserted below).
+    expect(replaceSource).toMatch(/<DialogShell/);
+    expect(replaceSource).toMatch(/blockBackdropClose=\{picking\}/);
     expect(replaceSource).toMatch(/addEventListener\("keydown",\s*onKey,\s*true\)/);
-    expect(replaceSource).toMatch(/\{\.\.\.backdrop\}/);
   });
 
   it("the Esc-swallower stops propagation so the picker owns input", () => {

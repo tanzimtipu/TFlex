@@ -32,9 +32,8 @@ import {
   useState,
   type ReactElement,
 } from "react";
-import { useBackdropClose } from "../components/modalBackdrop";
 import { AnimatePresence, motion, useIsPresent } from "motion/react";
-import { TfBackdrop, TfDialog } from "../components/motion/TfMotion";
+import { DialogShell } from "../components/DialogShell";
 import { TfResize, paneSwapFor } from "../components/motion/TfResize";
 import { useLiveReducedMotion, useInstantMotion } from "../hooks/useAnimations";
 import type { SavedSignature, SignatureSource } from "../../shared/types";
@@ -85,29 +84,6 @@ export function SignatureManagerModal(props: SignatureManagerModalProps): ReactE
     setSaved(savedSignatures);
   }, [savedSignatures]);
 
-  // B3/B6 — backdrop close only when the interaction started on the
-  // backdrop (a drag that starts in the Type input / draw canvas
-  // and releases over the backdrop must not dismiss).
-  const backdrop = useBackdropClose(onClose);
-
-  // DEF-171 — Escape closes, same window-keydown wiring as the other
-  // dialogs. Registered on `window` (bubble phase) so it fires even
-  // when focus is inside the draw canvas or the type input (neither
-  // has a keydown handler that stops propagation).
-  useEffect(() => {
-    if (!open) return;
-    const onKey = (e: KeyboardEvent): void => {
-      if (e.key === "Escape") {
-        e.preventDefault();
-        onClose();
-      }
-    };
-    window.addEventListener("keydown", onKey);
-    return (): void => window.removeEventListener("keydown", onKey);
-  }, [open, onClose]);
-
-  
-
   const onPick = (id: string): void => {
     onApply(id);
     onClose();
@@ -120,99 +96,83 @@ export function SignatureManagerModal(props: SignatureManagerModalProps): ReactE
     onSignaturesChanged?.();
   };
 
+  const footer = (
+    <div className="modal-footer">
+      <span className="modal-help-inline">
+        Signatures are saved locally and can be reused on any page.
+      </span>
+      <button type="button" className="btn btn-secondary" onClick={onClose}>
+        Close
+      </button>
+    </div>
+  );
+
   return (
-    <AnimatePresence>
-      {open && (
-        <TfBackdrop className="modal-backdrop" {...backdrop}>
-      <TfDialog
-        className="modal-dialog sig-manager"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="sig-modal-title"
-      >
-        <div className="modal-header">
-          <h2 id="sig-modal-title" className="modal-title">
-            Signature
-          </h2>
-          <button
-            type="button"
-            className="modal-close"
-            onClick={onClose}
-            aria-label="Close dialog"
-          >
-            <span aria-hidden style={{ fontSize: 14 }}>{"\u2715"}</span>
-          </button>
-        </div>
-        <div className="modal-tabs">
-          <TabButton active={tab === "draw"} onClick={(): void => setTab("draw")}>
-            Draw
-          </TabButton>
-          <TabButton active={tab === "type"} onClick={(): void => setTab("type")}>
-            Type
-          </TabButton>
-          <TabButton active={tab === "saved"} onClick={(): void => setTab("saved")}>
-            Saved ({saved.length})
-          </TabButton>
-        </div>
-        <div className="modal-body">
-          <TfResize className="sig-tab-stack" axes="height">
-            <AnimatePresence initial={false}>
-              {tab === "draw" && (
-                <SigTabPane key="draw">
-                  <DrawTab
-                    onToast={onToast}
-                    onSaved={(next): void => {
-                      // DEF-143 — adopt the service's returned list verbatim.
-                      // `save` returns the FULL persisted list (the main
-                      // service appends, the stub prepends), so the Saved tab
-                      // renders exactly what was saved — never a stale
-                      // duplicate of an earlier signature — and the count
-                      // badge stays in sync with the rendered rows.
-                      setSaved(next);
-                      setTab("saved");
-                      // Phase 51 (item 2) — a signature add is an automatic sync trigger.
-                      onSignaturesChanged?.();
-                    }}
-                  />
-                </SigTabPane>
-              )}
-              {tab === "type" && (
-                <SigTabPane key="type">
-                  <TypeTab
-                    onToast={onToast}
-                    onSaved={(next): void => {
-                      setSaved(next);
-                      setTab("saved");
-                      // Phase 51 (item 2) — a signature add is an automatic sync trigger.
-                      onSignaturesChanged?.();
-                    }}
-                  />
-                </SigTabPane>
-              )}
-              {tab === "saved" && (
-                <SigTabPane key="saved">
-                  <SavedTab
-                    saved={saved}
-                    onPick={onPick}
-                    onDelete={onDelete}
-                  />
-                </SigTabPane>
-              )}
-            </AnimatePresence>
-          </TfResize>
-        </div>
-        <div className="modal-footer">
-          <span className="modal-help-inline">
-            Signatures are saved locally and can be reused on any page.
-          </span>
-          <button type="button" className="btn btn-secondary" onClick={onClose}>
-            Close
-          </button>
-        </div>
-        </TfDialog>
-        </TfBackdrop>
-      )}
-    </AnimatePresence>
+    <DialogShell
+      open={open}
+      title="Signature"
+      titleId="sig-modal-title"
+      className="sig-manager"
+      onClose={onClose}
+      footer={footer}
+    >
+      <div className="modal-tabs">
+        <TabButton active={tab === "draw"} onClick={(): void => setTab("draw")}>
+          Draw
+        </TabButton>
+        <TabButton active={tab === "type"} onClick={(): void => setTab("type")}>
+          Type
+        </TabButton>
+        <TabButton active={tab === "saved"} onClick={(): void => setTab("saved")}>
+          Saved ({saved.length})
+        </TabButton>
+      </div>
+      <TfResize className="sig-tab-stack" axes="height">
+        <AnimatePresence initial={false}>
+          {tab === "draw" && (
+            <SigTabPane key="draw">
+              <DrawTab
+                onToast={onToast}
+                onSaved={(next): void => {
+                  // DEF-143 — adopt the service's returned list verbatim.
+                  // `save` returns the FULL persisted list (the main
+                  // service appends, the stub prepends), so the Saved tab
+                  // renders exactly what was saved — never a stale
+                  // duplicate of an earlier signature — and the count
+                  // badge stays in sync with the rendered rows.
+                  setSaved(next);
+                  setTab("saved");
+                  // Phase 51 (item 2) — a signature add is an automatic sync trigger.
+                  onSignaturesChanged?.();
+                }}
+              />
+            </SigTabPane>
+          )}
+          {tab === "type" && (
+            <SigTabPane key="type">
+              <TypeTab
+                onToast={onToast}
+                onSaved={(next): void => {
+                  setSaved(next);
+                  setTab("saved");
+                  // Phase 51 (item 2) — a signature add is an automatic sync trigger.
+                  onSignaturesChanged?.();
+                }}
+              />
+            </SigTabPane>
+          )}
+          {tab === "saved" && (
+            <SigTabPane key="saved">
+              <SavedTab
+                saved={saved}
+                onPick={onPick}
+                onDelete={onDelete}
+              />
+            </SigTabPane>
+          )}
+        </AnimatePresence>
+      </TfResize>
+    </DialogShell>
   );
 }
 

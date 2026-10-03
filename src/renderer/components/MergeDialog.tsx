@@ -1,9 +1,6 @@
 import { useEffect, useRef, useState, type ReactElement } from "react";
-import { X } from "lucide-react";
 import type { MergePosition } from "../engine/types";
-import { useBackdropClose } from "./modalBackdrop";
-import { AnimatePresence } from "motion/react";
-import { TfBackdrop, TfDialog } from "./motion/TfMotion";
+import { DialogShell, type DialogAction } from "./DialogShell";
 
 export interface MergeConfirm {
   otherPath: string;
@@ -59,7 +56,7 @@ export function MergeDialog(props: MergeDialogProps): ReactElement | null {
   const [position, setPosition] = useState<MergePosition>("after");
   const [afterPage, setAfterPage] = useState<number>(1);
   const [picking, setPicking] = useState(false);
-  const dialogRef = useRef<HTMLDivElement | null>(null);
+  const pickButtonRef = useRef<HTMLButtonElement | null>(null);
 
   // Reset every time we re-open so a stale path doesn't sneak in.
   useEffect(() => {
@@ -76,22 +73,14 @@ export function MergeDialog(props: MergeDialogProps): ReactElement | null {
     }
   }, [open, totalPages]);
 
-  // Esc closes; focus first input when opened.
+  // DialogShell owns Esc-to-close and the backdrop drag guard. The shipped
+  // first-control focus is kept here: the pick button (the dialog's primary
+  // affordance) receives focus on open. The Merge action is deliberately NOT
+  // marked `default` because it stays disabled until a file is chosen.
   useEffect(() => {
     if (!open) return;
-    const onKey = (e: KeyboardEvent): void => {
-      if (e.key === "Escape") {
-        e.preventDefault();
-        onClose();
-      }
-    };
-    window.addEventListener("keydown", onKey);
-    const first = dialogRef.current?.querySelector<HTMLElement>(
-      "button, input, [tabindex]",
-    );
-    first?.focus();
-    return () => window.removeEventListener("keydown", onKey);
-  }, [open, onClose]);
+    pickButtonRef.current?.focus();
+  }, [open]);
 
   // B12 — modal blocking while the OS file picker is open. The
   // previous dialog left the backdrop click handler live during
@@ -117,13 +106,6 @@ export function MergeDialog(props: MergeDialogProps): ReactElement | null {
     window.addEventListener("keydown", onKey, true);
     return (): void => window.removeEventListener("keydown", onKey, true);
   }, [picking]);
-
-  // B3/B6 + B12 — backdrop close only when the interaction started
-  // on the backdrop; blocked entirely while the OS file picker is
-  // open (the dialog must stay put until the picker returns).
-  const backdrop = useBackdropClose(onClose, picking);
-
-  
 
   const onPick = async (): Promise<void> => {
     setPicking(true);
@@ -155,41 +137,55 @@ export function MergeDialog(props: MergeDialogProps): ReactElement | null {
   // canonical "append" path uses position "after" instead.
   const canConfirm = chosen !== null && afterPageValid;
 
+  // The Merge action carries the shipped `data-merge-confirm` hook and
+  // stays disabled until a file is chosen; it is NOT the shell `default`
+  // (focus is kept on the pick button via the effect above).
+  const actions: DialogAction[] = [
+    {
+      key: "cancel",
+      label: "Cancel",
+      variant: "secondary",
+      onClick: onClose,
+      disabled: picking,
+    },
+    Object.assign(
+      {
+        key: "confirm",
+        label: "Merge",
+        variant: "primary" as const,
+        onClick: (): void => {
+          if (chosen !== null) {
+            onConfirm({
+              otherPath: chosen.path,
+              otherBytes: chosen.bytes,
+              position,
+              ...(position === "afterPage" ? { afterPage } : {}),
+            });
+          }
+        },
+        disabled: !canConfirm,
+      },
+      { "data-merge-confirm": true },
+    ),
+  ];
+
   return (
-    <AnimatePresence>
-      {open && (
-        <TfBackdrop
-          className="modal-backdrop"
-          {...backdrop}
-          data-picking={picking ? "true" : "false"}
-        >
-      <TfDialog
-        className="modal-dialog dialog merge-dialog modal-dialog-tool"
-        ref={dialogRef}
-        onClick={(e): void => e.stopPropagation()}
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="merge-dialog-title"
-        // aria-busy signals to assistive tech that the dialog is
-        // modal-blocked while the picker is open.
-        aria-busy={picking}
-      >
-        <div className="modal-header">
-          <h2 id="merge-dialog-title" className="modal-title">
-            Merge with another PDF
-          </h2>
-          <button
-            type="button"
-            className="modal-close"
-            onClick={onClose}
-            disabled={picking}
-            aria-label="Close dialog"
-          >
-            <X size={16} aria-hidden />
-          </button>
-        </div>
-        <div className="modal-body">
-          <p className="modal-help">
+    <DialogShell
+      open={open}
+      title="Merge with another PDF"
+      titleId="merge-dialog-title"
+      size="tool"
+      className="merge-dialog"
+      onClose={onClose}
+      blockBackdropClose={picking}
+      closeDisabled={picking}
+      actions={actions}
+      // data-picking and aria-busy signal the modal-block state while
+      // the OS picker is open.
+      data-picking={picking ? "true" : "false"}
+      aria-busy={picking}
+    >
+      <p className="modal-help">
             Pick a PDF to combine with <strong>{sourceName}</strong>. Pages from
             the chosen file are inserted before, after, or at a chosen page of
             the current document.
@@ -203,6 +199,7 @@ export function MergeDialog(props: MergeDialogProps): ReactElement | null {
               }}
               disabled={picking}
               data-merge-pick
+              ref={pickButtonRef}
             >
               {picking ? "Picking…" : chosen === null ? "Choose PDF…" : "Change…"}
             </button>
@@ -279,38 +276,6 @@ export function MergeDialog(props: MergeDialogProps): ReactElement | null {
               </label>
             )}
           </fieldset>
-        </div>
-        <div className="modal-footer">
-          <button
-            type="button"
-            className="btn btn-secondary"
-            onClick={onClose}
-            disabled={picking}
-          >
-            Cancel
-          </button>
-          <button
-            type="button"
-            className="btn btn-primary"
-            disabled={!canConfirm}
-            onClick={(): void => {
-              if (chosen !== null) {
-                onConfirm({
-                  otherPath: chosen.path,
-                  otherBytes: chosen.bytes,
-                  position,
-                  ...(position === "afterPage" ? { afterPage } : {}),
-                });
-              }
-            }}
-            data-merge-confirm
-          >
-            Merge
-          </button>
-        </div>
-      </TfDialog>
-        </TfBackdrop>
-      )}
-    </AnimatePresence>
+    </DialogShell>
   );
 }

@@ -32,9 +32,8 @@
 
 import { useEffect, useRef, useState, type ReactElement } from "react";
 import { ClipboardPaste, X } from "lucide-react";
-import { useBackdropClose } from "./modalBackdrop";
-import { AnimatePresence } from "motion/react";
-import { TfBackdrop, TfDialog } from "./motion/TfMotion";
+import { Icon } from "../icons/Icon";
+import { DialogShell } from "./DialogShell";
 import {
   DEFAULT_CREATE_IMAGE_QUALITY,
   clampCreateImageQuality,
@@ -200,7 +199,6 @@ export function CreateFromImagesDialog(
   const [picking, setPicking] = useState(false);
   const [clipboardBusy, setClipboardBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const dialogRef = useRef<HTMLDivElement | null>(null);
 
   // Reset every time we re-open so a stale file list doesn't sneak in.
   useEffect(() => {
@@ -211,23 +209,6 @@ export function CreateFromImagesDialog(
     setPicking(false);
     clipboardCountRef.current = 0;
   }, [open, initialQuality]);
-
-  // Esc closes; focus first interactive control on open.
-  useEffect(() => {
-    if (!open) return;
-    const onKey = (e: KeyboardEvent): void => {
-      if (e.key === "Escape") {
-        e.preventDefault();
-        onClose();
-      }
-    };
-    window.addEventListener("keydown", onKey);
-    const first = dialogRef.current?.querySelector<HTMLElement>(
-      "button, input, [tabindex]",
-    );
-    first?.focus();
-    return (): void => window.removeEventListener("keydown", onKey);
-  }, [open, onClose]);
 
   // Convert back to fraction for the engine call. The engine's
   // expected quality is the fraction (0..1) so the wire shape
@@ -337,13 +318,6 @@ export function CreateFromImagesDialog(
     }
   };
 
-  // B3/B6 — backdrop close only when the interaction started on the
-  // backdrop (a drag from the file-picker / clipboard button must
-  // not dismiss).
-  const backdrop = useBackdropClose(onClose);
-
-  
-
   // Surface every quality change as the fraction (0..1) so the
   // host's preferences reducer + persist pipeline can write the
   // canonical wire value to disk. The fraction survives the
@@ -355,35 +329,30 @@ export function CreateFromImagesDialog(
   };
 
   return (
-    <AnimatePresence>
-      {open && (
-        <TfBackdrop
-          className="modal-backdrop"
-          {...backdrop}
-          data-create-from-images-dialog
-        >
-      <TfDialog
-        className="modal-dialog dialog"
-        ref={dialogRef}
-        onClick={(e): void => e.stopPropagation()}
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="create-images-dialog-title"
-      >
-        <div className="modal-header">
-          <h2 id="create-images-dialog-title" className="modal-title">
-            Create PDF from images
-          </h2>
-          <button
-            type="button"
-            className="modal-close"
-            onClick={onClose}
-            aria-label="Close dialog"
-          >
-            <X size={16} aria-hidden />
-          </button>
-        </div>
-        <div className="modal-body">
+    <DialogShell
+      open={open}
+      title="Create PDF from images"
+      titleId="create-images-dialog-title"
+      onClose={onClose}
+      className="create-images-dialog"
+      data-create-from-images-dialog
+      actions={[
+        { key: "cancel", label: "Cancel", variant: "secondary", onClick: onClose },
+        Object.assign(
+          {
+            key: "create",
+            label: "Create PDF",
+            variant: "primary" as const,
+            onClick: (): void => {
+              if (valid) onConfirm({ files, quality: qualityFraction });
+            },
+            disabled: !valid,
+            default: true,
+          },
+          { "data-create-confirm": true },
+        ),
+      ]}
+    >
           <p className="modal-help">
             Pick one or more JPEG or PNG images, or paste one from the
             clipboard. Each image becomes a page in the new PDF, in the
@@ -413,7 +382,7 @@ export function CreateFromImagesDialog(
                 title="Insert the image currently on the OS clipboard"
                 data-create-from-clipboard
               >
-                <ClipboardPaste size={16} aria-hidden />
+                <Icon icon={ClipboardPaste} size="sm" />
                 {clipboardBusy ? "Reading…" : "Create from clipboard"}
               </button>
             )}
@@ -447,13 +416,13 @@ export function CreateFromImagesDialog(
                   </span>
                   <button
                     type="button"
-                    className="create-image-remove"
+                    className="btn btn-ghost btn-icon create-image-remove"
                     onClick={(): void => removeAt(idx)}
                     aria-label={`Remove ${f.name}`}
                     title="Remove"
                     data-create-remove={idx}
                   >
-                    <X size={16} aria-hidden />
+                    <Icon icon={X} size="sm" />
                   </button>
                 </li>
               ))}
@@ -499,26 +468,6 @@ export function CreateFromImagesDialog(
               <span>{error}</span>
             </div>
           )}
-        </div>
-        <div className="modal-footer">
-          <button type="button" className="btn btn-secondary" onClick={onClose}>
-            Cancel
-          </button>
-          <button
-            type="button"
-            className="btn btn-primary"
-            disabled={!valid}
-            onClick={(): void => {
-              if (valid) onConfirm({ files, quality: qualityFraction });
-            }}
-            data-create-confirm
-          >
-            Create PDF
-          </button>
-        </div>
-      </TfDialog>
-        </TfBackdrop>
-      )}
-    </AnimatePresence>
+    </DialogShell>
   );
 }

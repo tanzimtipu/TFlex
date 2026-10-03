@@ -11,11 +11,8 @@
 // are kept in a working copy so cancel doesn't leak partial
 // changes to the host.
 
-import { useEffect, useRef, useState, type ReactElement } from "react";
-import { X } from "lucide-react";
-import { useBackdropClose } from "./modalBackdrop";
-import { AnimatePresence } from "motion/react";
-import { TfBackdrop, TfDialog } from "./motion/TfMotion";
+import { useEffect, useState, type ReactElement } from "react";
+import { DialogShell, type DialogAction } from "./DialogShell";
 
 export interface RenumberPagesConfirm {
   /** One label per page, in 1-based visible order. An empty string
@@ -42,7 +39,6 @@ export function RenumberPagesDialog(
     Array.from({ length: totalPages }, () => ""),
   );
   const [error, setError] = useState<string | null>(null);
-  const dialogRef = useRef<HTMLDivElement | null>(null);
 
   // Reset every time we re-open so stale state from a previous open
   // doesn't leak in. Seed labels with the existing per-page overrides.
@@ -57,28 +53,6 @@ export function RenumberPagesDialog(
     setLabels(seeded);
     setError(null);
   }, [open, totalPages, initialLabels]);
-
-  useEffect(() => {
-    if (!open) return;
-    const onKey = (e: KeyboardEvent): void => {
-      if (e.key === "Escape") {
-        e.preventDefault();
-        onClose();
-      }
-    };
-    window.addEventListener("keydown", onKey);
-    const first = dialogRef.current?.querySelector<HTMLElement>(
-      "button, input, [tabindex]",
-    );
-    first?.focus();
-    return (): void => window.removeEventListener("keydown", onKey);
-  }, [open, onClose]);
-
-  // B3/B6 — backdrop close only when the interaction started on the
-  // backdrop (a drag from a page-label input must not dismiss).
-  const backdrop = useBackdropClose(onClose);
-
-  
 
   const onConfirmClick = (): void => {
     // Build the payload: one entry per non-empty label. Empty labels
@@ -108,37 +82,37 @@ export function RenumberPagesDialog(
     });
   };
 
+  const actions: DialogAction[] = [
+    {
+      key: "cancel",
+      label: "Cancel",
+      variant: "secondary",
+      onClick: onClose,
+    },
+    Object.assign(
+      {
+        key: "confirm",
+        label: "Apply labels",
+        variant: "primary" as const,
+        onClick: onConfirmClick,
+        default: true,
+      },
+      { "data-renumber-confirm": true },
+    ),
+  ];
+
   return (
-    <AnimatePresence>
-      {open && (
-        <TfBackdrop
-          className="modal-backdrop"
-          {...backdrop}
-          data-renumber-pages-dialog
-        >
-      <TfDialog
-        className="modal-dialog modal-dialog-wide dialog modal-dialog-tool"
-        ref={dialogRef}
-        onClick={(e): void => e.stopPropagation()}
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="renumber-pages-dialog-title"
-      >
-        <div className="modal-header">
-          <h2 id="renumber-pages-dialog-title" className="modal-title">
-            Rename pages
-          </h2>
-          <button
-            type="button"
-            className="modal-close"
-            onClick={onClose}
-            aria-label="Close dialog"
-          >
-            <X size={16} aria-hidden />
-          </button>
-        </div>
-        <div className="modal-body">
-          <p className="modal-help">
+    <DialogShell
+      open={open}
+      title="Rename pages"
+      titleId="renumber-pages-dialog-title"
+      size="tool"
+      className="modal-dialog-wide"
+      onClose={onClose}
+      actions={actions}
+      data-renumber-pages-dialog
+    >
+      <p className="modal-help">
             Set a logical label for any page. The viewer (and the page
             indicator in this app) shows the label instead of the raw page
             number when a label is set. Leave the field blank to keep the
@@ -169,23 +143,6 @@ export function RenumberPagesDialog(
               <span>{error}</span>
             </div>
           )}
-        </div>
-        <div className="modal-footer">
-          <button type="button" className="btn btn-secondary" onClick={onClose}>
-            Cancel
-          </button>
-          <button
-            type="button"
-            className="btn btn-primary"
-            onClick={onConfirmClick}
-            data-renumber-confirm
-          >
-            Apply labels
-          </button>
-        </div>
-      </TfDialog>
-        </TfBackdrop>
-      )}
-    </AnimatePresence>
+    </DialogShell>
   );
 }

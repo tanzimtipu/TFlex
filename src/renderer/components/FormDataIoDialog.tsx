@@ -11,13 +11,11 @@
 // backdrop-close guard, Escape handling). FDF/XFDF here carries FORM DATA,
 // distinct from the Phase-12 comment FDF verbs.
 
-import { useEffect, useRef, useState, type ReactElement } from "react";
-import { AnimatePresence } from "motion/react";
-import { FileDown, Upload, X } from "lucide-react";
+import { useEffect, useState, type ReactElement } from "react";
+import { FileDown, Upload } from "lucide-react";
 import { Icon } from "../icons/Icon";
 import type { FormDataImportReport } from "../../shared/types";
-import { useBackdropClose } from "./modalBackdrop";
-import { TfBackdrop, TfDialog } from "./motion/TfMotion";
+import { DialogShell, type DialogAction } from "./DialogShell";
 
 export type FormDataFormat = "fdf" | "xfdf";
 
@@ -127,7 +125,6 @@ export function FormDataIoDialog(
   const [error, setError] = useState<string | null>(null);
   const [exported, setExported] = useState<{ path: string; count: number } | null>(null);
   const [report, setReport] = useState<FormDataImportReport | null>(null);
-  const dialogRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     if (!open) return;
@@ -138,25 +135,6 @@ export function FormDataIoDialog(
     setExported(null);
     setReport(null);
   }, [open]);
-
-  useEffect(() => {
-    if (!open) return;
-    const onKey = (e: KeyboardEvent): void => {
-      if (e.key === "Escape") {
-        e.preventDefault();
-        onClose();
-      }
-    };
-    window.addEventListener("keydown", onKey);
-    const first = dialogRef.current?.querySelector<HTMLElement>(
-      "button, input, [tabindex]",
-    );
-    first?.focus();
-    return (): void => window.removeEventListener("keydown", onKey);
-  }, [open, onClose]);
-
-  // Backdrop close only when the interaction started on the backdrop.
-  const backdrop = useBackdropClose(onClose, running);
 
   const onPick = async (): Promise<void> => {
     setError(null);
@@ -218,163 +196,142 @@ export function FormDataIoDialog(
 
   const title = mode === "export" ? "Export form data" : "Import form data";
 
+  const closeAction: DialogAction = {
+    key: "close",
+    label: "Close",
+    variant: "secondary",
+    onClick: onClose,
+    testId: "form-data-close",
+  };
+
+  const actions: DialogAction[] =
+    mode === "export"
+      ? [
+          closeAction,
+          {
+            key: "export",
+            label: running ? "Exporting…" : "Export form data",
+            variant: "primary",
+            icon: <Icon icon={FileDown} size="sm" />,
+            onClick: (): void => {
+              void onRunExport();
+            },
+            disabled: running,
+            default: true,
+            testId: "form-data-export-run",
+          },
+        ]
+      : [
+          closeAction,
+          {
+            key: "import",
+            label: running ? "Importing…" : "Import form data",
+            variant: "primary",
+            icon: <Icon icon={Upload} size="sm" />,
+            onClick: (): void => {
+              void onRunImport();
+            },
+            disabled: running || path === null,
+            default: true,
+            testId: "form-data-import-run",
+          },
+        ];
+
   return (
-    <AnimatePresence>
-      {open && (
-        <TfBackdrop
-          className="modal-backdrop"
-          {...backdrop}
-          data-form-data-dialog
+    <DialogShell
+      open={open}
+      title={title}
+      titleId="form-data-dialog-title"
+      onClose={onClose}
+      blockBackdropClose={running}
+      actions={actions}
+      data-form-data-dialog
+    >
+      <p className="modal-help">
+        {mode === "export"
+          ? "Save the active document\u2019s form field values to a data file. The document itself is not changed."
+          : "Apply field values from a data file to the active document. Each name is matched to an existing form field; a name that does not match is reported, never created."}
+      </p>
+
+      <div
+        className="form-data-format"
+        role="group"
+        aria-label="Form-data format"
+      >
+        <button
+          type="button"
+          className={
+            format === "xfdf"
+              ? "btn btn-primary form-data-format-btn"
+              : "btn btn-secondary form-data-format-btn"
+          }
+          aria-pressed={format === "xfdf"}
+          onClick={(): void => setFormat("xfdf")}
+          data-testid="form-data-format-xfdf"
         >
-          <TfDialog
-            className="modal-dialog dialog"
-            ref={dialogRef}
-            onClick={(e): void => e.stopPropagation()}
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="form-data-dialog-title"
+          XFDF
+        </button>
+        <button
+          type="button"
+          className={
+            format === "fdf"
+              ? "btn btn-primary form-data-format-btn"
+              : "btn btn-secondary form-data-format-btn"
+          }
+          aria-pressed={format === "fdf"}
+          onClick={(): void => setFormat("fdf")}
+          data-testid="form-data-format-fdf"
+        >
+          FDF
+        </button>
+      </div>
+
+      {mode === "import" && (
+        <div className="modal-status form-data-file">
+          <button
+            type="button"
+            className="btn btn-secondary"
+            disabled={running}
+            onClick={(): void => {
+              void onPick();
+            }}
+            data-testid="form-data-import-pick"
           >
-            <div className="modal-header">
-              <h2 id="form-data-dialog-title" className="modal-title">
-                {title}
-              </h2>
-              <button
-                type="button"
-                className="btn btn-ghost btn-icon modal-close"
-                onClick={onClose}
-                aria-label="Close dialog"
-                title="Close dialog"
-              >
-                <Icon icon={X} size="sm" />
-              </button>
-            </div>
-            <div className="modal-body">
-              <p className="modal-help">
-                {mode === "export"
-                  ? "Save the active document\u2019s form field values to a data file. The document itself is not changed."
-                  : "Apply field values from a data file to the active document. Each name is matched to an existing form field; a name that does not match is reported, never created."}
-              </p>
-
-              <div
-                className="form-data-format"
-                role="group"
-                aria-label="Form-data format"
-              >
-                <button
-                  type="button"
-                  className={
-                    format === "xfdf"
-                      ? "btn btn-primary form-data-format-btn"
-                      : "btn btn-secondary form-data-format-btn"
-                  }
-                  aria-pressed={format === "xfdf"}
-                  onClick={(): void => setFormat("xfdf")}
-                  data-testid="form-data-format-xfdf"
-                >
-                  XFDF
-                </button>
-                <button
-                  type="button"
-                  className={
-                    format === "fdf"
-                      ? "btn btn-primary form-data-format-btn"
-                      : "btn btn-secondary form-data-format-btn"
-                  }
-                  aria-pressed={format === "fdf"}
-                  onClick={(): void => setFormat("fdf")}
-                  data-testid="form-data-format-fdf"
-                >
-                  FDF
-                </button>
-              </div>
-
-              {mode === "import" && (
-                <div className="modal-status form-data-file">
-                  <button
-                    type="button"
-                    className="btn btn-secondary"
-                    disabled={running}
-                    onClick={(): void => {
-                      void onPick();
-                    }}
-                    data-testid="form-data-import-pick"
-                  >
-                  <Icon icon={Upload} size="sm" />
-                    Choose form-data file{"\u2026"}
-                  </button>
-                  {path !== null && (
-                    <span
-                      className="form-data-file-name"
-                      data-form-data-file
-                      title={path}
-                    >
-                      {path}
-                    </span>
-                  )}
-                </div>
-              )}
-
-              {error !== null && (
-                <div
-                  className="modal-status optimize-error"
-                  role="alert"
-                  data-form-data-error
-                >
-                  <span>{error}</span>
-                </div>
-              )}
-
-              {exported !== null && (
-                <div className="form-data-export-result" data-form-data-export-result>
-                  <p className="form-data-exported" data-form-data-exported>
-                    {exported.count} field{exported.count === 1 ? "" : "s"} exported to{" "}
-                    <span title={exported.path}>{exported.path}</span>.
-                  </p>
-                </div>
-              )}
-
-              {report !== null && <FormDataImportResult report={report} />}
-            </div>
-            <div className="modal-footer">
-              <button
-                type="button"
-                className="btn btn-secondary"
-                onClick={onClose}
-                data-testid="form-data-close"
-              >
-                Close
-              </button>
-              {mode === "export" ? (
-                <button
-                  type="button"
-                  className="btn btn-primary"
-                  disabled={running}
-                  onClick={(): void => {
-                    void onRunExport();
-                  }}
-                  data-testid="form-data-export-run"
-                >
-                  <Icon icon={FileDown} size="sm" />
-                  {running ? "Exporting\u2026" : "Export form data"}
-                </button>
-              ) : (
-                <button
-                  type="button"
-                  className="btn btn-primary"
-                  disabled={running || path === null}
-                  onClick={(): void => {
-                    void onRunImport();
-                  }}
-                  data-testid="form-data-import-run"
-                >
-                  <Icon icon={Upload} size="sm" />
-                  {running ? "Importing\u2026" : `Import form data`}
-                </button>
-              )}
-            </div>
-          </TfDialog>
-        </TfBackdrop>
+          <Icon icon={Upload} size="sm" />
+            Choose form-data file{"\u2026"}
+          </button>
+          {path !== null && (
+            <span
+              className="form-data-file-name"
+              data-form-data-file
+              title={path}
+            >
+              {path}
+            </span>
+          )}
+        </div>
       )}
-    </AnimatePresence>
+
+      {error !== null && (
+        <div
+          className="modal-status optimize-error"
+          role="alert"
+          data-form-data-error
+        >
+          <span>{error}</span>
+        </div>
+      )}
+
+      {exported !== null && (
+        <div className="form-data-export-result" data-form-data-export-result>
+          <p className="form-data-exported" data-form-data-exported>
+            {exported.count} field{exported.count === 1 ? "" : "s"} exported to{" "}
+            <span title={exported.path}>{exported.path}</span>.
+          </p>
+        </div>
+      )}
+
+      {report !== null && <FormDataImportResult report={report} />}
+    </DialogShell>
   );
 }

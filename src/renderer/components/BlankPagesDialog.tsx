@@ -5,14 +5,10 @@
 // scan controls, the candidate list and the report, and reports the user's
 // choices through its callbacks. Nothing here talks to the engine.
 
-import { useEffect, useMemo, useRef, useState, type ReactElement } from "react";
-import { AnimatePresence } from "motion/react";
-import { X } from "lucide-react";
-import { Icon } from "../icons/Icon";
+import { useEffect, useMemo, useState, type ReactElement } from "react";
 import { classifyPages } from "../../shared/blankPages";
 import type { BlankPageMeasurement } from "../../shared/types";
-import { useBackdropClose } from "./modalBackdrop";
-import { TfBackdrop, TfDialog } from "./motion/TfMotion";
+import { DialogShell, type DialogAction } from "./DialogShell";
 
 export interface BlankPagesDialogProps {
   open: boolean;
@@ -47,7 +43,6 @@ export function BlankPagesDialog(
     onConfirm,
     onClose,
   } = props;
-  const dialogRef = useRef<HTMLDivElement | null>(null);
 
   const { candidates, unclassified } = useMemo(
     () => classifyPages(measurements ?? [], threshold),
@@ -106,28 +101,6 @@ export function BlankPagesDialog(
     });
   };
 
-  // Esc closes. Registered on the rising edge of `open` only, mirroring
-  // DeletePageDialog (B13) so a re-render cannot steal focus mid-typing.
-  useEffect(() => {
-    if (!open) return;
-    const onKey = (e: KeyboardEvent): void => {
-      if (e.key === "Escape") {
-        e.preventDefault();
-        onClose();
-      }
-    };
-    window.addEventListener("keydown", onKey);
-    queueMicrotask((): void => {
-      const first = dialogRef.current?.querySelector<HTMLElement>(
-        "button, input, [tabindex]",
-      );
-      first?.focus();
-    });
-    return (): void => window.removeEventListener("keydown", onKey);
-  }, [open, onClose]);
-
-  const backdrop = useBackdropClose(onClose);
-
   const onConfirmClick = (): void => {
     onConfirm([...effectiveChecked].sort((a, b) => a - b));
   };
@@ -140,37 +113,35 @@ export function BlankPagesDialog(
         ? "No blank pages found."
         : `${candidates.length} candidate pages, ${unclassified.length} unclassified`;
 
+  const actions: DialogAction[] = [
+    {
+      key: "close",
+      label: "Close",
+      variant: "secondary",
+      onClick: onClose,
+    },
+    Object.assign(
+      {
+        key: "remove",
+        label: `Remove ${effectiveChecked.size} selected`,
+        variant: "danger" as const,
+        onClick: onConfirmClick,
+        disabled: running || effectiveChecked.size === 0,
+        default: true,
+      },
+      { "data-blank-scan-confirm": true },
+    ),
+  ];
+
   return (
-    <AnimatePresence>
-      {open && (
-        <TfBackdrop
-          className="modal-backdrop"
-          {...backdrop}
-          data-blank-pages-dialog
-        >
-          <TfDialog
-            className="modal-dialog dialog"
-            ref={dialogRef}
-            onClick={(e): void => e.stopPropagation()}
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="blank-pages-dialog-title"
-          >
-            <div className="modal-header">
-              <h2 id="blank-pages-dialog-title" className="modal-title">
-                Remove blank pages
-              </h2>
-              <button
-                type="button"
-                className="btn btn-ghost btn-icon modal-close"
-                onClick={onClose}
-                aria-label="Close dialog"
-                title="Close dialog"
-              >
-                <Icon icon={X} size="sm" />
-              </button>
-            </div>
-            <div className="modal-body">
+    <DialogShell
+      open={open}
+      title="Remove blank pages"
+      titleId="blank-pages-dialog-title"
+      onClose={onClose}
+      actions={actions}
+      data-blank-pages-dialog
+    >
               <p className="modal-help">
                 Scan every page for a near-empty ink coverage, review the
                 candidates, then remove the ones you select. Removals are
@@ -260,24 +231,6 @@ export function BlankPagesDialog(
                     ))}
                 </div>
               )}
-            </div>
-            <div className="modal-footer">
-              <button type="button" className="btn btn-secondary" onClick={onClose}>
-                Close
-              </button>
-              <button
-                type="button"
-                className="btn btn-danger"
-                data-blank-scan-confirm
-                onClick={onConfirmClick}
-                disabled={running || effectiveChecked.size === 0}
-              >
-                Remove {effectiveChecked.size} selected
-              </button>
-            </div>
-          </TfDialog>
-        </TfBackdrop>
-      )}
-    </AnimatePresence>
+    </DialogShell>
   );
 }

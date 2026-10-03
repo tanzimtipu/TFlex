@@ -30,7 +30,7 @@
 // the document the user is looking at.
 
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactElement } from "react";
-import { X } from "lucide-react";
+import { DialogShell, type DialogAction } from "./DialogShell";
 import {
   DEFAULT_OCR_DOWNSAMPLE,
   DEFAULT_OCR_LANGUAGE,
@@ -40,9 +40,6 @@ import {
   clampOcrDownsample,
 } from "../state/preferences";
 import { rasterizePagesForOcr, type OcrRasterizeFormField } from "../pdf/ocrRasterize";
-import { useBackdropClose } from "./modalBackdrop";
-import { AnimatePresence } from "motion/react";
-import { TfBackdrop, TfDialog } from "./motion/TfMotion";
 import type {
   OcrLanguage,
   OcrPageImage,
@@ -190,7 +187,6 @@ export function OcrDialog(props: OcrDialogProps): ReactElement | null {
    *  pages and every post-await result is discarded) and shows a truthful
    *  "Cancelled" notice so the next Run starts from a clean state. */
   const [cancelled, setCancelled] = useState(false);
-  const dialogRef = useRef<HTMLDivElement | null>(null);
   const abortRef = useRef<AbortController | null>(null);
   const progressUnsubRef = useRef<(() => void) | null>(null);
 
@@ -260,52 +256,10 @@ export function OcrDialog(props: OcrDialogProps): ReactElement | null {
     };
   }, [open, running, subscribeOcrProgress]);
 
-  // Esc closes; focus the first interactive control ONLY on open.
-  // B13 — the previous implementation also depended on `running`,
-  // so a long-running OCR's progress update flipped the dep and
-  // the effect re-ran `first?.focus()`, stealing focus from the
-  // user mid-interaction. Worse, the focus selector matched the
-  // first `input, button, [tabindex]` — the language `<select>` is
-  // itself an `input`, so a fresh focus call while the user was
-  // hovering over a different `<select>` (e.g. page-scope)
-  // shifted focus to the language dropdown and dismissed the
-  // popup the user was actively engaging with. We now only run
-  // the focus call when `open` flips true (and only on the rising
-  // edge — not when it goes false), so a state change deep inside
-  // the dialog never steals focus.
-  const focusedOnceRef = useRef<boolean>(false);
-  useEffect(() => {
-    if (!open) {
-      focusedOnceRef.current = false;
-      return;
-    }
-    if (focusedOnceRef.current) return;
-    focusedOnceRef.current = true;
-    const onKey = (e: KeyboardEvent): void => {
-      if (e.key === 'Escape') {
-        e.preventDefault();
-        if (running) {
-          cancelRun();
-        } else {
-          onClose();
-        }
-      }
-    };
-    window.addEventListener('keydown', onKey);
-    // Defer the focus call to the next microtask so React has
-    // finished its commit phase. Without this, a synchronous
-    // focus() inside the effect races with the parent click event
-    // that opened the dialog, and the focus can land on the wrong
-    // element (especially if the opening click landed on a button
-    // that just transitioned to disabled state).
-    queueMicrotask((): void => {
-      const first = dialogRef.current?.querySelector<HTMLElement>(
-        'input, button, [tabindex]',
-      );
-      first?.focus();
-    });
-    return () => window.removeEventListener('keydown', onKey);
-  }, [open, onClose, running, cancelRun]);
+  // Esc-to-close, the backdrop drag guard and initial focus are owned by
+  // DialogShell. `onClose` on the shell is `running ? cancelRun : onClose`,
+  // so Esc and the header X CANCEL an active run (the shipped rule); the
+  // backdrop stays inert while running.
 
   // Tear down the abort controller + progress subscription when
   // the dialog closes (defensive — the run-finished effect below
@@ -340,12 +294,6 @@ export function OcrDialog(props: OcrDialogProps): ReactElement | null {
     }
     return true;
   }, [open, running, totalPages, scope, currentPage, language, downsample]);
-
-  // B3/B6 — backdrop close only when the interaction started on the
-  // backdrop; blocked entirely while OCR is running.
-  const backdrop = useBackdropClose(onClose, running);
-
-  
 
   const onConfirmClick = async (): Promise<void> => {
     if (!valid) return;
@@ -473,193 +421,179 @@ export function OcrDialog(props: OcrDialogProps): ReactElement | null {
     : 0;
   const progressPercent = Math.round(progressFraction * 100);
 
+  // The exit action swaps label/hook with the running gate; the primary
+  // Recognize action carries the shipped `data-ocr-confirm` hook.
+  const actions: DialogAction[] = [
+    running
+      ? Object.assign(
+          {
+            key: 'cancel',
+            label: 'Cancel',
+            variant: 'secondary' as const,
+            onClick: cancelRun,
+          },
+          { 'data-ocr-cancel': true },
+        )
+      : Object.assign(
+          {
+            key: 'close',
+            label: 'Close',
+            variant: 'secondary' as const,
+            onClick: onClose,
+          },
+          { 'data-ocr-close': true },
+        ),
+    Object.assign(
+      {
+        key: 'confirm',
+        label: running ? 'Running…' : 'Recognize text',
+        variant: 'primary' as const,
+        onClick: (): void => {
+          void onConfirmClick();
+        },
+        disabled: !valid,
+        default: true,
+      },
+      { 'data-ocr-confirm': true },
+    ),
+  ];
+
   return (
-    <AnimatePresence>
-      {open && (
-        <TfBackdrop className="modal-backdrop" {...backdrop}>
-      <TfDialog
-        className="modal-dialog dialog ocr-dialog modal-dialog-tool"
-        ref={dialogRef}
-        onClick={(e): void => e.stopPropagation()}
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="ocr-dialog-title"
-      >
-        <div className="modal-header">
-          <h2 id="ocr-dialog-title" className="modal-title">
-            Recognize text (OCR)
-          </h2>
-          <button
-            type="button"
-            className="modal-close"
-            onClick={running ? cancelRun : onClose}
-            aria-label={running ? 'Cancel OCR' : 'Close dialog'}
-            title={running ? 'Cancel OCR' : 'Close'}
-          >
-            <X size={16} aria-hidden />
-          </button>
-        </div>
-        <div className="modal-body">
-          <p className="modal-help">
-            Adds a searchable text layer to this scanned document so search
-            and copy-text work as on a normal PDF. The original page image
-            stays untouched.
-          </p>
+    <DialogShell
+      open={open}
+      title="Recognize text (OCR)"
+      titleId="ocr-dialog-title"
+      size="tool"
+      className="ocr-dialog"
+      onClose={running ? cancelRun : onClose}
+      closeAriaLabel={running ? "Cancel OCR" : "Close dialog"}
+      blockBackdropClose={running}
+      actions={actions}
+    >
+      <p className="modal-help">
+        Adds a searchable text layer to this scanned document so search
+        and copy-text work as on a normal PDF. The original page image
+        stays untouched.
+      </p>
 
-          <label className="modal-field">
-            <span>Language</span>
-            <select
-              className="modal-input"
-              value={language}
-              onChange={(e): void => {
-                const next = e.target.value as OcrLanguage;
-                if (OCR_LANGUAGES.includes(next)) {
-                  setLanguage(next);
-                  onLanguageChange?.(next);
-                }
-              }}
-              disabled={running}
-              data-ocr-language
-              aria-label="OCR language"
-            >
-              {OCR_LANGUAGES.map((code) => (
-                <option key={code} value={code}>
-                  {OCR_LANGUAGE_LABELS[code]} ({code})
-                </option>
-              ))}
-            </select>
-            <span className="modal-hint">
-              Only <code>eng</code> is bundled by default; other languages
-              require their traineddata file in <code>assets/tessdata/</code>.
+      <label className="modal-field">
+        <span>Language</span>
+        <select
+          className="modal-input"
+          value={language}
+          onChange={(e): void => {
+            const next = e.target.value as OcrLanguage;
+            if (OCR_LANGUAGES.includes(next)) {
+              setLanguage(next);
+              onLanguageChange?.(next);
+            }
+          }}
+          disabled={running}
+          data-ocr-language
+          aria-label="OCR language"
+        >
+          {OCR_LANGUAGES.map((code) => (
+            <option key={code} value={code}>
+              {OCR_LANGUAGE_LABELS[code]} ({code})
+            </option>
+          ))}
+        </select>
+        <span className="modal-hint">
+          Only <code>eng</code> is bundled by default; other languages
+          require their traineddata file in <code>assets/tessdata/</code>.
+        </span>
+      </label>
+
+      <label className="modal-field">
+        <span>Render DPI ({downsample})</span>
+        <input
+          type="range"
+          min={MIN_OCR_DOWNSAMPLE}
+          max={MAX_OCR_DOWNSAMPLE}
+          step={1}
+          value={downsample}
+          onChange={(e): void => {
+            const next = Number.parseInt(e.target.value, 10);
+            if (Number.isFinite(next)) {
+              setDownsample(clampOcrDownsample(next));
+            }
+          }}
+          onMouseUp={(): void => onDownsampleChange?.(downsample)}
+          onTouchEnd={(): void => onDownsampleChange?.(downsample)}
+          disabled={running}
+          data-ocr-dpi
+          aria-label="OCR render DPI"
+          className="modal-range"
+        />
+        <span className="modal-hint">
+          {MIN_OCR_DOWNSAMPLE} (screen) to {MAX_OCR_DOWNSAMPLE} (print).
+          Higher DPI improves accuracy at the cost of slower recognition.
+        </span>
+      </label>
+
+      <fieldset className="modal-position ocr-scope">
+        <legend>Scope</legend>
+        <label>
+          <input
+            type="radio"
+            name="ocr-scope"
+            checked={scope === 'currentPage'}
+            onChange={(): void => setScope('currentPage')}
+            disabled={running}
+            data-ocr-scope="currentPage"
+          />
+          <span>Current page ({currentPage})</span>
+        </label>
+        <label>
+          <input
+            type="radio"
+            name="ocr-scope"
+            checked={scope === 'allPages'}
+            onChange={(): void => setScope('allPages')}
+            disabled={running}
+            data-ocr-scope="allPages"
+          />
+          <span>All pages ({totalPages})</span>
+        </label>
+      </fieldset>
+
+      {running && (
+        <div className="modal-status ocr-progress" aria-live="polite" data-ocr-progress>
+          <div className="ocr-progress-header">
+            <span>
+              {progress.phase === 'writing'
+                ? 'Writing text layer…'
+                : 'Recognizing…'}
+              {progress.currentPage !== null && (
+                <> page {progress.currentPage} of {progress.total}</>
+              )}
             </span>
-          </label>
-
-          <label className="modal-field">
-            <span>Render DPI ({downsample})</span>
-            <input
-              type="range"
-              min={MIN_OCR_DOWNSAMPLE}
-              max={MAX_OCR_DOWNSAMPLE}
-              step={1}
-              value={downsample}
-              onChange={(e): void => {
-                const next = Number.parseInt(e.target.value, 10);
-                if (Number.isFinite(next)) {
-                  setDownsample(clampOcrDownsample(next));
-                }
-              }}
-              onMouseUp={(): void => onDownsampleChange?.(downsample)}
-              onTouchEnd={(): void => onDownsampleChange?.(downsample)}
-              disabled={running}
-              data-ocr-dpi
-              aria-label="OCR render DPI"
-              className="modal-range"
+            <span className="ocr-progress-percent">{progressPercent}%</span>
+          </div>
+          <div className="ocr-progress-track" aria-hidden>
+            <div
+              className="ocr-progress-fill"
+              style={{ width: `${progressPercent}%` }}
+              data-ocr-progress-fill
             />
-            <span className="modal-hint">
-              {MIN_OCR_DOWNSAMPLE} (screen) to {MAX_OCR_DOWNSAMPLE} (print).
-              Higher DPI improves accuracy at the cost of slower recognition.
-            </span>
-          </label>
-
-          <fieldset className="modal-position ocr-scope">
-            <legend>Scope</legend>
-            <label>
-              <input
-                type="radio"
-                name="ocr-scope"
-                checked={scope === 'currentPage'}
-                onChange={(): void => setScope('currentPage')}
-                disabled={running}
-                data-ocr-scope="currentPage"
-              />
-              <span>Current page ({currentPage})</span>
-            </label>
-            <label>
-              <input
-                type="radio"
-                name="ocr-scope"
-                checked={scope === 'allPages'}
-                onChange={(): void => setScope('allPages')}
-                disabled={running}
-                data-ocr-scope="allPages"
-              />
-              <span>All pages ({totalPages})</span>
-            </label>
-          </fieldset>
-
-          {running && (
-            <div className="modal-status ocr-progress" aria-live="polite" data-ocr-progress>
-              <div className="ocr-progress-header">
-                <span>
-                  {progress.phase === 'writing'
-                    ? 'Writing text layer…'
-                    : 'Recognizing…'}
-                  {progress.currentPage !== null && (
-                    <> page {progress.currentPage} of {progress.total}</>
-                  )}
-                </span>
-                <span className="ocr-progress-percent">{progressPercent}%</span>
-              </div>
-              <div className="ocr-progress-track" aria-hidden>
-                <div
-                  className="ocr-progress-fill"
-                  style={{ width: `${progressPercent}%` }}
-                  data-ocr-progress-fill
-                />
-              </div>
-            </div>
-          )}
-
-          {error !== null && (
-            <div className="modal-status optimize-error" role="alert" data-ocr-error>
-              <span>{error}</span>
-            </div>
-          )}
-
-          {/* Phase 51 (item 9) — a truthful "Cancelled" state: the run left the
-              running state and no result is applied, so the user knows the
-              Cancel took effect and can Run again. */}
-          {cancelled && !running && error === null && (
-            <div className="modal-status" role="status" data-ocr-cancelled>
-              <span>Cancelled. Run OCR again when you are ready.</span>
-            </div>
-          )}
+          </div>
         </div>
-        <div className="modal-footer">
-          {running ? (
-            <button
-              type="button"
-              className="btn btn-secondary"
-              onClick={cancelRun}
-              data-ocr-cancel
-            >
-              Cancel
-            </button>
-          ) : (
-            <button
-              type="button"
-              className="btn btn-secondary"
-              onClick={onClose}
-              data-ocr-close
-            >
-              Close
-            </button>
-          )}
-          <button
-            type="button"
-            className="btn btn-primary"
-            disabled={!valid}
-            onClick={(): void => {
-              void onConfirmClick();
-            }}
-            data-ocr-confirm
-          >
-            {running ? 'Running…' : 'Recognize text'}
-          </button>
-        </div>
-      </TfDialog>
-        </TfBackdrop>
       )}
-    </AnimatePresence>
+
+      {error !== null && (
+        <div className="modal-status optimize-error" role="alert" data-ocr-error>
+          <span>{error}</span>
+        </div>
+      )}
+
+      {/* Phase 51 (item 9) — a truthful "Cancelled" state: the run left the
+          running state and no result is applied, so the user knows the
+          Cancel took effect and can Run again. */}
+      {cancelled && !running && error === null && (
+        <div className="modal-status" role="status" data-ocr-cancelled>
+          <span>Cancelled. Run OCR again when you are ready.</span>
+        </div>
+      )}
+    </DialogShell>
   );
 }

@@ -23,7 +23,7 @@
 // Confirm is disabled while a previous export is still running.
 
 import { useEffect, useMemo, useRef, useState, type ReactElement } from "react";
-import { X } from "lucide-react";
+import { DialogShell, type DialogAction } from "./DialogShell";
 import {
   DEFAULT_EXPORT_IMAGE_DPI,
   DEFAULT_EXPORT_IMAGE_FORMAT,
@@ -40,9 +40,6 @@ import {
   downloadBlob,
   mimeForExportFormat,
 } from "../utils/exportDownload";
-import { useBackdropClose } from "./modalBackdrop";
-import { AnimatePresence } from "motion/react";
-import { TfBackdrop, TfDialog } from "./motion/TfMotion";
 import type {
   ExportImageFormat,
   ExportPageEntry,
@@ -118,7 +115,6 @@ export function ExportDialog(props: ExportDialogProps): ReactElement | null {
   const [running, setRunning] = useState(false);
   const [progress, setProgress] = useState<Progress>({ current: 0, total: 0, pageIndex: null });
   const [error, setError] = useState<string | null>(null);
-  const dialogRef = useRef<HTMLDivElement | null>(null);
   const cancelRef = useRef<{ aborted: boolean }>({ aborted: false });
 
   // Reset every time we re-open. The range resets to "all pages";
@@ -135,34 +131,15 @@ export function ExportDialog(props: ExportDialogProps): ReactElement | null {
     cancelRef.current.aborted = false;
   }, [open, totalPages, initialFormat, initialDpi]);
 
-  // Esc closes; focus first interactive control on open.
-  useEffect(() => {
-    if (!open) return;
-    const onKey = (e: KeyboardEvent): void => {
-      if (e.key === "Escape") {
-        e.preventDefault();
-        onClose();
-      }
-    };
-    window.addEventListener("keydown", onKey);
-    const first = dialogRef.current?.querySelector<HTMLElement>(
-      "button, input, [tabindex]",
-    );
-    first?.focus();
-    return (): void => window.removeEventListener("keydown", onKey);
-  }, [open, onClose]);
+  // Esc-to-close, the backdrop drag guard and initial focus are owned by
+  // DialogShell. The primary Export action is marked `default` so it
+  // receives focus on open.
 
   const parsed = useMemo(
     () => parsePageRange(rangeText, totalPages),
     [rangeText, totalPages],
   );
   const valid = parsed !== null && parsed.length > 0 && !running;
-
-  // B3/B6 — backdrop close only when the interaction started on the
-  // backdrop; blocked entirely while an export is running.
-  const backdrop = useBackdropClose(onClose, running);
-
-  
 
   const onConfirmClick = async (): Promise<void> => {
     if (!valid || parsed === null) return;
@@ -261,35 +238,57 @@ export function ExportDialog(props: ExportDialogProps): ReactElement | null {
     setRunning(false);
   };
 
+  // The exit action swaps label/hook with the running gate; the primary
+  // Export action carries the shipped `data-export-confirm` hook. Actions
+  // render right-aligned, primary right-most.
+  const actions: DialogAction[] = [
+    running
+      ? Object.assign(
+          {
+            key: "cancel",
+            label: "Cancel export",
+            variant: "secondary" as const,
+            onClick: onCancelRun,
+          },
+          { "data-export-cancel": true },
+        )
+      : Object.assign(
+          {
+            key: "close",
+            label: "Close",
+            variant: "secondary" as const,
+            onClick: onClose,
+          },
+          { "data-export-close": true },
+        ),
+    Object.assign(
+      {
+        key: "confirm",
+        label: running ? "Exporting…" : "Export",
+        variant: "primary" as const,
+        onClick: (): void => {
+          void onConfirmClick();
+        },
+        disabled: !valid,
+        default: true,
+      },
+      { "data-export-confirm": true },
+    ),
+  ];
+
   return (
-    <AnimatePresence>
-      {open && (
-        <TfBackdrop className="modal-backdrop" {...backdrop}>
-      <TfDialog
-        className="modal-dialog dialog modal-dialog-tool"
-        ref={dialogRef}
-        onClick={(e): void => e.stopPropagation()}
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="export-dialog-title"
-        data-export-dialog
-      >
-        <div className="modal-header">
-          <h2 id="export-dialog-title" className="modal-title">
-            Export pages as images
-          </h2>
-          <button
-            type="button"
-            className="modal-close"
-            onClick={onClose}
-            disabled={running}
-            aria-label="Close dialog"
-          >
-            <X size={16} aria-hidden />
-          </button>
-        </div>
-        <div className="modal-body">
-          <p className="modal-help">
+    <DialogShell
+      open={open}
+      title="Export pages as images"
+      titleId="export-dialog-title"
+      size="tool"
+      onClose={onClose}
+      blockBackdropClose={running}
+      closeDisabled={running}
+      actions={actions}
+      data-export-dialog
+    >
+      <p className="modal-help">
             Export pages of <strong>{sourceName}</strong> ({totalPages} total)
             as raster images. Each page downloads separately. The
             originals stay untouched.
@@ -405,43 +404,7 @@ export function ExportDialog(props: ExportDialogProps): ReactElement | null {
               <span>{error}</span>
             </div>
           )}
-        </div>
-        <div className="modal-footer">
-          {running ? (
-            <button
-              type="button"
-              className="btn btn-secondary"
-              onClick={onCancelRun}
-              data-export-cancel
-            >
-              Cancel export
-            </button>
-          ) : (
-            <button
-              type="button"
-              className="btn btn-secondary"
-              onClick={onClose}
-              data-export-close
-            >
-              Close
-            </button>
-          )}
-          <button
-            type="button"
-            className="btn btn-primary"
-            disabled={!valid}
-            onClick={(): void => {
-              void onConfirmClick();
-            }}
-            data-export-confirm
-          >
-            {running ? "Exporting…" : "Export"}
-          </button>
-        </div>
-      </TfDialog>
-        </TfBackdrop>
-      )}
-    </AnimatePresence>
+    </DialogShell>
   );
 }
 

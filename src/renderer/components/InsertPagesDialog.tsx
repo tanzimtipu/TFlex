@@ -14,15 +14,13 @@
 //
 // Both flows are undoable through the existing engine undo path.
 
-import { useEffect, useMemo, useRef, useState, type ReactElement } from "react";
-import { FilePlus2, X } from "lucide-react";
+import { useEffect, useMemo, useState, type ReactElement } from "react";
+import { FilePlus2 } from "lucide-react";
 import { Icon } from "../icons/Icon";
 import {
   defaultInsertPosition,
 } from "../engine/types";
-import { useBackdropClose } from "./modalBackdrop";
-import { AnimatePresence } from "motion/react";
-import { TfBackdrop, TfDialog } from "./motion/TfMotion";
+import { DialogShell, type DialogAction } from "./DialogShell";
 import { TfResize } from "./motion/TfResize";
 
 export type InsertMode = "blank" | "fromPdf";
@@ -81,7 +79,6 @@ export function InsertPagesDialog(
   const [pickedBytes, setPickedBytes] = useState<Uint8Array | null>(null);
   const [picking, setPicking] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const dialogRef = useRef<HTMLDivElement | null>(null);
 
   // Reset every time we re-open so stale state from a previous open
   // doesn't leak in.
@@ -95,38 +92,6 @@ export function InsertPagesDialog(
     setPicking(false);
     setError(null);
   }, [open, totalPages]);
-
-// B13 — focus the first interactive control ONLY on the rising
-  // edge of `open`. The previous implementation re-ran the focus
-  // call on every `onClose` identity change; for a dialog with a
-  // `<select>` (the page-position picker) that stole focus from
-  // the dropdown the user was actively hovering. The `focusedOnceRef`
-  // gate runs the focus call exactly once per dialog open — same
-  // microtask deferral as the OCR / Stamp dialog so the focus
-  // lands cleanly after React's commit phase.
-  const focusedOnceRef = useRef<boolean>(false);
-  useEffect(() => {
-    if (!open) {
-      focusedOnceRef.current = false;
-      return;
-    }
-    if (focusedOnceRef.current) return;
-    focusedOnceRef.current = true;
-    const onKey = (e: KeyboardEvent): void => {
-      if (e.key === "Escape") {
-        e.preventDefault();
-        onClose();
-      }
-    };
-    window.addEventListener("keydown", onKey);
-    queueMicrotask((): void => {
-      const first = dialogRef.current?.querySelector<HTMLElement>(
-        "button, input, [tabindex]",
-      );
-      first?.focus();
-    });
-    return (): void => window.removeEventListener("keydown", onKey);
-  }, [open, onClose]);
 
   // B18 — modal blocking while the OS file picker is open. The
   // dialog's pick button is disabled during `picking`, but the
@@ -172,14 +137,6 @@ export function InsertPagesDialog(
     parsed.valid &&
     (mode === "blank" ||
       (mode === "fromPdf" && pickedBytes !== null && pickedPath !== null));
-
-  // B3/B6 + B17/B18 — backdrop close only when the interaction
-  // STARTED on the backdrop (a drag that begins in the position
-  // input and releases over the backdrop must not dismiss);
-  // blocked entirely while the OS file picker is open.
-  const backdrop = useBackdropClose(onClose, picking);
-
-  
 
   // DEF-122 — the field value is the rank the new content lands at
   // ("becomes page v"), but users reason about placement in terms of
@@ -251,157 +208,136 @@ export function InsertPagesDialog(
     }
   };
 
+  const actions: DialogAction[] = [
+    {
+      key: "cancel",
+      label: "Cancel",
+      variant: "secondary",
+      onClick: onClose,
+    },
+    Object.assign(
+      {
+        key: "confirm",
+        label: "Insert",
+        variant: "primary" as const,
+        onClick: onConfirmClick,
+        disabled: !valid,
+        default: true,
+      },
+      { "data-insert-confirm": true },
+    ),
+  ];
+
   return (
-    <AnimatePresence>
-      {open && (
-        <TfBackdrop
-          className="modal-backdrop"
-          {...backdrop}
-          data-picking={picking ? "true" : "false"}
-          data-insert-pages-dialog
-        >
-      <TfDialog
-        className="modal-dialog dialog modal-dialog-tool"
-        ref={dialogRef}
-        onClick={(e): void => e.stopPropagation()}
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="insert-pages-dialog-title"
-      >
-        <div className="modal-header">
-          <h2
-            id="insert-pages-dialog-title"
-            className="modal-title"
-          >
-            Insert pages
-          </h2>
-          <button
-            type="button"
-            className="btn btn-ghost btn-icon modal-close"
-            onClick={onClose}
-            aria-label="Close dialog"
-            title="Close dialog"
-          >
-            <Icon icon={X} size="sm" />
-          </button>
-        </div>
-        <div className="modal-body">
-          <p className="modal-help">
-            Insert a blank page, or import every page from another
-            PDF, into the active document. Both modes are undoable.
-          </p>
+    <DialogShell
+      open={open}
+      title="Insert pages"
+      titleId="insert-pages-dialog-title"
+      size="tool"
+      onClose={onClose}
+      blockBackdropClose={picking}
+      actions={actions}
+      data-picking={picking ? "true" : "false"}
+      data-insert-pages-dialog
+    >
+      <p className="modal-help">
+        Insert a blank page, or import every page from another
+        PDF, into the active document. Both modes are undoable.
+      </p>
 
-          <fieldset className="modal-position">
-            <legend>What to insert</legend>
-            <label>
+      <fieldset className="modal-position">
+        <legend>What to insert</legend>
+        <label>
+          <input
+            type="radio"
+            name="insert-mode"
+            checked={mode === "blank"}
+            onChange={(): void => setMode("blank")}
+            data-insert-mode="blank"
+          />
+          <span>Blank page</span>
+        </label>
+        <label>
+          <input
+            type="radio"
+            name="insert-mode"
+            checked={mode === "fromPdf"}
+            onChange={(): void => setMode("fromPdf")}
+            data-insert-mode="fromPdf"
+          />
+          <span>Pages from another PDF</span>
+        </label>
+      </fieldset>
+
+      <label className="modal-field">
+        <span>Insert at page</span>
+        <input
+          type="text"
+          className="modal-input"
+          value={positionText}
+          onChange={(e): void => setPositionText(e.target.value)}
+          placeholder={defaultInsertPosition(totalPages)}
+          data-insert-position
+        />
+        <span className="modal-hint">{positionHint}</span>
+      </label>
+
+      <TfResize axes="height">
+      {mode === "blank" && (
+        <fieldset className="modal-position">
+          <legend>Page size</legend>
+          {BLANK_PRESETS.map((p) => (
+            <label key={p.id}>
               <input
                 type="radio"
-                name="insert-mode"
-                checked={mode === "blank"}
-                onChange={(): void => setMode("blank")}
-                data-insert-mode="blank"
+                name="blank-preset"
+                checked={presetId === p.id}
+                onChange={(): void => setPresetId(p.id)}
+                data-insert-preset={p.id}
               />
-              <span>Blank page</span>
+              <span>
+                {p.label} ({p.widthPt} × {p.heightPt} pt)
+              </span>
             </label>
-            <label>
-              <input
-                type="radio"
-                name="insert-mode"
-                checked={mode === "fromPdf"}
-                onChange={(): void => setMode("fromPdf")}
-                data-insert-mode="fromPdf"
-              />
-              <span>Pages from another PDF</span>
-            </label>
-          </fieldset>
-
-          <label className="modal-field">
-            <span>Insert at page</span>
-            <input
-              type="text"
-              className="modal-input"
-              value={positionText}
-              onChange={(e): void => setPositionText(e.target.value)}
-              placeholder={defaultInsertPosition(totalPages)}
-              data-insert-position
-            />
-            <span className="modal-hint">{positionHint}</span>
-          </label>
-
-          <TfResize axes="height">
-          {mode === "blank" && (
-            <fieldset className="modal-position">
-              <legend>Page size</legend>
-              {BLANK_PRESETS.map((p) => (
-                <label key={p.id}>
-                  <input
-                    type="radio"
-                    name="blank-preset"
-                    checked={presetId === p.id}
-                    onChange={(): void => setPresetId(p.id)}
-                    data-insert-preset={p.id}
-                  />
-                  <span>
-                    {p.label} ({p.widthPt} × {p.heightPt} pt)
-                  </span>
-                </label>
-              ))}
-            </fieldset>
-          )}
-
-          {mode === "fromPdf" && (
-            <div className="modal-row">
-              <button
-                type="button"
-                className="btn btn-secondary"
-                onClick={(): void => {
-                  void onPickFile();
-                }}
-                disabled={picking}
-                data-insert-pick
-              >
-                <Icon icon={FilePlus2} size="sm" />
-                {picking
-                  ? "Picking…"
-                  : pickedPath === null
-                    ? "Pick PDF…"
-                    : "Replace pick…"}
-              </button>
-              <div className="modal-picked">
-                {pickedPath === null ? (
-                  <span className="hint">No PDF selected</span>
-                ) : (
-                  <span title={pickedPath}>{pickedPath.split(/[\\/]/).pop()}</span>
-                )}
-              </div>
-            </div>
-          )}
-          </TfResize>
-
-          {error !== null && (
-            <div className="modal-status optimize-error" role="alert">
-              <span>{error}</span>
-            </div>
-          )}
-        </div>
-        <div className="modal-footer">
-          <button type="button" className="btn btn-secondary" onClick={onClose}>
-            Cancel
-          </button>
-          <button
-            type="button"
-            className="btn btn-primary"
-            disabled={!valid}
-            onClick={onConfirmClick}
-            data-insert-confirm
-          >
-            Insert
-          </button>
-        </div>
-      </TfDialog>
-        </TfBackdrop>
+          ))}
+        </fieldset>
       )}
-    </AnimatePresence>
+
+      {mode === "fromPdf" && (
+        <div className="modal-row">
+          <button
+            type="button"
+            className="btn btn-secondary"
+            onClick={(): void => {
+              void onPickFile();
+            }}
+            disabled={picking}
+            data-insert-pick
+          >
+            <Icon icon={FilePlus2} size="sm" />
+            {picking
+              ? "Picking…"
+              : pickedPath === null
+                ? "Pick PDF…"
+                : "Replace pick…"}
+          </button>
+          <div className="modal-picked">
+            {pickedPath === null ? (
+              <span className="hint">No PDF selected</span>
+            ) : (
+              <span title={pickedPath}>{pickedPath.split(/[\\/]/).pop()}</span>
+            )}
+          </div>
+        </div>
+      )}
+      </TfResize>
+
+      {error !== null && (
+        <div className="modal-status optimize-error" role="alert">
+          <span>{error}</span>
+        </div>
+      )}
+    </DialogShell>
   );
 }
 

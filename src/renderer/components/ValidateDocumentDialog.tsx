@@ -11,9 +11,9 @@
 // `state/validation` so the card and the dialog can never disagree, and none of
 // it makes a conformance claim.
 
-import { useEffect, useRef, useState, type ReactElement } from 'react';
-import { AnimatePresence } from 'motion/react';
-import { ShieldCheck, X } from 'lucide-react';
+import { useEffect, useState, type ReactElement } from 'react';
+import { ShieldCheck } from 'lucide-react';
+import { Icon } from '../icons/Icon';
 import type { PdfValidationDefaults } from '../../shared/types';
 import type {
   ValidationReport,
@@ -27,8 +27,7 @@ import {
   validationTargetLabel,
 } from '../state/validation';
 import { ValidationNotice } from './ValidationNotice';
-import { useBackdropClose } from './modalBackdrop';
-import { TfBackdrop, TfDialog } from './motion/TfMotion';
+import { DialogShell, type DialogAction } from './DialogShell';
 
 export type ValidationOnViolation = 'warn' | 'block';
 
@@ -66,7 +65,6 @@ export function ValidateDocumentDialog(
   const [running, setRunning] = useState(false);
   const [report, setReport] = useState<ValidationReport | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const dialogRef = useRef<HTMLDivElement | null>(null);
 
   // Re-seed from the persisted defaults each time the dialog opens.
   useEffect(() => {
@@ -78,22 +76,6 @@ export function ValidateDocumentDialog(
     setReport(null);
     setError(null);
   }, [open, initialTarget, initialOnViolation]);
-
-  // Esc closes (blocked while a validation is in flight); focus the first control.
-  useEffect(() => {
-    if (!open) return;
-    const onKey = (e: KeyboardEvent): void => {
-      if (e.key === 'Escape') {
-        e.preventDefault();
-        onClose();
-      }
-    };
-    window.addEventListener('keydown', onKey);
-    dialogRef.current?.querySelector<HTMLElement>('button, input, [tabindex]')?.focus();
-    return (): void => window.removeEventListener('keydown', onKey);
-  }, [open, onClose]);
-
-  const backdrop = useBackdropClose(onClose, running);
 
   const persist = (nextTarget: ValidationTag, nextViolation: ValidationOnViolation): void => {
     onRememberDefaults({ target: nextTarget, onViolation: nextViolation });
@@ -134,139 +116,124 @@ export function ValidateDocumentDialog(
     setReport(result.report);
   };
 
-  return (
-    <AnimatePresence>
-      {open && (
-        <TfBackdrop className="modal-backdrop" {...backdrop}>
-          <TfDialog
-            className="modal-dialog dialog modal-dialog-tool validate-document-dialog"
-            ref={dialogRef}
-            onClick={(e): void => e.stopPropagation()}
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="validate-document-title"
-            data-validate-document-dialog
-          >
-            <div className="modal-header">
-              <h2 id="validate-document-title" className="modal-title">
-                Validate document
-              </h2>
-              <button
-                type="button"
-                className="modal-close"
-                onClick={onClose}
-                disabled={running}
-                aria-label="Close dialog"
-              >
-                <X size={16} aria-hidden />
-              </button>
-            </div>
-            <div className="modal-body">
-              <p className="modal-help">
-                Check the active document against a profile. The report states what the file
-                declares, what was checked and every finding for that profile.
-              </p>
-              <fieldset className="modal-position validate-document-targets">
-                <legend>Check against</legend>
-                {CHOICES.map((choice) => (
-                  <label key={choice}>
-                    <input
-                      type="radio"
-                      name="validation-target"
-                      checked={target === choice}
-                      onChange={(): void => chooseTarget(choice)}
-                      disabled={running}
-                      data-validation-target={choice}
-                    />
-                    <span>{VALIDATION_TARGET_LABELS[choice]}</span>
-                  </label>
-                ))}
-              </fieldset>
-              <fieldset className="modal-position validate-document-onviolation">
-                <legend>When a save does not conform</legend>
-                <label>
-                  <input
-                    type="radio"
-                    name="validation-on-violation"
-                    checked={onViolation === 'warn'}
-                    onChange={(): void => chooseOnViolation('warn')}
-                    disabled={running}
-                    data-validation-on-violation="warn"
-                  />
-                  <span>Warn — save anyway and show the findings</span>
-                </label>
-                <label>
-                  <input
-                    type="radio"
-                    name="validation-on-violation"
-                    checked={onViolation === 'block'}
-                    onChange={(): void => chooseOnViolation('block')}
-                    disabled={running}
-                    data-validation-on-violation="block"
-                  />
-                  <span>Block — refuse the save and show the findings</span>
-                </label>
-              </fieldset>
-              <label className="modal-field validate-document-remember">
-                <input
-                  type="checkbox"
-                  checked={remember}
-                  onChange={(e): void => toggleRemember(e.target.checked)}
-                  disabled={running}
-                  data-validation-remember
-                />
-                <span>Remember this choice</span>
-              </label>
-              <p className="modal-hint" data-validation-effective>
-                {target === 'none'
-                  ? 'No validation: saving is unchanged.'
-                  : `Saving checks ${validationTargetLabel(target)} and ${
-                      onViolation === 'block' ? 'refuses' : 'warns'
-                    } on a finding.`}
-              </p>
+  const actions: DialogAction[] = [
+    Object.assign(
+      {
+        key: 'close',
+        label: 'Close',
+        variant: 'secondary' as const,
+        onClick: onClose,
+        disabled: running,
+      },
+      { 'data-validation-close': true },
+    ),
+    Object.assign(
+      {
+        key: 'run',
+        label: running ? 'Validating…' : 'Validate',
+        variant: 'primary' as const,
+        onClick: (): void => {
+          void onRun();
+        },
+        disabled: runDisabled,
+        default: true,
+        title: target === 'none' ? VALIDATION_NO_TARGET_REASON : undefined,
+      },
+      { 'data-validation-run': true },
+    ),
+  ];
 
-              {error !== null && (
-                <div className="modal-status optimize-error" role="alert" data-validation-error>
-                  <span>{error}</span>
-                </div>
-              )}
-              {report !== null && (
-                <div className="validate-document-report" data-validation-inline-report>
-                  <ValidationNotice notice={{ report, variant: 'report' }} />
-                </div>
-              )}
-              {report === null && error === null && !running && target !== 'none' && (
-                <p className="modal-hint validate-document-idle" data-validation-idle>
-                  <ShieldCheck size={14} aria-hidden /> Run the check to see the report here.
-                </p>
-              )}
-            </div>
-            <div className="modal-footer">
-              <button
-                type="button"
-                className="btn btn-secondary"
-                onClick={onClose}
-                disabled={running}
-                data-validation-close
-              >
-                Close
-              </button>
-              <button
-                type="button"
-                className="btn btn-primary"
-                disabled={runDisabled}
-                onClick={(): void => {
-                  void onRun();
-                }}
-                title={target === 'none' ? VALIDATION_NO_TARGET_REASON : undefined}
-                data-validation-run
-              >
-                {running ? 'Validating…' : 'Validate'}
-              </button>
-            </div>
-          </TfDialog>
-        </TfBackdrop>
+  return (
+    <DialogShell
+      open={open}
+      title="Validate document"
+      titleId="validate-document-title"
+      size="tool"
+      className="validate-document-dialog"
+      onClose={onClose}
+      blockBackdropClose={running}
+      closeDisabled={running}
+      actions={actions}
+      data-validate-document-dialog
+    >
+      <p className="modal-help">
+        Check the active document against a profile. The report states what the file
+        declares, what was checked and every finding for that profile.
+      </p>
+      <fieldset className="modal-position validate-document-targets">
+        <legend>Check against</legend>
+        {CHOICES.map((choice) => (
+          <label key={choice}>
+            <input
+              type="radio"
+              name="validation-target"
+              checked={target === choice}
+              onChange={(): void => chooseTarget(choice)}
+              disabled={running}
+              data-validation-target={choice}
+            />
+            <span>{VALIDATION_TARGET_LABELS[choice]}</span>
+          </label>
+        ))}
+      </fieldset>
+      <fieldset className="modal-position validate-document-onviolation">
+        <legend>When a save does not conform</legend>
+        <label>
+          <input
+            type="radio"
+            name="validation-on-violation"
+            checked={onViolation === 'warn'}
+            onChange={(): void => chooseOnViolation('warn')}
+            disabled={running}
+            data-validation-on-violation="warn"
+          />
+          <span>Warn — save anyway and show the findings</span>
+        </label>
+        <label>
+          <input
+            type="radio"
+            name="validation-on-violation"
+            checked={onViolation === 'block'}
+            onChange={(): void => chooseOnViolation('block')}
+            disabled={running}
+            data-validation-on-violation="block"
+          />
+          <span>Block — refuse the save and show the findings</span>
+        </label>
+      </fieldset>
+      <label className="modal-field validate-document-remember">
+        <input
+          type="checkbox"
+          checked={remember}
+          onChange={(e): void => toggleRemember(e.target.checked)}
+          disabled={running}
+          data-validation-remember
+        />
+        <span>Remember this choice</span>
+      </label>
+      <p className="modal-hint" data-validation-effective>
+        {target === 'none'
+          ? 'No validation: saving is unchanged.'
+          : `Saving checks ${validationTargetLabel(target)} and ${
+              onViolation === 'block' ? 'refuses' : 'warns'
+            } on a finding.`}
+      </p>
+
+      {error !== null && (
+        <div className="modal-status optimize-error" role="alert" data-validation-error>
+          <span>{error}</span>
+        </div>
       )}
-    </AnimatePresence>
+      {report !== null && (
+        <div className="validate-document-report" data-validation-inline-report>
+          <ValidationNotice notice={{ report, variant: 'report' }} />
+        </div>
+      )}
+      {report === null && error === null && !running && target !== 'none' && (
+        <p className="modal-hint validate-document-idle" data-validation-idle>
+          <Icon icon={ShieldCheck} size="xs" /> Run the check to see the report here.
+        </p>
+      )}
+    </DialogShell>
   );
 }

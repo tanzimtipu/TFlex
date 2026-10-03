@@ -59,7 +59,7 @@ function findRuleBody(src: string, selector: string): string | null {
 describe("Phase 40 item 3 — CreateFromImagesDialog responsive CSS", () => {
   it("scopes the responsive rules to the dialog's backdrop hook", () => {
     const stripped = stripCssComments(SRC);
-    expect(stripped).toContain("[data-create-from-images-dialog] .modal-dialog");
+    expect(stripped).toContain("[data-create-from-images-dialog].modal-dialog");
     expect(stripped).toContain("[data-create-from-images-dialog] .modal-body");
     expect(stripped).toContain(
       "[data-create-from-images-dialog] .create-image-list",
@@ -67,7 +67,7 @@ describe("Phase 40 item 3 — CreateFromImagesDialog responsive CSS", () => {
   });
 
   it("sizes the dialog from the viewport (fits small, grows large)", () => {
-    const body = findRuleBody(SRC, "[data-create-from-images-dialog] .modal-dialog");
+    const body = findRuleBody(SRC, "[data-create-from-images-dialog].modal-dialog");
     expect(body).not.toBeNull();
     // Width tracks the viewport between a small floor and a large cap.
     expect(body).toMatch(/width:\s*clamp\(\s*320px\s*,\s*62vw\s*,\s*760px\s*\)/);
@@ -135,9 +135,9 @@ describe("Phase 40 item 3 — CreateFromImagesDialog DOM hook", () => {
         />,
       );
     });
-    const backdrop = container.querySelector("[data-create-from-images-dialog]");
-    expect(backdrop).not.toBeNull();
-    expect(backdrop?.querySelector(".modal-dialog")).not.toBeNull();
-    expect(backdrop?.querySelector(".modal-body")).not.toBeNull();
+    const dialog = container.querySelector("[data-create-from-images-dialog]");
+    expect(dialog).not.toBeNull();
+    expect(dialog?.classList.contains("modal-dialog")).toBe(true);
+    expect(dialog?.querySelector(".modal-body")).not.toBeNull();
   });
 });

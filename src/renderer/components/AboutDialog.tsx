@@ -18,12 +18,9 @@
 
 import type { ReactElement } from 'react';
 import { useEffect, useState } from 'react';
-import { AnimatePresence } from 'motion/react';
-import { X } from 'lucide-react';
-import { Icon } from '../icons/Icon';
 import type { AppInfo, UpdateState } from '../../shared/types';
 import { whatsNewFor, whatsNewHistory } from '../../shared/whatsNew';
-import { TfBackdrop, TfSheet } from './motion/TfMotion';
+import { DialogShell } from './DialogShell';
 import { BrandMark } from './BrandMark';
 import { BrandWordmark } from './BrandWordmark';
 
@@ -229,26 +226,6 @@ export function AboutDialog(props: AboutDialogProps): ReactElement | null {
     };
   }, [open]);
 
-  // DEF-430 — close the About sheet on Escape. Every other dialog in the app
-  // (DeletePageDialog, MergeDialog, OptimizeDialog, ...) installs a
-  // window-level keydown listener while open; the About sheet was the odd
-  // one out, so Escape only closed it via the X button or a backdrop click.
-  // The listener is installed only while `open` so it is gone as soon as
-  // the sheet closes.
-  useEffect(() => {
-    if (!open) return;
-    const handleKeyDown = (e: KeyboardEvent): void => {
-      if (e.key === 'Escape') {
-        e.preventDefault();
-        onClose();
-      }
-    };
-    window.addEventListener('keydown', handleKeyDown);
-    return (): void => {
-      window.removeEventListener('keydown', handleKeyDown);
-    };
-  }, [open, onClose]);
-
   const handleOpenPath = (path: string): void => {
     const tflex = (window as unknown as { tflex?: { app?: { openPath?: (p: string) => Promise<void> } } }).tflex;
     if (tflex?.app?.openPath === undefined) return;
@@ -364,35 +341,16 @@ export function AboutDialog(props: AboutDialogProps): ReactElement | null {
   };
 
   return (
-    <AnimatePresence>
-      {open && (
-        <TfBackdrop
-          className="sheet-backdrop"
-          role="presentation"
-          onClick={(e): void => {
-            if (e.target === e.currentTarget) onClose();
-          }}
-        >
-          <TfSheet
-            className="sheet sheet-about"
-            role="dialog"
-            aria-labelledby="about-title"
-            aria-modal="true"
-            data-about-dialog
-          >
-            <header className="sheet-header">
-              <h2 id="about-title" className="sheet-title">About Jovrel</h2>
-              <button
-                type="button"
-                className="btn btn-ghost btn-icon sheet-close"
-                onClick={onClose}
-                aria-label="Close about dialog"
-                title="Close about dialog"
-              >
-                <Icon icon={X} size="sm" />
-              </button>
-            </header>
-            <div className="sheet-body">
+    <DialogShell
+      surface="sheet"
+      open={open}
+      title="About Jovrel"
+      titleId="about-title"
+      onClose={onClose}
+      closeAriaLabel="Close about dialog"
+      className="sheet-about"
+      data-about-dialog
+    >
               <BrandMark size={56} className="about-mark" />
               <h3 className="about-name"><BrandWordmark /></h3>
               <p className="about-tagline">A modern PDF studio for Windows.</p>
@@ -465,10 +423,6 @@ export function AboutDialog(props: AboutDialogProps): ReactElement | null {
                   </button>
                 </div>
               </div>
-            </div>
-          </TfSheet>
-        </TfBackdrop>
-      )}
-    </AnimatePresence>
+    </DialogShell>
   );
 }

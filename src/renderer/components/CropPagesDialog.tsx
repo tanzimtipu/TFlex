@@ -15,12 +15,11 @@
 // engine converts to bottom-left when serializing.
 
 import { useEffect, useMemo, useRef, useState, type ReactElement } from "react";
-import { X, Crop } from "lucide-react";
+import { Crop } from "lucide-react";
+import { Icon } from "../icons/Icon";
 import type { PDFDocumentProxy } from "pdfjs-dist";
 import type { CropEntry } from "../../shared/types";
-import { useBackdropClose } from "./modalBackdrop";
-import { AnimatePresence } from "motion/react";
-import { TfBackdrop, TfDialog } from "./motion/TfMotion";
+import { DialogShell, type DialogAction } from "./DialogShell";
 import { TfResize } from "./motion/TfResize";
 
 export type CropMode = "allPages" | "perPage";
@@ -95,7 +94,6 @@ export function CropPagesDialog(
   const [sharedBox, setSharedBox] = useState<BoxState | null>(null);
   const [perPageBoxes, setPerPageBoxes] = useState<Record<number, BoxState>>({});
   const [editorPage, setEditorPage] = useState<number | null>(null);
-  const dialogRef = useRef<HTMLDivElement | null>(null);
 
   // Reset on open / totalPages change.
   useEffect(() => {
@@ -105,37 +103,6 @@ export function CropPagesDialog(
     setPerPageBoxes({});
     setEditorPage(null);
   }, [open, totalPages]);
-
-  // B13 — focus the first interactive control ONLY on the rising
-  // edge of `open`. The previous implementation re-ran the focus
-  // call on every `onClose` identity change; for a dialog with a
-  // `<select>` (per-page crop mode picker) that stole focus from
-  // the dropdown the user was actively hovering. Same microtask
-  // deferral as the OCR / Stamp dialog so the focus lands cleanly
-  // after React's commit phase.
-  const focusedOnceRef = useRef<boolean>(false);
-  useEffect(() => {
-    if (!open) {
-      focusedOnceRef.current = false;
-      return;
-    }
-    if (focusedOnceRef.current) return;
-    focusedOnceRef.current = true;
-    const onKey = (e: KeyboardEvent): void => {
-      if (e.key === "Escape") {
-        e.preventDefault();
-        onClose();
-      }
-    };
-    window.addEventListener("keydown", onKey);
-    queueMicrotask((): void => {
-      const first = dialogRef.current?.querySelector<HTMLElement>(
-        "button, input, [tabindex]",
-      );
-      first?.focus();
-    });
-    return (): void => window.removeEventListener("keydown", onKey);
-  }, [open, onClose]);
 
   const editorPageSize = useMemo(() => {
     const p = editorPage ?? 1;
@@ -168,14 +135,6 @@ export function CropPagesDialog(
     }
   };
 
-  // B3/B6 — backdrop close only when the interaction STARTED on the
-  // backdrop (a text-selection drag that begins in the per-page
-  // select/inputs and releases over the backdrop must not dismiss
-  // the dialog).
-  const backdrop = useBackdropClose(onClose);
-
-  
-
   const onConfirmClick = (): void => {
     const entries: CropEntry[] = [];
     if (mode === "allPages") {
@@ -207,33 +166,38 @@ export function CropPagesDialog(
     onConfirm({ entries });
   };
 
+  const actions: DialogAction[] = [
+    {
+      key: "cancel",
+      label: "Cancel",
+      variant: "secondary",
+      onClick: onClose,
+    },
+    Object.assign(
+      {
+        key: "confirm",
+        label: "Apply crop",
+        variant: "primary" as const,
+        icon: <Icon icon={Crop} size="sm" />,
+        onClick: onConfirmClick,
+        default: true,
+      },
+      { "data-crop-confirm": true },
+    ),
+  ];
+
   return (
-    <AnimatePresence>
-      {open && (
-        <TfBackdrop className="modal-backdrop" {...backdrop} data-crop-pages-dialog>
-      <TfDialog
-        className="modal-dialog modal-dialog-wide dialog modal-dialog-tool"
-        ref={dialogRef}
-        onClick={(e): void => e.stopPropagation()}
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="crop-pages-dialog-title"
-      >
-        <div className="modal-header">
-          <h2 id="crop-pages-dialog-title" className="modal-title">
-            Crop pages
-          </h2>
-          <button
-            type="button"
-            className="modal-close"
-            onClick={onClose}
-            aria-label="Close dialog"
-          >
-            <X size={16} aria-hidden />
-          </button>
-        </div>
-        <div className="modal-body">
-          <p className="modal-help">
+    <DialogShell
+      open={open}
+      title="Crop pages"
+      titleId="crop-pages-dialog-title"
+      size="tool"
+      className="modal-dialog-wide"
+      onClose={onClose}
+      actions={actions}
+      data-crop-pages-dialog
+    >
+      <p className="modal-help">
             Drag the dashed rectangle to choose the crop area for each page.
             The CropBox and TrimBox of every listed page are updated to the
             chosen rect (top-left origin, PDF points).
@@ -345,25 +309,7 @@ export function CropPagesDialog(
               </div>
             </div>
           </section>
-        </div>
-        <div className="modal-footer">
-          <button type="button" className="btn btn-secondary" onClick={onClose}>
-            Cancel
-          </button>
-          <button
-            type="button"
-            className="btn btn-primary"
-            onClick={onConfirmClick}
-            data-crop-confirm
-          >
-            <Crop size={16} aria-hidden />
-            Apply crop
-          </button>
-        </div>
-</TfDialog>
-        </TfBackdrop>
-      )}
-    </AnimatePresence>
+    </DialogShell>
   );
 }
 

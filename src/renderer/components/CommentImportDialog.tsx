@@ -8,11 +8,10 @@
 //
 // The dialog is purely a UI shell — it owns no engine state.
 
-import { useEffect, useRef, useState, type ReactElement } from "react";
-import { X, Upload } from "lucide-react";
-import { useBackdropClose } from "./modalBackdrop";
-import { AnimatePresence } from "motion/react";
-import { TfBackdrop, TfDialog } from "./motion/TfMotion";
+import { useEffect, useState, type ReactElement } from "react";
+import { Upload } from "lucide-react";
+import { Icon } from "../icons/Icon";
+import { DialogShell, type DialogAction } from "./DialogShell";
 
 export interface CommentImportConfirm {
   /** Path the user picked. */
@@ -43,35 +42,12 @@ export function CommentImportDialog(
   const { open, pickFile, runImportFdf, onConfirm, onClose } = props;
   const [running, setRunning] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const dialogRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     if (!open) return;
     setRunning(false);
     setError(null);
   }, [open]);
-
-  useEffect(() => {
-    if (!open) return;
-    const onKey = (e: KeyboardEvent): void => {
-      if (e.key === "Escape") {
-        e.preventDefault();
-        onClose();
-      }
-    };
-    window.addEventListener("keydown", onKey);
-    const first = dialogRef.current?.querySelector<HTMLElement>(
-      "button, input, [tabindex]",
-    );
-    first?.focus();
-    return (): void => window.removeEventListener("keydown", onKey);
-  }, [open, onClose]);
-
-  // B3/B6 — backdrop close only when the interaction started on the
-  // backdrop.
-  const backdrop = useBackdropClose(onClose, running);
-
-  
 
   const onConfirmClick = async (): Promise<void> => {
     setRunning(true);
@@ -99,73 +75,52 @@ export function CommentImportDialog(
     }
   };
 
-  return (
-    <AnimatePresence>
-      {open && (
-        <TfBackdrop
-          className="modal-backdrop"
-          {...backdrop}
-          data-comment-import-dialog
-        >
-      <TfDialog
-        className="modal-dialog dialog"
-        ref={dialogRef}
-        onClick={(e): void => e.stopPropagation()}
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="comment-import-dialog-title"
-      >
-        <div className="modal-header">
-          <h2
-            id="comment-import-dialog-title"
-            className="modal-title"
-          >
-            Import comments
-          </h2>
-          <button
-            type="button"
-            className="modal-close"
-            onClick={onClose}
-            aria-label="Close dialog"
-          >
-            <X size={16} aria-hidden />
-          </button>
-        </div>
-        <div className="modal-body">
-          <p className="modal-help">
-            Merge annotations from an FDF file into the active
-            document. The original PDF content is untouched — only
-            the comments are added. Use <strong>Export
-            comments</strong> to save comments from one document for
-            later re-import into another.
-          </p>
+  const actions: DialogAction[] = [
+    {
+      key: "cancel",
+      label: "Cancel",
+      variant: "secondary",
+      onClick: onClose,
+    },
+    Object.assign(
+      {
+        key: "confirm",
+        label: running ? "Importing…" : "Import comments",
+        variant: "primary" as const,
+        icon: <Icon icon={Upload} size="sm" />,
+        onClick: (): void => {
+          void onConfirmClick();
+        },
+        disabled: running,
+        default: true,
+      },
+      { "data-comment-import-confirm": true },
+    ),
+  ];
 
-          {error !== null && (
-            <div className="modal-status optimize-error" role="alert">
-              <span>{error}</span>
-            </div>
-          )}
+  return (
+    <DialogShell
+      open={open}
+      title="Import comments"
+      titleId="comment-import-dialog-title"
+      onClose={onClose}
+      blockBackdropClose={running}
+      actions={actions}
+      data-comment-import-dialog
+    >
+      <p className="modal-help">
+        Merge annotations from an FDF file into the active
+        document. The original PDF content is untouched — only
+        the comments are added. Use <strong>Export
+        comments</strong> to save comments from one document for
+        later re-import into another.
+      </p>
+
+      {error !== null && (
+        <div className="modal-status optimize-error" role="alert">
+          <span>{error}</span>
         </div>
-        <div className="modal-footer">
-          <button type="button" className="btn btn-secondary" onClick={onClose}>
-            Cancel
-          </button>
-          <button
-            type="button"
-            className="btn btn-primary"
-            disabled={running}
-            onClick={(): void => {
-              void onConfirmClick();
-            }}
-            data-comment-import-confirm
-          >
-            <Upload size={16} aria-hidden />
-            {running ? "Importing…" : "Import comments"}
-          </button>
-        </div>
-      </TfDialog>
-        </TfBackdrop>
       )}
-    </AnimatePresence>
+    </DialogShell>
   );
 }

@@ -4,12 +4,16 @@
 // field disappears; values stay baked into the page content), so we want
 // a deliberate click before sending `engine.flattenForms`. Also offers
 // "Cancel" as the obvious exit.
+//
+// Phase 92 (TFL-513 chunk A) — adopts the shared DialogShell. The shell now
+// owns Esc, the backdrop-close guard and initial focus; this file keeps only
+// the Enter-to-flatten accelerator (Enter confirms anywhere in the dialog) and
+// its content. `data-animated-dialog="flatten-confirm"` is forwarded as an
+// extra prop so the shipped selector survives the AnimatedDialog -> DialogShell
+// move, and the shell adds `data-dialog-shell="flatten-confirm"`.
 
 import { useEffect, type ReactElement } from "react";
-// DEF-197 — the canonical AnimatedDialog wrapper (bloom/backdrop token
-// variants + the shared backdrop-close guard) replaces the hand-assembled
-// motion pair this dialog used to assemble itself.
-import { AnimatedDialog } from "../components/AnimatedDialog";
+import { DialogShell, type DialogAction } from "../components/DialogShell";
 
 interface FlattenConfirmDialogProps {
   open: boolean;
@@ -18,16 +22,16 @@ interface FlattenConfirmDialogProps {
   onConfirm: () => void;
 }
 
-export function FlattenConfirmDialog(props: FlattenConfirmDialogProps): ReactElement | null {
+export function FlattenConfirmDialog(props: FlattenConfirmDialogProps): ReactElement {
   const { open, fieldCount, onCancel, onConfirm } = props;
 
+  // Enter confirms. The keydown handler preventDefaults so the focused
+  // default action's native Enter-click is suppressed: exactly one flatten
+  // callback fires per Enter, never two.
   useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent): void => {
-      if (e.key === "Escape") {
-        e.preventDefault();
-        onCancel();
-      } else if (e.key === "Enter") {
+      if (e.key === "Enter") {
         e.preventDefault();
         onConfirm();
       }
@@ -36,42 +40,33 @@ export function FlattenConfirmDialog(props: FlattenConfirmDialogProps): ReactEle
     return () => {
       window.removeEventListener("keydown", onKey);
     };
-  }, [open, onCancel, onConfirm]);
+  }, [open, onConfirm]);
+
+  const actions: DialogAction[] = [
+    { key: "cancel", label: "Cancel", variant: "secondary", onClick: onCancel },
+    { key: "confirm", label: "Flatten", variant: "primary", onClick: onConfirm, default: true },
+  ];
 
   return (
-    <AnimatedDialog
+    <DialogShell
       open={open}
+      title="Flatten form fields"
+      titleId="flatten-title"
       onClose={onCancel}
-      className="modal-dialog"
-      backdropClassName="modal-backdrop"
-      labelledBy="flatten-title"
+      actions={actions}
       testId="flatten-confirm"
+      data-animated-dialog="flatten-confirm"
     >
-      <div className="modal-header">
-        <h2 id="flatten-title" className="modal-title">
-          Flatten form fields
-        </h2>
-      </div>
-      <div className="modal-body">
-        <p className="modal-help">
-          This will bake every filled value into the page content and
-          remove {fieldCount} form field{fieldCount === 1 ? "" : "s"}.
-          After flattening, the values can no longer be edited in any
-          reader.
-        </p>
-        <p className="modal-help" style={{ color: "var(--fg-faint)", fontSize: "var(--fs-xs)" }}>
-          Tip: Save a non-flattened copy with Save As first if you want
-          to keep an editable version.
-        </p>
-      </div>
-      <div className="modal-footer">
-        <button type="button" className="btn btn-secondary" onClick={onCancel}>
-          Cancel
-        </button>
-        <button type="button" className="btn btn-primary" onClick={onConfirm}>
-          Flatten
-        </button>
-      </div>
-    </AnimatedDialog>
+      <p className="modal-help">
+        This will bake every filled value into the page content and
+        remove {fieldCount} form field{fieldCount === 1 ? "" : "s"}.
+        After flattening, the values can no longer be edited in any
+        reader.
+      </p>
+      <p className="modal-help" style={{ color: "var(--fg-faint)", fontSize: "var(--fs-xs)" }}>
+        Tip: Save a non-flattened copy with Save As first if you want
+        to keep an editable version.
+      </p>
+    </DialogShell>
   );
 }

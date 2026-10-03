@@ -15,13 +15,10 @@
 // renderer via `pickImageFilesInRenderer` (the renderer has no `fs`
 // access — same pattern as Create-from-images).
 
-import { useEffect, useRef, useState, type CSSProperties, type ReactElement } from "react";
-import { ImagePlus, X } from "lucide-react";
+import { useEffect, useState, type CSSProperties, type ReactElement } from "react";
+import { ImagePlus } from "lucide-react";
 import { Icon } from "../icons/Icon";
-import { useBackdropClose } from "./modalBackdrop";
-import { AnimatePresence } from "motion/react";
-import { TfBackdrop, TfDialog } from "./motion/TfMotion";
-import { useDragWindow } from "./useDragWindow";
+import { DialogShell } from "./DialogShell";
 import {
   pickImageFilesInRenderer,
   readFileBytes,
@@ -211,11 +208,6 @@ export function WatermarkDialog(props: WatermarkDialogProps): ReactElement {
   const [imageName, setImageName] = useState<string>("");
   const [imageUrl, setImageUrl] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const dialogRef = useRef<HTMLDivElement | null>(null);
-
-  const drag = useDragWindow({
-    controlsSelector: "button, input, select, textarea, [role='button']",
-  });
 
   // Re-seed on open: fresh defaults, range seeds from the current page
   // (the natural pick is "watermark the page I'm on" when the user
@@ -248,34 +240,6 @@ export function WatermarkDialog(props: WatermarkDialogProps): ReactElement {
       if (imageUrl !== null) URL.revokeObjectURL(imageUrl);
     };
   }, [imageUrl]);
-
-  // Focus the first interactive control on the rising edge of `open`
-  // and wire Escape-to-close (same contract as the other dialogs).
-  const focusedOnceRef = useRef<boolean>(false);
-  useEffect(() => {
-    if (!open) {
-      focusedOnceRef.current = false;
-      return;
-    }
-    if (focusedOnceRef.current) return;
-    focusedOnceRef.current = true;
-    const onKey = (e: KeyboardEvent): void => {
-      if (e.key === "Escape") {
-        e.preventDefault();
-        onClose();
-      }
-    };
-    window.addEventListener("keydown", onKey);
-    queueMicrotask((): void => {
-      const first = dialogRef.current?.querySelector<HTMLElement>(
-        "button, input, [tabindex]",
-      );
-      first?.focus();
-    });
-    return (): void => window.removeEventListener("keydown", onKey);
-  }, [open, onClose]);
-
-  const backdrop = useBackdropClose(onClose);
 
   const onPickImage = (): void => {
     void (async (): Promise<void> => {
@@ -397,40 +361,28 @@ export function WatermarkDialog(props: WatermarkDialogProps): ReactElement {
   };
 
   return (
-    <AnimatePresence>
-      {open && (
-        <TfBackdrop className="modal-backdrop" {...backdrop} data-watermark-dialog>
-          <TfDialog
-            ref={(el): void => {
-              dialogRef.current = el;
-              drag.windowRef(el);
-            }}
-            className={drag.dragging ? "modal-dialog dialog modal-dialog-dragging modal-dialog-tool" : "modal-dialog dialog modal-dialog-tool"}
-            onClick={(e): void => e.stopPropagation()}
-            onPointerDown={(e): void => {
-              e.stopPropagation();
-              drag.handleProps.onPointerDown(e);
-            }}
-            animate={{ x: drag.offset.x, y: drag.offset.y }}
-            exit={{ x: drag.offset.x, y: drag.offset.y + 5 }}
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="watermark-dialog-title"
-          >
-            <div className="modal-header">
-              <h2 id="watermark-dialog-title" className="modal-title">
-                Watermark
-              </h2>
-              <button
-                type="button"
-                className="modal-close"
-                onClick={onClose}
-                aria-label="Close dialog"
-              >
-                <Icon icon={X} size="sm" />
-              </button>
-            </div>
-            <div className="modal-body">
+    <DialogShell
+      open={open}
+      title="Watermark"
+      titleId="watermark-dialog-title"
+      onClose={onClose}
+      size="tool"
+      data-watermark-dialog
+      draggable={{ controlsSelector: "button, input, select, textarea, [role='button']" }}
+      actions={[
+        { key: "cancel", label: "Cancel", variant: "secondary", onClick: onClose },
+        Object.assign(
+          {
+            key: "confirm",
+            label: "Apply watermark",
+            variant: "primary" as const,
+            onClick: onConfirmClick,
+            default: true,
+          },
+          { "data-watermark-confirm": true },
+        ),
+      ]}
+    >
               <p className="modal-help">
                 Overlay text or an image across the selected pages. The
                 watermark is baked into the page content (undo removes it).
@@ -791,24 +743,7 @@ export function WatermarkDialog(props: WatermarkDialogProps): ReactElement {
               )}
               </div>
               </div>
-            </div>
-            <div className="modal-footer">
-              <button type="button" className="btn btn-secondary" onClick={onClose}>
-                Cancel
-              </button>
-              <button
-                type="button"
-                className="btn btn-primary"
-                onClick={onConfirmClick}
-                data-watermark-confirm
-              >
-                Apply watermark
-              </button>
-            </div>
-          </TfDialog>
-        </TfBackdrop>
-      )}
-    </AnimatePresence>
+    </DialogShell>
   );
 }
 
