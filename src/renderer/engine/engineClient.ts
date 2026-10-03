@@ -43,6 +43,8 @@ import type {
   PdfCadMetadata,
   PdfLayer,
   RedactionApplyResult,
+  RemoveBlankPagesPayload,
+  RemoveBlankPagesResult,
   ReplaceTextPayload,
   ReplaceTextResult,
   SignaturePlacement,
@@ -550,6 +552,14 @@ addWatermark?(
     docId: string,
     payload: ReplaceTextPayload,
   ): Promise<Result<ReplaceTextResult, EngineError>>;
+  /** Phase 87 (FEA-039) — remove the caller-supplied 1-based visible pages
+   *  in one undoable op, echoing the updated state plus the removed/skipped
+   *  report. Optional so a pre-Phase-87 backend degrades with a friendly
+   *  engine-error. */
+  removeBlankPages?(
+    docId: string,
+    payload: RemoveBlankPagesPayload,
+  ): Promise<Result<RemoveBlankPagesResult, EngineError>>;
 }
 
 /** Normalize a wire EngineState into the renderer's EngineState: the Phase 3
@@ -804,6 +814,14 @@ function missingPhase86(): Result<never, EngineError> {
     "search replace requires the Phase 86 backend update",
   );
 }
+
+function missingPhase87(): Result<never, EngineError> {
+  return err(
+    "engine-error",
+    "Remove blank pages requires the Phase 87 backend update.",
+  );
+}
+
 function missingPhase18(): Result<never, EngineError> {
   return err(
     "engine-error",
@@ -1387,6 +1405,24 @@ class RealEngineAdapter implements EngineApi {
   ): Promise<Result<ReplaceTextResult, EngineError>> {
     if (this.inner.replaceText === undefined) return missingPhase86();
     const r = await this.inner.replaceText(docId, payload);
+    return r.ok
+      ? {
+          ok: true,
+          value: { ...r.value, state: this.normalizeAndCache(docId, r.value.state) },
+        }
+      : r;
+  }
+
+  /** Phase 87 (FEA-039) — remove the selected blank pages through the real
+   *  engine. The result embeds its own `state`, so normalize that through the
+   *  cache while preserving the removed/skipped report. Mirrors the
+   *  `replaceText` adapter shape. */
+  async removeBlankPages(
+    docId: string,
+    payload: RemoveBlankPagesPayload,
+  ): Promise<Result<RemoveBlankPagesResult, EngineError>> {
+    if (this.inner.removeBlankPages === undefined) return missingPhase87();
+    const r = await this.inner.removeBlankPages(docId, payload);
     return r.ok
       ? {
           ok: true,

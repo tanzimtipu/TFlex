@@ -202,6 +202,134 @@ Screenshot: n/a - probe output
 
 Disposition: ACCEPTED -> DEF-507 - a large class of real occurrences (kerning/Tf-split words) is found by Find but can never be replaced; the spec's "replace across a TJ array" coverage is not exercised by the shipped test.
 
+## Phase 87 remove-blank-pages diff-pass (TFL-442) - batch delete + settings persistence
+
+Session label: `diff-pass`. Scope: the Phase-87 working-tree diff on
+`src/shared/blankPages.ts`, `src/main/services/engine.ts` (`_removeBlankPagesImpl` +
+the `applyOpToDoc` delete reuse), `src/main/services/settings.ts`
+(`blankPageInkThreshold`), the `main/index.ts` + `preload.ts` wiring,
+`src/renderer/pdf/blankScan.ts`, `src/renderer/components/BlankPagesDialog.tsx`,
+`engineClient.ts`/`stubEngine.ts`/`types.ts`, and the `App.tsx` /
+`ContextPanel.tsx` / `DocumentView.tsx` wiring. Product code, tests and
+REQUIREMENTS.md were read but not modified. Probes live at
+`test-fixtures/adv442/` (own vitest config; not part of the shipped suite).
+
+Exact commands:
+
+- Probe suite (scratch config, `include: test-fixtures/adv442/**`):
+  `node node_modules/vitest/vitest.mjs run --config test-fixtures/adv442/vitest.probe.config.ts`
+  - result: 9 tests / 8 passed / 1 failed (ADV-170); the dialog probe passes and
+    encodes ADV-169.
+- Pure-classifier probe (no vitest, Node type-stripping):
+  `node <run-scratch>/adv442_blankpages_probe.mjs` -> 10/10 passed.
+- Phase-87 shipped oracles (baseline, all green):
+  `node node_modules/vitest/vitest.mjs run phase87Blank test/unit/shared/blankPages.test.ts`
+  -> 5 files / 28 tests passed.
+
+Attack-surface results (1-7):
+
+1. Batch deleting the FIRST / LAST / two adjacent pages: HOLDS. Probe asserts the
+   reloaded visible order and content (`TOKEN_2,3,4`; `TOKEN_1,2,3`;
+   `TOKEN_1,4,5`), no off-by-one, exact pageCount. Descending-order deletes in
+   `_removeBlankPagesImpl` are correct.
+2. Annotation / text box / placed signature bookkeeping: PARTIAL - text boxes and
+   signatures shift correctly, annotations on surviving pages do NOT (ADV-170).
+   Dropping an annotation on the deleted page itself HOLDS.
+3. Duplicate / out-of-range / delete-every-page batch: HOLDS. All five refusal
+   shapes (`[2,2]`, `[0]`, `[5]`, `[1,2,3,4]`, `[]`) return the typed
+   `out-of-range` / `empty-range` and `getDocumentBytes` is byte-for-byte
+   unchanged with pageCount unchanged.
+4. Undo / second undo / save+reopen: HOLDS. One `removeBlankPages([2,4])` is one
+   undo entry; undo restores pageCount 5, a second undo returns
+   `nothing-to-undo`, redo restores 3, and the serialized+reloaded doc keeps the
+   removal (`TOKEN_1,3,5`).
+5. Settings: HOLDS. `normalizeSettings` preserves finite `[0,1]` values and leaves
+   the field absent for `-0.1`, `1.1`, `NaN` and `'0.5'`; the engine op takes no
+   threshold argument, so it can never depend on a renderer-supplied one.
+6. Renderer scan: HOLDS. `scanBlankDocument` records a throwing page as
+   `{coverage:null, reason}` (never blank), `rasterizePagePixelsForBlankScan`
+   never calls `doc.destroy()` (per-page `pdfPage.cleanup()` in `finally`), and
+   the per-page await + `AbortSignal` + `onProgress` keep the scan yielding.
+7. Threshold-boundary classification: HOLDS. `coverage <= threshold` is a
+   candidate, including exactly-equal and `0` at `0`; a non-finite threshold
+   falls back to `DEFAULT_BLANK_INK_THRESHOLD`; `null` coverage is unclassified.
+
+## ADV-169: Lowering the ink threshold after a scan keeps hidden pages checked, so Confirm silently removes a page that is no longer a candidate
+
+- Session: diff-pass
+- Suggested severity: HIGH
+
+What I did: mounted `BlankPagesDialog` (`test-fixtures/adv442/adv442_dialog.probe.test.tsx`)
+with `threshold: 0.005` and measurements `[{page:1,coverage:0.004},{page:2,coverage:0.5}]`
+(page 1 is the only candidate and is pre-checked). Then re-rendered with
+`threshold: 0.001` WITHOUT a new `measurements` array - exactly what `App.tsx`
+does when `onChangeBlankThreshold` writes the setting - and clicked
+`[data-blank-scan-confirm]`.
+
+Expected: the confirm button should reflect the CURRENT candidate selection. After
+the threshold drops below page 1's measured 0.4% coverage, page 1 is no longer a
+candidate; it must not be removed, and the button must be disabled (or list zero
+pages).
+
+Actual: the candidate list is empty and `[data-blank-scan-report]` reads "No blank
+pages found.", yet the confirm button still reads "Remove 1 selected" and is
+ENABLED; clicking it hands `onConfirm([1])` to the host, which calls
+`engine.removeBlankPages` and deletes page 1. Root cause: `checked` is seeded only
+when `measurements` changes - `useEffect(..., [measurements])`
+(`src/renderer/components/BlankPagesDialog.tsx:60-66`) - while `candidates`
+reclassifies on a threshold change (`useMemo` deps `[measurements, threshold]`,
+lines 51-54). `onConfirmClick` sends the stale `[...checked]` (lines 99-101), so a
+page the user deliberately excluded by tightening the threshold is removed without
+being visible or selected. The probe's captured output:
+`confirm text after lowering threshold: Remove 1 selected`,
+`confirm disabled after lowering threshold: false`, `onConfirm payload: [[[1]]]`.
+
+Screenshot: none; probe `test-fixtures/adv442/adv442_dialog.probe.test.tsx` (the
+test passes because it encodes this exact bug).
+
+Disposition: ACCEPTED -> DEF-502 (frontend-dev). The confirm control must derive its selection from the CURRENT candidate set (intersect checked with candidates on every threshold change, or key the checked state to `(measurements, threshold)`); a page excluded by tightening the threshold must never be removed. Routed for fix 2026-10-03.
+
+## ADV-170: A batch remove-blank-pages leaves annotations on surviving pages reporting their OLD visible page (text boxes and signatures shift; annotations do not)
+
+- Session: diff-pass
+- Suggested severity: MEDIUM
+
+What I did: loaded a 4-page fixture, then on VISIBLE page 3 created one
+annotation (`createAnnotation {page:3}`), one text box (`addTextBox {page:3}`) and
+one placed signature (`placeSignature {page:3}`). Called
+`engine.removeBlankPages('d', {pages:[1]})` (removing visible page 1, so old
+visible page 3 becomes visible page 2) and read the returned `state`
+(`test-fixtures/adv442/adv442_engine.probe.test.ts`, attack 2).
+
+Expected: every page-anchored model must stay consistent with visible numbering
+after the batch, exactly as the delete bookkeeping promises -
+`placedSignatures` and `textBoxes` both move from page 3 to page 2, so the
+annotation must too.
+
+Actual: the probe prints `attack2 post box.page = [{"id":"box-p3","page":2}]` and
+`attack2 post sig.page = [{"id":"sig-p3","page":2}]` (correct) but
+`attack2 post ann.page = [{"id":"ann-p3","page":3}]` while
+`attack2 post pageCount = 3`. Root cause: `applyOpToDoc`'s delete case
+(`src/main/services/engine.ts:5347-5389`) drops annotations for the deleted page
+via `dropPageAnnotations` and shifts the signature/text-box registries, but never
+renumbers annotations on surviving pages; `buildState`
+(`src/main/services/engine.ts:5167-5175`) flattens `doc.annotations[origIdx]`
+verbatim, so `AnnModel.page` stays stale. The renderer groups by `a.page`
+(`src/renderer/components/DocumentView.tsx:3559-3570`), so the annotation overlay
+paints on the wrong visible page after a batch delete until a save/reload
+re-derives pages from /Annots. INHERITED, not new: the same probe shows the
+pre-existing single `engine.applyOp('d', {kind:'delete', page:0})` also leaves
+`ann.page = 3` on a 3-page doc (`inheritance applyOp ann.page ->
+[{"id":"ann-p3","page":3}] pageCount 3`); the Phase-87 batch inherits it because
+it reuses `applyOpToDoc`. Test-coverage gap: success criterion 6 requires the
+engine op tests to cover "annotation bookkeeping", but
+`test/unit/main/phase87BlankPagesEngine.test.ts` never creates an annotation.
+
+Screenshot: none; probe `test-fixtures/adv442/adv442_engine.probe.test.ts`
+(the one failing assertion).
+
+Disposition: ACCEPTED -> DEF-503 (backend-dev). The delete bookkeeping must renumber annotations on surviving pages alongside `placedSignatures`/`textBoxes`, so the overlay paints on the correct visible page; the spec-coverage gap (no annotation in `phase87BlankPagesEngine.test.ts`) is closed with the fix. Routed for fix 2026-10-03.
+
 ## Phase 85 outline diff-pass (TFL-420) - /Outlines rewrite + save path
 
 Session label: `diff-pass`. Scope: the Phase-85 final diff as named by the CTO -

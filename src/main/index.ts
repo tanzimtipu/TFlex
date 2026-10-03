@@ -32,6 +32,7 @@ import type {
   PlaceSignaturePayload,
   PrintJobPayload,
   RecentFile,
+  RemoveBlankPagesPayload,
   ReplaceTextPayload,
   TextBoxStylePatch,
   WatermarkInfo,
@@ -728,6 +729,9 @@ export async function start(): Promise<void> {
   });
   ipcMain.handle(IPC.engineApplyOp, (_event, docId: string, op: OpEntry) =>
     engine.applyOp(docId, op),
+  );
+  ipcMain.handle(IPC.engineRemoveBlankPages, (_event, docId: string, payload: RemoveBlankPagesPayload) =>
+    engine.removeBlankPages(docId, payload),
   );
   ipcMain.handle(IPC.engineUndo, (_event, docId: string) =>
     engine.undo(docId),

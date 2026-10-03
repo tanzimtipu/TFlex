@@ -119,6 +119,9 @@ onInsertBlank?: (page: number) => void;
    *  hover trash verb is a DIFFERENT path: it stays an immediate per-page
    *  delete through `onDelete([page])`. */
   onDeletePage?: (page: number) => void;
+  /** Phase 87 (FEA-039) — opens the Remove blank pages scan dialog. The
+   *  control only renders when the host wires it. */
+  onRemoveBlankPages?: () => void;
   /** Phase 32's cross-document drag wiring, threaded exactly as the Multi
    *  Mode strips thread it. `null` in single mode, where ThumbnailRail keeps
    *  its pre-Phase-32 intra-document drag semantics byte-for-byte. */
@@ -261,6 +264,7 @@ export function ContextPanel(props: ContextPanelProps): ReactElement {
 onInsertBlank,
     onReplacePages,
     onDeletePage,
+    onRemoveBlankPages,
     crossDoc = null,
     pageSelection = null,
     onPageSelectionChange = null,
@@ -404,6 +408,17 @@ const pageCount = engineState.pageCount;
           pageSelection={pageSelection}
           onPageSelectionChange={onPageSelectionChange}
         />
+      </div>
+      <div className="context-panel-actions-row">
+        <button
+          type="button"
+          className="context-panel-action"
+          data-blank-scan-open
+          onClick={(): void => onRemoveBlankPages?.()}
+          aria-label="Remove blank pages"
+        >
+          Remove blank pages…
+        </button>
       </div>
       {(outline !== null || effectiveOutlineEditor !== null) && (
         <section className="context-panel-outline" data-context-panel-outline aria-label="Outline" data-outline-open={outlineOpen ? 'true' : 'false'}>

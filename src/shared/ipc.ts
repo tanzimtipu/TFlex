@@ -52,6 +52,8 @@ import type {
   PrintWindowOpenResult,
   RecentFile,
   RedactionApplyResult,
+  RemoveBlankPagesPayload,
+  RemoveBlankPagesResult,
   ReplaceTextPayload,
   ReplaceTextResult,
   SampleDocument,
@@ -150,6 +152,7 @@ export const IPC = {
   engineLoadDocument: "engine:loadDocument",
   engineLoadDocumentBytes: "engine:loadDocumentBytes",
   engineApplyOp: "engine:applyOp",
+  engineRemoveBlankPages: "engine:removeBlankPages",
   engineUndo: "engine:undo",
   engineRedo: "engine:redo",
   engineMerge: "engine:merge",
@@ -712,6 +715,16 @@ export interface TFlexApiEngine {
     docId: string,
     payload: ReplaceTextPayload,
   ): Promise<Result<ReplaceTextResult, import("./types").EngineError>>;
+  /** Phase 87 (FEA-039) — remove the caller-supplied 1-based visible page
+   *  numbers in ONE all-or-nothing op with ONE undo entry. Any page that is
+   *  not an integer in [1, pageCount], is duplicated, or would leave zero
+   *  pages refuses the whole op (`out-of-range` / `empty-range`) and applies
+   *  nothing. Reuses the normal multi-page delete bookkeeping (annotations,
+   *  placed signatures and text boxes are dropped/shifted). */
+  removeBlankPages?(
+    docId: string,
+    payload: RemoveBlankPagesPayload,
+  ): Promise<Result<RemoveBlankPagesResult, import("./types").EngineError>>;
   /** Phase 10 — add a new text box with wrapping inside `rect`. As of
    *  Phase 14 / DEF-135 / DEF-136 this pushes a `TextBoxModel` into the
    *  engine-side placement registry (NO immediate draw); the box is drawn

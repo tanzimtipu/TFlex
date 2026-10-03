@@ -11051,3 +11051,75 @@ Impact: LOW - a stale bundle or a regression of the scale fix passes the suite s
 History:
 - qa: filed from ADV-161
 - qa (TFL-371, 2026-10-02): CLOSED. Added the hard assertion `expect(scaleAffectsOutput).toBe(true)` to the print-path test and documented the build-first phase-gate procedure in the spec header (`e2e/phase83_imposition.spec.cjs`). On a fresh `npm.cmd run build` (exit 0) the e2e printed `scaleAffectsOutput:true` and passed (2 passed / 0 failed), so the DEF-483 criterion is asserted rather than logged.
+
+## DEF-501: Live `exportText` still returns a page removed by "Remove blank pages" (ignores doc.order/deleted)
+
+- Status: CLOSED
+- Severity: MEDIUM (degrades the Export Text / XLSX / PPTX text-export workflows with wrong, duplicated text; saved PDFs are correct, so there is no document corruption)
+- Found by: qa
+- Phase: 87 (FEA-039 Remove blank pages; Phase 87 qa phase-validation gate)
+
+Steps to reproduce (from application launch):
+1. Open a document and remove a blank page through the PAGES panel -> "Remove blank pages..." -> Scan -> Remove N selected.
+2. Read `await window.tflex.engine.getState(docId)` -> `pageCount` is 3 (removal applied).
+3. Read `await window.tflex.engine.exportText(docId)` -> returns 4 pages, still including the removed page 2.
+
+Expected: after the removal the live engine's `exportText` reflects the visible order and returns the 3 surviving pages (as the Phase 87 criterion requires and as the saved/reloaded file already does).
+
+Actual: `_exportTextImpl` (`src/main/services/engine.ts:2290-2295`) serialises `doc.pdfDoc` directly and iterates `doc.pdfDoc.getPageCount()`; it never consults `doc.order`/`doc.deleted`, so deleted pages are still exported. On the 4-page Phase 87 fixture (page 2 truly blank) it returned `["ONE","THREE","THREE","FOUR"]` after removing page 2, whereas the same document saved and reopened correctly yields `["ONE","THREE","FOUR"]` (3 pages). `serializeDoc` (`engine.ts:6266-6315`) DOES honour `doc.order`, so save/saveAs/`getDocumentBytes` are correct; only the live `exportText` channel is stale. This is a pre-existing `exportText` limitation (documented in `test/unit/main/phase87BlankPagesEngine.test.ts:8-13`, which reloads via `getDocumentBytes` instead), exposed now because the Phase 87 criterion accepts live `exportText` as its oracle. It also affects every other page-deleting op, and the XLSX/PPTX/TXT export writers that read `engine.exportText`.
+
+Evidence: `e2e/phase87_blank_pages.spec.cjs` P87-CORE -> `[p87|exportText-after-removal] ["p1:ONE","p2:THREE","p3:THREE","p4:FOUR"]` vs `[p87|exportText-after-reload] ["p1:ONE","p2:THREE","p3:FOUR"]`; `getState.pageCount` 3 at both points. Screenshot `screenshots/phase87_after_removal.png`.
+
+Impact: MEDIUM - "Export Text" and the XLSX/PPTX writers emit a removed page (and a duplicated neighbour's text) until the document is saved/reloaded. Fix owner: backend-dev (make `_exportTextImpl` iterate `doc.order` and index `extractTextFromRawPdf` by the original index, matching `createDocxFromDoc`). After a fix, the Phase 87 P87-CORE assertion `expect(afterPages.length).toBe(3)` will pass.
+
+History:
+- qa (TFL-441, 2026-10-03): filed from the Phase 87 phase-validation e2e. P87-CORE reports FAIL on criterion 3's `exportText` page-count clause; criteria 1, 2, 4, 5, 6, 7 and the live-engine refusal checks pass.
+- qa (TFL-447, 2026-10-03): CLOSED. `_exportTextImpl` now iterates `doc.order` and indexes `extractTextFromRawPdf` by the original index. Phase 87 e2e P87-CORE re-run returns `exportText-after-removal ["p1:ONE","p2:THREE","p3:FOUR"]` (3 pages) and the spec's `expect(afterPages.length).toBe(3)` passes; engine spec `DEF-501: exportText honours doc.order after a delete` passes; 4/4 e2e, 307/307 unit, verify exit 0.
+
+## DEF-502: Remove-blank-pages dialog keeps a stale checked page after the threshold is tightened, so Confirm deletes a page that is no longer a candidate
+
+- Status: CLOSED
+- Severity: HIGH (a non-blank, no-longer-candidate page can be removed without being visible or selected)
+- Found by: adversary (ADV-169)
+- Phase: 87 (FEA-039 Remove blank pages; adversarial diff-pass TFL-442)
+
+Steps to reproduce (from application launch):
+1. Open a document; run the blank-page scan with threshold 0.005 so page 1 (measured 0.4% ink) is the only candidate and is pre-checked.
+2. Lower `[data-blank-scan-threshold]` to 0.001 (below page 1's measured coverage) WITHOUT re-scanning. The candidate list empties and `[data-blank-scan-report]` reads "No blank pages found."
+3. Click `[data-blank-scan-confirm]`.
+
+Expected: the confirm control reflects the CURRENT candidate selection; with zero candidates it is disabled and removes nothing.
+
+Actual: the button still reads "Remove N selected" and is enabled; clicking it hands the stale checked page to the host, which calls `engine.removeBlankPages` and deletes page 1. Root cause: `checked` is seeded only when `measurements` changes (`BlankPagesDialog.tsx:60-66`) while `candidates` reclassifies on `[measurements, threshold]` (`:51-54`), and `onConfirmClick` sends the stale `[...checked]` (`:99-101`). Related UX defects raised in the same pass: after a successful removal the dialog stays open with stale checked rows (a second Confirm then errors), and the threshold input coerces `Number()` on every keystroke (`:158`) so intermediate decimals cannot be typed and out-of-range values are accepted in-session.
+
+Evidence: adversary probe `test-fixtures/adv442/adv442_dialog.probe.test.tsx` (passes, encoding the bug): confirm text "Remove 1 selected", disabled false, `onConfirm payload: [[[1]]]`.
+
+Impact: HIGH - silent deletion of a page the user excluded. Fix owner: frontend-dev. Fix must intersect the checked set with the current candidates on every threshold change (or key checked state to `(measurements, threshold)`), make the confirm control derive its count/enabled state from the current candidates, and reset/close on a successful removal.
+
+History:
+- adversary (TFL-442, 2026-10-03): filed as ADV-169, suggested HIGH; CTO accepted it as DEF-502 and routed it to frontend-dev.
+- qa (TFL-447, 2026-10-03): CLOSED. `BlankPagesDialog` now derives the confirm count/enabled state from `effectiveChecked` (checked set intersected with the current candidates); the threshold input keeps a raw string and commits a clamped `[0,1]` value on blur/Enter. Unit `never confirms a checked page that is no longer a candidate (DEF-502)` passes: threshold 0.005 with page 1 at 0.4% -> enabled "Remove 1 selected"; same measurements at 0.001 -> 0 candidates, disabled "Remove 0 selected", click does not call `onConfirm`. Clamp tests (`on Enter`, `above 1`, `below 0`) pass; Phase 87 e2e 4/4 green with the new blur-commit input.
+
+## DEF-503: A batch remove-blank-pages leaves annotations on surviving pages reporting their OLD visible page
+
+- Status: CLOSED
+- Severity: MEDIUM (the annotation overlay paints on the wrong visible page until a save/reload re-derives pages from /Annots)
+- Found by: adversary (ADV-170)
+- Phase: 87 (FEA-039 Remove blank pages; adversarial diff-pass TFL-442)
+
+Steps to reproduce (from application launch):
+1. Open a 4-page document; on visible page 3 add one annotation, one text box and one placed signature.
+2. Run Remove blank pages and delete visible page 1 (old visible page 3 becomes visible page 2).
+
+Expected: every page-anchored model is renumbered to the new visible page, exactly as the delete bookkeeping promises: `textBoxes` and `placedSignatures` move from page 3 to page 2, so the annotation does too.
+
+Actual: `box.page` and `sig.page` become 2, but `ann.page` stays 3 while `pageCount` is 3. Root cause: `applyOpToDoc`'s delete case (`engine.ts:5347-5389`) drops annotations for the deleted page via `dropPageAnnotations` and shifts the signature/text-box registries, but never renumbers annotations on surviving pages; `buildState` (`engine.ts:5167-5175`) flattens `doc.annotations[origIdx]` verbatim. The renderer groups by `a.page` (`DocumentView.tsx:3559-3570`), so the overlay paints on the wrong visible page. INHERITED: the pre-existing single `engine.applyOp({kind:'delete'})` shows the same, and the Phase 87 batch inherits it by reusing `applyOpToDoc`.
+
+Evidence: adversary probe `test-fixtures/adv442/adv442_engine.probe.test.ts` (1 failing assertion): `ann.page = [{"id":"ann-p3","page":3}]` while `pageCount = 3`, vs `box.page`/`sig.page` = 2. Also a spec-coverage gap: `test/unit/main/phase87BlankPagesEngine.test.ts` never creates an annotation.
+
+Impact: MEDIUM - page-numbering/navigation correctness on any page deletion. Fix owner: backend-dev. Fix must shift annotations on surviving pages with the same `deletedVisiblePage` logic as signatures/text boxes (and correct `doc.annotations` indexing), and the Phase 87 engine spec must add an annotation case.
+
+History:
+- adversary (TFL-442, 2026-10-03): filed as ADV-170, suggested MEDIUM; CTO accepted it as DEF-503 and routed to backend-dev.
+- qa (TFL-447, 2026-10-03): CLOSED. `buildState` now rewrites each flattened annotation's `page` to its current visible page (`vi + 1`). Engine spec `DEF-503: after a delete, flattened annotations carry the current visible page` passes: annotation, text box and placed signature created on visible page 3 all report page 2 after removing visible page 1, pageCount 3; the spec-coverage gap (no annotation case) is now covered. 4/4 e2e, 307/307 unit, verify exit 0.
+

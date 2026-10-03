@@ -2,6 +2,7 @@ import { cloneElement, useCallback, useEffect, useMemo, useReducer, useRef, useS
 import type { ReactElement, ReactNode } from "react";
 import type {
   AppSettings,
+  BlankPageMeasurement,
   DocxImageEntry,
   DocumentProtectionState,
   EditFont,
@@ -273,6 +274,7 @@ import {
   type ValidationNoticeState,
 } from "./state/validation";
 import { DeletePageDialog } from "./components/DeletePageDialog";
+import { BlankPagesDialog } from "./components/BlankPagesDialog";
 import { CloseTabPromptDialog, type CloseTabPromptChoice } from "./components/CloseTabPromptDialog";
 import { SignatureManagerModal } from "./signatures/SignatureManagerModal";
 import { FlattenConfirmDialog } from "./forms/FlattenConfirmDialog";
@@ -282,6 +284,8 @@ import {
   type OcrScope,
 } from "./components/OcrDialog";
 import { rasterizePagesForOcr } from "./pdf/ocrRasterize";
+import { scanBlankDocument, formatScanReport } from "./pdf/blankScan";
+import { classifyPages, DEFAULT_BLANK_INK_THRESHOLD } from "../shared/blankPages";
 import { defaultPrintSettings } from "./pdf/printSettings";
 import type { EngineApi, EngineOp, EngineState } from "./engine/types";
 import type { PlacedStamp } from "./annotations/StampAnnotations";
@@ -906,6 +910,18 @@ export function App(): ReactElement {
   // the existing onDelete callback directly (no dialog) so a
   // single-thumb click is unaffected.
   const [deletePageOpen, setDeletePageOpen] = useState(false);
+  // Phase 87 (FEA-039) — Remove blank pages. The scan dialog is a pure UI
+  // shell; App owns the measurements, the scan lifecycle and the removal op.
+  // `blankScanAbortRef` cancels an in-flight raster sweep when the dialog
+  // closes; `blankScanMeasurementsRef` lets the removal callback read the
+  // latest measurements without being re-created (same pattern as settingsRef).
+  const [blankPagesOpen, setBlankPagesOpen] = useState(false);
+  const [blankScanRunning, setBlankScanRunning] = useState(false);
+  const [blankScanProgress, setBlankScanProgress] = useState(0);
+  const [blankScanMeasurements, setBlankScanMeasurements] =
+    useState<BlankPageMeasurement[] | null>(null);
+  const [blankScanReport, setBlankScanReport] = useState<string | null>(null);
+  const blankScanAbortRef = useRef<AbortController | null>(null);
   // Phase 36 (chunk 2) — the PAGES panel's "Delete…" gesture seeds the
   // dialog with the page it landed on. null means "no seed": the toolbar's
   // Delete button and the palette open the dialog seeded from the tab's
@@ -1148,6 +1164,8 @@ export function App(): ReactElement {
   engineUiRef.current = engineUi;
   const settingsRef = useRef(settings);
   settingsRef.current = settings;
+  const blankScanMeasurementsRef = useRef<BlankPageMeasurement[] | null>(null);
+  blankScanMeasurementsRef.current = blankScanMeasurements;
   const bootstrapRef = useRef(bootstrap);
   bootstrapRef.current = bootstrap;
   const savedSignaturesRef = useRef(savedSignatures);
@@ -7211,6 +7229,118 @@ pushToast(
     [applyEngineOp, pushToast],
   );
 
+  // ---- Phase 87 (FEA-039): remove blank pages ----
+
+  /** The persisted ink threshold, read through the ref so the scan callbacks
+   *  stay stable across an unrelated settings re-render. */
+  const blankThreshold =
+    settingsRef.current?.blankPageInkThreshold ?? DEFAULT_BLANK_INK_THRESHOLD;
+
+  const onChangeBlankThreshold = useCallback(
+    (value: number): void => {
+      setSettings((prev) => {
+        if (prev === null) return prev;
+        const updated: AppSettings = { ...prev, blankPageInkThreshold: value };
+        trackAndSave(updated);
+        return updated;
+      });
+    },
+    [trackAndSave],
+  );
+
+  const onOpenBlankPages = useCallback((): void => {
+    if (activeTabIdRefLocal.current === null) return;
+    setBlankScanMeasurements(null);
+    setBlankScanReport(null);
+    setBlankScanProgress(0);
+    setBlankPagesOpen(true);
+  }, []);
+
+  const onCloseBlankPages = useCallback((): void => {
+    blankScanAbortRef.current?.abort();
+    setBlankPagesOpen(false);
+  }, []);
+
+  const onRunBlankScan = useCallback(async (): Promise<void> => {
+    const id = activeTabIdRefLocal.current;
+    const tab = id === null ? undefined : openTabsRef.current[id];
+    if (!id || tab === undefined) return;
+    const controller = new AbortController();
+    blankScanAbortRef.current = controller;
+    setBlankScanRunning(true);
+    setBlankScanReport(null);
+    try {
+      const measurements = await scanBlankDocument({
+        doc: tab.session.doc,
+        dpi: 96,
+        threshold: blankThreshold,
+        signal: controller.signal,
+        onProgress: setBlankScanProgress,
+      });
+      setBlankScanMeasurements(measurements);
+    } catch (e) {
+      setBlankScanReport(
+        "Scan failed: " + (e instanceof Error ? e.message : String(e)),
+      );
+    } finally {
+      setBlankScanRunning(false);
+      blankScanAbortRef.current = null;
+    }
+  }, [blankThreshold]);
+
+  const handleRemoveBlankPages = useCallback(
+    async (tabId: string, pages: number[]): Promise<void> => {
+      const open = openTabsRef.current[tabId];
+      if (open === undefined) {
+        setBlankScanReport("No active document.");
+        return;
+      }
+      const result = await engineRef.current.removeBlankPages?.(
+        open.session.engineDocId,
+        { pages },
+      );
+      if (result === undefined) {
+        setBlankScanReport(
+          "Remove blank pages requires the Phase 87 backend update.",
+        );
+        return;
+      }
+      if (!result.ok) {
+        setBlankScanReport(
+          describeEngineError(result.error.code, result.error.message),
+        );
+        return;
+      }
+      noteOpApplied(tabId, result.value.state as EngineState);
+      const refreshFn = refreshDocProxyForRef.current;
+      if (refreshFn !== null) {
+        await refreshFn(tabId).catch(() => undefined);
+      }
+      const unclassified = classifyPages(
+        blankScanMeasurementsRef.current ?? [],
+        blankThreshold,
+      ).unclassified;
+      setBlankScanMeasurements([]);
+      setBlankScanReport(
+        formatScanReport(result.value.removed, result.value.skipped, unclassified),
+      );
+      pushToast(
+        "info",
+        "Removed " + result.value.removed.length + " blank page(s).",
+      );
+    },
+    [noteOpApplied, pushToast, blankThreshold],
+  );
+
+  const onConfirmBlankScan = useCallback(
+    (pages: number[]): void => {
+      const id = activeTabIdRefLocal.current;
+      if (id === null) return;
+      void handleRemoveBlankPages(id, pages);
+    },
+    [handleRemoveBlankPages],
+  );
+
   // ---- Phase 11: OCR (recognize text) ----
 
   /** Open the OCR dialog against the active tab. The toolbar /
@@ -10655,6 +10785,7 @@ pushToast(
                     // drop below the "must keep at least one"
                     // floor.
                     onDeletePage={onDeletePageClick}
+                    onRemoveBlankPages={onOpenBlankPages}
                     canDeletePage={engine.engineState.pageCount > 1}
                     annotations={ann.annotations}
                     liveAnnTextIds={ann.liveAnnTextIds}
@@ -11494,6 +11625,25 @@ pushToast(
         })()}
         onConfirm={onDeletePageConfirm}
         onClose={onCancelDeletePage}
+      />
+      <BlankPagesDialog
+        open={blankPagesOpen}
+        totalPages={
+          activeEngineUi?.state.pageCount ??
+          activeTab?.session.doc.numPages ??
+          0
+        }
+        threshold={blankThreshold}
+        running={blankScanRunning}
+        progress={blankScanProgress}
+        measurements={blankScanMeasurements}
+        report={blankScanReport}
+        onThresholdChange={onChangeBlankThreshold}
+        onRun={(): void => {
+          void onRunBlankScan();
+        }}
+        onConfirm={onConfirmBlankScan}
+        onClose={onCloseBlankPages}
       />
       {/* B8 — close-tab prompt. Shown when the user closes a tab
           with unsaved engine changes. The dialog stays mounted

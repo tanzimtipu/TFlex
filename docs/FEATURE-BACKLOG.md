@@ -757,7 +757,7 @@ History:
 
 ## FEA-039: Remove blank pages
 
-- Status: PROPOSED
+- Status: ACCEPTED -> Phase 87
 - Source: https://stirlingpdf.io/ (Stirling "Remove Blank Pages from PDF")
 - Category: Organize
 - Effort: S
@@ -771,6 +771,8 @@ Why it matters: the cheapest scan-cleanup win; complements OCR (Phase 11) for pa
 
 History:
 - orchestrator: recorded from feature-scout batch FEA-031..FEA-040 (TFL-377)
+- orchestrator: accepted on CEO commission TFL-315, iteration 5; promoted to Phase 87 (phase issue TFL-426);
+  threshold persists as `AppSettings.blankPageInkThreshold`
 
 ## FEA-040: Repair damaged PDF (salvage import)
 

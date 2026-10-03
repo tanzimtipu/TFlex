@@ -49,6 +49,8 @@ import type {
   PdfCadMetadata,
   PdfLayer,
   RedactionApplyResult,
+  RemoveBlankPagesPayload,
+  RemoveBlankPagesResult,
   ReplaceTextPayload,
   ReplaceTextResult,
   SavedSignature,
@@ -984,6 +986,45 @@ export class StubRendererEngine implements EngineApi {
       skipped: [],
       substitutedFonts: [],
     });
+  }
+
+  /** Phase 87 (FEA-039) — the stub has no pdf-lib, so it cannot rebuild the
+   *  page tree. It validates the request and flags the selected visible pages
+   *  as deleted (the same bookkeeping the `delete` op uses, so undo restores
+   *  exactly the removed pages) and echoes the removed list so the renderer's
+   *  remove flow can be exercised end-to-end before the real engine lands.
+   *  Empty, out-of-range, duplicated, or all-pages requests are refused
+   *  loudly rather than silently no-op'ing. */
+  async removeBlankPages(
+    docId: string,
+    payload: RemoveBlankPagesPayload,
+  ): Promise<Result<RemoveBlankPagesResult, EngineError>> {
+    const t = this.tabs.get(docId);
+    if (t === undefined) return err("engine-error", "unknown document");
+    if (payload.pages.length === 0) {
+      return err("empty-range", "removeBlankPages: no pages provided");
+    }
+    const visible = buildState(t).pageOrder;
+    const pageCount = visible.length;
+    const seen = new Set<number>();
+    for (const p of payload.pages) {
+      if (!Number.isInteger(p) || p < 1 || p > pageCount || seen.has(p)) {
+        return err("out-of-range", `removeBlankPages: page ${p} is out of range`);
+      }
+      seen.add(p);
+    }
+    if (payload.pages.length >= pageCount) {
+      return err("empty-range", "removeBlankPages: cannot remove every page");
+    }
+    pushUndo(t);
+    const sorted = [...payload.pages].sort((a, b) => b - a);
+    for (const p of sorted) {
+      const origIdx = visible[p - 1];
+      if (origIdx !== undefined) t.deleted[origIdx] = true;
+    }
+    t.modified = true;
+    const removed = [...payload.pages].sort((a, b) => a - b);
+    return ok({ state: buildState(t), removed, skipped: [] });
   }
 
   /** Phase 10 — add a new text box. Same shape as editTextRun.

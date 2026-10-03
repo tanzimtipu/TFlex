@@ -1179,6 +1179,13 @@ export function normalizeSettings(raw: unknown): AppSettings {
     settings.createImageQuality = rawObj.createImageQuality;
   }
 
+  // Phase 87 (FEA-039): preserve blankPageInkThreshold if it is a number in
+  // 0..1. Absent/invalid leaves the field unset so the consumer falls back to
+  // DEFAULT_BLANK_INK_THRESHOLD.
+  if (typeof rawObj.blankPageInkThreshold === 'number' && Number.isFinite(rawObj.blankPageInkThreshold) && rawObj.blankPageInkThreshold >= 0 && rawObj.blankPageInkThreshold <= 1) {
+    settings.blankPageInkThreshold = rawObj.blankPageInkThreshold;
+  }
+
   // Phase 10 / Phase 27: preserve editDefaultFont if it is a valid EditFont
   // allowlist value (the three StandardFont families plus the bundled ones).
   if (isEditFont(rawObj.editDefaultFont)) {

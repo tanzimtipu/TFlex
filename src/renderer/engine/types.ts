@@ -36,6 +36,8 @@ import type {
   PdfCadMetadata,
   PdfLayer,
   RedactionApplyResult,
+  RemoveBlankPagesPayload,
+  RemoveBlankPagesResult,
   ReplaceTextPayload,
   ReplaceTextResult,
   SignaturePlacement,
@@ -763,6 +765,16 @@ export interface EngineApi {
     docId: string,
     payload: ReplaceTextPayload,
   ): Promise<Result<ReplaceTextResult, EngineError>>;
+
+  /** Phase 87 (FEA-039) — remove the caller-supplied 1-based visible pages
+   *  from the document in one undoable op, echoing the updated state plus
+   *  the pages actually removed and any pages the engine refused to remove.
+   *  Optional so a pre-Phase-87 backend degrades with a friendly
+   *  engine-error. */
+  removeBlankPages?(
+    docId: string,
+    payload: RemoveBlankPagesPayload,
+  ): Promise<Result<RemoveBlankPagesResult, EngineError>>;
 
   /** Peek the renderer's most-recent normalized EngineState for `docId`
    *  without doing an IPC round-trip. The real-engine adapter populates

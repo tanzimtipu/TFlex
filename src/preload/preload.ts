@@ -51,6 +51,8 @@ import type {
   PrintWindowOpenResult,
   RecentFile,
   RedactionApplyResult,
+  RemoveBlankPagesPayload,
+  RemoveBlankPagesResult,
   ReplaceTextPayload,
   ReplaceTextResult,
   SampleDocument,
@@ -130,6 +132,9 @@ const engineApi = {
   },
   applyOp(docId: string, op: OpEntry): Promise<Result<EngineState, EngineError>> {
     return ipcRenderer.invoke(IPC.engineApplyOp, docId, op);
+  },
+  removeBlankPages(docId: string, payload: RemoveBlankPagesPayload): Promise<Result<RemoveBlankPagesResult, EngineError>> {
+    return ipcRenderer.invoke(IPC.engineRemoveBlankPages, docId, payload);
   },
   undo(docId: string): Promise<Result<EngineState, EngineError>> {
     return ipcRenderer.invoke(IPC.engineUndo, docId);

@@ -253,6 +253,11 @@ export interface AppSettings {
   printPresets?: PrintPreset[];
   /** Phase 82 — offline spell-check preference (enabled + language). */
   spellCheck?: SpellCheckSettings;
+  /** Phase 87 (FEA-039) — the ink-coverage fraction (0..1) at or below which
+   *  a page counts as blank. Validated preserve-if-valid in
+   *  src/main/services/settings.ts; when absent the consumer uses
+   *  DEFAULT_BLANK_INK_THRESHOLD. */
+  blankPageInkThreshold?: number;
 }
 
 /** Phase 6 — what the renderer gets back from `app:getInfo`. The
@@ -451,6 +456,50 @@ export type EngineError =
    *  content stream cannot be decoded, so no occurrence on it can be safely
    *  rewritten. Nothing is applied (all-or-nothing). */
   | 'replace-unsupported';
+
+// ---------------------------------------------------------------------------
+// Phase 87 (FEA-039) — remove blank pages
+// ---------------------------------------------------------------------------
+
+/** One page's blank-page measurement. `coverage` is the ink fraction 0..1
+ *  measured by src/shared/blankPages.ts, or null when the page could not be
+ *  measured (with a readable `reason`). */
+export interface BlankPageMeasurement {
+  page: number;
+  coverage: number | null;
+  reason?: string;
+}
+
+/** A page whose measured coverage is at or below the threshold. */
+export interface BlankPageCandidate {
+  page: number;
+  coverage: number;
+}
+
+/** A page the classifier could not measure; it is never a removal candidate. */
+export interface BlankPageUnclassified {
+  page: number;
+  reason: string;
+}
+
+/** A page the engine refused to remove, with a readable reason. */
+export interface BlankPageSkip {
+  page: number;
+  reason: string;
+}
+
+/** The 1-based visible page numbers the renderer asks the engine to remove. */
+export interface RemoveBlankPagesPayload {
+  pages: number[];
+}
+
+/** The post-removal state plus the pages actually removed (ascending) and any
+ *  pages skipped. */
+export interface RemoveBlankPagesResult {
+  state: EngineState;
+  removed: number[];
+  skipped: BlankPageSkip[];
+}
 
 // ---------------------------------------------------------------------------
 // Phase 52 — encrypted PDF support (engine half)

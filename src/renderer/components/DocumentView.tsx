@@ -424,6 +424,9 @@ interface DocumentViewProps extends DocumentViewDockProps {
    *  on; the toolbar passes no argument (the dialog then seeds from
    *  the tab's current page). */
   onDeletePage?: (page?: number) => void;
+  /** Phase 87 (FEA-039) — opens the Remove blank pages scan dialog. Only
+   *  renders the PAGES panel entry when the host wires it. */
+  onRemoveBlankPages?: () => void;
   /** Phase 36 (chunk 3b) â€” SUPERSEDED: the retired toolbar was the only
    *  reader; the PAGES dock's Delete verb is disabled from the host's gate
    *  instead. Kept on the interface for host/harness compatibility. */
@@ -958,6 +961,7 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
   onRotateClockwise,
   onRotateCounterClockwise,
   onDeletePage,
+  onRemoveBlankPages,
   onOptimize,
   onAuditSpace,
   annotations = [],
@@ -4283,6 +4287,7 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
       onInsertBlank={onInsertBlankPage}
       onReplacePages={onReplacePages}
       onDeletePage={onDeletePage}
+      onRemoveBlankPages={onRemoveBlankPages}
       // Phase 32's cross-document drag wiring: single mode keeps the rail's
       // intra-document drag semantics (null), exactly as before.
       crossDoc={null}

@@ -52,6 +52,8 @@ import type {
   PdfLayer,
   PlaceSignaturePayload,
   RedactionApplyResult,
+  RemoveBlankPagesPayload,
+  RemoveBlankPagesResult,
   ReplaceOccurrence,
   ReplaceSkip,
   ReplaceTextPayload,
@@ -585,6 +587,70 @@ export class EngineService {
     doc.redoStack = [];
     doc.modified = true;
     return ok(buildState(doc));
+  }
+
+  // -----------------------------------------------------------------------
+  // removeBlankPages — Phase 87 (FEA-039). Removes a caller-supplied set of
+  // 1-based visible page numbers in ONE op with ONE undo entry. Validation is
+  // all-or-nothing: any bad/duplicate page, or a set that would delete every
+  // page, refuses the whole op and mutates nothing. Uses applyOpToDoc's
+  // 'delete' case (descending order) so annotations, placed signatures and
+  // text boxes are dropped/shifted exactly as a single delete would.
+  // -----------------------------------------------------------------------
+  async removeBlankPages(
+    docId: string,
+    payload: RemoveBlankPagesPayload,
+  ): Promise<Result<RemoveBlankPagesResult, EngineError>> {
+    return this._enqueue(docId, () => this._removeBlankPagesImpl(docId, payload));
+  }
+
+  private async _removeBlankPagesImpl(
+    docId: string,
+    payload: RemoveBlankPagesPayload,
+  ): Promise<Result<RemoveBlankPagesResult, EngineError>> {
+    const doc = this.docs.get(docId);
+    if (doc === undefined) {
+      return err('engine-error', `unknown document: ${docId}`);
+    }
+    const pages = Array.isArray(payload.pages) ? payload.pages : [];
+    if (pages.length === 0) {
+      return err('empty-range', 'removeBlankPages: no pages provided');
+    }
+    const surviving = doc.order.length;
+    // Validate the WHOLE set before touching the document.
+    const seen = new Set<number>();
+    for (const page of pages) {
+      if (!Number.isInteger(page) || page < 1 || page > surviving) {
+        return err('out-of-range', `removeBlankPages: page ${String(page)} out of range [1,${surviving}]`);
+      }
+      if (seen.has(page)) {
+        return err('out-of-range', `removeBlankPages: duplicate page ${page}`);
+      }
+      seen.add(page);
+    }
+    if (pages.length >= surviving) {
+      return err('empty-range', 'removeBlankPages: cannot delete every page');
+    }
+    // ONE snapshot before any mutation: removing N pages is ONE undo entry.
+    const snapshot = snapshotDoc(doc);
+    // Delete in DESCENDING page order so an earlier deletion never shifts the
+    // visible index of a page still to be deleted.
+    const descending = [...pages].sort((a, b) => b - a);
+    for (const page of descending) {
+      const r = applyOpToDoc(doc, { kind: 'delete', page: page - 1 });
+      if (!r.ok) {
+        await restoreSnapshot(doc, snapshot);
+        return r;
+      }
+    }
+    doc.undoStack.push(snapshot);
+    doc.redoStack = [];
+    doc.modified = true;
+    return ok({
+      state: buildState(doc),
+      removed: [...pages].sort((a, b) => a - b),
+      skipped: [],
+    });
   }
 
   // -----------------------------------------------------------------------
@@ -2229,11 +2295,17 @@ export class EngineService {
       refreshDocumentContentStreams(doc.pdfDoc);
       const bytes = await doc.pdfDoc.save({ useObjectStreams: false });
       const pages: TextPage[] = [];
-      const pageCount = doc.pdfDoc.getPageCount();
 
-      for (let i = 0; i < pageCount; i++) {
-        const text = extractTextFromRawPdf(bytes, i);
-        pages.push({ pageIndex: i + 1, text });
+      // DEF-501: the saved bytes preserve the ORIGINAL pdfDoc page order
+      // (save does not apply doc.order/deletions), so extractTextFromRawPdf is
+      // indexed by the ORIGINAL page index. Iterate doc.order (visible pages)
+      // and map each visible position to its original index so a removed page
+      // is no longer returned and reorders are honoured — mirroring
+      // _createDocxFromDocImpl below.
+      for (let vi = 0; vi < doc.order.length; vi++) {
+        const origIdx = doc.order[vi];
+        const text = extractTextFromRawPdf(bytes, origIdx);
+        pages.push({ pageIndex: vi + 1, text });
       }
 
       return ok(pages);
@@ -5180,7 +5252,11 @@ function buildState(doc: EngineDoc): EngineState {
     const origIdx = doc.order[vi];
     const pageAnns = doc.annotations[origIdx];
     if (pageAnns !== undefined) {
-      flat.push(...pageAnns);
+      // DEF-503: annotations are stored keyed by ORIGINAL page index and each
+      // model's `page` was stamped at creation time, so after a delete/reorder
+      // it goes stale. Rewrite it to the CURRENT visible page (vi + 1) — the
+      // same visible numbering rotations/textBoxes/placedSignatures report.
+      flat.push(...pageAnns.map((a) => ({ ...a, page: vi + 1 })));
     }
   }
   (state as any).annotations = flat;
