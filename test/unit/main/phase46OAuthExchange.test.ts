@@ -51,7 +51,10 @@ type Route = () => Response | Promise<Response>;
 
 interface FakeSession extends OAuthExchangeSession {
   calls: string[];
-  inits: ({ method?: string; headers?: Record<string, string> } | undefined)[];
+  inits: (
+    | { method?: string; headers?: Record<string, string>; credentials?: string }
+    | undefined
+  )[];
   cookieCalls: number;
 }
 
@@ -61,7 +64,10 @@ function makeSession(options: {
   routes?: Record<string, Route>;
 }): FakeSession {
   const calls: string[] = [];
-  const inits: ({ method?: string; headers?: Record<string, string> } | undefined)[] = [];
+  const inits: (
+    | { method?: string; headers?: Record<string, string>; credentials?: string }
+    | undefined
+  )[] = [];
   const session: FakeSession = {
     calls,
     inits,
@@ -123,6 +129,15 @@ describe('completeOAuthExchange - happy path', () => {
     expect(outcome).toEqual({ ok: true });
     // The exact verified paths, off the configured base.
     expect(session.calls).toEqual([`${BASE}/get-session`, `${BASE}/token`]);
+    // Both outbound calls must opt into sending the session's cookies:
+    // Electron's request helper defaults to `same-origin` and the auth host is
+    // cross-origin, so without `credentials: 'include'` the held
+    // `__Secure-neon-auth.session_challenge` cookie is never sent and the
+    // provider answers `null`.
+    expect(session.inits).toEqual([
+      { method: 'GET', credentials: 'include' },
+      { method: 'GET', credentials: 'include' },
+    ]);
     expect(stored).toHaveLength(1);
     expect(stored[0].user).toEqual({
       id: 'user-1',

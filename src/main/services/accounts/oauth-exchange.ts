@@ -53,10 +53,17 @@ export interface OAuthExchangeSession {
   };
   /** Electron's session request helper (`session.fetch`), which attaches the
    *  session's cookies. Named `request` here so product code never spells the
-   *  network primitive the conventions gate forbids. */
+   *  network primitive the conventions gate forbids. Electron only attaches
+   *  the store's cookies when the init opts in via `credentials: 'include'`
+   *  (its default is `same-origin`, and these calls are cross-origin to the
+   *  auth host), so the init must be able to carry that field. */
   request(
     input: string,
-    init?: { method?: string; headers?: Record<string, string> },
+    init?: {
+      method?: string;
+      headers?: Record<string, string>;
+      credentials?: 'omit' | 'same-origin' | 'include';
+    },
   ): Promise<Response>;
 }
 
@@ -147,7 +154,11 @@ export async function completeOAuthExchange(
     );
   }
 
-  // 2. /get-session (better-auth). session.request attaches the Lax cookie.
+  // 2. /get-session (better-auth). session.request attaches the Lax cookie,
+  // but only when the init asks for it: Electron's request helper defaults to
+  // `credentials: 'same-origin'` and these calls are cross-origin to the auth
+  // host, so `credentials: 'include'` is what lets it send the held
+  // `__Secure-neon-auth.session_challenge` cookie the provider needs.
   // Phase 47 - when the Managed flow handed us a one-time verifier, present it
   // here: the provider mints the session cookie from the challenge cookie +
   // verifier and then answers with `{ session, user }`. Without it the hosted
@@ -159,7 +170,7 @@ export async function completeOAuthExchange(
       : `${base}/get-session`;
   let sessionResponse: Response;
   try {
-    sessionResponse = await session.request(getSessionUrl, { method: 'GET' });
+    sessionResponse = await session.request(getSessionUrl, { method: 'GET', credentials: 'include' });
   } catch (error) {
     return fail('reach', `Could not reach Neon Auth to complete the sign-in: ${errorText(error)}`);
   }
@@ -185,7 +196,7 @@ export async function completeOAuthExchange(
   // 3. /token (the jwt plugin) for the session JWT.
   let tokenResponse: Response;
   try {
-    tokenResponse = await session.request(`${base}/token`, { method: 'GET' });
+    tokenResponse = await session.request(`${base}/token`, { method: 'GET', credentials: 'include' });
   } catch (error) {
     return fail('reach', `Could not reach Neon Auth to fetch the session token: ${errorText(error)}`);
   }
