@@ -8,10 +8,12 @@
 import { describe, expect, it } from 'vitest';
 import {
   DEFAULT_BATES_DEFAULTS,
+  MAX_BATES_COORD,
   MAX_BATES_SIZE,
   MIN_BATES_SIZE,
   buildBatesLabel,
   formatBatesSeries,
+  isBatesCoord,
   normalizeBatesDefaults,
   validateBatesSettings,
 } from '../../../src/shared/bates';
@@ -175,5 +177,50 @@ describe('phase89: validateBatesSettings', () => {
     expect(out?.font).toBe('Times');
     expect(out?.size).toBe(MAX_BATES_SIZE);
     expect(out?.color).toEqual({ r: 0.1, g: 0.2, b: 0.3 });
+  });
+});
+
+describe('phase90: isBatesCoord', () => {
+  it('accepts a finite number in 0..MAX_BATES_COORD (inclusive)', () => {
+    expect(isBatesCoord(0)).toBe(true);
+    expect(isBatesCoord(1)).toBe(true);
+    expect(isBatesCoord(612.5)).toBe(true);
+    expect(isBatesCoord(MAX_BATES_COORD)).toBe(true);
+  });
+
+  it('rejects a non-number, non-finite or out-of-bounds value', () => {
+    for (const v of [undefined, null, '5', true, {}, [], NaN, Infinity, -Infinity, -1, -0.0001]) {
+      expect(isBatesCoord(v), String(v)).toBe(false);
+    }
+    expect(isBatesCoord(MAX_BATES_COORD + 1)).toBe(false);
+    expect(isBatesCoord(1e9)).toBe(false);
+  });
+});
+
+describe('phase90: validateBatesSettings x/y', () => {
+  it('preserves valid x/y independently (a partial pair is allowed)', () => {
+    const both = validateBatesSettings({ pages: [1], x: 0, y: MAX_BATES_COORD });
+    expect(both?.x).toBe(0);
+    expect(both?.y).toBe(MAX_BATES_COORD);
+    const onlyX = validateBatesSettings({ pages: [1], x: 12 });
+    expect(onlyX?.x).toBe(12);
+    expect(onlyX?.y).toBeUndefined();
+    const none = validateBatesSettings({ pages: [1] });
+    expect(none?.x).toBeUndefined();
+    expect(none?.y).toBeUndefined();
+  });
+
+  it('rejects a non-finite or out-of-bounds coordinate', () => {
+    for (const raw of [
+      { pages: [1], x: -1 },
+      { pages: [1], y: -1 },
+      { pages: [1], x: MAX_BATES_COORD + 1 },
+      { pages: [1], x: NaN },
+      { pages: [1], y: Infinity },
+      { pages: [1], x: '10' },
+      { pages: [1], x: null },
+    ]) {
+      expect(validateBatesSettings(raw), JSON.stringify(raw)).toBeNull();
+    }
   });
 });

@@ -336,9 +336,9 @@ describe("B12 — MergeDialog: After page N + modal blocking during pick", () =>
         // aria-busy is set on the dialog body.
         const dialog = host.querySelector<HTMLElement>(".modal-dialog");
         expect(dialog?.getAttribute("aria-busy")).toBe("true");
-        // backdrop data-picking attribute marks the modal-block state.
-        const backdrop = host.querySelector<HTMLElement>(".modal-backdrop");
-        expect(backdrop?.getAttribute("data-picking")).toBe("true");
+        // data-picking attribute on the dialog root marks the modal-block
+        // state (Phase 92 chunk C1 — DialogShell forwards it to the root).
+        expect(dialog?.getAttribute("data-picking")).toBe("true");
         // Release the picker so the cleanup can finish cleanly.
         await act(async (): Promise<void> => {
           resolvePick?.(SAMPLE_PICK);

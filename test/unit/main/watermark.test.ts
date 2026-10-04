@@ -826,15 +826,18 @@ describe('Phase 18 / DEF-216: watermark identity (getWatermarks/deleteWatermark)
     const engine = new EngineService();
     const { path } = await createNPagePdf(2);
     await engine.loadDocument('doc-wm-del', path);
-    // Establish the baseline AFTER a first read-only scan: the engine's
-    // watermark ops normalise each page's Contents (this pdf-lib build's
-    // autoNormalizeCTM wraps it with the context's shared q/Q streams),
-    // so the pre-apply measurement is taken in the same normalized state
-    // the document is in after apply/delete.
-    const norm = await engine.getWatermarks('doc-wm-del');
-    expect(norm.ok).toBe(true);
-    if (!norm.ok) return;
-    expect(norm.value).toEqual([]);
+    // Establish the baseline AFTER a first apply/delete round trip: the
+    // engine's watermark ops normalise each page's Contents (this pdf-lib
+    // build's autoNormalizeCTM wraps it with the context's shared q/Q streams),
+    // so the pre-apply measurement is taken in the same normalized state the
+    // document is in after apply/delete. DEF-515: a read-only scan no longer
+    // normalises, so the warm-up must go through an apply op instead.
+    const warm = await engine.addWatermark('doc-wm-del', { type: 'text', text: 'WARMUP' });
+    expect(warm.ok).toBe(true);
+    if (!warm.ok) return;
+    const warmDelete = await engine.deleteWatermark('doc-wm-del', 'wm-1');
+    expect(warmDelete.ok).toBe(true);
+    if (!warmDelete.ok) return;
 
     const preR = await engine.getDocumentBytes('doc-wm-del');
     expect(preR.ok).toBe(true);

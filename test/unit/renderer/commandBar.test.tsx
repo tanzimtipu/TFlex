@@ -224,4 +224,38 @@ describe("CommandBar — glass control groups", () => {
       unmount(host);
     }
   });
+
+  it("Phase 91 — plain buttons carry the canonical btn + btn-toolbar classes", () => {
+    const host = mountBar();
+    try {
+      const prev = host.querySelector<HTMLButtonElement>("[aria-label='Previous page']");
+      expect(prev?.classList.contains("btn")).toBe(true);
+      expect(prev?.classList.contains("btn-toolbar")).toBe(true);
+      // The legacy hook stays a DOM alias (the toolbar CSS contract and
+      // the e2e `button.tool-btn` selector keep resolving).
+      expect(prev?.classList.contains("tool-btn")).toBe(true);
+      // A plain control is NOT a toggle.
+      expect(prev?.classList.contains("btn-toggle")).toBe(false);
+      const merge = host.querySelector<HTMLButtonElement>("[data-icon='merge']");
+      expect(merge?.classList.contains("btn")).toBe(true);
+      expect(merge?.classList.contains("btn-toolbar")).toBe(true);
+    } finally {
+      unmount(host);
+    }
+  });
+
+  it("Phase 91 — pressed toggles carry btn-toggle and keep aria-pressed=true", () => {
+    const host = mountBar({ signToolActive: true, handActive: true, onHandToggle: NOOP });
+    try {
+      const sign = host.querySelector<HTMLButtonElement>("[data-icon='sign']");
+      expect(sign?.classList.contains("btn-toggle")).toBe(true);
+      expect(sign?.getAttribute("aria-pressed")).toBe("true");
+      expect(sign?.classList.contains("tool-btn-active")).toBe(true);
+      const hand = host.querySelector<HTMLButtonElement>("[data-hand-toggle]");
+      expect(hand?.classList.contains("btn-toggle")).toBe(true);
+      expect(hand?.getAttribute("aria-pressed")).toBe("true");
+    } finally {
+      unmount(host);
+    }
+  });
 });

@@ -89,12 +89,16 @@ describe("tfPresets consume the canonical tokens (DEF-197)", () => {
 });
 
 describe("canonical wrappers are imported by production surfaces (DEF-197)", () => {
-  it("FlattenConfirmDialog renders AnimatedDialog, not the Tf pair", () => {
+  it("FlattenConfirmDialog renders DialogShell, which roots in the Tf pair", () => {
+    // Phase 92 (TFL-513 chunk A): the shared DialogShell supersedes the
+    // per-dialog AnimatedDialog wrapper. The canonical Tf primitives still own
+    // the enter/exit — they just live one level down in DialogShell now.
     const src = read("forms/FlattenConfirmDialog.tsx");
-    expect(src).toContain("from \"../components/AnimatedDialog\"");
+    expect(src).toContain("from \"../components/DialogShell\"");
     expect(src).not.toContain("TfMotion");
-    expect(src).not.toContain("TfDialog");
-    expect(src).not.toContain("TfBackdrop");
+    const shell = read("components/DialogShell.tsx");
+    expect(shell).toContain("<TfDialog");
+    expect(shell).toContain("<TfBackdrop");
   });
 
   it("SideRail renders AnimatedPanel, not TfPanelLeft", () => {
