@@ -46,6 +46,16 @@ win:
       name: Jovrel.pdf
       description: Jovrel PDF Document
       icon: assets/brand/jovrel-pdf.ico
+    # Phase 97 (DEF-525) — the eight non-pdf family rows (.aaui/.bpdx/.fdf/
+    # .pdx/.rmf/.sequ/.xdp/.xfdf) are deliberately NOT listed here. Every
+    # `fileAssociations` row is fed to electron-builder's NSIS APP_ASSOCIATE
+    # macro, which writes the extension's DEFAULT value
+    # (`FileAssociation.nsh:65-74`), silently changing Adobe's existing
+    # per-machine defaults for eight types Jovrel cannot render. They register
+    # as CANDIDATES ONLY in electron-builder.nsh instead: a `Jovrel.<ext>`
+    # ProgID plus `OpenWithProgids` and the
+    # `RegisteredApplications`/`Capabilities` model. The shared registry
+    # src/shared/file-associations.ts remains the source of truth.
 # Phase 13 review — borderless / frameless NSIS installer is NOT supportable
 # via electron-builder, and the limit is recorded here honestly:
 #

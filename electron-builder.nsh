@@ -245,6 +245,106 @@ Var /GLOBAL tflexLegacyDirFailed
     RMDir "$0"
     tflexNestedCleanupDone:
   ${EndIf}
+
+  ; --- 5. Phase 97 - register the eight non-pdf PDF-family types and the
+  ;        acrobat: URL protocol as CANDIDATES ONLY, per-machine.
+  ;        These eight types used to be `win.fileAssociations` rows, whose NSIS
+  ;        APP_ASSOCIATE macro writes the extension's DEFAULT value
+  ;        (FileAssociation.nsh:65-74) and silently changed Adobe's existing
+  ;        per-machine defaults for eight types Jovrel cannot render (DEF-525).
+  ;        Writing the `Software\Classes\acrobat` class root instead hijacked
+  ;        Adobe's URL protocol (DEF-526). Only candidate slots are written here:
+  ;        a `Jovrel.<ext>` / `Jovrel.acrobat` ProgID plus an OpenWithProgids
+  ;        value and the RegisteredApplications/Capabilities model. No existing
+  ;        default is touched. SHELL_CONTEXT is the exact root electron-builder's
+  ;        own registry writes use (HKLM for this per-machine install). The
+  ;        matching removal is customUnInstall below, defined OUTSIDE the
+  ;        !ifndef BUILD_UNINSTALLER guard so it compiles in the uninstaller pass.
+  ; --- 5a. Jovrel.<ext> ProgIDs + candidate OpenWithProgids values (x8).
+  WriteRegStr SHELL_CONTEXT "Software\Classes\Jovrel.aaui" "" "Acrobat User Interface"
+  WriteRegStr SHELL_CONTEXT "Software\Classes\Jovrel.aaui\DefaultIcon" "" "$appExe,0"
+  WriteRegStr SHELL_CONTEXT "Software\Classes\Jovrel.aaui\shell\open\command" "" '"$appExe" "%1"'
+  WriteRegStr SHELL_CONTEXT "Software\Classes\.aaui\OpenWithProgids" "Jovrel.aaui" ""
+  WriteRegStr SHELL_CONTEXT "Software\Classes\Jovrel.bpdx" "" "Acrobat Batch PDX"
+  WriteRegStr SHELL_CONTEXT "Software\Classes\Jovrel.bpdx\DefaultIcon" "" "$appExe,0"
+  WriteRegStr SHELL_CONTEXT "Software\Classes\Jovrel.bpdx\shell\open\command" "" '"$appExe" "%1"'
+  WriteRegStr SHELL_CONTEXT "Software\Classes\.bpdx\OpenWithProgids" "Jovrel.bpdx" ""
+  WriteRegStr SHELL_CONTEXT "Software\Classes\Jovrel.fdf" "" "Acrobat Forms Document"
+  WriteRegStr SHELL_CONTEXT "Software\Classes\Jovrel.fdf\DefaultIcon" "" "$appExe,0"
+  WriteRegStr SHELL_CONTEXT "Software\Classes\Jovrel.fdf\shell\open\command" "" '"$appExe" "%1"'
+  WriteRegStr SHELL_CONTEXT "Software\Classes\.fdf\OpenWithProgids" "Jovrel.fdf" ""
+  WriteRegStr SHELL_CONTEXT "Software\Classes\Jovrel.pdx" "" "Acrobat Catalog Index"
+  WriteRegStr SHELL_CONTEXT "Software\Classes\Jovrel.pdx\DefaultIcon" "" "$appExe,0"
+  WriteRegStr SHELL_CONTEXT "Software\Classes\Jovrel.pdx\shell\open\command" "" '"$appExe" "%1"'
+  WriteRegStr SHELL_CONTEXT "Software\Classes\.pdx\OpenWithProgids" "Jovrel.pdx" ""
+  WriteRegStr SHELL_CONTEXT "Software\Classes\Jovrel.rmf" "" "Acrobat Rights Management Document"
+  WriteRegStr SHELL_CONTEXT "Software\Classes\Jovrel.rmf\DefaultIcon" "" "$appExe,0"
+  WriteRegStr SHELL_CONTEXT "Software\Classes\Jovrel.rmf\shell\open\command" "" '"$appExe" "%1"'
+  WriteRegStr SHELL_CONTEXT "Software\Classes\.rmf\OpenWithProgids" "Jovrel.rmf" ""
+  WriteRegStr SHELL_CONTEXT "Software\Classes\Jovrel.sequ" "" "Acrobat Action File"
+  WriteRegStr SHELL_CONTEXT "Software\Classes\Jovrel.sequ\DefaultIcon" "" "$appExe,0"
+  WriteRegStr SHELL_CONTEXT "Software\Classes\Jovrel.sequ\shell\open\command" "" '"$appExe" "%1"'
+  WriteRegStr SHELL_CONTEXT "Software\Classes\.sequ\OpenWithProgids" "Jovrel.sequ" ""
+  WriteRegStr SHELL_CONTEXT "Software\Classes\Jovrel.xdp" "" "Acrobat XML Data Package"
+  WriteRegStr SHELL_CONTEXT "Software\Classes\Jovrel.xdp\DefaultIcon" "" "$appExe,0"
+  WriteRegStr SHELL_CONTEXT "Software\Classes\Jovrel.xdp\shell\open\command" "" '"$appExe" "%1"'
+  WriteRegStr SHELL_CONTEXT "Software\Classes\.xdp\OpenWithProgids" "Jovrel.xdp" ""
+  WriteRegStr SHELL_CONTEXT "Software\Classes\Jovrel.xfdf" "" "Acrobat Forms Document"
+  WriteRegStr SHELL_CONTEXT "Software\Classes\Jovrel.xfdf\DefaultIcon" "" "$appExe,0"
+  WriteRegStr SHELL_CONTEXT "Software\Classes\Jovrel.xfdf\shell\open\command" "" '"$appExe" "%1"'
+  WriteRegStr SHELL_CONTEXT "Software\Classes\.xfdf\OpenWithProgids" "Jovrel.xfdf" ""
+  ; --- 5b. The acrobat: URL protocol, as a candidate only. The Jovrel.acrobat
+  ;         ProgID carries the command; the pre-existing Adobe class root is
+  ;         only touched by adding a candidate OpenWithProgids value (DEF-526).
+  WriteRegStr SHELL_CONTEXT "Software\Classes\Jovrel.acrobat" "" "Jovrel acrobat Protocol"
+  WriteRegStr SHELL_CONTEXT "Software\Classes\Jovrel.acrobat" "URL Protocol" ""
+  WriteRegStr SHELL_CONTEXT "Software\Classes\Jovrel.acrobat\DefaultIcon" "" "$appExe,0"
+  WriteRegStr SHELL_CONTEXT "Software\Classes\Jovrel.acrobat\shell\open\command" "" '"$appExe" "%1"'
+  WriteRegStr SHELL_CONTEXT "Software\Classes\acrobat\OpenWithProgids" "Jovrel.acrobat" ""
+  ; --- 5c. Register the app for Windows Settings > Default apps.
+  WriteRegStr SHELL_CONTEXT "Software\RegisteredApplications" "Jovrel" "Software\Jovrel\Capabilities"
+  WriteRegStr SHELL_CONTEXT "Software\Jovrel\Capabilities" "ApplicationName" "Jovrel"
+  WriteRegStr SHELL_CONTEXT "Software\Jovrel\Capabilities" "ApplicationDescription" "Jovrel PDF studio"
+  WriteRegStr SHELL_CONTEXT "Software\Jovrel\Capabilities" "ApplicationIcon" "$appExe,0"
+  WriteRegStr SHELL_CONTEXT "Software\Jovrel\Capabilities\FileAssociations" ".aaui" "Jovrel.aaui"
+  WriteRegStr SHELL_CONTEXT "Software\Jovrel\Capabilities\FileAssociations" ".bpdx" "Jovrel.bpdx"
+  WriteRegStr SHELL_CONTEXT "Software\Jovrel\Capabilities\FileAssociations" ".fdf" "Jovrel.fdf"
+  WriteRegStr SHELL_CONTEXT "Software\Jovrel\Capabilities\FileAssociations" ".pdx" "Jovrel.pdx"
+  WriteRegStr SHELL_CONTEXT "Software\Jovrel\Capabilities\FileAssociations" ".rmf" "Jovrel.rmf"
+  WriteRegStr SHELL_CONTEXT "Software\Jovrel\Capabilities\FileAssociations" ".sequ" "Jovrel.sequ"
+  WriteRegStr SHELL_CONTEXT "Software\Jovrel\Capabilities\FileAssociations" ".xdp" "Jovrel.xdp"
+  WriteRegStr SHELL_CONTEXT "Software\Jovrel\Capabilities\FileAssociations" ".xfdf" "Jovrel.xfdf"
+  WriteRegStr SHELL_CONTEXT "Software\Jovrel\Capabilities\URLAssociations" "acrobat" "Jovrel.acrobat"
 !macroend
 
 !endif
+
+; Phase 97 - remove ONLY Jovrel's own candidate registration (DEF-525 / DEF-526).
+; Defined OUTSIDE the !ifndef BUILD_UNINSTALLER guard above because
+; electron-builder inserts customUnInstall from uninstaller.nsh during the
+; uninstaller compile pass, where the install-only globals (and customInstall)
+; do not exist. This macro uses no install-only globals ($appExe is not defined
+; in that pass) and never deletes `Software\Classes\acrobat` itself, so a
+; pre-existing third-party acrobat: registration is never disturbed.
+!macro customUnInstall
+  DeleteRegValue SHELL_CONTEXT "Software\Classes\.aaui\OpenWithProgids" "Jovrel.aaui"
+  DeleteRegValue SHELL_CONTEXT "Software\Classes\.bpdx\OpenWithProgids" "Jovrel.bpdx"
+  DeleteRegValue SHELL_CONTEXT "Software\Classes\.fdf\OpenWithProgids" "Jovrel.fdf"
+  DeleteRegValue SHELL_CONTEXT "Software\Classes\.pdx\OpenWithProgids" "Jovrel.pdx"
+  DeleteRegValue SHELL_CONTEXT "Software\Classes\.rmf\OpenWithProgids" "Jovrel.rmf"
+  DeleteRegValue SHELL_CONTEXT "Software\Classes\.sequ\OpenWithProgids" "Jovrel.sequ"
+  DeleteRegValue SHELL_CONTEXT "Software\Classes\.xdp\OpenWithProgids" "Jovrel.xdp"
+  DeleteRegValue SHELL_CONTEXT "Software\Classes\.xfdf\OpenWithProgids" "Jovrel.xfdf"
+  DeleteRegValue SHELL_CONTEXT "Software\Classes\acrobat\OpenWithProgids" "Jovrel.acrobat"
+  DeleteRegKey  SHELL_CONTEXT "Software\Classes\Jovrel.aaui"
+  DeleteRegKey  SHELL_CONTEXT "Software\Classes\Jovrel.bpdx"
+  DeleteRegKey  SHELL_CONTEXT "Software\Classes\Jovrel.fdf"
+  DeleteRegKey  SHELL_CONTEXT "Software\Classes\Jovrel.pdx"
+  DeleteRegKey  SHELL_CONTEXT "Software\Classes\Jovrel.rmf"
+  DeleteRegKey  SHELL_CONTEXT "Software\Classes\Jovrel.sequ"
+  DeleteRegKey  SHELL_CONTEXT "Software\Classes\Jovrel.xdp"
+  DeleteRegKey  SHELL_CONTEXT "Software\Classes\Jovrel.xfdf"
+  DeleteRegKey  SHELL_CONTEXT "Software\Classes\Jovrel.acrobat"
+  DeleteRegKey  SHELL_CONTEXT "Software\Jovrel\Capabilities"
+  DeleteRegValue SHELL_CONTEXT "Software\RegisteredApplications" "Jovrel"
+!macroend

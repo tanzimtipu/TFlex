@@ -27,6 +27,7 @@ import type {
 import type { TFlexApiConvert } from '../../shared/ipc';
 import type { Result } from '../../shared/result';
 import type { EngineError } from '../../shared/types';
+import { pdfFamilyTargetFor } from '../../shared/file-associations';
 import { describeEngineError } from '../engine/types';
 
 /** What the ConversionNotice card renders for one tab. */
@@ -116,6 +117,13 @@ export function unsupportedFileMessage(displayName: string): string {
   return `"${displayName}" is not a file type Jovrel can open.`;
 }
 
+export function associationMessageFor(value: string, displayName: string): string | null {
+  const target = pdfFamilyTargetFor(value);
+  if (target === null) return null;
+  if ('scheme' in target) return 'Jovrel cannot open an "acrobat:" link yet.';
+  return `${displayName} is an ${target.label} (${target.ext}) file. Jovrel can be selected for this type but cannot display it yet.`;
+}
+
 /** Phase 53 routing. Convert when the bridge is present AND `sourceInfo`
  *  recognises the file. Otherwise: a `.pdf` falls through to the unchanged
  *  PDF path (so a `.pdf` and a corrupt `.pdf` keep today's exact behaviour
@@ -141,6 +149,11 @@ export async function routeOpenPath(
   path: string,
   deps: ConvertRouteDeps,
 ): Promise<string | null> {
+  const family = pdfFamilyTargetFor(path);
+  if (family !== null) {
+    deps.onUnsupported?.(path);
+    return null;
+  }
   const pdf = isPdfPath(path);
   if (deps.api === undefined) {
     if (!pdf) {

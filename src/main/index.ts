@@ -96,7 +96,7 @@ import { createDetachedWindow, createMainWindow, deriveAuthHost, installAuthPopu
 import { planCaptionMaximize } from './window-maximize';
 import { closePrintWindow, notifyPrintDocumentGone, openPrintWindow } from './print-window';
 import { createTabWindows } from './services/tabWindows';
-import { extractFileArgument, looksLikeOpenablePath, looksLikePdfPath } from './open-path';
+import { extractFileArgument, isPdfFamilyTarget, looksLikeOpenablePath, looksLikePdfPath } from './open-path';
 
 function mainModuleDir(): string {
   return __dirname;
@@ -192,7 +192,7 @@ export function sendOpenPath(path: string): void {
  * flow imports it. A genuinely unsupported path still fails LOUD (an error
  * box), never a silent no-op.
  */
-async function handleOsOpenPath(path: string): Promise<void> {
+export async function handleOsOpenPath(path: string): Promise<void> {
   if (looksLikePdfPath(path)) {
     const check = await loadPdfFile(path);
     if (!check.ok) {
@@ -203,6 +203,10 @@ async function handleOsOpenPath(path: string): Promise<void> {
     return;
   }
   if (looksLikeOpenablePath(path)) {
+    sendOpenPath(path);
+    return;
+  }
+  if (isPdfFamilyTarget(path)) {
     sendOpenPath(path);
     return;
   }

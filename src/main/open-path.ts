@@ -17,6 +17,13 @@
 import { extname } from 'node:path';
 import { createDefaultRegistry } from './services/convert/registry';
 
+/**
+ * Phase 97 - the main process imports the PDF-family lookups from ONE place
+ * (the shared registry). Re-exported here so `./index` keeps a single
+ * open-path import; there is deliberately no second hardcoded extension list.
+ */
+export { isPdfFamilyTarget, pdfFamilyTargetFor } from '../shared/file-associations';
+
 /** Index of the first document argument once packaged (after the exe). */
 const PACKAGED_ARG_START = 1;
 /** Index of the first document argument in dev (after electron + app dir). */

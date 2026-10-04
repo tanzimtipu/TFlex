@@ -205,6 +205,7 @@ import { BookView } from "./components/BookView";
 import { BookOpen } from "lucide-react";
 import { Icon } from "./icons/Icon";
 import {
+  associationMessageFor,
   createFromImagesRoute,
   noticeFromManyResult,
   noticeFromResult,
@@ -2325,7 +2326,8 @@ export function App(): ReactElement {
         openPdf: openPdfBytesFromPath,
         openConverted: openConvertedFromPath,
         onUnsupported: (unsupportedPath): void => {
-          pushToast("error", unsupportedFileMessage(splitRecentPath(unsupportedPath).name));
+          const displayName = splitRecentPath(unsupportedPath).name;
+          pushToast("error", associationMessageFor(unsupportedPath, displayName) ?? unsupportedFileMessage(displayName));
         },
       }),
     [openConvertedFromPath, openPdfBytesFromPath, pushToast],

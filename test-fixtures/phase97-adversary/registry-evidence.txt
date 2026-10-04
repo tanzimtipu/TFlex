@@ -1,0 +1,41 @@
+Phase 97-D adversarial registry evidence (TFL-655)
+Captured 2026-10-04 on the build host, read-only (reg query / PowerShell Get-ItemProperty).
+
+1) Adobe Acrobat owns the per-machine acrobat: URL protocol class (HKLM).
+   HKLM\Software\Classes\acrobat
+     (Default)    = URL:Acrobat Protocol
+     URL Protocol = (empty)
+     DefaultIcon  = C:\Program Files\Adobe\Acrobat DC\Acrobat\Acrobat.exe
+     shell\open\command = "C:\Program Files\Adobe\Acrobat DC\Acrobat\Acrobat.exe" /u "%1"
+     shell\open\ddeexec\application
+     shell\open\ddeexec\topic
+   HKCU\Software\Classes\acrobat : ABSENT
+   HKCR:\acrobat                 : ABSENT
+   => this HKLM key is the machine's only acrobat: handler; it is Adobe's.
+
+2) The eight Phase-97 extensions are currently per-machine Adobe defaults, with no per-user UserChoice.
+   HKLM\Software\Classes\.aaui -> Acrobat.aaui
+   HKLM\Software\Classes\.bpdx -> AcrobatBPDXFileType
+   HKLM\Software\Classes\.fdf  -> Acrobat.FDFDoc
+   HKLM\Software\Classes\.pdx  -> AcrobatPDXFileType
+   HKLM\Software\Classes\.rmf  -> Acrobat.RMFFile
+   HKLM\Software\Classes\.sequ -> Acrobat.Sequence
+   HKLM\Software\Classes\.xdp  -> Acrobat.XDPDoc
+   HKLM\Software\Classes\.xfdf -> Acrobat.XFDFDoc
+   HKLM\Software\Classes\.pdf  -> Jovrel.pdf   (Jovrel already installed)
+   HKCU\...\FileExts\.<ext>\UserChoice: FALSE for all eight family types; TRUE only for .pdf.
+
+3) electron-builder writes the extension DEFAULT value, not just a candidate:
+   node_modules/app-builder-lib/templates/nsis/include/FileAssociation.nsh:66
+     WriteRegStr SHELL_CONTEXT "Software\Classes\.${EXT}" "" "${FILECLASS}"
+   node_modules/app-builder-lib/out/targets/nsis/NsisTarget.js:647
+     registerFileAssociationsScript.insertMacro("APP_ASSOCIATE", ...)
+   Unregister (FileAssociation.nsh:99-102) deletes OpenWithProgids + the Jovrel.<ext> class key,
+   but NOT the .<ext> default value written above.
+
+4) electron-builder.nsh:256-259 (customInstall) unconditionally writes HKLM\Software\Classes\acrobat
+   default/URL Protocol/DefaultIcon/shell\open\command; :270-272 (customUnInstall) unconditionally
+   DeleteRegKey HKLM\Software\Classes\acrobat.
+
+Probe script: test-fixtures/phase97-adversary/reg_probe.ps1
+Run: powershell -NoProfile -ExecutionPolicy Bypass -File test-fixtures/phase97-adversary/reg_probe.ps1

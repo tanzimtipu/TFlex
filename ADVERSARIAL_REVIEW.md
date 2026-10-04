@@ -9040,3 +9040,48 @@ User: a TFlex desktop PDF user on Windows (knowledge worker / document reviewer)
 - Docked panels stay flat and the command palette rides level-2 as documented; the palette no-results and edit-content empty states read clearly and are keyboard-reachable.
 
 
+## ADV-192: Phase 97 per-machine installer overwrites Adobe Acrobat's default handler for all eight PDF-family extensions
+
+- Session: diff-pass
+- Suggested severity: HIGH
+
+What I did: Read electron-builder's own NSIS wiring and the machine registry (read-only). `node_modules/app-builder-lib/out/targets/nsis/NsisTarget.js:630-650` feeds every `win.fileAssociations` row into the `APP_ASSOCIATE` macro, and `node_modules/app-builder-lib/templates/nsis/include/FileAssociation.nsh:65-74` writes `WriteRegStr SHELL_CONTEXT "Software\Classes\.${EXT}" "" "${FILECLASS}"` - the extension's DEFAULT value - in addition to the `OpenWithProgids` candidate value. The live registry confirms the eight types are currently owned per-machine by Adobe Acrobat, with no per-user choice to shield them: `reg query "HKLM\Software\Classes\.xdp"` -> `(Default) REG_SZ Acrobat.XDPDoc`; PowerShell probe of `HKLM\Software\Classes\.<ext>` -> `.aaui=Acrobat.aaui`, `.bpdx=AcrobatBPDXFileType`, `.fdf=Acrobat.FDFDoc`, `.pdx=AcrobatPDXFileType`, `.rmf=Acrobat.RMFFile`, `.sequ=Acrobat.Sequence`, `.xdp=Acrobat.XDPDoc`, `.xfdf=Acrobat.XFDFDoc`; and `HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\FileExts\.<ext>\UserChoice` is ABSENT for all eight (probe script: `test-fixtures/phase97-adversary/reg_probe.ps1`, run via `powershell -File`).
+
+Expected: per Phase 97 (`docs/phase-specs/phase-97.md` lines 9 and 35) and `electron-builder.yml:36-43` ("This never sets the Windows default handler on its own - the user picks that in Settings"), Jovrel is only a SELECTABLE candidate for the non-pdf family types (an `OpenWithProgids` entry). The user's existing Acrobat default for these eight types must be untouched.
+
+Actual: the per-machine installer's generated `registerFileAssociations` overwrites `HKLM\Software\Classes\.<ext>` (Default) from `Acrobat.*` to `Jovrel.<ext>` for all eight types, because electron-builder's APP_ASSOCIATE writes the extension default, not just OpenWithProgids. Because no `UserChoice` exists for any of the eight on this machine, that HKLM default IS the effective handler: double-clicking a `.xdp`/`.fdf`/`.xfdf`/... then launches Jovrel, which answers "cannot display it yet", instead of Adobe Acrobat. The user's OS default is silently changed for eight file types the app explicitly claims only to be a candidate for.
+
+Repro: on the installed machine, `reg query "HKLM\Software\Classes\.xdp"` (shows `Acrobat.XDPDoc` before a Jovrel install); read `FileAssociation.nsh:66` + `NsisTarget.js:647`; then install the Phase 97 build and re-query (expected `Jovrel.xdp`). Recovery requires the user to reset each type by hand in Windows Settings.
+
+Disposition: ACCEPTED -> DEF-525 (HIGH, owner backend-dev). CTO triage (2026-10-04): confirmed. `fileAssociations` claims the OS default in electron-builder's NSIS target, which contradicts the "selectable candidate" contract and silently changes the user's existing handlers for eight types Jovrel cannot render. Fix: register the eight as candidates only (ProgID + `OpenWithProgids` + `RegisteredApplications`/`Capabilities`), never the `.<ext>` DEFAULT; `.pdf` stays as shipped. Fix chunk dispatched before the phase can close.
+
+## ADV-193: Phase 97 acrobat: protocol overwrites Adobe's per-machine registration and uninstall deletes it unconditionally
+
+- Session: diff-pass
+- Suggested severity: HIGH
+
+What I did: Read `electron-builder.nsh:249-272` and inspected the machine registry (read-only). `HKLM\Software\Classes\acrobat` EXISTS and is Adobe's: default value `URL:Acrobat Protocol`, `URL Protocol` = ``, `DefaultIcon` = `C:\Program Files\Adobe\Acrobat DC\Acrobat\Acrobat.exe`, `shell\open\command` = `"C:\Program Files\Adobe\Acrobat DC\Acrobat\Acrobat.exe" /u "%1"`, plus `shell\open\ddeexec\application` and `shell\open\ddeexec\topic`. `HKCU\Software\Classes\acrobat` and `HKCR:\acrobat` are absent, so this HKLM key is the machine's only `acrobat:` protocol handler. Evidence command: `powershell -NoProfile -File test-fixtures/phase97-adversary/reg_probe.ps1`.
+
+Expected: per the phase's "selectable ... candidate" framing, Jovrel registers without disturbing a pre-existing third-party `acrobat:` registration, and uninstall removes only registration Jovrel created (the same identity-guarded discipline the legacy-cleanup steps use at `electron-builder.nsh:108-192`).
+
+Actual: `customInstall` (`electron-builder.nsh:256-259`) unconditionally overwrites the existing HKLM class root default, `DefaultIcon` and `shell\open\command` with Jovrel's exe, so Jovrel HIJACKS Adobe Acrobat's per-machine `acrobat:` protocol for every user (a URL protocol has no OpenWithProgids candidate slot - writing the class root IS the handler). Then `customUnInstall` (`electron-builder.nsh:270-272`) runs `DeleteRegKey SHELL_CONTEXT "Software\Classes\acrobat"`, unconditionally deleting the WHOLE key - including Adobe's `DefaultIcon` and `shell\open\ddeexec` subkeys, which Jovrel never created and does not restore. After a Jovrel install+uninstall cycle, Adobe's `acrobat:` protocol is gone. Ruling 5 mandated the write, but did not weigh the third-party clobber; the delete in particular has no identity guard.
+
+Repro: `reg query "HKLM\Software\Classes\acrobat" /s` and `...\shell\open\command` on this machine (Adobe's values above); read `electron-builder.nsh:256-272`; install the Phase 97 build, re-query the class root (Jovrel's default), uninstall, re-query (key deleted entirely).
+
+Disposition: ACCEPTED -> DEF-526 (HIGH, owner backend-dev). CTO triage (2026-10-04): confirmed. Writing the URL-protocol class root is a machine-wide hijack and the unconditional uninstall delete destroys third-party registration Jovrel never created. Fix: candidate-only registration (`Jovrel.acrobat` ProgID + `OpenWithProgids` + `Capabilities\URLAssociations`), identity-guarded uninstall that never deletes `Software\Classes\acrobat`. Fix chunk dispatched with DEF-525.
+
+## ADV-194: Uninstall leaves a dangling `<ext>` default ProgID pointing at the deleted `Jovrel.<ext>` class
+
+- Session: diff-pass
+- Suggested severity: LOW
+
+What I did: Read electron-builder's unregister macro `APP_UNASSOCIATE` (`node_modules/app-builder-lib/templates/nsis/include/FileAssociation.nsh:99-102`), which the uninstaller runs for every `win.fileAssociations` row (`NsisTarget.js:653-659`, `uninstaller.nsh:212-214`). It deletes the `OpenWithProgids` value and the `Software\Classes\Jovrel.<ext>` class key, but never deletes the `Software\Classes\.<ext>` DEFAULT value that `APP_ASSOCIATE:66` wrote.
+
+Expected: uninstall removes the association it created, leaving no reference to a Jovrel ProgID behind.
+
+Actual: after uninstall, `HKLM\Software\Classes\.<ext>` (Default) still reads `Jovrel.<ext>` while `HKLM\Software\Classes\Jovrel.<ext>` no longer exists - a default handler pointing at a deleted file class, for all nine rows. This is upstream electron-builder behaviour that already applied to `.pdf`; Phase 97 newly multiplies it to the eight Acrobat-proprietary types. Not observable live on this host because Jovrel is currently installed (`HKLM\Software\Classes\.pdf` -> `Jovrel.pdf`); the defect is deterministic from the two macros.
+
+Repro: read `FileAssociation.nsh:66` (install default) vs `:99-102` (unregister); on a test VM install then uninstall a `fileAssociations` build, then `reg query "HKLM\Software\Classes\.pdf"` shows `(Default) Jovrel.pdf` with no `Jovrel.pdf` class.
+
+Disposition: REJECTED for Phase 97. CTO triage (2026-10-04): this is upstream electron-builder `APP_UNASSOCIATE` behaviour that already applies to the shipped `.pdf` row and is therefore pre-existing, not introduced by Phase 97. Criterion 5 freezes the `.pdf` association as-is, so changing its uninstall semantics is out of scope here. The DEF-525 fix moves the eight non-pdf types off `fileAssociations` to candidate-only registration, so they will no longer write an `.<ext>` DEFAULT and this dangling-default case will not apply to them. Re-open as a separate packaging defect only if the operator wants the `.pdf` uninstall path changed.
+
