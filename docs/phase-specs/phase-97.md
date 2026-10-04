@@ -75,3 +75,4 @@ Opening any registered type from Explorer or via Open With must launch Jovrel (r
 **CONTROL-INDEX:** this phase adds **no new app control and no new window**. Its "controls" are the nine Windows default-app rows and their promised launch-open behaviour. Each row is proven by `e2e/phase97_file_associations.spec.cjs`: a `.pdf` row opens a document tab; each non-pdf row launches the single window and shows the type-naming toast with no document tab; the config-manifest unit test proves the `.pdf` row in `electron-builder.yml` and the candidate-only registrations in `electron-builder.nsh`.
 
 **Settings impact:** none. No new persisted `AppSettings` field, no settings channel, no credential. The phase extends packaging manifests and reuses the existing open-path IPC; it adds no network call and no new renderer control. Offline only.
+
