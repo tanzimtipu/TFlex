@@ -20,6 +20,16 @@ export const MOTION_DURATION = {
   standard: 250,
   panel: 140,
   layout: 350,
+  /** Ambient sweeps: the frosted-glass reflection band (--motion-duration-sheen
+   *  / -sheen-slow) and the loading-placeholder shimmer (--motion-duration-shimmer).
+   *  Decorative CSS-only loops; mirrored here so the CSS↔TS contract stays one
+   *  source. */
+  sheen: 7000,
+  sheenSlow: 9000,
+  shimmer: 1400,
+  /** Tooltip hover dwell (--motion-duration-dwell): the delay before the
+   *  tooltip entrance runs. */
+  dwell: 300,
   /** The canonical no-motion duration (prefers-reduced-motion). */
   reduced: 0,
 } as const;

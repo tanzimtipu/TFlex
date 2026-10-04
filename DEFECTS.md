@@ -5,6 +5,81 @@
 > inspect the current `OPEN`, `FIX-READY`, and `DISPUTED` entries first; closed records are
 > historical evidence and must not be loaded wholesale.
 
+## DEF-545: The Phase 100 DriftGuard is blind to motion-duration LONGHANDS and exempts a whole declaration when it references a motion token
+
+- Status: CLOSED
+- Severity: MEDIUM
+- Found by: adversary (ADV-201)
+- Phase: 100
+- Files: `test/unit/renderer/foundationGuards.test.ts:286,396,440,506` (motion scan), `src/renderer/styles.css:12715,12720-12722` (live instances)
+
+Steps to reproduce:
+1. `node node_modules/vitest/vitest.mjs run test/unit/renderer/foundationGuards.test.ts` -> `Test Files 1 passed (1)` / `Tests 22 passed (22)` - the guard suite passes, so these are misses, not a red suite.
+2. Read `test/unit/renderer/foundationGuards.test.ts:440` and `:506`: the motion scan regex `(?:^|[;{\s])(transition|animation)\s*:` matches only the exact shorthand property name, never the `-duration` longhands.
+3. Run a scratch probe (`$PAPERCLIP_RUN_SCRATCH_DIR/advGuardProbe.full.mjs`, mirrors `cssMotionFileViolations` verbatim): `.x { animation-duration: 9s; }` and `.x { transition-duration: 200ms; }` both return `[]`; control `.x { transition: opacity 200ms ease; }` returns a violation.
+4. Read live `src/renderer/styles.css:12720-12722` - the frosted `.side-rail::after`/`.tools-palette::after` body contains `animation-duration: 9s;`. Probe: `present_in_styles_css=true guard_flagged=false`. Read `src/renderer/styles.css:12715` - `animation: acrylic-sheen 7s var(--tf-ease-standard) infinite;` - `isOneOffMotion` returns false because MOTION_TOKEN (`:286,396`) matches `--tf-ease-*`, so the raw `7s` is exempted with the whole declaration.
+
+Expected: `animation-duration` / `transition-duration` are the same motion declarations in longhand form and must be flagged exactly like the shorthand; a raw duration written beside a `--tf-ease-*`/`--tf-motion-*` token must still be flagged (the token exempts the easing slot, not the duration slot).
+
+Actual: both longhands return `[]`; the shorthand with `--tf-ease-standard` is exempt because any motion token exempts the whole declaration. Live `animation-duration: 9s` (styles.css:12720-12722) and `animation: acrylic-sheen 7s ...` (styles.css:12715) both pass the guard. Probe summary `evaded=18 caught=4`.
+
+Screenshot: screenshots/adv-phase100/guard_evasion_probe.log; qa rerun screenshots/adv-phase100/qa_f2_guard_evasion_repro.log
+
+History:
+- qa (TFL-729 Phase 100 F2, 2026-10-04): reproduced live `styles.css:12720-12722` raw `animation-duration: 9s` (present=true, guard_flagged=false) and the `--tf-ease-*` shorthand loophole at `styles.css:12715` via a scratch probe mirroring `cssMotionFileViolations`/`isOneOffMotion`; guard suite 22/22 green; filed.
+- CTO (TFL-742, 2026-10-04): FIX-READY - frontend-dev reports the motion scan now covers the duration longhands and flags a raw duration regardless of a motion token; the ambient sheen durations were tokenized (`--motion-duration-sheen` 7s / `--motion-duration-sheen-slow` 9s in `src/renderer/styles/animations.css`, reduced-motion mapped). `foundationGuards` grew 22 -> 30 tests; `foundationGuards foundationMirrors designSystem animationsTokens designTokensContract` = 5 files / 174 tests passed; conventions clean (360 files) + tsc 0 errors; renderer build ok. Awaiting qa retest to CLOSE.
+- qa (TFL-744, 2026-10-04): CLOSED. Guard suite `node node_modules/vitest/vitest.mjs run test/unit/renderer/foundationGuards.test.ts` -> 1 file / 30 tests passed. Scratch probe (`tfl744_probe.mjs`, mirrors `cssMotionFileViolations`/`isOneOffMotion` verbatim) 25/25: seeded `animation-duration: 9s`, `transition-duration: 200ms`, `animation-delay: 1.5s` each flagged; `isOneOffMotion("acrylic-sheen 7s var(--tf-ease-standard) infinite")` true; tokenized form false. Live: `styles.css` has no raw `animation-duration: 9s` / `acrylic-sheen 7s`; the two former rules now consume `var(--motion-duration-sheen)` (styles.css:12715) and `var(--motion-duration-sheen-slow)` (styles.css:12722); `animations.css` defines `--motion-duration-sheen: 7s` (:54) and `--motion-duration-sheen-slow: 9s` (:55).
+
+## DEF-546: The Phase 100 DriftGuard is blind to elevation, typography and colour literals expressed through sibling properties (filter drop-shadow, border/background shorthand, text-shadow, font shorthand, outline, backdrop-filter)
+
+- Status: CLOSED
+- Severity: MEDIUM
+- Found by: adversary (ADV-202)
+- Phase: 100
+- Files: `test/unit/renderer/foundationGuards.test.ts:284,464,487,517` (enforced families), `src/renderer/styles.css` (live instances below)
+
+Steps to reproduce:
+1. `node node_modules/vitest/vitest.mjs run test/unit/renderer/foundationGuards.test.ts` -> 22/22 green.
+2. Read `test/unit/renderer/foundationGuards.test.ts:284,464,487,517`: the enforced families are `fontSize`, `borderRadius`, `boxShadow` and inline hex only, so sibling spellings are never scanned.
+3. Runtime probe (same scratch probe, mirrors `cssFoundationViolations`/`cssTypographyViolations`/`cssViolations`): `.x { filter: drop-shadow(0 1px 1px rgba(0,0,0,0.18)); }`, `.x { text-shadow: 0 1px 2px rgba(0,0,0,0.3); }`, `.x { border: 2px solid #ffffff; }`, `.x { background: #ffffff; }`, `.x { font: 12px/1.4 Inter; }`, `.x { outline: 2px solid #f00; }` and `.x { backdrop-filter: blur(12px); }` all return `[]`; controls `.x { box-shadow: ... }` and `.x { font-size: 12px; }` return violations.
+4. Read the live instances: `src/renderer/styles.css:6211` (`filter: drop-shadow(0 1px 1px rgba(0, 0, 0, 0.18));`), `:9810` and `:9846` (`border: 2px solid #ffffff;`), `:3860`, `:4914`, `:4974`, `:7936`, `:8068`, `:10583`, `:10974`, `:13450`, `:13492`, `:18474` (`background: #ffffff;`), `:4704-4705`, `:4785-4786`, `:11321-11322`, `:12487-12488` (`backdrop-filter: blur(...)`, non-token).
+
+Expected: a raw elevation, type or colour literal must not pass the guard merely because it is spelled with a sibling property (`filter`/`text-shadow` elevation, `border`/`background`/`outline` colour, `font` shorthand size, `backdrop-filter` blur); otherwise the guard's "no raw foundation literal" promise hides drift behind a green suite.
+
+Actual: every sibling spelling above returns `[]`. Live: probe reports `filter: drop-shadow(...)` present=true guard_flagged=false, `background: #ffffff` present=true guard_flagged=false, `border: 2px solid #ffffff` present=true guard_flagged=false, non-token `backdrop-filter: blur(12px)` present=true guard_flagged=false.
+
+Screenshot: screenshots/adv-phase100/guard_evasion_probe.log; qa rerun screenshots/adv-phase100/qa_f2_guard_evasion_repro.log
+
+History:
+- qa (TFL-729 Phase 100 F2, 2026-10-04): reproduced the sibling-property evasions on the current repo - scratch probe seeded each spelling (`[]` each, controls caught) and confirmed the cited live `styles.css` lines all `present=true guard_flagged=false`; guard suite 22/22 green; filed.
+- CTO (TFL-742, 2026-10-04): FIX-READY - frontend-dev reports the CSS scan now covers the sibling spellings (`filter: drop-shadow`, `text-shadow`, `border`/`background`/`outline` shorthands, `font:` shorthand, non-token `backdrop-filter`); live instances were either retrofitted to tokens (raw `border ... #ffffff` and raw `backdrop-filter: blur(...)` are gone) or allow-listed with written reasons (e.g. `filter: drop-shadow` at `styles.css:6211`, remaining on-page `background: #ffffff`). `foundationGuards` grew 22 -> 30 tests; 5 files / 174 tests passed; verify clean; renderer build ok. Awaiting qa retest to CLOSE.
+- qa (TFL-744, 2026-10-04): CLOSED. Guard suite 1 file / 30 tests passed. Scratch probe: `filter: drop-shadow(...)`, `border: 2px solid #ffffff`, `background: #ffffff`, `outline: 2px solid #f00`, `text-shadow: ...`, non-token `backdrop-filter: blur(12px)` each flagged by `cssFoundationViolations`, `font: 12px/1.4 Inter` by `cssTypographyViolations`; token/transparent/gradient stay compliant. Every live `styles.css` violation is allow-listed with a written reason (probe 25/25; guard staleness oracle green); raw `border ... #ffffff` and non-token `backdrop-filter: blur(...)` are gone (now `var(--glass-blur)`).
+
+## DEF-547: The Phase 100 DriftGuard misses raw literals in inline JSX style contexts it does not reach (un-annotated style const, style-as-string, inline SVG presentation-attribute hex)
+
+- Status: CLOSED
+- Severity: LOW
+- Found by: adversary (ADV-203)
+- Phase: 100
+- Files: `test/unit/renderer/foundationGuards.test.ts:332-345` (`styleBlocks`), `src/renderer/annotations/AnnotationOverlay.tsx:1364` (live instance)
+
+Steps to reproduce:
+1. `node node_modules/vitest/vitest.mjs run test/unit/renderer/foundationGuards.test.ts` -> 22/22 green.
+2. Read `test/unit/renderer/foundationGuards.test.ts:332-345`: `styleBlocks` only collects a literal `style={...}` prop and a `: CSSProperties = {...}` annotation, so no other inline context is scanned.
+3. Runtime probe (same scratch probe, mirrors `scanSource`): `const S = { fontSize: 12, borderRadius: "8px" }; <div style={S} />` -> `[]`; `<div style="font-size: 12px" />` -> `[]`; `<circle cx={0} cy={0} r={4} fill="#ef4444" />` -> `[]`. Controls `const S: CSSProperties = { fontSize: 12 }` and `style={{ background: "#ff0000" }}` are caught.
+4. Read live `src/renderer/annotations/AnnotationOverlay.tsx:1364`: `<circle cx={0} cy={0} r={4} fill="#ef4444" />` - a migrated surface with a raw hex presentation attribute the guard never sees.
+
+Expected (Phase 100 ruling 4, `MIGRATED_SURFACES`): a renderer `.tsx` must contain no raw literal reaching the DOM through an inline style context; a raw hex/number reached via an un-annotated style const, a `style` string, or an inline SVG presentation attribute must be caught, or the limit stated with an explicit allow-list entry carrying a reason.
+
+Actual: all three contexts return `[]`. Live `AnnotationOverlay.tsx:1364` `fill="#ef4444"` is not scanned.
+
+Screenshot: screenshots/adv-phase100/guard_evasion_probe.log; qa rerun screenshots/adv-phase100/qa_f2_guard_evasion_repro.log
+
+History:
+- qa (TFL-729 Phase 100 F2, 2026-10-04): reproduced on the current repo - scratch probe mirrored `styleBlocks`/`scanSource`; the un-annotated style const, style-as-string and inline SVG attribute hex all return `[]` (controls caught); confirmed live `AnnotationOverlay.tsx:1364 fill="#ef4444"`; guard suite 22/22 green; filed.
+- CTO (TFL-742, 2026-10-04): FIX-READY - frontend-dev reports the JSX scan now covers the un-annotated style const consumed by `style={S}`, `style` as a string and inline SVG presentation-attribute hex on a migrated surface; the live `AnnotationOverlay.tsx:1364 fill="#ef4444"` is handled (retrofitted to a token or allow-listed as on-page annotation content with a written reason). `foundationGuards` grew 22 -> 30 tests; 5 files / 174 tests passed; verify clean; renderer build ok. Awaiting qa retest to CLOSE.
+- qa (TFL-744, 2026-10-04): CLOSED. Guard suite 1 file / 30 tests passed. Scratch probe: un-annotated `const S = { fontSize: 12 }; <div style={S} />`, `style="font-size: 12px"` and inline SVG `fill="#ef4444"` each flagged by `scanSource`; the computed-object limit stays documented. Live `AnnotationOverlay.tsx:1364 fill="#ef4444"` is detected and allow-listed (`annotations/AnnotationOverlay.tsx:fill`, ann-error diagnostic glyph); all live AnnotationOverlay raw literals allow-listed (probe 25/25).
+
 ## DEF-534: The colorful active tab's TOP edge sits below the inactive tabs' top edge, so the strip is misaligned (TFL-376 / TFL-524)
 
 - Status: CLOSED
@@ -12204,5 +12279,32 @@ Evidence: TFL-722 report on the issue; `tfl722_verify_full.log`.
 History:
 - qa (TFL-722, 2026-10-04): FILED from the Jovrel 1.49.0 release-gate re-run. The DEF-542 target files are green after TFL-721, but this unrelated order-dependent failure leaves the full suite red (`Test Files 1 failed | 634 passed (635)`, `Tests 1 failed | 7829 passed (7830)`, exit 1). Release STOPs until the full suite is green.
 - qa (TFL-724, 2026-10-04): CLOSED. Final Jovrel 1.49.0 release-gate full run `npm.cmd run verify:full` (from repo root) -> `Test Files 636 passed (636)`; `Tests 7832 passed (7832)`; 0 failed; exit 0. In THIS full run (the same order-dependent context that was red at TFL-722) `test/unit/main/phase90BatesOpsQa.test.ts` is green, together with the new `test/unit/main/def543SerializePurity.test.ts`; the suite is order-independent. Suite grew 635->636 files / 7830->7832 tests vs TFL-722, consistent with the added regression file.
+
+## DEF-544: Phase 100 blast radius — the non-sheet DialogShell close lost the canonical `.btn` base, so `phase91_button_system`'s `dialog` guard is red
+
+- Status: CLOSED
+- Severity: MEDIUM
+- Found by: qa (TFL-734 Phase 100 chunk 5 blast-radius run)
+- Phase: 100 (TFL-729 chunk 5 / feature E) — suspected regression from the chunk C/D chrome retrofits; needs dev root-cause
+- Files: `src/renderer/components/DialogShell.tsx:230` (non-sheet close renders `className="modal-close"`), `src/renderer/styles.css:5823` (`.modal-close:not(.btn)` legacy path), `e2e/phase91_button_system.spec.cjs:411` (failing oracle)
+
+Steps to reproduce:
+1. `npm.cmd run test:e2e -- phase91_button_system --reporter=line` from the repo root.
+2. The single test's `dialog` guard fails; all ten other guards pass.
+
+Expected (Phase 91 canonical button system): the Stamp dialog's header close (`[aria-labelledby="stamp-dialog-title"] .modal-close`) carries the canonical base `btn btn-ghost btn-icon`, exactly as `[data-prefs-dialog]`'s sheet close does.
+
+Actual: the element carries the bare legacy class only. Log: `[P91] FAIL dialog : dialog close: [aria-labelledby="stamp-dialog-title"] .modal-close carries .btn (got [modal-close])`. `DialogShell.tsx:230` renders `isSheet ? "btn btn-ghost btn-icon sheet-close" : "modal-close"`; `StampDialog.tsx:125-132` uses DialogShell without `surface="sheet"`, so its close stays legacy. The sheet branch is canonical, the modal branch is not.
+
+Root cause (hypothesis for the owner): the chunk C/D chrome retrofit normalised dialog surfaces but left the non-sheet DialogShell close on the pre-Phase-91 legacy path. Confirm against the Phase 91 D4 migration intent; do not simply delete the assertion.
+
+Fix owner: frontend-dev (`src/renderer/components/DialogShell.tsx` + the `.modal-close` rules in `src/renderer/styles.css`). Direction: give the non-sheet close the canonical `btn btn-ghost btn-icon` base (plus the layout alias) so the close family is uniform, or, if the legacy non-sheet look is intentional, re-baseline the Phase 91 oracle with a CTO ruling — a qa decision is not sufficient.
+
+Evidence: `e2e/phase100_p91.log` (RESULTS: only `dialog` ok:false), screenshot `screenshots/phase91-dialog-light.png`.
+
+History:
+- qa (TFL-734, 2026-10-04): FILED during the mandatory Phase 100 blast-radius run of `e2e/phase91_button_system.spec.cjs`. `phase91_button_system` -> 1 failed (guard `dialog`); `phase96_design_system` -> 6 passed; Phase 100 focused spec -> 1 passed; `npm run verify` (conventions clean + tsc exit 0) -> pass. The failing guard is about the canonical `.btn` base, not the token/theming layer, so the Phase 100 theming proof itself is unaffected.
+- CTO (TFL-735, 2026-10-04): FIX-READY - frontend-dev reports `DialogShell.tsx:230` non-sheet close now renders `btn btn-ghost btn-icon modal-close` (sheet branch byte-identical), `.modal-close:not(.btn)` retained for the live bare `.modal-close` in `EngineeringLayersPanel.tsx:136`. Dev re-ran `e2e/phase91_button_system.spec.cjs` -> 1 passed (all 11 guards green incl. `dialog`); `foundationGuards foundationMirrors designSystem` -> 3 files / 58 tests passed; conventions clean + tsc 0 errors; renderer build ok. Awaiting qa retest to CLOSE.
+- qa (TFL-736, 2026-10-04): CLOSED. Retested on the rebuilt renderer (`node node_modules/vite/bin/vite.js build`). `e2e/phase91_button_system.spec.cjs` -> 1 passed, all 11 guards `ok:true` including `dialog`; `[aria-labelledby="stamp-dialog-title"] .modal-close` now carries `btn btn-ghost btn-icon` (log `screenshots/phase91-dialog-light.png`, `e2e/phase100_p91_retest_736.log`). Blast radius: `e2e/phase92_dialog_shell.spec.cjs` -> 1 passed (SUMMARY pass=74 fail=0); the live bare `.modal-close` consumer `EngineeringLayersPanel.tsx:136` opened via the palette and its close still renders + closes (added `e2e/tfl736_def544_blast.spec.cjs` -> 1 passed, `screenshots/tfl736-engineering-layers-light.png`). `npm run verify` equivalent: `scripts/check-conventions.mjs` clean (352 files) + `tsc --noEmit` exit 0. Fix confirmed; no escape follow-up required (the oracle itself was correct and stayed unweakened).
 
 

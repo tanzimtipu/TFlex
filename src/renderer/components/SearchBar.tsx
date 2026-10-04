@@ -153,7 +153,7 @@ export function SearchBar(props: SearchBarProps) {
       {replaceMode && (
         <div
           className="search-replace-row"
-          style={{ flexBasis: '100%', display: 'flex', alignItems: 'center', gap: 6 }}
+          style={{ flexBasis: '100%', display: 'flex', alignItems: 'center', gap: "var(--sp-2)" }}
         >
           <input
             className="search-input"

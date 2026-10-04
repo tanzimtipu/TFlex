@@ -46,6 +46,16 @@
    * deliberately longer than every interaction band because it must survive
    * the scroll it announces to be seen at all. */
   --motion-duration-flash: 1600ms;
+  /* Ambient sweeps: the frosted-glass reflection band (`acrylic-sheen`) and
+   * the loading-placeholder shimmer (`shimmer-sweep`). Both are decorative
+   * loops, deliberately slower than the interaction bands, and both collapse
+   * to the canonical no-motion value under prefers-reduced-motion /
+   * Animations OFF like every other duration token. */
+  --motion-duration-sheen: 7s;
+  --motion-duration-sheen-slow: 9s;
+  --motion-duration-shimmer: 1400ms;
+  /* Tooltip hover dwell: the delay before the tooltip entrance runs. */
+  --motion-duration-dwell: 300ms;
   /* Canonical no-motion duration (see the reduced-motion block below). */
   --motion-duration-reduced: 0ms;
 
@@ -116,6 +126,10 @@
     --motion-duration-layout: var(--motion-duration-reduced);
     --motion-theme-crossfade: var(--motion-duration-reduced);
     --motion-duration-flash: var(--motion-duration-reduced);
+    --motion-duration-sheen: var(--motion-duration-reduced);
+    --motion-duration-sheen-slow: var(--motion-duration-reduced);
+    --motion-duration-shimmer: var(--motion-duration-reduced);
+    --motion-duration-dwell: var(--motion-duration-reduced);
   }
 
   /* Movement is disabled outright; the state change remains. DEF-234
@@ -170,6 +184,10 @@
   --motion-duration-layout: var(--motion-duration-reduced);
   --motion-theme-crossfade: var(--motion-duration-reduced);
   --motion-duration-flash: var(--motion-duration-reduced);
+  --motion-duration-sheen: var(--motion-duration-reduced);
+  --motion-duration-sheen-slow: var(--motion-duration-reduced);
+  --motion-duration-shimmer: var(--motion-duration-reduced);
+  --motion-duration-dwell: var(--motion-duration-reduced);
 }
 
 /* ---------------------------------------------------------------------------

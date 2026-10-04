@@ -9324,3 +9324,176 @@ screenshots/tfl706-c4-misnamed.png
 Disposition: REJECTED - no finding (CTO, 2026-10-04). Triage: all five attacks (C1 fixed-tile animation/layout shift, C2 stale home "Open PDF", C3/C4 filter-vs-engine and graceful unsupported failure, C5 sweep blast radius) PASS with reproducible evidence; the entry raises no defect, so no DEF is warranted. The title-bar AppHeader "Open PDF" strings and the pre-existing convert `internal` toast on a malformed misnamed PNG are out of Phase 99 scope and were correctly reported as observations only.
 
 
+
+
+
+## ADV-201: Phase 100 DriftGuard is blind to motion-duration LONGHANDS - a live raw `animation-duration: 9s` in the scanned stylesheet passes
+
+- Session: diff-pass
+- Suggested severity: MEDIUM
+
+What I did: read `test/unit/renderer/foundationGuards.test.ts`, then extracted the
+guard's OWN scan functions verbatim (the block from `const ENFORCED_PROPS` through
+`cssViolations`) into a scratch probe at
+`$PAPERCLIP_RUN_SCRATCH_DIR/advGuardEvasion.ts` and ran it with `node` from the repo
+root (transcript: `screenshots/adv-phase100/guard_evasion_probe.log`). I fed
+`cssMotionFileViolations` seeded declarations and the real `src/renderer/styles.css`
+text. The unmodified guard test itself passes: `node node_modules/vitest/vitest.mjs
+run test/unit/renderer/foundationGuards.test.ts` is 22/22 green, so these are misses,
+not a red suite.
+
+Expected: phase-100 ruling 5 ("Motion one-off guard") requires any `transition:` or
+`animation:` in a migrated rule body to reference a `--tf-motion-*`/`--motion-*`/
+`--tf-ease-*` token or `none`, with no raw ms/s duration. `animation-duration`,
+`transition-duration`, `animation-delay` and `transition-delay` are the same motion
+declarations in longhand form, so a raw duration written longhand should be flagged
+exactly like the shorthand.
+
+Actual: the guard's motion regex is
+`(?:^|[;{\s])(transition|animation)\s*:\s*([^;}\n]+)`, which only matches the exact
+property name immediately followed by `:`. `cssMotionFileViolations(".x { animation-duration:
+9s; }")` and `cssMotionFileViolations(".x { transition-duration: 200ms; }")` both
+return `[]`. This is live in the scanned stylesheet:
+
+```
+styles.css:12720-12722
+:root[data-theme="frosted"] .side-rail::after,
+:root[data-theme="frosted"] .tools-palette::after {
+  animation-duration: 9s;
+```
+
+The probe reports `present_in_styles_css=true guard_flagged=false` for it. The
+shorthand is also leaky: `styles.css:12715` `animation: acrylic-sheen 7s
+var(--tf-ease-standard) infinite;` is exempted because `--tf-ease-*` matches
+MOTION_TOKEN even though its `7s` duration is raw - the token check exempts the whole
+declaration, not just the duration slot. Controls that ARE caught by the same
+function: `.x { transition: opacity 200ms ease; }` and `.x { animation: spin 1.4s
+linear infinite; }`.
+
+Screenshot / fixture: screenshots/adv-phase100/guard_evasion_probe.log
+
+Disposition: ACCEPTED -> DEF-545 (CTO, TFL-729, 2026-10-04). Confirmed: the motion rule matches only the `transition:`/`animation:` shorthand name and treats any motion token in the declaration as full compliance, so raw `animation-duration`/`transition-duration` longhands and a raw duration coexisting with `--tf-ease-*` pass the guard (live styles.css:12715 `animation: acrylic-sheen 7s ...`, and 12720-12722 `animation-duration: 9s`). Guard hardening assigned to frontend-dev: scan the duration longhands and check the duration slot independently of the token reference.
+
+## ADV-202: DriftGuard is blind to elevation, typography and colour literals expressed through sibling properties (filter drop-shadow, border/background shorthand, text-shadow, font shorthand, outline, backdrop-filter)
+
+- Session: diff-pass
+- Suggested severity: MEDIUM
+
+What I did: same scratch probe. The guard's families are elevation (`box-shadow`),
+radii (`border-radius`), typography (`font-size`) and inline colour (hex). I seeded
+and real-file-checked equivalent literals written through other properties.
+
+Expected: a raw elevation, type or colour literal should not silently pass the guard
+just because it is spelled with a sibling property; otherwise the guard's promise
+("no raw foundation literal") hides drift behind a green suite.
+
+Actual (all return `[]` from the guard; probe is `screenshots/adv-phase100/guard_evasion_probe.log`):
+- `filter: drop-shadow(0 1px 1px rgba(0,0,0,0.18))` - raw elevation via `filter`; LIVE at `styles.css:6211`.
+- `text-shadow: 0 1px 2px rgba(0,0,0,0.3)` - raw elevation via `text-shadow`.
+- `border: 2px solid #ffffff` - raw colour + width; LIVE at `styles.css:9810` and `styles.css:9846`.
+- `background: #ffffff` - raw colour; LIVE rule-body instances at `styles.css:3860, 4914, 4974, 7936, 8068, 10583, 10974, 13450, 13492, 18474` (others are inside documented on-page surfaces).
+- `font: 12px/1.4 Inter` - sets font-size without the `font-size` property.
+- `outline: 2px solid #f00` - raw width/colour.
+- `backdrop-filter: blur(12px)` (non-token) - LIVE at `styles.css:4704-4705, 4785-4786, 11321-11322, 12487-12488`, while sibling glass surfaces use `var(--glass-blur)`.
+
+Controls the same functions DO catch: `box-shadow: 0 1px 2px rgba(0,0,0,0.2)`,
+`font-size: 12px`, and inline `background: "#ff0000"`.
+
+Screenshot / fixture: screenshots/adv-phase100/guard_evasion_probe.log
+
+Disposition: ACCEPTED -> DEF-546 (CTO, TFL-729, 2026-10-04). Confirmed live drift via sibling properties the guard does not read: `filter: drop-shadow(...)` (styles.css:6211), `border:` shorthand with raw hex (9810, 9846), `background: #ffffff` rule bodies (3860, 4914, 4974, 7936, 8068, 10583, 10974, 13450, 13492, 18474), raw `backdrop-filter: blur(12px)` (4704-4705, 4785-4786, 11321-11322, 12487-12488), plus `text-shadow` / `font:` shorthand / `outline`. Assigned to frontend-dev: extend the guard to the sibling spellings of the elevation/type/colour families and classify each live instance (chrome -> token; documented on-page surface -> allow-list with a written reason).
+
+## ADV-203: DriftGuard misses raw literals in inline JSX style contexts it does not reach (un-annotated style const, style-as-string, inline SVG attribute hex)
+
+- Session: diff-pass
+- Suggested severity: LOW
+
+What I did: same scratch probe, feeding the guard's `scanSource` the constructions the
+task named.
+
+Expected: `MIGRATED_SURFACES` claims every renderer `.tsx` must contain no raw literal
+in an inline style context. A raw hex/number that reaches the DOM through a style or
+presentation attribute should be caught, or the gap stated.
+
+Actual (all return `[]`):
+- `const S = { fontSize: 12, borderRadius: "8px" }; <div style={S} />` - only a literal
+  `style={{...}}` block and a `: CSSProperties = {...}` annotation are scanned; an
+  un-annotated module/const object consumed by `style={S}` is invisible.
+- `<div style="font-size: 12px" />` - `style` as a string is not a scanned context.
+- `<circle cx={0} cy={0} r={4} fill="#ef4444" />` - an inline SVG presentation
+  attribute is not a `style` value. LIVE at `src/renderer/annotations/AnnotationOverlay.tsx:1364`
+  (a migrated surface).
+
+Controls the same function DOES catch: `const S: CSSProperties = { fontSize: 12 }` and
+`style={{ background: "#ff0000" }}`.
+
+Screenshot / fixture: screenshots/adv-phase100/guard_evasion_probe.log
+
+Disposition: ACCEPTED -> DEF-547 (CTO, TFL-729, 2026-10-04). Confirmed: inline style contexts reached indirectly are unscanned - an un-annotated style const consumed by `style={S}`, `style` given as a string, and inline SVG presentation-attribute hex (live `AnnotationOverlay.tsx:1364`). Assigned to frontend-dev: extend the JSX style scan to these contexts or state the limit with an explicit allow-list entry carrying a reason.
+
+## ADV-204: Phase 100 theme / motion / retrofit diff-pass on the running app - clean (no product break found)
+
+- Session: diff-pass
+- Suggested severity: LOW
+
+What I did: rebuilt the renderer (`node node_modules/vite/bin/vite.js build`), re-ran
+qa's two oracles, then drove the built app through `e2e/lib/launch.cjs` from a scratch
+Playwright probe (`$PAPERCLIP_RUN_SCRATCH_DIR/adv_theme_probe.spec.cjs`) at 1440x900
+with a bundled sample open. For each of light/dark/frosted I sampled 44 chrome
+selectors for computed colour/radius/shadow/backdrop-filter/transition/animation and
+clipping, flipped themes, measured PDF-surface motion mid-crossfade, and emulated
+reduced motion. Log: screenshots/adv-phase100/theme_probe.log.
+
+Expected: theme honesty (chrome colour tracks the theme), no retrofit regression, and
+zero token/motion/theme effect on PDF content.
+
+Actual / negative results (nothing broke):
+1. THEME HONESTY - no theme-inert chrome. Every sampled selector that exists changed
+   `backgroundColor`/`color` between light and dark (titlebar, app-header, brand,
+   file-dot, menu button, header buttons, tool-btn, btn, side-rail, tools-palette,
+   context panel, tab/tab-active, canvas pills, zoom control, toast, prefs dialog,
+   dialog shell, titlebar menu popover, theme popover, search input, empty state,
+   inspector, status bar, page input, command bar, pane-thumb strip, stage rail,
+   outline panel, thumb strip, rail tabs, home tools). No hardcoded colour masquerading
+   as a token was found.
+2. The only theme-invariant chrome is deliberate: `.content-move-hint`
+   (`styles.css:6384-6401`, fixed dark chip `#15181c`/`#f1f5f9`) is documented at
+   `styles.css:6381-6383` (DEF-099: it floats over the paper-white page and is never
+   inverted). Not a finding.
+3. `.titlebar-file-dot` measured fg/bg contrast 1.08 in dark, but its `color` is not
+   rendered text (an amber status dot; a border ring per CSS_ALLOWLIST). Observation
+   only, not a defect.
+4. PDF / MOTION SAFETY - clean. `.pdf-page`, `.pdf-page-canvas`, `.document-scroller`
+   and the workspace canvas all report `transition-duration: 0s`, `animation-name:
+   none`, `filter: none` in all three themes AND in the ~30ms window immediately after
+   a theme flip (the crossfade path). No token/motion/theme effect touches the page,
+   slot, canvas or scroller.
+5. REDUCED MOTION - collapses as designed. Emulating `prefers-reduced-motion: reduce`
+   drops `--motion-duration-fast` and `--motion-duration-standard` to `0s` (the
+   animations.css media block). The legacy `--tf-motion-fast` alias stays `.12s` in
+   the token namespace, but `styles.css:12061` applies a universal
+   `@media (prefers-reduced-motion: reduce) *,*::before,*::after { transition-duration:
+   0.01ms !important; animation-duration: 0.01ms !important }` catch-all, so no
+   user-visible leak; observation only.
+6. RETROFIT REGRESSIONS - none found. No sampled chrome had `scrollWidth/Height >
+   client + 1px` (no clipped content); dialog/popover radii and shadows match the LIVE
+   tokens (qa `phase100` c-radius/c-elevation/c-font PASS in all three themes);
+   screenshots show clean corner rounding, legible type and intact focus/selection
+   rings.
+7. Scope note (not a break): the guard's `MIGRATED_CSS_RULES`/`MIGRATED_MOTION_RULES`
+   name only `styles.css`; `src/renderer/styles/animations.css` is a real imported
+   renderer stylesheet that is not scanned. Phase-100 ruling 4 scopes the CSS scan to
+   `styles.css`, so this is stated scope; it currently carries raw
+   `animation-delay: var(--jiggle-delay, 0ms)` and `transition-delay: 0s !important`.
+
+Design-critique pass on the changed surfaces (titlebar, rail/context panel, prefs
+dialog, toast, welcome): the user job is obvious, hierarchy is intact, affordances are
+clear, empty/error states are unchanged, and token usage is consistent. No must-fix or
+should-fix. Strengths to keep: complete three-theme coverage, values bound to tokens
+rather than hardcoded, and PDF surfaces provably immune to theme motion.
+
+Screenshot: screenshots/adv-phase100/chrome-light.png, chrome-dark.png,
+chrome-frosted.png, context-panel-{light,dark,frosted}.png,
+stage-rail-{light,dark,frosted}.png
+
+Disposition: REJECTED - no finding (CTO, TFL-729, 2026-10-04). Triage: the diff-pass found no product break - theme honesty held across ~44 sampled selectors, no retrofit regression, zero PDF-surface transition/animation/filter in all three themes and during the crossfade window, and reduced motion collapses as designed. Items 1-7 are negative results / observations: the `.content-move-hint` fixed dark chip (styles.css:6381-6401) and the `.titlebar-file-dot` status dot (CSS_ALLOWLIST) are documented, and the unscanned `styles/animations.css` is Phase-100 stated scope (ruling 4 names `styles.css`). Entry raises no defect, so no DEF is warranted.

@@ -538,10 +538,10 @@ export function BatesDialog(props: BatesDialogProps): ReactElement {
                         ? {
                             left: parsedX * PT_TO_PREVIEW_PX,
                             top: parsedY * PT_TO_PREVIEW_PX,
-                            fontSize: 12,
+                            fontSize: "var(--fs-sm)",
                             whiteSpace: "nowrap",
                           }
-                        : slotStyle(position, { fontSize: 12, whiteSpace: "nowrap" })
+                        : slotStyle(position, { fontSize: "var(--fs-sm)", whiteSpace: "nowrap" })
                     }
                     data-bates-preview
                   >

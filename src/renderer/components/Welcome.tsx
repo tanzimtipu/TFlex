@@ -282,7 +282,7 @@ export function Welcome(props: WelcomeProps): ReactElement {
               <Icon icon={OpenGlyph} size="sm" />
             </span>{" "}
             Open Files
-            <span className="kbd" style={{ marginLeft: 8 }}>Ctrl O</span>
+            <span className="kbd" style={{ marginLeft: "var(--sp-2)" }}>Ctrl O</span>
           </button>
           {tools.map((id) => {
             const entry = toolById(id);

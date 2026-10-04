@@ -435,4 +435,84 @@ neither state is user-reachable. They remain covered by the `EmptyState` unit
 contract in `test/unit/renderer/emptyState.test.tsx`; they are not part of the
 reachable-surface rendering oracle.
 
+## 16. How a feature consumes the foundation
+
+Phase 100 gives every shared element family ONE authoritative module and a
+single public API under `src/renderer/design`. A feature imports from the barrel
+and never re-declares a local value.
+
+```ts
+import {
+  COLOR_ROLES, colorVar,       // colour roles -> CSS custom-property names
+  FONT_FAMILIES, FONT_SIZES,   // typography
+  SPACING, SPACE,              // spacing (canonical --sp-*, named --space-*)
+  RADII, RADIUS,               // corner radii
+  ELEVATION, SHADOW_ROLE,      // elevation ladder + named roles
+  MOTION_DURATION, MOTION_EASE,// re-export of hooks/motionTokens
+  ICON_SIZES, ICON_STROKE,     // re-export of icons/Icon
+} from "../design";
+```
+
+Rules:
+
+1. **New or changed code uses tokens, never literals.** No raw hex colour in a
+   style context, no raw numeric `fontSize` / `borderRadius` / `padding` /
+   `margin` / `gap`, no raw `boxShadow`, no raw `cubic-bezier(...)` or ms
+   duration. Values live in the CSS token layer (`src/renderer/styles.css`,
+   `src/renderer/styles/animations.css`) and reach JS through the mirror
+   modules above.
+2. **Motion and icons are re-exports, not copies.** `design/motion.ts` forwards
+   `hooks/motionTokens.ts`; `design/icons.ts` forwards `icons/Icon.tsx`. There is
+   exactly one source for each.
+3. **Reduced motion.** Every JS-driven transition/animation reads
+   `MOTION_DURATION.reduced` (0ms) when the live reduced-motion hook reports the
+   OS preference, and never animates `transform` in that branch (opacity only);
+   CSS motion collapses under `@media (prefers-reduced-motion: reduce)` in
+   `animations.css`.
+4. **Theming.** Every semantic colour role is declared in all three scopes; a
+   feature names a role and inherits the theme mapping and must not branch on
+   the active theme in JS.
+
+### Canonical vs alias
+
+One value, one canonical name; aliases resolve through it so no rule breaks.
+
+| Family | Canonical tokens | Aliases (point at canonical) |
+| --- | --- | --- |
+| spacing | `--sp-1`..`--sp-6` (4/8/12/16/24/32px) | `--space-micro/small/control/standard/section/major` |
+| radii | `--radius-1..3`, `--radius-window/panel/group/control/pill` | `--tf-radius-sm` -> `--radius-2`, `--tf-radius-md` -> `--radius-3`, `--tf-radius-lg` -> `--radius-dialog` |
+| motion | `--tf-motion-*` / `--tf-ease-*` | `--motion-*` / `--ease-*` |
+| colour | `--accent*`, `--sem-*`, `--info/success/warning/error` (+`-soft`) | `--tf-accent*` |
+
+### Guard command
+
+The foundation is pinned by `test/unit/renderer/foundationMirrors.test.ts` — it
+parses `styles.css` and fails if a TS mirror drifts, an alias stops pointing at
+its canonical token, or a colour role is missing from a theme scope. Run it with
+the neighbouring contract suites:
+
+```sh
+npm.cmd run test:unit -- foundationMirrors foundationGuards designSystem animationsTokens designTokensContract
+```
+
+`npm run verify` (conventions + typecheck) must also stay clean.
+`test/unit/renderer/foundationGuards.test.ts` is the raw-literal guard for migrated
+surfaces. At phase close its coverage is complete: `MIGRATED_SURFACES` covers EVERY
+renderer TSX surface (a companion test asserts the list EQUALS the source walk, so it
+is complete and non-stale), and the CSS scans cover the whole `styles.css` rule-body
+scope. `MIGRATED_CSS_RULES` enforces raw elevation (`box-shadow`), radii
+(`border-radius`) and typography (`font-size`) literals **and their DEF-546 sibling
+spellings** — elevation via `filter: drop-shadow(...)` / `text-shadow`, opaque colour
+via the `border` / `background` / `outline` shorthands, a raw px `font` shorthand size,
+and a non-token `backdrop-filter: blur(<n>px)`. `MIGRATED_MOTION_RULES` enforces raw
+one-off `transition`/`animation` durations and `cubic-bezier(...)` easings across the
+shorthand **and the `-duration` / `-delay` longhands** (DEF-545): a raw `\d+ms` /
+`\d+s` duration is flagged even when a motion token appears in the same declaration,
+because the token exempts the easing slot, not the duration slot. The TSX half also
+reaches a raw literal through an un-annotated `style={S}` const (best-effort, same-file
+literal only), a `style="..."` string, and an inline SVG `fill`/`stroke` presentation
+attribute with raw hex (DEF-547). A written allow-list (`ALLOWLIST` for TSX,
+`CSS_ALLOWLIST` for CSS) records the few functional/data literals that may remain, each
+with a reason, and a companion test fails any stale entry.
+
 

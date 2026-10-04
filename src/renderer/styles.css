@@ -122,9 +122,13 @@
    * is retuned 1.3 -> 1.2 (restrained saturation). The defocused state
    * (data-window-focus="blurred") still relaxes this var to 12px. */
   --tf-acrylic-blur: 20px;
-  --tf-radius-sm: 5px;
-  --tf-radius-md: 8px;
-  --tf-radius-lg: 10px;
+  /* Phase 100 — the --tf-radius-* family are ALIASES of the canonical
+   * --radius-* tokens (sm -> --radius-2 = 5px, md -> --radius-3 = 8px,
+   * lg -> --radius-dialog = 10px). Resolved values are unchanged; no
+   * consumer is renamed. */
+  --tf-radius-sm: var(--radius-2);
+  --tf-radius-md: var(--radius-3);
+  --tf-radius-lg: var(--radius-dialog);
   /* The single blue accent stays the same in all three themes —
    * these are the canonical frosted names per the Phase-15 spec. */
   --tf-accent: #7C3AED;
@@ -160,12 +164,14 @@
    * These live in :root next to the motion tokens (same convention);
    * per-theme overrides only re-map the SURFACE colors below.
    * ------------------------------------------------------------------------- */
-  --space-micro: 4px;
-  --space-small: 8px;
-  --space-control: 12px;
-  --space-standard: 16px;
-  --space-section: 24px;
-  --space-major: 32px;
+  /* Phase 100 — the named --space-* rhythm are ALIASES of the canonical
+   * --sp-* grid (4/8/12/16/24/32px); resolved values are unchanged. */
+  --space-micro: var(--sp-1);
+  --space-small: var(--sp-2);
+  --space-control: var(--sp-3);
+  --space-standard: var(--sp-4);
+  --space-section: var(--sp-5);
+  --space-major: var(--sp-6);
 
   /* Phase 67 / DEF-447 — horizontal clearance for the collapsed notice-icon
    * ROW at the canvas top-left. The single-source base for all three fixed
@@ -1888,7 +1894,7 @@ input[type="checkbox"] {
   right: 3px;
   width: 6px;
   height: 6px;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: var(--warning);
   box-shadow: 0 0 0 1.5px var(--bg-toolbar);
   transition: opacity var(--motion-fast) var(--ease-out);
@@ -2383,7 +2389,7 @@ body.tab-reordering .tab-list[data-reorder="true"] .tab {
   width: 5px;
   height: 5px;
   box-sizing: border-box;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   /* Phase 51 (item 5) — the dot sits on the tab's full-strength hue now, so it
    *  and its ring use the tab ink / hue pair to stay visible. */
   background: var(--tf-tab-ink);
@@ -2631,7 +2637,7 @@ body.tab-reordering .tab-list[data-reorder="true"] .tab {
 }
 
 .account-signin-label {
-  font-size: 12px;
+  font-size: var(--fs-sm);
   font-weight: 600;
   line-height: 1;
 }
@@ -2653,7 +2659,7 @@ body.tab-reordering .tab-list[data-reorder="true"] .tab {
   padding: 0;
   overflow: hidden;
   border: 1px solid transparent;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: var(--accent);
   color: var(--fg-on-accent);
   cursor: pointer;
@@ -2678,7 +2684,7 @@ body.tab-reordering .tab-list[data-reorder="true"] .tab {
 }
 
 .account-avatar-text {
-  font-size: 11px;
+  font-size: var(--fs-xs);
   font-weight: 600;
   line-height: 1;
   letter-spacing: 0.01em;
@@ -2717,7 +2723,7 @@ body.tab-reordering .tab-list[data-reorder="true"] .tab {
   height: 32px;
   flex: none;
   overflow: hidden;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: var(--accent);
   color: var(--fg-on-accent);
 }
@@ -2734,7 +2740,7 @@ body.tab-reordering .tab-list[data-reorder="true"] .tab {
 }
 
 .account-panel-name {
-  font-size: 13px;
+  font-size: var(--fs-md);
   font-weight: 600;
   color: var(--fg-strong);
   white-space: nowrap;
@@ -2743,7 +2749,7 @@ body.tab-reordering .tab-list[data-reorder="true"] .tab {
 }
 
 .account-panel-email {
-  font-size: 12px;
+  font-size: var(--fs-sm);
   color: var(--fg-muted);
   white-space: nowrap;
   overflow: hidden;
@@ -2760,7 +2766,7 @@ body.tab-reordering .tab-list[data-reorder="true"] .tab {
   border-radius: var(--radius-2);
   background: transparent;
   color: var(--fg-strong);
-  font-size: 13px;
+  font-size: var(--fs-md);
   text-align: left;
   cursor: pointer;
   transition: background var(--motion-fast) var(--ease-out);
@@ -2789,7 +2795,7 @@ body.tab-reordering .tab-list[data-reorder="true"] .tab {
   flex-direction: column;
   gap: 2px;
   padding: 2px 8px 8px;
-  font-size: 11px;
+  font-size: var(--fs-xs);
   color: var(--fg-muted);
 }
 
@@ -2810,7 +2816,7 @@ body.tab-reordering .tab-list[data-reorder="true"] .tab {
 
 .account-profile-title {
   margin: 0;
-  font-size: 13px;
+  font-size: var(--fs-md);
   font-weight: 600;
   color: var(--fg-strong);
 }
@@ -2822,7 +2828,7 @@ body.tab-reordering .tab-list[data-reorder="true"] .tab {
 }
 
 .account-label {
-  font-size: 11px;
+  font-size: var(--fs-xs);
   font-weight: 600;
   color: var(--fg-muted);
 }
@@ -2834,7 +2840,7 @@ body.tab-reordering .tab-list[data-reorder="true"] .tab {
   border-radius: var(--radius-2);
   background: var(--bg-base, transparent);
   color: var(--fg-strong);
-  font-size: 13px;
+  font-size: var(--fs-md);
 }
 
 .account-input:focus-visible {
@@ -2851,14 +2857,14 @@ body.tab-reordering .tab-list[data-reorder="true"] .tab {
 
 .account-hint {
   margin: 0;
-  font-size: 11px;
+  font-size: var(--fs-xs);
   line-height: 1.4;
   color: var(--fg-muted);
 }
 
 .account-profile-error {
   margin: 0;
-  font-size: 12px;
+  font-size: var(--fs-sm);
   color: var(--danger, #dc2626);
 }
 
@@ -3090,7 +3096,7 @@ body.tab-reordering .tab-list[data-reorder="true"] .tab {
   padding: 4px;
   background: var(--menu-bg);
   border: 1px solid var(--glass-border);
-  border-radius: 8px;
+  border-radius: var(--radius-3);
   box-shadow: var(--shadow-popover);
   -webkit-backdrop-filter: var(--glass-blur);
   backdrop-filter: var(--glass-blur);
@@ -3100,7 +3106,7 @@ body.tab-reordering .tab-list[data-reorder="true"] .tab {
 
 .home-tools-hint {
   margin: 8px 0 0;
-  font-size: 11px;
+  font-size: var(--fs-xs);
   line-height: 1.4;
   color: var(--fg-muted);
 }
@@ -3885,7 +3891,7 @@ body.tab-reordering .tab-list[data-reorder="true"] .tab {
   font-size: var(--fs-xs);
   text-align: left;
   cursor: pointer;
-  transition: background 160ms ease-out;
+  transition: background var(--motion-duration-micro) var(--motion-ease-standard);
 }
 
 .spell-text-suggestion:hover {
@@ -4177,7 +4183,7 @@ body.tab-reordering .tab-list[data-reorder="true"] .tab {
   transform: translateX(-100%);
   background: linear-gradient(100deg, transparent 30%, var(--placeholder-to) 50%, transparent 70%);
   opacity: 0.55;
-  animation: shimmer-sweep 1.4s var(--tf-ease-standard) infinite;
+  animation: shimmer-sweep var(--motion-duration-shimmer) var(--tf-ease-standard) infinite;
 }
 
 .thumb-label {
@@ -4647,7 +4653,7 @@ body.tab-reordering .tab-list[data-reorder="true"] .tab {
 .document-scroller::-webkit-scrollbar { width: 10px; }
 .document-scroller::-webkit-scrollbar-thumb {
   background: var(--border-strong);
-  border-radius: 8px;
+  border-radius: var(--radius-3);
   border: 2px solid var(--bg-canvas);
 }
 
@@ -4694,9 +4700,9 @@ body.tab-reordering .tab-list[data-reorder="true"] .tab {
   /* Arrow shape pointing left. */
   clip-path: polygon(25% 0, 100% 0, 100% 100%, 25% 100%, 0% 50%);
   background: linear-gradient(135deg, rgba(139, 92, 246, 0.95), rgba(124, 58, 237, 0.95));
-  border-radius: 10px 0 0 10px;
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
+  border-radius: var(--radius-control) 0 0 var(--radius-control);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -4776,8 +4782,8 @@ body.tab-reordering .tab-list[data-reorder="true"] .tab {
  * wallpaper the window shows through. */
 :root[data-theme="frosted"] .tools-badge-tracker {
   background: linear-gradient(135deg, rgba(139, 92, 246, 0.88), rgba(124, 58, 237, 0.88));
-  backdrop-filter: blur(20px) saturate(1.4);
-  -webkit-backdrop-filter: blur(20px) saturate(1.4);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
 }
 
 /* Phase 13 — Hand (pan) mode. While armed, the scroller advertises
@@ -4913,7 +4919,7 @@ body.tab-reordering .tab-list[data-reorder="true"] .tab {
    * visible, and the slot reserves the page's own footprint so
    * mixed page sizes keep their exact geometry — DEF-141/148). */
   box-shadow: var(--shadow-page);
-  border-radius: 2px;
+  border-radius: var(--radius-1);
   overflow: visible;
   isolation: isolate;
 }
@@ -5031,7 +5037,7 @@ body.tab-reordering .tab-list[data-reorder="true"] .tab {
 .search-hit {
   position: absolute;
   background: var(--hit);
-  border-radius: 1px;
+  border-radius: var(--radius-1);
   mix-blend-mode: multiply;
 }
 
@@ -5049,7 +5055,7 @@ body.tab-reordering .tab-list[data-reorder="true"] .tab {
    * never paints outside the page geometry. */
   background: var(--placeholder-from);
   overflow: hidden;
-  border-radius: 2px;
+  border-radius: var(--radius-1);
 }
 
 .page-placeholder::after {
@@ -5059,7 +5065,7 @@ body.tab-reordering .tab-list[data-reorder="true"] .tab {
   transform: translateX(-100%);
   background: linear-gradient(100deg, transparent 30%, var(--placeholder-to) 50%, transparent 70%);
   opacity: 0.55;
-  animation: shimmer-sweep 1.4s var(--tf-ease-standard) infinite;
+  animation: shimmer-sweep var(--motion-duration-shimmer) var(--tf-ease-standard) infinite;
 }
 
 .toast-stack {
@@ -5450,7 +5456,7 @@ body.tab-reordering .tab-list[data-reorder="true"] .tab {
   background: rgba(25, 29, 35, 0.96);
   color: #e7e9ec;
   padding: 5px 8px 4px;
-  border-radius: 4px;
+  border-radius: var(--radius-2);
   font-size: var(--fs-xs);
   line-height: 1.35;
   white-space: pre-line;
@@ -5467,7 +5473,7 @@ body.tab-reordering .tab-list[data-reorder="true"] .tab {
 }
 
 .tooltip-anchor [data-tooltip]:hover::after {
-  animation: tooltip-enter var(--tf-motion-fast) var(--tf-ease-fast) 300ms forwards;
+  animation: tooltip-enter var(--tf-motion-fast) var(--tf-ease-fast) var(--motion-duration-dwell) forwards;
 }
 
 /* ---- Rail actions (undo) ---- */
@@ -5604,7 +5610,7 @@ body.tab-reordering .tab-list[data-reorder="true"] .tab {
   right: 4px;
   top: -5px;
   height: 4px;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: var(--accent);
   box-shadow:
     0 0 0 1px var(--accent-soft),
@@ -5811,9 +5817,12 @@ body.tab-reordering .tab-list[data-reorder="true"] .tab {
   letter-spacing: -0.005em;
 }
 
-/* Phase 91 D4 — the modal-header close is now canonical
- * `btn btn-ghost btn-icon`; the base rule is scoped with :not(.btn) so the
- * un-migrated DialogShell close keeps the legacy look. */
+/* Phase 91 D4 / DEF-544 — the modal-header close is canonical
+ * `btn btn-ghost btn-icon` (DialogShell renders it for every non-sheet dialog);
+ * the base rule stays scoped with :not(.btn) so it can never alter the canonical
+ * close and only serves the remaining un-migrated bare `.modal-close` adopters
+ * (e.g. EngineeringLayersPanel). Geometry for the canonical close is owned by
+ * `.btn.btn-icon` plus the `.btn.modal-close` layout alias below. */
 .modal-close:not(.btn) {
   width: var(--dlg-control-h);
   height: var(--dlg-control-h);
@@ -6213,7 +6222,7 @@ rect.ann-highlight.ann-preview {
 .ann-note-selected {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
-  border-radius: 4px;
+  border-radius: var(--radius-2);
   background: var(--accent-soft);
 }
 
@@ -6488,7 +6497,7 @@ rect.ann-highlight.ann-preview {
 .committed-color-row .content-color-swatch {
   width: 18px;
   height: 18px;
-  border-radius: 3px;
+  border-radius: var(--radius-1);
   border: 1px solid rgba(15, 23, 42, 0.25);
   cursor: pointer;
   padding: 0;
@@ -6555,7 +6564,7 @@ rect.ann-highlight.ann-preview {
   height: 10px;
   background: var(--bg-raised);
   border: 1.5px solid var(--accent);
-  border-radius: 2px;
+  border-radius: var(--radius-1);
   pointer-events: auto;
   z-index: 7;
 }
@@ -6881,7 +6890,7 @@ rect.ann-highlight.ann-preview {
 .ann-color-swatch {
   width: 18px;
   height: 18px;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   border: 2px solid transparent;
   cursor: pointer;
   padding: 0;
@@ -6955,7 +6964,7 @@ rect.ann-highlight.ann-preview {
   background: var(--bg-raised);
   color: var(--fg-muted);
   border: 1px solid var(--border);
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   padding: 0 7px;
   font-size: var(--fs-xs);
   font-weight: 500;
@@ -6989,7 +6998,7 @@ rect.ann-highlight.ann-preview {
   background: var(--bg-raised);
   color: var(--fg-muted);
   border: 1px solid var(--border);
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   padding: 2px 8px;
   font-size: var(--fs-xs);
   font-variant-numeric: tabular-nums;
@@ -7133,7 +7142,7 @@ rect.ann-highlight.ann-preview {
 .ann-panel-swatch {
   width: 14px;
   height: 14px;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   border: 2px solid transparent;
   background-clip: padding-box;
   padding: 0;
@@ -7242,7 +7251,7 @@ rect.ann-highlight.ann-preview {
   border-radius: var(--radius-1);
   padding: 2px 4px;
   font-family: inherit;
-  font-size: 12px;
+  font-size: var(--fs-sm);
   line-height: 1.3;
   outline: none;
   transition: border-color var(--motion-fast) var(--ease-out), background var(--motion-fast) var(--ease-out);
@@ -7384,7 +7393,7 @@ rect.ann-highlight.ann-preview {
   background: transparent;
   border: none;
   color: var(--fg);
-  font-size: 12px;
+  font-size: var(--fs-sm);
   cursor: pointer;
   padding: 0;
 }
@@ -7396,7 +7405,7 @@ rect.ann-highlight.ann-preview {
   /* Transparent at rest, like the checkbox (Phase 74 / DEF-461): no chrome
    * fill AND no chrome border over the page until hover/checked. */
   border: 1.5px solid transparent;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: transparent;
   transition: border-color var(--motion-fast) var(--ease-out);
 }
@@ -7417,7 +7426,7 @@ rect.ann-highlight.ann-preview {
 .form-radio-dot-inner {
   display: inline-block;
   background: var(--accent);
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
 }
 
 .form-radio-label {
@@ -7490,7 +7499,7 @@ rect.ann-highlight.ann-preview {
   border-radius: var(--radius-2);
   background: var(--bg-raised);
   color: var(--fg);
-  font-size: 12px;
+  font-size: var(--fs-sm);
 }
 
 .form-fill-report-head {
@@ -7580,7 +7589,7 @@ rect.ann-highlight.ann-preview {
   color: var(--fg-strong);
   padding: 2px 4px;
   text-align: left;
-  font-size: 12px;
+  font-size: var(--fs-sm);
   cursor: pointer;
   border-radius: var(--radius-1);
 }
@@ -7764,7 +7773,7 @@ rect.ann-highlight.ann-preview {
   height: 10px;
   background: var(--bg-raised);
   border: 1.5px solid var(--accent);
-  border-radius: 2px;
+  border-radius: var(--radius-1);
   pointer-events: auto;
   cursor: nwse-resize;
 }
@@ -7797,7 +7806,7 @@ rect.ann-highlight.ann-preview {
   border: 1.5px solid var(--accent);
   background: var(--accent-soft);
   border-radius: var(--radius-1);
-  box-shadow: 0 4px 16px rgba(15, 23, 42, 0.18);
+  box-shadow: var(--elevation-4);
   z-index: 4;
   opacity: 0.95;
   user-select: none;
@@ -8962,7 +8971,7 @@ rect.ann-highlight.ann-preview {
   width: 100%;
   height: 8px;
   background: var(--bg-input);
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   overflow: hidden;
   border: 1px solid var(--border-subtle);
   margin-top: var(--sp-2);
@@ -8971,7 +8980,7 @@ rect.ann-highlight.ann-preview {
   position: absolute;
   inset: 0 auto 0 0;
   background: var(--accent);
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   /* Width is set inline via the progress percent. The transition
    * smooths the visible jumps between progress events without
    * lagging behind a fast download. */
@@ -9175,7 +9184,7 @@ rect.ann-highlight.ann-preview {
   height: 18px;
   padding: 0;
   border: 1px solid var(--border);
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: var(--bg-input);
   cursor: pointer;
   transition:
@@ -9281,7 +9290,7 @@ rect.ann-highlight.ann-preview {
   flex-wrap: wrap;
 }
 .fill-csv-file-name {
-  font-size: 12px;
+  font-size: var(--fs-sm);
   color: var(--text-muted);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -9296,11 +9305,11 @@ rect.ann-highlight.ann-preview {
 }
 .fill-csv-filled {
   margin: 0;
-  font-size: 13px;
+  font-size: var(--fs-md);
   font-weight: 600;
 }
 .fill-csv-list-label {
-  font-size: 12px;
+  font-size: var(--fs-sm);
   font-weight: 600;
   color: var(--text-muted);
   margin-bottom: 2px;
@@ -9313,11 +9322,11 @@ rect.ann-highlight.ann-preview {
   gap: 2px;
 }
 .fill-csv-list-item {
-  font-size: 12px;
+  font-size: var(--fs-sm);
   word-break: break-word;
 }
 .fill-csv-list-empty {
-  font-size: 12px;
+  font-size: var(--fs-sm);
   color: var(--text-muted);
 }
 
@@ -9405,7 +9414,7 @@ rect.ann-highlight.ann-preview {
   font-size: var(--tf-label-size);
   font-weight: 700;
   line-height: 1;
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.28);
+  box-shadow: var(--elevation-1);
   user-select: none;
 }
 
@@ -9451,7 +9460,7 @@ rect.ann-highlight.ann-preview {
 .ann-comment-count {
   margin-left: auto;
   padding: 0 5px;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: var(--bg-subtle, var(--bg-toolbar));
   color: var(--fg-muted);
   font-size: var(--tf-label-size);
@@ -9471,7 +9480,7 @@ rect.ann-highlight.ann-preview {
   margin: 0;
   padding: 6px 2px;
   color: var(--fg-muted);
-  font-size: 12px;
+  font-size: var(--fs-sm);
 }
 
 .ann-comment-entry {
@@ -9512,7 +9521,7 @@ rect.ann-highlight.ann-preview {
 .ann-comment-text {
   margin: 0;
   color: var(--fg);
-  font-size: 12px;
+  font-size: var(--fs-sm);
   line-height: 1.35;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
@@ -9534,7 +9543,7 @@ rect.ann-highlight.ann-preview {
   background: var(--bg-input, var(--bg));
   color: var(--fg);
   font-family: inherit;
-  font-size: 12px;
+  font-size: var(--fs-sm);
   line-height: 1.35;
 }
 
@@ -9797,8 +9806,8 @@ rect.ann-highlight.ann-preview {
   position: absolute;
   width: 14px;
   height: 14px;
-  border-radius: 999px;
-  border: 2px solid #ffffff;
+  border-radius: var(--radius-pill);
+  border: 2px solid var(--fg-on-accent);
   box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.55), 0 1px 2px rgba(0, 0, 0, 0.35);
   transform: translate(-50%, -50%);
   pointer-events: none;
@@ -9833,8 +9842,8 @@ rect.ann-highlight.ann-preview {
   top: 50%;
   width: 14px;
   height: 14px;
-  border-radius: 999px;
-  border: 2px solid #ffffff;
+  border-radius: var(--radius-pill);
+  border: 2px solid var(--fg-on-accent);
   box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.55), 0 1px 2px rgba(0, 0, 0, 0.35);
   transform: translate(-50%, -50%);
   pointer-events: none;
@@ -10052,13 +10061,13 @@ rect.ann-highlight.ann-preview {
   height: 8px;
   background: var(--bg-input);
   border: 1px solid var(--border-subtle);
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   overflow: hidden;
 }
 
 .audit-bar-fill {
   height: 100%;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   transition: width var(--motion-normal) var(--ease-out);
 }
 
@@ -10331,7 +10340,7 @@ rect.ann-highlight.ann-preview {
   background: rgba(124, 58, 237, 0.12);
   border: 1.5px solid var(--accent);
   border-style: solid;
-  border-radius: 2px;
+  border-radius: var(--radius-1);
   /* Phase 52 follow-up — ONE selection outline. The former 2px
    * box-shadow ring was a second concentric border; the single solid
    * accent border carries the selection on its own. */
@@ -10400,7 +10409,7 @@ rect.ann-highlight.ann-preview {
   height: 10px;
   background: var(--bg-raised);
   border: 1.5px solid var(--accent);
-  border-radius: 2px;
+  border-radius: var(--radius-1);
   pointer-events: auto;
   z-index: 2;
 }
@@ -10463,7 +10472,7 @@ rect.ann-highlight.ann-preview {
   height: 10px;
   background: var(--bg-raised);
   border: 1.5px solid var(--accent);
-  border-radius: 2px;
+  border-radius: var(--radius-1);
   pointer-events: auto;
   z-index: 2;
 }
@@ -10495,7 +10504,7 @@ rect.ann-highlight.ann-preview {
   border-radius: var(--radius-2);
   padding: 2px;
   z-index: 5;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
+  box-shadow: var(--shadow-popover);
 }
 
 .edit-image-toolbar-btn,
@@ -10579,7 +10588,7 @@ rect.ann-highlight.ann-preview {
   display: flex;
   flex-direction: column;
   min-width: 200px;
-  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.18);
+  box-shadow: var(--shadow-popover);
   font-family: var(--font-ui, "Inter", system-ui, sans-serif);
   /* Phase 5 — contextual editor entrance (opacity + translateY -2px,
    * --motion-normal ease-out) so opening the editor never snaps. */
@@ -10704,7 +10713,7 @@ rect.ann-highlight.ann-preview {
 .edit-inline-field select,
 .edit-inline-field input[type="number"] {
   height: 24px;
-  font-size: 12px;
+  font-size: var(--fs-sm);
   border: 1px solid var(--border);
   border-radius: var(--radius-1);
   /* Phase 4 — dropdown surface matches --bg-input everywhere. */
@@ -10845,7 +10854,7 @@ rect.ann-highlight.ann-preview {
   width: 100%;
   height: 6px;
   background: var(--bg-base);
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   overflow: hidden;
   border: 1px solid var(--border-subtle);
 }
@@ -10853,7 +10862,7 @@ rect.ann-highlight.ann-preview {
 .ocr-progress-fill {
   height: 100%;
   background: var(--accent);
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   transition: width var(--motion-normal) var(--ease-out);
 }
 
@@ -10965,7 +10974,7 @@ rect.ann-highlight.ann-preview {
   background: #ffffff;
   border: 1px solid var(--border);
   border-radius: var(--radius-1);
-  box-shadow: var(--shadow-1, 0 1px 2px rgba(0, 0, 0, 0.08));
+  box-shadow: var(--shadow-page);
   overflow: hidden;
 }
 
@@ -11004,12 +11013,12 @@ rect.ann-highlight.ann-preview {
 .print-preview-placeholder {
   width: 60%;
   height: 4px;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: var(--border);
 }
 
 .print-preview-meta {
-  font-size: var(--fs-xs, 11px);
+  font-size: var(--fs-xs);
   color: var(--fg-muted);
   text-align: center;
 }
@@ -11309,8 +11318,8 @@ rect.ann-highlight.ann-preview {
    * blur so the bar reads as a floating strip over the page
    * content, not an opaque slab. */
   background: rgba(244, 244, 245, 0.88);
-  backdrop-filter: blur(10px);
-  -webkit-backdrop-filter: blur(10px);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
   border-bottom: 1px solid var(--border);
   font-family: var(--font-ui, "Inter", system-ui, sans-serif);
   overflow: hidden;
@@ -11537,7 +11546,7 @@ rect.ann-highlight.ann-preview {
   width: 44px;
   height: 4px;
   background: var(--bg-base);
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   overflow: hidden;
   position: relative;
   border: 1px solid var(--border-subtle);
@@ -11547,16 +11556,16 @@ rect.ann-highlight.ann-preview {
   display: block;
   height: 100%;
   background: var(--accent);
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   transition: width var(--motion-normal) var(--ease-out);
 }
 
 .ocr-suspects-confidence-low > span {
-  background: #b91c1c;
+  background: var(--error);
 }
 
 :root[data-theme="dark"] .ocr-suspects-confidence-low > span {
-  background: #f87171;
+  background: var(--error);
 }
 
 .ocr-suspects-confidence-label {
@@ -11727,8 +11736,8 @@ rect.ann-highlight.ann-preview {
 .crop-editor-handle {
   position: absolute;
   background: var(--accent);
-  border: 1.5px solid #ffffff;
-  border-radius: 2px;
+  border: 1.5px solid var(--fg-on-accent);
+  border-radius: var(--radius-1);
   cursor: nwse-resize;
   z-index: 1;
 }
@@ -12475,8 +12484,8 @@ rect.ann-highlight.ann-preview {
 :root[data-theme="frosted"] .theme-toggle-popover,
 :root[data-theme="frosted"] .ann-tool-menu,
 :root[data-theme="frosted"] .color-popover {
-  -webkit-backdrop-filter: blur(24px) saturate(1.2);
-  backdrop-filter: blur(24px) saturate(1.2);
+  -webkit-backdrop-filter: var(--glass-blur);
+  backdrop-filter: var(--glass-blur);
 }
 
 /* Dialogs / sheets — the most opaque sheet (0.93) with the dialog
@@ -12703,14 +12712,14 @@ rect.ann-highlight.ann-preview {
     transparent 100%
   );
   transform: translateX(-120%);
-  animation: acrylic-sheen 7s var(--tf-ease-standard) infinite;
+  animation: acrylic-sheen var(--motion-duration-sheen) var(--tf-ease-standard) infinite;
 }
 
 /* Sidebars + panels sweep slower and quieter (the thumbnails and the
  * tool list must stay readable while the band passes). */
 :root[data-theme="frosted"] .side-rail::after,
 :root[data-theme="frosted"] .tools-palette::after {
-  animation-duration: 9s;
+  animation-duration: var(--motion-duration-sheen-slow);
   background: linear-gradient(
     105deg,
     transparent 0%,
@@ -12762,14 +12771,14 @@ rect.ann-highlight.ann-preview {
   background: transparent;
   border: none;
   color: var(--fg-strong);
-  font-size: 12px;
+  font-size: var(--fs-sm);
   font-weight: 500;
   line-height: 1;
   padding: 4px 2px;
   min-width: 28px;
   text-align: center;
   cursor: pointer;
-  border-radius: 4px;
+  border-radius: var(--radius-2);
   /* The hover/focus lift itself comes from the JS LiftMotionProps
    * (useLiftAnimation, micro distance — token-driven); the CSS only
    * transitions the theme-tuned colour wash. */
@@ -13149,7 +13158,7 @@ rect.ann-highlight.ann-preview {
   text-align: left;
   gap: var(--sp-2);
   padding: 10px;
-  border-radius: 12px;
+  border-radius: var(--radius-group);
   border: 1px solid var(--border-subtle);
   background: var(--bg-hover);
 }
@@ -13172,7 +13181,7 @@ rect.ann-highlight.ann-preview {
 .tools-palette-entry-grid .tools-palette-entry-icon {
   width: 30px;
   height: 30px;
-  border-radius: 9px;
+  border-radius: var(--radius-control);
   background: var(--bg-hover);
 }
 
@@ -13438,7 +13447,7 @@ rect.ann-highlight.ann-preview {
 }
 
 .watermark-slot-active .watermark-slot-dot {
-  background: #ffffff;
+  background: var(--fg-on-accent);
 }
 
 /* Phase 45 (item 7) — with "Custom position (X, Y)" ticked the nine predefined
@@ -13483,7 +13492,7 @@ rect.ann-highlight.ann-preview {
   background: #ffffff;
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-1);
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
+  box-shadow: var(--elevation-1);
   overflow: hidden;
   pointer-events: none;
 }
@@ -13991,7 +14000,7 @@ rect.ann-highlight.ann-preview {
   padding: 0 6px 0 10px;
   border-bottom: 1px solid var(--border);
   background: var(--bg-toolbar);
-  font-size: 12px;
+  font-size: var(--fs-sm);
   color: var(--fg-muted);
   transition: background var(--motion-duration-fast) var(--motion-ease-standard);
 }
@@ -14157,10 +14166,10 @@ rect.ann-highlight.ann-preview {
      flex; it overflows the band symmetrically. */
   width: 20px;
   height: 44px;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: var(--bg-raised);
   color: var(--fg-muted);
-  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.22);
+  box-shadow: var(--elevation-4);
   /* Always visible — the old opacity: 0 hid the only affordance until hover. */
   opacity: 1;
   transition:
@@ -14173,7 +14182,7 @@ rect.ann-highlight.ann-preview {
 .multi-divider:active .multi-divider-grip {
   background: var(--fg-on-accent);
   color: var(--accent);
-  box-shadow: 0 1px 4px rgba(15, 23, 42, 0.28);
+  box-shadow: var(--elevation-4);
 }
 
 /* ---- Phase 36 (chunk 7) / Phase 40 (item 1) — the per-pane floating pills -- */
@@ -14252,14 +14261,14 @@ rect.ann-highlight.ann-preview {
 
 .multi-pane-empty-title {
   margin: 2px 0 0;
-  font-size: 14px;
+  font-size: var(--fs-lg);
   font-weight: 600;
   color: var(--fg-strong);
 }
 
 .multi-pane-empty-hint {
   margin: 0;
-  font-size: 12px;
+  font-size: var(--fs-sm);
   color: var(--fg-muted);
 }
 
@@ -14283,7 +14292,7 @@ rect.ann-highlight.ann-preview {
   border-radius: var(--radius-2);
   background: var(--bg-base);
   color: var(--fg);
-  font-size: 12px;
+  font-size: var(--fs-sm);
   text-align: left;
   cursor: pointer;
   transition:
@@ -14320,7 +14329,7 @@ rect.ann-highlight.ann-preview {
   border-radius: var(--radius-control);
   background: var(--accent);
   color: var(--fg-on-accent);
-  font-size: 12px;
+  font-size: var(--fs-sm);
   font-weight: 500;
   cursor: pointer;
   transition:
@@ -14475,7 +14484,7 @@ rect.ann-highlight.ann-preview {
   height: 26px;
   padding: 0;
   border: 1px solid var(--border);
-  border-radius: 6px;
+  border-radius: var(--radius-2);
   background: var(--panel-bg);
   color: var(--fg-muted);
   cursor: grab;
@@ -14511,7 +14520,7 @@ rect.ann-highlight.ann-preview {
   z-index: 40;
   display: flex;
   justify-content: center;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: var(--accent);
   box-shadow:
     0 0 0 1px var(--accent-soft),
@@ -14547,7 +14556,7 @@ rect.ann-highlight.ann-preview {
   position: absolute;
   top: 6px;
   padding: 1px 6px;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: var(--accent);
   color: var(--fg-on-accent);
   font-size: var(--fs-xs);
@@ -15425,7 +15434,7 @@ rect.ann-highlight.ann-preview {
   max-width: max(0px, calc(100% - var(--dock-reserve, 476px)));
   background: var(--bg-elevated);
   border: 1px solid var(--glass-border);
-  border-radius: 12px;
+  border-radius: var(--radius-group);
   /* Phase 96-C — the dock is a level-2 floating overlay; it consumes the
    * shared elevation ladder step directly. */
   box-shadow: var(--elevation-2);
@@ -15578,7 +15587,7 @@ rect.ann-highlight.ann-preview {
   padding: 0;
   background: var(--bg-elevated);
   border: 1px solid var(--glass-border);
-  border-radius: 6px;
+  border-radius: var(--radius-2);
   color: var(--tf-stage-edit);
   cursor: pointer;
   /* Phase 96-C — the dock's floating edit toggle rides the level-2 step
@@ -15661,7 +15670,7 @@ rect.ann-highlight.ann-preview {
   padding: 0;
   background: transparent;
   border: 1px dashed var(--border);
-  border-radius: 8px;
+  border-radius: var(--radius-3);
   color: var(--fg-muted);
   cursor: pointer;
   transition:
@@ -15724,7 +15733,7 @@ rect.ann-highlight.ann-preview {
   white-space: nowrap;
   color: var(--fg-on-accent);
   background: var(--accent);
-  border-radius: 6px;
+  border-radius: var(--radius-2);
 }
 
 .action-dock-divider {
@@ -15748,7 +15757,7 @@ rect.ann-highlight.ann-preview {
   padding: 5px 8px;
   background: transparent;
   border: 0;
-  border-radius: 8px;
+  border-radius: var(--radius-3);
   color: var(--fg-muted);
 cursor: pointer;
   /* Phase 43 (item 1) — the verb carries the full hover/press motion set:
@@ -15954,7 +15963,7 @@ cursor: pointer;
   padding: 4px;
   background: var(--menu-bg);
   border: 1px solid var(--glass-border);
-  border-radius: 8px;
+  border-radius: var(--radius-3);
   box-shadow: var(--shadow-popover);
   -webkit-backdrop-filter: var(--glass-blur);
   backdrop-filter: var(--glass-blur);
@@ -15980,7 +15989,7 @@ cursor: pointer;
   color: var(--fg);
   background: transparent;
   border: 0;
-  border-radius: 6px;
+  border-radius: var(--radius-2);
   cursor: pointer;
   transition: background-color var(--motion-duration-micro) var(--motion-ease-standard);
 }
@@ -16079,7 +16088,7 @@ cursor: pointer;
   padding: 0;
   background: transparent;
   border: 0;
-  border-radius: 8px;
+  border-radius: var(--radius-3);
   color: var(--fg-muted);
   cursor: pointer;
   /* Phase 43 (item 1) — the arrows lane controls get the same token
@@ -16130,7 +16139,7 @@ cursor: pointer;
   color: var(--fg-muted);
   background: var(--bg-hover);
   border: 1px solid var(--border-subtle);
-  border-radius: 4px;
+  border-radius: var(--radius-2);
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -17063,27 +17072,27 @@ cursor: pointer;
 .accounts-status {
   margin: 0;
   color: var(--fg-muted);
-  font-size: 13px;
+  font-size: var(--fs-md);
 }
 
 .accounts-unconfigured {
   padding: 14px 16px;
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: var(--radius-3);
   background: var(--bg-panel);
 }
 
 .accounts-unconfigured-title {
   margin: 0 0 6px;
   color: var(--fg-strong);
-  font-size: 14px;
+  font-size: var(--fs-lg);
   font-weight: 600;
 }
 
 .accounts-unconfigured-text {
   margin: 0;
   color: var(--fg-muted);
-  font-size: 13px;
+  font-size: var(--fs-md);
   line-height: 1.5;
 }
 
@@ -17091,10 +17100,10 @@ cursor: pointer;
   margin: 0;
   padding: 10px 12px;
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: var(--radius-3);
   background: var(--bg-panel);
   color: var(--fg);
-  font-size: 12.5px;
+  font-size: var(--fs-sm);
   line-height: 1.45;
 }
 
@@ -17104,7 +17113,7 @@ cursor: pointer;
   gap: 4px;
   padding: 3px;
   border: 1px solid var(--border);
-  border-radius: 9px;
+  border-radius: var(--radius-control);
   background: var(--bg-panel);
 }
 
@@ -17115,11 +17124,11 @@ cursor: pointer;
   gap: 6px;
   padding: 7px 10px;
   border: none;
-  border-radius: 6px;
+  border-radius: var(--radius-2);
   background: transparent;
   color: var(--fg);
   font: inherit;
-  font-size: 13px;
+  font-size: var(--fs-md);
   cursor: pointer;
   transition: background-color var(--motion-duration-fast) var(--motion-ease-standard),
     color var(--motion-duration-fast) var(--motion-ease-standard);
@@ -17132,7 +17141,7 @@ cursor: pointer;
 .accounts-mode-tab-active {
   background: var(--bg-elevated);
   color: var(--fg-strong);
-  box-shadow: 0 1px 2px rgb(15 23 42 / 8%);
+  box-shadow: var(--elevation-1);
 }
 
 .accounts-mode-tab:focus-visible {
@@ -17148,18 +17157,18 @@ cursor: pointer;
 
 .accounts-label {
   color: var(--fg-muted);
-  font-size: 12px;
+  font-size: var(--fs-sm);
   font-weight: 500;
 }
 
 .accounts-input {
   padding: 8px 10px;
   border: 1px solid var(--border);
-  border-radius: 7px;
+  border-radius: var(--radius-3);
   background: var(--bg-elevated);
   color: var(--fg-strong);
   font: inherit;
-  font-size: 13px;
+  font-size: var(--fs-md);
 }
 
 .accounts-input:focus {
@@ -17171,8 +17180,8 @@ cursor: pointer;
 .accounts-banner {
   margin: 0;
   padding: 9px 11px;
-  border-radius: 7px;
-  font-size: 12.5px;
+  border-radius: var(--radius-3);
+  font-size: var(--fs-sm);
   line-height: 1.45;
 }
 
@@ -17201,7 +17210,7 @@ cursor: pointer;
 .accounts-otp-lead {
   margin: 0;
   color: var(--fg);
-  font-size: 13px;
+  font-size: var(--fs-md);
   line-height: 1.5;
 }
 
@@ -17218,11 +17227,11 @@ cursor: pointer;
   gap: 4px;
   padding: 6px 8px;
   border: none;
-  border-radius: 6px;
+  border-radius: var(--radius-2);
   background: transparent;
   color: var(--accent-text);
   font: inherit;
-  font-size: 12.5px;
+  font-size: var(--fs-sm);
   cursor: pointer;
 }
 
@@ -17236,18 +17245,18 @@ cursor: pointer;
   gap: 2px;
   padding: 12px 14px;
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: var(--radius-3);
   background: var(--bg-panel);
 }
 
 .accounts-identity-label {
   color: var(--fg-muted);
-  font-size: 12px;
+  font-size: var(--fs-sm);
 }
 
 .accounts-identity-email {
   color: var(--fg-strong);
-  font-size: 14px;
+  font-size: var(--fs-lg);
   font-weight: 600;
   word-break: break-all;
 }
@@ -17269,13 +17278,13 @@ cursor: pointer;
 }
 
 .accounts-sync-label {
-  font-size: 12.5px;
+  font-size: var(--fs-sm);
   font-weight: 600;
 }
 
 .accounts-sync-detail {
   color: var(--fg-muted);
-  font-size: 12px;
+  font-size: var(--fs-sm);
   line-height: 1.4;
 }
 
@@ -17330,14 +17339,14 @@ cursor: pointer;
 }
 
 .accounts-brand-name {
-  font-size: 14px;
+  font-size: var(--fs-lg);
   font-weight: 600;
   letter-spacing: -0.01em;
   color: var(--fg-strong);
 }
 
 .accounts-brand-sub {
-  font-size: 11.5px;
+  font-size: var(--fs-xs);
   color: var(--fg-muted);
 }
 
@@ -17347,11 +17356,11 @@ cursor: pointer;
   margin-top: -8px;
   padding: 2px 0;
   border: none;
-  border-radius: 4px;
+  border-radius: var(--radius-2);
   background: transparent;
   color: var(--accent-text);
   font: inherit;
-  font-size: 12.5px;
+  font-size: var(--fs-sm);
   cursor: pointer;
   transition: color var(--motion-duration-fast) var(--motion-ease-standard);
 }
@@ -17371,7 +17380,7 @@ cursor: pointer;
   align-items: center;
   gap: 10px;
   color: var(--fg-faint);
-  font-size: 11.5px;
+  font-size: var(--fs-xs);
   text-transform: uppercase;
   letter-spacing: 0.04em;
 }
@@ -18258,7 +18267,7 @@ cursor: pointer;
   background: var(--bg-elevated);
   color: var(--fg);
   font: inherit;
-  font-size: 13px;
+  font-size: var(--fs-md);
   cursor: pointer;
   transition: background var(--motion-duration-fast) var(--motion-ease-standard),
     border-color var(--motion-duration-fast) var(--motion-ease-standard);
@@ -18333,7 +18342,7 @@ cursor: pointer;
 
 .reading-progress {
   margin-left: auto;
-  font-size: 12px;
+  font-size: var(--fs-sm);
   color: var(--reading-muted, var(--fg-muted));
   font-variant-numeric: tabular-nums;
 }
@@ -18389,7 +18398,7 @@ cursor: pointer;
   display: inline-flex;
   align-items: center;
   gap: var(--sp-2);
-  font-size: 12px;
+  font-size: var(--fs-sm);
   color: var(--reading-muted, var(--fg-muted));
 }
 
@@ -18435,7 +18444,7 @@ cursor: pointer;
   background: transparent;
   color: var(--reading-ink, var(--fg));
   font: inherit;
-  font-size: 12px;
+  font-size: var(--fs-sm);
   cursor: pointer;
   transition: background var(--motion-duration-fast) var(--motion-ease-standard);
 }
@@ -18486,7 +18495,7 @@ cursor: pointer;
   background: var(--reading-bg, var(--bg-elevated));
   color: var(--reading-ink, var(--fg));
   font: inherit;
-  font-size: 13px;
+  font-size: var(--fs-md);
   cursor: pointer;
   transition: background var(--motion-duration-fast) var(--motion-ease-standard),
     opacity var(--motion-duration-fast) var(--motion-ease-standard);
@@ -18510,7 +18519,7 @@ cursor: pointer;
 
 .engineering-layers-count {
   margin: 0 0 8px;
-  font-size: 12px;
+  font-size: var(--fs-sm);
   color: var(--fg-muted);
 }
 
@@ -18530,7 +18539,7 @@ cursor: pointer;
   align-items: center;
   gap: 8px;
   padding: 6px 8px;
-  border-radius: 6px;
+  border-radius: var(--radius-2);
   cursor: pointer;
   transition: background var(--motion-duration-fast) var(--motion-ease-standard);
 }
@@ -18549,7 +18558,7 @@ cursor: pointer;
   gap: 16px;
   margin-bottom: 12px;
   color: var(--fg-soft);
-  font-size: 12px;
+  font-size: var(--fs-sm);
 }
 
 .doc-info-section {
@@ -18558,7 +18567,7 @@ cursor: pointer;
 
 .doc-info-section-label {
   margin-bottom: 4px;
-  font-size: 11px;
+  font-size: var(--fs-xs);
   letter-spacing: 0.04em;
   text-transform: uppercase;
   color: var(--fg-muted);
@@ -18566,7 +18575,7 @@ cursor: pointer;
 
 .doc-info-section-empty {
   color: var(--fg-faint);
-  font-size: 12px;
+  font-size: var(--fs-sm);
 }
 
 .doc-info-pairs {
@@ -18584,14 +18593,14 @@ cursor: pointer;
   flex: 0 0 40%;
   margin: 0;
   color: var(--fg-muted);
-  font-size: 12px;
+  font-size: var(--fs-sm);
 }
 
 .doc-info-value {
   flex: 1 1 auto;
   margin: 0;
   color: var(--fg);
-  font-size: 12px;
+  font-size: var(--fs-sm);
   word-break: break-word;
 }
 
@@ -18616,7 +18625,7 @@ cursor: pointer;
   border-radius: var(--radius-3);
   background: var(--bg-raised);
   color: var(--fg-soft);
-  font-size: 12px;
+  font-size: var(--fs-sm);
   transform-origin: top left;
   animation: pdf3d-notice-in var(--motion-duration-standard) var(--motion-ease-enter) both;
 }
@@ -18863,7 +18872,7 @@ cursor: pointer;
 
 .book-view-progress {
   margin-left: auto;
-  font-size: 12px;
+  font-size: var(--fs-sm);
   color: var(--fg-muted);
   font-variant-numeric: tabular-nums;
 }
@@ -18997,7 +19006,7 @@ cursor: pointer;
   align-self: stretch;
   flex: 0 0 2px;
   margin: 0;
-  border-radius: 1px;
+  border-radius: var(--radius-1);
   background: linear-gradient(
     to right,
     var(--border) 0,
@@ -19135,7 +19144,7 @@ cursor: pointer;
   background: var(--bg-elevated);
   color: var(--fg);
   font: inherit;
-  font-size: 13px;
+  font-size: var(--fs-md);
   cursor: pointer;
   transition: background var(--motion-duration-fast) var(--motion-ease-standard),
     border-color var(--motion-duration-fast) var(--motion-ease-standard);
@@ -19171,7 +19180,7 @@ cursor: pointer;
   -webkit-app-region: no-drag;
   pointer-events: auto;
   font: inherit;
-  font-size: 12px;
+  font-size: var(--fs-sm);
   cursor: pointer;
   transition: background var(--motion-duration-fast) var(--motion-ease-standard),
     border-color var(--motion-duration-fast) var(--motion-ease-standard);

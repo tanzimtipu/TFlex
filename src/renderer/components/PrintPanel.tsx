@@ -787,25 +787,25 @@ export function PrintPanel({ print }: PrintPanelProps): ReactElement {
                         <span
                           className="print-preview-cut-mark"
                           data-print-cut-mark
-                          style={{ position: "absolute", top: 0, left: 0, width: 8, height: 1, background: "#2563eb" }}
+                          style={{ position: "absolute", top: 0, left: 0, width: 8, height: 1, background: "var(--accent)" }}
                           aria-hidden
                         />
                         <span
                           className="print-preview-cut-mark"
                           data-print-cut-mark
-                          style={{ position: "absolute", top: 0, left: 0, width: 1, height: 8, background: "#2563eb" }}
+                          style={{ position: "absolute", top: 0, left: 0, width: 1, height: 8, background: "var(--accent)" }}
                           aria-hidden
                         />
                         <span
                           className="print-preview-cut-mark"
                           data-print-cut-mark
-                          style={{ position: "absolute", bottom: 0, right: 0, width: 8, height: 1, background: "#2563eb" }}
+                          style={{ position: "absolute", bottom: 0, right: 0, width: 8, height: 1, background: "var(--accent)" }}
                           aria-hidden
                         />
                         <span
                           className="print-preview-cut-mark"
                           data-print-cut-mark
-                          style={{ position: "absolute", bottom: 0, right: 0, width: 1, height: 8, background: "#2563eb" }}
+                          style={{ position: "absolute", bottom: 0, right: 0, width: 1, height: 8, background: "var(--accent)" }}
                           aria-hidden
                         />
                       </>

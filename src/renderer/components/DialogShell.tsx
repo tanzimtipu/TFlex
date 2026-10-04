@@ -227,7 +227,9 @@ export function DialogShell(props: DialogShellProps): ReactElement {
       {onClose !== undefined && (
         <button
           type="button"
-          className={isSheet ? "btn btn-ghost btn-icon sheet-close" : "modal-close"}
+          className={
+            isSheet ? "btn btn-ghost btn-icon sheet-close" : "btn btn-ghost btn-icon modal-close"
+          }
           onClick={(): void => onClose()}
           aria-label={closeAriaLabel}
           title={closeAriaLabel}

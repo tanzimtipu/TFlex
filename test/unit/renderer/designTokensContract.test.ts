@@ -33,6 +33,12 @@ function readStyles(): string {
   return readFileSync(file, "utf8");
 }
 
+/** The canonical motion-token layer (DEF-545 moved the sheen durations here). */
+const ANIMATIONS_CSS = readFileSync(
+  resolve(process.cwd(), "src/renderer/styles/animations.css"),
+  "utf8",
+);
+
 /** Pull out the :root { ... } block (light theme defaults). */
 function lightThemeBlock(css: string): string {
   const m = /:root\s*\{([\s\S]*?)\n\}/m.exec(css);
@@ -504,7 +510,8 @@ describe("Global motion system — components consume the shared primitives", ()
     if (hover === null) return;
     const body = hover[1] ?? "";
     expect(body).toMatch(/animation:\s*tooltip-enter\s+var\(--tf-motion-fast\)\s+var\(--tf-ease-fast\)/);
-    expect(body).toMatch(/\d{3}ms\s+forwards/);
+    expect(body).toMatch(/var\(--motion-duration-dwell\)\s+forwards/);
+    expect(ANIMATIONS_CSS).toMatch(/--motion-duration-dwell:\s*300ms\s*;/);
   });
 });
 
@@ -727,9 +734,12 @@ describe("Phase D — PDF-safety audit (acrylic/reflection stays chrome-only)", 
 
   it("the moving reflection is transform-only, 7-9s, and never touches the PDF", () => {
     // The ::after band rules (chrome surfaces only) sweep translateX
-    // -120% -> 420% over 7s (toolbar/search) or 9s (rail/panel) with
-    // the light baked into the gradient — no filter, no width/height,
-    // no layout animation. The keyframe only ever animates transform.
+    // -120% -> 420% over the sheen token (7s toolbar/search) or its slow
+    // sibling (9s rail/panel) with the light baked into the gradient — no
+    // filter, no width/height, no layout animation. The keyframe only ever
+    // animates transform. DEF-545 moved the two durations onto named
+    // --motion-duration-sheen / -sheen-slow tokens so the DriftGuard can see
+    // them; the values are unchanged.
     const keyframes = /@keyframes\s+acrylic-sheen\s*\{([\s\S]*?)\n\}/.exec(cssClean);
     expect(keyframes).not.toBeNull();
     if (keyframes === null) return;
@@ -747,11 +757,14 @@ describe("Phase D — PDF-safety audit (acrylic/reflection stays chrome-only)", 
     expect(band).not.toBeNull();
     if (band === null) return;
     const body = band[1] ?? "";
-    expect(body).toMatch(/animation:\s*acrylic-sheen\s+[79]s\s/);
+    expect(body).toMatch(/animation:\s*acrylic-sheen\s+var\(--motion-duration-sheen\)\s/);
     expect(body).toMatch(/pointer-events:\s*none/);
     expect(body).not.toMatch(/filter\s*:/);
-    // The slower 9s band for the rail + panel.
-    expect(cssClean).toMatch(/animation-duration:\s*9s/);
+    // The slower band for the rail + panel rides its own token.
+    expect(cssClean).toMatch(/animation-duration:\s*var\(--motion-duration-sheen-slow\)/);
+    // Both tokens still resolve to the documented 7s / 9s values.
+    expect(ANIMATIONS_CSS).toMatch(/--motion-duration-sheen:\s*7s\s*;/);
+    expect(ANIMATIONS_CSS).toMatch(/--motion-duration-sheen-slow:\s*9s\s*;/);
   });
 });
 
@@ -1737,8 +1750,9 @@ describe("DEF-234 — reduced-motion travel class", () => {
       /\.tooltip-anchor\s*\[data-tooltip\]:hover::after\s*\{([\s\S]*?)\n\}/.exec(cssClean)?.[1] ??
       "";
     expect(hover).toMatch(
-      /animation:\s*tooltip-enter\s+var\(--tf-motion-fast\)\s+var\(--tf-ease-fast\)\s+300ms\s+forwards/,
+      /animation:\s*tooltip-enter\s+var\(--tf-motion-fast\)\s+var\(--tf-ease-fast\)\s+var\(--motion-duration-dwell\)\s+forwards/,
     );
+    expect(animClean).toMatch(/--motion-duration-dwell:\s*300ms\s*;/);
     expect(kfs.get("tooltip-enter") ?? "").toMatch(
       /from\s*\{[^}]*transform:\s*translateX\(-50%\)\s+translateY\(3px\)\s+scale\(0\.98\)/,
     );
