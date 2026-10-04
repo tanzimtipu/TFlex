@@ -65,7 +65,7 @@ async function openSample(sampleName) {
   await electronApp.evaluate(async ({ dialog }, p) => {
     dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [p] });
   }, samplePath);
-  await window.locator('button:has-text("Open PDF")').first().click();
+  await window.locator('[data-home-tool="open"]').first().click();
   await window.waitForSelector('.tab-pane[aria-hidden="false"] .workspace', { timeout: 30000 });
   await window.waitForSelector('.tab-pane[aria-hidden="false"] .pdf-page', { timeout: 30000 });
   return samplePath;
@@ -431,7 +431,7 @@ test('B22-port: Textbox move + Confirm relocates text exactly once (view + saved
   await electronApp.evaluate(async ({ dialog }, p) => {
     dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [p] });
   }, outPath);
-  await window.locator('button:has-text("Open PDF")').first().click();
+  await window.locator('[data-home-tool="open"]').first().click();
   await window.waitForSelector('.workspace', { timeout: 30000 });
   await window.waitForTimeout(2200);
 

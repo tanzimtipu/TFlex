@@ -444,7 +444,7 @@ test('welcome recent row click on a missing file', async () => {
   await app.evaluate(async ({ dialog }, p) => {
     dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [p] });
   }, seededPath);
-  await win.locator('button:has-text("Open PDF")').first().click();
+  await win.locator('[data-home-tool="open"]').first().click();
   await win.waitForSelector('.workspace', { timeout: 30000 });
   await win.keyboard.press('Control+w');
   await win.waitForSelector('.welcome', { timeout: 8000 });

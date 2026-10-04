@@ -214,7 +214,7 @@ test('repro: place box -> drag BODY to move -> release -> inspect action bar', a
   await electronApp.evaluate(async ({ dialog }, p) => {
     dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [p] });
   }, savePath);
-  await win.locator('button:has-text("Open PDF")').first().click();
+  await win.locator('[data-home-tool="open"]').first().click();
   await win.waitForTimeout(2400);
   await scrollToPage1();
   await win.waitForTimeout(1500);

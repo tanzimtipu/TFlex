@@ -113,6 +113,28 @@ describe('openPdfDialog', () => {
       filters: [{ name: 'FDF', extensions: ['fdf'] }],
     });
   });
+
+  it('uses the "Open Files" title and grouped document filters when kind is "document"', async () => {
+    mockShowOpenDialog.mockResolvedValue({
+      canceled: false,
+      filePaths: ['/test/report.pdf'],
+    });
+
+    await openPdfDialog('document');
+
+    const call = mockShowOpenDialog.mock.calls[0][0] as {
+      title: string;
+      properties: string[];
+      filters: { name: string; extensions: string[] }[];
+    };
+    expect(call.title).toBe('Open Files');
+    expect(call.properties).toEqual(['openFile']);
+    const allSupported = call.filters.find(
+      (filter) => filter.name === 'All supported files',
+    );
+    expect(allSupported).toBeDefined();
+    expect(allSupported?.extensions).toContain('pdf');
+  });
 });
 
 describe('openPdfDialogMulti', () => {

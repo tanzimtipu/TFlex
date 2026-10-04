@@ -1381,6 +1381,14 @@ pre-warn relevant entries when dispatching.
   CLI — post a single paragraph, or attach the full report as a `.md`/`.log` artifact and
   keep the comment to one line pointing at it (curl with a JSON body also preserves
   newlines).
+- CTO/qa: when a UI contract changes (a control stops animating, a label/role changes),
+  the oracle sweep must cover BOTH text locators AND class/behaviour audits — not just
+  `button:has-text(...)`. Phase 99 (2026-10-04): chunk D repointed every text locator but
+  missed the class-based home-jiggle audits (`tfl311_home_welcome_bughunt.spec.cjs:106,185`,
+  `phase58_home_tools.spec.cjs:65,78`, `tfl228_edit_jiggle.spec.cjs:251,254`), so the
+  phase-close pass failed SC5/P5 and forced an extra fix chunk. Rule: before assigning an
+  oracle-repoint sweep, grep e2e for the changed control's CLASS/attribute and its
+  behaviour assertions as well as its text.
 - backend-dev: hand-rolled PDF syntax where a library call (pdf-lib API) suffices —
   burns tokens and is a round-trip risk. Rule: prefer pdf-lib API and say so when
   forced to go lower.
@@ -1506,6 +1514,17 @@ pre-warn relevant entries when dispatching.
   (and its exact lines) in the chunk plan - a surface list in the prose is a hint, not the
   inventory; and an a11y "aria-label + title" contract means the brief must name BOTH
   attributes, not just the one the code happens to have.
+- tree-wide EOL rewrite hazard (found 2026-10-03, Phase 91 phase-close / TFL-608): with no
+  `.gitattributes` and `core.autocrlf` unset, 13 of 53 tracked-modified text files in the
+  shared working tree were CRLF-rewritten (whole-file diffs) by other phases, e.g.
+  `CommandBar.tsx` (LF at HEAD -> CRLF in tree, 481/455 whole-file). A whole-file EOL diff
+  makes a phase's real hunk inseparable from the foreign rewrite, so git-agent had to DROP
+  the Phase 91 `CommandBar.tsx` + `commandBar.test.tsx` class changes from the phase-close
+  commit 343fd56 (they ride with whichever phase commits those files). Rule: developers must
+  preserve a file's existing EOL (already a backend-dev rule - now frontend-dev too); before
+  reporting, run `git diff --numstat` and, if insertions+deletions ~= the whole file, fix the
+  EOL before the diff is handed to git-agent; and the CTO should check for whole-file diffs
+  in a phase's shared files before writing the phase-close brief.
 - frontend-dev: a unit oracle that derives its expected value from the SAME constant or
   assumption as the code under test is self-fulfilling and cannot catch the bug (TFL-686,
   2026-10-04: `test/unit/renderer/editHoverSymmetry.test.ts` computed the glyph band with

@@ -33,7 +33,7 @@ test.describe('No-op Sweep and Feature Verification', () => {
     await electronApp.evaluate(async ({ dialog }, p) => {
       dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [p] });
     }, reportPath);
-    await window.locator('button:has-text("Open PDF")').first().click();
+    await window.locator('[data-home-tool="open"]').first().click();
     await window.waitForSelector('.workspace');
 
     // Now "+" should be visible
@@ -186,7 +186,7 @@ test.describe('No-op Sweep and Feature Verification', () => {
     await electronApp.evaluate(async ({ dialog }, p) => {
       dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [p] });
     }, reportPath);
-    await window.locator('button:has-text("Open PDF")').first().click();
+    await window.locator('[data-home-tool="open"]').first().click();
     await window.waitForSelector('.workspace');
     
     const diagReload = await window.evaluate(() => window.tflexDiagnostics());

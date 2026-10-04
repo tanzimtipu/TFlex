@@ -15,7 +15,7 @@ test('PERF: cold start / 500-page open / idle memory (dev build)', async () => {
   await electronApp.evaluate(async ({ dialog }, p) => {
     dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [p] });
   }, longPath);
-  await win.locator('button:has-text("Open PDF")').first().click();
+  await win.locator('[data-home-tool="open"]').first().click();
   await win.waitForSelector('.workspace', { timeout: 40000 });
   const openTime = Date.now() - openT0;
 

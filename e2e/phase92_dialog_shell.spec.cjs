@@ -233,7 +233,7 @@ async function openPasswordPrompt(win, app) {
   await app.evaluate(async ({ dialog }, p) => {
     dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [p] });
   }, fixture);
-  await win.locator('button:has-text("Open PDF")').first().click();
+  await win.locator('[data-home-tool="open"]').first().click();
   await win.waitForSelector('[data-password-prompt]', { state: 'visible', timeout: 20000 });
 }
 

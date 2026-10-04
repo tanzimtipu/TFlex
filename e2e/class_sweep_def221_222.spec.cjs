@@ -297,7 +297,7 @@ async function saveAsCloseReopen(tag) {
   }, savePath);
   const cmdOpen = win.locator('[aria-label="Open PDF document"]').first();
   if (await cmdOpen.isVisible().catch(() => false)) await cmdOpen.click();
-  else await win.locator('button:has-text("Open PDF")').first().click();
+  else await win.locator('[data-home-tool="open"]').first().click();
   await win.waitForSelector('.workspace', { timeout: 30000 });
   await win.waitForTimeout(2800);
   return savePath;

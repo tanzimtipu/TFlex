@@ -23,7 +23,7 @@ async function openReport() {
   await electronApp.evaluate(async ({ dialog }, samplePath) => {
     dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [samplePath] });
   }, samplePath);
-  await win.click('button:has-text("Open PDF")');
+  await win.click('[data-home-tool="open"]');
   await win.waitForSelector('.workspace', { timeout: 30000 });
   await win.waitForTimeout(1500);
 }

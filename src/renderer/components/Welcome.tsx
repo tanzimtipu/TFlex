@@ -77,7 +77,7 @@ interface WelcomeProps {
   onSampleClick: (sample: SampleDocument) => void;
   onMergeClick?: () => void;
   /** Phase 9 — Create-from-images entry. Renders alongside the
-   *  existing Open PDF / Merge PDFs buttons on the welcome hero.
+   *  existing Open Files / Merge PDFs buttons on the welcome hero.
    *  Optional: callers that don't yet wire the Phase 9 dialog can
    *  omit the prop and the button stays hidden. */
   onCreateFromImages?: () => void;
@@ -275,15 +275,13 @@ export function Welcome(props: WelcomeProps): ReactElement {
             type="button"
             className="btn btn-primary home-tool home-tool-fixed"
             data-home-tool={HOME_FIXED_TOOL_ID}
+            title="Open Files (Ctrl+O)"
             onClick={onOpenFile}
           >
-            <span
-              className={editMode ? "home-tool-icon anim-jiggle" : "home-tool-icon"}
-              style={editMode ? { animationDelay: `-${jiggleDelayMs(HOME_FIXED_TOOL_ID)}ms` } : undefined}
-            >
+            <span className="home-tool-icon">
               <Icon icon={OpenGlyph} size="sm" />
             </span>{" "}
-            Open PDF
+            Open Files
             <span className="kbd" style={{ marginLeft: 8 }}>Ctrl O</span>
           </button>
           {tools.map((id) => {

@@ -233,7 +233,7 @@ test('A2: custom annotation color hex persists across save + reopen', async () =
   await electronApp.evaluate(async ({ dialog }, p) => {
     dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [p] });
   }, outPath);
-  await win.locator('button:has-text("Open PDF")').first().click();
+  await win.locator('[data-home-tool="open"]').first().click();
   await win.waitForSelector('.workspace', { timeout: 30000 });
   await win.waitForTimeout(2000);
   await scrollToPage(win, 1);
@@ -444,7 +444,7 @@ test('S2: signature near edges, reused on another page, save/reopen safe', async
   await electronApp.evaluate(async ({ dialog }, p) => {
     dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [p] });
   }, outPath);
-  await win.locator('button:has-text("Open PDF")').first().click();
+  await win.locator('[data-home-tool="open"]').first().click();
   await win.waitForSelector('.workspace', { timeout: 30000 });
   await win.waitForTimeout(2500);
 

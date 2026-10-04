@@ -92,7 +92,7 @@ test('DEF-170: two sequential extracts open two distinct tabs, each with its own
     await electronApp.evaluate(async ({ dialog }, p) => {
       dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [p] });
     }, FIXTURE);
-    await win.locator('button:has-text("Open PDF")').first().click();
+    await win.locator('[data-home-tool="open"]').first().click();
     await win.waitForSelector('.tab-pane[aria-hidden="false"] .workspace', { timeout: 20000 });
     await win.waitForTimeout(1500);
 

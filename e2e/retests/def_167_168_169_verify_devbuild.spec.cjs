@@ -58,7 +58,7 @@ test.describe('DEF-167/168/169 dev-build retests', () => {
     await electronApp.evaluate(async ({ dialog }, p) => {
       dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [p] });
     }, FIXTURE);
-    await window.locator('button:has-text("Open PDF")').first().click();
+    await window.locator('[data-home-tool="open"]').first().click();
     await window.waitForSelector('.tab-pane[aria-hidden="false"] .workspace', { timeout: 20000 });
     await window.waitForTimeout(1500);
 

@@ -28,7 +28,7 @@ async function openDoc(app, win) {
   await app.evaluate(async ({ dialog }, f) => {
     dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [f] });
   }, p);
-  await win.locator('button:has-text("Open PDF")').first().click();
+  await win.locator('[data-home-tool="open"]').first().click();
   await win.waitForSelector('.workspace', { timeout: 30000 });
   await win.waitForSelector('.pdf-page canvas', { timeout: 30000 });
   await win.waitForTimeout(900);

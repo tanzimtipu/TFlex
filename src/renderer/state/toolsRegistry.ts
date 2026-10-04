@@ -1037,8 +1037,8 @@ const REGISTRY = [
   // palette), per the operator-approved placement.
   {
     id: 'open',
-    label: 'Open PDF',
-    description: 'Open a PDF from disk.',
+    label: 'Open Files',
+    description: 'Open a file from disk.',
     icon: FolderOpen,
     shortcut: 'Ctrl+O',
     stage: 'global',

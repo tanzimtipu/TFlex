@@ -1,6 +1,6 @@
 // Phase 58 (chunk 4) — the HOME tool row's model.
 //
-// The welcome screen's action row is editable: Open PDF is a FIXED first tile,
+// The welcome screen's action row is editable: Open Files is a FIXED first tile,
 // and the rest of the row is the persisted `homeTools` list of registry tool
 // ids. This module owns the pure list algebra (sanitize / add / remove) and the
 // two constants that pin the row's shape. It touches no React and no electron.

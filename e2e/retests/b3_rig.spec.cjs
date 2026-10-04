@@ -26,7 +26,7 @@ test('B3 rigorous: does a custom-color rect annotation survive save/reopen?', as
   await electronApp.evaluate(async ({ dialog }, p) => {
     dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [p] });
   }, sourcePath);
-  await window.click('button:has-text("Open PDF")');
+  await window.click('[data-home-tool="open"]');
   await window.waitForSelector('.pdf-page', { timeout: 15000 });
   await window.waitForTimeout(1500);
 
@@ -93,7 +93,7 @@ test('B3 rigorous: does a custom-color rect annotation survive save/reopen?', as
   await electronApp.evaluate(async ({ dialog }, p) => {
     dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [p] });
   }, savePath);
-  await window.click('button:has-text("Open PDF")');
+  await window.click('[data-home-tool="open"]');
   await window.waitForSelector('.pdf-page', { timeout: 15000 });
   await window.waitForTimeout(1800);
 

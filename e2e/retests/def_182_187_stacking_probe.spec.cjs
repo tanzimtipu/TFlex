@@ -36,7 +36,7 @@ test('stacking probe under glass sample points', async () => {
   await electronApp.evaluate(async ({ dialog }, p) => {
     dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [p] });
   }, reportPath);
-  await win.locator('button:has-text("Open PDF")').first().click();
+  await win.locator('[data-home-tool="open"]').first().click();
   await win.waitForSelector('.tab-pane[aria-hidden="false"] .workspace', { timeout: 30000 });
   for (let i = 0; i < 45; i += 1) {
     const z = await win.evaluate(() => parseFloat(document.querySelector('.zoom-percent')?.textContent || '0'));

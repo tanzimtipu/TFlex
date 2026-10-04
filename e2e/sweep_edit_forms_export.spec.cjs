@@ -160,7 +160,7 @@ test('F1: fill form fields, flatten, save/reopen values baked + OCR search', asy
   await electronApp.evaluate(async ({ dialog }, p) => {
     dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [p] });
   }, outPathNonFlat);
-  await win.locator('button:has-text("Open PDF")').first().click();
+  await win.locator('[data-home-tool="open"]').first().click();
   await win.waitForSelector('.workspace', { timeout: 30000 });
   await win.waitForTimeout(2200);
   const dReopen = await diag(win);

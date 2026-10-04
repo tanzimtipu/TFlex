@@ -51,7 +51,7 @@ async function openDoc(filePath) {
   }, filePath);
   const openBtn = win.locator('[data-toolbar-open]').first();
   if ((await openBtn.count()) > 0) await openBtn.click();
-  else await win.locator('button:has-text("Open PDF")').first().click();
+  else await win.locator('[data-home-tool="open"]').first().click();
   await win.waitForSelector('.pdf-page canvas', { timeout: 30000 });
   await win.waitForTimeout(900);
 }

@@ -23,7 +23,7 @@ test.describe('QA redesign probe 5', () => {
     await electronApp.evaluate(async ({ dialog }, p) => {
       dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [p] });
     }, formPath);
-    await window.click('button:has-text("Open PDF")');
+    await window.click('[data-home-tool="open"]');
     await window.waitForSelector('.workspace');
     await window.waitForSelector('[data-form-field]', { timeout: 15000 });
 
@@ -52,7 +52,7 @@ test.describe('QA redesign probe 5', () => {
     await electronApp.evaluate(async ({ dialog }, p) => {
       dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [p] });
     }, reportPath);
-    await window.click('button:has-text("Open PDF")');
+    await window.click('[data-home-tool="open"]');
     await window.waitForSelector('.workspace');
     await window.waitForTimeout(800);
 

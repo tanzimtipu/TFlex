@@ -73,7 +73,7 @@ test('B3: custom #00ff00 rect survives Save As + reopen', async () => {
   await electronApp.evaluate(async ({ dialog }, p) => {
     dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [p] });
   }, savePath);
-  await window.click('button:has-text("Open PDF")');
+  await window.click('[data-home-tool="open"]');
   await window.waitForSelector('.pdf-page', { timeout: 15000 });
   await window.waitForTimeout(1800);
 

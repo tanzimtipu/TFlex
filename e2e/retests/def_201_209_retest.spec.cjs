@@ -61,7 +61,7 @@ async function openViaDialog(electronApp, win, absolutePath, waitMs = 1500) {
   await electronApp.evaluate(async ({ dialog }, p) => {
     dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [p] });
   }, absolutePath);
-  await win.locator('button:has-text("Open PDF")').first().click();
+  await win.locator('[data-home-tool="open"]').first().click();
   await wait(waitMs);
 }
 

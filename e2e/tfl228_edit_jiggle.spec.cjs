@@ -20,7 +20,7 @@ const SHOTS = path.resolve(__dirname, '..', 'screenshots');
 const DOCK = '[data-action-dock]';
 const HOME_ROW = '[data-home-tools]';
 const DOCK_ICON = '[data-dock-verb] .action-dock-icon';
-const HOME_ICON = '.home-tool-icon';
+const HOME_ICON = '[data-home-tool]:not([data-home-tool="open"]) .home-tool-icon';
 
 test.setTimeout(300000);
 
@@ -249,11 +249,13 @@ test('home EDIT jiggle: no entry shake, desynchronised + continuous, clean stop,
 
   // (b) Every tile glyph jiggles (not vibrates); delays are not all equal.
   const audit = await iconAudit(win, HOME_ICON);
-  console.log(`[TFL228-home] jiggle icons=${audit.count} names=${JSON.stringify(audit.names)} delays=${JSON.stringify(audit.delays)}`);
+  const fixedAnim = await win.evaluate(() => getComputedStyle(document.querySelector('[data-home-tool="open"] .home-tool-icon')).animationName);
+  console.log(`[TFL228-home] jiggle icons=${audit.count} names=${JSON.stringify(audit.names)} delays=${JSON.stringify(audit.delays)} fixed=${fixedAnim}`);
   expect(audit.count).toBeGreaterThan(1);
   for (const name of audit.names) expect(name).toContain('tf-anim-jiggle');
   for (const name of audit.names) expect(name).not.toContain('tf-anim-vibrate');
   expect(new Set(audit.delays).size).toBeGreaterThan(1);
+  expect(fixedAnim, 'the fixed open tile is static').toBe('none');
 
   // (c) Continuous pose change + coarse frame-rate sanity.
   const frames = await sampleFrames(win, '[data-home-tool="merge"] .home-tool-icon', 32);

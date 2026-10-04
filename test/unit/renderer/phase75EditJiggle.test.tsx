@@ -138,13 +138,15 @@ describe("Phase 75 (item A) — EDIT-mode icon jiggle", () => {
     }
   });
 
-  it("jiggles the home fixed and removable tiles but not the pen or plus", () => {
+  it("jiggles the home removable tiles but not the fixed tile, pen or plus", () => {
     const { host, unmount } = renderWelcome();
     try {
       clickOn(host.querySelector("[data-home-edit-toggle]") as Element);
-      const tiles = [...host.querySelectorAll<HTMLElement>("[data-home-tool]")];
-      expect(tiles.length).toBeGreaterThan(1);
-      for (const tile of tiles) {
+      const fixedIcon = host.querySelector('[data-home-tool="open"] .home-tool-icon');
+      expect(fixedIcon?.classList.contains("anim-jiggle")).toBe(false);
+      const removable = [...host.querySelectorAll<HTMLElement>('[data-home-tool]:not([data-home-tool="open"])')];
+      expect(removable.length).toBeGreaterThan(0);
+      for (const tile of removable) {
         const icon = tile.querySelector(".home-tool-icon");
         expect(icon?.classList.contains("anim-jiggle")).toBe(true);
       }

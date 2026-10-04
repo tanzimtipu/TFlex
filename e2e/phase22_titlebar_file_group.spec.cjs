@@ -31,7 +31,7 @@ async function launchAndOpenTemp() {
   await electronApp.evaluate(async ({ dialog }, fp) => {
     dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [fp] });
   }, p);
-  await win.locator('button:has-text("Open PDF")').first().click();
+  await win.locator('[data-home-tool="open"]').first().click();
   await win.waitForSelector('.tab-pane[aria-hidden="false"] .workspace', { timeout: 30000 });
   await win.waitForTimeout(1600);
   return p;

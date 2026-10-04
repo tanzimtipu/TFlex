@@ -9249,4 +9249,78 @@ Screenshot: screenshots/tfl695-s3-whitespace.png
 
 Disposition: ACCEPTED -> DEF-541 (CTO, 2026-10-04). Confirmed: the run commit branch has no trim guard, so a whitespace-only run Confirm reaches the engine (`modified=true`) and masks the run with no visible glyphs. Apply the same rule DEF-538 added for boxes and the pre-existing annotation guard (`session.text.trim() === ""`, `DocumentView.tsx:1371`): a whitespace-only run commit places nothing and leaves the document unmodified. Severity MEDIUM. qa to file as DEF-541.
 
+## ADV-200: Phase 99 home fixed Open tile rename + jiggle removal - clean diff-pass (no behaviour break found)
+
+- Session: diff-pass
+- Suggested severity: LOW
+
+What I did: read-only diff-pass over the uncommitted Phase 99 working tree
+(`git status --porcelain`, `git diff --stat`, `git diff` on the named files and
+`--ignore-all-space` over `e2e/`), then ran the focused spec and one throwaway
+probe. Attacks and verdicts:
+
+- C1 (no animation / no layout shift) - PASS. `src/renderer/components/Welcome.tsx:281-285`
+  renders the fixed tile with a plain `<span className="home-tool-icon">` (no
+  `anim-jiggle`, no inline `animationDelay`); only the removable branch
+  (`Welcome.tsx:302-304`) applies `editMode ? "home-tool-icon anim-jiggle" : ...`.
+  No CSS rule targets `.home-tool-fixed .home-tool-icon`. Focused spec
+  `e2e/tfl530_open_files_phase99.spec.cjs` T1 passed: fixed icon
+  `animation-name` = `none` at rest, across 6 rapid edit toggles, and on exit;
+  every sampled fixed-tile bounding box was byte-identical (dx/dy/dw/dh = 0),
+  and a removable tile still reported a `jiggle` animation. Scratch probe
+  (`$PAPERCLIP_RUN_SCRATCH_DIR/adv_probe.spec.cjs`, test C1) passed:
+  `prefers-reduced-motion: reduce` -> fixed `none`, removable `["none","none"]`;
+  at the 640x480 minimum and maximized both, edit on/off left the fixed tile box
+  unchanged (`x=64 y=268.296875 w=187.96875 h=36` min; `x=64 y=245.796875 ...`
+  max) and `animation-name` = `none`.
+
+- C2 (label) - PASS. No home-visible `Open PDF` remains. `grep -rn "Open PDF"
+  src/renderer` returns only `AppHeader.tsx:1023-1024` (the title-bar control,
+  out of scope by CTO ruling) and `grep src/main` only `dialog.ts:89` (the
+  `'pdf'` default kind's title, the title-bar/PDF-only picker's label). The
+  `open` registry entry is `label: 'Open Files'` (`toolsRegistry.ts:1040`) and
+  the tile's `title`/text/accessible name read `Open Files`. T2 passed, including
+  `.welcome` inner text containing no `Open PDF`.
+
+- C3/C4 (formats) - PASS. `documentFilters()` (`dialog.ts:39-63`) derives its
+  extension set from `createDefaultRegistry().listRegistrations()` + `pdf`;
+  every registration has `canImport: true` (no `canImport: false` anywhere), so
+  the advertised set cannot name an unopenable format. T3 passed opening a
+  supported `.txt` and a PDF end to end from the fixed tile. T4 passed: an
+  unsupported `.xyz` produced the exact named toast
+  `"<name>.xyz" is not a file type Jovrel can open.`, mounted no workspace, left
+  the home row up, and the renderer stayed live. Scratch probe C4 passed the
+  content-sniff precedence probe: a REAL PNG payload
+  (`assets/brand/jovrel-mark-128.png`) renamed to `.txt` opened a 1:1
+  (`pageRatio=1`) workspace with no unsupported toast - i.e. the specific PNG
+  adapter won over the generic `.txt` adapter, as criterion 9 requires.
+
+- C5 (sweep blast radius) - PASS. `git diff --ignore-all-space -U0 -- e2e` is
+  exactly 91 added / 91 removed substantive lines, all one pattern:
+  `button:has-text("Open PDF")` -> `[data-home-tool="open"]` (helpers.cjs:137,146
+  plus the spec files). The title-bar selectors `[data-toolbar-open]` and
+  `[aria-label="Open PDF document"]` are untouched by the sweep. The only
+  surviving `button:has-text("Open PDF")` in a non-archived path are in
+  `e2e/installed/*`, which `playwright.config.js` `testIgnore` excludes from the
+  standard suite (and there is no duplicate `[data-home-tool="open"]`:
+  `sanitizeHomeTools`/`addHomeTool` drop the fixed id and `homeCandidates`
+  filters it out, `homeTools.ts:41,57`, `App.tsx:10540`).
+
+Design-critique pass on the changed surface: the tile keeps its primary
+hierarchy, verb-named copy ("Open Files"), a tooltip and a visible Ctrl+O hint,
+a stable accessible name, and a correct non-animating edit state; no must-fix or
+should-fix item. Not a finding (out of scope by CTO ruling): the title-bar
+AppHeader still reads "Open PDF document"/"Open PDF (Ctrl+O)" while the home tile
+reads "Open Files" - a consistency gap between two controls the CTO separated.
+Observation only: an intentionally malformed 1x1 PNG payload named `.txt`
+surfaced the generic `internal` toast ("The file could not be imported") rather
+than a corrupt/decode message - pre-existing convert error classification,
+outside Phase 99, and the fixture was invalid for pdf-lib.
+
+Screenshot: screenshots/tfl530-edit-on.png, screenshots/tfl530-label.png,
+screenshots/tfl530-open-nonpdf.png, screenshots/tfl530-unsupported-toast.png,
+screenshots/tfl706-c4-misnamed.png
+
+Disposition: REJECTED - no finding (CTO, 2026-10-04). Triage: all five attacks (C1 fixed-tile animation/layout shift, C2 stale home "Open PDF", C3/C4 filter-vs-engine and graceful unsupported failure, C5 sweep blast radius) PASS with reproducible evidence; the entry raises no defect, so no DEF is warranted. The title-bar AppHeader "Open PDF" strings and the pre-existing convert `internal` toast on a malformed misnamed PNG are out of Phase 99 scope and were correctly reported as observations only.
+
 

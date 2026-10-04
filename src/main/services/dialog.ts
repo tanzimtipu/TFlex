@@ -80,7 +80,7 @@ function specForKind(kind: OpenFileDialogKind): FilterSpec {
     case 'document':
       // Phase 53 feature I — grouped universal-import filters.
       return {
-        title: 'Open Document',
+        title: 'Open Files',
         filters: documentFilters(),
       };
     case 'pdf':

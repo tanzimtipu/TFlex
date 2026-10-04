@@ -21,7 +21,7 @@ test('DEF-175 retest: frosted color palette paints + hit-tests above the page, n
     await electronApp.evaluate(async ({ dialog }, samplePath) => {
       dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [samplePath] });
     }, getSamplePath('report.pdf'));
-    await win.click('button:has-text("Open PDF")');
+    await win.click('[data-home-tool="open"]');
   }
   await win.waitForSelector('.workspace', { timeout: 20000 });
   await win.waitForSelector('.pdf-page', { timeout: 20000 });

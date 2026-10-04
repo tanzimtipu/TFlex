@@ -12,7 +12,7 @@ test.describe('DEF-098 Verification: Thumbnail Jump', () => {
     await electronApp.evaluate(async ({ dialog }, p) => {
       dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [p] });
     }, filePath);
-    const openBtn = window.locator('.btn-primary:has-text("Open"), button:has-text("Open PDF")').first();
+    const openBtn = window.locator('.btn-primary:has-text("Open"), [data-home-tool="open"]').first();
     await openBtn.click();
     await window.waitForSelector('.workspace', { timeout: 15000 });
     console.log('Workspace loaded');

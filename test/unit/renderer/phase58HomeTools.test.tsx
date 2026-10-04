@@ -204,9 +204,11 @@ describe("Phase 58 � Welcome home tool row", () => {
       clickOn(host.querySelector("[data-home-edit-toggle]") as Element);
       expect(row(host).getAttribute("data-home-edit")).toBe("true");
       expect(row(host).classList.contains("anim-vibrate")).toBe(false);
-      const icons = [...row(host).querySelectorAll(".home-tool-icon")];
-      expect(icons.length).toBeGreaterThan(0);
-      for (const icon of icons) {
+      const fixedIcon = row(host).querySelector('[data-home-tool="open"] .home-tool-icon');
+      expect(fixedIcon?.classList.contains("anim-jiggle")).toBe(false);
+      const removableIcons = [...row(host).querySelectorAll('[data-home-tool]:not([data-home-tool="open"]) .home-tool-icon')];
+      expect(removableIcons.length).toBeGreaterThan(0);
+      for (const icon of removableIcons) {
         expect(icon.classList.contains("anim-jiggle")).toBe(true);
       }
       pressEscape();

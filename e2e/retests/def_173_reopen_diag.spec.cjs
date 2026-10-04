@@ -120,7 +120,7 @@ test('DEF-174: reopened highlight renders ONCE - pale canvas wash (/CA 0.35), no
     await electronApp.evaluate(async ({ dialog }, p) => {
       dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [p] });
     }, savePath);
-    await win.click('button:has-text("Open PDF")');
+    await win.click('[data-home-tool="open"]');
     await win.waitForSelector('.pdf-page', { timeout: 30000 });
     await win.waitForTimeout(2000);
     await scrollToPage(win, 1);

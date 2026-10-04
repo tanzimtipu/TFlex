@@ -103,13 +103,14 @@ test('B: edit mode, jiggle, picker clamp, Escape ordering, reduced motion', asyn
     await win.screenshot({ path: path.join(SHOTS, 'home-editmode-armed-dark.png') });
 
     const jig = await win.evaluate(() => {
-      const icons = Array.from(document.querySelectorAll('.home-tool-icon'));
+      const icons = Array.from(document.querySelectorAll('[data-home-tool]:not([data-home-tool="open"]) .home-tool-icon'));
       return {
         count: icons.length,
         names: icons.map((e) => getComputedStyle(e).animationName),
         delays: icons.map((e) => getComputedStyle(e).animationDelay),
       };
     });
+    const fixedAnim = await win.evaluate(() => getComputedStyle(document.querySelector('[data-home-tool="open"] .home-tool-icon')).animationName);
 
     // Reduced-motion: the jiggle must be removed outright.
     await win.emulateMedia({ reducedMotion: 'reduce' });
@@ -181,9 +182,11 @@ test('B: edit mode, jiggle, picker clamp, Escape ordering, reduced motion', asyn
     }));
 
     // eslint-disable-next-line no-console
-    console.log('TFL311_B ' + JSON.stringify({ jig, rm, clampWide, resizeSpill, clamp640, afterFirst, afterSecond, afterOutside }));
+    console.log('TFL311_B ' + JSON.stringify({ jig, fixedAnim, rm, clampWide, resizeSpill, clamp640, afterFirst, afterSecond, afterOutside }));
+    expect(jig.names.length).toBeGreaterThan(0);
     expect(jig.names.every((n) => n.includes('tf-anim-jiggle'))).toBe(true);
     expect(new Set(jig.delays).size).toBeGreaterThan(1);
+    expect(fixedAnim, 'the fixed open tile is static').toBe('none');
     expect(rm, 'reduced motion removes the jiggle').toBe('none');
     expect(clampWide.items).toBe(5);
     expect(clampWide.x).toBeGreaterThanOrEqual(0);
@@ -224,7 +227,7 @@ test('C: recent long path truncation + samples loading ring probe', async () => 
     await app.evaluate(async ({ dialog }, p) => {
       dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [p] });
     }, seeded);
-    await win.locator('button:has-text("Open PDF")').first().click();
+    await win.locator('[data-home-tool="open"]').first().click();
     await win.waitForSelector('.workspace', { timeout: 30000 });
     await win.keyboard.press('Control+w');
     await win.waitForSelector('.welcome', { timeout: 8000 });

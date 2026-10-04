@@ -160,7 +160,7 @@ async function openFixture(filePath) {
   await app.evaluate(async ({ dialog }, fp) => {
     dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [fp] });
   }, filePath);
-  const welcome = win.locator('button:has-text("Open PDF")').first();
+  const welcome = win.locator('[data-home-tool="open"]').first();
   if (await welcome.isVisible().catch(() => false)) await welcome.click();
   else await win.keyboard.press('Control+o');
   await win.waitForSelector('.workspace', { timeout: 30000 });

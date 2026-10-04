@@ -134,7 +134,7 @@ async function openSample(window, electronApp, name) {
   await electronApp.evaluate(async ({ dialog }, p) => {
     dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [p] });
   }, samplePath);
-  await window.locator('button:has-text("Open PDF")').first().click();
+  await window.locator('[data-home-tool="open"]').first().click();
   await window.waitForSelector('.workspace', { timeout: 30000 });
   return samplePath;
 }
@@ -143,7 +143,7 @@ async function openSamplePath(window, electronApp, absolutePath) {
   await electronApp.evaluate(async ({ dialog }, p) => {
     dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [p] });
   }, absolutePath);
-  await window.locator('button:has-text("Open PDF")').first().click();
+  await window.locator('[data-home-tool="open"]').first().click();
   await window.waitForSelector('.workspace', { timeout: 30000 });
 }
 

@@ -62,13 +62,15 @@ test('home tool row: pen/edit/jiggle, minus/plus curate, picker excludes doc too
   const vib = await win.evaluate(() => {
     const row = document.querySelector('[data-home-tools]');
     const cs = getComputedStyle(row);
-    const icons = Array.from(document.querySelectorAll('.home-tool-icon'));
+    const icons = Array.from(document.querySelectorAll('[data-home-tool]:not([data-home-tool="open"]) .home-tool-icon'));
+    const fixed = document.querySelector('[data-home-tool="open"] .home-tool-icon');
     return {
       className: String(row.className),
       animationName: cs.animationName,
       count: icons.length,
       names: icons.map((el) => getComputedStyle(el).animationName),
       delays: icons.map((el) => getComputedStyle(el).animationDelay),
+      fixedAnimationName: fixed ? getComputedStyle(fixed).animationName : null,
     };
   });
   console.log(`[P58-home] edit-on className="${vib.className}" animationName="${vib.animationName}" jiggle icons=${vib.count} names=${JSON.stringify(vib.names)} delays=${JSON.stringify(vib.delays)}`);
@@ -78,6 +80,7 @@ test('home tool row: pen/edit/jiggle, minus/plus curate, picker excludes doc too
   for (const name of vib.names) expect(name).toContain('tf-anim-jiggle');
   for (const name of vib.names) expect(name).not.toContain('tf-anim-vibrate');
   expect(new Set(vib.delays).size).toBeGreaterThan(1);
+  expect(vib.fixedAnimationName, 'the fixed open tile is static').toBe('none');
 
   // Every non-fixed tile grows a minus; the fixed Open tile never does.
   const minusAudit = await win.evaluate(() => {

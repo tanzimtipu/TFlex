@@ -49,8 +49,8 @@ async function openPath(filePath) {
   await app.evaluate(async ({ dialog }, p) => {
     dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [p] });
   }, filePath);
-  const welcome = await win.locator('button:has-text("Open PDF")').count();
-  if (welcome > 0) await win.locator('button:has-text("Open PDF")').first().click({ timeout: 15000 });
+  const welcome = await win.locator('[data-home-tool="open"]').count();
+  if (welcome > 0) await win.locator('[data-home-tool="open"]').first().click({ timeout: 15000 });
   else await win.locator('[data-toolbar-open]').first().click({ timeout: 15000 });
   await win.waitForSelector('.workspace', { timeout: 40000 });
   await win.waitForTimeout(1000);

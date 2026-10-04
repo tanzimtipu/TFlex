@@ -19,7 +19,7 @@ test('PROBE: frosted dialog + menu surface facts', async () => {
     await electronApp.evaluate(async ({ dialog }, p) => {
       dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [p] });
     }, reportPath);
-    await win.locator('button:has-text("Open PDF")').first().click();
+    await win.locator('[data-home-tool="open"]').first().click();
     await win.waitForSelector('.tab-pane[aria-hidden="false"] .workspace', { timeout: 30000 });
     await win.waitForTimeout(2200);
 

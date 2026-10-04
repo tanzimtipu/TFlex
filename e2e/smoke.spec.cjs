@@ -27,7 +27,7 @@ async function runSmoke(electronApp, window) {
   await electronApp.evaluate(async ({ dialog }, p) => {
     dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [p] });
   }, reportPath);
-  await window.locator('button:has-text("Open PDF")').first().click();
+  await window.locator('[data-home-tool="open"]').first().click();
   await window.waitForSelector('.workspace', { timeout: 15000 });
 
   const diagInit = await window.evaluate(() => window.tflexDiagnostics());
