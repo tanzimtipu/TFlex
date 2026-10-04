@@ -1,0 +1,124 @@
+[
+  {
+    "pass": 1,
+    "check": "report-opens",
+    "reached": true
+  },
+  {
+    "pass": 1,
+    "check": "diagnostics",
+    "diag": {
+      "pageCount": 34,
+      "tabs": 34
+    }
+  },
+  {
+    "pass": 1,
+    "check": "false-empty",
+    "fe": {
+      "thumbsEmpty": false,
+      "thumbItems": 34,
+      "inspectorEmpty": false,
+      "inspectorFileSize": true,
+      "inspectorHasPagesRow": true
+    }
+  },
+  {
+    "pass": 1,
+    "check": "state-colours",
+    "states": {
+      "hoverToken": "#0f172a0a",
+      "activeToken": "#0f172a14",
+      "selectFill": "#0f172a08",
+      "selected": {
+        "bg": "rgba(15, 23, 42, 0.03)",
+        "border": "rgba(124, 58, 237, 0.45)",
+        "color": "rgb(15, 23, 42)",
+        "opacity": "1",
+        "shadow": "none"
+      },
+      "selectedAria": {
+        "bg": "rgba(15, 23, 42, 0.03)",
+        "border": "rgba(124, 58, 237, 0.45)",
+        "color": "rgb(15, 23, 42)",
+        "opacity": "1",
+        "shadow": "none"
+      },
+      "disabled": {
+        "bg": "rgba(0, 0, 0, 0)",
+        "border": "rgba(0, 0, 0, 0)",
+        "color": "rgb(182, 188, 198)",
+        "opacity": "0.5",
+        "shadow": "none"
+      },
+      "reviewSelected": {
+        "bg": "rgba(0, 0, 0, 0)",
+        "border": "rgb(30, 41, 59)",
+        "color": "rgb(30, 41, 59)",
+        "opacity": "1",
+        "shadow": "none"
+      }
+    }
+  },
+  {
+    "pass": 1,
+    "check": "dialog-elevation",
+    "elev": {
+      "shellClass": "sheet sheet-prefs",
+      "dialogShadow": "rgba(15, 23, 42, 0.1) 0px 2px 8px 0px, rgba(15, 23, 42, 0.12) 0px 8px 24px 0px",
+      "elevation2": "rgba(15, 23, 42, 0.1) 0px 2px 8px 0px, rgba(15, 23, 42, 0.12) 0px 8px 24px 0px",
+      "elevation3": "rgba(15, 23, 42, 0.14) 0px 4px 16px 0px, rgba(15, 23, 42, 0.18) 0px 12px 40px 0px"
+    },
+    "matchesElevation2": true,
+    "matchesElevation3": false
+  },
+  {
+    "pass": 1,
+    "check": "palette-hero",
+    "theme": "light",
+    "pal": {
+      "w": 31,
+      "h": 31,
+      "cls": "lucide lucide-search empty-state-mark",
+      "color": "rgb(148, 163, 184)"
+    }
+  },
+  {
+    "pass": 1,
+    "check": "palette-hero",
+    "theme": "dark",
+    "pal": {
+      "w": 32,
+      "h": 32,
+      "cls": "lucide lucide-search empty-state-mark",
+      "color": "rgb(91, 98, 107)"
+    }
+  },
+  {
+    "pass": 1,
+    "check": "palette-hero",
+    "theme": "frosted",
+    "pal": {
+      "w": 31,
+      "h": 31,
+      "cls": "lucide lucide-search empty-state-mark",
+      "color": "rgb(36, 50, 90)"
+    }
+  },
+  {
+    "pass": 1,
+    "check": "pageerrors",
+    "errs": []
+  },
+  {
+    "pass": 2,
+    "check": "zero-fixture",
+    "path": "C:\\Users\\tanzi\\AppData\\Local\\Temp\\paperclip-run-tfl-648-25107f75-145-VW3fel\\p96z-k6aIGW\\zero-pages.pdf",
+    "bytes": 233
+  },
+  {
+    "pass": 2,
+    "check": "EXCEPTION",
+    "error": "page.evaluate: TypeError: Cannot read properties of null (reading 'pageCount')\n    at eval (eval at evaluate (:311:30), <anonymous>:6:40)\n    at UtilityScript.evaluate (<anonymous>:313:16)\n    at UtilityScript.<anonymous> (<anonymous>:1:44)"
+  }
+]

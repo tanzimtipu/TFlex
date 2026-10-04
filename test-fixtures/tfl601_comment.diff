@@ -1,0 +1,187 @@
+diff --git a/src/renderer/components/CommentExportDialog.tsx b/src/renderer/components/CommentExportDialog.tsx
+index 80caaac..c03ab34 100644
+--- a/src/renderer/components/CommentExportDialog.tsx
++++ b/src/renderer/components/CommentExportDialog.tsx
+@@ -12,11 +12,10 @@
+ //   3. On a saved path, the dialog shows a success state with the
+ //      path; on cancel, the dialog simply closes.
+ 
+-import { useEffect, useRef, useState, type ReactElement } from "react";
+-import { X, FileDown } from "lucide-react";
+-import { useBackdropClose } from "./modalBackdrop";
+-import { AnimatePresence } from "motion/react";
+-import { TfBackdrop, TfDialog } from "./motion/TfMotion";
++import { useEffect, useState, type ReactElement } from "react";
++import { FileDown } from "lucide-react";
++import { Icon } from "../icons/Icon";
++import { DialogShell, type DialogAction } from "./DialogShell";
+ 
+ export interface CommentExportConfirm {
+   path: string;
+@@ -62,7 +61,6 @@ export function CommentExportDialog(
+   } = props;
+   const [running, setRunning] = useState(false);
+   const [error, setError] = useState<string | null>(null);
+-  const dialogRef = useRef<HTMLDivElement | null>(null);
+ 
+   useEffect(() => {
+     if (!open) return;
+@@ -70,28 +68,6 @@ export function CommentExportDialog(
+     setError(null);
+   }, [open]);
+ 
+-  useEffect(() => {
+-    if (!open) return;
+-    const onKey = (e: KeyboardEvent): void => {
+-      if (e.key === "Escape") {
+-        e.preventDefault();
+-        onClose();
+-      }
+-    };
+-    window.addEventListener("keydown", onKey);
+-    const first = dialogRef.current?.querySelector<HTMLElement>(
+-      "button, input, [tabindex]",
+-    );
+-    first?.focus();
+-    return (): void => window.removeEventListener("keydown", onKey);
+-  }, [open, onClose]);
+-
+-  // B3/B6 — backdrop close only when the interaction started on the
+-  // backdrop.
+-  const backdrop = useBackdropClose(onClose);
+-
+-  
+-
+   const onConfirmClick = async (): Promise<void> => {
+     setRunning(true);
+     setError(null);
+@@ -121,80 +97,58 @@ export function CommentExportDialog(
+     }
+   };
+ 
++  const actions: DialogAction[] = [
++    {
++      key: "cancel",
++      label: "Cancel",
++      variant: "secondary",
++      onClick: onClose,
++    },
++    Object.assign(
++      {
++        key: "confirm",
++        label: running ? "Exporting…" : "Export comments",
++        variant: "primary" as const,
++        icon: <Icon icon={FileDown} size="sm" />,
++        onClick: (): void => {
++          void onConfirmClick();
++        },
++        disabled: running,
++        default: true,
++      },
++      { "data-comment-export-confirm": true },
++    ),
++  ];
++
+   return (
+-<AnimatePresence>
+-      {open && (
+-        <TfBackdrop
+-          className="modal-backdrop"
+-          {...backdrop}
+-          data-comment-export-dialog
+-        >
+-<TfDialog
+-        className="modal-dialog dialog"
+-        ref={dialogRef}
+-        onClick={(e): void => e.stopPropagation()}
+-        role="dialog"
+-        aria-modal="true"
+-        aria-labelledby="comment-export-dialog-title"
+-      >
+-        <div className="modal-header">
+-          <h2
+-            id="comment-export-dialog-title"
+-            className="modal-title"
+-          >
+-            Export comments
+-          </h2>
+-          <button
+-            type="button"
+-            className="modal-close"
+-            onClick={onClose}
+-            aria-label="Close dialog"
+-          >
+-            <X size={16} aria-hidden />
+-          </button>
+-        </div>
+-        <div className="modal-body">
+-          <p className="modal-help">
+-            Save every annotation on the active document to an FDF
+-            (Forms Data Format) file. FDF round-trips with{" "}
+-            <strong>Import comments</strong>: re-importing the saved
+-            file merges the annotations into the active document.
+-          </p>
++    <DialogShell
++      open={open}
++      title="Export comments"
++      titleId="comment-export-dialog-title"
++      onClose={onClose}
++      actions={actions}
++      data-comment-export-dialog
++    >
++      <p className="modal-help">
++        Save every annotation on the active document to an FDF
++        (Forms Data Format) file. FDF round-trips with{" "}
++        <strong>Import comments</strong>: re-importing the saved
++        file merges the annotations into the active document.
++      </p>
+ 
+-          <div className="modal-row modal-row-pad">
+-            <span className="modal-hint">
+-              <strong>{annotationCount}</strong> annotation
+-              {annotationCount === 1 ? "" : "s"} on the active
+-              document.
+-            </span>
+-          </div>
++      <div className="modal-row modal-row-pad">
++        <span className="modal-hint">
++          <strong>{annotationCount}</strong> annotation
++          {annotationCount === 1 ? "" : "s"} on the active
++          document.
++        </span>
++      </div>
+ 
+-          {error !== null && (
+-            <div className="modal-status optimize-error" role="alert">
+-              <span>{error}</span>
+-            </div>
+-          )}
+-        </div>
+-        <div className="modal-footer">
+-          <button type="button" className="btn btn-secondary" onClick={onClose}>
+-            Cancel
+-          </button>
+-          <button
+-            type="button"
+-            className="btn btn-primary"
+-            disabled={running}
+-            onClick={(): void => {
+-              void onConfirmClick();
+-            }}
+-            data-comment-export-confirm
+-          >
+-            <FileDown size={16} aria-hidden />
+-            {running ? "Exporting…" : "Export comments"}
+-          </button>
++      {error !== null && (
++        <div className="modal-status optimize-error" role="alert">
++          <span>{error}</span>
+         </div>
+-      </TfDialog>
+-        </TfBackdrop>
+       )}
+-    </AnimatePresence>
++    </DialogShell>
+   );
+ }
+\ No newline at end of file

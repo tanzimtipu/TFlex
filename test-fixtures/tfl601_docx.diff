@@ -1,0 +1,328 @@
+diff --git a/src/renderer/components/DocxExportDialog.tsx b/src/renderer/components/DocxExportDialog.tsx
+index d4d2857..de56a15 100644
+--- a/src/renderer/components/DocxExportDialog.tsx
++++ b/src/renderer/components/DocxExportDialog.tsx
+@@ -22,10 +22,7 @@
+ // unavailable.
+ 
+ import { useEffect, useMemo, useRef, useState, type ReactElement } from "react";
+-import { X } from "lucide-react";
+-import { useBackdropClose } from "./modalBackdrop";
+-import { AnimatePresence } from "motion/react";
+-import { TfBackdrop, TfDialog } from "./motion/TfMotion";
++import { DialogShell, type DialogAction } from "./DialogShell";
+ import { ExportFidelityNotes } from "./ExportFidelityNotes";
+ import { ExportPagesWithoutTextNotice } from "./ExportPagesWithoutTextNotice";
+ import {
+@@ -115,7 +112,6 @@ export function DocxExportDialog(
+   }>({ current: 0, total: 0, pageIndex: null });
+   const [error, setError] = useState<string | null>(null);
+   const [pagesWithoutText, setPagesWithoutText] = useState<number[] | null>(null);
+-  const dialogRef = useRef<HTMLDivElement | null>(null);
+   const cancelRef = useRef<{ aborted: boolean }>({ aborted: false });
+ 
+   useEffect(() => {
+@@ -148,35 +144,15 @@ export function DocxExportDialog(
+     };
+   }, [open, docId, engine]);
+ 
+-  useEffect(() => {
+-    if (!open) return;
+-    const onKey = (e: KeyboardEvent): void => {
+-      if (e.key === "Escape") {
+-        e.preventDefault();
+-        onClose();
+-      }
+-    };
+-    window.addEventListener("keydown", onKey);
+-    const first = dialogRef.current?.querySelector<HTMLElement>(
+-      "button, input, [tabindex]",
+-    );
+-    first?.focus();
+-    return (): void => window.removeEventListener("keydown", onKey);
+-  }, [open, onClose]);
+-
+   const parsed = useMemo(
+     () => parsePageRange(rangeText, totalPages),
+     [rangeText, totalPages],
+   );
+   const valid = parsed !== null && parsed.length > 0 && !running;
+ 
+-  // B3/B6 — backdrop close only when the interaction STARTED on the
+-  // backdrop (a text-selection drag that begins in the range/DPI
+-  // input and releases over the backdrop must not dismiss the
+-  // dialog). Blocked entirely while an export is running.
+-  const backdrop = useBackdropClose(onClose, running);
+-
+-  
++  // Esc-to-close, the backdrop drag guard and initial focus are owned by
++  // DialogShell. The primary Export action is marked `default` so it
++  // receives focus on open.
+ 
+   const onConfirmClick = async (): Promise<void> => {
+     if (!valid || parsed === null) return;
+@@ -278,148 +254,130 @@ export function DocxExportDialog(
+     setRunning(false);
+   };
+ 
+-  return (
+-    <AnimatePresence>
+-      {open && (
+-        <TfBackdrop
+-          className="modal-backdrop"
+-          {...backdrop}
+-          data-docx-export-dialog
+-        >
+-      <TfDialog
+-        className="modal-dialog dialog modal-dialog-tool"
+-        ref={dialogRef}
+-        onClick={(e): void => e.stopPropagation()}
+-        role="dialog"
+-        aria-modal="true"
+-        aria-labelledby="docx-export-dialog-title"
+-      >
+-        <div className="modal-header">
+-          <h2 id="docx-export-dialog-title" className="modal-title">
+-            Export to Word
+-          </h2>
+-          <button
+-            type="button"
+-            className="modal-close"
+-            onClick={onClose}
+-            disabled={running}
+-            aria-label="Close dialog"
+-          >
+-            <X size={16} aria-hidden />
+-          </button>
+-        </div>
+-        <div className="modal-body">
+-          <p className="modal-help">
+-            Convert <strong>{sourceName}</strong> ({totalPages} pages) into
+-            a single .docx. Text is exported as real, editable text you can
+-            select and re-edit in Word; pages without readable text (such as
+-            scans) are embedded as images. The result opens in Word / Google
+-            Docs / LibreOffice. The layout may simplify — the text is the
+-            point.
+-          </p>
++  // The exit action swaps label/hook with the running gate; the primary
++  // Export action carries the shipped `data-docx-export-confirm` hook.
++  const actions: DialogAction[] = [
++    running
++      ? Object.assign(
++          {
++            key: "cancel",
++            label: "Cancel export",
++            variant: "secondary" as const,
++            onClick: onCancelRun,
++          },
++          { "data-docx-export-cancel": true },
++        )
++      : Object.assign(
++          {
++            key: "close",
++            label: "Close",
++            variant: "secondary" as const,
++            onClick: onClose,
++          },
++          { "data-docx-export-close": true },
++        ),
++    Object.assign(
++      {
++        key: "confirm",
++        label: running ? "Exporting…" : "Export",
++        variant: "primary" as const,
++        onClick: (): void => {
++          void onConfirmClick();
++        },
++        disabled: !valid,
++        default: true,
++      },
++      { "data-docx-export-confirm": true },
++    ),
++  ];
+ 
+-          <label className="modal-field">
+-            <span>Page range</span>
+-            <input
+-              type="text"
+-              className="modal-input"
+-              value={rangeText}
+-              onChange={(e): void => setRangeText(e.target.value)}
+-              placeholder={defaultPageRange(totalPages)}
+-              spellCheck={false}
+-              autoCorrect="off"
+-              autoCapitalize="off"
+-              data-docx-export-range
+-              disabled={running}
+-            />
+-            <span className="modal-hint">
+-              Examples: <code>10-20</code>, <code>1,3,5-7</code>.
+-            </span>
+-          </label>
++  return (
++    <DialogShell
++      open={open}
++      title="Export to Word"
++      titleId="docx-export-dialog-title"
++      size="tool"
++      onClose={onClose}
++      blockBackdropClose={running}
++      closeDisabled={running}
++      actions={actions}
++      data-docx-export-dialog
++    >
++      <p className="modal-help">
++        Convert <strong>{sourceName}</strong> ({totalPages} pages) into
++        a single .docx. Text is exported as real, editable text you can
++        select and re-edit in Word; pages without readable text (such as
++        scans) are embedded as images. The result opens in Word / Google
++        Docs / LibreOffice. The layout may simplify — the text is the
++        point.
++      </p>
+ 
+-          <label className="modal-field">
+-            <span>Resolution (DPI)</span>
+-            <input
+-              type="number"
+-              min={72}
+-              max={600}
+-              step={1}
+-              className="modal-input"
+-              value={dpi}
+-              onChange={(e): void => {
+-                const next = Number.parseInt(e.target.value, 10);
+-                if (Number.isFinite(next)) {
+-                  setDpi(clampExportImageDpi(next));
+-                }
+-              }}
+-              onBlur={(): void => {
+-                setDpi(clampExportImageDpi(dpi));
+-              }}
+-              data-docx-export-dpi
+-              disabled={running}
+-              aria-label="Resolution in DPI"
+-            />
+-            <span className="modal-hint">
+-              Resolution only affects pages embedded as images
+-              (scans); text pages stay crisp at any DPI. 150 is a
+-              balanced default.
+-            </span>
+-          </label>
++      <label className="modal-field">
++        <span>Page range</span>
++        <input
++          type="text"
++          className="modal-input"
++          value={rangeText}
++          onChange={(e): void => setRangeText(e.target.value)}
++          placeholder={defaultPageRange(totalPages)}
++          spellCheck={false}
++          autoCorrect="off"
++          autoCapitalize="off"
++          data-docx-export-range
++          disabled={running}
++        />
++        <span className="modal-hint">
++          Examples: <code>10-20</code>, <code>1,3,5-7</code>.
++        </span>
++      </label>
+ 
+-          <ExportFidelityNotes format="docx" />
++      <label className="modal-field">
++        <span>Resolution (DPI)</span>
++        <input
++          type="number"
++          min={72}
++          max={600}
++          step={1}
++          className="modal-input"
++          value={dpi}
++          onChange={(e): void => {
++            const next = Number.parseInt(e.target.value, 10);
++            if (Number.isFinite(next)) {
++              setDpi(clampExportImageDpi(next));
++            }
++          }}
++          onBlur={(): void => {
++            setDpi(clampExportImageDpi(dpi));
++          }}
++          data-docx-export-dpi
++          disabled={running}
++          aria-label="Resolution in DPI"
++        />
++        <span className="modal-hint">
++          Resolution only affects pages embedded as images
++          (scans); text pages stay crisp at any DPI. 150 is a
++          balanced default.
++        </span>
++      </label>
+ 
+-          <ExportPagesWithoutTextNotice pages={pagesWithoutText} />
++      <ExportFidelityNotes format="docx" />
+ 
+-          {running && (
+-            <div className="modal-status export-progress" aria-live="polite">
+-              <span>
+-                Rendering page {progress.pageIndex ?? "—"} of{" "}
+-                {progress.total}…
+-              </span>
+-            </div>
+-          )}
++      <ExportPagesWithoutTextNotice pages={pagesWithoutText} />
+ 
+-          {error !== null && (
+-            <div className="modal-status optimize-error" role="alert">
+-              <span>{error}</span>
+-            </div>
+-          )}
++      {running && (
++        <div className="modal-status export-progress" aria-live="polite">
++          <span>
++            Rendering page {progress.pageIndex ?? "—"} of{" "}
++            {progress.total}…
++          </span>
+         </div>
+-        <div className="modal-footer">
+-          {running ? (
+-            <button
+-              type="button"
+-              className="btn btn-secondary"
+-              onClick={onCancelRun}
+-              data-docx-export-cancel
+-            >
+-              Cancel export
+-            </button>
+-          ) : (
+-            <button
+-              type="button"
+-              className="btn btn-secondary"
+-              onClick={onClose}
+-              data-docx-export-close
+-            >
+-              Close
+-            </button>
+-          )}
+-          <button
+-            type="button"
+-            className="btn btn-primary"
+-            disabled={!valid}
+-            onClick={(): void => {
+-              void onConfirmClick();
+-            }}
+-            data-docx-export-confirm
+-          >
+-            {running ? "Exporting…" : "Export"}
+-          </button>
++      )}
++
++      {error !== null && (
++        <div className="modal-status optimize-error" role="alert">
++          <span>{error}</span>
+         </div>
+-      </TfDialog>
+-        </TfBackdrop>
+       )}
+-    </AnimatePresence>
++    </DialogShell>
+   );
+ }

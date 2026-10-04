@@ -1,0 +1,76 @@
+[
+  {
+    "pass": "A",
+    "theme": "light",
+    "paletteHero": {
+      "w": 32,
+      "h": 32,
+      "cssW": "32px",
+      "cssH": "32px"
+    }
+  },
+  {
+    "pass": "A",
+    "theme": "dark",
+    "paletteHero": {
+      "w": 32,
+      "h": 32,
+      "cssW": "32px",
+      "cssH": "32px"
+    }
+  },
+  {
+    "pass": "A",
+    "theme": "frosted",
+    "paletteHero": null
+  },
+  {
+    "pass": "A",
+    "theme": "light",
+    "editHero": {
+      "w": 32,
+      "h": 32,
+      "cssW": "32px",
+      "cssH": "32px"
+    },
+    "stageClicked": true
+  },
+  {
+    "pass": "A",
+    "theme": "dark",
+    "editHero": {
+      "w": 32,
+      "h": 32,
+      "cssW": "32px",
+      "cssH": "32px"
+    },
+    "stageClicked": true
+  },
+  {
+    "pass": "A",
+    "theme": "frosted",
+    "editHero": {
+      "w": 32,
+      "h": 32,
+      "cssW": "32px",
+      "cssH": "32px"
+    },
+    "stageClicked": true
+  },
+  {
+    "pass": "B",
+    "reached": false,
+    "st": {
+      "welcome": true,
+      "workspace": false,
+      "pageCount": 0,
+      "thumbsEmpty": false,
+      "inspectorEmpty": false,
+      "contextPanel": false,
+      "inspector": false,
+      "bodyText": "File Jovrel Open Light Sign in Jovrel A modern PDF studio for Windows. Open a document to begin, or pick one of the samples below to see Jovrel in action. Search and navigation are keyboard-driven; everything you need lives one click away. Open PDF Ctrl O Create PDF from images Merge PDFs Recent 10 "
+    },
+    "dialogs": [],
+    "pageerrors": []
+  }
+]

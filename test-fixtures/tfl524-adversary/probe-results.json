@@ -1,0 +1,247 @@
+[
+  {
+    "name": "S1 resting: at least one active + one inactive",
+    "pass": true,
+    "detail": "active=true inactive=2"
+  },
+  {
+    "name": "S1 resting: inactive chips are 26px",
+    "pass": true,
+    "detail": "[26,26]"
+  },
+  {
+    "name": "S1 resting: active fills the strip (>= all inactive)",
+    "pass": true,
+    "detail": "active=43"
+  },
+  {
+    "name": "S1 resting: every tab shares one top edge",
+    "pass": true,
+    "detail": "[0,0,0]"
+  },
+  {
+    "name": "S1 resting: active foot flush with canvas",
+    "pass": true,
+    "detail": "mainTop=44 activeBottom=43"
+  },
+  {
+    "name": "S1 drag: grabbing an inactive tab keeps its TOP edge fixed (no pre-fix-style jump)",
+    "pass": true,
+    "detail": "restTop=0 nowTop=0"
+  },
+  {
+    "name": "S1 drag: grabbed tab expands to the full strip height (top-aligned, not foot-pinned)",
+    "pass": true,
+    "detail": "restH=26 nowH=43"
+  },
+  {
+    "name": "S1 drag: armed tab still full strip height (no collapse)",
+    "pass": true,
+    "detail": "armed=43 activeRest=43"
+  },
+  {
+    "name": "S1 drag: armed tab top unchanged from resting chip",
+    "pass": true,
+    "detail": "rest=0 armed=0"
+  },
+  {
+    "name": "S1 tear-out: dragged tab is floated (position absolute)",
+    "pass": true,
+    "detail": "absolute"
+  },
+  {
+    "name": "S1 tear-out: floated box height equals the resting active height (no collapse/jump)",
+    "pass": true,
+    "detail": "floatH=43 activeRest=43"
+  },
+  {
+    "name": "S1 tear-out: floated box width equals the resting active width",
+    "pass": true,
+    "detail": "floatW=180 activeRestW=180"
+  },
+  {
+    "name": "S1 tear-out: reserve <li> keeps the full strip height",
+    "pass": true,
+    "detail": "liH=43"
+  },
+  {
+    "name": "S1 after release: all tops realign to one edge",
+    "pass": true,
+    "detail": "[0,0,0]"
+  },
+  {
+    "name": "S1 active-tab drag: an active tab survives the reorder gesture",
+    "pass": true,
+    "detail": "[\"496a3ea0-fded-441a-81e3-79885efadffa\",\"013a5e30-b41a-462c-a811-92e01551ffa6\",\"7785f789-e475-47dd-94d2-5e5ee6cad6e7\"]"
+  },
+  {
+    "name": "S1 drag active tab: height + top stable while dragged",
+    "pass": true,
+    "detail": "{\"dragging\":\"true\",\"top\":0,\"height\":43}"
+  },
+  {
+    "name": "S2 welcome: \"+\" is not rendered at zero tabs (DEF-055)",
+    "pass": true,
+    "detail": "count=0"
+  },
+  {
+    "name": "S2 welcome: strip has zero tabs",
+    "pass": true,
+    "detail": "count=0"
+  },
+  {
+    "name": "S2 multi-tab: \"+\" <li> rendered",
+    "pass": true,
+    "detail": "{\"li\":true,\"btn\":true}"
+  },
+  {
+    "name": "S2 \"+\" fully inside the strip vertically",
+    "pass": true,
+    "detail": "btn=0..34 list=0..43"
+  },
+  {
+    "name": "S2 \"+\" height unchanged at 34px",
+    "pass": true,
+    "detail": "h=34"
+  },
+  {
+    "name": "S2 \"+\" is hit-testable at its centre",
+    "pass": true,
+    "detail": "{\"tag\":\"path\",\"cls\":\"[object SVGAnimatedString]\",\"isNew\":true,\"isClose\":false}"
+  },
+  {
+    "name": "S2 silence attack: clicking \"+\" opens a new tab",
+    "pass": true,
+    "detail": "3 -> 4"
+  },
+  {
+    "name": "S2 after \"+\": all tops still share one edge",
+    "pass": true,
+    "detail": "[0,0,0,0]"
+  },
+  {
+    "name": "S3 @1280: 14+ tabs open",
+    "pass": true,
+    "detail": "count=14"
+  },
+  {
+    "name": "S3 @1280: every top shares one edge",
+    "pass": true,
+    "detail": "[0,0,0,0,0,0,0,0,0,0,0,0,0,0]"
+  },
+  {
+    "name": "S3 @1280: active foot flush with canvas",
+    "pass": true,
+    "detail": "mainTop=44 bottom=43"
+  },
+  {
+    "name": "S3 @640: every top shares one edge",
+    "pass": true,
+    "detail": "[0,0,0,0,0,0,0,0,0,0,0,0,0,0]"
+  },
+  {
+    "name": "S3 @640: active foot flush with canvas",
+    "pass": true,
+    "detail": "mainTop=44 bottom=43"
+  },
+  {
+    "name": "S3 @640: active tab not clipped past the list right",
+    "pass": true,
+    "detail": "activeRight=296 listRight=330"
+  },
+  {
+    "name": "S3 @640: active tab not clipped past the list left",
+    "pass": true,
+    "detail": "activeLeft=290 listLeft=182"
+  },
+  {
+    "name": "S3 @640: \"+\" still inside the strip vertically",
+    "pass": true,
+    "detail": "btn=0..34 list=0..43"
+  },
+  {
+    "name": "S3 resize-back: every top shares one edge",
+    "pass": true,
+    "detail": "[0,0,0,0,0,0,0,0,0,0,0,0,0,0]"
+  },
+  {
+    "name": "S4 multi-mode: composite tab present",
+    "pass": true,
+    "detail": "count=1"
+  },
+  {
+    "name": "S4 multi-mode: composite tab is active + full strip height",
+    "pass": true,
+    "detail": "{\"id\":\"tf-multi-workspace\",\"active\":true,\"dragging\":false,\"top\":0,\"bottom\":43,\"height\":43,\"left\":338.84,\"right\":518.84,\"width\":180}"
+  },
+  {
+    "name": "S4 multi-mode: composite tab top aligned to the strip top",
+    "pass": true,
+    "detail": "tabTop=0 areaTop=0"
+  },
+  {
+    "name": "S4 multi-mode: composite tab foot flush with canvas",
+    "pass": true,
+    "detail": "mainTop=44 bottom=43"
+  },
+  {
+    "name": "S4 multi-mode: composite tab not clipped vertically",
+    "pass": true,
+    "detail": "active=0..43 list=0..43"
+  },
+  {
+    "name": "S5 oracle current: topDelta <= 0.5 (would PASS on fixed CSS)",
+    "pass": true,
+    "detail": "topDelta=0"
+  },
+  {
+    "name": "S5 oracle current: foot flush <= 1 (would PASS on fixed CSS)",
+    "pass": true,
+    "detail": "footFlush=1"
+  },
+  {
+    "name": "S5 oracle discriminates: pre-fix CSS makes topDelta > 0.5 (oracle would FAIL)",
+    "pass": true,
+    "detail": "topDelta=4.5"
+  },
+  {
+    "name": "S5 oracle weakness: activeGreater still true on pre-fix CSS (weak assertion, not discriminating)",
+    "pass": true,
+    "detail": "activeGreater=true"
+  },
+  {
+    "name": "S6 colorful: close button inside the full-height active tab",
+    "pass": true,
+    "detail": "{\"top\":12.5,\"bottom\":30.5,\"height\":18,\"left\":674.84,\"width\":18}"
+  },
+  {
+    "name": "S6 colorful: close button hit-testable at its centre",
+    "pass": true,
+    "detail": "{\"tag\":\"path\",\"cls\":\"[object SVGAnimatedString]\",\"isNew\":false,\"isClose\":true}"
+  },
+  {
+    "name": "S6 colorful: clicking close closes the tab (silence attack)",
+    "pass": true,
+    "detail": "2 -> 1"
+  },
+  {
+    "name": "S6 standard: style is standard",
+    "pass": true,
+    "detail": "standard"
+  },
+  {
+    "name": "S6 standard: every tab is 34px",
+    "pass": true,
+    "detail": "[34]"
+  },
+  {
+    "name": "S6 standard: equal tops",
+    "pass": true,
+    "detail": "[9]"
+  },
+  {
+    "name": "S6 standard: active not taller than inactive (unchanged contract)",
+    "pass": true,
+    "detail": "[\"A34\"]"
+  }
+]
