@@ -875,38 +875,46 @@ export function ActionDock(props: ActionDockProps): ReactElement {
     // and the pen / plus controls never do.
     const jiggle = editMode && opts.out !== true;
     return (
-      <button
+      <div
         key={opts.pin ? `pin:${verb.id}` : verb.id}
-        type="button"
-        className={classes.join(' ')}
-        data-dock-verb={verb.id}
-        data-dock-pin={opts.pin ? verb.id : undefined}
-        data-dock-exiting={opts.out === true ? verb.id : undefined}
-        aria-label={verb.label}
-        aria-pressed={pressed ? true : undefined}
-        aria-disabled={opts.out === true ? true : undefined}
-        disabled={opts.out === true ? false : !verb.enabled}
-        tabIndex={opts.out === true ? -1 : undefined}
-        title={verb.reason}
-        onClick={(): void => verb.run()}
-        onContextMenu={(e): void => {
-          e.preventDefault();
-          openMenu(verb.id, e.clientX, e.clientY);
-        }}
+        className="action-dock-verb-slot"
+        data-dock-slot={opts.pin ? `pin:${verb.id}` : verb.id}
       >
-        <span
-          className={jiggle ? 'action-dock-icon anim-jiggle' : 'action-dock-icon'}
-          style={jiggle ? { animationDelay: `-${jiggleDelayMs(verb.id)}ms` } : undefined}
-          aria-hidden
+        <button
+          type="button"
+          className={classes.join(' ')}
+          data-dock-verb={verb.id}
+          data-dock-pin={opts.pin ? verb.id : undefined}
+          data-dock-exiting={opts.out === true ? verb.id : undefined}
+          aria-label={verb.label}
+          aria-pressed={pressed ? true : undefined}
+          aria-disabled={opts.out === true ? true : undefined}
+          disabled={opts.out === true ? false : !verb.enabled}
+          tabIndex={opts.out === true ? -1 : undefined}
+          title={verb.reason}
+          onClick={(): void => verb.run()}
+          onContextMenu={(e): void => {
+            e.preventDefault();
+            openMenu(verb.id, e.clientX, e.clientY);
+          }}
         >
-          <Icon icon={Glyph} size="lg" />
-        </span>
-        {!iconOnly && <span className="action-dock-label">{verb.label}</span>}
-        {/* Phase 58 — EDIT mode: the minus affordance. It is a SPAN with a
-            button role, never a nested <button> (invalid HTML), and it stops
+          <span
+            className={jiggle ? 'action-dock-icon anim-jiggle' : 'action-dock-icon'}
+            style={jiggle ? { animationDelay: `-${jiggleDelayMs(verb.id)}ms` } : undefined}
+            aria-hidden
+          >
+            <Icon icon={Glyph} size="lg" />
+          </span>
+          {!iconOnly && <span className="action-dock-label">{verb.label}</span>}
+        </button>
+        {/* TFL-660 — EDIT mode: the minus affordance. It is a SIBLING of the
+            verb button (never nested, so it is structurally outside a disabled
+            control and stays clickable while its verb is greyed), a SPAN with a
+            button role (never a nested <button>, invalid HTML), and it stops
             propagation on ITS OWN event only so the verb's own onClick does not
             run the tool. The cross-bubbling rules (AGENTS.md) are honoured: no
-            document-level catch-all, no disarm here. */}
+            document-level catch-all, no disarm here. The exiting ghost
+            (`opts.out === true`) renders no minus. */}
         {editMode && opts.out !== true && (
           <span
             className="action-dock-minus"
@@ -930,7 +938,7 @@ export function ActionDock(props: ActionDockProps): ReactElement {
             <Icon icon={DOCK_CHROME_GLYPHS.remove.icon} size="lg" aria-hidden />
           </span>
         )}
-      </button>
+      </div>
     );
   };
 

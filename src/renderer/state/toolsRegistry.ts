@@ -1702,6 +1702,22 @@ export const DOCK_STAGE_IDS: Readonly<Record<Stage, readonly string[]>> = {
   deliver: ['optimize', 'audit', 'exportPages', 'exportText', 'exportDocx', 'exportXlsx', 'exportPptx', 'createFromImages', 'encrypt'],
 };
 
+/** TFL-660 — the GLOBAL tools a dock may host: exactly the global entries
+ *  whose `action` the dock's run routing executes (App `dockAppActions` /
+ *  `appActionGates`, DocumentView `viewDockActions`). Every other global stays
+ *  out of the dock's picker / pin / restore paths, because a dock verb the
+ *  routing cannot run would render greyed with no way to act. */
+export const DOCK_GLOBAL_IDS: readonly string[] = ['undo', 'redo', 'openReadingView', 'openComicView'];
+
+/** TFL-660 — true when a dock may host the id: either one of the curated
+ *  `DOCK_GLOBAL_IDS` or any id the stage dock sets (`DOCK_STAGE_IDS`) own.
+ *  The ONE curation rule shared by the picker, the pin writers and the
+ *  settings restore, so no add path can seed a non-dock id. */
+export function isDockPinnableId(id: string): boolean {
+  if (DOCK_GLOBAL_IDS.includes(id)) return true;
+  return Object.values(DOCK_STAGE_IDS).some((ids) => ids.includes(id));
+}
+
 /** The Phase-37 relevance rule for one entry (see `DOCK_STAGE_IDS`). */
 export function isDockRelevantEntry(entry: ToolEntry, stage: Stage): boolean {
   if (entry.stage !== stage) return false;
@@ -1715,21 +1731,18 @@ export function dockRelevantIdsForStage(stage: Stage): readonly string[] {
   return TOOL_REGISTRY.filter((e) => isDockRelevantEntry(e, stage)).map((e) => e.id);
 }
 
-/** Phase 58 — the dock's EDIT-mode picker set: every entry relevant to the
- *  stage's dock OR to the GLOBAL dock, in registry order, deduped. The stage's
- *  own relevant set plus the global tools, so the "+ add" picker can offer any
- *  tool that can live in this dock. */
+/** Phase 58 / TFL-660 — the dock's EDIT-mode picker set: every entry relevant
+ *  to the stage's dock (registry order), then the curated `DOCK_GLOBAL_IDS`
+ *  (registry order), deduped. The ONE curation rule (`isDockPinnableId`) keeps
+ *  every offered id runnable by the dock's routing. */
 export function dockPickerIdsForStage(stage: Stage): readonly string[] {
   const out: string[] = [];
   for (const entry of TOOL_REGISTRY) {
-    // `'global'` is NOT a `Stage` value (it is the registry's no-stage bucket),
-    // so the global branch mirrors `isDockRelevantEntry` inline rather than
-    // passing a cast.
-    const relevant =
-      isDockRelevantEntry(entry, stage) ||
-      (entry.stage === 'global' && entry.surface !== 'panel' && entry.surface !== 'flyout');
-    if (!relevant) continue;
+    if (!isDockRelevantEntry(entry, stage)) continue;
     if (!out.includes(entry.id)) out.push(entry.id);
+  }
+  for (const id of DOCK_GLOBAL_IDS) {
+    if (!out.includes(id)) out.push(id);
   }
   return out;
 }

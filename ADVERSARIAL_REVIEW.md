@@ -9085,3 +9085,37 @@ Repro: read `FileAssociation.nsh:66` (install default) vs `:99-102` (unregister)
 
 Disposition: REJECTED for Phase 97. CTO triage (2026-10-04): this is upstream electron-builder `APP_UNASSOCIATE` behaviour that already applies to the shipped `.pdf` row and is therefore pre-existing, not introduced by Phase 97. Criterion 5 freezes the `.pdf` association as-is, so changing its uninstall semantics is out of scope here. The DEF-525 fix moves the eight non-pdf types off `fileAssociations` to candidate-only registration, so they will no longer write an `.<ext>` DEFAULT and this dangling-default case will not apply to them. Re-open as a separate packaging defect only if the operator wants the `.pdf` uninstall path changed.
 
+## ADV-195: TFL-520 chunk C breaks e2e/phase58_dock_edit.spec.cjs - minus is now a SIBLING of the verb, so the descendant query fails
+
+- Session: diff-pass
+- Suggested severity: LOW
+
+What I did: ran the shipped dock e2e suite against the built working tree with the dev renderer server up:
+`node node_modules/playwright/cli.js test e2e/phase36_chunk3_dock_gate.spec.cjs e2e/phase58_dock_edit.spec.cjs e2e/phase95_dock_edit_overflow.spec.cjs e2e/tfl228_edit_jiggle.spec.cjs` (needs the canonical `e2e/lib/launch.cjs`; ELECTRON_RUN_AS_NODE must be unset or Electron runs as Node and Playwright reports "Process failed to launch!"). Result: 12 passed, 7 failed. The TFL-520 chunk C change moved the edit-mode minus badge from a descendant of the verb `<button>` to a SIBLING inside the new `.action-dock-verb-slot` wrapper.
+
+Expected: `e2e/phase58_dock_edit.spec.cjs:153-158` asserts `verbs.every((v) => v.querySelector('[data-dock-minus]') !== null)` and expects `true`.
+
+Actual: `everyVerbHasMinus=false`; the test fails at `e2e/phase58_dock_edit.spec.cjs:158`. The minus is now outside the button, so `v.querySelector('[data-dock-minus]')` is always null. The product behaviour is correct (proven in ADV-196's sibling probe: the disabled-row minus removes and persists), but the shipped spec's DOM oracle is now structurally wrong and the suite is RED.
+
+Repro: `node node_modules/playwright/cli.js test e2e/phase58_dock_edit.spec.cjs`; the only assertion to change is the descendant lookup, e.g. `v.parentElement.querySelector('[data-dock-minus="' + v.getAttribute('data-dock-verb') + '"]')`. `e2e/phase95_dock_edit_overflow.spec.cjs` and `e2e/tfl228_edit_jiggle.spec.cjs` pass.
+
+Screenshot: screenshots/adv-tfl663-badges.png (badges render correctly on every verb at the icon-only rung).
+
+Disposition: ACCEPTED -> DEF-532 (CTO, 2026-10-04): the product behaviour is correct; the shipped e2e spec's descendant oracle is now structurally wrong after the TFL-520 minus-as-sibling change, leaving the e2e suite RED. Test-only fix routed to frontend-dev as TFL-520 chunk C2.
+
+## ADV-196: TFL-520 chunk C curation rule makes P36-C3-C seed now-illegal globals, so the cap-at-4 assertions fail
+
+- Session: diff-pass
+- Suggested severity: LOW
+
+What I did: ran `e2e/phase36_chunk3_dock_gate.spec.cjs` (same runner as ADV-195). The test seeds a hostile-but-formerly-legal pin set at `e2e/phase36_chunk3_dock_gate.spec.cjs:285-290`:
+`window.tflex.saveSettings({ ...s3, dockPins: ['panMode','paneOpen','paneClear','redo'], dockUnpinned: [] })`, then expects four pinned verbs after the divider.
+
+Expected: `pinnedIds.length === 4` and the dock reports full (max 4 pins).
+
+Actual: `[P36C3-C] seeded global pins=["redo"] divider=1` - only `redo` renders; the assertion at `:296` fails ("Expected: 4, Received: 1"). Root cause is the intended TFL-660 curation rule: `panMode`, `paneOpen` and `paneClear` are globals whose `surface` is `panel` and are NOT in `DOCK_GLOBAL_IDS = ['undo','redo','openReadingView','openComicView']`, so `sanitizeDockPins` now drops them (verified at the model level: `test-fixtures/tfl663/model.probe.test.ts` -> `sanitizeDockPins(['panMode',...]) === []`). The product change is deliberate and correct; the shipped spec was written before the curation rule and is now stale, leaving the suite RED.
+
+Repro: `node node_modules/playwright/cli.js test e2e/phase36_chunk3_dock_gate.spec.cjs --grep "P36-C3-C"`. Repoint the seed to four ids that are still dock-pinnable across stages (e.g. `['redo','undo','openReadingView','openComicView']`) or seed four stage-relevant pins in the active stage.
+
+Disposition: ACCEPTED -> DEF-533 (CTO, 2026-10-04): the curation rule is deliberate and correct; the shipped e2e seed is stale, leaving the e2e suite RED. Test-only fix routed to frontend-dev as TFL-520 chunk C2.
+

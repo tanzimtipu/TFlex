@@ -190,40 +190,72 @@ test.describe('Phase 36 chunk 4 — the Command Palette', () => {
     const s0 = await loadSettings();
     console.log(`[P36C456-P4] initial dockPins=${JSON.stringify(s0.dockPins)}`);
 
-    // Pin "renumberPages" via Ctrl+Enter. Phase 40: `merge` is now a PAGES
-    // dock DEFAULT, so it reads as already-pinned and Ctrl+Enter refuses it;
-    // the Ctrl+Enter pin path is proven with a NON-default tool instead.
+    // Pin "undo" (a curated dock GLOBAL) via Ctrl+Enter. TFL-660 allows a dock
+    // to host only the curated `DOCK_GLOBAL_IDS` plus the stage dock sets, so
+    // the old target `renumberPages` (a panel-surface command) is now refused.
+    // `undo` is live-GATED on the undo stack, and a fresh open has an empty
+    // stack, so make ONE undoable change first (rotate the visible page through
+    // the palette's own engine path) to open the row.
     await openPaletteCtrlK();
-    await win.fill('[data-command-palette-input]', 'renumber');
-    await win.waitForTimeout(200);
-    await win.locator('[data-palette-tool-id="renumberPages"]').first().hover();
+    await win.fill('[data-command-palette-input]', 'rotate counter');
+    await win.waitForTimeout(250);
+    await win.locator('[data-palette-tool-id="rotateCounterClockwise"]').first().click();
+    await win.waitForSelector('[data-command-palette]', { state: 'detached', timeout: 8000 });
+    await win.waitForTimeout(400);
+
+    await openPaletteCtrlK();
+    await win.fill('[data-command-palette-input]', 'undo');
+    await win.waitForFunction(() => {
+      const row = document.querySelector('[data-palette-tool-id="undo"]');
+      return row !== null && row.getAttribute('data-palette-disabled') === 'false';
+    }, null, { timeout: 8000 });
+    await win.locator('[data-palette-tool-id="undo"]').first().hover();
     await win.waitForTimeout(120);
     await win.keyboard.press('Control+Enter');
     await win.waitForTimeout(400);
-    const s1 = await waitForSettings((s) => Array.isArray(s.dockPins) && s.dockPins.includes('renumberPages'), 'pin-renumber');
-    const pinnedAttr = await win.locator('[data-palette-tool-id="renumberPages"]').first().getAttribute('data-palette-pinned');
-    const pinMark = await win.locator('[data-palette-tool-id="renumberPages"] [data-palette-pin]').count();
+    const s1 = await waitForSettings((s) => Array.isArray(s.dockPins) && s.dockPins.includes('undo'), 'pin-undo');
+    const pinnedAttr = await win.locator('[data-palette-tool-id="undo"]').first().getAttribute('data-palette-pinned');
+    const pinMark = await win.locator('[data-palette-tool-id="undo"] [data-palette-pin]').count();
     console.log(`[P36C456-P4] after pin: dockPins=${JSON.stringify(s1 && s1.dockPins)} pinned=${pinnedAttr} pinMark=${pinMark}`);
-    expect((s1 && s1.dockPins) || [], 'Ctrl+Enter did not write the pinned tool id through the dockPins writer').toContain('renumberPages');
+    expect((s1 && s1.dockPins) || [], 'Ctrl+Enter did not write the pinned tool id through the dockPins writer').toContain('undo');
     expect(pinnedAttr).toBe('true');
     expect(pinMark).toBe(1);
 
-    // Full-dock refusal: seed 4 explicit NON-default pins, then try a 5th.
+    // Pin refusal on the LIVE contract. Phase 58 raised `DOCK_MAX_PINS` from 4
+    // to 200, so four seeded pins no longer fill the dock; the refusal this
+    // surface still owns is TFL-660's curation rule: a NON-dock id is refused
+    // with the "cannot be added" copy (before any cap check), while a curated
+    // global still pins. This keeps the old "zoomOut absent" assertion.
     await win.keyboard.press('Escape');
     await win.waitForSelector('[data-command-palette]', { state: 'detached' });
-    await saveSettings({ dockPins: ['renumberPages', 'watermark', 'multi-mode', 'zoomIn'] });
+    await saveSettings({ dockPins: ['redo', 'openReadingView', 'openComicView', 'flatten'] });
     await openPaletteCtrlK();
     await win.fill('[data-command-palette-input]', 'zoom out');
-    await win.waitForTimeout(200);
+    await win.waitForTimeout(250);
     await win.locator('[data-palette-tool-id="zoomOut"]').first().hover();
     await win.waitForTimeout(120);
     await win.keyboard.press('Control+Enter');
     await win.waitForTimeout(400);
     const notice = (await win.locator('[data-command-palette-notice]').textContent().catch(() => '')) || '';
     const s2 = await loadSettings();
-    console.log(`[P36C456-P4] full-dock notice=${JSON.stringify(notice.trim())} dockPins=${JSON.stringify(s2 && s2.dockPins)}`);
-    expect(notice.trim()).toContain('Dock is full');
-    expect((s2 && s2.dockPins) || []).not.toContain('zoomOut');
+    console.log(`[P36C456-P4] non-dock pin notice=${JSON.stringify(notice.trim())} dockPins=${JSON.stringify(s2 && s2.dockPins)}`);
+    expect(notice.trim(), 'a non-dock id is refused with the curation copy').toContain('cannot be added to the dock');
+    expect((s2 && s2.dockPins) || [], 'a non-dock id never enters dockPins').not.toContain('zoomOut');
+
+    // The 200-pin cap means a curated global still pins alongside the seeded
+    // four: a legal 5th pin is ACCEPTED (the retired cap-at-4 would refuse it).
+    await win.keyboard.press('Escape');
+    await win.waitForSelector('[data-command-palette]', { state: 'detached' });
+    await openPaletteCtrlK();
+    await win.fill('[data-command-palette-input]', 'undo');
+    await win.waitForTimeout(250);
+    await win.locator('[data-palette-tool-id="undo"]').first().hover();
+    await win.waitForTimeout(120);
+    await win.keyboard.press('Control+Enter');
+    await win.waitForTimeout(400);
+    const s3 = await waitForSettings((s) => Array.isArray(s.dockPins) && s.dockPins.includes('undo'), 'pin-undo-5th');
+    console.log(`[P36C456-P4] legal 5th pin dockPins=${JSON.stringify(s3 && s3.dockPins)}`);
+    expect((s3 && s3.dockPins) || [], 'a legal 5th pin is accepted (cap is 200)').toContain('undo');
 
     // Ctrl+P is NOT claimed by the palette: it must reach the print path.
     // Phase 37 (item 17) — the in-app print modal is retired; Ctrl+P opens the

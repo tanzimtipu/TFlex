@@ -15498,6 +15498,12 @@ rect.ann-highlight.ann-preview {
   padding: 5px 8px;
 }
 
+.action-dock-verb-slot {
+  position: relative;
+  display: inline-flex;
+  flex: 0 0 auto;
+}
+
 .btn.action-dock-edit {
   flex: 0 0 auto;
   width: 22px;

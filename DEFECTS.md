@@ -5,6 +5,73 @@
 > inspect the current `OPEN`, `FIX-READY`, and `DISPUTED` entries first; closed records are
 > historical evidence and must not be loaded wholesale.
 
+## DEF-531: The dock's plus picker offers tools that can never run in the dock, and a disabled row's edit-mode remove badge is unclickable (TFL-395)
+
+- Status: CLOSED
+- Severity: MEDIUM
+- Found by: operator (TFL-395); root cause confirmed by CTO during TFL-520 planning
+- Phase: 98 (TFL-520)
+
+Steps to reproduce:
+1. Launch TFlex, open a document, switch to the PAGES stage, click the dock pen (`[data-dock-edit-toggle]`), then the plus (`[data-dock-plus]`).
+2. Pick "Open sample document" (`openSample`) or "Maximize window" (`windowMaximize`).
+3. The row is added but renders greyed/disabled (tooltip "Not available right now"), and clicking its edit-mode minus (`[data-dock-minus="openSample"]`) does nothing.
+
+Expected: the picker offers only the tab's dock-relevant tools plus global tools the dock can actually run; every added/greyed row is removable.
+
+Actual: `dockPickerIdsForStage` (`toolsRegistry.ts:1722-1735`) offers every global entry whose surface is not `panel`/`flyout`, so `openSample`, `windowMaximize`, `windowMinimize`, `windowClose`, `toggleTheme`, `preferences`, `save`, `saveAs`, `open`, `tabNew`, `checkForUpdate`, `about`, `appMenu` and the update verbs are all offered. The dock's run routing only knows the actions in `dockAppActions` (`App.tsx:9985-10053`) plus `viewDockActions` (`DocumentView.tsx:4105-4144`), so `dockAppToolEnabled` (`App.tsx:10261`) returns `false` for these and the row is a dead grey. The row cannot be removed in edit mode because the minus badge is nested INSIDE the verb `<button disabled={!verb.enabled}>` (`ActionDock.tsx:878-933`); Chromium suppresses activation events on descendants of a disabled button, so the minus never fires `removeTool`. (The right-click Pin/Unpin menu still works but is undiscoverable.)
+
+Root cause: (a) no curated set for global dock tools, and no guard on the add/restore paths; (b) the remove badge lives inside a disabled control.
+
+Evidence: operator report TFL-395; source anchors above; `test/unit/renderer/phase58DockEdit.test.tsx:304,355` pins the non-dock global `zoomIn` (the same over-broad assumption).
+
+Fix owner: frontend-dev (TFL-520 chunk A). Direction: add a curated `DOCK_GLOBAL_IDS` (`undo`, `redo`, `openReadingView`, `openComicView`) and an `isDockPinnableId` predicate that `dockPickerIdsForStage`, `sanitizeDockPins`, `addDockPin` and the Command Palette pin affordance all obey; render the edit-mode minus as a SIBLING of the verb button in a positioned `.action-dock-verb-slot` wrapper so it stays clickable on a disabled verb.
+
+History:
+- operator (TFL-395, 2026-10-02): filed, label Bug.
+- CTO (TFL-520, 2026-10-04): ACCEPTED from the operator report during phase planning; root cause confirmed by reading the source anchors; fix dispatched as TFL-520 chunk A (frontend-dev).
+- qa (TFL-665, 2026-10-04): CLOSED. Real-app verification via the canonical launcher (`e2e/phase98_dock_curation_qa.spec.cjs`, 1 passed / 0 failed, 11.9s). Every stage's plus picker (PAGES/EDIT/REVIEW/DELIVER) offered exactly `["undo","redo","openReadingView","openComicView"]` — the curated globals; none of `openSample, windowMaximize, windowMinimize, windowClose, toggleTheme, preferences, save, saveAs, open, zoomIn, print` appeared. The REVIEW `forms` verb on report.pdf rendered disabled (`title="This document has no form fields"`) and was removed via BOTH the edit-mode minus (`[data-dock-minus="forms"]`, then absent) and the right-click `Unpin from dock` menu, and was re-addable through the picker (still greyed). Screenshots `screenshots/p98-def531-pages-picker.png` and `screenshots/p98-def531-greyed-row.png` inspected: the picker shows only Undo/Redo/Open reading view/Open comic view; the greyed Forms row carries its own minus badge outside the disabled control. Supporting unit suites green: `def311_314_dockCuration`, `phase98_dockPickerCuration`, `phase98_dockRemoveDisabled`.
+
+## DEF-532: e2e/phase58_dock_edit.spec.cjs asserts the edit-mode minus as a DESCENDANT of the verb button, red after the sibling restructure (ADV-195)
+
+- Status: CLOSED
+- Severity: LOW
+- Found by: adversary (TFL-663, ADV-195)
+- Phase: 98 (TFL-520)
+
+Expected: `e2e/phase58_dock_edit.spec.cjs:153-158` `verbs.every((v) => v.querySelector('[data-dock-minus]') !== null)` is true.
+
+Actual: false. TFL-520 chunk A moved the edit-mode minus badge from a descendant of the verb `<button>` to a SIBLING inside the new `.action-dock-verb-slot` wrapper, so `v.querySelector('[data-dock-minus]')` is always null; the e2e suite is RED. Product behaviour is correct (the disabled-row minus removes and persists - ADV-196 sibling probe).
+
+Repro: `node node_modules/playwright/cli.js test e2e/phase58_dock_edit.spec.cjs` (ELECTRON_RUN_AS_NODE must be unset; canonical `e2e/lib/launch.cjs`).
+
+Fix owner: frontend-dev (TFL-520 chunk C2). Direction: query the minus via the verb's parent/slot (`v.parentElement.querySelector('[data-dock-minus="'+v.getAttribute('data-dock-verb')+'"]')`); keep the assertion strict.
+
+History:
+- adversary (TFL-663, 2026-10-04): FILED from ADV-195; 12 passed / 7 failed across the shipped dock suite; this one (`everyVerbHasMinus=false`) is caused by the TFL-520 diff.
+- CTO (TFL-520, 2026-10-04): triaged ACCEPTED, LOW; test-only fix dispatched as chunk C2 (frontend-dev). Blocks phase close.
+- qa (TFL-665, 2026-10-04): CLOSED. `node node_modules/playwright/cli.js test e2e/phase58_dock_edit.spec.cjs` green: log `[P58-dock] edit-on verbs=8 everyVerbHasMinus=true`, test `ok 30`, and the full phase-close sweep `27 passed / 8 failed` with zero failures of the direct-child/descendant verb-selector class. The repointed assertion queries the minus from the verb's parent `.action-dock-verb-slot`.
+
+## DEF-533: e2e/phase36_chunk3_dock_gate.spec.cjs P36-C3-C seeds now-illegal global pins, red after the curation rule (ADV-196)
+
+- Status: CLOSED
+- Severity: LOW
+- Found by: adversary (TFL-663, ADV-196)
+- Phase: 98 (TFL-520)
+
+Expected: the P36-C3-C test seeds `dockPins: ['panMode','paneOpen','paneClear','redo']` (`e2e/phase36_chunk3_dock_gate.spec.cjs:285-290`) and expects four pinned verbs.
+
+Actual: only `['redo']` renders (`[P36C3-C] seeded global pins=["redo"] divider=1`), so `:296` fails (expected 4, received 1). Root cause is the deliberate TFL-520 curation rule: `panMode`/`paneOpen`/`paneClear` are `surface: 'panel'` globals not in `DOCK_GLOBAL_IDS`, so `sanitizeDockPins` drops them. The seed is stale; the e2e suite is RED.
+
+Repro: `node node_modules/playwright/cli.js test e2e/phase36_chunk3_dock_gate.spec.cjs --grep "P36-C3-C"`.
+
+Fix owner: frontend-dev (TFL-520 chunk C2). Direction: repoint the seed to four still-dock-pinnable ids (e.g. `['redo','undo','openReadingView','openComicView']`) or four stage-relevant pins in the active stage; keep the cap assertions. Also sweep the remaining dock e2e specs for the same two classes (direct-child/descendant verb selectors and legacy non-dock pin seeds, e.g. `e2e/phase36_chunk456_gate.spec.cjs:214` seeds `renumberPages`/`watermark`/`multi-mode`/`zoomIn`).
+
+History:
+- adversary (TFL-663, 2026-10-04): FILED from ADV-196; caused by the TFL-520 curation rule.
+- CTO (TFL-520, 2026-10-04): triaged ACCEPTED, LOW; test-only fix dispatched as chunk C2 (frontend-dev). Blocks phase close.
+- qa (TFL-665, 2026-10-04): CLOSED. In the phase-close sweep (`node node_modules/playwright/cli.js test e2e/phase36_chunk3_dock_gate.spec.cjs ...`) the repointed `P36-C3-C pins (Phase 37 item 21): un-pin a default verb, re-pin restores, cap at 4` is `ok 5` (9.1s) with no legacy-pin seed failure. Unit `phase98_dockPickerCuration` also pins `sanitizeDockPins(["undo","openSample","windowMaximize","rotate"]) === ["undo","rotate"]` and `addDockPin([], "openSample") === []`.
+
 ## DEF-529: Phase 96 dialogs paint elevation-2, not the documented elevation-3 ladder step (--shadow-dialog orphaned)
 
 - Status: CLOSED

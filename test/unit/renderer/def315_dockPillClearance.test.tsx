@@ -378,8 +378,8 @@ describe("DEF-315 — the dock clears the pills at every supported host width", 
 
 describe("DEF-315 — the dock yields before it reaches a pill", () => {
   it("keeps the labels on the measured band above the 880 rung, routing to arrows", () => {
-    const wide = mountDock(1440, { dockPins: ["zoomIn", "zoomOut", "fitWidth", "fitPage"] });
-    const tight = mountDock(1000, { dockPins: ["zoomIn", "zoomOut", "fitWidth", "fitPage"] });
+    const wide = mountDock(1440, { dockPins: ["undo", "redo", "openReadingView", "openComicView"] });
+    const tight = mountDock(1000, { dockPins: ["undo", "redo", "openReadingView", "openComicView"] });
     const plain = mountDock(1000);
     try {
       expect(wide.dock.getAttribute("data-dock-icon-only")).toBe("false");
@@ -404,7 +404,7 @@ describe("DEF-315 — the dock yields before it reaches a pill", () => {
   });
 
   it("keeps every verb reachable in the arrows lane when the band cannot fit the pins", () => {
-    const { dock, unmount } = mountDock(640, { dockPins: ["zoomIn"], toolUsage: { rotate: 9, extract: 8 }, ladder: NO_ARROWS });
+    const { dock, unmount } = mountDock(640, { dockPins: ["undo"], toolUsage: { rotate: 9, extract: 8 }, ladder: NO_ARROWS });
     try {
       // DEF-334 — a labelled row that cannot fit prefers the arrows lane over
       // dropping labels: nothing hides behind a `...` menu, the pins stay.
@@ -413,7 +413,7 @@ describe("DEF-315 — the dock yields before it reaches a pill", () => {
       expect(dock.querySelector("[data-dock-overflow]")).toBeNull();
       expect([...dock.querySelectorAll('[data-dock-group="primary"] [data-dock-verb]')]).toHaveLength(8);
       expect([...dock.querySelectorAll("[data-dock-pin]")].map((el) => el.getAttribute("data-dock-pin"))).toEqual([
-        "zoomIn",
+        "undo",
       ]);
     } finally {
       unmount();
@@ -435,7 +435,7 @@ describe("DEF-315 — the dock yields before it reaches a pill", () => {
   });
 
   it("keeps the pinned verbs reachable at the app's minimum-width host", () => {
-    const { dock, unmount } = mountDock(420, { dockPins: ["zoomIn"], ladder: NO_ARROWS });
+    const { dock, unmount } = mountDock(420, { dockPins: ["undo"], ladder: NO_ARROWS });
     try {
       expect(dock.getAttribute("data-dock-lift")).toBe("true");
       expect(Number.parseFloat(dock.style.maxWidth)).toBe(396);

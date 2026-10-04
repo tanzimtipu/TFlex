@@ -152,7 +152,16 @@ test('dock pen enters edit mode with a desynchronised jiggle; minus/plus curate 
   expect(verbCount).toBeGreaterThan(0);
   const everyVerbHasMinus = await win.evaluate(() => {
     const verbs = Array.from(document.querySelectorAll('[data-dock-verb]'));
-    return verbs.every((v) => v.querySelector('[data-dock-minus]') !== null);
+    // TFL-660 — the minus is now a SIBLING of the verb button inside the
+    // `.action-dock-verb-slot` wrapper, not a descendant, so query it from the
+    // verb's parent slot and bind it to THIS verb's id. The assertion stays
+    // strict: every verb must still own exactly its own minus badge.
+    return verbs.every(
+      (v) =>
+        v.parentElement.querySelector(
+          `[data-dock-minus="${v.getAttribute('data-dock-verb')}"]`,
+        ) !== null,
+    );
   });
   console.log(`[P58-dock] edit-on verbs=${verbCount} everyVerbHasMinus=${everyVerbHasMinus}`);
   expect(everyVerbHasMinus).toBe(true);

@@ -214,6 +214,23 @@ expect(chip).toBe('3 pages');
 test('P36-C3-C pins (Phase 37 item 21): un-pin a default verb, re-pin restores, cap at 4', async () => {
   await openSample();
 
+  // TFL-660 — make ONE undoable change so the curated global `undo` is live.
+  // A fresh open carries an empty undo stack, so `undo`'s own dock gate greys
+  // it and its pin menu is unreachable; the old always-enabled `panMode` is no
+  // longer dock-pinnable. Rotating the visible page through the palette runs
+  // the real engine path and fills the undo stack.
+  await win.evaluate(() => {
+    const el = document.activeElement;
+    if (el !== null && typeof el.blur === 'function') el.blur();
+  });
+  await win.keyboard.press('Control+k');
+  await win.waitForSelector('[data-command-palette]', { timeout: 8000 });
+  await win.fill('[data-command-palette-input]', 'rotate counter');
+  await win.waitForTimeout(250);
+  await win.locator('[data-palette-tool-id="rotateCounterClockwise"]').first().click();
+  await win.waitForSelector('[data-command-palette]', { state: 'detached', timeout: 8000 });
+  await win.waitForTimeout(600);
+
   // DEF-312 retest — the pin menu is PICKED FROM THE REAL UI (no DOM-invoked
   // click): right-click a dock verb, then click the menu item with Playwright.
   // The menu is portalled to `document.body` so its fixed offsets resolve
@@ -277,15 +294,14 @@ test('P36-C3-C pins (Phase 37 item 21): un-pin a default verb, re-pin restores, 
   expect((s2 && s2.dockUnpinned) || [], 'the un-pin is cleared on re-pin').not.toContain('split');
 
   // --- cap at 4: seed four GLOBAL pins, then the Pin item is refused. ---
-  // Phase 42 (item 2) — a STAGE-NATIVE pin now surfaces only in its own stage
-  // (one home per tool), so the cross-stage assertion uses GLOBAL tools: they
-  // have no stage dock, so a pin is their only home and it may render in any
-  // stage. (The old seed — watermark/optimize/audit/recognizeText — was four
-  // stage-native tools and no longer renders outside their own stages.)
+  // TFL-660 — a dock may host only the curated DOCK_GLOBAL_IDS plus the stage
+  // dock sets. The four curated globals are the only NON-default ids that are
+  // legal, visible in every stage and reachable here; the old panel-surface
+  // globals (panMode/paneOpen/paneClear) are dropped by `sanitizeDockPins`.
   const s3 = await loadSettings();
   await win.evaluate((v) => window.tflex.saveSettings(v), {
     ...s3,
-    dockPins: ['panMode', 'paneOpen', 'paneClear', 'redo'],
+    dockPins: ['redo', 'undo', 'openReadingView', 'openComicView'],
     dockUnpinned: [],
   });
   await win.waitForTimeout(800);
@@ -296,17 +312,23 @@ test('P36-C3-C pins (Phase 37 item 21): un-pin a default verb, re-pin restores, 
   expect(pinnedIds.length, 'four global pins render after the divider').toBe(4);
   await openMenu('rotate');
   const pinItem = win.locator('[data-dock-menu-item="pin"]');
-  expect(await pinItem.isDisabled()).toBe(true);
-  console.log(`[P36C3-C] full dock pin title="${await pinItem.getAttribute('title')}"`);
-  expect(await pinItem.getAttribute('title')).toBe('Dock is full (max 4 pins)');
+  // Phase 58 raised `DOCK_MAX_PINS` from 4 to 200, so four seeded pins no
+  // longer fill the dock and the Pin item stays offered. The live assertion is
+  // the divider + the four-pin count above; the retired cap-at-4 refusal is
+  // recorded here instead of expected.
+  const pinDisabled = await pinItem.isDisabled();
+  console.log(`[P36C3-C] dock pin item disabled=${pinDisabled} title="${await pinItem.getAttribute('title')}"`);
+  expect(pinDisabled, 'the 200-pin dock offers Pin alongside four seeded pins').toBe(false);
   await win.keyboard.press('Escape');
   await win.waitForTimeout(300);
 
-  // --- unpin round-trip on a seeded global pin. ---
+  // --- unpin round-trip on a seeded global pin. `undo` is the seeded pin this
+  // test made actionable (the rotate above filled the undo stack); the
+  // reading-view globals stay greyed on a PDF and cannot be right-clicked. ---
   await setStage(1);
-  await openMenu('panMode');
+  await openMenu('undo');
   await invokeMenu('unpin');
-  expect(await win.locator('[data-dock-pin="panMode"]').count()).toBe(0);
+  expect(await win.locator('[data-dock-pin="undo"]').count()).toBe(0);
   expect((await win.$$eval('[data-action-dock] [data-dock-pin]', (els) => els.map((e) => e.getAttribute('data-dock-pin')))).length).toBe(3);
 });
 

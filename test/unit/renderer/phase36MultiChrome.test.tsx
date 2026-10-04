@@ -303,12 +303,15 @@ const paneEl = (host: HTMLElement, pane: PaneId): HTMLElement => {
 };
 
 /** The dock's rendered verb ids, in DOM order (inline verbs only). Phase 37
- *  item 6 wraps the groups in `.action-dock-scroll`, so the query is a
- *  descendant, not a direct child. */
+ *  item 6 wraps the groups in `.action-dock-scroll`, and TFL-660 wraps each
+ *  verb in `.action-dock-verb-slot`, so the query walks descendants — never a
+ *  direct child of the group. */
 const dockVerbIds = (host: HTMLElement): string[] =>
-  [...host.querySelectorAll<HTMLElement>("[data-action-dock] .action-dock-group > [data-dock-verb]")].map(
-    (el) => el.dataset.dockVerb ?? "",
-  );
+  [
+    ...host.querySelectorAll<HTMLElement>(
+      "[data-action-dock] .action-dock-group [data-dock-slot] [data-dock-verb]",
+    ),
+  ].map((el) => el.dataset.dockVerb ?? "");
 
 const click = (el: Element | null): void => {
   act((): void => {

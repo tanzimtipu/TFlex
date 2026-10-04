@@ -43,6 +43,7 @@ import {
 } from '../state/commandPalette';
 import { palettePinAllowed } from '../state/dockModel';
 import type { Stage } from '../state/stages';
+import { isDockPinnableId } from '../state/toolsRegistry';
 import type { ToolEntry } from '../state/toolsRegistry';
 import { useBackdropFadeAnimation, useCommandPaletteAnimation } from '../hooks/useAnimations';
 
@@ -200,6 +201,10 @@ export function CommandPalette(props: CommandPaletteProps): ReactElement {
   const pinRow = useCallback(
     (row: PaletteRow): void => {
       if (row.kind !== 'tool' || !row.enabled) return;
+      if (!isDockPinnableId(row.id)) {
+        setNotice(`${row.entry.label} cannot be added to the dock`);
+        return;
+      }
       if (row.pinned) {
         setNotice(`${row.entry.label} is already pinned`);
         return;
@@ -239,6 +244,10 @@ export function CommandPalette(props: CommandPaletteProps): ReactElement {
       // box, so the latter would not close anyway — this is the run guard).
       event.stopPropagation();
       if (row.kind !== 'tool' || !row.enabled) return;
+      if (!isDockPinnableId(row.id)) {
+        setNotice(`${row.entry.label} cannot be added to the dock`);
+        return;
+      }
       const dock = palettePinDockName(row);
       // DEF-359 — a pin that lives in ANOTHER stage (pinnedStage) is still a
       // pin: the toggle removes it and says from WHERE. A pin in this stage's
@@ -484,13 +493,18 @@ function PaletteRowItem(props: PaletteRowItemProps): ReactElement {
   const pinState = palettePinStateFor(row);
   const pinOn = pinState !== 'unpinned';
   const pinDock = palettePinDockName(row);
-  const pinLabel = pinOn
-    ? pinDock === undefined
-      ? `Unpin ${row.entry.label} from the dock`
-      : `Unpin ${row.entry.label} from the ${pinDock} dock`
-    : pinDock === undefined
-      ? `Pin ${row.entry.label} to the dock`
-      : `Pin ${row.entry.label} to the ${pinDock} dock`;
+  // TFL-660 — the palette is another dock ADD path: an id no dock may host is
+  // not pinnable, so the toggle is disabled and says why.
+  const dockPinnable = isDockPinnableId(row.id);
+  const pinLabel = !dockPinnable
+    ? `${row.entry.label} cannot be added to the dock`
+    : pinOn
+      ? pinDock === undefined
+        ? `Unpin ${row.entry.label} from the dock`
+        : `Unpin ${row.entry.label} from the ${pinDock} dock`
+      : pinDock === undefined
+        ? `Pin ${row.entry.label} to the dock`
+        : `Pin ${row.entry.label} to the ${pinDock} dock`;
   return (
     <li
       id={id}
@@ -532,7 +546,7 @@ function PaletteRowItem(props: PaletteRowItemProps): ReactElement {
         aria-pressed={pinOn}
         aria-label={pinLabel}
         title={pinLabel}
-        disabled={!row.enabled}
+        disabled={!row.enabled || !dockPinnable}
         onClick={(event): void => onTogglePin(row, event)}
       >
         <span className="command-palette-pin-glyph" data-pin-state={pinState}>

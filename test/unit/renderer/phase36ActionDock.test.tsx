@@ -260,10 +260,10 @@ describe("Phase 36 — ActionDock State 2: selection override", () => {
 
 describe("Phase 36 — ActionDock State 3: pins", () => {
   it("renders pins after a divider, in order", () => {
-    const { host, unmount } = renderDock({ activeStage: "pages", dockPins: ["zoomIn", "fitWidth"] });
+    const { host, unmount } = renderDock({ activeStage: "pages", dockPins: ["undo", "redo"] });
     try {
       expect(host.querySelector("[data-dock-divider]")).not.toBeNull();
-      expect(verbIds(host, "pins")).toEqual(["zoomIn", "fitWidth"]);
+      expect(verbIds(host, "pins")).toEqual(["undo", "redo"]);
     } finally {
       unmount();
     }
@@ -284,10 +284,10 @@ describe("Phase 36 — ActionDock State 3: pins", () => {
   it("drops unknown pin ids (the Phase-58 cap is effectively unlimited)", () => {
     const { host, unmount } = renderDock({
       activeStage: "deliver",
-      dockPins: ["zoomIn", "not-a-tool", "fitWidth", "find", "print", "open"],
+      dockPins: ["undo", "not-a-tool", "redo", "openReadingView", "openComicView"],
     });
     try {
-      expect(verbIds(host, "pins")).toEqual(["zoomIn", "fitWidth", "find", "print", "open"]);
+      expect(verbIds(host, "pins")).toEqual(["undo", "redo", "openReadingView", "openComicView"]);
     } finally {
       unmount();
     }
@@ -318,15 +318,15 @@ describe("Phase 36 — ActionDock State 3: pins", () => {
     const onUnpinTool = vi.fn();
     const { host, unmount } = renderDock({
       activeStage: "pages",
-      dockPins: ["zoomIn"],
+      dockPins: ["undo"],
       onUnpinTool,
     });
     try {
-      contextMenuOn(verb(host, "zoomIn"));
+      contextMenuOn(verb(host, "undo"));
       const unpin = document.body.querySelector<HTMLButtonElement>('[data-dock-menu-item="unpin"]');
       expect(unpin?.hasAttribute("disabled")).toBe(false);
       clickOn(unpin as Element);
-      expect(onUnpinTool).toHaveBeenCalledWith("zoomIn");
+      expect(onUnpinTool).toHaveBeenCalledWith("undo");
     } finally {
       unmount();
     }
@@ -335,7 +335,7 @@ describe("Phase 36 — ActionDock State 3: pins", () => {
   it("keeps Pin enabled below the effectively-unlimited Phase-58 cap", () => {
     const { host, unmount } = renderDock({
       activeStage: "pages",
-      dockPins: ["zoomIn", "fitWidth", "find", "print"],
+      dockPins: ["undo", "redo", "openReadingView", "openComicView"],
     });
     try {
       contextMenuOn(verb(host, "split"));
@@ -470,7 +470,7 @@ describe("Phase 36/37 — ActionDock responsive rules", () => {
       // the retained `...` overflow lane testable; at the ladder's last rung
       // the arrows replace it (see the next test).
       ladder: { inspectorCollapsed: true, panelCollapsed: true, iconOnly: true, arrows: false },
-      dockPins: ["zoomIn"],
+      dockPins: ["undo"],
       toolUsage: { rotate: 9, extract: 8 },
       onRunTool,
     });
@@ -480,7 +480,7 @@ describe("Phase 36/37 — ActionDock responsive rules", () => {
       const more = host.querySelector<HTMLElement>("[data-dock-overflow]");
       expect(more).not.toBeNull();
       // The pinned verb stays regardless of the overflow.
-      expect(verbIds(host, "pins")).toEqual(["zoomIn"]);
+      expect(verbIds(host, "pins")).toEqual(["undo"]);
       // Only the highest-usage verb stays inline (capacity 2 - 1 pinned).
       expect(verbIds(host, "primary")).toEqual(["rotate"]);
       clickOn(more as Element);

@@ -1379,6 +1379,12 @@ pre-warn relevant entries when dispatching.
   forced to go lower.
 - frontend-dev: emoji-as-icons or hard-coded flat colored frames that later need
   contrast fixes. Rule: the neutral-zinc palette + Lucide only.
+- CTO: a dev brief that changed a shared component's DOM or a registry curation rule
+  scoped only the files named in the brief, so OTHER existing specs that encoded the
+  old DOM/ids went red and cost an extra dev round-trip (TFL-660 -> TFL-661, 2026-10-04:
+  phase36MultiChrome direct-child selector, phase36/37ActionDock + def315 legacy pins).
+  Rule: before assigning any DOM/registry-contract change, grep the test tree for the
+  changed selectors/ids/API and put every affected spec file in the brief's scope.
 - qa: improvises launch code instead of using `e2e/lib/launch.cjs`; rewrites a spec
   to pass instead of asserting the bug. Rule: helper only; assertions stay honest.
 - qa: hand-rolls pixel-analysis scripts instead of using its own vision (the read tool)

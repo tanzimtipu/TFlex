@@ -112,7 +112,7 @@ describe("Phase 58 — ActionDock edit mode", () => {
       const verbs = [...host.querySelectorAll("[data-dock-verb]")];
       expect(verbs.length).toBeGreaterThan(0);
       for (const verb of verbs) {
-        expect(verb.querySelector("[data-dock-minus]")).not.toBeNull();
+        expect(verb.parentElement?.querySelector("[data-dock-minus]")).not.toBeNull();
         const icon = verb.querySelector(".action-dock-icon");
         expect(icon).not.toBeNull();
         expect(icon?.classList.contains("anim-jiggle")).toBe(true);
@@ -301,29 +301,29 @@ describe("Phase 59 (item 3) — adding / removing a dock tool animates", () => {
       const onUnpinTool = vi.fn();
       const onRunTool = vi.fn();
       const { host, rerender, unmount } = renderDock({
-        dockPins: ["zoomIn", "fitWidth"],
+        dockPins: ["undo", "redo"],
         onUnpinTool,
         onRunTool,
       });
       try {
         clickOn(host.querySelector("[data-dock-edit-toggle]") as Element);
-        const minus = host.querySelector('[data-dock-minus="zoomIn"]');
+        const minus = host.querySelector('[data-dock-minus="undo"]');
         if (minus === null) throw new Error("no minus");
         clickOn(minus);
         // The host write is NOT delayed; the ghost only holds the slot.
-        expect(onUnpinTool).toHaveBeenCalledWith("zoomIn");
+        expect(onUnpinTool).toHaveBeenCalledWith("undo");
         expect(onRunTool).not.toHaveBeenCalled();
         // The host applies the unpin on its next render.
-        rerender({ dockPins: ["fitWidth"] });
-        const ghosts = [...host.querySelectorAll<HTMLElement>('[data-dock-exiting="zoomIn"]')];
+        rerender({ dockPins: ["redo"] });
+        const ghosts = [...host.querySelectorAll<HTMLElement>('[data-dock-exiting="undo"]')];
         expect(ghosts).toHaveLength(1);
         const ghost = ghosts[0];
         expect(ghost?.classList.contains("anim-verb-out")).toBe(true);
         // Exactly ONE element for the id: the live verb is filtered out for the
         // whole collapse, so the ghost can never be a duplicate.
-        expect(host.querySelectorAll('[data-dock-verb="zoomIn"]')).toHaveLength(1);
+        expect(host.querySelectorAll('[data-dock-verb="undo"]')).toHaveLength(1);
         // It stays in the slot it held (index 0), before the surviving pin.
-        const survivor = host.querySelector('[data-dock-verb="fitWidth"]');
+        const survivor = host.querySelector('[data-dock-verb="redo"]');
         expect(survivor).not.toBeNull();
         expect(
           ((ghost?.compareDocumentPosition(survivor as Node) ?? 0) &
@@ -338,8 +338,8 @@ describe("Phase 59 (item 3) — adding / removing a dock tool animates", () => {
         act((): void => {
           vi.advanceTimersByTime(400);
         });
-        expect(host.querySelector('[data-dock-exiting="zoomIn"]')).toBeNull();
-        expect(host.querySelector('[data-dock-verb="zoomIn"]')).toBeNull();
+        expect(host.querySelector('[data-dock-exiting="undo"]')).toBeNull();
+        expect(host.querySelector('[data-dock-verb="undo"]')).toBeNull();
       } finally {
         unmount();
       }
@@ -353,18 +353,18 @@ describe("Phase 59 (item 3) — adding / removing a dock tool animates", () => {
     try {
       const allPrimary = dockToolsForStage("pages").map((t) => t.id);
       const { host, rerender, unmount } = renderDock({
-        dockPins: ["zoomIn"],
+        dockPins: ["undo"],
         dockUnpinned: allPrimary,
       });
       try {
         // The pin is the only verb on screen.
         expect(host.querySelectorAll("[data-dock-verb]")).toHaveLength(1);
         clickOn(host.querySelector("[data-dock-edit-toggle]") as Element);
-        clickOn(host.querySelector('[data-dock-minus="zoomIn"]') as Element);
+        clickOn(host.querySelector('[data-dock-minus="undo"]') as Element);
         // The pins section stays mounted for the ghost even though the last
         // live pin is already gone.
         rerender({ dockPins: [] });
-        expect(host.querySelector('[data-dock-exiting="zoomIn"]')).not.toBeNull();
+        expect(host.querySelector('[data-dock-exiting="undo"]')).not.toBeNull();
         act((): void => {
           vi.advanceTimersByTime(400);
         });

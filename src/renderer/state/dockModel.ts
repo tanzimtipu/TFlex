@@ -20,6 +20,7 @@ import type { Stage } from './stages';
 import type { ConvertFormatId } from '../../shared/convert';
 import {
   isDockHostedAction,
+  isDockPinnableId,
   toolById,
   type ToolAvailability,
   type ToolEntry,
@@ -302,6 +303,7 @@ export function sanitizeDockPins(raw: unknown, max: number = DOCK_MAX_PINS): str
   for (const value of raw) {
     if (typeof value !== 'string') continue;
     if (toolById(value) === undefined) continue;
+    if (!isDockPinnableId(value)) continue;
     if (out.includes(value)) continue;
     out.push(value);
     if (out.length >= max) break;
@@ -315,6 +317,7 @@ export function sanitizeDockPins(raw: unknown, max: number = DOCK_MAX_PINS): str
  */
 export function addDockPin(pins: readonly string[], id: string): string[] {
   if (toolById(id) === undefined) return [...pins];
+  if (!isDockPinnableId(id)) return [...pins];
   if (pins.includes(id)) return [...pins];
   if (pins.length >= DOCK_MAX_PINS) return [...pins];
   return [...pins, id];

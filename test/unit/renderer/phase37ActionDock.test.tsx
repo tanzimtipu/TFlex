@@ -608,9 +608,9 @@ describe("Phase 37 item 21 � the dock's default contents", () => {
       review.unmount();
     }
     // A GLOBAL tool (no stage dock) still pins into any stage.
-    const globalPin = renderDock({ activeStage: "pages", dockPins: ["zoomIn"] });
+    const globalPin = renderDock({ activeStage: "pages", dockPins: ["undo"] });
     try {
-      expect(verbIds(globalPin.host, "pins")).toEqual(["zoomIn"]);
+      expect(verbIds(globalPin.host, "pins")).toEqual(["undo"]);
     } finally {
       globalPin.unmount();
     }
