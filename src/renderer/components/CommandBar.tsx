@@ -45,10 +45,36 @@ import {
   ZoomIn,
   ZoomOut,
 } from 'lucide-react';
+import type { LucideIcon } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import type { ReactNode } from 'react';
 import type { ZoomMode } from '../state/zoom';
 import { GlassControlGroup } from './GlassChrome';
+import { Icon } from '../icons/Icon';
+
+/** The command bar's migrated glyphs. Declared with an `icon:` property so the
+ *  Phase 43 icon-identity guard still attributes each glyph to this surface. */
+const COMMAND_BAR_GLYPHS = {
+  chevronLeft: { icon: ChevronLeft },
+  chevronRight: { icon: ChevronRight },
+  expand: { icon: Expand },
+  fileSignature: { icon: FileSignature },
+  gitMerge: { icon: GitMerge },
+  hand: { icon: Hand },
+  layers: { icon: Layers },
+  minimize2: { icon: Minimize2 },
+  moveHorizontal: { icon: MoveHorizontal },
+  panelsLeftRight: { icon: PanelsLeftRight },
+  pencil: { icon: Pencil },
+  pieChart: { icon: PieChart },
+  rotateCcw: { icon: RotateCcw },
+  rotateCw: { icon: RotateCw },
+  scissors: { icon: Scissors },
+  search: { icon: Search },
+  trash2: { icon: Trash2 },
+  zoomIn: { icon: ZoomIn },
+  zoomOut: { icon: ZoomOut },
+} as const satisfies Record<string, { icon: LucideIcon }>;
 
 export interface CommandBarProps {
   page: number;
@@ -194,13 +220,13 @@ export function CommandBar(props: CommandBarProps) {
       <GlassControlGroup label="Navigation" className="toolbar-group">
         <button
           type="button"
-          className="tool-btn"
+          className="btn btn-toolbar tool-btn"
           disabled={page <= 1}
           onClick={() => onJump(String(page - 1))}
           aria-label="Previous page"
           title="Previous page"
         >
-          <ChevronLeft size={22} aria-hidden />
+          <Icon icon={COMMAND_BAR_GLYPHS.chevronLeft.icon} size="xl" aria-hidden />
         </button>
         <div className="page-indicator">
           <input
@@ -229,46 +255,46 @@ export function CommandBar(props: CommandBarProps) {
         </div>
         <button
           type="button"
-          className="tool-btn"
+          className="btn btn-toolbar tool-btn"
           disabled={page >= pageCount}
           onClick={() => onJump(String(page + 1))}
           aria-label="Next page"
           title="Next page"
         >
-          <ChevronRight size={22} aria-hidden />
+          <Icon icon={COMMAND_BAR_GLYPHS.chevronRight.icon} size="xl" aria-hidden />
         </button>
       </GlassControlGroup>
 
       {/* GROUP: Zoom — [- 372% +] + the two fit modes */}
       <GlassControlGroup label="Zoom" className="toolbar-group">
-        <button type="button" className="tool-btn" onClick={onZoomOut} aria-label="Zoom out" title="Zoom out">
-          <ZoomOut size={22} aria-hidden />
+        <button type="button" className="btn btn-toolbar tool-btn" onClick={onZoomOut} aria-label="Zoom out" title="Zoom out">
+          <Icon icon={COMMAND_BAR_GLYPHS.zoomOut.icon} size="xl" aria-hidden />
         </button>
         <span className="zoom-percent" title="Current zoom">
           {zoomPercent}%
         </span>
-        <button type="button" className="tool-btn" onClick={onZoomIn} aria-label="Zoom in" title="Zoom in">
-          <ZoomIn size={22} aria-hidden />
+        <button type="button" className="btn btn-toolbar tool-btn" onClick={onZoomIn} aria-label="Zoom in" title="Zoom in">
+          <Icon icon={COMMAND_BAR_GLYPHS.zoomIn.icon} size="xl" aria-hidden />
         </button>
         <button
           type="button"
-          className={zoomMode === 'fit-width' ? 'tool-btn tool-btn-active' : 'tool-btn'}
+          className={zoomMode === 'fit-width' ? 'btn btn-toolbar btn-toggle tool-btn tool-btn-active' : 'btn btn-toolbar btn-toggle tool-btn'}
           onClick={onFitWidth}
           aria-pressed={zoomMode === 'fit-width'}
           aria-label="Fit width"
           title="Fit width"
         >
-          <MoveHorizontal size={22} aria-hidden />
+          <Icon icon={COMMAND_BAR_GLYPHS.moveHorizontal.icon} size="xl" aria-hidden />
         </button>
         <button
           type="button"
-          className={zoomMode === 'fit-page' ? 'tool-btn tool-btn-active' : 'tool-btn'}
+          className={zoomMode === 'fit-page' ? 'btn btn-toolbar btn-toggle tool-btn tool-btn-active' : 'btn btn-toolbar btn-toggle tool-btn'}
           onClick={onFitPage}
           aria-pressed={zoomMode === 'fit-page'}
           aria-label="Fit page"
           title="Fit page"
         >
-          <Expand size={22} aria-hidden />
+          <Icon icon={COMMAND_BAR_GLYPHS.expand.icon} size="xl" aria-hidden />
         </button>
       </GlassControlGroup>
 
@@ -276,30 +302,30 @@ export function CommandBar(props: CommandBarProps) {
       <GlassControlGroup label="Tools" className="toolbar-group commandbar-group-tools">
         <button
           type="button"
-          className="tool-btn"
+          className="btn btn-toolbar btn-toggle tool-btn"
           onClick={onToggleSearch}
           aria-pressed={searchOpen}
           aria-label="Find in document"
           title="Find in document (Ctrl+F)"
         >
-          <Search size={22} aria-hidden />
+          <Icon icon={COMMAND_BAR_GLYPHS.search.icon} size="xl" aria-hidden />
         </button>
         {onRotateCounterClockwise !== undefined && (
           <button
             type="button"
-            className="tool-btn"
+            className="btn btn-toolbar tool-btn"
             onClick={onRotateCounterClockwise}
             title="Rotate counter-clockwise"
             aria-label="Rotate counter-clockwise"
             data-toolbar-rotate-ccw
           >
-            <RotateCcw size={22} aria-hidden />
+            <Icon icon={COMMAND_BAR_GLYPHS.rotateCcw.icon} size="xl" aria-hidden />
           </button>
         )}
         {onRotateClockwise !== undefined && (
           <button
             type="button"
-            className="tool-btn"
+            className="btn btn-toolbar tool-btn"
             // Phase 8 — disabled while no document is open (the host
             // passes `undefined` in that case so the button doesn't
             // render at all; this guard keeps the optional prop safe
@@ -309,12 +335,12 @@ export function CommandBar(props: CommandBarProps) {
             aria-label="Rotate clockwise"
             data-toolbar-rotate-cw
           >
-            <RotateCw size={22} aria-hidden />
+            <Icon icon={COMMAND_BAR_GLYPHS.rotateCw.icon} size="xl" aria-hidden />
           </button>
         )}
         <button
           type="button"
-          className={handActive ? 'tool-btn tool-btn-active' : 'tool-btn'}
+          className={handActive ? 'btn btn-toolbar btn-toggle tool-btn tool-btn-active' : 'btn btn-toolbar btn-toggle tool-btn'}
           onClick={onHandToggle}
           aria-pressed={handActive}
           title={handActive ? 'Pan mode active — drag to scroll. Click again to exit.' : 'Pan mode: drag anywhere to scroll the document'}
@@ -322,12 +348,12 @@ export function CommandBar(props: CommandBarProps) {
           data-hand-toggle
           data-hand-active={handActive ? 'true' : 'false'}
         >
-          <Hand size={22} aria-hidden />
+          <Icon icon={COMMAND_BAR_GLYPHS.hand.icon} size="xl" aria-hidden />
         </button>
         {onMultiModeToggle !== undefined && (
           <button
             type="button"
-            className={multiModeEnabled ? 'tool-btn tool-btn-active' : 'tool-btn'}
+            className={multiModeEnabled ? 'btn btn-toolbar btn-toggle tool-btn tool-btn-active' : 'btn btn-toolbar btn-toggle tool-btn'}
             onClick={onMultiModeToggle}
             aria-pressed={multiModeEnabled}
             title={
@@ -340,13 +366,13 @@ export function CommandBar(props: CommandBarProps) {
             data-multi-mode-active={multiModeEnabled ? 'true' : 'false'}
             data-icon="multi-mode"
           >
-            <PanelsLeftRight size={22} aria-hidden />
+            <Icon icon={COMMAND_BAR_GLYPHS.panelsLeftRight.icon} size="xl" aria-hidden />
           </button>
         )}
         {onEditModeToggle !== undefined && (
           <button
             type="button"
-            className={editModeOpen ? 'tool-btn tool-btn-active' : 'tool-btn'}
+            className={editModeOpen ? 'btn btn-toolbar btn-toggle tool-btn tool-btn-active' : 'btn btn-toolbar btn-toggle tool-btn'}
             onClick={onEditModeToggle}
             aria-pressed={editModeOpen}
             title="Edit content: replace text, add text boxes, edit images"
@@ -354,13 +380,13 @@ export function CommandBar(props: CommandBarProps) {
             data-toolbar-edit-toggle
             data-icon="edit"
           >
-            <Pencil size={22} aria-hidden />
+            <Icon icon={COMMAND_BAR_GLYPHS.pencil.icon} size="xl" aria-hidden />
           </button>
         )}
         {onDeletePage !== undefined && (
           <button
             type="button"
-            className="tool-btn"
+            className="btn btn-toolbar tool-btn"
             onClick={onDeletePage}
             disabled={!canDeletePage}
             title={canDeletePage ? 'Delete current page or a custom range' : 'Documents must keep at least one page'}
@@ -368,41 +394,41 @@ export function CommandBar(props: CommandBarProps) {
             data-toolbar-delete-pages
             data-icon="delete"
           >
-            <Trash2 size={22} aria-hidden />
+            <Icon icon={COMMAND_BAR_GLYPHS.trash2.icon} size="xl" aria-hidden />
           </button>
         )}
         <button
           type="button"
-          className="tool-btn tool-btn-optimize"
+          className="btn btn-toolbar tool-btn tool-btn-optimize"
           onClick={onOptimize}
           title="Reduce file size: re-serialise the document with a compression preset"
           aria-label="Reduce file size"
           data-toolbar-optimize
           data-icon="optimize"
         >
-          <Minimize2 size={22} aria-hidden />
+          <Icon icon={COMMAND_BAR_GLYPHS.minimize2.icon} size="xl" aria-hidden />
         </button>
         <button
           type="button"
-          className="tool-btn tool-btn-audit"
+          className="btn btn-toolbar tool-btn tool-btn-audit"
           onClick={onAuditSpace}
           title="Audit space usage: see a per-element breakdown of the file size"
           aria-label="Audit space usage"
           data-toolbar-audit
           data-icon="audit"
         >
-          <PieChart size={22} aria-hidden />
+          <Icon icon={COMMAND_BAR_GLYPHS.pieChart.icon} size="xl" aria-hidden />
         </button>
         {hasFormFields && (
           <button
             type="button"
-            className="tool-btn tool-btn-form"
+            className="btn btn-toolbar tool-btn tool-btn-form"
             onClick={onFlattenClick}
             title="Flatten form fields: bake filled values into the page content"
             aria-label="Flatten form fields"
             data-icon="flatten"
           >
-            <Layers size={22} aria-hidden />
+            <Icon icon={COMMAND_BAR_GLYPHS.layers.icon} size="xl" aria-hidden />
           </button>
         )}
       </GlassControlGroup>
@@ -415,34 +441,34 @@ export function CommandBar(props: CommandBarProps) {
       <GlassControlGroup label="Document actions" className="toolbar-group commandbar-group-actions">
         <button
           type="button"
-          className="tool-btn"
+          className="btn btn-toolbar tool-btn"
           onClick={onMerge}
           title="Merge with another PDF"
           aria-label="Merge with another PDF"
           data-icon="merge"
         >
-          <GitMerge size={22} aria-hidden />
+          <Icon icon={COMMAND_BAR_GLYPHS.gitMerge.icon} size="xl" aria-hidden />
         </button>
         <button
           type="button"
-          className="tool-btn"
+          className="btn btn-toolbar tool-btn"
           onClick={onSplit}
           title="Extract or split pages"
           aria-label="Extract or split pages"
           data-icon="split"
         >
-          <Scissors size={22} aria-hidden />
+          <Icon icon={COMMAND_BAR_GLYPHS.scissors.icon} size="xl" aria-hidden />
         </button>
         <button
           type="button"
-          className={signToolActive ? 'tool-btn tool-btn-active' : 'tool-btn'}
+          className={signToolActive ? 'btn btn-toolbar btn-toggle tool-btn tool-btn-active' : 'btn btn-toolbar btn-toggle tool-btn'}
           onClick={onSignClick}
           title={signToolActive ? 'Sign tool active — click a page to place the selected signature. Click again to disarm.' : 'Sign: draw, type, or place a saved signature.'}
           aria-pressed={signToolActive}
           aria-label="Sign tool"
           data-icon="sign"
         >
-          <FileSignature size={22} aria-hidden />
+          <Icon icon={COMMAND_BAR_GLYPHS.fileSignature.icon} size="xl" aria-hidden />
         </button>
       </GlassControlGroup>
 
