@@ -114,9 +114,11 @@ describe("Phase 62 — colorful tab stylesheet", () => {
     expect(block).toContain("content: none");
   });
 
-  it("Phase 72 — the strip is centred, not extended: only the active tab reaches the foot", () => {
+  it("TFL-524 — the strip hangs from the top: every tab shares one top edge and only the active fills to the foot", () => {
     // The Phase 62 strip extension is retired; the colorful strip fills the
-    // header content box and centres its row.
+    // header content box. TFL-524 (DEF-534) repointed the row alignment from
+    // vertical centring to a shared TOP edge, and the active tab now fills the
+    // full strip height instead of the fixed 30px foot-pinned box.
     const stripBlock = blockFor('.tab-area[data-tab-style="colorful"] {');
     expect(stripBlock).toContain("align-self: stretch");
     expect(stripBlock).toContain("height: 100%");
@@ -124,15 +126,19 @@ describe("Phase 62 — colorful tab stylesheet", () => {
     expect(stripBlock).not.toContain("calc(100% + 1px)");
     expect(stripBlock).not.toContain("margin-bottom: -1px");
     const listBlock = blockFor('.tab-area[data-tab-style="colorful"] .tab-list {');
-    expect(listBlock).toContain("align-items: center");
-    // TFL-213 (DEF-440) moved the foot alignment off the inner `.tab-active`
+    expect(listBlock).toContain("align-items: flex-start");
+    expect(listBlock).not.toContain("align-items: center");
+    // TFL-213 (DEF-440) moved the row alignment off the inner `.tab-active`
     // block — where `align-self` is inert — onto the wrapping `<li>`, the flex
-    // item `.tab-list` actually lays out. Assert the live selector.
+    // item `.tab-list` actually lays out. TFL-524 repoints that flex item from
+    // `flex-end` (foot-pinned 30px) to `stretch` (full strip height).
     const activeItemBlock = blockFor(
       '.tab-area[data-tab-style="colorful"] .tab-list > li[data-tab-active="true"] {',
     );
-    expect(activeItemBlock).toContain("align-self: flex-end");
+    expect(activeItemBlock).toContain("align-self: stretch");
+    expect(activeItemBlock).not.toContain("align-self: flex-end");
     const activeBlock = blockFor('.tab-area[data-tab-style="colorful"] .tab-active {');
-    expect(activeBlock).toContain("height: 30px");
+    expect(activeBlock).toContain("height: 100%");
+    expect(activeBlock).not.toContain("height: 30px");
   });
 });

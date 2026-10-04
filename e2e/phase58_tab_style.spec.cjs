@@ -2,11 +2,12 @@
 // Repointed by qa (Phase 62, TFL-63) to the Phase 62 silhouette, then by
 // frontend-dev (TFL-207) to the Phase 72 silhouette.
 //
-// Verifies the one assigned behaviour against the Phase 72 contract:
-//   - with tabStyle='colorful' the INACTIVE tabs are uniform 26px centred chips
-//     (--radius-2 = 5px on all four corners), while ONLY the ACTIVE tab drops to
-//     the foot-flush 30px box with its two BOTTOM corners squared so its fill
-//     runs into the canvas with no separator. The fill is FLAT (no inset /
+// Verifies the one assigned behaviour against the TFL-524 contract:
+//   - with tabStyle='colorful' the INACTIVE tabs are uniform 26px chips
+//     (--radius-2 = 5px on all four corners) that hang from the strip's TOP
+//     edge, while the ACTIVE tab fills the strip's full height with its two
+//     BOTTOM corners squared so its fill runs into the canvas with no separator.
+//     The fill is FLAT (no inset /
 //     emboss / reflection on the active tab): the body `::before` is the flat
 //     `color-mix(... --tf-tab-accent 22% ...)` tint inactive and `41%` active,
 //     with a 1px `color-mix(... 30% ...)` border. The `.tab-colour-chip`
@@ -104,6 +105,8 @@ test('colorful tabs are uniform + flat with the reference silhouette; Standard t
         id: el.getAttribute('data-tab-id'),
         active: el.getAttribute('aria-selected') === 'true',
         height: r.height,
+        top: r.top,
+        bottom: r.bottom,
         width: r.width,
         minWidth: cs.minWidth,
         boxShadow: cs.boxShadow,
@@ -120,21 +123,21 @@ test('colorful tabs are uniform + flat with the reference silhouette; Standard t
   });
   console.log(`[P62-tab] metrics=${JSON.stringify(metrics)}`);
 
-  // Criterion 1 (Phase 72 items 1-2) — the INACTIVE colorful tabs are the 26px
-  // centred chip; ONLY the ACTIVE tab drops to the 30px foot-flush box so its
-  // fill reaches the canvas. Every inactive tab is therefore identical.
+  // Criterion 1 (TFL-524 / DEF-534) — the INACTIVE colorful tabs are the 26px
+  // chips that hang from the strip's TOP edge; the ACTIVE tab fills the strip's
+  // full height so its fill reaches the canvas. Every inactive tab is therefore
+  // identical and every tab shares one aligned top edge.
   const TAB_HEIGHT = 26;
-  const ACTIVE_TAB_HEIGHT = 30;
   const active = metrics.find((m) => m.active);
   const inactive = metrics.find((m) => !m.active);
   expect(active, 'an active tab exists').toBeTruthy();
   expect(inactive, 'an inactive tab exists').toBeTruthy();
   for (const m of metrics) {
-    const expected = m.active ? ACTIVE_TAB_HEIGHT : TAB_HEIGHT;
-    console.log(`[P62-tab] ${m.id} height=${m.height} active=${m.active} expected=${expected}`);
+    if (m.active) continue;
+    console.log(`[P62-tab] ${m.id} height=${m.height} active=${m.active} expected=${TAB_HEIGHT}`);
     expect(
-      Math.abs(m.height - expected),
-      `tab ${m.id} is ${expected}px high (got ${m.height})`,
+      Math.abs(m.height - TAB_HEIGHT),
+      `inactive tab ${m.id} is ${TAB_HEIGHT}px high (got ${m.height})`,
     ).toBeLessThanOrEqual(0.5);
   }
   const inactiveHeights = metrics.filter((m) => !m.active).map((m) => m.height);
@@ -142,7 +145,13 @@ test('colorful tabs are uniform + flat with the reference silhouette; Standard t
     Math.max(...inactiveHeights) - Math.min(...inactiveHeights),
     'inactive tab heights are uniform',
   ).toBeLessThanOrEqual(0.5);
-  expect(active.height, 'active tab is the taller foot-flush box').toBeGreaterThan(inactive.height);
+  expect(active.height, 'active tab fills the strip to the foot').toBeGreaterThan(inactive.height);
+  // TFL-524 — the active and inactive tabs share one TOP edge.
+  console.log(`[P62-tab] tops active=${active.top} inactive=${inactive.top}`);
+  expect(
+    Math.abs(active.top - inactive.top),
+    `active and inactive tops share one edge (${active.top} vs ${inactive.top})`,
+  ).toBeLessThanOrEqual(0.5);
 
   // Uniform size: identical minWidth across tabs.
   const minWidths = new Set(metrics.map((m) => m.minWidth));
@@ -184,10 +193,10 @@ test('colorful tabs are uniform + flat with the reference silhouette; Standard t
   const lastTab = win.locator('[data-tab-id]').last();
   await expect(lastTab.locator('.tab-flare'), 'no .tab-flare node on the last tab').toHaveCount(0);
 
-  // Criterion 2 (TFL-213 / DEF-440) — the ACTIVE colorful tab reaches the
+  // Criterion 2 (TFL-524 / DEF-534) — the ACTIVE colorful tab reaches the
   // canvas foot: its box bottom sits within 1px of the canvas top, so the fill
   // runs flush onto the canvas with no separating band. The active tab is the
-  // taller 30px box whose foot still runs lower than the 26px inactive chips,
+  // full-strip-height box whose foot runs lower than the 26px inactive chips,
   // and the shared ink underline stays suppressed.
   const flush = await win.evaluate(() => {
     const activeEl = document.querySelector('[data-tab-id][aria-selected="true"]');

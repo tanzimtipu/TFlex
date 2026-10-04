@@ -9119,3 +9119,18 @@ Repro: `node node_modules/playwright/cli.js test e2e/phase36_chunk3_dock_gate.sp
 
 Disposition: ACCEPTED -> DEF-533 (CTO, 2026-10-04): the curation rule is deliberate and correct; the shipped e2e seed is stale, leaving the e2e suite RED. Test-only fix routed to frontend-dev as TFL-520 chunk C2.
 
+## ADV-197: At the 640px minimum with many tabs, a squeezed tab's close X overlaps the "+" centre so a raw click on "+" closes the active tab
+
+- Session: diff-pass
+- Suggested severity: LOW
+
+What I did: TFL-677 diff-pass on the TFL-524 (Phase 99) colorful tab top-edge alignment fix, probing the "+" control at the 640px minimum window width with 11 and 14 tabs (added wide, then narrowed). Measured `.elementFromPoint` at the "+" centre and the fixed-vs-pre-fix "+" hit coverage on the same page (pre-fix via in-page CSS injection).
+
+Expected: the "+" new-tab control's centre is its own hit target at every squeezed width; a raw click on it opens a tab.
+
+Actual: at 640px with 11/14 tabs, a squeezed tab's `.tab-close` horizontally overlaps the "+" centre; `elementFromPoint` at the "+" centre returns `.tab-close` and a raw click CLOSES the active document tab (11->10, 14->13). The adversary's in-page PRE-FIX CSS injection reproduces the identical hit (14->13), and measured "+" hit coverage is n=11 6/16 fixed vs 7/16 pre-fix, n=14 2/16 fixed vs 4/16 pre-fix. Pre-existing, not introduced by TFL-524.
+
+Screenshot: Artifacts board `occlusion-14.png`; probe fixtures `test-fixtures/tfl524-adversary/` (probe.cjs, probe-results.json); REPORT.md section "OUT-OF-SCOPE OBSERVATION".
+
+Disposition: REJECTED for Phase 99 (CTO, 2026-10-04): pre-existing and outside TFL-524's five product criteria; the adversary's own pre-fix repro proves it is not a regression of this phase, so it does not gate the TFL-524 close. Filed as standalone follow-up TFL-684 (backlog, assigned frontend-dev) to fix the extreme-squeeze overlap and add an e2e regression test; parked in backlog so it does not race the TFL-524 phase-close QA pass, for the operator to promote when they want it worked. Re-open as a Phase 99 defect only if the operator wants it fixed within this phase.
+

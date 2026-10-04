@@ -5,6 +5,33 @@
 > inspect the current `OPEN`, `FIX-READY`, and `DISPUTED` entries first; closed records are
 > historical evidence and must not be loaded wholesale.
 
+## DEF-534: The colorful active tab's TOP edge sits below the inactive tabs' top edge, so the strip is misaligned (TFL-376 / TFL-524)
+
+- Status: CLOSED
+- Severity: MEDIUM
+- Found by: operator (TFL-376, label Bug, screenshot attached); root cause confirmed by CTO during TFL-524 planning
+- Phase: 99 (TFL-524)
+- Files: `src/renderer/styles.css` (colorful tab scope, lines 2204-2262)
+
+Steps to reproduce:
+1. Launch TFlex in the default `colorful` tab style and open two documents (e.g. the bundled `report.pdf` then `long.pdf`).
+2. Look at the tab strip: the inactive 26px chips are vertically CENTRED, while the active tab is pinned to the strip foot.
+
+Expected: every tab (active and inactive) shares ONE aligned top edge at the top of the strip; the active tab extends down to the strip foot so its fill is flush with the canvas top (gap <= 1px); inactive chips stay visually distinct (recessed) below the shared top edge.
+
+Actual: with the strip content box ~43px high the inactive chip top is ~8.5px while the active tab top is ~13px, so the active top sits ~4.5px BELOW the inactive tops. Measured on the operator's attached PNG (`/api/assets/3020ea81-5d36-4512-afc4-324497dd71fe/content`, 445x52): inactive `long.pdf` box top=10 bottom=34; active `report.pdf` box top=14 bottom=42; strip content top ~9. The active foot is already flush (bottom 42-43) but the inactive chips float ~9px above the bottom.
+
+Root cause: `.tab-area[data-tab-style="colorful"] .tab-list { align-items: center; }` (`styles.css:2260-2262`) vertically centres the 26px inactive chips, while `.tab-active { height: 30px }` (`:2204-2209`) and `.tab-list > li[data-tab-active="true"] { align-self: flex-end }` (`:2214-2216`) pin the active tab's foot. Centring the inactive row and foot-pinning the taller active box are mutually exclusive: their tops can only coincide when the strip is exactly 30px tall.
+
+Fix owner: frontend-dev (TFL-524 chunk A). Direction: in the colorful scope, lay the strip from the TOP (replace `align-items: center`) and make the active tab fill the strip height so its foot stays flush while its top joins the shared top edge; keep the inactive 26px chip, its four rounded corners and its recessed gap. The standard tab style is unchanged (all 34px, tops already aligned).
+
+History:
+- operator (TFL-376, 2026-10-02): filed with screenshot; closed 2026-10-03 after the foot-flush fix, but the top-edge misalignment remained.
+- CEO (TFL-524, 2026-10-04): re-commissioned as a phase issue with the product success criteria; CTO owns decomposition.
+- CTO (TFL-524, 2026-10-04): root cause confirmed by reading `styles.css:2204-2262` and measuring the attached PNG; fix dispatched as TFL-524 chunk A (frontend-dev).
+- frontend-dev (TFL-675, 2026-10-04): FIX READY. Colorful scope only: `.tab-list { align-items: flex-start }`, `.tab-active { height: 100% }`, `.tab-list > li[data-tab-active="true"] { align-self: stretch }`. Repointed `test/unit/renderer/phase62TabRestyle.test.tsx` and `e2e/phase58_tab_style.spec.cjs`; added `e2e/tfl524_tab_alignment.spec.cjs`. Standard tab rules untouched; no render change. Unit 5 files / 47 tests pass; e2e 5 pass; `verify` exit 0.
+- qa (TFL-676, 2026-10-04): CLOSED. Focused verification PASS on all five criteria, evidence re-run by qa. Unit `npm.cmd run test:unit -- phase62TabRestyle phase58TabStyle phase68TabRestyle phase51TabColour phase45TabColour` -> exit 0, Test Files 5 passed (5), Tests 47 passed (47). Target e2e `npm.cmd run test:e2e -- e2e/phase58_tab_style.spec.cjs e2e/tfl524_tab_alignment.spec.cjs e2e/tfl676_standard_style.spec.cjs` -> exit 0, 6 passed (phase58 1 + tfl524 4 + tfl676 1). Regression `npm.cmd run test:e2e -- e2e/phase59_tab_overflow.spec.cjs e2e/phase58_tab_reorder.spec.cjs` -> exit 0, 4 passed. `npm.cmd run verify` -> exit 0. Raw px (default colorful): two tabs active top=0 bottom=43 h=43, inactive top=0 bottom=26 h=26, `.app-main` top=44 -> |dTop|=0, gap=1, recess=17; active-last identical; single top=0 bottom=43; 11 tabs @1280 and @640 tops=0, active bottom=43; standard both top=9 h=34 bottom=43. Screenshots inspected. New spec `e2e/tfl676_standard_style.spec.cjs` and report artifact `tfl676_report.md` left for git-agent.
+
 ## DEF-531: The dock's plus picker offers tools that can never run in the dock, and a disabled row's edit-mode remove badge is unclickable (TFL-395)
 
 - Status: CLOSED

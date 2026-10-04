@@ -2195,24 +2195,24 @@ input[type="checkbox"] {
 
 /* Active: brighter/darker fill + the existing ::after underline. No inset
  * highlight, no elevation shadow, no size or weight change.
- * Phase 72 (items 1-2) — the inactive row is vertically centred; ONLY the
- * active tab leaves the centred row and drops to the strip's foot with the
- * taller 30px box, so its fill reaches the canvas top while every inactive
- * 26px chip stays clear of both edges. TFL-213 (DEF-440) — the row alignment
- * lives on the wrapping `<li>` (the actual flex item of `.tab-list`), not on
- * this inner `.tab` block, where `align-self` is inert. */
+ * TFL-524 (DEF-534) — the inactive row hangs from the strip's TOP edge and
+ * ONLY the active tab fills the strip's full height so its fill reaches the
+ * canvas top. The active `.tab` fills the wrapping `<li>` (the actual flex
+ * item of `.tab-list`), which is stretched to the strip's height; `align-self`
+ * on this inner `.tab` block would be inert (TFL-213 / DEF-440). */
 .tab-area[data-tab-style="colorful"] .tab-active {
   font-weight: inherit;
   box-shadow: none;
   color: var(--fg-strong);
-  height: 30px;
+  height: 100%;
 }
 
-/* TFL-213 (DEF-440) — the active colorful tab's `<li>` is the flex item of
- * `.tab-list`, so the foot alignment is applied here: `flex-end` pins the
- * active box's bottom to the strip's foot, flush with the canvas top. */
+/* TFL-524 (DEF-534) — the active colorful tab's `<li>` is the flex item of
+ * `.tab-list`, so the height fill is applied here: `stretch` makes the `<li>`
+ * span the strip's full height and the inner `.tab` (height: 100%) then runs
+ * its fill flush onto the canvas top. */
 .tab-area[data-tab-style="colorful"] .tab-list > li[data-tab-active="true"] {
-  align-self: flex-end;
+  align-self: stretch;
 }
 
 .tab-area[data-tab-style="colorful"] .tab-active::before {
@@ -2249,8 +2249,9 @@ input[type="checkbox"] {
  * no longer reaches past the header's border: `.tab-area` fills the header's
  * content box (`align-self: stretch; height: 100%; margin-bottom: 0`) and the
  * base `align-items: end` is overridden on the colorful `.tab-list` so the
- * INACTIVE tabs sit vertically centred (>= 2px clear of both strip edges).
- * Only the active tab drops to the foot via `align-self: flex-end` above. */
+ * INACTIVE tabs hang from the strip's TOP edge with their recess at the
+ * bottom. Only the active tab fills to the foot via `align-self: stretch`
+ * above. TFL-524 (DEF-534) — every tab now shares one aligned top edge. */
 .tab-area[data-tab-style="colorful"] {
   align-self: stretch;
   height: 100%;
@@ -2258,7 +2259,7 @@ input[type="checkbox"] {
 }
 
 .tab-area[data-tab-style="colorful"] .tab-list {
-  align-items: center;
+  align-items: flex-start;
 }
 
 .tab-title {
