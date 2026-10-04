@@ -79,7 +79,36 @@ import type { SpellCheckState } from "../spell/useSpellCheck";
  *  preview ("the old text is slightly visible behind the selected text").
  *  The live preview uses the SAME padded rect so the new descenders render
  *  unclipped and are fully backed by the cover. */
-const RUN_COVER_DESCENT = 0.25;
+export const RUN_COVER_DESCENT = 0.25;
+
+/** TFL-686 — the equal breathing room (pt) added on every side of a run's
+ *  glyph box for the dashed hover / selection surfaces. Hand-tuned against a
+ *  real 12-20pt run: enough to read as a deliberate halo around the glyphs,
+ *  small enough that two adjacent lines' boxes never touch. */
+const HOVER_RECT_PAD_PT = 2;
+
+/** TFL-686 — the dashed hover / selection rect for a text run. The raw
+ *  pdf.js `TextItemGeom` spans ascender-top -> baseline (its bottom edge is
+ *  the baseline), so a box drawn at that rect shows MORE room above the
+ *  glyphs than below. This helper pads the glyph box — the same band
+ *  `runCoverRect` covers, ascender-top -> descender bottom — by an EQUAL
+ *  `HOVER_RECT_PAD_PT` on all four sides, so the dashed box reads
+ *  symmetrically around the text. Geometry only: never use the result for an
+ *  engine op (commits keep the raw run rect). */
+export function symmetricHoverRect(rect: {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}): { x: number; y: number; width: number; height: number } {
+  const descent = rect.height * RUN_COVER_DESCENT;
+  return {
+    x: rect.x - HOVER_RECT_PAD_PT,
+    y: rect.y - HOVER_RECT_PAD_PT,
+    width: rect.width + HOVER_RECT_PAD_PT * 2,
+    height: rect.height + descent + HOVER_RECT_PAD_PT * 2,
+  };
+}
 
 /** Extend a run rect to fully contain its glyph box (baseline -> descender).
  *  Phase 51 item 16 — a non-zero `baselineShift` (super/subscript, points)
@@ -713,7 +742,7 @@ export function EditOverlay(props: EditOverlayProps): ReactElement | null {
           y >= it.y - 2 &&
           y <= it.y + it.height + 2,
       );
-      setHoverRect(hit === undefined ? null : { ...hit });
+      setHoverRect(hit === undefined ? null : symmetricHoverRect(hit));
       // DEF-153 — while a run is selected the cursor-attached hint
       // follows the pointer.
       if (runSelectionRef.current !== null) {
@@ -1394,7 +1423,7 @@ export function EditOverlay(props: EditOverlayProps): ReactElement | null {
           className="edit-text-hover edit-textrun-selection"
           data-textrun-selection
           data-textrun-text={runSelection.text}
-          style={overlayRectToCss(runSelection.rect, cssScale)}
+          style={overlayRectToCss(symmetricHoverRect(runSelection.rect), cssScale)}
           onDoubleClick={(e): void => {
             // Phase 51 item 12 — a double-click lifts the run into the
             // on-canvas editor (the Inspector Text field stays available and
@@ -2046,9 +2075,10 @@ function TextBoxView(props: TextBoxViewProps): ReactElement {
     () =>
       layoutEditTextBox({
         text: box.text,
-        // The mirror's padding is "2px 3px" (2 vertical, 3 horizontal).
+        // The mirror's padding is "3px" on every side (TFL-686 — equal
+        // breathing room around the glyphs, matching the run hover box).
         widthPx: Math.max(1, box.rect.width * cssScale - 6),
-        heightPx: Math.max(1, box.rect.height * cssScale - 4),
+        heightPx: Math.max(1, box.rect.height * cssScale - 6),
         userSizePx: box.style.size * cssScale,
         indentPx: (box.style.indent ?? 0) * cssScale,
         lineHeight: box.style.lineHeight ?? LIVE_TEXT_DEFAULT_LINE_HEIGHT,
@@ -2095,7 +2125,7 @@ function TextBoxView(props: TextBoxViewProps): ReactElement {
         style={{
           position: "absolute",
           inset: 0,
-          padding: "2px 3px",
+          padding: "3px 3px",
           // DEF-263 — the stored indent insets the content box: every line
           // starts at the indented edge (the engine's `contentX`).
           paddingLeft: `${3 + layout.indentPx}px`,

@@ -239,6 +239,25 @@ export function textItemsToGeomAligned(
   });
 }
 
+/** TFL-686 — true when a focus target lives inside one of the EDIT-text
+ *  action bars (the text-run bar or the committed-box toolbar). Pressing a
+ *  button in either bar first blurs the Inspector's Text field; without this
+ *  guard that blur fired `commitTextSession` — an ENGINE op — before the
+ *  Cancel click could discard the live session, so Cancel committed the edit
+ *  it was meant to revert. Treating the bar as a "keep the session alive"
+ *  surface (exactly like a style control inside `[data-text-panel]`) defers
+ *  the commit to the bar's own handler: Confirm commits through the target
+ *  clear, Cancel/Delete discard first. Narrow by selector so the annotation /
+ *  image bars keep their existing blur semantics. */
+export function isEditTextActionBarTarget(target: EventTarget | null | undefined): boolean {
+  return (
+    typeof Element !== "undefined" &&
+    target instanceof Element &&
+    (target.closest("[data-edit-box-toolbar]") !== null ||
+      target.closest('[data-content-action-bar="textrun"]') !== null)
+  );
+}
+
 /** Phase 86 — map one `SearchHit` to a page-space `ReplaceOccurrence`. The
  *  rect is derived from the existing per-item text geometry plus a
  *  per-character width (`item.width / item.str.length`) over the hit's
@@ -1335,6 +1354,10 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
   const commitTextSession = useCallback(
     (relatedTarget?: EventTarget | null): void => {
       if (isTextPanelFocusTarget(relatedTarget)) return;
+      // TFL-686 — a press on the EDIT-text action bars (Cancel / Delete /
+      // Confirm) must NOT commit the live session on blur: Cancel has to be
+      // able to discard it. The bar's own click handler commits or discards.
+      if (isEditTextActionBarTarget(relatedTarget)) return;
       const session = textEditRef.current;
     textEditRef.current = null;
     setTextEdit(null);
