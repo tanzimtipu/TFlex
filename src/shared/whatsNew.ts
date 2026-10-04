@@ -23,6 +23,20 @@ export interface WhatsNewEntry {
 /** Ordered newest first. */
 export const WHATS_NEW: WhatsNewEntry[] = [
   {
+    version: '1.49.0',
+    date: '2026-10-04',
+    highlights: [
+      'A single modern button and icon system now runs across the whole app.',
+      'Every dialog and auxiliary window shares one shell for a consistent look.',
+      'App-wide visual refresh with calmer colour, elevation and empty-state styling.',
+      "The action dock's plus picker now lists only tools that can actually run there, and each row you add or grey out can be removed.",
+      'Book View no longer flickers when you turn single or spread pages.',
+      'The active tab in the tab strip now sits flush and aligned along its top edge.',
+      'Edit Text and Add Text now share a symmetric hover box and consistent Cancel, Confirm and Escape behaviour.',
+      'The home screen\'s fixed Open tile no longer jiggles in edit mode and is renamed "Open Files".',
+    ],
+  },
+  {
     version: '1.48.0',
     date: '2026-10-03',
     highlights: [

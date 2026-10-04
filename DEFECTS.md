@@ -12152,4 +12152,57 @@ History:
 - qa (TFL-696, 2026-10-04): FILED as OPEN from ADV-199 repro (S3 + unit A5). Severity MEDIUM per the CTO ruling.
 - qa (TFL-698, 2026-10-04): CLOSED. Rebuilt the renderer and extended the S3 oracle to assert `modified=false` plus the run surviving marker-free. `npm.cmd run test:e2e -- tfl525_adversary_diffpass --reporter=line` (ELECTRON_RUN_AS_NODE unset) -> 4 passed / 0 failed. S3 raw: `[TFL-698 S3] run="TFlex Technical Report" firstWord="TFlex" confirmCount=1 modified=false survivesWhitespaceCommit=true` — a whitespace-only run Confirm places nothing, leaves the document unmodified, and the original run text remains extractable (not masked). Fix: `DocumentView.tsx:1445` `if (session.text.trim() === "") return;` before `setTextCommitToken`; `EditOverlay.tsx:1606-1608` parks the run target only when `live.trim() !== ""`. Regressions: `tfl525_edit_text_sweep` 8 passed / 0 failed; `tfl525_edit_text_fixes` 4 passed / 0 failed; blast radius `ground_truth_edit` 1 passed, `qa_verify_edit_box` 1 passed. Note: S3 `confirmCount=1` only means the Confirm control exists/was clicked; the guard is that no commit resulted.
 
+## DEF-542: Phase 96 per-scope `--fg-on-page` declaration collides with the DEF-156/158/159 dark-ink guard — release gate red at 1.49.0
+
+- Status: CLOSED
+- Severity: MEDIUM
+- Found by: qa (TFL-720 release gate, Jovrel 1.49.0)
+- Phase: 96 (introduced, commit `748de6b`) / surfaced at the Phase 90-99 release gate (TFL-715)
+- Files: `test/unit/renderer/defDEF156_158_159_darkPageInk.test.ts:126-133` (stale assertion), `src/renderer/styles.css:488` (base), `:762` (dark), `:1000` (frosted), `test/unit/renderer/designSystem.test.ts:167-172,204-208`
+
+Steps to reproduce:
+1. `npm.cmd run verify:full` from the repo root at 1.49.0.
+2. vitest fails: `test/unit/renderer/defDEF156_158_159_darkPageInk.test.ts` > "declares a theme-independent --fg-on-page ink token" at line 132.
+
+Expected (release gate): conventions clean, `tsc --noEmit` OK, whole unit suite green.
+
+Actual: `Test Files 1 failed | 634 passed (635)`, `Tests 1 failed | 7829 passed (7830)`, exit 1. The DEF-156/158/159 guard asserts the `:root[data-theme="dark"]` block must not declare `--fg-on-page` at all; Phase 96 (`748de6b`) deliberately declares it per scope — dark `styles.css:762`, frosted `:1000` — both to the SAME dark ink `#0f172a` as the base (`:488`), so the paper-white page is never re-inverted. Phase 96's own `designSystem.test.ts:167-172` REQUIRES every documented token declared in every theme scope (it does not carve out `--fg-on-page`) and `:204-208` pins the value to `#0f172a` in all three scopes. The two tests are mutually exclusive: removing the per-scope declarations to satisfy the DEF-156 guard would break `designSystem.test.ts`.
+
+Root cause: the DEF-156/158/159 guard is stale relative to the Phase 96 design-system invariant. Its actual intent (its own inline comment: "It must not be redefined to a light color in the dark block") still holds — page ink is the dark `#0f172a` in every scope. Product behaviour is correct; no shipped build is affected and no rebuild is required.
+
+Fix owner: frontend-dev (renderer unit tests). Direction: correct ONLY the stale assertion at `defDEF156_158_159_darkPageInk.test.ts:126-133` so that, when the dark block declares `--fg-on-page`, its value must EQUAL the base light ink (never a light re-inversion) instead of forbidding the declaration. Do NOT touch `src/renderer/styles.css`; do NOT weaken `designSystem.test.ts`.
+
+Evidence: TFL-720 release-gate report (`verify_full_1490.log`); isolated rerun `npm.cmd run test:unit -- test/unit/renderer/defDEF156_158_159_darkPageInk.test.ts` -> `1 failed | 17 passed (18)`, exit 1, deterministic.
+
+History:
+- qa (TFL-720, 2026-10-04): FILED from the Jovrel 1.49.0 release gate; the mandatory release-gate full suite is red on this one test. Release STOPs until green. The packaged 1.49.0 launch smoke passed.
+- fix (TFL-721, 2026-10-04): FIX-READY (set by CTO). frontend-dev rewrote the assertion at `defDEF156_158_159_darkPageInk.test.ts:126-142` so a dark re-declaration must EQUAL the base ink; only that test file changed. Evidence: `npm.cmd run test:unit -- test/unit/renderer/defDEF156_158_159_darkPageInk.test.ts` -> 18 passed / 0 failed; blast radius `designSystem.test.ts` still green. Confirmed independently by qa in TFL-722: both target files green (`Test Files 2 passed (2)` / `Tests 41 passed (41)`). Awaiting qa CLOSE.
+- qa (TFL-724, 2026-10-04): CLOSED. Final Jovrel 1.49.0 release-gate full run `npm.cmd run verify:full` (from repo root) -> conventions: clean (344 source file(s) scanned); `tsc --noEmit` OK; `Test Files 636 passed (636)`; `Tests 7832 passed (7832)`; 0 failed; exit 0. `test/unit/renderer/defDEF156_158_159_darkPageInk.test.ts` is green in THIS full run (part of the all-green 636/636; vitest include `test/unit/**/*.test.ts` collects it). Blast-radius neighbour `test/unit/renderer/designSystem.test.ts` also green in the same full run.
+
+## DEF-543: `phase90BatesOpsQa` getWatermarks read-op purity is order-dependent — the 1.49.0 release gate is red in a full run but green in isolation
+
+- Status: CLOSED
+- Severity: MEDIUM
+- Found by: qa (TFL-722 release-gate re-run, Jovrel 1.49.0)
+- Phase: 90 (TFL-521 read-op purity) / surfaced at the Phase 90-99 release gate (TFL-715)
+- Files: `test/unit/main/phase90BatesOpsQa.test.ts:175-190` (failing test), `src/main/services/engine.ts:4890-4894` (`getWatermarks` / `_getWatermarksImpl`), `src/main/services/engine.ts:189-193` (module-level `jointSeq` counter), `:8781` (`fontExtractionCaches` WeakMap)
+
+Steps to reproduce:
+1. `npm.cmd run verify:full` from the repo root at 1.49.0.
+2. In the FULL run it fails; run alone it passes.
+
+Expected (TFL-521 read-op purity): `getWatermarks` on an unmodified document leaves the serialized bytes BIT-IDENTICAL (`sha(after) === sha(before)`), does not set `modified`, and pushes no undo entry — deterministically, regardless of what other tests ran first.
+
+Actual: in the full suite `assertion at phase90BatesOpsQa.test.ts:187` fails: `expected '05c90fd30afb…' to be '6ac14b1beae8…'`, console `before=6ac14b1b… after=05c90fd3… modified=false undoOk=false`. In isolation the same file is `Test Files 1 passed (1)` / `Tests 7 passed (7)`, exit 0. So the serialized output is order-dependent — a nondeterminism/isolation defect.
+
+Root cause (hypothesis for the owner): module-level mutable state in `engine.ts` (the `jointSeq` counter at `:189-193`, or a shared cache) leaks across `EngineService` instances and changes the serialized bytes depending on prior tests. NOT yet root-caused.
+
+Fix owner: backend-dev (main-process engine + `test/unit/main`). Direction: reproduce with the full suite, find the nondeterminism source, and make the read-op byte-pure and order-independent WITHOUT weakening the assertion — `sha(after) === sha(before)`, `modified === false`, `undo.ok === false` must all hold in a full run. Do not delete, skip or relax the test.
+
+Evidence: TFL-722 report on the issue; `tfl722_verify_full.log`.
+
+History:
+- qa (TFL-722, 2026-10-04): FILED from the Jovrel 1.49.0 release-gate re-run. The DEF-542 target files are green after TFL-721, but this unrelated order-dependent failure leaves the full suite red (`Test Files 1 failed | 634 passed (635)`, `Tests 1 failed | 7829 passed (7830)`, exit 1). Release STOPs until the full suite is green.
+- qa (TFL-724, 2026-10-04): CLOSED. Final Jovrel 1.49.0 release-gate full run `npm.cmd run verify:full` (from repo root) -> `Test Files 636 passed (636)`; `Tests 7832 passed (7832)`; 0 failed; exit 0. In THIS full run (the same order-dependent context that was red at TFL-722) `test/unit/main/phase90BatesOpsQa.test.ts` is green, together with the new `test/unit/main/def543SerializePurity.test.ts`; the suite is order-independent. Suite grew 635->636 files / 7830->7832 tests vs TFL-722, consistent with the added regression file.
+
 

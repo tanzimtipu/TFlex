@@ -124,12 +124,21 @@ describe("DEF-158/159 — committed page text stays DARK in both themes (the pag
   const src = readStyles();
 
   it("declares a theme-independent --fg-on-page ink token", () => {
-    // Defined in the BASE :root only (theme-independent — the page
-    // stays paper-white in dark mode, so page ink is always dark).
+    // Phase 96 (748de6b) re-declares the token per theme scope at the
+    // SAME dark ink as the base, because the page stays paper-white in
+    // dark mode (DEF-099). The invariant is therefore VALUE EQUALITY,
+    // not absence: the base scope defines the ink, and if the dark
+    // scope declares the token it must resolve to that same base ink
+    // (never a light-on-white color). designSystem.test.ts:204-208
+    // pins all three scopes to this value.
     const { light, dark } = themeBlocks(src);
-    expect(light).toMatch(/--fg-on-page:\s*#[0-9a-f]{6}/);
-    // It must not be redefined to a light color in the dark block.
-    expect(dark).not.toMatch(/--fg-on-page:\s*#(?:[0-9a-fA-F]{6})/);
+    const base = /--fg-on-page:\s*(#[0-9a-fA-F]{6})/.exec(light);
+    expect(base).not.toBeNull();
+    if (base === null) return;
+    const darkDecl = /--fg-on-page:\s*(#[0-9a-fA-F]{6})/.exec(dark);
+    if (darkDecl !== null) {
+      expect(darkDecl[1].toLowerCase()).toBe(base[1].toLowerCase());
+    }
   });
 
   it(".ann-textbox brushes with var(--fg-on-page), not the UI --fg-strong", () => {

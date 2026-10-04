@@ -6238,6 +6238,32 @@ export function stampBrandMetadata(doc: PDFDocument): void {
 }
 
 /**
+ * DEF-543 — make a serialized output's Info timestamps a pure function of the
+ * SOURCE document, so two serializations of an unchanged document are
+ * byte-identical. pdf-lib's `PDFDocument.create()` calls `updateInfoDict()`,
+ * which stamps `/ModDate` (and `/CreationDate` when absent) with the current
+ * wall-clock second; two saves that straddle a one-second boundary then differ
+ * only in those bytes. That is the nondeterminism behind the order-dependent
+ * read-op-purity failure: `getWatermarks` -> `getDocumentBytes` serializes
+ * twice and the pair can straddle the boundary under load. Copying the source
+ * document's timestamps (fixed for the document's lifetime once loaded) takes
+ * the wall clock out of the output. A source that carries no timestamps falls
+ * back to a fixed epoch, so the output stays deterministic either way.
+ */
+const SERIALIZE_EPOCH = new Date('2000-01-01T00:00:00.000Z');
+
+export function stabilizeSerializedMetadata(out: PDFDocument, src: PDFDocument): void {
+  try {
+    const created = src.getCreationDate() ?? SERIALIZE_EPOCH;
+    const modified = src.getModificationDate() ?? created;
+    out.setCreationDate(created);
+    out.setModificationDate(modified);
+  } catch {
+    // Metadata is cosmetic; never fail a save because of it.
+  }
+}
+
+/**
  * Phase 52 — emit the classic pdf-lib white-fill rectangle operator stream.
  *
  * @cantoo/pdf-lib rewrote `drawRectangle` to route through `drawSvgPath`, so
@@ -7300,6 +7326,10 @@ async function serializeDoc(doc: EngineDoc): Promise<Uint8Array> {
 
   // Phase 49 — brand the produced PDF's Producer/Creator as Jovrel.
   stampBrandMetadata(out);
+  // DEF-543 — take the wall clock out of the output (see
+  // stabilizeSerializedMetadata): the source timestamps are stable for the
+  // document's lifetime, so repeated serializations are byte-identical.
+  stabilizeSerializedMetadata(out, doc.pdfDoc);
   // Phase 59 item 4 — appearances were regenerated above with the Unicode
   // font, so suppress pdf-lib's own (WinAnsi Helvetica) re-render on save.
   return out.save({ updateFieldAppearances: false });
