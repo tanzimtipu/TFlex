@@ -11979,7 +11979,7 @@ History:
 
 ## DEF-536: Phase 91 button system stripped the dock verb's pressed inset ring — `def358_editdock_verify` ring assertion is red again
 
-- Status: OPEN
+- Status: CLOSED
 - Severity: LOW
 - Found by: qa (TFL-689 triage while retesting TFL-525; pre-existing, NOT a regression from TFL-686/TFL-688)
 - Phase: 91 (introduced) / surfaced during Phase 99 TFL-525
@@ -12000,6 +12000,7 @@ Evidence: command output above; `screenshots/def358-edit-dock-armed.png` (writte
 
 History:
 - qa (TFL-689, 2026-10-04): FILED during the DEF-535 retest triage. `npm.cmd run test:e2e -- def358_editdock_verify` — 2 failed / 0 passed, both on the missing inset ring. Classified pre-existing (introduced by `343fd56`, Phase 91); not caused by TFL-686 (`e5bf019`) or TFL-688. DEF-358 remains CLOSED from the earlier Phase-41-era retest, which measured the ring before `.btn` was added to the dock verbs.
+- qa (TFL-714, 2026-10-04): CLOSED. Rebuilt the renderer (`npm.cmd run build:renderer`; built CSS carries `.btn.action-dock-verb[aria-pressed=true]:not(:disabled){box-shadow:inset 0 0 0 1px var(--accent)}`) and re-ran `npm.cmd run test:e2e -- def358_editdock_verify` (ELECTRON_RUN_AS_NODE unset) -> 2 passed / 0 failed. Every pressed edit verb (`editToolOff` on entry; `editText` / `editTextBox` / `editImage` when armed) reports `boxShadow: rgb(124, 58, 237) 0px 0px 0px 1px inset` and `hasInsetRing=true` in BOTH the single-mode dock and the Multi Mode shared dock; every unpressed verb reports `boxShadow: none` and a transparent background. Unit `test/unit/renderer/buttonTaxonomyContract.test.ts` -> 25 passed / 0 failed (taxonomy unchanged). Blast radius: `commandBar.test.tsx` (10) + `phase45_dockRailWatermark.test.tsx` (14) -> 24 passed. Screenshot `screenshots/def358-edit-dock-armed.png` inspected: the armed `Edit text` verb carries the visible accent inset ring. Evidence logs `test-fixtures/tfl714/`.
 
 ## DEF-537: Confirm on an edited Edit-Text run does not commit — the edit is silently lost (TFL-690 bug-hunt; regression from TFL-686)
 
