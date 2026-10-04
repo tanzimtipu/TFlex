@@ -10,6 +10,7 @@ import type {
   EpubReadingDocument,
 } from "./convert";
 import type { AccountStatusResult, AccountsClientConfig, OAuthCallbackOutcome, OAuthCallbackStartResult, OAuthTraceEvent, OpenAuthUrlResult, SetSessionPayload, SyncReport } from "./accounts";
+import type { BugReportCaptureResult, BugReportInput } from "./bugReport";
 import type {
   ExportBuild,
   ExportErrorCode,
@@ -316,6 +317,10 @@ export const IPC = {
   signaturesList: "signatures:list",
   signaturesSave: "signatures:save",
   signaturesDelete: "signatures:delete",
+  // Phase 101 — always-on bug capture. The renderer forwards an unhandled
+  // failure to main over this channel; main fingerprints, redacts, queues and
+  // opportunistically persists it. Never user-triggered, no user-facing UI.
+  bugReportCapture: "bugReport:capture",
   // Phase 6 — OTA updates
   updateStatus: "update:status",
   updateDownload: "update:download",
@@ -1163,6 +1168,14 @@ export interface TFlexApi {
     list(): Promise<SavedSignaturesResult>;
     save(source: SignatureSource, label?: string): Promise<SavedSignaturesResult>;
     delete(id: string): Promise<SavedSignaturesResult>;
+  };
+  /** Phase 101 — always-on bug capture. The renderer forwards a captured
+   *  failure (uncaught error, unhandled rejection, React boundary) to main,
+   *  which fingerprints, redacts and persists it without blocking the UI.
+   *  Resolves the current queue depth; never makes the renderer wait on the
+   *  network. */
+  bugReport: {
+    capture(input: BugReportInput): Promise<BugReportCaptureResult>;
   };
   /** Phase 7 — application menu. Menu actions are pushed from main
    *  to the renderer via IPC; the renderer listens with onAction and

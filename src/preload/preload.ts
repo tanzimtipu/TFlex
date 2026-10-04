@@ -9,6 +9,7 @@ import {
   type TabTransferResult,
   type WindowMinimizedChange,
 } from "../shared/ipc";
+import type { BugReportCaptureResult, BugReportInput } from "../shared/bugReport";
 import type {
   AppInfo,
   AppSettings,
@@ -887,6 +888,14 @@ const api = {
     },
     delete(id: string): Promise<SavedSignaturesResult> {
       return ipcRenderer.invoke(IPC.signaturesDelete, id);
+    },
+  },
+  // Phase 101 — always-on bug capture. The renderer forwards a captured
+  // failure to main, which fingerprints, redacts and queues it; it never
+  // awaits the network and never surfaces a dialog.
+  bugReport: {
+    capture(input: BugReportInput): Promise<BugReportCaptureResult> {
+      return ipcRenderer.invoke(IPC.bugReportCapture, input);
     },
   },
   // Phase 6: About / preferences

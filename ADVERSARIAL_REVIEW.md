@@ -9497,3 +9497,145 @@ chrome-frosted.png, context-panel-{light,dark,frosted}.png,
 stage-rail-{light,dark,frosted}.png
 
 Disposition: REJECTED - no finding (CTO, TFL-729, 2026-10-04). Triage: the diff-pass found no product break - theme honesty held across ~44 sampled selectors, no retrofit regression, zero PDF-surface transition/animation/filter in all three themes and during the crossfade window, and reduced motion collapses as designed. Items 1-7 are negative results / observations: the `.content-move-hint` fixed dark chip (styles.css:6381-6401) and the `.titlebar-file-dot` status dot (CSS_ALLOWLIST) are documented, and the unscanned `styles/animations.css` is Phase-100 stated scope (ruling 4 names `styles.css`). Entry raises no defect, so no DEF is warranted.
+
+## ADV-205: Phase 101 redaction covers ONLY `context` - secrets in `message`, `error_name`, `stack_trace` and breadcrumb messages reach the unauthenticated public `bug_reports` table
+
+- Session: diff-pass
+- Suggested severity: HIGH
+
+What I did: read the Phase 101 diff and probed the running app (built `dist/main/index.js`
+from source at `21:50Z`, launched through `e2e/lib/launch.cjs`, transport pointed at an
+unreachable local port so no probe row reached the database). Drove
+`window.tflex.bugReport.capture(...)` with secrets planted in every free-text field:
+`message:'token sk-abc123 Authorization: Bearer eyJ...'`, `errorName:'password=hunter2'`,
+`stackTrace:'... apiKey=SECRETKEY ... bearer eyJ...'`, plus a nested `context`. Read the
+persisted `{userData}/bug-reports-queue.json` immediately after. Also fired a renderer
+`unhandledrejection` whose reason carried a Bearer token and captured a second row to
+inspect its breadcrumbs.
+
+Expected: secrets are stripped from every persisted/transmitted field, not just `context`
+(the preload/renderer forwards `message`, `error_name`, `stack_trace`; `transport.ts`
+POSTs the whole row verbatim to the public route; `hello.ts` inserts whatever it is given;
+the `public.bug_reports` row therefore carries exactly the queued text).
+
+Actual: `capture.ts:126` redacts only `redactContext(input.context)`; `buildRow`
+(`capture.ts:153-180`) copies `input.message`, `input.errorName`, `input.stackTrace` and
+`breadcrumbs` raw. The persisted row (screenshots/phase101-adv/probe1-redaction.json)
+retained, unredacted: `message` = `token sk-abc123 Authorization: Bearer eyJ...`,
+`error_name` = `password=hunter2`, `stack_trace` = `... apiKey=SECRETKEY ... bearer eyJ...`.
+Only `context` was masked (`password:[redacted]`, `nested.apiKey:[redacted]`,
+`arr[0].secret:[redacted]`). Breadcrumbs carry prior rows' messages unredacted
+(`probe-breadcrumbs.json`: row 2's breadcrumbs = a row-1 message containing
+`token=AAAA1111`). Because the transport posts the row unchanged and the route is
+unauthenticated, those secrets land in `public.bug_reports`. `redactString` already knows
+how to strip these classes (`redact.ts:44-50`); it is simply never applied to the
+message/error/stack/breadcrumb fields.
+
+Screenshot / log: screenshots/phase101-adv/probe1-redaction.json,
+screenshots/phase101-adv/probe-breadcrumbs.json, screenshots/phase101-adv/raw-probes.log,
+driver screenshots/phase101-adv/p101-adv-driver.cjs and p101-bc.cjs
+
+Disposition: ACCEPTED -> DEF-549
+
+## ADV-206: The public `POST /bug-reports` route has no authentication and no rate limit - anonymous write amplification into `public.bug_reports`
+
+- Session: diff-pass
+- Suggested severity: MEDIUM
+
+What I did: curled the live public route
+`https://br-purple-tooth-b31y4y7b-api.compute.c-4.ap-southeast-1.aws.neon.tech/bug-reports`
+with no credentials: one request of 100 rows, then 10 rapid single-row requests, then a
+single oversized (300 KB) request. Counted accepted rows in the database and cleaned up
+all `adv-%` probe rows afterward (`delete from public.bug_reports where message like
+'adv-%'`, 115 rows removed).
+
+Expected: at minimum a per-request row/size bound and some throughput limit (the cap is
+256 KB per batch, but a batch may hold unbounded rows under that byte cap; nothing limits
+request frequency).
+
+Actual: all 110 rows inserted (`{"inserted":100}` then ten `{"inserted":1}`), 10 rapid
+requests returned 200 in 2.2 s, and no throttling appeared. Any anonymous caller can
+append arbitrary volumes of rows to `public.bug_reports` (write amplification / storage
+abuse). The `adv-*` rows were deleted after the probe; the table was left clean.
+
+Screenshot / log: screenshots/phase101-adv/probe2-route.log,
+driver screenshots/phase101-adv/p101-route-probe.cjs
+
+Disposition: ACCEPTED -> DEF-550
+
+## ADV-207: The route inserts a batch row-by-row with no transaction - a mid-batch invalid row inserts the earlier rows, returns 500 with the raw Postgres constraint name, and the client's at-least-once retry duplicates them
+
+- Session: diff-pass
+- Suggested severity: MEDIUM
+
+What I did: posted a 3-row batch where rows 1-2 are valid and row 3 has `level:"BOGUS"`,
+then queried `public.bug_reports` for the two good messages. Also posted a single invalid
+`level` to read the error body.
+
+Expected: an invalid row rejects the whole request with a 4xx before any insert (or the
+batch is atomic), and no internal database detail is returned.
+
+Actual: the good rows `adv-partial-good-0` and `adv-partial-good-1` were both inserted
+(confirmed by SQL) while the response was `500
+{"error":"new row for relation \"bug_reports\" violates check constraint
+\"bug_reports_level_check\""}` - partial commit, no transaction, and the Postgres
+constraint name is leaked to the anonymous caller. The client (`capture.ts:230-238`)
+does NOT `acknowledge` on a thrown transport error, so a retried flush re-POSTs the same
+batch and inserts the good rows a second time, forever, for any batch that contains a
+row the server cannot insert. `bug-reports-*` rows were cleaned up after the probe.
+
+Screenshot / log: screenshots/phase101-adv/probe2-route.log (plus the mixed-batch curl and
+follow-up SQL in this entry)
+
+Disposition: ACCEPTED -> DEF-551
+
+## ADV-208: No size bound on captured `message`/`stack_trace`/`context` - a single >256 KB capture is queued but can never be delivered, and it blocks the flush head (poison pill)
+
+- Session: diff-pass
+- Suggested severity: MEDIUM
+
+What I did: launched the built app against the shipped (real) Function URL and captured
+one error whose `message` was 300 KB (`'A'.repeat(300*1024)`), then waited 20 s (past the
+2 s debounce plus the full 5-try backoff) and read the queue file and app liveness.
+
+Expected: capture either bounds/splits the payload or drops it locally so it cannot
+poison the outbound pipeline; the report eventually leaves the queue.
+
+Actual: `capture` accepted it (`{"ok":true,"queued":1}`) and persisted a 307,713-byte row.
+The route caps the batch at 256 KB and returns 413 (`hello.ts:39`), so the POST always
+fails; the client retries 5 times then gives up without acknowledging, and the row stays
+at the head of the queue. `peek(batchSize)` always returns oldest-first, so every later
+flush retries the same oversized head and no newer report can drain until >200 newer rows
+evict it via drop-oldest - i.e. up to 200 real reports are silently never sent. App stayed
+alive (no crash). The queue file can also balloon toward 200 x ~300 KB.
+
+Screenshot / log: screenshots/phase101-adv/probe-oversize.log,
+driver screenshots/phase101-adv/p101-oversize.cjs
+
+Disposition: ACCEPTED -> DEF-552
+
+## ADV-209: The transport has no request timeout and the single-flight guard never resets on a hung connection - one silent endpoint wedges the bug-report pipeline for the whole session
+
+- Session: diff-pass
+- Suggested severity: MEDIUM
+
+What I did: started a local TCP server that accepts the connection and reads the request
+but never responds, pointed `TFLEX_FUNCTION_API_URL` at it, launched the built app, made
+one capture (flush starts and hangs), waited past the debounce, made a second capture,
+then waited another 20 s and read the queue plus the server's accept/request counters.
+
+Expected: `fetch` has a timeout/AbortController, a hung socket is abandoned, the queue is
+retried/recovered on a later flush, and the UI/capture path is unaffected.
+
+Actual: the server saw exactly 1 accept / 1 request; 24 s later both `hang-probe-1` and
+`hang-probe-2` were still queued and no second request was ever attempted. `runFlush`
+(`capture.ts:231`) `await`s `fetch` with no `AbortSignal`, so the promise never settles;
+`flush()` (`capture.ts:144-151`) keeps returning that same never-settling `flushPromise`,
+so `scheduleFlush` is a no-op for every later capture. The app did not crash and the UI
+stayed responsive, but no bug report is ever delivered again until restart. Only a probe
+server was used; no product code was changed.
+
+Screenshot / log: screenshots/phase101-adv/probe-hang.log,
+driver screenshots/phase101-adv/p101-hang.cjs
+
+Disposition: ACCEPTED -> DEF-553

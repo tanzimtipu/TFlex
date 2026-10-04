@@ -97,6 +97,13 @@ import { planCaptionMaximize } from './window-maximize';
 import { closePrintWindow, notifyPrintDocumentGone, openPrintWindow } from './print-window';
 import { createTabWindows } from './services/tabWindows';
 import { extractFileArgument, isPdfFamilyTarget, looksLikeOpenablePath, looksLikePdfPath } from './open-path';
+import type { BugReportInput } from '../shared/bugReport';
+import {
+  createBugReportService,
+  installIpcHandlerCapture,
+  registerBugReportIpc,
+  type BugReportService,
+} from './services/bug-report';
 
 function mainModuleDir(): string {
   return __dirname;
@@ -115,6 +122,74 @@ app.setName('Jovrel');
 // In production the module-level init below calls start() automatically;
 // during vitest runs that block is skipped and the test drives start().
 const _isVitest = typeof process !== 'undefined' && process.env.VITEST === 'true';
+
+// Phase 101 — always-on main-process bug capture. The service is created once
+// `start()` reaches the accounts wiring; failures before that are buffered
+// (bounded) and replayed into it. Capture is in-memory and synchronous; the
+// network write is a debounced, single-flight background flush.
+let bugReportService: BugReportService | null = null;
+const pendingBugReports: BugReportInput[] = [];
+const MAX_PENDING_BUG_REPORTS = 50;
+
+function describeUnknownFailure(value: unknown): string {
+  if (value instanceof Error) return value.message;
+  if (typeof value === 'string') return value;
+  if (value === undefined) return 'undefined';
+  if (value === null) return 'null';
+  try {
+    return JSON.stringify(value) ?? String(value);
+  } catch {
+    return String(value);
+  }
+}
+
+function failureInput(
+  error: unknown,
+  category: BugReportInput['category'],
+  level: BugReportInput['level'],
+  handled: boolean,
+): BugReportInput {
+  const err = error instanceof Error ? error : null;
+  return {
+    level,
+    category,
+    component: 'main',
+    message: describeUnknownFailure(error),
+    errorName: err?.name,
+    stackTrace: err?.stack,
+    handled,
+  };
+}
+
+function captureMainFailure(input: BugReportInput): void {
+  if (bugReportService !== null) {
+    bugReportService.capture(input);
+    return;
+  }
+  if (pendingBugReports.length < MAX_PENDING_BUG_REPORTS) {
+    pendingBugReports.push(input);
+  }
+}
+
+// Capture a rejected `ipcMain.handle` result. The wrapper re-throws unchanged,
+// so no existing handler's behaviour changes.
+installIpcHandlerCapture(ipcMain, (channel, error) => {
+  captureMainFailure({
+    ...failureInput(error, 'ipc-handler', 'error', true),
+    context: { channel },
+  });
+});
+
+// Registered as early as the entry allows (module scope, before start()). The
+// handlers keep the process alive instead of crashing, per the always-on spec.
+if (!_isVitest) {
+  process.on('uncaughtException', (error) => {
+    captureMainFailure(failureInput(error, 'uncaught-exception', 'fatal', false));
+  });
+  process.on('unhandledRejection', (reason) => {
+    captureMainFailure(failureInput(reason, 'unhandled-rejection', 'error', false));
+  });
+}
 
 // Phase 35 — paths the OS handed us (launch argv or a second instance) that
 // arrived before the renderer was ready to receive them. Flushed once the
@@ -460,6 +535,29 @@ export async function start(): Promise<void> {
   registerAccountsIpc(ipcMain, accountsVault, accountsSync, () =>
     getAccountsConfig(process.env, app.getAppPath()),
   );
+
+  // Phase 101 — the always-on bug-capture service. The endpoint comes from the
+  // same `getAccountsConfig` accessor the accounts transport uses (env
+  // override, else the shipped package.json block); when it is null the
+  // service still queues locally. Main-process captures that arrived before
+  // this point are replayed into it here, then the renderer channel is opened.
+  const bugReport = createBugReportService({
+    userDataDir: app.getPath('userData'),
+    config: getAccountsConfig(process.env, app.getAppPath()),
+    getSessionUserId: async () => {
+      const session = await accountsVault.getSession();
+      return session === null ? null : session.user.id;
+    },
+    appVersion: app.getVersion(),
+    build: process.env.TFLEX_BUILD ?? null,
+    environment: process.env.TFLEX_BUG_REPORT_ENV ?? 'production',
+    locale: app.getLocale?.() ?? null,
+  });
+  bugReportService = bugReport;
+  for (const pending of pendingBugReports.splice(0)) {
+    bugReport.capture(pending);
+  }
+  registerBugReportIpc(ipcMain, bugReport);
 
   // Phase 46 - the loopback callback listener for Google sign-in. The
   // renderer runs from `file://`, so its origin is not an absolute URL and the

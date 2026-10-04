@@ -5,6 +5,185 @@
 > inspect the current `OPEN`, `FIX-READY`, and `DISPUTED` entries first; closed records are
 > historical evidence and must not be loaded wholesale.
 
+## DEF-549: Phase 101 redaction covers only `context` - secrets in `message`, `error_name`, `stack_trace` and breadcrumb messages reach the unauthenticated public `bug_reports` table
+
+- Status: CLOSED
+- Severity: HIGH - secrets (API keys, bearer tokens, passwords) planted in free-text error fields are transmitted to and stored in the unauthenticated public `bug_reports` table unredacted.
+- Found by: adversary (ADV-205)
+- Phase: 101
+- Files: `src/main/services/bug-report/capture.ts:126` (`redactContext(input.context)` redacts only `context`), `src/main/services/bug-report/capture.ts:153-180` (`buildRow` copies `input.message`, `input.errorName`, `input.stackTrace` and `breadcrumbs` raw), `src/main/services/bug-report/redact.ts:44-50` (`redactString` knows the secret classes but is never applied to these fields)
+
+Steps to reproduce:
+1. Read the Phase 101 diff and probe the running app (built `dist/main/index.js` from source at `21:50Z`, launched through `e2e/lib/launch.cjs`, transport pointed at an unreachable local port so no probe row reached the database).
+2. Drive `window.tflex.bugReport.capture(...)` with secrets planted in every free-text field: `message:'token sk-abc123 Authorization: Bearer eyJ...'`, `errorName:'password=hunter2'`, `stackTrace:'... apiKey=SECRETKEY ... bearer eyJ...'`, plus a nested `context`.
+3. Read the persisted `{userData}/bug-reports-queue.json` immediately after.
+4. Fire a renderer `unhandledrejection` whose reason carried a Bearer token and capture a second row to inspect its breadcrumbs.
+
+Expected: secrets are stripped from every persisted/transmitted field, not just `context` (the preload/renderer forwards `message`, `error_name`, `stack_trace`; `transport.ts` POSTs the whole row verbatim to the public route; `hello.ts` inserts whatever it is given; the `public.bug_reports` row therefore carries exactly the queued text).
+
+Actual: `capture.ts:126` redacts only `redactContext(input.context)`; `buildRow` (`capture.ts:153-180`) copies `input.message`, `input.errorName`, `input.stackTrace` and `breadcrumbs` raw. The persisted row (screenshots/phase101-adv/probe1-redaction.json) retained, unredacted: `message` = `token sk-abc123 Authorization: Bearer eyJ...`, `error_name` = `password=hunter2`, `stack_trace` = `... apiKey=SECRETKEY ... bearer eyJ...`. Only `context` was masked (`password:[redacted]`, `nested.apiKey:[redacted]`, `arr[0].secret:[redacted]`). Breadcrumbs carry prior rows' messages unredacted (`probe-breadcrumbs.json`: row 2's breadcrumbs = a row-1 message containing `token=AAAA1111`). Because the transport posts the row unchanged and the route is unauthenticated, those secrets land in `public.bug_reports`. `redactString` already knows how to strip these classes (`redact.ts:44-50`); it is simply never applied to the message/error/stack/breadcrumb fields.
+
+Screenshot: screenshots/phase101-adv/probe1-redaction.json, screenshots/phase101-adv/probe-breadcrumbs.json, screenshots/phase101-adv/raw-probes.log, driver screenshots/phase101-adv/p101-adv-driver.cjs and screenshots/phase101-adv/p101-bc.cjs
+
+History:
+- qa (TFL-759, 2026-10-05): filed from accepted ADV-205 (TFL-758 diff-pass).
+- CTO (TFL-739, 2026-10-05): FIX-READY - backend-dev (TFL-760) reports `buildRow` now `redactString()`s `message`/`error_name`/`stack_trace` and maps breadcrumbs through `redactValue`; unit tests cover the secret classes. Awaiting qa retest to CLOSE.
+- qa (TFL-762, 2026-10-05): REOPENED (FAIL). Retest on the rebuilt app (TFL-762 `npm.cmd run build`) with `TFLEX_FUNCTION_API_URL` pointed at a stub recorder that captures every POST body (`screenshots/phase101-qa/p101-qa-redaction.cjs`). The transmitted row's `message` was `token sk-abc123 Authorization=[redacted] [redacted]` - the bare API key `sk-abc123` is still present in the public row. `eyJx.y.z`, `hunter2` and `SECRETKEY` were redacted, `context.password === '[redacted]'`, and row-2 breadcrumbs carried no bearer token; only the separator-less API key leaks. Failing output: `screenshots/phase101-qa/p101-qa-redaction.json` (`row1.leaks: ["sk-abc123"]`).
+- qa (TFL-764, 2026-10-05): CLOSED (PASS). Retest after the TFL-763 `PROVIDER_KEY` fix, on the main bundle rebuilt from current source (`npm.cmd run build:node`), via `e2e/def549_retest.spec.cjs`: drives `window.tflex.bugReport.capture(...)` with the exact TFL-762 vector, reads the persisted `{userData}/bug-reports-queue.json`, and captures the transmitted `POST /bug-reports` body with a local stub recorder. Transmitted row `message` is now `token [redacted] Authorization=[redacted] [redacted]` - `sk-abc123` gone, `token`/`Authorization=`/`[redacted]` intact. Re-confirmed `eyJx.y.z`, `password=hunter2`, `apiKey=SECRETKEY` and `context.password` all redacted, and `risk-assessment desk-lamp task-list` left intact. Evidence: `screenshots/phase101-qa/p101-qa-redaction.json` (1 e2e passed; focused `test/unit/main/bugReport.test.ts` 22/22; neighbours 34/34).
+
+## DEF-550: The public `POST /bug-reports` route has no per-batch row cap or rate limit - anonymous write amplification into `public.bug_reports`
+
+- Status: CLOSED
+- Severity: LOW - anonymous write amplification into the public table; not a correctness break, but unbounded storage abuse with no throttle.
+- Found by: adversary (ADV-206)
+- Phase: 101
+- Files: `hello.ts` (`POST /bug-reports` route: public, no per-request row cap, no throughput limit)
+
+Steps to reproduce:
+1. Curl the live public route `https://br-purple-tooth-b31y4y7b-api.compute.c-4.ap-southeast-1.aws.neon.tech/bug-reports` with no credentials: one request of 100 rows, then 10 rapid single-row requests, then a single oversized (300 KB) request.
+2. Count accepted rows in the database and clean up all `adv-%` probe rows afterward (`delete from public.bug_reports where message like 'adv-%'`, 115 rows removed).
+
+Expected: at minimum a per-request row/size bound and some throughput limit (the cap is 256 KB per batch, but a batch may hold unbounded rows under that byte cap; nothing limits request frequency).
+
+Actual: all 110 rows inserted (`{"inserted":100}` then ten `{"inserted":1}`), 10 rapid requests returned 200 in 2.2 s, and no throttling appeared. Any anonymous caller can append arbitrary volumes of rows to `public.bug_reports` (write amplification / storage abuse). The `adv-*` rows were deleted after the probe; the table was left clean.
+
+Screenshot: screenshots/phase101-adv/probe2-route.log, driver screenshots/phase101-adv/p101-route-probe.cjs
+
+History:
+- qa (TFL-759, 2026-10-05): filed from accepted ADV-206 (TFL-758 diff-pass).
+- CTO (TFL-739, 2026-10-05): FIX-READY - backend-dev (TFL-760) reports the route now enforces a 50-row per-batch cap (400 `too-many-rows`); full throughput rate limiting is deferred to backlog TFL-761. Awaiting qa retest to CLOSE.
+- qa (TFL-762, 2026-10-05): CLOSED (PASS). Live-route probe `screenshots/phase101-qa/p101-qa-route.cjs`: 51 rows -> `400 {"error":"too-many-rows"}` (nothing inserted); 50 valid rows -> `200 {"inserted":50}` (exactly 50 `qa-cap-*` rows confirmed by SQL, then deleted). Log: `screenshots/phase101-qa/p101-qa-route-log.json`.
+
+## DEF-551: The route inserts a batch row-by-row with no transaction - a mid-batch invalid row inserts the earlier rows, returns 500 with the raw Postgres constraint name, and the client's at-least-once retry duplicates them
+
+- Status: CLOSED
+- Severity: MEDIUM - partial commit on an invalid batch, leaked internal Postgres detail, and permanent duplication of the good rows under the client's retry.
+- Found by: adversary (ADV-207)
+- Phase: 101
+- Files: `hello.ts` (row-by-row inserts with no transaction), `src/main/services/bug-report/capture.ts:230-238` (client does not `acknowledge` on a thrown transport error, so a retried flush re-POSTs the same batch)
+
+Steps to reproduce:
+1. Post a 3-row batch where rows 1-2 are valid and row 3 has `level:"BOGUS"`, then query `public.bug_reports` for the two good messages.
+2. Also post a single invalid `level` to read the error body.
+
+Expected: an invalid row rejects the whole request with a 4xx before any insert (or the batch is atomic), and no internal database detail is returned.
+
+Actual: the good rows `adv-partial-good-0` and `adv-partial-good-1` were both inserted (confirmed by SQL) while the response was `500 {"error":"new row for relation \"bug_reports\" violates check constraint \"bug_reports_level_check\""}` - partial commit, no transaction, and the Postgres constraint name is leaked to the anonymous caller. The client (`capture.ts:230-238`) does NOT `acknowledge` on a thrown transport error, so a retried flush re-POSTs the same batch and inserts the good rows a second time, forever, for any batch that contains a row the server cannot insert. `bug-reports-*` rows were cleaned up after the probe.
+
+Screenshot: screenshots/phase101-adv/probe2-route.log (plus the mixed-batch curl and follow-up SQL in this entry)
+
+History:
+- qa (TFL-759, 2026-10-05): filed from accepted ADV-207 (TFL-758 diff-pass).
+- CTO (TFL-739, 2026-10-05): FIX-READY - backend-dev (TFL-760) reports the route validates every row before one atomic multi-row INSERT (400 `invalid-level` / `too-many-rows`), returns a generic `insert-failed` with no constraint name, and the client drops a permanent 4xx batch instead of retrying it. Awaiting qa retest to CLOSE.
+- qa (TFL-762, 2026-10-05): CLOSED (PASS). Live-route probe `screenshots/phase101-qa/p101-qa-route.cjs`: 3-row mixed batch (2 valid + `level:"BOGUS"`) -> `400 {"error":"invalid-level"}` and SQL showed 0 rows for the two good messages `qa-partial-good-0/1` (atomic, nothing inserted). A row that passes route validation but has `occurred_at:"not-a-timestamp"` -> `500` with body exactly `{"error":"insert-failed"}` and no `bug_reports_*` constraint name. Probe rows deleted (0 remaining). Log: `screenshots/phase101-qa/p101-qa-route-log.json`.
+
+## DEF-552: No size bound on captured `message`/`stack_trace`/`context` - a single >256 KB capture is queued but can never be delivered, and it blocks the flush head (poison pill)
+
+- Status: CLOSED
+- Severity: MEDIUM - one oversized capture permanently blocks the outbound queue head, so up to 200 real reports can be silently never sent.
+- Found by: adversary (ADV-208)
+- Phase: 101
+- Files: `src/main/services/bug-report/capture.ts` (capture accepts unbounded fields; `peek(batchSize)` always returns oldest-first), `hello.ts:39` (256 KB batch cap -> 413)
+
+Steps to reproduce:
+1. Launch the built app against the shipped (real) Function URL and capture one error whose `message` was 300 KB (`'A'.repeat(300*1024)`).
+2. Wait 20 s (past the 2 s debounce plus the full 5-try backoff) and read the queue file and app liveness.
+
+Expected: capture either bounds/splits the payload or drops it locally so it cannot poison the outbound pipeline; the report eventually leaves the queue.
+
+Actual: `capture` accepted it (`{"ok":true,"queued":1}`) and persisted a 307,713-byte row. The route caps the batch at 256 KB and returns 413 (`hello.ts:39`), so the POST always fails; the client retries 5 times then gives up without acknowledging, and the row stays at the head of the queue. `peek(batchSize)` always returns oldest-first, so every later flush retries the same oversized head and no newer report can drain until >200 newer rows evict it via drop-oldest - i.e. up to 200 real reports are silently never sent. App stayed alive (no crash). The queue file can also balloon toward 200 x ~300 KB.
+
+Screenshot: screenshots/phase101-adv/probe-oversize.log, driver screenshots/phase101-adv/p101-oversize.cjs
+
+History:
+- qa (TFL-759, 2026-10-05): filed from accepted ADV-208 (TFL-758 diff-pass).
+- CTO (TFL-739, 2026-10-05): FIX-READY - backend-dev (TFL-760) reports capture bounds `message`<=8000, `error_name`<=1000, `stack_trace`<=32000, `context`/breadcrumbs JSON<=16000 (worst-case row ~73k chars, well under the 256 KB cap). Awaiting qa retest to CLOSE.
+- qa (TFL-762, 2026-10-05): CLOSED (PASS). Rebuilt-app probe against the shipped route `screenshots/phase101-qa/p101-qa-oversize.cjs`: a 307,212-char `message` persisted as length 8000 ending `...[truncated]`; the truncated row landed in `public.bug_reports` (SQL: `len=8000`, `tail=A...[truncated]`); a later capture `qa-after-oversize` also landed and the queue drained to 0 rows (no poison-pill head). Probe rows deleted (0 remaining). Log: `screenshots/phase101-qa/p101-qa-oversize.json`.
+
+## DEF-553: The transport has no request timeout and the single-flight guard never resets on a hung connection - one silent endpoint wedges the bug-report pipeline for the whole session
+
+- Status: CLOSED
+- Severity: MEDIUM - a single hung endpoint silently wedges the bug-report pipeline for the rest of the session; no report is delivered again until restart.
+- Found by: adversary (ADV-209)
+- Phase: 101
+- Files: `src/main/services/bug-report/capture.ts:231` (`runFlush` `await`s `fetch` with no `AbortSignal`), `src/main/services/bug-report/capture.ts:144-151` (`flush()` keeps returning the same never-settling `flushPromise`)
+
+Steps to reproduce:
+1. Start a local TCP server that accepts the connection and reads the request but never responds, point `TFLEX_FUNCTION_API_URL` at it, launch the built app, make one capture (flush starts and hangs), wait past the debounce, make a second capture, then wait another 20 s and read the queue plus the server's accept/request counters.
+
+Expected: `fetch` has a timeout/AbortController, a hung socket is abandoned, the queue is retried/recovered on a later flush, and the UI/capture path is unaffected.
+
+Actual: the server saw exactly 1 accept / 1 request; 24 s later both `hang-probe-1` and `hang-probe-2` were still queued and no second request was ever attempted. `runFlush` (`capture.ts:231`) `await`s `fetch` with no `AbortSignal`, so the promise never settles; `flush()` (`capture.ts:144-151`) keeps returning that same never-settling `flushPromise`, so `scheduleFlush` is a no-op for every later capture. The app did not crash and the UI stayed responsive, but no bug report is ever delivered again until restart. Only a probe server was used; no product code was changed.
+
+Screenshot: screenshots/phase101-adv/probe-hang.log, driver screenshots/phase101-adv/p101-hang.cjs
+
+History:
+- qa (TFL-759, 2026-10-05): filed from accepted ADV-209 (TFL-758 diff-pass).
+- CTO (TFL-739, 2026-10-05): FIX-READY - backend-dev (TFL-760) reports the transport aborts after a 10000 ms AbortController timeout (offline kind) so the single-flight flush resets and a later flush retries with rows kept. Awaiting qa retest to CLOSE.
+- qa (TFL-762, 2026-10-05): CLOSED (PASS). Rebuilt-app probe against a local TCP server that never responds `screenshots/phase101-qa/p101-qa-timeout.cjs`: within 15 s the server observed 2 requests (first attempt + a second flush attempt after the 10 s abort), the row `qa-hang-1` was still queued (not lost), and the app stayed alive. Log: `screenshots/phase101-qa/p101-qa-timeout.json`.
+
+## DEF-554: Google sign-in 400 "Session challenge cookie not found" - the app presents the challenge held by Electron's session, but Neon Auth's verifier is bound to the challenge of the external browser that reached the hosted callback
+
+- Status: OPEN
+- Severity: HIGH - every "Continue with Google" on the installed build fails after the browser returns; the same class was re-reported by the operator on 2026-10-04 and the 1.41.2 (verifier capture) and 1.43.0/Phase-51 (clear stale challenge) fixes both addressed the wrong mechanism.
+- Found by: qa (TFL-757 live measurement); root cause recorded by CTO
+- Phase: TFL-751
+- Files: `src/renderer/accounts/oauthLoopback.ts:213-218` (opens the provider URL through `openAuthUrl` -> `shell.openExternal`), `src/main/services/accounts/os-links.ts:58-67`, `src/main/index.ts:1218-1229` (`accounts:openAuthUrl`, Phase 50), `src/renderer/accounts/adapter.ts:294-299` (`signIn.social` posts from the renderer, establishing the challenge cookie in `session.defaultSession`), `src/main/services/accounts/oauth-exchange.ts:157-186` (`/get-session` presents the challenge cookie), `src/main/services/accounts/auth-cookies.ts` (the Phase-51 clear), `src/main/window.ts:84` + `src/main/index.ts:1377-1391` (the same-session auth popup handler - still present, currently unused for Google)
+
+Steps to reproduce (live, real Electron, real Neon Auth host - no stub):
+1. `env -u ELECTRON_RUN_AS_NODE npm.cmd run build`.
+2. `env -u ELECTRON_RUN_AS_NODE npm.cmd run test:e2e -- e2e/phase522_live_roundtrip.spec.cjs` (real OS default browser; `shell.openExternal` NOT stubbed). Verdict FAIL.
+3. Trace kinds: `challenge-clear, loopback-hit, exchange-cookies, exchange-get-session, exchange-failed`; final `getStatus` `{status:"signed-out",email:null}`.
+4. Read `%APPDATA%/Jovrel/oauth-trace.log` (and the renderer error message).
+
+Expected: `/get-session` mints the session and the account menu shows the signed-in user; no `step=session-rejected` 400.
+
+Actual: `400 Session challenge cookie not found`. Verbatim attribute-level diagnostic (NAMES/attributes only, no values):
+`step=session-rejected status=400 cookies=__Secure-neon-auth.session_challange,__Secure-neon-auth.session_challenge attrs=__Secure-neon-auth.session_challenge|ep-fragrant-pond-b3gqd6cf.neonauth.c-4.ap-southeast-1.aws.neon.tech|/|no_restriction|2026-10-04T22:08:33.635Z;__Secure-neon-auth.session_challange|ep-fragrant-pond-b3gqd6cf.neonauth.c-4.ap-southeast-1.aws.neon.tech|/|no_restriction|2026-10-04T22:08:33.636Z verifier=present provider="Session challenge cookie not found"`
+
+Measured facts (attribute dump `e2e/tfl751_cookie_attrs.spec.cjs`):
+- `challenge-clear present=[]` - at flow start NO challenge cookie existed, so the Phase-51 clear removed nothing; the "stale challenge" theory is DISPROVEN.
+- The flow starts ONCE (`challenge-clear=1`, `loopback-hit=1`, `exchange-get-session=1`); the TFL-672 "started twice" observation did not reproduce.
+- The flow's own sign-in mints BOTH spellings fresh, one domain/path/`sameSite=no_restriction`, ~10-minute expiry, and the app forwards both to `/get-session`, which rejects them.
+
+Root cause (named): Neon Auth's hosted OAuth callback binds its one-time `neon_auth_session_verifier` to the session-challenge cookie held by the client that REACHED the callback - here the OS DEFAULT browser, which holds none of the app's cookies. That client's callback establishes the binding; the app's `/get-session` then presents the challenge held by Electron's `defaultSession` (minted by the renderer's `signIn.social`). Two different cookie jars can never match, no matter how fresh or how many challenge cookies the app holds. This is why the Phase 46/47 in-app popup flow (which shares `session.defaultSession`) could complete the exchange and the Phase 50 external-browser flow cannot.
+
+Fix options:
+- A (recommended, product-visible): perform the provider round-trip in an in-app child `BrowserWindow` sharing `session.defaultSession` (the existing `installAuthPopupHandler`), so the callback's challenge cookie and the exchange share one jar. Restores correctness; changes the sign-in UX from the OS browser (operator-requested in Phase 50) to an app window.
+- B (operator/server-owned): a Neon Auth flow/config that returns the session to the app without a client-held challenge cookie. Requires operator/Neon action; credentials and the Google client must not be changed by the team.
+
+Screenshot: screenshots/phase522-live-roundtrip.png (account panel shows the `attrs=` diagnostic in the error banner), screenshots/tfl751-cookie-attrs.png. Evidence doc: TFL-757 `tfl757_evidence.md`.
+
+History:
+- qa (TFL-757, 2026-10-05): measured live FAIL with attribute-level evidence; root cause named by CTO (TFL-751). Prior DEF-365 / 1.41.2 / 1.43.0 addressed callback capture and stale cookies, not this cross-session binding.
+
+## DEF-548: Phase 101 always-on bug capture never reaches `public.bug_reports` — the transport's hardwired null token makes every insert fail with AuthRequiredError (TFL-746 criterion 8)
+
+- Status: CLOSED
+- Severity: HIGH — breaks the Phase 101 stated requirement that a forced main/renderer error produces a row in `public.bug_reports`; every report is silently dropped server-side (kept only in the bounded local queue).
+- Found by: qa (TFL-746, Phase 101 chunk 4 focused verification)
+- Phase: 101
+- Files: `src/main/services/bug-report/transport.ts:47` (`fetchWithToken(() => Promise.resolve(null), fetchImpl)`), `src/main/services/bug-report/capture.ts:224-240` (flush retries then leaves rows queued), `e2e/phase101_bugCapture.spec.cjs` (new focused spec)
+
+Steps to reproduce:
+1. `npm.cmd run build` (the checked-in `dist/main` was older than the Phase 101 sources, so the bug-report wiring had to be rebuilt).
+2. `npm.cmd run test:e2e -- e2e/phase101_bugCapture.spec.cjs` -> `1 passed`. The spec launches via `e2e/lib/launch.cjs`, force-dispatches `phase101-forced-renderer-error` then `phase101-forced-main-error`, waits 6000 ms, and asserts the renderer<->main bridge still answers (`probe.ok === true`, 1 window).
+3. Read the isolated userData queue (`%TEMP%\tflex-test-userData-*\bug-reports-queue.json`): it still contains all three rows (two forced errors + the probe), so nothing was acknowledged — `queue ack` only happens after the transport accepts.
+4. `Neon run_sql` on branch `br-purple-tooth-b31y4y7b` / `neondb`: `select count(*) from public.bug_reports` -> `0`; the two-message query returns `[]`.
+5. `src/main/services/bug-report/transport.ts:47` passes `() => Promise.resolve(null)` as the token supplier. `@neondatabase/postgrest-js` `fetchWithToken` (`dist/index.mjs:141`) returns `AuthRequiredError` when the token is falsy, before any fetch. Probe (`screenshots/phase101/transport_nulltoken_probe.log`): `client.from('bug_reports').insert([...])` -> `{"error":{"message":"AuthRequiredError: Authentication required. A valid token is needed...","status":0}}`.
+6. Unauthenticated `GET https://ep-fragrant-pond-b3gqd6cf.apirest.../neondb/rest/v1/` -> HTTP 400 `missing authentication credentials: required authorization bearer token in JWT format`. The branch Data API is active with `db_anon_role=anonymous`, RLS off and `anonymous` holding INSERT, so the intended path is an anonymous-role JWT — which the transport never mints or supplies.
+
+Expected: a forced main error produces one row with `component='main'`, `category IN ('uncaught-exception','unhandled-rejection')`, and a forced renderer error produces one row with `component='renderer'`, `category='renderer-error'`, in `public.bug_reports` (Phase 101 criterion 8).
+
+Actual: both captures are built correctly and enqueued with the right `component`/`category` (local queue snapshot in the e2e log), but no row is ever inserted. With a null token the client throws before any HTTP request, `runFlush` retries with backoff and then gives up, leaving the rows in the local queue. `public.bug_reports` remains empty.
+
+Screenshot: screenshots/phase101/transport_nulltoken_probe.log; e2e log screenshots/phase101/tfl746_e2e.log
+
+History:
+- qa (TFL-746, 2026-10-04): filed. New focused spec `e2e/phase101_bugCapture.spec.cjs` passes 1/1; the two capture rows are correct in the local queue but the persistence proof returns 0 rows. Blast-radius units `test/unit/main/bugReport.test.ts` 16/16 and `test/unit/renderer/bugReport.test.tsx` 5/5 pass; the transport unit test injects a fake client, so the real null-token path is never covered — the escape. Fix owner (CTO-corrected): backend-dev (`src/main/services/bug-report/transport.ts`) — the filing guessed frontend-dev, but the transport is main-process code.
+- CTO (TFL-739, 2026-10-04): confirmed root cause and re-scoped the fix. Independently verified with an unauthenticated `GET` on the branch Data API root: HTTP 400 `missing authentication credentials: required authorization bearer token in JWT format`. The branch Data API rejects EVERY request without a JWT, so there is no anonymous-role JWT to mint and the bare-fetch variant cannot work either; the Phase 101 CTO ruling "ingest = the Data API with a null token" is INVALID. CTO ruling for the fix: switch the ingest to the EXISTING `api` Neon Function via a new public `POST /bug-reports` route that INSERTs server-side using the injected `DATABASE_URL` — the "existing API path" the phase constraint prefers, with every credential kept server-side and no anonymous client credential. Two children: (a) board/operator provisions the route (the function source `hello.ts` is a repo-root file no build role may edit) and redeploys; (b) backend-dev reworks `transport.ts` to POST the batch to `${functionApiUrl}/bug-reports` with a token-free fetch (a bound `globalThis.fetch` reference, never a literal `fetch(` call, to stay inside the conventions gate), keeps the queue/flush/offline taxonomy, and updates the transport unit test. qa then re-runs `e2e/phase101_bugCapture.spec.cjs` to CLOSE this defect. Status stays OPEN until that retest.
+- qa (TFL-755, 2026-10-04): CLOSED. Rebuilt (`npm.cmd run build`: typecheck + vite renderer + esbuild node all ok) and re-ran `npm.cmd run test:e2e -- e2e/phase101_bugCapture.spec.cjs` -> `1 passed (1.5s)` (1 file / 1 test; log `[P101] probe={"ok":true,"queued":1} windows=1`). Persistence proof on branch `br-purple-tooth-b31y4y7b` / `neondb`: the two-message query returned exactly the required rows - `{component:"main", category:"uncaught-exception", message:"phase101-forced-main-error", level:"fatal", app_version:"1.49.0", session_id:"bc947cc1-b4e2-4aa0-9081-b92bff055a7c", occurred_at:"2026-10-04T21:33:13.006Z"}` and `{component:"renderer", category:"renderer-error", message:"phase101-forced-renderer-error", level:"error", app_version:"1.49.0", session_id:"bc947cc1-b4e2-4aa0-9081-b92bff055a7c", occurred_at:"2026-10-04T21:33:13.003Z"}`. Cleanup: `delete ... where message in ('phase101-forced-main-error','phase101-forced-renderer-error','phase101-queue-probe')` then `select count(*) ... where message like 'phase101-%'` -> `0`. Blast-radius units: `test/unit/main/bugReportTransport.test.ts` 5/5, `test/unit/main/bugReport.test.ts` 16/16, `test/unit/renderer/bugReport.test.tsx` 5/5 (3 files / 26 tests passed). Fix confirmed; defect CLOSED.
+
 ## DEF-545: The Phase 100 DriftGuard is blind to motion-duration LONGHANDS and exempts a whole declaration when it references a motion token
 
 - Status: CLOSED

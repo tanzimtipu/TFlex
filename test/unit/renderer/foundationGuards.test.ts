@@ -50,6 +50,7 @@ const MIGRATED_SURFACES: readonly string[] = [
   "annotations/ColorPalette.tsx",
   "annotations/StampAnnotations.tsx",
   "annotations/StampOverlay.tsx",
+  "bug-report/BugReportErrorBoundary.tsx",
   "components/AboutDialog.tsx",
   "components/AccountMenu.tsx",
   "components/AccountsDialog.tsx",

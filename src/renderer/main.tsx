@@ -5,6 +5,8 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { App } from "./App";
+import { BugReportErrorBoundary } from "./bug-report/BugReportErrorBoundary";
+import { installBugReportGlobalHandlers } from "./bug-report/installGlobalHandlers";
 import { resolveRendererEntry, rendererEntryTitle } from "./print-window/context";
 import { PrintWindowApp } from "./print-window/PrintWindowApp";
 import "./styles.css";
@@ -25,9 +27,14 @@ if (entryTitle !== null) {
 
 const container = document.getElementById("root");
 if (container !== null) {
+  // Phase 101 - capture renderer failures (window.onerror / unhandledrejection
+  // and React render crashes) silently; the package is built in chunk 1.
+  installBugReportGlobalHandlers();
   createRoot(container).render(
     <StrictMode>
-      {entry.kind === "app" ? <App /> : <PrintWindowApp entry={entry} />}
+      <BugReportErrorBoundary>
+        {entry.kind === "app" ? <App /> : <PrintWindowApp entry={entry} />}
+      </BugReportErrorBoundary>
     </StrictMode>,
   );
 }
