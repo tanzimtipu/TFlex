@@ -341,6 +341,20 @@ describe("ContextPanel — the live thumbnail stack (re-parented ThumbnailRail)"
     }
   });
 
+  it("shows the designed empty state when the document has zero pages", () => {
+    const { host, unmount } = renderPanel({ pageCount: 0 });
+    try {
+      expect(thumbs(host)).toHaveLength(0);
+      const empty = host.querySelector("[data-context-panel-thumbs-empty]");
+      expect(empty).not.toBeNull();
+      expect(empty?.classList.contains("empty-state")).toBe(true);
+      expect(empty?.querySelector(".empty-state-headline")?.textContent).toBe("No pages to show");
+      expect(empty?.querySelector(".empty-state-mark")).not.toBeNull();
+    } finally {
+      unmount();
+    }
+  });
+
   it("PAINTS real previews: non-zero backing store + a blit, never a placeholder", async () => {
     const { host, unmount } = renderPanel({ pageCount: 3 });
     try {

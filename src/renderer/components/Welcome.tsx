@@ -1,6 +1,7 @@
 import type { ReactElement } from "react";
 import { File, FilePlus2, FolderOpen, Minus, Pencil, Plus, Sparkles, X } from "lucide-react";
 import { Icon } from "../icons/Icon";
+import { EmptyState } from "./EmptyState";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import type { RecentFile, SampleDocument } from "../../shared/types";
@@ -431,10 +432,12 @@ export function Welcome(props: WelcomeProps): ReactElement {
           </h3>
           {recentCount === 0 ? (
             <div className="recent-list">
-              <div className="recent-empty">
-                <span>No recent files yet.</span>
-                <span className="hint">Open a PDF and it will appear here.</span>
-              </div>
+              <EmptyState
+                icon={File}
+                headline="No recent files yet."
+                help="Open a PDF and it will appear here."
+                className="recent-empty"
+              />
             </div>
           ) : (
             <div className="recent-list">
@@ -489,9 +492,12 @@ export function Welcome(props: WelcomeProps): ReactElement {
             </div>
           ) : samples.length === 0 ? (
             <div className="samples-grid">
-              <div className="samples-empty">
-                No bundled samples. Place PDF files in <code>assets/samples/</code> and rebuild.
-              </div>
+              <EmptyState
+                icon={Sparkles}
+                headline="No bundled samples"
+                help="Place PDF files in assets/samples/ and rebuild."
+                className="samples-empty"
+              />
             </div>
           ) : (
             <div className="samples-grid">

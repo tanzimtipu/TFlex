@@ -25,8 +25,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { ChangeEvent, MouseEvent as ReactMouseEvent, ReactElement } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
-import { Pin, TextSearch } from 'lucide-react';
+import { Pin, Search, TextSearch } from 'lucide-react';
 import { Icon } from '../icons/Icon';
+import { EmptyState } from './EmptyState';
 import {
   PALETTE_DOCK_FULL_MESSAGE,
   STAGE_TAG_LABELS,
@@ -395,7 +396,7 @@ export function CommandPalette(props: CommandPaletteProps): ReactElement {
             >
               {rows.length === 0 && (
                 <li className="command-palette-empty" data-command-palette-empty>
-                  No matching tools
+                  <EmptyState icon={Search} headline="No matching tools" />
                 </li>
               )}
               {rows.map((row, index) => (

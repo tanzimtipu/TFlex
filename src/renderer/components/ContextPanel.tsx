@@ -33,6 +33,7 @@ import {
   FileSignature,
   GitMerge,
   Image as ImageIcon,
+  Images,
   PanelLeftClose,
   PanelRightOpen,
   ScanText,
@@ -42,6 +43,7 @@ import {
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { Icon } from '../icons/Icon';
+import { EmptyState } from './EmptyState';
 import { OutlinePanel, OutlineEditorContext, RulerStrip, ThumbnailRail } from './SideRail';
 import type { OutlineEditorConfig, RailTab, ThumbVerbs } from './SideRail';
 import { usePageThumbMenu } from './pageThumbMenu';
@@ -419,28 +421,37 @@ const pageCount = engineState.pageCount;
   const renderPages = (): ReactElement => (
     <>
       <div className="context-panel-thumbs" data-context-panel-thumbs>
-        <ThumbnailRail
-          doc={doc}
-          pageCount={pageCount}
-          currentPage={currentPage}
-          aspectRatio={defaultHeightPt / defaultWidthPt}
-          pageSizes={pageSizes}
-          rotations={engineState.rotations}
-          visibleToSource={visibleToSource}
-          proxyVisibleOrder={proxyVisibleOrder}
-          pageLabelMap={pageLabelMap}
-          canUndo={canUndo}
-          onOp={onOp}
-          onDelete={onDelete}
-          onReorder={onReorder}
-          onUndo={onUndo}
-          onJump={onJump}
-          crossDoc={crossDoc}
-          thumbVerbs={verbs}
-          onThumbContextMenu={openMenu}
-          pageSelection={pageSelection}
-          onPageSelectionChange={onPageSelectionChange}
-        />
+        {pageCount === 0 ? (
+          <EmptyState
+            icon={Images}
+            headline="No pages to show"
+            help="Open a PDF to see its page thumbnails."
+            data-context-panel-thumbs-empty
+          />
+        ) : (
+          <ThumbnailRail
+            doc={doc}
+            pageCount={pageCount}
+            currentPage={currentPage}
+            aspectRatio={defaultHeightPt / defaultWidthPt}
+            pageSizes={pageSizes}
+            rotations={engineState.rotations}
+            visibleToSource={visibleToSource}
+            proxyVisibleOrder={proxyVisibleOrder}
+            pageLabelMap={pageLabelMap}
+            canUndo={canUndo}
+            onOp={onOp}
+            onDelete={onDelete}
+            onReorder={onReorder}
+            onUndo={onUndo}
+            onJump={onJump}
+            crossDoc={crossDoc}
+            thumbVerbs={verbs}
+            onThumbContextMenu={openMenu}
+            pageSelection={pageSelection}
+            onPageSelectionChange={onPageSelectionChange}
+          />
+        )}
       </div>
       <div className="context-panel-actions-row">
         <button
@@ -519,9 +530,12 @@ const pageCount = engineState.pageCount;
           </span>
         </div>
         {pageEditContent.length === 0 ? (
-          <p className="context-panel-empty" data-edit-content-empty>
-            No editable content on this page.
-          </p>
+          <EmptyState
+            icon={TextCursor}
+            className="context-panel-empty"
+            data-edit-content-empty
+            headline="No editable content on this page."
+          />
         ) : (
           <div className="context-panel-list" data-edit-content-list>
             {pageEditContent.map((item) => (

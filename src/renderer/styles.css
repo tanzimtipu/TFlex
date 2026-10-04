@@ -1,8 +1,9 @@
 ﻿/* TFlex renderer styles
- * Single accent professional blue (#2563eb, Phase 13), neutral zinc/slate base,
- * two equally designed themes.
+ * Single accent professional violet (#7C3AED, Phase 96), neutral zinc/slate base,
+ * three equally designed themes (light, dark, frosted).
  * Inter via @fontsource-variable/inter. Density like VS Code / Linear.
- * No gradients, no purple, no giant radii. Motion is the global
+ * No gradients, no second brand hue beside the one violet accent, no giant
+ * radii. Motion is the global
  * --tf-* system (theme-independent): clearly visible, fast, fluid,
  * never bouncy — nothing ordinary above ~350ms. */
 
@@ -71,10 +72,11 @@
   --sp-5: 24px;
   --sp-6: 32px;
 
-  /* Accent — professional blue (Phase 13). The one accent is Tailwind's
-   * blue-600 #2563eb: hover lightens to blue-500, press deepens to
-   * blue-700. Every soft wash below derives from the same 37/99/235
-   * triple so the whole state ladder stays one hue. */
+  /* Accent — the one brand violet (Phase 96). The base accent is #7C3AED:
+   * hover lightens to #8B5CF6, press deepens to #6D28D9. Every soft wash
+   * below derives from the same 124/58/237 triple so the whole state ladder
+   * stays one hue. On the dark surfaces the accent INK brightens to #A78BFA
+   * (--accent-text / --sem-primary) while this base token is unchanged. */
   --accent: #7C3AED;
   --accent-text: #7C3AED;
   --accent-hover: #8B5CF6;
@@ -97,7 +99,7 @@
    * accent slab. Geometry and timing are identical in all three themes; only
    * the two wash values move per theme, to keep the glyph >= 4.5:1 on the
    * composited fill (measured by phase38LegibilityContrast.test.ts). */
-  --select-fill: rgba(15, 23, 42, 0.07);
+  --select-fill: rgba(15, 23, 42, 0.03);
   --select-edge: rgba(124, 58, 237, 0.45);
   --select-glyph: var(--sem-primary);
 
@@ -428,12 +430,16 @@
   --border-w-box: 2px;
   --radius-box: var(--radius-2);
 
-  /* Light theme tokens */
+  /* Light theme tokens. Phase 96-B — the chrome/nav surface ramp. Adjacent
+   * bands step by a deliberate ~3-7% relative-luminance delta so canvas,
+   * rail, toolbar and raised read as distinct layers instead of one flat
+   * sheet (base #ffffff -> toolbar #fafbfd -> rail #e8ecf1 -> panel #f1f4f8 ->
+   * canvas #f1f5f9, with raised #ffffff and elevated #fcfdfe above the base). */
   --bg-base: #ffffff;
-  --bg-sunken: #f8fafc;
+  --bg-sunken: #e4e9ef;
   --bg-raised: #ffffff;
-  --bg-toolbar: #fafafa;
-  --bg-rail: #f4f4f5;
+  --bg-toolbar: #fafbfd;
+  --bg-rail: #e8ecf1;
   --bg-canvas: #f1f5f9;
   /* Phase 33 — the Multi Mode pane canvas. Unlike the app chrome (which
    * steps aside in frosted so the wallpaper/glass reads), the PDF canvas
@@ -467,9 +473,9 @@
   --tf-tab-ink: #ffffff;
   --tf-tab-ink-soft: #e2e8f0;
   /* DEF-340 — the dock's stage-PRIMARY verb ink. It sits on the --accent-soft
-   * wash over --bg-elevated, and the plain --accent (#2563eb) only measured
-   * 4.27:1 there, below the 4.5:1 interactive-text floor. blue-700 is the same
-   * accent family one step deeper and measures 5.54:1 on that wash. The wash,
+   * wash over --bg-elevated, and the plain --accent (#7C3AED) only measured
+   * 4.27:1 there, below the 4.5:1 interactive-text floor. #6D28D9 is the same
+   * violet family one step deeper and measures 5.54:1 on that wash. The wash,
    * the accent itself and every family hue are unchanged. */
   --dock-primary-fg: #6D28D9;
 
@@ -481,10 +487,10 @@
    * resolves to the dark ink used on white paper. */
   --fg-on-page: #0f172a;
 
-  --border: #e2e8f0;
-  --border-strong: #cbd5e1;
-  --border-subtle: #eef2f6;
-  --divider: #e6eaef;
+  --border: #d7dee8;
+  --border-strong: #c0cad8;
+  --border-subtle: #e4e9f0;
+  --divider: #dde3ea;
 
   /* Phase 4 — menu surfaces. Tokenized per theme so the TitleBar
    * popover and any dropdown menu share one chrome (the dark values
@@ -500,17 +506,34 @@
   --sample-card-border: #e2e8f0;
   --sample-card-border-hover: rgba(124, 58, 237, 0.35);
 
-  /* Layered surfaces (light) */
-  --bg-secondary: #f4f6f8;
-  --bg-elevated: #fbfcfd;
-  --bg-panel: #f8fafc;
+  /* Layered surfaces (light) — one step above the base, ordered
+   * secondary < panel < elevated so raised content floats and panel
+   * bodies sit below the raised cards. */
+  --bg-secondary: #eef1f5;
+  --bg-elevated: #fcfdfe;
+  --bg-panel: #f1f4f8;
   --fg-disabled: #b6bcc6;
 
-  --shadow-page: 0 4px 18px rgba(15, 23, 42, 0.14);
-  --shadow-menu: 0 2px 8px rgba(15, 23, 42, 0.10), 0 8px 24px rgba(15, 23, 42, 0.12);
-  --shadow-dialog: 0 4px 16px rgba(15, 23, 42, 0.14), 0 12px 40px rgba(15, 23, 42, 0.18);
-  --shadow-popover: 0 2px 6px rgba(15, 23, 42, 0.08), 0 8px 24px rgba(15, 23, 42, 0.08);
-  --shadow-toast: 0 4px 12px rgba(15, 23, 42, 0.14), 0 2px 4px rgba(15, 23, 42, 0.08);
+  /* Phase 96 — THE ELEVATION LADDER. One depth scale for the whole app; the
+   * named-surface shadow tokens below re-point onto it (never a parallel
+   * value). Fixed surface -> depth contract:
+   *   chrome / toolbar / rail        = flat (no shadow)
+   *   panel / card / selected-group  = --elevation-1
+   *   popover / menu / flyout        = --elevation-2
+   *   dialog / sheet                 = --elevation-3
+   *   toast / floating chip          = --elevation-4
+   * Each step is a soft slate contact shadow plus a wider diffuse shadow;
+   * depth is visible but restrained (no heavy black slab, no hue cast). */
+  --elevation-1: 0 4px 18px rgba(15, 23, 42, 0.14);
+  --elevation-2: 0 2px 8px rgba(15, 23, 42, 0.10), 0 8px 24px rgba(15, 23, 42, 0.12);
+  --elevation-3: 0 4px 16px rgba(15, 23, 42, 0.14), 0 12px 40px rgba(15, 23, 42, 0.18);
+  --elevation-4: 0 4px 12px rgba(15, 23, 42, 0.14), 0 2px 4px rgba(15, 23, 42, 0.08);
+
+  --shadow-page: var(--elevation-1);
+  --shadow-menu: var(--elevation-2);
+  --shadow-dialog: var(--elevation-3);
+  --shadow-popover: var(--elevation-2);
+  --shadow-toast: var(--elevation-4);
 
   --placeholder-from: #e5e7eb;
   --placeholder-to: #d1d5db;
@@ -598,10 +621,10 @@
 
 :root[data-theme="dark"] {
   --bg-base: #0b0d0f;
-  --bg-sunken: #090b0d;
-  --bg-raised: #111419;
-  --bg-toolbar: #101318;
-  --bg-rail: #101419;
+  --bg-sunken: #08090b;
+  --bg-raised: #13171d;
+  --bg-toolbar: #12161b;
+  --bg-rail: #161b21;
   /* Phase-3 workspace: the document canvas is the app's deepest
    * surface in dark mode — the near-black #0B0D0F base — so a
    * paper-white page reads as a physical sheet floating in the
@@ -622,10 +645,12 @@
    * surface (its light/frosted default is the brand violet #7C3AED). */
   --brand-loader-dot: #fff;
 
-  /* Layered surfaces (dark) */
-  --bg-secondary: #15191e;
-  --bg-elevated: #191e24;
-  --bg-panel: #14181d;
+  /* Layered surfaces (dark) — the same layered ramp as light, lifted
+   * just clear of the near-black canvas so rail, toolbar and raised
+   * content separate without a harsh band. */
+  --bg-secondary: #1a1f26;
+  --bg-elevated: #1d232b;
+  --bg-panel: #181d24;
 
   --fg-strong: #e7e9ec;
   --fg: #a8aeb6;
@@ -657,10 +682,10 @@
   --select-fill: rgba(255, 255, 255, 0.09);
   --select-edge: rgba(167, 139, 250, 0.5);
 
-  --border: #242a31;
-  --border-strong: #2e353d;
-  --border-subtle: #1e242b;
-  --divider: #1c2228;
+  --border: #2a313a;
+  --border-strong: #39424d;
+  --border-subtle: #222932;
+  --divider: #232a33;
 
   /* Phase 4 — menu surfaces (dark). The spec's desktop-menu chrome:
    * near-charcoal bg #171B20, slate border #292F36. */
@@ -672,11 +697,19 @@
   --sample-card-bg-hover: #191d22;
   --sample-card-border: #242a31;
 
-  --shadow-page: 0 4px 18px rgba(0, 0, 0, 0.28);
-  --shadow-menu: 0 2px 8px rgba(0, 0, 0, 0.5), 0 8px 24px rgba(0, 0, 0, 0.55);
-  --shadow-dialog: 0 4px 16px rgba(0, 0, 0, 0.55), 0 12px 40px rgba(0, 0, 0, 0.6);
-  --shadow-popover: 0 2px 6px rgba(0, 0, 0, 0.5), 0 8px 24px rgba(0, 0, 0, 0.5);
-  --shadow-toast: 0 4px 12px rgba(0, 0, 0, 0.6), 0 2px 4px rgba(0, 0, 0, 0.4);
+  /* Phase 96 — the elevation ladder on the near-black surfaces: the same
+   * surface -> depth contract as :root, re-tuned to black with restrained
+   * alphas and no light-theme slate cast. */
+  --elevation-1: 0 4px 18px rgba(0, 0, 0, 0.28);
+  --elevation-2: 0 2px 8px rgba(0, 0, 0, 0.5), 0 8px 24px rgba(0, 0, 0, 0.55);
+  --elevation-3: 0 4px 16px rgba(0, 0, 0, 0.55), 0 12px 40px rgba(0, 0, 0, 0.6);
+  --elevation-4: 0 4px 12px rgba(0, 0, 0, 0.6), 0 2px 4px rgba(0, 0, 0, 0.4);
+
+  --shadow-page: var(--elevation-1);
+  --shadow-menu: var(--elevation-2);
+  --shadow-dialog: var(--elevation-3);
+  --shadow-popover: var(--elevation-2);
+  --shadow-toast: var(--elevation-4);
 
   --placeholder-from: #1d2126;
   --placeholder-to: #262b32;
@@ -706,6 +739,29 @@
   --sem-neutral: #9aa7bd;
   --sem-affirmative: #7fbd8f;
   --sem-attention: #e07a74;
+
+  /* Phase 96 — per-theme completion of the shared token families. These
+   * already resolved through the :root cascade; they are declared explicitly
+   * here so every family is deliberate in the dark theme and the contract test
+   * can pin it. The base --accent stays the brand #7C3AED in every theme (the
+   * measured contrast oracles depend on it); the dark-surface accent INK is the
+   * bright counterpart #A78BFA, carried by --accent-text / --sem-primary
+   * above. */
+  --accent: #7C3AED;
+  --accent-hover: #8B5CF6;
+  --accent-pressed: #6D28D9;
+  --accent-soft: rgba(124, 58, 237, 0.12);
+  --accent-selected: rgba(124, 58, 237, 0.10);
+  --accent-pressed-soft: rgba(124, 58, 237, 0.20);
+  --accent-hover-bg: rgba(124, 58, 237, 0.08);
+  --select-glyph: var(--sem-primary);
+  --focus-ring: 0 0 0 2px rgba(124, 58, 237, 0.35);
+  --panel-bg: var(--bg-rail);
+  /* DEF-158/159 — the page-content ink is theme-independent: declared per
+   * scope so the dark theme never re-inverts the paper-white page. */
+  --fg-on-page: #0f172a;
+  --glass-selected-bg: rgba(124, 58, 237, 0.12);
+  --glass-selected-border: rgba(124, 58, 237, 0.35);
 
   /* Phase 14.1 — dark mapping of the glass material. The chips flip to
    * translucent white on the near-black panels (the same inversion the
@@ -782,11 +838,11 @@
   /* Phase C — glass-material opacity ladder, now pointing at the
    * neutral Phase-14.1 material tokens (one source of truth). */
   --tf-surface-frame: var(--glass-chrome-bg);      /* window frame / titlebar */
-  --tf-surface-toolbar: rgba(255, 255, 255, 0.68); /* command + annotation toolbars, search */
+  --tf-surface-toolbar: rgba(255, 255, 255, 0.6); /* command + annotation toolbars, search */
   --tf-surface-rail: var(--glass-sidebar-bg);      /* left thumbnail sidebar */
   --tf-surface-panel: var(--glass-sidebar-bg);     /* right tools panel — SAME material */
-  --tf-surface-menu: rgba(255, 255, 255, 0.86);    /* menus / popovers */
-  --tf-surface-dialog: rgba(255, 255, 255, 0.93);  /* dialogs / sheets */
+  --tf-surface-menu: rgba(255, 255, 255, 0.88);    /* menus / popovers */
+  --tf-surface-dialog: rgba(255, 255, 255, 0.94);  /* dialogs / sheets */
   --tf-surface-float: rgba(255, 255, 255, 0.84);   /* floating chip controls */
   --tf-surface-tab-active: rgba(255, 255, 255, 0.76); /* active tab */
   /* Phase-A legacy aliases — the old names keep resolving into the
@@ -797,9 +853,9 @@
   /* Hairlines: a translucent neutral edge that reads on light AND dark
    * wallpapers, never an obvious white outline and never a blue cast.
    * The luminous edge comes from the --glass-highlight inset (below). */
-  --tf-border: var(--glass-border);
+  --tf-border: rgba(15, 23, 42, 0.14);
   --tf-highlight: var(--glass-highlight);
-  --tf-divider: rgba(15, 23, 42, 0.06);
+  --tf-divider: rgba(15, 23, 42, 0.1);
   /* DEF-188 — dark ink ladder. The Phase-14.1 glass is NEUTRAL light
    * acrylic (0.68-0.75 white films), so the ink needs to stay a deep,
    * low-saturation slate-navy: on the light glass the old mock-tuned
@@ -869,8 +925,8 @@
 
   /* Hairlines */
   --border: var(--tf-border);
-  --border-strong: rgba(15, 23, 42, 0.18);
-  --border-subtle: rgba(15, 23, 42, 0.06);
+  --border-strong: rgba(15, 23, 42, 0.24);
+  --border-subtle: rgba(15, 23, 42, 0.08);
   --divider: var(--tf-divider);
 
   /* Menus + floating surfaces — acrylic so they read as one
@@ -883,14 +939,19 @@
   --sample-card-border: var(--tf-border);
   --sample-card-border-hover: rgba(124, 58, 237, 0.35);
 
-  /* Soft neutral shadows — elevation without harsh black and without
-   * the old blue cast (Phase 14.1: the glass is neutral, so its
-   * shadows are neutral slate). */
-  --shadow-page: 0 2px 10px rgba(15, 23, 42, 0.10), 0 10px 28px rgba(15, 23, 42, 0.10);
-  --shadow-menu: 0 2px 8px rgba(15, 23, 42, 0.10), 0 10px 26px rgba(15, 23, 42, 0.12);
-  --shadow-dialog: 0 4px 14px rgba(15, 23, 42, 0.12), 0 14px 42px rgba(15, 23, 42, 0.16);
-  --shadow-popover: 0 2px 6px rgba(15, 23, 42, 0.08), 0 10px 24px rgba(15, 23, 42, 0.12);
-  --shadow-toast: 0 4px 12px rgba(15, 23, 42, 0.12), 0 2px 4px rgba(15, 23, 42, 0.06);
+  /* Phase 96 — the elevation ladder over the light frosted glass: the same
+   * surface -> depth contract, neutral slate shadows (elevation without harsh
+   * black and without the old blue cast, Phase 14.1). */
+  --elevation-1: 0 2px 10px rgba(15, 23, 42, 0.10), 0 10px 28px rgba(15, 23, 42, 0.10);
+  --elevation-2: 0 2px 8px rgba(15, 23, 42, 0.10), 0 10px 26px rgba(15, 23, 42, 0.12);
+  --elevation-3: 0 4px 14px rgba(15, 23, 42, 0.12), 0 14px 42px rgba(15, 23, 42, 0.16);
+  --elevation-4: 0 4px 12px rgba(15, 23, 42, 0.12), 0 2px 4px rgba(15, 23, 42, 0.06);
+
+  --shadow-page: var(--elevation-1);
+  --shadow-menu: var(--elevation-2);
+  --shadow-dialog: var(--elevation-3);
+  --shadow-popover: var(--elevation-2);
+  --shadow-toast: var(--elevation-4);
 
   /* Loading placeholders sit against the lighter rail/workspace, so
    * the well reads as a hair lighter than its container. */
@@ -922,6 +983,24 @@
   --sem-affirmative: #12682f;
   --sem-attention: #9f1239;
 
+  /* Phase 96 — per-theme completion, the same contract as the dark block: the
+   * families that previously rode the :root cascade are declared explicitly so
+   * the frosted scope is deliberate. The base --accent stays the brand #7C3AED;
+   * the glass accent INK is the deeper #6D28D9 carried by --accent-text /
+   * --sem-primary above. */
+  --accent: #7C3AED;
+  --accent-hover: #8B5CF6;
+  --accent-pressed: #6D28D9;
+  --accent-soft: rgba(124, 58, 237, 0.12);
+  --accent-selected: rgba(124, 58, 237, 0.10);
+  --accent-pressed-soft: rgba(124, 58, 237, 0.20);
+  --accent-hover-bg: rgba(124, 58, 237, 0.08);
+  --select-glyph: var(--sem-primary);
+  --focus-ring: 0 0 0 2px rgba(124, 58, 237, 0.35);
+  --fg-on-page: #0f172a;
+  --glass-selected-bg: rgba(124, 58, 237, 0.12);
+  --glass-selected-border: rgba(124, 58, 237, 0.35);
+
   /* Phase 14.1 — the CANONICAL Liquid Glass values (the task-spec
    * token block, verbatim). The frosted theme is the one theme that
    * actually renders the glass material, so the spec's neutral white
@@ -932,7 +1011,7 @@
   --glass-shadow: 0 8px 32px rgba(0, 0, 0, 0.12);
   --glass-chrome-bg: rgba(255, 255, 255, 0.75);
   --glass-chrome-border: rgba(255, 255, 255, 0.4);
-  --glass-sidebar-bg: rgba(255, 255, 255, 0.68);
+  --glass-sidebar-bg: rgba(255, 255, 255, 0.74);
   --glass-sidebar-border: rgba(255, 255, 255, 0.32);
   --glass-group-bg: rgba(255, 255, 255, 0.55);
   --glass-group-border: rgba(255, 255, 255, 0.25);
@@ -2532,7 +2611,7 @@ body.tab-reordering .tab-list[data-reorder="true"] .tab {
  * Signed out: a labelled "Sign in" pill (same chrome ladder as the icon
  * controls, widened for its label). Signed in: a ROUND avatar with an
  * anchored menu panel. The avatar is the single accent surface: white ink on
- * the #2563eb accent measures 5.17:1 in all three themes (the accent token is
+ * the #7C3AED accent measures 5.70:1 in all three themes (the accent token is
  * identical across light / dark / frosted, and --fg-on-accent is #ffffff in
  * each), clearing the 4.5:1 text floor. */
 .account-signin {
@@ -3305,18 +3384,44 @@ body.tab-reordering .tab-list[data-reorder="true"] .tab {
   overflow: hidden;
 }
 
-.recent-empty {
-  padding: var(--sp-5);
-  color: var(--fg-muted);
-  font-size: var(--fs-sm);
+/* Phase 96 (chunk D) — the shared designed empty state. A centred column:
+ * optional hero mark, one headline line and one optional help line. Tokens
+ * only, so it reads in light, dark and frosted: the mark tints from
+ * --fg-faint, the headline from --fg-strong and the help from --fg-muted. */
+.empty-state {
   display: flex;
   flex-direction: column;
-  gap: var(--sp-1);
+  align-items: center;
+  justify-content: center;
+  gap: var(--sp-3);
+  padding: var(--sp-5) var(--sp-4);
+  border-radius: var(--radius-group);
+  text-align: center;
 }
 
-.recent-empty .hint {
+.empty-state-mark {
   color: var(--fg-faint);
-  font-size: var(--fs-xs);
+}
+
+.empty-state-headline {
+  margin: 0;
+  font-size: var(--fs-lg);
+  font-weight: 600;
+  color: var(--fg-strong);
+}
+
+.empty-state-help {
+  margin: 0;
+  max-width: 36ch;
+  font-size: var(--fs-sm);
+  line-height: 1.5;
+  color: var(--fg-muted);
+}
+
+/* `.recent-empty` is the EmptyState rendered inside the recent-list card: the
+ * card already supplies the surface, so this only trims the padding. */
+.recent-empty {
+  padding: var(--sp-5) var(--sp-4);
 }
 
 .recent-row {
@@ -3333,11 +3438,10 @@ body.tab-reordering .tab-list[data-reorder="true"] .tab {
 .recent-row:last-child { border-bottom: none; }
 
 /* Phase 4 — recent rows stay understated: whisper hover (0.035
- * alpha per theme, lighter than the standard 0.04), no card chrome. */
-.recent-row:hover { background: rgba(15, 23, 42, 0.035); }
-
-:root[data-theme="dark"] .recent-row:hover { background: rgba(255, 255, 255, 0.035); }
-:root[data-theme="frosted"] .recent-row:hover { background: rgba(15, 23, 42, 0.035); }
+ * alpha per theme, lighter than the standard 0.04), no card chrome.
+ * Phase 96 (chunk D) — the whisper hover now resolves from the shared
+ * state token instead of a per-theme literal. */
+.recent-row:hover { background: var(--bg-hover); }
 
 /* Phase 91 D3 — canonical `btn btn-ghost`; this legacy class is a LAYOUT alias
  * only. The full-width grid row keeps its own rhythm (`height: auto` so the
@@ -3443,14 +3547,22 @@ body.tab-reordering .tab-list[data-reorder="true"] .tab {
   color: var(--fg-muted);
 }
 
+/* Phase 96 (chunk D) — the samples empty state is a card-surface EmptyState:
+ * it keeps the dashed "drop files here" edge and rides the level-1 elevation
+ * step. The loading branch shares `.samples-empty` and stays a centred row. */
 .samples-empty {
   grid-column: 1 / -1;
   padding: var(--sp-5);
   border: 1px dashed var(--border-strong);
-  border-radius: var(--radius-3);
+  border-radius: var(--radius-group);
   color: var(--fg-muted);
   text-align: center;
   font-size: var(--fs-sm);
+}
+
+.samples-empty.empty-state {
+  background: var(--bg-raised);
+  box-shadow: var(--elevation-1);
 }
 
 .workspace {
@@ -4005,7 +4117,7 @@ body.tab-reordering .tab-list[data-reorder="true"] .tab {
  * (outline, not box-shadow, so it never collides with the
  * current-page selection ring). */
 .thumb:focus-visible {
-  outline: 2px solid rgba(124, 58, 237, 0.35);
+  outline: 2px solid var(--tf-accent-focus);
   outline-offset: 1px;
 }
 
@@ -5486,7 +5598,7 @@ body.tab-reordering .tab-list[data-reorder="true"] .tab {
   background: var(--accent);
   box-shadow:
     0 0 0 1px var(--accent-soft),
-    0 0 6px 1px rgba(124, 58, 237, 0.45);
+    0 0 6px 1px var(--select-edge);
   pointer-events: none;
   z-index: 2;
 }
@@ -5613,7 +5725,7 @@ body.tab-reordering .tab-list[data-reorder="true"] .tab {
   /* Phase 92 (TFL-513-A) — the base 460px box is the `md` size; every size
    * modifier below resolves from the --dlg-* width/height tokens. */
   border-radius: var(--dlg-radius);
-  box-shadow: var(--shadow-popover);
+  box-shadow: var(--shadow-dialog);
   display: grid;
   grid-template-rows: auto 1fr auto;
   /* DEF-100 — the dialog needs explicit `pointer-events: auto` to
@@ -8227,7 +8339,8 @@ rect.ann-highlight.ann-preview {
   cursor: pointer;
 }
 .inspector-menu-item:hover:not(:disabled) { background: var(--bg-hover); }
-.inspector-menu-item:disabled { opacity: 0.5; cursor: default; }
+.inspector-menu-item:active:not(:disabled) { background: var(--bg-active); }
+.inspector-menu-item:disabled { opacity: 0.5; cursor: default; color: var(--fg-disabled); }
 
 .inspector-quick-actions {
   display: flex;
@@ -8500,7 +8613,7 @@ rect.ann-highlight.ann-preview {
   background: var(--bg-raised);
   border: 1px solid var(--border);
   border-radius: var(--radius-dialog);
-  box-shadow: var(--shadow-popover);
+  box-shadow: var(--shadow-dialog);
   width: min(560px, calc(100vw - 64px));
   max-height: min(640px, calc(100vh - 64px));
   display: flex;
@@ -12332,7 +12445,9 @@ rect.ann-highlight.ann-preview {
    * dropped: it drew a bright 1px line along the joined top edge,
    * reading as a divider between the trigger and its menu. */
   border-radius: var(--radius-3);
-  box-shadow: 0 10px 28px rgba(15, 23, 42, 0.14);
+  /* Phase 96-B — the menu family rides the shared elevation-2 popover
+   * token instead of a literal drop shadow. */
+  box-shadow: var(--shadow-popover);
 }
 
 :root[data-theme="frosted"] .titlebar-menu-popover,
@@ -12351,7 +12466,7 @@ rect.ann-highlight.ann-preview {
   background: var(--tf-surface-dialog);
   border-radius: var(--tf-radius-lg);
   box-shadow:
-    var(--shadow-popover),
+    var(--shadow-dialog),
     inset 0 1px 0 rgba(255, 255, 255, 0.45),
     inset 0 -1px 0 rgba(15, 23, 42, 0.08);
 }
@@ -13157,7 +13272,10 @@ rect.ann-highlight.ann-preview {
   justify-content: space-between;
   gap: var(--space-small);
   padding: 0 var(--space-standard);
-  border-bottom: 1px solid var(--border-subtle);
+  /* Phase 96-C — the panel header keeps a visible 1px hairline on the
+   * standard --border token so every docked panel header (rail, palette,
+   * Inspector, ContextPanel) separates from its body identically. */
+  border-bottom: 1px solid var(--border);
 }
 
 .glass-sidebar-title {
@@ -13202,8 +13320,9 @@ rect.ann-highlight.ann-preview {
 :root[data-theme="frosted"] .glass-sidebar-header {
   /* Docked glass panes: the header divider is the same neutral
    * docking hairline family as the panel edges (the translucent white
-   * --glass-sidebar-border is invisible against the light glass). */
-  border-bottom-color: var(--border-subtle);
+   * --glass-sidebar-border is invisible against the light glass).
+   * Phase 96-C — the shared --border step, matching the other themes. */
+  border-bottom-color: var(--border);
 }
 
 :root[data-theme="frosted"] .glass-sidebar-header,
@@ -14813,7 +14932,7 @@ rect.ann-highlight.ann-preview {
   flex-direction: column;
   gap: var(--sp-1);
   padding: var(--space-small) var(--space-control);
-  border-bottom: 1px solid var(--border-subtle);
+  border-bottom: 1px solid var(--divider);
 }
 
 .review-elements-category[data-review-category="annotations"] {
@@ -14870,9 +14989,14 @@ rect.ann-highlight.ann-preview {
   color: var(--fg-strong);
 }
 
+.review-elements-row-select:active {
+  background: var(--bg-active);
+  color: var(--fg-strong);
+}
+
 .review-elements-row-select:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 1px;
+  outline: none;
+  box-shadow: var(--focus-ring);
 }
 
 .review-elements-row-label {
@@ -14909,6 +15033,12 @@ rect.ann-highlight.ann-preview {
   color: var(--fg-strong);
 }
 
+.review-elements-row-edit:active,
+.review-elements-row-delete:active {
+  background: var(--bg-active);
+  color: var(--fg-strong);
+}
+
 .review-elements-row-delete:hover {
   color: var(--error);
 }
@@ -14917,6 +15047,7 @@ rect.ann-highlight.ann-preview {
 .review-elements-row-delete:disabled {
   opacity: 0.4;
   cursor: not-allowed;
+  color: var(--fg-disabled);
 }
 
 .review-elements-row-error {
@@ -14939,7 +15070,7 @@ rect.ann-highlight.ann-preview {
   flex-direction: column;
   gap: var(--sp-1);
   padding: var(--space-small) var(--space-control);
-  border-bottom: 1px solid var(--border-subtle);
+  border-bottom: 1px solid var(--divider);
 }
 
 /* Phase 37 (item 22) — subtle separators between the distinct rows / text
@@ -14983,7 +15114,7 @@ rect.ann-highlight.ann-preview {
   padding: 0 4px;
 }
 .context-panel-select:focus-visible { outline: none; box-shadow: var(--focus-ring); }
-.context-panel-select:disabled { opacity: 0.5; cursor: not-allowed; }
+.context-panel-select:disabled { opacity: 0.5; cursor: not-allowed; color: var(--fg-disabled); }
 
 .context-panel-list {
   display: flex;
@@ -15016,14 +15147,24 @@ rect.ann-highlight.ann-preview {
   color: var(--fg-strong);
 }
 
-.context-panel-item-selected,
-.context-panel-item[aria-pressed="true"] {
-  background: var(--bg-hover);
-  border-color: var(--border-strong);
+/* Phase 96-C — the press film is the shared --bg-active step, one notch
+ * stronger than hover, so hover / press / selected / disabled are four
+ * visibly distinct states drawn from the one interaction-token set. */
+.context-panel-item:active:not(:disabled) {
+  background: var(--bg-active);
   color: var(--fg-strong);
 }
 
-.context-panel-item:disabled { opacity: 0.5; cursor: default; }
+/* Phase 96-C — selection rides the Phase-41 selection trio: the neutral
+ * --select-fill wash under the --select-edge ring, with --fg-strong ink. */
+.context-panel-item-selected,
+.context-panel-item[aria-pressed="true"] {
+  background: var(--select-fill);
+  border-color: var(--select-edge);
+  color: var(--fg-strong);
+}
+
+.context-panel-item:disabled { opacity: 0.5; cursor: default; color: var(--fg-disabled); }
 .context-panel-item-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 .context-panel-badge {
@@ -15137,6 +15278,16 @@ rect.ann-highlight.ann-preview {
 .thumb-verb:hover {
   background: var(--bg-hover);
   color: var(--fg-strong);
+}
+
+.thumb-verb:active:not(:disabled) {
+  background: var(--bg-active);
+  color: var(--fg-strong);
+}
+
+.thumb-verb:disabled {
+  color: var(--fg-disabled);
+  cursor: default;
 }
 
 .thumb-verb-danger:hover {
@@ -15254,7 +15405,9 @@ rect.ann-highlight.ann-preview {
   background: var(--bg-elevated);
   border: 1px solid var(--glass-border);
   border-radius: 12px;
-  box-shadow: var(--shadow-menu);
+  /* Phase 96-C — the dock is a level-2 floating overlay; it consumes the
+   * shared elevation ladder step directly. */
+  box-shadow: var(--elevation-2);
   -webkit-backdrop-filter: var(--glass-blur);
   backdrop-filter: var(--glass-blur);
   -webkit-app-region: no-drag;
@@ -15401,7 +15554,9 @@ rect.ann-highlight.ann-preview {
   border-radius: 6px;
   color: var(--tf-stage-edit);
   cursor: pointer;
-  box-shadow: var(--shadow-menu);
+  /* Phase 96-C — the dock's floating edit toggle rides the level-2 step
+   * like the dock body it sits on. */
+  box-shadow: var(--elevation-2);
   transition:
     background-color var(--motion-duration-fast) var(--motion-ease-standard),
     color var(--motion-duration-fast) var(--motion-ease-standard),
@@ -16019,7 +16174,8 @@ cursor: pointer;
   background: var(--bg-elevated);
   border: 1px solid var(--glass-border);
   border-radius: var(--radius-group);
-  box-shadow: var(--shadow-menu);
+  /* Phase 96-C — floating canvas pill: level-2 elevation. */
+  box-shadow: var(--elevation-2);
   -webkit-backdrop-filter: var(--glass-blur);
   backdrop-filter: var(--glass-blur);
   -webkit-app-region: no-drag;
@@ -16057,7 +16213,8 @@ cursor: pointer;
   background: var(--bg-elevated);
   border: 1px solid var(--glass-border);
   border-radius: var(--radius-group);
-  box-shadow: var(--shadow-menu);
+  /* Phase 96-C — floating page-layout surface: level-2 elevation. */
+  box-shadow: var(--elevation-2);
   -webkit-backdrop-filter: var(--glass-blur);
   backdrop-filter: var(--glass-blur);
   -webkit-app-region: no-drag;
@@ -16206,7 +16363,8 @@ cursor: pointer;
   background: var(--bg-elevated);
   border: 1px solid var(--glass-border);
   border-radius: var(--radius-group);
-  box-shadow: var(--shadow-menu);
+  /* Phase 96-C — floating annotation flyout: level-2 elevation. */
+  box-shadow: var(--elevation-2);
   -webkit-backdrop-filter: var(--glass-blur);
   backdrop-filter: var(--glass-blur);
   -webkit-app-region: no-drag;
@@ -16326,7 +16484,9 @@ cursor: pointer;
   background: var(--bg-raised);
   border: 1px solid var(--border);
   border-radius: var(--radius-dialog);
-  box-shadow: var(--shadow-dialog);
+  /* Phase 96-B — the palette is a level-2 overlay (menu/popover band),
+   * not a level-3 dialog, so it consumes the shared popover shadow. */
+  box-shadow: var(--shadow-popover);
   -webkit-backdrop-filter: var(--glass-blur);
   backdrop-filter: var(--glass-blur);
   -webkit-app-region: no-drag;
@@ -16391,6 +16551,17 @@ cursor: pointer;
 .command-palette-row-active {
   background: var(--accent-selected);
   color: var(--fg-strong);
+}
+
+/* Phase 96-B — pointer hover on a non-active, enabled row uses the shared
+ * hover film so hover / active / disabled are three visibly distinct states
+ * drawn from the one interaction-token set. */
+.command-palette-row:hover:not(.command-palette-row-active):not(.command-palette-row-disabled) {
+  background: var(--bg-hover);
+}
+
+.command-palette-row:active:not(.command-palette-row-disabled) {
+  background: var(--bg-active);
 }
 
 .command-palette-row-disabled {
@@ -16700,6 +16871,23 @@ cursor: pointer;
   flex: none;
   min-width: var(--tf-icon-size);
   min-height: var(--tf-icon-size);
+}
+
+/* DEF-528 — the EmptyState hero mark is NOT chrome: it must always render at
+ * the hero token, even when the empty state is mounted inside a surface that
+ * the 18px group above governs (`.command-palette-empty` inside
+ * `.command-palette`, `.context-panel-empty` inside `.context-panel`).
+ * The `Icon` wrapper renders lucide's SVG root directly and forwards
+ * `className` to it, so `.empty-state-mark` IS the `<svg>` element — there is
+ * no descendant `svg` to target. Scope here matches that root; two classes
+ * (0,2,0) outrank the one-class surface selectors (`.command-palette svg`,
+ * `.context-panel svg` = 0,1,1), so this wins by specificity and does not
+ * weaken the 18px chrome floor for normal icons. */
+.empty-state .empty-state-mark {
+  width: var(--tf-icon-size-hero);
+  height: var(--tf-icon-size-hero);
+  min-width: var(--tf-icon-size-hero);
+  min-height: var(--tf-icon-size-hero);
 }
 
 .action-dock svg,

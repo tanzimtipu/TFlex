@@ -8935,4 +8935,108 @@ User: a legal/accounting user who must keep a Bates series correct across a fili
 - Nice-to-fix - **Affordance (empty categories):** each category keeps its heading with a `No ... applied.` line, which is honest; consider collapsing the three empty categories to a single "No Bates numbering, watermarks or signatures applied." line to cut REVIEW-panel length when only annotations exist.
 - Strengths to keep: the list is one component re-parented by both panels (no second copy); every row is a real `<button>` with a stable `data-review-*` hook and an explicit `aria-label`; select/edit/delete are disabled (not hidden) when the host supplies no handler, and a per-row `[data-review-element-error]` slot carries a loud, readable refusal; the update dialogs carry `data-bates-mode="apply"|"update"` / `data-watermark-mode="apply"|"update"` so the mode is observable.
 
+## Phase 96 (TFL-648) adversarial diff-pass — attack-item results
+
+Session: diff-pass. Scope: the Phase 96 working-tree diff only — the colour/elevation token retune in all three theme blocks (`src/renderer/styles.css`), the chrome/nav/panel/dock/overlay surface rules, the interaction-state additions, the `.empty-state*` rules + DEF-528 hero override, `EmptyState.tsx` + `emptyState.test.tsx`, `Welcome.tsx`, `CommandPalette.tsx`, `ContextPanel.tsx`, `Inspector.tsx`, `designSystem.test.ts`, `e2e/phase96_design_system.spec.cjs`, `docs/DESIGN-SYSTEM.md`, and the `phase59PanelButtons.test.tsx` realignment (TFL-641). Product/test code was read but never modified. The `.ann-comment-icon` 16->20px hunk and the `.form-checkbox svg` de-nesting move are NOT Phase 96 and were not attacked (see "Out-of-scope observations"). The build mutex was held by this adversary for the build/e2e and released afterwards.
+
+Exact commands and pass/fail counts:
+- `npm.cmd run build:renderer` -> exit 0 (vite v8.2.2, 2681 modules, built in 756ms).
+- `npx.cmd vitest run test/unit/renderer/designSystem.test.ts test/unit/renderer/emptyState.test.tsx test/unit/renderer/phase59PanelButtons.test.tsx` -> **Test Files 3 passed (3) / Tests 51 passed (51)** (2.23s), exit 0.
+- `npx.cmd playwright test e2e/phase96_design_system.spec.cjs --reporter=list` -> **6 passed (1.5m)**, exit 0. (The shipped spec's zero-page case self-annotates `inconclusive`; its dialog case logs the shadow but never asserts it — both gaps below.)
+- `node test-fixtures/phase96-adversary/probe_state_and_dialog.cjs` and `node test-fixtures/phase96-adversary/probe_hero_and_zero_page.cjs` -> the two hostile probes (launched only through `e2e/lib/launch.cjs`). Logs: `test-fixtures/phase96-adversary/*.log`.
+
+Attack-item results:
+1. **Contrast — one confirmed break (ADV-190).** Interactive text on the darkened light rail `#e8ecf1` all clears 4.5:1 (`.stage-rail-label` 6.16:1 shipped-e2e, `--fg-muted` 5.37:1, `--sem-primary` 4.80:1, `--semi-*` stage hues 5.30-7.27:1); lifted dark surfaces likewise (`--fg-muted` 4.86-4.97:1). The only sub-floor figure is the decorative empty-state hero mark (2.16-2.56:1 light, 2.75-2.91:1 dark) under the doc's own 3:1 graphic floor.
+2. **Elevation — one confirmed break (ADV-189).** Menus/popovers/palette ride level-2 and docked panels stay flat (shipped e2e `menu`, `dialog`-log and `command-palette`-elevation checks; probe measured docked `[data-context-panel]`/`[data-inspector]`/`.tools-palette` flat). The dialogs, however, paint level-2 while the ladder names dialog/sheet = level-3.
+3. **Interaction states — no finding.** Selected `.context-panel-item` = `--select-fill` (0.03 slate) + the accent `--select-edge` ring; hover = `--bg-hover` (0.04); active = `--bg-active` (0.08); disabled = transparent, `--fg-disabled` ink, `opacity: .5`. The selected state is distinguished by the accent ring even though its wash is deliberately weaker than hover; disabled is visibly disabled. Command-palette row hover `.not(.command-palette-row-active):not(.command-palette-row-disabled)` and active states are present and distinct.
+4. **Empty states — one confirmed break (ADV-191).** On a real 34-page document the ContextPanel renders 34 thumbnails with no `[data-context-panel-thumbs-empty]`, and the Inspector renders the facts with no `[data-inspector-empty]` (no false empty). The reachable empty states render their hero at exactly 32x32 px in every theme. The two added zero-page/no-document empty states are unreachable in the shipped app (ADV-191).
+5. **Token drift — the ADV-189 consumer mismatch.** `--shadow-dialog` resolves to `var(--elevation-3)` in all three scopes and is pinned by `designSystem.test.ts:219-240`, but no dialog consumes it (only `.reading-view`, `styles.css:18239`); every dialog consumes `--shadow-popover`. Also observed (unreachable, folded into ADV-191): inside `.inspector`, `.inspector svg { color: var(--sem-neutral) }` (0,1,1) outranks `.empty-state-mark { color: var(--fg-faint) }` (0,1,0), so the Inspector's hero would tint neutral rather than faint.
+6. **Behaviour / no-op class — no finding.** The shipped no-op sweep passed (welcome sample card, palette row dispatch, ContextPanel action, Inspector renumber, dock rotate, stage rail, thumbnail context menu rotate all produced their state change). Probes recorded zero `pageerror`s. No `data-*` hook moved: `[data-command-palette-empty]`, `[data-edit-content-empty]`, `[data-recent]`/`.recent-empty`, `.samples-empty`, `[data-context-panel-thumbs]` and `[data-inspector-value="file-size"]` all survive the retune.
+7. **DEF-528 fix — no finding (verified).** The palette no-results and ContextPanel edit-content hero marks measured exactly `width/height: 32px` (computed) in light, dark and frosted after settle (`probe_hero_and_zero_page`). The `designSystem.test.ts` guard is a real DOM match, not a string pin: mounting the shipped `EmptyState` asserts `svg.empty-state-mark.matches(".empty-state .empty-state-mark")` is `true` and the retired TFL-645 descendant selector `.empty-state .empty-state-mark svg` is `false`; an independent jsdom check confirms the semantics (real selector true, phantom `.empty-state .no-such-mark` false). The earlier 31px reading was the palette's motion scale-in transient, not a rendered size.
+
+Files: ADV-189 (elevation), ADV-190 (hero contrast), ADV-191 (unreachable empty states). No must-fix; no crash, hang, unhandled error, data loss or document corruption — this is a behaviour-preserving visual diff.
+
+## ADV-189: Every dialog paints elevation-2, but the Phase 96 ladder and doc declare dialog/sheet = elevation-3
+
+- Session: diff-pass
+- Suggested severity: LOW
+
+What I did: opened `report.pdf`, clicked `[data-open-preferences]`, and measured the computed `box-shadow` of the prefs dialog root (`document.querySelector('[data-prefs-dialog]').closest('[data-dialog-shell]')`, whose class is `sheet sheet-prefs`) against fresh probe elements carrying `var(--elevation-2)` and `var(--elevation-3)`, in light, dark and frosted. Command: `node test-fixtures/phase96-adversary/probe_state_and_dialog.cjs`; the shipped `e2e/phase96_design_system.spec.cjs` `dialog` guard (spec lines 411-430) measures the same element but only `console.log`s it.
+
+Expected: `docs/DESIGN-SYSTEM.md:176` names `dialog / sheet` as level 3 and `:195` maps `--shadow-dialog -> var(--elevation-3)` (pinned by `test/unit/renderer/designSystem.test.ts:219-240`); the dialog/sheet shadow should therefore equal `var(--elevation-3)`.
+
+Actual: the dialog shadow equals `var(--elevation-2)` exactly and never `--elevation-3`, in all three themes. Light measured `rgba(15,23,42,0.10) 0 2px 8px, rgba(15,23,42,0.12) 0 8px 24px` (= elevation-2); dark `rgba(0,0,0,0.5) 0 2px 8px, rgba(0,0,0,0.55) 0 8px 24px`; frosted the same elevation-2 plus glass insets. Both dialog surfaces consume `--shadow-popover`, not `--shadow-dialog`: `.modal-dialog { box-shadow: var(--shadow-popover); }` (`src/renderer/styles.css:5728`) and `.sheet { box-shadow: var(--shadow-popover); }` (`src/renderer/styles.css:8616`). After the Phase 96 ladder, `--shadow-dialog` has exactly one consumer in the whole stylesheet, `.reading-view` (`styles.css:18239`) — not a dialog. The `designSystem.test.ts` elevation suite passes because it only asserts the token mapping (`--shadow-dialog === var(--elevation-3)`), never a dialog consumer; the shipped e2e dialog guard never asserts the shadow at all.
+
+Reproducibility: deterministic. Probe record: `{"pass":1,"check":"dialog-elevation","shellClass":"sheet sheet-prefs","dialogShadow":"rgba(15, 23, 42, 0.1) 0px 2px 8px 0px, rgba(15, 23, 42, 0.12) 0px 8px 24px 0px","elevation2":"rgba(15, 23, 42, 0.1) 0px 2px 8px 0px, rgba(15, 23, 42, 0.12) 0px 8px 24px 0px","elevation3":"rgba(15, 23, 42, 0.14) 0px 4px 16px 0px, rgba(15, 23, 42, 0.18) 0px 12px 40px 0px"},"matchesElevation2":true,"matchesElevation3":false`.
+
+Fix (not applied — the adversary does not patch): either consume `--shadow-dialog` on `.modal-dialog`/`.sheet` (and add the dialog assertion to the shipped e2e's `dialog` guard) or amend `DESIGN-SYSTEM.md` sections 10/12 to declare dialog/sheet at level 2. One of the two must move; the doc and the shipped dialog cannot both be right. Note the consumer predates Phase 96 (Phase 92 adopted DialogShell with `--shadow-popover`), but the level-3 claim and the orphaned `--shadow-dialog` token are introduced by this Phase 96 diff.
+
+Screenshot: screenshots/phase96/dialog-light.png (shipped spec), screenshots/phase96/adv-zero-page.png (probe).
+
+- Disposition: ACCEPTED -> DEF-529 (LOW, Should-fix). CTO triage (2026-10-04): the Phase 96 ladder and DESIGN-SYSTEM.md declare dialog/sheet = level 3, but .modal-dialog (styles.css:5728) and .sheet (styles.css:8616) consume --shadow-popover (level 2), leaving --shadow-dialog (level 3) orphaned. Phase 96 owns the elevation ladder (Ruling 5), so the shipped dialog must move onto the documented step. Assigned frontend-dev (TFL-649): consume --shadow-dialog on .modal-dialog/.sheet, add a dialog-shadow assertion to the shipped e2e, keep the unit token mapping. Blocks Phase 96 phase close.
+
+## ADV-190: The empty-state hero mark tint `--fg-faint` is below the design doc's own 3:1 graphic floor in light and dark
+
+- Session: diff-pass
+- Suggested severity: LOW
+
+What I did: measured the computed colour of the rendered hero mark (`.empty-state-mark`) in the shipped app and composited it against its real surfaces, then compared against `docs/DESIGN-SYSTEM.md` section 12 ("Interactive text clears >= 4.5:1 and icons/graphics clear >= 3:1 in light, dark AND frosted"). Probes: `test-fixtures/phase96-adversary/probe_hero_and_zero_page.cjs` and the WCAG maths in `probe_state_and_dialog.cjs`. Measured colours: light `rgb(148,163,184)` = `#94a3b8` (`--fg-faint`, `styles.css:465`), dark `rgb(91,98,107)` = `#5b626b` (`styles.css:662`), frosted `rgb(36,50,90)` = `#24325a` (`styles.css:906`). The tint is set by `.empty-state-mark { color: var(--fg-faint); }` (`styles.css:3402-3404`).
+
+Expected: the hero mark, being a graphic, clears 3:1 in every theme (section 12), or the doc carves out decorative marks.
+
+Actual: light `#94a3b8` measures 2.56:1 on the white palette/welcome card, 2.32:1 on the panel `#f1f4f8`, 2.16:1 on the rail `#e8ecf1`; dark `#5b626b` measures 2.91:1 on the palette `#13171d` and 2.75:1 on the panel `#181d24`; frosted clears easily at 12.51:1. Section 11 (`DESIGN-SYSTEM.md:203-204`) simultaneously mandates this exact tint ("a token-driven tint (`--fg-faint`, or `--sem-primary` where the surface is action-oriented)"), so the doc contradicts itself. The shipped e2e only samples `.stage-rail-icon` for the graphic floor, so the hero mark is unmeasured.
+
+Caveat (honest): the mark is decorative — `EmptyState.tsx:35` renders it `aria-hidden`, and WCAG 1.4.11 exempts purely decorative images. So this may be a deliberate carve-out rather than a defect; it is filed because the Phase 96 doc states an unqualified 3:1 graphic floor, and a reader of that contract would expect the hero mark to satisfy it. If the intent is to exempt decorative marks, the doc should say so.
+
+Reproducibility: deterministic. `probe_state_and_dialog.cjs` record: `{"pass":1,"check":"palette-hero","theme":"light","pal":{"w":32,"h":32,"cls":"lucide lucide-search empty-state-mark","color":"rgb(148, 163, 184)"}}`; same in dark `rgb(91, 98, 107)`.
+
+Fix (not applied): either tint the hero from a stronger token (e.g. `--fg-muted`, which clears 4.5:1 on the rail/panel) while keeping `--sem-primary` for action-oriented surfaces, or amend section 12 to exempt decorative `aria-hidden` empty-state marks from the 3:1 floor.
+
+Screenshot: screenshots/phase96/welcome-light.png, screenshots/phase96/command-palette-empty-light.png (shipped spec).
+
+- Disposition: ACCEPTED -> DEF-530 (LOW, Should-fix, doc-only). CTO triage (2026-10-04): the doc unqualified 3:1 graphic floor contradicts its own mandated --fg-faint tint. The empty-state hero mark is decorative and aria-hidden (EmptyState.tsx:35), which WCAG 1.4.11 exempts (it applies to graphics required to understand content). Ruling: keep the tint; amend DESIGN-SYSTEM.md section 12 to state the decorative aria-hidden empty-state mark is exempt from the 3:1 graphic floor. Assigned frontend-dev (TFL-649). Blocks Phase 96 phase close.
+
+## ADV-191: The two Phase 96 zero-page / no-document empty states are unreachable in the shipped app
+
+- Session: diff-pass
+- Suggested severity: LOW
+
+What I did: generated a valid zero-page PDF (`%PDF-1.4`, `/Type /Pages /Kids [] /Count 0`, correct xref/trailer; 233 bytes) and opened it through the shipped Open path (mocked `dialog.showOpenDialog` + the welcome "Open PDF" button, exactly the shipped `phase96_design_system.spec.cjs` zero-page case). Command: `node test-fixtures/phase96-adversary/probe_hero_and_zero_page.cjs` (pass B). The shipped spec's own zero-page test reports the identical result and annotates itself `inconclusive` (spec lines 521-527; e2e log line "INCONCLUSIVE: zero-page designed empty states not reachable via e2e").
+
+Expected: a document with zero pages opens into the workspace and the two new designed empty states render: `[data-context-panel-thumbs-empty]` ("No pages to show", `ContextPanel.tsx:424-430`) and `[data-inspector-empty]` ("No document open", `Inspector.tsx:533-546`, reached from `Inspector.tsx:697`).
+
+Actual: the app returns to / stays on the Welcome screen. Probe record: `{"pass":"B","reached":false,"st":{"welcome":true,"workspace":false,"pageCount":0,"thumbsEmpty":false,"inspectorEmpty":false,"contextPanel":false,"inspector":false,...},"dialogs":[],"pageerrors":[]}` — no error dialog, no thrown page error, no crash; the document simply never becomes an open tab. Because the Inspector is mounted only when a document is open (`App.tsx:9458` `inspectorOpen = tabs.activeId !== null && !activeIsEmpty`, and `activeIsEmpty` is true only for `kind === 'empty'` placeholder tabs), `renderDocumentSection`'s empty branch — whose condition requires `pageCount === 0 && fileSize === null && documentTitle === null` while a real tab is open — cannot be reached: its `[data-inspector-empty]` hook is dead. The ContextPanel thumbs-empty branch is likewise unreachable through the shipped open path. The consequence is that the hero-mark size/DEF-528 behaviour of these two new surfaces is unverified, and the shipped phase-validation suite is forced to skip them.
+
+Reproducibility: deterministic (two independent runs — the shipped spec and this probe).
+
+Fix (not applied): confirm the intended reachable empty surfaces. If a zero-page document is genuinely meant to be openable, the open path (not the empty-state branch) is where it is dropped; if not, the two empty-state branches should be removed or re-pointed at a reachable condition (e.g. the no-selection Inspector state on a real document), so the design system does not ship unverifiable dead surfaces. Add an e2e assertion for whichever surface is kept.
+
+Screenshot: screenshots/phase96/adv-zero-page.png (welcome after the zero-page open attempt; no workspace, no empty state).
+
+- Disposition: REJECTED for Phase 96. CTO triage (2026-10-04): already addressed as an explicit documented carve-out - DESIGN-SYSTEM.md section 15.4 records that data-context-panel-thumbs-empty (zero-page rail) and data-inspector-empty (no-document Inspector) are defensive/unreachable in shipped flows and are covered by the EmptyState unit contract. Removing the branches is churn; re-pointing them is a design change outside this phase. The underlying zero-page open-path behaviour (a valid 0-page PDF returns to Welcome) is pre-existing and outside Phase 96 scope.
+
+Out-of-scope observations (NOT filed — outside the Phase 96 list in the task):
+- The `.form-checkbox svg { width: 70%; height: 70% }` rule was moved out of the `.form-radio-group` declaration block to the top level (`styles.css:7338-7345`). It was previously a nested selector inside a plain (non-CSS-nesting) rule block and thus not applied; the move makes it live. This is a behaviour change inside `styles.css` but not a Phase 96 hunk, so it was not attacked; the e2e `formMouse` path was not exercised here.
+- The `.ann-comment-icon` 16->20px hunk is explicitly out of scope per the task.
+
+## Phase 96 (TFL-648) design-system visual refresh — design critique of the changed UI surface (skill: design-critique)
+
+User: a TFlex desktop PDF user on Windows (knowledge worker / document reviewer) who opens, reads and edits PDFs. Job on the changed surfaces: find and run a tool (command palette), read a document's facts and its per-page editable content (Inspector / ContextPanel), and understand why a surface is empty. Success: every surface is self-explanatory, and every control the empty state or panel shows does its job. Flow position: inside the app shell, after a document or none is open.
+
+### Must-fix (blocks ship)
+- None. No crash, hang, data loss or unreachable control was produced.
+
+### Should-fix (before broader rollout)
+- **Consistency (elevation):** a dialog is the deepest common overlay, but it reads at the same depth as a menu/popover (level 2), contradicting the ladder the doc and unit test claim (ADV-189). **Try:** consume `--shadow-dialog` on `.modal-dialog`/`.sheet`, or move the doc to level 2.
+- **Accessibility (states):** the decorative empty-state hero mark is 2.2-2.9:1 in light/dark, under the doc's own 3:1 graphic floor (ADV-190). **Try:** strengthen the tint or state the decorative exemption explicitly.
+
+### Nice-to-fix (when there's room)
+- **States (empty surfaces):** the two designed empty states added for zero-page/no-document are unreachable, so users never see them and the suite cannot verify them (ADV-191). **Try:** re-point them at a reachable condition or remove them.
+
+### Strengths to keep
+- One shared `EmptyState` (optional hero / headline / help) with `data-*` pass-through, so every adopter keeps its existing hook and there is a single place to change the pattern.
+- The DEF-528 hero override is pinned by a genuine DOM-match guard (not a string pin) and the mark renders at exactly 32px in all three themes.
+- Interaction states are visibly distinct: hover / active / selected / disabled each use a different token step, and selected carries the accent ring.
+- Docked panels stay flat and the command palette rides level-2 as documented; the palette no-results and edit-content empty states read clearly and are keyboard-reachable.
+
 

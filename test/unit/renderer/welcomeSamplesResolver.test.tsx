@@ -322,6 +322,13 @@ describe("Welcome — samplesResolver identity contract (DEF-077 / DEF-078)", ()
     expect(empty).not.toBeNull();
     expect(empty?.textContent).not.toContain("Loading");
     expect(empty?.textContent).toContain("No bundled samples");
+    // Phase 96-D — the empty branch is the shared designed EmptyState.
+    expect(empty?.classList.contains("empty-state")).toBe(true);
+    expect(empty?.querySelector(".empty-state-headline")?.textContent).toBe("No bundled samples");
+    expect(empty?.querySelector(".empty-state-help")?.textContent).toBe(
+      "Place PDF files in assets/samples/ and rebuild.",
+    );
+    expect(empty?.querySelector(".empty-state-mark")).not.toBeNull();
     expect(handle.container.querySelectorAll(".sample-card").length).toBe(0);
     handle.cleanup();
   });

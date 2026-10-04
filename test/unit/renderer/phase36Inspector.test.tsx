@@ -234,6 +234,20 @@ describe("Phase 36 chunk 5 - the DOCUMENT fallback with nothing selected", () =>
       unmount();
     }
   });
+
+  it("renders the designed no-selection empty state when no document is open", () => {
+    const { host, unmount } = mount({ stage: "pages", selection: { kind: "none" } });
+    try {
+      expect(slots(host)).toEqual(["document"]);
+      const empty = host.querySelector("[data-inspector-empty]");
+      expect(empty).not.toBeNull();
+      expect(empty?.classList.contains("empty-state")).toBe(true);
+      expect(empty?.querySelector(".empty-state-headline")?.textContent).toBe("No document open");
+      expect(empty?.querySelector(".empty-state-mark")).not.toBeNull();
+    } finally {
+      unmount();
+    }
+  });
 });
 
 describe("Phase 36 chunk 5 - the re-parented components", () => {

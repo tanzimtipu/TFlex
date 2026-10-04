@@ -214,8 +214,16 @@ describe("Phase 59 item 9 - no rendered button label ends with an ellipsis", () 
     }
     const review = renderContextPanel({ stage: "review", onManageSignatures: vi.fn() });
     try {
-      expect(review.host.textContent).toContain("Manage signatures");
-      expect(review.host.textContent).not.toContain("Manage signatures\u2026");
+      // Phase 90 re-pointed the review stage at the unified
+      // `ReviewElementsPanel`: the legacy `Manage signatures` control is gone,
+      // replaced by the Signatures category (empty text when none placed). The
+      // case's intent still holds — the current review affordances carry no
+      // dialog-promising (ellipsis) label.
+      const text = review.host.textContent ?? "";
+      expect(review.host.querySelector('[data-review-category="signatures"]')).not.toBeNull();
+      expect(text).toContain("Signatures");
+      expect(text).toContain("No signatures placed.");
+      expect(text).not.toContain("Manage signatures");
     } finally {
       review.unmount();
     }

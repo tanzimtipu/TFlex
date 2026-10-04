@@ -384,7 +384,12 @@ describe('Phase 36 — fuzzy search', () => {
 
       type(input(h.host), 'zzzqqq');
       expect(rows(h.host)).toHaveLength(0);
-      expect(h.host.querySelector('[data-command-palette-empty]')).not.toBeNull();
+      const empty = h.host.querySelector('[data-command-palette-empty]');
+      expect(empty).not.toBeNull();
+      // Phase 96-D — the empty surface is the shared designed EmptyState.
+      expect(empty?.querySelector('.empty-state')).not.toBeNull();
+      expect(empty?.querySelector('.empty-state-headline')?.textContent).toBe('No matching tools');
+      expect(empty?.querySelector('.empty-state-mark')).not.toBeNull();
     } finally {
       h.unmount();
     }

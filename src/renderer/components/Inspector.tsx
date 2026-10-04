@@ -23,8 +23,9 @@
 
 import { useMemo, useState } from 'react';
 import type { ReactElement, ReactNode } from 'react';
-import { Hash, PanelRightClose, PanelRightOpen, X } from 'lucide-react';
+import { Hash, MousePointerClick, PanelRightClose, PanelRightOpen, X } from 'lucide-react';
 import { Icon } from '../icons/Icon';
+import { EmptyState } from './EmptyState';
 import { GlassSidebarBody, GlassSidebarHeader } from './GlassSidebar';
 import { TextPropertiesPanel } from '../edit/TextPropertiesPanel';
 import type { TextPropertiesPanelProps } from '../edit/TextPropertiesPanel';
@@ -524,22 +525,45 @@ fileSize = null,
 
   /** The DOCUMENT section: read-only facts. Section 3A ruling 5 — File size
    *  is a VALUE with NO "▾" affordance, and Optimize / Audit live only in the
-   *  DELIVER stage (the dock + the panel's pre-flight). */
-  const renderDocumentSection = (): ReactElement => (
-    <Section id="document" title="Document">
-      {documentTitle !== null && (
-        <Row id="title" label="Title">
-          {documentTitle}
+   *  DELIVER stage (the dock + the panel's pre-flight).
+   *
+   *  Nothing selected AND no document open is the Inspector's no-selection
+   *  state: a designed empty state replaces the bare "Pages 0" / "File size —"
+   *  rows. With a document open the facts render exactly as before. */
+  const renderDocumentSection = (): ReactElement => {
+    if (
+      selection.kind === 'none' &&
+      pageCount === 0 &&
+      fileSize === null &&
+      documentTitle === null
+    ) {
+      return (
+        <Section id="document" title="Document">
+          <EmptyState
+            icon={MousePointerClick}
+            headline="No document open"
+            help="Open a PDF to inspect its details here."
+            data-inspector-empty
+          />
+        </Section>
+      );
+    }
+    return (
+      <Section id="document" title="Document">
+        {documentTitle !== null && (
+          <Row id="title" label="Title">
+            {documentTitle}
+          </Row>
+        )}
+        <Row id="page-count" label="Pages">
+          {pageCount}
         </Row>
-      )}
-      <Row id="page-count" label="Pages">
-        {pageCount}
-      </Row>
-      <Row id="file-size" label="File size">
-        <span data-inspector-value="file-size">{fileSizeText}</span>
-      </Row>
-    </Section>
-  );
+        <Row id="file-size" label="File size">
+          <span data-inspector-value="file-size">{fileSizeText}</span>
+        </Row>
+      </Section>
+    );
+  };
   /** Phase 37 (item 1) — the text-manipulation block, rendered at the TOP of
    *  the Inspector for both flows (EDIT and the REVIEW/annotate flow). The
    *  re-parented component keeps every selector; a subtle divider separates it

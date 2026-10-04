@@ -5,6 +5,49 @@
 > inspect the current `OPEN`, `FIX-READY`, and `DISPUTED` entries first; closed records are
 > historical evidence and must not be loaded wholesale.
 
+## DEF-529: Phase 96 dialogs paint elevation-2, not the documented elevation-3 ladder step (--shadow-dialog orphaned)
+
+- Status: CLOSED
+- Severity: LOW
+- Found by: adversary (ADV-189, Phase 96-F diff-pass TFL-648)
+- Phase: 96 (app-wide modern visual design refresh)
+- Files: `src/renderer/styles.css` (`.modal-dialog` `:5728`, `.sheet` `:8616`), `docs/DESIGN-SYSTEM.md` (sections 10/12), `test/unit/renderer/designSystem.test.ts` (elevation mapping), `e2e/phase96_design_system.spec.cjs` (dialog guard)
+- Expected: per Phase 96 Ruling 5 and the doc, dialog/sheet = `--elevation-3` (`--shadow-dialog`); the dialog root's computed `box-shadow` equals `var(--elevation-3)`.
+- Actual: the dialog root (`.sheet`/`.modal-dialog`, e.g. `[data-prefs-dialog]` shell `sheet sheet-prefs`) computes `var(--elevation-2)` in all three themes; both surfaces consume `--shadow-popover`. After Phase 96, `--shadow-dialog` (level 3) has one consumer, `.reading-view` (`styles.css:18239`).
+- Repro: launch -> open a document -> `[data-open-preferences]` -> measure the dialog root computed `box-shadow` (adversary probe `test-fixtures/phase96-adversary/probe_state_and_dialog.cjs`) -> equals elevation-2, not elevation-3.
+- Escape class: wrong-oracle - `designSystem.test.ts` asserts the token mapping `--shadow-dialog === var(--elevation-3)` but never a dialog consumer; the shipped e2e dialog guard logs the shadow but does not assert it.
+- CTO triage (2026-10-04): ACCEPTED, LOW, assigned frontend-dev (TFL-649). Fix: `.modal-dialog` and `.sheet` consume `--shadow-dialog` (matching the documented ladder); add a dialog-shadow assertion to the shipped e2e. Blocks Phase 96 phase close.
+- qa (TFL-650, 2026-10-04): CLOSED. `.modal-dialog` (`styles.css:5728`) and `.sheet` (`:8616`) now declare `box-shadow: var(--shadow-dialog)`, and the frosted override (`:12464-12472`) layers `var(--shadow-dialog)` over the glass insets; `--shadow-dialog: var(--elevation-3)` in all three theme blocks (`:534`, `:710`, `:952`). `npm.cmd run test:e2e -- e2e/phase96_design_system.spec.cjs` -> 6 passed / 0 failed. The dialog root's outer drop-shadow equals computed `var(--elevation-3)` in every theme: light `rgba(15,23,42,0.14) 0px 4px 16px 0px, rgba(15,23,42,0.18) 0px 12px 40px 0px`; dark `rgba(0,0,0,0.55) 0px 4px 16px 0px, rgba(0,0,0,0.6) 0px 12px 40px 0px`; frosted the same outer pair plus its two documented inset glass edges. No other surface's shadow changed by the fix (only `.modal-dialog`/`.sheet` moved from `--shadow-popover` to `--shadow-dialog`).
+
+## DEF-530: The design doc's unqualified 3:1 graphic floor contradicts its own decorative empty-state mark tint (--fg-faint at 2.16-2.91:1)
+
+- Status: CLOSED
+- Severity: LOW
+- Found by: adversary (ADV-190, Phase 96-F diff-pass TFL-648)
+- Phase: 96 (app-wide modern visual design refresh)
+- Files: `docs/DESIGN-SYSTEM.md` (sections 11 and 12), `src/renderer/styles.css` (`.empty-state-mark` `:3402`)
+- Expected: the doc states an unqualified "icons/graphics clear >= 3:1 in light, dark AND frosted".
+- Actual: section 11 mandates the hero-mark tint `--fg-faint`; it measures 2.16-2.56:1 on the light surfaces and 2.75-2.91:1 on the dark surfaces (frosted clears). The mark is decorative and `aria-hidden` (`EmptyState.tsx:35`), which WCAG 1.4.11 exempts (it applies only to graphics required to understand content).
+- CTO triage (2026-10-04): ACCEPTED, LOW, doc-only, assigned frontend-dev (TFL-649). Fix: amend `DESIGN-SYSTEM.md` section 12 to state the decorative `aria-hidden` empty-state mark is exempt from the 3:1 graphic floor; keep the tasteful tint. Blocks Phase 96 phase close.
+- qa (TFL-650, 2026-10-04): CLOSED. `docs/DESIGN-SYSTEM.md` section 12 (Contrast contract, `:215-228`) now states the one documented exemption is the decorative `aria-hidden` empty-state hero mark (`.empty-state-mark`, tinted `--fg-faint`), exempt from the 3:1 graphic floor per WCAG 1.4.11. The `.empty-state-mark` CSS is unchanged (`styles.css:3402` still `color: var(--fg-faint)`; the DEF-528 hero-size override at `:16886` is a size rule, not a tint change). `npm.cmd run test:e2e -- e2e/phase96_design_system.spec.cjs` -> 6 passed / 0 failed.
+
+## DEF-528: Phase 96 empty-state hero marks render at 17-18px on the command palette and ContextPanel, not the 32px `--tf-icon-size-hero`
+
+- Status: CLOSED
+- Severity: MEDIUM
+- Found by: qa (TFL-644, Phase 96-E phase validation, TFL-510)
+- Phase: 96 (app-wide modern visual design refresh)
+- Files: `src/renderer/styles.css` (the surface svg-size group at `:16859-16874`, `.context-panel svg` `:16863`, `.command-palette svg` `:16866`), `src/renderer/components/EmptyState.tsx`
+- Expected: the designed empty-state hero mark renders at `--tf-icon-size-hero` (32px) on every applied surface (Phase 96 Ruling 6; `icons/Icon.tsx` `size="hero"` = 32).
+- Actual: on the command-palette no-results (`.command-palette-empty`) and the ContextPanel edit-content (`.context-panel-empty`) empty states the mark renders at 17-18px in all three themes. The Phase-94 surface group `.context-panel svg, .command-palette svg { width/height: var(--tf-icon-size) }` (`styles.css:16859-16874`) beats the `Icon size="hero"` attribute, and it also pins `min-width/min-height` at 18px.
+- Repro: launch -> open a document -> Ctrl+K, type a non-matching query (palette empty), or enter the EDIT stage (context-panel edit-content empty); measure `.empty-state-mark svg` -> 17-18px. Phase 96-E e2e captured it in `screenshots/phase96/command-palette-empty-*.png` and `context-panel-edit-content-*.png`.
+- Escape class: wrong-oracle - `designSystem.test.ts` pins token presence, not the surface-scoped rendered SVG size, so it did not catch this; the Phase 96-E e2e is the only oracle that did.
+- Attribution: Phase 96-D (`EmptyState` implementation) interacting with the Phase-94 surface svg-size rule.
+- CTO triage (2026-10-04): ACCEPTED, MEDIUM, assigned frontend-dev (TFL-645). Blocks Phase 96 phase-close (success criterion 5). Fix: a higher-specificity `.empty-state .empty-state-mark svg` rule consuming `--tf-icon-size-hero` (all four of width/height/min-width/min-height), plus a source-contract guard, plus an explicit documented carve-out for the two unreachable empty states (zero-page rail, no-document Inspector).
+- frontend-dev (TFL-645): FIX-READY. Added `.empty-state .empty-state-mark svg { width/height/min-width/min-height: var(--tf-icon-size-hero) }` at `styles.css:16876-16887` + a `designSystem.test.ts` guard + the DESIGN-SYSTEM.md 15.4 carve-out. First verification (TFL-646) found the selector was DEAD: `EmptyState.tsx:35` renders `<Icon className="empty-state-mark" />` and `Icon.tsx` returns lucide's `<svg className="empty-state-mark">` directly, so `.empty-state-mark` IS the svg and the descendant `svg` selector matched nothing; the 18px surface rule still won (e2e 3 passed / 3 failed; measured 18px all themes).
+- frontend-dev (TFL-647 rework): FIX-READY. Selector corrected to `.empty-state .empty-state-mark` (`styles.css:16886`, specificity 0,2,0), all four dimensions on `var(--tf-icon-size-hero)`; the guard now renders `EmptyState` and asserts the selector MATCHES the mark and does NOT match the dead `.empty-state-mark svg`, so the phantom-selector failure cannot recur.
+- qa (TFL-646, 2026-10-04): CLOSED. Re-verification after the TFL-647 rework on a freshly rebuilt renderer. `test:unit -- designSystem emptyState commandBar phase36CommandPalette phase36ContextPanel` -> 9 files / 149 tests passed; `test:e2e -- e2e/phase96_design_system.spec.cjs` -> 6 passed / 0 failed (was 3/3); `verify` -> `conventions: clean (343 file(s))`, 0 type errors. Measured hero mark: command-palette no-results and ContextPanel edit-content = 32 / 32 / 32 px (light/dark/frosted); recent-empty and samples-empty unchanged at 32px. Blast radius `phase94_noAdHocIcons phase43IconUniqueness def339_iconFloor designTokensContract phase40SemanticPalette phase38LegibilityContrast` -> 6 files / 130 tests passed. No floor/contrast regression.
+
 ## DEF-527: The Bates update dialog defaults the page scope to All pages, so editing a partial run silently re-stamps every page
 
 - Status: CLOSED

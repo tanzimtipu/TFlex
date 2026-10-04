@@ -188,3 +188,21 @@ describe("bugSweepWelcome — DEF-472 samples loading ring spins", () => {
     }
   });
 });
+
+describe("bugSweepWelcome — Phase 96-D designed empty states", () => {
+  it("renders the recent-files EmptyState with its class preserved", () => {
+    const { host, unmount } = renderSweep({ samplesResolver: RESOLVE_EMPTY });
+    try {
+      const empty = host.querySelector(".recent-empty");
+      expect(empty).not.toBeNull();
+      expect(empty?.classList.contains("empty-state")).toBe(true);
+      expect(empty?.querySelector(".empty-state-headline")?.textContent).toBe("No recent files yet.");
+      expect(empty?.querySelector(".empty-state-help")?.textContent).toBe(
+        "Open a PDF and it will appear here.",
+      );
+      expect(empty?.querySelector(".empty-state-mark")).not.toBeNull();
+    } finally {
+      unmount();
+    }
+  });
+});
