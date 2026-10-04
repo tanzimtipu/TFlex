@@ -87,26 +87,43 @@ export const RUN_COVER_DESCENT = 0.25;
  *  small enough that two adjacent lines' boxes never touch. */
 const HOVER_RECT_PAD_PT = 2;
 
-/** TFL-686 — the dashed hover / selection rect for a text run. The raw
- *  pdf.js `TextItemGeom` spans ascender-top -> baseline (its bottom edge is
- *  the baseline), so a box drawn at that rect shows MORE room above the
- *  glyphs than below. This helper pads the glyph box — the same band
- *  `runCoverRect` covers, ascender-top -> descender bottom — by an EQUAL
- *  `HOVER_RECT_PAD_PT` on all four sides, so the dashed box reads
- *  symmetrically around the text. Geometry only: never use the result for an
- *  engine op (commits keep the raw run rect). */
+/** TFL-688 (DEF-535) — the REAL descent of a run's rendered font, as a
+ *  fraction of `item.height`. A raw pdf.js `TextItemGeom` is
+ *  `baseline - height` -> `baseline`, and pdf.js reports `item.height` as the
+ *  font's em box, so:
+ *    - the rect's TOP sits `descent * height` ABOVE the rendered glyph box
+ *      (the em-box ascent overshoots the ink top), and
+ *    - the rendered span box's BOTTOM sits `descent * height` BELOW the
+ *      baseline.
+ *  The rendered `.textLayer span` box is therefore the raw run rect shifted
+ *  DOWN by this descent (same height). `RUN_COVER_DESCENT` (0.25) is the
+ *  white-cover pad, NOT the glyph band, and must not be reused here — that
+ *  was DEF-535. Hand-set to the measured ~0.18-0.20 of a standard-font run;
+ *  the hover helper cannot read per-run font metrics (TextItemGeom has none)
+ *  without reaching outside its contract. */
+const HOVER_GLYPH_DESCENT = 0.2;
+
+/** TFL-686/TFL-688 — the dashed hover / selection rect for a text run. The
+ *  raw `TextItemGeom` spans em-box-top -> baseline, whose top is ABOVE and
+ *  whose bottom is AT the rendered glyph box; drawing there (or only padding
+ *  the bottom by a guessed descent) reads top-heavy. This helper shifts the
+ *  whole box DOWN by the run's real descent so the rendered glyph band —
+ *  `rect.y + descent` -> `rect.y + height + descent`, the pdf.js span box —
+ *  gets an EQUAL `HOVER_RECT_PAD_PT` of breathing room on all four sides.
+ *  Geometry only: never use the result for an engine op (commits keep the raw
+ *  run rect). */
 export function symmetricHoverRect(rect: {
   x: number;
   y: number;
   width: number;
   height: number;
 }): { x: number; y: number; width: number; height: number } {
-  const descent = rect.height * RUN_COVER_DESCENT;
+  const descent = rect.height * HOVER_GLYPH_DESCENT;
   return {
     x: rect.x - HOVER_RECT_PAD_PT,
-    y: rect.y - HOVER_RECT_PAD_PT,
+    y: rect.y + descent - HOVER_RECT_PAD_PT,
     width: rect.width + HOVER_RECT_PAD_PT * 2,
-    height: rect.height + descent + HOVER_RECT_PAD_PT * 2,
+    height: rect.height + HOVER_RECT_PAD_PT * 2,
   };
 }
 
@@ -387,6 +404,12 @@ export function EditOverlay(props: EditOverlayProps): ReactElement | null {
   if (props.textLive !== undefined && props.textLive !== null && textTarget?.kind === "run") {
     runLiveRef.current = props.textLive;
   }
+  /** DEF-537 — a plain Confirm on a run dismisses the selection (clearing
+   *  `textTarget`) BEFORE the host's commit token flips. The token effect
+   *  then read a null target and silently dropped the live edit. The Confirm
+   *  handler parks the run target HERE when a live edit exists, so the token
+   *  effect can still commit it exactly once after the clear. */
+  const pendingRunCommitTargetRef = useRef<EditTextTarget | null>(null);
   const [boxDrag, setBoxDrag] = useState<BoxDragState | null>(null);
   const [imageDrag, setImageDrag] = useState<ImageDragState | null>(null);
   const [textBoxDrag, setTextBoxDrag] = useState<TextBoxDragState | null>(null);
@@ -581,7 +604,10 @@ export function EditOverlay(props: EditOverlayProps): ReactElement | null {
   useEffect(() => {
     if (commitToken === prevCommitTokenRef.current) return;
     prevCommitTokenRef.current = commitToken;
-    const target = textTarget;
+    // DEF-537 — fall back to the run target a plain Confirm parked before it
+    // cleared `textTarget`, so a Confirm commit is not lost to the clear.
+    const target = textTarget ?? pendingRunCommitTargetRef.current;
+    pendingRunCommitTargetRef.current = null;
     if (target === null || target.kind !== "run") return;
     const next = runLiveRef.current;
     if (next === null || next === target.text) return;
@@ -1565,6 +1591,22 @@ export function EditOverlay(props: EditOverlayProps): ReactElement | null {
               // Phase 51 item 13 — a plain Confirm (no move) dismisses the
               // selection; clearing the target lets the host commit any live
               // panel session at the run's CURRENT rect. Never repositions.
+              // DEF-537 — park the run target when a live edit exists so the
+              // token-triggered commit still has it after this clear.
+              // DEF-541 — a whitespace-only run never commits, so do not park
+              // it: a stale parked target could later be read by the token
+              // effect and commit an aborted whitespace edit.
+              const t = textTarget;
+              const live = runLiveRef.current;
+              if (
+                t !== null &&
+                t.kind === "run" &&
+                live !== null &&
+                live !== t.text &&
+                live.trim() !== ""
+              ) {
+                pendingRunCommitTargetRef.current = t;
+              }
               setCanvasEditRun(false);
               setRunSelection(null);
               setPendingRunMove(null);
@@ -1773,6 +1815,7 @@ export function EditOverlay(props: EditOverlayProps): ReactElement | null {
             cssScale={cssScale}
             onChange={onTextInput}
             onCommit={onTextInputCommit}
+            onDiscard={onDiscardTextEdit}
             spellCheck={spellCheck}
           />
         ) : runPreviewText !== null && runPreviewText.length > 0 && runLiveRect !== null ? (
@@ -1959,6 +2002,10 @@ interface RunCanvasEditorProps {
   cssScale: number;
   onChange?: (text: string) => void;
   onCommit?: (relatedTarget?: EventTarget | null) => void;
+  /** DEF-540 — the host's explicit discard. Escape is the keyboard abort for
+   *  a live text session, so the on-canvas editor routes it here (never to the
+   *  blur commit) before releasing focus. */
+  onDiscard?: () => void;
   spellCheck?: SpellCheckState;
 }
 
@@ -1972,7 +2019,7 @@ interface RunCanvasEditorProps {
  *  so the text is shown exactly once. Phase 82 — it also carries the shared
  *  offline spell-check surface. */
 function RunCanvasEditor(props: RunCanvasEditorProps): ReactElement {
-  const { rect, text, style, cssScale, onChange, onCommit, spellCheck } = props;
+  const { rect, text, style, cssScale, onChange, onCommit, onDiscard, spellCheck } = props;
   const ref = useRef<HTMLTextAreaElement | null>(null);
   useEffect(() => {
     ref.current?.focus();
@@ -2021,7 +2068,10 @@ function RunCanvasEditor(props: RunCanvasEditorProps): ReactElement {
       onCommit={(relatedTarget): void => onCommit?.(relatedTarget)}
       onKeyDown={(e): void => {
         if (e.key === "Escape") {
+          // DEF-540 — Escape is the keyboard abort: discard the live session
+          // explicitly instead of blurring into the commit gesture.
           e.preventDefault();
+          onDiscard?.();
           (e.target as HTMLTextAreaElement).blur();
         }
       }}

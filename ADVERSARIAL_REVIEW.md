@@ -9134,3 +9134,119 @@ Screenshot: Artifacts board `occlusion-14.png`; probe fixtures `test-fixtures/tf
 
 Disposition: REJECTED for Phase 99 (CTO, 2026-10-04): pre-existing and outside TFL-524's five product criteria; the adversary's own pre-fix repro proves it is not a regression of this phase, so it does not gate the TFL-524 close. Filed as standalone follow-up TFL-684 (backlog, assigned frontend-dev) to fix the extreme-squeeze overlap and add an e2e regression test; parked in backlog so it does not race the TFL-524 phase-close QA pass, for the operator to promote when they want it worked. Re-open as a Phase 99 defect only if the operator wants it fixed within this phase.
 
+## TFL-695 adversary diff-pass — TFL-525 Edit Text / Add Text commit / cancel / hover change set
+
+Session label: `diff-pass`. Scope: TFL-686 (commit e5bf019), TFL-688, TFL-693 and
+the qa specs for TFL-525. Product code, tests and REQUIREMENTS.md read, never
+modified. Adversary probes added (uncommitted): `e2e/tfl525_adversary_diffpass.spec.cjs`
+(real-app Save-As + pdfjs reparse oracle) and
+`test/unit/renderer/tfl525_adversary_diffpass.test.tsx` (real EditOverlay + a host
+that mirrors DocumentView's run-session protocol).
+
+Exact commands and counts:
+
+- `npm.cmd run build:renderer` -> exit 0 (renderer built).
+- `npm.cmd run test:e2e -- e2e/tfl525_edit_text_fixes.spec.cjs --reporter=line`
+  -> **4 passed / 0 failed** (36.0s). Hover symmetry #1/#2 and Cancel/Confirm
+  boxes #3/#4/#5 hold on the real app.
+- `npm.cmd run test:e2e -- e2e/tfl525_adversary_diffpass.spec.cjs --reporter=line`
+  -> **3 tests / 2 passed / 1 failed** (S1 fails; S2, S3 pass). `-g S4` -> 1 passed.
+- `npx vitest run test/unit/renderer/tfl525_adversary_diffpass.test.tsx`
+  -> **8 tests / 5 passed / 3 failed** (A3, A5, A8; A8 later disproven by real S2).
+
+Attack-surface results (task categories 1-6):
+
+1. Confirm / Cancel / Delete boundaries: **HOLDS** - plain Confirm commits exactly
+   once (unit A1; real S2/S4); Cancel discards with no engine op (unit A2; qa #3);
+   Delete masks via an empty-text run commit (unit A6); the blur guard is narrow
+   (product `editCancelSemantics.test.tsx`; `isEditTextActionBarTarget` matches only
+   `[data-edit-box-toolbar]` and `[data-content-action-bar="textrun"]`, so the
+   `ann-*` / `stamp` bars keep their blur semantics); Confirm then a later disarm
+   does not double-commit (unit A7).
+2. `pendingRunCommitTargetRef` fallback: Confirm with no live edit does not park
+   (guard `live !== null && live !== t.text`); two confirms on two runs leave no
+   stale parked target (unit A9); switching runs COMMITS via the field blur (real
+   S2 - the jsdom A8 loss was a harness artifact, not a product break); a dock tool
+   switch COMMITS via the field blur (real S4). See ADV-198 for the Escape path.
+3. Escape: box discards (qa #5; product test); annotation semantics untouched (the
+   new Escape branch is gated on `target.kind === "box"`); **run Escape LOOSES the
+   live edit - ADV-198** (it neither bakes nor commits).
+4. Whitespace / empty commit: box whitespace discards, new box dropped / existing
+   box reverted (DEF-538; unit box tests); annotation whitespace discards
+   (`commitTextSession` trim guard line 1371). **Run whitespace DIRTIES the doc -
+   ADV-199** (no trim guard on the run branch, line 1439).
+5. Hover geometry: **HOLDS** - qa fixes spec #1 measures the rendered
+   `.textLayer span` against the hover box for every distinct page-1 run at the
+   app's default zoom and asserts equal vertical/horizontal gaps within 2px (4/4
+   pass). `symmetricHoverRect` shifts the raw run rect down by the constant
+   `HOVER_GLYPH_DESCENT = 0.2 * height`; the shift is exact only for a run whose
+   real rendered descent is 0.2, so a very large run (height > ~200pt) or an
+   unusual font could exceed the 2px budget - not reproduced on the sample PDF,
+   reported only as a bound.
+6. Undo / redo / round-trip / second edit: covered by qa sweep T5 on the real app
+   (commit -> undo -> redo -> Cancel adds no entry) and qa fixes #3 (Save-As +
+   reparse identity after Cancel); not re-run here per the task's no-full-suite rule.
+
+## ADV-198: Escape on a live text-run edit silently loses the edit (document data loss)
+
+- Session: diff-pass
+- Suggested severity: HIGH
+
+What I did: `e2e/tfl525_adversary_diffpass.spec.cjs` S1 (line 129), plus the
+mirror unit probe `test/unit/renderer/tfl525_adversary_diffpass.test.tsx` A3.
+With the app open on `assets/report.pdf` page 1, armed the Edit Text verb
+(`gotoStage(win, 2)` then `[data-dock-verb="editText"]`), clicked a text run,
+typed `"<run text> ZZESC<n>"` into the Inspector Text field (a live run session),
+then pressed Escape. Then Save As and reparsed the saved file with pdfjs.
+
+Expected: the host's target-change effect commits a run session when the target
+clears ("so no edit is lost", `src/renderer/components/DocumentView.tsx:1509`);
+Escape disarms the tool, so the live run edit must be committed exactly once -
+exactly as a dock tool switch (S4) and selecting another run (S2) already do.
+
+Actual: the run edit is silently DISCARDED. `committedAfterEscape=false` (the
+marker is absent from the saved PDF's page-1 text). Unit A3 reproduces it against
+the real `EditOverlay`: `onCommitTextEdit` call count after a tool switch = 0.
+Root cause: `pendingRunCommitTargetRef` is parked ONLY in the run bar's Confirm
+handler (`EditOverlay.tsx:1594-1600`). On Escape there is no field blur, so
+`commitTextSession` clears the session and bumps `textCommitToken` only AFTER the
+Escape/disarm has cleared the overlay's `textTarget` (the `[tool, page]` reset
+effect, `EditOverlay.tsx:517-529`). The token effect then reads
+`textTarget ?? pendingRunCommitTargetRef.current` (`EditOverlay.tsx:609`) = null,
+returns before `onCommitTextEdit`, and the keystrokes are gone with no engine op
+and no undo entry. A dock tool switch does not hit this because its mousedown
+blurs the field first, while `textTarget` is still the run.
+
+Screenshot: screenshots/tfl695-s1-escape.png
+
+Disposition: ACCEPTED -> DEF-540 (CTO, 2026-10-04). CTO RULING: Escape is the keyboard abort for a live text session and must be an explicit DISCARD - the same semantics as the run/box Cancel and the DEF-539 box-Escape fix: the run edit is reverted and the document left unmodified. The adversary's suggested expectation (Escape commits the run edit) is OVERRIDDEN; blur / click-away / tool-switch remain the commit gestures. The defect is that the run Escape path reaches the discard by ACCIDENT (the commit-token effect reads a cleared `textTarget` and returns), so it is nondeterministic and no test locks it. Fix: on Escape/disarm, call `discardTextSession` for a live RUN session too (mirroring the box handling TFL-693 added) and add the missing assertion. Severity recommended MEDIUM (the observable result already matches the intended revert; the risk is nondeterminism, not active data loss under this ruling). qa to file as DEF-540.
+
+## ADV-199: A whitespace-only run Confirm still reaches the engine and dirties the document
+
+- Session: diff-pass
+- Suggested severity: MEDIUM
+
+What I did: `e2e/tfl525_adversary_diffpass.spec.cjs` S3 (line 180), plus unit A5.
+Armed Edit Text, selected a text run, filled the Inspector Text field with three
+spaces (a live whitespace-only run session), clicked the run bar's Confirm, then
+read `window.tflexDiagnostics()` and Save-As + reparse.
+
+Expected: the same rule DEF-538 added for boxes ("a box with no visible content
+carries nothing: never reach the engine") and the pre-existing annotation guard
+(`session.text.trim() === ""`, `DocumentView.tsx:1371`) apply to the run kind too:
+a whitespace-only commit places nothing and does not mark the document modified.
+
+Actual: the run branch has NO trim guard (`DocumentView.tsx:1439-1441` just bumps
+`textCommitToken`), and the EditOverlay token effect commits whenever
+`next !== target.text`. Real app: `confirmCount=1`, `modified=true` after the
+whitespace-only Confirm, and unit A5 records one `onCommitTextEdit` with
+`newText="   "`. The engine masks the run's rect and draws no visible glyphs, so
+an accidental space visibly deletes the run; the original glyphs stay only in the
+content stream, so a later extraction still shows them (the mask is visual-only) -
+which is why the file is dirty but the string survives reparse.
+
+Screenshot: screenshots/tfl695-s3-whitespace.png
+
+Disposition: ACCEPTED -> DEF-541 (CTO, 2026-10-04). Confirmed: the run commit branch has no trim guard, so a whitespace-only run Confirm reaches the engine (`modified=true`) and masks the run with no visible glyphs. Apply the same rule DEF-538 added for boxes and the pre-existing annotation guard (`session.text.trim() === ""`, `DocumentView.tsx:1371`): a whitespace-only run commit places nothing and leaves the document unmodified. Severity MEDIUM. qa to file as DEF-541.
+
+

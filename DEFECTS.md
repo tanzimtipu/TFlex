@@ -11949,3 +11949,206 @@ History:
 - adversary (TFL-655, 2026-10-04): FILED from ADV-193 during the Phase 97 diff-pass.
 - CTO (2026-10-04): triaged ACCEPTED. Fix dispatched with DEF-525.
 
+## DEF-535: Edit Text hover box is still top-heavy — more breathing room above the glyphs than below (TFL-687 verifying TFL-686 / TFL-384 criterion 1)
+
+- Status: CLOSED
+- Severity: MEDIUM
+- Found by: qa (TFL-687 focused verification; independent e2e measurement, not the developer's unit oracle)
+- Phase: 99 / TFL-525 (TFL-686 fix, commit e5bf019)
+- Files: `src/renderer/edit/EditOverlay.tsx` (`symmetricHoverRect`, `RUN_COVER_DESCENT`)
+
+Steps to reproduce:
+1. Build and launch TFlex, open the bundled `assets/samples/report.pdf`.
+2. Enter EDIT mode, arm the `editText` tool, hover the page-1 title run "TFlex Technical Report".
+3. Measure the `.edit-text-hover` box against the run's rendered glyph box (the pdf.js `.textLayer span` under the cursor).
+
+Expected (TFL-525 criterion 1): equal breathing room above and below the text — top gap equals bottom gap within 2px (and left equals right within 2px).
+
+Actual: top gap 10.875px, bottom gap 6.141px (left 3.219, right 4.295) at 170% zoom. Vertical asymmetry is 4.73px, above the 2px tolerance; the box has more room above the text than below — the same direction as the operator's original report ("less space at the bottom than at the top"). Horizontal is symmetric (4.30 - 3.22 = 1.08px).
+
+Root cause: `symmetricHoverRect` pads around the run's raw pdf.js `TextItemGeom` rect (`y` = baseline - item.height, bottom = baseline) by `RUN_COVER_DESCENT` (0.25 x height) on the bottom and an equal `HOVER_RECT_PAD_PT` (2pt) on all sides. But `item.height` is the font's ascent+descent box, so the raw rect's top sat `descent` ABOVE the visual glyph top already; adding 0.25h at the bottom only balances when `descent == 0.125 * height`. For this title run `descent ~ 0.18 * height`, so top gap = descent + pad and bottom gap = 0.25h + pad - descent, leaving `2*descent - 0.25h = 4.73px` of extra room on top. The developer's unit test (`test/unit/renderer/editHoverSymmetry.test.ts`) reproduces the same band it constructs, so it cannot see the discrepancy.
+
+Evidence: `screenshots/tfl525-hover-measured.json` (raw numbers), `screenshots/tfl525-hover-box.png` (cropped hover box), `screenshots/tfl525-hover-page.png` (full page); command `npm.cmd run test:e2e -- tfl525_edit_text_fixes` (test 1 of `e2e/tfl525_edit_text_fixes.spec.cjs`). Test 3 (Cancel reverts an existing run, saved text byte-identical), test 2 (Add Text padding 3px all sides) and test 4+5 (Cancel removes a new box; Confirm commits) PASS.
+
+Fix owner: frontend-dev (TFL-686 follow-up). Direction: pad the hover/selection rect around the real glyph band (ascender-top -> descender-bottom) rather than around `baseline - item.height`; i.e. derive the descent from the run's actual font metrics (or shift the top down by `descent` and add `descent` at the bottom) so top and bottom breathing room match. Add an e2e oracle that measures against the pdf.js textLayer span, not only the constructed band.
+
+History:
+- qa (TFL-687, 2026-10-04): FILED from the focused verification of TFL-686. Test 1 measured 10.88 vs 6.14px; the other four assertions passed.
+- fix (TFL-688): `symmetricHoverRect` shifts the box down by the run's real glyph descent (`HOVER_GLYPH_DESCENT = 0.2 * height`) instead of padding the bottom by `RUN_COVER_DESCENT = 0.25 * height`, and no longer adds descent to the box height, so the rendered pdf.js glyph band gets equal `HOVER_RECT_PAD_PT` on all four sides. `src/renderer/edit/EditOverlay.tsx` only.
+- qa (TFL-689, 2026-10-04): CLOSED — retested on the rebuilt renderer (`npm.cmd run build:renderer`, since `dist/renderer` predated the fix). Command: `npm.cmd run test:e2e -- tfl525_edit_text_fixes` (with `ELECTRON_RUN_AS_NODE` unset) — 4 passed, 0 failed. Assertion 1 measured on two runs, `.edit-text-hover` vs the run's pdf.js `.textLayer span`: title "TFlex Technical Report" top=2.70px bottom=4.11px (diff 1.41px), left=3.22px right=4.30px (diff 1.08px); descender-rich body run "A study in PDF orchestration and performance." top=2.94px bottom=3.86px (diff 0.92px), left=3.28px right=4.82px (diff 1.54px). All vertical and horizontal gaps within the 2px tolerance. Assertions 2, 3, 4+5 remained PASS. Evidence: `screenshots/tfl525-hover-measured.json`, `screenshots/tfl525-hover-box.png`, `screenshots/tfl525-hover-page.png`.
+
+## DEF-536: Phase 91 button system stripped the dock verb's pressed inset ring — `def358_editdock_verify` ring assertion is red again
+
+- Status: OPEN
+- Severity: LOW
+- Found by: qa (TFL-689 triage while retesting TFL-525; pre-existing, NOT a regression from TFL-686/TFL-688)
+- Phase: 91 (introduced) / surfaced during Phase 99 TFL-525
+- Files: `src/renderer/components/ActionDock.tsx` (verb classes), `src/renderer/styles.css` (`.action-dock-verb[aria-pressed='true']:not(:disabled):not(.btn)` at ~15801 vs `.btn-toggle[aria-pressed="true"]` at ~3293)
+
+Steps to reproduce:
+1. Build and launch TFlex, open the bundled sample `report.pdf`, press Ctrl+2 for EDIT and pick a stage that renders the action dock.
+2. Read the computed style of the pressed edit verb (`[data-dock-verb="editToolOff"]` on entering EDIT; likewise `editText` / `editTextBox` / `editImage` after arming).
+3. Run `npm.cmd run test:e2e -- def358_editdock_verify` (unset `ELECTRON_RUN_AS_NODE`).
+
+Expected (DEF-358): the pressed verb carries `aria-pressed="true"` with the dock's selected treatment — accent wash plus an inset accent ring (`box-shadow: ... 1px inset`).
+
+Actual: the pressed verb has `aria-pressed="true"` and the accent wash (`background: rgba(124, 58, 237, 0.12)`) but `box-shadow: none` — no inset ring. Both tests of `e2e/def358_editdock_verify.spec.cjs` fail at `assertExactlyOne(...)` for `editToolOff`: "single/entered: editToolOff carries the selected inset ring (boxShadow=none)" and "multi/entered: editToolOff carries the selected inset ring (boxShadow=none)". 2 failed, 0 passed.
+
+Root cause: the dock verb is rendered with `className` `['btn', 'btn-ghost', 'btn-toggle', 'action-dock-verb']` (ActionDock.tsx:870). The DEF-314 ring rule `.action-dock-verb[aria-pressed='true']:not(:disabled):not(.btn)` (styles.css:15801) excludes `.btn`, so it no longer matches; the `.btn-toggle[aria-pressed="true"]` rule (styles.css:3293) supplies the accent wash + border colour but no inset `box-shadow`. The `.btn`/`.btn-toggle` classes were added to the dock verb by commit `343fd56` ("modern professional button system", Phase 91), which predates TFL-686 (`e5bf019`) and TFL-688. Verified the classes were already present at `c484013` (parent of `e5bf019`) and at `a5276a4~1`; TFL-686 changed only the blur guard in `DocumentView.tsx`, TFL-688 only `EditOverlay.tsx` — neither touches ActionDock or the dock pressed CSS. Hence PRE-EXISTING relative to those two fixes.
+
+Evidence: command output above; `screenshots/def358-edit-dock-armed.png` (written by the spec before the ring assertion ran). Out of scope for TFL-525.
+
+History:
+- qa (TFL-689, 2026-10-04): FILED during the DEF-535 retest triage. `npm.cmd run test:e2e -- def358_editdock_verify` — 2 failed / 0 passed, both on the missing inset ring. Classified pre-existing (introduced by `343fd56`, Phase 91); not caused by TFL-686 (`e5bf019`) or TFL-688. DEF-358 remains CLOSED from the earlier Phase-41-era retest, which measured the ring before `.btn` was added to the dock verbs.
+
+## DEF-537: Confirm on an edited Edit-Text run does not commit — the edit is silently lost (TFL-690 bug-hunt; regression from TFL-686)
+
+- Status: CLOSED
+- Severity: HIGH
+- Found by: qa (TFL-690 systematic sweep of the Edit Text / Add Text matrix)
+- Phase: 99 / TFL-525 (Edit Text corrections; regression from the TFL-686 fix, commit e5bf019)
+- Files: `src/renderer/components/DocumentView.tsx` (`commitTextSession` run branch -> `setTextCommitToken`; target-change effect ~1496-1519), `src/renderer/edit/EditOverlay.tsx` (commit-token effect ~598-624 reads `textTarget`)
+
+Steps to reproduce:
+1. `npm.cmd run build:renderer`, launch TFlex through the e2e harness, open the bundled `assets/samples/report.pdf`.
+2. Press Ctrl+2 (EDIT stage), arm the `editText` dock verb.
+3. Click the page-1 title run "TFlex Technical Report" (the Inspector Text field shows its text and the run bar appears).
+4. In the Text field append " ZZUNDO" (the on-canvas live preview follows).
+5. Click Confirm in the run bar (`[data-content-action="textrun-confirm"]`).
+
+Expected: the edit commits as one engine op — the document is marked modified and the appended text is baked into the saved PDF. (This is the same commit contract the sibling Add-Text path already meets; the bar's own comment says a plain Confirm "lets the host commit any live panel session at the run's CURRENT rect".)
+
+Actual: no commit happens. `window.tflexDiagnostics().modified === false`, the marker is absent from the page-1 `.textLayer`, and a Save-As byte scan of the saved file does not contain the marker — the edited text is silently lost and the document stays unmodified. Clicking an empty page area to blur-commit (the target-clear path) also fails the same way. Formatting controls (family/size/bold/colour) compose correctly on the same still-selected run, so the live session exists; only the commit is lost.
+
+Root cause: TFL-686 made `commitTextSession` return early when the blur's `relatedTarget` lives in an EDIT-text action bar, delegating Confirm to the bar handler. The bar's plain-Confirm branch (no pending move) clears the overlay's `textTarget`; the host's target-change effect then calls `commitTextSession()` -> `setTextCommitToken(n+1)`, but by the time the EditOverlay's token effect (`[commitToken]`) runs, `textTarget` is already `null`, so it hits `if (target === null || target.kind !== "run") return;` and never calls `onCommitTextEdit`. Before TFL-686 the blur itself committed, which is why this is a regression.
+
+Evidence: `e2e/tfl525_edit_text_sweep.spec.cjs` T5 rows — "Confirm commits an edited run" -> `confirmBtn=1 modified=false marker=false`; diagnostic "Confirm vs blur commit" -> `confirmCommitted=false blurCommitted=false`. Command `npm.cmd run test:e2e -- tfl525_edit_text_sweep` (with `ELECTRON_RUN_AS_NODE` unset): 4 passed, 2 failed. Screenshot `screenshots/tfl525-sweep-t5-confirm-commit.png`; raw matrix `screenshots/tfl525-sweep-results.json`.
+
+Fix owner: frontend-dev. Direction: don't lose the run session when the target is cleared — either pass the live run text/rect straight to `onCommitTextEdit` from the Confirm handler, or have the token effect read the session captured before the clear (a ref), so a plain Confirm bakes the edit while Cancel/Delete keep their discard semantics. Add a positive e2e assertion for the run text-commit path (no move).
+
+History:
+- qa (TFL-690, 2026-10-04): FILED from the TFL-525 Edit-Text/Add-Text sweep. Not one of the existing edit-text family (DEF-150/151/152/153/232/257/262/535); no duplicate.
+- qa (TFL-692, 2026-10-04): RE-RAN the TFL-525 Edit-Text/Add-Text sweep on the current renderer (spec extended with T7 paragraph-controls/typing-edge/resize/zoom rows and T8 text-layer/annotation-layer integrity rows; T7/T8 all PASS). Command `npm.cmd run test:e2e -- tfl525_edit_text_sweep` (ELECTRON_RUN_AS_NODE unset): 6 passed / 2 failed. DEF-537 still reproduces: rows "Confirm commits an edited run" `confirmBtn=1 modified=false marker=false`, "undo setup" `modified=false marker=false`, "redo" `marker=false`. No new defect required. Status remains OPEN; fix owner frontend-dev.
+- qa (TFL-694, 2026-10-04): CLOSED. Rebuilt the renderer (`npm.cmd run build:renderer`) and re-ran the sweep against the TFL-693 fix: `npm.cmd run test:e2e -- tfl525_edit_text_sweep` -> 8 passed / 0 failed. Rows "Confirm commits an edited run" `confirmBtn=1 modified=true marker=true`, "undo setup" `modified=true marker=true`, "undo after commit" `marker=false`, "redo" `marker=true`. Decisive saved-file oracle: `npm.cmd run test:e2e -- tfl694_def537_savedbytes` reparsed the Save-As output with pdf.js — page-1 text = "... TFlex Technical Report ZZUNDO", `reparsedHasMarker=true` (the raw byte scan is false only because the run text is encoded/compressed). The edit is committed in-memory and baked into the saved PDF. Regression `tfl525_edit_text_fixes` -> 4 passed / 0 failed; blast radius `ground_truth_edit` 1 passed, `qa_verify_edit_box` 1 passed.
+
+## DEF-538: whitespace-only Add Text commit bakes an invisible text box and dirties the document (TFL-690 bug-hunt)
+
+- Status: CLOSED
+- Severity: MEDIUM
+- Found by: qa (TFL-690 systematic sweep of the Edit Text / Add Text matrix)
+- Phase: 99 / TFL-525 (Edit Text / Add Text corrections)
+- Files: `src/renderer/components/DocumentView.tsx` (`commitTextSession`, box branch ~1386-1419 — no whitespace/empty guard)
+
+Steps to reproduce:
+1. `npm.cmd run build:renderer`, launch TFlex through the e2e harness, open `assets/samples/report.pdf`.
+2. Press Ctrl+2 (EDIT stage), arm the `editTextBox` dock verb.
+3. Drag a new text box on page 1 (drag-to-create).
+4. Type three spaces ("   ") into the Inspector Text field.
+5. Click Confirm in the box toolbar (`[data-edit-box-action="confirm"]`).
+
+Expected: whitespace-only content is treated as empty and discarded — no box surface remains and the document is not modified (the annotation branch already implements exactly this rule: `if (session.text.trim() === "") { onDeleteAnnotation(...); return; }`).
+
+Actual: the document flips `modified` false -> true and a `.edit-box` surface remains (baseline 0 -> 1), i.e. an invisible (no-glyph) text box is committed and baked. The box branch only compares `session.text === session.original`; for a freshly dragged box `original` is `""` and a whitespace string differs, so `addTextBox` is sent.
+
+Evidence: `e2e/tfl525_edit_text_sweep.spec.cjs` T4 row "empty/whitespace-only commit: discarded (not modified, no new box)" -> `baseline=0 after=1 beforeModified=false afterModified=true`. Command `npm.cmd run test:e2e -- tfl525_edit_text_sweep` (`ELECTRON_RUN_AS_NODE` unset): 4 passed, 2 failed. Screenshot `screenshots/tfl525-sweep-t4-whitespace.png`; matrix `screenshots/tfl525-sweep-results.json`.
+
+Fix owner: frontend-dev. Direction: apply the same `trim() === ""` empty-content guard to the box branch (drop the draft instead of calling `addTextBox`), so a whitespace-only box leaves the document unmodified.
+
+History:
+- qa (TFL-690, 2026-10-04): FILED from the TFL-525 Edit-Text/Add-Text sweep. Not one of the existing edit-text family (DEF-150/151/152/153/232/257/262/535); no duplicate.
+- qa (TFL-692, 2026-10-04): RE-RAN the extended sweep. DEF-538 still reproduces: T4 row "empty/whitespace-only commit: discarded (not modified, no new box)" `baseline=0 after=1 beforeModified=false afterModified=true`. No new defect required. Status remains OPEN; fix owner frontend-dev.
+- qa (TFL-694, 2026-10-04): CLOSED. Rebuilt the renderer and re-ran `npm.cmd run test:e2e -- tfl525_edit_text_sweep` -> 8 passed / 0 failed. Row "empty/whitespace-only commit: discarded (not modified, no new box)" -> `baseline=0 after=0 beforeModified=false afterModified=false`. The box branch now drops whitespace-only content before it reaches the engine; no box surface remains and the document stays unmodified.
+
+## DEF-539: Escape on a live Add Text box bakes the draft into the document instead of discarding it (TFL-690 bug-hunt)
+
+- Status: CLOSED
+- Severity: MEDIUM
+- Found by: qa (TFL-690 systematic sweep of the Edit Text / Add Text matrix)
+- Phase: 99 / TFL-525 (Edit Text / Add Text corrections)
+- Files: `src/renderer/App.tsx` (`disarmEditTools` Escape branch ~9117), `src/renderer/components/ActionDock.tsx` (Escape exits EDIT ~820-832), `src/renderer/components/DocumentView.tsx` (target-change commit effect ~1496-1519)
+
+Steps to reproduce:
+1. `npm.cmd run build:renderer`, launch TFlex through the e2e harness, open `assets/samples/report.pdf`.
+2. Press Ctrl+2 (EDIT stage), arm the `editTextBox` dock verb.
+3. Drag a new text box on page 1, type a distinctive marker (e.g. "QQBOXSWEEP_ESC").
+4. Press Escape (do NOT click Confirm or Cancel).
+5. Observe the page-1 `.textLayer`, then Save As and scan the saved file bytes for the marker.
+
+Expected: Escape abandons the live session without modifying the document — the same discard semantics as the box toolbar's Cancel (DEF-535 criterion 2 established that Cancel truly reverts).
+
+Actual: the draft is committed. The marker appears in the page-1 `.textLayer` AND in the Save-As saved-file bytes (`markerInLayer=true markerInSavedBytes=true`) even though EDIT mode exits and no `.edit-box` surface is left on screen. A draft the user abandoned with Escape is silently written into the document.
+
+Root cause: Escape disarms the edit tool (App `disarmEditTools`) and exits EDIT (`setEditMode(false)`), which clears the box `textTarget`. The target-change effect runs `commitTextSession()`, and the box branch (no trim guard, and here `original === ""` vs a non-empty draft) calls `addTextBox` instead of discarding, so the abandoned draft is baked.
+
+Evidence: `e2e/tfl525_edit_text_sweep.spec.cjs` T4 row "Escape: live box session does not bake and raises no error" -> `markerInLayer=true markerInSavedBytes=true errs=`. The save+reparse byte scan is the decisive oracle. Command `npm.cmd run test:e2e -- tfl525_edit_text_sweep` (`ELECTRON_RUN_AS_NODE` unset): 4 passed, 2 failed. Screenshot `screenshots/tfl525-sweep-t4-escape.png`; matrix `screenshots/tfl525-sweep-results.json`.
+
+Fix owner: frontend-dev. Direction: on Escape, discard the live edit session (through the same path as Cancel) before/while exiting EDIT, so a draft abandoned with Escape never reaches the engine.
+
+History:
+- qa (TFL-690, 2026-10-04): FILED from the TFL-525 Edit-Text/Add-Text sweep. Not one of the existing edit-text family (DEF-150/151/152/153/232/257/262/535); no duplicate.
+- qa (TFL-692, 2026-10-04): RE-RAN the extended sweep. DEF-539 still reproduces: T4 row "Escape: live box session does not bake and raises no error" `markerInLayer=true markerInSavedBytes=true errs=`. No new defect required. Status remains OPEN; fix owner frontend-dev.
+- qa (TFL-694, 2026-10-04): CLOSED. Rebuilt the renderer and re-ran `npm.cmd run test:e2e -- tfl525_edit_text_sweep` -> 8 passed / 0 failed. Row "Escape: live box session does not bake and raises no error" -> `markerInLayer=false markerInSavedBytes=false errs=`. Escape now discards the live box draft through the Cancel path before EDIT exits; the abandoned draft never reaches the engine and no page error is raised.
+
+## DEF-540: Escape on a live Edit-Text RUN session discards only by ACCIDENT (no explicit discard path, unlocked by any test) (TFL-696 / ADV-198)
+
+- Status: CLOSED
+- Severity: MEDIUM
+- Found by: qa (TFL-696, reproduced from adversary finding ADV-198, `ADVERSARIAL_REVIEW.md:9190`)
+- Phase: 99 / TFL-525 (Edit Text / Add Text corrections)
+- Files: `src/renderer/edit/EditOverlay.tsx` (commit-token effect ~604-633; `pendingRunCommitTargetRef` parked ONLY in the run-bar Confirm handler ~1596-1600; textarea Escape blur ~2056-2059), `src/renderer/components/DocumentView.tsx` (target-change commit effect ~1514-1537, run branch ~1439-1441)
+
+CTO ruling (2026-10-04, recorded verbatim in `ADVERSARIAL_REVIEW.md:9222`): Escape is the keyboard abort for a live text session and must be an EXPLICIT DISCARD — the same semantics as the run/box Cancel and the DEF-539 box-Escape fix: the run edit is reverted and the document is left unmodified. The adversary's suggested expectation (Escape commits the run edit) is OVERRIDDEN; blur / click-away / tool-switch remain the commit gestures.
+
+Steps to reproduce:
+1. `npm.cmd run build:renderer`, launch TFlex through the e2e harness, open `assets/samples/report.pdf` page 1.
+2. Press Ctrl+2 (EDIT stage), arm the `editText` dock verb.
+3. Click the page-1 text run "TFlex Technical Report" (`[data-textrun-selection]` appears).
+4. Type `"<run text> ZZESC<n>"` into the Inspector Text field (`[data-txt-text]`).
+5. Press Escape (do NOT click Confirm/Cancel).
+6. Click `[data-toolbar-save-as]`, confirm, then reparse page-1 text of the saved file with pdfjs (never trust the dialog).
+
+Expected: Escape explicitly discards the live run edit — no engine op, document unmodified, and the discard reached through the same explicit path as Cancel (deterministic, test-locked).
+
+Actual: the marker is absent from the saved PDF (`committedAfterEscape=false`) — the observable revert matches the CTO ruling — but it is reached by ACCIDENT, not by an explicit discard. The run Escape path never calls `discardTextSession`. The overlay's `[tool, page]` reset clears `textTarget` before the host's target-change effect bumps `textCommitToken`; the token effect then reads `textTarget ?? pendingRunCommitTargetRef.current` = null and returns at `EditOverlay.tsx:611`. `pendingRunCommitTargetRef` is parked only in the Confirm handler, so nothing locks this behaviour: it is nondeterministic and no test asserts it.
+
+Evidence: `npm.cmd run test:e2e -- tfl525_adversary_diffpass --reporter=line` (`ELECTRON_RUN_AS_NODE` unset) -> 4 tests / 3 passed / 1 failed; S1 logs `[TFL-695 S1] marker=ZZESC47354 committedAfterEscape=false` (S1 fails because the adversary oracle asserted the overridden commit-on-Escape expectation). Unit probe `test/unit/renderer/tfl525_adversary_diffpass.test.tsx` -> 8 tests / 5 passed / 3 failed; A3 `run commit count after tool switch (contract: 1) = 0`. Screenshot `screenshots/tfl695-s1-escape.png` (page-1 title intact after Escape). Blast-radius neighbour A2 (run Cancel discards, no commit) passes.
+
+Fix owner: frontend-dev. Direction: on Escape/disarm, call `discardTextSession` for a live RUN session too (mirroring the box handling TFL-693 added) so the discard is explicit, and add the missing assertion.
+
+Origin reference: ADV-198 (`ADVERSARIAL_REVIEW.md:9190`), accepted by CTO 2026-10-04.
+
+History:
+- qa (TFL-696, 2026-10-04): FILED as OPEN from ADV-198 repro (S1 + unit A3). Severity MEDIUM per the CTO ruling (observable result already matches the intended revert; the risk is nondeterminism, not active data loss under this ruling).
+- qa (TFL-698, 2026-10-04): CLOSED. Rebuilt the renderer (`npm.cmd run build:renderer`) and corrected the adversary S1 oracle to the CTO ruling (Escape = explicit discard, not commit). `npm.cmd run test:e2e -- tfl525_adversary_diffpass --reporter=line` (ELECTRON_RUN_AS_NODE unset) -> 4 passed / 0 failed. S1 raw: `[TFL-698 S1] marker=ZZESC91001 markerInLayer=false markerInSaved=false modified=false canUndo=false` — after Escape the marker is absent from the page-1 textLayer AND the Save-As reparse, `modified` is false, and no engine op/undo entry is produced. The discard is now explicit (`DocumentView.tsx:3878-3879` Escape branch calls `discardTextSession` for `box || run`; `EditOverlay.tsx:2005-2008, 2074-2076` run editor's own Escape calls `onDiscard`). Regressions: `tfl525_edit_text_sweep` 8 passed / 0 failed; `tfl525_edit_text_fixes` 4 passed / 0 failed; blast radius `ground_truth_edit` 1 passed, `qa_verify_edit_box` 1 passed.
+
+## DEF-541: whitespace-only run Confirm still reaches the engine and dirties the document (TFL-696 / ADV-199)
+
+- Status: CLOSED
+- Severity: MEDIUM
+- Found by: qa (TFL-696, reproduced from adversary finding ADV-199, `ADVERSARIAL_REVIEW.md:9224`)
+- Phase: 99 / TFL-525 (Edit Text / Add Text corrections)
+- Files: `src/renderer/components/DocumentView.tsx` (run branch `commitTextSession` ~1439-1441 — no trim guard), `src/renderer/edit/EditOverlay.tsx` (commit-token effect ~611-613 commits whenever `next !== target.text`)
+
+Steps to reproduce:
+1. `npm.cmd run build:renderer`, launch TFlex through the e2e harness, open `assets/samples/report.pdf` page 1.
+2. Press Ctrl+2 (EDIT stage), arm the `editText` dock verb.
+3. Click the page-1 text run "TFlex Technical Report" (`[data-textrun-selection]` appears).
+4. Fill the Inspector Text field (`[data-txt-text]`) with three spaces (`"   "`).
+5. Click the run bar Confirm (`[data-content-action="textrun-confirm"]`).
+6. Read `window.tflexDiagnostics().modified`.
+
+Expected: a whitespace-only run commit places nothing and leaves the document unmodified — the same rule DEF-538 added for boxes and the pre-existing annotation guard (`session.text.trim() === ""`, `DocumentView.tsx:1371`).
+
+Actual: `modified=true`. The run branch (`DocumentView.tsx:1439-1441`) has no `trim()` guard, and the overlay's token effect commits whenever `next !== target.text`, so the whitespace string reaches the engine. On the real app `confirmCount=1` and the engine masks the run's rect while drawing no visible glyphs — page 1's title visibly disappears (screenshot) even though the original glyphs survive only in the content stream, so a later extraction still shows the string. The file is nonetheless dirty and the run is visually deleted by an accidental space.
+
+Evidence: `npm.cmd run test:e2e -- tfl525_adversary_diffpass --reporter=line` (`ELECTRON_RUN_AS_NODE` unset) -> 4 tests / 3 passed / 1 failed; S3 logs `[TFL-695 S3] run="TFlex Technical Report" firstWord="TFlex" confirmCount=1 modified=true survivesWhitespaceCommit=true` (S3 passes because its oracle only checked string survival). Unit probe `test/unit/renderer/tfl525_adversary_diffpass.test.tsx` -> 8 tests / 5 passed / 3 failed; A5 `whitespace-only run commit count (expected 0) = 1`. Screenshot `screenshots/tfl695-s3-whitespace.png` (title gone; only the subtitle visible).
+
+Fix owner: frontend-dev. Direction: apply the same `session.text.trim() === ""` empty-content guard to the run branch (and/or the overlay token effect) so a whitespace-only run Confirm places nothing and leaves the document unmodified.
+
+Origin reference: ADV-199 (`ADVERSARIAL_REVIEW.md:9224`), accepted by CTO 2026-10-04.
+
+History:
+- qa (TFL-696, 2026-10-04): FILED as OPEN from ADV-199 repro (S3 + unit A5). Severity MEDIUM per the CTO ruling.
+- qa (TFL-698, 2026-10-04): CLOSED. Rebuilt the renderer and extended the S3 oracle to assert `modified=false` plus the run surviving marker-free. `npm.cmd run test:e2e -- tfl525_adversary_diffpass --reporter=line` (ELECTRON_RUN_AS_NODE unset) -> 4 passed / 0 failed. S3 raw: `[TFL-698 S3] run="TFlex Technical Report" firstWord="TFlex" confirmCount=1 modified=false survivesWhitespaceCommit=true` — a whitespace-only run Confirm places nothing, leaves the document unmodified, and the original run text remains extractable (not masked). Fix: `DocumentView.tsx:1445` `if (session.text.trim() === "") return;` before `setTextCommitToken`; `EditOverlay.tsx:1606-1608` parks the run target only when `live.trim() !== ""`. Regressions: `tfl525_edit_text_sweep` 8 passed / 0 failed; `tfl525_edit_text_fixes` 4 passed / 0 failed; blast radius `ground_truth_edit` 1 passed, `qa_verify_edit_box` 1 passed. Note: S3 `confirmCount=1` only means the Confirm control exists/was clicked; the guard is that no commit resulted.
+
+

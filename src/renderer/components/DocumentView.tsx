@@ -1387,6 +1387,24 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
       if (session.text === session.original) return;
       const editApi = editRef.current;
       if (editApi === null) return;
+      // DEF-538 — a box with no visible content carries nothing: never reach
+      // the engine. A fresh draft lives only in the renderer registry, so it
+      // is dropped again; an existing box reverts to the session original
+      // (its live keystrokes were registry-local until this commit).
+      if (session.text.trim() === "") {
+        if (target.isNew === true) {
+          editApi.onAction({ type: "delete-text-box", id: target.id });
+        } else {
+          const box = textBoxesRef.current.find((b) => b.id === target.id);
+          if (box !== undefined) {
+            editApi.onAction({
+              type: "upsert-text-box",
+              placement: { ...box, text: session.original },
+            });
+          }
+        }
+        return;
+      }
       if (target.isNew === true) {
         // A freshly dragged box lives only in the renderer registry: the
         // commit IS its first engine op (addTextBox), registered under
@@ -1420,6 +1438,11 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
     }
     // A text run: the Edit overlay owns the run's rect AND the white
     // mask cover, so it performs the commit when the token flips.
+    // DEF-541 — a whitespace-only run carries no visible content: never
+    // bump the commit token (which would reach the engine and mask the
+    // run). The session was already cleared above, so the document stays
+    // unmodified and no mask is written.
+    if (session.text.trim() === "") return;
     setTextCommitToken((n) => n + 1);
   }, [onEditAnnotation, onDeleteAnnotation, persistAnnText]);
   /** Phase 37 (item 11) — the Edit overlay's action-bar Cancel: DISCARD the
@@ -3844,6 +3867,17 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
         e.preventDefault();
         setSearchOpen(true);
       } else if (e.key === "Escape") {
+        // DEF-539 — Escape abandons a live Add Text (box) draft through the
+        // Cancel path BEFORE the host's disarm clears the overlay target and
+        // would otherwise commit (bake) the abandoned draft.
+        // DEF-540 — the CTO ruling makes Escape the keyboard abort for a live
+        // RUN session too: discard it explicitly through the same Cancel path,
+        // instead of relying on the commit-token effect reading a cleared
+        // target by accident. Annotation Escape keeps its existing semantics.
+        const live = textEditRef.current;
+        if (live !== null && (live.target.kind === "box" || live.target.kind === "run")) {
+          discardTextSession();
+        }
         if (handActive) {
           e.preventDefault();
           setHandActive(false);
@@ -3858,7 +3892,7 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [searchOpen, annTool.tool, handActive, paneOwnsKeys]);
+  }, [searchOpen, annTool.tool, handActive, paneOwnsKeys, discardTextSession]);
 
   // ---- persistence + diagnostics ------------------------------------------------------------
   useEffect(() => {

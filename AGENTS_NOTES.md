@@ -1506,6 +1506,22 @@ pre-warn relevant entries when dispatching.
   (and its exact lines) in the chunk plan - a surface list in the prose is a hint, not the
   inventory; and an a11y "aria-label + title" contract means the brief must name BOTH
   attributes, not just the one the code happens to have.
+- frontend-dev: a unit oracle that derives its expected value from the SAME constant or
+  assumption as the code under test is self-fulfilling and cannot catch the bug (TFL-686,
+  2026-10-04: `test/unit/renderer/editHoverSymmetry.test.ts` computed the glyph band with
+  the same `RUN_COVER_DESCENT` the helper used, so the top-heavy hover box passed its own
+  test; qa's independent e2e caught it -> DEF-535). Rule: a geometry/format oracle must
+  compute its expected value from an INDEPENDENT source (a different constant/metric, or
+  the rendered artifact), and the dev must show the oracle FAILS on the pre-fix code and
+  PASSES after the fix; a self-consistent oracle is not evidence.
+- frontend-dev: a narrow guard added to fix one action bar silently broke the sibling
+  commit path (TFL-686, 2026-10-04: the Cancel blur guard `isEditTextActionBarTarget`
+  (`DocumentView.tsx`) deferred Confirm to the bar, but the plain-Confirm handler cleared
+  the overlay `textTarget` before the commit-token effect read it, so Confirm lost the
+  edit - HIGH silent data loss, DEF-537, a regression from the same commit e5bf019). Rule:
+  when a fix changes who commits/discards a shared text session, the brief must require a
+  positive test for EVERY sibling action (Confirm, Cancel, Delete, Escape) on EVERY target
+  kind (run, box, annotation), not only the action being fixed.
 
 ## 2026-08-28: to-do discipline + Defects heading restored
 
