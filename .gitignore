@@ -42,3 +42,8 @@ screenshots/
 
 # Spent build-mutex files (watchdog reaps; never committed).
 /.paperclip-build.lock.spent-*
+
+# Nested public release-repo checkout (tanzimtipu/tflex-releases). It is a
+# separate git repository used only to publish OTA assets; never commit it
+# into this product repo.
+/tflex-releases/
