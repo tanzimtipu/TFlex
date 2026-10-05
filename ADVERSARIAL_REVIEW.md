@@ -9900,3 +9900,25 @@ sign-in dialog and its Google in-flight banner (`AccountsDialog.tsx:246,357-374`
 - Strengths to keep: copy now matches the actual mechanism (no stale "in your browser"),
   failures surface as non-blocking info rather than a dead spinner, and the surface stays
   usable while the popup is open.
+
+### TFL-783 remediation — probe result artifact redacted (2026-10-05)
+
+DEF-563 (LOW) flagged that `test-fixtures/tfl772_probe_result.json`, committed in
+`fe73758`, retained the captured Google sign-in URL with its full query
+(PKCE challenge, public client id, Google anti-abuse tokens; the `state` was already
+redacted). Remediated in TFL-783 as secrets hygiene only — no product code touched:
+
+- The probe's `redact()` (`test-fixtures/tfl772_adversary_probe.cjs:18-23`) now drops a
+  URL's query and fragment entirely (scheme/userinfo/host/path kept) plus a fallback
+  token-name scrub, so every future run is safe. Hostile-payload evidence (userinfo /
+  backslash / `%2f` look-alikes) is unchanged.
+- The stored result JSON was reprocessed through that same `redact()`, extracted from the
+  probe so the two cannot drift: `tabnabbing.popupUrl` and `popupChild.createdUrls[0]`
+  are now host/path only (`https://accounts.google.com/v3/signin/identifier`); no other
+  field changed (2 changes, both length 1590 -> 42).
+- Verification: a search under `test-fixtures/` for the captured token-parameter names
+  (Google anti-abuse and OAuth/PKCE query keys) and for any captured provider sign-in URL
+  carrying a query string returns zero matches; the file re-parses as valid JSON;
+  `redact()` is idempotent on all 17 payloads and on the captured URL.
+- Caveat: the token-bearing URL still exists in git history at `fe73758`. The fix cleans
+  the tip only; history was not rewritten (out of scope, operator-gated).

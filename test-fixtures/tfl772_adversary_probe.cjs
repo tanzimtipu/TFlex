@@ -6,7 +6,8 @@
 //      privileged main window; navigate it, then verify the attacker origin is
 //      left holding the live `window.tflex` preload bridge + working IPC
 //   C. child window.open FROM the popup (the popup has no open handler)
-// No token / code / verifier is ever printed: URL query strings are redacted.
+// No token / code / verifier is ever printed: URL query strings and fragments are
+// dropped (scheme/userinfo/host/path kept); any token-named param is replaced.
 const { launchApp } = require('../e2e/lib/launch.cjs');
 const { hardClose } = require('../e2e/lib/helpers.cjs');
 
@@ -14,10 +15,12 @@ const AUTH_HOST = 'ep-fragrant-pond-b3gqd6cf.neonauth.c-4.ap-southeast-1.aws.neo
 const U = AUTH_HOST;
 const BACKSLASH = '\\';
 
-const redact = (s) =>
-  typeof s === 'string'
-    ? s.replace(/([?&](token|code|neon_auth_session_verifier|state)=)[^&#\s]*/gi, '$1<redacted>')
-    : s;
+const redact = (s) => {
+  if (typeof s !== 'string') return s;
+  return s
+    .replace(/^([a-z][a-z0-9+.-]*:\/\/[^?#\s]*)[?#][^\s]*/i, '$1')
+    .replace(/([?&](token|code|neon_auth_session_verifier|state|part|rart|client_id|code_challenge|code_challenge_method|dsh)=)[^&#\s]*/gi, '$1<redacted>');
+};
 
 const HOSTILE = [
   ['evil https host', 'https://evil.example.com/'],
