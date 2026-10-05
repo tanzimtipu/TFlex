@@ -1,0 +1,10 @@
+{
+  "extends": "quiet-precision.tokens.json",
+  "status": "proposal",
+  "recommendedComposition": "Document Rail",
+  "geometry": {"titleRowHeight": 48, "tabRailHeight": 40, "tabIdealWidth": 200, "tabMaxWidth": 220, "tabMinWidth": 136, "capacityBudgetPerTab": 150, "tabTopRadius": 9, "activeKeyline": 2, "keylineInset": 10, "finePointerMinTarget": 32, "coarsePointerMinTarget": 44, "compactIcon": 16},
+  "typography": {"filenameSize": 13, "inactiveWeight": 400, "selectedWeight": 500, "secondarySize": 12},
+  "light": {"canvas":"#F5F6F8","surface":"#FFFFFF","strong":"#232A38","foreground":"#485164","muted":"#70798A","border":"#E1E4EB","accent":"#7050D6","soft":"#F0EBFC"},
+  "dark": {"canvas":"#171A21","surface":"#20232B","strong":"#EEF1F7","foreground":"#B8C0D0","muted":"#929BAC","border":"#3B414E","accent":"#B9A4FF","soft":"#302740"},
+  "constraints": ["Preserve native Windows caption controls and hit testing", "Overflow preserves every session", "No automatic tab-index colors", "Derive dirty/loading/error state from model", "Preserve established dirty-close flow"]
+}

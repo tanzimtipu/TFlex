@@ -1,0 +1,19 @@
+Context,Observed control,Proposed intent,Semantic kind,Implementation note
+Home,Open files,Primary,Action,Verify actual Windows shortcut
+Home,Create PDF from images,Secondary,Action,Retain creation-path clarity
+Home,Merge PDFs,Secondary,Action,Do not color ordinary merge action green
+Home,Check for Update,Tertiary,Action,Use existing update flow
+Title bar,Open,Compact utility,Action,Preserve drag-region and keyboard behavior
+Title bar,Save-related controls,Compact utility,Needs handler inspection,Distinguish Save Save As and Save All from actual commands
+Pages panel,Combine,Secondary,Needs handler inspection,Reconcile Combine versus Merge semantics
+Pages inspector,Apply or rename page label,Secondary,Action,Use existing page-label command
+Edit panel,Recognize text,Secondary or contextual primary,Action,No persistent selected state after OCR activation
+Edit panel,Review suspects,Secondary,Action,Availability follows actual recognition findings
+Dock,Text or Images,Soft selected tool,Toggle or tool selection,Read active tool from app model
+Dock,More and Tools,Tertiary,Disclosure or action,Match actual menu and command-palette behavior
+View utilities,Single spread or grid,Soft selected segment,Exclusive selection,Expose actual selected page-view mode
+Review,Delete annotation,Destructive,Action,Preserve existing undo and confirmations
+Pages,Delete pages,Destructive,Action,Explicit label and existing safeguards
+Deliver inspector,Export,Primary,Action,Use actual format label and pending operation state
+Deliver,Encrypt document,Secondary or task primary,Action,Security command is not automatically destructive
+Window caption,Minimize maximize close,Native platform control,Native command,Preserve platform geometry hit areas and behavior

@@ -2,7 +2,7 @@
 
 Implement the proposed **Quiet Precision** icon system in my in-development Windows PDF editor, Jovrel. The goal is a distinctive, ultra-modern, simple and elegant interface with a consistent icon language that future dock, panel and toolbar redesigns can share.
 
-Reference package: `C:\Users\tanzi\OneDrive\Desktop\Visual overhaul\Icons` and `C:\Users\tanzi\OneDrive\Desktop\Visual overhaul\Design System`.
+Reference package: `C:\Users\tanzi\OneDrive\App Development\TFlex\Visual overhaul\Icons` and `C:\Users\tanzi\OneDrive\App Development\TFlex\Visual overhaul\Design System`.
 
 Read `Icons\Specifications\icon-design-spec.md`, inspect `Icons\Visuals\icon-system-board.png` and `Icons\Visuals\interactive-icon-preview.html`, and use `Design System\quiet-precision.tokens.json` as the proposed baseline. The SVGs under `Icons\Assets` are original concept assets. Refine them where small-size inspection exposes problems; the screenshot-derived set is incomplete.
 

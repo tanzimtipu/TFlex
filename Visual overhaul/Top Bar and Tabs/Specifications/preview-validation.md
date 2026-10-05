@@ -1,0 +1,7 @@
+# Preview validation
+
+Rendered the portable preview in local headless Microsoft Edge and inspected the comparison board and narrow-width screenshot.
+
+Passed: guarded dirty example close; nine new independent sessions producing twelve total; active session remains visible beyond the first group; complete switcher contains all twelve; Escape closes menus and returns focus to the correct opener; Home preserves the twelve sessions; clean close reduces count accurately; both compositions fit 736, 520, 360 and 320px without horizontal page overflow; expanded lists stay within bounds; no JavaScript page errors. Light/dark visual references were rendered. Literal fragment structure, size and token JSON were checked.
+
+Scope: this is an interactive design demonstration. It does not test the TFlex source, file persistence, engine dirty state, native Windows caption hit testing, actual DPI behavior, production keyboard tab semantics or real Save / Discard / Cancel dialogs. Those checks belong to implementation acceptance. Small-width preview wrapping and omitted illustrative captions are presentation accommodations, not instructions to hide native window controls. The switcher expands in normal flow in the preview; production should use a bounded anchored menu/list. Offline icons use the original shared SVG concepts; inline icons use the host's Lucide glyphs, so small glyph differences are expected.

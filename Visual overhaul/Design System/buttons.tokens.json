@@ -1,0 +1,12 @@
+{
+  "direction": "Quiet Precision / Quiet Actions",
+  "status": "Proposed extension; existing directions remain proposed",
+  "inherits": ["quiet-precision.tokens.json", "dock.tokens.json", "panels.tokens.json"],
+  "geometry": {"radius":9,"standardHeightPreferred":36,"compactTarget":32,"prominentHeightPreferred":40,"coarseTargetMin":44,"horizontalPadding":12,"iconLabelGap":6,"peerGap":8,"iconSize":16,"labelSize":12,"labelWeight":500,"segmentOuterRadius":9,"segmentInset":3,"segmentInnerRadius":6},
+  "light": {"primarySurface":"#7050D6","primaryForeground":"#FFFFFF","primaryHover":"#6341C5","primaryPressed":"#5734B6","neutralPressed":"#EAEDF2"},
+  "dark": {"primarySurface":"#B9A4FF","primaryForeground":"#171A21","primaryHover":"#C5B4FF","primaryPressed":"#AC94F5","neutralPressed":"#303641"},
+  "intent": ["primary","secondary","tertiary","destructive"],
+  "semanticKind": ["action","toggle","exclusive-selection","disclosure"],
+  "state": ["rest","hover","pressed","focus","selected","disabled","busy"],
+  "rules": ["Primary is task emphasis; soft violet is persistent selection.","Use actual command/model state rather than last-clicked state.","Busy labels preserve measured width and prevent duplicate execution.","Native caption controls retain platform-specific behavior and geometry.","Keep dock and panel tokens coherent rather than overwriting their specialized geometry."]
+}

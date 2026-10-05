@@ -1,0 +1,184 @@
+<div id="jovrel-panel-concepts" aria-label="Jovrel panel redesign">
+  <style>
+    #jovrel-panel-concepts { --jp-surface:light-dark(#fff,#20232b);--jp-canvas:light-dark(#f5f6f8,#171a21);--jp-ink:light-dark(#485164,#b8c0d0);--jp-strong:light-dark(#232a38,#eef1f7);--jp-muted:light-dark(#70798a,#929bac);--jp-border:light-dark(#e1e4eb,#3b414e);--jp-accent:light-dark(#7050d6,#b9a4ff);--jp-soft:light-dark(#f0ebfc,#302740);--jp-danger:light-dark(#b82e43,#ff9aad);font:14px 'Segoe UI Variable','Segoe UI',system-ui,sans-serif;color:var(--jp-ink); }
+    #jovrel-panel-concepts * { box-sizing:border-box; }
+    #jovrel-panel-concepts [hidden] { display:none!important; }
+    #jovrel-panel-concepts .jp-stage { min-height:780px; }
+    #jovrel-panel-concepts .jp-chrome { background:var(--jp-surface);border:1px solid var(--jp-border);border-bottom:0;border-radius:14px 14px 0 0;padding:12px 16px;display:flex;align-items:center;gap:16px;padding-right:100px;flex-wrap:wrap; }
+    #jovrel-panel-concepts .jp-brand { color:var(--jp-strong);font-weight:500; }
+    #jovrel-panel-concepts .jp-filename { font-size:12px;color:var(--jp-muted); }
+    #jovrel-panel-concepts button { display:inline-flex;align-items:center;justify-content:center;gap:6px;font:inherit;font-size:12px;color:inherit;min-height:36px;padding:8px 10px;background:transparent;border:1px solid transparent;border-radius:9px;transition:color 140ms,background 140ms; }
+    #jovrel-panel-concepts button:hover:not(:disabled) { background:var(--jp-canvas);color:var(--jp-strong); }
+    #jovrel-panel-concepts button[aria-pressed="true"] { background:var(--jp-soft);color:var(--jp-accent); }
+    #jovrel-panel-concepts .jp-primary { background:var(--jp-accent);color:light-dark(#fff,#171a21); }
+    #jovrel-panel-concepts .jp-primary:hover:not(:disabled) { background:var(--jp-accent);color:light-dark(#fff,#171a21); }
+    #jovrel-panel-concepts .jp-secondary { border-color:var(--jp-border); }
+    #jovrel-panel-concepts button:disabled { color:var(--jp-muted); }
+    #jovrel-panel-concepts .jp-wide { width:100%; }
+    #jovrel-panel-concepts .jp-workspaces { display:flex;gap:4px;flex-wrap:wrap; }
+    #jovrel-panel-concepts [data-lucide],#jovrel-panel-concepts .jp-icon { width:18px;height:18px;stroke-width:1.65;flex-shrink:0; }
+    #jovrel-panel-concepts .jp-shell { display:grid;grid-template-columns:52px 224px minmax(200px,1fr) 272px;border:1px solid var(--jp-border);border-radius:0 0 14px 14px;overflow:clip;background:var(--jp-canvas); }
+    #jovrel-panel-concepts .jp-rail { background:var(--jp-surface);border-right:1px solid var(--jp-border);padding:12px 4px;display:flex;flex-direction:column;align-items:center;gap:12px; }
+    #jovrel-panel-concepts .jp-rail button { padding:8px; }
+    #jovrel-panel-concepts .jp-panel { background:var(--jp-surface);min-width:0; }
+    #jovrel-panel-concepts .jp-left { border-right:1px solid var(--jp-border); }
+    #jovrel-panel-concepts .jp-right { border-left:1px solid var(--jp-border); }
+    #jovrel-panel-concepts .jp-panel-head { min-height:52px;padding:12px 16px;border-bottom:1px solid var(--jp-border);display:flex;align-items:center;justify-content:space-between;gap:8px;font-weight:500;color:var(--jp-strong); }
+    #jovrel-panel-concepts .jp-panel-body { padding:16px; }
+    #jovrel-panel-concepts h3 { font-size:14px;font-weight:500;margin:0 0 12px;color:var(--jp-strong); }
+    #jovrel-panel-concepts p { font-size:12px;line-height:1.55;margin:0 0 12px; }
+    #jovrel-panel-concepts .jp-muted { color:var(--jp-muted);font-size:12px; }
+    #jovrel-panel-concepts .jp-section { padding-bottom:20px;margin-bottom:20px;border-bottom:1px solid var(--jp-border); }
+    #jovrel-panel-concepts .jp-section:last-child { border-bottom:0;margin-bottom:0; }
+    #jovrel-panel-concepts .jp-tabs { display:flex;gap:4px;margin-bottom:16px;flex-wrap:wrap; }
+    #jovrel-panel-concepts .jp-tabs button { padding:6px 8px;min-height:32px; }
+    #jovrel-panel-concepts .jp-row { display:flex;align-items:center;justify-content:space-between;gap:8px;padding:7px 0;min-width:0;font-size:12px; }
+    #jovrel-panel-concepts .jp-row span:last-child { color:var(--jp-strong);text-align:right;overflow-wrap:anywhere; }
+    #jovrel-panel-concepts .jp-actions { display:flex;gap:6px;flex-wrap:wrap; }
+    #jovrel-panel-concepts label { display:block;font-size:12px;line-height:1.5;margin-bottom:12px; }
+    #jovrel-panel-concepts input:not([type=checkbox]),#jovrel-panel-concepts select,#jovrel-panel-concepts textarea { width:100%;min-width:0;margin-top:5px;min-height:36px;font:inherit;font-size:12px;padding:8px 10px;border:1px solid var(--jp-border);border-radius:9px;background:var(--jp-surface);color:var(--jp-strong); }
+    #jovrel-panel-concepts textarea { resize:vertical;min-height:70px; }
+    #jovrel-panel-concepts .jp-check { display:flex;align-items:flex-start;gap:8px; }
+    #jovrel-panel-concepts .jp-check input { margin-top:4px;accent-color:var(--jp-accent); }
+    #jovrel-panel-concepts .jp-page-tile { display:flex;flex-direction:column;width:100%;padding:12px;gap:10px;border:1px solid var(--jp-border); }
+    #jovrel-panel-concepts .jp-mini-page { width:92px;height:122px;padding:12px;background:var(--jp-surface);border:1px solid var(--jp-border);display:flex;flex-direction:column;align-items:flex-start;gap:7px;color:var(--jp-strong); }
+    #jovrel-panel-concepts .jp-mini-title { width:70%;height:5px;background:var(--jp-ink); }
+    #jovrel-panel-concepts .jp-mini-line { width:90%;height:3px;background:var(--jp-border); }
+    #jovrel-panel-concepts .jp-mini-field { width:70%;height:12px;border:1px solid var(--jp-border);border-radius:2px; }
+    #jovrel-panel-concepts .jp-canvas { min-width:0;padding:20px 16px;display:flex;flex-direction:column;align-items:center; }
+    #jovrel-panel-concepts .jp-canvas-info { display:flex;width:100%;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;font-size:12px;color:var(--jp-muted);margin-bottom:18px; }
+    #jovrel-panel-concepts .jp-paper { width:100%;max-width:410px;min-height:330px;background:var(--jp-surface);padding:28px 20px;box-shadow:0 2px 14px light-dark(#232a380a,#00000020); }
+    #jovrel-panel-concepts .jp-paper h2 { font:500 20px 'Segoe UI Variable','Segoe UI',sans-serif;margin:0 0 28px;color:var(--jp-strong); }
+    #jovrel-panel-concepts .jp-paper .jp-form-label { color:var(--jp-muted);font-size:12px;margin:22px 0 6px; }
+    #jovrel-panel-concepts .jp-paper .jp-form-field { border-bottom:1px solid var(--jp-border);padding:8px 0;font-size:13px; }
+    #jovrel-panel-concepts .jp-paper .jp-selected-object { background:var(--jp-soft);outline:1px solid var(--jp-accent);padding:8px; }
+    #jovrel-panel-concepts .jp-example { display:block;margin:16px 0 0; }
+    #jovrel-panel-concepts .jp-mini-dock { display:flex;flex-wrap:wrap;justify-content:center;gap:4px;background:var(--jp-surface);border:1px solid var(--jp-border);border-radius:14px;padding:6px;margin-top:24px; }
+    #jovrel-panel-concepts .jp-mini-dock button { padding:6px 8px; }
+    #jovrel-panel-concepts details { font-size:12px; }
+    #jovrel-panel-concepts summary { min-height:36px;line-height:36px;color:var(--jp-strong);font-weight:500; }
+    #jovrel-panel-concepts .jp-note { display:block;width:100%;text-align:left;justify-content:flex-start;flex-direction:column;align-items:flex-start;border:1px solid var(--jp-border);padding:12px; }
+    #jovrel-panel-concepts .jp-error { color:var(--jp-danger);font-size:12px;margin:8px 0; }
+    #jovrel-panel-concepts .jp-status { padding:12px 4px;font-size:12px;color:var(--jp-muted); }
+    #jovrel-panel-concepts .jp-home { grid-column:2/-1;padding:28px;background:var(--jp-canvas); }
+    #jovrel-panel-concepts .jp-home h2 { font-size:22px;font-weight:500;color:var(--jp-strong);margin:0 0 8px; }
+    #jovrel-panel-concepts .jp-home-columns { display:grid;grid-template-columns:minmax(0,1.2fr) minmax(0,1fr);gap:24px;margin-top:26px; }
+    #jovrel-panel-concepts .jp-recent { background:var(--jp-surface);border:1px solid var(--jp-border);border-radius:14px; }
+    #jovrel-panel-concepts .jp-recent-row { padding:12px;border-bottom:1px solid var(--jp-border);display:grid;grid-template-columns:32px minmax(0,1fr) auto;align-items:center;gap:10px; }
+    #jovrel-panel-concepts .jp-recent-row:last-child { border-bottom:0; }
+    #jovrel-panel-concepts .jp-file-open { display:flex;flex-direction:column;align-items:flex-start;justify-content:center;min-width:0;text-align:left;padding:0;border:0; }
+    #jovrel-panel-concepts .jp-file-open strong { font-weight:500;color:var(--jp-strong);overflow-wrap:anywhere; }
+    #jovrel-panel-concepts .jp-file-open span { font-size:12px;color:var(--jp-muted);overflow-wrap:anywhere; }
+    #jovrel-panel-concepts .jp-samples { display:grid;grid-template-columns:1fr 1fr;gap:12px; }
+    #jovrel-panel-concepts .jp-sample { display:flex;flex-direction:column;align-items:stretch;text-align:left;background:var(--jp-surface);border:1px solid var(--jp-border);border-radius:14px;padding:14px;gap:10px; }
+    #jovrel-panel-concepts .jp-sample .jp-mini-page { width:70px;height:80px;padding:9px; }
+    #jovrel-panel-concepts .jp-sample strong { font-weight:500;color:var(--jp-strong); }
+    #jovrel-panel-concepts .jp-sample span { font-size:12px;line-height:1.4; }
+    #jovrel-panel-concepts .jp-unified .jp-shell { grid-template-columns:52px minmax(220px,1fr) 300px; }
+    #jovrel-panel-concepts .jp-unified .jp-left { display:none; }
+    #jovrel-panel-concepts .jp-unified .jp-right .jp-navigator-copy { margin-bottom:20px; }
+    @media(max-width:900px) {
+      #jovrel-panel-concepts .jp-shell,#jovrel-panel-concepts .jp-unified .jp-shell { grid-template-columns:52px minmax(0,1fr); }
+      #jovrel-panel-concepts .jp-left { grid-column:2;grid-row:2;border-right:0;border-top:1px solid var(--jp-border); }
+      #jovrel-panel-concepts .jp-canvas { grid-column:2;grid-row:1; }
+      #jovrel-panel-concepts .jp-right { grid-column:2;grid-row:3;border-left:0;border-top:1px solid var(--jp-border); }
+      #jovrel-panel-concepts .jp-rail { grid-row:1/4; }
+      #jovrel-panel-concepts .jp-home { grid-column:2;grid-row:1; }
+      #jovrel-panel-concepts .jp-home-columns { grid-template-columns:1fr; }
+      #jovrel-panel-concepts .jp-stage { min-height:1500px; }
+    }
+    @media(max-width:520px) {
+      #jovrel-panel-concepts .jp-chrome { gap:8px;padding-left:10px; }
+      #jovrel-panel-concepts .jp-shell,#jovrel-panel-concepts .jp-unified .jp-shell { grid-template-columns:minmax(0,1fr); }
+      #jovrel-panel-concepts .jp-rail { display:none; }
+      #jovrel-panel-concepts .jp-left,#jovrel-panel-concepts .jp-right,#jovrel-panel-concepts .jp-canvas,#jovrel-panel-concepts .jp-home { grid-column:1; }
+      #jovrel-panel-concepts .jp-home { padding:16px; }
+      #jovrel-panel-concepts .jp-samples { grid-template-columns:1fr; }
+      #jovrel-panel-concepts .jp-recent-row { grid-template-columns:24px minmax(0,1fr) auto;padding:10px;gap:6px; }
+      #jovrel-panel-concepts input:not([type=checkbox]),#jovrel-panel-concepts select,#jovrel-panel-concepts textarea { font-size:16px; }
+    }
+    @media(pointer:coarse) { #jovrel-panel-concepts button { min-height:44px;min-width:44px; } }
+    @media(prefers-reduced-motion:reduce) { #jovrel-panel-concepts button { transition:none; } }
+  </style>
+  <div class="viz-carousel" aria-label="Panel architecture alternatives">
+    <section data-variant="Context Pair" aria-label="Two complementary panels">
+      <div class="jp-stage" data-layout="pair"><div class="jp-chrome"><span class="jp-brand">Jovrel</span><span class="jp-filename">form.pdf</span><div class="jp-workspaces" aria-label="Workspace"></div></div><div class="jp-shell"></div><div class="jp-status" role="status">Illustrative panel preview</div></div>
+    </section>
+    <section data-variant="Single Inspector" aria-label="Consolidated inspector" hidden>
+      <div class="jp-stage jp-unified" data-layout="single"><div class="jp-chrome"><span class="jp-brand">Jovrel</span><span class="jp-filename">form.pdf</span><div class="jp-workspaces" aria-label="Workspace"></div></div><div class="jp-shell"></div><div class="jp-status" role="status">Illustrative panel preview</div></div>
+    </section>
+  </div>
+  <script>
+    (()=>{
+      const root=document.getElementById('jovrel-panel-concepts');
+      const escapeText=value=>String(value).replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;');
+      const icon=(name,asset='')=>`<i data-lucide="${name}" data-asset="${asset}" aria-hidden="true"></i>`;
+      const action=(label,id,kind='',glyph='')=>`<button type="button" class="cursor-interaction ${kind}" data-action="${id}">${glyph?icon(glyph):''}${label}</button>`;
+      const row=(key,value)=>`<div class="jp-row"><span>${key}</span><span>${value}</span></div>`;
+      const section=(title,content)=>`<div class="jp-section"><h3>${title}</h3>${content}</div>`;
+      const miniature=(form=true)=>`<span class="jp-mini-page" aria-hidden="true"><span class="jp-mini-title"></span><span class="jp-mini-line"></span>${form?'<span class="jp-mini-field"></span><span class="jp-mini-field"></span>':'<span class="jp-mini-line"></span><span class="jp-mini-line"></span>'}<span class="jp-mini-line"></span></span>`;
+      const documentDetails=()=>`<details><summary>Document details</summary>${row('File','form.pdf')}${row('Pages','1')}${row('Size','10.5 KB')}</details>`;
+      root.querySelectorAll('[data-layout]').forEach(stage=>{
+        let mode='Pages',selected=false,note=false,localText='John Doe',navTab='Pages',range='All pages';
+        const status=stage.querySelector('.jp-status'),shell=stage.querySelector('.jp-shell'),workspaceNav=stage.querySelector('.jp-workspaces');
+        const saved=window.openai?.widgetState?.privateContent?.panelPreview?.[stage.dataset.layout];if(saved&&['Home','Pages','Edit','Review','Deliver'].includes(saved.mode))mode=saved.mode;
+        function remember(){if(window.openai?.setWidgetState){const states={};root.querySelectorAll('[data-layout]').forEach(s=>states[s.dataset.layout]={mode:s.dataset.mode||'Pages'});window.openai.setWidgetState({modelContent:{panelDirection:'Quiet Precision',panelWorkspaces:states},privateContent:{panelPreview:states}}).catch(()=>{});}}
+        function announce(message){status.textContent=message+' · preview only';}
+        function leftContent(){
+          if(mode==='Edit'&&selected)return section('Page content',`<div class="jp-tabs">${action('Text','text-tab','jp-secondary')}${action('Images','images-tab')}${action('Fields · 8','fields')}</div><button type="button" class="jp-note cursor-interaction" data-action="select-text" aria-pressed="true"><strong>Text · example selection</strong><span>${escapeText(localText)}</span></button><p class="jp-muted" style="margin-top:12px">1 illustrative text object</p>${action('Add text box','add-text','jp-secondary jp-wide','square-plus')}`)+section('Related content',row('Form fields','8')+action('Inspect fields','fields','jp-secondary jp-wide'));
+          if(mode==='Pages')return `<div class="jp-tabs">${action('Pages','pages-tab',navTab==='Pages'?'jp-secondary':'')}${action('Outline','outline-tab',navTab==='Outline'?'jp-secondary':'')}</div>`+(navTab==='Pages'?`<button type="button" class="jp-page-tile cursor-interaction" data-action="select-page" aria-pressed="true">${miniature()}<span>1 · Application form</span></button><div class="jp-actions" style="margin-top:12px">${action('Insert pages','insert','jp-secondary','file-plus-2')}${action('Page tools','page-tools','','ellipsis')}</div>`:section('No bookmarks yet',`<p>Add a bookmark to make this document easier to navigate.</p>${action('Add bookmark','bookmark','jp-secondary','bookmark-plus')}`));
+          if(mode==='Edit')return section('Page content',`<div class="jp-tabs">${action('Text','text-tab','jp-secondary')}${action('Images','images-tab')}${action('Fields · 8','fields','')}</div><p>No editable text detected on this page.</p>${action('Add text box','add-text','jp-secondary jp-wide','square-plus')}`)+section('Text recognition',row('OCR','Not run')+`<p>Recognize text to make scanned content editable, when supported.</p>${action('Recognize page','ocr','jp-primary jp-wide','scan-text')}`)+`<p class="jp-muted">Form fields are available separately from page text.</p>`;
+          if(mode==='Review')return section('Document comments',row('All pages',note?'1 example note':'0 comments')+(note?`<button type="button" class="jp-note cursor-interaction" data-action="select-note"><strong>Page 1 · You</strong><span>Check this field label.</span><span class="jp-muted">Example annotation</span></button>`:`<p>No comments yet. Add a note to begin reviewing this document.</p>${action('Add note','add-note','jp-primary jp-wide','message-square')}`)+action('Import comments','import-comments','jp-wide','file-input'))+section('Document marks',row('Bates numbering','Not applied')+row('Watermark','Not applied')+row('Signatures','None placed')+`<div class="jp-actions">${action('Bates','bates','jp-secondary')}${action('Watermark','watermark','jp-secondary')}${action('Sign','sign','jp-secondary')}</div>`);
+          return section('Output checks',row('OCR','Not run')+row('Form fields','8 interactive')+row('File size','10.5 KB')+`<p>Keep fields interactive unless you explicitly choose to flatten them.</p>${action('Inspect form fields','fields','jp-secondary jp-wide')}`)+section('Prepare document',`<p>Optimization is optional. Savings have not been estimated.</p>${action('Optimize','optimize','jp-secondary jp-wide','minimize-2')}`);
+        }
+        function rightContent(){
+          if(mode==='Pages')return section('Page properties',row('Dimensions','Not available')+`<label>Rotation<select data-change="rotation"><option>0°</option><option>90°</option><option>180°</option><option>270°</option></select></label><label>Page label<input value="1" aria-label="Page label"></label>${action('Apply page label','label','jp-secondary jp-wide')}`)+section('On this page',row('Annotations',note?'1 example note':'0')+row('Form fields','8')+action('Inspect fields','fields','jp-secondary jp-wide'))+documentDetails();
+          if(mode==='Edit')return (selected?section('Text content',`<p class="jp-muted">Example text selection</p><label>Text<textarea data-change="text" aria-label="Selected text">${escapeText(localText)}</textarea></label>`)+section('Typography',`<label>Font family<select aria-label="Font family"><option>Times</option><option>Helvetica</option></select></label><label>Size (pt)<input type="number" value="12" min="1" max="200" aria-label="Font size"></label><div class="jp-actions">${action('Bold','bold','jp-secondary')}${action('Italic','italic','jp-secondary')}${action('Left align','align','jp-secondary')}</div><label>Line spacing<input type="number" value="1.2" min="0.5" max="4" step="0.1"></label>`):section('Select content to edit',`<p>Select an editable object on the page to see its text, typography and layout settings.</p>${action('Add text box','add-text','jp-secondary jp-wide','square-plus')}<p class="jp-muted" style="margin-top:12px">No formatting controls are active without a selection.</p>`))+documentDetails();
+          if(mode==='Review')return (note?section('Selected annotation',`<p class="jp-muted">Page 1 · Example note</p><label>Comment<textarea aria-label="Comment">Check this field label.</textarea></label><div class="jp-actions">${action('Jump to note','jump-note','jp-secondary')}${action('Delete note','delete-note','jp-secondary')}</div>`):section('Annotation properties',`<p>Select an annotation to edit its content and appearance.</p><p class="jp-muted">The document comment list lives in the navigator.</p>`))+documentDetails();
+          return section('Export settings',`<label>Format<select data-change="format"><option>PDF</option><option>Images</option><option>Text</option><option>Word (.docx)</option><option>Spreadsheet (.xlsx)</option><option>Presentation (.pptx)</option></select></label><label>Pages<select data-change="range"><option>All pages</option><option>Current page</option><option>Custom range</option></select></label><div data-custom-range hidden><label>Page range<input data-range-input value="1" placeholder="1 or 1-3" aria-label="Custom page range"></label></div><label>Output name<input value="form-export.pdf" data-output-name aria-label="Output name"></label><label class="jp-check"><input type="checkbox" checked>Keep form fields interactive</label><p class="jp-muted">Choose a save location when exporting.</p><div data-range-error class="jp-error" role="alert" hidden></div>${action('Export PDF','export','jp-primary jp-wide','file-output')}`)+`<details><summary>Security</summary>${action('Password protection','encrypt','jp-secondary jp-wide','lock-keyhole')}</details>`;
+        }
+        function home(){return `<main class="jp-home"><h2>Your documents</h2><p>Continue a document or explore a sample.</p>${action('Open files','open-files','jp-primary','folder-open')}<div class="jp-home-columns"><section><h3>Recent documents</h3><div class="jp-recent">${[['form.pdf','Samples · PDF','form'],['report.pdf','Samples · PDF','report'],['rows20000.xlsx','Test fixtures · XLSX','sheet'],['legacy.doc','Test fixtures · DOC','doc']].map(a=>`<div class="jp-recent-row">${icon('file-text','pages')}<button class="jp-file-open cursor-interaction" type="button" data-action="open-${a[2]}"><strong>${a[0]}</strong><span>${a[1]}</span></button><button type="button" class="cursor-interaction" data-action="recent-options" aria-label="Options for ${a[0]}">${icon('ellipsis')}</button></div>`).join('')}</div><p class="jp-muted" style="margin-top:12px">Source formats shown separately from any converted PDF.</p></section><section><h3>Explore sample documents</h3><div class="jp-samples">${[['Form fields','Fill and inspect a form.','form'],['Text recognition','Try OCR on a scanned sample.','scan'],['Long document','Navigate pages and bookmarks.','long'],['Technical report','Explore document properties.','report']].map(a=>`<button type="button" class="jp-sample cursor-interaction" data-action="sample-${a[2]}">${miniature(a[2]==='form')}<strong>${a[0]}</strong><span>${a[1]}</span><span class="jp-muted">Open sample →</span></button>`).join('')}</div></section></div></main>`;}
+        function render(){
+          stage.dataset.mode=mode;workspaceNav.replaceChildren();['Home','Pages','Edit','Review','Deliver'].forEach(m=>{const b=document.createElement('button');b.type='button';b.className='cursor-interaction';b.textContent=m;b.dataset.workspace=m;b.setAttribute('aria-pressed',String(mode===m));b.onclick=()=>{mode=m;selected=false;render();remember();announce(m+' panels');};workspaceNav.append(b);});
+          const rail=`<nav class="jp-rail" aria-label="Workspace shortcuts">${['pages','pencil','message-square','file-output'].map((n,i)=>`<button type="button" class="cursor-interaction" data-action="rail-${['Pages','Edit','Review','Deliver'][i]}" aria-label="${['Pages','Edit','Review','Deliver'][i]}">${icon(n,['pages','edit','review','deliver'][i])}</button>`).join('')}</nav>`;
+          if(mode==='Home'){shell.innerHTML=rail+home();stage.querySelector('.jp-filename').textContent='';}
+          else {
+            const leftTitle={Pages:'Document navigator',Edit:'Content navigator',Review:'Review navigator',Deliver:'Prepare output'}[mode];
+            const rightTitle={Pages:'Page 1',Edit:selected?'Text object':'Nothing selected',Review:note?'Selected note':'No annotation selected',Deliver:'Export document'}[mode];
+            const left=leftContent(),right=rightContent();
+            shell.innerHTML=rail+`<aside class="jp-panel jp-left" aria-label="${leftTitle}"><div class="jp-panel-head">${leftTitle}</div><div class="jp-panel-body">${left}</div></aside><main class="jp-canvas"><div class="jp-canvas-info"><span>form.pdf · Page 1 of 1</span><span>Illustrative preview</span></div><div class="jp-paper"><h2>TFlex Application Form</h2><div class="jp-form-label">Name</div><div class="jp-form-field" data-canvas-text>John Doe</div><div class="jp-form-label">Department</div><div class="jp-form-field">Engineering</div><div class="jp-form-label">Skills</div><div class="jp-form-field">JavaScript · TypeScript</div>${mode==='Edit'?action('Preview text selection','select-text','jp-secondary jp-example'):''}</div><div class="jp-mini-dock">${action(mode==='Review'?'Annotate':mode==='Deliver'?'Export':mode==='Edit'?'Text':'Rotate','dock-main','',mode==='Review'?'message-square':mode==='Deliver'?'file-output':mode==='Edit'?'type':'rotate-ccw')}${action('More','dock-more','','ellipsis')}${action('Tools','dock-tools','','search')}</div></main><aside class="jp-panel jp-right" aria-label="${rightTitle}"><div class="jp-panel-head">${rightTitle}</div><div class="jp-panel-body">${stage.dataset.layout==='single'?`<details class="jp-navigator-copy"><summary>${leftTitle}</summary>${left}</details>`:''}${right}</div></aside>`;
+            stage.querySelector('.jp-filename').textContent='form.pdf';
+          }
+          const canvasText=shell.querySelector('[data-canvas-text]');if(canvasText){canvasText.textContent=localText;if(mode==='Edit'&&selected)canvasText.classList.add('jp-selected-object');}
+          const fieldOption=shell.querySelector('.jp-check');if(fieldOption)fieldOption.dataset.formOption='true';
+          shell.querySelectorAll('[data-action]').forEach(b=>b.onclick=()=>handle(b.dataset.action));
+          shell.querySelectorAll('[data-change]').forEach(c=>c.addEventListener('change',()=>{
+            if(c.dataset.change==='text'){localText=c.value;const textNode=shell.querySelector('[data-canvas-text]');if(textNode)textNode.textContent=localText;shell.querySelectorAll('.jp-note[data-action="select-text"] span').forEach(s=>s.textContent=localText);announce('Example text updated');}
+            else if(c.dataset.change==='range'){range=c.value;shell.querySelector('[data-custom-range]').hidden=range!=='Custom range';announce('Page range updated');}
+            else if(c.dataset.change==='format'){const extensions={'PDF':'pdf','Images':'png','Text':'txt','Word (.docx)':'docx','Spreadsheet (.xlsx)':'xlsx','Presentation (.pptx)':'pptx'};shell.querySelector('[data-output-name]').value='form-export.'+extensions[c.value];shell.querySelector('[data-action="export"]').textContent='Export '+c.value;shell.querySelector('[data-form-option]').hidden=c.value!=='PDF';announce('Format updated; conversion capabilities require verification');}
+            else announce('Property change would use the existing document command');
+          }));
+          if(globalThis.lucide)lucide.createIcons({attrs:{width:18,height:18,'stroke-width':1.65}});
+        }
+        function handle(id){
+          if(id.startsWith('rail-')){mode=id.slice(5);selected=false;render();remember();announce(mode+' panels');return;}
+          if(id==='select-text'){selected=true;render();announce('Example selection reveals relevant formatting');return;}
+          if(id==='add-note'){note=true;render();announce('Example annotation added');return;}
+          if(id==='delete-note'){note=false;render();announce('Example annotation removed');return;}
+          if(id==='pages-tab'||id==='outline-tab'){navTab=id==='pages-tab'?'Pages':'Outline';render();announce(navTab+' navigator');return;}
+          if(id==='export'){
+            const error=shell.querySelector('[data-range-error]');let valid=true;
+            if(range==='Custom range'){const value=shell.querySelector('[data-range-input]').value.trim();valid=/^1(?:\s*-\s*1)?$/.test(value);}
+            error.hidden=valid;error.textContent=valid?'':'This example contains one page. Enter 1.';
+            announce(valid?'Export settings valid; connect to the existing export handler':'Correct the page range');return;
+          }
+          if(id==='sample-form'||id==='open-form'){mode='Pages';render();remember();announce('Form sample opened');return;}
+          announce(id.replaceAll('-',' ')+' would use the existing application action');
+        }
+        render();
+        window.addEventListener('openai:set_globals',e=>{const incoming=e.detail?.globals?.widgetState?.privateContent?.panelPreview?.[stage.dataset.layout];if(incoming&&['Home','Pages','Edit','Review','Deliver'].includes(incoming.mode)){mode=incoming.mode;render();}});
+        if(globalThis.Tweak){const config={padding:16};const t=new Tweak({container:stage,onChange:()=>stage.querySelectorAll('.jp-panel-body').forEach(p=>p.style.padding=config.padding+'px')});t.addSlider(config,'padding',{label:'Panel padding',min:12,max:24,step:4,unit:'px'});}
+      });
+    })();
+  </script>
+</div>

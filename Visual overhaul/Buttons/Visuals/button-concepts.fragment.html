@@ -1,0 +1,89 @@
+<div id="jovrel-button-concepts" aria-label="Jovrel button design system">
+  <style>
+    #jovrel-button-concepts { --jb-surface:light-dark(#fff,#20232b);--jb-canvas:light-dark(#f5f6f8,#171a21);--jb-ink:light-dark(#485164,#b8c0d0);--jb-strong:light-dark(#232a38,#eef1f7);--jb-muted:light-dark(#70798a,#929bac);--jb-border:light-dark(#e1e4eb,#3b414e);--jb-accent:light-dark(#7050d6,#b9a4ff);--jb-primary-ink:light-dark(#fff,#171a21);--jb-hover:light-dark(#6341c5,#c5b4ff);--jb-down:light-dark(#5734b6,#ac94f5);--jb-soft:light-dark(#f0ebfc,#302740);--jb-danger:light-dark(#b82e43,#ff9aad);--jb-danger-soft:light-dark(#fcecef,#452530);font:14px 'Segoe UI Variable','Segoe UI',system-ui,sans-serif;color:var(--jb-ink); }
+    #jovrel-button-concepts * { box-sizing:border-box; }
+    #jovrel-button-concepts [hidden] { display:none!important; }
+    #jovrel-button-concepts .jb-stage { min-height:680px;padding:24px 16px 16px; }
+    #jovrel-button-concepts .jb-product { background:var(--jb-surface);border:1px solid var(--jb-border);border-radius:14px;padding:24px; }
+    #jovrel-button-concepts .jb-section { padding-bottom:24px;margin-bottom:24px;border-bottom:1px solid var(--jb-border); }
+    #jovrel-button-concepts .jb-section:last-child { margin:0;padding:0;border:0; }
+    #jovrel-button-concepts h3 { margin:0 0 14px;font-size:14px;font-weight:500;color:var(--jb-strong); }
+    #jovrel-button-concepts .jb-row { display:flex;align-items:center;gap:8px;flex-wrap:wrap; }
+    #jovrel-button-concepts button { position:relative;display:inline-flex;align-items:center;justify-content:center;gap:6px;min-height:36px;max-width:100%;padding:8px 12px;border:1px solid transparent;border-radius:9px;background:transparent;color:var(--jb-ink);font:500 12px 'Segoe UI Variable','Segoe UI',system-ui,sans-serif;line-height:18px;transition:background 140ms cubic-bezier(.2,0,0,1),color 140ms cubic-bezier(.2,0,0,1),border-color 140ms cubic-bezier(.2,0,0,1); }
+    #jovrel-button-concepts button:hover:not(:disabled):not([aria-disabled=true]) { background:var(--jb-canvas);color:var(--jb-strong); }
+    #jovrel-button-concepts button:active:not(:disabled):not([aria-disabled=true]) { background:light-dark(#eaedf2,#303641); }
+    #jovrel-button-concepts .jb-primary { background:var(--jb-accent);color:var(--jb-primary-ink); }
+    #jovrel-button-concepts .jb-primary:hover:not([aria-disabled=true]) { background:var(--jb-hover);color:var(--jb-primary-ink); }
+    #jovrel-button-concepts .jb-primary:active:not([aria-disabled=true]) { background:var(--jb-down); }
+    #jovrel-button-concepts .jb-secondary { border-color:var(--jb-border);background:var(--jb-surface); }
+    #jovrel-button-concepts [data-export] { min-width:134px; }
+    #jovrel-button-concepts .jb-icon { width:32px;min-width:32px;min-height:32px;padding:6px; }
+    #jovrel-button-concepts [data-lucide],#jovrel-button-concepts .jb-vector { width:16px;height:16px;stroke-width:1.65;flex-shrink:0; }
+    #jovrel-button-concepts .jb-danger { color:var(--jb-danger); }
+    #jovrel-button-concepts .jb-danger:hover:not(:disabled) { color:var(--jb-danger);background:var(--jb-danger-soft); }
+    #jovrel-button-concepts button[aria-pressed=true] { background:var(--jb-soft);color:var(--jb-accent); }
+    #jovrel-button-concepts button:disabled { color:var(--jb-muted);background:var(--jb-canvas);border-color:var(--jb-border); }
+    #jovrel-button-concepts .jb-shortcut { border:1px solid currentColor;border-radius:4px;font:400 11px 'Segoe UI',sans-serif;padding:0 4px;opacity:.85; }
+    #jovrel-button-concepts .jb-context { display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap; }
+    #jovrel-button-concepts .jb-context-label { font-size:12px;color:var(--jb-muted); }
+    #jovrel-button-concepts .jb-segment { display:inline-flex;flex-wrap:wrap;gap:2px;padding:3px;border:1px solid var(--jb-border);border-radius:9px;max-width:100%; }
+    #jovrel-button-concepts .jb-segment button { border-radius:6px; }
+    #jovrel-button-concepts .jb-state-grid { display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px; }
+    #jovrel-button-concepts .jb-state { display:flex;flex-direction:column;align-items:flex-start;gap:8px; }
+    #jovrel-button-concepts .jb-state-label { font-size:12px;color:var(--jb-muted); }
+    #jovrel-button-concepts .jb-hover-sample { background:var(--jb-hover);color:var(--jb-primary-ink); }
+    #jovrel-button-concepts .jb-down-sample { background:var(--jb-down);color:var(--jb-primary-ink); }
+    #jovrel-button-concepts .jb-focus-sample { outline:2px solid var(--jb-accent);outline-offset:2px; }
+    #jovrel-button-concepts .jb-status { margin-top:16px;font-size:12px;min-height:20px;color:var(--jb-muted); }
+    #jovrel-button-concepts .jb-reason { font-size:12px;color:var(--jb-muted);margin:8px 0 0; }
+    #jovrel-button-concepts .jb-options { position:relative;display:inline-flex; }
+    #jovrel-button-concepts .jb-menu { position:absolute;top:calc(100% + 8px);right:0;z-index:2;min-width:180px;background:var(--jb-surface);border:1px solid var(--jb-border);border-radius:14px;padding:8px;box-shadow:0 8px 28px light-dark(#232a3814,#00000035); }
+    #jovrel-button-concepts .jb-menu button { width:100%;justify-content:flex-start; }
+    #jovrel-button-concepts .jb-option-list { display:flex;gap:8px;flex-wrap:wrap; }
+    #jovrel-button-concepts .jb-compact-group { display:flex;align-items:center;gap:2px;flex-wrap:wrap;padding:4px;border:1px solid var(--jb-border);border-radius:9px; }
+    #jovrel-button-concepts .jb-compact-group button { padding:8px 10px; }
+    @media(max-width:520px) { #jovrel-button-concepts .jb-stage { min-height:900px;padding:16px 8px; }#jovrel-button-concepts .jb-product { padding:16px; }#jovrel-button-concepts .jb-state-grid { grid-template-columns:repeat(2,minmax(0,1fr)); } }
+    @media(pointer:coarse) { #jovrel-button-concepts button { min-height:44px; }#jovrel-button-concepts .jb-icon { min-width:44px;min-height:44px; } }
+    @media(prefers-reduced-motion:reduce) { #jovrel-button-concepts button { transition:none; } }
+  </style>
+  <div class="viz-carousel viz-dotted-background" aria-label="Button composition alternatives">
+    <section data-variant="Quiet Actions" aria-label="Quiet Actions recommended button family">
+      <div class="jb-stage" data-design="quiet"><div class="jb-product">
+        <div class="jb-section"><h3>Welcome actions</h3><div class="jb-row"><button type="button" class="jb-primary cursor-interaction" data-action="open"><i data-lucide="folder-open" data-asset="open" aria-hidden="true"></i>Open files <span class="jb-shortcut" aria-hidden="true">Ctrl O</span></button><button type="button" class="jb-secondary cursor-interaction" data-action="create"><i data-lucide="file-plus-2" data-asset="create-from-images" aria-hidden="true"></i>Create PDF</button><button type="button" class="jb-secondary cursor-interaction" data-action="merge"><i data-lucide="merge" data-asset="merge-pdfs" aria-hidden="true"></i>Merge PDFs</button></div></div>
+        <div class="jb-section"><h3>Inspector actions</h3><div class="jb-context"><span class="jb-context-label">form.pdf · Export settings</span><div class="jb-row"><button type="button" class="cursor-interaction" data-action="cancel">Cancel</button><button type="button" class="jb-primary cursor-interaction" data-export><i data-lucide="file-output" data-asset="deliver" aria-hidden="true"></i><span data-export-label>Export PDF</span></button></div></div></div>
+        <div class="jb-section"><h3>Persistent tools and view controls</h3><div class="jb-row"><div class="jb-segment" aria-label="Edit tools"><button type="button" class="cursor-interaction" data-tool="text" aria-pressed="true"><i data-lucide="type" data-asset="edit-text" aria-hidden="true"></i>Text</button><button type="button" class="cursor-interaction" data-tool="images" aria-pressed="false"><i data-lucide="image" data-asset="edit-images" aria-hidden="true"></i>Images</button></div><div class="jb-segment" aria-label="Page view"><button type="button" class="jb-icon cursor-interaction" data-view="single" aria-pressed="true" aria-label="Single page" data-tooltip="Single page"><i data-lucide="rectangle-vertical" data-asset="single-page" aria-hidden="true"></i></button><button type="button" class="jb-icon cursor-interaction" data-view="spread" aria-pressed="false" aria-label="Two pages" data-tooltip="Two pages"><i data-lucide="columns-2" data-asset="two-page" aria-hidden="true"></i></button><button type="button" class="jb-icon cursor-interaction" data-view="grid" aria-pressed="false" aria-label="Page grid" data-tooltip="Page grid"><i data-lucide="grid-2x2" data-asset="grid" aria-hidden="true"></i></button></div></div></div>
+        <div class="jb-section"><h3>Utility and contextual actions</h3><div class="jb-row"><button type="button" class="jb-secondary cursor-interaction" data-action="ocr"><i data-lucide="scan-text" data-asset="recognize-text" aria-hidden="true"></i>Recognize text</button><button type="button" class="cursor-interaction" data-action="tools"><i data-lucide="search" data-asset="search" aria-hidden="true"></i>Tools</button><button type="button" class="jb-danger cursor-interaction" data-action="delete"><i data-lucide="trash-2" data-asset="delete-pages" aria-hidden="true"></i>Delete pages</button><div class="jb-options"><button type="button" class="jb-icon cursor-interaction" data-menu-toggle aria-expanded="false" aria-label="More document actions" data-tooltip="More document actions"><i data-lucide="ellipsis" aria-hidden="true"></i></button><div class="jb-menu" data-menu hidden><button type="button" class="cursor-interaction" data-action="insert">Insert pages</button><button type="button" class="cursor-interaction" data-action="extract">Extract pages</button></div></div></div></div>
+        <div class="jb-section"><h3>Unavailable action</h3><button type="button" class="jb-secondary" disabled aria-describedby="jb-quiet-disabled-reason">Review OCR suspects</button><p class="jb-reason" id="jb-quiet-disabled-reason">Run text recognition first.</p></div>
+      </div><div class="jb-status" role="status">Illustrative controls · no document commands run</div></div>
+    </section>
+    <section data-variant="Command Groups" aria-label="Grouped secondary-action alternative" hidden>
+      <div class="jb-stage" data-design="grouped"><div class="jb-product">
+        <div class="jb-section"><h3>Welcome actions</h3><div class="jb-row"><button type="button" class="jb-primary cursor-interaction" data-action="open"><i data-lucide="folder-open" data-asset="open" aria-hidden="true"></i>Open files</button><div class="jb-compact-group" aria-label="Document creation"><button type="button" class="cursor-interaction" data-action="create"><i data-lucide="file-plus-2" data-asset="create-from-images" aria-hidden="true"></i>Create PDF</button><button type="button" class="cursor-interaction" data-action="merge"><i data-lucide="merge" data-asset="merge-pdfs" aria-hidden="true"></i>Merge PDFs</button></div></div></div>
+        <div class="jb-section"><h3>Panel action strip</h3><div class="jb-context"><div class="jb-compact-group"><button type="button" class="cursor-interaction" data-action="insert">Insert</button><button type="button" class="cursor-interaction" data-action="extract">Extract</button><button type="button" class="jb-danger cursor-interaction" data-action="delete">Delete</button></div><button type="button" class="jb-primary cursor-interaction" data-export><i data-lucide="file-output" data-asset="deliver" aria-hidden="true"></i><span data-export-label>Export PDF</span></button></div></div>
+        <div class="jb-section"><h3>Persistent tools</h3><div class="jb-segment" aria-label="Edit tools"><button type="button" class="cursor-interaction" data-tool="text" aria-pressed="true"><i data-lucide="type" data-asset="edit-text" aria-hidden="true"></i>Text</button><button type="button" class="cursor-interaction" data-tool="images" aria-pressed="false"><i data-lucide="image" data-asset="edit-images" aria-hidden="true"></i>Images</button></div></div>
+        <div class="jb-section"><h3>Interaction states</h3><div class="jb-state-grid"><div class="jb-state"><span class="jb-state-label">Rest</span><button type="button" class="jb-primary cursor-interaction" data-action="state">Export PDF</button></div><div class="jb-state"><span class="jb-state-label">Hover sample</span><button type="button" class="jb-hover-sample cursor-interaction" data-action="state">Export PDF</button></div><div class="jb-state"><span class="jb-state-label">Pressed sample</span><button type="button" class="jb-down-sample cursor-interaction" data-action="state">Export PDF</button></div><div class="jb-state"><span class="jb-state-label">Focus sample</span><button type="button" class="jb-primary jb-focus-sample cursor-interaction" data-action="state">Export PDF</button></div><div class="jb-state"><span class="jb-state-label">Selected tool</span><button type="button" class="cursor-interaction" data-tool="sample" aria-pressed="true">Text</button></div><div class="jb-state"><span class="jb-state-label">Unavailable</span><button type="button" disabled>Review suspects</button></div></div></div>
+      </div><div class="jb-status" role="status">Illustrative controls · no document commands run</div></div>
+    </section>
+  </div>
+  <script>
+    (()=>{
+      const root=document.getElementById('jovrel-button-concepts');
+      const pending=new Map();
+      root.querySelectorAll('[data-design]').forEach(stage=>{
+        const status=stage.querySelector('.jb-status');
+        function announce(text){status.textContent=text+' · preview only';}
+        stage.querySelectorAll('[data-tool]').forEach(button=>button.onclick=()=>{if(button.dataset.tool==='sample'){button.setAttribute('aria-pressed',String(button.getAttribute('aria-pressed')!=='true'));return;}stage.querySelectorAll('[data-tool]:not([data-tool="sample"])').forEach(b=>b.setAttribute('aria-pressed',String(b===button)));announce(button.textContent.trim()+' tool selected');});
+        stage.querySelectorAll('[data-view]').forEach(button=>button.onclick=()=>{stage.querySelectorAll('[data-view]').forEach(b=>b.setAttribute('aria-pressed',String(b===button)));announce(button.getAttribute('aria-label')+' view selected');});
+        stage.querySelectorAll('[data-action]').forEach(button=>button.onclick=()=>{const menu=stage.querySelector('[data-menu]');if(menu){menu.hidden=true;stage.querySelector('[data-menu-toggle]').setAttribute('aria-expanded','false');}announce(button.textContent.trim()+' would use its existing handler');});
+        const toggle=stage.querySelector('[data-menu-toggle]'),menu=stage.querySelector('[data-menu]');
+        if(toggle){toggle.onclick=()=>{menu.hidden=!menu.hidden;toggle.setAttribute('aria-expanded',String(!menu.hidden));if(!menu.hidden){menu.style.transform='';const r=menu.getBoundingClientRect();const shift=r.left<8?8-r.left:r.right>innerWidth-8?innerWidth-8-r.right:0;menu.style.transform='translateX('+shift+'px)';}};stage.addEventListener('keydown',event=>{if(event.key==='Escape'&&!menu.hidden){menu.hidden=true;toggle.setAttribute('aria-expanded','false');toggle.focus();}});}
+        stage.querySelectorAll('[data-export]').forEach(button=>button.onclick=()=>{
+          if(pending.has(button))return;
+          const label=button.querySelector('[data-export-label]');button.setAttribute('aria-busy','true');button.setAttribute('aria-disabled','true');label.textContent='Exporting…';announce('Example operation pending');
+          pending.set(button,setTimeout(()=>{pending.delete(button);button.removeAttribute('aria-busy');button.removeAttribute('aria-disabled');label.textContent='Export PDF';announce('Example operation complete; no file created');},1400));
+        });
+        if(globalThis.Tweak){const config={radius:9};const tweak=new Tweak({container:stage,onChange:()=>stage.querySelectorAll('button:not(.jb-segment button)').forEach(b=>b.style.borderRadius=config.radius+'px')});tweak.addSlider(config,'radius',{label:'Button radius',min:6,max:12,unit:'px'});}
+      });
+    })();
+  </script>
+</div>

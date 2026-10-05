@@ -1,0 +1,26 @@
+{
+  "direction": "Quiet Precision",
+  "status": "Proposed panel extension; prior directions remain proposed",
+  "inherits": ["quiet-precision.tokens.json", "dock.tokens.json"],
+  "panels": {
+    "leftPreferredWidth": 240,
+    "leftMinWidth": 220,
+    "leftMaxWidth": 320,
+    "rightPreferredWidth": 280,
+    "rightMinWidth": 260,
+    "rightMaxWidth": 380,
+    "headerHeightPreferred": 52,
+    "padding": 16,
+    "sectionGap": 20,
+    "fieldRadius": 9,
+    "boundaryWidth": 1,
+    "headingSize": 14,
+    "headingWeight": 500,
+    "secondaryLabelSize": 12,
+    "editableTextSize": 14,
+    "homeSurfaceRadius": 14,
+    "ownership": {"left": "Navigation and document-level workflow", "right": "Current selection properties and export configuration"},
+    "unknownPolicy": "Unknown, not analyzed, unsupported, zero and empty are distinct states",
+    "compactAlternative": "Single Inspector sharing the same data and commands"
+  }
+}
