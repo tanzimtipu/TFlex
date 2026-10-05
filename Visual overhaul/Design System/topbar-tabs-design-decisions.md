@@ -1,5 +1,3 @@
-# Shared decisions: top bar and tabs
+# Revised shared decisions: colorful tabs
 
-Document Rail extends Quiet Precision with structural separation between application commands and document navigation. The single violet accent identifies selection and accurately derived dirty state; inactive peers remain neutral. Strong foreground and solid surfaces provide contrast without adding unrelated colors. Shared icons and buttons remain unchanged in style.
-
-This proposal prefers a second row over the current crowded single strip. The Compact Header remains an alternative for evaluation. Neither proposal authorizes changing session semantics, removing commands or replacing native Windows chrome. All tab widths are logical layout proposals; available width must exclude real caption controls. Desktop behavior must be tested in the implementation environment.
+The user explicitly requests a modern individual color for every new tab. This supersedes the earlier neutral-only proposal. Maintain Document Rail hierarchy while using rich session identity colors: full saturation on the active tab, coordinated tints on inactive tabs, and stable swatches in the switcher. All other components keep Quiet Precision neutrals and violet actions. Persist identity by session ID rather than index. Preserve native Windows controls, command access and session semantics.

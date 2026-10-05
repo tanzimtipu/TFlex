@@ -1,0 +1,82 @@
+{
+  "status": "user-requested revision",
+  "identityScope": "tab session only",
+  "inactiveTintPercent": 20,
+  "activeLightForeground": "#FFFFFF",
+  "activeDarkForeground": "#171A21",
+  "palette": [
+    {
+      "id": "violet",
+      "name": "Violet",
+      "light": "#7050D6",
+      "dark": "#B9A4FF"
+    },
+    {
+      "id": "ocean",
+      "name": "Ocean",
+      "light": "#086D91",
+      "dark": "#69D3F5"
+    },
+    {
+      "id": "terracotta",
+      "name": "Terracotta",
+      "light": "#A94430",
+      "dark": "#FFAE95"
+    },
+    {
+      "id": "jade",
+      "name": "Jade",
+      "light": "#16745F",
+      "dark": "#74DFC0"
+    },
+    {
+      "id": "rose",
+      "name": "Rose",
+      "light": "#AB386C",
+      "dark": "#FF9BCD"
+    },
+    {
+      "id": "indigo",
+      "name": "Indigo",
+      "light": "#4C62BF",
+      "dark": "#A6BAFF"
+    },
+    {
+      "id": "ochre",
+      "name": "Ochre",
+      "light": "#8A5B12",
+      "dark": "#E9C077"
+    },
+    {
+      "id": "olive",
+      "name": "Olive",
+      "light": "#416A2B",
+      "dark": "#B8D88B"
+    },
+    {
+      "id": "orchid",
+      "name": "Orchid",
+      "light": "#8B46A3",
+      "dark": "#D6A5ED"
+    },
+    {
+      "id": "lagoon",
+      "name": "Lagoon",
+      "light": "#276976",
+      "dark": "#8DD5DD"
+    },
+    {
+      "id": "raspberry",
+      "name": "Raspberry",
+      "light": "#9B4260",
+      "dark": "#F4A7BB"
+    },
+    {
+      "id": "iris",
+      "name": "Iris",
+      "light": "#5653A3",
+      "dark": "#B5B0F5"
+    }
+  ],
+  "allocation": "Unused concurrent identity first; then contrast-checked extended variants. Persist colorId by session ID; never current array index."
+}

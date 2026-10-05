@@ -1,0 +1,8 @@
+component_path,feature,surface_type,opener,command_ids,modal,capability_rules,commit_cancel_semantics,native_dependencies,migration_status,exception_reason
+,Extract or split,TaskDialog,,,,,,,,,
+,Create PDF from images,PreviewTaskDialog,,,,,,,,,
+,Stamp,PreviewTaskDialog,,,,,,,,,
+,Annotation selection,ContextToolbox,,,,,,,,,
+,Text selection,ContextToolbox,,,,,,,,,
+,File menu,CommandMenu,,,,,,,,,
+,Unshown overlays discovered by audit,,,,,,,,,,

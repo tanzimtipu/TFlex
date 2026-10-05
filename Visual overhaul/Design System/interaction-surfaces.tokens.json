@@ -1,0 +1,12 @@
+{
+  "extends": "quiet-precision.tokens.json",
+  "status": "proposal",
+  "geometry": {"dialogRadius":16,"floatingRadius":12,"borderWidth":1,"dialogPadding":24,"groupGap":16,"toolboxPadding":8,"menuPadding":6,"menuRowHeight":36,"menuWidth":300,"anchorGap":10,"viewportMargin":24,"finePointerTarget":32,"coarsePointerTarget":44},
+  "widthClasses": {"compact":440,"standard":560,"preview":680},
+  "typography": {"title":18,"body":14,"helper":12,"titleWeight":500},
+  "light": {"surface":"#FFFFFF","canvas":"#F5F6F8","foreground":"#485164","strong":"#232A38","muted":"#70798A","border":"#E1E4EB","accent":"#7050D6","accentForeground":"#FFFFFF","soft":"#F0EBFC","error":"#B82E43","shadow":"#232A381A","modalScrim":"#171A2147"},
+  "dark": {"surface":"#20232B","canvas":"#171A21","foreground":"#B8C0D0","strong":"#EEF1F7","muted":"#929BAC","border":"#3B414E","accent":"#B9A4FF","accentForeground":"#171A21","soft":"#302740","error":"#FF9AAD","shadow":"#00000040","modalScrim":"#00000066"},
+  "layerOrder": ["editor","contextToolbox","propertyPopover","commandMenu","modalScrim","taskDialog","nativeChildDialog"],
+  "layerNote": "Map order to existing framework overlay/native APIs; do not hardcode arbitrary z-index values.",
+  "constraints": ["Opaque text surfaces","Content-driven dialog height","Bounded body scroll with visible header/footer","Tab identity colors do not recolor task chrome","Preserve task and native semantics"]
+}

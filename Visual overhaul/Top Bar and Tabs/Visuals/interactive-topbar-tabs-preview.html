@@ -21,14 +21,15 @@
     #jovrel-document-rail .jt-caption button { border-radius:0;min-width:42px;pointer-events:none; }
     #jovrel-document-rail .jt-tabrow { padding:6px 8px 0;display:flex;align-items:center;gap:6px;border-bottom:1px solid var(--jt-border);background:var(--jt-canvas); }
     #jovrel-document-rail .jt-tablist { display:flex;align-items:stretch;gap:4px;min-width:0;flex:1; }
-    #jovrel-document-rail .jt-tab { position:relative;display:flex;align-items:center;gap:2px;min-width:0;flex:1;max-width:220px;background:transparent;border:1px solid transparent;border-radius:9px 9px 0 0; }
-    #jovrel-document-rail .jt-tab.is-active { background:var(--jt-surface);border-color:var(--jt-border);border-bottom-color:var(--jt-surface);color:var(--jt-strong); }
-    #jovrel-document-rail .jt-tab.is-active:before { content:'';position:absolute;top:0;left:10px;right:10px;height:var(--jt-keyline,2px);background:var(--jt-accent);border-radius:2px; }
+    #jovrel-document-rail .jt-tab { position:relative;display:flex;align-items:center;gap:2px;min-width:0;flex:1;max-width:220px;background:var(--tab-tint);color:var(--jt-strong);border:1px solid color-mix(in srgb,var(--tab-color) 35%,var(--jt-border));border-radius:9px 9px 0 0; }
+    #jovrel-document-rail .jt-tab.is-active { background:var(--tab-color);border-color:var(--tab-color);border-bottom-color:var(--tab-color);color:var(--tab-on); }
+    #jovrel-document-rail .jt-tab.is-active:before { content:'';position:absolute;top:0;left:10px;right:10px;height:var(--jt-keyline,2px);background:var(--tab-on);border-radius:2px; }
     #jovrel-document-rail .jt-tab-main { flex:1;min-width:0;justify-content:flex-start;min-height:38px;padding:8px 10px; }
+    #jovrel-document-rail .jt-tab.is-active button:hover { background:color-mix(in srgb,var(--tab-color) 85%,var(--tab-on));color:var(--tab-on); }
     #jovrel-document-rail .jt-tab-name { min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis; }
     #jovrel-document-rail .jt-tab-close { min-width:28px;width:28px;padding:4px;margin-right:4px; }
     #jovrel-document-rail .jt-tab-close [data-lucide],#jovrel-document-rail .jt-tab-close .jt-vector { width:14px;height:14px; }
-    #jovrel-document-rail .jt-dirty { width:5px;height:5px;border-radius:50%;background:var(--jt-accent);flex-shrink:0; }
+    #jovrel-document-rail .jt-dirty { width:5px;height:5px;border-radius:50%;background:currentColor;flex-shrink:0; }
     #jovrel-document-rail .jt-home.is-active { color:var(--jt-accent);background:var(--jt-soft); }
     #jovrel-document-rail .jt-tab-actions { display:flex;align-items:center;gap:4px; }
     #jovrel-document-rail .jt-list-count { font-variant-numeric:tabular-nums; }
@@ -49,11 +50,12 @@
     #jovrel-document-rail .jt-inline .jt-titlebar .jt-title-spacer { display:none; }
     #jovrel-document-rail .jt-inline .jt-tabrow { flex:1;min-width:260px;padding:0;border-bottom:0;background:var(--jt-surface); }
     #jovrel-document-rail .jt-inline .jt-tab { border-radius:9px; }
-    #jovrel-document-rail .jt-inline .jt-tab.is-active { background:var(--jt-soft);border:1px solid var(--jt-border); }
+    #jovrel-document-rail .jt-inline .jt-tab.is-active { background:var(--tab-color);border:1px solid var(--tab-color); }
     #jovrel-document-rail .jt-inline .jt-tab-main { min-height:32px; }
     #jovrel-document-rail .jt-inline .jt-home { display:none; }
     @media(max-width:760px) { #jovrel-document-rail .jt-extra { display:none; }#jovrel-document-rail .jt-titlebar { flex-wrap:wrap; }#jovrel-document-rail .jt-title-spacer { min-width:0; }#jovrel-document-rail .jt-caption { min-width:90px; }#jovrel-document-rail .jt-caption button { min-width:30px; }#jovrel-document-rail .jt-brand { padding:0 4px; } }
-    @media(max-width:520px) { #jovrel-document-rail .jt-stage { min-height:690px;padding:18px 4px; }#jovrel-document-rail .jt-content { padding:18px 12px; }#jovrel-document-rail .jt-titlebar .jt-utility { margin-left:auto; }#jovrel-document-rail .jt-caption { display:none; }#jovrel-document-rail .jt-file-menu-list { grid-template-columns:1fr; }#jovrel-document-rail .jt-tabrow { flex-wrap:wrap; }#jovrel-document-rail .jt-tab-name { font-size:12px; }#jovrel-document-rail .jt-home { display:none; }#jovrel-document-rail .jt-inline .jt-tabrow { min-width:0;flex-basis:100%; } }
+    @media(max-width:520px) { #jovrel-document-rail .jt-stage { min-height:690px;padding:18px 4px; }#jovrel-document-rail .jt-content { padding:18px 12px; }#jovrel-document-rail .jt-titlebar .jt-utility { margin-left:auto; }#jovrel-document-rail .jt-caption { display:none; }#jovrel-document-rail .jt-file-menu-list { grid-template-columns:1fr; }#jovrel-document-rail .jt-tabrow { flex-wrap:wrap; }#jovrel-document-rail .jt-tab.is-active button:hover { background:color-mix(in srgb,var(--tab-color) 85%,var(--tab-on));color:var(--tab-on); }
+    #jovrel-document-rail .jt-tab-name { font-size:12px; }#jovrel-document-rail .jt-home { display:none; }#jovrel-document-rail .jt-inline .jt-tabrow { min-width:0;flex-basis:100%; } }
     @media(pointer:coarse) { #jovrel-document-rail button { min-height:44px; }#jovrel-document-rail .jt-square,#jovrel-document-rail .jt-tab-close { min-width:44px;width:44px; } }
     @media(prefers-reduced-motion:reduce) { #jovrel-document-rail button { transition:none; } }
   </style>
@@ -68,6 +70,7 @@
   <script>
     (()=>{
       const root=document.getElementById('jovrel-document-rail');
+      const tabPalette=["#7050D6", "#086D91", "#A94430", "#16745F", "#AB386C", "#4C62BF", "#8A5B12", "#416A2B", "#8B46A3", "#276976", "#9B4260", "#5653A3"];const tabPaletteDark=["#B9A4FF", "#69D3F5", "#FFAE95", "#74DFC0", "#FF9BCD", "#A6BAFF", "#E9C077", "#B8D88B", "#D6A5ED", "#8DD5DD", "#F4A7BB", "#B5B0F5"];function tabStyle(t){const n=Number(t.id.split('-')[1])-1;const i=n%tabPalette.length;const c=tabPalette[i],d=tabPaletteDark[i];return `--tab-color:light-dark(${c},${d});--tab-on:light-dark(#ffffff,#171a21);--tab-tint:light-dark(color-mix(in srgb,${c} 20%,#ffffff),color-mix(in srgb,${d} 20%,#20232b))`; }
       const glyph=(name,asset='')=>`<i data-lucide="${name}" data-asset="${asset}" aria-hidden="true"></i>`;
       const esc=s=>String(s).replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('"','&quot;');
       root.querySelectorAll('[data-design]').forEach(stage=>{
@@ -79,7 +82,7 @@
         function render(){
           const width=row.getBoundingClientRect().width;const capacity=Math.max(1,Math.floor((width-144)/150));
           let visible=tabs.slice(0,capacity);const current=tabs.find(t=>t.id===active);if(current&&!visible.some(t=>t.id===active)){visible=visible.slice(0,Math.max(0,capacity-1)).concat(current);}
-          row.innerHTML=`<button type="button" class="jt-home cursor-interaction ${active==='home'?'is-active':''}" data-home aria-label="Home">Home</button><div class="jt-tablist" aria-label="Open documents">${visible.map(t=>`<div class="jt-tab ${t.id===active?'is-active':''}"><button type="button" class="jt-tab-main cursor-interaction" data-select="${t.id}" aria-pressed="${t.id===active}" aria-label="${esc(t.name)}${t.dirty?', unsaved changes':''}" data-tooltip="${esc(t.name)}${t.dirty?' · Unsaved changes':''}">${glyph(t.name.startsWith('New tab')?'file-plus-2':'file-text','pages')}<span class="jt-tab-name">${esc(t.name)}</span>${t.dirty?'<span class="jt-dirty" aria-hidden="true"></span>':''}</button><button type="button" class="jt-tab-close cursor-interaction" data-close="${t.id}" aria-label="Close ${esc(t.name)}">${glyph('x','close')}</button></div>`).join('')}</div><div class="jt-tab-actions"><button type="button" class="jt-square cursor-interaction" data-add aria-label="New tab" data-tooltip="New tab">${glyph('plus','plus')}</button><button type="button" class="cursor-interaction" data-all aria-expanded="false" aria-label="All ${tabs.length} tabs">${glyph('list','list')}<span class="jt-list-count">${tabs.length}</span></button></div>`;
+          row.innerHTML=`<button type="button" class="jt-home cursor-interaction ${active==='home'?'is-active':''}" data-home aria-label="Home">Home</button><div class="jt-tablist" aria-label="Open documents">${visible.map(t=>`<div class="jt-tab ${t.id===active?'is-active':''}" style="${tabStyle(t)}"><button type="button" class="jt-tab-main cursor-interaction" data-select="${t.id}" aria-pressed="${t.id===active}" aria-label="${esc(t.name)}${t.dirty?', unsaved changes':''}" data-tooltip="${esc(t.name)}${t.dirty?' · Unsaved changes':''}">${glyph(t.name.startsWith('New tab')?'file-plus-2':'file-text','pages')}<span class="jt-tab-name">${esc(t.name)}</span>${t.dirty?'<span class="jt-dirty" aria-hidden="true"></span>':''}</button><button type="button" class="jt-tab-close cursor-interaction" data-close="${t.id}" aria-label="Close ${esc(t.name)}">${glyph('x','close')}</button></div>`).join('')}</div><div class="jt-tab-actions"><button type="button" class="jt-square cursor-interaction" data-add aria-label="New tab" data-tooltip="New tab">${glyph('plus','plus')}</button><button type="button" class="cursor-interaction" data-all aria-expanded="false" aria-label="All ${tabs.length} tabs">${glyph('list','list')}<span class="jt-list-count">${tabs.length}</span></button></div>`;
           const currentName=current?.name||'Home';
           content.innerHTML=`<div class="jt-contextline"><span>${esc(currentName)}</span><span>${current?.dirty?'Unsaved changes (example)':''}</span></div><div class="jt-paper"><h3>${active==='home'||currentName.startsWith('New tab')?'Your documents':currentName==='form.pdf'?'TFlex Application Form':'TFlex Technical Report'}</h3><p>${active==='home'||currentName.startsWith('New tab')?'Open a document or choose a sample to begin.':'Document content stays the focal point. Each tab retains its own session.'}</p></div>`;
           row.querySelectorAll('[data-select]').forEach(b=>b.onclick=()=>{active=b.dataset.select;closeMenu();render();announce('Selected '+tabs.find(t=>t.id===active).name);});
@@ -87,7 +90,7 @@
           row.querySelector('[data-home]').onclick=()=>{active='home';closeMenu();render();announce('Home selected without closing documents');};
           row.querySelector('[data-add]').onclick=()=>{sequence++;const tab={id:'doc-'+sequence,name:'New tab '+sequence,dirty:false};tabs.push(tab);active=tab.id;closeMenu();render();announce('Independent empty tab added');};
           row.querySelector('[data-all]').onclick=()=>{
-            if(!menu.hidden){closeMenu();return;}menuOpener=row.querySelector('[data-all]');menu.hidden=false;menuOpener.setAttribute('aria-expanded','true');menu.innerHTML=`<h3>All tabs · ${tabs.length}</h3><div class="jt-file-menu-list">${tabs.map(t=>`<button type="button" class="jt-list-entry cursor-interaction" data-jump="${t.id}">${glyph('file-text','pages')}<span class="jt-entry-name">${esc(t.name)}<span class="jt-entry-detail">${t.id===active?' · Active':''}${t.dirty?' · Unsaved':''}</span></span></button>`).join('')}</div>`;menu.querySelectorAll('[data-jump]').forEach(b=>b.onclick=()=>{active=b.dataset.jump;closeMenu();render();announce('Selected tab from complete list');});icons();
+            if(!menu.hidden){closeMenu();return;}menuOpener=row.querySelector('[data-all]');menu.hidden=false;menuOpener.setAttribute('aria-expanded','true');menu.innerHTML=`<h3>All tabs · ${tabs.length}</h3><div class="jt-file-menu-list">${tabs.map(t=>`<button type="button" class="jt-list-entry cursor-interaction" style="${tabStyle(t)};border-left:3px solid var(--tab-color)" data-jump="${t.id}">${glyph('file-text','pages')}<span class="jt-entry-name">${esc(t.name)}<span class="jt-entry-detail">${t.id===active?' · Active':''}${t.dirty?' · Unsaved':''}</span></span></button>`).join('')}</div>`;menu.querySelectorAll('[data-jump]').forEach(b=>b.onclick=()=>{active=b.dataset.jump;closeMenu();render();announce('Selected tab from complete list');});icons();
           };
           icons();
         }
