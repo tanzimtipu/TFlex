@@ -211,7 +211,7 @@ History:
 
 ## DEF-555: `e2e/phase522_oauth_exchange.spec.cjs` leaks `TFLEX_AUTH_BASE_URL` into later specs on a reused Playwright worker, CSP-blocking their sign-in
 
-- Status: OPEN
+- Status: CLOSED (qa TFL-797, 2026-10-05)
 - Severity: MEDIUM - test-infrastructure correctness: a stale env var from this spec points a later spec's auth request at a dead local stub, which is CSP-blocked, so the later spec's sign-in never even opens a window (silent cross-spec contamination).
 - Found by: qa (TFL-770 C4 FIX-READY retest)
 - Phase: TFL-751 (finding; the spec is TFL-522)
@@ -228,10 +228,11 @@ Screenshot: none (test-infra; see `e2e/tfl770_retest.log`).
 History:
 - qa (TFL-770, 2026-10-05): raised during the TFL-751 C4 FIX-READY retest.
 - qa (TFL-780, 2026-10-05): reproduced again - running `e2e/tfl751_cookie_attrs.spec.cjs` in the same worker after `phase522_oauth_exchange` left `TFLEX_AUTH_BASE_URL` at the dead stub and CSP-blocked the sign-in (trace stopped at `challenge-clear`, no loopback/exchange). Running the spec alone is clean. Confirms the save/restore fix is still needed.
+- qa (TFL-797, 2026-10-05): CLOSED (PASS). Applied the save/restore fix: `phase522_oauth_exchange.spec.cjs` snapshots `ORIGINAL_AUTH_BASE_URL` at module load and restores it in a `test.afterAll` (delete when the original was undefined); the three in-test assignments and the `afterEach` hardClose are unchanged. Also removed the now-redundant defensive `delete process.env.TFLEX_AUTH_BASE_URL` from `tfl751_inapp_signin.spec.cjs` to prove the `afterAll` itself provides isolation. Evidence: named-order run `npm.cmd run test:e2e -- e2e/phase522_oauth_exchange.spec.cjs e2e/tfl751_inapp_signin.spec.cjs` = 4 passed (14.1s); crutch-removed re-run = 4 passed (12.9s) with the tfl751 spec opening the in-app window and reaching the exchange (`popup-open ... loopback-hit ... popup-complete`); a further invocation = 4 passed (12.8s). Playwright orders spec files alphabetically, so a literal reverse order (tfl751 first) normalizes to the same order; both invocations were green. Logs: `e2e/tfl797_*.log` (scratch run dir).
 
 ## DEF-556: the sign-in loopback success page still says "close this browser tab" though the callback now lands in the in-app window
 
-- Status: OPEN
+- Status: CLOSED (qa TFL-796, 2026-10-05; fix TFL-795)
 - Severity: LOW - cosmetic/incorrect copy shown in the in-app popup for the moment before it auto-closes.
 - Found by: qa (TFL-770 C4 FIX-READY retest)
 - Phase: TFL-751 (Phase 102 deferral)
@@ -247,10 +248,11 @@ Screenshot: screenshots/phase50-inapp-signin.png.
 
 History:
 - qa (TFL-770, 2026-10-05): raised during the TFL-751 C4 FIX-READY retest; deferred by CTO to a follow-up.
+- qa (TFL-796, 2026-10-05): CLOSED. TFL-795 landed the new `SUCCESS_PAGE` copy: "You can close this sign-in window and return to Jovrel. Jovrel will finish signing you in." (`oauth-callback.ts`; comment updated too). Repointed `e2e/phase50_gate.spec.cjs` C3 to assert `close this sign-in window` + `return to Jovrel` and that `close this browser tab` is absent, and corrected the now-stale C3 test title. Rebuilt `dist` (`npm run build:node`) and re-ran the combined command: `e2e/phase47_google_completion.spec.cjs` (2) + `e2e/phase50_gate.spec.cjs` (3) = **5 passed (33.3s)**; the C3 log body shows the new copy. Also fixed a pre-existing, unrelated test gap surfaced by that run: P50 C4 never selected the Phase-59 `documents` category, so `[data-prefs-default-pdf-section]` was hidden (diagnosed at TFL-770, `e2e/tfl770_retest.log:11`); C4 now clicks `[data-prefs-category="documents"]` first. No assertion weakened. Evidence: `e2e/tfl796_combined_run.log`.
 
 ## DEF-557: `e2e/phase47_google_completion.spec.cjs` hardcodes the packaged version `1.41.0` and its packaged fixture predates the change
 
-- Status: OPEN
+- Status: CLOSED (qa TFL-796, 2026-10-05)
 - Severity: LOW - the spec fails for fixture staleness (packaged build is 1.49.0; its asar predates the Phase 102 change), not for product behaviour.
 - Found by: qa (TFL-770 C4 FIX-READY retest)
 - Phase: TFL-751 (finding; the spec is TFL-47)
@@ -266,6 +268,7 @@ Screenshot: none (spec log in `e2e/tfl770_retest.log`).
 
 History:
 - qa (TFL-770, 2026-10-05): raised during the TFL-751 C4 FIX-READY retest.
+- qa (TFL-796, 2026-10-05): CLOSED. De-hardcoded the assertion: `phase47_google_completion.spec.cjs` now reads the expected version from `require('../package.json').version` and additionally checks the semver shape, so it cannot go stale each release. Rebuilt the packaged fixture from HEAD (`npm run build` + `electron-builder --dir`; `release/win-unpacked` now carries Phase 102), then re-ran the spec: 2 passed (25.5s), `[P47 version] 1.49.0`, and the trace shows the in-app popup path (`popup-open` -> `popup-complete` -> `popup-closed`), not the old browser path. Evidence: `e2e/tfl796_phase47_run.log`, `e2e/tfl796_build.log`, `e2e/tfl796_pack.log`.
 
 ## DEF-558: the in-app auth popup keeps `window.opener` on the privileged main window - a script in the provider chain can navigate the app to an attacker origin that still holds the full `window.tflex` preload bridge
 
@@ -346,7 +349,7 @@ History:
 
 ## DEF-562: the phase46 e2e spec prints live token-bearing URLs
 
-- Status: OPEN
+- Status: CLOSED (qa TFL-781, 2026-10-05)
 - Severity: LOW - same test-output redaction class as DEF-560, but in a pre-existing (not Phase 102) spec, found during the TFL-780 phase-close pass.
 - Found by: qa (TFL-780, 2026-10-05)
 - Phase: TFL-751 (Phase 102) - observed while re-running the phase-close neighbour spec `phase46_accounts_origin`
@@ -362,6 +365,7 @@ Screenshot: none (observed run output).
 
 History:
 - qa (TFL-780, 2026-10-05): opened. Out of DEF-560's named scope (DEF-560 covers the Phase 102 specs only). Does not affect the TFL-780 verdict; CTO to route.
+- qa (TFL-781, 2026-10-05): CLOSED. Added local `redactUrl` + `redactText` helpers to `e2e/phase46_accounts_origin.spec.cjs` mirroring `sanitizeUrlForTrace` (scheme + host + pathname only; query/hash dropped; `redactText` redacts URLs embedded in free text such as a provider response body). All URL- or body-bearing `console.log` calls now pass through them (`[P46-1 authRequests]`, `[P46-1 responses]`, `[P46-1 wireOrigin]`, `[P46-2c signupReq]`, `[P46-2c allAuthResponses]`, `[P46-3 minted]` -> `minted.callbackUrl`, `[P46-3 socialReq]`, `[P46-3 socialResp]`, `[P46-3 popupNavs]`, `[P46-3 popup final]`; banner logs via `redactText`). Assertions unchanged and still compare the raw values. Re-ran `env -u ELECTRON_RUN_AS_NODE npm.cmd run test:e2e -- e2e/phase46_accounts_origin.spec.cjs`: 6 passed; output has zero live token URLs (`token=`, `access_token`, `code_challenge`, `rart=`, `part=` all absent). `[P46-3 minted]` now reads `http://localhost:<port>/oauth/callback`. The only remaining `token=` string is the static P46-3 test title (`.../oauth/callback?token=...`), a literal template with no value. Evidence: phase46_redaction_run2.log.
 
 ## DEF-548: Phase 101 always-on bug capture never reaches `public.bug_reports` — the transport's hardwired null token makes every insert fail with AuthRequiredError (TFL-746 criterion 8)
 

@@ -24,6 +24,25 @@ fs.mkdirSync(SHOTS, { recursive: true });
 
 const AUTH_HOST_RE = /neonauth\.c-\d+\.ap-southeast-1\.aws\.neon\.tech/i;
 
+// DEF-560 / DEF-562: never print a token-bearing URL. Mirrors
+// `sanitizeUrlForTrace` (src/main/services/accounts/oauth-trace.ts): scheme +
+// host + pathname only, dropping the query and hash. Non-URLs pass through a
+// placeholder so an argument such as `_blank` is still visible without lying.
+function redactUrl(raw) {
+  try {
+    const u = new URL(String(raw));
+    return `${u.protocol}//${u.host}${u.pathname}`;
+  } catch {
+    return '<not-a-url>';
+  }
+}
+
+// Redacts every URL embedded in free text (e.g. a provider response body that
+// echoes the callback URL). Assertions still use the raw values.
+function redactText(text) {
+  return String(text).replace(/https?:\/\/[^\s"'`\\]+/gi, (m) => redactUrl(m));
+}
+
 let app = null;
 let win = null;
 test.setTimeout(180000);
@@ -106,14 +125,14 @@ test('P46-1 auth request carries an injected Origin; provider answers a credenti
 
   const banner = (await win.locator('[data-accounts-banner]').first().textContent()) ?? '';
   const reqs = authRequests(order);
-  console.log(`[P46-1 banner] ${JSON.stringify(banner)}`);
-  console.log(`[P46-1 authRequests] ${JSON.stringify(reqs.map((r) => ({ url: r.url, status: r.status, rendererOrigin: headerValue(r.rendererHeaders, 'origin'), wireOrigin: headerValue(r.extraHeaders, 'origin') })))}`);
-  console.log(`[P46-1 responses] ${JSON.stringify(responses.map((r) => ({ url: r.url, status: r.status, body: r.body.slice(0, 300) })))}`);
+  console.log(`[P46-1 banner] ${JSON.stringify(redactText(banner))}`);
+  console.log(`[P46-1 authRequests] ${JSON.stringify(reqs.map((r) => ({ url: redactUrl(r.url), status: r.status, rendererOrigin: headerValue(r.rendererHeaders, 'origin'), wireOrigin: headerValue(r.extraHeaders, 'origin') })))}`);
+  console.log(`[P46-1 responses] ${JSON.stringify(responses.map((r) => ({ url: redactUrl(r.url), status: r.status, body: redactText(r.body).slice(0, 300) })))}`);
 
   expect(reqs.length, 'the renderer reached the auth host').toBeGreaterThan(0);
   const signIn = reqs.find((r) => /sign-in\/email/.test(r.url)) ?? reqs[0];
   const wireOrigin = headerValue(signIn.extraHeaders, 'origin');
-  console.log(`[P46-1 wireOrigin] ${JSON.stringify(wireOrigin)}`);
+  console.log(`[P46-1 wireOrigin] ${JSON.stringify(redactUrl(wireOrigin))}`);
   expect(wireOrigin, 'the wire request carries the injected trusted Origin').toBe('http://localhost:5173');
 
   const resp = responses.find((r) => /sign-in\/email/.test(r.url)) ?? responses[0];
@@ -127,7 +146,7 @@ test('P46-1 auth request carries an injected Origin; provider answers a credenti
   // The banner is the honest surfacing: the credential copy for a 401, or the
   // provider's verbatim reason for any other refusal - never the false offline.
   expect(banner, 'no false offline text').not.toContain('offline');
-  console.log(`[P46-1 verdict] status=${resp.status} banner=${JSON.stringify(banner)}`);
+  console.log(`[P46-1 verdict] status=${resp.status} banner=${JSON.stringify(redactText(banner))}`);
   await cdp.detach();
 });
 
@@ -146,7 +165,7 @@ test('P46-2a registration with an invalid email -> validation message, not "Some
   await win.locator('[data-accounts-submit]').click();
   await win.waitForSelector('[data-accounts-banner]', { timeout: 15000 });
   const banner = (await win.locator('[data-accounts-banner]').first().textContent()) ?? '';
-  console.log(`[P46-2a banner] ${JSON.stringify(banner)}`);
+  console.log(`[P46-2a banner] ${JSON.stringify(redactText(banner))}`);
   await win.screenshot({ path: 'screenshots/phase46-packaged-invalid-email-banner.png' });
   expect(banner, 'a validation message is shown').toContain('valid email');
   expect(banner, 'never the generic failure').not.toContain('Something went wrong');
@@ -163,7 +182,7 @@ test('P46-2b registration with a short password -> validation message, not "Some
   await win.locator('[data-accounts-submit]').click();
   await win.waitForSelector('[data-accounts-banner]', { timeout: 15000 });
   const banner = (await win.locator('[data-accounts-banner]').first().textContent()) ?? '';
-  console.log(`[P46-2b banner] ${JSON.stringify(banner)}`);
+  console.log(`[P46-2b banner] ${JSON.stringify(redactText(banner))}`);
   await win.screenshot({ path: 'screenshots/phase46-packaged-short-password-banner.png' });
   expect(banner, 'a validation message is shown').toContain('at least 8 characters');
   expect(banner, 'never the generic failure').not.toContain('Something went wrong');
@@ -200,9 +219,9 @@ test('P46-2c the sign-up request carries the injected Origin; provider answers P
   const banner = (await win.locator('[data-accounts-banner]').first().textContent()) ?? '';
   const signup = authRequests(order).find((r) => /sign-up\/email/.test(r.url));
   const resp = responses.find((r) => /sign-up\/email/.test(r.url));
-  console.log(`[P46-2c signupReq] ${JSON.stringify(signup ? { url: signup.url, status: signup.status, rendererOrigin: headerValue(signup.rendererHeaders, 'origin'), wireOrigin: headerValue(signup.extraHeaders, 'origin') } : null)}`);
-  console.log(`[P46-2c allAuthResponses] ${JSON.stringify(responses.map((r) => ({ url: r.url, status: r.status, body: r.body.slice(0, 200) })))}`);
-  console.log(`[P46-2c banner] ${JSON.stringify(banner)}`);
+  console.log(`[P46-2c signupReq] ${JSON.stringify(signup ? { url: redactUrl(signup.url), status: signup.status, rendererOrigin: headerValue(signup.rendererHeaders, 'origin'), wireOrigin: headerValue(signup.extraHeaders, 'origin') } : null)}`);
+  console.log(`[P46-2c allAuthResponses] ${JSON.stringify(responses.map((r) => ({ url: redactUrl(r.url), status: r.status, body: redactText(r.body).slice(0, 200) })))}`);
+  console.log(`[P46-2c banner] ${JSON.stringify(redactText(banner))}`);
 
   expect(signup, 'the sign-up request was made').toBeTruthy();
   expect(headerValue(signup.rendererHeaders, 'origin'), 'the renderer itself sent no Origin').toBeNull();
@@ -248,7 +267,7 @@ test('P46-3 loopback URL is http://localhost:<port>/oauth/callback?token=... and
 
   // The URL main mints, captured directly from the bridge.
   const minted = await win.evaluate(() => window.tflex.accounts.startOAuthCallback());
-  console.log(`[P46-3 minted] ${JSON.stringify(minted)}`);
+  console.log(`[P46-3 minted] ${JSON.stringify(minted && minted.callbackUrl ? redactUrl(minted.callbackUrl) : minted)}`);
   await win.evaluate(() => window.tflex.accounts.stopOAuthCallback());
   expect(minted.callbackUrl, 'the minted URL uses the provider-trusted localhost host').toMatch(/^http:\/\/localhost:\d+\/oauth\/callback\?token=/);
 
@@ -258,9 +277,9 @@ test('P46-3 loopback URL is http://localhost:<port>/oauth/callback?token=... and
   await win.waitForTimeout(6000);
 
   const social = authRequests(order).find((r) => /sign-in\/social/.test(r.url));
-  console.log(`[P46-3 socialReq] ${JSON.stringify(social ? { url: social.url, status: social.status, wireOrigin: headerValue(social.extraHeaders, 'origin') } : null)}`);
+  console.log(`[P46-3 socialReq] ${JSON.stringify(social ? { url: redactUrl(social.url), status: social.status, wireOrigin: headerValue(social.extraHeaders, 'origin') } : null)}`);
   const socialResp = responses.find((r) => /sign-in\/social/.test(r.url));
-  console.log(`[P46-3 socialResp] ${JSON.stringify(socialResp ? { status: socialResp.status, body: socialResp.body.slice(0, 400) } : null)}`);
+  console.log(`[P46-3 socialResp] ${JSON.stringify(socialResp ? { status: socialResp.status, body: redactText(socialResp.body).slice(0, 400) } : null)}`);
   expect(social, 'the app made the social-init call').toBeTruthy();
   expect(socialResp, 'the provider answered the social-init call').toBeTruthy();
   expect(socialResp.status, 'the provider accepted the loopback callback URL').toBe(200);
@@ -271,14 +290,14 @@ test('P46-3 loopback URL is http://localhost:<port>/oauth/callback?token=... and
   // host redirected on to Google's authorize page.
   const popup = await popupPromise;
   const popupNavs = await app.evaluate(() => globalThis.__p46PopupNavs ?? []);
-  console.log(`[P46-3 popupNavs] ${JSON.stringify(popupNavs)}`);
+  console.log(`[P46-3 popupNavs] ${JSON.stringify(popupNavs.map(redactUrl))}`);
   expect(popup, 'a popup window opened').toBeTruthy();
   const firstNav = popupNavs[0] ?? '';
   expect(firstNav, 'the popup first navigated to the auth host').toMatch(AUTH_HOST_RE);
   if (popup) {
     await popup.waitForLoadState('domcontentloaded').catch(() => {});
     const popupUrl = popup.url();
-    console.log(`[P46-3 popup final] ${popupUrl}`);
+    console.log(`[P46-3 popup final] ${redactUrl(popupUrl)}`);
     expect(popupUrl, 'the auth host redirected the popup to Google').toContain('accounts.google.com');
     await popup.close().catch(() => {});
   }

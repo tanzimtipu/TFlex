@@ -40,12 +40,9 @@ test.afterEach(async () => {
 });
 
 test('T751: Google opens an in-app auth window (no shell.openExternal) and completes the exchange step', async () => {
-  // Isolation guard: e2e/phase522_oauth_exchange.spec.cjs sets
-  // TFLEX_AUTH_BASE_URL to its local stub and never restores it; when the
-  // Playwright worker is reused the stale value points this app at a dead stub
-  // and its sign-in request is CSP-blocked before any window opens. Clear it so
-  // this spec is independent of run order.
-  delete process.env.TFLEX_AUTH_BASE_URL;
+  // DEF-555 isolation now lives in e2e/phase522_oauth_exchange.spec.cjs
+  // (afterAll restores the prior TFLEX_AUTH_BASE_URL), so this spec no longer
+  // needs its defensive delete; order-independence is proven by the spec pair.
   app = await launchApp();
   win = await app.firstWindow();
   await win.waitForSelector('.sample-card', { timeout: 30000 });

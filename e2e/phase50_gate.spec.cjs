@@ -172,7 +172,7 @@ test('P50 C1+C2 (Phase 102): Google opens an IN-APP sign-in window; the opener r
   expect(finalOpened[finalOpened.length - 1]).toBe(AUTH_URL);
 });
 
-test('P50 C3: the loopback page names the browser tab and the app stays usable', async () => {
+test('P50 C3: the loopback page names the sign-in window and the app stays usable', async () => {
   app = await launchApp();
   win = await app.firstWindow();
   await win.waitForSelector('.sample-card', { timeout: 30000 });
@@ -186,9 +186,11 @@ test('P50 C3: the loopback page names the browser tab and the app stays usable',
   console.log(`[P50 C3] loopback status=${res.status}`);
   console.log(`[P50 C3] loopback body: ${body}`);
   expect(res.status).toBe(200);
-  expect(body).toContain('close this browser tab');
+  // DEF-556 (TFL-795): the loopback landing now renders in the in-app sign-in
+  // window, so the success copy names that window - not a browser tab.
+  expect(body).toContain('close this sign-in window');
   expect(body).toContain('return to Jovrel');
-  expect(body).not.toContain('close this window');
+  expect(body).not.toContain('close this browser tab');
   await win.evaluate(() => window.tflex.accounts.stopOAuthCallback());
 
   // The app is usable while the browser is open: the sign-in surface shows a
@@ -209,6 +211,11 @@ test('P50 C4: Preferences opens Windows Default-apps settings and reports honest
   // Open Preferences through the real UI (the title-bar gear).
   await win.locator('[data-open-preferences]').click();
   await win.waitForSelector('[data-prefs-dialog]', { timeout: 10000 });
+  // Phase 59 rail: the sheet defaults to the General category, so select
+  // Documents before asserting its default-PDF section. Without this the
+  // section exists but is hidden (pre-existing test gap, diagnosed in
+  // e2e/tfl770_retest.log).
+  await win.locator('[data-prefs-category="documents"]').click();
   const section = win.locator('[data-prefs-default-pdf-section]');
   await expect(section).toBeVisible();
   const why = await section.textContent();

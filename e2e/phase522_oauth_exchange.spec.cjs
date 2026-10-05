@@ -43,9 +43,21 @@ let TEST1_BASE = null;
 let app = null;
 test.setTimeout(180000);
 
+// DEF-555: this spec sets TFLEX_AUTH_BASE_URL to its local stub (tests 1-3) and
+// never restored it. With workers:1 Playwright reuses the worker process across
+// spec files, so a later sign-in spec inherited the stale, now-dead stub base
+// and its auth request was CSP-blocked before a window opened. Snapshot the
+// prior value at module load and restore it after this file's tests.
+const ORIGINAL_AUTH_BASE_URL = process.env.TFLEX_AUTH_BASE_URL;
+
 test.afterEach(async () => {
   if (app) await hardClose(app, 'p522');
   app = null;
+});
+
+test.afterAll(() => {
+  if (ORIGINAL_AUTH_BASE_URL === undefined) delete process.env.TFLEX_AUTH_BASE_URL;
+  else process.env.TFLEX_AUTH_BASE_URL = ORIGINAL_AUTH_BASE_URL;
 });
 
 // The local stub auth server. Base path `/auth`; ephemeral loopback port.

@@ -1,5 +1,5 @@
 // Phase 47 (qa) - the Google sign-in COMPLETION rule, verified against the
-// PACKAGED 1.40.0 build. Every launch goes through e2e/lib/launch.cjs.
+// PACKAGED build. Every launch goes through e2e/lib/launch.cjs.
 //
 // The operator's blocker was that the popup never closed when the flow landed
 // on the app's loopback callback. The fix (Phase 47) taught the completion
@@ -41,7 +41,13 @@ test('P47 packaged: popup closes when the flow lands on its minted loopback call
 
   const version = await app.evaluate(({ app: a }) => a.getVersion());
   console.log(`[P47 version] ${version}`);
-  expect(version, 'packaged build version').toBe('1.41.0');
+  // DEF-557 - read the expected version from package.json instead of hardcoding
+  // a release number, so this spec cannot go stale each release. The semver
+  // shape check catches a malformed/unpackaged build; the equality check proves
+  // the launched binary is the build under test.
+  const expectedVersion = require('../package.json').version;
+  expect(version, 'packaged build version is semver').toMatch(/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/);
+  expect(version, 'packaged build version matches package.json').toBe(expectedVersion);
 
   // Subscribe to the real trace bridge BEFORE the flow starts.
   await win.evaluate(() => {
