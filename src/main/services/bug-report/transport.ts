@@ -59,8 +59,14 @@ export class FunctionBugReportTransport implements BugReportTransport {
       if (!response.ok) {
         // DEF-551: a 4xx means the payload itself was rejected, so retrying the
         // same batch is futile. 5xx stays retryable ("server").
+        // TFL-761: 429 is a transient throttle, NOT a payload rejection, so it
+        // stays retryable too - otherwise the capture loop would drop the batch.
         const kind: BugReportErrorKind =
-          response.status >= 400 && response.status <= 499 ? 'permanent' : 'server';
+          response.status === 429
+            ? 'server'
+            : response.status >= 400 && response.status <= 499
+              ? 'permanent'
+              : 'server';
         throw new BugReportTransportError(kind, `bug-report insert failed (${response.status})`);
       }
     } catch (error) {

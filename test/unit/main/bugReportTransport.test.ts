@@ -118,6 +118,16 @@ describe('FunctionBugReportTransport', () => {
     });
   });
 
+  it('maps a 429 throttle to a retryable server error, not a permanent drop (TFL-761)', async () => {
+    const throttled = mockFetch(
+      () => new Response('{"error":"rate-limited"}', { status: 429, headers: { 'retry-after': '60' } }),
+    );
+    await expect(makeTransport(throttled.impl).insertRecords([ROW])).rejects.toMatchObject({
+      name: 'BugReportTransportError',
+      kind: 'server',
+    });
+  });
+
   it('aborts after the injected timeout and throws an offline error (DEF-553)', async () => {
     const impl = vi.fn(
       (_input: RequestInfo | URL, init?: RequestInit) =>
