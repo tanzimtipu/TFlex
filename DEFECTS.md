@@ -147,7 +147,7 @@ History:
 
 ## DEF-554: Google sign-in 400 "Session challenge cookie not found" - the app presents the challenge held by Electron's session, but Neon Auth's verifier is bound to the challenge of the external browser that reached the hosted callback
 
-- Status: FIX-READY (qa TFL-780 re-verify 2026-10-05: live retest INCONCLUSIVE, operator sign-in still pending; NOT closed)
+- Status: CLOSED
 - Severity: HIGH - every "Continue with Google" on the installed build fails after the browser returns; the same class was re-reported by the operator on 2026-10-04 and the 1.41.2 (verifier capture) and 1.43.0/Phase-51 (clear stale challenge) fixes both addressed the wrong mechanism.
 - Found by: qa (TFL-757 live measurement); root cause recorded by CTO
 - Phase: TFL-751
@@ -184,6 +184,7 @@ History:
 - frontend-dev (TFL-769, 2026-10-05): fix applied - `src/renderer/accounts/oauthLoopback.ts` port renamed to `openAuthPopup`; `src/renderer/components/AccountsDialog.tsx:366` opens `window.open(url, "jovrel-google-signin", ...)` into the existing `installAuthPopupHandler` popup (shared app session), instead of `accounts:openAuthUrl` (shell). Loopback listener, verifier capture, exchange and `attrs=` diagnostic unchanged.
 - qa (TFL-770, 2026-10-05): FIX-READY PASS. Account unit specs 70/70; `e2e/phase50_gate.spec.cjs` repointed to Phase 102 (C1/C2/C3 PASS); new `e2e/tfl751_inapp_signin.spec.cjs` FAILS pre-fix / PASSES post-fix (window.open auth-host URL, zero shell auth URLs, popup closes on the minted loopback); phase46/522 specs green. LIVE end-to-end INCONCLUSIVE (the operator's own Google account is required to complete the round trip) - per phase criterion 1 the phase stops at FIX-READY pending the operator's real sign-in. CLOSED requires that live confirmation.
 - qa (TFL-780, 2026-10-05): phase-close re-verify. Hardening + redaction fix retested green (see DEF-558/559/560); `e2e/tfl751_inapp_signin.spec.cjs` PASS; LIVE `e2e/phase522_live_roundtrip.spec.cjs` again INCONCLUSIVE - getStatus `{status:"signed-out"}`, trace stops at `popup-navigate` (no `loopback-hit`/`exchange-*`), no `oauth-trace.log` line (the flow never reached the exchange). Operator real sign-in still required; DEF-554 remains open.
+- qa (TFL-792, 2026-10-05): CLOSED (PASS). Operator confirmed a real "Continue with Google" sign-in on the installed build (interaction bcafb7d5, result=signed_in; account menu showed the signed-in user, no HTTP 400); qa (this issue) closes DEF-554.
 
 ## DEF-555: `e2e/phase522_oauth_exchange.spec.cjs` leaks `TFLEX_AUTH_BASE_URL` into later specs on a reused Playwright worker, CSP-blocking their sign-in
 
