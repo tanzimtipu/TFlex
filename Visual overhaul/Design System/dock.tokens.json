@@ -1,0 +1,28 @@
+{
+  "direction": "Quiet Precision",
+  "status": "Proposed dock extension; inherits icon baseline without overwriting it",
+  "inherits": "quiet-precision.tokens.json",
+  "dock": {
+    "radius": 14,
+    "controlRadius": 9,
+    "padding": 8,
+    "desktopHeightApprox": 68,
+    "toolTileMinWidth": 58,
+    "toolTileMinHeight": 52,
+    "iconSize": 20,
+    "iconLabelGap": 6,
+    "labelSize": 12,
+    "labelWeight": 500,
+    "bottomInset": 16,
+    "safeClearance": 16,
+    "borderWidth": 1,
+    "separatorHeight": 28,
+    "lightShadow": "0 8px 28px rgba(35,42,56,0.08)",
+    "darkShadow": "0 8px 28px rgba(0,0,0,0.21)",
+    "primaryCountTarget": 5,
+    "overflowPolicy": "Measure available document-viewport width; move lower-priority tools into More without shrinking labels",
+    "utilityActions": ["More", "Tools"],
+    "customizationLocation": "More",
+    "autoHideDefault": false
+  }
+}

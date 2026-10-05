@@ -1,0 +1,130 @@
+<div id="jovrel-dock-concepts" aria-label="Jovrel dock design concepts">
+  <style>
+    #jovrel-dock-concepts { --jd-canvas:light-dark(#f5f6f8,#171a21);--jd-surface:light-dark(#fff,#20232b);--jd-ink:light-dark(#485164,#b8c0d0);--jd-strong:light-dark(#232a38,#eef1f7);--jd-muted:light-dark(#70798a,#929bac);--jd-border:light-dark(#e1e4eb,#3b414e);--jd-accent:light-dark(#7050d6,#b9a4ff);--jd-soft:light-dark(#f0ebfc,#302740);--jd-danger:light-dark(#b82e43,#ff9aad);--jd-shadow:light-dark(0 8px 28px #232a3814,0 8px 28px #00000035);font:14px 'Segoe UI Variable','Segoe UI',system-ui,sans-serif;color:var(--jd-ink); }
+    #jovrel-dock-concepts * { box-sizing:border-box; }
+    #jovrel-dock-concepts .jd-stage { min-height:520px;padding:24px 16px 16px; }
+    #jovrel-dock-concepts .jd-controls { display:flex;gap:4px;flex-wrap:wrap;margin-bottom:16px;padding-right:90px; }
+    #jovrel-dock-concepts button { font:inherit;color:inherit;background:transparent;border:0;border-radius:9px;display:inline-flex;align-items:center;justify-content:center;gap:6px;min-height:36px;padding:8px 10px;transition:background 140ms cubic-bezier(.2,0,0,1),color 140ms cubic-bezier(.2,0,0,1); }
+    #jovrel-dock-concepts button:hover:not(:disabled) { background:var(--jd-canvas);color:var(--jd-strong); }
+    #jovrel-dock-concepts button[aria-pressed="true"] { color:var(--jd-accent);background:var(--jd-soft); }
+    #jovrel-dock-concepts button:disabled { color:var(--jd-muted); }
+    #jovrel-dock-concepts .jd-view { position:relative;background:var(--jd-canvas);border:1px solid var(--jd-border);border-radius:18px;min-height:362px;padding:22px 16px 20px; }
+    #jovrel-dock-concepts .jd-document { background:var(--jd-surface);width:76%;min-height:232px;margin:0 auto;padding:30px 32px;color:var(--jd-strong);box-shadow:0 2px 12px light-dark(#232a3808,#00000018); }
+    #jovrel-dock-concepts .jd-document h3 { font:500 22px 'Segoe UI Variable','Segoe UI',sans-serif;margin:0 0 20px; }
+    #jovrel-dock-concepts .jd-document p { font-size:13px;margin:0;line-height:1.6; }
+    #jovrel-dock-concepts .jd-document .jd-line { height:5px;background:var(--jd-border);margin-top:12px;width:92%; }
+    #jovrel-dock-concepts .jd-document .jd-line:last-child { width:65%; }
+    #jovrel-dock-concepts .jd-dock { position:relative;display:flex;align-items:center;justify-content:center;gap:4px;flex-wrap:wrap;max-width:100%;width:fit-content;margin:-12px auto 0;padding:8px;background:var(--jd-surface);border:1px solid var(--jd-border);border-radius:14px;box-shadow:var(--jd-shadow); }
+    #jovrel-dock-concepts .jd-group { display:flex;gap:2px;align-items:center;flex-wrap:wrap;justify-content:center; }
+    #jovrel-dock-concepts .jd-tool { flex-direction:column;gap:6px;min-width:58px;min-height:52px;font-size:12px;padding:6px 8px; }
+    #jovrel-dock-concepts [data-lucide],#jovrel-dock-concepts .jd-icon { width:20px;height:20px;flex-shrink:0;stroke-width:1.65; }
+    #jovrel-dock-concepts .jd-divider { height:28px;width:1px;background:var(--jd-border);margin:0 4px; }
+    #jovrel-dock-concepts .jd-utilities { display:flex;gap:2px;align-items:center; }
+    #jovrel-dock-concepts .jd-context { font-size:12px;font-weight:500;padding:0 10px;color:var(--jd-muted); }
+    #jovrel-dock-concepts .jd-status { margin:14px 0 0;text-align:center;color:var(--jd-muted);font-size:12px;min-height:20px; }
+    #jovrel-dock-concepts .jd-menu { position:absolute;z-index:3;bottom:calc(100% + 8px);right:0;background:var(--jd-surface);border:1px solid var(--jd-border);border-radius:14px;padding:8px;width:270px;max-width:100%;box-shadow:var(--jd-shadow); }
+    #jovrel-dock-concepts .jd-menu[hidden] { display:none; }
+    #jovrel-dock-concepts .jd-menu button { width:100%;justify-content:flex-start;font-size:13px;min-height:36px; }
+    #jovrel-dock-concepts .jd-menu .jd-danger { color:var(--jd-danger); }
+    #jovrel-dock-concepts .jd-menu-label { padding:6px 10px;font-size:12px;color:var(--jd-muted); }
+    #jovrel-dock-concepts .jd-shortcut { font-size:11px;padding:2px 4px;border:1px solid var(--jd-border);border-radius:4px; }
+    #jovrel-dock-concepts .jd-shelf { width:100%;border-radius:0 0 14px 14px;margin:0;box-shadow:none;border-width:1px 0 0;justify-content:flex-start;padding:12px; }
+    #jovrel-dock-concepts .jd-shelf .jd-tool { flex-direction:row;min-height:36px;min-width:0;padding:8px 10px; }
+    #jovrel-dock-concepts .jd-shelf .jd-utilities { margin-left:auto; }
+    #jovrel-dock-concepts .jd-shelf-view { padding-bottom:0; }
+    #jovrel-dock-concepts .jd-shelf-view .jd-document { min-height:240px;margin-bottom:28px; }
+    @media(max-width:520px) {
+      #jovrel-dock-concepts .jd-stage { min-height:620px;padding:18px 8px 12px; }
+      #jovrel-dock-concepts .jd-view { padding:16px 8px; }
+      #jovrel-dock-concepts .jd-document { width:95%;padding:20px 16px; }
+      #jovrel-dock-concepts .jd-document h3 { font-size:18px; }
+      #jovrel-dock-concepts .jd-context { display:none; }
+      #jovrel-dock-concepts .jd-tool { min-width:54px; }
+      #jovrel-dock-concepts .jd-optional { display:none; }
+      #jovrel-dock-concepts .jd-shelf { margin-bottom:-16px;padding:8px 4px; }
+      #jovrel-dock-concepts .jd-shelf .jd-tool { min-height:44px;padding:8px; }
+      #jovrel-dock-concepts .jd-shelf .jd-utilities { margin-left:0; }
+    }
+    @media(pointer:coarse) { #jovrel-dock-concepts button { min-height:44px;min-width:44px; } }
+    @media(prefers-reduced-motion:reduce) { #jovrel-dock-concepts button { transition:none; } }
+  </style>
+  <div class="viz-carousel viz-dotted-background" aria-label="Dock alternatives">
+    <section data-variant="Focus Dock" aria-label="Floating Focus Dock">
+      <div class="jd-stage" data-design="focus">
+        <div class="jd-controls" aria-label="Workspace preview">
+          <button type="button" class="cursor-interaction" data-workspace="Pages" aria-pressed="false">Pages</button>
+          <button type="button" class="cursor-interaction" data-workspace="Edit" aria-pressed="true">Edit</button>
+          <button type="button" class="cursor-interaction" data-workspace="Review" aria-pressed="false">Review</button>
+          <button type="button" class="cursor-interaction" data-workspace="Deliver" aria-pressed="false">Deliver</button>
+        </div>
+        <div class="jd-view">
+          <div class="jd-document"><h3>TFlex Technical Report</h3><p>A study in PDF orchestration and performance.</p><div class="jd-line"></div><div class="jd-line"></div><div class="jd-line"></div></div>
+          <div class="jd-dock" aria-label="Edit command dock">
+            <span class="jd-context">Edit</span><span class="jd-divider" aria-hidden="true"></span>
+            <div class="jd-group" data-primary></div>
+            <span class="jd-divider" aria-hidden="true"></span>
+            <div class="jd-utilities"><button type="button" class="jd-tool cursor-interaction" data-more aria-expanded="false"><i data-lucide="ellipsis" aria-hidden="true"></i><span>More</span></button><button type="button" class="jd-tool cursor-interaction" data-tools><i data-lucide="search" aria-hidden="true"></i><span>Tools</span></button></div>
+            <div class="jd-menu" data-menu hidden><div class="jd-menu-label">More edit tools</div><div data-menu-commands></div><button type="button" class="cursor-interaction" data-customize><i data-lucide="sliders-horizontal" aria-hidden="true"></i>Customize dock</button><button type="button" class="cursor-interaction" data-tools><i data-lucide="search" aria-hidden="true"></i>Search all tools <span class="jd-shortcut">Ctrl K</span></button></div>
+          </div>
+        </div>
+        <div class="jd-status" role="status">Edit text selected · visual prototype</div>
+      </div>
+    </section>
+    <section data-variant="Command Shelf" aria-label="Attached Command Shelf" hidden>
+      <div class="jd-stage" data-design="shelf">
+        <div class="jd-controls" aria-label="Workspace preview">
+          <button type="button" class="cursor-interaction" data-workspace="Pages" aria-pressed="false">Pages</button>
+          <button type="button" class="cursor-interaction" data-workspace="Edit" aria-pressed="true">Edit</button>
+          <button type="button" class="cursor-interaction" data-workspace="Review" aria-pressed="false">Review</button>
+          <button type="button" class="cursor-interaction" data-workspace="Deliver" aria-pressed="false">Deliver</button>
+        </div>
+        <div class="jd-view jd-shelf-view">
+          <div class="jd-document"><h3>TFlex Technical Report</h3><p>A study in PDF orchestration and performance.</p><div class="jd-line"></div><div class="jd-line"></div><div class="jd-line"></div></div>
+          <div class="jd-dock jd-shelf" aria-label="Edit command shelf">
+            <div class="jd-group" data-primary></div>
+            <div class="jd-utilities"><button type="button" class="cursor-interaction" data-more aria-expanded="false"><i data-lucide="ellipsis" aria-hidden="true"></i>More</button><button type="button" class="cursor-interaction" data-tools><i data-lucide="search" aria-hidden="true"></i>Tools</button></div>
+            <div class="jd-menu" data-menu hidden><div class="jd-menu-label">More edit tools</div><div data-menu-commands></div><button type="button" class="cursor-interaction" data-customize><i data-lucide="sliders-horizontal" aria-hidden="true"></i>Customize dock</button><button type="button" class="cursor-interaction" data-tools><i data-lucide="search" aria-hidden="true"></i>Search all tools <span class="jd-shortcut">Ctrl K</span></button></div>
+          </div>
+        </div>
+        <div class="jd-status" role="status">Edit text selected · visual prototype</div>
+      </div>
+    </section>
+  </div>
+  <script>
+    (()=>{
+      const root=document.getElementById('jovrel-dock-concepts');
+      const commands={
+        Pages:{main:[['rotate-ccw','Rotate','Rotate pages','rotate-pages'],['file-output','Extract','Extract pages','extract-pages'],['file-plus-2','Insert','Insert pages','insert-pages'],['merge','Merge','Merge PDFs','merge-pdfs'],['crop','Crop','Crop pages','crop']],more:[['replace','Replace pages','replace-pages'],['scissors','Split pages','split-pages'],['trash-2','Delete pages','delete-pages']]},
+        Edit:{main:[['mouse-pointer-2','Select','Selection tool','select'],['type','Text','Edit text','edit-text'],['image','Images','Edit images','edit-images'],['square-plus','Text box','Add a text box','add-text-box'],['scan-text','OCR','Recognize text (OCR)','recognize-text']],more:[['files','Batch OCR all tabs','batch-ocr'],['triangle-alert','Review OCR suspects','ocr-suspects']]},
+        Review:{main:[['message-square','Annotate','Annotate','annotate'],['signature','Sign','Sign document','sign'],['stamp','Stamp','Stamp document','stamp'],['list-checks','Forms','Forms','forms'],['hash','Bates','Bates numbering','bates-numbering']],more:[['layers','Flatten document','flatten'],['message-square','Export comments (FDF)','export-comments'],['message-square','Import comments (FDF)','import-comments'],['table','Fill form fields from CSV','forms'],['file-output','Export form data','forms'],['file-input','Import form data','forms'],['file-check-2','Validate document','validate'],['shield','Sanitize document','sanitize'],['layers','Engineering layers','layers']]},
+        Deliver:{main:[['minimize-2','Optimize','Reduce file size','reduce-size'],['image','Images','Export pages as images','export-images'],['type','Text','Export text','export-text'],['file-text','Word','Export to Word (.docx)','export-word'],['lock-keyhole','Encrypt','Encrypt document','encrypt']],more:[['chart-pie','Audit space usage','audit-space'],['table','Export as spreadsheet (.xlsx)','export-spreadsheet'],['presentation','Export as presentation (.pptx)','export-presentation'],['image-plus','Create PDF from images','create-from-images']]}
+      };
+      root.querySelectorAll('[data-design]').forEach(stage=>{
+        let workspace='Edit';let selected='edit-text';
+        const primary=stage.querySelector('[data-primary]'),menu=stage.querySelector('[data-menu]'),more=stage.querySelector('[data-more]'),status=stage.querySelector('.jd-status');
+        function closeMenu(){menu.hidden=true;more.setAttribute('aria-expanded','false');stage.querySelector('.jd-document').style.minHeight='';}
+        function icons(){if(globalThis.lucide)lucide.createIcons({attrs:{width:20,height:20,'stroke-width':1.65}});}
+        function choose(label,key,toggle){if(toggle){selected=key;stage.querySelectorAll('button[data-key][aria-pressed]').forEach(b=>b.setAttribute('aria-pressed',b.dataset.key===key?'true':'false'));}closeMenu();status.textContent=label+' · preview only';}
+        function button(icon,label,key,full,toggle=false){const b=document.createElement('button');b.type='button';b.className='cursor-interaction';b.dataset.key=key;b.setAttribute('aria-label',full||label);b.setAttribute('data-tooltip',full||label);if(toggle)b.setAttribute('aria-pressed',selected===key?'true':'false');const i=document.createElement('i');i.setAttribute('data-lucide',icon);i.setAttribute('aria-hidden','true');i.dataset.asset=key;const span=document.createElement('span');span.textContent=label;b.append(i,span);b.onclick=()=>choose(full||label,key,toggle);return b;}
+        function render(){
+          const isTool=k=>['select','edit-text','edit-images','add-text-box','annotate'].includes(k);
+          const c=commands[workspace];primary.replaceChildren();c.main.forEach((a,i)=>{if(i===4){const divider=document.createElement('span');divider.className='jd-divider jd-optional';divider.setAttribute('aria-hidden','true');primary.append(divider);}const b=button(a[0],a[1],a[3],a[2],isTool(a[3]));b.classList.add('jd-tool');if(i>1)b.classList.add('jd-optional');primary.append(b);});
+          const target=stage.querySelector('[data-menu-commands]');target.replaceChildren();
+          c.main.forEach(a=>{target.append(button(a[0],a[2],a[3],a[2],isTool(a[3])));});
+          c.more.forEach(a=>{const b=button(a[0],a[1],a[2],a[1]);if(a[2]==='delete-pages')b.classList.add('jd-danger');target.append(b);});
+          stage.querySelector('.jd-menu-label').textContent='All '+workspace.toLowerCase()+' tools';
+          const context=stage.querySelector('.jd-context');if(context)context.textContent=workspace;
+          stage.querySelector('.jd-dock').setAttribute('aria-label',workspace+' command '+(stage.dataset.design==='focus'?'dock':'shelf'));
+          closeMenu();icons();
+        }
+        stage.querySelectorAll('[data-workspace]').forEach(b=>b.onclick=()=>{workspace=b.dataset.workspace;selected=workspace==='Edit'?'edit-text':'';stage.querySelectorAll('[data-workspace]').forEach(x=>x.setAttribute('aria-pressed',x===b?'true':'false'));render();status.textContent=workspace+' workspace · preview only';});
+        more.onclick=()=>{if(!menu.hidden){closeMenu();return;}menu.hidden=false;more.setAttribute('aria-expanded','true');stage.querySelector('.jd-document').style.minHeight=Math.max(232,menu.offsetHeight+30)+'px';};
+        stage.querySelectorAll('[data-tools]').forEach(b=>b.onclick=()=>{closeMenu();status.textContent='Connect to existing Search all tools (Ctrl K) · preview only';});
+        stage.querySelector('[data-customize]').onclick=()=>{closeMenu();status.textContent='Customize dock: reorder and pin commands per workspace · proposed interaction';};
+        stage.addEventListener('keydown',e=>{if(e.key==='Escape'){closeMenu();more.focus();}});
+        render();
+        if(globalThis.Tweak){const config={radius:14,shadow:stage.dataset.design==='focus'};const dock=stage.querySelector('.jd-dock');const t=new Tweak({container:stage,onChange:()=>{dock.style.borderRadius=config.radius+'px';dock.style.boxShadow=config.shadow?'var(--jd-shadow)':'none';}});t.addSlider(config,'radius',{label:'Dock radius',min:10,max:20,unit:'px'});t.addToggle(config,'shadow',{label:'Surface elevation'});}
+      });
+    })();
+  </script>
+</div>

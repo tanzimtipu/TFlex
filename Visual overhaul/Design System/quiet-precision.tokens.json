@@ -1,0 +1,64 @@
+{
+  "direction": "Quiet Precision",
+  "status": "Proposed baseline; keep later components complementary.",
+  "light": {
+    "iconDefault": "#485164",
+    "iconStrong": "#232A38",
+    "iconMuted": "#70798A",
+    "accent": "#7050D6",
+    "accentSoft": "#F0EBFC",
+    "surface": "#FFFFFF",
+    "canvas": "#F5F6F8",
+    "border": "#E1E4EB",
+    "danger": "#B82E43",
+    "dangerSoft": "#FCECEF",
+    "success": "#25754A",
+    "focus": "#7050D6"
+  },
+  "dark": {
+    "iconDefault": "#B8C0D0",
+    "iconStrong": "#EEF1F7",
+    "iconMuted": "#929BAC",
+    "accent": "#B9A4FF",
+    "accentSoft": "#302740",
+    "surface": "#20232B",
+    "canvas": "#171A21",
+    "border": "#3B414E",
+    "danger": "#FF9AAD",
+    "dangerSoft": "#452530",
+    "success": "#85D3A6",
+    "focus": "#B9A4FF"
+  },
+  "geometry": {
+    "iconGrid": 24,
+    "smallIconSize": 16,
+    "toolbarIconSize": 20,
+    "navigationIconSize": 22,
+    "strokeWidth": 1.65,
+    "smallStrokeWidth": 1.8,
+    "buttonRadius": 9,
+    "toolbarRadius": 14,
+    "finePointerTargetMin": 32,
+    "touchTargetMin": 44,
+    "spacingUnit": 4,
+    "iconLabelGap": 6
+  },
+  "motion": {
+    "stateDurationMs": 140,
+    "easing": "cubic-bezier(0.2, 0, 0, 1)",
+    "reducedMotion": "Immediate state changes"
+  },
+  "typography": {
+    "preferred": "Segoe UI Variable",
+    "fallback": "Segoe UI, system-ui, sans-serif",
+    "labelPx": 12,
+    "labelWeight": 500,
+    "bodyPx": 14
+  },
+  "constraints": [
+    "Color is a state signal; navigation categories do not each receive a permanent color.",
+    "Retain text labels for specialist PDF commands.",
+    "Use the same tokens across docks, panels, tabs and menus.",
+    "Glyph geometry is shared; theme and state alter color rather than shape."
+  ]
+}
