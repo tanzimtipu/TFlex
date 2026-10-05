@@ -12935,3 +12935,117 @@ Fix owner: frontend-dev (ActionDock product source). Not fixed by qa (task scope
 - CTO (TFL-841, 2026-10-05): ACCEPTED; fix owner frontend-dev. Phase 104's chunk-2 reserved-row rung must consult `reservedRow` in `dockCap` so the inline `maxWidth` can never clamp to 0 when the pills are unmeasured/absent. The trigger is the uncommitted Phase 109 ViewStrip relocation, but the dock's narrow reserved-row behaviour is Phase 104's own criterion 4.
 - frontend-dev (TFL-884, 2026-10-05): FIX-READY. Added a pure, unit-testable `dockCap({width, lifted, reservedRow, freeBandWidth, band})` in `src/renderer/state/dockFit.ts:121-132`, returning `Math.max(0, width - 2*DOCK_LIFT_INSET)` when `lifted || reservedRow` (checked before the measured free band), then `freeBandWidth ?? band`; called once at `src/renderer/components/ActionDock.tsx:573`. A narrow probe at 520px with the pills absent now reports the dock at the reserved band (~332px, was 18px). New unit spec `test/unit/renderer/phase104_dockDef573.test.tsx`. A duplicate fix child (TFL-882) targeted the same defect; the landed tree is TFL-884's pure-helper version and the two are consistent (a single `dockCap` call, no leftover inline ternary).
 - qa (TFL-899, 2026-10-05): CLOSED. Retest PASS. `npm.cmd run build:renderer` exit 0. Focused unit specs (phase104_dockDef573 / dockResponsiveSet / focusDockShell / dockMoreFocus / dockDef569_571) = 5 files / 20 tests passed, 0 failed. Live e2e (`e2e/phase104_criterion8_validation.spec.cjs`) passed (1 passed) after hardening the narrow step with non-vacuous assertions; at 520x820 the dock box is `{l:132,r:464,w:332,h:73}` with `maxWidth:"332px"` (host 356 less 24 - was 18px), `data-dock-reserved="true"`, icon-only, 5 primary tiles, and zero VISIBLE child overlaps (clip-aware; the arrows lane clips the off-lane tiles). Refreshed evidence: `screenshots/phase104-c8/narrow-dock-c8-after.png` and `viewport-narrow-520-after.png`; log `test-fixtures/phase104-c8/def573-retest-tfl899.log`. Note: the spec's `setTheme` was repaired to the Phase 105 app-menu route (`[data-app-menu] [data-menu-action="toggleTheme"]`) because the retired `[data-theme-toggle]` picker blocked the run; test-only change, no product source touched.
+## DEF-578: Phase 108 Workspace Rail label contrast misses the design's `label-contrast-check.json` budgets in both themes (inactive ink uses `--fg-muted`, not the design's #485164 / #B8C0D0)
+
+- Status: CLOSED (attempt 2 verified by qa TFL-896 - rendered e2e green; the active fill is the rail selected surface #F0EBFC / #302740 in both themes)
+- Severity: MEDIUM - fails the phase's stated success criterion 4 (contrast) and the design package's own label budgets. Both themes' inactive labels and the light selected label are below the specified ratios; dark inactive (4.51) sits right at the WCAG AA 4.5 floor. Labels remain legible (all >= 4.5), so no workflow is blocked and no data is at risk, but the committed design contract is not met.
+- Found by: qa (TFL-890 chunk C focused verification; e2e `e2e/phase108_siderail.spec.cjs`, log `phase108_e2e7.log`)
+- Phase: 108 (Workspace Rail, TFL-862 chunk C)
+- Files: `src/renderer/styles.css:15319` `.stage-rail-label { color: var(--fg-muted) }`; `src/renderer/styles.css:15325` active label `color: var(--tf-icon-active)`; token values `--fg-muted: #556070` (light) / `#828a97` (dark) vs the design's inactive foreground `#485164` / `#B8C0D0` (`Visual overhaul/Siderail/Specifications/siderail-design-spec.md:17`). The light selected fill is `--accent-soft` `#7c3aed1f` over `#FFFFFF` (#EFE7FD composite) vs the design's soft `#F0EBFC`.
+
+Steps to reproduce (from application launch):
+1. `npm.cmd run test:e2e -- e2e/phase108_siderail.spec.cjs` (the spec unmaximizes the window, opens a sample, moves the pointer off the rail, then computes rendered WCAG contrast from computed styles).
+2. Read the `[p108] contrast light=...` / `contrast dark=...` lines.
+
+Expected (rendered label contrast meets `label-contrast-check.json`): light selected >= 4.73:1, light inactive >= 7.96:1; dark selected >= 6.59:1, dark inactive >= 8.59:1.
+
+Actual:
+- light inactive 6.38:1 (rgb(85,96,112) `#556070` on `#FFFFFF`) - below 7.96
+- light selected 4.61:1 (rgb(112,80,214) `#7050D6` on rgb(239.3,231.4,252.8)) - below 4.73
+- dark inactive 4.51:1 (rgb(130,138,151) `#828a97` on rgb(32,35,43) `#20232B`) - far below 8.59, at the AA floor
+- dark selected 6.74:1 - PASS
+The dark inactive labels are visibly dimmer than `Visual overhaul/Siderail/Visuals/rail-dark.png` (which uses #B8C0D0).
+
+Fix owner: frontend-dev. Either bind the rail label's inactive ink to the design's inactive foreground (a rail-scoped token, e.g. `--tf-siderail-label-ink` = `#485164` / `#B8C0D0`, since the brief forbids changing shared `--fg-muted`) plus adjust the light selected pair to the design soft, or raise the design package's foreground to match `--fg-muted` if the CTO rules the token reuse intentional. Owner decision (CTO) required on changing a shared ink vs adding a rail-scoped token.
+
+Evidence: `e2e/phase108_siderail.spec.cjs` (failing contrast assertions), `screenshots/phase108-rail-light.png`, `screenshots/phase108-rail-dark.png` vs `Visual overhaul/Siderail/Visuals/rail-light.png`, `rail-dark.png`.
+
+History:
+- qa: opened (TFL-890 chunk C focused verification)
+- orchestrator: CTO ruling - add rail-scoped tokens only; do NOT change shared `--fg-muted` / `--accent-soft`. Inactive label ink binds to the existing `--tf-icon-rest` (#485164 light / #B8C0D0 dark) and the active fill moves to a new `--tf-siderail-selected-surface` (#F0EBFC light / #302740 dark / frosted keeps `var(--accent-soft)`). Assigned to frontend-dev (TFL-891).
+- orchestrator: FIX-READY - frontend-dev reports the fix in (TFL-891). `styles.css:15380` `.stage-rail-label` color -> `var(--tf-icon-rest)`; `styles.css:15323` `.stage-rail-btn-active` background -> `var(--tf-siderail-selected-surface)`; new token in all three theme blocks (553/772/1073); `phase36StageTokens.test.ts:239` rebound; static contrast block added to `phase108_siderail.test.ts`. 73 targeted tests + `npm run verify` pass. Computed ratios (2 dp): light inactive 7.97, light selected 4.73, dark inactive 8.59, dark selected 6.59 - all meet the JSON. qa FIX-READY retest dispatched (TFL-893).
+- qa (TFL-893, FIX-READY retest): NOT CLOSED. Label-ink half VERIFIED: rendered inactive ink is `--tf-icon-rest` (light rgb(72,81,100) #485164 / dark rgb(184,192,208) #B8C0D0), rendered inactive ratios light 7.96 (raw 7.9650) and dark 8.59 (raw 8.5948) meet budget. Selected-fill half FAILS in the rendered app: `.btn-toggle[aria-pressed="true"]` (`styles.css:3572`, specificity 0,2,0) sets `background: var(--accent-soft)` and overrides `.stage-rail-btn-active` (`styles.css:15322`, 0,1,0) regardless of source order, so the active rail item still paints `--accent-soft` `rgba(124,58,237,0.12)` over the rail surface. Rendered light selected 4.61 (raw 4.6139) < 4.73 budget -> `e2e/phase108_siderail.spec.cjs` contrast assertion FAILS (`light selected 4.61 < 4.73`). Rendered dark selected 6.74 (raw 6.7406) passes only because the old `--accent-soft` composite happens to clear 6.59; it is not the design's #302740. `npm.cmd run test:unit -- phase108_siderail phase36StageTokens def320_stageRailTrack phase37Chunk5 stageRail phase36StageTokenSourceScan` = 73 passed; `npm.cmd run verify` = clean. The static unit test is a wrong oracle here: it reads the `.stage-rail-btn-active` rule and the token values, never the winning cascade, so it reports 4.73 while the app renders 4.61. Fix owner frontend-dev: raise the active-fill selector specificity (e.g. `.stage-rail .stage-rail-btn-active` or `.stage-rail-btn[aria-pressed="true"]`) so `--tf-siderail-selected-surface` wins over `.btn-toggle[aria-pressed="true"]`, and add a rendered/ cascade-aware guard. Evidence: `e2e/phase108_siderail.spec.cjs` (failing), logs under the TFL-893 run scratch, `screenshots/phase108-rail-light.png` / `-dark.png` vs `Visual overhaul/Siderail/Visuals/rail-light.png` / `rail-dark.png`.
+- orchestrator: FIX-READY (attempt 2) - frontend-dev reports the fix in (TFL-894). `styles.css:15329` active fill moved to `.stage-rail .stage-rail-btn[aria-pressed="true"]` (0,3,0), out-specifying `.btn-toggle[aria-pressed="true"]` (0,2,0). Oracle guards added: `phase108_siderail.test.ts` asserts the winning selector out-specifies the generic toggle and no bare `.stage-rail-btn-active { background }` remains; `phase36StageTokens.test.ts:242` grep moved to the aria-pressed selector. Rendered e2e (rebuilt `dist/renderer`): light selected 4.73 (rawActiveBg rgb(240,235,252) `#F0EBFC`), dark selected 6.59 (`#302740`); unit 75 passed, `npm run verify` clean. qa FIX-READY retest dispatched (TFL-896).
+- qa (TFL-896, FIX-READY retest attempt 2): CLOSED. `npm.cmd run build:renderer` then `npm.cmd run test:e2e -- e2e/phase108_siderail.spec.cjs` = 1 passed / 0 failed. Rendered ratios meet budget: light inactive 7.96 (raw 7.9650) >= 7.96, light selected 4.73 (raw 4.7260) >= 4.73, dark inactive 8.59 (raw 8.5948) >= 8.59, dark selected 6.59 (raw 6.5890) >= 6.59. `rawActiveBg` is the rail selected surface rgb(240,235,252) `#F0EBFC` (light) / rgb(48,39,64) `#302740` (dark), not the accent-soft wash; inactive ink rgb(72,81,100) `#485164` / rgb(184,192,208) `#B8C0D0` as designed. Targeted unit (phase108_siderail, phase36StageTokens, def320_stageRailTrack, phase37Chunk5, stageRail, phase36StageTokenSourceScan) = 6 files / 75 tests passed. Blast-radius neighbour toggles (buttonSystem, phase40_palettePinToggle) = 2 files / 21 tests passed. `npm.cmd run verify` = conventions clean (375 source files), 0 type errors. Screenshots `screenshots/phase108-rail-light.png` / `-dark.png` match `Visual overhaul/Siderail/Visuals/rail-light.png` / `rail-dark.png`.
+
+> ID-collision note (qa, TFL-916, 2026-10-06): the Phase 108 adversary diff-pass
+> dispositions in ADVERSARIAL_REVIEW.md name ADV-218 -> DEF-579, ADV-219 -> DEF-580,
+> ADV-220 -> DEF-581, but those IDs were already allocated to unrelated defects
+> (DEF-579 Phase 105 document rail, DEF-580 Phase 109 CanvasPills migration, DEF-581
+> Phase 107 def338 oracle). To keep the ledger unambiguous the three Phase 108 defects
+> are filed under the next free IDs DEF-584 / DEF-585 / DEF-586; the ADV mapping is
+> recorded in each entry so the adversary origin is traceable.
+
+## DEF-584: The active rail item loses its selected violet fill on hover - the generic `.btn-toggle:hover` rule out-specifies the rail active-fill selector
+
+- Status: CLOSED (qa TFL-916 chunk D3 FIX-READY retest, 2026-10-06)
+- Severity: MEDIUM - the committed selected affordance (soft-violet fill) disappears under the pointer, and after a click the pointer rests on the item, so this is the common state rather than an edge case. Selection remains recoverable via the marker/ink, so no data loss.
+- Found by: adversary (ADV-218; disposition ACCEPTED -> DEF-579, which collides; filed here as DEF-584) - recorded by qa (TFL-916)
+- Phase: 108 (Workspace Rail, TFL-862 chunk D)
+- Files: `src/renderer/styles.css:3617` generic `.btn-toggle:hover:not([disabled]):not([aria-disabled="true"])` (0,4,0); the rail active fill `.stage-rail .stage-rail-btn[aria-pressed="true"]` (0,3,0) could not win the hover tie before the fix.
+
+Steps to reproduce (from application launch):
+1. Launch via the canonical helper and open any sample.
+2. Click any stage (e.g. Review) and leave the pointer on it.
+3. Read the active button's computed background -> pre-fix `rgba(15, 23, 42, 0.04)`; move the pointer off the rail -> `rgb(240, 235, 252)`.
+
+Expected: the active destination keeps its committed soft-violet fill (`--tf-siderail-selected-surface`, light `#F0EBFC` / dark `#302740`) while hovered; the neutral hover is reserved for inactive destinations (phase-108.md ruling 3).
+
+Actual (pre-fix): on hover the active fill becomes `rgba(15, 23, 42, 0.04)` (light `--bg-hover`) - the selected violet fill disappears.
+
+Fix owner: frontend-dev (TFL-912) - added `.stage-rail .stage-rail-btn[aria-pressed="true"]:hover { background: var(--tf-siderail-selected-surface) }` (0,4,0, later in source, wins the tie).
+
+Evidence: `test-fixtures/phase108-adversary/adv_p108_rail.spec.cjs` ADV-108-I; log `[p108-adv] I activeBg rest=rgb(240, 235, 252) hover=rgba(15, 23, 42, 0.04)`.
+
+History:
+- qa: opened (TFL-916 chunk D3 FIX-READY retest; from ADV-218). See ID-collision note above.
+- qa (TFL-916 chunk D3, FIX-READY retest): CLOSED. `npm.cmd run build:renderer` then `npm.cmd run test:e2e -- e2e/phase108_siderail.spec.cjs` = 3 passed / 0 failed. New rendered guard `P108 rail DEF-584: active fill survives hover in both themes` reads the computed `background-color` of the active rail button at rest and under `locator.hover()`: light rest=rgb(240, 235, 252) `#F0EBFC`, hover=rgb(240, 235, 252); dark rest=rgb(48, 39, 64) `#302740`, hover=rgb(48, 39, 64) - hover does NOT repaint with `rgba(15, 23, 42, 0.04)`. Evidence: `screenshots/phase108-rail-light.png` / `-dark.png`. Focused unit 7 files/122 tests, blast-radius 2 files/21 tests, `npm.cmd run verify` clean.
+
+
+## DEF-585: In forced-colors the active rail item has no visual cue - the fill collapses and the 3px marker is forced to the Canvas colour, with no border fallback
+
+- Status: CLOSED (qa TFL-916 chunk D3 FIX-READY retest, 2026-10-06)
+- Severity: LOW - accessibility/visual cue only. The soft fill is forced away, the marker is forced to the Canvas colour and `.stage-rail-btn { border: 0 }` leaves no shape cue, so the sighted high-contrast user sees four identical items (`aria-pressed` survives for screen readers).
+- Found by: adversary (ADV-219; disposition ACCEPTED -> DEF-580, which collides; filed here as DEF-585) - recorded by qa (TFL-916)
+- Phase: 108 (Workspace Rail, TFL-862 chunk D)
+- Files: `src/renderer/styles.css` rail-scoped `@media (forced-colors: active)` block (absent pre-fix); `.stage-rail-btn { border: 0 }`.
+
+Steps to reproduce:
+1. Open a sample, activate a stage, enable a forced-colors / Windows High Contrast theme, inspect the rail - pre-fix the active item shows no fill, border or marker.
+
+Expected: forced-colors preserves a selected shape/border cue using system colors (`Visual overhaul/Siderail/Specifications/siderail-design-spec.md:41`).
+
+Actual (pre-fix): active background `rgba(255, 255, 255, 0.04)` vs inactive `rgba(255, 255, 255, 0)`, `::before` marker background forced to `rgb(255, 255, 255)` (Canvas), `border-top-width` 0px.
+
+Fix owner: frontend-dev (TFL-912) - rail-scoped `@media (forced-colors: active)` gives the active item `outline: 2px solid Highlight; outline-offset: -2px` and the `::before` marker `background: Highlight; forced-color-adjust: none`.
+
+Evidence: `screenshots/phase108-adversary/adv-h-forced-colors.png`; log `[p108-adv] H ... markerBg:"rgb(124, 58, 237)" forced=... markerBg:"rgb(255, 255, 255)"`.
+
+History:
+- qa: opened (TFL-916 chunk D3 FIX-READY retest; from ADV-219). See ID-collision note above.
+- qa (TFL-916 chunk D3, FIX-READY retest): CLOSED. New rendered guard `P108 rail DEF-585: forced-colors keeps a non-collapsed active cue` under `win.emulateMedia({ forcedColors: 'active' })` reads the active rail item: `outline-style: solid`, `outline-width: 2px`, `outline-color: rgb(55, 0, 110)` (system Highlight); the `::before` marker keeps `width: 3px` and `background: rgb(55, 0, 110)` (NOT the Canvas `rgb(255,255,255)`), so a sighted high-contrast user gets a shape cue. Rail-scoping confirmed live: a non-rail `.btn-toggle` reports `outline-style: none`. `aria-pressed='true'` survives. Evidence: `screenshots/phase108-rail-forced-colors.png` (Review item outlined, siblings plain). Ran with the DEF-584 batch: e2e 3 passed, unit 122 passed, verify clean.
+
+
+## DEF-586: `def315_dockPillClearance` still models the rail at 44px, so its dock/pill collision net guards a canvas 28px wider than the real one
+
+- Status: CLOSED (qa TFL-916 chunk D3 FIX-READY retest, 2026-10-06)
+- Severity: LOW - test-maintenance/oracle-drift only. The dock/pill clearance model computes from a stale 44px rail while the delivered layout is 72px, so its "pills never intersect the dock" assertions guard a canvas that no longer exists. No product behaviour is wrong.
+- Found by: adversary (ADV-220; disposition ACCEPTED -> DEF-581, which collides; filed here as DEF-586) - recorded by qa (TFL-916)
+- Phase: 108 (Workspace Rail, TFL-862 chunk D)
+- Files: `test/unit/renderer/def315_dockPillClearance.test.tsx:667,669,672-674` (hard-coded `STAGE_RAIL_W = 44`); `src/renderer/styles.css:100` (`--tf-stage-rail-w: 72px`).
+
+Steps to reproduce:
+1. `npm.cmd run test:unit -- test/unit/renderer/def315_dockPillClearance.test.tsx` -> passes with the 44px constant; change it to 72 and re-run to see the model shift.
+
+Expected: the clearance model derives `STAGE_RAIL_W` from `--tf-stage-rail-w` so it tracks the delivered 72px layout (as `def320`/`phase37Chunk5`/`phase108` do).
+
+Actual (pre-fix): `const STAGE_RAIL_W = 44;` so `visibleCanvasOf()` and the dock/pill collision net guard a canvas 28px wider than the real one (wrong-oracle escape class).
+
+Fix owner: frontend-dev (TFL-912) - `def315_dockPillClearance.test.tsx:670` now parses `STAGE_RAIL_W` from `--tf-stage-rail-w` (72); the five `visibleCanvasOf` oracle values updated (884/544/344/204/84).
+
+Evidence: `test/unit/renderer/def315_dockPillClearance.test.tsx:667,669,672-674`; `src/renderer/styles.css:100`.
+
+History:
+- qa: opened (TFL-916 chunk D3 FIX-READY retest; from ADV-220). See ID-collision note above.
+- qa (TFL-916 chunk D3, FIX-READY retest): CLOSED. `test/unit/renderer/def315_dockPillClearance.test.tsx:670` now derives `STAGE_RAIL_W` from `--tf-stage-rail-w` (72, was hard-coded 44); the five `visibleCanvasOf` oracle values updated to 884/544/344/204/84 for the delivered 72px layout. Verified in the focused unit run: `npm.cmd run test:unit -- ...def315_dockPillClearance.test.tsx ...` = 7 files / 122 tests passed, including this file. `npm.cmd run verify` clean.
+

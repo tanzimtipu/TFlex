@@ -236,7 +236,10 @@ describe("Phase 40 item 11 — the palette + rail consume the tokens (no literal
   it("keeps the active stage affordance on the brand accent, never a stage hue", () => {
     // The rail's active wash + 2px indicator and the palette's active row stay
     // accent; a stage hue must never claim them.
-    expect(body(".stage-rail-btn-active {")).toMatch(/background:\s*var\(--accent-soft\)/);
+    // DEF-578 (fix attempt 2) — the active fill must out-specify the generic
+    // `.btn-toggle[aria-pressed="true"]` override, so it lives on the
+    // rail-scoped aria-pressed selector, never a bare `.stage-rail-btn-active`.
+    expect(body('.stage-rail .stage-rail-btn[aria-pressed="true"] {')).toMatch(/background:\s*var\(--tf-siderail-selected-surface\)/);
     expect(body(".stage-rail-btn-active::before {")).toMatch(/background:\s*var\(--accent\)/);
     expect(body(".command-palette-row-active {")).toMatch(/background:\s*var\(--accent-selected\)/);
   });

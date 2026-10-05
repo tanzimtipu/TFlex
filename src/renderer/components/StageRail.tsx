@@ -1,11 +1,11 @@
 // Phase 36 (chunk 1b) — the Stage Rail.
 //
-// The 44px vertical rail at the window's leading edge: four stage buttons
-// (icon + a small uppercase label), the active stage marked with the
-// accent-soft wash plus a 2px accent indicator on the leading edge, and the
-// settings gear pinned at the rail's bottom (the title-bar gear stays).
-// `Ctrl+1..4` switch stages, and below a 1100px window width the rail
-// collapses to icons only.
+// The vertical Workspace Rail at the window's leading edge: four stage
+// buttons (icon + a small title-case label), the active stage marked with the
+// accent-soft wash plus an inset 3x20px accent marker on the leading edge, and
+// the settings gear pinned at the rail's bottom (the title-bar gear stays).
+// `Ctrl+1..4` switch stages; the rail stays labelled at every width (the
+// compact class no longer hides the label).
 //
 // This component owns NO app state: the active stage and the handlers come
 // from the host (App), which is also where the per-pane Multi Mode routing
@@ -165,7 +165,7 @@ export function StageRail(props: StageRailProps): ReactElement {
           data-stage-rail-gear
         >
           <span className="stage-rail-icon" aria-hidden>
-            <Icon name="preferences" size="xl" />
+            <Icon name="preferences" size="md" />
           </span>
           <span className="stage-rail-label" aria-hidden>
             Settings

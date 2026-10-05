@@ -10188,3 +10188,182 @@ redacted). Remediated in TFL-783 as secrets hygiene only — no product code tou
   `redact()` is idempotent on all 17 payloads and on the captured URL.
 - Caveat: the token-bearing URL still exists in git history at `fe73758`. The fix cleans
   the tip only; history was not rewritten (out of scope, operator-gated).
+## ADV-218: The active rail item loses its selected violet fill on hover - the generic `.btn-toggle:hover` rule out-specifies the DEF-578 active-fill selector
+
+- Session: diff-pass
+- Suggested severity: MEDIUM
+
+What I did: launched the dev app through `e2e/lib/launch.cjs`, opened `report.pdf`,
+clicked the Review stage, moved the pointer to (600,500) and read
+`getComputedStyle(document.querySelector('.stage-rail-btn-active')).backgroundColor`
+(= `rgb(240, 235, 252)`, the DEF-578 selected surface `#F0EBFC`), then hovered the
+active Review button and re-read the same property. Probe:
+`test-fixtures/phase108-adversary/adv_p108_rail.spec.cjs` test `ADV-108-I`.
+
+Expected: the active destination keeps its committed soft-violet fill while hovered
+(the design names the violet fill as the selected affordance and reserves the
+"restrained neutral hover" for inactive destinations; phase-108.md ruling 3).
+
+Actual: on hover the active fill becomes `rgba(15, 23, 42, 0.04)` (light
+`--bg-hover`) - the selected violet fill disappears. The pointer rests on the item
+after a click, so this is the common state, not an edge case. Cause: the generic
+`.btn-toggle:hover:not([disabled]):not([aria-disabled="true"])`
+(`src/renderer/styles.css:3617`, specificity 0,4,0) beats the rail's active-fill
+selector `.stage-rail .stage-rail-btn[aria-pressed="true"]`
+(`src/renderer/styles.css:15608`, 0,3,0). The DEF-578 "fix attempt 2" defeated the
+non-hover `.btn-toggle[aria-pressed="true"]` override (0,2,0) but did not account
+for the higher-specificity hover rule; the resting fill is correct, the hovered fill
+is not. The marker (`::before`) and the accent ink survive, so selection is still
+recoverable, but the committed fill flashes off under the cursor.
+
+Reproduction:
+1. Launch via the canonical helper and open any sample.
+2. Click any stage (e.g. Review) and leave the pointer on it.
+3. Read the active button's computed background -> `rgba(15, 23, 42, 0.04)`;
+   move the pointer off the rail -> `rgb(240, 235, 252)`.
+
+Evidence: `test-fixtures/phase108-adversary/adv_p108_rail.spec.cjs` (ADV-108-I);
+log `[p108-adv] I activeBg rest=rgb(240, 235, 252) hover=rgba(15, 23, 42, 0.04)`.
+
+Suggested fix (for the developer, not applied by me): add a
+`.stage-rail .stage-rail-btn[aria-pressed="true"]:hover` fill rule (same specificity
+as the generic hover rule, later in source, so it wins) or raise the active-fill
+selector's specificity above the generic `:hover` chain, binding it to
+`--tf-siderail-selected-surface` so hovering the active item never repaints it with
+the neutral hover wash.
+
+Disposition: ACCEPTED -> DEF-584 (CTO, 2026-10-06): the active destination must keep
+its committed violet fill while hovered; the design reserves the neutral hover for
+inactive destinations (phase-108.md ruling 3), and the pointer rests on the item
+after a click. Assign to frontend-dev. (Filed as DEF-584 by qa TFL-916; now CLOSED.)
+
+## ADV-219: In forced-colors the active rail item has no visual cue - the fill collapses and the 3px marker is forced to the Canvas colour, with no border fallback
+
+- Session: diff-pass
+- Suggested severity: LOW
+
+What I did: opened a sample, activated the Review stage, then
+`win.emulateMedia({ forcedColors: 'active' })` and read the computed styles of the
+active and an inactive rail button and of the active button's `::before`. Probe:
+`test-fixtures/phase108-adversary/adv_p108_rail.spec.cjs` test `ADV-108-H`;
+screenshot `screenshots/phase108-adversary/adv-h-forced-colors.png`.
+
+Expected: the design requires forced-colors to "preserve selected shape/border and
+programmatic state using system colors as appropriate"
+(`Visual overhaul/Siderail/Specifications/siderail-design-spec.md:41`), and the
+phase's success criterion 2 requires the active target to be unambiguous.
+
+Actual: in forced-colors the active button background becomes
+`rgba(255, 255, 255, 0.04)` versus the inactive `rgba(255, 255, 255, 0)` (a 4%-alpha
+white over the forced Canvas - effectively no fill), the `::before` marker's
+background is forced from `rgb(124, 58, 237)` to `rgb(255, 255, 255)` (the Canvas
+colour), and `border-top-width` is `0px`. On a white forced-colors Canvas the white
+marker is invisible and no border/outline remains, so the active workspace is
+distinguishable only by `aria-pressed` (screen reader) - the sighted high-contrast
+user sees four identical items. The rail is uniquely exposed here because
+`.stage-rail-btn { border: 0 }` (`src/renderer/styles.css:15584`) removes the 1px
+border the canonical toggle would otherwise carry into forced-colors; no
+`@media (forced-colors: active)` rule exists in `styles.css`. `aria-pressed="true"`
+and the accessible names do survive.
+
+Reproduction: open a sample, activate a stage, enable a forced-colors / Windows High
+Contrast theme, and inspect the rail - the active item shows no fill, border or
+marker.
+
+Evidence: `screenshots/phase108-adversary/adv-h-forced-colors.png`; log
+`[p108-adv] H normal=... markerBg:"rgb(124, 58, 237)" forced=... markerBg:"rgb(255, 255, 255)" ...`.
+
+Suggested fix (for the developer, not applied by me): add a rail-scoped
+`@media (forced-colors: active)` block that gives the active item a system-colour
+shape cue - e.g. a `1px solid ButtonText` border or an `outline` - and
+`forced-color-adjust: none` on the marker, so selection survives when the soft fill
+is forced away.
+
+Disposition: ACCEPTED -> DEF-585 (CTO, 2026-10-06): the design requires forced-colors
+to preserve a selected shape/border cue (siderail-design-spec.md:41) and criterion 2
+requires an unambiguous active target; `aria-pressed` alone is screen-reader-only, so
+the sighted high-contrast user sees four identical items. Assign to frontend-dev.
+(Filed as DEF-585 by qa TFL-916; now CLOSED.)
+
+## ADV-220: `def315_dockPillClearance` still models the rail at 44px, so its dock/pill collision net guards a canvas 28px wider than the real one
+
+- Session: diff-pass
+- Suggested severity: LOW
+
+What I did: read `test/unit/renderer/def315_dockPillClearance.test.tsx` and ran it
+against the Phase 108 tree. It passes (part of the 108/108 green run above), but it
+still computes its geometry from a hard-coded 44px rail.
+
+Expected: after Phase 108 the rail track is 72px (`--tf-stage-rail-w: 72px`,
+`styles.css:100`), so the model that derives the visible canvas and the dock/pill
+clearance should read the token (as `def320`/`phase37Chunk5`/`phase108` do).
+
+Actual: `const STAGE_RAIL_W = 44;` (`:667`), `const SIDE_CHROME_W = STAGE_RAIL_W +
+CONTEXT_PANEL_W;` (`:669`) and `visibleCanvasOf()` (`:672-674`) still assume 44px.
+The test's canvas is therefore 28px wider than the delivered layout, so its
+"pills never intersect the dock at 1440/1100/900/760/640" assertions guard a layout
+that no longer exists and can pass while the real, narrower canvas collides. The
+Phase 108 diff updated the sibling rail specs but left this oracle stale
+(ESCAPE class: wrong-oracle).
+
+Reproduction: `npm.cmd run test:unit --
+test/unit/renderer/def315_dockPillClearance.test.tsx` -> passes with the 44px
+constant; change it to 72 and re-run to see the model shift.
+
+Evidence: `test/unit/renderer/def315_dockPillClearance.test.tsx:667,669,672-674`;
+`src/renderer/styles.css:100`.
+
+Suggested fix (for the developer, not applied by me): derive `STAGE_RAIL_W` from
+`--tf-stage-rail-w` (or bump it to 72) so the dock/pill clearance model tracks the
+same token the layout uses.
+
+Disposition: ACCEPTED -> DEF-586 (CTO, 2026-10-06): the phase's 64->72 rail change
+invalidated this oracle (wrong-oracle drift); the test must read `--tf-stage-rail-w`
+so the dock/pill clearance net tracks the delivered layout. Assign to frontend-dev.
+(Filed as DEF-586 by qa TFL-916; now CLOSED.)
+
+### Phase 108 Workspace Rail diff-pass - design critique of the changed surface (skill: design-critique)
+
+User: someone reading or editing a PDF who moves between the Pages, Edit, Review and
+Deliver workspaces. Job on this surface: switch workspace without losing document
+state or hunting for the control. Success: the four destinations read as one
+deliberate set, the active workspace is unmistakable in both themes and in
+high-contrast, and Settings is clearly a separate utility pinned to the rail foot.
+
+- Must-fix - none. No new interactive control; the four stage buttons and the gear
+  keep their promised actions (verified live: each click switches `data-active-stage`
+  / opens Preferences without changing the workspace), and Ctrl+1..4 is intact and
+  guarded in text inputs.
+- Should-fix - **States (truthfulness of selection):** the active item's violet fill
+  is replaced by the neutral hover wash whenever the pointer is over it (ADV-218).
+  The one affordance the phase is built around flickers off under the cursor.
+  **Try:** a `.stage-rail .stage-rail-btn[aria-pressed="true"]:hover` fill rule bound
+  to `--tf-siderail-selected-surface`.
+- Should-fix - **Accessibility (not colour-only):** in forced-colors the active item
+  has no shape, border or marker cue (ADV-219); selection becomes screen-reader-only.
+  **Try:** a `@media (forced-colors: active)` border/outline on the active item.
+- Nice-to-fix - **Consistency (stale copy):** `App.tsx:10976,10979` still describe
+  the rail as a "44px track" (out of Phase 108's edit scope, so left untouched), which
+  will mislead the next reader. **Try:** update the comment with the next App.tsx
+  change.
+- Nice-to-fix - **Hierarchy / density:** the 11px labels sit at the documented UI
+  floor; they fit the 56px content box at 100% text scaling, but at 200% Windows text
+  scaling `white-space: nowrap` would push them past the fixed 72px rail (no expanded
+  mode ships this phase). **Try:** confirm on the target DPI; the design already
+  permits widening labels/expanded mode under text scaling.
+- Strengths to keep: the geometry is exact - 72px track flush with the stage column
+  at 1440 through 640, zero sibling overlap; every control reachable and hittable at
+  the 640x480 floor; labels visible at every width; the inset 3x20px marker and the
+  resting `#F0EBFC` fill match the design; reduced-motion collapses the marker
+  cleanly; the rail-scoped tokens leave the frozen shared palette untouched.
+
+---
+
+## Phase 109 View Strip footer diff-pass (TFL-918)
+
+Baseline: `npm.cmd run test:e2e -- e2e/phase109_viewstrip.spec.cjs` -> 12 passed
+(1.3m), log `test-fixtures/phase109-adversary/baseline-e2e.log`. The phase e2e never
+reaches the footer's `<=419px` overflow tier (at 640x480/100% the single-mode footer
+measures 476px, compact not overflow) and never exercises the frosted theme, which is
+why the two findings below survived it.
+

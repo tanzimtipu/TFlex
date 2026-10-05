@@ -222,7 +222,7 @@ describe("Phase 37 item 8 - the Stage Rail is hidden on the welcome screen", () 
     expect(decl(HIDDEN_APP_MAIN, "grid-template-columns")).toBe("minmax(0, 1fr)");
     expect(decl(HIDDEN_TAB_STAGE, "grid-column")).toBe("1");
     expect(decl(APP_MAIN, "grid-template-columns")).toBe(
-      "var(--tf-stage-rail-w, 64px) minmax(0, 1fr)",
+      "var(--tf-stage-rail-w, 72px) minmax(0, 1fr)",
     );
   });
 });
@@ -308,11 +308,11 @@ describe("Phase 37 item 9 - no control or label touches the window/canvas edge",
     const parts = (decl(STAGE_RAIL, "padding") ?? "").split(/\s+/);
     const inset = px(parts[1] ?? "");
     expect(inset).toBeGreaterThanOrEqual(3);
-    // Phase 38 (feature B) — the rail consumes the --tf-stage-rail-w token
-    // (64px) so the 12px label floor fits; no hardcoded 44px.
-    expect(decl(STAGE_RAIL, "width")).toBe("var(--tf-stage-rail-w, 64px)");
-    expect(STAGE_RAIL_W_TOKEN).toBe(64);
-    expect(decl(STAGE_RAIL_BTN, "border-radius")).toBe("var(--radius-2)");
+    // Phase 108 (Workspace Rail) — the rail consumes the --tf-stage-rail-w
+    // token (72px) so the 12px label floor fits; no hardcoded 44px.
+    expect(decl(STAGE_RAIL, "width")).toBe("var(--tf-stage-rail-w, 72px)");
+    expect(STAGE_RAIL_W_TOKEN).toBe(72);
+    expect(decl(STAGE_RAIL_BTN, "border-radius")).toBe("var(--tf-siderail-item-radius)");
 
     const contentBox = STAGE_RAIL_W_TOKEN - 2 * inset;
     const fontPx = LABEL_SIZE_TOKEN;

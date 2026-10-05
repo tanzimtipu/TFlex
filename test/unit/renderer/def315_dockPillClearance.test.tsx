@@ -648,7 +648,7 @@ describe("DEF-319 — the canvas-bound layer contract in the stylesheet", () => 
 // ---------------------------------------------------------------------------
 // 6. DEF-322 — the two SINGLE-MODE pills YIELD as the canvas narrows.
 //
-// Single mode's visible canvas is the window less BOTH side panels: the 44px
+// Single mode's visible canvas is the window less BOTH side panels: the 72px
 // stage rail + the 220px ContextPanel on the left, and the 264px Inspector on
 // the right (qa's live probe: 276..636 at a 900px window = 372px wide). The
 // yield ladder (pillFit.ts / the stylesheet container queries) is:
@@ -662,7 +662,12 @@ describe("DEF-319 — the canvas-bound layer contract in the stylesheet", () => 
 // the other pill.
 // ---------------------------------------------------------------------------
 
-const STAGE_RAIL_W = 44;
+// DEF-581 - the rail is a 72px track in the delivered Phase 108 layout; derive
+// it from the stylesheet token (like def320_stageRailTrack / phase37Chunk5) so
+// the clearance model tracks the real canvas instead of a stale 44px constant.
+const STAGE_RAIL_W = Number.parseFloat(
+  (/--tf-stage-rail-w:\s*(\d+)px/.exec(readFileSync(STYLES_PATH, "utf8")) ?? [])[1] ?? "NaN",
+);
 const CONTEXT_PANEL_W = 220;
 const SIDE_CHROME_W = STAGE_RAIL_W + CONTEXT_PANEL_W;
 const BOTTOM_INSET = 12;
@@ -754,12 +759,13 @@ describe("DEF-322 — the two pills yield, never colliding, at every supported w
     expect(pillMode(403)).toBe("compact");
     expect(pillMode(308)).toBe("compact");
     expect(pillMode(307)).toBe("stacked");
-    // The measured visible canvas at the five supported windows (qa's probe).
-    expect(visibleCanvasOf(1440)).toBe(912);
-    expect(visibleCanvasOf(1100)).toBe(572);
-    expect(visibleCanvasOf(900)).toBe(372);
-    expect(visibleCanvasOf(760)).toBe(232);
-    expect(visibleCanvasOf(640)).toBe(112);
+    // The visible canvas at the five supported windows (qa's probe), with the
+    // delivered 72px Phase 108 rail in the side-chrome model.
+    expect(visibleCanvasOf(1440)).toBe(884);
+    expect(visibleCanvasOf(1100)).toBe(544);
+    expect(visibleCanvasOf(900)).toBe(344);
+    expect(visibleCanvasOf(760)).toBe(204);
+    expect(visibleCanvasOf(640)).toBe(84);
   });
 
   it("raises the zoom pill clear of the page pill when stacked", () => {

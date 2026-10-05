@@ -12,8 +12,8 @@
 //      root's `data-active-stage`.
 //   3. The settings gear is pinned in the rail's foot and opens the same
 //      Preferences sheet the title-bar gear opens.
-//   4. Below the 1100px breakpoint the rail is icon-only
-//      (`stage-rail-compact`).
+//   4. Below the 1100px breakpoint the rail carries the `stage-rail-compact`
+//      flag; the label stays visible at every width.
 //   5. `Ctrl+1..4` switch stage; the exact chord only, and never while a
 //      text control has focus.
 import { describe, expect, it, vi } from "vitest";
@@ -158,7 +158,7 @@ describe("StageRail — the gear and the compact collapse", () => {
     h.unmount();
   });
 
-  it("collapses to icon-only below 1100px and stays labelled at 1100px", () => {
+  it("sets the compact flag below 1100px and keeps the label visible", () => {
     expect(isStageRailCompact(STAGE_RAIL_COMPACT_WIDTH - 1)).toBe(true);
     expect(isStageRailCompact(STAGE_RAIL_COMPACT_WIDTH)).toBe(false);
 
@@ -172,8 +172,8 @@ describe("StageRail — the gear and the compact collapse", () => {
     const wideRoot = wide.host.querySelector("[data-stage-rail]");
     expect(wideRoot?.classList.contains("stage-rail-compact")).toBe(false);
     expect(wideRoot?.getAttribute("data-stage-rail-compact")).toBe("false");
-    // The stage label is always in the DOM for a11y/QA; the compact class
-    // is what hides it visually.
+    // The stage label is always in the DOM for a11y/QA, and the compact class
+    // no longer hides it visually (Phase 108 Workspace Rail).
     expect(wide.host.querySelectorAll(".stage-rail-label")).toHaveLength(5);
     wide.unmount();
   });

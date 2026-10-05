@@ -73,9 +73,10 @@
   /* Phase 38 (feature B) — the Stage Rail's width. Was a hardcoded 44px; the
    * 12px label floor means every stage word (including the gear's "Settings")
    * needs more than the old 38px content box, so the ONE track token widens
-   * the rail to 64px (58px content). Both .app-main's grid track and the rail
-   * itself consume it, so the panel column can never overlap the rail. */
-  --tf-stage-rail-w: 64px;
+   * the rail. Phase 108 (Workspace Rail) — widened to 72px (a 56px content box
+   * inside the 8px inset). Both .app-main's grid track and the rail itself
+   * consume it, so the panel column can never overlap the rail. */
+  --tf-stage-rail-w: 72px;
 
   --sp-1: 4px;
   --sp-2: 8px;
@@ -459,6 +460,19 @@
   --bg-toolbar: #fafbfd;
   --bg-rail: #e8ecf1;
   --bg-canvas: #f1f5f9;
+  /* Phase 108 (Workspace Rail) — the Workspace Rail's own surface + geometry.
+   * Rail-scoped so the horizontal side rail (--bg-rail / --panel-bg) is left
+   * untouched. Light: the base white surface. */
+  --tf-siderail-surface: #FFFFFF;
+  /* Phase 108 / DEF-578 — the rail-scoped selected-item fill. Frozen design
+   * ``light.selectedSurface`` (#F0EBFC), distinct from the shared
+   * `--accent-soft` wash so the rail's label contrast clears the phase budget
+   * without touching a shared token. */
+  --tf-siderail-selected-surface: #F0EBFC;
+  --tf-siderail-item-radius: 10px;
+  --tf-siderail-utility-min: 48px;
+  --tf-siderail-marker-radius: 2px;
+  --tf-siderail-utility-icon: 18px;
   /* Phase 33 — the Multi Mode pane canvas. Unlike the app chrome (which
    * steps aside in frosted so the wallpaper/glass reads), the PDF canvas
    * area is ALWAYS an opaque surface: a pane is a document workspace, and
@@ -643,6 +657,16 @@
   --bg-raised: #13171d;
   --bg-toolbar: #12161b;
   --bg-rail: #161b21;
+  /* Phase 108 (Workspace Rail) — the Workspace Rail's surface + geometry for
+   * dark. The rail reads as a raised panel, not the deep canvas. */
+  --tf-siderail-surface: #20232B;
+  /* Phase 108 / DEF-578 — the rail-scoped selected-item fill (dark), the frozen
+   * design ``dark.selectedSurface``. */
+  --tf-siderail-selected-surface: #302740;
+  --tf-siderail-item-radius: 10px;
+  --tf-siderail-utility-min: 48px;
+  --tf-siderail-marker-radius: 2px;
+  --tf-siderail-utility-icon: 18px;
   /* Phase-3 workspace: the document canvas is the app's deepest
    * surface in dark mode — the near-black #0B0D0F base — so a
    * paper-white page reads as a physical sheet floating in the
@@ -905,6 +929,16 @@
   --bg-raised: var(--tf-surface-dialog);
   --bg-toolbar: var(--tf-surface-toolbar);
   --bg-rail: var(--tf-surface-rail);
+  /* Phase 108 (Workspace Rail) — frosted keeps the same glass/sidebar material
+   * the .side-rail / .glass-sidebar surfaces use in this theme. */
+  --tf-siderail-surface: var(--glass-sidebar-bg);
+  /* Phase 108 / DEF-578 — frosted keeps today's glass wash: the rail-scoped
+   * selected fill resolves to the shared `--accent-soft` film. */
+  --tf-siderail-selected-surface: var(--accent-soft);
+  --tf-siderail-item-radius: 10px;
+  --tf-siderail-utility-min: 48px;
+  --tf-siderail-marker-radius: 2px;
+  --tf-siderail-utility-icon: 18px;
   --bg-canvas: var(--tf-bg);
   /* Phase 33 — the frosted theme's CANVAS is deliberately opaque. The
    * --tf-bg base (#eef1f5) is the light neutral this theme already uses
@@ -1400,7 +1434,7 @@ input[type="checkbox"] {
    * the rail + stage share row 2. With no bar, row 1 is empty (auto -> 0) and
    * row 2 (1fr) owns the whole frame, exactly the old flex-column result. */
   display: grid;
-  grid-template-columns: var(--tf-stage-rail-w, 64px) minmax(0, 1fr);
+  grid-template-columns: var(--tf-stage-rail-w, 72px) minmax(0, 1fr);
   grid-template-rows: auto minmax(0, 1fr);
   min-height: 0;
   position: relative;
@@ -14667,13 +14701,13 @@ rect.ann-highlight.ann-preview {
   display: flex;
   flex-direction: column;
   justify-content: space-between;
-  width: var(--tf-stage-rail-w, 64px);
-  /* Phase 37 (item 9, the placement audit) — a horizontal inset so the rail's
-   * controls (and the "Settings" label in particular) never touch the window's
-   * leading edge. Phase 38 (feature B) — the token width (64px) gives a 58px
-   * content box, enough for every 12px stage word with a visible edge gap. */
-  padding: var(--sp-2) 3px;
-  background: var(--bg-rail);
+  width: var(--tf-stage-rail-w, 72px);
+  /* Phase 108 (Workspace Rail) — the 12px vertical / 8px horizontal inset:
+   * the 72px track gives a 56px content box, enough for every 12px stage
+   * word with a visible edge gap, and the item wash stays clear of the
+   * window edge. */
+  padding: 12px 8px;
+  background: var(--tf-siderail-surface);
   /* Phase 41 (item 4a) — the 1px NEUTRAL separator between the side rail and
    * the ContextPanel. It is the rail's own page-facing hairline (no gap, no
    * overlap; the panel's column starts flush at the rail's border box), drawn
@@ -14687,12 +14721,20 @@ rect.ann-highlight.ann-preview {
   display: flex;
   flex-direction: column;
   align-items: stretch;
-  gap: 2px;
+  gap: 8px;
+  /* Phase 108 (Workspace Rail) — at short window heights the workspace list
+   * scrolls while the Settings group stays pinned in the fixed utility region
+   * at the rail's bottom. Targets keep their full height and labels never
+   * hide. */
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 
 .stage-rail-foot {
   border-top: 1px solid var(--border-subtle);
   padding-top: var(--sp-1);
+  padding-bottom: var(--sp-2);
 }
 
 /* Phase 91 C2 — migrated to the canonical button system
@@ -14707,32 +14749,80 @@ rect.ann-highlight.ann-preview {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 3px;
+  gap: 6px;
   width: 100%;
   height: auto;
-  padding: 7px 0;
+  min-height: 60px;
+  padding: 8px 4px;
   border: 0;
-  /* Phase 37 (item 9) — the control's own surface is inset from the rail's
-   * edges, so its hover/active wash never grazes the window edge. */
-  border-radius: var(--radius-2);
+  /* Phase 108 (Workspace Rail) — the control's own surface is inset from the
+   * rail's edges and rounded on the rail-item radius, so its hover/active
+   * wash never grazes the window edge. */
+  border-radius: var(--tf-siderail-item-radius);
 }
 
-.stage-rail-btn-active {
-  background: var(--accent-soft);
+/* Phase 108 (Workspace Rail) — the bottom gear is the utility control, so it
+ * uses the shorter utility height instead of the 60px stage item. */
+.stage-rail-gear {
+  min-height: var(--tf-siderail-utility-min);
+}
+
+/* Phase 108 (Workspace Rail) — the utility gear glyph renders at the shorter
+ * utility size. It is MORE SPECIFIC than the shared `.stage-rail svg` pin, so
+ * the four nav glyphs keep their 22px --tf-icon-size-lg while the gear steps
+ * down. */
+.stage-rail .stage-rail-gear svg {
+  width: var(--tf-siderail-utility-icon);
+  height: var(--tf-siderail-utility-icon);
+  min-width: var(--tf-siderail-utility-icon);
+  min-height: var(--tf-siderail-utility-icon);
+}
+
+.stage-rail .stage-rail-btn[aria-pressed="true"] {
+  background: var(--tf-siderail-selected-surface);
   color: var(--fg-strong);
 }
 
-/* The 2px accent indicator on the active stage's leading edge. Phase 43
- * (item 1) — it fades in on the token band when a stage becomes active
- * (opacity-only: the bar's width/position never animate, so no layout is
+/* DEF-579 - the generic `.btn-toggle:hover:not([disabled]):not([aria-disabled=
+ * "true"])` hover (0,4,0) out-specifies the bare selected-fill rule above and
+ * repaints the ACTIVE item to the neutral --bg-hover wash on hover. This
+ * rail-scoped hover rule carries the same (0,4,0) and sits LATER in source, so
+ * it wins the tie: the selected fill survives hover. Inactive destinations are
+ * untouched and keep the canonical neutral hover. */
+.stage-rail .stage-rail-btn[aria-pressed="true"]:hover {
+  background: var(--tf-siderail-selected-surface);
+}
+
+/* DEF-580 - in forced-colors the active fill collapses to a near-transparent
+ * film, the ::before marker is forced to the Canvas colour and the rail's
+ * border:0 leaves the active item with no shape cue (aria-pressed only). Give
+ * the ACTIVE item a system-colour outline (outline, not border, so geometry is
+ * unchanged) and keep the leading marker visible with a system colour. */
+@media (forced-colors: active) {
+  .stage-rail .stage-rail-btn[aria-pressed="true"] {
+    outline: 2px solid Highlight;
+    outline-offset: -2px;
+  }
+
+  .stage-rail .stage-rail-btn[aria-pressed="true"]::before {
+    background: Highlight;
+    forced-color-adjust: none;
+  }
+}
+
+/* Phase 108 (Workspace Rail) — the active stage's inset leading marker: a
+ * short 3x20px accent bar on the item's leading edge (left 2px), replacing
+ * the old full-height 2px rail. Phase 43 (item 1) — it fades in on the token
+ * band (opacity-only: the marker's geometry never animates, so no layout is
  * touched), driven by the canonical tf-anim-tab-in keyframe. */
 .stage-rail-btn-active::before {
   content: '';
   position: absolute;
-  top: 0;
-  bottom: 0;
-  left: 0;
-  width: 2px;
+  left: 2px;
+  top: 20px;
+  width: 3px;
+  height: 20px;
+  border-radius: var(--tf-siderail-marker-radius);
   background: var(--accent);
   animation: tf-anim-tab-in var(--motion-duration-fast) var(--motion-ease-enter) both;
 }
@@ -14763,20 +14853,28 @@ rect.ann-highlight.ann-preview {
 .stage-rail-label {
   /* Phase 38 (feature B) — the 12px interactive-label floor. The old 7px
    * uppercase micro-label is retired: title-case at 12px keeps every stage
-   * word (and the gear's "Settings") readable inside the widened 58px content
-   * box. Colour is supplied per stage by the family-hue rule below; the gear
-   * (no data-stage) stays --fg-muted, which now clears the 4.5:1 floor. */
+   * word (and the gear's "Settings") readable inside the widened content box.
+   * Phase 108 (Workspace Rail) — the label rests in the neutral muted ink;
+   * the active stage's label takes the accent via the rule below. */
   font-size: var(--tf-label-size);
   line-height: 1.1;
   letter-spacing: 0.01em;
   white-space: nowrap;
-  color: var(--stage-hue, var(--fg-muted));
+  color: var(--tf-icon-rest);
   transition: color var(--motion-duration-fast) var(--motion-ease-standard);
 }
 
-/* Icon-only below the compact breakpoint. */
+/* Phase 108 (Workspace Rail) — the active stage's label matches its active
+ * icon ink, so the whole active item reads as one accent affordance. */
+.stage-rail-btn-active .stage-rail-label {
+  color: var(--tf-icon-active);
+}
+
+/* Phase 108 (Workspace Rail) — the label stays VISIBLE at every width; the
+ * compact class no longer hides it. The rail keeps its token track width, so
+ * the label still fits below the compact breakpoint. */
 .stage-rail-compact .stage-rail-label {
-  display: none;
+  padding: 0 1px;
 }
 
 @media (prefers-reduced-motion: reduce) {

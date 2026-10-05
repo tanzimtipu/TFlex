@@ -78,10 +78,10 @@ const PANEL_WIDTHS = [220, 48];
 describe('DEF-320 — the rail owns a real track in .app-main', () => {
   it('makes .app-main a two-column grid (rail track + stage) with the bar row above', () => {
     expect(decl(APP_MAIN, 'display')).toBe('grid');
-    // Phase 38 (feature B) — the track is the --tf-stage-rail-w token (64px),
-    // widened from the hardcoded 44px for the 12px label floor.
+    // Phase 108 (Workspace Rail) — the track is the --tf-stage-rail-w token
+    // (72px), widened from the hardcoded 44px for the 12px label floor.
     expect(decl(APP_MAIN, 'grid-template-columns')).toBe(
-      'var(--tf-stage-rail-w, 64px) minmax(0, 1fr)',
+      'var(--tf-stage-rail-w, 72px) minmax(0, 1fr)',
     );
     // Row 1 is the (optional) suspects bar, row 2 the rail + stage.
     expect(decl(APP_MAIN, 'grid-template-rows')).toBe('auto minmax(0, 1fr)');
@@ -110,9 +110,9 @@ describe('DEF-320 — the rail owns a real track in .app-main', () => {
   });
 
   it('parses the rail width out of the same track the frame reserves', () => {
-    expect(RAIL_W).toBe(64);
-    expect(decl(APP_MAIN, 'grid-template-columns')).toContain('var(--tf-stage-rail-w, 64px)');
-    expect(decl(STAGE_RAIL, 'width')).toBe('var(--tf-stage-rail-w, 64px)');
+    expect(RAIL_W).toBe(72);
+    expect(decl(APP_MAIN, 'grid-template-columns')).toContain('var(--tf-stage-rail-w, 72px)');
+    expect(decl(STAGE_RAIL, 'width')).toBe('var(--tf-stage-rail-w, 72px)');
   });
 });
 
@@ -168,17 +168,18 @@ describe('DEF-320 — the panel collapse/expand control stays clickable', () => 
     expect(inset).toBe(2);
     // 48 - 2*2 = 44px of content box holds the 38px control.
     expect(strip - 2 * inset).toBeGreaterThanOrEqual(button);
-    // The rail track (64px) sits entirely to the LEFT of the panel column, so
+    // The rail track (72px) sits entirely to the LEFT of the panel column, so
     // no part of the control can be covered by it.
-    expect(RAIL_W).toBe(64);
+    expect(RAIL_W).toBe(72);
   });
 
   it('keeps the compact (<1100px) rail behaviour and the Ctrl+1..4 chords', () => {
     expect(STAGE_RAIL_COMPACT_WIDTH).toBe(1100);
     expect(isStageRailCompact(1099)).toBe(true);
     expect(isStageRailCompact(1100)).toBe(false);
-    // The label is what compact drops; the rail keeps its token track width.
-    expect(CSS).toMatch(/\.stage-rail-compact \.stage-rail-label\s*\{[^}]*display:\s*none/s);
+    // Phase 108 (Workspace Rail) — the label stays visible at every width; the
+    // compact class no longer hides it. The rail keeps its token track width.
+    expect(CSS).not.toMatch(/\.stage-rail-compact \.stage-rail-label\s*\{[^}]*display:\s*none/s);
     const railSrc = readFileSync(
       resolve(__dirname, '../../../src/renderer/components/StageRail.tsx'),
       'utf8',

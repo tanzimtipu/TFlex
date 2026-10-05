@@ -6703,3 +6703,197 @@ phase is presentation and organisation only and preserves the existing `dockPins
 
 **Numbering:** this is Phase 104 (the last appended phase is 103).
 
+## Phase 108 - Siderail overhaul: the Workspace Rail replaces the Stage Rail (phase issue TFL-862; operator driver TFL-823, 2026-10-06)
+
+**Operator request (product terms, TFL-823 / phase issue TFL-862).** Replace the app's current
+Siderail (the left vertical Stage Rail) with the committed **Workspace Rail** from
+`Visual overhaul/Siderail/`: a dedicated 72 logical-pixel navigation rail below the application
+title / tab chrome where Pages, Edit, Review and Deliver read as ONE deliberate set of workspace
+destinations, and Settings is a bottom-aligned utility. The rail must match the supplied spec and
+visuals (`rail-light`, `rail-dark`, `rail-narrow-dark`) across hover / active / focus and light /
+dark, preserve every existing rail destination and shortcut, and integrate WITHOUT conflicting or
+overlapping the Canvas / Book View, Top Bar / Tabs, Dock, Panels or any other overhauled surface.
+Operator charge, verbatim: "Properly implement the new Siderail overhaul. make sure there's no
+conflict or overlapping contents." **Scope is doctrine: Siderail owns the rail surface and its
+geometry only.** The **Expanded Navigator** (156px) is a design ALTERNATE that this phase does NOT
+ship - its own spec says do not add a second permanent mode or expansion toggle; the phase proves
+the adjacent ContextPanel's expanded/collapsed states instead. The Viewing Controls overhaul is
+TFL-863; Typography is TFL-864; Thumbnails and Outline is TFL-865; Canvas is Phase 107 / TFL-858.
+Siderail CONSUMES the existing workspace controller / stage state and MUST NOT restyle, re-home,
+duplicate or edit any sibling's shared region.
+
+**Current state (verified by reading the repo on 2026-10-06).**
+
+1. Component: `src/renderer/components/StageRail.tsx` renders a `<nav aria-label="Work stages"
+   data-stage-rail>` with four `<button data-stage>` in `STAGE_ORDER` (`:120-156`), each
+   `aria-pressed` + `data-stage` + an `Icon name size="xl"` glyph (`STAGE_ICONS`, `:66-71`), a
+   `stage-rail-foot` gear button (`data-stage-rail-gear`, `Icon name="preferences" size="xl"`,
+   `:157-174`), `Ctrl+1..4` via `stageForCtrlDigit` (`:105-115`), and an icon-only compact state.
+   Constants: `STAGE_RAIL_COMPACT_WIDTH = 1100` (`:34`), `isStageRailCompact` (`:37-39`),
+   `isStageRailVisible` (`:57-64`).
+2. Showtime is gated by `isStageRailVisible`; App mounts it at `src/renderer/App.tsx:10983-10989`
+   inside `.app-main` and keys `data-stage-rail-hidden` at `:10976`.
+3. State: `src/renderer/state/stages.ts` - `Stage` (`:32`), `STAGE_ORDER` (`:35`),
+   `STAGE_LABELS` (`:38-43`), `DEFAULT_STAGE` (`:46`), `stageForCtrlDigit` (`:87-90`),
+   `editModeForStage` (`:129-131`). The rail owns NO state.
+4. Styling: `src/renderer/styles.css` - rail width token `--tf-stage-rail-w: 64px` (`:78`); icon
+   ink `--tf-icon-rest` / `--tf-icon-active` (`:66-70`); label size `--tf-label-size: 12px`
+   (`:71`); accent ladder `--accent: #7C3AED` / `--accent-text` / `--accent-soft` /
+   `--accent-selected` (`:92-104`); `.app-main` grid track `var(--tf-stage-rail-w, 64px)
+   minmax(0, 1fr)` (`:1437`) + hidden variant (`:1448-1454`). The `.stage-rail` block
+   (`:14733-14881`): `width: var(--tf-stage-rail-w, 64px)` (`:14764`), `padding: var(--sp-2) 3px`
+   (`:14769`), `background: var(--bg-rail)` (`:14770`), `border-right: 1px solid var(--divider)`
+   (`:14775`); buttons `gap: 2px` (`:14784`), `border-radius: var(--radius-2)` = 5px (`:14811`);
+   active wash `var(--accent-soft)` (`:14815`) + a full-height 2px `::before` bar (`:14823-14832`);
+   label consumes `var(--stage-hue, var(--fg-muted))` (`:14867`); compact hides the label
+   (`.stage-rail-compact .stage-rail-label { display: none }`, `:14872-14874`). `--tf-stage-rail-w`
+   is consumed at exactly these 3 sites (verified by sweep) - no canvas/dock geometry reads it
+   directly, so the grid reflows the stage column.
+5. Icon scale: `src/renderer/icons/Icon.tsx` `ICON_SIZES` = xs14 / sm16 / md18 / lg20 / xl22 /
+   xxl24 / hero32 (`:40-46`); the design's 22px nav glyph = `xl`, its 18px utility glyph = `md`.
+6. Focused tests that pin the CURRENT rail and will move with it:
+   `test/unit/renderer/stageRail.test.tsx` (four stages, active class, gear, compact, Ctrl+1..4);
+   `test/unit/renderer/def320_stageRailTrack.test.tsx:37,113-115,181` (parses `--tf-stage-rail-w`,
+   asserts 64 and the `display:none` compact label rule); `test/unit/renderer/phase37Chunk5.test.tsx:
+   224-226,313-315` (fallback `64px`, `STAGE_RAIL_W_TOKEN`, `border-radius: var(--radius-2)`);
+   `test/unit/renderer/phase36StageTokens.test.ts:236-242` (`.stage-rail-btn-active` background
+   `--accent-soft`, `::before` background `--accent`, icon rest/active ink - must stay);
+   `test/unit/renderer/phase36StageTokenSourceScan.test.ts` and
+   `test/unit/renderer/foundationGuards.test.ts:123` (StageRail.tsx must carry NO colour literal).
+   e2e that gate the running rail: `e2e/phase36_chunk1_rail_gate.spec.cjs` (four stages, indicator,
+   Ctrl+1..4, compact at 1000px, gear -> preferences, ONE screenshot), `e2e/phase36_layout_retest.spec.cjs`,
+   `e2e/phase103_qa_visual.spec.cjs`, `e2e/installed/release_1280_stages_installed.spec.cjs`.
+7. Supported window floor: `MIN_WINDOW_WIDTH = 640` / `MIN_WINDOW_HEIGHT = 480`
+   (`src/main/window.ts:41-42`). The rail must keep every destination and Settings reachable at
+   640x480 and under Windows text scaling.
+8. Design package: `Visual overhaul/Siderail/Implementation/orchestrator-prompt.md`,
+   `Specifications/siderail-design-spec.md:9-19,21-41`, `Specifications/preview-validation.md`
+   (computed light selected 4.73:1 / inactive 7.96:1; dark 6.59:1 / 8.59:1),
+   `Specifications/label-contrast-check.json`, `Design System/siderail.tokens.json` (geometry
+   railWidth 72 / inset 8 / topInset 12 / item 56x60 / gap 8 / radius 10 / icon 22 / iconLabelGap 6
+   / separator 1 / marker 3x20 / markerInset 2 / utilityIcon 18 / utilityMinHeight 48; light accent
+   `#7050D6` on soft `#F0EBFC`, dark `#B9A4FF` on `#302740`), and
+   `Visuals/interactive-siderail-preview.html` whose embedded CSS is the authoritative geometry
+   (`.jr-rail` 72px / `padding:12px 8px` / `gap:8px` / `border-right:1px solid`; `.jr-rail-button`
+   56px / `min-height:60px` / `padding:8px 4px` / `gap:6px` / `border-radius:10px`;
+   `[aria-pressed=true]:before` `left:2px; top:20px; width:3px; height:20px; border-radius:2px`).
+
+**CTO RULINGS:**
+
+1. **Scope.** Renderer only: `src/renderer/components/StageRail.tsx`, the Stage-Rail sections/tokens
+   of `src/renderer/styles.css`, and renderer unit tests under `test/unit/renderer/**`. No
+   `src/main/**`; no `src/shared/**` (Settings impact none); no new dependency; offline. Do NOT edit
+   `App.tsx`, `stages.ts`, `ContextPanel.tsx`, `ThumbnailRail`, `ActionDock.tsx`, `SideRail.tsx` or
+   any e2e spec.
+2. **Shared tokens are frozen.** Do NOT change the value of `--accent`, `--accent-text`,
+   `--accent-soft`, `--tf-icon-rest`, `--tf-icon-active`, `--bg-rail`, `--border-subtle`,
+   `--divider` or the `--tf-stage-*` roles - they colour other committed surfaces (dock, panel,
+   tabs). Add rail-scoped NEW tokens only (e.g. `--tf-siderail-surface`, item radius) and consume
+   the frozen accent/icon-ink tokens for the active affordance so the rail stays consistent with
+   the dock and panel selections. A shared-token change that would alter another surface is an
+   explicit CEO / operator decision, not an in-phase edit.
+3. **Geometry.** `--tf-stage-rail-w` 64 -> 72 (and BOTH fallbacks `64px` -> `72px` at
+   `styles.css:1437,14764`). Rail `padding: 12px 8px`; item list `gap: 8px`; target 56x60 with a
+   10px radius; icon 22px (`size="xl"`), label 11-12px with a 6px icon-label gap; 1px neutral
+   separator stays; utility icon 18px (`size="md"`) with a 48px minimum utility target and an
+   adequate bottom inset. The active marker becomes the design's inset 3x20px leading bar
+   (`left:2px; top:20px; border-radius:2px`), not the full-height 2px bar.
+4. **Labels stay visible.** The recommended Workspace Rail keeps its labels in every supported
+   width (design: "readable visible labels"; `rail-narrow-dark` shows labels at a narrow window).
+   Keep the `data-stage-rail-compact` attribute + `stage-rail-compact` class toggling at the
+   existing 1100px breakpoint for compatibility, but the compact state no longer hides the label -
+   it is a narrow-width geometry refinement. The rail column is 72px at all widths; the adjacent
+   ContextPanel handles the squeeze through its OWN header collapse.
+5. **No new mode.** Do NOT implement the 156px Expanded Navigator or any expand/collapse toggle on
+   the rail. Panel collapse stays in the panel header (unchanged this phase) and the rail reflects
+   the active workspace while the panel is collapsed.
+6. **Preserve contract.** Keep the `nav` / `aria-label="Work stages"` semantics, `data-stage`,
+   `data-active-stage`, `data-stage-rail`, `data-stage-rail-compact`, `data-stage-rail-gear`,
+   `aria-pressed`, the `Ctrl+1..4` binding guard, `onStageChange` / `onOpenPreferences` props, and
+   the `Icon`/`quietPrecision` registry. StageRail.tsx stays free of colour literals and introduces
+   no new interactive control, count, badge or shortcut.
+7. **No overlap.** The rail is a real `.app-main` grid track (DEF-320); the 72px width flows through
+   the grid so the panel/canvas columns start at its right edge with zero overlap in both panel
+   states and at every supported width. At short heights the rail keeps every destination and
+   Settings reachable without clipping or shrinking targets (a bounded internal scroll for the
+   workspace list is allowed; Settings stays in a fixed utility region).
+8. **Evidence + flow.** frontend-dev runs `npm run verify` plus the targeted rail unit tests
+   (`npm.cmd run test:unit -- --grep "<named specs>"`) and reports the CONTROL-INDEX; qa runs the
+   focused verification, the phase's CONTROL-INDEX sweep and captures light/dark/narrow/narrow-height
+   screenshots against the supplied visuals, timing the performance budget; the adversary runs a
+   diff-pass; then phase-close QA and ONE local commit via git-agent. No push, tag, release or
+   version bump without explicit operator approval.
+9. **Numbering.** This is Phase 108 (the last appended phase is 107). Artifacts use `phase108_*` /
+   `siderail*` so they stay unambiguous.
+
+**Features**
+
+**A. Workspace Rail visual + geometry (frontend-dev, chunk A).** Restyle `StageRail.tsx` + the
+Stage-Rail CSS to the committed Workspace Rail: 72px rail (`--tf-stage-rail-w` + both fallbacks),
+`padding: 12px 8px`, 8px item gap, 56x60 targets with a 10px radius, 22px nav glyphs, 11-12px
+labels, neutral inactive ink, the violet accent-soft wash + violet icon/label + the 3x20 inset
+leading marker when active, a restrained neutral hover, independent focus, and the bottom Settings
+utility group (18px glyph, 48px target, divider, bottom inset). Keep labels visible at every width
+(compact stays a narrow geometry refinement). Add rail-scoped surface/radius tokens without mutating
+any shared token. New focused spec `test/unit/renderer/phase108_siderail.test.ts`.
+
+**B. Responsive + panel integration + no-conflict pass (frontend-dev, chunk B).** Verify and, only
+where required, adjust the narrow-width and short-height behaviour (no clipping, targets intact,
+Settings fixed, bounded scroll for the workspace list) and the interplay with the adjacent
+ContextPanel's expanded/collapsed states and the canvas/dock/overlay geometry at 640x480, 1000,
+1100, 1440 and under text scaling. No sibling surface is edited.
+
+**C. Focused QA + visual verdict (qa, chunk C).** Run `npm run verify`, the named rail unit tests
+and the focused e2e (`e2e/phase36_chunk1_rail_gate.spec.cjs` plus the regression specs the brief
+names); sweep the CONTROL-INDEX; capture light / dark / narrow / short-height screenshots set
+against the supplied visuals; time the performance budget; record DEF-NNN. Task type: focused
+verification.
+
+**D. Adversarial diff-pass (adversary, chunk D).** Attack for overlap/z-fight with Canvas, Top Bar /
+Tabs, Dock and Panels; unreachable controls at narrow/short/scaled windows; keyboard/screen-reader
+regressions; forced-colors and reduced-motion behaviour; sibling-region edits.
+
+**E. Phase-close QA verdict (qa, chunk E).** Verdict per success criterion over the whole phase diff.
+
+**F. Phase-close local commit (git-agent, chunk F).** Stage and commit the phase's tracked changes
+as ONE local commit referencing Phase 108 and any DEF/ADV numbers; no push, no tag.
+
+**Success criteria**
+
+1. **Matches the spec and visuals.** On the running app the Siderail matches
+   `Visual overhaul/Siderail/` across its defined states and both themes - the default Workspace
+   Rail across hover / active / focus and light / dark, and the same rail at a narrow window - with
+   screenshots set against the supplied visuals. (The 156px Expanded Navigator is not shipped; the
+   adjacent Panel's expanded/collapsed states are proven instead.)
+2. **Functional parity.** Every Siderail destination navigates, expand/collapse stays in the panel
+   header, the narrow-width behaviour is correct, every label is visible, and every control is
+   keyboard reachable with an accessible name. No control becomes unreachable at any supported
+   window width or height (floor 640x480).
+3. **No conflict or overlap.** The rail does not overlap, clip or z-fight with the Canvas / Book
+   View, Top Bar / Tabs, Dock, Panels or any other overhauled surface, in both panel states and at
+   the narrow and expanded boundaries; the 72px track flows through `.app-main` so columns start at
+   its right edge. No sibling region is edited.
+4. **Contrast.** The label-contrast check passes for both themes: the values in
+   `Specifications/label-contrast-check.json` (light selected >= 4.73:1, inactive >= 7.96:1; dark
+   selected >= 6.59:1, inactive >= 8.59:1) hold for the implemented colours.
+5. **Regression.** Focused regression specs fail before / pass after the change; no regression on
+   the existing siderail / sidebar / navigation specs (`stageRail.test.tsx`,
+   `def320_stageRailTrack.test.tsx`, `phase37Chunk5.test.tsx`, `phase36StageTokens.test.ts`,
+   `phase36_chunk1_rail_gate.spec.cjs`).
+6. **Evidence.** Real-app screenshots plus a report of what passed and what remains unverified. No
+   status-only actions, fixture content or preview-only responsive accommodations. Standard phase
+   close: adversary diff-pass, per-criterion phase-close QA verdict, and ONE local phase-close
+   commit via git-agent. No push, release or credential change without operator approval.
+
+**CONTROL-INDEX:** this phase introduces NO new interactive control; it is a visual and geometry
+overhaul of the existing rail. The four stage buttons (`data-stage`, Pages/Edit/Review/Deliver) and
+the Settings gear (`data-stage-rail-gear`) keep their exact promised actions (switch stage; open
+Preferences without changing the workspace) and are covered by `stageRail.test.tsx` and
+`e2e/phase36_chunk1_rail_gate.spec.cjs` plus qa's re-run. The ContextPanel collapse control is
+unchanged this phase and stays in the panel header. No no-op may appear.
+
+**Settings impact:** none. No new persisted `AppSettings` field and no new settings channel.
+Renderer-only, offline; no network call is added.
+
+**Numbering:** this is Phase 108 (the last appended phase is 107).
+
