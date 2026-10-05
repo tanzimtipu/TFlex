@@ -31,7 +31,7 @@ import {
   type ReactElement,
   type ReactNode,
 } from 'react';
-import { BookOpen, ChevronLeft, ChevronRight, X } from 'lucide-react';
+import { X } from 'lucide-react';
 import { Icon } from '../icons/Icon';
 import type { PDFDocumentProxy } from 'pdfjs-dist';
 import { AnimatedPanel } from './AnimatedPanel';
@@ -333,7 +333,7 @@ export function ReadingView(props: ReadingViewProps): ReactElement {
       >
         <header className="reading-view-header">
           <span className="reading-view-title" data-reading-title>
-            <Icon icon={BookOpen} size="sm" />
+            <Icon name="openReadingView" size="sm" />
             {title}
           </span>
           <div
@@ -396,7 +396,7 @@ export function ReadingView(props: ReadingViewProps): ReactElement {
             aria-label="Previous page"
             data-reading-prev
           >
-            <Icon icon={ChevronLeft} size="sm" />
+            <Icon name="prevPage" size="sm" />
             Previous
           </button>
           <button
@@ -408,7 +408,7 @@ export function ReadingView(props: ReadingViewProps): ReactElement {
             data-reading-next
           >
             Next
-            <Icon icon={ChevronRight} size="sm" />
+            <Icon name="nextPage" size="sm" />
           </button>
         </nav>
       </div>

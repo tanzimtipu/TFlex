@@ -25,6 +25,7 @@ const RENDERER = resolve(process.cwd(), "src/renderer");
  * Phase 94 ruling-current-state item 5 set.
  */
 const SVG_ALLOWLIST: Readonly<Record<string, string>> = {
+  "icons/Icon.tsx": "the one icon source renders the registry's SVG",
   "components/BrandMark.tsx": "Phase 69/70 Jovrel brand mark: brand art, not a tool icon",
   "components/BrandLoader.tsx": "brand loader mark: brand art, not a tool icon",
   "components/AccountsDialog.tsx": "Phase 44 Google provider mark: third-party identity art",

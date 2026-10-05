@@ -12,7 +12,6 @@
 // Motion: TfBackdrop / TfDialog (centralised motion system).
 
 import { useEffect, useState, type ReactElement } from 'react';
-import { Lock } from 'lucide-react';
 import { Icon } from '../icons/Icon';
 import type {
   EncryptDefaults,
@@ -97,7 +96,7 @@ export function EncryptDialog(props: EncryptDialogProps): ReactElement | null {
         key: 'confirm',
         label: busy ? 'Encrypting\u2026' : 'Encrypt',
         variant: 'primary' as const,
-        icon: <Icon icon={Lock} size="sm" />,
+        icon: <Icon name="encrypt" size="sm" />,
         onClick: submit,
         disabled: busy,
         default: true,
@@ -111,7 +110,7 @@ export function EncryptDialog(props: EncryptDialogProps): ReactElement | null {
       open={open}
       title="Encrypt document"
       titleId="encrypt-dialog-title"
-      icon={<Icon icon={Lock} size="sm" />}
+      icon={<Icon name="encrypt" size="sm" />}
       size="tool"
       className="encrypt-dialog modal-dialog-wide"
       onClose={onClose}

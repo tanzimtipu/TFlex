@@ -12,7 +12,6 @@
 // it makes a conformance claim.
 
 import { useEffect, useState, type ReactElement } from 'react';
-import { ShieldCheck } from 'lucide-react';
 import { Icon } from '../icons/Icon';
 import type { PdfValidationDefaults } from '../../shared/types';
 import type {
@@ -231,7 +230,7 @@ export function ValidateDocumentDialog(
       )}
       {report === null && error === null && !running && target !== 'none' && (
         <p className="modal-hint validate-document-idle" data-validation-idle>
-          <Icon icon={ShieldCheck} size="xs" /> Run the check to see the report here.
+          <Icon name="validateDocument" size="xs" /> Run the check to see the report here.
         </p>
       )}
     </DialogShell>

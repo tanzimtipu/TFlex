@@ -140,6 +140,11 @@ const DECLARED = [
   "--panel-border",
   "--focus-ring",
   "--tf-accent-focus",
+  "--tf-icon-rest",
+  "--tf-icon-active",
+  "--tf-icon-disabled",
+  "--tf-icon-danger",
+  "--tf-icon-success",
 ] as const;
 
 const SURFACES = ["--bg-elevated", "--bg-raised", "--bg-toolbar", "--bg-rail", "--panel-bg"] as const;
@@ -213,20 +218,32 @@ describe("Phase 40 item 11 — the palette is FINITE (no colour outside the toke
 });
 
 describe("Phase 40 item 11 — every tool category maps to a declared role", () => {
-  it("every Action Dock verb resolves to a semantic role", () => {
+  it("every Action Dock verb resolves to the state ink ladder", () => {
+    // Phase 103 (chunk 3e) retired the per-command category colouring: the
+    // resting dock is one graphite family (--tf-icon-rest) and only the
+    // genuinely destructive commands keep a scoped rule (--tf-icon-danger).
+    // Any other per-verb colour rule is a regression.
+    const DESTRUCTIVE = new Set(["delete", "sanitize"]);
     const failures: string[] = [];
     for (const id of Object.values(DOCK_STAGE_IDS).flat()) {
       const re = new RegExp(`\\[data-dock-verb='${id}'\\][^{]*\\{([^}]*)\\}`);
       const m = re.exec(CSS_NO_COMMENTS);
       if (m === null) {
-        failures.push(`dock verb ${id}: no colour rule`);
+        if (DESTRUCTIVE.has(id)) failures.push(`destructive dock verb ${id}: no danger rule`);
         continue;
       }
-      if (!/var\(--sem-[a-z]+\)/.test(m[1] ?? "")) {
-        failures.push(`dock verb ${id}: ${(m[1] ?? "").trim()}`);
+      const body = m[1] ?? "";
+      if (DESTRUCTIVE.has(id)) {
+        if (!/var\(--tf-icon-danger\)/.test(body)) failures.push(`dock verb ${id}: ${body.trim()}`);
+      } else {
+        failures.push(`dock verb ${id}: unexpected scoped colour ${body.trim()}`);
       }
     }
     expect(failures, failures.join("\n")).toEqual([]);
+    // The single graphite rest rule covers every other verb.
+    expect(CSS_NO_COMMENTS).toMatch(
+      /\.action-dock-verb:not\(\.action-dock-verb-primary\):not\(\[aria-pressed='true'\]\):not\(:disabled\)\s*\{\s*color:\s*var\(--tf-icon-rest\)/,
+    );
   });
 
   it("every palette (tools) entry resolves to a semantic role", () => {
@@ -239,10 +256,14 @@ describe("Phase 40 item 11 — every tool category maps to a declared role", () 
     expect(failures, failures.join("\n")).toEqual([]);
   });
 
-  it("every annotation and rail-tab hook resolves to a semantic role", () => {
+  it("every annotation and rail-tab hook resolves to a declared ink token", () => {
     const failures: string[] = [];
+    // Phase 103 (chunk 3g, DEF-566) — the annotation tools no longer carry a
+    // per-tool category role: their glyph ink rests on the shared icon ladder
+    // (`--tf-icon-rest`) and arms to `--tf-icon-active`. The rail tab keeps its
+    // stage token. Both are declared tokens; neither is a raw colour.
     const hooks: ReadonlyArray<{ re: RegExp; label: string }> = [
-      { re: /\[data-tool="[a-z]+"\][^{]*\{[^}]*color:\s*var\((--(?:sem|tf-stage)-[a-z]+)\)/g, label: "annotation tool" },
+      { re: /\[data-tool="[a-z]+"\][^{]*\{[^}]*color:\s*var\((--(?:sem|tf-stage|tf-icon)-[a-z]+)\)/g, label: "annotation tool" },
       { re: /\[data-rail-tab="[a-z]+"\][^{]*\{[^}]*color:\s*var\((--(?:sem|tf-stage)-[a-z]+)\)/g, label: "rail tab" },
     ];
     for (const hook of hooks) {

@@ -15,7 +15,6 @@
 // mirror refreshes.
 
 import { useEffect, useMemo, useState, type ReactElement } from "react";
-import { FilePlus2 } from "lucide-react";
 import { Icon } from "../icons/Icon";
 import { defaultPageRange, parsePageRange } from "../engine/types";
 import { DialogShell, type DialogAction } from "./DialogShell";
@@ -201,7 +200,7 @@ export function ReplacePagesDialog(
               disabled={picking}
               data-replace-pick
             >
-              <Icon icon={FilePlus2} size="sm" />
+              <Icon name="replacePages" size="sm" />
               {picking
                 ? "Picking…"
                 : pickedPath === null

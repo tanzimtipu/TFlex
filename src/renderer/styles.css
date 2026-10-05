@@ -55,7 +55,19 @@
   --tf-icon-size-sm: 16px;
   --tf-icon-size-xs: 14px;
   --tf-icon-size-hero: 32px;
-  --tf-icon-stroke: 2;
+  --tf-icon-stroke: 1.65;
+  /* Phase 103 (chunk 3e) — THE icon INK ladder. Geometry above is
+   * theme-independent; the ink is a state signal. One neutral at rest, the
+   * single accent violet when active/selected, the muted ink when disabled,
+   * and the reserved danger / success signals. Values are the Quiet
+   * Precision icon spec (Visual overhaul/Icons/Specifications/
+   * icon-design-spec.md, states table); the dark and frosted blocks override
+   * below. These are additions — the geometry tokens are untouched. */
+  --tf-icon-rest: #485164;
+  --tf-icon-active: #7050D6;
+  --tf-icon-disabled: #70798A;
+  --tf-icon-danger: #B82E43;
+  --tf-icon-success: #25754A;
   --tf-label-size: 12px;
   --tf-label-size-md: 13px;
   /* Phase 38 (feature B) — the Stage Rail's width. Was a hardcoded 44px; the
@@ -746,6 +758,17 @@
   --sem-affirmative: #7fbd8f;
   --sem-attention: #e07a74;
 
+  /* Phase 103 (chunk 3e) — the icon ink ladder on the near-black dark
+   * surfaces (icon spec dark column). The neutral and disabled steps use the
+   * spec values; active / danger / success take the dark counterparts so
+   * every resting glyph clears the 3:1 icon floor and the labels the 4.5:1
+   * text floor. */
+  --tf-icon-rest: #B8C0D0;
+  --tf-icon-active: #B9A4FF;
+  --tf-icon-disabled: #929BAC;
+  --tf-icon-danger: #FF9AAD;
+  --tf-icon-success: #85D3A6;
+
   /* Phase 96 — per-theme completion of the shared token families. These
    * already resolved through the :root cascade; they are declared explicitly
    * here so every family is deliberate in the dark theme and the contract test
@@ -988,6 +1011,17 @@
   --sem-neutral: #3a4862;
   --sem-affirmative: #12682f;
   --sem-attention: #9f1239;
+
+  /* Phase 103 (chunk 3e) — the icon ink ladder on the light acrylic glass.
+   * The neutral / disabled steps reuse the light spec values (they stay well
+   * above the floors on the translucent sheets); active / danger / success
+   * take the deeper frosted state tokens so they clear the icon floor on the
+   * glass. */
+  --tf-icon-rest: #485164;
+  --tf-icon-active: var(--accent-text);
+  --tf-icon-disabled: #70798A;
+  --tf-icon-danger: var(--sem-attention);
+  --tf-icon-success: var(--sem-affirmative);
 
   /* Phase 96 — per-theme completion, the same contract as the dark block: the
    * families that previously rode the :root cascade are declared explicitly so
@@ -6860,7 +6894,7 @@ rect.ann-highlight.ann-preview {
   background: var(--bg-hover);
 }
 .ann-tool-menu-row[aria-checked="true"] {
-  color: var(--accent-text);
+  color: var(--tf-icon-active);
 }
 .ann-tool-menu-icon {
   display: inline-flex;
@@ -12279,31 +12313,48 @@ rect.ann-highlight.ann-preview {
 .btn.tool-btn[data-icon="delete"],
 .btn.tool-btn[data-icon="delete"]:hover { color: var(--sem-attention); }
 
-/* ---- Annotation toolbar (per data-tool). Category: markup that ADDS
- *      content to the review -> AFFIRMATIVE; the plain Select tool is
- *      navigation -> NEUTRAL. ---- */
+/* ---- Annotation toolbar (per data-tool). Phase 103 (criterion 3, DEF-566):
+ *      colour is STATE, never category. The retired per-tool ink painted a
+ *      permanent green on every markup tool (and neutral on Select) — the
+ *      broad category treatment the phase removes. Every tool glyph now rests
+ *      in the single graphite icon ink (`--tf-icon-rest`); hover lifts within
+ *      the graphite family to the strong foreground (`--fg-strong`); and the
+ *      armed tool takes the one accent violet (`--tf-icon-active`) through its
+ *      `[aria-pressed='true']` hook. ---- */
 .ann-tool-btn[data-tool="select"],
-.ann-tool-btn[data-tool="select"]:hover { color: var(--sem-neutral); }
 .ann-tool-btn[data-tool="highlight"],
-.ann-tool-btn[data-tool="highlight"]:hover { color: var(--sem-affirmative); }
 .ann-tool-btn[data-tool="underline"],
-.ann-tool-btn[data-tool="underline"]:hover { color: var(--sem-affirmative); }
 .ann-tool-btn[data-tool="strikeout"],
-.ann-tool-btn[data-tool="strikeout"]:hover { color: var(--sem-affirmative); }
 .ann-tool-btn[data-tool="ink"],
-.ann-tool-btn[data-tool="ink"]:hover { color: var(--sem-affirmative); }
 .ann-tool-btn[data-tool="textbox"],
-.ann-tool-btn[data-tool="textbox"]:hover { color: var(--sem-affirmative); }
 .ann-tool-btn[data-tool="rect"],
-.ann-tool-btn[data-tool="rect"]:hover { color: var(--sem-affirmative); }
 .ann-tool-btn[data-tool="ellipse"],
-.ann-tool-btn[data-tool="ellipse"]:hover { color: var(--sem-affirmative); }
 .ann-tool-btn[data-tool="arrow"],
-.ann-tool-btn[data-tool="arrow"]:hover { color: var(--sem-affirmative); }
 .ann-tool-btn[data-tool="callout"],
-.ann-tool-btn[data-tool="callout"]:hover { color: var(--sem-affirmative); }
-.ann-tool-btn[data-tool="note"],
-.ann-tool-btn[data-tool="note"]:hover { color: var(--sem-affirmative); }
+.ann-tool-btn[data-tool="note"] {
+  color: var(--tf-icon-rest);
+}
+
+.ann-tool-btn[data-tool="select"]:hover:not([disabled]):not([aria-disabled="true"]),
+.ann-tool-btn[data-tool="highlight"]:hover:not([disabled]):not([aria-disabled="true"]),
+.ann-tool-btn[data-tool="underline"]:hover:not([disabled]):not([aria-disabled="true"]),
+.ann-tool-btn[data-tool="strikeout"]:hover:not([disabled]):not([aria-disabled="true"]),
+.ann-tool-btn[data-tool="ink"]:hover:not([disabled]):not([aria-disabled="true"]),
+.ann-tool-btn[data-tool="textbox"]:hover:not([disabled]):not([aria-disabled="true"]),
+.ann-tool-btn[data-tool="rect"]:hover:not([disabled]):not([aria-disabled="true"]),
+.ann-tool-btn[data-tool="ellipse"]:hover:not([disabled]):not([aria-disabled="true"]),
+.ann-tool-btn[data-tool="arrow"]:hover:not([disabled]):not([aria-disabled="true"]),
+.ann-tool-btn[data-tool="callout"]:hover:not([disabled]):not([aria-disabled="true"]),
+.ann-tool-btn[data-tool="note"]:hover:not([disabled]):not([aria-disabled="true"]) {
+  color: var(--fg-strong);
+}
+
+/* The armed tool is the ONLY violet, and stays violet through a hover: this
+ * block follows the resting/hover blocks above at equal-or-higher specificity. */
+.ann-tool-btn[aria-pressed="true"],
+.ann-tool-btn[aria-pressed="true"]:hover:not([disabled]):not([aria-disabled="true"]) {
+  color: var(--tf-icon-active);
+}
 
 /* ---- Tools palette (per data-tool-id). The entry-level selectors
  *      beat the shared hover-brighten rule, so each icon keeps its
@@ -14679,31 +14730,21 @@ rect.ann-highlight.ann-preview {
   animation: tf-anim-tab-in var(--motion-duration-fast) var(--motion-ease-enter) both;
 }
 
-/* Phase 36 (chunk 8) — per-stage IDENTIFICATION: each stage button's icon
- * carries its semantic stage hue, so the four stages read apart at a glance
- * in every theme. The hue is set once per button as --stage-hue and consumed
- * by the icon; the label stays --fg-muted and the ACTIVE state keeps the
- * accent-soft wash + accent indicator above (the stage hue never claims the
- * active affordance). The gear (no data-stage) keeps the neutral muted icon. */
-.stage-rail-btn[data-stage="pages"] {
-  --stage-hue: var(--tf-stage-pages);
-}
-
-.stage-rail-btn[data-stage="edit"] {
-  --stage-hue: var(--tf-stage-edit);
-}
-
-.stage-rail-btn[data-stage="review"] {
-  --stage-hue: var(--tf-stage-review);
-}
-
-.stage-rail-btn[data-stage="deliver"] {
-  --stage-hue: var(--tf-stage-deliver);
-}
-
-.stage-rail-btn[data-stage] .stage-rail-icon {
-  color: var(--stage-hue);
+/* Phase 103 (chunk 3e) — stage NAVIGATION follows the single state
+ * discipline: the four stage glyphs (and the gear) rest in the neutral icon
+ * ink and take the one accent violet only when their stage is active. The
+ * retired per-stage category hue is gone, so navigation categories no longer
+ * carry a permanent colour; the active stage still keeps its accent-soft wash
+ * and leading-edge rail above, so identity is carried by position and
+ * selection, never by a per-category tint. The stage label falls through to
+ * its neutral muted ink (--fg-muted). */
+.stage-rail-btn .stage-rail-icon {
+  color: var(--tf-icon-rest);
   transition: color var(--motion-duration-fast) var(--motion-ease-standard);
+}
+
+.stage-rail-btn-active .stage-rail-icon {
+  color: var(--tf-icon-active);
 }
 
 .stage-rail-icon {
@@ -15540,13 +15581,15 @@ rect.ann-highlight.ann-preview {
   min-width: 22px;
   height: 22px;
   padding: 0;
-  color: var(--tf-stage-edit);
+  color: var(--tf-icon-rest);
 }
 
-/* Phase 63 identity preserved through the C1 migration: the pen rests in the
- * EDIT stage hue (outranking the canonical `.btn-ghost` / `.btn-toggle` rest
- * ink) and lifts to the strong foreground on hover, exactly as it shipped
- * before C1. Icon fill uses `stroke: currentColor`, so only ink is restored. */
+/* Phase 103 (criterion 3) SUPERSEDES the Phase 63 rule that the pen rested in
+ * the EDIT stage hue (`--tf-stage-edit`). The pen is an ICON, so it rides the
+ * shared icon rest/active ladder: graphite at rest (`--tf-icon-rest`) and the
+ * one accent violet only while armed (`--tf-icon-active`, `aria-pressed='true'`).
+ * Hover still lifts to the strong foreground, and icon fill uses
+ * `stroke: currentColor`, so only ink is restored. */
 .btn.action-dock-edit:hover:not([disabled]):not([aria-disabled="true"]) {
   color: var(--fg-strong);
 }
@@ -15588,7 +15631,7 @@ rect.ann-highlight.ann-preview {
   background: var(--bg-elevated);
   border: 1px solid var(--glass-border);
   border-radius: var(--radius-2);
-  color: var(--tf-stage-edit);
+  color: var(--tf-icon-rest);
   cursor: pointer;
   /* Phase 96-C — the dock's floating edit toggle rides the level-2 step
    * like the dock body it sits on. */
@@ -15604,8 +15647,8 @@ rect.ann-highlight.ann-preview {
   color: var(--fg-strong);
 }
 
-.action-dock-edit[aria-pressed='true']:not(.btn) {
-  color: var(--accent-text);
+.action-dock-edit[aria-pressed='true'] {
+  color: var(--tf-icon-active);
   border-color: var(--accent);
 }
 
@@ -15820,77 +15863,41 @@ cursor: pointer;
  * state is unmistakable and distinct from the first verb's primary wash. */
 .action-dock-verb[aria-pressed='true']:not(:disabled):not(.btn) {
   background: var(--accent-soft);
-  color: var(--dock-primary-fg, var(--accent));
+  color: var(--tf-icon-active);
   box-shadow: inset 0 0 0 1px var(--accent);
 }
 
-/* Phase 40 (item 11) — THE DOCK'S SEMANTIC ROLE. Each verb carries exactly
- * one of the four roles on the button's `color`, so its glyph and its label
- * read with meaning instead of a rainbow. Rules are guarded so the PRIMARY
- * verb (accent wash, `--dock-primary-fg`), a pressed toggle (accent ring) and
- * a disabled verb keep their own unmistakable states — the role colour only
- * paints the resting, enabled, non-primary verb. The base rule gives every
- * unmapped verb NEUTRAL, so nothing is left uncoloured. Category rule:
- * constructive (insert/add/create/merge/sign/export/optimize/OCR) ->
- * AFFIRMATIVE; destructive (delete/clear/replace/flatten) -> ATTENTION;
- * navigation/view/edit -> NEUTRAL. Every role is >= 4.5:1 on the dock surface
- * in every theme (measured by phase40SemanticPalette.test.ts). */
+/* Phase 103 (chunk 3e) — STATE, not category, carries the dock's colour.
+ * The retired Phase-40 per-command role block (41 rules) painted a permanent
+ * hue on every verb; colour is now reserved for state. Every resting, enabled,
+ * non-primary verb takes the single neutral icon ink, so the dock reads as one
+ * graphite family. Active/selected is the one accent violet (the pressed rule
+ * above); success green is reserved for a real completed outcome; and only
+ * genuinely destructive commands keep the danger ink at rest. Every resting
+ * ink clears the 4.5:1 label / 3:1 icon floors on the dock surface in all
+ * three themes (measured by phase40SemanticPalette.test.ts). */
 .action-dock-verb:not(.action-dock-verb-primary):not([aria-pressed='true']):not(:disabled) {
-  color: var(--sem-neutral);
+  color: var(--tf-icon-rest);
 }
 
-.action-dock-verb[data-dock-verb='rotate']:not(.action-dock-verb-primary):not([aria-pressed='true']):not(:disabled) { color: var(--sem-neutral); }
-.action-dock-verb[data-dock-verb='extract']:not(.action-dock-verb-primary):not([aria-pressed='true']):not(:disabled) { color: var(--sem-affirmative); }
-.action-dock-verb[data-dock-verb='insertPages']:not(.action-dock-verb-primary):not([aria-pressed='true']):not(:disabled) { color: var(--sem-affirmative); }
-.action-dock-verb[data-dock-verb='replacePages']:not(.action-dock-verb-primary):not([aria-pressed='true']):not(:disabled) { color: var(--sem-attention); }
-.action-dock-verb[data-dock-verb='split']:not(.action-dock-verb-primary):not([aria-pressed='true']):not(:disabled) { color: var(--sem-neutral); }
+/* Destructive-only at rest: deleting pages, and sanitizing (which can remove
+ * information). clearPageSelection is NOT destructive and stays graphite. */
 .action-dock-verb[data-dock-verb='delete']:not(.action-dock-verb-primary):not([aria-pressed='true']):not(:disabled),
-.action-dock-verb[data-dock-verb='clearPageSelection']:not(.action-dock-verb-primary):not([aria-pressed='true']):not(:disabled) { color: var(--sem-attention); }
-.action-dock-verb[data-dock-verb='merge']:not(.action-dock-verb-primary):not([aria-pressed='true']):not(:disabled) { color: var(--sem-affirmative); }
-.action-dock-verb[data-dock-verb='cropPages']:not(.action-dock-verb-primary):not([aria-pressed='true']):not(:disabled) { color: var(--sem-neutral); }
-.action-dock-verb[data-dock-verb='editToolOff']:not(.action-dock-verb-primary):not([aria-pressed='true']):not(:disabled) { color: var(--sem-neutral); }
-.action-dock-verb[data-dock-verb='editText']:not(.action-dock-verb-primary):not([aria-pressed='true']):not(:disabled) { color: var(--sem-neutral); }
-.action-dock-verb[data-dock-verb='editImage']:not(.action-dock-verb-primary):not([aria-pressed='true']):not(:disabled) { color: var(--sem-neutral); }
-.action-dock-verb[data-dock-verb='editTextBox']:not(.action-dock-verb-primary):not([aria-pressed='true']):not(:disabled) { color: var(--sem-neutral); }
-.action-dock-verb[data-dock-verb='recognizeText']:not(.action-dock-verb-primary):not([aria-pressed='true']):not(:disabled) { color: var(--sem-affirmative); }
-.action-dock-verb[data-dock-verb='batchOcr']:not(.action-dock-verb-primary):not([aria-pressed='true']):not(:disabled) { color: var(--sem-affirmative); }
-.action-dock-verb[data-dock-verb='ocrSuspects']:not(.action-dock-verb-primary):not([aria-pressed='true']):not(:disabled) { color: var(--sem-attention); }
-.action-dock-verb[data-dock-verb='annotate']:not(.action-dock-verb-primary):not([aria-pressed='true']):not(:disabled) { color: var(--sem-affirmative); }
-.action-dock-verb[data-dock-verb='sign']:not(.action-dock-verb-primary):not([aria-pressed='true']):not(:disabled) { color: var(--sem-affirmative); }
-.action-dock-verb[data-dock-verb='stamp']:not(.action-dock-verb-primary):not([aria-pressed='true']):not(:disabled) { color: var(--sem-affirmative); }
-.action-dock-verb[data-dock-verb='flatten']:not(.action-dock-verb-primary):not([aria-pressed='true']):not(:disabled) { color: var(--sem-attention); }
-.action-dock-verb[data-dock-verb='forms']:not(.action-dock-verb-primary):not([aria-pressed='true']):not(:disabled) { color: var(--sem-affirmative); }
-.action-dock-verb[data-dock-verb='watermark']:not(.action-dock-verb-primary):not([aria-pressed='true']):not(:disabled) { color: var(--sem-affirmative); }
-.action-dock-verb[data-dock-verb='bates']:not(.action-dock-verb-primary):not([aria-pressed='true']):not(:disabled) { color: var(--sem-affirmative); }
-.action-dock-verb[data-dock-verb='exportComments']:not(.action-dock-verb-primary):not([aria-pressed='true']):not(:disabled) { color: var(--sem-neutral); }
-.action-dock-verb[data-dock-verb='importComments']:not(.action-dock-verb-primary):not([aria-pressed='true']):not(:disabled) { color: var(--sem-neutral); }
-.action-dock-verb[data-dock-verb='fillFromCsv']:not(.action-dock-verb-primary):not([aria-pressed='true']):not(:disabled) { color: var(--sem-affirmative); }
-.action-dock-verb[data-dock-verb='exportFormData']:not(.action-dock-verb-primary):not([aria-pressed='true']):not(:disabled) { color: var(--sem-neutral); }
-.action-dock-verb[data-dock-verb='importFormData']:not(.action-dock-verb-primary):not([aria-pressed='true']):not(:disabled) { color: var(--sem-affirmative); }
-.action-dock-verb[data-dock-verb='validateDocument']:not(.action-dock-verb-primary):not([aria-pressed='true']):not(:disabled) { color: var(--sem-neutral); }
-.action-dock-verb[data-dock-verb='sanitize']:not(.action-dock-verb-primary):not([aria-pressed='true']):not(:disabled) { color: var(--sem-attention); }
-.action-dock-verb[data-dock-verb='engineeringLayers']:not(.action-dock-verb-primary):not([aria-pressed='true']):not(:disabled) { color: var(--sem-neutral); }
-.action-dock-verb[data-dock-verb='documentInfo']:not(.action-dock-verb-primary):not([aria-pressed='true']):not(:disabled) { color: var(--sem-neutral); }
-.action-dock-verb[data-dock-verb='optimize']:not(.action-dock-verb-primary):not([aria-pressed='true']):not(:disabled) { color: var(--sem-affirmative); }
-.action-dock-verb[data-dock-verb='audit']:not(.action-dock-verb-primary):not([aria-pressed='true']):not(:disabled) { color: var(--sem-neutral); }
-.action-dock-verb[data-dock-verb='exportPages']:not(.action-dock-verb-primary):not([aria-pressed='true']):not(:disabled) { color: var(--sem-affirmative); }
-.action-dock-verb[data-dock-verb='exportText']:not(.action-dock-verb-primary):not([aria-pressed='true']):not(:disabled) { color: var(--sem-affirmative); }
-.action-dock-verb[data-dock-verb='exportDocx']:not(.action-dock-verb-primary):not([aria-pressed='true']):not(:disabled) { color: var(--sem-affirmative); }
-.action-dock-verb[data-dock-verb='exportXlsx']:not(.action-dock-verb-primary):not([aria-pressed='true']):not(:disabled) { color: var(--sem-affirmative); }
-.action-dock-verb[data-dock-verb='exportPptx']:not(.action-dock-verb-primary):not([aria-pressed='true']):not(:disabled) { color: var(--sem-affirmative); }
-.action-dock-verb[data-dock-verb='createFromImages']:not(.action-dock-verb-primary):not([aria-pressed='true']):not(:disabled) { color: var(--sem-affirmative); }
-.action-dock-verb[data-dock-verb='encrypt']:not(.action-dock-verb-primary):not([aria-pressed='true']):not(:disabled) { color: var(--sem-attention); }
+.action-dock-verb[data-dock-verb='sanitize']:not(.action-dock-verb-primary):not([aria-pressed='true']):not(:disabled) {
+  color: var(--tf-icon-danger);
+}
 
-/* DEF-344 — the hover / pressed INK. The per-verb family rules above are
- * (0,5,0) and the old state rules were (0,3,0), so a hovered or pressed family
- * verb kept its hue on the darker `--bg-hover` / `--bg-active` surface; in the
- * light theme blue/cyan/green/orange measured 4.29/4.45/4.16/4.17 — below the
- * 4.5:1 floor. These overrides carry the SAME three `:not()` guards (so the
- * primary wash, an aria-pressed toggle and a disabled verb keep their own
- * treatments) and sit AFTER the family block, so equal specificity wins by
- * position and the state ink is `--fg-strong` in every theme. Measured by
- * phase38LegibilityContrast.test.ts: --fg-strong clears 4.5:1 on both
- * --bg-hover and --bg-active over --bg-elevated in light/dark/frosted. */
+/* DEF-344 — the hover / pressed INK. The resting verb ink (the state ladder
+ * above) is (0,4,0) and the older state rules were (0,3,0), so a hovered or
+ * pressed verb would keep its rest ink on the darker `--bg-hover` /
+ * `--bg-active` surface; in the light theme the old family hues measured
+ * 4.29/4.45/4.16/4.17 — below the 4.5:1 floor. These overrides carry the SAME
+ * `:not()` guards (so the primary wash, an aria-pressed toggle and a disabled
+ * verb keep their own treatments) and sit AFTER the rest rule, so equal
+ * specificity wins by position and the state ink is `--fg-strong` in every
+ * theme. Measured by phase38LegibilityContrast.test.ts: --fg-strong clears
+ * 4.5:1 on both --bg-hover and --bg-active over --bg-elevated in
+ * light/dark/frosted. */
 .action-dock-verb:hover:not(:disabled):not(.action-dock-verb-primary):not([aria-pressed='true']):not(.btn) {
   color: var(--fg-strong);
 }
@@ -15902,7 +15909,7 @@ cursor: pointer;
 /* DEF-344 (Phase 91 C1) — the same hover / pressed ink fix re-pinned for the
  * migrated verbs. The two rules above are scoped to non-`.btn` controls, so
  * this canonical-class alias restates the `--fg-strong` state ink AFTER the
- * per-verb family block (equal specificity wins by source position) and holds
+ * resting state ladder (equal specificity wins by source position) and holds
  * the 4.5:1 floor on `--bg-hover` / `--bg-active` in light / dark / frosted. */
 .btn.action-dock-verb:hover:not(:disabled):not(.action-dock-verb-primary):not([aria-pressed='true']),
 .btn.action-dock-verb:active:not(:disabled):not(.action-dock-verb-primary):not([aria-pressed='true']) {
@@ -15939,10 +15946,10 @@ cursor: pointer;
 }
 
 .action-dock-label {
-  /* Phase 38 (feature B) — the 12px label floor. The per-verb family hue is
-   * set on the verb button's `color` (see the family rules below), so the
-   * label inherits it; the label text itself (plus the icon shape) carries
-   * the meaning, colour is never the only signal. */
+  /* Phase 38 (feature B) — the 12px label floor. The state ink is set on the
+   * verb button's `color` (see the state ladder above), so the label inherits
+   * it; the label text itself (plus the icon shape) carries the meaning,
+   * colour is never the only signal. */
   font-size: var(--tf-label-size);
   line-height: 1.1;
   font-weight: 500;
@@ -16993,10 +17000,12 @@ cursor: pointer;
   color: var(--stage-hue, var(--sem-neutral));
 }
 
-/* Context panel: its stage role paints the section titles and their glyphs, so
- * each stage's panel reads in that stage's category colour. The stage ->
- * role mapping is declared once (styles.css tokens): PAGES neutral, EDIT
- * primary, REVIEW attention, DELIVER affirmative. */
+/* Context panel: the stage role paints the SECTION TITLES (a non-icon
+ * section accent, left as-is per Phase 103 chunk 3e). The stage -> role
+ * mapping is declared once (styles.css tokens): PAGES neutral, EDIT primary,
+ * REVIEW attention, DELIVER affirmative. The section GLYPHS no longer carry
+ * the category hue: they take the single neutral icon ink so colour stays a
+ * state signal, not a per-stage category. */
 [data-context-panel-stage='pages'] { --family-hue: var(--tf-stage-pages); }
 [data-context-panel-stage='edit'] { --family-hue: var(--tf-stage-edit); }
 [data-context-panel-stage='review'] { --family-hue: var(--tf-stage-review); }
@@ -17009,7 +17018,7 @@ cursor: pointer;
 .context-panel .context-panel-item svg,
 .context-panel .context-panel-action svg,
 .context-panel .context-panel-section-toggle svg {
-  color: var(--family-hue, var(--fg-muted));
+  color: var(--tf-icon-rest);
 }
 
 /* Inspector: the NEUTRAL role on its glyphs, links/actions keep their own

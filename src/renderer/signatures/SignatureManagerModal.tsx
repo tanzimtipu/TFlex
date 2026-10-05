@@ -23,7 +23,6 @@
 // (SigTabPane). Reduced motion keeps the same structure with a
 // zero-duration swap.
 
-import { PenLine, Trash2 } from "lucide-react";
 import { Icon } from "../icons/Icon";
 import {
   useCallback,
@@ -510,7 +509,7 @@ function SavedTab({
   if (saved.length === 0) {
     return (
       <div className="sig-empty">
-        <Icon icon={PenLine} size="lg" />
+        <Icon name="sign" size="lg" />
         <p>No saved signatures yet.</p>
         <p className="hint">
           Draw or type a signature in the other tabs, then Save it. Saved
@@ -541,7 +540,7 @@ function SavedTab({
             aria-label={`Delete ${signatureLabel(sig)}`}
             title="Delete"
           >
-            <Icon icon={Trash2} size="sm" />
+            <Icon name="delete" size="sm" />
           </button>
         </li>
       ))}

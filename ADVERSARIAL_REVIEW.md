@@ -3,6 +3,128 @@
 > Read discipline: this is a historical evidence ledger. Search for the assigned `ADV-NNN`
 > or unresolved `Disposition: PENDING` entries; do not load prior campaigns wholesale.
 
+## Phase 103 Quiet Precision icon system diff-pass (TFL-838) - behaviour drift, guards, glyph family, animation, colour, offline
+
+Session label: `diff-pass`. Scope: the Phase 103 uncommitted change set - the new
+semantic registry `src/renderer/icons/quietPrecision.tsx` (127 keys), the shared
+`src/renderer/icons/Icon.tsx` (dual `icon`/`name` API, 24/1.65/1.8), the app-wide
+`<Icon name=...>` migration, the `styles.css` colour-discipline change, and the updated
+guards `test/unit/renderer/phase94_noAdHocIcons.test.ts` and
+`test/unit/renderer/phase43IconUniqueness.test.ts`. Product code, tests,
+REQUIREMENTS.md and AGENTS.md were read but NOT modified. Result: **CLEAN - no ADV-NNN
+filed.** One adversarial probe spec added: `e2e/phase103_adversary.spec.cjs` (4 attacks;
+qa owns e2e, left in place for the phase-close run). Evidence logs under
+`test-fixtures/phase103-adversary/`.
+
+Exact commands:
+
+- Build: none run - the dev bundle under test was already built from current source
+  (`dist/renderer/assets/index-WJezcfIb.js`, mtime 2026-10-05 22:03 local; every
+  `src/**` file mtime is older, and the bundle contains `headerMenuDisclosure`,
+  `openReadingView`, `editToolOff`). Build mutex acquired and released around the runs.
+- Required probe: `npm.cmd run test:e2e -- phase94_iconEvidence.spec.cjs
+  phase103_control_index.spec.cjs` -> **4 passed / 0 failed (20.3s)** (the expected
+  3 icon-evidence + 1 control-index). `P94_A11Y` confirms dock verb / rail tab / outline
+  toggle glyphs render `stroke-width=1.65`, `aria-hidden=true`, `focusable=false`,
+  width >= 18px; the prefs close keeps `aria-label="Close preferences"`.
+- Adversarial probe: `npm.cmd run test:e2e -- phase103_adversary.spec.cjs` ->
+  **4 passed / 0 failed (19.3s)**. Runtime glyph dump: authored shape `viewBox 0 0 24 24`,
+  `fill=none`, `stroke=currentColor`, `stroke-width=1.65`, round cap/join, aria-hidden;
+  the retained Lucide header maximize glyph is ALSO `1.65` round (not Lucide's default 2),
+  so no retained glyph renders at a different weight.
+- Guard suites: `npm.cmd run test:unit -- phase94_noAdHocIcons phase43IconUniqueness
+  phase103_quietPrecision` -> **3 files / 18 tests passed**.
+- Guard-detection proof + independent contrast: `node
+  test-fixtures/phase103-adversary/p103_guard_contrast.cjs` -> ALL CHECKS PASS
+  (log `test-fixtures/phase103-adversary/guard_contrast.log`).
+- Direct-render scan: only 3 direct Lucide JSX renders exist in `src/renderer`
+  (`AnnotationOverlay StickyNote`, `AnnotationToolbar Slash`, `CommandPalette Pin`); all
+  are sized and all allow-listed. Zero unsized direct renders.
+
+Attack-surface results (task attacks 1-6; the probe test is the reproducer):
+
+1. Behaviour drift / no-op / swap / double-fire: **HOLDS** - A1/A2. A click on the
+   `cropPages` glyph itself (`[data-dock-verb="cropPages"] svg`) opens exactly ONE crop
+   dialog; rotate changes `engineState.rotations[0]` and opens NO crop dialog; delete
+   opens exactly ONE delete dialog and no crop dialog; Save is disabled on a clean doc
+   (`cursor=not-allowed`), re-enables on a modify, and clears `modified`; Save As opens
+   exactly one `[data-save-as-dialog]` and its own close dismisses it; the sanitize
+   `[data-sanitize-dialog]` opens/closes; Preferences opens/closes; `[data-print]` opens
+   the standalone print window. No swap, no no-op, no double-fire.
+2. Guards not weakened: **HOLDS** - the SVG regex `/<svg[\s/>]/` fires on an inline
+   `<svg ...>`, a bare `<svg>`, a self-closing `<svg/>` and a multi-line `<svg`, and
+   does NOT match a component named `<Svg>`. The size regex `<Name\b[^>]*size=\{` fires
+   on `size={18}`, `size={px}` and a multi-line render. The phase43 sweep yields a
+   violation for an un-allow-listed `cropPages` id shared by two named surfaces, and
+   clears it once a reason is supplied. None of the three detections is allow-listed away
+   (see observations for the two latent formatting gaps).
+3. Glyph family integrity: **HOLDS** - every check at runtime is 24/1.65/round/no-fill/
+   currentColor/aria-hidden; the retained Lucide maximize glyph is normalized to 1.65;
+   an app-wide scan finds zero `<svg` outside the brand/functional allow-list (and the
+   allow-list is `Icon.tsx` + brand/page-content only, no tool chrome); no second icon
+   registry exists (only `quietPrecision.tsx` maps ids to geometry).
+4. Animation: **HOLDS for the diff** - the only added `transition` in the `styles.css`
+   diff is `color` on `.stage-rail-icon`; the diff adds no `@keyframes`, `transform`,
+   `scale` or `rotate`. `prefers-reduced-motion` removes the Phase-75 `.anim-jiggle`
+   glyph animation outright (`animation:none; rotate:none; translate:none`) and zeroes
+   the dock verb transforms. (One pre-existing hover scale outside the diff is noted in
+   observations.)
+5. Colour / accessibility: **HOLDS** - independent WCAG ratios on the final surfaces:
+   light rest `#485164`/`#fcfdfe` = 7.82:1, light danger = 5.87:1, light success =
+   5.54:1; dark rest `#B8C0D0`/`#1d232b` = 8.65:1, dark danger = 7.89:1, dark success =
+   8.94:1 (all clear the 4.5:1 label / 3:1 non-text floors). Disabled icons keep
+   `cursor=not-allowed` and muted ink and are not hover-lifted; `aria-pressed` and the
+   verb label carry state so colour is never the only signal; the focus ring
+   (`.action-dock-verb:focus-visible` -> `--tf-accent-focus` outline) is a distinct shape
+   from the pressed accent wash+ring.
+6. Offline: **HOLDS** - `quietPrecision.tsx` imports only `lucide-react` and React types;
+   geometry is inline JSX; no `fetch`/`http`/`new URL`/`url(`/`.svg` asset reference in
+   the registry, the wrapper or the added CSS; `dist/renderer/assets/` contains zero
+   `.svg` files, so nothing is loaded at runtime.
+
+Diff-level no-behaviour-change audit: over `git diff -- src/renderer`, there are ZERO
+added/removed `onClick`/`onPointer`/`onContextMenu`/`setTool`/`action:`/`shortcut:`/
+`useState`/`useEffect` lines and ZERO added/removed `data-*` attributes in `.tsx`; the
+only `data-*` diff lines are removed CSS stage-tint selectors. Handler, selector,
+command-id and shortcut identity are unchanged, matching the CONTROL-INDEX claim.
+
+Design-critique pass (skill `design-critique`) on the changed surface - the icon system
+across the dock, header, rail, palette and dialogs. User job: recognise a command at a
+glance and read its state (rest / active / destructive / disabled) without hesitation.
+
+- Must-fix: none. The single graphite resting family, one violet active treatment, red
+  reserved for delete+sanitize, and the persistent verb labels make the job clear within
+  3 s; the disabled Save reads disabled (muted, `not-allowed`).
+- Should-fix: none blocking. Minor consistency: two semantically distinct command ids
+  render identical cursor geometry (`editToolOff` and `annSelect`), and the tab-close
+  affordance uses two glyphs (`tabClose` SquareX vs `tabClose (AnimatedTab)` X). Both are
+  context-separated and non-functional; a future pass could give "edit tool off" a
+  distinct off-state mark.
+- Nice-to-fix: the dynamic `<Icon name={id}>` renders are not visible to the static
+  uniqueness sweep, so a future dynamic duplicate would go unguarded (latent, below).
+- Strengths to keep: one registry/one wrapper/one stroke; colour carries state only,
+  never category; destructive-only danger ink; every glyph decorative with the control
+  keeping its label; geometry inlined (offline by construction).
+
+Observations (latent / pre-existing; NO ADV filed, no product defect reachable today):
+
+- The phase94 size rule is whitespace-sensitive: `size = {18}` (spaces around `=`)
+  evades `<Name\b[^>]*size=\{`. Prettier normalizes it away and no such source exists.
+- The size rule only catches SIZED direct renders; an unsized direct Lucide render
+  (default 24px/2 stroke) would pass. The tree currently has zero unsized direct renders.
+- The phase43 uniqueness sweep reads static `name="..."` only, so ActionDock /
+  CommandPalette / Welcome / StageRail / TitleBar dynamic `name={...}` ids are not
+  counted. By design, but it is a coverage hole for cross-surface duplicate ids.
+- Pre-existing, outside this diff: `.action-dock-minus:hover { transform: scale(1.12) }`
+  is not in the reduced-motion `transform: none` list, so the EDIT-mode remove badge still
+  scales (instantly) under `prefers-reduced-motion`. The diff adds no glyph animation; this
+  is a control-hover affordance, not a keyframe.
+
+Phase 103 is CLEAR from an adversarial standpoint: no crash/hang, no document or data
+change, no unhandled error, no silent failure, no handler/selector/command-id drift, no
+family break, no added network or runtime asset, and contrast/disabled/reduced-motion
+behaviour holds for the diff.
+
 ## TFL-776.4 Edit Text delete-teardown diff-pass (TFL-785) - run-bar Delete maskedRect
 
 Session label: `diff-pass`. Scope: the TFL-776.1 uncommitted change in

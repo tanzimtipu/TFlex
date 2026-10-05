@@ -14,7 +14,7 @@
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
 import type { ReactElement } from "react";
 import { AnimatePresence, motion } from "motion/react";
-import { ArrowLeft, LogOut, RefreshCcw, UserPlus, X } from "lucide-react";
+import { ArrowLeft, LogOut, RefreshCcw, UserPlus } from "lucide-react";
 import { Icon } from "../icons/Icon";
 import type {
   AccountStatus,
@@ -485,7 +485,7 @@ export function AccountsDialog(props: AccountsDialogProps): ReactElement {
           title="Close account dialog"
           data-accounts-close
         >
-          <Icon icon={X} size="sm" />
+          <Icon name="dialogClose" size="sm" />
         </button>
       </header>
       <div className="sheet-body sheet-body-accounts">

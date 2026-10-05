@@ -23,7 +23,6 @@ import {
   type ReactElement,
   type ReactNode,
 } from "react";
-import { X } from "lucide-react";
 import { Icon } from "../icons/Icon";
 import { AnimatePresence } from "motion/react";
 import { useBackdropClose } from "./modalBackdrop";
@@ -236,7 +235,7 @@ export function DialogShell(props: DialogShellProps): ReactElement {
           disabled={closeDisabled}
           data-testid={closeTestId}
         >
-          <Icon icon={X} size="sm" />
+          <Icon name="dialogClose" size="sm" />
         </button>
       )}
     </HeaderTag>

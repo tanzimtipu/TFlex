@@ -58,8 +58,8 @@ afterEach((): void => {
 });
 
 describe("Phase 94 — the icon token scale", () => {
-  it("declares the exact six-step scale", () => {
-    expect(ICON_SIZES).toEqual({ xs: 14, sm: 16, md: 18, lg: 20, xl: 22, hero: 32 });
+  it("declares the exact seven-step scale", () => {
+    expect(ICON_SIZES).toEqual({ xs: 14, sm: 16, md: 18, lg: 20, xl: 22, xxl: 24, hero: 32 });
   });
 
   it("keeps the chrome tokens at or above the 18px floor", () => {

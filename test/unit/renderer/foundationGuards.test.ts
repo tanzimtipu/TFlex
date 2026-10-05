@@ -142,6 +142,7 @@ const MIGRATED_SURFACES: readonly string[] = [
   "forms/FlattenConfirmDialog.tsx",
   "forms/FormsOverlay.tsx",
   "icons/Icon.tsx",
+  "icons/quietPrecision.tsx",
   "main.tsx",
   "print-window/PrintWindowApp.tsx",
   "redaction/RedactionOverlay.tsx",

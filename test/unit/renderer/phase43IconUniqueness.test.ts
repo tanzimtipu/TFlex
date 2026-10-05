@@ -20,7 +20,7 @@
 // deliberately small and splits into two kinds:
 //   (a) ONE universal affordance repeated verbatim (the close X), and
 //   (b) a single action that legitimately renders the same glyph in more than
-//       one surface (page zoom in the pills AND the legacy CommandBar; an
+//       one surface (page zoom in the CanvasPills AND the CommandBar; an
 //       annotation type in its toolbar AND its list legend; "delete" in every
 //       delete verb; a menu-disclosure chevron; a rail-scroll chevron).
 
@@ -33,6 +33,11 @@ const RENDERER = resolve(process.cwd(), "src/renderer");
 /** The named icon surfaces the invariant covers. */
 const NAMED_FILES: readonly string[] = [
   "state/toolsRegistry.ts",
+  // Phase 103 — the shared Quiet Precision registry HOLDS the retained Lucide
+  // glyphs for every "RETAIN lucide" row, so it is a named surface in its own
+  // right. Its `icon: X` entries and the registry's own `icon: X` entries are
+  // the same action in two places, allow-listed below.
+  "icons/quietPrecision.tsx",
   "components/AppHeader.tsx",
   "components/AccountMenu.tsx",
   "components/TitleBar.tsx",
@@ -54,6 +59,13 @@ const NAMED_FILES: readonly string[] = [
   "components/CanvasPills.tsx",
   "components/CommandBar.tsx",
   "components/MultiPane.tsx",
+  // Phase 103 (TFL-834, chunk 3d) — the view/notice surfaces migrated in wave 4
+  // join the sweep so the registry-name identity is enforced where the glyphs
+  // now live (the book/reading views, the page-drag grip and the validation).
+  "components/BookView.tsx",
+  "components/ReadingView.tsx",
+  "components/DocumentView.tsx",
+  "components/selectableContent.tsx",
   "components/Welcome.tsx",
   "components/Toasts.tsx",
   "components/UpdateIndicator.tsx",
@@ -72,11 +84,14 @@ const NAMED_FILES: readonly string[] = [
  */
 const DEAD_FILES: readonly string[] = ["components/ToolsPalette.tsx"];
 
-/** Every dialog in the renderer's components folder that renders a Lucide glyph. */
+/** Every dialog in the renderer's components folder. Phase 103 chunk 3c migrated
+ *  the dialogs onto the shared registry, so a dialog may render a registry name
+ *  without importing Lucide; the sweep therefore covers EVERY dialog rather than
+ *  only the ones still importing `lucide-react`, keeping the identity invariant
+ *  strict across the migrated surfaces. */
 const DIALOG_FILES: readonly string[] = readdirSync(resolve(RENDERER, "components"))
   .filter((n) => /Dialog\.tsx$/.test(n))
-  .map((n) => `components/${n}`)
-  .filter((f) => readFileSync(resolve(RENDERER, f), "utf8").includes("lucide-react"));
+  .map((n) => `components/${n}`);
 
 /**
  * Icons allowed to appear in more than one named file, each with its reason.
@@ -90,83 +105,57 @@ const SHARED_ALLOW: Readonly<Record<string, string>> = {
   // and the home edit rows is specified to be "a minus icon", so it shares the
   // glyph with the pre-existing window-minimize caption control.
   Minus: "the horizontal-line affordance: window minimize (caption control) plus the Phase-58 remove-tool badges on the dock and home edit rows; distinct contexts, never ambiguous",
-  ChevronRight: "page paging forward (CanvasPills + CommandBar + registry nextPage); the outline disclosure uses the distinct SquareChevronRight",
-  ChevronLeft: "page paging backward (CanvasPills + CommandBar + registry prevPage)",
+  ChevronRight: "page paging forward (registry nextPage retained glyph + toolsRegistry nextPage); the outline disclosure uses the distinct SquareChevronRight",
+  ChevronLeft: "page paging backward (registry prevPage retained glyph + toolsRegistry prevPage)",
   SquareChevronRight: "outline tree disclosure toggle (context panel outline + side rail outline tree)",
-  ChevronsLeft: "rail/dock scroll-left affordance (ActionDock + AnnotationFlyout)",
-  ChevronsRight: "rail/dock scroll-right affordance (ActionDock + AnnotationFlyout)",
   ChevronDown: "menu/disclosure chevron (theme menu + title-bar menu + tool menu)",
   Slash: "the pen-width control (registry annPenWidth + the annotation toolbar's width swatch)",
-  Plus: "new-tab verb (header + registry tabNew)",
-  ZoomIn: "zoom-in, the pills' and the legacy bar's rendering of the registry zoomIn action",
-  ZoomOut: "zoom-out, the pills' and the legacy bar's rendering of the registry zoomOut action",
-  MoveHorizontal: "fit-width, the pills' and the legacy bar's rendering of the registry fitWidth action",
-  Expand: "fit-page, the pills' and the legacy bar's rendering of the registry fitPage action",
-  Hand: "pan mode, the pills' and the legacy bar's rendering of the registry panMode action",
-  FolderOpen: "the open-a-PDF verb (header, welcome, Multi Mode pane, registry open)",
-  GitMerge: "the merge/combine verb (welcome, header merge, context combine, registry merge)",
-  Search: "the find-in-document verb (header find control + legacy bar + registry find); the palette search-field uses the distinct TextSearch",
-  Settings: "the open-preferences verb (header gear + stage rail gear + registry preferences)",
-  Trash2: "the delete verb (page delete, annotation delete, saved-signature delete)",
-  FileSignature: "the sign verb (sign tool + registry sign + its context entries)",
-  PanelsLeftRight: "the Multi Mode verb (header toggle + legacy bar toggle + registry/palette route)",
-  Sparkles: "the open-sample verb (welcome sample card + registry openSample)",
-  FilePlus2: "the add-document/page verb (context panel + registry insertPages; Welcome holds a hidden bundle sprite)",
+  Plus: "new-tab verb (registry tabNew + the dock's add control)",
+  FolderOpen: "the folder / open-a-location glyph (the registry's open entry + the Preferences Storage row); the same folder metaphor for choosing a location",
+  Search: "the find-in-document verb (header find control + registry find); the palette search-field uses the distinct TextSearch",
+  Settings: "the open-preferences verb (header gear + registry preferences)",
+  PanelsLeftRight: "the Multi Mode verb (header toggle + registry/palette route)",
+  Sparkles: "the bundled-samples mark (the welcome samples-empty state) and the registry's retained openSample metaphor",
+  Trash2: "the delete verb (the rail page-delete thumb + the registry's delete entry); the DeletePageDialog, annotation and review-element deletes render the registry delete id",
   Download: "the download-update verb (update indicator + registry updateDownload)",
   RefreshCw: "the check-for-update / retry verb (indicator + update prompt + registry checkForUpdate)",
-  Type: "the annotation text type glyph (annotation toolbar + list legend)",
   TextCursor: "the edit-content text item (registry editText + the context panel's edit-content text row)",
-  MessageSquareText: "the annotations-rail verb (registry annotationsPanel + the rail's annotations tab)",
+  MessageSquareText: "the annotations-panel command glyph (registry annotationsPanel + the shared Quiet Precision registry holds its retained glyph)",
   MessageSquare: "the on-page comment/note affordance (the placed note marker's AnnCommentIcon + its AnnotationCommentBox editor header); one comment concept, two surfaces",
   TriangleAlert: "the warning/alert glyph (registry ocrSuspects \"review suspects\" + the print window's error banner); the print window is a SEPARATE document surface (its own BrowserWindow), and both uses are the same warning semantics",
-  // Annotation tool glyphs shared between the toolbar and the annotations list legend.
-  Highlighter: "highlight annotation type (annotation toolbar + list legend); the Inspector text-format toggle uses the distinct PaintBucket",
-  Underline: "underline annotation type (annotation toolbar + list legend); the Inspector text-format toggle uses the distinct Baseline",
-  Strikethrough: "strikethrough annotation type (annotation toolbar + list legend)",
-  Pen: "ink annotation type (annotation toolbar + list legend)",
-  Square: "rectangle annotation type (annotation toolbar + list legend)",
-  Circle: "ellipse annotation type (annotation toolbar + list legend)",
-  ArrowUpRight: "arrow annotation type (annotation toolbar + list legend)",
-  StickyNote: "sticky-note annotation type (annotation toolbar + list legend) and the placed on-page note marker, which renders the note it represents",
-  MessageCirclePlus: "add-comment annotation type (annotation toolbar + list legend)",
+  // Annotation tool glyphs: the annotation toolbar and the annotations list legend
+  // now share the registry COMMAND ID (the ann* entries below); the retained
+  // Lucide metaphor is still owned by the shared Quiet Precision registry and the
+  // registry command entry in toolsRegistry, so each glyph stays allow-listed.
+  Highlighter: "highlight annotation metaphor (registry annHighlight entry + the shared Quiet Precision registry holds its retained glyph)",
+  Underline: "underline annotation metaphor (registry annUnderline entry + the shared Quiet Precision registry holds its retained glyph); the Inspector text-format toggle uses the distinct Baseline",
+  Strikethrough: "strikethrough annotation metaphor (registry annStrikeout entry + the shared Quiet Precision registry holds its retained glyph)",
+  Pen: "ink annotation metaphor (registry annInk entry + the shared Quiet Precision registry holds its retained glyph)",
+  Square: "the rectangle annotation metaphor (registry annRect entry + the shared Quiet Precision registry holds its retained glyph) plus the conventional maximize-window caption glyph (windowMaximize; Copy is the distinct windowRestore glyph)",
+  Circle: "ellipse annotation metaphor (registry annEllipse entry + the shared Quiet Precision registry holds its retained glyph)",
+  ArrowUpRight: "arrow annotation metaphor (registry annArrow entry + the shared Quiet Precision registry holds its retained glyph)",
+  StickyNote: "sticky-note annotation metaphor (registry annNote entry + the shared Quiet Precision registry holds its retained glyph) and the placed on-page note marker, which renders the note it represents",
+  MessageCirclePlus: "add-comment annotation metaphor (registry annCallout entry + the shared Quiet Precision registry holds its retained glyph)",
   PanelLeftClose: "collapse a side panel (rail + context panel + registry railCollapse)",
   PanelRightOpen: "expand a side panel (rail + context panel + inspector)",
   Check: "the check/confirm mark (registry toggle + annotation tool menu selection)",
-  Crop: "the crop-pages verb (registry cropPages + its dialog)",
-  Ellipsis: "the more-actions overflow (registry moreActions + the dock's overflow lane)",
-  FileDown: "the export-comments verb (registry exportComments + its dialog)",
+  Ellipsis: "the more-actions overflow (registry pageContextMenu/dockOverflow retained glyph + toolsRegistry)",
   File: "the generic document/file item glyph (Multi Mode untitled pane + welcome-recents file row); both denote an open PDF document",
-  ClipboardPaste: "the create-PDF-from-clipboard verb (registry createFromClipboard + the CreateFromImagesDialog paste affordance)",
+  ClipboardPaste: "the create-PDF-from-clipboard verb (registry createFromClipboard + toolsRegistry holds its retained glyph)",
   GripVertical: "the drag-handle affordance (page drag + the Multi Mode divider)",
-  Images: "the page-thumbnails verb (registry pageThumbnails + the rail's thumbs tab)",
-  Layers: "the flatten verb (registry flatten + the legacy bar)",
-  List: "the outline/bookmarks verb (registry outlinePanel + the rail's outline tab)",
-  Minimize2: "the optimize verb (registry optimize + the legacy bar)",
+  Images: "the page-thumbnails verb (registry pageThumbnails + the context panel's empty-thumbs state)",
   Moon: "the dark-theme option (registry theme entry + the header theme icon)",
-  MousePointer2: "the annotation Select tool (registry annSelect + the toolbar)",
-  Pencil: "the edit-content verb (registry editMode + the legacy bar)",
-  PieChart: "the audit-space verb (registry audit + the legacy bar)",
   Printer: "the print verb (registry print + the header)",
-  RotateCcw: "rotate counter-clockwise (registry + the legacy bar)",
-  RotateCw: "rotate clockwise (registry + the rail verb + the legacy bar)",
+  RotateCcw: "rotate counter-clockwise (registry retained glyph + toolsRegistry)",
+  RotateCw: "rotate clockwise (registry + the rail page verb)",
   Save: "the save verb (registry save + the header)",
   SaveAll: "the save-a-copy verb (registry saveAs + the header)",
   // Phase 44 (operator amendment) — the account menu repeats two verbs that
   // already live on the signed-in account dialog: sign out and sync now.
   LogOut: "the sign-out verb (the signed-in AccountsDialog surface + the top-bar avatar menu)",
   RefreshCcw: "the sync-now verb (the signed-in AccountsDialog surface + the top-bar avatar menu)",
-  ScanText: "the recognize-text/OCR verb (registry + the context panel)",
-  Scissors: "the extract/split verb (registry + the rail verb + the legacy bar)",
-  Stamp: "the stamp verb (registry stamp + its dialog)",
-  Undo2: "the undo verb (registry undo + the rail verb)",
-  FileSpreadsheet: "the fill-form-fields-from-CSV verb (registry fillFromCsv + its import dialog); one concept, two surfaces",
-  Upload: "the confirm-import action (CommentImportDialog + FillFromCsvDialog) rendered identically on both import dialogs",
-  // Phase 88 (FEA-037) — the sanitize verb renders the same Shield glyph on the
-  // REVIEW dock (registry) and the SanitizeDialog it opens.
-  Shield: "the sanitize-document verb (SanitizeDialog + the registry's sanitize entry); one concept, two surfaces",
-  // Phase 89 (FEA-033) — the Bates-numbering verb renders the same Hash glyph
-  // on the registry dock entry, its dialog, and the Inspector's Bates row.
-  Hash: "the Bates-numbering verb (BatesDialog + Inspector's Bates row + the registry's bates entry); one concept, the same glyph",
+  Scissors: "the extract/split verb (registry + the rail page verb)",
+  Upload: "the confirm-import action (CommentImportDialog + FillFromCsvDialog + FormDataIoDialog) rendered identically on every import dialog",
   // Phase 84 — the redact verb renders Eraser on the registry entry and the
   // edit TextPropertiesPanel's redact control.
   Eraser: "the redact-marked-region verb (the edit TextPropertiesPanel's redact control + the registry's redact entry)",
@@ -174,6 +163,67 @@ const SHARED_ALLOW: Readonly<Record<string, string>> = {
   // glyphs between the SideRail edit controls and the TextPropertiesPanel.
   IndentIncrease: "the increase-list-indent control (SideRail edit controls + TextPropertiesPanel); one direction, two surfaces",
   IndentDecrease: "the decrease-list-indent control (SideRail edit controls + TextPropertiesPanel); one direction, two surfaces",
+  // Phase 103 (TFL-829) — the shared Quiet Precision registry HOLDS the retained
+  // Lucide glyph for every "RETAIN lucide, normalize to 1.65/24" row, so each
+  // such glyph is legitimately owned by the registry command AND the shared
+  // source. One concept, one source of truth, two locations.
+  SquareDashed: "the clear-page-selection verb (registry + the shared Quiet Precision registry holds its retained glyph)",
+  ListX: "the remove-from-Recents verb (registry + the shared Quiet Precision registry holds its retained glyph)",
+  ArrowRightToLine: "the go-to-page verb (registry + the shared Quiet Precision registry holds its retained glyph)",
+  SquareX: "the close-tab verb (registry + the shared Quiet Precision registry holds its retained glyph)",
+  FolderInput: "the open-PDF-into-a-pane verb (registry + the shared Quiet Precision registry holds its retained glyph)",
+  FileInput: "the choose-a-document-for-a-pane verb (registry + the shared Quiet Precision registry holds its retained glyph)",
+  PanelRightDashed: "the clear-a-pane verb (registry + the shared Quiet Precision registry holds its retained glyph)",
+  SeparatorVertical: "the resize-panes verb (registry + the shared Quiet Precision registry holds its retained glyph)",
+  Info: "the about verb (registry + the shared Quiet Precision registry holds its retained glyph)",
+  Menu: "the application-menu verb (registry + the shared Quiet Precision registry holds its retained glyph)",
+  Minimize: "the minimize-window caption control (registry + the shared Quiet Precision registry holds its retained glyph)",
+  Palette: "the annotation-colour verb (registry + the shared Quiet Precision registry holds its retained glyph)",
+  // Phase 103 (TFL-831, chunk 3a) — the wave-1 Quiet Precision command IDs
+  // legitimately rendered by more than one named surface. Identity is now the
+  // registry command id, so sharing is expressed as the id, not the Lucide glyph.
+  prevPage: "page paging backward (CanvasPills + CommandBar + BookView + ReadingView), one command, one glyph",
+  nextPage: "page paging forward (CanvasPills + CommandBar + the AnnotationsPanel row jump + BookView + ReadingView), one command, one glyph",
+  zoomIn: "zoom in (CanvasPills + CommandBar), one command, one glyph",
+  zoomOut: "zoom out (CanvasPills + CommandBar), one command, one glyph",
+  fitWidth: "fit-width zoom (CanvasPills + CommandBar), one command, one glyph",
+  fitPage: "fit-page zoom (CanvasPills + CommandBar), one command, one glyph",
+  panMode: "pan mode (CanvasPills + CommandBar), one command, one glyph",
+  find: "find in document (AppHeader + CommandBar), one command, one glyph",
+  "multi-mode": "the Multi Mode verb (AppHeader + CommandBar), one command, one glyph",
+  preferences: "open preferences (AppHeader + StageRail), one command, one glyph",
+  headerMenuDisclosure: "the File-menu disclosure chevron (AppHeader theme menu + TitleBar File menu), one chrome affordance",
+  // Phase 103 (TFL-832, chunk 3b) — wave-2 Quiet Precision command IDs legitimately
+  // rendered by more than one named surface. Identity is the registry command id.
+  editMode: "the edit-content verb (CommandBar + the SideRail outline rename + the welcome home-row edit toggle), one command, one glyph",
+  delete: "the delete verb (CommandBar + the rail page/outline delete + the annotations list delete + the review-element delete + the DeletePageDialog confirm), one command, one glyph",
+  merge: "the combine/merge verb (CommandBar + the ContextPanel Combine control), one command, one glyph",
+  open: "the open-a-PDF verb (AppHeader + the Multi Mode pane's Open control + the welcome fixed Open tile), one command, one glyph",
+  recognizeText: "the recognize-text/OCR verb (the ContextPanel action + the OcrSuspectsPanel header), one command, one glyph",
+  annHighlight: "the highlight annotation glyph (annotation toolbar + annotations list legend), one command, one glyph",
+  annUnderline: "the underline annotation glyph (annotation toolbar + annotations list legend), one command, one glyph",
+  annStrikeout: "the strikeout annotation glyph (annotation toolbar + annotations list legend), one command, one glyph",
+  annInk: "the ink annotation glyph (annotation toolbar + annotations list legend), one command, one glyph",
+  annTextbox: "the text-box annotation glyph (annotation toolbar + annotations list legend), one command, one glyph",
+  annRect: "the rectangle annotation glyph (annotation toolbar + annotations list legend), one command, one glyph",
+  annEllipse: "the ellipse annotation glyph (annotation toolbar + annotations list legend), one command, one glyph",
+  annArrow: "the arrow annotation glyph (annotation toolbar + annotations list legend), one command, one glyph",
+  annCallout: "the callout annotation glyph (annotation toolbar + annotations list legend), one command, one glyph",
+  annNote: "the note annotation glyph (annotation toolbar + annotations list legend), one command, one glyph",
+  // Phase 103 (TFL-833, chunk 3c) — wave-3 Quiet Precision command IDs legitimately
+  // rendered by more than one named surface. Identity is the registry command id.
+  dialogClose: "the dialog close X (AccountsDialog + CreateFromImagesDialog; DialogShell owns the shared close control), one chrome affordance",
+  checkForUpdate: "the refresh / check-for-update command (the AuditSpaceDialog refresh + the UpdatePromptDialog restart + the UpdateIndicator), one command, one glyph",
+  updateDownload: "the download-update command (the UpdateIndicator available chip + the UpdatePromptDialog download state), one command, one glyph",
+  bates: "the Bates-numbering verb (the BatesDialog header + the Inspector Bates row), one command, one glyph",
+  insertPages: "the insert-documents verb (the InsertPagesDialog picker + the ContextPanel action), one command, one glyph",
+  dockScrollLeft: "dock scroll-left affordance (the ActionDock chrome + the AnnotationFlyout), one chrome affordance",
+  dockScrollRight: "dock scroll-right affordance (the ActionDock chrome + the AnnotationFlyout), one chrome affordance",
+  // Phase 103 (TFL-834, chunk 3d) — wave-4 Quiet Precision command IDs legitimately
+  // rendered by more than one named surface. Identity is the registry command id.
+  tabNew: "the neutral create/add verb (the AppHeader new-tab control + the welcome home-row add-tool picker), one plus metaphor, one command glyph",
+  dragPage: "the drag-handle affordance (the Multi Mode divider + the canvas page-drag grip + the shared floating-editor grip), one command, one glyph",
+  openReadingView: "the open-reading/book-view verb (BookView + ReadingView + the DocumentView Book View entry), one command, one glyph",
 };
 
 interface Usage {
@@ -224,6 +274,16 @@ function usagesIn(file: string, text: string): Usage[] {
       }
     }
   });
+  // Phase 103 — a static Quiet Precision render (`<Icon name="save" />`) is a
+  // usage of the named command id attributed to this file. Only `<Icon`-scoped
+  // `name=` attributes count, so a form control's `name="radio-group"` is not
+  // mistaken for a glyph.
+  const nameRe = /<Icon\b[^>]*\bname="([^"]+)"/gs;
+  let nm: RegExpExecArray | null;
+  while ((nm = nameRe.exec(text)) !== null) {
+    const line = text.slice(0, nm.index).split(/\r?\n/).length;
+    out.push({ file, icon: nm[1], line });
+  }
   return out;
 }
 
@@ -255,17 +315,19 @@ describe("Phase 43 — app-wide icon identity", () => {
     const text = [
       "import { useMemo } from 'react';",
       "import type { ReactElement, ReactNode } from 'react';",
-      "import { Hash, PanelRightClose, PanelRightOpen, X } from 'lucide-react';",
+      "import { MousePointerClick, PanelRightClose, PanelRightOpen, X } from 'lucide-react';",
     ].join("\n");
     expect([...importedIcons(text)].sort()).toEqual([
-      "Hash",
+      "MousePointerClick",
       "PanelRightClose",
       "PanelRightOpen",
       "X",
     ]);
-    // The exact file that exposed the bug: `Hash` is its first named import.
+    // The exact file that exposed the bug: `MousePointerClick` is now the
+    // Inspector's first named Lucide import (Phase 103 chunk 3b migrated the
+    // Bates `Hash` row onto the Quiet Precision `bates` id).
     const inspector = readFileSync(resolve(RENDERER, "components/Inspector.tsx"), "utf8");
-    expect([...importedIcons(inspector)]).toContain("Hash");
+    expect([...importedIcons(inspector)]).toContain("MousePointerClick");
   });
 
   it("dead files stay unimportable (excluded from the sweep, not allow-listed)", () => {
@@ -306,9 +368,11 @@ describe("Phase 43 — app-wide icon identity", () => {
 
   it("the layout control's three glyphs are unique app-wide", () => {
     const layout = readFileSync(resolve(RENDERER, "components/PageLayoutControl.tsx"), "utf8");
-    const used = [...importedIcons(layout)];
-    expect(used.sort()).toEqual(["Columns2", "Grid2x2", "RectangleVertical"]);
-    // None of the layout glyphs may be used by any other named surface.
+    // Phase 103 — the layout control renders through the Quiet Precision
+    // registry, so its identity is the command id, not the legacy Lucide glyph.
+    const used = [...layout.matchAll(/<Icon\b[^>]*\bname="([^"]+)"/g)].map((m) => m[1]);
+    expect(used.sort()).toEqual(["layoutFourPage", "layoutOnePage", "layoutTwoPage"]);
+    // None of the layout glyph ids may be used by any other named surface.
     for (const icon of used) {
       expect(iconOwners(icon), `${icon} leaks out of the layout control`).toEqual([
         "components/PageLayoutControl.tsx",
@@ -318,9 +382,9 @@ describe("Phase 43 — app-wide icon identity", () => {
 
   it("criterion 4 regression guard: the Multi Mode toggle and the two-page option are DISTINCT", () => {
     const control = readFileSync(resolve(RENDERER, "components/PageLayoutControl.tsx"), "utf8");
-    const two = control.match(/two:\s*\{[^}]*Icon:\s*([A-Za-z0-9]+)/)?.[1];
-    const one = control.match(/one:\s*\{[^}]*Icon:\s*([A-Za-z0-9]+)/)?.[1];
-    const four = control.match(/four:\s*\{[^}]*Icon:\s*([A-Za-z0-9]+)/)?.[1];
+    const two = control.match(/two:\s*\{[^}]*name="([^"]+)"/)?.[1];
+    const one = control.match(/one:\s*\{[^}]*name="([^"]+)"/)?.[1];
+    const four = control.match(/four:\s*\{[^}]*name="([^"]+)"/)?.[1];
 
     const header = readFileSync(resolve(RENDERER, "components/AppHeader.tsx"), "utf8");
     // Phase 94B correction — read the REAL render source: the header toggle's

@@ -20,7 +20,7 @@ import {
   useState,
   type ReactElement,
 } from 'react';
-import { BookOpen, ChevronLeft, ChevronRight, Columns2, Square, X } from 'lucide-react';
+import { Columns2, Square, X } from 'lucide-react';
 import { Icon } from '../icons/Icon';
 import type { PDFDocumentProxy } from 'pdfjs-dist';
 import { PageView } from './PageView';
@@ -562,7 +562,7 @@ export function BookView(props: BookViewProps): ReactElement {
     >
       <header className="book-view-header">
         <span className="book-view-title" data-book-title-label>
-          <Icon icon={BookOpen} size="sm" />
+          <Icon name="openReadingView" size="sm" />
           {title}
         </span>
         <div className="book-view-progress" data-book-progress>
@@ -672,7 +672,7 @@ export function BookView(props: BookViewProps): ReactElement {
           aria-label="Previous page"
           data-book-prev
         >
-          <Icon icon={ChevronLeft} size="sm" />
+          <Icon name="prevPage" size="sm" />
           Previous
         </button>
         <button
@@ -684,7 +684,7 @@ export function BookView(props: BookViewProps): ReactElement {
           data-book-next
         >
           Next
-          <Icon icon={ChevronRight} size="sm" />
+          <Icon name="nextPage" size="sm" />
         </button>
       </nav>
     </div>

@@ -5,6 +5,34 @@
 > inspect the current `OPEN`, `FIX-READY`, and `DISPUTED` entries first; closed records are
 > historical evidence and must not be loaded wholesale.
 
+## DEF-566: annotation-flyout tool icons rest green, not graphite - Phase 103 criterion 3 ("resting icons graphite app-wide; green only for real success") is not met
+
+- Status: CLOSED (qa TFL-843, 2026-10-05)
+- Severity: LOW - cosmetic colour on one secondary surface (the Review annotation flyout); no functional, document or data impact. Recorded as a stated-criterion miss that blocks Phase 103 criterion 3, not a workflow break.
+- Found by: qa (TFL-840, phase-close verdict)
+- Phase: 103 (TFL-824)
+- Files: `src/renderer/styles.css:12319-12340` (`.ann-tool-btn[data-tool=...]` colour hooks; unchanged by the Phase 103 diff, so the migration repointed the glyphs but left the per-tool ink)
+
+Steps to reproduce:
+1. `npm.cmd run test:e2e -- phase103_ann_colour_probe.spec.cjs`; or launch TFlex, open `report.pdf`, switch to Review, click the `Annotate` dock verb.
+2. Read the computed colour of `.ann-tool-btn[data-tool="rect"] svg` and `.ann-tool-btn[data-tool="highlight"] svg`.
+
+Expected: resting annotation-tool glyphs are graphite (`--tf-icon-rest`, `#485164` light / `#B8C0D0` dark), matching the migrated dock / rail / header / title-bar glyphs; green reserved for a real success outcome (criterion 3).
+
+Actual: both rest at `rgb(22, 101, 52)` = `#166534` (`--sem-affirmative` light; dark `#7fbd8f`). The 14 batch screenshots do not capture the annotation flyout, so the batch pass's "no green observed" did not cover this surface. Evidence: `screenshots/phase103-qa/probe-ann-flyout-light.png` (green tool row above the graphite dock), `screenshots/phase103-qa/probe-resting-ink.json`.
+
+Command output:
+`P103_PROBE {"annRect":{"buttonColor":"rgb(22, 101, 52)","svgStroke":"rgb(22, 101, 52)","svgWidth":"18px"},"annHighlight":{"buttonColor":"rgb(22, 101, 52)","svgStroke":"rgb(22, 101, 52)","svgWidth":"18px"}}`
+
+Scope note (no defect): `.tools-palette-entry[data-tool-id=...]` also retains green/red per-command hooks (`styles.css:12345-12404`), but `ToolsPalette.tsx` is no longer imported or rendered anywhere, so those are inert dead code, not a live surface. The ActionDock per-command colours were correctly removed (only `delete`+`sanitize` stay red, `styles.css:15868-15869`), and the stage-rail category tint was correctly removed.
+
+History:
+- qa: opened (TFL-840, phase-close verdict, 2026-10-05)
+- CTO: FIX-READY - relaying frontend-dev TFL-842 (2026-10-05): all 11 `.ann-tool-btn[data-tool=...]` resting rules repointed to `--tf-icon-rest` (Select was `--sem-neutral`); hover graphite (`--fg-strong`); armed/selected `[aria-pressed='true']` -> `--tf-icon-active`; menu `.ann-tool-menu-row[aria-checked='true']` -> `--tf-icon-active`. Specs designTokensContract + phase40SemanticPalette repointed. Probe `phase103_ann_colour_probe` now reports resting #485164 = `--tf-icon-rest`. typecheck clean; unit 30 files / 488 passed; build ok.
+- qa (TFL-843, 2026-10-05): FIX-READY re-verification PASS -> CLOSED. `npm.cmd run test:e2e -- phase103_ann_colour_probe.spec.cjs` -> 1 passed (9.5s). Probe JSON: light `.ann-tool-btn[data-tool="rect"]`/`[data-tool="highlight"]` buttonColor+svgStroke `rgb(72, 81, 100)` = `#485164` = `--tf-icon-rest`; dark `rgb(184, 192, 208)` = `#B8C0D0` = `--tf-icon-rest`; armed rect light `rgb(112, 80, 214)` = `#7050D6`, dark `rgb(185, 164, 255)` = `#B9A4FF` = `--tf-icon-active`. No `#166534` / `rgb(22, 101, 52)`. NEW light+dark screenshots in `screenshots/phase103-qa/` (`probe-ann-flyout-light/dark.png`, `probe-ann-tool-armed-light/dark.png` + tight `-crop` variants) inspected directly: resting annotation glyphs graphite (no green), armed rect the only violet, neighbouring dock `sign` graphite `#485164`; `annotate` reads `--fg-strong` (it is the selected verb while the flyout is open). Guards not weakened (read back): `designTokensContract.test.ts:1150-1153` still matches only `color: var(--(sem|tf-stage|tf-icon|fg-strong))` and pins `iconRules.length >= 11`; `phase40SemanticPalette.test.ts:189` `RAW_COLOR` still rejects raw hex/rgb/hsl, `:210` enforces membership in the finite `DECLARED` whitelist (now including the five `--tf-icon-*`), `:266` annotation-hook regex `var(--(sem|tf-stage|tf-icon)-[a-z]+)`. `npm.cmd run test:unit -- phase103 phase94 phase43 phase40SemanticPalette phase36StageTokens tfl47 annotation` -> 30 files / 488 passed, 0 failed. `npm.cmd run build:renderer` -> built OK. Phase 103 criterion 3 re-verdict: PASS.
+
+Origin: none (found during the phase-close sweep).
+
 ## DEF-565: v1.50.0 release gate is red - five static-CSS guards still assert pre-Phase-100 raw literals (blur / 12px / 999px) now expressed as design tokens
 
 - Status: CLOSED (qa TFL-806, 2026-10-05)

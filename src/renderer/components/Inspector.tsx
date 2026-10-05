@@ -23,7 +23,7 @@
 
 import { useMemo, useState } from 'react';
 import type { ReactElement, ReactNode } from 'react';
-import { Hash, MousePointerClick, PanelRightClose, PanelRightOpen, X } from 'lucide-react';
+import { MousePointerClick, PanelRightClose, PanelRightOpen, X } from 'lucide-react';
 import { Icon } from '../icons/Icon';
 import { EmptyState } from './EmptyState';
 import { GlassSidebarBody, GlassSidebarHeader } from './GlassSidebar';
@@ -493,7 +493,7 @@ fileSize = null,
             // button's own title (the action label).
             label={'rename'}
             onClick={onRenumberPages}
-            icon={<Icon icon={Hash} size="xs" />}
+            icon={<Icon name="bates" size="xs" />}
           />
         </span>
       </Row>

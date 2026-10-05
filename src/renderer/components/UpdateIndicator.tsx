@@ -24,7 +24,7 @@
 // dialog remains the source of truth for that case.
 
 import { type ReactElement, useEffect, useState, useCallback } from "react";
-import { Check, Download, RefreshCw, X } from "lucide-react";
+import { X } from "lucide-react";
 import { Icon } from "../icons/Icon";
 import type { UpdateState } from "../../shared/types";
 import { BrandLoader } from "./BrandLoader";
@@ -213,7 +213,7 @@ export function UpdateIndicator(props: UpdateIndicatorProps): ReactElement | nul
           aria-label="Checking for updates"
           title="Checking for updates"
         >
-          <Icon icon={RefreshCw} size="sm" />
+          <Icon name="checkForUpdate" size="sm" />
         </span>
       );
     case "available":
@@ -228,7 +228,7 @@ export function UpdateIndicator(props: UpdateIndicatorProps): ReactElement | nul
           title={view.ariaLabel}
           onClick={onDownload}
         >
-          <Icon icon={Download} size="sm" />
+          <Icon name="updateDownload" size="sm" />
           <span>Update v{view.version}</span>
         </button>
       );
@@ -258,7 +258,7 @@ export function UpdateIndicator(props: UpdateIndicatorProps): ReactElement | nul
           title={view.ariaLabel}
           onClick={onInstall}
         >
-          <Icon icon={Check} size="sm" />
+          <Icon name="updateInstall" size="sm" />
           <span>Restart to update</span>
         </button>
       );

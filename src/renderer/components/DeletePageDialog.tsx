@@ -15,7 +15,6 @@
 // only opens for the explicit "Delete" toolbar action).
 
 import { useEffect, useMemo, useRef, useState, type ReactElement } from "react";
-import { Trash2 } from "lucide-react";
 import { parsePageRange } from "../engine/types";
 import { Icon } from "../icons/Icon";
 import { DialogShell, type DialogAction } from "./DialogShell";
@@ -146,7 +145,7 @@ export function DeletePageDialog(
       {
         key: "confirm",
         label: "Delete",
-        icon: <Icon icon={Trash2} size="sm" />,
+        icon: <Icon name="delete" size="sm" />,
         variant: "danger" as const,
         onClick: onConfirmClick,
         disabled: !valid,

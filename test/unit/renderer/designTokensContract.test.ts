@@ -1144,10 +1144,11 @@ describe("Phase D — three-theme coherence + embedded theme picker license", ()
     }
     // No legacy hue token survives anywhere (definition or use).
     expect(css).not.toMatch(/--icon-(?:blue|cyan|green|orange|yellow|purple|red|pink)\b/);
-    // Every tool-icon rule routes through the semantic palette (roles or the
-    // stage tokens that resolve from them).
+    // Every chrome tool-icon rule routes through a declared design token: the
+    // semantic roles / stage tokens, or the Phase-103 icon ink ladder
+    // (`--tf-icon-*`) with its graphite hover lift (`--fg-strong`).
     const iconRules = css.match(
-      /\.(?:tool-btn|ann-tool-btn|edit-toolbar-btn)[^}]*\{[^}]*color:\s*var\(--(?:sem-[a-z]+|tf-stage-[a-z]+)\)[^}]*\}/g,
+      /\.(?:tool-btn|ann-tool-btn|edit-toolbar-btn)[^}]*\{[^}]*color:\s*var\(--(?:sem-[a-z]+|tf-stage-[a-z]+|tf-icon-[a-z]+|fg-strong)\)[^}]*\}/g,
     ) ?? [];
     expect(iconRules.length).toBeGreaterThanOrEqual(11);
     // Colour is never the only signal: shape + label still carry the meaning.

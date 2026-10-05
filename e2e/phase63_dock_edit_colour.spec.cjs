@@ -1,10 +1,12 @@
 // Phase 63 (TFL-47 / TFL-95) — RENDERED computed-style probe for the dock edit
 // pen colour.
 //
-// Verifies Phase 63 criterion 1 with a REAL rendered probe (not a source scan):
-// in each theme (light / dark / frosted) the pen's resting computed `color`
-// resolves to the theme's `--tf-stage-edit` (which is `var(--sem-primary)`) and
-// is DIFFERENT from the theme's `--sem-neutral`.
+// Phase 103 (TFL-836) SUPERSEDED the Phase 63 oracle: the pen is an ICON and
+// rides the shared icon ink ladder, so it rests graphite (`--tf-icon-rest`) and
+// turns the one accent violet (`--tf-icon-active`) only while armed
+// (`aria-pressed='true'`). This spec probes that ladder in each theme
+// (light / dark / frosted), parking the pointer away from the control before
+// each read so the hover lift (`--fg-strong`) cannot mask the rest / active ink.
 //
 // Launched ONCE through the canonical launchApp helper. The theme is switched by
 // setting `data-theme` on documentElement (light = :root / "light", dark =
@@ -39,8 +41,8 @@ async function setTheme(win, t) {
   await win.waitForTimeout(600);
 }
 
-// Read the rendered pen colour plus the theme's edit + neutral tokens, all
-// normalised to the same rgba form via a 1x1 canvas fill.
+// Read the rendered pen colour plus the theme's rest / active icon ink and the
+// neutral token, all normalised to the same rgba form via a 1x1 canvas fill.
 async function probe(win) {
   return win.evaluate(() => {
     const norm = (value) => {
@@ -58,35 +60,61 @@ async function probe(win) {
     if (pen === null) return null;
     const root = getComputedStyle(document.documentElement);
     const results = {};
-    const theme = document.documentElement.getAttribute('data-theme');
-    results.theme = theme;
+    results.theme = document.documentElement.getAttribute('data-theme');
     results.penColor = norm(getComputedStyle(pen).color);
-    results.stageEdit = norm(root.getPropertyValue('--tf-stage-edit'));
+    results.iconRest = norm(root.getPropertyValue('--tf-icon-rest'));
+    results.iconActive = norm(root.getPropertyValue('--tf-icon-active'));
     results.neutral = norm(root.getPropertyValue('--sem-neutral'));
+    results.pressed = pen.getAttribute('aria-pressed');
     results.raw = {
       penColor: getComputedStyle(pen).color,
-      stageEdit: root.getPropertyValue('--tf-stage-edit'),
+      iconRest: root.getPropertyValue('--tf-icon-rest'),
+      iconActive: root.getPropertyValue('--tf-icon-active'),
       neutral: root.getPropertyValue('--sem-neutral'),
     };
     return results;
   });
 }
 
-test('dock edit pen rests in the edit-stage colour, distinct from neutral, in every theme', async () => {
+test('dock edit pen rides the icon ink ladder: graphite at rest, violet armed, in every theme', async () => {
   const app = await launchApp([], USER_DATA);
   const win = await app.firstWindow();
   await openReport(win);
 
   for (const t of THEMES) {
     await setTheme(win, t);
-    const r = await probe(win);
-    console.log(`[P63-pen] theme=${t} ${JSON.stringify(r)}`);
-    expect(r, `the pen is rendered in theme ${t}`).not.toBeNull();
 
-    expect(r.penColor, `theme ${t}: pen colour matches --tf-stage-edit (pen=${r.raw.penColor} token=${r.raw.stageEdit})`).toBe(r.stageEdit);
-    expect(r.penColor, `theme ${t}: pen colour differs from --sem-neutral (pen=${r.raw.penColor} neutral=${r.raw.neutral})`).not.toBe(r.neutral);
-
+    // REST — park the pointer away so the hover lift cannot mask the rest ink.
+    await win.mouse.move(0, 0);
+    await win.waitForTimeout(600);
+    const rest = await probe(win);
+    console.log(`[P63-pen] theme=${t} rest=${JSON.stringify(rest)}`);
+    expect(rest, `the pen is rendered in theme ${t}`).not.toBeNull();
+    expect(rest.pressed, `theme ${t}: pen is unarmed at rest`).toBe('false');
+    expect(rest.penColor, `theme ${t}: pen rests in --tf-icon-rest (pen=${rest.raw.penColor} token=${rest.raw.iconRest})`).toBe(rest.iconRest);
+    expect(rest.penColor, `theme ${t}: pen rest ink differs from --sem-neutral (pen=${rest.raw.penColor} neutral=${rest.raw.neutral})`).not.toBe(rest.neutral);
     await win.locator('[data-action-dock]').screenshot({ path: path.join(SHOTS, `p63-dock-edit-pen-${t}.png`) });
+
+    // ACTIVE — arm edit mode, then park the pointer away again so the pressed
+    // rule (`--tf-icon-active`) is what we read, not the hover lift.
+    await win.locator('[data-dock-edit-toggle]').click();
+    await win.waitForFunction(() => document.querySelector('[data-dock-edit-toggle]')?.getAttribute('aria-pressed') === 'true', null, { timeout: 5000 });
+    await win.mouse.move(0, 0);
+    // The pen's colour rides a ~200ms transition (--motion-duration-fast), so
+    // let it settle before reading the armed ink.
+    await win.waitForTimeout(600);
+    const armed = await probe(win);
+    console.log(`[P63-pen] theme=${t} active=${JSON.stringify(armed)}`);
+    expect(armed.pressed, `theme ${t}: pen is armed`).toBe('true');
+    expect(armed.penColor, `theme ${t}: armed pen uses --tf-icon-active (pen=${armed.raw.penColor} token=${armed.raw.iconActive})`).toBe(armed.iconActive);
+    expect(armed.penColor, `theme ${t}: armed pen ink differs from rest (active=${armed.raw.penColor} rest=${armed.raw.iconRest})`).not.toBe(armed.iconRest);
+    await win.locator('[data-action-dock]').screenshot({ path: path.join(SHOTS, `p63-dock-edit-pen-${t}-active.png`) });
+
+    // Reset to rest for the next theme.
+    await win.locator('[data-dock-edit-toggle]').click();
+    await win.waitForFunction(() => document.querySelector('[data-dock-edit-toggle]')?.getAttribute('aria-pressed') === 'false', null, { timeout: 5000 });
+    await win.mouse.move(0, 0);
+    await win.waitForTimeout(600);
   }
 
   await hardClose(app, 'p63-dock-edit');

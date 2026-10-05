@@ -9,7 +9,6 @@
 // never reaches around the host callback.
 
 import { useEffect, useRef, useState, type CSSProperties, type ReactElement } from "react";
-import { Hash } from "lucide-react";
 import { Icon } from "../icons/Icon";
 import { DialogShell, type DialogAction } from "./DialogShell";
 import {
@@ -349,7 +348,7 @@ export function BatesDialog(props: BatesDialogProps): ReactElement {
       open={open}
       title="Bates numbering"
       titleId="bates-dialog-title"
-      icon={<Icon icon={Hash} size="sm" />}
+      icon={<Icon name="bates" size="sm" />}
       size="tool"
       onClose={onClose}
       blockBackdropClose={busy}

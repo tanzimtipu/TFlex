@@ -195,7 +195,8 @@ describe("foundation barrel — re-export, never copy", () => {
     expect(design.MOTION_DURATION.micro).toBe(150);
     expect(design.MOTION_THEME_CROSSFADE).toBe(400);
     expect(design.ICON_SIZES.md).toBe(18);
-    expect(design.ICON_STROKE).toBe(2);
+    expect(design.ICON_SIZES.xxl).toBe(24);
+    expect(design.ICON_STROKE).toBe(1.65);
     expect(design.ICON_STROKE_BOLD).toBe(3);
     expect(design.colorVar("primary")).toBe("var(--sem-primary)");
   });

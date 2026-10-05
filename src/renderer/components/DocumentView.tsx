@@ -1,6 +1,5 @@
 import type { PDFDocumentProxy } from "pdfjs-dist";
 import { AnimatePresence } from "motion/react";
-import { BookOpen, GripVertical } from "lucide-react";
 import { Icon } from "../icons/Icon";
 import {
   forwardRef,
@@ -4784,7 +4783,7 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
                       aria-label={`Drag page ${visiblePage} to another document`}
                       title="Drag this page to another document (Ctrl to copy)"
                     >
-                      <Icon icon={GripVertical} size="xs" />
+                      <Icon name="dragPage" size="xs" />
                     </button>
                   )}
                   {canvasTargetHere !== null && canvasTargetHere.atIndex === visiblePage && (
@@ -4871,7 +4870,7 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
             aria-label="Book View"
             onClick={onOpenBookView}
           >
-            <Icon icon={BookOpen} size="xs" />
+            <Icon name="openReadingView" size="xs" />
             Book View
           </button>
         )}

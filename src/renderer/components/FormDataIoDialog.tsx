@@ -12,7 +12,7 @@
 // distinct from the Phase-12 comment FDF verbs.
 
 import { useEffect, useState, type ReactElement } from "react";
-import { FileDown, Upload } from "lucide-react";
+import { Upload } from "lucide-react";
 import { Icon } from "../icons/Icon";
 import type { FormDataImportReport } from "../../shared/types";
 import { DialogShell, type DialogAction } from "./DialogShell";
@@ -212,7 +212,7 @@ export function FormDataIoDialog(
             key: "export",
             label: running ? "Exporting…" : "Export form data",
             variant: "primary",
-            icon: <Icon icon={FileDown} size="sm" />,
+            icon: <Icon name="exportFormData" size="sm" />,
             onClick: (): void => {
               void onRunExport();
             },

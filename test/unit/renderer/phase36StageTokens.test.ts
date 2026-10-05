@@ -220,15 +220,17 @@ describe("Phase 40 item 11 — the palette + rail consume the tokens (no literal
     expect(pin).not.toMatch(NO_LITERAL);
   });
 
-  it("tints each rail icon with its stage token (the section comment pattern)", () => {
-    for (const stage of STAGES) {
-      const rule = body(`.stage-rail-btn[data-stage="${stage}"] {`);
-      expect(rule).toMatch(new RegExp(`--stage-hue:\\s*var\\(--tf-stage-${stage}\\)`));
-      expect(rule).not.toMatch(NO_LITERAL);
-    }
-    const icon = body(".stage-rail-btn[data-stage] .stage-rail-icon {");
-    expect(icon).toMatch(/color:\s*var\(--stage-hue\)/);
+  it("rests each rail icon in the neutral ink and accents it only when active", () => {
+    // Phase 103 (chunk 3e) retired the per-stage category hue: navigation
+    // categories carry no permanent colour. Every stage glyph uses the single
+    // rest ink; the active stage takes the one accent ink. The active stage's
+    // wash + leading-edge rail (checked below) carry the selection identity.
+    const icon = body(".stage-rail-btn .stage-rail-icon {");
+    expect(icon).toMatch(/color:\s*var\(--tf-icon-rest\)/);
     expect(icon).not.toMatch(NO_LITERAL);
+    const active = body(".stage-rail-btn-active .stage-rail-icon {");
+    expect(active).toMatch(/color:\s*var\(--tf-icon-active\)/);
+    expect(active).not.toMatch(NO_LITERAL);
   });
 
   it("keeps the active stage affordance on the brand accent, never a stage hue", () => {

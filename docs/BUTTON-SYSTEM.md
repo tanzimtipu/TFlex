@@ -262,9 +262,12 @@ sizing and radius, its internal spacing, its icon usage and its five states.
 - Consume a canonical category; do not fork a parallel button class.
 - A surface may vary only SIZE (`btn-sm`) and layout (alignment, min-width).
   It must not override a canonical variant's colour or state styling.
-  Exception: the Action Dock edit pen (`.btn.action-dock-edit`) keeps its
-  Phase 63 EDIT-stage ink (`--tf-stage-edit` at rest, `--fg-strong` on hover),
-  which `REQUIREMENTS.md` Phase 63 and Phase 75 preserve as an intentional
-  identity and which `e2e/phase63_dock_edit_colour.spec.cjs` pins.
+  Exception: the Action Dock edit pen (`.btn.action-dock-edit`) is an icon and
+  follows the shared icon rest/active ladder (`--tf-icon-rest` at rest,
+  `--tf-icon-active` while `aria-pressed='true'`, `--fg-strong` on hover).
+  Phase 103 criterion 3 supersedes the Phase 63 EDIT-stage ink
+  (`--tf-stage-edit`); `REQUIREMENTS.md` records the supersession and the unit
+  guard `test/unit/renderer/tfl47_dockEditIconColor.test.ts` pins the new
+  rest/active treatment.
 - Never hardcode a duration, easing or press scale; never add a new colour
   literal. Colour comes from the tokens above, motion from `--motion-*`.

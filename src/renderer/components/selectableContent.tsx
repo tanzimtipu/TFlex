@@ -31,7 +31,6 @@
 
 import { useState } from "react";
 import type { PointerEvent as ReactPointerEvent, ReactElement, ReactNode } from "react";
-import { GripVertical } from "lucide-react";
 import { Icon } from "../icons/Icon";
 import { TfBar } from "./motion/TfMotion";
 import {
@@ -123,7 +122,7 @@ export function ContentGrip(props: {
   const cls = className === undefined ? "content-grip" : `content-grip ${className}`;
   return (
     <div className={cls} data-drag-grip={handleName} aria-hidden>
-      <Icon icon={GripVertical} size="sm" />
+      <Icon name="dragPage" size="sm" />
       <span className="content-grip-label" data-drag-grip-label={label}>
         {label}
       </span>

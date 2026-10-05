@@ -19,7 +19,7 @@ import type {
   ReactElement,
   ReactNode,
 } from "react";
-import { File, FolderOpen, GripVertical, PanelLeftDashed, X } from "lucide-react";
+import { File, PanelLeftDashed, X } from "lucide-react";
 import { Icon } from "../icons/Icon";
 import { paneTabId, type MultiModeState, type PaneId } from "../state/multiMode";
 import { useInstantMotion } from "../hooks/useAnimations";
@@ -175,7 +175,7 @@ export function MultiPaneEmpty(props: {
           aria-label={`Open a PDF into pane ${pane}`}
           title={`Open a PDF into pane ${pane}`}
         >
-          <Icon icon={FolderOpen} size="sm" />
+          <Icon name="open" size="sm" />
           <span>Open a PDF</span>
         </button>
       </div>
@@ -204,7 +204,7 @@ export function MultiDivider(props: {
       onPointerCancel={onPointerUp}
     >
       <span className="multi-divider-grip" aria-hidden>
-        <Icon icon={GripVertical} size="xs" />
+        <Icon name="dragPage" size="xs" />
       </span>
     </div>
   );

@@ -24,57 +24,11 @@
 // brand. This bar carries the page/zoom/tools/actions controls only,
 // and no duplicate File/Save control exists anywhere in the DOM.
 
-import {
-  ChevronLeft,
-  ChevronRight,
-  Expand,
-  FileSignature,
-  GitMerge,
-  Hand,
-  Layers,
-  Minimize2,
-  MoveHorizontal,
-  PanelsLeftRight,
-  Pencil,
-  PieChart,
-  RotateCcw,
-  RotateCw,
-  Scissors,
-  Search,
-  Trash2,
-  ZoomIn,
-  ZoomOut,
-} from 'lucide-react';
-import type { LucideIcon } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import type { ReactNode } from 'react';
 import type { ZoomMode } from '../state/zoom';
 import { GlassControlGroup } from './GlassChrome';
 import { Icon } from '../icons/Icon';
-
-/** The command bar's migrated glyphs. Declared with an `icon:` property so the
- *  Phase 43 icon-identity guard still attributes each glyph to this surface. */
-const COMMAND_BAR_GLYPHS = {
-  chevronLeft: { icon: ChevronLeft },
-  chevronRight: { icon: ChevronRight },
-  expand: { icon: Expand },
-  fileSignature: { icon: FileSignature },
-  gitMerge: { icon: GitMerge },
-  hand: { icon: Hand },
-  layers: { icon: Layers },
-  minimize2: { icon: Minimize2 },
-  moveHorizontal: { icon: MoveHorizontal },
-  panelsLeftRight: { icon: PanelsLeftRight },
-  pencil: { icon: Pencil },
-  pieChart: { icon: PieChart },
-  rotateCcw: { icon: RotateCcw },
-  rotateCw: { icon: RotateCw },
-  scissors: { icon: Scissors },
-  search: { icon: Search },
-  trash2: { icon: Trash2 },
-  zoomIn: { icon: ZoomIn },
-  zoomOut: { icon: ZoomOut },
-} as const satisfies Record<string, { icon: LucideIcon }>;
 
 export interface CommandBarProps {
   page: number;
@@ -226,7 +180,7 @@ export function CommandBar(props: CommandBarProps) {
           aria-label="Previous page"
           title="Previous page"
         >
-          <Icon icon={COMMAND_BAR_GLYPHS.chevronLeft.icon} size="xl" aria-hidden />
+          <Icon name="prevPage" size="xl" aria-hidden />
         </button>
         <div className="page-indicator">
           <input
@@ -261,20 +215,20 @@ export function CommandBar(props: CommandBarProps) {
           aria-label="Next page"
           title="Next page"
         >
-          <Icon icon={COMMAND_BAR_GLYPHS.chevronRight.icon} size="xl" aria-hidden />
+          <Icon name="nextPage" size="xl" aria-hidden />
         </button>
       </GlassControlGroup>
 
       {/* GROUP: Zoom — [- 372% +] + the two fit modes */}
       <GlassControlGroup label="Zoom" className="toolbar-group">
         <button type="button" className="btn btn-toolbar tool-btn" onClick={onZoomOut} aria-label="Zoom out" title="Zoom out">
-          <Icon icon={COMMAND_BAR_GLYPHS.zoomOut.icon} size="xl" aria-hidden />
+          <Icon name="zoomOut" size="xl" aria-hidden />
         </button>
         <span className="zoom-percent" title="Current zoom">
           {zoomPercent}%
         </span>
         <button type="button" className="btn btn-toolbar tool-btn" onClick={onZoomIn} aria-label="Zoom in" title="Zoom in">
-          <Icon icon={COMMAND_BAR_GLYPHS.zoomIn.icon} size="xl" aria-hidden />
+          <Icon name="zoomIn" size="xl" aria-hidden />
         </button>
         <button
           type="button"
@@ -284,7 +238,7 @@ export function CommandBar(props: CommandBarProps) {
           aria-label="Fit width"
           title="Fit width"
         >
-          <Icon icon={COMMAND_BAR_GLYPHS.moveHorizontal.icon} size="xl" aria-hidden />
+          <Icon name="fitWidth" size="xl" aria-hidden />
         </button>
         <button
           type="button"
@@ -294,7 +248,7 @@ export function CommandBar(props: CommandBarProps) {
           aria-label="Fit page"
           title="Fit page"
         >
-          <Icon icon={COMMAND_BAR_GLYPHS.expand.icon} size="xl" aria-hidden />
+          <Icon name="fitPage" size="xl" aria-hidden />
         </button>
       </GlassControlGroup>
 
@@ -308,7 +262,7 @@ export function CommandBar(props: CommandBarProps) {
           aria-label="Find in document"
           title="Find in document (Ctrl+F)"
         >
-          <Icon icon={COMMAND_BAR_GLYPHS.search.icon} size="xl" aria-hidden />
+          <Icon name="find" size="xl" aria-hidden />
         </button>
         {onRotateCounterClockwise !== undefined && (
           <button
@@ -319,7 +273,7 @@ export function CommandBar(props: CommandBarProps) {
             aria-label="Rotate counter-clockwise"
             data-toolbar-rotate-ccw
           >
-            <Icon icon={COMMAND_BAR_GLYPHS.rotateCcw.icon} size="xl" aria-hidden />
+            <Icon name="rotateCounterClockwise" size="xl" aria-hidden />
           </button>
         )}
         {onRotateClockwise !== undefined && (
@@ -335,7 +289,7 @@ export function CommandBar(props: CommandBarProps) {
             aria-label="Rotate clockwise"
             data-toolbar-rotate-cw
           >
-            <Icon icon={COMMAND_BAR_GLYPHS.rotateCw.icon} size="xl" aria-hidden />
+            <Icon name="rotate" size="xl" aria-hidden />
           </button>
         )}
         <button
@@ -348,7 +302,7 @@ export function CommandBar(props: CommandBarProps) {
           data-hand-toggle
           data-hand-active={handActive ? 'true' : 'false'}
         >
-          <Icon icon={COMMAND_BAR_GLYPHS.hand.icon} size="xl" aria-hidden />
+          <Icon name="panMode" size="xl" aria-hidden />
         </button>
         {onMultiModeToggle !== undefined && (
           <button
@@ -366,7 +320,7 @@ export function CommandBar(props: CommandBarProps) {
             data-multi-mode-active={multiModeEnabled ? 'true' : 'false'}
             data-icon="multi-mode"
           >
-            <Icon icon={COMMAND_BAR_GLYPHS.panelsLeftRight.icon} size="xl" aria-hidden />
+            <Icon name="multi-mode" size="xl" aria-hidden />
           </button>
         )}
         {onEditModeToggle !== undefined && (
@@ -380,7 +334,7 @@ export function CommandBar(props: CommandBarProps) {
             data-toolbar-edit-toggle
             data-icon="edit"
           >
-            <Icon icon={COMMAND_BAR_GLYPHS.pencil.icon} size="xl" aria-hidden />
+            <Icon name="editMode" size="xl" aria-hidden />
           </button>
         )}
         {onDeletePage !== undefined && (
@@ -394,7 +348,7 @@ export function CommandBar(props: CommandBarProps) {
             data-toolbar-delete-pages
             data-icon="delete"
           >
-            <Icon icon={COMMAND_BAR_GLYPHS.trash2.icon} size="xl" aria-hidden />
+            <Icon name="delete" size="xl" aria-hidden />
           </button>
         )}
         <button
@@ -406,7 +360,7 @@ export function CommandBar(props: CommandBarProps) {
           data-toolbar-optimize
           data-icon="optimize"
         >
-          <Icon icon={COMMAND_BAR_GLYPHS.minimize2.icon} size="xl" aria-hidden />
+          <Icon name="optimize" size="xl" aria-hidden />
         </button>
         <button
           type="button"
@@ -417,7 +371,7 @@ export function CommandBar(props: CommandBarProps) {
           data-toolbar-audit
           data-icon="audit"
         >
-          <Icon icon={COMMAND_BAR_GLYPHS.pieChart.icon} size="xl" aria-hidden />
+          <Icon name="audit" size="xl" aria-hidden />
         </button>
         {hasFormFields && (
           <button
@@ -428,7 +382,7 @@ export function CommandBar(props: CommandBarProps) {
             aria-label="Flatten form fields"
             data-icon="flatten"
           >
-            <Icon icon={COMMAND_BAR_GLYPHS.layers.icon} size="xl" aria-hidden />
+            <Icon name="engineeringLayers" size="xl" aria-hidden />
           </button>
         )}
       </GlassControlGroup>
@@ -447,7 +401,7 @@ export function CommandBar(props: CommandBarProps) {
           aria-label="Merge with another PDF"
           data-icon="merge"
         >
-          <Icon icon={COMMAND_BAR_GLYPHS.gitMerge.icon} size="xl" aria-hidden />
+          <Icon name="merge" size="xl" aria-hidden />
         </button>
         <button
           type="button"
@@ -457,7 +411,7 @@ export function CommandBar(props: CommandBarProps) {
           aria-label="Extract or split pages"
           data-icon="split"
         >
-          <Icon icon={COMMAND_BAR_GLYPHS.scissors.icon} size="xl" aria-hidden />
+          <Icon name="split" size="xl" aria-hidden />
         </button>
         <button
           type="button"
@@ -468,7 +422,7 @@ export function CommandBar(props: CommandBarProps) {
           aria-label="Sign tool"
           data-icon="sign"
         >
-          <Icon icon={COMMAND_BAR_GLYPHS.fileSignature.icon} size="xl" aria-hidden />
+          <Icon name="sign" size="xl" aria-hidden />
         </button>
       </GlassControlGroup>
 

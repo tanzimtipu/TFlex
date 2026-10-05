@@ -20,20 +20,6 @@ import {
   type AnnotationColor,
   type AnnotationPatch,
 } from "./model";
-import {
-  ChevronRight,
-  Highlighter,
-  Underline,
-  Strikethrough,
-  Pen,
-  Type,
-  Square,
-  Circle,
-  ArrowUpRight,
-  StickyNote,
-  Trash2,
-  MessageCirclePlus,
-} from "lucide-react";
 import { Icon } from "../icons/Icon";
 
 export interface AnnotationsPanelProps {
@@ -53,25 +39,25 @@ interface RowProps {
 function rowIcon(a: Annotation): ReactElement {
   switch (a.kind) {
     case "highlight":
-      return <Icon icon={Highlighter} size="sm" />;
+      return <Icon name="annHighlight" size="sm" />;
     case "underline":
-      return <Icon icon={Underline} size="sm" />;
+      return <Icon name="annUnderline" size="sm" />;
     case "strikeout":
-      return <Icon icon={Strikethrough} size="sm" />;
+      return <Icon name="annStrikeout" size="sm" />;
     case "ink":
-      return <Icon icon={Pen} size="sm" />;
+      return <Icon name="annInk" size="sm" />;
     case "textbox":
-      return <Icon icon={Type} size="sm" />;
+      return <Icon name="annTextbox" size="sm" />;
     case "rect":
-      return <Icon icon={Square} size="sm" />;
+      return <Icon name="annRect" size="sm" />;
     case "ellipse":
-      return <Icon icon={Circle} size="sm" />;
+      return <Icon name="annEllipse" size="sm" />;
     case "arrow":
-      return <Icon icon={ArrowUpRight} size="sm" />;
+      return <Icon name="annArrow" size="sm" />;
     case "note":
-      return <Icon icon={StickyNote} size="sm" />;
+      return <Icon name="annNote" size="sm" />;
     case "callout":
-      return <Icon icon={MessageCirclePlus} size="sm" />;
+      return <Icon name="annCallout" size="sm" />;
   }
 }
 
@@ -107,7 +93,7 @@ function AnnotationRow(props: RowProps): ReactElement {
             <span className="ann-panel-row-kind">{kindLabel(a.kind)}</span>
             <span className="ann-panel-row-page">Page {a.page}</span>
           </span>
-          <Icon icon={ChevronRight} size="sm" />
+          <Icon name="nextPage" size="sm" />
         </button>
         <button
           type="button"
@@ -116,7 +102,7 @@ function AnnotationRow(props: RowProps): ReactElement {
           aria-label={`Delete ${kindLabel(a.kind)} on page ${a.page}`}
           title="Delete annotation"
         >
-          <Icon icon={Trash2} size="sm" />
+          <Icon name="delete" size="sm" />
         </button>
       </div>
 

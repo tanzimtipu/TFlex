@@ -18,7 +18,7 @@
 // never edits text (correction is out of contract for Phase 11).
 
 import type { ReactElement } from 'react';
-import { ScanText, X } from 'lucide-react';
+import { X } from 'lucide-react';
 import { Icon } from '../icons/Icon';
 import type { OcrSuspect } from '../../shared/types';
 import { SUSPECT_CONFIDENCE_THRESHOLD } from '../../shared/types';
@@ -47,7 +47,7 @@ export function OcrSuspectsPanel(props: OcrSuspectsPanelProps): ReactElement {
   const header = (
     <header className="ocr-suspects-header">
       <span className="ocr-suspects-title">
-        <Icon icon={ScanText} size="sm" />
+        <Icon name="recognizeText" size="sm" />
         OCR suspects
       </span>
       <div className="ocr-suspects-summary" aria-live="polite">

@@ -1,6 +1,7 @@
 import type { ReactElement } from "react";
-import { File, FilePlus2, FolderOpen, Minus, Pencil, Plus, Sparkles, X } from "lucide-react";
+import { File, Minus, Sparkles, X } from "lucide-react";
 import { Icon } from "../icons/Icon";
+import type { QuietIconId } from "../icons/quietPrecision";
 import { EmptyState } from "./EmptyState";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
@@ -245,7 +246,6 @@ export function Welcome(props: WelcomeProps): ReactElement {
   };
   const runnerFor = (id: string): (() => void) | undefined =>
     onRunHomeTool === undefined ? legacyRuns[id] : (): void => onRunHomeTool(id);
-  const OpenGlyph = toolById(HOME_FIXED_TOOL_ID)?.icon ?? FolderOpen;
 
   return (
     <div className="welcome">
@@ -279,7 +279,7 @@ export function Welcome(props: WelcomeProps): ReactElement {
             onClick={onOpenFile}
           >
             <span className="home-tool-icon">
-              <Icon icon={OpenGlyph} size="sm" />
+              <Icon name="open" size="sm" />
             </span>{" "}
             Open Files
             <span className="kbd" style={{ marginLeft: "var(--sp-2)" }}>Ctrl O</span>
@@ -287,7 +287,6 @@ export function Welcome(props: WelcomeProps): ReactElement {
           {tools.map((id) => {
             const entry = toolById(id);
             if (entry === undefined) return null;
-            const EntryGlyph = entry.icon;
             const run = runnerFor(id);
             return (
               <button
@@ -303,7 +302,7 @@ export function Welcome(props: WelcomeProps): ReactElement {
                   className={editMode ? "home-tool-icon anim-jiggle" : "home-tool-icon"}
                   style={editMode ? { animationDelay: `-${jiggleDelayMs(id)}ms` } : undefined}
                 >
-                  <Icon icon={EntryGlyph} size="sm" />
+                  <Icon name={entry.id as QuietIconId} size="sm" />
                 </span>{" "}
                 {entry.label}
                 {editMode && (
@@ -352,7 +351,7 @@ export function Welcome(props: WelcomeProps): ReactElement {
                 disabled={full || noCandidates}
                 onClick={togglePicker}
               >
-                <Icon icon={Plus} size="sm" />
+                <Icon name="tabNew" size="sm" />
               </button>
               {/* DEF-410 — the picker is PORTALED to document.body. A
                   transformed ancestor is the containing block for
@@ -378,7 +377,6 @@ export function Welcome(props: WelcomeProps): ReactElement {
                     }
                   >
                     {pickerEntries.map((entry) => {
-                      const EntryGlyph = entry.icon;
                       return (
                         <button
                           key={entry.id}
@@ -391,7 +389,7 @@ export function Welcome(props: WelcomeProps): ReactElement {
                             onSetHomeTools?.(addHomeTool(tools, entry.id));
                           }}
                         >
-                          <Icon icon={EntryGlyph} size="md" />
+                          <Icon name={entry.id as QuietIconId} size="md" />
                           <span>{entry.label}</span>
                         </button>
                       );
@@ -413,7 +411,7 @@ export function Welcome(props: WelcomeProps): ReactElement {
               setPickerOpen(false);
             }}
           >
-            <Icon icon={Pencil} size="xs" />
+            <Icon name="editMode" size="xs" />
           </button>
         </div>
         {editMode && full && (
@@ -507,7 +505,7 @@ export function Welcome(props: WelcomeProps): ReactElement {
                   onClick={(): void => onSampleClick(sample)}
                 >
                   <div className="sample-thumb">
-                    <Icon icon={Sparkles} size="lg" />
+                    <Icon name="openSample" size="lg" />
                   </div>
                   <div className="sample-name">{sample.name}</div>
                   <div className="sample-sub">Click to open · PDF</div>
@@ -518,7 +516,7 @@ export function Welcome(props: WelcomeProps): ReactElement {
         </section>
       </div>
       <span hidden>
-        <Icon icon={FilePlus2} size="sm" />
+        <Icon name="createFromImages" size="sm" />
       </span>
     </div>
   );

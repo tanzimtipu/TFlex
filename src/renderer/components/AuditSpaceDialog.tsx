@@ -13,7 +13,6 @@
 // It does not modify the document — audit is purely informational.
 
 import { useEffect, useState, type ReactElement } from 'react';
-import { RefreshCw } from 'lucide-react';
 import { Icon } from '../icons/Icon';
 import type { SpaceAudit } from '../../shared/types';
 import { formatBytes } from '../utils/formatBytes';
@@ -108,7 +107,7 @@ export function AuditSpaceDialog(props: AuditSpaceDialogProps): ReactElement | n
         key: 'refresh',
         label: loading ? 'Refreshing…' : 'Refresh',
         variant: 'secondary' as const,
-        icon: <Icon icon={RefreshCw} size="sm" />,
+        icon: <Icon name="checkForUpdate" size="sm" />,
         onClick: (): void => {
           void refresh();
         },

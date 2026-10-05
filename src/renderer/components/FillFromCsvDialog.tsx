@@ -12,7 +12,7 @@
 // backdrop-close guard, Escape handling).
 
 import { useEffect, useState, type ReactElement } from "react";
-import { FileSpreadsheet, Upload } from "lucide-react";
+import { Upload } from "lucide-react";
 import { Icon } from "../icons/Icon";
 import type { CsvFieldMappingResult } from "../../shared/convert";
 import { DialogShell, type DialogAction } from "./DialogShell";
@@ -237,7 +237,7 @@ export function FillFromCsvDialog(
           }}
           data-fill-csv-pick
         >
-          <Icon icon={FileSpreadsheet} size="sm" />
+          <Icon name="fillFromCsv" size="sm" />
           Choose CSV file…
         </button>
         {path !== null && (

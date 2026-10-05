@@ -13,7 +13,6 @@
 //      path; on cancel, the dialog simply closes.
 
 import { useEffect, useState, type ReactElement } from "react";
-import { FileDown } from "lucide-react";
 import { Icon } from "../icons/Icon";
 import { DialogShell, type DialogAction } from "./DialogShell";
 
@@ -109,7 +108,7 @@ export function CommentExportDialog(
         key: "confirm",
         label: running ? "Exporting…" : "Export comments",
         variant: "primary" as const,
-        icon: <Icon icon={FileDown} size="sm" />,
+        icon: <Icon name="exportComments" size="sm" />,
         onClick: (): void => {
           void onConfirmClick();
         },

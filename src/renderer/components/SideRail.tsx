@@ -1,4 +1,4 @@
-import { AlertCircle, Images, IndentDecrease, IndentIncrease, List, MessageSquareText, PanelLeftClose, PanelRightOpen, Pencil, Plus, SquareChevronRight, Undo2, RotateCw, Scissors, Trash2 } from 'lucide-react';
+import { AlertCircle, IndentDecrease, IndentIncrease, PanelLeftClose, PanelRightOpen, Plus, SquareChevronRight, RotateCw, Scissors, Trash2 } from 'lucide-react';
 import { Icon } from '../icons/Icon';
 import { AnimatePresence, motion } from 'motion/react';
 import type { ReactElement } from 'react';
@@ -253,7 +253,7 @@ export function SideRail(props: SideRailProps) {
               title="Page thumbnails"
               data-rail-tab="thumbs"
             >
-              <Icon icon={Images} size="xl" />
+              <Icon name="pageThumbnails" size="xl" />
             </button>
             <button
               type="button"
@@ -267,7 +267,7 @@ export function SideRail(props: SideRailProps) {
               title="Annotations"
               data-rail-tab="annotations"
             >
-              <Icon icon={MessageSquareText} size="xl" />
+              <Icon name="annotationsPanel" size="xl" />
             </button>
             {outline !== null && (
               <button
@@ -282,7 +282,7 @@ export function SideRail(props: SideRailProps) {
                 title="Bookmarks"
                 data-rail-tab="outline"
               >
-                <Icon icon={List} size="xl" />
+                <Icon name="outlinePanel" size="xl" />
               </button>
             )}
             </>
@@ -1012,7 +1012,7 @@ const onDragStart = (page: number) => (e: React.DragEvent<HTMLElement>): void =>
             title={canUndo ? 'Undo last change' : 'Nothing to undo'}
             aria-label="Undo last change"
           >
-            <Icon icon={Undo2} size="xl" />
+            <Icon name="undo" size="xl" />
             <span>Undo last change</span>
           </button>
         </div>
@@ -1855,7 +1855,7 @@ export function OutlinePanel({ doc, outline, onJump, onError, editor = null }: O
                 if (target !== null) startRename(target);
               }}
             >
-              <Icon icon={Pencil} size="xs" />
+              <Icon name="editMode" size="xs" />
             </button>
             <select
               className="outline-verb outline-retarget"
@@ -1913,7 +1913,7 @@ export function OutlinePanel({ doc, outline, onJump, onError, editor = null }: O
                 if (target !== null) void runEdit(editDelete(modelRef.current, target));
               }}
             >
-              <Icon icon={Trash2} size="xs" />
+              <Icon name="delete" size="xs" />
             </button>
           </>
         )}

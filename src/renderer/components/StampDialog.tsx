@@ -18,7 +18,6 @@
 // same id on next launch (same pattern as Optimize / OCR).
 
 import { useEffect, useRef, useState, type ReactElement } from "react";
-import { Stamp } from "lucide-react";
 import { Icon } from "../icons/Icon";
 import { DialogShell } from "./DialogShell";
 import type { StampId } from "../../shared/types";
@@ -137,7 +136,7 @@ export function StampDialog(
             key: "confirm",
             label: "Place on page",
             variant: "primary" as const,
-            icon: <Icon icon={Stamp} size="sm" />,
+            icon: <Icon name="stamp" size="sm" />,
             onClick: onConfirmClick,
             default: true,
           },

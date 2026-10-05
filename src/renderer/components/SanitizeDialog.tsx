@@ -8,7 +8,6 @@
 // selection through the existing settings path.
 
 import { useEffect, useState, type ReactElement } from 'react';
-import { Shield } from 'lucide-react';
 import { Icon } from '../icons/Icon';
 import {
   SANITIZE_CLASSES,
@@ -198,7 +197,7 @@ export function SanitizeDialog(
 
       {!hasRun && report === null && error === null && !running && (
         <p className="modal-hint sanitize-idle" data-sanitize-idle>
-          <Icon icon={Shield} size="xs" /> Run sanitize to see the per-class
+          <Icon name="sanitize" size="xs" /> Run sanitize to see the per-class
           report here.
         </p>
       )}

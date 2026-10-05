@@ -15,7 +15,6 @@
 // engine converts to bottom-left when serializing.
 
 import { useEffect, useMemo, useRef, useState, type ReactElement } from "react";
-import { Crop } from "lucide-react";
 import { Icon } from "../icons/Icon";
 import type { PDFDocumentProxy } from "pdfjs-dist";
 import type { CropEntry } from "../../shared/types";
@@ -178,7 +177,7 @@ export function CropPagesDialog(
         key: "confirm",
         label: "Apply crop",
         variant: "primary" as const,
-        icon: <Icon icon={Crop} size="sm" />,
+        icon: <Icon name="cropPages" size="sm" />,
         onClick: onConfirmClick,
         default: true,
       },

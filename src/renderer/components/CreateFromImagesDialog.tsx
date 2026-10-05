@@ -31,7 +31,6 @@
 // channel for "open image files").
 
 import { useEffect, useRef, useState, type ReactElement } from "react";
-import { ClipboardPaste, X } from "lucide-react";
 import { Icon } from "../icons/Icon";
 import { DialogShell } from "./DialogShell";
 import {
@@ -382,7 +381,7 @@ export function CreateFromImagesDialog(
                 title="Insert the image currently on the OS clipboard"
                 data-create-from-clipboard
               >
-                <Icon icon={ClipboardPaste} size="sm" />
+                <Icon name="createFromClipboard" size="sm" />
                 {clipboardBusy ? "Reading…" : "Create from clipboard"}
               </button>
             )}
@@ -422,7 +421,7 @@ export function CreateFromImagesDialog(
                     title="Remove"
                     data-create-remove={idx}
                   >
-                    <Icon icon={X} size="sm" />
+                    <Icon name="dialogClose" size="sm" />
                   </button>
                 </li>
               ))}

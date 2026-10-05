@@ -10,7 +10,7 @@
 // renders and dispatches.
 
 import type { ReactElement } from 'react';
-import { Pencil, Trash2 } from 'lucide-react';
+import { Pencil } from 'lucide-react';
 import { Icon } from '../icons/Icon';
 import { AnnotationsPanel } from '../annotations/AnnotationsPanel';
 import type { Annotation, AnnotationPatch } from '../annotations/model';
@@ -129,7 +129,7 @@ function renderRow(
         aria-label={`Delete ${row.label}`}
         title="Delete"
       >
-        <Icon icon={Trash2} size="sm" />
+        <Icon name="delete" size="sm" />
       </button>
       {error !== null && (
         <p className="review-elements-row-error" data-review-element-error>

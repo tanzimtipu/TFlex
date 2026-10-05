@@ -21,7 +21,6 @@ import {
   type ReactElement,
 } from "react";
 import { AnimatePresence, motion } from "motion/react";
-import { X } from "lucide-react";
 import { Icon } from "../icons/Icon";
 import { resolveTabMouseDown, type TabInput } from "../state/tabMouseDown";
 import { useTabVariants } from "../hooks/useAnimations";
@@ -218,7 +217,7 @@ export function AnimatedTab(props: AnimatedTabProps): ReactElement {
           }}
           aria-label={`Close ${title}`}
         >
-          <Icon icon={X} size="sm" />
+          <Icon name="tabClose (AnimatedTab)" size="sm" />
         </button>
       </div>
     </motion.li>

@@ -20,9 +20,8 @@
 
 import { useEffect, useState } from 'react';
 import type { ReactElement } from 'react';
-import { BadgeCheck, FileOutput, Files, Pencil, Settings } from 'lucide-react';
-import type { LucideIcon } from 'lucide-react';
 import { Icon } from '../icons/Icon';
+import type { QuietIconId } from '../icons/quietPrecision';
 import {
   STAGE_LABELS,
   STAGE_ORDER,
@@ -64,16 +63,12 @@ export function isStageRailVisible(
   return !showWelcome;
 }
 
-const STAGE_ICONS: Record<Stage, LucideIcon> = {
-  pages: Files,
-  edit: Pencil,
-  review: BadgeCheck,
-  deliver: FileOutput,
+const STAGE_ICONS: Record<Stage, QuietIconId> = {
+  pages: "stagePages",
+  edit: "stageEdit",
+  review: "stageReview",
+  deliver: "stageDeliver",
 };
-
-/** The rail's gear glyph. Declared with an `icon:` property so the Phase 43
- *  icon-identity guard still attributes `Settings` to this surface. */
-const RAIL_GEAR: { icon: LucideIcon } = { icon: Settings };
 
 export interface StageRailProps {
   /** The stage currently in force for the host's focused scope. */
@@ -132,7 +127,7 @@ export function StageRail(props: StageRailProps): ReactElement {
     >
       <div className="stage-rail-buttons">
         {STAGE_ORDER.map((stage) => {
-          const Glyph = STAGE_ICONS[stage];
+          const glyph = STAGE_ICONS[stage];
           const active = stage === activeStage;
           return (
             <button
@@ -150,7 +145,7 @@ export function StageRail(props: StageRailProps): ReactElement {
               data-stage={stage}
             >
               <span className="stage-rail-icon" aria-hidden>
-                <Icon icon={Glyph} size="xl" />
+                <Icon name={glyph} size="xl" />
               </span>
               <span className="stage-rail-label" aria-hidden>
                 {STAGE_LABELS[stage]}
@@ -170,7 +165,7 @@ export function StageRail(props: StageRailProps): ReactElement {
           data-stage-rail-gear
         >
           <span className="stage-rail-icon" aria-hidden>
-            <Icon icon={RAIL_GEAR.icon} size="xl" />
+            <Icon name="preferences" size="xl" />
           </span>
           <span className="stage-rail-label" aria-hidden>
             Settings

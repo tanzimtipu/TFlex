@@ -13,7 +13,7 @@
 
 import { useEffect, useRef, useState, type ReactElement } from 'react';
 import { AnimatePresence } from 'motion/react';
-import { Layers2, X } from 'lucide-react';
+import { X } from 'lucide-react';
 import { Icon } from '../icons/Icon';
 import type { Result } from '../../shared/result';
 import type { EngineError } from '../../shared/types';
@@ -129,7 +129,7 @@ export function EngineeringLayersPanel(
           >
             <div className="modal-header">
               <h2 id="engineering-layers-title" className="modal-title">
-                <Icon icon={Layers2} size="sm" /> Engineering layers
+                <Icon name="engineeringLayers" size="sm" /> Engineering layers
               </h2>
               <button
                 type="button"

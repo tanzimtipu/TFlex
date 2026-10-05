@@ -15,7 +15,6 @@
 // Both flows are undoable through the existing engine undo path.
 
 import { useEffect, useMemo, useState, type ReactElement } from "react";
-import { FilePlus2 } from "lucide-react";
 import { Icon } from "../icons/Icon";
 import {
   defaultInsertPosition,
@@ -314,7 +313,7 @@ export function InsertPagesDialog(
             disabled={picking}
             data-insert-pick
           >
-            <Icon icon={FilePlus2} size="sm" />
+            <Icon name="insertPages" size="sm" />
             {picking
               ? "Picking…"
               : pickedPath === null

@@ -16,7 +16,6 @@
 // access — same pattern as Create-from-images).
 
 import { useEffect, useState, type CSSProperties, type ReactElement } from "react";
-import { ImagePlus } from "lucide-react";
 import { Icon } from "../icons/Icon";
 import { DialogShell } from "./DialogShell";
 import {
@@ -545,7 +544,7 @@ export function WatermarkDialog(props: WatermarkDialogProps): ReactElement {
                       onClick={onPickImage}
                       data-watermark-image-pick
                     >
-                      <Icon icon={ImagePlus} size="sm" />
+                      <Icon name="watermark" size="sm" />
                       {imageName !== "" ? "Change image" : "Choose image"}
                     </button>
                     {imageName !== "" && (

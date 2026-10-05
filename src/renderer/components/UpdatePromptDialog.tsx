@@ -45,7 +45,6 @@
 
 import type { ReactElement } from "react";
 import { useEffect, useState } from "react";
-import { Download, RefreshCw } from "lucide-react";
 import { Icon } from "../icons/Icon";
 import type { UpdateState } from "../../shared/types";
 import { BrandLoader } from "./BrandLoader";
@@ -433,7 +432,7 @@ export function UpdatePromptDialog(
               disabled={busy}
               data-update-prompt-update
             >
-              <Icon icon={Download} size="sm" />
+              <Icon name="updateDownload" size="sm" />
               Update
             </button>
           </div>
@@ -457,7 +456,7 @@ export function UpdatePromptDialog(
               disabled={busy}
               data-update-prompt-restart
             >
-              <Icon icon={RefreshCw} size="sm" />
+              <Icon name="checkForUpdate" size="sm" />
               Restart
             </button>
           </div>

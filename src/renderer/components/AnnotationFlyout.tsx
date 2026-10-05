@@ -18,7 +18,6 @@
 // Arming a tool KEEPS it open. There is no catch-all pointer/click handler
 // (cross-bubbling rules), so a page placement click is never swallowed.
 
-import { ChevronsLeft, ChevronsRight } from 'lucide-react';
 import { Icon } from '../icons/Icon';
 import { AnimatePresence, motion } from 'motion/react';
 import { useEffect, useRef } from 'react';
@@ -112,7 +111,7 @@ export function AnnotationFlyout(props: AnnotationFlyoutProps): ReactElement {
                   title="Scroll left"
                   onClick={(): void => scrollRow(-1)}
                 >
-                  <Icon icon={ChevronsLeft} size="sm" />
+                  <Icon name="dockScrollLeft" size="sm" />
                 </button>
               )}
               <div
@@ -131,7 +130,7 @@ export function AnnotationFlyout(props: AnnotationFlyoutProps): ReactElement {
                   title="Scroll right"
                   onClick={(): void => scrollRow(1)}
                 >
-                  <Icon icon={ChevronsRight} size="sm" />
+                  <Icon name="dockScrollRight" size="sm" />
                 </button>
               )}
             </div>

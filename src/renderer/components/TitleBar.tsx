@@ -41,14 +41,6 @@
 //      contract that survives React re-renders.
 
 import {
-  ChevronDown,
-  Copy,
-  Minus,
-  Square,
-  type LucideIcon,
-  X,
-} from "lucide-react";
-import {
   useCallback,
   useEffect,
   useRef,
@@ -58,17 +50,11 @@ import {
 } from "react";
 import { AnimatePresence } from "motion/react";
 import { Icon } from "../icons/Icon";
+import type { QuietIconId } from "../icons/quietPrecision";
 import { dispatchMenuAction, type MenuActionContext } from "../state/menuActions";
 import { TfMorph } from "./motion/TfMotion";
 import { useMorphPreset } from "./motion/useMorphPreset";
 import { GlassChromeBar } from "./GlassChrome";
-
-/** The caption strip's migrated glyphs. Declared with an `icon:` property so the
- *  Phase 43 icon-identity guard still attributes each glyph to this surface. */
-const TITLEBAR_GLYPHS = {
-  chevronDown: { icon: ChevronDown },
-  minimize: { icon: Minus },
-} as const satisfies Record<string, { icon: LucideIcon }>;
 
 /** The shape of a menu entry. Two kinds: a top-level group heading
  *  (rendered as a non-interactive row) or an action row. The
@@ -90,9 +76,10 @@ export interface MenuEntry {
    *  omitted, the entry renders as a non-interactive group heading
    *  (label-only, no shortcut, no hover state). */
   action?: string;
-  /** Rendered as a Lucide icon to the left of the label. Optional —
-   *  the popover stays text-only when omitted. */
-  icon?: LucideIcon;
+  /** Rendered through the Quiet Precision registry as a command/chrome id to
+   *  the left of the label. Optional — the popover stays text-only when
+   *  omitted. */
+  icon?: QuietIconId;
 }
 
 export interface MenuGroup {
@@ -246,7 +233,6 @@ export function TitleBar(props: TitleBarProps): ReactElement {
   // state reused the minimize glyph when maximized. `Copy` stays the
   // distinct restore glyph (two overlapping squares) so minimize and
   // restore can never look identical.
-  const MaximizeIcon = maximized ? Copy : Square;
   const maximizeLabel = maximized ? "Restore window" : "Maximize window";
 
   return (
@@ -278,7 +264,7 @@ export function TitleBar(props: TitleBarProps): ReactElement {
                 only the trigger's face changed. `data-menu-button` stays so
                 the existing selectors keep resolving. */}
             <span className="titlebar-menu-label">File</span>
-            <Icon icon={TITLEBAR_GLYPHS.chevronDown.icon} size="md" aria-hidden />
+            <Icon name="headerMenuDisclosure" size="md" aria-hidden />
           </button>
           <AnimatePresence>
             {menuOpen && (
@@ -313,7 +299,7 @@ export function TitleBar(props: TitleBarProps): ReactElement {
                   );
                 }
                 const entry = item.entry;
-                const Glyph = entry.icon;
+                const glyph = entry.icon;
                 return (
                   <button
                     key={item.key}
@@ -324,8 +310,8 @@ export function TitleBar(props: TitleBarProps): ReactElement {
                     data-menu-action={entry.action ?? entry.id}
                   >
                     <span className="titlebar-menu-row-label">
-                      {Glyph !== undefined && (
-                        <Icon icon={Glyph} size="md" aria-hidden className="titlebar-menu-row-icon" />
+                      {glyph !== undefined && (
+                        <Icon name={glyph} size="md" aria-hidden className="titlebar-menu-row-icon" />
                       )}
                       <span>{entry.label}</span>
                     </span>
@@ -354,7 +340,7 @@ export function TitleBar(props: TitleBarProps): ReactElement {
           title="Minimize"
           data-window-minimize
         >
-          <Icon icon={TITLEBAR_GLYPHS.minimize.icon} size="md" aria-hidden />
+          <Icon name="windowMinimize" size="md" aria-hidden />
         </button>
         <button
           type="button"
@@ -364,7 +350,7 @@ export function TitleBar(props: TitleBarProps): ReactElement {
           title={maximizeLabel}
           data-window-maximize
         >
-          <Icon icon={MaximizeIcon} size="md" aria-hidden />
+          <Icon name={maximized ? "windowRestore" : "windowMaximize"} size="md" aria-hidden />
         </button>
         <button
           type="button"
@@ -374,7 +360,7 @@ export function TitleBar(props: TitleBarProps): ReactElement {
           title="Close"
           data-window-close
         >
-          <Icon icon={X} size="md" aria-hidden />
+          <Icon name="windowClose" size="md" aria-hidden />
         </button>
       </div>
     </GlassChromeBar>

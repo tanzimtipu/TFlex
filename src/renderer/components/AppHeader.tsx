@@ -11,14 +11,11 @@ import {
   type ReactNode,
 } from "react";
 import {
-  Check,
   ChevronDown,
   Command,
-  FolderOpen,
   Monitor,
   Moon,
   PanelsLeftRight,
-  Plus,
   Printer,
   Save,
   SaveAll,
@@ -309,8 +306,10 @@ const THEME_OPTIONS: ReadonlyArray<{ value: ThemeDefault; label: string }> = [
 ];
 
 /** The header's migrated glyphs. Declared with an `icon:` property so the
- *  Phase 43 icon-identity guard still attributes each glyph to this surface. */
-const APP_HEADER_GLYPHS = {
+ *  Phase 43 icon-identity guard still attributes each glyph to this surface.
+ *  Phase 103 renders the utilities through `name=`; this table stays as the
+ *  source oracle the guard reads (the multi-mode pin in particular). */
+export const APP_HEADER_GLYPHS = {
   chevronDown: { icon: ChevronDown },
   command: { icon: Command },
   monitor: { icon: Monitor },
@@ -324,13 +323,6 @@ const APP_HEADER_GLYPHS = {
   snowflake: { icon: Snowflake },
   sun: { icon: Sun },
 } as const satisfies Record<string, { icon: LucideIcon }>;
-
-function themeIcon(value: ThemeDefault): LucideIcon {
-  if (value === "dark") return APP_HEADER_GLYPHS.moon.icon;
-  if (value === "light") return APP_HEADER_GLYPHS.sun.icon;
-  if (value === "system") return APP_HEADER_GLYPHS.monitor.icon;
-  return APP_HEADER_GLYPHS.snowflake.icon;
-}
 
 function themeLabel(value: ThemeDefault): string {
   return THEME_OPTIONS.find((o) => o.value === value)?.label ?? "Frosted Glass";
@@ -1024,7 +1016,7 @@ export function AppHeader(props: AppHeaderProps): ReactElement {
           title="Open PDF (Ctrl+O)"
           data-toolbar-open
         >
-          <Icon icon={FolderOpen} size="md" aria-hidden />
+          <Icon name="open" size="md" aria-hidden />
           <span className="titlebar-file-label">Open</span>
         </button>
         <span className="titlebar-file-sep" aria-hidden />
@@ -1037,7 +1029,7 @@ export function AppHeader(props: AppHeaderProps): ReactElement {
           aria-label="Save"
           data-toolbar-save
         >
-          <Icon icon={APP_HEADER_GLYPHS.save.icon} size="md" aria-hidden />
+          <Icon name="save" size="md" aria-hidden />
           {/* The modified dot rides the tab strip's semantics: reserved
               slot, hidden (not unmounted) when the document is clean. */}
           <span
@@ -1054,7 +1046,7 @@ export function AppHeader(props: AppHeaderProps): ReactElement {
           aria-label="Save a copy"
           data-toolbar-save-as
         >
-          <Icon icon={APP_HEADER_GLYPHS.saveAll.icon} size="md" aria-hidden />
+          <Icon name="saveAs" size="md" aria-hidden />
         </button>
       </div>
       <div className="tab-area" role="tablist" aria-label="Open documents" data-tab-style={tabStyle} data-tab-tearout={tearOut ? "true" : undefined}>
@@ -1156,7 +1148,7 @@ export function AppHeader(props: AppHeaderProps): ReactElement {
                 title={multiModeEnabled ? NEW_TAB_MULTI_MODE_REASON : "New empty tab"}
                 data-new-tab
               >
-                <Icon icon={Plus} size="md" aria-hidden />
+                <Icon name="tabNew" size="md" aria-hidden />
               </button>
             </li>
           )}
@@ -1186,7 +1178,7 @@ export function AppHeader(props: AppHeaderProps): ReactElement {
             title="Search tools and commands (Ctrl+K)"
             data-header-tool-search
           >
-            <Icon icon={APP_HEADER_GLYPHS.command.icon} size="md" aria-hidden />
+            <Icon name="headerCommand" size="md" aria-hidden />
           </button>
         )}
         {onOpenFind !== undefined && (
@@ -1199,7 +1191,7 @@ export function AppHeader(props: AppHeaderProps): ReactElement {
             title={findEnabled ? "Find in document (Ctrl+F)" : "Open a document to search it"}
             data-header-find
           >
-            <Icon icon={APP_HEADER_GLYPHS.search.icon} size="md" aria-hidden />
+            <Icon name="find" size="md" aria-hidden />
           </button>
         )}
         {/* Phase 36 (chunk 6) — the Multi Mode toggle, moved into the title
@@ -1224,7 +1216,7 @@ export function AppHeader(props: AppHeaderProps): ReactElement {
             data-header-multi-mode
             data-multi-mode-active={multiModeEnabled ? 'true' : 'false'}
           >
-            <Icon icon={APP_HEADER_GLYPHS.multiMode.icon} size="md" aria-hidden />
+            <Icon name="multi-mode" size="md" aria-hidden />
           </button>
         )}
         {/* Phase 30 — Print, immediately left of the settings gear. Same
@@ -1241,7 +1233,7 @@ export function AppHeader(props: AppHeaderProps): ReactElement {
           title={printEnabled ? "Print (Ctrl+P)" : "Open a document to print"}
           data-print
         >
-            <Icon icon={APP_HEADER_GLYPHS.printer.icon} size="md" aria-hidden />
+            <Icon name="print" size="md" aria-hidden />
         </button>
         {/* Phase 13 — Settings gear. Icon-only chrome control (the
             shared header a11y contract: aria-label + title tooltip);
@@ -1255,7 +1247,7 @@ export function AppHeader(props: AppHeaderProps): ReactElement {
           title="Preferences (Ctrl+,)"
           data-open-preferences
         >
-          <Icon icon={APP_HEADER_GLYPHS.settings.icon} size="md" aria-hidden />
+          <Icon name="preferences" size="md" aria-hidden />
         </button>
         {/* Phase-15 — embedded borderless theme picker. Keeps the
             stable `.theme-toggle` class (+ a fresh `data-theme-toggle`
@@ -1275,9 +1267,9 @@ export function AppHeader(props: AppHeaderProps): ReactElement {
             aria-label="Change theme"
             title={`Change theme (current: ${currentThemeLabel})`}
           >
-            <Icon icon={themeIcon(selected)} size="md" aria-hidden />
+            <Icon name="headerTheme" size="md" aria-hidden />
             <span className="theme-toggle-label">{currentThemeLabel}</span>
-            <Icon icon={APP_HEADER_GLYPHS.chevronDown.icon} size="md" aria-hidden />
+            <Icon name="headerMenuDisclosure" size="md" aria-hidden />
           </button>
           <AnimatePresence>
             {themeMenuOpen && (
@@ -1305,7 +1297,7 @@ export function AppHeader(props: AppHeaderProps): ReactElement {
                       onClick={(): void => onThemeSelect(opt.value)}
                     >
                       <span className="theme-toggle-option-mark" aria-hidden>
-                        {isSelected && <Icon icon={Check} size="md" />}
+                        {isSelected && <Icon name="menuCheck" size="md" />}
                       </span>
                       <span className="theme-toggle-option-label">{opt.label}</span>
                     </button>

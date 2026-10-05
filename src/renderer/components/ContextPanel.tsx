@@ -29,14 +29,10 @@ import { useContext, useEffect, useMemo, useRef, useState } from 'react';
 import type { ReactElement } from 'react';
 import type { PDFDocumentProxy } from 'pdfjs-dist';
 import {
-  FilePlus2,
   FileSignature,
-  GitMerge,
-  Image as ImageIcon,
   Images,
   PanelLeftClose,
   PanelRightOpen,
-  ScanText,
   SquareChevronDown,
   SquareChevronRight,
   TextCursor,
@@ -70,11 +66,8 @@ import type {
  *  icon-identity guard still attributes each glyph to this surface. */
 const CONTEXT_PANEL_GLYPHS = {
   signature: { icon: FileSignature },
-  combine: { icon: GitMerge },
-  image: { icon: ImageIcon },
   outlineOpen: { icon: SquareChevronDown },
   outlineClosed: { icon: SquareChevronRight },
-  text: { icon: TextCursor },
 } as const satisfies Record<string, { icon: LucideIcon }>;
 
 /** A single item in the EDIT stage's content outline: the text boxes and
@@ -553,9 +546,9 @@ const pageCount = engineState.pageCount;
                 onClick={(): void => onSelectEditContent?.(item.id, item.kind)}
               >
                 {item.kind === 'image' ? (
-                  <Icon icon={CONTEXT_PANEL_GLYPHS.image.icon} size="md" aria-hidden />
+                  <Icon name="editImage" size="md" aria-hidden />
                 ) : (
-                  <Icon icon={CONTEXT_PANEL_GLYPHS.text.icon} size="md" aria-hidden />
+                  <Icon name="editText" size="md" aria-hidden />
                 )}
                 <span className="context-panel-item-label">{item.label}</span>
               </button>
@@ -594,7 +587,7 @@ const pageCount = engineState.pageCount;
             onClick={(): void => onRecognizeText?.()}
             disabled={onRecognizeText === undefined}
           >
-            <Icon icon={ScanText} size="md" aria-hidden />
+            <Icon name="recognizeText" size="md" aria-hidden />
             <span>Recognize text</span>
           </button>
           <button
@@ -689,7 +682,7 @@ const pageCount = engineState.pageCount;
             onClick={(): void => onCreateFromImages?.()}
             disabled={onCreateFromImages === null}
           >
-            <Icon icon={FilePlus2} size="md" aria-hidden />
+            <Icon name="insertPages" size="md" aria-hidden />
             <span>From images</span>
           </button>
         </div>
@@ -731,7 +724,7 @@ const headerTitle = contextPanelTitle(stage, pageCount);
                 aria-label="Combine with another PDF"
                 data-context-panel-combine
               >
-                <Icon icon={CONTEXT_PANEL_GLYPHS.combine.icon} size="md" aria-hidden />
+                <Icon name="merge" size="md" aria-hidden />
                 <span>Combine</span>
               </button>
             )}

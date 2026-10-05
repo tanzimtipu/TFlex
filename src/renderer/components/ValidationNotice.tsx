@@ -12,7 +12,7 @@
 // no emoji, and motion from the shared tokens (see the .validation-* CSS).
 
 import type { ReactElement } from 'react';
-import { FileCheck2, X } from 'lucide-react';
+import { X } from 'lucide-react';
 import { Icon } from '../icons/Icon';
 import {
   VALIDATION_BLOCKED_TEXT,
@@ -60,7 +60,7 @@ export function ValidationNotice(props: ValidationNoticeProps): ReactElement {
       data-validation-conforms={report.conforms ? 'true' : 'false'}
       data-validation-violation-count={report.violations.length}
     >
-      <Icon icon={FileCheck2} size="md" className="validation-notice-icon" />
+      <Icon name="validateDocument" size="md" className="validation-notice-icon" />
       <div className="validation-notice-body">
         <p className="validation-notice-title" data-validation-title>
           {title}

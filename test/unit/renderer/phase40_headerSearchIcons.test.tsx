@@ -95,16 +95,19 @@ describe("Phase 40 item 5 — the header's two search icons", () => {
     }
   });
 
-  it("uses visually different glyphs (command vs magnifier)", () => {
+  it("uses visually different glyphs (palette field vs magnifier)", () => {
     const h = renderHeader(true);
     try {
       const kSvg = button(h.container, "[data-header-tool-search] svg");
       const fSvg = button(h.container, "[data-header-find] svg");
-      const kClass = kSvg.getAttribute("class") ?? "";
-      const fClass = fSvg.getAttribute("class") ?? "";
-      expect(kClass).toContain("command");
-      expect(fClass).toContain("search");
-      expect(kClass).not.toBe(fClass);
+      // Phase 103 — both glyphs are authored Quiet Precision shapes, so the
+      // distinction is pinned by geometry, not by a Lucide class name: the
+      // Ctrl+K command-palette glyph is a framed field, the Ctrl+F glyph is a
+      // bare magnifier (lens circle, no frame).
+      expect(kSvg.innerHTML).not.toBe(fSvg.innerHTML);
+      expect(kSvg.querySelector("rect")).not.toBeNull();
+      expect(fSvg.querySelector("rect")).toBeNull();
+      expect(fSvg.querySelector("circle")).not.toBeNull();
     } finally {
       h.cleanup();
     }
