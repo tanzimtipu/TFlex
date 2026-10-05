@@ -18,6 +18,14 @@ const REPORT_REQUIRED_FIELDS = ["level", "category", "component", "message"] as 
 const REPORT_LEVELS = new Set(["fatal", "error", "warning", "info"]);
 const MAX_REPORT_ROWS = 50;                // DEF-551: per-batch row cap
 
+// TFL-761: DEF-550 deferred throughput rate limiting. A best-effort, in-process
+// fixed-window limiter keyed by client IP. The Function runtime may run several
+// warm instances, so this bounds abuse per instance rather than globally; it
+// needs no server-side state and no new infrastructure.
+const RATE_LIMIT_WINDOW_MS = 60_000;       // one fixed window per minute
+const RATE_LIMIT_MAX = 5;                  // accepted requests per IP per window
+const RATE_LIMIT_MAX_KEYS = 10_000;        // bound the in-process window map
+
 const jwksUrl = process.env.NEON_AUTH_JWKS_URL;
 const authBase = process.env.NEON_AUTH_BASE_URL;
 const jwks = jwksUrl ? createRemoteJWKSet(new URL(jwksUrl)) : null;
@@ -53,8 +61,76 @@ const isJsonAssignable = (value: unknown): boolean => {
   }
 };
 
+/** The caller's IP from the runtime's proxy headers, or null when the runtime
+ *  exposes none. A null IP fails the limiter OPEN: a missing header must never
+ *  collapse every caller into one bucket and throttle the whole user base. */
+function clientIp(request: Request): string | null {
+  const forwarded = request.headers.get("x-forwarded-for");
+  if (forwarded) {
+    const first = forwarded.split(",")[0]?.trim();
+    if (first) return first;
+  }
+  return (
+    request.headers.get("x-real-ip")?.trim() ||
+    request.headers.get("cf-connecting-ip")?.trim() ||
+    null
+  );
+}
+
+interface RateWindow {
+  count: number;
+  windowStart: number;
+}
+
+const rateLimitWindows = new Map<string, RateWindow>();
+
+/** Fixed-window check: the first `RATE_LIMIT_MAX` requests in each window pass. */
+function checkRateLimit(ip: string, now: number): { allowed: boolean; retryAfterSeconds: number } {
+  const entry = rateLimitWindows.get(ip);
+  if (entry === undefined || now - entry.windowStart >= RATE_LIMIT_WINDOW_MS) {
+    rateLimitWindows.set(ip, { count: 1, windowStart: now });
+    return { allowed: true, retryAfterSeconds: 0 };
+  }
+  entry.count += 1;
+  if (entry.count > RATE_LIMIT_MAX) {
+    const remaining = entry.windowStart + RATE_LIMIT_WINDOW_MS - now;
+    return { allowed: false, retryAfterSeconds: Math.max(1, Math.ceil(remaining / 1000)) };
+  }
+  return { allowed: true, retryAfterSeconds: 0 };
+}
+
+/** Drop expired windows once the map grows past the cap, then evict oldest. */
+function pruneRateLimitWindows(now: number): void {
+  if (rateLimitWindows.size <= RATE_LIMIT_MAX_KEYS) return;
+  for (const [ip, entry] of rateLimitWindows) {
+    if (now - entry.windowStart >= RATE_LIMIT_WINDOW_MS) rateLimitWindows.delete(ip);
+  }
+  while (rateLimitWindows.size > RATE_LIMIT_MAX_KEYS) {
+    const oldest = rateLimitWindows.keys().next().value;
+    if (oldest === undefined) break;
+    rateLimitWindows.delete(oldest);
+  }
+}
+
 async function handleBugReports(request: Request): Promise<Response> {
   if (request.method !== "POST") return json({ error: "method-not-allowed" }, 405);
+
+  // TFL-761: throttle before reading or validating the body.
+  const now = Date.now();
+  const ip = clientIp(request);
+  if (ip !== null) {
+    const limit = checkRateLimit(ip, now);
+    if (!limit.allowed) {
+      return new Response(JSON.stringify({ error: "rate-limited" }), {
+        status: 429,
+        headers: {
+          "content-type": "application/json",
+          "retry-after": String(limit.retryAfterSeconds),
+        },
+      });
+    }
+    pruneRateLimitWindows(now);
+  }
 
   const body = new Uint8Array(await request.arrayBuffer());
   if (body.byteLength > MAX_REPORT_BYTES) return json({ error: "payload-too-large" }, 413);
