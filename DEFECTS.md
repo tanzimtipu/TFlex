@@ -5,9 +5,31 @@
 > inspect the current `OPEN`, `FIX-READY`, and `DISPUTED` entries first; closed records are
 > historical evidence and must not be loaded wholesale.
 
+## DEF-564: Edit Text - undoing a run delete restores the visible run but leaves it permanently un-selectable for the session (stale `maskedRect` never reconciled with engine undo/redo)
+
+- Status: CLOSED
+- Severity: MEDIUM - not operator-reported; a session-only regression introduced by the TFL-776.1 delete-teardown fix. After delete then Ctrl+Z the run's text is visible again but dead to hover / select / move / re-edit / delete until the document is closed and reopened.
+- Found by: adversary (ADV-213, TFL-785 diff-pass)
+- Phase: TFL-776
+- Files: `src/renderer/edit/EditOverlay.tsx:1691-1699` (run-bar Delete pushes a `push-text-run-commit` carrying `maskedRect`), `src/renderer/edit/model.ts:392-402` (`push-text-run-commit` reducer, per-tab `committedTextRuns`), `src/renderer/edit/model.ts:486-506` (`isMaskedRunRect` filters any text item whose geometry matches a `maskedRect` within 2pt), `src/renderer/App.tsx:3134-3250` (`onUndo` / `onRedo` - the engine history is reverted here but the renderer edit state is never reconciled)
+
+Steps to reproduce:
+1. Launch the app rebuilt from current source; open `assets/samples/report.pdf` page 2; arm Edit Text.
+2. Single-click the run "Chapter 1: The Art of Orchestration"; press the run bar's Delete (`[data-content-action="textrun-delete"]`).
+3. Press Ctrl+Z (undo); then probe the restored run's rect with the text tool; press Ctrl+Y (redo) and probe again.
+
+Expected: undo reverses the delete, so the restored run is visible AND selectable / hoverable / editable exactly as before the delete; redo re-applies the delete and the vacated rect stays inert.
+Actual: after undo the run's glyphs are visually restored (`darkGlyphs` 2197 -> 0 after delete -> 2197 after undo) but the position stays dead (`hover=0`, `barHover=0`, `barClick=0`, `selClick=0`, `elementFromPoint=DIV.edit-layer`). `undo` succeeds (`modified=false`, `canRedo=true`); redo returns to inert. Root cause: the delete's `maskedRect` stays in the renderer's per-tab `edit.committedTextRuns` and is never reconciled with engine undo, so `isMaskedRunRect` suppresses the restored run from both `textItemsForInteraction()` (hover) and `runAtPoint()` (click).
+
+Screenshot: screenshots/tfl776-adv-a6-after-undo.png; machine-readable evidence screenshots/tfl776-adversary-diffpass.json.
+
+History:
+- CTO (TFL-776, 2026-10-05): ACCEPTED from ADV-213 (TFL-785); severity MEDIUM; fix dispatched before the phase-close commit (a phase does not close with an OPEN defect). No push, no release.
+- qa (TFL-788, 2026-10-05): CLOSED (PASS). Focused verification of the TFL-787 reconcile fix on the tree rebuilt from current source. Check 1 `npm.cmd run verify` clean (conventions 362 files; typecheck no errors). Check 2 `tfl776_undo_reconcile` 1 passed (20.2s) - spec records pre-fix FAIL -> post-fix PASS per the TFL-787 FIX-READY report. Check 3 `tfl776_adversary_diffpass` 7 passed (2.3m), A6 now PASS. Check 4 no-regression set (`tfl776_deleted_run_ghost tfl776_recurrence_sweep tfl525_edit_text_fixes tfl525_edit_text_sweep qa_verify_edit_box`) 21 passed [1+7+4+8+1] (3.8m). Check 5 probes: after-undo `hover=1,barHover=0,barClick=1,selClick=1`; after-redo `hover=0,barHover=0,barClick=0,selClick=0`; A6 darkGlyphs 2197 before -> 0 after delete -> 2197 after undo -> 0 after redo. Check 6 DEF-149/Phase-52 guard: A1-A5 all PASS (A1 scroll/zoom/remount/tab-switch, A2 over-filter, A3 near-tolerance, A4 multi-delete, A5 other removal paths) - no regression. Evidence: `screenshots/tfl788_verify_evidence.txt`. Uncommitted for the phase-close commit.
+
 ## DEF-561: Edit Text - deleting a text run leaves a hoverable, clickable ghost box at the vacated position that restores the deleted text
 
-- Status: OPEN
+- Status: CLOSED
 - Severity: HIGH - operator-reported; a destructive edit is not final and a click re-inserts deleted content.
 - Found by: operator (TFL-775; re-report of the TFL-384/TFL-525 Edit-Text class)
 - Phase: TFL-776
@@ -27,6 +49,7 @@ Screenshot: operator attachment on TFL-775.
 
 History:
 - CTO (TFL-776, 2026-10-05): filed operator-reported with its escape class at filing time. Root-cause candidate: the run-bar Delete commits the engine mask but never registers the vacated rect in `committedTextRuns`, so `isMaskedRunRect` cannot suppress the pdf.js phantom text item and both the hover and click hit-tests still match it. To be confirmed by measurement (which layer keeps the stale element), not assumed.
+- qa (TFL-779, 2026-10-05): CLOSED (PASS). Retest of the TFL-776.1 fix on the renderer rebuilt from current source (`npm.cmd run build:renderer`). New regression `e2e/tfl776_deleted_run_ghost.spec.cjs` drives the exact operator path (open report.pdf, Edit Text, single-click the title run, Delete) and re-locates the vacated phantom `.textLayer span` after the refresh (the delete re-render scrolls the page ~161px, so the pre-delete coords are stale). Measured: pre-fix build `hoverBoxes=1` over the vacated centre (ghost present, spec FAIL); fixed build `hoverBoxes=0`, `bar=0`, `elementFromPoint` not `.edit-text-hover`, no re-selection and text-layer content unchanged (spec PASS). The engine still returns the phantom span (mask, not remove) but `isMaskedRunRect` now filters it. Neighbours: `tfl525_edit_text_fixes` 4/4, `tfl525_edit_text_sweep` 8/8, `qa_verify_edit_box` 1/1, unit `test/unit/renderer/tfl776_deleted_run_ghost.test.tsx` 3/3. Escape (`no-probe`) follow-up satisfied: the missing delete-teardown regression now exists at e2e and unit level. Evidence: `tfl779_e2e_prefix3.log` (pre-fix FAIL), `tfl779_e2e_ghost_fixed.log` (fixed PASS), `screenshots/tfl776-{before-delete,after-delete,hover-vacated,after-click}.png`, `screenshots/tfl776-verdict.json`.
 
 ## DEF-549: Phase 101 redaction covers only `context` - secrets in `message`, `error_name`, `stack_trace` and breadcrumb messages reach the unauthenticated public `bug_reports` table
 
@@ -305,6 +328,21 @@ Screenshot: none (observed run output).
 History:
 - adversary (TFL-772, 2026-10-05): opened via ADV-212; CTO ACCEPTED (LOW), assigned qa.
 - qa (TFL-780, 2026-10-05): CLOSED. Added a local `redactUrl` helper to both specs mirroring `sanitizeUrlForTrace` (scheme + host + pathname only; query/hash dropped); all logging calls that could carry a URL now pass through it (`e2e/tfl751_inapp_signin.spec.cjs` `window.open calls`, `minted`, `shell.openExternal urls`; `e2e/phase50_gate.spec.cjs` `window.open calls`, `shell.openExternal urls`, C3 loopback url). Assertions are unchanged and still compare the real URL values. Re-ran `env -u ELECTRON_RUN_AS_NODE npm.cmd run test:e2e -- e2e/tfl751_inapp_signin.spec.cjs e2e/phase50_gate.spec.cjs`: output contains zero `token=` occurrences; the `minted` line now reads `http://localhost:<port>/oauth/callback` and the window.open line shows the auth-host path only.
+
+## DEF-563: the committed adversary probe artifact retains a captured Google sign-in URL (non-credential tokens/PKCE challenge in the query)
+
+- Status: OPEN
+- Severity: LOW - test-artifact hygiene: `test-fixtures/tfl772_probe_result.json` (committed in `fe73758`) keeps a live Google sign-in URL whose query still carries `code_challenge` (PKCE, not usable alone), `client_id` (public) and Google anti-abuse tokens `part=`/`rart=`. No auth credential or access token; the `state` is redacted. Flagged by git-agent during the TFL-782 commit secret scan.
+- Found by: git-agent (TFL-782 phase-close commit, 2026-10-05)
+- Phase: TFL-751 (Phase 102)
+- Files: `test-fixtures/tfl772_probe_result.json`
+
+Expected: committed probe artifacts carry no third-party token-bearing URLs (host/path only), matching the DEF-560/562 redaction rule.
+
+Actual: the probe JSON keeps the raw Google URL. Fix (deferred): redact the URL in the probe writer, or gitignore the result JSON, then re-commit. CTO accepted the risk for the Phase 102 commit (no usable credential). Parked.
+
+History:
+- git-agent (TFL-782, 2026-10-05): flagged in the commit secret scan; CTO ACCEPTED (LOW) and parked.
 
 ## DEF-562: the phase46 e2e spec prints live token-bearing URLs
 

@@ -175,6 +175,12 @@ export interface EditState {
    *  (page, click-point). Optional so legacy `EditState` literals
    *  (tests / older tabs) compile unchanged. */
   committedTextRuns?: CommittedTextRun[];
+  /** TFL-776.6 (DEF-564) — bumped whenever an engine undo/redo changes the
+   *  live/reverted set of text-run commits. The per-page EditOverlay watches
+   *  this to dismiss its local run selection (a history change can delete or
+   *  restore the selected run, so the stale run bar must not linger). Optional
+   *  so legacy `EditState` literals compile unchanged. */
+  historyEpoch?: number;
 }
 
 /** A renderer-side image placement. Tracks the rect, the page
@@ -239,6 +245,19 @@ export interface CommittedTextRun {
    *  hovering the empty old spot paints no selection box. Absent for an
    *  in-place edit (old == new, the spot still has visible text). */
   maskedRect?: { x: number; y: number; width: number; height: number };
+  /** TFL-776.6 (DEF-564) — the engine undo depth this commit belongs to: the
+   *  `undoCount` AFTER this commit's engine op applied. The renderer
+   *  dispatches the commit BEFORE the op's counter is mirrored, so this is
+   *  `undefined` while pending and stamped by the first history reconcile
+   *  (`reconcile-text-run-history` phase `op`). A commit is live while
+   *  `undoDepth <= currentUndoCount`; an engine undo past it marks it
+   *  `reverted`. */
+  undoDepth?: number;
+  /** TFL-776.6 (DEF-564) — TRUE once an engine undo reverted this commit's
+   *  op. The hit-test selectors skip reverted commits so an undone run
+   *  delete (or move) stops suppressing the freshly restored run. Cleared
+   *  again when the matching redo re-applies the op. */
+  reverted?: boolean;
 }
 
 export interface PendingImage {
@@ -281,6 +300,16 @@ export type EditAction =
   | { type: "patch-text-box-style"; id: string; patch: TextBoxStylePatch }
   | { type: "set-cropping"; cropping: boolean }
   | { type: "push-text-run-commit"; run: CommittedTextRun }
+  /** TFL-776.6 (DEF-564) — reconcile the renderer-only `committedTextRuns`
+   *  with the engine's undo/redo stacks. `phase`:
+   *   - `op`   — a new engine op just applied (`undoCount` is its post-op
+   *              depth); stamp any pending commits with it and drop reverted
+   *              commits whose redo branch this new op overwrote.
+   *   - `undo` — the engine reverted the op at depth `undoCount + 1`; mark
+   *              that commit reverted so the restored run is live again.
+   *   - `redo` — the engine re-applied the op at depth `undoCount`; clear
+   *              its `reverted` flag so the delete suppresses again. */
+  | { type: "reconcile-text-run-history"; undoCount: number; phase: "op" | "undo" | "redo" }
   | { type: "reset" };
 
 /** Reducer for the per-tab edit state. Pure — no side effects, no
@@ -400,6 +429,56 @@ export function editReducer(state: EditState, action: EditAction): EditState {
       list.push(action.run);
       return { ...state, committedTextRuns: list };
     }
+    case "reconcile-text-run-history": {
+      // TFL-776.6 (DEF-564) — keep the renderer-only commit registry in step
+      // with the engine history. Pure bookkeeping: it never touches an engine
+      // op or the wire; it only re-marks which commits are live.
+      const list = state.committedTextRuns;
+      if (list === undefined || list.length === 0) return state;
+      const u = action.undoCount;
+      let changed = false;
+      const next: CommittedTextRun[] = [];
+      for (const commit of list) {
+        let entry = commit;
+        // Stamp a pending commit. Its op is the most recent one, so for an
+        // `undo` the op being reverted sits one depth ABOVE the post-undo
+        // count; for `op`/`redo` the post count IS the op's depth.
+        if (entry.undoDepth === undefined) {
+          entry = { ...entry, undoDepth: action.phase === "undo" ? u + 1 : u };
+          changed = true;
+        }
+        const depth = entry.undoDepth as number;
+        if (action.phase === "op") {
+          // A new op clears the redo stack: drop reverted commits at or above
+          // its depth, whose redo entry was overwritten by this new op.
+          if (entry.reverted === true && depth >= u) {
+            changed = true;
+            continue;
+          }
+        } else if (action.phase === "undo") {
+          // The op at depth u + 1 was reverted; its commit is no longer live.
+          if (depth === u + 1 && entry.reverted !== true) {
+            entry = { ...entry, reverted: true };
+            changed = true;
+          }
+        } else if (action.phase === "redo" && depth === u && entry.reverted === true) {
+          // The op at depth u was re-applied; its commit is live again.
+          entry = { ...entry, reverted: false };
+          changed = true;
+        }
+        next.push(entry);
+      }
+      if (!changed) return state;
+      // An undo/redo that changed the live/reverted set must also signal the
+      // overlay to drop its local run selection (the selected run may have
+      // just been deleted/restored under it).
+      const bumpEpoch = action.phase === "undo" || action.phase === "redo";
+      return {
+        ...state,
+        committedTextRuns: next,
+        ...(bumpEpoch ? { historyEpoch: (state.historyEpoch ?? 0) + 1 } : {}),
+      };
+    }
     case "reset":
       return initialEditState;
   }
@@ -464,6 +543,10 @@ export function committedTextRunAt(
     const r = list[i];
     if (r === undefined) continue;
     if (r.page !== page) continue;
+    // TFL-776.6 (DEF-564) — an undone commit's text is no longer the engine's
+    // latest at this rect; ignore it so the hit-test falls back to the live
+    // text item (the restored original after an undo).
+    if (r.reverted === true) continue;
     if (
       pt.x >= r.rect.x &&
       pt.x <= r.rect.x + r.rect.width &&
@@ -491,6 +574,10 @@ export function isMaskedRunRect(
   const list = commits ?? [];
   for (const c of list) {
     if (c.page !== page) continue;
+    // TFL-776.6 (DEF-564) — a commit whose op was undone must stop
+    // suppressing: after undo the engine restores the run's text operators at
+    // this exact geometry, and the restored run must be hoverable/selectable.
+    if (c.reverted === true) continue;
     const m = c.maskedRect;
     if (m === undefined) continue;
     if (

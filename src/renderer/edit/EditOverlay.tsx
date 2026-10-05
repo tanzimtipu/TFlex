@@ -497,6 +497,21 @@ export function EditOverlay(props: EditOverlayProps): ReactElement | null {
   // a nudge is the local drag state.
   const [dragTick, setDragTick] = useState(0);
 
+  // TFL-776.6 (DEF-564) — an engine undo/redo can delete or restore the run
+  // this overlay has selected, leaving a stale run bar / preview over a rect
+  // the engine no longer matches. Dismiss the local run session whenever the
+  // reconciled history epoch advances so the bar never outstays its run
+  // (A6's redo probe reads hover=0 once the stale selection is gone).
+  const historyEpoch = edit.historyEpoch ?? 0;
+  useEffect(() => {
+    setRunSelection(null);
+    setPendingRunMove(null);
+    setPendingRunEdit(null);
+    setRunDragFromRect(null);
+    setCanvasEditRun(false);
+    setTextTarget(null);
+  }, [historyEpoch]);
+
   // Text-run hover hint: when the text tool is active, underline the
   // run under the cursor so the user can see what's clickable. We
   // track the hover index in a ref + a state tick to avoid
@@ -1682,6 +1697,20 @@ export function EditOverlay(props: EditOverlayProps): ReactElement | null {
               style,
               // DEF-232 — target the engine at THIS overlay's page.
               page,
+            });
+            // TFL-776.1 — the delete MASKS the run's rect but never removes its
+            // text operators, so pdf.js still returns the phantom item at the
+            // vacated spot after the proxy refresh. Register the vacated rect
+            // exactly like the MOVE path's masked original so the hit-test
+            // (`isMaskedRunRect`) ignores it for both hover and click.
+            dispatch({
+              type: "push-text-run-commit",
+              run: {
+                page,
+                rect: { ...runSelection.rect },
+                text: "",
+                maskedRect: { ...runSelection.rect },
+              },
             });
             onDiscardTextEdit?.();
             setCanvasEditRun(false);

@@ -1824,6 +1824,22 @@ export function App(): ReactElement {
         canUndo: flags.canUndo,
         canRedo: flags.canRedo,
       });
+      // TFL-776.6 (DEF-564) — a successful op advances the engine history. The
+      // renderer-only text-run commit registry mirrors it: stamp any commit
+      // whose engine op just landed with this post-op depth, and drop commits
+      // the new op's cleared-redo branch has permanently overwritten. Guarded
+      // inside the updater so a tab with no commits never re-renders.
+      setOpenTabs((tabs) => {
+        const t = tabs[tabId];
+        if (t === undefined) return tabs;
+        const edit = editReducer(t.edit, {
+          type: "reconcile-text-run-history",
+          undoCount: counters.undoCount,
+          phase: "op",
+        });
+        if (edit === t.edit) return tabs;
+        return { ...tabs, [tabId]: { ...t, edit } };
+      });
     },
     [setEngineUiFor],
   );
@@ -3160,6 +3176,21 @@ export function App(): ReactElement {
           canUndo: flags.canUndo,
           canRedo: flags.canRedo,
         });
+        // TFL-776.6 (DEF-564) — the engine just reverted the op at depth
+        // `counters.undoCount + 1`. Reconcile the per-tab text-run commit
+        // registry: the reverted commit stops suppressing, so a run restored
+        // by this undo is hoverable/selectable again.
+        setOpenTabs((tabs) => {
+          const t = tabs[tabId];
+          if (t === undefined) return tabs;
+          const edit = editReducer(t.edit, {
+            type: "reconcile-text-run-history",
+            undoCount: counters.undoCount,
+            phase: "undo",
+          });
+          if (edit === t.edit) return tabs;
+          return { ...tabs, [tabId]: { ...t, edit } };
+        });
         // Bug 5 — undo must apply to stamps too. The engine reverts
         // the baked stamp pixels on undo (addStamp pushes an undo
         // snapshot), so the renderer's placed-stamp mirror — which is
@@ -3220,6 +3251,20 @@ export function App(): ReactElement {
           counters,
           canUndo: flags.canUndo,
           canRedo: flags.canRedo,
+        });
+        // TFL-776.6 (DEF-564) — symmetric to `onUndo`: the engine re-applied
+        // the op at depth `counters.undoCount`, so its commit suppresses the
+        // vacated rect again (a redone delete stays inert).
+        setOpenTabs((tabs) => {
+          const t = tabs[tabId];
+          if (t === undefined) return tabs;
+          const edit = editReducer(t.edit, {
+            type: "reconcile-text-run-history",
+            undoCount: counters.undoCount,
+            phase: "redo",
+          });
+          if (edit === t.edit) return tabs;
+          return { ...tabs, [tabId]: { ...t, edit } };
         });
         // Bug 5 — redo re-applies the stamp bake; the mirror was
         // cleared on the matching undo, so it stays cleared here (the

@@ -3,6 +3,122 @@
 > Read discipline: this is a historical evidence ledger. Search for the assigned `ADV-NNN`
 > or unresolved `Disposition: PENDING` entries; do not load prior campaigns wholesale.
 
+## TFL-776.4 Edit Text delete-teardown diff-pass (TFL-785) - run-bar Delete maskedRect
+
+Session label: `diff-pass`. Scope: the TFL-776.1 uncommitted change in
+`src/renderer/edit/EditOverlay.tsx` (run-bar `onDelete` ~:1677-1705 now dispatches
+`push-text-run-commit` with `{ page, rect, text: "", maskedRect: runSelection.rect }`)
+and its neighbours: `isMaskedRunRect` / `committedTextRuns`
+(`src/renderer/edit/model.ts:392-506`), the hover listener (`EditOverlay.tsx:752-865`),
+`runAtPoint` (`:699-735`), the panel/inline run-commit guard
+(`src/renderer/components/DocumentView.tsx:1441-1446`, DEF-541) and the per-tab edit
+state (`src/renderer/App.tsx:8843-8853`). Product code, tests and REQUIREMENTS.md were
+read but not modified. Spec: `e2e/tfl776_adversary_diffpass.spec.cjs` (one spec, six
+attacks). Screenshots: `screenshots/tfl776-adv-*.png`; machine-readable evidence
+`screenshots/tfl776-adversary-diffpass.json`.
+
+Exact commands:
+
+- Build: none run - the renderer bundle under test was already built from current
+  source (`dist/renderer/assets/index-9r2MZ4CX.js`, mtime 2026-10-05 11:19 local, and
+  it contains the `TFL-776.1` / `maskedRect` markers); the diff touches renderer code
+  only. Build mutex acquired and released around the e2e run.
+- Adversarial spec: `npm.cmd run test:e2e -- tfl776_adversary_diffpass --reporter=line`
+  -> **7 tests / 6 passed / 1 failed** (A6) in 2.3 min.
+
+Attack-surface results (task attacks 1-6; the spec test is the reproducer):
+
+1. Refresh persistence (scroll away/back, zoom in/out, page unmount/remount, tab
+   switch): **HOLDS** - A1. After each refresh the vacated rect reports
+   `hover=0`, `barHover=0`, `barClick=0`, `selClick=0` and `elementFromPoint` is the
+   `.edit-layer`, never `.edit-text-hover`.
+2. Over-filter false positive (delete A, MOVE run B onto A's vacated rect): **HOLDS** -
+   A2. The engine re-bakes B with different glyph metrics (phantom width 787.33pt vs
+   re-baked 791.21pt; a 3.88pt divergence > the 2pt window), so `isMaskedRunRect`
+   does not match and B stays hoverable (`hover=1`) and selectable (`bar=1`,
+   `sel=1`) at A's rect. Note: this safety is incidental - a re-baked copy whose
+   width happened to land within 2pt WOULD be suppressed (see ADV-213's mechanism).
+3. Near-tolerance (move B to +4pt from the deleted rect): **HOLDS** - A3. The
+   re-baked B sits at +4.02pt (`topGroup` offset 4.02) and is hoverable/selectable;
+   the phantom at offset 0 is filtered.
+4. Multi-delete (two runs on one page): **HOLDS** - A4. Both vacated rects inert
+   (`hover=0`, `bar=0`), a surviving control run still hovers (`hover=1`).
+5. Other run-removal paths (empty the on-canvas inline editor and the panel Text
+   field, then commit): **HOLDS** - A5. Both paths hit the DEF-541 whitespace guard:
+   the run text stays in the text layer and `modified` stays false, so no engine mask
+   and no vacated hit-target is created. Observation (pre-existing, not caused by this
+   diff, no ADV filed): after the empty commit the run stays selected and the inline
+   editor stays mounted (`elementFromPoint` = `TEXTAREA.edit-run-editor`); the blur
+   guard returns without dismissing `canvasEditRun`, so the user must click away /
+   Escape to close the editor.
+6. Delete then Confirm/undo/redo: **BREAKS** - ADV-213. No residual Confirm exists
+   after the delete (bar count 0); delete and redo are inert; but UNDO restores the
+   run's glyphs (canvas dark-glyph count 2197 -> 0 after delete -> 2197 after undo)
+   while the position stays dead to the tool (`hover=0`, `bar=0`, `sel=0`).
+
+Design-critique pass (skill `design-critique`) on the changed surface - the Edit Text
+run delete/teardown affordance. User job: remove or edit a run of page text and have
+the result stick. Must-fix: after undo the run is visible with NO hover/selection
+affordance and no in-session recovery, so the user has no signifier it is dead (the
+A6 break). Should-fix: the mask keys on raw rect geometry, so whether a legitimate run
+survives depends on font-metric divergence rather than run identity (A2) - make it
+deterministic; and an empty inline-editor commit leaves the editor mounted and the run
+selected with no visible completion (A5 observation). Strengths to keep: delete/redo
+leave the vacated rect fully inert across every refresh, and the DEF-541 guard stops
+an empty commit from ever reaching the engine.
+
+## ADV-213: Undoing a run delete restores the visible run but leaves it permanently un-selectable in the session (stale maskedRect is never reconciled with undo)
+
+- Session: diff-pass
+- Suggested severity: MEDIUM
+
+What I did: `e2e/tfl776_adversary_diffpass.spec.cjs` A6 (line 580). With the app open
+on `assets/samples/report.pdf` page 2, armed Edit Text, single-clicked the page-2 run
+"Chapter 1: The Art of Orchestration", pressed the run bar's Delete
+(`[data-content-action="textrun-delete"]`), then pressed Ctrl+Z (undo) and Ctrl+Y
+(redo). At each step I sampled the page canvas inside the run's box with
+`sampleCanvasPageRect` (`darkGlyphs`) and probed the rect with the text tool active
+(hover box count, run-bar count, selection-surface count, `elementFromPoint`).
+
+Expected: undo reverses the delete, so the run is visible AND selectable/editable
+again - exactly as it was before the delete. Redo re-applies the delete and the
+vacated rect stays inert.
+
+Actual: after undo the run is VISUALLY restored but DEAD. Measured:
+`glyphsBefore=2197`, `glyphsAfterDelete=0`, `glyphsAfterUndo=2197` (the mask is gone,
+the glyphs are back), yet `afterUndoProbe = { hover: 0, barHover: 0, barClick: 0,
+selClick: 0, elementFromPoint: DIV.edit-layer }` - no hover box, no selection, no
+click hit-target. `undo` succeeded (`modified=false`, `canRedo=true`). Redo returns to
+`glyphsAfterRedo=0` with the rect inert, so only the undo state is broken.
+
+Root cause: the TFL-776.1 fix records the vacated rect in the renderer's per-tab
+`edit.committedTextRuns` (`EditOverlay.tsx:1691-1699` -> `model.ts:392-402`), and
+`isMaskedRunRect` (`model.ts:486-506`) filters any text item whose geometry matches
+that `maskedRect` within 2pt. Undo/redo operate on the ENGINE document only; the
+renderer edit state is never reconciled (there is no `reset`/reconcile dispatch on
+undo - the only `reset` in the tree is AccountsDialog's unrelated reducer). So after
+undo the engine restores the original run's text operators, pdf.js returns the
+original item at the exact deleted geometry, and `isMaskedRunRect` suppresses it from
+both `textItemsForInteraction()` (hover) and `runAtPoint()` (click). The user sees the
+text but cannot click, hover, move, re-edit or delete it until the document is closed
+and reopened. This is a session-only regression introduced by this diff (before the
+fix the delete registered no `maskedRect`, so the restored run was selectable).
+
+Fix direction (for the CTO/developer, not applied): reconcile `committedTextRuns`
+with engine history - clear or drop the masked commits on undo/redo (or on any engine
+snapshot change) so a restored run becomes live again. Note the same geometry-only
+match is fragile in general (A2's safe outcome relied on a 3.88pt font-metric
+divergence between the original and the engine re-bake, not on identity), so an
+identity/text-aware key would be more robust than raw rect equality.
+
+Screenshot: screenshots/tfl776-adv-a6-after-undo.png (restored run, no hover/selection);
+machine-readable evidence `screenshots/tfl776-adversary-diffpass.json`.
+
+Disposition: ACCEPTED -> DEF-564 (MEDIUM). CTO triage 2026-10-05 (TFL-776): a real
+session-only regression introduced by the TFL-776.1 diff (before the fix no maskedRect
+was registered, so a restored run stayed selectable). A phase does not close with an
+OPEN defect, so the fix lands before the phase-close commit.
+
 ## Phase 88 sanitize + save merge diff-pass (TFL-477) - stripActiveContent + serializeDoc
 
 Session label: `diff-pass`. Scope: the Phase-88 sanitize path (`src/shared/sanitize.ts`,
