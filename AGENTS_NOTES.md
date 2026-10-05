@@ -5141,3 +5141,6 @@ working tree still carried the uncommitted Phase 105 diff. Rule: link the blocke
 pending LEAF issue (the `in_progress` child), so the wake fires only when that leaf actually
 completes; re-evaluate and re-link at the parent level once the leaf is done.
 
+## 2026-10-06: git-agent phase-close commit bled Phase 109 CSS into the Phase 107 commit (TFL-928 report)
+
+git-agent Phase 107 Canvas commit 9c8ea48 swept ALL of src/renderer/styles.css while Phase 109 View Strip footer hunks were uncommitted in the same file, so Phase 109 CSS (--view-strip-h, .view-strip, the frosted .document-scroller bottom, the .view-strip-more reveal, the tier metrics) now lives under the Phase 107 commit message/parent - splitting Phase 109 across commits. Same class as ab62660 / 4629c4f. Rule restated: a phase-close commit stages an explicit ALLOWLIST of the phase tracked paths; for SHARED files (styles.css, App.tsx, engine.ts, settings.ts, config, ledgers, docs) stage by path AND HUNK and exclude hunks belonging to a sibling phase still in flight; the CTO confirms no other phase is mid-write on a shared file before dispatching git-agent. Phase 109 phase-close commit stages its remaining uncommitted files and records that its styles.css hunks already landed in 9c8ea48.

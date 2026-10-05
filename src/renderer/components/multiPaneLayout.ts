@@ -85,12 +85,16 @@ export function insetCapFor(stageWidth: number): number {
   return Math.max(0, stageWidth - MIN_PANES_BUDGET_PX);
 }
 
-/** Phase 39 (DEF-348b/c) — the base height of the bottom band Multi Mode
- *  reserves for the shared Action Dock. The dock's box is `bottom: 12px` and
- *  up to 59.5px tall (a labelled verb row), so the panes (and their strips,
- *  pills and page-action bars) stopping at `base + lift` above the stage's
- *  bottom edge can never intersect the dock, lifted or not. */
-export const MULTI_DOCK_BAND_BASE_PX = 84;
+/** Phase 39 (DEF-348b/c), Phase 109 (chunk B/b2) — the base height of the bottom
+ *  band Multi Mode reserves for the shared Action Dock. The panes (and their
+ *  strips, pages, page-action bars and per-pane View Strip footers) stop at
+ *  `base + lift` above the stage's bottom edge, so nothing can intersect the
+ *  dock, lifted or not. A pane's footer is the bottom 48px of that band, and
+ *  the LIVE dock tokens put the dock's top edge at `--dock-bottom-inset` (16px)
+ *  plus `--dock-min-height` (68px) = 84px above the stage bottom; the 100px base
+ *  keeps the pane footers a full 16px clear of the dock's top edge
+ *  (100 - (16 + 68) = 16). */
+export const MULTI_DOCK_BAND_BASE_PX = 100;
 
 /** The band the panes reserve for the shared dock at a measured vertical
  *  yield (`liftPx` is the dock's own pill-band lift, 0 when not lifted). The

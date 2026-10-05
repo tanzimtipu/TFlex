@@ -13315,7 +13315,7 @@ History:
 
 ## DEF-588: The `<=419px` `.view-strip-more` reveal never wins the cascade, hiding the layout + Book View controls with no re-home
 
-- Status: OPEN
+- Status: CLOSED
 - Severity: HIGH - at the `<=419px` overflow tier the layout + Book View controls are hidden with no replacement route. The cascade fix now reveals the More host, but the trigger is still not pointer-reachable (residual filed as DEF-591), so the end-to-end acceptance is not met.
 - Found by: adversary (ADV-222, TFL-918 diff-pass); triaged by CTO to DEF-588
 - Phase: 109 (Viewing Controls, TFL-863)
@@ -13336,6 +13336,7 @@ History:
 - adversary: opened (ADV-222, TFL-918 diff-pass, 2026-10-06).
 - CTO triage: ACCEPTED -> DEF-588 (TFL-863, 2026-10-06); assigned frontend-dev (TFL-921).
 - qa: returned OPEN (TFL-925 rendered FIX-READY retest, 2026-10-06). The cascade fix is proven rendered: at 640x480@150% the footer inline-size is 263px, `.view-strip-layout`/`.view-strip-book` compute `display: none`, `.view-strip-more` computes a visible flex box (the declared `inline-flex` blockifies to `flex` as a `.view-strip` flex item), the More menu opens and its three layout rows + Book View row have non-zero boxes, and keyboard (focus + Enter, ArrowDown, Enter) opens Book View. BUT the pointer acceptance fails - the More trigger box `[386,282,32,28]` overflows the footer box `[120,272,263,48]` and is covered by the collapsed Inspector rail (`elementFromPoint` -> `div.inspector`; a real click times out 6000ms). Residual filed as DEF-591. Evidence: `e2e/phase109_def587_def588_retest.spec.cjs` P109-14; `test-fixtures/phase109-qa/tfl925_def587_588_retest.log`, `probe-more-hit.log`; `screenshots/phase109-qa-def588-overflow-640x480.png`.
+- qa: CLOSED (TFL-933 rendered FIX-READY retest, 2026-10-06). `npm.cmd run build:renderer`; `npm.cmd run test:e2e -- e2e/phase109_def587_def588_retest.spec.cjs` = 2 passed / 0 failed (P109-13 frosted 12/12 controls hit-testable in light/frosted/dark, scrollerBottom 852 == footerTop 852; P109-14 `inlineSize 263`, `more flex`, `layout/book none`, pointerOpened=true). Independent probe `e2e/phase109_def591_pointer_probe.spec.cjs` = 1 passed: strip right 383 >= toggle right 371, trigger box `[349,282,22,28]` inside footer `[120,272,263,48]`, `elementFromPoint` at the trigger centre resolves to `circle` (a descendant of the trigger, not `div.inspector`), a real un-forced click opens the menu, and all three `[data-page-layout-option]` rows + `[data-book-view-open]` are pointer-hit-testable (top element a row `span`). Keyboard focus+Enter still lands on a `menuitem`. Regression: `e2e/phase109_viewstrip.spec.cjs` 12 passed; `test/unit/renderer/phase109_viewStrip.test.ts` 23 passed. Evidence: `screenshots/phase109-qa-def591-pointer-open-640x480.png`, `test-fixtures/phase109-qa/tfl933_probe_tier.json`, `tfl933_probe_pointer_rows.json`, `tfl933_def588_591_retest.log`, `tfl933_def591_pointer_probe.log`.
 
 ## DEF-589: Orbit Desk motion pause control is not pinned to the header top-right - a specificity collision drops its `position: absolute` (Phase 106 chunk B)
 
@@ -13413,4 +13414,5 @@ Evidence: `test-fixtures/phase109-qa/probe-more-hit.log` (top element `div.inspe
 
 History:
 - qa: opened (TFL-925 FIX-READY retest of DEF-588, 2026-10-06).
+- qa: CLOSED (TFL-933 rendered FIX-READY retest, 2026-10-06). The overflow-tier fit fix (TFL-928: `min-width: 0` on `.view-strip .btn-toolbar` + tightened `<=419px` row metrics) keeps the trigger inside the footer. At 640x480@150% (footer inline-size 263px): `.view-strip` right 383 >= `[data-view-strip-more-toggle]` right 371, trigger box `[349,282,22,28]` inside footer `[120,272,263,48]`; `document.elementFromPoint` at the trigger centre resolves to `circle` (a descendant of the trigger), NOT `div.inspector`; a real un-forced `click()` opens the menu (pointerOpened=true) and the three `[data-page-layout-option]` rows + `[data-book-view-open]` are pointer-hit-testable (each top element a row `span`); keyboard focus+Enter still reaches them. Commands: `npm.cmd run build:renderer`; `npm.cmd run test:e2e -- e2e/phase109_def587_def588_retest.spec.cjs` = 2 passed; `e2e/phase109_def591_pointer_probe.spec.cjs` = 1 passed; `e2e/phase109_viewstrip.spec.cjs` = 12 passed; `npm.cmd run test:unit -- test/unit/renderer/phase109_viewStrip.test.ts` = 23 passed. Evidence: `screenshots/phase109-qa-def591-pointer-open-640x480.png`; `test-fixtures/phase109-qa/tfl933_probe_tier.json`, `tfl933_probe_pointer_rows.json`, `tfl933_def591_pointer_probe.log`.
 
