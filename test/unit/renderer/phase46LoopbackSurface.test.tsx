@@ -60,7 +60,6 @@ interface FakeBridge {
   startOAuthCallback?: ReturnType<typeof vi.fn>;
   stopOAuthCallback: ReturnType<typeof vi.fn>;
   onOAuthCallback?: ReturnType<typeof vi.fn>;
-  openAuthUrl: ReturnType<typeof vi.fn>;
   emitOAuth: (outcome: OAuthCallbackOutcome) => void;
   oauthUnsubscribed: () => boolean;
 }
@@ -86,10 +85,9 @@ function fakeBridge(options: { noLoopback?: boolean } = {}): FakeBridge {
         unsubscribed = true;
       };
     });
-    // Phase 50 - main opens the OS default browser for the provider URL; the
-    // renderer never calls window.open. A preload without the loopback predates
-    // this port too, so it is absent in the noLoopback shape.
-    parts.openAuthUrl = vi.fn(async () => ({ ok: true }));
+    // Phase 102 - the provider URL opens in an in-app child window
+    // (`window.open`), which the main window's auth-popup handler turns into a
+    // session-bound child. A preload without the loopback predates this flow.
   }
   parts.emitOAuth = (outcome: OAuthCallbackOutcome): void => oauthListener?.(outcome);
   parts.oauthUnsubscribed = (): boolean => unsubscribed;
@@ -178,18 +176,17 @@ async function openGoogle(container: HTMLElement): Promise<void> {
 }
 
 describe("Phase 46 - the surface completes a Google sign-in", () => {
-  it("ok -> getStatus -> signed-in UI (no setSession), and main opened the browser", async () => {
-    const openSpy = vi.spyOn(window, "open");
+  it("ok -> getStatus -> signed-in UI (no setSession), and the provider opened in an in-app window", async () => {
+    const openSpy = vi.spyOn(window, "open").mockReturnValue({ close: vi.fn() } as unknown as Window);
     const h = await renderDialog();
     await openGoogle(h.container);
 
     expect(h.bridge.startOAuthCallback).toHaveBeenCalledTimes(1);
     expect(h.adapter.signInGoogle).toHaveBeenCalledWith({ callbackUrl: CALLBACK_URL });
-    // Phase 50 - the provider URL goes to main (OS default browser); the
-    // renderer never opens an in-app popup.
-    expect(h.bridge.openAuthUrl).toHaveBeenCalledTimes(1);
-    expect(h.bridge.openAuthUrl).toHaveBeenCalledWith(AUTHORIZE_URL);
-    expect(openSpy).not.toHaveBeenCalled();
+    // Phase 102 - the provider URL opens in an in-app child window bound to the
+    // app session (never the OS browser).
+    expect(openSpy).toHaveBeenCalledTimes(1);
+    expect(openSpy).toHaveBeenCalledWith(AUTHORIZE_URL, "jovrel-google-signin", "width=520,height=760");
 
     // Main completed the exchange and stored the session; the status now
     // carries the real identity (name + image included).
@@ -212,10 +209,10 @@ describe("Phase 46 - the surface completes a Google sign-in", () => {
   });
 
   it("an ok:false outcome with a message shows the provider/main reason verbatim", async () => {
-    vi.spyOn(window, "open");
+    vi.spyOn(window, "open").mockReturnValue({ close: vi.fn() } as unknown as Window);
     const h = await renderDialog();
     await openGoogle(h.container);
-    expect(h.bridge.openAuthUrl).toHaveBeenCalledWith(AUTHORIZE_URL);
+    expect(window.open).toHaveBeenCalledWith(AUTHORIZE_URL, "jovrel-google-signin", "width=520,height=760");
 
     const reason = "The exchange failed: no session cookie was present on the auth host.";
     await act(async () => {
@@ -229,30 +226,12 @@ describe("Phase 46 - the surface completes a Google sign-in", () => {
     expect(h.bridge.stopOAuthCallback).toHaveBeenCalledTimes(1);
   });
 
-  it("a refused sign-in address (invalid-url) shows the honest banner and never a popup", async () => {
-    const openSpy = vi.spyOn(window, "open");
-    const bridge = fakeBridge();
-    bridge.openAuthUrl = vi.fn(async () => ({ ok: false, reason: "invalid-url" }));
-    const h = await renderDialog({ bridge });
+  it("a blocked sign-in window (window.open returns null) shows the honest banner, not a dead button", async () => {
+    const openSpy = vi.spyOn(window, "open").mockReturnValue(null);
+    const h = await renderDialog();
     await openGoogle(h.container);
 
-    expect(bridge.openAuthUrl).toHaveBeenCalledTimes(1);
-    expect(bridge.openAuthUrl).toHaveBeenCalledWith(AUTHORIZE_URL);
-    expect(openSpy).not.toHaveBeenCalled();
-    expect(bannerText(h.container)).toContain("The Google sign-in address was rejected. Try again.");
-    expect(h.bridge.setSession).not.toHaveBeenCalled();
-    expect(h.bridge.stopOAuthCallback).toHaveBeenCalledTimes(1);
-  });
-
-  it("a browser that will not open (failed) shows the honest banner, not a dead button", async () => {
-    const openSpy = vi.spyOn(window, "open");
-    const bridge = fakeBridge();
-    bridge.openAuthUrl = vi.fn(async () => ({ ok: false, reason: "failed" }));
-    const h = await renderDialog({ bridge });
-    await openGoogle(h.container);
-
-    expect(bridge.openAuthUrl).toHaveBeenCalledTimes(1);
-    expect(openSpy).not.toHaveBeenCalled();
+    expect(openSpy).toHaveBeenCalledTimes(1);
     expect(bannerText(h.container)).toContain(
       "Jovrel could not open your browser for Google sign-in. Try again.",
     );
@@ -261,10 +240,10 @@ describe("Phase 46 - the surface completes a Google sign-in", () => {
   });
 
   it("a timeout shows the message, signs nobody in, and releases the listener", async () => {
-    vi.spyOn(window, "open");
+    vi.spyOn(window, "open").mockReturnValue({ close: vi.fn() } as unknown as Window);
     const h = await renderDialog();
     await openGoogle(h.container);
-    expect(h.bridge.openAuthUrl).toHaveBeenCalledWith(AUTHORIZE_URL);
+    expect(window.open).toHaveBeenCalledWith(AUTHORIZE_URL, "jovrel-google-signin", "width=520,height=760");
 
     await act(async () => {
       h.bridge.emitOAuth({ ok: false, reason: "timeout" });
@@ -277,10 +256,10 @@ describe("Phase 46 - the surface completes a Google sign-in", () => {
   });
 
   it("unmounting the surface cancels the flow; a late outcome fires nothing", async () => {
-    vi.spyOn(window, "open");
+    vi.spyOn(window, "open").mockReturnValue({ close: vi.fn() } as unknown as Window);
     const h = await renderDialog();
     await openGoogle(h.container);
-    expect(h.bridge.openAuthUrl).toHaveBeenCalledWith(AUTHORIZE_URL);
+    expect(window.open).toHaveBeenCalledWith(AUTHORIZE_URL, "jovrel-google-signin", "width=520,height=760");
     expect(h.bridge.oauthUnsubscribed()).toBe(false);
 
     h.unmount();

@@ -86,6 +86,7 @@ import { createSettingsPort, createSignaturesPort } from './services/accounts/po
 import { OAuthCallbackService } from './services/accounts/oauth-callback';
 import { registerOAuthCallbackIpc } from './services/accounts/oauth-callback-ipc';
 import { clearAuthChallengeCookies } from './services/accounts/auth-cookies';
+import { makeOAuthTrace } from './services/accounts/oauth-trace';
 import { appendOAuthTraceLine } from './services/accounts/oauth-trace-file';
 import { installAuthOriginHeader } from './services/accounts/origin-header';
 import { openAuthUrlExternally, openDefaultAppsSettings } from './services/os-links';
@@ -642,9 +643,18 @@ export async function start(): Promise<void> {
   // signed out by starting a new flow.
   const oauthCallbackController = {
     start: async () => {
-      await clearAuthChallengeCookies(
+      const cleared = await clearAuthChallengeCookies(
         session.defaultSession.cookies,
         getAccountsConfig(process.env, app.getAppPath()).authBaseUrl,
+      );
+      // Phase 51 chunk C1 - record whether a stale/legacy challenge cookie was
+      // actually present and removed, so the flow log names the root cause
+      // instead of only showing that the exchange later rejected. NAMES only.
+      broadcastOAuthTrace(
+        makeOAuthTrace('challenge-clear', {
+          cookieNames: cleared.present,
+          cookieRemovedNames: cleared.removed,
+        }),
       );
       return oauthCallback.start();
     },

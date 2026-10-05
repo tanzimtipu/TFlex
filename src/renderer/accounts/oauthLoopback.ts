@@ -7,8 +7,10 @@
 // or Electron:
 //
 //   start loopback listener -> signIn.social(callbackURL) -> open the provider
-//   in the OS DEFAULT BROWSER (Phase 50; no in-app popup)
-//   -> the browser lands on the loopback URL -> main completes the exchange
+//   in an IN-APP child window bound to the app session (Phase 102; the main
+//   window's auth-popup handler)
+//   -> the callback lands on the loopback URL in the SAME session -> main
+//   completes the exchange
 //   and stores the session, reporting `{ ok: true }` -> re-read getStatus()
 //   -> signed in. The renderer does NOT read the SDK session itself: it runs
 //   from `file://`, cross-site to the auth host, so Chromium never attaches
@@ -107,11 +109,13 @@ export interface GoogleSignInPorts {
    * image) from here instead of attempting its own SDK session read.
    */
   getStatus(): Promise<AccountStatusResult>;
-  /** Hand the provider authorize URL to the OS DEFAULT BROWSER through
-   *  `accounts:openAuthUrl`. Main validates it (https on exactly the
-   *  configured auth host) before `shell.openExternal`; a refused or failed
-   *  URL is reported honestly, never retried silently. Never throws. */
-  openAuthUrl(url: string): Promise<OpenAuthUrlResult>;
+  /** Open the provider authorize URL in an IN-APP child window bound to the
+   *  app session (Phase 102: `window.open` -> the main window's auth-popup
+   *  handler). The hosted callback then lands in the same Electron session
+   *  that runs the loopback exchange, so its challenge cookie is visible. A
+   *  refused or failed popup is reported honestly, never retried silently.
+   *  Never throws. */
+  openAuthPopup(url: string): Promise<OpenAuthUrlResult>;
   /** Main completed the sign-in and stored the session; drive the account
    *  machine to its signed-in state from this status. */
   onSignedIn(status: AccountStatusResult): void;
@@ -212,10 +216,11 @@ export function runGoogleSignIn(ports: GoogleSignInPorts): GoogleSignInHandle {
     }
     let opened: OpenAuthUrlResult;
     try {
-      // Phase 50 - hand the URL to main, which validates it (https on the
-      // configured auth host) and opens the OS DEFAULT BROWSER. Never a
-      // window.open popup: the browser owns the Google session.
-      opened = await ports.openAuthUrl(started.url);
+      // Phase 102 - open the provider URL in an in-app child window bound to
+      // the app session (the main window's auth-popup handler allows only
+      // https on the configured auth host), so the callback's challenge
+      // cookie lands in the same Electron session that runs the exchange.
+      opened = await ports.openAuthPopup(started.url);
     } catch (error) {
       // The bridge contract is "never throws"; a foreign/older bridge might
       // still reject, and that must surface, not hang the flow.
@@ -238,7 +243,7 @@ export function runGoogleSignIn(ports: GoogleSignInPorts): GoogleSignInHandle {
     // The browser is open. The loopback listener and the onOAuthCallback
     // subscription stay live, so main's completion still drives the sign-in;
     // the app stays usable in the meantime (no modal block).
-    ports.onInfo("Finish signing in with Google in your browser - Jovrel will take it from there.");
+    ports.onInfo("Finish signing in with Google in the Jovrel sign-in window - Jovrel will take it from there.");
   })();
 
   return {

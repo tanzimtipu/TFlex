@@ -6260,3 +6260,60 @@ database detail, and the client drops a permanent 4xx batch. DEF-549..553 record
 fixes and their qa retests; full throughput rate limiting remains deferred (TFL-761).
 Settings impact: unchanged (none).
 
+## Phase 102 — Google sign-in returns to an in-app same-session sign-in window (operator reversal of Phase 50 feature A, via TFL-751, 2026-10-04)
+
+**Operator directive (2026-10-04, TFL-751):** after the recurring `400 Session challenge
+cookie not found` was measured as a cross-session mismatch (DEF-554) - Neon Auth binds
+its one-time verifier to the challenge cookie of the client that reached the hosted OAuth
+callback (the external browser), while the app's `/get-session` presents the challenge
+held by Electron's session - the operator first chose a Neon/server-side change, then
+reversed to option A: complete the Google provider round-trip in an in-app window that
+shares the app's session.
+
+**Supersession:** this phase supersedes ONLY Phase 50 feature A (Google sign-in opens in
+the OS default browser) and the Phase 50 gate assertions that encode it (C1 "no in-app
+popup / handed to the OS", C3 "copy names the browser"). It does NOT change Phase 50
+feature B (the Default-apps affordance), the validated `accounts:openAuthUrl` channel or
+the deny-by-default popup allowlist (kept as a security net), the verifier handling, the
+leak-free diagnostics, or any other phase.
+
+**Features**
+
+**A. In-app same-session sign-in window (replaces the Phase 50 browser open).**
+- Clicking **Continue with Google** opens the provider URL in an in-app child
+  `BrowserWindow` bound to the app's session (the existing `installAuthPopupHandler`,
+  `src/main/window.ts:225`), NOT the OS browser. Because the callback's challenge cookie
+  lands in the SAME Electron session that performs the exchange, main's `/get-session`
+  presents the challenge the verifier is bound to and mints the session.
+- The loopback listener, the one-time verifier capture, the single-use token, the main
+  exchange and the `step=... attrs=... verifier=...` diagnostic are unchanged.
+- The in-flight user copy names the sign-in window, not the browser; the loopback success
+  page copy is updated to match (the popup closes itself on completion).
+- The popup is confined to https on exactly the configured auth host; every other URL is
+  still refused by `decideAuthPopup`.
+
+**Success criteria**
+
+1. A real sign-in completes with no `step=session-rejected` 400: the in-app window runs
+   the provider round-trip, the popup closes on the loopback landing, and the account menu
+   shows the signed-in user. Proven by a real Electron probe driving the flow (not a mocked
+   bridge); if the operator's own account is required, stop at FIX-READY and say so.
+2. No auth URL is handed to `shell.openExternal` for Google; the in-app window is created
+   instead.
+3. A focused packaged regression spec fails on the pre-fix code (which routes Google
+   through `accounts:openAuthUrl`) and passes after the fix.
+4. No regression on the Phase 44/45/46/47 account specs; the Phase 50 gate C1/C3
+   assertions are repointed to the in-app window; `npm run verify` clean.
+5. The measured cause and the decision are recorded: DEF-554; this phase; the operator
+   directive above.
+
+**CONTROL-INDEX:** no new user control. The existing `[data-accounts-google]` control's
+action changes from "open the OS browser" to "open the in-app sign-in window"; the new
+regression spec (criterion 3) and the repointed Phase 50 gate spec prove it.
+
+**Settings impact:** none. No new persisted `AppSettings` field and no settings channel;
+sign-in remains an online-only, user-initiated action.
+
+**Numbering:** this is Phase 102 (the last appended phase is 101).
+
+

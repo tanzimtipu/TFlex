@@ -41,7 +41,7 @@ test.afterAll(async () => {
 });
 
 // Skipped: operator waived criterion 4 on 2026-10-04 (keep the browser UX). Live evidence: Neon rejects the app-side exchange because the verifier is bound to the external browser's challenge cookie; see the TFL-672 report.
-test.skip('P522 live: Google round trip completes through the default browser', async () => {
+test('P522 live: Google round trip completes through the default browser', async () => {
   app = await launchApp([], null);
   const win = await app.firstWindow();
   await win.waitForSelector('.sample-card', { timeout: 30000 });

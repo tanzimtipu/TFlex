@@ -5086,3 +5086,24 @@ stamps `blockedBy` without a PATCH; the watchdog then re-parks the parent to `bl
 completion wake. Do not burn tokens retrying the denied PATCH/comment - after the first 403, switch to
 creation-time linking and end the run with the report.
 
+## 2026-10-04: create child issues via POST /api/issues/{parentId}/children, not the CLI
+
+The `paperclipai issue create` CLI silently drops `--parent-id`, `--status` and
+`--assignee-agent-id` when `--description` contains newlines (the multi-line value breaks
+its argument parsing): the issue lands parentless (or mis-parented), `backlog`, and assigned
+to the calling agent. `POST /api/issues` is not a route (404); the create route is
+`POST /api/companies/{companyId}/issues`. Use `POST /api/issues/{parentId}/children` with
+`blockParentUntilDone: true` to create a child AND stamp the parent's blocker in one call;
+otherwise create then PATCH `parentId`/`status`/`assigneeAgentId`/`description`. One-line
+descriptions survive the CLI; multi-line ones do not.
+
+## 2026-10-04: cannot delegate a child back to the agent that created the parent
+
+`POST /api/issues/{parentId}/children` with `assigneeAgentId` set to the agent who created
+the parent fails `409 Delegation cycle: ... created by the agent this child would be
+assigned to`. To escalate to the CEO on a CEO-created phase issue, use an
+`ask_user_questions` interaction (resolverPolicy `human_only`, continuationPolicy
+`wake_assignee`) on the phase issue and leave it `in_progress` - that reaches the board
+operator directly and wakes the assignee on answer. Do not burn attempts re-assigning to
+the creating agent.
+

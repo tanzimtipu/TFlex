@@ -39,7 +39,7 @@ import type {
   OAuthTraceEvent,
   SetSessionPayload,
 } from '../../../shared/accounts';
-import { cookieSummary, makeOAuthTrace } from './oauth-trace';
+import { cookieAttributes, cookieSummary, makeOAuthTrace } from './oauth-trace';
 import { NEON_AUTH_SESSION_VERIFIER_PARAM } from './oauth-callback';
 
 /**
@@ -49,7 +49,16 @@ import { NEON_AUTH_SESSION_VERIFIER_PARAM } from './oauth-callback';
  */
 export interface OAuthExchangeSession {
   cookies: {
-    get(filter: { url: string }): Promise<{ name?: unknown }[]>;
+    get(filter: { url: string }): Promise<
+      {
+        name?: unknown;
+        domain?: unknown;
+        path?: unknown;
+        sameSite?: unknown;
+        expirationDate?: unknown;
+        session?: unknown;
+      }[]
+    >;
   };
   /** Electron's session request helper (`session.fetch`), which attaches the
    *  session's cookies. Named `request` here so product code never spells the
@@ -120,6 +129,7 @@ export async function completeOAuthExchange(
   const verifier = providedVerifier.length > 0 ? providedVerifier : null;
   const verifierPresent = verifier !== null;
   let cookieNames: string[] = [];
+  let cookieAttrs: string[] = [];
   const trace = (event: OAuthTraceEvent): void => deps.onTrace?.(event);
   const fail = (
     reason: string,
@@ -127,7 +137,7 @@ export async function completeOAuthExchange(
     fields: DiagnosticFields = {},
   ): OAuthCallbackOutcome => {
     trace(makeOAuthTrace('exchange-failed', { reason }));
-    const detail = diagnosticLine(reason, fields, cookieNames, verifierPresent);
+    const detail = diagnosticLine(reason, fields, cookieNames, cookieAttrs, verifierPresent);
     deps.onDiagnostic?.(detail);
     return { ok: false, reason: 'error', message: `${message} [${detail}]` };
   };
@@ -139,7 +149,14 @@ export async function completeOAuthExchange(
   const host = hostOf(base);
 
   // 1. Cookies: presence only, reported as names + count.
-  let cookies: { name?: unknown }[];
+  let cookies: {
+    name?: unknown;
+    domain?: unknown;
+    path?: unknown;
+    sameSite?: unknown;
+    expirationDate?: unknown;
+    session?: unknown;
+  }[];
   try {
     cookies = await session.cookies.get({ url: base });
   } catch (error) {
@@ -147,6 +164,7 @@ export async function completeOAuthExchange(
   }
   trace(makeOAuthTrace('exchange-cookies', { host, ...cookieSummary(cookies) }));
   cookieNames = cookieSummary(cookies).cookieNames;
+  cookieAttrs = cookieAttributes(cookies);
   if (cookies.length === 0) {
     return fail(
       'no-cookie',
@@ -232,20 +250,24 @@ export async function completeOAuthExchange(
 /**
  * Build the ONE compact, secret-free diagnosis line a failure surfaces (in the
  * UI message) and persists (to `oauth-trace.log`): the failing step, the HTTP
- * status, the cookie NAMES present (NEVER values), verifier presence and the
- * provider's own clipped message. Only fixed machine codes and cookie names
- * flow in, so no token, cookie value, OAuth code or verifier can appear.
+ * status, the cookie NAMES present (NEVER values), each cookie's ATTRIBUTES
+ * (name/domain/path/sameSite/expiry - again never a value), verifier presence
+ * and the provider's own clipped message. Only fixed machine codes, cookie
+ * names and cookie attributes flow in, so no token, cookie value, OAuth code
+ * or verifier can appear.
  */
 function diagnosticLine(
   step: string,
   fields: DiagnosticFields,
   cookieNames: readonly string[],
+  cookieAttrs: readonly string[],
   verifierPresent: boolean,
 ): string {
   const status = typeof fields.status === 'number' ? String(fields.status) : 'none';
   const cookies = cookieNames.length > 0 ? cookieNames.join(',') : 'none';
+  const attrs = cookieAttrs.join(';');
   const provider = fields.provider !== undefined && fields.provider.length > 0 ? `"${fields.provider}"` : 'none';
-  return `step=${step} status=${status} cookies=${cookies} verifier=${
+  return `step=${step} status=${status} cookies=${cookies} attrs=${attrs} verifier=${
     verifierPresent ? 'present' : 'absent'
   } provider=${provider}`;
 }

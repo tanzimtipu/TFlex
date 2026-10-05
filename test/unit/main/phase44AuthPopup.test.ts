@@ -16,6 +16,7 @@ vi.mock('electron', () => ({
 import {
   decideAuthPopup,
   deriveAuthHost,
+  isAppNavigationUrl,
   isAuthCompletionUrl,
 } from '../../../src/main/window';
 
@@ -108,5 +109,50 @@ describe('isAuthCompletionUrl', () => {
 
   it('is false for a malformed URL', () => {
     expect(isAuthCompletionUrl('not a url', AUTH_HOST, 'http://localhost:5173')).toBe(false);
+  });
+});
+
+describe('isAppNavigationUrl', () => {
+  it('is true for the exact app file pathname', () => {
+    expect(
+      isAppNavigationUrl('file:///C:/app/dist/index.html', 'file:///C:/app/dist/index.html'),
+    ).toBe(true);
+  });
+
+  it('is true for the app file pathname with a hash or query', () => {
+    expect(
+      isAppNavigationUrl(
+        'file:///C:/app/dist/index.html#detached',
+        'file:///C:/app/dist/index.html',
+      ),
+    ).toBe(true);
+  });
+
+  it('is false for a different file pathname', () => {
+    expect(isAppNavigationUrl('file:///C:/Windows/win.ini', 'file:///C:/app/dist/index.html')).toBe(
+      false,
+    );
+  });
+
+  it('is false for https://example.com/ against the app', () => {
+    expect(
+      isAppNavigationUrl('https://example.com/?tfl772=tabnabbing', 'http://localhost:5173'),
+    ).toBe(false);
+  });
+
+  it('is true for the same dev origin', () => {
+    expect(isAppNavigationUrl('http://localhost:5173/?code=abc', 'http://localhost:5173')).toBe(true);
+  });
+
+  it('is false for a different dev origin', () => {
+    expect(isAppNavigationUrl('http://localhost:9999/', 'http://localhost:5173')).toBe(false);
+  });
+
+  it('is false when the app URL is null', () => {
+    expect(isAppNavigationUrl('http://localhost:5173/', null)).toBe(false);
+  });
+
+  it('is false for a malformed target URL', () => {
+    expect(isAppNavigationUrl('not a url', 'http://localhost:5173')).toBe(false);
   });
 });

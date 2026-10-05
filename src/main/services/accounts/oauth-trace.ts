@@ -60,3 +60,48 @@ export function cookieSummary(
   }
   return { cookieNames: [...names].sort(), cookieCount: cookies.length };
 }
+
+/**
+ * Phase 51 chunk C1 - report each cookie's ATTRIBUTES so a
+ * "Session challenge cookie not found" rejection can be attributed to a
+ * stale/legacy cookie rather than to a missing one. One
+ * `name|domain|path|sameSite|expires` string per cookie; domain and path fall
+ * back to `(none)`, and `expires` is the ISO string of `expirationDate` or
+ * `session` when the cookie is a session cookie. The cookie VALUE is never
+ * read, so no session token can leak through the diagnostic.
+ */
+export function cookieAttributes(
+  cookies: readonly {
+    name?: unknown;
+    domain?: unknown;
+    path?: unknown;
+    sameSite?: unknown;
+    expirationDate?: unknown;
+    session?: unknown;
+  }[],
+): string[] {
+  return cookies.map(
+    (cookie) =>
+      `${textOf(cookie?.name)}|${textOf(cookie?.domain)}|${textOf(cookie?.path)}|${textOf(
+        cookie?.sameSite,
+      )}|${expiresOf(cookie)}`,
+  );
+}
+
+/** A cookie string attribute, or `(none)` when absent/non-string/empty. */
+function textOf(value: unknown): string {
+  return typeof value === 'string' && value.length > 0 ? value : '(none)';
+}
+
+/** A cookie's expiry as an ISO string, or `session` for a session cookie. */
+function expiresOf(cookie: { expirationDate?: unknown; session?: unknown } | undefined): string {
+  if (cookie?.session === true) return 'session';
+  const raw = cookie?.expirationDate;
+  if (raw instanceof Date && !Number.isNaN(raw.getTime())) return raw.toISOString();
+  if (typeof raw === 'number' && Number.isFinite(raw)) {
+    const ms = raw > 1e12 ? raw : raw * 1000;
+    const date = new Date(ms);
+    return Number.isNaN(date.getTime()) ? 'session' : date.toISOString();
+  }
+  return 'session';
+}

@@ -89,7 +89,7 @@ function harness(over: {
     bridge,
     adapter,
     getStatus: getStatus as unknown as () => Promise<AccountStatusResult>,
-    openAuthUrl: async (url: string): Promise<OpenAuthUrlResult> => {
+    openAuthPopup: async (url: string): Promise<OpenAuthUrlResult> => {
       calls.open.push(url);
       if (over.openRejects === true) throw new Error("bridge exploded");
       return over.open === undefined ? { ok: true } : over.open(url);
@@ -129,7 +129,7 @@ describe("Phase 46 - Google sign-in: start -> open -> ok -> getStatus -> signed 
     expect(h.adapter.signInGoogle).toHaveBeenCalledWith({ callbackUrl: CALLBACK });
     expect(h.calls.open).toEqual([AUTHORIZE]);
     expect(h.calls.info).toContain(
-      "Finish signing in with Google in your browser - Jovrel will take it from there.",
+      "Finish signing in with Google in the Jovrel sign-in window - Jovrel will take it from there.",
     );
     // Still waiting: no status re-read, nothing closed or cancelled.
     expect(h.getStatus).not.toHaveBeenCalled();
@@ -218,7 +218,7 @@ describe("Phase 46 - Google sign-in: the real failure reaches the user", () => {
     expect(h.calls.open).toHaveLength(0);
   });
 
-  it("a browser that will not open (failed) is reported, not left as a dead button", async () => {
+  it("a popup that will not open (failed) is reported, not left as a dead button", async () => {
     const h = harness({ open: () => ({ ok: false, reason: "failed" }) });
     await until(() =>
       expect(h.calls.info).toContain("Jovrel could not open your browser for Google sign-in. Try again."),
@@ -239,7 +239,7 @@ describe("Phase 46 - Google sign-in: the real failure reaches the user", () => {
     expect(h.bridge.stopOAuthCallback).toHaveBeenCalledTimes(1);
   });
 
-  it("a bridge that rejects openAuthUrl surfaces a failure instead of hanging", async () => {
+  it("a bridge that rejects openAuthPopup surfaces a failure instead of hanging", async () => {
     const h = harness({ openRejects: true });
     await until(() => expect(h.calls.failure).toHaveLength(1));
     expect(h.calls.signedIn).toHaveLength(0);

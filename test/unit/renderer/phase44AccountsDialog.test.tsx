@@ -56,7 +56,6 @@ interface FakeBridge {
   startOAuthCallback: ReturnType<typeof vi.fn>;
   stopOAuthCallback: ReturnType<typeof vi.fn>;
   onOAuthCallback: ReturnType<typeof vi.fn>;
-  openAuthUrl: ReturnType<typeof vi.fn>;
   emitSync: (report: SyncReport) => void;
   emitOAuth: (outcome: OAuthCallbackOutcome) => void;
 }
@@ -84,7 +83,6 @@ function fakeBridge(over: Partial<Record<string, unknown>> = {}): FakeBridge {
         oauthListener = null;
       };
     }),
-    openAuthUrl: vi.fn(async () => ({ ok: true })),
   };
   for (const [key, value] of Object.entries(over)) {
     (parts as Record<string, unknown>)[key] = vi.fn(value as () => unknown);
@@ -367,13 +365,13 @@ describe("Phase 44 � signed-in surface and sync status", () => {
     expect(h.onStatusChange).toHaveBeenCalledWith("signed-out", null, null);
   });
 
-  it("Continue with Google starts the loopback flow, then hands only the provider URL to main", async () => {
+  it("Continue with Google starts the loopback flow, then opens the provider in an in-app sign-in window", async () => {
     const openSpy = vi.spyOn(window, "open").mockReturnValue({ close: vi.fn() } as unknown as Window);
     try {
       const h = await renderDialog({
         adapter: fakeAdapter({
-          // The SDK hands back the provider authorize URL; Phase 50 routes it
-          // through main, which opens the OS default browser.
+          // The SDK hands back the provider authorize URL; Phase 102 opens it
+          // in an in-app child window bound to the app session.
           signInGoogle: async () => ({ ok: true, url: "https://auth.example.invalid/authorize" }),
         }),
       });
@@ -381,11 +379,13 @@ describe("Phase 44 � signed-in surface and sync status", () => {
 
       expect(h.bridge?.startOAuthCallback).toHaveBeenCalledTimes(1);
       expect(h.adapter.signInGoogle).toHaveBeenCalledWith({ callbackUrl: CALLBACK_URL });
-      expect(h.bridge?.openAuthUrl).toHaveBeenCalledTimes(1);
-      expect(h.bridge?.openAuthUrl).toHaveBeenCalledWith("https://auth.example.invalid/authorize");
-      // Never an in-app popup: the browser owns the provider session.
-      expect(openSpy).not.toHaveBeenCalled();
-      // Nothing is closed/cancelled while the browser is still open.
+      expect(openSpy).toHaveBeenCalledTimes(1);
+      expect(openSpy).toHaveBeenCalledWith(
+        "https://auth.example.invalid/authorize",
+        "jovrel-google-signin",
+        "width=520,height=760",
+      );
+      // Nothing is closed/cancelled while the sign-in window is still open.
       expect(h.bridge?.stopOAuthCallback).not.toHaveBeenCalled();
     } finally {
       openSpy.mockRestore();

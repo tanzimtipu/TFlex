@@ -10,6 +10,7 @@ import { describe, expect, it } from 'vitest';
 import {
   clearAuthChallengeCookies,
   NEON_AUTH_CHALLENGE_COOKIE_NAMES,
+  type AuthCookies,
 } from '../../../src/main/services/accounts/auth-cookies';
 
 interface Removal {
@@ -18,11 +19,14 @@ interface Removal {
 }
 
 /** A fake cookie jar that records removals and can reject a given name. */
-function fakeJar(rejectName?: string): { removals: Removal[]; cookies: { remove: (url: string, name: string) => Promise<void> } } {
+function fakeJar(rejectName?: string): { removals: Removal[]; cookies: AuthCookies } {
   const removals: Removal[] = [];
   return {
     removals,
     cookies: {
+      async get(): Promise<{ name?: unknown }[]> {
+        return [];
+      },
       async remove(url: string, name: string): Promise<void> {
         removals.push({ url, name });
         if (name === rejectName) throw new Error('cookie store unavailable');
@@ -67,7 +71,9 @@ describe('Phase 51 auth challenge cookie cleanup', () => {
 
   it('swallows a removal failure and still clears the other name', async () => {
     const jar = fakeJar('__Secure-neon-auth.session_challenge');
-    await expect(clearAuthChallengeCookies(jar.cookies, AUTH_BASE)).resolves.toBeUndefined();
+    const result = await clearAuthChallengeCookies(jar.cookies, AUTH_BASE);
+    expect(result.removed).toEqual(['__Secure-neon-auth.session_challange']);
+    expect(result.present).toEqual([]);
     expect(jar.removals.map((r) => r.name)).toEqual([
       '__Secure-neon-auth.session_challenge',
       '__Secure-neon-auth.session_challange',

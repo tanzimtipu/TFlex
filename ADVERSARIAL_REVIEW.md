@@ -9639,3 +9639,148 @@ Screenshot / log: screenshots/phase101-adv/probe-hang.log,
 driver screenshots/phase101-adv/p101-hang.cjs
 
 Disposition: ACCEPTED -> DEF-553
+
+## Phase 102 in-app sign-in window (TFL-772 diff-pass) - auth-popup opener, child-window allowlist, token logging
+
+Session label: `diff-pass`. Scope: the uncommitted Phase 102 change
+(`src/renderer/components/AccountsDialog.tsx:357-374`, `src/renderer/accounts/oauthLoopback.ts`)
+built on the existing `installAuthPopupHandler` (`src/main/window.ts:104-310`), plus the
+Phase 51 challenge-clear / `attrs=` changes in `src/main/services/accounts/*` and the
+repointed specs. Product code, `e2e/**` and REQUIREMENTS.md were read but NOT modified.
+Launches went only through `e2e/lib/launch.cjs`. No token, code, verifier or cookie value
+is printed in this entry or in the probe (`test-fixtures/tfl772_adversary_probe.cjs` redacts
+every `token|code|state|verifier` query value).
+
+Exact commands / results:
+
+- `env -u ELECTRON_RUN_AS_NODE npm.cmd run build` -> exit 0 (typecheck + renderer + main + preload clean).
+- targeted main unit specs (phase44AuthPopup, phase46OAuthTrace, phase46OAuthExchange,
+  phase47OAuthCompletion, phase50OpenExternal, phase51AuthChallenge) -> **6 files / 89 tests passed**.
+- `env -u ELECTRON_RUN_AS_NODE npm.cmd run test:e2e -- e2e/tfl751_inapp_signin.spec.cjs` -> **1 passed** (9.8 s).
+- hostile probe `node test-fixtures/tfl772_adversary_probe.cjs` -> `test-fixtures/tfl772_probe_result.json`.
+
+Attack-surface results (shipped dev build):
+
+1. NEW `window.open` call site -> `decideAuthPopup` allowlist: **HOLDS**. 17 hostile payloads
+   (evil / subdomain / suffix / userinfo / auth-host-then-evil / backslash / `%2f` / trailing
+   dot / in-path / `http:` / `javascript:` / `file:` / `data:` / malformed / null / object)
+   each created **zero** windows. The only windows created were genuine `https://<auth-host>/...`
+   URLs (the backslash payload `https://<auth-host>\@evil.example/` is normalised by WHATWG to
+   `https://<auth-host>/@evil.example/`, i.e. still the auth host - not a bypass).
+2. `accounts:openAuthUrl` / `openAuthUrlExternally`: **HOLDS and UNCHANGED**. Every
+   non-auth-host payload returned `{ok:false,reason:'invalid-url'}`; `shell.openExternal`
+   received no hostile URL (the C2 attack table is intact and extended).
+3. Completion/landing: no false `{ok:true}` without the single-use loopback token (a
+   wrong/missing token is 403 and emits no outcome); verifier capture, `/get-session`
+   exchange and the new `attrs=` line are value-free (name/domain/path/sameSite/expiry only).
+4. Repointed Phase 50 gate: C1's supersession is legitimate (asserts `window.open` + in-app
+   window + NO shell auth URL) and C2 is not relaxed. No assertion weakened.
+5. **BREAKS found** -> ADV-210, ADV-211, ADV-212 below.
+
+## ADV-210: The in-app auth popup keeps `window.opener` on the privileged main window - a script in the provider chain can navigate the app to an attacker origin that still holds the full `window.tflex` preload bridge
+
+- Session: diff-pass
+- Suggested severity: HIGH
+
+What I did: launched the shipped dev build via `e2e/lib/launch.cjs`, clicked the title-bar
+account control, then "Continue with Google". The in-app popup opened and followed the real
+provider chain to `https://accounts.google.com/...`. In that popup I ran
+`window.opener.location.href = 'https://example.com/?tfl772=tabnabbing'` (equivalent to any
+script executing in the popup), then read the MAIN window's URL and evaluated
+`window.tflex.accounts.getStatus()` on it. Repro: `node test-fixtures/tfl772_adversary_probe.cjs`
+(result JSON `test-fixtures/tfl772_probe_result.json`, fields `tabnabbing.*`).
+
+Expected: the provider window must not hold a usable opener on the app's privileged window.
+The app renderer runs from `file://` with a `contextBridge` bridge, and every IPC handler in
+`src/main/index.ts` acts on the payload without validating the sender origin/frame, so any
+origin that keeps the preload is a full app bridge. The Phase 102 contract keeps the popup
+allowlist as "a security net"; the opener relationship is a hole in it. `window.open` at
+`src/renderer/components/AccountsDialog.tsx:367` passes no `noopener`/`noreferrer`, and the
+main window has no `will-navigate` guard (`src/main/window.ts` installs only
+`setWindowOpenHandler`, which governs new windows, not navigation).
+
+Actual: the popup had `window.opener` (`hasOpener:true`; cross-origin read of
+`opener.location.href` was correctly blocked, but writing `location` is allowed), and the
+main window navigated to `https://example.com/?tfl772=tabnabbing` (`mainUrlAfterNav`). On
+that attacker origin `window.tflex` was still present and live:
+`{hasTflex:"object", hasAccounts:true, ipcResult:{ok:true, status:"signed-out"}}` - the
+preload bridge and IPC survived the cross-origin navigation. That bridge exposes the app's
+full IPC surface (file open/save/export, `shell.openPath`, settings, signatures, update
+install), so a single script execution anywhere in the popup's navigation chain (a
+compromised/XSS'd provider page, or an open redirect that lands script) escalates from a
+third-party web origin to local file access under the user's account. Phase 50's OS-browser
+path had no opener relationship, so this is a new weakening introduced by the diff.
+
+Screenshot / log: `test-fixtures/tfl772_probe_result.json` (`tabnabbing`),
+driver `test-fixtures/tfl772_adversary_probe.cjs`.
+
+Disposition: ACCEPTED -> DEF-558 (HIGH). CTO triage (TFL-751, 2026-10-05): Phase 102 re-enables the in-app popup, so this opener/escalation hole is in scope for this merge. Fix: main-process hardening - a main-window `will-navigate` guard so the privileged window can never be navigated away from the app (the escalation), plus best-effort opener severing - assigned backend-dev (TFL-777). Blocks the Phase 102 commit.
+
+## ADV-211: The in-app auth popup's own `window.open` bypasses `decideAuthPopup` - the popup has no `setWindowOpenHandler`, so the provider page spawns arbitrary untracked windows
+
+- Session: diff-pass
+- Suggested severity: MEDIUM
+
+What I did: with the Google popup open on `https://accounts.google.com/...`, I called
+`window.open('https://evil.example.com/', '_blank')` from inside the popup, then counted and
+listed the app's remote windows from main. Repro: `node test-fixtures/tfl772_adversary_probe.cjs`
+(result `popupChild.*`).
+
+Expected: Phase 102 feature A states "The popup is confined to https on exactly the configured
+auth host; every other URL is still refused by `decideAuthPopup`", and the deny-by-default
+popup allowlist is "kept as a security net". A window opened FROM the popup is still a new
+window in the app and must not bypass that rule.
+
+Actual: `window.open` returned a WindowProxy and a real window was created at
+`https://evil.example.com/` (`windowsCreated:1`). `installAuthPopupHandler` installs
+`setWindowOpenHandler` only on the MAIN window (`src/main/window.ts:228`); the popup created
+at `did-create-window` (`window.ts:253-299`) gets no handler, so Electron's default allow
+applies to every window the provider page opens. That window is not added to the handler's
+tracked `popups` set, so it is not closed on completion or when the main window closes (stray
+window / process that outlives the flow).
+
+Screenshot / log: `test-fixtures/tfl772_probe_result.json` (`popupChild`).
+
+Disposition: ACCEPTED -> DEF-559 (MEDIUM). CTO triage (TFL-751, 2026-10-05): a window opened by the provider popup bypasses the deny-by-default allowlist and is untracked. Fix: install a deny-all `setWindowOpenHandler` on the child popup in `installAuthPopupHandler` - assigned backend-dev (TFL-777). Blocks the Phase 102 commit.
+
+## ADV-212: The new/changed Phase 102 e2e specs print live token-bearing URLs despite a header that states no token is ever printed
+
+- Session: diff-pass
+- Suggested severity: LOW
+
+What I did: ran the required `e2e/tfl751_inapp_signin.spec.cjs` and read its console output;
+also read `e2e/phase50_gate.spec.cjs`.
+
+Expected: `e2e/tfl751_inapp_signin.spec.cjs:1-12` states "No cookie/token/code value is ever
+printed - trace KINDS only", and the adversary brief forbids logging any token/code/verifier.
+The loopback token in particular is treated everywhere else in the product as a secret kept
+in main ("never traced, logged, stored or returned to the renderer",
+`src/main/services/accounts/oauth-callback.ts:31-32`).
+
+Actual: the spec's own output contains the raw values - `[T751] window.open calls` (line 87)
+prints the SDK sign-in URL including its `?token=<init token>`, and `[T751] minted=` (line 92)
+prints the full minted loopback URL including `?token=<32-byte token>`. `e2e/phase50_gate.spec.cjs:83`
+logs the same token-bearing `window.open calls`. These land in CI/stdout logs (and any captured
+run artifacts), contradicting the spec header and the brief.
+
+Screenshot / log: `e2e/tfl751_inapp_signin.spec.cjs:87,92`; `e2e/phase50_gate.spec.cjs:83`;
+observed run output (`[T751] window.open calls`, `[T751] minted`). Redact the query values
+(or log host/path only) in both specs.
+
+Disposition: ACCEPTED -> DEF-560 (LOW). CTO triage (TFL-751, 2026-10-05): the specs must not print token-bearing URLs. Fix: log host/path only - assigned qa (TFL-780) with the post-fix re-verification.
+
+Design-critique pass (skill `design-critique`) on the changed surface - the accounts
+sign-in dialog and its Google in-flight banner (`AccountsDialog.tsx:246,357-374`):
+
+- Must-fix: none. The user job ("sign in with Google") is obvious within 3 s; the primary
+  action `[data-accounts-google]` keeps its place and prominence; the busy/loading and the
+  local-outcome error states ("could not open", "address was rejected") are intact and honest.
+- Should-fix: the in-flight copy names the "Jovrel sign-in window" but does not say it may
+  have opened behind the app or how to bring it back; a user who misses it has no explicit
+  recover affordance beyond clicking Google again (which silently cancels and restarts).
+  **Try:** add a one-line hint that the sign-in window may be behind the app, or a "Reopen
+  sign-in window" action while the flow is live.
+- Nice-to-fix: child window is fixed at 520x760 with no remembered size; fine for now.
+- Strengths to keep: copy now matches the actual mechanism (no stale "in your browser"),
+  failures surface as non-blocking info rather than a dead spinner, and the surface stays
+  usable while the popup is open.

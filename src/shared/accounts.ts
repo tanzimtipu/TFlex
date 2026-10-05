@@ -250,7 +250,9 @@ export type OAuthTraceKind =
   | 'exchange-get-session'
   | 'exchange-token'
   | 'exchange-stored'
-  | 'exchange-failed';
+  | 'exchange-failed'
+  // Phase 51 - the stale/legacy challenge-cookie clear at flow start.
+  | 'challenge-clear';
 
 export interface OAuthTraceEvent {
   /** Epoch milliseconds; events order by this. */
@@ -267,11 +269,14 @@ export interface OAuthTraceEvent {
   errorCode?: number;
   /** `popup-fail-load` only - Chromium's net error description. */
   errorDescription?: string;
-  /** `popup-cookies` / `exchange-cookies` only - cookie NAMES, sorted;
-   *  never values. */
+  /** `popup-cookies` / `exchange-cookies` / `challenge-clear` only - cookie
+   *  NAMES, sorted; never values. */
   cookieNames?: string[];
   /** `popup-cookies` / `exchange-cookies` only - total matching cookies. */
   cookieCount?: number;
+  /** `challenge-clear` only - challenge cookie NAMES removed by the clear;
+   *  never values. */
+  cookieRemovedNames?: string[];
   /** `exchange-get-session` / `exchange-token` only - the HTTP status the auth
    *  host answered. Never a body. */
   status?: number;

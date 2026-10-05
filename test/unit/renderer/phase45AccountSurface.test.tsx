@@ -57,7 +57,6 @@ interface FakeBridge {
   startOAuthCallback: ReturnType<typeof vi.fn>;
   stopOAuthCallback: ReturnType<typeof vi.fn>;
   onOAuthCallback: ReturnType<typeof vi.fn>;
-  openAuthUrl: ReturnType<typeof vi.fn>;
 }
 
 function fakeBridge(over: Partial<Record<string, unknown>> = {}): FakeBridge {
@@ -71,7 +70,6 @@ function fakeBridge(over: Partial<Record<string, unknown>> = {}): FakeBridge {
     startOAuthCallback: vi.fn(async () => ({ callbackUrl: CALLBACK_URL })),
     stopOAuthCallback: vi.fn(async () => undefined),
     onOAuthCallback: vi.fn(() => () => undefined),
-    openAuthUrl: vi.fn(async () => ({ ok: true })),
   };
   for (const [key, value] of Object.entries(over)) {
     (parts as Record<string, unknown>)[key] = vi.fn(value as () => unknown);
@@ -173,8 +171,8 @@ describe("Phase 45 - the surface belongs to the app (Jovrel, Phase 49)", () => {
     expect(button.querySelector("svg")?.getAttribute("aria-hidden")).toBe("true");
   });
 
-  it("still wires the Google flow: loopback callback -> adapter -> OS browser (never window.open)", async () => {
-    const openSpy = vi.spyOn(window, "open");
+  it("still wires the Google flow: loopback callback -> adapter -> in-app sign-in window", async () => {
+    const openSpy = vi.spyOn(window, "open").mockReturnValue({ close: vi.fn() } as unknown as Window);
     try {
       const adapter = fakeAdapter({
         signInGoogle: async () => ({ ok: true, url: "https://auth.example.invalid/authorize" }),
@@ -184,56 +182,49 @@ describe("Phase 45 - the surface belongs to the app (Jovrel, Phase 49)", () => {
 
       expect(h.bridge.startOAuthCallback).toHaveBeenCalledTimes(1);
       expect(h.adapter.signInGoogle).toHaveBeenCalledWith({ callbackUrl: CALLBACK_URL });
-      // Phase 50: main opens the OS default browser; the renderer NEVER opens
-      // an in-app popup.
-      expect(h.bridge.openAuthUrl).toHaveBeenCalledWith("https://auth.example.invalid/authorize");
-      expect(openSpy).not.toHaveBeenCalled();
-      expect(must(h.container, "[data-accounts-banner]").textContent).toContain("in your browser");
+      // Phase 102: the provider URL opens in an in-app child window bound to
+      // the app session; the OS browser is never used.
+      expect(openSpy).toHaveBeenCalledWith(
+        "https://auth.example.invalid/authorize",
+        "jovrel-google-signin",
+        "width=520,height=760",
+      );
+      expect(must(h.container, "[data-accounts-banner]").textContent).toContain("Jovrel sign-in window");
     } finally {
       openSpy.mockRestore();
     }
   });
 
-  it("stays non-blocking while the browser is open: the form and close control remain", async () => {
-    const adapter = fakeAdapter({
-      signInGoogle: async () => ({ ok: true, url: "https://auth.example.invalid/authorize" }),
-    });
-    const h = await renderDialog(adapter);
-    await click(must(h.container, "[data-accounts-google]"));
+  it("stays non-blocking while the sign-in window is open: the form and close control remain", async () => {
+    const openSpy = vi.spyOn(window, "open").mockReturnValue({ close: vi.fn() } as unknown as Window);
+    try {
+      const adapter = fakeAdapter({
+        signInGoogle: async () => ({ ok: true, url: "https://auth.example.invalid/authorize" }),
+      });
+      const h = await renderDialog(adapter);
+      await click(must(h.container, "[data-accounts-google]"));
 
-    // Not a modal block: the sign-in step and its controls are still there.
-    expect(step(h.container)).toBe("credentials");
-    expect(must(h.container, "[data-accounts-close]")).not.toBeNull();
-    expect(must(h.container, "[data-accounts-email]")).not.toBeNull();
+      // Not a modal block: the sign-in step and its controls are still there.
+      expect(step(h.container)).toBe("credentials");
+      expect(must(h.container, "[data-accounts-close]")).not.toBeNull();
+      expect(must(h.container, "[data-accounts-email]")).not.toBeNull();
+    } finally {
+      openSpy.mockRestore();
+    }
   });
 
-  it("a refused sign-in address shows the honest banner and never a popup", async () => {
-    const bridge = fakeBridge({ openAuthUrl: vi.fn(async () => ({ ok: false, reason: "invalid-url" })) });
-    (window as unknown as { tflex?: unknown }).tflex = { accounts: bridge };
-    const adapter = fakeAdapter({
-      signInGoogle: async () => ({ ok: true, url: "https://evil.example.invalid/authorize" }),
-    });
-    const container = document.createElement("div");
-    document.body.appendChild(container);
-    const root = createRoot(container);
-    act(() => {
-      root.render(
-        <AccountsDialog open onClose={(): void => undefined} createAdapter={(): AccountsAuthAdapter => adapter.adapter} />,
-      );
-    });
-    await flush();
-    mounted.push(() => {
-      act(() => root.unmount());
-      container.remove();
-    });
-
-    const openSpy = vi.spyOn(window, "open");
+  it("a blocked sign-in window shows the honest banner and signs nobody in", async () => {
+    const openSpy = vi.spyOn(window, "open").mockReturnValue(null);
     try {
-      await click(must(container, "[data-accounts-google]"));
-      expect(bridge.openAuthUrl).toHaveBeenCalledTimes(1);
-      expect(openSpy).not.toHaveBeenCalled();
-      expect(must(container, "[data-accounts-banner]").textContent).toContain(
-        "The Google sign-in address was rejected.",
+      const adapter = fakeAdapter({
+        signInGoogle: async () => ({ ok: true, url: "https://auth.example.invalid/authorize" }),
+      });
+      const h = await renderDialog(adapter);
+      await click(must(h.container, "[data-accounts-google]"));
+
+      expect(openSpy).toHaveBeenCalledTimes(1);
+      expect(must(h.container, "[data-accounts-banner]").textContent).toContain(
+        "Jovrel could not open your browser for Google sign-in.",
       );
     } finally {
       openSpy.mockRestore();

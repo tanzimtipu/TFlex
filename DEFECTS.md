@@ -5,6 +5,29 @@
 > inspect the current `OPEN`, `FIX-READY`, and `DISPUTED` entries first; closed records are
 > historical evidence and must not be loaded wholesale.
 
+## DEF-561: Edit Text - deleting a text run leaves a hoverable, clickable ghost box at the vacated position that restores the deleted text
+
+- Status: OPEN
+- Severity: HIGH - operator-reported; a destructive edit is not final and a click re-inserts deleted content.
+- Found by: operator (TFL-775; re-report of the TFL-384/TFL-525 Edit-Text class)
+- Phase: TFL-776
+- Files: `src/renderer/edit/EditOverlay.tsx:1677-1691` (run-bar Delete commits the engine mask but never registers the vacated rect), `src/renderer/edit/model.ts:486-506` (`isMaskedRunRect` only suppresses MOVE-masked rects), `src/renderer/edit/EditOverlay.tsx:684-692` (`textItemsForInteraction` filter), `:757-771` (window hover listener), `:699-735` (`runAtPoint` click hit-test)
+- Escape: no-probe - TFL-525 tested hover symmetry and Cancel/Confirm/Escape, but no test covered the run-delete teardown leaving a hit-target.
+
+Steps to reproduce:
+1. Launch the app (or a build rebuilt from current source) and open a text document with selectable runs (e.g. the sample report PDF).
+2. Edit -> Edit Text; single-click a text run so the selection bar (Confirm / Edit / Delete / Cancel) appears.
+3. Press the bar's Delete ("Delete text (mask)").
+4. Move the pointer over the vacated position, then click it.
+
+Expected: after Delete the run's text is gone and the vacated position is inert - no hover/selection box, no click hit-target, and clicking does not restore or re-insert the deleted text.
+Actual (operator, installed build): the text disappears but an empty dashed hover/selection box remains exactly where the run was; hovering shows it and clicking it re-selects the run and restores the deleted text.
+
+Screenshot: operator attachment on TFL-775.
+
+History:
+- CTO (TFL-776, 2026-10-05): filed operator-reported with its escape class at filing time. Root-cause candidate: the run-bar Delete commits the engine mask but never registers the vacated rect in `committedTextRuns`, so `isMaskedRunRect` cannot suppress the pdf.js phantom text item and both the hover and click hit-tests still match it. To be confirmed by measurement (which layer keeps the stale element), not assumed.
+
 ## DEF-549: Phase 101 redaction covers only `context` - secrets in `message`, `error_name`, `stack_trace` and breadcrumb messages reach the unauthenticated public `bug_reports` table
 
 - Status: CLOSED
@@ -124,7 +147,7 @@ History:
 
 ## DEF-554: Google sign-in 400 "Session challenge cookie not found" - the app presents the challenge held by Electron's session, but Neon Auth's verifier is bound to the challenge of the external browser that reached the hosted callback
 
-- Status: OPEN
+- Status: FIX-READY (qa TFL-780 re-verify 2026-10-05: live retest INCONCLUSIVE, operator sign-in still pending; NOT closed)
 - Severity: HIGH - every "Continue with Google" on the installed build fails after the browser returns; the same class was re-reported by the operator on 2026-10-04 and the 1.41.2 (verifier capture) and 1.43.0/Phase-51 (clear stale challenge) fixes both addressed the wrong mechanism.
 - Found by: qa (TFL-757 live measurement); root cause recorded by CTO
 - Phase: TFL-751
@@ -156,6 +179,150 @@ Screenshot: screenshots/phase522-live-roundtrip.png (account panel shows the `at
 
 History:
 - qa (TFL-757, 2026-10-05): measured live FAIL with attribute-level evidence; root cause named by CTO (TFL-751). Prior DEF-365 / 1.41.2 / 1.43.0 addressed callback capture and stale cookies, not this cross-session binding.
+- CTO (TFL-751, 2026-10-05): operator decision on the fix - option B "keep the OS-browser UX". The reliable same-session fix (option A, in-app window) was declined, so this defect now requires a Neon Auth / server-side change that the team must NOT make (criterion 5: no credential or Neon-setting edits). Required: the loopback/desktop flow must mint the session without the app holding the challenge cookie bound at callback time - either bind the verifier to the app session's `signIn.social` challenge, return the session to the loopback redirect, or support a PKCE/loopback desktop flow. Parked; operator/Neon action required before C3.
+- CTO (TFL-751, 2026-10-05): operator REVERSED to option A (latest instruction wins); TFL-768 (the option-B Neon action) cancelled. Contract amended with `REQUIREMENTS.md` Phase 102 (Google sign-in returns to an in-app same-session window; supersedes Phase 50 feature A; Settings impact none).
+- frontend-dev (TFL-769, 2026-10-05): fix applied - `src/renderer/accounts/oauthLoopback.ts` port renamed to `openAuthPopup`; `src/renderer/components/AccountsDialog.tsx:366` opens `window.open(url, "jovrel-google-signin", ...)` into the existing `installAuthPopupHandler` popup (shared app session), instead of `accounts:openAuthUrl` (shell). Loopback listener, verifier capture, exchange and `attrs=` diagnostic unchanged.
+- qa (TFL-770, 2026-10-05): FIX-READY PASS. Account unit specs 70/70; `e2e/phase50_gate.spec.cjs` repointed to Phase 102 (C1/C2/C3 PASS); new `e2e/tfl751_inapp_signin.spec.cjs` FAILS pre-fix / PASSES post-fix (window.open auth-host URL, zero shell auth URLs, popup closes on the minted loopback); phase46/522 specs green. LIVE end-to-end INCONCLUSIVE (the operator's own Google account is required to complete the round trip) - per phase criterion 1 the phase stops at FIX-READY pending the operator's real sign-in. CLOSED requires that live confirmation.
+- qa (TFL-780, 2026-10-05): phase-close re-verify. Hardening + redaction fix retested green (see DEF-558/559/560); `e2e/tfl751_inapp_signin.spec.cjs` PASS; LIVE `e2e/phase522_live_roundtrip.spec.cjs` again INCONCLUSIVE - getStatus `{status:"signed-out"}`, trace stops at `popup-navigate` (no `loopback-hit`/`exchange-*`), no `oauth-trace.log` line (the flow never reached the exchange). Operator real sign-in still required; DEF-554 remains open.
+
+## DEF-555: `e2e/phase522_oauth_exchange.spec.cjs` leaks `TFLEX_AUTH_BASE_URL` into later specs on a reused Playwright worker, CSP-blocking their sign-in
+
+- Status: OPEN
+- Severity: MEDIUM - test-infrastructure correctness: a stale env var from this spec points a later spec's auth request at a dead local stub, which is CSP-blocked, so the later spec's sign-in never even opens a window (silent cross-spec contamination).
+- Found by: qa (TFL-770 C4 FIX-READY retest)
+- Phase: TFL-751 (finding; the spec is TFL-522)
+- Files: `e2e/phase522_oauth_exchange.spec.cjs` (sets `process.env.TFLEX_AUTH_BASE_URL` to its stub base and never restores it)
+
+Steps to reproduce: run `e2e/phase522_oauth_exchange.spec.cjs` before another sign-in spec on the same worker (e.g. the tfl751 sweep); the later spec's provider request targets the dead stub base and is refused before any window opens. `e2e/tfl751_inapp_signin.spec.cjs` clears the variable defensively before launch.
+
+Expected: each spec restores `TFLEX_AUTH_BASE_URL` (save/restore in beforeAll/afterAll) so specs are order-independent.
+
+Actual: the variable persists after the spec, contaminating later specs on a reused worker.
+
+Screenshot: none (test-infra; see `e2e/tfl770_retest.log`).
+
+History:
+- qa (TFL-770, 2026-10-05): raised during the TFL-751 C4 FIX-READY retest.
+- qa (TFL-780, 2026-10-05): reproduced again - running `e2e/tfl751_cookie_attrs.spec.cjs` in the same worker after `phase522_oauth_exchange` left `TFLEX_AUTH_BASE_URL` at the dead stub and CSP-blocked the sign-in (trace stopped at `challenge-clear`, no loopback/exchange). Running the spec alone is clean. Confirms the save/restore fix is still needed.
+
+## DEF-556: the sign-in loopback success page still says "close this browser tab" though the callback now lands in the in-app window
+
+- Status: OPEN
+- Severity: LOW - cosmetic/incorrect copy shown in the in-app popup for the moment before it auto-closes.
+- Found by: qa (TFL-770 C4 FIX-READY retest)
+- Phase: TFL-751 (Phase 102 deferral)
+- Files: `src/main/services/accounts/oauth-callback.ts:387` (`SUCCESS_PAGE`: "You can close this browser tab and return to Jovrel...")
+
+Steps to reproduce: complete the provider round-trip; the loopback landing renders `SUCCESS_PAGE` inside the in-app popup (auto-closed on completion), which still names the browser tab.
+
+Expected: copy that matches the in-app window (Phase 102 feature A), or a neutral "you can return to Jovrel".
+
+Actual: "close this browser tab". Deferred by the CTO for this phase (the page is transient and the popup auto-closes); `e2e/phase50_gate.spec.cjs` C3 still asserts the old copy and must be repointed with the change.
+
+Screenshot: screenshots/phase50-inapp-signin.png.
+
+History:
+- qa (TFL-770, 2026-10-05): raised during the TFL-751 C4 FIX-READY retest; deferred by CTO to a follow-up.
+
+## DEF-557: `e2e/phase47_google_completion.spec.cjs` hardcodes the packaged version `1.41.0` and its packaged fixture predates the change
+
+- Status: OPEN
+- Severity: LOW - the spec fails for fixture staleness (packaged build is 1.49.0; its asar predates the Phase 102 change), not for product behaviour.
+- Found by: qa (TFL-770 C4 FIX-READY retest)
+- Phase: TFL-751 (finding; the spec is TFL-47)
+- Files: `e2e/phase47_google_completion.spec.cjs:44` (`expect(version).toBe('1.41.0')`)
+
+Steps to reproduce: `env -u ELECTRON_RUN_AS_NODE npm.cmd run test:e2e -- e2e/phase47_google_completion.spec.cjs` - 2 fails: the version assertion (1.41.0 vs 1.49.0) and a popup that never opens because the packaged asar is pre-Phase-102 (browser path).
+
+Expected: the spec asserts the CURRENT packaged version (or reads it) and runs against a build that carries the code under test.
+
+Actual: stale hardcoded version + stale packaged fixture.
+
+Screenshot: none (spec log in `e2e/tfl770_retest.log`).
+
+History:
+- qa (TFL-770, 2026-10-05): raised during the TFL-751 C4 FIX-READY retest.
+
+## DEF-558: the in-app auth popup keeps `window.opener` on the privileged main window - a script in the provider chain can navigate the app to an attacker origin that still holds the full `window.tflex` preload bridge
+
+- Status: CLOSED (qa TFL-780, 2026-10-05; fix TFL-777)
+- Severity: HIGH - a single script execution anywhere in the provider navigation chain can tab-nab the app window to an attacker origin where the preload bridge and every IPC handler remain live (file open/save/export, `shell.openPath`, settings, signatures, update install). New weakening introduced by Phase 102's re-enabled in-app popup.
+- Found by: adversary (ADV-210, TFL-772 diff-pass)
+- Phase: TFL-751 (Phase 102)
+- Files: `src/renderer/components/AccountsDialog.tsx:367` (`window.open` with no `noopener`/`noreferrer`), `src/main/window.ts` (only `setWindowOpenHandler` is installed; no `will-navigate` guard on the main window), `src/main/index.ts` (IPC handlers act on the payload without sender-origin validation)
+
+Steps to reproduce:
+1. `env -u ELECTRON_RUN_AS_NODE npm.cmd run build`.
+2. `node test-fixtures/tfl772_adversary_probe.cjs` (result `test-fixtures/tfl772_probe_result.json`, `tabnabbing.*`): open the account sheet, click Continue with Google, in the popup run `window.opener.location.href = 'https://example.com/?tfl772=tabnabbing'`, then read the main window URL and `window.tflex.accounts.getStatus()` on it.
+
+Expected: the provider window has no usable opener on the app window, and the main window can never be navigated away from the app.
+
+Actual: the popup had `window.opener` (`hasOpener:true`), the main window navigated to `https://example.com/?tfl772=tabnabbing`, and on that origin `window.tflex` was still present and live (`{hasTflex:"object",hasAccounts:true,ipcResult:{ok:true,status:"signed-out"}}`).
+
+Screenshot: test-fixtures/tfl772_probe_result.json (`tabnabbing`), driver test-fixtures/tfl772_adversary_probe.cjs.
+
+History:
+- adversary (TFL-772, 2026-10-05): opened via ADV-210; CTO ACCEPTED (HIGH), assigned backend-dev (TFL-777: main-window `will-navigate` guard + opener severing). Blocks the Phase 102 commit.
+- qa (TFL-780, 2026-10-05): CLOSED. Re-ran `node test-fixtures/tfl772_adversary_probe.cjs` against the built fix; `tabnabbing.mainUrlAfterNav` = `file:///.../dist/renderer/index.html` (the app URL, NOT `https://example.com/...`), so the opener escalation is blocked. `tabnabbing.opener.hasOpener` = true (the opener reference remains, as expected; the navigation guard neutralises it) and `tabnabbing.opener.readOpenerHref` = `blocked:SecurityError`. Evidence: `test-fixtures/tfl772_probe_result.json`.
+
+## DEF-559: the in-app auth popup's own `window.open` bypasses `decideAuthPopup` - the popup has no `setWindowOpenHandler`
+
+- Status: CLOSED (qa TFL-780, 2026-10-05; fix TFL-777)
+- Severity: MEDIUM - a window opened from the provider popup bypasses the deny-by-default allowlist and is untracked (not closed on completion / app close; stray process).
+- Found by: adversary (ADV-211, TFL-772 diff-pass)
+- Phase: TFL-751 (Phase 102)
+- Files: `src/main/window.ts:228` (`setWindowOpenHandler` installed on the MAIN window only), `src/main/window.ts:253-299` (the child created at `did-create-window` gets no handler and is not added to the tracked `popups` set for child-opened windows)
+
+Steps to reproduce: with the Google popup open, call `window.open('https://evil.example.com/','_blank')` from inside the popup; `test-fixtures/tfl772_adversary_probe.cjs` (`popupChild.*`) shows `windowsCreated:1`.
+
+Expected: Phase 102 feature A - the popup is confined to https on exactly the configured auth host; deny by default.
+
+Actual: a real untracked window was created at `https://evil.example.com/`.
+
+Screenshot: test-fixtures/tfl772_probe_result.json (`popupChild`).
+
+History:
+- adversary (TFL-772, 2026-10-05): opened via ADV-211; CTO ACCEPTED (MEDIUM), assigned backend-dev (TFL-777: deny-all `setWindowOpenHandler` on the child popup). Blocks the Phase 102 commit.
+- qa (TFL-780, 2026-10-05): CLOSED. Re-ran `node test-fixtures/tfl772_adversary_probe.cjs`; `popupChild.windowsCreated` = 0 and `window.open('https://evil.example.com/','_blank')` from the popup created no window (the deny-all handler returns null -> `popupChild.result` = "null"). All 16 deny-class hostile `windowOpen` payloads created 0 windows; the single allow entry is the backslash-normalisation case that resolves to a path on the auth host. Evidence: `test-fixtures/tfl772_probe_result.json`.
+
+## DEF-560: the Phase 102 e2e specs print live token-bearing URLs
+
+- Status: CLOSED (qa TFL-780, 2026-10-05)
+- Severity: LOW - test-output redaction: token-bearing sign-in/loopback URLs land in CI/stdout logs, contradicting the spec header and the product's "never printed" rule.
+- Found by: adversary (ADV-212, TFL-772 diff-pass)
+- Phase: TFL-751 (Phase 102)
+- Files: `e2e/tfl751_inapp_signin.spec.cjs:87,92` (`[T751] window.open calls`, `[T751] minted`), `e2e/phase50_gate.spec.cjs:83`
+
+Steps to reproduce: run `env -u ELECTRON_RUN_AS_NODE npm.cmd run test:e2e -- e2e/tfl751_inapp_signin.spec.cjs` and read the console: the SDK sign-in URL and the minted loopback URL appear with their `?token=` values.
+
+Expected: log host/path only (or redact the query).
+
+Actual: raw token-bearing URLs printed. Fix assigned qa (TFL-780) with the post-fix re-verification.
+
+Screenshot: none (observed run output).
+
+History:
+- adversary (TFL-772, 2026-10-05): opened via ADV-212; CTO ACCEPTED (LOW), assigned qa.
+- qa (TFL-780, 2026-10-05): CLOSED. Added a local `redactUrl` helper to both specs mirroring `sanitizeUrlForTrace` (scheme + host + pathname only; query/hash dropped); all logging calls that could carry a URL now pass through it (`e2e/tfl751_inapp_signin.spec.cjs` `window.open calls`, `minted`, `shell.openExternal urls`; `e2e/phase50_gate.spec.cjs` `window.open calls`, `shell.openExternal urls`, C3 loopback url). Assertions are unchanged and still compare the real URL values. Re-ran `env -u ELECTRON_RUN_AS_NODE npm.cmd run test:e2e -- e2e/tfl751_inapp_signin.spec.cjs e2e/phase50_gate.spec.cjs`: output contains zero `token=` occurrences; the `minted` line now reads `http://localhost:<port>/oauth/callback` and the window.open line shows the auth-host path only.
+
+## DEF-562: the phase46 e2e spec prints live token-bearing URLs
+
+- Status: OPEN
+- Severity: LOW - same test-output redaction class as DEF-560, but in a pre-existing (not Phase 102) spec, found during the TFL-780 phase-close pass.
+- Found by: qa (TFL-780, 2026-10-05)
+- Phase: TFL-751 (Phase 102) - observed while re-running the phase-close neighbour spec `phase46_accounts_origin`
+- Files: `e2e/phase46_accounts_origin.spec.cjs:251` (`[P46-3 minted]` = full loopback URL with `?token=`), `:263` (`[P46-3 socialResp]` body with `?token=`), `:274` (`[P46-3 popupNavs]` with `?token=`)
+
+Steps to reproduce: run `env -u ELECTRON_RUN_AS_NODE npm.cmd run test:e2e -- e2e/phase46_accounts_origin.spec.cjs` and read the console: the minted loopback URL, the social-init response body and the popup navigation list appear with their `?token=` values.
+
+Expected: log host/path only (or redact the query), as DEF-560 now does.
+
+Actual: raw token-bearing URLs printed.
+
+Screenshot: none (observed run output).
+
+History:
+- qa (TFL-780, 2026-10-05): opened. Out of DEF-560's named scope (DEF-560 covers the Phase 102 specs only). Does not affect the TFL-780 verdict; CTO to route.
 
 ## DEF-548: Phase 101 always-on bug capture never reaches `public.bug_reports` — the transport's hardwired null token makes every insert fail with AuthRequiredError (TFL-746 criterion 8)
 

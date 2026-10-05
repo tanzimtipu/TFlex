@@ -339,34 +339,34 @@ export function AccountsDialog(props: AccountsDialogProps): ReactElement {
   }, [adapter, state.email, fail]);
 
   /**
-   * Phase 46 - "Continue with Google".
+   * Phase 46 / 102 - "Continue with Google".
    *
    * There is no absolute page origin to hand the provider (the packaged
    * renderer is `file://`), so the flow asks main for a loopback callback URL,
-   * hands it to the SDK as the absolute `callbackURL`, and has main open the
-   * authorize URL in the OS DEFAULT BROWSER (Phase 50; no in-app popup). The
-   * provider's redirect lands on the loopback listener; main reads the
-   * auth-host cookie (which the renderer cannot, being cross-site from
-   * `file://`), completes the exchange and stores the session, then reports
-   * `{ ok: true }`. The flow re-queries `getStatus()` and drives this surface
-   * signed-in from the result. Any real provider/main failure reaches `fail`
-   * verbatim; a local outcome (timeout, cancel, a browser that would not open,
-   * or a refused address) is reported as a non-blocking message.
+   * hands it to the SDK as the absolute `callbackURL`, and opens the provider
+   * in an IN-APP child window bound to the app session (`window.open` -> the
+   * main window's auth-popup handler). The provider's redirect lands on the
+   * loopback listener in that same session; main reads the auth-host cookie
+   * (which the renderer cannot, being cross-site from `file://`), completes
+   * the exchange and stores the session, then reports `{ ok: true }`. The flow
+   * re-queries `getStatus()` and drives this surface signed-in from the
+   * result. Any real provider/main failure reaches `fail` verbatim; a local
+   * outcome (timeout, cancel, a popup that would not open, or a refused
+   * address) is reported as a non-blocking message.
    */
   const google = useCallback((): void => {
     const api = accountsBridge();
     if (adapter === null || api === null) return;
-    if (typeof api.openAuthUrl !== "function") {
-      dispatch({ type: "info", text: "Google sign-in is not available in this build." });
-      return;
-    }
     googleFlowRef.current?.cancel();
     dispatch({ type: "busy", value: true });
     googleFlowRef.current = runGoogleSignIn({
       bridge: api,
       adapter,
       getStatus: (): Promise<AccountStatusResult> => api.getStatus(),
-      openAuthUrl: (url): Promise<OpenAuthUrlResult> => api.openAuthUrl!(url),
+      openAuthPopup: (url): Promise<OpenAuthUrlResult> => {
+        const w = window.open(url, "jovrel-google-signin", "width=520,height=760");
+        return Promise.resolve(w ? { ok: true } : { ok: false, reason: "failed" });
+      },
       onSignedIn: completeGoogleSignIn,
       onFailure: fail,
       onInfo: (text): void => dispatch({ type: "info", text }),

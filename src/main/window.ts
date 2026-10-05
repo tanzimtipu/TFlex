@@ -196,6 +196,29 @@ export function isAuthCompletionUrl(
   return false;
 }
 
+/**
+ * DEF-558 / ADV-210 - true when `url` may replace the privileged main window's
+ * top-level document, i.e. when it is the app's own URL. Mirrors the app-URL
+ * rule in `isAuthCompletionUrl`: a `file:` app URL matches by protocol and
+ * pathname, anything else matches by origin. Returns false when `appUrl` is
+ * null or either URL is unparseable. Pure and exported for the unit tests.
+ */
+export function isAppNavigationUrl(url: string, appUrl: string | null): boolean {
+  if (appUrl === null) return false;
+  let parsed: URL;
+  let app: URL;
+  try {
+    parsed = new URL(url);
+    app = new URL(appUrl);
+  } catch {
+    return false;
+  }
+  if (app.protocol === 'file:') {
+    return parsed.protocol === 'file:' && parsed.pathname === app.pathname;
+  }
+  return parsed.origin === app.origin;
+}
+
 export interface AuthPopupDeps {
   /** Resolve the configured auth host at decision time; null denies all. */
   getAuthHost: () => string | null;
@@ -250,7 +273,21 @@ export function installAuthPopupHandler(win: BrowserWindow, deps: AuthPopupDeps)
     };
   });
 
+  // DEF-558 / ADV-210 - the privileged main window must never navigate away
+  // from the app. A reverse-tabnabbing popup can otherwise assign
+  // `window.opener.location` to an attacker origin, which would then inherit
+  // the preload bridge and IPC surface. Foreign top-level navigations are
+  // cancelled and traced; the app's own URL passes unchanged.
+  win.webContents.on('will-navigate', (event, url) => {
+    if (!isAppNavigationUrl(url, deps.getAppUrl())) {
+      event.preventDefault();
+      deps.onTrace?.(makeOAuthTrace('popup-navigate', { url: sanitizeUrlForTrace(url) }));
+    }
+  });
+
   win.webContents.on('did-create-window', (child) => {
+    // DEF-559 / ADV-211 - the child popup must not spawn windows of its own.
+    child.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
     popups.add(child);
     // Capture the shared session now: after `closed` the child's webContents
     // is gone, but the cookie probe below still needs the session handle.

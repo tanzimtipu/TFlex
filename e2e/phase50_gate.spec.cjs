@@ -1,13 +1,17 @@
-// Phase 50 (qa gate) - browser sign-in, the SECURE URL opener, and the
-// default-PDF-app affordance, verified against the DEV build.
+// Phase 50 (qa gate) - sign-in, the SECURE URL opener, and the default-PDF-app
+// affordance, verified against the DEV build.
 //
-// Criterion 1: "Continue with Google" hands the provider URL to
-//   `accounts:openAuthUrl` (never `window.open`); main validates it and calls
-//   `shell.openExternal`; no in-app popup window is created.
-// Criterion 2: the URL opener REFUSES every non-auth-host / non-https /
-//   malformed / non-string payload and never hands it to the OS.
-// Criterion 3: the copy names the browser; the loopback page tells the user to
-//   close the browser tab; the app is not blocked.
+// REPOINTED to Phase 102 (TFL-751 C3): the Google flow now opens an IN-APP
+// sign-in window bound to the app session (`window.open` -> the main window's
+// auth-popup handler), superseding the Phase 50 browser path.
+//
+// Criterion 1 (Phase 102): "Continue with Google" calls `window.open` with the
+//   auth-host URL and creates an in-app window; it does NOT hand the URL to
+//   `shell.openExternal` for auth.
+// Criterion 2: the URL opener `accounts:openAuthUrl` (unchanged) REFUSES every
+//   non-auth-host / non-https / malformed / non-string payload and never hands
+//   it to the OS.
+// Criterion 3: the loopback page still renders; the app is not blocked.
 // Criterion 4: Preferences opens Windows' Default-apps settings and reports
 //   honestly (never claims the default changed).
 //
@@ -20,6 +24,19 @@ const { hardClose } = require('./lib/helpers.cjs');
 
 const AUTH_HOST = 'ep-fragrant-pond-b3gqd6cf.neonauth.c-4.ap-southeast-1.aws.neon.tech';
 const AUTH_URL = `https://${AUTH_HOST}/sign-in/social?provider=google`;
+
+// DEF-560 / ADV-212: never print a token-bearing URL. Mirrors
+// `sanitizeUrlForTrace` (src/main/services/accounts/oauth-trace.ts): scheme +
+// host + pathname only, dropping the query and hash. Non-URLs pass through a
+// placeholder so an argument such as `_blank` is still visible without lying.
+function redactUrl(raw) {
+  try {
+    const u = new URL(String(raw));
+    return `${u.protocol}//${u.host}${u.pathname}`;
+  } catch {
+    return '<not-a-url>';
+  }
+}
 
 let app = null;
 let win = null;
@@ -47,13 +64,14 @@ async function setShellMode(electronApp, mode) {
   await electronApp.evaluate((_electron, m) => { globalThis.__p50.mode = m; }, mode);
 }
 
-test('P50 C1+C2: Google opens the browser via openAuthUrl; the opener refuses every hostile URL', async () => {
+test('P50 C1+C2 (Phase 102): Google opens an IN-APP sign-in window; the opener refuses every hostile URL', async () => {
   app = await launchApp();
   win = await app.firstWindow();
   await win.waitForSelector('.sample-card', { timeout: 30000 });
   await installShellSpy(app);
 
-  // The renderer must expose the browser opener, and must NOT use window.open.
+  // The shell opener bridge still exists (unchanged; the C2 attack table
+  // below drives it directly), but the Google flow must NOT route through it.
   const hasOpener = await win.evaluate(() => typeof window.tflex?.accounts?.openAuthUrl === 'function');
   expect(hasOpener, 'window.tflex.accounts.openAuthUrl is exposed').toBe(true);
   await win.evaluate(() => {
@@ -64,35 +82,42 @@ test('P50 C1+C2: Google opens the browser via openAuthUrl; the opener refuses ev
 
   await win.locator('[data-header-accounts]').click();
   await win.waitForSelector('[data-accounts-auth]', { timeout: 15000 });
+
+  const popupPromise = app.waitForEvent('window', { timeout: 30000 }).catch(() => null);
   await win.locator('[data-accounts-google]').click();
+  const popup = await popupPromise;
 
-  // The provider URL reaches the OS shell (through openAuthUrl -> validation).
+  // Phase 102 - the click creates an in-app sign-in window: window.open is
+  // called with the auth-host URL and the app window count increases.
   await expect
-    .poll(async () => (await openedUrls(app)).length, { timeout: 60000, message: 'shell.openExternal received the provider URL' })
-    .toBeGreaterThan(0);
-  const opened = await openedUrls(app);
-  console.log(`[P50 C1] shell.openExternal urls: ${JSON.stringify(opened)}`);
-  expect(opened[0], 'the OS call is the provider URL on the configured auth host').toMatch(
-    new RegExp(`^https://${AUTH_HOST.replace(/\./g, '\\.')}/`),
-  );
-
-  // No in-app popup: no window.open call, and no second BrowserWindow.
+    .poll(async () => app.windows().length, { timeout: 15000, message: 'the in-app sign-in window was created' })
+    .toBeGreaterThan(1);
   const openCalls = await win.evaluate(() => window.__p50open);
-  console.log(`[P50 C1] window.open calls: ${JSON.stringify(openCalls)}`);
-  expect(openCalls, 'the renderer did not call window.open for auth').toEqual([]);
-  expect(app.windows().length, 'no in-app popup window was created').toBe(1);
+  console.log(`[P50 C1] window.open calls: ${JSON.stringify(openCalls.map((a) => a.map(redactUrl)))}`);
+  const authCall = openCalls.find((a) => typeof a[0] === 'string' && a[0].includes(AUTH_HOST));
+  expect(authCall, 'window.open was called with the auth-host URL').toBeTruthy();
 
-  // The in-flight copy names the BROWSER.
+  // The provider URL is NOT handed to the OS shell for auth (Phase 102).
+  const opened = await openedUrls(app);
+  console.log(`[P50 C1] shell.openExternal urls: ${JSON.stringify(opened.map(redactUrl))}`);
+  expect(opened.filter((u) => u.includes(AUTH_HOST)), 'shell.openExternal received NO auth-host URL').toEqual([]);
+
+  // The in-flight copy names the in-app sign-in window, not the browser.
   const banner = await win.locator('[data-accounts-banner]').first().textContent();
-  console.log(`[P50 C3] in-flight banner: ${JSON.stringify(banner)}`);
-  expect(banner).toContain('in your browser');
-  await win.screenshot({ path: 'screenshots/phase50-browser-signin.png' });
+  console.log(`[P50 C1] in-flight banner: ${JSON.stringify(banner)}`);
+  expect(banner).toContain('sign-in window');
+  expect(banner).not.toContain('in your browser');
+  await win.screenshot({ path: 'screenshots/phase50-inapp-signin.png' });
 
   // The deny-by-default popup rule is still intact: a non-auth window.open is
-  // denied and creates no window.
+  // denied and creates no additional window.
+  const beforeDeny = app.windows().length;
   await win.evaluate(() => { window.open('https://evil.example.com/', '_blank'); });
   await win.waitForTimeout(800);
-  expect(app.windows().length, 'the deny-by-default popup rule refused the foreign URL').toBe(1);
+  expect(app.windows().length, 'the deny-by-default popup rule refused the foreign URL').toBe(beforeDeny);
+
+  // Close the sign-in window so the app returns to its single-window state.
+  if (popup) await popup.close().catch(() => {});
 
   // The app is not blocked: the dialog closes and the workspace is reachable.
   await win.locator('[data-accounts-close]').click();
@@ -154,7 +179,7 @@ test('P50 C3: the loopback page names the browser tab and the app stays usable',
 
   // Mint the real loopback URL and fetch it exactly as the browser would.
   const started = await win.evaluate(() => window.tflex.accounts.startOAuthCallback());
-  console.log(`[P50 C3] loopback url: ${started.callbackUrl}`);
+  console.log(`[P50 C3] loopback url: ${redactUrl(started.callbackUrl)}`);
   expect(started.callbackUrl).toMatch(/^http:\/\/(127\.0\.0\.1|localhost):\d+\/oauth\/callback\?token=/);
   const res = await fetch(started.callbackUrl);
   const body = await res.text();
