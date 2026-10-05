@@ -127,8 +127,16 @@ describe("Phase 40 (item 7) — DocumentView wires the mode per tab, session-sco
     expect(persistCall).not.toMatch(/pageLayout/);
   });
 
-  it("is single-view only: no control in a Multi Mode pane", () => {
-    expect(source).toMatch(/\{!inMultiPane && \(\s*<PageLayoutControl value=\{pageLayout\} onChange=\{onChangePageLayout\} \/>/);
+  it("is single-view only: the layout group lives in the footer, absent in a pane", () => {
+    // Phase 109 (chunk A) — the top-right control moved to the unified View
+    // Strip footer; the group is single-view only (`!inMultiPane`).
+    const viewStrip = readFileSync(
+      resolve(__dirname, "../../../src/renderer/components/ViewStrip.tsx"),
+      "utf8",
+    );
+    expect(viewStrip).toMatch(/\{!inMultiPane && \(/);
+    expect(viewStrip).toMatch(/aria-label="Page layout"/);
+    expect(viewStrip).toMatch(/data-page-layout-option=\{mode\}/);
     // A pane collapses its layout to ONE so Multi Mode's layout is untouched.
     expect(source).toMatch(/singleView \? pageLayout : DEFAULT_PAGE_LAYOUT/);
   });
@@ -144,7 +152,7 @@ describe("Phase 40 (item 7) — DocumentView wires the mode per tab, session-sco
     expect(source).toMatch(/<div className="document-content" data-page-layout=\{layoutMode\}>/);
     expect(source).toMatch(/layoutFitViewport\(layoutMode, zoom\.mode, viewportBox\)/);
     expect(source).toMatch(/layoutFitAnchor\(layoutMode, zoom\.mode, fitAnchor\)/);
-    // The ONE path keeps the DEF-338 gate's exact call.
-    expect(source).toMatch(/computeEffectiveScale\(viewportBox, fitAnchor, zoom, CONTENT_PADDING_PX\)/);
+    // The ONE path keeps the DEF-338 gate's exact call, now scaled by the fit margin.
+    expect(source).toMatch(/computeEffectiveScale\(viewportBox, fitAnchor, zoom, FIT_MARGIN_PX\)/);
   });
 });

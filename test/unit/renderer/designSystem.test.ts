@@ -217,7 +217,6 @@ describe("Phase 96 — documented roles resolve to their documented values", () 
 describe("Phase 96 — the elevation ladder and its surface mapping", () => {
   const LADDER = ["--elevation-1", "--elevation-2", "--elevation-3", "--elevation-4"] as const;
   const MAPPING: ReadonlyArray<readonly [string, string]> = [
-    ["--shadow-page", "--elevation-1"],
     ["--shadow-menu", "--elevation-2"],
     ["--shadow-dialog", "--elevation-3"],
     ["--shadow-popover", "--elevation-2"],
@@ -236,6 +235,9 @@ describe("Phase 96 — the elevation ladder and its surface mapping", () => {
       for (const [shadow, step] of MAPPING) {
         expect(map[shadow], `${id} ${shadow}`).toBe(`var(${step})`);
       }
+      // Phase 107 (Ruling 5) — the page role moved OFF the ladder onto its own
+      // canvas-frame token; the other four named surfaces stay on rungs.
+      expect(map["--shadow-page"], `${id} --shadow-page`).toBe("var(--shadow-page-canvas)");
     });
   }
 

@@ -1392,6 +1392,23 @@ pre-warn relevant entries when dispatching.
 - backend-dev: hand-rolled PDF syntax where a library call (pdf-lib API) suffices —
   burns tokens and is a round-trip risk. Rule: prefer pdf-lib API and say so when
   forced to go lower.
+- CTO/all: a shared working tree carried UNCOMMITTED work from several visual-overhaul
+  phases at once (a ViewStrip/Viewing Controls relocation plus Top Bar/Tabs, Home Screen
+  and support modules), so Phase 104's phase-close could not be role-clean and its
+  collision oracle was invalidated by another phase's DOM move (TFL-874, 2026-10-05:
+  single-mode `[data-page-pill]`/`[data-zoom-pill]` query `null` -> the dock overlap
+  assertion returned `null` and failed; `styles.css` alone carried 640 uncommitted
+  lines). Rule: one phase owns the tree write-surface at a time — do not start a
+  renderer overhaul while another phase's change set is uncommitted; commit each phase
+  before the next begins, and keep every e2e oracle's DOM lookup robust to unambiguous
+  relocations rather than pinned to a single element id.
+- all visual-overhaul phases: a renderer `.tsx` added by one phase leaves
+  `test/unit/renderer/foundationGuards.test.ts`'s `MIGRATED_SURFACES` red for every
+  other phase (Phase 110 chunks A and B both inherited a red named spec: first the
+  in-flight `ViewStrip.tsx`, then the untracked `TaskDialog.tsx`/`PreviewTaskDialog.tsx`
+  from TFL-855). Rule: the chunk that adds or removes a renderer `.tsx` must add or
+  remove it in `MIGRATED_SURFACES` in the SAME chunk, and a pure-CSS chunk must not be
+  asked to fix another phase's missing entry.
 - frontend-dev: emoji-as-icons or hard-coded flat colored frames that later need
   contrast fixes. Rule: the neutral-zinc palette + Lucide only.
 - CTO: a dev brief that changed a shared component's DOM or a registry curation rule
@@ -1400,6 +1417,12 @@ pre-warn relevant entries when dispatching.
   phase36MultiChrome direct-child selector, phase36/37ActionDock + def315 legacy pins).
   Rule: before assigning any DOM/registry-contract change, grep the test tree for the
   changed selectors/ids/API and put every affected spec file in the brief's scope.
+- CTO/frontend-dev: changing a shared call-site ARGUMENT (not a selector) left sibling
+  source-contract oracles red - Phase 107 chunk B repointed DocumentView's fit call to
+  FIT_MARGIN_PX, updated the 3 named specs, but missed `phase40_pageLayoutControl.test.tsx:156` (DEF-576) and `def338_paneFirstFit.test.ts:115` (ADV-216/DEF-580): two extra
+  fix/retest round-trips. Rule: when a chunk changes a function's argument value or symbol, the
+  brief must require a repo-wide grep of `test/` for the OLD argument text plus the function name,
+  and list every hit as in-scope.
 - qa: improvises launch code instead of using `e2e/lib/launch.cjs`; rewrites a spec
   to pass instead of asserting the bug. Rule: helper only; assertions stay honest.
 - qa: hand-rolls pixel-analysis scripts instead of using its own vision (the read tool)
@@ -5106,4 +5129,15 @@ assigned to`. To escalate to the CEO on a CEO-created phase issue, use an
 `wake_assignee`) on the phase issue and leave it `in_progress` - that reaches the board
 operator directly and wakes the assignee on answer. Do not burn attempts re-assigning to
 the creating agent.
+
+## 2026-10-05: bind blockedBy to the pending LEAF issue, not to a parent driver that is itself `blocked`
+
+The dependency resolver treats a blocker whose status is `blocked` as resolved. Linking a driver's
+`blockedByIssueIds` to a parent phase issue that is itself `blocked` (waiting on its own in-flight
+child) fires a spurious `issue_blockers_resolved` wake almost immediately: it clears the link and
+flips the driver to `in_progress`, even though the real work is still running. Seen on TFL-854
+(Panels), blocked on TFL-856 (Phase 105) while TFL-856's chunk TFL-886 was `in_progress` and the
+working tree still carried the uncommitted Phase 105 diff. Rule: link the blocker to the genuinely
+pending LEAF issue (the `in_progress` child), so the wake fires only when that leaf actually
+completes; re-evaluate and re-link at the parent level once the leaf is done.
 

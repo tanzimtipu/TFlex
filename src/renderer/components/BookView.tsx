@@ -84,7 +84,7 @@ const INITIAL_PAGE_DIMS = { width: 612, height: 792 };
 
 /** Phase 66 (chunk 2) — the visual gap the centre crease occupies, subtracted
  *  from the stage width when sizing each half of a double spread. */
-const SPREAD_CREASE_PX = 24;
+const SPREAD_CREASE_PX = 12;
 
 /** The fallback that clears the transient turn. It mirrors the layout
  *  motion token (`--motion-duration-layout`, 350ms) plus a small margin: in a

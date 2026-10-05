@@ -69,8 +69,7 @@ import {
   resolveDrop,
   type PageDropOp,
 } from "../state/pageDrag";
-import { CanvasPills } from "./CanvasPills";
-import { PageLayoutControl } from "./PageLayoutControl";
+import { ViewStrip } from "./ViewStrip";
 import {
   DEFAULT_PAGE_LAYOUT,
   buildRowGeom,
@@ -126,6 +125,7 @@ import { annTextMaxHeightPt, grownAnnTextRect } from "../annotations/annTextLayo
 import { measureTextWidthCss } from "../edit/rasterize";
 import {
   CONTENT_PADDING_PX,
+  FIT_MARGIN_PX,
   mixedPageAtScrollTop,
   mixedSlotOffsetTop,
   mixedVisiblePageRange,
@@ -2091,7 +2091,7 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
     if (layoutMode === "one") {
       // The DEF-338 gate's exact call — byte-identical behaviour for the
       // single-page default (the fit has ONE home in `computeEffectiveScale`).
-      return computeEffectiveScale(viewportBox, fitAnchor, zoom, CONTENT_PADDING_PX);
+      return computeEffectiveScale(viewportBox, fitAnchor, zoom, FIT_MARGIN_PX);
     }
     // Phase 40 (item 7) — TWO / FOUR transform the fit box and anchor so the
     // SAME formula measures the laid-out footprint (2 columns, and 2 rows for
@@ -2101,7 +2101,7 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
       layoutFitViewport(layoutMode, zoom.mode, viewportBox),
       fitAnchor === null ? null : layoutFitAnchor(layoutMode, zoom.mode, fitAnchor),
       zoom,
-      CONTENT_PADDING_PX,
+      FIT_MARGIN_PX,
     );
   }, [zoom, viewportBox, fitAnchor, layoutMode]);
   const effectiveScaleRef = useRef(effectiveScale);
@@ -2470,8 +2470,7 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
   }, [paneFitPending, pageCount]);
 
   // True only while a NEVER-painted pane is waiting for its first settled box.
-  // A view that has already painted keeps its pills exactly as before.
-  const paneFirstFitHeld = paneGateActive && !paneBoxReady;
+  // A view that has already painted keeps its footer exactly as before.
 
   // ---- page slot registry + IntersectionObserver ---------------------------
   //
@@ -4830,6 +4829,38 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
             })}
           </div>
         </div>
+        {/* Phase 109 (chunk A/B) — the unified View Strip footer. Grid row 6 of
+            `.workspace-main`, below the scroller, so it is a REAL reserved band
+            rather than a floating surface: page navigation, zoom/fit, pan, the
+            page layout and the Book View entry all live here now. It consumes
+            this view's existing view model unchanged (the SAME expressions the
+            retired pills / top-right control used). Chunk A rendered it in
+            SINGLE mode; chunk B renders it in a Multi Mode pane too and retires
+            the per-pane CanvasPills. In a pane `ViewStrip` omits the layout
+            group and the Book View entry (both are single-view only). */}
+        {!paneFitPending &&
+          (inMultiPane || (!suppressToolbar && multiModeEnabled !== true)) && (
+          <ViewStrip
+            page={currentPage}
+            pageCount={pageCount}
+            pageLabel={resolvePageLabel(currentPage, engineState.pageLabels)}
+            pageReadout={pageReadout}
+            zoomPercent={Math.round(effectiveScale * 100)}
+            zoomMode={zoom.mode}
+            onJump={pageJump}
+            onZoomIn={(): void => zoomTo(1)}
+            onZoomOut={(): void => zoomTo(-1)}
+            onFitWidth={(): void => setMode('fit-width')}
+            onFitPage={(): void => setMode('fit-page')}
+            handActive={handActive}
+            onHandToggle={toggleHand}
+            onOpenBookView={onOpenBookView}
+            pageLayout={pageLayout}
+            onChangePageLayout={onChangePageLayout}
+            idle={inMultiPane ? chromeIdle : dockIdle}
+            inMultiPane={inMultiPane}
+          />
+        )}
         {/* Phase 36 (chunk 5) â€” the floating All Tools badge is RETIRED. The
             Inspector is the workspace's right panel and needs no toggle, so
             no view renders a badge any more (DEF-284's single-badge rule is
@@ -4849,75 +4880,23 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
             pixel-identical to before. The layer is pointer-inert; the pills,
             the flyout and the dock opt back in. */}
         <div className="canvas-overlay" data-canvas-overlay>
-        {/* Phase 78 (feature B) — the canvas TOP-RIGHT control cluster, the
-            single anchor for the open-triggered notice "i" row, the Book View
-            entry and the page-layout control. Phase 66 put Book View at the
-            overlay's TOP-LEFT; Phase 78 moves it immediately LEFT of the
-            page-layout control and parks the notice family immediately LEFT of
-            Book View with a tight ~8px gap. The cluster is pointer-inert; each
-            control opts back in (the buttons below and the notice icons in
-            styles.css). It renders only when there is a control to show. */}
+        {/* Phase 109 (chunk A) — the canvas TOP-RIGHT cluster now holds ONLY
+            the open-triggered notice "i" row. The Book View entry and the
+            page-layout control that Phase 78 parked here moved to the unified
+            View Strip footer (grid row 6); the cluster keeps their CSS hooks for
+            the notice wrapping. It is pointer-inert; each notice opts back in
+            (styles.css). It renders only when there is a notice to show. */}
         <div className="canvas-top-right">
         {canvasNotices !== undefined && (
           <div className="canvas-notices">{canvasNotices}</div>
         )}
-        {/* Phase 66 (chunk 1) — the Book View entry. It renders only when the
-            host wires the verb and never in a Multi Mode pane; activating it
-            makes the host swap this whole view for the read-only BookView, so
-            it disappears along with the dock. Phase 78 moves it to the canvas
-            top-right (immediately left of the page-layout control). */}
-        {onOpenBookView !== undefined && !inMultiPane && (
-          <button
-            type="button"
-            className="canvas-book-view"
-            data-book-view-open
-            aria-label="Book View"
-            onClick={onOpenBookView}
-          >
-            <Icon name="openReadingView" size="xs" />
-            Book View
-          </button>
-        )}
-        {/* Phase 40 (item 7) — the SINGLE-VIEW page-layout control. It sits at
-            the canvas's top-right (inside the canvas-bound overlay, so the open
-            Inspector's inset already keeps it off the panel) and never renders
-            in a Multi Mode pane — the requirement is single-view only, and
-            Multi Mode's layout is untouched. The pills live at the bottom and
-            the dock is Multi Mode only, so the three surfaces cannot overlap.
-            Phase 78 anchors it as the rightmost control of the top-right
-            cluster. */}
-        {!inMultiPane && (
-          <PageLayoutControl value={pageLayout} onChange={onChangePageLayout} />
-        )}
         </div>
-        {/* Phase 36 (chunk 3b / chunk 7) â€” the floating page + zoom pills.
-            SINGLE mode keeps their unchanged placement (page bottom-left, zoom
-            bottom-right of the canvas). In MULTI MODE each pane carries its OWN
-            pills inside its OWN canvas bounds, so page / zoom / pan act on the
-            pane that owns them: they stack at the pane's OUTER edge (A left,
-            B right) so the workspace's bottom-centre band stays clear for the
-            ONE shared Action Dock. They re-parent the retired toolbar's
-            handlers and aria-labels and fade with the dock's idle. */}
-        {(inMultiPane || (!suppressToolbar && multiModeEnabled !== true)) &&
-          !paneFirstFitHeld && (
-          <CanvasPills
-            page={currentPage}
-            pageCount={pageCount}
-            pageLabel={resolvePageLabel(currentPage, engineState.pageLabels)}
-            pageReadout={pageReadout}
-            zoomPercent={Math.round(effectiveScale * 100)}
-            zoomMode={zoom.mode}
-            onJump={pageJump}
-            onZoomIn={(): void => zoomTo(1)}
-            onZoomOut={(): void => zoomTo(-1)}
-            onFitWidth={(): void => setMode('fit-width')}
-            onFitPage={(): void => setMode('fit-page')}
-            handActive={handActive}
-            onHandToggle={toggleHand}
-            idle={inMultiPane ? chromeIdle : dockIdle}
-            pane={multiPane}
-          />
-        )}
+        {/* Phase 109 (chunk B) — the floating page + zoom CanvasPills are
+            RETIRED here. The unified View Strip footer (above) is now the ONLY
+            page / zoom / pan surface, in single mode AND in every Multi Mode
+            pane, so each pane's footer acts on the pane that owns it. The
+            `CanvasPills` component and its isolated unit spec remain for the
+            component-level contract; this view simply no longer renders it. */}
         {/* Phase 36 (chunk 3b) â€” the ONE annotations flyout. The REVIEW dock's
             Annotate primary toggles it; it hosts the EXISTING AnnotationToolbar
             (re-parented), so the registry's annotation entries have exactly one

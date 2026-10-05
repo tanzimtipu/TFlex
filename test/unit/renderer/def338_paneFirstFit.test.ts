@@ -112,7 +112,7 @@ describe("DEF-338 — DocumentView wires the pane-constrained first fit", () => 
   });
 
   it("computes the fit through the pure helper", () => {
-    expect(source).toMatch(/computeEffectiveScale\(viewportBox, fitAnchor, zoom, CONTENT_PADDING_PX\)/);
+    expect(source).toMatch(/computeEffectiveScale\(viewportBox, fitAnchor, zoom, FIT_MARGIN_PX\)/);
   });
 });
 
@@ -187,9 +187,11 @@ describe("DEF-338 residual — DocumentView samples the pane box to settle it", 
     expect(source).toMatch(/if \(firstFitCommittedRef\.current\) return undefined;/);
   });
 
-  it("holds the pane's own pills while the first fit is held", () => {
-    expect(source).toMatch(/const paneFirstFitHeld = paneGateActive && !paneBoxReady;/);
-    expect(source).toMatch(/!paneFirstFitHeld && \(/);
+  it("holds the pane's own footer while the first fit is held", () => {
+    // Phase 109 (chunk B) — the per-pane CanvasPills are retired; the unified
+    // View Strip footer is the pane's view-control surface and is held on the
+    // same first-fit flag (`paneFitPending`) until the pane's box has settled.
+    expect(source).toMatch(/!paneFitPending &&[\s\S]{0,80}?inMultiPane \|\|/);
   });
 });
 

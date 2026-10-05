@@ -7,7 +7,7 @@
 // chrome (DEF-181); the document canvas must NOT, or the gutter beside a
 // zoomed-out page shows the desktop through the app (qa sampled alpha 16 at a
 // gutter pixel). The fix adds single-mode rules that mirror the Multi Mode
-// pane rule and paint `--tf-canvas-opaque` (light `#f1f5f9`, dark `#0b0d0f`,
+// pane rule and paint `--tf-canvas-opaque` (light `#ECEFF4`, dark `#151820`,
 // frosted `--tf-bg`). These tests pin the static CSS contract (so removing the
 // rule fails, the style of the def282_paneToolbarOffset guard) plus the token
 // definitions in all three themes, and check the rendered single-mode stage

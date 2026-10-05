@@ -82,16 +82,16 @@ describe("Phase 40 (item 7) — the exact fit rule per mode", () => {
   });
 
   it("TWO fits two pages side by side: (900 - gap) / (2 * 595)", () => {
-    // gap = PAGE_GAP_PX = 18
-    expect(fitFor("two", FIT_WIDTH)).toBeCloseTo(882 / 1190, 6);
+    // gap = PAGE_GAP_PX = 24
+    expect(fitFor("two", FIT_WIDTH)).toBeCloseTo(876 / 1190, 6);
     // fit-page clamps against the SAME two-across width here (still narrower
     // than one page tall), so it equals fit-width.
-    expect(fitFor("two", FIT_PAGE)).toBeCloseTo(882 / 1190, 6);
+    expect(fitFor("two", FIT_PAGE)).toBeCloseTo(876 / 1190, 6);
   });
 
   it("FOUR fits four pages (2x2): min((W-gap)/(2*w), (H-gap)/(2*h))", () => {
-    expect(fitFor("four", FIT_WIDTH)).toBeCloseTo(882 / 1190, 6);
-    expect(fitFor("four", FIT_PAGE)).toBeCloseTo(682 / 1684, 6);
+    expect(fitFor("four", FIT_WIDTH)).toBeCloseTo(876 / 1190, 6);
+    expect(fitFor("four", FIT_PAGE)).toBeCloseTo(676 / 1684, 6);
     // The 2x2 fit is strictly tighter than two-across on this canvas.
     expect(fitFor("four", FIT_PAGE)).toBeLessThan(fitFor("two", FIT_PAGE));
   });
@@ -99,7 +99,7 @@ describe("Phase 40 (item 7) — the exact fit rule per mode", () => {
   it("the fit transforms only the axis the zoom mode constrains", () => {
     // fit-width must not scale down for a second row.
     const box = layoutFitViewport("four", "fit-width", VIEW);
-    expect(box.w).toBe(882);
+    expect(box.w).toBe(876);
     expect(box.h).toBe(700);
     const anchor = layoutFitAnchor("four", "fit-width", PAGE);
     expect(anchor.w).toBe(1190);
@@ -118,8 +118,8 @@ describe("Phase 40 (item 7) — row geometry drives the scroller", () => {
   it("collapses pages into grid rows (row height = tallest page)", () => {
     const rows = buildRowGeom(geom, 2);
     expect(rows).toHaveLength(2);
-    expect(rows[0]).toEqual({ widthCss: 100 + 120 + 18, heightCss: 260 });
-    expect(rows[1]).toEqual({ widthCss: 100 + 90 + 18, heightCss: 200 });
+    expect(rows[0]).toEqual({ widthCss: 100 + 120 + 24, heightCss: 260 });
+    expect(rows[1]).toEqual({ widthCss: 100 + 90 + 24, heightCss: 200 });
   });
 
   it("one column leaves one page per row (the ONE-mode identity)", () => {
@@ -160,7 +160,7 @@ describe("Phase 40 (item 7) — row geometry drives the scroller", () => {
 // without `pageLayoutFitMode` and the fit switch.
 // ---------------------------------------------------------------------------
 describe("Phase 40 (item 9) — each mode's established fit keeps its promised pages fully visible", () => {
-  const GAP = 18;
+  const GAP = 24;
   // Representative viewport (canvas) boxes at the two acceptance window sizes;
   // the running-app counts are measured separately (page boxes vs canvas box).
   const VIEWS = [

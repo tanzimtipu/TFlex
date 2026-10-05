@@ -11,13 +11,16 @@
 // These helpers are pure so the math is unit-testable without mounting React.
 // The DOM layout must agree with them exactly.
 
-export const PAGE_GAP_PX = 18;
+export const PAGE_GAP_PX = 24;
 // Phase 29 — flush canvas. `.document-content` carries NO top/bottom
 // padding in any theme, so the first page's slot starts at content
 // offset 0 and every slot offset / landing / visibility helper below
 // (which defaults to this constant) stays in lockstep with the DOM.
 // The inter-page PAGE_GAP_PX is unchanged.
 export const CONTENT_PADDING_PX = 0;
+// Phase 107 — logical margin at fit scale (contract range 24-32px), applied
+// ONLY to the fit scale, never to scroll-landing math.
+export const FIT_MARGIN_PX = 28;
 
 /**
  * Phase 29 — sub-pixel tolerance for the "current page" heuristic.

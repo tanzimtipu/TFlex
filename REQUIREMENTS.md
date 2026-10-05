@@ -6703,6 +6703,621 @@ phase is presentation and organisation only and preserves the existing `dockPins
 
 **Numbering:** this is Phase 104 (the last appended phase is 103).
 
+## Phase 105 - Top Bar and Tabs overhaul: structured title row + document rail with per-session tab identity (phase issue TFL-856; operator driver TFL-819, 2026-10-05)
+
+**Operator request (product terms, TFL-819 / phase issue TFL-856).** Replace TFlex's single
+caption strip with the committed **Document Rail** composition from `Visual overhaul/Top Bar
+and Tabs/`: a structured **48 logical-px title row** (brand, File menu, Open, Save, a genuine
+safe drag region, Search tools, Print when space permits, application menu, reserved caption
+controls) plus a separate **40 logical-px document rail** (readable per-session coloured tabs,
+New tab, All tabs switcher with count). Every existing top-bar command, availability rule and
+tab/session behaviour is preserved; no command is lost or invented. This is visual overhaul 1
+of 4 for the chrome; Icons (Phase 103 / TFL-824) and Dock (Phase 104 / TFL-841) landed first and
+the shared Quiet Precision registry, `Icon` component, button geometry and tokens are inherited.
+Buttons (TFL-839) and the sibling Panels/Dialogs phases follow.
+
+**Current state (verified by reading the repo on 2026-10-05).**
+
+1. The window is frameless (`frame: false`, `src/main/window.ts:488`) and the renderer draws the
+   caption strip. `TitleBar` (`src/renderer/components/TitleBar.tsx`, 368 lines) is the
+   `.titlebar` drag region (a `GlassChromeBar`) holding the File menu trigger + popover
+   (`.titlebar-menu*`, `[data-menu-button]`), a `.titlebar-slot` child slot, and the custom
+   caption controls (`.titlebar-controls`, `[data-window-minimize]`/`[data-window-maximize]`/
+   `[data-window-close]`, wired to `window.tflex.minimizeWindow/maximizeWindow/closeWindow`).
+2. `AppHeader` (`src/renderer/components/AppHeader.tsx`, 1321 lines) is rendered inside the
+   TitleBar slot (`App.tsx:10822-10920`) and holds `.brand` (BrandMark + BrandWordmark),
+   `.titlebar-file` (Open `[data-toolbar-open]`, Save `[data-toolbar-save]`, Save a copy
+   `[data-toolbar-save-as]`), the `.tab-area`/`.tab-list` strip (one `AnimatedTab` per tab plus
+   the `+` `.tab-list-new`/`[data-new-tab]`), and `.header-actions` (update indicator, Ctrl+K
+   `[data-header-tool-search]`, Ctrl+F `[data-header-find]`, Multi Mode `[data-header-multi-mode]`,
+   Print `[data-print]`, Preferences `[data-open-preferences]`, theme picker `.theme-toggle`,
+   account slot).
+3. The application menu is ONE "File" popover (`TitleBar.tsx:246-328`) fed `menuGroups` from
+   `App.tsx:9399-9451` (File/Edit/View/Tools/Help). Rows dispatch through `dispatchMenuAction`
+   (`src/renderer/state/menuActions.ts:107-141`); the native menu is `src/main/menu.ts`.
+4. The tab session store is `src/renderer/state/tabs.ts` (`TabMeta { id, title, filePath, kind,
+   modified }`; reducer `open`/`close`/`activate`/`deactivate`/`set-modified`/`rename`/`move`/
+   `fill-empty`/`open-empty`). Per-tab sessions live in the renderer's `openTabs` map
+   (`App.tsx:774`). Tabs are **in-memory only** - there is no open-tab persistence across app
+   restarts (`src/shared/types.ts` has no session field; only `dockPins`/`dockUnpinned`/`tabStyle`
+   persist). "Restore" therefore means the tab transfer/detach-adopt path, not a relaunch.
+5. Tab colour today is INDEX-derived: `tabColourSlot(index)` (`src/renderer/state/tabColour.ts:30-34`,
+   a 4-slot cycle) is passed as `colourSlot={tabColourSlot(index)}` (`AppHeader.tsx:1097`) and
+   consumed as `data-tab-colour` (`AnimatedTab.tsx:176`). This is the exact anti-pattern the phase
+   removes.
+6. Tab overflow today shrinks every tab uniformly toward 0 (`planTabOverflow`, `AppHeader.tsx:123-150`;
+   `MIN_TAB_WIDTH = 56`, `HARD_MIN_TAB_WIDTH = 24`) and never offers a switcher. Reorder/tear-out
+   gestures are `AppHeader.tsx:722-940`; detach/adopt is `src/main/services/tabWindows.ts` with
+   `TabTransferPayload { title, bytes, modified }` (`src/shared/ipc.ts:504-508`).
+7. Dirty close runs `onHeaderClose`/`closeTab` -> `CloseTabPromptDialog` (Save/Discard/Cancel)
+   through `src/renderer/state/closeGate.ts` and `saveGuard.ts`; the window-close gate is in
+   `src/main/index.ts`.
+8. Existing top-bar/tab tests: `test/unit/renderer/appHeader.test.tsx`, `titleBar.test.tsx`,
+   `phase45TabColour.test.tsx`, `phase51TabColour.test.ts`, `phase58TabStyle.test.tsx`,
+   `phase58TabReorder.test.ts`, `phase59PaletteAndTabOverflow.test.tsx`, `phase60TabDrag.test.ts`,
+   `phase61TabTearOut.test.ts`, `phase62TabRestyle.test.tsx`, `phase68TabRestyle.test.tsx`,
+   `def324_titlebarResponsive.test.ts`, `tfl678TabClip.test.ts`, `tfl684TabNewHitTarget.test.ts`;
+   e2e `phase22_titlebar_file_group.spec.cjs`, `phase58_tab_style.spec.cjs`,
+   `phase58_tab_reorder.spec.cjs`, `phase58_tab_detach.spec.cjs`, `phase59_tab_overflow.spec.cjs`,
+   `phase60_tab_drag.spec.cjs`, `phase61_tab_tearout.spec.cjs`, `tfl524_tab_alignment.spec.cjs`.
+
+**Command inventory (the audited top-bar inventory - success criterion 1).** Every action keeps
+its existing production handler; none is renamed, removed or invented. Compact-window placement
+may move a command into the application menu, never delete it.
+
+| # | Control | Selector / hook | Real handler | Availability rule | Final location |
+|---|---|---|---|---|---|
+| 1 | Brand mark + wordmark | `.brand` | identity only | always | title row leading edge |
+| 2 | File menu | `[data-menu-button]` `.titlebar-menu-button` | toggles File popover; rows -> `dispatchMenuAction` | always | title row (File) |
+| 3 | Open | `[data-toolbar-open]` | `onOpenFile` -> `onOpenClick` | always | title row |
+| 4 | Save | `[data-toolbar-save]` | `onSave` -> `onHeaderSave` | `saveModified && saveInPlaceEnabled` | title row |
+| 5 | Save a copy (Ctrl+Shift+S) | `[data-toolbar-save-as]` | `onSaveAs` -> `onHeaderSaveAs` | `activeId !== null` | title row, else File menu |
+| 6 | Drag region | `.titlebar` (`-webkit-app-region: drag`) | OS caption drag / Snap / double-click maximize | always | title row flexible middle |
+| 7 | Search tools (Ctrl+K) | `[data-header-tool-search]` | `openCommandPalette` | always | title row |
+| 8 | Find in document (Ctrl+F) | `[data-header-find]` | `openFindInDocument` | `activeTabHasDocument` | title row, else app menu |
+| 9 | Print (Ctrl+P) | `[data-print]` | `openPrintWindow` | `activeId !== null && printEnabled` | title row when space permits, else app menu |
+| 10 | Application menu | new trigger | Panels / Appearance / Settings / account groups | always | title row trailing |
+| 11 | Preferences (Ctrl+,) | `[data-open-preferences]` | `setPrefsOpen(true)` | always | app menu (Settings) |
+| 12 | Theme picker | `[data-theme-toggle]` `.theme-toggle` | `onThemeChange` | always | app menu (Appearance) |
+| 13 | Multi Mode | `[data-header-multi-mode]` | `onMultiModeToggle` | always (toast with no doc) | app menu or title-row utility |
+| 14 | Update indicator | `updateIndicator` slot | `UpdateIndicator` | update available | title row trailing |
+| 15 | Account | `accountSlot` | `AccountMenu` | `accountsEnabled === true` | title row trailing / app menu |
+| 16 | Caption controls | `[data-window-minimize]` / `[data-window-maximize]` / `[data-window-close]` | `window.tflex.*Window` | always | title row trailing (reserved) |
+| 17 | Document tab | `.tab` `[data-tab-id]` `role="tab"` | activate / reorder / tear-out | per session | document rail |
+| 18 | Tab close | `.tab-close` | `onClose(id)` | per session | document rail |
+| 19 | New tab (`+`) | `[data-new-tab]` | `onNewEmptyTab` | `tabs.length >= 1 && !multiModeEnabled` | document rail (reserved) |
+| 20 | All tabs switcher | new | opens the complete session switcher | `tabs.length >= 1` | document rail (reserved) |
+
+File-menu rows preserved verbatim: `open`, `merge`, `save`, `saveAs`, `closeTab`, `undo`, `redo`,
+`preferences`, `toggleTheme`, `showToolsPalette`, `recognizeText`, `checkForUpdate`, `about`.
+
+**CTO RULINGS:**
+
+1. **Scope.** Renderer only: `src/renderer/**` (TitleBar/AppHeader + the new document rail, tab
+   state modules, scoped top-bar/rail token CSS) and renderer unit tests under
+   `test/unit/renderer/**`. ONE shared-contract amendment is in scope and is done first by
+   backend-dev: add an optional `colorId?: string` to `TabTransferPayload` (`src/shared/ipc.ts:504-508`)
+   so a detached/adopted tab carries its identity; main relays the payload opaquely
+   (`src/main/services/tabWindows.ts`), so no main code changes. No other `src/main/**`, no new
+   dependency, no network call, no CDN. qa owns `e2e/**`, `screenshots/**`, `test-fixtures/**`.
+2. **One composition, one visual language.** Implement the Document Rail direction only. The
+   Compact Header is a reference, not a second selectable theme. Consume the existing Quiet
+   Precision tokens, `Icon` component (Phase 103) and button geometry (Phase 91/104); do not fork
+   a second icon set, palette, tab-identity token or button primitive.
+3. **Inventory before replacement.** The table above is the audited inventory and is resolved from
+   code, not screenshots. The command inventory/mapping is also written by the developer as a
+   document on the chunk-A child issue before any edit. No command may become unreachable.
+4. **Title row and document rail geometry.** Title row 48 logical px; document rail 40 logical px.
+   One understated bottom divider, solid opaque surfaces, no glow, no blurred text, no shadow
+   beneath every tab. Reserve the trailing caption-control space using the real control widths; a
+   genuine `-webkit-app-region: drag` region must remain between the interactive clusters and every
+   interactive child must stay `no-drag`. Tab geometry: ideal 200px, max 220px, min 136px, 9px top
+   corners, 2px inset contrast keyline, 24-unit icon grid / 16px compact icons / 1.65 round stroke,
+   13px filenames (500 selected / 400 inactive), 12px supporting status, 4px spacing unit, 6px
+   icon-label gap, fine-pointer target >= 32px including close, coarse-pointer >= 44px.
+5. **Per-session tab identity.** Add a stable `colorId` to `TabMeta`, assigned at session creation
+   and persisted through reorder/rename/overflow/restore. Allocation is unused-identity-first from
+   the twelve-colour palette (`tab-identity.tokens.json`: violet, ocean, terracotta, jade, rose,
+   indigo, ochre, olive, orchid, lagoon, raspberry, iris), then contrast-checked extended variants;
+   never derived from the current index; existing sessions are never recoloured to free a slot.
+   Inactive tabs use 20% identity tints, the active tab the full saturated colour with contrasting
+   text (white in light mode, `#171A21` in dark) and the 2px inset keyline. Identity colour is
+   decorative session identity only - it never recolours panels, menus or primary actions and is
+   never a dirty/error/status code. Follow `color-policy-revision.md`, which supersedes the earlier
+   neutral-only tabs instruction. The `Colorful`/`Standard` (`tabStyle`) preference is preserved.
+6. **Overflow and switcher.** Reserve New tab and All tabs before computing capacity (~150px budget
+   per tab, min 136px). Never shrink tabs below the readable minimum, never to slivers; keep the
+   selected document visible; never close, recycle or deduplicate empty sessions; use stable session
+   IDs. Expose every open session in one complete, anchored, opaque, collision-aware switcher with
+   full filenames, the accurate total count, actual dirty state and duplicate-name context, keyboard
+   reachable and bounded with scrolling for long lists. Count all sessions, not only visible tabs.
+7. **Preserved behaviour.** Retain documents, undo state, scroll state, reorder and close behaviour;
+   keep Save/Discard/Cancel on dirty close and keep failed/cancelled saves leaving the document open;
+   keep close actions distinct from selection and dirty indicators. Multi Mode's single composite tab
+   and its disabled New tab reason are preserved. Do not redesign the document engine.
+8. **Native window + accessibility.** Use platform-safe caption/drag APIs; preserve the system menu,
+   maximize, Snap, DPI and full-screen behaviour; never hide or replace the caption controls to make
+   room. Use accessible tab/menu primitives (`role="tablist"`/`tab`, `role="menu"`/`menuitem`,
+   `tabpanel` relationships); keep verified Windows accelerator labels (Ctrl+O/S/Shift+S/W/K/F/P/,);
+   Escape closes a menu and returns focus to its opener; overflow tabs stay keyboard reachable;
+   filename and dirty status are announced; close has an explicit accessible name and separate target.
+9. **Motion.** Every new/changed surface that appears, moves or changes state animates through the
+   shared motion tokens only (`src/renderer/styles/animations.css`, `motionTokens.ts`) - no hardcoded
+   durations/easings, transform/opacity only, identical timing across themes, a `prefers-reduced-motion`
+   fallback, and PDF page pixels never recoloured or cross-faded. A new/changed surface with no
+   token-based animation is a defect, not polish.
+10. **Tests + evidence.** `npm run verify` (conventions + typecheck) and the targeted unit tests for
+    the touched files; `npm run build:renderer` where bundling is affected; the full suite is NOT run
+    by default. Evidence includes the command inventory/mapping, implementation and token changes,
+    screenshots at 1/3/12/30 tabs plus overflow selection, long/duplicate names, empty sessions,
+    dirty-close cancellation and save failure, narrow supported width, light/dark, keyboard focus and
+    display scaling. Do not claim completion while any command is missing or any tab/session
+    behaviour regressed.
+11. **Standard flow + commit.** CTO brief -> backend-dev (shared contract) -> frontend-dev (renderer,
+    serialized on `AppHeader.tsx`/`styles.css`) -> focused qa verification + visual verdict -> adversary
+    diff-pass -> phase-close QA verdict -> ONE local phase-close commit via git-agent. No push, tag,
+    release or credential change without explicit operator approval.
+12. **Numbering.** This is Phase 105 (the last appended phase is 104). Artifacts are named
+    `phase105_*` / `topbarRail*` so they stay unambiguous.
+
+**Features**
+
+**A. Shared tab-transfer contract (backend-dev, chunk A).** Add optional `colorId?: string` to
+`TabTransferPayload` (`src/shared/ipc.ts`); confirm `tabWindows.ts` and the `index.ts` handlers relay
+the payload opaquely; add/adjust a main unit test that the payload round-trips with `colorId` intact.
+
+**B. Command inventory + tab identity color model (frontend-dev, chunk B).** Write the command
+inventory/mapping as the child issue document, then implement the per-session identity model: a
+`colorId` field on `TabMeta`, the unused-first allocator and extended variants in
+`src/renderer/state/tabColour.ts`, reducer persistence across `open`/`open-empty`/`fill-empty`/`rename`/
+`move`, the identity palette tokens and CSS, and unit tests.
+
+**C. Structured title row (frontend-dev, chunk C).** Split the caption strip into the 48px title row
+(brand, File menu, Open, Save, Save a copy, genuine drag region, Search tools, Print, application menu,
+update/account, reserved caption controls) and wire the application menu groups (Panels / Appearance /
+Settings / account); preserve every handler, selector and availability rule; thread `colorId` through
+detach/adopt using the chunk-A contract.
+
+**D. Document rail + overflow + switcher (frontend-dev, chunk D).** Render the 40px document rail
+(tabs, New tab, All tabs) with the per-session identity visuals (tints, saturated active, 9px corners,
+2px keyline), readable minimum widths, responsive overflow that reserves New tab/All tabs and keeps the
+selected document visible, and the complete accessible switcher (full names, count, dirty state,
+duplicate context). Preserve reorder/tear-out, Multi Mode, and dirty-close behaviour.
+
+**E. Focused QA + visual verdict (qa, chunk E).** Run `npm run verify`, the updated renderer unit tests
+and `build:renderer`; sweep the CONTROL-INDEX; capture screenshots at 1/3/12/30 tabs plus overflow,
+long/duplicate names, empty sessions, dirty-close cancellation, narrow width, light/dark, keyboard focus
+and scaling; record DEF-NNN.
+
+**F. Adversarial diff-pass (adversary, chunk F).** Attack the change for behaviour drift (handlers,
+shortcuts, selectors), lost or invented commands, tab/session-state loss on reorder/overflow/restore,
+native caption/drag regressions, colour-identity persistence and accessibility/motion regressions.
+
+**G. Phase-close QA verdict (qa, chunk G).** Verdict per success criterion over the whole phase diff.
+
+**H. Phase-close local commit (git-agent, chunk H).** Stage and commit the phase's tracked changes as
+ONE local commit referencing Phase 105 and any DEF/ADV numbers; no push, no tag, no version bump.
+
+**Success criteria**
+
+1. **Command inventory and mapping.** Every top-bar action (both save-like controls, the command-symbol
+   control, panel toggle, printing, appearance/theme, account, File menu, native caption controls and any
+   others found) is inventoried with its real handler, availability/permission rule and final location,
+   resolved from code; every command is preserved and resolves to a production handler in its mapped
+   location.
+2. **Structured title row and document rail.** The 48px title row (brand, File/Open/Save, a genuine safe
+   drag region, Search tools, Print, application menu, reserved caption space) and the separate 40px
+   document rail are built; Home uses the established start-page/session model with no document-state
+   refactor.
+3. **Tab identity colours.** Every session has a stable `colorId`; rich paired identity colours, clearly
+   tinted inactive tabs and a saturated active tab with contrasting text, 9px top corners and a 2px
+   contrast inset keyline; unused identities allocated first; contrast-checked variants after exhaustion;
+   colour persists through reorder/restore/rename and is never derived from index.
+4. **Tab overflow and switcher.** Responsive overflow reserves New tab and All tabs first, preserves
+   readable minimum widths and keeps the selected document visible; the complete accessible switcher
+   exposes every session with full filenames, accurate total count, actual dirty state and duplicate-name
+   context; no slivers, no closing/recycling/deduping empty sessions; stable session IDs.
+5. **Preserved behaviour.** Documents, undo state, scroll state and existing close/reorder behaviour are
+   retained; Save/Discard/Cancel on dirty close is preserved and failed/cancelled saves leave the document
+   open; close actions stay distinct from selection and dirty indicators.
+6. **Native window integrity.** Platform-safe caption and drag APIs; the system menu, maximize, Snap, DPI
+   and full-screen behaviour are preserved; caption controls are never hidden or replaced; shared icon
+   strokes, button geometry, light/dark colours, typography, focus and reduced-motion rules hold.
+7. **Accessibility.** Accessible tab/menu primitives and verified Windows accelerator labels; Escape
+   restores focus to the correct menu opener; overflow tabs remain keyboard reachable.
+8. **Validation.** The relevant existing checks run green; desktop titlebar behaviour is verified at
+   1/3/12/30 tabs with long/duplicate names, empty sessions, overflow selection, dirty-close cancellation
+   and save failures, supported minimum width, light/dark, keyboard and display scaling.
+9. **Reviewable deliverable.** Reviewable uncommitted repository changes for git-agent (no commit,
+   publish or merge; human release approval only), the command mapping, validation results and any
+   remaining limitations, with resulting screenshots; the resource prompt stays synchronized with
+   implemented behaviour; the document engine is not redesigned.
+
+**CONTROL-INDEX:** every control in the inventory table above keeps its existing command id, handler,
+shortcut, selector and availability rule; each displaced command keeps its action, relocated to the
+application menu. The new **All tabs** switcher opens the complete session switcher (full names, count,
+dirty state, duplicate context); **New tab** keeps its existing `onNewEmptyTab` handler and its Multi Mode
+disabled reason; the caption controls keep their `window.tflex.*Window` IPC. Separators and dividers are
+non-interactive. qa's focused pass verifies every listed control performs its promised action with no no-op
+and no changed handler. No new document operation is introduced.
+
+**Settings impact:** none. No new persisted `AppSettings` field and no settings channel. `colorId` is
+in-memory session state on `TabMeta` (tabs do not persist across restarts); it travels between windows on
+the existing `TabTransferPayload` IPC, and the existing `tabStyle` preference is preserved. Renderer-only,
+offline; no network call is added.
+
+**Numbering:** this is Phase 105 (the last appended phase is 104).
+
+## Phase 106 - Home Screen overhaul (Orbit Desk): real start surface for the document studio (phase issue TFL-857; operator driver TFL-820, 2026-10-05)
+
+**Operator request (product terms, TFL-820 / phase issue TFL-857).** Replace TFlex's current
+schematic welcome screen with the committed **Orbit Desk** composition from `Visual overhaul/Home
+Screen/`: a short, useful introduction; the three real entry actions (Open files primary; From
+images and Merge PDFs secondary); an asymmetric ~1.6:1 body (Continue working recents on the left,
+Explore samples on the right); real recent-document metadata and task-oriented samples; and a slow,
+low-opacity decorative violet/amber arc motif inspired by the real brand mark. The Home surface is
+the app's real start page - it opens and resumes documents and must never read as a marketing
+landing page. **Scope is doctrine: the Top Bar and Tabs overhaul is Phase 105 / TFL-856 and is NOT
+re-implemented here.** Phase 106 owns the Home surface only, must consume the chrome delivered by
+Phase 105 (or coexist with the still-current chrome while TFL-856 is in flight), and must not
+overlap, duplicate or re-home any chrome command, tab control or session model.
+
+**Current state (verified by reading the repo on 2026-10-05).**
+
+1. The Home surface is `src/renderer/components/Welcome.tsx` (523 lines), mounted inside the
+   `DocumentStage` `welcome` slot at `src/renderer/App.tsx:10970-10992`, shown when
+   `showWelcomeEffective` (`App.tsx:10804`, `!stageRailVisible`, from `isStageRailVisible`,
+   `src/renderer/components/StageRail.tsx:57-64`). It is a real start page with real handlers, not a
+   fixture: props include `recentFiles`, `onOpenRecent`, `onRemoveRecent`, `onOpenFile`,
+   `onSampleClick`, `onMergeClick`, `onCreateFromImages`, the Phase-58 editable `homeTools` row,
+   `onRunHomeTool`, `onSetHomeTools` and `samplesResolver` (`Welcome.tsx:73-96`).
+2. The hero already uses the real inline brand asset: `BrandMark` (inline SVG of
+   `assets/brand/jovrel-mark.svg`, `src/renderer/components/BrandMark.tsx`) plus `BrandWordmark`
+   (`Welcome.tsx:253-256`); assets live under `assets/brand/` (`jovrel-mark*.png`/`.svg`,
+   `jovrel-wordmark-*.png`, `jovrel-ring*.png`). No giant repeated logo is present today.
+3. Recents are real: `settings.recentFiles` (`src/shared/types.ts:31`, `:105`) projected to
+   `recentDisplays` via `splitRecentPath` (`src/renderer/utils/recentPath.ts`, `PathMeta { name,
+   dir, isSample }`) at `App.tsx:9332-9336`, and pushed/capped by `src/renderer/state/recentFiles.ts`
+   (`RECENT_CAP = 10`). **Gap:** the current row hard-codes the label `PDF` for every entry
+   (`Welcome.tsx:461`) and shows no rendered first page - the live-app addendum requires source-format
+   truth (`Welcome.tsx`/`recentPath` cannot derive an extension today) and honest previews.
+4. Samples are real: `SampleDocument { name, path }` (`src/shared/types.ts:37`) resolved by
+   `window.tflex.listSamples()` (`Welcome.tsx:127-142`, `App.tsx:9327-9330`) from
+   `src/main/services/samples.ts` over `assets/samples/` (`form.pdf`, `long.pdf`, `report.pdf`,
+   `scanned.pdf`). **Gap:** every sample tile renders the same `openSample` sparkle glyph and the
+   subtitle `Click to open - PDF` (`Welcome.tsx:500-513`); no real first-page preview, no
+   task-oriented labels, no honest fallback.
+5. The editable home row is Phase 58: `homeTools` model (`src/renderer/state/homeTools.ts`,
+   `HOME_TOOLS_MAX = 14`, fixed `open`, defaults `['createFromImages','merge']`), hosted by
+   `homeActions` (`App.tsx:10557-10586`) and persisted through `AppSettings.homeTools`
+   (`src/shared/types.ts:258`). This customization MUST be preserved.
+6. There is no decorative motion today and no motion setting specific to Home. The global animation
+   switch is `AppSettings.animationsEnabled` (`src/shared/types.ts:179-180`, Phase 23) and the shared
+   motion system lives in `src/renderer/styles/animations.css` / `motionTokens.ts` (see AGENTS.md).
+   The design's violet/amber arc motif does not exist yet.
+7. Existing Home tests: `test/unit/renderer/bugSweepWelcome.test.tsx`,
+   `bugDEF429_recentSampleReopen.test.tsx`, `phase58HomeTools.test.tsx`, `recentFiles.test.ts`,
+   `welcomeSamplesResolver.test.tsx`, `test/unit/main/samples.test.ts`; e2e
+   `e2e/phase58_home_tools.spec.cjs`, `e2e/phase95_home_tool_overflow.spec.cjs`,
+   `e2e/tfl311_home_welcome_bughunt.spec.cjs`, `e2e/pilot1_welcome_about_bughunt.spec.cjs`.
+8. Current Home CSS is `.welcome*` / `.recent*` / `.sample*` / `.home-tool*` in
+   `src/renderer/styles.css:2939-3600` and `:4499`, `:12009`, `:12055`.
+
+**CTO RULINGS:**
+
+1. **Scope.** Renderer only: `src/renderer/**` (Welcome + the new Orbit Desk components, home
+   presentational state, `recentPath`/recent display helpers, scoped Home CSS) and renderer unit
+   tests under `test/unit/renderer/**`. qa owns `e2e/**`, `screenshots/**`, `test-fixtures/**`. No
+   `src/main/**`, no `src/shared/**` change is expected; if one becomes necessary the developer
+   stops and asks the CTO rather than editing the contract. No new dependency, no network call, no
+   CDN, v1 stays fully offline.
+2. **Phase-105 non-overlap (the operator's explicit acceptance condition).** Phase 106 does not
+   touch the title row, the document rail, tabs, the tab/session store, the application menu or the
+   native caption controls. Home is reachable through the existing `DocumentStage` welcome slot and
+   the existing tab/session model; opening a document from Home uses the existing handlers
+   (`onOpenFile`/`onOpenRecent`/`onSampleClick`/`onMergeClick`/`onCreateFromImages`). Home controls
+   must not duplicate chrome commands; updater, Preferences, account and theme stay in their Phase-105
+   chrome locations. Open sessions are preserved when visiting Home (no session mutation).
+3. **One source of truth.** Reuse the real recent store, the real sample registry, the real brand
+   assets and the real command handlers. Build ONE shared recent-row component and ONE shared
+   sample-preview component rather than a parallel data store or per-tile fixtures. No fabricated
+   progress, success or document history; an empty/missing-file state shows a truthful invitation and
+   the real actions.
+4. **Source-format truth.** A recent/sample entry must show its real source format derived from the
+   actual path/extension (extend `PathMeta`/`splitRecentPath` or add a small helper), never a blanket
+   `PDF` label; a converted PDF output, if shown, is described separately. Duplicate basenames carry
+   enough location context (folder shorthand / accessible description) to disambiguate. A
+   moved/missing recent gets a truthful recovery path, and existing removal/privacy behaviour is
+   preserved.
+5. **Samples are task-oriented and honest.** Present the bundled samples with real task framing (for
+   example Read and navigate, Try form fields, Explore recognition) backed by real rendered first
+   pages or an honest per-file-type fallback; opening a sample keeps the existing "open a copy"
+   semantics so bundled assets are never overwritten. If a real preview cannot be produced, use a
+   purposeful per-file-type illustration, never identical sparkle rectangles.
+6. **Brand + decorative motif.** Reuse the existing `BrandMark` asset; the circular violet/amber
+   orbit motif is a thin, low-opacity decorative layer beside/behind the header (about 0.18-0.28
+   opacity), never behind body text at full intensity, and never replaced, distorted or animated over
+   the real logo. The static composition must remain attractive with motion off.
+7. **Motion.** The decorative motion is slow (about an 18s easing cycle through roughly 20 degrees),
+   transform/opacity only on a small decorative layer, and must obey, in order: `prefers-reduced-motion`,
+   the existing global `AppSettings.animationsEnabled` switch, document visibility (`document.hidden`)
+   and window minimized/blur (suspend when not visible, resume only per user preference). It must be
+   pausable through a discoverable control; the pause reuses the existing settings path (no new
+   persisted field). No layout/text/thumbnail/PDF animation, no animated filters or continuous canvas
+   redraws. Any new animation uses the shared motion tokens only (AGENTS.md Animation System).
+8. **Evidence + flow.** `npm run verify` plus the targeted Home unit tests; `npm run build:renderer`
+   where bundling is affected; the full suite is NOT run by default. Evidence includes light/dark
+   screenshots of the real revised app, populated/empty/missing-file recents, duplicate names,
+   source-format truth, real sample previews/fallback, long filenames/localization, keyboard and
+   screen-reader operation, text/DPI scaling, constrained/restored window bounds, and motion
+   pause/reduced-motion/visibility checks. Standard flow: CTO brief -> frontend-dev (renderer) ->
+   focused qa verification + visual verdict -> adversary diff-pass -> phase-close QA verdict -> ONE
+   local phase-close commit via git-agent. No push, tag, release or credential change without explicit
+   operator approval.
+9. **Numbering.** This is Phase 106 (the last appended phase is 105). Artifacts are named
+   `phase106_*` / `orbitDesk*` so they stay unambiguous.
+
+**Features**
+
+**A. Orbit Desk composition shell (frontend-dev, chunk A).** Rebuild `Welcome.tsx` into the Orbit
+Desk layout: a centered fluid content region (max ~1120px, 32px normal / 18-24px constrained
+padding), a short header (title, one sentence, Open files primary, From images and Merge PDFs
+secondary) that preserves the Phase-58 editable `homeTools` row and its fixed Open tile, and the
+asymmetric 1.6:1 body split (Continue working left, Explore right). Reuse `BrandMark`/`BrandWordmark`.
+Add the scoped `.orbit-desk*` CSS. Preserve every existing prop, handler, `data-*` hook and the
+empty/missing states.
+
+**B. Shared real recent list (frontend-dev, chunk B).** Build ONE shared recent-row component (used
+by Home) with real basename, containing-folder shorthand, source-format truth and relative opened-at
+time; the full path belongs in the accessible description/title, not a long visible path. Disambiguate
+duplicate basenames; show a truthful recovery path for a missing/moved file; keep remove/privacy
+behaviour. Resume through the existing `onOpenRecent`.
+
+**C. Task-oriented samples with honest previews (frontend-dev, chunk C).** Build ONE shared
+sample-preview component with real task framing and a real rendered first page or an honest
+per-file-type fallback; keep the existing copy-open semantics. Real bundled samples only.
+
+**D. Decorative orbit motion (frontend-dev, chunk D).** Add the thin low-opacity violet/amber arc
+layer and its slow easing motion behind/beside the header, wired to `prefers-reduced-motion`,
+`animationsEnabled`, document visibility and window minimized/blur, with a discoverable pause control
+and shared motion tokens; attractive static state. Unit tests for the on/off decision logic.
+
+**E. Focused QA + visual verdict (qa, chunk E).** Run `npm run verify`, the Home renderer unit tests
+and `build:renderer`; sweep the CONTROL-INDEX; capture light/dark screenshots of populated/empty/
+missing recents, duplicate names, real sample previews, long names, keyboard focus, DPI scaling and
+motion on/off; record DEF-NNN.
+
+**F. Adversarial diff-pass (adversary, chunk F).** Attack for fixture content, fabricated
+history/status, source-format mislabelling, unintended overwrite of bundled samples, loss of open
+sessions when visiting Home, motion that ignores reduced-motion/visibility, handler/selector drift
+and overlap with the Phase-105 chrome.
+
+**G. Phase-close QA verdict (qa, chunk G).** Verdict per success criterion over the whole phase diff.
+
+**H. Phase-close local commit (git-agent, chunk H).** Stage and commit the phase's tracked changes as
+ONE local commit referencing Phase 106 and any DEF/ADV numbers; no push, no tag, no version bump.
+
+**Success criteria**
+
+1. **Orbit Desk composition.** A short useful introduction; Open / From images / Merge actions; an
+   asymmetric real recent-document list; task-oriented samples; the real brand asset reused (the
+   circular violet/amber orbit motif decorative only, never replaced or animated over the logo); no
+   fixture content, no status-only actions, no preview-only responsive accommodations. All existing
+   home actions (including the Phase-58 home-tool customization and updater access) stay accessible.
+2. **Real recents.** Rows show real basename, useful folder shorthand, actual source/working format
+   and relative opened time; full location in the accessible description; duplicate basenames
+   disambiguated; moved/missing files handled truthfully; removal/privacy preserved; resume uses the
+   existing handler.
+3. **Real samples.** Task-oriented samples open real bundled copies with real first-page previews or
+   an honest per-file-type fallback; bundled assets are never overwritten.
+4. **Session preservation.** Open sessions (documents, undo, scroll) are preserved when visiting Home;
+   opening from Home uses the existing session/command model; no document-engine refactor; one source
+   of truth for recents, samples and commands.
+5. **Decorative motion.** Slow, low-opacity arc motion respects pause, reduced motion, document
+   visibility and window minimized/blur and the global Animations setting; static state remains
+   attractive; no layout/text/PDF animation.
+6. **No overlap with Phase 105.** Home content and the Top Bar + Tabs chrome do not overlap or
+   duplicate controls; one source of truth for commands and the session model.
+7. **Validation.** Light/dark, keyboard/screen-reader, reduced motion, localization, Windows text/DPI
+   scaling, constrained/restored windows and real document fidelity are checked; the relevant existing
+   checks plus targeted regression checks run green; resulting screenshots, validation and remaining
+   limitations are recorded.
+8. **Reviewable deliverable.** Reviewable uncommitted repository changes for git-agent (no commit,
+   publish or merge; human release approval only); the screenshot logo guides composition and the real
+   product asset is used in implementation; the resource prompt stays synchronized with implemented
+   behaviour.
+
+**CONTROL-INDEX:** every Home control keeps its existing handler and availability rule. Open Files
+(`onOpenFile` -> `onOpenClick`), From images (`onCreateFromImages` -> `onCreateClick`),
+Merge PDFs (`onMergeClick`), the fixed Open home tile and each persisted `homeTools` tile
+(`onRunHomeTool` -> `homeActions[id]`), the edit-home pen, each remove-minus
+(`onSetHomeTools(removeHomeTool(...))`) and each add-picker row (`onSetHomeTools(addHomeTool(...))`),
+each recent row open (`onOpenRecent` -> `onRecentClick`) and remove (`onRemoveRecent`), and each
+sample card (`onSampleClick`) all perform their promised action with no no-op. The new decorative
+motion pause control toggles the existing `animationsEnabled` path. Updater, Preferences, account and
+theme remain in their Phase-105 chrome locations and are not duplicated on Home.
+
+**Settings impact:** none. No new persisted `AppSettings` field and no new settings channel. The
+decorative motion reuses the existing `animationsEnabled` switch (`src/shared/types.ts:179-180`) plus
+`prefers-reduced-motion`, document visibility and window state; the Phase-58 `homeTools` field is
+preserved unchanged. Renderer-only, offline; no network call is added.
+
+**Numbering:** this is Phase 106 (the last appended phase is 105).
+
+## Phase 107 - Canvas overhaul: Paper Stage for the editor viewport (phase issue TFL-858; operator driver TFL-821, 2026-10-05)
+
+**Operator request (product terms, TFL-821 / phase issue TFL-858).** Apply the committed
+**Paper Stage** canvas treatment from `Visual overhaul/Canvas/` to the editor viewport: the area
+around and behind rendered PDF pages becomes a quiet, cool neutral document stage (proposed light
+`#ECEFF4`, dark `#151820`) with a 1px neutral exterior boundary and a restrained two-layer exterior
+page shadow, so the colorful tabs and violet workspace cues read clearly without competing with page
+content. Page edges are square and follow the real PDF bounds; the app's real page artwork, geometry
+and interactions are preserved exactly. **Scope is doctrine: Canvas owns the document stage only.**
+The viewing footer / zoom controls are the Viewing Controls overhaul (phase issue TFL-863); the
+thumbnail + outline navigator is the Thumbnails and Outline overhaul (TFL-865); the siderail is the
+Siderail overhaul (TFL-862); application typography is the Typography overhaul (TFL-864). Canvas
+CONSUMES their measured sizes at runtime and MUST NOT restyle, re-home, duplicate or once edit any of
+their shared regions.
+
+**Current state (verified by reading the repo on 2026-10-05).**
+
+1. Scroll container + inner flow: `.document-scroller` (`src/renderer/styles.css:4661-4692`) paints
+   `background: var(--bg-canvas)` (`:4665`), carries the open-Inspector inset
+   `margin-right: var(--tf-tools-inset, 0px)` (`:4691`) and the dock clearance
+   `padding-bottom: var(--dock-band-reserved, 0px)` (`:4680`). Inner `.document-content`
+   (`:4854-4865`) is `align-items: center`, `padding: 0`, `gap: 18px`; the two/four grid reuses the
+   same gap on both axes (`:4873-4880`).
+2. Canvas background tokens: light `--bg-canvas: #f1f5f9` (`styles.css:461`), dark `#0b0d0f`
+   (`:651`), frosted `var(--tf-bg)` (`:908`); Multi Mode opaque `--tf-canvas-opaque` light `#f1f5f9`
+   (`:468`), dark `#0b0d0f` (`:654`), frosted `var(--tf-bg)` (`:915`), applied to
+   `.document-scroller` / `.workspace-main` at `:13947`, `:13952`, `:13967`.
+3. Page surface: `.pdf-page` (`styles.css:4938-4966`) is paper-white `#ffffff` (`:4955`),
+   `box-shadow: var(--shadow-page)` (`:4962`), `border-radius: var(--radius-1)` = 3px (`:4963`), and
+   deliberately has NO 1px ring (comment `:4956-4961`). Dark override `:5025-5031`. `.page-slot`
+   paints paper-white too (`:5000-5016`).
+4. Shadow token: `--shadow-page: var(--elevation-1)` in all three themes (`:550`, `:726`, `:979`);
+   the elevation ladder (`:545-548`) is the Phase-100 foundation, mirrored by
+   `src/renderer/design/elevation.ts:9-24`; `test/unit/renderer/foundationMirrors.test.ts:162` pins
+   `SHADOW_ROLE.page` to the CSS `--shadow-page` string.
+5. Geometry constants: `PAGE_GAP_PX = 18` and `CONTENT_PADDING_PX = 0`
+   (`src/renderer/components/pageGeometry.ts:14`, `:20`); grid gap mirrors `gap: 18px`
+   (`styles.css:4864`); fit gap subtraction `layoutFitViewport`
+   (`src/renderer/components/pageLayoutMode.ts:90-102`). Fit:
+   `computeEffectiveScale(viewportBox, fitAnchor, zoom, padding)`
+   (`src/renderer/components/paneFit.ts:122-139`) called with `padding = CONTENT_PADDING_PX = 0` at
+   `DocumentView.tsx:2090-2106`; the viewport is measured from `scroller.clientWidth/clientHeight`
+   via ResizeObserver (`DocumentView.tsx:2350-2362`). The scroller box already excludes the
+   siderail / thumbnail column (grid sibling `--tf-rail-w`, `styles.css:3634`) and the open
+   Inspector (`margin-right`, `:4691`), and the dock band reduces height (`:4680`). The viewing
+   footer (`CanvasPills`, `styles.css:16247-16290`) is absolutely positioned in `.canvas-overlay` and
+   does NOT currently reduce the scroller box.
+6. Multi Mode: `.tab-stage[data-multi-mode="true"]` (`styles.css:13815-13903`); per-pane `.tab-pane`
+   (`:13872-13903`); opaque pane canvas `:13946-13953`; pane thumb strip reserved by
+   `multiPaneLayout.ts:40 STRIP_REST_PX = 150`, `:273 stripAndPageWidths` and CSS tracks
+   `:14447-14461`; active pane tracked by `multiMode.focused` (`src/renderer/state/multiMode.ts:31-39`).
+7. Tests: `test/unit/renderer/pageGeometry.test.ts`, `phase29_flushCanvas.test.ts` (asserts
+   `gap: 18px` and `CONTENT_PADDING_PX === 0`), `phase40_pageLayoutMode.test.ts`,
+   `foundationMirrors.test.ts`, `def285_singleModeCanvasOpaque.test.tsx`, `phase36CanvasPills.test.tsx`,
+   `multiModeStage.test.tsx`, `paneStripsStage.test.tsx`; e2e `e2e/phase33_multi_layout.spec.cjs`,
+   `phase34_*`, `phase43_gate.spec.cjs`, `phase59_fit_page.spec.cjs`. Scripts: `npm run verify`
+   (conventions + typecheck), `npm run test:unit -- --grep "<pattern>"`, `npm run build:renderer`.
+
+**CTO RULINGS:**
+
+1. **Scope.** Renderer only: `src/renderer/styles.css`, `src/renderer/design/elevation.ts` (mirror
+   only), `src/renderer/components/pageGeometry.ts`, `pageLayoutMode.ts`, `DocumentView.tsx`
+   (fit-call padding only), scoped canvas CSS, and renderer unit tests under `test/unit/renderer/**`.
+   No `src/main/**`; no `src/shared/**` (Settings impact none); no new dependency; offline.
+2. **Never touch a sibling region.** Do NOT edit `CanvasPills.tsx` / `.canvas-pills` /
+   `.canvas-overlay`, `ContextPanel.tsx` / `ThumbnailRail` / `PaneThumbStrip`, `SideRail.tsx` /
+   `.side-rail` / `--tf-rail-w`, the `ActionDock.tsx` / `--dock-band-reserved` producers,
+   `design/typography.ts`, Book View page-turn semantics, or any main-process code. Canvas changes
+   the stage surface, the page frame and the canvas geometry constants/CSS only.
+3. **PDF fidelity is absolute.** PDF pixels, artwork, CropBox/MediaBox/rotation, aspect ratios and
+   square page bounds are unchanged. `.pdf-page` stays `background: #ffffff` in every theme; no
+   `filter: invert`, no `mix-blend`, no recolour. Dark UI must not invert PDFs. Application type
+   tokens never replace embedded PDF fonts.
+4. **Boundary and shadow are chrome, never geometry.** Implement the 1px neutral exterior boundary as
+   a non-layout-affecting `box-shadow` ring (or an `outline` with offset), NOT a border or margin, so
+   page boxes, scroll math, hit testing and overlay coordinates stay identical. Square corners:
+   `.pdf-page` `border-radius: 0`. The two-layer shadow draws outside the page only and must never
+   enter exported/printed content.
+5. **Shadow token, not the ladder.** Keep `--elevation-1..4` untouched. Introduce the canvas page
+   shadow as its own token (add `--shadow-page-canvas`, or repoint the existing `--shadow-page`
+   role) and update `src/renderer/design/elevation.ts` `SHADOW_ROLE.page` in lockstep so
+   `foundationMirrors.test.ts` still passes. Proposed: light
+   `0 0 0 1px #DCE0E7, 0 2px 4px #232A3808, 0 12px 24px #232A380D`; dark
+   `0 0 0 1px #A1A6AF, 0 2px 4px #00000020, 0 12px 24px #00000030`.
+6. **Geometry constants change only where the contract demands.** `PAGE_GAP_PX` 18 -> 24 (mirror the
+   CSS `.document-content` gap and the grid gap). Fit margin 24-32px (default 28) applied ONLY to the
+   fit scale, as a new `FIT_MARGIN_PX` passed to `computeEffectiveScale`, NOT to
+   `CONTENT_PADDING_PX`; `CONTENT_PADDING_PX` stays 0 so scroll-landing math stays exact unless a
+   landing test proves it must move. Spread gap 8-12px (default 12) applies to Book View layout only;
+   do not alter Book View page-turn semantics. Update the affected assertions in place; do not weaken
+   them.
+7. **Multi Mode.** Extend the same Paper Stage surface to both panes (opaque per-pane canvas, same
+   boundary/shadow), preserve independent viewport/selection state and the visible active pane, keep
+   the pane-thumbnail width reserved and widget PDF transforms intact. Move vs Ctrl-copy transfer
+   semantics and undo are untouched.
+8. **Evidence + flow.** `npm run verify`, the targeted unit tests and `build:renderer`; qa runs the
+   focused verification and captures light/dark screenshots; the adversary runs a diff-pass; then
+   phase-close QA and ONE local commit via git-agent. No push, tag, release or version bump without
+   explicit operator approval. Canvas must not conflict with the four sibling overhaul phases
+   (862 Siderail, 863 Viewing Controls, 864 Typography, 865 Thumbnails and Outline): it reads
+   measured sizes and edits no shared region twice.
+9. **Numbering.** This is Phase 107 (the last appended phase is 106). Artifacts use `phase107_*` /
+   `paperStage*` so they stay unambiguous.
+
+**Features**
+
+**A. Paper Stage surface + page frame (frontend-dev, chunk A).** Repoint `--bg-canvas` and
+`--tf-canvas-opaque` per theme (light `#ECEFF4`, dark `#151820`, frosted keeps its glass), add the
+canvas edge and page-shadow tokens, give `.pdf-page` square corners plus the 1px ring and the
+two-layer exterior shadow (chrome only, background stays `#ffffff`), and mirror `elevation.ts` in
+lockstep. Add focused unit test `phase107_paperStage.test.ts`.
+
+**B. Canvas geometry (frontend-dev, chunk B).** `PAGE_GAP_PX` 18 -> 24 with the CSS gap mirrored, a
+new `FIT_MARGIN_PX` (28) wired into the `computeEffectiveScale` call sites, and the Book View spread
+gap set to 12; update `pageGeometry.test.ts`, `phase29_flushCanvas.test.ts` and
+`phase40_pageLayoutMode.test.ts` in place.
+
+**C. Multi Mode Paper Stage (frontend-dev, chunk C).** Extend the same surface to both panes; verify
+independent viewport/selection, the visible active pane, the reserved pane-thumbnail width and
+correct widget transforms.
+
+**D. Focused QA + visual verdict (qa, chunk D).** Run `npm run verify`, the named canvas unit tests
+and `build:renderer`; sweep the CONTROL-INDEX; capture light/dark screenshots (single/continuous/
+two/four, fit-page/width/manual, high-zoom scroll, panel open/close, tab switch, Multi Mode, large
+virtualized document); record DEF-NNN.
+
+**E. Adversarial diff-pass (adversary, chunk E).** Attack for PDF inversion, shadow bleeding into the
+page/export, geometry drift, hit-test/overlay offset, scroll-anchor instability, sibling-region
+edits and multi-pane divergence.
+
+**F. Phase-close QA verdict (qa, chunk F).** Verdict per success criterion over the whole phase diff.
+
+**G. Phase-close local commit (git-agent, chunk G).** Stage and commit the phase's tracked changes as
+ONE local commit referencing Phase 107 and any DEF/ADV numbers; no push, no tag.
+
+**Success criteria**
+
+1. **Stage.** The editor viewport outside the rendered document uses the quiet cool neutral stage
+   (light `#ECEFF4`, dark `#151820`) with a 1px neutral exterior boundary and the two-layer restrained
+   exterior page shadow. The shadow is UI chrome only and never enters exported/printed content or
+   selection coordinates.
+2. **PDF fidelity.** Actual PDF page pixels, artwork, CropBox/MediaBox/rotation, aspect ratios and
+   square page bounds are unchanged. Dark UI does not invert PDFs. Application typography tokens
+   never replace embedded PDF fonts.
+3. **Fit and geometry.** Page centering and fit are computed against the actual available viewport,
+   excluding siderail, open panels/inspector, top chrome and the viewing footer. Consistent logical
+   margins at fit (approx 24-32px), 24px continuous-page gap, 8-12px spread gap.
+4. **Modes.** Single-page, continuous, facing-pages/book and grid modes keep their distinct existing
+   renderer semantics. Fit-page/fit-width/manual zoom recalculate on viewport dimension, page rotation
+   or layout-mode change; above-fit zoom scrolls/pans; active view anchor and scroll position stay
+   stable across zoom and panel changes.
+5. **Interactions preserved.** Selection, hit testing, page overlays, toolbox positioning,
+   text/form/canvas interaction, PDF links, keyboard navigation, virtualization/lazy rendering and
+   export/print fidelity.
+6. **Multi Mode.** Paper Stage extended to both panes with independent viewport/selection state and a
+   visible active pane; pane-thumbnail width reserved; widgets keep correct PDF transforms. Move vs
+   Ctrl-copy transfer semantics and undo preserved.
+7. **No overlap with siblings.** No conflict or overlap with the Siderail, Viewing Controls,
+   Typography or Thumbnails and Outline overhauls; shared regions are not edited twice.
+8. **Evidence.** Real-app screenshots plus a report of what passed and what remains unverified. No
+   fixture content, status-only actions or preview-only responsive accommodations.
+
+**CONTROL-INDEX:** this phase introduces NO new interactive control; it is a visual and geometry
+treatment. The only controls affected are the existing fit/zoom buttons (`CanvasPills`,
+`.canvas-pill-zoom`), the layout-mode control (`src/renderer/components/PageLayoutControl.tsx`) and
+the Multi Mode divider (`MultiDivider`), whose promised actions are unchanged and covered by existing
+tests (`phase36CanvasPills.test.tsx`, `phase40_pageLayoutControl.test.tsx`, `multiModeStage.test.tsx`)
+plus qa's re-run. No no-op may appear.
+
+**Settings impact:** none. No new persisted `AppSettings` field and no new settings channel.
+Renderer-only, offline; no network call is added.
+
+**Numbering:** this is Phase 107 (the last appended phase is 106).
+
 ## Phase 108 - Siderail overhaul: the Workspace Rail replaces the Stage Rail (phase issue TFL-862; operator driver TFL-823, 2026-10-06)
 
 **Operator request (product terms, TFL-823 / phase issue TFL-862).** Replace the app's current
@@ -6896,4 +7511,600 @@ unchanged this phase and stays in the panel header. No no-op may appear.
 Renderer-only, offline; no network call is added.
 
 **Numbering:** this is Phase 108 (the last appended phase is 107).
+
+## Phase 109 - Viewing Controls overhaul: the unified View Strip footer (phase issue TFL-863; operator driver TFL-825, 2026-10-06)
+
+**Operator request (product terms, TFL-825 / phase issue TFL-863).** Consolidate the app's
+fragmented page-navigation, zoom, layout and pan access into ONE dedicated **View Strip** footer
+inside the editor area, below the document viewport, with three groups (page navigation left,
+flexible space, zoom + view/tool access right), 44-48px tall, matching the committed
+`Visual overhaul/Viewing Controls/` package. Every current viewing control, shortcut and mode is
+preserved (Book View, fit-width/page, zoom entry/steps, fullscreen, continuous modes, page layout
+and pan/tool state); the footer becomes the single correct home for viewing controls and binds to
+the existing shared view model. Operator charge, verbatim: "Properly implement the new [Viewing
+Controls] overhaul. make sure there's no conflict or overlapping contents."
+
+**Current state (verified by reading the repo on 2026-10-05).**
+
+1. Page navigation lives in the floating page pill `src/renderer/components/CanvasPills.tsx`
+   (`.canvas-pill-page`, `:124-181`): Previous (`:128` disabled `page<=1`), the `.page-input`
+   (aria-label "Current page", Enter/blur commit, `:136-159`), `.page-total` + `.page-label-hint`
+   (`:160-169`), Next (`:174` disabled `page>=pageCount`). Handlers are `onJump` -> `pageJump` ->
+   `jumpToPage` (`DocumentView.tsx:3939-3946`, `:4906-4910`); `resolvePageLabel(currentPage,
+   engineState.pageLabels)` supplies the logical label.
+2. Zoom + fit + pan live in the floating zoom pill `CanvasPills.tsx:184-231` (`.canvas-pill-zoom`):
+   Zoom out/in (`zoomTo(-1)`/`zoomTo(1)`, `DocumentView.tsx:3029-3040`), the `.zoom-percent` readout
+   (`:4908`), Fit width/page (`setMode`, `:3041-3054`, `:4913-4914`), Pan (`toggleHand`,
+   `:1891-1895`, `:4915-4916`, `data-hand-toggle`/`data-hand-active`). The zoom ladder, min/max,
+   ctrl+wheel and `stepTowards` are in `src/renderer/state/zoom.ts`; ctrl+wheel wiring is
+   `DocumentView.tsx:3089-3116`.
+3. Page layout (one / two / four) is the top-right `src/renderer/components/PageLayoutControl.tsx`
+   (`:48-78`; `data-page-layout-option`, aria-labels "One page"/"Two pages side by side"/"Four
+   pages in two rows"), driven by `onChangePageLayout` -> `setPageLayout` + `setMode(
+   pageLayoutFitMode(mode))` (`DocumentView.tsx:3064-3075`, `:4889-4891`); single-view only
+   (`!inMultiPane`).
+4. The Book View entry is the top-right `.canvas-book-view` (`DocumentView.tsx:4869-4880`,
+   `data-book-view-open`) -> App `openBookView` (`App.tsx:10050-10058`); single-view only.
+5. All three surfaces are children of the pointer-inert `.canvas-overlay` (`DocumentView.tsx:4851`)
+   inside `.workspace-main` (`:4528`), whose grid is `auto auto auto auto 1fr` with
+   `.document-scroller { grid-row: 5 }` (`styles.css:3762`, `:4848`). The Action Dock floats in the
+   same layer at `bottom: var(--dock-bottom-inset, 16px)` (`styles.css:15555-15626`) and reserves
+   `--dock-band-reserved` on `.document-scroller` (`styles.css:4774`; `ActionDock.tsx:536-548`).
+6. Multi Mode renders one `DocumentView` per pane (`MultiPane.tsx:559`); each pane's own
+   `CanvasPills` carry `pane` and act on that pane only (`DocumentView.tsx:4901-4920`); the layout
+   control and Book View entry are absent in panes.
+7. Shortcuts (native, `src/main/menu.ts`): Zoom In `Ctrl+=`, Zoom Out `Ctrl+-`, Fit Width `Ctrl+0`,
+   Fit Page `Ctrl+9`; View menu carries `role: 'togglefullscreen'` (`:155`). Registry view commands
+   `zoomIn`/`zoomOut`/`fitWidth`/`fitPage`/`prevPage`/`nextPage`/`pageJump` (`toolsRegistry.ts:
+   1128-1200`) are bridged to the Command Palette by `viewCommands` (`DocumentView.tsx:4213-4236`).
+8. **Audit finding:** there is NO in-app fullscreen control (only the native View menu role) and NO
+   typed zoom-percentage input (the readout is a `<span>`; `CommandBar.tsx` is retired and unmounted).
+   Preserve the native accelerators; invent nothing.
+9. Focused specs that pin the current surfaces and must stay green: `phase36CanvasPills.test.tsx`,
+   `phase40_pageLayoutControl.test.tsx`, `phase40_pageLayoutMode.test.ts`, `phase40_pageReadout.test.tsx`,
+   `zoom.test.ts`, `def315_dockPillClearance.test.ts`, `def349_multiNarrowPills.test.ts`,
+   `def351_pagePillReplace.test.tsx`.
+
+**CTO RULINGS:**
+
+1. **Scope.** Renderer only: `src/renderer/components/**` (a new `ViewStrip.tsx`; edits to
+   `DocumentView.tsx` and any renderer component it mounts), the View-Strip sections/tokens of
+   `src/renderer/styles.css`, and renderer unit tests under `test/unit/renderer/**`. No `src/main/**`;
+   no `src/shared/**` (Settings impact none); no new dependency; offline. Do NOT edit `App.tsx`,
+   `MultiPane.tsx`, `BookView.tsx`, `ActionDock.tsx`, `toolsRegistry.ts`, `pageLayoutMode.ts`,
+   `zoom.ts`, `paneFit.ts`, `pageGeometry.ts` or any e2e spec.
+2. **Shared tokens are frozen.** Do NOT change `--accent`, `--accent-soft`, `--accent-text`,
+   `--bg-canvas`, `--tf-canvas-opaque`, `--bg-toolbar`, `--border`, `--divider`, `--shadow-page`, or
+   any dock/panel/rail/tab token - they colour other committed surfaces. Add footer-scoped NEW tokens
+   only and consume the frozen accent/ink tokens for the selected layout/pan state.
+3. **Footer geometry.** The footer is a REAL grid row (row 6) of `.workspace-main`, fixed 44-48px
+   (`--view-strip-h`), below the document viewport; `.document-scroller` keeps `grid-row: 5` and
+   `.canvas-overlay` is inset by the footer height so the dock, flyout and notices float above it.
+   This makes no-overlap structural; the dock keeps >=16px separation (its existing `bottom: 16px`
+   now measures from the footer top). Reuse existing theme/motion tokens only.
+4. **Preserve the view model.** Consume `DocumentView`'s existing zoom reducer, `jumpToPage`,
+   `zoomTo`, `setMode`, `pageLayout`, `handActive` and `pageLabels` unchanged. No parallel store, no
+   engine refactor, no semantics change.
+5. **Preserve every control; invent none.** The footer's page group keeps the exact
+   aria-labels/handlers of `CanvasPills.tsx:124-181`; the view group keeps zoom out/in + readout +
+   fit width/page + pan + the one/two/four layout (from `PageLayoutControl.tsx:48-78`) + the Book View
+   entry (single mode). Do NOT add a fullscreen button or a typed zoom input.
+6. **Multi Mode.** Each pane keeps pane-targeted page/zoom/pan in its own footer; the layout group is
+   absent in panes; never broadcast one pane's navigation to both without an existing explicit sync
+   setting.
+7. **Responsive.** Keep ONE fixed-height footer row; route overflow to a measured More menu rather
+   than wrapping into multi-row chrome. Every control stays reachable at 640x480 and under Windows
+   text/DPI scaling; footer visibility follows the established app policy (no disappearing controls
+   while interacting, no transient bar covering the document).
+8. **Accessibility + motion.** Correct framework semantics per control kind (layout selection vs
+   menu vs tool), visible focus, stable disabled state, tooltips, keyboard/screen-reader access,
+   reduced motion; the footer and its controls animate through existing motion TOKENS only
+   (transform/opacity, no hardcoded durations, identical in light/dark/frosted); PDF page pixels are
+   never recoloured or cross-faded.
+9. **No overlap.** Prove no overlap/clip/z-fight with the Canvas / Book View, Top Bar / Tabs,
+   Siderail, Dock or Panels across supported widths including constrained/restored windows; do not
+   edit any sibling region.
+10. **Evidence + flow.** frontend-dev runs `npm run verify`, `npm run build:renderer` and the named
+    targeted unit specs and reports the CONTROL-INDEX; qa runs the focused verification, the phase's
+    CONTROL-INDEX sweep and captures light/dark + constrained-window screenshots, timing the
+    performance budget; the adversary runs a diff-pass; then phase-close QA and ONE local commit via
+    git-agent. No push, tag, release or version bump without explicit operator approval.
+
+**Features**
+
+**A. View Strip footer shell + single-mode control migration + geometry (frontend-dev, chunk A).**
+New `src/renderer/components/ViewStrip.tsx` with three groups (page navigation left, flexible space,
+zoom + view/tool access right) re-homing the existing single-mode controls with their exact
+aria-labels/handlers; mount it as grid row 6 of `.workspace-main` in `DocumentView.tsx` and stop
+rendering the old single-mode `CanvasPills`, the top-right `PageLayoutControl` and the top-right Book
+View entry (the `.canvas-top-right` cluster keeps only the notices); add the footer CSS and
+`.canvas-overlay` bottom inset. New focused spec `test/unit/renderer/phase109_viewStrip.test.ts`.
+
+**B. Multi Mode per-pane footer + responsive/constrained windows + accessibility (frontend-dev,
+chunk B).** Extend the footer to Multi Mode's per-pane placement (retiring the per-pane `CanvasPills`)
+with pane-targeted state, add the fixed-height overflow/More-menu tiers and the 640x480 / text-scaling
+behavior, and complete the keyboard/screen-reader/reduced-motion pass. Update the named multi/dock
+specs and the CONTROL-INDEX. Blocked by A.
+
+**C. Focused QA + visual verdict (qa, chunk C).** Run `npm run verify`, the named unit specs and
+`build:renderer`; sweep the CONTROL-INDEX; capture light / dark screenshots for every mode, zoom
+path, layout switch, pan, Book View, Multi Mode and the constrained/restored windows; time the
+performance budget; record DEF-NNN. Task type: focused verification.
+
+**D. Adversarial diff-pass (adversary, chunk D).** Attack overlap/z-fight with Canvas, Top Bar /
+Tabs, Siderail, Dock and Panels; stale state on rapid tab/pane switches; unreachable controls at
+constrained/scaled windows; keyboard/screen-reader regressions; sibling-region edits.
+
+**E. Phase-close QA verdict (qa, chunk E).** Verdict per success criterion over the whole phase diff.
+
+**F. Phase-close local commit (git-agent, chunk F).** Stage ONLY the phase's declared paths/hunks as
+ONE local commit referencing Phase 109 and any DEF/ADV numbers; no push, no tag.
+
+**Success criteria**
+
+1. **Command inventory and semantics.** Every current viewing control in the audited inventory above
+   resolves to a production handler in the View Strip footer, with its real availability rule and
+   shortcut; no control, shortcut or mode is lost and none is invented.
+2. **Unified View Strip footer.** Page navigation, zoom, page layout, pan and the Book View entry
+   live in one dedicated footer with page-left / space / view-right groups; every existing control
+   and mode remains reachable from it.
+3. **Shared view-model binding.** The footer binds to `DocumentView`'s existing view model (fit
+   intent plus real scale; physical index plus actual page labels; page layout kept separate from
+   pan/tool state); no parallel mock data store and no engine refactor.
+4. **Layout and no-overlap.** The footer is a reserved layout band with the command dock safely
+   above it (>=16px) and no overlay collision; it does not overlap, clip or z-fight with the Canvas /
+   Book View, Top Bar / Tabs, Siderail, Dock or Panels across supported window widths including
+   constrained/restored windows.
+5. **Fidelity.** No fixture content, status-only actions or preview-only responsive accommodations;
+   real document fidelity is required.
+6. **Accessibility, theme and platform.** Light/dark, keyboard and screen-reader access, reduced
+   motion, localization, Windows text/DPI scaling and constrained restored windows are verified.
+7. **Validation.** The relevant existing checks plus meaningful targeted regression specs run and
+   pass; resulting app screenshots, validation results and any remaining limitations are provided.
+8. **Reviewable deliverable.** Reviewable uncommitted repository changes are left for git-agent (no
+   commit, publish or merge; human release approval only), and the resource prompt stays
+   synchronized with implemented behavior.
+
+**CONTROL-INDEX:** the phase re-homes the existing viewing controls into the footer; it introduces no
+new command. Page navigation (Previous page, Current page, Next page) keeps its handlers and
+`data-*`/aria hooks (`CanvasPills.tsx:124-181`), proven by `phase109_viewStrip.test.ts` and the
+existing `phase36CanvasPills.test.tsx`; zoom out/in, fit width/page and pan keep theirs
+(`CanvasPills.tsx:184-231`), proven by the same plus `zoom.test.ts`; the one/two/four layout keeps
+`data-page-layout-option` and its aria-labels (`PageLayoutControl.tsx:48-78`), proven by
+`phase40_pageLayoutControl.test.tsx`; the Book View entry keeps `data-book-view-open`
+(`DocumentView.tsx:4869-4880`); the page readout keeps its label-aware form
+(`phase40_pageReadout.test.tsx`). The native accelerators (`Ctrl+=`/`Ctrl+-`/`Ctrl+0`/`Ctrl+9`,
+View > Toggle Full Screen) and the Command Palette view verbs are unchanged. No no-op may appear.
+
+**Settings impact:** none. No new persisted `AppSettings` field and no new settings channel.
+Renderer-only, offline; no network call is added.
+
+**Numbering:** this is Phase 109 (the last appended phase is 108).
+
+## Phase 110 - Typography overhaul: one semantic, token-driven type scale applied app-wide (phase issue TFL-864; operator driver TFL-826, 2026-10-06)
+
+**Operator request (product terms, TFL-864 / design handoff `Visual overhaul/Typography/`).**
+Replace TFlex's scattered font declarations with ONE semantic, token-driven type scale
+("Quiet Precision") applied through shared primitives and feature adapters, so hierarchy and
+consistency improve across the top bar, tabs, siderail, dock, panels, home, menus, dialogs,
+viewing controls and notifications - WITHOUT changing PDF/document typography. Precedence:
+consistency corrections > category spec > visual references.
+
+**Current state (verified by reading the repo and the design package on 2026-10-05).**
+
+1. `src/renderer/styles.css` (19,666 lines) is the single global stylesheet, imported at
+   `src/renderer/main.tsx:12`; `styles.css:10` imports `@fontsource-variable/inter` and `:14`
+   imports `styles/animations.css` (motion only, zero font declarations).
+2. Existing typography tokens in `:root` (`styles.css:16`): `--font-sans` (`:18`, Inter-first
+   stack `"Inter Variable","Inter",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif`),
+   `--font-ui` (`:24`), `--font-mono` (`:25`); the generic scale `--fs-xs/sm/md/lg/xl/2xl`
+   (`:31-39` = 12/12/13/15/18/24px); `--tf-label-size` (`:71`=12), `--tf-label-size-md` (`:72`=13);
+   dialog tokens `--dlg-title-fs`/`--dlg-label-fs`/`--dlg-help-fs` (`:431-433`); dock tokens
+   `--dock-label-size` (`:15650`=12) and `--dock-label-weight` (`:15651`=500). There is NO
+   line-height token, NO weight token and NO semantic role token.
+3. `src/renderer/design/typography.ts` mirrors `FONT_FAMILIES` (`:11-17`) and `FONT_SIZES`
+   (`:20-27`); `test/unit/renderer/foundationMirrors.test.ts:72-86` pins those constants to the
+   `:root` tokens; `test/unit/renderer/foundationGuards.test.ts` rejects a raw literal `fontSize`
+   in migrated TSX and a raw `font-size`/`font` shorthand in a CSS rule body.
+4. Scatter audit: in CSS 304 `font-size`, 122 `font-weight`, 56 `line-height`, 42 `letter-spacing`,
+   38 `font-variant-numeric: tabular-nums`, 28 `font-family`, 14 `font` shorthand; in TSX 11
+   `fontSize`, 6 `fontWeight`, 8 `lineHeight`, 5 `letterSpacing` inline. Only 2 CSS `font-size`
+   declarations are literals - the rest already resolve to tokens - so the migration is by role,
+   not a rewrite.
+5. Shared text primitives are already centralized (Phase 100, `docs/DESIGN-SYSTEM.md:438-517`):
+   `Button` (`src/renderer/components/Button.tsx:63`; `.btn` `styles.css:3256`), `DialogShell`
+   (`components/DialogShell.tsx:223`; `.modal-title` `styles.css:6030`, `.modal-help` `:6096`,
+   `.dlg-label` `:6212`, `.dlg-help` `:6221`), section titles (`Inspector.tsx:393`,
+   `ContextPanel.tsx:497`, `PreferencesDialog.tsx:372`; `.inspector-section-title` `styles.css:8533`,
+   `.prefs-section-title` `:9343`), dock labels (`ActionDock.tsx:1133`; `.action-dock-label`
+   `styles.css:16201`), rail labels (`StageRail.tsx:150`; `.stage-rail-label` `styles.css:14944`),
+   tabs (`AnimatedTab.tsx:205`; `.tab-title` `styles.css:2422`), home headline (`Welcome.tsx:265`;
+   `.welcome-title` `styles.css:3085`).
+6. Supporting-text colour: `--tf-text-tertiary` (`styles.css:941`) currently carries `#70798A` in
+   light. The corrections replace the default small readable helper text with `#667085` light /
+   `#929BAC` dark by semantic role; `#70798A` stays only as a non-text/disabled token.
+7. PDF/document typography is a SEPARATE pipeline that reads none of the UI tokens: renderer
+   previews `edit/editColor.ts:24-42`, `annotations/annTextStyle.ts:26-33`,
+   `components/WatermarkDialog.tsx:77-84`, `annotations/stampRender.ts:294-297`,
+   `signatures/canvas.ts:70,145,243`; baked appearance streams / embedded fonts / standard fonts in
+   `src/main/services/{fonts,annotations,engine,text-style}.ts`; print is image-only
+   (`src/main/services/print.ts:420-537`). The document font-family selector is
+   `edit/TextPropertiesPanel.tsx:318-333` (`data-txt-font`) and stays independent.
+8. Design handoff committed under `Visual overhaul/Typography/` (spec, corrections,
+   `supporting-text-contrast.json`) and
+   `Visual overhaul/Design System/{typography,unified-ui,quiet-precision}.tokens.json`.
+9. `docs/phase-specs/` extracts are generated: `python scripts/split-requirements.py` after this
+   edit.
+
+**CTO RULINGS:**
+
+1. **Scope.** Renderer only: `src/renderer/styles.css`, `src/renderer/styles/**`,
+   `src/renderer/design/typography.ts`, shared-primitive and feature components under
+   `src/renderer/**`, plus renderer unit tests under `test/unit/renderer/**`. No `src/main/**`, no
+   `src/shared/**`, no new dependency, no network call. qa owns `e2e/**`, `screenshots/**`,
+   `test-fixtures/**`. **DO NOT touch the document pipeline**: `edit/editColor.ts`,
+   `annotations/annTextStyle.ts`, the `WatermarkDialog.tsx` `FONT_CSS` map,
+   `annotations/stampRender.ts`, `signatures/**`, or any `src/main/**` font/appearance/print/export
+   code.
+2. **One semantic scale is the single source of truth.** Introduce role tokens in `:root` for the
+   eight spec roles (homeHeadline 32/38, 28/34 constrained, weight 500-600; taskTitle 18/25, 500;
+   panelTitle 16/22, 500; body 14/22, 400; documentRow 13/20, 400-500; controlLabel 12/17, 500;
+   helper 12/18, 400; compactException 11/16, 400-500). Repoint the existing generic tokens
+   (`--fs-*`, `--tf-label-size`, `--dlg-*`, `--dock-label-*`) at the semantic roles so there is
+   exactly one scale and no duplicate/contradictory type rule; keep the legacy token NAMES as
+   aliases so the 300+ existing consumers keep resolving. Align the earlier 12/14 label/body
+   proposal to this scale (controlLabel 12, body 14).
+3. **Font stack.** `--font-sans`/`--font-ui` become `"Segoe UI Variable", "Segoe UI", system-ui,
+   sans-serif` (native Windows, no network font). KEEP the `@fontsource-variable/inter` import and
+   every Inter literal used by the document/annotation previews: Inter is the document editing
+   font, not the UI font.
+4. **Tabular figures by role.** `font-variant-numeric: tabular-nums` on page counts, zoom
+   percentages, sizes and aligned changing values; ordinary prose and filenames stay proportional.
+   Audit the 38 existing tabular declarations and add only where missing.
+5. **Supporting text by semantic role.** Add semantic supporting/helper colour tokens (`#667085`
+   light / `#929BAC` dark) and apply them by role; `#70798A` remains only the non-text/disabled
+   token. Never lower opacity as the universal disabled/muted treatment.
+6. **No clipping, no shrink-to-fit.** No fixed-height container may clip ascenders, descenders,
+   multiline labels or emoji; field labels, validation and essential action verbs wrap or expand;
+   never reduce font size to fit a translated label. The 11px rail/accelerator is the ONLY
+   documented compact exception. Respect Windows text scaling separately from DPI; add no new
+   density setting.
+7. **Migration order.** Shared primitives first (chunk A), then feature-specific chrome (chunk B)
+   and content (chunk C). No global CSS/font replacement; migrate by role and remove contradictory
+   rules as you go.
+8. **Isolation proof.** A guard test asserts the document-pipeline files reference no UI type
+   token; qa confirms annotation appearance streams and export/print output are byte-unchanged for
+   a fixed fixture.
+9. **Coordination.** The Pages navigator is owned by TFL-865 (Thumbnails and Outline): this phase
+   applies tokens to shared primitives and chrome only and leaves navigator-specific typography to
+   that phase. Because `styles.css` is a shared write surface, the foundation chunk is serialised
+   behind the in-flight sibling writer before it starts.
+10. **Evidence + flow.** frontend-dev runs `npm run verify`, `npm run build:renderer` and the named
+    targeted specs and reports a CONTROL-INDEX; qa runs focused verification, the phase
+    CONTROL-INDEX sweep, records `docs/typography/supporting-text-contrast.json`, and captures
+    light/dark screenshots at 100% and 200% DPI plus Windows text scaling; the adversary runs a
+    diff-pass; then phase-close QA and ONE local commit via git-agent. No push, tag, release,
+    version bump or credential change without explicit operator approval.
+11. **Numbering.** This is Phase 110 (the last appended phase is 109). Artifacts are named
+    `phase110_*` / `typography*` so they stay unambiguous.
+
+**Features**
+
+**A. Semantic scale foundation + shared-primitive migration (frontend-dev, chunk A).** Add the
+eight semantic role tokens and the supporting-text colour tokens to `styles.css` `:root`; set
+`--font-sans`/`--font-ui` to the Segoe stack; repoint the legacy type tokens as aliases; update
+`src/renderer/design/typography.ts` (`FONT_FAMILIES`/`FONT_SIZES`/new role map) and the
+mirror/guard tests to the new source of truth; migrate the shared text primitives (Button,
+DialogShell titles/labels/help, section titles, dock labels, rail labels, tabs, home headline) by
+role; add `test/unit/renderer/phase110_typographyScale.test.ts`; add the document-isolation guard
+test.
+
+**B. Chrome-surface migration (frontend-dev, chunk B).** Apply the semantic tokens and
+supporting-text roles across the top bar, tabs, siderail, dock, viewing controls, menus and
+notifications; add tabular figures to page counts / zoom % / sizes; keep the 11px compact
+exceptions; remove contradictory rules. Blocked by A.
+
+**C. Content-surface migration (frontend-dev, chunk C).** Apply the semantic tokens across the
+home screen, panels, dialogs, command palette, empty states and form/helper text; ensure
+labels/validation/action verbs wrap or expand and no container clips; complete the Windows
+text-scaling/DPI pass. Blocked by B.
+
+**D. Focused QA + visual verdict (qa, chunk D).** Run `npm run verify`, `npm run build:renderer`
+and the named unit specs; sweep the CONTROL-INDEX; capture light/dark screenshots for every major
+surface at 100%/200% DPI and Windows text scaling; measure helper-text contrast and record
+`docs/typography/supporting-text-contrast.json`; confirm PDF output/annotation appearance
+unchanged; record DEF-NNN. Task type: focused verification.
+
+**E. Adversarial diff-pass (adversary, chunk E).** Attack clipping/shrink-to-fit, text-scaling/DPI
+regressions, contradictory/duplicate type rules, tabular-vs-proportional misuse, supporting-text
+contrast, and any leak of UI type tokens into the document pipeline.
+
+**F. Phase-close QA verdict (qa, chunk F).** Verdict per success criterion over the whole phase
+diff.
+
+**G. Phase-close local commit (git-agent, chunk G).** Stage ONLY the phase's declared paths/hunks
+as ONE local commit referencing Phase 110 and any DEF/ADV numbers; no push, no tag.
+
+**Success criteria**
+
+1. One semantic type scale applied app-wide through shared primitives/adapters: home headline,
+   dialog/page title, panel heading, body/editable fields, document/tab row, control/section label,
+   helper text and compact rail/accelerator each resolve to the spec sizes/line-heights/weights,
+   and the earlier 12/14 label/body proposal is aligned to this scale.
+2. The UI font stack is `"Segoe UI Variable", "Segoe UI", system-ui, sans-serif` with no network
+   font request; tabular figures are used for page counts, zoom %, sizes and aligned changing
+   values and proportional figures for prose and filenames.
+3. Supporting text uses `#667085` light / `#929BAC` dark by semantic role (replacing the earlier
+   `#70798A` helper default); helper-text contrast is >= 4.5:1 and the measured ratios are recorded
+   in `docs/typography/supporting-text-contrast.json`.
+4. Documented compact exceptions are retained (11px rail labels/accelerators); text is never shrunk
+   to fit; field labels, validation and essential action verbs wrap or expand; no clipping of
+   ascenders/descenders/multiline/emoji and no fixed-height container that clips.
+5. PDF/document typography is untouched: embedded PDF fonts, annotation appearance streams,
+   export/print layout and document editing font choices are unchanged, and the document
+   font-family selector stays independent from interface typography.
+6. No conflict or overlap: the scattered declarations are audited and mapped to semantic tokens,
+   shared primitives migrate before feature text, no global CSS/font replacement, and no duplicate
+   or contradictory type rule is left behind.
+7. Accessibility/scale is verified: 100-200% DPI, Windows text scaling kept separate from DPI,
+   long translations, mixed scripts, keyboard focus, baseline alignment and reduced motion; no new
+   density setting is added.
+8. No fixture content, status-only actions or preview-only responsive accommodations are shipped.
+9. Validation: `npm run verify`, `npm run build:renderer` and the named targeted specs run and
+   pass; light/dark screenshots of the major surfaces, the contrast record and any remaining
+   limitations are provided.
+10. Reviewable deliverable: reviewable uncommitted repository changes are left for git-agent (no
+    commit, publish or merge; human release approval only).
+
+**CONTROL-INDEX:** this phase introduces NO new interactive control; it is a presentation/typography
+overhaul. Every existing control keeps its action, handler, `data-*`/aria hook and shortcut; qa's
+focused pass verifies there is no no-op and no changed handler. The migrated surfaces are: home
+headline (`Welcome.tsx:265`), dialog titles/labels/help (`DialogShell.tsx:223`), panel section
+titles (`Inspector.tsx:393`, `ContextPanel.tsx:497`, `PreferencesDialog.tsx:372`), dock labels
+(`ActionDock.tsx:1133`), rail labels (`StageRail.tsx:150`), tabs (`AnimatedTab.tsx:205`), buttons
+(`Button.tsx:63`) and the top-bar / viewing-control / menu / notification text. No no-op may appear.
+
+**Settings impact:** none. No new persisted `AppSettings` field and no new settings channel; the
+phase is presentation-only, renderer-only and offline.
+
+**Numbering:** this is Phase 110 (the last appended phase is 109).
+
+## Phase 111 - Thumbnails and Outline overhaul: the Document Navigator (phase issue TFL-865; CEO commission from TFL-827, 2026-10-06)
+
+**Operator request (product terms, TFL-827 / phase issue TFL-865).** Overhaul the document
+navigator - the Thumbnails (Pages) panel and the Outline panel - so it matches the committed
+`Visual overhaul/Thumbnails and Outline/` package in both light and dark themes and at the narrow
+and split sizes, and reads as ONE coherent surface with no conflicting or overlapping content
+against the neighbouring overhaul slices (Siderail, Panels, Design System, Consistency
+Corrections). Recommended direction: **Document Navigator** (full-height Pages / Outline views);
+**Split Navigator** is a persisted alternative. Precedence: consistency corrections > category
+spec > visual references; where the phase-issue notes and the bundle disagree the bundle wins.
+Operator charge: "no conflict or overlapping contents." Out of scope: network features
+(offline-first product scope).
+
+**Current state (verified by reading the repo on 2026-10-06).**
+
+1. Navigator components live in `src/renderer/components/SideRail.tsx` (2,024 lines):
+   `ThumbnailRail` (`:581`; page list, virtualization, drag-reorder, raster), `Thumb` (`:1217`;
+   PDF.js raster effect `:1281-1416`, offscreen release `:1424-1432`, inline hover verbs
+   `:1585-1630`), `RulerStrip` (`:1126`), `OutlinePanel` (`:1677`; tree `renderNodes:1790`,
+   inline verbs `renderVerbs:1824`), `OutlineEditorContext` (`:1654`). The legacy full `SideRail`
+   function (`:129`) is exported but mounted nowhere.
+2. Mount points: single mode `ContextPanel.renderPages` (`ContextPanel.tsx:414-487`; ThumbnailRail
+   `:425-446`, OutlinePanel `:481`, section collapse `:399-411`/`:462-471`, Combine `:718-730`,
+   Remove blank `:449-459`); Multi Mode `PaneThumbStrip` (`PaneThumbStrip.tsx:99`; ThumbnailRail
+   `:223-245`, `STRIP_WIDTH_PX=150` `:47`). Shared right-click page menu
+   `pageThumbMenu.tsx:92/62/21`.
+3. State: current page `DocumentView.tsx:1837`; selected-page set `pageSelection: number[]`
+   `DocumentView.tsx:4104` (host-owned; writes `:4377,4454`; prune `:4108-4114`); range anchor
+   `SideRail.tsx:636`; selection pure logic `state/pageSelection.ts:25,42,58,87,123,131`; outline
+   local state (`selected:1687`, `editingPath:1688`, `collapsed:1685`, `model:1686`); rail tab
+   `App.tsx:737` (palette writes `:10537-10544`; mount guard `ContextPanel.tsx:334-346`); panel
+   collapse `state/pagesPanel.ts:35`, `AppSettings.pagesPanelCollapsed` (`types.ts:176`),
+   `App.tsx:727-731,1675-1685,754`.
+4. Outline: read `pdfjs.ts:191-203`; destination resolve `pdfjs.ts:209-233`; seed
+   `state/outlineEditor.ts:58-72`; contract `src/shared/outline.ts:23` (`OutlineEntry`,
+   `MAX_OUTLINE_DEPTH:31`, pure transforms `:62-220`); renderer handlers
+   `state/outlineEditor.ts:126,147,169,195,221,242,282`; host commit `App.tsx:1851-1869`; IPC
+   `ipc.ts:287`, main `main/index.ts:1074-1075`.
+5. Dock integration: selection state `dockModel.ts:283-288`; bulk verbs `ActionDock.tsx:293-319`;
+   ids `dockModel.ts:53,56`; handlers `DocumentView.dockBulk:4144-4159`; clear `:4116/4175`;
+   registry `toolsRegistry.ts:349,339,359,449,319,439`. Combine `App.tsx:5263`; Remove blank
+   `App.tsx:7719,7759`.
+6. Styling: ONE `src/renderer/styles.css`; themes light/dark/frosted only (`types.ts:83`), NO
+   high-contrast theme. Navigator blocks `.side-rail:3922`, `.rail-header:4272`, `.rail-tabs:4279`,
+   `.thumb-scroller:4310`, `.thumb:4325`, `.thumb-current:4369`, `.thumb-canvas-wrap:4384`,
+   `.thumb-label:4418`, `.thumb-selected:5815/5927`, `.outline-panel:4430`, `.outline-row:4440`,
+   `.outline-verb:4520`, `.rail-ruler:13007`, `.pane-thumb-strip:14666`, `.context-panel:15024`.
+   The shared attached-panel header token is `--glass-sidebar-header-h: 44px` (`:265`); the 52px
+   value is the command bar (`--chrome-commandbar-h: 52px`, `:230`).
+7. Persistence: only `pagesPanelCollapsed` and `dockPins` persist today; navigator width, layout,
+   split ratio, active view, scroll anchors and outline expansion are not persisted.
+8. Tests pinning the current surfaces: `sideRail.test.tsx`, `phase16PagesPanel.test.tsx`,
+   `phase36PageSelection.test.ts`, `phase36ThumbMultiSelect.test.tsx`, `phase36ContextPanel.test.tsx`,
+   `phase85OutlineEditor.test.tsx`, `test/unit/shared/outline.test.ts`,
+   `test/unit/main/phase85Outline.test.ts`, `paneThumbStrip.test.tsx`, `pageDrag*.test.ts`,
+   `thumbGeometry*.test.ts`; e2e `phase85_outline_edit.spec.cjs`,
+   `phase36_chunk2_pages_parity.spec.cjs`, `phase36_chunk3_dock_gate.spec.cjs`,
+   `phase59_outline_flush.spec.cjs`, `tfl50_outline_corner.spec.cjs`,
+   `phase87_blank_pages.spec.cjs`.
+9. Design package + tokens: `Visual overhaul/Thumbnails and Outline/`;
+   `Design System/navigator.tokens.json` (panel 280 / 240-420 / header 44 / selector 40; thumbnail
+   radius 10 / padding 12 / preview 120-144 / two-column >=360 / min card 152; outline row 44-52 /
+   2 lines / indent 16 / destination 32; target 32 fine / 44 coarse; split 0.6 / min section 180;
+   motion 140; full light+dark semantic colours), `Design System/unified-ui.tokens.json`
+   (`attachedPanelHeaderHeight: 52` supersedes the 44 header; `navigatorViewSelectorHeight: 40`;
+   `navigatorWidth: 280`), `quiet-precision.tokens.json`. Contrast
+   `Specifications/contrast-check.json`: light body 7.96 / helper 4.97 / selected 4.73; dark body
+   8.59 / helper 5.62 / selected 6.59.
+
+**CTO RULINGS:**
+
+1. **Scope.** Renderer only: `src/renderer/components/**` (navigator primitives and the panel
+   wrappers that mount them), `src/renderer/state/**`, the navigator sections of
+   `src/renderer/styles.css`, and renderer unit tests under `test/unit/renderer/**`. ONE small
+   backend contract chunk adds the navigator persistence fields to `src/shared/types.ts`,
+   `src/main/services/settings.ts` and `test/unit/main/settings.test.ts`. No new dependency; offline.
+   qa owns `e2e/**`, `screenshots/**`, `test-fixtures/**`.
+2. **Precedence + header geometry.** Consistency corrections > category spec > visuals. The
+   navigator header uses the shared attached-panel shell at the corrected **52px** (consuming the
+   existing panel-shell token / `unified-ui.tokens.json attachedPanelHeaderHeight`) with a **40px**
+   Pages/Outline view selector beneath it; the 44px category-spec header is superseded. Panel width
+   280 default, resizable 240-420, persisted per user.
+3. **Shared tokens are frozen.** Do NOT change `--accent`, `--accent-soft`, `--accent-text`,
+   `--bg-rail`, `--border`, `--divider`, `--tf-icon-rest/-active`, `--chrome-commandbar-h`,
+   `--glass-sidebar-header-h`, `--tf-stage-rail-w` or any dock/panel/rail/tab token - they colour
+   other committed surfaces. Add navigator-scoped NEW tokens only, declared in light, dark AND
+   frosted, consuming the frozen accent/ink/colour roles so the navigator matches dock/panel/rail
+   selections.
+4. **State separation is a hard requirement.** Keep current-page ID, selected-page ID set, range
+   anchor, focused item, selected bookmark, active view, expansion set and list scroll anchors as
+   SEPARATE values. The current page must never be inferred from the batch set, and a checkbox
+   toggle must never navigate.
+5. **Preserve contracts; invent nothing.** Keep the existing single-click thumbnail behaviour and
+   the audited Ctrl / Shift / range semantics; keep the contextual dock as the owner of batch
+   Rotate / Extract / Delete; keep the real outline handlers (add / rename / indent / outdent /
+   delete / retarget) and their depth / permission restrictions; keep every shortcut and every
+   load-bearing `data-*` / aria hook (or migrate its e2e spec deliberately). Do NOT fabricate
+   hierarchy, parents, destinations, counts, badges or placeholder commands.
+6. **PDF pixels are untouched.** Never recolor or cross-fade page pixels; the page card keeps each
+   page's real crop-box aspect ratio and rotation; the raster/cache keys on document revision +
+   page identity + rotation/crop + raster size + DPR with stale-job cancellation and per-page
+   invalidation after edits.
+7. **Persistence.** Navigator width, layout mode and split ratio persist per user through new
+   `AppSettings` fields (validated preserve-if-valid; defaults 280 / stacked / 0.6). Active view,
+   scroll anchors and outline expansion restore per document within the session. Reuse the existing
+   panel collapse/reopen mechanism.
+8. **No overlap + performance.** Prove no conflict / clip / z-fight with Canvas / Book View, Top
+   Bar / Tabs, Siderail, Dock or Panels at 640x480 and under Windows text / DPI scaling; the renderer
+   never blocks on PDF work; long page lists are virtualized with bounded concurrency; the
+   performance budget is contract and is timed at the gate.
+9. **Evidence + flow.** frontend-dev runs `npm run verify` plus the named targeted unit specs and
+   reports a CONTROL-INDEX; qa runs focused verification, the phase CONTROL-INDEX sweep, the
+   contrast check and light / dark / narrow / split screenshots against the visuals and times the
+   budget; the adversary runs a diff-pass; then phase-close QA and ONE local commit via git-agent.
+   No push, tag, release or version bump without explicit operator approval.
+
+**Features**
+
+**A. Navigator state foundation + source inventory (frontend-dev, chunk A).** Record the entry-point
+/ click / modifier / range-selection inventory the orchestrator prompt requires (as issue record),
+and create the separated navigator state model as a pure, unit-tested module (current page, selected
+set, range anchor, focused item, selected bookmark, active view, expansion set, scroll anchors) -
+new files only, no wiring into shared components and no `styles.css`. New spec
+`test/unit/renderer/phase111_navigatorState.test.ts`. No visual change.
+
+**B. Navigator visual primitives + theme tokens (frontend-dev, chunk B).** Add the shared
+`DocumentNavigator` / page-card / selection-summary / outline-tree / outline-row / navigator-layout
+primitives consuming the chunk-A state, the 52px header + 40px view selector, and navigator-scoped
+tokens for both themes (surfaces, border, accent, selected surface, danger, 10px card radius,
+32/44px targets, 140ms motion via the motion tokens). New spec
+`test/unit/renderer/phase111_navigatorPrimitives.test.ts`. Blocked by A, and serialised behind the
+sibling writers of `styles.css` and the shared primitives.
+
+**C. Pages view migration + contextual dock integration (frontend-dev, chunk C).** Migrate the
+Pages view to the page card: footer with checkbox + page label and a 32px (44px coarse) More;
+current-page marker (violet 2px leading marker + "Viewing" label) kept distinct from the
+selected-set tint; "N selected" + Clear summary; More offers only supported Rotate CW / Extract /
+Delete (Delete separated, danger); move Combine and Remove blank pages into the panel's labeled More
+menu with a separated destructive section; preserve single-click behaviour, keyboard access,
+virtualization, revision-aware cache, stale-job cancellation, per-page invalidation and scroll
+anchors; single column at narrow width, optional two-column at >=360px preserving real crop aspect.
+New spec `test/unit/renderer/phase111_pages.test.tsx`. Blocked by B, and by Canvas / Viewing
+Controls / Dock / Typography.
+
+**D. Outline view migration (frontend-dev, chunk D).** Migrate the Outline to the outline tree:
+44-52px rows, up to two lines at 13px, 16px disclosure chevron only on nodes with children, 16px
+indent per depth, fixed 32px destination column and 32px More, no horizontal action strips; real
+hierarchy and destinations preserved (non-page / external / unresolved shown honestly); reuse the
+real add / rename / indent / outdent / delete / retarget handlers with their depth and permission
+restrictions; title editing via the shared popover/dialog primitive; empty state "No bookmarks" +
+Add bookmark; keyboard / screen-reader tree navigation via the existing primitives. New spec
+`test/unit/renderer/phase111_outline.test.tsx`. Blocked by B, and by Dialogs / Menus.
+
+**E. Navigator persistence contract (backend-dev, chunk E).** Add `navigatorWidthPx` (number
+240-420, default 280), `navigatorLayout` (`'stacked' | 'split'`, default `'stacked'`) and
+`navigatorSplitRatio` (number 0.1-0.9, default 0.6) to `AppSettings` with preserve-if-valid
+normalisation and unit tests. Disjoint from the renderer chunks; may run in parallel.
+
+**F. Navigator layout, split view, persistence wiring, performance + accessibility (frontend-dev,
+chunk F).** Implement the 280px resizable panel (240-420) persisted per user; full-height Pages /
+Outline views; the Split Navigator with a keyboard-resizable divider (initial 60 / 40,
+independently scrolling sections, 180px minimum section height, short-window fallback to the
+tabbed view); restore active view / scroll anchors / outline expansion per document; virtualized
+rendering with bounded concurrency; reduced-motion, coarse-pointer and 200% scaling behaviour;
+selection-count announcements. New spec `test/unit/renderer/phase111_navigatorLayout.test.tsx`.
+Blocked by C, D, E.
+
+**G. Regression + removal of superseded UI (frontend-dev, chunk G).** Delete the dead legacy
+`SideRail` function and its dead styles; remove the nested hover action buttons over the PDF
+preview; unify `ContextPanel` and `PaneThumbStrip` onto the shared navigator primitives; keep every
+load-bearing `data-*` / aria hook (or migrate its spec deliberately); confirm every thumbnail and
+outline entry point uses the shared components. Blocked by F.
+
+**H. Focused QA + visual verdict (qa, chunk H).** Run `npm run verify`, the named unit specs and
+the focused e2e; sweep the CONTROL-INDEX; run the contrast check; capture light / dark / narrow /
+split screenshots against the supplied visuals; time the performance budget; record DEF-NNN. Task
+type: focused verification.
+
+**I. Adversarial diff-pass (adversary, chunk I).** Attack selection vs current-page state, stale
+thumbnails after edit / reorder / delete / undo, destination integrity, overlap / z-fight with
+Canvas, Top Bar / Tabs, Siderail, Dock and Panels, unreachable controls at narrow / short / scaled
+windows, keyboard / screen-reader regressions, permission handling and sibling-region edits.
+
+**J. Phase-close QA verdict (qa, chunk J).** Verdict per success criterion over the whole phase
+diff.
+
+**K. Phase-close local commit (git-agent, chunk K).** Stage and commit the phase's tracked changes
+as ONE local commit referencing Phase 111 and any DEF/ADV numbers; no push, no tag.
+
+**Success criteria**
+
+1. **Visual fidelity.** The Pages panel and the Outline panel match `Visual overhaul/Thumbnails and
+   Outline/` in light and dark themes and at the narrow and split sizes, with screenshots set
+   against the supplied visuals (pages-light/dark/narrow, outline-light/dark, split-light/dark).
+2. **Behaviour and state separation.** Selection, page navigation, outline navigation, scrolling
+   and split resizing behave as the spec describes; current page and the selected set are separate;
+   a checkbox toggle never navigates; navigating and switching views never silently alter the set;
+   existing viewer behaviour (dock bulk commands, shortcuts, drag/reorder, undo) has no regression.
+3. **No conflict or overlap.** The navigator does not overlap, clip or z-fight with Canvas / Book
+   View, Top Bar / Tabs, Siderail, Dock or Panels at any supported width (floor 640x480) or under
+   text/DPI scaling, and its visual language aligns with the Design System and the frozen shared
+   tokens.
+4. **Contrast.** The `Specifications/contrast-check.json` values hold for the implemented colours
+   (light body >= 7.96, helper >= 4.97, selected >= 4.73; dark body >= 8.59, helper >= 5.62,
+   selected >= 6.59).
+5. **Persistence, performance and accessibility.** Navigator width / layout / split ratio persist
+   per user; active view / scroll / expansion restore per document; long page lists stay virtualized
+   with no stale thumbnails; full keyboard / coarse-pointer / reduced-motion / 200% scaling support;
+   the performance budget is timed and recorded.
+6. **Validation.** Focused tests plus an adversarial pass gate the phase, defects are captured in
+   DEFECTS.md, and the work is left uncommitted for git-agent (no push, release or credential
+   change without operator approval).
+7. **No fabrication.** No network call, no fabricated hierarchy / destinations / counts / badges, no
+   status-only actions and no preview-only responsive accommodations.
+
+**CONTROL-INDEX:** the phase re-homes the navigator controls into the shared Document Navigator.
+Each control keeps a real production handler and is proven by a named test - Pages/Outline view
+selector (switch view; `phase111_navigatorLayout.test.tsx`), page card single click (navigate + the
+audited selection policy; `phase111_pages.test.tsx` and `phase36ThumbMultiSelect.test.tsx`), page
+card checkbox (toggle batch membership without navigating; `phase111_pages.test.tsx`), page card
+More (Rotate CW / Extract / Delete this page; `phase111_pages.test.tsx` + `phase36_chunk2_pages_parity.spec.cjs`),
+selection summary Clear (clear the set without navigating; `phase36_chunk3_dock_gate.spec.cjs`),
+panel More menu (Combine / Remove blank pages - the latter separated destructive;
+`phase87_blank_pages.spec.cjs`), outline header Add bookmark (existing permission-gated add flow;
+`phase85OutlineEditor.test.tsx` + `phase85_outline_edit.spec.cjs`), outline row disclosure
+(expand/collapse), outline row More (Rename / Set destination to current view where confirmed / Add
+child / sibling / Indent / Outdent / Delete; `phase85OutlineEditor.test.tsx`), layout menu
+(Pages / Outline / Split), collapse/reopen (existing panel mechanism) and the split divider
+(keyboard-resizable). No no-op may appear; qa's focused pass verifies no handler changed silently.
+
+**Settings impact:** new persisted `AppSettings` fields - `navigatorWidthPx` (number 240-420,
+default 280), `navigatorLayout` (`'stacked' | 'split'`, default `'stacked'`) and
+`navigatorSplitRatio` (number 0.1-0.9, default 0.6) - validated preserve-if-valid in
+`src/main/services/settings.ts`. No new settings channel; renderer-only otherwise; offline, no
+network call.
+
+**Numbering:** this is Phase 111 (the last appended phase is 110).
+
 

@@ -165,7 +165,8 @@ by these directly.
 ## 10. Elevation ladder
 
 One depth scale for the whole app. Chrome / toolbar / rail are flat; every
-elevated named surface consumes a ladder step, and the named `--shadow-*` tokens
+elevated named surface consumes a ladder step (the Phase-107 page frame is the
+one documented exception, section 17), and the named `--shadow-*` tokens
 re-point onto the ladder instead of carrying parallel literals.
 
 | Depth | Surfaces | Token |
@@ -189,11 +190,15 @@ Named-surface mapping (pinned by `designSystem.test.ts`):
 
 | Named shadow | Ladder step | Depth |
 | --- | --- | --- |
-| `--shadow-page` | `var(--elevation-1)` | level 1 |
+| `--shadow-page` | `var(--shadow-page-canvas)` | own canvas token (Phase 107) |
 | `--shadow-menu` | `var(--elevation-2)` | level 2 |
 | `--shadow-popover` | `var(--elevation-2)` | level 2 |
 | `--shadow-dialog` | `var(--elevation-3)` | level 3 |
 | `--shadow-toast` | `var(--elevation-4)` | level 4 |
+
+Phase 107 (chunk A) repoints `--shadow-page` off the ladder onto
+`--shadow-page-canvas` (the Paper Stage page frame: a 1px neutral ring plus a
+two-layer exterior shadow, section 17); every other named shadow stays on a rung.
 
 ## 11. Empty-state pattern
 
@@ -251,9 +256,11 @@ Light, lightest band to deepest:
 | side rail / tools panel | `--bg-rail` (= `--panel-bg`) | `#e8ecf1` | 93.2 |
 
 Adjacent bands step by ~1.4-3.1 L* (chrome bar -> canvas ~2.3, canvas -> rail
-~3.1). The light canvas value is PINNED at `#f1f5f9` by the DEF-285
-opaque-canvas contract (`--tf-canvas-opaque`), so the ramp is built around it:
-the rail/panel is the deepest band, the chrome bar sits just under white.
+~3.1). The light canvas value was PINNED at `#f1f5f9` by the DEF-285
+opaque-canvas contract (`--tf-canvas-opaque`); Phase 107 (chunk A) repointed that
+same opaque-canvas contract to the Paper Stage neutral `#ECEFF4` (see section
+17), so the rail/panel remains the deepest band and the chrome bar still sits
+just under white.
 
 Dark, deepest band to lightest:
 
@@ -483,6 +490,7 @@ One value, one canonical name; aliases resolve through it so no rule breaks.
 | radii | `--radius-1..3`, `--radius-window/panel/group/control/pill` | `--tf-radius-sm` -> `--radius-2`, `--tf-radius-md` -> `--radius-3`, `--tf-radius-lg` -> `--radius-dialog` |
 | motion | `--tf-motion-*` / `--tf-ease-*` | `--motion-*` / `--ease-*` |
 | colour | `--accent*`, `--sem-*`, `--info/success/warning/error` (+`-soft`) | `--tf-accent*` |
+| typography | `--type-family` + `--type-<role>-{size,line,weight}` | `--fs-*`, `--tf-label-size(-md)`, `--dlg-{title,label,help}-fs`, `--dock-label-{size,weight}`, `--font-sans`/`--font-ui` -> `var(--type-family)` |
 
 ### Guard command
 
@@ -514,5 +522,143 @@ literal only), a `style="..."` string, and an inline SVG `fill`/`stroke` present
 attribute with raw hex (DEF-547). A written allow-list (`ALLOWLIST` for TSX,
 `CSS_ALLOWLIST` for CSS) records the few functional/data literals that may remain, each
 with a reason, and a companion test fails any stale entry.
+
+## 17. Phase 107 — Paper Stage canvas (chunk A, applied)
+
+Phase 107 (Ruling 5) gives the editor viewport a quiet "Paper Stage" surface and a
+square-cornered paper page. It introduces one new token and repoints one role; it
+does NOT change the `--elevation-1..4` definitions or any other named shadow.
+
+### 17.1 Canvas background
+
+`--bg-canvas` and the Multi Mode opaque `--tf-canvas-opaque` move to the Paper
+Stage neutral in light and dark; frosted keeps its opaque `--tf-bg` glass.
+
+| Token | Light | Dark | Frosted |
+| --- | --- | --- | --- |
+| `--bg-canvas` | `#ECEFF4` | `#151820` | `var(--tf-bg)` |
+| `--tf-canvas-opaque` | `#ECEFF4` | `#151820` | `var(--tf-bg)` |
+
+This supersedes the section 13.1 light/dark canvas band values and the DEF-285
+`#f1f5f9` pin; the DEF-285 opaque-canvas contract itself is unchanged.
+
+### 17.2 Page frame
+
+`--shadow-page-canvas` is the page-frame token (a 1px neutral ring plus a
+two-layer exterior contact + diffuse shadow). `--shadow-page` is repointed onto
+it in all three themes, and `SHADOW_ROLE.page` in `design/elevation.ts` follows in
+lockstep (`foundationMirrors.test.ts`). `.pdf-page` is square
+(`border-radius: 0`), keeps its paper-white `background: #ffffff`, and consumes
+`box-shadow: var(--shadow-page)`. The 1px boundary is a `box-shadow` ring only
+(never a border or margin), so page geometry, scroll math and hit testing are
+unchanged, and the shadow never enters exported/printed content.
+
+| Token | Light / Frosted | Dark |
+| --- | --- | --- |
+| `--shadow-page-canvas` | `0 0 0 1px #DCE0E7, 0 2px 4px #232A3808, 0 12px 24px #232A380D` | `0 0 0 1px #A1A6AF, 0 2px 4px #00000020, 0 12px 24px #00000030` |
+
+Pinned by `test/unit/renderer/phase107_paperStage.test.ts`.
+
+## 18. Phase 110 - Quiet Precision type scale (chunk A, applied)
+
+Phase 110 replaces the scattered UI font declarations with ONE semantic,
+token-driven type scale. Chunk A lands the foundation and the shared text
+primitives; chunks B and C migrate the feature chrome and content. PDF/document
+typography is untouched.
+
+### 18.1 Semantic roles
+
+`styles.css` `:root` declares eight roles (size / line-height / weight), sourced
+from `Visual overhaul/Design System/typography.tokens.json`:
+
+| Role | Token stem | Size | Line | Weight |
+| --- | --- | --- | --- | --- |
+| Home headline | `--type-home-*` | 32 | 38 | 500 |
+| Dialog/page title | `--type-title-*` | 18 | 25 | 500 |
+| Panel heading | `--type-panel-*` | 16 | 22 | 500 |
+| Body / fields | `--type-body-*` | 14 | 22 | 400 |
+| Document/tab row | `--type-row-*` | 13 | 20 | 500 |
+| Control/section label | `--type-label-*` | 12 | 17 | 500 |
+| Helper text | `--type-helper-*` | 12 | 18 | 400 |
+| Compact rail/accelerator | `--type-compact-*` | 11 | 16 | 500 |
+
+The home role also carries a constrained variant
+(`--type-home-size-constrained` 28 / `--type-home-line-constrained` 34) at the
+`max-width: 860px` breakpoint.
+
+### 18.2 Font stack and supporting colour
+
+`--font-sans` and `--font-ui` are `var(--type-family)`
+(`"Segoe UI Variable", "Segoe UI", system-ui, sans-serif`); `--font-mono` is
+unchanged and the bundled Inter import stays (Inter is the document editing
+font). `--tf-text-supporting` is `#667085` in `:root` and `#929BAC` in dark; the
+non-text/disabled `--tf-icon-disabled` (`#70798A`) is untouched.
+
+### 18.3 Legacy tokens alias the roles
+
+`--fs-xs/sm/md/lg/xl/2xl` -> helper / label / row / panel / title / home size;
+`--tf-label-size(-md)`, `--dlg-{title,label,help}-fs` and
+`--dock-label-{size,weight}` -> the matching role. The legacy NAMES keep
+resolving, so the 300+ existing consumers do not change. `design/typography.ts`
+mirrors the roles as `TYPE_ROLES` alongside `FONT_FAMILIES` / `FONT_SIZES`.
+
+### 18.4 Shared primitives and isolation
+
+`Button` (`.btn`, body role), `DialogShell` (`.modal-title` title role,
+`.dlg-label`/`.modal-field` label role, `.dlg-input/select/textarea` body role,
+`.modal-help`/`.dlg-help` helper role + supporting colour), the section titles
+(`.inspector-section-title`, `.context-panel-section-title`, `.prefs-section-title`,
+`.text-props-group-title`, label role), the dock labels (`.action-dock-label`,
+`.action-dock-tools-label`, label role), the rail label (`.stage-rail-label`, the
+documented 11px compact exception), the tab title (`.tab-title`, row role) and
+`.welcome-title` (home role) now read the role tokens; `.text-props-hint` uses the
+helper role and supporting colour. The document pipeline (`editColor.ts`,
+`annTextStyle.ts`, the `WatermarkDialog` `FONT_CSS`, `stampRender.ts`,
+`signatures/canvas.ts`) references no UI type token.
+
+Pinned by `test/unit/renderer/phase110_typographyScale.test.ts` and
+`test/unit/renderer/phase110_documentTypographyIsolation.test.ts`.
+
+### 18.5 Chrome surfaces
+
+Chunk B applies the roles across the chrome (top bar / title bar, tabs, rail,
+dock, viewing controls, menus, notifications). The numeric readouts
+`.page-total` (toolbar and view strip) join `.page-input`, `.page-label-hint`
+and `.zoom-percent` in `font-variant-numeric: tabular-nums`, while prose and
+filenames stay proportional. The small readable supporting text on the chrome --
+`.page-total`, `.view-strip .page-total`, `.toast-text` and
+`.action-dock-tools-label` -- reads `--tf-text-supporting`; icon, border and
+decorative rules keep `--fg-muted`, which itself is unedited. `.toast-text`
+takes the helper role line-height (`var(--type-helper-line)`), structural
+single-line chips keep `line-height: 1`, and `.stage-rail-label` remains the one
+documented 11px compact exception. Pinned by
+`test/unit/renderer/phase110_typographyChrome.test.ts`.
+
+### 18.6 Content surfaces
+
+Chunk C applies the roles across the content surfaces (home, panels, dialogs,
+command palette, empty states, forms and validation). The small readable
+supporting text reads `--tf-text-supporting`: home (`.welcome-sub`,
+`.home-tools-hint`, `.welcome-section h3 .count`, `.recent-row .doc-path`,
+`.recent-row .doc-when`, `.sample-sub`), the empty state (`.empty-state-help`),
+panels (`.inspector-row-label`, `.inspector-note`,
+`.context-panel-row-label`), dialogs (`.modal-hint`, `.modal-picked .hint`,
+`.modal-status .hint`), the command palette (`.command-palette-hint`),
+preferences (`.prefs-hint`), the hints (`.ann-panel-empty .hint`,
+`.sig-empty .hint`) and validation (`.validation-notice-detail`,
+`.validation-notice-line`). Supporting text with a loose unitless line-height
+takes its role line token (`.welcome-sub` -> panel, `.home-tools-hint` and
+`.empty-state-help` -> helper); `.recent-row .doc-when` keeps
+`font-variant-numeric: tabular-nums`, while `.recent-row .doc-path` and other
+prose/filenames stay proportional. The PDF form controls (`.form-editor`,
+`.form-textarea`, `.form-select`) take the body role
+(`--type-body-size` / `--type-body-line` / `--type-body-weight`) and
+`.form-radio-label` keeps the control-label role. Icon, border and decorative
+rules keep `--fg-muted` / `--fg-faint`, which themselves are unedited, and the
+on-page `.content-move-hint` chip keeps its fixed light ink (DEF-099) rather
+than the themeable supporting colour. The role tokens are px custom properties,
+so content text scales with display DPI / UI scale but the app adds no separate
+text-size preference. Pinned by
+`test/unit/renderer/phase110_typographyContent.test.ts`.
 
 

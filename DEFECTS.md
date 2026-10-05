@@ -12935,6 +12935,119 @@ Fix owner: frontend-dev (ActionDock product source). Not fixed by qa (task scope
 - CTO (TFL-841, 2026-10-05): ACCEPTED; fix owner frontend-dev. Phase 104's chunk-2 reserved-row rung must consult `reservedRow` in `dockCap` so the inline `maxWidth` can never clamp to 0 when the pills are unmeasured/absent. The trigger is the uncommitted Phase 109 ViewStrip relocation, but the dock's narrow reserved-row behaviour is Phase 104's own criterion 4.
 - frontend-dev (TFL-884, 2026-10-05): FIX-READY. Added a pure, unit-testable `dockCap({width, lifted, reservedRow, freeBandWidth, band})` in `src/renderer/state/dockFit.ts:121-132`, returning `Math.max(0, width - 2*DOCK_LIFT_INSET)` when `lifted || reservedRow` (checked before the measured free band), then `freeBandWidth ?? band`; called once at `src/renderer/components/ActionDock.tsx:573`. A narrow probe at 520px with the pills absent now reports the dock at the reserved band (~332px, was 18px). New unit spec `test/unit/renderer/phase104_dockDef573.test.tsx`. A duplicate fix child (TFL-882) targeted the same defect; the landed tree is TFL-884's pure-helper version and the two are consistent (a single `dockCap` call, no leftover inline ternary).
 - qa (TFL-899, 2026-10-05): CLOSED. Retest PASS. `npm.cmd run build:renderer` exit 0. Focused unit specs (phase104_dockDef573 / dockResponsiveSet / focusDockShell / dockMoreFocus / dockDef569_571) = 5 files / 20 tests passed, 0 failed. Live e2e (`e2e/phase104_criterion8_validation.spec.cjs`) passed (1 passed) after hardening the narrow step with non-vacuous assertions; at 520x820 the dock box is `{l:132,r:464,w:332,h:73}` with `maxWidth:"332px"` (host 356 less 24 - was 18px), `data-dock-reserved="true"`, icon-only, 5 primary tiles, and zero VISIBLE child overlaps (clip-aware; the arrows lane clips the off-lane tiles). Refreshed evidence: `screenshots/phase104-c8/narrow-dock-c8-after.png` and `viewport-narrow-520-after.png`; log `test-fixtures/phase104-c8/def573-retest-tfl899.log`. Note: the spec's `setTheme` was repaired to the Phase 105 app-menu route (`[data-app-menu] [data-menu-action="toggleTheme"]`) because the retired `[data-theme-toggle]` picker blocked the run; test-only change, no product source touched.
+
+
+## DEF-574: Home "Continue working" rows render the filename and its folder context on one line, jammed together (Phase 106 chunk A)
+
+- Status: CLOSED
+- Severity: MEDIUM - the recent list is a primary Home surface; every row now reads as `form.pdfsamples` / `Passport - Taslim Ara.pdfParent visa`, so the containing-folder shorthand is unreadable and the designed two-line name/context hierarchy is lost. No data risk; it materially degrades the supported recent-document workflow.
+- Found by: qa (TFL-876 chunk A focused verification; screenshots `screenshots/phase106-orbit-light.png`, `screenshots/phase106-orbit-dark.png`)
+- Phase: 106 (chunk A)
+- Files: `src/renderer/components/home/HomeRecentRow.tsx:45-48` renders `<span className="doc-name">` and `<span className="doc-path">` inside `<span className="recent-row-text">`; `src/renderer/styles.css` `.recent-row-text { min-width: 0; }` has no `display:flex; flex-direction:column`. The pre-chunk-A `Welcome.tsx` used `<div>` elements, which stacked as blocks.
+
+Steps to reproduce (from application launch):
+1. `npm.cmd run build:renderer`.
+2. `npx.cmd playwright test phase106_home_orbit.spec.cjs`.
+3. Inspect the Home "Continue working" list or open `screenshots/phase106-orbit-light.png`.
+
+Expected: each recent row shows the basename on its own line and the folder shorthand as a separate, fainter second line (the preserved `.doc-name` / `.doc-path` styling).
+
+Actual: the basename and folder context render inline with no separator on every row: `form.pdfsamples`, `long.pdfsamples`, `Passport - Taslim Ara.pdfParent visa`, `Paper.pdfDesktop`.
+
+Fix owner: frontend-dev (`HomeRecentRow.tsx` markup or the `.recent-row-text` CSS).
+
+Evidence: `screenshots/phase106-orbit-light.png`, `screenshots/phase106-orbit-dark.png`.
+
+History:
+- qa: opened (TFL-876 chunk A focused verification).
+- CTO: FIX-READY - frontend-dev (TFL-883) reports `.recent-row-text` in `src/renderer/styles.css:3760` now declares `display:flex; flex-direction:column; align-items:flex-start;`, stacking basename over folder shorthand; added a CSS flex-column regression oracle in `phase106HomeOrbit.test.tsx`; `npx vitest run test/unit/renderer/phase106HomeOrbit.test.tsx` -> 15 passed. Awaiting qa retest.
+- qa (TFL-898, 2026-10-06): CLOSED. Real-app retest `npx playwright test phase106_home_orbit.spec.cjs` -> 2 passed; the new chunk-A retest asserts (with recents present) each `.recent-row-text` renders `display:flex; flex-direction:column` and every `.doc-path` sits below its `.doc-name`; screenshots `screenshots/phase106-def574-575-light.png` and `screenshots/phase106-def574-575-dark.png` show `form.pdf`/`samples`, `Passport - Taslim Ara.pdf`/`Parent visa`, `Paper.pdf`/`Desktop` stacked on two lines in both themes. Focused regression `npx vitest run test/unit/renderer/phase106HomeOrbit.test.tsx` -> 15 passed.
+
+
+## DEF-575: Home sample cards render the literal text `\u00b7` instead of the middle-dot separator (Phase 106 chunk A)
+
+- Status: CLOSED
+- Severity: LOW - cosmetic text corruption on all four sample cards ("Try form fields \u00b7 PDF"), visible in both themes; the card still opens the sample.
+- Found by: qa (TFL-876 chunk A focused verification; screenshots `screenshots/phase106-orbit-light.png`, `screenshots/phase106-orbit-dark.png`)
+- Phase: 106 (chunk A)
+- Files: `src/renderer/components/home/HomeSampleCard.tsx:38-40` renders `{task.label} \u00b7 {format.label}` as JSX TEXT, where `\u00b7` is not an escape and prints literally. The `title`/`aria-label` template literals on lines 31-32 do interpret the escape, so only the visible subtitle is wrong.
+
+Steps to reproduce (from application launch):
+1. `npm.cmd run build:renderer`.
+2. `npx.cmd playwright test phase106_home_orbit.spec.cjs`.
+3. Inspect the "Explore Jovrel" sample cards or open `screenshots/phase106-orbit-light.png`.
+
+Expected: the subtitle displays as `Try form fields · PDF` with a real middle dot (`·`), not the six literal characters.
+
+Actual: the six literal characters `\u00b7` are shown between the task label and the format label on every card.
+
+Fix owner: frontend-dev (`HomeSampleCard.tsx`: use `{"\u00b7"}` or the literal `·`).
+
+Evidence: `screenshots/phase106-orbit-light.png`, `screenshots/phase106-orbit-dark.png`.
+
+History:
+- qa: opened (TFL-876 chunk A focused verification).
+- CTO: FIX-READY - frontend-dev (TFL-883) reports `src/renderer/components/home/HomeSampleCard.tsx:39` now renders `{task.label} {"\u00b7"} {format.label}` (real middle dot); added a regression assertion that `.sample-sub` contains the real dot and not the literal backslash-u sequence; `npx vitest run test/unit/renderer/phase106HomeOrbit.test.tsx` -> 15 passed. Awaiting qa retest.
+- qa (TFL-898, 2026-10-06): CLOSED. Real-app retest `npx playwright test phase106_home_orbit.spec.cjs` -> 2 passed; the chunk-A retest asserts every `.sample-sub` contains the real `\u00b7` and none contains the literal `\\u00b7`. Screenshots `screenshots/phase106-def574-575-light.png` / `-dark.png` show `Try form fields \u00b7 PDF`, `Read and navigate \u00b7 PDF`, `Explore recognition \u00b7 PDF` in both themes. Focused regression `npx vitest run test/unit/renderer/phase106HomeOrbit.test.tsx` -> 15 passed.
+
+
+
+
+
+## DEF-576: Phase 107 chunk B left `phase40_pageLayoutControl.test.tsx` pinning the retired `CONTENT_PADDING_PX` fit argument, so the named canvas verification test fails
+
+- Status: CLOSED (qa TFL-907, 2026-10-06)
+- Severity: MEDIUM - the Phase 107 verification set names this test and it fails on the phase's own diff; the promised "update the affected assertions in place" (CTO ruling 6) was not applied to this file. No product behaviour is wrong (the fit call is correct), but the required regression oracle is red.
+- Found by: qa (TFL-887 chunk D focused verification; unit log `tfl887_unit.log`)
+- Phase: 107 (chunk B, TFL-877)
+- Files: `src/renderer/components/DocumentView.tsx:2095,2105` now pass `FIT_MARGIN_PX`; `test/unit/renderer/phase40_pageLayoutControl.test.tsx:156` still asserts `computeEffectiveScale\(viewportBox, fitAnchor, zoom, CONTENT_PADDING_PX\)`.
+
+Steps to reproduce (from a clean tree):
+1. `npx.cmd vitest run test/unit/renderer/phase40_pageLayoutControl.test.tsx`.
+2. Observe the failure at `phase40_pageLayoutControl.test.tsx:156` ("DocumentView wires the mode per ...").
+
+Expected: the assertion tracks the new `FIT_MARGIN_PX` fit argument, matching the Phase 107 chunk B contract and the other updated tests (`pageGeometry.test.ts`, `phase29_flushCanvas.test.ts`, `phase40_pageLayoutMode.test.ts`).
+
+Actual: the test fails because DocumentView no longer passes `CONTENT_PADDING_PX`. Full named-run result: 1 failed | 123 passed (124); the only failure is this file.
+
+Fix owner: frontend-dev (update the assertion in place; qa may not edit `test/unit/**`).
+
+Evidence: `tfl887_unit.log` (failing run), `tfl887_e2e_final.log` (Phase 107 e2e PASS).
+
+History:
+- qa: opened (TFL-887 chunk D focused verification; unit log `tfl887_unit.log`).
+- frontend-dev: fix in (TFL-888) - updated `test/unit/renderer/phase40_pageLayoutControl.test.tsx` lines 155-156 so the assertion matches `computeEffectiveScale(viewportBox, fitAnchor, zoom, FIT_MARGIN_PX)` and the comment no longer implies `CONTENT_PADDING_PX`; no product code touched. Evidence: `npx vitest run phase40_pageLayoutControl.test.tsx` 1 file passed / 8 tests; named Phase 107 set 124 passed (was 1 failed | 123 passed); `npm run verify` clean. Relayed verbatim by the CTO; awaiting qa retest to close.
+- qa (TFL-907, 2026-10-06): FIX-READY retest PASS -> CLOSED. `npx.cmd vitest run test/unit/renderer/phase40_pageLayoutControl.test.tsx` -> 1 file passed, 8 tests passed (was 1 failed | 123 passed in the named set). The oracle now matches `FIT_MARGIN_PX`, consistent with `src/renderer/components/DocumentView.tsx:2094`.
+
+
+## DEF-577: The open Inspector overlaps the View Strip footer's right-hand layout / Book View controls, making them unclickable (observed during Phase 107 QA; ViewStrip/Inspector surface, not a Phase 107 change)
+
+- Status: CLOSED (qa TFL-914 FIX-READY retest, 2026-10-06; rendered `elementFromPoint` + un-forced clicks green)
+- Severity: MEDIUM - with the Inspector open, the footer's page-layout control and Book View button sit under the Inspector panel and cannot be clicked; the layout-mode workflow is blocked until the Inspector is collapsed. Not caused by Phase 107 (Canvas edits no sibling region); the footer is the uncommitted Phase 109 View Strip, which is not inset by `--tf-tools-inset` the way `.document-scroller` is.
+- Found by: qa (TFL-887 chunk D; probe geometry + `screenshots/phase107-canvas/light-01-single-continuous.png`)
+- Phase: 109 (ViewStrip footer) / Inspector inset - observed during Phase 107 verification
+- Files: `src/renderer/components/ViewStrip.tsx` `.view-strip` (styles.css:5021-5034) has no `margin-right: var(--tf-tools-inset)`; `src/renderer/styles.css:4967-4998` insets only `.document-scroller`. Probe: footer right edge 2560, Inspector left 2296, layout option box l=2377 r=2409 -> `document.elementFromPoint` returns `.glass-sidebar-body.inspector-body`.
+
+Steps to reproduce (from application launch):
+1. `npm.cmd run build:renderer`.
+2. `npx.cmd playwright test e2e/phase107_canvas_stage.spec.cjs --grep "light theme"`.
+3. With a document open and the Inspector expanded (default), click the footer's two-page layout control at the far right.
+
+Expected: the footer's right-hand controls (zoom/layout/Book View) are reachable beside the open Inspector, like the document scroller is.
+
+Actual: Playwright reports `<div class="glass-sidebar-body inspector-body"> ... intercepts pointer events`; a forced click is required. The e2e spec collapses the Inspector before driving the footer controls to work around it.
+
+Fix owner: frontend-dev (ViewStrip footer inset by `--tf-tools-inset`, or reflow the footer controls clear of the Inspector).
+
+Evidence: probe geometry (in this issue thread), `screenshots/phase107-canvas/light-01-single-continuous.png`.
+
+History:
+- qa: opened (TFL-887 chunk D; probe geometry) - observed during Phase 107 verification, surface is the Phase 109 View Strip footer.
+- cto: assigned to frontend-dev (TFL-908); a parallel dispatch also filed TFL-889 which is cancelled as a duplicate of TFL-908.
+- orchestrator: FIX-READY - frontend-dev reports the fix in (TFL-908). `styles.css` adds `margin-right: var(--tf-tools-inset, 0px);` to the single-mode rule `.tab-stage[data-multi-mode="false"] .view-strip` (5258); the base `.view-strip` rule (5089) is untouched so a Multi Mode pane footer never double-insets (DEF-323). New source-scan guard `(m)` in `phase109_viewStrip.test.ts` pins the single-mode inset and the base rule's absence. 2 files / 30 tests + `npm run verify` green. qa FIX-READY retest pending (rendered `elementFromPoint` with the Inspector open).
+- qa (TFL-914, FIX-READY retest): CLOSED. `npm.cmd run build:renderer` then `npm.cmd run test:e2e -- e2e/phase109_viewstrip.spec.cjs` = 12 passed / 0 failed. New rendered retests P109-10/11/12 prove the fix on the running app: with the Inspector EXPANDED (default, `--tf-tools-inset` 264px, `data-tools-open=true`), `document.elementFromPoint` at the centre of `.view-strip-layout [data-page-layout-option="two"]` returns the control (`aria=Two pages side by side`) and at `.view-strip-book` returns the Book View control (`aria=Book View`) - neither resolves to `.glass-sidebar-body.inspector-body`; a normal un-forced `.click()` switched `data-page-layout` to `two` and opened `[data-book-view]`. The footer's right edge is flush with the Inspector's left edge (does not extend under it). COLLAPSED (inset 44px) both controls remain reachable and the layout click switches. At 640x480 the footer stays ONE 48px row with no clipping and its `single-view-strip` container re-evaluates to the compact tier against the reduced width (container 476px vs 920px at 1440x900; `.zoom-percent` / `.view-strip-book-label` yield). Evidence: `screenshots/phase109-def577-inspector-open.png` (footer layout + Book View clear of the open Inspector), `screenshots/phase109-def577-640x480.png` (one row, no clipping).
+
+
 ## DEF-578: Phase 108 Workspace Rail label contrast misses the design's `label-contrast-check.json` budgets in both themes (inactive ink uses `--fg-muted`, not the design's #485164 / #B8C0D0)
 
 - Status: CLOSED (attempt 2 verified by qa TFL-896 - rendered e2e green; the active fill is the rail selected surface #F0EBFC / #302740 in both themes)
@@ -12967,6 +13080,133 @@ History:
 - qa (TFL-893, FIX-READY retest): NOT CLOSED. Label-ink half VERIFIED: rendered inactive ink is `--tf-icon-rest` (light rgb(72,81,100) #485164 / dark rgb(184,192,208) #B8C0D0), rendered inactive ratios light 7.96 (raw 7.9650) and dark 8.59 (raw 8.5948) meet budget. Selected-fill half FAILS in the rendered app: `.btn-toggle[aria-pressed="true"]` (`styles.css:3572`, specificity 0,2,0) sets `background: var(--accent-soft)` and overrides `.stage-rail-btn-active` (`styles.css:15322`, 0,1,0) regardless of source order, so the active rail item still paints `--accent-soft` `rgba(124,58,237,0.12)` over the rail surface. Rendered light selected 4.61 (raw 4.6139) < 4.73 budget -> `e2e/phase108_siderail.spec.cjs` contrast assertion FAILS (`light selected 4.61 < 4.73`). Rendered dark selected 6.74 (raw 6.7406) passes only because the old `--accent-soft` composite happens to clear 6.59; it is not the design's #302740. `npm.cmd run test:unit -- phase108_siderail phase36StageTokens def320_stageRailTrack phase37Chunk5 stageRail phase36StageTokenSourceScan` = 73 passed; `npm.cmd run verify` = clean. The static unit test is a wrong oracle here: it reads the `.stage-rail-btn-active` rule and the token values, never the winning cascade, so it reports 4.73 while the app renders 4.61. Fix owner frontend-dev: raise the active-fill selector specificity (e.g. `.stage-rail .stage-rail-btn-active` or `.stage-rail-btn[aria-pressed="true"]`) so `--tf-siderail-selected-surface` wins over `.btn-toggle[aria-pressed="true"]`, and add a rendered/ cascade-aware guard. Evidence: `e2e/phase108_siderail.spec.cjs` (failing), logs under the TFL-893 run scratch, `screenshots/phase108-rail-light.png` / `-dark.png` vs `Visual overhaul/Siderail/Visuals/rail-light.png` / `rail-dark.png`.
 - orchestrator: FIX-READY (attempt 2) - frontend-dev reports the fix in (TFL-894). `styles.css:15329` active fill moved to `.stage-rail .stage-rail-btn[aria-pressed="true"]` (0,3,0), out-specifying `.btn-toggle[aria-pressed="true"]` (0,2,0). Oracle guards added: `phase108_siderail.test.ts` asserts the winning selector out-specifies the generic toggle and no bare `.stage-rail-btn-active { background }` remains; `phase36StageTokens.test.ts:242` grep moved to the aria-pressed selector. Rendered e2e (rebuilt `dist/renderer`): light selected 4.73 (rawActiveBg rgb(240,235,252) `#F0EBFC`), dark selected 6.59 (`#302740`); unit 75 passed, `npm run verify` clean. qa FIX-READY retest dispatched (TFL-896).
 - qa (TFL-896, FIX-READY retest attempt 2): CLOSED. `npm.cmd run build:renderer` then `npm.cmd run test:e2e -- e2e/phase108_siderail.spec.cjs` = 1 passed / 0 failed. Rendered ratios meet budget: light inactive 7.96 (raw 7.9650) >= 7.96, light selected 4.73 (raw 4.7260) >= 4.73, dark inactive 8.59 (raw 8.5948) >= 8.59, dark selected 6.59 (raw 6.5890) >= 6.59. `rawActiveBg` is the rail selected surface rgb(240,235,252) `#F0EBFC` (light) / rgb(48,39,64) `#302740` (dark), not the accent-soft wash; inactive ink rgb(72,81,100) `#485164` / rgb(184,192,208) `#B8C0D0` as designed. Targeted unit (phase108_siderail, phase36StageTokens, def320_stageRailTrack, phase37Chunk5, stageRail, phase36StageTokenSourceScan) = 6 files / 75 tests passed. Blast-radius neighbour toggles (buttonSystem, phase40_palettePinToggle) = 2 files / 21 tests passed. `npm.cmd run verify` = conventions clean (375 source files), 0 type errors. Screenshots `screenshots/phase108-rail-light.png` / `-dark.png` match `Visual overhaul/Siderail/Visuals/rail-light.png` / `rail-dark.png`.
+
+## DEF-579: Phase 105 document rail overflows the viewport at first layout with many open tabs, pushing New tab / All tabs and the active tab off-screen (success criterion 4)
+
+- Status: CLOSED (qa TFL-911, 2026-10-06)
+- Severity: HIGH - breaks the phase's stated success criterion 4 ("responsive overflow reserves New tab and All tabs first ... keeps the selected document visible") and the Document Rail requirement. With 12 sessions open at a normal 1280px window the 40px rail lays out about 2197px wide (30 sessions: about 4658px), so the strip is clipped at the app edge: the All-tabs switcher and the New-tab "+" are unreachable and the active document's tab is off-screen. It blocks the phase's headline switcher workflow, though no document data is at risk.
+- Found by: qa (TFL-903 chunk E focused verification; e2e `e2e/phase105_topbar_rail.spec.cjs`, run log `e2e4.log`)
+- Phase: 105 (Top Bar and Tabs, TFL-856 chunk D)
+- Files: `src/renderer/components/DocumentRail.tsx` - `planRailCapacity` / the measure effect reads `list.clientWidth` (`DocumentRail.tsx:356-393`); `src/renderer/styles.css` `.document-rail` (17747), `.tab-list` (2179), `.tab-area` (2164). `.document-rail` computes `min-width: auto; overflow: visible; width: 2197px` inside a 1280px window, so the strip's own box grows to its content instead of being constrained to the viewport; the planner then measures that already-expanded width and concludes every session fits (`visibleCount = total`, `hiddenCount = 0`).
+
+Steps to reproduce (from application launch):
+1. `npm.cmd run test:e2e -- phase105_topbar_rail.spec.cjs` (test "document rail: 1/3/12/30 tabs keep readable widths, reserved controls and no horizontal scroll").
+2. Or manually: launch, set the window to 1280x800, open 12 documents via Open, and wait for 12 tabs.
+3. Observe the rail: the tabs stretch past the right window edge; no "+" or All-tabs control is visible; the active (last-opened) tab is off-screen.
+
+Expected: the rail reserves the New-tab and All-tabs controls, renders every visible tab at least 136px, hides sessions past capacity (still reachable via the All-tabs switcher), keeps the active document visible, and never exceeds the viewport.
+
+Actual: at 1280px the `.document-rail` box is 2197px (12 tabs, each 175.7px) and 4658px at 30 tabs; `.tab-list` clientWidth equals that expanded width, so `planRailCapacity` reports `visibleCount = 12/30, hiddenCount = 0`. Rendered geometry: New-tab right = 2165, All-tabs right = 2195, active tab right = 2135 - all beyond the 1280 viewport, clipped by `.app` (`overflow: clip`). The switcher is unreachable and the active document is not visible. A later window resize forces a constrained re-measure and self-corrects (at 640px: hidden 9, tabW 136, controls on-screen; resizing back to 1280: hidden 4), so the defect is the FIRST layout at a given width - the normal "open many documents without resizing" path.
+
+Fix owner: frontend-dev. Constrain the rail/strip to the viewport (for example `.document-rail { min-width: 0 }` and/or `.tab-list { min-width: 0 }`) so the planner measures the available width rather than its own expanded content, and/or measure the fixed `.tab-area` width instead of `list.clientWidth`. Add a rendered regression guard: the e2e rail test asserts the `.document-rail`/`.tab-list` right edge is within the viewport and that the New-tab, All-tabs and active-tab boxes are on-screen.
+
+Evidence: `e2e/phase105_topbar_rail.spec.cjs` (rail test fails: "12: the strip does not exceed the viewport width"; expected <= 1281, received 2199.06), `screenshots/phase105-rail-12.png` and `phase105-rail-30.png` (controls and active tab off-screen), `phase105-narrow.png` (self-corrected after resize).
+
+History:
+- qa: opened (TFL-903 chunk E focused verification). 4/5 e2e tests pass; this is the only Phase 105 failure. Targeted unit suites 219/219 pass; `npm run verify` clean.
+- cto: assigned to frontend-dev (TFL-905 chunk E2); status stays OPEN until the fix is verified by qa in the FIX-READY retest.
+- cto: FIX-READY - frontend-dev (TFL-905): root cause was the whole chunk-C `.document-rail` geometry block nested inside the `@media (max-width:900px)` band, so above 900px the rail had no rule and stretched to its tab content. Fixed by making the rail rules global (re-opened the media band after `.app-header`), adding `max-width:100%` to `.document-rail`, `grid-template-columns: minmax(0,1fr)` on `.app`, and `min-width:0; max-width:100%` on `.tab-list`. Evidence: `npm run verify` clean; 112 unit tests pass; `build:renderer`/`build:node` green; `phase105_topbar_rail.spec.cjs` 5/5 (1280px: 12 tabs visible=8 hidden=4; 30 tabs visible=8 hidden=22; New-tab/All-tabs/active on-screen without a resize). Pending qa FIX-READY retest.
+- qa: CLOSED (TFL-911 chunk E3 FIX-READY retest). Rebuilt the bundle (`npm run build`; typecheck + `build:renderer` + `build:node` green). `npm.cmd run test:e2e -- phase105_topbar_rail.spec.cjs`: the rail test is green in every run - at 1280px 12 tabs visible=8 hidden=4, 30 tabs visible=8 hidden=22; at 640px visible=3 hidden=27; `.document-rail`/`.tab-list` right edges and the New-tab/All-tabs/active-tab boxes all inside the viewport. Added the rendered regression guard the fix requested: a native-window first-layout snapshot taken BEFORE any resize plus `assertViewportContainment` asserting `.document-rail` and `.tab-list` right edges and the `[data-new-tab]`, `[data-all-tabs]` and active-tab boxes are within `viewportW + 1`, run for every stage (native-1/1/3/12/30/640). `npm run verify` clean; targeted unit suites 112/112 pass (`phase105_documentRail`, `phase105_titleRow`, `phase105_tabIdentity`, `phase58TabReorder`, `phase60TabDrag`, `phase61TabTearOut`, `phase59PaletteAndTabOverflow`). See DEF-583 for an unrelated load-sensitive File-menu morph-close flake observed in the same spec's full-suite runs.
+
+
+## DEF-580: Phase 109 retires the per-pane CanvasPills but leaves the neighbour spec P36-C3-G asserting the retired `[data-page-pill]`/`[data-zoom-pill]` surface (blast-radius spec not migrated)
+
+- Status: CLOSED (qa TFL-914 migration, 2026-10-06; P36-C3-G retargeted to `[data-view-strip]` and green)
+- Severity: LOW - test-maintenance only. The product surface is intentionally retired by Phase 109 (chunk B); the neighbour spec still queries the removed pills, so the blast-radius run is red. No product behaviour is wrong.
+- Found by: qa (TFL-906 chunk C focused verification; blast-radius run)
+- Phase: 109 (ViewStrip footer / CanvasPills retirement)
+- Files: `e2e/phase36_chunk3_dock_gate.spec.cjs` P36-C3-G (lines ~676-731) queries `[data-page-pill]` / `[data-zoom-pill]` / `[data-page-pill] input.page-input`; the pills are no longer rendered (Phase 109 retires `CanvasPills` from `DocumentView.tsx`).
+
+Steps to reproduce (from application launch):
+1. `npm.cmd run build:renderer`.
+2. `npm.cmd run test:e2e -- e2e/phase36_chunk3_dock_gate.spec.cjs`.
+3. P36-C3-G fails at line 714: `Error: the Next-page control is the top element at its own centre` / `Expected: "Next page" / Received: "missing"` (the `[data-page-pill]` element is absent).
+
+Expected: a blast-radius neighbour spec keeps resolving after a surface is retired - it is migrated to the replacement surface (the View Strip footer: `[data-view-strip] .page-input` / `[aria-label="Next page"]`).
+
+Actual: the spec still targets the retired pills and is red. The remaining 23 failures in the same blast-radius run are foreign and not Phase 109: Phase 105 Multi-Mode toggle relocation (`[data-header-multi-mode]` gone -> all 8 `phase32_multi_mode` tests), the `toolsRegistry` dock-verb-set change (`[data-dock-verb="split"/"delete"/"editMode"]`), the maximized-window `setSize` resize oracle, and the 64px rail oracle (`phase36_layout_retest`).
+
+Fix owner: phase author / qa follow-up (migrate P36-C3-G to the View Strip footer). Not fixed in TFL-906 (verification scope only).
+
+History:
+- qa (TFL-914, migration): CLOSED. Migrated `e2e/phase36_chunk3_dock_gate.spec.cjs` P36-C3-G off the retired `[data-page-pill]` / `[data-zoom-pill]` surface onto `[data-view-strip]`, `[data-view-strip] .page-input`, and the Next/Previous controls, keeping the original intent (the Next-page control is the TOP element at its own centre - now `"Next page"`). The same-class idle-fade oracle in P36-C3-E was also retargeted to `[data-view-strip][data-view-strip-idle]` / `.view-strip-page`. The Multi Mode leg's toggle was migrated from the Phase-105-retired `[data-header-multi-mode]` to the app-menu row, and the per-pane `[data-canvas-pills]` proxy to per-pane `[data-view-strip]`. Result: `npm.cmd run test:e2e -- e2e/phase36_chunk3_dock_gate.spec.cjs` -> 3 passed / 11 failed; P36-C3-G is GREEN (footer geometry dock<->footer no overlap, `Next page` top element, `Zoom in` top element, page total `/34`, zoom 152->175, Multi Mode pane footer `[{"pane":"A","insidePane":true}]`). The 11 remaining failures are FOREIGN pre-existing (not Phase 109): Phase 37 `toolsRegistry` dock-verb-set (P36-C3-A/B/C/D/J/K/`editMode`), Phase 37 annotation tool set P36-C3-H (`select` gone), Phase 105 title-row relocation P36-C3-I, and the maximized-window `setSize` resize oracle (P36-C3-F/N). DEF-319/`page-pill` tests in `phase36_layout_retest.spec.cjs` carry the same stale pill selectors but fail earlier on the resize oracle, so they are foreign-failing with a latent Phase-109 selector left as-is (out of this record's scope).
+
+
+## DEF-581: Phase 107 chunk B repointed DocumentView's fit call to `FIT_MARGIN_PX` but left the DEF-338 source oracle asserting the retired `CONTENT_PADDING_PX` call, so `def338_paneFirstFit.test.ts` fails
+
+- Status: CLOSED (qa TFL-924 chunk F3 FIX-READY retest, 2026-10-06)
+- Severity: MEDIUM - the Phase 107 verification set names this test and it fails on the phase's own diff; the promised in-place oracle update was applied to the sibling `phase40_pageLayoutControl.test.tsx` but missed here. No product behaviour is wrong (the fit call is correct), but the required regression oracle is red, so the phase-close unit suite is not green.
+- Found by: adversary (ADV-216) - filed by qa (TFL-907 chunk F1)
+- Phase: 107 (chunk B, TFL-877)
+- Files: `src/renderer/components/DocumentView.tsx:2094` now passes `FIT_MARGIN_PX` (was `CONTENT_PADDING_PX`); `test/unit/renderer/def338_paneFirstFit.test.ts:115` still asserts `computeEffectiveScale\(viewportBox, fitAnchor, zoom, CONTENT_PADDING_PX\)` against that source (`readFileSync`, :91-94).
+
+Steps to reproduce:
+1. `npx.cmd vitest run test/unit/renderer/def338_paneFirstFit.test.ts`.
+2. Observe the failure at `test/unit/renderer/def338_paneFirstFit.test.ts:115` ("computes the fit through the pure helper").
+
+Expected: the assertion tracks the new `FIT_MARGIN_PX` fit argument, matching `DocumentView.tsx:2094` and the sibling already updated in `phase40_pageLayoutControl.test.tsx:156`.
+
+Actual: `toMatch` fails because DocumentView no longer passes `CONTENT_PADDING_PX`. Full run: `Test Files 1 failed (1)` / `Tests 1 failed | 27 passed (28)`; the only failure is this test.
+
+Fix owner: frontend-dev (update the def338 oracle in place; qa may not edit `test/unit/**`).
+
+Evidence: `src/renderer/components/DocumentView.tsx:2094`; `test/unit/renderer/def338_paneFirstFit.test.ts:91-94,115`.
+
+History:
+- qa: opened (TFL-907 chunk F1 focused verification; from ADV-216). Repro `npx.cmd vitest run test/unit/renderer/def338_paneFirstFit.test.ts` -> 1 failed | 27 passed (28).
+- frontend-dev: fix in (TFL-909) - `test/unit/renderer/def338_paneFirstFit.test.ts:115` regex `CONTENT_PADDING_PX` -> `FIT_MARGIN_PX`, matching `DocumentView.tsx:2094`. Evidence: `npx vitest run test/unit/renderer/def338_paneFirstFit.test.ts` 28 passed (was 1 failed | 27 passed); the 6 named Phase 107 files 101 passed; `npm run verify` clean. Relayed verbatim by the CTO; awaiting qa retest to close.
+- qa: CLOSED (TFL-924 chunk F3, 2026-10-06). Retest `npx.cmd vitest run test/unit/renderer/def338_paneFirstFit.test.ts` -> 28 passed (28). The full 12-file Phase 107 set is green (152 passed); `npm run verify` clean.
+
+## DEF-582: The `--shadow-page` repoint leaks the Paper Stage page frame (1px ring + two-layer shadow) into `.print-preview-sheet`, a Print-and-Output surface outside Canvas scope
+
+- Status: CLOSED (qa TFL-924 chunk F3 FIX-READY retest, 2026-10-06)
+- Severity: LOW - cosmetic cross-surface scope leak. The print-preview sheet now stacks the canvas 1px ring on its own 1px border and gets a heavier drop shadow than its pre-Phase-107 frame. No data impact (ring/shadow are chrome and never reach the composed print HTML).
+- Found by: adversary (ADV-217) - filed by qa (TFL-907 chunk F1)
+- Phase: 107 (chunk A)
+- Files: `src/renderer/styles.css:672-673` (light), `:880-881` (dark), `:1154-1155` (frosted) now resolve `--shadow-page: var(--shadow-page-canvas)` (was `var(--elevation-1)` at HEAD); `:11875` `.print-preview-sheet` still declares `border: 1px solid var(--border)` and `:11877` `box-shadow: var(--shadow-page)`.
+
+Steps to reproduce (static):
+1. `Select-String -Path src/renderer/styles.css -Pattern '--shadow-page:'` -> in all three theme scopes `--shadow-page: var(--shadow-page-canvas)` (HEAD was `--shadow-page: var(--elevation-1)`).
+2. `Select-String -Path src/renderer/styles.css -Pattern 'print-preview-sheet' -Context 0,10` -> `.print-preview-sheet` still consumes `box-shadow: var(--shadow-page)` alongside `border: 1px solid var(--border)`.
+
+Expected: the print-preview sheet keeps its own pre-Phase-107 `var(--elevation-1)` frame; the Canvas page-frame token does not reach the Print-and-Output surface (phase-107.md scope, "document stage only").
+
+Actual: the sheet inherits the canvas value `0 0 0 1px #DCE0E7, 0 2px 4px #232A3808, 0 12px 24px #232A380D` (light) / `0 0 0 1px #A1A6AF, 0 2px 4px #00000020, 0 12px 24px #00000030` (dark/frosted) - a 1px ring stacked on its own 1px border plus a heavier two-layer shadow.
+
+Fix owner: frontend-dev (give `.print-preview-sheet` its own shadow token - its pre-Phase-107 `var(--elevation-1)`).
+
+Evidence: `src/renderer/styles.css:672-673,880-881,1154-1155` (token); `:11867-11879` (consumer).
+
+History:
+- qa: opened (TFL-907 chunk F1 focused verification; from ADV-217). Static repro confirms `--shadow-page` resolves to `--shadow-page-canvas` in light/dark/frosted and `.print-preview-sheet` still consumes `var(--shadow-page)`.
+- frontend-dev: fix in (TFL-909) - `.print-preview-sheet` `box-shadow: var(--shadow-page)` -> `box-shadow: var(--elevation-1)` (its pre-Phase-107 value); `--shadow-page`/`--shadow-page-canvas` and the `.pdf-page` consumers untouched, sheet border/radius untouched. Evidence: `npm run verify` clean; grep found no test pinning the print-preview sheet shadow. Relayed verbatim by the CTO; awaiting qa retest to close.
+- qa: CLOSED (TFL-924 chunk F3, 2026-10-06). Live computed retest (`e2e/phase107_interactions_stage.spec.cjs`, light theme): `.print-preview-sheet` box-shadow `rgba(15, 23, 42, 0.14) 0px 4px 18px 0px` == the computed `--elevation-1` value and != the canvas ring (no `0px 0px 0px 1px` layer); `.pdf-page` box-shadow still resolves `--shadow-page-canvas` (1px ring + two layers). 2 passed.
+
+## DEF-583: The Phase 105 title-row File-menu Escape assertion is load-sensitive - the exiting popover (`data-tf-morph="out"`) stays "visible" past the 8s wait when the full spec runs several Electron launches
+
+- Status: OPEN
+- Severity: LOW - flaky e2e assertion, no product behaviour wrong. In isolation the File menu opens and Escape closes it (the morph completes); only under a full-suite multi-launch run does the exiting `[data-menu-popover]` element linger past 8s so `waitForSelector(..., { state: 'hidden' })` times out. No document, data or workflow impact.
+- Found by: qa (TFL-911 chunk E3 FIX-READY retest of DEF-579; observed in `e2e/phase105_topbar_rail.spec.cjs` full-suite runs)
+- Phase: 105 (Top Bar and Tabs) - incident, not part of DEF-579
+- Files: `e2e/phase105_topbar_rail.spec.cjs:316` and `:686` (`waitForSelector('[data-menu-popover]', { state: 'hidden', timeout: 8000 })`); `src/renderer/components/TitleBar.tsx:296-350` (`TfMorph` popover, `data-menu-popover`, `aria-label="Application menu"`), `src/renderer/components/motion/TfMotion`.
+
+Steps to reproduce:
+1. `npm.cmd run build`.
+2. `npm.cmd run test:e2e -- phase105_topbar_rail.spec.cjs` (the FULL spec, all 5 tests, one worker).
+3. Intermittently (run 1: title-row test at `:316`; run 3: CONTROL-INDEX test at `:686`) the run reports 4 passed / 1 failed with `TimeoutError: page.waitForSelector: Timeout 8000ms exceeded ... waiting for locator('[data-menu-popover]') to be hidden`, the locator resolving 19-20x to a `<div inert role="menu" data-tf-morph="out" data-menu-popover="true" aria-label="Application menu">`.
+4. `npm.cmd run test:e2e -- phase105_topbar_rail.spec.cjs --grep "title row"` and `--grep "CONTROL-INDEX"` each pass in isolation (1/1).
+
+Expected: the exiting File-menu popover unmounts (or becomes hidden) within the 8s wait in every run, so the spec is deterministic.
+
+Actual: under full-suite load the morph-out popover can stay "visible" past 8s, producing an intermittent spec failure. The rail test (DEF-579's target) is green in every run, so this is independent of the DEF-579 fix.
+
+Fix owner: frontend-dev / qa follow-up - either the TfMorph exit is throttled under load (product) or the e2e wait should await popover detach rather than `state: 'hidden'` (test). Triage before assigning.
+
+Evidence: run logs `e3-e2e.log` and `e3-e2e-full2.log` (scratch), `test-results/phase105_topbar_rail-title-*/error-context.md` and `test-results/phase105_topbar_rail-CONTR-*/error-context.md`.
+
+History:
+- qa: opened (TFL-911 chunk E3; observed during the DEF-579 FIX-READY retest). Not reproduced in isolation; not DEF-579.
+
 
 > ID-collision note (qa, TFL-916, 2026-10-06): the Phase 108 adversary diff-pass
 > dispositions in ADVERSARIAL_REVIEW.md name ADV-218 -> DEF-579, ADV-219 -> DEF-580,
@@ -13048,4 +13288,129 @@ Evidence: `test/unit/renderer/def315_dockPillClearance.test.tsx:667,669,672-674`
 History:
 - qa: opened (TFL-916 chunk D3 FIX-READY retest; from ADV-220). See ID-collision note above.
 - qa (TFL-916 chunk D3, FIX-READY retest): CLOSED. `test/unit/renderer/def315_dockPillClearance.test.tsx:670` now derives `STAGE_RAIL_W` from `--tf-stage-rail-w` (72, was hard-coded 44); the five `visibleCanvasOf` oracle values updated to 884/544/344/204/84 for the delivered 72px layout. Verified in the focused unit run: `npm.cmd run test:unit -- ...def315_dockPillClearance.test.tsx ...` = 7 files / 122 tests passed, including this file. `npm.cmd run verify` clean.
+
+## DEF-587: In the frosted theme the full-bleed `.document-scroller` covers the View Strip footer - 11 of its 12 controls were not hit-testable
+
+- Status: CLOSED
+- Severity: HIGH - a stated Phase 109 requirement (the footer controls are clickable in every theme) was broken: in the frosted theme the PDF page and its `.textLayer` covered the whole 48px footer band, so 11/12 footer controls were not the top element at their own centre.
+- Found by: adversary (ADV-221, TFL-918 diff-pass); triaged by CTO to DEF-587
+- Phase: 109 (Viewing Controls, TFL-863)
+- Files: `src/renderer/styles.css` - `:root[data-theme="frosted"] .document-scroller` (~13917-13933).
+
+Steps to reproduce:
+1. Launch TFlex, open `report.pdf`, 1440x900.
+2. Use the app menu -> Toggle Theme until `document.documentElement.dataset.theme === "frosted"`.
+3. Measure `.document-scroller` vs `.view-strip`; hit-test each footer control at its own centre with `document.elementFromPoint`.
+
+Expected: the frosted full-bleed scroller stops at the footer's top edge (scroller bottom == footer top == 852 at 1440x900), so the footer paints above it and stays clickable - exactly as in light/dark.
+
+Actual (pre-fix): the scroller was `position: absolute; inset: 0; height: auto; z-index: 0`, spanning the whole `.workspace-main` box including row 6. Measured `[256,88,920,812]` (bottom 900) vs footer `[256,852,920,48]` (top 852) = 48px overlap. Hit-test: light/dark 12/12 true; frosted 11/12 returned `div.textLayer`/`div.document-content` (hit:false).
+
+Fix (frontend-dev, TFL-921): `bottom: 0` -> `bottom: var(--view-strip-h, 48px)` (`top: 0` kept).
+
+History:
+- adversary: opened (ADV-221, TFL-918 diff-pass, 2026-10-06).
+- CTO triage: ACCEPTED -> DEF-587 (TFL-863, 2026-10-06); assigned frontend-dev (TFL-921).
+- qa: CLOSED (TFL-925 rendered FIX-READY retest, 2026-10-06). `npm.cmd run test:e2e -- e2e/phase109_def587_def588_retest.spec.cjs` P109-13 PASS - light/frosted/dark each 12/12 controls hit-true, 0 blocker hits; frosted scrollerBottom 852 == footerTop 852. Screenshot `screenshots/phase109-qa-def587-frosted-footer.png`. Regression: `phase109_viewstrip.spec.cjs` 12 passed; unit `phase109_viewStrip.test.ts` 22 passed.
+
+## DEF-588: The `<=419px` `.view-strip-more` reveal never wins the cascade, hiding the layout + Book View controls with no re-home
+
+- Status: OPEN
+- Severity: HIGH - at the `<=419px` overflow tier the layout + Book View controls are hidden with no replacement route. The cascade fix now reveals the More host, but the trigger is still not pointer-reachable (residual filed as DEF-591), so the end-to-end acceptance is not met.
+- Found by: adversary (ADV-222, TFL-918 diff-pass); triaged by CTO to DEF-588
+- Phase: 109 (Viewing Controls, TFL-863)
+- Files: `src/renderer/styles.css` - `@container single-view-strip (max-width: 419px)` reveal (~5443-5448).
+
+Steps to reproduce:
+1. Launch TFlex, open `report.pdf`.
+2. Set the window to 640x480 and `BrowserWindow.getAllWindows()[0].webContents.setZoomFactor(1.5)` (Windows text/DPI 150%); the footer inline-size drops to 263px (<=419).
+3. Inspect computed `display` of `.view-strip-more` / `.view-strip-layout` / `.view-strip-book`; click the More trigger.
+
+Expected: the container query hides `.view-strip-layout` + `.view-strip-book` AND reveals `.view-strip-more` so its menu re-homes the one/two/four layout + Book View; every control stays reachable by pointer and keyboard.
+
+Actual (pre-fix): the reveal `.view-strip-more { display: inline-flex }` (0,1,0) lost the cascade to the later base `.view-strip-more { display: none }` (0,1,0, declared later), so the More host never displayed (`moreDisplay: "none"`, visibleMoreToggles 0) and the layout + Book View were unreachable.
+
+Fix (frontend-dev, TFL-921): reveal changed to `.view-strip .view-strip-more { display: inline-flex }` (specificity 0,2,0), out-specifying the later base rule.
+
+History:
+- adversary: opened (ADV-222, TFL-918 diff-pass, 2026-10-06).
+- CTO triage: ACCEPTED -> DEF-588 (TFL-863, 2026-10-06); assigned frontend-dev (TFL-921).
+- qa: returned OPEN (TFL-925 rendered FIX-READY retest, 2026-10-06). The cascade fix is proven rendered: at 640x480@150% the footer inline-size is 263px, `.view-strip-layout`/`.view-strip-book` compute `display: none`, `.view-strip-more` computes a visible flex box (the declared `inline-flex` blockifies to `flex` as a `.view-strip` flex item), the More menu opens and its three layout rows + Book View row have non-zero boxes, and keyboard (focus + Enter, ArrowDown, Enter) opens Book View. BUT the pointer acceptance fails - the More trigger box `[386,282,32,28]` overflows the footer box `[120,272,263,48]` and is covered by the collapsed Inspector rail (`elementFromPoint` -> `div.inspector`; a real click times out 6000ms). Residual filed as DEF-591. Evidence: `e2e/phase109_def587_def588_retest.spec.cjs` P109-14; `test-fixtures/phase109-qa/tfl925_def587_588_retest.log`, `probe-more-hit.log`; `screenshots/phase109-qa-def588-overflow-640x480.png`.
+
+## DEF-589: Orbit Desk motion pause control is not pinned to the header top-right - a specificity collision drops its `position: absolute` (Phase 106 chunk B)
+
+> Numbering note: filed concurrently and first numbered DEF-587; renumbered to DEF-589 by qa (TFL-925, 2026-10-06) because DEF-587/DEF-588 are bound to the Phase 109 Viewing Controls findings by `src/renderer/styles.css` comments and `test/unit/renderer/phase109_viewStrip.test.ts`. No content changed.
+
+- Status: FIX-READY
+- Severity: LOW - cosmetic/implementation mismatch. The control is visible, discoverable and fully functional (it pauses/resumes the drift through the existing Animations setting); it just renders inline next to the brand wordmark instead of the header's top-right edge the rule declares.
+- Found by: qa
+- Phase: 106 (Home Screen / Orbit Desk, TFL-900 chunk B)
+- Files: `src/renderer/styles.css:3950` (`.orbit-desk .welcome-hero > :not(.orbit-desk-motif) { position: relative; z-index: 1 }`, specificity 0,3,0) vs `src/renderer/styles.css:4080` (`.orbit-desk-motion-toggle { position: absolute; top: 0; right: 0 }`, specificity 0,1,0).
+
+Steps to reproduce:
+1. Launch TFlex; the Orbit Desk Home renders.
+2. Inspect `[data-orbit-motion-toggle]` geometry - it sits immediately right of the "Jovrel" wordmark (left/right 826/862, top 120), not at the header's top-right (header right 1808).
+
+Expected: the control is pinned to the header's top-right (per the rule's own comment "pinned to the header's top-right, above the motif") and sits above the motif layer.
+
+Actual: `.orbit-desk .welcome-hero > :not(.orbit-desk-motif)` (0,3,0) out-specifies `.orbit-desk-motion-toggle` (0,1,0), so the toggle's `position: absolute; top:0; right:0` is overridden by `position: relative` and it flows inline after `.welcome-brand`. Computed `position` is `relative`; it does not overlap the headline (toggle bottom 156 <= title top 158), so nothing is blocked - only the intended anchor is lost.
+
+Fix owner: frontend-dev - exclude the toggle from the header-children stacking rule (e.g. `:not(.orbit-desk-motif):not(.orbit-desk-motion-toggle)`) or raise the toggle rule's specificity.
+
+Evidence: `screenshots/phase106-chunkB-geometry.json` (`togglePosition: "relative"`, toggle right 862 vs header right 1808); `screenshots/phase106-chunkB-motion-light.png`, `screenshots/phase106-chunkB-paused-light.png`; e2e `e2e/phase106_orbit_motion.spec.cjs`.
+
+History:
+- qa: opened (TFL-917 chunk B focused verification, 2026-10-06).
+- CTO: FIX-READY - frontend-dev (TFL-922) reports `src/renderer/styles.css:3950` now reads `.orbit-desk .welcome-hero > :not(.orbit-desk-motif):not(.orbit-desk-motion-toggle)`, so the toggle's own `position:absolute; top:0; right:0; z-index:2` wins; a guard test was added to `phase106OrbitMotion.test.tsx`; `npx vitest run test/unit/renderer/phase106OrbitMotion.test.tsx` -> 10 passed. Awaiting qa retest.
+
+## DEF-590: surface-inventory.csv has a wrong `component_path` and stale `opener` line numbers (TFL-855 chunk C1 criterion-1 deliverable)
+
+> Numbering note: filed concurrently and first numbered DEF-588; renumbered to DEF-590 by qa (TFL-925, 2026-10-06) because DEF-587/DEF-588 are bound to the Phase 109 Viewing Controls findings by `src/renderer/styles.css` comments and `test/unit/renderer/phase109_viewStrip.test.ts`. No content changed.
+
+- Status: OPEN
+- Severity: LOW - spec-artifact accuracy only. No product, document or data impact; the inventory is a handoff/spec deliverable that the C3 pilot authors read, and a mis-stated path or line sends a reader to the wrong file/location.
+- Found by: qa (TFL-920 chunk C2Q focused verification, criterion-1 inventory coverage)
+- Phase: 855 (shared interaction-surface foundations, TFL-873 chunk C1)
+- Files: `Visual overhaul/Dialogs Toolboxes and Menus/Specifications/surface-inventory.csv` (row 5 `AnnotationFlyout`; `opener` column for the App.tsx rows).
+
+Steps to reproduce:
+1. Read `Visual overhaul/Dialogs Toolboxes and Menus/Specifications/surface-inventory.csv`.
+2. Row 5 (`AnnotationFlyout.tsx`) has `component_path = src/renderer/annotations/AnnotationFlyout.tsx`; check it exists.
+3. For an App.tsx-opened row, open the named `opener` line and look for the named call site.
+
+Expected: every `component_path` exists in the repo; every `opener` `file:line` resolves to (or near) the named call site.
+
+Actual:
+- Row 5 `component_path` `src/renderer/annotations/AnnotationFlyout.tsx` does not exist. The file is `src/renderer/components/AnnotationFlyout.tsx`. (All 66 other component_paths exist; verified with `Test-Path` over every row -> `MISSING_COUNT=1`.)
+- The App.tsx `opener` line numbers do not resolve to the named symbols. Verified samples (CSV line -> actual symbol line): row 2 `App.tsx:5329 onSplitClick` -> 5360; row 3 `App.tsx:5621 onCreateClick` -> 5653; row 8 `App.tsx:5046 openMergeFlow` -> 5068; row 41 `App.tsx:12183 pendingCloseTabId !== null` -> 12229; row 64 `App.tsx:10011 openReadingView` -> 10067. Non-App.tsx openers are exact or near (e.g. `Button.tsx:122 title={label}` = 122; `PrintWindowApp.tsx:273 <PrintPanel>` = 273; `pageThumbMenu.tsx:97 openMenu` = 97; `dialog.ts` 101/117/138/161 all exact).
+
+Evidence: `MISSING_COUNT=1` from `Test-Path` over all CSV rows; `rg -n` symbol lookups above. Cross-checks that passed: 11 columns / 67 data rows; all 68 distinct `command_ids` resolve (menuActions.ts `action` union + `toolsRegistry.ts` ids); native exceptions correct (only `savePdfDialog`/`saveFormDataDialog`/`openPdfDialog`/`openPdfDialogMulti` in `src/main/services/dialog.ts`).
+
+Fix owner: frontend-dev - correct row 5 `component_path` to `src/renderer/components/AnnotationFlyout.tsx`; refresh the App.tsx `opener` line numbers against current App.tsx.
+
+History:
+- qa: opened (TFL-920 chunk C2Q focused verification, 2026-10-06). Items 1-3 and 5-6 of that pass were PASS; item 4 is the sole FAIL.
+
+## DEF-591: At the `<=419px` overflow tier the revealed More trigger overflows the footer box and is covered by the Inspector rail, so it is not pointer-reachable
+
+- Status: OPEN
+- Severity: MEDIUM - at 640x480 with Windows text/DPI 150% the View Strip's overflow trigger is visible but not clickable (a real pointer click is intercepted by the collapsed Inspector rail), so the one/two/four layout and Book View controls cannot be reached by pointer at that rung. Keyboard still reaches them, so it is not a total loss of the workflow.
+- Found by: qa (TFL-925 FIX-READY retest, DEF-588 residual)
+- Phase: 109 (Viewing Controls, TFL-863)
+- Files: `src/renderer/styles.css` - the overflow-tier footer content vs Inspector inset (`@container single-view-strip (max-width: 419px)` reveal ~5443-5448; `.tab-stage[data-multi-mode="false"] .view-strip` inset ~5258).
+
+Steps to reproduce:
+1. Launch TFlex, open `report.pdf`, set the window to 640x480, then `BrowserWindow.getAllWindows()[0].webContents.setZoomFactor(1.5)`.
+2. Inspect the `.view-strip` and `[data-view-strip-more-toggle]` boxes; hit-test the trigger's centre with `document.elementFromPoint`; attempt a real click.
+
+Expected: at the overflow tier the More trigger sits inside the footer box and is clickable, so its menu opens and re-homes the layout + Book View.
+
+Actual: `.view-strip` is `[120,272,263,48]` (right edge 383) but its flex content overflows: the More trigger renders at `[386,282,32,28]`, outside the footer box, under the collapsed Inspector rail `[data-inspector]` `[383,88,44,232]`. `document.elementFromPoint` at the trigger centre returns `div.inspector`; a real Playwright click times out (6000ms). The overflow tier hides `.view-strip-layout`/`.view-strip-book`, so this is the only pointer route to those controls and it is blocked.
+
+Fix owner: frontend-dev - make the overflow-tier footer content fit its own box (shrink/wrap the page + view groups, or apply the Inspector inset to the content) so the More trigger stays inside the footer and above the Inspector rail.
+
+Evidence: `test-fixtures/phase109-qa/probe-more-hit.log` (top element `div.inspector`, click timeout); `e2e/phase109_def587_def588_retest.spec.cjs` P109-14 (pointerOpened=false, keyboard route works); `screenshots/phase109-qa-def588-overflow-640x480.png`.
+
+History:
+- qa: opened (TFL-925 FIX-READY retest of DEF-588, 2026-10-06).
 

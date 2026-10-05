@@ -10188,6 +10188,210 @@ redacted). Remediated in TFL-783 as secrets hygiene only — no product code tou
   `redact()` is idempotent on all 17 payloads and on the captured URL.
 - Caveat: the token-bearing URL still exists in git history at `fe73758`. The fix cleans
   the tip only; history was not rewritten (out of scope, operator-gated).
+
+## Phase 107 Canvas Paper Stage diff-pass (TFL-904) - stale DEF-338 fit-call oracle fails; page-frame token leaks into the print-preview sheet
+
+Session label: `diff-pass`. Scope: the uncommitted Phase 107 Canvas overhaul (chunks A + B) -
+`styles.css` (`--bg-canvas`/`--tf-canvas-opaque` `#ECEFF4`/`#151820`, the new
+`--shadow-page-canvas` plus the `--shadow-page` repoint, `.pdf-page` square corners, the
+`.document-content` 24px gap), `design/elevation.ts` (`SHADOW_ROLE.page`), `pageGeometry.ts`
+(`PAGE_GAP_PX` 24, new `FIT_MARGIN_PX` 28), `DocumentView.tsx` (the two `computeEffectiveScale`
+call sites) and `BookView.tsx` (`SPREAD_CREASE_PX` 12). Product code, tests, DEFECTS.md,
+REQUIREMENTS.md and AGENTS.md were read but NOT modified.
+
+Exact commands (live; run in a later heartbeat once the build mutex freed):
+
+- `npm.cmd run build:renderer` -> `vite build`, `✓ built in 872ms`; fresh
+  `dist/renderer/assets/index-DXXwz-4P.js`.
+- `npx.cmd vitest run <the 11 named files>` -> `Test Files 11 passed (11)`, `Tests 124 passed (124)`.
+- `npx.cmd vitest run test/unit/renderer/def338_paneFirstFit.test.ts` -> `1 failed | 27 passed (28)`;
+  the failure is exactly ADV-216.
+- `npx.cmd playwright test e2e/phase107_canvas_stage.spec.cjs --workers=1` -> `4 passed (1.0m)`; logs:
+  light `{"scrollerBg":"rgb(236, 239, 244)","pageRadius":"0px","pageBg":"rgb(255, 255, 255)","canvasCount":3}`,
+  dark `{"scrollerBg":"rgb(21, 24, 32)","pageRadius":"0px","pageBg":"rgb(255, 255, 255)","canvasCount":3}`,
+  fit-width margin `{"left":28,"right":28,"pageW":2194,"scrollerW":2250,"scrollbar":10}`,
+  multi pane A/B both `rgb(236, 239, 244)` with independent scroll (`A 0->2192 B 0->0`),
+  long.pdf `{"slots":520,"canvases":3,"scrollHeight":639674}` -> 4 canvases after a deep scroll.
+  Screenshots: `screenshots/phase107-canvas/` (27 files).
+- Adversary live probe `test-fixtures/phase107-adversary/adv_p107_geometry.spec.cjs`
+  (`npx.cmd playwright test --config test-fixtures/phase107-adversary/playwright.config.cjs`)
+  -> `4 passed (22.7s)`; logs: A containment `{"border":"0px","margin":"0px","page":{"x":805.046875,"w":931.90625,"h":1206},"canvas":{"x":805.046875,"w":931,"h":1206}}`;
+  B jump page 17 readout 17 `scrollTop=19680` == expected 19680.0, last page 34 readout 34 `scrollTop=40590` == expected 40590.0;
+  C zoom anchor page 17 `relTop 0->0`; D Inspector open/close page 17 `relTop 0->0->0`.
+  Screenshots: `screenshots/phase107-adversary/`.
+
+Vector verdicts (static + live; per the issue's attack surface):
+
+1. PDF fidelity - PASS. Static: `.pdf-page` keeps `background: #ffffff` (styles.css:5477) and
+   `border-radius: 0` (:5487); no `filter`, `mix-blend-mode` or recolour on the page or
+   `.pdf-page-canvas` (:5558). Live: dark `.pdf-page` computed background `rgb(255, 255, 255)`,
+   radius `0px` (phase107 e2e), so the dark stage does not invert the page.
+2. Shadow/ring containment - PASS. Static: the frame is `box-shadow: var(--shadow-page)` only
+   (:5486, :5555); `.pdf-page` has no `border:`/`margin:` (`phase107_paperStage.test.ts:109-113`).
+   Live (probe A): `.pdf-page` `border-width 0px`, `margin 0px`, and its box equals the page
+   bitmap's box (x/y/h exact; width differs by 0.906px from pre-existing integer canvas sizing in
+   `PageView.tsx:642-645`, which Phase 107 does not touch).
+3. Geometry drift - PASS. Static: `PAGE_GAP_PX = 24` (pageGeometry.ts:14) matches the base
+   `.document-content { gap: 24px }` (styles.css:5386) and the frosted override (:13704);
+   `layoutFitViewport` (pageLayoutMode.ts:99-100) reads the same constant; `CONTENT_PADDING_PX`
+   stays 0. Live (probe B): jump to page 17 lands at `scrollTop 19680` == `(17-1)*(1206+24)`;
+   jump to the last page (34) lands at `40590` == `(34-1)*1230`; readouts exact. The phase107 e2e
+   fit-width margins are 28/28 (contract 24-32). One stale oracle: ADV-216.
+4. Hit-test / overlay offset - PASS. Static: no layout-affecting property was added to `.pdf-page`.
+   Live (probe A): the page box equals the bitmap box (border/margin 0), so the overlay coordinate
+   space is unchanged.
+5. Anchor/scroll stability - PASS. Live (probe C): after jumping to page 17 and three Zoom-in
+   steps, the readout stays 17 and the anchored slot's top stays at the viewport top (`relTop 0->0`).
+   Live (probe D): opening and re-closing the Inspector keeps readout 17 and `relTop 0->0->0`.
+6. Sibling-region edits - PASS (static). `CanvasPills.tsx`, `ContextPanel.tsx`, `SideRail.tsx`,
+   `ActionDock.tsx`, `ThumbnailRail.tsx`, `PaneThumbStrip.tsx` are neither modified nor untracked;
+   the `styles.css` diff touches none of `.canvas-pills`/`.canvas-overlay`/`--tf-rail-w`/
+   `--dock-band-reserved`/`.side-rail` (the two grep hits are comments owned by Phase 109/110).
+   `design/typography.ts` is modified, but that is Phase 110 work, not Phase 107.
+7. Multi-pane divergence - PASS. Static: both panes and single mode read the same
+   `--tf-canvas-opaque` (styles.css:14690, :14695, :14710). Live (phase107 e2e): both panes show
+   `rgb(236, 239, 244)` with radius 0/paper-white pages, the active-pane flag flips A<->B, the
+   pane-thumbnail strips are populated (A 34, B 1 in the sample), and a pane-A thumbnail click
+   scrolls only A (`A 0->2192`, `B 0->0`).
+
+Two findings: ADV-216 (MEDIUM, confirmed live) and ADV-217 (LOW, static). One observation: the fit
+oracle in `test/unit/renderer/phase40_pageLayoutMode.test.ts` still passes `padding = 0` (:41, :47,
+:185, :204, :212) though DocumentView now passes `FIT_MARGIN_PX`; the test still passes (it isolates
+the gap transform) but no longer mirrors the app's real fit. Recorded, not filed.
+
+## ADV-216: Phase 107 chunk B repoints DocumentView's fit call to FIT_MARGIN_PX but leaves the DEF-338 source oracle asserting the retired CONTENT_PADDING_PX call, so that test now fails
+
+- Session: diff-pass
+- Suggested severity: MEDIUM
+
+What I did: diffed the Phase 107 chunk B change set and grepped the whole `test/` tree for the old
+fit-call contract. `src/renderer/components/DocumentView.tsx:2094` now reads
+`return computeEffectiveScale(viewportBox, fitAnchor, zoom, FIT_MARGIN_PX);` (was
+`CONTENT_PADDING_PX`). `test/unit/renderer/def338_paneFirstFit.test.ts:115` still asserts
+`expect(source).toMatch(/computeEffectiveScale\(viewportBox, fitAnchor, zoom, CONTENT_PADDING_PX\)/)`
+against the DocumentView source (`source = readFileSync(.../DocumentView.tsx)`, :91-94). The
+sibling oracle in the named set WAS updated (`test/unit/renderer/phase40_pageLayoutControl.test.tsx:156`
+now matches `FIT_MARGIN_PX`), so this is a single missed update.
+
+Expected: every source-contract oracle that pins DocumentView's fit call is updated in the same
+chunk, so `npm.cmd run verify:full` / the phase-close unit suite stays green.
+
+Actual: the regex can never match the new source line, so `toMatch` fails. The Phase 107 diff
+introduced the failure; it is not pre-existing work (the only tracked edit in that file, per
+`git diff`, is a Phase 109 footer-hold assertion, and the fit-oracle line is unchanged).
+
+Reproduction (confirmed live):
+- `npx.cmd vitest run test/unit/renderer/def338_paneFirstFit.test.ts` -> `1 failed | 27 passed (28)`;
+  the failure is "computes the fit through the pure helper".
+- Or: `Select-String -Path src/renderer/components/DocumentView.tsx -Pattern 'computeEffectiveScale\(viewportBox'`
+  -> `... FIT_MARGIN_PX)`; `Select-String -Path test/unit/renderer/def338_paneFirstFit.test.ts -Pattern 'CONTENT_PADDING_PX\)'`
+  -> the stale oracle at :115.
+
+Evidence: src/renderer/components/DocumentView.tsx:2094; test/unit/renderer/def338_paneFirstFit.test.ts:91-94,115.
+
+Suggested fix (for the developer, not applied by me): update the def338 oracle to
+`computeEffectiveScale\(viewportBox, fitAnchor, zoom, FIT_MARGIN_PX\)`, matching the change already
+made in `phase40_pageLayoutControl.test.tsx:156`.
+
+Disposition: ACCEPTED -> DEF-581
+
+## ADV-217: The `--shadow-page` repoint leaks the Paper Stage page frame into `.print-preview-sheet`, a Print-and-Output surface outside Canvas scope
+
+- Session: diff-pass
+- Suggested severity: LOW
+
+What I did: enumerated every consumer of the repointed `--shadow-page` token in `src/`. Besides
+`.pdf-page` (styles.css:5486) and its dark override (:5555), `.print-preview-sheet` consumes it
+too: `box-shadow: var(--shadow-page);` (styles.css:11759). That rule is unchanged by the Phase 107
+diff (the token value moved underneath it; `git diff -U0 -- styles.css` has no hunk for it).
+
+Expected: Canvas scope is "the document stage only" and "MUST NOT restyle ... the Print and Output
+overhaul" (phase-107.md:15-20, ruling 2). The print-preview sheet should keep its own frame - it
+already declares `border: 1px solid var(--border)` (:11757) and `border-radius: var(--radius-1)`
+(:11758).
+
+Actual: the sheet now also gets the new `--shadow-page-canvas` value - a `0 0 0 1px` neutral ring
+plus the two-layer contact+diffuse shadow - stacked on top of its existing 1px border (a double
+1px edge) and a much heavier drop shadow than its pre-Phase-107 `var(--elevation-1)`. No data
+impact (ring/shadow are chrome and never reach the composed print HTML), so this is a cosmetic
+cross-surface scope leak.
+
+Reproduction (static): open Print preview and inspect
+`getComputedStyle(document.querySelector('.print-preview-sheet')).boxShadow` -> the canvas ring
+value in every theme, versus `var(--elevation-1)` before the repoint.
+
+Evidence: src/renderer/styles.css:672-673, :880-881, :1154-1155 (token); :11757-11759 (consumer).
+
+Suggested fix (for the developer, not applied by me): give `.print-preview-sheet` its own shadow
+token (its pre-Phase-107 `var(--elevation-1)`) instead of `var(--shadow-page)`, so the Canvas
+token repoint cannot reach the Print-and-Output surface.
+
+Disposition: ACCEPTED -> DEF-582
+
+### Phase 107 Canvas Paper Stage diff-pass - design critique of the changed surface (skill: design-critique)
+
+User: someone reading or editing a PDF in the editor viewport. Job on this surface: read the page
+content while the app chrome and the stage stay out of the way. Success: the page is unmistakably
+the focus, its edges are crisp against the stage in every theme, and navigation/zoom never makes
+the view jump.
+
+- Must-fix - none. The change is a visual/geometry treatment with no new control; the only controls
+  it touches (fit/zoom, layout, Multi Mode) keep their promised actions (verified by the phase107
+  e2e and the named unit set).
+- Should-fix - **States (truthfulness of the "physical sheet"):** in light mode the 1px ring
+  `#DCE0E7` sits on a `#ECEFF4` stage (~1.03:1 contrast), so the page edge nearly disappears and the
+  sheet reads flat at fit; in dark mode the same role is clearly visible. If the intent is a crisp
+  sheet edge in both themes, lift the light ring toward the shadow's own tone. (Operator-chosen
+  token values; flagged as a critique, not a defect.)
+- Should-fix - **Affordance / density:** the light two-layer shadow is very subtle at fit, so the
+  page and the stage can merge; the dark theme carries the separation. Consider a slightly stronger
+  contact layer in light so the sheet reads as lifted, matching dark's clarity.
+- Nice-to-fix - **Consistency (cross-surface):** the page-frame token also drives
+  `.print-preview-sheet` (ADV-217), so the print preview now shows a heavier frame than before; give
+  that surface its own shadow so the Canvas role stays Canvas-only.
+- Strengths to keep: the page stays paper-white in both themes (PDF fidelity untouched); square
+  corners match the real PDF bounds; the frame is box-shadow chrome only (border/margin 0, bitmap
+  box unchanged); the fit margin (28px) and gap (24px) are consistent and the scroll/zoom anchor is
+  stable (probes C/D); both Multi Mode panes carry the same stage with independent scroll.
+## Phase 108 Workspace Rail diff-pass (TFL-910 / TFL-862 chunk D) - active-fill hover override, forced-colors selection cue, stale dock-clearance oracle
+
+Session label: `diff-pass`. Scope: the Phase 108 Workspace Rail change set -
+`src/renderer/components/StageRail.tsx` (comment rewrite + gear glyph `xl` -> `md`),
+the Stage-Rail sections/tokens of `src/renderer/styles.css` (72px track and both
+fallbacks, 12px/8px inset, 8px gap, 56x60 items on the rail radius, the inset
+3x20px marker, visible labels, the scrollable workspace list, six rail-scoped
+`--tf-siderail-*` tokens in all three themes), and the focused unit spec. Product
+code, tests, REQUIREMENTS.md and AGENTS.md were read but NOT modified; the app was
+launched ONLY through `e2e/lib/launch.cjs`.
+
+Exact commands:
+
+- Focused unit run (already green): `npm.cmd run test:unit --
+  test/unit/renderer/phase108_siderail.test.ts
+  test/unit/renderer/def320_stageRailTrack.test.ts
+  test/unit/renderer/stageRail.test.tsx test/unit/renderer/phase36StageTokens.test.ts
+  test/unit/renderer/phase37Chunk5.test.tsx
+  test/unit/renderer/def315_dockPillClearance.test.tsx` -> 6 files, 108 tests
+  passed.
+- Live probe (canonical launcher, dev bundle built from current source -
+  `dist/renderer/assets/index-BFTZFZpO.css` contains `--tf-siderail-surface` and
+  `--tf-stage-rail-w:72px`): `npx.cmd playwright test -c
+  test-fixtures/phase108-adversary/playwright.config.cjs --reporter=line` ->
+  8 passed (ADV-A..H); `-g "ADV-108-I"` -> 1 failed (ADV-218 repro).
+
+Verified clean (no finding): the 72px track flows through `.app-main` and the rail
+box is flush with the stage column at 1440/1100/1000/900/760/640 (rail.right ==
+stage.x == panel.x, grid column 72px); no sibling surface (stage, ContextPanel,
+dock, document scroller) intersects the rail at any width; all four stage buttons
+and the gear are fully inside 640x480 and are the top element at their centres;
+labels stay visible and inside the rail at every width including 640px; reduced
+motion collapses the marker animation (0.2s -> 1e-05s); Ctrl+1..4 switches stage
+and is correctly suppressed while a text input is focused; the resting active fill
+resolves to `#F0EBFC`. No sibling region was edited; the frozen shared tokens
+(`--accent`, `--accent-text`, `--accent-soft`, `--tf-icon-rest`,
+`--tf-icon-active`, `--bg-rail`, `--border-subtle`, `--divider`) are byte-identical
+to HEAD.
+
 ## ADV-218: The active rail item loses its selected violet fill on hover - the generic `.btn-toggle:hover` rule out-specifies the DEF-578 active-fill selector
 
 - Session: diff-pass
@@ -10367,3 +10571,153 @@ reaches the footer's `<=419px` overflow tier (at 640x480/100% the single-mode fo
 measures 476px, compact not overflow) and never exercises the frosted theme, which is
 why the two findings below survived it.
 
+## ADV-221: In the frosted theme the full-bleed document scroller covers the View Strip footer - 11 of its 12 controls are not hit-testable
+
+- Session: diff-pass
+- Suggested severity: HIGH
+
+What I did: launched the real app through `e2e/lib/launch.cjs` `launchApp`, opened
+`report.pdf`, set 1440x900, cycled the app-menu "Toggle Theme" row to each shipped
+theme, and hit-tested every control inside `[data-view-strip]` at its own centre with
+`document.elementFromPoint`, then measured `.document-scroller` against `.view-strip`
+(`test-fixtures/phase109-adversary/probe6.cjs`, `probe5.cjs`).
+
+Expected: the footer is grid row 6 of `.workspace-main` and `.document-scroller`
+occupies row 5, so in every theme the scroller stops at the footer's top edge
+(scroller bottom == footer top == 852px at 1440x900) and the footer paints above it
+and is clickable - exactly as it is in the light and dark themes.
+
+Actual: in the FROSTED theme `.document-scroller` is `position: absolute; inset: 0;
+height: auto; z-index: 0` (`src/renderer/styles.css:13914-13933`), so it spans the
+WHOLE `.workspace-main` box including the new row 6. Measured at 1440x900 frosted:
+scroller `[256,88,920,812]` (bottom 900) vs footer `[256,852,920,48]` (top 852) - a
+48px overlap, i.e. the entire footer band. The scroller is a positioned `z-index: 0`
+box painted above the static grid-item footer, so the PDF page and its `.textLayer`
+cover the View Strip. Per-control hit-test at 1440x900: light theme 12/12 controls
+hit-true; frosted theme **11/12 return `div.textLayer` or `div.document-content` as
+the top element** (`hit:false`) - only the leftmost "Previous page" still hits. The
+overlap is reversible by toggling back to light/dark (scroller bottom returns to
+852) and reappears on every switch to frosted, so it is a static frosted-layout
+omission, not a transition frame. (Playwright's own `.click()` on "Fit width" still
+eventually applied because it re-scrolls/retries the element into an actionable
+position; a raw pointer click at the control's real coordinates lands on the page.)
+
+Reproduction:
+1. `node test-fixtures/phase109-adversary/probe6.cjs`.
+2. Open `report.pdf`, 1440x900, use the app menu -> "Toggle Theme" until
+   `document.documentElement.dataset.theme === "frosted"`.
+3. In devtools: `document.querySelector('.document-scroller').getBoundingClientRect()`
+   -> bottom 900; `document.querySelector('.view-strip').getBoundingClientRect()` ->
+   top 852; `elementFromPoint` at any footer button centre -> `.textLayer`.
+
+Evidence: `screenshots/phase109-adv-frosted-footer-covered.png`;
+`test-fixtures/phase109-adversary/probe6.log` (full hit table), `probe5.log`
+(theme-toggle matrix light/frosted/dark).
+
+Suggested fix (for the developer, not applied by me): make the frosted
+full-bleed scroller stop at the footer top the way `.canvas-overlay` already
+does - replace `bottom: 0` with `bottom: var(--view-strip-h, 48px)` in the
+`:root[data-theme="frosted"] .document-scroller` rule (and keep `top: 0`), so
+the reserved footer row is never under the page content.
+
+Disposition: ACCEPTED -> DEF-587 (CTO, TFL-863, 2026-10-06): confirmed on the rendered frosted theme - the full-bleed .document-scroller spans .workspace-main row 6 (scroller bottom 900 vs footer top 852 = 48px overlap) and 11/12 footer controls are not the top element, while light/dark are 12/12. Fix: stop the frosted scroller at the footer top with bottom: var(--view-strip-h, 48px). Assigned to frontend-dev (TFL-921). Blocks the Phase 109 commit.
+
+## ADV-222: The `.view-strip-more` overflow host can never display, so at the `<=419px` overflow tier the page-layout and Book View controls are unreachable
+
+- Session: diff-pass
+- Suggested severity: HIGH
+
+What I did: launched the real app, opened `report.pdf`, set the physical window to
+the 640x480 floor, applied Windows text/DPI scaling 150% via
+`BrowserWindow.getAllWindows()[0].webContents.setZoomFactor(1.5)`, and audited the
+single-mode footer's tier and the visibility/hit-test of every named viewing control
+(`test-fixtures/phase109-adversary/probe4.cjs`, `probe-reach.cjs`).
+
+Expected: success criteria 2 and 7 - at the `<=419px` overflow rung the container
+query hides `.view-strip-layout` and `.view-strip-book` AND reveals `.view-strip-more`
+(`display: inline-flex`), whose menu re-homes the one/two/four layout and the Book
+View entry, so every control stays reachable at 640x480 and under Windows text
+scaling.
+
+Actual: at 640x480 + 150% scaling the footer's inline-size container is 263px
+(`window.innerWidth` 427), which matches `@container single-view-strip
+(max-width: 419px)`: `.view-strip-layout` and `.view-strip-book` compute
+`display: none` (visible layout options 0, visible Book View entries 0) - but
+`.view-strip-more` ALSO computes `display: none` (visible More toggles 0). The
+overflow host never appears, so "One page", "Two pages side by side", "Four pages in
+two rows" and "Book View" are present in the DOM but have zero box and are
+unreachable by pointer and by keyboard. Root cause: the reveal rule
+`@container single-view-strip (max-width: 419px) { .view-strip-more { display:
+inline-flex; } }` (`src/renderer/styles.css:5440-5442`) and the base rule
+`.view-strip-more { display: none; }` (`src/renderer/styles.css:5451-5455`) have the
+same specificity (0,1,0), but the base rule is declared LATER in source order, so
+`display: none` wins and the host is permanently hidden. The phase e2e missed it
+because at 640x480/100% the footer is 476px (compact rung, P109-12) - only `<=419px`
+at text scaling exposes it - and P109-12 asserts the More trigger is *present*, not
+that it is visible.
+
+Reproduction:
+1. `node test-fixtures/phase109-adversary/probe4.cjs`.
+2. Open `report.pdf`; set the window to 640x480; set
+   `webContents.setZoomFactor(1.5)` (`window.innerWidth` -> 427).
+3. In devtools: `.view-strip` width 263; `getComputedStyle(document.querySelector(
+   '.view-strip-more')).display === 'none'` while `.view-strip-layout` and
+   `.view-strip-book` are also `none`; every `[data-page-layout-option]` and
+   `[data-book-view-open]` has `getBoundingClientRect().width === 0`.
+
+Evidence: `screenshots/phase109-adv-overflow-config.png`;
+`test-fixtures/phase109-adversary/probe4.log`, `probe-reach.log` (full control table).
+
+Suggested fix (for the developer, not applied by me): declare the base
+`.view-strip-more { display: none; }` BEFORE the `@container` block, or raise the
+reveal's specificity (e.g. `.view-strip .view-strip-more`), so the `<=419px` reveal
+actually wins.
+
+Disposition: ACCEPTED -> DEF-588 (CTO, TFL-863, 2026-10-06): confirmed - the base .view-strip-more{display:none} is declared AFTER the <=419px reveal at equal specificity, so the overflow host never displays and the layout/Book View controls are unreachable at 640x480 + 150% scaling. Fix: order/specificity so the reveal wins. Assigned to frontend-dev (TFL-921). Blocks the Phase 109 commit.
+
+### Phase 109 View Strip footer diff-pass - design critique of the changed surface (skill: design-critique)
+
+User: someone reading or editing a PDF who wants page/zoom/layout/pan control without
+leaving the document. Job on this surface: move through the document and change how it
+is presented from one predictable band. Success: every viewing control is where the
+user last learned it, reachable at any supported width and theme, and the band never
+steals the page.
+
+- Must-fix - **States / platform (truthfulness):** in the frosted theme the footer is
+  entirely covered by the page (ADV-221) - the controls look present but are not the
+  top element under the cursor. **Try:** the `bottom: var(--view-strip-h, 48px)` fix.
+- Must-fix - **Accessibility / responsive (reachability):** at the `<=419px` overflow
+  tier the layout group and Book View are hidden with no replacement (ADV-222), so
+  both are keyboard-unreachable. **Try:** fix the `.view-strip-more` cascade.
+- Should-fix - **Consistency (theme parity):** the footer geometry is correct in
+  light/dark and wrong in one of the three shipped themes; the phase spec promises
+  "identical in light/dark/frosted". **Try:** add a frosted case to the phase e2e's
+  screenshot/geometry sweep.
+- Nice-to-fix - **Affordance (idle):** the open state of the More menu lives inside
+  `.view-strip-view`, which the dock idle dims to `opacity: 0.4` after 3s
+  (`styles.css:5311-5314`), so an open menu would render dimmed and, because opacity
+  makes a stacking context, its `z-index: 30` would be trapped under the later
+  `.canvas-overlay`. Not reachable as shipped (ADV-222 hides the host), so recorded
+  for the fix, not filed separately. **Try:** exempt the open menu from the idle dim.
+- Strengths to keep: the light/dark geometry is exact - a single 48px row, dock
+  clearance a measured 16px at both 1440x900 and 640x480, and one footer per pane in
+  Multi Mode; the accessible names and `data-*` hooks are preserved verbatim; the
+  page-input replace-on-type (DEF-351) and blur-commit work; reduced motion collapses
+  the footer/menu transitions; Book View correctly unmounts the footer (no ghost).
+
+### Areas probed with no finding (Phase 109 diff-pass)
+
+- Dock/footer clearance: 16px in single mode and 70px to the shared dock in Multi
+  Mode at 1440x900/640x480, both themes, panels open and collapsed (P109-6 plus my
+  probe). No overlap.
+- Pan mode + footer: with Pan armed the footer controls remain the top element and
+  hit-testable in light/dark (`probe-geom.log` section B).
+- Page-input stale state: type "5" at page 1, blur without Enter -> `currentPage`
+  becomes 5 and the input reads 5; the readout effect does not linger
+  (`probe-reach.log` section B). No stale value found.
+- Book View lifecycle: footer count 1 -> 0 (Book View) -> 1 (close); no ghost footer
+  (`probe-viewstrip.log` Part 8).
+- Sibling regions: the Phase 109 hunks do not restyle the dock, rail, tabs or panels;
+  the only sibling bleed found is the frosted scroller (ADV-221).
+- Known FOREIGN failures (`phase32_multi_mode` header relocation, `toolsRegistry`
+  dock-verb-set, maximized `setSize` oracle, 64px rail oracle): not re-reported.

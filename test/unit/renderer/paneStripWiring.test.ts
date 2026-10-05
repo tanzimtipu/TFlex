@@ -147,8 +147,8 @@ describe("Multi Mode's canvas is opaque in every theme (Phase 33 / DEF-281)", ()
       expect(value).not.toMatch(/transparent/i);
       expect(value).not.toMatch(/rgba?\(|hsla?\(/);
     }
-    expect(declarations).toContain("#f1f5f9");
-    expect(declarations).toContain("#0b0d0f");
+    expect(declarations).toContain("#ECEFF4");
+    expect(declarations).toContain("#151820");
     expect(declarations).toContain("var(--tf-bg)");
     // The frosted theme's --tf-bg is a solid hex, so the frosted canvas
     // resolves opaque too.

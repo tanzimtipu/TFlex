@@ -2,6 +2,7 @@
 import { describe, expect, it } from "vitest";
 import {
   CONTENT_PADDING_PX,
+  FIT_MARGIN_PX,
   PAGE_GAP_PX,
   documentScrollHeight,
   mixedPageAtScrollTop,
@@ -17,6 +18,11 @@ import {
 } from "../../../src/renderer/components/pageGeometry";
 
 describe("page geometry", () => {
+  it("Phase 107 — PAGE_GAP_PX is 24 and FIT_MARGIN_PX is 28", () => {
+    expect(PAGE_GAP_PX).toBe(24);
+    expect(FIT_MARGIN_PX).toBe(28);
+  });
+
   it("pageSlotHeight adds the inter-slot gap to the CSS-scaled page height", () => {
     const h = pageSlotHeight(792, 1);
     expect(h).toBe(792 + PAGE_GAP_PX);
@@ -196,14 +202,14 @@ describe("mixed scroller geometry — DEF-141 + content top-pad parameter", () =
   // value to prove the per-slot deltas stay flat under any top pad.
   const chromeY = 96;
   const shiftedTopPad = CONTENT_PADDING_PX + chromeY;
-  // Three 792px-tall pages (post-rotation CSS height), 18px gap.
+  // Three 792px-tall pages (post-rotation CSS height), 24px gap.
   const geom: MixedPageGeom[] = [
     { widthCss: 612, heightCss: 792 },
     { widthCss: 612, heightCss: 792 },
     { widthCss: 612, heightCss: 792 },
   ];
-  const acc1 = 792 + PAGE_GAP_PX; // 810 — page-2 slot top minus padding
-  const acc2 = acc1 + 792 + PAGE_GAP_PX; // 1620 — page-3 slot top minus padding
+  const acc1 = 792 + PAGE_GAP_PX; // 816 — page-2 slot top minus padding
+  const acc2 = acc1 + 792 + PAGE_GAP_PX; // 1632 — page-3 slot top minus padding
 
   it("mixedSlotOffsetTop defaults to the in-flow content padding and advances by slot heights + gap", () => {
     expect(mixedSlotOffsetTop(1, geom)).toBe(CONTENT_PADDING_PX);
@@ -240,25 +246,25 @@ describe("mixed scroller geometry — DEF-141 + content top-pad parameter", () =
   it("mixedVisiblePageRange (shifted topPad) keeps a page mounted while its tail is still on screen", () => {
     // Page 1's slot spans [shiftedTopPad, shiftedTopPad + 792] =
     // [96, 888] in content coordinates; its gap-inclusive block ends
-    // at shiftedTopPad + acc1 = 906 (acc1 = 810). At scrollTop 838
+    // at shiftedTopPad + acc1 = 912 (acc1 = 816). At scrollTop 838
     // page 1's bottom is still 888-838 = 50px inside the viewport, so
     // the range must still START at page 1.
     const rangeStillMounted = mixedVisiblePageRange(838, 900, geom, 3, 0, shiftedTopPad);
     expect(rangeStillMounted.start, "page 1 must stay mounted while its tail is visible").toBe(1);
     // Only once the viewport top passes the slot's gap-inclusive REAL
-    // bottom (topPad + acc1 = 906) may page 1 leave the mounted set.
-    const rangeAfterClear = mixedVisiblePageRange(907, 900, geom, 3, 0, shiftedTopPad);
+    // bottom (topPad + acc1 = 912) may page 1 leave the mounted set.
+    const rangeAfterClear = mixedVisiblePageRange(913, 900, geom, 3, 0, shiftedTopPad);
     expect(rangeAfterClear.start, "page 1 unmounts only after its block clears the viewport").toBe(2);
   });
 
   it("mixedVisiblePageRange with the default (flush) padding unmounts a page once its block clears the viewport top", () => {
     // Phase 29 flush: page 1's slot spans [0, 792]; its gap-inclusive
-    // block ends at acc1 = 810. While the viewport top is still inside
+    // block ends at acc1 = 816. While the viewport top is still inside
     // that block page 1 stays mounted.
     expect(mixedVisiblePageRange(809, 900, geom, 3, 0).start).toBe(1);
-    // At scrollTop 810 the viewport top sits exactly on page 2's slot
+    // At scrollTop 816 the viewport top sits exactly on page 2's slot
     // top, so page 1 leaves the mounted set.
-    expect(mixedVisiblePageRange(810, 900, geom, 3, 0).start).toBe(2);
+    expect(mixedVisiblePageRange(816, 900, geom, 3, 0).start).toBe(2);
   });
 });
 

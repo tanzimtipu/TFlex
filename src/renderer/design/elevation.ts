@@ -16,7 +16,7 @@ export const ELEVATION = {
 /** Named-surface roles -> ladder token.
  *  Mirrors --shadow-page/menu/dialog/popover/toast. */
 export const SHADOW_ROLE = {
-  page: "var(--elevation-1)",
+  page: "var(--shadow-page-canvas)",
   menu: "var(--elevation-2)",
   dialog: "var(--elevation-3)",
   popover: "var(--elevation-2)",

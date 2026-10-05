@@ -53,7 +53,7 @@ describe("Phase 29 — flush canvas geometry", () => {
     expect(body).not.toMatch(/padding:\s*28px/);
     // The gap between consecutive sheets is NOT "space around the
     // canvas" — it stays so pages read as separate sheets.
-    expect(body).toMatch(/gap:\s*18px/);
+    expect(body).toMatch(/gap:\s*24px/);
   });
 
   it("base .document-scroller has no right padding", () => {

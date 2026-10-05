@@ -30,7 +30,7 @@ caught at the source instead of in a retest pass.
 
 | Control | Selector | Promised action | Unit test | E2e |
 |---|---|---|---|---|
-| `.app` grid template | `.app` (grid container) | Two rows: TitleBar (auto) + app-main (1fr). The previous three-row layout (`auto auto 1fr`) left the third row empty because the AppHeader moved inside the TitleBar, collapsing `app-main` to 0px. | `test/unit/renderer/designTokensContract.test.ts` (grid contract pinned through manual CSS inspection) + new assertion in same file covering the 2-row grid | `e2e/phase13_gate_final.spec.cjs` SC1/SC5 (welcomescreen + workspace visible after gate) |
+| `.app` grid template | `.app` (grid container) | Three rows (Phase 105 chunk C): the 48px title row (auto), the 40px document rail (auto) and app-main (1fr). The pre-Phase-105 two-row template (`.titlebar` + app-main) collapsed to two because the AppHeader sat inside the TitleBar; the rail is a real third grid item now. DEF-579: the single column is pinned to `minmax(0, 1fr)`, so no grid item (the document rail included) can size the track to its content and push the shell past the viewport. | `test/unit/renderer/designTokensContract.test.ts` (grid contract pins `auto auto 1fr`) + `test/unit/renderer/phase105_titleRow.test.tsx` | `e2e/phase13_gate_final.spec.cjs` SC1/SC5 (welcomescreen + workspace visible after gate) |
 | `.app-main` fills viewport | `.app-main` | Has non-zero height and contains the Welcome screen or Workspace after boot. Playwright's `toBeVisible()` on `.welcome` / `.workspace` proves the workspace is rendered, not hidden. | (CSS-level; new designTokensContract test pins the grid template) | `e2e/phase13_gate_final.spec.cjs` SC1 (`.titlebar` and `.welcome` both visible after launch) |
 
 ## Menu popover
@@ -46,7 +46,7 @@ caught at the source instead of in a retest pass.
 | Control | Selector | Promised action | Unit test | E2e |
 |---|---|---|---|---|
 | Theme toggle | `.theme-toggle` | Flips `data-theme` between `light` / `dark` on `<html>`; persists via `trackAndSave` | `test/unit/renderer/theme.test.ts` + `test/unit/renderer/settingsPersistImmediate.test.ts` | `e2e/phase13_gate_final.spec.cjs` SC5 |
-| Light theme tokens | `:root` (no attribute) / `:root[data-theme="light"]` | `--bg-base: #ffffff` (white), `--bg-toolbar: #fafafa`, `--bg-rail: #f4f4f5`, `--bg-canvas: #f1f5f9`, `--fg-strong: #0f172a` | `test/unit/renderer/designTokensContract.test.ts` | `e2e/phase13_gate_final.spec.cjs` SC5 (asserts computed body bg is white in light) |
+| Light theme tokens | `:root` (no attribute) / `:root[data-theme="light"]` | `--bg-base: #ffffff` (white), `--bg-toolbar: #fafafa`, `--bg-rail: #f4f4f5`, `--bg-canvas: #ECEFF4`, `--fg-strong: #0f172a` | `test/unit/renderer/designTokensContract.test.ts` | `e2e/phase13_gate_final.spec.cjs` SC5 (asserts computed body bg is white in light) |
 
 ### DEF-083 — light theme must read light
 
@@ -82,10 +82,10 @@ collapsed `app-main` reveals the same native background.
 
 | Control | Selector | Promised action | Unit test | E2e |
 |---|---|---|---|---|
-| Brand mark | `.brand .brand-mark` | Non-interactive logotype ("TF" in a 4x4 rounded square). | (CSS contract test) | (visible at launch) |
-| Tab strip | `.tab-list` | Renders every open tab; click activates the clicked tab; close button removes the tab. | `test/unit/renderer/appHeader.test.tsx` + `test/unit/renderer/tabMouseDown.test.ts` | (covered by every workspace e2e) |
-| '+ new tab' button | `[data-new-tab]` | Appends an empty placeholder tab; hidden when `tabs.length === 0`. | `test/unit/renderer/appHeader.test.tsx` | (e2e in phase7 spec) |
-| Theme toggle slot | `.theme-toggle` | See "Theme toggle" row above. | (same) | (same) |
+| Brand mark | `.brand .brand-mark` | Non-interactive logotype ("Jovrel" wordmark beside the halo mark). Phase 105 (chunk C): the brand leads the 48px title row inside TitleBar. | (CSS contract test) | (visible at launch) |
+| Document rail | `.document-rail .tab-list` | The 40px rail below the title row: renders every open tab; click activates, close removes; reorder / tear-out gestures unchanged. | `test/unit/renderer/phase105_titleRow.test.tsx` + `test/unit/renderer/appHeader.test.tsx` | (covered by every workspace e2e) |
+| '+ new tab' button | `[data-new-tab]` | Appends an empty placeholder tab; hidden when `tabs.length === 0`; disabled with a reason in Multi Mode. | `test/unit/renderer/phase105_titleRow.test.tsx` + `test/unit/renderer/phase34_chunk2.test.tsx` | (e2e in phase7 spec) |
+| Application menu trigger | `.app-menu-trigger` (`data-app-menu`) | Opens the non-File menu groups (Edit / View / Tools / Help) plus the relocated Multi Mode / Find rows; Escape closes and refocuses. | `test/unit/renderer/phase105_titleRow.test.tsx` | (qa: menu opens) |
 | Update indicator slot | `.update-indicator` | See "Update indicator" rows above. | (same) | (same) |
 | Open button | `button.btn-primary` (AppHeader context) | Calls `onOpenClick` which opens the OS file dialog and routes the picked file through `openPdfFromPath`. | (covered by App integration tests) | (covered by every workspace e2e) |
 
@@ -122,7 +122,7 @@ title-bar affordances, and repoints the single accent to `#2563eb`.
 
 | Control | Selector | Promised action | Unit test | E2e |
 |---|---|---|---|---|
-| Settings gear | `.header-gear` (`data-open-preferences`) | Opens the Preferences sheet (same `prefsOpen` state the Edit-menu row and Ctrl+, use) | `test/unit/renderer/phase13Controls.test.tsx` (renders, a11y name, click fires `onOpenPreferences`) | (qa: click gear -> Preferences dialog visible) |
+| Settings (Preferences) | `.app-menu-trigger` -> Edit > Preferences (`data-menu-action="preferences"`) | Phase 105 (chunk C): the gear moved into the application menu; choosing Preferences opens the same `prefsOpen` sheet the Ctrl+, accelerator uses. | `test/unit/renderer/phase13Controls.test.tsx` (menu opens, row fires `menuContext.preferences`) | (qa: menu -> Preferences dialog visible) |
 | Caption glyphs (min/max/restore/close) | `[data-window-minimize]` / `[data-window-maximize]` | Standard Windows glyphs: Minus / Square / Copy(restore) / X — IPC actions unchanged from the rows above | `test/unit/renderer/titleBar.test.tsx` ("standard caption glyphs" test) | (qa: maximize/restore flips glyph) |
 | Toolbar icon-only conversion | `.toolbar .tool-btn` | Every action renders as a 28px icon-only button; `aria-label` + `title` carry the promise (Save a copy, Merge, Split, Sign, Flatten, Optimize, Audit, Edit, Delete) | `test/unit/renderer/phase13Controls.test.tsx` (no `.tool-btn-label` spans; every button named) + `test/unit/renderer/toolbarCssOverflow.test.ts` (label rules pruned) | (qa: no-op sweep by `data-*` attributes) |
 | Rotate counter-clockwise | `[data-toolbar-rotate-ccw]` | `engine.applyOp({kind:'rotate', page, dir:'ccw'})` on the toolbar's current page | `test/unit/renderer/phase13Controls.test.tsx` (fires callback) | (qa: page rotates counter-clockwise) |
@@ -163,7 +163,9 @@ hierarchy) in `src/renderer/styles.css`.
 | Zoom group | `.glass-control-group[aria-label='Zoom']` | `[-] [372% chip] [+]` + fit-width / fit-page | `test/unit/renderer/commandBar.test.tsx` | (qa: zoom in/out/fit) |
 | Tools group | `.glass-control-group[aria-label='Tools']` | Search / rotate ccw+cw / hand / edit / delete / optimize / audit / flatten in ONE capsule | `test/unit/renderer/commandBar.test.tsx` (a11y sweep) | (qa: no-op sweep by data-*) |
 | Actions group | `.glass-control-group[aria-label='Document actions']` | Merge / Split / Sign / More (ellipsis, `data-tools-toggle` kept), pinned to the trailing edge | `test/unit/renderer/commandBar.test.tsx` | (qa: capsule pinned right, palette opens) |
-| GlassChrome title bar | `.titlebar.glass-chrome-title` | Standardized 44px caption strip (drag region + no-drag children unchanged) | `test/unit/renderer/glassChrome.test.tsx` (variant class + height var + data passthrough), `test/unit/renderer/phase14Glass.test.ts` (44px token) | `e2e/phase13_gate_final.spec.cjs` SC1 (drag/controls unchanged) |
+| GlassChrome title bar | `.titlebar.glass-chrome-title` | Standardized 48px title row (Phase 105 chunk C; was 44px), drag region + no-drag children unchanged | `test/unit/renderer/glassChrome.test.tsx` (variant class + height var + data passthrough), `test/unit/renderer/phase14Glass.test.ts` (48px token) | `e2e/phase13_gate_final.spec.cjs` SC1 (drag/controls unchanged) |
+| Document rail | `.document-rail` | Standardized 40px rail below the title row holding the tab strip (Phase 105 chunk C); chunk D adds responsive capacity — the New-tab and All-tabs controls are reserved first, a tab is never narrower than 136px, overflowed sessions stay open and are hidden from the rail. The rail/tab-area/tab-list chain is viewport-constrained at FIRST layout (DEF-579), so the capacity planner measures the available width rather than the strip's own expanded content. | `test/unit/renderer/phase105_titleRow.test.tsx`, `test/unit/renderer/phase105_documentRail.test.tsx` (capacity planner + hidden-overflow DOM) | (qa: rail below the title row; narrow-window overflow) |
+| All-tabs switcher | `[data-all-tabs]` / `.all-tabs-popover` | Phase 105 (chunk D) disclosure control after `[data-new-tab]`; opens an anchored, opaque, collision-aware popover listing every session in canonical order with the full filename, the total count, a dirty dot + "Unsaved changes" description and duplicate-basename folder context; arrow roving, Enter/Space activate, Escape closes and refocuses the trigger. | `test/unit/renderer/phase105_documentRail.test.tsx` | (qa: overflowed session reachable + activated from the switcher) |
 | GlassSidebar header (Pages) | `.side-rail .glass-sidebar-header` | "Pages" title left + view tabs right in ONE 44px shared row | `test/unit/renderer/glassSidebar.test.tsx` | (qa: rail header) |
 | GlassSidebar header (Tools) | `.tools-palette .glass-sidebar-header` | "Tools" title + layout toggle + close; SAME header component as Pages (material parity) | `test/unit/renderer/glassSidebar.test.tsx` | (qa: palette header) |
 | Selected thumbnail | `.thumb-current` / `.thumb-selected` | Thin accent outline + `0 0 0 4px` accent halo (2px outline drawn via box-shadow so the rail's 1px-border slot math never shifts); canvas stays opaque | `test/unit/renderer/phase14Glass.test.ts` ("thin accent outline + halo") | (qa: thumbnails) |

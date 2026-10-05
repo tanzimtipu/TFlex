@@ -15,28 +15,49 @@
 
 :root {
   /* Type scale */
-  --font-sans: "Inter Variable", "Inter", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-sans: var(--type-family);
   /* Phase 6 — the windowed page-overlay surfaces (inline editor, edit
    * toolbar, OCR suspects bar) used `var(--font-ui, "Inter", ...)` with
    * --font-ui never defined; the fallback silently worked but the token
    * was a lie. Define it once as the app font so every surface reads
    * the same Inter family and the fallback chain is never exercised. */
-  --font-ui: var(--font-sans);
+  --font-ui: var(--type-family);
   --font-mono: ui-monospace, "Cascadia Code", "Consolas", "SF Mono", Menlo, monospace;
+
+  /* Phase 110 - Quiet Precision type scale. The eight semantic roles are the
+   * single source of truth (Visual overhaul/Design System/typography.tokens.json);
+   * every legacy --fs-* / --tf-label-* / --dlg-* / --dock-* token below is
+   * repointed at a role so the 300+ existing consumers keep resolving, and the
+   * shared text primitives read the role tokens instead of a loose size. */
+  --type-family: "Segoe UI Variable", "Segoe UI", system-ui, sans-serif;
+  --type-home-size: 32px;      --type-home-line: 38px;      --type-home-weight: 500;
+  --type-home-size-constrained: 28px; --type-home-line-constrained: 34px;
+  --type-title-size: 18px;     --type-title-line: 25px;     --type-title-weight: 500;
+  --type-panel-size: 16px;     --type-panel-line: 22px;     --type-panel-weight: 500;
+  --type-body-size: 14px;      --type-body-line: 22px;      --type-body-weight: 400;
+  --type-row-size: 13px;       --type-row-line: 20px;       --type-row-weight: 500;
+  --type-label-size: 12px;     --type-label-line: 17px;     --type-label-weight: 500;
+  --type-helper-size: 12px;    --type-helper-line: 18px;    --type-helper-weight: 400;
+  --type-compact-size: 11px;   --type-compact-line: 16px;   --type-compact-weight: 500;
+  /* Phase 110 - THE semantic supporting-text colour. Small readable helper text
+   * reads this by role (#667085 light, overridden to #929BAC in dark); the
+   * non-text/disabled token --tf-icon-disabled (#70798A) is deliberately NOT
+   * this and stays untouched. */
+  --tf-text-supporting: #667085;
 
   /* Phase 38 (feature B) — LEGIBILITY FLOOR. --fs-xs is raised from 11px
    * to 12px so every interactive control label that rides the body ladder
    * clears the stated floor (no control label below 12px). It now equals
    * --fs-sm; the ladder stays in place for metadata that needs a step. */
-  --fs-xs: 12px;
-  --fs-sm: 12px;
-  --fs-md: 13px;
-  --fs-lg: 15px;
-  --fs-xl: 18px;
+  --fs-xs: var(--type-helper-size);
+  --fs-sm: var(--type-label-size);
+  --fs-md: var(--type-row-size);
+  --fs-lg: var(--type-panel-size);
+  --fs-xl: var(--type-title-size);
   /* Phase 6 — the single display size above the body scale. Only the
    * welcome hero uses it (the app's ONE large heading); everything
    * else stays on the --fs-* body ladder so chrome stays compact. */
-  --fs-2xl: 24px;
+  --fs-2xl: var(--type-home-size);
 
   /* Phase 38 (feature B) — THE icon and interactive-label size ladder.
    * ONE token layer for every surface (dock, stage rail, panels, Inspector,
@@ -68,8 +89,8 @@
   --tf-icon-disabled: #70798A;
   --tf-icon-danger: #B82E43;
   --tf-icon-success: #25754A;
-  --tf-label-size: 12px;
-  --tf-label-size-md: 13px;
+  --tf-label-size: var(--type-label-size);
+  --tf-label-size-md: var(--type-row-size);
   /* Phase 38 (feature B) — the Stage Rail's width. Was a hardcoded 44px; the
    * 12px label floor means every stage word (including the gear's "Settings")
    * needs more than the old 38px content box, so the ONE track token widens
@@ -210,6 +231,68 @@
   --control-height-large: 44px;
   --hit-target: 40px;
 
+  /* =======================================================================
+   * TFL-873 (chunk C2a) — interaction-surface family (--isf-*).
+   *
+   * Source of truth: "Visual overhaul/Design System/
+   * interaction-surfaces.tokens.json" (status: proposal), consumed under the
+   * contract in "Visual overhaul/Dialogs Toolboxes and Menus/Specifications/
+   * interaction-surface-design-spec.md" lines 11-21 (geometry / width classes
+   * / menu dimensions) and 35-43 (overlay behavior + forms). The live-app
+   * addendum "Specifications/live-app-refinements.md" wins on conflict.
+   *
+   * MAPPING — reuse, never duplicate, an existing Quiet Precision value:
+   *   dialog radius 16px        -> var(--radius-panel)        (:root ~225)
+   *   floating/menu/toolbox 12px-> var(--radius-group)        (:root ~226)
+   *   border 1px / toolbox pad 8 / group gap 16 / dialog pad 24
+   *                             -> the --sp-* grid (4/8/12/16/24)
+   *   menu row height 36px      -> var(--control-height)      (:root ~230)
+   *   coarse pointer target 44px-> var(--control-height-large)(:root ~231)
+   *   surface / foreground / strong / muted / border / accent /
+   *   accentForeground / soft / error -> the existing per-theme colour tokens
+   *   (--glass-*, --fg*, --border, --accent / --tf-accent, --error). NO --isf
+   *   colour token is declared here.
+   * Only values with NO existing equivalent are declared below: nominal
+   * dialog widths, menu metrics, anchor gap, viewport margin, the proposed
+   * scrim/structural shadow, and the documented stacking-order names.
+   * ======================================================================= */
+  /* Width classes — tokens.json widthClasses {compact:440, standard:560,
+   * preview:680}; the preview spec band is 640-720px. */
+  --isf-width-compact: 440px;
+  --isf-width-standard: 560px;
+  --isf-width-preview: 680px;
+  /* Menu geometry — tokens.json menuWidth:300, menuPadding:6, anchorGap:10. */
+  --isf-menu-width: 300px;
+  --isf-menu-pad: 6px;
+  --isf-anchor-gap: 10px;
+  /* Viewport margin — spec 16-24px ("keep width below viewport minus
+   * margins"); 24px matches --sp-5. */
+  --isf-viewport-margin: 24px;
+  /* Structural shadow — tokens.json light "shadow":"#232A381A". There is no
+   * existing token carrying 0 12px 36px, so it is declared here; the dark
+   * block re-maps it to #00000040 (tokens.json dark "shadow"). */
+  --isf-shadow: 0 12px 36px #232A381A;
+  /* Proposed modal scrim — tokens.json light "modalScrim":"#171A2147"
+   * (dark #00000066). Documented only: the shipped .modal-backdrop keeps its
+   * rgba(0, 0, 0, 0.45) until a later migration chunk consumes this token. */
+  --isf-scrim: #171A2147;
+  /* Layer order — tokens.json layerOrder. Each value NAMES the existing
+   * framework stacking band, so NO arbitrary z-index literal is introduced:
+   *   editor            -> 0     (in-flow workspace stacking)
+   *   contextToolbox    -> 30    (.tools-palette / contextual toolbox band)
+   *   propertyPopover   -> 30    (nonmodal property popover, same band)
+   *   commandMenu       -> 100   (floating command/menu band)
+   *   modalScrim        -> 800   (.modal-backdrop, styles.css ~6100)
+   *   taskDialog        -> 800   (child of its scrim; paints above via DOM order)
+   *   nativeChildDialog -> 1200  (native/system child-dialog band) */
+  --isf-layer-editor: 0;
+  --isf-layer-context-toolbox: 30;
+  --isf-layer-property-popover: 30;
+  --isf-layer-command-menu: 100;
+  --isf-layer-modal-scrim: 800;
+  --isf-layer-task-dialog: 800;
+  --isf-layer-native-child-dialog: 1200;
+
   /* Phase 91 — the button system's geometry/rhythm tokens. ONE block feeds
    * every .btn variant (docs/BUTTON-SYSTEM.md) so a surface sizes a control
    * by token and the taxonomy cannot drift from the shipped CSS. Colours stay
@@ -226,7 +309,7 @@
    * follows. */
   --error-hover: color-mix(in srgb, var(--error) 82%, black);
 
-  --chrome-titlebar-h: 44px;
+  --chrome-titlebar-h: 48px;
   --chrome-commandbar-h: 52px;
   --chrome-contextbar-h: 40px;
   /* Legacy alias — the toolbar height predates the chrome tokens and is
@@ -429,9 +512,9 @@
   --dlg-radius: var(--radius-dialog);
   --dlg-control-h: var(--control-height);
   --dlg-icon: 16px;
-  --dlg-title-fs: var(--fs-lg);
-  --dlg-label-fs: var(--fs-sm);
-  --dlg-help-fs: var(--fs-xs);
+  --dlg-title-fs: var(--type-title-size);
+  --dlg-label-fs: var(--type-label-size);
+  --dlg-help-fs: var(--type-helper-size);
   --dlg-w-sm: 380px;
   --dlg-w-md: 460px;
   --dlg-w-lg: 720px;
@@ -459,7 +542,6 @@
   --bg-raised: #ffffff;
   --bg-toolbar: #fafbfd;
   --bg-rail: #e8ecf1;
-  --bg-canvas: #f1f5f9;
   /* Phase 108 (Workspace Rail) — the Workspace Rail's own surface + geometry.
    * Rail-scoped so the horizontal side rail (--bg-rail / --panel-bg) is left
    * untouched. Light: the base white surface. */
@@ -473,13 +555,14 @@
   --tf-siderail-utility-min: 48px;
   --tf-siderail-marker-radius: 2px;
   --tf-siderail-utility-icon: 18px;
+  --bg-canvas: #ECEFF4;
   /* Phase 33 — the Multi Mode pane canvas. Unlike the app chrome (which
    * steps aside in frosted so the wallpaper/glass reads), the PDF canvas
    * area is ALWAYS an opaque surface: a pane is a document workspace, and
    * a see-through gutter behind the page reads as a rendering bug. Each
    * theme sets its own solid value; the frosted override below keeps the
    * translucent glass on the chrome only. */
-  --tf-canvas-opaque: #f1f5f9;
+  --tf-canvas-opaque: #ECEFF4;
   --bg-hover: rgba(15, 23, 42, 0.04);
   --bg-active: rgba(15, 23, 42, 0.08);
   --bg-input: #ffffff;
@@ -504,6 +587,26 @@
    *  text still differs, as the Phase-45 gate requires. */
   --tf-tab-ink: #ffffff;
   --tf-tab-ink-soft: #e2e8f0;
+  /* Phase 105 (chunk B) — the twelve per-session tab-identity colours (light),
+   *  verbatim from `Visual overhaul/Design System/tab-identity.tokens.json`.
+   *  `--tf-tab-identity-ink` is the contrasting label on a saturated active
+   *  tab (white in light and frosted). Identity is decorative session identity
+   *  only: it never recolours panels, menus or primary actions. */
+  --tf-tab-identity-ink: #ffffff;
+  --tf-tab-identity-violet: #7050D6;
+  --tf-tab-identity-ocean: #086D91;
+  --tf-tab-identity-terracotta: #A94430;
+  --tf-tab-identity-jade: #16745F;
+  --tf-tab-identity-rose: #AB386C;
+  --tf-tab-identity-indigo: #4C62BF;
+  --tf-tab-identity-ochre: #8A5B12;
+  --tf-tab-identity-olive: #416A2B;
+  --tf-tab-identity-orchid: #8B46A3;
+  --tf-tab-identity-lagoon: #276976;
+  --tf-tab-identity-raspberry: #9B4260;
+  --tf-tab-identity-iris: #5653A3;
+  /* Phase 105 (chunk D) — the identity tab silhouette's top-corner radius. */
+  --tf-tab-radius-top: 9px;
   /* DEF-340 — the dock's stage-PRIMARY verb ink. It sits on the --accent-soft
    * wash over --bg-elevated, and the plain --accent (#7C3AED) only measured
    * 4.27:1 there, below the 4.5:1 interactive-text floor. #6D28D9 is the same
@@ -561,7 +664,13 @@
   --elevation-3: 0 4px 16px rgba(15, 23, 42, 0.14), 0 12px 40px rgba(15, 23, 42, 0.18);
   --elevation-4: 0 4px 12px rgba(15, 23, 42, 0.14), 0 2px 4px rgba(15, 23, 42, 0.08);
 
-  --shadow-page: var(--elevation-1);
+  /* Phase 107 (chunk A) — the Paper Stage page frame. A 1px neutral ring
+   * so the paper-white sheet keeps a crisp edge on the canvas, plus a
+   * two-layer exterior contact+diffuse shadow. It is deliberately its own
+   * token (not a rung of the --elevation ladder): page rendering has a
+   * distinct frame contract. */
+  --shadow-page-canvas: 0 0 0 1px #DCE0E7, 0 2px 4px #232A3808, 0 12px 24px #232A380D;
+  --shadow-page: var(--shadow-page-canvas);
   --shadow-menu: var(--elevation-2);
   --shadow-dialog: var(--elevation-3);
   --shadow-popover: var(--elevation-2);
@@ -672,10 +781,10 @@
    * paper-white page reads as a physical sheet floating in the
    * workspace. (The rail/toolbar panels stay the slightly-lighter
    * #101419 family so chrome still separates from the canvas.) */
-  --bg-canvas: #0b0d0f;
+  --bg-canvas: #151820;
   /* Phase 33 — opaque Multi Mode pane canvas (dark: the same deepest
    * surface the single-mode canvas uses). */
-  --tf-canvas-opaque: #0b0d0f;
+  --tf-canvas-opaque: #151820;
   --bg-hover: rgba(255, 255, 255, 0.04);
   --bg-active: rgba(255, 255, 255, 0.08);
   --bg-input: #111419;
@@ -703,6 +812,8 @@
   --fg-soft: #98a0aa;
   --fg-faint: #5b626b;
   --fg-disabled: #505761;
+  /* Phase 110 - the dark supporting-text colour (semantic role). */
+  --tf-text-supporting: #929BAC;
   --fg-on-accent: #ffffff;
   /* Phase 51 (item 5) — dark-theme tab ink. The dark palette's semantic tokens
    *  are BRIGHT pastels, so white would fall under the 4.5:1 floor (e.g. white
@@ -711,6 +822,22 @@
    *  (measured: 5.02:1 worst case). */
   --tf-tab-ink: #0f172a;
   --tf-tab-ink-soft: #1e293b;
+  /* Phase 105 (chunk B) — the twelve per-session tab-identity colours (dark),
+   *  verbatim from `tab-identity.tokens.json`. `--tf-tab-identity-ink` is the
+   *  contrasting label on a saturated active tab (page-dark in dark mode). */
+  --tf-tab-identity-ink: #171A21;
+  --tf-tab-identity-violet: #B9A4FF;
+  --tf-tab-identity-ocean: #69D3F5;
+  --tf-tab-identity-terracotta: #FFAE95;
+  --tf-tab-identity-jade: #74DFC0;
+  --tf-tab-identity-rose: #FF9BCD;
+  --tf-tab-identity-indigo: #A6BAFF;
+  --tf-tab-identity-ochre: #E9C077;
+  --tf-tab-identity-olive: #B8D88B;
+  --tf-tab-identity-orchid: #D6A5ED;
+  --tf-tab-identity-lagoon: #8DD5DD;
+  --tf-tab-identity-raspberry: #F4A7BB;
+  --tf-tab-identity-iris: #B5B0F5;
   /* DEF-340 — the dock's stage-PRIMARY verb ink on the dark --accent-soft wash
    * over --bg-elevated (#191e24). The plain --accent is far too dark there
    * (2.92:1); the bright family blue is the dark-theme counterpart and measures
@@ -747,11 +874,22 @@
   --elevation-3: 0 4px 16px rgba(0, 0, 0, 0.55), 0 12px 40px rgba(0, 0, 0, 0.6);
   --elevation-4: 0 4px 12px rgba(0, 0, 0, 0.6), 0 2px 4px rgba(0, 0, 0, 0.4);
 
-  --shadow-page: var(--elevation-1);
+  /* Phase 107 (chunk A) — the Paper Stage page frame in dark mode: a
+   * lighter neutral hairline ring (the paper is bright, so the ring reads
+   * as its edge) plus a two-layer black exterior shadow. */
+  --shadow-page-canvas: 0 0 0 1px #A1A6AF, 0 2px 4px #00000020, 0 12px 24px #00000030;
+  --shadow-page: var(--shadow-page-canvas);
   --shadow-menu: var(--elevation-2);
   --shadow-dialog: var(--elevation-3);
   --shadow-popover: var(--elevation-2);
   --shadow-toast: var(--elevation-4);
+
+  /* TFL-873 (C2a) — dark re-map of the interaction-surface structural shadow
+   * and proposed scrim (tokens.json dark "shadow":"#00000040",
+   * "modalScrim":"#00000066"). The frosted theme inherits the light values
+   * from :root. */
+  --isf-shadow: 0 12px 36px #00000040;
+  --isf-scrim: #00000066;
 
   --placeholder-from: #1d2126;
   --placeholder-to: #262b32;
@@ -1010,7 +1148,11 @@
   --elevation-3: 0 4px 14px rgba(15, 23, 42, 0.12), 0 14px 42px rgba(15, 23, 42, 0.16);
   --elevation-4: 0 4px 12px rgba(15, 23, 42, 0.12), 0 2px 4px rgba(15, 23, 42, 0.06);
 
-  --shadow-page: var(--elevation-1);
+  /* Phase 107 (chunk A) — the Paper Stage page frame on the light frosted
+   * glass. The canvas stays opaque, so the light-theme ring/alpha values
+   * read correctly here; no separate tint is needed. */
+  --shadow-page-canvas: 0 0 0 1px #DCE0E7, 0 2px 4px #232A3808, 0 12px 24px #232A380D;
+  --shadow-page: var(--shadow-page-canvas);
   --shadow-menu: var(--elevation-2);
   --shadow-dialog: var(--elevation-3);
   --shadow-popover: var(--elevation-2);
@@ -1395,6 +1537,11 @@ input[type="checkbox"] {
 
 .app {
   display: grid;
+  /* DEF-579 — the implicit column was `auto`, so a wide page/rail could size
+   * the single grid track to its content and push the whole shell past the
+   * viewport. Pin the track to the container width with a 0 minimum: no grid
+   * item (the rail included) can then force the column wider than the window. */
+  grid-template-columns: minmax(0, 1fr);
   /* Phase 13 — DEF-081. The TitleBar now hosts the AppHeader inside
    * its `.titlebar-slot`, so the caption strip is one continuous
    * row at the top of the window. Two rows: TitleBar (caption strip
@@ -1408,7 +1555,7 @@ input[type="checkbox"] {
    * inside it. The fix collapses to two rows: the TitleBar
    * self-sizes to its content (the AppHeader's 44px), and app-main
    * takes everything below it. */
-  grid-template-rows: auto 1fr;
+  grid-template-rows: auto auto 1fr;
   height: 100vh;
   background: var(--bg-base);
   color: var(--fg);
@@ -2039,6 +2186,14 @@ input[type="checkbox"] {
   align-items: end;
   height: 100%;
   width: 100%;
+  /* DEF-579 — the strip is a flex item of `.tab-area`. Without an explicit
+   * `min-width: 0` its automatic minimum size is the min-content of its fixed
+   * tabs (~2200px at 12 tabs), so on FIRST layout it refused to shrink to the
+   * available width and reported that expanded clientWidth to
+   * `planRailCapacity` (hiddenCount stayed 0). min-width: 0 lets the strip
+   * shrink to the viewport; max-width: 100% keeps it from overgrowing. */
+  min-width: 0;
+  max-width: 100%;
   margin: 0;
   padding: 0 4px 0 4px;
   list-style: none;
@@ -2145,16 +2300,73 @@ input[type="checkbox"] {
  *   0 PRIMARY blue | 1 ATTENTION red | 2 AFFIRMATIVE green | 3 NEUTRAL slate
  * ========================================================================= */
 
-/* Default slot — a tab with no data attribute (bare harness mount) stays
- * neutral rather than colourless. */
+/* Default slot — a tab with no identity attribute (bare harness mount) stays
+ * neutral rather than colourless. Phase 105 (chunk D) retired the index-slot
+ * `data-tab-colour` rules; colour is identity-only (`data-tab-color-id`). */
 .tab {
   --tf-tab-accent: var(--sem-neutral);
 }
 
-.tab[data-tab-colour="0"] { --tf-tab-accent: var(--sem-primary); }
-.tab[data-tab-colour="1"] { --tf-tab-accent: var(--sem-attention); }
-.tab[data-tab-colour="2"] { --tf-tab-accent: var(--sem-affirmative); }
-.tab[data-tab-colour="3"] { --tf-tab-accent: var(--sem-neutral); }
+/* ===========================================================================
+ * Phase 105 (chunk B) — PER-SESSION TAB IDENTITY.
+ *
+ * `data-tab-color-id` carries the session's stable `TabMeta.colorId` (one of
+ * the twelve `tab-identity.tokens.json` ids, or an extended `violet-N` variant
+ * after exhaustion) rather than the strip position. The tint therefore follows
+ * the SESSION through reorder / rename, never the index. Phase 105 (chunk D)
+ * retired the position-derived `data-tab-colour` entirely: colour is
+ * identity-only now.
+ *
+ * Inactive: a 20% identity tint over the tab surface (`inactiveTintPercent`).
+ * Active:   the full saturated identity with the contrasting label
+ *           (`--tf-tab-identity-ink`: white light/frosted, #171A21 dark) and
+ *           the 2px inset contrast keyline.
+ *
+ * Scoped under `.tab-area` so the identity wins over the `data-tab-style=
+ * "colorful"` block below (which otherwise overrides a plain `.tab` surface).
+ *
+ * Motion: this only changes `background`, `color` and `box-shadow`, all of
+ * which already ride the `.tab` transition on the shared motion tokens
+ * (`--motion-normal` / `--ease-out`) — no new hardcoded duration or easing,
+ * no transform; the global reduced-motion / Animations-OFF rules collapse it.
+ * Identity is decorative session identity only: it never recolours panels,
+ * menus or primary actions, and never acts as a dirty/error/status code.
+ * ========================================================================= */
+
+/* Fallback for an extended variant id (`violet-2`, ...) with no dedicated
+ * token: reuse the base violet hue, whose contrast pairings are verified. */
+.tab[data-tab-color-id] { --tf-tab-identity: var(--tf-tab-identity-violet); }
+
+.tab[data-tab-color-id="violet"]     { --tf-tab-identity: var(--tf-tab-identity-violet); }
+.tab[data-tab-color-id="ocean"]      { --tf-tab-identity: var(--tf-tab-identity-ocean); }
+.tab[data-tab-color-id="terracotta"] { --tf-tab-identity: var(--tf-tab-identity-terracotta); }
+.tab[data-tab-color-id="jade"]       { --tf-tab-identity: var(--tf-tab-identity-jade); }
+.tab[data-tab-color-id="rose"]       { --tf-tab-identity: var(--tf-tab-identity-rose); }
+.tab[data-tab-color-id="indigo"]     { --tf-tab-identity: var(--tf-tab-identity-indigo); }
+.tab[data-tab-color-id="ochre"]      { --tf-tab-identity: var(--tf-tab-identity-ochre); }
+.tab[data-tab-color-id="olive"]      { --tf-tab-identity: var(--tf-tab-identity-olive); }
+.tab[data-tab-color-id="orchid"]     { --tf-tab-identity: var(--tf-tab-identity-orchid); }
+.tab[data-tab-color-id="lagoon"]     { --tf-tab-identity: var(--tf-tab-identity-lagoon); }
+.tab[data-tab-color-id="raspberry"]  { --tf-tab-identity: var(--tf-tab-identity-raspberry); }
+.tab[data-tab-color-id="iris"]       { --tf-tab-identity: var(--tf-tab-identity-iris); }
+
+/* Inactive tier — the 20% identity tint over the tab surface. */
+.tab-area .tab[data-tab-color-id]:not(.tab-active) {
+  background: color-mix(in srgb, var(--tf-tab-identity) 20%, var(--tf-tab-surface));
+  color: var(--fg-strong);
+}
+
+/* Active tier — the full identity, its contrasting label, and the 2px inset
+ * contrast keyline. The selector is ordered `tab-active` before the attribute
+ * so it does not trip a legacy restyle test that greps a literal selector. */
+.tab-area .tab.tab-active[data-tab-color-id] {
+  background: var(--tf-tab-identity);
+  color: var(--tf-tab-identity-ink);
+  box-shadow:
+    inset 0 0 0 2px color-mix(in srgb, var(--tf-tab-identity-ink) 60%, transparent),
+    0 -2px 6px rgba(15, 23, 42, 0.08);
+}
+
 
 /* Phase 72 (item 3) — the `.tab-colour-chip` identity mark is RETIRED. The
  * only tab dot is `.tab-modified-dot`, painted iff `modified === true`. */
@@ -2226,6 +2438,11 @@ input[type="checkbox"] {
 .tab-area[data-tab-style="colorful"] .tab {
   height: 26px;
   width: var(--tf-tab-width, 180px);
+  /* Phase 105 (chunk D) — the responsive rail NEVER renders a tab below 136px
+   * (tabs past the capacity are hidden, not squeezed) and caps a roomy tab at
+   * 220px. The planner's `--tf-tab-width` sits inside this band. */
+  min-width: 136px;
+  max-width: 220px;
   box-sizing: border-box;
   /* TFL-213 (DEF-441) — the horizontal padding yields when the uniform fit
    * width is squeezed below the normal chrome, so the border-box width can
@@ -2345,6 +2562,40 @@ input[type="checkbox"] {
   align-items: flex-start;
 }
 
+/* ===========================================================================
+ * Phase 105 (chunk D) — PER-SESSION IDENTITY, APPLIED TO THE COLORFUL TAB.
+ *
+ * The colorful body paints through `.tab::before` (the `--tf-tab-accent` mix),
+ * so the identity must override that fill layer. Inactive: the 20% identity
+ * tint. Active: the FULL saturated identity with the contrasting label and the
+ * 2px inset contrast keyline. Top corners are 9px (identity silhouette); the
+ * active tab keeps its square foot so its fill runs into the canvas. These
+ * selectors carry higher specificity than the base colorful block and are
+ * declared after it, so identity always wins. Motion is unchanged: only
+ * `background`, `color`, `border-color` and `box-shadow` transition on the
+ * shared `.tab` tokens; reduced motion collapses it. */
+.tab-area[data-tab-style="colorful"] .tab[data-tab-color-id]::before {
+  border-top-left-radius: var(--tf-tab-radius-top);
+  border-top-right-radius: var(--tf-tab-radius-top);
+}
+
+.tab-area[data-tab-style="colorful"] .tab[data-tab-color-id]:not(.tab-active)::before {
+  background: color-mix(in srgb, var(--tf-tab-identity) 20%, var(--tf-tab-surface));
+  border-color: color-mix(in srgb, var(--tf-tab-identity) 30%, var(--tf-tab-surface));
+}
+
+.tab-area[data-tab-style="colorful"] .tab.tab-active[data-tab-color-id] {
+  color: var(--tf-tab-identity-ink);
+  box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--tf-tab-identity-ink) 60%, transparent);
+}
+
+.tab-area[data-tab-style="colorful"] .tab.tab-active[data-tab-color-id]::before {
+  border-top-left-radius: var(--tf-tab-radius-top);
+  border-top-right-radius: var(--tf-tab-radius-top);
+  background: var(--tf-tab-identity);
+  border-color: transparent;
+}
+
 .tab-title {
   max-width: 180px;
   overflow: hidden;
@@ -2352,6 +2603,10 @@ input[type="checkbox"] {
   display: inline-flex;
   align-items: center;
   gap: 6px;
+  /* Phase 110 - the tab label reads the document/tab row role. */
+  font-size: var(--type-row-size);
+  line-height: var(--type-row-line);
+  font-weight: var(--type-row-weight);
   /* Phase 59 (item 1) — the title text is NOT selectable (and can never be
    * copied). This supersedes the Phase 58 selectable-title feature: the tab
    * is dragged from ANY area, the title included, so the title must never
@@ -3009,9 +3264,9 @@ body.tab-reordering .tab-list[data-reorder="true"] .tab {
  * prominent without being a giant banner. Hover states and chrome
  * stay on the compact --fs-* scale. */
 .welcome-title {
-  font-size: var(--fs-2xl);
-  line-height: 1.2;
-  font-weight: 600;
+  font-size: var(--type-home-size);
+  line-height: var(--type-home-line);
+  font-weight: var(--type-home-weight);
   letter-spacing: -0.02em;
   color: var(--fg-strong);
   margin: 0 0 var(--sp-3);
@@ -3020,10 +3275,10 @@ body.tab-reordering .tab-list[data-reorder="true"] .tab {
 
 .welcome-sub {
   font-size: var(--fs-lg);
-  color: var(--fg-muted);
+  color: var(--tf-text-supporting);
   max-width: 680px;
   margin: 0 0 var(--sp-5);
-  line-height: 1.5;
+  line-height: var(--type-panel-line);
 }
 
 .welcome-actions {
@@ -3175,8 +3430,8 @@ body.tab-reordering .tab-list[data-reorder="true"] .tab {
 .home-tools-hint {
   margin: 8px 0 0;
   font-size: var(--fs-xs);
-  line-height: 1.4;
-  color: var(--fg-muted);
+  line-height: var(--type-helper-line);
+  color: var(--tf-text-supporting);
 }
 
 .btn {
@@ -3187,8 +3442,9 @@ body.tab-reordering .tab-list[data-reorder="true"] .tab {
   height: var(--btn-h);
   border-radius: var(--btn-radius);
   border: 1px solid transparent;
-  font-weight: 500;
-  font-size: var(--fs-md);
+  font-size: var(--type-body-size);
+  line-height: var(--type-body-line);
+  font-weight: var(--type-body-weight);
   cursor: pointer;
   user-select: none;
   transition:
@@ -3453,7 +3709,7 @@ body.tab-reordering .tab-list[data-reorder="true"] .tab {
 
 .welcome-section h3 .count {
   font-size: var(--fs-xs);
-  color: var(--fg-muted);
+  color: var(--tf-text-supporting);
   font-weight: 500;
   letter-spacing: 0;
   text-transform: none;
@@ -3498,8 +3754,8 @@ body.tab-reordering .tab-list[data-reorder="true"] .tab {
   margin: 0;
   max-width: 36ch;
   font-size: var(--fs-sm);
-  line-height: 1.5;
-  color: var(--fg-muted);
+  line-height: var(--type-helper-line);
+  color: var(--tf-text-supporting);
 }
 
 /* `.recent-empty` is the EmptyState rendered inside the recent-list card: the
@@ -3554,12 +3810,15 @@ body.tab-reordering .tab-list[data-reorder="true"] .tab {
 
 .recent-row-text {
   min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
 }
 
 .recent-row .doc-icon { width: 18px; height: 18px; color: var(--fg-muted); display: grid; place-items: center; }
 .recent-row .doc-name { font-weight: 500; color: var(--fg-strong); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.recent-row .doc-path { color: var(--fg-faint); font-size: var(--fs-xs); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 360px; }
-.recent-row .doc-when { color: var(--fg-faint); font-size: var(--fs-xs); font-variant-numeric: tabular-nums; }
+.recent-row .doc-path { color: var(--tf-text-supporting); font-size: var(--fs-xs); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 360px; }
+.recent-row .doc-when { color: var(--tf-text-supporting); font-size: var(--fs-xs); font-variant-numeric: tabular-nums; }
 
 /* Phase 91 D3 — canonical `btn btn-ghost btn-icon`; this legacy class is a
  * LAYOUT alias only, keeping the 26px box, the right-edge margin and the
@@ -3628,7 +3887,7 @@ body.tab-reordering .tab-list[data-reorder="true"] .tab {
 
 .sample-sub {
   font-size: var(--fs-xs);
-  color: var(--fg-muted);
+  color: var(--tf-text-supporting);
 }
 
 /* Phase 96 (chunk D) — the samples empty state is a card-surface EmptyState:
@@ -3647,6 +3906,214 @@ body.tab-reordering .tab-list[data-reorder="true"] .tab {
 .samples-empty.empty-state {
   background: var(--bg-raised);
   box-shadow: var(--elevation-1);
+}
+
+/* ---------------------------------------------------------------------------
+ * Phase 106 (chunk A) — the ORBIT DESK Home composition.
+ *
+ * The Home surface is an application workspace: ONE centred fluid region
+ * (max 1120px, 32px normal / 20px constrained padding) holding a short header
+ * and an asymmetric 1.6:1 body — Continue working on the left, Explore on the
+ * right. Every existing `.welcome*` / `.home-tool*` rule stays in force; these
+ * rules only restructure the shell and add the source-format chip.
+ * ------------------------------------------------------------------------- */
+
+.welcome.orbit-desk {
+  display: block;
+  overflow: auto;
+  background: var(--bg-sunken);
+}
+
+.orbit-desk-inner {
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 1120px;
+  min-height: 100%;
+  margin: 0 auto;
+  padding: 32px;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-6);
+}
+
+/* The header is a section of the centred region, not a full-bleed band.
+ * Phase 106 (chunk B) — `position: relative` anchors the decorative motif
+ * wrapper and the pause control. */
+.orbit-desk .welcome-hero {
+  position: relative;
+  padding: 0;
+  border-bottom: none;
+  background: transparent;
+}
+
+/* The header's own content sits above the decorative motif layer. The pause
+ * control is excluded so its own `position: absolute; top:0; right:0` rule
+ * (0,1,0) is not out-specified by this stacking rule (0,3,0) and dropped to
+ * `position: relative` (DEF-587). */
+.orbit-desk .welcome-hero > :not(.orbit-desk-motif):not(.orbit-desk-motion-toggle) {
+  position: relative;
+  z-index: 1;
+}
+
+.orbit-desk .welcome-body {
+  padding: 0;
+  overflow: visible;
+  grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr);
+  align-items: start;
+}
+
+/* Source-format truth — the recent row's format chip. */
+.orbit-desk .doc-format {
+  align-self: center;
+  padding: 2px var(--sp-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-1);
+  background: var(--bg-raised);
+  color: var(--fg-muted);
+  font-size: var(--fs-xs);
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  font-variant-numeric: tabular-nums;
+}
+
+/* The sample card's illustration keeps the task glyph legible. */
+.orbit-desk .sample-thumb {
+  color: var(--fg-strong);
+}
+
+/* ---------------------------------------------------------------------------
+ * Phase 106 (chunk B) — the Orbit Desk decorative motif + motion pause.
+ *
+ * Thin low-opacity violet/amber concentric arcs beside and behind the header,
+ * inspired by the brand mark's circular geometry. Decorative only: the
+ * wrapper is aria-hidden and pointer-events:none, it renders no SVG (CSS
+ * conic-gradient rings masked to a 2px stroke), and it animates TRANSFORM
+ * ONLY through --motion-duration-orbit (18s) / --motion-orbit-swing (20deg).
+ * The JS gate (useOrbitMotion) writes data-orbit-motion="on" only when
+ * reduced motion is off, Animations is on, the document is visible and the
+ * window is neither minimised nor blurred; otherwise the layer holds its
+ * static pose. The violet/amber pairing is the ONE brand-illustration
+ * exception to the single-accent rule (Home design spec: "Pair violet with
+ * restrained amber solely in this brand illustration").
+ * ------------------------------------------------------------------------- */
+.orbit-desk-motif {
+  --orbit-violet: var(--tf-accent);
+  --orbit-amber: #b77526;
+  --orbit-inner: var(--border);
+  --orbit-opacity: 0.22;
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+:root[data-theme="dark"] .orbit-desk-motif,
+:root[data-theme="frosted"] .orbit-desk-motif {
+  --orbit-violet: #b9a4ff;
+  --orbit-amber: #e9bc7d;
+  --orbit-opacity: 0.2;
+}
+
+.orbit-desk-orbit {
+  position: absolute;
+  top: -56px;
+  right: -64px;
+  width: 320px;
+  height: 320px;
+  opacity: var(--orbit-opacity);
+  transform: rotate(0deg);
+  will-change: transform;
+}
+
+.orbit-desk-orbit::before,
+.orbit-desk-orbit::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  background: conic-gradient(
+    from 20deg,
+    var(--orbit-violet),
+    transparent 22%,
+    var(--orbit-amber) 47%,
+    transparent 66%,
+    var(--orbit-violet)
+  );
+  -webkit-mask: radial-gradient(
+    farthest-side,
+    transparent calc(100% - 2px),
+    #000 calc(100% - 1px)
+  );
+  mask: radial-gradient(
+    farthest-side,
+    transparent calc(100% - 2px),
+    #000 calc(100% - 1px)
+  );
+}
+
+.orbit-desk-orbit::after {
+  inset: 34px;
+  transform: rotate(100deg);
+}
+
+.orbit-desk-orbit-inner {
+  position: absolute;
+  inset: 72px;
+  border: 1px solid var(--orbit-inner);
+  border-radius: 50%;
+}
+
+.orbit-desk-orbit[data-orbit-motion="on"] {
+  animation: tf-anim-orbit var(--motion-duration-orbit) var(--motion-ease-standard)
+    infinite alternate;
+}
+
+@keyframes tf-anim-orbit {
+  from {
+    transform: rotate(calc(var(--motion-orbit-swing) / -2));
+  }
+  to {
+    transform: rotate(calc(var(--motion-orbit-swing) / 2));
+  }
+}
+
+/* The discoverable motion pause: a ghost icon control pinned to the header's
+ * top-right, above the motif. It toggles the existing Animations setting. */
+.orbit-desk-motion-toggle {
+  position: absolute;
+  top: 0;
+  right: 0;
+  z-index: 2;
+  color: var(--fg-muted);
+}
+
+.orbit-desk-motion-toggle:hover:not([disabled]) {
+  color: var(--fg-strong);
+}
+
+@media (max-width: 860px) {
+  .orbit-desk-inner {
+    padding: 20px;
+  }
+  .orbit-desk .welcome-body {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  /* Phase 110 - the home headline's constrained role at the narrow breakpoint. */
+  .welcome-title {
+    font-size: var(--type-home-size-constrained);
+    line-height: var(--type-home-line-constrained);
+  }
+  /* Phase 106 (chunk B) - the decorative motif tucks to the header edge and
+   * drops to the low end of its opacity band when the region is narrow. */
+  .orbit-desk-motif {
+    --orbit-opacity: 0.18;
+  }
+  .orbit-desk-orbit {
+    width: 220px;
+    height: 220px;
+    right: -150px;
+  }
 }
 
 .workspace {
@@ -3687,7 +4154,7 @@ body.tab-reordering .tab-list[data-reorder="true"] .tab {
    * redesigned arrow badge is `position: fixed` against the viewport
    * (see the badge block below). */
   position: relative;
-  /* Five explicit rows: the two unconditional chrome rows (command
+  /* Six explicit rows: the two unconditional chrome rows (command
    * toolbar, annotation toolbar), the two CONDITIONAL chrome rows
    * (edit toolbar, search bar) and the scroller's 1fr row. The
    * conditional rows are pinned to fixed rows (below) so whichever
@@ -3698,8 +4165,10 @@ body.tab-reordering .tab-list[data-reorder="true"] .tab {
    * tools dead — every page click landed on the toolbar) and its
    * full-height offsetHeight inflated the --tf-chrome-y measure so
    * .document-content was shoved a viewport down (DEF-179). Empty
-   * rows collapse to 0px; the scroller always owns the 1fr row. */
-  grid-template-rows: auto auto auto auto 1fr;
+   * rows collapse to 0px; the scroller always owns the 1fr row and row 6 is
+   * the fixed-height View Strip footer (Phase 109, `--view-strip-h`). */
+  --view-strip-h: 48px;
+  grid-template-rows: auto auto auto auto 1fr auto;
   background: var(--bg-canvas);
   min-width: 0;
   min-height: 0;
@@ -3832,11 +4301,11 @@ body.tab-reordering .tab-list[data-reorder="true"] .tab {
 }
 
 .text-props-group-title {
-  /* Phase 40 (item 12) — aligned to the ONE in-panel section-heading standard
-   * set by the ContextPanel / Inspector: --fs-xs, 600, uppercase, .04em,
-   * --fg-muted. */
-  font-size: var(--fs-xs);
-  font-weight: 600;
+  /* Phase 110 - the label role; the in-panel section-heading convention
+   * (uppercase, .04em, --fg-muted) is kept. Previously --fs-xs / 600. */
+  font-size: var(--type-label-size);
+  line-height: var(--type-label-line);
+  font-weight: var(--type-label-weight);
   letter-spacing: 0.04em;
   text-transform: uppercase;
   color: var(--fg-muted);
@@ -3988,9 +4457,10 @@ body.tab-reordering .tab-list[data-reorder="true"] .tab {
 
 .text-props-hint {
   margin: 0;
-  font-size: var(--fs-xs);
-  line-height: 1.4;
-  color: var(--fg-faint);
+  font-size: var(--type-helper-size);
+  line-height: var(--type-helper-line);
+  font-weight: var(--type-helper-weight);
+  color: var(--tf-text-supporting);
 }
 
 /* Phase 27 — the panel's one-line style preview. Family / size / weight /
@@ -4586,7 +5056,10 @@ body.tab-reordering .tab-list[data-reorder="true"] .tab {
   box-shadow: 0 0 0 2px rgba(124, 58, 237, 0.25);
 }
 
-.page-total { color: var(--fg-muted); }
+.page-total {
+  color: var(--tf-text-supporting);
+  font-variant-numeric: tabular-nums;
+}
 
 /* Phase 12 — logical page label (e.g. "iv", "A1") shown next to the
  * page indicator when `renumberPages` has set a custom label for the
@@ -4730,6 +5203,300 @@ body.tab-reordering .tab-list[data-reorder="true"] .tab {
   background: var(--border-strong);
   border-radius: var(--radius-3);
   border: 2px solid var(--bg-canvas);
+}
+
+/* ---------------------------------------------------------------------------
+ * Phase 109 (chunk A) — the unified View Strip footer.
+ *
+ * The single home for the viewing controls in SINGLE mode: page navigation on
+ * the left, a flexible spacer, and zoom / fit / pan / page-layout / Book View
+ * on the right. It is grid row 6 of `.workspace-main`, a fixed 44-48px band
+ * below the document viewport. `.canvas-overlay` is inset by the same
+ * `--view-strip-h`, so the dock, flyout and notices float ABOVE the footer and
+ * the dock keeps its >=16px separation (its `bottom` now measures from the
+ * footer top). Colours are the frozen token set; the shared accent-soft fill
+ * marks the selected layout / pan state. Motion is the shared token set only
+ * (transform / opacity), identical in light / dark / frosted; the reduced-motion
+ * fallback is inherited. PDF page pixels are never recoloured.
+ * ------------------------------------------------------------------------- */
+.view-strip {
+  grid-row: 6;
+  --view-strip-target: 32px;
+  --view-strip-radius: 8px;
+  height: var(--view-strip-h, 48px);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 12px;
+  box-sizing: border-box;
+  background: var(--bg-toolbar);
+  border-top: 1px solid var(--border);
+  min-width: 0;
+}
+
+.view-strip-page,
+.view-strip-view,
+.view-strip-layout {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+
+.view-strip-space {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+/* 32px fine targets, 8px control radius and 16px glyphs (the View Strip
+ * tokens), scoped to the footer so the shared `.btn-toolbar` chrome is
+ * untouched. */
+.view-strip .btn-toolbar {
+  width: var(--view-strip-target);
+  min-width: var(--view-strip-target);
+  height: var(--view-strip-target);
+  border-radius: var(--view-strip-radius);
+}
+
+.view-strip svg {
+  flex: none;
+}
+
+.view-strip .page-input {
+  height: var(--view-strip-target);
+  border-radius: var(--view-strip-radius);
+}
+
+.view-strip .page-total {
+  font-variant-numeric: tabular-nums;
+  font-size: var(--fs-sm);
+  color: var(--tf-text-supporting);
+}
+
+.view-strip .zoom-percent {
+  min-width: 44px;
+  font-size: var(--fs-sm);
+  font-variant-numeric: tabular-nums;
+}
+
+.view-strip .page-label-hint {
+  font-size: var(--fs-xs);
+}
+
+/* The selected layout option and the armed pan take the shared violet soft
+ * fill; ordinary view commands carry no `aria-pressed` and stay neutral. */
+.view-strip .btn[aria-pressed='true'] {
+  background: var(--accent-soft);
+  color: var(--accent-text);
+  border-color: transparent;
+}
+
+/* The Book View entry: a labelled, neutral footer command. */
+.view-strip-book {
+  height: var(--view-strip-target);
+  padding: 0 10px;
+  border-radius: var(--view-strip-radius);
+  gap: 6px;
+  font-size: var(--fs-sm);
+  color: var(--fg-strong);
+}
+
+.view-strip-book:hover:not([disabled]) {
+  background: var(--bg-hover);
+}
+
+/* State-4 idle: the footer chrome dims with the dock's idle flip, mirroring
+ * the retired pills, then restores. Motion through the shared token. */
+.view-strip-page,
+.view-strip-view {
+  transition: opacity var(--motion-duration-fast) var(--motion-ease-standard);
+}
+.view-strip[data-view-strip-idle='true'] .view-strip-page,
+.view-strip[data-view-strip-idle='true'] .view-strip-view {
+  opacity: 0.4;
+}
+
+/* Phase 109 (chunk B) — the per-pane footer's own inline-size container and
+ * its two narrow tiers. A Multi Mode pane's footer is just as narrow as the
+ * pane, so it mirrors the retired per-pane pill tiers EXACTLY (the same
+ * thresholds and metrics as `multiPillTier` / `multiPillMetrics` in
+ * multiPaneLayout.ts and the `multi-pills` container queries): at 407px the
+ * zoom readout and the page total/label yield, at 311px the controls take the
+ * dense 24x28 micro size and the group chrome tightens. Every control stays
+ * present and hit-testable at every pane width and the footer stays ONE 48px
+ * row — no wrapping, no second row. Single mode declares no such container, so
+ * its footer is untouched. */
+.tab-stage[data-multi-mode="true"] .view-strip {
+  container-type: inline-size;
+  container-name: multi-view-strip;
+}
+
+@container multi-view-strip (max-width: 407px) {
+  .view-strip .zoom-percent,
+  .view-strip .page-total,
+  .view-strip .page-label-hint {
+    display: none;
+  }
+
+  .view-strip .page-input {
+    width: 20px;
+    padding: 0 2px;
+  }
+}
+
+@container multi-view-strip (max-width: 311px) {
+  .view-strip {
+    gap: 4px;
+    padding: 0 6px;
+  }
+
+  .view-strip-page,
+  .view-strip-view {
+    gap: 2px;
+  }
+
+  .view-strip .btn-toolbar {
+    width: 24px;
+    height: 28px;
+  }
+
+  .view-strip .page-indicator {
+    gap: 2px;
+    padding: 0;
+  }
+}
+
+/* Phase 109 (chunk B2) — the SINGLE-mode footer's own inline-size container and
+ * its yield ladder. The single-mode footer is WIDER than a Multi Mode pane
+ * footer because it also carries the page-layout group and the Book View entry,
+ * so its thresholds are the footer's OWN computed control widths, NOT the
+ * retired pill constants. The tier intents mirror `pillFit` (the compact rung
+ * hides the readouts and narrows the page input) and `MULTI_PILL_MICRO_*` (the
+ * dense 24x28 controls with tight group gaps):
+ *
+ *   full     >= 668px   every control inline at its full width;
+ *   compact  <= 667px   hide `.zoom-percent` / `.page-total` /
+ *                       `.page-label-hint`, narrow `.page-input` to 20px and
+ *                       the Book View entry to its icon;
+ *   micro    <= 459px   controls take the 24x28 dense size (with `min-width`
+ *                       relaxed so the shrink actually applies), group gaps 2px,
+ *                       footer padding 6px;
+ *   overflow <= 419px   the layout group + Book View move into the
+ *                       `.view-strip-more` menu AND the row's own metrics
+ *                       tighten one rung further (22px controls, 3px footer
+ *                       gap, 5px padding) so the content fits inside the
+ *                       footer box (still ONE 48px row).
+ *
+ * The thresholds are the computed natural row widths (full ~659, compact ~452,
+ * micro ~412) plus a small guard; the row is ONE 48px line at every width, so
+ * the hidden controls leave the flow instead of wrapping. A Multi Mode pane
+ * keeps its `multi-view-strip` container above untouched. */
+.tab-stage[data-multi-mode="false"] .view-strip {
+  container-type: inline-size;
+  container-name: single-view-strip;
+  margin-right: var(--tf-tools-inset, 0px);
+}
+
+@container single-view-strip (max-width: 667px) {
+  .view-strip .zoom-percent,
+  .view-strip .page-total,
+  .view-strip .page-label-hint {
+    display: none;
+  }
+
+  .view-strip .page-input {
+    width: 20px;
+    padding: 0 2px;
+  }
+
+  .view-strip .view-strip-book-label {
+    display: none;
+  }
+}
+
+@container single-view-strip (max-width: 459px) {
+  .view-strip {
+    gap: 4px;
+    padding: 0 6px;
+  }
+
+  .view-strip-page,
+  .view-strip-view,
+  .view-strip-layout {
+    gap: 2px;
+  }
+
+  /* DEF-591 — the base `.view-strip .btn-toolbar` pins `min-width` to the
+   * 32px `--view-strip-target`; overriding `width` alone therefore never
+   * shrank the control and the row kept its full width. Relax `min-width`
+   * alongside the dense `width` so the micro controls genuinely shrink. */
+  .view-strip .btn-toolbar {
+    width: 24px;
+    min-width: 0;
+    height: 28px;
+  }
+
+  .view-strip .page-indicator {
+    gap: 2px;
+    padding: 0;
+  }
+}
+
+@container single-view-strip (max-width: 419px) {
+  .view-strip-layout,
+  .view-strip-book {
+    display: none;
+  }
+
+  /* DEF-591 — at the overflow tier even the micro row can out-measure its
+   * own inline-size box (e.g. a 263px footer beside the collapsed Inspector
+   * rail), pushing the More trigger past the box's right edge and under the
+   * rail. Tighten the row's own metrics one rung further so its content fits
+   * inside `.view-strip` and the trigger stays the hit-test target at its
+   * centre. The page group + zoom stay inline; one/two/four + Book View are
+   * re-homed into the More menu. */
+  .view-strip {
+    gap: 3px;
+    padding: 0 5px;
+  }
+
+  .view-strip-page,
+  .view-strip-view {
+    gap: 2px;
+  }
+
+  .view-strip .btn-toolbar {
+    width: 22px;
+    min-width: 0;
+    height: 28px;
+  }
+
+  /* DEF-588 — out-specify the base `.view-strip-more { display: none; }`
+   * (0,1,0) that is declared later in the sheet, so the overflow tier's
+   * More trigger actually reveals. */
+  .view-strip .view-strip-more {
+    display: inline-flex;
+  }
+}
+
+/* The single-mode overflow host: hidden until the footer can no longer hold the
+ * layout group + Book View inline, then a 32px More trigger at the trailing
+ * end. The menu reuses the Action Dock's overflow surface (`.action-dock-menu` /
+ * `.action-dock-menu-item` / `anim-menu-pop`) and opens UPWARD, right-aligned to
+ * the trigger so it can never clip against the stage's right edge. Motion is the
+ * shared menu-pop token only; the menu is removed from the DOM when closed. */
+.view-strip-more {
+  position: relative;
+  display: none;
+  align-items: center;
+}
+
+.view-strip .view-strip-more-menu {
+  position: absolute;
+  left: auto;
+  right: 0;
+  bottom: calc(100% + 6px);
+  min-width: 168px;
 }
 
 /* Tools badge — the floating Tools palette toggle on the page
@@ -4895,12 +5662,12 @@ body.tab-reordering .tab-list[data-reorder="true"] .tab {
    * sheets, it is not space AROUND the canvas. The scroll math reads
    * CONTENT_PADDING_PX (now 0) so jump landings stay exact. */
   padding: 0;
-  gap: 18px;
+  gap: 24px;
 }
 
 /* Phase 40 (item 7) — the SINGLE-VIEW multi-page layouts. TWO and FOUR flow
  * the SAME always-mounted page slots into a 2-column grid; FOUR additionally
- * fits 2x2 (the fit maths lives in pageLayoutMode.ts). The 18px `gap` applies
+ * fits 2x2 (the fit maths lives in pageLayoutMode.ts). The 24px `gap` applies
  * on both axes, matching PAGE_GAP_PX. ONE is the unchanged flex column, so the
  * default is byte-identical to the pre-change canvas. The scroller's row math
  * reads the same rows (buildRowGeom) the grid lays out. */
@@ -4987,14 +5754,16 @@ body.tab-reordering .tab-list[data-reorder="true"] .tab {
    * dark rectangle next to the toolbar. Hard-coding `#ffffff`
    * here matches paper and works in both themes. */
   background: #ffffff;
-  /* Phase-3 workspace: the page floats as a physical sheet — the
-   * single --shadow-page token (0 4px 18px) gives it depth over
-   * the canvas. Deliberately NO 1px ring: the page has no visible
-   * border, and the shadow never clips the bitmap (overflow is
-   * visible, and the slot reserves the page's own footprint so
-   * mixed page sizes keep their exact geometry — DEF-141/148). */
+  /* Phase 107 (chunk A) — the Paper Stage page frame. The page is a
+   * SQUARE-cornered sheet: --shadow-page now resolves to a 1px neutral
+   * ring plus a two-layer exterior contact+diffuse shadow, so the paper
+   * reads as a physical sheet on the canvas. The ring is a box-shadow
+   * (never a border or margin), so page geometry, scroll math and hit
+   * testing are unchanged; the shadow never clips the bitmap (overflow
+   * is visible, and the slot reserves the page's own footprint so mixed
+   * page sizes keep their exact geometry — DEF-141/148). */
   box-shadow: var(--shadow-page);
-  border-radius: var(--radius-1);
+  border-radius: 0;
   overflow: visible;
   isolation: isolate;
 }
@@ -5057,10 +5826,11 @@ body.tab-reordering .tab-list[data-reorder="true"] .tab {
 }
 
 :root[data-theme="dark"] .pdf-page {
-  /* Phase-3 workspace: --shadow-page resolves to the deep
-   * 0 4px 18px rgba(0, 0, 0, 0.28) in dark mode so the sheet lifts
-   * off the near-black canvas. The light ring is gone — the page
-   * surface stays paper-white with no visible border (DEF-099). */
+  /* Phase-3 workspace / Phase 107 (chunk A) — --shadow-page resolves to
+   * the Paper Stage frame (1px ring + two-layer exterior shadow) in dark
+   * mode: the page surface stays paper-white so the sheet reads as
+   * physical paper lifted off the #151820 canvas (DEF-099). The ring is a
+   * subtle neutral hairline, never a themed recolour of the page. */
   box-shadow: var(--shadow-page);
 }
 
@@ -5198,7 +5968,10 @@ body.tab-reordering .tab-list[data-reorder="true"] .tab {
 }
 .toast-warning .toast-icon { color: var(--warning); }
 
-.toast-text { line-height: 1.35; }
+.toast-text {
+  color: var(--tf-text-supporting);
+  line-height: var(--type-helper-line);
+}
 
 .toast-close {
   width: 22px;
@@ -5886,8 +6659,9 @@ body.tab-reordering .tab-list[data-reorder="true"] .tab {
    * when an optional leading icon is present. */
   flex: 1 1 auto;
   min-width: 0;
-  font-size: var(--dlg-title-fs);
-  font-weight: 600;
+  font-size: var(--type-title-size);
+  line-height: var(--type-title-line);
+  font-weight: var(--type-title-weight);
   color: var(--fg-strong);
   letter-spacing: -0.005em;
 }
@@ -5948,9 +6722,10 @@ body.tab-reordering .tab-list[data-reorder="true"] .tab {
 
 .modal-help {
   margin: 0;
-  color: var(--fg-muted);
-  font-size: var(--dlg-help-fs);
-  line-height: 1.5;
+  color: var(--tf-text-supporting);
+  font-size: var(--type-helper-size);
+  line-height: var(--type-helper-line);
+  font-weight: var(--type-helper-weight);
 }
 
 .modal-row {
@@ -5970,14 +6745,16 @@ body.tab-reordering .tab-list[data-reorder="true"] .tab {
 }
 
 .modal-picked .hint {
-  color: var(--fg-faint);
+  color: var(--tf-text-supporting);
 }
 
 .modal-field {
   display: flex;
   flex-direction: column;
   gap: var(--sp-1);
-  font-size: var(--dlg-label-fs);
+  font-size: var(--type-label-size);
+  line-height: var(--type-label-line);
+  font-weight: var(--type-label-weight);
   color: var(--fg-muted);
 }
 
@@ -6028,7 +6805,7 @@ body.tab-reordering .tab-list[data-reorder="true"] .tab {
 }
 
 .modal-status .hint {
-  color: var(--fg-faint);
+  color: var(--tf-text-supporting);
 }
 
 .modal-footer {
@@ -6038,6 +6815,91 @@ body.tab-reordering .tab-list[data-reorder="true"] .tab {
   padding: var(--dlg-pad-y) var(--dlg-pad-x);
   border-top: 1px solid var(--border);
   background: var(--bg-toolbar);
+}
+
+/* ==========================================================================
+ * TFL-873 (chunk C2a) — interaction-surface dialog primitives.
+ *
+ * Additive modifiers for the DialogShell family; the base .modal-* rules
+ * above are untouched, so every existing adopter is byte-identical.
+ * Reuse mapping (see the --isf-* token block in :root):
+ *   radius    -> var(--radius-panel)      (16px)
+ *   padding   -> var(--sp-5)              (24px)
+ *   field gap -> var(--sp-4)              (16px)
+ *   border    -> 1px solid var(--border)  (matches the shipped modal border)
+ *   elevation -> var(--isf-shadow)        (theme-aware)
+ * ======================================================================== */
+
+/* Header context line — opt-in via DialogShell's `headerContext` prop; the
+ * modifier class is only emitted when the prop is present, so no existing
+ * header re-wraps. The context spans a full second row under the title. */
+.modal-header.has-header-context,
+.sheet-header.has-header-context {
+  flex-wrap: wrap;
+  row-gap: var(--sp-1);
+}
+
+.modal-context {
+  flex: 0 0 100%;
+  min-width: 0;
+  color: var(--fg-muted);
+  font-size: var(--type-helper-size);
+  line-height: var(--type-helper-line);
+  font-weight: var(--type-helper-weight);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Bounded single body scroll — opt-in via DialogShell's `bodyScroll` prop.
+ * The header and footer stay pinned (auto / minmax(0,1fr) / auto rows) and
+ * only the body scrolls, so no content is hidden beneath either region. */
+.modal-dialog.modal-dialog-body-scroll {
+  overflow: hidden;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+}
+
+.modal-dialog.modal-dialog-body-scroll > .modal-body.modal-body-scroll {
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  overscroll-behavior: contain;
+}
+
+/* TaskDialog — the shared task transaction surface. */
+.modal-dialog.task-dialog {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-panel);
+  box-shadow: var(--isf-shadow);
+}
+
+.modal-dialog.task-dialog > .modal-header,
+.modal-dialog.task-dialog > .modal-body,
+.modal-dialog.task-dialog > .modal-footer {
+  padding: var(--sp-5);
+}
+
+.modal-dialog.task-dialog > .modal-body {
+  gap: var(--sp-4);
+}
+
+.modal-dialog.task-dialog-compact {
+  width: min(var(--isf-width-compact), calc(100vw - 2 * var(--isf-viewport-margin)));
+}
+
+.modal-dialog.task-dialog-standard {
+  width: min(var(--isf-width-standard), calc(100vw - 2 * var(--isf-viewport-margin)));
+}
+
+/* PreviewTaskDialog — the list/preview variant. The width is nominal; the
+ * height is content-driven. `task-dialog-preview-grow` is emitted ONLY once
+ * content is present, so an empty preview never reserves a blank body. */
+.modal-dialog.task-dialog-preview {
+  width: min(var(--isf-width-preview), calc(100vw - 2 * var(--isf-viewport-margin)));
+}
+
+.modal-dialog.task-dialog-preview.task-dialog-preview-grow > .modal-body {
+  min-height: 280px;
 }
 
 /* Phase 92 (TFL-513-A) — the canonical dialog content grid.
@@ -6063,19 +6925,22 @@ body.tab-reordering .tab-list[data-reorder="true"] .tab {
 }
 
 .dlg-label {
-  font-size: var(--dlg-label-fs);
+  font-size: var(--type-label-size);
+  font-weight: var(--type-label-weight);
   color: var(--fg-muted);
   /* Sit the label on the control's baseline: the label box is one control
-   * tall so its text centres against the control beside it. */
+   * tall so its text centres against the control beside it. The line-height is
+   * deliberately the control height (layout), not the label role line. */
   line-height: var(--dlg-control-h);
   padding: 0;
 }
 
 .dlg-help {
   margin: 0;
-  font-size: var(--dlg-help-fs);
-  color: var(--fg-muted);
-  line-height: 1.5;
+  font-size: var(--type-helper-size);
+  line-height: var(--type-helper-line);
+  font-weight: var(--type-helper-weight);
+  color: var(--tf-text-supporting);
 }
 
 .dlg-error {
@@ -6097,7 +6962,8 @@ body.tab-reordering .tab-list[data-reorder="true"] .tab {
   border: 1px solid var(--border);
   border-radius: var(--radius-2);
   color: var(--fg-strong);
-  font-size: var(--fs-md);
+  font-size: var(--type-body-size);
+  line-height: var(--type-body-line);
   outline: none;
   transition: border-color var(--motion-fast) var(--ease-out);
 }
@@ -7057,7 +7923,7 @@ rect.ann-highlight.ann-preview {
 }
 
 .ann-panel-empty .hint {
-  color: var(--fg-faint);
+  color: var(--tf-text-supporting);
   font-size: var(--fs-xs);
 }
 
@@ -7326,8 +8192,9 @@ rect.ann-highlight.ann-preview {
   border-radius: var(--radius-1);
   padding: 2px 4px;
   font-family: inherit;
-  font-size: var(--fs-sm);
-  line-height: 1.3;
+  font-size: var(--type-body-size);
+  line-height: var(--type-body-line);
+  font-weight: var(--type-body-weight);
   outline: none;
   transition: border-color var(--motion-fast) var(--ease-out), background var(--motion-fast) var(--ease-out);
 }
@@ -7392,6 +8259,9 @@ rect.ann-highlight.ann-preview {
   resize: none;
   min-height: 36px;
   font-family: inherit;
+  font-size: var(--type-body-size);
+  line-height: var(--type-body-line);
+  font-weight: var(--type-body-weight);
 }
 
 .form-select {
@@ -7403,6 +8273,9 @@ rect.ann-highlight.ann-preview {
   background-size: 4px 4px;
   background-repeat: no-repeat;
   padding-right: 18px;
+  font-size: var(--type-body-size);
+  line-height: var(--type-body-line);
+  font-weight: var(--type-body-weight);
 }
 
 .form-checkbox {
@@ -8049,7 +8922,7 @@ rect.ann-highlight.ann-preview {
 
 .sig-empty .hint {
   font-size: var(--fs-xs);
-  color: var(--fg-faint);
+  color: var(--tf-text-supporting);
   max-width: 340px;
 }
 
@@ -8200,6 +9073,124 @@ rect.ann-highlight.ann-preview {
     box-shadow var(--motion-fast) var(--ease-out),
     transform var(--motion-fast) var(--ease-in-out);
   flex-shrink: 0;
+}
+
+/* ----- All-tabs switcher (Phase 105, chunk D) ----- */
+
+.tab-list-all {
+  /* Sits immediately after the "+" as the last control in the strip. Like the
+   * "+" it is a positioned, non-shrinking flex item so its own hit target and
+   * stacking level survive the strip's clip. */
+  display: inline-flex;
+  align-items: end;
+  list-style: none;
+  flex: 0 0 auto;
+  padding: 0;
+  margin: 0;
+  position: relative;
+  z-index: 3;
+}
+
+/* Phase 105 (chunk D) — a session past the rail's capacity stays mounted (so
+ * reorder / close stay stable and no exit animation plays on a reflow) but is
+ * hidden from the rail. It remains reachable through the All-tabs switcher. */
+.tab-list > li[data-tab-overflow="hidden"] {
+  display: none;
+}
+
+.tab-all {
+  width: 24px;
+  min-width: 24px;
+  height: 34px;
+  margin-left: 4px;
+  padding: 0;
+  border-radius: var(--radius-1);
+  transition:
+    background var(--motion-fast) var(--ease-out),
+    color var(--motion-fast) var(--ease-out),
+    border-color var(--motion-fast) var(--ease-out),
+    box-shadow var(--motion-fast) var(--ease-out);
+  flex-shrink: 0;
+}
+
+.tab-all-active {
+  background: var(--accent-selected);
+  color: var(--fg-strong);
+}
+
+/* The switcher popover. `.tab-area`/`.tab-list` both clip (`overflow: hidden`),
+ * so this surface is `position: fixed` — a fixed descendant escapes an
+ * ancestor's overflow clip — and is anchored from the trigger rect by the
+ * component (with a collision flip). Opaque, bounded and scrollable. */
+.all-tabs-popover {
+  position: fixed;
+  z-index: 80;
+  width: 320px;
+  max-height: min(60vh, 360px);
+  overflow-y: auto;
+  padding: var(--space-small) 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-3);
+  background: var(--bg-panel, var(--bg-toolbar));
+  box-shadow: var(--shadow-popover);
+}
+
+.all-tabs-count {
+  padding: var(--space-small) var(--space-standard);
+  color: var(--fg-muted);
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+.all-tabs-rows {
+  display: flex;
+  flex-direction: column;
+}
+
+.all-tabs-row {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  width: 100%;
+  padding: var(--space-small) var(--space-standard);
+  border-radius: 0;
+  text-align: left;
+}
+
+.all-tabs-row-current {
+  background: var(--accent-selected);
+}
+
+.all-tabs-name {
+  /* The COMPLETE filename — never truncated, wraps if needed. */
+  flex: 1 1 auto;
+  min-width: 0;
+  color: var(--fg-strong);
+  font-size: var(--fs-sm);
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.all-tabs-context {
+  flex: 0 1 auto;
+  max-width: 40%;
+  color: var(--fg-muted);
+  font-size: var(--fs-xs);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.all-tabs-dot {
+  flex: 0 0 auto;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  /* Current-foreground dot: it inherits the row's text colour, so the dirty
+   * mark reads on the current surface without introducing a new colour. */
+  background: currentColor;
 }
 
 /* ----- Tools palette ----- */
@@ -8384,8 +9375,9 @@ rect.ann-highlight.ann-preview {
 
 .inspector-section { display: flex; flex-direction: column; gap: var(--sp-2); }
 .inspector-section-title {
-  font-size: var(--fs-xs);
-  font-weight: 600;
+  font-size: var(--type-label-size);
+  line-height: var(--type-label-line);
+  font-weight: var(--type-label-weight);
   text-transform: uppercase;
   letter-spacing: 0.04em;
   color: var(--fg-muted);
@@ -8400,7 +9392,7 @@ rect.ann-highlight.ann-preview {
   min-height: 24px;
   font-size: var(--fs-sm);
 }
-.inspector-row-label { color: var(--fg-muted); }
+.inspector-row-label { color: var(--tf-text-supporting); }
 .inspector-row-value { color: var(--fg); text-align: right; min-width: 0; }
 .inspector-inline { display: inline-flex; align-items: center; gap: var(--sp-1); }
 
@@ -8474,7 +9466,7 @@ rect.ann-highlight.ann-preview {
 .inspector-note {
   margin: 0;
   font-size: var(--fs-xs);
-  color: var(--fg-muted);
+  color: var(--tf-text-supporting);
 }
 
 /* The re-parented text-properties card renders INLINE inside the Inspector:
@@ -9195,8 +10187,9 @@ rect.ann-highlight.ann-preview {
 .prefs-section:last-child { border-bottom: none; padding-bottom: 0; }
 .prefs-section-title {
   margin: 0 0 var(--sp-3);
-  font-size: var(--fs-md);
-  font-weight: 600;
+  font-size: var(--type-label-size);
+  line-height: var(--type-label-line);
+  font-weight: var(--type-label-weight);
   color: var(--fg-strong);
 }
 /* Phase 59 (item 8) — TWO-COLUMN ROWS. Track 1 is the text column: it owns
@@ -9293,7 +10286,7 @@ rect.ann-highlight.ann-preview {
 }
 .prefs-hint {
   margin: 0;
-  color: var(--fg-muted);
+  color: var(--tf-text-supporting);
   font-size: var(--fs-xs);
 }
 .prefs-paths {
@@ -11049,7 +12042,7 @@ rect.ann-highlight.ann-preview {
   background: #ffffff;
   border: 1px solid var(--border);
   border-radius: var(--radius-1);
-  box-shadow: var(--shadow-page);
+  box-shadow: var(--elevation-1);
   overflow: hidden;
 }
 
@@ -12965,7 +13958,10 @@ rect.ann-highlight.ann-preview {
   position: absolute;
   top: 0;
   right: 0;
-  bottom: 0;
+  /* DEF-587 — stop the full-bleed box at the View Strip footer's top
+   * edge (grid row 6), exactly like `.canvas-overlay`, so the 48px
+   * footer is never under the frosted page content. */
+  bottom: var(--view-strip-h, 48px);
   left: 0;
   height: auto;
   z-index: 0;
@@ -12994,7 +13990,7 @@ rect.ann-highlight.ann-preview {
    * pad in every theme so jump landings, the current-page readout and
    * the mount window stay in step with this padding. */
   padding: 0;
-  gap: 18px;
+  gap: 24px;
 }
 
 /* ===========================================================================
@@ -13911,10 +14907,12 @@ rect.ann-highlight.ann-preview {
      reachable (DEF-282's invariant, restated). */
   top: 0;
   /* Phase 39 (DEF-348b/c) — the shared Action Dock owns a reserved bottom
-     band in Multi Mode (`--tf-multi-dock-band`, 96px base + the dock's
+     band in Multi Mode (`--tf-multi-dock-band`, 100px base + the dock's
      measured lift). Both panes stop above it, so their strips, page-action
-     bars and per-pane View Strip footers can never intersect the dock. */
-  bottom: var(--tf-multi-dock-band, 96px);
+     bars and per-pane View Strip footers can never intersect the dock. The
+     100px base clears the dock's live top edge (16px inset + 68px min-height)
+     by a full 16px footer separation. */
+  bottom: var(--tf-multi-dock-band, 100px);
   left: auto;
   right: auto;
   display: flex;
@@ -14204,7 +15202,7 @@ rect.ann-highlight.ann-preview {
      Phase 39 (DEF-348c) — it stops above the same reserved dock band the
      panes use, so the divider can never intersect the shared dock either. */
   top: 0;
-  bottom: var(--tf-multi-dock-band, 96px);
+  bottom: var(--tf-multi-dock-band, 100px);
   /* Phase 34 (chunk 3) — the divider consumes the SAME capped inset as the
      pane widths (see the pane rule), so its centre stays exactly between
      them when the All Tools panel is open. */
@@ -14602,7 +15600,7 @@ rect.ann-highlight.ann-preview {
  * transparent so it never blocks the drop. Phase 34 (chunk 1): thicker (5px,
  * up from 3px) with a soft accent glow and fully rounded end caps so it reads
  * as "the page lands HERE" rather than a border. It still spans the page
- * column and sits in the 18px inter-page gap (see .document-content `gap`),
+ * column and sits in the 24px inter-page gap (see .document-content `gap`),
  * never overlaying a page's content. */
 .page-drop-indicator {
   position: absolute;
@@ -14856,8 +15854,11 @@ rect.ann-highlight.ann-preview {
    * word (and the gear's "Settings") readable inside the widened content box.
    * Phase 108 (Workspace Rail) — the label rests in the neutral muted ink;
    * the active stage's label takes the accent via the rule below. */
-  font-size: var(--tf-label-size);
-  line-height: 1.1;
+  /* Phase 110 - the documented 11px compact/rail exception, expressed through
+   * the semantic compact role tokens (was --tf-label-size / 12px and a bare
+   * line-height: 1.1). This is the ONE place the UI scale drops below 12px. */
+  font-size: var(--type-compact-size);
+  line-height: var(--type-compact-line);
   letter-spacing: 0.01em;
   white-space: nowrap;
   color: var(--tf-icon-rest);
@@ -15259,8 +16260,9 @@ rect.ann-highlight.ann-preview {
 }
 
 .context-panel-section-title {
-  font-size: var(--fs-xs);
-  font-weight: 600;
+  font-size: var(--type-label-size);
+  line-height: var(--type-label-line);
+  font-weight: var(--type-label-weight);
   letter-spacing: 0.04em;
   text-transform: uppercase;
   color: var(--fg-muted);
@@ -15274,7 +16276,7 @@ rect.ann-highlight.ann-preview {
   font-size: var(--fs-xs);
 }
 
-.context-panel-row-label { color: var(--fg-muted); }
+.context-panel-row-label { color: var(--tf-text-supporting); }
 .context-panel-row-value { color: var(--fg); text-align: right; min-width: 0; }
 
 /* Phase 41 (item 2) — the EDIT panel's Default font picker (the retired edit
@@ -16122,7 +17124,7 @@ cursor: pointer;
    * colour is never the only signal. */
   font-size: var(--tf-label-size);
   line-height: 1.1;
-  font-weight: 500;
+  font-weight: var(--type-label-weight);
   white-space: nowrap;
   color: inherit;
 }
@@ -16377,6 +17379,11 @@ cursor: pointer;
   position: absolute;
   inset: 0;
   right: var(--tf-tools-inset, 0px);
+  /* Phase 109 (chunk A) — the floating-chrome layer stops at the View Strip
+   * footer's top edge, so the dock, flyout and notices sit ABOVE the footer.
+   * The dock's own `bottom: var(--dock-bottom-inset, 16px)` now measures from
+   * the footer top, preserving its >=16px clearance from the page controls. */
+  bottom: var(--view-strip-h, 48px);
   pointer-events: none;
   /* DEF-466 — a SIZE query container (the layer is `inset:0`, so its box is
    * definite). The expanded notice boxes cap their height against `100cqh`
@@ -16967,6 +17974,7 @@ cursor: pointer;
 }
 
 .command-palette-hint {
+  color: var(--tf-text-supporting);
   white-space: nowrap;
 }
 
@@ -17042,8 +18050,112 @@ cursor: pointer;
   .app-header {
     padding: 0 var(--sp-2);
   }
+}
 
-  .header-actions {
+/* ===========================================================================
+ * Phase 105 (chunk C) — the document rail geometry (GLOBAL, every width).
+ *
+ * The chrome is TWO rows: the 48px title row (TitleBar hosting the File menu,
+ * brand, AppHeader's document actions / drag region / utilities, and the
+ * caption controls) and the 40px document rail (the tab strip), rendered as a
+ * sibling below the title bar. A single understated divider separates the rail
+ * from the workspace; both surfaces are opaque, with no glow or shadow.
+ *
+ * DEF-579 — the rail rules below MUST apply at every width. They were
+ * previously nested inside the DEF-324 `@media (max-width: 900px)` band, so
+ * above 900px the rail had NO rule: as a grid item in the implicit `auto`
+ * column of `.app` it stretched to its tab content (2197px at 12 tabs /
+ * 4658px at 30 tabs) and `planRailCapacity` then measured that expanded
+ * `.tab-list` clientWidth, hiding nothing and pushing the New-tab / All-tabs /
+ * active tab off-screen. The title-row rules that follow remain in the
+ * responsive band (re-opened below).
+ * ========================================================================= */
+
+/* The rail row itself — full width, non-dragging (the drag region lives in the
+ * title row), and clipped so the tab strip never scrolls the shell. */
+.document-rail {
+  display: flex;
+  align-items: end;
+  height: 40px;
+  width: 100%;
+  min-width: 0;
+  /* DEF-579 — belt-and-braces: the rail can never render wider than its grid
+   * track (the viewport), so the tab strip below it is constrained at FIRST
+   * layout and `planRailCapacity` measures the AVAILABLE width. */
+  max-width: 100%;
+  padding: 0 var(--space-standard);
+  border-bottom: 1px solid var(--border-subtle);
+  background: var(--bg-toolbar);
+  flex-shrink: 0;
+  overflow: hidden;
+  /* Phase 105 — the rail is not part of the caption drag region. */
+  -webkit-app-region: no-drag;
+}
+
+/* The global `.tab-area` / `.tab-list` drag rule (the caption strip contract)
+ * must not make the rail's empty space a window-drag surface: the rail owns its
+ * own row. Re-declare no-drag with the rail-scoped selector. */
+.document-rail .tab-area,
+.document-rail .tab-list {
+  -webkit-app-region: no-drag;
+}
+
+@media (max-width: 900px) {
+/* The flexible genuine drag region between the document-action cluster and the
+ * utility cluster. It absorbs the row's slack, so the caption can be dragged
+ * from the empty middle while every interactive child stays no-drag. */
+.titlebar-drag {
+  flex: 1 1 auto;
+  min-width: 24px;
+  align-self: stretch;
+  -webkit-app-region: drag;
+}
+
+/* The brand leads the title row (moved out of AppHeader in chunk C). It keeps
+ * the caption's leading inset and the divider before the File menu. */
+.titlebar > .brand {
+  padding-left: var(--space-standard);
+  align-self: center;
+}
+
+/* The application menu popover — mirrors the TitleBar File popover surface
+ * (opaque card, shared heading / row / kbd classes) and anchors under the
+ * trigger's trailing corner. */
+.app-menu {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.btn.app-menu-trigger {
+  width: 28px;
+  min-width: 28px;
+  height: 28px;
+  flex-shrink: 0;
+  border-radius: var(--radius-2);
+}
+
+.app-menu-trigger-active {
+  background: var(--accent-selected);
+  color: var(--fg-strong);
+}
+
+.app-menu-popover {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  z-index: 60;
+  min-width: 232px;
+  max-height: min(70vh, 520px);
+  overflow-y: auto;
+  padding: var(--space-small) 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-3);
+  background: var(--bg-panel, var(--bg-toolbar));
+  box-shadow: var(--shadow-popover);
+}
+
+.header-actions {
     gap: var(--sp-1);
     padding-left: var(--sp-2);
   }
@@ -18202,7 +19314,7 @@ cursor: pointer;
 
 .modal-hint {
   margin: 0 0 var(--sp-2);
-  color: var(--fg-muted);
+  color: var(--tf-text-supporting);
   font-size: var(--fs-xs);
 }
 
@@ -18293,7 +19405,7 @@ cursor: pointer;
 
 .validation-notice-line {
   margin: 0;
-  color: var(--fg);
+  color: var(--tf-text-supporting);
 }
 
 .validation-notice-key {
@@ -18367,7 +19479,7 @@ cursor: pointer;
 }
 
 .validation-notice-detail {
-  color: var(--fg-muted);
+  color: var(--tf-text-supporting);
 }
 
 .validation-notice-note {
@@ -19577,6 +20689,248 @@ cursor: pointer;
   border: 1px solid var(--border);
   box-shadow: var(--shadow-popover);
   pointer-events: none;
+}
+
+/* ===========================================================================
+ * TFL-885 (chunk C2b) — floating interaction-surface primitives.
+ *
+ * Chrome only for the ContextToolbox / PropertyPopover / Tooltip primitives.
+ * Geometry, surface, border, shadow and the tooltip chip live here; motion is
+ * owned by the shared TfBar / TfPopover wrappers and, for the tooltip, by the
+ * existing tooltip-enter / tooltip-enter-reduced keyframes reused below. The
+ * --isf-* token family (styles.css :root) is consumed, never redefined.
+ * =========================================================================== */
+
+/* --- ContextToolbox: one nonmodal surface over a canvas selection. ------- */
+.context-toolbox {
+  position: fixed;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+  padding: var(--sp-2);
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-group);
+  box-shadow: var(--isf-shadow);
+  z-index: var(--isf-layer-context-toolbox);
+  pointer-events: auto;
+}
+
+.context-toolbox-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-1);
+  min-height: 32px;
+}
+
+.context-toolbox-actions > button {
+  pointer-events: auto;
+}
+
+.context-toolbox-expanded {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+  padding-top: var(--sp-1);
+  border-top: 1px solid var(--border);
+}
+
+/* Coarse pointers (touch) get the 44px target floor from the design spec. */
+@media (pointer: coarse) {
+  .context-toolbox-actions {
+    min-height: var(--control-height-large);
+  }
+
+  .context-toolbox-actions > button {
+    min-width: var(--control-height-large);
+    min-height: var(--control-height-large);
+  }
+}
+
+/* --- PropertyPopover: anchored, nonmodal, single-property editor. -------- */
+.property-popover {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  min-width: var(--isf-menu-width);
+  max-width: min(420px, calc(100vw - 2 * var(--isf-viewport-margin)));
+  padding: var(--sp-3);
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-group);
+  box-shadow: var(--isf-shadow);
+  z-index: var(--isf-layer-property-popover);
+  pointer-events: auto;
+}
+
+.property-popover-title {
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  color: var(--fg);
+}
+
+.property-popover-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  color: var(--fg);
+}
+
+.property-popover-footer {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--sp-1);
+  padding-top: var(--sp-2);
+  border-top: 1px solid var(--border);
+}
+
+/* --- Tooltip: a real role="tooltip" chip, reused keyframes. -------------- */
+.tooltip-control {
+  position: relative;
+  display: inline-flex;
+}
+
+.tooltip-element {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%) translateY(3px) scale(0.98);
+  background: rgba(25, 29, 35, 0.96);
+  color: #e7e9ec;
+  padding: 5px 8px 4px;
+  border-radius: var(--radius-2);
+  font-size: var(--fs-xs);
+  line-height: 1.35;
+  white-space: pre-line;
+  pointer-events: none;
+  z-index: var(--isf-layer-command-menu);
+  box-shadow: var(--shadow-popover);
+  opacity: 0;
+  visibility: hidden;
+  transition:
+    opacity var(--tf-motion-fast) var(--tf-ease-fast),
+    transform var(--tf-motion-fast) var(--tf-ease-fast),
+    visibility 0s linear var(--tf-motion-fast);
+}
+
+.tooltip-element--top {
+  bottom: calc(100% + 6px);
+}
+
+.tooltip-element--bottom {
+  top: calc(100% + 6px);
+}
+
+/* The entrance is the only reveal (base is hidden), so the class applies the
+ * shared dwell-delayed keyframe; the dwell lives in the animation delay. */
+.tooltip-element--visible {
+  animation: tooltip-enter var(--tf-motion-fast) var(--tf-ease-fast) var(--motion-duration-dwell) forwards;
+}
+
+/* Reduced motion / Animations off: keep the reveal, drop every transform. */
+.tooltip-element--instant.tooltip-element--visible {
+  animation: tooltip-enter-reduced var(--tf-motion-fast) var(--tf-ease-fast) forwards;
+  transform: translateX(-50%);
+}
+
+.tooltip-element-shortcut {
+  display: block;
+  color: rgba(231, 233, 236, 0.7);
+  font-size: var(--fs-xs);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tooltip-element {
+    transition-property: opacity, visibility;
+  }
+
+  .tooltip-element--visible {
+    animation: tooltip-enter-reduced var(--tf-motion-fast) var(--tf-ease-fast) forwards;
+    transform: translateX(-50%);
+  }
+}
+
+/* ===========================================================================
+ * TFL-901 (TFL-855 chunk C2c) — CommandMenu: the one shared command-menu
+ * surface. ADDITIVE: it reuses the shipped `titlebar-menu-*` shell, heading,
+ * separator and row rules verbatim and overrides only the box so the ROW LIST
+ * scrolls (never the whole surface). Geometry comes from the spec tokens
+ * (--radius-group / --control-height / --isf-menu-* / --isf-layer-command-menu);
+ * no existing token is redefined.
+ * ========================================================================= */
+
+.command-menu {
+  /* The shell owns the frame; the inner `.command-menu-list` owns the scroll. */
+  overflow: hidden;
+  max-height: none;
+  padding: var(--isf-menu-pad);
+  min-width: var(--isf-menu-width);
+  border-radius: var(--radius-group);
+  box-shadow: var(--isf-shadow);
+  z-index: var(--isf-layer-command-menu);
+}
+
+.command-menu-align-end {
+  left: auto;
+  right: var(--sp-2);
+  transform-origin: top right;
+}
+
+.command-menu-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+/* Spec row height: the 36px control token, additive over the shipped 30px. */
+.command-menu .titlebar-menu-row {
+  min-height: var(--control-height);
+}
+
+.command-menu-row-wrap {
+  position: relative;
+}
+
+.command-menu-submenu {
+  position: absolute;
+  top: calc(-1 * var(--isf-menu-pad));
+  left: calc(100% - var(--isf-menu-pad));
+  min-width: var(--isf-menu-width);
+  padding: var(--isf-menu-pad);
+  background: var(--menu-bg);
+  border: 1px solid var(--menu-border);
+  border-radius: var(--radius-group);
+  box-shadow: var(--isf-shadow);
+  z-index: var(--isf-layer-command-menu);
+}
+
+.command-menu-row-chevron {
+  flex: 0 0 auto;
+  color: var(--fg-muted);
+  /* The supplied disclosure glyph points down; rotate it to point into the
+   * submenu it opens. Decorative only. */
+  transform: rotate(-90deg);
+}
+
+.command-menu-row-check {
+  flex: 0 0 auto;
+  color: var(--accent-text);
+}
+
+/* The disabled reason is exposed through `title` + `aria-describedby`; this is
+ * its accessible text node, kept out of the visual flow. */
+.command-menu-row-desc {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
 }
 
 
