@@ -6520,4 +6520,186 @@ EDIT-stage hue (`--tf-stage-edit`). The dock edit pen (`.action-dock-edit`, incl
 repointed to pin the new rest/active treatment. No handler or `data-*` selector changes.
 Regenerate `docs/phase-specs/phase-103.md` after this edit.
 
+## Phase 104 - Dock overhaul: one reusable Focus Dock command dock applied app-wide (phase issue TFL-841; operator driver TFL-809, 2026-10-05)
+
+**Operator request (product terms, TFL-809 / phase issue TFL-841).** Redesign TFlex's
+command dock using the committed **Focus Dock** concept from `Visual overhaul/Dock/`,
+applied app-wide: ONE reusable dock shell that consumes the workspace command metadata
+and the shared Quiet Precision icon registry, the established graphite/violet palette, a
+compact near-opaque surface, a restrained theme-aware shadow, and a responsive command set
+(about five primary commands, then a stable More + Tools utility group) that never
+collides with page navigation, zoom/pan, scrollbars or page content. Geometry: 14px outer
+radius, 1px neutral border, 8px padding, ~68px content-driven desktop height, 20px icons,
+12px medium labels, 6px icon-label gap, 9px selected-tool radius, 16px bottom inset, 16px
+minimum edge clearance. No command ID, click handler, shortcut, automation hook, test
+selector, document operation or undo/redo behaviour changes. This is visual overhaul 2 of
+4; Icons (Phase 103 / TFL-824) landed first and must leave the shared registry this phase
+inherits; Buttons (TFL-839) follows.
+
+**Current state (verified by reading the repo on 2026-10-05).**
+
+1. The dock already exists as ONE reusable shell: `src/renderer/components/ActionDock.tsx`
+   (1254 lines), rendered in single mode by `App.tsx` and in Multi Mode by
+   `src/renderer/components/MultiActionDock.tsx`; it consumes `src/renderer/state/toolsRegistry.ts`
+   (the canonical command inventory) and the shared `Icon` component
+   (`src/renderer/icons/Icon.tsx`, Quiet Precision `name=` registry, `size="lg"` = 20px).
+2. Dock command membership is `DOCK_STAGE_IDS` (`toolsRegistry.ts:1681-1703`): pages 8,
+   edit 7, review 16, deliver 9 verbs; the palette is `TOOL_REGISTRY` (id, label,
+   description, icon, shortcut, stage, action, availability, surface), with per-id hosting
+   in `SURFACE_BY_ID` (`toolsRegistry.ts:1515-1638`).
+3. The responsive/fit model is `src/renderer/state/dockModel.ts` (bulk ids, pin curation,
+   `planDockOverflow`), `dockResponsive.ts` (ladder breakpoints 1200/1000/880/720) and
+   `dockFit.ts` (measured pill clearance, labelled width, lane decision); the surface and
+   its 84 `.action-dock*` rules live in `src/renderer/styles.css` (surface block 15442+).
+4. The detached "Search all tools: Ctrl+K" hint is `ActionDock.tsx:1022-1035`; the trailing
+   pencil (dock EDIT mode: minus badges + plus picker = pin/unpin/reorder) is
+   `ActionDock.tsx:1187-1200`; the More overflow menu is `ActionDock.tsx:1079-1102`. The
+   Ctrl+K command-palette chord is confirmed in `App.tsx`.
+5. `test/unit/renderer/*dock*` (19 files) pin the current dock behaviour and presentation.
+
+**CTO RULINGS:**
+
+1. **Scope.** Renderer only: `src/renderer/**` (ActionDock/MultiActionDock, the dock state
+   modules, scoped dock-token CSS) plus renderer unit tests under `test/unit/renderer/**`.
+   qa owns `e2e/**`, `screenshots/**`, `test-fixtures/**`. No IPC/preload/shared-contract
+   change; no `src/main/**`; no new dependency, no network call, no CDN.
+2. **One shell, one registry, one visual language.** Keep the ONE `ActionDock` shell in both
+   single and Multi Mode; consume `toolsRegistry.ts` command metadata and the Phase 103
+   `Icon`/Quiet Precision registry. A second dock, icon system or visual language may not be
+   forked. Do not change the button primitive (TFL-839) or panel/navigation structure
+   (TFL-810).
+3. **Inventory before replacement.** Record every workspace command and dock configuration,
+   including items absent from the screenshots: command ID, handler (registry `action`),
+   shortcut, selector, current presentation, availability and workspace membership; resolve
+   the ambiguous handlers by code inspection - **Optimize / Reduce file size** is the single
+   registry entry `optimize` (`toolsRegistry.ts:932-941`, action `optimize`, label "Reduce
+   file size"), and the **trailing pencil** is the dock EDIT-mode toggle
+   (`ActionDock.tsx:1187-1200`, `data-dock-edit-toggle`) driving the existing
+   pin/unpin/reorder restore flow. The inventory is delivered as the child issue's
+   `dock-inventory` document; every command is preserved, displaced commands only move to
+   More.
+4. **Focus Dock look and geometry.** Compact near-opaque surface, 14px outer radius, 1px
+   neutral border, restrained theme-aware shadow, 8px padding, ~68px content-driven height,
+   20px icons, 12px/500 labels, 6px icon-label gap, 9px selected-tool radius, graphite/violet
+   palette and original rounded SVG geometry; a few purposeful separators, not a box around
+   every button. Centre within the document viewport (excluding side panels, page navigation,
+   zoom/pan controls, scrollbars and safe clearances), not the application window. If a theme
+   definition conflicts, add a scoped dock-token mapping rather than replacing the app theme.
+5. **Responsive command set.** ~5 primary commands at ordinary editor widths, then a stable
+   More + Tools utility group: Pages (Rotate, Extract, Insert, Merge, Crop), Edit (Select,
+   Text, Images, Text box, OCR), Review (Annotate, Sign, Stamp, Forms, Bates), Deliver
+   (Optimize, Images, Text, Word, Encrypt). Reconcile against actual handlers and
+   availability (short labels keep full accessible names; Edit `Images` = `editImage`,
+   Deliver `Images` = `exportPages`). Every other and unseen command stays reachable in More
+   and the command palette; never shrink text/icons to fit; at very narrow widths use a
+   reserved row. Reuse the existing command registry, popover/menu primitives, customization
+   state and viewport geometry.
+6. **State and colour discipline.** Persistent editing tools use a soft violet selected tile;
+   exports, OCR and dialogs get momentary pressed feedback, not permanent selected styling; no
+   green on ordinary export commands; Delete stays clearly labelled and red; a clear
+   active-tool indication is preserved. Replace the detached "Search all tools" hint with a
+   labelled **Tools** button that opens the existing command palette (Ctrl+K confirmed). Move
+   **Customize dock** into More after verifying the pencil (reuse the existing dock EDIT-mode
+   flow; support pin/unpin/reorder with accessible alternatives to dragging and restore
+   defaults; persist choices without auto-rearranging by usage).
+7. **No collisions and no covered content.** Reserve bottom scroll padding/inset so the last
+   page's bottom edge stays reachable above the floating dock. The anchored More popover opens
+   upward when space allows and otherwise repositions within screen bounds; keyboard
+   navigation, Escape/focus return, outside dismissal and correct accessible semantics. Do not
+   copy the preview's document reflow on menu open.
+8. **Motion and accessibility.** Shared 140ms colour/surface transitions; honour reduced
+   motion; distinct keyboard focus ring; disabled reasons where helpful; busy feedback; high
+   contrast; 44px coarse-input targets. No magnification, bounce, continuous animation, heavy
+   glass blur or default auto-hide.
+9. **Tests + evidence.** `npm run typecheck`; the updated/added renderer unit tests RUN and
+   green; `npm run build:renderer` where bundling is affected; the full suite is NOT run by
+   default. Evidence includes the command inventory/mapping, implementation and token changes,
+   before/after screenshots for all four workspaces plus overflow, keyboard focus and a narrow
+   viewport, validation results and remaining exceptions. Do not claim completion while
+   commands are missing or overlays still collide.
+10. **Standard flow + commit.** CTO brief -> frontend-dev (renderer) -> focused qa
+    verification and visual verdict -> adversary diff-pass -> phase-close QA verdict -> ONE
+    local phase-close commit via git-agent. No push, no tag, no release and no credential
+    change without explicit operator approval.
+11. **Numbering.** This is Phase 104 (the last appended phase is 103). Artifacts are named
+    `phase104_*` / `focusDock*` so they stay unambiguous.
+
+**Features**
+
+**A. Dock inventory + Focus Dock shell (frontend-dev, chunk 1).** Record the complete command
+inventory as the child issue's `dock-inventory` document (id, handler, shortcut, selector,
+presentation, availability, workspace membership; ambiguous handlers resolved from code). Add
+the scoped dock-token layer and restyle the shell to the Focus Dock geometry and palette
+(surface, radius, border, shadow, padding, 20px icons, 12px/500 labels, 6px gap, 9px selected
+radius, separators); apply the state/colour discipline; replace the detached hint with a
+labelled Tools button opening the existing palette; move Customize dock into More reusing the
+existing dock EDIT-mode flow.
+
+**B. Responsive command set + collision safety + More popover (frontend-dev, chunk 2).**
+Reconcile `DOCK_STAGE_IDS` into the ~5 primary + stable More arrangement per stage while
+preserving every command id; key the fit on the measured document-viewport width; reserve
+bottom scroll inset so the last page's bottom edge stays reachable; anchor the More popover
+upward with keyboard navigation, Escape/focus return, outside dismissal and correct ARIA; keep
+the explicit pin/unpin/reorder/restore customization with accessible alternatives to dragging;
+handle the very narrow viewport with a reserved row; never shrink glyphs/labels.
+
+**C. Focused QA + visual verdict (qa, chunk 3).** Run typecheck, the updated renderer unit
+tests and `build:renderer`; sweep the CONTROL-INDEX; capture before/after screenshots for all
+four workspaces, overflow, keyboard focus and a narrow viewport; verify no collision with page
+navigation, zoom/pan, scrollbar or page content; record DEF-NNN.
+
+**D. Adversarial diff-pass (adversary, chunk 4).** Attack the change for behaviour drift
+(handlers/shortcuts/selectors), dropped or duplicated commands, overlay collisions at
+DPI/panel/theme extremes, and accessibility/motion regressions.
+
+**E. Phase-close QA verdict (qa, chunk 5).** Verdict per success criterion over the whole
+phase diff.
+
+**F. Phase-close local commit (git-agent, chunk 6).** Stage and commit the phase's tracked
+changes as ONE local commit referencing Phase 104 and any DEF/ADV numbers; no push, no tag, no
+version bump.
+
+**Success criteria**
+
+1. One reusable dock shell consuming the workspace command metadata and the shared icon
+   registry, in single and Multi Mode, reusing the existing command registry, popover/menu
+   primitives, customization state and viewport geometry.
+2. The inventory is recorded before replacement, covering every workspace command and dock
+   configuration with command ID, handler, shortcut, selector, presentation, availability and
+   membership; ambiguous handlers (Optimize / trailing pencil) resolved from code; no command
+   missing.
+3. Focus Dock look and geometry hold: compact near-opaque surface, 14px radius, 1px border,
+   restrained theme-aware shadow, 8px padding, ~68px content-driven height, 20px icons,
+   12px/500 labels, 6px gap, 9px selected radius, graphite/violet palette, purposeful
+   separators; centred in the document viewport.
+4. Responsive set: ~5 primary commands then a stable More + Tools group; short labels with
+   full accessible names; every other/unseen command reachable in More and the palette; no
+   glyph/label shrinking; reserved row at very narrow widths.
+5. State/colour discipline holds: soft violet selected tile for persistent tools; momentary
+   feedback for exports/OCR/dialogs; no green on ordinary exports; Delete labelled and red;
+   clear active-tool indication; a labelled Tools button replaces the hint; Customize dock
+   lives in More with pin/unpin/reorder/restore and persisted choices.
+6. No collisions: reserved bottom scroll inset keeps the last page's bottom edge reachable;
+   the More popover opens upward, stays within screen bounds, and supports keyboard navigation,
+   Escape/focus return, outside dismissal and correct ARIA; no document reflow on open.
+7. Motion/accessibility: shared 140ms transitions, reduced motion honoured, distinct focus
+   ring, disabled reasons, busy feedback, high-contrast support, 44px coarse targets; no
+   magnification/bounce/continuous animation/heavy blur/default auto-hide.
+8. Standard flow closed with evidence: typecheck, targeted unit tests and `build:renderer`
+   green where affected; before/after screenshots for all four workspaces plus overflow,
+   keyboard focus and a narrow viewport; adversary diff-pass, phase-close QA verdict and ONE
+   local phase-close commit; no push/tag/release/credential change without operator approval.
+
+**CONTROL-INDEX:** every dock verb keeps its existing command id, handler and shortcut; each
+displaced verb keeps its action, relocated to More; the new **Tools** button opens the existing
+command palette; **Customize dock** in More opens the existing dock EDIT-mode flow (pin/unpin/
+reorder/restore); separators are non-interactive. qa's focused pass verifies every listed
+control performs its promised action with no no-op and no changed handler. No new document
+operation is introduced.
+
+**Settings impact:** none. No new persisted `AppSettings` field and no settings channel; the
+phase is presentation and organisation only and preserves the existing `dockPins` /
+`dockUnpinned` persistence flow (no auto-rearranging by usage).
+
+**Numbering:** this is Phase 104 (the last appended phase is 103).
 

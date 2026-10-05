@@ -1702,6 +1702,56 @@ export const DOCK_STAGE_IDS: Readonly<Record<Stage, readonly string[]>> = {
   deliver: ['optimize', 'audit', 'exportPages', 'exportText', 'exportDocx', 'exportXlsx', 'exportPptx', 'createFromImages', 'encrypt'],
 };
 
+/** Phase 104 (chunk 2) — the dock's RESPONSIVE PRIMARY curation.
+ *
+ *  `DOCK_STAGE_IDS` above is the stage's FULL membership: every verb the dock
+ *  can reach, primary tile OR More menu. This map names the ~5 headlining
+ *  verbs rendered as labelled tiles at ordinary editor widths; every remaining
+ *  `DOCK_STAGE_IDS[stage]` id is a More verb. The lists are ADDITIVE — no id is
+ *  removed from `DOCK_STAGE_IDS` — and every id here MUST also appear in
+ *  `DOCK_STAGE_IDS[stage]` (the unit tests assert both). */
+export const DOCK_PRIMARY_IDS: Readonly<Record<Stage, readonly string[]>> = {
+  pages: ['rotate', 'extract', 'insertPages', 'merge', 'cropPages'],
+  edit: ['editToolOff', 'editText', 'editImage', 'editTextBox', 'recognizeText'],
+  review: ['annotate', 'sign', 'stamp', 'forms', 'bates'],
+  deliver: ['optimize', 'exportPages', 'exportText', 'exportDocx', 'encrypt'],
+};
+
+/** Phase 104 (chunk 2) — the stage's curated primary verb ids, in render order.
+ *  A stage always resolves its own list (never empty). */
+export function dockPrimaryIdsForStage(stage: Stage): readonly string[] {
+  return DOCK_PRIMARY_IDS[stage];
+}
+
+/** Phase 104 (chunk 2) — the SHORT visible tile label for a curated primary id.
+ *  The FULL registry `label` stays the accessible name (`aria-label`), the
+ *  disabled reason / tooltip (`title`) and the More-menu row; only the on-tile
+ *  text is shortened so the five labelled primaries fit the dock band without
+ *  shrinking the glyph or the label size. An id with no entry keeps its full
+ *  label (pins and every non-primary id are unaffected). */
+export const DOCK_SHORT_LABELS: Readonly<Record<string, string>> = {
+  rotate: 'Rotate',
+  extract: 'Extract',
+  insertPages: 'Insert',
+  merge: 'Merge',
+  cropPages: 'Crop',
+  editToolOff: 'Select',
+  editText: 'Text',
+  editImage: 'Images',
+  editTextBox: 'Text box',
+  recognizeText: 'OCR',
+  annotate: 'Annotate',
+  sign: 'Sign',
+  stamp: 'Stamp',
+  forms: 'Forms',
+  bates: 'Bates',
+  optimize: 'Optimize',
+  exportPages: 'Images',
+  exportText: 'Text',
+  exportDocx: 'Word',
+  encrypt: 'Encrypt',
+};
+
 /** TFL-660 — the GLOBAL tools a dock may host: exactly the global entries
  *  whose `action` the dock's run routing executes (App `dockAppActions` /
  *  `appActionGates`, DocumentView `viewDockActions`). Every other global stays

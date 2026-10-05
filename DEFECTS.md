@@ -12751,4 +12751,187 @@ History:
 - CTO (TFL-735, 2026-10-04): FIX-READY - frontend-dev reports `DialogShell.tsx:230` non-sheet close now renders `btn btn-ghost btn-icon modal-close` (sheet branch byte-identical), `.modal-close:not(.btn)` retained for the live bare `.modal-close` in `EngineeringLayersPanel.tsx:136`. Dev re-ran `e2e/phase91_button_system.spec.cjs` -> 1 passed (all 11 guards green incl. `dialog`); `foundationGuards foundationMirrors designSystem` -> 3 files / 58 tests passed; conventions clean + tsc 0 errors; renderer build ok. Awaiting qa retest to CLOSE.
 - qa (TFL-736, 2026-10-04): CLOSED. Retested on the rebuilt renderer (`node node_modules/vite/bin/vite.js build`). `e2e/phase91_button_system.spec.cjs` -> 1 passed, all 11 guards `ok:true` including `dialog`; `[aria-labelledby="stamp-dialog-title"] .modal-close` now carries `btn btn-ghost btn-icon` (log `screenshots/phase91-dialog-light.png`, `e2e/phase100_p91_retest_736.log`). Blast radius: `e2e/phase92_dialog_shell.spec.cjs` -> 1 passed (SUMMARY pass=74 fail=0); the live bare `.modal-close` consumer `EngineeringLayersPanel.tsx:136` opened via the palette and its close still renders + closes (added `e2e/tfl736_def544_blast.spec.cjs` -> 1 passed, `screenshots/tfl736-engineering-layers-light.png`). `npm run verify` equivalent: `scripts/check-conventions.mjs` clean (352 files) + `tsc --noEmit` exit 0. Fix confirmed; no escape follow-up required (the oracle itself was correct and stayed unweakened).
 
+## DEF-567: Phase 104 More popover loses roving focus when the first row is disabled (EDIT stage) — Arrow/Home/End do nothing
 
+> Renumbered by the CTO 2026-10-05: qa filed this as "DEF-545", but DEF-545 is already
+> held by the closed Phase 100 DriftGuard entry above, and the ledger's highest id is 566.
+> The ledger id is DEF-567; the qa-authored e2e spec filename
+> `e2e/phase104_def545_more_roving_focus.spec.cjs` is retained verbatim.
+
+- Status: CLOSED
+- Severity: MEDIUM
+- Found by: qa (TFL-847 Phase 104 focused verification + visual verdict)
+- Phase: 104 (TFL-841 chunk 3) — regression-class gap in the new anchored More popover
+- Files: `src/renderer/components/ActionDock.tsx:959-964` (the open effect focuses `overflowMenuRef.current?.querySelector('[role="menuitem"]')`)
+
+Steps to reproduce:
+1. `npm.cmd run build:renderer` then `npx.cmd playwright test e2e/phase104_qa_control_index.spec.cjs --reporter=list` from the repo root.
+2. Launch opens `report.pdf`; press Ctrl+2 to enter the EDIT stage.
+3. Click the dock's `[data-dock-overflow]` (More) button.
+4. Inspect `document.activeElement` — it is the More button, NOT inside `[data-dock-overflow-menu]`.
+
+Expected (Phase 104 CONTROL-INDEX g / success criterion 6): opening More places roving focus on its first ENABLED row so ArrowUp/Down and Home/End move focus through the menu; keyboard users can reach every row.
+
+Actual: in EDIT the first two More rows (`batchOcr`, `ocrSuspects`) are both DISABLED (batchOcr needs a second document; ocrSuspects needs an OCR run), so `querySelector('[role="menuitem"]')` returns a disabled button; `.focus()` on a disabled button is a no-op and focus stays on the More button OUTSIDE the menu. Arrow/Home/End keydown events therefore never reach the menu's `onKeyDown`, so the one enabled row (`customize`) is unreachable by keyboard. PAGES/REVIEW/DELIVER (first row enabled) are unaffected. Evidence: `[P104 edit-more-initial-focus] {"firstItemDisabled":true,"activeId":null,"activeTag":"BUTTON","inMenu":false}` and `[P104 popover keys] ... home=replacePages end=customize initialFocus={"id":"replacePages","inMenu":true}` (pages works). Pinned by `e2e/phase104_def545_more_roving_focus.spec.cjs` (`test.fail()`).
+
+Root cause (hypothesis for the owner): the open-focus effect does not skip disabled rows. Focus the first non-disabled `[role="menuitem"]`, or render unavailable rows focusable with `aria-disabled="true"` (already `disabled` on the buttons) so the roving index can exclude them consistently. Do not weaken the keyboard criterion.
+
+Fix owner: frontend-dev (`src/renderer/components/ActionDock.tsx`). On fix, qa retests and removes the `test.fail()` marker.
+
+Evidence: `e2e/phase104_qa_control_index.spec.cjs` (control-index sweep), screenshot `screenshots/phase104-edit.png`.
+
+History:
+- qa (TFL-847, 2026-10-05): FILED during the Phase 104 focused verification. All other CONTROL-INDEX items (a-h) pass; this is the sole failure. Not covered by `test/unit/renderer/phase104_focusDockShell.test.tsx` / `phase104_dockResponsiveSet.test.tsx` (their More menu opens in the PAGES stage where the first row is enabled).
+- frontend-dev (TFL-848, 2026-10-05): FIX-READY. Added exported `focusFirstEnabledMenuItem(menu, fallback)` in `src/renderer/components/ActionDock.tsx:276`, selecting `'[role="menuitem"]:not([disabled])'`; the open-focus effect now targets the first enabled row and, when no row is enabled, leaves focus on the More button (no throw). Roving ArrowUp/Down/Home/End and Escape-return-to-`[data-dock-overflow]` unchanged.
+- qa (TFL-849, 2026-10-06): CLOSED. Retest PASS. `npm.cmd run build:renderer` -> exit 0; `npx.cmd playwright test e2e/phase104_def545_more_roving_focus.spec.cjs e2e/phase104_qa_control_index.spec.cjs --reporter=list` -> 2 passed, 0 failed. Removed the `test.fail()` marker from the pin spec (assertions untouched). EDIT More open now reports `{"firstItemDisabled":true,"activeId":"customize","activeTag":"BUTTON","inMenu":true}` (focus lands on the first ENABLED row). Blast radius (same spec): roving keys still hold (`down=split up=replacePages home=replacePages end=customize`) and Escape returns focus (`focusOnBtn:true`). Evidence: `screenshots/phase104_tfl849_retest.log`.
+
+
+## DEF-568: Phase 104 More menu renders the destructive `delete` verb graphite, not red (success criterion 5)
+
+- Status: CLOSED
+- Severity: MEDIUM
+- Found by: CTO visual review (TFL-841, screenshot `screenshots/phase104-overflow.png`, 2026-10-05)
+- Phase: 104
+- Files: `src/renderer/components/ActionDock.tsx` (the More overflow menu item, ~1096-1113, renders `className="btn btn-ghost action-dock-menu-item"` with `data-dock-overflow-item` and no danger class); `src/renderer/styles.css` (the red ink rule exists only for the ROW verb `.action-dock-verb[data-dock-verb='delete']` at 15947-15949, not for the More-menu item)
+
+Steps to reproduce:
+1. Open the PAGES workspace dock and click `[data-dock-overflow]` (More).
+2. Observe the `[data-dock-overflow-item="delete"]` row ("Delete pages"): the glyph and label render graphite, not red.
+
+Expected (Phase 104 success criterion 5 / dock-design-spec line 60): "Delete is always clearly labeled and red wherever exposed; moving it into More changes prominence, not availability." The More-menu `delete` row must carry the danger ink (`--tf-icon-danger`) and label, mirroring the dock verb's red treatment.
+
+Actual: graphite. The dock ROW verb is red (`.action-dock-verb[data-dock-verb='delete']`, styles.css:15947-15949) and qa's item e confirmed the State-2 `delete` is red rgb(184,46,67); only the More-menu item lacks the danger treatment.
+
+Fix owner: frontend-dev (scoped: add a red rule for `.action-dock-menu-item[data-dock-overflow-item='delete']` mirroring the row verb's danger treatment; do not restructure the `.btn` primitive). qa retests and closes.
+
+History:
+- CTO (TFL-841, 2026-10-05): FILED from the Phase 104 focused-verification screenshots; folded into the DEF-567 fix child so the More-menu fix lands in one bounded pass.
+- frontend-dev (TFL-848, 2026-10-05): FIX-READY. Added `.action-dock-menu-item[data-dock-overflow-item='delete']:not(:disabled) { color: var(--tf-icon-danger); }` in `src/renderer/styles.css:15958`, mirroring the row verb and scoped to the delete row only.
+
+
+## DEF-569: In PAGES selection state the More popover duplicates `delete` and routes it to a DIFFERENT handler than the selection tile (ADV-214)
+
+- Status: CLOSED
+- Severity: MEDIUM
+- Found by: adversary (ADV-214, TFL-850 Phase 104 diff-pass)
+- Phase: 104
+- Files: `src/renderer/components/ActionDock.tsx:636` (`moreVerbs` = `stageEntries` minus `DOCK_PRIMARY_IDS`, not gated on `primaryState`), `:650` (`primaryVerbs` becomes `selectionVerbs` in State 2), `:758` (`menuVerbs`)
+
+Steps to reproduce:
+1. `npx.cmd vitest run --config test-fixtures/phase104-adversary/vitest.probe.config.ts` -> the "delete must not appear in BOTH the selection primary tiles and the More menu" test fails with `["delete"]`. Live: `npm.cmd run test:e2e -- phase104_adversary.spec.cjs -g "ADV-A"`.
+2. PAGES stage, select page 1 (State 2, `data-dock-state="selection"`), open More.
+
+Expected: exactly ONE `delete` command on screen; the More popover holds only stage verbs NOT already visible; every row runs the same handler as its tile.
+
+Actual: `delete` renders BOTH as a selection tile and a More row, and they diverge - the tile runs the bulk handler (`bulk.onDelete(pages)` -> `engine.deletePages`, deletes the selection) while the More row runs `onRunTool("delete")` -> `dockAppActions.deletePages` -> `onDeletePageClick()` (opens the Delete Pages dialog). Same visible label, two behaviours.
+
+Fix owner: frontend-dev (gate `moreVerbs`/`menuVerbs` on `primaryState` so a selection tile id is never also a More row). qa verifies and closes.
+
+History:
+- adversary (TFL-850, 2026-10-05): FILED. Disposition ACCEPTED by CTO -> DEF-569.
+- frontend-dev (TFL-851, 2026-10-05): FIX-READY. `moreVerbs` (`ActionDock.tsx:636-639`) now excludes the CURRENT `primaryIds` (the State-2 selection tile ids), not the stage primary set; State-2 tiles = `rotate/extract/delete/clearPageSelection`, More = `insertPages/merge/cropPages/replacePages/split`; no dock id renders twice and every `DOCK_STAGE_IDS.pages` id stays reachable. Adversary probe `test-fixtures/phase104-adversary/vitest.probe.config.ts` now passes (4/4), incl. the "delete must not appear in BOTH" test.
+- qa (TFL-852, 2026-10-06): CLOSED. Retest PASS. `npx.cmd vitest run --config test-fixtures/phase104-adversary/vitest.probe.config.ts` -> 4 passed (4). Live: added `e2e/phase104_def569_571_retest.spec.cjs`; PAGES shift-click -> `data-dock-state="selection"`, tiles `["rotate","extract","delete","clearPageSelection"]`, (`[data-dock-verb="delete"]` tile count 1), More menu `["insertPages","replacePages","split","merge","cropPages"]`, `[data-dock-overflow-item="delete"]` count 0, zero id overlap. `npm.cmd run test:e2e -- e2e/phase104_def569_571_retest.spec.cjs` -> 2 passed, 0 failed. Screenshot inspected: `screenshots/phase104-def569-selection.png` (red "Delete pages" tile + "Clear page selection"; More holds Insert/Replace/Split/Merge/Crop/Customize, no Delete).
+
+
+## DEF-570: Phase 104 retires `[data-dock-edit-toggle]` and `[data-dock-hint]`, so eight existing e2e specs query dead selectors (ADV-215)
+
+- Status: CLOSED
+- Severity: MEDIUM
+- Found by: adversary (ADV-215, TFL-850 Phase 104 diff-pass)
+- Phase: 104
+- Files: `e2e/phase58_dock_edit.spec.cjs` (62,115,118,278), `e2e/phase63_dock_edit_colour.spec.cjs` (33,59,100,101,114,115), `e2e/phase95_dock_edit_overflow.spec.cjs` (120,121), `e2e/phase98_dock_curation_qa.spec.cjs` (51), `e2e/tfl228_edit_jiggle.spec.cjs` (114,206,359), `e2e/phase103_qa_visual.spec.cjs` (64,66) - `[data-dock-edit-toggle]`; `e2e/phase37_gate.spec.cjs` (99,934,945), `e2e/phase39_matrix.spec.cjs` (103) - `[data-dock-hint]`
+
+Steps to reproduce: `npx.cmd rg -n "data-dock-edit-toggle|data-dock-hint" e2e/` (read-only).
+
+Expected: every e2e spec that drives the dock EDIT mode or the Ctrl+K hint is migrated to the new affordances in the same phase (the unit specs phase36/37/58/75/98 were), so `npm run test:e2e` and CI `verify:full` stay green.
+
+Actual: eight live e2e specs still hard-query the retired selectors and will fail once the diff is committed; the `[data-dock-hint]` `count().toBe(0)` now passes vacuously and its `.textContent` reads return null.
+
+Fix owner: qa (e2e is qa's path): migrate `[data-dock-edit-toggle]` -> `[data-dock-overflow]` then `[data-dock-menu-item="customize"]`, and drop/replace the `[data-dock-hint]` assertions (Tools button `[data-dock-tools]`). qa verifies and closes.
+
+History:
+- adversary (TFL-850, 2026-10-05): FILED. Disposition ACCEPTED by CTO -> DEF-570.
+- qa (TFL-852, 2026-10-06): CLOSED. Retired selectors migrated in every LIVE spec named in the defect: `[data-dock-edit-toggle]` -> click `[data-dock-overflow]` then `[data-dock-menu-item="customize"]` (phase58, phase63, phase95, phase98, tfl228, phase103); `[data-dock-hint]` -> the labelled `[data-dock-tools]` (phase37 textContent reads replaced by a `count() === 0` "hint is gone" assertion + the Tools label/aria, phase39 boolean read -> tools). `npx.cmd rg -n "data-dock-edit-toggle|data-dock-hint" e2e/` now returns only comments and `e2e/installed/release_1290_feedback_installed.spec.cjs:117` (intentionally pinned to the shipped 1.29.0 build via `launchInstalled`/`Program Files\Jovrel\Jovrel.exe`, where the hint still exists - left as-is). The six edit-toggle specs pass (`18 passed, 3 failed` across the eight migrated files; `e2e/tfl228_edit_jiggle.spec.cjs` also needed its dialog verb `split` -> `merge` because Phase 104 moved `split` into the More menu). The 3 failures are all `e2e/phase37_gate.spec.cjs` and are NOT retired-selector queries: they are stale non-selector oracles (see DEF-572). DEF-570's dead-selector deliverable is complete; the residual phase37 oracle drift is tracked separately.
+
+
+## DEF-571: Phase 104 icon-only rung (740-860px) lets the leading dock tile render over the page pill (pre-existing overlap, surfaced by the diff-pass)
+
+- Status: CLOSED
+- Severity: MEDIUM
+- Found by: adversary observation (TFL-850 vector 3; not filed by the adversary as an ADV, filed by the CTO from that evidence)
+- Phase: 104
+- Files: `src/renderer/state/dockFit.ts` / `src/renderer/state/dockModel.ts` fit math + `src/renderer/components/ActionDock.tsx` lane decision
+
+Steps to reproduce: live width sweep 1440 -> 560px; at the icon-only rung 740-860px the dock box clears both pills but the dock content (343px) exceeds its ~289px band (`dockOverflow` 37-54px), so the leading tile `rotate` renders over the page pill. Evidence: `test-fixtures/phase104-adversary/adv-w860.png`, `test-fixtures/phase104-adversary/adv-width-sweep.json`.
+
+Expected (Phase 104 criteria 6/8): the dock never overlaps the page pill, zoom pill, scrollbar or unrecoverable content at any supported width; a row that cannot fit its band routes to the arrows/reserved lane instead of spilling over a pill.
+
+Actual: the leading tile spills over the page pill between ~740 and ~860px. The adversary measured the pre-diff icon-only row at ~350-358px (vs 343px now), so the diff does not introduce or worsen it - it is pre-existing - but the phase's own "no collisions" criterion is not met while it stands.
+
+Fix owner: frontend-dev (route the icon-only row through the lane when its measured content exceeds the band, so the first tile can never sit over a pill). qa verifies at the 740-860px band and closes.
+
+History:
+- adversary (TFL-850, 2026-10-05): recorded as a release-gate observation, not filed. CTO (TFL-841, 2026-10-05): FILED as DEF-571 because Phase 104 criterion 8 requires no collision; folded into the DEF-569 fix batch.
+- frontend-dev (TFL-851, 2026-10-05): FIX-READY. Added `iconOnlyDockNeed()` in `src/renderer/state/dockFit.ts` (58px Focus Dock tile floor x controls + gaps + padding); `ActionDock` routes an overflowing icon-only row into the arrows lane when `!lifted && !reservedRow && iconNeed > band`, so the leading `rotate` tile cannot sit over the page pill at 720-880px. Arrows still gate on the existing `useRowOverflow` measurement. (Assumption noted: the lane decision is a geometry estimate; qa must verify live at 740-860px.)
+- qa (TFL-849, 2026-10-06): CLOSED. Retest PASS. Added a focused assertion to `e2e/phase104_qa_control_index.spec.cjs` (PAGES More block): the enabled `[data-dock-overflow-item="delete"]` row computes `rgb(184, 46, 67)`, equal to `--tf-icon-danger` (`#b82e43`); every sibling row stays graphite. Screenshots inspected: `screenshots/phase104-overflow.png` (More popover, red "Delete pages" row) and `screenshots/phase104-delete-red.png` (State-2 inline red delete). Command: `npx.cmd playwright test e2e/phase104_def545_more_roving_focus.spec.cjs e2e/phase104_qa_control_index.spec.cjs --reporter=list` -> 2 passed, 0 failed.
+- qa (TFL-852, 2026-10-06): CLOSED. Retest PASS. Live width sweep via `e2e/phase104_def569_571_retest.spec.cjs` at 740/780/820/860px (window 860h): `data-dock-icon-only="true"` and `data-dock-arrows-lane="true"` at every rung; `[data-dock-verb="rotate"]` visible rect intersects `[data-page-pill]` = false, dock box vs page pill = false, dock box vs zoom pill = false. `npm.cmd run test:e2e -- e2e/phase104_def569_571_retest.spec.cjs` -> 2 passed, 0 failed. Screenshot inspected: `screenshots/phase104-def571-860.png` (arrows-lane dock clear of both pills). Evidence: `screenshots/phase104-def569-selection.png`.
+
+
+## DEF-572: Phase 37 gate keeps three stale NON-selector oracles red (rail icons, inspector-action padding, dock one-row height)
+
+- Status: CLOSED
+- Severity: MEDIUM
+- Found by: qa (TFL-852 Phase 104 DEF-570 migration retest)
+- Phase: 104 (data only; two oracles are pre-existing at committed HEAD)
+- Files: `e2e/phase37_gate.spec.cjs:287` (inspector-action padding), `:444-446` (rail icons), `:807` (dock one-row height); plus the same-class refreshes unmasked behind them: `:22-27` (`DOCK_STAGE_IDS` const), `:315`/`:503` (divider-token separators), `:1004` (unpin a rendered default verb)
+
+Steps to reproduce:
+1. `npm.cmd run test:e2e -- e2e/phase37_gate.spec.cjs --reporter=list` (after the DEF-570 selector migration).
+
+Expected: the migrated phase37 gate passes.
+
+Actual: P37-A2/C/D/E-hint/F pass; three oracles fail:
+- P37-A (`:287`): `[data-inspector-action="renumber"]` computes `padding: 0px 12px`; the spec expects `4px 10px`. `.inspector-action` and `.btn` are IDENTICAL at committed HEAD and the uncommitted diff does not touch them, so this is pre-existing Phase 103 button-system drift.
+- P37-B (`:444-446`): the rail toggle renders `lucide-panel-left-close` (and `lucide-panel-right-open`); the spec expects `chevron-left`/`chevron-right`. HEAD `SideRail.tsx` already imports/renders `PanelLeftClose`/`PanelRightOpen`, so this is pre-existing since the Phase 103 icon migration.
+- P37-E (`:807`): at 640px the dock is 73px tall while the spec's label-derived single-row bound is ~51px. `verbRows` is still 1 (no stacking). The oracle omits the Phase 104 dock floor (`--dock-min-height: 68px`, `--dock-tool-tile-min-height: 52px`, the 58px Focus Dock tiles) introduced by the uncommitted TFL-851 diff.
+
+Evidence: `18 passed, 3 failed` across the eight DEF-570 migrated specs; the 3 are all phase37.
+
+Fix owner: qa (e2e is qa's path) - refresh the three oracles to the current intended design (panel-left-close/panel-right-open; the current `.btn` control padding; include `--dock-min-height` in the one-row bound). Two of the three pre-date Phase 104, so the CTO decides whether to fold this into the DEF-570 close or track separately. Not a DEF-569/570/571 regression.
+
+History:
+- qa (TFL-852, 2026-10-06): FILED from the DEF-570 migration retest. `e2e/phase37_gate.spec.cjs` `setWindowSize()` also had to `unmaximize()` before `setSize()` because the app launches maximized on this host (2560px work area), which is why the file previously failed at resize before reaching any assertion. Product untouched.
+- CTO (TFL-841, 2026-10-06): ACCEPTED; fix owner qa (e2e). The P37-E dock-height oracle is Phase-104-caused (the TFL-851 `--dock-min-height: 68px` / 58px Focus tiles); the P37-A padding and P37-B rail-icon oracles are pre-existing Phase-103 test-expectation drift, folded in so the dock's own phase37 gate is green. Refresh all three to the current intended behaviour, preserving each oracle's intent (rail icons = panel-left-close/panel-right-open; the current `.btn` padding; the dock one-row bound including `--dock-min-height`). Product untouched.
+- qa (TFL-853, 2026-10-06): CLOSED. The three named oracles refreshed to current intended behaviour, then verified. Refreshing them unmasked four further oracles of the identical stale-test class in the same spec (they were hidden behind the earlier failures; product correct in every case):
+  1. `:315` and `:503` used a broken rgba-alpha regex `/rgba?\([^)]*?,\s*([0-9.]+)\s*\)/` that reads the BLUE channel of the now-opaque `--divider` (`#dde3ea` -> false alpha 234). Replaced with an exact comparison of the separator's `borderTopColor` to the resolved `--divider` token (and, for P37-A, an explicit "not the heavier `--border`" check) - a stronger, non-vacuous oracle, not a relaxation.
+  2. `:948`'s `DOCK_STAGE_IDS` const was stale vs `toolsRegistry.DOCK_STAGE_IDS` (review 8 vs 16 ids; deliver missing exportXlsx/exportPptx/encrypt). Synced the const to the registry (Set-compared, order-independent).
+  3. `:1004` (P37-E item 21) right-clicked inline `[data-dock-verb="split"]`, but Phase 104 moved `split` into the More menu. The unpin step now targets whichever default primary is actually rendered and asserts THAT id is removed and persisted in `dockUnpinned`.
+   All are test expectations only; no product source touched; no assertion deleted or made vacuous. Verified: `npm.cmd run build:renderer` -> exit 0; `npm.cmd run test:e2e -- e2e/phase37_gate.spec.cjs` -> 7 passed, 0 failed; the DEF-570 migrated set (`phase58/63/95/98`, `tfl228_edit_jiggle`, `phase103_qa_visual`, `phase39_matrix`) -> 14 passed, 0 failed. Evidence: `e2e_phase37_gate_tfl853.log`, `migrated_set_tfl853.log` (issue TFL-853 artifacts).
+
+
+## DEF-573: Phase 104 reserved-row dock collapses to an 18px sliver at narrow single-mode widths once the page/zoom pills are absent (ViewStrip relocation) - dock controls overlap
+
+- Status: CLOSED
+- Severity: MEDIUM - at narrow single-mode widths (<~476px canvas) the Action Dock loses its surface and its primary tiles, arrows, More and Tools overlap each other, so the reserved-row rung (Phase 104 criterion 4) does not work and the dock controls are visually unreadable and mis-hit-prone. Commands remain reachable via More / Tools, so it is not a HIGH document/data risk; it materially degrades the supported narrow workflow.
+- Found by: qa (TFL-880 Phase 104 phase-close reconciliation, criterion-8 narrow-viewport evidence)
+- Phase: 104 (chunk 2 reserved-row rung; triggered by the uncommitted Phase 109 ViewStrip relocation removing `[data-page-pill]`/`[data-zoom-pill]` from single mode)
+- Files: `src/renderer/components/ActionDock.tsx:570` (`dockCap`), `src/renderer/components/ActionDock.tsx:1246` (inline `maxWidth: ${dockCap}px`)
+
+Steps to reproduce (from application launch):
+1. `npm.cmd run build:renderer` then `npm.cmd run test:e2e -- e2e/phase104_criterion8_validation.spec.cjs`.
+2. The spec opens `report.pdf`, sets the window to 520x820 in the narrow-viewport step and logs `[P104-C8 narrow-dock]`.
+
+Expected: the reserved-row rung (`data-dock-reserved="true"`, `width < DOCK_RESERVED_ROW_WIDTH=560`) gives the dock its own band (CSS `.action-dock[data-dock-reserved='true'] { max-width: max(0px, calc(100% - 24px)) }`, ~332px at this host), so the five icon-only primary tiles plus the arrows, More and Tools render in one non-overlapping row on a visible dock surface.
+
+Actual: the dock's computed `max-width` is `0px` and its box is 18px wide (`dockRect {w:18,h:73,l:289,t:683}`), so the dock surface vanishes and its children overflow and overlap: `arrow-left l=206`, `scroll l=236 w=0`, `arrow-right l=240`, `more l=270 w=58`, `tools l=332 w=58`, primary tiles at `l=236,297,358,419,480`. Root cause: `dockCap` (ActionDock.tsx:570) is `lifted ? width-2*DOCK_LIFT_INSET : freeBand?.width ?? band`. With the pills gone, `pill === null` so `lifted === false` and `freeBand === null`, leaving `dockCap = band = dockBand(width, 476) = max(0, 356-476) = 0`; the inline `maxWidth: 0px` then overrides the reserved-row CSS rule. `reservedRow` is never consulted by `dockCap`.
+
+Evidence:
+- `test-fixtures/phase104-c8/narrow-probe.log` (full DOM/geometry dump from the temporary diagnostic probe used to root-cause the collapse).
+- `screenshots/phase104-c8/narrow-dock-crop.png` (520px dock region: overlapping "Rotate"/"Ext..."/icons, no dock surface).
+- `test-fixtures/phase104-c8/criterion8-validation.log` / `criterion8-validation-rerun.log` (`[P104-C8 narrow-520] dock {w:18,...}`, `dockReserved:"true"`, `dockIconOnly:"true"`, `dockTiles:5`).
+
+Fix owner: frontend-dev (ActionDock product source). Not fixed by qa (task scope is test-robustness + validation evidence). Note: the collision oracle itself is honest - the 18px dock does not intersect the ViewStrip page/zoom controls - so the collapse is a separate criterion-4 defect, not a collision-oracle failure.
+
+- CTO (TFL-841, 2026-10-05): ACCEPTED; fix owner frontend-dev. Phase 104's chunk-2 reserved-row rung must consult `reservedRow` in `dockCap` so the inline `maxWidth` can never clamp to 0 when the pills are unmeasured/absent. The trigger is the uncommitted Phase 109 ViewStrip relocation, but the dock's narrow reserved-row behaviour is Phase 104's own criterion 4.
+- frontend-dev (TFL-884, 2026-10-05): FIX-READY. Added a pure, unit-testable `dockCap({width, lifted, reservedRow, freeBandWidth, band})` in `src/renderer/state/dockFit.ts:121-132`, returning `Math.max(0, width - 2*DOCK_LIFT_INSET)` when `lifted || reservedRow` (checked before the measured free band), then `freeBandWidth ?? band`; called once at `src/renderer/components/ActionDock.tsx:573`. A narrow probe at 520px with the pills absent now reports the dock at the reserved band (~332px, was 18px). New unit spec `test/unit/renderer/phase104_dockDef573.test.tsx`. A duplicate fix child (TFL-882) targeted the same defect; the landed tree is TFL-884's pure-helper version and the two are consistent (a single `dockCap` call, no leftover inline ternary).
+- qa (TFL-899, 2026-10-05): CLOSED. Retest PASS. `npm.cmd run build:renderer` exit 0. Focused unit specs (phase104_dockDef573 / dockResponsiveSet / focusDockShell / dockMoreFocus / dockDef569_571) = 5 files / 20 tests passed, 0 failed. Live e2e (`e2e/phase104_criterion8_validation.spec.cjs`) passed (1 passed) after hardening the narrow step with non-vacuous assertions; at 520x820 the dock box is `{l:132,r:464,w:332,h:73}` with `maxWidth:"332px"` (host 356 less 24 - was 18px), `data-dock-reserved="true"`, icon-only, 5 primary tiles, and zero VISIBLE child overlaps (clip-aware; the arrows lane clips the off-lane tiles). Refreshed evidence: `screenshots/phase104-c8/narrow-dock-c8-after.png` and `viewport-narrow-520-after.png`; log `test-fixtures/phase104-c8/def573-retest-tfl899.log`. Note: the spec's `setTheme` was repaired to the Phase 105 app-menu route (`[data-app-menu] [data-menu-action="toggleTheme"]`) because the retired `[data-theme-toggle]` picker blocked the run; test-only change, no product source touched.

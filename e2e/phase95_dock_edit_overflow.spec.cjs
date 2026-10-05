@@ -117,8 +117,10 @@ async function openReport(win) {
 }
 
 async function enterEditMode(win) {
-  expect(await win.locator('[data-dock-edit-toggle]').count()).toBe(1);
-  await win.locator('[data-dock-edit-toggle]').click();
+  expect(await win.locator('[data-dock-overflow]').count()).toBe(1);
+  await win.locator('[data-dock-overflow]').click();
+  await win.waitForSelector('[data-dock-menu-item="customize"]', { state: 'visible', timeout: 8000 });
+  await win.locator('[data-dock-menu-item="customize"]').click();
   await win.waitForTimeout(400);
   expect(await win.locator(DOCK).getAttribute('data-dock-edit')).toBe('true');
 }

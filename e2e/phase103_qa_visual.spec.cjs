@@ -58,12 +58,14 @@ for (const theme of ['light', 'dark']) {
       await win.screenshot({ path: path.join(OUT, `stage-${stage}-${theme}.png`) });
     }
 
-    // The dock "add a tool" picker — revealed by the dock's own edit pen (the
-    // `[data-dock-edit-toggle]`, not the Edit workspace stage); its glyphs are
-    // absent from the supplied refs.
-    await win.click('[data-dock-edit-toggle]');
+    // The dock "add a tool" picker — revealed by the dock's own Customize dock
+    // item in the More popover (Phase 104 retired the `[data-dock-edit-toggle]`
+    // pen); its glyphs are absent from the supplied refs.
+    await win.click('[data-dock-overflow]');
+    await win.waitForSelector('[data-dock-menu-item="customize"]', { state: 'visible', timeout: 5000 });
+    await win.click('[data-dock-menu-item="customize"]');
     await win.waitForFunction(
-      () => document.querySelector('[data-dock-edit-toggle]')?.getAttribute('aria-pressed') === 'true',
+      () => document.querySelector('[data-action-dock]')?.getAttribute('data-dock-edit') === 'true',
       null,
       { timeout: 5000 },
     );

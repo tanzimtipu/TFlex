@@ -64,6 +64,7 @@ import {
   type PillControl,
 } from "../../../src/renderer/state/pillFit";
 import { multiPaneGeometry } from "../../../src/renderer/components/multiPaneLayout";
+import { dockPrimaryIdsForStage } from "../../../src/renderer/state/toolsRegistry";
 import {
   MULTI_DOCK_BAND_BASE_PX,
   multiPillLayerWidthPx,
@@ -392,8 +393,9 @@ describe("DEF-315 — the dock yields before it reaches a pill", () => {
       // scrolls with the arrows instead of yielding the labels.
       expect(tight.dock.getAttribute("data-dock-icon-only")).toBe("false");
       expect(tight.dock.querySelector(".action-dock-label")).not.toBeNull();
-      expect(tight.dock.getAttribute("data-dock-arrows")).toBe("true");
-      expect(tight.dock.querySelector("[data-dock-overflow]")).toBeNull();
+      // Phase 104 (chunk 2) — the stable More control always renders, outside
+      // the strip; the labels are still never dropped above the 880 rung.
+      expect(tight.dock.querySelector("[data-dock-overflow]")).not.toBeNull();
       // Without pins the six PAGES labels (~451px) still fit the 588px band.
       expect(plain.dock.getAttribute("data-dock-icon-only")).toBe("false");
     } finally {
@@ -410,8 +412,11 @@ describe("DEF-315 — the dock yields before it reaches a pill", () => {
       // dropping labels: nothing hides behind a `...` menu, the pins stay.
       expect(dock.getAttribute("data-dock-icon-only")).toBe("false");
       expect(dock.getAttribute("data-dock-arrows")).toBe("true");
-      expect(dock.querySelector("[data-dock-overflow]")).toBeNull();
-      expect([...dock.querySelectorAll('[data-dock-group="primary"] [data-dock-verb]')]).toHaveLength(8);
+      // Phase 104 (chunk 2) — the primary strip scrolls; More is stable.
+      expect(dock.querySelector("[data-dock-overflow]")).not.toBeNull();
+      expect(
+        dock.querySelectorAll('[data-dock-group="primary"] [data-dock-verb]'),
+      ).toHaveLength(dockPrimaryIdsForStage("pages").length);
       expect([...dock.querySelectorAll("[data-dock-pin]")].map((el) => el.getAttribute("data-dock-pin"))).toEqual([
         "undo",
       ]);
@@ -426,9 +431,12 @@ describe("DEF-315 — the dock yields before it reaches a pill", () => {
       expect(dock.getAttribute("data-dock-lift")).toBe("true");
       expect(dock.style.getPropertyValue("--dock-lift")).toBe(`${PILL_H + DOCK_PILL_GAP}px`);
       expect(Number.parseFloat(dock.style.maxWidth)).toBe(516);
-      // Plan width is the host: all eight relevant PAGES verbs stay inline.
-      expect([...dock.querySelectorAll("[data-dock-group='primary'] [data-dock-verb]")]).toHaveLength(8);
-      expect(dock.querySelector("[data-dock-overflow]")).toBeNull();
+      // Phase 104 (chunk 2) — the primary strip is the curated set; More is
+      // stable and outside the scroll strip.
+      expect(
+        dock.querySelectorAll('[data-dock-group="primary"] [data-dock-verb]'),
+      ).toHaveLength(dockPrimaryIdsForStage("pages").length);
+      expect(dock.querySelector("[data-dock-overflow]")).not.toBeNull();
     } finally {
       unmount();
     }
@@ -440,7 +448,11 @@ describe("DEF-315 — the dock yields before it reaches a pill", () => {
       expect(dock.getAttribute("data-dock-lift")).toBe("true");
       expect(Number.parseFloat(dock.style.maxWidth)).toBe(396);
       expect([...dock.querySelectorAll("[data-dock-pin]")]).toHaveLength(1);
-      expect([...dock.querySelectorAll("[data-dock-group='primary'] [data-dock-verb]")]).toHaveLength(8);
+      // Phase 104 (chunk 2) — the curated primary set, with the displaced PAGES
+      // verbs in the stable More menu.
+      expect(
+        dock.querySelectorAll('[data-dock-group="primary"] [data-dock-verb]'),
+      ).toHaveLength(dockPrimaryIdsForStage("pages").length);
     } finally {
       unmount();
     }

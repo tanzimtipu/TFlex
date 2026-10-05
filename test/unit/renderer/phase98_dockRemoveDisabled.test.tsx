@@ -47,7 +47,8 @@ function renderDock(options: Partial<ActionDockProps> = {}): Harness {
     onPinTool: vi.fn(),
     onUnpinTool: vi.fn(),
     onRunTool: vi.fn(),
-    canvasWidth: 1400,
+    canvasWidth: 100,
+    ladder: { inspectorCollapsed: true, panelCollapsed: true, iconOnly: true, arrows: false },
     ...options,
   };
   act((): void => {
@@ -80,10 +81,9 @@ describe("TFL-660 — a disabled dock verb is removable in edit mode", () => {
       onRunTool,
     });
     try {
-      // Arm EDIT mode so the minus renders.
-      const pen = host.querySelector("[data-dock-edit-toggle]");
-      expect(pen).not.toBeNull();
-      clickOn(pen as Element);
+      // Arm EDIT mode via the More overflow menu (Phase 104 chunk 1).
+      clickOn(host.querySelector("[data-dock-overflow]") as Element);
+      clickOn(host.querySelector('[data-dock-menu-item="customize"]') as Element);
 
       const verb = host.querySelector<HTMLElement>('[data-dock-verb="undo"]');
       expect(verb).not.toBeNull();

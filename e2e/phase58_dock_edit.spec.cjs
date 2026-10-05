@@ -54,18 +54,20 @@ async function dockMetrics(win) {
   });
 }
 
-// Phase 59 (item 3) — the pen must be fully CONTAINED inside the dock's box at
-// every responsive rung (it is the dock's own trailing row item now).
-async function penContainment(win) {
+// Phase 59 (item 3) — the dock's trailing utility must be fully CONTAINED
+// inside the dock's box at every responsive rung. Phase 104 (chunk 1) retired
+// the edit pen; its row slot is now the labelled Tools utility (`[data-dock-tools]`),
+// so the same containment contract is asserted on that control.
+async function trailingContainment(win) {
   return win.evaluate(() => {
     const dock = document.querySelector('[data-action-dock]');
-    const pen = document.querySelector('[data-dock-edit-toggle]');
-    if (dock === null || pen === null) return null;
+    const control = document.querySelector('[data-dock-tools]');
+    if (dock === null || control === null) return null;
     const d = dock.getBoundingClientRect();
-    const p = pen.getBoundingClientRect();
+    const p = control.getBoundingClientRect();
     return {
       dock: { left: d.left, top: d.top, right: d.right, bottom: d.bottom, width: d.width, height: d.height },
-      pen: { left: p.left, top: p.top, right: p.right, bottom: p.bottom, width: p.width, height: p.height },
+      control: { left: p.left, top: p.top, right: p.right, bottom: p.bottom, width: p.width, height: p.height },
       contained:
         p.left >= d.left - 0.5 &&
         p.right <= d.right + 0.5 &&
@@ -76,6 +78,14 @@ async function penContainment(win) {
       arrowsLane: dock.getAttribute('data-dock-arrows-lane'),
     };
   });
+}
+
+// Phase 104 (chunk 1) — dock EDIT mode is armed through the More popover's
+// Customize dock item (the retired pen's replacement).
+async function armDockEdit(win) {
+  await win.locator('[data-dock-overflow]').click();
+  await win.waitForSelector('[data-dock-menu-item="customize"]', { state: 'visible', timeout: 8000 });
+  await win.locator('[data-dock-menu-item="customize"]').click();
 }
 
 async function setWidth(app, win, w) {
@@ -111,11 +121,12 @@ test('dock pen enters edit mode with a desynchronised jiggle; minus/plus curate 
   let win = await app.firstWindow();
   await openReport(win);
 
-  // 1. The pen exists and the dock starts OUT of edit mode.
-  expect(await win.locator('[data-dock-edit-toggle]').count()).toBe(1);
+  // 1. The Customize affordance exists (through the More popover) and the dock
+  //    starts OUT of edit mode.
+  expect(await win.locator('[data-dock-overflow]').count()).toBe(1);
   expect(await win.locator(DOCK).getAttribute('data-dock-edit')).toBe('false');
 
-  await win.locator('[data-dock-edit-toggle]').click();
+  await armDockEdit(win);
   await win.waitForTimeout(400);
   expect(await win.locator(DOCK).getAttribute('data-dock-edit')).toBe('true');
 
@@ -140,12 +151,12 @@ test('dock pen enters edit mode with a desynchronised jiggle; minus/plus curate 
   for (const name of jiggle.names) expect(name).not.toContain('tf-anim-vibrate');
   expect(new Set(jiggle.delays).size).toBeGreaterThan(1);
 
-  // Phase 59 (item 3) — the pen is INSIDE the dock's bounds at the default
-  // (labelled) rung.
-  const containDefault = await penContainment(win);
-  console.log(`[P59-dock] pen containment (default) ${JSON.stringify(containDefault)}`);
-  expect(containDefault, 'the pen and dock boxes are measurable').not.toBeNull();
-  expect(containDefault.contained, `pen fully inside the dock (pen=${JSON.stringify(containDefault.pen)} dock=${JSON.stringify(containDefault.dock)})`).toBe(true);
+  // Phase 59 (item 3) — the trailing utility (now Tools) is INSIDE the dock's
+  // bounds at the default (labelled) rung.
+  const containDefault = await trailingContainment(win);
+  console.log(`[P59-dock] trailing containment (default) ${JSON.stringify(containDefault)}`);
+  expect(containDefault, 'the trailing control and dock boxes are measurable').not.toBeNull();
+  expect(containDefault.contained, `trailing control fully inside the dock (control=${JSON.stringify(containDefault.control)} dock=${JSON.stringify(containDefault.dock)})`).toBe(true);
 
   // A minus badge on EVERY dock verb, and exactly one plus at the row's right.
   const verbCount = await win.locator('[data-dock-verb]').count();
@@ -256,13 +267,13 @@ test('dock pen enters edit mode with a desynchronised jiggle; minus/plus curate 
   expect(mergeAfter, 'removed tool stays removed across a relaunch').toBe(0);
   expect(addedAfter, 'added tool persists across a relaunch').toBeGreaterThanOrEqual(1);
 
-  // Phase 59 (item 3) — the pen stays fully inside the dock at the narrow
-  // (icon-only + arrows) rung too.
+  // Phase 59 (item 3) — the trailing utility stays fully inside the dock at the
+  // narrow (icon-only + arrows) rung too.
   await setWidth(app, win, 700);
-  const narrow = await penContainment(win);
-  console.log(`[P59-dock] pen containment (narrow 700) ${JSON.stringify(narrow)}`);
-  expect(narrow, 'the pen and dock boxes are measurable at 700').not.toBeNull();
-  expect(narrow.contained, `pen fully inside the dock at 700 (pen=${JSON.stringify(narrow.pen)} dock=${JSON.stringify(narrow.dock)})`).toBe(true);
+  const narrow = await trailingContainment(win);
+  console.log(`[P59-dock] trailing containment (narrow 700) ${JSON.stringify(narrow)}`);
+  expect(narrow, 'the trailing control and dock boxes are measurable at 700').not.toBeNull();
+  expect(narrow.contained, `trailing control fully inside the dock at 700 (control=${JSON.stringify(narrow.control)} dock=${JSON.stringify(narrow.dock)})`).toBe(true);
   await win.screenshot({ path: path.join(SHOTS, 'p59-dock-pen-narrow.png') });
   await setWidth(app, win, 1440);
 
@@ -275,7 +286,7 @@ test('dock pen enters edit mode with a desynchronised jiggle; minus/plus curate 
   expect(await win.evaluate(() => document.documentElement.getAttribute('data-animations'))).toBe('off');
   await closePrefs(win);
 
-  await win.locator('[data-dock-edit-toggle]').click();
+  await armDockEdit(win);
   await win.waitForTimeout(400);
   expect(await win.locator(DOCK).getAttribute('data-dock-edit')).toBe('true');
   const off = await dockMetrics(win);

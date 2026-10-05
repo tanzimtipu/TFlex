@@ -1,0 +1,1068 @@
+[
+  {
+    "dockOverflow": 0,
+    "verbWidths": [
+      {
+        "id": "rotate",
+        "w": 58,
+        "min": "58px"
+      },
+      {
+        "id": "extract",
+        "w": 58.6,
+        "min": "58px"
+      },
+      {
+        "id": "insertPages",
+        "w": 58,
+        "min": "58px"
+      },
+      {
+        "id": "merge",
+        "w": 58,
+        "min": "58px"
+      },
+      {
+        "id": "cropPages",
+        "w": 58,
+        "min": "58px"
+      }
+    ],
+    "width": 1440,
+    "dock": {
+      "l": 458.2,
+      "t": 774,
+      "r": 902.9,
+      "b": 844,
+      "w": 444.6,
+      "h": 70
+    },
+    "page": {
+      "l": 260,
+      "t": 810,
+      "r": 415.1,
+      "b": 848,
+      "w": 155.1,
+      "h": 38
+    },
+    "zoom": {
+      "l": 946,
+      "t": 810,
+      "r": 1164,
+      "b": 848,
+      "w": 218,
+      "h": 38
+    },
+    "dockVsPage": false,
+    "dockVsZoom": false,
+    "spillRight": 0,
+    "verbVsPage": [],
+    "verbVsZoom": [],
+    "arrowsLane": "false",
+    "iconOnly": "false",
+    "reservedRow": null,
+    "scrollW": 443,
+    "clientW": 443,
+    "reserved": "98px",
+    "scrollerPad": "98px",
+    "state": "stage"
+  },
+  {
+    "dockOverflow": 0,
+    "verbWidths": [
+      {
+        "id": "rotate",
+        "w": 58,
+        "min": "58px"
+      },
+      {
+        "id": "extract",
+        "w": 58.6,
+        "min": "58px"
+      },
+      {
+        "id": "insertPages",
+        "w": 58,
+        "min": "58px"
+      },
+      {
+        "id": "merge",
+        "w": 58,
+        "min": "58px"
+      },
+      {
+        "id": "cropPages",
+        "w": 58,
+        "min": "58px"
+      }
+    ],
+    "width": 1280,
+    "dock": {
+      "l": 423.1,
+      "t": 771,
+      "r": 778,
+      "b": 844,
+      "w": 354.9,
+      "h": 73
+    },
+    "page": {
+      "l": 260,
+      "t": 810,
+      "r": 415.1,
+      "b": 848,
+      "w": 155.1,
+      "h": 38
+    },
+    "zoom": {
+      "l": 786,
+      "t": 810,
+      "r": 1004,
+      "b": 848,
+      "w": 218,
+      "h": 38
+    },
+    "dockVsPage": false,
+    "dockVsZoom": false,
+    "spillRight": 0,
+    "verbVsPage": [],
+    "verbVsZoom": [],
+    "arrowsLane": "true",
+    "iconOnly": "false",
+    "reservedRow": null,
+    "scrollW": 353,
+    "clientW": 353,
+    "reserved": "101px",
+    "scrollerPad": "101px",
+    "state": "stage"
+  },
+  {
+    "dockOverflow": 0,
+    "verbWidths": [
+      {
+        "id": "rotate",
+        "w": 58,
+        "min": "58px"
+      },
+      {
+        "id": "extract",
+        "w": 58.6,
+        "min": "58px"
+      },
+      {
+        "id": "insertPages",
+        "w": 58,
+        "min": "58px"
+      },
+      {
+        "id": "merge",
+        "w": 58,
+        "min": "58px"
+      },
+      {
+        "id": "cropPages",
+        "w": 58,
+        "min": "58px"
+      }
+    ],
+    "width": 1100,
+    "dock": {
+      "l": 423.1,
+      "t": 771,
+      "r": 817.7,
+      "b": 844,
+      "w": 394.5,
+      "h": 73
+    },
+    "page": {
+      "l": 260,
+      "t": 810,
+      "r": 415.1,
+      "b": 848,
+      "w": 155.1,
+      "h": 38
+    },
+    "zoom": {
+      "l": 826,
+      "t": 810,
+      "r": 1044,
+      "b": 848,
+      "w": 218,
+      "h": 38
+    },
+    "dockVsPage": false,
+    "dockVsZoom": false,
+    "spillRight": 0,
+    "verbVsPage": [],
+    "verbVsZoom": [],
+    "arrowsLane": "true",
+    "iconOnly": "false",
+    "reservedRow": null,
+    "scrollW": 393,
+    "clientW": 393,
+    "reserved": "101px",
+    "scrollerPad": "101px",
+    "state": "stage"
+  },
+  {
+    "dockOverflow": 0,
+    "verbWidths": [
+      {
+        "id": "rotate",
+        "w": 58,
+        "min": "58px"
+      },
+      {
+        "id": "extract",
+        "w": 58.6,
+        "min": "58px"
+      },
+      {
+        "id": "insertPages",
+        "w": 58,
+        "min": "58px"
+      },
+      {
+        "id": "merge",
+        "w": 58,
+        "min": "58px"
+      },
+      {
+        "id": "cropPages",
+        "w": 58,
+        "min": "58px"
+      }
+    ],
+    "width": 1000,
+    "dock": {
+      "l": 423.1,
+      "t": 771,
+      "r": 718,
+      "b": 844,
+      "w": 294.9,
+      "h": 73
+    },
+    "page": {
+      "l": 260,
+      "t": 810,
+      "r": 415.1,
+      "b": 848,
+      "w": 155.1,
+      "h": 38
+    },
+    "zoom": {
+      "l": 726,
+      "t": 810,
+      "r": 944,
+      "b": 848,
+      "w": 218,
+      "h": 38
+    },
+    "dockVsPage": false,
+    "dockVsZoom": false,
+    "spillRight": 46.8,
+    "verbVsPage": [],
+    "verbVsZoom": [],
+    "arrowsLane": "true",
+    "iconOnly": "false",
+    "reservedRow": null,
+    "scrollW": 293,
+    "clientW": 293,
+    "reserved": "101px",
+    "scrollerPad": "101px",
+    "state": "stage"
+  },
+  {
+    "dockOverflow": 0,
+    "verbWidths": [
+      {
+        "id": "rotate",
+        "w": 58,
+        "min": "58px"
+      },
+      {
+        "id": "extract",
+        "w": 58.6,
+        "min": "58px"
+      },
+      {
+        "id": "insertPages",
+        "w": 58,
+        "min": "58px"
+      },
+      {
+        "id": "merge",
+        "w": 58,
+        "min": "58px"
+      },
+      {
+        "id": "cropPages",
+        "w": 58,
+        "min": "58px"
+      }
+    ],
+    "width": 940,
+    "dock": {
+      "l": 287.1,
+      "t": 771,
+      "r": 657.8,
+      "b": 844,
+      "w": 370.7,
+      "h": 73
+    },
+    "page": {
+      "l": 124,
+      "t": 810,
+      "r": 279.1,
+      "b": 848,
+      "w": 155.1,
+      "h": 38
+    },
+    "zoom": {
+      "l": 666,
+      "t": 810,
+      "r": 884,
+      "b": 848,
+      "w": 218,
+      "h": 38
+    },
+    "dockVsPage": false,
+    "dockVsZoom": false,
+    "spillRight": 0,
+    "verbVsPage": [],
+    "verbVsZoom": [],
+    "arrowsLane": "true",
+    "iconOnly": "false",
+    "reservedRow": null,
+    "scrollW": 369,
+    "clientW": 369,
+    "reserved": "101px",
+    "scrollerPad": "101px",
+    "state": "stage"
+  },
+  {
+    "dockOverflow": 0,
+    "verbWidths": [
+      {
+        "id": "rotate",
+        "w": 58,
+        "min": "58px"
+      },
+      {
+        "id": "extract",
+        "w": 58.6,
+        "min": "58px"
+      },
+      {
+        "id": "insertPages",
+        "w": 58,
+        "min": "58px"
+      },
+      {
+        "id": "merge",
+        "w": 58,
+        "min": "58px"
+      },
+      {
+        "id": "cropPages",
+        "w": 58,
+        "min": "58px"
+      }
+    ],
+    "width": 900,
+    "dock": {
+      "l": 287.1,
+      "t": 771,
+      "r": 618,
+      "b": 844,
+      "w": 330.9,
+      "h": 73
+    },
+    "page": {
+      "l": 124,
+      "t": 810,
+      "r": 279.1,
+      "b": 848,
+      "w": 155.1,
+      "h": 38
+    },
+    "zoom": {
+      "l": 626,
+      "t": 810,
+      "r": 844,
+      "b": 848,
+      "w": 218,
+      "h": 38
+    },
+    "dockVsPage": false,
+    "dockVsZoom": false,
+    "spillRight": 10.8,
+    "verbVsPage": [],
+    "verbVsZoom": [],
+    "arrowsLane": "true",
+    "iconOnly": "false",
+    "reservedRow": null,
+    "scrollW": 329,
+    "clientW": 329,
+    "reserved": "101px",
+    "scrollerPad": "101px",
+    "state": "stage"
+  },
+  {
+    "dockOverflow": 0,
+    "verbWidths": [
+      {
+        "id": "rotate",
+        "w": 58,
+        "min": "58px"
+      },
+      {
+        "id": "extract",
+        "w": 58.6,
+        "min": "58px"
+      },
+      {
+        "id": "insertPages",
+        "w": 58,
+        "min": "58px"
+      },
+      {
+        "id": "merge",
+        "w": 58,
+        "min": "58px"
+      },
+      {
+        "id": "cropPages",
+        "w": 58,
+        "min": "58px"
+      }
+    ],
+    "width": 880,
+    "dock": {
+      "l": 287.1,
+      "t": 771,
+      "r": 598,
+      "b": 844,
+      "w": 310.9,
+      "h": 73
+    },
+    "page": {
+      "l": 124,
+      "t": 810,
+      "r": 279.1,
+      "b": 848,
+      "w": 155.1,
+      "h": 38
+    },
+    "zoom": {
+      "l": 606,
+      "t": 810,
+      "r": 824,
+      "b": 848,
+      "w": 218,
+      "h": 38
+    },
+    "dockVsPage": false,
+    "dockVsZoom": false,
+    "spillRight": 30.8,
+    "verbVsPage": [],
+    "verbVsZoom": [],
+    "arrowsLane": "true",
+    "iconOnly": "false",
+    "reservedRow": null,
+    "scrollW": 309,
+    "clientW": 309,
+    "reserved": "101px",
+    "scrollerPad": "101px",
+    "state": "stage"
+  },
+  {
+    "dockOverflow": 54,
+    "verbWidths": [
+      {
+        "id": "rotate",
+        "w": 58,
+        "min": "58px"
+      },
+      {
+        "id": "extract",
+        "w": 58,
+        "min": "58px"
+      },
+      {
+        "id": "insertPages",
+        "w": 58,
+        "min": "58px"
+      },
+      {
+        "id": "merge",
+        "w": 58,
+        "min": "58px"
+      },
+      {
+        "id": "cropPages",
+        "w": 58,
+        "min": "58px"
+      }
+    ],
+    "width": 860,
+    "dock": {
+      "l": 287.1,
+      "t": 774,
+      "r": 578,
+      "b": 844,
+      "w": 290.9,
+      "h": 70
+    },
+    "page": {
+      "l": 124,
+      "t": 810,
+      "r": 279.1,
+      "b": 848,
+      "w": 155.1,
+      "h": 38
+    },
+    "zoom": {
+      "l": 586,
+      "t": 810,
+      "r": 804,
+      "b": 848,
+      "w": 218,
+      "h": 38
+    },
+    "dockVsPage": false,
+    "dockVsZoom": false,
+    "spillRight": 0,
+    "verbVsPage": [
+      "rotate"
+    ],
+    "verbVsZoom": [],
+    "arrowsLane": "false",
+    "iconOnly": "true",
+    "reservedRow": null,
+    "scrollW": 343,
+    "clientW": 289,
+    "reserved": "98px",
+    "scrollerPad": "98px",
+    "state": "stage"
+  },
+  {
+    "dockOverflow": 54,
+    "verbWidths": [
+      {
+        "id": "rotate",
+        "w": 58,
+        "min": "58px"
+      },
+      {
+        "id": "extract",
+        "w": 58,
+        "min": "58px"
+      },
+      {
+        "id": "insertPages",
+        "w": 58,
+        "min": "58px"
+      },
+      {
+        "id": "merge",
+        "w": 58,
+        "min": "58px"
+      }
+    ],
+    "width": 820,
+    "dock": {
+      "l": 287.1,
+      "t": 774,
+      "r": 538,
+      "b": 844,
+      "w": 250.9,
+      "h": 70
+    },
+    "page": {
+      "l": 124,
+      "t": 810,
+      "r": 279.1,
+      "b": 848,
+      "w": 155.1,
+      "h": 38
+    },
+    "zoom": {
+      "l": 546,
+      "t": 810,
+      "r": 764,
+      "b": 848,
+      "w": 218,
+      "h": 38
+    },
+    "dockVsPage": false,
+    "dockVsZoom": false,
+    "spillRight": 0,
+    "verbVsPage": [
+      "rotate"
+    ],
+    "verbVsZoom": [],
+    "arrowsLane": "false",
+    "iconOnly": "true",
+    "reservedRow": null,
+    "scrollW": 303,
+    "clientW": 249,
+    "reserved": "98px",
+    "scrollerPad": "98px",
+    "state": "stage"
+  },
+  {
+    "dockOverflow": 47,
+    "verbWidths": [
+      {
+        "id": "rotate",
+        "w": 58,
+        "min": "58px"
+      },
+      {
+        "id": "extract",
+        "w": 58,
+        "min": "58px"
+      },
+      {
+        "id": "insertPages",
+        "w": 58,
+        "min": "58px"
+      }
+    ],
+    "width": 780,
+    "dock": {
+      "l": 287.1,
+      "t": 774,
+      "r": 498,
+      "b": 844,
+      "w": 210.9,
+      "h": 70
+    },
+    "page": {
+      "l": 124,
+      "t": 810,
+      "r": 279.1,
+      "b": 848,
+      "w": 155.1,
+      "h": 38
+    },
+    "zoom": {
+      "l": 506,
+      "t": 810,
+      "r": 724,
+      "b": 848,
+      "w": 218,
+      "h": 38
+    },
+    "dockVsPage": false,
+    "dockVsZoom": false,
+    "spillRight": 0,
+    "verbVsPage": [
+      "rotate"
+    ],
+    "verbVsZoom": [],
+    "arrowsLane": "false",
+    "iconOnly": "true",
+    "reservedRow": null,
+    "scrollW": 256,
+    "clientW": 209,
+    "reserved": "98px",
+    "scrollerPad": "98px",
+    "state": "stage"
+  },
+  {
+    "dockOverflow": 37,
+    "verbWidths": [
+      {
+        "id": "rotate",
+        "w": 58,
+        "min": "58px"
+      },
+      {
+        "id": "extract",
+        "w": 58,
+        "min": "58px"
+      }
+    ],
+    "width": 740,
+    "dock": {
+      "l": 287.1,
+      "t": 774,
+      "r": 458,
+      "b": 844,
+      "w": 170.9,
+      "h": 70
+    },
+    "page": {
+      "l": 124,
+      "t": 810,
+      "r": 279.1,
+      "b": 848,
+      "w": 155.1,
+      "h": 38
+    },
+    "zoom": {
+      "l": 466,
+      "t": 810,
+      "r": 684,
+      "b": 848,
+      "w": 218,
+      "h": 38
+    },
+    "dockVsPage": false,
+    "dockVsZoom": false,
+    "spillRight": 0,
+    "verbVsPage": [
+      "rotate"
+    ],
+    "verbVsZoom": [],
+    "arrowsLane": "false",
+    "iconOnly": "true",
+    "reservedRow": null,
+    "scrollW": 206,
+    "clientW": 169,
+    "reserved": "98px",
+    "scrollerPad": "98px",
+    "state": "stage"
+  },
+  {
+    "dockOverflow": 0,
+    "verbWidths": [
+      {
+        "id": "rotate",
+        "w": 58,
+        "min": "58px"
+      },
+      {
+        "id": "extract",
+        "w": 58,
+        "min": "58px"
+      },
+      {
+        "id": "insertPages",
+        "w": 58,
+        "min": "58px"
+      },
+      {
+        "id": "merge",
+        "w": 58,
+        "min": "58px"
+      },
+      {
+        "id": "cropPages",
+        "w": 58,
+        "min": "58px"
+      }
+    ],
+    "width": 720,
+    "dock": {
+      "l": 172,
+      "t": 728,
+      "r": 616,
+      "b": 798,
+      "w": 444,
+      "h": 70
+    },
+    "page": {
+      "l": 124,
+      "t": 810,
+      "r": 279.1,
+      "b": 848,
+      "w": 155.1,
+      "h": 38
+    },
+    "zoom": {
+      "l": 446,
+      "t": 810,
+      "r": 664,
+      "b": 848,
+      "w": 218,
+      "h": 38
+    },
+    "dockVsPage": false,
+    "dockVsZoom": false,
+    "spillRight": 0,
+    "verbVsPage": [],
+    "verbVsZoom": [],
+    "arrowsLane": "false",
+    "iconOnly": "true",
+    "reservedRow": null,
+    "scrollW": 442,
+    "clientW": 442,
+    "reserved": "144px",
+    "scrollerPad": "144px",
+    "state": "stage"
+  },
+  {
+    "dockOverflow": 0,
+    "verbWidths": [
+      {
+        "id": "rotate",
+        "w": 58,
+        "min": "58px"
+      },
+      {
+        "id": "extract",
+        "w": 58,
+        "min": "58px"
+      },
+      {
+        "id": "insertPages",
+        "w": 58,
+        "min": "58px"
+      },
+      {
+        "id": "merge",
+        "w": 58,
+        "min": "58px"
+      },
+      {
+        "id": "cropPages",
+        "w": 58,
+        "min": "58px"
+      }
+    ],
+    "width": 680,
+    "dock": {
+      "l": 152,
+      "t": 725,
+      "r": 596,
+      "b": 798,
+      "w": 444,
+      "h": 73
+    },
+    "page": {
+      "l": 124,
+      "t": 810,
+      "r": 279.1,
+      "b": 848,
+      "w": 155.1,
+      "h": 38
+    },
+    "zoom": {
+      "l": 406,
+      "t": 810,
+      "r": 624,
+      "b": 848,
+      "w": 218,
+      "h": 38
+    },
+    "dockVsPage": false,
+    "dockVsZoom": false,
+    "spillRight": 0,
+    "verbVsPage": [],
+    "verbVsZoom": [],
+    "arrowsLane": "true",
+    "iconOnly": "true",
+    "reservedRow": "true",
+    "scrollW": 442,
+    "clientW": 442,
+    "reserved": "147px",
+    "scrollerPad": "147px",
+    "state": "stage"
+  },
+  {
+    "dockOverflow": 0,
+    "verbWidths": [
+      {
+        "id": "rotate",
+        "w": 58,
+        "min": "58px"
+      },
+      {
+        "id": "extract",
+        "w": 58,
+        "min": "58px"
+      },
+      {
+        "id": "insertPages",
+        "w": 58,
+        "min": "58px"
+      },
+      {
+        "id": "merge",
+        "w": 58,
+        "min": "58px"
+      },
+      {
+        "id": "cropPages",
+        "w": 58,
+        "min": "58px"
+      }
+    ],
+    "width": 640,
+    "dock": {
+      "l": 132,
+      "t": 725,
+      "r": 576,
+      "b": 798,
+      "w": 444,
+      "h": 73
+    },
+    "page": {
+      "l": 124,
+      "t": 810,
+      "r": 279.1,
+      "b": 848,
+      "w": 155.1,
+      "h": 38
+    },
+    "zoom": {
+      "l": 366,
+      "t": 810,
+      "r": 584,
+      "b": 848,
+      "w": 218,
+      "h": 38
+    },
+    "dockVsPage": false,
+    "dockVsZoom": false,
+    "spillRight": 0,
+    "verbVsPage": [],
+    "verbVsZoom": [],
+    "arrowsLane": "true",
+    "iconOnly": "true",
+    "reservedRow": "true",
+    "scrollW": 442,
+    "clientW": 442,
+    "reserved": "147px",
+    "scrollerPad": "147px",
+    "state": "stage"
+  },
+  {
+    "dockOverflow": 0,
+    "verbWidths": [
+      {
+        "id": "rotate",
+        "w": 58,
+        "min": "58px"
+      },
+      {
+        "id": "extract",
+        "w": 58,
+        "min": "58px"
+      },
+      {
+        "id": "insertPages",
+        "w": 58,
+        "min": "58px"
+      },
+      {
+        "id": "merge",
+        "w": 58,
+        "min": "58px"
+      },
+      {
+        "id": "cropPages",
+        "w": 58,
+        "min": "58px"
+      }
+    ],
+    "width": 600,
+    "dock": {
+      "l": 124,
+      "t": 725,
+      "r": 544,
+      "b": 798,
+      "w": 420,
+      "h": 73
+    },
+    "page": {
+      "l": 124,
+      "t": 810,
+      "r": 279.1,
+      "b": 848,
+      "w": 155.1,
+      "h": 38
+    },
+    "zoom": {
+      "l": 326,
+      "t": 810,
+      "r": 544,
+      "b": 848,
+      "w": 218,
+      "h": 38
+    },
+    "dockVsPage": false,
+    "dockVsZoom": false,
+    "spillRight": 0,
+    "verbVsPage": [],
+    "verbVsZoom": [],
+    "arrowsLane": "true",
+    "iconOnly": "true",
+    "reservedRow": "true",
+    "scrollW": 418,
+    "clientW": 418,
+    "reserved": "147px",
+    "scrollerPad": "147px",
+    "state": "stage"
+  },
+  {
+    "dockOverflow": 0,
+    "verbWidths": [
+      {
+        "id": "rotate",
+        "w": 58,
+        "min": "58px"
+      },
+      {
+        "id": "extract",
+        "w": 58,
+        "min": "58px"
+      },
+      {
+        "id": "insertPages",
+        "w": 58,
+        "min": "58px"
+      },
+      {
+        "id": "merge",
+        "w": 58,
+        "min": "58px"
+      },
+      {
+        "id": "cropPages",
+        "w": 58,
+        "min": "58px"
+      }
+    ],
+    "width": 560,
+    "dock": {
+      "l": 124,
+      "t": 725,
+      "r": 504,
+      "b": 798,
+      "w": 380,
+      "h": 73
+    },
+    "page": {
+      "l": 124,
+      "t": 810,
+      "r": 279.1,
+      "b": 848,
+      "w": 155.1,
+      "h": 38
+    },
+    "zoom": {
+      "l": 286,
+      "t": 810,
+      "r": 504,
+      "b": 848,
+      "w": 218,
+      "h": 38
+    },
+    "dockVsPage": false,
+    "dockVsZoom": false,
+    "spillRight": 0,
+    "verbVsPage": [],
+    "verbVsZoom": [],
+    "arrowsLane": "true",
+    "iconOnly": "true",
+    "reservedRow": "true",
+    "scrollW": 378,
+    "clientW": 378,
+    "reserved": "147px",
+    "scrollerPad": "147px",
+    "state": "stage"
+  }
+]

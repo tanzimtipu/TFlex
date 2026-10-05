@@ -4671,6 +4671,13 @@ body.tab-reordering .tab-list[data-reorder="true"] .tab {
    * column and the window edge; the page area now runs edge-to-edge
    * (the 10px webkit scrollbar rides the box edge itself). */
   padding-right: 0;
+  /* Phase 104 (chunk 2) — reserved bottom scroll clearance. ActionDock
+   * republishes its measured band + `--dock-bottom-inset` + a safe gap as the
+   * document-root custom property `--dock-band-reserved`, so the LAST page can
+   * always be scrolled fully above the floating dock. Unset (no dock mounted)
+   * reads as 0px; the value is a custom property, so opening the More menu
+   * never reflows or resizes the scroller. */
+  padding-bottom: var(--dock-band-reserved, 0px);
   /* DEF-178/179 — pinned grid row: the scroller ALWAYS owns the
    * .workspace-main 1fr row (row 5), no matter which conditional
    * chrome rows above it are mounted. */
@@ -13870,10 +13877,10 @@ rect.ann-highlight.ann-preview {
      reachable (DEF-282's invariant, restated). */
   top: 0;
   /* Phase 39 (DEF-348b/c) — the shared Action Dock owns a reserved bottom
-     band in Multi Mode (`--tf-multi-dock-band`, 84px base + the dock's
-     measured lift). Both panes stop above it, so their strips, pills and
-     page-action bars can never intersect the dock. */
-  bottom: var(--tf-multi-dock-band, 84px);
+     band in Multi Mode (`--tf-multi-dock-band`, 96px base + the dock's
+     measured lift). Both panes stop above it, so their strips, page-action
+     bars and per-pane View Strip footers can never intersect the dock. */
+  bottom: var(--tf-multi-dock-band, 96px);
   left: auto;
   right: auto;
   display: flex;
@@ -14163,7 +14170,7 @@ rect.ann-highlight.ann-preview {
      Phase 39 (DEF-348c) — it stops above the same reserved dock band the
      panes use, so the divider can never intersect the shared dock either. */
   top: 0;
-  bottom: var(--tf-multi-dock-band, 84px);
+  bottom: var(--tf-multi-dock-band, 96px);
   /* Phase 34 (chunk 3) — the divider consumes the SAME capped inset as the
      pane widths (see the pane rule), so its centre stays exactly between
      them when the All Tools panel is open. */
@@ -15438,10 +15445,37 @@ rect.ann-highlight.ann-preview {
  * five real labels fit the pill-free band on one row), radius 8px. Every
  * colour is an existing theme token and every duration an existing motion
  * token — the dock introduces none of its own.
- * ========================================================================= */
+* ========================================================================= */
+
+/* ---------------------------------------------------------------------------
+ * Phase 104 (chunk 1) — SCOPED FOCUS DOCK TOKENS.
+ *
+ * `Visual overhaul/Design System/dock.tokens.json` (the committed Focus Dock
+ * extension) mapped onto a SCOPED custom-property layer consumed by the dock's
+ * own rules only. The app theme is NOT replaced: every colour still resolves to
+ * an existing `--tf-*` / theme token; this block adds the dock's geometry and
+ * its theme-aware shadow. `light` is the default; `dark` and `frosted` (the
+ * app's elevated near-black theme, its high-contrast surface) override ONLY the
+ * shadow, so the three themes share one geometry.
+ * ------------------------------------------------------------------------- */
 .action-dock {
+  --dock-radius: 14px;
+  --dock-control-radius: 9px;
+  --dock-padding: 8px;
+  --dock-min-height: 68px;
+  --dock-tool-tile-min-width: 58px;
+  --dock-tool-tile-min-height: 52px;
+  --dock-icon-size: 20px;
+  --dock-label-size: var(--type-label-size);
+  --dock-label-weight: var(--type-label-weight);
+  --dock-icon-label-gap: 6px;
+  --dock-bottom-inset: 16px;
+  --dock-separator-height: 28px;
+  --dock-border-width: 1px;
+  /* lightShadow from dock.tokens.json; dark / frosted override above. */
+  --dock-shadow: 0 8px 28px rgba(35, 42, 56, 0.08);
   position: absolute;
-  bottom: 12px;
+  bottom: var(--dock-bottom-inset);
   left: 50%;
   /* DEF-315 — the dock stays centred on the canvas; the vertical YIELD (above
    * the pill row at hosts too narrow for any free band) is a transform, so it
@@ -15463,7 +15497,8 @@ rect.ann-highlight.ann-preview {
   align-items: center;
   justify-content: center;
   gap: 4px;
-  padding: 6px 8px;
+  padding: var(--dock-padding);
+  min-height: var(--dock-min-height);
   /* DEF-315 — the dock must never reach the two floating pills. The reserve is
    * MEASURED, not assumed: ActionDock publishes `--dock-reserve` (px) from the
    * pills' own boxes, so the cap tracks their real widths (the zoom readout
@@ -15474,11 +15509,12 @@ rect.ann-highlight.ann-preview {
    * where ActionDock parks the dock above the pills instead. */
   max-width: max(0px, calc(100% - var(--dock-reserve, 476px)));
   background: var(--bg-elevated);
-  border: 1px solid var(--glass-border);
-  border-radius: var(--radius-group);
-  /* Phase 96-C — the dock is a level-2 floating overlay; it consumes the
-   * shared elevation ladder step directly. */
-  box-shadow: var(--elevation-2);
+  border: var(--dock-border-width) solid var(--border);
+  border-radius: var(--dock-radius);
+  /* Phase 96-C — the dock is a level-2 floating overlay; Phase 104 maps the
+   * Focus Dock's restrained theme-aware shadow over that step (light / dark /
+   * frosted), scoped to the dock. */
+  box-shadow: var(--dock-shadow);
   -webkit-backdrop-filter: var(--glass-blur);
   backdrop-filter: var(--glass-blur);
   -webkit-app-region: no-drag;
@@ -15493,6 +15529,15 @@ rect.ann-highlight.ann-preview {
        (the row can now overflow and scroll). Token-driven, so it is instant
        under reduced motion and with Animations OFF. */
     max-width var(--motion-duration-standard) var(--motion-ease-standard);
+}
+
+/* Phase 104 (chunk 1) — dark / frosted (the app's elevated near-black and
+ * high-contrast surfaces) take the dock.tokens.json darkShadow. Placed AFTER
+ * the base `.action-dock` rule so a source-order selector scan still finds the
+ * base box first. */
+:root[data-theme='dark'] .action-dock,
+:root[data-theme='frosted'] .action-dock {
+  --dock-shadow: 0 8px 28px rgba(0, 0, 0, 0.21);
 }
 
 /* DEF-330 — between the pills the dock is placed INSIDE the pill-free band
@@ -15520,6 +15565,16 @@ rect.ann-highlight.ann-preview {
  * height plus the clearance, published by ActionDock; this cap is the no-JS
  * fallback for the same state. */
 .action-dock[data-dock-lift='true'] {
+  max-width: max(0px, calc(100% - 24px));
+}
+
+/* Phase 104 (chunk 2) — the RESERVED-ROW rung. At very narrow hosts the five
+ * primary tiles plus the stable More + Tools controls cannot share a band with
+ * the page / zoom pills, so the dock takes its OWN layout band: it spans the
+ * canvas minus a 12px gutter on each side and stays centred, rather than
+ * overrunning navigation. The pills are never hidden; the scroller's reserved
+ * bottom clearance (below) keeps the last page clear of the dock. */
+.action-dock[data-dock-reserved='true'] {
   max-width: max(0px, calc(100% - 24px));
 }
 
@@ -15563,10 +15618,15 @@ rect.ann-highlight.ann-preview {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 3px;
+  /* Phase 104 (chunk 1) — the Focus Dock's 6px icon-label gap, content-driven
+   * ~52px tool tile and 9px control radius (dock.tokens.json). */
+  gap: var(--dock-icon-label-gap);
   flex: 0 0 auto;
   height: auto;
+  min-width: var(--dock-tool-tile-min-width);
+  min-height: var(--dock-tool-tile-min-height);
   padding: 5px 8px;
+  border-radius: var(--dock-control-radius);
 }
 
 .action-dock-verb-slot {
@@ -15781,7 +15841,7 @@ rect.ann-highlight.ann-preview {
 
 .action-dock-divider {
   width: 1px;
-  height: 22px;
+  height: var(--dock-separator-height);
   background: var(--border);
 }
 
@@ -15791,16 +15851,18 @@ rect.ann-highlight.ann-preview {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 3px;
+  gap: var(--dock-icon-label-gap);
   /* Phase 38 (feature B) — the enlarged 20px glyph + 12px label need a
    * comfortable hit target; 5px/8px keeps the verb >= 30px tall and wide
    * enough to press. DEF-334: the wider row routes into the arrows lane
    * rather than wrapping or dropping labels. Padding is 8px (16px total)
    * and the fit model (dockFit.dockVerbWidth) matches it. */
   padding: 5px 8px;
+  min-width: var(--dock-tool-tile-min-width);
+  min-height: var(--dock-tool-tile-min-height);
   background: transparent;
   border: 0;
-  border-radius: var(--radius-3);
+  border-radius: var(--dock-control-radius);
   color: var(--fg-muted);
 cursor: pointer;
   /* Phase 43 (item 1) — the verb carries the full hover/press motion set:
@@ -15887,6 +15949,16 @@ cursor: pointer;
   color: var(--tf-icon-danger);
 }
 
+/* DEF-568 — the SAME destructive ink for the More-menu row. The delete verb
+ * also renders as `.action-dock-menu-item[data-dock-overflow-item='delete']`
+ * (ActionDock.tsx) because PAGES curates it out of the primary tiles; without
+ * this scoped rule the row inherits `.btn-ghost`'s `--fg-strong` graphite and
+ * reads as a non-destructive command. Only the delete row is recoloured and
+ * only at rest; every other menu item keeps the canonical ink. */
+.action-dock-menu-item[data-dock-overflow-item='delete']:not(:disabled) {
+  color: var(--tf-icon-danger);
+}
+
 /* DEF-344 — the hover / pressed INK. The resting verb ink (the state ladder
  * above) is (0,4,0) and the older state rules were (0,3,0), so a hovered or
  * pressed verb would keep its rest ink on the darker `--bg-hover` /
@@ -15957,6 +16029,18 @@ cursor: pointer;
   color: inherit;
 }
 
+/* Phase 104 (chunk 1) — the labelled Tools utility. It shares the verb tile
+ * geometry but carries its own label hook (`.action-dock-tools-label`) so it
+ * never joins the verb-label count / rung contract; its ink is the neutral
+ * icon-rest it inherits from the verb state ladder. */
+.action-dock-tools-label {
+  font-size: var(--tf-label-size);
+  line-height: 1.1;
+  font-weight: var(--dock-label-weight);
+  white-space: nowrap;
+  color: var(--tf-text-supporting);
+}
+
 .action-dock-overflow {
   position: relative;
   display: inline-flex;
@@ -15976,7 +16060,11 @@ cursor: pointer;
   backdrop-filter: var(--glass-blur);
 }
 
-/* The `...` chip's own list anchors to the chip, not the pointer. */
+/* The `...` chip's own list anchors to the chip, not the pointer. Phase 104
+ * (chunk 2) — it opens UPWARD (`bottom: 100% + 6px`) and ActionDock clamps its
+ * inline `left` into the viewport, overriding the centred `left`/`transform`
+ * fallback below. The panel never reflows the document and the dock never
+ * moves when it opens. */
 .action-dock-menu-overflow {
   position: absolute;
   bottom: calc(100% + 6px);
@@ -16124,30 +16212,11 @@ cursor: pointer;
   outline-offset: -2px;
 }
 
-/* Phase 37 (item 21) — the unobtrusive Ctrl+K hint above the dock. Absolutely
- * positioned out of the single verb row; hidden at the arrows rung by the
- * component, so it never steals width from the verbs. */
-.action-dock-hint {
-  position: absolute;
-  left: 0;
-  right: 0;
-  bottom: calc(100% + 5px);
-  text-align: center;
-  font-size: var(--tf-label-size);
-  line-height: 1;
-  color: var(--fg-faint);
-  pointer-events: none;
-  white-space: nowrap;
-}
-
-.action-dock-kbd {
-  padding: 1px 4px;
-  font: inherit;
-  color: var(--fg-muted);
-  background: var(--bg-hover);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-2);
-}
+/* Phase 104 (chunk 1) — the Phase-37 detached Ctrl+K hint
+ * (`.action-dock-hint` / `.action-dock-kbd`) is RETIRED. The command palette is
+ * reached from the labelled `[data-dock-tools]` utility button, styled by the
+ * `.action-dock-tools` / `.action-dock-tools-label` hooks above and sharing the
+ * verb tile geometry; no detached banner competes with the verb row. */
 
 @media (prefers-reduced-motion: reduce) {
   .action-dock,

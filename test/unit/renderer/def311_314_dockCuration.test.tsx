@@ -26,6 +26,7 @@ import { editModeForStage } from "../../../src/renderer/state/stages";
 import {
   DOCK_STAGE_IDS,
   TOOL_REGISTRY,
+  dockPrimaryIdsForStage,
   dockToolsForStage,
   toolById,
 } from "../../../src/renderer/state/toolsRegistry";
@@ -131,10 +132,9 @@ describe("DEF-313 â€” the dock can never span the canvas over the pills", (
     for (const canvasWidth of [900, 1400]) {
       const { host, unmount } = renderDock({ activeStage: "pages", canvasWidth });
       try {
-        expect(verbIds(host)).toHaveLength(8);
-        expect(verbIds(host)).toEqual([
-          "rotate", "extract", "insertPages", "replacePages", "split", "delete", "merge", "cropPages",
-        ]);
+        // Phase 104 (chunk 2) — the visible row is the curated primary set; the
+        // displaced stage verbs live in the stable More menu.
+        expect(verbIds(host)).toEqual([...dockPrimaryIdsForStage("pages")]);
       } finally {
         unmount();
       }
@@ -230,7 +230,14 @@ describe("DEF-311 â€” a disabled verb shows the availability reason", () =>
       isToolEnabled: (entry) => entry.id !== "audit",
     });
     try {
-      const audit = host.querySelector<HTMLElement>('[data-dock-verb="audit"]');
+      // Phase 104 (chunk 2) — `audit` is a displaced DELIVER verb in the stable
+      // More menu; the availability copy is unchanged.
+      act((): void => {
+        host
+          .querySelector("[data-dock-overflow]")
+          ?.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
+      });
+      const audit = host.querySelector<HTMLElement>('[data-dock-overflow-item="audit"]');
       expect(audit?.hasAttribute("disabled")).toBe(true);
       expect(audit?.getAttribute("title")).toBe(DOCK_AVAILABILITY_REASON.document);
       expect(audit?.getAttribute("title")).not.toBe(toolById("audit")?.description);

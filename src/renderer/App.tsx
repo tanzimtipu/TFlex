@@ -11031,6 +11031,7 @@ pushToast(
                 activeToolIds={dockActiveToolIds}
                 onIdleChange={setSharedDockIdle}
                 onLiftChange={setSharedDockLift}
+                onOpenTools={openCommandPalette}
               />
             ) : null
           }
@@ -11147,6 +11148,9 @@ pushToast(
                     toolUsage={settings.toolUsage}
                     onDockToolAction={onDockToolAction}
                     isDockToolEnabled={dockAppToolEnabled}
+                    // Phase 104 (chunk 1) — the dock's labelled Tools button
+                    // opens the SAME command palette Ctrl+K and the header use.
+                    onOpenTools={openCommandPalette}
                     // Phase 82 — the offline spell-check preference for the
                     // text-edit surfaces. The flip persists through
                     // `trackAndSave` (the sole settings write path).

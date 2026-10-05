@@ -42,7 +42,8 @@ function renderDock(options: Partial<ActionDockProps> = {}): {
     onPinTool: vi.fn(),
     onUnpinTool: vi.fn(),
     onRunTool: vi.fn(),
-    canvasWidth: 1400,
+    canvasWidth: 100,
+    ladder: { inspectorCollapsed: true, panelCollapsed: true, iconOnly: true, arrows: false },
     ...options,
   };
   act((): void => {
@@ -101,6 +102,13 @@ function clickOn(target: Element): void {
   });
 }
 
+/** Phase 104 (chunk 1) — Customize dock lives in the More overflow menu; this
+ *  opens More and toggles the existing EDIT mode. */
+function armDockEditMode(host: HTMLElement): void {
+  clickOn(host.querySelector("[data-dock-overflow]") as Element);
+  clickOn(host.querySelector('[data-dock-menu-item="customize"]') as Element);
+}
+
 function pressEscape(): void {
   act((): void => {
     document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
@@ -111,7 +119,7 @@ describe("Phase 75 (item A) — EDIT-mode icon jiggle", () => {
   it("jiggles every dock curated glyph with a desynchronised phase", () => {
     const { host, unmount } = renderDock();
     try {
-      clickOn(host.querySelector("[data-dock-edit-toggle]") as Element);
+      armDockEditMode(host);
       const icons = [...host.querySelectorAll<HTMLElement>("[data-dock-verb] .action-dock-icon")];
       expect(icons.length).toBeGreaterThan(0);
       for (const icon of icons) {
@@ -125,13 +133,13 @@ describe("Phase 75 (item A) — EDIT-mode icon jiggle", () => {
     }
   });
 
-  it("never jiggles the dock pen or plus", () => {
+  it("never jiggles the dock Tools utility or plus", () => {
     const { host, unmount } = renderDock();
     try {
-      clickOn(host.querySelector("[data-dock-edit-toggle]") as Element);
-      expect(host.querySelector("[data-dock-edit-toggle]")?.classList.contains("anim-jiggle")).toBe(false);
+      armDockEditMode(host);
+      expect(host.querySelector("[data-dock-tools]")?.classList.contains("anim-jiggle")).toBe(false);
       expect(host.querySelector("[data-dock-plus]")?.classList.contains("anim-jiggle")).toBe(false);
-      expect(host.querySelector("[data-dock-edit-toggle] .anim-jiggle")).toBeNull();
+      expect(host.querySelector("[data-dock-tools] .anim-jiggle")).toBeNull();
       expect(host.querySelector("[data-dock-plus] .anim-jiggle")).toBeNull();
     } finally {
       unmount();
@@ -163,7 +171,7 @@ describe("Phase 75 (item A) — EDIT-mode icon jiggle", () => {
     const dock = renderDock();
     const home = renderWelcome();
     try {
-      clickOn(dock.host.querySelector("[data-dock-edit-toggle]") as Element);
+      armDockEditMode(dock.host);
       clickOn(home.host.querySelector("[data-home-edit-toggle]") as Element);
       expect(dock.host.querySelectorAll(".anim-jiggle").length).toBeGreaterThan(0);
       expect(home.host.querySelectorAll(".anim-jiggle").length).toBeGreaterThan(0);

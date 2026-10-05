@@ -3,6 +3,150 @@
 > Read discipline: this is a historical evidence ledger. Search for the assigned `ADV-NNN`
 > or unresolved `Disposition: PENDING` entries; do not load prior campaigns wholesale.
 
+## Phase 104 Focus Dock diff-pass (TFL-850) - selection-state delete duplication, stale dock e2e oracles, pre-existing icon-only pill overlap
+
+Session label: `diff-pass`. Scope: the uncommitted Phase 104 Focus Dock change set -
+`toolsRegistry.ts` (additive `DOCK_PRIMARY_IDS` / `dockPrimaryIdsForStage` /
+`DOCK_SHORT_LABELS`), `ActionDock.tsx` (primary/More split, unconditional More +
+Tools utility, anchored upward More popover, reserved-row rung, roving focus),
+`styles.css` (scoped `--dock-*` tokens, reserved bottom inset, overflow anchor,
+delete danger rule), the `onOpenTools` forwarding in `App.tsx` / `DocumentView.tsx` /
+`MultiActionDock.tsx`, and the updated unit specs. Product code, tests,
+REQUIREMENTS.md and AGENTS.md were read but NOT modified. Two ADV filed:
+**ADV-214** (selection-state `delete` duplicated into the More popover and
+mis-routed) and **ADV-215** (the retired `[data-dock-edit-toggle]` /
+`[data-dock-hint]` leave eight existing e2e specs querying dead selectors). One
+pre-existing overlay overlap is recorded below as an observation only.
+
+Exact commands:
+
+- Unit probe (adversary-owned; runs only through its own config):
+  `npx.cmd vitest run --config test-fixtures/phase104-adversary/vitest.probe.config.ts`
+  -> 1 failed / 3 passed. The single failure is ADV-214's reproducer.
+- Live probe (canonical launcher, dev bundle already built from current source -
+  `dist/renderer/assets/index-BN1Di1ns.js` contains `data-dock-tools`,
+  `data-dock-overflow-host`, `data-dock-reserved`, `dock-band-reserved`):
+  `npm.cmd run test:e2e -- phase104_adversary.spec.cjs` -> ADV-A fail (ADV-214
+  repro), ADV-B fail (verb-vs-pill overlap at the icon-only rung), ADV-C pass.
+
+Vector verdicts:
+
+1. Reachability, exhaustive: **ADV-214 only**. Stage state: every
+   `DOCK_STAGE_IDS` id is a primary tile or a More row in all four stages, with no
+   tile/menu overlap (unit probe + the qa control-index agree). A pinned GLOBAL id
+   (`undo`) renders once, as a pin; a user-unpinned primary (`merge`) is absent
+   from the dock (palette-reachable), so "moving a tool into More does not unpin
+   it" holds. In PAGES State 2 (>=1 page selected) `delete` appears as a tile AND
+   a More row - ADV-214.
+2. Behaviour / undo-redo integrity: **ADV-215** (the selector change) and
+   otherwise no finding. `toolsRegistry` is additive only; every dock verb still
+   runs `onRunTool(entry.id)`; `buildSelectionVerbs`, command ids, shortcuts and
+   handlers are unchanged over the diff.
+3. Overlay collisions at extremes: **no diff-introduced collision.** Live sweep
+   1440 -> 560px: the dock BOX never overlaps either pill; the new reserved-row
+   rung (560-680) and the arrows lane hold. A PRE-EXISTING overlap was measured at
+   the icon-only rung 740-860px (dock content 343px vs its ~289px band ->
+   `dockOverflow` 37-54px; the first tile `rotate` renders over the page pill).
+   The diff does not introduce or materially worsen it (the pre-diff icon-only row
+   is ~350-358px), so it is recorded for the release-gate, not filed here.
+4. Accessibility / motion: **no finding.** `.anim-menu-pop` is zeroed under
+   `prefers-reduced-motion`; roving focus skips disabled rows and wraps (unit +
+   qa); Escape returns focus to the More button; tiles are >= 52x58px; the
+   distinct focus ring is unchanged.
+5. Short-label ambiguity: **no finding.** Full accessible names stay distinct:
+   `editImage` = "Edit images" vs `exportPages` = "Export pages as images";
+   `editToolOff` keeps "Edit mode off"; `optimize` keeps "Reduce file size".
+6. No-fork: **no finding.** One shared Icon registry (`toolsPalette`,
+   `dockOverflow`, `dockEditPencil` exist in `quietPrecision`); no second visual
+   language; the `.btn` primitive is extended by scoped aliases, not restructured.
+
+## ADV-214: In PAGES selection state the More popover duplicates the `delete` verb and routes it to a DIFFERENT handler than the visible Delete tile
+
+- Session: diff-pass
+- Suggested severity: MEDIUM
+
+What I did:
+1. Render the real `ActionDock` (unit probe) or open the app to PAGES and
+   shift-click page 1 (live probe). Both enter State 2
+   (`[data-action-dock][data-dock-state="selection"]`).
+2. Read the primary tiles and, with the anchored More popover open, the More rows.
+
+Expected: the selection-state dock shows exactly ONE `delete` command; the More
+popover holds only the stage verbs that are NOT already on screen, so no id appears
+twice and every row runs the same handler as its tile.
+
+Actual: `delete` renders BOTH as a State-2 primary tile and as a More row.
+- tiles: `["rotate","extract","delete","clearPageSelection"]`
+- More rows: `["replacePages","split","delete"]` (overlap = `["delete"]`)
+The two Delete commands are also MIS-ROUTED: the tile runs the bulk handler
+(`bulk.onDelete(pages)` -> `onDelete?.([...pages])` -> `engine.deletePages`, which
+deletes the selected pages and clears the selection), while the More row runs
+`onRunTool("delete")` -> `dockAppActions.deletePages` -> `onDeletePageClick()`,
+which opens the Delete Pages dialog seeded with the current page. Same visible
+label ("Delete pages"), two different behaviours.
+
+Root cause: `moreVerbs` (`src/renderer/components/ActionDock.tsx:636`) is computed
+from `stageEntries` minus `DOCK_PRIMARY_IDS` and is NOT gated on `primaryState`; in
+State 2 `primaryVerbs` becomes `selectionVerbs`
+(`src/renderer/components/ActionDock.tsx:650`), so `delete` - a non-curated stage
+id - is added to `menuVerbs` (`:758`) while its selection tile is on screen.
+Pre-Phase-104 the More popover held only `overflowVerbs` (selection tiles that
+overflowed), so this duplication could not occur.
+
+Reproduction:
+- Unit: `npx.cmd vitest run --config test-fixtures/phase104-adversary/vitest.probe.config.ts`
+  -> the test "delete must not appear in BOTH the selection primary tiles and the
+  More menu" fails with `duplicated tile+More ids: ["delete"]`.
+- Live: `npm.cmd run test:e2e -- phase104_adversary.spec.cjs -g "ADV-A"` ->
+  `[ADV-A] state=selection tiles=[...] menu=["replacePages","split","delete"]
+  overlap=["delete"] deleteRow={"disabled":false,"label":"Delete pages",...}`.
+- Fixtures: `test-fixtures/phase104-adversary/adv_probe.test.tsx`,
+  `test-fixtures/phase104-adversary/adv-selection-more.png`.
+
+Screenshot: test-fixtures/phase104-adversary/adv-selection-more.png
+
+Disposition: ACCEPTED -> DEF-569 (CTO TFL-841, 2026-10-05). The duplicate divergent `delete` is a real regression-class gap introduced by chunk 2's unconditional More; owner frontend-dev.
+
+## ADV-215: Phase 104 retires `[data-dock-edit-toggle]` and `[data-dock-hint]`, so eight existing e2e specs now query dead selectors
+
+- Session: diff-pass
+- Suggested severity: MEDIUM
+
+What I did: grepped the whole `e2e/` tree for the two selectors the diff removes
+(`[data-dock-edit-toggle]`, `[data-dock-hint]`).
+
+Expected: every e2e spec that drives the dock's EDIT mode or the Ctrl+K hint is
+updated in the same change (the unit specs phase36/37/58/75/98 were; the e2e specs
+were not), so `npm run test:e2e` and CI's `verify:full` stay green.
+
+Actual: eight live (non-archived) e2e specs still hard-query the retired selectors,
+so they fail the moment the diff is committed:
+
+- `e2e/phase58_dock_edit.spec.cjs:62,115,118,278` - `[data-dock-edit-toggle]`
+  (wait/click/`count().toBe(1)`).
+- `e2e/phase63_dock_edit_colour.spec.cjs:33,59,100,101,114,115` -
+  `[data-dock-edit-toggle]` (waitForFunction + click + `aria-pressed`).
+- `e2e/phase95_dock_edit_overflow.spec.cjs:120,121` - `[data-dock-edit-toggle]`.
+- `e2e/phase98_dock_curation_qa.spec.cjs:51` - `[data-dock-edit-toggle]`.
+- `e2e/tfl228_edit_jiggle.spec.cjs:114,206,359` - `[data-dock-edit-toggle]`.
+- `e2e/phase103_qa_visual.spec.cjs:64,66` - `win.click('[data-dock-edit-toggle]')`.
+- `e2e/phase37_gate.spec.cjs:99,934,945` - `[data-dock-hint]` (incl.
+  `expect(...count()).toBe(0)`, which now passes vacuously, and the `.textContent`
+  reads, which now return null).
+- `e2e/phase39_matrix.spec.cjs:103` - `[data-dock-hint]`.
+
+Root cause: `ActionDock.tsx` retires the pen button (`[data-dock-edit-toggle]`) in
+favour of the More popover's `[data-dock-menu-item="customize"]`, and retires the
+detached `.action-dock-hint` / `.action-dock-kbd`. Only the renderer unit specs
+were migrated (see `test/unit/renderer/phase58DockEdit.test.tsx` `armEditMode`).
+
+Reproduction: `npx.cmd rg -n "data-dock-edit-toggle|data-dock-hint"
+e2e/` (read-only; no suite run per the task's DO-NOT). The same class as ADV-195.
+
+Screenshot: n/a (static selector drift)
+
+Disposition: ACCEPTED -> DEF-570 (CTO TFL-841, 2026-10-05). Eight live e2e specs query retired selectors and will fail CI; owner qa (e2e is qa's path).
+
 ## Phase 103 Quiet Precision icon system diff-pass (TFL-838) - behaviour drift, guards, glyph family, animation, colour, offline
 
 Session label: `diff-pass`. Scope: the Phase 103 uncommitted change set - the new

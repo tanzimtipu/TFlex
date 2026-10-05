@@ -42,6 +42,14 @@ async function openReport(win) {
   await win.waitForTimeout(1200);
 }
 
+// Phase 104 (chunk 1) — dock EDIT mode is toggled through the More popover's
+// Customize dock item (the retired pen's replacement).
+async function toggleDockEdit(win) {
+  await win.locator('[data-dock-overflow]').click();
+  await win.waitForSelector('[data-dock-menu-item="customize"]', { state: 'visible', timeout: 8000 });
+  await win.locator('[data-dock-menu-item="customize"]').click();
+}
+
 // The computed animation state of every curated glyph for a surface.
 async function iconAudit(win, selector) {
   return win.evaluate((sel) => {
@@ -111,7 +119,7 @@ test('dock EDIT jiggle: no entry shake, desynchronised + continuous, clean stop,
   const rest = await rects(win, '[data-dock-verb="rotate"] .action-dock-icon', '[data-dock-verb="rotate"]');
   expect(rest.icon, 'the rotate glyph exists at rest').not.toBeNull();
 
-  await win.locator('[data-dock-edit-toggle]').click();
+  await toggleDockEdit(win);
   await win.waitForTimeout(250);
   expect(await root.getAttribute('data-dock-edit')).toBe('true');
 
@@ -176,10 +184,11 @@ test('dock EDIT jiggle: no entry shake, desynchronised + continuous, clean stop,
   expect(iconDy).toBeLessThan(4);
   await win.screenshot({ path: path.join(SHOTS, 'tfl228-dock-jiggle.png') });
 
-  // (e) No dropped clicks: a jiggling glyph's tool still runs (`split` opens the
-  //     split dialog; closed via its own close button to stay in EDIT).
-  await win.waitForSelector('[data-dock-verb="split"] .action-dock-icon', { timeout: 8000 });
-  await win.locator('[data-dock-verb="split"] .action-dock-icon').click();
+  // (e) No dropped clicks: a jiggling TILE glyph's tool still runs. `merge` is a
+  //     PAGES primary tile (Phase 104 moved `split` into the More menu) and opens
+  //     the merge dialog; closed via its own close button to stay in EDIT.
+  await win.waitForSelector('[data-dock-verb="merge"] .action-dock-icon', { timeout: 8000 });
+  await win.locator('[data-dock-verb="merge"] .action-dock-icon').click();
   await win.waitForSelector('[role="dialog"]', { timeout: 8000 });
   expect(await win.locator('[role="dialog"]').count()).toBeGreaterThanOrEqual(1);
   await win.locator('[role="dialog"] .modal-close').first().click();
@@ -203,7 +212,7 @@ test('dock EDIT jiggle: no entry shake, desynchronised + continuous, clean stop,
 
   // (f) Clean stop: exiting EDIT removes the jiggle and every glyph rests at
   //     identity (no residual offset).
-  await win.locator('[data-dock-edit-toggle]').click();
+  await toggleDockEdit(win);
   await win.waitForTimeout(400);
   expect(await root.getAttribute('data-dock-edit')).toBe('false');
   const stopped = await win.evaluate(() =>
@@ -356,7 +365,7 @@ test('reduced motion: EDIT arms, no jiggle on dock/home, minus/plus still fire',
 
   // Dock: open a document, EDIT arms with no glyph jiggle; plus/minus still work.
   await openReport(win);
-  await win.locator('[data-dock-edit-toggle]').click();
+  await toggleDockEdit(win);
   await win.waitForTimeout(300);
   expect(await win.locator(DOCK).getAttribute('data-dock-edit')).toBe('true');
   names = await win.evaluate(() =>

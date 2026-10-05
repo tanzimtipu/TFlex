@@ -15,7 +15,7 @@ import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { ActionDock, type ActionDockProps, type DockBulkActions } from "../../../src/renderer/components/ActionDock";
 import { DOCK_IDLE_MS } from "../../../src/renderer/state/dockModel";
-import { dockToolsForStage } from "../../../src/renderer/state/toolsRegistry";
+import { dockPrimaryIdsForStage } from "../../../src/renderer/state/toolsRegistry";
 
 function bulk(overrides: Partial<DockBulkActions> = {}): DockBulkActions {
   return {
@@ -103,7 +103,9 @@ describe("Phase 36 — ActionDock State 1: stage verbs", () => {
     const { host, unmount } = renderDock({ activeStage: "pages" });
     try {
       expect(host.querySelector("[data-dock-state]")?.getAttribute("data-dock-state")).toBe("stage");
-      expect(verbIds(host, "primary")).toEqual(dockToolsForStage("pages").map((t) => t.id));
+      // Phase 104 (chunk 2) — the visible tiles are the curated primaries; the
+      // remaining stage verbs live in the stable More menu.
+      expect(verbIds(host, "primary")).toEqual([...dockPrimaryIdsForStage("pages")]);
     } finally {
       unmount();
     }
@@ -112,9 +114,9 @@ describe("Phase 36 — ActionDock State 1: stage verbs", () => {
   it("swaps the whole set when the stage changes", () => {
     const { host, rerender, unmount } = renderDock({ activeStage: "deliver" });
     try {
-      expect(verbIds(host, "primary")).toEqual(dockToolsForStage("deliver").map((t) => t.id));
+      expect(verbIds(host, "primary")).toEqual([...dockPrimaryIdsForStage("deliver")]);
       rerender({ activeStage: "review" });
-      expect(verbIds(host, "primary")).toEqual(dockToolsForStage("review").map((t) => t.id));
+      expect(verbIds(host, "primary")).toEqual([...dockPrimaryIdsForStage("review")]);
     } finally {
       unmount();
     }
@@ -158,10 +160,14 @@ describe("Phase 36 — ActionDock State 1: stage verbs", () => {
       isToolEnabled: (entry) => entry.id !== "audit",
     });
     try {
-      const audit = verb(host, "audit");
-      expect(audit.hasAttribute("disabled")).toBe(true);
+      // Phase 104 (chunk 2) — `audit` is a displaced DELIVER verb, so it lives
+      // in the stable More menu; it is still present and still disabled.
+      clickOn(host.querySelector("[data-dock-overflow]") as Element);
+      const audit = host.querySelector<HTMLElement>('[data-dock-overflow-item="audit"]');
+      expect(audit).not.toBeNull();
+      expect(audit?.hasAttribute("disabled")).toBe(true);
       // `audit` declares availability 'document'.
-      expect(audit.getAttribute("title")).toBe("Open a document first");
+      expect(audit?.getAttribute("title")).toBe("Open a document first");
     } finally {
       unmount();
     }
@@ -298,7 +304,7 @@ describe("Phase 36 — ActionDock State 3: pins", () => {
     const onUnpinTool = vi.fn();
     const { host, unmount } = renderDock({ activeStage: "pages", onPinTool, onUnpinTool });
     try {
-      contextMenuOn(verb(host, "split"));
+      contextMenuOn(verb(host, "merge"));
       const pin = document.body.querySelector<HTMLButtonElement>('[data-dock-menu-item="pin"]');
       const unpin = document.body.querySelector<HTMLButtonElement>('[data-dock-menu-item="unpin"]');
       expect(pin).not.toBeNull();
@@ -308,7 +314,7 @@ describe("Phase 36 — ActionDock State 3: pins", () => {
       // records it in `dockUnpinned`), so Unpin is enabled for any verb.
       expect(unpin?.hasAttribute("disabled")).toBe(false);
       clickOn(pin as Element);
-      expect(onPinTool).toHaveBeenCalledWith("split");
+      expect(onPinTool).toHaveBeenCalledWith("merge");
     } finally {
       unmount();
     }
@@ -338,7 +344,7 @@ describe("Phase 36 — ActionDock State 3: pins", () => {
       dockPins: ["undo", "redo", "openReadingView", "openComicView"],
     });
     try {
-      contextMenuOn(verb(host, "split"));
+      contextMenuOn(verb(host, "merge"));
       const pin = document.body.querySelector<HTMLButtonElement>('[data-dock-menu-item="pin"]');
       // The cap is 200 (and only 109 registry ids exist), so four pins is far
       // below it: the Pin item stays enabled and carries no refusal title.
@@ -498,9 +504,10 @@ describe("Phase 36/37 — ActionDock responsive rules", () => {
     const { host, unmount } = renderDock({ activeStage: "pages", canvasWidth: 640 });
     try {
       expect(host.querySelector("[data-action-dock]")?.getAttribute("data-dock-arrows")).toBe("true");
-      // No `...` menu at the arrows rung: the full set is present, scrollable.
-      expect(host.querySelector("[data-dock-overflow]")).toBeNull();
-      expect(verbIds(host, "primary")).toEqual(dockToolsForStage("pages").map((t) => t.id));
+      // Phase 104 (chunk 2) — the arrows scroll the PRIMARY strip; the stable
+      // More control (outside the strip) hosts the displaced stage verbs.
+      expect(host.querySelector("[data-dock-overflow]")).not.toBeNull();
+      expect(verbIds(host, "primary")).toEqual([...dockPrimaryIdsForStage("pages")]);
       const left = host.querySelector<HTMLElement>('[data-dock-arrow="left"]');
       const right = host.querySelector<HTMLElement>('[data-dock-arrow="right"]');
       expect(left).not.toBeNull();
@@ -517,16 +524,18 @@ describe("Phase 36/37 — ActionDock responsive rules", () => {
     }
   });
 
-  it("Phase 37 item 21 — the Ctrl+K hint rides above the dock and hides at the arrows rung", () => {
-    const wide = renderDock({ canvasWidth: 1400 });
-    const narrow = renderDock({ canvasWidth: 640 });
+  it("Phase 104 item 5 — the labelled Tools button replaces the detached Ctrl+K hint", () => {
+    const onOpenTools = vi.fn();
+    const { host, unmount } = renderDock({ canvasWidth: 1400, onOpenTools });
     try {
-      const hint = wide.host.querySelector("[data-dock-hint]");
-      expect(hint?.textContent).toContain("Search all tools: Ctrl+K");
-      expect(narrow.host.querySelector("[data-dock-hint]")).toBeNull();
+      expect(host.querySelector("[data-dock-hint]")).toBeNull();
+      const tools = host.querySelector<HTMLElement>("[data-dock-tools]");
+      expect(tools).not.toBeNull();
+      expect(tools?.textContent?.replace(/\s+/g, " ").trim()).toBe("Tools");
+      clickOn(tools as Element);
+      expect(onOpenTools).toHaveBeenCalledTimes(1);
     } finally {
-      wide.unmount();
-      narrow.unmount();
+      unmount();
     }
   });
 });

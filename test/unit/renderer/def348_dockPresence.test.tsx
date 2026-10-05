@@ -78,7 +78,8 @@ describe("Multi Mode dock presence with an empty pane focused (DEF-348a)", () =>
     const host = harness({ enabled: true, paneA: "a", paneB: null, focused: "B" });
     const dock = host.querySelector("[data-action-dock]");
     expect(dock).not.toBeNull();
-    expect(host.querySelectorAll("[data-dock-verb]").length).toBe(8);
+    // Phase 104 (chunk 2) — the visible row is the five curated PAGES primaries.
+    expect(host.querySelectorAll('[data-dock-group="primary"] [data-dock-verb]').length).toBe(5);
   });
 
   it("still renders the dock when the document pane is focused", () => {

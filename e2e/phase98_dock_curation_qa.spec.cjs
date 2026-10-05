@@ -48,7 +48,9 @@ async function openReport(win) {
 
 async function dockEditOn(win) {
   if ((await win.locator(DOCK).getAttribute('data-dock-edit')) !== 'true') {
-    await win.locator('[data-dock-edit-toggle]').click();
+    await win.locator('[data-dock-overflow]').click();
+    await win.waitForSelector('[data-dock-menu-item="customize"]', { state: 'visible', timeout: 8000 });
+    await win.locator('[data-dock-menu-item="customize"]').click();
     await win.waitForTimeout(400);
   }
   expect(await win.locator(DOCK).getAttribute('data-dock-edit')).toBe('true');

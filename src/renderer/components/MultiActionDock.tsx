@@ -49,6 +49,9 @@ export interface MultiActionDockProps {
   /** Phase 37 (items 2 + 6) — the shared responsive ladder (App resolves it
    *  once from the measured workspace width). */
   ladder?: DockLadder;
+  /** Phase 104 (chunk 1) — forward the host's command-palette opener to the
+   *  shared dock's labelled Tools utility button. */
+  onOpenTools?: () => void;
 }
 
 export function MultiActionDock(props: MultiActionDockProps): ReactElement | null {
@@ -93,6 +96,7 @@ export function MultiActionDock(props: MultiActionDockProps): ReactElement | nul
          dock measures THEIR widths and rebuilds the single-mode basis, so the
          reserve/lane/lift are identical to single mode at the same width. */
       pillSelector={`.tab-pane[data-pane="${pane}"]`}
+      onOpenTools={props.onOpenTools}
     />
   );
 }

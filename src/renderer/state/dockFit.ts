@@ -106,6 +106,32 @@ export function dockBand(hostWidth: number, reserve: number): number {
 }
 
 /**
+ * DEF-573 — the dock's inline `max-width` cap, in px.
+ *
+ * A LIFTED dock and the RESERVED-ROW rung both take the whole host less the
+ * lift inset (12px each side); the reserved case is exactly the CSS
+ * `.action-dock[data-dock-reserved='true']` rule's `calc(100% - 24px)`, so the
+ * inline cap no longer contradicts it. The reserved branch is checked BEFORE
+ * the measured free band because the rung must hold independent of the pills:
+ * when they are unmeasured (`pill === null`) `freeBand` is null and the old
+ * `freeBand ?? band` fell back to the symmetric band, which `dockBand(520, 476)`
+ * collapses to 0. Only outside those two cases does the measured free band (when
+ * present) then the symmetric band apply — the unchanged DEF-330 geometry.
+ */
+export function dockCap(args: {
+  width: number;
+  lifted: boolean;
+  reservedRow: boolean;
+  freeBandWidth: number | null;
+  band: number;
+}): number {
+  if (args.lifted || args.reservedRow) {
+    return Math.max(0, args.width - 2 * DOCK_LIFT_INSET);
+  }
+  return args.freeBandWidth ?? args.band;
+}
+
+/**
  * DEF-330 — the pill-FREE band: the horizontal span the dock may actually use
  * when it is placed BETWEEN the two pills instead of on the host's centre.
  *
@@ -230,6 +256,29 @@ export function labelledDockNeed(
  *  this is a plain fit test — no second clearance is charged. */
 export function labelsFitBand(need: number, band: number): boolean {
   return need <= band;
+}
+
+/** Phase 104 (chunk 1) — the Focus Dock tool tile's min width, mirrored from
+ *  the scoped `--dock-tool-tile-min-width` token. The tile is 58px in EVERY
+ *  rung, the icon-only rung included: dropping the label narrows the GLYPH
+ *  column, never the tile, so an icon-only row is not narrower per control. */
+export const DOCK_TOOL_TILE_MIN_W = 58;
+
+/** The row gap between dock controls (mirrors the dock's 4px gap). */
+const DOCK_ROW_GAP = 4;
+
+/**
+ * DEF-571 — the estimated width of the ICON-ONLY dock row for `controlCount`
+ * controls (primary tiles + pins + the selection chip + the edit add + the
+ * stable More and Tools utilities). Each control is at least
+ * `DOCK_TOOL_TILE_MIN_W` wide, separated by the row gap, plus the dock's 16px
+ * padding. The labelled fit test cannot see this row (its labels are gone), so
+ * the lane decision needs this basis to route an overflowing icon-only row into
+ * the arrows lane before its leading tile can sit over the page pill.
+ */
+export function iconOnlyDockNeed(controlCount: number): number {
+  if (controlCount <= 0) return 0;
+  return controlCount * DOCK_TOOL_TILE_MIN_W + (controlCount - 1) * DOCK_ROW_GAP + 16;
 }
 
 /**

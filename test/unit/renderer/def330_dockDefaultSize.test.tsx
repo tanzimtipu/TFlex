@@ -28,6 +28,10 @@ import {
   pillFreeBand,
   type PillBox,
 } from '../../../src/renderer/state/dockFit';
+import {
+  DOCK_SHORT_LABELS,
+  dockPrimaryIdsForStage,
+} from '../../../src/renderer/state/toolsRegistry';
 import type { Stage } from '../../../src/renderer/state/stages';
 
 /** The live default-window geometry (ADV-081). */
@@ -35,38 +39,21 @@ const CANVAS = 914;
 const PAGE_W = 154.45;
 const ZOOM_W = 225.8;
 
-/** Phase 38 (feature B) — the dock's WIDENED relevant sets, as rendered. At the
- *  default-window band (~494px) these exceed the band, so DEF-334 routes the
- *  labelled row into the ARROWS lane (all labels kept, one scrolling row)
- *  instead of yielding them; the ladder hides labels only below 880px. */
+/** Phase 104 (chunk 2) — the dock's CURATED PRIMARY sets, as rendered. The
+ *  visible tile label is the short form (`DOCK_SHORT_LABELS`); the remaining
+ *  stage verbs live in the stable More menu. At the default-window band these
+ *  curated sets FIT as a plain labelled row; the ladder hides labels only below
+ *  880px. Derived from the registry so the test can never drift from the dock. */
 const DOCK_LABELS: Record<Stage, string[]> = {
-  pages: [
-    'Rotate pages', 'Extract pages', 'Insert pages', 'Replace pages',
-    'Split pages', 'Delete pages', 'Merge PDFs', 'Crop pages',
-  ],
-  edit: [
-    'Edit mode off', 'Edit text', 'Edit images', 'Add a text box', 'Recognize text (OCR)',
-    'Batch OCR all tabs', 'OCR suspects',
-  ],
-  review: [
-    'Annotate', 'Sign', 'Stamp', 'Flatten', 'Forms', 'Watermark',
-    // Phase 89 (FEA-033) adds the Bates-numbering verb to the REVIEW dock.
-    'Bates numbering…',
-    'Export comments (FDF)', 'Import comments (FDF)', 'Fill form fields from CSV…',
-    // Phase 57 (feature B) adds the form-data export/import pair; feature A
-    // adds the engineering layers and document-info verbs.
-    'Export form data…', 'Import form data…', 'Validate document…',
-    // Phase 88 (FEA-037) adds the sanitize verb to the REVIEW dock.
-    'Sanitize document…',
-    'Engineering layers…', 'Document info…',
-  ],
-  deliver: [
-    'Reduce file size', 'Audit space usage', 'Export pages as images',
-    'Export text', 'Export to Word (.docx)', 'Export as spreadsheet (.xlsx)',
-    'Export as presentation (.pptx)', 'Create PDF from images',
-    'Encrypt document',
-  ],
+  pages: dockPrimaryIdsForStage('pages').map((id) => DOCK_SHORT_LABELS[id] ?? id),
+  edit: dockPrimaryIdsForStage('edit').map((id) => DOCK_SHORT_LABELS[id] ?? id),
+  review: dockPrimaryIdsForStage('review').map((id) => DOCK_SHORT_LABELS[id] ?? id),
+  deliver: dockPrimaryIdsForStage('deliver').map((id) => DOCK_SHORT_LABELS[id] ?? id),
 };
+
+/** Phase 104 (chunk 2) — the dock charges the trailing Tools slot in its label
+ *  budget (`DOCK_EDIT_SLOT`), so the arrows prediction mirrors it. */
+const EDIT_SLOT = 26;
 
 function boxOf(left: number, top: number, right: number, bottom: number): DOMRect {
   return {
@@ -160,21 +147,23 @@ describe('DEF-330 â€” the dock renders as designed at the default window', 
     for (const stage of ['pages', 'edit', 'review', 'deliver'] as const) {
       const { dock, unmount } = mountDock(CANVAS, stage);
       try {
-        const labels = [...dock.querySelectorAll('.action-dock-label')];
+        const labels = [
+          ...dock.querySelectorAll('[data-dock-group="primary"] .action-dock-label'),
+        ];
         // The band-placed geometry is unchanged.
         expect(dock.getAttribute('data-dock-band-placed'), stage).toBe('true');
         expect(Number(dock.getAttribute('data-dock-free-band')), stage).toBe(Math.round(band));
         expect(Number(dock.getAttribute('data-dock-band')), stage).toBe(Math.round(band));
         // DEF-334 — the 880 rung owns the labels; at the default window (914)
-        // the widened sets stay labelled and the lane scrolls, so nothing is
-        // silently dropped (the re-opened DEF-330). Where a set genuinely
-        // exceeds the band the arrows lane is used, never a label drop.
+        // the curated PRIMARY set stays labelled, and the stable More control
+        // hosts the displaced verbs (never a label drop).
         expect(dock.getAttribute('data-dock-icon-only'), stage).toBe('false');
         expect(labels.map((el) => el.textContent), stage).toEqual(DOCK_LABELS[stage]);
-        if (labelledDockNeed(DOCK_LABELS[stage]) > band) {
-          expect(dock.getAttribute('data-dock-arrows'), stage).toBe('true');
-          expect(dock.querySelector('[data-dock-overflow]'), stage).toBeNull();
-        }
+        expect(
+          dock.getAttribute('data-dock-arrows'),
+          stage,
+        ).toBe(labelledDockNeed(DOCK_LABELS[stage]) + EDIT_SLOT > band ? 'true' : 'false');
+        expect(dock.querySelector('[data-dock-overflow]'), stage).not.toBeNull();
         // ALWAYS one row: at most the primary group + the pins group.
         expect(dock.querySelectorAll('[data-dock-group]').length, stage).toBeLessThanOrEqual(2);
       } finally {
@@ -219,10 +208,10 @@ describe('DEF-330 â€” the dock renders as designed at the default window', 
     // metrics (up from the Phase-37 4px/7px).
     expect(css).toMatch(/\.action-dock-verb\s*\{[^}]*padding:\s*5px 8px/s);
     expect(css).toMatch(/\.action-dock-group\s*\{[^}]*gap:\s*3px/s);
-    // The enlarged DELIVER set genuinely exceeds the 493.75px band, so DEF-334
-    // routes the still-labelled row into the arrows lane (one row, nothing
-    // hidden) instead of squeezing the labels.
-    expect(labelledDockNeed(DOCK_LABELS.deliver)).toBeGreaterThan(freeBand().width);
+    // Phase 104 (chunk 2) — the CURATED primary DELIVER set now FITS the
+    // 493.75px band as a plain labelled row (the displaced verbs moved into the
+    // stable More menu), so no arrows lane is needed at the default window.
+    expect(labelledDockNeed(DOCK_LABELS.deliver) + EDIT_SLOT).toBeLessThan(freeBand().width);
   });
 
   it('the stylesheet places the dock in the band with left/right + margin auto', () => {
@@ -268,38 +257,42 @@ describe('DEF-330 â€” the dock renders as designed at the default window', 
   });
 
   it('stays labelled everywhere above the 880 rung, routing to arrows where the band is tight', () => {
-    // Phase 38 (feature B) — the enlarged labels no longer all fit 1100's
-    // ~679.75px band (PAGES 708.8 / DELIVER 760 exceed it; EDIT 614.4 and
-    // REVIEW 636 fit). DEF-334 keeps the labels either way: the wide sets ride
-    // the arrows lane, the fitting sets render as a plain labelled row.
+    // Phase 104 (chunk 2) — the curated primary sets are narrow enough to fit
+    // even a tight band, so the labelled row stays plain (no arrows) while the
+    // displaced verbs ride the stable More menu. DEF-334 still keeps the labels
+    // above the 880 rung.
     const wideBand = 1100 - (DOCK_PILL_INSET + PAGE_W + DOCK_PILL_GAP) - (DOCK_PILL_INSET + ZOOM_W + DOCK_PILL_GAP);
     for (const stage of ['pages', 'edit', 'review', 'deliver'] as const) {
       const wide = mountDock(1100, stage);
       try {
         expect(wide.dock.getAttribute('data-dock-icon-only'), `1100 ${stage}`).toBe('false');
-        expect(wide.dock.querySelectorAll('.action-dock-label').length, `1100 ${stage}`).toBe(
-          DOCK_LABELS[stage].length,
-        );
+        expect(
+          wide.dock.querySelectorAll('[data-dock-group="primary"] .action-dock-label').length,
+          `1100 ${stage}`,
+        ).toBe(DOCK_LABELS[stage].length);
         expect(wide.dock.getAttribute('data-dock-arrows'), `1100 ${stage}`).toBe(
-          labelledDockNeed(DOCK_LABELS[stage]) > wideBand ? 'true' : 'false',
+          labelledDockNeed(DOCK_LABELS[stage]) + EDIT_SLOT > wideBand ? 'true' : 'false',
         );
       } finally {
         wide.unmount();
       }
     }
-    // 900px canvas leaves ~479.75px: every widened set now exceeds it, but
-    // 900 is ABOVE the 880 rung, so DEF-334 keeps the labels and uses the
-    // arrows lane rather than dropping them.
+    // 900px canvas leaves ~479.75px: the curated sets still fit, and 900 is
+    // ABOVE the 880 rung, so the labels stay as a plain row.
     const mediumBand = 900 - (DOCK_PILL_INSET + PAGE_W + DOCK_PILL_GAP) - (DOCK_PILL_INSET + ZOOM_W + DOCK_PILL_GAP);
     for (const stage of ['pages', 'edit', 'review', 'deliver'] as const) {
       const medium = mountDock(900, stage);
       try {
-        expect(labelledDockNeed(DOCK_LABELS[stage]), `900 need ${stage}`).toBeGreaterThan(mediumBand);
+        expect(
+          labelledDockNeed(DOCK_LABELS[stage]) + EDIT_SLOT,
+          `900 need ${stage}`,
+        ).toBeLessThan(mediumBand);
         expect(medium.dock.getAttribute('data-dock-icon-only'), `900 ${stage}`).toBe('false');
-        expect(medium.dock.querySelectorAll('.action-dock-label').length, `900 ${stage}`).toBe(
-          DOCK_LABELS[stage].length,
-        );
-        expect(medium.dock.getAttribute('data-dock-arrows'), `900 ${stage}`).toBe('true');
+        expect(
+          medium.dock.querySelectorAll('[data-dock-group="primary"] .action-dock-label').length,
+          `900 ${stage}`,
+        ).toBe(DOCK_LABELS[stage].length);
+        expect(medium.dock.getAttribute('data-dock-arrows'), `900 ${stage}`).toBe('false');
       } finally {
         medium.unmount();
       }
@@ -308,7 +301,8 @@ describe('DEF-330 â€” the dock renders as designed at the default window', 
 
   it('hides labels only below the 880 rung; the compact lane above it is the arrows', () => {
     // 899 is above the 880 rung: the labels stay (the old host-width 900
-    // threshold is not the authority).
+    // threshold is not the authority). The measured host is inside the
+    // icon-only zone (899 < 900), so the still-labelled row routes to arrows.
     const above = mountDock(899, 'review');
     try {
       expect(above.dock.getAttribute('data-dock-icon-only')).toBe('false');

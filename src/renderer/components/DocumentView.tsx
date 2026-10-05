@@ -959,6 +959,9 @@ export interface DocumentViewDockProps {
    *  for the dock's own verbs use the dock's verdict instead of a second guess.
    *  `null` withdraws it (unmount / tab close). */
   registerDockAvailability?: (availability: DockAvailability | null) => void;
+  /** Phase 104 (chunk 1) — the host's command-palette opener, forwarded to the
+   *  Action Dock's labelled Tools utility button. */
+  onOpenTools?: () => void;
 }
 
 /**
@@ -1081,6 +1084,7 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
   dockLadder,
   onDockToolAction,
   isDockToolEnabled,
+  onOpenTools,
   spellCheckEnabled = false,
   onSpellCheckEnabledChange,
 }: DocumentViewProps,
@@ -4992,6 +4996,7 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
                 : []
             }
             onIdleChange={setDockIdle}
+            onOpenTools={onOpenTools}
           />
         )}
         </div>

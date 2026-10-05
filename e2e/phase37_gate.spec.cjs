@@ -19,11 +19,19 @@ const { hardClose } = require('./lib/helpers.cjs');
 const SHOTS = path.resolve(__dirname, '..', 'screenshots');
 fs.mkdirSync(SHOTS, { recursive: true });
 
+// Mirrors `src/renderer/state/toolsRegistry.ts` `DOCK_STAGE_IDS` (the stage's
+// FULL dock membership: primary tiles + More verbs). Refreshed for the Phase 104
+// additions (review: bates/form-data/sanitize/engineering/documentInfo; deliver:
+// xlsx/pptx/encrypt). Order is irrelevant — the assertion compares Sets.
 const DOCK_STAGE_IDS = {
   pages: ['rotate', 'extract', 'insertPages', 'replacePages', 'split', 'delete', 'merge', 'cropPages'],
-  edit: ['editText', 'editImage', 'editTextBox', 'editToolOff', 'recognizeText', 'batchOcr', 'ocrSuspects'],
-  review: ['annotate', 'sign', 'stamp', 'flatten', 'forms', 'watermark', 'exportComments', 'importComments'],
-  deliver: ['optimize', 'audit', 'exportPages', 'exportText', 'exportDocx', 'createFromImages'],
+  edit: ['editToolOff', 'editText', 'editImage', 'editTextBox', 'recognizeText', 'batchOcr', 'ocrSuspects'],
+  review: [
+    'annotate', 'sign', 'stamp', 'flatten', 'forms', 'watermark', 'bates', 'exportComments',
+    'importComments', 'fillFromCsv', 'exportFormData', 'importFormData', 'validateDocument',
+    'sanitize', 'engineeringLayers', 'documentInfo',
+  ],
+  deliver: ['optimize', 'audit', 'exportPages', 'exportText', 'exportDocx', 'exportXlsx', 'exportPptx', 'createFromImages', 'encrypt'],
 };
 
 let app = null;
@@ -54,7 +62,12 @@ async function setWindowSize(w, h) {
     const bw = BrowserWindow.getAllWindows().find(
       (x) => !x.webContents.getURL().includes('tfWindow=print'),
     );
-    if (bw) bw.setSize(s[0], s[1]);
+    if (bw) {
+      // The app may launch MAXIMIZED (a maximized window ignores setSize), so
+      // restore to a normal window before sizing, like e2e/phase58's setWidth.
+      try { if (bw.isMaximized()) bw.unmaximize(); } catch (_) { /* not maximizable */ }
+      bw.setSize(s[0], s[1]);
+    }
   }, [w, h]);
   await win.waitForTimeout(700);
   await win.waitForFunction((t) => Math.abs(window.innerWidth - t) < 45, w, { timeout: 10000 });
@@ -96,7 +109,7 @@ const dockInfo = () => win.evaluate(() => {
     scrollWidth: sc?.scrollWidth ?? null,
     clientWidth: sc?.clientWidth ?? null,
     scrollDisplay: sc ? getComputedStyle(sc).display : null,
-    hint: document.querySelector('[data-dock-hint]')?.textContent?.replace(/\s+/g, ' ').trim() ?? null,
+    tools: !!document.querySelector('[data-dock-tools]'),
     overflow: d.querySelectorAll('[data-dock-overflow]').length,
   };
 });
@@ -279,7 +292,10 @@ test('P37-A Inspector: text block on top, divider, scrolling, flush, collapse, s
   console.log(`[P37-A] inspector action sizing=${JSON.stringify(sizing)}`);
   expect(sizing.height, 'a comfortable hit target (28px)').toBeGreaterThanOrEqual(28);
   expect(parseFloat(sizing.fontSize), 'a legible label (12px)').toBeGreaterThanOrEqual(12);
-  expect(sizing.padding).toBe('4px 10px');
+  // Phase 104: the inspector action is a canonical `.btn`, so its padding is the
+  // shared control padding (`0 var(--space-control)` = 0px 12px), not the old
+  // bespoke 4px 10px. Either way it stays the canonical-button hit target.
+  expect(sizing.padding).toBe('0px 12px');
 
   // --- Subtle separators: the divider token, not the heavier border token. ---
   const sep = await win.evaluate(() => {
@@ -287,15 +303,24 @@ test('P37-A Inspector: text block on top, divider, scrolling, flush, collapse, s
     const cs = getComputedStyle(row);
     const root = getComputedStyle(document.documentElement);
     const action = document.querySelector('[data-inspector-action]');
-    const alpha = (() => {
-      const m = /rgba?\([^)]*?,\s*([0-9.]+)\s*\)/.exec(cs.borderTopColor);
-      return m ? Number(m[1]) : 1;
-    })();
+    // Resolve each token to its used colour so the oracle compares the divider
+    // token itself. The old rgba-alpha regex read the BLUE channel of an opaque
+    // rgb() (the divider is now `#dde3ea`, zero alpha by definition), so it read
+    // a false "234" alpha and always failed on the correct product.
+    const resolve = (token) => {
+      const probe = document.createElement('div');
+      probe.style.borderTop = `1px solid ${token}`;
+      document.body.appendChild(probe);
+      const c = getComputedStyle(probe).borderTopColor;
+      probe.remove();
+      return c;
+    };
     return {
       borderTopWidth: cs.borderTopWidth,
       borderTopStyle: cs.borderTopStyle,
       borderTopColor: cs.borderTopColor,
-      alpha,
+      dividerColor: resolve('var(--divider)'),
+      borderColor: resolve('var(--border)'),
       divider: root.getPropertyValue('--divider').trim(),
       borderToken: root.getPropertyValue('--border').trim(),
       actionBorder: action ? getComputedStyle(action).borderTopColor : null,
@@ -304,7 +329,8 @@ test('P37-A Inspector: text block on top, divider, scrolling, flush, collapse, s
   console.log(`[P37-A] separator=${JSON.stringify(sep)}`);
   expect(parseFloat(sep.borderTopWidth), 'a hairline separator').toBeGreaterThan(0);
   expect(sep.borderTopStyle, 'the separator is a solid hairline').toBe('solid');
-  expect(sep.alpha, 'the separator is subtle (low alpha), not a heavy border').toBeLessThan(0.1);
+  expect(sep.borderTopColor, 'the separator uses the subtle --divider token').toBe(sep.dividerColor);
+  expect(sep.borderTopColor, 'the separator is not the heavier --border token').not.toBe(sep.borderColor);
   expect(sep.divider, 'the divider token exists').not.toBe('');
   expect(sep.divider, 'the subtle divider differs from the heavier border token').not.toBe(sep.borderToken);
 });
@@ -436,9 +462,12 @@ test('P37-B rail/panel: welcome absence, chevron flip, edge gaps, 184px panel, f
   console.log(`[P37-B] chevron ${dir0}/${icon0} -> ${dir1}/${icon1} -> ${dir2}/${icon2}`);
   expect(dir0).toBe('collapse');
   expect(dir1).toBe('expand');
-  expect(icon0).toContain('chevron-left');
-  expect(icon1).toContain('chevron-right');
-  expect(icon2).toContain('chevron-left');
+  // Phase 43/103: the rail toggle renders PanelLeftClose when expanded (press to
+  // collapse) and PanelRightOpen when collapsed (press to expand) — the glyphs
+  // themselves flip with the state, so the toggle still reflects it.
+  expect(icon0).toContain('panel-left-close');
+  expect(icon1).toContain('panel-right-open');
+  expect(icon2).toContain('panel-left-close');
 
   // --- item 15: no PAGES title, panel 184px. ---
   const panel = await win.evaluate(() => {
@@ -468,10 +497,16 @@ test('P37-B rail/panel: welcome absence, chevron flip, edge gaps, 184px panel, f
     const sr = section.getBoundingClientRect();
     const pr = p.getBoundingClientRect();
     const cs = getComputedStyle(section);
-    const alpha = (() => {
-      const m = /rgba?\([^)]*?,\s*([0-9.]+)\s*\)/.exec(cs.borderTopColor);
-      return m ? Number(m[1]) : 1;
-    })();
+    // Resolve the token instead of the broken rgba-alpha heuristic (see P37-A):
+    // the --divider token is opaque, so the old regex read its blue channel.
+    const resolve = (token) => {
+      const probe = document.createElement('div');
+      probe.style.borderTop = `1px solid ${token}`;
+      document.body.appendChild(probe);
+      const c = getComputedStyle(probe).borderTopColor;
+      probe.remove();
+      return c;
+    };
     return {
       lastChild: body.lastElementChild === section,
       firstChild: body.firstElementChild === document.querySelector('[data-context-panel-thumbs]'),
@@ -479,7 +514,7 @@ test('P37-B rail/panel: welcome absence, chevron flip, edge gaps, 184px panel, f
       borderTopWidth: cs.borderTopWidth,
       borderTopStyle: cs.borderTopStyle,
       borderTopColor: cs.borderTopColor,
-      borderAlpha: alpha,
+      dividerColor: resolve('var(--divider)'),
       divider: getComputedStyle(document.documentElement).getPropertyValue('--divider').trim(),
     };
   });
@@ -489,7 +524,7 @@ test('P37-B rail/panel: welcome absence, chevron flip, edge gaps, 184px panel, f
   expect(Math.abs(outline.sectionBottom - outline.panelBottom), 'the Outline bottom is flush with the panel bottom').toBeLessThanOrEqual(3);
   expect(parseFloat(outline.borderTopWidth), 'a separator above the Outline (hairline)').toBeGreaterThan(0);
   expect(outline.borderTopStyle, 'the Outline separator is a solid hairline').toBe('solid');
-  expect(outline.borderAlpha, 'the Outline separator uses the subtle divider token (low alpha)').toBeLessThan(0.1);
+  expect(outline.borderTopColor, 'the Outline separator uses the subtle --divider token').toBe(outline.dividerColor);
 
   // --- item 9: the placement audit (raw edge gaps; nothing touches an edge). ---
   const gaps = await win.evaluate(() => {
@@ -776,10 +811,14 @@ test('P37-E Action Dock: one row, ladder order both ways, arrows, full set + unp
     await setWindowSize(w, 900);
     await gotoStage(1);
     const d = await dockInfo();
-    // Re-derive the single-row height from the icon token and the live paddings
-    // instead of a magic number: the dock is now 60px with the 20px icons, so
-    // the old `< 60` threshold was exactly at the boundary. A stacked dock would
-    // add a second verb row and exceed this bound.
+    // Re-derive the single-row height from the dock tokens and the live
+    // paddings instead of a magic number. Phase 104 (TFL-851) gave the dock a
+    // `--dock-min-height` floor (68px) and the Focus tool tiles a
+    // `--dock-tool-tile-min-height` (52px), so the old label-only derivation
+    // (~51px) now under-counts the real 73px box. The bound is the tallest of
+    // the content stack (tile + the scroller's DEF-518 badge headroom) and the
+    // dock's own min-height floor. A stacked dock adds a second verb row and
+    // blows past this bound.
     const singleRow = await win.evaluate(() => {
       const root = getComputedStyle(document.documentElement);
       const icon = parseFloat(root.getPropertyValue('--tf-icon-size-md')) || 20;
@@ -787,19 +826,27 @@ test('P37-E Action Dock: one row, ladder order both ways, arrows, full set + unp
       const verb = dock.querySelector('[data-dock-verb]');
       const dcs = getComputedStyle(dock);
       const vcs = getComputedStyle(verb);
+      // The dock tokens are declared on `.action-dock`, not `:root`.
+      const dockMin = parseFloat(dcs.getPropertyValue('--dock-min-height')) || 0;
+      const tileMin = parseFloat(dcs.getPropertyValue('--dock-tool-tile-min-height')) || 0;
       const label = verb.querySelector('.action-dock-label');
       const labelH = label ? label.getBoundingClientRect().height : 0;
       const gap = parseFloat(vcs.rowGap) || 0;
-      const oneRow = parseFloat(dcs.paddingTop) + parseFloat(dcs.paddingBottom)
-        + parseFloat(vcs.paddingTop) + parseFloat(vcs.paddingBottom)
-        + icon + gap + labelH
-        + parseFloat(dcs.borderTopWidth) + parseFloat(dcs.borderBottomWidth);
+      const dockPad = parseFloat(dcs.paddingTop) + parseFloat(dcs.paddingBottom);
+      const dockBorder = parseFloat(dcs.borderTopWidth) + parseFloat(dcs.borderBottomWidth);
+      const verbContent = parseFloat(vcs.paddingTop) + parseFloat(vcs.paddingBottom) + icon + gap + labelH;
+      const tile = Math.max(verbContent, tileMin);
+      // The scroller reserves 3px of top padding as headroom for the edit
+      // badge's hover lift (DEF-518), so the content stack is 3px over the tile.
+      const badgeHeadroom = 3;
+      const contentRow = dockPad + tile + badgeHeadroom + dockBorder;
+      const oneRow = Math.max(contentRow, dockMin + dockBorder);
       return { icon, oneRow: +oneRow.toFixed(1) };
     });
     console.log(`[P37-E] w=${w} inner=${d.innerWidth} dock=${JSON.stringify({ h: d.height, rows: d.verbRows, wrap: d.flexWrap, arrows: d.arrows, iconOnly: d.iconOnly, labels: d.labels.length, verbs: d.verbs.length })} singleRow=${JSON.stringify(singleRow)}`);
     expect(d, `dock present at ${w}`).not.toBeNull();
     expect(d.verbRows, `w=${w}: the dock is ONE row (never stacks)`).toBe(1);
-    expect(d.height, `w=${w}: a single-row dock height (<= ${singleRow.oneRow + 3}px, derived from --tf-icon-size-md=${singleRow.icon})`).toBeLessThanOrEqual(singleRow.oneRow + 3);
+    expect(d.height, `w=${w}: a single-row dock height (<= ${singleRow.oneRow + 3}px, derived from --tf-icon-size-md=${singleRow.icon} / --dock-min-height)`).toBeLessThanOrEqual(singleRow.oneRow + 3);
     expect(d.flexWrap, `w=${w}: flex-wrap is nowrap`).toBe('nowrap');
   }
 
@@ -924,19 +971,27 @@ test('P37-E Action Dock: one row, ladder order both ways, arrows, full set + unp
     console.log(`[P37-E] ${stage} dock set=${JSON.stringify(ids)}`);
     expect(new Set(ids), `${stage} carries its full relevant set by default`).toEqual(new Set(DOCK_STAGE_IDS[stage]));
   }
-  // The Ctrl+K hint is gated on the arrows LANE (DEF-337): it is hidden while
-  // the lane is on, which at 1440 is the DEF-334 labelled-row overflow. Check
-  // it at 1920, where the full labelled set fits and the lane is off.
+  // The Ctrl+K hint is RETIRED (Phase 104 chunk 1): the command palette is now
+  // reached from the labelled Tools utility. Confirm the hint is gone and the
+  // Tools affordance is present. Checked at 1920, where the full labelled set
+  // fits and the lane is off.
   await setWindowSize(1920, 900);
   await gotoStage(1);
-  const hintState = await win.evaluate(() => ({
-    lane: document.querySelector('[data-action-dock]')?.getAttribute('data-dock-arrows-lane') ?? null,
-    hint: document.querySelector('[data-dock-hint]')?.textContent?.replace(/\s+/g, ' ').trim() ?? null,
-  }));
-  console.log(`[P37-E] Ctrl+K hint state=${JSON.stringify(hintState)}`);
-  expect(hintState.lane, 'at 1920 the arrows lane is off').toBe('false');
-  expect(hintState.hint, 'the Ctrl+K hint appears above the dock').toBe('Search all tools: Ctrl+K');
-  // Park the pointer off the dock so no hover tooltip obscures the hint.
+  const toolsState = await win.evaluate(() => {
+    const tools = document.querySelector('[data-dock-tools]');
+    return {
+      lane: document.querySelector('[data-action-dock]')?.getAttribute('data-dock-arrows-lane') ?? null,
+      hintCount: document.querySelectorAll('[data-dock-hint]').length,
+      toolsText: (tools?.textContent ?? '').replace(/\s+/g, ' ').trim(),
+      toolsAria: tools?.getAttribute('aria-label') ?? null,
+    };
+  });
+  console.log(`[P37-E] Tools/hint state=${JSON.stringify(toolsState)}`);
+  expect(toolsState.lane, 'at 1920 the arrows lane is off').toBe('false');
+  expect(toolsState.hintCount, 'the retired Ctrl+K hint is gone').toBe(0);
+  expect(toolsState.toolsText, 'the Tools utility is labelled above the dock').toBe('Tools');
+  expect(toolsState.toolsAria, 'the Tools utility is the palette affordance').toBe('Tools');
+  // Park the pointer off the dock so no hover tooltip obscures the dock.
   await win.mouse.move(700, 420);
   await win.waitForTimeout(400);
   await win.screenshot({ path: path.join(SHOTS, 'phase37-dock-default.png') });
@@ -946,23 +1001,28 @@ test('P37-E Action Dock: one row, ladder order both ways, arrows, full set + unp
 
   // --- item 21: UNPIN a default verb; it disappears and persists. ---
   await gotoStage(1);
-  await win.locator('[data-dock-verb="split"]').first().click({ button: 'right' });
+  // Phase 104 responsibly curates the inline primaries, so `split` is no longer
+  // rendered inline at 640 (it lives in the More menu). Unpin whichever default
+  // primary is actually rendered and assert THAT id is removed and persisted.
+  const unpinTarget = win.locator('[data-action-dock] [data-dock-verb]').first();
+  const unpinId = await unpinTarget.getAttribute('data-dock-verb');
+  await unpinTarget.click({ button: 'right' });
   await win.waitForSelector('[data-dock-menu]', { state: 'visible', timeout: 8000 });
   await win.locator('[data-dock-menu-item="unpin"]').click();
   await win.waitForTimeout(700);
   const afterUnpin = await win.$$eval('[data-action-dock] [data-dock-verb]', (els) =>
     els.map((e) => e.getAttribute('data-dock-verb')));
-  console.log(`[P37-E] after unpin verbs=${JSON.stringify(afterUnpin)}`);
-  expect(afterUnpin, 'the un-pinned default verb is gone from the dock').not.toContain('split');
+  console.log(`[P37-E] after unpin ${unpinId} verbs=${JSON.stringify(afterUnpin)}`);
+  expect(afterUnpin, 'the un-pinned default verb is gone from the dock').not.toContain(unpinId);
   let stored = null;
   const t0 = Date.now();
   while (Date.now() - t0 < 8000) {
     const s = await loadSettings();
-    if (s && Array.isArray(s.dockUnpinned) && s.dockUnpinned.includes('split')) { stored = s.dockUnpinned; break; }
+    if (s && Array.isArray(s.dockUnpinned) && s.dockUnpinned.includes(unpinId)) { stored = s.dockUnpinned; break; }
     await win.waitForTimeout(250);
   }
-  console.log(`[P37-E] persisted dockUnpinned=${JSON.stringify(stored)}`);
-  expect(stored, 'the un-pin is persisted in dockUnpinned').toContain('split');
+  console.log(`[P37-E] persisted dockUnpinned=${JSON.stringify(stored)} for ${unpinId}`);
+  expect(stored, 'the un-pin is persisted in dockUnpinned').toContain(unpinId);
 
   // --- item 7: consistent across the three themes. ---
   await setWindowSize(1440, 900);

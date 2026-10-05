@@ -100,7 +100,7 @@ const collectDock = (w) => w.evaluate(`(() => {
     band: dock.getAttribute('data-dock-band'), lift: dock.getAttribute('data-dock-lift'),
     rect: { x:+r.x.toFixed(1), y:+r.y.toFixed(1), w:+r.width.toFixed(1), h:+r.height.toFixed(1) },
     rows: cs.gridTemplateRows, divider: !!dock.querySelector('[data-dock-divider]'),
-    hint: !!dock.querySelector('[data-dock-hint]'), overflowButton: !!dock.querySelector('[data-dock-overflow]'),
+    tools: !!dock.querySelector('[data-dock-tools]'), overflowButton: !!dock.querySelector('[data-dock-overflow]'),
     verbs, overflowItems,
     primaryIds: verbs.filter((v) => !v.pin).map((v) => v.id),
     pinnedIds: verbs.filter((v) => v.pin).map((v) => v.id),

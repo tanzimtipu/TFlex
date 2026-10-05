@@ -35,6 +35,7 @@ import {
   resolveDockLadder,
 } from "../../../src/renderer/state/dockResponsive";
 import {
+  dockPrimaryIdsForStage,
   dockRelevantIdsForStage,
   dockToolsForStage,
   isDockHostedAction,
@@ -204,9 +205,10 @@ describe("Phase 37 item 6 � the scroll arrows", () => {
     try {
       const root = host.querySelector("[data-action-dock]");
       expect(root?.getAttribute("data-dock-arrows")).toBe("true");
-      // Every review verb is present (nothing hidden behind a `...` menu).
-      expect(verbIds(host)).toEqual(dockToolsForStage("review").map((t) => t.id));
-      expect(host.querySelector("[data-dock-overflow]")).toBeNull();
+      // Phase 104 (chunk 2) — the arrows scroll the PRIMARY strip; the displaced
+      // review verbs now live in the stable More menu, which always renders.
+      expect(verbIds(host)).toEqual([...dockPrimaryIdsForStage("review")]);
+      expect(host.querySelector("[data-dock-overflow]")).not.toBeNull();
       const scroller = host.querySelector<HTMLElement>("[data-dock-scroll]");
       expect(scroller).not.toBeNull();
       scroller!.scrollBy = scrollBy;
@@ -252,8 +254,10 @@ describe('DEF-334 — the 880 rung decides the labels, the measured band does no
     });
     try {
       expect(host.querySelector('[data-action-dock]')?.getAttribute('data-dock-icon-only')).toBe('false');
-      expect(host.querySelectorAll('.action-dock-label')).toHaveLength(
-        dockToolsForStage('pages').length,
+      // Phase 104 (chunk 2) — the visible labels are the curated primaries
+      // (plus the stable More label); every primary keeps its label.
+      expect(host.querySelectorAll('[data-dock-group="primary"] .action-dock-label')).toHaveLength(
+        dockPrimaryIdsForStage('pages').length,
       );
       expect(host.querySelectorAll('[data-dock-group="primary"]')).toHaveLength(1);
     } finally {
@@ -453,32 +457,36 @@ describe('DEF-337 — the arrows are gated on a real overflow', () => {
 // ---------------------------------------------------------------------------
 
 describe("Phase 37 item 21 � the Ctrl+K hint", () => {
-  it("renders a small hint line above the dock at usable widths", () => {
-    const { host, unmount } = renderDock({ canvasWidth: 1400 });
+it("renders a labelled Tools button that opens the palette at usable widths", () => {
+    const onOpenTools = vi.fn();
+    const { host, unmount } = renderDock({ canvasWidth: 1400, onOpenTools });
     try {
-      const hint = host.querySelector<HTMLElement>("[data-dock-hint]");
-      expect(hint).not.toBeNull();
-      expect(hint?.textContent?.replace(/\s+/g, " ").trim()).toBe("Search all tools: Ctrl+K");
-      expect(hint?.querySelector("kbd")?.textContent).toBe("Ctrl+K");
+      // Phase 104 (chunk 1) — the detached hint is retired.
+      expect(host.querySelector("[data-dock-hint]")).toBeNull();
+      const tools = host.querySelector<HTMLElement>("[data-dock-tools]");
+      expect(tools).not.toBeNull();
+      expect(tools?.textContent?.replace(/\s+/g, " ").trim()).toBe("Tools");
+      act((): void => {
+        tools?.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
+      });
+      expect(onOpenTools).toHaveBeenCalledTimes(1);
     } finally {
       unmount();
     }
   });
 
-  it("hides the hint at the smallest rung with the rest of the ladder", () => {
+  it("keeps the Tools button at the smallest rung and drops only its label", () => {
     const { host, unmount } = renderDock({ activeStage: "pages", canvasWidth: 640 });
     try {
       expect(host.querySelector("[data-dock-arrow]")).not.toBeNull();
-      expect(host.querySelector("[data-dock-hint]")).toBeNull();
+      expect(host.querySelector("[data-dock-tools]")).not.toBeNull();
+      expect(host.querySelector(".action-dock-tools-label")).toBeNull();
     } finally {
       unmount();
     }
   });
 
-  it("is keyed on the ladder rung, not the measured overflow lane (present at 1440, absent at 719)", () => {
-    // 1440: the ladder is idle, but a narrow canvas host forces the measured
-    // label-overflow LANE on. The hint must still show - it is gated on the
-    // width rung (visible at every width >= 720), not the lane.
+  it("keeps the Tools button when a measured lane is on (it is not lane-gated)", () => {
     const wide = renderDock({
       activeStage: "pages",
       canvasWidth: 700,
@@ -486,29 +494,18 @@ describe("Phase 37 item 21 � the Ctrl+K hint", () => {
     });
     try {
       expect(wide.host.querySelector("[data-action-dock]")?.getAttribute("data-dock-arrows-lane")).toBe("true");
-      expect(wide.host.querySelector("[data-dock-hint]")).not.toBeNull();
+      expect(wide.host.querySelector("[data-dock-tools]")).not.toBeNull();
     } finally {
       wide.unmount();
     }
-    // 719: the ladder's narrowest rung - the hint is shed.
-    const narrow = renderDock({
-      activeStage: "pages",
-      canvasWidth: 719,
-      ladder: resolveDockLadder(719),
-    });
-    try {
-      expect(narrow.host.querySelector("[data-dock-hint]")).toBeNull();
-    } finally {
-      narrow.unmount();
-    }
   });
 
-  it("themes the hint from shared tokens (no hardcoded colour)", () => {
+  it("themes the Tools label from shared tokens (no hardcoded colour)", () => {
     const css = CSS.replace(/\/\*[\s\S]*?\*\//g, "");
-    const hintRule = /\.action-dock-hint\s*\{([^}]*)\}/s.exec(css);
-    expect(hintRule).not.toBeNull();
-    expect(hintRule?.[1]).toMatch(/color:\s*var\(--fg-faint\)/);
-    expect(hintRule?.[1]).not.toMatch(/#[0-9a-fA-F]{3,8}\b|rgba?\(/);
+    const rule = /\.action-dock-tools-label\s*\{([^}]*)\}/s.exec(css);
+    expect(rule).not.toBeNull();
+    expect(rule?.[1]).toMatch(/font-size:\s*var\(--tf-label-size\)/);
+    expect(rule?.[1]).not.toMatch(/#[0-9a-fA-F]{3,8}\b|rgba?\(/);
   });
 });
 
@@ -599,11 +596,19 @@ describe("Phase 37 item 21 � the dock's default contents", () => {
     } finally {
       pages.unmount();
     }
-    // In REVIEW the pin is deduped against the stage default — one glyph only.
+    // In REVIEW the pin is deduped against the stage's dock — Phase 104
+    // (chunk 2): watermark is a displaced REVIEW verb, so it appears exactly
+    // once, as a stable More row, and never as a duplicate pin glyph.
     const review = renderDock({ activeStage: "review", dockPins: ["watermark"] });
     try {
-      expect(verbIds(review.host).filter((id) => id === "watermark")).toEqual(["watermark"]);
       expect(review.host.querySelector('[data-dock-group="pins"]')).toBeNull();
+      expect(verbIds(review.host)).not.toContain("watermark");
+      act((): void => {
+        review.host
+          .querySelector("[data-dock-overflow]")
+          ?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      });
+      expect(review.host.querySelector('[data-dock-overflow-item="watermark"]')).not.toBeNull();
     } finally {
       review.unmount();
     }
@@ -722,9 +727,14 @@ describe("Phase 37 item 7 � the dock's tokens resolve in every theme", () => {
     }
   });
 
-  it("introduces no hardcoded colour in any dock rule", () => {
+it("introduces no hardcoded colour in any dock rule", () => {
     for (const body of dockBodies) {
-      expect(body, "hardcoded colour").not.toMatch(/#[0-9a-fA-F]{3,8}\b|rgba?\(/);
+      // Phase 104 (chunk 1) — the scoped Focus Dock token layer DEFINES the
+      // dock's theme-aware shadow literals (dock.tokens.json light / dark /
+      // frosted). Strip custom-property DEFINITIONS before the raw-colour guard
+      // so the guard still rejects a literal colour used AS a declaration.
+      const decls = body.replace(/--[\w-]+\s*:[^;]+;/g, "");
+      expect(decls, "hardcoded colour").not.toMatch(/#[0-9a-fA-F]{3,8}\b|rgba?\(/);
     }
   });
 });
@@ -786,8 +796,10 @@ describe("Phase 38 feature B — the dock keeps ONE ROW with the enlarged sizes"
       expect(root?.getAttribute("data-dock-icon-only")).toBe("false");
       expect(root?.getAttribute("data-dock-arrows")).toBe("false");
       expect(host.querySelectorAll('[data-dock-group="primary"]')).toHaveLength(1);
-      expect(host.querySelectorAll(".action-dock-label")).toHaveLength(
-        dockToolsForStage("pages").length,
+      // Phase 104 (chunk 2) — one labelled tile per curated primary (the stable
+      // More control adds its own label outside the primary group).
+      expect(host.querySelectorAll('[data-dock-group="primary"] .action-dock-label')).toHaveLength(
+        dockPrimaryIdsForStage("pages").length,
       );
     } finally {
       unmount();

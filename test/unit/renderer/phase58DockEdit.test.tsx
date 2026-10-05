@@ -20,7 +20,28 @@ import {
   type DockBulkActions,
 } from "../../../src/renderer/components/ActionDock";
 import { DOCK_MAX_PINS } from "../../../src/renderer/state/dockModel";
+import type { DockLadder } from "../../../src/renderer/state/dockResponsive";
 import { dockPickerIdsForStage, dockToolsForStage } from "../../../src/renderer/state/toolsRegistry";
+
+/** Phase 104 (chunk 1) — Customize dock now lives in the More overflow menu.
+ *  This ladder (icon-only, no arrows, compact host) keeps the `...` overflow
+ *  lane on so the Customize entry is reachable in the tests, exactly as the
+ *  dock renders it before chunk 2's stable More + Tools arrangement. */
+const MORE_LADDER: DockLadder = {
+  inspectorCollapsed: true,
+  panelCollapsed: true,
+  iconOnly: true,
+  arrows: false,
+};
+
+function armEditMode(host: HTMLElement): void {
+  const more = host.querySelector("[data-dock-overflow]");
+  if (more === null) throw new Error("no More overflow button");
+  clickOn(more);
+  const customize = host.querySelector('[data-dock-menu-item="customize"]');
+  if (customize === null) throw new Error("no Customize dock menu item");
+  clickOn(customize);
+}
 
 function bulk(overrides: Partial<DockBulkActions> = {}): DockBulkActions {
   return {
@@ -50,7 +71,8 @@ function renderDock(options: Partial<ActionDockProps> = {}): Harness {
     onPinTool: vi.fn(),
     onUnpinTool: vi.fn(),
     onRunTool: vi.fn(),
-    canvasWidth: 1400,
+    canvasWidth: 100,
+    ladder: MORE_LADDER,
     ...options,
   };
   const draw = (): void => {
@@ -93,20 +115,23 @@ function pressEscape(): void {
 }
 
 describe("Phase 58 — ActionDock edit mode", () => {
-  it("renders the pen toggle", () => {
+  it("renders the Customize dock entry in the More overflow menu", () => {
     const { host, unmount } = renderDock();
     try {
-      expect(host.querySelector("[data-dock-edit-toggle]")).not.toBeNull();
+      clickOn(host.querySelector("[data-dock-overflow]") as Element);
+      expect(host.querySelector('[data-dock-menu-item="customize"]')).not.toBeNull();
+      // Phase 104 (chunk 1) — the standalone edit pen is retired.
+      expect(host.querySelector("[data-dock-edit-toggle]")).toBeNull();
       expect(dockRoot(host).getAttribute("data-dock-edit")).toBe("false");
     } finally {
       unmount();
     }
   });
 
-  it("clicking the pen arms edit mode, a per-icon jiggle and a minus per verb", () => {
+  it("Customize dock from More arms edit mode, a per-icon jiggle and a minus per verb", () => {
     const { host, unmount } = renderDock();
     try {
-      clickOn(host.querySelector("[data-dock-edit-toggle]") as Element);
+      armEditMode(host);
       expect(dockRoot(host).getAttribute("data-dock-edit")).toBe("true");
       expect(dockRoot(host).classList.contains("anim-vibrate")).toBe(false);
       const verbs = [...host.querySelectorAll("[data-dock-verb]")];
@@ -127,7 +152,7 @@ describe("Phase 58 — ActionDock edit mode", () => {
     const onRunTool = vi.fn();
     const { host, unmount } = renderDock({ onUnpinTool, onRunTool });
     try {
-      clickOn(host.querySelector("[data-dock-edit-toggle]") as Element);
+      armEditMode(host);
       const minus = host.querySelector('[data-dock-minus="rotate"]');
       expect(minus).not.toBeNull();
       clickOn(minus as Element);
@@ -142,7 +167,7 @@ describe("Phase 58 — ActionDock edit mode", () => {
     const onPinTool = vi.fn();
     const { host, unmount } = renderDock({ onPinTool });
     try {
-      clickOn(host.querySelector("[data-dock-edit-toggle]") as Element);
+      armEditMode(host);
       const plus = host.querySelector("[data-dock-plus]");
       expect(plus).not.toBeNull();
       clickOn(plus as Element);
@@ -160,7 +185,7 @@ describe("Phase 58 — ActionDock edit mode", () => {
   it("Escape exits edit mode", () => {
     const { host, unmount } = renderDock();
     try {
-      clickOn(host.querySelector("[data-dock-edit-toggle]") as Element);
+      armEditMode(host);
       expect(dockRoot(host).getAttribute("data-dock-edit")).toBe("true");
       pressEscape();
       expect(dockRoot(host).getAttribute("data-dock-edit")).toBe("false");
@@ -208,16 +233,16 @@ function ruleBodies(css: string, selector: string): string[] {
 }
 
 describe("Phase 59 (item 3) — the pen is contained by the dock", () => {
-  it("renders the pen as a real descendant of the dock root", () => {
+  it("renders the Tools utility as a direct child of the dock root", () => {
     const { host, unmount } = renderDock();
     try {
       const dock = dockRoot(host);
-      const pen = host.querySelector<HTMLElement>("[data-dock-edit-toggle]");
-      if (pen === null) throw new Error("no pen");
-      expect(dock.contains(pen)).toBe(true);
-      expect(pen.closest("[data-action-dock]")).toBe(dock);
-      // A DIRECT child: an in-row flex item, not a floating overlay.
-      expect(pen.parentElement).toBe(dock);
+      const tools = host.querySelector<HTMLElement>("[data-dock-tools]");
+      if (tools === null) throw new Error("no Tools button");
+      expect(dock.contains(tools)).toBe(true);
+      expect(tools.closest("[data-action-dock]")).toBe(dock);
+      // A DIRECT child: an in-row utility, not a floating overlay.
+      expect(tools.parentElement).toBe(dock);
     } finally {
       unmount();
     }
@@ -265,7 +290,7 @@ describe("Phase 59 (item 3) — adding / removing a dock tool animates", () => {
       const onPinTool = vi.fn();
       const { host, rerender, unmount } = renderDock({ onPinTool });
       try {
-        clickOn(host.querySelector("[data-dock-edit-toggle]") as Element);
+        armEditMode(host);
         clickOn(host.querySelector("[data-dock-plus]") as Element);
         const item = host.querySelector<HTMLElement>("[data-dock-picker-item]");
         if (item === null) throw new Error("no picker item");
@@ -306,7 +331,7 @@ describe("Phase 59 (item 3) — adding / removing a dock tool animates", () => {
         onRunTool,
       });
       try {
-        clickOn(host.querySelector("[data-dock-edit-toggle]") as Element);
+        armEditMode(host);
         const minus = host.querySelector('[data-dock-minus="undo"]');
         if (minus === null) throw new Error("no minus");
         clickOn(minus);
@@ -354,12 +379,18 @@ describe("Phase 59 (item 3) — adding / removing a dock tool animates", () => {
       const allPrimary = dockToolsForStage("pages").map((t) => t.id);
       const { host, rerender, unmount } = renderDock({
         dockPins: ["undo"],
-        dockUnpinned: allPrimary,
+        // Phase 104 (chunk 1) — Customize dock is reached through More, which
+        // renders only while a verb overflows. Keep one primary verb off the
+        // visible row (it overflows) with a compact capacity of one, so the
+        // More menu is reachable to arm EDIT mode.
+        dockUnpinned: allPrimary.filter((id) => id !== "rotate"),
+        canvasWidth: 30,
       });
       try {
-        // The pin is the only verb on screen.
+        armEditMode(host);
+        // Now drop the overflowing primary so the `undo` pin is the only verb.
+        rerender({ dockUnpinned: allPrimary });
         expect(host.querySelectorAll("[data-dock-verb]")).toHaveLength(1);
-        clickOn(host.querySelector("[data-dock-edit-toggle]") as Element);
         clickOn(host.querySelector('[data-dock-minus="undo"]') as Element);
         // The pins section stays mounted for the ghost even though the last
         // live pin is already gone.
@@ -372,7 +403,7 @@ describe("Phase 59 (item 3) — adding / removing a dock tool animates", () => {
         // The empty EDIT state is coherent: the dock, the pen and the plus all
         // remain, and edit mode is still armed.
         expect(dockRoot(host).getAttribute("data-dock-edit")).toBe("true");
-        expect(host.querySelector("[data-dock-edit-toggle]")).not.toBeNull();
+        expect(host.querySelector("[data-dock-tools]")).not.toBeNull();
         expect(host.querySelector("[data-dock-plus]")).not.toBeNull();
       } finally {
         unmount();

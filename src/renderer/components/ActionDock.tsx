@@ -26,7 +26,7 @@
 // ContextPanel's thumb menu); no catch-all pointerdown/click handler exists and
 // no event is stopped from reaching its own target.
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import type { CSSProperties, ReactElement } from 'react';
 import type { LucideIcon } from 'lucide-react';
@@ -55,10 +55,11 @@ import { useInstantMotion } from '../hooks/useAnimations';
 import { MOTION_DURATION } from '../hooks/motionTokens';
 import {
   DOCK_DEFAULT_RESERVE,
-  DOCK_LIFT_INSET,
   DOCK_PILL_GAP,
   dockBand,
+  dockCap,
   dockPlanWidth,
+  iconOnlyDockNeed,
   labelledDockNeed,
   labelsFitBand,
   pillBandHeight,
@@ -68,7 +69,7 @@ import {
   shouldLiftDock,
   type PillBox,
 } from '../state/dockFit';
-import { toolById, dockToolsForStage, dockPickerIdsForStage, isPinVisibleInStage, type ToolEntry } from '../state/toolsRegistry';
+import { toolById, dockToolsForStage, dockPrimaryIdsForStage, DOCK_SHORT_LABELS, dockPickerIdsForStage, isPinVisibleInStage, type ToolEntry } from '../state/toolsRegistry';
 import {
   PAGE_COMPACT_W,
   PAGE_FULL_W,
@@ -149,6 +150,12 @@ export interface ActionDockProps {
    *  measured widths at the single-mode insets, so both modes reserve the SAME
    *  band at the same host width (Phase 39 D3). */
   pillSelector?: string;
+  /** Phase 104 (chunk 1) — the dock's labelled Tools button opens the existing
+   *  command palette. The host supplies the SAME `openCommandPalette` the Ctrl+K
+   *  chord and the header's Tools row use, so the dock never re-implements the
+   *  palette. The button is presentational; with no handler it is inert and
+   *  disabled so a test / preview mount never offers a dead control. */
+  onOpenTools?: () => void;
 }
 /** One rendered verb, unified across States 1 and 2. */
 interface DockVerb {
@@ -170,6 +177,25 @@ interface PinMenuState {
 const MENU_W = 168;
 const MENU_H = 76;
 
+/** Phase 104 (chunk 2) — the anchored More popover's estimated width, used to
+ *  clamp its horizontal position inside the viewport before it is measured. */
+const MENU_OVERFLOW_W = 200;
+
+/** Phase 104 (chunk 2) — the dock's own minimum band height (mirrors
+ *  `--dock-min-height`), the floor used when the real box is unmeasured. */
+const DOCK_MIN_HEIGHT = 68;
+
+/** Phase 104 (chunk 2) — the bottom inset and safe clearance the canvas
+ *  scroller reserves BELOW the last page so it can scroll fully above the
+ *  floating dock (item 4: band + `--dock-bottom-inset` + clearance). */
+const DOCK_BOTTOM_INSET = 16;
+const DOCK_SCROLL_CLEARANCE = 12;
+
+/** Phase 104 (chunk 2) — below this host width the five primary tiles plus
+ *  More + Tools cannot share a band with the page / zoom pills, so the dock
+ *  takes its OWN reserved layout row (the pills are never hidden). */
+export const DOCK_RESERVED_ROW_WIDTH = 560;
+
 /** Phase 37 (item 6) — how far one arrow click scrolls the dock's verb strip. */
 export const DOCK_SCROLL_STEP = 160;
 
@@ -179,6 +205,20 @@ export const DOCK_SCROLL_STEP = 160;
  *  than growing toward a pill, and the dock can still never reach either pill
  *  (the measured reserve cap owns that). */
 const DOCK_EDIT_SLOT = 26;
+
+/** Phase 104 (chunk 1) — verbs that are MOMENTARY by nature: exports, OCR runs
+ *  and dialog launchers. They get hover / pressed feedback only and must never
+ *  acquire a permanent selected tile, even if the host's `activeToolIds` were to
+ *  name one. Persistent editing tools keep their soft-violet selected tile. */
+const MOMENTARY_VERB_IDS: ReadonlySet<string> = new Set([
+  'exportPages',
+  'exportText',
+  'exportDocx',
+  'exportXlsx',
+  'exportPptx',
+  'recognizeText',
+  'batchOcr',
+]);
 
 /** Phase 59 (item 3) — one verb held on screen for its EXIT animation after the
  *  host has already removed it (`index` is its position in the rendered group at
@@ -227,6 +267,25 @@ export function clampDockMenu(
     left: Math.min(Math.max(margin, x), Math.max(margin, vw - w - margin)),
     top: Math.min(Math.max(margin, y), Math.max(margin, vh - h - margin)),
   };
+}
+
+/** Phase 104 (TFL-848 / DEF-567) — focus the first ENABLED `menuitem` inside
+ *  the More popover. A disabled leading row (EDIT's `batchOcr`) is skipped so
+ *  roving focus genuinely starts inside the menu; when NO row is enabled the
+ *  fallback (the More button) takes focus instead, and a null / empty menu is
+ *  a no-op. Never throws. Returns true when a menu row took focus. */
+export function focusFirstEnabledMenuItem(
+  menu: HTMLElement | null | undefined,
+  fallback?: HTMLElement | null,
+): boolean {
+  const first =
+    menu?.querySelector<HTMLElement>('[role="menuitem"]:not([disabled])') ?? null;
+  if (first === null) {
+    fallback?.focus();
+    return false;
+  }
+  first.focus();
+  return true;
 }
 
 /** The State 2 verbs: the registry's own entries (icons/labels reused) plus
@@ -281,6 +340,7 @@ export function ActionDock(props: ActionDockProps): ReactElement {
     onIdleChange,
     onLiftChange,
     pillSelector,
+    onOpenTools,
   } = props;
 
   const rootRef = useRef<HTMLElement | null>(null);
@@ -293,6 +353,11 @@ export function ActionDock(props: ActionDockProps): ReactElement {
   const [activityTick, setActivityTick] = useState(0);
   const [menu, setMenu] = useState<PinMenuState | null>(null);
   const [overflowOpen, setOverflowOpen] = useState(false);
+  /** Phase 104 (chunk 2) — the anchored More popover's clamped horizontal
+   *  offset (px, relative to its `.action-dock-overflow` host) and the dock's
+   *  measured layout band (px) republished to the canvas for scroll clearance. */
+  const [overflowShift, setOverflowShift] = useState(0);
+  const [dockBandPx, setDockBandPx] = useState(0);
   /** Phase 58 — the dock's EDIT mode: the pen arms it, every verb grows a
    *  minus affordance, and a plus control at the row's end opens the picker. */
   const [editMode, setEditMode] = useState(false);
@@ -309,6 +374,9 @@ export function ActionDock(props: ActionDockProps): ReactElement {
   } | null>(null);
   const pillKeyRef = useRef('');
   const menuRef = useRef<HTMLDivElement | null>(null);
+  const overflowBtnRef = useRef<HTMLButtonElement | null>(null);
+  const overflowMenuRef = useRef<HTMLDivElement | null>(null);
+  const overflowHostRef = useRef<HTMLDivElement | null>(null);
   const hoveredRef = useRef(false);
   hoveredRef.current = hovered;
 
@@ -425,6 +493,11 @@ export function ActionDock(props: ActionDockProps): ReactElement {
 
   const width = canvasWidth ?? measuredWidth;
   const compact = isDockCompact(width);
+  // Phase 104 (chunk 2) — the RESERVED-ROW rung. Below this host width the five
+  // primary tiles plus More + Tools cannot share a band with the pills, so the
+  // dock takes its OWN reserved layout row instead of colliding with them; the
+  // page / zoom pills are never hidden.
+  const reservedRow = width < DOCK_RESERVED_ROW_WIDTH;
   // Phase 37 (items 2 + 6) — the responsive ladder. The host resolves it once
   // from the measured workspace width and threads it to every dock; a
   // standalone dock (test / preview mount) derives the same ladder from its own
@@ -445,6 +518,34 @@ export function ActionDock(props: ActionDockProps): ReactElement {
   useEffect((): void => {
     onLiftChange?.(liftPx);
   }, [liftPx, onLiftChange]);
+  // Phase 104 (chunk 2) — measure the dock's own box and republish the bottom
+  // scroll clearance (measured band + `--dock-bottom-inset` + a safe gap) to the
+  // document root, so the canvas scroller can scroll the LAST page fully above
+  // the floating dock. The value is a custom property, so opening the More menu
+  // never reflows or resizes the dock.
+  useEffect((): (() => void) | undefined => {
+    const el = rootRef.current;
+    if (el === null) return undefined;
+    const measure = (): void => setDockBandPx(Math.round(el.getBoundingClientRect().height));
+    measure();
+    if (typeof ResizeObserver === 'undefined') return undefined;
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return (): void => ro.disconnect();
+  }, []);
+  const reservedBottom =
+    (lifted ? liftPx : 0) +
+    Math.max(dockBandPx, DOCK_MIN_HEIGHT) +
+    DOCK_BOTTOM_INSET +
+    DOCK_SCROLL_CLEARANCE;
+  useEffect((): (() => void) => {
+    if (typeof document === 'undefined') return (): void => undefined;
+    const rootEl = document.documentElement;
+    rootEl.style.setProperty('--dock-band-reserved', `${reservedBottom}px`);
+    return (): void => {
+      rootEl.style.removeProperty('--dock-band-reserved');
+    };
+  }, [reservedBottom]);
   // DEF-330 — the pill-FREE band. The symmetric `band` doubles the WIDEST
   // pill's offset, so it charged the dock for slack the narrower side never
   // uses; between the pills there is `free.width` to work with and the dock
@@ -466,7 +567,16 @@ export function ActionDock(props: ActionDockProps): ReactElement {
     bandPlaced && freeBand !== null
       ? Math.max(0, width - freeBand.left - freeBand.width)
       : 0;
-  const dockCap = lifted ? Math.max(0, width - 2 * DOCK_LIFT_INSET) : freeBand?.width ?? band;
+  // DEF-573 — the cap must consult `reservedRow`: an unmeasured reserved dock
+  // (`pill === null`, no free band) would otherwise collapse to 0 at a 520px
+  // host. `dockCap` is pure and unit-tested in `dockFit.ts`.
+  const dockCapPx = dockCap({
+    width,
+    lifted,
+    reservedRow,
+    freeBandWidth: freeBand?.width ?? null,
+    band,
+  });
   const dockShift =
     lifted || freeBand === null ? 0 : freeBand.left + freeBand.width / 2 - width / 2;
   const activeSet = useMemo(() => new Set(activeToolIds ?? []), [activeToolIds]);
@@ -501,31 +611,60 @@ export function ActionDock(props: ActionDockProps): ReactElement {
     selectionCount: pageSelection.length,
   });
 
-  const stageVerbs = useMemo<DockVerb[]>(
-    () =>
-      stageEntries.map((entry) => {
-        const enabled = isToolEnabled === undefined ? defaultDockEnabled(entry, pageSelection.length) : isToolEnabled(entry);
-        const reason = reasonFor(entry, enabled);
-        return {
-          id: entry.id,
-          label: entry.label,
-          description: entry.description,
-          icon: entry.icon,
-          enabled,
-          reason,
-          run: (): void => onRunTool(entry.id),
-        };
-      }),
-    [stageEntries, isToolEnabled, disabledReasonFor, onRunTool, pageSelection.length],
+  // Phase 104 (chunk 2) — the stage's verbs split into the CURATED PRIMARY
+  // tiles (the ~5 headlining verbs, in `DOCK_PRIMARY_IDS` order) and the
+  // remaining MORE verbs (every other `DOCK_STAGE_IDS` id). Both sets are minus
+  // the user's un-pins; `DOCK_STAGE_IDS` stays the stage's full membership.
+  const primaryStageIds = useMemo(() => dockPrimaryIdsForStage(activeStage), [activeStage]);
+  const toVerb = useCallback(
+    (entry: ToolEntry): DockVerb => {
+      const enabled =
+        isToolEnabled === undefined
+          ? defaultDockEnabled(entry, pageSelection.length)
+          : isToolEnabled(entry);
+      const reason = reasonFor(entry, enabled);
+      return {
+        id: entry.id,
+        label: entry.label,
+        description: entry.description,
+        icon: entry.icon,
+        enabled,
+        reason,
+        run: (): void => onRunTool(entry.id),
+      };
+    },
+    [isToolEnabled, reasonFor, onRunTool, pageSelection.length],
   );
+  const stagePrimaryVerbs = useMemo<DockVerb[]>(
+    () =>
+      primaryStageIds.flatMap((id) => {
+        const entry = stageEntries.find((e) => e.id === id);
+        return entry === undefined ? [] : [toVerb(entry)];
+      }),
+    [primaryStageIds, stageEntries, toVerb],
+  );
+  /** Every id the active stage's dock already renders (primary tiles OR the
+   *  More menu). Pins and the edit picker dedupe against this UNION so a tool
+   *  that moved from a tile into More never renders twice. */
+  const stageDockIds = useMemo(() => stageEntries.map((entry) => entry.id), [stageEntries]);
 
   const selectionVerbs = useMemo<DockVerb[]>(
     () => buildSelectionVerbs(pageSelection, bulk, onClearPageSelection),
     [pageSelection, bulk, onClearPageSelection],
   );
 
-  const primaryVerbs = primaryState === 'selection' ? selectionVerbs : stageVerbs;
+  const primaryVerbs = primaryState === 'selection' ? selectionVerbs : stagePrimaryVerbs;
   const primaryIds = useMemo(() => primaryVerbs.map((v) => v.id), [primaryVerbs]);
+  // DEF-569 — the More set is every stage entry the CURRENT primary set does
+  // NOT already render as a tile. In State 2 the primaries are the SELECTION
+  // verbs, so `primaryIds` (never the stage's curated set) is the exclusion
+  // basis: `delete` stays a selection tile only, while the stage primaries it
+  // displaces (`insertPages` / `merge` / `cropPages`) remain reachable in More.
+  // A dock id therefore renders exactly once in every state.
+  const moreVerbs = useMemo<DockVerb[]>(
+    () => stageEntries.filter((entry) => !primaryIds.includes(entry.id)).map(toVerb),
+    [stageEntries, primaryIds, toVerb],
+  );
 
   // ---- State 3: pins ----------------------------------------------------
   const pins = useMemo(() => sanitizeDockPins(dockPins), [dockPins]);
@@ -542,37 +681,29 @@ export function ActionDock(props: ActionDockProps): ReactElement {
     [pins, activeStage],
   );
   const dedupedPins = useMemo(
-    () => dedupePinsAgainst(pinnedEntries, primaryIds),
-    [pinnedEntries, primaryIds],
+    () => dedupePinsAgainst(pinnedEntries, [...stageDockIds, ...primaryIds]),
+    [pinnedEntries, stageDockIds, primaryIds],
   );
   const pinnedVerbs = useMemo<DockVerb[]>(
-    () =>
-      dedupedPins.map((entry) => {
-        const enabled = isToolEnabled === undefined ? defaultDockEnabled(entry, pageSelection.length) : isToolEnabled(entry);
-        const reason = reasonFor(entry, enabled);
-        return {
-          id: entry.id,
-          label: entry.label,
-          description: entry.description,
-          icon: entry.icon,
-          enabled,
-          reason,
-          run: (): void => onRunTool(entry.id),
-        };
-      }),
-    [dedupedPins, isToolEnabled, disabledReasonFor, onRunTool, pageSelection.length],
+    () => dedupedPins.map(toVerb),
+    [dedupedPins, toVerb],
   );
 
   // Phase 58 — the EDIT-mode picker: the stage + global dock tools, minus the
-  // ids already rendered (primary + pins). Registry-derived, so no unknown ids.
+  // ids already rendered (primary tiles, More verbs and pins). Registry-derived,
+  // so no unknown ids and no tool can be added twice.
   const pickerEntries = useMemo<ToolEntry[]>(() => {
-    const rendered = new Set<string>([...primaryIds, ...pinnedVerbs.map((v) => v.id)]);
+    const rendered = new Set<string>([
+      ...stageDockIds,
+      ...primaryIds,
+      ...pinnedVerbs.map((v) => v.id),
+    ]);
     return dockPickerIdsForStage(activeStage).flatMap((id) => {
       if (rendered.has(id)) return [];
       const entry = toolById(id);
       return entry === undefined ? [] : [entry];
     });
-  }, [activeStage, primaryIds, pinnedVerbs]);
+  }, [activeStage, stageDockIds, primaryIds, pinnedVerbs]);
 
   // ---- responsive overflow ---------------------------------------------
   // DEF-315 — plan on the BAND once the pills are measured, so the `...` chip
@@ -592,17 +723,35 @@ export function ActionDock(props: ActionDockProps): ReactElement {
   // measured-band path below then routes the row into the arrows lane instead.
   const need =
     labelledDockNeed(
-      primaryVerbs.map((v) => v.label),
+      primaryVerbs.map((v) => DOCK_SHORT_LABELS[v.id] ?? v.label),
       pinnedVerbs.map((v) => v.label),
     ) + DOCK_EDIT_SLOT;
   const iconOnly = ladder.iconOnly;
   const measuredLabelOverflow =
-    !ladder.iconOnly &&
+    !iconOnly &&
     (isDockIconOnly(width) || (pill !== null && !labelsFitBand(need, labelBand)));
-  // The lane decision (plan + hints): the ladder's last rung OR a labelled row
-  // that cannot fit its band. Rendering of the arrows is separately gated on a
-  // real overflow measurement (DEF-337).
-  const arrowsLane = ladder.arrows || measuredLabelOverflow;
+  // DEF-571 — the icon-only row carries the same 58px Focus Dock tiles as the
+  // labelled row, so at the icon rung it can exceed the pill-free band while
+  // NEITHER the arrows rung NOR the labelled fit test is engaged (the 720-880
+  // band). Charge every control the row renders (primary tiles, pins, the
+  // selection chip, the edit add and the stable More + Tools utilities) and
+  // route the row into the arrows lane when that exceeds the band, so the
+  // leading tile can never sit over the page pill. A LIFTED dock parks above
+  // the pills and the reserved-row rung owns its own layout, so neither needs
+  // this lane.
+  const iconControlCount =
+    primaryVerbs.length +
+    pinnedVerbs.length +
+    2 +
+    (primaryState === 'selection' ? 1 : 0) +
+    (editMode ? 1 : 0);
+  const iconNeed = iconOnlyDockNeed(iconControlCount);
+  const measuredIconOverflow =
+    iconOnly && !lifted && !reservedRow && !labelsFitBand(iconNeed, labelBand);
+  // The lane decision (plan + hints): the ladder's last rung OR a row (labelled
+  // or icon-only) that cannot fit its band. Rendering of the arrows is
+  // separately gated on a real overflow measurement (DEF-337).
+  const arrowsLane = ladder.arrows || measuredLabelOverflow || measuredIconOverflow;
   // Phase 37 (item 6) — once the ladder reaches its LAST rung (or the labelled
   // row must scroll) the `...` chip is replaced by the left/right ARROWS: every
   // verb stays in the single row and the row scrolls, so nothing is ever hidden
@@ -624,7 +773,7 @@ export function ActionDock(props: ActionDockProps): ReactElement {
   const rowOverflow = useRowOverflow(
     scrollRef,
     arrowsLane,
-    `${iconOnly}:${Math.round(need)}`,
+    `${iconOnly}:${iconControlCount}:${Math.round(need)}`,
   );
   const arrows = arrowsLane && rowOverflow;
   const visibleIds = useMemo(() => new Set(plan.visible.map((e) => e.id)), [plan]);
@@ -636,6 +785,20 @@ export function ActionDock(props: ActionDockProps): ReactElement {
     () => primaryVerbs.filter((v) => !visibleIds.has(v.id)),
     [primaryVerbs, visibleIds],
   );
+  // Phase 104 (chunk 2) — the anchored More popover's rows: (a) any responsive-
+  // overflow PRIMARIES first, then (b) every displaced MORE verb, deduped so an
+  // id can never appear twice. `moreVerbs` is empty only when a stage has no
+  // secondary verbs, which no stage does.
+  const menuVerbs = useMemo<DockVerb[]>(() => {
+    const seen = new Set<string>();
+    const out: DockVerb[] = [];
+    for (const verb of [...overflowVerbs, ...moreVerbs]) {
+      if (seen.has(verb.id)) continue;
+      seen.add(verb.id);
+      out.push(verb);
+    }
+    return out;
+  }, [overflowVerbs, moreVerbs]);
 
   // ---- Phase 59 (item 3): adding / removing a tool animates ---------------
   // Adding a tool (the plus picker or the pin menu) blooms the new verb in and
@@ -822,6 +985,78 @@ export function ActionDock(props: ActionDockProps): ReactElement {
     return (): void => document.removeEventListener('keydown', onKeyDown);
   }, [editMode]);
 
+  // ---- Phase 104 (chunk 2): the anchored More popover --------------------
+  const closeOverflow = useCallback((returnFocus: boolean): void => {
+    setOverflowOpen(false);
+    if (returnFocus) overflowBtnRef.current?.focus();
+  }, []);
+
+  // Open upward (the CSS anchors the panel at `bottom: 100% + 6px`) and clamp
+  // its horizontal position inside the viewport, then convert that viewport
+  // left into an offset from the `.action-dock-overflow` host.
+  useLayoutEffect((): void => {
+    if (!overflowOpen) return;
+    const btn = overflowBtnRef.current;
+    const panel = overflowMenuRef.current;
+    const host = overflowHostRef.current;
+    if (btn === null || panel === null || host === null) return;
+    const box = btn.getBoundingClientRect();
+    const hostBox = host.getBoundingClientRect();
+    const panelW = panel.offsetWidth > 0 ? panel.offsetWidth : MENU_OVERFLOW_W;
+    const vw = typeof window === 'undefined' ? 1024 : window.innerWidth;
+    const desired = box.left + box.width / 2 - panelW / 2;
+    const left = Math.min(Math.max(8, desired), Math.max(8, vw - panelW - 8));
+    setOverflowShift(Math.round(left - hostBox.left));
+  }, [overflowOpen]);
+
+  // Focus the first ENABLED menu row on open (roving focus starts inside the
+  // menu). DEF-567 — a stage whose leading More rows are disabled (EDIT's
+  // `batchOcr` / `ocrSuspects`) must not park focus on a disabled button:
+  // `:not([disabled])` skips them, and when NO row is enabled focus stays on
+  // the More button (never throws).
+  useEffect((): void => {
+    if (!overflowOpen) return;
+    focusFirstEnabledMenuItem(overflowMenuRef.current, overflowBtnRef.current);
+  }, [overflowOpen]);
+
+  // Escape closes and returns focus to the More button; an outside pointerdown
+  // dismisses. The menu never reflows the document or moves the dock.
+  useEffect((): (() => void) | undefined => {
+    if (!overflowOpen) return undefined;
+    const onKeyDown = (event: KeyboardEvent): void => {
+      if (event.key === 'Escape') closeOverflow(true);
+    };
+    const onPointerDown = (event: PointerEvent): void => {
+      const target = event.target;
+      if (target instanceof Node && overflowHostRef.current?.contains(target) === true) return;
+      setOverflowOpen(false);
+    };
+    document.addEventListener('keydown', onKeyDown);
+    document.addEventListener('pointerdown', onPointerDown);
+    return (): void => {
+      document.removeEventListener('keydown', onKeyDown);
+      document.removeEventListener('pointerdown', onPointerDown);
+    };
+  }, [overflowOpen, closeOverflow]);
+
+  // Roving focus: ArrowUp/Down move one row, Home/End jump, all with wrap.
+  const onOverflowMenuKeyDown = (event: { key: string; preventDefault: () => void }): void => {
+    const items = [
+      ...(overflowMenuRef.current?.querySelectorAll<HTMLButtonElement>('[role="menuitem"]') ?? []),
+    ].filter((el): boolean => !el.hasAttribute('disabled'));
+    if (items.length === 0) return;
+    const active = overflowMenuRef.current?.ownerDocument.activeElement;
+    const index = items.findIndex((el): boolean => el === active);
+    let next = index;
+    if (event.key === 'ArrowDown') next = index < 0 ? 0 : (index + 1) % items.length;
+    else if (event.key === 'ArrowUp') next = index <= 0 ? items.length - 1 : index - 1;
+    else if (event.key === 'Home') next = 0;
+    else if (event.key === 'End') next = items.length - 1;
+    else return;
+    event.preventDefault();
+    items[next]?.focus();
+  };
+
   const openMenu = (id: string, x: number, y: number): void => {
     setOverflowOpen(false);
     setMenu({ id, x, y });
@@ -849,16 +1084,25 @@ export function ActionDock(props: ActionDockProps): ReactElement {
 
   const renderVerb = (
     verb: DockVerb,
-    opts: { primary: boolean; pin: boolean; index: number; out?: boolean },
+    opts: { primary: boolean; pin: boolean; index: number; out?: boolean; short?: boolean },
   ): ReactElement => {
-    const pressed = activeSet.has(verb.id);
+    const pressed = activeSet.has(verb.id) && !MOMENTARY_VERB_IDS.has(verb.id);
     const group: 'primary' | 'pins' = opts.pin ? 'pins' : 'primary';
+    // Phase 104 (chunk 2) — the primary TILE label is the short form; the full
+    // registry label stays the accessible name (`aria-label`) and the tooltip
+    // (`title`). Pins and non-primary ids keep their full label.
+    const tileLabel =
+      opts.short === true ? DOCK_SHORT_LABELS[verb.id] ?? verb.label : verb.label;
     // Phase 59 (item 3) — the add / remove bloom rides these two utilities. An
     // EXITING verb (a ghost held for its collapse) is inert: `pointer-events`
     // comes from `.anim-verb-out`, it is out of the tab order and it renders no
     // minus badge, so a click can never land on it and it can never run.
     const classes = ['btn', 'btn-ghost', 'btn-toggle', 'action-dock-verb'];
     if (opts.primary) classes.push('action-dock-verb-primary');
+    // Phase 104 (chunk 1) — the selected-tile hook. Only a persistent tool that
+    // is genuinely ON takes it; the momentary guard above keeps exports / OCR /
+    // dialogs on momentary feedback only.
+    if (pressed) classes.push('action-dock-verb-selected');
     if (opts.out === true) classes.push('anim-verb-out');
     else if (enteringIds.has(verb.id)) classes.push('anim-verb-in');
     // Phase 75 (item A) — only a live curated glyph jiggles; an exiting ghost
@@ -895,7 +1139,7 @@ export function ActionDock(props: ActionDockProps): ReactElement {
           >
             <Icon name={verb.id as QuietIconId} size="lg" />
           </span>
-          {!iconOnly && <span className="action-dock-label">{verb.label}</span>}
+          {!iconOnly && <span className="action-dock-label">{tileLabel}</span>}
         </button>
         {/* TFL-660 — EDIT mode: the minus affordance. It is a SIBLING of the
             verb button (never nested, so it is structurally outside a disabled
@@ -945,7 +1189,13 @@ export function ActionDock(props: ActionDockProps): ReactElement {
       const ghost = ghosts[gi];
       if (ghost === undefined) return;
       out.push(
-        renderVerb(ghost.verb, { primary: false, pin: group === 'pins', index: -1, out: true }),
+        renderVerb(ghost.verb, {
+          primary: false,
+          pin: group === 'pins',
+          index: -1,
+          out: true,
+          short: group === 'primary',
+        }),
       );
       gi += 1;
     };
@@ -956,6 +1206,7 @@ export function ActionDock(props: ActionDockProps): ReactElement {
           primary: index === 0 && group === 'primary',
           pin: group === 'pins',
           index,
+          short: group === 'primary',
         }),
       );
     });
@@ -978,6 +1229,9 @@ export function ActionDock(props: ActionDockProps): ReactElement {
       data-dock-idle={idle ? 'true' : 'false'}
       data-dock-icon-only={iconOnly ? 'true' : 'false'}
       data-dock-compact={compact ? 'true' : 'false'}
+      /* Phase 104 (chunk 2) — the reserved-row rung: at very narrow hosts the
+       * dock takes its own layout band instead of colliding with the pills. */
+      data-dock-reserved={reservedRow ? 'true' : undefined}
       data-dock-arrows={arrows ? 'true' : 'false'}
       /* DEF-337 — the ladder's arrows LANE, independent of whether the gated
        * arrows currently render. The stylesheet keys the scroll container's
@@ -998,7 +1252,7 @@ export function ActionDock(props: ActionDockProps): ReactElement {
        * unchanged then). */
       style={
         {
-          maxWidth: `${dockCap}px`,
+          maxWidth: `${dockCapPx}px`,
           '--dock-reserve': `${reserve}px`,
           '--dock-lift': `${lifted ? (pill?.pillHeight ?? 0) + DOCK_PILL_GAP : 0}px`,
           '--dock-shift': `${dockShift}px`,
@@ -1019,20 +1273,10 @@ export function ActionDock(props: ActionDockProps): ReactElement {
         setHovered(false);
       }}
     >
-      {/* Phase 37 (item 21) — the Ctrl+K hint, a small themed line above the
-          dock. It is absolutely positioned so it never joins the dock's single
-          verb row, and it is hidden only at the ladder's smallest rung (the
-          arrows, innerWidth < 720) with the rest of the shed chrome. The hint
-          sits ABOVE the row, so it never competes for the row's width: it is
-          keyed on the LADDER's width rung, not the measured overflow LANE. The
-          eight labelled PAGES verbs make the lane turn on at 1440; keying on
-          the lane hid the hint at the default window, which the operator asked
-          to keep visible (item 21). */}
-      {!ladder.arrows && (
-        <span className="action-dock-hint" data-dock-hint>
-          Search all tools: <kbd className="action-dock-kbd">Ctrl+K</kbd>
-        </span>
-      )}
+      {/* Phase 104 (chunk 1) — the detached Ctrl+K hint is RETIRED. The
+          command palette is now reachable from the labelled Tools utility
+          button at the dock's trailing end (below), alongside More. The old
+          `.action-dock-hint` / `.action-dock-kbd` chrome is gone. */}
       {/* Phase 37 (item 6) — the ladder's last rung: left/right arrows scroll
           the single verb row instead of wrapping or hiding verbs in a menu. */}
       {arrows && (
@@ -1056,52 +1300,6 @@ export function ActionDock(props: ActionDockProps): ReactElement {
         <div className="action-dock-group" key={primaryState} data-dock-group="primary">
           {renderVerbs(inlineRender, 'primary')}
         </div>
-        {overflowVerbs.length > 0 && (
-          <div className="action-dock-overflow">
-            <button
-              type="button"
-              className="btn btn-ghost action-dock-verb action-dock-more"
-              data-dock-overflow
-              aria-label="More actions"
-              aria-expanded={overflowOpen}
-              aria-haspopup="menu"
-              title="More actions"
-              onClick={(): void => {
-                setMenu(null);
-                setOverflowOpen((v) => !v);
-              }}
-            >
-              <span className="action-dock-icon" aria-hidden>
-                <Icon name="dockOverflow" size="lg" />
-              </span>
-              {!iconOnly && <span className="action-dock-label">More</span>}
-            </button>
-            {overflowOpen && (
-              <div className="action-dock-menu action-dock-menu-overflow anim-menu-pop" role="menu" data-dock-overflow-menu>
-                {overflowVerbs.map((verb) => {
-                  return (
-                    <button
-                      key={verb.id}
-                      type="button"
-                      role="menuitem"
-                      className="btn btn-ghost action-dock-menu-item"
-                      data-dock-overflow-item={verb.id}
-                      disabled={!verb.enabled}
-                      title={verb.reason}
-                      onClick={(): void => {
-                        setOverflowOpen(false);
-                        verb.run();
-                      }}
-                    >
-                      <Icon name={verb.id as QuietIconId} size="lg" aria-hidden />
-                      <span>{verb.label}</span>
-                    </button>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-        )}
         {/* Phase 59 (item 3) — the pins section also stays mounted while a
             ghost is collapsing, so removing the LAST pin still animates out
             before the empty/edit state settles. */}
@@ -1177,26 +1375,107 @@ export function ActionDock(props: ActionDockProps): ReactElement {
           <Icon name="dockScrollRight" size="lg" aria-hidden />
         </button>
       )}
-      {/* Phase 58 — the EDIT-mode pen. Phase 59 (item 3): it is now the dock's
-          own TRAILING ROW ITEM (a flex child of `[data-action-dock]`, after the
-          right arrow when the lane is on), never absolutely positioned — so its
-          box is always fully inside the dock's bounds at every responsive rung
-          and the verbs can never run under it. It is a 22px icon control; the
-          fit budgets charge `DOCK_EDIT_SLOT` for it. Clicking toggles EDIT
-          mode; Escape exits. */}
+      {/* Phase 104 (chunk 2) — the anchored More popover is a STABLE utility
+          control: it renders UNCONDITIONALLY, OUTSIDE the scroll strip, and its
+          menu holds (a) any responsive-overflow primaries, (b) every displaced
+          MORE verb with its registry icon/label/enabled/reason, and (c) the
+          Customize dock item. It opens UPWARD and clamps into the viewport, so
+          it never reflows the document or moves the dock. */}
+      <div className="action-dock-overflow" ref={overflowHostRef} data-dock-overflow-host>
+        <button
+          ref={overflowBtnRef}
+          type="button"
+          className="btn btn-ghost action-dock-verb action-dock-more"
+          data-dock-overflow
+          aria-label="More actions"
+          aria-expanded={overflowOpen}
+          aria-haspopup="menu"
+          title="More actions"
+          onClick={(): void => {
+            setMenu(null);
+            setOverflowOpen((v) => !v);
+          }}
+        >
+          <span className="action-dock-icon" aria-hidden>
+            <Icon name="dockOverflow" size="lg" />
+          </span>
+          {!iconOnly && <span className="action-dock-label">More</span>}
+        </button>
+        {overflowOpen && (
+          <div
+            ref={overflowMenuRef}
+            className="action-dock-menu action-dock-menu-overflow anim-menu-pop"
+            role="menu"
+            aria-label="More actions"
+            data-dock-overflow-menu
+            style={{ left: overflowShift, transform: 'none' }}
+            onKeyDown={onOverflowMenuKeyDown}
+          >
+            {menuVerbs.map((verb) => {
+              return (
+                <button
+                  key={verb.id}
+                  type="button"
+                  role="menuitem"
+                  className="btn btn-ghost action-dock-menu-item"
+                  data-dock-overflow-item={verb.id}
+                  disabled={!verb.enabled}
+                  title={verb.reason}
+                  onClick={(): void => {
+                    setOverflowOpen(false);
+                    verb.run();
+                  }}
+                >
+                  <Icon name={verb.id as QuietIconId} size="lg" aria-hidden />
+                  <span>{verb.label}</span>
+                </button>
+              );
+            })}
+            {/* Phase 104 (chunk 1) — Customize dock. This item toggles the
+                EXISTING dock EDIT mode (the minus badges + the plus picker's
+                pin/unpin/reorder flow); it is the only customization entry
+                point, so no second mechanism exists. */}
+            <button
+              type="button"
+              role="menuitem"
+              className="btn btn-ghost action-dock-menu-item"
+              data-dock-menu-item="customize"
+              aria-pressed={editMode}
+              onClick={(): void => {
+                setOverflowOpen(false);
+                setPlusOpen(false);
+                setEditMode((v) => !v);
+              }}
+            >
+              <Icon name="dockEditPencil" size="lg" aria-hidden />
+              <span>Customize dock</span>
+            </button>
+          </div>
+        )}
+      </div>
+      {/* Phase 104 (chunk 1) — the dock's TRAILING UTILITY: a labelled Tools
+          button that opens the EXISTING command palette (the SAME
+          `openCommandPalette` the Ctrl+K chord and the header's Tools row run).
+          It replaces the retired detached Ctrl+K hint and occupies the retired
+          edit pen's row slot; the fit budget still charges `DOCK_EDIT_SLOT`.
+          Docking customization now lives in the More menu (Customize dock). */}
       <button
         type="button"
-        className="btn btn-ghost btn-icon btn-toggle action-dock-edit"
-        data-dock-edit-toggle
-        aria-pressed={editMode}
-        aria-label="Edit dock tools"
-        title="Edit dock tools"
+        className="btn btn-ghost action-dock-verb action-dock-tools"
+        data-dock-tools
+        aria-label="Tools"
+        title="Tools"
+        disabled={onOpenTools === undefined}
         onClick={(): void => {
-          setEditMode((v) => !v);
-          setPlusOpen(false);
+          setMenu(null);
+          setOverflowOpen(false);
+          onOpenTools?.();
         }}
       >
-        <Icon name="dockEditPencil" size="lg" aria-hidden />
+        <span className="action-dock-icon" aria-hidden>
+          <Icon name="toolsPalette" size="lg" />
+        </span>
+        {!iconOnly && <span className="action-dock-tools-label">Tools</span>}
       </button>
       {/* DEF-312 — the Pin/Unpin menu is portaled to `document.body`. The dock
           carries `transform: translateX(-50%)`, and a transformed ancestor is
