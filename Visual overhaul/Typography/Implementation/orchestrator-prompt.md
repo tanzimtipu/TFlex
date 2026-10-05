@@ -1,0 +1,9 @@
+Implement the Typography visual overhaul for Jovrel in TFlex.
+
+Resource root: C:\Users\tanzi\OneDrive\App Development\TFlex\Visual overhaul. Read this category's Specifications file and the matching Design System token JSON, then implementation-roadmap.md and previous Icons, Buttons, Dock, Panels, Siderail, revised colorful Top Bar and Tabs and Dialogs Toolboxes and Menus resources. Each new tab retains its user-requested stable color identity. These resources are design references, not production code.
+
+Audit actual framework, model, commands and capabilities before editing. Preserve current feature access and document/session semantics. Reuse shared components and existing handlers; no parallel mock data stores, fabricated progress/success or unnecessary engine refactor. Create a concrete reviewable implementation, run relevant existing checks and meaningful targeted regression checks where needed. Verify light/dark, keyboard/screen readers, reduced motion, localization, Windows text/DPI scaling, constrained restored windows and real document fidelity. Include resulting app screenshots, validation and remaining limitations. No publishing or merging is requested.
+
+Apply the semantic UI scale consistently through shared primitives and feature adapters. Use existing/native Segoe UI Variable/Segoe UI/system configuration, clear role sizes/line heights, regular/medium weights and tabular figures for aligned values. Preserve compact documented exceptions, allow text scaling/localization and do not clip labels or reduce text size to fit. Audit and isolate PDF/document typography before migration; embedded PDF fonts, annotation appearance streams and document editing font choices must remain unchanged.
+
+Read Specifications/typography-design-spec.md and Design System/typography.tokens.json for detailed acceptance criteria. Do not ship fixture content, status-only actions or preview-only responsive accommodations.

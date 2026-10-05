@@ -1,0 +1,21 @@
+{
+  "recommended": "View Strip",
+  "geometry": {
+    "footerHeight": 48,
+    "surfaceRadius": 12,
+    "targetRadius": 8,
+    "iconSize": 16,
+    "fineTarget": 32,
+    "coarseTarget": 44,
+    "dockSeparation": 16
+  },
+  "constraints": [
+    "Retain all existing viewing commands",
+    "Fit mode separate from computed zoom",
+    "Page label separate from physical index",
+    "Pan tool separate from page layout",
+    "Use real renderer/view state"
+  ],
+  "extends": "quiet-precision.tokens.json",
+  "status": "proposal"
+}

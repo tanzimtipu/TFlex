@@ -1,0 +1,24 @@
+<div id="jovrel-paper-stage" aria-label="Jovrel document canvas concepts">
+  <style>
+    #jovrel-paper-stage { --jc-canvas:light-dark(#eceff4,#151820);--jc-surface:light-dark(#fff,#20232b);--jc-ink:light-dark(#485164,#b8c0d0);--jc-border:light-dark(#d8dde6,#3b414e);--jc-paper:light-dark(#fff,#fff);--jc-print:light-dark(#232a38,#232a38);font:14px 'Segoe UI Variable','Segoe UI',system-ui,sans-serif;color:var(--jc-ink); }
+    #jovrel-paper-stage * { box-sizing:border-box; }#jovrel-paper-stage [hidden] { display:none!important; }
+    #jovrel-paper-stage .jc-stage { padding:54px 8px 24px;min-height:620px; }
+    #jovrel-paper-stage .jc-viewport { background:var(--jc-canvas);border:1px solid var(--jc-border);border-radius:12px;overflow:hidden; }
+    #jovrel-paper-stage .jc-context { padding:12px 16px;background:var(--jc-surface);font-size:12px;display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap; }
+    #jovrel-paper-stage .jc-pages { display:grid;gap:24px;padding:28px 24px 36px; }
+    #jovrel-paper-stage .jc-paper { margin:auto;width:100%;max-width:330px;min-height:360px;padding:32px 28px;background:var(--jc-paper);color:var(--jc-print);border:1px solid light-dark(#dce0e7,#a1a6af);box-shadow:0 2px 4px light-dark(#232a3808,#00000020),0 12px 24px light-dark(#232a380d,#00000030); }
+    #jovrel-paper-stage h3 { font:500 20px 'Segoe UI',sans-serif;margin:0 0 24px; }
+    #jovrel-paper-stage p { font-size:12px;line-height:1.7;margin:0 0 14px; }
+    #jovrel-paper-stage .jc-rule { margin-top:28px;height:1px;background:light-dark(#dce0e7,#dce0e7); }
+    #jovrel-paper-stage .jc-caption { font-size:11px;text-align:center;margin-top:18px;color:var(--jc-ink); }
+    #jovrel-paper-stage .jc-spread .jc-pages { grid-template-columns:1fr 1fr;gap:12px;padding:24px 18px; }
+    #jovrel-paper-stage .jc-spread .jc-paper { min-height:310px;padding:24px 18px; }
+    #jovrel-paper-stage .jc-status { font-size:12px;margin:12px 0;color:var(--jc-ink); }
+    @media(max-width:520px) { #jovrel-paper-stage .jc-spread .jc-pages { grid-template-columns:1fr;gap:24px; }#jovrel-paper-stage .jc-pages { padding:20px 12px; }#jovrel-paper-stage .jc-paper { padding:28px 20px; }#jovrel-paper-stage .jc-stage { min-height:920px; } }
+  </style>
+  <div class="viz-carousel viz-dotted-background" aria-label="Canvas composition alternatives">
+    <section data-variant="Paper Stage"><div class="jc-stage"><div class="jc-viewport"><div class="jc-context"><span>report.pdf</span><span>Page 1 of 34</span></div><div class="jc-pages"><div class="jc-paper"><h3>Technical report</h3><p>A study in document orchestration and performance.</p><div class="jc-rule"></div><p>Document artwork retains its own fonts, colors and page geometry.</p></div></div></div><div class="jc-status">Schematic page · document artwork is not recolored by the interface theme</div></div></section>
+    <section data-variant="Reading Spread" hidden><div class="jc-stage jc-spread"><div class="jc-viewport"><div class="jc-context"><span>report.pdf</span><span>Pages 2–3 of 34</span></div><div class="jc-pages"><div class="jc-paper"><h3>Chapter one</h3><p>A quiet background gives the document a clear boundary.</p><div class="jc-rule"></div><p>Page shadows remain soft and consistent.</p></div><div class="jc-paper"><h3>Chapter two</h3><p>Viewing modes preserve the document's actual dimensions.</p><div class="jc-rule"></div><p>This spread is schematic.</p></div></div></div><div class="jc-status">Illustrative spread · narrow preview stacks pages</div></div></section>
+  </div>
+  <script>(()=>{const root=document.getElementById('jovrel-paper-stage');if(globalThis.Tweak){root.querySelectorAll('.jc-viewport').forEach(v=>{const state={gutter:24};const tweak=new Tweak({container:v,onChange:()=>v.querySelector('.jc-pages').style.gap=state.gutter+'px'});tweak.addSlider(state,'gutter',{label:'Page gap',min:16,max:32,unit:'px'});});}})();</script>
+</div>

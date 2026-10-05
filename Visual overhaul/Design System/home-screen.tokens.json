@@ -1,0 +1,31 @@
+{
+  "recommended": "Orbit Desk",
+  "geometry": {
+    "maxContentWidth": 1120,
+    "normalPadding": 32,
+    "narrowPadding": 18,
+    "recentRowMinHeight": 64,
+    "rowRadius": 12
+  },
+  "brand": {
+    "violetApproximation": "#7050D6",
+    "amberApproximation": "#B77526",
+    "note": "Use actual logo asset/colors in production; illustration is inspired by screenshot only."
+  },
+  "motion": {
+    "durationSeconds": 18,
+    "fromDegrees": -8,
+    "toDegrees": 12,
+    "opacity": 0.28,
+    "reducedMotion": "static",
+    "pauseControl": true,
+    "hiddenOrMinimized": "suspend"
+  },
+  "extends": "quiet-precision.tokens.json",
+  "status": "proposal",
+  "textRoleOverride": {
+    "lightSupportingForeground": "#667085",
+    "darkSupportingForeground": "#929BAC",
+    "scope": "Small readable supporting text on opaque UI surfaces"
+  }
+}

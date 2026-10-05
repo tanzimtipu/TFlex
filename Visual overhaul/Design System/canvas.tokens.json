@@ -1,0 +1,28 @@
+{
+  "recommended": "Paper Stage",
+  "light": {
+    "background": "#ECEFF4",
+    "edge": "#DCE0E7",
+    "nearShadow": "#232A3808",
+    "farShadow": "#232A380D"
+  },
+  "dark": {
+    "background": "#151820",
+    "edge": "#A1A6AF",
+    "nearShadow": "#00000020",
+    "farShadow": "#00000030"
+  },
+  "geometry": {
+    "pageCorners": 0,
+    "pageGap": 24,
+    "spreadGap": 12,
+    "fitMargin": 28
+  },
+  "constraints": [
+    "Preserve actual PDF artwork/colors/fonts",
+    "Shadow outside rendered page",
+    "Preserve transforms/virtualization/viewport anchors"
+  ],
+  "extends": "quiet-precision.tokens.json",
+  "status": "proposal"
+}

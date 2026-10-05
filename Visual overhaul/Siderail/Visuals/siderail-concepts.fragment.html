@@ -1,0 +1,73 @@
+<div id="jovrel-workspace-rail" aria-label="Jovrel siderail concepts">
+  <style>
+    #jovrel-workspace-rail { --jr-surface:light-dark(#ffffff,#20232b);--jr-canvas:light-dark(#f5f6f8,#171a21);--jr-ink:light-dark(#485164,#b8c0d0);--jr-strong:light-dark(#232a38,#eef1f7);--jr-muted:light-dark(#70798a,#929bac);--jr-border:light-dark(#e1e4eb,#3b414e);--jr-accent:light-dark(#7050d6,#b9a4ff);--jr-soft:light-dark(#f0ebfc,#302740);font:14px 'Segoe UI Variable','Segoe UI',system-ui,sans-serif;color:var(--jr-ink); }
+    #jovrel-workspace-rail * { box-sizing:border-box; }
+    #jovrel-workspace-rail [hidden] { display:none!important; }
+    #jovrel-workspace-rail .jr-stage { min-height:640px;padding:54px 8px 24px; }
+    #jovrel-workspace-rail .jr-slice { display:flex;max-width:560px;margin:auto;background:var(--jr-surface);border:1px solid var(--jr-border);border-radius:14px;overflow:hidden; }
+    #jovrel-workspace-rail .jr-rail { width:72px;flex:0 0 72px;padding:12px 8px;display:flex;flex-direction:column;gap:8px;min-height:470px;border-right:1px solid var(--jr-border);background:var(--jr-surface); }
+    #jovrel-workspace-rail .jr-workspaces { display:flex;flex-direction:column;gap:8px; }
+    #jovrel-workspace-rail button { font:500 12px 'Segoe UI Variable','Segoe UI',system-ui,sans-serif;color:inherit;display:inline-flex;align-items:center;justify-content:center;gap:6px;min-height:32px;padding:7px 10px;border:1px solid transparent;border-radius:9px;background:transparent;max-width:100%;transition:background 140ms,color 140ms; }
+    #jovrel-workspace-rail button:hover { background:var(--jr-canvas);color:var(--jr-strong); }
+    #jovrel-workspace-rail .jr-rail-button { position:relative;width:56px;min-height:60px;padding:8px 4px;flex-direction:column;gap:6px;border-radius:var(--jr-radius,10px); }
+    #jovrel-workspace-rail .jr-rail-button[aria-pressed=true] { background:var(--jr-soft);color:var(--jr-accent); }
+    #jovrel-workspace-rail .jr-rail-button[aria-pressed=true]:before { content:'';position:absolute;left:2px;top:20px;width:3px;height:20px;border-radius:2px;background:var(--jr-accent); }
+    #jovrel-workspace-rail [data-lucide],#jovrel-workspace-rail .jr-vector { width:22px;height:22px;stroke-width:1.65;flex-shrink:0; }
+    #jovrel-workspace-rail .jr-rail-label { font-size:11px;white-space:nowrap; }
+    #jovrel-workspace-rail .jr-rail-spacer { flex:1;min-height:20px; }
+    #jovrel-workspace-rail .jr-utilities { padding-top:8px;border-top:1px solid var(--jr-border);display:flex;flex-direction:column;gap:4px; }
+    #jovrel-workspace-rail .jr-utility-button { min-height:48px; }
+    #jovrel-workspace-rail .jr-utility-button [data-lucide],#jovrel-workspace-rail .jr-utility-button .jr-vector { width:18px;height:18px; }
+    #jovrel-workspace-rail .jr-panel { flex:1;min-width:0;background:var(--jr-canvas); }
+    #jovrel-workspace-rail .jr-panel-header { padding:18px 20px;border-bottom:1px solid var(--jr-border);display:flex;align-items:center;justify-content:space-between;gap:8px; }
+    #jovrel-workspace-rail h3 { margin:0;font-size:16px;font-weight:500;color:var(--jr-strong); }
+    #jovrel-workspace-rail .jr-panel-header button { padding:6px; }
+    #jovrel-workspace-rail .jr-panel-header [data-lucide],#jovrel-workspace-rail .jr-panel-header .jr-vector { width:16px;height:16px; }
+    #jovrel-workspace-rail .jr-panel-body { padding:20px;display:grid;gap:16px; }
+    #jovrel-workspace-rail p { margin:0;font-size:12px;line-height:1.6;color:var(--jr-muted); }
+    #jovrel-workspace-rail .jr-document { font-size:12px;color:var(--jr-ink);display:flex;gap:8px;flex-wrap:wrap; }
+    #jovrel-workspace-rail .jr-section-title { font-size:12px;font-weight:500;color:var(--jr-strong); }
+    #jovrel-workspace-rail .jr-row { display:flex;align-items:center;justify-content:space-between;gap:8px;padding:8px 0;border-bottom:1px solid var(--jr-border);font-size:12px;flex-wrap:wrap; }
+    #jovrel-workspace-rail .jr-secondary { background:var(--jr-surface);border-color:var(--jr-border);justify-self:start; }
+    #jovrel-workspace-rail .jr-secondary [data-lucide],#jovrel-workspace-rail .jr-secondary .jr-vector { width:16px;height:16px; }
+    #jovrel-workspace-rail .jr-thumbnail { width:100px;padding:8px;border:1px solid var(--jr-border);border-radius:9px;background:var(--jr-surface); }
+    #jovrel-workspace-rail .jr-mini-page { height:110px;padding:12px 8px;background:var(--jr-canvas);font-size:11px;color:var(--jr-ink); }
+    #jovrel-workspace-rail .jr-page-number { text-align:center;font-size:11px;margin-top:8px; }
+    #jovrel-workspace-rail .jr-status { margin:14px auto 0;max-width:560px;color:var(--jr-muted);font-size:12px;min-height:20px; }
+    #jovrel-workspace-rail .jr-expanded .jr-rail { width:156px;flex-basis:156px; }
+    #jovrel-workspace-rail .jr-expanded .jr-rail-button { width:140px;min-height:44px;flex-direction:row;justify-content:flex-start;padding:10px 12px;gap:12px; }
+    #jovrel-workspace-rail .jr-expanded .jr-rail-label { font-size:12px; }
+    #jovrel-workspace-rail .jr-expanded .jr-rail-button[aria-pressed=true]:before { top:12px; }
+    #jovrel-workspace-rail .jr-expanded .jr-utility-button { min-height:44px; }
+    @media(max-width:520px) { #jovrel-workspace-rail .jr-stage { min-height:780px;padding:54px 0 24px; }#jovrel-workspace-rail .jr-panel-header,#jovrel-workspace-rail .jr-panel-body { padding:16px 12px; }#jovrel-workspace-rail .jr-expanded .jr-slice { flex-wrap:wrap; }#jovrel-workspace-rail .jr-expanded .jr-panel { flex-basis:100%;border-top:1px solid var(--jr-border); }#jovrel-workspace-rail .jr-expanded .jr-rail { min-height:400px; } }
+    @media(prefers-reduced-motion:reduce) { #jovrel-workspace-rail button { transition:none; } }
+  </style>
+  <div class="viz-carousel viz-dotted-background" aria-label="Siderail layout alternatives">
+    <section data-variant="Workspace Rail">
+      <div class="jr-stage" data-design="rail"><div class="jr-slice"><nav class="jr-rail" aria-label="Document workspaces"><div class="jr-workspaces"><button type="button" class="jr-rail-button cursor-interaction" data-workspace="Pages" aria-pressed="false"><i data-lucide="files" data-asset="pages" aria-hidden="true"></i><span class="jr-rail-label">Pages</span></button><button type="button" class="jr-rail-button cursor-interaction" data-workspace="Edit" aria-pressed="true"><i data-lucide="pencil" data-asset="edit" aria-hidden="true"></i><span class="jr-rail-label">Edit</span></button><button type="button" class="jr-rail-button cursor-interaction" data-workspace="Review" aria-pressed="false"><i data-lucide="badge-check" data-asset="review" aria-hidden="true"></i><span class="jr-rail-label">Review</span></button><button type="button" class="jr-rail-button cursor-interaction" data-workspace="Deliver" aria-pressed="false"><i data-lucide="file-output" data-asset="deliver" aria-hidden="true"></i><span class="jr-rail-label">Deliver</span></button></div><div class="jr-rail-spacer"></div><div class="jr-utilities"><button type="button" class="jr-rail-button jr-utility-button cursor-interaction" data-settings aria-label="Open settings"><i data-lucide="settings" data-asset="settings" aria-hidden="true"></i><span class="jr-rail-label">Settings</span></button></div></nav><div class="jr-panel" data-panel></div></div><div class="jr-status" role="status">Illustrative document workspace · no files modified</div></div>
+    </section>
+    <section data-variant="Expanded Navigator" hidden>
+      <div class="jr-stage jr-expanded" data-design="expanded"><div class="jr-slice"><nav class="jr-rail" aria-label="Document workspaces"><div class="jr-workspaces"><button type="button" class="jr-rail-button cursor-interaction" data-workspace="Pages" aria-pressed="false"><i data-lucide="files" data-asset="pages" aria-hidden="true"></i><span class="jr-rail-label">Pages</span></button><button type="button" class="jr-rail-button cursor-interaction" data-workspace="Edit" aria-pressed="true"><i data-lucide="pencil" data-asset="edit" aria-hidden="true"></i><span class="jr-rail-label">Edit</span></button><button type="button" class="jr-rail-button cursor-interaction" data-workspace="Review" aria-pressed="false"><i data-lucide="badge-check" data-asset="review" aria-hidden="true"></i><span class="jr-rail-label">Review</span></button><button type="button" class="jr-rail-button cursor-interaction" data-workspace="Deliver" aria-pressed="false"><i data-lucide="file-output" data-asset="deliver" aria-hidden="true"></i><span class="jr-rail-label">Deliver</span></button></div><div class="jr-rail-spacer"></div><div class="jr-utilities"><button type="button" class="jr-rail-button jr-utility-button cursor-interaction" data-settings aria-label="Open settings"><i data-lucide="settings" data-asset="settings" aria-hidden="true"></i><span class="jr-rail-label">Settings</span></button></div></nav><div class="jr-panel" data-panel></div></div><div class="jr-status" role="status">Illustrative document workspace · no files modified</div></div>
+    </section>
+  </div>
+  <script>
+    (()=>{
+      const root=document.getElementById('jovrel-workspace-rail');
+      const content={
+        Pages:'<div class="jr-section-title">Document navigation</div><div class="jr-thumbnail"><div class="jr-mini-page">Technical report</div><div class="jr-page-number">1</div></div><div class="jr-row"><span>Pages</span><span>34</span></div><button type="button" class="jr-secondary cursor-interaction" data-action="Outline">Outline</button>',
+        Edit:'<div class="jr-section-title">Text and objects</div><p>Select a text or image object to inspect its editing options.</p><div class="jr-row"><span>Text recognition</span><span>Not run</span></div><button type="button" class="jr-secondary cursor-interaction" data-action="Recognize text">Recognize text</button><p>Recognition is available through the existing workflow.</p>',
+        Review:'<div class="jr-section-title">Annotations</div><div class="jr-row"><span>On this page</span><span>0</span></div><p>No annotations yet. Choose a review tool to begin.</p><button type="button" class="jr-secondary cursor-interaction" data-action="Annotate">Annotate</button>',
+        Deliver:'<div class="jr-section-title">Prepare output</div><div class="jr-row"><span>Document size</span><span>32.3 KB</span></div><div class="jr-row"><span>Pages</span><span>34</span></div><p>Choose output options in the export inspector.</p><button type="button" class="jr-secondary cursor-interaction" data-action="Export options">Export options</button>'
+      };
+      root.querySelectorAll('[data-design]').forEach(stage=>{
+        let active='Edit',panelOpen=true;
+        const panel=stage.querySelector('[data-panel]'),status=stage.querySelector('.jr-status');
+        function icons(){if(globalThis.lucide)lucide.createIcons({attrs:{width:22,height:22,'stroke-width':1.65}});}
+        function render(){stage.querySelectorAll('[data-workspace]').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.workspace===active)));panel.innerHTML='<div class="jr-panel-header"><h3>'+active+'</h3><button type="button" class="cursor-interaction" data-panel-toggle aria-expanded="'+panelOpen+'" aria-label="'+(panelOpen?'Collapse':'Open')+' '+active+' panel"><i data-lucide="panel-left" data-asset="panel-left" aria-hidden="true"></i></button></div><div class="jr-panel-body" '+(panelOpen?'':'hidden')+'><div class="jr-document"><span>report.pdf</span><span>Page 1 of 34</span></div>'+content[active]+'</div>';panel.querySelector('[data-panel-toggle]').onclick=()=>{panelOpen=!panelOpen;render();panel.querySelector('[data-panel-toggle]').focus();status.textContent=active+' panel '+(panelOpen?'opened':'collapsed')+' · preview only';};panel.querySelectorAll('[data-action]').forEach(b=>b.onclick=()=>status.textContent=b.dataset.action+' routes to its existing command · preview only');icons();}
+        stage.querySelectorAll('[data-workspace]').forEach(b=>b.onclick=()=>{const changed=active!==b.dataset.workspace;active=b.dataset.workspace;if(changed)panelOpen=true;render();status.textContent=active+' workspace selected · preview only';});
+        stage.querySelector('[data-settings]').onclick=()=>{status.textContent='Settings opens without changing the document workspace · preview only';};render();
+        if(globalThis.Tweak){const settings={radius:10};const tweak=new Tweak({container:stage.querySelector('.jr-rail'),onChange:()=>stage.style.setProperty('--jr-radius',settings.radius+'px')});tweak.addSlider(settings,'radius',{label:'Workspace target radius',min:8,max:14,unit:'px'});}
+      });
+    })();
+  </script>
+</div>

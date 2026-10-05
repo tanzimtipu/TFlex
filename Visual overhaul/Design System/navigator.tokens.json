@@ -1,0 +1,11 @@
+{
+  "name": "Quiet Precision / Document Navigator",
+  "panel": {"defaultWidth":280,"minWidth":240,"maxWidth":420,"headerHeight":44,"viewSelectorHeight":40},
+  "thumbnail": {"radius":10,"padding":12,"previewMinWidth":120,"previewMaxWidth":144,"twoColumnThreshold":360,"minGridCardWidth":152},
+  "outline": {"rowMinHeight":44,"rowMaxHeight":52,"titleMaxLines":2,"indent":16,"destinationWidth":32},
+  "target": {"fine":32,"coarse":44},
+  "split": {"initialPagesRatio":0.6,"minSectionHeight":180},
+  "motionMs":140,
+  "light": {"surface":"#FFFFFF","canvas":"#F5F6F8","foreground":"#485164","strong":"#232A38","secondary":"#667085","border":"#E1E4EB","accent":"#7050D6","selectedSurface":"#F0EBFC","danger":"#B82E43"},
+  "dark": {"surface":"#20232B","canvas":"#171A21","foreground":"#B8C0D0","strong":"#EEF1F7","secondary":"#929BAC","border":"#3B414E","accent":"#B9A4FF","selectedSurface":"#302740","danger":"#FF9AAD"}
+}

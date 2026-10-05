@@ -1,0 +1,63 @@
+{
+  "family": [
+    "Segoe UI Variable",
+    "Segoe UI",
+    "system-ui",
+    "sans-serif"
+  ],
+  "roles": {
+    "homeHeadline": {
+      "size": 32,
+      "lineHeight": 38,
+      "weight": 500
+    },
+    "taskTitle": {
+      "size": 18,
+      "lineHeight": 25,
+      "weight": 500
+    },
+    "panelTitle": {
+      "size": 16,
+      "lineHeight": 22,
+      "weight": 500
+    },
+    "body": {
+      "size": 14,
+      "lineHeight": 22,
+      "weight": 400
+    },
+    "documentRow": {
+      "size": 13,
+      "lineHeight": 20,
+      "weight": 500
+    },
+    "controlLabel": {
+      "size": 12,
+      "lineHeight": 17,
+      "weight": 500
+    },
+    "helper": {
+      "size": 12,
+      "lineHeight": 18,
+      "weight": 400
+    },
+    "compactException": {
+      "size": 11,
+      "lineHeight": 16,
+      "weight": 500
+    }
+  },
+  "constraints": [
+    "UI only: never override PDF/document fonts",
+    "Scale geometry with text size",
+    "No network font dependency",
+    "Tabular figures for aligned numeric values"
+  ],
+  "extends": "quiet-precision.tokens.json",
+  "status": "proposal",
+  "textRoleOverride": {
+    "lightSupportingForeground": "#667085",
+    "darkSupportingForeground": "#929BAC",
+    "scope": "Small readable supporting text on opaque UI surfaces"
+  }
+}

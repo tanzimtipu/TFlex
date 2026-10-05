@@ -1,0 +1,9 @@
+Implement the Canvas visual overhaul for Jovrel in TFlex.
+
+Resource root: C:\Users\tanzi\OneDrive\App Development\TFlex\Visual overhaul. Read this category's Specifications file and the matching Design System token JSON, then implementation-roadmap.md and previous Icons, Buttons, Dock, Panels, Siderail, revised colorful Top Bar and Tabs and Dialogs Toolboxes and Menus resources. Each new tab retains its user-requested stable color identity. These resources are design references, not production code.
+
+Audit actual framework, model, commands and capabilities before editing. Preserve current feature access and document/session semantics. Reuse shared components and existing handlers; no parallel mock data stores, fabricated progress/success or unnecessary engine refactor. Create a concrete reviewable implementation, run relevant existing checks and meaningful targeted regression checks where needed. Verify light/dark, keyboard/screen readers, reduced motion, localization, Windows text/DPI scaling, constrained restored windows and real document fidelity. Include resulting app screenshots, validation and remaining limitations. No publishing or merging is requested.
+
+Apply Paper Stage to the editor viewport outside the rendered document. Preserve actual page artwork, square PDF bounds, CropBox/rotation, virtualization, coordinate transforms, page anchors and scroll behavior. Use a quiet cool neutral background, restrained external page shadow and consistent logical margins/gaps. Recalculate fit against actual available viewport after rail/panel/footer changes. Do not invert PDFs in dark UI or replace PDF fonts with application typography.
+
+Read Specifications/canvas-design-spec.md and Design System/canvas.tokens.json for detailed acceptance criteria. Do not ship fixture content, status-only actions or preview-only responsive accommodations.

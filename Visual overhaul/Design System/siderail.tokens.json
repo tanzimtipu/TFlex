@@ -1,0 +1,10 @@
+{
+  "extends":"quiet-precision.tokens.json",
+  "status":"proposal",
+  "recommended":"Workspace Rail",
+  "geometry":{"railWidth":72,"horizontalInset":8,"topInset":12,"itemWidth":56,"itemMinHeight":60,"itemGap":8,"itemRadius":10,"iconSize":22,"iconLabelGap":6,"separatorWidth":1,"markerWidth":3,"markerHeight":20,"markerInset":2,"utilityIcon":18,"utilityMinHeight":48,"expandedRailWidth":156,"expandedTargetWidth":140,"expandedTargetHeight":44},
+  "typography":{"compactLabel":11,"expandedLabel":12,"selectedWeight":500},
+  "light":{"surface":"#FFFFFF","foreground":"#485164","strong":"#232A38","border":"#E1E4EB","accent":"#7050D6","selectedSurface":"#F0EBFC"},
+  "dark":{"surface":"#20232B","foreground":"#B8C0D0","strong":"#EEF1F7","border":"#3B414E","accent":"#B9A4FF","selectedSurface":"#302740"},
+  "constraints":["Colorful document tabs retain their identities","Rail selection uses shared violet","Settings does not change workspace","File belongs to top chrome","Workspace changes preserve session and draft semantics","Panel visibility is separate from workspace/tool state"]
+}

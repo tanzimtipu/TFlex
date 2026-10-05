@@ -1,0 +1,64 @@
+<div id="jovrel-orbit-home" aria-label="Jovrel home screen concepts">
+  <style>
+    #jovrel-orbit-home { --jh-surface:light-dark(#fff,#20232b);--jh-canvas:light-dark(#f5f6f8,#171a21);--jh-strong:light-dark(#232a38,#eef1f7);--jh-ink:light-dark(#485164,#b8c0d0);--jh-muted:light-dark(#667085,#929bac);--jh-border:light-dark(#e1e4eb,#3b414e);--jh-accent:light-dark(#7050d6,#b9a4ff);--jh-on:light-dark(#fff,#171a21);--jh-soft:light-dark(#f0ebfc,#302740);--jh-amber:light-dark(#b77526,#e9bc7d);font:14px 'Segoe UI Variable','Segoe UI',system-ui,sans-serif;color:var(--jh-ink); }
+    #jovrel-orbit-home * { box-sizing:border-box; }
+    #jovrel-orbit-home [hidden] { display:none!important; }
+    #jovrel-orbit-home .jh-stage { min-height:780px;padding:54px 8px 24px; }
+    #jovrel-orbit-home .jh-home { background:var(--jh-canvas);border:1px solid var(--jh-border);border-radius:16px;overflow:hidden; }
+    #jovrel-orbit-home .jh-top { padding:14px 24px;display:flex;align-items:center;gap:16px;border-bottom:1px solid var(--jh-border);background:var(--jh-surface);font-size:12px; }
+    #jovrel-orbit-home .jh-brand { color:var(--jh-strong);font-weight:500;font-size:14px; }
+    #jovrel-orbit-home .jh-home-tab { padding:7px 14px;border-radius:9px;background:var(--jh-soft);color:var(--jh-accent); }
+    #jovrel-orbit-home button { font:500 12px 'Segoe UI Variable','Segoe UI',system-ui,sans-serif;color:inherit;display:inline-flex;align-items:center;justify-content:center;gap:6px;min-height:36px;padding:8px 12px;border:1px solid transparent;border-radius:9px;background:transparent;max-width:100%; }
+    #jovrel-orbit-home button:hover { background:var(--jh-soft); }
+    #jovrel-orbit-home .jh-primary { background:var(--jh-accent);color:var(--jh-on); }
+    #jovrel-orbit-home .jh-primary:hover { background:light-dark(#6341c5,#c5b4ff); }
+    #jovrel-orbit-home .jh-secondary { border-color:var(--jh-border);background:var(--jh-surface); }
+    #jovrel-orbit-home [data-lucide],#jovrel-orbit-home .jh-vector { width:16px;height:16px;stroke-width:1.65;flex-shrink:0; }
+    #jovrel-orbit-home .jh-hero { position:relative;isolation:isolate;overflow:hidden;padding:38px 32px 34px;background:var(--jh-surface); }
+    #jovrel-orbit-home .jh-hero-copy { position:relative;z-index:1;max-width:520px; }
+    #jovrel-orbit-home .jh-eyebrow { font-size:12px;color:var(--jh-accent);margin-bottom:12px; }
+    #jovrel-orbit-home h1 { font-size:32px;font-weight:500;line-height:1.2;letter-spacing:-.6px;color:var(--jh-strong);margin:0 0 14px;max-width:400px; }
+    #jovrel-orbit-home p { font-size:14px;line-height:1.6;margin:0;color:var(--jh-muted); }
+    #jovrel-orbit-home .jh-actions { margin-top:22px;display:flex;gap:8px;flex-wrap:wrap; }
+    #jovrel-orbit-home .jh-orbit { position:absolute;z-index:0;width:320px;height:320px;right:-72px;top:-42px;opacity:var(--jh-orbit-opacity,.28);pointer-events:none;animation:jovrel-orbit-drift 18s ease-in-out infinite alternate; }
+    #jovrel-orbit-home .jh-orbit:before,#jovrel-orbit-home .jh-orbit:after { content:'';position:absolute;inset:0;border-radius:50%;background:conic-gradient(from 20deg,var(--jh-accent),transparent 22%,var(--jh-amber) 47%,transparent 66%,var(--jh-accent));mask:radial-gradient(farthest-side,transparent calc(100% - 2px),light-dark(#000,#000) calc(100% - 1px)); }
+    #jovrel-orbit-home .jh-orbit:after { inset:34px;transform:rotate(100deg); }
+    #jovrel-orbit-home .jh-orbit-inner { position:absolute;inset:72px;border:1px solid var(--jh-border);border-radius:50%; }
+    #jovrel-orbit-home .jh-motion { margin-left:auto;font-size:11px; }
+    #jovrel-orbit-home .jh-content { padding:26px 32px 30px;display:grid;grid-template-columns:minmax(0,1.6fr) minmax(0,1fr);gap:28px; }
+    #jovrel-orbit-home h2 { font-size:15px;font-weight:500;color:var(--jh-strong);margin:0 0 12px; }
+    #jovrel-orbit-home .jh-recent { background:var(--jh-surface);border:1px solid var(--jh-border);border-radius:12px;overflow:hidden; }
+    #jovrel-orbit-home .jh-recent button { width:100%;min-height:64px;padding:12px 14px;justify-content:flex-start;border-radius:0;border-bottom:1px solid var(--jh-border);text-align:left; }
+    #jovrel-orbit-home .jh-recent button:last-child { border-bottom:0; }
+    #jovrel-orbit-home .jh-file-label { flex:1;min-width:0;display:grid;gap:5px; }
+    #jovrel-orbit-home .jh-name { font-size:13px;color:var(--jh-strong);overflow-wrap:anywhere; }
+    #jovrel-orbit-home .jh-meta { font-size:11px;color:var(--jh-muted);font-weight:400; }
+    #jovrel-orbit-home .jh-time { font-size:11px;color:var(--jh-muted);white-space:nowrap; }
+    #jovrel-orbit-home .jh-samples { display:grid;gap:10px; }
+    #jovrel-orbit-home .jh-sample { padding:10px;min-height:72px;display:flex;gap:12px;justify-content:flex-start;text-align:left;border:1px solid var(--jh-border);background:var(--jh-surface);border-radius:12px; }
+    #jovrel-orbit-home .jh-preview { flex-shrink:0;width:42px;height:52px;border:1px solid var(--jh-border);border-radius:3px;padding:7px 5px;background:var(--jh-canvas);display:grid;align-content:start;gap:5px; }
+    #jovrel-orbit-home .jh-preview b { height:2px;background:var(--jh-muted);opacity:.45; }
+    #jovrel-orbit-home .jh-preview b:first-child { width:65%;background:var(--jh-accent);opacity:.7; }
+    #jovrel-orbit-home .jh-sample-text { display:grid;gap:5px; }
+    #jovrel-orbit-home .jh-note { margin:0 32px 20px;font-size:11px;color:var(--jh-muted); }
+    #jovrel-orbit-home .jh-status { font-size:12px;margin-top:12px;color:var(--jh-muted);min-height:20px; }
+    #jovrel-orbit-home .jh-library .jh-hero { padding:28px 32px; }
+    #jovrel-orbit-home .jh-library h1 { font-size:26px;max-width:none; }
+    #jovrel-orbit-home .jh-library .jh-content { grid-template-columns:1fr; }
+    #jovrel-orbit-home .jh-library .jh-samples { grid-template-columns:repeat(3,minmax(0,1fr)); }
+    #jovrel-orbit-home .jh-library .jh-sample { align-items:flex-start;flex-direction:column; }
+    #jovrel-orbit-home .jh-library .jh-orbit { width:220px;height:220px;right:-60px; }
+    #jovrel-orbit-home .jh-paused .jh-orbit { animation-play-state:paused; }
+    @keyframes jovrel-orbit-drift { from { transform:rotate(-8deg); }to { transform:rotate(12deg); } }
+    @media(max-width:620px) { #jovrel-orbit-home .jh-content { grid-template-columns:1fr;gap:24px; }#jovrel-orbit-home .jh-stage { min-height:1020px; }#jovrel-orbit-home .jh-hero,#jovrel-orbit-home .jh-content { padding:24px 18px; }#jovrel-orbit-home h1 { font-size:27px;max-width:340px; }#jovrel-orbit-home .jh-top { padding:12px 18px; }#jovrel-orbit-home .jh-note { margin-left:18px;margin-right:18px; }#jovrel-orbit-home .jh-library .jh-samples { grid-template-columns:1fr; }#jovrel-orbit-home .jh-library .jh-sample { flex-direction:row; }#jovrel-orbit-home .jh-orbit { right:-180px;opacity:.18; } }
+    @media(pointer:coarse) { #jovrel-orbit-home button { min-height:44px; } }
+    @media(prefers-reduced-motion:reduce) { #jovrel-orbit-home .jh-orbit { animation:none; } }
+  </style>
+  <div class="viz-carousel" aria-label="Home screen alternatives">
+    <section data-variant="Orbit Desk"><div class="jh-stage" data-design="orbit"><div class="jh-home"><div class="jh-top"><span class="jh-brand">Jovrel</span><span class="jh-home-tab">Home</span><button type="button" class="jh-motion cursor-interaction" data-motion aria-pressed="false">Pause motion</button></div><div class="jh-hero"><div class="jh-orbit" aria-hidden="true"><div class="jh-orbit-inner"></div></div><div class="jh-hero-copy"><div class="jh-eyebrow">Your document studio</div><h1>A clear space for your documents.</h1><p>Pick up where you left off, or start something new.</p><div class="jh-actions"><button type="button" class="jh-primary cursor-interaction" data-command="Open files"><i data-lucide="folder-open" data-asset="open" aria-hidden="true"></i>Open files</button><button type="button" class="jh-secondary cursor-interaction" data-command="Create PDF from images">From images</button><button type="button" class="jh-secondary cursor-interaction" data-command="Merge PDFs">Merge PDFs</button></div></div></div><div class="jh-content"><div><h2>Continue working</h2><div class="jh-recent" data-recent></div></div><div><h2>Explore Jovrel</h2><div class="jh-samples" data-samples></div></div></div><div class="jh-note">Example documents and schematic previews</div></div><div class="jh-status" role="status">Illustrative home · no files opened</div></div></section>
+    <section data-variant="Library Welcome" hidden><div class="jh-stage jh-library" data-design="library"><div class="jh-home"><div class="jh-top"><span class="jh-brand">Jovrel</span><span class="jh-home-tab">Home</span><button type="button" class="jh-motion cursor-interaction" data-motion aria-pressed="false">Pause motion</button></div><div class="jh-hero"><div class="jh-orbit" aria-hidden="true"><div class="jh-orbit-inner"></div></div><div class="jh-hero-copy"><div class="jh-eyebrow">Your document studio</div><h1>Welcome back to your workspace.</h1><div class="jh-actions"><button type="button" class="jh-primary cursor-interaction" data-command="Open files">Open files</button><button type="button" class="jh-secondary cursor-interaction" data-command="Create PDF from images">From images</button><button type="button" class="jh-secondary cursor-interaction" data-command="Merge PDFs">Merge PDFs</button></div></div></div><div class="jh-content"><div><h2>Continue working</h2><div class="jh-recent" data-recent></div></div><div><h2>Explore Jovrel</h2><div class="jh-samples" data-samples></div></div></div><div class="jh-note">Example documents and schematic previews</div></div><div class="jh-status" role="status">Illustrative home · no files opened</div></div></section>
+  </div>
+  <script>
+    (()=>{const root=document.getElementById('jovrel-orbit-home');root.querySelectorAll('[data-design]').forEach(stage=>{const status=stage.querySelector('.jh-status');const recent=[['Technical report.pdf','PDF · Documents','Today'],['Application form.pdf','PDF · Documents','Yesterday'],['Budget.xlsx','XLSX source · Imports','Last week']];stage.querySelector('[data-recent]').innerHTML=recent.map(([name,meta,time])=>`<button type="button" class="cursor-interaction" data-file="${name}"><i data-lucide="file-text" data-asset="pages" aria-hidden="true"></i><span class="jh-file-label"><span class="jh-name">${name}</span><span class="jh-meta">${meta}</span></span><span class="jh-time">${time}</span></button>`).join('');stage.querySelector('[data-samples]').innerHTML=[['Read and navigate','Technical report'],['Try form fields','Application form'],['Explore recognition','Scanned document']].map(([label,detail])=>`<button type="button" class="jh-sample cursor-interaction" data-file="${detail}"><span class="jh-preview" aria-hidden="true"><b></b><b></b><b></b><b></b></span><span class="jh-sample-text"><span class="jh-name">${label}</span><span class="jh-meta">${detail}</span></span></button>`).join('');stage.querySelectorAll('[data-file]').forEach(b=>b.onclick=()=>status.textContent=b.dataset.file+' opens through the existing handler · preview only');stage.querySelectorAll('[data-command]').forEach(b=>b.onclick=()=>status.textContent=b.dataset.command+' invokes the existing command · preview only');const motion=stage.querySelector('[data-motion]');motion.onclick=()=>{const paused=stage.classList.toggle('jh-paused');motion.setAttribute('aria-pressed',String(paused));motion.textContent=paused?'Resume motion':'Pause motion';};if(globalThis.Tweak){const config={opacity:.28};const tweak=new Tweak({container:stage.querySelector('.jh-hero'),onChange:()=>stage.style.setProperty('--jh-orbit-opacity',config.opacity)});tweak.addSlider(config,'opacity',{label:'Orbit intensity',min:.1,max:.35,step:.01});}});if(globalThis.lucide)lucide.createIcons({attrs:{width:16,height:16,'stroke-width':1.65}});})();
+  </script>
+</div>
