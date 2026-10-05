@@ -5,6 +5,31 @@
 > inspect the current `OPEN`, `FIX-READY`, and `DISPUTED` entries first; closed records are
 > historical evidence and must not be loaded wholesale.
 
+## DEF-565: v1.50.0 release gate is red - five static-CSS guards still assert pre-Phase-100 raw literals (blur / 12px / 999px) now expressed as design tokens
+
+- Status: CLOSED (qa TFL-806, 2026-10-05)
+- Severity: MEDIUM - test-only false red: the product CSS is correct (Phase 100 centralized these values into tokens); the guards still assert raw literals and fail on the token form. One red test stops the v1.50.0 OTA release.
+- Found by: qa (TFL-804, release-gate `verify:full`)
+- Phase: 100 (TFL-729) stale-guard drift; blocks TFL-798
+- Files: `test/unit/renderer/bugB4_ocrTopBarCss.test.ts:76`, `test/unit/renderer/phase14Glass.test.ts:444-445`, `test/unit/renderer/phase34_multi_layout.test.tsx:434,794,837`
+
+Steps to reproduce:
+1. `npm.cmd run verify:full` -> `Test Files 3 failed | 642 passed (645)`, `Tests 5 failed | 7930 passed (7935)`, exit 1. Conventions and `tsc --noEmit` are clean.
+
+Expected: the guards accept the tokenized form, which resolves to the same visual value they were written against.
+
+Actual:
+- `bugB4_ocrTopBarCss.test.ts:76` expects the `.ocr-suspects-panel` slice to match `backdrop-filter:\s*blur\(`; source `src/renderer/styles.css:11321` is `backdrop-filter: var(--glass-blur)` (`--glass-blur: blur(var(--tf-acrylic-blur, 20px)) saturate(1.2)` at `:236`).
+- `phase14Glass.test.ts:444-445` finds no `.tools-palette-entry-grid` body with `border-radius: 12px`; source uses `border-radius: var(--radius-group)` at `styles.css:13161` (`--radius-group: 12px` at `:192`).
+- `phase34_multi_layout.test.tsx:434,794,837` expect `border-radius: 999px;` on `.multi-divider-grip` (`styles.css:14169`), `.page-drop-indicator` (`:14523`) and `.thumb-drop-line` (`:5613`); source uses `border-radius: var(--radius-pill)` (`--radius-pill: 9999px` at `:194`; visually identical fully-rounded value).
+
+Fix direction (test-only, mirror DEF-542): update the three guards to accept the token reference, do NOT change product CSS. No rebuild is required because product source is unchanged.
+
+History:
+- qa (TFL-804, 2026-10-05): filed at the v1.50.0 release gate. `verify:full` red; focused `whatsNew` gate PASS; packaged 1.50.0 launch smoke PASS. CTO ruled test-only guard drift (source correct); fix assigned frontend-dev.
+- CTO (TFL-798, 2026-10-05): set FIX-READY. Fix in TFL-805 (frontend-dev, test-only): `bugB4_ocrTopBarCss.test.ts:76` accepts `var(--glass-blur)`; `phase14Glass.test.ts:445` accepts `var(--radius-group)`, and `:450` accepts `var(--radius-control)` (a FOURTH stale guard the brief missed - the icon chip moved 9px -> the control token's 10px, a 1px change; same class, guard intent preserved); `phase34_multi_layout.test.tsx:434/794/837` accept `var(--radius-pill)`. Dev ran `npm.cmd run verify:full` -> EXIT=0, `Test Files 645 passed (645)`, `Tests 7935 passed (7935)`. qa FIX-READY re-verification and CLOSED pending.
+- qa (TFL-806, 2026-10-05): FIX-READY re-verification PASS. Read back the six edited guards (`bugB4_ocrTopBarCss.test.ts:76`; `phase14Glass.test.ts:445,450`; `phase34_multi_layout.test.tsx:434,794,837`). `npm.cmd run verify:full` -> EXIT=0, `Test Files 645 passed (645)`, `Tests 7935 passed (7935)`; conventions clean (362 source files scanned), `tsc --noEmit` clean. `git status --porcelain` shows the fix touches only the three test files plus the expected 1.50.0 release files. DEF-565 CLOSED.
+
 ## DEF-564: Edit Text - undoing a run delete restores the visible run but leaves it permanently un-selectable for the session (stale `maskedRect` never reconciled with engine undo/redo)
 
 - Status: CLOSED
@@ -334,7 +359,7 @@ History:
 
 ## DEF-563: the committed adversary probe artifact retains a captured Google sign-in URL (non-credential tokens/PKCE challenge in the query)
 
-- Status: OPEN
+- Status: CLOSED (qa TFL-800, 2026-10-05)
 - Severity: LOW - test-artifact hygiene: `test-fixtures/tfl772_probe_result.json` (committed in `fe73758`) keeps a live Google sign-in URL whose query still carries `code_challenge` (PKCE, not usable alone), `client_id` (public) and Google anti-abuse tokens `part=`/`rart=`. No auth credential or access token; the `state` is redacted. Flagged by git-agent during the TFL-782 commit secret scan.
 - Found by: git-agent (TFL-782 phase-close commit, 2026-10-05)
 - Phase: TFL-751 (Phase 102)
@@ -346,6 +371,8 @@ Actual: the probe JSON keeps the raw Google URL. Fix (deferred): redact the URL 
 
 History:
 - git-agent (TFL-782, 2026-10-05): flagged in the commit secret scan; CTO ACCEPTED (LOW) and parked.
+- CTO (TFL-798, 2026-10-05): set FIX-READY. The redaction fix is already committed in `9a6ba0a` "Redact token-bearing URL in tfl772 probe artifact [TFL-783; DEF-563]": `test-fixtures/tfl772_adversary_probe.cjs:18-22` now applies a `redact` helper to every emitted URL and the committed `test-fixtures/tfl772_probe_result.json` carries no `code_challenge`/`part=`/`rart=`/`token=`. qa focused verification and CLOSED pending.
+- qa (TFL-800, 2026-10-05): CLOSED. Focused verification of the committed state. `grep -nE "code_challenge|code_challenge_method|rart=|part=|token=|access_token|neon_auth_session_verifier" test-fixtures/tfl772_probe_result.json` printed nothing and exited 1 (zero matches). `grep -nE "redact|code_challenge|rart|part=" test-fixtures/tfl772_adversary_probe.cjs` exited 0 and showed the `redact` helper at `:18` whose `.replace(...)` at `:22` covers `token|code|neon_auth_session_verifier|state|part|rart|client_id|code_challenge|code_challenge_method|dsh`, with all emitted URLs routed through `redact` (`:99`, `:102`, `:120`, `:146`, `:179`, `:186`). Did not re-run the probe (requires a live Google session).
 
 ## DEF-562: the phase46 e2e spec prints live token-bearing URLs
 

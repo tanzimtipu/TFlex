@@ -442,12 +442,12 @@ describe("Phase 14 — tools panel sizing and descriptions", () => {
 
   it("the grid card layout stacks icon chip, title and description", () => {
     const card = findRuleBodies(css, ".tools-palette-entry-grid")
-      .find((b) => /border-radius:\s*12px/.test(b));
+      .find((b) => /border-radius:\s*var\(--radius-group\)/.test(b));
     expect(card).toBeDefined();
     expect(card ?? "").toMatch(/flex-direction:\s*column/);
     const chip = findRuleBody(css, ".tools-palette-entry-grid .tools-palette-entry-icon");
     expect(chip ?? "").toMatch(/width:\s*30px/);
-    expect(chip ?? "").toMatch(/border-radius:\s*9px/);
+    expect(chip ?? "").toMatch(/border-radius:\s*var\(--radius-control\)/);
     // Two-column card rhythm: the 64px tile grid is overridden so a
     // 380px panel lands two ~170px cards (no one-word-per-line wraps).
     const columns = findRuleBodies(css, ".tools-palette-group-grid")

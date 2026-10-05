@@ -23,6 +23,17 @@ export interface WhatsNewEntry {
 /** Ordered newest first. */
 export const WHATS_NEW: WhatsNewEntry[] = [
   {
+    version: '1.50.0',
+    date: '2026-10-05',
+    highlights: [
+      'Sign in with Google now completes inside the app in a window that shares the app session, fixing the recurring "session challenge cookie not found" error.',
+      'The sign-in window and its success message now name the in-app window instead of a browser tab.',
+      'Edit Text: after you delete a text run, the empty spot is now inert - clicking it no longer restores the deleted text - and undo or redo after a delete stays consistent.',
+      'Errors and crashes are now captured quietly in the background with no pop-up, so problems can be found and fixed faster.',
+      'Under the hood, all shared visual elements - colour, type, spacing, radii, elevation, motion and icons - now come from one documented foundation, so themes stay consistent across the app.',
+    ],
+  },
+  {
     version: '1.49.0',
     date: '2026-10-04',
     highlights: [

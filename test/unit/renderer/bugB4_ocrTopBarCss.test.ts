@@ -73,7 +73,7 @@ describe("DEF-126 — OCR suspects panel reserves space (never covers the rail /
       css.indexOf(":root[data-theme=\"dark\"] .ocr-suspects-panel"),
     );
     expect(panel).toMatch(/background:\s*rgba\(/);
-    expect(panel).toMatch(/backdrop-filter:\s*blur\(/);
+    expect(panel).toMatch(/backdrop-filter:\s*(var\(--glass-blur\)|blur\()/);
     expect(panel).not.toMatch(/background:\s*var\(--bg-rail\)/);
     // The dark theme override is translucent too.
     const dark = css.slice(

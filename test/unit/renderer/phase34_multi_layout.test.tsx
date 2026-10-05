@@ -431,7 +431,7 @@ describe("Phase 34 — item 4: the divider's prominence (static CSS guard)", () 
     expect(body).not.toBeNull();
     expect(body ?? "").toMatch(/opacity:\s*1\s*;/);
     expect(body ?? "").toMatch(/background:\s*var\(--bg-raised\)\s*;/);
-    expect(body ?? "").toMatch(/border-radius:\s*999px\s*;/);
+    expect(body ?? "").toMatch(/border-radius:\s*(var\(--radius-pill\)|999px)\s*;/);
   });
 
   it("takes the accent on hover/active so the affordance is obvious", () => {
@@ -791,7 +791,7 @@ describe("Phase 34 — item 5: the insertion line geometry (static CSS guard)", 
     const height = Number(heightMatch?.[1] ?? 0);
     expect(height).toBeGreaterThanOrEqual(4);
     expect(height).toBeLessThanOrEqual(6);
-    expect(body ?? "").toMatch(/border-radius:\s*999px\s*;/);
+    expect(body ?? "").toMatch(/border-radius:\s*(var\(--radius-pill\)|999px)\s*;/);
     expect(body ?? "").toMatch(/background:\s*var\(--accent\)\s*;/);
     expect(body ?? "").toMatch(/box-shadow:/);
   });
@@ -834,7 +834,7 @@ describe("Phase 34 — item 5: the insertion line geometry (static CSS guard)", 
     expect(body).not.toBeNull();
     expect(body ?? "").toMatch(/background:\s*var\(--accent\)\s*;/);
     expect(body ?? "").toMatch(/top:\s*-5px\s*;/);
-    expect(body ?? "").toMatch(/border-radius:\s*999px\s*;/);
+    expect(body ?? "").toMatch(/border-radius:\s*(var\(--radius-pill\)|999px)\s*;/);
     expect(body ?? "").toMatch(/box-shadow:/);
     const first = findRuleBody(src, ".thumb-drop-line-first");
     expect(first ?? "").toMatch(/top:\s*0\s*;/);
