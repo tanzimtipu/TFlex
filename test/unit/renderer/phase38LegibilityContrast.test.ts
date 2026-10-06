@@ -490,3 +490,51 @@ describe("Phase 41 item 3 — the selection trio clears the text floor", () => {
   });
 });
 
+/**
+ * Phase 110 (chunk E2) / DEF-594 / ADV-224 — the supporting-text token on the
+ * Home `--bg-sunken` surface. `.welcome-sub` and `.welcome-section h3 .count`
+ * ride `--tf-text-supporting`; on the Home hero (`.welcome.orbit-desk`) the
+ * surface is `--bg-sunken`. Dark clears easily (#929BAC on #08090b = 7.12); the
+ * LIGHT #e4e9ef sunken measures 4.07 for the raw token, below the floor, which
+ * is exactly why the light Home hero overrides its ink to `--fg-muted` (5.22,
+ * scored by phase110_homeContrast). This test pins both facts so neither drifts.
+ */
+describe("Phase 110 E2 — --tf-text-supporting on the Home --bg-sunken surface", () => {
+  it("clears the text floor on dark, and documents the light gap the hero override closes", () => {
+    const lightRatio = contrast(
+      tokenColor(BASE, "--tf-text-supporting"),
+      surfaceColor(BASE, "--bg-sunken"),
+    );
+    const darkRatio = contrast(
+      tokenColor(DARK, "--tf-text-supporting"),
+      surfaceColor(DARK, "--bg-sunken"),
+    );
+    console.log(
+      `[P110-E2] --tf-text-supporting on --bg-sunken: light ${lightRatio.toFixed(2)} | dark ${darkRatio.toFixed(2)}`,
+    );
+    // Dark keeps the global token and clears the floor.
+    expect(darkRatio).toBeGreaterThanOrEqual(TEXT_FLOOR);
+    // Light raw token is the documented gap the Home-hero override closes.
+    expect(lightRatio).toBeLessThan(TEXT_FLOOR);
+  });
+
+  it("scores the token on the raised chrome surfaces it is applied on in every theme", () => {
+    // The token is the app's small supporting ink on raised chrome. It clears
+    // the floor on the raised surfaces; the two deepest light layers
+    // (--bg-rail / --bg-sunken) are the Home hero's, handled by its override.
+    const surfaces = ["--bg-elevated", "--bg-raised", "--bg-toolbar"] as const;
+    const failures: string[] = [];
+    for (const { id, map } of THEMES) {
+      for (const surface of surfaces) {
+        const ratio = contrast(tokenColor(map, "--tf-text-supporting"), surfaceColor(map, surface));
+        if (ratio < TEXT_FLOOR) {
+          failures.push(
+            `${id} --tf-text-supporting on ${surface} = ${ratio.toFixed(2)} (floor ${TEXT_FLOOR})`,
+          );
+        }
+      }
+    }
+    expect(failures, failures.join("\n")).toEqual([]);
+  });
+});
+

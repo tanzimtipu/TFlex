@@ -169,9 +169,12 @@ const STAGE_RAIL = ruleBody(".stage-rail");
 const STAGE_RAIL_LABEL = ruleBody(".stage-rail-label");
 const STAGE_RAIL_BTN = ruleBody(".stage-rail-btn");
 const RAIL_W_PROPERTY = /@property\s+--tf-rail-w\s*\{([^}]*)\}/.exec(STYLES)?.[1] ?? "";
-/** Phase 38 (feature B) — the rail's width and label-floor tokens. */
+/** Phase 38 (feature B) — the rail's width and label-floor tokens.
+ *  Phase 110 (chunk A) — the rail label is the documented 11px compact
+ *  exception, expressed through --type-compact-size; --tf-label-size is now an
+ *  alias of --type-label-size, so parse the semantic role token directly. */
 const STAGE_RAIL_W_TOKEN = Number.parseFloat(/--tf-stage-rail-w:\s*(\d+)px/.exec(STYLES)?.[1] ?? "NaN");
-const LABEL_SIZE_TOKEN = Number.parseFloat(/--tf-label-size:\s*(\d+)px/.exec(STYLES)?.[1] ?? "NaN");
+const LABEL_SIZE_TOKEN = Number.parseFloat(/--type-compact-size:\s*(\d+)px/.exec(STYLES)?.[1] ?? "NaN");
 const OUTLINE = ruleBody(".context-panel-outline");
 const OUTLINE_WITH_BODY = ruleBody(".context-panel-outline[data-outline-open='true']");
 const PANEL_HEADER_ACTIONS = ruleBody(".context-panel-header .glass-sidebar-actions");
@@ -316,8 +319,10 @@ describe("Phase 37 item 9 - no control or label touches the window/canvas edge",
 
     const contentBox = STAGE_RAIL_W_TOKEN - 2 * inset;
     const fontPx = LABEL_SIZE_TOKEN;
-    // The interactive-label floor: no stage label below 12px.
-    expect(fontPx).toBeGreaterThanOrEqual(12);
+    // Phase 110 (chunk A) — the rail label is the ONE documented compact
+    // exception at 11px (--type-compact-size); every other control label keeps
+    // the 12px floor (phase38LegibilityContrast.test.ts).
+    expect(fontPx).toBeGreaterThanOrEqual(11);
     expect(decl(STAGE_RAIL_LABEL, "text-transform")).toBeNull();
     // "Settings" (8 chars) at ~0.52em average TITLE-CASE advance.
     const labelPx = 8 * fontPx * 0.52;

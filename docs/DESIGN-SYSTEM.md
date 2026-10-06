@@ -661,4 +661,16 @@ so content text scales with display DPI / UI scale but the app adds no separate
 text-size preference. Pinned by
 `test/unit/renderer/phase110_typographyContent.test.ts`.
 
+### 18.7 Home-hero contrast exception (DEF-594 / ADV-224)
+
+The global `--tf-text-supporting` (`#667085` light) is unchanged. On the Home
+hero (`.welcome.orbit-desk`) the surface is `--bg-sunken` (`#e4e9ef` light),
+where `#667085` measures 4.07:1, below the 4.5:1 interactive-text floor. In the
+LIGHT theme only, `.welcome-sub` and `.welcome-section h3 .count` therefore read
+the retired `--fg-muted` (`#556070`, 5.22:1 on the same surface). The override is
+scoped with `:root:not([data-theme="dark"]):not([data-theme="frosted"])`, so dark
+(`#929BAC` on `#08090b` = 7.12:1), frosted and every other surface keep the
+global token. Pinned by `test/unit/renderer/phase110_homeContrast.test.ts` and
+the `--bg-sunken` scoring in `test/unit/renderer/phase38LegibilityContrast.test.ts`.
+
 

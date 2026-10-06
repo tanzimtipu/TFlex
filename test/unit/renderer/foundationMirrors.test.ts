@@ -23,6 +23,7 @@ import {
   SHADOW_ROLE,
   SPACE,
   SPACING,
+  TYPE_ROLES,
 } from "../../../src/renderer/design";
 
 const REPO_ROOT = join(import.meta.dirname, "..", "..", "..");
@@ -76,13 +77,25 @@ describe("foundation mirrors — typography.ts", () => {
     expect(FONT_FAMILIES.ui).toBe(token(root, "--font-ui"));
   });
 
-  it("mirrors the --fs-* type scale in px", () => {
-    expect(FONT_SIZES.xs).toBe(px(token(root, "--fs-xs")));
-    expect(FONT_SIZES.sm).toBe(px(token(root, "--fs-sm")));
-    expect(FONT_SIZES.md).toBe(px(token(root, "--fs-md")));
-    expect(FONT_SIZES.lg).toBe(px(token(root, "--fs-lg")));
-    expect(FONT_SIZES.xl).toBe(px(token(root, "--fs-xl")));
-    expect(FONT_SIZES["2xl"]).toBe(px(token(root, "--fs-2xl")));
+  it("mirrors the --fs-* type scale in px (resolving the Phase 110 aliases)", () => {
+    expect(FONT_SIZES.xs).toBe(px(resolve(token(root, "--fs-xs"))));
+    expect(FONT_SIZES.sm).toBe(px(resolve(token(root, "--fs-sm"))));
+    expect(FONT_SIZES.md).toBe(px(resolve(token(root, "--fs-md"))));
+    expect(FONT_SIZES.lg).toBe(px(resolve(token(root, "--fs-lg"))));
+    expect(FONT_SIZES.xl).toBe(px(resolve(token(root, "--fs-xl"))));
+    expect(FONT_SIZES["2xl"]).toBe(px(resolve(token(root, "--fs-2xl"))));
+  });
+
+  it("mirrors the eight --type-* semantic roles (size / line-height / weight)", () => {
+    for (const [role, spec] of Object.entries(TYPE_ROLES)) {
+      expect(spec.size, `${role} size`).toBe(px(token(root, `--type-${role}-size`)));
+      expect(spec.lineHeight, `${role} line-height`).toBe(
+        px(token(root, `--type-${role}-line`)),
+      );
+      expect(spec.weight, `${role} weight`).toBe(
+        Number(token(root, `--type-${role}-weight`)),
+      );
+    }
   });
 });
 

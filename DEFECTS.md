@@ -13474,7 +13474,7 @@ History:
 
 ## DEF-594: Phase 110 supporting-text token drops the light-theme Home hero below the 4.5:1 floor - `.welcome-sub` measures 4.07:1 where the retired `--fg-muted` cleared 5.22:1 (ADV-224)
 
-- Status: OPEN
+- Status: CLOSED
 - Severity: MEDIUM - a legible supporting-text contrast regression on the light Home hero; no document, data or behaviour impact.
 - Found by: adversary (ADV-224)
 - Phase: 110
@@ -13495,6 +13495,7 @@ Evidence: ADV-224 (probe `test-fixtures/phase110-adversary/probe-output.json`; s
 History:
 - adversary: reported as ADV-224 (Phase 110 diff-pass, TFL-932, 2026-10-06).
 - CTO (TFL-864, 2026-10-06): ACCEPTED -> DEF-594; fix assigned to frontend-dev TFL-945.
+- qa: CLOSED (TFL-950 chunk F phase-close, 2026-10-06). FIX-READY retest on the rendered app: light Home hero `.welcome-sub` and `.welcome-section h3 .count` compute to `--fg-muted` #556070 (rgb 85,96,112) on `--bg-sunken` #e4e9ef = 5.22:1 >= 4.5 (was 4.07). Dark stays #929BAC on #08090b = 7.12:1; frosted rides the global token and renders 4.84:1 (`.welcome-sub` over the 0.62 hero film) and 4.63:1 (`.count` over the 0.42 `.welcome` film), both >= 4.5. `phase110_homeContrast` + `phase38LegibilityContrast` green; e2e `phase110_typography.spec.cjs` 4/4 (P110-D measures the actual rendered composite). Evidence: `screenshots/phase110-hero-contrast.json`, `screenshots/phase110-home-frosted.png`.
 
 ## DEF-595: Phase 105 application menu is unstyled above 900px - the popover renders as a ~925px in-flow block overlapping the title row and the document rail (ADV-225)
 
