@@ -3868,7 +3868,8 @@ body.tab-reordering .tab-list[data-reorder="true"] .tab {
 }
 
 .sample-thumb {
-  height: 84px;
+  position: relative;
+  height: 116px;
   border-radius: var(--radius-2);
   background: linear-gradient(180deg, var(--placeholder-from), var(--placeholder-to));
   margin-bottom: var(--sp-2);
@@ -3876,6 +3877,37 @@ body.tab-reordering .tab-list[data-reorder="true"] .tab {
   display: grid;
   place-items: center;
   color: var(--fg-muted);
+  overflow: hidden;
+}
+
+/* DEF-592 — the REAL first page of the bundled sample. The raster carries the
+ * page's own aspect (height-constrained, width auto), so its hairline hugs the
+ * sheet rather than the full thumb box. */
+.sample-thumb-page {
+  height: calc(100% - var(--sp-4));
+  width: auto;
+  max-width: calc(100% - var(--sp-4));
+  object-fit: contain;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-1);
+}
+
+/* DEF-592 — the honest per-sample fallback while the page raster is pending or
+ * unavailable: a faint page sheet plus the sample's OWN glyph, so `long.pdf`
+ * and `report.pdf` never render the same tile. */
+.sample-thumb-glyph {
+  position: relative;
+  z-index: 1;
+  color: var(--fg-strong);
+}
+
+.sample-thumb[data-sample-preview="unavailable"]::before {
+  content: "";
+  position: absolute;
+  inset: var(--sp-3);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-1);
+  background: var(--placeholder-to);
 }
 
 .sample-name {

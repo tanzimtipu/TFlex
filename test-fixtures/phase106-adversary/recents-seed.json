@@ -1,0 +1,18 @@
+{
+  "theme": "light",
+  "geometry": { "x": 100, "y": 100, "width": 1440, "height": 900, "maximized": false },
+  "homeTools": ["createFromImages", "merge"],
+  "animationsEnabled": true,
+  "recentFiles": [
+    { "path": "C:\\Users\\tänzi\\Doc üments\\project alpha\\finance report 2026 final v3 (approved).pdf", "name": "finance report 2026 final v3 (approved).pdf", "openedAt": "2026-10-06T09:00:00.000Z" },
+    { "path": "D:\\Archive\\2024\\report.pdf", "name": "report.pdf", "openedAt": "2026-10-06T08:30:00.000Z" },
+    { "path": "E:\\Backup\\report.pdf", "name": "report.pdf", "openedAt": "2026-10-06T08:00:00.000Z" },
+    { "path": "C:\\Scans\\scan-0001.docx", "name": "scan-0001.docx", "openedAt": "2026-10-05T20:00:00.000Z" },
+    { "path": "C:\\Data\\sheet.xlsx", "name": "sheet.xlsx", "openedAt": "2026-10-05T18:00:00.000Z" },
+    { "path": "C:\\Data\\noextension", "name": "noextension", "openedAt": "2026-10-05T17:00:00.000Z" },
+    { "path": "samples/form.pdf", "name": "form.pdf", "openedAt": "2026-10-05T16:00:00.000Z" },
+    { "path": "C:\\路径\\文档.pdf", "name": "文档.pdf", "openedAt": "2026-10-05T15:00:00.000Z" },
+    { "path": "C:\\Users\\tänzi\\.hiddenfile", "name": ".hiddenfile", "openedAt": "2026-10-05T14:00:00.000Z" },
+    { "path": "C:\\gone\\moved-away file.pdf", "name": "moved-away file.pdf", "openedAt": "2026-10-05T13:00:00.000Z" }
+  ]
+}

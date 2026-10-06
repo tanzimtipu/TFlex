@@ -1,0 +1,24 @@
+{
+  "mode": "session",
+  "seeded": true,
+  "userData": "C:\\Users\\tanzi\\AppData\\Local\\Temp\\paperclip-run-tfl-931-d0a093c7-af1-ZobL8T\\tflex-adv-p106-session-1791242018742-195953",
+  "afterOpen": {
+    "tabs": 1,
+    "canvas": true,
+    "hasHome": false
+  },
+  "afterNew": {
+    "tabs": 2,
+    "hasHome": true,
+    "tabTitles": [
+      "form.pdf",
+      "Empty tab"
+    ]
+  },
+  "backToDoc": {
+    "hasHome": false,
+    "canvas": true,
+    "tabs": 2
+  },
+  "pageErrors": []
+}

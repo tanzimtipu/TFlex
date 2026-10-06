@@ -1,0 +1,85 @@
+{
+  "mode": "silence",
+  "seeded": true,
+  "userData": "C:\\Users\\tanzi\\AppData\\Local\\Temp\\paperclip-run-tfl-931-d0a093c7-af1-ZobL8T\\tflex-adv-p106-silence-1791241963846-41227",
+  "controls": [
+    {
+      "label": "motion pause",
+      "sel": "[data-orbit-motion-toggle]",
+      "err": null,
+      "diff": {
+        "rows": 0,
+        "editPressed": false,
+        "toasts": 0,
+        "dialogs": 0,
+        "tabs": 0
+      }
+    },
+    {
+      "label": "motion resume",
+      "sel": "[data-orbit-motion-toggle]",
+      "err": null,
+      "diff": {
+        "rows": 0,
+        "editPressed": false,
+        "toasts": 0,
+        "dialogs": 0,
+        "tabs": 0
+      }
+    },
+    {
+      "label": "edit pen arm",
+      "sel": "[data-home-edit-toggle]",
+      "err": null,
+      "diff": {
+        "rows": 0,
+        "editPressed": true,
+        "toasts": 0,
+        "dialogs": 0,
+        "tabs": 0
+      }
+    },
+    {
+      "label": "edit pen disarm",
+      "sel": "[data-home-edit-toggle]",
+      "err": null,
+      "diff": {
+        "rows": 0,
+        "editPressed": true,
+        "toasts": 0,
+        "dialogs": 0,
+        "tabs": 0
+      }
+    },
+    {
+      "label": "open recent (missing)",
+      "sel": "[data-recent-row]:nth-child(1) .recent-row-open",
+      "err": null,
+      "diff": {
+        "rows": -1,
+        "editPressed": false,
+        "toasts": 1,
+        "dialogs": 0,
+        "tabs": 0
+      }
+    },
+    {
+      "label": "remove recent",
+      "sel": "[data-recent-row]:nth-child(1) .recent-row-remove",
+      "err": null,
+      "diff": {
+        "rows": -1,
+        "editPressed": false,
+        "toasts": 0,
+        "dialogs": 0,
+        "tabs": 0
+      }
+    }
+  ],
+  "before": {
+    "rows": 10,
+    "editPressed": "false",
+    "bodyClass": "welcome orbit-desk"
+  },
+  "pageErrors": []
+}

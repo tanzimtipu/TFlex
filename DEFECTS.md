@@ -13184,7 +13184,7 @@ History:
 
 ## DEF-583: The Phase 105 title-row File-menu Escape assertion is load-sensitive - the exiting popover (`data-tf-morph="out"`) stays "visible" past the 8s wait when the full spec runs several Electron launches
 
-- Status: OPEN
+- Status: CLOSED (qa TFL-915 chunk E4 FIX-READY self-fix + retest, 2026-10-06)
 - Severity: LOW - flaky e2e assertion, no product behaviour wrong. In isolation the File menu opens and Escape closes it (the morph completes); only under a full-suite multi-launch run does the exiting `[data-menu-popover]` element linger past 8s so `waitForSelector(..., { state: 'hidden' })` times out. No document, data or workflow impact.
 - Found by: qa (TFL-911 chunk E3 FIX-READY retest of DEF-579; observed in `e2e/phase105_topbar_rail.spec.cjs` full-suite runs)
 - Phase: 105 (Top Bar and Tabs) - incident, not part of DEF-579
@@ -13206,6 +13206,7 @@ Evidence: run logs `e3-e2e.log` and `e3-e2e-full2.log` (scratch), `test-results/
 
 History:
 - qa: opened (TFL-911 chunk E3; observed during the DEF-579 FIX-READY retest). Not reproduced in isolation; not DEF-579.
+- qa: CLOSED (TFL-915 chunk E4 FIX-READY self-fix + retest, 2026-10-06). Triage: test-timing, not product - the exit is a finite TfMorph/AnimatePresence morph and `state: 'hidden'` is a weak close signal because Playwright counts an opacity-0 element as visible until AnimatePresence unmounts it; under multi-launch CPU starvation the tween can outlast 8s. Fix (test-only, `e2e/phase105_topbar_rail.spec.cjs`): pin `win.emulateMedia({ reducedMotion: 'reduce' })` per launch so the exit morph collapses to its instant end state, and wait for popover DETACHMENT (`state: 'detached'`) via a `waitForPopoverClosed` helper at the three menu close sites (was `:316`, `:322`, `:686`). Functional intent unchanged (Escape closes; app-menu focus returns to the opener). Three back-to-back FULL-spec runs: run1 5 passed (1.6m), run2 5 passed (1.6m), run3 5 passed (1.7m) - deterministic 5/5 each. `npm run verify` green (conventions clean 379 files + typecheck). Logs: `$PAPERCLIP_SCRATCH_DIR/e4-run{1,2,3}.log`.
 
 
 > ID-collision note (qa, TFL-916, 2026-10-06): the Phase 108 adversary diff-pass
@@ -13342,7 +13343,7 @@ History:
 
 > Numbering note: filed concurrently and first numbered DEF-587; renumbered to DEF-589 by qa (TFL-925, 2026-10-06) because DEF-587/DEF-588 are bound to the Phase 109 Viewing Controls findings by `src/renderer/styles.css` comments and `test/unit/renderer/phase109_viewStrip.test.ts`. No content changed.
 
-- Status: FIX-READY
+- Status: CLOSED
 - Severity: LOW - cosmetic/implementation mismatch. The control is visible, discoverable and fully functional (it pauses/resumes the drift through the existing Animations setting); it just renders inline next to the brand wordmark instead of the header's top-right edge the rule declares.
 - Found by: qa
 - Phase: 106 (Home Screen / Orbit Desk, TFL-900 chunk B)
@@ -13363,12 +13364,13 @@ Evidence: `screenshots/phase106-chunkB-geometry.json` (`togglePosition: "relativ
 History:
 - qa: opened (TFL-917 chunk B focused verification, 2026-10-06).
 - CTO: FIX-READY - frontend-dev (TFL-922) reports `src/renderer/styles.css:3950` now reads `.orbit-desk .welcome-hero > :not(.orbit-desk-motif):not(.orbit-desk-motion-toggle)`, so the toggle's own `position:absolute; top:0; right:0; z-index:2` wins; a guard test was added to `phase106OrbitMotion.test.tsx`; `npx vitest run test/unit/renderer/phase106OrbitMotion.test.tsx` -> 10 passed. Awaiting qa retest.
+- qa: CLOSED (TFL-927 rendered FIX-READY retest, 2026-10-06). `npm.cmd run build:renderer` then `npm.cmd run test:e2e -- e2e/phase106_orbit_motion.spec.cjs` = 4 passed / 0 failed. Rendered geometry (`screenshots/phase106-chunkB-geometry.json`, 2560px window): the toggle computes `position: absolute` (`togglePosition` was `relative` pre-fix), right 1808 == header/hero right 1808 (was 862), top 120 == hero top 120, `z-index: 2`; `elementFromPoint` at its own centre resolves to the toggle (not the motif). Blast radius: `.welcome-brand` still computes `position: relative; z-index: 1`, `[data-orbit-motif]` keeps `pointer-events: none`, so the header-children stacking rule is intact. Focused unit `phase106OrbitMotion.test.tsx` = 10 passed; neighbour e2e `phase106_home_orbit.spec.cjs` = 2 passed; neighbour unit `phase106HomeOrbit.test.tsx` = 15 passed. Evidence: `screenshots/phase106-chunkB-header-crop.png` (control pinned top-right of the content header, on the wordmark row), `screenshots/phase106-chunkB-motion-light.png` / `-dark.png`.
 
 ## DEF-590: surface-inventory.csv has a wrong `component_path` and stale `opener` line numbers (TFL-855 chunk C1 criterion-1 deliverable)
 
 > Numbering note: filed concurrently and first numbered DEF-588; renumbered to DEF-590 by qa (TFL-925, 2026-10-06) because DEF-587/DEF-588 are bound to the Phase 109 Viewing Controls findings by `src/renderer/styles.css` comments and `test/unit/renderer/phase109_viewStrip.test.ts`. No content changed.
 
-- Status: OPEN
+- Status: OPEN (reopened by qa TFL-936, 2026-10-06: row 4 residual does not meet the recorded "every opener resolves" expectation)
 - Severity: LOW - spec-artifact accuracy only. No product, document or data impact; the inventory is a handoff/spec deliverable that the C3 pilot authors read, and a mis-stated path or line sends a reader to the wrong file/location.
 - Found by: qa (TFL-920 chunk C2Q focused verification, criterion-1 inventory coverage)
 - Phase: 855 (shared interaction-surface foundations, TFL-873 chunk C1)
@@ -13391,10 +13393,12 @@ Fix owner: frontend-dev - correct row 5 `component_path` to `src/renderer/compon
 
 History:
 - qa: opened (TFL-920 chunk C2Q focused verification, 2026-10-06). Items 1-3 and 5-6 of that pass were PASS; item 4 is the sole FAIL.
+- CTO (TFL-855 chunk C3, 2026-10-06): FIX-READY - relaying frontend-dev TFL-929. Row 5 `component_path` corrected to `src/renderer/components/AnnotationFlyout.tsx`; the sampled App.tsx `opener` lines refreshed against current source (row 2 onSplitClick 5329->5360 / extract 10034->10090; row 3 onCreateClick 5621->5653; row 8 openMergeFlow 5046->5068; row 41 12183->12229; row 64 openReadingView 10011->10067 / openComicView 10015->10071). Structure intact: 67 data rows x 11 columns, no row/column added or removed. Residual (deliberate, per the sampled-rows scope): row 4 onStampClick opener left stale (6356; real 6388) - qa to judge whether row 5 + the sampled rows suffice to CLOSE or whether the residual reopens the finding. Awaiting qa retest.
+- qa (TFL-936 chunk C3 focused verification + DEF-590 retest, 2026-10-06): REOPENED. Partial fix verified: row 5 `component_path` = `src/renderer/components/AnnotationFlyout.tsx` and the file exists; structure intact (11 columns / 67 data rows); the sampled App.tsx openers resolve - row 2 onSplitClick 5360 / extract 10090, row 3 onCreateClick 5653, row 8 openMergeFlow 5068, row 64 openReadingView 10067 / openComicView 10071, row 41 12229 -> the named condition `pendingCloseTabId !== null` sits at 12230 (one line; the opener names the `<CloseTabPromptDialog>` open tag at 12229, within "near"). Residual NOT acceptable against the recorded expectation ("every `opener` `file:line` resolves to (or near) the named call site"): CSV row 4 `App.tsx:6356 onStampClick` does not resolve - `const onStampClick` is at App.tsx:6388 (32 lines off; line 6356 is the blank line after `onCropConfirm`'s close and before `seedActivePageSizes`). The refreshed openers the dev accepted all drifted by 22-56 lines, so a 32-line miss is the same class the defect was filed against. Fix owner frontend-dev: correct row 4 opener to `App.tsx:6388 onStampClick`; re-run this retest to CLOSE.
 
 ## DEF-591: At the `<=419px` overflow tier the revealed More trigger overflows the footer box and is covered by the Inspector rail, so it is not pointer-reachable
 
-- Status: OPEN
+- Status: CLOSED
 - Severity: MEDIUM - at 640x480 with Windows text/DPI 150% the View Strip's overflow trigger is visible but not clickable (a real pointer click is intercepted by the collapsed Inspector rail), so the one/two/four layout and Book View controls cannot be reached by pointer at that rung. Keyboard still reaches them, so it is not a total loss of the workflow.
 - Found by: qa (TFL-925 FIX-READY retest, DEF-588 residual)
 - Phase: 109 (Viewing Controls, TFL-863)
@@ -13415,4 +13419,78 @@ Evidence: `test-fixtures/phase109-qa/probe-more-hit.log` (top element `div.inspe
 History:
 - qa: opened (TFL-925 FIX-READY retest of DEF-588, 2026-10-06).
 - qa: CLOSED (TFL-933 rendered FIX-READY retest, 2026-10-06). The overflow-tier fit fix (TFL-928: `min-width: 0` on `.view-strip .btn-toolbar` + tightened `<=419px` row metrics) keeps the trigger inside the footer. At 640x480@150% (footer inline-size 263px): `.view-strip` right 383 >= `[data-view-strip-more-toggle]` right 371, trigger box `[349,282,22,28]` inside footer `[120,272,263,48]`; `document.elementFromPoint` at the trigger centre resolves to `circle` (a descendant of the trigger), NOT `div.inspector`; a real un-forced `click()` opens the menu (pointerOpened=true) and the three `[data-page-layout-option]` rows + `[data-book-view-open]` are pointer-hit-testable (each top element a row `span`); keyboard focus+Enter still reaches them. Commands: `npm.cmd run build:renderer`; `npm.cmd run test:e2e -- e2e/phase109_def587_def588_retest.spec.cjs` = 2 passed; `e2e/phase109_def591_pointer_probe.spec.cjs` = 1 passed; `e2e/phase109_viewstrip.spec.cjs` = 12 passed; `npm.cmd run test:unit -- test/unit/renderer/phase109_viewStrip.test.ts` = 23 passed. Evidence: `screenshots/phase109-qa-def591-pointer-open-640x480.png`; `test-fixtures/phase109-qa/tfl933_probe_tier.json`, `tfl933_probe_pointer_rows.json`, `tfl933_def591_pointer_probe.log`.
+
+
+## DEF-592: Home sample cards render identical per-task glyphs, not a real first page or an honest per-sample fallback - `long.pdf` and `report.pdf` are indistinguishable (Phase 106 chunk C)
+
+- Status: CLOSED
+- Severity: MEDIUM - Phase 106 success criterion 3 requires sample previews to be real rendered first pages or an honest per-file-type/per-sample fallback with scan/form/long/report distinctions kept honest. Today every sample renders a per-TASK glyph on an identical gradient, and `long.pdf` and `report.pdf` (both "Read and navigate") are pixel-identical, so the section reads as broken/duplicate images rather than a choice of tasks. No data risk; it is the operator's original complaint about identical tiles.
+- Found by: adversary (ADV-223, TFL-931 Phase 106 diff-pass)
+- Phase: 106 (chunk C)
+- Files: `src/renderer/components/home/HomeSampleCard.tsx:34-36` renders `<span class="sample-thumb" data-sample-format="pdf"><Icon name={task.icon}/></span>` - a fixed gradient box with one Quiet Precision glyph, never a rendered page and never a per-file/per-sample image. `long.pdf` and `report.pdf` both map to the `find` glyph / "Read and navigate - PDF".
+
+Steps to reproduce (from application launch):
+1. Open Home; inspect the four "Explore" sample cards.
+2. Compare `long.pdf` and `report.pdf` - same glyph, same label, same subtitle, same gradient.
+
+Expected: each sample card shows a real rendered first page OR an honest fallback that keeps scan/form/long/report distinct - no two of the four cards are identical.
+
+Actual: no sample renders a first page; the fallback is per-TASK, so `long.pdf` and `report.pdf` are fully indistinguishable.
+
+Fix owner: frontend-dev - render the real first page of each bundled sample into `.sample-thumb` (the sample bytes are already available via the existing `readSample` IPC; a cached first-page raster per sample is enough), OR give each sample a distinct, honest purposeful illustration/label so no two cards are identical and each reflects the sample's real nature (form fields / long document / report / scanned).
+
+Evidence: `test-fixtures/phase106-adversary/adv-p106-recents-light.png`, `-dark.png`, `adv-p106-recents.json`; ADV-223.
+
+History:
+- CTO: opened on ADV-223 triage (TFL-857, 2026-10-06); owner frontend-dev.
+- CTO: FIX-READY - frontend-dev (TFL-937) reports a new `src/renderer/components/home/samplePreview.ts` that rasters the REAL first page of each bundled sample (bytes via the existing `readSample` IPC, page 1 via pdf.js) with a per-sample cache plus an honest distinct per-sample fallback (form/long/report/scan), consumed by `HomeSampleCard.tsx` (`<img class="sample-thumb-page">` when ready, else the distinct fallback; new `data-sample-tone`/`data-sample-preview`); `long.pdf` and `report.pdf` are now distinct (tone reading vs report; glyph find vs audit). `def592_homeSamplePreviews.test.tsx` + `phase106HomeOrbit.test.tsx` -> 2 files, 26 passed. Awaiting qa retest (visual verdict on the rendered pages).
+- QA: CLOSED (TFL-943, 2026-10-06). Retest in the live Electron app: all four sample cards settle to `data-sample-preview="ready"` and render a real first page (`img.sample-thumb-page`, distinct PNG data URLs; byte lengths 22654/18022/18954/453178). Visual verdict - `long.pdf` shows "This is page 1 of the long test document" ("Page 1 of 520") and `report.pdf` shows the "TFlex Technical Report" cover: indistinguishable-twins gap gone, both themes clean, no clipping/overlap. FOCUSED + BLAST-RADIUS evidence: new `e2e/phase106_def592_sample_previews.spec.cjs` 1 passed; `def592_homeSamplePreviews.test.tsx` + `phase106HomeOrbit.test.tsx` 26 passed; neighbour checks `bugDEF429_recentSampleReopen`, `welcomeSamplesResolver`, `multiModeOpenAssignment` passed; `foundationGuards` unchanged at the pre-existing DEF-593 red (1 failed / 29 passed, `HomeSampleCard.tsx` registered). Screenshots `def592-home-light.png`, `-dark.png`, `def592-thumb-long.png`, `-report.png`; probe `def592-sample-preview-probe.json` on the TFL-943 Artifacts board.
+
+## DEF-593: `foundationGuards` `MIGRATED_SURFACES` is red - 6 TFL-855 primitive renderer `.tsx` files are not registered (TFL-936 chunk C3 focused verification)
+
+- Status: OPEN
+- Severity: LOW - test-artifact completeness only; no product, document or data impact. It does leave `test/unit/renderer/foundationGuards.test.ts` red (1 failed / 29 passed) and, per `AGENTS_NOTES.md:1405-1411`, every sibling visual-overhaul phase inherits the red named spec, so it gates the TFL-855 phase-close check.
+- Found by: qa (TFL-936 chunk C3 focused verification, item 5; the dev had reported it "pre-existing/unrelated")
+- Phase: 855 (shared interaction-surface foundations, TFL-873 chunk C2)
+- Files: `test/unit/renderer/foundationGuards.test.ts` `MIGRATED_SURFACES` (phase-100 guard). Missing renderer sources: `src/renderer/components/CommandMenu.tsx`, `ContextToolbox.tsx`, `PropertyPopover.tsx`, `TaskDialog.tsx`, `PreviewTaskDialog.tsx`, `Tooltip.tsx`.
+
+Steps to reproduce:
+1. `npm.cmd run test:unit -- test/unit/renderer/foundationGuards.test.ts`
+
+Expected: the guard suite is green; `MIGRATED_SURFACES` equals the renderer `.tsx` walk (its own "complete, not stale" assertion).
+
+Actual: `Test Files 1 failed (1) / Tests 1 failed | 29 passed (30)`. The sole failure is `MIGRATED_SURFACES covers every renderer TSX exactly (complete, not stale)` (`foundationGuards.test.ts:686`); its diff lists exactly the 6 paths above as walked-but-not-listed (115 listed vs 121 walked, 0 stale). All 6 are the TFL-855 C2 primitives.
+
+Note: this is the red already recorded as a known external in `AGENTS_NOTES.md:1405-1411` ("a renderer `.tsx` added by one phase leaves `MIGRATED_SURFACES` red for every other phase ... the chunk that adds or removes a renderer `.tsx` must add or remove it in `MIGRATED_SURFACES` in the SAME chunk") and referenced in the TFL-932 brief. It is NOT a commit-time/untracked artifact: committing the 6 files does not remove them from the on-disk walk, so registration is required.
+
+Fix owner: frontend-dev (the chunk that added the 6 primitives, TFL-855 C2) - add the 6 paths to `MIGRATED_SURFACES` and confirm the suite is green. Do not file under Phase 110 (per TFL-932's DO-NOT).
+
+Evidence: vitest output `Test Files 1 failed (1)` / `Tests 1 failed | 29 passed (30)`; log `tfl936_item5.log` on the TFL-936 Artifacts board.
+
+History:
+- qa: opened (TFL-936 chunk C3 focused verification, 2026-10-06). Determined it is a real TFL-855 phase deliverable (registering the new primitive surfaces), not merely a commit-time/untracked artifact; it is a phase-close gate.
+
+## DEF-594: Phase 110 supporting-text token drops the light-theme Home hero below the 4.5:1 floor - `.welcome-sub` measures 4.07:1 where the retired `--fg-muted` cleared 5.22:1 (ADV-224)
+
+- Status: OPEN
+- Severity: MEDIUM - a legible supporting-text contrast regression on the light Home hero; no document, data or behaviour impact.
+- Found by: adversary (ADV-224)
+- Phase: 110
+- Files: `src/renderer/styles.css:3276-3278` (`.welcome-sub` `color: var(--tf-text-supporting)`); the surface is `.welcome.orbit-desk` `background: var(--bg-sunken)` (`src/renderer/styles.css:541`); the same surface also carries `.welcome-section h3 .count`.
+
+Steps to reproduce:
+1. Launch the app, set `<html data-theme="light">`, open Home; read the computed colour of `.welcome-sub` and its nearest opaque ancestor background (`.welcome.orbit-desk`).
+2. Compute the WCAG 2.1 relative-luminance ratio of `#667085` on `#e4e9ef`.
+
+Expected: supporting text clears the project's 4.5:1 floor on its actual opaque surface in every theme.
+
+Actual: 4.07:1 (was 5.22:1 with `--fg-muted` `#556070`). Dark is 7.12:1 and frosted ~4.8:1 (fine). Not caught by `phase38LegibilityContrast.test.ts`, which scores only `--fg-strong`/`--fg`/`--fg-muted` and never the new `--tf-text-supporting` token nor `--bg-sunken`.
+
+Fix owner: frontend-dev (Phase 110, TFL-945) - restore >= 4.5:1 on the light Home hero with a Home-hero-scoped ink; do not change the global `--tf-text-supporting` token.
+
+Evidence: ADV-224 (probe `test-fixtures/phase110-adversary/probe-output.json`; screenshot `screenshots/adv-p110-home-light.png`).
+
+History:
+- adversary: reported as ADV-224 (Phase 110 diff-pass, TFL-932, 2026-10-06).
+- CTO (TFL-864, 2026-10-06): ACCEPTED -> DEF-594; fix assigned to frontend-dev TFL-945.
 

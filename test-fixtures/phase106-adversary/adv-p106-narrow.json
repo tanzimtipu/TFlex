@@ -1,0 +1,122 @@
+{
+  "mode": "narrow",
+  "seeded": true,
+  "userData": "C:\\Users\\tanzi\\AppData\\Local\\Temp\\paperclip-run-tfl-931-d0a093c7-af1-ZobL8T\\tflex-adv-p106-narrow-1791242128591-707206",
+  "narrow": {
+    "windowW": 640,
+    "rows": [
+      {
+        "name": "finance report 2026 final v3 (approved).",
+        "format": "PDF",
+        "nameW": 235,
+        "nameVisible": true,
+        "chipRight": 502,
+        "whenRight": 545,
+        "rowRight": 604,
+        "listRight": 605,
+        "overflows": false
+      },
+      {
+        "name": "report.pdf",
+        "format": "PDF",
+        "nameW": 56,
+        "nameVisible": true,
+        "chipRight": 502,
+        "whenRight": 545,
+        "rowRight": 604,
+        "listRight": 605,
+        "overflows": false
+      },
+      {
+        "name": "report.pdf",
+        "format": "PDF",
+        "nameW": 56,
+        "nameVisible": true,
+        "chipRight": 502,
+        "whenRight": 545,
+        "rowRight": 604,
+        "listRight": 605,
+        "overflows": false
+      },
+      {
+        "name": "scan-0001.docx",
+        "format": "DOCX",
+        "nameW": 85,
+        "nameVisible": true,
+        "chipRight": 502,
+        "whenRight": 545,
+        "rowRight": 604,
+        "listRight": 605,
+        "overflows": false
+      },
+      {
+        "name": "sheet.xlsx",
+        "format": "XLSX",
+        "nameW": 52,
+        "nameVisible": true,
+        "chipRight": 502,
+        "whenRight": 545,
+        "rowRight": 604,
+        "listRight": 605,
+        "overflows": false
+      },
+      {
+        "name": "noextension",
+        "format": "File",
+        "nameW": 67,
+        "nameVisible": true,
+        "chipRight": 502,
+        "whenRight": 545,
+        "rowRight": 604,
+        "listRight": 605,
+        "overflows": false
+      },
+      {
+        "name": "form.pdf",
+        "format": "PDF",
+        "nameW": 48,
+        "nameVisible": true,
+        "chipRight": 502,
+        "whenRight": 545,
+        "rowRight": 604,
+        "listRight": 605,
+        "overflows": false
+      },
+      {
+        "name": "文档.pdf",
+        "format": "PDF",
+        "nameW": 46,
+        "nameVisible": true,
+        "chipRight": 502,
+        "whenRight": 545,
+        "rowRight": 604,
+        "listRight": 605,
+        "overflows": false
+      },
+      {
+        "name": ".hiddenfile",
+        "format": "File",
+        "nameW": 58,
+        "nameVisible": true,
+        "chipRight": 502,
+        "whenRight": 545,
+        "rowRight": 604,
+        "listRight": 605,
+        "overflows": false
+      },
+      {
+        "name": "moved-away file.pdf",
+        "format": "PDF",
+        "nameW": 112,
+        "nameVisible": true,
+        "chipRight": 502,
+        "whenRight": 545,
+        "rowRight": 604,
+        "listRight": 605,
+        "overflows": false
+      }
+    ],
+    "docOverflowX": 0
+  },
+  "pageErrors": []
+}

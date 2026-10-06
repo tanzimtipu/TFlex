@@ -1,0 +1,308 @@
+{
+  "mode": "layout",
+  "seeded": false,
+  "userData": "C:\\Users\\tanzi\\AppData\\Local\\Temp\\paperclip-run-tfl-931-d0a093c7-af1-ZobL8T\\tflex-adv-p106-layout-1791241947505-268220",
+  "sizes": [
+    {
+      "innerWidth": 2170,
+      "innerHeight": 1355,
+      "docScrollW": 2170,
+      "bodyScrollW": 2170,
+      "horizontalOverflow": 0,
+      "inner": {
+        "l": 525,
+        "t": 88,
+        "r": 1645,
+        "b": 1355,
+        "w": 1120,
+        "h": 1267
+      },
+      "innerPaddingTop": "32px",
+      "bodyCols": "630.146px 393.854px",
+      "toggle": {
+        "l": 1577,
+        "t": 120,
+        "r": 1613,
+        "b": 156,
+        "w": 36,
+        "h": 36
+      },
+      "togglePos": "absolute",
+      "hero": {
+        "l": 557,
+        "t": 120,
+        "r": 1613,
+        "b": 288,
+        "w": 1056,
+        "h": 168
+      },
+      "hit": "toggle",
+      "sampleCards": 4,
+      "sampleCardWidths": [
+        394,
+        394,
+        394,
+        394
+      ],
+      "sampleGridOverflow": 0,
+      "recentsRight": 1187,
+      "exploreRight": 1613,
+      "innerRight": 1645,
+      "windowSet": {
+        "w": 1440,
+        "h": 900
+      }
+    },
+    {
+      "innerWidth": 1024,
+      "innerHeight": 768,
+      "docScrollW": 1024,
+      "bodyScrollW": 1024,
+      "horizontalOverflow": 0,
+      "inner": {
+        "l": 0,
+        "t": 88,
+        "r": 1009,
+        "b": 1056,
+        "w": 1009,
+        "h": 968
+      },
+      "innerPaddingTop": "32px",
+      "bodyCols": "561.635px 351.031px",
+      "toggle": {
+        "l": 941,
+        "t": 120,
+        "r": 977,
+        "b": 156,
+        "w": 36,
+        "h": 36
+      },
+      "togglePos": "absolute",
+      "hero": {
+        "l": 32,
+        "t": 120,
+        "r": 977,
+        "b": 288,
+        "w": 945,
+        "h": 168
+      },
+      "hit": "toggle",
+      "sampleCards": 4,
+      "sampleCardWidths": [
+        351,
+        351,
+        351,
+        351
+      ],
+      "sampleGridOverflow": 0,
+      "recentsRight": 594,
+      "exploreRight": 977,
+      "innerRight": 1009,
+      "windowSet": {
+        "w": 1024,
+        "h": 768
+      }
+    },
+    {
+      "innerWidth": 860,
+      "innerHeight": 900,
+      "docScrollW": 860,
+      "bodyScrollW": 860,
+      "horizontalOverflow": 0,
+      "inner": {
+        "l": 0,
+        "t": 88,
+        "r": 845,
+        "b": 1277,
+        "w": 845,
+        "h": 1189
+      },
+      "innerPaddingTop": "20px",
+      "bodyCols": "804.667px",
+      "toggle": {
+        "l": 789,
+        "t": 108,
+        "r": 825,
+        "b": 144,
+        "w": 36,
+        "h": 36
+      },
+      "togglePos": "absolute",
+      "hero": {
+        "l": 20,
+        "t": 108,
+        "r": 825,
+        "b": 272,
+        "w": 805,
+        "h": 164
+      },
+      "hit": "toggle",
+      "sampleCards": 4,
+      "sampleCardWidths": [
+        260,
+        260,
+        260,
+        260
+      ],
+      "sampleGridOverflow": 0,
+      "recentsRight": 825,
+      "exploreRight": 825,
+      "innerRight": 845,
+      "windowSet": {
+        "w": 860,
+        "h": 900
+      }
+    },
+    {
+      "innerWidth": 640,
+      "innerHeight": 481,
+      "docScrollW": 640,
+      "bodyScrollW": 640,
+      "horizontalOverflow": 0,
+      "inner": {
+        "l": 0,
+        "t": 88,
+        "r": 625,
+        "b": 1299,
+        "w": 625,
+        "h": 1211
+      },
+      "innerPaddingTop": "20px",
+      "bodyCols": "584.667px",
+      "toggle": {
+        "l": 569,
+        "t": 108,
+        "r": 605,
+        "b": 144,
+        "w": 36,
+        "h": 36
+      },
+      "togglePos": "absolute",
+      "hero": {
+        "l": 20,
+        "t": 108,
+        "r": 605,
+        "b": 294,
+        "w": 585,
+        "h": 186
+      },
+      "hit": "toggle",
+      "sampleCards": 4,
+      "sampleCardWidths": [
+        286,
+        286,
+        286,
+        286
+      ],
+      "sampleGridOverflow": 0,
+      "recentsRight": 605,
+      "exploreRight": 605,
+      "innerRight": 625,
+      "windowSet": {
+        "w": 640,
+        "h": 480
+      }
+    },
+    {
+      "innerWidth": 640,
+      "innerHeight": 900,
+      "docScrollW": 640,
+      "bodyScrollW": 640,
+      "horizontalOverflow": 0,
+      "inner": {
+        "l": 0,
+        "t": 88,
+        "r": 625,
+        "b": 1299,
+        "w": 625,
+        "h": 1211
+      },
+      "innerPaddingTop": "20px",
+      "bodyCols": "584.667px",
+      "toggle": {
+        "l": 569,
+        "t": 108,
+        "r": 605,
+        "b": 144,
+        "w": 36,
+        "h": 36
+      },
+      "togglePos": "absolute",
+      "hero": {
+        "l": 20,
+        "t": 108,
+        "r": 605,
+        "b": 294,
+        "w": 585,
+        "h": 186
+      },
+      "hit": "toggle",
+      "sampleCards": 4,
+      "sampleCardWidths": [
+        286,
+        286,
+        286,
+        286
+      ],
+      "sampleGridOverflow": 0,
+      "recentsRight": 605,
+      "exploreRight": 605,
+      "innerRight": 625,
+      "windowSet": {
+        "w": 480,
+        "h": 900
+      }
+    },
+    {
+      "innerWidth": 2560,
+      "innerHeight": 1440,
+      "docScrollW": 2560,
+      "bodyScrollW": 2560,
+      "horizontalOverflow": 0,
+      "inner": {
+        "l": 720,
+        "t": 88,
+        "r": 1840,
+        "b": 1440,
+        "w": 1120,
+        "h": 1352
+      },
+      "innerPaddingTop": "32px",
+      "bodyCols": "630.146px 393.854px",
+      "toggle": {
+        "l": 1772,
+        "t": 120,
+        "r": 1808,
+        "b": 156,
+        "w": 36,
+        "h": 36
+      },
+      "togglePos": "absolute",
+      "hero": {
+        "l": 752,
+        "t": 120,
+        "r": 1808,
+        "b": 288,
+        "w": 1056,
+        "h": 168
+      },
+      "hit": "toggle",
+      "sampleCards": 4,
+      "sampleCardWidths": [
+        394,
+        394,
+        394,
+        394
+      ],
+      "sampleGridOverflow": 0,
+      "recentsRight": 1382,
+      "exploreRight": 1808,
+      "innerRight": 1840,
+      "windowSet": {
+        "w": 2560,
+        "h": 1440
+      }
+    }
+  ],
+  "pageErrors": []
+}

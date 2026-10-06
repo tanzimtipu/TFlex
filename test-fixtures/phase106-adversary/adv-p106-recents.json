@@ -1,0 +1,213 @@
+{
+  "mode": "recents",
+  "seeded": true,
+  "userData": "C:\\Users\\tanzi\\AppData\\Local\\Temp\\paperclip-run-tfl-931-d0a093c7-af1-ZobL8T\\tflex-adv-p106-recents-1791241919574-709120",
+  "recents": {
+    "count": 10,
+    "rows": [
+      {
+        "name": "finance report 2026 final v3 (approved).pdf",
+        "dir": "project alpha",
+        "format": "PDF",
+        "formatKind": "pdf",
+        "when": "Today",
+        "aria": "Open finance report 2026 final v3 (approved).pdf, PDF, in project alpha. Full path: C:\\Users\\tänzi\\Doc üments\\project alpha\\finance report 2026 final v3 (approved).pdf",
+        "title": "Open C:\\Users\\tänzi\\Doc üments\\project alpha\\finance report 2026 final v3 (approved).pdf",
+        "removeAria": "Remove finance report 2026 final v3 (approved).pdf from Recents",
+        "right": 815,
+        "listRight": 815,
+        "overflowsRowBox": false,
+        "openCols": "18px 432.646px 39.7083px 31.125px"
+      },
+      {
+        "name": "report.pdf",
+        "dir": "Archive / 2024",
+        "format": "PDF",
+        "formatKind": "pdf",
+        "when": "Today",
+        "aria": "Open report.pdf, PDF, in Archive / 2024. Full path: D:\\Archive\\2024\\report.pdf",
+        "title": "Open D:\\Archive\\2024\\report.pdf",
+        "removeAria": "Remove report.pdf from Recents",
+        "right": 815,
+        "listRight": 815,
+        "overflowsRowBox": false,
+        "openCols": "18px 432.646px 39.7083px 31.125px"
+      },
+      {
+        "name": "report.pdf",
+        "dir": "E: / Backup",
+        "format": "PDF",
+        "formatKind": "pdf",
+        "when": "Today",
+        "aria": "Open report.pdf, PDF, in E: / Backup. Full path: E:\\Backup\\report.pdf",
+        "title": "Open E:\\Backup\\report.pdf",
+        "removeAria": "Remove report.pdf from Recents",
+        "right": 815,
+        "listRight": 815,
+        "overflowsRowBox": false,
+        "openCols": "18px 432.646px 39.7083px 31.125px"
+      },
+      {
+        "name": "scan-0001.docx",
+        "dir": "Scans",
+        "format": "DOCX",
+        "formatKind": "document",
+        "when": "Today",
+        "aria": "Open scan-0001.docx, DOCX, in Scans. Full path: C:\\Scans\\scan-0001.docx",
+        "title": "Open C:\\Scans\\scan-0001.docx",
+        "removeAria": "Remove scan-0001.docx from Recents",
+        "right": 815,
+        "listRight": 815,
+        "overflowsRowBox": false,
+        "openCols": "18px 421.5px 50.8542px 31.125px"
+      },
+      {
+        "name": "sheet.xlsx",
+        "dir": "Data",
+        "format": "XLSX",
+        "formatKind": "spreadsheet",
+        "when": "Today",
+        "aria": "Open sheet.xlsx, XLSX, in Data. Full path: C:\\Data\\sheet.xlsx",
+        "title": "Open C:\\Data\\sheet.xlsx",
+        "removeAria": "Remove sheet.xlsx from Recents",
+        "right": 815,
+        "listRight": 815,
+        "overflowsRowBox": false,
+        "openCols": "18px 426.802px 45.5521px 31.125px"
+      },
+      {
+        "name": "noextension",
+        "dir": "Data",
+        "format": "File",
+        "formatKind": "other",
+        "when": "Today",
+        "aria": "Open noextension, File, in Data. Full path: C:\\Data\\noextension",
+        "title": "Open C:\\Data\\noextension",
+        "removeAria": "Remove noextension from Recents",
+        "right": 815,
+        "listRight": 815,
+        "overflowsRowBox": false,
+        "openCols": "18px 435.385px 36.9688px 31.125px"
+      },
+      {
+        "name": "form.pdf",
+        "dir": "samples",
+        "format": "PDF",
+        "formatKind": "pdf",
+        "when": "Today",
+        "aria": "Open form.pdf, PDF, in samples. Full path: samples/form.pdf",
+        "title": "Open samples/form.pdf",
+        "removeAria": "Remove form.pdf from Recents",
+        "right": 815,
+        "listRight": 815,
+        "overflowsRowBox": false,
+        "openCols": "18px 432.646px 39.7083px 31.125px"
+      },
+      {
+        "name": "文档.pdf",
+        "dir": "路径",
+        "format": "PDF",
+        "formatKind": "pdf",
+        "when": "Today",
+        "aria": "Open 文档.pdf, PDF, in 路径. Full path: C:\\路径\\文档.pdf",
+        "title": "Open C:\\路径\\文档.pdf",
+        "removeAria": "Remove 文档.pdf from Recents",
+        "right": 815,
+        "listRight": 815,
+        "overflowsRowBox": false,
+        "openCols": "18px 432.646px 39.7083px 31.125px"
+      },
+      {
+        "name": ".hiddenfile",
+        "dir": "tänzi",
+        "format": "File",
+        "formatKind": "other",
+        "when": "Today",
+        "aria": "Open .hiddenfile, File, in tänzi. Full path: C:\\Users\\tänzi\\.hiddenfile",
+        "title": "Open C:\\Users\\tänzi\\.hiddenfile",
+        "removeAria": "Remove .hiddenfile from Recents",
+        "right": 815,
+        "listRight": 815,
+        "overflowsRowBox": false,
+        "openCols": "18px 435.385px 36.9688px 31.125px"
+      },
+      {
+        "name": "moved-away file.pdf",
+        "dir": "gone",
+        "format": "PDF",
+        "formatKind": "pdf",
+        "when": "Today",
+        "aria": "Open moved-away file.pdf, PDF, in gone. Full path: C:\\gone\\moved-away file.pdf",
+        "title": "Open C:\\gone\\moved-away file.pdf",
+        "removeAria": "Remove moved-away file.pdf from Recents",
+        "right": 815,
+        "listRight": 815,
+        "overflowsRowBox": false,
+        "openCols": "18px 432.646px 39.7083px 31.125px"
+      }
+    ],
+    "listOverflowX": "hidden",
+    "listScrollClipped": false,
+    "listWidth": 630,
+    "samples": [
+      {
+        "name": "form.pdf",
+        "sub": "Try form fields · PDF",
+        "task": "forms",
+        "fmt": "pdf"
+      },
+      {
+        "name": "long.pdf",
+        "sub": "Read and navigate · PDF",
+        "task": "reading",
+        "fmt": "pdf"
+      },
+      {
+        "name": "report.pdf",
+        "sub": "Read and navigate · PDF",
+        "task": "reading",
+        "fmt": "pdf"
+      },
+      {
+        "name": "scanned.pdf",
+        "sub": "Explore recognition · PDF",
+        "task": "recognition",
+        "fmt": "pdf"
+      }
+    ],
+    "pageOverflowX": 0
+  },
+  "themes": [
+    {
+      "theme": "light",
+      "chipColor": "rgb(85, 96, 112)",
+      "chipBg": "rgb(255, 255, 255)",
+      "chipFontSize": "12px",
+      "chipContrast": 6.38,
+      "motifOpacity": 0.22,
+      "welcomeBg": "rgb(228, 233, 239)",
+      "rowBg": "rgba(0, 0, 0, 0)"
+    },
+    {
+      "theme": "dark",
+      "chipColor": "rgb(130, 138, 151)",
+      "chipBg": "rgb(19, 23, 29)",
+      "chipFontSize": "12px",
+      "chipContrast": 5.16,
+      "motifOpacity": 0.2,
+      "welcomeBg": "rgb(8, 9, 11)",
+      "rowBg": "rgba(0, 0, 0, 0)"
+    },
+    {
+      "theme": "frosted",
+      "chipColor": "rgb(31, 42, 74)",
+      "chipBg": "rgba(255, 255, 255, 0.94)",
+      "chipFontSize": "12px",
+      "chipContrast": 14.11,
+      "motifOpacity": 0.2,
+      "welcomeBg": "rgba(255, 255, 255, 0.42)",
+      "rowBg": "rgba(0, 0, 0, 0)"
+    }
+  ],
+  "pageErrors": []
+}

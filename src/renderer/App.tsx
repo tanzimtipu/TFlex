@@ -10987,6 +10987,19 @@ pushToast(
                   return updated;
                 })
               }
+              // Phase 106 (chunk B) — the Home decorative-motion pause reuses
+              // the existing Animations setting (no new persisted field).
+              onSetAnimationsEnabled={(next): void => {
+                setSettings((prev) => {
+                  if (prev === null) return prev;
+                  const updated = preferencesReducer(prev, {
+                    type: "set-animations-enabled",
+                    value: next,
+                  });
+                  trackAndSave(updated);
+                  return updated;
+                });
+              }}
               samplesResolver={samplesResolver}
             />
           }

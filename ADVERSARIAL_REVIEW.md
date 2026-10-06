@@ -10721,3 +10721,299 @@ steals the page.
   the only sibling bleed found is the frosted scroller (ADV-221).
 - Known FOREIGN failures (`phase32_multi_mode` header relocation, `toolsRegistry`
   dock-verb-set, maximized `setSize` oracle, 64px rail oracle): not re-reported.
+
+## Phase 106 Home Screen (Orbit Desk) diff-pass (TFL-931)
+
+Session label: `diff-pass`. Scope: the uncommitted Phase 106 Home change set -
+`Welcome.tsx`, `components/home/*` (`HomeRecentRow`, `HomeSampleCard`, `OrbitMotif`),
+the pure helpers `utils/recentContext.ts`, `utils/sourceFormat.ts`,
+`utils/sampleTask.ts`, `utils/orbitMotion.ts`, `hooks/useOrbitMotion.ts`, the
+`orbit-desk*` CSS in `styles.css`, the `--motion-duration-orbit` /
+`--motion-orbit-swing` tokens, and the `onSetAnimationsEnabled` wiring in `App.tsx`.
+Product code, tests, REQUIREMENTS.md, DEFECTS.md and AGENTS.md were read but NOT
+modified. One ADV filed: **ADV-223**.
+
+Exact commands (build mutex `.paperclip-build.lock` acquired, then released):
+
+- `npm.cmd run build:renderer` -> 878ms, rebuilt `dist/renderer` (the checked-in
+  `dist` did not contain `orbit-desk`; a real-launch probe is impossible without this).
+- `node test-fixtures/phase106-adversary/adv-phase106-probe.cjs recents` (seeded
+  hostile recents: duplicate basenames, long unicode name with spaces, `.docx`,
+  `.xlsx`, extensionless, dotfile, CJK path, a `samples/` recent, a missing file).
+- `node test-fixtures/phase106-adversary/adv-phase106-probe.cjs narrow` (640x480),
+  `layout` (1440x900 / 1024x768 / 860x900 / 640x480 / 480x900 / 2560x1440),
+  `silence` (click every actionable Home control with a state diff), `session`
+  (open sample -> new empty tab -> back), `persist` (pause -> restart), `hammer`
+  (15 rapid motion-toggle and 15 rapid edit-toggle clicks), `leak` (25 Home
+  mount/unmount cycles).
+
+## ADV-223: Home sample cards show a generic per-task glyph, not a real first page or a file-type fallback - `long.pdf` and `report.pdf` render identically (Phase 106 chunk C)
+
+- Session: diff-pass
+- Suggested severity: MEDIUM
+
+What I did:
+1. Launch the app with a seeded profile (or the real profile) and open Home; the
+   four bundled sample cards render under "Explore Jovrel".
+2. Read each card's thumbnail markup: `HomeSampleCard.tsx:34-36` renders
+   `<span class="sample-thumb" data-sample-format="pdf"><Icon name={task.icon}/></span>`
+   - a fixed `--placeholder-from/to` gradient box with one Quiet Precision glyph,
+   never a rendered page and never an image/canvas.
+3. Compare the four cards: `form.pdf` -> `forms` glyph / "Try form fields - PDF";
+   `long.pdf` -> `find` glyph / "Read and navigate - PDF"; `report.pdf` -> **the same
+   `find` glyph / "Read and navigate - PDF"**; `scanned.pdf` -> `recognizeText` /
+   "Explore recognition - PDF". `long.pdf` and `report.pdf` are pixel-identical.
+
+Expected: Phase 106 success criterion 3 and REQUIREMENTS/`docs/phase-specs/phase-106.md`
+lines 88-92 ("real task framing and a real rendered first page or an honest
+per-file-type fallback") and the committed Home design spec
+(`Visual overhaul/Home Screen/Specifications/home-screen-design-spec.md:17`):
+"previews must be real rendered first pages or an honest fallback based on file
+type; do not use generic sparkle tiles", and `live-app-refinements.md:7`:
+"never ... identical sparkle rectangles, keeping scan/form/long/report distinctions
+honest". The operator's stated gap was exactly that every sample tile looked the
+same; two of the four still do.
+
+Actual: no sample ever renders a first page; the fallback is a per-TASK glyph on an
+identical gradient, not per-file-type. `long.pdf` and `report.pdf` are fully
+indistinguishable (same glyph, same label, same subtitle, same gradient), so the
+"long vs report" distinction the design requires is absent, and the only sample
+"preview" is the same placeholder rectangle the operator rejected.
+
+Screenshot: `test-fixtures/phase106-adversary/adv-p106-recents-light.png`
+(and `-dark.png`); probe dump `test-fixtures/phase106-adversary/adv-p106-recents.json`
+(see `.samples`). Probe script:
+`test-fixtures/phase106-adversary/adv-phase106-probe.cjs`.
+
+Suggested fix (for the developer, not applied by me): render the real first page of
+each bundled sample into `.sample-thumb` (it is already decoded through the existing
+`readSample` IPC when opened; a cached first-page raster per sample is enough), or,
+if previews are deliberately deferred, make the fallback file-type-based and give
+`long` and `report` distinct, honest illustrations/labels so no two cards are
+identical.
+
+Disposition: ACCEPTED -> DEF-592 (CTO, TFL-857, 2026-10-06). Confirmed against Phase 106 success criterion 3 and the committed Home design spec: the sample "previews" are a per-TASK glyph on an identical gradient, and `long.pdf` / `report.pdf` are indistinguishable, so the required per-sample (or per-file-type) honest fallback is absent. Owner frontend-dev (TFL-857 chunk C-fix).
+
+### Phase 106 Home diff-pass - design critique of the changed surface (skill: design-critique)
+
+User: someone opening the app who wants to get straight into a document. Job on this
+surface: resume a recent, open a file, or pick a real sample - not browse a landing
+page. Success: the fastest path to a document is obvious, the list is truthful about
+what each file is, and nothing on the page lies about history or status.
+
+- Must-fix - **Clarity/affordance (samples):** the sample "previews" are empty grey
+  placeholders with a tiny glyph; two are identical, so the section reads as broken
+  images rather than a choice of tasks (ADV-223). **Try:** the ADV-223 fix.
+- Should-fix - **Accessibility/affordance (motion pause):** the top-right pause is an
+  unlabelled icon-only toggle that changes the GLOBAL Animations setting and persists
+  it; a user who only wants to still the decorative arcs silently disables every app
+  animation, and a motion-sensitive user cannot tell from the control what it does.
+  The reuse is required by the spec, so this is a labelling/placement fix, not a new
+  field. **Try:** make the tooltip/aria label state the app-wide effect ("Pause all
+  animations") or move it next to the motif it controls.
+- Should-fix - **States (missing recents):** a moved/deleted recent is shown exactly
+  like a live one; the user only learns it is gone from an error toast on click, after
+  which the entry is silently pruned (`App.tsx:2204-2213`). **Try:** annotate a recent
+  that fails an existence check (faint "Missing" chip) and keep it until the user
+  removes it, rather than pruning on first failed open.
+- Nice-to-fix - **Copy:** the recents empty help "Open a PDF and it will appear here."
+  is narrower than the surface, which now deliberately lists DOCX/XLSX/image sources.
+  **Try:** "Open a document and it will appear here."
+- Strengths to keep: source-format truth is exact and honest (DOCX/XLSX/File/PDF read
+  from the real extension, never a blanket "PDF"); duplicate basenames are genuinely
+  disambiguated ("Archive / 2024" vs "E: / Backup"); the full path lives only in the
+  accessible description/title; long and unicode names ellipsize with no overflow at
+  640x480; the empty, loading and no-samples states are designed; recents/removal and
+  open-session preservation work; the pause reuses `animationsEnabled` with no new
+  persisted field and survives a restart; keyboard focus reaches every control.
+
+### Areas probed with no finding (Phase 106 diff-pass)
+
+- Source-format truth: 9 seeded formats inspected - `.docx`->DOCX/document,
+  `.xlsx`->XLSX/spreadsheet, extensionless and `.hiddenfile`->File/other, PDF and
+  `samples/`->PDF, CJK path->PDF. Every chip label and `data-source-format` was
+  correct; no blanket "PDF" (`adv-p106-recents.json`).
+- Duplicate disambiguation: two `report.pdf` rows widened to "Archive / 2024" and
+  "E: / Backup" with distinct accessible descriptions. No collision.
+- Overflow: `.recent-list` has no horizontal overflow (row right 815 = list right
+  815 at 1440; row right 604 vs list right 605 at 640); `.doc-name` ellipsizes; the
+  long unicode name did not push the chip/time out; `documentElement` overflow-x = 0
+  at 640/860/1024/1440/2560.
+- Constrained/wide layout: `.orbit-desk-inner` stays max 1120px centred, padding
+  32px at wide and 20px at the <=860 breakpoint; `.welcome-body` is two columns
+  above 860 and one column at 860 and below; the motion toggle stays `position:
+  absolute`, top/right pinned, and is the hit-test target at its own centre at every
+  size (640 is the enforced minimum window width; a 480 request clamps to 640).
+- Motion policy: reduced-motion, document hidden, minimize and blur all gate the
+  drift, and the paused state survives a full app restart with `data-animations=off`
+  and the control reading "Resume motion" - no new settings field, no drift while
+  paused (qa's spec covers the same states; my `persist` run confirms the restart).
+- Handler/silence sweep: every actionable Home element produced an effect - motion
+  toggle flips the setting, edit pen arms/disarms, a recent open fires the existing
+  handler (an error toast for the missing file, which also prunes it), and the remove
+  minus drops the row. No no-op control found.
+- Session preservation: open a sample (1 tab, no Home) -> new empty tab (2 tabs, Home
+  shown) -> click back to the sample tab (canvas present, 2 tabs). No session loss,
+  scroll/undo state untouched by the Home visit.
+- Sample overwrite class: samples open with `onDiskPath: null` and
+  `saveInPlaceEnabled` is false for them (`App.tsx:9955-9956`), so in-place Save is
+  disabled and Ctrl+S cannot rewrite a bundled asset. No overwrite found.
+- Rapid stress: 15 motion toggles and 15 edit toggles in a row left consistent state
+  (motion off / pressed true / animations off; edit pressed true, 2 minus badges,
+  plus present) with zero page errors. 25 Home mount/unmount cycles showed no page
+  error and a flat `performance.memory` reading (not a reliable heap oracle, so no
+  leak is claimed either way).
+- Theme parity: chip contrast 6.38 (light), 5.16 (dark), 14.11 (frosted); motif
+  opacity 0.22/0.20/0.20, inside the required 0.18-0.28 band in all three themes.
+- Overlap with Phase 105: Home renders no chrome command, tab control or session
+  model; it consumes the existing `onOpenFile`/`onOpenRecent`/`onSampleClick`/
+  `onMergeClick`/`onCreateFromImages` handlers and the existing `homeTools` row
+  unchanged.
+
+## ADV-224: The Phase 110 supporting-text token drops light-theme Home hero text below the 4.5:1 floor - `.welcome-sub` measures 4.07:1 where the retired `--fg-muted` cleared 5.22:1
+
+- Session: diff-pass
+- Suggested severity: MEDIUM
+
+What I did: Launched the shipped app through the canonical helper
+(`test-fixtures/phase110-adversary/probe.cjs`, which requires `e2e/lib/launch.cjs`),
+set `<html data-theme="light">`, and read the computed colour of `.welcome-sub`
+together with the nearest OPAQUE ancestor background (walked with `getComputedStyle`):
+`.welcome-sub` computes `rgb(102,112,133)` = `#667085` (the new
+`--tf-text-supporting`, `src/renderer/styles.css:46`), and its opaque surface is
+`.welcome.orbit-desk` = `rgb(228,233,239)` = `--bg-sunken #e4e9ef`
+(`src/renderer/styles.css:541`, rule `.welcome.orbit-desk` `background:
+var(--bg-sunken)`). Recomputed the WCAG 2.1 relative-luminance ratio with the
+project's own formula (`test/unit/renderer/phase38LegibilityContrast.test.ts`):
+`#667085` on `#e4e9ef` = 4.07:1. The selector is `.welcome-sub`
+(`src/renderer/styles.css:3276-3278`, `color: var(--tf-text-supporting)`), the same
+home surface also carries `.welcome-section h3 .count` (supporting ink, 12px).
+Sanity anchors: the same probe measured dark `.welcome-sub` `#929BAC` on `#08090b`
+= 7.12:1 (fine) and the frosted composite (`.welcome.orbit-desk` white 0.42 film
+plus `.welcome-hero` white 0.62 film over `#eef1f5` -> approx `#fbfcfd`) = 4.8:1
+(fine). The full probe output is `test-fixtures/phase110-adversary/probe-output.json`.
+
+Expected: Supporting/helper text clears the project's documented 4.5:1 floor on its
+ACTUAL opaque surface in every theme. `--fg-muted` (the token these selectors used
+before Phase 110) was deliberately darkened in Phase 38 to clear that floor: light
+`#556070` on the same `#e4e9ef` hero = 5.22:1. The Phase 110 typography spec claims
+`#667085` "raises contrast on both white and `#F5F6F8` surfaces"
+(`Visual overhaul/Typography/Specifications/typography-design-spec.md:31`) and its
+only measured ratios are `light/helper-on-surface 4.97` / `light/helper-on-canvas
+4.6` (`.../supporting-text-contrast.json`) - none of which is the Home `#e4e9ef`
+sunken surface.
+
+Actual: On the light Home hero the supporting ink is now 4.07:1, below 4.5:1 and
+below the phase's own >=4.6 target - a legibility REGRESSION from the token swap
+(5.22 -> 4.07). It is not caught by any test: the Phase 38 contrast sweep
+(`test/unit/renderer/phase38LegibilityContrast.test.ts`) only scores
+`--fg-strong/--fg/--fg-muted` on `--bg-elevated/--bg-raised/--bg-toolbar/--bg-rail/
+--panel-bg`; it never scores the NEW `--tf-text-supporting` token, and `--bg-sunken`
+is not one of its surfaces. The Phase 110 unit specs pin the colour VALUE
+(`#667085`) and the selector list but never the contrast, and the Phase 110 e2e only
+checks light/dark colour equality, not frosted. This is the attack-class-3 +
+attack-class-8 hit: the semantic supporting colour is misused on a surface the
+design never validated.
+
+Screenshot: screenshots/adv-p110-home-light.png
+
+Disposition: ACCEPTED -> DEF-594 (CTO TFL-864, 2026-10-06). A real Phase 110 legibility regression on the light Home hero: `.welcome-sub` is 4.07:1 on `.welcome.orbit-desk` `--bg-sunken #e4e9ef`, below the 4.5 floor and below the retired `--fg-muted` 5.22:1. Fix assigned to frontend-dev TFL-945 (Home-hero-scoped ink; global `--tf-text-supporting` unchanged); the phase38 contrast sweep must also score `--tf-text-supporting` on `--bg-sunken`. qa closes DEF-594 at the FIX-READY retest.
+
+## ADV-225: The Phase 105 application menu is completely unstyled above 900px - every `.app-menu*` rule lives only inside `@media (max-width: 900px)`, so at the default 1440px window the popover renders as a 925px in-flow block overlapping the title row and the document rail
+
+- Session: diff-pass
+- Suggested severity: HIGH
+
+What I did: launched the shipped app through the canonical helper
+(`e2e/lib/launch.cjs`), pinned reduced motion, set the window to 1280x800
+(measured `innerWidth` 1280, `devicePixelRatio` 1), opened a document, opened
+the application menu, and read computed styles plus rects (probe
+`p105-adv-probe3.cjs`). Results: `.app-menu` computed `position: static`;
+`[data-app-menu-popover]` computed `position: static` with `top: auto;
+right: auto; z-index: auto`; the popover rect is left 412.6, top -189.3, width
+924.8, height 461.6; the `.app-menu` wrapper rect is left 412.6, top -225.3,
+width 924.8. Root cause: ALL `.app-menu*` rules are declared only inside
+`@media (max-width: 900px)` (`src/renderer/styles.css:18135` opens the band;
+`.app-menu` 18156, `.app-menu-popover` 18175-18188; band closes 18202). Above
+900px there is no rule, so `.app-menu-popover` falls back to `position: static`
+with no width/height/background/border/box-shadow/z-index/overflow, and
+`.app-menu` is a plain block. Because `.header-actions` is `align-items: center`
+in the 48px title row, the 461.6px block is vertically centred on the title row
+(top -225) and stretches to 924.8px wide. Confirmed in the built bundle
+(`dist/renderer/assets/index-423TE2bp.css`): the only `.app-menu` rule is
+emitted inside `@media (width<=900px){...}`. The default window geometry is
+1440x900 (`src/main/services/settings.ts:290`), so the native launch width is
+well above 900.
+
+Expected: the new application menu popover is anchored under its
+`[data-app-menu]` trigger, opaque and bounded, at every supported width (CTO
+rulings 4 and 6; the phase geometry is a fixed 48px row, not width-conditional).
+
+Actual: at 1280 and 1440 the application-menu popover is an unstyled
+924.8x461.6 in-flow block overlapping the title bar and the document rail, with
+the trigger pulled up to top -225 (screenshot
+`screenshots/adv-225-appmenu-above900.png`). The new application menu - a core
+chunk-C control - is effectively unusable at any width > 900px; it only renders
+correctly at <=900px. Why the phase e2e missed it: test 1 clicks the (still
+present, if mispositioned) `[data-menu-action]` rows, and test 5's
+`.titlebar-drag` assertion (`e2e/phase105_topbar_rail.spec.cjs:682-693`) passes
+because `-webkit-app-region` is INHERITED - the probe measured
+`.titlebar-drag` `getPropertyValue('-webkit-app-region')` = `drag` (inherited
+from the parent `.app-header`) even though the element has no rule and is
+0-width. So the drag-region half of the change is fine; the popover misrender is
+the defect.
+
+Screenshot: screenshots/adv-225-appmenu-above900.png
+
+Disposition: ACCEPTED - HIGH; fix assigned to frontend-dev (TFL-944 chunk F2); qa to file as DEF and close at the FIX-READY retest
+
+## ADV-226: The All-tabs switcher popover is painted beneath the Inspector - its stacking context is capped by `.tab-list-all { z-index: 3 }`, so the switcher's right side (dirty dot, duplicate-folder context) is occluded and unclickable
+
+- Session: diff-pass
+- Suggested severity: MEDIUM
+
+What I did: launched the app (reduced motion pinned), set 1280x800, opened 12
+documents so the rail overflows and the All-tabs control sits at the rail's
+right end, then opened `[data-all-tabs]` and sampled `document.elementFromPoint`
+across the settled popover rect. Results: `.inspector` is at left 1016, right
+1280, width 264, `z-index: 30`, `position: absolute`; `[data-all-tabs-popover]`
+is at left 860, right 1180, top 85, bottom 445, width 320, `position: fixed`,
+`z-index: 80`; `.tab-list-all` is `position: relative; z-index: 3`. At the
+popover's left edge (x 880) the topmost element is the row's own
+`.all-tabs-name`; at x 1020 and x 1160 - inside the Inspector's rect - the
+topmost element is the Inspector (`glass-sidebar-header inspector-header`,
+`glass-sidebar-body inspector-body`, `inspector-row`). So the Inspector paints
+OVER the switcher's right ~164px. Root cause:
+`src/renderer/components/DocumentRail.tsx:951-1023` renders the switcher
+`TfMorph` as a child of `<li className="tab-list-all">`; that `<li>` has
+`position: relative; z-index: 3` (`src/renderer/styles.css:9112-9124`), which
+establishes a stacking context, so the popover's `z-index: 80`
+(`styles.css:9157`) never competes at the root. `.inspector` is a direct child
+of `.app-main` (`position: relative`, no z-index, `styles.css:1587`), so its
+`z-index: 30` wins at root. Placement
+(`DocumentRail.tsx:492`): `left = max(8, min(rect.right-320, innerWidth-328))`;
+with the All-tabs control at the rail's right end the 320px popover's right
+edge lands ~16px inside the window, overlapping the Inspector's trailing 264px.
+
+Expected: the switcher is "one complete, anchored, opaque, collision-aware
+switcher ... full filenames, the accurate total count, actual dirty state and
+duplicate-name context" (CTO ruling 6). A `position: fixed` popover should sit
+above the docked workspace panels.
+
+Actual: with the Inspector open (which is the normal state whenever a document
+is active - `inspectorOpen = tabs.activeId !== null && !activeIsEmpty`,
+`src/renderer/App.tsx:9561`), the switcher popover paints UNDER the Inspector
+(screenshot `screenshots/adv-226-switcher-over-inspector.png`): the right ~164px
+of each row is covered - where `.all-tabs-dot` (the dirty indicator) and
+`.all-tabs-context` (the duplicate-folder disambiguator) render - and a click
+there hits the Inspector instead of the row. The filenames stay readable because
+`.all-tabs-name` is left-aligned. This is why the phase e2e missed it: test 3
+opens the switcher with only 4 tabs, so the All-tabs control sits mid-rail and
+the popover never reaches the Inspector; the many-tabs case (12/30, required by
+success criterion 8) does. Any root-level surface with z-index > 3 that overlaps
+the popover rect has the same effect (`.stage-rail` z-index 8, `.action-dock`
+z-index 7).
+
+Screenshot: screenshots/adv-226-switcher-over-inspector.png
+
+Disposition: ACCEPTED - MEDIUM; fix assigned to frontend-dev (TFL-944 chunk F2); qa to file as DEF and close at the FIX-READY retest

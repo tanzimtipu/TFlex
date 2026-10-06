@@ -1,13 +1,18 @@
 import type { ReactElement } from "react";
-import { File, Minus, Sparkles, X } from "lucide-react";
+import { File, Minus, Pause, Play, Sparkles } from "lucide-react";
 import { Icon } from "../icons/Icon";
 import type { QuietIconId } from "../icons/quietPrecision";
 import { EmptyState } from "./EmptyState";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import type { RecentFile, SampleDocument } from "../../shared/types";
-import { formatOpenedAt } from "../utils/recentPath";
+import { recentContextLabels } from "../utils/recentContext";
 import { toolById } from "../state/toolsRegistry";
+import { HomeRecentRow } from "./home/HomeRecentRow";
+import { HomeSampleCard } from "./home/HomeSampleCard";
+import { OrbitMotif } from "./home/OrbitMotif";
+import { useAnimationsEnabled } from "../hooks/useAnimations";
+import { useOrbitMotion } from "../hooks/useOrbitMotion";
 import {
   DEFAULT_HOME_TOOLS,
   HOME_FIXED_TOOL_ID,
@@ -93,6 +98,11 @@ interface WelcomeProps {
   /** Persist a new home-tool list (remove / add). */
   onSetHomeTools?: (ids: string[]) => void;
   samplesResolver: () => Promise<SampleDocument[]>;
+  /** Phase 106 (chunk B) — toggle the persisted Animations setting, the
+   *  existing settings path the decorative-motion pause reuses (no new
+   *  persisted field). When omitted the pause control is not rendered, so
+   *  legacy and minimal test mounts are unchanged. */
+  onSetAnimationsEnabled?: (next: boolean) => void;
 }
 
 export function Welcome(props: WelcomeProps): ReactElement {
@@ -109,7 +119,12 @@ export function Welcome(props: WelcomeProps): ReactElement {
     onRunHomeTool,
     onSetHomeTools,
     samplesResolver,
+    onSetAnimationsEnabled,
   } = props;
+  // Phase 106 (chunk B) — the decorative orbit's live on/off decision and the
+  // persisted Animations value that drives the pause control's state.
+  const orbitMotion = useOrbitMotion();
+  const animationsEnabled = useAnimationsEnabled();
   const [samples, setSamples] = useState<SampleDocument[] | null>(null);
   /** Phase 58 (chunk 4) — the home row's EDIT mode: the pen arms it, every
    *  removable tile grows a minus affordance and the plus opens the picker. */
@@ -235,6 +250,11 @@ export function Welcome(props: WelcomeProps): ReactElement {
 
   const recentCount = recentFiles.length;
   const sampleCount = samples?.length ?? 0;
+  // Phase 106 (chunk A) — a short folder context per row, widened only when a
+  // basename repeats so two same-named files stay distinguishable.
+  const contextLabels = recentContextLabels(
+    recentFiles.map((row) => ({ name: row.meta.name, dir: row.meta.dir })),
+  );
 
   // Phase 58 (chunk 4) — the fixed Open tile and each removable tile run the
   // host's registry-keyed handler. A legacy mount (no `onRunHomeTool`) keeps
@@ -248,18 +268,35 @@ export function Welcome(props: WelcomeProps): ReactElement {
     onRunHomeTool === undefined ? legacyRuns[id] : (): void => onRunHomeTool(id);
 
   return (
-    <div className="welcome">
-      <div className="welcome-hero">
-        <div className="welcome-brand">
-          <BrandMark size={24} className="welcome-brand-mark" />
-          <BrandWordmark className="welcome-brand-name" />
-        </div>
-        <h1 className="welcome-title">A modern PDF studio for Windows.</h1>
-        <p className="welcome-sub">
-          Open a document to begin, or pick one of the samples below to see Jovrel
-          in action. Search and navigation are keyboard-driven; everything you
-          need lives one click away.
-        </p>
+    <div className="welcome orbit-desk">
+      <div className="orbit-desk-inner">
+        <header className="welcome-hero orbit-desk-header">
+          <OrbitMotif active={orbitMotion} />
+          <div className="welcome-brand">
+            <BrandMark size={24} className="welcome-brand-mark" />
+            <BrandWordmark className="welcome-brand-name" />
+          </div>
+          {/* Phase 106 (chunk B) — the discoverable decorative-motion pause.
+              It toggles the EXISTING persisted Animations setting (no new
+              field); aria-pressed reflects the paused state. */}
+          {onSetAnimationsEnabled !== undefined && (
+            <button
+              type="button"
+              className="btn btn-ghost btn-icon orbit-desk-motion-toggle"
+              data-orbit-motion-toggle
+              aria-pressed={!animationsEnabled}
+              aria-label={animationsEnabled ? "Pause motion" : "Resume motion"}
+              title={animationsEnabled ? "Pause motion" : "Resume motion"}
+              onClick={(): void => onSetAnimationsEnabled(!animationsEnabled)}
+            >
+              <Icon icon={animationsEnabled ? Pause : Play} size="sm" />
+            </button>
+          )}
+          <h1 className="welcome-title">A clear space for your documents.</h1>
+          <p className="welcome-sub">
+            Open a file to begin, resume a recent document, or pick a sample
+            below to see Jovrel in action.
+          </p>
         {/* Phase 58 (chunk 4) — the editable home tool row. The first tile is
             the FIXED Open action (primary, never removable); the rest are the
             persisted `homeTools` ids. The pen arms EDIT mode: every removable
@@ -419,11 +456,11 @@ export function Welcome(props: WelcomeProps): ReactElement {
             Home row is full (max 14 tools)
           </p>
         )}
-      </div>
-      <div className="welcome-body">
-        <section className="welcome-section">
+        </header>
+        <div className="welcome-body orbit-desk-body">
+        <section className="welcome-section orbit-desk-recents" data-home-recents>
           <h3>
-            <span>Recent</span>
+            <span>Continue working</span>
             <span className="count">{recentCount}</span>
           </h3>
           {recentCount === 0 ? (
@@ -437,46 +474,22 @@ export function Welcome(props: WelcomeProps): ReactElement {
             </div>
           ) : (
             <div className="recent-list">
-              {recentFiles.map((row) => (
-                <div
+              {recentFiles.map((row, index) => (
+                <HomeRecentRow
                   key={row.entry.path}
-                  className="recent-row"
-                  role="group"
-                  title={row.entry.path}
-                >
-                  <button
-                    type="button"
-                    className="btn btn-ghost recent-row-open"
-                    onClick={(): void => onOpenRecent(row.entry)}
-                    title={`Open ${row.entry.path}`}
-                  >
-                    <span className="doc-icon" aria-hidden>
-                      <Icon icon={File} size="sm" />
-                    </span>
-                    <span className="recent-row-text">
-                      <div className="doc-name">{row.meta.name}</div>
-                      <div className="doc-path">{row.meta.dir || "—"}</div>
-                    </span>
-                    <span className="doc-when">{formatOpenedAt(row.entry.openedAt)}</span>
-                    <span className="doc-when">PDF</span>
-                  </button>
-                  <button
-                    type="button"
-                    className="btn btn-ghost btn-icon recent-row-remove"
-                    onClick={(): void => onRemoveRecent(row.entry)}
-                    aria-label={`Remove ${row.entry.name} from Recents`}
-                    title="Remove from Recents"
-                  >
-                    <Icon icon={X} size="sm" />
-                  </button>
-                </div>
+                  entry={row.entry}
+                  meta={row.meta}
+                  contextLabel={contextLabels[index] ?? ""}
+                  onOpen={onOpenRecent}
+                  onRemove={onRemoveRecent}
+                />
               ))}
             </div>
           )}
         </section>
-        <section className="welcome-section">
+        <section className="welcome-section orbit-desk-explore" data-home-explore>
           <h3>
-            <span>Sample documents</span>
+            <span>Explore Jovrel</span>
             <span className="count">{sampleCount}</span>
           </h3>
           {samples === null ? (
@@ -498,22 +511,16 @@ export function Welcome(props: WelcomeProps): ReactElement {
           ) : (
             <div className="samples-grid">
               {samples.map((sample) => (
-                <button
+                <HomeSampleCard
                   key={sample.path}
-                  type="button"
-                  className="btn btn-ghost sample-card"
-                  onClick={(): void => onSampleClick(sample)}
-                >
-                  <div className="sample-thumb">
-                    <Icon name="openSample" size="lg" />
-                  </div>
-                  <div className="sample-name">{sample.name}</div>
-                  <div className="sample-sub">Click to open · PDF</div>
-                </button>
+                  sample={sample}
+                  onOpen={onSampleClick}
+                />
               ))}
             </div>
           )}
         </section>
+        </div>
       </div>
       <span hidden>
         <Icon name="createFromImages" size="sm" />

@@ -27,6 +27,10 @@ export const MOTION_DURATION = {
   sheen: 7000,
   sheenSlow: 9000,
   shimmer: 1400,
+  /** Phase 106 — the Home (Orbit Desk) decorative motif's ambient drift
+   *  (--motion-duration-orbit): a slow 18s sweep, decorative CSS-only like the
+   *  sheen/shimmer loops, mirrored so the CSS↔TS contract stays one source. */
+  orbit: 18000,
   /** Tooltip hover dwell (--motion-duration-dwell): the delay before the
    *  tooltip entrance runs. */
   dwell: 300,

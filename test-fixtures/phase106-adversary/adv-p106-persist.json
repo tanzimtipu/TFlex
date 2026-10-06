@@ -1,0 +1,19 @@
+{
+  "mode": "persist",
+  "seeded": true,
+  "userData": "C:\\Users\\tanzi\\AppData\\Local\\Temp\\paperclip-run-tfl-931-d0a093c7-af1-ZobL8T\\tflex-adv-p106-persist-1791242038623-67369",
+  "pausedState": {
+    "motion": "off",
+    "rootAnimations": "off",
+    "pressed": "true"
+  },
+  "afterRestart": {
+    "motion": "off",
+    "rootAnimations": "off",
+    "pressed": "true",
+    "label": "Resume motion"
+  },
+  "pageErrors2": [],
+  "pageErrors": [],
+  "path": "C:\\Users\\tanzi\\AppData\\Local\\Temp\\paperclip-run-tfl-931-d0a093c7-af1-ZobL8T\\tflex-adv-p106-persist-1791242038623-67369"
+}

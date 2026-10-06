@@ -1,0 +1,33 @@
+{
+  "mode": "leak",
+  "seeded": false,
+  "userData": "C:\\Users\\tanzi\\AppData\\Local\\Temp\\paperclip-run-tfl-931-d0a093c7-af1-ZobL8T\\tflex-adv-p106-leak-1791242137947-753085",
+  "heap": [
+    {
+      "cycle": 0,
+      "bytes": 11200000
+    },
+    {
+      "cycle": 5,
+      "bytes": 11200000
+    },
+    {
+      "cycle": 10,
+      "bytes": 11200000
+    },
+    {
+      "cycle": 15,
+      "bytes": 11200000
+    },
+    {
+      "cycle": 20,
+      "bytes": 11200000
+    },
+    {
+      "cycle": 25,
+      "bytes": 11200000
+    }
+  ],
+  "heapFinal": 11200000,
+  "pageErrors": []
+}

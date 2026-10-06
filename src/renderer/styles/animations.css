@@ -54,6 +54,11 @@
   --motion-duration-sheen: 7s;
   --motion-duration-sheen-slow: 9s;
   --motion-duration-shimmer: 1400ms;
+  /* Ambient orbit drift: the Home (Orbit Desk) decorative motif's slow sweep
+   * (Phase 106). A decorative loop like the sheen/shimmer bands, deliberately
+   * slower than every interaction band, and it collapses to the canonical
+   * no-motion value under prefers-reduced-motion / Animations OFF. */
+  --motion-duration-orbit: 18s;
   /* Tooltip hover dwell: the delay before the tooltip entrance runs. */
   --motion-duration-dwell: 300ms;
   /* Canonical no-motion duration (see the reduced-motion block below). */
@@ -83,6 +88,9 @@
   --motion-translate-micro: 2px;   /* Icon hover lift, floating bars. */
   /* Jiggle rotation amplitude for the edit-mode icon wobble (Phase 75). */
   --motion-jiggle-rotate: 1.75deg;
+  /* Orbit swing: the Home decorative motif's slow rotation range (Phase 106).
+   * The animation eases between -swing/2 and +swing/2 (a ~20 degree sweep). */
+  --motion-orbit-swing: 20deg;
   --motion-translate-small: 4px;   /* Thumbnail lift, tooltip drop. */
   --motion-translate-panel: 24px;  /* Docked rail slide travel. */
 
@@ -129,6 +137,7 @@
     --motion-duration-sheen: var(--motion-duration-reduced);
     --motion-duration-sheen-slow: var(--motion-duration-reduced);
     --motion-duration-shimmer: var(--motion-duration-reduced);
+    --motion-duration-orbit: var(--motion-duration-reduced);
     --motion-duration-dwell: var(--motion-duration-reduced);
   }
 
@@ -155,7 +164,11 @@
   .anim-menu-pop,
   .anim-jiggle,
   .anim-verb-in,
-  .anim-verb-out {
+  .anim-verb-out,
+  /* Phase 106 — the Home decorative orbit is JS-gated (useOrbitMotion) and
+   * token-collapsed, but this is the belt-and-suspenders CSS stop: under
+   * reduced motion the drift never runs and the motif holds its static pose. */
+  .orbit-desk-orbit {
     animation: none !important;
     transform: none !important;
     translate: none !important;
