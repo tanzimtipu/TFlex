@@ -16,6 +16,7 @@
 import type { ReactElement } from 'react';
 import { ChevronUp, Cuboid, Info } from 'lucide-react';
 import { Icon } from '../icons/Icon';
+import { IconButton } from './Button';
 import type { Pdf3dContent } from '../../shared/types';
 import { useNoticeCollapse } from '../hooks/useNoticeCollapse';
 
@@ -45,15 +46,16 @@ export function Pdf3dNotice(props: Pdf3dNoticeProps): ReactElement | null {
   if (phase === 'collapsed' || phase === 'entering') {
     return (
       <div className="pdf3d-notice-region" data-pdf3d-notice-state={phase}>
-        <button
-          type="button"
+        <IconButton
+          label="Show 3D content notice"
+          intent="secondary"
+          kind="disclosure"
+          density="compact"
           className="pdf3d-notice-collapsed-toggle"
           onClick={expand}
-          aria-label="Show 3D content notice"
           data-pdf3d-icon
-        >
-          <Icon icon={Info} size="sm" />
-        </button>
+          icon={<Icon icon={Info} size="sm" />}
+        />
       </div>
     );
   }
@@ -70,15 +72,16 @@ export function Pdf3dNotice(props: Pdf3dNoticeProps): ReactElement | null {
     >
       <Icon icon={Cuboid} size="xs" />
       <span className="pdf3d-notice-text">{pdf3dNoticeText(entries)}</span>
-      <button
-        type="button"
+      <IconButton
+        label="Collapse 3D content notice"
+        intent="tertiary"
+        kind="disclosure"
+        density="compact"
         className="pdf3d-notice-collapse"
         onClick={collapse}
-        aria-label="Collapse 3D content notice"
         data-pdf3d-collapse
-      >
-        <Icon icon={ChevronUp} size="xs" />
-      </button>
+        icon={<Icon icon={ChevronUp} size="xs" />}
+      />
     </div>
   );
 }

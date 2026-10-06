@@ -45,6 +45,7 @@ import {
 import { describeSyncReport } from "../accounts/syncStatus";
 import { requestAutoSync } from "../accounts/autoSync";
 import { AnimatedDialog } from "./AnimatedDialog";
+import { Button } from "./Button";
 import { TfResize } from "./motion/TfResize";
 import { BrandLoader } from "./BrandLoader";
 import { BrandMark } from "./BrandMark";
@@ -514,28 +515,34 @@ export function AccountsDialog(props: AccountsDialogProps): ReactElement {
             <TfResize axes="height">
             {state.step === "credentials" ? (
               <>
-                <div className="accounts-mode" role="tablist" aria-label="Sign in or create an account">
-                  <button
+<div className="accounts-mode" role="tablist" aria-label="Sign in or create an account">
+                  <Button
                     type="button"
                     role="tab"
                     aria-selected={state.mode === "sign-in"}
+                    intent="tertiary"
+                    kind="exclusive-selection"
+                    density="standard"
                     className={state.mode === "sign-in" ? "accounts-mode-tab accounts-mode-tab-active" : "accounts-mode-tab"}
                     onClick={(): void => dispatch({ type: "set-mode", mode: "sign-in" })}
                     data-accounts-mode-signin
                   >
                     Sign in
-                  </button>
-                  <button
+                  </Button>
+                  <Button
                     type="button"
                     role="tab"
                     aria-selected={state.mode === "sign-up"}
+                    intent="tertiary"
+                    kind="exclusive-selection"
+                    density="standard"
                     className={state.mode === "sign-up" ? "accounts-mode-tab accounts-mode-tab-active" : "accounts-mode-tab"}
                     onClick={(): void => dispatch({ type: "set-mode", mode: "sign-up" })}
                     data-accounts-mode-signup
                   >
                     <Icon icon={UserPlus} size="xs" />
                     Create account
-                  </button>
+                  </Button>
                 </div>
                 <label className="accounts-field" htmlFor="accounts-email">
                   <span className="accounts-label">Email</span>
@@ -576,14 +583,17 @@ export function AccountsDialog(props: AccountsDialogProps): ReactElement {
                   />
                 </label>
                 {state.mode === "sign-in" && (
-                  <button
+                  <Button
                     type="button"
+                    intent="tertiary"
+                    kind="action"
+                    density="standard"
                     className="accounts-forgot"
                     onClick={openReset}
                     data-accounts-forgot
                   >
                     Forgot password?
-                  </button>
+                  </Button>
                 )}
                 <Banner banner={state.banner} variants={bannerPop} />
                 <button
@@ -647,15 +657,18 @@ export function AccountsDialog(props: AccountsDialogProps): ReactElement {
                   >
                     Resend code
                   </button>
-                  <button
+                  <Button
                     type="button"
+                    intent="tertiary"
+                    kind="action"
+                    density="standard"
                     className="accounts-link"
                     onClick={(): void => dispatch({ type: "back" })}
                     data-accounts-back
                   >
                     <Icon icon={ArrowLeft} size="xs" />
                     Back
-                  </button>
+                  </Button>
                 </div>
               </>
             ) : state.step === "reset-request" ? (
@@ -686,15 +699,18 @@ export function AccountsDialog(props: AccountsDialogProps): ReactElement {
                   {state.busy ? "Sending..." : "Send reset code"}
                 </button>
                 <div className="accounts-otp-actions">
-                  <button
+                  <Button
                     type="button"
+                    intent="tertiary"
+                    kind="action"
+                    density="standard"
                     className="accounts-link"
                     onClick={(): void => dispatch({ type: "back" })}
                     data-accounts-back
                   >
                     <Icon icon={ArrowLeft} size="xs" />
                     Back to sign in
-                  </button>
+                  </Button>
                 </div>
               </>
             ) : (
@@ -738,15 +754,18 @@ export function AccountsDialog(props: AccountsDialogProps): ReactElement {
                   {state.busy ? "Updating..." : "Set new password"}
                 </button>
                 <div className="accounts-otp-actions">
-                  <button
+                  <Button
                     type="button"
+                    intent="tertiary"
+                    kind="action"
+                    density="standard"
                     className="accounts-link"
                     onClick={(): void => dispatch({ type: "back" })}
                     data-accounts-back
                   >
                     <Icon icon={ArrowLeft} size="xs" />
                     Back to sign in
-                  </button>
+                  </Button>
                 </div>
               </>
             )}

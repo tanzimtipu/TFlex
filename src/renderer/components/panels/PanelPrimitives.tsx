@@ -16,6 +16,8 @@
 import type { LucideIcon } from "lucide-react";
 import type { HTMLAttributes, ReactElement, ReactNode } from "react";
 import { Icon } from "../../icons/Icon";
+import { Button } from "../Button";
+import type { ButtonIntent, ButtonKind, ButtonDensity } from "../Button";
 
 /** Join truthy class names into one string (the Button.tsx composer shape). */
 function compose(...parts: Array<string | undefined>): string {
@@ -161,6 +163,12 @@ export interface PanelAction {
   /** Phase 112 (C5) — extra legacy `data-*` hooks to keep on the button while a
    *  migrated surface still owes them (e.g. `data-context-panel-action`). */
   dataAttrs?: Record<`data-${string}`, string>;
+  /** Phase 113 — Quiet Actions task emphasis; defaults to `secondary`. */
+  intent?: ButtonIntent;
+  /** Phase 113 — Quiet Actions semantic role; defaults to `action`. */
+  kind?: ButtonKind;
+  /** Phase 113 — Quiet Actions target size; defaults to `standard`. */
+  density?: ButtonDensity;
 }
 
 export interface ActionListProps extends DataAttrs {
@@ -176,10 +184,12 @@ export function ActionList(props: ActionListProps): ReactElement {
   return (
     <div className={compose("tf-panel-action-list", className)} {...forwarded}>
       {actions.map((action) => (
-        <button
+        <Button
           key={action.id}
-          type="button"
-          className="btn btn-secondary tf-panel-action"
+          intent={action.intent ?? "secondary"}
+          kind={action.kind ?? "action"}
+          density={action.density ?? "standard"}
+          className="tf-panel-action"
           data-tf-panel-action={action.id}
           onClick={action.onClick}
           disabled={action.disabled ?? action.onClick === undefined}
@@ -188,7 +198,7 @@ export function ActionList(props: ActionListProps): ReactElement {
         >
           {action.icon}
           <span>{action.label}</span>
-        </button>
+        </Button>
       ))}
     </div>
   );

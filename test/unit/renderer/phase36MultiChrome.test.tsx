@@ -470,22 +470,28 @@ describe("Phase 36 (chunk 7) ï¿½ the ONE shared Action Dock", () => {
 // ---------------------------------------------------------------------------
 // (2) Per-pane stage + per-pane view controls (the pills).
 
-describe("Phase 36 (chunk 7) ï¿½ each pane keeps its own stage and its own pills", () => {
-  it("gives each pane its own pills, inside its own canvas bounds", () => {
+describe("Phase 36 (chunk 7) / Phase 109 (chunk B) — each pane keeps its own stage and its own footer", () => {
+  it("gives each pane its own View Strip footer, inside its own canvas bounds", () => {
     const { host, unmount } = mount(createElement(MultiHarness, { probes: freshProbes() }));
     try {
-      expect(host.querySelectorAll("[data-canvas-pills]")).toHaveLength(2);
-      expect(paneEl(host, "A").querySelector('[data-canvas-pills][data-pill-pane="A"]')).not.toBeNull();
-      expect(paneEl(host, "B").querySelector('[data-canvas-pills][data-pill-pane="B"]')).not.toBeNull();
-      // Pane A's pills stay in A's subtree and B's in B's: no cross-pane chrome.
-      expect(paneEl(host, "A").querySelector('[data-pill-pane="B"]')).toBeNull();
-      expect(paneEl(host, "B").querySelector('[data-pill-pane="A"]')).toBeNull();
-      // Each pane's pills carry the page / zoom / pan controls.
+      // Phase 109 (chunk B) — the per-pane CanvasPills are RETIRED: each pane's
+      // sole view-control surface is its own View Strip footer.
+      expect(host.querySelectorAll("[data-canvas-pills]")).toHaveLength(0);
+      expect(host.querySelectorAll("[data-view-strip]")).toHaveLength(2);
+      expect(paneEl(host, "A").querySelector("[data-view-strip]")).not.toBeNull();
+      expect(paneEl(host, "B").querySelector("[data-view-strip]")).not.toBeNull();
+      // Pane A's footer stays in A's subtree and B's in B's: no cross-pane chrome.
+      expect(paneEl(host, "A").querySelectorAll("[data-view-strip]")).toHaveLength(1);
+      expect(paneEl(host, "B").querySelectorAll("[data-view-strip]")).toHaveLength(1);
+      // Each pane's footer carries the page / zoom / pan controls, and omits the
+      // single-view layout group and Book View entry.
       for (const pane of ["A", "B"] as const) {
-        const pills = paneEl(host, pane).querySelector("[data-canvas-pills]");
-        expect(pills?.querySelector('[data-page-pill]')).not.toBeNull();
-        expect(pills?.querySelector('[data-zoom-pill] [aria-label="Zoom in"]')).not.toBeNull();
-        expect(pills?.querySelector('[data-hand-toggle]')).not.toBeNull();
+        const footer = paneEl(host, pane).querySelector("[data-view-strip]");
+        expect(footer?.querySelector('[aria-label="Current page"]')).not.toBeNull();
+        expect(footer?.querySelector('[aria-label="Zoom in"]')).not.toBeNull();
+        expect(footer?.querySelector('[data-hand-toggle]')).not.toBeNull();
+        expect(footer?.querySelector("[data-page-layout-option]")).toBeNull();
+        expect(footer?.querySelector("[data-book-view-open]")).toBeNull();
       }
     } finally {
       unmount();
@@ -498,10 +504,10 @@ describe("Phase 36 (chunk 7) ï¿½ each pane keeps its own stage and its own pi
     try {
       expect(probes.pageA).toBe(1);
       expect(probes.pageB).toBe(1);
-      click(paneEl(host, "A").querySelector('[data-pill-pane="A"] [aria-label="Next page"]'));
+      click(paneEl(host, "A").querySelector('[data-view-strip] [aria-label="Next page"]'));
       expect(probes.pageA).toBe(2);
       expect(probes.pageB).toBe(1);
-      click(paneEl(host, "B").querySelector('[data-pill-pane="B"] [aria-label="Next page"]'));
+      click(paneEl(host, "B").querySelector('[data-view-strip] [aria-label="Next page"]'));
       expect(probes.pageB).toBe(2);
       expect(probes.pageA).toBe(2);
     } finally {

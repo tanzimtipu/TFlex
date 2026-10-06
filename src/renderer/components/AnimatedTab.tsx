@@ -22,6 +22,7 @@ import {
 } from "react";
 import { AnimatePresence, motion } from "motion/react";
 import { Icon } from "../icons/Icon";
+import { Button } from "./Button";
 import { resolveTabMouseDown, type TabInput } from "../state/tabMouseDown";
 import { useTabVariants } from "../hooks/useAnimations";
 
@@ -182,7 +183,11 @@ export function AnimatedTab(props: AnimatedTabProps): ReactElement {
       style={hidden ? { ...(reserveStyle ?? {}), display: "none" } : reserveStyle}
     >
       <div
-        className={active ? "tab tab-active" : "tab"}
+        className={
+          active
+            ? "btn btn-secondary btn-segmented-item btn-compact tab tab-active"
+            : "btn btn-secondary btn-segmented-item btn-compact tab"
+        }
         role="tab"
         aria-selected={active}
         data-tab-id={id}
@@ -221,8 +226,10 @@ export function AnimatedTab(props: AnimatedTabProps): ReactElement {
            *  can never eat it at the squeezed fit width. */}
           <span className="tab-title-text">{title}</span>
         </span>
-        <button
-          type="button"
+        <Button
+          intent="secondary"
+          kind="action"
+          density="compact"
           className="tab-close"
           onMouseDown={onCloseMouseDown}
           onClick={(e): void => {
@@ -230,9 +237,8 @@ export function AnimatedTab(props: AnimatedTabProps): ReactElement {
             onClose(id);
           }}
           aria-label={`Close ${title}`}
-        >
-          <Icon name="tabClose (AnimatedTab)" size="sm" />
-        </button>
+          icon={<Icon name="tabClose (AnimatedTab)" size="sm" />}
+        />
       </div>
     </motion.li>
   );

@@ -31,6 +31,7 @@ import {
   ANNOTATION_COLOR_HEX,
   type AnnotationColor,
 } from './model';
+import { Button } from '../components/Button';
 import {
   EMPTY_ANNOTATION_COLORS,
   hexToHsl,
@@ -377,13 +378,16 @@ const ColorPalette = forwardRef<ColorPaletteHandle, ColorPaletteProps>(
           <div className="color-palette-label">Built-in</div>
           <div className="color-palette-grid" role="group" aria-label="Built-in colors">
             {ANNOTATION_COLORS.map((c) => (
-              <button
+              <Button
                 key={c}
                 type="button"
+                intent="secondary"
+                kind="exclusive-selection"
+                density="compact"
                 className={
                   activeColor === c && activeCustomHex === null
-                    ? 'color-swatch color-swatch-active'
-                    : 'color-swatch'
+                    ? 'color-swatch color-swatch-active btn-icon'
+                    : 'color-swatch btn-icon'
                 }
                 style={{ background: ANNOTATION_COLOR_HEX[c] }}
                 onClick={(): void => onPickBuiltIn(c)}
@@ -413,9 +417,12 @@ const ColorPalette = forwardRef<ColorPaletteHandle, ColorPaletteProps>(
                       : 'color-swatch-wrap'
                   }
                 >
-                  <button
+                  <Button
                     type="button"
-                    className="color-swatch"
+                    intent="secondary"
+                    kind="exclusive-selection"
+                    density="compact"
+                    className="color-swatch btn-icon"
                     style={{ background: p.hex }}
                     onClick={(): void => onPickCustom(p)}
                     aria-pressed={isCustomActive(p.hex)}

@@ -122,6 +122,10 @@ export function usePageThumbMenu(handlers: PageMenuHandlers): PageThumbMenuContr
         label: item.label,
         // CommandMenu's `onSelect` runs this, then closes the menu.
         onSelect: (): void => item.run(),
+        // Phase 113 (wave E2) — the six context rows on the canonical axes:
+        // secondary for the five page verbs, destructive for Delete.
+        intent: item.danger === true ? 'destructive' : 'secondary',
+        density: 'compact',
         // Keep the per-row `[data-menu-item]` hook and the legacy row classes
         // while the primitive owns the row's behavior and motion.
         rowDataAttrs: { 'data-menu-item': item.id },

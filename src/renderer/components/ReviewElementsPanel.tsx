@@ -12,6 +12,7 @@
 import type { ReactElement } from 'react';
 import { Pencil } from 'lucide-react';
 import { Icon } from '../icons/Icon';
+import { Button, IconButton } from './Button';
 import { AnnotationsPanel } from '../annotations/AnnotationsPanel';
 import { PanelEmptyState, PanelSection } from './panels/PanelPrimitives';
 import type { Annotation, AnnotationPatch } from '../annotations/model';
@@ -104,8 +105,10 @@ function renderRow(
       data-review-element-type={row.type}
       data-review-element-id={row.id}
     >
-      <button
-        type="button"
+      <Button
+        intent="secondary"
+        kind="action"
+        density="standard"
         className="review-elements-row-select"
         data-review-element-select
         onClick={(): void => onSelect?.(ref)}
@@ -115,29 +118,29 @@ function renderRow(
       >
         <span className="review-elements-row-label">{row.label}</span>
         <span className="review-elements-row-page">Page {row.page}</span>
-      </button>
-      <button
-        type="button"
+      </Button>
+      <IconButton
+        label={`Edit ${row.label}`}
+        intent="tertiary"
+        kind="action"
+        density="standard"
         className="review-elements-row-edit"
         data-review-element-edit
         onClick={(): void => onEdit?.(ref)}
         disabled={onEdit === null}
-        aria-label={`Edit ${row.label}`}
-        title={onEdit === null ? 'Editing is not available yet' : `Edit ${row.label}`}
-      >
-        <Icon icon={Pencil} size="sm" />
-      </button>
-      <button
-        type="button"
+        icon={<Icon icon={Pencil} size="sm" />}
+      />
+      <IconButton
+        label={`Delete ${row.label}`}
+        intent="destructive"
+        kind="action"
+        density="standard"
         className="review-elements-row-delete"
         data-review-element-delete
         onClick={(): void => onDelete?.(ref)}
         disabled={onDelete === null}
-        aria-label={`Delete ${row.label}`}
-        title="Delete"
-      >
-        <Icon name="delete" size="sm" />
-      </button>
+        icon={<Icon name="delete" size="sm" />}
+      />
       {error !== null && (
         <p className="review-elements-row-error" data-review-element-error>
           {error}

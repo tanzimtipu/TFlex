@@ -153,10 +153,12 @@ describe("Phase 36 (chunk 3b) — the toolbar row is retired in SINGLE mode", ()
     }
   });
 
-  it("renders the floating pills instead of the row's view clusters", async () => {
+  it("renders the View Strip footer instead of the row's view clusters", async () => {
     const host = await mountView({ activeStage: "pages" });
     try {
-      expect(host.querySelector("[data-canvas-pills]")).not.toBeNull();
+      expect(host.querySelector("[data-view-strip]")).not.toBeNull();
+      // Phase 109 (chunk A) — single mode no longer renders the floating pills.
+      expect(host.querySelector("[data-canvas-pills]")).toBeNull();
       expect(host.querySelector('[aria-label="Previous page"]')).not.toBeNull();
       expect(host.querySelector('input[aria-label="Current page"]')).not.toBeNull();
       expect(host.querySelector('[aria-label="Zoom out"]')).not.toBeNull();

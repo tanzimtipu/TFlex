@@ -18,6 +18,7 @@ import type { ReactElement } from 'react';
 import { createPortal } from 'react-dom';
 import { AnimatePresence } from 'motion/react';
 import { useDragWindow } from '../components/useDragWindow';
+import { IconButton } from '../components/Button';
 import { TfPopover } from '../components/motion/TfMotion';
 import ColorPalette, { paletteEqual } from './ColorPalette';
 import { annotationColorToCss, isAnnotationColor } from './model';
@@ -103,16 +104,17 @@ export default function AnnColorBox(props: AnnColorBoxProps): ReactElement {
 
   return (
     <span className="ann-color-box-anchor">
-      <button
+      <IconButton
         ref={swatchRef}
-        type="button"
+        label={`Annotation color: ${annotationColorToCss(color)}. Open color picker.`}
+        intent="secondary"
+        kind="disclosure"
+        density="compact"
         className="ann-color-box"
         style={{ background: annotationColorToCss(color) }}
         onClick={(): void => setOpen((v) => !v)}
-        aria-pressed={open}
+        pressed={open}
         aria-haspopup="dialog"
-        aria-label={`Annotation color: ${annotationColorToCss(color)}. Open color picker.`}
-        title={`Color: ${annotationColorToCss(color)}`}
         data-ann-color-box
         data-color-current={annotationColorToCss(color)}
       />

@@ -319,7 +319,7 @@ describe("Phase 91 - panel controls compose the canonical button classes", () =>
       expect(combine?.classList.contains("btn-secondary")).toBe(true);
       const blank = pages.host.querySelector("[data-blank-scan-open]");
       expect(blank?.classList.contains("btn-secondary")).toBe(true);
-      expect(blank?.classList.contains("btn-sm")).toBe(true);
+      expect(blank?.classList.contains("btn-compact")).toBe(true);
       const toggle = pages.host.querySelector("[data-outline-toggle]");
       expect(toggle?.classList.contains("btn")).toBe(true);
       expect(toggle?.classList.contains("btn-ghost")).toBe(true);
@@ -335,9 +335,9 @@ describe("Phase 91 - panel controls compose the canonical button classes", () =>
     try {
       const recognize = edit.host.querySelector('[data-context-panel-action="recognize"]');
       expect(recognize?.classList.contains("btn-secondary")).toBe(true);
-      expect(recognize?.classList.contains("btn-sm")).toBe(true);
+      expect(recognize?.classList.contains("btn-compact")).toBe(true);
       const suspects = edit.host.querySelector('[data-context-panel-action="suspects"]');
-      expect(suspects?.classList.contains("btn-sm")).toBe(true);
+      expect(suspects?.classList.contains("btn-compact")).toBe(true);
     } finally {
       edit.unmount();
     }
@@ -357,7 +357,7 @@ describe("Phase 91 - panel controls compose the canonical button classes", () =>
       expect(renumber?.classList.contains("btn-secondary")).toBe(true);
       const jump = host.querySelector('[data-inspector-action="jump-to-review"]');
       expect(jump?.classList.contains("btn-ghost")).toBe(true);
-      expect(jump?.classList.contains("btn-sm")).toBe(true);
+      expect(jump?.classList.contains("btn-compact")).toBe(true);
       const collapse = host.querySelector("[data-inspector-collapse]");
       expect(collapse?.classList.contains("btn-ghost")).toBe(true);
       expect(collapse?.getAttribute("aria-expanded")).not.toBeNull();
@@ -365,7 +365,7 @@ describe("Phase 91 - panel controls compose the canonical button classes", () =>
       expect(close?.classList.contains("btn-ghost")).toBe(true);
       expect(close?.classList.contains("btn-icon")).toBe(true);
       expect(close?.getAttribute("aria-label")).toBe("Close inspector");
-      expect(close?.getAttribute("title")).toBe("Close");
+      expect(close?.getAttribute("title")).toBe("Close inspector");
     } finally {
       unmount();
     }

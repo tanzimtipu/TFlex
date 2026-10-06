@@ -26,6 +26,7 @@
 import { type ReactElement, useEffect, useState, useCallback } from "react";
 import { X } from "lucide-react";
 import { Icon } from "../icons/Icon";
+import { Button } from "./Button";
 import type { UpdateState } from "../../shared/types";
 import { BrandLoader } from "./BrandLoader";
 import { normalizeUpdateState } from "./updateStateNormalize";
@@ -218,8 +219,11 @@ export function UpdateIndicator(props: UpdateIndicatorProps): ReactElement | nul
       );
     case "available":
       return (
-        <button
+        <Button
           type="button"
+          intent="primary"
+          kind="action"
+          density="standard"
           className="update-indicator update-indicator-available"
           data-update-indicator
           data-update-indicator-kind="available"
@@ -227,10 +231,10 @@ export function UpdateIndicator(props: UpdateIndicatorProps): ReactElement | nul
           aria-label={view.ariaLabel}
           title={view.ariaLabel}
           onClick={onDownload}
+          icon={<Icon name="updateDownload" size="sm" />}
         >
-          <Icon name="updateDownload" size="sm" />
           <span>Update v{view.version}</span>
-        </button>
+        </Button>
       );
     case "downloading":
       return (
@@ -248,8 +252,11 @@ export function UpdateIndicator(props: UpdateIndicatorProps): ReactElement | nul
       );
     case "downloaded":
       return (
-        <button
+        <Button
           type="button"
+          intent="primary"
+          kind="action"
+          density="standard"
           className="update-indicator update-indicator-downloaded"
           data-update-indicator
           data-update-indicator-kind="downloaded"
@@ -257,25 +264,28 @@ export function UpdateIndicator(props: UpdateIndicatorProps): ReactElement | nul
           aria-label={view.ariaLabel}
           title={view.ariaLabel}
           onClick={onInstall}
+          icon={<Icon name="updateInstall" size="sm" />}
         >
-          <Icon name="updateInstall" size="sm" />
           <span>Restart to update</span>
-        </button>
+        </Button>
       );
     case "error":
       return (
-        <button
+        <Button
           type="button"
+          intent="secondary"
+          kind="action"
+          density="standard"
           className="update-indicator update-indicator-error"
           data-update-indicator
           data-update-indicator-kind="error"
           aria-label={view.ariaLabel}
           title={view.ariaLabel}
           onClick={onRetry}
+          icon={<Icon icon={X} size="sm" />}
         >
-          <Icon icon={X} size="sm" />
           <span>Retry</span>
-        </button>
+        </Button>
       );
   }
 }

@@ -2025,8 +2025,8 @@ function DomAnnotation({
       <div
         className={
           selected
-            ? "ann ann-note ann-note-selected"
-            : "ann ann-note"
+            ? "btn btn-secondary btn-compact ann ann-note ann-note-selected"
+            : "btn btn-secondary btn-compact ann ann-note"
         }
         data-annotation-id={ann.id}
         data-kind="note"

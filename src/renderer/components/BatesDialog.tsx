@@ -10,6 +10,7 @@
 
 import { useEffect, useRef, useState, type CSSProperties, type ReactElement } from "react";
 import { Icon } from "../icons/Icon";
+import { Button } from "./Button";
 import { DialogShell, type DialogAction } from "./DialogShell";
 import {
   buildBatesLabel,
@@ -423,10 +424,13 @@ export function BatesDialog(props: BatesDialogProps): ReactElement {
                 </label>
                 <div className="watermark-position-grid" role="group" aria-label="Stamp position">
                   {POSITION_SLOTS.map((slot) => (
-                    <button
+                    <Button
                       key={slot}
                       type="button"
-                      className={position === slot ? "watermark-slot watermark-slot-active" : "watermark-slot"}
+                      intent="tertiary"
+                      kind="exclusive-selection"
+                      density="compact"
+                      className={position === slot ? "watermark-slot watermark-slot-active btn-icon" : "watermark-slot btn-icon"}
                       onClick={(): void => setPosition(slot)}
                       aria-pressed={position === slot}
                       aria-label={slot}
@@ -435,7 +439,7 @@ export function BatesDialog(props: BatesDialogProps): ReactElement {
                       data-bates-position={slot}
                     >
                       <span className="watermark-slot-dot" />
-                    </button>
+                    </Button>
                   ))}
                 </div>
                 <div className="modal-row">

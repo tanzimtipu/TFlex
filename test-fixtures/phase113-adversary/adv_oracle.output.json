@@ -1,0 +1,26 @@
+{
+  "S1a": {
+    "mergeTilePresent": true,
+    "mergeAfterDoubleCounts": {
+      "open": 2,
+      "save": 0
+    },
+    "mergeAfterStormCounts": {
+      "open": 5,
+      "save": 0
+    }
+  },
+  "S1b": {
+    "openCounts": {
+      "open": 2,
+      "save": 0
+    },
+    "saveAsCounts": {
+      "open": 0,
+      "save": 0
+    },
+    "rotateBefore": 0,
+    "rotateAfter": 2,
+    "rotateDelta": 2
+  }
+}

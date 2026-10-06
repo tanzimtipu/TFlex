@@ -23,6 +23,7 @@ import type { CSSProperties } from "react";
 import { Check, X } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { Icon } from "../icons/Icon";
+import { Button } from "../components/Button";
 import type {
   FormField,
   FormFieldOption,
@@ -338,8 +339,10 @@ function CheckboxEditor({
     height: box * cssScale,
   };
   return (
-    <button
-      type="button"
+    <Button
+      intent="secondary"
+      kind="toggle"
+      density="compact"
       className={checked ? "form-checkbox form-checkbox-checked" : "form-checkbox"}
       data-form-field={field.id}
       data-form-kind="checkbox"
@@ -355,7 +358,7 @@ function CheckboxEditor({
           sizes the glyph to 70% of this `box * cssScale` button, so the `xs`
           token is only the attribute-level base and CSS tracks page zoom. */}
       {checked && <Icon icon={MARK_ICONS.check} size="xs" variant="bold" />}
-    </button>
+    </Button>
   );
 }
 
@@ -418,9 +421,11 @@ function RadioEditor({
         const selected = opt.value === current;
         const dotSize = RADIO_DOT_PT * cssScale;
         return (
-          <button
+          <Button
             key={opt.value}
-            type="button"
+            intent="secondary"
+            kind="exclusive-selection"
+            density="compact"
             className={selected ? "form-radio form-radio-checked" : "form-radio"}
             data-form-option={opt.value}
             data-form-readonly={field.readOnly === true ? "true" : undefined}
@@ -444,7 +449,7 @@ function RadioEditor({
               )}
             </span>
             <span className="form-radio-label">{opt.label}</span>
-          </button>
+          </Button>
         );
       })}
     </div>
@@ -486,9 +491,11 @@ function WidgetRadioEditor({
           minHeight: Math.max(widget.rect.height * cssScale, dotSize),
         };
         return (
-          <button
+          <Button
             key={`${widget.value}-${index}`}
-            type="button"
+            intent="secondary"
+            kind="exclusive-selection"
+            density="compact"
             className={
               selected
                 ? "form-radio form-radio-widget form-radio-checked"
@@ -519,7 +526,7 @@ function WidgetRadioEditor({
               )}
             </span>
             <span className="form-radio-label">{widget.value}</span>
-          </button>
+          </Button>
         );
       })}
     </>
@@ -597,8 +604,10 @@ function ListboxEditor({
         const on = selected.includes(opt.value);
         return (
           <li key={opt.value}>
-            <button
-              type="button"
+            <Button
+              intent="secondary"
+              kind="toggle"
+              density="compact"
               className={on ? "form-listbox-row form-listbox-row-on" : "form-listbox-row"}
               data-form-option={opt.value}
               disabled={readOnly}
@@ -608,7 +617,7 @@ function ListboxEditor({
                 {on ? "\u2713" : ""}
               </span>
               <span className="form-listbox-label">{opt.label}</span>
-            </button>
+            </Button>
           </li>
         );
       })}

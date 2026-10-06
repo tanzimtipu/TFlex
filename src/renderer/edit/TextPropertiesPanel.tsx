@@ -43,6 +43,7 @@ import {
   Superscript,
 } from "lucide-react";
 import { Icon } from "../icons/Icon";
+import { Button, IconButton } from "../components/Button";
 import type { EditFont, TextBoxStylePatch, TextAlign, TextListStyle } from "../../shared/types";
 import { AnimatedPanel } from "../components/AnimatedPanel";
 import { SpellCheckTextarea } from "../spell/SpellCheckTextarea";
@@ -268,28 +269,18 @@ export function TextPropertiesPanel(props: TextPropertiesPanelProps): ReactEleme
             onCommit={(relatedTarget): void => props.onTextCommit?.(relatedTarget)}
           />
           <div className="text-props-btn-row" role="group" aria-label="Spell check">
-            <button
-              type="button"
+            <IconButton
+              label="Spell check"
+              intent="tertiary"
+              kind="toggle"
+              density="compact"
+              className="text-props-btn"
               data-txt-spellcheck
-              className={
-                spellState.enabled
-                  ? "btn btn-ghost text-props-btn text-props-btn-active"
-                  : "btn btn-ghost text-props-btn"
-              }
-              aria-label="Spell check"
-              aria-pressed={spellState.enabled}
+              pressed={spellState.enabled}
               disabled={spellCheck === undefined}
-              title={
-                spellCheck === undefined
-                  ? "Spell check is unavailable."
-                  : spellState.enabled
-                    ? "Spell check on: misspellings are underlined."
-                    : "Spell check off."
-              }
               onClick={(): void => spellCheck?.setEnabled(!spellState.enabled)}
-            >
-              <Icon icon={SpellCheck} size="xs" />
-            </button>
+              icon={<Icon icon={SpellCheck} size="xs" />}
+            />
           </div>
         </Group>
         <Group title="Font">
@@ -354,92 +345,80 @@ export function TextPropertiesPanel(props: TextPropertiesPanelProps): ReactEleme
             />
           </label>
           <div className="text-props-btn-row" role="group" aria-label="Font style">
-            <button
-              type="button"
+            <IconButton
+              label="Bold"
+              intent="tertiary"
+              kind="toggle"
+              density="compact"
+              className="text-props-btn"
               data-txt-bold
-              className={values.bold ? "btn btn-ghost text-props-btn text-props-btn-active" : "btn btn-ghost text-props-btn"}
-              aria-label="Bold"
-              aria-pressed={values.bold}
-              title="Bold"
+              pressed={values.bold}
               onClick={(): void => onPatch({ bold: !values.bold })}
-            >
-              <Icon icon={Bold} size="xs" />
-            </button>
-            <button
-              type="button"
+              icon={<Icon icon={Bold} size="xs" />}
+            />
+            <IconButton
+              label="Italic"
+              intent="tertiary"
+              kind="toggle"
+              density="compact"
+              className="text-props-btn"
               data-txt-italic
-              className={values.italic ? "btn btn-ghost text-props-btn text-props-btn-active" : "btn btn-ghost text-props-btn"}
-              aria-label="Italic"
-              aria-pressed={values.italic}
-              title="Italic"
+              pressed={values.italic}
               onClick={(): void => onPatch({ italic: !values.italic })}
-            >
-              <Icon icon={Italic} size="xs" />
-            </button>
-            <button
-              type="button"
+              icon={<Icon icon={Italic} size="xs" />}
+            />
+            <IconButton
+              label="Underline"
+              intent="tertiary"
+              kind="toggle"
+              density="compact"
+              className="text-props-btn"
               data-txt-underline
-              className={
-                values.underline ? "btn btn-ghost text-props-btn text-props-btn-active" : "btn btn-ghost text-props-btn"
-              }
-              aria-label="Underline"
-              aria-pressed={values.underline}
-              title="Underline"
+              pressed={values.underline}
               onClick={(): void => onPatch({ underline: !values.underline })}
-            >
-              <Icon icon={Baseline} size="xs" />
-            </button>
-            <button
-              type="button"
+              icon={<Icon icon={Baseline} size="xs" />}
+            />
+            <IconButton
+              label="Superscript"
+              intent="tertiary"
+              kind="toggle"
+              density="compact"
+              className="text-props-btn"
               data-txt-super
-              className={
-                values.baselineShift > 0 ? "btn btn-ghost text-props-btn text-props-btn-active" : "btn btn-ghost text-props-btn"
-              }
-              aria-label="Superscript"
-              aria-pressed={values.baselineShift > 0}
-              title="Superscript"
+              pressed={values.baselineShift > 0}
               onClick={(): void =>
                 onPatch({ baselineShift: values.baselineShift > 0 ? 0 : TEXT_SUPER_SHIFT })
               }
-            >
-              <Icon icon={Superscript} size="xs" />
-            </button>
-            <button
-              type="button"
+              icon={<Icon icon={Superscript} size="xs" />}
+            />
+            <IconButton
+              label="Subscript"
+              intent="tertiary"
+              kind="toggle"
+              density="compact"
+              className="text-props-btn"
               data-txt-sub
-              className={
-                values.baselineShift < 0 ? "btn btn-ghost text-props-btn text-props-btn-active" : "btn btn-ghost text-props-btn"
-              }
-              aria-label="Subscript"
-              aria-pressed={values.baselineShift < 0}
-              title="Subscript"
+              pressed={values.baselineShift < 0}
               onClick={(): void =>
                 onPatch({ baselineShift: values.baselineShift < 0 ? 0 : TEXT_SUB_SHIFT })
               }
-            >
-              <Icon icon={Subscript} size="xs" />
-            </button>
-            <button
-              type="button"
+              icon={<Icon icon={Subscript} size="xs" />}
+            />
+            <IconButton
+              label="Format Painter"
+              intent="tertiary"
+              kind="toggle"
+              density="compact"
+              className="text-props-btn"
               data-txt-format-painter
-              className={painterArmed ? "btn btn-ghost text-props-btn text-props-btn-active" : "btn btn-ghost text-props-btn"}
-              aria-label="Format Painter"
-              aria-pressed={painterArmed}
+              pressed={painterArmed}
               disabled={!canPickUpPainter && !painterArmed}
-              title={
-                !canPickUpPainter && !painterArmed
-                  ? "Format Painter: select a text object first to pick up its format."
-                  : painterArmed
-                    ? "Format Painter: click to cancel. Select a text box or text annotation to apply."
-                    : "Format Painter: pick up this text's format, then select a text box or text annotation to apply."
-              }
               onClick={(): void => {
                 if (painterArmed) props.onCancelPainter?.();
                 else props.onArmPainter?.();
               }}
-            >
-              <Icon icon={Paintbrush} size="xs" />
-            </button>
+              icon={<Icon icon={Paintbrush} size="xs" />}
+            />
           </div>
           {painterHint !== null ? (
             <p className="text-props-hint" data-txt-format-painter-hint>
@@ -468,28 +447,32 @@ export function TextPropertiesPanel(props: TextPropertiesPanelProps): ReactEleme
                 value={editColorToHex(values.highlight ?? TEXT_NO_HIGHLIGHT)}
                 onChange={(e): void => onPatch({ highlight: hexToEditColor(e.target.value) })}
               />
-              <button
-                type="button"
+              <Button
+                intent="secondary"
+                kind="action"
+                density="compact"
+                className="text-props-mini-btn"
                 data-txt-highlight-clear
-                className="btn btn-secondary btn-sm text-props-mini-btn"
                 title="No highlight"
                 aria-label="No highlight"
                 onClick={(): void => onPatch({ highlight: null })}
               >
                 None
-              </button>
+              </Button>
             </span>
           </label>
-          <button
-            type="button"
+          <Button
+            intent="secondary"
+            kind="action"
+            density="standard"
+            className="text-props-wide-btn"
             data-txt-clear
-            className="btn btn-secondary text-props-wide-btn"
             title="Clear formatting"
             onClick={(): void => onPatch(clearFormattingPatch(defaults))}
           >
             <Icon icon={Eraser} size="xs" />
             <span>Clear formatting</span>
-          </button>
+          </Button>
         </Group>
 
         <Group title="Paragraph">
@@ -502,20 +485,18 @@ export function TextPropertiesPanel(props: TextPropertiesPanelProps): ReactEleme
                 ["justify", AlignJustify, "Justify"],
               ] as const
             ).map(([align, Glyph, label]) => (
-              <button
+              <IconButton
                 key={align}
-                type="button"
+                label={label}
+                intent="tertiary"
+                kind="exclusive-selection"
+                density="compact"
+                className="text-props-btn"
                 {...{ [`data-txt-align-${align}`]: "true" }}
-                className={
-                  values.align === align ? "btn btn-ghost text-props-btn text-props-btn-active" : "btn btn-ghost text-props-btn"
-                }
-                aria-label={label}
-                aria-pressed={values.align === align}
-                title={label}
+                pressed={values.align === align}
                 onClick={(): void => onPatch({ align: align as TextAlign })}
-              >
-                <Icon icon={Glyph} size="xs" />
-              </button>
+                icon={<Icon icon={Glyph} size="xs" />}
+              />
             ))}
           </div>
           <div className="text-props-btn-row" role="group" aria-label="List style">
@@ -526,50 +507,48 @@ export function TextPropertiesPanel(props: TextPropertiesPanelProps): ReactEleme
                 ["number", ListOrdered, "Numbered list"],
               ] as const
             ).map(([list, Glyph, label]) => (
-              <button
+              <IconButton
                 key={list}
-                type="button"
+                label={label}
+                intent="tertiary"
+                kind="exclusive-selection"
+                density="compact"
+                className="text-props-btn"
                 {...{ [`data-txt-list-${list}`]: "true" }}
-                className={
-                  values.list === list ? "btn btn-ghost text-props-btn text-props-btn-active" : "btn btn-ghost text-props-btn"
-                }
-                aria-label={label}
-                aria-pressed={values.list === list}
-                title={label}
+                pressed={values.list === list}
                 onClick={(): void => onPatch({ list: list as TextListStyle })}
-              >
-                <Icon icon={Glyph} size="xs" />
-              </button>
+                icon={<Icon icon={Glyph} size="xs" />}
+              />
             ))}
           </div>
           <div className="text-props-row">
             <span className="text-props-label">Indent</span>
             <div className="text-props-btn-row" role="group" aria-label="Indent">
-              <button
-                type="button"
+              <IconButton
+                label="Decrease indent"
+                intent="tertiary"
+                kind="action"
+                density="compact"
+                className="text-props-btn"
                 data-txt-indent-dec
-                className="btn btn-ghost btn-icon text-props-btn"
-                aria-label="Decrease indent"
-                title="Decrease indent"
                 disabled={values.indent <= 0}
                 onClick={(): void => onPatch({ indent: clampIndent(values.indent - TEXT_INDENT_STEP) })}
-              >
-                <Icon icon={IndentDecrease} size="xs" />
-              </button>
+                icon={<Icon icon={IndentDecrease} size="xs" />}
+              />
               <span className="text-props-indent-value" data-txt-indent-value>
                 {values.indent}
               </span>
-              <button
-                type="button"
+              <IconButton
+                label="Increase indent"
+                intent="tertiary"
+                kind="action"
+                density="compact"
+                className="text-props-btn"
                 data-txt-indent-inc
-                className="btn btn-ghost btn-icon text-props-btn"
-                aria-label="Increase indent"
-                title="Increase indent"
                 disabled={values.indent >= 200}
                 onClick={(): void => onPatch({ indent: clampIndent(values.indent + TEXT_INDENT_STEP) })}
-              >
-                <Icon icon={IndentIncrease} size="xs" />
-              </button>
+                icon={<Icon icon={IndentIncrease} size="xs" />}
+              />
             </div>
           </div>
         </Group>
@@ -618,15 +597,17 @@ export function TextPropertiesPanel(props: TextPropertiesPanelProps): ReactEleme
                 }}
               />
             </label>
-            <button
-              type="button"
+            <Button
+              intent="secondary"
+              kind="action"
+              density="standard"
+              className="text-props-wide-btn"
               data-txt-horizontal-scaling
-              className="btn btn-secondary text-props-wide-btn"
               disabled
               title="Horizontal scaling is not available: the PDF engine has no Tz operator."
             >
               <span>Horizontal scaling</span>
-            </button>
+            </Button>
           </div>
         </details>
         </div>

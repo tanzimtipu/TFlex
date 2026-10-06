@@ -64,10 +64,16 @@ const VARIANT_SELECTORS = [
   ".btn-secondary",
   ".btn-ghost",
   ".btn-danger",
+  ".btn-danger-commit",
   ".btn-icon",
   ".btn-toolbar",
   ".btn-toggle",
+  ".btn-disclosure",
   ".btn-sm",
+  ".btn-compact",
+  ".btn-prominent",
+  ".btn-coarse",
+  ".btn-busy",
   ".btn-segmented",
   ".btn-segmented-item",
 ] as const;
@@ -77,24 +83,61 @@ describe("Phase 91 — button tokens exist and resolve", () => {
     expect(styles).toMatch(/--btn-h:\s*var\(--control-height\)/);
     expect(styles).toMatch(/--btn-h-sm:\s*28px/);
     expect(styles).toMatch(/--btn-toolbar-size:\s*var\(--btn-h-sm\)/);
-    expect(styles).toMatch(/--btn-icon-size:\s*var\(--tf-icon-size\)/);
-    expect(styles).toMatch(/--btn-radius:\s*var\(--radius-control\)/);
-    expect(styles).toMatch(/--btn-gap:\s*var\(--sp-2\)/);
+    expect(styles).toMatch(/--btn-icon-size:\s*16px/);
+    expect(styles).toMatch(/--btn-radius:\s*9px/);
+    expect(styles).toMatch(/--btn-gap:\s*6px/);
+  });
+
+  it("declares the Phase 113 geometry/rhythm additions", () => {
+    expect(styles).toMatch(/--btn-pad-x:\s*12px/);
+    expect(styles).toMatch(/--btn-label-size:\s*12px/);
+    expect(styles).toMatch(/--btn-label-weight:\s*500/);
+    expect(styles).toMatch(/--btn-h-compact:\s*32px/);
+    expect(styles).toMatch(/--btn-h-prominent:\s*40px/);
+    expect(styles).toMatch(/--btn-target-coarse:\s*44px/);
+  });
+
+  it("declares the button-scoped Quiet Actions colour tokens (light + dark)", () => {
+    expect(styles).toMatch(/--btn-primary-bg:\s*#7050D6/);
+    expect(styles).toMatch(/--btn-primary-fg:\s*#FFFFFF/);
+    expect(styles).toMatch(/--btn-primary-hover:\s*#6341C5/);
+    expect(styles).toMatch(/--btn-primary-pressed:\s*#5734B6/);
+    expect(styles).toMatch(/--btn-neutral-pressed:\s*#EAEDF2/);
+    expect(styles).toMatch(/--btn-selected-bg:\s*#F0EBFC/);
+    expect(styles).toMatch(/--btn-selected-fg:\s*#7050D6/);
+    expect(styles).toMatch(/--btn-selected-border:\s*#7050D6/);
+    expect(styles).toMatch(/--btn-danger-fg:\s*#B82E43/);
+    expect(styles).toMatch(/--btn-primary-bg:\s*#B9A4FF/);
+    expect(styles).toMatch(/--btn-primary-fg:\s*#171A21/);
+    expect(styles).toMatch(/--btn-primary-hover:\s*#C5B4FF/);
+    expect(styles).toMatch(/--btn-primary-pressed:\s*#AC94F5/);
+    expect(styles).toMatch(/--btn-neutral-pressed:\s*#303641/);
+    expect(styles).toMatch(/--btn-selected-bg:\s*#302740/);
+    expect(styles).toMatch(/--btn-selected-fg:\s*#B9A4FF/);
+    expect(styles).toMatch(/--btn-selected-border:\s*#B9A4FF/);
+    expect(styles).toMatch(/--btn-danger-fg:\s*#FF9AAD/);
   });
 
   it("defines the previously-missing --error-hover token derived from --error", () => {
     expect(styles).toMatch(/--error-hover:\s*color-mix\(in srgb,\s*var\(--error\)/);
   });
 
-  it("removes the old --error-hover fallback literal from .btn-danger:hover", () => {
+  it("keeps the solid destructive-commit hover free of a fallback literal", () => {
     const body = findRuleBody(
       styles,
-      '.btn-danger:hover:not([disabled]):not([aria-disabled="true"])',
+      '.btn-danger-commit:hover:not([disabled]):not([aria-disabled="true"])',
     );
     expect(body).not.toBeNull();
     expect(body ?? "").toContain("var(--error-hover)");
     expect(body ?? "").not.toContain("#b91c1c");
     expect(body ?? "").not.toMatch(/var\(--error-hover\s*,/);
+  });
+
+  it("makes .btn-danger the subtle treatment (transparent fill, token ink)", () => {
+    const body = findRuleBody(styles, ".btn-danger") ?? "";
+    expect(body).toContain("background: transparent");
+    expect(body).toContain("var(--btn-danger-fg)");
+    expect(body).toContain("color-mix");
   });
 });
 
@@ -135,10 +178,24 @@ describe("Phase 91 — the .btn family consumes the documented tokens", () => {
     expect(body).toContain("var(--btn-h-sm)");
   });
 
-  it(".btn-toggle drives its selected state from [aria-pressed=true]", () => {
+  it(".btn-toggle drives its selected state from the selected tokens", () => {
     const body = findRuleBody(styles, '.btn-toggle[aria-pressed="true"]') ?? "";
-    expect(body).toContain("var(--accent-soft)");
-    expect(body).toContain("var(--accent)");
+    expect(body).toContain("var(--btn-selected-bg)");
+    expect(body).toContain("var(--btn-selected-fg)");
+    expect(body).toContain("var(--btn-selected-border)");
+  });
+
+  it("each density class consumes its target token", () => {
+    expect(findRuleBody(styles, ".btn-compact") ?? "").toContain("var(--btn-h-compact)");
+    expect(findRuleBody(styles, ".btn-prominent") ?? "").toContain("var(--btn-h-prominent)");
+    expect(findRuleBody(styles, ".btn-coarse") ?? "").toContain("var(--btn-target-coarse)");
+  });
+
+  it(".btn-disclosure is chrome-neutral with an expanded hook", () => {
+    const body = findRuleBody(styles, ".btn-disclosure") ?? "";
+    expect(body).toContain("background: transparent");
+    const expanded = findRuleBody(styles, '.btn-disclosure[aria-expanded="true"]') ?? "";
+    expect(expanded).toContain("var(--btn-selected-bg)");
   });
 
   it(".btn-segmented owns the outer radius and items are square", () => {
@@ -179,10 +236,16 @@ describe("Phase 91 — the taxonomy document is pinned to the CSS", () => {
       ".btn-secondary",
       ".btn-ghost",
       ".btn-danger",
+      ".btn-danger-commit",
       ".btn-icon",
       ".btn-toolbar",
       ".btn-toggle",
+      ".btn-disclosure",
       ".btn-sm",
+      ".btn-compact",
+      ".btn-prominent",
+      ".btn-coarse",
+      ".btn-busy",
       ".btn-segmented",
       ".btn-segmented-item",
     ]) {
@@ -200,6 +263,9 @@ describe("Phase 91 — the taxonomy document is pinned to the CSS", () => {
       "Destructive",
       "Toggle",
       "Segmented",
+      "Disclosure",
+      "Density",
+      "Busy",
     ]) {
       expect(doc, `doc must define ${category}`).toContain(category);
     }
@@ -213,6 +279,21 @@ describe("Phase 91 — the taxonomy document is pinned to the CSS", () => {
       "--btn-icon-size",
       "--btn-radius",
       "--btn-gap",
+      "--btn-pad-x",
+      "--btn-label-size",
+      "--btn-label-weight",
+      "--btn-h-compact",
+      "--btn-h-prominent",
+      "--btn-target-coarse",
+      "--btn-primary-bg",
+      "--btn-primary-fg",
+      "--btn-primary-hover",
+      "--btn-primary-pressed",
+      "--btn-neutral-pressed",
+      "--btn-selected-bg",
+      "--btn-selected-fg",
+      "--btn-selected-border",
+      "--btn-danger-fg",
       "--error-hover",
       "--motion-duration-fast",
       "--motion-ease-standard",
@@ -222,10 +303,12 @@ describe("Phase 91 — the taxonomy document is pinned to the CSS", () => {
     }
   });
 
-  it("states the accessible-name, focus, toggle and group contracts", () => {
+  it("states the accessible-name, focus, toggle, disclosure and group contracts", () => {
     expect(doc).toContain("aria-label");
     expect(doc).toContain("title");
     expect(doc).toContain("aria-pressed");
+    expect(doc).toContain("aria-expanded");
+    expect(doc).toContain("aria-busy");
     expect(doc).toContain('role="group"');
     expect(doc).toContain("--focus-ring");
   });

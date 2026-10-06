@@ -1,0 +1,494 @@
+{
+  "S1a": {
+    "mergeTilePresent": true,
+    "mergeAfterDoubleCounts": {
+      "open": 2,
+      "save": 0
+    },
+    "mergeAfterDoubleDialogs": 0,
+    "mergeAfterStormCounts": {
+      "open": 5,
+      "save": 0
+    },
+    "mergeAfterStormDialogs": 0,
+    "dialogsAfterClose": 0
+  },
+  "S1b": {
+    "openCounts": {
+      "open": 2,
+      "save": 0
+    },
+    "openDialogs": 0,
+    "saveAsDisabled": false,
+    "saveAsCounts": {
+      "open": 0,
+      "save": 0
+    },
+    "saveAsDialogs": 1,
+    "rotateBefore": 0,
+    "rotateAfter": 2,
+    "rotateDelta": 2,
+    "menuClosedAfterVerb": true
+  },
+  "S2": {
+    "fileOpenFocus": {
+      "tag": "BUTTON",
+      "id": null,
+      "cls": "btn btn-ghost btn-compact titlebar-menu-row",
+      "action": "open",
+      "ariaLabel": null,
+      "dataMenuButton": false,
+      "dataAppMenu": false,
+      "dataToolSearch": false,
+      "text": "Open...Ctrl+O"
+    },
+    "fileAriaExpandedOpen": "true",
+    "fileFocusAfterEscape": {
+      "tag": "BUTTON",
+      "id": null,
+      "cls": "btn btn-secondary btn-disclosure btn-compact titlebar-menu-button titlebar-menu-file",
+      "action": null,
+      "ariaLabel": "File menu",
+      "dataMenuButton": true,
+      "dataAppMenu": false,
+      "dataToolSearch": false,
+      "text": "File"
+    },
+    "fileAriaExpandedClosed": "false",
+    "fileOutsideDismissed": true,
+    "fileArrowSeq": [
+      "merge",
+      "save",
+      "saveAs",
+      "closeTab",
+      "open",
+      "merge"
+    ],
+    "paletteOpenFocus": {
+      "tag": "INPUT",
+      "id": null,
+      "cls": "command-palette-input",
+      "action": null,
+      "ariaLabel": "Search tools, recent files and view actions",
+      "dataMenuButton": false,
+      "dataAppMenu": false,
+      "dataToolSearch": false,
+      "text": ""
+    },
+    "paletteFocusAfterEscape": {
+      "tag": "BODY",
+      "id": null,
+      "cls": "",
+      "action": null,
+      "ariaLabel": null,
+      "dataMenuButton": false,
+      "dataAppMenu": false,
+      "dataToolSearch": false,
+      "text": "JovrelFileOpenSign in1791302"
+    },
+    "prefsRowPresent": true,
+    "prefsOpenFocus": {
+      "tag": "BUTTON",
+      "id": null,
+      "cls": "btn btn-ghost btn-icon sheet-close",
+      "action": null,
+      "ariaLabel": "Close preferences",
+      "dataMenuButton": false,
+      "dataAppMenu": false,
+      "dataToolSearch": false,
+      "text": ""
+    },
+    "prefsFocusAfterClose": {
+      "tag": "BODY",
+      "id": null,
+      "cls": "",
+      "action": null,
+      "ariaLabel": null,
+      "dataMenuButton": false,
+      "dataAppMenu": false,
+      "dataToolSearch": false,
+      "text": "JovrelFileOpenSign in1791302"
+    },
+    "prefsClosed": true
+  },
+  "S3": {
+    "saveDisabled": {
+      "tag": "BUTTON",
+      "disabled": true,
+      "ariaBusy": null,
+      "title": "Saved — no changes to save",
+      "ariaLabel": "Save",
+      "cls": "btn btn-secondary btn-compact titlebar-file-btn titlebar-file-btn-clean",
+      "opacity": 0.55,
+      "color": "rgb(61, 76, 105)",
+      "bg": "rgb(255, 255, 255)",
+      "effectiveBg": {
+        "r": 255,
+        "g": 255,
+        "b": 255,
+        "a": 1
+      },
+      "rect": {
+        "x": 246,
+        "y": 10,
+        "w": 32,
+        "h": 28
+      },
+      "contrast": 8.62
+    },
+    "saveAsDisabled": {
+      "tag": "BUTTON",
+      "disabled": false,
+      "ariaBusy": null,
+      "title": "Save a copy (Ctrl+Shift+S)",
+      "ariaLabel": "Save a copy",
+      "cls": "btn btn-secondary btn-compact titlebar-file-btn",
+      "opacity": 1,
+      "color": "rgb(61, 76, 105)",
+      "bg": "rgb(255, 255, 255)",
+      "effectiveBg": {
+        "r": 255,
+        "g": 255,
+        "b": 255,
+        "a": 1
+      },
+      "rect": {
+        "x": 280,
+        "y": 10,
+        "w": 32,
+        "h": 28
+      },
+      "contrast": 8.62
+    },
+    "printDisabled": {
+      "tag": "BUTTON",
+      "disabled": false,
+      "ariaBusy": null,
+      "title": "Print (Ctrl+P)",
+      "ariaLabel": "Print",
+      "cls": "btn btn-ghost btn-compact btn-icon header-print",
+      "opacity": 1,
+      "color": "rgb(61, 76, 105)",
+      "bg": "rgba(0, 0, 0, 0)",
+      "effectiveBg": {
+        "r": 250,
+        "g": 251,
+        "b": 253,
+        "a": 1
+      },
+      "rect": {
+        "x": 2211,
+        "y": 10,
+        "w": 28,
+        "h": 28
+      },
+      "contrast": 8.33
+    },
+    "saveEnabled": {
+      "tag": "BUTTON",
+      "disabled": false,
+      "ariaBusy": null,
+      "title": "Unsaved changes — Save now (Ctrl+S)",
+      "ariaLabel": "Save",
+      "cls": "btn btn-secondary btn-compact titlebar-file-btn titlebar-file-btn-modified",
+      "opacity": 1,
+      "color": "rgb(61, 76, 105)",
+      "bg": "rgb(255, 255, 255)",
+      "effectiveBg": {
+        "r": 255,
+        "g": 255,
+        "b": 255,
+        "a": 1
+      },
+      "rect": {
+        "x": 246,
+        "y": 10,
+        "w": 32,
+        "h": 28
+      },
+      "contrast": 8.62
+    },
+    "saveWidthDeltaPx": 0,
+    "saveHeightDeltaPx": 0,
+    "busyControlsOnLoad": [],
+    "busySurfaceReachable": {
+      "present": false
+    }
+  },
+  "S4": {
+    "rotateRowClassBeforeClick": "btn btn-secondary btn-compact titlebar-menu-row context-menu-item",
+    "rotateRowStillInDom": false,
+    "pressedTrueAfterOneShot": [
+      "btn btn-toggle stage-rail-btn stage-rail-btn-active",
+      "btn btn-toolbar btn-toggle btn-compact",
+      "btn btn-toolbar btn-segmented-item btn-compact"
+    ],
+    "thumbStillPressed": null,
+    "viewSegPresent": true,
+    "viewSegInitial": [
+      {
+        "v": "one",
+        "pressed": "true"
+      },
+      {
+        "v": "two",
+        "pressed": "false"
+      },
+      {
+        "v": "four",
+        "pressed": "false"
+      }
+    ],
+    "viewSegAfterTwo": [
+      {
+        "v": "one",
+        "pressed": "false"
+      },
+      {
+        "v": "two",
+        "pressed": "true"
+      },
+      {
+        "v": "four",
+        "pressed": "false"
+      }
+    ],
+    "viewSegAfterOne": [
+      {
+        "v": "one",
+        "pressed": "true"
+      },
+      {
+        "v": "two",
+        "pressed": "false"
+      },
+      {
+        "v": "four",
+        "pressed": "false"
+      }
+    ]
+  },
+  "S5": {
+    "dockMoreAriaExpandedBefore": "false",
+    "dockMoreAriaExpandedAfter": "true",
+    "dockMoreRect": {
+      "x": 1269,
+      "y": 1072,
+      "w": 300,
+      "h": 190,
+      "right": 1569,
+      "bottom": 1262,
+      "vw": 2560,
+      "vh": 1392,
+      "position": "fixed"
+    },
+    "dockMoreFirstFocus": {
+      "tag": "BUTTON",
+      "id": null,
+      "cls": "btn btn-secondary btn-compact titlebar-menu-row action-dock-menu-item",
+      "action": "replacePages",
+      "ariaLabel": null,
+      "dataMenuButton": false,
+      "dataAppMenu": false,
+      "dataToolSearch": false,
+      "text": "Replace pagesSwap a contiguo"
+    },
+    "dockMoreEscapeDetached": true,
+    "ctxRect": {
+      "x": 186,
+      "y": 894,
+      "w": 300,
+      "h": 266,
+      "right": 486,
+      "bottom": 1160,
+      "vw": 2560,
+      "vh": 1392,
+      "position": "fixed"
+    },
+    "ctxFirstFocus": {
+      "tag": "BUTTON",
+      "id": null,
+      "cls": "btn btn-secondary btn-compact titlebar-menu-row context-menu-item",
+      "action": "rotate-cw",
+      "ariaLabel": null,
+      "dataMenuButton": false,
+      "dataAppMenu": false,
+      "dataToolSearch": false,
+      "text": "Rotate CW"
+    },
+    "ctxArrowSeq": [
+      "rotate-ccw",
+      "extract",
+      "insert-blank",
+      "replace"
+    ],
+    "ctxEscapeDetached": true,
+    "paletteFirstFocus": {
+      "tag": "INPUT",
+      "id": null,
+      "cls": "command-palette-input",
+      "action": null,
+      "ariaLabel": "Search tools, recent files and view actions",
+      "dataMenuButton": false,
+      "dataAppMenu": false,
+      "dataToolSearch": false,
+      "text": ""
+    },
+    "paletteRect": {
+      "x": 1079,
+      "y": 220,
+      "w": 428,
+      "h": 21,
+      "right": 1507,
+      "bottom": 241,
+      "vw": 2560,
+      "vh": 1392,
+      "position": "static"
+    },
+    "paletteClosed": true
+  },
+  "S6": {
+    "controlsWrap": {
+      "tag": "DIV",
+      "cls": "titlebar-controls",
+      "ariaLabel": null,
+      "rect": {
+        "x": 2422,
+        "y": 0,
+        "w": 138,
+        "h": 47,
+        "right": 2560,
+        "bottom": 47
+      },
+      "appRegion": "no-drag",
+      "borderRadius": "0px",
+      "position": "static",
+      "vw": 2560
+    },
+    "minimize": {
+      "tag": "BUTTON",
+      "cls": "btn btn-ghost btn-icon titlebar-control titlebar-control-min",
+      "ariaLabel": "Minimize window",
+      "rect": {
+        "x": 2422,
+        "y": 0,
+        "w": 46,
+        "h": 47,
+        "right": 2468,
+        "bottom": 47
+      },
+      "appRegion": "no-drag",
+      "borderRadius": "0px",
+      "position": "static",
+      "vw": 2560
+    },
+    "maximize": {
+      "tag": "BUTTON",
+      "cls": "btn btn-ghost btn-icon titlebar-control titlebar-control-max",
+      "ariaLabel": "Restore window",
+      "rect": {
+        "x": 2468,
+        "y": 0,
+        "w": 46,
+        "h": 47,
+        "right": 2514,
+        "bottom": 47
+      },
+      "appRegion": "no-drag",
+      "borderRadius": "0px",
+      "position": "static",
+      "vw": 2560
+    },
+    "close": {
+      "tag": "BUTTON",
+      "cls": "btn btn-ghost btn-icon titlebar-control titlebar-control-close",
+      "ariaLabel": "Close window",
+      "rect": {
+        "x": 2514,
+        "y": 0,
+        "w": 46,
+        "h": 47,
+        "right": 2560,
+        "bottom": 47
+      },
+      "appRegion": "no-drag",
+      "borderRadius": "0px",
+      "position": "static",
+      "vw": 2560
+    },
+    "dragRegion": {
+      "tag": "DIV",
+      "cls": "titlebar-drag",
+      "ariaLabel": null,
+      "rect": {
+        "x": 1245,
+        "y": 24,
+        "w": 0,
+        "h": 0,
+        "right": 1245,
+        "bottom": 24
+      },
+      "appRegion": "drag",
+      "borderRadius": "0px",
+      "position": "static",
+      "vw": 2560
+    },
+    "dragRegionPresent": true,
+    "bridge": {
+      "minimize": "function",
+      "maximize": "function",
+      "close": "function"
+    },
+    "captionButtonsRawTag": [
+      "BUTTON|btn btn-ghost btn-icon titlebar-control titlebar-control-min",
+      "BUTTON|btn btn-ghost btn-icon titlebar-control titlebar-control-max",
+      "BUTTON|btn btn-ghost btn-icon titlebar-control titlebar-control-close"
+    ]
+  },
+  "S7": {
+    "menuDangerRows": [
+      {
+        "item": "rotate-cw",
+        "cls": "btn btn-secondary btn-compact titlebar-menu-row context-menu-item",
+        "variant": null,
+        "color": "rgb(15, 23, 42)"
+      },
+      {
+        "item": "rotate-ccw",
+        "cls": "btn btn-secondary btn-compact titlebar-menu-row context-menu-item",
+        "variant": null,
+        "color": "rgb(15, 23, 42)"
+      },
+      {
+        "item": "extract",
+        "cls": "btn btn-secondary btn-compact titlebar-menu-row context-menu-item",
+        "variant": null,
+        "color": "rgb(15, 23, 42)"
+      },
+      {
+        "item": "insert-blank",
+        "cls": "btn btn-secondary btn-compact titlebar-menu-row context-menu-item",
+        "variant": null,
+        "color": "rgb(15, 23, 42)"
+      },
+      {
+        "item": "replace",
+        "cls": "btn btn-secondary btn-compact titlebar-menu-row context-menu-item",
+        "variant": null,
+        "color": "rgb(15, 23, 42)"
+      },
+      {
+        "item": "delete",
+        "cls": "btn btn-danger btn-compact titlebar-menu-row command-menu-row-danger context-menu-item context-menu-item-dange",
+        "variant": "danger",
+        "color": "rgb(217, 108, 99)"
+      }
+    ],
+    "deleteRowPresent": true,
+    "dialogBeforeDelete": 0,
+    "dialogAfterDelete": 2,
+    "deleteDialogTitle": "Delete pages",
+    "dangerCommitCount": 0,
+    "homeMinus": null
+  }
+}

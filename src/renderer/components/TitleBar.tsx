@@ -59,6 +59,7 @@ import {
 import { GlassChromeBar } from "./GlassChrome";
 import { BrandMark } from "./BrandMark";
 import { BrandWordmark } from "./BrandWordmark";
+import { Button } from "./Button";
 
 /** The shape of a menu entry. Two kinds: a top-level group heading
  *  (rendered as a non-interactive row) or an action row. The
@@ -258,13 +259,15 @@ export function TitleBar(props: TitleBarProps): ReactElement {
       {/* Menu button — leading edge, hidden when no groups are wired. */}
       {menuGroups !== undefined && menuGroups.length > 0 && (
         <div className="titlebar-menu">
-          <button
+          <Button
             ref={menuButtonRef}
-            type="button"
-            // Phase 91 — canonical control (`btn btn-ghost`); the legacy
-            // classes stay as layout/e2e aliases. `titlebar-menu-button-active`
-            // remains the joined-corner open alias.
-            className={menuOpen ? "btn btn-ghost titlebar-menu-button titlebar-menu-file titlebar-menu-button-active" : "btn btn-ghost titlebar-menu-button titlebar-menu-file"}
+            intent="secondary"
+            kind="disclosure"
+            density="compact"
+            // Phase 91 — canonical control; the legacy classes stay as
+            // layout/e2e aliases. `titlebar-menu-button-active` remains the
+            // joined-corner open alias.
+            className={menuOpen ? "titlebar-menu-button titlebar-menu-file titlebar-menu-button-active" : "titlebar-menu-button titlebar-menu-file"}
             onClick={(): void => setMenuOpen((v) => !v)}
             aria-haspopup="menu"
             aria-expanded={menuOpen}
@@ -278,7 +281,7 @@ export function TitleBar(props: TitleBarProps): ReactElement {
                 the existing selectors keep resolving. */}
             <span className="titlebar-menu-label">File</span>
             <Icon name="headerMenuDisclosure" size="md" aria-hidden />
-          </button>
+          </Button>
           {/* TFL-975 (TFL-855 chunk C5) — the File menu is the shared
               `CommandMenu` primitive. It emits the SHIPPED `.titlebar-menu-*`
               DOM contract verbatim (popover shell, headings, separators,

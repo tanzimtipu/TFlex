@@ -46,6 +46,7 @@ import { DEFAULT_CONVERT_DEFAULTS } from '../../shared/convert';
 import type { ConvertDefaults } from '../../shared/convert';
 import type { ThemeDefault } from '../state/preferences';
 import { DialogShell } from './DialogShell';
+import { Button } from './Button';
 import { TfResize } from './motion/TfResize';
 
 interface PreferencesDialogProps {
@@ -330,11 +331,14 @@ export function PreferencesDialog(props: PreferencesDialogProps): ReactElement |
                 const isActive = category === cat.id;
                 const CategoryIcon = cat.icon;
                 return (
-                  <button
+                  <Button
                     key={cat.id}
                     type="button"
                     role="tab"
                     id={`prefs-cat-${cat.id}`}
+                    intent="secondary"
+                    kind="exclusive-selection"
+                    density="compact"
                     className="prefs-cat"
                     aria-selected={isActive}
                     aria-controls={`prefs-panel-${cat.id}`}
@@ -347,7 +351,7 @@ export function PreferencesDialog(props: PreferencesDialogProps): ReactElement |
                   >
                     <Icon className="prefs-cat-icon" icon={CategoryIcon} size="sm" />
                     <span className="prefs-cat-label">{cat.label}</span>
-                  </button>
+                  </Button>
                 );
               })}
             </nav>
@@ -628,33 +632,42 @@ export function PreferencesDialog(props: PreferencesDialogProps): ReactElement |
                       <section className="prefs-section">
                         <h3 className="prefs-section-title">Storage locations</h3>
                         <div className="prefs-paths">
-                          <button
+                          <Button
                             type="button"
+                            intent="secondary"
+                            kind="action"
+                            density="compact"
                             className="prefs-path"
                             onClick={(): void => handleOpenPath(paths.userData)}
                             title={paths.userData}
                           >
                             <span className="prefs-path-label">User data</span>
                             <span className="prefs-path-value">{paths.userData}</span>
-                          </button>
-                          <button
+                          </Button>
+                          <Button
                             type="button"
+                            intent="secondary"
+                            kind="action"
+                            density="compact"
                             className="prefs-path"
                             onClick={(): void => handleOpenPath(paths.settings)}
                             title={paths.settings}
                           >
                             <span className="prefs-path-label">Settings file</span>
                             <span className="prefs-path-value">{paths.settings}</span>
-                          </button>
-                          <button
+                          </Button>
+                          <Button
                             type="button"
+                            intent="secondary"
+                            kind="action"
+                            density="compact"
                             className="prefs-path"
                             onClick={(): void => handleOpenPath(paths.signatures)}
                             title={paths.signatures}
                           >
                             <span className="prefs-path-label">Saved signatures</span>
                             <span className="prefs-path-value">{paths.signatures}</span>
-                          </button>
+                          </Button>
                         </div>
                       </section>
                     )}

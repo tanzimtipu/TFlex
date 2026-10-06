@@ -20,6 +20,7 @@ import type {
 } from "../../shared/types";
 import type { Result } from "../../shared/result";
 import type { PagePoint } from "../annotations/model";
+import { Button } from "../components/Button";
 import type { TextItemGeom } from "../annotations/geometry";
 import {
   clientToPagePoint,
@@ -292,9 +293,11 @@ export function RedactionOverlay({
         </div>
         <div className="redact-swatches" role="group" aria-label="Mark colour">
           {REDACT_MARK_COLORS.map((hex) => (
-            <button
+            <Button
               key={hex}
-              type="button"
+              intent="secondary"
+              kind="exclusive-selection"
+              density="compact"
               data-redact-swatch
               data-color={hex}
               aria-label={`Mark colour ${hex}`}

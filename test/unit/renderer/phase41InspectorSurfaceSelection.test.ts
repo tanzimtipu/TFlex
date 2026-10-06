@@ -126,7 +126,7 @@ describe("Phase 41 item 3 — one professional selection trio", () => {
   });
 
   it("the text panel's active option consumes the trio (no accent slab)", () => {
-    const active = ruleBody(".text-props-btn-active");
+    const active = ruleBody('.text-props-btn[aria-pressed="true"]');
     expect(active).toMatch(/background:\s*var\(--select-fill\)/);
     expect(active).toMatch(/border-color:\s*var\(--select-edge\)/);
     expect(active).toMatch(/color:\s*var\(--select-glyph\)/);

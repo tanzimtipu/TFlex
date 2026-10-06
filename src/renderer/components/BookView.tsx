@@ -22,6 +22,7 @@ import {
 } from 'react';
 import { Columns2, Square, X } from 'lucide-react';
 import { Icon } from '../icons/Icon';
+import { Button, IconButton } from './Button';
 import type { PDFDocumentProxy } from 'pdfjs-dist';
 import { PageView } from './PageView';
 import { useInstantMotion } from '../hooks/useAnimations';
@@ -579,36 +580,39 @@ export function BookView(props: BookViewProps): ReactElement {
           role="group"
           aria-label="Book layout"
         >
-          <button
-            type="button"
+          <IconButton
+            label="Book single page"
+            intent="secondary"
+            kind="exclusive-selection"
+            density="compact"
             className="book-view-layout-button"
             onClick={(): void => chooseLayout('single')}
-            aria-label="Book single page"
-            aria-pressed={layout === 'single'}
+            pressed={layout === 'single'}
             data-book-single
-          >
-            <Icon icon={Square} size="sm" />
-          </button>
-          <button
-            type="button"
+            icon={<Icon icon={Square} size="sm" />}
+          />
+          <IconButton
+            label="Book double page"
+            intent="secondary"
+            kind="exclusive-selection"
+            density="compact"
             className="book-view-layout-button"
             onClick={(): void => chooseLayout('double')}
-            aria-label="Book double page"
-            aria-pressed={layout === 'double'}
+            pressed={layout === 'double'}
             data-book-double
-          >
-            <Icon icon={Columns2} size="sm" />
-          </button>
+            icon={<Icon icon={Columns2} size="sm" />}
+          />
         </div>
-        <button
-          type="button"
+        <IconButton
+          label="Close book view"
+          intent="secondary"
+          kind="action"
+          density="compact"
           className="book-view-close"
           onClick={onClose}
-          aria-label="Close book view"
           data-book-close
-        >
-          <Icon icon={X} size="sm" />
-        </button>
+          icon={<Icon icon={X} size="sm" />}
+        />
       </header>
 
       {/* Phase 66 (chunk 3) — the EXISTING annotation toolbar, re-parented as
@@ -664,19 +668,23 @@ export function BookView(props: BookViewProps): ReactElement {
       </div>
 
       <nav className="book-view-nav" aria-label="Book navigation">
-        <button
-          type="button"
+        <Button
+          intent="secondary"
+          kind="action"
+          density="prominent"
           className="book-nav-button"
           onClick={stepBack}
           disabled={noPrev}
           aria-label="Previous page"
           data-book-prev
+          icon={<Icon name="prevPage" size="sm" />}
         >
-          <Icon name="prevPage" size="sm" />
           Previous
-        </button>
-        <button
-          type="button"
+        </Button>
+        <Button
+          intent="secondary"
+          kind="action"
+          density="prominent"
           className="book-nav-button"
           onClick={stepForward}
           disabled={noNext}
@@ -685,7 +693,7 @@ export function BookView(props: BookViewProps): ReactElement {
         >
           Next
           <Icon name="nextPage" size="sm" />
-        </button>
+        </Button>
       </nav>
     </div>
   );

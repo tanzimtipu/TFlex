@@ -29,6 +29,7 @@ import type { ReactNode } from 'react';
 import type { ZoomMode } from '../state/zoom';
 import { GlassControlGroup } from './GlassChrome';
 import { Icon } from '../icons/Icon';
+import { IconButton } from './Button';
 
 export interface CommandBarProps {
   page: number;
@@ -172,16 +173,16 @@ export function CommandBar(props: CommandBarProps) {
 
       {/* GROUP: Navigation — [<] [1/34] [>] */}
       <GlassControlGroup label="Navigation" className="toolbar-group">
-        <button
-          type="button"
-          className="btn btn-toolbar tool-btn"
+        <IconButton
+          variant="toolbar"
+          kind="action"
+          density="standard"
+          label="Previous page"
+          className="tool-btn"
           disabled={page <= 1}
           onClick={() => onJump(String(page - 1))}
-          aria-label="Previous page"
-          title="Previous page"
-        >
-          <Icon name="prevPage" size="xl" aria-hidden />
-        </button>
+          icon={<Icon name="prevPage" size="xl" aria-hidden />}
+        />
         <div className="page-indicator">
           <input
             className="page-input"
@@ -207,183 +208,188 @@ export function CommandBar(props: CommandBarProps) {
             </span>
           )}
         </div>
-        <button
-          type="button"
-          className="btn btn-toolbar tool-btn"
+        <IconButton
+          variant="toolbar"
+          kind="action"
+          density="standard"
+          label="Next page"
+          className="tool-btn"
           disabled={page >= pageCount}
           onClick={() => onJump(String(page + 1))}
-          aria-label="Next page"
-          title="Next page"
-        >
-          <Icon name="nextPage" size="xl" aria-hidden />
-        </button>
+          icon={<Icon name="nextPage" size="xl" aria-hidden />}
+        />
       </GlassControlGroup>
 
       {/* GROUP: Zoom — [- 372% +] + the two fit modes */}
       <GlassControlGroup label="Zoom" className="toolbar-group">
-        <button type="button" className="btn btn-toolbar tool-btn" onClick={onZoomOut} aria-label="Zoom out" title="Zoom out">
-          <Icon name="zoomOut" size="xl" aria-hidden />
-        </button>
+        <IconButton
+          variant="toolbar"
+          kind="action"
+          density="standard"
+          label="Zoom out"
+          className="tool-btn"
+          onClick={onZoomOut}
+          icon={<Icon name="zoomOut" size="xl" aria-hidden />}
+        />
         <span className="zoom-percent" title="Current zoom">
           {zoomPercent}%
         </span>
-        <button type="button" className="btn btn-toolbar tool-btn" onClick={onZoomIn} aria-label="Zoom in" title="Zoom in">
-          <Icon name="zoomIn" size="xl" aria-hidden />
-        </button>
-        <button
-          type="button"
-          className={zoomMode === 'fit-width' ? 'btn btn-toolbar btn-toggle tool-btn tool-btn-active' : 'btn btn-toolbar btn-toggle tool-btn'}
+        <IconButton
+          variant="toolbar"
+          kind="action"
+          density="standard"
+          label="Zoom in"
+          className="tool-btn"
+          onClick={onZoomIn}
+          icon={<Icon name="zoomIn" size="xl" aria-hidden />}
+        />
+        <IconButton
+          variant="toolbar"
+          kind="toggle"
+          density="standard"
+          label="Fit width"
+          className="tool-btn"
+          pressed={zoomMode === 'fit-width'}
           onClick={onFitWidth}
-          aria-pressed={zoomMode === 'fit-width'}
-          aria-label="Fit width"
-          title="Fit width"
-        >
-          <Icon name="fitWidth" size="xl" aria-hidden />
-        </button>
-        <button
-          type="button"
-          className={zoomMode === 'fit-page' ? 'btn btn-toolbar btn-toggle tool-btn tool-btn-active' : 'btn btn-toolbar btn-toggle tool-btn'}
+          icon={<Icon name="fitWidth" size="xl" aria-hidden />}
+        />
+        <IconButton
+          variant="toolbar"
+          kind="toggle"
+          density="standard"
+          label="Fit page"
+          className="tool-btn"
+          pressed={zoomMode === 'fit-page'}
           onClick={onFitPage}
-          aria-pressed={zoomMode === 'fit-page'}
-          aria-label="Fit page"
-          title="Fit page"
-        >
-          <Icon name="fitPage" size="xl" aria-hidden />
-        </button>
+          icon={<Icon name="fitPage" size="xl" aria-hidden />}
+        />
       </GlassControlGroup>
 
       {/* GROUP: Tools — the working icon set in ONE capsule */}
       <GlassControlGroup label="Tools" className="toolbar-group commandbar-group-tools">
-        <button
-          type="button"
-          className="btn btn-toolbar btn-toggle tool-btn"
+        <IconButton
+          variant="toolbar"
+          kind="toggle"
+          density="standard"
+          label="Find in document"
+          className="tool-btn"
+          pressed={searchOpen}
           onClick={onToggleSearch}
-          aria-pressed={searchOpen}
-          aria-label="Find in document"
-          title="Find in document (Ctrl+F)"
-        >
-          <Icon name="find" size="xl" aria-hidden />
-        </button>
+          icon={<Icon name="find" size="xl" aria-hidden />}
+        />
         {onRotateCounterClockwise !== undefined && (
-          <button
-            type="button"
-            className="btn btn-toolbar tool-btn"
+          <IconButton
+            variant="toolbar"
+            kind="action"
+            density="standard"
+            label="Rotate counter-clockwise"
+            className="tool-btn"
             onClick={onRotateCounterClockwise}
-            title="Rotate counter-clockwise"
-            aria-label="Rotate counter-clockwise"
             data-toolbar-rotate-ccw
-          >
-            <Icon name="rotateCounterClockwise" size="xl" aria-hidden />
-          </button>
+            icon={<Icon name="rotateCounterClockwise" size="xl" aria-hidden />}
+          />
         )}
         {onRotateClockwise !== undefined && (
-          <button
-            type="button"
-            className="btn btn-toolbar tool-btn"
-            // Phase 8 — disabled while no document is open (the host
-            // passes `undefined` in that case so the button doesn't
-            // render at all; this guard keeps the optional prop safe
-            // in tests too).
+          <IconButton
+            variant="toolbar"
+            kind="action"
+            density="standard"
+            label="Rotate clockwise"
+            className="tool-btn"
             onClick={onRotateClockwise}
-            title="Rotate clockwise"
-            aria-label="Rotate clockwise"
             data-toolbar-rotate-cw
-          >
-            <Icon name="rotate" size="xl" aria-hidden />
-          </button>
+            icon={<Icon name="rotate" size="xl" aria-hidden />}
+          />
         )}
-        <button
-          type="button"
-          className={handActive ? 'btn btn-toolbar btn-toggle tool-btn tool-btn-active' : 'btn btn-toolbar btn-toggle tool-btn'}
+        <IconButton
+          variant="toolbar"
+          kind="toggle"
+          density="standard"
+          label="Pan mode"
+          className="tool-btn"
+          pressed={handActive}
           onClick={onHandToggle}
-          aria-pressed={handActive}
-          title={handActive ? 'Pan mode active — drag to scroll. Click again to exit.' : 'Pan mode: drag anywhere to scroll the document'}
-          aria-label="Pan mode"
           data-hand-toggle
           data-hand-active={handActive ? 'true' : 'false'}
-        >
-          <Icon name="panMode" size="xl" aria-hidden />
-        </button>
+          icon={<Icon name="panMode" size="xl" aria-hidden />}
+        />
         {onMultiModeToggle !== undefined && (
-          <button
-            type="button"
-            className={multiModeEnabled ? 'btn btn-toolbar btn-toggle tool-btn tool-btn-active' : 'btn btn-toolbar btn-toggle tool-btn'}
+          <IconButton
+            variant="toolbar"
+            kind="toggle"
+            density="standard"
+            label="Multi Mode: view/edit two documents side by side"
+            className="tool-btn"
+            pressed={multiModeEnabled}
             onClick={onMultiModeToggle}
-            aria-pressed={multiModeEnabled}
-            title={
-              multiModeEnabled
-                ? 'Multi Mode on — view/edit two documents side by side. Click to return to one document.'
-                : 'Multi Mode: view/edit two documents side by side in one workspace'
-            }
-            aria-label="Multi Mode: view/edit two documents side by side"
             data-toolbar-multi-mode
             data-multi-mode-active={multiModeEnabled ? 'true' : 'false'}
             data-icon="multi-mode"
-          >
-            <Icon name="multi-mode" size="xl" aria-hidden />
-          </button>
+            icon={<Icon name="multi-mode" size="xl" aria-hidden />}
+          />
         )}
         {onEditModeToggle !== undefined && (
-          <button
-            type="button"
-            className={editModeOpen ? 'btn btn-toolbar btn-toggle tool-btn tool-btn-active' : 'btn btn-toolbar btn-toggle tool-btn'}
+          <IconButton
+            variant="toolbar"
+            kind="toggle"
+            density="standard"
+            label="Edit content"
+            className="tool-btn"
+            pressed={editModeOpen}
             onClick={onEditModeToggle}
-            aria-pressed={editModeOpen}
-            title="Edit content: replace text, add text boxes, edit images"
-            aria-label="Edit content"
             data-toolbar-edit-toggle
             data-icon="edit"
-          >
-            <Icon name="editMode" size="xl" aria-hidden />
-          </button>
+            icon={<Icon name="editMode" size="xl" aria-hidden />}
+          />
         )}
         {onDeletePage !== undefined && (
-          <button
-            type="button"
-            className="btn btn-toolbar tool-btn"
+          <IconButton
+            variant="toolbar"
+            intent="destructive"
+            kind="action"
+            density="standard"
+            label="Delete pages"
+            className="tool-btn btn-toolbar"
             onClick={onDeletePage}
             disabled={!canDeletePage}
-            title={canDeletePage ? 'Delete current page or a custom range' : 'Documents must keep at least one page'}
-            aria-label="Delete pages"
             data-toolbar-delete-pages
             data-icon="delete"
-          >
-            <Icon name="delete" size="xl" aria-hidden />
-          </button>
+            icon={<Icon name="delete" size="xl" aria-hidden />}
+          />
         )}
-        <button
-          type="button"
-          className="btn btn-toolbar tool-btn tool-btn-optimize"
+        <IconButton
+          variant="toolbar"
+          kind="action"
+          density="standard"
+          label="Reduce file size"
+          className="tool-btn"
           onClick={onOptimize}
-          title="Reduce file size: re-serialise the document with a compression preset"
-          aria-label="Reduce file size"
           data-toolbar-optimize
           data-icon="optimize"
-        >
-          <Icon name="optimize" size="xl" aria-hidden />
-        </button>
-        <button
-          type="button"
-          className="btn btn-toolbar tool-btn tool-btn-audit"
+          icon={<Icon name="optimize" size="xl" aria-hidden />}
+        />
+        <IconButton
+          variant="toolbar"
+          kind="action"
+          density="standard"
+          label="Audit space usage"
+          className="tool-btn"
           onClick={onAuditSpace}
-          title="Audit space usage: see a per-element breakdown of the file size"
-          aria-label="Audit space usage"
           data-toolbar-audit
           data-icon="audit"
-        >
-          <Icon name="audit" size="xl" aria-hidden />
-        </button>
+          icon={<Icon name="audit" size="xl" aria-hidden />}
+        />
         {hasFormFields && (
-          <button
-            type="button"
-            className="btn btn-toolbar tool-btn tool-btn-form"
+          <IconButton
+            variant="toolbar"
+            kind="action"
+            density="standard"
+            label="Flatten form fields"
+            className="tool-btn"
             onClick={onFlattenClick}
-            title="Flatten form fields: bake filled values into the page content"
-            aria-label="Flatten form fields"
             data-icon="flatten"
-          >
-            <Icon name="engineeringLayers" size="xl" aria-hidden />
-          </button>
+            icon={<Icon name="engineeringLayers" size="xl" aria-hidden />}
+          />
         )}
       </GlassControlGroup>
 

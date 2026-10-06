@@ -21,6 +21,7 @@ import {
   type AnnotationPatch,
 } from "./model";
 import { Icon } from "../icons/Icon";
+import { Button, IconButton } from "../components/Button";
 import {
   PanelEmptyState,
   PanelSection,
@@ -85,8 +86,10 @@ function AnnotationRow(props: RowProps): ReactElement {
   return (
     <li className="ann-panel-row" data-annotation-row={a.id}>
       <div className="ann-panel-row-head">
-        <button
-          type="button"
+        <Button
+          intent="secondary"
+          kind="action"
+          density="standard"
           className="ann-panel-row-jump"
           onClick={(): void => onJumpTo(a.page, a.id)}
           aria-label={`Jump to ${kindLabel(a.kind)} on page ${a.page}`}
@@ -100,16 +103,16 @@ function AnnotationRow(props: RowProps): ReactElement {
             <span className="ann-panel-row-page">Page {a.page}</span>
           </span>
           <Icon name="nextPage" size="sm" />
-        </button>
-        <button
-          type="button"
+        </Button>
+        <IconButton
+          label={`Delete ${kindLabel(a.kind)} on page ${a.page}`}
+          intent="destructive"
+          kind="action"
+          density="standard"
           className="ann-panel-row-delete"
           onClick={(): void => onDelete(a.id)}
-          aria-label={`Delete ${kindLabel(a.kind)} on page ${a.page}`}
-          title="Delete annotation"
-        >
-          <Icon name="delete" size="sm" />
-        </button>
+          icon={<Icon name="delete" size="sm" />}
+        />
       </div>
 
       <div className="ann-panel-row-body">
@@ -120,11 +123,7 @@ function AnnotationRow(props: RowProps): ReactElement {
               <button
                 key={c}
                 type="button"
-                className={
-                  active
-                    ? "ann-panel-swatch ann-panel-swatch-active"
-                    : "ann-panel-swatch"
-                }
+                className="ann-panel-swatch"
                 style={{ background: ANNOTATION_COLOR_HEX[c as AnnotationColor] }}
                 onClick={(): void => onEdit(a.id, { color: c })}
                 aria-pressed={active}
@@ -158,8 +157,10 @@ function AnnotationRow(props: RowProps): ReactElement {
               placeholder={isMarkup(a) ? "Markup text" : "Note text"}
             />
           ) : (
-            <button
-              type="button"
+            <Button
+              intent="tertiary"
+              kind="action"
+              density="standard"
               className="ann-panel-text ann-panel-text-display"
               onClick={(): void => {
                 setDraftText(aText);
@@ -168,7 +169,7 @@ function AnnotationRow(props: RowProps): ReactElement {
               title="Click to edit"
             >
               {annotationSummary(a)}
-            </button>
+            </Button>
           )
         ) : (
           <span className="ann-panel-text ann-panel-text-readonly">{annotationSummary(a)}</span>

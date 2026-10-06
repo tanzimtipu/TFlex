@@ -63,6 +63,12 @@ const DOC_VIEW_SRC = readFileSync(
   resolve(__dirname, "../../../src/renderer/components/DocumentView.tsx"),
   "utf8",
 );
+// Phase 109 (chunk A) — the Book View entry moved from the canvas top-right to
+// the unified View Strip footer, so its stable hooks now live there.
+const VIEW_STRIP_SRC = readFileSync(
+  resolve(__dirname, "../../../src/renderer/components/ViewStrip.tsx"),
+  "utf8",
+);
 
 /** The body of the first rule whose selector LIST contains `selector`. */
 function ruleBody(selector: string): string {
@@ -238,8 +244,8 @@ describe("phase 78 — DocumentView renders the notice layer inside .canvas-over
     expect(noticesAt).toBeGreaterThan(layerStart);
     expect(DOC_VIEW_SRC).toContain('className="canvas-top-right"');
     expect(DOC_VIEW_SRC).toContain('className="canvas-notices"');
-    expect(DOC_VIEW_SRC).toMatch(/data-book-view-open/);
-    expect(DOC_VIEW_SRC).toMatch(/aria-label="Book View"/);
+    expect(VIEW_STRIP_SRC).toMatch(/data-book-view-open/);
+    expect(VIEW_STRIP_SRC).toMatch(/aria-label="Book View"/);
   });
 });
 

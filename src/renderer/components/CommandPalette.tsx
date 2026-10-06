@@ -471,7 +471,7 @@ function PaletteRowItem(props: PaletteRowItemProps): ReactElement {
     return (
       <li
         id={id}
-        className="command-palette-row"
+        className="btn btn-secondary command-palette-row"
         data-palette-row="recent"
         role="option"
         aria-selected={highlighted}
@@ -509,7 +509,7 @@ function PaletteRowItem(props: PaletteRowItemProps): ReactElement {
     <li
       id={id}
       className={
-        row.enabled ? 'command-palette-row' : 'command-palette-row command-palette-row-disabled'
+        row.enabled ? 'btn btn-secondary command-palette-row' : 'btn btn-secondary command-palette-row command-palette-row-disabled'
       }
       data-palette-row="tool"
       data-palette-tool-id={row.id}

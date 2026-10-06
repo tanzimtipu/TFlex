@@ -16,6 +16,7 @@ import type { ReactElement } from "react";
 import { AnimatePresence, motion } from "motion/react";
 import { LogOut, RefreshCcw, UserCog, UserRound } from "lucide-react";
 import { Icon } from "../icons/Icon";
+import { Button } from "./Button";
 import type { AccountUser, SyncReport } from "../../shared/accounts";
 import type { AccountsAuthAdapter } from "../accounts/adapter";
 import { createNeonAuthAdapter } from "../accounts/adapter";
@@ -200,8 +201,10 @@ export function AccountMenu(props: AccountMenuProps): ReactElement {
 
   if (!signedIn) {
     return (
-      <button
+      <Button
         type="button"
+        intent="secondary"
+        kind="action"
         className="header-accounts account-signin"
         onClick={onOpenSignIn}
         aria-haspopup="dialog"
@@ -211,7 +214,7 @@ export function AccountMenu(props: AccountMenuProps): ReactElement {
       >
         <Icon icon={UserRound} size="sm" />
         <span className="account-signin-label">Sign in</span>
-      </button>
+      </Button>
     );
   }
 
@@ -256,8 +259,10 @@ export function AccountMenu(props: AccountMenuProps): ReactElement {
                     <span className="account-panel-email" data-account-panel-email>{identity.email}</span>
                   </span>
                 </div>
-                <button
+                <Button
                   type="button"
+                  intent="secondary"
+                  kind="action"
                   className="account-panel-action"
                   role="menuitem"
                   onClick={(): void => { setView("profile"); setProfileError(null); setDraftName(shownUser.name ?? ""); }}
@@ -265,18 +270,22 @@ export function AccountMenu(props: AccountMenuProps): ReactElement {
                 >
                   <Icon icon={UserCog} size="sm" />
                   Update profile
-                </button>
-                <button
+                </Button>
+                <Button
                   type="button"
+                  intent="secondary"
+                  kind="action"
                   className="account-panel-action"
                   role="menuitem"
                   onClick={runSync}
                   disabled={syncing}
+                  busy={syncing}
+                  busyLabel="Syncing"
                   data-account-sync-now
                 >
                   <Icon icon={RefreshCcw} size="sm" />
-                  {syncing ? "Syncing" : "Sync now"}
-                </button>
+                  Sync now
+                </Button>
                 <div
                   className={`account-sync-status accounts-sync-${syncView.tone}`}
                   data-sync-phase={syncView.phase}
@@ -287,8 +296,10 @@ export function AccountMenu(props: AccountMenuProps): ReactElement {
                     <span className="account-sync-detail">{syncView.detail}</span>
                   )}
                 </div>
-                <button
+                <Button
                   type="button"
+                  intent="secondary"
+                  kind="action"
                   className="account-panel-action account-panel-signout"
                   role="menuitem"
                   onClick={signOut}
@@ -296,7 +307,7 @@ export function AccountMenu(props: AccountMenuProps): ReactElement {
                 >
                   <Icon icon={LogOut} size="sm" />
                   Sign out
-                </button>
+                </Button>
               </>
             ) : (
               <div className="account-profile-form" data-account-profile-form>

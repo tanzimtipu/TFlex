@@ -36,6 +36,7 @@ import type {
 import { AnimatePresence } from "motion/react";
 import { Icon } from "../icons/Icon";
 import type { QuietIconId } from "../icons/quietPrecision";
+import { Button, type ButtonDensity, type ButtonIntent } from "./Button";
 import { TfMenu } from "./motion/TfMotion";
 
 /** A command-menu entry. Superset of the shipped `MenuEntry`. */
@@ -64,6 +65,13 @@ export interface CommandMenuItem {
    *  and `data-menu-variant="danger"`; adopters that own a legacy red-ink class
    *  add it via `rowClassName` so the primitive stays surface-agnostic. */
   variant?: "danger";
+  /** Phase 113 (Quiet Actions) — task emphasis for the row. Defaults to
+   *  `tertiary` (the quiet menu-row treatment); a stronger adopter passes
+   *  `secondary`, a destructive row `destructive`. Additive. */
+  intent?: ButtonIntent;
+  /** Phase 113 (Quiet Actions) — target density for the row. Defaults to
+   *  `compact` (the 32px menu-row band). Additive. */
+  density?: ButtonDensity;
   /** Extra class names appended to the row button. Lets an adopter keep a
    *  legacy row selector/class (e.g. `context-menu-item`) across a migration
    *  without CommandMenu knowing the surface. Additive; default none. */
@@ -353,11 +361,12 @@ function MenuList(props: MenuListProps): ReactElement {
             : descIdFor(baseKey, index);
           return (
             <div key={row.key} className="command-menu-row-wrap">
-              <button
+              <Button
                 type="button"
+                intent={item.intent ?? "tertiary"}
+                kind="action"
+                density={item.density ?? "compact"}
                 className={[
-                  "btn",
-                  "btn-ghost",
                   "titlebar-menu-row",
                   item.variant === "danger" ? "command-menu-row-danger" : undefined,
                   item.rowClassName,
@@ -417,7 +426,7 @@ function MenuList(props: MenuListProps): ReactElement {
                     {item.disabledReason}
                   </span>
                 )}
-              </button>
+              </Button>
               {hasSubmenu && openChildKey === row.key && item.submenu !== undefined && (
                 <div
                   className="command-menu-submenu"

@@ -245,3 +245,127 @@ describe("Phase 91 — IconButton", () => {
     expect(ref.current).toBe(firstButton(container));
   });
 });
+
+describe("Phase 113 — Quiet Actions axes", () => {
+  it("intent composes the same class as the equivalent variant", () => {
+    const pairs = [
+      ["primary", "primary"],
+      ["secondary", "secondary"],
+      ["tertiary", "ghost"],
+      ["destructive", "danger"],
+    ] as const;
+    for (const [intent, variant] of pairs) {
+      const byIntent = firstButton(mount(<Button intent={intent}>Go</Button>));
+      const byVariant = firstButton(mount(<Button variant={variant}>Go</Button>));
+      expect(byIntent.className).toBe(byVariant.className);
+    }
+  });
+
+  it("intent wins when both intent and variant are supplied", () => {
+    const el = firstButton(
+      mount(
+        <Button variant="secondary" intent="primary">
+          Go
+        </Button>,
+      ),
+    );
+    expect(el.classList.contains("btn-primary")).toBe(true);
+    expect(el.classList.contains("btn-secondary")).toBe(false);
+  });
+
+  it("kind='toggle' adds btn-toggle and preserves aria-pressed", () => {
+    const on = firstButton(
+      mount(<IconButton label="Grid" kind="toggle" pressed icon={<span>g</span>} />),
+    );
+    expect(on.classList.contains("btn-toggle")).toBe(true);
+    expect(on.getAttribute("aria-pressed")).toBe("true");
+    const off = firstButton(
+      mount(<IconButton label="Grid" kind="toggle" pressed={false} icon={<span>g</span>} />),
+    );
+    expect(off.getAttribute("aria-pressed")).toBe("false");
+  });
+
+  it("kind='exclusive-selection' adds btn-segmented-item", () => {
+    const el = firstButton(
+      mount(<Button kind="exclusive-selection">Left</Button>),
+    );
+    expect(el.classList.contains("btn-segmented-item")).toBe(true);
+  });
+
+  it("kind='disclosure' adds btn-disclosure and sets aria-expanded from expanded", () => {
+    const open = firstButton(
+      mount(<IconButton label="Advanced" kind="disclosure" expanded icon={<span>g</span>} />),
+    );
+    expect(open.classList.contains("btn-disclosure")).toBe(true);
+    expect(open.getAttribute("aria-expanded")).toBe("true");
+    const closed = firstButton(
+      mount(
+        <IconButton label="Advanced" kind="disclosure" expanded={false} icon={<span>g</span>} />,
+      ),
+    );
+    expect(closed.getAttribute("aria-expanded")).toBe("false");
+    const none = firstButton(
+      mount(<IconButton label="Advanced" kind="disclosure" icon={<span>g</span>} />),
+    );
+    expect(none.hasAttribute("aria-expanded")).toBe(false);
+  });
+
+  it("density classes compose and standard adds no class", () => {
+    const compact = firstButton(mount(<Button density="compact">Go</Button>));
+    expect(compact.classList.contains("btn-compact")).toBe(true);
+    const prominent = firstButton(mount(<Button density="prominent">Go</Button>));
+    expect(prominent.classList.contains("btn-prominent")).toBe(true);
+    const coarse = firstButton(mount(<Button density="coarse">Go</Button>));
+    expect(coarse.classList.contains("btn-coarse")).toBe(true);
+    const standard = firstButton(mount(<Button density="standard">Go</Button>));
+    expect(standard.className).toBe("btn btn-secondary");
+  });
+
+  it("busy sets aria-busy + btn-busy, renders busyLabel, keeps the resting label and suppresses onClick", () => {
+    let clicks = 0;
+    const el = firstButton(
+      mount(
+        <Button
+          busy
+          busyLabel="Saving..."
+          onClick={(): void => {
+            clicks += 1;
+          }}
+        >
+          Save
+        </Button>,
+      ),
+    );
+    expect(el.classList.contains("btn-busy")).toBe(true);
+    expect(el.getAttribute("aria-busy")).toBe("true");
+    expect(el.querySelector(".btn-label-busy")?.textContent).toBe("Saving...");
+    expect(el.querySelector(".btn-label-resting")?.textContent).toBe("Save");
+    click(el);
+    expect(clicks).toBe(0);
+  });
+
+  it("busy falls back to the children when no busyLabel is given", () => {
+    const el = firstButton(mount(<Button busy>Save</Button>));
+    expect(el.querySelector(".btn-label-busy")?.textContent).toBe("Save");
+  });
+
+  it("a busy button still forwards data-* attributes and ref", () => {
+    const ref = createRef<HTMLButtonElement>();
+    const el = firstButton(
+      mount(
+        <Button ref={ref} busy busyLabel="Working" data-busy-hook="x">
+          Go
+        </Button>,
+      ),
+    );
+    expect(el.getAttribute("data-busy-hook")).toBe("x");
+    expect(ref.current).toBe(el);
+  });
+
+  it("a non-busy button emits no aria-busy and no label wrapper", () => {
+    const el = firstButton(mount(<Button data-resting-hook="y">Go</Button>));
+    expect(el.hasAttribute("aria-busy")).toBe(false);
+    expect(el.querySelector(".btn-label")).toBeNull();
+    expect(el.getAttribute("data-resting-hook")).toBe("y");
+  });
+});

@@ -225,7 +225,7 @@ describe("Phase 13 — Toolbar is icon-only", () => {
     const handArmed = armed.querySelector<HTMLButtonElement>("[data-hand-toggle]");
     expect(handArmed?.getAttribute("aria-pressed")).toBe("true");
     expect(handArmed?.getAttribute("data-hand-active")).toBe("true");
-    expect(handArmed?.classList.contains("tool-btn-active")).toBe(true);
+    expect(handArmed?.classList.contains("btn-toggle")).toBe(true);
     unmount(armed);
   });
 

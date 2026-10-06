@@ -22,6 +22,7 @@
 import { useCallback, useEffect, useState, type ReactElement } from 'react';
 import { ChevronUp, Info, ShieldAlert } from 'lucide-react';
 import { Icon } from '../icons/Icon';
+import { IconButton } from './Button';
 import type { DocumentProtectionState } from '../../shared/types';
 import { useInstantMotion } from '../hooks/useAnimations';
 import { MOTION_DURATION } from '../hooks/motionTokens';
@@ -153,27 +154,29 @@ export function ProtectionNotice(props: ProtectionNoticeProps): ReactElement {
               {PROTECTION_ENFORCEMENT_TEXT}
             </p>
           </div>
-          <button
-            type="button"
+          <IconButton
+            label="Collapse document protection notice"
+            intent="tertiary"
+            kind="disclosure"
+            density="compact"
             className="protection-notice-collapse"
             onClick={collapse}
-            aria-label="Collapse document protection notice"
             data-protection-collapse
-          >
-            <Icon icon={ChevronUp} size="xs" />
-          </button>
+            icon={<Icon icon={ChevronUp} size="xs" />}
+          />
         </div>
       )}
       {(phase === 'collapsed' || phase === 'entering') && (
-        <button
-          type="button"
+        <IconButton
+          label="Show document protection details"
+          intent="secondary"
+          kind="disclosure"
+          density="compact"
           className="protection-notice-collapsed-toggle"
           onClick={expand}
-          aria-label="Show document protection details"
           data-protection-icon
-        >
-          <Icon icon={Info} size="sm" />
-        </button>
+          icon={<Icon icon={Info} size="sm" />}
+        />
       )}
     </div>
   );

@@ -33,6 +33,7 @@ import {
 } from "react";
 import { AnimatePresence, motion, useIsPresent } from "motion/react";
 import { DialogShell } from "../components/DialogShell";
+import { Button } from "../components/Button";
 import { TfResize, paneSwapFor } from "../components/motion/TfResize";
 import { useLiveReducedMotion, useInstantMotion } from "../hooks/useAnimations";
 import type { SavedSignature, SignatureSource } from "../../shared/types";
@@ -185,14 +186,17 @@ function TabButton({
   children: React.ReactNode;
 }): ReactElement {
   return (
-    <button
+    <Button
       type="button"
+      intent="secondary"
+      kind="exclusive-selection"
+      density="standard"
       className={active ? "sig-tab sig-tab-active" : "sig-tab"}
       onClick={onClick}
       aria-pressed={active}
     >
       {children}
-    </button>
+    </Button>
   );
 }
 
@@ -522,18 +526,24 @@ function SavedTab({
     <ul className="sig-saved-list">
       {saved.map((sig) => (
         <li key={sig.id} className="sig-saved-row">
-          <button
+          <Button
             type="button"
+            intent="secondary"
+            kind="action"
+            density="standard"
             className="sig-saved-pick"
             onClick={(): void => onPick(sig.id)}
             disabled={signatureIsEmpty(sig)}
           >
             <SavedThumbnail signature={sig} />
             <span className="sig-saved-label">{signatureLabel(sig)}</span>
-          </button>
-          <button
+          </Button>
+          <Button
             type="button"
-            className="sig-saved-delete"
+            intent="destructive"
+            kind="action"
+            density="compact"
+            className="sig-saved-delete btn-icon"
             onClick={(): void => {
               void onDelete(sig.id);
             }}
@@ -541,7 +551,7 @@ function SavedTab({
             title="Delete"
           >
             <Icon name="delete" size="sm" />
-          </button>
+          </Button>
         </li>
       ))}
     </ul>

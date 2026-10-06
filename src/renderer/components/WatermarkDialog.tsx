@@ -17,6 +17,7 @@
 
 import { useEffect, useState, type CSSProperties, type ReactElement } from "react";
 import { Icon } from "../icons/Icon";
+import { Button } from "./Button";
 import { DialogShell } from "./DialogShell";
 import {
   pickImageFilesInRenderer,
@@ -601,10 +602,13 @@ export function WatermarkDialog(props: WatermarkDialogProps): ReactElement {
                 </label>
                 <div className="watermark-position-grid" role="group" aria-label="Grid position">
                   {POSITION_SLOTS.map((slot) => (
-                    <button
+                    <Button
                       key={slot}
                       type="button"
-                      className={position === slot ? "watermark-slot watermark-slot-active" : "watermark-slot"}
+                      intent="secondary"
+                      kind="exclusive-selection"
+                      density="compact"
+                      className={position === slot ? "watermark-slot watermark-slot-active btn-icon" : "watermark-slot btn-icon"}
                       onClick={(): void => setPosition(slot)}
                       aria-pressed={position === slot}
                       aria-label={slot}
@@ -613,7 +617,7 @@ export function WatermarkDialog(props: WatermarkDialogProps): ReactElement {
                       data-watermark-position={slot}
                     >
                       <span className="watermark-slot-dot" />
-                    </button>
+                    </Button>
                   ))}
                 </div>
                 <div className="modal-row">

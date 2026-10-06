@@ -21,6 +21,7 @@ import {
   Check,
 } from "lucide-react";
 import { Icon, type IconSize } from "../icons/Icon";
+import { Button, IconButton } from "../components/Button";
 import type { KeyboardEvent as ReactKeyboardEvent, ReactElement } from "react";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
@@ -485,20 +486,20 @@ export function AnnotationToolbar(props: AnnotationToolbarProps): ReactElement {
     const isDisabled = disabled || isBlocked || isHandBlocked;
     const label = tool === "select" ? "Select (no annotation tool)" : TOOL_LABELS[tool];
     return (
-      <button
+      <IconButton
         key={tool}
-        type="button"
-        className={active ? "btn btn-toolbar btn-toggle tool-btn tool-btn-active ann-tool-btn" : "btn btn-toolbar btn-toggle tool-btn ann-tool-btn"}
+        variant="toolbar"
+        kind="toggle"
+        density="standard"
+        label={label}
+        className="tool-btn ann-tool-btn"
         onClick={(): void => armTool(tool)}
         disabled={isDisabled}
-        aria-pressed={active}
+        pressed={active}
         aria-disabled={isDisabled}
-        aria-label={label}
-        title={toolTitle(tool, isBlocked, isHandBlocked)}
         data-tool={tool}
-      >
-        {toolIcon(tool, "xl")}
-      </button>
+        icon={toolIcon(tool, "xl")}
+      />
     );
   };
 
@@ -605,24 +606,20 @@ export function AnnotationToolbar(props: AnnotationToolbarProps): ReactElement {
 
       {/* The all-tools dropdown arrow. Rotation uses a motion token in
           CSS; the menu itself is a portaled TfPopover (DEF-175). */}
-      <button
+      <IconButton
         ref={toggleRef}
-        type="button"
-        className={
-          menuOpen
-            ? "btn btn-toolbar tool-btn ann-dropdown-toggle ann-dropdown-toggle-open"
-            : "btn btn-toolbar tool-btn ann-dropdown-toggle"
-        }
+        variant="toolbar"
+        kind="disclosure"
+        density="standard"
+        label="All annotation tools"
+        expanded={menuOpen}
+        className="ann-dropdown-toggle"
         onClick={(): void => setMenuOpen((v) => !v)}
         onKeyDown={onToggleKeyDown}
         aria-haspopup="menu"
-        aria-expanded={menuOpen}
-        aria-label="All annotation tools"
-        title="All annotation tools"
         data-ann-dropdown-toggle
-      >
-        <Icon icon={ChevronDown} size="xl" aria-hidden />
-      </button>
+        icon={<Icon icon={ChevronDown} size="xl" aria-hidden />}
+      />
 
       {createPortal(
         <AnimatePresence>
@@ -656,15 +653,18 @@ export function AnnotationToolbar(props: AnnotationToolbarProps): ReactElement {
                     const isHandBlocked = handBlocksTool();
                     const isDisabled = disabled || isBlocked || isHandBlocked;
                     return (
-                      <button
+                      <Button
                         key={tool}
                         type="button"
+                        intent="secondary"
+                        kind="exclusive-selection"
+                        density="compact"
                         role="menuitemradio"
                         aria-checked={active}
                         className={
                           highlighted
-                            ? "btn btn-ghost ann-tool-menu-row ann-tool-menu-row-highlight"
-                            : "btn btn-ghost ann-tool-menu-row"
+                            ? "ann-tool-menu-row ann-tool-menu-row-highlight"
+                            : "ann-tool-menu-row"
                         }
                         onClick={(): void => selectFromMenu(tool)}
                         disabled={isDisabled}
@@ -676,7 +676,7 @@ export function AnnotationToolbar(props: AnnotationToolbarProps): ReactElement {
                         <span className="ann-tool-menu-icon">{toolIcon(tool, "md")}</span>
                         <span className="ann-tool-menu-text">{TOOL_LABELS[tool]}</span>
                         {active && <Icon icon={Check} size="md" aria-hidden className="ann-tool-menu-check" />}
-                      </button>
+                      </Button>
                     );
                   })}
                 </div>
@@ -693,22 +693,24 @@ export function AnnotationToolbar(props: AnnotationToolbarProps): ReactElement {
                   {PEN_WIDTHS.map((w) => {
                     const active = state.penWidth === w;
                     return (
-                      <button
+                      <IconButton
                         key={w}
-                        type="button"
-                        className={active ? "ann-pen-swatch ann-pen-swatch-active" : "ann-pen-swatch"}
+                        intent="secondary"
+                        kind="toggle"
+                        density="compact"
+                        label={`Pen width ${w}`}
+                        pressed={active}
+                        className="ann-pen-swatch"
                         onClick={(): void => setPenWidth(w)}
-                        aria-pressed={active}
-                        aria-label={`Pen width ${w}`}
-                        title={`Pen width: ${w} pt`}
                         data-pen-width={w}
-                      >
-                        <Slash
-                          size={Math.max(8, Math.min(18, w * 2.5))}
-                          strokeWidth={Math.max(2, Math.min(6, w))}
-                          aria-hidden
-                        />
-                      </button>
+                        icon={
+                          <Slash
+                            size={Math.max(8, Math.min(18, w * 2.5))}
+                            strokeWidth={Math.max(2, Math.min(6, w))}
+                            aria-hidden
+                          />
+                        }
+                      />
                     );
                   })}
                 </div>

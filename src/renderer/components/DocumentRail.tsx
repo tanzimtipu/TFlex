@@ -35,6 +35,7 @@ import { Icon } from "../icons/Icon";
 import type { TabStyle } from "../../shared/types";
 import type { TabInput } from "../state/tabMouseDown";
 import { AnimatedTab } from "./AnimatedTab";
+import { Button, IconButton } from "./Button";
 import { TfMorph } from "./motion/TfMotion";
 import { useMorphPreset } from "./motion/useMorphPreset";
 
@@ -932,41 +933,37 @@ export function DocumentRail(props: DocumentRailProps): ReactElement {
               className="tab-list-new"
               title={multiModeEnabled ? NEW_TAB_MULTI_MODE_REASON : undefined}
             >
-              <button
-                type="button"
-                className="btn btn-ghost btn-icon tab-new"
+              <IconButton
+                label={multiModeEnabled ? NEW_TAB_MULTI_MODE_REASON : "New empty tab"}
+                intent="secondary"
+                kind="action"
+                density="compact"
+                className="tab-new"
                 onMouseDown={onNewTabMouseDown}
                 onClick={onNewEmptyTab}
                 disabled={multiModeEnabled}
-                aria-label={multiModeEnabled ? NEW_TAB_MULTI_MODE_REASON : "New empty tab"}
-                title={multiModeEnabled ? NEW_TAB_MULTI_MODE_REASON : "New empty tab"}
                 data-new-tab
-              >
-                <Icon name="tabNew" size="md" aria-hidden />
-              </button>
+                icon={<Icon name="tabNew" size="md" aria-hidden />}
+              />
             </li>
           )}
           {/* Phase 105 (chunk D) — the All-tabs switcher. Sits immediately
               after the "+" and lists EVERY session in canonical order. */}
           {tabs.length >= 1 && (
             <li className="tab-list-all">
-              <button
+              <IconButton
                 ref={switcherButtonRef}
-                type="button"
-                className={
-                  switcherOpen
-                    ? "btn btn-ghost btn-icon tab-all tab-all-active"
-                    : "btn btn-ghost btn-icon tab-all"
-                }
+                label={`All open documents (${tabs.length})`}
+                intent="tertiary"
+                kind="disclosure"
+                density="compact"
+                expanded={switcherOpen}
+                className={switcherOpen ? "tab-all tab-all-active" : "tab-all"}
                 onClick={onSwitcherToggle}
                 aria-haspopup="menu"
-                aria-expanded={switcherOpen}
-                aria-label={`All open documents (${tabs.length})`}
-                title={`All open documents (${tabs.length})`}
                 data-all-tabs
-              >
-                <Icon name="headerMenuDisclosure" size="md" aria-hidden />
-              </button>
+                icon={<Icon name="headerMenuDisclosure" size="md" aria-hidden />}
+              />
               <AnimatePresence>
                 {switcherOpen && (
                   <TfMorph
@@ -984,16 +981,18 @@ export function DocumentRail(props: DocumentRailProps): ReactElement {
                     </div>
                     <div className="all-tabs-rows">
                       {switcherRows.map((row, rowIndex) => (
-                        <button
+                        <Button
                           key={row.id}
                           ref={(el): void => {
                             switcherRowRefs.current[rowIndex] = el;
                           }}
-                          type="button"
+                          intent="secondary"
+                          kind="action"
+                          density="standard"
                           className={
                             row.id === activeId
-                              ? "btn btn-ghost all-tabs-row all-tabs-row-current"
-                              : "btn btn-ghost all-tabs-row"
+                              ? "all-tabs-row all-tabs-row-current"
+                              : "all-tabs-row"
                           }
                           role="menuitem"
                           aria-current={row.id === activeId ? "true" : undefined}
@@ -1014,7 +1013,7 @@ export function DocumentRail(props: DocumentRailProps): ReactElement {
                               <span className="visually-hidden">Unsaved changes</span>
                             </>
                           )}
-                        </button>
+                        </Button>
                       ))}
                     </div>
                   </TfMorph>

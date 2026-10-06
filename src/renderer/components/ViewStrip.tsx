@@ -17,6 +17,7 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { ReactElement } from "react";
 import { Icon } from "../icons/Icon";
+import { Button, IconButton } from "./Button";
 import { PAGE_LAYOUT_MODES, type PageLayoutMode } from "./pageLayoutMode";
 import type { ZoomMode } from "../state/zoom";
 
@@ -179,16 +180,15 @@ export function ViewStrip(props: ViewStripProps): ReactElement {
       data-view-strip-idle={idle ? "true" : "false"}
     >
       <div className="view-strip-page" role="group" aria-label="Page navigation">
-        <button
-          type="button"
-          className="btn btn-toolbar tool-btn"
+        <IconButton
+          variant="toolbar"
+          kind="action"
+          density="compact"
+          label="Previous page"
           disabled={page <= 1}
           onClick={(): void => onJump(String(page - 1))}
-          aria-label="Previous page"
-          title="Previous page"
-        >
-          <Icon name="prevPage" size="sm" aria-hidden />
-        </button>
+          icon={<Icon name="prevPage" size="sm" aria-hidden />}
+        />
         <div className="page-indicator">
           <input
             ref={inputRef}
@@ -225,91 +225,69 @@ export function ViewStrip(props: ViewStripProps): ReactElement {
             </span>
           )}
         </div>
-        <button
-          type="button"
-          className="btn btn-toolbar tool-btn"
+        <IconButton
+          variant="toolbar"
+          kind="action"
+          density="compact"
+          label="Next page"
           disabled={page >= pageCount}
           onClick={(): void => onJump(String(page + 1))}
-          aria-label="Next page"
-          title="Next page"
-        >
-          <Icon name="nextPage" size="sm" aria-hidden />
-        </button>
+          icon={<Icon name="nextPage" size="sm" aria-hidden />}
+        />
       </div>
 
       <div className="view-strip-space" />
 
       <div className="view-strip-view" role="group" aria-label="View and zoom">
-        <button
-          type="button"
-          className="btn btn-toolbar tool-btn"
+        <IconButton
+          variant="toolbar"
+          kind="action"
+          density="compact"
+          label="Zoom out"
           onClick={onZoomOut}
-          aria-label="Zoom out"
-          title="Zoom out"
-        >
-          <Icon name="zoomOut" size="sm" aria-hidden />
-        </button>
+          icon={<Icon name="zoomOut" size="sm" aria-hidden />}
+        />
         <span className="zoom-percent" title="Current zoom">
           {zoomPercent}%
         </span>
-        <button
-          type="button"
-          className="btn btn-toolbar tool-btn"
+        <IconButton
+          variant="toolbar"
+          kind="action"
+          density="compact"
+          label="Zoom in"
           onClick={onZoomIn}
-          aria-label="Zoom in"
-          title="Zoom in"
-        >
-          <Icon name="zoomIn" size="sm" aria-hidden />
-        </button>
-        <button
-          type="button"
-          className={
-            zoomMode === "fit-width"
-              ? "btn btn-toolbar btn-toggle tool-btn tool-btn-active"
-              : "btn btn-toolbar btn-toggle tool-btn"
-          }
+          icon={<Icon name="zoomIn" size="sm" aria-hidden />}
+        />
+        <IconButton
+          variant="toolbar"
+          kind="toggle"
+          density="compact"
+          label="Fit width"
+          pressed={zoomMode === "fit-width"}
           onClick={onFitWidth}
-          aria-pressed={zoomMode === "fit-width"}
-          aria-label="Fit width"
-          title="Fit width"
-        >
-          <Icon name="fitWidth" size="sm" aria-hidden />
-        </button>
-        <button
-          type="button"
-          className={
-            zoomMode === "fit-page"
-              ? "btn btn-toolbar btn-toggle tool-btn tool-btn-active"
-              : "btn btn-toolbar btn-toggle tool-btn"
-          }
+          icon={<Icon name="fitWidth" size="sm" aria-hidden />}
+        />
+        <IconButton
+          variant="toolbar"
+          kind="toggle"
+          density="compact"
+          label="Fit page"
+          pressed={zoomMode === "fit-page"}
           onClick={onFitPage}
-          aria-pressed={zoomMode === "fit-page"}
-          aria-label="Fit page"
-          title="Fit page"
-        >
-          <Icon name="fitPage" size="sm" aria-hidden />
-        </button>
+          icon={<Icon name="fitPage" size="sm" aria-hidden />}
+        />
         {onHandToggle !== undefined && (
-          <button
-            type="button"
-            className={
-              handActive
-                ? "btn btn-toolbar btn-toggle tool-btn tool-btn-active"
-                : "btn btn-toolbar btn-toggle tool-btn"
-            }
+          <IconButton
+            variant="toolbar"
+            kind="toggle"
+            density="compact"
+            label="Pan mode"
+            pressed={handActive}
             onClick={onHandToggle}
-            aria-pressed={handActive}
-            title={
-              handActive
-                ? "Pan mode active — drag to scroll. Click again to exit."
-                : "Pan mode: drag anywhere to scroll the document"
-            }
-            aria-label="Pan mode"
             data-hand-toggle
             data-hand-active={handActive ? "true" : "false"}
-          >
-            <Icon name="panMode" size="sm" aria-hidden />
-          </button>
+            icon={<Icon name="panMode" size="sm" aria-hidden />}
+          />
         )}
         {!inMultiPane && (
           <div className="view-strip-layout" role="group" aria-label="Page layout">
@@ -317,53 +295,50 @@ export function ViewStrip(props: ViewStripProps): ReactElement {
               const meta = LAYOUT_META[mode];
               const active = mode === pageLayout;
               return (
-                <button
+                <IconButton
                   key={mode}
-                  type="button"
-                  className={
-                    active
-                      ? "btn btn-toolbar btn-toggle tool-btn tool-btn-active"
-                      : "btn btn-toolbar btn-toggle tool-btn"
-                  }
+                  variant="toolbar"
+                  kind="exclusive-selection"
+                  density="compact"
+                  label={meta.label}
+                  pressed={active}
                   data-page-layout-option={mode}
-                  aria-pressed={active}
-                  aria-label={meta.label}
-                  title={meta.label}
                   onClick={(): void => onChangePageLayout(mode)}
-                >
-                  <Icon name={meta.icon} size="sm" aria-hidden />
-                </button>
+                  icon={<Icon name={meta.icon} size="sm" aria-hidden />}
+                />
               );
             })}
           </div>
         )}
         {onOpenBookView !== undefined && !inMultiPane && (
-          <button
-            type="button"
-            className="btn tool-btn view-strip-book"
+          <Button
+            intent="secondary"
+            kind="action"
+            density="standard"
+            className="view-strip-book"
             data-book-view-open
             aria-label="Book View"
             onClick={onOpenBookView}
+            icon={<Icon name="openReadingView" size="sm" aria-hidden />}
           >
-            <Icon name="openReadingView" size="sm" aria-hidden />
             <span className="view-strip-book-label">Book View</span>
-          </button>
+          </Button>
         )}
         {!inMultiPane && (
           <div className="view-strip-more" ref={moreHostRef} data-view-strip-more>
-            <button
+            <IconButton
               ref={moreBtnRef}
-              type="button"
-              className="btn btn-toolbar tool-btn view-strip-more-btn"
+              variant="toolbar"
+              kind="disclosure"
+              density="compact"
+              label="More viewing controls"
+              expanded={moreOpen}
+              className="view-strip-more-btn"
               data-view-strip-more-toggle
               aria-haspopup="menu"
-              aria-expanded={moreOpen}
-              aria-label="More viewing controls"
-              title="More viewing controls"
               onClick={(): void => setMoreOpen((v) => !v)}
-            >
-              <Icon name="dockOverflow" size="sm" aria-hidden />
-            </button>
+              icon={<Icon name="dockOverflow" size="sm" aria-hidden />}
+            />
             {moreOpen && (
               <div
                 ref={moreMenuRef}
@@ -377,11 +352,13 @@ export function ViewStrip(props: ViewStripProps): ReactElement {
                   const meta = LAYOUT_META[mode];
                   const active = mode === pageLayout;
                   return (
-                    <button
+                    <Button
                       key={mode}
-                      type="button"
+                      variant="ghost"
+                      kind="exclusive-selection"
+                      density="compact"
                       role="menuitem"
-                      className="btn btn-ghost action-dock-menu-item"
+                      className="action-dock-menu-item"
                       data-page-layout-option={mode}
                       aria-pressed={active}
                       aria-label={meta.label}
@@ -390,27 +367,29 @@ export function ViewStrip(props: ViewStripProps): ReactElement {
                         setMoreOpen(false);
                         onChangePageLayout(mode);
                       }}
+                      icon={<Icon name={meta.icon} size="sm" aria-hidden />}
                     >
-                      <Icon name={meta.icon} size="sm" aria-hidden />
                       <span>{meta.label}</span>
-                    </button>
+                    </Button>
                   );
                 })}
                 {onOpenBookView !== undefined && (
-                  <button
-                    type="button"
+                  <Button
+                    variant="ghost"
+                    kind="action"
+                    density="compact"
                     role="menuitem"
-                    className="btn btn-ghost action-dock-menu-item"
+                    className="action-dock-menu-item"
                     data-book-view-open
                     aria-label="Book View"
                     onClick={(): void => {
                       setMoreOpen(false);
                       onOpenBookView?.();
                     }}
+                    icon={<Icon name="openReadingView" size="sm" aria-hidden />}
                   >
-                    <Icon name="openReadingView" size="sm" aria-hidden />
                     <span>Book View</span>
-                  </button>
+                  </Button>
                 )}
               </div>
             )}

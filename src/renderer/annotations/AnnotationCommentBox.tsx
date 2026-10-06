@@ -21,6 +21,7 @@ import { useMemo, useRef, useState } from 'react';
 import type { CSSProperties, ReactElement } from 'react';
 import { MessageSquare, Send } from 'lucide-react';
 import { Icon } from '../icons/Icon';
+import { Button } from '../components/Button';
 import { annotationBounds, overlayRectToCss } from './geometry';
 import { CONTROL_BAR_HEIGHT, placeControlNearAnchor } from '../components/controlPlacement';
 import type { Annotation, PageRect } from './model';
@@ -285,18 +286,20 @@ export default function AnnotationCommentBox(props: AnnotationCommentBoxProps): 
             }
           }}
         />
-        <button
-          type="button"
+        <Button
+          intent="primary"
+          kind="action"
+          density="compact"
           className="ann-comment-submit"
           data-comment-submit
           disabled={!canSubmit}
           title={entries.length === 0 ? 'Add comment' : 'Add reply'}
           aria-label={entries.length === 0 ? 'Add comment' : 'Add reply'}
           onClick={submit}
+          icon={<Icon icon={Send} size="xs" />}
         >
-          <Icon icon={Send} size="xs" />
           <span>{entries.length === 0 ? 'Comment' : 'Reply'}</span>
-        </button>
+        </Button>
       </div>
     </div>
   );

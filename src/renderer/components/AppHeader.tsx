@@ -23,6 +23,7 @@ import {
 import type { LucideIcon } from "lucide-react";
 import { Icon } from "../icons/Icon";
 import { CommandMenu, type CommandMenuGroup, type CommandMenuItem } from "./CommandMenu";
+import { Button, IconButton } from "./Button";
 import { dispatchMenuAction, type MenuActionContext } from "../state/menuActions";
 import {
   toCommandGroups,
@@ -252,11 +253,11 @@ export function AppHeader(props: AppHeaderProps): ReactElement {
     : saveInPlaceEnabled
       ? "Unsaved changes — Save now (Ctrl+S)"
       : "Read-only document — use Save As to save a copy";
-  const saveClass = !saveModified
-    ? "btn btn-secondary titlebar-file-btn titlebar-file-btn-clean"
+  const saveStateClass = !saveModified
+    ? "titlebar-file-btn-clean"
     : saveInPlaceEnabled
-      ? "btn btn-secondary titlebar-file-btn titlebar-file-btn-modified"
-      : "btn btn-secondary titlebar-file-btn titlebar-file-btn-modified titlebar-file-btn-readonly";
+      ? "titlebar-file-btn-modified"
+      : "titlebar-file-btn-modified titlebar-file-btn-readonly";
 
   return (
     <header className="app-header">
@@ -264,44 +265,49 @@ export function AppHeader(props: AppHeaderProps): ReactElement {
        *  right of the File menu and left of the flexible drag region. The
        *  stable e2e hooks move with the controls. */}
       <div className="titlebar-file" role="group" aria-label="File actions">
-        <button
-          type="button"
-          className="btn btn-secondary titlebar-file-btn titlebar-file-open"
+        <Button
+          intent="secondary"
+          kind="action"
+          density="compact"
+          className="titlebar-file-btn titlebar-file-open"
           onClick={onOpenFile}
           aria-label="Open PDF document"
           title="Open PDF (Ctrl+O)"
           data-toolbar-open
+          icon={<Icon name="open" size="md" aria-hidden />}
         >
-          <Icon name="open" size="md" aria-hidden />
           <span className="titlebar-file-label">Open</span>
-        </button>
+        </Button>
         <span className="titlebar-file-sep" aria-hidden />
-        <button
-          type="button"
-          className={saveClass}
+        <Button
+          intent="secondary"
+          kind="action"
+          density="compact"
+          className={`titlebar-file-btn ${saveStateClass}`}
           onClick={onSave}
           disabled={!saveModified || !saveInPlaceEnabled}
           title={saveTitle}
           aria-label="Save"
           data-toolbar-save
+          icon={<Icon name="save" size="md" aria-hidden />}
         >
-          <Icon name="save" size="md" aria-hidden />
           <span
             className={saveModified ? "titlebar-file-dot" : "titlebar-file-dot titlebar-file-dot-hidden"}
             aria-hidden
           />
-        </button>
-        <button
-          type="button"
-          className="btn btn-secondary titlebar-file-btn"
+        </Button>
+        <Button
+          intent="secondary"
+          kind="action"
+          density="compact"
+          className="titlebar-file-btn"
           onClick={onSaveAs}
           disabled={activeId === null}
           title="Save a copy (Ctrl+Shift+S)"
           aria-label="Save a copy"
           data-toolbar-save-as
-        >
-          <Icon name="saveAs" size="md" aria-hidden />
-        </button>
+          icon={<Icon name="saveAs" size="md" aria-hidden />}
+        />
       </div>
       {/* Phase 105 (chunk C) — the genuine flexible drag region between the
           document-action cluster and the trailing utilities. Interactive
@@ -311,49 +317,50 @@ export function AppHeader(props: AppHeaderProps): ReactElement {
       <div className="header-actions">
         {/* Phase 40 (item 5) — Search tools (Ctrl+K) opens the Command Palette. */}
         {onOpenToolSearch !== undefined && (
-          <button
-            type="button"
-            className="btn btn-ghost btn-icon header-tool-search"
+          <IconButton
+            label={TOOL_SEARCH_ACCESSIBLE_NAME}
+            intent="tertiary"
+            kind="action"
+            density="compact"
+            className="header-tool-search"
             onClick={onOpenToolSearch}
             aria-haspopup="dialog"
-            aria-label={TOOL_SEARCH_ACCESSIBLE_NAME}
-            title="Search tools and commands (Ctrl+K)"
             data-header-tool-search
-          >
-            <Icon name="headerCommand" size="md" aria-hidden />
-          </button>
+            icon={<Icon name="headerCommand" size="md" aria-hidden />}
+          />
         )}
         {/* Phase 30 — Print. Same surface as File > Print and Ctrl+P. */}
-        <button
-          type="button"
-          className="btn btn-ghost btn-icon header-print"
+        <Button
+          intent="tertiary"
+          kind="action"
+          density="compact"
+          className="btn-icon header-print"
           onClick={onPrint}
           disabled={activeId === null || !printEnabled}
           aria-haspopup="dialog"
           aria-label="Print"
           title={printEnabled ? "Print (Ctrl+P)" : "Open a document to print"}
           data-print
-        >
-          <Icon name="print" size="md" aria-hidden />
-        </button>
+          icon={<Icon name="print" size="md" aria-hidden />}
+        />
         {/* Phase 105 (chunk C) — the ONE application menu. Lists the Edit /
             View / Tools / Help groups plus the relocated Multi Mode and Find
             commands. */}
         {appMenuGroups !== undefined && appMenuGroups.length > 0 && (
           <div className="app-menu">
-            <button
+            <IconButton
               ref={appMenuButtonRef}
-              type="button"
-              className={appMenuOpen ? "btn btn-ghost btn-icon app-menu-trigger app-menu-trigger-active" : "btn btn-ghost btn-icon app-menu-trigger"}
+              label="Application menu"
+              intent="secondary"
+              kind="disclosure"
+              density="compact"
+              expanded={appMenuOpen}
+              className={appMenuOpen ? "app-menu-trigger app-menu-trigger-active" : "app-menu-trigger"}
               onClick={onAppMenuToggle}
               aria-haspopup="menu"
-              aria-expanded={appMenuOpen}
-              aria-label="Application menu"
-              title="Application menu"
               data-app-menu
-            >
-              <Icon name="appMenu" size="md" aria-hidden />
-            </button>
+              icon={<Icon name="appMenu" size="md" aria-hidden />}
+            />
             {/* Phase 105 (chunk C7) — the shared `CommandMenu`. It emits the
                 shipped `.titlebar-menu-*` DOM contract verbatim (headings,
                 separators, `data-menu-action` rows with their `.kbd`

@@ -276,7 +276,7 @@ describe('Phase 91 — the migrated Inspector controls consume the canonical but
       expect(link).not.toBeNull();
       expect(link?.classList.contains('btn')).toBe(true);
       expect(link?.classList.contains('btn-ghost')).toBe(true);
-      expect(link?.classList.contains('btn-sm')).toBe(true);
+      expect(link?.classList.contains('btn-compact')).toBe(true);
       expect(link?.classList.contains('inspector-link')).toBe(true);
     } finally {
       unmount();

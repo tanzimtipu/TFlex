@@ -33,6 +33,8 @@ import type { LucideIcon } from 'lucide-react';
 import { Plus } from 'lucide-react';
 import { Icon } from '../icons/Icon';
 import type { QuietIconId } from '../icons/quietPrecision';
+import { Button, IconButton } from './Button';
+import type { ButtonIntent } from './Button';
 // TFL-1004 (TFL-855 chunk C9) — the Add-a-tool picker and the More overflow
 // menu adopt the shared `CommandMenu` primitive (mirroring C5/C7/C8). It owns
 // dismissal, focus capture/return and the row keyboard model; the dock keeps
@@ -880,6 +882,8 @@ export function ActionDock(props: ActionDockProps): ReactElement {
             id: entry.id,
             label: entry.label,
             icon: entry.id as QuietIconId,
+            intent: 'secondary',
+            density: 'compact',
             rowClassName: 'action-dock-menu-item',
             rowDataAttrs: { 'data-dock-picker-item': entry.id },
             onSelect: (): void => {
@@ -909,6 +913,8 @@ export function ActionDock(props: ActionDockProps): ReactElement {
               id: verb.id,
               label: verb.label,
               icon: verb.id as QuietIconId,
+              intent: verb.id === 'delete' ? 'destructive' : 'secondary',
+              density: 'compact',
               disabled: !verb.enabled,
               disabledReason: verb.reason,
               rowClassName: 'action-dock-menu-item',
@@ -924,6 +930,8 @@ export function ActionDock(props: ActionDockProps): ReactElement {
             label: 'Customize dock',
             icon: 'dockEditPencil' as QuietIconId,
             checked: editMode,
+            intent: 'tertiary',
+            density: 'compact',
             rowClassName: 'action-dock-menu-item',
             rowDataAttrs: { 'data-dock-menu-item': 'customize' },
             onSelect: (): void => {
@@ -1194,6 +1202,8 @@ export function ActionDock(props: ActionDockProps): ReactElement {
                 {
                   id: 'pin',
                   label: 'Pin to dock',
+                  intent: 'secondary',
+                  density: 'compact',
                   disabled: menuPinned || !canPinMore(pins),
                   disabledReason:
                     !menuPinned && !canPinMore(pins) ? 'Dock is full' : undefined,
@@ -1207,6 +1217,8 @@ export function ActionDock(props: ActionDockProps): ReactElement {
                 {
                   id: 'unpin',
                   label: 'Unpin from dock',
+                  intent: 'secondary',
+                  density: 'compact',
                   // Phase 37 (item 21) — ANY rendered verb can be unpinned now:
                   // a default stage verb is recorded in `dockUnpinned`, an
                   // explicit pin is dropped from `dockPins`. The host owns which
@@ -1225,12 +1237,26 @@ export function ActionDock(props: ActionDockProps): ReactElement {
     [menu, menuPinned, pins, addTool, unpinFromMenu],
   );
 
+  /** Phase 113 (Quiet Actions) — the dock tile's intent by verb id. Everything
+   *  not listed is `secondary` (the supporting-tool default). */
+  const VERB_INTENT: Record<string, ButtonIntent> = {
+    rotate: 'primary',
+    annotate: 'primary',
+    optimize: 'primary',
+    delete: 'destructive',
+    clearPageSelection: 'tertiary',
+  };
+
   const renderVerb = (
     verb: DockVerb,
     opts: { primary: boolean; pin: boolean; index: number; out?: boolean; short?: boolean },
   ): ReactElement => {
     const pressed = activeSet.has(verb.id) && !MOMENTARY_VERB_IDS.has(verb.id);
     const group: 'primary' | 'pins' = opts.pin ? 'pins' : 'primary';
+    // Phase 113 (Quiet Actions) — the dock tile's task emphasis. The stage's
+    // headlining verbs are `primary`; Delete is the one `destructive`; Clear is
+    // `tertiary`; every other verb is `secondary`.
+    const verbIntent: ButtonIntent = VERB_INTENT[verb.id] ?? 'secondary';
     // Phase 104 (chunk 2) — the primary TILE label is the short form; the full
     // registry label stays the accessible name (`aria-label`) and the tooltip
     // (`title`). Pins and non-primary ids keep their full label.
@@ -1240,7 +1266,7 @@ export function ActionDock(props: ActionDockProps): ReactElement {
     // EXITING verb (a ghost held for its collapse) is inert: `pointer-events`
     // comes from `.anim-verb-out`, it is out of the tab order and it renders no
     // minus badge, so a click can never land on it and it can never run.
-    const classes = ['btn', 'btn-ghost', 'btn-toggle', 'action-dock-verb'];
+    const classes = ['action-dock-verb'];
     if (opts.primary) classes.push('action-dock-verb-primary');
     // Phase 104 (chunk 1) — the selected-tile hook. Only a persistent tool that
     // is genuinely ON takes it; the momentary guard above keeps exports / OCR /
@@ -1257,8 +1283,11 @@ export function ActionDock(props: ActionDockProps): ReactElement {
         className="action-dock-verb-slot"
         data-dock-slot={opts.pin ? `pin:${verb.id}` : verb.id}
       >
-        <button
+        <Button
           type="button"
+          intent={verbIntent}
+          kind="toggle"
+          density="prominent"
           className={classes.join(' ')}
           data-dock-verb={verb.id}
           data-dock-pin={opts.pin ? verb.id : undefined}
@@ -1274,16 +1303,18 @@ export function ActionDock(props: ActionDockProps): ReactElement {
             e.preventDefault();
             openMenu(verb.id, e.clientX, e.clientY);
           }}
+          icon={
+            <span
+              className={jiggle ? 'action-dock-icon anim-jiggle' : 'action-dock-icon'}
+              style={jiggle ? { animationDelay: `-${jiggleDelayMs(verb.id)}ms` } : undefined}
+              aria-hidden
+            >
+              <Icon name={verb.id as QuietIconId} size="lg" />
+            </span>
+          }
         >
-          <span
-            className={jiggle ? 'action-dock-icon anim-jiggle' : 'action-dock-icon'}
-            style={jiggle ? { animationDelay: `-${jiggleDelayMs(verb.id)}ms` } : undefined}
-            aria-hidden
-          >
-            <Icon name={verb.id as QuietIconId} size="lg" />
-          </span>
           {!iconOnly && <span className="action-dock-label">{tileLabel}</span>}
-        </button>
+        </Button>
         {/* TFL-660 — EDIT mode: the minus affordance. It is a SIBLING of the
             verb button (never nested, so it is structurally outside a disabled
             control and stays clickable while its verb is greyed), a SPAN with a
@@ -1294,7 +1325,7 @@ export function ActionDock(props: ActionDockProps): ReactElement {
             (`opts.out === true`) renders no minus. */}
         {editMode && opts.out !== true && (
           <span
-            className="action-dock-minus"
+            className="btn btn-ghost btn-compact action-dock-minus"
             role="button"
             tabIndex={0}
             aria-label={`Remove ${verb.label} from dock`}
@@ -1423,16 +1454,16 @@ export function ActionDock(props: ActionDockProps): ReactElement {
       {/* Phase 37 (item 6) — the ladder's last rung: left/right arrows scroll
           the single verb row instead of wrapping or hiding verbs in a menu. */}
       {arrows && (
-        <button
-          type="button"
-          className="btn btn-ghost btn-icon action-dock-arrow"
+        <IconButton
+          variant="ghost"
+          kind="action"
+          density="standard"
+          label="Scroll dock tools left"
+          className="action-dock-arrow"
           data-dock-arrow="left"
-          aria-label="Scroll dock tools left"
-          title="Scroll left"
           onClick={(): void => scrollVerbs(-1)}
-        >
-          <Icon name="dockScrollLeft" size="lg" aria-hidden />
-        </button>
+          icon={<Icon name="dockScrollLeft" size="lg" aria-hidden />}
+        />
       )}
       <div className="action-dock-scroll" ref={scrollRef} data-dock-scroll>
         {primaryState === 'selection' && (
@@ -1471,23 +1502,23 @@ export function ActionDock(props: ActionDockProps): ReactElement {
               setPlusOpen(false);
             }}
           >
-            <button
+            <IconButton
               ref={plusBtnRef}
-              type="button"
-              className="btn btn-ghost btn-icon action-dock-plus"
+              variant="ghost"
+              kind="disclosure"
+              density="standard"
+              label="Add a tool to the dock"
+              expanded={plusOpen}
+              className="action-dock-plus"
               data-dock-plus
               aria-haspopup="menu"
-              aria-expanded={plusOpen}
-              aria-label="Add a tool to the dock"
-              title="Add a tool to the dock"
               onClick={(): void => {
                 setMenu(null);
                 setOverflowOpen(false);
                 setPlusOpen((v) => !v);
               }}
-            >
-              <Icon icon={Plus} size="lg" aria-hidden />
-            </button>
+              icon={<Icon icon={Plus} size="lg" aria-hidden />}
+            />
             {/* TFL-1004 (chunk C9) — the picker is the shared `CommandMenu`.
                 `data-dock-picker` stays on the root and each row keeps
                 `data-dock-picker-item` + `.action-dock-menu-item`; the trigger
@@ -1505,16 +1536,16 @@ export function ActionDock(props: ActionDockProps): ReactElement {
         )}
       </div>
       {arrows && (
-        <button
-          type="button"
-          className="btn btn-ghost btn-icon action-dock-arrow"
+        <IconButton
+          variant="ghost"
+          kind="action"
+          density="standard"
+          label="Scroll dock tools right"
+          className="action-dock-arrow"
           data-dock-arrow="right"
-          aria-label="Scroll dock tools right"
-          title="Scroll right"
           onClick={(): void => scrollVerbs(1)}
-        >
-          <Icon name="dockScrollRight" size="lg" aria-hidden />
-        </button>
+          icon={<Icon name="dockScrollRight" size="lg" aria-hidden />}
+        />
       )}
       {/* Phase 104 (chunk 2) — the anchored More popover is a STABLE utility
           control: it renders UNCONDITIONALLY, OUTSIDE the scroll strip, and its
@@ -1523,10 +1554,12 @@ export function ActionDock(props: ActionDockProps): ReactElement {
           Customize dock item. It opens UPWARD and clamps into the viewport, so
           it never reflows the document or moves the dock. */}
       <div className="action-dock-overflow" ref={overflowHostRef} data-dock-overflow-host>
-        <button
+        <Button
           ref={overflowBtnRef}
-          type="button"
-          className="btn btn-ghost action-dock-verb action-dock-more"
+          intent="tertiary"
+          kind="disclosure"
+          density="standard"
+          className="action-dock-verb action-dock-more"
           data-dock-overflow
           aria-label="More actions"
           aria-expanded={overflowOpen}
@@ -1541,7 +1574,7 @@ export function ActionDock(props: ActionDockProps): ReactElement {
             <Icon name="dockOverflow" size="lg" />
           </span>
           {!iconOnly && <span className="action-dock-label">More</span>}
-        </button>
+        </Button>
         {/* TFL-1004 (chunk C9) — the More rows are the shared `CommandMenu`.
             `data-dock-overflow-menu` stays on the root; each verb row keeps
             `data-dock-overflow-item` + `.action-dock-menu-item` and the
@@ -1563,9 +1596,11 @@ export function ActionDock(props: ActionDockProps): ReactElement {
           It replaces the retired detached Ctrl+K hint and occupies the retired
           edit pen's row slot; the fit budget still charges `DOCK_EDIT_SLOT`.
           Docking customization now lives in the More menu (Customize dock). */}
-      <button
-        type="button"
-        className="btn btn-ghost action-dock-verb action-dock-tools"
+      <Button
+        intent="tertiary"
+        kind="disclosure"
+        density="standard"
+        className="action-dock-verb action-dock-tools"
         data-dock-tools
         aria-label="Tools"
         title="Tools"
@@ -1580,7 +1615,7 @@ export function ActionDock(props: ActionDockProps): ReactElement {
           <Icon name="toolsPalette" size="lg" />
         </span>
         {!iconOnly && <span className="action-dock-tools-label">Tools</span>}
-      </button>
+      </Button>
       {/* DEF-312 — the Pin/Unpin menu is portaled to `document.body`. The dock
           carries `transform: translateX(-50%)`, and a transformed ancestor is
           the containing block for `position: fixed` descendants, so the menu

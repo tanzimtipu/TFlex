@@ -634,12 +634,14 @@ describe("DEF-319 — the canvas-bound layer contract in the stylesheet", () => 
     expect(css).toMatch(/\.action-dock\s*\{[^}]*pointer-events:\s*auto/s);
   });
 
-  it("mounts the pills, the flyout and the dock inside the layer", () => {
+  it("mounts the flyout and the dock inside the layer (the floating pills are retired)", () => {
     expect(docView).toContain('className="canvas-overlay"');
     const layerStart = docView.indexOf('className="canvas-overlay"');
-    const pillsAt = docView.indexOf("<CanvasPills", layerStart);
+    // Phase 109 (chunk B) — the floating page / zoom pills are RETIRED from the
+    // layer: the unified View Strip footer (a sibling grid row, not in this
+    // overlay) is the sole view-control surface now.
+    expect(docView.indexOf("<CanvasPills", layerStart), "no floating pills").toBe(-1);
     const dockAt = docView.indexOf("<ActionDock", layerStart);
-    expect(pillsAt, "the pills follow the layer open tag").toBeGreaterThan(layerStart);
     expect(dockAt, "the dock follows the layer open tag").toBeGreaterThan(layerStart);
     expect(docView.indexOf("<AnnotationFlyout", layerStart)).toBeGreaterThan(layerStart);
   });

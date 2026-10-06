@@ -1,0 +1,21 @@
+{
+  "S1a": {
+    "afterDblclick": {
+      "open": 2,
+      "save": 0
+    },
+    "afterTwoClicks60ms": {
+      "open": 2,
+      "save": 0
+    }
+  },
+  "S1b": {
+    "openAfterDblclick": {
+      "open": 2,
+      "save": 0
+    },
+    "rotateBefore": 0,
+    "rotateAfter": 1,
+    "rotateDelta": 1
+  }
+}

@@ -15,6 +15,7 @@ import { useEffect, useRef, useState, type ReactElement } from 'react';
 import { AnimatePresence } from 'motion/react';
 import { X } from 'lucide-react';
 import { Icon } from '../icons/Icon';
+import { IconButton } from './Button';
 import type { Result } from '../../shared/result';
 import type { EngineError } from '../../shared/types';
 import type { EngineState } from '../engine/types';
@@ -131,15 +132,16 @@ export function EngineeringLayersPanel(
               <h2 id="engineering-layers-title" className="modal-title">
                 <Icon name="engineeringLayers" size="sm" /> Engineering layers
               </h2>
-              <button
-                type="button"
+              <IconButton
+                label="Close dialog"
+                intent="tertiary"
+                kind="action"
+                density="standard"
                 className="modal-close"
                 onClick={onClose}
-                aria-label="Close dialog"
                 data-testid="layer-close"
-              >
-                <Icon icon={X} size="sm" />
-              </button>
+                icon={<Icon icon={X} size="sm" />}
+              />
             </div>
             <div className="modal-body">
               {layers.length === 0 ? (

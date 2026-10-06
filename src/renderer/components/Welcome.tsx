@@ -24,6 +24,7 @@ import {
 import { BrandLoader } from "./BrandLoader";
 import { BrandMark } from "./BrandMark";
 import { BrandWordmark } from "./BrandWordmark";
+import { Button, IconButton } from "./Button";
 
 /** DEF-410 — fallback home-picker box used before the portal is measured (or in
  *  jsdom, which reports zero-size rects). Only affects the viewport clamp. */
@@ -319,9 +320,11 @@ export function Welcome(props: WelcomeProps): ReactElement {
               Home-only persisted preference (never the global Animations
               setting); aria-pressed reflects the paused state. */}
           {onSetHomeMotionPaused !== undefined && (
-            <button
-              type="button"
-              className="btn btn-ghost orbit-desk-motion-toggle"
+            <Button
+              intent="tertiary"
+              kind="toggle"
+              density="standard"
+              className="orbit-desk-motion-toggle"
               data-orbit-motion-toggle
               aria-pressed={paused}
               aria-label={paused ? "Resume background motion" : "Pause background motion"}
@@ -332,7 +335,7 @@ export function Welcome(props: WelcomeProps): ReactElement {
               <span className="orbit-desk-motion-toggle-label">
                 {paused ? "Resume background motion" : "Pause background motion"}
               </span>
-            </button>
+            </Button>
           )}
           <h1 className="welcome-title">A clear space for your documents.</h1>
           <p className="welcome-sub">
@@ -350,9 +353,11 @@ export function Welcome(props: WelcomeProps): ReactElement {
           data-home-tools
           data-home-edit={editMode ? "true" : "false"}
         >
-          <button
-            type="button"
-            className="btn btn-primary home-tool home-tool-fixed"
+          <Button
+            intent="primary"
+            kind="action"
+            density="standard"
+            className="home-tool home-tool-fixed"
             data-home-tool={HOME_FIXED_TOOL_ID}
             title="Open Files (Ctrl+O)"
             onClick={onOpenFile}
@@ -362,16 +367,18 @@ export function Welcome(props: WelcomeProps): ReactElement {
             </span>{" "}
             Open Files
             <span className="kbd" style={{ marginLeft: "var(--sp-2)" }}>Ctrl O</span>
-          </button>
+          </Button>
           {tools.map((id) => {
             const entry = toolById(id);
             if (entry === undefined) return null;
             const run = runnerFor(id);
             return (
-              <button
+              <Button
                 key={id}
-                type="button"
-                className="btn btn-secondary home-tool"
+                intent="secondary"
+                kind="action"
+                density="standard"
+                className="home-tool"
                 data-home-tool={id}
                 disabled={run === undefined}
                 title={run === undefined ? "Not available on the Home screen" : entry.description}
@@ -386,7 +393,7 @@ export function Welcome(props: WelcomeProps): ReactElement {
                 {entry.label}
                 {editMode && (
                   <span
-                    className="home-tool-minus"
+                    className="btn btn-danger btn-compact home-tool-minus"
                     role="button"
                     tabIndex={0}
                     aria-label={`Remove ${entry.label} from the home row`}
@@ -407,15 +414,17 @@ export function Welcome(props: WelcomeProps): ReactElement {
                     <Icon icon={Minus} size="xs" />
                   </span>
                 )}
-              </button>
+              </Button>
             );
           })}
           {editMode && (
             <div className="home-tools-add">
-              <button
+              <Button
                 ref={plusRef}
-                type="button"
-                className="btn btn-ghost btn-icon home-tools-plus"
+                intent="secondary"
+                kind="disclosure"
+                density="compact"
+                className="btn-icon home-tools-plus"
                 data-home-plus
                 aria-haspopup="menu"
                 aria-expanded={pickerOpen}
@@ -429,9 +438,8 @@ export function Welcome(props: WelcomeProps): ReactElement {
                 }
                 disabled={full || noCandidates}
                 onClick={togglePicker}
-              >
-                <Icon name="tabNew" size="sm" />
-              </button>
+                icon={<Icon name="tabNew" size="sm" />}
+              />
               {/* DEF-410 — the picker stays PORTALED to document.body. A
                   transformed ancestor is the containing block for
                   `position: fixed` descendants, so an in-row fixed popover
@@ -463,20 +471,20 @@ export function Welcome(props: WelcomeProps): ReactElement {
                 )}
             </div>
           )}
-          <button
-            type="button"
-            className="btn btn-toggle btn-icon home-tools-edit"
+          <IconButton
+            label="Edit home tools"
+            intent="tertiary"
+            kind="toggle"
+            density="compact"
+            className="home-tools-edit"
             data-home-edit-toggle
-            aria-pressed={editMode}
-            aria-label="Edit home tools"
-            title="Edit home tools"
+            pressed={editMode}
             onClick={(): void => {
               setEditMode((v) => !v);
               setPickerOpen(false);
             }}
-          >
-            <Icon name="editMode" size="xs" />
-          </button>
+            icon={<Icon name="editMode" size="xs" />}
+          />
         </div>
         {editMode && full && (
           <p className="home-tools-hint" data-home-full-hint>

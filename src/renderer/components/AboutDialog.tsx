@@ -21,6 +21,7 @@ import { useEffect, useState } from 'react';
 import type { AppInfo, UpdateState } from '../../shared/types';
 import { whatsNewFor, whatsNewHistory } from '../../shared/whatsNew';
 import { DialogShell } from './DialogShell';
+import { Button } from './Button';
 import { BrandMark } from './BrandMark';
 import { BrandWordmark } from './BrandWordmark';
 
@@ -391,36 +392,45 @@ export function AboutDialog(props: AboutDialogProps): ReactElement | null {
               <div className="about-paths">
                 <div className="about-row about-row-path">
                   <span className="about-row-label">User data</span>
-                  <button
+                  <Button
                     type="button"
+                    intent="tertiary"
+                    kind="action"
+                    density="standard"
                     className="about-row-value about-row-value-link"
                     onClick={(): void => handleOpenPath(info.storagePaths.userData)}
                     title={info.storagePaths.userData}
                   >
                     {info.storagePaths.userData}
-                  </button>
+                  </Button>
                 </div>
                 <div className="about-row about-row-path">
                   <span className="about-row-label">Settings</span>
-                  <button
+                  <Button
                     type="button"
+                    intent="tertiary"
+                    kind="action"
+                    density="standard"
                     className="about-row-value about-row-value-link"
                     onClick={(): void => handleOpenPath(info.storagePaths.settings)}
                     title={info.storagePaths.settings}
                   >
                     {info.storagePaths.settings}
-                  </button>
+                  </Button>
                 </div>
                 <div className="about-row about-row-path">
                   <span className="about-row-label">Signatures</span>
-                  <button
+                  <Button
                     type="button"
+                    intent="tertiary"
+                    kind="action"
+                    density="standard"
                     className="about-row-value about-row-value-link"
                     onClick={(): void => handleOpenPath(info.storagePaths.signatures)}
                     title={info.storagePaths.signatures}
                   >
                     {info.storagePaths.signatures}
-                  </button>
+                  </Button>
                 </div>
               </div>
     </DialogShell>

@@ -43,6 +43,7 @@ import {
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { Icon } from '../icons/Icon';
+import { Button, IconButton } from './Button';
 import { EmptyState } from './EmptyState';
 import { OutlinePanel, OutlineEditorContext, RulerStrip, ThumbnailRail } from './SideRail';
 import type { OutlineEditorConfig, RailTab, ThumbVerbs } from './SideRail';
@@ -499,17 +500,17 @@ const pageCount = engineState.pageCount;
   // `data-rail-collapse` and the two titles/aria-labels are unchanged, so the
   // existing e2e contract resolves in both states.
   const collapseButton = (
-    <button
-      type="button"
+    <IconButton
+      label={collapsed ? 'Expand panel' : 'Collapse panel'}
+      intent="tertiary"
+      kind="toggle"
+      density="standard"
       className="rail-tab rail-tab-collapse context-panel-collapse"
       onClick={(): void => onToggleCollapsed?.()}
-      title={collapsed ? 'Expand panel' : 'Collapse panel'}
-      aria-label={collapsed ? 'Expand panel' : 'Collapse panel'}
       data-rail-collapse
       data-collapse-direction={collapsed ? 'expand' : 'collapse'}
-    >
-      {collapsed ? <Icon icon={PanelRightOpen} size="md" aria-hidden /> : <Icon icon={PanelLeftClose} size="md" aria-hidden />}
-    </button>
+      icon={collapsed ? <Icon icon={PanelRightOpen} size="md" aria-hidden /> : <Icon icon={PanelLeftClose} size="md" aria-hidden />}
+    />
   );
 
   // ---- PAGES -----------------------------------------------------------
@@ -549,15 +550,17 @@ const pageCount = engineState.pageCount;
         )}
       </div>
       <div className="context-panel-actions-row">
-        <button
-          type="button"
-          className="btn btn-secondary btn-sm context-panel-action"
+        <Button
+          intent="secondary"
+          kind="action"
+          density="compact"
+          className="context-panel-action"
           data-blank-scan-open
           onClick={(): void => onRemoveBlankPages?.()}
           aria-label="Remove blank pages"
         >
           Remove blank pages
-        </button>
+        </Button>
       </div>
       {/* Phase 112 (TFL-854 C2) — the thumbnail multi-select summary. The
        *  host owns the set (DocumentView) and threads it here; the section
@@ -585,9 +588,11 @@ const pageCount = engineState.pageCount;
       )}
       {(outline !== null || effectiveOutlineEditor !== null) && (
         <section className="context-panel-outline" data-context-panel-outline aria-label="Outline" data-outline-open={outlineOpen ? 'true' : 'false'}>
-          <button
-            type="button"
-            className="btn btn-ghost context-panel-section-toggle"
+          <Button
+            intent="tertiary"
+            kind="disclosure"
+            density="standard"
+            className="context-panel-section-toggle"
             onClick={(): void => {
               const next = !outlineOpen;
               setOutlineOpen(next);
@@ -601,7 +606,7 @@ const pageCount = engineState.pageCount;
           >
             {outlineOpen ? <Icon icon={CONTEXT_PANEL_GLYPHS.outlineOpen.icon} size="md" aria-hidden /> : <Icon icon={CONTEXT_PANEL_GLYPHS.outlineClosed.icon} size="md" aria-hidden />}
             <span>Outline</span>
-          </button>
+          </Button>
           {outlineOpen && (
             <div className="context-panel-outline-body" id="context-panel-outline-body" data-context-panel-outline-body>
               {outline !== null && outline.length === 0 && effectiveOutlineEditor === null ? (
@@ -678,9 +683,11 @@ const pageCount = engineState.pageCount;
         {contentState === 'ready' ? (
           <div className="context-panel-list" data-edit-content-list>
             {pageEditContent.map((item) => (
-              <button
+              <Button
                 key={item.id}
-                type="button"
+                intent="secondary"
+                kind="toggle"
+                density="standard"
                 className={
                   item.selected
                     ? 'context-panel-item context-panel-item-selected'
@@ -697,7 +704,7 @@ const pageCount = engineState.pageCount;
                   <Icon name="editText" size="md" aria-hidden />
                 )}
                 <span className="context-panel-item-label">{item.label}</span>
-              </button>
+              </Button>
             ))}
           </div>
         ) : contentState === 'no-content' ? (
@@ -769,19 +776,23 @@ const pageCount = engineState.pageCount;
           </span>
         </PropertyRow>
         <div className="context-panel-actions-row">
-          <button
-            type="button"
-            className="btn btn-secondary btn-sm context-panel-action"
+          <Button
+            intent="secondary"
+            kind="action"
+            density="compact"
+            className="context-panel-action"
             data-context-panel-action="recognize"
             onClick={(): void => onRecognizeText?.()}
             disabled={onRecognizeText === undefined}
           >
             <Icon name="recognizeText" size="md" aria-hidden />
             <span>Recognize text</span>
-          </button>
-          <button
-            type="button"
-            className="btn btn-secondary btn-sm context-panel-action"
+          </Button>
+          <Button
+            intent="secondary"
+            kind="action"
+            density="compact"
+            className="context-panel-action"
             data-context-panel-action="suspects"
             onClick={(): void => onOpenOcrSuspects?.()}
             // DEF-328 — the SAME gate as the palette's `ocrSuspects` row and
@@ -792,7 +803,7 @@ const pageCount = engineState.pageCount;
             title={ocrHasRun ? undefined : 'Run Recognize text first'}
           >
             <span>Review suspects</span>
-          </button>
+          </Button>
         </div>
       </PanelSection>
     </>
@@ -970,9 +981,11 @@ const headerTitle = contextPanelTitle(stage, pageCount);
         actions={
           <div className="context-panel-actions">
             {!collapsed && stage === 'pages' && (
-              <button
-                type="button"
-                className="btn btn-secondary context-panel-combine"
+              <Button
+                intent="secondary"
+                kind="action"
+                density="standard"
+                className="context-panel-combine"
                 onClick={(): void => onMerge?.()}
                 title="Combine with another PDF"
                 aria-label="Combine with another PDF"
@@ -980,7 +993,7 @@ const headerTitle = contextPanelTitle(stage, pageCount);
               >
                 <Icon name="merge" size="md" aria-hidden />
                 <span>Combine</span>
-              </button>
+              </Button>
             )}
             {collapseButton}
           </div>

@@ -1,5 +1,6 @@
 import { AlertCircle, AlertTriangle, CheckCircle, Info, X } from 'lucide-react';
 import { Icon } from '../icons/Icon';
+import { IconButton } from './Button';
 import { useEffect } from 'react';
 import { AnimatePresence } from 'motion/react';
 import { TfToast } from './motion/TfMotion';
@@ -59,14 +60,15 @@ function ToastItem({ toast, onDismiss }: { toast: Toast; onDismiss: (id: number)
     >
       <Icon icon={ToastGlyph} size="sm" className="toast-icon" />
       <span className="toast-text">{toast.text}</span>
-      <button
-        type="button"
+      <IconButton
+        label="Dismiss"
+        intent="tertiary"
+        kind="action"
+        density="compact"
         className="toast-close"
         onClick={() => onDismiss(toast.id)}
-        aria-label="Dismiss"
-      >
-        <Icon icon={X} size="sm" />
-      </button>
+        icon={<Icon icon={X} size="sm" />}
+      />
     </TfToast>
   );
 }

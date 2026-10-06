@@ -21,6 +21,7 @@ import type {
 } from "react";
 import { File, PanelLeftDashed, X } from "lucide-react";
 import { Icon } from "../icons/Icon";
+import { Button, IconButton } from "./Button";
 import { paneTabId, type MultiModeState, type PaneId } from "../state/multiMode";
 import { useInstantMotion } from "../hooks/useAnimations";
 import { MOTION_DURATION } from "../hooks/motionTokens";
@@ -115,16 +116,16 @@ export function MultiPaneHeader(props: {
       <span className="multi-pane-count">
         {pageCount} {pageCount === 1 ? "page" : "pages"}
       </span>
-      <button
-        type="button"
+      <IconButton
+        label={`Clear pane ${pane}`}
+        intent="destructive"
+        kind="action"
+        density="compact"
         className="multi-pane-clear"
         data-pane-clear
         onClick={onClear}
-        aria-label={`Clear pane ${pane}`}
-        title={`Clear pane ${pane} and choose another document`}
-      >
-        <Icon icon={X} size="sm" />
-      </button>
+        icon={<Icon icon={X} size="sm" />}
+      />
     </div>
   );
 }
@@ -149,35 +150,39 @@ export function MultiPaneEmpty(props: {
           <ul className="multi-pane-pick-list">
             {options.map((option) => (
               <li key={option.id}>
-                <button
-                  type="button"
+                <Button
+                  intent="secondary"
+                  kind="action"
+                  density="standard"
                   className="multi-pane-pick"
                   data-pane-pick={option.id}
                   onClick={(): void => onPick(pane, option.id)}
                   aria-label={`Show ${option.title} in pane ${pane}`}
                   title={`Show ${option.title} in pane ${pane}`}
+                  icon={<Icon icon={File} size="sm" />}
                 >
-                  <Icon icon={File} size="sm" />
                   <span className="multi-pane-pick-title">{option.title}</span>
                   <span className="multi-pane-pick-count">
                     {option.pageCount} {option.pageCount === 1 ? "page" : "pages"}
                   </span>
-                </button>
+                </Button>
               </li>
             ))}
           </ul>
         )}
-        <button
-          type="button"
+        <Button
+          intent="secondary"
+          kind="action"
+          density="standard"
           className="multi-pane-open"
           data-pane-open
           onClick={(): void => onOpen(pane)}
           aria-label={`Open a PDF into pane ${pane}`}
           title={`Open a PDF into pane ${pane}`}
+          icon={<Icon name="open" size="sm" />}
         >
-          <Icon name="open" size="sm" />
           <span>Open a PDF</span>
-        </button>
+        </Button>
       </div>
     </div>
   );

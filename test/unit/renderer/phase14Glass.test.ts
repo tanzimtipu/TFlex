@@ -505,8 +505,8 @@ describe("Phase 14 — spring tool motion", () => {
 describe("Phase 14.1 — standardized chrome heights + glass material components", () => {
   const css = readStyles();
 
-  it("the THREE top-bar heights are tokenized (44 / 52 / 40)", () => {
-    expect(css).toMatch(/--chrome-titlebar-h:\s*44px/);
+  it("the THREE top-bar heights are tokenized (48 / 52 / 40)", () => {
+    expect(css).toMatch(/--chrome-titlebar-h:\s*48px/);
     expect(css).toMatch(/--chrome-commandbar-h:\s*52px/);
     expect(css).toMatch(/--chrome-contextbar-h:\s*40px/);
     // The legacy --toolbar-h alias resolves into the command-bar token.

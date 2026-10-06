@@ -300,13 +300,34 @@
   --btn-h: var(--control-height);
   --btn-h-sm: 28px;
   --btn-toolbar-size: var(--btn-h-sm);
-  --btn-icon-size: var(--tf-icon-size);
-  --btn-radius: var(--radius-control);
-  --btn-gap: var(--sp-2);
+  --btn-icon-size: 16px;
+  --btn-radius: 9px;
+  --btn-gap: 6px;
+  /* Phase 113 (Quiet Actions) — geometry/rhythm additions. The three densities
+   * ride these, so a call site picks a target size by token, never a literal. */
+  --btn-pad-x: 12px;
+  --btn-label-size: 12px;
+  --btn-label-weight: 500;
+  --btn-h-compact: 32px;
+  --btn-h-prominent: 40px;
+  --btn-target-coarse: 44px;
+  /* Phase 113 — button-scoped colour tokens. These live here (not on the
+   * app-wide --accent/theme layer) so the Quiet Actions palette can move
+   * without repainting the whole app; light values are the defaults and the
+   * dark block remaps the same names. */
+  --btn-primary-bg: #7050D6;
+  --btn-primary-fg: #FFFFFF;
+  --btn-primary-hover: #6341C5;
+  --btn-primary-pressed: #5734B6;
+  --btn-neutral-pressed: #EAEDF2;
+  --btn-selected-bg: #F0EBFC;
+  --btn-selected-fg: #7050D6;
+  --btn-selected-border: #7050D6;
+  --btn-danger-fg: #B82E43;
   /* Phase 91 — the destructive hover tone used to be a fallback literal in
    * .btn-danger:hover. It is now a real token DERIVED from --error, so the
    * later colour-refresh phase moves one value and every destructive hover
-   * follows. */
+   * follows. Phase 113 keeps it as the solid `.btn-danger-commit` hover. */
   --error-hover: color-mix(in srgb, var(--error) 82%, black);
 
   --chrome-titlebar-h: 48px;
@@ -765,6 +786,18 @@
 }
 
 :root[data-theme="dark"] {
+  /* Phase 113 (Quiet Actions) — button-scoped colour remap. Only the names the
+   * :root block introduces are overridden; every geometry/rhythm token is
+   * inherited unchanged. */
+  --btn-primary-bg: #B9A4FF;
+  --btn-primary-fg: #171A21;
+  --btn-primary-hover: #C5B4FF;
+  --btn-primary-pressed: #AC94F5;
+  --btn-neutral-pressed: #303641;
+  --btn-selected-bg: #302740;
+  --btn-selected-fg: #B9A4FF;
+  --btn-selected-border: #B9A4FF;
+  --btn-danger-fg: #FF9AAD;
   --bg-base: #0b0d0f;
   --bg-sunken: #08090b;
   --bg-raised: #13171d;
@@ -3442,13 +3475,13 @@ body.tab-reordering .tab-list[data-reorder="true"] .tab {
   display: inline-flex;
   align-items: center;
   gap: var(--btn-gap);
-  padding: 0 var(--space-control);
+  padding: 0 var(--btn-pad-x);
   height: var(--btn-h);
   border-radius: var(--btn-radius);
   border: 1px solid transparent;
-  font-size: var(--type-body-size);
+  font-size: var(--btn-label-size);
   line-height: var(--type-body-line);
-  font-weight: var(--type-body-weight);
+  font-weight: var(--btn-label-weight);
   cursor: pointer;
   user-select: none;
   transition:
@@ -3476,22 +3509,21 @@ body.tab-reordering .tab-list[data-reorder="true"] .tab {
 }
 
 .btn-primary {
-  background: var(--accent);
-  color: var(--fg-on-accent);
-  border-color: var(--accent);
+  background: var(--btn-primary-bg);
+  color: var(--btn-primary-fg);
+  border-color: var(--btn-primary-bg);
 }
 
 .btn-primary:hover:not([disabled]):not([aria-disabled="true"]) {
-  background: var(--accent-hover);
-  border-color: var(--accent-hover);
+  background: var(--btn-primary-hover);
+  border-color: var(--btn-primary-hover);
 }
 
-/* Phase 2 — pressed state for the primary (accent) button. The
- * header's compact Open button and every modal confirm ride this
- * lifecycle: accent -> accent-hover -> accent-pressed, white text. */
+/* Phase 113 — pressed state for the primary button; the Quiet Actions
+ * primary ladder is bg -> hover -> pressed, all button-scoped tokens. */
 .btn-primary:active:not([disabled]):not([aria-disabled="true"]) {
-  background: var(--accent-pressed);
-  border-color: var(--accent-pressed);
+  background: var(--btn-primary-pressed);
+  border-color: var(--btn-primary-pressed);
 }
 
 /* Phase 14.1 — the command bar's PRIMARY action. The reference puts
@@ -3541,22 +3573,37 @@ body.tab-reordering .tab-list[data-reorder="true"] .tab {
   background: transparent;
 }
 
-/* B8 — destructive primary (e.g. Delete). The accent colour reads
- * as "go", but a destructive action should be visually distinct so
- * the user doesn't accidentally commit. The error token's solid
- * colour + matching border + white text on hover gives the
- * button a clear "this will destroy data" affordance without
- * crossing into alarm-red. */
+/* Phase 113 — destructive is now SUBTLE by default. The Quiet Actions
+ * treatment is a transparent fill with `--btn-danger-fg` ink and a hairline
+ * red edge derived from that ink, so a destructive action reads as danger
+ * without the alarm of a solid red slab before the user commits. The former
+ * solid treatment is preserved verbatim as `.btn-danger-commit` for call
+ * sites that are the destructive COMMIT (Delete / Clear / Flatten), which the
+ * migration waves opt into explicitly. `--error-hover` is retained for it. */
 .btn-danger {
+  background: transparent;
+  color: var(--btn-danger-fg);
+  border-color: color-mix(in srgb, var(--btn-danger-fg) 45%, transparent);
+}
+.btn-danger:hover:not([disabled]):not([aria-disabled="true"]) {
+  background: color-mix(in srgb, var(--btn-danger-fg) 10%, transparent);
+  border-color: color-mix(in srgb, var(--btn-danger-fg) 65%, transparent);
+}
+.btn-danger:active:not([disabled]):not([aria-disabled="true"]) {
+  background: color-mix(in srgb, var(--btn-danger-fg) 16%, transparent);
+  border-color: color-mix(in srgb, var(--btn-danger-fg) 75%, transparent);
+}
+
+.btn-danger-commit {
   background: var(--error);
   color: var(--fg-on-accent);
   border-color: var(--error);
 }
-.btn-danger:hover:not([disabled]):not([aria-disabled="true"]) {
+.btn-danger-commit:hover:not([disabled]):not([aria-disabled="true"]) {
   background: var(--error-hover);
   border-color: var(--error-hover);
 }
-.btn-danger:active:not([disabled]):not([aria-disabled="true"]) {
+.btn-danger-commit:active:not([disabled]):not([aria-disabled="true"]) {
   background: var(--error);
   border-color: var(--error);
 }
@@ -3569,13 +3616,13 @@ body.tab-reordering .tab-list[data-reorder="true"] .tab {
 
 .btn-secondary:hover:not([disabled]):not([aria-disabled="true"]) { background: var(--bg-hover); }
 
-/* Phase 4 — secondary dialog buttons press with the shared orange
- * wash (the primary keeps its solid accent-pressed). */
-.btn-secondary:active:not([disabled]):not([aria-disabled="true"]) { background: var(--accent-pressed-soft); }
+/* Phase 113 — secondary presses with the Quiet Actions neutral wash (the
+ * resting surface/border/ink stay the raised-surface tokens). */
+.btn-secondary:active:not([disabled]):not([aria-disabled="true"]) { background: var(--btn-neutral-pressed); }
 
 /* Phase 91 — TERTIARY / GHOST. Transparent fill + border at rest; a neutral
- * hover film; the accent-soft wash on press. The default low-emphasis action
- * and the base of the icon/toolbar controls. */
+ * hover film; the Quiet Actions neutral wash on press. The default
+ * low-emphasis action and the base of the icon/toolbar controls. */
 .btn-ghost {
   background: transparent;
   color: var(--fg-strong);
@@ -3585,7 +3632,7 @@ body.tab-reordering .tab-list[data-reorder="true"] .tab {
   background: var(--bg-hover);
 }
 .btn-ghost:active:not([disabled]):not([aria-disabled="true"]) {
-  background: var(--accent-pressed-soft);
+  background: var(--btn-neutral-pressed);
 }
 
 /* Phase 91 — ICON-ONLY. Square: width follows the variant height, zero gap,
@@ -3622,16 +3669,16 @@ body.tab-reordering .tab-list[data-reorder="true"] .tab {
   background: var(--bg-hover);
 }
 .btn-toggle:active:not([disabled]):not([aria-disabled="true"]) {
-  background: var(--accent-pressed-soft);
+  background: var(--btn-neutral-pressed);
 }
 .btn-toggle[aria-pressed="true"] {
-  background: var(--accent-soft);
-  border-color: var(--accent);
-  color: var(--accent);
+  background: var(--btn-selected-bg);
+  border-color: var(--btn-selected-border);
+  color: var(--btn-selected-fg);
 }
 .btn-toggle[aria-pressed="true"]:hover:not([disabled]):not([aria-disabled="true"]) {
-  border-color: var(--accent-hover);
-  color: var(--accent-hover);
+  border-color: var(--btn-selected-border);
+  color: var(--btn-selected-fg);
 }
 
 /* Phase 91 — SIZE MODIFIER. */
@@ -3666,6 +3713,56 @@ body.tab-reordering .tab-list[data-reorder="true"] .tab {
   color: var(--fg-strong);
 }
 
+/* Phase 113 (Quiet Actions) — DENSITY. Each modifier swaps only the target
+ * size token; the base .btn stays content-driven and owns the shared chrome.
+ * No clipping or overflow lock is added, so a taller label under text scaling
+ * is never cut off. */
+.btn-compact { height: var(--btn-h-compact); }
+.btn-prominent { height: var(--btn-h-prominent); }
+.btn-coarse {
+  min-height: var(--btn-target-coarse);
+  min-width: var(--btn-target-coarse);
+}
+
+/* Phase 113 — DISCLOSURE. Chrome-neutral like ghost; the expanded hook is the
+ * only extra state and it shares the selected tokens, so an open disclosure
+ * reads the same as a selected toggle. */
+.btn-disclosure {
+  background: transparent;
+  color: var(--fg-strong);
+  border-color: transparent;
+}
+.btn-disclosure:hover:not([disabled]):not([aria-disabled="true"]) {
+  background: var(--bg-hover);
+}
+.btn-disclosure:active:not([disabled]):not([aria-disabled="true"]) {
+  background: var(--btn-neutral-pressed);
+}
+.btn-disclosure[aria-expanded="true"] {
+  background: var(--btn-selected-bg);
+  color: var(--btn-selected-fg);
+}
+
+/* Phase 113 — BUSY. The resting label stays in flow (visually hidden) as the
+ * width anchor while the busy label overlays it, so toggling busy cannot
+ * change the control's width. The duplicate-activation guard lives in the
+ * component; the primitive only paints a progress cursor. */
+.btn-busy { cursor: progress; }
+.btn-label {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.btn-busy .btn-label-resting { visibility: hidden; }
+.btn-label-busy {
+  position: absolute;
+  inset: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
 /* Phase 91 — keyboard focus is always visible through the shared ring on
  * every canonical variant (the base .btn:focus-visible rule covers the
  * family; this list makes each variant's focus state explicit). */
@@ -3673,10 +3770,16 @@ body.tab-reordering .tab-list[data-reorder="true"] .tab {
 .btn-secondary:focus-visible,
 .btn-ghost:focus-visible,
 .btn-danger:focus-visible,
+.btn-danger-commit:focus-visible,
 .btn-icon:focus-visible,
 .btn-toolbar:focus-visible,
 .btn-toggle:focus-visible,
-.btn-segmented-item:focus-visible {
+.btn-disclosure:focus-visible,
+.btn-segmented-item:focus-visible,
+.btn-compact:focus-visible,
+.btn-prominent:focus-visible,
+.btn-coarse:focus-visible,
+.btn-busy:focus-visible {
   outline: none;
   box-shadow: var(--focus-ring);
 }
@@ -3689,6 +3792,191 @@ body.tab-reordering .tab-list[data-reorder="true"] .tab {
 .btn[aria-disabled="true"] {
   cursor: not-allowed;
   opacity: 0.55;
+}
+
+/* ---------------------------------------------------------------------------
+ * Phase 113 (Quiet Actions) — wave C alias re-pins.
+ *
+ * The Home remove badge, the tab surface and the tab close now carry the
+ * canonical Quiet Actions classes (`btn` + intent/kind/density). Each one's
+ * layout is still owned by its long-standing alias, so these higher-specificity
+ * rules restore the alias geometry/colour the base `.btn` family would
+ * otherwise override and keep the strip's identity look. Same pattern as the
+ * `.btn.action-dock-verb` alias (Phase 91 C1).
+ * ------------------------------------------------------------------------- */
+
+/* The Home remove badge is a SPAN with a button role (never a nested <button>),
+ * so it takes the canonical classes directly. Re-pin its 16px badge box and its
+ * attention ink over `.btn` / `.btn-danger` / `.btn-compact`, and keep it
+ * hidden until EDIT mode. */
+.home-tool-minus.btn {
+  display: none;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  min-width: 0;
+  height: 16px;
+  padding: 0;
+  gap: 0;
+  border: none;
+  border-radius: 50%;
+  background: var(--sem-attention, var(--accent));
+  color: var(--fg-on-accent);
+  font-size: var(--fs-xs);
+  line-height: 1;
+}
+
+.home-tools[data-home-edit="true"] .home-tool-minus.btn {
+  display: inline-flex;
+}
+
+.home-tool-minus.btn:hover:not([disabled]):not([aria-disabled="true"]) {
+  background: var(--sem-attention, var(--accent));
+  border-color: transparent;
+  color: var(--fg-on-accent);
+  transform: scale(1.12);
+}
+
+.home-tool-minus.btn:active:not([disabled]):not([aria-disabled="true"]) {
+  background: var(--sem-attention, var(--accent));
+  color: var(--fg-on-accent);
+  transform: none;
+}
+
+/* The tab surface is a `div[role=tab]`; it carries the canonical segmented-item
+ * axes while `.tab` / `.tab-active` keep owning the strip look. Re-pin the
+ * geometry, ink and transition the canonical family would override, and
+ * neutralise the global `.btn` hover-lift / press-settle so a tab never lifts
+ * off the strip (its inline drag transform always wins). The colour-id identity
+ * rules (0,4,0) still paint a coloured tab. */
+.tab.btn {
+  --tf-tab-repin-bg: var(--tf-tab-accent, var(--sem-neutral));
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  height: 34px;
+  padding: 0 var(--sp-2) 0 var(--sp-3);
+  border: 1px solid transparent;
+  border-bottom: none;
+  border-top-left-radius: var(--radius-2);
+  border-top-right-radius: var(--radius-2);
+  font-size: var(--fs-sm);
+  font-weight: 400;
+  background: var(--tf-tab-repin-bg);
+  color: var(--tf-tab-ink-soft);
+  transition:
+    background var(--motion-normal) var(--ease-out),
+    color var(--motion-normal) var(--ease-out),
+    box-shadow var(--motion-normal) var(--ease-out),
+    width var(--motion-normal) var(--ease-out),
+    margin-left var(--motion-normal) var(--ease-out),
+    transform var(--motion-duration-fast) var(--motion-ease-standard);
+}
+
+.tab.tab-active.btn {
+  font-weight: 600;
+  color: var(--tf-tab-ink);
+}
+
+.tab-area .tab.btn[data-tab-color-id]:not(.tab-active) {
+  --tf-tab-repin-bg: color-mix(in srgb, var(--tf-tab-identity) 20%, var(--tf-tab-surface));
+}
+
+.tab-area .tab.tab-active.btn[data-tab-color-id] {
+  --tf-tab-repin-bg: var(--tf-tab-identity);
+  color: var(--tf-tab-identity-ink);
+}
+
+.tab.btn:hover:not([disabled]):not([aria-disabled="true"]),
+.tab.btn:active:not([disabled]):not([aria-disabled="true"]) {
+  background: var(--tf-tab-repin-bg);
+  transform: none;
+}
+
+/* The tab close is a real <button>; re-pin its 18px transparent chip over the
+ * canonical secondary/compact chrome, and keep both the standard and the
+ * colorful ink washes on hover. */
+.tab-close.btn {
+  width: 18px;
+  min-width: 0;
+  height: 18px;
+  padding: 0;
+  gap: 0;
+  border: none;
+  border-radius: var(--radius-1);
+  background: transparent;
+  color: inherit;
+  opacity: 0.7;
+  transition:
+    background var(--motion-fast) var(--ease-out),
+    opacity var(--motion-fast) var(--ease-out),
+    box-shadow var(--motion-fast) var(--ease-out),
+    transform var(--motion-fast) var(--ease-in-out);
+}
+
+.tab-close.btn:hover:not([disabled]):not([aria-disabled="true"]) {
+  background: color-mix(in srgb, var(--tf-tab-ink) 22%, transparent);
+  opacity: 1;
+}
+
+.tab-area[data-tab-style="colorful"] .tab-close.btn:hover:not([disabled]):not([aria-disabled="true"]) {
+  background: color-mix(in srgb, var(--fg-strong) 16%, transparent);
+  opacity: 1;
+}
+
+/* ---------------------------------------------------------------------------
+ * Phase 113 (Quiet Actions) — wave D alias re-pins.
+ *
+ * The dock's EDIT-mode remove badge is a SPAN with a button role (never a
+ * nested <button>), so it takes the canonical classes directly; re-pin its
+ * 16px badge box over `.btn` / `.btn-ghost` / `.btn-compact`. The View Strip
+ * segmented layout options keep the footer's 32px square geometry and the
+ * More-menu rows keep the menu radius while adopting `.btn-segmented-item`.
+ * Same pattern as the wave-C block above.
+ * ------------------------------------------------------------------------- */
+
+.action-dock-minus.btn {
+  padding: 0;
+  gap: 0;
+  min-width: 0;
+  border: none;
+  justify-content: center;
+}
+
+.view-strip-layout .btn-segmented-item {
+  padding: 0;
+  justify-content: center;
+}
+
+.view-strip-more-menu .btn-segmented-item {
+  border-radius: var(--btn-radius);
+}
+
+/* ---------------------------------------------------------------------------
+ * Phase 113 (Quiet Actions) — wave E1 alias re-pins.
+ *
+ * The panel / inspector controls now carry the canonical Quiet Actions classes
+ * (`btn` + intent/kind/density). Each long-standing alias still owns its
+ * layout, so these higher-specificity rules restore the box the base `.btn` /
+ * `.btn-icon` family would otherwise override: `.btn` imposes a 36px control
+ * height on the content-sized row controls and `.btn-icon` a 36px min-width
+ * floor on the fixed 22/24px icon chips. Same pattern as wave C / wave D.
+ * ------------------------------------------------------------------------- */
+
+.rail-tab-collapse.btn,
+.context-panel-item.btn,
+.ann-panel-row-jump.btn,
+.ann-panel-text-display.btn,
+.review-elements-row-select.btn,
+.ocr-suspects-entry-btn.btn {
+  height: auto;
+}
+
+.ann-panel-row-delete.btn-icon,
+.review-elements-row-edit.btn-icon,
+.review-elements-row-delete.btn-icon,
+.ocr-suspects-close.btn-icon {
+  min-width: 0;
 }
 
 .welcome-body {
@@ -4715,13 +5003,13 @@ body.tab-reordering .tab-list[data-reorder="true"] .tab {
  * a muted accent-tinted edge (hairline + inner ring), and the accent on the
  * GLYPH only. Geometry and timing are unchanged (same box, same
  * .text-props-btn transition). */
-.text-props-btn-active {
+.text-props-btn[aria-pressed="true"] {
   background: var(--select-fill);
   border-color: var(--select-edge);
   color: var(--select-glyph);
   box-shadow: inset 0 0 0 1px var(--select-edge);
 }
-.text-props-btn-active:hover:not(:disabled) {
+.text-props-btn[aria-pressed="true"]:hover:not(:disabled) {
   background: var(--select-fill);
   color: var(--select-glyph);
 }
@@ -8063,6 +8351,7 @@ rect.ann-highlight.ann-preview {
 .ann-pen-swatch {
   height: 24px;
   width: 26px;
+  min-width: 26px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -8080,12 +8369,6 @@ rect.ann-highlight.ann-preview {
 .ann-pen-swatch:focus-visible {
   outline: none;
   box-shadow: var(--focus-ring);
-}
-
-.ann-pen-swatch-active {
-  border-color: var(--accent);
-  background: var(--accent-soft);
-  color: var(--fg-strong);
 }
 
 /* ---------------------------------------------------------------------------
@@ -8303,7 +8586,7 @@ rect.ann-highlight.ann-preview {
 }
 
 .ann-panel-swatch:hover { transform: scale(1.15); }
-.ann-panel-swatch-active {
+.ann-panel-swatch[aria-pressed="true"] {
   border-color: var(--fg-strong);
   box-shadow: 0 0 0 1px var(--bg-raised);
 }
@@ -14155,6 +14438,12 @@ rect.ann-highlight.ann-preview {
   line-height: 1;
   padding: 4px 2px;
   min-width: 28px;
+  /* Phase 113 (wave F3) — the ruler number adopts the canonical axes
+   * (`btn btn-ghost btn-compact`) on its native `motion.button`; these two
+   * neutralise the `.btn`/`.btn-compact` control box the base family would
+   * otherwise impose, so the dense numbers ladder keeps its micro height. */
+  height: auto;
+  gap: 0;
   text-align: center;
   cursor: pointer;
   border-radius: var(--radius-2);
@@ -15487,6 +15776,10 @@ rect.ann-highlight.ann-preview {
   align-items: center;
   justify-content: center;
   width: 24px;
+  /* Phase 113 (wave F3) — the clear control is the canonical destructive
+   * `IconButton`; this alias owns the 24px box, so neutralise `.btn-icon`'s
+   * 36px min-width floor (see styles.css `.btn-icon`). */
+  min-width: 0;
   height: 24px;
   padding: 0;
   border: 0;
@@ -21578,3 +21871,293 @@ cursor: pointer;
   justify-content: center;
   border-radius: var(--tf-panel-field-radius);
 }
+
+/* ---------------------------------------------------------------------------
+   Phase 113 (Quiet Actions) — wave F1: dialogs and the command palette.
+
+   Layout aliases for the migrated controls. Colour, hover, focus, selected and
+   disabled states resolve from the canonical `.btn` family
+   (docs/BUTTON-SYSTEM.md); these rules pin only the long-standing box so the
+   migrated controls keep their geometry. No colour or motion is declared, so
+   the canonical treatment is never overridden.
+   --------------------------------------------------------------------------- */
+
+.btn.about-row-value-link {
+  height: auto;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+}
+
+.btn.accounts-mode-tab {
+  height: auto;
+  border-radius: var(--radius-2);
+}
+
+.btn.accounts-link {
+  height: auto;
+}
+
+.btn.prefs-cat {
+  height: auto;
+}
+
+.btn.prefs-path {
+  height: auto;
+}
+
+.btn.sig-saved-pick {
+  height: auto;
+}
+
+.btn.sig-saved-delete {
+  min-width: 28px;
+  border-radius: var(--radius-1);
+}
+
+.btn.watermark-slot {
+  border-radius: var(--radius-1);
+}
+
+.btn.color-swatch {
+  width: 32px;
+  min-width: 32px;
+}
+
+.btn.command-palette-row {
+  display: flex;
+  width: 100%;
+  height: auto;
+  border-radius: var(--radius-2);
+}
+
+/* ---------------------------------------------------------------------------
+   Phase 113 (Quiet Actions) — wave F2: notices, empty states and overlays.
+
+   Layout aliases for the migrated notice / empty-state / overlay controls.
+   Colour, hover, focus, selected and disabled states resolve from the canonical
+   `.btn` family (docs/BUTTON-SYSTEM.md); these rules pin only the long-standing
+   box (and restore the surface's own hover/selected ink where the canonical
+   pseudo-class would otherwise win on specificity). Same pattern as waves
+   C / D / E1 / F1.
+   --------------------------------------------------------------------------- */
+
+/* Icon-only squares: neutralise `.btn-icon`'s 36px width floor and padding. */
+.conversion-notice-collapse.btn,
+.conversion-notice-collapsed-toggle.btn,
+.pdf3d-notice-collapse.btn,
+.pdf3d-notice-collapsed-toggle.btn,
+.protection-notice-collapse.btn,
+.protection-notice-collapsed-toggle.btn,
+.validation-notice-dismiss.btn,
+.toast-close.btn {
+  min-width: 0;
+  padding: 0;
+  gap: 0;
+}
+
+/* The in-flow notice collapse controls keep their own hover ink and do not
+   lift off the card. */
+.conversion-notice-collapse.btn:hover:not([disabled]),
+.pdf3d-notice-collapse.btn:hover:not([disabled]),
+.protection-notice-collapse.btn:hover:not([disabled]) {
+  background: var(--accent);
+  color: var(--bg-base);
+  transform: none;
+}
+
+.protection-notice-collapse.btn:hover:not([disabled]) {
+  background: var(--warning);
+}
+
+.validation-notice-dismiss.btn:hover:not([disabled]),
+.toast-close.btn:hover:not([disabled]) {
+  background: var(--bg-hover);
+  color: var(--fg-strong);
+  transform: none;
+}
+
+/* The collapsed "i" toggles are absolute overlays painted with an entry
+   animation; they must never pick up the shared hover lift. */
+.conversion-notice-collapsed-toggle.btn:hover:not([disabled]),
+.pdf3d-notice-collapsed-toggle.btn:hover:not([disabled]) {
+  background: var(--accent);
+  color: var(--bg-base);
+  transform: none;
+}
+
+.protection-notice-collapsed-toggle.btn:hover:not([disabled]) {
+  background: var(--warning);
+  color: var(--bg-base);
+  transform: none;
+}
+
+/* The annotation colour box keeps its live swatch fill and its own scale
+   affordance; `.btn-icon` must not widen it. */
+.ann-color-box.btn {
+  min-width: 0;
+  padding: 0;
+}
+
+.ann-color-box.btn:hover:not([disabled]) {
+  transform: scale(1.08);
+}
+
+.ann-color-box.btn:active:not([disabled]) {
+  transform: none;
+}
+
+/* Header icon buttons stay their content-sized chip rather than the 36px
+   `.btn-icon` square. */
+.book-view-close.btn,
+.reading-view-close.btn {
+  width: 24px;
+  min-width: 0;
+  height: 24px;
+  padding: 0;
+}
+
+/* Segmented icon chips keep their own content box over `.btn-segmented-item`. */
+.book-view-layout-button.btn {
+  width: auto;
+  min-width: 0;
+  height: auto;
+}
+
+.reading-toggle.btn {
+  height: auto;
+  white-space: nowrap;
+}
+
+.book-view-layout-button.btn[aria-pressed="true"]:hover:not([disabled]),
+.reading-toggle.btn[aria-pressed="true"]:hover:not([disabled]) {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+  color: var(--accent-text);
+}
+
+/* Multi-pane empty-state actions keep their own hover ink. */
+.multi-pane-pick.btn:hover:not([disabled]) {
+  background: var(--accent-hover-bg);
+  border-color: var(--accent);
+}
+
+.multi-pane-open.btn:hover:not([disabled]) {
+  background: var(--accent-hover);
+  border-color: var(--accent-hover);
+}
+
+/* The conversion Cancel and the comment submit keep their surface ink. */
+.conversion-progress-cancel.btn:hover:not([disabled]) {
+  background: var(--bg-hover);
+}
+
+.ann-comment-submit.btn:disabled {
+  opacity: 0.5;
+}
+
+.ann-comment-submit.btn:hover:not([disabled]) {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+/* Book / reading navigation keeps its own hover surfaces and disabled ink. */
+.book-nav-button.btn:hover:not(:disabled) {
+  background: var(--bg-hover);
+  border-color: var(--border-strong);
+}
+
+.reading-nav-button.btn:hover:not(:disabled) {
+  background: var(--bg-hover);
+}
+
+.book-nav-button.btn:disabled,
+.reading-nav-button.btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+/* Redaction mark swatches keep their fixed 22px disc and inline fill. */
+.redact-swatch.btn {
+  min-width: 0;
+}
+
+.redact-swatch.btn:hover:not([disabled]),
+.redact-swatch.btn:active:not([disabled]) {
+  transform: none;
+}
+
+/* Stamp chips restore the compact action-bar box the retired
+   `.toolbox-action-btn:not(.btn)` block used to own. */
+.stamp-type-btn.btn,
+.toolbox-action-btn--cancel.btn {
+  height: auto;
+  padding: 4px 8px;
+  border-radius: var(--radius-1);
+}
+
+.toolbox-action-btn--cancel.btn {
+  font-size: var(--fs-xs);
+}
+
+.stamp-type-btn.btn[aria-pressed="true"] {
+  border-color: var(--accent);
+  color: var(--accent-text);
+}
+
+/* Form widgets render over the page: preserve their fixed/positioned box and
+   suppress the shared hover lift. */
+.form-checkbox.btn,
+.form-radio.btn,
+.form-listbox-row.btn {
+  height: auto;
+}
+
+.form-checkbox.btn {
+  padding: 0;
+  min-width: 0;
+}
+
+.form-radio.btn {
+  white-space: normal;
+}
+
+.form-checkbox.btn:hover:not([disabled]),
+.form-checkbox.btn:active:not([disabled]),
+.form-radio.btn:hover:not([disabled]),
+.form-radio.btn:active:not([disabled]),
+.form-listbox-row.btn:hover:not([disabled]),
+.form-listbox-row.btn:active:not([disabled]) {
+  transform: none;
+}
+
+/* The committed note icon is a draggable page surface that adopts the axes
+   while `.ann-note` keeps its position, cursor and transparent chrome. */
+.ann-note.btn {
+  gap: 0;
+  padding: 0;
+  border: none;
+  background: transparent;
+  border-radius: 0;
+  font-size: inherit;
+  line-height: normal;
+  white-space: normal;
+  transform: none;
+}
+
+.ann-note.btn:hover:not([disabled]),
+.ann-note.btn:active:not([disabled]) {
+  background: transparent;
+  border-color: transparent;
+  transform: none;
+}
+
+.ann-note-selected.btn {
+  border-radius: var(--radius-2);
+}
+
+.ann-note-selected.btn:hover:not([disabled]) {
+  background: var(--accent-soft);
+}
+
+

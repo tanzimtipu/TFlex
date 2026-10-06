@@ -16,6 +16,7 @@
 import type { ReactElement } from 'react';
 import { ChevronUp, FileText, Info } from 'lucide-react';
 import { Icon } from '../icons/Icon';
+import { Button, IconButton } from './Button';
 import { BrandLoader } from './BrandLoader';
 import { useNoticeCollapse } from '../hooks/useNoticeCollapse';
 import {
@@ -47,15 +48,16 @@ export function ConversionNotice(props: ConversionNoticeProps): ReactElement {
         className="conversion-notice-region"
         data-conversion-notice-state={phase}
       >
-        <button
-          type="button"
+        <IconButton
+          label="Show conversion notice"
+          intent="secondary"
+          kind="disclosure"
+          density="compact"
           className="conversion-notice-collapsed-toggle"
           onClick={expand}
-          aria-label="Show conversion notice"
           data-conversion-icon
-        >
-          <Icon icon={Info} size="sm" />
-        </button>
+          icon={<Icon icon={Info} size="sm" />}
+        />
       </div>
     );
   }
@@ -116,15 +118,16 @@ export function ConversionNotice(props: ConversionNoticeProps): ReactElement {
           </ul>
         )}
       </div>
-      <button
-        type="button"
+      <IconButton
+        label="Collapse conversion notice"
+        intent="tertiary"
+        kind="disclosure"
+        density="compact"
         className="conversion-notice-collapse"
         onClick={collapse}
-        aria-label="Collapse conversion notice"
         data-conversion-collapse
-      >
-        <Icon icon={ChevronUp} size="xs" />
-      </button>
+        icon={<Icon icon={ChevronUp} size="xs" />}
+      />
     </div>
   );
 }
@@ -167,14 +170,16 @@ export function ConversionProgress(props: ConversionProgressProps): ReactElement
           />
         </div>
       </div>
-      <button
-        type="button"
+      <Button
+        intent="secondary"
+        kind="action"
+        density="compact"
         className="conversion-progress-cancel"
         onClick={(): void => onCancel(progress.docId)}
         data-conversion-cancel
       >
         Cancel
-      </button>
+      </Button>
     </div>
   );
 }

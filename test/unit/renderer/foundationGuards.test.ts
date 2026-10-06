@@ -214,8 +214,8 @@ const CSS_ALLOWLIST: Readonly<Record<string, string>> = {
   // --- focus / selection RINGS: a hairline that carries a colour token, not elevation ---
   ".titlebar-file-dot|box-shadow":
     "colour-dot ring: a 1.5px bg-toolbar outline separates the dot from the tab strip; a hairline ring, not a shadow",
-  ".text-props-btn-active|box-shadow":
-    "pressed-button inset hairline ring (select-edge); a state edge, not elevation",
+  ".text-props-btn[aria-pressed=\"true\"]|box-shadow":
+    "pressed-button inset hairline ring (select-edge); a state edge, not elevation (Phase 113: the legacy .text-props-btn-active class is retired; the pressed state is driven by [aria-pressed=\"true\"])",
   ".thumb-current|box-shadow":
     "current-thumbnail selection ring (accent); a state indicator, not elevation",
   ".page-input:focus|box-shadow":
@@ -228,8 +228,8 @@ const CSS_ALLOWLIST: Readonly<Record<string, string>> = {
     "thumbnail drop-indicator ring plus a soft select-edge glow; a drag affordance, not elevation",
   ".ann-color-swatch-active|box-shadow":
     "active annotation swatch ring (bg-toolbar); a state edge, not elevation",
-  ".ann-panel-swatch-active|box-shadow":
-    "active annotation-panel swatch ring (bg-raised); a state edge, not elevation",
+  ".ann-panel-swatch[aria-pressed=\"true\"]|box-shadow":
+    "active annotation-panel swatch ring (bg-raised); a state edge, not elevation (Phase 113: the legacy .ann-panel-swatch-active class is retired; selection rides [aria-pressed=\"true\"])",
   ".form-editor:focus|box-shadow":
     "form-field focus ring (accent-soft); a functional focus affordance, not elevation",
   ".stamp-annotation:hover|box-shadow":

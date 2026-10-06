@@ -33,6 +33,7 @@ import {
 } from 'react';
 import { X } from 'lucide-react';
 import { Icon } from '../icons/Icon';
+import { Button, IconButton } from './Button';
 import type { PDFDocumentProxy } from 'pdfjs-dist';
 import { AnimatedPanel } from './AnimatedPanel';
 import { BrandLoader } from './BrandLoader';
@@ -347,15 +348,16 @@ export function ReadingView(props: ReadingViewProps): ReactElement {
           >
             {progressLabel}
           </div>
-          <button
-            type="button"
+          <IconButton
+            label="Close reading view"
+            intent="secondary"
+            kind="action"
+            density="compact"
             className="reading-view-close"
             onClick={onClose}
-            aria-label="Close reading view"
             data-reading-close
-          >
-            <Icon icon={X} size="sm" />
-          </button>
+            icon={<Icon icon={X} size="sm" />}
+          />
         </header>
 
         {mode === 'epub' ? (
@@ -388,19 +390,23 @@ export function ReadingView(props: ReadingViewProps): ReactElement {
         )}
 
         <nav className="reading-view-nav" aria-label="Reading navigation">
-          <button
-            type="button"
+          <Button
+            intent="secondary"
+            kind="action"
+            density="prominent"
             className="reading-nav-button"
             onClick={stepBack}
             disabled={noPrev}
             aria-label="Previous page"
             data-reading-prev
+            icon={<Icon name="prevPage" size="sm" />}
           >
-            <Icon name="prevPage" size="sm" />
             Previous
-          </button>
-          <button
-            type="button"
+          </Button>
+          <Button
+            intent="secondary"
+            kind="action"
+            density="prominent"
             className="reading-nav-button"
             onClick={stepForward}
             disabled={noNext}
@@ -409,7 +415,7 @@ export function ReadingView(props: ReadingViewProps): ReactElement {
           >
             Next
             <Icon name="nextPage" size="sm" />
-          </button>
+          </Button>
         </nav>
       </div>
     </AnimatedPanel>
@@ -627,8 +633,10 @@ function ComicBody(props: ComicBodyProps): ReactElement {
   return (
     <div className="reading-body reading-body--comic">
       <div className="reading-controls" role="group" aria-label="Comic settings">
-        <button
-          type="button"
+        <Button
+          intent="secondary"
+          kind="exclusive-selection"
+          density="compact"
           className="reading-toggle"
           aria-label="Comic single page"
           aria-pressed={layout === 'single'}
@@ -636,9 +644,11 @@ function ComicBody(props: ComicBodyProps): ReactElement {
           data-comic-single
         >
           Single
-        </button>
-        <button
-          type="button"
+        </Button>
+        <Button
+          intent="secondary"
+          kind="exclusive-selection"
+          density="compact"
           className="reading-toggle"
           aria-label="Comic double page"
           aria-pressed={layout === 'double'}
@@ -646,9 +656,11 @@ function ComicBody(props: ComicBodyProps): ReactElement {
           data-comic-double
         >
           Double
-        </button>
-        <button
-          type="button"
+        </Button>
+        <Button
+          intent="secondary"
+          kind="exclusive-selection"
+          density="compact"
           className="reading-toggle"
           aria-label="Comic fit width"
           aria-pressed={fit === 'width'}
@@ -656,9 +668,11 @@ function ComicBody(props: ComicBodyProps): ReactElement {
           data-comic-fit-width
         >
           Fit width
-        </button>
-        <button
-          type="button"
+        </Button>
+        <Button
+          intent="secondary"
+          kind="exclusive-selection"
+          density="compact"
           className="reading-toggle"
           aria-label="Comic fit height"
           aria-pressed={fit === 'height'}
@@ -666,9 +680,11 @@ function ComicBody(props: ComicBodyProps): ReactElement {
           data-comic-fit-height
         >
           Fit height
-        </button>
-        <button
-          type="button"
+        </Button>
+        <Button
+          intent="secondary"
+          kind="toggle"
+          density="compact"
           className="reading-toggle"
           aria-label="Comic right to left"
           aria-pressed={rightToLeft}
@@ -676,7 +692,7 @@ function ComicBody(props: ComicBodyProps): ReactElement {
           data-comic-rtl
         >
           Right to left
-        </button>
+        </Button>
       </div>
 
       <div

@@ -13854,3 +13854,57 @@ Retest (TFL-1030, 2026-10-06) - PASS. `[data-dock-menu]` rect `{y:1270,h:114,bot
 History:
 - CTO: ACCEPTED ADV-235 (TFL-1028 phase-close, 2026-10-06) -> DEF-608 (LOW); relayed to frontend-dev TFL-1029.
 - qa: filed + CLOSED (TFL-1030 FIX-READY retest, 2026-10-06). Fix present (`menuMeasuredH` re-clamp in `ActionDock.tsx`); measured rect clamped 1384<=1392. PASS.
+
+## DEF-609: Phase 113 leaves the pinned `phase91_button_system` e2e red on two guards (`.tool-btn` dropped from the annotation toolbar, menu rows moved ghost->secondary)
+
+- Status: CLOSED (qa retest, TFL-1055 Phase 113 chunk G2, 2026-10-06)
+- Severity: MEDIUM - the Phase 113 success criterion "the existing per-surface suites ... must stay green" (and CONTROL-INDEX "the spec files that pin each migrated control must stay green") is unmet for two guards; the underlying handlers/labels/hooks are intact, so no user workflow breaks - the pinned oracle/class contract drifted without reconciliation.
+- Found by: qa (TFL-1052 focused verification, Phase 113 chunk G)
+- Phase: 113 (Quiet Actions button system)
+- Files: `src/renderer/annotations/AnnotationToolbar.tsx:495` (comment/docs: `className="ann-tool-btn"` passed to `IconButton`, so the rendered class is now `btn btn-toolbar btn-toggle ann-tool-btn` and no longer carries `.tool-btn`), `src/renderer/components/CommandMenu.tsx` (context-menu rows render `btn btn-secondary btn-compact ...`); oracle `e2e/phase91_button_system.spec.cjs:258` (toolbar), `:436` (menu).
+
+Steps to reproduce:
+1. `npm.cmd run build:renderer` (exit 0), then `npx.cmd playwright test e2e/phase91_button_system.spec.cjs`.
+2. Open `report.pdf`; open the REVIEW Annotate flyout; inspect `[data-ann-tools-visible] button[data-tool="highlight"]` classes; right-click a page thumbnail and inspect a `[data-context-menu] [data-menu-item]` row.
+
+Expected: all 11 phase91 guards green (`tool-btn-all-canonical` and `menu` included).
+
+Actual: 1 failed / 11 guards; `toolbar` FAIL - expected `.tool-btn`, got `[btn btn-toolbar btn-toggle ann-tool-btn]`; `menu` FAIL - expected `.btn-ghost`, got `[btn btn-secondary btn-compact titlebar-menu-row context-menu-item]`. (`sheet-close` FAIL is pre-existing - `[data-open-preferences]` is absent at HEAD f9a88c2 too; `context-panel` FAIL cascades from the un-closed annotation flyout. HEAD verification: `git show f9a88c2:.../AnnotationToolbar.tsx` carried `.tool-btn`; `git show f9a88c2:.../CommandMenu.tsx` used `btn-ghost` - so these two are Phase 113 regressions of the pinned oracle, the other two are not.)
+
+Command output: `screenshots/phase113/e2e-phase91.log` (`[P91] RESULTS ... "toolbar":ok:false ... "menu":ok:false`; `SUMMARY` 1 failed).
+
+Disposition note: intended migration (the Phase 113 specs pin the new `ann-tool-btn` / `btn-secondary btn-compact` contract) vs oracle-update - CTO to decide whether to restore the legacy classes or reconcile the phase91 assertions.
+
+CTO decision (TFL-839, 2026-10-06): FIX-READY, split by owning role. (1) `.tool-btn` on the annotation tool button is a REGRESSION, not an intended rename - `styles.css:5452-5465` and `:8221-8222` document `.tool-btn` as the retained canonical DOM/e2e alias while `.ann-tool-btn` keeps only the per-tool icon-colour hook. frontend-dev restores the alias (`AnnotationToolbar.tsx:495` className `tool-btn ann-tool-btn`); the migration toward the canonical `btn btn-toolbar btn-toggle` axes stays. (2) The context-menu row ghost->secondary change is the intended Phase 113 contract (the chunk-A inventory assigned the page-thumb verbs secondary/compact; the phase113 specs pin it), so the phase91 menu-row oracle is STALE - qa reconciles `e2e/phase91_button_system.spec.cjs:436` to the canonical `btn btn-secondary btn-compact` contract while keeping the `data-menu-item` hook assertion and its spirit; qa also de-cascades the `context-panel` guard (close the annotation flyout before scanning) and records the `sheet-close` guard as PRE-EXISTING (`[data-open-preferences]` absent at HEAD `f9a88c2` too - routed to TFL-1051's pre-existing set, not a Phase 113 regression).
+
+QA retest (TFL-1055, Phase 113 chunk G2, 2026-10-06): CLOSED. frontend-dev's F5 fix restored the source alias (`AnnotationToolbar.tsx:495` now `className="tool-btn ann-tool-btn"`; rendered `btn btn-toolbar btn-toggle tool-btn ann-tool-btn`). Oracle reconciliations in `e2e/phase91_button_system.spec.cjs`: (1) menu-row guard `:436` now asserts the Phase 113 canonical `btn btn-secondary btn-compact` family, keeping the `data-menu-item="rotate-cw"` hook and its click-through; (2) context-panel guard de-cascades by pressing Escape + waiting for `[data-annotation-flyout]` to detach before the scan, AND reconciles the stale class selector: DELIVER renders its actions via `ActionList` as `.tf-panel-action` with the `[data-context-panel-action]` hook (the `.context-panel-action` class exists only on PAGES/REVIEW), so the guard now asserts `.context-panel-actions-row .tf-panel-action` carries `btn btn-secondary` and keeps the hook count assertion. Root-cause correction: the CTO note attributed `context-panel` FAIL to the un-closed flyout; the retest shows flyout=0 yet `.context-panel-action`=0 at stage `deliver`, and `git show f9a88c2:src/renderer/components/ContextPanel.tsx` already used `ActionList` in `renderDeliver` - so it is a pre-existing stale oracle (Phase 112 TFL-855), not a flyout cascade. `sheet-close` remains PRE-EXISTING (`[data-open-preferences]` absent at HEAD `f9a88c2`; routed to TFL-1051) and is excluded from the Phase 113 pass/fail while its red result is kept in the guard table.
+
+Retest evidence:
+- `npm.cmd run build:renderer` -> exit 0.
+- `npx.cmd playwright test e2e/phase91_button_system.spec.cjs` -> 1 passed. Guard table: home PASS, open report PASS, toolbar PASS (`.tool-btn` restored + `ann-tool-btn`), tool-btn-all-canonical PASS, sheet-close FAIL (PRE-EXISTING, excluded), search-bar-tool-btn PASS, context-panel PASS (reconciled), inspector PASS, dialog PASS, menu PASS (secondary contract), segmented PASS. Log: `screenshots/phase113/e2e-phase91-g2.log`.
+- `npx.cmd playwright test e2e/phase113_quiet_actions.spec.cjs` -> 1 passed (pass=8 fail=0 skip=1 pre-existing `notice-collapse`). Log: `screenshots/phase113/e2e-phase113-g2.log`.
+- `npx.cmd vitest run test/unit/renderer/phase113_dockToolbars.test.tsx test/unit/renderer/phase113_menusContextMenus.test.tsx` -> 2 files, 21 tests passed. Log: `screenshots/phase113/e2e-phase113-g2-vitest.log`.
+
+## DEF-610: A real double-click fires the Home hero Merge and the title-bar Open native pickers twice (ADV-236)
+
+- Status: OPEN
+- Severity: MEDIUM - a real double-click (or two clicks ~60 ms apart) on the Home hero Merge action and the title-bar Open action invokes the native `showOpenDialog` twice; a five-click storm fires it five times. The page-thumb `rotate-cw` row is also unguarded in a single synchronous task (two sync `.click()` -> delta 2).
+- Found by: adversary (ADV-236)
+- Phase: 113 (Quiet Actions - chunk H adversarial diff-pass)
+- Files: the Home hero Merge action and title-bar Open picker host (`Welcome`/`TitleBar`), and the `rotate-cw` menu-row handler. The migration did not change this behaviour; the primitive's `busy` guard is not wired to these commands.
+- Origin: `ADVERSARIAL_REVIEW.md:11552` (ADV-236); CTO ACCEPTED (TFL-839 chunk H triage).
+- Probe: `test-fixtures/phase113-adversary/adv_realdbl.spec.cjs`, `adv_p113.spec.cjs` (S1a/S1b); measurements `adv_realdbl.output.json`, `adv_p113.output.json`.
+- Class: PRE-EXISTING - the detached-HEAD `f9a88c2` oracle produced byte-identical numbers (merge 2/2, storm 5, open 2, rotate synchronously delta 2).
+- Closure: does NOT block Phase 113 (pre-existing, out of this presentation-only phase's scope; criterion 7 preserves behaviour). Tracked by deferred issue TFL-1057.
+
+## DEF-611: Closing the Command Palette or Preferences drops focus to `<body>` instead of the opener (ADV-237)
+
+- Status: OPEN
+- Severity: LOW - after Escape-closing the Command Palette (`Ctrl+K`) or Preferences, `document.activeElement` is `BODY` instead of the invoking control, so a keyboard user must Tab from the top of the page. Every other disclosure (File menu, dock More overflow, thumbnail context menu) returns focus correctly.
+- Found by: adversary (ADV-237)
+- Phase: 113 (Quiet Actions - chunk H adversarial diff-pass)
+- Files: the Command Palette host and the Preferences dialog host (`CommandPalette.tsx` diff is class-name-only; `DialogShell.tsx` is not in the phase diff).
+- Origin: `ADVERSARIAL_REVIEW.md:11593` (ADV-237); CTO ACCEPTED (TFL-839 chunk H triage).
+- Probe: `test-fixtures/phase113-adversary/adv_p113.spec.cjs` (S2); measurements `adv_p113.output.json`.
+- Class: PRE-EXISTING - no focus logic changed by the Phase 113 diff; identical at HEAD `f9a88c2`.
+- Closure: does NOT block Phase 113 (pre-existing, out of scope). Tracked by deferred issue TFL-1057.

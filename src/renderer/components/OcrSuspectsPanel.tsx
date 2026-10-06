@@ -20,6 +20,7 @@
 import type { ReactElement } from 'react';
 import { X } from 'lucide-react';
 import { Icon } from '../icons/Icon';
+import { Button, IconButton } from './Button';
 import type { OcrSuspect } from '../../shared/types';
 import { SUSPECT_CONFIDENCE_THRESHOLD } from '../../shared/types';
 import { TfBarTop } from './motion/TfMotion';
@@ -65,15 +66,15 @@ export function OcrSuspectsPanel(props: OcrSuspectsPanelProps): ReactElement {
           <span>Run OCR on this document to populate suspects.</span>
         )}
       </div>
-      <button
-        type="button"
+      <IconButton
+        label="Close OCR suspects panel"
+        intent="tertiary"
+        kind="action"
+        density="standard"
         className="ocr-suspects-close"
         onClick={onClose}
-        aria-label="Close OCR suspects panel"
-        title="Close"
-      >
-        <Icon icon={X} size="sm" />
-      </button>
+        icon={<Icon icon={X} size="sm" />}
+      />
     </header>
   );
 
@@ -153,8 +154,10 @@ function SuspectGroups(props: {
                 key={`${entry.page}-${idx}-${entry.rect.x}-${entry.rect.y}`}
                 className="ocr-suspects-entry"
               >
-                <button
-                  type="button"
+                <Button
+                  intent="tertiary"
+                  kind="action"
+                  density="compact"
                   className="ocr-suspects-entry-btn"
                   onClick={(): void => onNavigate(entry)}
                   title={`Navigate to page ${entry.page}`}
@@ -180,7 +183,7 @@ function SuspectGroups(props: {
                       {entry.confidence.toFixed(0)}%
                     </span>
                   </span>
-                </button>
+                </Button>
               </li>
             ))}
           </ul>

@@ -37,6 +37,7 @@ import {
   placeControlNearAnchor,
 } from "../components/controlPlacement";
 import { TfBar } from "../components/motion/TfMotion";
+import { Button } from "../components/Button";
 import { rectsClose } from "../edit/geometry";
 import type { ImageResizeHandle } from "../edit/geometry";
 import { clamp } from "../edit/model";
@@ -584,21 +585,19 @@ function StampTypeEditor(props: {
       </div>
       <div className="stamp-type-row" role="group" aria-label="Stamp type">
         {STAMP_IDS.map((id) => (
-          <button
+          <Button
             key={id}
-            type="button"
-            className={
-              id === active
-                ? "toolbox-action-btn stamp-type-btn stamp-type-btn-active"
-                : "toolbox-action-btn stamp-type-btn"
-            }
+            intent="secondary"
+            kind="exclusive-selection"
+            density="compact"
+            className="toolbox-action-btn stamp-type-btn"
             onClick={(): void => onPick(id)}
             data-stamp-type-btn={id}
             aria-pressed={id === active}
             aria-label={`Set stamp to ${id}`}
           >
             {id}
-          </button>
+          </Button>
         ))}
       </div>
       <div
@@ -606,8 +605,10 @@ function StampTypeEditor(props: {
         data-annotation-action-bar="stamp-type"
         style={{ pointerEvents: "auto", position: "relative", zIndex: 5 }}
       >
-        <button
-          type="button"
+        <Button
+          intent="secondary"
+          kind="action"
+          density="compact"
           className="toolbox-action-btn toolbox-action-btn--cancel ann-textbox-action-btn"
           onClick={onClose}
           data-stamp-type-cancel
@@ -615,7 +616,7 @@ function StampTypeEditor(props: {
           title="Cancel (Esc)"
         >
           Cancel
-        </button>
+        </Button>
       </div>
     </TfBar>
   );

@@ -25,6 +25,7 @@ import { useMemo, useState } from 'react';
 import type { ReactElement, ReactNode } from 'react';
 import { MousePointerClick, PanelRightClose, PanelRightOpen, X } from 'lucide-react';
 import { Icon } from '../icons/Icon';
+import { Button, IconButton } from './Button';
 import { EmptyState } from './EmptyState';
 import { GlassSidebarBody } from './GlassSidebar';
 import { ActionList, PanelEmptyState, PanelSection, PanelShell, PropertyRow, ScopedHeader } from './panels/PanelPrimitives';
@@ -522,9 +523,11 @@ function Action(props: {
   icon?: ReactElement;
 }): ReactElement {
   return (
-    <button
-      type="button"
-      className="btn btn-secondary inspector-action"
+    <Button
+      intent="secondary"
+      kind="action"
+      density="standard"
+      className="inspector-action"
       data-inspector-action={props.id}
       onClick={props.onClick}
       disabled={props.onClick === undefined}
@@ -532,7 +535,7 @@ function Action(props: {
     >
       {props.icon}
       <span>{props.label}</span>
-    </button>
+    </Button>
   );
 }
 
@@ -751,9 +754,11 @@ function ExportConfigSection(props: {
         </div>
       )}
 
-      <button
-        type="button"
-        className="btn btn-primary export-config-action"
+      <Button
+        intent="primary"
+        kind="action"
+        density="standard"
+        className="export-config-action"
         data-inspector-action="export"
         onClick={run}
         disabled={exportDisabled}
@@ -761,7 +766,7 @@ function ExportConfigSection(props: {
       >
         <Icon name="exportPages" size="sm" aria-hidden />
         <span>{exportPrimaryLabel(format)}</span>
-      </button>
+      </Button>
     </div>
   );
 }
@@ -890,16 +895,18 @@ fileSize = null,
   const renderOnPageSection = (): ReactElement => (
     <Section id="on-page" title="On this page">
       <Row id="annotations" label="Annotations">
-        <button
-          type="button"
-          className="btn btn-ghost btn-sm inspector-link"
+        <Button
+          intent="tertiary"
+          kind="action"
+          density="compact"
+          className="inspector-link"
           data-inspector-action="jump-to-review"
           onClick={onJumpToReview}
           disabled={onJumpToReview === undefined}
           title="Show the annotations list in the REVIEW panel"
         >
           <span data-inspector-annotations-count>{annotationCount}</span>
-        </button>
+        </Button>
       </Row>
       <Row id="form-fields" label="Form fields">
         {formFieldCount}
@@ -1087,6 +1094,7 @@ const renderSignatureSection = (): ReactElement => (
             {
               id: 'annotation-delete',
               label: 'Delete annotation',
+              intent: 'destructive',
               icon: <Icon name="delete" size="sm" />,
               onClick:
                 onDeleteAnnotation === null
@@ -1173,22 +1181,24 @@ const renderSignatureSection = (): ReactElement => (
    *  ladder's rung 1 is OR-ed by the host, so a manual expand can never fight
    *  the ladder. */
   const collapseControl = (
-    <button
-      type="button"
-      className="btn btn-ghost inspector-collapse-toggle"
+    <IconButton
+      label={collapsed ? 'Expand inspector' : 'Collapse inspector'}
+      intent="tertiary"
+      kind="toggle"
+      density="standard"
+      className="inspector-collapse-toggle"
       data-inspector-collapse
       onClick={onToggleCollapsed}
       disabled={onToggleCollapsed === undefined}
-      aria-expanded={!collapsed}
-      aria-label={collapsed ? 'Expand inspector' : 'Collapse inspector'}
-      title={collapsed ? 'Expand inspector' : 'Collapse inspector'}
-    >
-      {collapsed ? (
-        <Icon icon={PanelRightOpen} size="sm" />
-      ) : (
-        <Icon icon={PanelRightClose} size="sm" />
-      )}
-    </button>
+      expanded={!collapsed}
+      icon={
+        collapsed ? (
+          <Icon icon={PanelRightOpen} size="sm" />
+        ) : (
+          <Icon icon={PanelRightClose} size="sm" />
+        )
+      }
+    />
   );
 
   return (
@@ -1219,16 +1229,16 @@ const renderSignatureSection = (): ReactElement => (
               <div className="inspector-header-actions">
                 {collapseControl}
                 {onClose !== undefined ? (
-                  <button
-                    type="button"
-                    className="btn btn-ghost btn-icon inspector-close"
+                  <IconButton
+                    label="Close inspector"
+                    intent="tertiary"
+                    kind="action"
+                    density="standard"
+                    className="inspector-close"
                     data-inspector-close
                     onClick={onClose}
-                    aria-label="Close inspector"
-                    title="Close"
-                  >
-                    <Icon icon={X} size="sm" />
-                  </button>
+                    icon={<Icon icon={X} size="sm" />}
+                  />
                 ) : null}
               </div>
             }

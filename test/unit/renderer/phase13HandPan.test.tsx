@@ -151,7 +151,7 @@ describe("Phase 13 — Hand (pan) mode", () => {
       });
       const after = host.querySelector<HTMLButtonElement>("[data-hand-toggle]");
       expect(after?.getAttribute("aria-pressed")).toBe("true");
-      expect(after?.classList.contains("tool-btn-active")).toBe(true);
+      expect(after?.classList.contains("btn-toggle")).toBe(true);
       const sc = scroller(host);
       expect(sc.classList.contains("document-scroller-hand")).toBe(true);
       expect(sc.getAttribute("data-hand")).toBe("true");
@@ -159,8 +159,11 @@ describe("Phase 13 — Hand (pan) mode", () => {
       // pinned in bug4_escapeAndDisarm.test.ts (reducer level); the
       // button-level inertness moves with the ribbon's Annotate
       // wiring.
-      // The toolbar Hand button flips to its armed tooltip.
-      expect(after?.getAttribute("title")).toMatch(/Pan mode active/);
+      // Phase 113 — the Hand control is the shared IconButton, whose required
+      // `label` writes BOTH aria-label and title (the guidance collapse is the
+      // chunk-B foundation contract). The accessible name stays "Pan mode".
+      expect(after?.getAttribute("aria-label")).toBe("Pan mode");
+      expect(after?.getAttribute("title")).toBe("Pan mode");
     } finally {
       unmount();
     }

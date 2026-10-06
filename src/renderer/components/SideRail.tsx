@@ -1139,7 +1139,11 @@ export function RulerStrip({
         <motion.button
           key={page}
           type="button"
-          className={page === currentPage ? 'rail-ruler-page rail-ruler-current' : 'rail-ruler-page'}
+          className={
+            page === currentPage
+              ? 'btn btn-ghost btn-compact rail-ruler-page rail-ruler-current'
+              : 'btn btn-ghost btn-compact rail-ruler-page'
+          }
           onClick={() => onJump(page)}
           data-ruler-page={page}
           {...hover}
@@ -1607,7 +1611,11 @@ function Thumb({
                 role="button"
                 tabIndex={0}
                 draggable={false}
-                className={id === 'delete' ? 'thumb-verb thumb-verb-danger' : 'thumb-verb'}
+                className={
+                  id === 'delete'
+                    ? 'btn btn-danger btn-compact thumb-verb thumb-verb-danger'
+                    : 'btn btn-ghost btn-compact thumb-verb'
+                }
                 title={title}
                 aria-label={aria}
                 data-thumb-verb={id}

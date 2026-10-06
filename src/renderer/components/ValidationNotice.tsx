@@ -14,6 +14,7 @@
 import type { ReactElement } from 'react';
 import { X } from 'lucide-react';
 import { Icon } from '../icons/Icon';
+import { IconButton } from './Button';
 import {
   VALIDATION_BLOCKED_TEXT,
   VALIDATION_BLOCKED_TITLE,
@@ -153,15 +154,16 @@ export function ValidationNotice(props: ValidationNoticeProps): ReactElement {
         </p>
       </div>
       {onDismiss !== undefined && (
-        <button
-          type="button"
+        <IconButton
+          label="Dismiss validation report"
+          intent="tertiary"
+          kind="action"
+          density="compact"
           className="validation-notice-dismiss"
           onClick={onDismiss}
-          aria-label="Dismiss validation report"
           data-validation-dismiss
-        >
-          <Icon icon={X} size="xs" />
-        </button>
+          icon={<Icon icon={X} size="xs" />}
+        />
       )}
     </div>
   );

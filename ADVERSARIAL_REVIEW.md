@@ -11548,3 +11548,170 @@ running document verbs from menus; the job is "act on the object I can see" and
   and Create-from-images show no fabricated content and their disabled/enabled
   transitions reflect real validation.
 - Reduced motion is honoured centrally (TfMenu/TfBar/TfDialog) with no travel.
+
+## ADV-236: A real double-click fires the Home hero Merge and the title-bar Open native pickers twice
+
+- Session: diff-pass (Phase 113 chunk H)
+- Suggested severity: MEDIUM
+
+What I did: launched the dev build only through `e2e/lib/launch.cjs`; armed
+main-process `dialog.showOpenDialog` / `showSaveDialog` counters (returning a
+cancelled result so the extra invocation is countable with no side effect), then
+on the Home screen real-`dblclick()`ed `[data-home-tool="merge"]` and also sent
+two real mouse clicks 60 ms apart at its centre; then opened `report.pdf` and
+real-`dblclick()`ed `[data-toolbar-open]`; then opened the page-1 thumbnail
+context menu and sent two real clicks 70 ms apart at the centre of
+`[data-menu-item="rotate-cw"]`. Probes:
+`test-fixtures/phase113-adversary/adv_realdbl.spec.cjs` and
+`test-fixtures/phase113-adversary/adv_p113.spec.cjs` (S1a/S1b); raw
+measurements: `adv_realdbl.output.json` and `adv_p113.output.json` beside each.
+Expected: one activation, one native picker - the phase success criterion
+"no double execution" and criterion 6 "guard duplicate activation in both UI and
+handler".
+Actual: Home Merge real `dblclick` -> `showOpenDialog` count 2, two real clicks
+60 ms apart -> count 2; title-bar Open real `dblclick` -> count 2. A five-click
+synchronous storm on Home Merge -> count 5 (one picker invocation per click).
+Rotate CW via two real clicks 70 ms apart advanced `engineState.rotations[0]`
+0 -> 1 (delta 1, the menu dismisses first), but two SYNCHRONOUS `el.click()`
+calls advanced it 0 -> 2 (delta 2), i.e. the handler itself is unguarded in one
+task. Oracle: building the detached-HEAD `f9a88c2` worktree (`git worktree` +
+`node_modules` junction, `build:node` + `build:renderer`) and running the SAME
+`adv_realdbl` / `adv_oracle` specs produced byte-identical numbers (merge 2 and
+2, storm 5, open 2, rotate 68 synchronous delta 2), so this is PRE-EXISTING, not
+introduced or altered by the Phase 113 migration. No document corruption was
+observed (the stubbed pickers were cancelled); the impact is a duplicated OS
+picker on an ordinary double-click. The new `Button` busy guard
+(`onClick={busy ? undefined : onClick}`) does not help here because these
+controls never set `busy`, so the guard never engages for a same-tick pair.
+Screenshots: `screenshots/phase113-adversary/s1a-home-merge-double.png`,
+`s1b-rotate-double.png`. Suggested fix (a behaviour change, so out of this phase's
+scope): set a synchronous re-entry flag at handler entry, or wire these
+file-opening commands to the primitive's `busy` state.
+
+Disposition: ACCEPTED -> DEF-610 (MEDIUM, PRE-EXISTING, out of Phase 113 scope; filed as deferred TFL-1057)
+
+## ADV-237: Closing the Command Palette or Preferences drops focus to `<body>` instead of the opener
+
+- Session: diff-pass (Phase 113 chunk H)
+- Suggested severity: LOW
+
+What I did: opened `report.pdf`, measured `document.activeElement` (a) after
+`Ctrl+K` opens the Command Palette and Escape closes it, and (b) after opening
+Preferences from the application menu (`[data-menu-action="preferences"]`) and
+closing it with Escape. Probe:
+`test-fixtures/phase113-adversary/adv_p113.spec.cjs` (S2); raw measurements:
+`adv_p113.output.json`. Expected: the disclosure/dialog returns focus to its
+opener (per phase success criterion 7, "disclosures use real menu primitives with
+... Escape/focus return"). Actual: `activeElement` after palette Escape is
+`BODY` (text "JovrelFileOpen..."); after Preferences Escape is `BODY`; the
+palette/preferences open-focus is correctly the input / the sheet close X. The
+File menu, dock More overflow and thumbnail context menu all DID return focus to
+their opener, so only these two dialog-style surfaces lose focus. Oracle: the
+Phase 113 diff for `CommandPalette.tsx` is class-name-only (no focus logic
+changed) and `DialogShell.tsx` is not in the phase diff at all, so this is
+PRE-EXISTING. Impact: a keyboard user must Tab from the top of the page after
+dismissing the palette or Preferences. Suggested fix: have the host remember and
+restore the invoking element on close (the menu drawer already does this).
+
+Disposition: ACCEPTED -> DEF-611 (LOW, PRE-EXISTING, out of Phase 113 scope; filed as deferred TFL-1057)
+
+## Phase 113 chunk H adversary diff-pass - per-surface verdicts
+
+Build: `npm.cmd run build:renderer` under the build mutex - exit 0. Launch:
+`e2e/lib/launch.cjs` only. Probes: `test-fixtures/phase113-adversary/`
+(`adv_p113.spec.cjs`, `adv_realdbl.spec.cjs`, `adv_oracle.spec.cjs`); results
+JSON beside each. Oracle tree: `git worktree` at `f9a88c2` with a `node_modules`
+junction, both trees built.
+
+- **S1 double execution - FINDING (ADV-236, PRE-EXISTING).** Home Merge and
+  title-bar Open fire their native picker twice on a real double-click (2/2 and
+  2); five-click storm 5; rotate-cw synchronous delta 2 (real double-click delta
+  1). Identical at HEAD `f9a88c2` -> not phase-induced. Save As did not increment
+  the `showSaveDialog` counter (0) and raised one in-app surface.
+- **S2 focus - PARTIAL (ADV-237, PRE-EXISTING).** File menu: open focus on
+  `[data-menu-action="open"]`, `aria-expanded` false->true->false, Escape returns
+  focus to `[data-menu-button]`; outside pointerdown dismissed; ArrowDown walked
+  merge/save/saveAs/closeTab/open (no dead stop). Command Palette focus lands on
+  the input; Escape closes. Preferences focus lands on the close X; Escape closes.
+  Focus after close is `BODY` for palette + Preferences only (ADV-237).
+- **S3 disabled/busy honesty - CLEAN for disabled; busy NOT VERIFIED.** Disabled
+  Save: `opacity 0.55`, label `rgb(61,76,105)` on `rgb(255,255,255)`, computed
+  contrast 8.62, and a real reason title "Saved - no changes to save"; enabled
+  Save is the same 32x28 rect, so resting->enabled width delta 0 px and height
+  delta 0 px. Print (enabled) contrast 8.33. No control carried `aria-busy` on
+  load (no premature busy). The only `busy` consumer of the primitive is the
+  signed-in AccountMenu "Sync now", which an offline-first run cannot reach
+  (`[data-account-sync-now]` absent), so the busy label / `aria-busy` / width-
+  reservation contract is NOT EXERCISED this pass and is called out rather than
+  claimed clean.
+- **S4 false persistent selection - CLEAN.** The one-shot rotate-cw row is
+  removed from the DOM after dispatch (no lingering selected row) and no
+  one-shot left an `aria-pressed="true"`; the only pressed controls are the
+  persistent Stage Rail, a dock toggle and a segmented toolbar item. View Strip
+  exclusive-selection followed real state: initial `one=true, two=false,
+  four=false`; after clicking `two` -> `one=false, two=true, four=false`; after
+  clicking `one` -> `one=true` again.
+- **S5 disclosure keyboard/menu semantics - CLEAN.** Dock More: `aria-expanded`
+  false->true, first focus a real row, Escape detached, rect
+  (x1269,y1072,300x190) inside 2560x1392. Thumbnail context menu near the bottom
+  edge: rect (186,894,300x266) bottom 1160 < 1392 (clamped), first focus
+  rotate-cw, ArrowDown -> rotate-ccw/extract/insert-blank/replace, Escape
+  detached. Command Palette input focused, Escape closed.
+- **S6 native caption-control geometry - CLEAN.** `[data-titlebar-controls]`
+  (2422,0,138x47); minimize (2422,46x47), maximize (2468,46x47), close
+  (2514,46x47); all `border-radius 0px`, `-webkit-app-region: no-drag`, raw
+  `<button>` tags; `.titlebar-drag` present with `app-region: drag`; preload
+  bridge exposes minimizeWindow/maximizeWindow/closeWindow as functions. Oracle
+  at HEAD `f9a88c2`: identical wrap (2422,0,138x47) and identical control rects
+  and classes - no native control was wrapped into a generic rounded button or
+  replaced by a web layer. (The `.titlebar-drag` spacer measured 0x0 in BOTH
+  trees at this 2560px width; unchanged, so not a phase finding.)
+- **S7 destructive styling gates - CLEAN.** The context-menu delete row alone
+  carries the destructive treatment: class `btn btn-danger ... command-menu-row-danger`,
+  `data-menu-variant="danger"`, colour `rgb(217,108,99)`; rotate-cw/ccw, extract,
+  insert-blank and replace stay `rgb(15,23,42)`. One dispatcher click raised the
+  existing "Delete pages" dialog (0 -> 1 dialog); Escape closed it; no extra
+  approval step. No solid `.btn-danger-commit` was present on this surface
+  (count 0), matching the rule that a solid danger commit appears only where an
+  existing destructive flow needs one.
+
+## Design critique: the Phase 113 Quiet Actions surfaces (Home, title bar, dock, menus, dialogs)
+
+User context: a desktop PDF user whose job is "open/act on a document and finish
+the transaction with as few decisions as possible"; success is the action fires
+once, the surface looks the way it behaves, and nothing is lost. Precedes:
+Home/Workspace navigation. Follows: the document operation.
+
+### Must-fix (blocks ship)
+- **Affordance / state honesty:** a one-shot file command (Home Merge, title-bar
+  Open) fires twice on a double-click (ADV-236). Even though pre-existing, the
+  phase's own criterion 6 claims duplicate activation is guarded; the shared
+  primitive's busy guard is real but unwired on these controls. **Try:** set a
+  synchronous re-entry guard at handler entry, or route these through the
+  primitive's `busy` state.
+
+### Should-fix (before broader rollout)
+- **Focus return:** dismissing the Command Palette or Preferences drops focus to
+  `<body>` (ADV-237), unlike every menu surface which returns correctly. **Try:**
+  reuse the menu drawer's remembered-opener restore for these two dialogs.
+- **Busy-state coverage:** the busy label / `aria-busy` / reserved-width contract
+  is exercised by exactly one control (AccountMenu Sync now) and could not be
+  reached offline; the contract is therefore effectively unproven in the shipped
+  app. **Try:** wire one reachable long-running action (e.g. OCR / Optimize) to
+  the primitive's busy state so it is testable.
+
+### Nice-to-fix (when there's room)
+- **Drag region:** `.titlebar-drag` measures 0x0 at 2560px (a flex spacer), so
+  the intended window-drag strip is not observable there; identical at HEAD, so
+  not this phase, but worth confirming the real drag surface. **Try:** verify the
+  GlassChromeBar `app-region` covers the intended strip.
+
+### Strengths to keep
+- The destructive gate is disciplined: only the delete row is red, and one click
+  still raises the pre-existing "Delete pages" dialog with no bolted-on approval.
+- Persistent-selection honesty is correct: View Strip segments and dock toggles
+  read real app state; one-shot commands leave no selected residue.
+- Disabled legibility is genuinely fixed: disabled Save stays at contrast 8.62
+  with an explicit reason and no resting/enabled width jump (0 px).
+- Native caption controls were left as native-shaped raw buttons (radius 0,
+  no-drag, same rects as HEAD) - the migration did not swallow them.
