@@ -107,9 +107,8 @@ const SHARED_ALLOW: Readonly<Record<string, string>> = {
   // and the home edit rows is specified to be "a minus icon", so it shares the
   // glyph with the pre-existing window-minimize caption control.
   Minus: "the horizontal-line affordance: window minimize (caption control) plus the Phase-58 remove-tool badges on the dock and home edit rows; distinct contexts, never ambiguous",
-  ChevronRight: "page paging forward (registry nextPage retained glyph + toolsRegistry nextPage); the outline disclosure uses the distinct SquareChevronRight",
+  ChevronRight: "page paging forward (registry nextPage retained glyph + toolsRegistry nextPage); the outline tree disclosure uses the distinct SquareChevronRight",
   ChevronLeft: "page paging backward (registry prevPage retained glyph + toolsRegistry prevPage)",
-  SquareChevronRight: "outline tree disclosure toggle (context panel outline + side rail outline tree)",
   ChevronDown: "menu/disclosure chevron (theme menu + title-bar menu + tool menu)",
   Slash: "the pen-width control (registry annPenWidth + the annotation toolbar's width swatch)",
   Plus: "new-tab verb (registry tabNew + the dock's add control)",
@@ -232,6 +231,12 @@ const SHARED_ALLOW: Readonly<Record<string, string>> = {
   headerMenuDisclosure: "the disclosure chevron (the title-bar File menu + the document rail's All-tabs switcher), one menu-disclosure metaphor",
   dragPage: "the drag-handle affordance (the Multi Mode divider + the canvas page-drag grip + the shared floating-editor grip), one command, one glyph",
   openReadingView: "the open-reading/book-view verb (BookView + ReadingView + the DocumentView Book View entry), one command, one glyph",
+  // Phase 113 / TFL-1053 — three glyphs whose two owners render the SAME
+  // action or the same designed metaphor, so sharing is legitimate and each is
+  // justified here rather than re-glyphed.
+  optimize: "the reduce-file-size / Optimize verb (the CommandBar toolbar's 'Reduce file size' control + the ContextPanel Deliver Optimize action); both invoke the same onOptimize command, one command, one glyph",
+  ScanText: "the recognize-text / OCR metaphor (the registry recognizeText entry's Lucide glyph + the ContextPanel Recognition empty-state illustration); one OCR concept across the panel and its command",
+  MousePointerClick: "the click-to-select empty-state illustration (the ContextPanel EDIT no-selection state + the Inspector no-document-open state); one 'nothing selected yet' empty-state metaphor, two designed empty states",
 };
 
 interface Usage {

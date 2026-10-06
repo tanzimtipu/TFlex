@@ -200,8 +200,14 @@ describe('Phase 37 item 5 — flush geometry and one collapse control', () => {
     // DEF-335 — the control records the intent its label shows, not a raw
     // toggle of the user preference.
     expect(app).toContain('collapsePreferenceAfterToggle(inspectorCollapsedEffective)');
-    // The collapsed strip's inset target matches its CSS width.
-    expect(app).toContain('INSPECTOR_COLLAPSED_W_PX');
+    // The collapsed strip's inset target matches its CSS width. Phase 112
+    // moved `INSPECTOR_COLLAPSED_W_PX` out of App.tsx into the layout module
+    // that now owns the collapsed inset geometry; the host consumes it there.
+    const layout = readFileSync(
+      resolve(__dirname, '../../../src/renderer/components/multiPaneLayout.ts'),
+      'utf8',
+    );
+    expect(layout).toContain('INSPECTOR_COLLAPSED_W_PX');
   });
 });
 

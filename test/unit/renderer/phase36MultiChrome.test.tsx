@@ -350,37 +350,32 @@ describe("Phase 36 (chunk 7) ï¿½ the ONE shared Action Dock", () => {
   it("shows the focused pane's stage verbs and swaps them on a focus switch", () => {
     const { host, unmount } = mount(createElement(MultiHarness, { probes: freshProbes() }));
     try {
-      // Focused A -> A's PAGES stage verbs, in registry order (Phase 37 item 21
-      // widened the set).
+      // Focused A -> A's PAGES stage's VISIBLE primary subset. Phase 104's
+      // Focus Dock moves the overflow verbs (replacePages / split / delete)
+      // behind the "More" control, so `dockVerbIds` returns the curated
+      // primaries only; the FULL set stays reachable through More.
       expect(dockVerbIds(host)).toEqual([
         "rotate",
         "extract",
         "insertPages",
-        "replacePages",
-        "split",
-        "delete",
         "merge",
         "cropPages",
       ]);
       focusPane(host, "B");
-      // Focused B -> B's EDIT stage verbs: the same ONE dock, new contents.
+      // Focused B -> B's EDIT stage's VISIBLE primary subset: the same ONE
+      // dock, new contents (batchOcr / ocrSuspects moved behind "More").
       expect(dockVerbIds(host)).toEqual([
         "editToolOff",
         "editText",
         "editImage",
         "editTextBox",
         "recognizeText",
-        "batchOcr",
-        "ocrSuspects",
       ]);
       focusPane(host, "A");
       expect(dockVerbIds(host)).toEqual([
         "rotate",
         "extract",
         "insertPages",
-        "replacePages",
-        "split",
-        "delete",
         "merge",
         "cropPages",
       ]);
@@ -398,14 +393,14 @@ describe("Phase 36 (chunk 7) ï¿½ the ONE shared Action Dock", () => {
         paneB.dispatchEvent(new Event("pointerdown", { bubbles: true }));
       });
       expect(paneEl(host, "B").getAttribute("data-pane-focused")).toBe("true");
+      // B's EDIT stage's VISIBLE primary subset after Phase 104's overflow
+      // curation (batchOcr / ocrSuspects sit behind "More").
       expect(dockVerbIds(host)).toEqual([
         "editToolOff",
         "editText",
         "editImage",
         "editTextBox",
         "recognizeText",
-        "batchOcr",
-        "ocrSuspects",
       ]);
       expect(host.querySelectorAll("[data-action-dock]")).toHaveLength(1);
     } finally {
@@ -417,7 +412,9 @@ describe("Phase 36 (chunk 7) ï¿½ the ONE shared Action Dock", () => {
     const api: HarnessApi = {};
     const { host, unmount } = mount(createElement(MultiHarness, { probes: freshProbes(), api }));
     try {
-      expect(dockVerbIds(host)).toContain("delete");
+      // Focused A starts on PAGES: its visible primary subset is present
+      // (the overflow verbs live behind "More").
+      expect(dockVerbIds(host)).toContain("rotate");
       act((): void => {
         api.setStage?.("A", "review");
       });
@@ -425,19 +422,8 @@ describe("Phase 36 (chunk 7) ï¿½ the ONE shared Action Dock", () => {
         "annotate",
         "sign",
         "stamp",
-        "flatten",
         "forms",
-        "watermark",
         "bates",
-        "exportComments",
-        "importComments",
-        "fillFromCsv",
-        "exportFormData",
-        "importFormData",
-        "validateDocument",
-        "sanitize",
-        "engineeringLayers",
-        "documentInfo",
       ]);
       // The UNFOCUSED pane's stage change never leaks into the dock.
       act((): void => {
@@ -447,19 +433,8 @@ describe("Phase 36 (chunk 7) ï¿½ the ONE shared Action Dock", () => {
         "annotate",
         "sign",
         "stamp",
-        "flatten",
         "forms",
-        "watermark",
         "bates",
-        "exportComments",
-        "importComments",
-        "fillFromCsv",
-        "exportFormData",
-        "importFormData",
-        "validateDocument",
-        "sanitize",
-        "engineeringLayers",
-        "documentInfo",
       ]);
     } finally {
       unmount();

@@ -518,11 +518,18 @@ describe("Global motion system — components consume the shared primitives", ()
 describe("Global motion system — reduced motion + no-PDF-animation guards", () => {
   const css = readStyles();
 
-  /** The @media (prefers-reduced-motion: reduce) block body. */
+  /** The MAIN @media (prefers-reduced-motion: reduce) block body - the
+   *  catch-all (`*, *::before, *::after`), NOT the first small
+   *  `.panel-resize-handle` block earlier in the file. */
   const reducedBody = (): string => {
-    const m = /@media\s*\(prefers-reduced-motion:\s*reduce\)\s*\{([\s\S]*?)\n\}/m.exec(css);
-    expect(m).not.toBeNull();
-    return m?.[1] ?? "";
+    const blocks = [
+      ...css.matchAll(/@media\s*\(prefers-reduced-motion:\s*reduce\)\s*\{([\s\S]*?)\n\}/g),
+    ];
+    const main = blocks.find((b) =>
+      (b[1] ?? "").includes("animation-duration: 0.01ms !important"),
+    );
+    expect(main, "main reduced-motion catch-all block missing").toBeDefined();
+    return main?.[1] ?? "";
   };
 
   it("declares a @media (prefers-reduced-motion: reduce) block", () => {
@@ -807,9 +814,14 @@ describe("Phase D — reduced motion (motion wrappers + frosted reflection)", ()
   const css = readStyles();
 
   const reducedBody = (): string => {
-    const m = /@media\s*\(prefers-reduced-motion:\s*reduce\)\s*\{([\s\S]*?)\n\}/.exec(css);
-    expect(m).not.toBeNull();
-    return m?.[1] ?? "";
+    const blocks = [
+      ...css.matchAll(/@media\s*\(prefers-reduced-motion:\s*reduce\)\s*\{([\s\S]*?)\n\}/g),
+    ];
+    const main = blocks.find((b) =>
+      (b[1] ?? "").includes("animation-duration: 0.01ms !important"),
+    );
+    expect(main, "main reduced-motion catch-all block missing").toBeDefined();
+    return main?.[1] ?? "";
   };
 
   it("every TfMotion surface wrapper honours the live reduced-motion hook (DEF-198)", () => {
@@ -1322,17 +1334,24 @@ describe("Phase 20 — surface motion contract", () => {
       preset: "tfDialog",
     },
     {
-      surface: "title-bar menu (morph)",
-      wrapperFile: "src/renderer/components/AppHeader.tsx",
-      primitive: "TfMorph",
-      presenceFiles: ["src/renderer/components/AppHeader.tsx"],
-      preset: "tfMorph",
+      surface: "title-bar menu",
+      // Phase 105 (chunk C7) — the title-bar app menu moved onto the shared
+      // `CommandMenu`, which roots in `TfMenu` (preset `tfMenu`) inside its own
+      // AnimatePresence boundary; the bespoke FLIP morph was retired.
+      wrapperFile: "src/renderer/components/CommandMenu.tsx",
+      primitive: "TfMenu",
+      presenceFiles: ["src/renderer/components/CommandMenu.tsx"],
+      preset: "tfMenu",
     },
     {
-      surface: "theme popover (morph)",
-      wrapperFile: "src/renderer/components/TitleBar.tsx",
+      surface: "all-tabs switcher (morph)",
+      // Phase 105 (chunk D) — the document rail's All-tabs switcher owns the
+      // remaining bespoke `TfMorph` FLIP popover. The old TitleBar "theme
+      // popover" was retired onto the shared CommandMenu (the title-bar menu
+      // row above), so this row tracks the real remaining morph surface.
+      wrapperFile: "src/renderer/components/DocumentRail.tsx",
       primitive: "TfMorph",
-      presenceFiles: ["src/renderer/components/TitleBar.tsx"],
+      presenceFiles: ["src/renderer/components/DocumentRail.tsx"],
       preset: "tfMorph",
     },
     {
@@ -1413,7 +1432,10 @@ describe("Phase 20 — surface motion contract", () => {
       surface: "document tabs",
       wrapperFile: "src/renderer/components/AnimatedTab.tsx",
       primitive: "motion.li",
-      presenceFiles: ["src/renderer/components/AppHeader.tsx"],
+      // Phase 105 (chunk C) — the tab strip moved out of AppHeader into the
+      // DocumentRail, which now wraps each AnimatedTab mount in the
+      // AnimatePresence boundary.
+      presenceFiles: ["src/renderer/components/DocumentRail.tsx"],
       preset: null,
       variantHook: "useTabVariants",
     },
@@ -1604,11 +1626,17 @@ describe("DEF-234 — reduced-motion travel class", () => {
 
   const normalized = (s: string): string => s.replace(/\s+/g, " ").trim();
 
-  /** The @media (prefers-reduced-motion: reduce) block body. */
+  /** The MAIN @media (prefers-reduced-motion: reduce) block body - the
+   *  catch-all (`*, *::before, *::after`), not the first small block. */
   const reducedBody = (): string => {
-    const m = /@media\s*\(prefers-reduced-motion:\s*reduce\)\s*\{([\s\S]*?)\n\}/.exec(cssClean);
-    expect(m).not.toBeNull();
-    return m?.[1] ?? "";
+    const blocks = [
+      ...cssClean.matchAll(/@media\s*\(prefers-reduced-motion:\s*reduce\)\s*\{([\s\S]*?)\n\}/g),
+    ];
+    const main = blocks.find((b) =>
+      (b[1] ?? "").includes("animation-duration: 0.01ms !important"),
+    );
+    expect(main, "main reduced-motion catch-all block missing").toBeDefined();
+    return main?.[1] ?? "";
   };
 
   /** The stylesheet WITHOUT the reduced block, so a reduced override is

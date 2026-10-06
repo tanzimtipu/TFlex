@@ -234,10 +234,12 @@ describe("DEF-282 restated — the stylesheet keeps the header band clear", () =
     expect(body ?? "").toMatch(/pointer-events:\s*none\s*;/);
     // No top anchor: the layer's box cannot extend upward past the bottom edge.
     expect(body ?? "").not.toMatch(/top:\s*/);
-    // The dock itself is bottom-anchored, never top-anchored.
+    // The dock itself is bottom-anchored, never top-anchored. Phase 104
+    // (commit 7f0f605) moved the inset onto the `--dock-bottom-inset` token
+    // (16px) so the token form proves the same bottom pin.
     const dock = findRuleBody(src, ".action-dock");
     expect(dock).not.toBeNull();
-    expect(dock ?? "").toMatch(/bottom:\s*12px\s*;/);
+    expect(dock ?? "").toMatch(/bottom:\s*var\(--dock-bottom-inset\)\s*;/);
     expect(dock ?? "").not.toMatch(/top:\s*\d/);
   });
 });
