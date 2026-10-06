@@ -300,3 +300,23 @@ hierarchy) in `src/renderer/styles.css`.
 - Performance: no render-path change; the measure effect adds two
   custom-property writes per re-measure (resize-gated). The Phase-13
   budget is unaffected.
+
+## Phase 112 - Context Pair panels (TFL-854)
+
+Appended 2026-10-06 from the TFL-1003 phase-close QA verdict (item 11). Every
+reworked Context Pair panel control, its promised action and the named test that
+locks it. The TFL-1003 CONTROL-INDEX sweep verified all of these present with a
+real handler and no no-op.
+
+| Control | Selector | Promised action | Unit test | E2e |
+|---|---|---|---|---|
+| Pages/Outline modes | `[data-outline-toggle]` | Toggles `outlineOpen` and switches the rail tab via `onRailTabChange` (`ContextPanel.tsx:600`) | `test/unit/renderer/phase112_pages.test.tsx` + `test/unit/renderer/panelPrimitives.test.tsx` | `e2e/phase112_c2_pages_visual.spec.cjs` |
+| Page selection / multi-select | `[data-context-panel-selection]` (summary, with `-count` / `-range` children) | Reflects one / multi page selection; the summary reports the selection count and range (`ContextPanel.tsx:570-582`) | `test/unit/renderer/phase112_pages.test.tsx` | `e2e/phase112_c2_pages_visual.spec.cjs` (multi-select) |
+| Insert / Page tools | page-thumb menu verbs `onRotateCw` / `onRotateCcw` / `onExtract` / `onInsertBlank` / `onReplace` / `onDeletePage`; Combine/Merge header | Each invokes its existing engine op; Combine/Merge confirmed against the real handlers (`ContextPanel.tsx:466-492`, `976-979`) | `test/unit/renderer/phase112_pages.test.tsx` | `e2e/phase112_c2_pages_visual.spec.cjs` |
+| Edit navigate + OCR / Add text | `onSelectEditContent` (`ContextPanel.tsx:692`), `[data-context-panel-action="recognize"]` / `[data-context-panel-action="suspects"]` (`ContextPanel.tsx:775`, `785`) | Selects enumerated edit content; recognize / suspects route to their handlers | `test/unit/renderer/phase112_edit.test.tsx` | (qa: edit nav + OCR) |
+| Review annotation list + FDF | `[data-annotation-row]` (`annotations/AnnotationsPanel.tsx:86`) + Export/Import FDF | Groups annotations by page; document-level FDF import/export | `test/unit/renderer/phase112_review.test.tsx` | (qa: review list + FDF) |
+| Deliver checks + Export config | `exportConfigGate` (`components/exportConfig.ts:157`; `Inspector.tsx:608`) + named Export button | Factual output checks and a clearly named Export using the parse-validated range | `test/unit/renderer/phase112_deliver.test.tsx` | (qa: deliver + export) |
+| Recent row actions | `[data-recent-action="open"]` / `="pin"` / `="show"` / `="locate"` / `="remove"` (`components/home/HomeRecentRow.tsx:85`, `124`, `137`, `149`, `160`) | Each row action routes to its real handler; Remove never deletes the file | `test/unit/renderer/phase112_home.test.tsx` | `e2e/phase112_phaseclose_qa.spec.cjs` |
+| Recent missing detection (proactive) | App effect -> `window.tflex.checkMissing` (`App.tsx:9587-9591`) -> main `recent:checkMissing` (`src/shared/ipc.ts:137`, bridge `src/preload/preload.ts:764`) | A vanished recent file shows Missing + Locate on first paint with no click | `test/unit/renderer/phase112_home.test.tsx` (proactive-detection case, `323-436`) + `test/unit/main/phase112Recents.test.ts` | `e2e/phase112_phaseclose_qa.spec.cjs` |
+| Sample card Open | `.sample-card` (`components/home/HomeSampleCard.tsx:23`; rendered by `Welcome.tsx:545`) | Opens the sample through the existing safe exploration flow | `test/unit/renderer/phase112_home.test.tsx` | `e2e/phase112_phaseclose_qa.spec.cjs` |
+| Panel resize / collapse | `PanelResizeHandle` (role=separator, pointer + keyboard; `components/panels/PanelResizeHandle.tsx`; mounted `App.tsx:11353`, `11362`) + `[data-rail-collapse]` (`ContextPanel.tsx:508`) | Resizes within 220-320 / 260-380 and persists width + collapse state | `test/unit/renderer/phase112_panelLayout.test.tsx` | `e2e/phase112_phaseclose_qa.spec.cjs` (P112CLOSE-3) |
