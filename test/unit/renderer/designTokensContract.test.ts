@@ -217,16 +217,16 @@ describe("Phase 13 — DEF-081 grid layout (AppHeader inside TitleBar)", () => {
   // three-row layout is caught at the source.
   const css = readStyles();
 
-  it("the .app grid uses two rows (TitleBar + app-main, not three)", () => {
+  it("the .app grid uses three rows (title row + document rail + app-main)", () => {
     const block = /\.app\s*\{([\s\S]*?)\n\}/m.exec(css);
     expect(block).not.toBeNull();
     if (block === null) return;
     const body = block[1] ?? "";
-    // The new template is `auto 1fr`. The old (broken) one was
-    // `auto auto 1fr`. Either way, "auto 1fr" must be present.
-    expect(body).toMatch(/grid-template-rows:\s*auto\s+1fr/);
-    // Guard against the broken three-row template sneaking back in.
-    expect(body).not.toMatch(/grid-template-rows:\s*auto\s+auto\s+1fr/);
+    // Phase 105 (chunk C) — the chrome splits into the title row and the
+    // document rail, so the shell is three rows: `auto auto 1fr`.
+    expect(body).toMatch(/grid-template-rows:\s*auto\s+auto\s+1fr/);
+    // Guard against collapsing back to the pre-Phase-105 two-row layout.
+    expect(body).not.toMatch(/grid-template-rows:\s*auto\s+1fr\s*;/);
   });
 
   it("the .titlebar self-sizes to its tallest child (height: auto)", () => {

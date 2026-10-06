@@ -180,6 +180,9 @@ describe('Phase 36 chunk 6 — the File menu label', () => {
   });
 });
 
+/** Phase 105 (chunk C) — the application menu consumes the NON-File groups. */
+const APP_MENU_GROUPS: MenuGroup[] = GROUPS.filter((g) => g.id !== 'file');
+
 function renderHeader(props: {
   multiModeEnabled?: boolean;
   onMultiModeToggle?: () => void;
@@ -191,19 +194,13 @@ function renderHeader(props: {
     root.render(
       <AppHeader
         activeId={null}
-        tabs={[]}
-        onActivate={(): void => undefined}
-        onClose={(): void => undefined}
-        theme="frosted"
-        onThemeChange={(): void => undefined}
-        onNewEmptyTab={(): void => undefined}
-        onOpenPreferences={(): void => undefined}
+        appMenuGroups={APP_MENU_GROUPS}
+        menuContext={noopContext()}
         onPrint={(): void => undefined}
         onOpenFile={(): void => undefined}
         onSave={(): void => undefined}
         onSaveAs={(): void => undefined}
         updateIndicator={<span data-update-indicator />}
-        multiModeEnabled={props.multiModeEnabled ?? false}
         onMultiModeToggle={props.onMultiModeToggle}
       />,
     );
@@ -219,17 +216,21 @@ function renderHeader(props: {
   };
 }
 
-describe('Phase 36 chunk 6 — the title-bar Multi Mode toggle', () => {
-  it('renders the toggle and reports the toggle to the host', () => {
+describe('Phase 36 chunk 6 — the application-menu Multi Mode command', () => {
+  it('offers Multi Mode in the application menu and reports the toggle to the host', () => {
     const onMultiModeToggle = vi.fn();
     const { container, cleanup } = renderHeader({ onMultiModeToggle });
     try {
-      const toggle = container.querySelector<HTMLButtonElement>('[data-header-multi-mode]');
-      expect(toggle).not.toBeNull();
-      expect(toggle?.getAttribute('aria-pressed')).toBe('false');
-      expect(toggle?.getAttribute('aria-label')).toBe(MULTI_MODE_ACCESSIBLE_NAME);
+      const trigger = container.querySelector<HTMLButtonElement>('[data-app-menu]');
+      expect(trigger).not.toBeNull();
       act((): void => {
-        toggle?.click();
+        trigger?.click();
+      });
+      const row = container.querySelector<HTMLButtonElement>("[data-menu-action='multiMode']");
+      expect(row).not.toBeNull();
+      expect(row?.textContent).toContain(MULTI_MODE_ACCESSIBLE_NAME);
+      act((): void => {
+        row?.click();
       });
       expect(onMultiModeToggle).toHaveBeenCalledTimes(1);
     } finally {
@@ -237,36 +238,32 @@ describe('Phase 36 chunk 6 — the title-bar Multi Mode toggle', () => {
     }
   });
 
-  it('marks the active state and keeps every existing title-bar control', () => {
+  it('keeps every existing title-row control', () => {
     const { container, cleanup } = renderHeader({
-      multiModeEnabled: true,
       onMultiModeToggle: (): void => undefined,
     });
     try {
-      expect(
-        container.querySelector('[data-header-multi-mode]')?.getAttribute('data-multi-mode-active'),
-      ).toBe('true');
-      expect(
-        container.querySelector('[data-header-multi-mode]')?.getAttribute('aria-pressed'),
-      ).toBe('true');
-      // The contract keeps all three quick file actions, print, the update
-      // indicator, the theme picker and the gear.
+      // The title row keeps all three quick file actions, print, the update
+      // indicator and the application-menu trigger.
       expect(container.querySelector('[data-toolbar-open]')).not.toBeNull();
       expect(container.querySelector('[data-toolbar-save]')).not.toBeNull();
       expect(container.querySelector('[data-toolbar-save-as]')).not.toBeNull();
       expect(container.querySelector('[data-print]')).not.toBeNull();
       expect(container.querySelector('[data-update-indicator]')).not.toBeNull();
-      expect(container.querySelector('[data-theme-toggle]')).not.toBeNull();
-      expect(container.querySelector('[data-open-preferences]')).not.toBeNull();
+      expect(container.querySelector('[data-app-menu]')).not.toBeNull();
     } finally {
       cleanup();
     }
   });
 
-  it('omits the toggle entirely when the host wires no handler', () => {
+  it('omits the Multi Mode row entirely when the host wires no handler', () => {
     const { container, cleanup } = renderHeader({});
     try {
-      expect(container.querySelector('[data-header-multi-mode]')).toBeNull();
+      const trigger = container.querySelector<HTMLButtonElement>('[data-app-menu]');
+      act((): void => {
+        trigger?.click();
+      });
+      expect(container.querySelector("[data-menu-action='multiMode']")).toBeNull();
     } finally {
       cleanup();
     }

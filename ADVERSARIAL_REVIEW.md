@@ -10967,6 +10967,8 @@ Screenshot: screenshots/adv-225-appmenu-above900.png
 
 Disposition: ACCEPTED - HIGH; fix assigned to frontend-dev (TFL-944 chunk F2); qa to file as DEF and close at the FIX-READY retest
 
+Filed: ADV-225 -> DEF-595; CLOSED by qa (TFL-949 chunk F3, 2026-10-06) at the FIX-READY retest (green).
+
 ## ADV-226: The All-tabs switcher popover is painted beneath the Inspector - its stacking context is capped by `.tab-list-all { z-index: 3 }`, so the switcher's right side (dirty dot, duplicate-folder context) is occluded and unclickable
 
 - Session: diff-pass
@@ -11017,3 +11019,5 @@ z-index 7).
 Screenshot: screenshots/adv-226-switcher-over-inspector.png
 
 Disposition: ACCEPTED - MEDIUM; fix assigned to frontend-dev (TFL-944 chunk F2); qa to file as DEF and close at the FIX-READY retest
+
+Filed: ADV-226 -> DEF-596; CLOSED by qa (TFL-949 chunk F3, 2026-10-06) at the FIX-READY retest (green).

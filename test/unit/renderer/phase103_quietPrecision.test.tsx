@@ -98,18 +98,15 @@ describe("Phase 103 — pilot surfaces render via the registry", () => {
 
   it("(c) the App Header renders its utilities through `name=`", () => {
     const text = readFileSync(resolve(RENDERER, "components/AppHeader.tsx"), "utf8");
-    for (const id of [
-      "save",
-      "saveAs",
-      "headerCommand",
-      "headerTheme",
-      "headerMenuDisclosure",
-      "print",
-      "find",
-      "preferences",
-      "multi-mode",
-    ]) {
+    // Phase 105 (chunk C) — the title row keeps the document actions, Search
+    // tools, Print and the application-menu trigger; the relocated Theme /
+    // Preferences / Find / Multi Mode commands render as application-menu rows
+    // with their registry icon ids.
+    for (const id of ["open", "save", "saveAs", "headerCommand", "print", "appMenu"]) {
       expect(text, `header renders name="${id}"`).toContain(`name="${id}"`);
+    }
+    for (const id of ["multi-mode", "find"]) {
+      expect(text, `header app-menu row uses icon "${id}"`).toContain(`icon: "${id}"`);
     }
   });
 });

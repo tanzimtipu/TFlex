@@ -24,7 +24,8 @@ import { resolve } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import { act, type ReactElement } from "react";
 import { createRoot } from "react-dom/client";
-import { AppHeader, NEW_TAB_MULTI_MODE_REASON } from "../../../src/renderer/components/AppHeader";
+import { NEW_TAB_MULTI_MODE_REASON } from "../../../src/renderer/components/AppHeader";
+import { DocumentRail } from "../../../src/renderer/components/DocumentRail";
 import {
   DocumentStage,
   MultiPaneHeader,
@@ -80,15 +81,12 @@ function renderHeader(args: {
   multiModeEnabled?: boolean;
 }): HTMLElement {
   return mount(
-    <AppHeader
+    <DocumentRail
       activeId={args.activeId}
       tabs={args.tabs}
       onActivate={args.onActivate ?? NOOP}
       onClose={args.onClose ?? NOOP}
-      theme="frosted"
-      onThemeChange={NOOP}
       onNewEmptyTab={NOOP}
-      onOpenPreferences={NOOP}
       multiModeEnabled={args.multiModeEnabled ?? false}
     />,
   ).host;

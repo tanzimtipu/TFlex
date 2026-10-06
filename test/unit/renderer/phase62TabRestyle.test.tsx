@@ -10,7 +10,7 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it, afterEach } from "vitest";
 import { createRoot } from "react-dom/client";
 import { act } from "react";
-import { AppHeader } from "../../../src/renderer/components/AppHeader";
+import { DocumentRail } from "../../../src/renderer/components/DocumentRail";
 import type { TabStyle } from "../../../src/shared/types";
 
 interface TabSpec {
@@ -29,15 +29,12 @@ function renderHeader(
   const root = createRoot(container);
   act((): void => {
     root.render(
-      <AppHeader
+      <DocumentRail
         activeId={activeId}
         tabs={tabs}
         onActivate={(): void => undefined}
         onClose={(): void => undefined}
-        theme="frosted"
-        onThemeChange={(): void => undefined}
         onNewEmptyTab={(): void => undefined}
-        onOpenPreferences={(): void => undefined}
         tabStyle={tabStyle}
       />,
     );

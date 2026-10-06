@@ -51,6 +51,7 @@ import type { ConvertFormatId, ConvertManyResult, ConvertSourceInfo, CsvFieldMap
 import { DEFAULT_CONVERT_DEFAULTS } from "../shared/convert";
 import { Welcome } from "./components/Welcome";
 import { AppHeader } from "./components/AppHeader";
+import { DocumentRail } from "./components/DocumentRail";
 import { Toasts, type Toast } from "./components/Toasts";
 import { printWindowOpenFailureMessage } from "./print-window/context";
 import { TitleBar, type MenuGroup } from "./components/TitleBar";
@@ -75,6 +76,7 @@ import {
 import { normalizeUpdateState } from "./components/updateStateNormalize";
 import { tabsReducer, initialTabsState, resolveOpenId, type TabMeta } from "./state/tabs";
 import { isSamePath } from "./state/pathIdentity";
+import { allocateColorId } from "./state/tabColour";
 import { pagesPanelReducer, initialPagesPanelState } from "./state/pagesPanel";
 // Phase 32 — Multi Mode: the two-pane view state (pure reducer) plus the
 // workspace stage that renders the panes.
@@ -168,7 +170,6 @@ import {
   DEFAULT_TAB_STYLE,
   clampOcrDownsample,
   preferencesReducer,
-  type ThemeDefault,
 } from "./state/preferences";
 import { applyAnnotationPaletteChange } from "./state/colorPalette";
 import {
@@ -1633,37 +1634,11 @@ export function App(): ReactElement {
     });
   }, [trackAndSave, setTheme]);
 
-  // Phase-15 — the frosted-acrylic theme picker. Receives the
-  // picker's selection: one of the three explicit themes (light /
-  // dark / frosted) OR the 'system' meta-option. 'system' resolves
-  // to the OS's current colour preference at choice time
-  // (resolveThemeDefault, same contract as the Preferences sheet);
-  // the resolved concrete theme is applied live and persisted as
-  // `theme` so the same look boots on the next launch, while
-  // `themeDefault` records which option the user picked so the
-  // header shows the right entry (e.g. "System default") as
-  // selected after a restart. Persists through the same trackAndSave
-  // path so the choice survives a restart. Shared shape with
-  // onToggleTheme, minus the toggle math.
-  const onThemeChange = useCallback((next: ThemeDefault): void => {
-    const concrete = resolveThemeDefault(
-      next,
-      window.matchMedia("(prefers-color-scheme: dark)").matches,
-    );
-    setSettings((prev) => {
-      if (prev === null) return prev;
-      // No-op guard: the pick resolves to the theme already showing
-      // AND the selection hasn't moved. themeDefault falls back to
-      // the concrete theme when unset — the same fallback the header
-      // display uses, so "re-pick the current selection" never
-      // churns a persist.
-      if (concrete === prev.theme && (prev.themeDefault ?? prev.theme) === next) return prev;
-      const updated: AppSettings = { ...prev, theme: concrete, themeDefault: next };
-      setTheme(concrete);
-      trackAndSave(updated);
-      return updated;
-    });
-  }, [trackAndSave, setTheme]);
+  // Phase 105 (chunk C) — the borderless 4-option theme picker is RETIRED
+  // from the title row; the application menu's "Toggle Theme" row (the
+  // existing `toggleTheme` action) is the title-row route, and the Preferences
+  // sheet keeps its own themed picker. `onToggleTheme` above is the single
+  // cycle handler both the menu row and the accelerator use.
 
   // Phase 16 — collapse / expand the side-rail pages panel. App owns
   // the value and persists it through the same trackAndSave path as
@@ -1933,11 +1908,25 @@ export function App(): ReactElement {
           ? tabsRef.current.tabs.find((t) => isSamePath(t.filePath, source.path))
           : undefined;
       const effectiveId = dedupeTarget?.id ?? id;
+      // Phase 105 (chunk B) — mint the session identity alongside the id, at
+      // this single source of truth. If this open FILLS an existing empty tab,
+      // preserve that tab's identity so filling never recolours the session;
+      // otherwise allocate the first unused id against the sessions currently
+      // open. Never derived from strip index.
+      const filledTab =
+        fillsEmptyId !== null
+          ? tabsRef.current.tabs.find((t) => t.id === fillsEmptyId)
+          : undefined;
+      const usedColorIds = tabsRef.current.tabs
+        .map((t) => t.colorId)
+        .filter((c): c is string => c !== undefined);
+      const colorId = filledTab?.colorId ?? allocateColorId(usedColorIds);
       const meta: TabMeta = {
         id,
         title: source.displayName,
         filePath: source.path,
         kind: source.kind,
+        colorId,
         modified: false,
       };
       const session: DocSession = {
@@ -2785,10 +2774,16 @@ export function App(): ReactElement {
     // (React batches the two setStates, so either can lag the other).
     const metaModified = tabsRef.current.tabs.find((t) => t.id === id)?.modified === true;
     const engineModified = engineUiRef.current[id]?.state.modified === true;
+    // Phase 105 (chunk C) — carry the session identity across the move so the
+    // adopted tab keeps its colour. The chunk-A contract (`TabTransferPayload`)
+    // relays `colorId` opaquely through main; a tab with no identity yet sends
+    // `undefined`, which the adopter treats as "allocate one".
+    const colorId = tabsRef.current.tabs.find((t) => t.id === id)?.colorId;
     const payload = {
       title: open.displayName,
       bytes: new Uint8Array(bytesResult.value),
       modified: metaModified || engineModified,
+      colorId,
     };
     // Phase 58 (chunk 6c) — the same tear-out gesture means opposite things
     // depending on the window: in the origin it detaches the tab out, in a
@@ -2880,6 +2875,35 @@ export function App(): ReactElement {
           // BOTH signals the close gate / diagnostics read: the tab meta
           // (dot + `tabModified`) and the engineUi mirror (`modified`).
           const patch = adoptedModifiedPatch(payload.modified);
+          // Phase 105 (chunk C) — carry the ORIGIN session's identity onto the
+          // adopted tab. `openFromBytes` mints a fresh colorId for the new
+          // session; the origin's `colorId` (when present) overrides it so the
+          // moved document keeps its colour. The reducer meta is patched with a
+          // same-id `open` (an in-place row replace) and the App-level mirror
+          // is patched to match, exactly like the DEF-414 modified patch below.
+          const adoptedColorId = payload.colorId;
+          if (adoptedColorId !== undefined) {
+            dispatchTabs({
+              type: "open",
+              tab: {
+                id: opened.tabId,
+                title: payload.title,
+                filePath: source.path,
+                kind: "file",
+                colorId: adoptedColorId,
+                modified: patch.tabModified,
+              },
+              dedupePath: false,
+            });
+            setOpenTabs((prev) => {
+              const tab = prev[opened.tabId];
+              if (tab === undefined) return prev;
+              return {
+                ...prev,
+                [opened.tabId]: { ...tab, meta: { ...tab.meta, colorId: adoptedColorId } },
+              };
+            });
+          }
           if (patch.tabModified) {
             dispatchTabs({ type: "set-modified", id: opened.tabId, modified: true });
             setOpenTabs((prev) => {
@@ -2952,11 +2976,19 @@ export function App(): ReactElement {
     // disabled; this guard keeps any other caller honest too.
     if (multiMode.enabled) return;
     const id = crypto.randomUUID();
+    // Phase 105 (chunk B) — a brand-new empty tab also gets a stable identity
+    // minted here, allocated against the sessions currently open.
+    const colorId = allocateColorId(
+      tabsRef.current.tabs
+        .map((t) => t.colorId)
+        .filter((c): c is string => c !== undefined),
+    );
     const meta: TabMeta = {
       id,
       title: 'Empty tab',
       filePath: '',
       kind: 'empty',
+      colorId,
       modified: false,
     };
     dispatchTabs({ type: 'open-empty', tab: meta });
@@ -9346,7 +9378,18 @@ pushToast(
     // AppHeader resolve to the same DOM node the user pressed
     // (DEF-034: state-churn click loss).
   const headerTabs = useMemo(
-    () => tabs.tabs.map((meta) => ({ id: meta.id, title: meta.title, modified: meta.modified })),
+    () =>
+      tabs.tabs.map((meta) => ({
+        id: meta.id,
+        title: meta.title,
+        modified: meta.modified,
+        // Phase 105 (chunk B) — the stable per-session identity travels with
+        // the tab through every reorder; it is never re-derived from index.
+        colorId: meta.colorId,
+        // Phase 105 (chunk D) — the full path feeds the All-tabs switcher's
+        // duplicate-name context (never painted across the rail).
+        filePath: meta.filePath,
+      })),
     [tabs.tabs],
   );
 
@@ -9448,6 +9491,19 @@ pushToast(
       },
     ],
     [],
+  );
+
+  // Phase 105 (chunk C) — the File trigger and the application menu consume
+  // DISJOINT slices of the same audited group list. The File popover keeps the
+  // File group only; the application menu takes Edit / View / Tools / Help.
+  // No group, row, label or action id is added, removed or renamed.
+  const fileMenuGroups = useMemo<MenuGroup[]>(
+    () => menuGroups.filter((g) => g.id === "file"),
+    [menuGroups],
+  );
+  const appMenuGroups = useMemo<MenuGroup[]>(
+    () => menuGroups.filter((g) => g.id !== "file"),
+    [menuGroups],
   );
 
   /** True when the active tab is an empty placeholder (no document).
@@ -10815,71 +10871,26 @@ pushToast(
        * parallax controller writes --tf-parallax-* here. */}
       <div className="tf-ambient" ref={ambientLayerRef} aria-hidden />
       <TitleBar
-        menuGroups={menuGroups}
+        menuGroups={fileMenuGroups}
         menuContext={menuContext}
         maximized={isMaximized}
       >
         <AppHeader
           activeId={stripActiveId}
-          // `stripTabs` is memoised above so its reference is stable
-          // across App re-renders that don't actually change tab state.
-          // AppHeader reads `modified` from this list (mirrored by the
-          // tabs reducer on every successful engine op). Phase 34 (chunk 2):
-          // in Multi Mode `stripTabs` is the ONE composite workspace tab;
-          // single mode is the unchanged per-document projection.
-          tabs={stripTabs}
-          // Phase 32 — the strip click is the Multi Mode routing seam:
-          // a tab in a pane focuses that pane, a tab outside the panes is
-          // assigned to the focused pane. Phase 34 (chunk 2) — while the
-          // composite tab is shown the handler is a no-op; the rules apply
-          // again when the mode is off.
-          onActivate={onTabStripActivate}
-          // Phase 34 (chunk 2) — the composite tab's close runs the
-          // per-document modified queue over BOTH pane documents; every
-          // real tab keeps the unchanged `closeTab`.
-          onClose={onHeaderClose}
-          // Phase 58 (chunk 5) — reorder the strip. The reducer owns the
-          // ordering and leaves the active id untouched.
-          onMoveTab={onMoveTab}
-          // Phase 58 (chunk 6b) — tear a tab out into a new app window.
-          // The drag gesture decides reorder vs detach at release time;
-          // this handler runs the detach IPC and leaves the tab open
-          // until the new window confirms the adopt.
-          onDetachTab={detachTab}
-          theme={settings.theme}
-          // The picker's selection state: the persisted preference
-          // ('light' | 'dark' | 'frosted' | 'system'). Absent on
-          // first run — the header then falls back to the concrete
-          // theme, the legacy behaviour.
-          themeDefault={settings.themeDefault}
-          onThemeChange={onThemeChange}
-          // Phase 58 — the tab-strip style preference. Absent means the
-          // default ('colorful'), which is what the reference look uses.
-          tabStyle={settings.tabStyle ?? DEFAULT_TAB_STYLE}
-          onNewEmptyTab={onNewEmptyTab}
-          // DEF-288 — while Multi Mode is on the strip shows ONE composite
-          // workspace tab, so the "+" is disabled with a reason instead of
-          // silently creating a tab the user cannot see.
-          multiModeEnabled={multiMode.enabled}
-          // Phase 36 (chunk 6) — the Multi Mode toggle's approved home: the
-          // title bar. The palette keeps its own registry route.
+          // Phase 105 (chunk C) — the application menu's groups (Edit / View /
+          // Tools / Help) and the dispatcher context its id-backed rows run
+          // through. The relocated Multi Mode / Find rows call their handlers
+          // directly, exactly like the icon controls they replace.
+          appMenuGroups={appMenuGroups}
+          menuContext={menuContext}
           onMultiModeToggle={onMultiModeToggle}
-          // Phase 13 — the Settings (gear) affordance in the title bar
-          // opens the same Preferences sheet the Edit menu and Ctrl+,
-          // open. Same single source of truth (`prefsOpen`).
-          onOpenPreferences={(): void => setPrefsOpen(true)}
-          // Phase 30 — the Print icon sits immediately left of the gear.
+          onOpenFind={openFindInDocument}
+          findEnabled={activeTabHasDocument}
+          // Phase 30 — the Print icon. Phase 40 (item 5) — Ctrl+K Search tools.
           onPrint={openPrintWindow}
           // DEF-336 — enabled only with a real document on the active tab.
           printEnabled={activeTabHasDocument}
-          // Phase 40 (item 5) — the TWO distinct search icons. Ctrl+K opens
-          // the Command Palette (the same `openCommandPalette` every palette
-          // route uses); Ctrl+F opens the focused pane's find bar through the
-          // view command above. `findEnabled` mirrors the Print gate: the find
-          // bar is per-document, so it disables with a reason when none is open.
           onOpenToolSearch={openCommandPalette}
-          onOpenFind={openFindInDocument}
-          findEnabled={activeTabHasDocument}
           // Phase 44 (operator amendment) — the account section is built by
           // the App and passed as a slot, so AppHeader stays presentational.
           // It is rendered while the internal `accountsEnabled` escape hatch
@@ -10903,7 +10914,7 @@ pushToast(
             />
           ) : null}
           // Phase 22 — the relocated Open / Save / Save As. The CommandBar
-          // no longer renders them; the caption strip owns them now.
+          // no longer renders them; the title row owns them now.
           onOpenFile={onOpenClick}
           onSave={onHeaderSave}
           onSaveAs={onHeaderSaveAs}
@@ -10911,14 +10922,35 @@ pushToast(
           saveInPlaceEnabled={activeSaveInPlaceEnabled}
           // OTA UX — the toolbar update indicator reads its state
           // from the App's shared `onStatusChanged` subscription via
-          // `externalState` so the same push that opens the prompt
-          // also drives the toolbar chip. We disable the indicator's
-          // own IPC subscription (`enabled={false}` would also work,
-          // but `externalState !== undefined` short-circuits it
-          // internally — same effect) so we never double-subscribe.
+          // `externalState`.
           updateIndicator={<UpdateIndicator externalState={updateState} />}
         />
       </TitleBar>
+      {/* Phase 105 (chunk C) — the document rail: a SECOND 40px row below the
+          title row. It owns the tab strip (`.tab-area`/`.tab-list`), the "+"
+          new tab affordance, the reorder / tear-out gesture and the uniform
+          overflow plan. The Multi Mode composite tab and its disabled "+"
+          reason are unchanged; chunk D adds the All-tabs switcher. */}
+      <DocumentRail
+        activeId={stripActiveId}
+        // `stripTabs` is memoised above so its reference is stable across App
+        // re-renders that don't actually change tab state.
+        tabs={stripTabs}
+        // Phase 32 — the strip click is the Multi Mode routing seam.
+        onActivate={onTabStripActivate}
+        // Phase 34 (chunk 2) — the composite tab's close runs the
+        // per-document modified queue over BOTH pane documents.
+        onClose={onHeaderClose}
+        // Phase 58 (chunk 5) — reorder the strip.
+        onMoveTab={onMoveTab}
+        // Phase 58 (chunk 6b) — tear a tab out into a new app window.
+        onDetachTab={detachTab}
+        onNewEmptyTab={onNewEmptyTab}
+        // DEF-288 — while Multi Mode is on the "+" is disabled with a reason.
+        multiModeEnabled={multiMode.enabled}
+        // Phase 58 — the tab-strip style preference.
+        tabStyle={settings.tabStyle ?? DEFAULT_TAB_STYLE}
+      />
       {/* Phase 36 (chunk 5) — the open INSPECTOR's state lives on .app-main
           as a data attribute, driven by the SAME `inspectorOpen` flag that
           mounts the panel below. The CSS animates --tf-tools-inset from it
@@ -11654,6 +11686,7 @@ pushToast(
       />
       <SplitDialog
         open={splitOpen}
+        sourceName={activeTab?.displayName}
         totalPages={
           activeEngineUi?.state.pageCount ??
           activeTab?.session.doc.numPages ??

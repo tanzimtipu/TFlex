@@ -8,6 +8,8 @@
 // the composite close plan reuses the existing `collectModifiedTabIds`
 // selection so the SAME per-document prompt walk covers both documents.
 
+import { IDENTITY_PALETTE } from "./tabColour";
+
 /** The synthetic id of the single workspace tab. It is not a tab-store id:
  *  nothing ever dispatches a tab action with it; the header close/activate
  *  handlers special-case it. */
@@ -17,6 +19,12 @@ export const COMPOSITE_TAB_ID = "tf-multi-workspace";
  *  (both cleared): the workspace is still ONE tab, so the strip stays one
  *  entry rather than falling back to the hidden per-document tabs. */
 export const COMPOSITE_EMPTY_LABEL = "Multi Mode";
+
+/** Phase 105 (chunk B) — the composite workspace tab is not a real session, so
+ *  it takes a fixed identity id (the first palette entry) rather than
+ *  allocating one. This keeps the document rail painted in Multi Mode without
+ *  ever consuming a real session's identity slot. */
+export const COMPOSITE_TAB_COLOR_ID = IDENTITY_PALETTE[0];
 
 /** One document the composite tab represents. */
 export interface CompositeDocRef {
@@ -30,6 +38,9 @@ export interface CompositeHeaderTab {
   id: string;
   title: string;
   modified: boolean;
+  /** Phase 105 (chunk B) — the composite workspace tab carries a fixed
+   *  identity so the document rail still paints it while Multi Mode is on. */
+  colorId: string;
 }
 
 /** The pane documents, left then right, resolved through `lookup`; an empty
@@ -53,12 +64,18 @@ export function compositeDocRefs(
  *  document is modified. Never null — an empty workspace is still one tab. */
 export function compositeHeaderTab(docs: readonly CompositeDocRef[]): CompositeHeaderTab {
   if (docs.length === 0) {
-    return { id: COMPOSITE_TAB_ID, title: COMPOSITE_EMPTY_LABEL, modified: false };
+    return {
+      id: COMPOSITE_TAB_ID,
+      title: COMPOSITE_EMPTY_LABEL,
+      modified: false,
+      colorId: COMPOSITE_TAB_COLOR_ID,
+    };
   }
   return {
     id: COMPOSITE_TAB_ID,
     title: docs.map((doc) => doc.title).join(" | "),
     modified: docs.some((doc) => doc.modified),
+    colorId: COMPOSITE_TAB_COLOR_ID,
   };
 }
 

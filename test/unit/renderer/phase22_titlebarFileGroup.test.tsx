@@ -25,6 +25,8 @@ import { createRoot } from "react-dom/client";
 import { act } from "react";
 import type { ReactElement } from "react";
 import { AppHeader } from "../../../src/renderer/components/AppHeader";
+import { DocumentRail } from "../../../src/renderer/components/DocumentRail";
+import { TitleBar } from "../../../src/renderer/components/TitleBar";
 import { CommandBar } from "../../../src/renderer/components/CommandBar";
 import type { ZoomMode } from "../../../src/renderer/state/zoom";
 
@@ -54,13 +56,6 @@ function headerElement(args: HeaderArgs = {}): ReactElement {
   return (
     <AppHeader
       activeId={args.activeId === undefined ? "a" : args.activeId}
-      tabs={args.tabs ?? [{ id: "a", title: "a.pdf", modified: args.saveModified ?? false }]}
-      onActivate={NOOP}
-      onClose={NOOP}
-      theme="frosted"
-      onThemeChange={NOOP}
-      onNewEmptyTab={NOOP}
-      onOpenPreferences={NOOP}
       onOpenFile={args.onOpenFile ?? NOOP}
       onSave={args.onSave ?? NOOP}
       onSaveAs={args.onSaveAs ?? NOOP}
@@ -74,20 +69,63 @@ function renderHeader(args: HeaderArgs = {}): HTMLElement {
   return mount(headerElement(args));
 }
 
+/** Phase 105 (chunk C) — the tab strip now lives in the document rail. */
+function railElement(args: HeaderArgs = {}): ReactElement {
+  return (
+    <DocumentRail
+      activeId={args.activeId === undefined ? "a" : args.activeId}
+      tabs={args.tabs ?? []}
+      onActivate={NOOP}
+      onClose={NOOP}
+      onNewEmptyTab={NOOP}
+    />
+  );
+}
+
+function renderRail(args: HeaderArgs = {}): HTMLElement {
+  return mount(railElement(args));
+}
+
 describe("Phase 22 — title-bar file group placement", () => {
-  it("sits between the brand and the tab strip, in that DOM order", () => {
-    const host = renderHeader();
+  it("sits in the title row, with the tab strip in the separate document rail", () => {
+    const host = document.createElement("div");
+    document.body.appendChild(host);
+    const root = createRoot(host);
+    act((): void => {
+      root.render(
+        <>
+          <TitleBar menuGroups={[{ id: "file", label: "File", entries: [] }]}>
+            <AppHeader
+              activeId="a"
+              onOpenFile={NOOP}
+              onSave={NOOP}
+              onSaveAs={NOOP}
+            />
+          </TitleBar>
+          <DocumentRail
+            activeId="a"
+            tabs={[{ id: "a", title: "a.pdf", modified: false }]}
+            onActivate={NOOP}
+            onClose={NOOP}
+            onNewEmptyTab={NOOP}
+          />
+        </>,
+      );
+    });
     try {
       const header = host.querySelector(".app-header");
       expect(header).not.toBeNull();
-      const children = Array.from(header?.children ?? []);
-      const order = children.map((c) => c.className);
-      const brandIdx = order.findIndex((c) => c.includes("brand"));
-      const groupIdx = order.findIndex((c) => c.includes("titlebar-file"));
-      const tabIdx = order.findIndex((c) => c.includes("tab-area"));
-      expect(brandIdx).toBeGreaterThanOrEqual(0);
-      expect(groupIdx).toBe(brandIdx + 1);
-      expect(tabIdx).toBe(groupIdx + 1);
+      // The file group renders inside the title row.
+      expect(header?.querySelector(".titlebar-file")).not.toBeNull();
+      // The rail is a separate surface below the title bar.
+      const rail = host.querySelector(".document-rail .tab-area");
+      expect(rail).not.toBeNull();
+      expect(header?.contains(rail as Node)).toBe(false);
+      // The brand leads the title row in TitleBar, before the file group.
+      const bar = host.querySelector(".titlebar");
+      const brand = bar?.querySelector(".brand");
+      expect(brand).not.toBeNull();
+      expect(brand?.compareDocumentPosition(header as Node)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
     } finally {
       host.remove();
     }
@@ -251,7 +289,7 @@ describe("Phase 22 — relocated Save state semantics (unchanged)", () => {
   // where Save As is disabled; both routes that reach the same action
   // (menu saveAs + Ctrl+Shift+S) are gated on an active document too.
   it("disables Save As only on the welcome screen (no active document)", () => {
-    const host = renderHeader({ activeId: null, tabs: [] });
+    const host = renderHeader({ activeId: null });
     try {
       const save = host.querySelector<HTMLButtonElement>("[data-toolbar-save]");
       const saveAs = host.querySelector<HTMLButtonElement>("[data-toolbar-save-as]");
@@ -281,8 +319,8 @@ describe("DEF-245 — the active tab stays in the strip (Phase 72 retired the re
     { id: "b", title: "b.pdf", modified: false },
   ];
 
-  it("the AppHeader source never calls scrollIntoView / writes scrollLeft", () => {
-    const source = readFileSync("src/renderer/components/AppHeader.tsx", "utf8");
+  it("the document rail source never calls scrollIntoView / writes scrollLeft", () => {
+    const source = readFileSync("src/renderer/components/DocumentRail.tsx", "utf8");
     expect(source).not.toContain("scrollIntoView");
     // The reorder drop-slot math keeps `el.scrollLeft` as a read term, but
     // there is no reveal write (`list.scrollLeft +=`).
@@ -290,7 +328,7 @@ describe("DEF-245 — the active tab stays in the strip (Phase 72 retired the re
   });
 
   it("the active tab is not scrolled: every tab is rendered in the strip", () => {
-    const host = renderHeader({ activeId: "b", tabs: TABS });
+    const host = renderRail({ activeId: "b", tabs: TABS });
     try {
       const list = host.querySelector<HTMLElement>(".tab-list");
       expect(list).not.toBeNull();
@@ -309,14 +347,14 @@ describe("DEF-245 — the active tab stays in the strip (Phase 72 retired the re
     const root = createRoot(host);
     try {
       act((): void => {
-        root.render(headerElement({ activeId: "b", tabs: TABS }));
+        root.render(railElement({ activeId: "b", tabs: TABS }));
       });
       expect(host.querySelectorAll(".tab-active")).toHaveLength(1);
       expect(host.querySelector(".tab-active")?.getAttribute("data-tab-id")).toBe("b");
 
       // Switch to the first tab — the marker moves, the strip does not.
       act((): void => {
-        root.render(headerElement({ activeId: "a", tabs: TABS }));
+        root.render(railElement({ activeId: "a", tabs: TABS }));
       });
       expect(host.querySelectorAll(".tab-active")).toHaveLength(1);
       expect(host.querySelector(".tab-active")?.getAttribute("data-tab-id")).toBe("a");
@@ -326,7 +364,7 @@ describe("DEF-245 — the active tab stays in the strip (Phase 72 retired the re
   });
 
   it("shows no active marker on the welcome screen (no document)", () => {
-    const host = renderHeader({ activeId: null, tabs: [] });
+    const host = renderRail({ activeId: null, tabs: [] });
     try {
       expect(host.querySelector(".tab-list")).not.toBeNull();
       expect(host.querySelectorAll(".tab")).toHaveLength(0);
@@ -581,7 +619,7 @@ describe("DEF-428 — a strip width change does not reveal (Phase 72 retired the
   ];
 
   it("the measure path re-plans the fit width instead of scrolling", () => {
-    const source = readFileSync("src/renderer/components/AppHeader.tsx", "utf8");
+    const source = readFileSync("src/renderer/components/DocumentRail.tsx", "utf8");
     expect(source).not.toContain("scrollIntoView");
     expect(source).not.toContain("scrollLeft +=");
     // The ResizeObserver re-measure writes the uniform fit custom property,
@@ -591,14 +629,14 @@ describe("DEF-428 — a strip width change does not reveal (Phase 72 retired the
   });
 
   it("keeps every tab (active included) rendered in the strip", () => {
-    const host = renderHeader({ activeId: "b", tabs: RESIZE_TABS });
+    const host = renderRail({ activeId: "b", tabs: RESIZE_TABS });
     try {
       expect(host.querySelectorAll(".tab")).toHaveLength(2);
       expect(host.querySelector(".tab-active")?.getAttribute("data-tab-id")).toBe("b");
 
       // A width-stress re-render with more tabs still keeps the one row and
       // the same active marker — nothing is orphaned off-strip.
-      const stressed = renderHeader({
+      const stressed = renderRail({
         activeId: "b",
         tabs: [...RESIZE_TABS, { id: "c", title: "c.pdf", modified: false }],
       });

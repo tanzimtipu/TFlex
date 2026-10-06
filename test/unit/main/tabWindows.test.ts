@@ -220,3 +220,66 @@ describe('Phase 58 preload adopt buffer (DEF-416 late-subscription delivery)', (
     expect(resubscribed).toEqual([third]);
   });
 });
+
+describe('Phase 105 optional colorId round-trip', () => {
+  const coloured: TabTransferPayload = {
+    title: 'a.pdf',
+    bytes: new Uint8Array([1, 2, 3]),
+    modified: false,
+    colorId: 'ocean',
+  };
+
+  it('relays colorId verbatim on the detached adopt event', () => {
+    vi.mocked(BrowserWindow.fromWebContents).mockReturnValue({
+      id: 9,
+      isDestroyed: () => false,
+    } as unknown as BrowserWindow);
+    const send = vi.fn();
+    const webContents = {
+      once: vi.fn(() => webContents),
+      send,
+      isDestroyed: () => false,
+      isLoading: () => false,
+    };
+    const child = {
+      window: { id: 77, isDestroyed: () => false, webContents, on: vi.fn() },
+      load: vi.fn(),
+    } as unknown as DetachedWindowHandle;
+    const handlers = createTabWindows({
+      rendererHtml: 'index.html',
+      createWindow: () => child,
+    });
+
+    const result = handlers.openDetached({} as WebContents, coloured);
+
+    expect(result).toEqual({ ok: true, windowId: 77 });
+    expect(send).toHaveBeenCalledWith(IPC.tabAdoptEvent, coloured);
+    expect(send.mock.calls[0][1].colorId).toBe('ocean');
+  });
+
+  it('relays colorId verbatim on the return adopt event', () => {
+    const targetSend = vi.fn();
+    vi.mocked(BrowserWindow.fromWebContents).mockReturnValue({
+      id: 9,
+      isDestroyed: () => false,
+    } as unknown as BrowserWindow);
+    vi.mocked(BrowserWindow.getAllWindows).mockReturnValue([
+      { id: 9, isDestroyed: () => false } as unknown as BrowserWindow,
+    ]);
+    vi.mocked(BrowserWindow.fromId).mockReturnValue({
+      id: 9,
+      isDestroyed: () => false,
+      webContents: { isDestroyed: () => false, send: targetSend },
+    } as unknown as BrowserWindow);
+    const handlers = createTabWindows({
+      rendererHtml: 'index.html',
+      createWindow: () => ({}) as unknown as DetachedWindowHandle,
+    });
+
+    const result = handlers.handleReturn({ id: 9 } as unknown as WebContents, coloured);
+
+    expect(result).toEqual({ ok: true, windowId: 9 });
+    expect(targetSend).toHaveBeenCalledWith(IPC.tabAdoptEvent, coloured);
+    expect(targetSend.mock.calls[0][1].colorId).toBe('ocean');
+  });
+});

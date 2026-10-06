@@ -15,9 +15,8 @@ import { readFileSync } from "node:fs";
 import { createElement } from "react";
 import { createRoot } from "react-dom/client";
 import { act } from "react";
-import * as AppHeaderModule from "../../../src/renderer/components/AppHeader";
-import { AppHeader } from "../../../src/renderer/components/AppHeader";
-import type { Theme } from "../../../src/renderer/state/theme";
+import * as DocumentRailModule from "../../../src/renderer/components/DocumentRail";
+import { DocumentRail } from "../../../src/renderer/components/DocumentRail";
 
 const TAB_DEFS = [
   { id: "a", title: "a.pdf", modified: false },
@@ -28,13 +27,13 @@ const TAB_DEFS = [
 describe("DEF-433 — the active-tab scroll reveal is retired by Phase 72", () => {
   it("no longer exports activeTabScrollDelta", () => {
     expect(
-      (AppHeaderModule as Record<string, unknown>).activeTabScrollDelta,
+      (DocumentRailModule as Record<string, unknown>).activeTabScrollDelta,
       "the scroll reveal export must be gone",
     ).toBeUndefined();
   });
 
-  it("the AppHeader source never calls scrollIntoView / touches scrollLeft", () => {
-    const source = readFileSync("src/renderer/components/AppHeader.tsx", "utf8");
+  it("the document-rail source never calls scrollIntoView / touches scrollLeft", () => {
+    const source = readFileSync("src/renderer/components/DocumentRail.tsx", "utf8");
     expect(source).not.toContain("scrollIntoView");
     // The reorder's drop-slot math keeps `el.scrollLeft` as a byte-identical
     // term, but there is no reveal write (`list.scrollLeft +=`).
@@ -73,15 +72,12 @@ describe("DEF-433 — the strip keeps every tab in one row (Phase 72 item 8)", (
     const root = createRoot(host);
     act((): void => {
       root.render(
-        createElement(AppHeader, {
+        createElement(DocumentRail, {
           activeId: "c",
           tabs: TAB_DEFS,
           onActivate: (): void => undefined,
           onClose: (): void => undefined,
-          theme: "frosted" as Theme,
-          onThemeChange: (): void => undefined,
           onNewEmptyTab: (): void => undefined,
-          onOpenPreferences: (): void => undefined,
         }),
       );
     });

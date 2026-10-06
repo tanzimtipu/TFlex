@@ -567,13 +567,7 @@ describe("AppHeader â€” update indicator slot (DEF-077)", () => {
       root.render(
         <AppHeader
           activeId={null}
-          tabs={[]}
-          onActivate={(): void => undefined}
-          onClose={(): void => undefined}
-          theme={"dark"}
-          onThemeChange={(): void => undefined}
-          onNewEmptyTab={(): void => undefined}
-          onOpenPreferences={(): void => undefined}
+          appMenuGroups={[{ id: "view", label: "View", entries: [] }]}
           updateIndicator={<UpdateIndicator />}
         />,
       );
@@ -584,32 +578,25 @@ describe("AppHeader â€” update indicator slot (DEF-077)", () => {
     expect(actions).not.toBeNull();
     const indicator = actions?.querySelector("[data-update-indicator]");
     expect(indicator).not.toBeNull();
-    // The theme toggle is the next sibling â€” spec said "next to the
-    // Tools/theme controls", so the indicator and the theme toggle
-    // must be adjacent inside .header-actions.
-    const themeToggle = actions?.querySelector(".theme-toggle");
-    expect(themeToggle).not.toBeNull();
-    // Order: indicator appears before theme toggle. Use
-    // querySelectorAll("*") to walk every descendant â€” React
-    // can insert comment nodes between adjacent elements in
-    // the rendered tree (visible via .children but not via
-    // .querySelectorAll("*")), and the slot's button can be
-    // a direct child of .header-actions either way. The
-    // contract we want to pin is: both elements are present
-    // inside .header-actions and the indicator comes first
-    // in document order.
+    // The application menu trigger is the control BEFORE the indicator (the
+    // Phase 105 title-row order is search, print, app menu, update, account),
+    // and both live inside .header-actions.
+    const appMenu = actions?.querySelector("[data-app-menu]");
+    expect(appMenu).not.toBeNull();
+    // Order: menu trigger appears before the indicator. Use
+    // querySelectorAll("*") to walk every descendant.
     const descendants = Array.from(actions?.querySelectorAll("*") ?? []);
     const indicatorIdx = descendants.findIndex(
       (el) =>
         el.matches("[data-update-indicator]") ||
         el.querySelector("[data-update-indicator]") !== null,
     );
-    const themeIdx = descendants.findIndex(
-      (el) => (el as HTMLElement).classList.contains("theme-toggle"),
+    const appMenuIdx = descendants.findIndex(
+      (el) => (el as HTMLElement).classList.contains("app-menu-trigger"),
     );
     expect(indicatorIdx).toBeGreaterThanOrEqual(0);
-    expect(themeIdx).toBeGreaterThanOrEqual(0);
-    expect(indicatorIdx).toBeLessThan(themeIdx);
+    expect(appMenuIdx).toBeGreaterThanOrEqual(0);
+    expect(appMenuIdx).toBeLessThan(indicatorIdx);
     act((): void => {
       root.unmount();
     });
@@ -629,13 +616,6 @@ describe("AppHeader â€” update indicator slot (DEF-077)", () => {
       root.render(
         <AppHeader
           activeId={null}
-          tabs={[]}
-          onActivate={(): void => undefined}
-          onClose={(): void => undefined}
-          theme={"dark"}
-          onThemeChange={(): void => undefined}
-          onNewEmptyTab={(): void => undefined}
-          onOpenPreferences={(): void => undefined}
         />,
       );
     });

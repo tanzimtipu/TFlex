@@ -3956,6 +3956,20 @@ body.tab-reordering .tab-list[data-reorder="true"] .tab {
   background: var(--bg-sunken);
 }
 
+/* DEF-594 / ADV-224 — the LIGHT Home-hero supporting ink. `.welcome-sub` and
+ * `.welcome-section h3 .count` ride the global `--tf-text-supporting` (#667085),
+ * but the Home hero sits on `.welcome.orbit-desk`, whose surface is
+ * `--bg-sunken` (#e4e9ef in light). #667085 on that surface measures 4.07:1,
+ * below the 4.5:1 interactive-text floor, while the retired `--fg-muted`
+ * (#556070) measures 5.22:1. This override is scoped to the LIGHT theme only
+ * (`:root` is light; `data-theme="dark"`/`"frosted"` are excluded) and to the
+ * orbit-desk hero, so dark (7.12:1 on #08090b), frosted and every other surface
+ * keep the global token unchanged. The token itself is NOT edited here. */
+:root:not([data-theme="dark"]):not([data-theme="frosted"]) .welcome.orbit-desk .welcome-sub,
+:root:not([data-theme="dark"]):not([data-theme="frosted"]) .welcome.orbit-desk .welcome-section h3 .count {
+  color: var(--fg-muted);
+}
+
 .orbit-desk-inner {
   box-sizing: border-box;
   width: 100%;
@@ -9112,7 +9126,17 @@ rect.ann-highlight.ann-preview {
 .tab-list-all {
   /* Sits immediately after the "+" as the last control in the strip. Like the
    * "+" it is a positioned, non-shrinking flex item so its own hit target and
-   * stacking level survive the strip's clip. */
+   * stacking level survive the strip's clip.
+   *
+   * ADV-226 — the switcher popover is a `position: fixed` descendant of this
+   * `<li>`, so this element's `z-index` is the stacking level the popover is
+   * confined to. The old `z-index: 3` capped the popover's own `z-index: 80`
+   * inside a context that lost to `.inspector` (30), `.stage-rail` (8) and
+   * `.action-dock` (7) at root, so the open switcher painted BENEATH the
+   * Inspector. 40 lifts the whole context (and thus the popover) above the
+   * Inspector while staying below the fixed-position surfaces it must never
+   * cover (color popover 50, sheets 100, modals 800, toasts 1000) — the same
+   * lane the `.titlebar` uses for its own popovers. */
   display: inline-flex;
   align-items: end;
   list-style: none;
@@ -9120,7 +9144,7 @@ rect.ann-highlight.ann-preview {
   padding: 0;
   margin: 0;
   position: relative;
-  z-index: 3;
+  z-index: 40;
 }
 
 /* Phase 105 (chunk D) — a session past the rail's capacity stays mounted (so
@@ -11239,12 +11263,25 @@ rect.ann-highlight.ann-preview {
 
 .create-image-row {
   display: grid;
-  grid-template-columns: 28px 40px minmax(0, 1fr) 28px;
+  grid-template-columns: 28px 40px minmax(0, 1fr) auto;
   align-items: center;
   gap: 8px;
   padding: 6px 10px;
   border-bottom: 1px solid var(--border-subtle);
   font-size: var(--fs-sm);
+}
+
+.create-image-row:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+/* Explicit per-row reorder + remove controls, grouped so the whole
+ * action cluster stays one grid cell and never squeezes the name. */
+.create-image-controls {
+  display: flex;
+  align-items: center;
+  gap: 2px;
 }
 
 /* Phase 45 item 1 — per-row preview. The source bytes are a real File
@@ -11287,6 +11324,38 @@ rect.ann-highlight.ann-preview {
   padding: 0;
   gap: 0;
   border-radius: var(--radius-1);
+}
+
+/* Layout alias for the per-row move up / move down buttons; identical
+ * geometry to the remove control so the three align in one cluster. */
+.btn.create-image-move {
+  width: 22px;
+  min-width: 22px;
+  height: 22px;
+  padding: 0;
+  gap: 0;
+  border-radius: var(--radius-1);
+}
+
+/* TFL-951 — the JPEG-quality control lives under a named "Encoding
+ * options" group so the single encoding knob reads as a section, not a
+ * loose field. Additive: no existing modal-field rule changes. */
+.create-image-encoding {
+  margin: 0;
+  padding: 0;
+  border: none;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
+
+.create-image-encoding-legend {
+  padding: 0;
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--fg-muted);
 }
 
 /* Phase 40 item 3 — the Create-from-images dialog is responsive: it
@@ -18132,27 +18201,13 @@ cursor: pointer;
   -webkit-app-region: no-drag;
 }
 
-@media (max-width: 900px) {
-/* The flexible genuine drag region between the document-action cluster and the
- * utility cluster. It absorbs the row's slack, so the caption can be dragged
- * from the empty middle while every interactive child stays no-drag. */
-.titlebar-drag {
-  flex: 1 1 auto;
-  min-width: 24px;
-  align-self: stretch;
-  -webkit-app-region: drag;
-}
-
-/* The brand leads the title row (moved out of AppHeader in chunk C). It keeps
- * the caption's leading inset and the divider before the File menu. */
-.titlebar > .brand {
-  padding-left: var(--space-standard);
-  align-self: center;
-}
-
-/* The application menu popover — mirrors the TitleBar File popover surface
- * (opaque card, shared heading / row / kbd classes) and anchors under the
- * trigger's trailing corner. */
+/* ADV-225 / DEF-579 — the application-menu rules are GLOBAL, never nested in
+ * the 900px responsive band. They were declared inside `@media (max-width:
+ * 900px)` (the same class of defect as DEF-579): above 900px the popover
+ * computed `position: static` and rendered as a ~925px in-flow block that
+ * overlapped the title row and rail. The menu is width-independent chrome and
+ * the default window is 1440x900, so the anchored popover must be styled at
+ * every width. */
 .app-menu {
   position: relative;
   display: flex;
@@ -18185,6 +18240,24 @@ cursor: pointer;
   border-radius: var(--radius-3);
   background: var(--bg-panel, var(--bg-toolbar));
   box-shadow: var(--shadow-popover);
+}
+
+@media (max-width: 900px) {
+/* The flexible genuine drag region between the document-action cluster and the
+ * utility cluster. It absorbs the row's slack, so the caption can be dragged
+ * from the empty middle while every interactive child stays no-drag. */
+.titlebar-drag {
+  flex: 1 1 auto;
+  min-width: 24px;
+  align-self: stretch;
+  -webkit-app-region: drag;
+}
+
+/* The brand leads the title row (moved out of AppHeader in chunk C). It keeps
+ * the caption's leading inset and the divider before the File menu. */
+.titlebar > .brand {
+  padding-left: var(--space-standard);
+  align-self: center;
 }
 
 .header-actions {
@@ -20963,6 +21036,33 @@ cursor: pointer;
   clip: rect(0, 0, 0, 0);
   white-space: nowrap;
   border: 0;
+}
+
+/* TFL-929 (chunk C3) — Stamp dialog on PreviewTaskDialog. Additive only:
+ * the compact 2-column stamp-choice grid and a bounded preview that sits
+ * inside the content-driven preview width. No type is shrunk and the actual
+ * `drawStamp` raster is untouched (CONFIDENTIAL red / APPROVED green are
+ * stamp content, not UI status). */
+.stamp-option-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--sp-2);
+}
+
+.stamp-option-grid .stamp-option {
+  margin-bottom: 0;
+}
+
+.modal-dialog.stamp-dialog-preview .stamp-preview-frame {
+  max-width: 480px;
+  margin-inline: auto;
+}
+
+/* At constrained widths the stamp grid stacks instead of shrinking type. */
+@media (max-width: 640px) {
+  .stamp-option-grid {
+    grid-template-columns: 1fr;
+  }
 }
 
 

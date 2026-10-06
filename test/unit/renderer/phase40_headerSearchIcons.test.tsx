@@ -21,6 +21,11 @@ import {
   FIND_IN_DOCUMENT_ACCESSIBLE_NAME,
   TOOL_SEARCH_ACCESSIBLE_NAME,
 } from "../../../src/renderer/components/AppHeader";
+import type { MenuGroup } from "../../../src/renderer/components/TitleBar";
+
+/** Phase 105 (chunk C) — Find relocated into the application menu; an empty
+ *  View group is enough for the trigger plus the spliced Find row. */
+const APP_MENU_GROUPS: MenuGroup[] = [{ id: "view", label: "View", entries: [] }];
 
 interface Harness {
   container: HTMLElement;
@@ -39,13 +44,7 @@ function renderHeader(findEnabled: boolean): Harness {
     root.render(
       <AppHeader
         activeId={null}
-        tabs={[]}
-        onActivate={(): void => undefined}
-        onClose={(): void => undefined}
-        theme="frosted"
-        onThemeChange={(): void => undefined}
-        onNewEmptyTab={(): void => undefined}
-        onOpenPreferences={(): void => undefined}
+        appMenuGroups={APP_MENU_GROUPS}
         onPrint={(): void => undefined}
         onOpenFile={(): void => undefined}
         onSave={(): void => undefined}
@@ -81,15 +80,21 @@ function click(target: Element): void {
   });
 }
 
-describe("Phase 40 item 5 — the header's two search icons", () => {
-  it("renders both icons with distinct, stateful hooks", () => {
+/** Open the application menu so its relocated Find row is queryable. */
+function openAppMenu(container: HTMLElement): void {
+  click(button(container, "[data-app-menu]"));
+}
+
+describe("Phase 40 item 5 — the header's two search affordances", () => {
+  it("renders the Ctrl+K icon and the relocated Ctrl+F menu row", () => {
     const h = renderHeader(true);
     try {
       const k = button(h.container, "[data-header-tool-search]");
-      const f = button(h.container, "[data-header-find]");
-      expect(k).not.toBe(f);
       expect(k.tagName).toBe("BUTTON");
+      openAppMenu(h.container);
+      const f = button(h.container, "[data-menu-action='find']");
       expect(f.tagName).toBe("BUTTON");
+      expect(f).not.toBe(k);
     } finally {
       h.cleanup();
     }
@@ -99,7 +104,8 @@ describe("Phase 40 item 5 — the header's two search icons", () => {
     const h = renderHeader(true);
     try {
       const kSvg = button(h.container, "[data-header-tool-search] svg");
-      const fSvg = button(h.container, "[data-header-find] svg");
+      openAppMenu(h.container);
+      const fSvg = button(h.container, "[data-menu-action='find'] svg");
       // Phase 103 — both glyphs are authored Quiet Precision shapes, so the
       // distinction is pinned by geometry, not by a Lucide class name: the
       // Ctrl+K command-palette glyph is a framed field, the Ctrl+F glyph is a
@@ -117,13 +123,14 @@ describe("Phase 40 item 5 — the header's two search icons", () => {
     const h = renderHeader(true);
     try {
       const k = button(h.container, "[data-header-tool-search]");
-      const f = button(h.container, "[data-header-find]");
       expect(k.getAttribute("aria-label")).toBe(TOOL_SEARCH_ACCESSIBLE_NAME);
-      expect(f.getAttribute("aria-label")).toBe(FIND_IN_DOCUMENT_ACCESSIBLE_NAME);
       expect(TOOL_SEARCH_ACCESSIBLE_NAME).toContain("Ctrl+K");
-      expect(FIND_IN_DOCUMENT_ACCESSIBLE_NAME).toContain("Ctrl+F");
       expect(k.getAttribute("title")).toContain("Ctrl+K");
-      expect(f.getAttribute("title")).toContain("Ctrl+F");
+      openAppMenu(h.container);
+      const f = button(h.container, "[data-menu-action='find']");
+      expect(f.textContent).toContain(FIND_IN_DOCUMENT_ACCESSIBLE_NAME);
+      expect(FIND_IN_DOCUMENT_ACCESSIBLE_NAME).toContain("Ctrl+F");
+      expect(f.textContent).toContain("Ctrl+F");
     } finally {
       h.cleanup();
     }
@@ -136,7 +143,8 @@ describe("Phase 40 item 5 — the header's two search icons", () => {
       expect(h.onOpenToolSearch).toHaveBeenCalledTimes(1);
       expect(h.onOpenFind).not.toHaveBeenCalled();
 
-      click(button(h.container, "[data-header-find]"));
+      openAppMenu(h.container);
+      click(button(h.container, "[data-menu-action='find']"));
       expect(h.onOpenFind).toHaveBeenCalledTimes(1);
       expect(h.onOpenToolSearch).toHaveBeenCalledTimes(1);
     } finally {
@@ -144,10 +152,11 @@ describe("Phase 40 item 5 — the header's two search icons", () => {
     }
   });
 
-  it("disables the Ctrl+F control with a reason when no document is open", () => {
+  it("disables the Ctrl+F menu row with a reason when no document is open", () => {
     const h = renderHeader(false);
     try {
-      const f = button(h.container, "[data-header-find]");
+      openAppMenu(h.container);
+      const f = button(h.container, "[data-menu-action='find']");
       expect(f.hasAttribute("disabled")).toBe(true);
       expect(f.getAttribute("title")).toContain("Open a document");
       click(f);

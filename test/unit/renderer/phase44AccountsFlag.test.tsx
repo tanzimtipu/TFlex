@@ -28,13 +28,6 @@ function renderHeader(accountSlot?: ReactNode): HTMLElement {
     root.render(
       <AppHeader
         activeId={null}
-        tabs={[]}
-        onActivate={(): void => undefined}
-        onClose={(): void => undefined}
-        theme="frosted"
-        onThemeChange={(): void => undefined}
-        onNewEmptyTab={(): void => undefined}
-        onOpenPreferences={(): void => undefined}
         onPrint={(): void => undefined}
         onOpenFile={(): void => undefined}
         onSave={(): void => undefined}

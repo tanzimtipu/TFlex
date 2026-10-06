@@ -500,11 +500,14 @@ export type OpenDefaultAppsSettingsResult =
 
 /** Phase 58 — a document tab carried between app windows. The BYTES are the
  *  document (not a file path), so a saved, unsaved or derived document can all
- *  move. `title` is the tab label; `modified` is the origin's dirty state. */
+ *  move. `title` is the tab label; `modified` is the origin's dirty state.
+ *  `colorId` is the stable per-session tab identity carried so a detached or
+ *  adopted tab keeps its colour; absent means the tab had no colour. */
 export interface TabTransferPayload {
   title: string;
   bytes: Uint8Array;
   modified: boolean;
+  colorId?: string;
 }
 
 /** Phase 58 — result of `tab:detach` / `tab:return`. `ok: true` carries the

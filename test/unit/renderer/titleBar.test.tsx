@@ -202,16 +202,16 @@ describe("TitleBar — window controls wire to tflex.* IPC", () => {
 
   it("uses the standard caption glyphs — distinct restore, never the minimize icon (B10 + Phase 13)", () => {
     // B10 + Phase 13 — the caption glyphs follow the Windows/VS Code
-    // convention: minimize = `Minus` (horizontal line), maximize =
-    // `Square`, restore = the overlapping-squares `Copy` icon. The
-    // restore glyph must never equal the minimize glyph.
+    // convention: the minimize control carries its own Lucide glyph,
+    // maximize = `Square`, restore = the overlapping-squares `Copy` icon.
+    // The restore glyph must never equal the minimize glyph.
     setTflex({
       minimizeWindow: vi.fn(),
       maximizeWindow: vi.fn(),
       closeWindow: vi.fn(),
       menu: { onAction: vi.fn() },
     });
-    // Maximized: restore icon is Copy; minimize is Minus.
+    // Maximized: restore icon is Copy; minimize keeps its own glyph.
     {
       const { container, cleanup } = renderTitleBar({ maximized: true });
       const maxBtn = container.querySelector<HTMLElement>("[data-window-maximize]");
@@ -219,9 +219,10 @@ describe("TitleBar — window controls wire to tflex.* IPC", () => {
       expect(maxBtn?.querySelector("svg.lucide-copy")).not.toBeNull();
       expect(maxBtn?.querySelector("svg.lucide-square")).toBeNull();
       expect(maxBtn?.querySelector("svg.lucide-minimize-2")).toBeNull();
-      // The minimize button still shows its own Minus glyph, so
-      // the two controls are visually unambiguous.
-      expect(minBtn?.querySelector("svg.lucide-minus")).not.toBeNull();
+      // The minimize button still shows its own distinct glyph (Phase 103
+      // Quiet Precision maps `windowMinimize` to Lucide `Minimize`), so the
+      // two controls are visually unambiguous.
+      expect(minBtn?.querySelector("svg.lucide-minimize")).not.toBeNull();
       cleanup();
     }
     // Restored: the maximize button shows Square.

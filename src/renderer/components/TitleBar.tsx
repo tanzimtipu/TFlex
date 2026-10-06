@@ -55,6 +55,8 @@ import { dispatchMenuAction, type MenuActionContext } from "../state/menuActions
 import { TfMorph } from "./motion/TfMotion";
 import { useMorphPreset } from "./motion/useMorphPreset";
 import { GlassChromeBar } from "./GlassChrome";
+import { BrandMark } from "./BrandMark";
+import { BrandWordmark } from "./BrandWordmark";
 
 /** The shape of a menu entry. Two kinds: a top-level group heading
  *  (rendered as a non-interactive row) or an action row. The
@@ -80,6 +82,14 @@ export interface MenuEntry {
    *  the left of the label. Optional — the popover stays text-only when
    *  omitted. */
   icon?: QuietIconId;
+  /** Phase 105 (chunk C) — an action that runs a handler DIRECTLY rather than
+   *  through `dispatchMenuAction`. Used by the application menu for the
+   *  relocated icon commands that have no menu action id (Multi Mode, Find).
+   *  When present, `action` is ignored. */
+  onSelect?: () => void;
+  /** Phase 105 (chunk C) — render the row disabled (unavailable right now).
+   *  Keeps the relocated Find row honest when no document is open. */
+  disabled?: boolean;
 }
 
 export interface MenuGroup {
@@ -138,7 +148,7 @@ export function flattenMenuGroups(
   for (const g of groups) {
     out.push({ kind: "heading", key: `${g.id}-h`, label: g.label });
     for (const entry of g.entries) {
-      if (entry.action === undefined) {
+      if (entry.action === undefined && entry.onSelect === undefined) {
         out.push({ kind: "sep", key: `${g.id}-${entry.id}` });
         continue;
       }
@@ -208,6 +218,14 @@ export function TitleBar(props: TitleBarProps): ReactElement {
 
   const onMenuEntry = useCallback(
     (entry: MenuEntry): void => {
+      if (entry.disabled === true) return;
+      // Phase 105 (chunk C) — a relocated command with its own handler runs it
+      // directly; the menu-action dispatcher only sees id-backed rows.
+      if (entry.onSelect !== undefined) {
+        entry.onSelect();
+        setMenuOpen(false);
+        return;
+      }
       if (entry.action === undefined || menuContext === undefined) return;
       // The dispatcher's return value is intentionally discarded:
       // a `false` return means the action is unknown (a stale entry
@@ -242,6 +260,13 @@ export function TitleBar(props: TitleBarProps): ReactElement {
     // region + the frosted caption glass) and GlassChromeBar adds the
     // shared glass-chrome height/centering contract.
     <GlassChromeBar variant="titleBar" className="titlebar" data-titlebar>
+      {/* Phase 105 (chunk C) — the brand leads the 48px title row, before the
+          File menu, so the row reads brand, File, document actions, drag
+          region, utilities, caption controls. */}
+      <div className="brand">
+        <BrandMark size={18} className="brand-mark" />
+        <BrandWordmark className="brand-name" />
+      </div>
       {/* Menu button — leading edge, hidden when no groups are wired. */}
       {menuGroups !== undefined && menuGroups.length > 0 && (
         <div className="titlebar-menu">
@@ -307,6 +332,7 @@ export function TitleBar(props: TitleBarProps): ReactElement {
                     className="btn btn-ghost titlebar-menu-row"
                     role="menuitem"
                     onClick={(): void => onMenuEntry(entry)}
+                    disabled={entry.disabled === true}
                     data-menu-action={entry.action ?? entry.id}
                   >
                     <span className="titlebar-menu-row-label">

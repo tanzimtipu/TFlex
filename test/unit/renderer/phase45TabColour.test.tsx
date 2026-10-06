@@ -14,7 +14,7 @@
 import { describe, expect, it } from "vitest";
 import { createRoot } from "react-dom/client";
 import { act } from "react";
-import { AppHeader } from "../../../src/renderer/components/AppHeader";
+import { DocumentRail } from "../../../src/renderer/components/DocumentRail";
 import {
   TAB_COLOUR_PALETTE_SIZE,
   TAB_COLOUR_TOKENS,
@@ -26,6 +26,7 @@ interface TabSpec {
   id: string;
   title: string;
   modified: boolean;
+  colorId?: string;
 }
 
 function renderHeader(tabs: TabSpec[], activeId: string | null): HTMLElement {
@@ -34,15 +35,12 @@ function renderHeader(tabs: TabSpec[], activeId: string | null): HTMLElement {
   const root = createRoot(container);
   act((): void => {
     root.render(
-      <AppHeader
+      <DocumentRail
         activeId={activeId}
         tabs={tabs}
         onActivate={(): void => undefined}
         onClose={(): void => undefined}
-        theme="frosted"
-        onThemeChange={(): void => undefined}
         onNewEmptyTab={(): void => undefined}
-        onOpenPreferences={(): void => undefined}
       />,
     );
   });
@@ -82,34 +80,38 @@ describe("Phase 45 item 2 — the tab-colour assignment rule", () => {
   });
 });
 
-describe("Phase 45 item 2 — the rendered tab strip", () => {
+describe("Phase 105 (chunk D) — the rendered tab strip carries identity, not index slots", () => {
   const TABS: TabSpec[] = [
-    { id: "a", title: "Alpha.pdf", modified: false },
-    { id: "b", title: "Beta.pdf", modified: false },
-    { id: "c", title: "Gamma.pdf", modified: false },
+    { id: "a", title: "Alpha.pdf", modified: false, colorId: "violet" },
+    { id: "b", title: "Beta.pdf", modified: false, colorId: "ocean" },
+    { id: "c", title: "Gamma.pdf", modified: false, colorId: "jade" },
   ];
 
-  it("every tab carries its own colour slot and NO identity chip (Phase 72)", () => {
+  it("every tab carries its per-session identity and NO retired index slot", () => {
     const host = renderHeader(TABS, "a");
     const tabs = [...host.querySelectorAll<HTMLElement>("[data-tab-id]")];
     expect(tabs).toHaveLength(3);
-    const slots = tabs.map((t) => t.getAttribute("data-tab-colour"));
-    expect(slots).toEqual(["0", "1", "2"]);
-    expect(new Set(slots).size).toBe(3);
+    const ids = tabs.map((t) => t.getAttribute("data-tab-color-id"));
+    expect(ids).toEqual(["violet", "ocean", "jade"]);
     for (const t of tabs) {
-      // Phase 72 (item 3) — the always-on `.tab-colour-chip` is retired;
-      // `data-tab-colour` still drives `--tf-tab-accent`.
+      // Phase 105 (chunk D) — colour is identity-only: the index-slot
+      // `data-tab-colour` attribute and the colour chip are both gone.
+      expect(t.getAttribute("data-tab-colour")).toBeNull();
       expect(t.querySelector(".tab-colour-chip"), "colour chip gone").toBeNull();
     }
   });
 
-  it("adjacent rendered tabs never share a colour slot", () => {
-    const host = renderHeader(TABS, "b");
-    const slots = [...host.querySelectorAll<HTMLElement>("[data-tab-id]")].map((t) =>
-      Number(t.getAttribute("data-tab-colour")),
+  it("a bare harness mount with no identity renders no colour attribute", () => {
+    const host = renderHeader(
+      [
+        { id: "a", title: "Alpha.pdf", modified: false },
+        { id: "b", title: "Beta.pdf", modified: false },
+      ],
+      "a",
     );
-    for (let i = 0; i + 1 < slots.length; i += 1) {
-      expect(slots[i], `rendered tabs ${i}/${i + 1}`).not.toBe(slots[i + 1]);
+    for (const t of host.querySelectorAll<HTMLElement>("[data-tab-id]")) {
+      expect(t.getAttribute("data-tab-color-id")).toBeNull();
+      expect(t.getAttribute("data-tab-colour")).toBeNull();
     }
   });
 
@@ -120,8 +122,6 @@ describe("Phase 45 item 2 — the rendered tab strip", () => {
     expect(active?.classList.contains("tab-active")).toBe(true);
     expect(active?.getAttribute("aria-selected")).toBe("true");
     expect(inactive?.classList.contains("tab-active")).toBe(false);
-    // Phase 72 (item 3) — no identity chip on either tab; the selection signal
-    // is the surface tint + `.tab-active`, never a per-tab mark.
     expect(active?.querySelector(".tab-colour-chip")).toBeNull();
     expect(inactive?.querySelector(".tab-colour-chip")).toBeNull();
   });

@@ -30,11 +30,13 @@ export interface AnimatedTabProps {
   title: string;
   active: boolean;
   modified: boolean;
-  /** Phase 45 (item 2) — the tab's palette slot from its position in the
-   *  strip (`tabColourSlot(index)`). Paints the per-tab colour identity via
-   *  `data-tab-colour`; optional so a bare harness mount defaults to slot 0
-   *  rather than an undefined colour. */
-  colourSlot?: number;
+  /** Phase 105 (chunk D) — the session's stable identity colour id from
+   *  `TabMeta.colorId` (`allocateColorId`). Rendered as `data-tab-color-id` so
+   *  styles.css paints the per-session tint / saturated active surface.
+   *  Optional so a bare harness mount renders without an identity rather than
+   *  an undefined attribute. The retired index-slot `colourSlot` /
+   *  `data-tab-colour` plumbing is gone: colour is identity-only now. */
+  colorId?: string;
   /** Phase 60 — this tab is the one currently under the pointer. It is lifted
    *  above the row and follows the pointer via `dragOffset`. */
   dragging?: boolean;
@@ -61,6 +63,11 @@ export interface AnimatedTabProps {
    *  shift rides the `.tab` transition (shared motion tokens, so reduced
    *  motion / Animations OFF collapse it). */
   reflowPx?: number;
+  /** Phase 105 (chunk D) — this session is past the rail's capacity. It stays
+   *  mounted (so reorder / close stay stable and no exit animation plays on a
+   *  reflow) but is hidden from the rail; it remains reachable through the
+   *  All-tabs switcher. */
+  hidden?: boolean;
   onActivate: (id: string) => void;
   onClose: (id: string) => void;
 }
@@ -71,12 +78,13 @@ export function AnimatedTab(props: AnimatedTabProps): ReactElement {
     title,
     active,
     modified,
-    colourSlot = 0,
+    colorId,
     dragging = false,
     dragOffset = null,
     floating = false,
     floatRect = null,
     reflowPx = 0,
+    hidden = false,
     onActivate,
     onClose,
   } = props;
@@ -166,14 +174,19 @@ export function AnimatedTab(props: AnimatedTabProps): ReactElement {
       // inner `.tab` div, so the row alignment is driven from here (the CSS
       // `align-self` on `.tab-active` was inert on an inner block).
       data-tab-active={active ? "true" : undefined}
-      style={reserveStyle}
+      // Phase 105 (chunk D) — an overflowed session stays mounted but is
+      // hidden from the rail (inline display:none, so no exit animation plays
+      // on a capacity reflow). It remains reachable through the All-tabs
+      // switcher, which lists EVERY session.
+      data-tab-overflow={hidden ? "hidden" : undefined}
+      style={hidden ? { ...(reserveStyle ?? {}), display: "none" } : reserveStyle}
     >
       <div
         className={active ? "tab tab-active" : "tab"}
         role="tab"
         aria-selected={active}
         data-tab-id={id}
-        data-tab-colour={colourSlot}
+        data-tab-color-id={colorId}
         // Phase 58 (chunk 5) — the tab is NOT HTML5-draggable. Reorder runs
         // on pointer events (AppHeader). Phase 59 (item 1) keeps the drag
         // gesture on pointer events so a tab can be dragged from ANY area,
@@ -190,9 +203,10 @@ export function AnimatedTab(props: AnimatedTabProps): ReactElement {
         onMouseDown={onTabMouseDown}
       >
         {/* Phase 72 (item 3) — the always-on per-tab colour-identity chip is
-         *  RETIRED. `data-tab-colour` still drives `--tf-tab-accent` for the
-         *  tab body tint; the ONLY dot a tab may paint is `.tab-modified-dot`,
-         *  and only when `modified === true` (the conditional below). */}
+         *  RETIRED. Phase 105 (chunk D) — `data-tab-color-id` is the single
+         *  colour source (per-session identity); the index-slot
+         *  `data-tab-colour` is gone. The ONLY dot a tab may paint is
+         *  `.tab-modified-dot`, and only when `modified === true`. */}
         <span className="tab-title" title={title}>
           <span
             className={

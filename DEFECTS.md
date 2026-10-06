@@ -13370,7 +13370,7 @@ History:
 
 > Numbering note: filed concurrently and first numbered DEF-588; renumbered to DEF-590 by qa (TFL-925, 2026-10-06) because DEF-587/DEF-588 are bound to the Phase 109 Viewing Controls findings by `src/renderer/styles.css` comments and `test/unit/renderer/phase109_viewStrip.test.ts`. No content changed.
 
-- Status: OPEN (reopened by qa TFL-936, 2026-10-06: row 4 residual does not meet the recorded "every opener resolves" expectation)
+- Status: CLOSED
 - Severity: LOW - spec-artifact accuracy only. No product, document or data impact; the inventory is a handoff/spec deliverable that the C3 pilot authors read, and a mis-stated path or line sends a reader to the wrong file/location.
 - Found by: qa (TFL-920 chunk C2Q focused verification, criterion-1 inventory coverage)
 - Phase: 855 (shared interaction-surface foundations, TFL-873 chunk C1)
@@ -13395,6 +13395,7 @@ History:
 - qa: opened (TFL-920 chunk C2Q focused verification, 2026-10-06). Items 1-3 and 5-6 of that pass were PASS; item 4 is the sole FAIL.
 - CTO (TFL-855 chunk C3, 2026-10-06): FIX-READY - relaying frontend-dev TFL-929. Row 5 `component_path` corrected to `src/renderer/components/AnnotationFlyout.tsx`; the sampled App.tsx `opener` lines refreshed against current source (row 2 onSplitClick 5329->5360 / extract 10034->10090; row 3 onCreateClick 5621->5653; row 8 openMergeFlow 5046->5068; row 41 12183->12229; row 64 openReadingView 10011->10067 / openComicView 10015->10071). Structure intact: 67 data rows x 11 columns, no row/column added or removed. Residual (deliberate, per the sampled-rows scope): row 4 onStampClick opener left stale (6356; real 6388) - qa to judge whether row 5 + the sampled rows suffice to CLOSE or whether the residual reopens the finding. Awaiting qa retest.
 - qa (TFL-936 chunk C3 focused verification + DEF-590 retest, 2026-10-06): REOPENED. Partial fix verified: row 5 `component_path` = `src/renderer/components/AnnotationFlyout.tsx` and the file exists; structure intact (11 columns / 67 data rows); the sampled App.tsx openers resolve - row 2 onSplitClick 5360 / extract 10090, row 3 onCreateClick 5653, row 8 openMergeFlow 5068, row 64 openReadingView 10067 / openComicView 10071, row 41 12229 -> the named condition `pendingCloseTabId !== null` sits at 12230 (one line; the opener names the `<CloseTabPromptDialog>` open tag at 12229, within "near"). Residual NOT acceptable against the recorded expectation ("every `opener` `file:line` resolves to (or near) the named call site"): CSV row 4 `App.tsx:6356 onStampClick` does not resolve - `const onStampClick` is at App.tsx:6388 (32 lines off; line 6356 is the blank line after `onCropConfirm`'s close and before `seedActivePageSizes`). The refreshed openers the dev accepted all drifted by 22-56 lines, so a 32-line miss is the same class the defect was filed against. Fix owner frontend-dev: correct row 4 opener to `App.tsx:6388 onStampClick`; re-run this retest to CLOSE.
+- qa: CLOSED (TFL-941 fix-batch retest, 2026-10-06). Row 4 (Stamp) opener now `App.tsx:6388 onStampClick`; App.tsx:6388 contains `onStampClick`. Structure intact (11 columns / 67 data rows, lines 2-68). Every App.tsx `file:line symbol` opener in the CSV was validated against `src/renderer/App.tsx` on the fixed tree: 41/41 resolve to the named symbol within +/-2 lines, 0 misses. The rows the dev had refreshed in TFL-929 remain resolved (row 2 onSplitClick 5360, row 3 onCreateClick 5653, row 8 openMergeFlow 5068, row 64 openReadingView 10067 / openComicView 10071, row 41 pendingCloseTabId 12229 -> named condition at 12230). Fix verified.
 
 ## DEF-591: At the `<=419px` overflow tier the revealed More trigger overflows the footer box and is covered by the Inspector rail, so it is not pointer-reachable
 
@@ -13448,7 +13449,7 @@ History:
 
 ## DEF-593: `foundationGuards` `MIGRATED_SURFACES` is red - 6 TFL-855 primitive renderer `.tsx` files are not registered (TFL-936 chunk C3 focused verification)
 
-- Status: OPEN
+- Status: CLOSED
 - Severity: LOW - test-artifact completeness only; no product, document or data impact. It does leave `test/unit/renderer/foundationGuards.test.ts` red (1 failed / 29 passed) and, per `AGENTS_NOTES.md:1405-1411`, every sibling visual-overhaul phase inherits the red named spec, so it gates the TFL-855 phase-close check.
 - Found by: qa (TFL-936 chunk C3 focused verification, item 5; the dev had reported it "pre-existing/unrelated")
 - Phase: 855 (shared interaction-surface foundations, TFL-873 chunk C2)
@@ -13469,6 +13470,7 @@ Evidence: vitest output `Test Files 1 failed (1)` / `Tests 1 failed | 29 passed 
 
 History:
 - qa: opened (TFL-936 chunk C3 focused verification, 2026-10-06). Determined it is a real TFL-855 phase deliverable (registering the new primitive surfaces), not merely a commit-time/untracked artifact; it is a phase-close gate.
+- qa: CLOSED (TFL-941 fix-batch retest, 2026-10-06). `npm.cmd run test:unit -- test/unit/renderer/foundationGuards.test.ts` = 1 file passed / 30 tests passed / 0 failed (was 1 failed / 29 passed). The `MIGRATED_SURFACES covers every renderer TSX exactly (complete, not stale)` assertion (now at `foundationGuards.test.ts:690`) is green; all 6 TFL-855 primitives are registered in `MIGRATED_SURFACES` (`components/CommandMenu.tsx`:74, `components/ContextToolbox.tsx`:80, `components/PreviewTaskDialog.tsx`:118, `components/PropertyPopover.tsx`:120, `components/TaskDialog.tsx`:133, `components/Tooltip.tsx`:139). Fix verified.
 
 ## DEF-594: Phase 110 supporting-text token drops the light-theme Home hero below the 4.5:1 floor - `.welcome-sub` measures 4.07:1 where the retired `--fg-muted` cleared 5.22:1 (ADV-224)
 
@@ -13493,4 +13495,65 @@ Evidence: ADV-224 (probe `test-fixtures/phase110-adversary/probe-output.json`; s
 History:
 - adversary: reported as ADV-224 (Phase 110 diff-pass, TFL-932, 2026-10-06).
 - CTO (TFL-864, 2026-10-06): ACCEPTED -> DEF-594; fix assigned to frontend-dev TFL-945.
+
+## DEF-595: Phase 105 application menu is unstyled above 900px - the popover renders as a ~925px in-flow block overlapping the title row and the document rail (ADV-225)
+
+- Status: CLOSED
+- Severity: HIGH - the chunk-C application menu is a core control and was unusable at the default 1440px window (every width > 900px); its in-flow block also overlapped the title row and the document rail.
+- Found by: adversary (ADV-225)
+- Phase: 105 (Top Bar and Tabs)
+- Files: `src/renderer/styles.css` - all `.app-menu*` rules were nested inside `@media (max-width: 900px)`; fix makes `.app-menu` (~18152) and `.app-menu-popover` (~18171) global.
+- Origin: `ADVERSARIAL_REVIEW.md` ADV-225 (Phase 105 diff-pass, TFL-932); disposition ACCEPTED - HIGH, fix assigned to frontend-dev TFL-944 chunk F2.
+
+Steps to reproduce:
+1. Launch TFlex at 1440x900 (the shipped default window), open a document.
+2. Click `[data-app-menu]` in the title row.
+3. Read the computed style and rect of `[data-app-menu-popover]`.
+
+Expected: an anchored, opaque, width-bounded popover under its `[data-app-menu]` trigger at every supported width.
+
+Actual (pre-fix): `position: static` with no background/border/z-index; rect ~924.8 x 461.6 in-flow, overlapping the title row and the document rail.
+
+Fix: `.app-menu*` rules moved out of the `@media (max-width:900px)` band into global scope.
+
+Retest evidence (post-fix; `dist/` rebuilt with `npm.cmd run build:renderer` + `build:node`):
+- `npm.cmd run test:e2e -- phase105_topbar_rail.spec.cjs -g "ADV-22"` -> ADV-225 guard PASS; full spec `npm.cmd run test:e2e -- phase105_topbar_rail.spec.cjs` -> 7 passed.
+- Live geometry, 1440x900: position `absolute`, z-index 60, background `rgb(241, 244, 248)` (opaque), width 313.11; pop.top 41.5 >= trig.bottom 36.5; pop.right 1158.66 == trig.right 1158.66.
+- Live geometry, 1280x800: width 313.11; pop.right 998.66 == trig.right 998.66.
+- No overlap with the rail's tab strip / reserved controls (rail content right 278 vs popover left 845.55 at 1440).
+- Screenshot: `screenshots/phase105-adv225-appmenu-1440x900.png`.
+
+History:
+- adversary: reported as ADV-225 (Phase 105 diff-pass, TFL-932, 2026-10-06).
+- CTO: ACCEPTED - HIGH; fix assigned to frontend-dev TFL-944 chunk F2.
+- qa: filed as DEF-595 (TFL-949 chunk F3, 2026-10-06). Rebuilt `dist/`, reproduced the fix live, added the rendered regression guard to `e2e/phase105_topbar_rail.spec.cjs` ("ADV-225 regression: app-menu popover is anchored + bounded above 900px"); `npm.cmd run verify` green. CLOSED.
+
+## DEF-596: Phase 105 All-tabs switcher popover is painted beneath the Inspector - its stacking context is capped by `.tab-list-all { z-index: 3 }`, so the switcher's right ~164px (dirty dot, duplicate-folder context) is occluded and unclickable (ADV-226)
+
+- Status: CLOSED
+- Severity: MEDIUM - with the Inspector open (the normal state whenever a document is active) the switcher's right side - the dirty indicator and duplicate-name context - was occluded and clicks there hit the Inspector; the workflow was degraded but not blocked.
+- Found by: adversary (ADV-226)
+- Phase: 105 (Top Bar and Tabs)
+- Files: `src/renderer/styles.css:9112-9134` - `.tab-list-all { z-index: 3 }` capped the popover's stacking context below `.inspector` (30); fix sets `.tab-list-all { z-index: 40 }` (above the Inspector 30, below the color popover 50 / sheets / modals / toasts).
+- Origin: `ADVERSARIAL_REVIEW.md` ADV-226 (Phase 105 diff-pass, TFL-932); disposition ACCEPTED - MEDIUM, fix assigned to frontend-dev TFL-944 chunk F2.
+
+Steps to reproduce:
+1. Launch TFlex, set the window to 1280x800, open 12 documents so the rail overflows and the All-tabs control sits at the rail's right end.
+2. Click `[data-all-tabs]` and sample `document.elementFromPoint` across the settled popover rect, including its right ~164px.
+
+Expected: the anchored, opaque switcher popover paints above the docked Inspector across its full width; the dirty dot and duplicate context stay hit-testable.
+
+Actual (pre-fix): `.inspector` (left 1016, right 1280, width 264, z-index 30) painted over the popover's right ~164px; samples at x 1020 and x 1160 returned Inspector descendants (`.inspector-header`, `.inspector-row`).
+
+Fix: `.tab-list-all` z-index raised from 3 to 40.
+
+Retest evidence (post-fix; `dist/` rebuilt with `npm.cmd run build:renderer` + `build:node`):
+- `npm.cmd run test:e2e -- phase105_topbar_rail.spec.cjs -g "ADV-22"` -> ADV-226 guard PASS; full spec -> 7 passed.
+- Live probe at 1280x800: `.inspector` z-index 30; `.tab-list-all` z-index 40; popover rect left 860, right 1180, width 320; 12 rows listed; every sampled point across the popover width (including the right ~164px band) hits a popover descendant (`inside: true`, zero offenders); `.all-tabs-dot` and `.all-tabs-context` present and hit-testable.
+- Screenshot: `screenshots/phase105-adv226-switcher-inspector-1280x800.png`.
+
+History:
+- adversary: reported as ADV-226 (Phase 105 diff-pass, TFL-932, 2026-10-06).
+- CTO: ACCEPTED - MEDIUM; fix assigned to frontend-dev TFL-944 chunk F2.
+- qa: filed as DEF-596 (TFL-949 chunk F3, 2026-10-06). Rebuilt `dist/`, reproduced the fix live, added the rendered regression guard to `e2e/phase105_topbar_rail.spec.cjs` ("ADV-226 regression: All-tabs switcher is not occluded by the Inspector at 12 tabs"); `npm.cmd run verify` green. CLOSED.
 

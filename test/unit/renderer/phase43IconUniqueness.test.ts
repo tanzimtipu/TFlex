@@ -39,6 +39,8 @@ const NAMED_FILES: readonly string[] = [
   // the same action in two places, allow-listed below.
   "icons/quietPrecision.tsx",
   "components/AppHeader.tsx",
+  // Phase 105 (chunk C) — the document rail owns the tab strip's New-tab glyph.
+  "components/DocumentRail.tsx",
   "components/AccountMenu.tsx",
   "components/TitleBar.tsx",
   "components/PageLayoutControl.tsx",
@@ -189,10 +191,12 @@ const SHARED_ALLOW: Readonly<Record<string, string>> = {
   fitWidth: "fit-width zoom (CanvasPills + CommandBar), one command, one glyph",
   fitPage: "fit-page zoom (CanvasPills + CommandBar), one command, one glyph",
   panMode: "pan mode (CanvasPills + CommandBar), one command, one glyph",
-  find: "find in document (AppHeader + CommandBar), one command, one glyph",
-  "multi-mode": "the Multi Mode verb (AppHeader + CommandBar), one command, one glyph",
-  preferences: "open preferences (AppHeader + StageRail), one command, one glyph",
-  headerMenuDisclosure: "the File-menu disclosure chevron (AppHeader theme menu + TitleBar File menu), one chrome affordance",
+  // Phase 105 (chunk C) — `find`, `multi-mode`, `preferences` and
+  // `headerMenuDisclosure` are no longer rendered as `<Icon name="...">` in
+  // more than one surface: the relocated commands render through the
+  // application menu's registry icon ids (a data path this sweep does not
+  // count), leaving a single `<Icon name>` owner each. They are dropped here
+  // so the "still shared" guard stays honest.
   // Phase 103 (TFL-832, chunk 3b) — wave-2 Quiet Precision command IDs legitimately
   // rendered by more than one named surface. Identity is the registry command id.
   editMode: "the edit-content verb (CommandBar + the SideRail outline rename + the welcome home-row edit toggle), one command, one glyph",
@@ -222,6 +226,10 @@ const SHARED_ALLOW: Readonly<Record<string, string>> = {
   // Phase 103 (TFL-834, chunk 3d) — wave-4 Quiet Precision command IDs legitimately
   // rendered by more than one named surface. Identity is the registry command id.
   tabNew: "the neutral create/add verb (the AppHeader new-tab control + the welcome home-row add-tool picker), one plus metaphor, one command glyph",
+  // Phase 105 (chunk D) — the All-tabs switcher discloses a list of open
+  // documents, so it shares the disclosure chevron with the title-bar File
+  // menu; one disclosure metaphor, two menu surfaces.
+  headerMenuDisclosure: "the disclosure chevron (the title-bar File menu + the document rail's All-tabs switcher), one menu-disclosure metaphor",
   dragPage: "the drag-handle affordance (the Multi Mode divider + the canvas page-drag grip + the shared floating-editor grip), one command, one glyph",
   openReadingView: "the open-reading/book-view verb (BookView + ReadingView + the DocumentView Book View entry), one command, one glyph",
 };

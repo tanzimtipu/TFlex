@@ -28,7 +28,7 @@ import type { ReactNode } from "react";
 
 import { BrandMark } from "../../../src/renderer/components/BrandMark";
 import { BrandWordmark } from "../../../src/renderer/components/BrandWordmark";
-import { AppHeader } from "../../../src/renderer/components/AppHeader";
+import { TitleBar } from "../../../src/renderer/components/TitleBar";
 import { Welcome } from "../../../src/renderer/components/Welcome";
 import { AboutDialog } from "../../../src/renderer/components/AboutDialog";
 import { AccountsDialog } from "../../../src/renderer/components/AccountsDialog";
@@ -182,19 +182,8 @@ describe("Phase 49 — BrandWordmark", () => {
 });
 
 describe("Phase 49 � branded surfaces", () => {
-  it("title bar (AppHeader) shows the mark + Jovrel and no old name", () => {
-    const { container } = render(
-      <AppHeader
-        activeId={null}
-        tabs={[]}
-        onActivate={(): void => undefined}
-        onClose={(): void => undefined}
-        theme="frosted"
-        onThemeChange={(): void => undefined}
-        onNewEmptyTab={(): void => undefined}
-        onOpenPreferences={(): void => undefined}
-      />,
-    );
+  it("title bar (TitleBar) shows the mark + Jovrel and no old name", () => {
+    const { container } = render(<TitleBar />);
     expect(container.querySelector(".brand svg[data-brand-mark]")).not.toBeNull();
     expect(must(container, ".brand .brand-wordmark").textContent).toBe("Jovrel");
     expect(container.querySelector(".brand")?.textContent ?? "").not.toContain("TFlex");

@@ -14,8 +14,7 @@ import { describe, expect, it, vi } from "vitest";
 import { createElement } from "react";
 import { createRoot } from "react-dom/client";
 import { act } from "react";
-import { AppHeader } from "../../../src/renderer/components/AppHeader";
-import type { Theme } from "../../../src/renderer/state/theme";
+import { DocumentRail } from "../../../src/renderer/components/DocumentRail";
 
 const TAB_DEFS = [
   { id: "a", title: "a.pdf", modified: false },
@@ -83,15 +82,12 @@ function renderHeader(opts: {
   const root = createRoot(container);
   act((): void => {
     root.render(
-      createElement(AppHeader, {
+      createElement(DocumentRail, {
         activeId,
         tabs,
         onActivate,
         onClose: (): void => undefined,
-        theme: "frosted" as Theme,
-        onThemeChange: (): void => undefined,
         onNewEmptyTab: (): void => undefined,
-        onOpenPreferences: (): void => undefined,
         onMoveTab,
         ...(opts.detach === true ? { onDetachTab } : {}),
       }),

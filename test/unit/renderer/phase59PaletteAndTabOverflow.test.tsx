@@ -30,7 +30,7 @@ import {
   planTabOverflow,
   tabFitAvailableWidth,
 } from '../../../src/renderer/components/AppHeader';
-import { AppHeader } from '../../../src/renderer/components/AppHeader';
+import { DocumentRail } from '../../../src/renderer/components/DocumentRail';
 import {
   PALETTE_UNRUNNABLE_ACTIONS,
   buildPaletteRows,
@@ -151,9 +151,9 @@ describe('Phase 59 item 7 — the palette removes rows that can never act', () =
   });
 });
 
-describe('Phase 59 item 10 / Phase 72 items 7-8 — the tab-overflow DOM contract', () => {
+describe('Phase 105 (chunk D) — the responsive rail DOM contract', () => {
   const sheet = readFileSync('src/renderer/styles.css', 'utf8');
-  const headerSource = readFileSync('src/renderer/components/AppHeader.tsx', 'utf8');
+  const railSource = readFileSync('src/renderer/components/DocumentRail.tsx', 'utf8');
   const tabSource = readFileSync('src/renderer/components/AnimatedTab.tsx', 'utf8');
 
   function blockFor(selector: string): string {
@@ -163,8 +163,8 @@ describe('Phase 59 item 10 / Phase 72 items 7-8 — the tab-overflow DOM contrac
   }
 
   // jsdom has no layout engine, so stub `clientWidth` to give the strip a real
-  // measured width. The measure effect then plans the overflow on mount and
-  // writes the custom property onto the DOM.
+  // measured width. The measure effect then plans the responsive capacity on
+  // mount and writes `--tf-tab-width` onto the DOM.
   const proto = HTMLElement.prototype as unknown as Record<string, unknown>;
   const hadOwnClientWidth = Object.prototype.hasOwnProperty.call(proto, 'clientWidth');
   const originalClientWidth = hadOwnClientWidth
@@ -175,7 +175,6 @@ describe('Phase 59 item 10 / Phase 72 items 7-8 — the tab-overflow DOM contrac
     Object.defineProperty(proto, 'clientWidth', {
       configurable: true,
       get(this: HTMLElement): number {
-        // Only the strip is given a width; everything else keeps jsdom's 0.
         return this.classList?.contains('tab-list') ? 700 : 0;
       },
     });
@@ -190,11 +189,10 @@ describe('Phase 59 item 10 / Phase 72 items 7-8 — the tab-overflow DOM contrac
     document.body.innerHTML = '';
   });
 
-  /** Mount the header with `count` colorful tabs (natural 180, floor 56).
-   *  Width 700 forces the overflow regime: the TFL-209 trailing-gap reserve
-   *  leaves 698px for the tabs, so every one takes the SAME uniform fit width
-   *  ((698 - 15*2) / 16 = 41.75px). */
-  function renderOverflowHeader(count: number): HTMLElement {
+  /** Mount the rail with `count` colorful tabs. Width 700 forces the capacity
+   *  regime: 16 tabs at min 136px cannot fit, so only the leading window is
+   *  rendered at exactly the 136px floor. */
+  function renderOverflowRail(count: number, activeId = 't0'): HTMLElement {
     const container = document.createElement('div');
     document.body.appendChild(container);
     const root = createRoot(container);
@@ -205,15 +203,12 @@ describe('Phase 59 item 10 / Phase 72 items 7-8 — the tab-overflow DOM contrac
     }));
     act((): void => {
       root.render(
-        <AppHeader
-          activeId="t0"
+        <DocumentRail
+          activeId={activeId}
           tabs={tabs}
           onActivate={(): void => undefined}
           onClose={(): void => undefined}
-          theme="frosted"
-          onThemeChange={(): void => undefined}
           onNewEmptyTab={(): void => undefined}
-          onOpenPreferences={(): void => undefined}
           tabStyle="colorful"
         />,
       );
@@ -221,34 +216,41 @@ describe('Phase 59 item 10 / Phase 72 items 7-8 — the tab-overflow DOM contrac
     return container;
   }
 
-  it('the uniform fit width rides --tf-tab-width on .tab-list and the .tab consumes it', () => {
-    const host = renderOverflowHeader(16);
+  it('the responsive plan rides --tf-tab-width on .tab-list and the .tab consumes it', () => {
+    const host = renderOverflowRail(16);
     const list = host.querySelector<HTMLElement>('.tab-list');
-    // TFL-209 reserves the trailing gap: (700 - 2 - 15*2) / 16 = 41.75px,
-    // above HARD_MIN_TAB_WIDTH.
-    expect(list?.style.getPropertyValue('--tf-tab-width')).toBe('41.75px');
+    // At 700px only five 136px tabs fit; the plan writes the 136px floor.
+    expect(list?.style.getPropertyValue('--tf-tab-width')).toBe('136px');
     expect(blockFor('.tab {')).toContain('width: var(--tf-tab-width');
     for (const tab of host.querySelectorAll('.tab')) {
       expect(tab.classList.contains('tab')).toBe(true);
     }
   });
 
-  it('every tab is the SAME width: no tab ever writes a per-tab overlap', () => {
-    const host = renderOverflowHeader(16);
-    const tabItems = [...host.querySelectorAll<HTMLElement>('.tab-list > li')].filter(
-      (li) => li.querySelector('.tab') !== null,
+  it('hides the overflowed sessions from the rail (they stay mounted/open)', () => {
+    const host = renderOverflowRail(16);
+    const all = host.querySelectorAll('.tab-list > li > .tab');
+    const visible = host.querySelectorAll(
+      '.tab-list > li:not([data-tab-overflow="hidden"]) > .tab',
     );
-    expect(tabItems).toHaveLength(16);
-    for (const li of tabItems) {
-      expect(li.style.getPropertyValue('--tf-tab-overlap'), li.getAttribute('data-animated-tab') ?? '').toBe('');
-    }
+    expect(all.length).toBe(16);
+    expect(visible.length).toBeGreaterThan(0);
+    expect(visible.length).toBeLessThan(16);
   });
 
-  it('the retired stack rule and the overlap write are absent from the source', () => {
+  it('every rendered tab is at or above the 136px floor (never a sliver)', () => {
+    const host = renderOverflowRail(16);
+    const list = host.querySelector<HTMLElement>('.tab-list');
+    const width = parseFloat(list?.style.getPropertyValue('--tf-tab-width') ?? '0');
+    expect(width).toBeGreaterThanOrEqual(136);
+  });
+
+  it('the retired overlap machinery is absent from the source', () => {
     expect(sheet).not.toContain('.tab-list > li:not(:first-child) > .tab');
     expect(sheet).not.toContain('--tf-tab-overlap');
-    expect(headerSource).not.toContain('--tf-tab-overlap');
+    expect(railSource).not.toContain('--tf-tab-overlap');
     expect(tabSource).not.toContain('--tf-tab-overlap');
+    expect(railSource).not.toContain('planTabOverflow({');
   });
 
   it("the strip never scrolls: .tab-list is overflow:hidden with no scrollbar rule", () => {
@@ -258,19 +260,12 @@ describe('Phase 59 item 10 / Phase 72 items 7-8 — the tab-overflow DOM contrac
     expect(blockFor('.tab-list {')).toMatch(/width:\s*100%/);
   });
 
-  it('the colorful tab no longer pins min-width/max-width so the fit width applies', () => {
+  it('the colorful tab keeps the responsive width band (136px .. 220px)', () => {
     const block = blockFor('.tab-area[data-tab-style="colorful"] .tab {');
-    expect(block).not.toContain('min-width: 132px');
-    expect(block).not.toContain('max-width: 200px');
     expect(block).toContain('width: var(--tf-tab-width, 180px)');
-  });
-
-  it('the "+" new-tab <li> never carries an overlap', () => {
-    const host = renderOverflowHeader(16);
-    const newTabItem = host.querySelector<HTMLElement>('.tab-list-new');
-    expect(newTabItem).not.toBeNull();
-    expect(newTabItem?.style.getPropertyValue('--tf-tab-overlap')).toBe('');
-    expect(newTabItem?.querySelector('[data-new-tab]')).not.toBeNull();
+    expect(block).toContain('min-width: 136px');
+    expect(block).toContain('max-width: 220px');
+    expect(block).not.toContain('min-width: 132px');
   });
 
   it('the active tab paints above its neighbours (z-index 2)', () => {
@@ -459,9 +454,12 @@ describe('TFL-209 — the trailing tab gap is reserved so scrollWidth <= clientW
     expect(count * plan.width + count * TAB_GAP + plus).toBe(clientWidth);
   });
 
-  it('the caller passes the reserved width (source pin)', () => {
-    const source = readFileSync('src/renderer/components/AppHeader.tsx', 'utf8');
-    expect(source).toContain('tabFitAvailableWidth({');
-    expect(source).not.toContain('availableWidth: available - plus,');
+  it('the caller reserves both controls before planning (source pin)', () => {
+    const source = readFileSync('src/renderer/components/DocumentRail.tsx', 'utf8');
+    // Phase 105 (chunk D) — the rendered rail plans capacity and reserves the
+    // New-tab AND All-tabs controls; the retired uniform-fit caller is gone.
+    expect(source).toContain('planRailCapacity({');
+    expect(source).toContain('reserveWidths:');
+    expect(source).not.toContain('tabFitAvailableWidth({');
   });
 });

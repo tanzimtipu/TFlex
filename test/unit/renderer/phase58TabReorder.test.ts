@@ -24,9 +24,9 @@ import { describe, expect, it, vi } from "vitest";
 import { createElement } from "react";
 import { createRoot } from "react-dom/client";
 import { act } from "react";
-import { AppHeader, shouldRestoreActiveOnReorder, tearOutDecision } from "../../../src/renderer/components/AppHeader";
+import { shouldRestoreActiveOnReorder, tearOutDecision } from "../../../src/renderer/components/AppHeader";
+import { DocumentRail } from "../../../src/renderer/components/DocumentRail";
 import { tabExitAction } from "../../../src/renderer/App";
-import type { Theme } from "../../../src/renderer/state/theme";
 import {
   initialTabsState,
   moveTab,
@@ -211,15 +211,12 @@ function renderReorderHeader(activeId: string): ReorderRender {
   const root = createRoot(container);
   act((): void => {
     root.render(
-      createElement(AppHeader, {
+      createElement(DocumentRail, {
         activeId,
         tabs: TAB_DEFS,
         onActivate,
         onClose: (): void => undefined,
-        theme: "frosted" as Theme,
-        onThemeChange: (): void => undefined,
         onNewEmptyTab: (): void => undefined,
-        onOpenPreferences: (): void => undefined,
         onMoveTab,
       }),
     );
@@ -453,15 +450,12 @@ function renderDetachHeader(activeId: string): DetachRender {
   const root = createRoot(container);
   act((): void => {
     root.render(
-      createElement(AppHeader, {
+      createElement(DocumentRail, {
         activeId,
         tabs: TAB_DEFS,
         onActivate,
         onClose: (): void => undefined,
-        theme: "frosted" as Theme,
-        onThemeChange: (): void => undefined,
         onNewEmptyTab: (): void => undefined,
-        onOpenPreferences: (): void => undefined,
         onMoveTab,
         onDetachTab,
       }),
@@ -551,15 +545,12 @@ function renderSingleTabHeader(detach: boolean): SingleTabRender {
   const root = createRoot(container);
   act((): void => {
     root.render(
-      createElement(AppHeader, {
+      createElement(DocumentRail, {
         activeId: "solo",
         tabs: SOLO_TAB,
         onActivate: (): void => undefined,
         onClose: (): void => undefined,
-        theme: "frosted" as Theme,
-        onThemeChange: (): void => undefined,
         onNewEmptyTab: (): void => undefined,
-        onOpenPreferences: (): void => undefined,
         onMoveTab,
         ...(detach ? { onDetachTab } : {}),
       }),

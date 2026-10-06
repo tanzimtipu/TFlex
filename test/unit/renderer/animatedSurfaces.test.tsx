@@ -9,7 +9,7 @@ import type { ReactElement } from "react";
 import { AnimatedDialog } from "../../../src/renderer/components/AnimatedDialog";
 import { AnimatedPanel } from "../../../src/renderer/components/AnimatedPanel";
 import { AnimatedTab } from "../../../src/renderer/components/AnimatedTab";
-import { AppHeader } from "../../../src/renderer/components/AppHeader";
+import { DocumentRail } from "../../../src/renderer/components/DocumentRail";
 
 interface TabHarness {
   activated: string[];
@@ -290,7 +290,7 @@ describe("AppHeader tab strip integration", () => {
     onCloseOverride?: (id: string) => void,
   ): HTMLElement {
     return mount(
-      <AppHeader
+      <DocumentRail
         activeId={activeId}
         tabs={list}
         onActivate={(id): void => {
@@ -302,10 +302,7 @@ describe("AppHeader tab strip integration", () => {
             h.closed.push(id);
           })
         }
-        theme="frosted"
-        onThemeChange={(): void => undefined}
         onNewEmptyTab={(): void => undefined}
-        onOpenPreferences={(): void => undefined}
       />,
     );
   }
@@ -360,7 +357,7 @@ describe("AppHeader tab strip integration", () => {
     const render = (): void => {
       act((): void => {
         root.render(
-          <AppHeader
+          <DocumentRail
             activeId="a"
             tabs={list}
             onActivate={(): void => undefined}
@@ -368,10 +365,7 @@ describe("AppHeader tab strip integration", () => {
               list = list.filter((t) => t.id !== id);
               render();
             }}
-            theme="frosted"
-            onThemeChange={(): void => undefined}
             onNewEmptyTab={(): void => undefined}
-            onOpenPreferences={(): void => undefined}
           />,
         );
       });

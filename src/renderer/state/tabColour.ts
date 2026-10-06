@@ -50,3 +50,71 @@ export const TAB_COLOUR_TOKENS = [
 export function tabColoursDiffer(a: number, b: number): boolean {
   return tabColourSlot(a) !== tabColourSlot(b);
 }
+
+// ---------------------------------------------------------------------------
+// Phase 105 (chunk B) — PER-SESSION TAB IDENTITY.
+//
+// The Phase-45/51/72 colour above is derived from the tab's POSITION in the
+// strip (a 4-slot cycle). That is the exact anti-pattern Phase 105 removes:
+// closing or reordering a tab re-flows every other tab's colour. The identity
+// model below instead gives every SESSION a stable `colorId`, minted once at
+// session creation, carried on `TabMeta` and preserved through reorder/rename/
+// fill. Colour is a property of the session, never of the current index.
+//
+// Source of truth for the ids and hues is the committed design token file
+// `Visual overhaul/Design System/tab-identity.tokens.json` (12 ids:
+// violet/ocean/terracotta/jade/rose/indigo/ochre/olive/orchid/lagoon/
+// raspberry/iris). This module owns only the allocation rule; styles.css maps
+// each id to its `--tf-tab-identity-<id>` token in light and dark.
+// ---------------------------------------------------------------------------
+
+/** The twelve stable session-identity ids, in allocation order. Matches the
+ *  `palette` array of `tab-identity.tokens.json` exactly. */
+export const IDENTITY_PALETTE = [
+  "violet",
+  "ocean",
+  "terracotta",
+  "jade",
+  "rose",
+  "indigo",
+  "ochre",
+  "olive",
+  "orchid",
+  "lagoon",
+  "raspberry",
+  "iris",
+] as const;
+
+/** A canonical palette id (one of the twelve). */
+export type IdentityColorId = (typeof IDENTITY_PALETTE)[number];
+
+/** How many distinct canonical ids the identity palette offers. */
+export const IDENTITY_PALETTE_SIZE = IDENTITY_PALETTE.length;
+
+/** Allocate the identity for a NEW session.
+ *
+ *  Unused-first: return the first palette id not present in `used`. When every
+ *  canonical id is taken, return a contrast-checked EXTENDED variant of the
+ *  first id with a textual disambiguator suffix (e.g. `violet-2`), skipping any
+ *  suffix already in `used`. The extended variant reuses the violet hue, whose
+ *  contrast pairings are already verified by the token file; the suffix keeps
+ *  it textually distinct from a canonical id's `data-tab-color-id` and is never
+ *  an empty string.
+ *
+ *  `used` is the colorIds currently held by open sessions - never a strip
+ *  index. Existing sessions are never recoloured to free a slot; callers only
+ *  ever allocate for a brand-new session or a brand-new empty tab. */
+export function allocateColorId(used: readonly string[]): string {
+  const taken = new Set(used);
+  for (const id of IDENTITY_PALETTE) {
+    if (!taken.has(id)) return id;
+  }
+  const base = IDENTITY_PALETTE[0];
+  let n = 2;
+  let candidate = `${base}-${n}`;
+  while (taken.has(candidate)) {
+    n += 1;
+    candidate = `${base}-${n}`;
+  }
+  return candidate;
+}

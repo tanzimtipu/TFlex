@@ -25,6 +25,8 @@ import { createRoot } from "react-dom/client";
 import { act } from "react";
 import type { ReactElement } from "react";
 import { AppHeader } from "../../../src/renderer/components/AppHeader";
+import type { MenuGroup } from "../../../src/renderer/components/TitleBar";
+import type { MenuActionContext } from "../../../src/renderer/state/menuActions";
 import { Toolbar } from "../../../src/renderer/components/Toolbar";
 import type { ZoomMode } from "../../../src/renderer/state/zoom";
 
@@ -44,42 +46,77 @@ function unmount(host: HTMLElement): void {
 
 const NOOP = (): void => undefined;
 
+function noopContext(): MenuActionContext {
+  return {
+    open: NOOP,
+    merge: NOOP,
+    save: NOOP,
+    saveAs: NOOP,
+    closeTab: NOOP,
+    undo: NOOP,
+    redo: NOOP,
+    toggleTheme: NOOP,
+    showToolsPalette: NOOP,
+    about: NOOP,
+    preferences: NOOP,
+    optimize: NOOP,
+    auditSpace: NOOP,
+    createFromImages: NOOP,
+    exportPages: NOOP,
+    exportText: NOOP,
+    exportDocx: NOOP,
+    insertPages: NOOP,
+    recognizeText: NOOP,
+    checkForUpdate: NOOP,
+  };
+}
+
+// Phase 105 (chunk C) — the Settings command moved from the title-row gear into
+// the application menu. The Edit group carries the same `preferences` row.
+const APP_MENU_GROUPS: MenuGroup[] = [
+  {
+    id: "edit",
+    label: "Edit",
+    entries: [{ id: "prefs", label: "Preferences...", accelerator: "Ctrl+,", action: "preferences" }],
+  },
+];
+
 function mountHeader(overrides: Partial<Parameters<typeof AppHeader>[0]> = {}): HTMLElement {
   return mount(
     <AppHeader
       activeId={null}
-      tabs={[]}
-      onActivate={NOOP}
-      onClose={NOOP}
-      theme="frosted"
-      onThemeChange={NOOP}
-      onNewEmptyTab={NOOP}
-      onOpenPreferences={overrides.onOpenPreferences ?? NOOP}
+      appMenuGroups={APP_MENU_GROUPS}
+      menuContext={noopContext()}
       {...overrides}
     />,
   );
 }
 
-describe("Phase 13 — AppHeader Settings gear", () => {
-  it("renders the gear affordance with an accessible name and a tooltip", () => {
+describe("Phase 13 — AppHeader application menu carries the Settings command", () => {
+  it("renders the application-menu trigger with an accessible name", () => {
     const host = mountHeader();
-    const gear = host.querySelector<HTMLButtonElement>("[data-open-preferences]");
-    expect(gear).not.toBeNull();
-    expect(gear?.getAttribute("aria-label")).toBe("Open preferences");
-    expect(gear?.getAttribute("title")).toMatch(/Preferences/);
-    expect(gear?.getAttribute("aria-haspopup")).toBe("dialog");
+    const trigger = host.querySelector<HTMLButtonElement>("[data-app-menu]");
+    expect(trigger).not.toBeNull();
+    expect(trigger?.getAttribute("aria-label")).toBe("Application menu");
+    expect(trigger?.getAttribute("aria-haspopup")).toBe("menu");
     unmount(host);
   });
 
-  it("clicking the gear fires onOpenPreferences (opens the Preferences sheet)", () => {
-    const onOpenPreferences = vi.fn();
-    const host = mountHeader({ onOpenPreferences });
-    const gear = host.querySelector<HTMLButtonElement>("[data-open-preferences]");
-    expect(gear).not.toBeNull();
+  it("choosing Preferences in the menu fires menuContext.preferences", () => {
+    const ctx = noopContext();
+    const preferences = vi.spyOn(ctx, "preferences");
+    const host = mountHeader({ menuContext: ctx });
+    const trigger = host.querySelector<HTMLButtonElement>("[data-app-menu]");
+    expect(trigger).not.toBeNull();
     act((): void => {
-      gear?.click();
+      trigger?.click();
     });
-    expect(onOpenPreferences).toHaveBeenCalledTimes(1);
+    const row = host.querySelector<HTMLButtonElement>("[data-menu-action='preferences']");
+    expect(row).not.toBeNull();
+    act((): void => {
+      row?.click();
+    });
+    expect(preferences).toHaveBeenCalledTimes(1);
     unmount(host);
   });
 });

@@ -13,6 +13,17 @@ export interface TabMeta {
   filePath: string;
   kind: DocKind;
   /**
+   * Phase 105 (chunk B) — the session's stable identity colour id. Minted
+   * once alongside `id` (see `allocateColorId` in `tabColour.ts`) and carried
+   * on the meta so it survives reorder / rename / fill-empty unchanged.
+   * Colour is a property of the session, never of its strip index.
+   *
+   * Optional only so the repo's pre-Phase-105 tab fixtures (which build the
+   * meta by hand) still type-check; every production construction site —
+   * `openFromBytes` and `onNewEmptyTab` — always supplies it.
+   */
+  colorId?: string;
+  /**
    * Whether the engine holds unsaved changes for this tab. Owned by the
    * renderer (kept in sync via engine-state events); cleared on save success
    * and set true the moment any successful engine op lands.
@@ -162,6 +173,7 @@ export function tabsReducer(state: TabsState, action: TabsAction): TabsState {
           byId.kind === action.tab.kind &&
           byId.title === action.tab.title &&
           byId.filePath === action.tab.filePath &&
+          byId.colorId === action.tab.colorId &&
           byId.modified === action.tab.modified;
         if (isSame) {
           // Nothing to update, but ensure the tab is activated (caller

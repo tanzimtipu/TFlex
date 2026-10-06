@@ -15,7 +15,7 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it, vi, afterEach } from "vitest";
 import { createRoot } from "react-dom/client";
 import { act } from "react";
-import { AppHeader } from "../../../src/renderer/components/AppHeader";
+import { DocumentRail } from "../../../src/renderer/components/DocumentRail";
 import { PreferencesDialog } from "../../../src/renderer/components/PreferencesDialog";
 import {
   DEFAULT_TAB_STYLE,
@@ -40,15 +40,12 @@ function renderHeader(
   const root = createRoot(container);
   act((): void => {
     root.render(
-      <AppHeader
+      <DocumentRail
         activeId={activeId}
         tabs={tabs}
         onActivate={(): void => undefined}
         onClose={(): void => undefined}
-        theme="frosted"
-        onThemeChange={(): void => undefined}
         onNewEmptyTab={(): void => undefined}
-        onOpenPreferences={(): void => undefined}
         tabStyle={tabStyle}
       />,
     );
@@ -199,7 +196,9 @@ describe("AnimatedTab — Phase 62 retired the DEF-409 flare", () => {
     const host = renderHeader("colorful", TABS, "a");
     const tab = host.querySelector<HTMLElement>("[data-tab-id='a']");
     expect(tab?.getAttribute("role")).toBe("tab");
-    expect(tab?.getAttribute("data-tab-colour")).toBe("0");
+    // Phase 105 (chunk D) — the index-slot `data-tab-colour` is retired;
+    // colour is identity-only (`data-tab-color-id`, absent without a colorId).
+    expect(tab?.getAttribute("data-tab-colour")).toBeNull();
     expect(tab?.classList.contains("tab-active")).toBe(true);
     expect(tab?.querySelector(".tab-title")).not.toBeNull();
     expect(tab?.querySelector(".tab-modified-dot")).not.toBeNull();
