@@ -11,7 +11,6 @@ import { toolById } from "../state/toolsRegistry";
 import { HomeRecentRow } from "./home/HomeRecentRow";
 import { HomeSampleCard } from "./home/HomeSampleCard";
 import { OrbitMotif } from "./home/OrbitMotif";
-import { useAnimationsEnabled } from "../hooks/useAnimations";
 import { useOrbitMotion } from "../hooks/useOrbitMotion";
 import {
   DEFAULT_HOME_TOOLS,
@@ -98,11 +97,13 @@ interface WelcomeProps {
   /** Persist a new home-tool list (remove / add). */
   onSetHomeTools?: (ids: string[]) => void;
   samplesResolver: () => Promise<SampleDocument[]>;
-  /** Phase 106 (chunk B) — toggle the persisted Animations setting, the
-   *  existing settings path the decorative-motion pause reuses (no new
-   *  persisted field). When omitted the pause control is not rendered, so
-   *  legacy and minimal test mounts are unchanged. */
-  onSetAnimationsEnabled?: (next: boolean) => void;
+  /** TFL-938 - the persisted Home-only decorative-motion pause. True pins the
+   *  arcs to their static pose and touches NOTHING else: menu, panel and
+   *  dialog animations still follow the global Animations setting. */
+  homeMotionPaused?: boolean;
+  /** TFL-938 - persist the Home-only motion pause. Absent hides the control,
+   *  so legacy and minimal test mounts are unchanged. */
+  onSetHomeMotionPaused?: (next: boolean) => void;
 }
 
 export function Welcome(props: WelcomeProps): ReactElement {
@@ -119,12 +120,14 @@ export function Welcome(props: WelcomeProps): ReactElement {
     onRunHomeTool,
     onSetHomeTools,
     samplesResolver,
-    onSetAnimationsEnabled,
+    homeMotionPaused,
+    onSetHomeMotionPaused,
   } = props;
-  // Phase 106 (chunk B) — the decorative orbit's live on/off decision and the
-  // persisted Animations value that drives the pause control's state.
-  const orbitMotion = useOrbitMotion();
-  const animationsEnabled = useAnimationsEnabled();
+  // Phase 106 (chunk B) — the decorative orbit's live on/off decision. TFL-938
+  // moves the Home pause onto its own persisted preference so it no longer
+  // touches the global Animations setting.
+  const paused = homeMotionPaused === true;
+  const orbitMotion = useOrbitMotion(paused);
   const [samples, setSamples] = useState<SampleDocument[] | null>(null);
   /** Phase 58 (chunk 4) — the home row's EDIT mode: the pen arms it, every
    *  removable tile grows a minus affordance and the plus opens the picker. */
@@ -276,20 +279,23 @@ export function Welcome(props: WelcomeProps): ReactElement {
             <BrandMark size={24} className="welcome-brand-mark" />
             <BrandWordmark className="welcome-brand-name" />
           </div>
-          {/* Phase 106 (chunk B) — the discoverable decorative-motion pause.
-              It toggles the EXISTING persisted Animations setting (no new
-              field); aria-pressed reflects the paused state. */}
-          {onSetAnimationsEnabled !== undefined && (
+          {/* TFL-938 — the discoverable decorative-motion pause. It toggles the
+              Home-only persisted preference (never the global Animations
+              setting); aria-pressed reflects the paused state. */}
+          {onSetHomeMotionPaused !== undefined && (
             <button
               type="button"
-              className="btn btn-ghost btn-icon orbit-desk-motion-toggle"
+              className="btn btn-ghost orbit-desk-motion-toggle"
               data-orbit-motion-toggle
-              aria-pressed={!animationsEnabled}
-              aria-label={animationsEnabled ? "Pause motion" : "Resume motion"}
-              title={animationsEnabled ? "Pause motion" : "Resume motion"}
-              onClick={(): void => onSetAnimationsEnabled(!animationsEnabled)}
+              aria-pressed={paused}
+              aria-label={paused ? "Resume background motion" : "Pause background motion"}
+              title={paused ? "Resume background motion" : "Pause background motion"}
+              onClick={(): void => onSetHomeMotionPaused(!paused)}
             >
-              <Icon icon={animationsEnabled ? Pause : Play} size="sm" />
+              <Icon icon={paused ? Play : Pause} size="sm" />
+              <span className="orbit-desk-motion-toggle-label">
+                {paused ? "Resume background motion" : "Pause background motion"}
+              </span>
             </button>
           )}
           <h1 className="welcome-title">A clear space for your documents.</h1>

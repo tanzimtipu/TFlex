@@ -49,6 +49,7 @@ export type PreferencesAction =
   | { type: 'set-default-stamp-id'; value: StampId }
   | { type: 'set-save-as-linearize'; value: boolean }
   | { type: 'set-animations-enabled'; value: boolean }
+  | { type: 'set-home-motion-paused'; value: boolean }
   | { type: 'set-annotation-recent-tools'; value: string[] }
   | { type: 'set-encrypt-defaults'; value: EncryptDefaults }
   | { type: 'set-tab-style'; value: TabStyle };
@@ -253,6 +254,14 @@ export function preferencesReducer(
       const current = state.animationsEnabled ?? true;
       if (current === action.value) return state;
       return { ...state, animationsEnabled: action.value };
+    }
+    case 'set-home-motion-paused': {
+      // TFL-938 - the Home-only decorative-motion pause. `undefined` means the
+      // default (not paused), so the equality guard short-circuits a first-time
+      // write that matches the default (same shape as set-animations-enabled).
+      const current = state.homeMotionPaused ?? false;
+      if (current === action.value) return state;
+      return { ...state, homeMotionPaused: action.value };
     }
     case 'set-annotation-recent-tools': {
       // Phase 19 — MRU annotation tool order. Sanitise through the

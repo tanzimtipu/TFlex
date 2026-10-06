@@ -1262,6 +1262,14 @@ export function normalizeSettings(raw: unknown): AppSettings {
     settings.animationsEnabled = rawObj.animationsEnabled;
   }
 
+  // Phase 106 follow-up (TFL-938): preserve homeMotionPaused if it is a real
+  // boolean. Non-boolean values are rejected; the consumer applies the
+  // documented default `false` (motion allowed) when the field is absent.
+  // Same preserve-if-valid convention as animationsEnabled.
+  if (typeof rawObj.homeMotionPaused === 'boolean') {
+    settings.homeMotionPaused = rawObj.homeMotionPaused;
+  }
+
   // Phase 36: Action Dock pins. Reject-if-invalid: a non-array leaves the
   // field absent (consumer default []). A valid array is filtered
   // (non-empty strings only), deduped and truncated to DOCK_PINS_CAP.

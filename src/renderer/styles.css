@@ -4124,14 +4124,23 @@ body.tab-reordering .tab-list[data-reorder="true"] .tab {
   }
 }
 
-/* The discoverable motion pause: a ghost icon control pinned to the header's
- * top-right, above the motif. It toggles the existing Animations setting. */
+/* The discoverable motion pause: a ghost control pinned to the header's
+ * top-right, above the motif, with an icon + visible text label. TFL-938 — it
+ * toggles the Home-only persisted motion pause, not the global Animations
+ * setting. */
 .orbit-desk-motion-toggle {
   position: absolute;
   top: 0;
   right: 0;
   z-index: 2;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
   color: var(--fg-muted);
+}
+
+.orbit-desk-motion-toggle-label {
+  white-space: nowrap;
 }
 
 .orbit-desk-motion-toggle:hover:not([disabled]) {

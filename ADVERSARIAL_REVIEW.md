@@ -11021,3 +11021,67 @@ Screenshot: screenshots/adv-226-switcher-over-inspector.png
 Disposition: ACCEPTED - MEDIUM; fix assigned to frontend-dev (TFL-944 chunk F2); qa to file as DEF and close at the FIX-READY retest
 
 Filed: ADV-226 -> DEF-596; CLOSED by qa (TFL-949 chunk F3, 2026-10-06) at the FIX-READY retest (green).
+
+## Phase 106 follow-up - Home-scoped motion-pause settings persistence diff-pass (TFL-938 / TFL-965)
+
+Session label: `diff-pass`. Scope: the uncommitted TFL-938 change set - `src/shared/types.ts`
+(`homeMotionPaused?: boolean`), `src/main/services/settings.ts` (preserve-if-valid), 
+`src/renderer/state/preferences.ts` (`set-home-motion-paused`), `src/renderer/utils/orbitMotion.ts`
+(4/5-gate policy), `src/renderer/hooks/useOrbitMotion.ts`, `src/renderer/components/Welcome.tsx` (Home
+control) and `src/renderer/App.tsx` (Welcome mount). Attacks 1, 3, 5 (reducer logic) and 6 came back
+clean (evidence in the run comment). One finding filed below.
+
+## ADV-227: The `settings:changed` echo filter ignores `homeMotionPaused` - a stale echo can silently revert the Home motion pause (the same gap TFL-938 mirrors for the existing `animationsEnabled` field)
+
+- Session: diff-pass
+- Suggested severity: LOW (settings-persistence correctness; TFL-938 also violates the explicit DEF-072 comparator contract)
+
+What I did: read the TFL-938 diff and confirmed `src/renderer/state/settingsEcho.ts` is UNCHANGED by
+this change (`git diff --stat -- src/renderer/state/settingsEcho.ts` is empty; `git show
+HEAD:src/renderer/state/settingsEcho.ts | Select-String "animationsEnabled|homeMotionPaused"` prints
+nothing, so neither the new `homeMotionPaused` nor the pre-existing `animationsEnabled` participates in
+the echo comparator). Then I exercised the real modules directly (no reimplementation) with a probe at
+`test-fixtures/phase106-tfl938-adversary/probe.ts`, bundled with the repo's own esbuild and run on
+Node 24:
+
+```
+node_modules\.bin\esbuild.cmd test-fixtures\phase106-tfl938-adversary\probe.ts --bundle --platform=node --format=esm --outfile=<scratch>\tfl938-probe.mjs
+node <scratch>\tfl938-probe.mjs
+```
+
+The relevant probes model the DEF-037/DEF-072 stale-echo race: local write seq 2 set
+`homeMotionPaused=false`, then an older echo carrying `homeMotionPaused=true` (every echo-compared field
+identical) arrives. Observed output:
+
+```
+{ "attack": "2-echo", "name": "stale echo carrying old homeMotionPaused=true is discarded",
+  "pass": false,
+  "detail": { "shouldApply": true, "sameSettingsSaysIdentical": true,
+              "staleHome": true, "latestHome": false } }
+{ "attack": "2-echo", "name": "stale echo carrying old animationsEnabled=true is discarded",
+  "pass": false,
+  "detail": { "shouldApply": true, "sameSettingsSaysIdentical": true } }
+TOTAL=23 FAILED=2
+```
+
+Expected: `shouldApplyEcho(staleEcho, 2, latest)` returns `false` for both fields, exactly as it does
+for `theme`, `recentsCap`, `optimizePreset` and the palette (`test/unit/renderer/settingsEcho.test.ts`
+"discards a stale echo ..."). The DEF-072 header in `settingsEcho.ts:51-60` states the contract
+verbatim: "every AppSettings field MUST participate in the content comparison ... new fields added in
+future phases must add their own lines here".
+
+Actual: `sameSettings()` (`settingsEcho.ts:82-100`), `differsOnlyInRecentFiles()` (`:113-141`) and
+`differsOnlyInGeometry()` (`:227-249`) have no comparison line for `homeMotionPaused` (nor
+`animationsEnabled`), so `sameSettings(staleEcho, latest)` collapses to `true` on that difference and
+the stale payload is APPLIED. The Main-process `save()` coalescing (`settings.ts:1474-1479`, lazy
+`this.current` read) makes a same-turn double toggle safe, but any second write that lands after the
+first `_doSave` completes while its `settings:changed` echo is still in flight (a rapid Pause->Resume
+double-tap, or a window maximize/resize geometry echo overtaking a Home toggle) reverts the pause. Fix
+shape (for frontend-dev - I did not edit anything): add a `homeMotionPaused` equality line to all three
+comparators, and while there add the missing `animationsEnabled` line the same contract requires.
+
+Screenshot: none (logic-level race). Fixture/probe: `test-fixtures/phase106-tfl938-adversary/probe.ts`.
+
+Disposition: ACCEPTED - LOW; fix assigned to frontend-dev (child of TFL-938, 2026-10-06); qa to CLOSE at the FIX-READY retest.
+
+Filed: ADV-227 -> DEF-599 (CTO triage, 2026-10-06).

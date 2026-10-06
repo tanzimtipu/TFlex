@@ -97,6 +97,24 @@ describe("sameSettings — AppSettings deep comparator", () => {
       sameSettings(baseSettings({ themeDefault: 'dark' }), baseSettings({ themeDefault: 'light' })),
     ).toBe(false);
   });
+
+  it("returns false when homeMotionPaused differs", () => {
+    expect(
+      sameSettings(
+        baseSettings({ homeMotionPaused: false }),
+        baseSettings({ homeMotionPaused: true }),
+      ),
+    ).toBe(false);
+  });
+
+  it("returns false when animationsEnabled differs", () => {
+    expect(
+      sameSettings(
+        baseSettings({ animationsEnabled: true }),
+        baseSettings({ animationsEnabled: false }),
+      ),
+    ).toBe(false);
+  });
 });
 
 describe("sameAnnotationColors — annotationColors canonicalisation", () => {
@@ -264,6 +282,30 @@ describe("shouldApplyEcho — settings.changed echo filter (DEF-037 regression)"
     const latest = baseSettings({ optimizePreset: 'max' });
     const echoFromMain = baseSettings({ optimizePreset: 'max' });
     expect(shouldApplyEcho(echoFromMain, 1, latest)).toBe(true);
+  });
+
+  it("discards a stale echo that carries an older homeMotionPaused", () => {
+    const persisted = baseSettings({ homeMotionPaused: false });
+    const echo = baseSettings({ homeMotionPaused: true });
+    expect(shouldApplyEcho(echo, 2, persisted)).toBe(false);
+  });
+
+  it("applies an echo whose homeMotionPaused matches the latest local write", () => {
+    const persisted = baseSettings({ homeMotionPaused: false });
+    const echo = baseSettings({ homeMotionPaused: false });
+    expect(shouldApplyEcho(echo, 2, persisted)).toBe(true);
+  });
+
+  it("discards a stale echo that carries an older animationsEnabled", () => {
+    const persisted = baseSettings({ animationsEnabled: true });
+    const echo = baseSettings({ animationsEnabled: false });
+    expect(shouldApplyEcho(echo, 2, persisted)).toBe(false);
+  });
+
+  it("applies an echo whose animationsEnabled matches the latest local write", () => {
+    const persisted = baseSettings({ animationsEnabled: true });
+    const echo = baseSettings({ animationsEnabled: true });
+    expect(shouldApplyEcho(echo, 2, persisted)).toBe(true);
   });
 });
 

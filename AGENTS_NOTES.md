@@ -1368,6 +1368,7 @@ pre-warn relevant entries when dispatching.
 
 ### Common mistakes (found classes are added here as dispatches complete)
 
+- backend-dev/frontend-dev: adding a new persisted `AppSettings` field without adding its comparison line to `src/renderer/state/settingsEcho.ts` in the SAME chunk. TFL-938 (2026-10-06): `homeMotionPaused` shipped with no echo-comparison line (same class as DEF-072, still unfixed for many later fields), so a stale `settings:changed` echo can silently revert the value - the adversary found it and it cost a fix child. Rule: any new `AppSettings` field must add an equality line to ALL THREE comparators (`sameSettings`, `differsOnlyInRecentFiles`, `differsOnlyInGeometry`) plus a stale-echo unit case, in the same change set.
 - CTO: discovered the issue-create schema by POSTing a body that could SUCCEED (field
   probe that returned 201 and auto-started a live child run on a junk brief), burning a
   task slot and forcing a re-brief. Rule: discover create schemas only with bodies that

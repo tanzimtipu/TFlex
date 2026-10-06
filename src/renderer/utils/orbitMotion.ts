@@ -5,9 +5,11 @@
 //
 //   1. the OS `prefers-reduced-motion` preference — ALWAYS wins;
 //   2. the persisted `AppSettings.animationsEnabled` switch (Animations OFF);
-//   3. document visibility (`document.hidden` — Home scrolled away/tab
+//   3. the persisted `AppSettings.homeMotionPaused` Home pause (a separate
+//      user preference, distinct from the app-wide Animations setting);
+//   4. document visibility (`document.hidden` — Home scrolled away/tab
 //      backgrounded);
-//   4. window state: minimised (the main-process `window:minimizedChanged`
+//   5. window state: minimised (the main-process `window:minimizedChanged`
 //      signal) or blurred (the window lost OS focus).
 //
 // A user pause (Animations OFF) is a PREFERENCE and is never overridden by a
@@ -21,6 +23,8 @@
 export interface OrbitMotionInput {
   /** The persisted Animations setting (`AppSettings.animationsEnabled`). */
   animationsEnabled: boolean;
+  /** The persisted Home-only decorative-motion pause (`AppSettings.homeMotionPaused`). */
+  homeMotionPaused: boolean;
   /** The live OS `prefers-reduced-motion` preference. */
   prefersReduced: boolean;
   /** `document.hidden` — true when the document is not visible. */
@@ -36,6 +40,7 @@ export interface OrbitMotionInput {
 export function shouldAnimateOrbit(input: OrbitMotionInput): boolean {
   if (input.prefersReduced === true) return false;
   if (input.animationsEnabled === false) return false;
+  if (input.homeMotionPaused === true) return false;
   if (input.documentHidden === true) return false;
   if (input.windowMinimized === true) return false;
   if (input.windowBlurred === true) return false;

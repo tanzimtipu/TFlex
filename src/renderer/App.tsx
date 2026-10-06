@@ -11019,13 +11019,15 @@ pushToast(
                   return updated;
                 })
               }
-              // Phase 106 (chunk B) — the Home decorative-motion pause reuses
-              // the existing Animations setting (no new persisted field).
-              onSetAnimationsEnabled={(next): void => {
+              // TFL-938 — the Home decorative-motion pause is its own
+              // persisted preference; it never touches the global Animations
+              // setting.
+              homeMotionPaused={settings.homeMotionPaused === true}
+              onSetHomeMotionPaused={(next): void => {
                 setSettings((prev) => {
                   if (prev === null) return prev;
                   const updated = preferencesReducer(prev, {
-                    type: "set-animations-enabled",
+                    type: "set-home-motion-paused",
                     value: next,
                   });
                   trackAndSave(updated);

@@ -20,11 +20,13 @@ import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { Welcome } from "../../../src/renderer/components/Welcome";
 import { shouldAnimateOrbit } from "../../../src/renderer/utils/orbitMotion";
+import { resolveMotionMode } from "../../../src/renderer/hooks/motionPolicy";
 import { MOTION_DURATION } from "../../../src/renderer/hooks/motionTokens";
 import type { SampleDocument } from "../../../src/shared/types";
 
 const OPEN = {
   animationsEnabled: true,
+  homeMotionPaused: false,
   prefersReduced: false,
   documentHidden: false,
   windowMinimized: false,
@@ -45,6 +47,18 @@ describe("Phase 106 (chunk B) — orbit motion decision", () => {
     expect(
       shouldAnimateOrbit({ ...OPEN, animationsEnabled: false, prefersReduced: true }),
     ).toBe(false);
+  });
+
+  it("lets the Home pause win while global Animations stays ON", () => {
+    expect(
+      shouldAnimateOrbit({ ...OPEN, animationsEnabled: true, homeMotionPaused: true }),
+    ).toBe(false);
+  });
+
+  it("leaves the global motion layer untouched by the Home pause", () => {
+    expect(resolveMotionMode({ animationsEnabled: true, prefersReduced: false })).toBe(
+      "animated",
+    );
   });
 
   it("suspends on document visibility and window state", () => {
@@ -104,7 +118,8 @@ const RESOLVE_SAMPLES =
     Promise.resolve(list);
 
 function renderWelcome(
-  onSetAnimationsEnabled?: (next: boolean) => void,
+  homeMotionPaused?: boolean,
+  onSetHomeMotionPaused?: (next: boolean) => void,
 ): { host: HTMLElement; unmount: () => void } {
   const host = document.createElement("div");
   document.body.appendChild(host);
@@ -118,7 +133,8 @@ function renderWelcome(
         onOpenFile={(): void => undefined}
         onSampleClick={(): void => undefined}
         samplesResolver={RESOLVE_SAMPLES([])}
-        onSetAnimationsEnabled={onSetAnimationsEnabled}
+        homeMotionPaused={homeMotionPaused}
+        onSetHomeMotionPaused={onSetHomeMotionPaused}
       />,
     );
   });
@@ -155,20 +171,34 @@ describe("Phase 106 (chunk B) — Orbit Desk motif + pause control", () => {
     }
   });
 
-  it("pauses through the existing Animations setting path", () => {
+  it("pauses through the Home-only persisted preference", () => {
     const onSet = vi.fn();
-    const { host, unmount } = renderWelcome(onSet);
+    const { host, unmount } = renderWelcome(false, onSet);
     try {
       const toggle = host.querySelector<HTMLButtonElement>(
         "[data-orbit-motion-toggle]",
       );
       expect(toggle).not.toBeNull();
+      expect(toggle?.textContent).toContain("Pause background motion");
       expect(toggle?.getAttribute("aria-pressed")).toBe("false");
-      expect(toggle?.getAttribute("aria-label")).toBe("Pause motion");
       act((): void => {
         toggle?.click();
       });
-      expect(onSet).toHaveBeenCalledWith(false);
+      expect(onSet).toHaveBeenCalledWith(true);
+    } finally {
+      unmount();
+    }
+  });
+
+  it("reflects the paused state with a resume label", () => {
+    const { host, unmount } = renderWelcome(true, vi.fn());
+    try {
+      const toggle = host.querySelector<HTMLButtonElement>(
+        "[data-orbit-motion-toggle]",
+      );
+      expect(toggle).not.toBeNull();
+      expect(toggle?.textContent).toContain("Resume background motion");
+      expect(toggle?.getAttribute("aria-pressed")).toBe("true");
     } finally {
       unmount();
     }

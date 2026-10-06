@@ -3,6 +3,7 @@
 // resolves them through the pure policy:
 //
 //   - the persisted Animations setting  (useAnimationsEnabled)
+//   - the persisted Home pause          (the `homeMotionPaused` argument)
 //   - the OS reduced-motion preference  (useLiveReducedMotion, shared source)
 //   - document visibility               (visibilitychange / document.hidden)
 //   - window minimised / blurred        (renderSuspend IPC + window blur/focus)
@@ -56,7 +57,7 @@ function useWindowBlurred(): boolean {
 }
 
 /** Resolve whether the decorative orbit may drift right now. */
-export function useOrbitMotion(): boolean {
+export function useOrbitMotion(homeMotionPaused = false): boolean {
   const animationsEnabled = useAnimationsEnabled();
   const prefersReduced = useLiveReducedMotion();
   const documentHidden = useSyncExternalStore(
@@ -72,6 +73,7 @@ export function useOrbitMotion(): boolean {
   const windowBlurred = useWindowBlurred();
   return shouldAnimateOrbit({
     animationsEnabled,
+    homeMotionPaused,
     prefersReduced,
     documentHidden,
     windowMinimized,

@@ -178,6 +178,13 @@ export interface AppSettings {
   annotationRecentTools?: string[];
   /** Phase 23 - when false, every app animation runs the instant path (see Phase 23). Default true. */
   animationsEnabled?: boolean;
+  /** Phase 106 follow-up (TFL-938) - Home-specific decorative-motion pause.
+   *  When true the Orbit Desk decorative arcs are pinned to their static pose.
+   *  Scoped to Home ONLY: it never gates menu / panel / dialog animations
+   *  (the global `animationsEnabled` switch still owns those). Default when
+   *  absent is false (motion allowed). Validated preserve-if-valid in
+   *  src/main/services/settings.ts. */
+  homeMotionPaused?: boolean;
   /** Phase 36 — tool ids pinned to the Action Dock (max 4; oldest
    *  overflow into a "..." chip). Validated preserve-if-valid in
    *  settings.ts: only non-empty strings survive, duplicates are dropped

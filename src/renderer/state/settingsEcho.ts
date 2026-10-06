@@ -58,6 +58,12 @@
 // field now has a comparison line in `sameSettings` and
 // `differsOnlyInRecentFiles`; new fields added in future phases
 // must add their own lines here.
+//
+// DEF-599 — the Phase 82 motion booleans (`homeMotionPaused`,
+// `animationsEnabled`) now participate as well: all three
+// comparators (`sameSettings`, `differsOnlyInRecentFiles`,
+// `differsOnlyInGeometry`) guard on them, so a stale echo carrying
+// an older motion state cannot revert the Home pause.
 
 import type {
   AnnotationColorPreset,
@@ -93,6 +99,8 @@ export function sameSettings(a: AppSettings, b: AppSettings): boolean {
   if (a.ocrDownsample !== b.ocrDownsample) return false;
   if (a.defaultStampId !== b.defaultStampId) return false;
   if (a.saveAsLinearize !== b.saveAsLinearize) return false;
+  if (a.homeMotionPaused !== b.homeMotionPaused) return false;
+  if (a.animationsEnabled !== b.animationsEnabled) return false;
   if (!sameGeometry(a.geometry, b.geometry)) return false;
   if (!sameRecentFiles(a.recentFiles, b.recentFiles)) return false;
   if (!sameSpellCheck(a.spellCheck, b.spellCheck)) return false;
@@ -129,6 +137,8 @@ export function differsOnlyInRecentFiles(
   if (a.ocrDownsample !== b.ocrDownsample) return false;
   if (a.defaultStampId !== b.defaultStampId) return false;
   if (a.saveAsLinearize !== b.saveAsLinearize) return false;
+  if (a.homeMotionPaused !== b.homeMotionPaused) return false;
+  if (a.animationsEnabled !== b.animationsEnabled) return false;
   if (!sameGeometry(a.geometry, b.geometry)) return false;
   if (!sameAnnotationColors(a.annotationColors, b.annotationColors)) return false;
   if (!sameSpellCheck(a.spellCheck, b.spellCheck)) return false;
@@ -239,6 +249,8 @@ export function differsOnlyInGeometry(a: AppSettings, b: AppSettings): boolean {
   if (a.ocrDownsample !== b.ocrDownsample) return false;
   if (a.defaultStampId !== b.defaultStampId) return false;
   if (a.saveAsLinearize !== b.saveAsLinearize) return false;
+  if (a.homeMotionPaused !== b.homeMotionPaused) return false;
+  if (a.animationsEnabled !== b.animationsEnabled) return false;
   if (!sameRecentFiles(a.recentFiles, b.recentFiles)) return false;
   if (!sameAnnotationColors(a.annotationColors, b.annotationColors)) return false;
   if (!sameSpellCheck(a.spellCheck, b.spellCheck)) return false;

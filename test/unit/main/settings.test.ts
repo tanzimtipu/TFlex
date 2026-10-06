@@ -917,6 +917,49 @@ describe('Phase 16: pagesPanelCollapsed validation', () => {
   });
 });
 
+// Phase 106 follow-up (TFL-938): homeMotionPaused validation
+describe('Phase 106 follow-up (TFL-938): homeMotionPaused validation', () => {
+  it('preserves homeMotionPaused: true', () => {
+    expect(normalizeSettings({ homeMotionPaused: true }).homeMotionPaused).toBe(true);
+  });
+
+  it('preserves homeMotionPaused: false', () => {
+    expect(normalizeSettings({ homeMotionPaused: false }).homeMotionPaused).toBe(false);
+  });
+
+  it('rejects non-boolean homeMotionPaused values (left undefined)', () => {
+    expect(normalizeSettings({ homeMotionPaused: 'yes' }).homeMotionPaused).toBeUndefined();
+    expect(normalizeSettings({ homeMotionPaused: 1 }).homeMotionPaused).toBeUndefined();
+    expect(normalizeSettings({ homeMotionPaused: 0 }).homeMotionPaused).toBeUndefined();
+    expect(normalizeSettings({ homeMotionPaused: null }).homeMotionPaused).toBeUndefined();
+    expect(normalizeSettings({ homeMotionPaused: undefined }).homeMotionPaused).toBeUndefined();
+    expect(normalizeSettings({ homeMotionPaused: ['true'] }).homeMotionPaused).toBeUndefined();
+    expect(normalizeSettings({ homeMotionPaused: { value: true } }).homeMotionPaused).toBeUndefined();
+  });
+
+  it('does not set homeMotionPaused when absent (consumer applies default false)', () => {
+    const result = normalizeSettings({});
+    expect(result.homeMotionPaused).toBeUndefined();
+    expect('homeMotionPaused' in result).toBe(false);
+  });
+
+  it('save/load round-trips homeMotionPaused', async () => {
+    const svc = new SettingsService(file);
+    const settings = {
+      theme: 'dark' as const,
+      geometry: DEFAULT_SETTINGS.geometry,
+      recentFiles: [] as RecentFile[],
+      homeMotionPaused: true,
+    };
+    await svc.save(settings);
+    const result = await svc.load();
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.value.homeMotionPaused).toBe(true);
+    }
+  });
+});
+
 // DEF-212: themeDefault validation — preserve-if-valid against
 // 'light' | 'dark' | 'system' | 'frosted' (see AppSettings.themeDefault).
 describe('DEF-212: themeDefault validation', () => {

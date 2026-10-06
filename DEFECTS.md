@@ -13558,3 +13558,28 @@ History:
 - CTO: ACCEPTED - MEDIUM; fix assigned to frontend-dev TFL-944 chunk F2.
 - qa: filed as DEF-596 (TFL-949 chunk F3, 2026-10-06). Rebuilt `dist/`, reproduced the fix live, added the rendered regression guard to `e2e/phase105_topbar_rail.spec.cjs` ("ADV-226 regression: All-tabs switcher is not occluded by the Inspector at 12 tabs"); `npm.cmd run verify` green. CLOSED.
 
+
+## DEF-599: `settingsEcho` comparators omit `homeMotionPaused` - a stale `settings:changed` echo can silently revert the Home motion pause (TFL-938 adversary diff-pass, ADV-227)
+
+- Status: CLOSED
+- Closed by: qa (TFL-977 FIX-READY retest 2026-10-06; independently re-confirmed at TFL-981, 2026-10-06)
+- Severity: LOW - settings-persistence correctness race; needs a stale echo to land after a newer local write. Violates the file's own DEF-072 contract ("every AppSettings field MUST participate... new fields must add their own lines").
+- Found by: adversary (TFL-938 diff-pass, TFL-965, 2026-10-06)
+- Phase: Phase 106 follow-up (TFL-938)
+- Files: `src/renderer/state/settingsEcho.ts` - `sameSettings` (`:82-100`), `differsOnlyInRecentFiles` (`:113-141`) and `differsOnlyInGeometry` (`:227-249`) each lack a `homeMotionPaused` comparison line (and the pre-existing `animationsEnabled`).
+- Origin: the TFL-938 change adds the persisted `AppSettings.homeMotionPaused` field but does not update the echo comparator, so the DEF-072 rule for new fields is not honoured.
+
+Steps to reproduce:
+1. `node_modules\.bin\esbuild.cmd test-fixtures\phase106-tfl938-adversary\probe.ts --bundle --platform=node --format=esm --outfile=<scratch>\tfl938-probe.mjs` then `node <scratch>\tfl938-probe.mjs`.
+
+Expected: a stale echo (local write seq 2 set `homeMotionPaused=false`; older echo carries `homeMotionPaused=true`, every compared field otherwise identical) is discarded - `shouldApplyEcho(...)` returns `false`.
+
+Actual: `sameSettings(stale, latest)` returns `true` on that difference, so `shouldApplyEcho` returns `true` and the stale payload is APPLIED - reverting the pause. Probe output: `TOTAL=23 FAILED=2` (`stale echo carrying old homeMotionPaused=true is discarded` -> `shouldApply: true`).
+
+Fix owner: frontend-dev - add a `homeMotionPaused` equality line to all three comparators (`sameSettings`, `differsOnlyInRecentFiles`, `differsOnlyInGeometry`) and, per the same contract, the missing `animationsEnabled` line; add a unit case proving the stale `homeMotionPaused`/`animationsEnabled` echo is discarded. `src/renderer/state/settingsEcho.ts` and its spec only.
+
+Note (deferred, not fixed here): the comparator is likewise stale for several other later-added optional fields (e.g. `pagesPanelCollapsed`, `homeTools`, `tabStyle`, `dockPins`, `sanitizeOptions`); that broader DEF-072 sweep is filed as a separate deferred child of TFL-938 and is out of scope for this fix.
+
+Closure evidence (TFL-977, 2026-10-06): `src/renderer/state/settingsEcho.ts` now carries `if (a.homeMotionPaused !== b.homeMotionPaused) return false;` and `if (a.animationsEnabled !== b.animationsEnabled) return false;` immediately after the `saveAsLinearize` line in all three comparators (`sameSettings:102-103`, `differsOnlyInRecentFiles:140-141`, `differsOnlyInGeometry:252-253`). `test/unit/renderer/settingsEcho.test.ts` adds the sameSettings differ-cases (`:101`, `:110`) and shouldApplyEcho stale-echo cases (`:287-309`). Verified: `vitest run test/unit/renderer/settingsEcho.test.ts` -> 84 passed; `vitest run test/unit/renderer/adv_phase82_settingsEcho.test.ts` -> 5 passed; `npm run verify` -> exit 0. Stale `homeMotionPaused`/`animationsEnabled` echoes are now discarded.
+
+Retest evidence (TFL-981, 2026-10-06): independently re-verified, criteria-by-criteria. `npx.cmd vitest run test/unit/renderer/settingsEcho.test.ts test/unit/renderer/adv_phase82_settingsEcho.test.ts` -> 2 files passed, 89 tests passed, 0 failed, exit 0. `npx.cmd vitest run test/unit/renderer/phase106OrbitMotion.test.tsx test/unit/main/settings.test.ts` -> 2 files passed, 184 tests passed, 0 failed, exit 0. `npm.cmd run verify` -> exit 0 (conventions clean, 381 source files; typecheck clean). Blast-radius regression (live app, shared settings persistence + relaunch): `npx.cmd playwright test e2e/phase106_orbit_motion.spec.cjs` -> 7 passed, 0 failed, exit 0. Adversary real-module probe (esbuild bundle of `test-fixtures/phase106-tfl938-adversary/probe.ts` to ESM, then `node`) -> `TOTAL=23 FAILED=0`; the two checks that previously failed (`stale echo carrying old homeMotionPaused=true is discarded`, `stale echo carrying old animationsEnabled=true is discarded`) now return `pass: true` / `shouldApply: false` (was `FAILED=2`). Original defect no longer reproduces; status remains CLOSED.

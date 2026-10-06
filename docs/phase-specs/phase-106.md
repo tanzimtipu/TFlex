@@ -190,11 +190,14 @@ Merge PDFs (`onMergeClick`), the fixed Open home tile and each persisted `homeTo
 (`onSetHomeTools(removeHomeTool(...))`) and each add-picker row (`onSetHomeTools(addHomeTool(...))`),
 each recent row open (`onOpenRecent` -> `onRecentClick`) and remove (`onRemoveRecent`), and each
 sample card (`onSampleClick`) all perform their promised action with no no-op. The new decorative
-motion pause control toggles the existing `animationsEnabled` path. Updater, Preferences, account and
-theme remain in their Phase-105 chrome locations and are not duplicated on Home.
+motion pause control toggles the persisted Home-only `homeMotionPaused` preference (TFL-938; it never
+touches the global `animationsEnabled` path) and carries a visible text label. Updater, Preferences,
+account and theme remain in their Phase-105 chrome locations and are not duplicated on Home.
 
-**Settings impact:** none. No new persisted `AppSettings` field and no new settings channel. The
-decorative motion reuses the existing `animationsEnabled` switch (`src/shared/types.ts:179-180`) plus
+**Settings impact:** one new persisted `AppSettings` field, `homeMotionPaused` (optional boolean,
+default false; absent means motion allowed), written through the renderer `set-home-motion-paused`
+reducer action and the `onSetHomeMotionPaused` Welcome callback. It gates the decorative orbit
+alongside the existing `animationsEnabled` switch (`src/shared/types.ts:179-180`),
 `prefers-reduced-motion`, document visibility and window state; the Phase-58 `homeTools` field is
 preserved unchanged. Renderer-only, offline; no network call is added.
 
