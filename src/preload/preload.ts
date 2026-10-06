@@ -5,6 +5,7 @@ import {
   type OpenDefaultAppsSettingsResult,
   type SavedSignaturesResult,
   type ShowInFolderResult,
+  type CheckMissingResult,
   type TabDetachResolved,
   type TabTransferPayload,
   type TabTransferResult,
@@ -759,6 +760,9 @@ const api = {
   },
   locateMissing(): Promise<string | null> {
     return ipcRenderer.invoke(IPC.recentLocateMissing);
+  },
+  checkMissing(paths: readonly string[]): Promise<CheckMissingResult> {
+    return ipcRenderer.invoke(IPC.recentCheckMissing, paths);
   },
   settings: {
     changed(cb: (s: AppSettings) => void): () => void {

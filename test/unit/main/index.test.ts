@@ -1465,6 +1465,8 @@ describe('main/index - Phase 112 recent actions', () => {
     expect(getRegisteredChannels()).toContain(IPC.recentLocateMissing);
     expect(IPC.recentShowInFolder).toBe('recent:showInFolder');
     expect(IPC.recentLocateMissing).toBe('recent:locateMissing');
+    expect(getRegisteredChannels()).toContain(IPC.recentCheckMissing);
+    expect(IPC.recentCheckMissing).toBe('recent:checkMissing');
   });
 
   it('resolves { ok: true } and reveals an existing file', async () => {
@@ -1501,6 +1503,20 @@ describe('main/index - Phase 112 recent actions', () => {
     const handler = handlerFor(IPC.recentLocateMissing);
     await expect(handler()).resolves.toBe('/mock/selected.pdf');
     expect(openPdfDialog).toHaveBeenCalledWith('pdf');
+  });
+
+  it('checkMissing returns only the paths absent on disk, never throwing', async () => {
+    const handler = handlerFor(IPC.recentCheckMissing);
+    const gone = join(process.cwd(), 'TFL-1006-no-such-dir', 'gone.pdf');
+    expect(await handler({}, [process.execPath, gone])).toEqual([gone]);
+  });
+
+  it('checkMissing returns [] for a non-array argument, never throwing', async () => {
+    const handler = handlerFor(IPC.recentCheckMissing);
+    expect(await handler({}, undefined)).toEqual([]);
+    expect(await handler({}, null)).toEqual([]);
+    expect(await handler({}, '/x.pdf')).toEqual([]);
+    expect(await handler({}, 42)).toEqual([]);
   });
 
   it('locateMissing resolves null on cancel', async () => {

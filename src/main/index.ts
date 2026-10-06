@@ -854,6 +854,10 @@ export async function start(): Promise<void> {
     }
   });
   ipcMain.handle(IPC.recentLocateMissing, () => openPdfDialog('pdf'));
+  ipcMain.handle(IPC.recentCheckMissing, (_event, paths: unknown) => {
+    if (!Array.isArray(paths)) return [];
+    return paths.filter((p): p is string => typeof p === "string" && p.length > 0 && !existsSync(p));
+  });
 
   // Phase 2: page organization engine
   ipcMain.handle(IPC.engineLoadDocument, (_event, docId: string, path: string, password?: string) =>

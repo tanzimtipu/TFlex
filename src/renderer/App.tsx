@@ -9574,6 +9574,38 @@ pushToast(
   }, [allRecents]);
   // Phase 112 (C6b) — the missing-file paths handed to the Home rows.
   const missingRecentList = useMemo(() => [...missingRecents], [missingRecents]);
+  // Phase 112 follow-up (TFL-1006) — proactively seed the missing set at mount
+  // and whenever the recent list changes, so a row whose file vanished renders
+  // its Missing / Locate state on the first paint of Home (no click, no open).
+  // Keyed on the joined path signature (never on `missingRecents`) so the effect
+  // cannot re-trigger itself; it only UNIONS, the existing removal paths clear.
+  const recentPathsKey = useMemo(
+    () => allRecents.map((r) => r.path).join("\n"),
+    [allRecents],
+  );
+  useEffect((): (() => void) | undefined => {
+    if (typeof window.tflex.checkMissing !== "function") return undefined;
+    const paths = allRecents.map((r) => r.path).filter((p) => p.length > 0);
+    if (paths.length === 0) return undefined;
+    let cancelled = false;
+    void window.tflex.checkMissing(paths).then((missing) => {
+      if (cancelled || missing.length === 0) return;
+      setMissingRecents((prev) => {
+        let changed = false;
+        const next = new Set(prev);
+        for (const p of missing) {
+          if (!next.has(p)) {
+            next.add(p);
+            changed = true;
+          }
+        }
+        return changed ? next : prev;
+      });
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [recentPathsKey]);
 
   // Stable projection of tabs.tabs for AppHeader. We rebuild this list
     // only when the underlying tabs array actually changes (open / close

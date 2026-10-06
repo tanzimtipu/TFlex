@@ -24,10 +24,34 @@
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
-import { describe, expect, it, vi } from "vitest";
+// The App-mount follow-up (TFL-1006) renders the REAL App; the document
+// renderer and the PDF.js parse are irrelevant to the Home path, so they are
+// stubbed exactly as the DEF-299 harness does to keep jsdom out of canvas.
+vi.mock("../../../src/renderer/components/DocumentView", () => ({
+  DocumentView: (): unknown => null,
+}));
+vi.mock("../../../src/renderer/pdf/pdfjs", () => ({
+  openPdfDocument: async (): Promise<unknown> => ({
+    doc: {
+      numPages: 3,
+      getPage: async (): Promise<unknown> => ({}),
+      destroy: async (): Promise<unknown> => undefined,
+    },
+  }),
+  readOutline: async (): Promise<null> => null,
+}));
+vi.mock("../../../src/renderer/pdf/printRaster", () => ({
+  PRINT_DPI: 200,
+  MAX_PRINT_PIXELS: 12000000,
+  rasterizePagesForPrint: async (): Promise<unknown[]> => [],
+}));
+
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act } from "react";
-import { createRoot } from "react-dom/client";
+import { createRoot, type Root } from "react-dom/client";
 import { Welcome } from "../../../src/renderer/components/Welcome";
+import { App } from "../../../src/renderer/App";
+import { DEFAULT_SETTINGS } from "../../../src/renderer/state/defaults";
 import type { RecentFile, SampleDocument } from "../../../src/shared/types";
 
 interface RecentDisplay {
@@ -290,6 +314,128 @@ describe("Phase 112 C6b — the empty states and data-* hooks are preserved", ()
     } finally {
       unmount();
     }
+  });
+});
+
+// TFL-1006 (chunk C2) — the REAL App seeds the missing set PROACTIVELY on
+// mount, so a Recent row whose file vanished renders Missing / Locate on the
+// first paint of Home, with no open attempt and no click. This mounts the real
+// App and asserts the C1 `checkMissing` bridge is consulted and unioned.
+describe("Phase 112 follow-up (TFL-1006) - proactive missing detection", () => {
+  const PRESENT_PATH = "C:\\Docs\\here.pdf";
+  const GONE_PATH = "C:\\Docs\\gone.pdf";
+
+  function installStubs(): ReturnType<typeof vi.fn> {
+    const checkMissing = vi.fn(async (): Promise<string[]> => [GONE_PATH]);
+    const tflex = {
+      loadSettings: async (): Promise<unknown> => ({
+        ok: true,
+        value: {
+          ...structuredClone(DEFAULT_SETTINGS),
+          recentFiles: [
+            { path: PRESENT_PATH, name: "here.pdf", openedAt: new Date().toISOString() },
+            { path: GONE_PATH, name: "gone.pdf", openedAt: new Date().toISOString() },
+          ],
+        },
+      }),
+      saveSettings: async (): Promise<unknown> => ({ ok: true }),
+      addRecentFile: async (): Promise<unknown> => ({ ok: true }),
+      listSamples: async (): Promise<unknown[]> => [],
+      openFileDialog: async (): Promise<string> => PRESENT_PATH,
+      loadPdf: async (): Promise<unknown> => ({ ok: true, value: new Uint8Array([1, 2, 3]) }),
+      listPrinters: async (): Promise<unknown[]> => [],
+      showInFolder: async (): Promise<unknown> => ({ ok: true }),
+      checkMissing,
+      closeWindow: (): void => undefined,
+      minimizeWindow: (): void => undefined,
+      maximizeWindow: (): void => undefined,
+      confirmClose: async (): Promise<void> => undefined,
+      settings: { changed: (): (() => void) => (): void => undefined },
+      menu: {
+        onAction: (): (() => void) => (): void => undefined,
+        setEnabled: (): void => undefined,
+      },
+    };
+    (window as unknown as { tflex: unknown }).tflex = tflex;
+    return checkMissing;
+  }
+
+  function installDomShims(): void {
+    if (typeof window.matchMedia !== "function") {
+      (window as unknown as { matchMedia: unknown }).matchMedia = (
+        query: string,
+      ): MediaQueryList =>
+        ({
+          matches: false,
+          media: query,
+          onchange: null,
+          addListener: (): void => undefined,
+          removeListener: (): void => undefined,
+          addEventListener: (): void => undefined,
+          removeEventListener: (): void => undefined,
+          dispatchEvent: (): boolean => false,
+        }) as unknown as MediaQueryList;
+    }
+    if (typeof (globalThis as { ResizeObserver?: unknown }).ResizeObserver !== "function") {
+      (globalThis as unknown as { ResizeObserver: unknown }).ResizeObserver = class {
+        observe(): void {}
+        unobserve(): void {}
+        disconnect(): void {}
+      };
+    }
+  }
+
+  async function flushAsync(): Promise<void> {
+    await act(async (): Promise<void> => {
+      for (let i = 0; i < 12; i += 1) await Promise.resolve();
+      await new Promise<void>((r) => setTimeout(r, 0));
+      for (let i = 0; i < 12; i += 1) await Promise.resolve();
+    });
+  }
+
+  let container: HTMLElement;
+  let root: Root;
+
+  beforeEach((): void => {
+    installDomShims();
+    container = document.createElement("div");
+    container.id = "root";
+    document.body.appendChild(container);
+    root = createRoot(container);
+  });
+
+  afterEach((): void => {
+    act((): void => {
+      root.unmount();
+    });
+    container.remove();
+  });
+
+  it("flags a vanished recent row Missing on first paint, with no click", async () => {
+    const checkMissing = installStubs();
+    act((): void => {
+      root.render(<App />);
+    });
+    await flushAsync();
+
+    const goneRow = container.querySelector<HTMLElement>(
+      '[data-recent-row][data-recent-missing="true"]',
+    );
+    expect(goneRow).not.toBeNull();
+    expect(goneRow?.querySelector(".doc-name")?.textContent).toBe("gone.pdf");
+    expect(goneRow?.querySelector("[data-recent-missing-note]")?.textContent).toBe("Missing");
+    expect(goneRow?.querySelector('[data-recent-action="locate"]')).not.toBeNull();
+
+    const presentRow = container.querySelector<HTMLElement>(
+      '[data-recent-row][data-recent-missing="false"]',
+    );
+    expect(presentRow).not.toBeNull();
+    expect(presentRow?.querySelector(".doc-name")?.textContent).toBe("here.pdf");
+    expect(presentRow?.querySelector('[data-recent-action="locate"]')).toBeNull();
+
+    expect(checkMissing).toHaveBeenCalledWith(
+      expect.arrayContaining([PRESENT_PATH, GONE_PATH]),
+    );
   });
 });
 

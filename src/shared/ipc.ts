@@ -134,6 +134,7 @@ export const IPC = {
   // Open-PDF picker and resolving the chosen absolute path (null on cancel).
   recentShowInFolder: "recent:showInFolder",
   recentLocateMissing: "recent:locateMissing",
+  recentCheckMissing: "recent:checkMissing",
   settingsChangedEvent: "settings:changed",
   settingsWriteErrorEvent: "settings:writeError",
   // Phase 7: application menu actions pushed from main to renderer
@@ -514,6 +515,9 @@ export type OpenDefaultAppsSettingsResult =
 export type ShowInFolderResult =
   | { ok: true }
   | { ok: false; reason: "missing" | "failed" };
+
+/** Phase 112 follow-up (TFL-1006) — returns the subset of the given paths that do NOT exist on disk. Never throws. */
+export type CheckMissingResult = string[];
 
 /** Phase 58 — a document tab carried between app windows. The BYTES are the
  *  document (not a file path), so a saved, unsaved or derived document can all
@@ -1180,6 +1184,8 @@ export interface TFlexApi {
    *  through the single Open-PDF dialog. Resolves the chosen absolute path, or
    *  null when the user cancels. */
   locateMissing(): Promise<string | null>;
+  /** TFL-1006 — batch existence probe for Recent rows; returns the paths that are missing on disk. */
+  checkMissing(paths: readonly string[]): Promise<CheckMissingResult>;
   settings: {
     changed(cb: (s: AppSettings) => void): () => void;
     /** DEF-230 — fired when a settings write fails (e.g. EPERM on rename).
