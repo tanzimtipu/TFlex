@@ -2,7 +2,7 @@ import { mkdir, mkdtemp, rm, stat, writeFile, readFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { ANNOTATION_RECENT_TOOLS_CAP, DEFAULT_SETTINGS, DOCK_PINS_CAP, DOCK_UNPINNED_CAP, HOME_TOOLS_CAP, TAB_STYLES, TOOL_USAGE_CAP, normalizeAnnotationRecentTools, normalizeHomeTools, normalizeSettings, normalizeTabStyle, SettingsService } from '../../../src/main/services/settings';
+import { ANNOTATION_RECENT_TOOLS_CAP, DEFAULT_SETTINGS, DOCK_PINS_CAP, DOCK_UNPINNED_CAP, HOME_TOOLS_CAP, PANEL_LEFT_WIDTH_MAX, PANEL_LEFT_WIDTH_MIN, PANEL_RIGHT_WIDTH_MAX, PANEL_RIGHT_WIDTH_MIN, TAB_STYLES, TOOL_USAGE_CAP, normalizeAnnotationRecentTools, normalizeBoundedWidth, normalizeHomeTools, normalizeSettings, normalizeTabStyle, SettingsService } from '../../../src/main/services/settings';
 import type { AppSettings, RecentFile } from '../../../src/shared/types';
 import { DEFAULT_READING_DEFAULTS, type ReadingDefaults } from '../../../src/shared/types';
 
@@ -1886,5 +1886,301 @@ describe('normalizeSettings spellCheck (Phase 82)', () => {
   it('leaves spellCheck absent when not stored', () => {
     const result = normalizeSettings({});
     expect('spellCheck' in result).toBe(false);
+  });
+});
+
+// Phase 112 (TFL-986) — RecentFile verified-source metadata + pin flag are
+// OPTIONAL and preserve-if-valid; pre-Phase-112 records must keep loading
+// unchanged and a malformed new field must drop only itself, never the entry.
+describe('Phase 112: RecentFile source metadata normalisation', () => {
+  const base = { path: '/a/b.pdf', name: 'b.pdf', openedAt: '2026-01-01T00:00:00.000Z' };
+
+  it('preserves all four new fields when valid', () => {
+    const result = normalizeSettings({
+      recentFiles: [{
+        ...base,
+        sourceLabel: 'Word Document',
+        sourceKind: 'docx',
+        converted: true,
+        pinned: true,
+        workingFormat: 'pdf',
+      }],
+    });
+    expect(result.recentFiles).toEqual([{
+      ...base,
+      sourceLabel: 'Word Document',
+      sourceKind: 'docx',
+      converted: true,
+      pinned: true,
+      workingFormat: 'pdf',
+    }]);
+  });
+
+  it('preserves converted:false and pinned:false (false is not the same as absent)', () => {
+    const result = normalizeSettings({
+      recentFiles: [{ ...base, converted: false, pinned: false }],
+    });
+    expect(result.recentFiles[0].converted).toBe(false);
+    expect(result.recentFiles[0].pinned).toBe(false);
+    expect('converted' in result.recentFiles[0]).toBe(true);
+    expect('pinned' in result.recentFiles[0]).toBe(true);
+  });
+
+  it('drops invalid field shapes without dropping the entry', () => {
+    const result = normalizeSettings({
+      recentFiles: [{
+        ...base,
+        sourceLabel: '',
+        sourceKind: 7,
+        converted: 'yes',
+        pinned: 1,
+        workingFormat: 'docx',
+      }],
+    });
+    expect(result.recentFiles).toHaveLength(1);
+    expect(result.recentFiles[0]).toEqual(base);
+    for (const key of ['sourceLabel', 'sourceKind', 'converted', 'pinned', 'workingFormat']) {
+      expect(key in result.recentFiles[0]).toBe(false);
+    }
+  });
+
+  it('keeps a pre-Phase-112 record (only the required fields) unchanged', () => {
+    const result = normalizeSettings({ recentFiles: [base] });
+    expect(result.recentFiles).toEqual([base]);
+  });
+
+  it('still drops an entry missing a required field even when the new fields are valid', () => {
+    const result = normalizeSettings({
+      recentFiles: [
+        { path: '/keep.pdf', name: 'keep.pdf', openedAt: 'x', pinned: true },
+        { name: 'no-path.pdf', openedAt: 'x', pinned: true },
+        { path: 3, name: 'bad-path.pdf', openedAt: 'x' },
+      ],
+    });
+    expect(result.recentFiles).toHaveLength(1);
+    expect(result.recentFiles[0].path).toBe('/keep.pdf');
+    expect(result.recentFiles[0].pinned).toBe(true);
+  });
+
+  it('save/load round-trips the new fields and addRecentFile keeps them', async () => {
+    const svc = new SettingsService(file);
+    const entry: RecentFile = {
+      path: '/a/imported.docx',
+      name: 'imported.docx',
+      openedAt: '2026-02-01T00:00:00.000Z',
+      sourceLabel: 'Word Document',
+      sourceKind: 'docx',
+      converted: true,
+      pinned: true,
+      workingFormat: 'pdf',
+    };
+    await svc.addRecentFile(entry);
+    const result = await svc.load();
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.value.recentFiles).toEqual([entry]);
+    }
+    const onDisk = JSON.parse(await readFile(file, 'utf8'));
+    expect(onDisk.recentFiles[0]).toEqual(entry);
+  });
+
+  it('an on-disk record with a bad new field loads with only that field dropped', async () => {
+    await writeFile(file, JSON.stringify({
+      theme: 'light',
+      geometry: DEFAULT_SETTINGS.geometry,
+      recentFiles: [{
+        path: '/a/b.pdf',
+        name: 'b.pdf',
+        openedAt: '2026-01-01T00:00:00.000Z',
+        sourceLabel: 'PDF Document',
+        pinned: 'yes',
+      }],
+    }), 'utf8');
+    const svc = new SettingsService(file);
+    const result = await svc.load();
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.value.recentFiles[0]).toEqual({
+        path: '/a/b.pdf',
+        name: 'b.pdf',
+        openedAt: '2026-01-01T00:00:00.000Z',
+        sourceLabel: 'PDF Document',
+      });
+    }
+  });
+
+  it('the recents cap still applies with the new fields present', () => {
+    const many: unknown[] = [];
+    for (let i = 0; i < 14; i++) {
+      many.push({ path: `p${i}`, name: `n${i}`, openedAt: '2026-01-01T00:00:00.000Z', pinned: i === 0 });
+    }
+    const normalized = normalizeSettings({ recentFiles: many });
+    expect(normalized.recentFiles).toHaveLength(10);
+    expect(normalized.recentFiles[0].pinned).toBe(true);
+  });
+});
+
+// Phase 112 (TFL-992) — panel geometry + inspector collapse persistence.
+// Preserve-if-valid: a width survives only when finite and inside its range,
+// the boolean only when a real boolean; absent/invalid leaves the field unset
+// so the consumer applies its own default (240 / 280 / false) and the default
+// is never stored. An invalid width drops ONLY itself.
+describe('Phase 112 (TFL-992): panel geometry + inspector collapse', () => {
+  it('keeps an in-range panelLeftWidthPx', () => {
+    expect(normalizeSettings({ panelLeftWidthPx: 220 }).panelLeftWidthPx).toBe(220);
+    expect(normalizeSettings({ panelLeftWidthPx: 240 }).panelLeftWidthPx).toBe(240);
+    expect(normalizeSettings({ panelLeftWidthPx: 320 }).panelLeftWidthPx).toBe(320);
+    expect(normalizeSettings({ panelLeftWidthPx: 275 }).panelLeftWidthPx).toBe(275);
+  });
+
+  it('keeps an in-range panelRightWidthPx', () => {
+    expect(normalizeSettings({ panelRightWidthPx: 260 }).panelRightWidthPx).toBe(260);
+    expect(normalizeSettings({ panelRightWidthPx: 280 }).panelRightWidthPx).toBe(280);
+    expect(normalizeSettings({ panelRightWidthPx: 380 }).panelRightWidthPx).toBe(380);
+    expect(normalizeSettings({ panelRightWidthPx: 333 }).panelRightWidthPx).toBe(333);
+  });
+
+  it('drops an out-of-range panelLeftWidthPx (field absent)', () => {
+    for (const bad of [219, 321, 0, -1, 1000]) {
+      const result = normalizeSettings({ panelLeftWidthPx: bad });
+      expect(result.panelLeftWidthPx).toBeUndefined();
+      expect('panelLeftWidthPx' in result).toBe(false);
+    }
+  });
+
+  it('drops an out-of-range panelRightWidthPx (field absent)', () => {
+    for (const bad of [259, 381, 0, -1, 1000]) {
+      const result = normalizeSettings({ panelRightWidthPx: bad });
+      expect(result.panelRightWidthPx).toBeUndefined();
+      expect('panelRightWidthPx' in result).toBe(false);
+    }
+  });
+
+  it('drops non-number / non-finite panel widths (field absent)', () => {
+    for (const bad of ['240', true, null, undefined, [240], { value: 240 }, Number.NaN, Number.POSITIVE_INFINITY]) {
+      const result = normalizeSettings({ panelLeftWidthPx: bad, panelRightWidthPx: bad });
+      expect(result.panelLeftWidthPx).toBeUndefined();
+      expect(result.panelRightWidthPx).toBeUndefined();
+      expect('panelLeftWidthPx' in result).toBe(false);
+      expect('panelRightWidthPx' in result).toBe(false);
+    }
+  });
+
+  it('leaves both widths absent when stored absent (consumer applies defaults 240/280)', () => {
+    const result = normalizeSettings({});
+    expect(result.panelLeftWidthPx).toBeUndefined();
+    expect(result.panelRightWidthPx).toBeUndefined();
+    expect('panelLeftWidthPx' in result).toBe(false);
+    expect('panelRightWidthPx' in result).toBe(false);
+  });
+
+  it('preserves inspectorCollapsed: true and false (false is not absent)', () => {
+    const t = normalizeSettings({ inspectorCollapsed: true });
+    expect(t.inspectorCollapsed).toBe(true);
+    expect('inspectorCollapsed' in t).toBe(true);
+    const f = normalizeSettings({ inspectorCollapsed: false });
+    expect(f.inspectorCollapsed).toBe(false);
+    expect('inspectorCollapsed' in f).toBe(true);
+  });
+
+  it('rejects non-boolean inspectorCollapsed (left absent)', () => {
+    for (const bad of ['true', 'yes', 1, 0, null, undefined, ['true'], { value: true }]) {
+      const result = normalizeSettings({ inspectorCollapsed: bad });
+      expect(result.inspectorCollapsed).toBeUndefined();
+      expect('inspectorCollapsed' in result).toBe(false);
+    }
+  });
+
+  it('does not set inspectorCollapsed when absent (consumer applies default false)', () => {
+    const result = normalizeSettings({});
+    expect(result.inspectorCollapsed).toBeUndefined();
+    expect('inspectorCollapsed' in result).toBe(false);
+  });
+
+  it('an invalid panel width drops only that field and leaves other settings untouched', () => {
+    const result = normalizeSettings({
+      theme: 'light',
+      pagesPanelCollapsed: true,
+      panelLeftWidthPx: 9999,
+      panelRightWidthPx: 300,
+      inspectorCollapsed: true,
+    });
+    expect(result.panelLeftWidthPx).toBeUndefined();
+    expect('panelLeftWidthPx' in result).toBe(false);
+    expect(result.panelRightWidthPx).toBe(300);
+    expect(result.inspectorCollapsed).toBe(true);
+    expect(result.pagesPanelCollapsed).toBe(true);
+    expect(result.theme).toBe('light');
+  });
+
+  it('save/load round-trips all three fields without storing defaults', async () => {
+    const svc = new SettingsService(file);
+    await svc.save({
+      ...structuredClone(DEFAULT_SETTINGS),
+      panelLeftWidthPx: 300,
+      panelRightWidthPx: 360,
+      inspectorCollapsed: true,
+    });
+    const result = await svc.load();
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.value.panelLeftWidthPx).toBe(300);
+      expect(result.value.panelRightWidthPx).toBe(360);
+      expect(result.value.inspectorCollapsed).toBe(true);
+    }
+    const onDisk = JSON.parse(await readFile(file, 'utf8'));
+    expect(onDisk.panelLeftWidthPx).toBe(300);
+    expect(onDisk.panelRightWidthPx).toBe(360);
+    expect(onDisk.inspectorCollapsed).toBe(true);
+  });
+
+  it('a save with absent fields does not persist default widths', async () => {
+    const svc = new SettingsService(file);
+    await svc.save({ ...structuredClone(DEFAULT_SETTINGS) });
+    const onDisk = JSON.parse(await readFile(file, 'utf8'));
+    expect('panelLeftWidthPx' in onDisk).toBe(false);
+    expect('panelRightWidthPx' in onDisk).toBe(false);
+    expect('inspectorCollapsed' in onDisk).toBe(false);
+  });
+
+  it('invalid persisted values are dropped on load without corrupting other fields', async () => {
+    await writeFile(file, JSON.stringify({
+      theme: 'light',
+      geometry: DEFAULT_SETTINGS.geometry,
+      recentFiles: [],
+      pagesPanelCollapsed: true,
+      panelLeftWidthPx: 10,
+      panelRightWidthPx: 'wide',
+      inspectorCollapsed: 'yes',
+    }), 'utf8');
+    const svc = new SettingsService(file);
+    const result = await svc.load();
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.value.panelLeftWidthPx).toBeUndefined();
+      expect(result.value.panelRightWidthPx).toBeUndefined();
+      expect('inspectorCollapsed' in result.value).toBe(false);
+      expect(result.value.pagesPanelCollapsed).toBe(true);
+      expect(result.value.theme).toBe('light');
+    }
+  });
+
+  it('normalizeBoundedWidth keeps finite in-range values and rejects everything else', () => {
+    expect(normalizeBoundedWidth(200, 100, 300)).toBe(200);
+    expect(normalizeBoundedWidth(100, 100, 300)).toBe(100);
+    expect(normalizeBoundedWidth(300, 100, 300)).toBe(300);
+    expect(normalizeBoundedWidth(99, 100, 300)).toBeNull();
+    expect(normalizeBoundedWidth(301, 100, 300)).toBeNull();
+    expect(normalizeBoundedWidth('200', 100, 300)).toBeNull();
+    expect(normalizeBoundedWidth(Number.NaN, 100, 300)).toBeNull();
+    expect(normalizeBoundedWidth(Number.POSITIVE_INFINITY, 100, 300)).toBeNull();
+    expect(normalizeBoundedWidth(null, 100, 300)).toBeNull();
+  });
+
+  it('exports the documented panel width bounds', () => {
+    expect(PANEL_LEFT_WIDTH_MIN).toBe(220);
+    expect(PANEL_LEFT_WIDTH_MAX).toBe(320);
+    expect(PANEL_RIGHT_WIDTH_MIN).toBe(260);
+    expect(PANEL_RIGHT_WIDTH_MAX).toBe(380);
   });
 });

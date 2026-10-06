@@ -1,5 +1,5 @@
 import { cloneElement, useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
-import type { ReactElement, ReactNode } from "react";
+import type { CSSProperties, ReactElement, ReactNode } from "react";
 import type {
   AppSettings,
   BatesDefaults,
@@ -59,8 +59,9 @@ import {
   Inspector,
   inspectorSelectionFor,
   inspectorTextPanelForSelection,
+  resolveInspectorPageSize,
 } from "./components/Inspector";
-import type { InspectorTextSelection } from "./components/Inspector";
+import type { InspectorExportRequest, InspectorTextSelection } from "./components/Inspector";
 import { AboutDialog } from "./components/AboutDialog";
 import { AccountsDialog } from "./components/AccountsDialog";
 import { AccountMenu } from "./components/AccountMenu";
@@ -78,6 +79,10 @@ import { tabsReducer, initialTabsState, resolveOpenId, type TabMeta } from "./st
 import { isSamePath } from "./state/pathIdentity";
 import { allocateColorId } from "./state/tabColour";
 import { pagesPanelReducer, initialPagesPanelState } from "./state/pagesPanel";
+// Phase 112 (TFL-854 C2) — the PAGES Context Pair's real page meta: the label
+// resolver and the multi-select identity check for the Inspector.
+import { resolvePageLabel } from "./components/pageGeometry";
+import { samePageSelection } from "./state/pageSelection";
 // Phase 32 — Multi Mode: the two-pane view state (pure reducer) plus the
 // workspace stage that renders the panes.
 import {
@@ -144,7 +149,14 @@ import {
   planCompositeClose,
 } from "./state/compositeTab";
 import { DocumentStage, type StageTab } from "./components/MultiPane";
-import { INSPECTOR_COLLAPSED_W_PX, INSPECTOR_W_PX, multiDockBandPx } from "./components/multiPaneLayout";
+import { multiDockBandPx } from "./components/multiPaneLayout";
+import {
+  PanelResizeHandle,
+  clampPanelWidth,
+  resolvePanelComposition,
+  resolvePanelWidth,
+  syncPanelWidth,
+} from "./components/panels/PanelResizeHandle";
 import { MultiActionDock } from "./components/MultiActionDock";
 import { SharedToolController } from "./components/multiToolController";
 // Phase 33 — the per-pane thumbnail strips are rendered by each pane's own
@@ -248,6 +260,7 @@ import { AuditSpaceDialog } from "./components/AuditSpaceDialog";
 import { SaveAsDialog } from "./components/SaveAsDialog";
 import { CreateFromImagesDialog } from "./components/CreateFromImagesDialog";
 import { ExportDialog } from "./components/ExportDialog";
+import { exportDialogSeed } from "./components/exportConfig";
 import { TextExportDialog } from "./components/TextExportDialog";
 import { DocxExportDialog } from "./components/DocxExportDialog";
 import { OfficeExportDialog } from "./components/OfficeExportDialog";
@@ -720,6 +733,14 @@ export function App(): ReactElement {
   const [bootDone, setBootDone] = useState(false);
   const [bootstrap, setBootstrap] = useState<Bootstrap | null>(null);
   const [settings, setSettings] = useState<AppSettings | null>(null);
+  // Phase 112 (C6b) — recent paths known to be missing / unopenable on disk.
+  // The record is KEPT (removing history never deletes a file); the Home row
+  // renders its missing state and offers Locate missing instead. Populated by
+  // an open that fails with an `io` error and by `recent:showInFolder`
+  // reporting `missing`.
+  const [missingRecents, setMissingRecents] = useState<ReadonlySet<string>>(
+    (): ReadonlySet<string> => new Set<string>(),
+  );
   // Phase 16 — the side-rail pages panel can be collapsed to the ruler
   // strip. App owns the value through the pagesPanelReducer (persisted
   // in settings so it survives a restart); the rail itself never owns
@@ -759,6 +780,17 @@ export function App(): ReactElement {
   // fight the ladder.
   const [inspectorCollapsed, setInspectorCollapsed] = useState(false);
   const inspectorCollapsedEffective = inspectorCollapsedFor(inspectorCollapsed, dockLadder);
+  // Phase 112 (TFL-854, chunk H) — the resizable side-panel widths. App owns
+  // the live value (a drag updates it without a settings write per frame); the
+  // settings write happens on gesture commit through the shared trackAndSave
+  // path, and the boot restore / settings echo keep it in sync. The defaults
+  // (240 left / 280 right) apply only when the persisted field is absent.
+  const [panelLeftWidth, setPanelLeftWidth] = useState<number>(
+    (): number => resolvePanelWidth("left", undefined),
+  );
+  const [panelRightWidth, setPanelRightWidth] = useState<number>(
+    (): number => resolvePanelWidth("right", undefined),
+  );
   // Phase 32 — Multi Mode. The mode + the two pane slots live in App
   // (session-only, per the phase's Settings-impact line); the split is a
   // pure view value the divider drag writes.
@@ -871,6 +903,13 @@ export function App(): ReactElement {
   // `export:pptx`). They share ONE parameterised dialog component.
   const [xlsxExportOpen, setXlsxExportOpen] = useState(false);
   const [pptxExportOpen, setPptxExportOpen] = useState(false);
+  // Phase 112 (C5 follow-up, TFL-985) - the Deliver inspector's prepared export
+  // request, held only while an export dialog is open so the EXISTING dialog is
+  // seeded with the user's configured format / range / DPI / output name. The
+  // effect below clears it the moment every export dialog is closed, so a later
+  // toolbar open is unseeded.
+  const [inspectorExportSeed, setInspectorExportSeed] =
+    useState<InspectorExportRequest | null>(null);
   const [insertPagesOpen, setInsertPagesOpen] = useState(false);
   // Phase 12 — residual page-organize + annotate parity. Each
   // dialog drives its own engine IPC; the host routes the result
@@ -1359,6 +1398,12 @@ export function App(): ReactElement {
         type: "set",
         collapsed: b.settings.pagesPanelCollapsed ?? false,
       });
+      // Phase 112 (TFL-854, chunk H) — restore the resizable panel widths and
+      // the inspector collapse preference. Absent fields resolve to the
+      // documented defaults (240 / 280 / false).
+      setPanelLeftWidth(resolvePanelWidth("left", b.settings.panelLeftWidthPx));
+      setPanelRightWidth(resolvePanelWidth("right", b.settings.panelRightWidthPx));
+      setInspectorCollapsed(b.settings.inspectorCollapsed ?? false);
       // DEF-202 — seed the caption from the boot settings' geometry.
       setWindowMaximized(b.settings.geometry.maximized);
       setBootDone(true);
@@ -1408,6 +1453,14 @@ export function App(): ReactElement {
       // another window writes it). Absent / invalid field: the reducer
       // leaves local state alone (preserve-if-valid, like the backend).
       dispatchPagesPanel({ type: "sync", value: s.pagesPanelCollapsed });
+      // Phase 112 (TFL-854, chunk H) — keep the panel widths + inspector
+      // collapse in sync with settings echoes (preserve-if-valid: an absent /
+      // invalid field leaves the local value alone).
+      setPanelLeftWidth((prev) => syncPanelWidth("left", s.panelLeftWidthPx, prev));
+      setPanelRightWidth((prev) => syncPanelWidth("right", s.panelRightWidthPx, prev));
+      if (typeof s.inspectorCollapsed === "boolean") {
+        setInspectorCollapsed(s.inspectorCollapsed);
+      }
       // DEF-199 — skip the theme re-apply when the document is already
       // showing the echoed theme. The settings.changed echo of our own
       // write re-applies an identical theme, and that second apply
@@ -1657,6 +1710,21 @@ export function App(): ReactElement {
     const updated: AppSettings = { ...settings, pagesPanelCollapsed: next };
     trackAndSave(updated);
   }, [pagesPanelCollapsedEffective, settings, trackAndSave]);
+
+  // Phase 112 (TFL-854, chunk H) — the Inspector collapse control persists its
+  // preference through the SAME trackAndSave path. DEF-335: the control records
+  // the intent its label shows (while the ladder forces the collapse it reads
+  // "Expand", so one click records the expand preference).
+  const toggleInspectorCollapsed = useCallback((): void => {
+    const next = collapsePreferenceAfterToggle(inspectorCollapsedEffective);
+    setInspectorCollapsed(next);
+    setSettings((prev) => {
+      if (prev === null) return prev;
+      const updated: AppSettings = { ...prev, inspectorCollapsed: next };
+      trackAndSave(updated);
+      return updated;
+    });
+  }, [inspectorCollapsedEffective, trackAndSave]);
 
   const pushToast = useCallback((kind: Toast["kind"], text: string): void => {
     dispatchError({ type: "push", toast: { kind, text } });
@@ -2204,13 +2272,17 @@ export function App(): ReactElement {
       const result = await window.tflex.loadPdf(path);
       if (!result.ok) {
         pushToast("error", toastForPdfError(result.error.code, path));
-        if (result.error.code === "io" && settings !== null) {
-          const remaining = removeRecent(settings.recentFiles, path);
-          if (remaining.length !== settings.recentFiles.length) {
-            const next: AppSettings = { ...settings, recentFiles: remaining };
-            setSettings(next);
-            trackAndSave(next);
-          }
+        // Phase 112 (C6b) — a file that cannot be read keeps its history
+        // record (removing history never deletes a file) and is flagged
+        // missing so the Home row offers Locate missing instead of a dead
+        // entry. Replaces the old silent removal on an `io` error.
+        if (result.error.code === "io") {
+          setMissingRecents((prev) => {
+            if (prev.has(path)) return prev;
+            const next = new Set(prev);
+            next.add(path);
+            return next;
+          });
         }
         return null;
       }
@@ -2237,9 +2309,7 @@ export function App(): ReactElement {
       pushToast,
       recordRecentOpen,
       sessionPasswords,
-      settings,
       toastForPdfError,
-      trackAndSave,
     ],
   );
 
@@ -2487,8 +2557,76 @@ export function App(): ReactElement {
       const next: AppSettings = { ...settings, recentFiles: remaining };
       setSettings(next);
       trackAndSave(next);
+      // Removing history must NOT delete a file; clear the stale missing flag
+      // so a later re-add starts clean.
+      setMissingRecents((prev) => {
+        if (!prev.has(entry.path)) return prev;
+        const nextMissing = new Set(prev);
+        nextMissing.delete(entry.path);
+        return nextMissing;
+      });
     },
     [settings, trackAndSave],
+  );
+
+  // Phase 112 (C6b) — pin / unpin walks the EXISTING settings save path (no new
+  // IPC). Toggling the record's `pinned` boolean only; the display order lifts
+  // pinned rows to the top (see `recentDisplays`).
+  const onToggleRecentPin = useCallback(
+    (entry: RecentFile): void => {
+      if (settings === null) return;
+      const target = settings.recentFiles.find((r) => r.path === entry.path);
+      if (target === undefined) return;
+      const next = settings.recentFiles.map((r) =>
+        r.path === entry.path ? { ...r, pinned: r.pinned !== true } : r,
+      );
+      const updated: AppSettings = { ...settings, recentFiles: next };
+      setSettings(updated);
+      trackAndSave(updated);
+    },
+    [settings, trackAndSave],
+  );
+
+  // Phase 112 (C6b) — reveal the file through the C6a `recent:showInFolder`
+  // bridge. A typed `missing` result flags the row; a real failure toasts.
+  // The handler never deletes or moves a file.
+  const onShowRecentInFolder = useCallback(
+    (entry: RecentFile): void => {
+      void window.tflex.showInFolder(entry.path).then((res) => {
+        if (res.ok) return;
+        if (res.reason === "missing") {
+          setMissingRecents((prev) => {
+            if (prev.has(entry.path)) return prev;
+            const next = new Set(prev);
+            next.add(entry.path);
+            return next;
+          });
+          return;
+        }
+        pushToast("error", `Could not show "${entry.name}" in its folder.`);
+      });
+    },
+    [pushToast],
+  );
+
+  // Phase 112 (C6b) — re-point a missing entry through the C6a
+  // `recent:locateMissing` bridge (the single Open-PDF picker). A chosen path
+  // opens through the EXISTING open flow (which records a fresh recent) and the
+  // old missing flag clears; a cancel resolves null and changes nothing.
+  const onLocateRecentMissing = useCallback(
+    (entry: RecentFile): void => {
+      void window.tflex.locateMissing().then((found) => {
+        if (found === null || found.length === 0) return;
+        setMissingRecents((prev) => {
+          if (!prev.has(entry.path)) return prev;
+          const next = new Set(prev);
+          next.delete(entry.path);
+          return next;
+        });
+        void openFromRequest(found);
+      });
+    },
+    [openFromRequest],
   );
 
   // B7 — clear every tool/arm state on tab close. The annotation
@@ -5995,6 +6133,69 @@ const onPickMergeFile = useCallback(async (): Promise<{ path: string; bytes: Uin
     [pushToast],
   );
 
+  // Phase 112 (C5) - the Deliver inspector's export surface routes the prepared
+  // configuration to the EXISTING export flows: the raster dialog for image
+  // formats and the matching text / docx / office dialog for the writers. The
+  // inspector never reimplements an export; it only launches the same command.
+  const onInspectorExportRun = useCallback(
+    (request: InspectorExportRequest): void => {
+      if (activeTabIdRefLocal.current === null) return;
+      // Seed the EXISTING flow with exactly what the inspector prepared; the
+      // dialog still owns parsing, validation, progress, errors and the save.
+      setInspectorExportSeed(request);
+      switch (request.format) {
+        case "png":
+        case "jpeg":
+        case "tiff":
+          setExportOpen(true);
+          break;
+        case "txt":
+          setTextExportOpen(true);
+          break;
+        case "docx":
+          setDocxExportOpen(true);
+          break;
+        case "xlsx":
+          setXlsxExportOpen(true);
+          break;
+        case "pptx":
+          setPptxExportOpen(true);
+          break;
+      }
+    },
+    [],
+  );
+
+  // Phase 112 (C5 follow-up, TFL-985) - clear the inspector seed once every
+  // export dialog is closed, so a later toolbar / menu export opens unseeded
+  // while the inspector-seeded flow keeps its request for the whole open.
+  useEffect(() => {
+    if (
+      !exportOpen &&
+      !textExportOpen &&
+      !docxExportOpen &&
+      !xlsxExportOpen &&
+      !pptxExportOpen
+    ) {
+      setInspectorExportSeed(null);
+    }
+  }, [exportOpen, textExportOpen, docxExportOpen, xlsxExportOpen, pptxExportOpen]);
+
+  // Phase 112 (C5 follow-up) - the seed mapped to the dialog's initial props,
+  // gated on the format so a modal never receives another format's request.
+  const inspectorSeed =
+    inspectorExportSeed !== null ? exportDialogSeed(inspectorExportSeed) : null;
+  const seedFormat = inspectorExportSeed?.format ?? null;
+  const imageSeedFormat =
+    seedFormat === "png" || seedFormat === "jpeg" || seedFormat === "tiff"
+      ? seedFormat
+      : null;
+  const imageSeed = imageSeedFormat !== null ? inspectorSeed : null;
+  const textSeed = seedFormat === "txt" ? inspectorSeed : null;
+  const docxSeed = seedFormat === "docx" ? inspectorSeed : null;
+  const xlsxSeed = seedFormat === "xlsx" ? inspectorSeed : null;
+  const pptxSeed = seedFormat === "pptx" ? inspectorSeed : null;
+
   const onInsertPagesClick = useCallback((): void => {
     if (activeTabIdRefLocal.current === null) return;
     setInsertPagesOpen(true);
@@ -9362,10 +9563,17 @@ pushToast(
   );
 
   const allRecents = settings?.recentFiles ?? [];
-  const recentDisplays = useMemo(
-    () => allRecents.map((entry) => ({ entry, meta: splitRecentPath(entry.path) })),
-    [allRecents],
-  );
+  // Phase 112 (C6b) — pinned rows lift to the top of the display order without
+  // rewriting the persisted list (the persisted order is unchanged). Every
+  // history record is kept.
+  const recentDisplays = useMemo(() => {
+    const rows = allRecents.map((entry) => ({ entry, meta: splitRecentPath(entry.path) }));
+    const pinned = rows.filter((row) => row.entry.pinned === true);
+    const rest = rows.filter((row) => row.entry.pinned !== true);
+    return [...pinned, ...rest];
+  }, [allRecents]);
+  // Phase 112 (C6b) — the missing-file paths handed to the Home rows.
+  const missingRecentList = useMemo(() => [...missingRecents], [missingRecents]);
 
   // Stable projection of tabs.tabs for AppHeader. We rebuild this list
     // only when the underlying tabs array actually changes (open / close
@@ -9564,6 +9772,65 @@ pushToast(
   // visibility also honours the ladder's rung 1. The inset machinery and the
   // .app-main data attributes read this ONE derived flag.
   const inspectorVisible = inspectorOpen && !inspectorCollapsedEffective;
+
+  // Phase 112 (TFL-854, chunk H) — the ONE panel composition. The rail's
+  // effective collapse folds in the ladder rung + book view (the same condition
+  // the .app-main attribute uses); the inspector's folds in the ladder rung +
+  // book view. The widths resolve from the persisted preferences, clamped so a
+  // usable document column always remains. These values drive `--tf-rail-w` /
+  // `--tools-panel-w` / `--tf-tools-inset` inline on .app-main, and the SAME
+  // `toolsInsetPx` feeds the panes' geometry target, so the CSS, the dock and
+  // the zoom math can never disagree.
+  const railCollapsedEffective = pagesPanelCollapsedEffective || bookViewActive;
+  const panelComposition = resolvePanelComposition({
+    viewportWidth,
+    railWidthPx: panelLeftWidth,
+    railCollapsed: railCollapsedEffective,
+    toolsWidthPx: panelRightWidth,
+    toolsCollapsed: inspectorCollapsedForBookView,
+    inspectorOpen,
+  });
+  const railWidthPx = panelComposition.railPx;
+  const toolsWidthPx = panelComposition.toolsPx;
+  const toolsInsetPx = panelComposition.toolsInsetPx;
+  const appMainPanelStyle: CSSProperties = {
+    "--tf-rail-w": `${railWidthPx}px`,
+    "--tf-tools-inset": `${toolsInsetPx}px`,
+    ...(inspectorOpen ? { "--tools-panel-w": `${toolsWidthPx}px` } : {}),
+  } as CSSProperties;
+
+  const onPanelLeftResize = useCallback((next: number): void => {
+    setPanelLeftWidth(clampPanelWidth("left", next));
+  }, []);
+  const onPanelRightResize = useCallback((next: number): void => {
+    setPanelRightWidth(clampPanelWidth("right", next));
+  }, []);
+  const commitPanelLeftWidth = useCallback(
+    (next: number): void => {
+      const clamped = clampPanelWidth("left", next);
+      setPanelLeftWidth(clamped);
+      setSettings((prev) => {
+        if (prev === null) return prev;
+        const updated: AppSettings = { ...prev, panelLeftWidthPx: clamped };
+        trackAndSave(updated);
+        return updated;
+      });
+    },
+    [trackAndSave],
+  );
+  const commitPanelRightWidth = useCallback(
+    (next: number): void => {
+      const clamped = clampPanelWidth("right", next);
+      setPanelRightWidth(clamped);
+      setSettings((prev) => {
+        if (prev === null) return prev;
+        const updated: AppSettings = { ...prev, panelRightWidthPx: clamped };
+        trackAndSave(updated);
+        return updated;
+      });
+    },
+    [trackAndSave],
+  );
 
   // ---- Phase 32 — Multi Mode ----------------------------------------
   // The mode is a VIEW over the tab store: a pane holds a tab id and the
@@ -10037,6 +10304,74 @@ pushToast(
     armedSignatureId === null
       ? null
       : savedSignatures.find((s) => s.id === armedSignatureId) ?? null;
+  // Phase 112 (TFL-854 C2) — each mounted DocumentView reports its thumbnail
+  // multi-select; the host reads the FOCUSED pane's set for the right
+  // Inspector's scope header and Mixed values. Keyed by pane ("single" in
+  // single mode), the same shape as the view-command / dock-availability maps.
+  const [pageSelections, setPageSelections] = useState<Record<string, number[]>>({});
+  const reportPageSelectionFor = useCallback(
+    (pane: PaneId | null, pages: readonly number[]): void => {
+      const key = pane ?? "single";
+      setPageSelections((prev) => {
+        const existing = prev[key];
+        if (existing !== undefined && samePageSelection(existing, pages)) return prev;
+        return { ...prev, [key]: [...pages] };
+      });
+    },
+    [],
+  );
+
+  // Phase 112 (TFL-854 C2 follow-up) — each mounted DocumentView publishes the
+  // page sizes it has ALREADY measured for its mounted PageViews (its
+  // `onPageSize` map). The host reads the FOCUSED pane's map first so a
+  // normally-opened document shows real dimensions WITHOUT opening the Crop
+  // dialog (which is what seeds `activePageSizes`). Keyed by pane, mirroring
+  // `pageSelections`. Nothing extra is measured here: no getPage sweep on open.
+  const [livePageSizes, setLivePageSizes] = useState<
+    Record<string, ReadonlyMap<number, { w: number; h: number }>>
+  >({});
+  const reportPageSizesFor = useCallback(
+    (pane: PaneId | null, sizes: ReadonlyMap<number, { w: number; h: number }>): void => {
+      const key = pane ?? "single";
+      setLivePageSizes((prev) => (prev[key] === sizes ? prev : { ...prev, [key]: sizes }));
+    },
+    [],
+  );
+  const livePageSizesForScope = livePageSizes[stagePane ?? "single"];
+  const activePageSelection: number[] = useMemo(() => {
+    if (multiMode.enabled) return pageSelections[multiMode.focused] ?? [];
+    return pageSelections["single"] ?? [];
+  }, [pageSelections, multiMode.enabled, multiMode.focused]);
+
+  // Phase 112 (TFL-854 C2) — the PAGES inspector's REAL page meta. The label
+  // comes from the engine's sparse label map; the size from the seeded page
+  // sizes (the SAME doc.getPage viewport the Crop dialog reads). Unknown stays
+  // unknown ("Not available"), never a guessed A4 or a zero.
+  const inspectorPageNumber = Math.max(1, Math.floor(activeTab?.persisted.currentPage ?? 1));
+  const inspectorPageLabel = resolvePageLabel(
+    inspectorPageNumber,
+    activeEngineUi?.state.pageLabels,
+  );
+  const inspectorPageSize = resolveInspectorPageSize(
+    inspectorPageNumber,
+    livePageSizesForScope,
+    activePageSizes,
+  );
+  const inspectorPageMetaMixed = useMemo(() => {
+    const pages = activePageSelection;
+    if (pages.length <= 1) return { size: false, rotation: false, label: false };
+    const rotations = activeEngineUi?.state.rotations ?? [];
+    const labels = activeEngineUi?.state.pageLabels;
+    const rotationSet = new Set<number | null>(pages.map((p) => rotations[p - 1] ?? null));
+    const labelSet = new Set<string>(pages.map((p) => resolvePageLabel(p, labels) ?? ""));
+    const sizeKeys = pages.map((p) => {
+      const s = resolveInspectorPageSize(p, livePageSizesForScope, activePageSizes);
+      return s === null ? null : `${s.widthPt}x${s.heightPt}`;
+    });
+    const sizeMixed = sizeKeys.every((k) => k !== null) && new Set(sizeKeys).size > 1;
+    return { size: sizeMixed, rotation: rotationSet.size > 1, label: labelSet.size > 1 };
+  }, [activePageSelection, activeEngineUi, activePageSizes, livePageSizesForScope]);
+
   const inspectorSelection = inspectorSelectionFor({
     stage: activeStage,
     text: inspectorTextSelection,
@@ -10969,6 +11304,7 @@ pushToast(
           reflows together in every theme. */}
       <div
         className="app-main"
+        style={appMainPanelStyle}
         data-tools-open={inspectorVisible ? "true" : "false"}
         data-rail-collapsed={pagesPanelCollapsedEffective || bookViewActive ? "true" : "false"}
         data-inspector-collapsed={inspectorCollapsedForBookView ? "true" : "false"}
@@ -10976,6 +11312,29 @@ pushToast(
         // rail's 44px track and lets the stage span the full frame.
         data-stage-rail-hidden={stageRailVisible ? "false" : "true"}
       >
+        {/* Phase 112 (TFL-854, chunk H) — the resizable panel separators. The
+            LEFT handle exists only while the navigator is expanded (Multi Mode
+            draws its own per-pane strips instead); the RIGHT handle only while
+            the inspector is expanded. Both edit the SAME App state the panels
+            read, so a drag, a key press and a settings echo all agree. */}
+        {stageRailVisible && !railCollapsedEffective && !multiMode.enabled && (
+          <PanelResizeHandle
+            side="left"
+            width={panelLeftWidth}
+            onResize={onPanelLeftResize}
+            onCommit={commitPanelLeftWidth}
+            data-testid="panel-resize-left"
+          />
+        )}
+        {inspectorOpen && !inspectorCollapsedForBookView && (
+          <PanelResizeHandle
+            side="right"
+            width={panelRightWidth}
+            onResize={onPanelRightResize}
+            onCommit={commitPanelRightWidth}
+            data-testid="panel-resize-right"
+          />
+        )}
         {/* Phase 36 (chunk 1b) — the Stage Rail. Mounted here as a REAL 44px
          * grid track inside .app-main (already `position: relative`); it
          * claims only its own column and reflows nothing. The gear opens the
@@ -11004,6 +11363,10 @@ pushToast(
               recentFiles={recentDisplays}
               onOpenRecent={onRecentClick}
               onRemoveRecent={onRemoveRecent}
+              onToggleRecentPin={onToggleRecentPin}
+              onShowRecentInFolder={onShowRecentInFolder}
+              onLocateRecentMissing={onLocateRecentMissing}
+              missingRecentPaths={missingRecentList}
               onOpenFile={onOpenClick}
               onSampleClick={onSampleClick}
               onMergeClick={onMergeClick}
@@ -11041,16 +11404,12 @@ pushToast(
           splitFraction={splitFraction}
           onSplitChange={setSplitFraction}
           // DEF-287 (residual) — the Inspector's requested inset target: 0
-          // when no document is open, the Inspector's single width when it
-          // is, or the narrow strip width while collapsed (Phase 37 item 3),
-          // so the panes' geometry always matches the CSS inset.
-          toolsInsetTarget={
-            inspectorOpen
-              ? inspectorCollapsedEffective
-                ? INSPECTOR_COLLAPSED_W_PX
-                : INSPECTOR_W_PX
-              : 0
-          }
+          // when no document is open, the Inspector's live width when it is,
+          // or the narrow strip width while collapsed (Phase 37 item 3), so the
+          // panes' geometry always matches the CSS inset. Phase 112 (chunk H):
+          // the width is the SAME resolved `toolsInsetPx` the inline
+          // `--tf-tools-inset` uses, so a resize can never desync them.
+          toolsInsetTarget={toolsInsetPx}
           onFocusPane={onFocusPane}
           onClearPane={onClearPane}
           onPickPane={onPickPane}
@@ -11233,6 +11592,15 @@ pushToast(
                     registerDockAvailability={(availability): void =>
                       registerDockAvailabilityFor(pane, availability)
                     }
+                    // Phase 112 (TFL-854 C2) — publish this pane's thumbnail
+                    // multi-select so the right Inspector names the scope.
+                    onPageSelectionReport={(pages): void =>
+                      reportPageSelectionFor(pane, pages)
+                    }
+                    // Phase 112 (TFL-854 C2 follow-up) — publish this pane's
+                    // live measured page sizes so the Inspector's Size row is
+                    // real on a normally-opened document.
+                    onPageSizesReport={(sizes): void => reportPageSizesFor(pane, sizes)}
                     onToast={pushToast}
                     engineState={engine.engineState}
                     // DEF-139 — visible-order flag for the slot ->
@@ -11479,13 +11847,8 @@ pushToast(
                     // pane's first-fit gate cannot release while the panel slide
                     // is still pending (the SAME target the stage's
                     // `toolsInsetTarget` above hands the panes' geometry).
-                    paneInsetTarget={
-                      inspectorOpen
-                        ? inspectorCollapsedEffective
-                          ? INSPECTOR_COLLAPSED_W_PX
-                          : INSPECTOR_W_PX
-                        : 0
-                    }
+                    // Phase 112 (chunk H): the resolved `toolsInsetPx`.
+                    paneInsetTarget={toolsInsetPx}
                     // DEF-343 — the pane's tab must be a REAL document before
                     // its first fit can settle: engine.pageCount can be >0 one
                     // commit before `kind` flips and the Inspector target (and
@@ -11590,12 +11953,8 @@ pushToast(
             // collapse the control reads "Expand" and one click records the
             // expand preference (the surface then expands when the window
             // grows past the rung). At a ladder-idle width this is a plain
-            // both-ways toggle.
-            onToggleCollapsed={(): void =>
-              setInspectorCollapsed(
-                collapsePreferenceAfterToggle(inspectorCollapsedEffective),
-              )
-            }
+            // both-ways toggle. Phase 112 (chunk H): the preference persists.
+            onToggleCollapsed={toggleInspectorCollapsed}
             selection={inspectorSelection}
             textPanel={inspectorTextPanel}
             signatureStyle={
@@ -11612,6 +11971,15 @@ pushToast(
                 Math.max(1, Math.floor(activeTab.persisted.currentPage)) - 1
               ] ?? null
             }
+            // Phase 112 (TFL-854 C2) — the REAL page meta + the multi-select
+            // scope. Unknown size/label reads "Not available"; a multi-page
+            // selection names its scope and shows Mixed for differing values.
+            pageSize={inspectorPageSize}
+            pageLabel={inspectorPageLabel}
+            pageSelection={activePageSelection}
+            pageSizeMixed={inspectorPageMetaMixed.size}
+            pageRotationMixed={inspectorPageMetaMixed.rotation}
+            pageLabelMixed={inspectorPageMetaMixed.label}
             annotationCount={annotationHandlers(tabs.activeId).annotations.length}
             formFieldCount={activeTab.forms.fields.length}
             formFillReport={activeTab.forms.report}
@@ -11650,7 +12018,19 @@ pushToast(
             reviewErrorFor={reviewErrorFor}
             onExportComments={onCommentExportClick}
             onImportComments={onCommentImportClick}
+            // Phase 112 (C5) - the Deliver export surface prepares the format,
+            // the parser-validated page scope, the output name and the options,
+            // then launches the EXISTING flow. `exportBridge` carries the same
+            // optional `window.tflex.export` guard the dock/palette read.
             exportFormat={settings.exportImageFormat ?? null}
+            exportSourceName={activeTab.displayName}
+            exportDpi={settings.exportImageDpi ?? DEFAULT_EXPORT_IMAGE_DPI}
+            exportCurrentPage={Math.max(1, Math.floor(activeTab.persisted.currentPage))}
+            exportBridge={{
+              xlsx: hasExportXlsxBridge,
+              pptx: hasExportPptxBridge,
+            }}
+            onExportRun={onInspectorExportRun}
             onExport={onExportClick}
             // Phase 51 (item 10) — the OCR suspects view is re-parented into
             // the Inspector (the workspace's right panel). The B14 empty-tab
@@ -11729,11 +12109,15 @@ pushToast(
           0
         }
         initialFormat={
-          settings.exportImageFormat ?? DEFAULT_EXPORT_IMAGE_FORMAT
+          imageSeedFormat ?? settings.exportImageFormat ?? DEFAULT_EXPORT_IMAGE_FORMAT
         }
         initialDpi={
-          settings.exportImageDpi ?? DEFAULT_EXPORT_IMAGE_DPI
+          imageSeed?.initialDpi ?? settings.exportImageDpi ?? DEFAULT_EXPORT_IMAGE_DPI
         }
+        // Phase 112 (C5 follow-up, TFL-985) - the inspector's prepared range /
+        // output name seed the SAME dialog; the dialog re-parses both.
+        initialRange={imageSeed?.initialRange ?? null}
+        initialOutputName={imageSeed?.initialOutputName ?? null}
         onFormatChange={(next): void => {
           setSettings((prev) => {
             if (prev === null) return prev;
@@ -11936,6 +12320,8 @@ pushToast(
         runExport={runExportText}
         onConfirm={onTextExportConfirm}
         sourceName={activeTab?.displayName ?? "this document"}
+        initialRange={textSeed?.initialRange ?? null}
+        initialOutputName={textSeed?.initialOutputName ?? null}
         docId={activeTab?.session.engineDocId ?? null}
         engine={engineRef.current}
         onClose={onCancelTextExport}
@@ -11951,6 +12337,9 @@ pushToast(
         runAssemble={runAssembleDocx}
         onConfirm={onDocxExportConfirm}
         sourceName={activeTab?.displayName ?? "this document"}
+        initialRange={docxSeed?.initialRange ?? null}
+        initialDpi={docxSeed?.initialDpi ?? null}
+        initialOutputName={docxSeed?.initialOutputName ?? null}
         docId={activeTab?.session.engineDocId ?? null}
         engine={engineRef.current}
         onClose={onCancelDocxExport}
@@ -11964,6 +12353,9 @@ pushToast(
           0
         }
         sourceName={activeTab?.displayName ?? "this document"}
+        initialRange={xlsxSeed?.initialRange ?? null}
+        initialDpi={xlsxSeed?.initialDpi ?? null}
+        initialOutputName={xlsxSeed?.initialOutputName ?? null}
         docId={activeTab?.session.engineDocId ?? null}
         client={window.tflex.export as TFlexApiExport | undefined}
         runEngineExport={runExportPages}
@@ -11979,6 +12371,9 @@ pushToast(
           0
         }
         sourceName={activeTab?.displayName ?? "this document"}
+        initialRange={pptxSeed?.initialRange ?? null}
+        initialDpi={pptxSeed?.initialDpi ?? null}
+        initialOutputName={pptxSeed?.initialOutputName ?? null}
         docId={activeTab?.session.engineDocId ?? null}
         client={window.tflex.export as TFlexApiExport | undefined}
         runEngineExport={runExportPages}

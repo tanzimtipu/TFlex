@@ -322,7 +322,7 @@ describe('Phase 36 chunk 6 — the DELIVER stage panel', () => {
       expect(sections(host)).toEqual(['preflight', 'new-document']);
       expect(host.querySelector('[data-preflight="ocr"]')?.textContent).toContain('Recognized');
       expect(host.querySelector('[data-file-size]')?.textContent).toBe('2.0 KB');
-      expect(host.querySelector('[data-form-fields]')?.textContent).toBe('3 to flatten');
+      expect(host.querySelector('[data-form-fields]')?.textContent).toBe('3 interactive');
     } finally {
       unmount();
     }

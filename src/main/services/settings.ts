@@ -43,6 +43,19 @@ const RECENT_FILES_CAP = 10;
 const MIN_WINDOW_WIDTH = 640;
 const MIN_WINDOW_HEIGHT = 480;
 
+/** Phase 112 (TFL-992) — allowed width range (CSS px) for the LEFT page
+ *  panel. A stored `panelLeftWidthPx` outside this range is dropped by
+ *  `normalizeSettings`; absent/invalid resolves to the consumer default 240. */
+export const PANEL_LEFT_WIDTH_MIN = 220;
+export const PANEL_LEFT_WIDTH_MAX = 320;
+
+/** Phase 112 (TFL-992) — allowed width range (CSS px) for the RIGHT
+ *  inspector panel. A stored `panelRightWidthPx` outside this range is
+ *  dropped by `normalizeSettings`; absent/invalid resolves to the consumer
+ *  default 280. */
+export const PANEL_RIGHT_WIDTH_MIN = 260;
+export const PANEL_RIGHT_WIDTH_MAX = 380;
+
 /** Phase 11 — OCR language allowlist. ISO-639 codes for which traineddata
  *  can be bundled offline in `assets/tessdata/`. The renderer uses this
  *  to populate the language picker; settings uses it for preserve-if-valid
@@ -377,7 +390,27 @@ function normalizeRecentFiles(raw: unknown, cap: number = RECENT_FILES_CAP): Rec
       typeof r.name === 'string' &&
       typeof r.openedAt === 'string'
     ) {
-      files.push({ path: r.path, name: r.name, openedAt: r.openedAt });
+      const file: RecentFile = { path: r.path, name: r.name, openedAt: r.openedAt };
+      // Phase 112 (TFL-986) — the verified-source metadata + pin flag are
+      // OPTIONAL and preserve-if-valid: a present-but-invalid field is dropped
+      // while the entry itself is kept, so pre-Phase-112 records survive and a
+      // malformed new field never rejects the whole record.
+      if (typeof r.sourceLabel === 'string' && r.sourceLabel.length > 0) {
+        file.sourceLabel = r.sourceLabel;
+      }
+      if (typeof r.sourceKind === 'string' && r.sourceKind.length > 0) {
+        file.sourceKind = r.sourceKind;
+      }
+      if (typeof r.converted === 'boolean') {
+        file.converted = r.converted;
+      }
+      if (typeof r.pinned === 'boolean') {
+        file.pinned = r.pinned;
+      }
+      if (r.workingFormat === 'pdf') {
+        file.workingFormat = 'pdf';
+      }
+      files.push(file);
     }
   }
   const effectiveCap = Math.max(1, Math.min(50, cap));
@@ -467,6 +500,20 @@ export const REDACTION_COLOR_PATTERN = /^#[0-9a-fA-F]{6}$/;
 export function normalizeRedactionColor(raw: unknown): string | null {
   if (typeof raw !== 'string') return null;
   return REDACTION_COLOR_PATTERN.test(raw) ? raw : null;
+}
+
+/** Phase 112 (TFL-992) — normalise a raw panel-width value, preserve-if-valid.
+ *  Returns the value only when it is a finite number inside `[min, max]`, else
+ *  `null` (so the caller leaves the field absent and the consumer applies its
+ *  own default). A present-but-invalid value drops only that field; it never
+ *  rejects the record/settings around it. */
+export function normalizeBoundedWidth(
+  raw: unknown,
+  min: number,
+  max: number,
+): number | null {
+  if (typeof raw !== 'number' || !Number.isFinite(raw)) return null;
+  return raw >= min && raw <= max ? raw : null;
 }
 
 /** Phase 58 — normalise a raw `homeTools` value, preserve-if-valid /
@@ -1244,6 +1291,32 @@ export function normalizeSettings(raw: unknown): AppSettings {
   // when the field is absent.
   if (typeof rawObj.pagesPanelCollapsed === 'boolean') {
     settings.pagesPanelCollapsed = rawObj.pagesPanelCollapsed;
+  }
+
+  // Phase 112 (TFL-992): panel geometry + inspector collapse. Preserve-if-
+  // valid: a width survives only when it is a finite number inside its range;
+  // a present-but-invalid width drops ONLY that field (the rest of the record
+  // is kept). The collapse flag survives only when it is a real boolean. Every
+  // absent/invalid field is left unset so the consumer applies its documented
+  // default (240 / 280 / false) — the default is never stored here.
+  const panelLeftWidthPx = normalizeBoundedWidth(
+    rawObj.panelLeftWidthPx,
+    PANEL_LEFT_WIDTH_MIN,
+    PANEL_LEFT_WIDTH_MAX,
+  );
+  if (panelLeftWidthPx !== null) {
+    settings.panelLeftWidthPx = panelLeftWidthPx;
+  }
+  const panelRightWidthPx = normalizeBoundedWidth(
+    rawObj.panelRightWidthPx,
+    PANEL_RIGHT_WIDTH_MIN,
+    PANEL_RIGHT_WIDTH_MAX,
+  );
+  if (panelRightWidthPx !== null) {
+    settings.panelRightWidthPx = panelRightWidthPx;
+  }
+  if (typeof rawObj.inspectorCollapsed === 'boolean') {
+    settings.inspectorCollapsed = rawObj.inspectorCollapsed;
   }
 
   // Phase 19: preserve annotationRecentTools only when the value survives

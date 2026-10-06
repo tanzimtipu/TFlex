@@ -20,6 +20,7 @@ import {
   defaultTextExportFilename,
   downloadBlob,
 } from "../utils/exportDownload";
+import { exportOutputNameStem } from "./exportConfig";
 import { ExportFidelityNotes } from "./ExportFidelityNotes";
 import { ExportPagesWithoutTextNotice } from "./ExportPagesWithoutTextNotice";
 import {
@@ -45,6 +46,12 @@ interface TextExportDialogProps {
   >;
   onConfirm: (result: TextExportConfirm) => void;
   sourceName: string;
+  /** Phase 112 (C5 follow-up) - the Inspector's prepared page range as the
+   *  dialog's own TEXT expression. Re-parsed by the dialog; absent = all. */
+  initialRange?: string | null;
+  /** Phase 112 (C5 follow-up) - the Inspector's prepared output name. Its stem
+   *  seeds the downloaded filename; absent falls back to `sourceName`. */
+  initialOutputName?: string | null;
   /** The active document's engine id, or null when none is open. */
   docId?: string | null;
   /** The engine client the dialog reads `exportText(docId)` from, as a MEMBER
@@ -62,12 +69,17 @@ export function TextExportDialog(
     runExport,
     onConfirm,
     sourceName,
+    initialRange,
+    initialOutputName,
     docId = null,
     engine,
     onClose,
   } = props;
-  const initialRange = useMemo(() => defaultPageRange(totalPages), [totalPages]);
-  const [rangeText, setRangeText] = useState<string>(initialRange);
+  const initialRangeText = useMemo(
+    () => (initialRange != null && initialRange.length > 0 ? initialRange : defaultPageRange(totalPages)),
+    [initialRange, totalPages],
+  );
+  const [rangeText, setRangeText] = useState<string>(initialRangeText);
   const [format, setFormat] = useState<TextExportFormat>("txt");
   const [running, setRunning] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -76,13 +88,13 @@ export function TextExportDialog(
 
   useEffect(() => {
     if (!open) return;
-    setRangeText(defaultPageRange(totalPages));
+    setRangeText(initialRangeText);
     setFormat("txt");
     setRunning(false);
     setError(null);
     setPagesWithoutText(null);
     cancelRef.current.aborted = false;
-  }, [open, totalPages]);
+  }, [open, totalPages, initialRangeText]);
 
   // DEF-390 — name the pages with no extractable text, as the xlsx/pptx
   // surfaces do. `engine.exportText(docId)` is the same source the export
@@ -141,7 +153,13 @@ export function TextExportDialog(
       const blob = new Blob([joined], {
         type: format === "rtf" ? "application/rtf" : "text/plain",
       });
-      downloadBlob(blob, defaultTextExportFilename(sourceName, format));
+      // Phase 112 (C5 follow-up) - the Inspector's prepared output name seeds
+      // the filename stem; otherwise the source name does.
+      const nameStem =
+        initialOutputName != null && initialOutputName.length > 0
+          ? exportOutputNameStem(initialOutputName)
+          : sourceName;
+      downloadBlob(blob, defaultTextExportFilename(nameStem, format));
       onConfirm({ range: parsed, format, text: joined });
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);

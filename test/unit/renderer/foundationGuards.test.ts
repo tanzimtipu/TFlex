@@ -147,6 +147,8 @@ const MIGRATED_SURFACES: readonly string[] = [
   "components/motion/TfMotion.tsx",
   "components/motion/TfResize.tsx",
   "components/pageThumbMenu.tsx",
+  "components/panels/PanelPrimitives.tsx",
+  "components/panels/PanelResizeHandle.tsx",
   "components/selectableContent.tsx",
   "edit/EditOverlay.tsx",
   "edit/TextPropertiesPanel.tsx",

@@ -13,6 +13,7 @@ import type { ReactElement } from 'react';
 import { Pencil } from 'lucide-react';
 import { Icon } from '../icons/Icon';
 import { AnnotationsPanel } from '../annotations/AnnotationsPanel';
+import { PanelEmptyState, PanelSection } from './panels/PanelPrimitives';
 import type { Annotation, AnnotationPatch } from '../annotations/model';
 import type {
   BatesInfo,
@@ -41,6 +42,12 @@ export interface ReviewElementsPanelProps {
   onEdit?: ((el: ReviewElementRef) => void) | null;
   onDelete?: ((el: ReviewElementRef) => void) | null;
   errorFor?: ((el: ReviewElementRef) => string | null) | null;
+  /** Phase 112 (TFL-854 C4) — the Inspector's annotation scope. When supplied,
+   *  the Annotations category renders this slot (the selected annotation's
+   *  inspector, or a short hint) instead of the authoritative AnnotationsPanel
+   *  list, so the LEFT navigator's list is never duplicated into the right
+   *  panel. The LEFT navigator omits it and keeps the list. */
+  renderAnnotations?: (() => ReactElement) | null;
 }
 
 /** A row's display label + jump page, derived purely from its source record. */
@@ -149,22 +156,27 @@ function renderCategory(args: {
 }): ReactElement {
   const { category, title, emptyText, rows, props } = args;
   return (
-    <section
+    <PanelSection
       className="review-elements-category"
+      titleClassName="review-elements-category-title"
+      bodyClassName="review-elements-category-body"
       data-review-category={category}
       aria-label={title}
+      title={title}
     >
-      <div className="review-elements-category-title">{title}</div>
       {rows.length === 0 ? (
-        <p className="context-panel-empty" data-review-empty>
-          {emptyText}
-        </p>
+        <PanelEmptyState
+          className="context-panel-empty"
+          data-review-empty
+          data-review-empty-category={category}
+          headline={emptyText}
+        />
       ) : (
         <ul className="review-elements-list">
           {rows.map((row): ReactElement => renderRow(row, props))}
         </ul>
       )}
-    </section>
+    </PanelSection>
   );
 }
 
@@ -181,6 +193,7 @@ export function ReviewElementsPanel(props: ReviewElementsPanelProps): ReactEleme
     onEdit = null,
     onDelete = null,
     errorFor = null,
+    renderAnnotations = null,
   } = props;
 
   const rowProps = { onSelect, onEdit, onDelete, errorFor };
@@ -206,21 +219,27 @@ export function ReviewElementsPanel(props: ReviewElementsPanelProps): ReactEleme
 
   return (
     <div className="review-elements" data-review-elements>
-      <section
+      <PanelSection
         className="review-elements-category"
+        titleClassName="review-elements-category-title"
+        bodyClassName="review-elements-category-body"
         data-review-category="annotations"
         aria-label="Annotations"
+        title="Annotations"
       >
-        <div className="review-elements-category-title">Annotations</div>
-        <div className="context-panel-annotations" data-context-panel-annotations>
-          <AnnotationsPanel
-            annotations={[...annotations]}
-            onJumpTo={(page, id): void => onJumpToAnnotation?.(page, id)}
-            onEdit={(id, patch): void => onEditAnnotation?.(id, patch)}
-            onDelete={(id): void => onDeleteAnnotation?.(id)}
-          />
-        </div>
-      </section>
+        {renderAnnotations === null ? (
+          <div className="context-panel-annotations" data-context-panel-annotations>
+            <AnnotationsPanel
+              annotations={[...annotations]}
+              onJumpTo={(page, id): void => onJumpToAnnotation?.(page, id)}
+              onEdit={(id, patch): void => onEditAnnotation?.(id, patch)}
+              onDelete={(id): void => onDeleteAnnotation?.(id)}
+            />
+          </div>
+        ) : (
+          renderAnnotations()
+        )}
+      </PanelSection>
       {renderCategory({
         category: 'bates',
         title: 'Bates numbering',

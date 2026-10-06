@@ -5,6 +5,33 @@
 > inspect the current `OPEN`, `FIX-READY`, and `DISPUTED` entries first; closed records are
 > historical evidence and must not be loaded wholesale.
 
+## DEF-597: Repo-wide typecheck is red - preferencesReducer lacks an ending return (src/renderer/state/preferences.ts)
+
+- Status: CLOSED (qa TFL-961, 2026-10-06)
+- Severity: HIGH - build blocker: `npm run typecheck` exits 1, which fails the Phase gate (`npm run verify`) and blocks any phase-close commit until fixed.
+- Found by: qa (TFL-959 focused verification, Phase 112 chunk C1)
+- Phase: 112 (found while verifying TFL-854 C1; `preferences.ts` is outside the Panels deliverable set - an unowned working-tree edit)
+- Files: `src/renderer/state/preferences.ts` (working-tree edit; 947-line diff reported for a 444-line file - suspected CRLF/LF churn plus a real change)
+
+Steps to reproduce:
+1. `npm.cmd run typecheck`.
+
+Expected: clean (exit 0).
+
+Actual: exit 1 -
+`src/renderer/state/preferences.ts(143,4): error TS2366: Function lacks ending return statement and return type does not include 'undefined'.`
+`preferencesReducer(state: AppSettings, action: PreferencesAction): AppSettings` (`:140-143`) switches on `action.type` but no longer returns on every path - a `PreferencesAction` variant is unhandled and there is no exhaustive `default`/`assertNever`.
+
+Command output:
+`src/renderer/state/preferences.ts(143,4): error TS2366: Function lacks ending return statement and return type does not include 'undefined'.`
+
+History:
+- CTO: filed from the TFL-959 qa report (2026-10-06) - qa did not file it because its brief forbade ledger edits. Routed to frontend-dev as a fix chunk child of TFL-854.
+- CTO: FIX-READY - relaying frontend-dev TFL-960 (2026-10-06): normalized `src/renderer/state/preferences.ts` line endings CRLF -> LF to match HEAD, removing ~947 lines of EOL churn; the diff is now 9 insertions (the already-present TFL-938 Home-motion-pause union member + its reducer case), the switch is exhaustive so the reducer returns `AppSettings` on every path, and no command/handler/selector/persistence/settings-key behaviour changed. Evidence: `typecheck` clean (exit 0); `preferences` specs 3 files / 80 tests pass; `npm run verify` clean (381 source files scanned); `git diff --stat` 1 file changed, 9 insertions. doc-maintenance: no changes required.
+- qa (TFL-961, 2026-10-06): FIX-READY re-verification PASS -> CLOSED. Independent re-run of the exact outcome commands: `npm.cmd run typecheck` -> clean, EXIT=0. `npm.cmd run verify` -> `conventions: clean (381 source file(s) scanned)` then typecheck clean, EXIT=0. `npx.cmd vitest run preferences` -> Test Files 3 passed (3), Tests 80 passed (80), EXIT=0. `git diff --stat -- src/renderer/state/preferences.ts` -> `1 file changed, 9 insertions(+)`; `git diff --numstat` -> `9 0 src/renderer/state/preferences.ts` (no ~947-line EOL churn). Repo-wide typecheck confirmed green. Raw output: `.paperclip scratch typecheck.out.txt`, `verify.out.txt`, `vitest-pref.out.txt`.
+
+Origin: found during the Phase 112 C1 focused verification; unowned working-tree edit (no open issue owns `preferences.ts`).
+
 ## DEF-566: annotation-flyout tool icons rest green, not graphite - Phase 103 criterion 3 ("resting icons graphite app-wide; green only for real success") is not met
 
 - Status: CLOSED (qa TFL-843, 2026-10-05)
@@ -13559,6 +13586,30 @@ History:
 - qa: filed as DEF-596 (TFL-949 chunk F3, 2026-10-06). Rebuilt `dist/`, reproduced the fix live, added the rendered regression guard to `e2e/phase105_topbar_rail.spec.cjs` ("ADV-226 regression: All-tabs switcher is not occluded by the Inspector at 12 tabs"); `npm.cmd run verify` green. CLOSED.
 
 
+## DEF-598: `foundationGuards` `MIGRATED_SURFACES` is red again - the TFL-854 Panels primitive `components/panels/PanelPrimitives.tsx` is not registered (TFL-952 focused verification)
+
+- Status: CLOSED
+- Closed by: qa (TFL-978 FIX-READY retest, 2026-10-06)
+- Severity: LOW - test-artifact completeness only; no product, document or data impact. It leaves `test/unit/renderer/foundationGuards.test.ts` red (1 failed / 29 passed / 30 total) and, per `AGENTS_NOTES.md`, gates the TFL-855 phase-close check.
+- Found by: qa (TFL-952 focused verification, 2026-10-06)
+- Phase: 105+ Panels overhaul (TFL-854 chunk C1)
+- Files: `test/unit/renderer/foundationGuards.test.ts` `MIGRATED_SURFACES` (phase-100 guard); missing renderer source: `src/renderer/components/panels/PanelPrimitives.tsx` (listed nowhere; header `// Phase 105+ (TFL-854, chunk C1) - the shared panel primitives.`).
+- Origin: observed while running the TFL-952 item-1 command against the shared tree. Same class as DEF-593 (closed 2026-10-06 by TFL-941): a renderer `.tsx` added by one phase must be added to `MIGRATED_SURFACES` in the SAME chunk.
+
+Steps to reproduce:
+1. From the repo root run `npm.cmd run test:unit -- test/unit/renderer/foundationGuards.test.ts`.
+
+Expected: the guard suite is green; `MIGRATED_SURFACES` equals the renderer `.tsx` walk (its "complete, not stale" assertion).
+
+Actual: `Test Files 1 failed (1) / Tests 1 failed | 29 passed (30)`. The sole failure is `MIGRATED_SURFACES covers every renderer TSX exactly (complete, not stale)` (`foundationGuards.test.ts:692`); its diff lists walked-but-not-listed `components/panels/PanelPrimitives.tsx` (120 listed vs 121 walked, 0 stale). TFL-951's own new surfaces (`components/TaskDialog.tsx`, `components/PreviewTaskDialog.tsx`, `components/CreateFromImagesDialog.tsx`) ARE registered.
+
+Fix owner: frontend-dev (the TFL-854 chunk that added the primitive) - add the path to `MIGRATED_SURFACES` in the same chunk and confirm the suite is green. Independent of TFL-951.
+
+History:
+- qa: opened (TFL-952 focused verification, 2026-10-06).
+- CTO: FIX-READY - relaying frontend-dev TFL-974 (2026-10-06): added `components/panels/PanelPrimitives.tsx` to `MIGRATED_SURFACES` (walk vs list now 122 == 122, was 121 vs 120); `foundationGuards` 30/30 pass; typecheck clean; `npm run verify` clean; phase112 specs 46 pass.
+- qa: CLOSED (TFL-978 FIX-READY retest, 2026-10-06): reproduced the original command - `npm.cmd run test:unit -- test/unit/renderer/foundationGuards.test.ts` -> 1 file passed, `Tests 30 passed (30)`, 0 failed (was 1 failed / 29 passed). `MIGRATED_SURFACES covers every renderer TSX exactly` is green; walk vs list complete. `npm.cmd run typecheck` clean; `npm.cmd run verify` clean (conventions: clean, 381 source files). Regression side-check of the same suite's motion guard green. Original red reproduction no longer reproduces.
+
 ## DEF-599: `settingsEcho` comparators omit `homeMotionPaused` - a stale `settings:changed` echo can silently revert the Home motion pause (TFL-938 adversary diff-pass, ADV-227)
 
 - Status: CLOSED
@@ -13583,3 +13634,174 @@ Note (deferred, not fixed here): the comparator is likewise stale for several ot
 Closure evidence (TFL-977, 2026-10-06): `src/renderer/state/settingsEcho.ts` now carries `if (a.homeMotionPaused !== b.homeMotionPaused) return false;` and `if (a.animationsEnabled !== b.animationsEnabled) return false;` immediately after the `saveAsLinearize` line in all three comparators (`sameSettings:102-103`, `differsOnlyInRecentFiles:140-141`, `differsOnlyInGeometry:252-253`). `test/unit/renderer/settingsEcho.test.ts` adds the sameSettings differ-cases (`:101`, `:110`) and shouldApplyEcho stale-echo cases (`:287-309`). Verified: `vitest run test/unit/renderer/settingsEcho.test.ts` -> 84 passed; `vitest run test/unit/renderer/adv_phase82_settingsEcho.test.ts` -> 5 passed; `npm run verify` -> exit 0. Stale `homeMotionPaused`/`animationsEnabled` echoes are now discarded.
 
 Retest evidence (TFL-981, 2026-10-06): independently re-verified, criteria-by-criteria. `npx.cmd vitest run test/unit/renderer/settingsEcho.test.ts test/unit/renderer/adv_phase82_settingsEcho.test.ts` -> 2 files passed, 89 tests passed, 0 failed, exit 0. `npx.cmd vitest run test/unit/renderer/phase106OrbitMotion.test.tsx test/unit/main/settings.test.ts` -> 2 files passed, 184 tests passed, 0 failed, exit 0. `npm.cmd run verify` -> exit 0 (conventions clean, 381 source files; typecheck clean). Blast-radius regression (live app, shared settings persistence + relaunch): `npx.cmd playwright test e2e/phase106_orbit_motion.spec.cjs` -> 7 passed, 0 failed, exit 0. Adversary real-module probe (esbuild bundle of `test-fixtures/phase106-tfl938-adversary/probe.ts` to ESM, then `node`) -> `TOTAL=23 FAILED=0`; the two checks that previously failed (`stale echo carrying old homeMotionPaused=true is discarded`, `stale echo carrying old animationsEnabled=true is discarded`) now return `pass: true` / `shouldApply: false` (was `FAILED=2`). Original defect no longer reproduces; status remains CLOSED.
+
+## DEF-600: `foundationGuards` motion guard is red - uncommitted Panels stylesheet rules use a raw fallback motion in `.text-props-advanced-summary::before` and `.inspector-document-summary::before` (TFL-971 C4-QA)
+
+- Status: CLOSED
+- Closed by: qa (TFL-978 FIX-READY retest, 2026-10-06)
+- Severity: LOW - test-artifact/guard only; no product, document or data impact. Leaves `test/unit/renderer/foundationGuards.test.ts` red (2 failed / 28 passed / 30 total) and gates the TFL-855 phase-close check.
+- Found by: qa (TFL-971 C4-QA focused verification, 2026-10-06)
+- Phase: 105+ Panels overhaul (TFL-854 family; sibling of DEF-598)
+- Files: `src/renderer/styles.css` - `.text-props-advanced-summary::before` (line 4404) and `.inspector-document-summary::before` (line 9586) each declare `transition: transform var(--panel-motion-duration|--tf-panel-motion-duration, 140ms) var(--motion-ease-standard, ease-out)`; both are part of the uncommitted working-tree Panels change set (`git status`: `M src/renderer/styles.css`, alongside untracked `src/renderer/components/panels/`).
+- Origin: observed while running the TFL-971 item-1 command against the shared tree. Same class as DEF-598: an in-flight Panels chunk violates the phase-100 "no raw one-off motion in a migrated stylesheet" guard. Failure (b) below is NOT covered by DEF-598.
+
+Steps to reproduce:
+1. From the repo root run `npm.cmd run test:unit -- test/unit/renderer/foundationGuards.test.ts`.
+
+Expected: the guard suite is green.
+
+Actual: `Tests 2 failed | 28 passed (30)`. Failure (a) `MIGRATED_SURFACES covers every renderer TSX exactly` is DEF-598. Failure (b) `no raw one-off motion in a migrated stylesheet rule body` (`foundationGuards.test.ts:749`) lists `styles.css .text-props-advanced-summary::before` and `styles.css .inspector-document-summary::before`. The TFL-951/C4 surfaces (`components/CreateFromImagesDialog.tsx`, `components/PreviewTaskDialog.tsx`) are registered and are not involved.
+
+Fix owner: frontend-dev (the in-flight Panels chunk) - route these two transitions through the shared motion token with no raw fallback, as the other migrated rules do, and confirm the guard is green.
+
+History:
+- qa: opened (TFL-971 C4-QA focused verification, 2026-10-06).
+- CTO: FIX-READY - relaying frontend-dev TFL-974 (2026-10-06): removed the raw `140ms`/`ease-out` fallbacks in `.text-props-advanced-summary::before` and `.inspector-document-summary::before` and routed both through `var(--tf-panel-motion-duration) var(--motion-ease-standard)` (transitions kept); `foundationGuards` 30/30 pass; typecheck clean; `npm run verify` clean.
+- qa: CLOSED (TFL-978 FIX-READY retest, 2026-10-06): confirmed `src/renderer/styles.css:4409` `.text-props-advanced-summary::before` and `styles.css:9590` `.inspector-document-summary::before` now declare `transition: transform var(--tf-panel-motion-duration) var(--motion-ease-standard)` - shared tokens, NO raw fallback (the `140ms`/`ease-out` fallbacks are gone). Reproduced the original command - `npm.cmd run test:unit -- test/unit/renderer/foundationGuards.test.ts` -> 1 file passed, `Tests 30 passed (30)`, 0 failed; the guard `no raw one-off motion in a migrated stylesheet rule body` is green (was 2 failed / 28 passed). `npm.cmd run typecheck` clean; `npm.cmd run verify` clean.
+
+## DEF-601: The File trigger cannot close its own open menu - a real mouse click closes on pointerdown and the trailing click reopens it (ADV-228)
+
+- Status: CLOSED
+- Closed by: qa (TFL-984 FIX-READY retest, 2026-10-06)
+- Severity: MEDIUM - dismissal/toggle contract regression on the primary File menu; no document or data impact, but the trigger appears inert while open (a basic toggle a desktop user relies on).
+- Found by: adversary (ADV-228)
+- Phase: 855 (TFL-855 chunk C5, File menu on the shared CommandMenu primitive)
+- Files: `src/renderer/components/CommandMenu.tsx` (`openerRef` exemption, `:451-467`), `src/renderer/components/TitleBar.tsx` (trigger toggle `:268`, `openerRef={menuButtonRef}` `:298`); retest probe `e2e/phase105_def601_602_603_retest.spec.cjs`
+- Origin: TFL-938 C5 File-menu adversary diff-pass (ADV-228). The CommandMenu outside-pointerdown dismiss (`CommandMenu.tsx:449-457`) exempted only `rootRef` (the popover), never the opener trigger.
+
+Steps to reproduce (from ADV-228, launch via `e2e/lib/launch.cjs`):
+1. Launch the app; click `[data-menu-button]` to open the File menu (popover present, `aria-expanded="true"`).
+2. Click `[data-menu-button]` again with a real pointer click and read `[data-menu-popover]` after ~600 ms. Repeat 3x.
+
+Expected: the second real click closes the menu; `[data-menu-popover]` is absent and `aria-expanded` returns to `false` (`TitleBar.tsx:268` is `setMenuOpen((v) => !v)`).
+
+Actual (pre-fix): the menu stayed open on 3/3 real mouse clicks. Captured order on the open trigger: `pointerdown` (target = trigger) -> `mousedown` (menu already closed) -> `mouseup` -> `click` (reopens). A synthetic `.click()` and keyboard Enter both closed 1/1, isolating the pointerdown+click pairing. Evidence: `adv228-trigger-event-sequence.json`, `adv228-229-230-probe3.json`.
+
+Retest (TFL-984, 2026-10-06): `npx.cmd playwright test e2e/phase105_def601_602_603_retest.spec.cjs` -> `3 passed (6.2s)`. The DEF-601 trial log reads `trial 1: present=false expanded=false`, `trial 2: present=false expanded=false`, `trial 3: present=false expanded=false`; popover absent and `aria-expanded="false"` on all three real pointer clicks. PASS.
+
+History:
+- CTO: ACCEPTED -> DEF-601 (TFL-938 C5 File-menu adversary diff-pass, 2026-10-06) - relaying frontend-dev; MEDIUM.
+- qa: filed from ADV-228 (TFL-984, 2026-10-06) with `Found by: adversary (ADV-228)`, `Phase: 855`.
+- qa: CLOSED (TFL-984 FIX-READY retest, 2026-10-06). TFL-983's `openerRef` exemption is present (`CommandMenu.tsx:462` returns early when the pointerdown target is inside `openerRef.current`; `TitleBar.tsx:298` passes `openerRef={menuButtonRef}`), so the real pointerdown leaves the menu open and the trigger's own click collapses it. Real-app retest green 3/3.
+
+## DEF-602: Escape stops closing the File menu whenever focus is not on a menu row (ADV-229)
+
+- Status: CLOSED
+- Closed by: qa (TFL-984 FIX-READY retest, 2026-10-06)
+- Severity: MEDIUM - keyboard dismissal regression; once focus leaves the row list (heading/padding click) Escape silently fails while the menu is still visible.
+- Found by: adversary (ADV-229)
+- Phase: 855 (TFL-855 chunk C5, File menu on the shared CommandMenu primitive)
+- Files: `src/renderer/components/CommandMenu.tsx` (document-level Escape fallback `:469-485`; focus return `:436-449`); retest probe `e2e/phase105_def601_602_603_retest.spec.cjs`
+- Origin: TFL-938 C5 File-menu adversary diff-pass (ADV-229). Escape was bound to the row list's `onKeyDown` only (`CommandMenu.tsx:273-278`), so a heading/padding click that moves focus to BODY disarmed it; the retired TitleBar had a global `window` `keydown` close.
+
+Steps to reproduce (from ADV-229):
+1. Open the File menu; click the non-focusable heading `.titlebar-menu-heading` (`div role="presentation"`) and read `document.activeElement` (BODY, not inside `.command-menu`).
+2. Press Escape. Run the heading path 3x; separately click the popover padding near its bottom-right corner, then press Escape.
+
+Expected: Escape closes the menu regardless of which part of the popover has focus, and returns focus to the trigger.
+
+Actual (pre-fix): the menu stayed open in all 4 trials (`escapeClosed: false`). Control: with focus forced onto a row, Escape closed 1/1. Evidence: `adv229-escape-heading.json`.
+
+Retest (TFL-984, 2026-10-06): `npx.cmd playwright test e2e/phase105_def601_602_603_retest.spec.cjs` -> `3 passed (6.2s)`. Log: `[DEF-602] focus after heading click = {"tag":"BODY","inPopover":false}` and `[DEF-602] focus off row list after padding click = true`; both paths then closed the popover and returned `document.activeElement` to `[data-menu-button]`. PASS.
+
+History:
+- CTO: ACCEPTED -> DEF-602 (TFL-938 C5 File-menu adversary diff-pass, 2026-10-06) - relaying frontend-dev; MEDIUM.
+- qa: filed from ADV-229 (TFL-984, 2026-10-06) with `Found by: adversary (ADV-229)`, `Phase: 855`.
+- qa: CLOSED (TFL-984 FIX-READY retest, 2026-10-06). TFL-983's document-level Escape fallback is present (`CommandMenu.tsx:474-485` binds a `document` `keydown` that closes unless the event target is inside the surface, and the focus-return layout effect `:436-449` refocuses the captured opener). Real-app retest green on both the heading and padding paths.
+
+## DEF-603: The CommandMenu border-radius shorthand overrides the shipped square top-left corner, so the File popover no longer joins the trigger's silhouette (ADV-230)
+
+- Status: CLOSED
+- Closed by: qa (TFL-984 FIX-READY retest, 2026-10-06)
+- Severity: LOW - visual/design-system consistency; no functional or document impact. The joined trigger+popover silhouette gains a rounded notch on the trigger's left corner.
+- Found by: adversary (ADV-230)
+- Phase: 855 (TFL-855 chunk C5, File menu on the shared CommandMenu primitive)
+- Files: `src/renderer/styles.css` (`.titlebar-menu-popover.command-menu { border-top-left-radius: 0 }` at `:14962`); retest probe `e2e/phase105_def601_602_603_retest.spec.cjs`; screenshot `screenshots/tfl984-def603-joined-corner.png`
+- Origin: TFL-938 C5 File-menu adversary diff-pass (ADV-230). `.command-menu { border-radius: var(--radius-group) }` (`styles.css:21157`, `--radius-group: 12px`) is later in the sheet at equal specificity, so its shorthand overrode the shipped `border-top-left-radius: 0` on `.titlebar-menu-popover`.
+
+Steps to reproduce (from ADV-230):
+1. Open the File menu and measure the trigger and popover geometry and computed radii at rest after the enter animation settles.
+
+Expected: the popover's top-left corner is square and flush with the trigger's bottom-left corner (the "one silhouette" joined-corner contract); the other popover corners keep the menu radius; the open trigger's bottom corners stay square.
+
+Actual (pre-fix): popover `border-top-left-radius` was 12px while the trigger's bottom corners were 0px (gap 1px). Evidence: `adv230-joined-corner.png`.
+
+Retest (TFL-984, 2026-10-06): `npx.cmd playwright test e2e/phase105_def601_602_603_retest.spec.cjs` -> `3 passed (6.2s)`. Measured live: `{"popover":{"topLeft":"0px","topRight":"12px","bottomRight":"12px","bottomLeft":"12px"},"trigger":{"bottomLeft":"0px","bottomRight":"0px"},"edgeGapY":1,"edgeGapX":0}`. Popover top-left is 0px, the other three corners are the menu radius (12px), the open trigger's bottom corners are 0px, and the popover's top/left edges are flush (1px/0px). Visually inspected `screenshots/tfl984-def603-joined-corner.png`: the popover joins the File trigger as one square-cornered silhouette. PASS.
+
+History:
+- CTO: ACCEPTED -> DEF-603 (TFL-938 C5 File-menu adversary diff-pass, 2026-10-06) - relaying frontend-dev; LOW.
+- qa: filed from ADV-230 (TFL-984, 2026-10-06) with `Found by: adversary (ADV-230)`, `Phase: 855`.
+- qa: CLOSED (TFL-984 FIX-READY retest, 2026-10-06). TFL-983 re-asserts the square top-left at higher specificity (`.titlebar-menu-popover.command-menu { border-top-left-radius: 0 }` `styles.css:14962`, specificity 0,2,0, which beats the later `.command-menu` shorthand). Real-app computed radii + visual screenshot confirm the joined silhouette.
+
+## DEF-604: The settings echo filter ignores every panel-layout field - a stale echo silently reverts a just-committed panel width or collapse (ADV-231)
+
+- Status: CLOSED
+- Closed by: qa (TFL-1001 FIX-READY retest, 2026-10-06)
+- Severity: MEDIUM - state-integrity gap in the Phase 112 panel-layout persistence: a stale `settings:changed` echo can revert a just-committed width or collapse. No document or data impact.
+- Found by: adversary (ADV-231)
+- Phase: 112 (TFL-854)
+- Files: `src/renderer/state/settingsEcho.ts` - the `sameSettings` (`:108-111`), `differsOnlyInRecentFiles` (`:153-156`) and `differsOnlyInGeometry` (`:311-314`) comparators each lacked a `panelLeftWidthPx` / `panelRightWidthPx` / `inspectorCollapsed` / `pagesPanelCollapsed` comparison. Probe: `test-fixtures/phase112-adversary/adv_echo_probe.mjs` / `.out.log`.
+- Origin: Phase 112 (TFL-997) adversary diff-pass, filed ADV-231; CTO ACCEPTED (`ADVERSARIAL_REVIEW.md:11275`) -> frontend-dev TFL-998/TFL-1000. The CTO brief labelled this `DEF-601`, which is already the closed Phase 105 File-trigger defect; filed here under the next free id `DEF-604`.
+
+Steps to reproduce:
+1. `node --experimental-strip-types test-fixtures/phase112-adversary/adv_echo_probe.mjs` (imports the real `src/renderer/state/settingsEcho.ts`).
+
+Expected: a stale echo that disagrees with the persisted settings on any of the four panel-layout fields is discarded - `shouldApplyEcho(...)` / `sameSettings(...)` return `false`.
+
+Actual (pre-fix): all four stale panel-layout echoes were applied (`actual=true`). Evidence: `test-fixtures/phase112-adversary/adv_echo_probe.out.log`.
+
+Command output (retest, TFL-1001): `node --experimental-strip-types test-fixtures/phase112-adversary/adv_echo_probe.mjs` -> EXIT=0; every decisive line `actual=false`: `left-width stale echo applied?: actual=false`, `right-width stale echo applied?: actual=false`, `inspectorCollapsed stale echo applied?: actual=false`, `pagesPanelCollapsed stale echo applied?: actual=false`, `sameSettings(stale,persisted) (width differs): actual=false`.
+
+History:
+- CTO: ACCEPTED ADV-231 (TFL-997 adversary diff-pass, 2026-10-06) - relayed to frontend-dev TFL-998 as the brief's `DEF-601`; MEDIUM.
+- qa: filed (TFL-1001, 2026-10-06) as DEF-604 (the brief's `DEF-601` id is already the closed Phase 105 File-trigger defect) with `Found by: adversary (ADV-231)`, `Phase: 112`.
+- qa: CLOSED (TFL-1001 FIX-READY retest, 2026-10-06). TFL-1000 added `if (a.panelLeftWidthPx !== b.panelLeftWidthPx) return false;` (and `panelRightWidthPx` / `inspectorCollapsed` / `pagesPanelCollapsed`) to all three comparators (`settingsEcho.ts:108-111`, `:153-156`, `:311-314`). Retest: probe green (above); `npx.cmd vitest run settingsEcho phase112_panelLayout exportDialog officeExport docxExport textExport` -> 8 files / 160 tests passed, EXIT=0; `npm.cmd run typecheck` clean; `npm.cmd run verify` clean (383 files). PASS.
+
+## DEF-605: A non-contiguous page range is collapsed to [first,last] before the engine call, so a prepared range silently exports unrequested intermediate pages (ADV-232)
+
+- Status: CLOSED
+- Closed by: qa (TFL-1001 FIX-READY retest, 2026-10-06)
+- Severity: MEDIUM - export-range honesty: the Deliver inspector's prepared non-contiguous range silently widened to the span between its first and last pages, exporting unrequested pages. The source document is not modified, but the output set is wrong.
+- Found by: adversary (ADV-232)
+- Phase: 112 (TFL-854)
+- Files: `src/renderer/components/ExportDialog.tsx`, `OfficeExportDialog.tsx`, `DocxExportDialog.tsx` (each collapsed the parsed selection to `[parsed[0], parsed[last]]` before a single engine call); fixed by `contiguousPageRuns` in `src/renderer/components/exportConfig.ts:253-266`. Probe (now stale, see below): `test-fixtures/phase112-adversary/adv_range_probe.mjs` / `.out.log`.
+- Origin: Phase 112 (TFL-997) adversary diff-pass, filed ADV-232; CTO ACCEPTED (`ADVERSARIAL_REVIEW.md:11307`) -> frontend-dev TFL-998/TFL-1000. The CTO brief labelled this `DEF-602`, already the closed Phase 105 Escape defect; filed here as `DEF-605`.
+
+Steps to reproduce:
+1. `node --experimental-strip-types test-fixtures/phase112-adversary/adv_range_probe.mjs`.
+
+Expected: a non-contiguous selection is exported exactly - no `[first,last]` widening.
+
+Actual (pre-fix): 4 of 6 non-empty expressions silently widened, e.g. `expr="1,3" parsed=[1,3] engineRange=[1,3] requested=2 enginePages=3 <-- SILENT WIDENING`. Evidence: `test-fixtures/phase112-adversary/adv_range_probe.out.log`.
+
+Retest (TFL-1001, 2026-10-06) - product fixed, shipped probe is a stale oracle: the shipped `adv_range_probe.mjs` STILL prints the same 4 of 6 "SILENT WIDENING" lines, because it hand-models the removed `[first,last]` transform and imports only `parsePageRange`; it never imports the shipped dialog transform. The dialogs no longer do `[first,last]` - each now loops `for (const [start,end] of contiguousPageRuns(parsed))` and calls the engine once per contiguous run. The decisive corrected-oracle evidence is the extended spec `test/unit/renderer/exportDialog.test.tsx:311-369` ("exports exactly the parsed pages, one engine call per contiguous run"): with `totalPages:5` and range `"1,3"` it asserts `calls === [[1,1],[3,3]]` (NOT the widening `[1,3]`) and `onConfirm` range `[1,3]`; `contiguousPageRuns` split cases at `:297-309`. Both passed. `npm.cmd run typecheck` clean; `npm.cmd run verify` clean; the 8-file vitest pass includes `exportDialog` / `officeExport` / `docxExport` / `textExport`.
+Finding (fixture only, not product): `adv_range_probe.mjs` is a stale/wrong oracle and should be refreshed to import `contiguousPageRuns` so it stops reporting widening; recorded here, not fixed (out of scope).
+
+History:
+- CTO: ACCEPTED ADV-232 (TFL-997, 2026-10-06) - relayed to frontend-dev TFL-998 as the brief's `DEF-602`; MEDIUM.
+- qa: filed (TFL-1001, 2026-10-06) as DEF-605 (`DEF-602` id already taken by the closed Phase 105 Escape defect) with `Found by: adversary (ADV-232)`, `Phase: 112`.
+- qa: CLOSED (TFL-1001 FIX-READY retest, 2026-10-06). Product defect resolved (per-run export + spec green); stale-probe fixture finding noted above. PASS (product).
+
+## DEF-606: A stale recents-only echo is trusted as an authoritative backend write - it can silently revert a renderer-written Pin (ADV-233)
+
+- Status: CLOSED
+- Closed by: qa (TFL-1001 FIX-READY retest, 2026-10-06)
+- Severity: MEDIUM - state-integrity gap: the `differsOnlyInRecentFiles` branch trusted any recents-only delta, so a stale echo could revert a renderer-written pin (or a verified source label). No document/data loss.
+- Found by: adversary (ADV-233)
+- Phase: 112 (TFL-854)
+- Files: `src/renderer/state/settingsEcho.ts` - `differsOnlyInRecentFiles` returned `!sameRecentFiles(...)`, bypassing the metadata comparison when the list length matched; fixed at `:172` (`return sameRecentMetadata(...)`) plus the new `sameRecentMetadata` (`:232-247`). Probe: `test-fixtures/phase112-adversary/adv_echo_probe.mjs` / `.out.log`.
+- Origin: Phase 112 (TFL-997) adversary diff-pass, filed ADV-233; CTO ACCEPTED (`ADVERSARIAL_REVIEW.md:11334`) -> frontend-dev TFL-998/TFL-1000. Task brief labelled `DEF-603` (already the closed Phase 105 CommandMenu radius defect); filed here as `DEF-606`.
+
+Steps to reproduce:
+1. `node --experimental-strip-types test-fixtures/phase112-adversary/adv_echo_probe.mjs` (imports the real `src/renderer/state/settingsEcho.ts`).
+
+Expected: a stale recents-only echo whose only local-vs-persisted delta is a reverted `pinned` flag is discarded.
+
+Actual (pre-fix): `pinned recents-only stale echo applied?: actual=true` and `differsOnlyInRecentFiles(stale,persisted): actual=true`. Evidence: `test-fixtures/phase112-adversary/adv_echo_probe.out.log`.
+
+Command output (retest, TFL-1001): `pinned recents-only stale echo applied?: actual=false`; `sameRecentFiles via sameSettings (pin differs): actual=false`; `differsOnlyInRecentFiles(stale,persisted): actual=false`. Probe EXIT=0. The `settingsEcho.test.ts` pin / sourceLabel / openedAt cases at `:1043-1094` passed within the 8-file run.
+
+History:
+- CTO: ACCEPTED ADV-233 (TFL-997, 2026-10-06) - relayed to frontend-dev TFL-998 as the brief's `DEF-603`; MEDIUM.
+- qa: filed (TFL-1001, 2026-10-06) as DEF-606 (`DEF-603` id already taken by the closed Phase 105 CommandMenu radius defect) with `Found by: adversary (ADV-233)`, `Phase: 112`.
+- qa: CLOSED (TFL-1001 FIX-READY retest, 2026-10-06). TFL-1000 changed `differsOnlyInRecentFiles` to `return sameRecentMetadata(a.recentFiles, b.recentFiles)` (`settingsEcho.ts:172`), which disqualifies the delta when any shared recents entry disagrees on `pinned` / `sourceLabel` / `sourceKind` / `converted` / `workingFormat` (`:232-247`). Probe + spec green. PASS.

@@ -20,6 +20,7 @@ const {
   _buildAppMenu,
     _updateServiceInstance,
     _openPath,
+    _showItemInFolder,
     _ipcOn,
     _applyMenuEnabled,
     _clipboard,
@@ -94,6 +95,8 @@ const {
       onStatusChanged: vi.fn().mockReturnValue(() => {}),
     },
     _openPath: vi.fn().mockResolvedValue(''),
+    // Phase 112 — the OS reveal call behind `recent:showInFolder`.
+    _showItemInFolder: vi.fn(),
     _handle: vi.fn(),
     _on: vi.fn(),
     _ipcOn: vi.fn(),
@@ -152,6 +155,8 @@ vi.mock('electron', async () => ({
   },
   shell: {
     openPath: _openPath,
+    // Phase 112 — reveal a recent file in the OS file manager.
+    showItemInFolder: _showItemInFolder,
   },
   // Phase 44 — the accounts session vault reads Electron safeStorage at
   // construction; a reversible base64 transform stands in for encryption.
@@ -225,7 +230,8 @@ vi.mock('../../../src/main/services/dialog', () => ({
 
 import { start } from '../../../src/main/index';
 import { IPC } from '../../../src/shared/ipc';
-import { savePdfDialog } from '../../../src/main/services/dialog';
+import { openPdfDialog, savePdfDialog } from '../../../src/main/services/dialog';
+import { join } from 'node:path';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -1428,5 +1434,78 @@ describe('main/index - clipboard:readImage', () => {
     const call = _handle.mock.calls.find((c: unknown[]) => c[0] === IPC.clipboardReadImage);
     const handler = call![1] as () => Promise<{ ok: boolean; reason?: string }>;
     await expect(handler()).resolves.toEqual({ ok: false, reason: 'empty' });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Phase 112 (TFL-986) — Home Recent panel actions: recent:showInFolder and
+// recent:locateMissing. showInFolder must never throw and never delete/move a
+// file; a missing path resolves a typed 'missing' result so the renderer can
+// offer Locate missing. locateMissing reuses the single Open-PDF picker.
+// ---------------------------------------------------------------------------
+
+describe('main/index - Phase 112 recent actions', () => {
+  beforeEach(async () => {
+    vi.clearAllMocks();
+    _handle.mockClear();
+    _on.mockClear();
+    _getAllWindows.mockReturnValue([]);
+    _showItemInFolder.mockReset();
+    await start();
+  });
+
+  function handlerFor(channel: string): (...args: unknown[]) => unknown {
+    const call = _handle.mock.calls.find((c: unknown[]) => c[0] === channel);
+    expect(call).toBeDefined();
+    return call![1] as (...args: unknown[]) => unknown;
+  }
+
+  it('registers both new channels', () => {
+    expect(getRegisteredChannels()).toContain(IPC.recentShowInFolder);
+    expect(getRegisteredChannels()).toContain(IPC.recentLocateMissing);
+    expect(IPC.recentShowInFolder).toBe('recent:showInFolder');
+    expect(IPC.recentLocateMissing).toBe('recent:locateMissing');
+  });
+
+  it('resolves { ok: true } and reveals an existing file', async () => {
+    const handler = handlerFor(IPC.recentShowInFolder);
+    expect(await handler({}, process.execPath)).toEqual({ ok: true });
+    expect(_showItemInFolder).toHaveBeenCalledTimes(1);
+    expect(_showItemInFolder).toHaveBeenCalledWith(process.execPath);
+  });
+
+  it('resolves { ok: false, reason: missing } and does NOT call the OS for an absent path', async () => {
+    const handler = handlerFor(IPC.recentShowInFolder);
+    const missing = join(process.cwd(), 'TFL-986-no-such-dir', 'missing.pdf');
+    expect(await handler({}, missing)).toEqual({ ok: false, reason: 'missing' });
+    expect(_showItemInFolder).not.toHaveBeenCalled();
+  });
+
+  it('resolves { ok: false, reason: failed } when the OS call rejects, never throwing', async () => {
+    _showItemInFolder.mockImplementationOnce(() => {
+      throw new Error('no shell');
+    });
+    const handler = handlerFor(IPC.recentShowInFolder);
+    expect(await handler({}, process.execPath)).toEqual({ ok: false, reason: 'failed' });
+  });
+
+  it('resolves { ok: false, reason: failed } for a non-string/empty path', async () => {
+    const handler = handlerFor(IPC.recentShowInFolder);
+    expect(await handler({}, undefined)).toEqual({ ok: false, reason: 'failed' });
+    expect(await handler({}, '')).toEqual({ ok: false, reason: 'failed' });
+    expect(await handler({}, 42)).toEqual({ ok: false, reason: 'failed' });
+    expect(_showItemInFolder).not.toHaveBeenCalled();
+  });
+
+  it('locateMissing resolves the chosen absolute path from the PDF picker', async () => {
+    const handler = handlerFor(IPC.recentLocateMissing);
+    await expect(handler()).resolves.toBe('/mock/selected.pdf');
+    expect(openPdfDialog).toHaveBeenCalledWith('pdf');
+  });
+
+  it('locateMissing resolves null on cancel', async () => {
+    vi.mocked(openPdfDialog).mockResolvedValueOnce(null);
+    const handler = handlerFor(IPC.recentLocateMissing);
+    await expect(handler()).resolves.toBeNull();
   });
 });

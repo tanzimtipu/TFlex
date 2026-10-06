@@ -673,4 +673,44 @@ scoped with `:root:not([data-theme="dark"]):not([data-theme="frosted"])`, so dar
 global token. Pinned by `test/unit/renderer/phase110_homeContrast.test.ts` and
 the `--bg-sunken` scoring in `test/unit/renderer/phase38LegibilityContrast.test.ts`.
 
+## 19. Phase 112 - shared panel primitives + scoped panel tokens (chunk A, applied)
+
+Phase 112 rebuilds the workspace panels as a Context Pair. Chunk A lands the
+foundation only: ONE shared primitive set and a scoped panel token mapping. No
+existing workspace content, section order, control or command changes.
+
+### 19.1 The shared primitives
+
+`src/renderer/components/panels/PanelPrimitives.tsx` exports the vocabulary every
+workspace panel builds from: `PanelShell` (opaque surface, `role="region"` +
+`aria-label`, class passthrough), `ScopedHeader` (preferred 52px header, sentence
+case title, actions slot), `PanelSection` (14px/500 heading, 20px section gap),
+`PropertyRow` (32-36px row, 12px secondary label, value slot), `ActionList` (a
+list of labelled actions) and `PanelEmptyState` (mark + headline + optional help,
+through the Phase-94 `Icon`). Every class is prefixed `tf-panel-`; every state
+rides a `data-*` hook (`data-tf-panel-header`, `data-tf-panel-action`). The
+legacy `glass-sidebar-*` classes are emitted alongside so existing CSS and e2e
+selectors keep resolving.
+
+### 19.2 Scoped panel tokens
+
+A `.tf-panel` block at the END of `styles.css` maps the proposed
+`Visual overhaul/Design System/panels.tokens.json` extension onto existing
+tokens, scoped so it cannot leak into the app theme: padding 16px, section gap
+20px, header height 52px, field radius 9px, heading 14px/500, secondary label
+12px, boundary 1px. Motion reuses the existing 140ms `--motion-duration-panel`
+token; colour resolves through `--panel-*` / `--fg-*` / `--border`. The scope
+re-honours `prefers-reduced-motion` and `forced-colors: active` (Canvas /
+CanvasText).
+
+### 19.3 Shell geometry
+
+`GlassSidebar` / `GlassSidebarHeader` gain an opt-in `height="preferred"` (52px
+via `--glass-sidebar-header-h-preferred`); omitted, every existing consumer keeps
+the legacy 44px. `ContextPanel` and `Inspector` now mount `PanelShell` as their
+root, `ScopedHeader` at the preferred height, and the Inspector's section via
+`PanelSection`, preserving their `data-*` hooks and legacy classes.
+
+Pinned by `test/unit/renderer/panelPrimitives.test.tsx`.
+
 

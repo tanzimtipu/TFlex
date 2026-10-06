@@ -101,6 +101,14 @@ export function sameSettings(a: AppSettings, b: AppSettings): boolean {
   if (a.saveAsLinearize !== b.saveAsLinearize) return false;
   if (a.homeMotionPaused !== b.homeMotionPaused) return false;
   if (a.animationsEnabled !== b.animationsEnabled) return false;
+  // Phase 112 (TFL-1000, DEF-601) — the panel-layout fields participate so a
+  // stale echo that disagrees on a just-committed panel width or collapse is
+  // recognised as stale and discarded (syncPanelWidth / setInspectorCollapsed
+  // consume only accepted echoes).
+  if (a.panelLeftWidthPx !== b.panelLeftWidthPx) return false;
+  if (a.panelRightWidthPx !== b.panelRightWidthPx) return false;
+  if (a.inspectorCollapsed !== b.inspectorCollapsed) return false;
+  if (a.pagesPanelCollapsed !== b.pagesPanelCollapsed) return false;
   if (!sameGeometry(a.geometry, b.geometry)) return false;
   if (!sameRecentFiles(a.recentFiles, b.recentFiles)) return false;
   if (!sameSpellCheck(a.spellCheck, b.spellCheck)) return false;
@@ -139,6 +147,13 @@ export function differsOnlyInRecentFiles(
   if (a.saveAsLinearize !== b.saveAsLinearize) return false;
   if (a.homeMotionPaused !== b.homeMotionPaused) return false;
   if (a.animationsEnabled !== b.animationsEnabled) return false;
+  // Phase 112 (TFL-1000, DEF-601) — a panel-layout drift also disqualifies a
+  // recents-only delta, so a stale width/collapse echo is never mistaken for
+  // the canonical addRecentFile reflection.
+  if (a.panelLeftWidthPx !== b.panelLeftWidthPx) return false;
+  if (a.panelRightWidthPx !== b.panelRightWidthPx) return false;
+  if (a.inspectorCollapsed !== b.inspectorCollapsed) return false;
+  if (a.pagesPanelCollapsed !== b.pagesPanelCollapsed) return false;
   if (!sameGeometry(a.geometry, b.geometry)) return false;
   if (!sameAnnotationColors(a.annotationColors, b.annotationColors)) return false;
   if (!sameSpellCheck(a.spellCheck, b.spellCheck)) return false;
@@ -147,7 +162,14 @@ export function differsOnlyInRecentFiles(
   // the recents are identical — in which case sameSettings above
   // would have caught it; we're here because sameSettings
   // returned false, so recents MUST differ.)
-  return !sameRecentFiles(a.recentFiles, b.recentFiles);
+  if (sameRecentFiles(a.recentFiles, b.recentFiles)) return false;
+  // DEF-603 — only trust the delta as the canonical backend
+  // `addRecentFile` reflection when the C6a metadata of every recents entry
+  // present in BOTH lists agrees. `addRecentFile` inserts/refreshes an entry
+  // (path / name / openedAt); it never rewrites a pin or a verified source
+  // label the renderer wrote on its own local path. A stale local-write echo
+  // that reverted one of those fields therefore fails here and is discarded.
+  return sameRecentMetadata(a.recentFiles, b.recentFiles);
 }
 
 /** Suppress an "unused import" lint check while documenting the
@@ -179,6 +201,11 @@ function sameSpellCheck(
   return a.enabled === b.enabled && a.language === b.language;
 }
 
+/** TFL-990 (Phase 112 C6b) — the recents comparator covers the C6a optional
+ *  fields (sourceLabel / sourceKind / converted / pinned / workingFormat).
+ *  Without them a stale settings echo carrying an older recents list would
+ *  still compare equal and silently revert a pin, a verified source label or a
+ *  converted marker — the same DEF-599 class of clobber for the new fields. */
 function sameRecentFiles(a: RecentFile[], b: RecentFile[]): boolean {
   if (a.length !== b.length) return false;
   for (let i = 0; i < a.length; i += 1) {
@@ -186,6 +213,33 @@ function sameRecentFiles(a: RecentFile[], b: RecentFile[]): boolean {
     const y = b[i];
     if (x === undefined || y === undefined) return false;
     if (x.path !== y.path || x.name !== y.name || x.openedAt !== y.openedAt) return false;
+    if (x.sourceLabel !== y.sourceLabel) return false;
+    if (x.sourceKind !== y.sourceKind) return false;
+    if (x.converted !== y.converted) return false;
+    if (x.pinned !== y.pinned) return false;
+    if (x.workingFormat !== y.workingFormat) return false;
+  }
+  return true;
+}
+
+/** TFL-1000 (Phase 112, DEF-603) — true when every recents entry that appears
+ *  in BOTH lists agrees on the five C6a metadata fields. A genuine backend
+ *  `addRecentFile` echo only inserts or refreshes an entry (path / name /
+ *  openedAt); it never rewrites a pin, source label, source kind, converted
+ *  marker or working format the renderer wrote on its own local path. A stale
+ *  local-write echo that reverted one of those fields fails here, so the
+ *  recents-only branch no longer trusts it as the canonical backend list. */
+function sameRecentMetadata(a: RecentFile[], b: RecentFile[]): boolean {
+  const byPath = new Map<string, RecentFile>();
+  for (const entry of b) byPath.set(entry.path, entry);
+  for (const x of a) {
+    const y = byPath.get(x.path);
+    if (y === undefined) continue;
+    if (x.sourceLabel !== y.sourceLabel) return false;
+    if (x.sourceKind !== y.sourceKind) return false;
+    if (x.converted !== y.converted) return false;
+    if (x.pinned !== y.pinned) return false;
+    if (x.workingFormat !== y.workingFormat) return false;
   }
   return true;
 }
@@ -251,6 +305,13 @@ export function differsOnlyInGeometry(a: AppSettings, b: AppSettings): boolean {
   if (a.saveAsLinearize !== b.saveAsLinearize) return false;
   if (a.homeMotionPaused !== b.homeMotionPaused) return false;
   if (a.animationsEnabled !== b.animationsEnabled) return false;
+  // Phase 112 (TFL-1000, DEF-601) — a panel-layout drift disqualifies the
+  // geometry-only delta as well, so an echo that carries a stale width or
+  // collapse alongside live window geometry is never applied wholesale.
+  if (a.panelLeftWidthPx !== b.panelLeftWidthPx) return false;
+  if (a.panelRightWidthPx !== b.panelRightWidthPx) return false;
+  if (a.inspectorCollapsed !== b.inspectorCollapsed) return false;
+  if (a.pagesPanelCollapsed !== b.pagesPanelCollapsed) return false;
   if (!sameRecentFiles(a.recentFiles, b.recentFiles)) return false;
   if (!sameAnnotationColors(a.annotationColors, b.annotationColors)) return false;
   if (!sameSpellCheck(a.spellCheck, b.spellCheck)) return false;

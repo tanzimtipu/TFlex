@@ -332,9 +332,9 @@ export function TextPropertiesPanel(props: TextPropertiesPanelProps): ReactEleme
               ))}
             </select>
           </label>
-          <p className="text-props-hint">
-            Standard faces use the base-14 fonts; bundled faces embed a real subset on
-            save.
+          <p className="text-props-hint" data-txt-font-availability>
+            All listed fonts are available offline. If a document uses a font that is
+            not available, its text is shown in a substituted face.
           </p>
           <label className="text-props-row">
             <span className="text-props-label">Size</span>
@@ -518,23 +518,6 @@ export function TextPropertiesPanel(props: TextPropertiesPanelProps): ReactEleme
               </button>
             ))}
           </div>
-          <label className="text-props-row">
-            <span className="text-props-label">Line spacing</span>
-            <input
-              className="text-props-input"
-              data-txt-line-height
-              type="number"
-              min={TEXT_LINE_HEIGHT_MIN}
-              max={TEXT_LINE_HEIGHT_MAX}
-              step={0.1}
-              value={values.lineHeight}
-              onChange={(e): void => {
-                const n = numberOrNull(e.target.value);
-                if (n === null) return;
-                onPatch({ lineHeight: clampLineHeight(n) });
-              }}
-            />
-          </label>
           <div className="text-props-btn-row" role="group" aria-label="List style">
             {(
               [
@@ -591,39 +574,61 @@ export function TextPropertiesPanel(props: TextPropertiesPanelProps): ReactEleme
           </div>
         </Group>
 
-        {/* Phase 27 — character spacing is LIVE: the engine now emits the
-            `Tc` text-state operator, so the control writes `charSpacing`
-            into the style patch. Horizontal scaling stays disabled — the
-            engine still exposes no `Tz` operator. */}
-        <Group title="Spacing">
-          <label className="text-props-row">
-            <span className="text-props-label">Character spacing</span>
-            <input
-              className="text-props-input"
-              data-txt-character-spacing
-              type="number"
-              min={TEXT_CHAR_SPACING_MIN}
-              max={TEXT_CHAR_SPACING_MAX}
-              step={TEXT_CHAR_SPACING_STEP}
-              value={values.charSpacing}
-              title="Extra space between glyphs, in points (PDF Tc). 0 = default."
-              onChange={(e): void => {
-                const n = numberOrNull(e.target.value);
-                if (n === null) return;
-                onPatch({ charSpacing: clampCharSpacing(n) });
-              }}
-            />
-          </label>
-          <button
-            type="button"
-            data-txt-horizontal-scaling
-            className="btn btn-secondary text-props-wide-btn"
-            disabled
-            title="Horizontal scaling is not available: the PDF engine has no Tz operator."
-          >
-            <span>Horizontal scaling</span>
-          </button>
-        </Group>
+        {/* Phase 112 (C3) — advanced typography is disclosed progressively.
+            Line spacing, character spacing and horizontal scaling live behind
+            one disclosure instead of rendering unconditionally; the common
+            controls (Text / Font / Paragraph) stay visible. Character spacing
+            is LIVE (the engine emits the `Tc` operator); horizontal scaling
+            stays disabled (no `Tz` operator yet). */}
+        <details className="text-props-advanced" data-txt-advanced>
+          <summary className="text-props-advanced-summary">Advanced typography</summary>
+          <div className="text-props-advanced-body">
+            <label className="text-props-row">
+              <span className="text-props-label">Line spacing</span>
+              <input
+                className="text-props-input"
+                data-txt-line-height
+                type="number"
+                min={TEXT_LINE_HEIGHT_MIN}
+                max={TEXT_LINE_HEIGHT_MAX}
+                step={0.1}
+                value={values.lineHeight}
+                onChange={(e): void => {
+                  const n = numberOrNull(e.target.value);
+                  if (n === null) return;
+                  onPatch({ lineHeight: clampLineHeight(n) });
+                }}
+              />
+            </label>
+            <label className="text-props-row">
+              <span className="text-props-label">Character spacing</span>
+              <input
+                className="text-props-input"
+                data-txt-character-spacing
+                type="number"
+                min={TEXT_CHAR_SPACING_MIN}
+                max={TEXT_CHAR_SPACING_MAX}
+                step={TEXT_CHAR_SPACING_STEP}
+                value={values.charSpacing}
+                title="Extra space between glyphs, in points (PDF Tc). 0 = default."
+                onChange={(e): void => {
+                  const n = numberOrNull(e.target.value);
+                  if (n === null) return;
+                  onPatch({ charSpacing: clampCharSpacing(n) });
+                }}
+              />
+            </label>
+            <button
+              type="button"
+              data-txt-horizontal-scaling
+              className="btn btn-secondary text-props-wide-btn"
+              disabled
+              title="Horizontal scaling is not available: the PDF engine has no Tz operator."
+            >
+              <span>Horizontal scaling</span>
+            </button>
+          </div>
+        </details>
         </div>
       </AnimatedPanel>
     </div>

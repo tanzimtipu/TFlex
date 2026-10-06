@@ -318,7 +318,7 @@ it("EDIT + a page shows ONLY the CropBox values (no OCR status — ruling 4)", (
     }
   });
 
-  it("REVIEW + the document renders the unified review list and wires the FDF actions", () => {
+  it("REVIEW + the document shows the annotation hint (never a duplicate list) and wires the FDF actions", () => {
     const onExportComments = vi.fn();
     const onImportComments = vi.fn();
     const { host, unmount } = mount({
@@ -330,17 +330,20 @@ it("EDIT + a page shows ONLY the CropBox values (no OCR status — ruling 4)", (
     });
     try {
       expect(slots(host)).toEqual(["comments", "review-elements"]);
-      // Phase 90 (TFL-509-C1) — Ruling 6: the unified list IS rendered here,
-      // and its Annotations category re-parents the ONE real AnnotationsPanel.
+      // Phase 112 (TFL-854 C4) — the Inspector keeps the shared review marks
+      // categories but the Annotations category is the SELECTED annotation's
+      // scope, never a second copy of the LEFT navigator's list. With nothing
+      // selected it is a short designed hint.
       expect(host.querySelector("[data-review-elements]")).not.toBeNull();
-      expect(
-        host.querySelector('[data-review-category="annotations"] [data-annotation-panel]'),
-      ).not.toBeNull();
-      // The superseded reference-only section is gone — the list is rendered
-      // once, never duplicated.
+      expect(host.querySelector('[data-review-category="annotations"]')).not.toBeNull();
+      expect(host.querySelector("[data-annotation-panel]")).toBeNull();
+      const hint = host.querySelector("[data-inspector-review-empty]");
+      expect(hint).not.toBeNull();
+      expect(hint?.classList.contains("tf-panel-empty")).toBe(true);
+      // The superseded reference-only section is gone — the list lives in the
+      // REVIEW navigator, never duplicated here.
       expect(host.querySelector("[data-inspector-annotations-reference]")).toBeNull();
-      // The 3A cleanup: no per-annotation verbs here either — the list owns
-      // them, so the Inspector adds no separate row callbacks.
+      // No per-annotation verbs without a selection.
       expect(host.querySelector('[data-inspector-action="annotation-jump"]')).toBeNull();
       expect(host.querySelector('[data-inspector-action="annotation-edit"]')).toBeNull();
       expect(host.querySelector('[data-inspector-action="annotation-delete"]')).toBeNull();

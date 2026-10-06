@@ -1,0 +1,12 @@
+{
+  "panelCount": {
+    "pages": 1,
+    "edit": 1,
+    "review": 1,
+    "deliver": 1
+  },
+  "themes": [
+    "light",
+    "dark"
+  ]
+}

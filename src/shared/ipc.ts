@@ -126,6 +126,14 @@ export const IPC = {
   dictionaryLoad: "dictionary:load",
   settingsSave: "settings:save",
   settingsAddRecent: "settings:addRecent",
+  // Phase 112 (TFL-986) — Home Recent panel actions. `recent:showInFolder`
+  // reveals an entry's file in the OS file manager; it NEVER deletes or moves
+  // a file, and a path that no longer exists resolves a typed 'missing' result
+  // (the renderer then offers Locate missing) instead of throwing.
+  // `recent:locateMissing` re-points a missing entry by opening the single
+  // Open-PDF picker and resolving the chosen absolute path (null on cancel).
+  recentShowInFolder: "recent:showInFolder",
+  recentLocateMissing: "recent:locateMissing",
   settingsChangedEvent: "settings:changed",
   settingsWriteErrorEvent: "settings:writeError",
   // Phase 7: application menu actions pushed from main to renderer
@@ -497,6 +505,15 @@ export type ClipboardImageResult =
 export type OpenDefaultAppsSettingsResult =
   | { ok: true }
   | { ok: false; reason: "failed" };
+
+/** Phase 112 (TFL-986) — result of `recent:showInFolder`. `ok: true` means the
+ *  path exists and the OS file manager was asked to reveal it. `missing` means
+ *  the path no longer exists on disk (the renderer offers Locate missing);
+ *  `failed` means the OS call rejected or the argument was not a path. The
+ *  handler never throws and never deletes or moves a file. */
+export type ShowInFolderResult =
+  | { ok: true }
+  | { ok: false; reason: "missing" | "failed" };
 
 /** Phase 58 — a document tab carried between app windows. The BYTES are the
  *  document (not a file path), so a saved, unsaved or derived document can all
@@ -1155,6 +1172,14 @@ export interface TFlexApi {
   loadDictionary(language: SpellCheckLanguage): Promise<Result<{ language: SpellCheckLanguage; words: string }, DictionaryLoadError>>;
   saveSettings(s: AppSettings): Promise<void>;
   addRecentFile(f: RecentFile): Promise<void>;
+  /** Phase 112 (TFL-986) — reveal a recent file in the OS file manager. Never
+   *  deletes or moves the file; resolves a typed `ShowInFolderResult` and never
+   *  throws (a missing path resolves `reason: 'missing'`). */
+  showInFolder(path: string): Promise<ShowInFolderResult>;
+  /** Phase 112 (TFL-986) — re-point a missing recent entry by picking a PDF
+   *  through the single Open-PDF dialog. Resolves the chosen absolute path, or
+   *  null when the user cancels. */
+  locateMissing(): Promise<string | null>;
   settings: {
     changed(cb: (s: AppSettings) => void): () => void;
     /** DEF-230 — fired when a settings write fails (e.g. EPERM on rename).

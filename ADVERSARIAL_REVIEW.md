@@ -11085,3 +11085,326 @@ Screenshot: none (logic-level race). Fixture/probe: `test-fixtures/phase106-tfl9
 Disposition: ACCEPTED - LOW; fix assigned to frontend-dev (child of TFL-938, 2026-10-06); qa to CLOSE at the FIX-READY retest.
 
 Filed: ADV-227 -> DEF-599 (CTO triage, 2026-10-06).
+
+## TFL-975 - File menu migrated to the shared CommandMenu primitive (TFL-855 chunk C5)
+
+Session label: `diff-pass`. Scope: the uncommitted TFL-975 change - `src/renderer/components/TitleBar.tsx`
+(the File popover migrated from the inline `TfMorph` menu to the shared `CommandMenu` primitive;
+`toCommandGroups` added; the inline rows, the bespoke outside-pointerdown effect, the Escape listener and
+the `useMorphPreset` / `menuPopoverRef` morph plumbing removed) plus `src/renderer/components/CommandMenu.tsx`.
+
+Build: `npm.cmd run build:renderer` then `npm.cmd run build:node` from the current (dirty) tree, held under
+the build mutex; the app was launched only through `e2e/lib/launch.cjs`. Raw evidence is attached to the
+issue as the `adv228*`, `adv229*`, `adv230*` and `clean-*` artifacts.
+
+Per-item verdicts:
+1. Command preservation - CLEAN. The `[data-menu-action]` rows read open / merge / save / saveAs / closeTab
+   with Ctrl+O / Ctrl+Shift+O / Ctrl+S / Ctrl+Shift+S / Ctrl+W, identical to `App.tsx:9453-9457`;
+   `toCommandGroups` is a pure pass-through (TitleBar.tsx:168-182).
+2. Dismissal contract - OUTSIDE POINTERDOWN PASSTHROUGH CLEAN (an injected button outside the popover
+   received its click and the menu closed); TWO REGRESSIONS filed (ADV-228, ADV-229).
+3. Keyboard - CLEAN except the Escape scoping in ADV-229. ArrowUp/Down, Home/End traverse enabled rows and
+   wrap; `aria-expanded` tracks open state; Enter/Space activate exactly once (see item 6).
+4. No double motion / dead plumbing - CLEAN. No `TfMorph` / `useMorphPreset` / `menuPopoverRef` residual in
+   TitleBar. With emulated OS reduced motion the popover is opacity 1 / transform none at +40 ms (instant, no
+   travel); normal motion is a single 0.96 scale + y -4 fade with no second animation.
+5. Edge/height - NOT REACHABLE for the File menu. The 5-row list is 215 px and the app would not shrink below
+   ~725 px content height in this environment, so the JS clamp (560 px cap, `overflow-y: auto` on
+   `.command-menu-list`) never engages. The `data-placement` attribute the clamp writes has no matching CSS
+   (`rg '\[data-placement' src/renderer/styles.css` is empty), so the documented "flip" is a no-op; harmless
+   for this top-anchored menu.
+6. Save-class guards - CLEAN. `closeTab` via mouse and via Enter each reduced `[data-tab-id]` by exactly 1
+   (2 -> 1 -> 0): single dispatch, no bypass. The row dispatches the same `action` string to the same App
+   `closeTab` handler; the active-doc / unsaved-close guard path is untouched by the diff.
+7. Appearance - OPAQUE AND LEGIBLE in light (rgb(255,255,255)) and dark (rgb(23,27,32)), opacity 1, no
+   translucency regression; one LOW visual defect filed (ADV-230).
+
+## ADV-228: The File trigger cannot close its own open menu - a real mouse click closes on pointerdown and the trailing click reopens it
+
+- Session: diff-pass
+- Suggested severity: MEDIUM (dismissal / toggle contract regression; no data loss)
+
+What I did: launched the app via `e2e/lib/launch.cjs`, clicked `[data-menu-button]` to open the File menu
+(popover present, `aria-expanded="true"`), then clicked `[data-menu-button]` again with a real pointer click
+and counted `[data-menu-popover]` after 600 ms. Repeated three times. Separately I recorded the DOM event
+order with a capture-phase `pointerdown`/`mousedown`/`mouseup`/`click` listener, and compared a real pointer
+click against a synthetic `element.click()` (no pointerdown) and against keyboard Enter on the trigger.
+
+Expected: the second click closes the menu and `aria-expanded` returns to false. The trigger's `onClick` is
+`setMenuOpen((v) => !v)` (`TitleBar.tsx:268`), and the retired TitleBar handler explicitly exempted the
+trigger from its outside-pointerdown close (`if (menuButtonRef.current?.contains(t)) return;`, removed by
+this diff), so pre-migration the trigger toggled closed.
+
+Actual: the menu stays open on 3/3 real mouse clicks. The captured order on the open trigger is
+`pointerdown` (target = trigger) -> `mousedown` (the trigger has already lost `titlebar-menu-button-active`,
+i.e. the menu has already closed) -> `mouseup` -> `click` (reopens). `CommandMenu`'s window pointerdown
+handler (`CommandMenu.tsx:449-457`) exempts only `rootRef` (the popover), never the opener, so the
+pointerdown closes the menu and the click toggle immediately reopens it. A synthetic `.click()` with no
+preceding pointerdown closes the menu (1/1), and keyboard Enter on the trigger also closes it, isolating the
+pointerdown+click pairing as the cause. Fix shape (for the frontend-dev - I edited nothing): the opener
+element must be exempted from the dismiss (an `openerRef`, or ignore a pointerdown inside the trigger's
+`closest('.titlebar-menu')`), or the trigger should not toggle on click while the pointerdown already
+dismissed.
+
+Screenshot: none (state behaviour). Evidence: `adv228-trigger-event-sequence.json`,
+`adv228-229-230-probe3.json`.
+
+Disposition: ACCEPTED -> DEF-601 (MEDIUM) - relaying frontend-dev. Real dismissal/toggle regression introduced by the C5 CommandMenu migration: the opener must be exempted from CommandMenu's outside-pointerdown dismiss so a real click on the trigger collapses the open menu.
+
+## ADV-229: Escape stops closing the File menu whenever focus is not on a menu row
+
+- Session: diff-pass
+- Suggested severity: MEDIUM (dismissal / keyboard contract regression; no data loss)
+
+What I did: opened the File menu, clicked the non-focusable group heading `.titlebar-menu-heading` (a
+`div role="presentation"`), read `document.activeElement` (BODY, not inside `.command-menu`), then pressed
+Escape. Ran the heading click 3 times; separately clicked the popover padding near its bottom-right corner
+then pressed Escape.
+
+Expected: Escape closes the menu regardless of which part of the popover has focus, and returns focus to the
+trigger. The retired TitleBar had a global `window.addEventListener("keydown", onKey)` that closed the menu
+on Escape from anywhere (removed by this diff).
+
+Actual: the menu stays open in all 4 trials (`escapeClosed: false`). `CommandMenu` binds Escape to the row
+list's `onKeyDown` only (`CommandMenu.tsx:269`, attached at `:282-287`); clicking the heading or padding
+moves focus to BODY, so the list never receives the key. Control: with focus forced onto a row, Escape closes
+1/1. Any click inside the popover that misses a row disarms Escape while the menu is still visible. Fix
+shape: add a document-level Escape listener while open (or make the popover root focusable and keep focus
+inside it).
+
+Screenshot: none (state behaviour). Evidence: `adv229-escape-heading.json`.
+
+Disposition: ACCEPTED -> DEF-602 (MEDIUM) - relaying frontend-dev. Real keyboard regression: Escape must close while focus is off the row list; add a document-level Escape listener while the menu is open (or keep focus inside the surface).
+
+## ADV-230: The CommandMenu border-radius shorthand overrides the shipped square top-left corner, so the File popover no longer joins the trigger's silhouette
+
+- Session: diff-pass
+- Suggested severity: LOW (visual / design-system consistency; no functional impact)
+
+What I did: opened the File menu and measured the trigger and popover geometry and computed radii at rest
+after the enter animation settled.
+
+Expected: the popover's top-left corner is square and flush with the trigger's bottom-left corner (the
+title-bar "one silhouette" joined-corner contract; `.titlebar-menu-popover { border-top-left-radius: 0 }` at
+`styles.css:14932-14934`, with the open trigger squaring its bottom corners at `styles.css:14961-14962`).
+
+Actual: popover `border-top-left-radius` is 12px while the trigger's bottom corners are 0px (gap 1px, fine).
+`.command-menu { border-radius: var(--radius-group) }` (`styles.css:21152`, `--radius-group: 12px`,
+`styles.css:226`) is later in the stylesheet at equal specificity, so its shorthand overrides the shipped
+`border-top-left-radius: 0`; the joined silhouette gains a rounded notch on the trigger's left corner. Fix
+shape: scope the radius so the top-left stays 0 (e.g. re-assert `border-top-left-radius: 0` after the
+shorthand, or use longhand radii in `.command-menu`).
+
+Screenshot: `adv230-joined-corner.png`; `file-menu-light.png` shows the full surface.
+
+Disposition: ACCEPTED -> DEF-603 (LOW) - relaying frontend-dev. Keep the popover top-left square so the trigger + popover reads as one joined silhouette.
+
+## Design critique: File menu on CommandMenu (TFL-975)
+
+User context: a desktop PDF user opening, merging, saving and closing documents; the File popover is a
+discoverability surface - the native accelerators own the shortcuts, so the primary job is "find the right
+document action and read its accelerator" with the mouse.
+
+### Must-fix (blocks ship)
+- **Affordance / states:** the trigger does not read as a toggle - clicking it while open appears to do
+  nothing (ADV-228). **Try:** close on trigger activation, keep the open wash, and let the second click
+  collapse the menu.
+- **Interaction:** Escape silently fails after a click on the heading or padding (ADV-229). **Try:** keep the
+  menu's Escape scope at the surface level, not the row list.
+
+### Should-fix (before broader rollout)
+- **Consistency:** the rounded top-left corner breaks the joined trigger+menu silhouette (ADV-230). **Try:**
+  square the top-left so the pair reads as one surface.
+
+### Nice-to-fix (when there's room)
+- **Error prevention:** every File row is enabled with no document open, so Save / Save As / Close Tab
+  dispatch a silent no-op (the known DEF-065 renderer gate). The primitive now supports `disabled` +
+  `disabledReason`, so the File group could surface "No document open" instead of a dead click. **Try:** gate
+  the active-doc rows via the new `disabled`/`disabledReason` fields.
+
+### Strengths to keep
+- Accelerators are right-aligned `.kbd` chips on every row, and the documented `[data-menu-action]` contract
+  is preserved exactly - the e2e selectors still resolve.
+- Auto-focus lands on the first row on open and returns to the opener on close; Arrow/Home/End traversal
+  wraps and skips nothing it should not.
+- The surface is opaque and legible in light and dark, and the reduced-motion path is genuinely instant (no
+  travel), so the swap did not regress the motion budget.
+
+## ADV-231: The settings echo filter ignores every panel-layout field, so a stale echo silently reverts a just-committed panel width or collapse
+
+- Session: diff-pass
+- Suggested severity: MEDIUM (silent revert of a user setting; self-heals on the next echo, but a
+  timing-dependent variant can persist it to disk; no data loss)
+
+What I did: ran a probe that imports the REAL renderer comparator
+(`src/renderer/state/settingsEcho.ts`) and calls the exact `shouldApplyEcho(...)` decision the App's
+`settings.changed` listener at `App.tsx:1441-1463` makes. For each Phase-112 field I built a "latest local
+write" snapshot and a stale echo whose ONLY difference is that field, then asked the filter whether the
+echo would be applied. Command: `node --experimental-strip-types
+test-fixtures/phase112-adversary/adv_echo_probe.mjs`; raw output in
+`test-fixtures/phase112-adversary/adv_echo_probe.out.log`.
+
+Expected: a stale echo that disagrees with the newest local write on a persisted field must be discarded
+(`shouldApplyEcho === false`); `sameSettings(staleEcho, persisted) === false`. This is the DEF-037/DEF-072
+Lamport contract, and Phase 112 exports `syncPanelWidth(...)` at `App.tsx:1459-1460` precisely to consume
+the echo IF it is accepted, so an incorrectly-accepted echo flows straight into the width state.
+
+Actual: `shouldApplyEcho` returns `true` for a stale echo carrying an older `panelLeftWidthPx`,
+`panelRightWidthPx`, `inspectorCollapsed`, or `pagesPanelCollapsed`; `sameSettings` reports the two
+settings equal despite the disagreement (output line "sameSettings(stale,persisted) (width differs):
+actual=true"). Root cause: none of the four panel-layout fields has a comparison line in `sameSettings`
+(`settingsEcho.ts:88-108`), `differsOnlyInRecentFiles` (`:121-151`) or `differsOnlyInGeometry`
+(`:247-271`). Phase 112 added three new fields and reused `pagesPanelCollapsed`; all four are written
+through `trackAndSave` (`App.tsx:1702-1727`, `:9808-9833`) but none participates in the filter, so an echo
+from an older write is not recognised as stale. It is applied and `syncPanelWidth`/`setInspectorCollapsed`
+(`App.tsx:1459-1463`) overwrite the newer local value. This is the same class already recorded for
+`homeMotionPaused` in ADV-227 and documented in the file's DEF-599 note; the phase did not extend the
+comparators for its own fields.
+
+Runtime symptom and persistent variant: a burst of two width/collapse commits (or a commit followed by an
+`addRecentFile` backend write that builds from main's not-yet-updated `this.current`,
+`settings.ts:1610-1613`) can deliver an echo from the older write. Because the other fields match, the echo
+passes the filter and the panel jumps back to the previous width/collapse; the next echo usually restores
+it, but if the stale payload is the newer one main persisted (the `addRecentFile` race), the revert is
+written to disk. Repro is deterministic at the pure-function level (probe above); the UI-level revert is
+timing-dependent.
+
+Screenshot: none (state/service behaviour). Evidence: `test-fixtures/phase112-adversary/adv_echo_probe.mjs`
+and `.out.log`.
+
+Disposition: ACCEPTED -> DEF-604 - real Phase 112 gap: the panel-layout fields (panelLeftWidthPx/panelRightWidthPx/inspectorCollapsed/pagesPanelCollapsed) must participate in the settings echo filter. Filed as DEF-604 (the CTO brief's DEF-601 id collided with a closed Phase 105 File-menu defect); fixed by frontend-dev TFL-1000, CLOSED by qa TFL-1001.
+
+## ADV-232: A non-contiguous page range is collapsed to [first,last] before the engine call, so the Deliver inspector's prepared range silently exports unrequested intermediate pages
+
+- Session: diff-pass
+- Suggested severity: MEDIUM (silent wrong output; extra pages in the exported file(s), no data loss)
+
+What I did: ran a probe that imports the REAL shipped parser (`parsePageRange`,
+`src/renderer/engine/types.ts`), parses each range expression, then applies the transform every export
+dialog performs right before calling the engine
+(`ExportDialog.tsx:165-172`, `docx` `DocxExportDialog.tsx:187-190`, `xlsx`/`pptx`
+`OfficeExportDialog.tsx:210-212`): `const [start,end] = [parsed[0], parsed[parsed.length-1]]`. The engine
+payload contract is a CONTINUOUS 1-based inclusive `[start,end]` (`src/shared/types.ts:373-379`). Command:
+`node --experimental-strip-types test-fixtures/phase112-adversary/adv_range_probe.mjs`; output in
+`test-fixtures/phase112-adversary/adv_range_probe.out.log`.
+
+Expected: the pages the user selected are the pages exported. The parser's discrete list is the
+authoritative selection (Phase 112 success criterion 7: "pages/range validated by the actual parser").
+
+Actual: 4 of 6 non-empty expressions are silently widened: `"1,3"` -> engineRange `[1,3]` (3 pages for 2
+requested), `"1,3,5"` -> `[1,5]` (5 for 3), `"2,4-6"` -> `[2,6]` (5 for 4), `"1-2,4"` -> `[1,4]` (4 for 3).
+The parser is correct; the dialog's `[first,last]` collapse discards the gaps. The Phase-112 Deliver
+inspector prepares exactly such a set: `exportRangeExpression` (`exportConfig.ts:219-238`) emits `"1,3,5"`,
+which the host seeds through `onInspectorExportRun` (`App.tsx:6140-6164`), so the new surface newly routes
+non-contiguous prepared ranges into this pre-existing collapse. The dialog's own `valid` gate
+(`ExportDialog.tsx:151-158`) passes because `parsePageRange` is correct - the widening happens after
+validation, with no error. (Provenance: the `[start,end]` line predates Phase 112, but the diff-pass must
+flag it because Phase 112 makes it reachable from the Deliver panel and criterion 7 owns range honesty.)
+
+Screenshot: none (data/output behaviour). Evidence: `test-fixtures/phase112-adversary/adv_range_probe.mjs`
+and `.out.log`.
+
+Disposition: ACCEPTED -> DEF-605 - real Phase 112 gap: criterion 7 range honesty. A non-contiguous selection must not be silently widened to [first,last]. Filed as DEF-605 (brief id DEF-602 collided); fixed by frontend-dev TFL-1000 (contiguous-run export, no widening), CLOSED by qa TFL-1001. Note: the shipped fixture `adv_range_probe.mjs` is a stale oracle - it hand-models the removed transform; refresh is a deferred fixture-only follow-up.
+
+## ADV-233: A stale recents-only echo is trusted as an authoritative backend write, so it can silently revert a renderer-written Pin (the C6b sameRecentFiles fix is bypassed)
+
+- Session: diff-pass
+- Suggested severity: MEDIUM (silent revert of a pin; self-heals on the next echo; no data loss)
+
+What I did: ran the same probe (`adv_echo_probe.mjs`) against the recents path. Built a latest local write
+with a recent pinned `true` and a stale echo of the prior state with the same path/name/openedAt but
+`pinned: false`, then asked `shouldApplyEcho` and its two sub-checks.
+
+Expected: the stale pin echo is discarded. Phase 112 C6b added `pinned` / `sourceLabel` / `sourceKind` /
+`converted` / `workingFormat` to `sameRecentFiles` (`settingsEcho.ts:187-201`) specifically so a stale
+recents echo cannot revert a pin, and `onToggleRecentPin` / `onRemoveRecent` now write recents through the
+renderer local path (`App.tsx:2552-2588`, `trackAndSave`).
+
+Actual: `shouldApplyEcho` returns `true`. `sameRecentFiles` is correct - `sameSettings(stale, persisted)`
+is `false` because the pin differs - but `differsOnlyInRecentFiles(stale, persisted)` returns `true`
+(output: "differsOnlyInRecentFiles(stale,persisted): actual=true"), and that branch at `settingsEcho.ts:298`
+applies the echo before `sameSettings`' recents guard can matter. The branch assumes recents-only deltas
+are backend `addRecentFile` echoes; since this phase moved Pin/Remove onto the renderer local-write path,
+a stale recents-only echo is now indistinguishable from the canonical one and reverts the pin. The C6b
+comparison lines only help the `sameSettings` path, never the `differsOnlyInRecentFiles` path.
+
+Screenshot: none (state behaviour). Evidence: `test-fixtures/phase112-adversary/adv_echo_probe.mjs`
+and `.out.log`.
+
+Disposition: ACCEPTED -> DEF-606 - real Phase 112 gap: settingsEcho.sameRecentFiles is bypassed by the differsOnlyInRecentFiles branch, so a stale recents-only echo can revert a Pin. Filed as DEF-606 (brief id DEF-603 collided); fixed by frontend-dev TFL-1000 (sameRecentMetadata gate), CLOSED by qa TFL-1001.
+
+## Phase 112 adversary diff-pass (TFL-997) - surfaces that held
+
+- **Export config / office gate - HELD.** `ExportConfigSection` re-parses the seeded range and gates the
+  action on `validation.valid && gate.enabled` (`Inspector.tsx:604-627`); the seed enters the dialog as
+  TEXT and is re-parsed and re-validated by the dialog (`ExportDialog.tsx:121-155`,
+  `OfficeExportDialog.tsx:145-176`), so the inspector cannot bypass the dialog's validation. `xlsx`/`pptx`
+  route through `officeExportGate`, which returns the bridge-absent reason when `bridgePresent` is false
+  (`dockModel.ts:126-136`), so the office gate holds when `window.tflex.export` is absent. Range-parser
+  edge cases (empty, descending, out-of-range, huge) are rejected by `parsePageRange` returning `null`
+  (probe: `""` -> `null`; `lo > hi` and `hi > total` -> `null`). No export-time flatten was introduced;
+  PDF forms stay interactive by default (no new flatten call on the Deliver path).
+- **Recent-files safety - HELD (with ADV-233 on persistence).** `Remove from Recent` only rewrites the
+  settings list and clears the local missing flag (`App.tsx:2552-2570`); it never deletes or moves a file.
+  `recent:showInFolder` validates a non-empty string, `existsSync`-guards, never throws and never deletes
+  (`main/index.ts`, `ShowInFolderResult`); `recent:locateMissing` opens the single Open-PDF picker and
+  resolves a path or null. Hostile/missing paths resolve typed `missing`/`failed`, not a throw.
+- **Settings normalisation - HELD.** `normalizeBoundedWidth` accepts only finite in-range numbers and
+  drops the single field otherwise (`settings.ts:510-517`); `inspectorCollapsed` accepts only real
+  booleans (`:1318-1320`); a present-but-invalid value never rejects the surrounding record. Covered by
+  `test/unit/main/settings.test.ts:2029-2177`.
+- **Delete / merge / save regression - HELD.** The App.tsx diff touches no delete, extract, rotate, merge
+  or save handler; the only merge-adjacent change is the insertion of the new export block after
+  `onPickMergeFile`. No new IPC channel was added for page operations.
+- **Panel data freshness - HELD in the panels.** The migrated panels are presentation over host-published
+  state (`ContextPanel` re-parents `ThumbnailRail` / `AnnotationsPanel`; the Inspector resolves the
+  selected annotation from the published text-panel snapshot,
+  `Inspector.tsx:1049-1100`), so no new async thumbnail/analysis/page-size result is owned by a panel and
+  no stale result can target the wrong page from the diff. The existing document-version guards in
+  `DocumentView`/`SideRail` are unchanged.
+- **Resize / collapse geometry - HELD with one note.** `clampPanelWidth` floors/ceils to 220-320 / 260-380
+  and a non-finite value resolves to the default, so keyboard Home/End and a drag cannot produce a 0 or
+  negative panel; the handle is only rendered while its panel is expanded (`App.tsx:11320-11337`), so a
+  collapsed panel has no live resizer. `fitPanelWidths` reserves the document budget and the panels floor
+  at their collapsed/min widths, so no dock-centering collision (`dockBand(320, 476)=0` correctly lifts the
+  dock). Note (not filed, LOW): `fitPanelWidths` still reserves the inspector width even when
+  `inspectorOpen` is false, so in the narrow empty-placeholder-tab state (rail visible, no document) the
+  rail can be clamped below the persisted width for a panel that is not on screen - cosmetic.
+
+## Design critique: Phase 112 panels (Deliver export config + Home Recent + resize handle)
+
+User context: a desktop PDF user preparing an export and picking a recent document; the panels are
+configuration/navigation surfaces where the primary job is "state the output precisely" and "find the file
+again", and where a wrong control costs a mis-exported file or a lost document.
+
+### Must-fix (blocks ship)
+- **Error prevention:** the Deliver range field accepts non-contiguous sets but the export silently emits
+  the span between the ends (ADV-232). **Try:** reject gaps in the inspector, or pass the discrete page
+  list through and have the dialog export exactly those pages.
+
+### Should-fix (before broader rollout)
+- **State integrity:** a stale settings echo can revert a prepared width, a collapse or a pin (ADV-231,
+  ADV-233). **Try:** add the panel-layout fields to all three comparators and narrow the recents-only
+  branch to genuinely backend-originated writes.
+- **States / disabled reason:** when the range is invalid the primary Export button is disabled but its
+  `title` shows the format label, not the reason; the reason sits elsewhere in the section. **Try:** put
+  the validation error into the disabled button's tooltip so the cause is co-located with the dead control.
+
+### Nice-to-fix (when there's room)
+- **Clarity:** the format group labels mix "Images · PNG (lossless)" and "Text (.txt)" in one list; the
+  group split (`image` / `office`) is not surfaced. **Try:** two labelled sub-groups so the image-vs-writer
+  choice is legible at a glance.
+- **Resize affordance:** the resize handle is a 1px separator with a grip; at 200% DPI a 44px coarse
+  target is not guaranteed by the primitive itself. **Try:** size the hit area from the coarse-pointer
+  token, not a fixed px.
+
+### Strengths to keep
+- The panels keep ONE home per object type: the annotation list stays in the left navigator and the right
+  panel renders only the selected annotation's facts and actions (`Inspector.tsx:1049-1123`), so the
+  "no duplicated list / empty state" criterion reads cleanly.
+- Empty / loading / error / success / gate states are all rendered (`Inspector.tsx:692-752`) and disabled
+  actions explain themselves (`PanelPrimitives.tsx:150-195`), so no control is a silent no-op by
+  construction.
+- The resize handle exposes `role="separator"` with aria value bounds and a full keyboard path
+  (Arrow/Home/End), and the width contract is clamped in one pure module shared by CSS, the panels and
+  the dock geometry.

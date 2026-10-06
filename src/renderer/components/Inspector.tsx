@@ -26,14 +26,35 @@ import type { ReactElement, ReactNode } from 'react';
 import { MousePointerClick, PanelRightClose, PanelRightOpen, X } from 'lucide-react';
 import { Icon } from '../icons/Icon';
 import { EmptyState } from './EmptyState';
-import { GlassSidebarBody, GlassSidebarHeader } from './GlassSidebar';
+import { GlassSidebarBody } from './GlassSidebar';
+import { ActionList, PanelEmptyState, PanelSection, PanelShell, PropertyRow, ScopedHeader } from './panels/PanelPrimitives';
+import {
+  DEFAULT_EXPORT_CONFIG_FORMAT,
+  EXPORT_CONFIG_FORMATS,
+  exportConfigGate,
+  exportDefaultName,
+  exportFidelityNotes,
+  exportFormatOption,
+  exportPrimaryLabel,
+  exportRangeText,
+  exportScopeLabel,
+  validateExportRange,
+  type ExportConfigFormat,
+  type ExportPageScope,
+} from './exportConfig';
+import { ExportFidelityNotes } from './ExportFidelityNotes';
+import {
+  clampExportImageDpi,
+  DEFAULT_EXPORT_IMAGE_DPI,
+} from '../state/preferences';
+import type { ExportFormat } from '../../shared/export';
 import { TextPropertiesPanel } from '../edit/TextPropertiesPanel';
 import type { TextPropertiesPanelProps } from '../edit/TextPropertiesPanel';
 import type { SpellCheckState } from '../spell/useSpellCheck';
 import { OcrSuspectsPanel } from './OcrSuspectsPanel';
 import type { OcrSuspectsPanelProps } from './OcrSuspectsPanel';
 import { formatBytes } from '../utils/formatBytes';
-import type { Annotation, AnnotationPatch } from '../annotations/model';
+import { kindLabel, type Annotation, type AnnotationPatch } from '../annotations/model';
 import type {
   BatesInfo,
   SignaturePlacement,
@@ -41,8 +62,8 @@ import type {
   FormFillReport,
   WatermarkInfo,
 } from '../../shared/types';
-import { ReviewElementsPanel } from './ReviewElementsPanel';
 import type { ReviewElementRef } from './ReviewElementsPanel';
+import { ReviewElementsPanel } from './ReviewElementsPanel';
 import { FormFillReportSummary } from '../forms/FormsOverlay';
 import type { TextStyleValues } from '../edit/textStyle';
 import type { Stage } from '../state/stages';
@@ -157,6 +178,20 @@ export function inspectorSelectionLabel(selection: InspectorSelection): string {
   }
 }
 
+/** Phase 112 (TFL-854 C2) — the header scope name. A multi-page thumbnail
+ *  selection names the SCOPE ("N pages selected") instead of the single page
+ *  the canvas happens to show; every other selection keeps the Phase-36
+ *  label. Pure, so the scope contract is pinned without a DOM. */
+export function inspectorScopeLabel(
+  selection: InspectorSelection,
+  pageSelection: readonly number[] | null | undefined,
+): string {
+  if (pageSelection !== null && pageSelection !== undefined && pageSelection.length > 1) {
+    return `${pageSelection.length} pages selected`;
+  }
+  return inspectorSelectionLabel(selection);
+}
+
 /** DEF-329 — the PAGES Rotation row's text. `EngineState.rotations` is a
  *  QUARTER-TURN index (`(rot + delta) % 4`, see `stubEngine`), so the degrees
  *  every other consumer shows are `index * 90` (`PageView`'s `pdf-page-rot-N`
@@ -189,12 +224,66 @@ export function inspectorSelectionFor(args: {
   return { kind: 'page', page: args.page };
 }
 
+/** Phase 112 (TFL-854 C4) — the annotation the REVIEW inspector inspects.
+ *  The host publishes the selected annotation as a text-panel snapshot (mode
+ *  `annotation`), so that snapshot's `targetKey` is the authoritative id: the
+ *  Inspector resolves the REAL annotation from the document list and never
+ *  guesses a row. `null` when nothing annotation is selected (the section then
+ *  shows a short hint, not a duplicate list). Pure, so the contract is pinned
+ *  without mounting App. */
+export function selectedReviewAnnotation(
+  selection: InspectorSelection,
+  textPanel: ReviewAnnotationSelectionSource | null,
+  annotations: readonly Annotation[],
+): Annotation | null {
+  if (selection.kind !== 'text') return null;
+  if (textPanel === null || textPanel.mode !== 'annotation') return null;
+  const targetKey = textPanel.targetKey;
+  if (targetKey === undefined) return null;
+  return annotations.find((a) => a.id === targetKey) ?? null;
+}
+
+/** Phase 112 (TFL-854 C2 follow-up) — resolve the Inspector's page size for a
+ *  1-based page number. It prefers the host's LIVE measured sizes (published
+ *  upward by the mounted PageViews, so a normally-opened document has them
+ *  without opening the Crop dialog), then falls back to the seeded
+ *  `activePageSizes` map (the Crop path). Unknown stays `null` so the Size row
+ *  reads "Not available" — never a guessed A4 and never 0. Pure, so the host
+ *  wiring is pinned without mounting App. */
+export function resolveInspectorPageSize(
+  pageNumber: number,
+  liveSizes: ReadonlyMap<number, { w: number; h: number }> | null | undefined,
+  seededSizes: Readonly<Record<number, { widthPt: number; heightPt: number }>>,
+): { widthPt: number; heightPt: number } | null {
+  const live = liveSizes?.get(pageNumber);
+  if (live !== undefined) return { widthPt: live.w, heightPt: live.h };
+  return seededSizes[pageNumber] ?? null;
+}
+
+/** Phase 112 (TFL-854 C4) — the text-panel props plus the selection identity
+ *  the REVIEW inspector needs. The identity rides the SAME snapshot the host
+ *  already publishes upward (`InspectorTextSelection`), so the Inspector can
+ *  resolve the REAL selected annotation from the document list without a second
+ *  selection model and without the host changing its wiring. Both extras are
+ *  optional so an existing hand-built props literal stays valid. */
+export type InspectorTextPanel = TextPropertiesPanelProps & {
+  targetKey?: string;
+  name?: string;
+};
+
+/** The minimal selected-target shape the REVIEW inspector resolves an
+ *  annotation from: the panel mode plus the stable target key. */
+export interface ReviewAnnotationSelectionSource {
+  mode?: 'text' | 'annotation';
+  targetKey?: string;
+}
+
 /** Phase 36 (chunk 6) — map the published text-object snapshot onto the
  *  re-parented text-properties component's props (the view's OWN handlers
  *  ride the snapshot, so the Inspector never re-implements the edit path). */
 export function inspectorTextPanelFor(
   text: InspectorTextSelection | null,
-): TextPropertiesPanelProps | null {
+): InspectorTextPanel | null {
   if (text === null) return null;
   return {
     open: true,
@@ -212,6 +301,8 @@ export function inspectorTextPanelFor(
     onArmPainter: text.onArmPainter,
     onCancelPainter: text.onCancelPainter,
     spellCheck: text.spellCheck,
+    targetKey: text.targetKey,
+    name: text.name,
   };
 }
 
@@ -225,7 +316,7 @@ export function inspectorTextPanelFor(
 export function inspectorTextPanelForSelection(
   selection: InspectorSelection,
   text: InspectorTextSelection | null,
-): TextPropertiesPanelProps | null {
+): InspectorTextPanel | null {
   return selection.kind === 'text' ? inspectorTextPanelFor(text) : null;
 }
 
@@ -271,6 +362,32 @@ export function floatingTextPanelOpen(args: {
   return args.textPanelOpen && !args.inspectorOwns;
 }
 
+/** Phase 112 (C5) — the export configuration the panel has prepared. The host
+ *  routes it to the EXISTING export flow (the raster dialog, the text/docx
+ *  dialog or the office writer); the panel never reimplements export. */
+export interface InspectorExportRequest {
+  format: ExportConfigFormat;
+  /** The validated, parsed 1-based pages (empty when the flow exports all). */
+  range: number[];
+  dpi: number;
+  /** The prepared output name derived from the real source name. */
+  outputName: string;
+}
+
+/** Live status reported by the host's running export, rendered honestly. */
+export interface InspectorExportStatus {
+  state: 'running' | 'error' | 'success';
+  message?: string;
+  current?: number;
+  total?: number;
+}
+
+/** Per-format availability of the optional `window.tflex.export` members. */
+export interface InspectorExportBridge {
+  xlsx: boolean;
+  pptx: boolean;
+}
+
 export interface InspectorProps {
   stage: Stage;
   selection?: InspectorSelection;
@@ -290,6 +407,15 @@ export interface InspectorProps {
   pageSize?: { widthPt: number; heightPt: number } | null;
   pageRotation?: number | null;
   pageLabel?: string | null;
+  /** Phase 112 (TFL-854 C2) — the host's thumbnail multi-select (VISIBLE
+   *  1-based pages). More than one entry switches the header scope to
+   *  "N pages selected" and lets the mixed flags below render "Mixed". */
+  pageSelection?: readonly number[] | null;
+  /** True when the selected pages DISAGREE on that value. The host computes
+   *  it from the authoritative per-page sources; the Inspector never guesses. */
+  pageSizeMixed?: boolean;
+  pageRotationMixed?: boolean;
+  pageLabelMixed?: boolean;
   cropBox?: { x: number; y: number; width: number; height: number } | null;
   annotationCount?: number;
   formFieldCount?: number;
@@ -312,8 +438,10 @@ export interface InspectorProps {
   onJumpToReview?: () => void;
 
   // --- EDIT ------------------------------------------------------------
-  /** The re-parented Phase-21/25 text-properties component. */
-  textPanel?: TextPropertiesPanelProps | null;
+  /** The re-parented Phase-21/25 text-properties component. Phase 112 (C4)
+   *  carries the selection identity (targetKey/name) so the REVIEW inspector
+   *  resolves the selected annotation without a second selection model. */
+  textPanel?: InspectorTextPanel | null;
   /** Phase 51 (item 10) — the re-parented OCR suspects view. Non-null only
    *  while the host has the suspects panel open; it renders as an Inspector
    *  section (the product home) instead of the retired top bar. */
@@ -341,20 +469,46 @@ export interface InspectorProps {
   onExportComments?: () => void;
   onImportComments?: () => void;
 
-  // --- DELIVER ---------------------------------------------------------
-  exportFormat?: string | null;
+  // --- DELIVER / EXPORT CONFIGURATION ---------------------------------
+  /** Phase 112 (C5) — the format the export surface opens on. The shipped
+   *  default is the persisted image format; the panel lets the user switch. */
+  exportFormat?: ExportConfigFormat | null;
+  /** Legacy display values, preserved for the Phase-36 contract. */
   exportPages?: string | null;
   exportPreset?: string | null;
+  /** The active document's display name (for the prepared output name). */
+  exportSourceName?: string | null;
+  /** The persisted image DPI the options default to. */
+  exportDpi?: number;
+  /** The page the "Current page" scope targets. */
+  exportCurrentPage?: number;
+  /** Per-format office bridge availability (`window.tflex.export`). */
+  exportBridge?: InspectorExportBridge | null;
+  /** Fired when the user changes the prepared format. */
+  onExportFormatChange?: (format: ExportConfigFormat) => void;
+  /** Launches the host's EXISTING export flow for the prepared configuration. */
+  onExportRun?: (request: InspectorExportRequest) => void;
+  /** Legacy DELIVER submit (the Phase-36 hook); used when `onExportRun` is
+   *  absent so the existing spec keeps calling the same handler. */
   onExport?: () => void;
+  /** Live progress / failure / success from the host's running export. */
+  exportStatus?: InspectorExportStatus | null;
 }
 
-/** A label-left / value-right property row. */
+/** A label-left / value-right property row. Phase 112 (C2) — the shape is the
+ *  shared PropertyRow primitive; the legacy `inspector-row*` classes and the
+ *  `data-inspector-row` hook are kept so existing CSS/specs resolve. */
 function Row(props: { id: string; label: string; children: ReactNode }): ReactElement {
   return (
-    <div className="inspector-row" data-inspector-row={props.id}>
-      <span className="inspector-row-label">{props.label}</span>
-      <span className="inspector-row-value">{props.children}</span>
-    </div>
+    <PropertyRow
+      className="inspector-row"
+      labelClassName="inspector-row-label"
+      valueClassName="inspector-row-value"
+      data-inspector-row={props.id}
+      label={props.label}
+    >
+      {props.children}
+    </PropertyRow>
   );
 }
 
@@ -382,21 +536,236 @@ function Action(props: {
   );
 }
 
-/** A titled inspector section. */
+/** A titled inspector section. Phase 105+ (C1) — the shape is the shared
+ *  PanelSection primitive; the legacy inspector classes and the
+ *  `data-inspector-section` hook are kept so existing CSS/specs resolve. */
 function Section(props: {
   id: InspectorSectionId;
   title: string;
   children: ReactNode;
 }): ReactElement {
   return (
-    <section className="inspector-section" data-inspector-section={props.id}>
-      <div className="inspector-section-title" role="heading" aria-level={2}>
-        {props.title}
-      </div>
-      <div className="inspector-section-body">{props.children}</div>
-    </section>
+    <PanelSection
+      className="inspector-section"
+      titleClassName="inspector-section-title"
+      bodyClassName="inspector-section-body"
+      data-inspector-section={props.id}
+      title={props.title}
+    >
+      {props.children}
+    </PanelSection>
   );
 }
+
+/** Phase 112 (C5) — the Deliver export-configuration surface. In LEGACY mode
+ *  (no `onRun`) it renders the Phase-36 format/pages/preset rows + the legacy
+ *  submit so the existing spec is untouched. In CONFIG mode (`onRun` wired) it
+ *  prepares a real format, a page scope validated by the shipped parser, an
+ *  output name and the format-specific options, and hands the request to the
+ *  host's EXISTING export flow. It never reimplements export. */
+function ExportConfigSection(props: {
+  format: ExportConfigFormat | null;
+  legacyPages: string | null;
+  legacyPreset: string | null;
+  sourceName: string | null;
+  initialDpi: number;
+  currentPage: number;
+  totalPages: number;
+  bridge: InspectorExportBridge | null;
+  onFormatChange?: (format: ExportConfigFormat) => void;
+  onRun?: (request: InspectorExportRequest) => void;
+  legacyExport?: () => void;
+  status: InspectorExportStatus | null;
+}): ReactElement {
+  const {
+    format: formatProp,
+    legacyPages,
+    legacyPreset,
+    sourceName,
+    initialDpi,
+    currentPage,
+    totalPages,
+    bridge,
+    onFormatChange,
+    onRun,
+    legacyExport,
+    status,
+  } = props;
+
+  const [format, setFormat] = useState<ExportConfigFormat>(
+    formatProp ?? DEFAULT_EXPORT_CONFIG_FORMAT,
+  );
+  const [scope, setScope] = useState<ExportPageScope>('all');
+  const [customRange, setCustomRange] = useState<string>('');
+  const [dpi, setDpi] = useState<number>(clampExportImageDpi(initialDpi));
+
+  const option = exportFormatOption(format);
+  const group = option?.group ?? 'image';
+  const effectiveRangeText = exportRangeText(scope, customRange, totalPages, currentPage);
+  const validation = validateExportRange(effectiveRangeText, totalPages);
+  const bridgePresent =
+    format === 'xlsx' ? bridge?.xlsx === true : format === 'pptx' ? bridge?.pptx === true : false;
+  const gate = exportConfigGate(format, { hasDocument: totalPages > 0, bridgePresent });
+  const running = status?.state === 'running';
+  const canRun = gate.enabled && validation.valid && !running;
+  const outputName = exportDefaultName(sourceName ?? 'document', format);
+  const fidelity = exportFidelityNotes(format);
+
+  const selectFormat = (next: ExportConfigFormat): void => {
+    setFormat(next);
+    onFormatChange?.(next);
+  };
+
+  const run = (): void => {
+    if (onRun === undefined) {
+      legacyExport?.();
+      return;
+    }
+    if (!canRun) return;
+    onRun({ format, range: validation.parsed ?? [], dpi, outputName });
+  };
+  const exportDisabled = onRun !== undefined ? !canRun : legacyExport === undefined;
+
+  // LEGACY MODE — the Phase-36 rows + submit, unchanged.
+  if (onRun === undefined) {
+    return (
+      <>
+        <Row id="export-format" label="Format">
+          {format}
+        </Row>
+        <Row id="export-pages" label="Pages">
+          {legacyPages ?? 'All'}
+        </Row>
+        <Row id="export-preset" label="Preset">
+          {legacyPreset ?? 'Default'}
+        </Row>
+        <Action id="export" label={'Export'} onClick={legacyExport} />
+      </>
+    );
+  }
+
+  return (
+    <div className="export-config" data-export-config data-export-config-format={format}>
+      <fieldset className="export-config-group" data-export-config-formats>
+        <legend className="export-config-group-title">Format</legend>
+        {EXPORT_CONFIG_FORMATS.map((o) => (
+          <label key={o.id} className="export-config-option">
+            <input
+              type="radio"
+              name="export-config-format"
+              checked={o.id === format}
+              onChange={(): void => selectFormat(o.id)}
+              data-export-config-format-option={o.id}
+            />
+            <span>{o.label}</span>
+          </label>
+        ))}
+      </fieldset>
+
+      <div className="export-config-group" data-export-config-pages>
+        <div className="export-config-group-title">Pages</div>
+        <div className="export-config-options" role="radiogroup" aria-label="Page scope">
+          {(['all', 'current', 'custom'] as const).map((s) => (
+            <label key={s} className="export-config-option">
+              <input
+                type="radio"
+                name="export-config-scope"
+                checked={s === scope}
+                onChange={(): void => setScope(s)}
+                data-export-config-scope={s}
+              />
+              <span>{exportScopeLabel(s)}</span>
+            </label>
+          ))}
+        </div>
+        {scope === 'custom' && (
+          <input
+            type="text"
+            className="export-config-input"
+            value={customRange}
+            onChange={(e): void => setCustomRange(e.target.value)}
+            placeholder={totalPages > 0 ? `1-${totalPages}` : ''}
+            spellCheck={false}
+            data-export-config-range
+          />
+        )}
+        {!validation.valid && (
+          <span className="export-config-error" role="alert" data-export-config-range-error>
+            {validation.error}
+          </span>
+        )}
+        <span className="export-config-value" data-export-config-range-summary>
+          {effectiveRangeText.length > 0 ? effectiveRangeText : '\u2014'}
+        </span>
+      </div>
+
+      <div className="export-config-group" data-export-config-output>
+        <span className="export-config-group-title">Output name</span>
+        <span className="export-config-value" data-export-config-output-value>
+          {outputName}
+        </span>
+      </div>
+
+      {group === 'image' && (
+        <label className="export-config-group" data-export-config-dpi>
+          <span className="export-config-group-title">Resolution (DPI)</span>
+          <input
+            type="number"
+            min={72}
+            max={600}
+            step={1}
+            className="export-config-input"
+            value={dpi}
+            onChange={(e): void => {
+              const next = Number.parseInt(e.target.value, 10);
+              if (Number.isFinite(next)) setDpi(clampExportImageDpi(next));
+            }}
+            data-export-config-dpi-input
+          />
+        </label>
+      )}
+
+      {group === 'office' && fidelity !== null && (
+        <ExportFidelityNotes format={format as ExportFormat} />
+      )}
+
+      {!gate.enabled && gate.reason !== undefined && (
+        <span className="export-config-error" role="status" data-export-config-gate-reason>
+          {gate.reason}
+        </span>
+      )}
+
+      {status?.state === 'running' && (
+        <div className="export-config-status" role="status" data-export-config-progress>
+          Exporting {status.current ?? 0} of {status.total ?? 0}&hellip;
+        </div>
+      )}
+      {status?.state === 'error' && (
+        <div className="export-config-error" role="alert" data-export-config-error>
+          {status.message ?? 'Export failed.'}
+        </div>
+      )}
+      {status?.state === 'success' && (
+        <div className="export-config-status" role="status" data-export-config-success>
+          {status.message ?? 'Export complete.'}
+        </div>
+      )}
+
+      <button
+        type="button"
+        className="btn btn-primary export-config-action"
+        data-inspector-action="export"
+        onClick={run}
+        disabled={exportDisabled}
+        title={gate.reason ?? exportPrimaryLabel(format)}
+      >
+        <Icon name="exportPages" size="sm" aria-hidden />
+        <span>{exportPrimaryLabel(format)}</span>
+      </button>
+    </div>
+  );
+}
+
 
 /**
  * The workspace Inspector. Header (`Inspector - <selection>`), then the
@@ -414,6 +783,10 @@ export function Inspector(props: InspectorProps): ReactElement {
     pageSize = null,
     pageRotation = null,
     pageLabel = null,
+    pageSelection = null,
+    pageSizeMixed = false,
+    pageRotationMixed = false,
+    pageLabelMixed = false,
     cropBox = null,
     annotationCount = 0,
     formFieldCount = 0,
@@ -442,7 +815,14 @@ fileSize = null,
     exportFormat = null,
     exportPages = null,
     exportPreset = null,
+    exportSourceName = null,
+    exportDpi = DEFAULT_EXPORT_IMAGE_DPI,
+    exportCurrentPage = 1,
+    exportBridge = null,
+    onExportFormatChange,
+    onExportRun,
     onExport,
+    exportStatus = null,
   } = props;
 
   const sections = useMemo(
@@ -464,11 +844,15 @@ fileSize = null,
     reportKey !== dismissedReportKey;
 
 
-  const pageSizeText =
-    pageSize === null
-      ? '\u2014'
+  const pageSizeText = pageSizeMixed
+    ? 'Mixed'
+    : pageSize === null
+      ? 'Not available'
       : `${Math.round(pageSize.widthPt)} x ${Math.round(pageSize.heightPt)} pt`;
-  const rotationText = rotationDegreesText(pageRotation);
+  // DEF-329 — the rotation value keeps its em-dash for an unknown index (the
+  // real angle is never fabricated); a mixed selection reads "Mixed".
+  const rotationText = pageRotationMixed ? 'Mixed' : rotationDegreesText(pageRotation);
+  const pageLabelText = pageLabelMixed ? 'Mixed' : pageLabel ?? 'Not available';
   const fileSizeText = fileSize === null ? '\u2014' : formatBytes(fileSize);
 
 /** The page (PAGES) section: read-only Size / Rotation + the Label
@@ -485,7 +869,7 @@ fileSize = null,
       </Row>
       <Row id="label" label="Label">
         <span className="inspector-inline">
-          <span data-inspector-value="label">{pageLabel ?? '\u2014'}</span>
+          <span data-inspector-value="label">{pageLabelText}</span>
           <Action
             id="renumber"
             // Phase 59 (item 9) — the visible label is the bare action name
@@ -549,19 +933,28 @@ fileSize = null,
       );
     }
     return (
-      <Section id="document" title="Document">
-        {documentTitle !== null && (
-          <Row id="title" label="Title">
-            {documentTitle}
+      <details
+        className="inspector-document-details"
+        data-inspector-document-details
+        data-inspector-section="document"
+      >
+        <summary className="inspector-section-title inspector-document-summary">
+          Document details
+        </summary>
+        <PanelSection className="inspector-section" bodyClassName="inspector-section-body">
+          {documentTitle !== null && (
+            <Row id="title" label="Title">
+              {documentTitle}
+            </Row>
+          )}
+          <Row id="page-count" label="Pages">
+            {pageCount}
           </Row>
-        )}
-        <Row id="page-count" label="Pages">
-          {pageCount}
-        </Row>
-        <Row id="file-size" label="File size">
-          <span data-inspector-value="file-size">{fileSizeText}</span>
-        </Row>
-      </Section>
+          <Row id="file-size" label="File size">
+            <span data-inspector-value="file-size">{fileSizeText}</span>
+          </Row>
+        </PanelSection>
+      </details>
     );
   };
   /** Phase 37 (item 1) — the text-manipulation block, rendered at the TOP of
@@ -653,9 +1046,64 @@ const renderSignatureSection = (): ReactElement => (
     </Section>
   );
 
+  /** Phase 112 (TFL-854 C4) — the Annotations category's RIGHT-panel body.
+   *  The Inspector resolves the selected annotation from the published
+   *  text-panel snapshot (so the host wiring is unchanged) and renders its
+   *  content facts + supported actions; with nothing selected it is a short
+   *  designed hint. The authoritative list stays in the LEFT navigator. */
+  const renderAnnotationInspector = (): ReactElement => {
+    const selected = selectedReviewAnnotation(selection, textPanel, annotations);
+    if (selected === null) {
+      return (
+        <PanelEmptyState
+          className="inspector-review-empty context-panel-empty"
+          data-inspector-review-empty
+          headline="No annotation selected"
+          help="Select an annotation on a page or in the review list to inspect it."
+        />
+      );
+    }
+    return (
+      <>
+        <Row id="annotation-type" label="Type">
+          {kindLabel(selected.kind)}
+        </Row>
+        <Row id="annotation-page" label="Page">
+          {selected.page}
+        </Row>
+        <ActionList
+          className="inspector-quick-actions"
+          data-inspector-review-actions
+          actions={[
+            {
+              id: 'annotation-jump',
+              label: `Jump to page ${selected.page}`,
+              icon: <Icon name="nextPage" size="sm" />,
+              onClick:
+                onJumpToAnnotation === null
+                  ? undefined
+                  : (): void => onJumpToAnnotation(selected.page, selected.id),
+            },
+            {
+              id: 'annotation-delete',
+              label: 'Delete annotation',
+              icon: <Icon name="delete" size="sm" />,
+              onClick:
+                onDeleteAnnotation === null
+                  ? undefined
+                  : (): void => onDeleteAnnotation(selected.id),
+            },
+          ]}
+        />
+      </>
+    );
+  };
+
   const renderReviewElementsSection = (): ReactElement => (
-    // Phase 90 (TFL-509-C1/C2) — Ruling 6: the Inspector's REVIEW stage renders
-    // the SAME unified list as the ContextPanel; edit dispatches to the host.
+    // Phase 112 (TFL-854 C4) — the review-elements section keeps the shared
+    // marks categories (one renderer, one set of `data-review-*` hooks) but the
+    // Annotations category renders the Inspector's annotation scope, never a
+    // second copy of the LEFT navigator's list.
     <Section id="review-elements" title="Review elements">
       <ReviewElementsPanel
         annotations={annotations}
@@ -669,22 +1117,27 @@ const renderSignatureSection = (): ReactElement => (
         onEdit={onEditReviewElement}
         onDelete={onDeleteReviewElement}
         errorFor={reviewErrorFor}
+        renderAnnotations={renderAnnotationInspector}
       />
     </Section>
   );
 
   const renderExportSection = (): ReactElement => (
     <Section id="export" title="Export">
-      <Row id="export-format" label="Format">
-        {exportFormat ?? '\u2014'}
-      </Row>
-      <Row id="export-pages" label="Pages">
-        {exportPages ?? 'All'}
-      </Row>
-      <Row id="export-preset" label="Preset">
-        {exportPreset ?? 'Default'}
-      </Row>
-      <Action id="export" label={'Export'} onClick={onExport} />
+      <ExportConfigSection
+        format={exportFormat}
+        legacyPages={exportPages}
+        legacyPreset={exportPreset}
+        sourceName={exportSourceName}
+        initialDpi={exportDpi}
+        currentPage={exportCurrentPage}
+        totalPages={pageCount}
+        bridge={exportBridge}
+        onFormatChange={onExportFormatChange}
+        onRun={onExportRun}
+        legacyExport={onExport}
+        status={exportStatus}
+      />
     </Section>
   );
   const sectionBody = (id: InspectorSectionId): ReactElement | null => {
@@ -739,14 +1192,14 @@ const renderSignatureSection = (): ReactElement => (
   );
 
   return (
-    <div
+    <PanelShell
       className="inspector"
+      role="complementary"
+      label="Inspector"
       data-inspector
       data-inspector-stage={stage}
       data-inspector-selection={selection.kind}
       data-inspector-collapsed={collapsed ? 'true' : 'false'}
-      role="complementary"
-      aria-label="Inspector"
     >
       {collapsed ? (
         // Phase 37 (item 3) — the collapsed Inspector is a narrow strip that
@@ -758,9 +1211,10 @@ const renderSignatureSection = (): ReactElement => (
         </div>
       ) : (
         <>
-          <GlassSidebarHeader
+          <ScopedHeader
             className="inspector-header"
-            title={`Inspector \u00b7 ${inspectorSelectionLabel(selection)}`}
+            preferredHeight
+            title={`Inspector \u00b7 ${inspectorScopeLabel(selection, pageSelection)}`}
             actions={
               <div className="inspector-header-actions">
                 {collapseControl}
@@ -809,6 +1263,6 @@ const renderSignatureSection = (): ReactElement => (
           </GlassSidebarBody>
         </>
       )}
-    </div>
+    </PanelShell>
   );
 }

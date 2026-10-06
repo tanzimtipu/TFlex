@@ -41,6 +41,7 @@ import {
   defaultDocxExportFilename,
   downloadBlob,
 } from "../utils/exportDownload";
+import { contiguousPageRuns, exportOutputNameStem } from "./exportConfig";
 import type {
   DocxImageEntry,
   ExportPagesPayload,
@@ -79,6 +80,15 @@ interface DocxExportDialogProps {
   ) => Promise<Uint8Array | { error: string }>;
   onConfirm: (result: DocxExportConfirm) => void;
   sourceName: string;
+  /** Phase 112 (C5 follow-up) - the Inspector's prepared page range as the
+   *  dialog's own TEXT expression. Re-parsed by the dialog; absent = all. */
+  initialRange?: string | null;
+  /** Phase 112 (C5 follow-up) - the Inspector's prepared resolution. Clamped by
+   *  the dialog; absent falls back to the persisted default. */
+  initialDpi?: number | null;
+  /** Phase 112 (C5 follow-up) - the Inspector's prepared output name. Its stem
+   *  seeds the downloaded filename; absent falls back to `sourceName`. */
+  initialOutputName?: string | null;
   /** The active document's engine id, or null when none is open. */
   docId?: string | null;
   /** The engine client the dialog reads `exportText(docId)` from, as a MEMBER
@@ -97,13 +107,23 @@ export function DocxExportDialog(
     runAssemble,
     onConfirm,
     sourceName,
+    initialRange,
+    initialDpi,
+    initialOutputName,
     docId = null,
     engine,
     onClose,
   } = props;
-  const initialRange = useMemo(() => defaultPageRange(totalPages), [totalPages]);
-  const [rangeText, setRangeText] = useState<string>(initialRange);
-  const [dpi, setDpi] = useState<number>(DEFAULT_EXPORT_IMAGE_DPI);
+  const initialRangeText = useMemo(
+    () => (initialRange != null && initialRange.length > 0 ? initialRange : defaultPageRange(totalPages)),
+    [initialRange, totalPages],
+  );
+  const initialDpiValue = useMemo(
+    () => clampExportImageDpi(initialDpi ?? DEFAULT_EXPORT_IMAGE_DPI),
+    [initialDpi],
+  );
+  const [rangeText, setRangeText] = useState<string>(initialRangeText);
+  const [dpi, setDpi] = useState<number>(initialDpiValue);
   const [running, setRunning] = useState(false);
   const [progress, setProgress] = useState<{
     current: number;
@@ -116,14 +136,14 @@ export function DocxExportDialog(
 
   useEffect(() => {
     if (!open) return;
-    setRangeText(defaultPageRange(totalPages));
-    setDpi(DEFAULT_EXPORT_IMAGE_DPI);
+    setRangeText(initialRangeText);
+    setDpi(initialDpiValue);
     setRunning(false);
     setProgress({ current: 0, total: 0, pageIndex: null });
     setError(null);
     setPagesWithoutText(null);
     cancelRef.current.aborted = false;
-  }, [open, totalPages]);
+  }, [open, totalPages, initialRangeText, initialDpiValue]);
 
   // DEF-390 — name the pages with no extractable text, as the xlsx/pptx
   // surfaces do. The read is async and NEVER blocks the dialog: the form
@@ -161,19 +181,28 @@ export function DocxExportDialog(
     setError(null);
     setProgress({ current: 0, total: parsed.length, pageIndex: null });
     try {
-      const [start, end] = [
-        parsed[0] ?? 1,
-        parsed[parsed.length - 1] ?? totalPages,
-      ] as [number, number];
-      const exportRes = await runEngineExport({
-        range: [start, end],
-        format: "png", // rasterize PNG for DOCX assembly
-        dpi,
-      });
-      if ("error" in exportRes) {
-        setError(exportRes.error);
-        setRunning(false);
-        return;
+      const exportRes: {
+        pageIndex: number;
+        buffer: Uint8Array;
+        format: "png" | "jpeg" | "tiff";
+        width: number;
+        height: number;
+      }[] = [];
+      // DEF-602 — the engine range is ONE continuous [start,end]; export each
+      // contiguous run of the parsed selection so a non-contiguous range never
+      // silently widens to the span between its first and last pages.
+      for (const [start, end] of contiguousPageRuns(parsed)) {
+        const runRes = await runEngineExport({
+          range: [start, end],
+          format: "png", // rasterize PNG for DOCX assembly
+          dpi,
+        });
+        if ("error" in runRes) {
+          setError(runRes.error);
+          setRunning(false);
+          return;
+        }
+        exportRes.push(...runRes);
       }
       const entries: DocxImageEntry[] = [];
       for (let i = 0; i < exportRes.length; i += 1) {
@@ -184,7 +213,7 @@ export function DocxExportDialog(
         }
         const e = exportRes[i];
         if (e === undefined) continue;
-        const pageNumber = start + i;
+        const pageNumber = parsed[i] ?? i + 1;
         setProgress({
           current: i,
           total: exportRes.length,
@@ -238,7 +267,13 @@ export function DocxExportDialog(
       const blob = new Blob([assembled.slice().buffer as ArrayBuffer], {
         type: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
       });
-      downloadBlob(blob, defaultDocxExportFilename(sourceName));
+      // Phase 112 (C5 follow-up) - the Inspector's prepared output name seeds
+      // the filename stem; otherwise the source name does.
+      const nameStem =
+        initialOutputName != null && initialOutputName.length > 0
+          ? exportOutputNameStem(initialOutputName)
+          : sourceName;
+      downloadBlob(blob, defaultDocxExportFilename(nameStem));
       setRunning(false);
       onConfirm({ range: parsed, dpi });
     } catch (e) {

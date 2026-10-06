@@ -1,0 +1,63 @@
+{
+  "before": {
+    "rail": "240px",
+    "tools": "280px",
+    "inset": "280px",
+    "dock": {
+      "cx": 737,
+      "cy": 803,
+      "w": 374,
+      "vw": 1442,
+      "vh": 903
+    }
+  },
+  "widthUpdateMs": 138,
+  "afterLeft": {
+    "rail": "288px",
+    "tools": "280px",
+    "inset": "280px",
+    "dock": {
+      "cx": 761,
+      "cy": 803,
+      "w": 314,
+      "vw": 1442,
+      "vh": 903
+    }
+  },
+  "afterRight": {
+    "rail": "288px",
+    "tools": "380px",
+    "inset": "380px",
+    "dock": {
+      "cx": 711,
+      "cy": 803,
+      "w": 337,
+      "vw": 1442,
+      "vh": 903
+    }
+  },
+  "afterCollapse": {
+    "rail": "48px",
+    "tools": "380px",
+    "inset": "380px",
+    "dock": {
+      "cx": 591,
+      "cy": 805,
+      "w": 443,
+      "vw": 1442,
+      "vh": 903
+    }
+  },
+  "narrow": {
+    "rail": "48px",
+    "tools": "44px",
+    "inset": "44px",
+    "dock": {
+      "cx": 428,
+      "cy": 800,
+      "w": 140,
+      "vw": 780,
+      "vh": 900
+    }
+  }
+}

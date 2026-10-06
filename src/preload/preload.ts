@@ -4,6 +4,7 @@ import {
   type ClipboardImageResult,
   type OpenDefaultAppsSettingsResult,
   type SavedSignaturesResult,
+  type ShowInFolderResult,
   type TabDetachResolved,
   type TabTransferPayload,
   type TabTransferResult,
@@ -749,6 +750,15 @@ const api = {
   },
   addRecentFile(f: RecentFile): Promise<void> {
     return ipcRenderer.invoke(IPC.settingsAddRecent, f);
+  },
+  // Phase 112 (TFL-986) — Home Recent panel actions. showInFolder reveals the
+  // file in the OS file manager (typed result, never throws); locateMissing
+  // opens the single Open-PDF picker and resolves the replacement path or null.
+  showInFolder(path: string): Promise<ShowInFolderResult> {
+    return ipcRenderer.invoke(IPC.recentShowInFolder, path);
+  },
+  locateMissing(): Promise<string | null> {
+    return ipcRenderer.invoke(IPC.recentLocateMissing);
   },
   settings: {
     changed(cb: (s: AppSettings) => void): () => void {

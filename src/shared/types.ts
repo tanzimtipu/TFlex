@@ -32,6 +32,25 @@ export interface RecentFile {
   path: string;
   name: string;
   openedAt: string; // ISO 8601
+  /** Phase 112 (TFL-986) — the VERIFIED source format label recorded at
+   *  import/open time (from the detected format, NOT inferred from the file
+   *  extension), e.g. 'PDF Document' or 'Word Document'. Optional and
+   *  preserve-if-valid: an existing record without it still loads. */
+  sourceLabel?: string;
+  /** Phase 112 (TFL-986) — the VERIFIED source format kind (stable id) that
+   *  pairs with `sourceLabel`, e.g. 'pdf' or 'docx'. Optional,
+   *  preserve-if-valid. */
+  sourceKind?: string;
+  /** Phase 112 (TFL-986) — true when the working document is a PDF CONVERTED
+   *  from this source format (the file on disk is not itself a PDF). Optional,
+   *  preserve-if-valid; absent means the source is the working format. */
+  converted?: boolean;
+  /** Phase 112 (TFL-986) — whether the user pinned this entry to the top of
+   *  the Home Recent panel. Optional, preserve-if-valid; absent = not pinned. */
+  pinned?: boolean;
+  /** Phase 112 (TFL-986) — the working format marker. Only 'pdf' today (the
+   *  engine's canonical working format); optional and preserve-if-valid. */
+  workingFormat?: 'pdf';
 }
 
 export interface SampleDocument {
@@ -174,6 +193,23 @@ export interface AppSettings {
    *  rail renders as a narrow ruler strip showing only page numbers.
    *  Validated preserve-if-valid in settings.ts; default `false`. */
   pagesPanelCollapsed?: boolean;
+  /** Phase 112 (TFL-992) — left page panel width in CSS pixels, allowed
+   *  220-320. Validated preserve-if-valid in settings.ts (a finite number
+   *  inside the range survives; anything else is dropped while the rest of
+   *  the settings are kept). Absent resolves to the consumer default 240 —
+   *  the default is NOT stored. */
+  panelLeftWidthPx?: number;
+  /** Phase 112 (TFL-992) — right inspector panel width in CSS pixels,
+   *  allowed 260-380. Validated preserve-if-valid in settings.ts (a finite
+   *  number inside the range survives; anything else is dropped while the
+   *  rest of the settings are kept). Absent resolves to the consumer default
+   *  280 — the default is NOT stored. */
+  panelRightWidthPx?: number;
+  /** Phase 112 (TFL-992) — right inspector panel collapsed state. When true
+   *  the inspector renders as a narrow rail. Validated preserve-if-valid in
+   *  settings.ts (only a real boolean survives); default `false` is applied
+   *  by the consumer when absent. */
+  inspectorCollapsed?: boolean;
   /** Phase 19 - the annotation tools' most-recently-used order, most recent first (capped, deduped). */
   annotationRecentTools?: string[];
   /** Phase 23 - when false, every app animation runs the instant path (see Phase 23). Default true. */

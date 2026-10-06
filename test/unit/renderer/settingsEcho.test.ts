@@ -999,3 +999,101 @@ describe("DEF-072 — sameSettings covers every optional AppSettings field", () 
     }
   });
 });
+
+// Phase 112 (TFL-1000) — adversary fix batch. DEF-601/ADV-231 and
+// DEF-603/ADV-233: the echo filter must reject a stale echo that disagrees
+// with the latest local write on a panel-layout field, and must not trust a
+// recents-only delta that reverted a pin (the `differsOnlyInRecentFiles`
+// branch previously bypassed the C6b `sameRecentFiles` comparison).
+describe("TFL-1000 DEF-601 — panel-layout fields participate in the echo filter", () => {
+  const cases: ReadonlyArray<{
+    field: keyof AppSettings;
+    stale: unknown;
+    latest: unknown;
+  }> = [
+    { field: "panelLeftWidthPx", stale: 300, latest: 320 },
+    { field: "panelRightWidthPx", stale: 300, latest: 380 },
+    { field: "inspectorCollapsed", stale: false, latest: true },
+    { field: "pagesPanelCollapsed", stale: false, latest: true },
+  ];
+
+  for (const { field, stale, latest } of cases) {
+    it(`discards a stale echo that disagrees on ${String(field)}`, () => {
+      const persisted = baseSettings({ [field]: latest } as Partial<AppSettings>);
+      const echo = baseSettings({ [field]: stale } as Partial<AppSettings>);
+      expect(sameSettings(echo, persisted)).toBe(false);
+      expect(differsOnlyInRecentFiles(echo, persisted)).toBe(false);
+      expect(shouldApplyEcho(echo, 2, persisted)).toBe(false);
+    });
+  }
+
+  it("still applies an echo that matches the latest panel-layout write", () => {
+    const persisted = baseSettings({
+      panelLeftWidthPx: 320,
+      panelRightWidthPx: 380,
+      inspectorCollapsed: true,
+      pagesPanelCollapsed: true,
+    });
+    expect(sameSettings(persisted, { ...persisted })).toBe(true);
+    expect(shouldApplyEcho({ ...persisted }, 2, persisted)).toBe(true);
+  });
+});
+
+describe("TFL-1000 DEF-603 — a stale recents-only echo cannot revert a pin", () => {
+  const pinned: RecentFile = {
+    path: "/a.pdf",
+    name: "a.pdf",
+    openedAt: "2026-01-01T00:00:00Z",
+    pinned: true,
+    sourceLabel: "PDF",
+    sourceKind: "pdf",
+    converted: true,
+    workingFormat: "pdf",
+  };
+
+  it("discards a recents-only echo whose pin disagrees, even though only recents differ", () => {
+    const persisted = baseSettings({ recentFiles: [pinned] });
+    const staleEcho = baseSettings({
+      recentFiles: [{ ...pinned, pinned: false }],
+    });
+    expect(sameSettings(staleEcho, persisted)).toBe(false);
+    expect(differsOnlyInRecentFiles(staleEcho, persisted)).toBe(false);
+    expect(shouldApplyEcho(staleEcho, 2, persisted)).toBe(false);
+  });
+
+  it("discards a recents-only echo that reverted any other C6a metadata field", () => {
+    for (const override of [
+      { sourceLabel: undefined },
+      { sourceKind: undefined },
+      { converted: false },
+      { workingFormat: undefined },
+    ] as Array<Partial<RecentFile>>) {
+      const persisted = baseSettings({ recentFiles: [pinned] });
+      const staleEcho = baseSettings({
+        recentFiles: [{ ...pinned, ...override }],
+      });
+      expect(shouldApplyEcho(staleEcho, 2, persisted)).toBe(false);
+    }
+  });
+
+  it("still honours a genuine backend addRecentFile echo (a new path appears)", () => {
+    const persisted = baseSettings({ recentFiles: [pinned] });
+    const echo = baseSettings({
+      recentFiles: [
+        { path: "/new.pdf", name: "new.pdf", openedAt: "2026-01-02T00:00:00Z" },
+        pinned,
+      ],
+    });
+    expect(differsOnlyInRecentFiles(echo, persisted)).toBe(true);
+    expect(shouldApplyEcho(echo, 2, persisted)).toBe(true);
+  });
+
+  it("still honours a refresh of an existing entry that only advanced openedAt", () => {
+    const persisted = baseSettings({ recentFiles: [pinned] });
+    const echo = baseSettings({
+      recentFiles: [{ ...pinned, openedAt: "2026-01-03T00:00:00Z" }],
+    });
+    expect(differsOnlyInRecentFiles(echo, persisted)).toBe(true);
+    expect(shouldApplyEcho(echo, 2, persisted)).toBe(true);
+  });
+});

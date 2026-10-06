@@ -13,6 +13,18 @@ import {
   clampExportImageDpi,
 } from "../../../src/renderer/components/ExportDialog";
 import type { ExportImageFormat, ExportPageEntry } from "../../../src/shared/types";
+import { contiguousPageRuns } from "../../../src/renderer/components/exportConfig";
+
+// jsdom has no canvas backend; the dialog's per-page rasterize step is stubbed
+// so the confirm flow can be exercised without pdf.js / canvas. `isEngineNativeFormat`
+// is read during render (the TIFF radio label), so the mock must provide it too.
+vi.mock("../../../src/renderer/pdf/rasterize", () => ({
+  rasterizePageToBlob: async (): Promise<{ blob: Blob; width: number; height: number }> => {
+    const bytes = new Uint8Array([0x89, 0x50, 0x4e, 0x47]);
+    return { blob: new Blob([bytes], { type: "image/png" }), width: 612, height: 792 };
+  },
+  isEngineNativeFormat: (): boolean => false,
+}));
 
 /**
  * Phase 9 — Export-Pages dialog rendering tests.
@@ -276,5 +288,90 @@ describe("clampExportImageDpi — boundary clamp", () => {
     expect(clampExportImageDpi(150)).toBe(150);
     expect(clampExportImageDpi(72)).toBe(72);
     expect(clampExportImageDpi(600)).toBe(600);
+  });
+});
+
+// TFL-1000 (DEF-602 / ADV-232) — a non-contiguous parsed range must export
+// exactly its pages, never the [first,last] span. The engine payload carries
+// ONE continuous [start,end], so the dialog calls it once per contiguous run.
+describe("contiguousPageRuns — splits a selection without widening it", () => {
+  it("collapses a fully contiguous selection to one run", () => {
+    expect(contiguousPageRuns([1, 2, 3])).toEqual([[1, 3]]);
+  });
+  it("splits gaps into discrete runs", () => {
+    expect(contiguousPageRuns([1, 3, 5])).toEqual([[1, 1], [3, 3], [5, 5]]);
+    expect(contiguousPageRuns([1, 2, 4, 5, 6])).toEqual([[1, 2], [4, 6]]);
+    expect(contiguousPageRuns([2, 4, 6])).toEqual([[2, 2], [4, 4], [6, 6]]);
+  });
+  it("returns no runs for an empty selection", () => {
+    expect(contiguousPageRuns([])).toEqual([]);
+  });
+});
+
+describe("ExportDialog — DEF-602 non-contiguous ranges", () => {
+  it("exports exactly the parsed pages, one engine call per contiguous run", async () => {
+    const calls: Array<[number, number]> = [];
+    const runExport = async (payload: {
+      range?: [number, number];
+      format: ExportImageFormat;
+      dpi: number;
+    }): Promise<ExportPageEntry[]> => {
+      const range = payload.range as [number, number];
+      calls.push(range);
+      const out: ExportPageEntry[] = [];
+      for (let p = range[0]; p <= range[1]; p += 1) {
+        out.push({
+          pageIndex: p,
+          buffer: new Uint8Array([p]),
+          format: payload.format,
+          width: 1,
+          height: 1,
+        });
+      }
+      return out;
+    };
+    const onConfirm = vi.fn();
+    const { container, cleanup } = renderDialog({
+      totalPages: 5,
+      runExport,
+      onConfirm,
+    });
+    const rangeInput = container.querySelector<HTMLInputElement>("[data-export-range]");
+    expect(rangeInput).not.toBeNull();
+    if (rangeInput === null) return cleanup();
+    await act(async (): Promise<void> => {
+      const setter = Object.getOwnPropertyDescriptor(
+        window.HTMLInputElement.prototype,
+        "value",
+      )?.set;
+      setter?.call(rangeInput, "1,3");
+      rangeInput.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    const realCreate = URL.createObjectURL;
+    const realRevoke = URL.revokeObjectURL;
+    (URL as unknown as { createObjectURL: (b: Blob) => string }).createObjectURL = vi.fn(
+      () => "blob:tfl1000",
+    );
+    (URL as unknown as { revokeObjectURL: (u: string) => void }).revokeObjectURL = vi.fn();
+    try {
+      await act(async (): Promise<void> => {
+        container.querySelector<HTMLButtonElement>("[data-export-confirm]")?.click();
+        await new Promise((r) => setTimeout(r, 0));
+        await new Promise((r) => setTimeout(r, 0));
+      });
+      // Two discrete runs, NOT the widening [1,3].
+      expect(calls).toEqual([[1, 1], [3, 3]]);
+      expect(onConfirm).toHaveBeenCalledTimes(1);
+      const result = onConfirm.mock.calls[0]?.[0] as {
+        range: number[];
+        entries: ExportPageEntry[];
+      };
+      expect(result.range).toEqual([1, 3]);
+      expect(result.entries.map((e) => e.pageIndex)).toEqual([1, 3]);
+    } finally {
+      (URL as unknown as { createObjectURL: unknown }).createObjectURL = realCreate;
+      (URL as unknown as { revokeObjectURL: unknown }).revokeObjectURL = realRevoke;
+      cleanup();
+    }
   });
 });

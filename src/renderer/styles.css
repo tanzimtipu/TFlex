@@ -346,6 +346,10 @@
   --glass-selected-border: rgba(124, 58, 237, 0.35);
   /* The glass sidebar header row (shared by Pages + Tools). */
   --glass-sidebar-header-h: 44px;
+  /* Phase 105+ (TFL-854 C1) — the opt-in preferred header height
+   * (panels.tokens.json headerHeightPreferred). Consumers that do not
+   * opt in keep the legacy 44px above. */
+  --glass-sidebar-header-h-preferred: 52px;
   /* Floating-panel margin: sidebars never touch the window edges. */
   --panel-margin: 16px;
   /* Phase 14.2 — the ONE panel material contract. BOTH side panels
@@ -3790,7 +3794,7 @@ body.tab-reordering .tab-list[data-reorder="true"] .tab {
 .recent-row-open {
   flex: 1 1 auto;
   display: grid;
-  grid-template-columns: auto 1fr auto auto;
+  grid-template-columns: auto 1fr auto;
   align-items: center;
   gap: var(--sp-3);
   /* Phase 4 — compact row (10px -> 8px vertical). */
@@ -3820,26 +3824,65 @@ body.tab-reordering .tab-list[data-reorder="true"] .tab {
 .recent-row .doc-path { color: var(--tf-text-supporting); font-size: var(--fs-xs); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 360px; }
 .recent-row .doc-when { color: var(--tf-text-supporting); font-size: var(--fs-xs); font-variant-numeric: tabular-nums; }
 
-/* Phase 91 D3 — canonical `btn btn-ghost btn-icon`; this legacy class is a
- * LAYOUT alias only, keeping the 26px box, the right-edge margin and the
- * hover/focus reveal. The width/min-width pair pins the box against
- * `.btn-icon`'s 36px floor; colour and the focus ring come from the canonical
- * variant (docs/BUTTON-SYSTEM.md). */
-.recent-row-remove {
-  flex: 0 0 auto;
-  display: grid;
-  place-items: center;
-  width: 26px;
-  min-width: 26px;
-  height: auto;
-  margin: 6px var(--sp-3) 6px 0;
+/* Phase 112 (C6b) — the format / converted / missing / last-opened chips ride
+ * ONE trailing meta cell, so the recent-row grid stays a stable three tracks
+ * whether or not the optional converted / missing markers render. */
+.recent-row-meta {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--sp-2);
+  min-width: 0;
+}
+
+/* Phase 112 (C6b) — a converted working PDF is marked honestly (the file on
+ * disk is not itself a PDF). Token-only geometry and ink. */
+.recent-row .doc-converted,
+.recent-row .doc-missing {
+  align-self: center;
+  padding: 2px var(--sp-2);
+  border: 1px solid var(--border);
   border-radius: var(--radius-1);
+  background: var(--bg-raised);
+  color: var(--fg-muted);
+  font-size: var(--fs-xs);
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+}
+
+.recent-row .doc-missing { color: var(--fg-strong); }
+
+/* Phase 112 (C6b) — the per-row action cluster (pin / show in folder / locate
+ * missing / remove). It reveals on row hover and on focus-within, and is
+ * ALWAYS shown for a missing file so Locate stays discoverable. Each button is
+ * the canonical `btn btn-ghost btn-icon`; this only places the cluster and
+ * pins the 26px box against `.btn-icon`'s 36px floor. */
+.recent-row-actions {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-1);
+  padding-right: var(--sp-2);
   opacity: 0;
   transition: opacity var(--motion-fast) var(--ease-out);
 }
 
-.recent-row:hover .recent-row-remove,
-.recent-row-remove:focus-visible { opacity: 1; }
+.recent-row:hover .recent-row-actions,
+.recent-row-actions:focus-within,
+.recent-row[data-recent-missing="true"] .recent-row-actions { opacity: 1; }
+
+.recent-row-action {
+  display: grid;
+  place-items: center;
+  width: 26px;
+  min-width: 26px;
+  height: 26px;
+  border-radius: var(--radius-1);
+  color: var(--fg-muted);
+}
+
+.recent-row-action[aria-pressed="true"] { color: var(--accent); }
 
 .samples-grid {
   display: grid;
@@ -4276,6 +4319,77 @@ body.tab-reordering .tab-list[data-reorder="true"] .tab {
   --tf-rail-w: 48px;
 }
 
+/* Phase 112 (TFL-854, chunk H) — the resizable panel separators. Each handle
+ * is absolutely positioned on its panel's inner edge inside `.app-main`
+ * (position: relative), reading the SAME state-driven tokens the panels
+ * consume: `--tf-rail-w` (left) and `--tools-panel-w` (right). The band is 8px
+ * with a 44px coarse-pointer hit target, mirroring the Multi Mode divider's
+ * affordance (MultiPane.tsx). The edit is pointer drag OR keyboard (ArrowLeft /
+ * ArrowRight nudge, Home / End jump to the bounds); focus is a distinct
+ * outline, never the text selection. */
+.panel-resize-handle {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: var(--tf-panel-resize-w, 8px);
+  z-index: 35;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: col-resize;
+  touch-action: none;
+  user-select: none;
+  background: transparent;
+  transition: background var(--motion-duration-fast) var(--motion-ease-standard);
+}
+
+.panel-resize-handle[data-panel-resize="left"] {
+  left: calc(var(--tf-stage-rail-w, 72px) + var(--tf-rail-w, 240px));
+  transform: translateX(-50%);
+}
+
+.panel-resize-handle[data-panel-resize="right"] {
+  right: var(--tools-panel-w, 280px);
+  transform: translateX(50%);
+}
+
+.panel-resize-handle:hover,
+.panel-resize-handle:focus-visible {
+  background: var(--accent);
+}
+
+.panel-resize-handle:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.panel-resize-grip {
+  flex: 0 0 auto;
+  width: 4px;
+  height: 40px;
+  border-radius: var(--radius-pill);
+  background: var(--border-strong);
+  transition: background var(--motion-duration-fast) var(--motion-ease-standard);
+}
+
+.panel-resize-handle:hover .panel-resize-grip,
+.panel-resize-handle:focus-visible .panel-resize-grip {
+  background: var(--fg-on-accent);
+}
+
+@media (pointer: coarse) {
+  .panel-resize-handle {
+    width: 44px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .panel-resize-handle,
+  .panel-resize-grip {
+    transition: none;
+  }
+}
+
 /* DEF-241 (ADV-057) — RETIRED by Phase 25. The docked text-properties
  * column no longer exists (the panel is a floating card over the page
  * view), so there is no chrome for the right-anchored Tools palette to
@@ -4368,6 +4482,48 @@ body.tab-reordering .tab-list[data-reorder="true"] .tab {
 }
 
 .text-props-group-body {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+/* Phase 112 (C3) — advanced typography is disclosed progressively (line
+ * spacing / character spacing / horizontal scaling). The summary carries the
+ * same label role as a group title so the collapsed and expanded states read
+ * as one panel; the body matches the group-body rhythm. */
+.text-props-advanced {
+  margin-top: 10px;
+}
+
+.text-props-advanced-summary {
+  font-size: var(--type-label-size);
+  line-height: var(--type-label-line);
+  font-weight: var(--type-label-weight);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--fg-muted);
+  padding: 6px 2px 4px;
+  cursor: pointer;
+  list-style: none;
+}
+
+.text-props-advanced-summary::-webkit-details-marker {
+  display: none;
+}
+
+.text-props-advanced-summary::before {
+  content: "\25B8";
+  display: inline-block;
+  width: 1em;
+  color: var(--fg-muted);
+  transition: transform var(--tf-panel-motion-duration) var(--motion-ease-standard);
+}
+
+.text-props-advanced[open] > .text-props-advanced-summary::before {
+  transform: rotate(90deg);
+}
+
+.text-props-advanced-body {
   display: flex;
   flex-direction: column;
   gap: 6px;
@@ -9522,6 +9678,34 @@ rect.ann-highlight.ann-preview {
   padding-top: var(--sp-2);
 }
 
+/* Phase 112 (TFL-854 C2) — the collapsed Document details disclosure. The
+ * section's rows live behind a native <details>, collapsed by default so the
+ * page-scoped facts lead; the summary reuses the section-heading typography. */
+.inspector-document-details {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
+.inspector-document-summary {
+  cursor: pointer;
+  list-style: none;
+}
+.inspector-document-summary::-webkit-details-marker {
+  display: none;
+}
+.inspector-document-summary::before {
+  content: '\25B8';
+  display: inline-block;
+  margin-right: var(--sp-1);
+  transition: transform var(--tf-panel-motion-duration) var(--motion-ease-standard);
+}
+.inspector-document-details[open] > .inspector-document-summary::before {
+  transform: rotate(90deg);
+}
+.inspector-document-details[open] > .inspector-document-summary {
+  margin-bottom: var(--sp-1);
+}
+
 /* The re-parented annotations panel fills the section edge-to-edge. */
 .inspector-embedded { margin: 0 calc(-1 * var(--space-standard)); }
 .inspector-embedded .ann-panel { border: none; background: transparent; }
@@ -14516,6 +14700,12 @@ rect.ann-highlight.ann-preview {
   text-overflow: ellipsis;
 }
 
+/* Phase 105+ (TFL-854 C1) — the opt-in 52px header override. Applied only
+ * when a caller passes height="preferred"; the default stays 44px. */
+.glass-sidebar-header-preferred {
+  height: var(--glass-sidebar-header-h-preferred);
+}
+
 .glass-sidebar-actions {
   display: flex;
   align-items: center;
@@ -14870,6 +15060,17 @@ rect.ann-highlight.ann-preview {
 :root[data-theme="frosted"] .ann-tool-menu,
 :root[data-theme="frosted"] .color-popover {
   border-top-right-radius: 0;
+}
+
+/* DEF-603 (ADV-230) — when the CommandMenu primitive adopts the joined
+   titlebar shell it re-declares `border-radius` later in the sheet, which
+   out-specifies the equal-specificity `.titlebar-menu-popover` squaring above
+   and rounds the top-left corner back to 12px. Re-assert the square top-left
+   at higher specificity (0,2,0) so the trigger + popover read as one surface.
+   Scoped to the joined titlebar menu only; other CommandMenu adopters keep the
+   generic rounding. */
+.titlebar-menu-popover.command-menu {
+  border-top-left-radius: 0;
 }
 
 /* 3 + 4. Triggers: merge material, square the joined corners, no lift. */
@@ -16172,6 +16373,20 @@ rect.ann-highlight.ann-preview {
   padding-bottom: 0;
 }
 
+/* Phase 112 (TFL-854 C2) — the PAGES multi-select summary. A compact
+ * PanelSection under the thumbnail actions; it renders only for a real
+ * multi-selection, so single-page navigation never sees it. */
+.context-panel-selection {
+  flex: 0 0 auto;
+  padding: var(--space-small) var(--space-control);
+  border-top: 1px solid var(--divider);
+}
+
+/* The view-only no-bookmarks state fills the bounded outline body. */
+.context-panel-outline-empty {
+  height: 100%;
+}
+
 /* DEF-318 — the REVIEW annotations section owns a BOUNDED, scrollable body,
  * the same containment DEF-310 applied to the outline section. The
  * re-parented `.ann-panel` is `position: absolute; inset: 0` (the rail's own
@@ -16345,6 +16560,66 @@ rect.ann-highlight.ann-preview {
   color: var(--error);
 }
 
+/* ---- Phase 112 (TFL-854 C4) — the review panels on the shared primitives ----
+ *
+ * The review navigator's annotation list groups by page through PanelSection;
+ * the document-marks categories and the inspector's annotation scope reuse the
+ * same primitives. These scoped overrides keep the shipped review rhythm (tight
+ * section gaps, the bounded annotations category) on top of the `.tf-panel`
+ * geometry. The ownership hooks (`data-review-*`, `.ann-panel-*`) are the same
+ * as before — only the wrapper element gained the primitive classes. */
+
+.ann-panel.tf-panel-shell {
+  background: transparent;
+}
+
+.ann-panel-list {
+  display: flex;
+  flex-direction: column;
+}
+
+.ann-panel-group.tf-panel-section {
+  gap: var(--sp-1);
+  padding: var(--sp-2) var(--sp-2);
+}
+
+.ann-panel-group.tf-panel-section + .ann-panel-group.tf-panel-section {
+  border-top: 1px solid var(--divider);
+}
+
+.ann-panel-group-title.tf-panel-section-title {
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  color: var(--fg-strong);
+}
+
+.ann-panel-group-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.review-elements-category.tf-panel-section {
+  gap: var(--sp-1);
+}
+
+.review-elements-category > .tf-panel-section-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+  min-width: 0;
+}
+
+.review-elements-category[data-review-category="annotations"] > .tf-panel-section-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.inspector-review-empty {
+  min-height: 120px;
+}
+
 /* ---- Phase 36 (chunk 6) — the EDIT / REVIEW / DELIVER stage bodies ----
  *
  * One shared vocabulary for the three non-PAGES panels: a section (title +
@@ -16376,6 +16651,22 @@ rect.ann-highlight.ann-preview {
   letter-spacing: 0.04em;
   text-transform: uppercase;
   color: var(--fg-muted);
+}
+
+/* Phase 112 (C3) — after the EDIT body migrated onto PanelSection, the
+ * primitive wraps the children in `.tf-panel-section-body`. Keep the
+ * established row rhythm (and the subtle inter-row hairlines) INSIDE that
+ * body so the EDIT content navigator reads exactly as before; the section
+ * gap itself comes from the primitive. */
+.context-panel-section > .tf-panel-section-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+}
+
+.context-panel-section > .tf-panel-section-body > * + * {
+  border-top: 1px solid var(--divider);
+  padding-top: var(--space-micro);
 }
 
 .context-panel-row {
@@ -20851,7 +21142,16 @@ cursor: pointer;
 
 /* Coarse pointers (touch) get the 44px target floor from the design spec. */
 @media (pointer: coarse) {
-  .context-toolbox-actions {
+/* TFL-987 — page-view coordinate space. A toolbox whose anchor and clamp
+ * viewport are given in the page view's coordinates (the legacy text-box /
+ * image placement bars) must position ABSOLUTE inside the page's containing
+ * block, not fixed to the window. Declared after `.context-toolbox` so it
+ * wins the position tie at equal specificity. */
+.context-toolbox--page-view {
+  position: absolute;
+}
+
+.context-toolbox-actions {
     min-height: var(--control-height-large);
   }
 
@@ -21074,5 +21374,231 @@ cursor: pointer;
   }
 }
 
+/* =============================================================================
+ * Phase 105+ (TFL-854, chunk C1) — the scoped panel token block.
+ *
+ * ONE mapping from the proposed `Visual overhaul/Design System/panels.tokens.json`
+ * extension, scoped strictly to `.tf-panel` so it can never leak into the app
+ * theme. It carries GEOMETRY and TYPE only: every colour resolves through the
+ * existing --panel-* / --fg-* tokens and every duration resolves through the
+ * existing 140ms --motion-duration-panel token, which the animations.css layer
+ * already collapses under prefers-reduced-motion and data-animations="off".
+ * Forced-colors (the platform high-contrast path) re-points the boundary and
+ * ink at the system Canvas colours below.
+ * ========================================================================== */
+.tf-panel {
+  --tf-panel-padding: 16px;
+  --tf-panel-section-gap: 20px;
+  --tf-panel-header-height-preferred: 52px;
+  --tf-panel-field-radius: 9px;
+  --tf-panel-heading-size: 14px;
+  --tf-panel-heading-weight: 500;
+  --tf-panel-secondary-label-size: 12px;
+  --tf-panel-boundary-width: 1px;
+  --tf-panel-motion-duration: var(--motion-duration-panel, 140ms);
+  --tf-panel-motion-ease: var(--motion-ease-standard, cubic-bezier(0.4, 0, 0.2, 1));
+  --tf-panel-surface: var(--panel-bg, var(--bg-rail));
+  --tf-panel-boundary: var(--panel-border, var(--border));
+  --tf-panel-ink: var(--fg-strong);
+  --tf-panel-ink-secondary: var(--fg-muted);
+}
+
+.tf-panel-shell {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  background: var(--tf-panel-surface);
+}
+
+.tf-panel-header {
+  min-height: var(--tf-panel-header-height-preferred);
+  transition:
+    background-color var(--tf-panel-motion-duration) var(--tf-panel-motion-ease),
+    border-color var(--tf-panel-motion-duration) var(--tf-panel-motion-ease);
+}
+
+.tf-panel-header-preferred {
+  height: var(--tf-panel-header-height-preferred);
+}
+
+.tf-panel-header-title {
+  font-size: var(--tf-panel-heading-size);
+  font-weight: var(--tf-panel-heading-weight);
+}
+
+.tf-panel-section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--tf-panel-section-gap);
+}
+
+.tf-panel-section + .tf-panel-section {
+  border-top: var(--tf-panel-boundary-width) solid var(--tf-panel-boundary);
+}
+
+.tf-panel-section-title {
+  font-size: var(--tf-panel-heading-size);
+  font-weight: var(--tf-panel-heading-weight);
+  color: var(--tf-panel-ink);
+}
+
+.tf-panel-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-small, 8px);
+  min-height: 32px;
+  max-height: 36px;
+}
+
+.tf-panel-row-label {
+  font-size: var(--tf-panel-secondary-label-size);
+  color: var(--tf-panel-ink-secondary);
+}
+
+.tf-panel-action-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--tf-panel-section-gap);
+}
+
+.tf-panel-action {
+  border-radius: var(--tf-panel-field-radius);
+}
+
+.tf-panel-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-small, 8px);
+  padding: var(--tf-panel-padding);
+  color: var(--tf-panel-ink-secondary);
+  text-align: center;
+}
+
+.tf-panel-empty-mark {
+  color: var(--tf-panel-ink-secondary);
+}
+
+.tf-panel-empty-headline {
+  margin: 0;
+  font-size: var(--tf-panel-heading-size);
+  font-weight: var(--tf-panel-heading-weight);
+  color: var(--tf-panel-ink);
+}
+
+.tf-panel-empty-help {
+  margin: 0;
+  font-size: var(--tf-panel-secondary-label-size);
+  color: var(--tf-panel-ink-secondary);
+}
+
+/* Reduced motion: the scoped state transition collapses to an instant change.
+ * The global animations.css catch-all already does this; this explicit block
+ * keeps the panel scope self-documenting and independent of load order. */
+@media (prefers-reduced-motion: reduce) {
+  .tf-panel,
+  .tf-panel-header {
+    --tf-panel-motion-duration: 0ms;
+  }
+
+  .tf-panel-header {
+    transition-duration: 0.01ms;
+  }
+}
+
+/* Forced colors (platform high contrast): keep the single neutral boundary and
+ * the readable ink by deferring to the system Canvas colours. */
+@media (forced-colors: active) {
+  .tf-panel {
+    --tf-panel-surface: Canvas;
+    --tf-panel-boundary: CanvasText;
+    --tf-panel-ink: CanvasText;
+    --tf-panel-ink-secondary: CanvasText;
+  }
+}
 
 
+
+
+
+/* =============================================================================
+ * Phase 112 (TFL-854, chunk C5) - the Deliver output checks + export config.
+ *
+ * Geometry and type ride the scoped --tf-panel tokens; colour comes from the
+ * shared fg / border / error tokens so both themes and forced colours resolve
+ * without a raw literal.
+ * ========================================================================== */
+.tf-panel-section-note {
+  margin: 0;
+  font-size: var(--tf-panel-secondary-label-size);
+  color: var(--tf-panel-ink-secondary);
+}
+
+.export-config {
+  display: flex;
+  flex-direction: column;
+  gap: var(--tf-panel-section-gap);
+}
+
+.export-config-group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-small, 8px);
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.export-config-group-title {
+  font-size: var(--tf-panel-secondary-label-size);
+  font-weight: var(--tf-panel-heading-weight);
+  color: var(--tf-panel-ink-secondary);
+}
+
+.export-config-options {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-small, 8px);
+}
+
+.export-config-option {
+  display: flex;
+  align-items: center;
+  gap: var(--space-small, 8px);
+  font-size: var(--tf-panel-secondary-label-size);
+  color: var(--tf-panel-ink);
+}
+
+.export-config-input {
+  min-height: 32px;
+  padding: 0 var(--space-small, 8px);
+  border: var(--tf-panel-boundary-width) solid var(--tf-panel-boundary);
+  border-radius: var(--tf-panel-field-radius);
+  background: var(--bg-input);
+  color: var(--fg-strong);
+  font: inherit;
+  font-size: var(--tf-panel-secondary-label-size);
+}
+
+.export-config-value {
+  font-size: var(--tf-panel-secondary-label-size);
+  color: var(--tf-panel-ink);
+}
+
+.export-config-error {
+  font-size: var(--tf-panel-secondary-label-size);
+  color: var(--error);
+}
+
+.export-config-status {
+  font-size: var(--tf-panel-secondary-label-size);
+  color: var(--tf-panel-ink-secondary);
+}
+
+.export-config-action {
+  justify-content: center;
+  border-radius: var(--tf-panel-field-radius);
+}

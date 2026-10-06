@@ -191,3 +191,14 @@ Packaged walkthrough: P57_PACKAGED_MATRIX total 28, covered 28, failed 0 — eve
 
 *Method: e2e/perf_retime.spec.cjs launched against the packaged exe C:\Users\tanzi\OneDrive\App Development\TFlex\release\win-unpacked\Jovrel.exe via the canonical launchApp() with env var TFLEX_E2E_EXE set to that path; cold start = launch -> .sample-card, open = Ctrl+O (long.pdf, 520 pages) -> .workspace, idle RSS = process.memoryUsage().rss in the main process after 10s. The packaged 28-extension matrix comes from e2e/installed/phase57_packaged_runtime.spec.cjs run with TFLEX_PACKAGED_EXE set to the same exe and --config=e2e/installed/playwright.installed.config.js; the surface smoke is e2e/installed/phase57_packaged_surface.spec.cjs run the same way. Artifact sizes are the byte sizes of the four release/ 1.44.0 artifacts plus release/win-unpacked/resources/app.asar after `npm.cmd run dist` (build + electron-builder --publish never) on the prune-reverted tree. One perf run only (every number comfortably inside budget, none within 10% of a cap). Recorded by qa at the Phase 57 packaging gate re-measure (2026-09-30).*
 
+## Phase 112 - Panels Context Pair (TFL-854), phase-close QA timing (TFL-1003, 2026-10-06)
+
+| Item | Budget | Measured | Verdict |
+|---|---|---|---|
+| Open report.pdf -> workspace ready | (no Phase 112 numeric budget) | 500 ms | recorded |
+| First thumbnail painted (34 thumbs, Pages rail) | (no Phase 112 numeric budget) | 519 ms | recorded |
+| Panel resize: keyboard End -> width applied (incl. 120 ms settle wait) | shared 140 ms motion band | 138 ms (~18 ms net) | PASS |
+| Review annotation list after stage switch (incl. 1200 ms settle wait) | (no Phase 112 numeric budget) | 1297 ms (~97 ms net) | recorded |
+
+*Method: e2e/phase112_phaseclose_qa.spec.cjs (P112CLOSE-4), dev dist, launch through the canonical launchApp() with a seeded Recent userData dir; the timing incl. waits is the honest wall-clock of the settled UI and the net figure subtracts the deliberate settle window. No numeric Phase 112 performance budget is documented; the resize step sits inside the shared 140 ms motion token and the open/thumbnail numbers are in the same band as the existing Phase 5/14 rows. Raw numbers: test-fixtures/phase112-qa/timings.json. Recorded by qa at the Phase 112 phase-close verdict.*
+

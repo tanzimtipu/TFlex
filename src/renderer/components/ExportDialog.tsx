@@ -40,6 +40,7 @@ import {
   downloadBlob,
   mimeForExportFormat,
 } from "../utils/exportDownload";
+import { contiguousPageRuns, exportOutputNameStem } from "./exportConfig";
 import type {
   ExportImageFormat,
   ExportPageEntry,
@@ -68,6 +69,13 @@ interface ExportDialogProps {
   initialFormat: ExportImageFormat;
   /** Mirrors AppSettings.exportImageDpi. Re-seeds on open. */
   initialDpi: number;
+  /** Phase 112 (C5 follow-up) - the Inspector's prepared page range, as the
+   *  dialog's own TEXT expression. Re-seeded on open and re-parsed by the
+   *  dialog; absent means "all pages". */
+  initialRange?: string | null;
+  /** Phase 112 (C5 follow-up) - the Inspector's prepared output name. Its stem
+   *  seeds the downloaded filename; absent falls back to `sourceName`. */
+  initialOutputName?: string | null;
   /** Fires when the user changes format / DPI. The host persists the
    *  choice through the preferences reducer. */
   onFormatChange?: (format: ExportImageFormat) => void;
@@ -101,6 +109,8 @@ export function ExportDialog(props: ExportDialogProps): ReactElement | null {
     totalPages,
     initialFormat,
     initialDpi,
+    initialRange,
+    initialOutputName,
     onFormatChange,
     onDpiChange,
     runExport,
@@ -108,8 +118,11 @@ export function ExportDialog(props: ExportDialogProps): ReactElement | null {
     sourceName,
     onClose,
   } = props;
-  const initialRange = useMemo(() => defaultPageRange(totalPages), [totalPages]);
-  const [rangeText, setRangeText] = useState<string>(initialRange);
+  const initialRangeText = useMemo(
+    () => (initialRange != null && initialRange.length > 0 ? initialRange : defaultPageRange(totalPages)),
+    [initialRange, totalPages],
+  );
+  const [rangeText, setRangeText] = useState<string>(initialRangeText);
   const [format, setFormat] = useState<ExportImageFormat>(initialFormat);
   const [dpi, setDpi] = useState<number>(clampExportImageDpi(initialDpi));
   const [running, setRunning] = useState(false);
@@ -117,19 +130,19 @@ export function ExportDialog(props: ExportDialogProps): ReactElement | null {
   const [error, setError] = useState<string | null>(null);
   const cancelRef = useRef<{ aborted: boolean }>({ aborted: false });
 
-  // Reset every time we re-open. The range resets to "all pages";
-  // format / DPI reset to the persisted defaults so the dialog opens
-  // with the same selection next time.
+  // Reset every time we re-open. The range resets to "all pages" (or the
+  // Inspector's seeded expression); format / DPI reset to the persisted
+  // defaults so the dialog opens with the same selection next time.
   useEffect(() => {
     if (!open) return;
-    setRangeText(defaultPageRange(totalPages));
+    setRangeText(initialRangeText);
     setFormat(initialFormat);
     setDpi(clampExportImageDpi(initialDpi));
     setRunning(false);
     setProgress({ current: 0, total: 0, pageIndex: null });
     setError(null);
     cancelRef.current.aborted = false;
-  }, [open, totalPages, initialFormat, initialDpi]);
+  }, [open, totalPages, initialFormat, initialDpi, initialRangeText]);
 
   // Esc-to-close, the backdrop drag guard and initial focus are owned by
   // DialogShell. The primary Export action is marked `default` so it
@@ -148,20 +161,23 @@ export function ExportDialog(props: ExportDialogProps): ReactElement | null {
     setError(null);
     setProgress({ current: 0, total: parsed.length, pageIndex: null });
     try {
-      // Step 1: ask the engine for per-page PDF buffers.
-      const [start, end] = [
-        parsed[0] ?? 1,
-        parsed[parsed.length - 1] ?? totalPages,
-      ] as [number, number];
-      const exportRes = await runExport({
-        range: [start, end],
-        format,
-        dpi,
-      });
-      if ("error" in exportRes) {
-        setError(exportRes.error);
-        setRunning(false);
-        return;
+      // Step 1: ask the engine for per-page PDF buffers. DEF-602 — the engine
+      // payload's range is ONE continuous [start,end]; a non-contiguous
+      // selection is exported as one call per contiguous run so exactly the
+      // parsed pages go out, never the span between the first and the last.
+      const exportRes: ExportPageEntry[] = [];
+      for (const [start, end] of contiguousPageRuns(parsed)) {
+        const runRes = await runExport({
+          range: [start, end],
+          format,
+          dpi,
+        });
+        if ("error" in runRes) {
+          setError(runRes.error);
+          setRunning(false);
+          return;
+        }
+        exportRes.push(...runRes);
       }
       const entries: ExportPageEntry[] = [];
       for (let i = 0; i < exportRes.length; i += 1) {
@@ -172,7 +188,7 @@ export function ExportDialog(props: ExportDialogProps): ReactElement | null {
         }
         const e = exportRes[i];
         if (e === undefined) continue;
-        const pageNumber = start + i;
+        const pageNumber = parsed[i] ?? i + 1;
         setProgress({
           current: i,
           total: exportRes.length,
@@ -219,9 +235,15 @@ export function ExportDialog(props: ExportDialogProps): ReactElement | null {
         const blob = new Blob([entry.buffer.slice().buffer as ArrayBuffer], {
           type: mimeForExportFormat(entry.format),
         });
+        // Phase 112 (C5 follow-up) - the Inspector's prepared output name seeds
+        // the filename stem; otherwise the source name does.
+        const nameStem =
+          initialOutputName != null && initialOutputName.length > 0
+            ? exportOutputNameStem(initialOutputName)
+            : sourceName;
         downloadBlob(
           blob,
-          defaultExportFilename(sourceName, entry.pageIndex, entry.format),
+          defaultExportFilename(nameStem, entry.pageIndex, entry.format),
         );
       }
       onConfirm({ range: parsed, format, dpi, entries });

@@ -30,9 +30,13 @@ import type { ReactElement } from 'react';
 import type { PDFDocumentProxy } from 'pdfjs-dist';
 import {
   FileSignature,
+  FileWarning,
   Images,
+  Lock,
+  MousePointerClick,
   PanelLeftClose,
   PanelRightOpen,
+  ScanText,
   SquareChevronDown,
   SquareChevronRight,
   TextCursor,
@@ -43,19 +47,23 @@ import { EmptyState } from './EmptyState';
 import { OutlinePanel, OutlineEditorContext, RulerStrip, ThumbnailRail } from './SideRail';
 import type { OutlineEditorConfig, RailTab, ThumbVerbs } from './SideRail';
 import { usePageThumbMenu } from './pageThumbMenu';
-import { GlassSidebarBody, GlassSidebarHeader } from './GlassSidebar';
+import { GlassSidebarBody } from './GlassSidebar';
+import { ActionList, PanelEmptyState, PanelSection, PanelShell, PropertyRow, ScopedHeader } from './panels/PanelPrimitives';
 import { ReviewElementsPanel } from './ReviewElementsPanel';
 import type { ReviewElementRef } from './ReviewElementsPanel';
 import type { Annotation, AnnotationPatch } from '../annotations/model';
 import { buildPageLabelMap } from './pageGeometry';
 import { formatBytes } from '../utils/formatBytes';
+import { protectionSummary } from '../security/protection';
 import type { EngineState } from '../engine/types';
 import type { OutlineNode } from '../pdf/pdfjs';
 import type { PageDropOp } from '../state/pageDrag';
 import type { Stage } from '../state/stages';
 import { EDIT_DEFAULT_FONTS } from '../state/preferences';
+import { EXPORT_FIDELITY_NOTES, type ExportFormat } from '../../shared/export';
 import type {
   BatesInfo,
+  DocumentProtectionState,
   EditFont,
   SavedSignature,
   SignaturePlacement,
@@ -81,6 +89,62 @@ export interface ContextPanelEditContent {
   page: number;
   selected: boolean;
 }
+
+/** Phase 112 (C3) — the EDIT content navigator's state vocabulary. PURE, so
+ *  the panel's diagnostic contract is pinned without mounting. `ready` is the
+ *  only state that lists objects; every other state is a designed empty state
+ *  and must never fabricate content the engine did not report. */
+export type EditContentState =
+  | 'ready'
+  | 'no-selection'
+  | 'no-content'
+  | 'unsupported'
+  | 'restricted';
+
+/** Resolve the EDIT content state from the host's data. Precedence is
+ *  deliberate: an explicit restriction/unsupported flag wins, then "no edit
+ *  session data" reads as no-selection, then an empty page reads as no-content.
+ *  A page with visible text is NOT claimed blank/scanned here — that verdict
+ *  needs engine data the navigator does not carry. */
+export function editContentState(args: {
+  editContent: readonly ContextPanelEditContent[] | null | undefined;
+  pageItemCount: number;
+  unsupported?: boolean;
+  restricted?: boolean;
+}): EditContentState {
+  if (args.restricted === true) return 'restricted';
+  if (args.unsupported === true) return 'unsupported';
+  if (args.editContent === null || args.editContent === undefined) return 'no-selection';
+  return args.pageItemCount === 0 ? 'no-content' : 'ready';
+}
+
+/** The designed empty state for each non-ready EDIT content state. Copy is
+ *  truthful: it never claims a page is blank/scanned without engine data. */
+const EDIT_CONTENT_EMPTY: Record<
+  Exclude<EditContentState, 'ready'>,
+  { icon: LucideIcon; headline: string; help: string }
+> = {
+  'no-selection': {
+    icon: MousePointerClick,
+    headline: 'No selection',
+    help: 'Select a page or an object to edit.',
+  },
+  'no-content': {
+    icon: TextCursor,
+    headline: 'No editable content detected',
+    help: 'This page has no text or image objects to edit.',
+  },
+  unsupported: {
+    icon: FileWarning,
+    headline: 'Unsupported editing',
+    help: 'This document cannot be edited.',
+  },
+  restricted: {
+    icon: Lock,
+    headline: 'Permission restricted',
+    help: "This document's permissions do not allow editing.",
+  },
+};
 
 export interface ContextPanelProps {
   /** The stage this panel belongs to. Defaults to PAGES so every pre-chunk-6
@@ -188,6 +252,12 @@ onInsertBlank?: (page: number) => void;
    *  in the Edit panel"). The host threads the existing edit-session values. */
   editDefaultFont?: EditFont;
   onEditDefaultFontChange?: ((font: EditFont) => void) | null;
+  /** Phase 112 (C3) — the host's edit-availability flags for the CONTENT
+   *  navigator. Both default false so the panel never fabricates a
+   *  restricted/unsupported state without engine data; when true they replace
+   *  the content list with the matching diagnostic PanelEmptyState. */
+  editUnsupported?: boolean;
+  editPermissionRestricted?: boolean;
 
   // --- REVIEW -----------------------------------------------------------
   /** The active document's annotations. The REVIEW body re-parents the SAME
@@ -223,6 +293,14 @@ onInsertBlank?: (page: number) => void;
   /** The active document's form-field count (0 = none or already flattened;
    *  the app has no separate "flattened" flag — see the pre-flight note). */
   formFieldCount?: number;
+  /** Phase 112 (C5) — the document's REAL encryption state, when the host has
+   *  read it. Null/undefined renders the distinct "Not analysed" observation
+   *  (never a fabricated "unencrypted"). */
+  protection?: DocumentProtectionState | null;
+  /** Phase 112 (C5) — the office format whose mandatory fidelity limits the
+   *  output checks should surface, when a format is being prepared. Null shows
+   *  the distinct "Not analysed" observation. */
+  exportFidelityFormat?: ExportFormat | null;
   /** The EXISTING Optimize entry (the document-size disclosure's action). */
   onOptimize?: () => void;
   /** The EXISTING "create from images" dialog entry. */
@@ -251,6 +329,26 @@ export function contextPanelTitle(stage: Stage, _pageCount: number): string {
     case 'deliver':
       return 'Deliver';
   }
+}
+
+/** Phase 112 (TFL-854 C2) — the thumbnail selection's range label. A
+ *  contiguous run reads "Pages 2-4"; a sparse set lists its pages. Pure so
+ *  the summary text is pinned by tests. */
+export function pageRangeText(pages: readonly number[]): string {
+  if (pages.length === 0) return 'No pages';
+  let contiguous = true;
+  for (let i = 1; i < pages.length; i += 1) {
+    if (pages[i] !== pages[i - 1] + 1) {
+      contiguous = false;
+      break;
+    }
+  }
+  if (contiguous) {
+    const first = pages[0];
+    const last = pages[pages.length - 1];
+    return first === last ? `Page ${first}` : `Pages ${first}-${last}`;
+  }
+  return `Pages ${pages.join(', ')}`;
 }
 
 /**
@@ -306,6 +404,8 @@ onInsertBlank,
     onOpenOcrSuspects,
     editDefaultFont,
     onEditDefaultFontChange = null,
+    editUnsupported = false,
+    editPermissionRestricted = false,
     annotations = [],
     onJumpToAnnotation = null,
     onEditAnnotation = null,
@@ -319,6 +419,8 @@ onInsertBlank,
     reviewErrorFor = null,
     fileSize = null,
     formFieldCount = 0,
+    protection = null,
+    exportFidelityFormat = null,
     onOptimize,
     onCreateFromImages = null,
   } = props;
@@ -457,6 +559,30 @@ const pageCount = engineState.pageCount;
           Remove blank pages
         </button>
       </div>
+      {/* Phase 112 (TFL-854 C2) — the thumbnail multi-select summary. The
+       *  host owns the set (DocumentView) and threads it here; the section
+       *  renders ONLY when more than one page is selected, so a single-page
+       *  navigation stays uncluttered. Count + range are read straight off
+       *  the set, never a fabricated badge. */}
+      {pageSelection !== null && pageSelection.length > 1 && (
+        <PanelSection
+          className="context-panel-selection"
+          data-context-panel-selection
+          title="Selection"
+          aria-label="Selection"
+        >
+          <PropertyRow
+            label="Pages"
+            value={`${pageSelection.length} selected`}
+            data-context-panel-selection-count
+          />
+          <PropertyRow
+            label="Range"
+            value={pageRangeText(pageSelection)}
+            data-context-panel-selection-range
+          />
+        </PanelSection>
+      )}
       {(outline !== null || effectiveOutlineEditor !== null) && (
         <section className="context-panel-outline" data-context-panel-outline aria-label="Outline" data-outline-open={outlineOpen ? 'true' : 'false'}>
           <button
@@ -478,7 +604,19 @@ const pageCount = engineState.pageCount;
           </button>
           {outlineOpen && (
             <div className="context-panel-outline-body" id="context-panel-outline-body" data-context-panel-outline-body>
-              <OutlinePanel doc={doc} outline={outline ?? []} onJump={onJump} onError={onError} editor={effectiveOutlineEditor} />
+              {outline !== null && outline.length === 0 && effectiveOutlineEditor === null ? (
+                // Phase 112 (TFL-854 C2) — the no-bookmarks state is the shared
+                // designed empty state. No Add action is fabricated: a
+                // view-only outline (no editor config) cannot add bookmarks.
+                <PanelEmptyState
+                  className="context-panel-outline-empty"
+                  headline="No bookmarks"
+                  help="This document has no bookmark outline."
+                  data-context-panel-outline-empty
+                />
+              ) : (
+                <OutlinePanel doc={doc} outline={outline ?? []} onJump={onJump} onError={onError} editor={effectiveOutlineEditor} />
+              )}
             </div>
           )}
         </section>
@@ -491,45 +629,53 @@ const pageCount = engineState.pageCount;
   // placements the app already models. The host builds the items from the
   // edit model; selecting one routes to the host's existing edit selection.
   const pageEditContent = editContent === null ? [] : editContent.filter((i) => i.page === currentPage);
+  const contentState = editContentState({
+    editContent,
+    pageItemCount: pageEditContent.length,
+    unsupported: editUnsupported,
+    restricted: editPermissionRestricted,
+  });
+  const contentEmpty = contentState === 'ready' ? null : EDIT_CONTENT_EMPTY[contentState];
   const renderEdit = (): ReactElement => (
     <>
-      <section className="context-panel-section" data-context-panel-section="content" aria-label="Content">
-        <div className="context-panel-section-title">Content</div>
+      <PanelSection
+        className="context-panel-section"
+        titleClassName="context-panel-section-title"
+        data-context-panel-section="content"
+        aria-label="Content"
+        title="Content"
+      >
         {/* Phase 41 (item 2) — the retired edit toolbar's last control. New /
             replaced text uses this font; the host persists it like before. */}
-        <div className="context-panel-row" data-edit-default-font-row>
-          <span className="context-panel-row-label">Default font</span>
-          <span className="context-panel-row-value">
-            <select
-              className="context-panel-select"
-              data-edit-default-font
-              aria-label="Default font"
-              value={editDefaultFont ?? ''}
-              disabled={onEditDefaultFontChange === null}
-              onChange={(e): void => {
-                const v = e.target.value;
-                if (EDIT_DEFAULT_FONTS.includes(v as EditFont)) {
-                  onEditDefaultFontChange?.(v as EditFont);
-                }
-              }}
-            >
-              {editDefaultFont === undefined && <option value="">—</option>}
-              {EDIT_DEFAULT_FONTS.map((f) => (
-                <option key={f} value={f}>
-                  {f}
-                </option>
-              ))}
-            </select>
-          </span>
-        </div>
-        {pageEditContent.length === 0 ? (
-          <EmptyState
-            icon={TextCursor}
-            className="context-panel-empty"
-            data-edit-content-empty
-            headline="No editable content on this page."
-          />
-        ) : (
+        <PropertyRow
+          className="context-panel-row"
+          labelClassName="context-panel-row-label"
+          valueClassName="context-panel-row-value"
+          data-edit-default-font-row
+          label="Default font"
+        >
+          <select
+            className="context-panel-select"
+            data-edit-default-font
+            aria-label="Default font"
+            value={editDefaultFont ?? ''}
+            disabled={onEditDefaultFontChange === null}
+            onChange={(e): void => {
+              const v = e.target.value;
+              if (EDIT_DEFAULT_FONTS.includes(v as EditFont)) {
+                onEditDefaultFontChange?.(v as EditFont);
+              }
+            }}
+          >
+            {editDefaultFont === undefined && <option value="">—</option>}
+            {EDIT_DEFAULT_FONTS.map((f) => (
+              <option key={f} value={f}>
+                {f}
+              </option>
+            ))}
+          </select>
+        </PropertyRow>
+        {contentState === 'ready' ? (
           <div className="context-panel-list" data-edit-content-list>
             {pageEditContent.map((item) => (
               <button
@@ -554,31 +700,74 @@ const pageCount = engineState.pageCount;
               </button>
             ))}
           </div>
+        ) : contentState === 'no-content' ? (
+          // A real, empty page. The Phase-96 shared designed empty state keeps
+          // its `empty-state` hooks (phase96_design_system e2e) and its exact
+          // copy; no Blank/Scanned claim is made without engine data.
+          <EmptyState
+            icon={TextCursor}
+            className="context-panel-empty"
+            data-edit-content-empty
+            headline="No editable content on this page."
+          />
+        ) : (
+          // Phase 112 (C3) — the remaining diagnostics (no selection /
+          // unsupported / permission restricted) are the shared PanelEmptyState.
+          <PanelEmptyState
+            icon={contentEmpty?.icon ?? TextCursor}
+            className="context-panel-empty"
+            data-edit-content-empty
+            data-edit-content-state={contentState}
+            headline={contentEmpty?.headline ?? 'No editable content detected'}
+            help={contentEmpty?.help}
+          />
         )}
-      </section>
-      <section className="context-panel-section" data-context-panel-section="recognition" aria-label="Recognition">
-        <div className="context-panel-section-title">Recognition</div>
-        <div className="context-panel-row" data-ocr-status-row>
-          <span className="context-panel-row-label">OCR status</span>
-          <span className="context-panel-row-value" data-ocr-status>
-            {ocrStatus ?? 'Not run'}
+      </PanelSection>
+      <PanelSection
+        className="context-panel-section"
+        titleClassName="context-panel-section-title"
+        data-context-panel-section="recognition"
+        aria-label="Recognition"
+        title="Recognition"
+      >
+        {!ocrHasRun && (
+          // Phase 112 (C3) — before a run the recognition section states it
+          // plainly, then still offers the EXISTING recognize entry below.
+          <PanelEmptyState
+            icon={ScanText}
+            className="context-panel-empty"
+            data-ocr-empty
+            headline="Recognition not run"
+            help="Run Recognize text to detect text on scanned pages."
+          />
+        )}
+        <PropertyRow
+          className="context-panel-row"
+          labelClassName="context-panel-row-label"
+          valueClassName="context-panel-row-value"
+          data-ocr-status-row
+          label="OCR status"
+        >
+          <span data-ocr-status>{ocrStatus ?? 'Not run'}</span>
+        </PropertyRow>
+        <PropertyRow
+          className="context-panel-row"
+          labelClassName="context-panel-row-label"
+          valueClassName="context-panel-row-value"
+          data-ocr-suspects-row
+          label="Suspects"
+        >
+          <span
+            className={
+              ocrHasRun && ocrSuspectCount > 0
+                ? 'context-panel-badge context-panel-badge-alert'
+                : 'context-panel-badge'
+            }
+            data-ocr-suspect-count
+          >
+            {ocrHasRun ? ocrSuspectCount : '\u2014'}
           </span>
-        </div>
-        <div className="context-panel-row" data-ocr-suspects-row>
-          <span className="context-panel-row-label">Suspects</span>
-          <span className="context-panel-row-value">
-            <span
-              className={
-                ocrHasRun && ocrSuspectCount > 0
-                  ? 'context-panel-badge context-panel-badge-alert'
-                  : 'context-panel-badge'
-              }
-              data-ocr-suspect-count
-            >
-              {ocrHasRun ? ocrSuspectCount : '\u2014'}
-            </span>
-          </span>
-        </div>
+        </PropertyRow>
         <div className="context-panel-actions-row">
           <button
             type="button"
@@ -605,7 +794,7 @@ const pageCount = engineState.pageCount;
             <span>Review suspects</span>
           </button>
         </div>
-      </section>
+      </PanelSection>
     </>
   );
 
@@ -632,63 +821,126 @@ const pageCount = engineState.pageCount;
   );
 
   // ---- DELIVER ---------------------------------------------------------
-  // The pre-flight checklist READS the existing state only: the OCR status
-  // (the same flag the EDIT panel shows), the file size (the session's
-  // byte count, with the Optimize entry) and the form-field count. The app
-  // keeps no separate "flattened" flag — a flattened document and a
-  // form-less document both report zero fields, so both read "None" here.
-  const renderDeliver = (): ReactElement => (
-    <>
-      <section className="context-panel-section" data-context-panel-section="preflight" aria-label="Pre-flight">
-        <div className="context-panel-section-title">Pre-flight</div>
-        <div className="context-panel-row" data-preflight="ocr">
-          <span className="context-panel-row-label">OCR</span>
-          <span className="context-panel-row-value">{ocrStatus ?? 'Not run'}</span>
-        </div>
-        <div className="context-panel-row" data-preflight="file-size">
-          <span className="context-panel-row-label">File size</span>
-          <span className="context-panel-row-value">
-            <span data-file-size>{fileSize === null ? '\u2014' : formatBytes(fileSize)}</span>
-          </span>
-        </div>
-        <div className="context-panel-row" data-preflight="optimize">
-          <span className="context-panel-row-label">Optimize</span>
-          <span className="context-panel-row-value">
-            <button
-              type="button"
-              className="btn btn-secondary context-panel-action"
-              data-context-panel-action="optimize"
-              onClick={(): void => onOptimize?.()}
-              disabled={onOptimize === undefined}
-            >
-              <span>Optimize</span>
-            </button>
-          </span>
-        </div>
-        <div className="context-panel-row" data-preflight="forms">
-          <span className="context-panel-row-label">Form fields</span>
-          <span className="context-panel-row-value" data-form-fields>
-            {formFieldCount > 0 ? `${formFieldCount} to flatten` : 'None'}
-          </span>
-        </div>
-      </section>
-      <section className="context-panel-section" data-context-panel-section="new-document" aria-label="New document">
-        <div className="context-panel-section-title">New document</div>
-        <div className="context-panel-actions-row">
-          <button
-            type="button"
-            className="btn btn-secondary context-panel-action"
-            data-context-panel-action="from-images"
-            onClick={(): void => onCreateFromImages?.()}
-            disabled={onCreateFromImages === null}
-          >
-            <Icon name="insertPages" size="md" aria-hidden />
-            <span>From images</span>
-          </button>
-        </div>
-      </section>
-    </>
-  );
+  // The output checks are FACTUAL OBSERVATIONS read from the existing state,
+  // never blockers and never a readiness score: the OCR status (not-run is not
+  // an error), the real file size, the interactive form-field count (a nonzero
+  // count is not a problem to flatten), the document's actual encryption
+  // dictionary when the host read it, and an office format's mandatory fidelity
+  // limits when one is being prepared. Unknown/not-analysed reads distinctly.
+  const renderDeliver = (): ReactElement => {
+    const protectionText =
+      protection === null ? 'Not analysed' : protectionSummary(protection);
+    const fidelityNotes =
+      exportFidelityFormat === null ? null : EXPORT_FIDELITY_NOTES[exportFidelityFormat];
+    const fidelityText =
+      fidelityNotes === null ? 'Not analysed' : fidelityNotes.join(' ');
+    const checkActions = [
+      {
+        id: 'optimize',
+        label: 'Optimize',
+        icon: <Icon name="optimize" size="md" aria-hidden />,
+        onClick: onOptimize,
+        dataAttrs: { 'data-context-panel-action': 'optimize' },
+      },
+    ];
+    const newDocumentActions = [
+      {
+        id: 'from-images',
+        label: 'From images',
+        icon: <Icon name="insertPages" size="md" aria-hidden />,
+        onClick: onCreateFromImages ?? undefined,
+        dataAttrs: { 'data-context-panel-action': 'from-images' },
+      },
+    ];
+    return (
+      <>
+        <PanelSection
+          className="context-panel-section"
+          titleClassName="context-panel-section-title"
+          bodyClassName="context-panel-section-body"
+          data-context-panel-section="preflight"
+          title="Output checks"
+        >
+          {pageCount === 0 ? (
+            <PanelEmptyState
+              className="context-panel-empty"
+              data-deliver-empty
+              headline="No document to check"
+              help="Open a PDF to see its output checks."
+            />
+          ) : (
+            <>
+              <p className="tf-panel-section-note" data-deliver-observation-legend>
+                Observations, not blockers: they describe the document and never stop an export.
+              </p>
+              <PropertyRow
+                className="context-panel-row"
+                data-preflight="ocr"
+                data-deliver-observation
+                label="OCR"
+              >
+                <span data-deliver-observation-value>{ocrStatus ?? 'Not run'}</span>
+              </PropertyRow>
+              <PropertyRow
+                className="context-panel-row"
+                data-preflight="file-size"
+                data-deliver-observation
+                label="File size"
+              >
+                <span data-file-size>
+                  {fileSize === null ? '\u2014' : formatBytes(fileSize)}
+                </span>
+              </PropertyRow>
+              <PropertyRow
+                className="context-panel-row"
+                data-preflight="forms"
+                data-deliver-observation
+                label="Form fields"
+              >
+                <span data-form-fields>
+                  {formFieldCount > 0 ? `${formFieldCount} interactive` : 'None'}
+                </span>
+              </PropertyRow>
+              <PropertyRow
+                className="context-panel-row"
+                data-preflight="protection"
+                data-deliver-observation
+                label="Protection"
+              >
+                <span data-deliver-protection>{protectionText}</span>
+              </PropertyRow>
+              <PropertyRow
+                className="context-panel-row"
+                data-preflight="fidelity"
+                data-deliver-observation
+                label="Export fidelity"
+              >
+                <span data-deliver-fidelity>{fidelityText}</span>
+              </PropertyRow>
+            </>
+          )}
+          <ActionList
+            className="context-panel-actions-row"
+            data-deliver-actions
+            actions={checkActions}
+          />
+        </PanelSection>
+        <PanelSection
+          className="context-panel-section"
+          titleClassName="context-panel-section-title"
+          bodyClassName="context-panel-section-body"
+          data-context-panel-section="new-document"
+          title="New document"
+        >
+          <ActionList
+            className="context-panel-actions-row"
+            data-deliver-actions="new-document"
+            actions={newDocumentActions}
+          />
+        </PanelSection>
+      </>
+    );
+  };
 
   const body =
     stage === 'edit'
@@ -702,14 +954,16 @@ const pageCount = engineState.pageCount;
 const headerTitle = contextPanelTitle(stage, pageCount);
 
   return (
-    <div
+    <PanelShell
       className="context-panel"
+      label="Context panel"
       data-context-panel={stage}
       data-context-panel-stage={stage}
       data-context-panel-collapsed={collapsed ? 'true' : undefined}
     >
-      <GlassSidebarHeader
+      <ScopedHeader
         className="context-panel-header"
+        preferredHeight
         /* Phase 37 (item 15) — the PAGES title is GONE (empty title = no
          * title span). EDIT / REVIEW / DELIVER keep their word. */
         title={headerTitle === '' ? undefined : headerTitle}
@@ -742,6 +996,6 @@ const headerTitle = contextPanelTitle(stage, pageCount);
         )}
         {menuNode}
       </GlassSidebarBody>
-    </div>
+    </PanelShell>
   );
 }

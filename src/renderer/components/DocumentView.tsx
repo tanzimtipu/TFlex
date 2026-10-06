@@ -959,6 +959,17 @@ export interface DocumentViewDockProps {
    *  for the dock's own verbs use the dock's verdict instead of a second guess.
    *  `null` withdraws it (unmount / tab close). */
   registerDockAvailability?: (availability: DockAvailability | null) => void;
+  /** Phase 112 (TFL-854 C2) — report the thumbnail multi-select upward so the
+   *  right Inspector can name the scope ("N pages selected") and show Mixed
+   *  values. The set stays OWNED here; the host only reads it. */
+  onPageSelectionReport?: (pages: readonly number[]) => void;
+  /** Phase 112 (TFL-854 C2 follow-up) — report the LIVE measured page sizes
+   *  (un-rotated PDF points, keyed by 1-based page) upward so the right
+   *  Inspector can show the real Size for a normally-opened document instead
+   *  of "Not available". These are the same sizes the mounted PageViews already
+   *  report via `onPageSize`; nothing extra is measured. The map stays OWNED
+   *  here; the host only reads it. */
+  onPageSizesReport?: (sizes: ReadonlyMap<number, { w: number; h: number }>) => void;
   /** Phase 104 (chunk 1) — the host's command-palette opener, forwarded to the
    *  Action Dock's labelled Tools utility button. */
   onOpenTools?: () => void;
@@ -980,6 +991,8 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
   registerSearchIndexInvalidator,
   registerViewCommands,
   registerDockAvailability,
+  onPageSelectionReport,
+  onPageSizesReport,
   onToast,
   proxyVisibleOrder = false,
   engineState,
@@ -4113,6 +4126,25 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
   }, [pageCount]);
 
   const clearPageSelection = useCallback((): void => setPageSelection([]), []);
+
+  // Phase 112 (TFL-854 C2) — publish the thumbnail selection upward so the
+  // right Inspector can name its scope and show Mixed values. Ref pattern: the
+  // effect keys only on the set, so an inline host callback never re-fires it.
+  const onPageSelectionReportRef = useRef(onPageSelectionReport);
+  onPageSelectionReportRef.current = onPageSelectionReport;
+  useEffect((): void => {
+    onPageSelectionReportRef.current?.(pageSelection);
+  }, [pageSelection]);
+
+  // Phase 112 (TFL-854 C2 follow-up) — publish the LIVE measured page sizes
+  // upward so the right Inspector shows real dimensions without opening the
+  // Crop dialog. Same ref pattern as the selection report: the effect keys only
+  // on the map identity, so an inline host callback never re-fires it.
+  const onPageSizesReportRef = useRef(onPageSizesReport);
+  onPageSizesReportRef.current = onPageSizesReport;
+  useEffect((): void => {
+    onPageSizesReportRef.current?.(pageSizes);
+  }, [pageSizes]);
 
   // ---- Phase 36 (chunk 3b / chunk 7): the annotations flyout + shared idle --
   //

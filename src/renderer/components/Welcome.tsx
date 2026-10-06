@@ -104,6 +104,15 @@ interface WelcomeProps {
   /** TFL-938 - persist the Home-only motion pause. Absent hides the control,
    *  so legacy and minimal test mounts are unchanged. */
   onSetHomeMotionPaused?: (next: boolean) => void;
+  /** Phase 112 (C6b) - the Recent-row actions. Every handler is the host's
+   *  existing flow (pin via the settings save path, show in folder / locate
+   *  via the C6a IPC); absent leaves the action unrendered. */
+  onToggleRecentPin?: (entry: RecentFile) => void;
+  onShowRecentInFolder?: (entry: RecentFile) => void;
+  onLocateRecentMissing?: (entry: RecentFile) => void;
+  /** Paths the host knows are missing / unopenable, so the row renders its
+   *  missing state and the Locate-missing action. */
+  missingRecentPaths?: readonly string[];
 }
 
 export function Welcome(props: WelcomeProps): ReactElement {
@@ -122,6 +131,10 @@ export function Welcome(props: WelcomeProps): ReactElement {
     samplesResolver,
     homeMotionPaused,
     onSetHomeMotionPaused,
+    onToggleRecentPin,
+    onShowRecentInFolder,
+    onLocateRecentMissing,
+    missingRecentPaths,
   } = props;
   // Phase 106 (chunk B) — the decorative orbit's live on/off decision. TFL-938
   // moves the Home pause onto its own persisted preference so it no longer
@@ -258,6 +271,9 @@ export function Welcome(props: WelcomeProps): ReactElement {
   const contextLabels = recentContextLabels(
     recentFiles.map((row) => ({ name: row.meta.name, dir: row.meta.dir })),
   );
+  // Phase 112 (C6b) - the host's missing-file set, so a row can render its
+  // missing state (and the Locate action) without a second query.
+  const missingPaths = new Set(missingRecentPaths ?? []);
 
   // Phase 58 (chunk 4) — the fixed Open tile and each removable tile run the
   // host's registry-keyed handler. A legacy mount (no `onRunHomeTool`) keeps
@@ -486,8 +502,12 @@ export function Welcome(props: WelcomeProps): ReactElement {
                   entry={row.entry}
                   meta={row.meta}
                   contextLabel={contextLabels[index] ?? ""}
+                  missing={missingPaths.has(row.entry.path)}
                   onOpen={onOpenRecent}
                   onRemove={onRemoveRecent}
+                  onTogglePin={onToggleRecentPin}
+                  onShowInFolder={onShowRecentInFolder}
+                  onLocateMissing={onLocateRecentMissing}
                 />
               ))}
             </div>

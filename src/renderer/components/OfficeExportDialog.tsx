@@ -33,6 +33,7 @@ import {
   downloadBlob,
   mimeForOfficeExportFormat,
 } from "../utils/exportDownload";
+import { contiguousPageRuns, exportOutputNameStem } from "./exportConfig";
 import { ExportFidelityNotes } from "./ExportFidelityNotes";
 import { ExportPagesWithoutTextNotice } from "./ExportPagesWithoutTextNotice";
 import type { ExportBuild, ExportErrorCode } from "../../shared/export";
@@ -89,6 +90,15 @@ export interface OfficeExportDialogProps {
   format: OfficeExportFormat;
   totalPages: number;
   sourceName: string;
+  /** Phase 112 (C5 follow-up) - the Inspector's prepared page range as the
+   *  dialog's own TEXT expression. Re-parsed by the dialog; absent = all. */
+  initialRange?: string | null;
+  /** Phase 112 (C5 follow-up) - the Inspector's prepared resolution. Clamped by
+   *  the dialog; absent falls back to the persisted default. */
+  initialDpi?: number | null;
+  /** Phase 112 (C5 follow-up) - the Inspector's prepared output name. Its stem
+   *  seeds the downloaded filename; absent falls back to `sourceName`. */
+  initialOutputName?: string | null;
   /** The active document's engine id, or null when none is open. */
   docId: string | null;
   /** The optional office-export bridge object (`window.tflex.export`). Its
@@ -122,6 +132,9 @@ export function OfficeExportDialog(
     format,
     totalPages,
     sourceName,
+    initialRange,
+    initialDpi,
+    initialOutputName,
     docId,
     client,
     runEngineExport,
@@ -129,9 +142,16 @@ export function OfficeExportDialog(
     onClose,
   } = props;
   const copy = FORMAT_COPY[format];
-  const initialRange = useMemo(() => defaultPageRange(totalPages), [totalPages]);
-  const [rangeText, setRangeText] = useState<string>(initialRange);
-  const [dpi, setDpi] = useState<number>(DEFAULT_EXPORT_IMAGE_DPI);
+  const initialRangeText = useMemo(
+    () => (initialRange != null && initialRange.length > 0 ? initialRange : defaultPageRange(totalPages)),
+    [initialRange, totalPages],
+  );
+  const initialDpiValue = useMemo(
+    () => clampExportImageDpi(initialDpi ?? DEFAULT_EXPORT_IMAGE_DPI),
+    [initialDpi],
+  );
+  const [rangeText, setRangeText] = useState<string>(initialRangeText);
+  const [dpi, setDpi] = useState<number>(initialDpiValue);
   const [running, setRunning] = useState(false);
   const [progress, setProgress] = useState<{
     current: number;
@@ -144,14 +164,14 @@ export function OfficeExportDialog(
 
   useEffect(() => {
     if (!open) return;
-    setRangeText(defaultPageRange(totalPages));
-    setDpi(DEFAULT_EXPORT_IMAGE_DPI);
+    setRangeText(initialRangeText);
+    setDpi(initialDpiValue);
     setRunning(false);
     setProgress({ current: 0, total: 0, pageIndex: null });
     setError(null);
     setPagesWithoutText(null);
     cancelRef.current.aborted = false;
-  }, [open, totalPages, format]);
+  }, [open, totalPages, format, initialRangeText, initialDpiValue]);
 
   const parsed = useMemo(
     () => parsePageRange(rangeText, totalPages),
@@ -186,17 +206,28 @@ export function OfficeExportDialog(
     setPagesWithoutText(null);
     setProgress({ current: 0, total: parsed.length, pageIndex: null });
     try {
-      const start = parsed[0] ?? 1;
-      const end = parsed[parsed.length - 1] ?? totalPages;
-      const exportRes = await runEngineExport({
-        range: [start, end],
-        format: "png",
-        dpi,
-      });
-      if ("error" in exportRes) {
-        setError(exportRes.error);
-        setRunning(false);
-        return;
+      const exportRes: {
+        pageIndex: number;
+        buffer: Uint8Array;
+        format: "png" | "jpeg" | "tiff";
+        width: number;
+        height: number;
+      }[] = [];
+      // DEF-602 — the engine range is ONE continuous [start,end]; export each
+      // contiguous run of the parsed selection so a non-contiguous range never
+      // silently widens to the span between its first and last pages.
+      for (const [start, end] of contiguousPageRuns(parsed)) {
+        const runRes = await runEngineExport({
+          range: [start, end],
+          format: "png",
+          dpi,
+        });
+        if ("error" in runRes) {
+          setError(runRes.error);
+          setRunning(false);
+          return;
+        }
+        exportRes.push(...runRes);
       }
       const entries: DocxImageEntry[] = [];
       for (let i = 0; i < exportRes.length; i += 1) {
@@ -207,7 +238,7 @@ export function OfficeExportDialog(
         }
         const e = exportRes[i];
         if (e === undefined) continue;
-        const pageNumber = start + i;
+        const pageNumber = parsed[i] ?? i + 1;
         setProgress({ current: i, total: exportRes.length, pageIndex: pageNumber });
         const { blob, width, height } = await rasterizePageToBlob({
           pdfBytes: e.buffer,
@@ -254,7 +285,13 @@ export function OfficeExportDialog(
       const out = new Blob([build.bytes.slice().buffer as ArrayBuffer], {
         type: mimeForOfficeExportFormat(format),
       });
-      downloadBlob(out, copy.fileName(sourceName));
+      // Phase 112 (C5 follow-up) - the Inspector's prepared output name seeds
+      // the filename stem; otherwise the source name does.
+      const nameStem =
+        initialOutputName != null && initialOutputName.length > 0
+          ? exportOutputNameStem(initialOutputName)
+          : sourceName;
+      downloadBlob(out, copy.fileName(nameStem));
       setRunning(false);
       setPagesWithoutText(build.pagesWithoutText);
       onConfirm({ range: parsed, dpi });

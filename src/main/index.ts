@@ -1,4 +1,5 @@
 import { app, BrowserWindow, clipboard, dialog, ipcMain, safeStorage, session, shell } from 'electron';
+import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { IPC } from '../shared/ipc';
@@ -832,6 +833,27 @@ export async function start(): Promise<void> {
   ipcMain.handle(IPC.dictionaryLoad, (_event, language) => dictionary.load(language));
   ipcMain.handle(IPC.settingsSave, (_event, s: AppSettings) => settings.save(s));
   ipcMain.handle(IPC.settingsAddRecent, (_event, f: RecentFile) => settings.addRecentFile(f));
+  // Phase 112 (TFL-986) — Home Recent panel actions. `showInFolder` reveals an
+  // entry's file in the OS file manager: it NEVER deletes or moves a file, a
+  // path that no longer exists resolves a typed 'missing' result (the renderer
+  // then offers Locate missing), and an OS failure resolves 'failed' — the
+  // handler never throws. `locateMissing` reuses the single Open-PDF picker and
+  // resolves the chosen absolute path, or null on cancel.
+  ipcMain.handle(IPC.recentShowInFolder, (_event, path: string) => {
+    if (typeof path !== 'string' || path.length === 0) {
+      return { ok: false, reason: 'failed' };
+    }
+    if (!existsSync(path)) {
+      return { ok: false, reason: 'missing' };
+    }
+    try {
+      shell.showItemInFolder(path);
+      return { ok: true };
+    } catch {
+      return { ok: false, reason: 'failed' };
+    }
+  });
+  ipcMain.handle(IPC.recentLocateMissing, () => openPdfDialog('pdf'));
 
   // Phase 2: page organization engine
   ipcMain.handle(IPC.engineLoadDocument, (_event, docId: string, path: string, password?: string) =>

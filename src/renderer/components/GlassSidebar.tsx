@@ -24,14 +24,22 @@ export interface GlassSidebarProps {
   title?: string;
   /** Extra classes on the panel root (legacy surface classes). */
   className?: string;
+  /** Phase 105+ (TFL-854 C1) — opt-in preferred header height. Omitted
+   *  (the default) keeps the legacy 44px header, so every existing
+   *  consumer is byte-for-byte unchanged. */
+  headerHeight?: GlassSidebarHeaderHeight;
   children?: ReactNode;
 }
 
+/** The shared panel-header height ladder. `default` is the legacy 44px;
+ *  `preferred` is the 52px panel-token height. */
+export type GlassSidebarHeaderHeight = "default" | "preferred";
+
 export function GlassSidebar(props: GlassSidebarProps): ReactElement {
-  const { title, className, children } = props;
+  const { title, className, headerHeight, children } = props;
   return (
     <div className={`glass-sidebar${className ? ` ${className}` : ""}`}>
-      {title !== undefined && <GlassSidebarHeader title={title} />}
+      {title !== undefined && <GlassSidebarHeader title={title} height={headerHeight} />}
       {children}
     </div>
   );
@@ -50,12 +58,24 @@ export interface GlassSidebarHeaderProps {
   /** Legacy header class (e.g. "rail-header" / "tools-palette-header")
    *  so existing CSS/e2e selectors keep resolving. */
   className?: string;
+  /** Phase 105+ (TFL-854 C1) — `preferred` applies the 52px panel-token
+   *  height; omitted keeps the legacy 44px so existing consumers do not
+   *  move. */
+  height?: GlassSidebarHeaderHeight;
 }
 
 export function GlassSidebarHeader(props: GlassSidebarHeaderProps): ReactElement {
-  const { title, actions, className } = props;
+  const { title, actions, className, height = "default" } = props;
+  const preferred = height === "preferred";
+  const classes = [
+    "glass-sidebar-header",
+    preferred ? "glass-sidebar-header-preferred" : undefined,
+    className,
+  ]
+    .filter((part): part is string => part !== undefined && part !== "")
+    .join(" ");
   return (
-    <header className={`glass-sidebar-header${className ? ` ${className}` : ""}`}>
+    <header className={classes} data-glass-sidebar-header-height={height}>
       {title !== undefined && title !== "" && (
         <span className="glass-sidebar-title">{title}</span>
       )}
