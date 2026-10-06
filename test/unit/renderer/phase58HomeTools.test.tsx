@@ -431,3 +431,113 @@ describe("Phase 58 � Welcome home tool row", () => {
     }
   });
 });
+
+describe("TFL-1016 (TFL-855 C11) — Welcome picker adopts the shared CommandMenu", () => {
+  it("portals the CommandMenu surface to document.body at the measured picker position", () => {
+    const { host, unmount } = renderWelcome({
+      homeTools: ["merge"],
+      homeCandidates: ["createFromImages", "merge", "preferences"],
+    });
+    try {
+      clickOn(host.querySelector("[data-home-edit-toggle]") as Element);
+      clickOn(host.querySelector("[data-home-plus]") as Element);
+      const picker = document.querySelector("[data-home-picker]") as HTMLElement;
+      expect(picker).not.toBeNull();
+      // DEF-410 — a transformed ancestor is the containing block for fixed
+      // descendants, so the surface MUST stay on document.body, never the row.
+      expect(picker.parentElement).toBe(document.body);
+      expect(row(host).contains(picker)).toBe(false);
+      expect(host.contains(picker)).toBe(false);
+      // The shared primitive shell carries the legacy surface hook too.
+      expect(picker.classList.contains("command-menu")).toBe(true);
+      expect(picker.classList.contains("titlebar-menu-popover")).toBe(true);
+      expect(picker.classList.contains("home-tools-picker")).toBe(true);
+      expect(picker.getAttribute("role")).toBe("menu");
+      expect(picker.getAttribute("aria-label")).toBe("Add a tool to the home row");
+      // Fixed placement from `pickerPos` (jsdom rects are zero-size, so the
+      // fallback box clamps to the 8px gutter and left/top are present).
+      expect(picker.style.position).toBe("fixed");
+      expect(picker.style.left).not.toBe("");
+      expect(picker.style.top).not.toBe("");
+      // The bespoke motion class is retired in favour of the TfMenu motion.
+      expect(picker.classList.contains("anim-menu-pop")).toBe(false);
+    } finally {
+      unmount();
+    }
+  });
+
+  it("renders every candidate as a row keeping the legacy per-row hooks", () => {
+    const { host, unmount } = renderWelcome({
+      homeTools: ["merge"],
+      homeCandidates: ["createFromImages", "merge", "preferences"],
+    });
+    try {
+      clickOn(host.querySelector("[data-home-edit-toggle]") as Element);
+      clickOn(host.querySelector("[data-home-plus]") as Element);
+      const rows = [...document.querySelectorAll("[data-home-picker-item]")];
+      expect(rows.map((el) => el.getAttribute("data-home-picker-item"))).toEqual([
+        "createFromImages",
+        "preferences",
+      ]);
+      for (const el of rows) {
+        expect(el.classList.contains("action-dock-menu-item")).toBe(true);
+        expect(el.getAttribute("role")).toBe("menuitem");
+      }
+    } finally {
+      unmount();
+    }
+  });
+
+  it("selecting a row appends through addHomeTool and closes the picker", () => {
+    const onSetHomeTools = vi.fn();
+    const { host, unmount } = renderWelcome({
+      homeTools: ["merge"],
+      homeCandidates: ["createFromImages", "merge", "preferences"],
+      onSetHomeTools,
+    });
+    try {
+      clickOn(host.querySelector("[data-home-edit-toggle]") as Element);
+      clickOn(host.querySelector("[data-home-plus]") as Element);
+      const item = document.querySelector(
+        '[data-home-picker-item="createFromImages"]',
+      ) as Element;
+      expect(item).not.toBeNull();
+      clickOn(item);
+      expect(onSetHomeTools).toHaveBeenCalledWith(
+        addHomeTool(["merge"], "createFromImages"),
+      );
+      expect(document.querySelector("[data-home-picker]")).toBeNull();
+    } finally {
+      unmount();
+    }
+  });
+
+  it("keeps the plus disabled with a reason at the cap and when no candidates remain", () => {
+    const full = [...VALID_IDS].slice(0, HOME_TOOLS_MAX);
+    const fullMount = renderWelcome({ homeTools: full, homeCandidates: VALID_IDS });
+    try {
+      clickOn(fullMount.host.querySelector("[data-home-edit-toggle]") as Element);
+      const plus = fullMount.host.querySelector("[data-home-plus]") as HTMLButtonElement;
+      expect(plus.disabled).toBe(true);
+      expect(plus.getAttribute("title")).toContain("Home row is full (max 14 tools)");
+      clickOn(plus);
+      expect(document.querySelector("[data-home-picker]")).toBeNull();
+    } finally {
+      fullMount.unmount();
+    }
+    const noneMount = renderWelcome({
+      homeTools: ["merge", "sign"],
+      homeCandidates: ["merge", "sign"],
+    });
+    try {
+      clickOn(noneMount.host.querySelector("[data-home-edit-toggle]") as Element);
+      const plus = noneMount.host.querySelector("[data-home-plus]") as HTMLButtonElement;
+      expect(plus.disabled).toBe(true);
+      expect(plus.getAttribute("title")).toContain("Every available tool");
+      clickOn(plus);
+      expect(document.querySelector("[data-home-picker]")).toBeNull();
+    } finally {
+      noneMount.unmount();
+    }
+  });
+});

@@ -3,8 +3,10 @@ import { File, Minus, Pause, Play, Sparkles } from "lucide-react";
 import { Icon } from "../icons/Icon";
 import type { QuietIconId } from "../icons/quietPrecision";
 import { EmptyState } from "./EmptyState";
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import { CommandMenu } from "./CommandMenu";
+import type { CommandMenuGroup, CommandMenuItem } from "./CommandMenu";
 import type { RecentFile, SampleDocument } from "../../shared/types";
 import { recentContextLabels } from "../utils/recentContext";
 import { toolById } from "../state/toolsRegistry";
@@ -189,22 +191,11 @@ export function Welcome(props: WelcomeProps): ReactElement {
     return (): void => document.removeEventListener("keydown", onKeyDown);
   }, [editMode, pickerOpen]);
 
-  // DEF-410 — dismiss the picker on an outside pointerdown. The event is never
-  // swallowed (cross-bubbling rules): an outside press still reaches its own
-  // target, so closing the picker can never eat a click. A press on the plus is
-  // left to the plus's own onClick toggle (so one press never closes-then-reopens).
-  useEffect((): (() => void) | undefined => {
-    if (!pickerOpen) return undefined;
-    const onPointerDown = (event: PointerEvent): void => {
-      const target = event.target;
-      if (!(target instanceof Node)) return;
-      if (pickerRef.current?.contains(target) === true) return;
-      if (plusRef.current?.contains(target) === true) return;
-      setPickerOpen(false);
-    };
-    document.addEventListener("pointerdown", onPointerDown);
-    return (): void => document.removeEventListener("pointerdown", onPointerDown);
-  }, [pickerOpen]);
+  // TFL-1016 (TFL-855 chunk C11) — the shared `CommandMenu` owns outside-dismiss
+  // (Escape / outside pointerdown / focus return). The plus is handed to it as
+  // `openerRef` so its own click toggle still collapses the surface, matching
+  // the retired bespoke pointerdown handler. The portal + clamp plumbing below
+  // still supplies the measured `pickerPos`.
 
   // DEF-410 — clamp the portaled picker into the viewport once it is measured.
   // A layout effect so the real box is measured BEFORE paint (the node renders
@@ -263,6 +254,35 @@ export function Welcome(props: WelcomeProps): ReactElement {
     });
   // Nothing left to offer: the plus must not open an empty popover.
   const noCandidates = pickerEntries.length === 0;
+
+  // TFL-1016 (TFL-855 chunk C11) — the Add-a-tool picker as the shared
+  // `CommandMenu` data model. The legacy `[data-home-picker]` root hook and the
+  // per-row `[data-home-picker-item]` hook survive through the primitive's
+  // additive `popoverDataAttrs` / `rowDataAttrs`; each row keeps the
+  // `.action-dock-menu-item` class. Selecting an item closes the picker and
+  // appends the id through `addHomeTool`.
+  const pickerGroups = useMemo<CommandMenuGroup[]>(
+    () => [
+      {
+        id: "home-picker",
+        label: "Add a tool",
+        entries: pickerEntries.map(
+          (entry): CommandMenuItem => ({
+            id: entry.id,
+            label: entry.label,
+            icon: entry.id as QuietIconId,
+            rowClassName: "action-dock-menu-item",
+            rowDataAttrs: { "data-home-picker-item": entry.id },
+            onSelect: (): void => {
+              setPickerOpen(false);
+              onSetHomeTools?.(addHomeTool(tools, entry.id));
+            },
+          }),
+        ),
+      },
+    ],
+    [pickerEntries, onSetHomeTools, tools],
+  );
 
   const recentCount = recentFiles.length;
   const sampleCount = samples?.length ?? 0;
@@ -412,48 +432,33 @@ export function Welcome(props: WelcomeProps): ReactElement {
               >
                 <Icon name="tabNew" size="sm" />
               </button>
-              {/* DEF-410 — the picker is PORTALED to document.body. A
+              {/* DEF-410 — the picker stays PORTALED to document.body. A
                   transformed ancestor is the containing block for
                   `position: fixed` descendants, so an in-row fixed popover
-                  collapsed to a sliver against the 36px row. On the body it is
-                  positioned against the viewport from the
-                  plus's getBoundingClientRect() (same class of fix as the dock's
-                  portaled Pin/Unpin menu). */}
+                  collapsed to a sliver against the 36px row. TFL-1016
+                  (TFL-855 chunk C11) — the surface is now the shared
+                  `CommandMenu` (mirroring C8/C9/C10): it owns dismissal, focus
+                  capture/return and the row keyboard model, and its `TfMenu`
+                  motion replaces the retired `anim-menu-pop`. The legacy
+                  `[data-home-picker]` root hook and the per-row
+                  `[data-home-picker-item]` / `.action-dock-menu-item` hooks
+                  survive through the primitive's additive props; the trigger
+                  above is unchanged. */}
               {pickerOpen &&
                 !full &&
                 !noCandidates &&
                 createPortal(
-                  <div
-                    ref={pickerRef}
-                    className="home-tools-picker anim-menu-pop"
-                    role="menu"
-                    aria-label="Add a tool to the home row"
-                    data-home-picker
-                    style={
-                      pickerPos === null
-                        ? { visibility: "hidden", left: 0, top: 0 }
-                        : { left: pickerPos.left, top: pickerPos.top }
-                    }
-                  >
-                    {pickerEntries.map((entry) => {
-                      return (
-                        <button
-                          key={entry.id}
-                          type="button"
-                          role="menuitem"
-                          className="btn btn-ghost action-dock-menu-item"
-                          data-home-picker-item={entry.id}
-                          onClick={(): void => {
-                            setPickerOpen(false);
-                            onSetHomeTools?.(addHomeTool(tools, entry.id));
-                          }}
-                        >
-                          <Icon name={entry.id as QuietIconId} size="md" />
-                          <span>{entry.label}</span>
-                        </button>
-                      );
-                    })}
-                  </div>,
+                  <CommandMenu
+                    open
+                    groups={pickerGroups}
+                    ariaLabel="Add a tool to the home row"
+                    onClose={(): void => setPickerOpen(false)}
+                    openerRef={plusRef}
+                    position={pickerPos ?? undefined}
+                    popoverRef={pickerRef}
+                    className="home-tools-picker"
+                    popoverDataAttrs={{ "data-home-picker": "true" }}
+                  />,
                   document.body,
                 )}
             </div>

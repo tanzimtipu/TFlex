@@ -24,16 +24,20 @@ function read(rel: string): string {
 
 /** Every tool dialog the Phase-45 item-6 spec names, minus the `.sheet`
  *  surfaces (Preferences / About / Accounts) which already ship a
- *  560x640 box and are deliberately untouched. */
+ *  560x640 box and are deliberately untouched.
+ *
+ *  TFL-935 — SplitDialog and StampDialog migrated off
+ *  DialogShell size="tool" / `.modal-dialog-tool` onto the task surfaces
+ *  (TaskDialog task-dialog-compact / PreviewTaskDialog
+ *  task-dialog-preview). Those two no longer carry the token and are
+ *  asserted by their own task-dialog specs instead. */
 const TOOL_DIALOG_FILES = [
   "components/WatermarkDialog.tsx",
   "components/MergeDialog.tsx",
-  "components/SplitDialog.tsx",
   "components/CropPagesDialog.tsx",
   "components/OcrDialog.tsx",
   "components/ExportDialog.tsx",
   "components/OptimizeDialog.tsx",
-  "components/StampDialog.tsx",
   "components/RenumberPagesDialog.tsx",
   "components/AuditSpaceDialog.tsx",
   "components/DocxExportDialog.tsx",

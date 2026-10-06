@@ -140,3 +140,68 @@ describe("Phase 104 (TFL-848) DEF-568 — the More delete row carries the danger
     }
   });
 });
+
+// TFL-1004 (TFL-855 chunk C9) — the More overflow menu is now the shared
+// `CommandMenu`. The legacy `data-dock-overflow-menu` root + per-row
+// `data-dock-overflow-item` / `data-dock-menu-item` hooks must survive, every
+// verb must render, and the Customize toggle must expose `aria-checked`.
+describe("TFL-1004 — the More menu renders through the shared CommandMenu", () => {
+  it("keeps the root/row hooks and toggles Customize with aria-checked", () => {
+    const { host, unmount } = renderDock({
+      activeStage: "pages",
+      canvasWidth: 1400,
+      isToolEnabled: () => true,
+    });
+    try {
+      clickOn(host.querySelector("[data-dock-overflow]") as Element);
+      const menu = host.querySelector("[data-dock-overflow-menu]");
+      expect(menu).not.toBeNull();
+      expect(menu?.classList.contains("command-menu")).toBe(true);
+      expect(menu?.getAttribute("role")).toBe("menu");
+      const rows = overflowRows(host);
+      expect(rows.length).toBeGreaterThan(0);
+      for (const row of rows) {
+        expect(row.classList.contains("action-dock-menu-item")).toBe(true);
+        expect(row.getAttribute("role")).toBe("menuitem");
+      }
+      const customize = host.querySelector<HTMLButtonElement>(
+        '[data-dock-menu-item="customize"]',
+      );
+      expect(customize).not.toBeNull();
+      expect(customize?.getAttribute("role")).toBe("menuitemcheckbox");
+      expect(customize?.getAttribute("aria-checked")).toBe("false");
+      clickOn(customize as Element);
+      // Selecting Customize closes the menu and arms EDIT mode.
+      expect(host.querySelector("[data-action-dock]")?.getAttribute("data-dock-edit")).toBe("true");
+      expect(host.querySelector("[data-dock-overflow]")?.getAttribute("aria-expanded")).toBe("false");
+      // Re-open: the toggle now reports the checked state.
+      clickOn(host.querySelector("[data-dock-overflow]") as Element);
+      expect(
+        host.querySelector('[data-dock-menu-item="customize"]')?.getAttribute("aria-checked"),
+      ).toBe("true");
+    } finally {
+      unmount();
+    }
+  });
+
+  it("closes the menu and runs the verb when a row is selected", () => {
+    const onRunTool = vi.fn();
+    const { host, unmount } = renderDock({
+      activeStage: "pages",
+      canvasWidth: 1400,
+      isToolEnabled: () => true,
+      onRunTool,
+    });
+    try {
+      clickOn(host.querySelector("[data-dock-overflow]") as Element);
+      const row = host.querySelector<HTMLButtonElement>("[data-dock-overflow-item]");
+      expect(row).not.toBeNull();
+      const id = row?.getAttribute("data-dock-overflow-item") ?? "";
+      clickOn(row as Element);
+      expect(onRunTool).toHaveBeenCalledWith(id);
+      expect(host.querySelector("[data-dock-overflow]")?.getAttribute("aria-expanded")).toBe("false");
+    } finally {
+      unmount();
+    }
+  });
+});

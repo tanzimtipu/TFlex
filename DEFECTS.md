@@ -13634,6 +13634,7 @@ Note (deferred, not fixed here): the comparator is likewise stale for several ot
 Closure evidence (TFL-977, 2026-10-06): `src/renderer/state/settingsEcho.ts` now carries `if (a.homeMotionPaused !== b.homeMotionPaused) return false;` and `if (a.animationsEnabled !== b.animationsEnabled) return false;` immediately after the `saveAsLinearize` line in all three comparators (`sameSettings:102-103`, `differsOnlyInRecentFiles:140-141`, `differsOnlyInGeometry:252-253`). `test/unit/renderer/settingsEcho.test.ts` adds the sameSettings differ-cases (`:101`, `:110`) and shouldApplyEcho stale-echo cases (`:287-309`). Verified: `vitest run test/unit/renderer/settingsEcho.test.ts` -> 84 passed; `vitest run test/unit/renderer/adv_phase82_settingsEcho.test.ts` -> 5 passed; `npm run verify` -> exit 0. Stale `homeMotionPaused`/`animationsEnabled` echoes are now discarded.
 
 Retest evidence (TFL-981, 2026-10-06): independently re-verified, criteria-by-criteria. `npx.cmd vitest run test/unit/renderer/settingsEcho.test.ts test/unit/renderer/adv_phase82_settingsEcho.test.ts` -> 2 files passed, 89 tests passed, 0 failed, exit 0. `npx.cmd vitest run test/unit/renderer/phase106OrbitMotion.test.tsx test/unit/main/settings.test.ts` -> 2 files passed, 184 tests passed, 0 failed, exit 0. `npm.cmd run verify` -> exit 0 (conventions clean, 381 source files; typecheck clean). Blast-radius regression (live app, shared settings persistence + relaunch): `npx.cmd playwright test e2e/phase106_orbit_motion.spec.cjs` -> 7 passed, 0 failed, exit 0. Adversary real-module probe (esbuild bundle of `test-fixtures/phase106-tfl938-adversary/probe.ts` to ESM, then `node`) -> `TOTAL=23 FAILED=0`; the two checks that previously failed (`stale echo carrying old homeMotionPaused=true is discarded`, `stale echo carrying old animationsEnabled=true is discarded`) now return `pass: true` / `shouldApply: false` (was `FAILED=2`). Original defect no longer reproduces; status remains CLOSED.
+- Deferred DEF-072 sweep resolved (TFL-968, 2026-10-06): the broader completeness gap noted above is now closed. frontend-dev (TFL-1014) added a private `sameJsonValue` deep-equality helper and 20 comparison lines to each of `sameSettings` / `differsOnlyInRecentFiles` / `differsOnlyInGeometry` in `src/renderer/state/settingsEcho.ts` (+86), covering every remaining optional `AppSettings` field: redactionColor, accountsEnabled, syncDeviceId, lastSyncedAt, tabStyle, blankPageInkThreshold, annotationRecentTools, dockPins, dockUnpinned, homeTools, toolUsage, sanitizeOptions, batesDefaults, encryptDefaults, convertDefaults, imageImportDefaults, pdfValidationDefaults, officeConvertDefaults, readingDefaults, printPresets (`pagesPanelCollapsed` was already covered). The DEF-072 coverage guard `requiredFields` in `test/unit/renderer/settingsEcho.test.ts` was extended accordingly (+188) with per-field stale-echo rejection cases. qa (TFL-1020) focused verification: PASS - `npm.cmd run test:unit -- test/unit/renderer/settingsEcho.test.ts` -> 1 file, 135 tests passed, 0 failed; `npm.cmd run verify` clean (383 files, tsc exit 0); independent field-coverage cross-check found no missing `AppSettings` field. Changes left uncommitted for git-agent.
 
 ## DEF-600: `foundationGuards` motion guard is red - uncommitted Panels stylesheet rules use a raw fallback motion in `.text-props-advanced-summary::before` and `.inspector-document-summary::before` (TFL-971 C4-QA)
 
@@ -13805,3 +13806,51 @@ History:
 - CTO: ACCEPTED ADV-233 (TFL-997, 2026-10-06) - relayed to frontend-dev TFL-998 as the brief's `DEF-603`; MEDIUM.
 - qa: filed (TFL-1001, 2026-10-06) as DEF-606 (`DEF-603` id already taken by the closed Phase 105 CommandMenu radius defect) with `Found by: adversary (ADV-233)`, `Phase: 112`.
 - qa: CLOSED (TFL-1001 FIX-READY retest, 2026-10-06). TFL-1000 changed `differsOnlyInRecentFiles` to `return sameRecentMetadata(a.recentFiles, b.recentFiles)` (`settingsEcho.ts:172`), which disqualifies the delta when any shared recents entry disagrees on `pinned` / `sourceLabel` / `sourceKind` / `converted` / `workingFormat` (`:232-247`). Probe + spec green. PASS.
+
+## DEF-607: On-canvas text-box / image-placement action bars render detached from their selection on a fine-pointer desktop (ADV-234)
+
+- Status: CLOSED
+- Closed by: qa (TFL-1030 FIX-READY retest, 2026-10-06)
+- Severity: HIGH - the page-view TextBoxToolbar / PlacementToolbar (Confirm/Delete for a placed text box or image) computed `position: fixed` on a fine-pointer desktop and rendered in the window's upper-left, ~827px from the object; the primary edit affordance is lost and the object cannot be confirmed by aiming at it.
+- Found by: adversary (ADV-234)
+- Phase: 855 (TFL-1028 phase-close adversary pass)
+- Files: `src/renderer/styles.css` (`.context-toolbox--page-view { position: absolute }` was nested inside `@media (pointer: coarse)`, so inert on fine pointers and beaten by the equal-specificity base `.context-toolbox { position: fixed }`); lifted to top level at `styles.css:21124-21126`. `src/renderer/components/ContextToolbox.tsx` (`coordinateSpace="page-view"` -> adds `context-toolbox--page-view`); `src/renderer/edit/EditOverlay.tsx:2302,2358` (both bars pass `coordinateSpace="page-view"`).
+- Origin: `ADVERSARIAL_REVIEW.md:11412`; CTO ACCEPTED `ADVERSARIAL_REVIEW.md:11450` -> frontend-dev. Probe: `test-fixtures/phase1028-adversary/adv_canvas.spec.cjs` / `adv_canvas.output.json`.
+
+Steps to reproduce:
+1. Build the dev tree (`npm.cmd run build`), then `npx.cmd playwright test -c test-fixtures/phase1028-adversary/playwright.config.cjs adv_canvas.spec.cjs`.
+2. Open `report.pdf`, arm EDIT + `editTextBox`, drag a text box on page 1, type and commit, select it; measure `.edit-box` and `[data-edit-box-toolbar]`; scroll `.document-scroller` by 260px; click View-Strip Zoom in. Repeat for `editImage` / `.edit-image-toolbar` via the real file chooser.
+
+Expected: the bar floats beside its selection (`position: absolute`, same x, just below) and tracks it across scroll/zoom, per `ContextToolbox`'s `coordinateSpace="page-view"` contract.
+
+Actual (pre-fix): bar computed `position: fixed`; text box at (967,248) but bar at (140,208) - 827px left; 260px scroll moved the box -260 and the bar 0 (drift 260). Image: box (987,348), bar (160,354); 240px scroll drift 240.
+
+Retest (TFL-1030, 2026-10-06) - PASS. `npx.cmd playwright test -c test-fixtures/phase1028-adversary/playwright.config.cjs adv_canvas.spec.cjs adv_menus.spec.cjs` -> 6 passed. T5 measured: `position:"absolute"`, box `{x:967,y:248,w:180,h:44}`, bar `{x:967,y:296,w:234,h:54}` -> `rel {dx:0,dy:48}` (beside, not upper-left); after 260px scroll `boxDelta:-260 barDelta:-260 drift:0`; after Zoom in `rel` drift x:0 y:7 (box scaled 208x51, bar still anchored, `inlineTop` re-placed 208px->239.62px). T6 image placement: `position:"absolute"`, `rel {dx:0,dy:94}`, 240px scroll drift 0. Both `hasPageViewClass:true`. qa probe `e2e/phase1030_def607_608_retest.spec.cjs` (fine-pointer Chromium cascade): `{"coarse":false,"window":"fixed","pageView":"absolute"}` - the NON-page-view caller still computes `fixed`. Visual: `screenshots/phase1028-adversary/tfl1028-textbox-toolbar-initial.png` (Confirm/Delete/Cancel directly under the selected box).
+
+History:
+- CTO: ACCEPTED ADV-234 (TFL-1028 phase-close, 2026-10-06) -> DEF-607 (HIGH); relayed to frontend-dev TFL-1029.
+- qa: filed + CLOSED (TFL-1030 FIX-READY retest, 2026-10-06). Fix present in `styles.css:21124` (top-level absolute), `ContextToolbox.tsx` page-view class, `EditOverlay.tsx` page-view call sites; red (measured) and green (retest) rects recorded above. PASS.
+
+## DEF-608: Dock Pin/Unpin context menu overflows the viewport bottom edge (ADV-235)
+
+- Status: CLOSED
+- Closed by: qa (TFL-1030 FIX-READY retest, 2026-10-06)
+- Severity: LOW - the pointer-anchored Pin/Unpin menu's bottom row/padding was clipped at the window floor when opened near the bottom of the window. Usability only; no data loss.
+- Found by: adversary (ADV-235)
+- Phase: 855 (TFL-1028 phase-close adversary pass)
+- Files: `src/renderer/components/ActionDock.tsx` - the clamp passed the constant `MENU_H = 76` while the migrated `CommandMenu` renders 114px (it now includes the tool-name heading); fixed by measuring the rendered `[data-dock-menu]` height (`menuMeasuredH`) and re-clamping (`ActionDock.tsx:382-387,1134-1150,1174`), mirroring the overflow/picker layout effects.
+- Origin: `ADVERSARIAL_REVIEW.md:11452`; CTO ACCEPTED `ADVERSARIAL_REVIEW.md:11473` -> frontend-dev. Probe: `test-fixtures/phase1028-adversary/adv_menus.spec.cjs` (T3) / `adv_menus.output.json`.
+
+Steps to reproduce:
+1. Build the dev tree, then `npx.cmd playwright test -c test-fixtures/phase1028-adversary/playwright.config.cjs adv_menus.spec.cjs`.
+2. Open `report.pdf`; right-click a dock verb near the bottom of the window; measure the `[data-dock-menu]` rect.
+
+Expected: the menu clamps fully inside the viewport (`rect.bottom <= window.innerHeight`), parity with the thumbnail context menu.
+
+Actual (pre-fix): rect y=1293 h=114 -> bottom 1407 vs viewport height 1392, i.e. 15px below the window; the stale `MENU_H=76` clamp under-counted the migrated menu's real height.
+
+Retest (TFL-1030, 2026-10-06) - PASS. `[data-dock-menu]` rect `{y:1270,h:114,bottom:1384,vw:2560,vh:1392}` -> `bottom 1384 <= 1392`, `pinInsideViewport:true` (`adv_menus.output.json` T3; pre-fix bottom was 1407). qa probe `e2e/phase1030_def607_608_retest.spec.cjs` right-clicked the lowest dock verb and asserted strictly: `position:"fixed"`, `bottom 1384 <= vh 1392` - PASS. Visual: `screenshots/phase1028-adversary/tfl1028-dock-pin-menu.png` (Pin/Unpin menu fully visible above the window floor).
+
+History:
+- CTO: ACCEPTED ADV-235 (TFL-1028 phase-close, 2026-10-06) -> DEF-608 (LOW); relayed to frontend-dev TFL-1029.
+- qa: filed + CLOSED (TFL-1030 FIX-READY retest, 2026-10-06). Fix present (`menuMeasuredH` re-clamp in `ActionDock.tsx`); measured rect clamped 1384<=1392. PASS.

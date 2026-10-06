@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState, type ReactElement } from "react";
 import { defaultPageRange, parsePageRange } from "../engine/types";
-import { DialogShell, type DialogAction } from "./DialogShell";
+import type { DialogAction } from "./DialogShell";
+import { TaskDialog } from "./TaskDialog";
 
 export type SplitMode = "extract" | "split";
 
@@ -12,12 +13,16 @@ export interface SplitConfirm {
 interface SplitDialogProps {
   open: boolean;
   totalPages: number;
+  /** Real source document name for the header context line, e.g.
+   *  `report.pdf`. Optional: when absent no context line is rendered
+   *  (never a fabricated name). */
+  sourceName?: string;
   onClose: () => void;
   onConfirm: (choice: SplitConfirm) => void;
 }
 
 export function SplitDialog(props: SplitDialogProps): ReactElement | null {
-  const { open, totalPages, onClose, onConfirm } = props;
+  const { open, totalPages, sourceName, onClose, onConfirm } = props;
   const [text, setText] = useState<string>(defaultPageRange(totalPages));
   const [mode, setMode] = useState<SplitMode>("extract");
 
@@ -32,8 +37,7 @@ export function SplitDialog(props: SplitDialogProps): ReactElement | null {
   const parsed = useMemo(() => parsePageRange(text, totalPages), [text, totalPages]);
   const valid = parsed !== null && parsed.length > 0;
 
-  // The primary Extract/Split action is marked `default`; DialogShell owns
-  // Esc-to-close, the backdrop drag guard and initial focus.
+  // DialogShell owns Esc-to-close, the backdrop drag guard and initial focus.
   const actions: DialogAction[] = [
     { key: "cancel", label: "Cancel", variant: "secondary", onClick: onClose },
     {
@@ -48,12 +52,21 @@ export function SplitDialog(props: SplitDialogProps): ReactElement | null {
     },
   ];
 
+  // Header context line: the real source basename plus the live page count.
+  // Rendered only when the host supplies a name, so no fabricated document
+  // name ever appears.
+  const headerContext =
+    sourceName !== undefined && sourceName.length > 0
+      ? `${sourceName} - ${totalPages} page${totalPages === 1 ? "" : "s"}`
+      : undefined;
+
   return (
-    <DialogShell
+    <TaskDialog
       open={open}
       title="Extract or split pages"
       titleId="split-dialog-title"
-      size="tool"
+      width="compact"
+      headerContext={headerContext}
       onClose={onClose}
       actions={actions}
     >
@@ -91,7 +104,7 @@ export function SplitDialog(props: SplitDialogProps): ReactElement | null {
                 checked={mode === "extract"}
                 onChange={(): void => setMode("extract")}
               />
-              <span>Extract — keep only the selected pages in a new document.</span>
+              <span>Extract — copy the selected pages to a new document; the source keeps all its pages.</span>
             </label>
             <label>
               <input
@@ -100,9 +113,9 @@ export function SplitDialog(props: SplitDialogProps): ReactElement | null {
                 checked={mode === "split"}
                 onChange={(): void => setMode("split")}
               />
-              <span>Split — selected pages go to a new document, the rest stay here.</span>
+              <span>Split — move the selected pages to a new document; the rest stay here.</span>
             </label>
           </fieldset>
-    </DialogShell>
+    </TaskDialog>
   );
 }

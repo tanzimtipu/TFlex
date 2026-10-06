@@ -57,6 +57,10 @@ export interface DialogShellProps {
   /** Forwarded to the dialog root; lets an adopter keep a per-dialog Enter handler. */
   onKeyDown?: KeyboardEventHandler<HTMLDivElement>;
   icon?: ReactNode;
+  /** TFL-873 (C2a) — one line of real document/task context rendered under
+   *  the title in a `.modal-context` row. Omitted => the header DOM, class
+   *  list and every data-* hook stay byte-identical. */
+  headerContext?: ReactNode;
   size?: "sm" | "md" | "lg" | "tool";
   /** Dialog role; ConfirmDialog passes "alertdialog". Default "dialog". */
   role?: "dialog" | "alertdialog";
@@ -72,6 +76,11 @@ export interface DialogShellProps {
   /** Custom footer node, only for a dialog whose footer is not a plain action row. */
   footer?: ReactNode;
   bodyClassName?: string;
+  /** TFL-873 (C2a) — opt into a bounded single body scroll: adds
+   *  `modal-body-scroll` to the body and `modal-dialog-body-scroll` to the
+   *  dialog root so the header and footer stay pinned. Omitted => the body
+   *  DOM and class list are byte-identical. */
+  bodyScroll?: boolean;
   className?: string;
   testId?: string;
   /** DEF-147 floating window. When set, the dialog root becomes a drag
@@ -123,6 +132,7 @@ export function DialogShell(props: DialogShellProps): ReactElement {
     closeDisabled = false,
     closeTestId,
     icon,
+    headerContext,
     size = "md",
     role = "dialog",
     surface = "dialog",
@@ -130,6 +140,7 @@ export function DialogShell(props: DialogShellProps): ReactElement {
     actions,
     footer,
     bodyClassName,
+    bodyScroll = false,
     className,
     testId,
     draggable,
@@ -202,6 +213,7 @@ export function DialogShell(props: DialogShellProps): ReactElement {
     "dialog",
     "dialog-shell",
     SIZE_CLASS[size],
+    bodyScroll ? "modal-dialog-body-scroll" : undefined,
     className,
     dragging ? "modal-dialog-dragging" : undefined,
   ]);
@@ -218,7 +230,12 @@ export function DialogShell(props: DialogShellProps): ReactElement {
   // Shared header/body/footer, differing only in element classes.
   const HeaderTag: "header" | "div" = isSheet ? "header" : "div";
   const headerNode = (
-    <HeaderTag className={isSheet ? "sheet-header" : "modal-header"}>
+    <HeaderTag
+      className={joinClasses([
+        isSheet ? "sheet-header" : "modal-header",
+        headerContext !== undefined ? "has-header-context" : undefined,
+      ])}
+    >
       {icon}
       <h2 className={isSheet ? "sheet-title" : "modal-title"} id={titleId}>
         {title}
@@ -238,11 +255,18 @@ export function DialogShell(props: DialogShellProps): ReactElement {
           <Icon name="dialogClose" size="sm" />
         </button>
       )}
+      {headerContext !== undefined && <div className="modal-context">{headerContext}</div>}
     </HeaderTag>
   );
 
   const bodyNode = (
-    <div className={joinClasses([isSheet ? "sheet-body" : "modal-body", bodyClassName])}>
+    <div
+      className={joinClasses([
+        isSheet ? "sheet-body" : "modal-body",
+        bodyScroll ? "modal-body-scroll" : undefined,
+        bodyClassName,
+      ])}
+    >
       {children}
     </div>
   );

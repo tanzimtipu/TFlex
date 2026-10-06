@@ -315,32 +315,73 @@ test('P43-2/3 animation spot-checks: dock verb, stage rail, menu pop-in, pin gly
   expect(railT, 'stage-rail button compresses on press (scale 0.97)').toMatch(/matrix\(0\.97, 0, 0, 0\.97/);
 
   // (3) Menu pop-in � the dock overflow menu (or the thumbnail context menu).
-  let menuSel = null;
-  if ((await win.locator('[data-dock-overflow]').count()) > 0) {
-    await win.locator('[data-dock-overflow]').first().click();
-    menuSel = '[data-dock-overflow-menu]';
-  } else {
-    const thumb = win.locator('.thumb').first();
-    if ((await thumb.count()) > 0) {
-      await thumb.click({ button: 'right' });
-      menuSel = '[data-context-menu]';
-    }
-  }
-  if (menuSel !== null) {
-    await win.waitForSelector(menuSel, { state: 'visible', timeout: 8000 });
-    const menuAnim = await win.locator(menuSel).first().evaluate((el) => {
-      const cs = getComputedStyle(el);
-      return { name: cs.animationName, dur: cs.animationDuration, ease: cs.animationTimingFunction, cls: el.className };
-    });
-    console.log(`[P43-2/3 menu] ${JSON.stringify(menuAnim)}`);
-    expect(menuAnim.cls, 'the menu carries the anim-menu-pop utility').toContain('anim-menu-pop');
-    expect(menuAnim.name, 'the menu plays the token keyframe').toBe('tf-anim-menu-pop');
-    expect(menuAnim.dur, 'the menu pop-in uses the fast token').toBe('0.2s');
-    await win.keyboard.press('Escape');
-    await win.waitForTimeout(200);
-  } else {
-    console.log('[P43-2/3 menu] no overflow menu and no thumbnail available');
-  }
+  // (3a) The THUMBNAIL right-click menu (TFL-998 / TFL-855 chunk C8). It now
+  // renders through the shared `CommandMenu` primitive, whose `TfMenu` wrapper
+  // owns the enter/exit motion; the retired one-off `anim-menu-pop` utility is
+  // GONE. The check is RETARGETED (not deleted): the menu must render through
+  // the shared primitive with no raw `anim-*` motion class, and it must OPEN
+  // and CLOSE through the shared motion.
+  const thumb = win.locator('[data-context-panel="pages"] .thumb-item').first();
+  await thumb.scrollIntoViewIfNeeded();
+  await win.waitForTimeout(250);
+  await thumb.click({ button: 'right' });
+  await win.waitForSelector('[data-context-menu]', { state: 'visible', timeout: 8000 });
+  const thumbMenu = await win.locator('[data-context-menu]').first().evaluate((el) => {
+    const cs = getComputedStyle(el);
+    return {
+      cls: el.className,
+      name: cs.animationName,
+      isPopover: el.hasAttribute('data-menu-popover'),
+      role: el.getAttribute('role'),
+      inlineMotion: `${el.style.transform || ''}|${el.style.opacity || ''}`,
+    };
+  });
+  console.log(`[P43-2/3 thumbMenu] ${JSON.stringify(thumbMenu)}`);
+  expect(thumbMenu.cls, 'the menu renders through the shared command primitive').toContain('command-menu');
+  expect(thumbMenu.cls, 'the retired one-off anim-menu-pop utility is gone').not.toContain('anim-menu-pop');
+  expect(thumbMenu.cls, 'no raw one-off anim-* motion class on the shared menu').not.toMatch(/\banim-/);
+  expect(thumbMenu.isPopover, 'the shared CommandMenu marks the surface [data-menu-popover]').toBe(true);
+  expect(thumbMenu.role, 'the shared menu carries role=menu').toBe('menu');
+  // SHARED MOTION: no bespoke CSS keyframe drives it (the shared TfMenu spring
+  // runs in JS and writes the inline transform/opacity).
+  expect(thumbMenu.name, 'the shared menu carries no bespoke CSS keyframe').toBe('none');
+  expect(thumbMenu.inlineMotion, 'the shared TfMenu motion drives the surface').not.toBe('|');
+  // CLOSES with the shared motion: Escape dismisses and the surface detaches.
+  await win.keyboard.press('Escape');
+  await win.waitForSelector('[data-context-menu]', { state: 'detached', timeout: 5000 });
+  expect(await win.locator('[data-context-menu]').count(), 'Escape closed the thumbnail menu').toBe(0);
+
+  // (3b) The DOCK OVERFLOW menu (TFL-1004 / TFL-855 chunk C9) ALSO renders
+  // through the shared `CommandMenu` primitive now, so its retired one-off
+  // `anim-menu-pop` utility is GONE. The check is RETARGETED (not deleted),
+  // mirroring (3a): the menu must render through the shared primitive with no
+  // raw `anim-*` motion class, and it must OPEN and CLOSE through the shared
+  // `TfMenu` motion (a JS spring that writes inline transform/opacity, not a
+  // bespoke CSS keyframe).
+  await win.locator('[data-dock-overflow]').first().click();
+  await win.waitForSelector('[data-dock-overflow-menu]', { state: 'visible', timeout: 8000 });
+  const dockMenu = await win.locator('[data-dock-overflow-menu]').first().evaluate((el) => {
+    const cs = getComputedStyle(el);
+    return {
+      cls: el.className,
+      name: cs.animationName,
+      isPopover: el.hasAttribute('data-menu-popover'),
+      role: el.getAttribute('role'),
+      inlineMotion: `${el.style.transform || ''}|${el.style.opacity || ''}`,
+    };
+  });
+  console.log(`[P43-2/3 dockMenu] ${JSON.stringify(dockMenu)}`);
+  expect(dockMenu.cls, 'the dock overflow menu renders through the shared command primitive').toContain('command-menu');
+  expect(dockMenu.cls, 'the retired one-off anim-menu-pop utility is gone').not.toContain('anim-menu-pop');
+  expect(dockMenu.cls, 'no raw one-off anim-* motion class on the shared menu').not.toMatch(/\banim-/);
+  expect(dockMenu.isPopover, 'the shared CommandMenu marks the surface [data-menu-popover]').toBe(true);
+  expect(dockMenu.role, 'the shared menu carries role=menu').toBe('menu');
+  expect(dockMenu.name, 'the shared menu carries no bespoke CSS keyframe').toBe('none');
+  expect(dockMenu.inlineMotion, 'the shared TfMenu motion drives the surface').not.toBe('|');
+  // CLOSES with the shared motion: Escape dismisses and the surface detaches.
+  await win.keyboard.press('Escape');
+  await win.waitForSelector('[data-dock-overflow-menu]', { state: 'detached', timeout: 5000 });
+  expect(await win.locator('[data-dock-overflow-menu]').count(), 'Escape closed the dock overflow menu').toBe(0);
 
   // (4) Palette pin GLYPH transition (rotate + opacity on the token band).
   await win.evaluate(() => { const el = document.activeElement; if (el instanceof HTMLElement) el.blur(); });

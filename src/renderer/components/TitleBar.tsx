@@ -13,13 +13,13 @@
 // rather than two stacked surfaces.
 //
 // The optional menu popover (the "menu" button at the leading edge,
-// next to the brand) exposes every File / Edit / View / Tools /
-// Window / Help menu action as a labelled row with its accelerator.
-// Native menu accelerators still own the shortcuts — the popover is a
-// discoverability surface, not an alternate input path. The popover
-// is keyboard-accessible (Escape closes, Enter activates, Tab walks
-// rows), and clicking outside closes it (same click-outside pattern
-// the annotation palette uses).
+// next to the brand) exposes the File menu actions as labelled rows
+// with their accelerators. As of TFL-975 (TFL-855 chunk C5) it is the
+// shared `CommandMenu` primitive: CommandMenu owns the shipped
+// `.titlebar-menu-*` DOM contract, outside-click dismiss, Escape and
+// focus-return-to-opener, so this component keeps no bespoke menu
+// plumbing. Native menu accelerators still own the shortcuts — the
+// popover is a discoverability surface, not an alternate input path.
 //
 // Three render-tree rules baked into this component that you must
 // preserve:
@@ -42,7 +42,6 @@
 
 import {
   useCallback,
-  useEffect,
   useRef,
   useState,
   type ReactElement,
@@ -52,8 +51,11 @@ import { AnimatePresence } from "motion/react";
 import { Icon } from "../icons/Icon";
 import type { QuietIconId } from "../icons/quietPrecision";
 import { dispatchMenuAction, type MenuActionContext } from "../state/menuActions";
-import { TfMorph } from "./motion/TfMotion";
-import { useMorphPreset } from "./motion/useMorphPreset";
+import {
+  CommandMenu,
+  type CommandMenuGroup,
+  type CommandMenuItem,
+} from "./CommandMenu";
 import { GlassChromeBar } from "./GlassChrome";
 import { BrandMark } from "./BrandMark";
 import { BrandWordmark } from "./BrandWordmark";
@@ -158,45 +160,33 @@ export function flattenMenuGroups(
   return out;
 }
 
+/** TFL-975 (TFL-855 chunk C5) — adapt the host's {@link MenuGroup} list to the
+ *  shared {@link CommandMenuGroup} model. `CommandMenuItem` is a SUPERSET of
+ *  `MenuEntry` with the SAME field names, so this is a pure pass-through that
+ *  preserves `id` / `label` / `accelerator` / `action` / `icon` / `onSelect` /
+ *  `disabled` verbatim. No command is added, removed or renamed. */
+export function toCommandGroups(groups: readonly MenuGroup[]): CommandMenuGroup[] {
+  return groups.map((group) => ({
+    id: group.id,
+    label: group.label,
+    entries: group.entries.map((entry) => ({
+      id: entry.id,
+      label: entry.label,
+      accelerator: entry.accelerator,
+      action: entry.action,
+      icon: entry.icon,
+      onSelect: entry.onSelect,
+      disabled: entry.disabled,
+    })),
+  }));
+}
+
 export function TitleBar(props: TitleBarProps): ReactElement {
   // Hooks above any conditional. We don't have an early return; this
   // rule is pinned by the mistakes-notes for future-proofing.
   const { menuGroups, menuContext, maximized = false, children } = props;
   const [menuOpen, setMenuOpen] = useState(false);
   const menuButtonRef = useRef<HTMLButtonElement | null>(null);
-  const menuPopoverRef = useRef<HTMLDivElement | null>(null);
-  // Phase 20 — the application menu MORPHS out of its button: the popover
-  // is laid out flush under the button's bottom-left corner (CSS
-  // placement, untouched) and the FLIP preset grows it from that box.
-  const menuMorph = useMorphPreset({
-    open: menuOpen,
-    triggerRef: menuButtonRef,
-    surfaceRef: menuPopoverRef,
-    anchorCorner: "top-left",
-  });
-
-  // Close on outside click / Escape. Mirrors the annotation palette's
-  // click-outside contract: a global pointerdown listener that
-  // checks both the trigger button and the popover for hits.
-  useEffect(() => {
-    if (!menuOpen) return;
-    const onPointer = (e: PointerEvent): void => {
-      const t = e.target as Node | null;
-      if (t === null) return;
-      if (menuButtonRef.current?.contains(t)) return;
-      if (menuPopoverRef.current?.contains(t)) return;
-      setMenuOpen(false);
-    };
-    const onKey = (e: KeyboardEvent): void => {
-      if (e.key === "Escape") setMenuOpen(false);
-    };
-    window.addEventListener("pointerdown", onPointer);
-    window.addEventListener("keydown", onKey);
-    return (): void => {
-      window.removeEventListener("pointerdown", onPointer);
-      window.removeEventListener("keydown", onKey);
-    };
-  }, [menuOpen]);
 
   const onMinimize = useCallback((): void => {
     window.tflex.minimizeWindow();
@@ -217,12 +207,12 @@ export function TitleBar(props: TitleBarProps): ReactElement {
   }, []);
 
   const onMenuEntry = useCallback(
-    (entry: MenuEntry): void => {
+    (entry: CommandMenuItem): void => {
       if (entry.disabled === true) return;
       // Phase 105 (chunk C) — a relocated command with its own handler runs it
       // directly; the menu-action dispatcher only sees id-backed rows.
       if (entry.onSelect !== undefined) {
-        entry.onSelect();
+        entry.onSelect(entry);
         setMenuOpen(false);
         return;
       }
@@ -237,8 +227,6 @@ export function TitleBar(props: TitleBarProps): ReactElement {
     },
     [menuContext],
   );
-
-  const flattened = menuGroups !== undefined ? flattenMenuGroups(menuGroups) : [];
 
   // B10 + Phase 13 — the caption glyphs follow the Windows/VS Code
   // convention every desktop user already knows:
@@ -291,64 +279,24 @@ export function TitleBar(props: TitleBarProps): ReactElement {
             <span className="titlebar-menu-label">File</span>
             <Icon name="headerMenuDisclosure" size="md" aria-hidden />
           </button>
+          {/* TFL-975 (TFL-855 chunk C5) — the File menu is the shared
+              `CommandMenu` primitive. It emits the SHIPPED `.titlebar-menu-*`
+              DOM contract verbatim (popover shell, headings, separators,
+              `data-menu-action` rows with their `.kbd` accelerator) and owns
+              outside-click dismiss, Escape, first-focus and
+              focus-return-to-opener, so TitleBar keeps no bespoke menu
+              plumbing. The popover enters with the shared `TfMenu` motion
+              (standard menu enter + reduced-motion) in place of the retired
+              FLIP morph. */}
           <AnimatePresence>
-            {menuOpen && (
-              <TfMorph
-                morph={menuMorph}
-                ref={menuPopoverRef}
-                className="titlebar-menu-popover"
-                role="menu"
-                aria-label="Application menu"
-                data-menu-popover
-              >
-              {flattened.map((item) => {
-                if (item.kind === "heading") {
-                  return (
-                    <div
-                      key={item.key}
-                      className="titlebar-menu-heading"
-                      role="presentation"
-                    >
-                      {item.label}
-                    </div>
-                  );
-                }
-                if (item.kind === "sep") {
-                  return (
-                    <div
-                      key={item.key}
-                      className="titlebar-menu-sep"
-                      role="separator"
-                      aria-hidden
-                    />
-                  );
-                }
-                const entry = item.entry;
-                const glyph = entry.icon;
-                return (
-                  <button
-                    key={item.key}
-                    type="button"
-                    className="btn btn-ghost titlebar-menu-row"
-                    role="menuitem"
-                    onClick={(): void => onMenuEntry(entry)}
-                    disabled={entry.disabled === true}
-                    data-menu-action={entry.action ?? entry.id}
-                  >
-                    <span className="titlebar-menu-row-label">
-                      {glyph !== undefined && (
-                        <Icon name={glyph} size="md" aria-hidden className="titlebar-menu-row-icon" />
-                      )}
-                      <span>{entry.label}</span>
-                    </span>
-                    {entry.accelerator !== undefined && (
-                      <span className="kbd titlebar-menu-row-kbd">{entry.accelerator}</span>
-                    )}
-                  </button>
-                );
-              })}
-              </TfMorph>
-            )}
+            <CommandMenu
+              open={menuOpen}
+              groups={menuGroups !== undefined ? toCommandGroups(menuGroups) : []}
+              ariaLabel="Application menu"
+              onClose={(): void => setMenuOpen(false)}
+              onSelect={onMenuEntry}
+              openerRef={menuButtonRef}
+            />
           </AnimatePresence>
         </div>
       )}

@@ -33,6 +33,13 @@ import type { LucideIcon } from 'lucide-react';
 import { Plus } from 'lucide-react';
 import { Icon } from '../icons/Icon';
 import type { QuietIconId } from '../icons/quietPrecision';
+// TFL-1004 (TFL-855 chunk C9) — the Add-a-tool picker and the More overflow
+// menu adopt the shared `CommandMenu` primitive (mirroring C5/C7/C8). It owns
+// dismissal, focus capture/return and the row keyboard model; the dock keeps
+// only the DATA and the placement math, and the legacy `data-dock-*` hooks
+// survive through `popoverDataAttrs` / `rowDataAttrs`.
+import { CommandMenu } from './CommandMenu';
+import type { CommandMenuGroup, CommandMenuItem } from './CommandMenu';
 import {
   DOCK_AVAILABILITY_REASON,
   DOCK_BULK_IDS,
@@ -180,6 +187,12 @@ const MENU_H = 76;
 /** Phase 104 (chunk 2) — the anchored More popover's estimated width, used to
  *  clamp its horizontal position inside the viewport before it is measured. */
 const MENU_OVERFLOW_W = 200;
+
+/** TFL-1004 (chunk C9) — the 6px gap the dock's upward menus keep from the
+ *  trigger (`bottom: calc(100% + 6px)` in the retired bespoke CSS). The
+ *  CommandMenu render is placed with an explicit fixed `top`, so the gap is
+ *  applied here instead. */
+const MENU_OVERFLOW_GAP = 6;
 
 /** Phase 104 (chunk 2) — the dock's own minimum band height (mirrors
  *  `--dock-min-height`), the floor used when the real box is unmeasured. */
@@ -353,15 +366,25 @@ export function ActionDock(props: ActionDockProps): ReactElement {
   const [activityTick, setActivityTick] = useState(0);
   const [menu, setMenu] = useState<PinMenuState | null>(null);
   const [overflowOpen, setOverflowOpen] = useState(false);
-  /** Phase 104 (chunk 2) — the anchored More popover's clamped horizontal
-   *  offset (px, relative to its `.action-dock-overflow` host) and the dock's
-   *  measured layout band (px) republished to the canvas for scroll clearance. */
-  const [overflowShift, setOverflowShift] = useState(0);
+  /** TFL-1004 (chunk C9) — the anchored More popover's computed fixed
+   *  viewport-relative position (pre-clamped by the layout effect) and the
+   *  dock's measured layout band (px) republished to the canvas for scroll
+   *  clearance. `null` until the CommandMenu has rendered and been measured. */
+  const [overflowPos, setOverflowPos] = useState<{ left: number; top: number } | null>(null);
   const [dockBandPx, setDockBandPx] = useState(0);
   /** Phase 58 — the dock's EDIT mode: the pen arms it, every verb grows a
    *  minus affordance, and a plus control at the row's end opens the picker. */
   const [editMode, setEditMode] = useState(false);
   const [plusOpen, setPlusOpen] = useState(false);
+  /** TFL-1004 (chunk C9) — the Add-a-tool picker's computed fixed position,
+   *  mirroring `overflowPos`. */
+  const [pickerPos, setPickerPos] = useState<{ left: number; top: number } | null>(null);
+  /** DEF-608 — the Pin/Unpin `CommandMenu`'s MEASURED rendered height. The
+   *  clamp used the estimate `MENU_H` (76px, the retired bespoke row), but the
+   *  migrated menu renders taller (a group heading), so at the window floor its
+   *  last row clipped ~15px below the viewport. Measured in a layout effect and
+   *  re-clamped; `null` while unmeasured falls back to `MENU_H`. */
+  const [menuMeasuredH, setMenuMeasuredH] = useState<number | null>(null);
   /** DEF-315 — the MEASURED pill band: the reserve the dock must leave clear
    *  (from the pills' own inner edges) and their height for the vertical yield.
    *  DEF-330 — plus the pill-FREE band the dock actually occupies when it is
@@ -375,8 +398,8 @@ export function ActionDock(props: ActionDockProps): ReactElement {
   const pillKeyRef = useRef('');
   const menuRef = useRef<HTMLDivElement | null>(null);
   const overflowBtnRef = useRef<HTMLButtonElement | null>(null);
-  const overflowMenuRef = useRef<HTMLDivElement | null>(null);
   const overflowHostRef = useRef<HTMLDivElement | null>(null);
+  const plusBtnRef = useRef<HTMLButtonElement | null>(null);
   const hoveredRef = useRef(false);
   hoveredRef.current = hovered;
 
@@ -842,6 +865,79 @@ export function ActionDock(props: ActionDockProps): ReactElement {
     [onPinTool],
   );
 
+  // TFL-1004 (chunk C9) — the Add-a-tool picker as `CommandMenuItem`s. The
+  // legacy `[data-dock-picker]` root hook and `[data-dock-picker-item]` per-row
+  // hook survive through the primitive's additive props; the row keeps the
+  // `.action-dock-menu-item` class. Selecting an item closes the picker and
+  // pins the tool (the host blooms it in through `addTool`).
+  const pickerGroups = useMemo<CommandMenuGroup[]>(
+    () => [
+      {
+        id: 'dock-picker',
+        label: 'Add a tool',
+        entries: pickerEntries.map(
+          (entry): CommandMenuItem => ({
+            id: entry.id,
+            label: entry.label,
+            icon: entry.id as QuietIconId,
+            rowClassName: 'action-dock-menu-item',
+            rowDataAttrs: { 'data-dock-picker-item': entry.id },
+            onSelect: (): void => {
+              setPlusOpen(false);
+              addTool(entry.id);
+            },
+          }),
+        ),
+      },
+    ],
+    [pickerEntries, addTool],
+  );
+
+  // TFL-1004 (chunk C9) — the More overflow rows as `CommandMenuItem`s: every
+  // displaced verb with its registry icon/label/enabled/reason, then the
+  // always-present Customize dock toggle. The primitive's `disabled` /
+  // `disabledReason` expose the unavailable rows identically, and `checked`
+  // renders the Customize row as a `menuitemcheckbox` with `aria-checked`.
+  const overflowGroups = useMemo<CommandMenuGroup[]>(
+    () => [
+      {
+        id: 'dock-more',
+        label: 'More actions',
+        entries: [
+          ...menuVerbs.map(
+            (verb): CommandMenuItem => ({
+              id: verb.id,
+              label: verb.label,
+              icon: verb.id as QuietIconId,
+              disabled: !verb.enabled,
+              disabledReason: verb.reason,
+              rowClassName: 'action-dock-menu-item',
+              rowDataAttrs: { 'data-dock-overflow-item': verb.id },
+              onSelect: (): void => {
+                setOverflowOpen(false);
+                verb.run();
+              },
+            }),
+          ),
+          {
+            id: 'customize',
+            label: 'Customize dock',
+            icon: 'dockEditPencil' as QuietIconId,
+            checked: editMode,
+            rowClassName: 'action-dock-menu-item',
+            rowDataAttrs: { 'data-dock-menu-item': 'customize' },
+            onSelect: (): void => {
+              setOverflowOpen(false);
+              setPlusOpen(false);
+              setEditMode((v) => !v);
+            },
+          },
+        ],
+      },
+    ],
+    [menuVerbs, editMode],
+  );
+
   /** Unpin a tool and collapse its verb out. `onUnpinTool` fires immediately;
    *  the ghost only HOLDS THE SLOT while the verb collapses. */
   const removeTool = useCallback(
@@ -985,77 +1081,73 @@ export function ActionDock(props: ActionDockProps): ReactElement {
     return (): void => document.removeEventListener('keydown', onKeyDown);
   }, [editMode]);
 
-  // ---- Phase 104 (chunk 2): the anchored More popover --------------------
-  const closeOverflow = useCallback((returnFocus: boolean): void => {
-    setOverflowOpen(false);
-    if (returnFocus) overflowBtnRef.current?.focus();
-  }, []);
-
-  // Open upward (the CSS anchors the panel at `bottom: 100% + 6px`) and clamp
-  // its horizontal position inside the viewport, then convert that viewport
-  // left into an offset from the `.action-dock-overflow` host.
+  // ---- TFL-1004 (chunk C9): CommandMenu placement for the dock menus ------
+  // NOTE the containing block: the dock carries a transform, so a
+  // `position: fixed` descendant is contained by the DOCK's own box, not the
+  // viewport. `CommandMenu`'s `position` prop sets an explicit fixed
+  // `left`/`top`, overriding the inherited `.titlebar-menu-popover` anchor
+  // (`top: 100%`) that would otherwise leave the surface hanging below the
+  // dock. Each effect measures the rendered menu and converts the clamped
+  // viewport rect into dock-relative coordinates, opening upward with the
+  // retired CSS's 6px gap. Both run in a layout effect, so the first painted
+  // frame is already placed (no placement flash).
   useLayoutEffect((): void => {
     if (!overflowOpen) return;
     const btn = overflowBtnRef.current;
-    const panel = overflowMenuRef.current;
-    const host = overflowHostRef.current;
-    if (btn === null || panel === null || host === null) return;
+    const dock = rootRef.current;
+    const panel = dock?.querySelector<HTMLElement>('[data-dock-overflow-menu]') ?? null;
+    if (btn === null || dock === null || panel === null) return;
     const box = btn.getBoundingClientRect();
-    const hostBox = host.getBoundingClientRect();
+    const dockBox = dock.getBoundingClientRect();
     const panelW = panel.offsetWidth > 0 ? panel.offsetWidth : MENU_OVERFLOW_W;
+    const panelH = panel.offsetHeight;
     const vw = typeof window === 'undefined' ? 1024 : window.innerWidth;
     const desired = box.left + box.width / 2 - panelW / 2;
     const left = Math.min(Math.max(8, desired), Math.max(8, vw - panelW - 8));
-    setOverflowShift(Math.round(left - hostBox.left));
+    const top = Math.max(8, box.top - panelH - MENU_OVERFLOW_GAP);
+    setOverflowPos({
+      left: Math.round(left - dockBox.left),
+      top: Math.round(top - dockBox.top),
+    });
   }, [overflowOpen]);
 
-  // Focus the first ENABLED menu row on open (roving focus starts inside the
-  // menu). DEF-567 — a stage whose leading More rows are disabled (EDIT's
-  // `batchOcr` / `ocrSuspects`) must not park focus on a disabled button:
-  // `:not([disabled])` skips them, and when NO row is enabled focus stays on
-  // the More button (never throws).
-  useEffect((): void => {
-    if (!overflowOpen) return;
-    focusFirstEnabledMenuItem(overflowMenuRef.current, overflowBtnRef.current);
-  }, [overflowOpen]);
+  useLayoutEffect((): void => {
+    if (!plusOpen) return;
+    const btn = plusBtnRef.current;
+    const dock = rootRef.current;
+    const panel = dock?.querySelector<HTMLElement>('[data-dock-picker]') ?? null;
+    if (btn === null || dock === null || panel === null) return;
+    const box = btn.getBoundingClientRect();
+    const dockBox = dock.getBoundingClientRect();
+    const panelW = panel.offsetWidth > 0 ? panel.offsetWidth : MENU_OVERFLOW_W;
+    const panelH = panel.offsetHeight;
+    const vw = typeof window === 'undefined' ? 1024 : window.innerWidth;
+    const desired = box.right - panelW;
+    const left = Math.min(Math.max(8, desired), Math.max(8, vw - panelW - 8));
+    const top = Math.max(8, box.top - panelH - MENU_OVERFLOW_GAP);
+    setPickerPos({
+      left: Math.round(left - dockBox.left),
+      top: Math.round(top - dockBox.top),
+    });
+  }, [plusOpen]);
 
-  // Escape closes and returns focus to the More button; an outside pointerdown
-  // dismisses. The menu never reflows the document or moves the dock.
-  useEffect((): (() => void) | undefined => {
-    if (!overflowOpen) return undefined;
-    const onKeyDown = (event: KeyboardEvent): void => {
-      if (event.key === 'Escape') closeOverflow(true);
-    };
-    const onPointerDown = (event: PointerEvent): void => {
-      const target = event.target;
-      if (target instanceof Node && overflowHostRef.current?.contains(target) === true) return;
-      setOverflowOpen(false);
-    };
-    document.addEventListener('keydown', onKeyDown);
-    document.addEventListener('pointerdown', onPointerDown);
-    return (): void => {
-      document.removeEventListener('keydown', onKeyDown);
-      document.removeEventListener('pointerdown', onPointerDown);
-    };
-  }, [overflowOpen, closeOverflow]);
-
-  // Roving focus: ArrowUp/Down move one row, Home/End jump, all with wrap.
-  const onOverflowMenuKeyDown = (event: { key: string; preventDefault: () => void }): void => {
-    const items = [
-      ...(overflowMenuRef.current?.querySelectorAll<HTMLButtonElement>('[role="menuitem"]') ?? []),
-    ].filter((el): boolean => !el.hasAttribute('disabled'));
-    if (items.length === 0) return;
-    const active = overflowMenuRef.current?.ownerDocument.activeElement;
-    const index = items.findIndex((el): boolean => el === active);
-    let next = index;
-    if (event.key === 'ArrowDown') next = index < 0 ? 0 : (index + 1) % items.length;
-    else if (event.key === 'ArrowUp') next = index <= 0 ? items.length - 1 : index - 1;
-    else if (event.key === 'Home') next = 0;
-    else if (event.key === 'End') next = items.length - 1;
-    else return;
-    event.preventDefault();
-    items[next]?.focus();
-  };
+  // DEF-608 — measure the rendered Pin/Unpin `CommandMenu` and re-clamp with its
+  // REAL height (mirroring the overflow/picker layout effects above). Reads the
+  // portaled `[data-dock-menu]` root via `menuRef`; the first paint uses the
+  // `MENU_H` fallback, then this effect lifts the clamp once measured. Cleared
+  // when the menu closes so a later menu is never clamped with a stale height.
+  useLayoutEffect((): void => {
+    if (menu === null) {
+      setMenuMeasuredH((prev) => (prev === null ? prev : null));
+      return;
+    }
+    const el = menuRef.current;
+    if (el === null) return;
+    const measured = el.offsetHeight;
+    if (measured > 0) {
+      setMenuMeasuredH((prev) => (prev === measured ? prev : measured));
+    }
+  }, [menu, menuMeasuredH]);
 
   const openMenu = (id: string, x: number, y: number): void => {
     setOverflowOpen(false);
@@ -1079,8 +1171,59 @@ export function ActionDock(props: ActionDockProps): ReactElement {
   const menuPos =
     menu === null
       ? null
-      : clampDockMenu(menu.x, menu.y, MENU_W, MENU_H, window.innerWidth, window.innerHeight);
+      : clampDockMenu(menu.x, menu.y, MENU_W, menuMeasuredH ?? MENU_H, window.innerWidth, window.innerHeight);
   const menuPinned = menu !== null && pins.includes(menu.id);
+
+  // TFL-1012 (TFL-855 chunk C10) — the Pin/Unpin menu as a `CommandMenu` group.
+  // The primitive owns dismissal, focus and motion (its `TfMenu` motion
+  // replaces the retired `anim-menu-pop`); the dock keeps the `menu`/`menuPos`
+  // state, the `onContextMenu` opener and the clamp, and the legacy
+  // `data-dock-menu-item` / `.action-dock-menu-item` row hooks survive through
+  // `rowDataAttrs` / `rowClassName`. The group heading names the verb under the
+  // pointer (mirroring the thumbnail menu's `Page N` heading), falling back to
+  // the id when the registry has no label.
+  const pinMenuGroups = useMemo<CommandMenuGroup[]>(
+    () =>
+      menu === null
+        ? []
+        : [
+            {
+              id: 'dock-pin',
+              label: toolById(menu.id)?.label ?? menu.id,
+              entries: [
+                {
+                  id: 'pin',
+                  label: 'Pin to dock',
+                  disabled: menuPinned || !canPinMore(pins),
+                  disabledReason:
+                    !menuPinned && !canPinMore(pins) ? 'Dock is full' : undefined,
+                  rowClassName: 'action-dock-menu-item',
+                  rowDataAttrs: { 'data-dock-menu-item': 'pin' },
+                  onSelect: (): void => {
+                    setMenu(null);
+                    addTool(menu.id);
+                  },
+                },
+                {
+                  id: 'unpin',
+                  label: 'Unpin from dock',
+                  // Phase 37 (item 21) — ANY rendered verb can be unpinned now:
+                  // a default stage verb is recorded in `dockUnpinned`, an
+                  // explicit pin is dropped from `dockPins`. The host owns which
+                  // list. Phase 59 (item 3) — it routes through `unpinFromMenu`,
+                  // so the verb collapses out in its own slot like a minus click.
+                  rowClassName: 'action-dock-menu-item',
+                  rowDataAttrs: { 'data-dock-menu-item': 'unpin' },
+                  onSelect: (): void => {
+                    setMenu(null);
+                    unpinFromMenu(menu.id);
+                  },
+                },
+              ],
+            },
+          ],
+    [menu, menuPinned, pins, addTool, unpinFromMenu],
+  );
 
   const renderVerb = (
     verb: DockVerb,
@@ -1316,8 +1459,20 @@ export function ActionDock(props: ActionDockProps): ReactElement {
             pins it (the host's `onPinTool`, through `addTool` so the new verb
             BLOOMS in) and closes the picker. */}
         {editMode && (
-          <div className="action-dock-add">
+          <div
+            className="action-dock-add"
+            onKeyDownCapture={(event): void => {
+              // Preserve the shipped Escape behavior: while the picker is open
+              // Escape exits EDIT mode. `CommandMenu` stops the Escape at its
+              // row list, so the dock's document-level handler no longer sees
+              // it; this capture handler keeps the behavior intact.
+              if (event.key !== 'Escape') return;
+              setEditMode(false);
+              setPlusOpen(false);
+            }}
+          >
             <button
+              ref={plusBtnRef}
               type="button"
               className="btn btn-ghost btn-icon action-dock-plus"
               data-dock-plus
@@ -1333,33 +1488,19 @@ export function ActionDock(props: ActionDockProps): ReactElement {
             >
               <Icon icon={Plus} size="lg" aria-hidden />
             </button>
-            {plusOpen && (
-              <div
-                className="action-dock-menu action-dock-menu-picker anim-menu-pop"
-                role="menu"
-                aria-label="Add a tool to the dock"
-                data-dock-picker
-              >
-                {pickerEntries.map((entry) => {
-                  return (
-                    <button
-                      key={entry.id}
-                      type="button"
-                      role="menuitem"
-                      className="btn btn-ghost action-dock-menu-item"
-                      data-dock-picker-item={entry.id}
-                      onClick={(): void => {
-                        setPlusOpen(false);
-                        addTool(entry.id);
-                      }}
-                    >
-                      <Icon name={entry.id as QuietIconId} size="lg" aria-hidden />
-                      <span>{entry.label}</span>
-                    </button>
-                  );
-                })}
-              </div>
-            )}
+            {/* TFL-1004 (chunk C9) — the picker is the shared `CommandMenu`.
+                `data-dock-picker` stays on the root and each row keeps
+                `data-dock-picker-item` + `.action-dock-menu-item`; the trigger
+                above is unchanged. */}
+            <CommandMenu
+              open={plusOpen}
+              groups={pickerGroups}
+              ariaLabel="Add a tool to the dock"
+              onClose={(): void => setPlusOpen(false)}
+              openerRef={plusBtnRef}
+              position={pickerPos ?? undefined}
+              popoverDataAttrs={{ 'data-dock-picker': 'true' }}
+            />
           </div>
         )}
       </div>
@@ -1401,57 +1542,20 @@ export function ActionDock(props: ActionDockProps): ReactElement {
           </span>
           {!iconOnly && <span className="action-dock-label">More</span>}
         </button>
-        {overflowOpen && (
-          <div
-            ref={overflowMenuRef}
-            className="action-dock-menu action-dock-menu-overflow anim-menu-pop"
-            role="menu"
-            aria-label="More actions"
-            data-dock-overflow-menu
-            style={{ left: overflowShift, transform: 'none' }}
-            onKeyDown={onOverflowMenuKeyDown}
-          >
-            {menuVerbs.map((verb) => {
-              return (
-                <button
-                  key={verb.id}
-                  type="button"
-                  role="menuitem"
-                  className="btn btn-ghost action-dock-menu-item"
-                  data-dock-overflow-item={verb.id}
-                  disabled={!verb.enabled}
-                  title={verb.reason}
-                  onClick={(): void => {
-                    setOverflowOpen(false);
-                    verb.run();
-                  }}
-                >
-                  <Icon name={verb.id as QuietIconId} size="lg" aria-hidden />
-                  <span>{verb.label}</span>
-                </button>
-              );
-            })}
-            {/* Phase 104 (chunk 1) — Customize dock. This item toggles the
-                EXISTING dock EDIT mode (the minus badges + the plus picker's
-                pin/unpin/reorder flow); it is the only customization entry
-                point, so no second mechanism exists. */}
-            <button
-              type="button"
-              role="menuitem"
-              className="btn btn-ghost action-dock-menu-item"
-              data-dock-menu-item="customize"
-              aria-pressed={editMode}
-              onClick={(): void => {
-                setOverflowOpen(false);
-                setPlusOpen(false);
-                setEditMode((v) => !v);
-              }}
-            >
-              <Icon name="dockEditPencil" size="lg" aria-hidden />
-              <span>Customize dock</span>
-            </button>
-          </div>
-        )}
+        {/* TFL-1004 (chunk C9) — the More rows are the shared `CommandMenu`.
+            `data-dock-overflow-menu` stays on the root; each verb row keeps
+            `data-dock-overflow-item` + `.action-dock-menu-item` and the
+            Customize toggle keeps `data-dock-menu-item="customize"` (rendered
+            as `aria-checked`). The trigger above is unchanged. */}
+        <CommandMenu
+          open={overflowOpen}
+          groups={overflowGroups}
+          ariaLabel="More actions"
+          onClose={(): void => setOverflowOpen(false)}
+          openerRef={overflowBtnRef}
+          position={overflowPos ?? undefined}
+          popoverDataAttrs={{ 'data-dock-overflow-menu': 'true' }}
+        />
       </div>
       {/* Phase 104 (chunk 1) — the dock's TRAILING UTILITY: a labelled Tools
           button that opens the EXISTING command palette (the SAME
@@ -1482,50 +1586,27 @@ export function ActionDock(props: ActionDockProps): ReactElement {
           the containing block for `position: fixed` descendants, so the menu
           (fixed, clamped against the VIEWPORT) rendered ~700px below the
           window while it lived inside the dock. On the body it is positioned
-          against the viewport, exactly like the thumbnail context menu. */}
+          against the viewport, exactly like the thumbnail context menu.
+          TFL-1012 (TFL-855 chunk C10) — the surface is now the shared
+          `CommandMenu` (mirroring C5/C7/C8/C9): it owns dismissal, focus
+          capture/return and the row keyboard model, and its `TfMenu` motion
+          replaces the retired `anim-menu-pop`. The dock keeps the `menu` /
+          `menuPos` state, the `onContextMenu` opener and the clamp; the legacy
+          `data-dock-menu` root hook and the `data-dock-menu-item` /
+          `.action-dock-menu-item` row hooks survive through the primitive's
+          additive `popoverDataAttrs` / `rowDataAttrs` / `rowClassName` props. */}
       {menu !== null &&
         menuPos !== null &&
         createPortal(
-          <div
-            ref={menuRef}
-            className="action-dock-menu anim-menu-pop"
-            role="menu"
-            aria-label={`${menu.id} options`}
-            data-dock-menu
-            style={{ left: menuPos.left, top: menuPos.top }}
-          >
-            <button
-              type="button"
-              role="menuitem"
-              className="btn btn-ghost action-dock-menu-item"
-              data-dock-menu-item="pin"
-              disabled={menuPinned || !canPinMore(pins)}
-              title={!menuPinned && !canPinMore(pins) ? 'Dock is full' : undefined}
-              onClick={(): void => {
-                setMenu(null);
-                addTool(menu.id);
-              }}
-            >
-              <span>Pin to dock</span>
-            </button>
-            <button
-              type="button"
-              role="menuitem"
-              className="btn btn-ghost action-dock-menu-item"
-              data-dock-menu-item="unpin"
-              /* Phase 37 (item 21) — ANY rendered verb can be unpinned now: a
-                 default stage verb is recorded in `dockUnpinned`, an explicit
-                 pin is dropped from `dockPins`. The host owns which list.
-                 Phase 59 (item 3) — it routes through `unpinFromMenu`, so the
-                 verb collapses out in its own slot like a minus click. */
-              onClick={(): void => {
-                setMenu(null);
-                unpinFromMenu(menu.id);
-              }}
-            >
-              <span>Unpin from dock</span>
-            </button>
-          </div>,
+          <CommandMenu
+            open
+            groups={pinMenuGroups}
+            ariaLabel={`${menu.id} options`}
+            onClose={(): void => setMenu(null)}
+            position={{ left: menuPos.left, top: menuPos.top }}
+            popoverRef={menuRef}
+            popoverDataAttrs={{ 'data-dock-menu': 'true' }}
+          />,
           document.body,
         )}
     </div>

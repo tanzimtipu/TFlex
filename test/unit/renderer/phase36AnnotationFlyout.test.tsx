@@ -144,4 +144,31 @@ describe("Phase 36 (chunk 3b) — the annotations flyout surface", () => {
       unmount();
     }
   });
+
+  // TFL-1018 (chunk C12) — documented native exception. The flyout keeps its
+  // own CSS dock-anchored chassis: `.annotation-flyout-anchor` is the
+  // canvas-bound, horizontally-centred bottom-centre home (left/right 0,
+  // bottom 72px) and the surface carries role="dialog" + data-annotation-flyout
+  // + data-flyout-* plus the useRowOverflow arrow ladder around its scroll
+  // body. ContextToolbox places through placeControlNearAnchor from a rect
+  // anchor, hardcodes role="toolbar"/data-context-toolbox and has no
+  // scroll-body/arrow slot; styles.css is outside this chunk's writable set, so
+  // the dock anchor, the ladder and the data-* hooks cannot all survive
+  // adoption. This pins the surface as unchanged (never rendered through
+  // ContextToolbox).
+  it("stays a native exception: unchanged chassis with no ContextToolbox", () => {
+    const { host, unmount } = renderFlyout(true);
+    try {
+      expect(host.querySelector("[data-context-toolbox]")).toBeNull();
+      const root = host.querySelector("[data-annotation-flyout]");
+      expect(root).not.toBeNull();
+      expect(root?.getAttribute("role")).toBe("dialog");
+      expect(root?.getAttribute("data-flyout-icon-only")).toBe("false");
+      expect(root?.getAttribute("data-flyout-arrows")).toBe("false");
+      expect(host.querySelector("[data-annotation-flyout-row]")).not.toBeNull();
+      expect(host.querySelector("[data-annotation-flyout-scroll]")).not.toBeNull();
+    } finally {
+      unmount();
+    }
+  });
 });

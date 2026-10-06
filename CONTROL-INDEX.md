@@ -38,8 +38,99 @@ caught at the source instead of in a retest pass.
 | Control | Selector | Promised action | Unit test | E2e |
 |---|---|---|---|---|
 | Menu button | `.titlebar-menu-button` (`data-menu-button`) | Toggles the popover open/closed; `aria-haspopup="menu"` and `aria-expanded` flip together | `test/unit/renderer/titleBar.test.tsx` (click toggles popover visibility) | `e2e/phase13_gate_final.spec.cjs` SC2 |
-| Popover | `.titlebar-menu-popover` (`data-menu-popover`) | Renders every entry from `menuGroups` with `role="menu"` + group heading + accelerator chip; closes on outside click, Escape, or entry click | `test/unit/renderer/titleBar.test.tsx` (menu structure + Escape close) | `e2e/phase13_gate_final.spec.cjs` SC2 |
-| Popover row | `.titlebar-menu-row` (`data-menu-action`) | Routes through `dispatchMenuAction(action, menuContext)` — the same dispatcher the native menu uses | `test/unit/renderer/titleBar.test.tsx` (click invokes dispatcher) | `e2e/phase13_gate_final.spec.cjs` SC2 (menu items trigger handlers) |
+| Popover | `.titlebar-menu-popover` (`data-menu-popover`) | Renders every entry from `menuGroups` with `role="menu"` + group heading + accelerator chip; closes on outside click, Escape, or entry click | `test/unit/renderer/titleBar.test.tsx` (menu structure + Escape close) + `test/unit/renderer/titleBarFileMenu.test.tsx` | `e2e/phase13_gate_final.spec.cjs` SC2 |
+| Popover row | `.titlebar-menu-row` (`data-menu-action`) | Routes through `dispatchMenuAction(action, menuContext)` — the same dispatcher the native menu uses | `test/unit/renderer/titleBar.test.tsx` (click invokes dispatcher) + `test/unit/renderer/titleBarFileMenu.test.tsx` | `e2e/phase13_gate_final.spec.cjs` SC2 (menu items trigger handlers) |
+| Page context menu | `[data-context-menu]` (`data-page`) | The six page verbs (Rotate CW / Rotate CCW / Extract… / Insert blank after / Replace… / Delete…, delete danger-styled); opens fixed at the pointer, closes on Escape / outside-click / scroll; every row keeps `data-menu-item` (TFL-998 chunk C8, on the shared `CommandMenu`). | `test/unit/renderer/pageThumbMenu.test.tsx` + `test/unit/renderer/phase36ContextPanel.test.tsx` | `e2e/phase36_chunk2_pages_parity.spec.cjs` |
+
+TFL-975 (TFL-855 chunk C5): the File popover now renders through the shared
+`CommandMenu` primitive (`src/renderer/components/CommandMenu.tsx`), which owns the
+shipped `.titlebar-menu-*` DOM contract and the outside-click / Escape /
+focus-return-to-opener behaviour. `TitleBar` keeps only the trigger and the
+`dispatchMenuAction` routing (via `onMenuEntry`); the popover enters with the shared
+`TfMenu` motion in place of the retired FLIP morph. Every File command and
+accelerator is preserved verbatim.
+
+TFL-993 (TFL-855 chunk C7): the AppHeader application menu (`[data-app-menu]`) now
+renders through the same `CommandMenu` primitive, reusing C5's exported
+`toCommandGroups` (`TitleBar.tsx`) and keeping the `app-menu-popover` class plus the
+`data-app-menu-popover` hook (via `className` + the additive `popoverDataAttrs` prop)
+so existing selectors keep resolving. The bespoke `TfMorph` / outside-click / Escape /
+Tab / roving-focus plumbing is removed; CommandMenu owns dismiss, focus capture and
+return-to-trigger. Every Edit / View / Tools / Help command and the relocated Multi
+Mode / Find rows (with the Find row's `disabledReason`) are preserved verbatim. This
+also adds Tab-close to `CommandMenu`, so both the File and application menus close on
+Tab. The application menu enters with the shared `TfMenu` motion in place of the
+retired FLIP morph. Test: `test/unit/renderer/appHeaderAppMenu.test.tsx`.
+
+TFL-998 (TFL-855 chunk C8): the thumbnail right-click menu (`[data-context-menu]`,
+`src/renderer/components/pageThumbMenu.tsx`) now renders through the same
+`CommandMenu` primitive. The hook keeps only the six page verbs and the clamped
+pointer anchor and passes them through CommandMenu's additive props: `position`
+(fixed at the clamped pointer coordinates), `dismissOnScroll`, and the per-row
+`variant` / `rowClassName` / `rowDataAttrs`. Every legacy hook survives — the root
+keeps `data-context-menu` + `data-page` (via `popoverDataAttrs`), and each row
+keeps `data-menu-item` plus `.context-menu-item` / `.context-menu-item-danger` — so
+existing CSS/e2e selectors resolve on both the single-mode Pages panel and the
+Multi Mode strips. CommandMenu owns Escape / outside-pointerdown / scroll dismiss
+and the row keyboard model; the bespoke `.context-menu` chrome and its
+`anim-menu-pop` animation are retired in favour of the shared `.command-menu`
+shell and `TfMenu` motion. Tests: `test/unit/renderer/pageThumbMenu.test.tsx` +
+`test/unit/renderer/commandMenu.test.tsx`.
+
+TFL-1004 (TFL-855 chunk C9): the Action Dock's Add-a-tool picker
+(`[data-dock-picker]`) and its stable More overflow menu
+(`[data-dock-overflow-menu]`) now render through the shared `CommandMenu`
+primitive, in `src/renderer/components/ActionDock.tsx`. The dock keeps only the
+picker / More data and the clamp-and-place math: `pickerEntries` and `menuVerbs`
+become `CommandMenuItem`s, and each surface is placed by the additive `position`
+prop (opened upward with a 6px gap; the dock's `transform` makes the fixed
+coordinates relative to the dock box). Every legacy hook survives — the picker
+root keeps `data-dock-picker` and each row keeps `data-dock-picker-item`; the
+More root keeps `data-dock-overflow-menu` and each verb row keeps
+`data-dock-overflow-item` plus `.action-dock-menu-item`, while the Customize
+toggle keeps `data-dock-menu-item="customize"` and now exposes `aria-checked`
+(rendered as a `menuitemcheckbox`). The bespoke `onOverflowMenuKeyDown`, the
+Escape / outside-pointerdown plumbing and the `anim-menu-pop` utility are
+retired in favour of CommandMenu's keyboard model and `TfMenu` motion. Tests:
+`test/unit/renderer/phase104_dockMoreFocus.test.tsx` +
+`test/unit/renderer/phase58DockEdit.test.tsx` +
+`test/unit/renderer/commandMenu.test.tsx`.
+
+TFL-1012 (TFL-855 chunk C10): the Action Dock's portaled Pin/Unpin menu (the
+right-click context menu on a dock verb) now renders through the shared
+`CommandMenu` primitive, completing the dock's migration. It keeps the SAME
+`createPortal(..., document.body)` because the dock's `transform` makes the
+fixed surface's containing block the dock box rather than the viewport
+(DEF-312); the `position` prop still receives the viewport-clamped pointer
+coordinates, and the new additive `popoverRef` prop surfaces the rendered root
+to the dock's own outside-dismiss. Every legacy hook survives — the root keeps
+`data-dock-menu` (via `popoverDataAttrs`) and each row keeps
+`data-dock-menu-item="pin"` / `"unpin"` plus `.action-dock-menu-item` (via
+`rowDataAttrs` / `rowClassName`) — so existing CSS/e2e selectors resolve. The
+pin/unpin semantics and the dock-full rule (`menuPinned || !canPinMore(pins)`,
+reason "Dock is full") are unchanged, and the retired `anim-menu-pop` class is
+replaced by `TfMenu` motion. Tests:
+`test/unit/renderer/phase36ActionDock.test.tsx` +
+`test/unit/renderer/def311_314_dockCuration.test.tsx` +
+`test/unit/renderer/commandMenu.test.tsx`.
+
+TFL-1016 (TFL-855 chunk C11): the Welcome home-tools picker
+(`[data-home-picker]`, `src/renderer/components/Welcome.tsx`) now renders through
+the shared `CommandMenu` primitive. It keeps the SAME
+`createPortal(..., document.body)` because the 36px home row's transform makes
+it the containing block for fixed descendants, collapsing an in-row popover to a
+sliver (DEF-410); the `position` prop receives the same clamped `pickerPos`
+measured from the plus's `getBoundingClientRect()`. Every legacy hook survives —
+the root keeps `data-home-picker` (via `popoverDataAttrs`) plus the
+`home-tools-picker` class (via `className`) and each row keeps
+`data-home-picker-item` and `.action-dock-menu-item` (via `rowDataAttrs` /
+`rowClassName`) — so existing CSS/e2e selectors resolve. The add behavior
+(`onSetHomeTools(addHomeTool(tools, id))`), the full/noCandidates gating on the
+plus and the escape/edit-mode ladder are unchanged, and the retired
+`anim-menu-pop` class is replaced by `TfMenu` motion. Tests:
+`test/unit/renderer/phase58HomeTools.test.tsx` +
+`test/unit/renderer/bugSweepWelcome.test.tsx` +
+`test/unit/renderer/commandMenu.test.tsx`.
 
 ## Theme toggle + semantic colors
 
@@ -85,7 +176,7 @@ collapsed `app-main` reveals the same native background.
 | Brand mark | `.brand .brand-mark` | Non-interactive logotype ("Jovrel" wordmark beside the halo mark). Phase 105 (chunk C): the brand leads the 48px title row inside TitleBar. | (CSS contract test) | (visible at launch) |
 | Document rail | `.document-rail .tab-list` | The 40px rail below the title row: renders every open tab; click activates, close removes; reorder / tear-out gestures unchanged. | `test/unit/renderer/phase105_titleRow.test.tsx` + `test/unit/renderer/appHeader.test.tsx` | (covered by every workspace e2e) |
 | '+ new tab' button | `[data-new-tab]` | Appends an empty placeholder tab; hidden when `tabs.length === 0`; disabled with a reason in Multi Mode. | `test/unit/renderer/phase105_titleRow.test.tsx` + `test/unit/renderer/phase34_chunk2.test.tsx` | (e2e in phase7 spec) |
-| Application menu trigger | `.app-menu-trigger` (`data-app-menu`) | Opens the non-File menu groups (Edit / View / Tools / Help) plus the relocated Multi Mode / Find rows; Escape closes and refocuses. | `test/unit/renderer/phase105_titleRow.test.tsx` | (qa: menu opens) |
+| Application menu trigger | `.app-menu-trigger` (`data-app-menu`) | Opens the non-File menu groups (Edit / View / Tools / Help) plus the relocated Multi Mode / Find rows; Escape / Tab / outside-click close and refocus the trigger (TFL-993 chunk C7, on the shared `CommandMenu`). | `test/unit/renderer/phase105_titleRow.test.tsx` + `test/unit/renderer/appHeaderAppMenu.test.tsx` | (qa: menu opens) |
 | Update indicator slot | `.update-indicator` | See "Update indicator" rows above. | (same) | (same) |
 | Open button | `button.btn-primary` (AppHeader context) | Calls `onOpenClick` which opens the OS file dialog and routes the picked file through `openPdfFromPath`. | (covered by App integration tests) | (covered by every workspace e2e) |
 

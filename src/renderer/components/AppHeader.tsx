@@ -1,10 +1,8 @@
 import {
   useCallback,
-  useEffect,
   useMemo,
   useRef,
   useState,
-  type KeyboardEvent as ReactKeyboardEvent,
   type ReactElement,
   type ReactNode,
 } from "react";
@@ -23,13 +21,11 @@ import {
   Sun,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
-import { AnimatePresence } from "motion/react";
 import { Icon } from "../icons/Icon";
-import { TfMorph } from "./motion/TfMotion";
-import { useMorphPreset } from "./motion/useMorphPreset";
+import { CommandMenu, type CommandMenuGroup, type CommandMenuItem } from "./CommandMenu";
 import { dispatchMenuAction, type MenuActionContext } from "../state/menuActions";
 import {
-  flattenMenuGroups,
+  toCommandGroups,
   type MenuEntry,
   type MenuGroup,
 } from "./TitleBar";
@@ -69,6 +65,12 @@ export const TOOL_SEARCH_ACCESSIBLE_NAME = "Search tools and commands (Ctrl+K)";
 /** Phase 40 (item 5) — the Ctrl+F find icon's accessible name. Reused
  *  verbatim as the relocated Find row's label. */
 export const FIND_IN_DOCUMENT_ACCESSIBLE_NAME = "Find in document (Ctrl+F)";
+
+/** Phase 105 (chunk C7) — the relocated Find row's accessible reason when no
+ *  document is open. Rendered by `CommandMenu` via the row's `title` +
+ *  `aria-describedby`, replacing the bespoke hard-coded title the inline
+ *  popover carried. */
+export const FIND_DISABLED_REASON = "Open a document to search it";
 
 /** The header's migrated glyphs. Declared with an `icon:` property so the
  *  Phase 43 icon-identity guard still attributes each glyph to this surface.
@@ -176,23 +178,16 @@ export function AppHeader(props: AppHeaderProps): ReactElement {
     findEnabled = false,
   } = props;
 
-  // Phase 105 (chunk C) — the application menu popover mirrors the TitleBar
-  // File popover machinery: `useMorphPreset` + `TfMorph`, outside-click and
-  // Escape close (Escape returns focus to the trigger), and arrow-key roving
-  // across the actionable rows. Hooks stay above any return (DEF-117).
+  // Phase 105 (chunk C7) — the application menu is the shared `CommandMenu`
+  // primitive, mirroring the TitleBar File menu migration (C5). CommandMenu
+  // owns outside-click dismiss, Escape/Tab close, focus capture/return and the
+  // row keyboard model, so this component keeps no bespoke menu plumbing.
+  // Hooks stay above any return (DEF-117).
   const [appMenuOpen, setAppMenuOpen] = useState(false);
   const appMenuButtonRef = useRef<HTMLButtonElement | null>(null);
-  const appMenuPopoverRef = useRef<HTMLDivElement | null>(null);
-  const appMenuRowRefs = useRef<Array<HTMLButtonElement | null>>([]);
-  const appMenuMorph = useMorphPreset({
-    open: appMenuOpen,
-    triggerRef: appMenuButtonRef,
-    surfaceRef: appMenuPopoverRef,
-    anchorCorner: "top-right",
-  });
 
-  // The groups the popover lists: the host's NON-File groups plus the
-  // relocated icon commands that carry their own handler (Multi Mode, Find).
+  // The groups the menu lists: the host's NON-File groups plus the relocated
+  // icon commands that carry their own handler (Multi Mode, Find).
   const groups = useMemo<MenuGroup[]>(() => {
     const relocated: MenuEntry[] = [];
     if (onMultiModeToggle !== undefined) {
@@ -215,42 +210,31 @@ export function AppHeader(props: AppHeaderProps): ReactElement {
     return buildAppMenuGroups(appMenuGroups, relocated);
   }, [appMenuGroups, onMultiModeToggle, onOpenFind, findEnabled]);
 
-  const flattened = useMemo(() => flattenMenuGroups(groups), [groups]);
-
-  useEffect(() => {
-    if (!appMenuOpen) return;
-    const onPointer = (e: PointerEvent): void => {
-      const t = e.target as Node | null;
-      if (t === null) return;
-      if (appMenuButtonRef.current?.contains(t)) return;
-      if (appMenuPopoverRef.current?.contains(t)) return;
-      setAppMenuOpen(false);
-    };
-    const onKey = (e: KeyboardEvent): void => {
-      if (e.key === "Escape") {
-        setAppMenuOpen(false);
-        appMenuButtonRef.current?.focus();
-      } else if (e.key === "Tab") {
-        setAppMenuOpen(false);
-      }
-    };
-    window.addEventListener("pointerdown", onPointer);
-    window.addEventListener("keydown", onKey);
-    return (): void => {
-      window.removeEventListener("pointerdown", onPointer);
-      window.removeEventListener("keydown", onKey);
-    };
-  }, [appMenuOpen]);
+  // Adapt to the shared model via C5's `toCommandGroups` (no duplicated
+  // conversion), then attach the disabled Find row's accessible reason. The
+  // shipped `MenuEntry` carries no `disabledReason`, so the reason is injected
+  // on the already-converted row; every other field passes through verbatim.
+  const commandGroups = useMemo<CommandMenuGroup[]>(() => {
+    const converted = toCommandGroups(groups);
+    return converted.map((group) => ({
+      ...group,
+      entries: group.entries.map((entry) =>
+        entry.id === "find" && entry.disabled === true
+          ? { ...entry, disabledReason: FIND_DISABLED_REASON }
+          : entry,
+      ),
+    }));
+  }, [groups]);
 
   const onAppMenuToggle = useCallback((): void => {
     setAppMenuOpen((v) => !v);
   }, []);
 
   const onAppMenuEntry = useCallback(
-    (entry: MenuEntry): void => {
+    (entry: CommandMenuItem): void => {
       if (entry.disabled === true) return;
       if (entry.onSelect !== undefined) {
-        entry.onSelect();
+        entry.onSelect(entry);
       } else if (entry.action !== undefined && menuContext !== undefined) {
         dispatchMenuAction(entry.action, menuContext);
       }
@@ -258,22 +242,6 @@ export function AppHeader(props: AppHeaderProps): ReactElement {
     },
     [menuContext],
   );
-
-  // Roving focus across the actionable rows (the ARIA menu pattern). The
-  // disabled rows are skipped so focus never stalls on an inert entry.
-  const onAppMenuKeyDown = useCallback((e: ReactKeyboardEvent<HTMLDivElement>): void => {
-    if (e.key !== "ArrowDown" && e.key !== "ArrowUp") return;
-    e.preventDefault();
-    const els = appMenuRowRefs.current.filter(
-      (el): el is HTMLButtonElement => el !== null && !el.disabled,
-    );
-    if (els.length === 0) return;
-    const focused = els.findIndex((el) => el === document.activeElement);
-    const dir = e.key === "ArrowDown" ? 1 : -1;
-    const base = focused >= 0 ? focused : -dir;
-    const next = ((base + dir) % els.length + els.length) % els.length;
-    els[next]?.focus();
-  }, []);
 
   // Phase 22 — the relocated Save control's state ladder. Identical semantics
   // to the CommandBar Save button it replaces: warning tint + dot mark unsaved
@@ -289,9 +257,6 @@ export function AppHeader(props: AppHeaderProps): ReactElement {
     : saveInPlaceEnabled
       ? "btn btn-secondary titlebar-file-btn titlebar-file-btn-modified"
       : "btn btn-secondary titlebar-file-btn titlebar-file-btn-modified titlebar-file-btn-readonly";
-
-  let rowIndex = 0;
-  appMenuRowRefs.current = [];
 
   return (
     <header className="app-header">
@@ -389,63 +354,25 @@ export function AppHeader(props: AppHeaderProps): ReactElement {
             >
               <Icon name="appMenu" size="md" aria-hidden />
             </button>
-            <AnimatePresence>
-              {appMenuOpen && (
-                <TfMorph
-                  morph={appMenuMorph}
-                  ref={appMenuPopoverRef}
-                  className="app-menu-popover"
-                  role="menu"
-                  aria-label="Application menu"
-                  data-app-menu-popover
-                  onKeyDown={onAppMenuKeyDown}
-                >
-                  {flattened.map((item) => {
-                    if (item.kind === "heading") {
-                      return (
-                        <div key={item.key} className="titlebar-menu-heading" role="presentation">
-                          {item.label}
-                        </div>
-                      );
-                    }
-                    if (item.kind === "sep") {
-                      return (
-                        <div key={item.key} className="titlebar-menu-sep" role="separator" aria-hidden />
-                      );
-                    }
-                    const entry = item.entry;
-                    const glyph = entry.icon;
-                    const refIndex = rowIndex;
-                    rowIndex += 1;
-                    return (
-                      <button
-                        key={item.key}
-                        ref={(el): void => {
-                          appMenuRowRefs.current[refIndex] = el;
-                        }}
-                        type="button"
-                        className="btn btn-ghost titlebar-menu-row"
-                        role="menuitem"
-                        onClick={(): void => onAppMenuEntry(entry)}
-                        disabled={entry.disabled === true}
-                        title={entry.disabled === true ? "Open a document to search it" : undefined}
-                        data-menu-action={entry.action ?? entry.id}
-                      >
-                        <span className="titlebar-menu-row-label">
-                          {glyph !== undefined && (
-                            <Icon name={glyph} size="md" aria-hidden className="titlebar-menu-row-icon" />
-                          )}
-                          <span>{entry.label}</span>
-                        </span>
-                        {entry.accelerator !== undefined && (
-                          <span className="kbd titlebar-menu-row-kbd">{entry.accelerator}</span>
-                        )}
-                      </button>
-                    );
-                  })}
-                </TfMorph>
-              )}
-            </AnimatePresence>
+            {/* Phase 105 (chunk C7) — the shared `CommandMenu`. It emits the
+                shipped `.titlebar-menu-*` DOM contract verbatim (headings,
+                separators, `data-menu-action` rows with their `.kbd`
+                accelerator) and owns outside-click / Escape / Tab dismiss,
+                first-focus and focus-return-to-opener. The `app-menu-popover`
+                class and `data-app-menu-popover` hook survive via
+                `className` + `popoverDataAttrs` so existing selectors keep
+                resolving. Enters with the shared `TfMenu` motion in place of
+                the retired bespoke FLIP morph. */}
+            <CommandMenu
+              open={appMenuOpen}
+              groups={commandGroups}
+              ariaLabel="Application menu"
+              onClose={(): void => setAppMenuOpen(false)}
+              onSelect={onAppMenuEntry}
+              openerRef={appMenuButtonRef}
+              className="app-menu-popover"
+              popoverDataAttrs={{ "data-app-menu-popover": "true" }}
+            />
           </div>
         )}
         {/* DEF-077 — the OTA update indicator, then the account slot, at the

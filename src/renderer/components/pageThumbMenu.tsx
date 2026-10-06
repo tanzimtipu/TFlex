@@ -2,15 +2,23 @@
 //
 // The single-mode PAGES ContextPanel and the Multi Mode per-pane strips must
 // offer the SAME page options. This module is the ONE home for the menu's
-// data (the six verbs), the viewport clamp and the anchored popover, so the
-// multi-mode strips re-parent the single-mode machinery instead of forking
-// it. The menu markup/classes are byte-identical to the pre-chunk-5 menu:
-// every existing CSS/e2e selector (`[data-context-menu]`, `[data-menu-item]`)
+// data (the six verbs) and the pointer anchor, so the multi-mode strips
+// re-parent the single-mode machinery instead of forking it.
+//
+// TFL-855 chunk C8 — the menu node is now the shared `CommandMenu` primitive
+// (mirroring the C5 File menu and C7 application menu). CommandMenu owns
+// dismissal, focus and the row keyboard model; this module keeps the legacy
+// hooks alive through its additive props: the root carries `[data-context-menu]`
+// / `[data-page]` (`popoverDataAttrs` + `position`), and every row carries
+// `[data-menu-item]` plus the `.context-menu-item[-danger]` classes
+// (`rowDataAttrs` + `rowClassName` + `variant`). Every existing CSS/e2e selector
 // keeps resolving on both surfaces.
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import type { ReactElement } from 'react';
 import type { ThumbContextMenuHandler } from './SideRail';
+import { CommandMenu } from './CommandMenu';
+import type { CommandMenuGroup, CommandMenuItem } from './CommandMenu';
 
 /** Fallback menu box used when the platform reports no layout (jsdom, or the
  *  first frame before the menu is measured). Only affects the clamp. */
@@ -85,87 +93,70 @@ export interface PageThumbMenuController {
 }
 
 /**
- * The shared menu controller. Callers supply their page verbs; the hook owns
- * the menu's own state, dismissal (Esc / outside pointerdown / scroll, never
- * swallowing the event) and the viewport clamp.
+ * The shared menu controller. Callers supply their page verbs; the menu node is
+ * the shared `CommandMenu` primitive (TFL-855 chunk C8), which owns dismissal
+ * (Escape / outside pointerdown / scroll), focus capture/return and the row
+ * keyboard model. This hook keeps only the page-menu DATA and the pointer
+ * anchor: the six verbs converted to `CommandMenuItem`s, and the clamped fixed
+ * position (`clampMenuPosition`). The root keeps the legacy `[data-context-menu]`
+ * / `[data-page]` hooks and every row keeps `[data-menu-item]` plus the
+ * `.context-menu-item[-danger]` classes, so every existing CSS/e2e selector
+ * still resolves on both the single-mode panel and the Multi Mode strips.
  */
 export function usePageThumbMenu(handlers: PageMenuHandlers): PageThumbMenuController {
   const [menu, setMenu] = useState<MenuState | null>(null);
-  const [menuPos, setMenuPos] = useState<{ left: number; top: number } | null>(null);
-  const menuRef = useRef<HTMLDivElement | null>(null);
 
   const openMenu = useCallback((page: number, x: number, y: number): void => {
     setMenu({ page, x, y });
   }, []);
 
-  // Dismissal: Esc, a pointerdown outside the menu, and any scroll. None of
-  // these swallow the event (no preventDefault / stopPropagation): an
-  // outside press still reaches its own target, so dismissing the menu can
-  // never eat a thumbnail click or a panel control (AGENTS cross-bubbling).
-  useEffect((): (() => void) | undefined => {
-    if (menu === null) return undefined;
-    const onKeyDown = (event: KeyboardEvent): void => {
-      if (event.key === 'Escape') setMenu(null);
-    };
-    const onPointerDown = (event: PointerEvent): void => {
-      const target = event.target;
-      if (target instanceof Node && menuRef.current?.contains(target) === true) return;
-      setMenu(null);
-    };
-    const onScroll = (): void => setMenu(null);
-    document.addEventListener('keydown', onKeyDown);
-    document.addEventListener('pointerdown', onPointerDown);
-    document.addEventListener('scroll', onScroll, true);
-    return (): void => {
-      document.removeEventListener('keydown', onKeyDown);
-      document.removeEventListener('pointerdown', onPointerDown);
-      document.removeEventListener('scroll', onScroll, true);
-    };
-  }, [menu]);
+  const closeMenu = useCallback((): void => {
+    setMenu(null);
+  }, []);
 
-  // Clamp the menu into the viewport once it is measured. The fallback box
-  // keeps the clamp meaningful before layout (or in jsdom).
-  useEffect((): void => {
-    if (menu === null) {
-      setMenuPos(null);
-      return;
-    }
-    const el = menuRef.current;
-    const w = el === null || el.offsetWidth === 0 ? MENU_W : el.offsetWidth;
-    const h = el === null || el.offsetHeight === 0 ? MENU_H : el.offsetHeight;
-    setMenuPos(
-      clampMenuPosition(menu.x, menu.y, w, h, window.innerWidth, window.innerHeight),
+  const groups = useMemo<CommandMenuGroup[]>(() => {
+    if (menu === null) return [];
+    const entries: CommandMenuItem[] = buildPageMenuItems(menu.page, handlers).map(
+      (item): CommandMenuItem => ({
+        id: item.id,
+        label: item.label,
+        // CommandMenu's `onSelect` runs this, then closes the menu.
+        onSelect: (): void => item.run(),
+        // Keep the per-row `[data-menu-item]` hook and the legacy row classes
+        // while the primitive owns the row's behavior and motion.
+        rowDataAttrs: { 'data-menu-item': item.id },
+        rowClassName:
+          item.danger === true
+            ? 'context-menu-item context-menu-item-danger'
+            : 'context-menu-item',
+        ...(item.danger === true ? { variant: 'danger' as const } : {}),
+      }),
     );
-  }, [menu]);
+    return [{ id: 'page', label: `Page ${menu.page}`, entries }];
+  }, [menu, handlers]);
+
+  // Clamp the pointer anchor into the viewport. MENU_W/H is the same fallback
+  // box the bespoke menu used (it was measured only after first paint, so the
+  // fallback always drove the clamp), keeping the math unchanged.
+  const menuPos =
+    menu === null
+      ? null
+      : clampMenuPosition(menu.x, menu.y, MENU_W, MENU_H, window.innerWidth, window.innerHeight);
 
   const menuNode =
-    menu === null || menuPos === null ? null : (
-      <div
-        ref={menuRef}
-        className="context-menu anim-menu-pop"
-        role="menu"
-        aria-label={`Page ${menu.page} actions`}
-        data-context-menu
-        data-page={menu.page}
-        style={{ left: menuPos.left, top: menuPos.top }}
-      >
-        <div className="context-menu-title">Page {menu.page}</div>
-        {buildPageMenuItems(menu.page, handlers).map((item) => (
-          <button
-            key={item.id}
-            type="button"
-            role="menuitem"
-            className={item.danger === true ? 'btn btn-ghost context-menu-item context-menu-item-danger' : 'btn btn-ghost context-menu-item'}
-            data-menu-item={item.id}
-            onClick={(): void => {
-              setMenu(null);
-              item.run();
-            }}
-          >
-            {item.label}
-          </button>
-        ))}
-      </div>
+    menu === null ? null : (
+      <CommandMenu
+        open
+        groups={groups}
+        ariaLabel={`Page ${menu.page} actions`}
+        onClose={closeMenu}
+        position={menuPos ?? undefined}
+        dismissOnScroll
+        popoverDataAttrs={{
+          'data-context-menu': 'true',
+          'data-page': String(menu.page),
+        }}
+      />
     );
 
   return { openMenu, menuNode };

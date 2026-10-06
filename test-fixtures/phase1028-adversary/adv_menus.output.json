@@ -1,0 +1,530 @@
+{
+  "T1": {
+    "rows": [
+      {
+        "action": "undo",
+        "role": "menuitem",
+        "checked": null,
+        "disabled": false,
+        "reason": null,
+        "text": "UndoCtrl+Z"
+      },
+      {
+        "action": "redo",
+        "role": "menuitem",
+        "checked": null,
+        "disabled": false,
+        "reason": null,
+        "text": "RedoCtrl+Shift+Z"
+      },
+      {
+        "action": "preferences",
+        "role": "menuitem",
+        "checked": null,
+        "disabled": false,
+        "reason": null,
+        "text": "Preferences...Ctrl+,"
+      },
+      {
+        "action": "toggleTheme",
+        "role": "menuitem",
+        "checked": null,
+        "disabled": false,
+        "reason": null,
+        "text": "Toggle ThemeCtrl+Shift+T"
+      },
+      {
+        "action": "showToolsPalette",
+        "role": "menuitem",
+        "checked": null,
+        "disabled": false,
+        "reason": null,
+        "text": "Command Palette...Ctrl+Shift+P"
+      },
+      {
+        "action": "multiMode",
+        "role": "menuitem",
+        "checked": null,
+        "disabled": false,
+        "reason": null,
+        "text": "Multi Mode: view/edit two documents side"
+      },
+      {
+        "action": "find",
+        "role": "menuitem",
+        "checked": null,
+        "disabled": true,
+        "reason": "Open a document to search it",
+        "text": "Find in document (Ctrl+F)Open a document"
+      },
+      {
+        "action": "recognizeText",
+        "role": "menuitem",
+        "checked": null,
+        "disabled": false,
+        "reason": null,
+        "text": "Recognize Text...Ctrl+Shift+R"
+      },
+      {
+        "action": "checkForUpdate",
+        "role": "menuitem",
+        "checked": null,
+        "disabled": false,
+        "reason": null,
+        "text": "Check for Update...Ctrl+Shift+U"
+      },
+      {
+        "action": "about",
+        "role": "menuitem",
+        "checked": null,
+        "disabled": false,
+        "reason": null,
+        "text": "About Jovrel"
+      }
+    ],
+    "firstFocus": {
+      "tag": "BUTTON",
+      "action": "undo",
+      "key": "edit-undo",
+      "id": null,
+      "cls": "btn btn-ghost titlebar-menu-row"
+    },
+    "rect": {
+      "x": 2259,
+      "y": 42,
+      "w": 300,
+      "h": 517,
+      "right": 2559,
+      "bottom": 558,
+      "vw": 2560,
+      "vh": 1392,
+      "position": "absolute",
+      "z": "100"
+    },
+    "focusSeq": [
+      "redo",
+      "preferences",
+      "toggleTheme",
+      "showToolsPalette",
+      "multiMode",
+      "recognizeText",
+      "checkForUpdate",
+      "about",
+      "undo",
+      "redo",
+      "preferences",
+      "toggleTheme",
+      "showToolsPalette",
+      "multiMode"
+    ],
+    "focusLandedOnDisabled": false,
+    "endFocus": {
+      "tag": "BUTTON",
+      "action": "about",
+      "key": "help-about",
+      "id": null,
+      "cls": "btn btn-ghost titlebar-menu-row"
+    },
+    "homeFocus": {
+      "tag": "BUTTON",
+      "action": "undo",
+      "key": "edit-undo",
+      "id": null,
+      "cls": "btn btn-ghost titlebar-menu-row"
+    },
+    "escapeDetached": true,
+    "focusAfterEscape": {
+      "tag": "BUTTON",
+      "action": null,
+      "key": null,
+      "id": null,
+      "cls": "btn btn-ghost btn-icon app-menu-trigger"
+    },
+    "openerToggleClosed": true,
+    "outsideClickClosed": true,
+    "tabDetached": true,
+    "focusAfterTab": {
+      "tag": "BUTTON",
+      "action": null,
+      "key": null,
+      "id": null,
+      "cls": "btn btn-ghost btn-icon app-menu-trigger"
+    }
+  },
+  "T2": {
+    "fileRows": [
+      {
+        "action": "open",
+        "role": "menuitem",
+        "checked": null,
+        "disabled": false,
+        "reason": null,
+        "text": "Open...Ctrl+O"
+      },
+      {
+        "action": "merge",
+        "role": "menuitem",
+        "checked": null,
+        "disabled": false,
+        "reason": null,
+        "text": "Merge...Ctrl+Shift+O"
+      },
+      {
+        "action": "save",
+        "role": "menuitem",
+        "checked": null,
+        "disabled": false,
+        "reason": null,
+        "text": "SaveCtrl+S"
+      },
+      {
+        "action": "saveAs",
+        "role": "menuitem",
+        "checked": null,
+        "disabled": false,
+        "reason": null,
+        "text": "Save As...Ctrl+Shift+S"
+      },
+      {
+        "action": "closeTab",
+        "role": "menuitem",
+        "checked": null,
+        "disabled": false,
+        "reason": null,
+        "text": "Close TabCtrl+W"
+      }
+    ],
+    "fileFirstFocus": {
+      "tag": "BUTTON",
+      "action": "open",
+      "key": "file-open",
+      "id": null,
+      "cls": "btn btn-ghost titlebar-menu-row"
+    },
+    "fileRect": {
+      "x": 81,
+      "y": 34,
+      "w": 300,
+      "h": 228,
+      "right": 381,
+      "bottom": 263,
+      "vw": 2560,
+      "vh": 1392,
+      "position": "absolute",
+      "z": "100"
+    },
+    "fileEscapeDetached": true,
+    "fileToggleClosed": true,
+    "appRows": [
+      {
+        "action": "undo",
+        "role": "menuitem",
+        "checked": null,
+        "disabled": false,
+        "reason": null,
+        "text": "UndoCtrl+Z"
+      },
+      {
+        "action": "redo",
+        "role": "menuitem",
+        "checked": null,
+        "disabled": false,
+        "reason": null,
+        "text": "RedoCtrl+Shift+Z"
+      },
+      {
+        "action": "preferences",
+        "role": "menuitem",
+        "checked": null,
+        "disabled": false,
+        "reason": null,
+        "text": "Preferences...Ctrl+,"
+      },
+      {
+        "action": "toggleTheme",
+        "role": "menuitem",
+        "checked": null,
+        "disabled": false,
+        "reason": null,
+        "text": "Toggle ThemeCtrl+Shift+T"
+      },
+      {
+        "action": "showToolsPalette",
+        "role": "menuitem",
+        "checked": null,
+        "disabled": false,
+        "reason": null,
+        "text": "Command Palette...Ctrl+Shift+P"
+      },
+      {
+        "action": "multiMode",
+        "role": "menuitem",
+        "checked": null,
+        "disabled": false,
+        "reason": null,
+        "text": "Multi Mode: view/edit two documents side"
+      },
+      {
+        "action": "find",
+        "role": "menuitem",
+        "checked": null,
+        "disabled": false,
+        "reason": null,
+        "text": "Find in document (Ctrl+F)"
+      },
+      {
+        "action": "recognizeText",
+        "role": "menuitem",
+        "checked": null,
+        "disabled": false,
+        "reason": null,
+        "text": "Recognize Text...Ctrl+Shift+R"
+      },
+      {
+        "action": "checkForUpdate",
+        "role": "menuitem",
+        "checked": null,
+        "disabled": false,
+        "reason": null,
+        "text": "Check for Update...Ctrl+Shift+U"
+      },
+      {
+        "action": "about",
+        "role": "menuitem",
+        "checked": null,
+        "disabled": false,
+        "reason": null,
+        "text": "About Jovrel"
+      }
+    ],
+    "ocrEnabled": true,
+    "ocrDialogOpened": true,
+    "appMenuClosedAfterDispatch": true,
+    "closeTabReturnedWelcome": true
+  },
+  "T3": {
+    "moreRows": [
+      {
+        "action": "replacePages",
+        "role": "menuitem",
+        "checked": null,
+        "disabled": false,
+        "reason": "Swap a contiguous range with another PDF; outline and links survive.",
+        "text": "Replace pagesSwap a contiguous range wit"
+      },
+      {
+        "action": "split",
+        "role": "menuitem",
+        "checked": null,
+        "disabled": false,
+        "reason": "Split a range of pages into a new document.",
+        "text": "Split pagesSplit a range of pages into a"
+      },
+      {
+        "action": "delete",
+        "role": "menuitem",
+        "checked": null,
+        "disabled": false,
+        "reason": "Remove the selected page from the document.",
+        "text": "Delete pagesRemove the selected page fro"
+      },
+      {
+        "action": "customize",
+        "role": "menuitemcheckbox",
+        "checked": "false",
+        "disabled": false,
+        "reason": null,
+        "text": "Customize dock"
+      }
+    ],
+    "moreRect": {
+      "x": 1269,
+      "y": 1072,
+      "w": 300,
+      "h": 190,
+      "right": 1569,
+      "bottom": 1262,
+      "vw": 2560,
+      "vh": 1392,
+      "position": "fixed",
+      "z": "100"
+    },
+    "moreFirstFocus": {
+      "tag": "BUTTON",
+      "action": "replacePages",
+      "key": "dock-more-replacePages",
+      "id": null,
+      "cls": "btn btn-ghost titlebar-menu-row action-dock-menu-item"
+    },
+    "moreInsideViewport": true,
+    "moreEscapeDetached": true,
+    "editModeOn": true,
+    "pickerRows": [
+      {
+        "action": "undo",
+        "role": "menuitem",
+        "checked": null,
+        "disabled": false,
+        "reason": null,
+        "text": "Undo"
+      },
+      {
+        "action": "redo",
+        "role": "menuitem",
+        "checked": null,
+        "disabled": false,
+        "reason": null,
+        "text": "Redo"
+      },
+      {
+        "action": "openReadingView",
+        "role": "menuitem",
+        "checked": null,
+        "disabled": false,
+        "reason": null,
+        "text": "Open reading view"
+      },
+      {
+        "action": "openComicView",
+        "role": "menuitem",
+        "checked": null,
+        "disabled": false,
+        "reason": null,
+        "text": "Open comic view"
+      }
+    ],
+    "pickerRect": {
+      "x": 1103,
+      "y": 1083,
+      "w": 300,
+      "h": 190,
+      "right": 1403,
+      "bottom": 1273,
+      "vw": 2560,
+      "vh": 1392,
+      "position": "fixed",
+      "z": "100"
+    },
+    "pickerFirstFocus": {
+      "tag": "BUTTON",
+      "action": "undo",
+      "key": "dock-picker-undo",
+      "id": null,
+      "cls": "btn btn-ghost titlebar-menu-row action-dock-menu-item"
+    },
+    "pickerInsideViewport": true,
+    "pickerFirstAction": "undo",
+    "pickerAddedVerb": true,
+    "pickerMenuClosedAfterPick": true,
+    "escapeClosedPicker": true,
+    "escapeExitedEditMode": true,
+    "pinMenuOpened": true,
+    "pinRows": [
+      {
+        "action": "pin",
+        "role": "menuitem",
+        "checked": null,
+        "disabled": false,
+        "reason": null,
+        "text": "Pin to dock"
+      },
+      {
+        "action": "unpin",
+        "role": "menuitem",
+        "checked": null,
+        "disabled": false,
+        "reason": null,
+        "text": "Unpin from dock"
+      }
+    ],
+    "pinRect": {
+      "x": 1078,
+      "y": 1270,
+      "w": 300,
+      "h": 114,
+      "right": 1378,
+      "bottom": 1384,
+      "vw": 2560,
+      "vh": 1392,
+      "position": "fixed",
+      "z": "100"
+    },
+    "pinInsideViewport": true,
+    "pinEscapeDetached": true
+  },
+  "T4": {
+    "rows": [
+      {
+        "action": "rotate-cw",
+        "role": "menuitem",
+        "checked": null,
+        "disabled": false,
+        "reason": null,
+        "text": "Rotate CW"
+      },
+      {
+        "action": "rotate-ccw",
+        "role": "menuitem",
+        "checked": null,
+        "disabled": false,
+        "reason": null,
+        "text": "Rotate CCW"
+      },
+      {
+        "action": "extract",
+        "role": "menuitem",
+        "checked": null,
+        "disabled": false,
+        "reason": null,
+        "text": "Extract…"
+      },
+      {
+        "action": "insert-blank",
+        "role": "menuitem",
+        "checked": null,
+        "disabled": false,
+        "reason": null,
+        "text": "Insert blank after"
+      },
+      {
+        "action": "replace",
+        "role": "menuitem",
+        "checked": null,
+        "disabled": false,
+        "reason": null,
+        "text": "Replace…"
+      },
+      {
+        "action": "delete",
+        "role": "menuitem",
+        "checked": null,
+        "disabled": false,
+        "reason": null,
+        "text": "Delete…"
+      }
+    ],
+    "rect": {
+      "x": 186,
+      "y": 894,
+      "w": 300,
+      "h": 266,
+      "right": 486,
+      "bottom": 1160,
+      "vw": 2560,
+      "vh": 1392,
+      "position": "fixed",
+      "z": "100"
+    },
+    "firstFocus": {
+      "tag": "BUTTON",
+      "action": "rotate-cw",
+      "key": "page-rotate-cw",
+      "id": null,
+      "cls": "btn btn-ghost titlebar-menu-row context-menu-item"
+    },
+    "insideViewport": true,
+    "rotateCcwChanged": false,
+    "menuClosedAfterVerb": true,
+    "scrollDismissed": true
+  }
+}

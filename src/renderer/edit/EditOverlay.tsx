@@ -51,7 +51,7 @@ import {
   type ImageResizeHandle,
 } from "./geometry";
 import { colorToHex, fontFamilyFor } from "./editColor";
-import { TfBar } from "../components/motion/TfMotion";
+import { ContextToolbox } from "../components/ContextToolbox";
 import {
   ContentActionBar,
 } from "../components/selectableContent";
@@ -2292,24 +2292,27 @@ interface TextBoxToolbarProps {
 
 function TextBoxToolbar(props: TextBoxToolbarProps): ReactElement {
   const { box, cssScale, pageWidthPt, pageHeightPt, onConfirm, onDelete, onCancel } = props;
-  // Position the toolbar just under the box, anchored to its left
-  // edge, then clamp into the page view on both axes (Phase 48 item 3).
-  const bar = placeControlNearAnchor({
-    anchor: {
-      left: box.rect.x * cssScale,
-      top: box.rect.y * cssScale,
-      bottom: (box.rect.y + box.rect.height) * cssScale,
-    },
-    size: { width: 200, height: CONTROL_BAR_HEIGHT },
-    viewport: { width: pageWidthPt * cssScale, height: pageHeightPt * cssScale },
-  });
+  // TFL-987 — adopt the shared ContextToolbox primitive. The bar anchors in
+  // the PAGE VIEW's coordinate space (so it clamps into the page edge and
+  // flips above/below at exactly the same threshold as the legacy bar), so
+  // we pass the page-view box plus the historical fixed size. Cancel is an
+  // existing revert action, so ContextToolbox also wires Escape through
+  // onClose (no new transaction cancel is invented).
   return (
-    <TfBar
+    <ContextToolbox
+      open
+      anchor={{
+        left: box.rect.x * cssScale,
+        top: box.rect.y * cssScale,
+        bottom: (box.rect.y + box.rect.height) * cssScale,
+      }}
+      ariaLabel="Text box actions"
+      onClose={onCancel}
       className="content-action-bar edit-box-toolbar"
-      data-edit-box-id={box.id}
-      data-edit-box-toolbar
-      style={{ left: bar.left, top: bar.top }}
-      onPointerDown={(e): void => e.stopPropagation()}
+      coordinateSpace="page-view"
+      size={{ width: 200, height: CONTROL_BAR_HEIGHT }}
+      viewport={{ width: pageWidthPt * cssScale, height: pageHeightPt * cssScale }}
+      dataAttributes={{ "data-edit-box-id": box.id, "data-edit-box-toolbar": "true" }}
     >
       <button
         type="button"
@@ -2341,30 +2344,30 @@ function TextBoxToolbar(props: TextBoxToolbarProps): ReactElement {
       >
         Cancel
       </button>
-    </TfBar>
+    </ContextToolbox>
   );
 }
 
 function PlacementToolbar(props: PlacementToolbarProps): ReactElement {
   const { placement, cropping, cssScale, pageWidthPt, pageHeightPt, onReplace, onCrop, onDelete } = props;
-  // Position the toolbar just under the placement, anchored to the
-  // placement's left edge, then clamp into the page view (Phase 48
-  // item 3 — both axes).
-  const bar = placeControlNearAnchor({
-    anchor: {
-      left: placement.rect.x * cssScale,
-      top: placement.rect.y * cssScale,
-      bottom: (placement.rect.y + placement.rect.height) * cssScale,
-    },
-    size: { width: 220, height: CONTROL_BAR_HEIGHT },
-    viewport: { width: pageWidthPt * cssScale, height: pageHeightPt * cssScale },
-  });
+  // TFL-987 — adopt the shared ContextToolbox primitive in the PAGE VIEW's
+  // coordinate space, preserving the legacy clamp and above/below flip
+  // exactly. There is no cancel/revert action on this bar, so no onClose is
+  // wired and ContextToolbox owns Escape only when the host supplies one.
   return (
-    <TfBar
+    <ContextToolbox
+      open
+      anchor={{
+        left: placement.rect.x * cssScale,
+        top: placement.rect.y * cssScale,
+        bottom: (placement.rect.y + placement.rect.height) * cssScale,
+      }}
+      ariaLabel="Image placement actions"
       className="edit-image-toolbar"
-      data-placement-id={placement.id}
-      style={{ left: bar.left, top: bar.top }}
-      onPointerDown={(e): void => e.stopPropagation()}
+      coordinateSpace="page-view"
+      size={{ width: 220, height: CONTROL_BAR_HEIGHT }}
+      viewport={{ width: pageWidthPt * cssScale, height: pageHeightPt * cssScale }}
+      dataAttributes={{ "data-placement-id": placement.id }}
     >
       <button
         type="button"
@@ -2395,7 +2398,7 @@ function PlacementToolbar(props: PlacementToolbarProps): ReactElement {
       >
         Remove
       </button>
-    </TfBar>
+    </ContextToolbox>
   );
 }
 

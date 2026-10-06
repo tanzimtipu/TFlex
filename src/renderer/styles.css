@@ -16889,12 +16889,6 @@ rect.ann-highlight.ann-preview {
   box-shadow: var(--shadow-menu);
 }
 
-.context-menu-title {
-  padding: var(--space-micro) var(--space-control) 2px;
-  font-size: var(--fs-xs);
-  color: var(--fg-muted);
-}
-
 /* Phase 91 D2 — layout alias for the canonical `btn btn-ghost` menu row
  * (mirrors `.btn.action-dock-menu-item`). Colour, hover, focus and disabled
  * come from the family; the danger red-ink alias is kept below. */
@@ -17294,15 +17288,6 @@ rect.ann-highlight.ann-preview {
   outline-offset: -2px;
 }
 
-/* The picker popover anchors to the plus (bottom-up, like the `...` menu). */
-.action-dock-menu-picker {
-  position: absolute;
-  bottom: calc(100% + 6px);
-  right: 0;
-  max-height: 320px;
-  overflow-y: auto;
-}
-
 .action-dock-group {
   display: flex;
   align-items: center;
@@ -17559,18 +17544,6 @@ cursor: pointer;
   box-shadow: var(--shadow-popover);
   -webkit-backdrop-filter: var(--glass-blur);
   backdrop-filter: var(--glass-blur);
-}
-
-/* The `...` chip's own list anchors to the chip, not the pointer. Phase 104
- * (chunk 2) — it opens UPWARD (`bottom: 100% + 6px`) and ActionDock clamps its
- * inline `left` into the viewport, overriding the centred `left`/`transform`
- * fallback below. The panel never reflows the document and the dock never
- * moves when it opens. */
-.action-dock-menu-overflow {
-  position: absolute;
-  bottom: calc(100% + 6px);
-  left: 50%;
-  transform: translateX(-50%);
 }
 
 .action-dock-menu-item:not(.btn) {
@@ -21140,18 +21113,21 @@ cursor: pointer;
   border-top: 1px solid var(--border);
 }
 
-/* Coarse pointers (touch) get the 44px target floor from the design spec. */
-@media (pointer: coarse) {
-/* TFL-987 — page-view coordinate space. A toolbox whose anchor and clamp
- * viewport are given in the page view's coordinates (the legacy text-box /
- * image placement bars) must position ABSOLUTE inside the page's containing
- * block, not fixed to the window. Declared after `.context-toolbox` so it
- * wins the position tie at equal specificity. */
+/* TFL-987 / DEF-607 — page-view coordinate space. A toolbox whose anchor and
+ * clamp viewport are given in the page view's coordinates (the legacy text-box
+ * / image placement bars) must position ABSOLUTE inside the page's containing
+ * block, not fixed to the window. Declared at TOP LEVEL after `.context-toolbox`
+ * so it wins the position tie at equal specificity on every pointer type. The
+ * earlier nesting inside the coarse-pointer media block left it inert on fine
+ * pointers, so `.context-toolbox { position: fixed }` won and the bars detached
+ * from the selection (DEF-607). */
 .context-toolbox--page-view {
   position: absolute;
 }
 
-.context-toolbox-actions {
+/* Coarse pointers (touch) get the 44px target floor from the design spec. */
+@media (pointer: coarse) {
+  .context-toolbox-actions {
     min-height: var(--control-height-large);
   }
 

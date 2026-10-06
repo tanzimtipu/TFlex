@@ -450,8 +450,14 @@ describe("TitleBar — Escape closes the popover", () => {
       });
     }
     expect(container.querySelector("[data-menu-popover]")).not.toBeNull();
+    // TFL-975 — the File menu is the shared CommandMenu, whose Escape is owned
+    // by the focused row list (React synthetic keydown), not a window listener.
+    // Dispatch on the list root so the event bubbles through the React root.
+    const list = container.querySelector<HTMLElement>(".command-menu-list");
     act((): void => {
-      window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
+      list?.dispatchEvent(
+        new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }),
+      );
     });
     // Phase C — the animated popover lingers one exit frame.
     await settleMotion();

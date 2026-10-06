@@ -195,6 +195,37 @@ describe("Phase 58 — ActionDock edit mode", () => {
       unmount();
     }
   });
+
+  // TFL-1004 (TFL-855 chunk C9) — the picker is now the shared `CommandMenu`.
+  it("renders every curated entry through the shared menu and closes on pick", () => {
+    const onPinTool = vi.fn();
+    const { host, unmount } = renderDock({ onPinTool });
+    try {
+      armEditMode(host);
+      clickOn(host.querySelector("[data-dock-plus]") as Element);
+      const picker = host.querySelector("[data-dock-picker]");
+      expect(picker).not.toBeNull();
+      // The migrated surface is the shared primitive and keeps its root hook.
+      expect(picker?.classList.contains("command-menu")).toBe(true);
+      expect(picker?.getAttribute("role")).toBe("menu");
+      const items = [...host.querySelectorAll("[data-dock-picker-item]")];
+      expect(items.length).toBeGreaterThan(0);
+      // Every picker row (and only picker rows) carries the legacy row hooks.
+      for (const item of items) {
+        expect(item.classList.contains("action-dock-menu-item")).toBe(true);
+        expect(item.getAttribute("role")).toBe("menuitem");
+      }
+      const id = items[0]?.getAttribute("data-dock-picker-item") ?? "";
+      clickOn(items[0] as Element);
+      expect(onPinTool).toHaveBeenCalledWith(id);
+      // Activation closes the picker (the trigger reports collapsed).
+      expect(
+        host.querySelector("[data-dock-plus]")?.getAttribute("aria-expanded"),
+      ).toBe("false");
+    } finally {
+      unmount();
+    }
+  });
 });
 
 describe("Phase 58 — the picker set and the raised cap", () => {

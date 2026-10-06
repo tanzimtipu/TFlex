@@ -30,9 +30,16 @@
 // The dialog owns the picker (so the host doesn't need a new IPC
 // channel for "open image files").
 
-import { useEffect, useRef, useState, type ReactElement } from "react";
+import {
+  useEffect,
+  useRef,
+  useState,
+  type KeyboardEvent as ReactKeyboardEvent,
+  type ReactElement,
+} from "react";
+import { ChevronDown, ChevronUp } from "lucide-react";
 import { Icon } from "../icons/Icon";
-import { DialogShell } from "./DialogShell";
+import { PreviewTaskDialog } from "./PreviewTaskDialog";
 import {
   DEFAULT_CREATE_IMAGE_QUALITY,
   clampCreateImageQuality,
@@ -252,6 +259,39 @@ export function CreateFromImagesDialog(
     setFiles((prev) => prev.filter((_, i) => i !== idx));
   };
 
+  /** Reorder a single image by one slot. Only the array order changes:
+   *  every File keeps its bytes, name and de-dupe key, so the confirm
+   *  payload is the visible list order with the exact same files. */
+  const moveAt = (idx: number, dir: -1 | 1): void => {
+    setFiles((prev) => {
+      const to = idx + dir;
+      if (to < 0 || to >= prev.length) return prev;
+      const moved = prev[idx];
+      if (moved === undefined) return prev;
+      const out = prev.slice();
+      out.splice(idx, 1);
+      out.splice(to, 0, moved);
+      return out;
+    });
+  };
+
+  /** Alt+ArrowUp / Alt+ArrowDown from a focused row handle moves that
+   *  row without touching its bytes. Ignored while an IME composition
+   *  is in flight so a composing keystroke never reorders the list. */
+  const onRowKeyDown =
+    (idx: number) =>
+    (e: ReactKeyboardEvent<HTMLLIElement>): void => {
+      if (!e.altKey || e.ctrlKey || e.metaKey) return;
+      if (e.nativeEvent.isComposing) return;
+      if (e.key === "ArrowUp") {
+        e.preventDefault();
+        moveAt(idx, -1);
+      } else if (e.key === "ArrowDown") {
+        e.preventDefault();
+        moveAt(idx, 1);
+      }
+    };
+
   /** Insert raw clipboard image bytes into the SAME list the file picker
    *  feeds, as a real File, so the preview, de-dupe-free append, remove and
    *  confirm flows are identical for both sources. Sniffs the magic bytes
@@ -328,7 +368,7 @@ export function CreateFromImagesDialog(
   };
 
   return (
-    <DialogShell
+    <PreviewTaskDialog
       open={open}
       title="Create PDF from images"
       titleId="create-images-dialog-title"
@@ -390,7 +430,7 @@ export function CreateFromImagesDialog(
                 <span className="hint">No images selected</span>
               ) : (
                 <span>
-                  {files.length} image{files.length === 1 ? "" : "s"} selected
+                  {files.length} page{files.length === 1 ? "" : "s"}
                 </span>
               )}
             </div>
@@ -407,66 +447,98 @@ export function CreateFromImagesDialog(
                   key={`${f.name}-${idx}`}
                   className="create-image-row"
                   data-create-image-row={idx}
+                  tabIndex={0}
+                  aria-label={`Image ${idx + 1}: ${f.name}`}
+                  onKeyDown={onRowKeyDown(idx)}
                 >
                   <span className="create-image-index">{idx + 1}</span>
                   <ImageThumb file={f} />
                   <span className="create-image-name" title={f.name}>
                     {f.name}
                   </span>
-                  <button
-                    type="button"
-                    className="btn btn-ghost btn-icon create-image-remove"
-                    onClick={(): void => removeAt(idx)}
-                    aria-label={`Remove ${f.name}`}
-                    title="Remove"
-                    data-create-remove={idx}
-                  >
-                    <Icon name="dialogClose" size="sm" />
-                  </button>
+                  <div className="create-image-controls">
+                    <button
+                      type="button"
+                      className="btn btn-ghost btn-icon create-image-move"
+                      onClick={(): void => moveAt(idx, -1)}
+                      disabled={idx === 0}
+                      aria-label={`Move ${f.name} up`}
+                      title="Move up"
+                      data-create-move-up={idx}
+                    >
+                      <Icon icon={ChevronUp} size="sm" />
+                    </button>
+                    <button
+                      type="button"
+                      className="btn btn-ghost btn-icon create-image-move"
+                      onClick={(): void => moveAt(idx, 1)}
+                      disabled={idx === files.length - 1}
+                      aria-label={`Move ${f.name} down`}
+                      title="Move down"
+                      data-create-move-down={idx}
+                    >
+                      <Icon icon={ChevronDown} size="sm" />
+                    </button>
+                    <button
+                      type="button"
+                      className="btn btn-ghost btn-icon create-image-remove"
+                      onClick={(): void => removeAt(idx)}
+                      aria-label={`Remove ${f.name}`}
+                      title="Remove"
+                      data-create-remove={idx}
+                    >
+                      <Icon name="dialogClose" size="sm" />
+                    </button>
+                  </div>
                 </li>
               ))}
             </ul>
           )}
 
-          <label className="modal-field">
-            <span>JPEG quality ({qualityPercent}%)</span>
-            <input
-              type="number"
-              min={10}
-              max={100}
-              step={1}
-              className="modal-input"
-              value={qualityPercent}
-              onChange={(e): void => {
-                const next = Number.parseInt(e.target.value, 10);
-                if (Number.isFinite(next)) {
-                  emitQualityChange(next);
-                }
-              }}
-              onBlur={(): void => {
-                // Round-trip through emit so an out-of-range entry
-                // snaps back to the allowed band on blur (e.g. user
-                // typed 5 → clamps to 10; user typed 9999 → clamps to
-                // 100). emitQualityChange also writes the fraction
-                // through the host's onQualityChange callback so the
-                // backend sees the clamped value.
-                emitQualityChange(qualityPercent);
-              }}
-              data-create-quality
-              aria-label="JPEG quality percentage (10..100)"
-            />
-            <span className="modal-hint">
-              Applies when an image is re-encoded (for example a clipboard
-              image). Images added from disk keep their original quality and
-              DPI. 85 is a safe default.
-            </span>
-          </label>
+          <fieldset className="create-image-encoding" data-create-encoding>
+            <legend className="create-image-encoding-legend">
+              Encoding options
+            </legend>
+            <label className="modal-field">
+              <span>JPEG quality ({qualityPercent}%)</span>
+              <input
+                type="number"
+                min={10}
+                max={100}
+                step={1}
+                className="modal-input"
+                value={qualityPercent}
+                onChange={(e): void => {
+                  const next = Number.parseInt(e.target.value, 10);
+                  if (Number.isFinite(next)) {
+                    emitQualityChange(next);
+                  }
+                }}
+                onBlur={(): void => {
+                  // Round-trip through emit so an out-of-range entry
+                  // snaps back to the allowed band on blur (e.g. user
+                  // typed 5 → clamps to 10; user typed 9999 → clamps to
+                  // 100). emitQualityChange also writes the fraction
+                  // through the host's onQualityChange callback so the
+                  // backend sees the clamped value.
+                  emitQualityChange(qualityPercent);
+                }}
+                data-create-quality
+                aria-label="JPEG quality percentage (10..100)"
+              />
+              <span className="modal-hint">
+                Applies when an image is re-encoded (for example a clipboard
+                image). Images added from disk keep their original quality and
+                DPI. 85 is a safe default.
+              </span>
+            </label>
+          </fieldset>
 
           {error !== null && (
             <div className="modal-status optimize-error" role="alert">
               <span>{error}</span>
             </div>
           )}
-    </DialogShell>
+    </PreviewTaskDialog>
   );
 }

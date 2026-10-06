@@ -477,3 +477,40 @@ describe("Phase 28 - comment box placement + time formatting", () => {
     expect(formatCommentTime(Number.NaN, now)).toBe("");
   });
 });
+
+// TFL-1018 (chunk C12) — documented native exception. The card keeps its own
+// chassis: role="dialog" + data-ann-comment-box on the positioned root, its
+// own click stopPropagation (the layer's pointerdown AND click must not reach
+// it) and the bespoke commentBoxPlacement (DEF-326/DEF-366) that emits
+// bottom-anchored styles (`bottom`) when it flips above the action bar.
+// ContextToolbox only emits left/top, hardcodes role="toolbar" and has no
+// bottom-anchor capability, so the bespoke avoid-overlap placement cannot be
+// preserved through the primitive. This pins the surface as unchanged (never
+// rendered through ContextToolbox).
+describe("TFL-1018 (C12) - the comment card stays a native exception", () => {
+  it("keeps role=dialog and is never wrapped in a ContextToolbox", () => {
+    const { host, cleanup } = mountComments({
+      annotations: [RECT_ANN],
+      initialComments: [THREAD_ONE],
+    });
+    try {
+      selectRect(host);
+      const card = box(host);
+      expect(card).not.toBeNull();
+      expect(card?.getAttribute("role")).toBe("dialog");
+      expect(card?.getAttribute("aria-label")).toBe("Annotation comments");
+      expect(card?.closest("[data-context-toolbox]")).toBeNull();
+      expect(host.querySelector("[data-context-toolbox]")).toBeNull();
+    } finally {
+      cleanup();
+    }
+  });
+
+  it("keeps the bottom-anchored flip when the bar is above the annotation", () => {
+    // The flip that ContextToolbox cannot express: the card is anchored with
+    // `bottom`, not `top` (DEF-366).
+    const style = commentBoxPlacement({ x: 100, y: 640, width: 150, height: 80 }, 1, 612, 792);
+    expect(style.top).toBeUndefined();
+    expect(typeof style.bottom).toBe("number");
+  });
+});

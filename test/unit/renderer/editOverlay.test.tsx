@@ -470,3 +470,34 @@ describe("DEF-223 — image placement move/resize commits the pre-drag rect", ()
     }
   });
 });
+
+// TFL-987 — the image placement bar adopts the shared ContextToolbox
+// primitive. Placement parity (page-relative clamp) and every legacy
+// data-*/button hook must survive the swap.
+describe("TFL-987 — image placement bar adopts ContextToolbox", () => {
+  it("renders through the shared primitive with the legacy hooks + placement intact", () => {
+    const onCommitImageEdit = vi.fn();
+    const { host, unmount } = mountImageDragHarness(
+      onCommitImageEdit,
+      makeImageState({ selectedImage: { id: IMAGE_ID } }),
+    );
+    try {
+      const bar = host.querySelector<HTMLElement>(".edit-image-toolbar");
+      expect(bar).not.toBeNull();
+      if (bar === null) return;
+      expect(bar.getAttribute("data-placement-id")).toBe("img-1");
+      expect(bar.getAttribute("data-context-toolbox")).toBe("true");
+      expect(bar.getAttribute("role")).toBe("toolbar");
+      expect(bar.getAttribute("aria-label")).toBe("Image placement actions");
+      const verbs = [...bar.querySelectorAll("button")].map((b) => b.textContent?.trim());
+      expect(verbs).toEqual(["Replace", "Crop", "Remove"]);
+      expect(host.querySelector("[data-crop-toggle]")).not.toBeNull();
+      // Legacy placement: rect at (100,100,200x100); the bar floats 4pt below
+      // and clamps left to the placement's left edge.
+      expect(Number.parseFloat(bar.style.top)).toBeCloseTo(204);
+      expect(Number.parseFloat(bar.style.left)).toBeCloseTo(100);
+    } finally {
+      unmount();
+    }
+  });
+});

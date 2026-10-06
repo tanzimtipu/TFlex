@@ -1,0 +1,131 @@
+{
+  "T5": {
+    "toolbarShown": true,
+    "snap0": {
+      "box": {
+        "x": 967,
+        "y": 248,
+        "w": 180,
+        "h": 44
+      },
+      "bar": {
+        "x": 967,
+        "y": 296,
+        "w": 234,
+        "h": 54
+      },
+      "rel": {
+        "dx": 0,
+        "dy": 48
+      },
+      "position": "absolute",
+      "inlineTop": "208px",
+      "placement": "below",
+      "insideViewport": true
+    },
+    "toolboxClass": "context-toolbox context-toolbox--below context-toolbox--page-view content-action-bar edit-box-toolbar",
+    "hasPageViewClass": true,
+    "snapScroll": {
+      "box": {
+        "x": 967,
+        "y": -12,
+        "w": 180,
+        "h": 44
+      },
+      "bar": {
+        "x": 967,
+        "y": 36,
+        "w": 234,
+        "h": 54
+      },
+      "rel": {
+        "dx": 0,
+        "dy": 48
+      },
+      "position": "absolute",
+      "inlineTop": "208px",
+      "placement": "below",
+      "insideViewport": true
+    },
+    "scrollBoxDelta": -260,
+    "scrollBarDelta": -260,
+    "scrollDrift": 0,
+    "snapZoom": {
+      "box": {
+        "x": 917,
+        "y": 13,
+        "w": 208,
+        "h": 51
+      },
+      "bar": {
+        "x": 917,
+        "y": 68,
+        "w": 234,
+        "h": 54
+      },
+      "rel": {
+        "dx": 0,
+        "dy": 55
+      },
+      "position": "absolute",
+      "inlineTop": "239.62px",
+      "placement": "below",
+      "insideViewport": true
+    },
+    "zoomRelDriftX": 0,
+    "zoomRelDriftY": 7
+  },
+  "T6": {
+    "fileChosen": true,
+    "placementExists": true,
+    "toolbarShown": true,
+    "snap0": {
+      "box": {
+        "x": 987,
+        "y": 348,
+        "w": 150,
+        "h": 90
+      },
+      "bar": {
+        "x": 987,
+        "y": 442,
+        "w": 231,
+        "h": 54
+      },
+      "rel": {
+        "dx": 0,
+        "dy": 94
+      },
+      "position": "absolute",
+      "inlineTop": "354px",
+      "placement": "below",
+      "insideViewport": true
+    },
+    "hasPageViewClass": true,
+    "snapScroll": {
+      "box": {
+        "x": 987,
+        "y": 108,
+        "w": 150,
+        "h": 90
+      },
+      "bar": {
+        "x": 987,
+        "y": 202,
+        "w": 231,
+        "h": 54
+      },
+      "rel": {
+        "dx": 0,
+        "dy": 94
+      },
+      "position": "absolute",
+      "inlineTop": "354px",
+      "placement": "below",
+      "insideViewport": true
+    },
+    "scrollBoxDelta": -240,
+    "scrollBarDelta": -240,
+    "scrollDrift": 0
+  }
+}

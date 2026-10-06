@@ -20,6 +20,14 @@ import {
   qualityPercentToFraction,
 } from "../../../src/renderer/state/preferences";
 
+// TFL-951 — drive the OS file picker with controlled File objects so the
+// reorder / page-count assertions can build a real multi-image list in jsdom.
+const { pickMock } = vi.hoisted(() => ({ pickMock: vi.fn() }));
+
+vi.mock("../../../src/renderer/utils/pickImageFiles", () => ({
+  pickImageFilesInRenderer: pickMock,
+}));
+
 /**
  * Phase 9 — Create-from-images dialog rendering tests.
  *
@@ -505,5 +513,155 @@ describe("CreateFromImagesDialog — clipboard routing (Phase 45 item 2)", () =>
     expect(clipboardReasonMessage("no-image")).toBe(CLIPBOARD_NO_IMAGE_MESSAGE);
     expect(clipboardReasonMessage("too-large")).toBe(CLIPBOARD_TOO_LARGE_MESSAGE);
     expect(clipboardReasonMessage("unreadable")).toBe(CLIPBOARD_UNREADABLE_MESSAGE);
+  });
+});
+
+// TFL-951 — ordered reordering, page-count wording and the grouped encoding
+// options. The picker is mocked so a real multi-image list can be driven.
+describe("CreateFromImagesDialog — reorder + encoding (TFL-951)", () => {
+  function imgFile(name: string): File {
+    return new File([new Uint8Array([1, 2, 3])], name, { type: "image/png" });
+  }
+
+  function rowNames(container: HTMLElement): string[] {
+    return [...container.querySelectorAll(".create-image-name")].map(
+      (n) => n.textContent ?? "",
+    );
+  }
+
+  async function clickPick(container: HTMLElement): Promise<void> {
+    const button = container.querySelector<HTMLButtonElement>("[data-create-pick]");
+    await act(async (): Promise<void> => {
+      button?.click();
+      await Promise.resolve();
+    });
+  }
+
+  beforeEach((): void => {
+    pickMock.mockReset();
+  });
+
+  it("moves a row down and keeps that order in the confirm payload", async () => {
+    pickMock.mockResolvedValue({
+      files: [imgFile("a.png"), imgFile("b.png")],
+      paths: [],
+    });
+    const onConfirm = vi.fn();
+    const { container, cleanup } = renderDialog({ onConfirm });
+    await clickPick(container);
+    expect(rowNames(container)).toEqual(["a.png", "b.png"]);
+
+    const down = container.querySelector<HTMLButtonElement>(
+      "[data-create-move-down='0']",
+    );
+    await act(async (): Promise<void> => {
+      down?.click();
+      await Promise.resolve();
+    });
+    expect(rowNames(container)).toEqual(["b.png", "a.png"]);
+
+    const confirm = container.querySelector<HTMLButtonElement>("[data-create-confirm]");
+    await act(async (): Promise<void> => {
+      confirm?.click();
+    });
+    expect(onConfirm).toHaveBeenCalledTimes(1);
+    expect(onConfirm.mock.calls[0][0].files.map((f: File) => f.name)).toEqual([
+      "b.png",
+      "a.png",
+    ]);
+    cleanup();
+  });
+
+  it("moves a row up with the explicit control", async () => {
+    pickMock.mockResolvedValue({
+      files: [imgFile("a.png"), imgFile("b.png")],
+      paths: [],
+    });
+    const { container, cleanup } = renderDialog();
+    await clickPick(container);
+    const up = container.querySelector<HTMLButtonElement>("[data-create-move-up='1']");
+    await act(async (): Promise<void> => {
+      up?.click();
+      await Promise.resolve();
+    });
+    expect(rowNames(container)).toEqual(["b.png", "a.png"]);
+    cleanup();
+  });
+
+  it("disables move-up on the first row and move-down on the last", async () => {
+    pickMock.mockResolvedValue({
+      files: [imgFile("a.png"), imgFile("b.png")],
+      paths: [],
+    });
+    const { container, cleanup } = renderDialog();
+    await clickPick(container);
+    expect(
+      container.querySelector<HTMLButtonElement>("[data-create-move-up='0']")?.disabled,
+    ).toBe(true);
+    expect(
+      container.querySelector<HTMLButtonElement>("[data-create-move-down='0']")?.disabled,
+    ).toBe(false);
+    expect(
+      container.querySelector<HTMLButtonElement>("[data-create-move-up='1']")?.disabled,
+    ).toBe(false);
+    expect(
+      container.querySelector<HTMLButtonElement>("[data-create-move-down='1']")?.disabled,
+    ).toBe(true);
+    cleanup();
+  });
+
+  it("reorders with Alt+ArrowDown from a focused row", async () => {
+    pickMock.mockResolvedValue({
+      files: [imgFile("a.png"), imgFile("b.png")],
+      paths: [],
+    });
+    const { container, cleanup } = renderDialog();
+    await clickPick(container);
+    const row = container.querySelector<HTMLLIElement>("[data-create-image-row='0']");
+    await act(async (): Promise<void> => {
+      row?.dispatchEvent(
+        new KeyboardEvent("keydown", {
+          key: "ArrowDown",
+          altKey: true,
+          bubbles: true,
+        }),
+      );
+    });
+    expect(rowNames(container)).toEqual(["b.png", "a.png"]);
+    cleanup();
+  });
+
+  it("shows the real page count wording", async () => {
+    pickMock.mockResolvedValue({
+      files: [imgFile("a.png"), imgFile("b.png")],
+      paths: [],
+    });
+    const { container, cleanup } = renderDialog();
+    await clickPick(container);
+    expect(container.querySelector(".modal-picked")?.textContent).toBe("2 pages");
+    cleanup();
+  });
+
+  it("uses singular page for a single image", async () => {
+    pickMock.mockResolvedValue({ files: [imgFile("a.png")], paths: [] });
+    const { container, cleanup } = renderDialog();
+    await clickPick(container);
+    expect(container.querySelector(".modal-picked")?.textContent).toBe("1 page");
+    cleanup();
+  });
+
+  it("groups the quality control under an Encoding options heading", () => {
+    const { container, cleanup } = renderDialog();
+    expect(container.querySelector("[data-create-encoding]")).not.toBeNull();
+    expect(container.textContent).toContain("Encoding options");
+    expect(container.querySelector("[data-create-quality]")).not.toBeNull();
+    cleanup();
+  });
+
+  it("does not reserve a preview list in the empty state", () => {
+    const { container, cleanup } = renderDialog();
+    expect(container.querySelector("[data-create-list]")).toBeNull();
+    expect(container.textContent).toContain("No images selected");
+    cleanup();
   });
 });

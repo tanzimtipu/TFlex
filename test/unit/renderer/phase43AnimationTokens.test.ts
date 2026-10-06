@@ -417,17 +417,22 @@ describe("Phase 43 — the fixed elements carry their named token", () => {
       r.at.some((a) => a.includes("@keyframes tf-anim-menu-pop")),
     );
     expect(keyframes.some((r) => r.body.includes("var(--motion-translate-small)"))).toBe(true);
-    // The dock pin menu + the thumbnail right-click menu consume it.
+    // No dock surface consumes the one-off utility any longer. (TFL-855 chunk
+    // C8 migrated the thumbnail right-click menu onto the shared `CommandMenu`,
+    // TFL-1004 chunk C9 the dock's Add-a-tool picker and More overflow, and
+    // TFL-1012 chunk C10 the last consumer, the portaled Pin/Unpin menu: each
+    // now carries the shared `TfMenu` motion instead.) The utility definition
+    // stays in animations.css for now; a future cleanup can retire it once no
+    // source references it.
     const actionDock = readFileSync(
       join(REPO_ROOT, "src", "renderer", "components", "ActionDock.tsx"),
       "utf8",
     );
-    const thumbMenu = readFileSync(
-      join(REPO_ROOT, "src", "renderer", "components", "pageThumbMenu.tsx"),
-      "utf8",
-    );
-    expect(actionDock).toContain("action-dock-menu anim-menu-pop");
-    expect(actionDock).toContain("action-dock-menu action-dock-menu-overflow anim-menu-pop");
-    expect(thumbMenu).toContain("context-menu anim-menu-pop");
+    // The retired bespoke class is gone from every dock menu surface (the
+    // source comment may still NAME the utility it replaced).
+    expect(actionDock).not.toContain("action-dock-menu anim-menu-pop");
+    // Every dock menu now renders the shared surface (legacy hooks preserved).
+    expect(actionDock).toContain("data-dock-overflow-menu");
+    expect(actionDock).toContain("data-dock-menu");
   });
 });

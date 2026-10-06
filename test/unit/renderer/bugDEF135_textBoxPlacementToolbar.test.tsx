@@ -197,4 +197,43 @@ describe("DEF-135/136 — committed text box placement toolbar", () => {
       unmount();
     }
   });
+
+  // TFL-987 — the bar now renders through the shared ContextToolbox
+  // primitive. Every legacy hook, class and action must survive the swap.
+  it("renders through the shared ContextToolbox with role=toolbar and intact hooks", () => {
+    const { host, unmount } = mountBoxTool(selectedBoxTool());
+    try {
+      const bar = host.querySelector<HTMLElement>("[data-edit-box-toolbar]");
+      expect(bar).not.toBeNull();
+      if (bar === null) return;
+      expect(bar.getAttribute("data-context-toolbox")).toBe("true");
+      expect(bar.getAttribute("role")).toBe("toolbar");
+      expect(bar.getAttribute("aria-label")).toBe("Text box actions");
+      expect(bar.dataset.editBoxId).toBe("tb-1");
+      expect(bar.classList.contains("edit-box-toolbar")).toBe(true);
+      expect(host.querySelector("[data-edit-box-action='confirm']")).not.toBeNull();
+      expect(host.querySelector("[data-edit-box-action='delete']")).not.toBeNull();
+      expect(host.querySelector("[data-edit-box-action='cancel']")).not.toBeNull();
+      expect(host.querySelector(".toolbox-action-btn--confirm")).not.toBeNull();
+      expect(host.querySelector(".toolbox-action-btn--delete")).not.toBeNull();
+      expect(host.querySelector(".toolbox-action-btn--cancel")).not.toBeNull();
+    } finally {
+      unmount();
+    }
+  });
+
+  it("Escape dismisses the selection through the existing Cancel action", () => {
+    const { host, state, unmount } = mountBoxTool(selectedBoxTool());
+    try {
+      expect(host.querySelector("[data-edit-box-toolbar]")).not.toBeNull();
+      act((): void => {
+        window.dispatchEvent(
+          new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }),
+        );
+      });
+      expect(state().selectedTextBox).toBeNull();
+    } finally {
+      unmount();
+    }
+  });
 });

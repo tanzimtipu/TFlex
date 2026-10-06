@@ -11408,3 +11408,143 @@ again", and where a wrong control costs a mis-exported file or a lost document.
 - The resize handle exposes `role="separator"` with aria value bounds and a full keyboard path
   (Arrow/Home/End), and the width contract is clamped in one pure module shared by CSS, the panels and
   the dock geometry.
+
+## ADV-234: On-canvas text-box / image-placement action bars render detached from their selection
+
+- Session: phase-close
+- Suggested severity: HIGH
+
+What I did: launched the dev build only through `e2e/lib/launch.cjs`, opened the
+`report.pdf` sample, armed EDIT (`Ctrl+2`) + the `editTextBox` dock verb, dragged a
+text box on page 1, typed and committed it, selected it, then measured the
+`.edit-box` and `[data-edit-box-toolbar]` rects; scrolled `.document-scroller` by
+260px; clicked the View Strip `Zoom in`. Repeated for an image placement
+(`.edit-image-placement` + `.edit-image-toolbar`, placed via the real file
+chooser). Probe: `test-fixtures/phase1028-adversary/adv_canvas.spec.cjs`;
+raw measurements: `test-fixtures/phase1028-adversary/adv_canvas.output.json`.
+Expected: the bar floats just under its selection and tracks it across document
+scroll and zoom, per `ContextToolbox`'s `coordinateSpace="page-view"` contract and
+the TFL-987 comment ("position ABSOLUTE inside the page's containing block").
+Actual: the bar computes `position: fixed`, not `absolute`. Text box: box at
+viewport (967,248) but bar at (140,208) - 827px to the LEFT and above the box; after
+a 260px document scroll the box moved -260 while the bar moved 0 (drift 260px);
+after Zoom in the relation drifted a further 72px in x. Image placement: box
+(987,348), bar (160,354) - 827px left; after a 240px scroll the box moved -240 and
+the bar moved 0 (drift 240). Root cause: in `src/renderer/styles.css` the
+`.context-toolbox--page-view { position: absolute }` rule (lines 21123-21125) is
+nested INSIDE the `@media (pointer: coarse)` block opened at line 21117, so it is
+inert on a fine-pointer desktop; the later, equal-specificity
+`.context-toolbox { position: fixed }` (line 21084) then beats the legacy
+`.content-action-bar` / `.edit-box-toolbar` / `.edit-image-toolbar` absolute rules.
+Impact: the primary surface for Confirm/Delete of a placed text box or image
+(and the image Replace/Crop/Remove bar) renders in the upper-left of the window,
+overlapping unrelated UI and far from the object; the edit affordance is lost and
+the object cannot be confirmed by aiming at it. Violates the REQUIREMENTS
+look-and-feel rules.
+Screenshot: screenshots/phase1028-adversary/tfl1028-textbox-toolbar-initial.png
+(bar upper-left, box top-centre), `tfl1028-textbox-toolbar-after-scroll.png`,
+`tfl1028-image-toolbar-initial.png`. Suggested fix: lift `.context-toolbox--page-view`
+out of the media query (top level), or scope the fixed rule to
+`.context-toolbox:not(.context-toolbox--page-view)`.
+
+Disposition: ACCEPTED -> DEF-607 (HIGH) - relaying frontend-dev. Real C6 regression: the ContextToolbox page-view bars render detached on fine-pointer desktops.
+
+## ADV-235: Dock Pin/Unpin context menu overflows the viewport bottom edge
+
+- Session: phase-close
+- Suggested severity: LOW
+
+What I did: opened `report.pdf`, right-clicked a dock verb (`.action-dock-verb`)
+near the bottom of the 2560x1392 window, and measured `[data-dock-menu]`. Probe:
+`test-fixtures/phase1028-adversary/adv_menus.spec.cjs` (T3); raw measurements:
+`test-fixtures/phase1028-adversary/adv_menus.output.json`.
+Expected: the pointer-anchored menu clamps fully inside the viewport (parity with
+the thumbnail context menu, which did clamp in T4).
+Actual: rect y=1293 h=114 -> bottom 1407 vs viewport height 1392, i.e. 15px below
+the window; the clamp at `ActionDock.tsx:1150` passes the constant `MENU_H = 76`
+(`ActionDock.tsx:185`), but the migrated CommandMenu renders 114px because it now
+includes the group heading (the tool name); the bottom row/padding is clipped at
+the window floor. Screenshot:
+screenshots/phase1028-adversary/tfl1028-dock-pin-menu.png. Suggested fix: measure
+the rendered `[data-dock-menu]` height (as the dock's overflow/picker layout
+effects already do) or update `MENU_H` to the migrated menu's real height before
+clamping.
+
+Disposition: ACCEPTED -> DEF-608 (LOW) - relaying frontend-dev. Real C10 regression: the migrated Pin/Unpin menu is taller (heading) than the stale MENU_H clamp.
+
+## TFL-1028 phase-close adversary diff-pass (TFL-855 migrated inventory) — surfaces that held CLEAN
+
+Build: `npm run build` under the build mutex (typecheck + renderer + node) - clean.
+Launch: `e2e/lib/launch.cjs` only. Probes: `test-fixtures/phase1028-adversary/`
+(`adv_menus`, `adv_canvas`, `adv_dialogs`), results JSON beside each spec.
+
+- **No command lost / no silent no-op - CLEAN (2 ADV-234 surfaces excepted).** File
+  menu rows Open / Merge / Save / Save As / **Close Tab** all present; Close Tab
+  really closed the document and returned to Home. Application menu rows present;
+  **Recognize Text (OCR)** really opened the OCR dialog. Dock More overflow rows +
+  the `Customize dock` `menuitemcheckbox`; a picker row really pinned a new verb
+  into the dock; the thumbnail menu exposed its six verbs and `rotate-ccw` changed
+  `engineState.rotations[0]`.
+- **Dismissal / focus contracts - CLEAN.** App, File, dock-More, dock-picker and
+  thumbnail menus all closed on Escape, outside pointerdown and Tab, and returned
+  focus to their opener; the opener toggle collapsed its own menu (no
+  dismiss-then-reopen race); the disabled `Find` row was skipped by Arrow/Home/End
+  traversal and exposed its reason via `title` + `aria-describedby`; Escape on the
+  open dock picker also exited EDIT mode; ContextToolbox Escape closed the Split
+  dialog (T7).
+- **Edge / zoom / scroll - PART HELD, one HIGH finding (ADV-234).** The thumbnail
+  context menu clamped inside the viewport at a low pointer anchor and dismissed on
+  a real wheel scroll; the dock overflow and Add-a-tool picker clamped; the dock
+  Pin/Unpin menu did NOT clamp (ADV-235); the on-canvas ContextToolbox bars did not
+  stay anchored (ADV-234).
+- **Split / Stamp / Create-images behaviour - CLEAN.** Split (TaskDialog) showed the
+  real source context `report.pdf - 34 pages`, a bounded `modal-body-scroll`, and
+  the real parser disabled the primary action for `999-1000` and re-enabled it for
+  `1-3` with `3 pages selected`. Stamp (PreviewTaskDialog) rendered a real canvas
+  preview (PNG data URL 15906 bytes) and re-rendered on stamp change (APPROVED ->
+  DRAFT, 10946 bytes). Create-from-images (PreviewTaskDialog): designed empty state
+  + disabled Create, two real files added (2 pages), reorder via button and
+  `Alt+ArrowDown` both changed visible order, Remove dropped the row count, quality
+  5 -> 10 and 9999 -> 100 on blur.
+- **Light/dark + reduced motion - CLEAN.** The migrated menu surface was opaque
+  (alpha 1) in both themes (light `rgb(255,255,255)` / dark `rgb(23,27,32)`); under
+  `prefers-reduced-motion: reduce` the menu's `transitionDuration` and
+  `animationDuration` collapsed to `1e-05s` with `transform: none` (no travel).
+- **Busy / duplicate-invocation - NOT EXERCISED this pass.** The migrated surfaces
+  close on first activation, so a rapid second Enter/click has no lingering target;
+  no double-dispatch was observed incidentally, but this class was not attacked
+  directly and is called out rather than claimed clean.
+
+## Design critique: TFL-855 migrated menus + on-canvas toolboxes
+
+User context: a desktop PDF user editing text boxes / images on the page and
+running document verbs from menus; the job is "act on the object I can see" and
+"finish the transaction", where a misplaced action bar costs a lost edit.
+
+### Must-fix (blocks ship)
+- **Affordance / positioning:** the selected-object action bar is not co-located
+  with its object (ADV-234) - it reads as unrelated floating chrome and the
+  Confirm/Delete target cannot be aimed at. **Try:** make the page-view toolbox
+  absolute within the page (fix the media-query nesting) so it sits under the box.
+
+### Should-fix (before broader rollout)
+- **Edge clamp:** the dock Pin/Unpin menu can drop ~15px below the window floor at
+  a low anchor (ADV-235). **Try:** clamp against the measured menu height.
+- **Copy/consistency:** in the dock More overflow, enabled verb rows still carry a
+  `title` equal to their description while disabled rows carry the disabled reason
+  in the same slot; the two meanings are not distinguishable by tone. **Try:** omit
+  the description `title` on enabled overflow rows, or mark it explicitly.
+
+### Nice-to-fix (when there's room)
+- **Discoverability:** the on-canvas toolbar's page-edge flip uses the shared
+  above/below logic but with no visual nudge; near the page bottom the bar can
+  cover the object it edits. **Try:** prefer the side with more clearance.
+
+### Strengths to keep
+- One menu DOM contract and one keyboard model across File / app / dock / picker /
+  thumbnail surfaces, with disabled reasons exposed and focus returned to the
+  opener.
+- TaskDialog / PreviewTaskDialog keep the real host context and state; Split, Stamp
+  and Create-from-images show no fabricated content and their disabled/enabled
+  transitions reflect real validation.
+- Reduced motion is honoured centrally (TfMenu/TfBar/TfDialog) with no travel.

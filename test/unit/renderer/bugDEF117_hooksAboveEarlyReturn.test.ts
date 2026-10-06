@@ -86,8 +86,11 @@ const RETURN_SOURCE = /\breturn\b/;
 /** The open gate lives inside a presence boundary — the dialog's own
  *  <AnimatePresence>, the canonical AnimatedDialog wrapper (DEF-197),
  *  which owns one internally, or the Phase-92 DialogShell (TFL-513-A),
- *  which owns the boundary for every adopted dialog. */
-const ANIMATE_PRESENCE_SOURCE = /<AnimatePresence>|<AnimatedDialog|<DialogShell/;
+ *  which owns the boundary for every adopted dialog. The task surfaces
+ *  (TFL-873 TaskDialog / PreviewTaskDialog, adopted by SplitDialog and
+ *  StampDialog in TFL-929) compose DialogShell, so they own the
+ *  presence boundary transitively. */
+const ANIMATE_PRESENCE_SOURCE = /<AnimatePresence>|<AnimatedDialog|<DialogShell|<TaskDialog|<PreviewTaskDialog/;
 const FN_DECL_SOURCE = /^(?:export\s+)?function\s+([A-Za-z0-9_$]+)\s*\(/;
 
 /** Blank comments and string / template-literal contents, keeping

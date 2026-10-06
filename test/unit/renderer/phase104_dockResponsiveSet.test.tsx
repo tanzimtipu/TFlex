@@ -146,7 +146,10 @@ describe("Phase 104 (chunk 2) — the anchored More popover", () => {
       act((): void => {
         document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
       });
-      expect(host.querySelector("[data-dock-overflow-menu]")).toBeNull();
+      // TFL-1004 (chunk C9) — the More surface is the shared `CommandMenu`,
+      // whose `TfMenu` owns an exit motion, so the node lingers while it
+      // animates out. The logical closed state is the trigger's `aria-expanded`.
+      expect(more?.getAttribute("aria-expanded")).toBe("false");
       expect(document.activeElement).toBe(more);
     } finally {
       unmount();

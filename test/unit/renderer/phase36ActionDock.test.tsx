@@ -14,7 +14,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { ActionDock, type ActionDockProps, type DockBulkActions } from "../../../src/renderer/components/ActionDock";
-import { DOCK_IDLE_MS } from "../../../src/renderer/state/dockModel";
+import { DOCK_IDLE_MS, DOCK_MAX_PINS, canPinMore } from "../../../src/renderer/state/dockModel";
 import { dockPrimaryIdsForStage } from "../../../src/renderer/state/toolsRegistry";
 
 function bulk(overrides: Partial<DockBulkActions> = {}): DockBulkActions {
@@ -352,6 +352,98 @@ describe("Phase 36 — ActionDock State 3: pins", () => {
       expect(pin?.getAttribute("title")).toBeNull();
     } finally {
       unmount();
+    }
+  });
+});
+
+describe("TFL-1012 (TFL-855 chunk C10) — the Pin/Unpin menu is the shared CommandMenu", () => {
+  it("portals the shared surface to the body with both data-dock-menu-item rows", () => {
+    const { host, unmount } = renderDock({ activeStage: "pages", dockPins: ["undo"] });
+    try {
+      contextMenuOn(verb(host, "undo"));
+      const menu = document.body.querySelector<HTMLElement>("[data-dock-menu]");
+      expect(menu, "the shared surface resolves via data-dock-menu").not.toBeNull();
+      // The dock carries a transform, so the surface must live on the body
+      // (DEF-312); it must not be a descendant of the transformed dock.
+      expect(host.contains(menu as Node)).toBe(false);
+      expect(menu?.querySelector('[data-dock-menu-item="pin"]'), "pin row").not.toBeNull();
+      expect(menu?.querySelector('[data-dock-menu-item="unpin"]'), "unpin row").not.toBeNull();
+    } finally {
+      unmount();
+    }
+  });
+
+  it("disables Pin on a verb that is already pinned, keeping Unpin live", () => {
+    const { host, unmount } = renderDock({ activeStage: "pages", dockPins: ["undo"] });
+    try {
+      contextMenuOn(verb(host, "undo"));
+      const pin = document.body.querySelector<HTMLButtonElement>('[data-dock-menu-item="pin"]');
+      const unpin = document.body.querySelector<HTMLButtonElement>('[data-dock-menu-item="unpin"]');
+      expect(pin?.disabled).toBe(true);
+      expect(unpin?.disabled).toBe(false);
+    } finally {
+      unmount();
+    }
+  });
+
+  it("surfaces 'Dock is full' only when the cap is reached", () => {
+    // A real render can never exceed the registry size (the ~109 pinnable ids
+    // are sanitized, deduped and capped at 200), so the full state is
+    // unreachable through `dockPins`. Assert the predicate the menu's
+    // `disabledReason` ("Dock is full") is keyed on, at the boundary.
+    expect(canPinMore(new Array(DOCK_MAX_PINS - 1).fill("undo"))).toBe(true);
+    expect(canPinMore(new Array(DOCK_MAX_PINS).fill("undo"))).toBe(false);
+  });
+
+  // DEF-608 — the clamp used the stale `MENU_H = 76` estimate while the migrated
+  // `CommandMenu` renders taller (a group heading), so at the window floor its
+  // bottom row clipped ~15px below the viewport. The fix measures the rendered
+  // `[data-dock-menu]` height and re-clamps with it.
+  it("clamps against the MEASURED rendered menu height so nothing clips at the viewport floor", () => {
+    const originalOffsetHeight = Object.getOwnPropertyDescriptor(
+      HTMLElement.prototype,
+      "offsetHeight",
+    );
+    // jsdom reports 0 for offsetHeight; give the rendered menu its real 114px
+    // (two rows + group heading) while every other box stays unmeasured.
+    Object.defineProperty(HTMLElement.prototype, "offsetHeight", {
+      configurable: true,
+      get(this: HTMLElement): number {
+        return this.hasAttribute("data-dock-menu") ? 114 : 0;
+      },
+    });
+    try {
+      const { host, unmount } = renderDock({ activeStage: "pages" });
+      try {
+        const nearBottom = window.innerHeight - 2;
+        act((): void => {
+          verb(host, "merge").dispatchEvent(
+            new MouseEvent("contextmenu", {
+              bubbles: true,
+              cancelable: true,
+              clientX: 24,
+              clientY: nearBottom,
+            }),
+          );
+        });
+        const menu = document.body.querySelector<HTMLElement>("[data-dock-menu]");
+        expect(menu).not.toBeNull();
+        if (menu === null) return;
+        const top = Number.parseFloat(menu.style.top);
+        // 8px gutter: the whole 114px surface sits at or above vh - 114 - 8, so
+        // the last row is fully inside the viewport.
+        expect(top).toBeLessThanOrEqual(window.innerHeight - 114 - 8 + 0.5);
+        // The retired 76px constant would have allowed ~38px lower and clipped.
+        expect(top).toBeLessThan(window.innerHeight - 76 - 8);
+      } finally {
+        unmount();
+      }
+    } finally {
+      if (originalOffsetHeight !== undefined) {
+        Object.defineProperty(HTMLElement.prototype, "offsetHeight", originalOffsetHeight);
+      } else {
+        Reflect.deleteProperty(HTMLElement.prototype, "offsetHeight");
+      }
     }
   });
 });

@@ -19,7 +19,7 @@
 
 import { useEffect, useRef, useState, type ReactElement } from "react";
 import { Icon } from "../icons/Icon";
-import { DialogShell } from "./DialogShell";
+import { PreviewTaskDialog } from "./PreviewTaskDialog";
 import type { StampId } from "../../shared/types";
 import {
   DEFAULT_STAMP_ID,
@@ -121,12 +121,12 @@ export function StampDialog(
   };
 
   return (
-    <DialogShell
+    <PreviewTaskDialog
       open={open}
       title="Stamp"
       titleId="stamp-dialog-title"
       onClose={onClose}
-      size="tool"
+      className="stamp-dialog-preview"
       data-stamp-dialog
       draggable={{ controlsSelector: "button, input, select, textarea, [role='button']" }}
       actions={[
@@ -146,33 +146,35 @@ export function StampDialog(
     >
           <p className="modal-help">
             Pick a built-in stamp. After confirming, the next click on a
-            page drops the stamp at that location. Stamps are baked into
-            the page content on save.
+            page drops the stamp at that location. The stamp is baked
+            into the page content when you place it.
           </p>
 
           <fieldset className="modal-position">
             <legend>Stamp</legend>
-            {STAMP_IDS.map((id) => (
-              <label key={id} className="stamp-option">
-                <input
-                  type="radio"
-                  name="stamp-id"
-                  value={id}
-                  checked={stampId === id}
-                  onChange={(): void => {
-                    setStampId(id);
-                    onStampIdChange?.(id);
-                  }}
-                  data-stamp-id={id}
-                />
-                <span className="stamp-option-text">
-                  <span className="stamp-option-label">{STAMP_STYLES[id].label}</span>
-                  <span className="stamp-option-desc">
-                    {describeStamp(id)}
+            <div className="stamp-option-grid">
+              {STAMP_IDS.map((id) => (
+                <label key={id} className="stamp-option">
+                  <input
+                    type="radio"
+                    name="stamp-id"
+                    value={id}
+                    checked={stampId === id}
+                    onChange={(): void => {
+                      setStampId(id);
+                      onStampIdChange?.(id);
+                    }}
+                    data-stamp-id={id}
+                  />
+                  <span className="stamp-option-text">
+                    <span className="stamp-option-label">{STAMP_STYLES[id].label}</span>
+                    <span className="stamp-option-desc">
+                      {describeStamp(id)}
+                    </span>
                   </span>
-                </span>
-              </label>
-            ))}
+                </label>
+              ))}
+            </div>
           </fieldset>
 
           <section className="stamp-preview-wrap" aria-label="Stamp preview">
@@ -211,7 +213,7 @@ export function StampDialog(
               <span>{error}</span>
             </div>
           )}
-    </DialogShell>
+    </PreviewTaskDialog>
   );
 }
 
