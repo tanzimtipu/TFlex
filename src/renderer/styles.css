@@ -6313,6 +6313,33 @@ body.tab-reordering .tab-list[data-reorder="true"] .tab {
   animation: tf-page-zoom-flip var(--motion-duration-layout) var(--motion-ease-layout);
 }
 
+/* Phase 114 (chunk A) — the page-flip transition engine. A page turn
+   (next / prev in the single-page and facing reading modes) re-lays-out the
+   PAPER-OWNING page unit (`.page-slot`) instantly, then the unit plays a
+   one-shot transform + opacity entrance from the turn direction back to rest.
+   Both start values are CSS custom properties the engine writes
+   (`--tf-page-flip-dx` / `--tf-page-flip-dy`); transform + opacity only, so
+   the turn composites on the GPU and the PDF bitmap is never recoloured. The
+   duration/easing come from the centralised motion tokens; the global
+   prefers-reduced-motion and :root[data-animations="off"] catch-alls collapse
+   --motion-duration-fast to 0, and the React binding additionally skips the
+   class entirely on the instant path. */
+.tf-page-flip {
+  animation: tf-page-flip var(--motion-duration-fast) var(--motion-ease-enter);
+  will-change: transform, opacity;
+}
+
+@keyframes tf-page-flip {
+  from {
+    opacity: 0;
+    transform: translate(var(--tf-page-flip-dx, 0px), var(--tf-page-flip-dy, 0px));
+  }
+  to {
+    opacity: 1;
+    transform: translate(0px, 0px);
+  }
+}
+
 .pdf-page {
   position: relative;
   /* DEF-099 — paper-white background on the page slot itself.
