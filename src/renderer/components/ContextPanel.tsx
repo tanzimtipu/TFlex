@@ -334,12 +334,13 @@ onInsertBlank?: (page: number) => void;
    *  the app has no separate "flattened" flag — see the pre-flight note). */
   formFieldCount?: number;
   /** Phase 112 (C5) — the document's REAL encryption state, when the host has
-   *  read it. Null/undefined renders the distinct "Not analysed" observation
-   *  (never a fabricated "unencrypted"). */
+   *  read it. Null/undefined renders the honest "Not read" observation with its
+   *  reason (never a fabricated "unencrypted"). */
   protection?: DocumentProtectionState | null;
   /** Phase 112 (C5) — the office format whose mandatory fidelity limits the
-   *  output checks should surface, when a format is being prepared. Null shows
-   *  the distinct "Not analysed" observation. */
+   *  output checks should surface, when a format is being prepared. Null renders
+   *  the honest "Not applicable" observation with its reason (only office
+   *  exports carry conversion-limit notes). */
   exportFidelityFormat?: ExportFormat | null;
   /** The EXISTING Optimize entry (the document-size disclosure's action). */
   onOptimize?: () => void;
@@ -1404,12 +1405,25 @@ const pageCount = engineState.pageCount;
   // dictionary when the host read it, and an office format's mandatory fidelity
   // limits when one is being prepared. Unknown/not-analysed reads distinctly.
   const renderDeliver = (): ReactElement => {
+    // DEF-634 (ER21) — each unavailable check states WHAT it is honestly and
+    // WHY the value is unavailable. Protection reads the encryption dictionary
+    // the host loads on open; until it is read the value is unknown, not a
+    // fabricated pass. Fidelity notes exist only for office conversions, so for
+    // an image export the truthful value is "not applicable", never a failure.
     const protectionText =
-      protection === null ? 'Not analysed' : protectionSummary(protection);
+      protection === null ? 'Not read' : protectionSummary(protection);
+    const protectionReason =
+      protection === null
+        ? 'The encryption dictionary has not been read for this document.'
+        : null;
     const fidelityNotes =
       exportFidelityFormat === null ? null : EXPORT_FIDELITY_NOTES[exportFidelityFormat];
     const fidelityText =
-      fidelityNotes === null ? 'Not analysed' : fidelityNotes.join(' ');
+      fidelityNotes === null ? 'Not applicable' : fidelityNotes.join(' ');
+    const fidelityReason =
+      fidelityNotes === null
+        ? 'Only office exports (Word, Excel, PowerPoint) carry conversion-limit notes.'
+        : null;
     const checkActions = [
       {
         id: 'optimize',
@@ -1477,22 +1491,36 @@ const pageCount = engineState.pageCount;
                   {formFieldCount > 0 ? `${formFieldCount} interactive` : 'None'}
                 </span>
               </PropertyRow>
-              <PropertyRow
-                className="context-panel-row"
-                data-preflight="protection"
-                data-deliver-observation
-                label="Protection"
-              >
-                <span data-deliver-protection>{protectionText}</span>
-              </PropertyRow>
-              <PropertyRow
-                className="context-panel-row"
-                data-preflight="fidelity"
-                data-deliver-observation
-                label="Export fidelity"
-              >
-                <span data-deliver-fidelity>{fidelityText}</span>
-              </PropertyRow>
+              <div className="context-panel-check" data-deliver-check="protection">
+                <PropertyRow
+                  className="context-panel-row"
+                  data-preflight="protection"
+                  data-deliver-observation
+                  label="Protection"
+                >
+                  <span data-deliver-protection>{protectionText}</span>
+                </PropertyRow>
+                {protectionReason !== null && (
+                  <p className="tf-panel-section-note" data-deliver-protection-reason>
+                    {protectionReason}
+                  </p>
+                )}
+              </div>
+              <div className="context-panel-check" data-deliver-check="fidelity">
+                <PropertyRow
+                  className="context-panel-row"
+                  data-preflight="fidelity"
+                  data-deliver-observation
+                  label="Export fidelity"
+                >
+                  <span data-deliver-fidelity>{fidelityText}</span>
+                </PropertyRow>
+                {fidelityReason !== null && (
+                  <p className="tf-panel-section-note" data-deliver-fidelity-reason>
+                    {fidelityReason}
+                  </p>
+                )}
+              </div>
             </>
           )}
           <ActionList

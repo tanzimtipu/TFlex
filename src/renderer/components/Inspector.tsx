@@ -36,6 +36,7 @@ import {
   exportDefaultName,
   exportFidelityNotes,
   exportFormatOption,
+  exportImageOutputSummary,
   exportPrimaryLabel,
   exportRangeText,
   exportScopeLabel,
@@ -700,6 +701,13 @@ function ExportConfigSection(props: {
   const running = status?.state === 'running';
   const canRun = gate.enabled && validation.valid && !running;
   const outputName = exportDefaultName(sourceName ?? 'document', format);
+  // DEF-633 (ER20) — an image format writes one file per selected page. Resolve
+  // the real count and naming example from the SAME filename helper the save
+  // flow uses; null for office formats (single file) or an empty/invalid range.
+  const imageOutput =
+    group === 'image' && validation.valid && validation.parsed !== null
+      ? exportImageOutputSummary(sourceName ?? 'document', validation.parsed, format)
+      : null;
   const fidelity = exportFidelityNotes(format);
 
   const selectFormat = (next: ExportConfigFormat): void => {
@@ -810,9 +818,24 @@ function ExportConfigSection(props: {
 
       <div className="export-config-group" data-export-config-output>
         <span className="export-config-group-title">Output name</span>
-        <span className="export-config-value" data-export-config-output-value>
-          {outputName}
-        </span>
+        {group === 'image' ? (
+          <>
+            <span className="export-config-value" data-export-config-output-value>
+              {imageOutput === null
+                ? '\u2014'
+                : `${imageOutput.count} ${imageOutput.count === 1 ? 'file' : 'files'}`}
+            </span>
+            {imageOutput !== null && (
+              <span className="export-config-status" data-export-config-output-scheme>
+                {imageOutput.example}
+              </span>
+            )}
+          </>
+        ) : (
+          <span className="export-config-value" data-export-config-output-value>
+            {outputName}
+          </span>
+        )}
       </div>
 
       {group === 'image' && (

@@ -37,6 +37,7 @@ import {
   exportDefaultName,
   exportDialogSeed,
   exportFidelityNotes,
+  exportImageOutputSummary,
   exportOutputNameStem,
   exportPrimaryLabel,
   exportRangeExpression,
@@ -172,6 +173,9 @@ describe("Phase 112 C5 - the LEFT output checks", () => {
       expect(host.querySelector("[data-form-fields]")?.textContent).toBe("3 interactive");
       expect(host.querySelector("[data-deliver-protection]")?.textContent).toContain("AES-256");
       expect(host.querySelector("[data-deliver-fidelity]")?.textContent).toContain("Word");
+      // A known value carries no "unavailable" reason line.
+      expect(host.querySelector("[data-deliver-protection-reason]")).toBeNull();
+      expect(host.querySelector("[data-deliver-fidelity-reason]")).toBeNull();
     } finally {
       unmount();
     }
@@ -183,9 +187,18 @@ describe("Phase 112 C5 - the LEFT output checks", () => {
       expect(host.querySelector('[data-preflight="ocr"]')?.textContent).toContain("Not run");
       expect(host.querySelector("[data-file-size]")?.textContent).toBe("\u2014");
       expect(host.querySelector("[data-form-fields]")?.textContent).toBe("None");
-      expect(host.querySelector("[data-deliver-protection]")?.textContent).toBe("Not analysed");
-      expect(host.querySelector("[data-deliver-fidelity]")?.textContent).toBe("Not analysed");
+      // DEF-634 / ER21 — the honest, self-explanatory value plus its reason,
+      // never the bare literal "Not analysed".
+      expect(host.querySelector("[data-deliver-protection]")?.textContent).toBe("Not read");
+      expect(
+        host.querySelector("[data-deliver-protection-reason]")?.textContent,
+      ).toContain("encryption dictionary");
+      expect(host.querySelector("[data-deliver-fidelity]")?.textContent).toBe("Not applicable");
+      expect(
+        host.querySelector("[data-deliver-fidelity-reason]")?.textContent,
+      ).toContain("office exports");
       const text = textLower(host);
+      expect(text).not.toContain("not analysed");
       expect(text).not.toContain("readiness");
       expect(text).not.toContain("%");
       expect(text).not.toContain("savings");
@@ -265,7 +278,19 @@ describe("Phase 112 C5 - the RIGHT export configuration", () => {
       expect(host.querySelector('[data-export-config-scope="all"]')).not.toBeNull();
       expect(host.querySelector('[data-export-config-scope="current"]')).not.toBeNull();
       expect(host.querySelector('[data-export-config-scope="custom"]')).not.toBeNull();
+      // DEF-633 / ER20 — an image export writes one file per selected page, so
+      // the output area states the real count and the real naming scheme, not a
+      // single file name.
       expect(host.querySelector("[data-export-config-output-value]")?.textContent).toContain(
+        "5 files",
+      );
+      expect(
+        host.querySelector("[data-export-config-output-scheme]")?.textContent,
+      ).toContain("Report-page-1.png");
+      expect(
+        host.querySelector("[data-export-config-output-scheme]")?.textContent,
+      ).toContain("Report-page-5.png");
+      expect(host.querySelector("[data-export-config-output-scheme]")?.textContent).not.toContain(
         "Report.png",
       );
       expect(host.querySelector("[data-export-config-dpi]")).not.toBeNull();
@@ -347,6 +372,18 @@ describe("Phase 112 C5 - the RIGHT export configuration", () => {
     }
   });
 
+  it("keeps the single output name for a single-file office format (DEF-633 / ER20)", () => {
+    const { host, unmount } = mountExport({ format: "txt" });
+    try {
+      expect(host.querySelector("[data-export-config-output-value]")?.textContent).toBe(
+        "Report.txt",
+      );
+      expect(host.querySelector("[data-export-config-output-scheme]")).toBeNull();
+    } finally {
+      unmount();
+    }
+  });
+
   it("never adds an export-time flatten toggle", () => {
     const { host, unmount } = mountExport({ format: "txt" });
     try {
@@ -414,6 +451,30 @@ describe("Phase 112 C5 - the export-config model", () => {
     expect(exportPrimaryLabel("png")).toBe("Export images");
     expect(exportPrimaryLabel("docx")).toContain("Word");
     expect(exportDefaultName("Report.pdf", "png")).toBe("Report.png");
+  });
+
+  it("states the real per-page image naming scheme and count (DEF-633 / ER20)", () => {
+    expect(exportImageOutputSummary("report.pdf", [1], "png")).toEqual({
+      count: 1,
+      example: "report-page-1.png",
+    });
+    const all = exportImageOutputSummary(
+      "report.pdf",
+      Array.from({ length: 34 }, (_, i) => i + 1),
+      "png",
+    );
+    expect(all?.count).toBe(34);
+    expect(all?.example).toBe("report-page-1.png \u2026 report-page-34.png");
+    // JPEG / TIFF ride the same helper's real extensions.
+    expect(exportImageOutputSummary("report.pdf", [2, 4], "jpeg")?.example).toBe(
+      "report-page-2.jpg \u2026 report-page-4.jpg",
+    );
+    expect(exportImageOutputSummary("report.pdf", [3], "tiff")?.example).toBe(
+      "report-page-3.tif",
+    );
+    // Single-file office formats have no per-page scheme.
+    expect(exportImageOutputSummary("report.pdf", [1, 2], "docx")).toBeNull();
+    expect(exportImageOutputSummary("report.pdf", [], "png")).toBeNull();
   });
 });
 

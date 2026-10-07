@@ -1,10 +1,11 @@
 // Phase 12 — Stamp tool dialog.
 //
-// Pick a built-in stamp id, see a preview at the dialog's native
-// size, then click "Place on page" to enter placement mode. In
+// Pick a built-in stamp, see a preview at the dialog's native
+// size, then click "Start placement" to enter placement mode. In
 // placement mode the user clicks on a page in the document area
 // to drop the stamp at the click location (default rect width
-// derived from the stamp's aspect ratio).
+// derived from the stamp's aspect ratio). The dialog copy states
+// this click-to-place flow exactly; there is no page picker.
 //
 // The dialog owns the canvas-rendered preview but NOT the
 // placement — it sets a local "armed" flag the host reads to
@@ -36,27 +37,28 @@ export interface StampConfirm {
   pngBytes: Uint8Array;
   pngWidth: number;
   pngHeight: number;
-  /** 1-based visible page the stamp lands on. The host centers the
-   *  stamp on this page at the on-page center. */
+  /** The page the user was viewing when they opened the dialog. The
+   *  click-to-place flow lets the next page click choose the real page,
+   *  so this is informational only. */
   page: number;
 }
 
 interface StampDialogProps {
   open: boolean;
-  /** Total pages on the active doc. Drives the "Place on page"
-   *  picker so the user can choose which page the stamp lands on. */
+  /** Total pages on the active doc. Kept for host compatibility; the
+   *  click-to-place flow needs no page picker, so it is not rendered. */
   totalPages: number;
-  /** 1-based visible page the user is currently looking at. Used
-   *  to seed the picker so the natural action is "stamp the page
-   *  I'm on". */
+  /** 1-based visible page the user is currently looking at. Sent with the
+   *  confirm as an informational default; the real placement page is the
+   *  one the user clicks. */
   currentPage: number;
   /** Mirrors AppSettings.defaultStampId. Re-seeds on open. */
   initialStampId: StampId;
   /** Fires whenever the user picks a different stamp id. The host
    *  persists the choice through the preferences reducer. */
   onStampIdChange?: (id: StampId) => void;
-  /** Fires when the user confirms "Place on page". The host places
-   *  the stamp centered on the picked page. */
+  /** Fires when the user confirms placement. The host then arms the
+   *  stamp; the next page click drops it at the clicked point. */
   onConfirm: (choice: StampConfirm) => void;
   onClose: () => void;
 }
@@ -66,7 +68,6 @@ export function StampDialog(
 ): ReactElement | null {
   const {
     open,
-    totalPages,
     currentPage,
     initialStampId,
     onStampIdChange,
@@ -74,16 +75,13 @@ export function StampDialog(
     onClose,
   } = props;
   const [stampId, setStampId] = useState<StampId>(initialStampId);
-  const [page, setPage] = useState<number>(currentPage);
   const [error, setError] = useState<string | null>(null);
-  // Reset on open / initialStampId change. Re-seed `page` from
-  // currentPage so the user lands on their natural pick.
+  // Reset on open / initialStampId change.
   useEffect(() => {
     if (!open) return;
     setStampId(initialStampId);
-    setPage(currentPage);
     setError(null);
-  }, [open, initialStampId, currentPage]);
+  }, [open, initialStampId]);
 
   const onConfirmClick = (): void => {
     setError(null);
@@ -113,7 +111,7 @@ export function StampDialog(
         );
         return;
       }
-      onConfirm({ stampId, pngBytes, pngWidth: width, pngHeight: height, page });
+      onConfirm({ stampId, pngBytes, pngWidth: width, pngHeight: height, page: currentPage });
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       setError(`Could not render stamp: ${msg}`);
@@ -134,7 +132,7 @@ export function StampDialog(
         Object.assign(
           {
             key: "confirm",
-            label: "Place on page",
+            label: "Start placement",
             variant: "primary" as const,
             icon: <Icon name="stamp" size="sm" />,
             onClick: onConfirmClick,
@@ -145,9 +143,9 @@ export function StampDialog(
       ]}
     >
           <p className="modal-help">
-            Pick a built-in stamp. After confirming, the next click on a
-            page drops the stamp at that location. The stamp is baked
-            into the page content when you place it.
+            Pick a built-in stamp, then choose Start placement. The next click on
+            a page drops the stamp at that location; the stamp is baked into the
+            page content when you place it. Press Escape to cancel.
           </p>
 
           <fieldset className="modal-position">
@@ -186,27 +184,6 @@ export function StampDialog(
             </header>
             <StampPreview stampId={stampId} />
           </section>
-
-          <label className="modal-field">
-            <span>Place on page</span>
-            <select
-              className="modal-input"
-              value={page}
-              onChange={(e): void => setPage(Number(e.target.value))}
-              data-stamp-page-select
-            >
-              {Array.from({ length: totalPages }, (_, i) => i + 1).map((p) => (
-                <option key={p} value={p}>
-                  Page {p}
-                </option>
-              ))}
-            </select>
-            <span className="modal-hint">
-              The stamp is centered on the picked page at a default
-              size (60 pt tall, width derived from the stamp's aspect
-              ratio).
-            </span>
-          </label>
 
           {error !== null && (
             <div className="modal-status optimize-error" role="alert">

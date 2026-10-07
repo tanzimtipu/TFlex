@@ -13,14 +13,21 @@ import { TaskDialog, type TaskDialogProps } from "./TaskDialog";
 export interface PreviewTaskDialogProps extends Omit<TaskDialogProps, "width"> {
   /** Extra class(es) appended to the preview root. */
   className?: string;
+  /** TFL-1197 (DEF-632 / ER18) — override the content-driven grow marker.
+   *  Omitted => the shipped behaviour (grow iff any children exist), so
+   *  every existing host (StampDialog) is unchanged. A host whose children
+   *  are always present but whose preview body is only meaningful when it
+   *  has data (CreateFromImagesDialog) passes the real data condition. */
+  grow?: boolean;
 }
 
 export function PreviewTaskDialog(props: PreviewTaskDialogProps): ReactElement {
-  const { children, className, ...rest } = props;
+  const { children, className, grow, ...rest } = props;
   const hasContent = Children.count(children) > 0;
+  const shouldGrow = grow ?? hasContent;
   const rootClass = [
     "task-dialog-preview",
-    hasContent ? "task-dialog-preview-grow" : undefined,
+    shouldGrow ? "task-dialog-preview-grow" : undefined,
     className,
   ]
     .filter((part): part is string => Boolean(part))

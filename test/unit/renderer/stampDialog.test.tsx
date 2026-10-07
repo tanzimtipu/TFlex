@@ -17,8 +17,9 @@ import type { StampId } from "../../../src/shared/types";
  *   - Initial id comes from `initialStampId`.
  *   - Picking a different id fires `onStampIdChange`.
  *   - Confirm fires `onConfirm` with the stampId, PNG bytes,
- *     dimensions and the chosen page.
- *   - The page picker is populated from `totalPages`.
+ *     dimensions and the current page.
+ *   - The dialog states the click-to-place flow: no page picker and
+ *     no "centered on the picked page" promise (DEF-635 / ER24).
  *   - Esc + close button fire onClose.
  *
  * jsdom doesn't ship a working canvas 2D backend; we polyfill
@@ -139,12 +140,16 @@ describe("StampDialog — render contract", () => {
     cleanup();
   });
 
-  it("populates the page picker from totalPages", () => {
+  it("has no page picker and no 'centered on the picked page' copy (DEF-635 / ER24)", () => {
     const { container, cleanup } = renderDialog({ totalPages: 4 });
-    const options = container.querySelectorAll<HTMLOptionElement>(
-      "[data-stamp-page-select] option",
+    // The handler arms the stamp and ignores any picked page: the next click
+    // places it. A page picker would be a silent no-op control, so it is gone.
+    expect(container.querySelector("[data-stamp-page-select]")).toBeNull();
+    expect(container.querySelectorAll("[data-stamp-id]").length).toBe(4);
+    expect((container.textContent ?? "").toLowerCase()).not.toContain(
+      "centered on the picked page",
     );
-    expect(options.length).toBe(4);
+    expect((container.textContent ?? "").toLowerCase()).not.toContain("60 pt");
     cleanup();
   });
 

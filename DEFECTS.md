@@ -5,6 +5,128 @@
 > inspect the current `OPEN`, `FIX-READY`, and `DISPUTED` entries first; closed records are
 > historical evidence and must not be loaded wholesale.
 
+## DEF-631: Text inspector still scrolls horizontally at normal full-window width; its preview clips a formatting control
+
+- Status: CLOSED (qa TFL-1198 retest, 2026-10-08)
+- Severity: MEDIUM - the text inspector's own content still overflows horizontally at a normal full-window width, so a formatting row/preview is cut off and requires a nested horizontal scroll. ER02 (audit P2) is NOT resolved by the R11 panel-shell pass, which only asserts the outer `.inspector-body` has no nested scroll.
+- Found by: qa (TFL-1196 ER01..ER24 re-audit, ER02)
+- Phase: visual-overhaul correction 3 (TFL-1195), ER02
+
+Files:
+- `src/renderer/components/edit/TextPropertiesPanel.tsx` (the re-parented Inspector text panel) - `.text-props-body` carries `overflow-x: auto`; its children overflow the inspector's fixed ~269px width.
+
+Steps to reproduce (HEAD `dc68679`, app v1.51.0, dev build):
+1. `npm.cmd run build`; open `report.pdf`; go to Edit (Ctrl+2) and click the "Text" dock verb; click a text run on page 1 to open the text inspector.
+2. Inspect the inspector at 1440x900: the nested `.text-props-body` has `scrollWidth 246 > clientWidth 237` with `overflow-x: auto` (a horizontal scrollbar renders), `section.text-props-group` / `div.text-props-btn-row` overflow by ~19px, and `div.text-props-preview` clips its text (`scrollWidth 263 > clientWidth 215`, `overflow-x: hidden`).
+
+Expected: all formatting controls reflow into complete groups at normal width with no nested horizontal scroll and no clipped control (ER02).
+
+Actual: nested horizontal overflow persists; a formatting control/preview is cut off.
+- Command: `npm.cmd run test:e2e -- e2e/tfl1196_er_uncovered_audit.spec.cjs -g "B:"` -> 1 passed, log `[tfl1196-ER02-normal-1440] bodyScrollW=269 bodyClientW=269 bodyOverflowX=hidden controls=25 clipped=0 nested=[text-props-body sw246/cw237 overflowX=auto, text-props-group 236/217, text-props-preview 263/215 hidden, text-props-btn-row 236/217]`.
+- Screenshot: screenshots/tfl1196_er02_text_inspector_full.png (horizontal scrollbar visible at the inspector foot).
+
+History:
+- qa (TFL-1196, 2026-10-08): classified STILL-PRESENT at HEAD; not verified by `tfl1116_r11_panel_shell.spec.cjs` (that spec passed but measures only the outer panel body).
+- orchestrator (TFL-1197, 2026-10-08): FIX-READY - developer reports reflow fix in `styles.css` (min-width:0 + flex-wrap on `.text-props-row`/`.text-props-btn-row`; `.text-props-btn` min-width:0 beats `.btn-icon`; `.text-props-preview` wraps; no `overflow-x:hidden` workaround). Evidence: 5 unit files / 82 tests passed, `npm.cmd run verify` clean, `npm.cmd run build` success; oracle observed bodyOverflowX=hidden, nested=[], clipped=0 at 1440x900 and 985x645. Awaiting qa retest.
+- qa (TFL-1198, 2026-10-08): CLOSED. Retested at current working-tree build (HEAD `dc68679` + TFL-1197 changes, app v1.51.0, dev build; inner DIP 1440x900 full and 985x645 compact). Oracle `e2e/tfl1196_er_uncovered_audit.spec.cjs -g "B:"` -> 1 passed (11.0s). Full 1440x900: `{"textPanel":true,"bodyScrollW":269,"bodyClientW":269,"bodyOverflowX":"hidden","controls":25,"clipped":0,"nested":[]}`; compact 985x645 drawer: `{"textPanel":true,"bodyScrollW":348,"bodyClientW":348,"bodyOverflowX":"hidden","controls":25,"clipped":0,"nested":[]}`. All 25 controls present, no nested horizontal overflow, no clipped control, no horizontal scrollbar at both sizes. Screenshots: screenshots/tfl1196_er02_text_inspector_full.png, screenshots/tfl1196_er02_text_inspector_compact.png (inspected; full panel shows every control reflowed into complete rows, no cut-off).
+
+## DEF-632: Image-creation dialog still opens with a disproportionately empty body
+
+- Status: CLOSED (qa TFL-1198 retest, 2026-10-08)
+- Severity: LOW - cosmetic/whitespace polish: with nothing selected the "Create PDF from images" dialog holds a ~588px blank body between the top controls and the footer. ER18 (audit P3, layout refinement).
+- Found by: qa (TFL-1196 ER01..ER24 re-audit, ER18)
+- Phase: visual-overhaul correction 3 (TFL-1195), ER18
+
+Steps to reproduce (HEAD `dc68679`, app v1.51.0, dev build):
+1. `npm.cmd run build`; launch; on Home click "Create PDF from images".
+2. Observe the dialog body with no images selected.
+
+Expected: a deliberate empty/drop state with content-driven size (ER18).
+
+Actual: `dialogH=760`, body `588`px, `listPresent=false`, only help text + the Add/Clipboard row + the JPEG-quality fieldset; a large blank gap precedes the footer.
+- Command: `npm.cmd run test:e2e -- e2e/tfl1196_er_uncovered_audit.spec.cjs -g "A:"` -> 1 passed, log `[tfl1196-ER18] {"help":"Pick one or more JPEG or PNG images...","bodyH":588,"listPresent":false,"dialogH":760}`.
+- Screenshot: screenshots/tfl1196_er18_image_dialog_full.png.
+
+History:
+- qa (TFL-1196, 2026-10-08): classified STILL-PRESENT at HEAD; no existing spec covers ER18.
+- orchestrator (TFL-1197, 2026-10-08): FIX-READY - developer reports content-driven height: base `.modal-dialog` now `height:auto; max-height:min(72vh,760px)`, tall height gated on `[data-create-has-files]`; `PreviewTaskDialog` gained backward-compatible `grow?: boolean` (default preserves StampDialog); `CreateFromImagesDialog` passes `grow={files.length>0}`. Evidence: unit tests passed, verify clean, build success; oracle observed bodyH 588->272, dialogH 760->444, listPresent=false. Awaiting qa retest.
+- qa (TFL-1198, 2026-10-08): CLOSED. Retested at current working-tree build (HEAD `dc68679` + TFL-1197 changes, app v1.51.0, dev build). Oracle `e2e/tfl1196_er_uncovered_audit.spec.cjs -g "A:"` -> 1 passed (5.9s). Empty state: `{"bodyH":272,"listPresent":false,"hasFilesAttr":false,"growClass":false,"dialogH":444}` (content-driven, well under the old 760, no large blank body). After selection (2 PNGs via the real file chooser): `{"bodyH":588,"listPresent":true,"hasFilesAttr":true,"growClass":true,"dialogH":760}` - the list appears and the layout grows (R18 after-selection). Screenshots: screenshots/tfl1196_er18_empty.png, screenshots/tfl1196_er18_filled.png (inspected; empty is compact, filled shows the two-row list and taller preview). Blast radius: `tfl1196 ... -g "B:"` asserts the StampDialog body is not collapsed (bodyH=634, dialogH=806, confirm visible/in-view) and `e2e/tfl1116_r11_panel_shell.spec.cjs` re-run -> 1 passed (outer inspector body unchanged: 279/279 hidden).
+
+## DEF-633: All-pages PNG export shows only a single output name with no page-count or naming-scheme explanation
+
+- Status: CLOSED (qa TFL-1200 retest, 2026-10-08)
+- Severity: MEDIUM - an information gap that mis-sets export expectations: with All pages + Images PNG the Deliver inspector shows one "Output name" (e.g. `report.png`) and never explains that a 34-page document yields 34 files or the naming scheme. ER20 (audit P2).
+- Found by: qa (TFL-1196 ER01..ER24 re-audit, ER20)
+- Phase: visual-overhaul correction 3 (TFL-1195), ER20
+
+Files:
+- `src/renderer/components/Inspector.tsx:811-816` - the export config renders `Output name` = `exportDefaultName(sourceName, format)` only; `src/renderer/components/exportConfig.ts:194-197` returns `${base}.png` with no per-page expansion text.
+
+Steps to reproduce (HEAD `dc68679`, app v1.51.0, dev build):
+1. `npm.cmd run build`; open `report.pdf` (34 pages); go to Deliver (Ctrl+4).
+2. Select Format "Images - PNG (lossless)" and scope "All pages".
+
+Expected: the surface states the selected count and the filename/folder strategy matching real export semantics (ER20).
+
+Actual: only `Output name = <stem>.png` and `Pages = 1-34`; no "34 files" or naming-scheme statement. No export was performed, so no output-loss is claimed.
+- Command: `npm.cmd run test:e2e -- e2e/tfl1196_er_uncovered_audit.spec.cjs -g "C:"` -> 1 passed, log `[tfl1196-ER20-png] {"format":"png","outputName":"1791406954140-report.png","rangeSummary":"1-34"}`, `[tfl1196-ER20-strings] outputName="1791406954140-report.png" rangeSummary="1-34"` (the numeric prefix is the test harness's temp sample-copy name).
+- Screenshot: screenshots/tfl1196_er20_21_deliver_full.png.
+
+History:
+- qa (TFL-1196, 2026-10-08): classified STILL-PRESENT at HEAD; no existing spec covers ER20.
+- orchestrator (TFL-1199, 2026-10-08): FIX-READY - developer adds `exportImageOutputSummary` (`exportConfig.ts`) reusing the real `defaultExportFilename`, and `Inspector.tsx` shows the selected file count (`[data-export-config-output-value]`, e.g. "34 files") plus the naming example (`[data-export-config-output-scheme]`, e.g. "report-page-1.png … report-page-34.png") for image formats; office keeps the single name. Evidence: verify EXIT 0, build EXIT 0, targeted vitest green. Awaiting qa retest.
+- qa (TFL-1200, 2026-10-08): CLOSED - retest PASS. `npm.cmd run test:e2e -- e2e/tfl1196_er_uncovered_audit.spec.cjs -g "C:"` -> 1 passed. With report.pdf (34 pages) + Images PNG + All pages the Deliver surface reads `outputName="34 files"` and `output-scheme="<stem>-page-1.png … <stem>-page-34.png"` from the real `defaultExportFilename`; `rangeSummary="1-34"`. ER20/ER21 sub-cases converted from logging to assertions. Blast radius: `e2e/tfl1116_r21_r26_export_cta.spec.cjs` PASS (invalid range still disables the CTA). Evidence: build EXIT 0; screenshots/tfl1196_er20_21_deliver_full.png; log test-fixtures/tfl1200/e2e_er20_21.log.
+
+## DEF-634: Output checks still read "Not analysed" without a reason or a discoverable next step
+
+- Status: CLOSED (qa TFL-1200 retest, 2026-10-08)
+- Severity: LOW - an information gap: Protection and Export fidelity read "Not analysed" and the single added legend "Observations, not blockers." does not explain why the information is unavailable nor offer an analysis path. ER21 (audit P3).
+- Found by: qa (TFL-1196 ER01..ER24 re-audit, ER21)
+- Phase: visual-overhaul correction 3 (TFL-1195), ER21
+
+Files:
+- `src/renderer/components/ContextPanel.tsx:1449-1495` - the legend renders, but `protectionText`/`fidelityText` still fall back to the literal `'Not analysed'` (`:1408`, `:1412`) with no per-row help or link to analysis.
+
+Steps to reproduce (HEAD `dc68679`, app v1.51.0, dev build):
+1. `npm.cmd run build`; open `report.pdf`; go to Deliver (Ctrl+4); read the "Output checks" section.
+
+Expected: real analysis or an explanation of why the value is unavailable (ER21).
+
+Actual: `legend="Observations, not blockers."`, `Protection="Not analysed"`, `Export fidelity="Not analysed"`, `OCR="Not run"` - no reason and no next step beyond the separate "Optimize" action.
+- Command: `npm.cmd run test:e2e -- e2e/tfl1196_er_uncovered_audit.spec.cjs -g "C:"` -> 1 passed, log `[tfl1196-ER21-strings] legend="Observations, not blockers." protection="Not analysed" fidelity="Not analysed" ocr="Not run"`.
+- Screenshot: screenshots/tfl1196_er20_21_deliver_full.png.
+
+History:
+- qa (TFL-1196, 2026-10-08): classified STILL-PRESENT at HEAD (partially mitigated by the legend); no existing spec covers ER21.
+- orchestrator (TFL-1199, 2026-10-08): FIX-READY - developer replaces the bare literal with Protection "Not read" + reason (`[data-deliver-protection-reason]`) and Export fidelity "Not applicable" + reason (`[data-deliver-fidelity-reason]`); row hooks and legend kept; no invented analysis feature. Evidence: verify EXIT 0, build EXIT 0, focused vitest green. Awaiting qa retest.
+- qa (TFL-1200, 2026-10-08): CLOSED - retest PASS. `npm.cmd run test:e2e -- e2e/tfl1196_er_uncovered_audit.spec.cjs -g "C:"` -> 1 passed. Surface now reads `Protection="Not read"` + reason "The encryption dictionary has not been read for this document." and `Export fidelity="Not applicable"` + reason "Only office exports (Word, Excel, PowerPoint) carry conversion-limit notes."; the legend "Observations, not blockers." is kept and no "Not analysed" literal remains anywhere in the panel. Truthfulness: `protectionByTab` (App.tsx:2301-2304) is set only when `engine.getDocumentProtection` returns ok+non-null (encrypted), so the null input the Deliver panel receives honestly means "not read", never a fabricated "unencrypted"; for the unencrypted sample the engine returns null, so no false claim. Evidence: build EXIT 0; screenshots/tfl1196_er20_21_deliver_full.png; log test-fixtures/tfl1200/e2e_er20_21.log.
+
+## DEF-635: Stamp dialog still states two incompatible placement workflows
+
+- Status: CLOSED (qa TFL-1200 retest, 2026-10-08)
+- Severity: MEDIUM - the dialog's introduction and its page-selector helper contradict each other, so the user cannot tell whether the stamp lands at the next click or is centred on a picked page. ER24 (audit P2, confirmed copy defect).
+- Found by: qa (TFL-1196 ER01..ER24 re-audit, ER24)
+- Phase: visual-overhaul correction 3 (TFL-1195), ER24
+
+Files:
+- `src/renderer/components/StampDialog.tsx:147-151` - help: "After confirming, the next click on a page drops the stamp at that location."
+- `src/renderer/components/StampDialog.tsx:204-208` - hint: "The stamp is centered on the picked page at a default size (60 pt tall...)."
+
+Steps to reproduce (HEAD `dc68679`, app v1.51.0, dev build):
+1. `npm.cmd run build`; open `report.pdf`; go to Review (Ctrl+3); open the "Stamp" dock verb.
+2. Read the introduction paragraph and the "Place on page" helper text.
+
+Expected: instructions and primary label match the actual implementation; if both modes exist, placement mode is explicit (ER24).
+
+Actual: both contradictory strings render together; primary label is "Place on page" with a page selector.
+- Command: `npm.cmd run test:e2e -- e2e/tfl1196_er_uncovered_audit.spec.cjs -g "B:"` -> 1 passed, log `[tfl1196-ER24] {"help":"Pick a built-in stamp. After confirming, the next click on a page drops the stamp at that location. ...","hints":["The stamp is centered on the picked page at a default size (60 pt tall, width derived from the stamp's aspect ratio)."],"confirmLabel":"Place on page","pageSelectPresent":true}`.
+- Screenshot: screenshots/tfl1196_er24_stamp_dialog_full.png.
+
+History:
+- qa (TFL-1196, 2026-10-08): classified STILL-PRESENT at HEAD; no existing spec covers ER24.
+- orchestrator (TFL-1199, 2026-10-08): FIX-READY - developer removes the ignored page picker (`[data-stamp-page-select]`) and the false "centered on the picked page / 60 pt" hint, renames the primary action to "Start placement" (keeps `[data-stamp-confirm]`), and states click-to-place + Escape; `App.tsx` placement handler unchanged. Evidence: verify EXIT 0, build EXIT 0, stampDialog unit green. Awaiting qa retest.
+- qa (TFL-1200, 2026-10-08): CLOSED - retest PASS. `npm.cmd run test:e2e -- e2e/tfl1196_er_uncovered_audit.spec.cjs -g "B:"` -> 1 passed: `pageSelectPresent=false`, `confirmLabel="Start placement"`, dialog text contains no "centered on the picked page", no "60 pt", no "Place on page"; the intro states click-to-place + "Press Escape to cancel." Blast radius "F:": `-g "F:"` -> 1 passed - Start placement arms, a page click places exactly one stamp (`[data-stamp-annotation]`=1, canUndo=true), Ctrl+Z Undo removes it (0 remaining) on the disposable sample copy. Unit: stampDialog + phase112_deliver -> 27 passed. Evidence: build EXIT 0; screenshots/tfl1196_er24_stamp_dialog_full.png, tfl1196_stamp_placed.png, tfl1196_stamp_undone.png; logs test-fixtures/tfl1200/.
+
 ## DEF-628: View > Toggle Theme persists the live theme without updating `themeDefault`, so Preferences and the effective shell disagree
 
 - Status: CLOSED (qa TFL-1190, 2026-10-08)

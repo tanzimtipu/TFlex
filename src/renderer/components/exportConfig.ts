@@ -22,6 +22,7 @@ import {
 import type { ExportImageFormat } from '../../shared/types';
 import { classifyPageRange, defaultPageRange } from '../engine/types';
 import { DOCK_AVAILABILITY_REASON, officeExportGate } from '../state/dockModel';
+import { defaultExportFilename } from '../utils/exportDownload';
 
 /** Every format the Deliver export surface can prepare. */
 export type ExportConfigFormat = ExportImageFormat | ExportFormat;
@@ -194,6 +195,31 @@ export function exportPrimaryLabel(format: ExportConfigFormat): string {
 export function exportDefaultName(sourceName: string, format: ExportConfigFormat): string {
   const base = sourceName.replace(/\.[^./\\]+$/, '') || 'document';
   return `${base}.${format}`;
+}
+
+/** DEF-633 (ER20) — an image export writes ONE file PER selected page, each
+ *  named by the shipped `defaultExportFilename`. This returns the selected file
+ *  count and a naming example ("report-page-1.png ... report-page-34.png") so the
+ *  surface can state the real multi-file scheme instead of a single name, or
+ *  null for a single-file (office) format or an empty/invalid selection. It
+ *  reuses the ONE real filename helper, so the example cannot drift from the
+ *  save flow. Never invents a destination. */
+export function exportImageOutputSummary(
+  sourceName: string,
+  pages: readonly number[],
+  format: ExportConfigFormat,
+): { count: number; example: string } | null {
+  const option = exportFormatOption(format);
+  if (option === null || option.group !== 'image' || pages.length === 0) return null;
+  const imageFormat = format as ExportImageFormat;
+  const first = pages[0] as number;
+  const last = pages[pages.length - 1] as number;
+  const firstFile = defaultExportFilename(sourceName, first, imageFormat);
+  const example =
+    first === last
+      ? firstFile
+      : `${firstFile} \u2026 ${defaultExportFilename(sourceName, last, imageFormat)}`;
+  return { count: pages.length, example };
 }
 
 // ---------------------------------------------------------------------------

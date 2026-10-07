@@ -367,6 +367,9 @@ export function CreateFromImagesDialog(
     onQualityChange?.(qualityPercentToFraction(clampedPct));
   };
 
+  // TFL-1197 (DEF-632 / ER18) — the tall preview body is only meaningful once
+  // images exist; while empty the dialog sizes to its content. The marker is
+  // absent (not "false") when there are no files.
   return (
     <PreviewTaskDialog
       open={open}
@@ -375,6 +378,8 @@ export function CreateFromImagesDialog(
       onClose={onClose}
       className="create-images-dialog"
       data-create-from-images-dialog
+      {...(files.length > 0 ? { "data-create-has-files": true } : {})}
+      grow={files.length > 0}
       actions={[
         { key: "cancel", label: "Cancel", variant: "secondary", onClick: onClose },
         Object.assign(

@@ -4984,6 +4984,11 @@ body.tab-reordering .tab-list[data-reorder="true"] .tab {
   display: flex;
   flex-direction: column;
   gap: 6px;
+  /* TFL-1197 (DEF-631 / ER02) — containment: let the group's content shrink and
+   * reflow within the Inspector's ~249px content width instead of overflowing
+   * it. Mirrors the R11 workspace containment (`min-width: 0` all the way
+   * down). */
+  min-width: 0;
 }
 
 /* Phase 112 (C3) — advanced typography is disclosed progressively (line
@@ -5026,6 +5031,8 @@ body.tab-reordering .tab-list[data-reorder="true"] .tab {
   display: flex;
   flex-direction: column;
   gap: 6px;
+  /* TFL-1197 (DEF-631 / ER02) — same containment as .text-props-group-body. */
+  min-width: 0;
 }
 
 .text-props-row {
@@ -5034,12 +5041,18 @@ body.tab-reordering .tab-list[data-reorder="true"] .tab {
   justify-content: space-between;
   gap: 8px;
   min-height: 26px;
+  /* TFL-1197 (DEF-631 / ER02) — a label + control that cannot share one line
+   * wraps onto a complete second line rather than overflowing the panel. */
+  flex-wrap: wrap;
+  min-width: 0;
 }
 
 .text-props-label {
   font-size: var(--fs-xs);
   color: var(--fg);
   white-space: nowrap;
+  /* TFL-1197 (DEF-631 / ER02) — the label yields before the panel overflows. */
+  min-width: 0;
 }
 
 .text-props-select,
@@ -5179,21 +5192,29 @@ body.tab-reordering .tab-list[data-reorder="true"] .tab {
 .text-props-preview {
   display: block;
   max-width: 100%;
+  min-width: 0;
   padding: 6px 8px;
   border: 1px dashed var(--border);
   border-radius: var(--radius-2);
   background: var(--bg-input);
   color: var(--fg-strong);
   line-height: 1.4;
-  white-space: nowrap;
+  /* TFL-1197 (DEF-631 / ER02) — the preview wraps inside the real content box
+   * so its content can never exceed the panel (a nowrap line forced a nested
+   * horizontal overflow, even while clipped). */
+  white-space: normal;
+  overflow-wrap: anywhere;
   overflow: hidden;
-  text-overflow: ellipsis;
 }
 
 .text-props-btn-row {
   display: flex;
   align-items: center;
   gap: 4px;
+  /* TFL-1197 (DEF-631 / ER02) — a formatting button group that needs more than
+   * one line wraps into complete rows instead of overflowing. */
+  flex-wrap: wrap;
+  min-width: 0;
 }
 
 /* Phase 91 D2 — layout alias for the canonical `btn btn-ghost` toggle
@@ -5204,6 +5225,9 @@ body.tab-reordering .tab-list[data-reorder="true"] .tab {
   align-items: center;
   justify-content: center;
   width: 28px;
+  /* TFL-1197 (DEF-631 / ER02) — neutralise `.btn-icon`'s 36px min-width floor
+   * so the declared 28px box wins and the Font-style row fits on one line. */
+  min-width: 0;
   height: 26px;
   padding: 0;
   border-radius: var(--radius-2);
@@ -5260,6 +5284,7 @@ body.tab-reordering .tab-list[data-reorder="true"] .tab {
   display: inline-flex;
   align-items: center;
   gap: 6px;
+  min-width: 0;
 }
 
 .text-props-inline-icon {
@@ -12184,11 +12209,20 @@ rect.ann-highlight.ann-preview {
    * height does the same vertically. At 900x600 this resolves to
    * ~558x432, at 1920x1080 to 760x760, both inside the viewport. */
   width: clamp(320px, 62vw, 760px);
-  height: min(72vh, 760px);
-  /* minmax(0, 1fr) lets the body shrink below its content height so
-   * the dialog never scrolls as a whole and carries the footer out
-   * of the viewport. */
+  /* TFL-1197 (DEF-632 / ER18) — height is CONTENT-DRIVEN while the dialog is
+   * empty (no images selected): the box must not reserve a large blank body.
+   * minmax(0, 1fr) lets the body shrink below its content height so the
+   * dialog never scrolls as a whole and carries the footer out of the
+   * viewport. The tall height is applied only once files exist, below. */
+  height: auto;
+  max-height: min(72vh, 760px);
   grid-template-rows: auto minmax(0, 1fr) auto;
+}
+
+/* TFL-1197 (DEF-632 / ER18) — with images present, keep the existing tall
+ * preview layout (the list owns the vertical scroll). */
+[data-create-from-images-dialog][data-create-has-files].modal-dialog {
+  height: min(72vh, 760px);
 }
 
 [data-create-from-images-dialog] .modal-body {

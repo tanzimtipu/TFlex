@@ -71,12 +71,22 @@ describe("Phase 40 item 3 — CreateFromImagesDialog responsive CSS", () => {
     expect(body).not.toBeNull();
     // Width tracks the viewport between a small floor and a large cap.
     expect(body).toMatch(/width:\s*clamp\(\s*320px\s*,\s*62vw\s*,\s*760px\s*\)/);
-    // Height does the same, so a 900x600 window gets ~432px (inside the
-    // 536px viewport allowance) and a 1920x1080 window gets 760px.
-    expect(body).toMatch(/height:\s*min\(\s*72vh\s*,\s*760px\s*\)/);
+    // TFL-1197 (DEF-632 / ER18) — while empty the box is CONTENT-DRIVEN: an
+    // auto height capped by the viewport, so no large blank body is reserved.
+    expect(body).toMatch(/height:\s*auto/);
+    expect(body).toMatch(/max-height:\s*min\(\s*72vh\s*,\s*760px\s*\)/);
     // minmax(0, 1fr) stops the body from forcing the dialog to scroll
     // as a whole (which would carry the footer out of the viewport).
     expect(body).toMatch(/grid-template-rows:\s*auto\s+minmax\(0,\s*1fr\)\s+auto/);
+  });
+
+  it("applies the tall preview height only once files exist (DEF-632)", () => {
+    const body = findRuleBody(
+      SRC,
+      "[data-create-from-images-dialog][data-create-has-files].modal-dialog",
+    );
+    expect(body).not.toBeNull();
+    expect(body).toMatch(/height:\s*min\(\s*72vh\s*,\s*760px\s*\)/);
   });
 
   it("moves the vertical scroll onto the body so header/footer stay reachable", () => {
@@ -139,5 +149,27 @@ describe("Phase 40 item 3 — CreateFromImagesDialog DOM hook", () => {
     expect(dialog).not.toBeNull();
     expect(dialog?.classList.contains("modal-dialog")).toBe(true);
     expect(dialog?.querySelector(".modal-body")).not.toBeNull();
+  });
+
+  it("is content-sized when empty: no grow marker and no has-files hook (DEF-632)", () => {
+    container = document.createElement("div");
+    document.body.appendChild(container);
+    root = createRoot(container);
+    act((): void => {
+      root?.render(
+        <CreateFromImagesDialog
+          open={true}
+          initialQuality={DEFAULT_CREATE_IMAGE_QUALITY}
+          onConfirm={(): void => undefined}
+          onClose={(): void => undefined}
+        />,
+      );
+    });
+    const dialog = container.querySelector("[data-create-from-images-dialog]");
+    expect(dialog).not.toBeNull();
+    // Empty dialog: no tall preview body is reserved.
+    expect(dialog?.classList.contains("task-dialog-preview-grow")).toBe(false);
+    expect(dialog?.hasAttribute("data-create-has-files")).toBe(false);
+    expect(dialog?.querySelector("[data-create-list]")).toBeNull();
   });
 });

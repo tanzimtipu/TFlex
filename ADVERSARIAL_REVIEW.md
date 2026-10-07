@@ -12358,3 +12358,118 @@ shell to match them, and who navigates a document from a compact window.
 - The compact drawer exposes `aria-expanded` in both states and returns focus to
   the collapse control on Escape and close.
 
+## TFL-1201 diff-pass — ER20 export truthfulness + ER24 stamp placement: NO FINDINGS
+
+- Session: diff-pass (TFL-1201)
+- Build under attack: app v1.51.0, dev renderer built from HEAD `dc68679` plus the
+  uncommitted TFL-1197/1199 working-tree changes (`npm run build` exit 0).
+- Suggested severity: none — no finding met the bar. No ADV entry is filed.
+
+No ADV-246 (or any) entry is created: the five mandated attack classes for this
+diff all held, and I will not fabricate a finding. The exact commands and
+observed results are recorded below so the CTO can audit the negative result.
+
+### Attack 1 — Export truthfulness (displayed count/scheme vs actual written files)
+
+The shipped renderer save path is an anchor download (`downloadBlob`,
+`src/renderer/utils/exportDownload.ts:25`). Playwright's Electron transport does
+not surface `download` events for this build (verified: `mechanism_check.log`
+shows `[download-events] []` while the real write fired), so the probe observes
+the real write at its primitive — `HTMLAnchorElement.prototype.click` with the
+product's `download` filename and blob — and materializes those exact bytes into
+`test-fixtures/tfl1201-adversary/out-export-truth/`. No product file is patched;
+this is runtime observation of the only save call the app makes.
+
+Command: `node test-fixtures/tfl1201-adversary/probe_export_truth.cjs`
+(plus `probe_unicode.cjs`). Results:
+
+- 34-page `report.pdf` + Images - PNG + All pages: display `"34 files"` and
+  scheme `<stem>-page-1.png … <stem>-page-34.png`; actual = **34** files, all 34
+  start with the PNG magic `89504e470d0a1a0a`, and the first/last names equal the
+  displayed scheme exactly. (`out-export-truth/caseA-report-png-all/`)
+- 1-page fixture + PNG + All pages: display `"1 file"`, scheme
+  `fixture-onepage-page-1.png`; actual = **1** file, valid PNG.
+- 34-page + PNG + custom `1,1,34`: display `"2 files"`, scheme spans page-1 …
+  page-34; actual = **2** files (`…-page-1.png`, `…-page-34.png`). The duplicate is
+  deduped by the real parser, the count is honest, and the dialog re-parses the
+  seed to a matching `1,34` (`rangeSummary` shows the raw user text `1,1,34`).
+- 34-page + Text (.txt): display is the single name `<stem>.txt` and **no**
+  `[data-export-config-output-scheme]` element is rendered.
+- Hostile source name (`Adversary Rëport Ünïcode v1.2.pdf`, spaces + unicode +
+  extra dot) + PNG + `1,3`: display `"2 files"` scheme
+  `Adversary Rëport Ünïcode v1.2-page-1.png … …-page-3.png`; actual names are
+  byte-identical to the displayed scheme.
+
+### Attack 2 — Export gating preserved
+
+Same probe. Invalid range `1,999` on a 34-page doc: `[data-export-config-output-value]`
+shows `—`, the action `[data-inspector-action="export"]` is `disabled`, and the
+range error names the bound (`Page 999 is outside the document's 1-34 pages.`).
+Typing `9999` into the DPI field clamps to `600`; typing `10` clamps to `72`. No
+new copy path bypasses validation or alters the save flow (the summary is a pure
+display function with no side effects).
+
+### Attack 3 — Stamp placement (ER24)
+
+Command: `node test-fixtures/tfl1201-adversary/probe_stamp.cjs` on a disposable
+`getSamplePath('report.pdf')` copy. Results: dialog confirm reads
+`Start placement` and the page picker `[data-stamp-page-select]` is gone;
+confirming arms the ghost `[data-stamp-layer]` with **0** `[data-stamp-annotation]`;
+Escape before any click detaches the layer with **0** annotations and no undo
+entry; a single page click places **exactly one** stamp (`canUndo=true`) and
+disarms the layer; a second immediate click does **not** place a second stamp
+(still 1); Undo removes it (0). The source copy's sha256 and byte size are
+identical before and after (`9b39af69…`, 33028 bytes) — no in-place write.
+
+### Attack 4 / 5 — Image dialog content height, cancel, resize, reopen
+
+Command: `node test-fixtures/tfl1201-adversary/probe_dialog.cjs`. At 985x645 the
+empty Create-from-images dialog is 444 px (no list, no grow marker), the filled
+one grows to 464 px (list + grow marker), and the footer confirm stays in view in
+both. Resizing while open to 960x1392 and back to 1024x768 keeps the confirm in
+view with zero horizontal-overflow descendants. Escape cancels with no document
+mutation (Home still shown, tab count unchanged, no toast); reopening restores the
+empty state with no stale list and no stray toast/flash.
+
+### Classes that held (TFL-1201 diff-pass)
+
+- **ER20 export copy — HOLDS.** Displayed count and naming scheme equal the real
+  written files for 34p/1p/duplicate-range/txt and a hostile unicode+space name.
+- **Export gating — HOLDS.** Invalid range disables the action; DPI clamps to
+  72..600; the summary is display-only.
+- **ER24 stamp flow — HOLDS.** Arm / no-stamp-before-click / Escape-cancel /
+  one-click-one-stamp / Undo / source untouched.
+- **ER18 image-dialog grow + boundary — HOLDS.** Content-driven height, reachable
+  footer, resize-safe, clean reopen.
+
+Baseline: `npm run build` exit 0 (typecheck + renderer + node).
+
+### Design critique: the TFL-1201 changed surfaces (Deliver export config, Stamp dialog, image dialog)
+
+User context: a desktop PDF user preparing a multi-file image export and placing a
+stamp on a document; they glance once at the output summary and expect it to match
+what lands on disk.
+
+#### Must-fix (blocks ship)
+- None.
+
+#### Should-fix (before broader rollout)
+- **Copy:** in the duplicate-range case the "Pages" row echoes the raw input
+  (`1,1,34`) while the output row says `2 files`, so a fast reader can briefly
+  wonder where the third file went. **Try:** optionally echo the resolved scope
+  beside the count (e.g. `2 files (pages 1, 34)`).
+
+#### Nice-to-fix (when there's room)
+- **States:** the `…` ellipsis scheme is precise but terse; a one-line "one PNG
+  per selected page" clause would remove any remaining ambiguity for first-time
+  exporters.
+
+#### Strengths to keep
+- The count and naming example reuse the ONE real filename helper
+  (`defaultExportFilename`), so the copy cannot drift from the save flow.
+- The scheme degrades honestly: office formats keep the single-name display and
+  render no scheme element at all.
+- The stamp dialog now states the real click-to-place + Escape-cancel flow and no
+  longer promises a page/centering the handler ignores.
+
+
