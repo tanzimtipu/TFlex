@@ -2023,14 +2023,14 @@ describe('Phase 112: RecentFile source metadata normalisation', () => {
 // Phase 112 (TFL-992) — panel geometry + inspector collapse persistence.
 // Preserve-if-valid: a width survives only when finite and inside its range,
 // the boolean only when a real boolean; absent/invalid leaves the field unset
-// so the consumer applies its own default (240 / 280 / false) and the default
+// so the consumer applies its own default (280 / 280 / false) and the default
 // is never stored. An invalid width drops ONLY itself.
 describe('Phase 112 (TFL-992): panel geometry + inspector collapse', () => {
   it('keeps an in-range panelLeftWidthPx', () => {
-    expect(normalizeSettings({ panelLeftWidthPx: 220 }).panelLeftWidthPx).toBe(220);
     expect(normalizeSettings({ panelLeftWidthPx: 240 }).panelLeftWidthPx).toBe(240);
     expect(normalizeSettings({ panelLeftWidthPx: 320 }).panelLeftWidthPx).toBe(320);
     expect(normalizeSettings({ panelLeftWidthPx: 275 }).panelLeftWidthPx).toBe(275);
+    expect(normalizeSettings({ panelLeftWidthPx: 420 }).panelLeftWidthPx).toBe(420);
   });
 
   it('keeps an in-range panelRightWidthPx', () => {
@@ -2041,7 +2041,7 @@ describe('Phase 112 (TFL-992): panel geometry + inspector collapse', () => {
   });
 
   it('drops an out-of-range panelLeftWidthPx (field absent)', () => {
-    for (const bad of [219, 321, 0, -1, 1000]) {
+    for (const bad of [239, 421, 0, -1, 1000]) {
       const result = normalizeSettings({ panelLeftWidthPx: bad });
       expect(result.panelLeftWidthPx).toBeUndefined();
       expect('panelLeftWidthPx' in result).toBe(false);
@@ -2178,9 +2178,33 @@ describe('Phase 112 (TFL-992): panel geometry + inspector collapse', () => {
   });
 
   it('exports the documented panel width bounds', () => {
-    expect(PANEL_LEFT_WIDTH_MIN).toBe(220);
-    expect(PANEL_LEFT_WIDTH_MAX).toBe(320);
+    expect(PANEL_LEFT_WIDTH_MIN).toBe(240);
+    expect(PANEL_LEFT_WIDTH_MAX).toBe(420);
     expect(PANEL_RIGHT_WIDTH_MIN).toBe(260);
     expect(PANEL_RIGHT_WIDTH_MAX).toBe(380);
+  });
+
+  it('keeps a valid navigatorLayout / navigatorSplitRatio and drops invalid ones', () => {
+    expect(normalizeSettings({ navigatorLayout: 'split' }).navigatorLayout).toBe('split');
+    expect(normalizeSettings({ navigatorLayout: 'stacked' }).navigatorLayout).toBe('stacked');
+    expect(normalizeSettings({ navigatorSplitRatio: 0.5 }).navigatorSplitRatio).toBe(0.5);
+    expect(normalizeSettings({ navigatorSplitRatio: 0.1 }).navigatorSplitRatio).toBe(0.1);
+    expect(normalizeSettings({ navigatorSplitRatio: 0.9 }).navigatorSplitRatio).toBe(0.9);
+
+    const badLayout = normalizeSettings({ navigatorLayout: 'grid' });
+    expect(badLayout.navigatorLayout).toBeUndefined();
+    expect('navigatorLayout' in badLayout).toBe(false);
+
+    for (const bad of [0.05, 0.95, '0.5', Number.NaN]) {
+      const result = normalizeSettings({ navigatorSplitRatio: bad });
+      expect(result.navigatorSplitRatio).toBeUndefined();
+      expect('navigatorSplitRatio' in result).toBe(false);
+    }
+
+    const absent = normalizeSettings({});
+    expect(absent.navigatorLayout).toBeUndefined();
+    expect(absent.navigatorSplitRatio).toBeUndefined();
+    expect('navigatorLayout' in absent).toBe(false);
+    expect('navigatorSplitRatio' in absent).toBe(false);
   });
 });

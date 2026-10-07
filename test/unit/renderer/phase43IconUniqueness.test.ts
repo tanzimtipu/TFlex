@@ -117,7 +117,6 @@ const SHARED_ALLOW: Readonly<Record<string, string>> = {
   Settings: "the open-preferences verb (header gear + registry preferences)",
   PanelsLeftRight: "the Multi Mode verb (header toggle + registry/palette route)",
   Sparkles: "the bundled-samples mark (the welcome samples-empty state) and the registry's retained openSample metaphor",
-  Trash2: "the delete verb (the rail page-delete thumb + the registry's delete entry); the DeletePageDialog, annotation and review-element deletes render the registry delete id",
   Download: "the download-update verb (update indicator + registry updateDownload)",
   RefreshCw: "the check-for-update / retry verb (indicator + update prompt + registry checkForUpdate)",
   TextCursor: "the edit-content text item (registry editText + the context panel's edit-content text row)",
@@ -141,6 +140,9 @@ const SHARED_ALLOW: Readonly<Record<string, string>> = {
   PanelRightOpen: "expand a side panel (rail + context panel + inspector)",
   Check: "the check/confirm mark (registry toggle + annotation tool menu selection)",
   Ellipsis: "the more-actions overflow (registry pageContextMenu/dockOverflow retained glyph + toolsRegistry)",
+  // Phase 111 (chunk B) — the More affordance on the page-card footer and the
+  // PAGES panel header. One overflow metaphor, two sibling surfaces.
+  MoreHorizontal: "the More overflow affordance (the PAGES panel header More + the per-page card footer More)",
   File: "the generic document/file item glyph (Multi Mode untitled pane + welcome-recents file row); both denote an open PDF document",
   ClipboardPaste: "the create-PDF-from-clipboard verb (registry createFromClipboard + toolsRegistry holds its retained glyph)",
   GripVertical: "the drag-handle affordance (page drag + the Multi Mode divider)",
@@ -148,22 +150,20 @@ const SHARED_ALLOW: Readonly<Record<string, string>> = {
   Moon: "the dark-theme option (registry theme entry + the header theme icon)",
   Printer: "the print verb (registry print + the header)",
   RotateCcw: "rotate counter-clockwise (registry retained glyph + toolsRegistry)",
-  RotateCw: "rotate clockwise (registry + the rail page verb)",
   Save: "the save verb (registry save + the header)",
   SaveAll: "the save-a-copy verb (registry saveAs + the header)",
   // Phase 44 (operator amendment) — the account menu repeats two verbs that
   // already live on the signed-in account dialog: sign out and sync now.
   LogOut: "the sign-out verb (the signed-in AccountsDialog surface + the top-bar avatar menu)",
   RefreshCcw: "the sync-now verb (the signed-in AccountsDialog surface + the top-bar avatar menu)",
-  Scissors: "the extract/split verb (registry + the rail page verb)",
   Upload: "the confirm-import action (CommentImportDialog + FillFromCsvDialog + FormDataIoDialog) rendered identically on every import dialog",
   // Phase 84 — the redact verb renders Eraser on the registry entry and the
   // edit TextPropertiesPanel's redact control.
   Eraser: "the redact-marked-region verb (the edit TextPropertiesPanel's redact control + the registry's redact entry)",
-  // Phase 88 (FEA-037) — the two list-indent controls share their directional
-  // glyphs between the SideRail edit controls and the TextPropertiesPanel.
-  IndentIncrease: "the increase-list-indent control (SideRail edit controls + TextPropertiesPanel); one direction, two surfaces",
-  IndentDecrease: "the decrease-list-indent control (SideRail edit controls + TextPropertiesPanel); one direction, two surfaces",
+  // Phase 111 (chunk C) — the outline's inline indent/outdent verbs were
+  // retired (the row More menu now uses text rows), so IndentIncrease /
+  // IndentDecrease are owned by the edit TextPropertiesPanel alone and no
+  // longer need a shared-allow entry.
   // Phase 103 (TFL-829) — the shared Quiet Precision registry HOLDS the retained
   // Lucide glyph for every "RETAIN lucide, normalize to 1.65/24" row, so each
   // such glyph is legitimately owned by the registry command AND the shared
@@ -200,7 +200,9 @@ const SHARED_ALLOW: Readonly<Record<string, string>> = {
   // rendered by more than one named surface. Identity is the registry command id.
   editMode: "the edit-content verb (CommandBar + the SideRail outline rename + the welcome home-row edit toggle), one command, one glyph",
   delete: "the delete verb (CommandBar + the rail page/outline delete + the annotations list delete + the review-element delete + the DeletePageDialog confirm), one command, one glyph",
-  merge: "the combine/merge verb (CommandBar + the ContextPanel Combine control), one command, one glyph",
+  // Phase 111 (chunk B) — `merge` is no longer shared: the ContextPanel
+  // header's Combine control moved into the More menu (a text row), leaving
+  // the CommandBar as its only icon owner.
   open: "the open-a-PDF verb (AppHeader + the Multi Mode pane's Open control + the welcome fixed Open tile), one command, one glyph",
   recognizeText: "the recognize-text/OCR verb (the ContextPanel action + the OcrSuspectsPanel header), one command, one glyph",
   annHighlight: "the highlight annotation glyph (annotation toolbar + annotations list legend), one command, one glyph",

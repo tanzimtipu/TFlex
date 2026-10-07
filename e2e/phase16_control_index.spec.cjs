@@ -38,6 +38,11 @@
 const { test, expect } = require('@playwright/test');
 const { launchDev, openSample, diag, shot, hardClose, gotoStage } = require('./lib/helpers.cjs');
 
+// The Paperclip harness exports ELECTRON_RUN_AS_NODE=1; launchApp spreads
+// process.env into the Electron child, which then exits as plain Node before any
+// window is observable. Drop it before any launch.
+delete process.env.ELECTRON_RUN_AS_NODE;
+
 // Set the theme through the UI (title-bar theme popover), the way a user
 // would, and wait for data-theme + the 400ms crossfade to settle.
 async function setTheme(window, want) {
@@ -415,10 +420,13 @@ test('P16C-6: no-op sweep - every new control double-clicked, nothing hangs', as
     await thumbsTab.waitFor({ timeout: 10000 });
     await thumbsTab.click();
     await thumbsTab.click();
-    const bm = window.locator('[data-context-panel-outline]');
-    if ((await bm.count()) > 0) {
-      await bm.locator('[data-outline-toggle]').click();
-      await bm.locator('[data-outline-toggle]').click();
+    // Phase 111 (chunk A) retired the collapsible Outline section and its
+    // [data-outline-toggle] / data-outline-open hooks; the live outline
+    // disclosure is the navigator view tab.
+    const outlineTab = window.locator('[data-context-panel-view-tab="outline"]');
+    if ((await outlineTab.count()) > 0) {
+      await outlineTab.click();
+      await outlineTab.click();
     }
     // Annotations section lives in the REVIEW body.
     await gotoStage(window, 3);

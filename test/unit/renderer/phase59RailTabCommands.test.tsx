@@ -9,8 +9,9 @@
 //   2. The two commands (App's handlers, modelled here with the SAME shape:
 //      ensure Pages + set the tab) switch that state to 'thumbs' / 'outline'.
 //   3. The Pages ContextPanel consumes the host tab: the "Bookmarks" command
-//      expands the outline section, "Page thumbnails" collapses it, and the
-//      panel's own outline toggle writes the SAME host state back.
+//      selects the full-height Outline view, "Page thumbnails" selects Pages,
+//      and the panel's own view tabs write the SAME host state back (Phase 111
+//      chunk A replaced the old collapsible outline section with these views).
 //   4. The palette lists both rows and enables them with the Pages panel
 //      showing (the buildPaletteRows side lives in the sibling item-7 spec).
 
@@ -21,7 +22,7 @@ import { createRoot } from "react-dom/client";
 import { act, useState } from "react";
 import type { ReactElement } from "react";
 import type { PDFDocumentProxy } from "pdfjs-dist";
-import { SideRail, type RailTab } from "../../../src/renderer/components/SideRail";
+import type { RailTab } from "../../../src/renderer/components/SideRail";
 import { ContextPanel } from "../../../src/renderer/components/ContextPanel";
 import type { EngineState } from "../../../src/renderer/engine/types";
 import type { OutlineNode } from "../../../src/renderer/pdf/pdfjs";
@@ -90,93 +91,6 @@ function applyRailCommand(setTab: (t: RailTab) => void, action: string): void {
   else if (action === "railTabOutline") setTab("outline");
 }
 
-// ---------------------------------------------------------------------------
-// A host harness: the rail is CONTROLLED by one `RailTab` state, and the rail
-// tab buttons and the commands both write it (exactly App's shape).
-// ---------------------------------------------------------------------------
-
-function mountControlledRail(): {
-  host: HTMLElement;
-  setRailTab: (t: RailTab) => void;
-  activeTab: () => string | null;
-  clickTab: (t: RailTab) => void;
-  unmount: () => void;
-} {
-  const host = document.createElement("div");
-  document.body.appendChild(host);
-  const root = createRoot(host);
-  let setter: (t: RailTab) => void = () => undefined;
-  const api = {
-    host,
-    setRailTab: (t: RailTab): void => setter(t),
-    activeTab: (): string | null =>
-      host.querySelector(".rail-tab-active[data-rail-tab]")?.getAttribute("data-rail-tab") ?? null,
-    clickTab: (t: RailTab): void => {
-      const btn = host.querySelector<HTMLButtonElement>(`.rail-tab[data-rail-tab="${t}"]`);
-      act((): void => btn?.click());
-    },
-    unmount: (): void => {
-      act((): void => root.unmount());
-      host.remove();
-    },
-  };
-  function Host(): ReactElement {
-    const [tab, setTab] = useState<RailTab>("thumbs");
-    setter = setTab;
-    return (
-      <SideRail
-        doc={makeStubDoc()}
-        pageCount={4}
-        outline={OUTLINE}
-        currentPage={1}
-        defaultWidthPt={612}
-        defaultHeightPt={792}
-        engineState={makeEngineState(4)}
-        canUndo={false}
-        onJump={(): void => undefined}
-        tab={tab}
-        onTabChange={setTab}
-      />
-    );
-  }
-  act((): void => {
-    root.render(<Host />);
-  });
-  return api;
-}
-
-describe("Phase 59 (item 7 follow-up) — the rail tab is host-owned", () => {
-  it("the rail's OWN buttons write the shared host state", () => {
-    const { host, activeTab, clickTab, unmount } = mountControlledRail();
-    try {
-      expect(activeTab()).toBe("thumbs");
-      clickTab("outline");
-      expect(activeTab()).toBe("outline");
-      clickTab("thumbs");
-      expect(activeTab()).toBe("thumbs");
-      void host;
-    } finally {
-      unmount();
-    }
-  });
-
-  it("the pageThumbnails / outlinePanel commands switch the SAME state", () => {
-    const { setRailTab, activeTab, unmount } = mountControlledRail();
-    try {
-      act((): void => applyRailCommand(setRailTab, "railTabOutline"));
-      expect(activeTab()).toBe("outline");
-      act((): void => applyRailCommand(setRailTab, "railTabThumbnails"));
-      expect(activeTab()).toBe("thumbs");
-      // Idempotent: re-running the current tab changes nothing and throws not.
-      act((): void => applyRailCommand(setRailTab, "railTabThumbnails"));
-      expect(activeTab()).toBe("thumbs");
-    } finally {
-      unmount();
-    }
-  });
-});
-
-// ---------------------------------------------------------------------------
 // The Pages ContextPanel consumes the host tab: the commands switch its outline
 // section, and the panel's own toggle writes the SAME host state back.
 // ---------------------------------------------------------------------------
@@ -184,8 +98,8 @@ describe("Phase 59 (item 7 follow-up) — the rail tab is host-owned", () => {
 function mountPagesPanel(): {
   host: HTMLElement;
   setRailTab: (t: RailTab) => void;
-  outlineOpen: () => boolean;
-  clickOutlineToggle: () => void;
+  outlineViewActive: () => boolean;
+  clickViewTab: (dataTab: "pages" | "outline") => void;
   currentRailTab: () => RailTab;
   unmount: () => void;
 } {
@@ -197,12 +111,12 @@ function mountPagesPanel(): {
   const api = {
     host,
     setRailTab: (t: RailTab): void => setter(t),
-    outlineOpen: (): boolean =>
-      host
-        .querySelector("[data-context-panel-outline]")
-        ?.getAttribute("data-outline-open") === "true",
-    clickOutlineToggle: (): void => {
-      const btn = host.querySelector<HTMLButtonElement>("[data-outline-toggle]");
+    outlineViewActive: (): boolean =>
+      host.querySelector('[data-context-panel-view="outline"]') !== null,
+    clickViewTab: (dataTab: "pages" | "outline"): void => {
+      const btn = host.querySelector<HTMLButtonElement>(
+        `[data-context-panel-view-tab="${dataTab}"]`,
+      );
       act((): void => btn?.click());
     },
     currentRailTab: (): RailTab => current,
@@ -237,43 +151,40 @@ function mountPagesPanel(): {
   return api;
 }
 
-describe("Phase 59 (item 7 follow-up) — the Pages panel consumes the host tab", () => {
-  it("starts expanded (no visual change on open) and the default is untouched", () => {
-    const { outlineOpen, currentRailTab, unmount } = mountPagesPanel();
+describe("Phase 111 (chunk A) — the Pages panel consumes the host tab", () => {
+  it("starts on the Pages view (the default is untouched)", () => {
+    const { outlineViewActive, currentRailTab, unmount } = mountPagesPanel();
     try {
-      expect(outlineOpen()).toBe(true);
+      expect(outlineViewActive()).toBe(false);
       expect(currentRailTab()).toBe("thumbs");
     } finally {
       unmount();
     }
   });
 
-  it("the Bookmarks command expands the outline; Page thumbnails collapses it", () => {
-    const { setRailTab, outlineOpen, unmount } = mountPagesPanel();
+  it("the Bookmarks / Page thumbnails commands switch the navigator VIEW", () => {
+    const { setRailTab, outlineViewActive, unmount } = mountPagesPanel();
     try {
       act((): void => applyRailCommand(setRailTab, "railTabOutline"));
-      expect(outlineOpen()).toBe(true);
+      expect(outlineViewActive()).toBe(true);
       act((): void => applyRailCommand(setRailTab, "railTabThumbnails"));
-      expect(outlineOpen()).toBe(false);
-      // The thumbnails stay live regardless of the section.
+      expect(outlineViewActive()).toBe(false);
+      // The Pages view is live again.
       expect(document.body.querySelectorAll(".thumb-item").length).toBeGreaterThanOrEqual(0);
     } finally {
       unmount();
     }
   });
 
-  it("the panel's own outline toggle writes the SAME host tab state", () => {
-    const { clickOutlineToggle, outlineOpen, currentRailTab, host, unmount } = mountPagesPanel();
+  it("the panel's own view tabs write the SAME host tab state", () => {
+    const { clickViewTab, outlineViewActive, currentRailTab, unmount } = mountPagesPanel();
     try {
-      // Collapse via the panel's own control -> host tab becomes 'thumbs'.
-      clickOutlineToggle();
-      expect(currentRailTab()).toBe("thumbs");
-      expect(outlineOpen()).toBe(false);
-      // Expand again -> host tab becomes 'outline'.
-      clickOutlineToggle();
+      clickViewTab("outline");
       expect(currentRailTab()).toBe("outline");
-      expect(outlineOpen()).toBe(true);
-      void host;
+      expect(outlineViewActive()).toBe(true);
+      clickViewTab("pages");
+      expect(currentRailTab()).toBe("thumbs");
+      expect(outlineViewActive()).toBe(false);
     } finally {
       unmount();
     }

@@ -17,6 +17,11 @@ const fs = require('node:fs');
 const { launchApp } = require('./lib/launch.cjs');
 const { hardClose } = require('./lib/helpers.cjs');
 
+// The Paperclip harness exports ELECTRON_RUN_AS_NODE=1; launchApp spreads
+// process.env into the Electron child, which then exits as plain Node before any
+// window is observable. Drop it before any launch.
+delete process.env.ELECTRON_RUN_AS_NODE;
+
 const SHOTS = path.resolve(__dirname, '..', 'screenshots');
 fs.mkdirSync(SHOTS, { recursive: true });
 const PANEL_SHOT = path.join(SHOTS, 'phase36-chunk2-panel.png');
@@ -262,9 +267,13 @@ test('P36C2-A the panel is the default left slot; no dev markers, no rail; chrom
   expect(painted.length, 'at least one panel preview painted').toBeGreaterThan(0);
   for (const t of painted) expect(t.ink, `panel page ${t.page} has real ink`).toBeGreaterThan(0);
   await expect(win.locator(`${PANEL} .thumb-current`)).toHaveAttribute('data-page', '1');
-  // The chrome exists (verbs are hover-hidden but mounted; Combine is present).
-  expect(await win.locator(`${PANEL} .thumb-item[data-page="1"] [data-thumb-verbs]`).count()).toBe(1);
-  expect(await win.locator('[data-context-panel-combine]').count()).toBe(1);
+  // The chrome exists (the per-card More is mounted; Combine lives in the
+  // header's labelled More menu — Phase 111 chunk B).
+  expect(await win.locator(`${PANEL} .thumb-item[data-page="1"] [data-thumb-more]`).count()).toBe(1);
+  await win.locator('[data-context-panel-more]').click();
+  await expect(win.locator('[data-context-panel-more-menu] [data-context-panel-combine]')).toHaveCount(1);
+  await win.keyboard.press('Escape');
+  await expect(win.locator('[data-context-panel-more-menu]')).toHaveCount(0);
   console.log(`[P36C2-A] panel default: count=${panel.count} painted=${JSON.stringify(paintedPages(panel))}`);
 });
 
@@ -328,7 +337,7 @@ test('P36C2-B1 live previews and thumbnail geometry', async () => {
       inner: rr(root.querySelector('.thumb-scroller-inner')),
       outline: rr(root.querySelector('.context-panel-outline')),
       outlineBody: rr(root.querySelector('.context-panel-outline-body')),
-      toggle: rr(root.querySelector('[data-outline-toggle]')),
+      toggle: rr(root.querySelector('[data-context-panel-view-tab="outline"]')),
       thumb1: rr(root.querySelector('.thumb-item[data-page="1"]')),
       links: [...root.querySelectorAll('.outline-link')].slice(0, 3).map(rr),
       linkCount: root.querySelectorAll('.outline-link').length,
@@ -387,10 +396,10 @@ test('P36C2-B2 rotate and delete re-render the panel', async () => {
   console.log(`[P36C2-B2] after rotate page1: panel="${rot.panel}"`);
   expect(rot.panel).toContain('thumb-rot-90');
 
-  // Delete page 3 through the panel's own hover delete verb (an IMMEDIATE
-  // delete; the panel re-renders from the new engine state).
-  await win.locator(`${PANEL} .thumb-item[data-page="3"]`).hover();
-  await win.locator(`${PANEL} .thumb-item[data-page="3"] [data-thumb-verb="delete"]`).click();
+  // Delete page 3 through the card's own More menu (Phase 111 chunk B retired
+  // the over-preview verb strip; the action is an IMMEDIATE delete).
+  await win.locator(`${PANEL} .thumb-item[data-page="3"] [data-thumb-more]`).click();
+  await win.locator('[data-page-menu="card"] [data-menu-item="delete"]').click();
 
   await expect.poll(async () => (await engine()).pageCount, { timeout: 30000 }).toBe(33);
   await expect.poll(async () => win.locator(`${PANEL} .thumb-item`).count(), { timeout: 30000 }).toBe(33);
@@ -496,57 +505,81 @@ async function openPageMenu(page) {
   return win.locator('[data-context-menu]');
 }
 
+// Phase 111 (chunk B) — the retired over-preview verbs live in the card footer's
+// More menu now (`[data-thumb-more]` -> a `[data-page-menu="card"]` CommandMenu
+// whose rows carry `[data-menu-item]`). Open that menu and click the row.
+async function cardMenuAction(page, item) {
+  const thumb = win.locator(`${PANEL} .thumb-item[data-page="${page}"]`).first();
+  await thumb.scrollIntoViewIfNeeded();
+  await win.waitForTimeout(400);
+  const menu = win.locator('[data-page-menu="card"]');
+  // The menu dismisses on scroll; a pending navigation recentre can close it
+  // right after the click, so retry briefly until it stays open.
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    await thumb.locator('[data-thumb-more]').click();
+    if ((await menu.count()) > 0) break;
+    await win.waitForTimeout(400);
+  }
+  await expect(menu).toHaveCount(1);
+  await menu.locator(`[data-menu-item="${item}"]`).click();
+}
+
 // ---------------------------------------------------------------------------
-// C. Panel-only — the inline hover verbs.
+// C. Panel-only — the per-card More menu (Phase 111 chunk B replaced the
+//    over-preview hover verbs with the card footer's 32px [data-thumb-more]).
 // ---------------------------------------------------------------------------
-test('P36C2-C hover verbs: reveal, right action for the right page, no select/jump/drag', async () => {
+test('P36C2-C card More menu: right action for the right page, no select/jump/drag', async () => {
   
-  // No-outline fixture so the verb clicks are not blocked by the DEF-310
-  // outline overlay (report.pdf would intercept every panel-body pointer).
+  // No-outline fixture so the menu gestures are not blocked by any outline
+  // overlay (report.pdf would intercept every panel-body pointer).
   await openDoc('scanned.pdf');
 
-  const verbs = win.locator(`${PANEL} .thumb-item[data-page="2"] [data-thumb-verbs]`);
-  await expect(verbs).toHaveCount(1);
-  // Hidden until hover.
-  const before = await verbs.evaluate((el) => ({ opacity: getComputedStyle(el).opacity, pe: getComputedStyle(el).pointerEvents }));
-  expect(Number(before.opacity), 'verbs hidden before hover').toBe(0);
-  await win.locator(`${PANEL} .thumb-item[data-page="2"]`).hover();
-  await expect.poll(async () => verbs.evaluate((el) => getComputedStyle(el).opacity), { timeout: 5000 }).toBe('1');
-  const after = await verbs.evaluate((el) => getComputedStyle(el).pointerEvents);
-  expect(after).toBe('auto');
-  console.log(`[P36C2-C] verbs reveal on hover: opacity ${before.opacity}->${after}, pointer-events ${before.pe}->auto`);
+  // The per-card More is mounted and opens a real menu with the three page
+  // actions (the retired verb strip's rotate / extract / delete).
+  const more = win.locator(`${PANEL} .thumb-item[data-page="2"] [data-thumb-more]`);
+  await expect(more).toHaveCount(1);
+  await more.click();
+  const menu = win.locator('[data-page-menu="card"]');
+  await expect(menu).toHaveCount(1);
+  for (const item of ['rotate-cw', 'extract', 'delete']) {
+    await expect(menu.locator(`[data-menu-item="${item}"]`)).toHaveCount(1);
+  }
+  await win.keyboard.press('Escape');
+  await expect(menu).toHaveCount(0);
+  console.log('[P36C2-C] card More opens the rotate/extract/delete menu');
 
   const irBefore = (await engine()).currentPage;
 
-  // rotate-CW verb on page 2 rotates page 2 ONLY, without select/jump/drag.
-  await win.locator(`${PANEL} .thumb-item[data-page="2"] [data-thumb-verb="rotate-cw"]`).click();
+  // rotate-CW on page 2 rotates page 2 ONLY, without select/jump/drag.
+  await cardMenuAction(2, 'rotate-cw');
   await expect.poll(async () => win.locator(`${PANEL} .thumb-item[data-page="2"]`).getAttribute('class'), { timeout: 20000 })
     .toContain('thumb-rot-90');
   expect(await win.locator(`${PANEL} .thumb-item[data-page="1"]`).getAttribute('class')).not.toContain('thumb-rot-90');
-  expect(await win.locator(`${PANEL} .thumb-selected`).count(), 'verb click does not select').toBe(0);
-  expect((await engine()).currentPage, 'verb click does not jump the canvas').toBe(irBefore);
-  expect(await win.locator(`${PANEL} .thumb-dragging`).count(), 'verb click does not start a drag').toBe(0);
-  console.log(`[P36C2-C] rotate-CW verb on page 2 -> page2 only rotated; no select/jump/drag (currentPage=${irBefore})`);
+  expect(await win.locator(`${PANEL} .thumb-selected`).count(), 'menu action does not select').toBe(0);
+  expect((await engine()).currentPage, 'menu action does not jump the canvas').toBe(irBefore);
+  expect(await win.locator(`${PANEL} .thumb-dragging`).count(), 'menu action does not start a drag').toBe(0);
+  console.log(`[P36C2-C] rotate-CW on page 2 -> page2 only rotated; no select/jump/drag (currentPage=${irBefore})`);
 
-  // extract verb on page 4 opens the EXISTING extract/split dialog.
-  await win.locator(`${PANEL} .thumb-item[data-page="4"] [data-thumb-verb="extract"]`).click();
+  // extract on page 4 opens the EXISTING extract/split dialog.
+  await cardMenuAction(4, 'extract');
   await win.waitForSelector('#split-dialog-title', { timeout: 8000 });
   await expect(win.locator('#split-dialog-title')).toHaveText('Extract or split pages');
   await closeDialog('#split-dialog-title');
-  console.log('[P36C2-C] extract verb on page 4 opened the extract/split dialog');
+  console.log('[P36C2-C] extract on page 4 opened the extract/split dialog');
 
-  // drag guard: a press that starts on a verb must not start a page drag.
+  // drag guard: a press that starts on the card More control must not start a
+  // page drag (the footer control is not a drag handle).
   const orderBefore = JSON.stringify((await engine()).pageOrder);
   const guard = await win.evaluate(({ panel }) => {
     const thumb = document.querySelector(`${panel} .thumb-item[data-page="4"]`);
-    const glyph = thumb.querySelector('[data-thumb-verb="rotate-cw"] svg');
+    const glyph = thumb.querySelector('[data-thumb-more] svg') || thumb.querySelector('[data-thumb-more]');
     glyph.dispatchEvent(new MouseEvent('pointerdown', { bubbles: true, cancelable: true }));
     const dt = new DataTransfer();
     window.__p36guard = dt;
     thumb.dispatchEvent(new DragEvent('dragstart', { bubbles: true, cancelable: true, dataTransfer: dt }));
     return { dragging: thumb.className.includes('thumb-dragging') };
   }, { panel: PANEL });
-  expect(guard.dragging, 'a press on a verb never starts a page drag').toBe(false);
+  expect(guard.dragging, 'a press on a card control never starts a page drag').toBe(false);
   const dropped = await win.evaluate(({ panel }) => {
     const dt = window.__p36guard;
     const tgt = document.querySelector(`${panel} .thumb-item[data-page="2"]`);
@@ -556,19 +589,19 @@ test('P36C2-C hover verbs: reveal, right action for the right page, no select/ju
     return { prevented: ev.defaultPrevented };
   }, { panel: PANEL });
   await win.waitForTimeout(600);
-  console.log(`[P36C2-C] verb drag guard: dragging=${guard.dragging} drop.prevented=${dropped.prevented}`);
-  expect(JSON.stringify((await engine()).pageOrder), 'verb-origin drag did not reorder').toBe(orderBefore);
+  console.log(`[P36C2-C] card-control drag guard: dragging=${guard.dragging} drop.prevented=${dropped.prevented}`);
+  expect(JSON.stringify((await engine()).pageOrder), 'control-origin drag did not reorder').toBe(orderBefore);
 
-  // delete verb on page 2 is an IMMEDIATE delete (no dialog).
+  // delete on page 2 is an IMMEDIATE delete (no dialog).
   const sigBefore = await sigs(PANEL);
-  await win.locator(`${PANEL} .thumb-item[data-page="2"] [data-thumb-verb="delete"]`).click();
+  await cardMenuAction(2, 'delete');
   await expect.poll(async () => (await engine()).pageCount, { timeout: 30000 }).toBe(5);
-  expect(await win.locator('[data-delete-pages-dialog]').count(), 'trash verb does not open a dialog').toBe(0);
+  expect(await win.locator('[data-delete-pages-dialog]').count(), 'card delete does not open a dialog').toBe(0);
   await win.waitForTimeout(1500);
   const sigAfter = await sigs(PANEL);
   expect(await win.locator(`${PANEL} .thumb-item`).count()).toBe(5);
   const shift = sigDiff(sigAfter[2], sigBefore[3]);
-  console.log(`[P36C2-C] delete verb on page 2: count 6->5; slot2 now shows the old slot3 raster (diff ${shift})`);
+  console.log(`[P36C2-C] delete page 2: count 6->5; slot2 now shows the old slot3 raster (diff ${shift})`);
   expect(shift, 'slot 2 became the old page 3 (right page deleted)').not.toBeNull();
   expect(shift, 'slot 2 became the old page 3 (right page deleted)').toBeLessThan(5);
 });
@@ -661,23 +694,23 @@ test('P36C2-E Combine opens the merge dialog; the outline section toggles and na
   
   await openReport();
 
-  await win.locator('[data-context-panel-combine]').click();
+  // Combine moved into the header's labelled More menu (Phase 111 chunk B).
+  await win.locator('[data-context-panel-more]').click();
+  await win.locator('[data-context-panel-more-menu] [data-context-panel-combine]').click();
   await win.waitForSelector('[data-merge-pick]', { timeout: 8000 });
   console.log('[P36C2-E] Combine… opened the EXISTING merge dialog');
   await closeDialog('[data-merge-pick]');
 
-  const outline = win.locator(`${PANEL} [data-context-panel-outline]`);
+  // Phase 111 (chunk A) — the Outline is now a full-height navigator VIEW, so
+  // disclose it with the view selector and assert its live hooks.
+  await win.locator(`${PANEL} [data-context-panel-view-tab="outline"]`).click();
+  const outline = win.locator(`${PANEL} [data-context-panel-view="outline"]`);
   await expect(outline).toBeVisible();
   const linkCount = await win.locator(`${PANEL} .outline-link`).count();
   expect(linkCount).toBeGreaterThan(0);
   console.log(`[P36C2-E] outline links: ${linkCount}`);
 
-  // DEF-310 — the re-parented outline must live INSIDE its collapsible section
-  // (below the thumbnail stack). `.outline-panel` is `position:absolute;
-  // inset:0` and the new `.context-panel-outline-body` wrapper is not a
-  // positioning context, so the tree escapes to the panel body: the links
-  // paint over the thumbnails (y96..162 vs thumb1 y120) and the toggle is
-  // covered by it. These two assertions state the required layout.
+  // The outline tree must render INSIDE the outline view's bounded body.
   const geom = await win.evaluate((panel) => {
     const rr = (el) => {
       const b = el.getBoundingClientRect();
@@ -699,19 +732,16 @@ test('P36C2-E Combine opens the merge dialog; the outline section toggles and na
     };
   }, PANEL);
   console.log(`[P36C2-E] outline geometry: ${JSON.stringify(geom)}`);
-  expect(geom.inside, 'DEF-310: outline links must render inside the outline section').toBe(true);
-  expect(geom.overlapThumbs, 'DEF-310: outline must not overlap the thumbnail stack').toBe(false);
+  expect(geom.inside, 'outline links must render inside the outline view body').toBe(true);
+  expect(geom.overlapThumbs, 'the outline view must not overlap the thumbnail stack').toBe(false);
 
-  const toggle = win.locator(`${PANEL} [data-outline-toggle]`);
-  await expect(toggle).toHaveAttribute('aria-expanded', 'true');
-  // Short timeout: DEF-310 covers the toggle, so this fails fast with the
-  // interception evidence rather than burning the full 30 s.
-  await toggle.click({ timeout: 8000 });
-  await expect(toggle).toHaveAttribute('aria-expanded', 'false');
+  // The view selector discloses and hides the outline (the live replacement for
+  // the retired collapsible section + [data-outline-toggle]).
+  await win.locator(`${PANEL} [data-context-panel-view-tab="pages"]`).click();
   await expect(win.locator(`${PANEL} [data-context-panel-outline-body]`)).toHaveCount(0);
-  await toggle.click();
+  await win.locator(`${PANEL} [data-context-panel-view-tab="outline"]`).click();
   await expect(win.locator(`${PANEL} [data-context-panel-outline-body]`)).toHaveCount(1);
-  console.log('[P36C2-E] outline section toggled closed and open');
+  console.log('[P36C2-E] outline view disclosed and hidden by the view selector');
 
   const before = (await engine()).currentPage;
   await win.locator(`${PANEL} .outline-link`).first().click();
@@ -720,19 +750,21 @@ test('P36C2-E Combine opens the merge dialog; the outline section toggles and na
   expect(after).toBeGreaterThan(1);
   console.log(`[P36C2-E] outline navigation: currentPage ${before} -> ${after}`);
 
-  // DEF-310 — with the outline present, the panel body must not be
-  // intercepted: a thumbnail click still jumps the canvas, and a hover verb
-  // still fires. These are exactly the two gestures the defect blocked.
+  // The panel body must not be intercepted: back on the Pages view a thumbnail
+  // click still jumps the canvas, and a card More action still fires.
+  await win.locator(`${PANEL} [data-context-panel-view-tab="pages"]`).click();
   const thumbBefore = (await engine()).currentPage;
+  await expect(win.locator(`${PANEL} .thumb-item[data-page="7"]`)).toBeVisible();
   await win.locator(`${PANEL} .thumb-item[data-page="7"]`).click();
   await expect.poll(async () => (await engine()).currentPage, { timeout: 15000 }).toBe(7);
-  console.log(`[P36C2-E] thumbnail click with outline present: currentPage ${thumbBefore} -> 7`);
+  console.log(`[P36C2-E] thumbnail click after outline: currentPage ${thumbBefore} -> 7`);
 
-  await win.locator(`${PANEL} .thumb-item[data-page="2"]`).hover();
-  await win.locator(`${PANEL} .thumb-item[data-page="2"] [data-thumb-verb="rotate-cw"]`).click();
+  // Let the navigation recentre scroll settle (the card menu dismisses on scroll).
+  await win.waitForTimeout(1800);
+  await cardMenuAction(2, 'rotate-cw');
   await expect.poll(async () => win.locator(`${PANEL} .thumb-item[data-page="2"]`).getAttribute('class'), { timeout: 20000 })
     .toContain('thumb-rot-90');
-  console.log('[P36C2-E] hover verb with outline present: page 2 rotated (not intercepted)');
+  console.log('[P36C2-E] card More rotate after outline: page 2 rotated (not intercepted)');
 
   // Header fit on the outlined document (title `Pages · 34`): the widest
   // realistic title, so the ellipsis question is answered on the worst case.

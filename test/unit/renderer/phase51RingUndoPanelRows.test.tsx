@@ -3,12 +3,12 @@
 // Phase 51 — items 3 and 4 (operator RE-REPORTS).
 //
 // Item 3: the first thumbnail's selection ring must never reach the "Undo last
-// change" row. The ring is an OUTER box-shadow (1.5px light/dark, 4px frosted),
-// so an element-box comparison can pass while the PAINTED ring is clipped at
-// the scroller's top edge and reads as running under the Undo bar. The fix
-// reserves the ring's full footprint inside the scroller
+// change" row. The fix reserves the ring's full footprint inside the scroller
 // (`.thumb-scroller-inner` padding-top = 8px = --sp-2, the SAME 8px the rail's
-// `THUMB_OUTER_PADDING` already assumes for page 1's slot top).
+// `THUMB_OUTER_PADDING` already assumes for page 1's slot top). Phase 111
+// (TFL-1074 / DEF-612) made the CURRENT card NEUTRAL, so the outer ring this
+// item guarded is retired; the reserve + clip backstop still hold and the test
+// now pins the absence of a current-card ring alongside them.
 //
 // Item 4: a context-panel annotation row's 24px delete control was pushed past
 // the row's right edge by a non-shrinking `.ann-panel-row-jump`
@@ -61,9 +61,8 @@ function maxRingSpread(block: string): number {
 const SCROLLER = rule('.thumb-scroller');
 const SCROLLER_INNER = rule('.thumb-scroller-inner');
 const RAIL_ACTIONS = rule('.rail-actions');
-const LIGHT_RING = rule('.thumb-current');
+const CURRENT = rule('.thumb-current');
 const ROOT = rule(':root');
-const FROSTED_RING = rule(':root[data-theme="frosted"] .thumb-current');
 
 const SP2 = Number((decl(ROOT, '--sp-2') ?? '0').replace('px', ''));
 
@@ -72,15 +71,17 @@ const SP2 = Number((decl(ROOT, '--sp-2') ?? '0').replace('px', ''));
 // ---------------------------------------------------------------------------
 
 describe('Phase 51 item 3 — the selection ring stays inside the scroller', () => {
-  it('reserves at least the largest painted ring spread above the first thumb', () => {
-    const reservedTop = SP2; // `.thumb-scroller-inner` padding is `var(--sp-2)`
+  it('the current card paints no outer ring (DEF-612) and the scroller still clips', () => {
+    // Phase 111 (TFL-1074 / DEF-612) — the current card is NEUTRAL: it no
+    // longer shares the selected card's outer ring, so there is no
+    // current-thumb ring left that could bleed under the Undo row. This pins
+    // that absence and the unchanged structural backstop.
+    expect(decl(CURRENT, 'box-shadow')).toBeNull();
+    expect(maxRingSpread(CURRENT), 'the current card paints no ring').toBe(0);
+    // The scroller keeps its reserve + clip, so any future ring cannot reach
+    // the Undo row.
     expect(SP2, '--sp-2 is the 8px spacing token').toBe(8);
     expect(decl(SCROLLER_INNER, 'padding')).toBe('var(--sp-2)');
-    const light = maxRingSpread(LIGHT_RING);
-    const frosted = maxRingSpread(FROSTED_RING);
-    expect(light, 'the light/dark current-thumb ring is the 1.5px accent ring').toBeGreaterThan(0);
-    expect(frosted, 'the frosted current-thumb ring is a 4px outer halo').toBe(4);
-    expect(reservedTop, 'the scroller reserves the full painted ring').toBeGreaterThanOrEqual(frosted);
   });
 
   it('keeps hard clipping as the backstop at the scroller edge', () => {

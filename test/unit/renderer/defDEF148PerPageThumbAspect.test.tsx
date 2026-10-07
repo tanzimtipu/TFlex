@@ -29,7 +29,7 @@ import { describe, expect, it } from "vitest";
 import { createRoot } from "react-dom/client";
 import { act } from "react";
 import type { PDFDocumentProxy } from "pdfjs-dist";
-import { SideRail } from "../../../src/renderer/components/SideRail";
+import { ThumbnailRail } from "../../../src/renderer/components/SideRail";
 import type { EngineState } from "../../../src/renderer/engine/types";
 
 if (typeof globalThis.IntersectionObserver === "undefined") {
@@ -96,17 +96,19 @@ function mountRail(args: {
     modified: false,
     annotations: [],
   };
+  const visibleToSource = new Map<number, number>();
+  order.forEach((src, i) => visibleToSource.set(i + 1, src + 1));
   act((): void => {
     root.render(
-      <SideRail
+      <ThumbnailRail
         doc={makeStubDoc()}
         pageCount={4}
-        outline={null}
         currentPage={1}
-        defaultWidthPt={args.defaultWidthPt}
-        defaultHeightPt={args.defaultHeightPt}
+        aspectRatio={args.defaultHeightPt / args.defaultWidthPt}
         pageSizes={args.pageSizes ?? null}
-        engineState={engineState}
+        rotations={engineState.rotations}
+        visibleToSource={visibleToSource}
+        proxyVisibleOrder={false}
         canUndo={false}
         onJump={(): void => undefined}
       />,

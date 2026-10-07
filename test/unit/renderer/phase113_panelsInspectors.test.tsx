@@ -52,6 +52,13 @@ function cls(el: Element | null): string {
   return el.getAttribute("class") ?? "";
 }
 
+/** Dispatch a bubbling click on a rendered control. */
+function clickOn(target: Element): void {
+  act((): void => {
+    target.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
+  });
+}
+
 beforeEach((): void => {
   roots = [];
   hosts = [];
@@ -141,25 +148,32 @@ describe("Phase 113 — ContextPanel call sites", () => {
         onJump={NOOP}
         outline={[{ title: "Chapter 1", dest: [1], children: [] }]}
         onMerge={NOOP}
+        onRemoveBlankPages={NOOP}
       />,
     );
   }
 
   it("renders the page-view actions on the secondary compact primitive", () => {
     const host = renderPanel();
+    // Phase 111 (chunk B) — Combine + Remove blank pages live in the More menu.
+    clickOn(host.querySelector("[data-context-panel-more]") as HTMLElement);
     const blank = host.querySelector("[data-blank-scan-open]");
     expect(cls(blank)).toContain("btn");
-    expect(cls(blank)).toContain("btn-secondary");
+    // Remove blank pages is a destructive More-menu row now.
+    expect(cls(blank)).toContain("btn-danger");
     expect(cls(blank)).toContain("btn-compact");
   });
 
-  it("renders the Outline disclosure on the tertiary disclosure primitive", () => {
+  it("renders the navigator view selector on the canonical segmented primitive", () => {
     const host = renderPanel();
-    const outline = host.querySelector("[data-outline-toggle]");
+    const tablist = host.querySelector("[data-context-panel-view-tabs]");
+    expect(tablist).not.toBeNull();
+    expect(tablist?.getAttribute("role")).toBe("tablist");
+    const outline = host.querySelector('[data-context-panel-view-tab="outline"]');
     expect(cls(outline)).toContain("btn");
-    expect(cls(outline)).toContain("btn-ghost");
-    expect(cls(outline)).toContain("btn-disclosure");
-    expect(["true", "false"]).toContain(outline?.getAttribute("aria-expanded"));
+    expect(cls(outline)).toContain("btn-toggle");
+    expect(cls(outline)).toContain("tool-btn");
+    expect(["true", "false"]).toContain(outline?.getAttribute("aria-selected"));
   });
 
   it("renders the collapse control as a canonical tertiary toggle", () => {
@@ -172,8 +186,11 @@ describe("Phase 113 — ContextPanel call sites", () => {
 
   it("keeps the Combine action's accessible name", () => {
     const host = renderPanel();
+    // Phase 111 (chunk B) — Combine is a More-menu row now; its accessible
+    // name is the visible label.
+    clickOn(host.querySelector("[data-context-panel-more]") as HTMLElement);
     const combine = host.querySelector("[data-context-panel-combine]");
-    expect(combine?.getAttribute("aria-label")).toBe("Combine with another PDF");
+    expect(combine?.textContent).toContain("Combine with another PDF");
     expect(cls(combine)).toContain("btn-secondary");
   });
 });

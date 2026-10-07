@@ -340,16 +340,31 @@
 .anim-tab-in  { animation: tf-anim-tab-in var(--motion-duration-fast) var(--motion-ease-enter) both; }
 .anim-tab-out { animation: tf-anim-tab-in var(--motion-duration-micro) var(--motion-ease-exit) both reverse; }
 
-/* Thumbnails/pages — Materialize / Dissolve (scale 0.95 <-> 1 + opacity). */
+/* Thumbnails/pages — Materialize / Dissolve.
+ * TFL-1080 (DEF-615): `tf-anim-materialize` MUST NOT animate `transform` at
+ * all, not even ending at `transform: none`. A `fill-mode: both` transform
+ * animation still computes the identity matrix in Chromium while it fills
+ * forwards, so the animated box stays a containing block for `position: fixed`
+ * descendants and offsets + clips any fixed menu anchored inside it in viewport
+ * coordinates. The outline body (`.context-panel-outline-body`) rides this
+ * keyframe and owns the fixed row More menu + retarget popover, so this
+ * keyframe is opacity-only: no containing block is ever established.
+ * The scale entrance moved to `tf-anim-scale-in`, which the free-standing
+ * `.anim-materialize` utility (pane empty state / divider, no fixed children)
+ * keeps using, so those consumers are visually unchanged. */
 @keyframes tf-anim-materialize {
+  from { opacity: var(--motion-opacity-hidden); }
+  to   { opacity: var(--motion-opacity-visible); }
+}
+@keyframes tf-anim-scale-in {
   from { opacity: var(--motion-opacity-hidden); transform: scale(var(--motion-scale-enter)); }
-  to   { opacity: var(--motion-opacity-visible); transform: scale(1); }
+  to   { opacity: var(--motion-opacity-visible); transform: none; }
 }
 @keyframes tf-anim-dissolve {
   from { opacity: var(--motion-opacity-visible); transform: scale(1); }
   to   { opacity: var(--motion-opacity-hidden); transform: scale(var(--motion-scale-exit)); }
 }
-.anim-materialize { animation: tf-anim-materialize var(--motion-duration-standard) var(--motion-ease-enter) both; }
+.anim-materialize { animation: tf-anim-scale-in var(--motion-duration-standard) var(--motion-ease-enter) both; }
 .anim-dissolve    { animation: tf-anim-dissolve var(--motion-duration-fast) var(--motion-ease-exit) both; }
 
 /* Hover lift + press compression utility pair (buttons/controls/thumbnails). */

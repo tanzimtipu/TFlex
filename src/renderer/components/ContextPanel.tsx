@@ -25,25 +25,30 @@
 // toggle. Page state, selection, edit state, signatures and engine ops all
 // belong to the host (DocumentView/App) and are threaded through.
 
-import { useContext, useEffect, useMemo, useRef, useState } from 'react';
-import type { ReactElement } from 'react';
+import { useCallback, useContext, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import type {
+  KeyboardEvent as ReactKeyboardEvent,
+  PointerEvent as ReactPointerEvent,
+  ReactElement,
+} from 'react';
 import type { PDFDocumentProxy } from 'pdfjs-dist';
 import {
-  FileSignature,
   FileWarning,
   Images,
   Lock,
+  MoreHorizontal,
   MousePointerClick,
   PanelLeftClose,
   PanelRightOpen,
   ScanText,
-  SquareChevronDown,
-  SquareChevronRight,
   TextCursor,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { Icon } from '../icons/Icon';
 import { Button, IconButton } from './Button';
+import { CommandMenu } from './CommandMenu';
+import type { CommandMenuGroup, CommandMenuItem } from './CommandMenu';
+import { clampMenuPosition } from './pageThumbMenu';
 import { EmptyState } from './EmptyState';
 import { OutlinePanel, OutlineEditorContext, RulerStrip, ThumbnailRail } from './SideRail';
 import type { OutlineEditorConfig, RailTab, ThumbVerbs } from './SideRail';
@@ -62,6 +67,8 @@ import type { PageDropOp } from '../state/pageDrag';
 import type { Stage } from '../state/stages';
 import { EDIT_DEFAULT_FONTS } from '../state/preferences';
 import { EXPORT_FIDELITY_NOTES, type ExportFormat } from '../../shared/export';
+import { countOutline } from '../../shared/outline';
+import type { OutlineEntry } from '../../shared/outline';
 import type {
   BatesInfo,
   DocumentProtectionState,
@@ -71,13 +78,17 @@ import type {
   WatermarkInfo,
 } from '../../shared/types';
 
-/** The panel's migrated glyphs. Declared with an `icon:` property so the Phase 43
- *  icon-identity guard still attributes each glyph to this surface. */
-const CONTEXT_PANEL_GLYPHS = {
-  signature: { icon: FileSignature },
-  outlineOpen: { icon: SquareChevronDown },
-  outlineClosed: { icon: SquareChevronRight },
-} as const satisfies Record<string, { icon: LucideIcon }>;
+/** Shape a pdf.js outline tree into the shared `OutlineEntry` shape purely for
+ *  counting. The pdf.js nodes carry a `dest` instead of a resolved `page`, so
+ *  this adapter maps only the fields `countOutline` reads (title + children);
+ *  no destination is invented or resolved here. */
+function outlineCountEntries(nodes: readonly OutlineNode[]): OutlineEntry[] {
+  return nodes.map((node) => ({
+    title: node.title,
+    page: null,
+    children: outlineCountEntries(node.children),
+  }));
+}
 
 /** A single item in the EDIT stage's content outline: the text boxes and
  *  image placements the app already models for the CURRENT page. Built by the
@@ -218,18 +229,31 @@ onInsertBlank?: (page: number) => void;
   /** Phase 16 — asks the host to toggle the collapsed state. */
   onToggleCollapsed?: () => void;
 
-  // --- Host-owned rail tab (Phase 59 item 7 follow-up) -------------------
+  // --- Host-owned rail tab (Phase 59 item 7 follow-up; Phase 111 chunk A) --
   /** The host's active rail tab (App's `railTab`). The PAGES body lives in
    *  this panel, so the "Page thumbnails" / "Bookmarks" palette commands land
-   *  here: `'outline'` expands the outline section, `'thumbs'` collapses it
-   *  back to the thumbnail stack. Absent = the legacy local behaviour (the
-   *  panel keeps its own `outlineOpen`, default expanded) — every pre-existing
-   *  caller and test is unchanged. */
+   *  here: `'outline'` selects the full-height Outline view, anything else
+   *  (`'thumbs'`, `'annotations'` or undefined) shows the Pages view. Absent =
+   *  the Pages view (the default), so every pre-existing caller is unchanged. */
   railTab?: RailTab;
-  /** Phase 59 (item 7 follow-up) — the outline section's toggle reports here,
-   *  so the panel's own control and the palette command write the SAME host
-   *  state and can never disagree. */
+  /** Phase 111 (chunk A) — the view selector reports here, so the panel's own
+   *  tabs and the palette commands write the SAME host state and can never
+   *  disagree. `'thumbs'` selects Pages, `'outline'` selects Outline. */
   onRailTabChange?: (tab: RailTab) => void;
+
+  // --- Split Navigator (Phase 111 chunk D1) -----------------------------
+  /** The host-owned navigator layout. `'stacked'` (default) keeps the
+   *  full-height tabbed view; `'split'` stacks Pages above Outline when the
+   *  panel is tall enough, else it falls back to `'stacked'`. */
+  navigatorLayout?: 'stacked' | 'split';
+  /** The host-owned Pages share of the split body (initial 0.6). Clamped to
+   *  0.1-0.9; a non-finite value resolves to 0.6. */
+  navigatorSplitRatio?: number;
+  /** Report a new layout choice from the panel More menu. */
+  onNavigatorLayoutChange?: (layout: 'stacked' | 'split') => void;
+  /** Report the settled split ratio (pointer release / keyboard step); the host
+   *  persists it. Live drag frames are held locally, never reported here. */
+  onNavigatorSplitRatioChange?: (ratio: number) => void;
 
   // --- EDIT -------------------------------------------------------------
   /** The current page's modelled text boxes + image placements (built by the
@@ -352,6 +376,71 @@ export function pageRangeText(pages: readonly number[]): string {
   return `Pages ${pages.join(', ')}`;
 }
 
+/* ---------------------------------------------------------------------------
+ * Phase 111 (chunk D1) — the Split Navigator's pure layout contract.
+ *
+ * The navigator can render Pages above Outline with a resizable horizontal
+ * separator and independent scroll regions, or fall back to the full-height
+ * tabbed view. These helpers are exported so the contract can be pinned without
+ * a DOM (mirroring `PanelResizeHandle`'s `panelWidthAfterKey` / `clampPanelWidth`).
+ * ------------------------------------------------------------------------- */
+
+/** The smallest an expanded section may become before the split layout gives up
+ *  and falls back to the tabbed view (design-decisions.md line 53). */
+export const NAVIGATOR_MIN_SECTION_PX = 180;
+/** The divider's own height, reserved when deciding whether the split fits. */
+export const NAVIGATOR_SPLIT_DIVIDER_PX = 12;
+/** The default Pages share of the navigator body (initial 60 / 40). */
+export const NAVIGATOR_SPLIT_RATIO_DEFAULT = 0.6;
+/** The persisted ratio band (mirrors NAVIGATOR_SPLIT_RATIO_MIN/MAX in settings). */
+export const NAVIGATOR_SPLIT_RATIO_MIN = 0.1;
+export const NAVIGATOR_SPLIT_RATIO_MAX = 0.9;
+
+/** Clamp the persisted split ratio into 0.1-0.9; a non-finite value falls back
+ *  to the documented 0.6 default rather than an out-of-band number. */
+export function clampSplitRatio(value: number): number {
+  if (!Number.isFinite(value)) return NAVIGATOR_SPLIT_RATIO_DEFAULT;
+  return Math.min(NAVIGATOR_SPLIT_RATIO_MAX, Math.max(NAVIGATOR_SPLIT_RATIO_MIN, value));
+}
+
+/** Resolve the effective navigator layout for a measured body height. `'stacked'`
+ *  is always `'stacked'`; `'split'` survives only when both sections plus the
+ *  divider fit, else it falls back to the full-height tabbed view. */
+export function resolveNavigatorLayout(
+  layout: 'stacked' | 'split',
+  bodyHeightPx: number,
+  minSectionPx: number = NAVIGATOR_MIN_SECTION_PX,
+): 'stacked' | 'split' {
+  if (layout !== 'split') return 'stacked';
+  if (!Number.isFinite(bodyHeightPx)) return 'stacked';
+  return bodyHeightPx >= 2 * minSectionPx + NAVIGATOR_SPLIT_DIVIDER_PX ? 'split' : 'stacked';
+}
+
+/** The ratio a keyboard key produces on the split separator, or `null` when the
+ *  key is not a resize control. ArrowUp grows the Pages share, ArrowDown shrinks
+ *  it, Home / End jump to the bounds; every result is clamped. */
+export function splitRatioAfterKey(
+  current: number,
+  key: string,
+  step: number = 0.05,
+): number | null {
+  // Round the step result so `0.6 - 0.05` lands on the exact 0.55 a keyboard
+  // user (and the pinned spec) expects, not 0.5499999999999999.
+  const round = (value: number): number => Math.round(value * 1e6) / 1e6;
+  switch (key) {
+    case 'ArrowUp':
+      return clampSplitRatio(round(current + step));
+    case 'ArrowDown':
+      return clampSplitRatio(round(current - step));
+    case 'Home':
+      return NAVIGATOR_SPLIT_RATIO_MIN;
+    case 'End':
+      return NAVIGATOR_SPLIT_RATIO_MAX;
+    default:
+      return null;
+  }
+}
+
 /**
  * The STAGES left panel. One component, four stage bodies:
  *   PAGES   — the header's Combine entry, the SAME live thumbnail stack the
@@ -396,6 +485,10 @@ onInsertBlank,
     onToggleCollapsed,
     railTab,
     onRailTabChange,
+    navigatorLayout = 'stacked',
+    navigatorSplitRatio = NAVIGATOR_SPLIT_RATIO_DEFAULT,
+    onNavigatorLayoutChange,
+    onNavigatorSplitRatioChange,
     editContent = null,
     onSelectEditContent = null,
     ocrStatus = null,
@@ -427,26 +520,36 @@ onInsertBlank,
   } = props;
 
 const pageCount = engineState.pageCount;
-  const [outlineOpen, setOutlineOpen] = useState(true);
 
   // Phase 85 — an explicit `outlineEditor` prop wins, else the config App
   // publishes through the context. Null keeps the outline view-only.
   const contextOutlineEditor = useContext(OutlineEditorContext);
   const effectiveOutlineEditor = outlineEditor ?? contextOutlineEditor;
 
-  // Phase 59 (item 7 follow-up) — the host's `railTab` drives the PAGES body's
-  // outline section. The command "Bookmarks" (`railTab: 'outline'`) expands it;
-  // "Page thumbnails" (`railTab: 'thumbs'`) collapses it back to the thumbnail
-  // stack. The panel is only CONTROLLED once the host tab actually CHANGES from
-  // its mount value, so the default (expanded) visual and every document-open
-  // flow are untouched; an explicit switch then takes effect.
-  const prevRailTabRef = useRef<RailTab | undefined>(railTab);
-  useEffect((): void => {
-    if (railTab === undefined) return;
-    if (prevRailTabRef.current === railTab) return;
-    prevRailTabRef.current = railTab;
-    setOutlineOpen(railTab === 'outline');
-  }, [railTab]);
+  // Phase 111 (chunk A) — the host's `railTab` selects the navigator VIEW.
+  // `'outline'` shows the full-height Outline view; anything else ('thumbs',
+  // 'annotations' or undefined) shows the Pages view. The two tabs are a real
+  // tablist: the panel never holds view state of its own, it only reports the
+  // chosen tab back through `onRailTabChange`.
+  const outlineView = railTab === 'outline';
+  const outlineCount = countOutline(outlineCountEntries(outline ?? []));
+
+  const selectView = (tab: RailTab): void => {
+    onRailTabChange?.(tab);
+  };
+
+  // Roving tabindex + Left/Right between the two tabs (ARIA tabs pattern): the
+  // arrow moves focus AND selects, so a single press switches the view.
+  const onViewTabsKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>): void => {
+    if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;
+    event.preventDefault();
+    const next: RailTab = outlineView ? 'thumbs' : 'outline';
+    selectView(next);
+    const dataTab = next === 'outline' ? 'outline' : 'pages';
+    event.currentTarget
+      .querySelector<HTMLButtonElement>(`[data-context-panel-view-tab="${dataTab}"]`)
+      ?.focus();
+  };
 
   // The same visible -> source mapping and label map the rail builds, so a
   // reordered or renumbered document renders identically here.
@@ -492,6 +595,207 @@ const pageCount = engineState.pageCount;
     onDeletePage: (page: number): void => onDeletePage?.(page),
   });
 
+  // Phase 111 (chunk B) — the panel More menu. The header's standalone
+  // Combine entry and the Pages view's standalone Remove blank pages button
+  // move here: Combine in the Document group, Remove blank pages in a clearly
+  // separated destructive group. The ActionDock remains the owner of batch
+  // Rotate / Extract / Delete, so this is NOT a second action toolbar.
+  const [panelMoreOpen, setPanelMoreOpen] = useState(false);
+  const [panelMorePos, setPanelMorePos] = useState<{ left: number; top: number } | null>(null);
+  const panelMoreBtnRef = useRef<HTMLButtonElement | null>(null);
+  const closePanelMore = (): void => setPanelMoreOpen(false);
+  const openPanelMore = (): void => {
+    const rect = panelMoreBtnRef.current?.getBoundingClientRect();
+    if (rect !== undefined) {
+      setPanelMorePos(
+        clampMenuPosition(rect.left, rect.bottom + 4, 220, 140, window.innerWidth, window.innerHeight),
+      );
+    }
+    setPanelMoreOpen(true);
+  };
+  const panelMoreGroups = useMemo<CommandMenuGroup[]>(() => {
+    const documentRows: CommandMenuItem[] = [];
+    if (onMerge !== undefined) {
+      documentRows.push({
+        id: 'combine',
+        label: 'Combine with another PDF',
+        intent: 'secondary',
+        density: 'compact',
+        rowClassName: 'context-menu-item',
+        rowDataAttrs: { 'data-context-panel-combine': 'true' },
+        onSelect: (): void => onMerge(),
+      });
+    }
+    const destructiveRows: CommandMenuItem[] = [];
+    if (onRemoveBlankPages !== undefined) {
+      destructiveRows.push({
+        id: 'remove-blank',
+        label: 'Remove blank pages',
+        intent: 'destructive',
+        variant: 'danger',
+        density: 'compact',
+        rowClassName: 'context-menu-item context-menu-item-danger',
+        rowDataAttrs: { 'data-blank-scan-open': 'true' },
+        onSelect: (): void => onRemoveBlankPages(),
+      });
+    }
+    // Phase 111 (chunk D1) — the FIRST group is the navigator layout toggle.
+    // One row, always present; its label flips with the CURRENT layout, and its
+    // selection persists through the host (never a second header button).
+    const layoutRow: CommandMenuItem =
+      navigatorLayout === 'split'
+        ? {
+            id: 'navigator-layout',
+            label: 'Use stacked layout',
+            intent: 'secondary',
+            density: 'compact',
+            rowClassName: 'context-menu-item',
+            rowDataAttrs: { 'data-context-panel-layout-split': 'true' },
+            onSelect: (): void => onNavigatorLayoutChange?.('stacked'),
+          }
+        : {
+            id: 'navigator-layout',
+            label: 'Use split layout',
+            intent: 'secondary',
+            density: 'compact',
+            rowClassName: 'context-menu-item',
+            rowDataAttrs: { 'data-context-panel-layout-split': 'true' },
+            onSelect: (): void => onNavigatorLayoutChange?.('split'),
+          };
+    const groups: CommandMenuGroup[] = [
+      { id: 'panel-layout', label: 'Layout', entries: [layoutRow] },
+    ];
+    if (documentRows.length > 0) groups.push({ id: 'panel-document', label: 'Document', entries: documentRows });
+    if (destructiveRows.length > 0) {
+      groups.push({ id: 'panel-destructive', label: 'Destructive', entries: destructiveRows });
+    }
+    return groups;
+  }, [navigatorLayout, onMerge, onNavigatorLayoutChange, onRemoveBlankPages]);
+  const panelMoreNode =
+    panelMoreOpen && panelMoreGroups.length > 0 ? (
+      <CommandMenu
+        open
+        groups={panelMoreGroups}
+        ariaLabel="More actions"
+        onClose={closePanelMore}
+        align="end"
+        position={panelMorePos ?? undefined}
+        openerRef={panelMoreBtnRef}
+        popoverDataAttrs={{ 'data-context-panel-more-menu': 'true' }}
+      />
+    ) : null;
+
+  // ---- Split Navigator (Phase 111 chunk D1) ----------------------------
+  // The panel body's live height decides whether the split layout fits. A
+  // `ResizeObserver` (no new dependency) plus a window-resize listener keep it
+  // fresh; the ref sits on the body wrapper so the measurement is the space the
+  // navigator actually has, never the whole panel.
+  const bodyRef = useRef<HTMLDivElement | null>(null);
+  const [bodyHeight, setBodyHeight] = useState(0);
+
+  useLayoutEffect((): (() => void) | undefined => {
+    const el = bodyRef.current;
+    if (el === null) return undefined;
+    const measure = (): void => setBodyHeight(el.clientHeight);
+    measure();
+    window.addEventListener('resize', measure);
+    let observer: ResizeObserver | null = null;
+    if (typeof ResizeObserver !== 'undefined') {
+      observer = new ResizeObserver(measure);
+      observer.observe(el);
+    }
+    return (): void => {
+      window.removeEventListener('resize', measure);
+      observer?.disconnect();
+    };
+  }, [collapsed, stage]);
+
+  const resolvedNavigatorLayout = resolveNavigatorLayout(navigatorLayout, bodyHeight);
+  const splitActive = stage === 'pages' && resolvedNavigatorLayout === 'split';
+
+  // Live drag updates local state only; the host is told once the gesture
+  // settles (pointerup) or on a keyboard step, so no per-frame settings write.
+  const [dragRatio, setDragRatio] = useState<number | null>(null);
+  const splitRatio = dragRatio ?? clampSplitRatio(navigatorSplitRatio);
+  const splitContainerRef = useRef<HTMLDivElement | null>(null);
+  const splitDragRef = useRef<{ startY: number; startRatio: number } | null>(null);
+  const splitFrameRef = useRef<number | null>(null);
+  const splitPendingRef = useRef<number | null>(null);
+
+  const ratioAt = useCallback(
+    (clientY: number): number => {
+      const drag = splitDragRef.current;
+      if (drag === null) return clampSplitRatio(splitRatio);
+      const height = splitContainerRef.current?.clientHeight ?? 0;
+      if (height <= 0) return clampSplitRatio(splitRatio);
+      return clampSplitRatio(drag.startRatio + (clientY - drag.startY) / height);
+    },
+    [splitRatio],
+  );
+
+  const flushSplitPending = useCallback((): void => {
+    splitFrameRef.current = null;
+    if (splitPendingRef.current !== null) {
+      setDragRatio(splitPendingRef.current);
+      splitPendingRef.current = null;
+    }
+  }, []);
+
+  const onSplitPointerDown = useCallback(
+    (e: ReactPointerEvent<HTMLDivElement>): void => {
+      if (e.button !== undefined && e.button !== 0) return;
+      splitDragRef.current = { startY: e.clientY, startRatio: splitRatio };
+      if (typeof e.currentTarget.setPointerCapture === 'function') {
+        try {
+          e.currentTarget.setPointerCapture(e.pointerId);
+        } catch {
+          // capture is an optimization; the drag still works without it
+        }
+      }
+      e.preventDefault();
+    },
+    [splitRatio],
+  );
+
+  const onSplitPointerMove = useCallback(
+    (e: ReactPointerEvent<HTMLDivElement>): void => {
+      if (splitDragRef.current === null) return;
+      splitPendingRef.current = ratioAt(e.clientY);
+      if (splitFrameRef.current === null && typeof requestAnimationFrame === 'function') {
+        splitFrameRef.current = requestAnimationFrame(flushSplitPending);
+      } else if (splitFrameRef.current === null) {
+        flushSplitPending();
+      }
+    },
+    [flushSplitPending, ratioAt],
+  );
+
+  const onSplitPointerUp = useCallback(
+    (e: ReactPointerEvent<HTMLDivElement>): void => {
+      if (splitDragRef.current === null) return;
+      const next = ratioAt(e.clientY);
+      splitDragRef.current = null;
+      splitPendingRef.current = null;
+      if (splitFrameRef.current !== null && typeof cancelAnimationFrame === 'function') {
+        cancelAnimationFrame(splitFrameRef.current);
+      }
+      splitFrameRef.current = null;
+      setDragRatio(null);
+      onNavigatorSplitRatioChange?.(next);
+    },
+    [onNavigatorSplitRatioChange, ratioAt],
+  );
+
+  const onSplitKeyDown = useCallback(
+    (e: ReactKeyboardEvent<HTMLDivElement>): void => {
+      const next = splitRatioAfterKey(splitRatio, e.key);
+      if (next === null) return;
+      e.preventDefault();
+      onNavigatorSplitRatioChange?.(next);
+    },
+    [onNavigatorSplitRatioChange, splitRatio],
+  );
+
   // Phase 37 (item 4) — the collapse control is the RAIL's affordance,
   // re-homed to this header. The glyph FLIPS with the state: expanded shows
   // PanelLeftClose (press to collapse toward the edge), collapsed shows
@@ -514,105 +818,298 @@ const pageCount = engineState.pageCount;
   );
 
   // ---- PAGES -----------------------------------------------------------
+  // Phase 111 (chunk A) — one full-height navigator with two views. The 40px
+  // selector under the header picks the view; only ONE view is mounted at a
+  // time (Pages by default, Outline when `railTab === 'outline'`). The
+  // segmented buttons mirror the PageLayoutControl chrome; the selected state
+  // rides the canonical `.btn-toggle[aria-pressed]` / `tool-btn-active` pair.
+  const pagesViewTabClass = outlineView
+    ? 'btn btn-toolbar btn-toggle tool-btn context-panel-view-tab'
+    : 'btn btn-toolbar btn-toggle tool-btn tool-btn-active context-panel-view-tab';
+  const outlineViewTabClass = outlineView
+    ? 'btn btn-toolbar btn-toggle tool-btn tool-btn-active context-panel-view-tab'
+    : 'btn btn-toolbar btn-toggle tool-btn context-panel-view-tab';
+  // The view-only outline with no nodes reads as the designed empty state; a
+  // document with an editor config always renders the tree (so the very first
+  // bookmark can be added - DEF-492).
+  const outlineEmpty =
+    (outline === null || outline === undefined || outline.length === 0) &&
+    effectiveOutlineEditor === null;
+
   const renderPages = (): ReactElement => (
     <>
-      <div className="context-panel-thumbs" data-context-panel-thumbs>
-        {pageCount === 0 ? (
-          <EmptyState
-            icon={Images}
-            headline="No pages to show"
-            help="Open a PDF to see its page thumbnails."
-            data-context-panel-thumbs-empty
-          />
-        ) : (
-          <ThumbnailRail
-            doc={doc}
-            pageCount={pageCount}
-            currentPage={currentPage}
-            aspectRatio={defaultHeightPt / defaultWidthPt}
-            pageSizes={pageSizes}
-            rotations={engineState.rotations}
-            visibleToSource={visibleToSource}
-            proxyVisibleOrder={proxyVisibleOrder}
-            pageLabelMap={pageLabelMap}
-            canUndo={canUndo}
-            onOp={onOp}
-            onDelete={onDelete}
-            onReorder={onReorder}
-            onUndo={onUndo}
-            onJump={onJump}
-            crossDoc={crossDoc}
-            thumbVerbs={verbs}
-            onThumbContextMenu={openMenu}
-            pageSelection={pageSelection}
-            onPageSelectionChange={onPageSelectionChange}
-          />
-        )}
-      </div>
-      <div className="context-panel-actions-row">
-        <Button
-          intent="secondary"
-          kind="action"
-          density="compact"
-          className="context-panel-action"
-          data-blank-scan-open
-          onClick={(): void => onRemoveBlankPages?.()}
-          aria-label="Remove blank pages"
+      <div
+        className="context-panel-view-tabs"
+        data-context-panel-view-tabs
+        role="tablist"
+        aria-label="Navigator view"
+        onKeyDown={onViewTabsKeyDown}
+      >
+        <button
+          type="button"
+          role="tab"
+          id="context-panel-view-tab-pages"
+          className={pagesViewTabClass}
+          data-context-panel-view-tab="pages"
+          aria-controls="context-panel-view-pages"
+          aria-selected={!outlineView}
+          tabIndex={outlineView ? -1 : 0}
+          onClick={(): void => selectView('thumbs')}
         >
-          Remove blank pages
-        </Button>
-      </div>
-      {/* Phase 112 (TFL-854 C2) — the thumbnail multi-select summary. The
-       *  host owns the set (DocumentView) and threads it here; the section
-       *  renders ONLY when more than one page is selected, so a single-page
-       *  navigation stays uncluttered. Count + range are read straight off
-       *  the set, never a fabricated badge. */}
-      {pageSelection !== null && pageSelection.length > 1 && (
-        <PanelSection
-          className="context-panel-selection"
-          data-context-panel-selection
-          title="Selection"
-          aria-label="Selection"
+          {`Pages \u00B7 ${pageCount}`}
+        </button>
+        <button
+          type="button"
+          role="tab"
+          id="context-panel-view-tab-outline"
+          className={outlineViewTabClass}
+          data-context-panel-view-tab="outline"
+          aria-controls="context-panel-view-outline"
+          aria-selected={outlineView}
+          tabIndex={outlineView ? 0 : -1}
+          onClick={(): void => selectView('outline')}
         >
-          <PropertyRow
-            label="Pages"
-            value={`${pageSelection.length} selected`}
-            data-context-panel-selection-count
-          />
-          <PropertyRow
-            label="Range"
-            value={pageRangeText(pageSelection)}
-            data-context-panel-selection-range
-          />
-        </PanelSection>
+          {`Outline \u00B7 ${outlineCount}`}
+        </button>
+      </div>
+      {outlineView ? (
+        <div
+          className="context-panel-outline context-panel-view-body"
+          id="context-panel-view-outline"
+          role="tabpanel"
+          aria-labelledby="context-panel-view-tab-outline"
+          aria-label="Outline"
+          data-context-panel-outline
+          data-context-panel-view="outline"
+        >
+          <div className="context-panel-outline-body" id="context-panel-outline-body" data-context-panel-outline-body>
+            {outlineEmpty ? (
+              // The no-bookmarks state is the shared designed empty state. No
+              // Add action is fabricated: a view-only outline (no editor config)
+              // cannot add bookmarks.
+              <PanelEmptyState
+                className="context-panel-outline-empty"
+                headline="No bookmarks"
+                help="This document has no bookmark outline."
+                data-context-panel-outline-empty
+              />
+            ) : (
+              <OutlinePanel doc={doc} outline={outline ?? []} onJump={onJump} onError={onError} editor={effectiveOutlineEditor} />
+            )}
+          </div>
+        </div>
+      ) : (
+        <div
+          className="context-panel-view-body"
+          id="context-panel-view-pages"
+          role="tabpanel"
+          aria-labelledby="context-panel-view-tab-pages"
+          data-context-panel-view="pages"
+        >
+          {/* Phase 111 (chunk B) — the compact selection summary sits ABOVE
+           *  the scrolling list and renders for ANY real selection (>= 1),
+           *  not just multi-page. Count + range read straight off the host
+           *  set; Clear routes to the host clear path and never navigates. */}
+          {pageSelection !== null && pageSelection.length >= 1 && (
+            <PanelSection
+              className="context-panel-selection"
+              data-context-panel-selection
+              title="Selection"
+              aria-label="Selection"
+            >
+              <span
+                className="visually-hidden"
+                data-context-panel-selection-live
+                role="status"
+                aria-live="polite"
+              >{`${pageSelection.length} selected`}</span>
+              <PropertyRow
+                label="Pages"
+                value={`${pageSelection.length} selected`}
+                data-context-panel-selection-count
+              />
+              <PropertyRow
+                label="Range"
+                value={pageRangeText(pageSelection)}
+                data-context-panel-selection-range
+              />
+              <div className="context-panel-selection-actions">
+                <Button
+                  intent="tertiary"
+                  kind="action"
+                  density="compact"
+                  className="context-panel-selection-clear"
+                  data-context-panel-selection-clear
+                  onClick={(): void => onPageSelectionChange?.([])}
+                  aria-label="Clear page selection"
+                >
+                  Clear
+                </Button>
+              </div>
+            </PanelSection>
+          )}
+          <div className="context-panel-thumbs" data-context-panel-thumbs>
+            {pageCount === 0 ? (
+              <EmptyState
+                icon={Images}
+                headline="No pages to show"
+                help="Open a PDF to see its page thumbnails."
+                data-context-panel-thumbs-empty
+              />
+            ) : (
+              <ThumbnailRail
+                doc={doc}
+                pageCount={pageCount}
+                currentPage={currentPage}
+                aspectRatio={defaultHeightPt / defaultWidthPt}
+                pageSizes={pageSizes}
+                rotations={engineState.rotations}
+                visibleToSource={visibleToSource}
+                proxyVisibleOrder={proxyVisibleOrder}
+                pageLabelMap={pageLabelMap}
+                canUndo={canUndo}
+                onOp={onOp}
+                onDelete={onDelete}
+                onReorder={onReorder}
+                onUndo={onUndo}
+                onJump={onJump}
+                crossDoc={crossDoc}
+                thumbVerbs={verbs}
+                onThumbContextMenu={openMenu}
+                pageSelection={pageSelection}
+                onPageSelectionChange={onPageSelectionChange}
+              />
+            )}
+          </div>
+        </div>
       )}
-      {(outline !== null || effectiveOutlineEditor !== null) && (
-        <section className="context-panel-outline" data-context-panel-outline aria-label="Outline" data-outline-open={outlineOpen ? 'true' : 'false'}>
-          <Button
-            intent="tertiary"
-            kind="disclosure"
-            density="standard"
-            className="context-panel-section-toggle"
-            onClick={(): void => {
-              const next = !outlineOpen;
-              setOutlineOpen(next);
-              // Phase 59 (item 7 follow-up) — the toggle writes the SAME host
-              // state the palette command does, so the two can never disagree.
-              onRailTabChange?.(next ? 'outline' : 'thumbs');
-            }}
-            aria-expanded={outlineOpen}
-            aria-controls="context-panel-outline-body"
-            data-outline-toggle
+    </>
+  );
+
+  // Phase 111 (chunk D1) — the Split Navigator. Both views are mounted at once,
+  // Pages above Outline, each its own bounded scroll region with a compact
+  // count title. The divider between them is the keyboard-accessible separator
+  // that edits the persisted ratio (pointer commit on settle + keyboard steps).
+  const renderPagesSplit = (): ReactElement => {
+    const pagesBasis = `${Math.round(splitRatio * 100)}%`;
+    const outlineBasis = `${Math.round((1 - splitRatio) * 100)}%`;
+    return (
+      <div className="context-panel-split" data-context-panel-split ref={splitContainerRef}>
+        <div
+          className="context-panel-split-section"
+          data-context-panel-split-section="pages"
+          style={{ flexBasis: pagesBasis, minHeight: NAVIGATOR_MIN_SECTION_PX }}
+        >
+          <div className="context-panel-split-title" data-context-panel-split-title="pages">
+            {`Pages \u00B7 ${pageCount}`}
+          </div>
+          <div className="context-panel-view-body" data-context-panel-view="pages">
+            {pageSelection !== null && pageSelection.length >= 1 && (
+              <PanelSection
+                className="context-panel-selection"
+                data-context-panel-selection
+                title="Selection"
+                aria-label="Selection"
+              >
+                <span
+                  className="visually-hidden"
+                  data-context-panel-selection-live
+                  role="status"
+                  aria-live="polite"
+                >{`${pageSelection.length} selected`}</span>
+                <PropertyRow
+                  label="Pages"
+                  value={`${pageSelection.length} selected`}
+                  data-context-panel-selection-count
+                />
+                <PropertyRow
+                  label="Range"
+                  value={pageRangeText(pageSelection)}
+                  data-context-panel-selection-range
+                />
+                <div className="context-panel-selection-actions">
+                  <Button
+                    intent="tertiary"
+                    kind="action"
+                    density="compact"
+                    className="context-panel-selection-clear"
+                    data-context-panel-selection-clear
+                    onClick={(): void => onPageSelectionChange?.([])}
+                    aria-label="Clear page selection"
+                  >
+                    Clear
+                  </Button>
+                </div>
+              </PanelSection>
+            )}
+            <div className="context-panel-thumbs" data-context-panel-thumbs>
+              {pageCount === 0 ? (
+                <EmptyState
+                  icon={Images}
+                  headline="No pages to show"
+                  help="Open a PDF to see its page thumbnails."
+                  data-context-panel-thumbs-empty
+                />
+              ) : (
+                <ThumbnailRail
+                  doc={doc}
+                  pageCount={pageCount}
+                  currentPage={currentPage}
+                  aspectRatio={defaultHeightPt / defaultWidthPt}
+                  pageSizes={pageSizes}
+                  rotations={engineState.rotations}
+                  visibleToSource={visibleToSource}
+                  proxyVisibleOrder={proxyVisibleOrder}
+                  pageLabelMap={pageLabelMap}
+                  canUndo={canUndo}
+                  onOp={onOp}
+                  onDelete={onDelete}
+                  onReorder={onReorder}
+                  onUndo={onUndo}
+                  onJump={onJump}
+                  crossDoc={crossDoc}
+                  thumbVerbs={verbs}
+                  onThumbContextMenu={openMenu}
+                  pageSelection={pageSelection}
+                  onPageSelectionChange={onPageSelectionChange}
+                />
+              )}
+            </div>
+          </div>
+        </div>
+        <div
+          className="context-panel-split-divider"
+          data-context-panel-split-divider
+          role="separator"
+          aria-orientation="horizontal"
+          aria-label="Resize navigator sections"
+          aria-valuenow={Math.round(splitRatio * 100)}
+          aria-valuemin={10}
+          aria-valuemax={90}
+          tabIndex={0}
+          onPointerDown={onSplitPointerDown}
+          onPointerMove={onSplitPointerMove}
+          onPointerUp={onSplitPointerUp}
+          onPointerCancel={onSplitPointerUp}
+          onKeyDown={onSplitKeyDown}
+        >
+          <span className="context-panel-split-grip" aria-hidden="true" />
+        </div>
+        <div
+          className="context-panel-split-section"
+          data-context-panel-split-section="outline"
+          style={{ flexBasis: outlineBasis, minHeight: NAVIGATOR_MIN_SECTION_PX }}
+        >
+          <div className="context-panel-split-title" data-context-panel-split-title="outline">
+            {`Outline \u00B7 ${outlineCount}`}
+          </div>
+          <div
+            className="context-panel-outline context-panel-view-body"
+            data-context-panel-outline
+            data-context-panel-view="outline"
           >
-            {outlineOpen ? <Icon icon={CONTEXT_PANEL_GLYPHS.outlineOpen.icon} size="md" aria-hidden /> : <Icon icon={CONTEXT_PANEL_GLYPHS.outlineClosed.icon} size="md" aria-hidden />}
-            <span>Outline</span>
-          </Button>
-          {outlineOpen && (
-            <div className="context-panel-outline-body" id="context-panel-outline-body" data-context-panel-outline-body>
-              {outline !== null && outline.length === 0 && effectiveOutlineEditor === null ? (
-                // Phase 112 (TFL-854 C2) — the no-bookmarks state is the shared
-                // designed empty state. No Add action is fabricated: a
-                // view-only outline (no editor config) cannot add bookmarks.
+            <div className="context-panel-outline-body" data-context-panel-outline-body>
+              {outlineEmpty ? (
                 <PanelEmptyState
                   className="context-panel-outline-empty"
                   headline="No bookmarks"
@@ -620,14 +1117,20 @@ const pageCount = engineState.pageCount;
                   data-context-panel-outline-empty
                 />
               ) : (
-                <OutlinePanel doc={doc} outline={outline ?? []} onJump={onJump} onError={onError} editor={effectiveOutlineEditor} />
+                <OutlinePanel
+                  doc={doc}
+                  outline={outline ?? []}
+                  onJump={onJump}
+                  onError={onError}
+                  editor={effectiveOutlineEditor}
+                />
               )}
             </div>
-          )}
-        </section>
-      )}
-    </>
-  );
+          </div>
+        </div>
+      </div>
+    );
+  };
 
   // ---- EDIT ------------------------------------------------------------
   // The content outline of the CURRENT page: the text boxes + image
@@ -960,7 +1463,9 @@ const pageCount = engineState.pageCount;
         ? renderReview()
         : stage === 'deliver'
           ? renderDeliver()
-          : renderPages();
+          : splitActive
+            ? renderPagesSplit()
+            : renderPages();
 
 const headerTitle = contextPanelTitle(stage, pageCount);
 
@@ -985,14 +1490,17 @@ const headerTitle = contextPanelTitle(stage, pageCount);
                 intent="secondary"
                 kind="action"
                 density="standard"
-                className="context-panel-combine"
-                onClick={(): void => onMerge?.()}
-                title="Combine with another PDF"
-                aria-label="Combine with another PDF"
-                data-context-panel-combine
+                className="context-panel-more"
+                ref={panelMoreBtnRef}
+                onClick={openPanelMore}
+                title="More actions"
+                aria-label="More actions"
+                aria-haspopup="menu"
+                aria-expanded={panelMoreOpen}
+                data-context-panel-more
               >
-                <Icon name="merge" size="md" aria-hidden />
-                <span>Combine</span>
+                <Icon icon={MoreHorizontal} size="md" aria-hidden />
+                <span>More</span>
               </Button>
             )}
             {collapseButton}
@@ -1005,9 +1513,12 @@ const headerTitle = contextPanelTitle(stage, pageCount);
             <RulerStrip pageCount={pageCount} currentPage={currentPage} onJump={onJump} />
           </div>
         ) : (
-          body
+          <div className="context-panel-body-fill" ref={bodyRef}>
+            {body}
+          </div>
         )}
         {menuNode}
+        {panelMoreNode}
       </GlassSidebarBody>
     </PanelShell>
   );

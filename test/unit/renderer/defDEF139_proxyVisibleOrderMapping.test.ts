@@ -42,7 +42,7 @@ describe("DEF-139 — DocumentView maps the slot via the proxy-family helper", (
   });
 });
 
-describe("DEF-139 — SideRail thumbnails follow the same proxy-family rule", () => {
+describe("DEF-139 — the live rail follows the same proxy-family rule", () => {
   const sideRail = src("components/SideRail.tsx");
 
   it("ThumbnailRail picks the identity page for a visible-order proxy", () => {
@@ -51,8 +51,9 @@ describe("DEF-139 — SideRail thumbnails follow the same proxy-family rule", ()
     );
   });
 
-  it("threads proxyVisibleOrder from SideRail into ThumbnailRail", () => {
-    expect(sideRail).toMatch(/proxyVisibleOrder=\{proxyVisibleOrder\}/);
+  it("threads proxyVisibleOrder into the live shared rail", () => {
+    const contextPanel = src("components/ContextPanel.tsx");
+    expect(contextPanel).toMatch(/proxyVisibleOrder=\{proxyVisibleOrder\}/);
   });
 });
 

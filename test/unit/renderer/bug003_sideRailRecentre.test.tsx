@@ -67,7 +67,7 @@ if (typeof globalThis.ResizeObserver === "undefined") {
 import { describe, expect, it, vi } from "vitest";
 import { createRoot } from "react-dom/client";
 import { act } from "react";
-import { SideRail } from "../../../src/renderer/components/SideRail";
+import { ThumbnailRail } from "../../../src/renderer/components/SideRail";
 import type { EngineState } from "../../../src/renderer/engine/types";
 import type { PDFDocumentProxy } from "pdfjs-dist";
 
@@ -114,23 +114,20 @@ function makeRail(args: {
   const container = document.createElement("div");
   document.body.appendChild(container);
   const root = createRoot(container);
+  const visibleToSource = new Map<number, number>();
+  engineState.pageOrder.forEach((src, i) => visibleToSource.set(i + 1, src + 1));
   act((): void => {
     root.render(
-      <SideRail
+      <ThumbnailRail
         doc={makeDocStub()}
         pageCount={engineState.pageCount}
-        outline={null}
         currentPage={args.currentPage}
-        defaultWidthPt={612}
-        defaultHeightPt={792}
-        engineState={engineState}
+        aspectRatio={792 / 612}
+        rotations={engineState.rotations}
+        visibleToSource={visibleToSource}
+        proxyVisibleOrder={false}
         canUndo={false}
-        onOp={undefined}
-        onDelete={undefined}
-        onReorder={undefined}
-        onUndo={undefined}
         onJump={args.onJump}
-        annotations={[]}
       />,
     );
   });

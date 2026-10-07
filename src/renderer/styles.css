@@ -137,6 +137,26 @@
   --select-edge: rgba(124, 58, 237, 0.45);
   --select-glyph: var(--sem-primary);
 
+  /* Phase 111 (chunk A) — the Document Navigator view selector. Navigator-scoped
+   * tokens ONLY (the frozen shared tokens above are untouched); they consume the
+   * shared surface / ink / selected-button roles so the selector matches the
+   * dock / panel / rail selections. Declared in light, dark AND frosted below. */
+  --tf-nav-view-tabs-surface: var(--bg-sunken);
+  --tf-nav-view-tab-ink: var(--tf-nav-helper-ink);
+  --tf-nav-view-tab-active-surface: var(--btn-selected-bg);
+  --tf-nav-view-tab-active-ink: var(--btn-selected-fg);
+  /* Phase 111 (TFL-1074 / DEF-613) — the navigator's own CONTRAST palette,
+   * verbatim from the bundle `Design System/navigator.tokens.json` so all six
+   * `Specifications/contrast-check.json` ratios hold: body = foreground/surface
+   * (7.96), helper = secondary/surface (4.97), selected = accent/selectedSurface
+   * (4.73). Navigator-scoped names only — the frozen shared tokens above are
+   * untouched. Declared in light, dark AND frosted. */
+  --tf-nav-surface: #FFFFFF;
+  --tf-nav-body-ink: #485164;
+  --tf-nav-helper-ink: #667085;
+  --tf-nav-selected-surface: #F0EBFC;
+  --tf-nav-selected-ink: #7050D6;
+
   /* Phase-15 frosted-acrylic — THEME-INDEPENDENT structural tokens.
    * They live in :root (next to the --tf-motion-* system, same
    * convention) because they are identical in all three themes: the
@@ -798,6 +818,20 @@
   --btn-selected-fg: #B9A4FF;
   --btn-selected-border: #B9A4FF;
   --btn-danger-fg: #FF9AAD;
+  /* Phase 111 (chunk A) — the Navigator view selector (dark). Navigator-scoped
+   * only; consumes the shared role tokens remapped in this block. */
+  --tf-nav-view-tabs-surface: var(--bg-sunken);
+  --tf-nav-view-tab-ink: var(--tf-nav-helper-ink);
+  --tf-nav-view-tab-active-surface: var(--btn-selected-bg);
+  --tf-nav-view-tab-active-ink: var(--btn-selected-fg);
+  /* Phase 111 (TFL-1074 / DEF-613) — the navigator CONTRAST palette (dark),
+   * verbatim from `Design System/navigator.tokens.json`: body 8.59, helper
+   * 5.62, selected 6.59. Navigator-scoped names only. */
+  --tf-nav-surface: #20232B;
+  --tf-nav-body-ink: #B8C0D0;
+  --tf-nav-helper-ink: #929BAC;
+  --tf-nav-selected-surface: #302740;
+  --tf-nav-selected-ink: #B9A4FF;
   --bg-base: #0b0d0f;
   --bg-sunken: #08090b;
   --bg-raised: #13171d;
@@ -1104,6 +1138,20 @@
   --bg-raised: var(--tf-surface-dialog);
   --bg-toolbar: var(--tf-surface-toolbar);
   --bg-rail: var(--tf-surface-rail);
+  /* Phase 111 (chunk A) — the Navigator view selector (frosted). Navigator-
+   * scoped only; consumes the shared role tokens remapped in this block. */
+  --tf-nav-view-tabs-surface: var(--bg-sunken);
+  --tf-nav-view-tab-ink: var(--tf-nav-helper-ink);
+  --tf-nav-view-tab-active-surface: var(--btn-selected-bg);
+  --tf-nav-view-tab-active-ink: var(--btn-selected-fg);
+  /* Phase 111 (TFL-1074 / DEF-613) — the navigator CONTRAST palette (frosted).
+   * The glass panel is a light surface, so it rides the light bundle values
+   * (body 7.96, helper 4.97, selected 4.73). Navigator-scoped names only. */
+  --tf-nav-surface: #FFFFFF;
+  --tf-nav-body-ink: #485164;
+  --tf-nav-helper-ink: #667085;
+  --tf-nav-selected-surface: #F0EBFC;
+  --tf-nav-selected-ink: #7050D6;
   /* Phase 108 (Workspace Rail) — frosted keeps the same glass/sidebar material
    * the .side-rail / .glass-sidebar surfaces use in this theme. */
   --tf-siderail-surface: var(--glass-sidebar-bg);
@@ -1604,7 +1652,7 @@ input[type="checkbox"] {
 }
 
 .app-main {
-  /* DEF-320 — the Stage Rail claims a REAL 44px layout track. The rail was a
+  /* DEF-320 — the Stage Rail claims a REAL rail-width layout track (`--tf-stage-rail-w`, 72px since Phase 108). The rail was a
    * chunk-1 absolute left-edge OVERLAY (mounted before the ContextPanel moved
    * into the left slot), so once the panel took that slot the two stacked at
    * x=0: the rail clipped the panel's header and, collapsed, covered its
@@ -1612,7 +1660,7 @@ input[type="checkbox"] {
    * contract describes — rail | context panel | canvas | inspector — where the
    * rail track is column 1 of THIS container and the panel/canvas columns live
    * one level down inside `.workspace` (`.tab-stage` owns them). Nothing can
-   * overlap at any width: the panel's own column starts at x=44.
+   * overlap at any width: the panel's own column starts at the rail track's 72px width.
    *
    * Two rows: the OCR suspects bar (a FLOW element, DEF-126) spans row 1 and
    * the rail + stage share row 2. With no bar, row 1 is empty (auto -> 0) and
@@ -1625,7 +1673,7 @@ input[type="checkbox"] {
 }
 
 /* Phase 37 (item 8) — on the welcome/home screen the Stage Rail is not
- * rendered, so its 44px track collapses and the stage spans the full frame.
+ * rendered, so its rail-width track collapses and the stage spans the full frame.
  * The condition is the same one that shows the welcome pane (and hides the
  * ContextPanel). As soon as a document is open the rail returns to its track
  * and the stage moves back to column 2. */
@@ -3245,7 +3293,7 @@ body.tab-reordering .tab-list[data-reorder="true"] .tab {
    * absolutely positioned inside the stage, so this clips nothing at rest. */
   overflow: hidden;
   /* DEF-320 — the stage is the app frame's second column, in the same 1fr row
-   * as the rail (the first column is the rail's 44px track; see .app-main). */
+   * as the rail (the first column is the rail's 72px track; see .app-main). */
   grid-column: 2;
   grid-row: 2;
 }
@@ -5175,18 +5223,14 @@ body.tab-reordering .tab-list[data-reorder="true"] .tab {
 }
 
 .thumb-current {
-  /* Phase 13 look-and-feel — current-page selection is a full accent
-   * ring (1.5px, all four sides) over the shared 0.10 selected wash.
-   * The previous leading-edge-only 2px inset bar was a one-sided
-   * accent border (banned by the design rules); a symmetric ring
-   * reads as "this thumb is selected" without a directional edge. */
-  background: var(--accent-selected);
-  box-shadow: 0 0 0 1.5px var(--accent);
-  /* Chunk 2 — selecting a thumb swells it 0.985 -> 1 over
-   * --tf-motion-normal (180ms, in the 120-180ms thumb band). The
-   * ring itself stays instant (documented Phase 5
-   * contract — it tracks scroll and must never repaint per frame). */
-  animation: thumb-select var(--tf-motion-normal) var(--tf-ease-standard);
+  /* Phase 111 (chunk B / DEF-612) — the CURRENT page is NEUTRAL. It is a
+   * different state from the batch selection: `.thumb-selected` owns the
+   * violet select-fill tint + ring, so painting current with the same wash
+   * made the two indistinguishable. The current card carries only the 2px
+   * violet leading marker ([data-thumb-current-marker]) and the visible
+   * "Viewing" label ([data-thumb-viewing]) — no wash, no accent ring, no
+   * swell animation (that was the selection affordance). */
+  background: transparent;
 }
 
 .thumb-canvas-wrap {
@@ -5239,6 +5283,14 @@ body.tab-reordering .tab-list[data-reorder="true"] .tab {
   position: absolute;
   inset: 0;
   overflow-y: auto;
+  /* TFL-1080 (DEF-616) — the outline NEVER scrolls sideways. At the 240px
+   * navigator floor a deeply indented row used to raise `scrollWidth` past
+   * `clientWidth` and scroll the row's More target out of reach. The indent is
+   * capped in `outlineIndent()` (SideRail) so padding-left PLUS the fixed
+   * columns (18px toggle + 32px destination + 32px/44px More) PLUS the gap /
+   * trailing pad / the title's 14px padding+border floor stays inside the
+   * panel; this is the belt-and-suspenders stop against residual overflow. */
+  overflow-x: hidden;
   padding: var(--sp-2) 0;
   scrollbar-width: thin;
 }
@@ -5250,7 +5302,13 @@ body.tab-reordering .tab-list[data-reorder="true"] .tab {
   align-items: center;
   gap: 2px;
   padding-right: 8px;
+  min-height: 44px;
   font-size: var(--fs-sm);
+  /* TFL-1080 (DEF-616) — the row is the title control's flex parent. `min-width:
+   * 0` lets the title shrink below its content so the fixed 18px toggle / 32px
+   * destination / 32px (44px coarse) More columns always stay inside the panel,
+   * never pushed out by a long title or a deep indent. */
+  min-width: 0;
 }
 
 /* Phase 91 C2 — layout alias for the canonical `btn btn-ghost btn-icon`
@@ -5282,15 +5340,24 @@ body.tab-reordering .tab-list[data-reorder="true"] .tab {
 .chevron-closed { transform: rotate(0deg); }
 
 /* Phase 91 C2 — layout alias for the canonical `btn btn-ghost btn-sm`
- * variant; colour/hover/focus come from the family. */
+ * variant; colour/hover/focus come from the family. Phase 111 (chunk C): the
+ * title is a two-line 13px block (full text kept in `title` + the accessible
+ * name) instead of a nowrap ellipsis. TFL-1080 (DEF-616): the title control
+ * keeps `min-width: 0` so it shrinks to its 12px padding + 2px border floor and
+ * never widens the row past the panel. */
 .outline-link {
   flex: 1 1 auto;
+  min-width: 0;
+  height: auto;
   text-align: left;
   padding: 4px 6px;
-  font-size: var(--fs-sm);
+  font-size: var(--fs-md);
+  line-height: 1.3;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
   overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  white-space: normal;
 }
 
 /* Phase 85 — editable outline rows. The base `.outline-row` flex layout is
@@ -5303,9 +5370,9 @@ body.tab-reordering .tab-list[data-reorder="true"] .tab {
 }
 
 .outline-page {
-  flex: 0 0 auto;
-  min-width: 1.8em;
-  text-align: center;
+  flex: 0 0 32px;
+  width: 32px;
+  text-align: right;
   font-variant-numeric: tabular-nums;
   font-size: var(--fs-xs);
   color: var(--fg-faint);
@@ -5314,40 +5381,36 @@ body.tab-reordering .tab-list[data-reorder="true"] .tab {
   padding: 1px 4px;
 }
 
-.outline-verbs {
-  display: inline-flex;
-  align-items: center;
-  gap: 2px;
-  margin-left: auto;
+/* Phase 111 (chunk C) — the always-visible per-row More target (32px, 44px
+ * coarse) that replaces the retired horizontal verb strip. */
+.outline-more {
   flex: 0 0 auto;
-}
-
-/* Phase 91 C2 — layout alias; the tree verbs are canonical `btn btn-ghost
- * btn-icon` (the delete verb `btn btn-danger`), so colour/hover/focus/disabled
- * all come from the family. */
-.outline-verb {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 22px;
-  height: 22px;
+  width: 32px;
+  height: 32px;
   padding: 0;
 }
 
-/* The native page-target <select> shares the layout class but is not a
- * canonical `.btn`, so it keeps its own neutral reset (its colour comes from
- * `.outline-retarget` below). */
-.outline-verb.outline-retarget {
-  background: transparent;
-  border: none;
-  border-radius: var(--radius-1);
-  cursor: pointer;
+@media (pointer: coarse) {
+  .outline-more {
+    width: 44px;
+    height: 44px;
+  }
+}
+
+/* The destination chooser revealed by the More menu's "Set destination...". */
+.outline-retarget-popover {
+  z-index: var(--isf-layer-command-menu, 60);
+  padding: var(--sp-2);
+  background: var(--menu-bg);
+  border: 1px solid var(--menu-border);
+  border-radius: var(--radius-group);
+  box-shadow: var(--isf-shadow);
 }
 
 .outline-retarget {
-  width: auto;
-  max-width: 96px;
-  height: 22px;
+  width: 100%;
+  max-width: 160px;
+  height: 28px;
   font-size: var(--fs-xs);
   color: var(--fg);
 }
@@ -5363,10 +5426,25 @@ body.tab-reordering .tab-list[data-reorder="true"] .tab {
   border-radius: var(--radius-1);
 }
 
-.outline-editor-toolbar {
+/* Phase 111 (chunk C) — the outline header's single Add control (top-right of
+ * the outline body, editable only). */
+.outline-head {
   display: flex;
   justify-content: flex-end;
   padding: 2px 8px 4px;
+}
+
+.outline-head-add {
+  width: 32px;
+  height: 32px;
+  padding: 0;
+}
+
+@media (pointer: coarse) {
+  .outline-head-add {
+    width: 44px;
+    height: 44px;
+  }
 }
 
 .outline-empty {
@@ -13827,13 +13905,13 @@ rect.ann-highlight.ann-preview {
 
   /* DEF-234 class, remaining members — every one of these keyframe-driven
    * surfaces paints a `from` transform on the collapsed first frame
-   * (indicator-in translateY+scaleX, thumb-select scale, success-pop
-   * scale, shake-x translateX, update-prompt-indeterminate translateX)
-   * while its BASE state is already the visible end state. Removing the
-   * animation outright is the leak-free reduced representation: the
-   * surface still appears — instantly and in place — with no travel. */
+   * (indicator-in translateY+scaleX, success-pop scale, shake-x translateX,
+   * update-prompt-indeterminate translateX) while its BASE state is already
+   * the visible end state. Removing the animation outright is the leak-free
+   * reduced representation: the surface still appears — instantly and in
+   * place — with no travel. (Phase 111 / DEF-612 dropped `.thumb-current`
+   * from this set: the current card no longer animates.) */
   .tab-active::after,
-  .thumb-current,
   .tool-btn-save-clean,
   .color-palette-error,
   .optimize-error,
@@ -14268,14 +14346,11 @@ rect.ann-highlight.ann-preview {
     box-shadow var(--motion-fast) var(--ease-out);
 }
 
-:root[data-theme="frosted"] .thumb-current {
-  background: var(--glass-selected-bg);
-  border-color: var(--glass-selected-border);
-  border-radius: var(--radius-3);
-  box-shadow:
-    0 0 0 2px var(--glass-selected-border),
-    0 0 0 4px rgba(124, 58, 237, 0.15);
-}
+/* Phase 111 (chunk B / DEF-612) — frosted has NO `.thumb-current` override:
+ * the glass wash + ring that lived here made the current card identical to a
+ * selected card. Current is NEUTRAL in every theme and keeps only the 2px
+ * violet leading marker + the "Viewing" label; `.thumb-selected` keeps the
+ * glass selection trio below. */
 
 /* Phase 41 (item 3) — the frosted SELECTED thumb now consumes the SAME shared
  * selection trio as light/dark, so all three themes share one geometry (1px
@@ -14394,21 +14469,9 @@ rect.ann-highlight.ann-preview {
 
 /* Phase 16 — Collapsed ruler mode.
  *
- * The strip is a SWAP layer inside the rail body: it and the expanded
- * content (thumbnails / annotations / outline) are both absolute
- * (.rail-content-swap), so AnimatePresence can crossfade them
- * (opacity + a slight scale, token-driven via useRailSwapAnimation)
- * while the .workspace grid column tweens 220px -> 48px on
- * --motion-duration-panel / --motion-ease-layout. The strip carries
- * NO scrollbar chrome — just the numbers ladder. The hover/focus
- * LIFT on the numbers is the standard LiftMotionProps (JS,
+ * The strip carries NO scrollbar chrome — just the numbers ladder. The
+ * hover/focus LIFT on the numbers is the standard LiftMotionProps (JS,
  * token-driven); the CSS only paints the theme-tuned colour wash. */
-
-.rail-content-swap {
-  position: absolute;
-  inset: 0;
-  overflow: hidden;
-}
 
 .rail-ruler {
   display: flex;
@@ -16275,13 +16338,13 @@ rect.ann-highlight.ann-preview {
 /* ===========================================================================
  * Phase 36 (chunk 1b) — THE STAGE RAIL.
  *
- * The 44px vertical stage rail: four stage buttons (icon + 8px uppercase
- * label), the active stage washed in --accent-soft and marked by a 2px
- * accent indicator on the leading edge, and the settings gear pinned at the
- * rail's bottom. Below the host's compact breakpoint the labels drop and the
- * rail is icon-only.
+ * The Workspace Rail: a 72px vertical track (--tf-stage-rail-w, Phase 108)
+ * with four stage buttons (icon + an 11px title-case label, never hidden),
+ * the active stage on the rail-scoped selected wash and marked by an inset
+ * 3x20px accent bar on the leading edge, and the settings gear pinned at the
+ * rail's bottom.
  *
- * It is a REAL grid item in `.app-main`'s 44px first column (row 2), beside
+ * It is a REAL grid item in `.app-main`'s 72px first column (row 2), beside
  * the stage (DEF-320): the rail reserves its own track, reflows nothing, and
  * can never overlap the ContextPanel that now owns the app's left slot. Every
  * duration is an existing motion token, and every stage is IDENTIFIED by its
@@ -16290,11 +16353,12 @@ rect.ann-highlight.ann-preview {
  * accent indicator — stays the brand accent, never a stage hue.
  * ========================================================================= */
 .stage-rail {
-  /* DEF-320 — the rail is a REAL grid item in .app-main's 44px first column
+  /* DEF-320 — the rail is a REAL grid item in .app-main's 72px first column
    * (row 2, beside the stage), not the chunk-1 absolute overlay. It therefore
    * reserves its own space and can never stack over the ContextPanel: the
-   * panel's column starts at x=44, so the header and its collapse/expand
-   * control stay fully visible and clickable in both states, at every width. */
+   * panel's column starts at the rail track's 72px width, so the header and its
+   * collapse/expand control stay fully visible and clickable in both states, at
+   * every width. */
   position: relative;
   grid-column: 1;
   grid-row: 2;
@@ -16464,7 +16528,16 @@ rect.ann-highlight.ann-preview {
   font-size: var(--type-compact-size);
   line-height: var(--type-compact-line);
   letter-spacing: 0.01em;
-  white-space: nowrap;
+  /* TFL-913 (Phase 108 deferral) — at 200% text scaling the rail keeps its
+   * fixed 72px track while the label ink scales, so the old `white-space:
+   * nowrap` overflowed the 56px content box and spilled across the panel
+   * column. The label now WRAPS inside the track instead: the button already
+   * sizes with `min-height` (never a fixed height), so extra lines grow the
+   * item vertically while the rail's width is untouched. */
+  white-space: normal;
+  overflow-wrap: anywhere;
+  max-width: 100%;
+  text-align: center;
   color: var(--tf-icon-rest);
   transition: color var(--motion-duration-fast) var(--motion-ease-standard);
 }
@@ -16517,6 +16590,17 @@ rect.ann-highlight.ann-preview {
   overflow: hidden;
   background: var(--panel-bg);
   border-right: 1px solid var(--panel-border);
+  /* Phase 111 (TFL-1074 / DEF-613) — the Document Navigator consumes its own
+   * contrast palette so all six `Specifications/contrast-check.json` ratios
+   * hold. The helper ink is the bundle `secondary` and the batch selection is
+   * the bundle `accent` on `selectedSurface`; the body/strong ink keeps the
+   * existing (already-passing) shared `--fg-strong`. These are scope-local
+   * remaps of shared token NAMES inside the navigator only — the frozen
+   * :root/dark/frosted token definitions are untouched, and the rail and every
+   * other surface still resolve the shared values. */
+  --fg-muted: var(--tf-nav-helper-ink);
+  --select-fill: var(--tf-nav-selected-surface);
+  --select-glyph: var(--tf-nav-selected-ink);
 }
 
 .context-panel-actions {
@@ -16541,11 +16625,19 @@ rect.ann-highlight.ann-preview {
   flex: 0 0 auto;
 }
 
-/* Phase 91 D2 — the migrated context-menu rows take focus from
- * `.btn:focus-visible`; the thumbnail verb keeps its local ring. */
-.thumb-verb:focus-visible {
-  outline: 2px solid var(--tf-accent-focus);
-  outline-offset: 1px;
+/* Phase 111 (chunk B) — the header's labelled More entry (Combine and
+ * Remove blank pages live in its menu now). Layout alias only; colour comes
+ * from the canonical secondary variant. */
+.context-panel-more {
+  flex: 0 0 auto;
+}
+
+/* Phase 111 (chunk D2b) — the header More is a navigator primary control, so it
+ * meets the same 44px coarse-pointer target as `.thumb-more`. */
+@media (pointer: coarse) {
+  .context-panel-more {
+    min-height: 44px;
+  }
 }
 
 .context-panel-body {
@@ -16553,7 +16645,49 @@ rect.ann-highlight.ann-preview {
   flex-direction: column;
 }
 
-/* The thumbnail stack fills the body. `.thumb-scroller` is
+/* Phase 111 (chunk A) — the navigator's 40px view selector, directly under the
+ * panel header. A real tablist of two segmented tabs (Pages / Outline),
+ * sentence case, with the real document counts in tabular figures. The
+ * selected tab takes the shared selected-button role, so it matches every
+ * other selected control. */
+.context-panel-view-tabs {
+  display: flex;
+  align-items: stretch;
+  flex: 0 0 auto;
+  min-height: 40px;
+  gap: var(--sp-1);
+  padding: 0 var(--space-control);
+  border-bottom: 1px solid var(--divider);
+  background: var(--tf-nav-view-tabs-surface);
+}
+
+.context-panel-view-tab {
+  flex: 1 1 0;
+  min-width: 0;
+  height: 100%;
+  justify-content: center;
+  color: var(--tf-nav-view-tab-ink);
+  /* Counts are document data; tabular figures stop the two numbers shifting as
+   * pages or bookmarks change. Size and weight come from the canonical `.btn`
+   * role, never a hardcoded font-family or size here. */
+  font-variant-numeric: tabular-nums;
+}
+
+.context-panel-view-tab[aria-selected='true'] {
+  background: var(--tf-nav-view-tab-active-surface);
+  color: var(--tf-nav-view-tab-active-ink);
+}
+
+/* Phase 111 (chunk A) — the navigator body: exactly ONE view (Pages or
+ * Outline) is mounted, and it owns the panel body's remaining height. */
+.context-panel-view-body {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+/* The thumbnail stack fills the Pages view. `.thumb-scroller` is
  * `position: absolute; inset: 0` inside its parent, so this wrapper is the
  * positioning context — exactly the role `.rail-content` plays for the rail. */
 .context-panel-thumbs {
@@ -16562,83 +16696,38 @@ rect.ann-highlight.ann-preview {
   min-height: 0;
 }
 
-/* ---- The outline section (collapsible, below the stack) ---- */
+/* ---- The full-height Outline view ---- */
 
-/* DEF-310 — the section is the outline's frame. `.outline-panel` is
- * `position: absolute; inset: 0` (the RAIL's own rule, which the rail's
- * `.rail-content` bounds), so the section and the body must be bounded boxes
- * too: with a static body the tree escapes to the nearest positioned
- * ancestor (`.glass-sidebar-body`) and paints over the thumbnail stack.
- * Expanded, the section claims a definite share of the panel body — exactly
- * the role `.rail-content`'s definite height plays in the rail. Collapsed
- * (no body rendered) it is content-sized, so the toggle sits flush under the
- * stack with no dead space. */
+/* Phase 111 (chunk A) — the Outline is a first-class VIEW now, not a collapsible
+ * section under the stack: it fills the panel body (via `.context-panel-view-body`)
+ * and scrolls internally. DEF-310 containment is unchanged: `.outline-panel` is
+ * `position: absolute; inset: 0` (the rail's own rule), so this view AND its body
+ * must be bounded positioned boxes or the tree would escape to
+ * `.glass-sidebar-body` and paint over the tab strip. */
 .context-panel-outline {
-  display: flex;
-  flex-direction: column;
-  flex: 0 1 auto;
   min-height: 0;
   overflow: hidden;
-  /* Phase 37 (item 16) — the hairline separator between the thumbnail area and
-   * the Outline now uses the SAME item-22 divider token as the Inspector's
-   * inter-row rules (not the heavier border-subtle), so every separator in the
-   * product shares one treatment. */
-  border-top: 1px solid var(--divider);
-}
-
-/* Phase 59 (item 5 / DEF-419) — EXPANDED, the section HUGS its content
- * instead of reserving a FIXED share of the panel body. A short outline makes
- * the section only as tall as its rows, so the last row's bottom edge sits
- * FLUSH on the section/panel bottom (measured gap 0 — DEF-419's 294.59px dead
- * space is gone). `max-height: 40%` keeps the Phase-40 share as an UPPER
- * BOUND: an outline longer than the cap scrolls INSIDE the section, and the
- * `flex: 0 1 auto` lets the section shrink to its content height while
- * `.context-panel-thumbs` (flex: 1 1 auto) absorbs the free space.
- *
- * Phase 40 (item 10) — the expanded state's flush is driven by the section's
- * OWN state attribute (`data-outline-open`), not by `:has()`. The base rule's
- * `overflow: hidden` still bounds the section, so DEF-310 containment is
- * unchanged: a long outline can never paint over the thumbnail stack. */
-.context-panel-outline[data-outline-open='true'] {
-  height: auto;
-  max-height: 40%;
-  flex: 0 1 auto;
-}
-
-/* Phase 91 — migrated to the canonical button system (`btn btn-ghost`). The
- * disclosure keeps only its own layout + section-label typography; colour,
- * border, hover, active, focus and disabled come from `.btn-ghost`. */
-.context-panel-section-toggle {
-  width: 100%;
-  justify-content: flex-start;
-  padding: var(--space-small) var(--space-control);
-  font-size: var(--fs-xs);
-  font-weight: 600;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
 }
 
 /* The positioning context for the re-parented `.outline-panel`, mirroring
- * `.rail-content` (`position: relative`) in the rail. The section's definite
- * height above gives this box a definite height too, so the panel's own
- * `inset: 0` + `overflow-y: auto` scroll INSIDE the section and can never
- * reach the thumbnails. `overflow: hidden` keeps the panel's scroller here.
+ * `.rail-content` (`position: relative`) in the rail. The view's definite height
+ * gives this box a definite height too, so the panel's own `inset: 0` +
+ * `overflow-y: auto` scroll INSIDE the view and can never reach the tab strip.
+ * `overflow: hidden` keeps the panel's scroller here.
  *
- * Phase 59 (item 5) — the body carries NO trailing padding-bottom: the panel's
- * own bottom padding is zeroed below too, so when the section is EXPANDED the
- * last outline row's bottom edge is FLUSH with the section/panel bottom edge
- * (measured gap 0). The old `padding-bottom: var(--space-small)` left a dead
- * band under the last row. */
+ * The body carries NO trailing padding-bottom: the panel's own bottom padding is
+ * zeroed below too, so the last outline row's bottom edge is FLUSH with the
+ * view's bottom edge. */
 .context-panel-outline-body {
   position: relative;
   flex: 1 1 auto;
   min-height: 0;
   overflow: hidden;
   padding-bottom: 0;
-  /* Phase 43 (item 1) — the Outline disclosure's body MATERIALIZES in on
-   * the token band when the section is opened instead of snapping (the
-   * section's own height is a layout property and must not animate, so
-   * only the disclosed content's transform/opacity move). */
+  /* Phase 43 (item 1); Phase 111 (chunk A) — the Outline view's body
+   * MATERIALIZES in on the token band when the view is shown instead of
+   * snapping (only the content's transform/opacity move; the view's own height
+   * is a layout property and is not animated). */
   animation: tf-anim-materialize var(--motion-duration-standard) var(--motion-ease-enter) both;
 }
 
@@ -16651,18 +16740,12 @@ rect.ann-highlight.ann-preview {
   }
 }
 
-/* Phase 59 (item 5 / DEF-419) — inside the EXPANDED context-panel section the
- * re-parented `.outline-panel` JOINS THE FLEX FLOW (the shared rule keeps it
- * `position: absolute; inset: 0` for the rail, where `.rail-content` bounds
- * it). In flow the section can size to the tree's content, so a short outline
- * leaves NO dead space under the last row. `max-height: 100%` caps the tree to
- * the bounded body and the shared `overflow-y: auto` then scrolls a long
- * outline INSIDE the section. The bottom padding is zeroed here too, so the
- * last row's bottom edge sits FLUSH on the section/panel bottom edge. The
- * rail's outline tab and the collapsed ruler-strip are untouched. */
+/* The re-parented tree keeps the shared `.outline-panel` rule inside the
+ * context panel (`position: absolute; inset: 0` + `overflow-y: auto`, bounded by
+ * the body above), so a long outline scrolls INSIDE the view. Only its bottom
+ * padding is zeroed so the last row sits FLUSH on the view's bottom edge; the
+ * rail's own outline tab and the collapsed ruler-strip are untouched. */
 .context-panel-outline .outline-panel {
-  position: static;
-  max-height: 100%;
   padding-bottom: 0;
 }
 
@@ -16672,12 +16755,128 @@ rect.ann-highlight.ann-preview {
 .context-panel-selection {
   flex: 0 0 auto;
   padding: var(--space-small) var(--space-control);
-  border-top: 1px solid var(--divider);
+  border-bottom: 1px solid var(--divider);
+}
+
+/* Phase 111 (chunk B) — the summary's Clear control. Clearing routes to the
+ * host and never navigates, so it reads as a quiet tertiary action. */
+.context-panel-selection-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: var(--space-micro);
+}
+
+.context-panel-selection-clear {
+  flex: 0 0 auto;
 }
 
 /* The view-only no-bookmarks state fills the bounded outline body. */
 .context-panel-outline-empty {
   height: 100%;
+}
+
+/* ---- Phase 111 (chunk D1) — the Split Navigator ---- */
+
+/* The panel body's measurement wrapper. It owns the remaining height so the
+ * stage body (and the split navigator) fills exactly the space the panel gives
+ * it, which is what the split/stacked decision measures. */
+.context-panel-body-fill {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+/* Pages above Outline, with the horizontal divider between them. */
+.context-panel-split {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
+}
+
+/* Each section is an independent bounded region. The inline `flex-basis` (the
+ * persisted ratio) and `min-height` (NAVIGATOR_MIN_SECTION_PX, 180px) drive the
+ * split; the CSS floor stays 0 so the browser's flex algorithm owns the
+ * distribution and the section can never paint outside the panel. */
+.context-panel-split-section {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  flex-grow: 0;
+  flex-shrink: 1;
+  flex-basis: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+
+/* The compact count title above each section's scroller, in tabular figures so
+ * the numbers stop shifting as pages / bookmarks change. */
+.context-panel-split-title {
+  display: flex;
+  align-items: center;
+  flex: 0 0 auto;
+  min-height: 28px;
+  padding: 0 var(--space-control);
+  color: var(--tf-nav-view-tab-ink);
+  font-variant-numeric: tabular-nums;
+  border-bottom: 1px solid var(--divider);
+}
+
+/* The horizontal separator reuses the `.panel-resize-handle` visual language
+ * (accent on hover / focus, a grip bar) but lays out horizontally across the
+ * panel width. */
+.context-panel-split-divider {
+  position: relative;
+  flex: 0 0 auto;
+  height: 12px;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: row-resize;
+  touch-action: none;
+  user-select: none;
+  background: transparent;
+  transition: background var(--motion-duration-fast) var(--motion-ease-standard);
+}
+
+.context-panel-split-divider:hover,
+.context-panel-split-divider:focus-visible {
+  background: var(--accent);
+}
+
+.context-panel-split-divider:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.context-panel-split-grip {
+  flex: 0 0 auto;
+  width: 40px;
+  height: 4px;
+  border-radius: var(--radius-pill);
+  background: var(--border-strong);
+  transition: background var(--motion-duration-fast) var(--motion-ease-standard);
+}
+
+.context-panel-split-divider:hover .context-panel-split-grip,
+.context-panel-split-divider:focus-visible .context-panel-split-grip {
+  background: var(--fg-on-accent);
+}
+
+@media (pointer: coarse) {
+  .context-panel-split-divider {
+    height: 44px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .context-panel-split-divider,
+  .context-panel-split-grip {
+    transition: none;
+  }
 }
 
 /* DEF-318 — the REVIEW annotations section owns a BOUNDED, scrollable body,
@@ -17103,68 +17302,126 @@ rect.ann-highlight.ann-preview {
 }
 .context-panel-ruler .rail-ruler { position: absolute; inset: 0; }
 
-/* ---- The inline hover verbs on each thumbnail ---- */
+/* ---- Phase 111 (chunk B) — the Pages navigator card footer ---- */
 
-/* A semi-opaque themed backdrop (the same film token the chrome uses) keeps
- * the verbs legible over any page content; the reveal rides the existing
- * micro motion token. It is pointer-inert until revealed, so it never steals
- * the thumbnail's hover, click or drag. */
-.thumb-verbs {
-  position: absolute;
-  top: 4px;
-  right: 4px;
+/* The card is now a plain container; the preview is its own real button
+ * (keyboard + mouse navigation), and the footer's checkbox + More are
+ * SIBLING controls, never nested inside the preview button. The footer
+ * replaces the retired over-preview hover verbs. */
+.thumb-page {
+  display: block;
+  width: 100%;
+  padding: 0;
+  margin: 0;
+  background: transparent;
+  border: 0;
+  color: inherit;
+  cursor: pointer;
+  text-align: center;
+}
+
+.thumb-page:focus-visible {
+  outline: 2px solid var(--tf-accent-focus);
+  outline-offset: 1px;
+  border-radius: var(--radius-1);
+}
+
+.thumb-footer {
   display: flex;
-  gap: 2px;
-  padding: 1px;
-  background: var(--glass-chrome-bg);
-  border: 1px solid var(--glass-border);
-  border-radius: var(--radius-2);
-  opacity: 0;
+  align-items: center;
+  gap: var(--sp-1);
+  margin-top: 6px;
+  min-height: 32px;
+  text-align: left;
+}
+
+.thumb-checkbox {
+  flex: 0 0 auto;
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+.thumb-footer .thumb-label {
+  margin-top: 0;
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: left;
+}
+
+/* Current page is DISTINCT from the batch selection: a violet leading marker
+ * on the card plus this visible "Viewing" label. Never inferred from the set. */
+.thumb-viewing {
+  flex: 0 0 auto;
+  font-size: var(--fs-xs);
+  font-weight: 500;
+  color: var(--accent);
+  white-space: nowrap;
+}
+
+.thumb-current-marker {
+  position: absolute;
+  left: 0;
+  top: 6px;
+  bottom: 6px;
+  width: 2px;
+  border-radius: var(--radius-pill);
+  background: var(--accent);
   pointer-events: none;
-  transition: opacity var(--motion-duration-micro) var(--motion-ease-standard);
 }
 
-.thumb:hover .thumb-verbs,
-.thumb:focus-within .thumb-verbs {
-  opacity: 1;
-  pointer-events: auto;
-}
-
-.thumb-verb {
+/* The 32px per-card More target; enlarged to 44px under coarse pointers. */
+.thumb-more {
+  flex: 0 0 auto;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 18px;
-  height: 18px;
+  width: 32px;
+  height: 32px;
   padding: 0;
   color: var(--fg-soft);
   background: transparent;
   border: 0;
-  border-radius: var(--radius-1);
+  border-radius: var(--radius-2);
   cursor: pointer;
   transition:
     background-color var(--motion-duration-micro) var(--motion-ease-standard),
     color var(--motion-duration-micro) var(--motion-ease-standard);
 }
 
-.thumb-verb:hover {
+.thumb-more:hover {
   background: var(--bg-hover);
   color: var(--fg-strong);
 }
 
-.thumb-verb:active:not(:disabled) {
-  background: var(--bg-active);
-  color: var(--fg-strong);
+.thumb-more:focus-visible {
+  outline: 2px solid var(--tf-accent-focus);
+  outline-offset: 1px;
 }
 
-.thumb-verb:disabled {
-  color: var(--fg-disabled);
-  cursor: default;
+@media (pointer: coarse) {
+  .thumb-more {
+    width: 44px;
+    height: 44px;
+  }
 }
 
-.thumb-verb-danger:hover {
-  background: var(--error-soft);
-  color: var(--error);
+/* Phase 111 (chunk B) — the optional two-column card grid at navigator
+ * content widths >= 360px. Minimum card width 152px; one column below. */
+.thumb-scroller-inner--two-col {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(152px, 1fr));
+  gap: var(--sp-2);
+  align-content: start;
+}
+
+.thumb-scroller-inner--two-col .thumb {
+  margin-bottom: 0;
 }
 
 /* ---- The thumbnail right-click menu ---- */
@@ -17206,7 +17463,6 @@ rect.ann-highlight.ann-preview {
 
 @media (prefers-reduced-motion: reduce) {
   .context-panel-combine,
-  .context-panel-section-toggle,
   .thumb-verbs,
   .thumb-verb,
   .context-menu-item {
@@ -18966,8 +19222,7 @@ cursor: pointer;
 }
 
 .context-panel .context-panel-item svg,
-.context-panel .context-panel-action svg,
-.context-panel .context-panel-section-toggle svg {
+.context-panel .context-panel-action svg {
   color: var(--tf-icon-rest);
 }
 

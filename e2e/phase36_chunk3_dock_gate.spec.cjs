@@ -414,16 +414,18 @@ test('P36-C3-E idle: fade ~40% after 3s, hover restores, suppressed armed/draggi
   expect(op, 'idle fades to ~40%').toBeGreaterThan(0.3);
   expect(op).toBeLessThan(0.5);
 
-  // The pills fade in lockstep with the dock.
-  expect(await win.locator('[data-canvas-pills]').getAttribute('data-canvas-pills-idle')).toBe('true');
-  const pillOp = await opacity(win.locator('[data-page-pill]'));
-  console.log(`[P36C3-E] idle page-pill opacity=${pillOp}`);
+  // The View Strip footer fades in lockstep with the dock (Phase 109 replaced
+  // the retired CanvasPills with the footer, whose `.view-strip-page` group
+  // dims on the same idle flip).
+  expect(await win.locator('[data-view-strip]').getAttribute('data-view-strip-idle')).toBe('true');
+  const pillOp = await opacity(win.locator('[data-view-strip] .view-strip-page'));
+  console.log(`[P36C3-E] idle footer page-group opacity=${pillOp}`);
   expect(pillOp).toBeLessThan(0.5);
 
   await dock.hover();
   await win.waitForTimeout(450);
   expect(await dock.getAttribute('data-dock-idle'), 'hover restores the dock').toBe('false');
-  expect(await opacity(win.locator('[data-page-pill]'))).toBeGreaterThan(0.9);
+  expect(await opacity(win.locator('[data-view-strip] .view-strip-page'))).toBeGreaterThan(0.9);
 
   // Armed tool suppresses idle.
   await setStage(3);
@@ -670,15 +672,24 @@ test('P36-C3-N dock containment: nothing paints or hit-tests outside the dock at
 });
 
 // ---------------------------------------------------------------------------
-// G. The floating pills — page steps/jump/labels, the zoom handlers + readout
-//    + fit states, the Hand (pan) control, and their absence in Multi Mode.
+// G. The unified View Strip footer (Phase 109) — page steps/jump, zoom + fit +
+//    pan, and the per-pane footers in Multi Mode.
+//
+// DEF-580 migration: Phase 109 retired the per-pane `CanvasPills`; this
+// blast-radius neighbour no longer queries `[data-page-pill]` /
+// `[data-zoom-pill]`. The SAME assertions are retargeted to the replacement
+// surface — `[data-view-strip]`, its `.page-input` (aria-label "Current page"),
+// the Next/Previous controls, and the `.view-strip-view` zoom group — with the
+// original intent preserved (the Next-page control is the TOP element at its
+// own centre). Only the toggle that drives the Multi Mode leg is also migrated,
+// from the Phase-105-retired `[data-header-multi-mode]` to the app-menu row.
 // ---------------------------------------------------------------------------
-test('P36-C3-G pills: page steps/jump, zoom + fit + pan, absent in Multi Mode', async () => {
+test('P36-C3-G view strip: page steps/jump, zoom + fit + pan, per-pane footers in Multi Mode', async () => {
   await openSample();
 
   // DEF-313 retest — the PAGES dock is CURATED (6 verbs) and capped
   // (`max-width: max(220px, calc(100% - 380px))`) with wrapping groups, so it
-  // no longer spans the canvas or covers either floating pill. Measure the
+  // no longer spans the canvas or covers the footer. Measure the
   // geometry AND hit-test both pills in the DEFAULT (PAGES) stage.
   const geom = await win.evaluate(() => {
     const rect = (sel) => {
@@ -688,15 +699,15 @@ test('P36-C3-G pills: page steps/jump, zoom + fit + pan, absent in Multi Mode', 
       return { left: Math.round(r.left), right: Math.round(r.right), top: Math.round(r.top), bottom: Math.round(r.bottom), w: Math.round(r.width), h: Math.round(r.height) };
     };
     const dock = rect('[data-action-dock]');
-    const page = rect('[data-page-pill]');
-    const zoom = rect('[data-zoom-pill]');
+    const page = rect('[data-view-strip]');
+    const zoom = rect('[data-view-strip] .view-strip-view');
     const hits = (a, b) => a !== null && b !== null && a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom;
     return { dock, page, zoom, dockHitsPage: hits(dock, page), dockHitsZoom: hits(dock, zoom) };
   });
-  console.log(`[P36C3-G] PAGES dock/pill geometry=${JSON.stringify(geom)}`);
+  console.log(`[P36C3-G] PAGES dock/footer geometry=${JSON.stringify(geom)}`);
   expect(geom.dock, 'the PAGES dock is rendered').not.toBeNull();
-  expect(geom.dockHitsPage, 'the dock does NOT overlap the page pill (DEF-313)').toBe(false);
-  expect(geom.dockHitsZoom, 'the dock does NOT overlap the zoom pill (DEF-313)').toBe(false);
+  expect(geom.dockHitsPage, 'the dock does NOT overlap the footer (DEF-313)').toBe(false);
+  expect(geom.dockHitsZoom, 'the dock does NOT overlap the footer zoom group (DEF-313)').toBe(false);
 
   const hitAt = (sel) => win.evaluate((s) => {
     const b = document.querySelector(s);
@@ -707,33 +718,34 @@ test('P36-C3-G pills: page steps/jump, zoom + fit + pan, absent in Multi Mode', 
     const owner = el.closest('button');
     return owner === null ? (el.getAttribute('data-dock-verb') ?? el.className) : (owner.getAttribute('aria-label') ?? owner.getAttribute('data-dock-verb') ?? owner.className);
   }, sel);
-  const nextHit = await hitAt('[data-page-pill] [aria-label="Next page"]');
-  const zoomHit = await hitAt('[data-zoom-pill] [aria-label="Zoom in"]');
-  console.log(`[P36C3-G] PAGES element at the Next-page point=${nextHit}`);
-  console.log(`[P36C3-G] PAGES element at the Zoom-in point=${zoomHit}`);
+  const nextHit = await hitAt('[data-view-strip] [aria-label="Next page"]');
+  const zoomHit = await hitAt('[data-view-strip] .view-strip-view [aria-label="Zoom in"]');
+  console.log(`[P36C3-G] footer element at the Next-page point=${nextHit}`);
+  console.log(`[P36C3-G] footer element at the Zoom-in point=${zoomHit}`);
   expect(nextHit, 'the Next-page control is the top element at its own centre').toBe('Next page');
-  // DEF-319 — the Inspector covers the zoom pill, so its controls are not the
-  // top element at their own centre; the zoom/fit/pan clicks below are skipped
-  // and the blockage is carried by the defect record.
+  // DEF-319 - historically the Inspector covered the pill's zoom point, so the
+  // zoom/fit/pan clicks were deferred. The footer is inset (DEF-577), so the
+  // zoom point should now resolve; the branch is kept so a covered case is
+  // recorded explicitly rather than silently skipped.
   const zoomReachable = zoomHit === 'Zoom in';
   if (!zoomReachable) {
     console.log(`[P36C3-G] DEF-319: the Zoom-in point resolves to ${zoomHit} (Inspector covers the pill) — zoom/fit/pan clicks deferred`);
   }
 
   // A real click in the PAGES stage lands and acts.
-  const pageInput = win.locator('[data-page-pill] input.page-input');
-  await win.locator('[data-page-pill] [aria-label="Next page"]').click();
+  const pageInput = win.locator('[data-view-strip] .page-input');
+  await win.locator('[data-view-strip] [aria-label="Next page"]').click();
   await win.waitForTimeout(450);
   expect(await pageInput.inputValue(), 'the PAGES-stage Next-page click advanced the page').toBe('2');
-  await win.locator('[data-page-pill] [aria-label="Previous page"]').click();
+  await win.locator('[data-view-strip] [aria-label="Previous page"]').click();
   await win.waitForTimeout(450);
   expect(await pageInput.inputValue()).toBe('1');
 
-  // DELIVER also has a pill-clear dock; keep the detailed pill behaviour there.
+  // DELIVER also carries the footer; keep the detailed view-strip behaviour there.
   await setStage(4);
   await win.waitForTimeout(400);
-  const pagePill = win.locator('[data-page-pill]');
-  const zoomPill = win.locator('[data-zoom-pill]');
+  const pagePill = win.locator('[data-view-strip]');
+  const zoomPill = win.locator('[data-view-strip] .view-strip-view');
   await expect(pagePill).toBeVisible();
   await expect(zoomPill).toBeVisible();
 
@@ -791,29 +803,33 @@ test('P36-C3-G pills: page steps/jump, zoom + fit + pan, absent in Multi Mode', 
     console.log('[P36C3-G] DEF-319: zoom/fit/pan controls present but covered by the Inspector');
   }
 
-  // Multi Mode (chunk 7): each non-empty pane carries its OWN pills inside its
-  // own canvas bounds, tagged with its pane id (the shared dock stays at the
-  // workspace bottom-centre).
-  await toggleMultiModeViaPalette(win);
+  // Multi Mode (Phase 109 chunk B): each non-empty pane carries its OWN View
+  // Strip footer inside its own pane bounds (the shared dock stays at the
+  // workspace bottom-centre). Phase 105 relocated the Multi Mode toggle into
+  // the application menu, so drive it there (the retired
+  // `[data-header-multi-mode]` title-bar control no longer exists).
+  await win.locator('[data-app-menu]').first().click();
+  await win.waitForSelector('[data-app-menu-popover]', { state: 'visible', timeout: 8000 });
+  await win.locator('[data-app-menu-popover] [data-menu-action="multiMode"]').first().click();
+  await win.waitForSelector('.tab-pane[data-pane="B"]', { timeout: 15000 });
   await win.waitForTimeout(900);
-  const multiPills = await win.evaluate(() => {
-    const pills = [...document.querySelectorAll('[data-canvas-pills]')];
-    return pills.map((p) => {
-      const pane = p.getAttribute('data-pill-pane');
-      const host = p.closest('.tab-pane[data-pane]');
-      const pr = p.getBoundingClientRect();
+  const multiStrips = await win.evaluate(() => {
+    const strips = [...document.querySelectorAll('.tab-pane[data-pane] [data-view-strip]')];
+    return strips.map((s) => {
+      const host = s.closest('.tab-pane[data-pane]');
+      const sr = s.getBoundingClientRect();
       const hr = host ? host.getBoundingClientRect() : null;
       return {
-        pane,
-        insidePane: hr ? pr.left >= hr.left - 1 && pr.right <= hr.right + 1 : null,
+        pane: host ? host.getAttribute('data-pane') : null,
+        insidePane: hr ? sr.left >= hr.left - 1 && sr.right <= hr.right + 1 : null,
       };
     });
   });
-  console.log(`[P36C3-G] Multi Mode pills=${JSON.stringify(multiPills)}`);
-  expect(multiPills.length, 'Multi Mode renders per-pane pills').toBeGreaterThanOrEqual(1);
-  for (const p of multiPills) {
-    expect(['A', 'B'], 'each pill set is tagged with its pane').toContain(p.pane);
-    expect(p.insidePane, `the ${p.pane} pills stay inside their pane bounds`).toBe(true);
+  console.log(`[P36C3-G] Multi Mode pane footers=${JSON.stringify(multiStrips)}`);
+  expect(multiStrips.length, 'Multi Mode renders per-pane footers').toBeGreaterThanOrEqual(1);
+  for (const p of multiStrips) {
+    expect(['A', 'B'], 'each pane footer is inside a tagged pane').toContain(p.pane);
+    expect(p.insidePane, `the ${p.pane} footer stays inside its pane bounds`).toBe(true);
   }
 });
 

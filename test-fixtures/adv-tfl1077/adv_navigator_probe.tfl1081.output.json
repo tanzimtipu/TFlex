@@ -1,0 +1,72 @@
+{
+  "source": {
+    "materialize": "@keyframes tf-anim-materialize { from { opacity: var(--motion-opacity-hidden); } to { opacity: var(--motion-opacity-visible); } }",
+    "outlinePanel": ".outline-panel { position: absolute; inset: 0; overflow-y: auto; /* TFL-1080 (DEF-616) — the outline NEVER scrolls sideways. At the 240px * navigator floor a deeply indented row used to raise `scrollWidth` past * `clientWidth` and scroll the row's More target out of reach. The indent is * capped in `outlineIndent()` (SideRail) so padding-left PLUS the fixed * columns (18px toggle + 32px destination + 32px/44px More) PLUS the gap / * trailing pad / the title's 14px padding+border floor stays inside the * panel; this is the belt-and-suspenders stop against residual overflow. */ overflow-x: hidden; padding: var(--sp-2) 0; scrollbar-width: thin; }",
+    "depth10Indent": 104
+  },
+  "P1_fixedMenuInAnimatedAncestor": {
+    "bodyTransform": "none",
+    "bodyOrigin": {
+      "x": 100,
+      "y": 92
+    },
+    "menuRendered": {
+      "x": 100,
+      "y": 360
+    },
+    "menuRequested": {
+      "left": 100,
+      "top": 360
+    },
+    "menuOffsetFromAncestor": {
+      "x": 0,
+      "y": 268
+    },
+    "clipProbePoint": {
+      "x": 190,
+      "y": 532
+    },
+    "clipProbeHit": "menu",
+    "clippedByAncestorBottom": false,
+    "anchoredToViewport": true
+  },
+  "P1_negativeControl_settledTransform": {
+    "bodyTransform": "matrix(1, 0, 0, 1, 0, 0)",
+    "bodyOrigin": {
+      "x": 100,
+      "y": 92
+    },
+    "menuRendered": {
+      "x": 200,
+      "y": 452
+    },
+    "menuRequested": {
+      "left": 100,
+      "top": 360
+    },
+    "menuOffsetFromAncestor": {
+      "x": 100,
+      "y": 360
+    },
+    "clipProbePoint": {
+      "x": 190,
+      "y": 532
+    },
+    "clipProbeHit": "HTML",
+    "clippedByAncestorBottom": true,
+    "anchoredToViewport": false
+  },
+  "P2_outlineOverflowX": {
+    "overflowX": "hidden",
+    "overflowY": "auto",
+    "scrollWidth": 240,
+    "clientWidth": 240,
+    "horizontalOverflow": false
+  },
+  "checks": {
+    "p1Ok": true,
+    "p1ControlOk": true,
+    "p2Ok": true
+  },
+  "passed": true
+}

@@ -5,7 +5,7 @@
 // `panelRightWidthPx`), driven by App state rather than a fixed stylesheet
 // width. This module owns the ONE width contract:
 //
-//   left  220..320 px, default 240
+//   left  240..420 px, default 280
 //   right 260..380 px, default 280
 //
 // and the keyboard-accessible separator that edits it. The pure helpers are
@@ -30,8 +30,9 @@ export interface PanelWidthRange {
   default: number;
 }
 
-/** The left navigator's width band (mirrors the G contract). */
-export const PANEL_LEFT_WIDTH: PanelWidthRange = { min: 220, max: 320, default: 240 };
+/** The left navigator's width band (Phase 111 chunk D1 widened it to mirror the
+ *  settings contract: 240..420 px, default 280). */
+export const PANEL_LEFT_WIDTH: PanelWidthRange = { min: 240, max: 420, default: 280 };
 /** The right inspector's width band (mirrors the G contract). */
 export const PANEL_RIGHT_WIDTH: PanelWidthRange = { min: 260, max: 380, default: 280 };
 

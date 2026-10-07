@@ -1,0 +1,29 @@
+{
+  "P1_fixedMenuInAnimatedAncestor": {
+    "bodyTransform": "matrix(1, 0, 0, 1, 0, 0)",
+    "bodyOrigin": {
+      "x": 100,
+      "y": 92
+    },
+    "menuRendered": {
+      "x": 200,
+      "y": 452
+    },
+    "menuRequested": {
+      "left": 100,
+      "top": 360
+    },
+    "menuOffsetFromAncestor": {
+      "x": 100,
+      "y": 360
+    },
+    "clippedByAncestorBottom": true
+  },
+  "P2_outlineOverflowX": {
+    "overflowX": "auto",
+    "overflowY": "auto",
+    "scrollWidth": 256,
+    "clientWidth": 240,
+    "horizontalOverflow": true
+  }
+}

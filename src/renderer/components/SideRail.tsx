@@ -1,9 +1,13 @@
-import { AlertCircle, IndentDecrease, IndentIncrease, PanelLeftClose, PanelRightOpen, Plus, SquareChevronRight, RotateCw, Scissors, Trash2 } from 'lucide-react';
+import { AlertCircle, MoreHorizontal, Plus, SquareChevronRight } from 'lucide-react';
+import { createPortal } from 'react-dom';
 import { Icon } from '../icons/Icon';
-import { AnimatePresence, motion } from 'motion/react';
+import { CommandMenu } from './CommandMenu';
+import type { CommandMenuGroup, CommandMenuItem } from './CommandMenu';
+import { clampMenuPosition } from './pageThumbMenu';
+import { motion } from 'motion/react';
 import type { ReactElement } from 'react';
 import type { PDFDocumentProxy, PDFPageProxy } from 'pdfjs-dist';
-import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import { createContext, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { resolveOutlinePage, isInvalidPageRequest, type OutlineNode } from '../pdf/pdfjs';
 import {
   cloneEntries,
@@ -22,15 +26,10 @@ import {
   type OutlinePath,
   type SetOutlineFn,
 } from '../state/outlineEditor';
-import { useLiftAnimation, useRailSwapAnimation } from '../hooks/useAnimations';
+import { useLiftAnimation } from '../hooks/useAnimations';
 import { computeThumbGeometry, THUMB_WIDTH } from './thumbGeometry';
 import { deferWork } from '../state/renderSuspend';
 import type { EngineState } from '../engine/types';
-import type { Annotation, AnnotationPatch } from '../annotations/model';
-import { AnnotationsPanel } from '../annotations/AnnotationsPanel';
-import { buildPageLabelMap } from './pageGeometry';
-import { AnimatedPanel } from './AnimatedPanel';
-import { GlassSidebarBody, GlassSidebarHeader } from './GlassSidebar';
 import { usePageDragOptional } from '../state/PageDragContext';
 import {
   buildDragSource,
@@ -48,311 +47,10 @@ import {
   type PageSelectionState,
 } from '../state/pageSelection';
 
-interface SideRailProps {
-  doc: PDFDocumentProxy;
-  pageCount: number;
-  outline: OutlineNode[] | null;
-  currentPage: number;
-  defaultWidthPt: number;
-  defaultHeightPt: number;
-  /** DEF-148 — per-VISIBLE-page sizes in PDF points (un-rotated), as
-   *  reported by the main view's PageView mounts. When present, each
-   *  thumbnail wrap is sized from ITS OWN page's aspect ratio instead
-   *  of a single page-1-derived ratio, so cropping page 1 no longer
-   *  collapses every other thumb into the crop square. Optional — the
-   *  rail falls back to `defaultWidthPt/defaultHeightPt` when absent
-   *  (fresh open / tests). */
-  pageSizes?: Map<number, { w: number; h: number }> | null;
-  /** Live engine state for this tab (pageCount after ops, rotations,
-   *  deleted). Owned by App. The rail uses this to skip deleted pages
-   *  and rotate the rendered thumbnail to match the engine. */
-  engineState: EngineState;
-  /** DEF-139 — true once the tab's pdf.js `doc` proxy was rebuilt from
-   *  `engine.getDocumentBytes` bytes. A re-serialized file is written in
-   *  the engine's VISIBLE order, so the thumbnail at visible position
-   *  `page` must render `doc.getPage(page)` — NOT the pageOrder-derived
-   *  source map (pdf-lib ORIGINAL indices), which only addresses the
-   *  original open bytes. Defaults to false (original proxy). */
-  proxyVisibleOrder?: boolean;
-  /** Whether undo is currently available for the active tab. The rail
-   *  keeps this in its own UI state (the engine's IPC `EngineState` does
-   *  not expose it directly). */
-  canUndo: boolean;
-  /** Operations on the active document, dispatched through the engine.
-   *  Errors are surfaced through `onError` as a friendly toast. */
-  onOp?: (op: { kind: 'rotate'; page: number; dir: 'cw' | 'ccw' }) => void;
-  onDelete?: (pages: number[]) => void;
-  onReorder?: (fromIndex: number, toIndex: number) => void;
-  onUndo?: () => void;
-  onError?: (message: string) => void;
-  onJump: (page: number) => void;
-  /** Annotations for the active tab (Phase 3). Wired to the annotations
-   *  panel tab on the rail. */
-  annotations?: Annotation[];
-  /** Edit / delete handlers for annotations; the rail panel passes the id
-   *  and patch through to the host (App / DocumentView) which dispatches
-   *  through the engine. */
-  onEditAnnotation?: (id: string, patch: AnnotationPatch) => void;
-  onDeleteAnnotation?: (id: string) => void;
-  /** When the panel wants to flash an annotation, the host receives the
-   *  id; passing it back through `flashAnnotationId` makes the overlay
-   *  draw the highlight. */
-  onJumpToAnnotation?: (page: number, id: string) => void;
-  /** Phase 16 — the pages panel is collapsed to the ruler strip. The
-   *  body shows only the RulerStrip (no view tabs, no annotations,
-   *  no outline) and the header shrinks to a lone expand button. */
-  pagesPanelCollapsed?: boolean;
-  /** Phase 16 — asks the host (App) to toggle the collapsed state;
-   *  the rail never owns the value itself. */
-  onTogglePagesPanelCollapsed?: () => void;
-  /** Phase 59 (item 7 follow-up) — the rail's ACTIVE TAB is HOST-owned so a
-   *  command can switch it (the palette's "Page thumbnails" / "Bookmarks"
-   *  rows). When `tab` is supplied the rail is CONTROLLED: it renders this
-   *  value and EVERY tab button reports through `onTabChange`, so the command
-   *  and the rail can never disagree. Absent = the legacy internal state
-   *  (existing callers/tests), byte-for-byte. */
-  tab?: RailTab;
-  /** Reports a tab selection (a rail button, or the outline-gone fallback).
-   *  The host applies it; the rail never owns the value when controlled. */
-  onTabChange?: (tab: RailTab) => void;
-}
-
 /** The rail's three view tabs. Phase 59 — exported so the host can type its
  *  own `railTab` state and thread it in. */
 export type RailTab = 'thumbs' | 'outline' | 'annotations';
 
-/**
- * Left rail with an icon tab strip. Thumbnails always exist; the bookmarks
- * tab appears only when the document has an outline; the annotations tab
- * is always present (Phase 3).
- */
-export function SideRail(props: SideRailProps) {
-  const {
-    doc,
-    outline,
-    currentPage,
-    defaultWidthPt,
-    defaultHeightPt,
-    pageSizes = null,
-    engineState,
-    proxyVisibleOrder = false,
-    canUndo,
-    onOp,
-    onDelete,
-    onReorder,
-    onUndo,
-    onError,
-    onJump,
-    annotations = [],
-    onEditAnnotation,
-    onDeleteAnnotation,
-    onJumpToAnnotation,
-    pagesPanelCollapsed = false,
-    onTogglePagesPanelCollapsed,
-    tab: tabProp,
-    onTabChange,
-  } = props;
-  // Phase 59 (item 7 follow-up) — the active tab is HOST-owned when `tab` is
-  // supplied (App's `railTab`); otherwise the rail keeps its legacy internal
-  // state. Every tab button routes through `selectTab`, so a controlled rail
-  // reports to the SAME host state the palette command writes.
-  const [internalTab, setInternalTab] = useState<RailTab>('thumbs');
-  const tabControlled = tabProp !== undefined;
-  const tab = tabProp ?? internalTab;
-  const selectTab = useCallback(
-    (next: RailTab): void => {
-      if (!tabControlled) setInternalTab(next);
-      onTabChange?.(next);
-    },
-    [tabControlled, onTabChange],
-  );
-  // Phase 16 — the swap variants for the collapsed ruler strip vs the
-  // expanded tab content (useRailSwapAnimation: opacity + slight swell,
-  // entry on the 280ms panel token so the numbers appear in step with
-  // the grid-column width tween).
-  const railSwap = useRailSwapAnimation();
-
-  useEffect(() => {
-    if (outline === null && tab === 'outline') {
-      selectTab('thumbs');
-    }
-  }, [outline, tab, selectTab]);
-
-  const aspect = defaultHeightPt / defaultWidthPt;
-
-  // Map visible 1-based position -> source 1-based page (the engine's
-  // pageOrder tells us which underlying page is at each visible slot).
-  // Before any op, pageOrder is [0..N-1] so this is the identity. After
-  // a reorder it changes: e.g. [1, 0, 2, ...] means visible position 1
-  // now shows source page 2, position 2 shows page 1, position 3 shows
-  // page 3.
-  const visibleToSource = useMemo(() => {
-    const m = new Map<number, number>();
-    const order = engineState.pageOrder;
-    for (let i = 0; i < order.length; i += 1) {
-      m.set(i + 1, order[i] + 1);
-    }
-    return m;
-  }, [engineState.pageOrder]);
-
-  // Phase 12 — logical page labels (e.g. "iv", "A1"). The engine
-  // echoes a sparse list of `{page, label}` overrides; we build an
-  // O(1) Map so every thumbnail / page indicator can render in
-  // one pass without re-scanning the array. Null when there are no
-  // labels (callers short-circuit).
-  const pageLabelMap = useMemo(
-    () => buildPageLabelMap(engineState.pageLabels),
-    [engineState.pageLabels],
-  );
-
-  const jumpToAnnotation = (page: number, id: string): void => {
-    onJump(page);
-    onJumpToAnnotation?.(page, id);
-  };
-
-  return (
-    // DEF-197 — the canonical AnimatedPanel wrapper (docked Slide In /
-    // Slide Out from the token layer) replaces the TfPanelLeft preset
-    // wrapper. The rail is permanently mounted, so `open` is constant
-    // and the slide plays on mount exactly as before.
-    <AnimatedPanel open side="left" mode="docked" className="side-rail" testId="side-rail">
-      {/* Phase 14.1 — the shared GlassSidebar header: ONE 44px row for
-       * both floating panels. Phase 16 — the rail header is icon-only
-       * (the "Pages" title text is gone): the view tabs and the
-       * collapse icon share ONE round glass capsule
-       * (glass-control-group, the same material as the command-bar
-       * groups), and while collapsed the header is the lone expand
-       * button centred in the 48px strip. The legacy .rail-header /
-       * .rail-tabs classes stay on the elements so the existing
-       * CSS/e2e contracts keep resolving. */}
-      <GlassSidebarHeader
-        className={
-          pagesPanelCollapsed ? 'rail-header rail-header-ruler' : 'rail-header'
-        }
-        actions={
-          <div
-            className={
-              pagesPanelCollapsed ? 'rail-tabs' : 'rail-tabs glass-control-group'
-            }
-          >
-            {/* Phase 16 — the view tabs are hidden while collapsed
-             * (the 48px strip has no room for the capsule); the
-             * active-tab state stays in the rail's tab state, so
-             * expanding restores the previously selected view. */}
-            {!pagesPanelCollapsed && (
-              <>
-            <button
-              type="button"
-              className={
-                tab === 'thumbs'
-                  ? 'btn btn-ghost btn-icon btn-toggle rail-tab rail-tab-active'
-                  : 'btn btn-ghost btn-icon btn-toggle rail-tab'
-              }
-              onClick={() => selectTab('thumbs')}
-              aria-pressed={tab === 'thumbs'}
-              title="Page thumbnails"
-              data-rail-tab="thumbs"
-            >
-              <Icon name="pageThumbnails" size="xl" />
-            </button>
-            <button
-              type="button"
-              className={
-                tab === 'annotations'
-                  ? 'btn btn-ghost btn-icon btn-toggle rail-tab rail-tab-active'
-                  : 'btn btn-ghost btn-icon btn-toggle rail-tab'
-              }
-              onClick={() => selectTab('annotations')}
-              aria-pressed={tab === 'annotations'}
-              title="Annotations"
-              data-rail-tab="annotations"
-            >
-              <Icon name="annotationsPanel" size="xl" />
-            </button>
-            {outline !== null && (
-              <button
-                type="button"
-                className={
-                  tab === 'outline'
-                    ? 'btn btn-ghost btn-icon btn-toggle rail-tab rail-tab-active'
-                    : 'btn btn-ghost btn-icon btn-toggle rail-tab'
-                }
-                onClick={() => selectTab('outline')}
-                aria-pressed={tab === 'outline'}
-                title="Bookmarks"
-                data-rail-tab="outline"
-              >
-                <Icon name="outlinePanel" size="xl" />
-              </button>
-            )}
-            </>
-            )}
-            <button
-              type="button"
-              className="btn btn-ghost btn-icon rail-tab rail-tab-collapse"
-              onClick={() => onTogglePagesPanelCollapsed?.()}
-              aria-label={pagesPanelCollapsed ? 'Expand panel' : 'Collapse panel'}
-              title={pagesPanelCollapsed ? 'Expand panel' : 'Collapse panel'}
-              data-rail-collapse
-            >
-              {pagesPanelCollapsed ? <Icon icon={PanelRightOpen} size="xl" /> : <Icon icon={PanelLeftClose} size="xl" />}
-            </button>
-          </div>
-        }
-      />
-      <GlassSidebarBody className="rail-content">
-        {/* Phase 16 — the body is an AnimatePresence swap: the ruler
-         * strip and the thumbnails / annotations / bookmarks content
-         * are absolute layers that crossfade (opacity + a slight
-         * swell, token-driven via useRailSwapAnimation) while the
-         * workspace grid column tweens the registered rail width over
-         * the same 280ms panel token. initial={false} keeps the mount
-         * clean — the panel slide already animates the whole rail in. */}
-        <AnimatePresence initial={false}>
-          <motion.div
-            key={pagesPanelCollapsed ? 'ruler' : tab}
-            className="rail-content-swap"
-            initial="initial"
-            animate="animate"
-            exit="exit"
-            variants={railSwap}
-          >
-            {pagesPanelCollapsed ? (
-              <RulerStrip pageCount={engineState.pageCount} currentPage={currentPage} onJump={onJump} />
-            ) : tab === 'thumbs' ? (
-              <ThumbnailRail
-                doc={doc}
-                pageCount={engineState.pageCount}
-                currentPage={currentPage}
-                aspectRatio={aspect}
-                pageSizes={pageSizes}
-                rotations={engineState.rotations}
-                visibleToSource={visibleToSource}
-                proxyVisibleOrder={proxyVisibleOrder}
-                pageLabelMap={pageLabelMap}
-                canUndo={canUndo}
-                onOp={onOp}
-                onDelete={onDelete}
-                onReorder={onReorder}
-                onUndo={onUndo}
-                onJump={onJump}
-              />
-            ) : tab === 'annotations' ? (
-              <AnnotationsPanel
-                annotations={annotations}
-                onJumpTo={jumpToAnnotation}
-                onEdit={(id, patch): void => onEditAnnotation?.(id, patch)}
-                onDelete={(id): void => onDeleteAnnotation?.(id)}
-              />
-            ) : (
-              <OutlinePanel doc={doc} outline={outline ?? []} onJump={onJump} onError={onError} />
-            )}
-          </motion.div>
-        </AnimatePresence>
-      </GlassSidebarBody>
-    </AnimatedPanel>
-  );
-}
 
 // ---------------------------------------------------------------------------
 // Thumbnails
@@ -373,6 +71,10 @@ const THUMB_PADDING_PX = 6;
 const THUMB_BORDER_PX = 1;
 const THUMB_LABEL_PX = 18;
 const THUMB_MARGIN_BOTTOM_PX = 6;
+// Phase 111 (chunk B) — the card footer's height (checkbox + label + 32px More
+// button on one row). The card-mode slot math uses this instead of the plain
+// 18px label line so the navigator's virtualization stays accurate.
+const THUMB_CARD_FOOTER_PX = 34;
 const THUMB_OUTER_PADDING = 8;
 // Initial thumbs on open dropped from 6 -> 3: each thumb keeps a backing
 // ImageBitmap (~190KB at dpr 1.5), so 3 fewer mounted thumbs at startup
@@ -415,13 +117,14 @@ function thumbSlotHeightFor(
   pageSize: { w: number; h: number } | null,
   defaultAspect: number,
   thumbWidth: number = THUMB_WIDTH,
+  labelHeight: number = THUMB_LABEL_PX,
 ): number {
   const wrapHeight = thumbWrapHeightFor(pageSize, defaultAspect, thumbWidth);
   return (
     wrapHeight +
     THUMB_PADDING_PX * 2 +
     THUMB_BORDER_PX * 2 +
-    THUMB_LABEL_PX +
+    labelHeight +
     THUMB_MARGIN_BOTTOM_PX
   );
 }
@@ -437,14 +140,31 @@ function thumbSlotTops(
   sizeForPage: (p: number) => { w: number; h: number } | null,
   defaultAspect: number,
   thumbWidth: number = THUMB_WIDTH,
+  columns = 1,
+  labelHeight: number = THUMB_LABEL_PX,
 ): number[] {
-  const tops: number[] = [0, THUMB_OUTER_PADDING];
-  for (let p = 1; p <= pageCount; p += 1) {
-    // tops[p] is the top of page p; append page p's bottom (= page
-    // p+1's top). Final length = pageCount + 2: [0, pad, top1..topN,
-    // scrollerContentBottom].
-    tops.push(tops[tops.length - 1] + thumbSlotHeightFor(sizeForPage(p), defaultAspect, thumbWidth));
+  // Phase 111 (chunk B) — `columns` lets the PAGES navigator lay its cards out
+  // two-up at panel widths >= 360px. Each grid row's height is its tallest
+  // card; pages sharing a row share a top (their slot height reads 0), so the
+  // existing visible-range walk keeps working. `columns = 1` reproduces the
+  // pre-chunk-B single-column tops byte-for-byte.
+  const cols = Math.max(1, Math.floor(columns));
+  const pageTop: number[] = new Array(pageCount + 2).fill(THUMB_OUTER_PADDING);
+  let rowTop = THUMB_OUTER_PADDING;
+  for (let start = 1; start <= pageCount; start += cols) {
+    const rowEnd = Math.min(start + cols - 1, pageCount);
+    let rowHeight = 0;
+    for (let p = start; p <= rowEnd; p += 1) {
+      pageTop[p] = rowTop;
+      rowHeight = Math.max(rowHeight, thumbSlotHeightFor(sizeForPage(p), defaultAspect, thumbWidth, labelHeight));
+    }
+    rowTop += rowHeight;
   }
+  const tops: number[] = [0, THUMB_OUTER_PADDING];
+  for (let p = 2; p <= pageCount; p += 1) {
+    tops.push(pageTop[p]);
+  }
+  tops.push(rowTop);
   return tops;
 }
 
@@ -612,6 +332,10 @@ export function ThumbnailRail({
   const observerRef = useRef<IntersectionObserver | null>(null);
   const ioExtraThumbsRef = useRef<Set<number>>(new Set());
   const [visibleThumbs, setVisibleThumbs] = useState<Set<number>>(new Set());
+  // Phase 111 (chunk B) — the PAGES navigator's optional two-column card grid
+  // at content widths >= 360px. Only the ContextPanel's card mode (thumbVerbs
+  // present) opts in; every other rail stays single-column byte-for-byte.
+  const [twoCol, setTwoCol] = useState(false);
   // Per-thumb drag state. We use HTML5 drag-and-drop: dragging a thumb
   // paints it as the drag source, dropping it on another thumb inserts it
   // before that target. The reorder index is the visible 1-based index,
@@ -707,8 +431,16 @@ export function ThumbnailRail({
   );
 
   const slotTops = useMemo(
-    () => thumbSlotTops(pageCount, sizeForPage, fallbackAspect, thumbWidth),
-    [pageCount, sizeForPage, fallbackAspect, thumbWidth],
+    () =>
+      thumbSlotTops(
+        pageCount,
+        sizeForPage,
+        fallbackAspect,
+        thumbWidth,
+        twoCol ? 2 : 1,
+        thumbVerbs !== null ? THUMB_CARD_FOOTER_PX : THUMB_LABEL_PX,
+      ),
+    [pageCount, sizeForPage, fallbackAspect, thumbWidth, twoCol, thumbVerbs],
   );
 
   const computeGeometryMountRef = useRef<() => void>(() => undefined);
@@ -793,12 +525,21 @@ export function ThumbnailRail({
   useEffect(() => {
     const el = scrollerRef.current;
     if (el === null) return;
+    // Phase 111 (chunk B) — measure the navigator content width so the card
+    // grid can switch to two columns at >= 360px. Only the ContextPanel's
+    // card mode (thumbVerbs) opts in.
+    const measure = (): void => {
+      const next = thumbVerbs !== null && el.clientWidth >= 360;
+      setTwoCol((prev) => (prev === next ? prev : next));
+    };
+    measure();
     const ro = new ResizeObserver(() => {
+      measure();
       computeGeometryMountRef.current();
     });
     ro.observe(el);
     return () => ro.disconnect();
-  }, []);
+  }, [thumbVerbs]);
 
   useEffect(() => {
     const el = scrollerRef.current;
@@ -1019,7 +760,10 @@ const onDragStart = (page: number) => (e: React.DragEvent<HTMLElement>): void =>
       )}
       <div
         ref={scrollerRef}
-        className="thumb-scroller-inner"
+        className={
+          twoCol ? 'thumb-scroller-inner thumb-scroller-inner--two-col' : 'thumb-scroller-inner'
+        }
+        data-thumb-columns={twoCol ? '2' : '1'}
       >
         {Array.from({ length: pageCount }, (_, i) => i + 1).map((page) => {
           // DEF-139 — `sourcePage` is the 1-based pdf.js page to render
@@ -1081,6 +825,9 @@ const onDragStart = (page: number) => (e: React.DragEvent<HTMLElement>): void =>
               onJump={onJump}
               onSelect={setSelected}
               onSelectGesture={multiSelect ? applyPageGesture : null}
+              onToggleSelected={
+                multiSelect ? (p): void => applyPageGesture(p, 'toggle') : null
+              }
               onDragStart={onDragStart(page)}
               onDragOver={onDragOver(page)}
               onDragLeave={onDragLeave}
@@ -1216,6 +963,10 @@ interface ThumbProps {
    *  multi-select gesture handler (toggle / extend / replace) instead of the
    *  legacy modifier-select. Absent everywhere but the ContextPanel. */
   onSelectGesture?: ((page: number, gesture: PageSelectGesture) => void) | null;
+  /** Phase 111 (chunk B) — the card footer's real checkbox. Present only on
+   *  the ContextPanel's rail instance (multi-select): toggles this page's
+   *  membership in the host batch set WITHOUT navigating. */
+  onToggleSelected?: ((page: number) => void) | null;
 }
 
 function Thumb({
@@ -1246,6 +997,7 @@ function Thumb({
   thumbVerbs = null,
   onThumbContextMenu = null,
   onSelectGesture = null,
+  onToggleSelected = null,
 }: ThumbProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   // Phase 36 (chunk 2) — true when the gesture that started a drag landed on
@@ -1261,6 +1013,10 @@ function Thumb({
   // same-slot dependency change (doc proxy swap, page/width change).
   const mountedRef = useRef(true);
   const [rendered, setRendered] = useState(false);
+  // Phase 111 (chunk B) — the card footer's per-page More popover. Only the
+  // ContextPanel wires `thumbVerbs`, so the plain rail / pane strips keep
+  // today's DOM without this surface.
+  const [moreAnchor, setMoreAnchor] = useState<{ x: number; y: number } | null>(null);
   const width = thumbWidth;
   // DEF-148 — the wrap height comes from THIS page's own aspect
   // ratio when known (floor, matching the rendered canvas's cssHeight
@@ -1455,9 +1211,52 @@ function Thumb({
     .filter((s) => s.length > 0)
     .join(' ');
 
+  // Phase 111 (chunk B) — card mode is the ContextPanel's navigator: the
+  // footer (checkbox + label + More) replaces the retired over-preview verbs.
+  // The plain rail / pane strips keep today's label-only DOM.
+  const cardMode = thumbVerbs !== null;
+  const morePos =
+    moreAnchor === null
+      ? null
+      : clampMenuPosition(moreAnchor.x, moreAnchor.y, 184, 170, window.innerWidth, window.innerHeight);
+  const moreGroups = useMemo<CommandMenuGroup[]>(() => {
+    if (thumbVerbs === null) return [];
+    const rows: CommandMenuItem[] = [
+      {
+        id: 'rotate-cw',
+        label: 'Rotate CW',
+        intent: 'secondary',
+        density: 'compact',
+        rowClassName: 'context-menu-item',
+        rowDataAttrs: { 'data-menu-item': 'rotate-cw' },
+        onSelect: (): void => thumbVerbs.onRotateCw(label),
+      },
+      {
+        id: 'extract',
+        label: 'Extract this page',
+        intent: 'secondary',
+        density: 'compact',
+        rowClassName: 'context-menu-item',
+        rowDataAttrs: { 'data-menu-item': 'extract' },
+        onSelect: (): void => thumbVerbs.onExtract(label),
+      },
+      { id: 'card-more-sep', label: '' },
+      {
+        id: 'delete',
+        label: 'Delete this page',
+        intent: 'destructive',
+        variant: 'danger',
+        density: 'compact',
+        rowClassName: 'context-menu-item context-menu-item-danger',
+        rowDataAttrs: { 'data-menu-item': 'delete' },
+        onSelect: (): void => thumbVerbs.onDelete(label),
+      },
+    ];
+    return [{ id: 'page-card', label: `Page ${label}`, entries: rows }];
+  }, [thumbVerbs, label]);
+
   return (
-    <button
-      type="button"
+    <div
       ref={(el) => registerThumb(label, el)}
       className={classes}
       onClick={(e): void => {
@@ -1506,17 +1305,17 @@ function Thumb({
         onJump(visiblePage);
       }}
       draggable
-      // Phase 36 (chunk 2) — the verb cluster is a CONTROL inside this
-      // draggable button, not a drag handle: remember that the press landed
-      // on it so `onDragStart` can refuse (the drag belongs to the page, and
-      // the verbs must never start one). Inert without `thumbVerbs`.
+      // Phase 111 (chunk B) — the footer controls (checkbox, More) are
+      // CONTROLS inside this draggable card, not drag handles: remember that
+      // the press landed on one so `onDragStart` can refuse (the drag belongs
+      // to the page). Inert without the card footer.
       onPointerDown={(e): void => {
-        // `Element`, not `HTMLElement`: the target of a press on a verb's
+        // `Element`, not `HTMLElement`: the target of a press on a control's
         // lucide glyph is the nested SVGElement, which is not an HTMLElement.
         pointerDownOnVerbRef.current =
-          thumbVerbs !== null &&
+          cardMode &&
           e.target instanceof Element &&
-          e.target.closest('.thumb-verbs') !== null;
+          e.target.closest('.thumb-more, .thumb-checkbox') !== null;
       }}
       onDragStart={(e): void => {
         if (pointerDownOnVerbRef.current) {
@@ -1545,6 +1344,7 @@ function Thumb({
               onThumbContextMenu(label, e.clientX, e.clientY);
             }
       }
+      data-thumb-item
       data-page={label}
       data-source-page={page}
       title={pageLabel !== null ? `Page ${label} (label: ${pageLabel})` : `Page ${label}`}
@@ -1570,76 +1370,79 @@ function Thumb({
           aria-hidden="true"
         />
       )}
-      <span className="thumb-canvas-wrap" style={{ width, height }}>
-        <canvas ref={canvasRef} className="thumb-canvas" />
-        {!rendered && <span className="thumb-placeholder" aria-hidden />}
-      </span>
-      {/* Phase 36 (chunk 2) — the ContextPanel's inline hover verbs: three
-          12px ghost icon controls at the thumb's top-right corner on a
-          semi-opaque themed backdrop, revealed on hover / focus-within over
-          the existing micro motion token. They are `role="button"` SPANS, not
-          nested buttons: a <button> inside the thumb's own <button> is
-          invalid HTML (React flags it) and the thumb must stay the one real
-          button per page. Their own click/keydown handlers stop the bubble to
-          the thumb's handler (which would jump and could re-select) — a
-          targeted stop on the verb's own handler, never a catch-all — so
-          invoking a verb changes neither the selection nor the page. They are
-          `draggable={false}` and covered by the pointerdown guard above, so
-          they can never start a page drag either. */}
-      {thumbVerbs !== null && (
-        <span className="thumb-verbs" data-thumb-verbs>
-          {(
-            [
-              {
-                id: 'rotate-cw',
-                title: 'Rotate clockwise',
-                aria: `Rotate page ${label} clockwise`,
-                Icon: RotateCw,
-              },
-              { id: 'extract', title: 'Extract this page', aria: `Extract page ${label}`, Icon: Scissors },
-              { id: 'delete', title: 'Delete this page', aria: `Delete page ${label}`, Icon: Trash2 },
-            ] as const
-          ).map(({ id, title, aria, Icon: Glyph }) => {
-            const run = (): void => {
-              if (id === 'rotate-cw') thumbVerbs.onRotateCw(label);
-              else if (id === 'extract') thumbVerbs.onExtract(label);
-              else thumbVerbs.onDelete(label);
-            };
-            return (
-              <span
-                key={id}
-                role="button"
-                tabIndex={0}
-                draggable={false}
-                className={
-                  id === 'delete'
-                    ? 'btn btn-danger btn-compact thumb-verb thumb-verb-danger'
-                    : 'btn btn-ghost btn-compact thumb-verb'
-                }
-                title={title}
-                aria-label={aria}
-                data-thumb-verb={id}
-                onClick={(e): void => {
-                  e.stopPropagation();
-                  run();
-                }}
-                onKeyDown={(e): void => {
-                  if (e.key !== 'Enter' && e.key !== ' ') return;
-                  e.preventDefault();
-                  e.stopPropagation();
-                  run();
-                }}
-              >
-                <Icon icon={Glyph} size="xs" />
-              </span>
-            );
-          })}
+      {/* Phase 111 (chunk B) — the current page's violet 2px leading marker.
+          Paired with the footer's "Viewing" label so current is never inferred
+          from the batch selection. */}
+      {isCurrent && (
+        <span className="thumb-current-marker" data-thumb-current-marker aria-hidden="true" />
+      )}
+      {/* The preview is the card's ONE real navigation control: a real button
+          (mouse + keyboard), never wrapping the footer controls. */}
+      <button
+        type="button"
+        className="thumb-page"
+        aria-label={`Page ${label}`}
+        title={pageLabel !== null ? `Page ${label} (label: ${pageLabel})` : `Page ${label}`}
+      >
+        <span className="thumb-canvas-wrap" style={{ width, height }}>
+          <canvas ref={canvasRef} className="thumb-canvas" />
+          {!rendered && <span className="thumb-placeholder" aria-hidden />}
+        </span>
+      </button>
+      {cardMode ? (
+        <div className="thumb-footer">
+          <input
+            type="checkbox"
+            className="thumb-checkbox"
+            checked={isSelected}
+            onChange={(): void => onToggleSelected?.(label)}
+            onClick={(e): void => e.stopPropagation()}
+            aria-label={`Select page ${label}`}
+            data-thumb-checkbox
+          />
+          <span className="thumb-label">
+            {pageLabel !== null ? pageLabel : label}
+          </span>
+          {isCurrent && (
+            <span className="thumb-viewing" data-thumb-viewing>
+              Viewing
+            </span>
+          )}
+          <button
+            type="button"
+            className="thumb-more"
+            aria-label={`Page ${label} actions`}
+            aria-haspopup="menu"
+            aria-expanded={moreAnchor !== null}
+            data-thumb-more
+            onClick={(e): void => {
+              e.stopPropagation();
+              const rect = e.currentTarget.getBoundingClientRect();
+              setMoreAnchor({ x: rect.left, y: rect.bottom + 4 });
+            }}
+          >
+            <Icon icon={MoreHorizontal} size="sm" aria-hidden />
+          </button>
+        </div>
+      ) : (
+        <span className="thumb-label">
+          {pageLabel !== null ? pageLabel : label}
         </span>
       )}
-      <span className="thumb-label">
-        {pageLabel !== null ? pageLabel : label}
-      </span>
-    </button>
+      {moreAnchor !== null && moreGroups.length > 0 && (
+        <div className="thumb-more-menu" onClick={(e): void => e.stopPropagation()}>
+          <CommandMenu
+            open
+            groups={moreGroups}
+            ariaLabel={`Page ${label} actions`}
+            onClose={(): void => setMoreAnchor(null)}
+            position={morePos ?? undefined}
+            dismissOnScroll
+            popoverDataAttrs={{ 'data-page-menu': 'card' }}
+          />
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -1676,6 +1479,23 @@ function samePath(a: OutlinePath | null, b: OutlinePath | null): boolean {
   return a.length === b.length && a.every((value, i) => value === b[i]);
 }
 
+// TFL-1080 (DEF-616) — the navigator's 240px floor with a thin (~11px)
+// scrollbar leaves ~229px of row width. The fixed columns (18px disclosure +
+// 32px destination + the 44px COARSE More target) are 94px, the three 2px
+// flex gaps 6px, the row's trailing pad 8px, and the title control cannot
+// shrink below its 12px padding + 2px border (14px). That leaves ~107px for
+// the indent; capping at 8 + 6*16 = 104px keeps a depth-10 row's More inside
+// the panel (measured earlier at cap 8 + 7*16 = 120px: scrollWidth 244 >
+// clientWidth 229, More right edge past the panel). Deeper rows share level
+// 6's indent rather than pushing the row into horizontal overflow.
+const OUTLINE_INDENT_BASE = 8;
+const OUTLINE_INDENT_STEP = 16;
+const OUTLINE_INDENT_MAX_DEPTH = 6;
+
+function outlineIndent(depth: number): number {
+  return OUTLINE_INDENT_BASE + Math.min(depth, OUTLINE_INDENT_MAX_DEPTH) * OUTLINE_INDENT_STEP;
+}
+
 /** Phase 36 (chunk 2) — exported so the PAGES ContextPanel can re-parent the
  *  same tree (REQUIREMENTS: surfaces are re-parented, never rewritten).
  *  Phase 85 adds an editable mode gated on the OutlineEditorContext (or the
@@ -1696,20 +1516,67 @@ export function OutlinePanel({ doc, outline, onJump, onError, editor = null }: O
   const [editingPath, setEditingPath] = useState<OutlinePath | null>(null);
   const [draftTitle, setDraftTitle] = useState('');
   const [error, setError] = useState<string | null>(null);
+  // Phase 111 (chunk C) — the per-row More popover. Only one row's menu is open
+  // at a time; `retargetPath` is the row whose destination <select> is revealed
+  // (opened from the More menu, anchored at the same point).
+  const [rowMenuPath, setRowMenuPath] = useState<OutlinePath | null>(null);
+  const [rowMenuPos, setRowMenuPos] = useState<{ left: number; top: number } | null>(null);
+  const [retargetPath, setRetargetPath] = useState<OutlinePath | null>(null);
   const modelRef = useRef(model);
   modelRef.current = model;
   const skipBlurCommitRef = useRef(false);
+  // Phase 111 (chunk D2a) — per-document navigator state for the outline view.
+  // `collapsedByDocRef` keeps each document's expansion set so collapsing a row
+  // under one document never leaks into another; `docIdRef` names the set the
+  // panel is currently showing. `outlineScrollRef` is the editable panel's own
+  // scroll container; `pendingOutlineScrollRef` carries its anchor across a
+  // model swap (re-seed or a committed edit) so the list never jumps to the top.
+  const collapsedByDocRef = useRef<Map<string, Set<string>>>(new Map());
+  const docIdRef = useRef<string | null>(docId);
+  const outlineScrollRef = useRef<HTMLDivElement | null>(null);
+  const pendingOutlineScrollRef = useRef<number | null>(null);
+  // Phase 111 (TFL-1078 / ADV-240) — the row More button that opened the
+  // current menu/popover. Escape and outside-pointer dismissal hand focus back
+  // to it, mirroring CommandMenu's focus-return. `retargetPopoverRef` bounds the
+  // outside-pointer test for the destination chooser.
+  const rowMenuOpenerRef = useRef<HTMLElement | null>(null);
+  const retargetPopoverRef = useRef<HTMLDivElement | null>(null);
+
+  // Swap the model while carrying the scroller's anchor across the commit, so
+  // a rename / re-seed leaves the reader where they were instead of at the top.
+  const commitModel = useCallback((entries: OutlineEntry[]): void => {
+    const scroller = outlineScrollRef.current;
+    if (scroller !== null) pendingOutlineScrollRef.current = scroller.scrollTop;
+    setModel(entries);
+  }, []);
 
   // Re-seed whenever the host publishes a freshly read tree (open, save +
   // reload, undo / redo) or the pane switches documents. The panel's own
-  // successful edit does not change the host seed, so it is preserved.
+  // successful edit does not change the host seed, so it is preserved. The
+  // OUTGOING document's expansion set is saved and the INCOMING one restored;
+  // the scroll anchor is carried over the model swap.
   useEffect((): void => {
     if (!editable) return;
-    setModel(cloneEntries(seedEntries ?? []));
+    const prevDocId = docIdRef.current;
+    if (prevDocId !== null && prevDocId !== docId) {
+      collapsedByDocRef.current.set(prevDocId, collapsed);
+    }
+    commitModel(cloneEntries(seedEntries ?? []));
     setSelected(null);
     setEditingPath(null);
     setError(null);
+    setCollapsed(docId === null ? new Set() : collapsedByDocRef.current.get(docId) ?? new Set());
+    docIdRef.current = docId;
   }, [docId, seedEntries, editable]);
+
+  // Restore the captured anchor after the model swap commits, before paint.
+  useLayoutEffect((): void => {
+    const pending = pendingOutlineScrollRef.current;
+    if (pending === null) return;
+    pendingOutlineScrollRef.current = null;
+    const scroller = outlineScrollRef.current;
+    if (scroller !== null) scroller.scrollTop = pending;
+  }, [model]);
 
   const toggle = (key: string): void => {
     setCollapsed((prev) => {
@@ -1719,6 +1586,7 @@ export function OutlinePanel({ doc, outline, onJump, onError, editor = null }: O
       } else {
         next.add(key);
       }
+      if (docId !== null) collapsedByDocRef.current.set(docId, next);
       return next;
     });
   };
@@ -1760,7 +1628,7 @@ export function OutlinePanel({ doc, outline, onJump, onError, editor = null }: O
         outcome,
         setOutline: config.commit,
       });
-      setModel(result.entries);
+      commitModel(result.entries);
       setEditingPath(null);
       if (result.error === null) {
         setSelected(outcome.selection);
@@ -1796,23 +1664,30 @@ export function OutlinePanel({ doc, outline, onJump, onError, editor = null }: O
   );
 
   const renderNodes = (nodes: OutlineNode[], path: string, depth: number): React.ReactNode => (
-    <ul className="outline-list">
+    <ul className="outline-list" role={depth === 0 ? 'tree' : 'group'} aria-label={depth === 0 ? 'Document outline' : undefined}>
       {nodes.map((node, i) => {
         const key = `${path}/${i}`;
         const isCollapsed = collapsed.has(key);
+        const hasChildren = node.children.length > 0;
         return (
-          <li key={key}>
-            <div className="outline-row" style={{ paddingLeft: 8 + depth * 14 }}>
-              {node.children.length > 0 ? (
+          <li
+            key={key}
+            role="treeitem"
+            aria-level={depth + 1}
+            aria-expanded={hasChildren ? !isCollapsed : undefined}
+          >
+            <div className="outline-row" style={{ paddingLeft: outlineIndent(depth) }}>
+              {hasChildren ? (
                 <button
                   type="button"
                   className="btn btn-ghost btn-icon outline-toggle"
                   onClick={() => toggle(key)}
                   aria-label={isCollapsed ? 'Expand' : 'Collapse'}
+                  aria-expanded={!isCollapsed}
                   title={isCollapsed ? 'Expand' : 'Collapse'}
                 >
                   <span className={isCollapsed ? 'chevron chevron-closed' : 'chevron'}>
-                    <Icon icon={SquareChevronRight} size="xl" />
+                    <Icon icon={SquareChevronRight} size="sm" />
                   </span>
                 </button>
               ) : (
@@ -1822,115 +1697,148 @@ export function OutlinePanel({ doc, outline, onJump, onError, editor = null }: O
                 {node.title}
               </button>
             </div>
-            {!isCollapsed && node.children.length > 0 && renderNodes(node.children, key, depth + 1)}
+            {!isCollapsed && hasChildren && renderNodes(node.children, key, depth + 1)}
           </li>
         );
       })}
     </ul>
   );
 
-  const renderVerbs = (target: OutlinePath | null, addOnly = false): React.ReactNode => {
-    const firstChild = target !== null && isFirstChild(target);
-    const atRoot = target !== null && isRootRow(target);
-    const disabled = target === null;
-    const targetEntry = target === null ? null : entryAt(modelRef.current, target);
-    const pages: number[] = [];
-    for (let p = 1; p <= visiblePageCount; p += 1) pages.push(p);
-    return (
-      <span className="outline-verbs">
-        <button
-          type="button"
-          className="btn btn-ghost btn-icon outline-verb"
-          data-outline-add
-          title="Add bookmark"
-          aria-label="Add bookmark"
-          onClick={(): void => {
-            void runEdit(editAdd(modelRef.current, target));
-          }}
-        >
-          <Icon icon={Plus} size="xs" />
-        </button>
-        {!addOnly && (
-          <>
-            <button
-              type="button"
-              className="btn btn-ghost btn-icon outline-verb"
-              data-outline-rename
-              title="Rename"
-              aria-label="Rename bookmark"
-              disabled={disabled}
-              onClick={(): void => {
-                if (target !== null) startRename(target);
-              }}
-            >
-              <Icon name="editMode" size="xs" />
-            </button>
-            <select
-              className="outline-verb outline-retarget"
-              data-outline-retarget
-              title="Page target"
-              aria-label="Bookmark page target"
-              disabled={disabled}
-              value={targetEntry?.page == null ? '' : String(targetEntry.page)}
-              onClick={(e): void => e.stopPropagation()}
-              onChange={(e): void => {
-                if (target !== null) {
-                  void runEdit(editRetarget(modelRef.current, target, e.target.value, visiblePageCount));
-                }
-              }}
-            >
-              <option value="">No page</option>
-              {pages.map((p) => (
-                <option key={p} value={String(p)}>{`Page ${p}`}</option>
-              ))}
-            </select>
-            <button
-              type="button"
-              className="btn btn-ghost btn-icon outline-verb"
-              data-outline-indent
-              title={firstChild ? 'The first bookmark cannot be indented' : 'Indent'}
-              aria-label="Indent bookmark"
-              disabled={disabled || firstChild}
-              onClick={(): void => {
-                if (target !== null) void runEdit(editIndent(modelRef.current, target));
-              }}
-            >
-              <Icon icon={IndentIncrease} size="xs" />
-            </button>
-            <button
-              type="button"
-              className="btn btn-ghost btn-icon outline-verb"
-              data-outline-outdent
-              title={disabled || atRoot ? 'Already at the top level' : 'Outdent'}
-              aria-label="Outdent bookmark"
-              disabled={disabled || atRoot}
-              onClick={(): void => {
-                if (target !== null) void runEdit(editOutdent(modelRef.current, target));
-              }}
-            >
-              <Icon icon={IndentDecrease} size="xs" />
-            </button>
-            <button
-              type="button"
-              className="btn btn-danger btn-icon outline-verb outline-verb-danger"
-              data-outline-delete
-              title="Delete bookmark"
-              aria-label="Delete bookmark"
-              disabled={disabled}
-              onClick={(): void => {
-                if (target !== null) void runEdit(editDelete(modelRef.current, target));
-              }}
-            >
-              <Icon name="delete" size="xs" />
-            </button>
-          </>
-        )}
-      </span>
+  // Phase 111 (chunk C) — the per-row More popover replaces the retired
+  // horizontal renderVerbs strip: one always-visible 32px More per row opens a
+  // CommandMenu (Rename / Set destination... / Add bookmark / Indent / Outdent /
+  // separator / Delete bookmark). Restrictions come from the real helpers.
+  const openRowMenu = (path: OutlinePath, el: HTMLElement): void => {
+    rowMenuOpenerRef.current = el;
+    const rect = el.getBoundingClientRect();
+    setRowMenuPos(
+      clampMenuPosition(rect.left, rect.bottom + 4, 220, 300, window.innerWidth, window.innerHeight),
     );
+    setRetargetPath(null);
+    setRowMenuPath(path);
+  };
+
+  const closeRowMenu = (): void => setRowMenuPath(null);
+
+  // Phase 111 (TFL-1078 / ADV-240) — the retarget popover dismisses on Escape
+  // and on an outside pointerdown, returning focus to the row's More button the
+  // same way CommandMenu returns focus to its opener. `dismissRetarget` is
+  // idempotent, so the popover's own key handler and the window fallback can
+  // both fire without harm.
+  // TFL-1080 (DEF-617): a pointerdown's DEFAULT action moves focus to the
+  // pressed target (typically `document.body`) AFTER this listener returns, so
+  // the synchronous `opener.focus()` in `dismissRetarget` was immediately
+  // overwritten and focus landed on BODY. Cancelling the outside pointerdown
+  // suppresses that focus move, exactly like Escape leaves focus alone.
+  const dismissRetarget = useCallback((): void => {
+    setRetargetPath(null);
+    const opener = rowMenuOpenerRef.current;
+    if (opener !== null && document.contains(opener)) opener.focus();
+  }, []);
+
+  useEffect((): (() => void) | undefined => {
+    if (retargetPath === null) return undefined;
+    const onPointer = (event: PointerEvent): void => {
+      const target = event.target;
+      if (target instanceof Node) {
+        if (retargetPopoverRef.current?.contains(target) === true) return;
+        if (rowMenuOpenerRef.current?.contains(target) === true) return;
+      }
+      event.preventDefault();
+      dismissRetarget();
+    };
+    const onKey = (event: KeyboardEvent): void => {
+      if (event.key !== 'Escape') return;
+      dismissRetarget();
+    };
+    window.addEventListener('pointerdown', onPointer);
+    window.addEventListener('keydown', onKey);
+    return (): void => {
+      window.removeEventListener('pointerdown', onPointer);
+      window.removeEventListener('keydown', onKey);
+    };
+  }, [retargetPath, dismissRetarget]);
+
+  const rowMenuGroups = (path: OutlinePath): CommandMenuGroup[] => {
+    const firstChild = isFirstChild(path);
+    const atRoot = isRootRow(path);
+    const gone = entryAt(modelRef.current, path) === null;
+    const rows: CommandMenuItem[] = [
+      {
+        id: 'rename',
+        label: 'Rename',
+        intent: 'secondary',
+        density: 'compact',
+        rowClassName: 'context-menu-item',
+        rowDataAttrs: { 'data-outline-rename': 'true' },
+        onSelect: (): void => startRename(path),
+      },
+      {
+        id: 'retarget',
+        label: 'Set destination...',
+        intent: 'secondary',
+        density: 'compact',
+        rowClassName: 'context-menu-item',
+        rowDataAttrs: { 'data-outline-retarget-open': 'true' },
+        onSelect: (): void => setRetargetPath(path),
+      },
+      {
+        id: 'add',
+        label: 'Add bookmark',
+        intent: 'secondary',
+        density: 'compact',
+        rowClassName: 'context-menu-item',
+        rowDataAttrs: { 'data-outline-add': 'true' },
+        onSelect: (): void => {
+          void runEdit(editAdd(modelRef.current, path));
+        },
+      },
+      {
+        id: 'indent',
+        label: 'Indent',
+        intent: 'secondary',
+        density: 'compact',
+        disabled: firstChild,
+        disabledReason: firstChild ? 'The first bookmark cannot be indented' : undefined,
+        rowClassName: 'context-menu-item',
+        rowDataAttrs: { 'data-outline-indent': 'true' },
+        onSelect: (): void => {
+          void runEdit(editIndent(modelRef.current, path));
+        },
+      },
+      {
+        id: 'outdent',
+        label: 'Outdent',
+        intent: 'secondary',
+        density: 'compact',
+        disabled: atRoot,
+        disabledReason: atRoot ? 'Already at the top level' : undefined,
+        rowClassName: 'context-menu-item',
+        rowDataAttrs: { 'data-outline-outdent': 'true' },
+        onSelect: (): void => {
+          void runEdit(editOutdent(modelRef.current, path));
+        },
+      },
+      { id: 'row-sep', label: '' },
+      {
+        id: 'delete',
+        label: 'Delete bookmark',
+        intent: 'destructive',
+        variant: 'danger',
+        density: 'compact',
+        disabled: gone,
+        rowClassName: 'context-menu-item context-menu-item-danger',
+        rowDataAttrs: { 'data-outline-delete': 'true' },
+        onSelect: (): void => {
+          void runEdit(editDelete(modelRef.current, path));
+        },
+      },
+    ];
+    return [{ id: 'bookmark-actions', label: 'Bookmark actions', entries: rows }];
   };
 
   const renderEntries = (nodes: OutlineEntry[], parentPath: OutlinePath, depth: number): React.ReactNode => (
-    <ul className="outline-list">
+    <ul className="outline-list" role={depth === 0 ? 'tree' : 'group'} aria-label={depth === 0 ? 'Document outline' : undefined}>
       {nodes.map((entry, i) => {
         const path = [...parentPath, i];
         const key = path.join('/');
@@ -1938,10 +1846,16 @@ export function OutlinePanel({ doc, outline, onJump, onError, editor = null }: O
         const rowSelected = samePath(selected, path);
         const isEditing = samePath(editingPath, path);
         return (
-          <li key={key}>
+          <li
+            key={key}
+            role="treeitem"
+            aria-level={depth + 1}
+            aria-selected={rowSelected}
+            aria-expanded={entry.children.length > 0 ? !isCollapsed : undefined}
+          >
             <div
               className={rowSelected ? 'outline-row outline-row-selected' : 'outline-row'}
-              style={{ paddingLeft: 8 + depth * 14 }}
+              style={{ paddingLeft: outlineIndent(depth) }}
               data-outline-row
               data-outline-path={key}
               data-outline-selected={rowSelected ? 'true' : 'false'}
@@ -1956,10 +1870,11 @@ export function OutlinePanel({ doc, outline, onJump, onError, editor = null }: O
                     toggle(key);
                   }}
                   aria-label={isCollapsed ? 'Expand' : 'Collapse'}
+                  aria-expanded={!isCollapsed}
                   title={isCollapsed ? 'Expand' : 'Collapse'}
                 >
                   <span className={isCollapsed ? 'chevron chevron-closed' : 'chevron'}>
-                    <Icon icon={SquareChevronRight} size="xl" />
+                    <Icon icon={SquareChevronRight} size="sm" />
                   </span>
                 </button>
               ) : (
@@ -1985,7 +1900,12 @@ export function OutlinePanel({ doc, outline, onJump, onError, editor = null }: O
                   onBlur={(): void => commitRename(path)}
                 />
               ) : (
-                <button type="button" className="btn btn-ghost btn-sm outline-link" onClick={(): void => goEntry(entry)}>
+                <button
+                  type="button"
+                  className="btn btn-ghost btn-sm outline-link"
+                  title={entry.title}
+                  onClick={(): void => goEntry(entry)}
+                >
                   {entry.title}
                 </button>
               )}
@@ -1993,10 +1913,25 @@ export function OutlinePanel({ doc, outline, onJump, onError, editor = null }: O
                 className="outline-page"
                 data-outline-page
                 title={entry.page === null ? 'No page target' : `Page ${entry.page}`}
+                aria-label={entry.page === null ? 'No page target' : `Page ${entry.page}`}
               >
                 {entry.page === null ? '\u2013' : entry.page}
               </span>
-              {rowSelected && renderVerbs(path)}
+              <button
+                type="button"
+                className="btn btn-ghost btn-icon outline-more"
+                data-outline-more
+                aria-label="Bookmark actions"
+                aria-haspopup="menu"
+                aria-expanded={rowMenuPath !== null && samePath(rowMenuPath, path)}
+                title="Bookmark actions"
+                onClick={(e): void => {
+                  e.stopPropagation();
+                  openRowMenu(path, e.currentTarget);
+                }}
+              >
+                <Icon icon={MoreHorizontal} size="sm" />
+              </button>
             </div>
             {!isCollapsed && entry.children.length > 0 && renderEntries(entry.children, path, depth + 1)}
           </li>
@@ -2009,24 +1944,101 @@ export function OutlinePanel({ doc, outline, onJump, onError, editor = null }: O
     return <div className="outline-panel">{renderNodes(outline, '', 0)}</div>;
   }
 
+  const retargetEntry = retargetPath === null ? null : entryAt(modelRef.current, retargetPath);
+  const retargetPages: number[] = [];
+  for (let p = 1; p <= visiblePageCount; p += 1) retargetPages.push(p);
+
   return (
-    <div className="outline-panel" data-outline-editable>
+    <div className="outline-panel" data-outline-editable ref={outlineScrollRef}>
       {error !== null && (
         <div className="outline-error" data-outline-error role="alert">
           <Icon icon={AlertCircle} size="xs" />
           <span>{error}</span>
         </div>
       )}
-      {selected === null && (
-        <div className="outline-editor-toolbar" data-outline-toolbar>
-          {renderVerbs(null, true)}
-        </div>
-      )}
+      <div className="outline-head">
+        <button
+          type="button"
+          className="btn btn-ghost btn-icon outline-head-add"
+          data-outline-add
+          title="Add bookmark"
+          aria-label="Add bookmark"
+          onClick={(): void => {
+            void runEdit(editAdd(modelRef.current, null));
+          }}
+        >
+          <Icon icon={Plus} size="sm" />
+        </button>
+      </div>
       {model.length === 0 ? (
-        <div className="outline-empty">No bookmarks yet.</div>
+        <div className="outline-empty">No bookmarks</div>
       ) : (
         renderEntries(model, [], 0)
       )}
+      {/* TFL-1083 (DEF-615) — the row More CommandMenu and the retarget
+       *  popover are portalled to `document.body`. The Outline view's body
+       *  (`.context-panel-outline-body`) rides a `fill-mode: both` materialize
+       *  animation, which Chromium keeps as a STACKING CONTEXT even after it
+       *  settles (opacity-only is not enough — the animation, not the
+       *  transform, is the trigger). A `position: fixed` surface inside that
+       *  animated ancestor therefore paints and hit-tests UNDER
+       *  `.document-content` wherever it extends past the navigator, leaving
+       *  its rows unclickable. Portalling the two fixed surfaces out to
+       *  `document.body` takes them out of that ancestor chain, so their
+       *  `position: fixed` viewport coordinates are authoritative with
+       *  animations ON and OFF. The CSS keyframe is untouched. */}
+      {rowMenuPath !== null && rowMenuPos !== null &&
+        createPortal(
+          <div className="outline-more-menu" onClick={(e): void => e.stopPropagation()}>
+            <CommandMenu
+              open
+              groups={rowMenuGroups(rowMenuPath)}
+              ariaLabel="Bookmark actions"
+              onClose={closeRowMenu}
+              position={rowMenuPos}
+              popoverDataAttrs={{ 'data-outline-menu': 'true' }}
+            />
+          </div>,
+          document.body,
+        )}
+      {retargetPath !== null && rowMenuPos !== null &&
+        createPortal(
+          <div
+            ref={retargetPopoverRef}
+            className="outline-retarget-popover"
+            data-outline-retarget-popover
+            style={{ position: 'fixed', left: rowMenuPos.left, top: rowMenuPos.top }}
+            onKeyDown={(e): void => {
+              if (e.key !== 'Escape') return;
+              e.preventDefault();
+              e.stopPropagation();
+              dismissRetarget();
+            }}
+          >
+            <select
+              className="outline-retarget"
+              data-outline-retarget
+              aria-label="Bookmark page target"
+              autoFocus
+              value={retargetEntry?.page == null ? '' : String(retargetEntry.page)}
+              onClick={(e): void => e.stopPropagation()}
+              onChange={(e): void => {
+                const next = e.target.value;
+                const target = retargetPath;
+                dismissRetarget();
+                if (target !== null) {
+                  void runEdit(editRetarget(modelRef.current, target, next, visiblePageCount));
+                }
+              }}
+            >
+              <option value="">No page</option>
+              {retargetPages.map((p) => (
+                <option key={p} value={String(p)}>{`Page ${p}`}</option>
+              ))}
+            </select>
+          </div>,
+          document.body,
+        )}
     </div>
   );
 }

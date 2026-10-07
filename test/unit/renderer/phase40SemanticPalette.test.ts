@@ -329,8 +329,11 @@ describe("Phase 40 item 12/13 — separators and the active panel edge", () => {
     expect(CSS_NO_COMMENTS).toMatch(
       /\.inspector-section-body > \* \+ \*\s*\{[^}]*border-top:\s*1px solid var\(--divider\)/,
     );
+    // Phase 111 (chunk A) — the navigator's separator is the view selector's
+    // hairline under the header (the outline is a full-height view now, not a
+    // stacked section with its own top border).
     expect(CSS_NO_COMMENTS).toMatch(
-      /\.context-panel-outline\s*\{[^}]*border-top:\s*1px solid var\(--divider\)/,
+      /\.context-panel-view-tabs\s*\{[^}]*border-bottom:\s*1px solid var\(--divider\)/,
     );
     // Phase 41 (item 4) SUPERSEDES the Phase-40 "active edge takes
     // --sem-primary" rule: the Inspector's page-facing edge is now the neutral

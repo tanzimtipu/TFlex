@@ -31,7 +31,7 @@ import { act } from "react";
 import type { PDFDocumentProxy } from "pdfjs-dist";
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { SideRail } from "../../../src/renderer/components/SideRail";
+import { ThumbnailRail } from "../../../src/renderer/components/SideRail";
 import type { EngineState } from "../../../src/renderer/engine/types";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -103,16 +103,18 @@ function mountRail(args: MountArgs): {
   document.body.appendChild(host);
   const root = createRoot(host);
   const onJump = vi.fn(args.onJump ?? ((): void => undefined));
+  const visibleToSource = new Map<number, number>();
+  engineState.pageOrder.forEach((src, i) => visibleToSource.set(i + 1, src + 1));
   act((): void => {
     root.render(
-      <SideRail
+      <ThumbnailRail
         doc={makeDocStub()}
         pageCount={args.pageCount}
-        outline={null}
         currentPage={args.currentPage}
-        defaultWidthPt={612}
-        defaultHeightPt={792}
-        engineState={engineState}
+        aspectRatio={792 / 612}
+        rotations={engineState.rotations}
+        visibleToSource={visibleToSource}
+        proxyVisibleOrder={false}
         canUndo={false}
         onJump={onJump}
       />,
@@ -214,9 +216,11 @@ describe("DEF-098 — thumbnail click uses the visible page number", () => {
     try {
       const item = host.querySelector<HTMLElement>(".thumb-item");
       if (item === null) throw new Error(".thumb-item not found");
-      // The alias sits on the same <button> that carries the page
-      // data and the click handler.
-      expect(item.tagName).toBe("BUTTON");
+      // Phase 111 (chunk B) — the card is a container now (its preview is the
+      // inner button and the footer holds sibling controls), but `.thumb-item`
+      // (aliased by `[data-thumb-item]`) remains the clickable navigate target.
+      expect(item.tagName).toBe("DIV");
+      expect(item.getAttribute("data-thumb-item")).not.toBeNull();
       expect(item.getAttribute("data-page")).toBe("1");
       act((): void => {
         item.click();

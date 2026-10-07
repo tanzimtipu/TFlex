@@ -34,7 +34,7 @@ import { describe, expect, it, vi } from "vitest";
 import { createRoot } from "react-dom/client";
 import { act } from "react";
 import type { PDFDocumentProxy } from "pdfjs-dist";
-import { SideRail } from "../../../src/renderer/components/SideRail";
+import { ThumbnailRail } from "../../../src/renderer/components/SideRail";
 import type { EngineState } from "../../../src/renderer/engine/types";
 import * as fs from "node:fs";
 import * as path from "node:path";
@@ -122,16 +122,18 @@ function mountRail(args: MountArgs): {
   document.body.appendChild(host);
   const root = createRoot(host);
   const onJump = vi.fn(args.onJump ?? ((): void => undefined));
+  const visibleToSource = new Map<number, number>();
+  engineState.pageOrder.forEach((src, i) => visibleToSource.set(i + 1, src + 1));
   act((): void => {
     root.render(
-      <SideRail
+      <ThumbnailRail
         doc={makeDocStub()}
         pageCount={args.pageCount}
-        outline={null}
         currentPage={args.currentPage}
-        defaultWidthPt={612}
-        defaultHeightPt={792}
-        engineState={engineState}
+        aspectRatio={792 / 612}
+        rotations={engineState.rotations}
+        visibleToSource={visibleToSource}
+        proxyVisibleOrder={false}
         canUndo={false}
         onJump={onJump}
       />,
@@ -282,9 +284,9 @@ describe("B7 — thumbnail click jumps to the clicked VISIBLE page", () => {
     }
   });
 
-  it("DocumentView wires SideRail onJump straight to jumpToPage(p) — no remap that could clip to page 1", () => {
-    // The rail's `onJump` callback is wired through
-    // `<SideRail onJump={(p): void => jumpToPage(p)} />` —
+  it("DocumentView wires the navigator onJump straight to jumpToPage(p) — no remap that could clip to page 1", () => {
+    // The navigator's `onJump` callback is wired through
+    // `<ContextPanel onJump={(p): void => jumpToPage(p)} />` —
     // `p` is the visible 1-based index the rail passes and
     // `jumpToPage` consumes it directly. A future refactor
     // that remaps `p` (e.g. through `visibleToSourcePage`)

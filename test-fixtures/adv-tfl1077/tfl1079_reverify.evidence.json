@@ -1,0 +1,43 @@
+{
+  "task": "TFL-1079",
+  "phase": "111",
+  "taskType": "FIX-READY defect re-verification",
+  "verdict": "FAIL - DEF-615, DEF-616, DEF-617 all remain OPEN",
+  "adversaryProbeSourceDerived": {
+    "note": "test-fixtures/adv-tfl1077/adv_navigator_probe.cjs was made source-derived (reads animations.css / styles.css / SideRail.tsx) so it validates the shipped fix; before-values are in adv_navigator_probe.output.json.",
+    "P1_bodyTransform": "matrix(1, 0, 0, 1, 0, 0)",
+    "P1_menuRendered": { "x": 200, "y": 452 },
+    "P1_menuRequested": { "left": 100, "top": 360 },
+    "P1_anchoredToViewport": false,
+    "P1_clippedByAncestorBottom": true,
+    "P2_overflowX": "hidden",
+    "P2_scrollWidth": 240,
+    "P2_clientWidth": 240,
+    "P2_horizontalOverflow": false,
+    "passed": false
+  },
+  "inApp": {
+    "DEF615_animationsOn": { "bodyTransform": "matrix(1, 0, 0, 1, 0, 0)", "deltaLeft": -228, "deltaTop": 184, "deleteRowHit": true, "menuInViewport": true, "verdict": "FAIL - menu anchored to the transformed ancestor, not the trigger" },
+    "DEF615_reducedMotion": { "bodyTransform": "none", "deltaLeft": 0, "deltaTop": 4, "deleteRowHit": true, "verdict": "PASS - only the animation:none path works" },
+    "DEF615_animationsOff": { "bodyTransform": "matrix(1, 0, 0, 1, 0, 0)", "deltaLeft": -236, "deltaTop": 184, "deleteRowHit": true, "verdict": "FAIL" },
+    "DEF616_floor240_depth10": { "overflowX": "hidden", "scrollWidth": 244, "clientWidth": 229, "deepestIndent": "120px", "moreRight": 316, "panelRight": 311, "moreInsidePanel": false, "moreReachable": false, "verdict": "FAIL - More clipped/unreachable at the floor" },
+    "DEF617_roles": "PASS - role=tree / treeitem / aria-level / aria-expanded / aria-selected / role=group on the in-app editable outline; view-only path covered by phase111_outline.test.tsx",
+    "DEF617_escape": "PASS - popover closes and focus returns to [data-outline-more]",
+    "DEF617_outsidePointer": "FAIL - popover closes but focus lands on BODY, not the row More (activeElement={\"tag\":\"BODY\",\"isMore\":false})"
+  },
+  "alsoRan": {
+    "focusedE2E_tfl1073_phase111_navigator": "7 passed",
+    "namedUnitSet": "8 files / 66 tests passed",
+    "verify": "clean (conventions clean, typecheck ok)"
+  },
+  "artifacts": [
+    "screenshots/tfl1079-def615-top-menu.png",
+    "screenshots/tfl1079-def615-bottom-menu.png",
+    "screenshots/tfl1079-def615-reduced-motion.png",
+    "screenshots/tfl1079-def615-animations-off.png",
+    "screenshots/tfl1079-def616-240px-floor.png",
+    "screenshots/tfl1079-def617-tree-roles.png",
+    "screenshots/tfl1079-def617-retarget-open.png",
+    "e2e/tfl1079_def615_617_evidence.spec.cjs"
+  ]
+}

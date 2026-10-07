@@ -19,6 +19,11 @@ const { launchApp, getSamplePath } = require('./lib/launch.cjs');
 const { hardClose } = require('./lib/helpers.cjs');
 const { PDFDocument, PDFName, PDFString, PDFNumber } = require('@cantoo/pdf-lib');
 
+// The Paperclip harness exports ELECTRON_RUN_AS_NODE=1; launchApp spreads
+// process.env into the Electron child, which then exits as plain Node before any
+// window is observable. Drop it before any launch.
+delete process.env.ELECTRON_RUN_AS_NODE;
+
 const SHOTS = path.resolve(__dirname, '..', 'screenshots');
 
 let app = null;
@@ -82,13 +87,15 @@ async function buildOutlinePdf(file, count) {
 }
 
 async function ensureOutlineExpanded() {
-  const section = win.locator('[data-context-panel-outline]');
-  await expect(section).toHaveCount(1);
-  if ((await section.getAttribute('data-outline-open')) !== 'true') {
-    await win.locator('[data-outline-toggle]').click();
+  // Phase 111 (chunk A) retired the collapsible Outline section: the Outline is
+  // now a full-height navigator VIEW selected by the view tab. Selecting it is
+  // the live disclosure action; the section is readable via its live view hook.
+  const view = win.locator('[data-context-panel-view="outline"]');
+  if ((await view.count()) === 0) {
+    await win.locator('[data-context-panel-view-tab="outline"]').click();
     await win.waitForTimeout(600);
   }
-  expect(await section.getAttribute('data-outline-open'), 'outline expanded').toBe('true');
+  await expect(view).toHaveCount(1);
 }
 
 async function measure() {
@@ -119,7 +126,7 @@ async function measure() {
   });
 }
 
-test('SHORT outline: the last outline row is flush with the panel/section bottom (gap 0)', async () => {
+test('SHORT outline: the outline view is flush with the panel bottom (gap 0)', async () => {
   await openReport();
   await ensureOutlineExpanded();
 
@@ -131,12 +138,16 @@ test('SHORT outline: the last outline row is flush with the panel/section bottom
   console.log(`[P59-outline-short] ${JSON.stringify(m)}`);
   await win.screenshot({ path: path.join(SHOTS, 'p59-outline-flush-short.png') });
 
-  // The outline scroller's bottom edge is flush with the panel bottom (gap 0).
+  // Phase 111 (chunk A) superseded the Phase-59 content-hugging 40% section:
+  // the Outline is now a FULL-HEIGHT navigator view. The retained contract is
+  // that the outline scroll region is flush with the panel's bottom edge (no
+  // gap between the view and the panel), and the rows stay inside that region
+  // (never clipped). A short list legitimately leaves empty scroll space below
+  // it in a full-height view; only the OVERFLOWING case can put the last row
+  // flush (asserted in the next test).
   expect(Math.abs(m.outlinePanelGap), `outline panel bottom flush with panel bottom (gap ${m.outlinePanelGap}px)`).toBeLessThanOrEqual(1);
-  // Phase 59 item 5 / success criterion 5: the outline list's LAST ROW sits
-  // flush with the panel's bottom edge (measured gap 0) — no dead space.
-  expect(Math.abs(m.lastRowGap), `last outline row bottom flush with panel bottom (gap ${m.lastRowGap}px)`).toBeLessThanOrEqual(1);
-  expect(Math.abs(m.lastRowGapToSection), `last outline row bottom flush with section bottom (gap ${m.lastRowGapToSection}px)`).toBeLessThanOrEqual(1);
+  expect(m.sectionBottom, 'outline view bottom is the panel bottom').toBeLessThanOrEqual(m.panelBottom + 1);
+  expect(m.lastRowBottom, 'last outline row is inside the scroll region').toBeLessThanOrEqual(m.panelBottom + 1);
 });
 
 test('OVERFLOWING outline: the list scrolls inside the section and the last VISIBLE row meets the bottom edge', async () => {

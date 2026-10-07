@@ -109,6 +109,31 @@ export function sameSettings(a: AppSettings, b: AppSettings): boolean {
   if (a.panelRightWidthPx !== b.panelRightWidthPx) return false;
   if (a.inspectorCollapsed !== b.inspectorCollapsed) return false;
   if (a.pagesPanelCollapsed !== b.pagesPanelCollapsed) return false;
+  // Phase 111 (chunk D1) — the Split Navigator fields participate so a stale
+  // echo that disagrees on a just-committed layout or split ratio is recognised
+  // as stale and discarded (the same DEF-604 class chunk E flagged).
+  if (a.navigatorLayout !== b.navigatorLayout) return false;
+  if (a.navigatorSplitRatio !== b.navigatorSplitRatio) return false;
+  if (a.redactionColor !== b.redactionColor) return false;
+  if (a.accountsEnabled !== b.accountsEnabled) return false;
+  if (a.syncDeviceId !== b.syncDeviceId) return false;
+  if (a.lastSyncedAt !== b.lastSyncedAt) return false;
+  if (a.tabStyle !== b.tabStyle) return false;
+  if (a.blankPageInkThreshold !== b.blankPageInkThreshold) return false;
+  if (!sameJsonValue(a.annotationRecentTools, b.annotationRecentTools)) return false;
+  if (!sameJsonValue(a.dockPins, b.dockPins)) return false;
+  if (!sameJsonValue(a.dockUnpinned, b.dockUnpinned)) return false;
+  if (!sameJsonValue(a.homeTools, b.homeTools)) return false;
+  if (!sameJsonValue(a.toolUsage, b.toolUsage)) return false;
+  if (!sameJsonValue(a.sanitizeOptions, b.sanitizeOptions)) return false;
+  if (!sameJsonValue(a.batesDefaults, b.batesDefaults)) return false;
+  if (!sameJsonValue(a.encryptDefaults, b.encryptDefaults)) return false;
+  if (!sameJsonValue(a.convertDefaults, b.convertDefaults)) return false;
+  if (!sameJsonValue(a.imageImportDefaults, b.imageImportDefaults)) return false;
+  if (!sameJsonValue(a.pdfValidationDefaults, b.pdfValidationDefaults)) return false;
+  if (!sameJsonValue(a.officeConvertDefaults, b.officeConvertDefaults)) return false;
+  if (!sameJsonValue(a.readingDefaults, b.readingDefaults)) return false;
+  if (!sameJsonValue(a.printPresets, b.printPresets)) return false;
   if (!sameGeometry(a.geometry, b.geometry)) return false;
   if (!sameRecentFiles(a.recentFiles, b.recentFiles)) return false;
   if (!sameSpellCheck(a.spellCheck, b.spellCheck)) return false;
@@ -154,6 +179,31 @@ export function differsOnlyInRecentFiles(
   if (a.panelRightWidthPx !== b.panelRightWidthPx) return false;
   if (a.inspectorCollapsed !== b.inspectorCollapsed) return false;
   if (a.pagesPanelCollapsed !== b.pagesPanelCollapsed) return false;
+  // Phase 111 (chunk D1) — a Split Navigator drift also disqualifies a
+  // recents-only delta, so a stale layout/ratio echo is never mistaken for the
+  // canonical addRecentFile reflection.
+  if (a.navigatorLayout !== b.navigatorLayout) return false;
+  if (a.navigatorSplitRatio !== b.navigatorSplitRatio) return false;
+  if (a.redactionColor !== b.redactionColor) return false;
+  if (a.accountsEnabled !== b.accountsEnabled) return false;
+  if (a.syncDeviceId !== b.syncDeviceId) return false;
+  if (a.lastSyncedAt !== b.lastSyncedAt) return false;
+  if (a.tabStyle !== b.tabStyle) return false;
+  if (a.blankPageInkThreshold !== b.blankPageInkThreshold) return false;
+  if (!sameJsonValue(a.annotationRecentTools, b.annotationRecentTools)) return false;
+  if (!sameJsonValue(a.dockPins, b.dockPins)) return false;
+  if (!sameJsonValue(a.dockUnpinned, b.dockUnpinned)) return false;
+  if (!sameJsonValue(a.homeTools, b.homeTools)) return false;
+  if (!sameJsonValue(a.toolUsage, b.toolUsage)) return false;
+  if (!sameJsonValue(a.sanitizeOptions, b.sanitizeOptions)) return false;
+  if (!sameJsonValue(a.batesDefaults, b.batesDefaults)) return false;
+  if (!sameJsonValue(a.encryptDefaults, b.encryptDefaults)) return false;
+  if (!sameJsonValue(a.convertDefaults, b.convertDefaults)) return false;
+  if (!sameJsonValue(a.imageImportDefaults, b.imageImportDefaults)) return false;
+  if (!sameJsonValue(a.pdfValidationDefaults, b.pdfValidationDefaults)) return false;
+  if (!sameJsonValue(a.officeConvertDefaults, b.officeConvertDefaults)) return false;
+  if (!sameJsonValue(a.readingDefaults, b.readingDefaults)) return false;
+  if (!sameJsonValue(a.printPresets, b.printPresets)) return false;
   if (!sameGeometry(a.geometry, b.geometry)) return false;
   if (!sameAnnotationColors(a.annotationColors, b.annotationColors)) return false;
   if (!sameSpellCheck(a.spellCheck, b.spellCheck)) return false;
@@ -178,6 +228,32 @@ export function differsOnlyInRecentFiles(
  *  the same allowlist on writes; this import is here so future
  *  readers see the contract without diving into shared/types.ts. */
 export type { ExportImageFormat };
+
+/** DEF-072 — order-sensitive deep equality for the optional array/object
+ *  AppSettings fields. `undefined` matches `undefined` only (same contract as
+ *  `sameSpellCheck`): a write that dropped a field must not compare equal to
+ *  one that carries it. */
+function sameJsonValue(a: unknown, b: unknown): boolean {
+  if (a === b) return true;
+  if (a === undefined || b === undefined) return false;
+  if (typeof a !== 'object' || typeof b !== 'object' || a === null || b === null) return false;
+  if (Array.isArray(a) || Array.isArray(b)) {
+    if (!Array.isArray(a) || !Array.isArray(b) || a.length !== b.length) return false;
+    for (let i = 0; i < a.length; i += 1) {
+      if (!sameJsonValue(a[i], b[i])) return false;
+    }
+    return true;
+  }
+  const ao = a as Record<string, unknown>;
+  const bo = b as Record<string, unknown>;
+  const ak = Object.keys(ao);
+  if (ak.length !== Object.keys(bo).length) return false;
+  for (const k of ak) {
+    if (!Object.prototype.hasOwnProperty.call(bo, k)) return false;
+    if (!sameJsonValue(ao[k], bo[k])) return false;
+  }
+  return true;
+}
 
 function sameGeometry(a: WindowGeometry, b: WindowGeometry): boolean {
   return (
@@ -312,6 +388,30 @@ export function differsOnlyInGeometry(a: AppSettings, b: AppSettings): boolean {
   if (a.panelRightWidthPx !== b.panelRightWidthPx) return false;
   if (a.inspectorCollapsed !== b.inspectorCollapsed) return false;
   if (a.pagesPanelCollapsed !== b.pagesPanelCollapsed) return false;
+  // Phase 111 (chunk D1) — a Split Navigator drift disqualifies the
+  // geometry-only delta as well.
+  if (a.navigatorLayout !== b.navigatorLayout) return false;
+  if (a.navigatorSplitRatio !== b.navigatorSplitRatio) return false;
+  if (a.redactionColor !== b.redactionColor) return false;
+  if (a.accountsEnabled !== b.accountsEnabled) return false;
+  if (a.syncDeviceId !== b.syncDeviceId) return false;
+  if (a.lastSyncedAt !== b.lastSyncedAt) return false;
+  if (a.tabStyle !== b.tabStyle) return false;
+  if (a.blankPageInkThreshold !== b.blankPageInkThreshold) return false;
+  if (!sameJsonValue(a.annotationRecentTools, b.annotationRecentTools)) return false;
+  if (!sameJsonValue(a.dockPins, b.dockPins)) return false;
+  if (!sameJsonValue(a.dockUnpinned, b.dockUnpinned)) return false;
+  if (!sameJsonValue(a.homeTools, b.homeTools)) return false;
+  if (!sameJsonValue(a.toolUsage, b.toolUsage)) return false;
+  if (!sameJsonValue(a.sanitizeOptions, b.sanitizeOptions)) return false;
+  if (!sameJsonValue(a.batesDefaults, b.batesDefaults)) return false;
+  if (!sameJsonValue(a.encryptDefaults, b.encryptDefaults)) return false;
+  if (!sameJsonValue(a.convertDefaults, b.convertDefaults)) return false;
+  if (!sameJsonValue(a.imageImportDefaults, b.imageImportDefaults)) return false;
+  if (!sameJsonValue(a.pdfValidationDefaults, b.pdfValidationDefaults)) return false;
+  if (!sameJsonValue(a.officeConvertDefaults, b.officeConvertDefaults)) return false;
+  if (!sameJsonValue(a.readingDefaults, b.readingDefaults)) return false;
+  if (!sameJsonValue(a.printPresets, b.printPresets)) return false;
   if (!sameRecentFiles(a.recentFiles, b.recentFiles)) return false;
   if (!sameAnnotationColors(a.annotationColors, b.annotationColors)) return false;
   if (!sameSpellCheck(a.spellCheck, b.spellCheck)) return false;

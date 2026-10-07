@@ -51,6 +51,9 @@ import type { ConvertFormatId, ConvertManyResult, ConvertSourceInfo, CsvFieldMap
 import { DEFAULT_CONVERT_DEFAULTS } from "../shared/convert";
 import { Welcome } from "./components/Welcome";
 import { AppHeader } from "./components/AppHeader";
+// Phase 111 (chunk D1) — the Split Navigator ratio's clamp is the panel's ONE
+// exported contract, so App persists the same value the panel displays.
+import { clampSplitRatio } from "./components/ContextPanel";
 import { DocumentRail } from "./components/DocumentRail";
 import { Toasts, type Toast } from "./components/Toasts";
 import { printWindowOpenFailureMessage } from "./print-window/context";
@@ -205,6 +208,7 @@ import {
   type OutlineEntry,
   type SetOutlineFn,
 } from "./state/outlineEditor";
+import { recordRailTab, restoreRailTab } from "./state/navigatorState";
 import { splitRecentPath } from "./utils/recentPath";
 import { toArrayBuffer } from "./utils/toArrayBuffer";
 import { createDebouncer } from "./utils/debounce";
@@ -791,6 +795,12 @@ export function App(): ReactElement {
   const [panelRightWidth, setPanelRightWidth] = useState<number>(
     (): number => resolvePanelWidth("right", undefined),
   );
+  // Phase 111 (chunk D1) — the Split Navigator's persisted layout + ratio. App
+  // owns the live values; the panel reports a settled change (layout-menu
+  // selection / divider gesture settle) and App persists it through the shared
+  // trackAndSave path, exactly like the panel widths above.
+  const [navigatorLayout, setNavigatorLayout] = useState<'stacked' | 'split'>('stacked');
+  const [navigatorSplitRatio, setNavigatorSplitRatio] = useState<number>(0.6);
   // Phase 32 — Multi Mode. The mode + the two pane slots live in App
   // (session-only, per the phase's Settings-impact line); the split is a
   // pure view value the divider drag writes.
@@ -974,6 +984,16 @@ export function App(): ReactElement {
   const [layersByDoc, setLayersByDoc] = useState<Record<string, PdfLayer[]>>({});
   const [cadByDoc, setCadByDoc] = useState<Record<string, PdfCadMetadata | null>>({});
   const [content3dByDoc, setContent3dByDoc] = useState<Record<string, Pdf3dContent[]>>({});
+  // Phase 111 (chunk D2a) — the active navigator view, remembered SEPARATELY
+  // per document (keyed by the stable engine doc id). Session-only: never
+  // persisted to settings. The refs hold the latest values so the restore
+  // effect keys ONLY on a document change, never on a tab click.
+  const [railTabByDoc, setRailTabByDoc] = useState<Record<string, RailTab>>({});
+  const railTabRef = useRef<RailTab>(railTab);
+  railTabRef.current = railTab;
+  const railTabByDocRef = useRef<Record<string, RailTab>>(railTabByDoc);
+  railTabByDocRef.current = railTabByDoc;
+  const prevEngineDocIdRef = useRef<string | null>(null);
   // The two feature-A dialogs.
   const [engineeringLayersOpen, setEngineeringLayersOpen] = useState(false);
   const [documentInfoOpen, setDocumentInfoOpen] = useState(false);
@@ -1404,6 +1424,15 @@ export function App(): ReactElement {
       setPanelLeftWidth(resolvePanelWidth("left", b.settings.panelLeftWidthPx));
       setPanelRightWidth(resolvePanelWidth("right", b.settings.panelRightWidthPx));
       setInspectorCollapsed(b.settings.inspectorCollapsed ?? false);
+      // Phase 111 (chunk D1) — restore the Split Navigator layout + ratio.
+      // Absent / invalid fields resolve to the documented defaults
+      // ('stacked' / 0.6); the ratio is clamped to 0.1-0.9.
+      setNavigatorLayout(b.settings.navigatorLayout === "split" ? "split" : "stacked");
+      setNavigatorSplitRatio(
+        typeof b.settings.navigatorSplitRatio === "number"
+          ? clampSplitRatio(b.settings.navigatorSplitRatio)
+          : 0.6,
+      );
       // DEF-202 — seed the caption from the boot settings' geometry.
       setWindowMaximized(b.settings.geometry.maximized);
       setBootDone(true);
@@ -1460,6 +1489,15 @@ export function App(): ReactElement {
       setPanelRightWidth((prev) => syncPanelWidth("right", s.panelRightWidthPx, prev));
       if (typeof s.inspectorCollapsed === "boolean") {
         setInspectorCollapsed(s.inspectorCollapsed);
+      }
+      // Phase 111 (chunk D1) — keep the Split Navigator in sync with settings
+      // echoes (preserve-if-valid: an absent / invalid field leaves the local
+      // value alone, so a stale echo can never revert the live layout).
+      if (s.navigatorLayout === "stacked" || s.navigatorLayout === "split") {
+        setNavigatorLayout(s.navigatorLayout);
+      }
+      if (typeof s.navigatorSplitRatio === "number" && Number.isFinite(s.navigatorSplitRatio)) {
+        setNavigatorSplitRatio(clampSplitRatio(s.navigatorSplitRatio));
       }
       // DEF-199 — skip the theme re-apply when the document is already
       // showing the echoed theme. The settings.changed echo of our own
@@ -9794,6 +9832,32 @@ pushToast(
     };
   }, [activeEngineDocId, refreshWatermarkList, refreshBatesList]);
 
+  // Phase 111 (chunk D2a) — on a document change, first record the OUTGOING
+  // document's current rail view (a tab set outside `selectRailTab`, e.g. by a
+  // restore, is still captured), then restore the INCOMING document's view,
+  // defaulting to 'thumbs' for a document never seen. The refs make this run
+  // only on the id change, never on a tab click.
+  useEffect(() => {
+    const prev = prevEngineDocIdRef.current;
+    if (prev === activeEngineDocId) return;
+    if (prev !== null) {
+      setRailTabByDoc((prevMap) => recordRailTab(prevMap, prev, railTabRef.current));
+    }
+    setRailTab(restoreRailTab(railTabByDocRef.current, activeEngineDocId));
+    prevEngineDocIdRef.current = activeEngineDocId;
+  }, [activeEngineDocId]);
+
+  // Phase 111 (chunk D2a) — the ONE rail-view setter. Every entry point (the
+  // Pages panel's own toggle and the palette's "Page thumbnails" / "Bookmarks"
+  // rows) writes both the live value and this document's remembered value.
+  const selectRailTab = useCallback(
+    (tab: RailTab): void => {
+      setRailTab(tab);
+      setRailTabByDoc((prevMap) => recordRailTab(prevMap, activeEngineDocId, tab));
+    },
+    [activeEngineDocId],
+  );
+
   // Phase 36 (chunk 5) — the Inspector's visibility: a real document is open
   // (an empty placeholder tab or the welcome screen has none to inspect). The
   // panel-inset machinery below and the .app-main data attribute both read
@@ -9857,6 +9921,35 @@ pushToast(
       setSettings((prev) => {
         if (prev === null) return prev;
         const updated: AppSettings = { ...prev, panelRightWidthPx: clamped };
+        trackAndSave(updated);
+        return updated;
+      });
+    },
+    [trackAndSave],
+  );
+
+  // Phase 111 (chunk D1) — the Split Navigator commits. The layout writes only
+  // on a layout-menu selection; the ratio writes only on a divider gesture
+  // settle or a keyboard step (never per drag frame).
+  const commitNavigatorLayout = useCallback(
+    (layout: 'stacked' | 'split'): void => {
+      setNavigatorLayout(layout);
+      setSettings((prev) => {
+        if (prev === null || prev.navigatorLayout === layout) return prev;
+        const updated: AppSettings = { ...prev, navigatorLayout: layout };
+        trackAndSave(updated);
+        return updated;
+      });
+    },
+    [trackAndSave],
+  );
+  const commitNavigatorSplitRatio = useCallback(
+    (next: number): void => {
+      const clamped = clampSplitRatio(next);
+      setNavigatorSplitRatio(clamped);
+      setSettings((prev) => {
+        if (prev === null || prev.navigatorSplitRatio === clamped) return prev;
+        const updated: AppSettings = { ...prev, navigatorSplitRatio: clamped };
         trackAndSave(updated);
         return updated;
       });
@@ -10928,11 +11021,11 @@ pushToast(
       // fired with no document open simply switches the tab and never throws.
       railTabThumbnails: (): void => {
         onStageChange("pages");
-        setRailTab("thumbs");
+        selectRailTab("thumbs");
       },
       railTabOutline: (): void => {
         onStageChange("pages");
-        setRailTab("outline");
+        selectRailTab("outline");
       },
       // The clipboard-create command's UI is the Create sheet's own button
       // (the sheet reads the OS clipboard and asks for the quality), so the
@@ -10969,6 +11062,7 @@ pushToast(
       onOpenIntoPane,
       onClearPane,
       onStageChange,
+      selectRailTab,
     ],
   );
   // Phase 58 (chunk 4) — the HOME row's run map. It carries ONLY tools that
@@ -11833,8 +11927,17 @@ pushToast(
                     // threaded to the Pages ContextPanel so the palette's
                     // "Page thumbnails" / "Bookmarks" commands switch it and
                     // the panel's own outline toggle writes it back.
+                    // Phase 111 (chunk D2a) — routed through `selectRailTab` so
+                    // the view is remembered per document.
                     railTab={railTab}
-                    onRailTabChange={setRailTab}
+                    onRailTabChange={selectRailTab}
+                    // Phase 111 (chunk D1) — the Split Navigator layout + ratio
+                    // and their settled-change handlers, threaded through
+                    // DocumentView to the Pages ContextPanel.
+                    navigatorLayout={navigatorLayout}
+                    navigatorSplitRatio={navigatorSplitRatio}
+                    onNavigatorLayoutChange={commitNavigatorLayout}
+                    onNavigatorSplitRatioChange={commitNavigatorSplitRatio}
                     // Phase 32 — Multi Mode suppresses each pane's OWN rail
                     // (the shared two-section rail is the next chunk); the
                     // CommandBar control reads the same App-owned state as

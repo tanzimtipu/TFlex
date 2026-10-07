@@ -1,0 +1,36 @@
+{
+  "source": {
+    "materialize": "@keyframes tf-anim-materialize { from { opacity: var(--motion-opacity-hidden); transform: scale(var(--motion-scale-enter)); } to { opacity: var(--motion-opacity-visible); transform: none; } }",
+    "outlinePanel": ".outline-panel { position: absolute; inset: 0; overflow-y: auto; /* Phase 111 (TFL-1078 / ADV-239) — the outline NEVER scrolls sideways. At the * 240px navigator floor a deeply indented row used to raise `scrollWidth` * past `clientWidth` and scroll the row's More target out of reach. The indent * itself is capped in `outlineIndent()` (SideRail) so the fixed 18px toggle / * 32px destination / 32px More columns always fit; this is the belt-and- * suspenders stop against any residual horizontal overflow. */ overflow-x: hidden; padding: var(--sp-2) 0; scrollbar-width: thin; }",
+    "depth10Indent": 120
+  },
+  "P1_fixedMenuInAnimatedAncestor": {
+    "bodyTransform": "matrix(1, 0, 0, 1, 0, 0)",
+    "bodyOrigin": {
+      "x": 100,
+      "y": 92
+    },
+    "menuRendered": {
+      "x": 200,
+      "y": 452
+    },
+    "menuRequested": {
+      "left": 100,
+      "top": 360
+    },
+    "menuOffsetFromAncestor": {
+      "x": 100,
+      "y": 360
+    },
+    "clippedByAncestorBottom": true,
+    "anchoredToViewport": false
+  },
+  "P2_outlineOverflowX": {
+    "overflowX": "hidden",
+    "overflowY": "auto",
+    "scrollWidth": 240,
+    "clientWidth": 240,
+    "horizontalOverflow": false
+  },
+  "passed": false
+}

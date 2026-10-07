@@ -8033,7 +8033,7 @@ Outline views; the Split Navigator with a keyboard-resizable divider (initial 60
 independently scrolling sections, 180px minimum section height, short-window fallback to the
 tabbed view); restore active view / scroll anchors / outline expansion per document; virtualized
 rendering with bounded concurrency; reduced-motion, coarse-pointer and 200% scaling behaviour;
-selection-count announcements. New spec `test/unit/renderer/phase111_navigatorLayout.test.tsx`.
+selection-count announcements. New spec `test/unit/renderer/phase111_splitLayout.test.tsx`.
 Blocked by C, D, E.
 
 **G. Regression + removal of superseded UI (frontend-dev, chunk G).** Delete the dead legacy
@@ -8086,7 +8086,7 @@ as ONE local commit referencing Phase 111 and any DEF/ADV numbers; no push, no t
 
 **CONTROL-INDEX:** the phase re-homes the navigator controls into the shared Document Navigator.
 Each control keeps a real production handler and is proven by a named test - Pages/Outline view
-selector (switch view; `phase111_navigatorLayout.test.tsx`), page card single click (navigate + the
+selector (switch view; `phase111_navigatorChrome.test.tsx`), page card single click (navigate + the
 audited selection policy; `phase111_pages.test.tsx` and `phase36ThumbMultiSelect.test.tsx`), page
 card checkbox (toggle batch membership without navigating; `phase111_pages.test.tsx`), page card
 More (Rotate CW / Extract / Delete this page; `phase111_pages.test.tsx` + `phase36_chunk2_pages_parity.spec.cjs`),
@@ -8106,6 +8106,42 @@ default 280), `navigatorLayout` (`'stacked' | 'split'`, default `'stacked'`) and
 network call.
 
 **Numbering:** this is Phase 111 (the last appended phase is 110).
+
+**Re-baseline (2026-10-07, post Phases 104-113; HEAD `1c7a78d`).** Phase 112 (Panels) landed after
+this phase was appended and already delivered part of the navigator work: it re-parented
+`ContextPanel` / `PaneThumbStrip` onto the shared panel primitives
+(`src/renderer/components/panels/PanelPrimitives.tsx`: `PanelShell:41`, `ScopedHeader:68`,
+`PanelSection:107`, `PropertyRow:141`, `ActionList:181`, `PanelEmptyState:219`), added a
+Pages/Outline section toggle and a multi-select summary, mounted a resizable left panel with a 52px
+preferred header (`ScopedHeader preferredHeight`), and persisted `AppSettings.panelLeftWidthPx`
+(`types.ts:201`), `panelRightWidthPx` (`:207`) and `inspectorCollapsed` (`:212`). This phase therefore
+no longer builds the panel shell, primitives or the basic persistence; it delivers the navigator
+BUNDLE specifics on top of that base. Rulings that supersede the pre-Phase-112 current-state text
+above; the success criteria, out-of-scope and evidence flow stand:
+
+1. The Pages navigator uses the desk's full-height **Pages / Outline views** with a 40px segmented
+   selector showing REAL counts, not the stacked collapsible outline section Phase 112 shipped.
+2. Page cards use the bundle's **footer** (checkbox + page label left; 32px More right, 44px on
+   coarse pointers); the current inline hover verbs over the PDF preview
+   (`SideRail.tsx:1589-1638`) are removed.
+3. Navigator width follows the Consistency Corrections: **280 default, 240-420**, superseding
+   Phase 112's general left-panel bounds (220-320/240) for this navigator; the existing
+   `panelLeftWidthPx` field is reused with the navigator bounds.
+4. `navigatorLayout` (`'stacked' | 'split'`) and `navigatorSplitRatio` (0.1-0.9, default 0.6) are
+   added for the persisted Split Navigator.
+5. `SideRail.tsx` is now a shared building-block module; the `SideRail` component itself is orphaned
+   (0 mounts). This phase removes the dead component and the superseded hover-verb UI.
+
+Revised current anchors: `ContextPanel.tsx:367` (PAGES body `:517-630`, `PanelShell` `:968`,
+`ScopedHeader` `:975`); `SideRail.tsx` (`ThumbnailRail` `:581`, `Thumb` `:1221`, `OutlinePanel`
+`:1685-2032`, orphaned `SideRail` `:129`); `PaneThumbStrip.tsx:99/223`;
+`components/panels/PanelResizeHandle.tsx:34`; `pageSelection.ts` / `outlineEditor.ts` /
+`shared/outline.ts` unchanged. Read the plan document on TFL-865 for the re-baselined chunk list.
+
+**Settings impact (re-baselined):** reuses `AppSettings.panelLeftWidthPx` with the navigator bounds
+(240-420, default 280) and adds `navigatorLayout` (`'stacked' | 'split'`, default `'stacked'`) and
+`navigatorSplitRatio` (0.1-0.9, default 0.6), validated preserve-if-valid in
+`src/main/services/settings.ts`. No new settings channel; renderer-only otherwise; offline.
 
 ## Phase 112 - Panels overhaul: Context Pair panels and shared panel primitives (phase issue TFL-854; operator driver TFL-810, 2026-10-05)
 

@@ -6,6 +6,11 @@ const fs = require('node:fs');
 const { launchApp, getSamplePath } = require('./lib/launch.cjs');
 const { hardClose, toggleMultiModeViaPalette, gotoStage } = require('./lib/helpers.cjs');
 
+// The Paperclip harness exports ELECTRON_RUN_AS_NODE=1; launchApp spreads
+// process.env into the Electron child, which then exits as plain Node before any
+// window is observable. Drop it before any launch.
+delete process.env.ELECTRON_RUN_AS_NODE;
+
 const ROOT = path.resolve(__dirname, '..');
 const SHOTS = path.join(ROOT, 'screenshots');
 fs.mkdirSync(SHOTS, { recursive: true });
@@ -187,7 +192,7 @@ const OUTLINE_OFFSETS = `(() => {
   const br = body ? body.getBoundingClientRect() : null;
   const outlinePanel = document.querySelector('.outline-panel');
   const or = outlinePanel ? outlinePanel.getBoundingClientRect() : null;
-  return { open: section.getAttribute('data-outline-open'),
+  return { open: section ? section.getAttribute('data-context-panel-view') === 'outline' : false,
     sectionBottom: Math.round(sr.bottom), panelBottom: Math.round(pr.bottom),
     sectionGapToPanelBottom: Math.round(pr.bottom - sr.bottom),
     bodyBottom: br ? Math.round(br.bottom) : null,
@@ -202,16 +207,18 @@ test('P40-11 Outline flush with the panel bottom when expanded', async () => {
   await openDoc(getSamplePath('report.pdf'));
   await win.waitForTimeout(1200);
 
-  const section = win.locator('[data-context-panel-outline]');
-  await expect(section).toHaveCount(1);
-  // Ensure expanded.
-  if ((await section.getAttribute('data-outline-open')) !== 'true') {
-    await win.locator('[data-outline-toggle]').click();
+  // Phase 111 (chunk A) retired the collapsible Outline section: the Outline is
+  // now a full-height navigator VIEW selected by the view tab. Selecting it is
+  // the live disclosure action.
+  const view = win.locator('[data-context-panel-view="outline"]');
+  if ((await view.count()) === 0) {
+    await win.locator('[data-context-panel-view-tab="outline"]').click();
     await win.waitForTimeout(500);
   }
+  await expect(view).toHaveCount(1);
   const m = await win.evaluate(OUTLINE_OFFSETS);
   console.log(`[P40 item11 expanded] ${JSON.stringify(m)}`);
-  expect(m.open, 'outline expanded').toBe('true');
+  expect(m.open, 'outline view selected').toBe(true);
   expect(Math.abs(m.sectionGapToPanelBottom), `section bottom flush with panel bottom (gap ${m.sectionGapToPanelBottom}px)`).toBeLessThanOrEqual(2);
   if (m.outlinePanelGapToPanelBottom !== null) {
     expect(Math.abs(m.outlinePanelGapToPanelBottom), `outline list bottom flush with panel bottom (gap ${m.outlinePanelGapToPanelBottom}px)`).toBeLessThanOrEqual(2);

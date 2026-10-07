@@ -46,6 +46,13 @@ function ruleBody(css: string, selector: string): string {
   return m?.[1] ?? "";
 }
 
+/** Dispatch a bubbling click on a rendered control. */
+function clickOn(target: Element): void {
+  act((): void => {
+    target.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
+  });
+}
+
 function stubObservers(): void {
   const g = globalThis as unknown as {
     IntersectionObserver?: unknown;
@@ -189,9 +196,14 @@ describe("Phase 59 item 9 - no rendered button label ends with an ellipsis", () 
   });
 
   it("ContextPanel exposes the bare action names (dialog-promising labels stripped)", () => {
-    const pages = renderContextPanel({ stage: "pages" });
+    const pages = renderContextPanel({ stage: "pages", onMerge: vi.fn() });
     try {
-      expect(pages.host.querySelector("[data-context-panel-combine]")?.textContent?.trim()).toBe("Combine");
+      // Phase 111 (chunk B) — Combine now lives in the panel More menu; the
+      // label stays dialog-promise free (no trailing ellipsis).
+      clickOn(pages.host.querySelector("[data-context-panel-more]") as HTMLElement);
+      const combine = pages.host.querySelector("[data-context-panel-combine]")?.textContent?.trim() ?? "";
+      expect(combine).toContain("Combine");
+      expect(combine).not.toContain(ELLIPSIS);
     } finally {
       pages.unmount();
     }
@@ -315,15 +327,28 @@ describe("Phase 91 - panel controls compose the canonical button classes", () =>
     });
     try {
       const combine = pages.host.querySelector("[data-context-panel-combine]");
-      expect(combine?.classList.contains("btn")).toBe(true);
-      expect(combine?.classList.contains("btn-secondary")).toBe(true);
+      // Phase 111 (chunk B) — Combine + Remove blank pages moved into the
+      // panel More menu; the data hooks and canonical button classes move
+      // with them.
+      expect(combine).toBeNull();
+      clickOn(pages.host.querySelector("[data-context-panel-more]") as HTMLElement);
+      const combineRow = pages.host.querySelector("[data-context-panel-combine]");
+      expect(combineRow?.classList.contains("btn")).toBe(true);
+      expect(combineRow?.classList.contains("btn-secondary")).toBe(true);
       const blank = pages.host.querySelector("[data-blank-scan-open]");
-      expect(blank?.classList.contains("btn-secondary")).toBe(true);
+      // Remove blank pages is a destructive More-menu row now.
+      expect(blank?.classList.contains("btn")).toBe(true);
+      expect(blank?.classList.contains("btn-danger")).toBe(true);
       expect(blank?.classList.contains("btn-compact")).toBe(true);
-      const toggle = pages.host.querySelector("[data-outline-toggle]");
-      expect(toggle?.classList.contains("btn")).toBe(true);
-      expect(toggle?.classList.contains("btn-ghost")).toBe(true);
-      expect(toggle?.getAttribute("aria-expanded")).not.toBeNull();
+      // Phase 111 (chunk A) — the retired disclosure is replaced by the
+      // navigator view selector, which composes the canonical segmented chrome.
+      const pagesTab = pages.host.querySelector('[data-context-panel-view-tab="pages"]');
+      expect(pagesTab?.classList.contains("btn")).toBe(true);
+      expect(pagesTab?.classList.contains("btn-toggle")).toBe(true);
+      expect(pagesTab?.classList.contains("tool-btn")).toBe(true);
+      expect(pagesTab?.getAttribute("aria-selected")).toBe("true");
+      const outlineTab = pages.host.querySelector('[data-context-panel-view-tab="outline"]');
+      expect(outlineTab?.getAttribute("aria-selected")).toBe("false");
     } finally {
       pages.unmount();
     }
@@ -416,20 +441,17 @@ function cssBlock(css: string, selector: string): string {
   return m?.[1] ?? "";
 }
 
-describe("Phase 59 item 5 - the expanded outline hugs its content (DEF-419)", () => {
+describe("Phase 111 (chunk A) - the Outline view fills and bounds its content", () => {
   const css = readStyles();
 
-  it("the section is content-sized with a max-height cap, not a fixed fraction", () => {
-    const open = ruleBody(css, "\\.context-panel-outline\\[data-outline-open='true'\\]");
-    expect(open).not.toBe("");
-    // A bare `height: <n>%` is exactly what reserved the dead space DEF-419
-    // measured (lastRowGap 294.59px); the share survives only as an upper
-    // bound, so a short outline shrinks the section to its rows.
-    expect(open).not.toMatch(/(?:^|[\s;{])height:\s*\d+(?:\.\d+)?%/);
-    expect(open).toMatch(/max-height:\s*40%/);
-    // The section can shrink to its content height (never a pinned basis).
-    expect(open).not.toMatch(/flex:\s*0 0 40%/);
-    expect(open).toMatch(/flex:\s*0 1 auto/);
+  it("the Outline view body fills the panel body (one view mounted at a time)", () => {
+    const view = ruleBody(css, "\\.context-panel-view-body");
+    expect(view).not.toBe("");
+    expect(view).toMatch(/flex:\s*1 1 auto/);
+    expect(view).toMatch(/min-height:\s*0/);
+    // A bare `height: <n>%` pinned the old dead space DEF-419 measured; the
+    // full-height view claims the remaining flex space instead.
+    expect(view).not.toMatch(/(?:^|[\s;{])height:\s*\d+(?:\.\d+)?%/);
   });
 
   it("the section body carries no trailing bottom padding", () => {
@@ -440,13 +462,11 @@ describe("Phase 59 item 5 - the expanded outline hugs its content (DEF-419)", ()
     expect(paddingBottom === "" || paddingBottom === "0").toBe(true);
   });
 
-  it("the re-parented .outline-panel joins the flow and zeroes its bottom padding", () => {
+  it("the re-parented .outline-panel zeroes its bottom padding (the rail rule owns the scroll)", () => {
     const scoped = ruleBody(css, "\\.context-panel-outline \\.outline-panel");
+    // The shared `.outline-panel` rule keeps `position: absolute; inset: 0` +
+    // `overflow-y: auto`, so the tree still scrolls inside the bounded view.
     expect(scoped).toMatch(/padding-bottom:\s*0/);
-    // In flow the section can size to the tree's content; the cap keeps a
-    // long outline scrolling inside the bounded body.
-    expect(scoped).toMatch(/position:\s*static/);
-    expect(scoped).toMatch(/max-height:\s*100%/);
   });
 
   it("the outline list and rows add no bottom padding under the last row", () => {

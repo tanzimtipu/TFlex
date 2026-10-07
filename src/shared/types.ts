@@ -194,9 +194,9 @@ export interface AppSettings {
    *  Validated preserve-if-valid in settings.ts; default `false`. */
   pagesPanelCollapsed?: boolean;
   /** Phase 112 (TFL-992) — left page panel width in CSS pixels, allowed
-   *  220-320. Validated preserve-if-valid in settings.ts (a finite number
+   *  240-420. Validated preserve-if-valid in settings.ts (a finite number
    *  inside the range survives; anything else is dropped while the rest of
-   *  the settings are kept). Absent resolves to the consumer default 240 —
+   *  the settings are kept). Absent resolves to the consumer default 280 —
    *  the default is NOT stored. */
   panelLeftWidthPx?: number;
   /** Phase 112 (TFL-992) — right inspector panel width in CSS pixels,
@@ -210,6 +210,18 @@ export interface AppSettings {
    *  settings.ts (only a real boolean survives); default `false` is applied
    *  by the consumer when absent. */
   inspectorCollapsed?: boolean;
+  /** Phase 111 (TFL-1067) — the navigator's layout mode. Validated
+   *  preserve-if-valid in settings.ts (only 'stacked' or 'split' survive;
+   *  anything else is dropped while the rest of the settings are kept).
+   *  Absent resolves to the consumer default 'stacked' — the default is NOT
+   *  stored. */
+  navigatorLayout?: 'stacked' | 'split';
+  /** Phase 111 (TFL-1067) — the Split Navigator ratio. Validated
+   *  preserve-if-valid in settings.ts (only a finite number in 0.1-0.9
+   *  survives; anything else is dropped while the rest of the settings are
+   *  kept). Absent resolves to the consumer default 0.6 — the default is NOT
+   *  stored. */
+  navigatorSplitRatio?: number;
   /** Phase 19 - the annotation tools' most-recently-used order, most recent first (capped, deduped). */
   annotationRecentTools?: string[];
   /** Phase 23 - when false, every app animation runs the instant path (see Phase 23). Default true. */

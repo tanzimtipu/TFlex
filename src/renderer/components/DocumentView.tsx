@@ -619,6 +619,12 @@ interface DocumentViewProps extends DocumentViewDockProps {
    *  legacy local behaviour. */
   railTab?: RailTab;
   onRailTabChange?: (tab: RailTab) => void;
+  /** Phase 111 (chunk D1) — the Split Navigator's host-owned layout + ratio,
+   *  threaded to the Pages ContextPanel. */
+  navigatorLayout?: 'stacked' | 'split';
+  navigatorSplitRatio?: number;
+  onNavigatorLayoutChange?: (layout: 'stacked' | 'split') => void;
+  onNavigatorSplitRatioChange?: (ratio: number) => void;
   /** Phase 32 â€” the rail master switch. `false` suppresses the rail
    *  entirely and collapses the workspace grid to the page column
    *  (`data-rail="none"`), leaving no empty gutter. Defaults to `true`.
@@ -1074,6 +1080,10 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
   onTogglePagesPanelCollapsed,
   railTab,
   onRailTabChange,
+  navigatorLayout,
+  navigatorSplitRatio,
+  onNavigatorLayoutChange,
+  onNavigatorSplitRatioChange,
   showRail = true,
   railSide = "left",
   multiRail = null,
@@ -4415,6 +4425,12 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
       // switch the panel and the panel's own outline toggle writes it back.
       railTab={railTab}
       onRailTabChange={onRailTabChange}
+      // Phase 111 (chunk D1) — the Split Navigator layout + ratio and their
+      // settled-change handlers, straight through to the panel.
+      navigatorLayout={navigatorLayout}
+      navigatorSplitRatio={navigatorSplitRatio}
+      onNavigatorLayoutChange={onNavigatorLayoutChange}
+      onNavigatorSplitRatioChange={onNavigatorSplitRatioChange}
       // EDIT â€” the current page's modelled content + the recognition summary.
       editContent={editContent}
       onSelectEditContent={selectEditContent}

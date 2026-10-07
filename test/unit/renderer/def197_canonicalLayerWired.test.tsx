@@ -101,8 +101,8 @@ describe("canonical wrappers are imported by production surfaces (DEF-197)", () 
     expect(shell).toContain("<TfBackdrop");
   });
 
-  it("SideRail renders AnimatedPanel, not TfPanelLeft", () => {
-    const src = read("components/SideRail.tsx");
+  it("ReadingView renders AnimatedPanel, not TfPanelLeft", () => {
+    const src = read("components/ReadingView.tsx");
     expect(src).toContain("from './AnimatedPanel'");
     expect(src).not.toContain("from './motion/TfMotion'");
     expect(src).not.toContain('<TfPanelLeft');

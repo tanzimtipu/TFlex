@@ -221,7 +221,7 @@ title-bar affordances, and repoints the single accent to `#2563eb`.
 | More (ellipsis) | `[data-tools-toggle]` | Opens/closes the Tools palette (the overflow surface); stable attribute from DEF-094 kept | `test/unit/renderer/bugDEF094_toolsToggleAttribute.test.tsx` ("More tools") | (qa: palette opens) |
 | Edit toolbar icon-only | `.edit-toolbar [data-edit-tool]` | Off / Edit text / Add box / Image as icon-only buttons | `test/unit/renderer/phase13Controls.test.tsx` | (qa: edit tools switch) |
 | Accent re-point | `--accent` (`#2563eb`), `--tf-accent*`, all soft washes | Single blue accent across all three themes; Open button, active tools, selection rings, focus rings, glows all follow; default annotation ink follows the accent | `test/unit/renderer/designTokensContract.test.ts` (frosted glow pins 37/99/235), `test/unit/renderer/annotationModel.test.ts` (default color #2563eb) | (qa: theme sweep screenshots `phase13-0*.png`) |
-| Thumbnail selection ring | `.thumb-current` | Full 1.5px accent ring (the one-sided 2px leading-edge bar was removed per the design rules) | (visual; no test pinned the inset bar) | (qa: thumbnails) |
+| Current page card | `.thumb-current` | Phase 111 (TFL-1074 / DEF-612): NEUTRAL, distinct from the batch selection — carries only the violet 2px leading marker (`[data-thumb-current-marker]`) + the "Viewing" label (`[data-thumb-viewing]`). The full 1.5px accent ring + `--accent-selected` wash it once shared with `.thumb-selected` are retired | `test/unit/renderer/phase111_pages.test.tsx` (static CSS guard) | (qa: thumbnails) |
 
 ### QA gate notes for this round
 
@@ -259,7 +259,7 @@ hierarchy) in `src/renderer/styles.css`.
 | All-tabs switcher | `[data-all-tabs]` / `.all-tabs-popover` | Phase 105 (chunk D) disclosure control after `[data-new-tab]`; opens an anchored, opaque, collision-aware popover listing every session in canonical order with the full filename, the total count, a dirty dot + "Unsaved changes" description and duplicate-basename folder context; arrow roving, Enter/Space activate, Escape closes and refocuses the trigger. | `test/unit/renderer/phase105_documentRail.test.tsx` | (qa: overflowed session reachable + activated from the switcher) |
 | GlassSidebar header (Pages) | `.side-rail .glass-sidebar-header` | "Pages" title left + view tabs right in ONE 44px shared row | `test/unit/renderer/glassSidebar.test.tsx` | (qa: rail header) |
 | GlassSidebar header (Tools) | `.tools-palette .glass-sidebar-header` | "Tools" title + layout toggle + close; SAME header component as Pages (material parity) | `test/unit/renderer/glassSidebar.test.tsx` | (qa: palette header) |
-| Selected thumbnail | `.thumb-current` / `.thumb-selected` | Thin accent outline + `0 0 0 4px` accent halo (2px outline drawn via box-shadow so the rail's 1px-border slot math never shifts); canvas stays opaque | `test/unit/renderer/phase14Glass.test.ts` ("thin accent outline + halo") | (qa: thumbnails) |
+| Selected thumbnail | `.thumb-selected` | Thin accent outline + `0 0 0 4px` accent halo (2px outline drawn via box-shadow so the rail's 1px-border slot math never shifts); canvas stays opaque. Phase 111 (TFL-1074 / DEF-612): `.thumb-current` no longer shares this treatment — it is NEUTRAL | `test/unit/renderer/phase14Glass.test.ts` ("thin accent outline + halo") | (qa: thumbnails) |
 | Measured band offset | `--tf-band-h` (published by DocumentView on `.app-main` + `.workspace`) | The floating cards drop below the command band even when it WRAPS on narrow windows (fallback `--chrome-commandbar-h` 52px) | `test/unit/renderer/phase14Glass.test.ts` (band var in rail/palette rules) | (qa: 900px window - no overlap) |
 
 ### QA gate notes for this round (Phase 14.1)
@@ -310,7 +310,7 @@ real handler and no no-op.
 
 | Control | Selector | Promised action | Unit test | E2e |
 |---|---|---|---|---|
-| Pages/Outline modes | `[data-outline-toggle]` | Toggles `outlineOpen` and switches the rail tab via `onRailTabChange` (`ContextPanel.tsx:600`) | `test/unit/renderer/phase112_pages.test.tsx` + `test/unit/renderer/panelPrimitives.test.tsx` | `e2e/phase112_c2_pages_visual.spec.cjs` |
+| Pages/Outline modes | `[data-context-panel-view-tabs]` with `[data-context-panel-view-tab="pages\|outline"]` | Phase 111 (chunk A) re-baseline: selects the full-height Pages / Outline navigator VIEW through `onRailTabChange` (`ContextPanel.tsx`); the retired `[data-outline-toggle]` disclosure is gone | `test/unit/renderer/phase111_navigatorChrome.test.tsx` + `test/unit/renderer/phase112_pages.test.tsx` | (qa: navigator views) |
 | Page selection / multi-select | `[data-context-panel-selection]` (summary, with `-count` / `-range` children) | Reflects one / multi page selection; the summary reports the selection count and range (`ContextPanel.tsx:570-582`) | `test/unit/renderer/phase112_pages.test.tsx` | `e2e/phase112_c2_pages_visual.spec.cjs` (multi-select) |
 | Insert / Page tools | page-thumb menu verbs `onRotateCw` / `onRotateCcw` / `onExtract` / `onInsertBlank` / `onReplace` / `onDeletePage`; Combine/Merge header | Each invokes its existing engine op; Combine/Merge confirmed against the real handlers (`ContextPanel.tsx:466-492`, `976-979`) | `test/unit/renderer/phase112_pages.test.tsx` | `e2e/phase112_c2_pages_visual.spec.cjs` |
 | Edit navigate + OCR / Add text | `onSelectEditContent` (`ContextPanel.tsx:692`), `[data-context-panel-action="recognize"]` / `[data-context-panel-action="suspects"]` (`ContextPanel.tsx:775`, `785`) | Selects enumerated edit content; recognize / suspects route to their handlers | `test/unit/renderer/phase112_edit.test.tsx` | (qa: edit nav + OCR) |
@@ -319,4 +319,172 @@ real handler and no no-op.
 | Recent row actions | `[data-recent-action="open"]` / `="pin"` / `="show"` / `="locate"` / `="remove"` (`components/home/HomeRecentRow.tsx:85`, `124`, `137`, `149`, `160`) | Each row action routes to its real handler; Remove never deletes the file | `test/unit/renderer/phase112_home.test.tsx` | `e2e/phase112_phaseclose_qa.spec.cjs` |
 | Recent missing detection (proactive) | App effect -> `window.tflex.checkMissing` (`App.tsx:9587-9591`) -> main `recent:checkMissing` (`src/shared/ipc.ts:137`, bridge `src/preload/preload.ts:764`) | A vanished recent file shows Missing + Locate on first paint with no click | `test/unit/renderer/phase112_home.test.tsx` (proactive-detection case, `323-436`) + `test/unit/main/phase112Recents.test.ts` | `e2e/phase112_phaseclose_qa.spec.cjs` |
 | Sample card Open | `.sample-card` (`components/home/HomeSampleCard.tsx:23`; rendered by `Welcome.tsx:545`) | Opens the sample through the existing safe exploration flow | `test/unit/renderer/phase112_home.test.tsx` | `e2e/phase112_phaseclose_qa.spec.cjs` |
-| Panel resize / collapse | `PanelResizeHandle` (role=separator, pointer + keyboard; `components/panels/PanelResizeHandle.tsx`; mounted `App.tsx:11353`, `11362`) + `[data-rail-collapse]` (`ContextPanel.tsx:508`) | Resizes within 220-320 / 260-380 and persists width + collapse state | `test/unit/renderer/phase112_panelLayout.test.tsx` | `e2e/phase112_phaseclose_qa.spec.cjs` (P112CLOSE-3) |
+| Panel resize / collapse | `PanelResizeHandle` (role=separator, pointer + keyboard; `components/panels/PanelResizeHandle.tsx`; mounted `App.tsx:11353`, `11362`) + `[data-rail-collapse]` (`ContextPanel.tsx:508`) | Resizes within 240-420 (left, default 280; Phase 111 chunk D1) / 260-380 (right) and persists width + collapse state | `test/unit/renderer/phase112_panelLayout.test.tsx` | `e2e/phase112_phaseclose_qa.spec.cjs` (P112CLOSE-3) |
+
+## Phase 111 (chunk A) - Navigator view chrome (TFL-1060) addendum
+
+Appended 2026-10-07. The PAGES ContextPanel's collapsible Outline section is
+replaced by a 40px Pages/Outline view selector (`role="tablist"`,
+`[data-context-panel-view-tabs]`) and two full-height views
+(`[data-context-panel-view="pages"|"outline"]`, one mounted at a time).
+
+- Retired hooks: `[data-outline-toggle]`, `data-outline-open` and the
+  `.context-panel-section-toggle` rule. The Outline view keeps
+  `[data-context-panel-outline]` / `[data-context-panel-outline-body]`.
+- Navigator-scoped tokens `--tf-nav-view-tabs-surface` / `--tf-nav-view-tab-ink`
+  / `--tf-nav-view-tab-active-surface` / `--tf-nav-view-tab-active-ink` are
+  declared in light, dark and frosted.
+- Unit coverage: `test/unit/renderer/phase111_navigatorChrome.test.tsx`.
+- FOLLOW-UP (qa-owned): the e2e specs that still click `[data-outline-toggle]`
+  and read `data-outline-open` must be migrated deliberately -
+  `phase16_control_index.spec.cjs`, `phase36_chunk2_pages_parity.spec.cjs`,
+  `phase38_gate.spec.cjs`, `phase40_design.spec.cjs`, `phase45_gate.spec.cjs`,
+  `phase59_outline_flush.spec.cjs`, `phase59_palette_rows.spec.cjs`,
+  `phase85_outline_edit.spec.cjs`, `phase94_iconEvidence.spec.cjs`,
+  `tfl50_outline_corner.spec.cjs`.
+
+## Phase 111 (chunk B) - Page cards + More menus (TFL-1065) addendum
+
+Appended 2026-10-07. The PAGES navigator's thumbnails are page CARDS: the
+over-preview hover verbs (`[data-thumb-verbs]`, `[data-thumb-verb]`) are
+retired and replaced by a footer below the preview - a real
+`[data-thumb-checkbox]` + `.thumb-label` on the left and a 32px
+`[data-thumb-more]` button (44px under coarse pointers) on the right. The
+current page keeps a violet 2px leading marker (`[data-thumb-current-marker]`)
+plus a visible "Viewing" label (`[data-thumb-viewing]`), distinct from the
+selected set (checkbox checked + `.thumb-selected` tint).
+
+| Control | Selector | Promised action | Unit test |
+|---|---|---|---|
+| Card checkbox | `[data-thumb-checkbox]` | Toggles the host batch set via `onPageSelectionChange`; never navigates | `test/unit/renderer/phase111_pages.test.tsx` |
+| Card More | `[data-thumb-more]` | `CommandMenu` with Rotate CW / Extract this page / Delete this page (Delete separated + danger); each runs the matching handler | `test/unit/renderer/phase111_pages.test.tsx` |
+| Selection summary + Clear | `[data-context-panel-selection]` (`-count` / `-range` / `-clear`) | Renders for any selection `>= 1`; Clear routes to `onPageSelectionChange([])` and never navigates | `test/unit/renderer/phase111_pages.test.tsx` |
+| Panel More | `[data-context-panel-more]` | `CommandMenu` with Combine (`[data-context-panel-combine]`) in the Document group and Remove blank pages (`[data-blank-scan-open]`) in a separated destructive group | `test/unit/renderer/phase111_pages.test.tsx` |
+| Two-column grid | `.thumb-scroller-inner--two-col` / `[data-thumb-columns]` | Two columns at navigator content width `>= 360px` (min 152px card), one below | `test/unit/renderer/phase111_pages.test.tsx` |
+
+- Migrated assertions (same chunk): `phase36ContextPanel.test.tsx`,
+  `phase112_pages.test.tsx`, `phase59PanelButtons.test.tsx`,
+  `phase113_panelsInspectors.test.tsx`, `phase37Chunk5.test.tsx`,
+  `phase36SurfaceDiscipline.test.tsx` (collectPanel/More),
+  `phase43IconUniqueness.test.ts` (MoreHorizontal allow-listed; Trash2 /
+  RotateCw / Scissors / merge de-shared), `bugDEF098_thumbnailJumpVisiblePage`
+  (`.thumb-item` is a card container, still the navigate target).
+- FOLLOW-UP (qa-owned): the e2e spec `e2e/def327_331_retest.spec.cjs` still
+  clicks `[data-thumb-verb="rotate-cw"]`; migrate it to `[data-thumb-more]` +
+  the More menu.
+
+## Phase 111 (chunk C) - Outline rows + More menu (TFL-1066) addendum
+
+Appended 2026-10-07. The editable OUTLINE (`OutlinePanel`) now matches the
+navigator design: rows are 44px (52px when the title wraps to two lines) with a
+13px two-line title (`--fs-md` -> `--type-row-size`), 16px indent per depth, a
+16px disclosure chevron on child rows only, and a fixed 32px right-aligned
+destination column. The horizontal `renderVerbs` strip is retired; every row
+carries an always-visible 32px `[data-outline-more]` (44px coarse) that opens a
+`CommandMenu` with Rename / Set destination... / Add bookmark / Indent /
+Outdent / separated danger Delete bookmark, with the real restrictions
+preserved. A single header `[data-outline-add]` (`.outline-head-add`) appends a
+root bookmark; the editable empty state reads "No bookmarks".
+
+| Control | Selector | Promised action | Unit test |
+|---|---|---|---|
+| Row More | `[data-outline-more]` | `CommandMenu` with Rename / Set destination... / Add bookmark / Indent / Outdent / Delete bookmark (Indent off on a first child, Outdent off at root, Delete separated danger) | `test/unit/renderer/phase111_outline.test.tsx` |
+| Retarget select | `[data-outline-retarget]` | Revealed by `Set destination...` (in `[data-outline-retarget-popover]`); routes to `editRetarget` | `test/unit/renderer/phase111_outline.test.tsx` |
+| Header Add | `[data-outline-add]` / `.outline-head-add` | Appends a root bookmark (`editAdd(model, null)`) | `test/unit/renderer/phase111_outline.test.tsx` |
+| Destination column | `.outline-page` / `[data-outline-page]` | Fixed 32px, right-aligned tabular page number or a dash | `test/unit/renderer/phase111_outline.test.tsx` |
+
+- Retired: `[data-outline-toolbar]`, `.outline-verbs`, `.outline-verb` and the
+  selected-row inline verb strip.
+- Migrated assertions (same chunk): `phase85OutlineEditor.test.tsx` (verbs via
+  the row More menu), `phase36ContextPanel.test.tsx` (DEF-494 header Add),
+  `phase43IconUniqueness.test.ts` (IndentIncrease / IndentDecrease de-listed).
+- Divergence from `docs/phase-specs/phase-111.md` D: the brief keeps the inline
+  rename input and defers a rename dialog, so "title editing via the shared
+  popover/dialog primitive" is deferred.
+
+## Phase 111 (chunk D1) - Split Navigator layout + persistence (TFL-1068) addendum
+
+Appended 2026-10-07. The navigator can now stack Pages above Outline with a
+resizable horizontal separator and two independent scroll regions, or fall back
+to the full-height tabbed view. The split is persisted (`navigatorLayout` /
+`navigatorSplitRatio`) through the existing settings channel and echoed
+preserve-if-valid.
+
+- The left panel width band widens to 240-420 px, default 280
+  (`PANEL_LEFT_WIDTH` in `components/panels/PanelResizeHandle.tsx:34`; right
+  stays 260-380). The panel More menu gained a first `Layout` group.
+- Fallback: `resolveNavigatorLayout` keeps `'split'` only when the measured
+  panel body is `>= 2 * 180 + 12` px, else the tabbed view is unchanged.
+- Pure helpers exported (DOM-free): `resolveNavigatorLayout`,
+  `clampSplitRatio`, `splitRatioAfterKey`, `NAVIGATOR_MIN_SECTION_PX`.
+- New `settingsEcho.ts` comparators for `navigatorLayout` / `navigatorSplitRatio`
+  close the stale-echo class chunk E flagged (same class as DEF-604).
+
+| Control | Selector | Promised action | Unit test |
+|---|---|---|---|
+| Layout menu | `[data-context-panel-layout-split]` (first group of `[data-context-panel-more]`) | Toggles stacked/split via `onNavigatorLayoutChange`; label flips with the current layout | `test/unit/renderer/phase111_splitLayout.test.tsx` |
+| Split divider | `[data-context-panel-split-divider]` (`role="separator"`, `aria-orientation="horizontal"`, keyboard ArrowUp/Down/Home/End) | Edits `navigatorSplitRatio` (0.1-0.9); pointer commits on gesture settle, not per frame | `test/unit/renderer/phase111_splitLayout.test.tsx` |
+| Split sections | `[data-context-panel-view="pages"]` + `[data-context-panel-view="outline"]` | Both mounted at once with independent scroll regions; compact `Pages · N` / `Outline · N` titles | `test/unit/renderer/phase111_splitLayout.test.tsx` |
+
+## Phase 111 (chunk D2a) - Per-document navigator restore (TFL-1069) addendum
+
+Appended 2026-10-07. The active navigator view, the outline expansion set and
+the list scroll anchors are now remembered per document, keyed by the stable
+engine doc id (`activeEngineDocId`). Session-only: nothing is persisted to
+settings.
+
+- New module `src/renderer/state/navigatorState.ts` with two pure helpers
+  (DOM-free): `restoreRailTab(map, docId)` (the stored view, else `'thumbs'`)
+  and `recordRailTab(map, docId, tab)` (a new map; a null id returns the same
+  map unchanged).
+- `App.tsx` keeps `railTabByDoc` beside `layersByDoc`; `selectRailTab` writes
+  both the live `railTab` and this document's remembered view, and the rail-view
+  effect records the OUTGOING document's view then restores the INCOMING one on
+  each `activeEngineDocId` change.
+- `OutlinePanel` (`components/SideRail.tsx`) keys its collapse set by document
+  (`collapsedByDocRef`) and carries the `.outline-panel` `scrollTop` across a
+  model swap (re-seed or a committed rename/edit) via a layout-effect restore.
+- No visual or behaviour change for the stacked default beyond the above.
+
+| Behaviour | Where | Promised action | Unit test |
+|---|---|---|---|
+| Rail view per document | `railTabByDoc` (App) | Restores the stored Pages/Outline view on a document switch; `'thumbs'` for a document never seen | `test/unit/renderer/phase111_restore.test.tsx` |
+| Outline expansion per document | `OutlinePanel` | A collapse under one document does not leak into another and is restored when returning | `test/unit/renderer/phase111_restore.test.tsx` |
+| Scroll anchors | `OutlinePanel` / `ThumbnailRail` | The outline scroller keeps `scrollTop` across a re-seed / rename; the Pages rail is not force-scrolled by a page-list mutation | `test/unit/renderer/phase111_restore.test.tsx` |
+
+## Phase 111 (focused QA fixes) - neutral current card + navigator contrast (TFL-1074) addendum
+
+Appended 2026-10-07. Two qa defects from the chunk-G focused QA (TFL-1073) are
+fixed in source + CSS + tokens (left uncommitted for git-agent).
+
+- DEF-612 — the current page card is NEUTRAL. `.thumb-current` no longer paints
+  the shared `--accent-selected` wash or the 1.5px `--accent` ring (and the
+  frosted `--glass-selected-bg` halo override is removed); the `thumb-select`
+  swell is retired. Current keeps only the violet 2px leading marker
+  (`[data-thumb-current-marker]`) + the "Viewing" label (`[data-thumb-viewing]`).
+  Selected cards keep the select-fill tint + checkbox. Guard specs migrated to
+  pin the absence: `phase51RingUndoPanelRows.test.tsx`,
+  `designTokensContract.test.ts` (frosted glow must be null; `thumb-select`
+  removed from the reduced-motion travel set), `foundationGuards.test.ts`
+  (`.thumb-current|box-shadow` allow-list entry removed as no longer a
+  violation).
+- DEF-613 — navigator-scoped contrast tokens added for light, dark AND frosted
+  (`--tf-nav-surface`, `--tf-nav-body-ink`, `--tf-nav-helper-ink`,
+  `--tf-nav-selected-surface`, `--tf-nav-selected-ink`) from
+  `Visual overhaul/Design System/navigator.tokens.json`. `.context-panel`
+  scope-remaps `--fg-muted` / `--select-fill` / `--select-glyph` to them; the
+  frozen shared tokens are untouched. The contract
+  `Specifications/contrast-check.json` is NOT relaxed.
+
+| Tier | Light | Dark |
+|---|---|---|
+| body (foreground on surface) | 7.96 (floor 7.96) | 8.59 (floor 8.59) |
+| helper (secondary on surface) | 4.97 (floor 4.97) | 5.62 (floor 5.62) |
+| selected (accent on selectedSurface) | 4.73 (floor 4.73) | 6.59 (floor 6.59) |
+
+- New spec `test/unit/renderer/phase111_contrast.test.ts` computes all six
+  ratios from the CSS token values and asserts the bundle palette + thresholds.
+- `docs/phase-specs/phase-111.md` regenerated (`scripts/split-requirements.py`):
+  the F spec now reads `phase111_splitLayout.test.tsx`; no
+  `phase111_navigatorLayout.test.tsx` reference remains.
+

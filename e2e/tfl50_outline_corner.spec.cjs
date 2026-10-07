@@ -11,6 +11,11 @@ const path = require('node:path');
 const { launchApp, getSamplePath } = require('./lib/launch.cjs');
 const { hardClose } = require('./lib/helpers.cjs');
 
+// The Paperclip harness exports ELECTRON_RUN_AS_NODE=1; launchApp spreads
+// process.env into the Electron child, which then exits as plain Node before any
+// window is observable. Drop it before any launch.
+delete process.env.ELECTRON_RUN_AS_NODE;
+
 const SHOTS = path.resolve(__dirname, '..', 'screenshots');
 
 let app = null;
@@ -42,13 +47,15 @@ async function openReport() {
 }
 
 async function ensureOutlineExpanded() {
-  const section = win.locator('[data-context-panel-outline]');
-  await expect(section).toHaveCount(1);
-  if ((await section.getAttribute('data-outline-open')) !== 'true') {
-    await win.locator('[data-outline-toggle]').click();
+  // Phase 111 (chunk A) retired the collapsible Outline section: the Outline is
+  // now a full-height navigator VIEW selected by the view tab. Selecting it is
+  // the live disclosure action; the section is readable via its live view hook.
+  const view = win.locator('[data-context-panel-view="outline"]');
+  if ((await view.count()) === 0) {
+    await win.locator('[data-context-panel-view-tab="outline"]').click();
     await win.waitForTimeout(600);
   }
-  expect(await section.getAttribute('data-outline-open'), 'outline expanded').toBe('true');
+  await expect(view).toHaveCount(1);
 }
 
 test('the Outline/PAGES panel bottom-right corner renders square (0px)', async () => {

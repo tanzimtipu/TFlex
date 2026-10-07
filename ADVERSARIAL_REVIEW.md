@@ -11715,3 +11715,258 @@ Home/Workspace navigation. Follows: the document operation.
   with an explicit reason and no resting/enabled width jump (0 px).
 - Native caption controls were left as native-shaped raw buttons (radius 0,
   no-drag, same rects as HEAD) - the migration did not swallow them.
+
+## ADV-238: The outline row More menu and the destination popover render offset from their row and are clipped by the outline body
+
+- Session: diff-pass (Phase 111 chunk H/I)
+- Suggested severity: HIGH
+- Classification: NEW-in-this-phase
+
+What I did: static diff + a headless-Chromium CSS probe. The outline row More
+button calls `openRowMenu` (`src/renderer/components/SideRail.tsx:1681-1688`),
+which clamps the trigger's VIEWPORT rect with `clampMenuPosition` and stores it;
+the menu is then rendered as a `CommandMenu` inside `.outline-panel`
+(`SideRail.tsx:1903-1914`), and `CommandMenu` applies that rect as
+`position: fixed; left/top` (`src/renderer/components/CommandMenu.tsx:615-624`).
+The retarget select is the same: `position: fixed; left: rowMenuPos.left;
+top: rowMenuPos.top` (`SideRail.tsx:1915-1942`). Both are descendants of
+`.context-panel-outline-body`, which carries
+`animation: tf-anim-materialize ... both` (`src/renderer/styles.css:16706`) whose
+final keyframe is `to { opacity: 1; transform: scale(1); }`
+(`src/renderer/styles/animations.css:344-346`). With `fill-mode: both` the
+element retains `transform: matrix(1, 0, 0, 1, 0, 0)` after the animation, so it
+becomes the containing block for fixed descendants; the body also has
+`overflow: hidden` (`styles.css:16700`).
+
+Repro: `node test-fixtures/adv-tfl1077/adv_navigator_probe.cjs` (P1). The probe
+mirrors the exact keyframe + `.context-panel-outline-body` rule and a fixed child
+requested at viewport (100, 360) inside an ancestor at (100, 92).
+
+Expected: the fixed menu/popover renders at the trigger's viewport coordinates,
+above neighbouring content, and is not clipped.
+
+Actual (probe output): `bodyTransform "matrix(1, 0, 0, 1, 0, 0)"`,
+`menuRendered { x: 200, y: 452 }` against `menuRequested { left: 100, top: 360 }`
+- i.e. the menu is offset by exactly the ancestor's viewport origin (100, 92) and
+`clippedByAncestorBottom: true`. In the app the outline body sits below the 52px
+panel header + 40px view selector (and, in Split, below the Pages section), so
+the row More menu renders roughly 90-150px lower than its row and is clipped at
+the panel bottom; the lower rows' menu items (Delete, and the destination select
+which replaces the menu) are pushed under the clip. This also happens with the
+Animations preference off, because `:root[data-animations="off"] *` only zeroes
+`animation-duration` and keeps the end state (`styles.css:13921-13929`); only OS
+`prefers-reduced-motion` sets `animation: none` on this element
+(`styles.css:16712-16715`).
+
+Oracle: this is the phase's own change - before Phase 111 the outline used the
+inline horizontal verb strip (`SideRail.tsx:1824` pre-image, removed in the diff)
+and its retarget was an inline `<select class="outline-verb outline-retarget">`;
+no fixed-position descendant existed in the animated body. The phase introduced
+both fixed surfaces.
+
+Suggested fix: end the materialize keyframe at `transform: none` (or animate
+opacity only, or wrap only the tree content), or render the row menu/retarget
+popover through a portal to `document.body` so the fixed coordinates are
+viewport-relative. Any of the three restores the trigger-anchored placement.
+
+Disposition: ACCEPTED -> DEF-615 (HIGH, NEW-in-this-phase). Fix dispatched as TFL-1078.
+
+- TFL-1081 fixture correction: the P1 clipping assertion originally quoted here
+  (`clippedByAncestorBottom: m.y + m.height > b.bottom`) was later found to be
+  TRUE for every source state - the fixture placed the menu below the ancestor
+  bottom even with no containing block, and `getBoundingClientRect()` ignores
+  `overflow: hidden` clipping - so it could never pass on the fix and never
+  discriminated the defect. It is replaced in
+  `test-fixtures/adv-tfl1077/adv_navigator_probe.cjs` with a real hit-test clip
+  probe (a requested-menu point below the ancestor bottom must hit `#menu`) plus
+  a settled-`transform` negative control that `passed` requires to be flagged.
+  The finding's substantive basis is unchanged: on the buggy ancestor the fixed
+  menu renders offset at `{x: 200, y: 452}` versus requested `{left: 100,
+  top: 360}` (`anchoredToViewport: false`, `bodyTransform: "matrix(1, 0, 0, 1,
+  0, 0)"`); on the fix it renders `{x: 100, y: 360}` with `bodyTransform:
+  "none"` and `clippedByAncestorBottom: false`.
+
+## ADV-239: A deeply indented outline row overflows the 240px navigator and scrolls horizontally
+
+- Session: diff-pass (Phase 111 chunk H/I)
+- Suggested severity: MEDIUM
+- Classification: NEW-in-this-phase
+
+What I did: static diff + headless-Chromium probe. `.outline-panel` sets only
+`overflow-y: auto` (`src/renderer/styles.css:5282-5288`), so `overflow-x`
+computes to `auto`; the phase's row is now `padding-left: 8 + depth*16` plus a
+non-shrinking 18px toggle, a 32px destination column and a 32px More
+(`styles.css:5292-5376`, `SideRail.tsx:1780-1859`). Indent is the real
+`editIndent` handler (`src/renderer/state/outlineEditor.ts:195-217`) and is not
+depth-capped by the editor (the shared tree caps at 64 levels).
+
+Repro: `node test-fixtures/adv-tfl1077/adv_navigator_probe.cjs` (P2) renders a
+240px `.outline-panel` containing one 168px-indented row (depth 10).
+
+Expected (phase success criterion 3 / attack surface 4): "no horizontal outline
+scrolling"; the row's More stays reachable at the 240px floor.
+
+Actual (probe output): `overflowX "auto"`, `scrollWidth 256`, `clientWidth 240`,
+`horizontalOverflow: true`. With the coarse-pointer 44px More
+(`styles.css:5378-5383`) the same overflow starts at depth 8; at the default
+280px panel it starts around depth 11. When it overflows, the row's More button
+leaves the visible box and a horizontal scrollbar appears on the outline.
+
+Suggested fix: `overflow-x: hidden` (or `overflow: hidden auto`) on
+`.outline-panel`, and/or clamp the indent so the fixed columns always fit (e.g.
+cap the effective `padding-left` to the available width).
+
+Disposition: ACCEPTED -> DEF-616 (MEDIUM, NEW-in-this-phase). Fix dispatched as TFL-1078.
+
+## ADV-240: The outline tree's new `aria-level` sits on roleless divs, and the destination popover has no Escape / dismiss / focus return
+
+- Session: diff-pass (Phase 111 chunk H/I)
+- Suggested severity: LOW
+- Classification: NEW-in-this-phase
+
+What I did: read the Phase 111 outline diff and probed the DOM with the phase's
+own focused specs. The diff adds `aria-level={depth + 1}` to the view-only row
+(`src/renderer/components/SideRail.tsx:1649`) and to the editable row
+(`SideRail.tsx:1786`), but neither row has a `role`, and `OutlinePanel` contains
+no `role="tree"`, `role="treeitem"` or `role="group"` anywhere (grep of
+`SideRail.tsx`). `aria-level` is only valid on a `treeitem`/`heading`/`row`
+role, so it is ignored by assistive tech; the phase's D2b claim of screen-reader
+tree navigation is not realized. Separately, the "Set destination..." popover
+(`SideRail.tsx:1915-1942`) is an auto-focused `<select>` with only an `onChange`
+commit: it has no Escape handler, no outside-pointer dismiss and no
+focus-return, so a keyboard user who opens it and decides not to change the
+target cannot cancel it.
+
+Expected: real tree semantics (`role="tree"` on the list, `role="treeitem"` +
+`aria-level`/`aria-expanded`/`aria-selected` on each row, `role="group"` on
+nested lists), and a dismissible retarget surface with Escape + focus return
+(the More menu itself already does this via `CommandMenu`).
+
+Actual: `aria-level` on a roleless `<div>` (ignored); the retarget select only
+closes on a value change.
+
+Suggested fix: add the tree roles to the outline list/rows, or drop the orphan
+`aria-level`; add an Escape/outside-pointer dismiss to the retarget popover that
+returns focus to the row's More button.
+
+Disposition: ACCEPTED -> DEF-617 (LOW, NEW-in-this-phase). Fix dispatched as TFL-1078.
+
+## Phase 111 adversary diff-pass - per-surface verdicts
+
+Build/test context: I did NOT rebuild the app. The phase's own targeted specs
+were run under the build mutex:
+`node node_modules/vitest/vitest.mjs run test/unit/renderer/phase111_ test/unit/renderer/settingsEcho.test.ts test/unit/main/settings.test.ts`
+-> 10 files / 387 tests passed (exit 0; log
+`test-fixtures/adv-tfl1077/adv_unit_run.txt`). The two CSS probes are
+`test-fixtures/adv-tfl1077/adv_navigator_probe.cjs`
+(`adv_navigator_probe.output.json` beside it).
+
+1. **Settings persistence - CLEAN (no finding).** `normalizeSettings` preserves
+   `navigatorLayout` only inside the allowlist and `navigatorSplitRatio` only as
+   a finite number in 0.1-0.9 via `normalizeBoundedWidth`
+   (`src/main/services/settings.ts:1330-1351`); the renderer band is
+   `PANEL_LEFT_WIDTH = 240/420/280` (`PanelResizeHandle.tsx:33-37`) and the boot
+   + echo consumers clamp with the same `clampSplitRatio`
+   (`App.tsx:1430-1435,1496-1501`). A stale navigator echo is rejected because
+   both fields participate in all three comparators
+   (`settingsEcho.ts:115-116,185-186,393-394`); the ratio writes only on pointer
+   settle / keyboard step (`ContextPanel.tsx:773-797`), never per drag frame,
+   and the pointermove path only touches local `dragRatio` through rAF. Gap
+   (test-only, not a product defect): the phase added the comparators but there
+   is no direct stale-echo case for the two navigator fields in
+   `settingsEcho.test.ts` (the TFL-1014 sweep covers 20 other fields, not these).
+2. **Current-vs-selected - CLEAN (no finding).** Outline navigation routes
+   only `onJump` (`SideRail.tsx:1570-1586`) and `jumpToPage` never writes
+   `pageSelection` (`DocumentView.tsx:4126,4196`); Clear routes
+   `onPageSelectionChange([])` (`ContextPanel.tsx:943`); the checkbox stops the
+   click before the card's navigate handler (`SideRail.tsx:1393-1401`) and
+   toggles through `applyPageGesture` only. A both-current-and-selected page
+   renders the marker + selected tint together (`SideRail.tsx:1375-1377,1391-1409`).
+   Range/Ctrl/Shift mapping is the unchanged audited `pageSelection.ts`
+   (`pageSelectGestureFor:42-50`).
+3. **Destination integrity - CLEAN (no finding).** Rename/retarget/indent/
+   outdent/delete preserve `page` on untouched nodes and never fabricate one
+   (`src/shared/outline.ts:144-219`); seeding resolves destinations to
+   `page: null` when unresolved (`outlineEditor.ts:58-72`); the destination
+   column prints the real page or an en-dash (`SideRail.tsx:1837-1844`); counts
+   use `countOutline` over the real tree (`ContextPanel.tsx:535`).
+4. **Overlap / z-fight - TWO FINDINGS (ADV-238, ADV-239).** The split divider
+   `z-index: 5` sits under the menus' 60 (`styles.css:16805-16809`); no
+   transformed/filter/contain ancestor exists on the THUMB card menu path, so
+   that menu is viewport-correct. The outline menus are not (ADV-238). No
+   horizontal outline scrolling is the claim, but ADV-239 shows it is reachable.
+5. **Constrained windows - CLEAN for the split fallback (no finding).**
+   `resolveNavigatorLayout` falls back to stacked under
+   `2*180 + 12 = 372px` measured body height (`ContextPanel.tsx:409-417`), the
+   body is measured by a `ResizeObserver` + window resize
+   (`ContextPanel.tsx:696-711`), and the view tabs/split title use `min-height`
+   (40/28px) so 200% scaling grows rather than clips
+   (`styles.css:16628-16637,16791-16800`); coarse targets are 44px
+   (`styles.css:16612-16616,16844-16848,17382-17387,5378-5383`). No control was
+   found unreachable purely from the split->stacked fallback.
+6. **Keyboard / screen-reader - ONE FINDING (ADV-240).** Divider is
+   `role="separator"` with `aria-valuenow/min/max` and Arrow/Home/End
+   (`ContextPanel.tsx:1080-1095,789-797`); the More menus close on Escape and
+   return focus through `CommandMenu` (`CommandMenu.tsx:508-580`); the
+   selection live region is `visually-hidden role=status aria-live=polite` and
+   only mounts with a real selection, so scrolling cannot re-announce it
+   (`ContextPanel.tsx:920-925`). The outline `aria-level` and the retarget
+   popover gaps are ADV-240.
+7. **Cleanup removal (F) - CLEAN (no finding).** `grep` over `src`, `test` and
+   `e2e` finds no `export function SideRail`, `SideRailProps`,
+   `useRailSwapAnimation` or `.rail-content-swap {` rule; the only
+   `.rail-content-swap` hits are the negative guards in
+   `test/unit/renderer/phase111_cleanup.test.tsx`.
+8. **Permissions / restrictions - CLEAN (no finding).** Indent is `disabled`
+   on the first child, Outdent on a root row, Delete on a row that no longer
+   resolves (`SideRail.tsx:1692-1765`), backed by the real
+   `editIndent`/`editOutdent`/`editDelete` guards that make no engine call on
+   an invalid edit (`outlineEditor.ts:195-264`). The header Add and every menu
+   row call a real handler.
+
+## Design critique: the Phase 111 Document Navigator surfaces (view selector, page cards, outline rows, Split Navigator)
+
+User context: a desktop PDF user whose job is "find a page or bookmark, act on it,
+and get back to reading"; success is that the current view, the batch selection
+and the bookmark destination each read honestly and every row control is where it
+says it is. Precedes: the canvas. Follows: the document view.
+
+### Must-fix (blocks ship)
+- **Affordance / positioning:** the outline row More menu and the destination
+  popover detach from their row and are clipped at the panel bottom (ADV-238).
+  The primary bookmark actions (Rename / Indent / Outdent / Delete / Set
+  destination) are the inventory this chunk adds, so a displaced trigger is a
+  core-surfaces failure, not polish. **Try:** end the outline body's materialize
+  keyframe at `transform: none`, or portal the row menu/retarget popover to the
+  body.
+
+### Should-fix (before broader rollout)
+- **Edge case / overflow:** a depth-9+ bookmark at the 240px floor, or depth-8
+  with a coarse pointer, scrolls the outline horizontally and pushes the row's
+  More out of view (ADV-239). **Try:** `overflow-x: hidden` on `.outline-panel`
+  plus a clamp on the effective indent padding.
+- **Accessibility:** the added `aria-level` is on roleless rows and the retarget
+  popover cannot be cancelled (ADV-240). **Try:** add real `tree`/`treeitem`
+  roles and an Escape/outside-dismiss path.
+
+### Nice-to-fix (when there's room)
+- **State honesty:** the panel More row flips label on the PERSISTED layout, not
+  the EFFECTIVE one, so in a short window whose persisted layout is `split` (but
+  which has fallen back to stacked) it still offers "Use stacked layout".
+  Harmless but reads as a stale state. **Try:** label from
+  `resolvedNavigatorLayout`.
+- **Test coverage:** add the two navigator fields to the stale-echo sweep so the
+  DEF-072 completeness guard actually covers them.
+
+### Strengths to keep
+- Current page vs batch selection is genuinely separated: a neutral current card
+  with a violet leading marker + "Viewing" label, and the checkbox tint distinct
+  from it - no inferred selection.
+- The card checkbox and More are real sibling controls: the checkbox toggles the
+  host set without navigating and opening More never jumps the page.
+- The split fallback is measured from the real body box and degrades to the
+  tabbed view rather than clipping; the divider is a real keyboard separator with
+  live `aria-valuenow`.
+- Cleanup is complete: the dead `SideRail` component, `SideRailProps`,
+  `useRailSwapAnimation` and the `.rail-content-swap` rule are gone with only
+  negative guards left behind.

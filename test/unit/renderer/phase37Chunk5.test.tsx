@@ -176,7 +176,6 @@ const RAIL_W_PROPERTY = /@property\s+--tf-rail-w\s*\{([^}]*)\}/.exec(STYLES)?.[1
 const STAGE_RAIL_W_TOKEN = Number.parseFloat(/--tf-stage-rail-w:\s*(\d+)px/.exec(STYLES)?.[1] ?? "NaN");
 const LABEL_SIZE_TOKEN = Number.parseFloat(/--type-compact-size:\s*(\d+)px/.exec(STYLES)?.[1] ?? "NaN");
 const OUTLINE = ruleBody(".context-panel-outline");
-const OUTLINE_WITH_BODY = ruleBody(".context-panel-outline[data-outline-open='true']");
 const PANEL_HEADER_ACTIONS = ruleBody(".context-panel-header .glass-sidebar-actions");
 const PANEL_ACTIONS = ruleBody(".context-panel-actions");
 const STRIP_WORKSPACE = ruleBody(".workspace:has(> .pane-thumb-strip)");
@@ -355,7 +354,7 @@ describe("Phase 37 item 15 - no PAGES title, narrower panel", () => {
     expect(panelWidth).toBeLessThan(220);
   });
 
-  it("renders no title for PAGES but keeps the Combine entry + collapse control", () => {
+  it("renders no title for PAGES but keeps the More entry + collapse control", () => {
     const { host, unmount } = mount(
       <ContextPanel
         doc={makeDocStub(3)}
@@ -372,7 +371,8 @@ describe("Phase 37 item 15 - no PAGES title, narrower panel", () => {
     );
     try {
       expect(host.querySelector(".glass-sidebar-title")).toBeNull();
-      expect(host.querySelector("[data-context-panel-combine]")).not.toBeNull();
+      // Phase 111 (chunk B) — Combine moved into the labelled More menu.
+      expect(host.querySelector("[data-context-panel-more]")).not.toBeNull();
       expect(host.querySelector("[data-rail-collapse]")).not.toBeNull();
     } finally {
       unmount();
@@ -404,26 +404,26 @@ describe("Phase 37 item 15 - no PAGES title, narrower panel", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Item 16 - the Outline is flush at the panel bottom behind a divider.
+// Item 16 (re-baselined by Phase 111 chunk A) - the Outline is a full-height
+// navigator view under a divider, not a flush collapsible section.
 // ---------------------------------------------------------------------------
 
 const OUTLINE_NODES: OutlineNode[] = [{ title: "Chapter 1", dest: [1], children: [] }];
 
-describe("Phase 37 item 16 - flush Outline with an item-22 separator", () => {
-  it("uses the shared --divider token above the Outline section", () => {
-    expect(decl(OUTLINE, "border-top")).toBe("1px solid var(--divider)");
+describe("Phase 111 (chunk A) - the Outline view sits under a shared divider", () => {
+  it("uses the shared --divider token on the navigator view selector", () => {
+    expect(decl(ruleBody(".context-panel-view-tabs"), "border-bottom")).toBe("1px solid var(--divider)");
   });
 
-  it("caps the Outline section's share so a short outline hugs its content", () => {
-    // Phase 59 (item 5 / DEF-419) — the share became an upper bound: a fixed
-    // `height: 40%` reserved dead space under a short outline's last row.
-    expect(decl(OUTLINE_WITH_BODY, "height")).toBe("auto");
-    expect(decl(OUTLINE_WITH_BODY, "max-height")).toBe("40%");
-    expect(decl(OUTLINE_WITH_BODY, "flex")).toBe("0 1 auto");
+  it("fills the panel body and bounds its tree (no fixed share)", () => {
+    // Phase 111 (chunk A) — the Outline is a full-height view; the old fixed
+    // `height: 40%` share and its `data-outline-open` disclosure are retired.
+    expect(decl(OUTLINE, "overflow")).toBe("hidden");
+    expect(decl(ruleBody(".context-panel-view-body"), "flex")).toBe("1 1 auto");
     expect(decl(ruleBody(".context-panel-thumbs"), "flex")).toBe("1 1 auto");
   });
 
-  it("renders the Outline as the panel body's LAST child, after the thumbs", () => {
+  it("renders the Outline view only when the host selects it", () => {
     const { host, unmount } = mount(
       <ContextPanel
         doc={makeDocStub(6)}
@@ -439,12 +439,10 @@ describe("Phase 37 item 16 - flush Outline with an item-22 separator", () => {
       />,
     );
     try {
-      const body = host.querySelector(".context-panel-body");
-      const section = host.querySelector("[data-context-panel-outline]");
-      const stack = host.querySelector("[data-context-panel-thumbs]");
-      expect(section).not.toBeNull();
-      expect(body?.lastElementChild).toBe(section);
-      expect(body?.firstElementChild).toBe(stack);
+      // Default (undefined railTab) is the Pages view; the Outline view is not
+      // mounted at all, so the two views can never overlap.
+      expect(host.querySelector("[data-context-panel-view='pages']")).not.toBeNull();
+      expect(host.querySelector("[data-context-panel-outline]")).toBeNull();
     } finally {
       unmount();
     }
@@ -559,34 +557,39 @@ function contextMenuOn(target: Element): void {
 }
 
 describe("Phase 37 item 19 - strip parity with the single-mode panel", () => {
-  it("renders the SAME three inline hover verbs per thumbnail", () => {
+  it("renders the SAME card footer per thumbnail (verbs retired)", () => {
     const { host, unmount } = renderStrip();
     try {
       for (const page of [1, 2, 3, 4]) {
-        const verbs = [...thumb(host, page).querySelectorAll("[data-thumb-verb]")];
-        expect(verbs.map((v) => v.getAttribute("data-thumb-verb"))).toEqual([
-          "rotate-cw",
-          "extract",
-          "delete",
-        ]);
-        expect(thumb(host, page).querySelector(".thumb-verbs")).not.toBeNull();
+        const card = thumb(host, page);
+        // The retired inline verb cluster is GONE; the card footer replaces it.
+        expect(card.querySelector("[data-thumb-verbs]")).toBeNull();
+        expect(card.querySelector("[data-thumb-verb]")).toBeNull();
+        expect(card.querySelector("[data-thumb-checkbox]")).not.toBeNull();
+        expect(card.querySelector("[data-thumb-more]")).not.toBeNull();
       }
     } finally {
       unmount();
     }
   });
 
-  it("runs the strip's own handlers from the verbs", () => {
+  it("runs the strip's own handlers from the card More menu", () => {
     const onOp = vi.fn();
     const onExtractPages = vi.fn();
     const onDelete = vi.fn();
     const { host, unmount } = renderStrip({ onOp, onExtractPages, onDelete });
     try {
-      clickOn(thumb(host, 2).querySelector("[data-thumb-verb='rotate-cw']") as Element);
+      const openMore = (page: number): void => {
+        clickOn(thumb(host, page).querySelector("[data-thumb-more]") as Element);
+      };
+      openMore(2);
+      clickOn(host.querySelector('[data-menu-item="rotate-cw"]') as Element);
       expect(onOp).toHaveBeenCalledWith({ kind: "rotate", page: 2, dir: "cw" });
-      clickOn(thumb(host, 3).querySelector("[data-thumb-verb='extract']") as Element);
+      openMore(3);
+      clickOn(host.querySelector('[data-menu-item="extract"]') as Element);
       expect(onExtractPages).toHaveBeenCalledWith(3);
-      clickOn(thumb(host, 4).querySelector("[data-thumb-verb='delete']") as Element);
+      openMore(4);
+      clickOn(host.querySelector('[data-menu-item="delete"]') as Element);
       expect(onDelete).toHaveBeenCalledWith([4]);
     } finally {
       unmount();

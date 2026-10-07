@@ -386,3 +386,26 @@ describe('Phase 108 / DEF-580 - the active rail cue survives forced-colors', () 
     expect(decl(marker, 'forced-color-adjust')).toBe('none');
   });
 });
+
+// TFL-913 (Phase 108 deferral) — at 200% text scaling the rail keeps its fixed
+// 72px track while the label ink scales. The retired `white-space: nowrap` let
+// the label overflow the 56px content box and spill across the panel column;
+// the label now wraps inside the track, and because the rail button sizes with
+// `min-height` (never a fixed height) the extra lines grow the item vertically
+// while the rail's width is untouched. jsdom has no layout engine, so this pins
+// the stylesheet contract the renderer relies on at 200% text scaling.
+describe('TFL-913 — the rail label wraps instead of overflowing at 200% text scaling', () => {
+  it('relaxes the one-line pin so the label may wrap', () => {
+    expect(decl(RAIL_LABEL, 'white-space')).toBe('normal');
+  });
+
+  it('breaks an overlong word inside the track instead of spilling past it', () => {
+    expect(decl(RAIL_LABEL, 'overflow-wrap')).toBe('anywhere');
+    expect(decl(RAIL_LABEL, 'max-width')).toBe('100%');
+  });
+
+  it('keeps the item on a growing min-height so wrapped lines are never clipped', () => {
+    expect(decl(RAIL_BTN, 'height')).toBe('auto');
+    expect(decl(RAIL_BTN, 'min-height')).toBe('60px');
+  });
+});

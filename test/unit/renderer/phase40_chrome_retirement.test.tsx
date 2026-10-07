@@ -7,10 +7,9 @@
 // mode (DOM assertion). The capabilities keep their OTHER homes: the Action
 // Dock's PAGES verbs (rotate / delete) and the page right-click menu.
 //
-// Item 10 (criterion 11) — the Outline's EXPANDED state is flush with the
-// panel bottom. The flush is driven by the section's own `data-outline-open`
-// state attribute (not a `:has()` dependency), and the section stays the
-// panel body's last in-flow flex child with a definite height.
+// Item 10 (re-baselined by Phase 111 chunk A) — the Outline is a full-height
+// navigator VIEW (Pages / Outline) filling the panel body, not a collapsible
+// section. The old `data-outline-open` disclosure and its toggle are retired.
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -25,6 +24,7 @@ import {
   buildPageMenuItems,
 } from "../../../src/renderer/components/ContextPanel";
 import { DOCK_STAGE_IDS } from "../../../src/renderer/state/toolsRegistry";
+import type { RailTab } from "../../../src/renderer/components/SideRail";
 import type { EngineState } from "../../../src/renderer/engine/types";
 import type { OutlineNode } from "../../../src/renderer/pdf/pdfjs";
 
@@ -91,6 +91,8 @@ interface PanelOptions {
   outline?: OutlineNode[] | null;
   pageSelection?: readonly number[] | null;
   onPageSelectionChange?: ((pages: number[]) => void) | null;
+  railTab?: RailTab;
+  onRailTabChange?: (tab: RailTab) => void;
 }
 
 function renderPanel(options: PanelOptions = {}): {
@@ -121,6 +123,8 @@ function renderPanel(options: PanelOptions = {}): {
         outline={options.outline === undefined ? null : options.outline}
         pageSelection={options.pageSelection ?? null}
         onPageSelectionChange={options.onPageSelectionChange ?? null}
+        railTab={options.railTab}
+        onRailTabChange={options.onRailTabChange}
       />,
     );
   });
@@ -262,42 +266,49 @@ describe("Phase 40 item 9 — the under-thumbnail rotate/delete bar is retired",
 });
 
 // ---------------------------------------------------------------------------
-// Item 10 — the Outline's expanded state is flush with the panel bottom
+// Item 10 (re-baselined by Phase 111 chunk A) — the Outline is a full-height
+// navigator VIEW (Pages / Outline), not a collapsible section. The old
+// `data-outline-open` disclosure is retired; the view fills the panel body and
+// the bounded body frames the re-parented tree.
 // ---------------------------------------------------------------------------
 
-describe("Phase 40 item 10 — the Outline is flush when expanded", () => {
-  it("exposes the expanded state on the section (open by default, toggles)", () => {
-    const { host, unmount } = renderPanel({ pageCount: 4, outline: OUTLINE });
+describe("Phase 111 (chunk A) — the Outline view is a full-height navigator view", () => {
+  it("mounts the Outline view from railTab and mounts only that view", () => {
+    const onRailTabChange = vi.fn();
+    const pages = renderPanel({ pageCount: 4, outline: OUTLINE, onRailTabChange });
     try {
-      const section = host.querySelector("[data-context-panel-outline]");
-      expect(section).not.toBeNull();
-      expect(section?.getAttribute("data-outline-open")).toBe("true");
-      const toggle = host.querySelector<HTMLButtonElement>("[data-outline-toggle]");
-      expect(toggle?.getAttribute("aria-expanded")).toBe("true");
-      clickOn(toggle as HTMLButtonElement);
-      expect(section?.getAttribute("data-outline-open")).toBe("false");
-      clickOn(toggle as HTMLButtonElement);
-      expect(section?.getAttribute("data-outline-open")).toBe("true");
+      expect(pages.host.querySelector("[data-context-panel-outline]")).toBeNull();
+      expect(pages.host.querySelectorAll(".thumb-item").length).toBe(4);
+      // The panel's own Outline tab reports the host-owned view.
+      clickOn(pages.host.querySelector('[data-context-panel-view-tab="outline"]') as Element);
+      expect(onRailTabChange).toHaveBeenLastCalledWith("outline");
+      expect(pages.host.querySelector("[data-outline-toggle]")).toBeNull();
     } finally {
-      unmount();
+      pages.unmount();
+    }
+    const outline = renderPanel({ pageCount: 4, outline: OUTLINE, railTab: "outline" });
+    try {
+      expect(outline.host.querySelector("[data-context-panel-outline]")).not.toBeNull();
+      expect(outline.host.querySelector("[data-context-panel-outline-body]")).not.toBeNull();
+      expect(outline.host.querySelectorAll(".thumb-item").length).toBe(0);
+    } finally {
+      outline.unmount();
     }
   });
 
-  it("the expanded flush rule keys on data-outline-open and caps a content-sized section", () => {
-    const open = ruleBody(".context-panel-outline[data-outline-open='true']");
-    // Phase 59 (item 5 / DEF-419) — the section HUGS its content; the old
-    // fixed 40% height left dead space under a short outline's last row.
-    // The share is now only an upper bound (`max-height`), so the section's
-    // bottom edge is flush with the last row, and a long outline scrolls.
-    expect(open, "the expanded section is content-sized").toMatch(/height:\s*auto/);
-    expect(open, "the share survives as an upper bound").toMatch(/max-height:\s*40%/);
-    expect(open, "the section shrinks to its content").toMatch(/flex:\s*0 1 auto/);
+  it("the full-height view rule fills the panel body and bounds the tree", () => {
+    const view = ruleBody(".context-panel-view-body");
+    expect(view).toMatch(/flex:\s*1 1 auto/);
+    expect(view).toMatch(/min-height:\s*0/);
     // The flush no longer rides on a `:has()` query.
     expect(STYLES).not.toContain(":has(.context-panel-outline-body)");
     // The body is the bounded box that frames the re-parented tree.
     const body = ruleBody(".context-panel-outline-body");
     expect(body).toMatch(/flex:\s*1 1 auto/);
     expect(body).toMatch(/overflow:\s*hidden/);
+    // The old disclosure state attribute and its rule are retired.
+    expect(STYLES).not.toContain("data-outline-open");
+    expect(STYLES).not.toContain(".context-panel-section-toggle");
   });
 });
 

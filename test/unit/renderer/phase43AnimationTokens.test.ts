@@ -157,7 +157,7 @@ const AUDITED_SELECTORS: readonly string[] = [
   ".inspector-collapse-toggle",
   ".inspector-close",
   ".context-panel-section",
-  ".context-panel-section-toggle",
+  ".context-panel-view-tab",
   ".context-panel-outline-body",
   ".stage-rail-btn",
   ".stage-rail-btn-active",

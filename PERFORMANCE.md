@@ -202,3 +202,16 @@ Packaged walkthrough: P57_PACKAGED_MATRIX total 28, covered 28, failed 0 — eve
 
 *Method: e2e/phase112_phaseclose_qa.spec.cjs (P112CLOSE-4), dev dist, launch through the canonical launchApp() with a seeded Recent userData dir; the timing incl. waits is the honest wall-clock of the settled UI and the net figure subtracts the deliberate settle window. No numeric Phase 112 performance budget is documented; the resize step sits inside the shared 140 ms motion token and the open/thumbnail numbers are in the same band as the existing Phase 5/14 rows. Raw numbers: test-fixtures/phase112-qa/timings.json. Recorded by qa at the Phase 112 phase-close verdict.*
 
+## Phase 111 navigator re-measure (TFL-1073 chunk G focused QA, 2026-10-07)
+
+| Metric | Target | Result | Status |
+| --- | --- | --- | --- |
+| View switch Pages -> Outline (mount) | shared 140 ms motion band | 65 ms | PASS |
+| View switch Outline -> Pages (mount) | shared 140 ms motion band | 72 ms | PASS |
+| Split divider keyboard step applied | shared 140 ms motion band | 94 ms | PASS |
+| Panel resize keyboard step applied | shared 140 ms motion band | 86 ms (-> 296 px) | PASS |
+| Long-list scroll, 120-page doc, 6 x 1200 px steps | no documented numeric budget; renderer must not block | 109 ms, ~55 fps, scroll 0 -> 7200 px | PASS |
+| Split layout toggle (menu open + click + divider mount, wall-clock incl. Playwright round-trips) | n/a | 549 ms | recorded |
+
+*Method: `e2e/tfl1073_phase111_perf.spec.cjs`, dev dist (npm run build:renderer + build:node), canonical launchApp() with a generated 120-page fixture. REQUIREMENTS Phase 111 names three items to time (view switch, panel resize / split drag, long-list scroll) but publishes no numeric budget; the only documented timing is the shared 140 ms motion token, used above as the reference band. The split-toggle figure includes two Playwright click round-trips and menu mount, so it is an upper bound, not a frame budget. Recorded by qa at the TFL-1073 focused QA + visual verdict.*
+

@@ -26,7 +26,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
 import type { PDFDocumentProxy, PDFPageProxy } from "pdfjs-dist";
-import { SideRail } from "../../../src/renderer/components/SideRail";
+import { ThumbnailRail } from "../../../src/renderer/components/SideRail";
 import { PageView } from "../../../src/renderer/components/PageView";
 import { initialAnnotationToolState } from "../../../src/renderer/annotations/model";
 import type { EngineState } from "../../../src/renderer/engine/types";
@@ -179,16 +179,19 @@ function mountRail(
   document.body.appendChild(host);
   const root = createRoot(host);
   const draw = (nextDoc: PDFDocumentProxy, nextRot: EngineState["rotations"]): void => {
+    const es = engineState(pageCount, nextRot);
+    const visibleToSource = new Map<number, number>();
+    es.pageOrder.forEach((src, i) => visibleToSource.set(i + 1, src + 1));
     act((): void => {
       root.render(
-        <SideRail
+        <ThumbnailRail
           doc={nextDoc}
           pageCount={pageCount}
-          outline={null}
           currentPage={1}
-          defaultWidthPt={612}
-          defaultHeightPt={792}
-          engineState={engineState(pageCount, nextRot)}
+          aspectRatio={792 / 612}
+          rotations={es.rotations}
+          visibleToSource={visibleToSource}
+          proxyVisibleOrder={false}
           canUndo={false}
           onJump={(): void => undefined}
         />,

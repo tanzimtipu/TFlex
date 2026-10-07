@@ -215,26 +215,33 @@ describe("Phase 112 C2 — the LEFT Pages navigator", () => {
     }
   });
 
-  it("omits the summary for zero or one selected page", () => {
+  it("omits the summary for an empty set but shows it for a single selected page", () => {
     const none = mountContextPanel({ pageSelection: [] });
     try {
       expect(none.host.querySelector("[data-context-panel-selection]")).toBeNull();
     } finally {
       none.unmount();
     }
+    // Phase 111 (chunk B) — the summary now renders for ANY real selection
+    // (>= 1), not just multi-page, and carries a Clear control.
     const one = mountContextPanel({ pageSelection: [3] });
     try {
-      expect(one.host.querySelector("[data-context-panel-selection]")).toBeNull();
+      const section = one.host.querySelector("[data-context-panel-selection]");
+      expect(section).not.toBeNull();
+      expect(
+        section?.querySelector("[data-context-panel-selection-count]")?.textContent,
+      ).toContain("1 selected");
+      expect(section?.querySelector("[data-context-panel-selection-clear]")).not.toBeNull();
     } finally {
       one.unmount();
     }
   });
 
   it("presents the no-bookmarks state through PanelEmptyState", () => {
-    const { host, unmount } = mountContextPanel({ outline: [] });
+    const { host, unmount } = mountContextPanel({ outline: [], railTab: "outline" });
     try {
-      // The section still renders (a real, empty outline), and its body is the
-      // shared designed empty state — never a fabricated Add action.
+      // The Outline view still renders (a real, empty outline), and its body is
+      // the shared designed empty state — never a fabricated Add action.
       expect(host.querySelector("[data-context-panel-outline]")).not.toBeNull();
       const empty = host.querySelector<HTMLElement>("[data-context-panel-outline-empty]");
       expect(empty).not.toBeNull();
@@ -246,10 +253,12 @@ describe("Phase 112 C2 — the LEFT Pages navigator", () => {
     }
   });
 
-  it("keeps the Outline toggle and the real tree when bookmarks exist", () => {
-    const { host, unmount } = mountContextPanel({ outline: OUTLINE });
+  it("keeps the real outline tree when bookmarks exist", () => {
+    const { host, unmount } = mountContextPanel({ outline: OUTLINE, railTab: "outline" });
     try {
-      expect(host.querySelector("[data-outline-toggle]")).not.toBeNull();
+      // Phase 111 (chunk A) — the outline is a view now, not a disclosure.
+      expect(host.querySelector('[data-context-panel-view="outline"]')).not.toBeNull();
+      expect(host.querySelector("[data-outline-toggle]")).toBeNull();
       expect(host.querySelector("[data-context-panel-outline-empty]")).toBeNull();
       expect(host.querySelectorAll(".outline-link").length).toBe(2);
     } finally {
@@ -257,10 +266,14 @@ describe("Phase 112 C2 — the LEFT Pages navigator", () => {
     }
   });
 
-  it("preserves the Combine header entry and its onMerge handler", () => {
+  it("preserves the Combine entry (now in the panel More menu) and its onMerge handler", () => {
     const onMerge = vi.fn();
     const { host, unmount } = mountContextPanel({ onMerge });
     try {
+      // Phase 111 (chunk B) — Combine moved off the header into the labelled
+      // More menu; the data hook is preserved on the menu row.
+      expect(host.querySelector("[data-context-panel-combine]")).toBeNull();
+      clickOn(host.querySelector("[data-context-panel-more]") as HTMLElement);
       const combine = host.querySelector<HTMLButtonElement>("[data-context-panel-combine]");
       expect(combine).not.toBeNull();
       expect(combine?.textContent).toContain("Combine");

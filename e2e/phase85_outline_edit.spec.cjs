@@ -181,13 +181,15 @@ async function openFixture(filePath) {
 }
 
 async function ensureOutlineOpen() {
-  const section = win.locator(`${PANE} [data-context-panel-outline]`);
-  await expect(section).toHaveCount(1);
-  if ((await section.getAttribute('data-outline-open')) !== 'true') {
-    await win.locator(`${PANE} [data-outline-toggle]`).click();
+  // Phase 111 (chunk A) retired the collapsible Outline section: the Outline is
+  // now a full-height navigator VIEW selected by the view tab. Selecting it is
+  // the live disclosure action.
+  const view = win.locator(`${PANE} [data-context-panel-view="outline"]`);
+  if ((await view.count()) === 0) {
+    await win.locator(`${PANE} [data-context-panel-view-tab="outline"]`).click();
     await win.waitForTimeout(500);
   }
-  await expect(section).toHaveAttribute('data-outline-open', 'true');
+  await expect(view).toHaveCount(1);
 }
 
 async function waitEditable() {
@@ -227,12 +229,22 @@ async function currentPage() {
   return win.evaluate(() => window.tflexDiagnostics().currentPage);
 }
 
+async function openRowMenu(pathStr) {
+  // Phase 111 (chunk C) moved every per-row verb off the row and into the row's
+  // More menu (`[data-outline-more]` -> a CommandMenu with `[data-outline-menu]`
+  // and the `data-outline-<verb>` rows). Open it before clicking a verb.
+  await row(pathStr).locator('[data-outline-more]').click();
+  await expect(win.locator('[data-outline-menu="true"]')).toHaveCount(1);
+}
+
 async function addAfter(pathStr) {
-  await row(pathStr).locator('[data-outline-add]').click();
+  await openRowMenu(pathStr);
+  await win.locator('[data-outline-menu="true"] [data-outline-add]').click();
 }
 
 async function renameRow(pathStr, title) {
-  await row(pathStr).locator('[data-outline-rename]').click();
+  await openRowMenu(pathStr);
+  await win.locator('[data-outline-menu="true"] [data-outline-rename]').click();
   const input = win.locator(`${PANE} [data-outline-rename-input]`);
   await input.waitFor({ state: 'visible', timeout: 5000 });
   await input.fill(title);
@@ -240,11 +252,14 @@ async function renameRow(pathStr, title) {
 }
 
 async function retargetRow(pathStr, value) {
-  await row(pathStr).locator('[data-outline-retarget]').selectOption(value);
+  await openRowMenu(pathStr);
+  await win.locator('[data-outline-menu="true"] [data-outline-retarget-open]').click();
+  await win.locator('[data-outline-retarget]').selectOption(value);
 }
 
 async function clickVerb(pathStr, verb) {
-  await row(pathStr).locator(`[data-outline-${verb}]`).click();
+  await openRowMenu(pathStr);
+  await win.locator(`[data-outline-menu="true"] [data-outline-${verb}]`).click();
 }
 
 async function saveAs(savePath) {
@@ -391,10 +406,15 @@ test('P85-FAIL-LOUD: out-of-range retarget shows [data-outline-error], applies n
   const pageBefore = (await getRow('0')).page;
   expect(pageBefore).toBe('1');
 
-  // Force an out-of-range target through the real control's change event.
+  // Force an out-of-range target through the real control's change event. The
+  // retarget chooser now lives in the row's More menu (chunk C), so open it
+  // first, then drive the popover select.
+  await openRowMenu('0');
+  await win.locator('[data-outline-menu="true"] [data-outline-retarget-open]').click();
+  await win.waitForSelector('[data-outline-retarget]', { timeout: 5000 });
   await win.evaluate((pane) => {
     const root = document.querySelector(pane);
-    const sel = root.querySelector('[data-outline-path="0"] [data-outline-retarget]');
+    const sel = root.querySelector('[data-outline-retarget]');
     const opt = document.createElement('option');
     opt.value = '99';
     opt.textContent = 'Page 99';
@@ -436,19 +456,18 @@ test('P85-FAIL-LOUD: out-of-range retarget shows [data-outline-error], applies n
 // ---------------------------------------------------------------------------
 test('P85-DEF492-EMPTY: an outline-less document shows the Outline section and can add the first bookmark', async () => {
   await openFixture(EMPTY_FIXTURE);
-  await win.waitForSelector('[data-context-panel-outline]', { timeout: 15000 });
   await ensureOutlineOpen();
   await waitEditable();
 
   const before = await readRows();
   log('empty-rows-before', before);
   expect(before.length, 'no outline rows yet').toBe(0);
-  await expect(win.locator(`${PANE} [data-outline-add]`)).toBeVisible();
+  await expect(win.locator(`${PANE} .outline-head [data-outline-add]`)).toBeVisible();
 
   // Diagnostic geometry for the toolbar Add control (DEF-492 empty path).
   const geom = await win.evaluate((pane) => {
     const root = document.querySelector(pane);
-    const add = root.querySelector('[data-outline-toolbar] [data-outline-add]');
+    const add = root.querySelector('.outline-head [data-outline-add]');
     const rail = document.querySelector('.stage-rail');
     const rr = (el) => {
       if (el === null) return null;
@@ -462,7 +481,7 @@ test('P85-DEF492-EMPTY: an outline-less document shows the Outline section and c
     return {
       add: rr(add),
       rail: rail ? rr(rail) : null,
-      toolbar: rr(root.querySelector('[data-outline-toolbar]')),
+      toolbar: rr(root.querySelector('.outline-head')),
       editable: rr(root.querySelector('[data-outline-editable]')),
       section: rr(root.querySelector('[data-context-panel-outline]')),
       body: rr(root.querySelector('[data-context-panel-outline-body]')),
@@ -486,7 +505,7 @@ test('P85-DEF492-EMPTY: an outline-less document shows the Outline section and c
     `DEF-492: [data-outline-add] must be hit-testable at its centre; got ${geom.atCenter}`,
   ).toBe(true);
 
-  await win.locator(`${PANE} [data-outline-toolbar] [data-outline-add]`).click();
+  await win.locator(`${PANE} .outline-head [data-outline-add]`).click();
   await expect.poll(async () => (await readRows()).length, { timeout: 15000 }).toBe(1);
   const first = await getRow('0');
   log('empty-rows-after-add', first);

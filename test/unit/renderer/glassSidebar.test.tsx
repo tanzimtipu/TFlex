@@ -17,15 +17,12 @@ import { describe, expect, it } from "vitest";
 import { createRoot } from "react-dom/client";
 import { act } from "react";
 import type { ReactElement } from "react";
-import type { PDFDocumentProxy } from "pdfjs-dist";
-import { SideRail } from "../../../src/renderer/components/SideRail";
 import { ToolsPalette } from "../../../src/renderer/components/ToolsPalette";
 import {
   GlassSidebar,
   GlassSidebarBody,
   GlassSidebarHeader,
 } from "../../../src/renderer/components/GlassSidebar";
-import type { EngineState } from "../../../src/renderer/engine/types";
 
 if (typeof globalThis.IntersectionObserver === "undefined") {
   class NoopIntersectionObserver {
@@ -128,92 +125,6 @@ describe("GlassSidebar — the shared panel primitives", () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// SideRail (Pages, left) mounts with the same stub doc the DEF-058
-// tests use — only the header/body structure is under test here.
-
-function makeStubDoc(): PDFDocumentProxy {
-  return {
-    numPages: 3,
-    async getPage(n: number): Promise<unknown> {
-      return {
-        pageNumber: n,
-        view: [0, 0, 612, 792],
-        getViewport: (_args: { scale: number }): { width: number; height: number } => ({
-          width: 612,
-          height: 792,
-        }),
-        render: (_args: unknown): { promise: Promise<void> } => ({
-          promise: Promise.resolve(),
-        }),
-      };
-    },
-    destroy: async (): Promise<void> => undefined,
-  } as unknown as PDFDocumentProxy;
-}
-
-function mountRail(): HTMLElement {
-  const pageCount = 3;
-  const engineState: EngineState = {
-    pageCount,
-    pageOrder: Array.from({ length: pageCount }, (_, i) => i),
-    rotations: new Array(pageCount).fill(0) as EngineState["rotations"],
-    deleted: Array.from({ length: pageCount }, () => false),
-    modified: false,
-    annotations: [],
-  };
-  return mount(
-    <SideRail
-      doc={makeStubDoc()}
-      pageCount={pageCount}
-      outline={null}
-      currentPage={1}
-      defaultWidthPt={612}
-      defaultHeightPt={792}
-      engineState={engineState}
-      canUndo={false}
-      onJump={(): void => undefined}
-    />,
-  );
-}
-
-describe("GlassSidebar — the Pages rail (left) uses it", () => {
-  it("the rail header is the shared GlassSidebar header with the view tabs as its actions", () => {
-    const host = mountRail();
-    try {
-      const header = host.querySelector<HTMLElement>(".glass-sidebar-header");
-      expect(header).not.toBeNull();
-      expect(header?.classList.contains("rail-header")).toBe(true);
-      // Phase 16 — the rail header is icon-only: the "Pages" title text
-      // was removed, so no .glass-sidebar-title span renders.
-      expect(header?.querySelector(".glass-sidebar-title")).toBeNull();
-      // The view toggle lives INSIDE .glass-sidebar-actions.
-      const tabs = header?.querySelector(".rail-tabs");
-      expect(tabs).not.toBeNull();
-      expect(header?.querySelector(".glass-sidebar-actions")?.contains(tabs ?? null)).toBe(true);
-      // Two view tabs (thumbs + annotations). The Phase 16 collapse
-      // toggle also carries .rail-tab, so it is excluded here.
-      expect(
-        tabs?.querySelectorAll("button.rail-tab:not(.rail-tab-collapse)").length,
-      ).toBe(2);
-    } finally {
-      unmount(host);
-    }
-  });
-
-  it("the rail body is the shared GlassSidebar body (legacy .rail-content kept)", () => {
-    const host = mountRail();
-    try {
-      const body = host.querySelector<HTMLElement>(".glass-sidebar-body");
-      expect(body).not.toBeNull();
-      expect(body?.classList.contains("rail-content")).toBe(true);
-      expect(body?.querySelector(".thumb-scroller")).not.toBeNull();
-    } finally {
-      unmount(host);
-    }
-  });
-});
-
 const noop = (): void => undefined;
 
 function mountPalette(): HTMLElement {
@@ -290,27 +201,6 @@ describe("GlassSidebar — the 22px sidebar icon ladder (Phase 14.2 FIX 6)", () 
   // chevrons and the palette's tool entries / layout toggle / close —
   // renders at the 22px sidebar rung; nothing in either panel falls
   // back to the old 20px chrome size.
-
-  it("every SideRail icon button glyph renders at 22px", () => {
-    const host = mountRail();
-    try {
-      const svgs = Array.from(host.querySelectorAll<SVGSVGElement>("button svg"));
-      // 2 view tabs + the Undo action (no selection -> no thumb-action
-      // bar) = the 3 buttons the bare rail mounts.
-      expect(svgs.length).toBeGreaterThanOrEqual(3);
-      for (const svg of svgs) {
-        const w = Number(svg.getAttribute("width"));
-        const h = Number(svg.getAttribute("height"));
-        expect(
-          w,
-          `rail glyph too small: ${svg.getAttribute("class") ?? "unknown"}`,
-        ).toBe(22);
-        expect(h).toBe(22);
-      }
-    } finally {
-      unmount(host);
-    }
-  });
 
   it("every ToolsPalette icon glyph renders at 22px", () => {
     const host = mountPalette();

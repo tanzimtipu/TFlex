@@ -25,7 +25,7 @@ import { describe, expect, it } from "vitest";
 import { createRoot } from "react-dom/client";
 import { act } from "react";
 import type { PDFDocumentProxy } from "pdfjs-dist";
-import { SideRail } from "../../../src/renderer/components/SideRail";
+import { ThumbnailRail } from "../../../src/renderer/components/SideRail";
 import type { EngineState } from "../../../src/renderer/engine/types";
 
 // jsdom doesn't ship IntersectionObserver or ResizeObserver. The
@@ -134,14 +134,14 @@ function mountRail(args: MountArgs): { host: HTMLElement; rerender: (next: Mount
     };
     act((): void => {
       root.render(
-        <SideRail
+        <ThumbnailRail
           doc={makeStubDoc()}
           pageCount={current.pageCount}
-          outline={null}
           currentPage={current.currentPage}
-          defaultWidthPt={612}
-          defaultHeightPt={792}
-          engineState={engineState}
+          aspectRatio={792 / 612}
+          rotations={engineState.rotations}
+          visibleToSource={m}
+          proxyVisibleOrder={false}
           canUndo={false}
           onJump={(): void => undefined}
         />,

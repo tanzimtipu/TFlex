@@ -9,6 +9,11 @@ const fs = require('node:fs');
 const { launchApp, getSamplePath } = require('./lib/launch.cjs');
 const { hardClose } = require('./lib/helpers.cjs');
 
+// The Paperclip harness exports ELECTRON_RUN_AS_NODE=1; launchApp spreads
+// process.env into the Electron child, which then exits as plain Node before any
+// window is observable. Drop it before any launch.
+delete process.env.ELECTRON_RUN_AS_NODE;
+
 const OUT = process.env.PHASE94_SHOTS
   ? path.resolve(process.env.PHASE94_SHOTS)
   : path.join(__dirname, 'screenshots', 'phase94', 'after');
@@ -73,7 +78,7 @@ const { expect } = require('@playwright/test');
 const A11Y_SELECTORS = [
   ['dock verb (toolbar button)', '[data-dock-verb="rotate"]'],
   ['side-rail tab', '.rail-tab'],
-  ['panel toggle (outline)', '[data-outline-toggle]'],
+  ['panel view toggle (outline)', '[data-context-panel-view-tab="outline"]'],
   ['palette search input', '[data-command-palette-input]'],
 ];
 

@@ -271,6 +271,24 @@ function rows(host: HTMLElement): HTMLElement[] {
   return [...host.querySelectorAll<HTMLElement>("[data-outline-row]")];
 }
 
+// Phase 111 (chunk C) — the per-row verbs moved into an always-visible More
+// popover. These helpers open a row's menu and resolve one of its commands.
+function openRowMore(host: HTMLElement, index: number): void {
+  const more = rows(host)[index].querySelector<HTMLElement>("[data-outline-more]");
+  if (more === null) throw new Error(`no More on row ${index}`);
+  clickOn(more);
+}
+
+function menuRow(host: HTMLElement, hook: string): HTMLElement {
+  // TFL-1083 (DEF-615) — the row More menu is portalled to `document.body`, so
+  // it is no longer a descendant of the test host; query the whole document.
+  const menu = host.ownerDocument.querySelector<HTMLElement>("[data-outline-menu]");
+  if (menu === null) throw new Error("no open outline menu");
+  const row = menu.querySelector<HTMLElement>(`[data-outline-${hook}]`);
+  if (row === null) throw new Error(`no menu row ${hook}`);
+  return row;
+}
+
 function setInputValue(input: HTMLInputElement, value: string): void {
   const setter = Object.getOwnPropertyDescriptor(
     window.HTMLInputElement.prototype,
@@ -317,15 +335,17 @@ describe("OutlinePanel — editable", () => {
   it("selects on a row click and exposes the verbs on the selected row", () => {
     const h = renderOutlinePanel();
     try {
-      // Nothing selected: the toolbar offers the add verb.
+      // The header always offers the add verb.
       expect(h.host.querySelector("[data-outline-add]")).not.toBeNull();
       clickOn(rows(h.host)[1]);
       const selected = h.host.querySelector(
         '[data-outline-row][data-outline-selected="true"]',
       );
       expect(selected?.getAttribute("data-outline-path")).toBe("1");
-      expect(selected?.querySelector("[data-outline-delete]")).not.toBeNull();
-      expect(selected?.querySelector("[data-outline-rename]")).not.toBeNull();
+      // Phase 111 (chunk C) — the row verbs live in the selected row's More.
+      openRowMore(h.host, 1);
+      expect(menuRow(h.host, "delete")).not.toBeNull();
+      expect(menuRow(h.host, "rename")).not.toBeNull();
     } finally {
       h.unmount();
     }
@@ -334,8 +354,8 @@ describe("OutlinePanel — editable", () => {
   it("commits an add of a sibling with the right payload", async () => {
     const h = renderOutlinePanel();
     try {
-      clickOn(rows(h.host)[0]);
-      clickOn(h.host.querySelector("[data-outline-add]") as Element);
+      openRowMore(h.host, 0);
+      clickOn(menuRow(h.host, "add"));
       await flush();
       expect(h.commit).toHaveBeenCalledTimes(1);
       const [, payload] = h.commit.mock.calls[0] as [string, OutlineEntry[]];
@@ -352,8 +372,8 @@ describe("OutlinePanel — editable", () => {
   it("shows [data-outline-error] and calls no engine for an empty title", async () => {
     const h = renderOutlinePanel();
     try {
-      clickOn(rows(h.host)[0]);
-      clickOn(h.host.querySelector("[data-outline-rename]") as Element);
+      openRowMore(h.host, 0);
+      clickOn(menuRow(h.host, "rename"));
       const input = h.host.querySelector<HTMLInputElement>("[data-outline-rename-input]");
       expect(input).not.toBeNull();
       input?.focus();
@@ -373,8 +393,8 @@ describe("OutlinePanel — editable", () => {
   it("renames inline and commits the trimmed title", async () => {
     const h = renderOutlinePanel();
     try {
-      clickOn(rows(h.host)[0]);
-      clickOn(h.host.querySelector("[data-outline-rename]") as Element);
+      openRowMore(h.host, 0);
+      clickOn(menuRow(h.host, "rename"));
       const input = h.host.querySelector<HTMLInputElement>("[data-outline-rename-input]");
       input?.focus();
       setInputValue(input as HTMLInputElement, "  Intro  ");
@@ -391,9 +411,10 @@ describe("OutlinePanel — editable", () => {
   it("rejects an out-of-range retarget without calling the engine", async () => {
     const h = renderOutlinePanel();
     try {
-      clickOn(rows(h.host)[0]);
+      openRowMore(h.host, 0);
+      clickOn(menuRow(h.host, "retarget-open"));
       changeSelect(
-        h.host.querySelector("[data-outline-retarget]") as HTMLSelectElement,
+        h.host.ownerDocument.querySelector("[data-outline-retarget]") as HTMLSelectElement,
         "99",
       );
       await flush();
@@ -407,9 +428,10 @@ describe("OutlinePanel — editable", () => {
   it("commits a valid retarget with the selected page", async () => {
     const h = renderOutlinePanel();
     try {
-      clickOn(rows(h.host)[0]);
+      openRowMore(h.host, 0);
+      clickOn(menuRow(h.host, "retarget-open"));
       changeSelect(
-        h.host.querySelector("[data-outline-retarget]") as HTMLSelectElement,
+        h.host.ownerDocument.querySelector("[data-outline-retarget]") as HTMLSelectElement,
         "7",
       );
       await flush();
@@ -424,13 +446,13 @@ describe("OutlinePanel — editable", () => {
   it("disables indent on a first child and outdent on a root row, with tooltips", () => {
     const h = renderOutlinePanel();
     try {
-      clickOn(rows(h.host)[0]);
-      const indent = h.host.querySelector<HTMLButtonElement>("[data-outline-indent]");
-      const outdent = h.host.querySelector<HTMLButtonElement>("[data-outline-outdent]");
-      expect(indent?.disabled).toBe(true);
-      expect(indent?.getAttribute("title")).toContain("first");
-      expect(outdent?.disabled).toBe(true);
-      expect(outdent?.getAttribute("title")).toContain("top level");
+      openRowMore(h.host, 0);
+      const indent = menuRow(h.host, "indent") as HTMLButtonElement;
+      const outdent = menuRow(h.host, "outdent") as HTMLButtonElement;
+      expect(indent.disabled).toBe(true);
+      expect(indent.getAttribute("title")).toContain("first");
+      expect(outdent.disabled).toBe(true);
+      expect(outdent.getAttribute("title")).toContain("top level");
     } finally {
       h.unmount();
     }
@@ -439,8 +461,8 @@ describe("OutlinePanel — editable", () => {
   it("commits an indent of a non-first sibling", async () => {
     const h = renderOutlinePanel();
     try {
-      clickOn(rows(h.host)[1]);
-      clickOn(h.host.querySelector("[data-outline-indent]") as Element);
+      openRowMore(h.host, 1);
+      clickOn(menuRow(h.host, "indent"));
       await flush();
       expect(h.commit).toHaveBeenCalledTimes(1);
       const [, payload] = h.commit.mock.calls[0] as [string, OutlineEntry[]];
@@ -453,8 +475,8 @@ describe("OutlinePanel — editable", () => {
   it("commits a delete of the entry and its subtree", async () => {
     const h = renderOutlinePanel();
     try {
-      clickOn(rows(h.host)[1]);
-      clickOn(h.host.querySelector("[data-outline-delete]") as Element);
+      openRowMore(h.host, 1);
+      clickOn(menuRow(h.host, "delete"));
       await flush();
       expect(h.commit).toHaveBeenCalledTimes(1);
       const [, payload] = h.commit.mock.calls[0] as [string, OutlineEntry[]];
@@ -484,9 +506,10 @@ describe("OutlinePanel — editable", () => {
     const commit = vi.fn(async () => err("out-of-range", "page 7 out of range"));
     const h = renderOutlinePanel({ commit });
     try {
-      clickOn(rows(h.host)[0]);
+      openRowMore(h.host, 0);
+      clickOn(menuRow(h.host, "retarget-open"));
       changeSelect(
-        h.host.querySelector("[data-outline-retarget]") as HTMLSelectElement,
+        h.host.ownerDocument.querySelector("[data-outline-retarget]") as HTMLSelectElement,
         "7",
       );
       await flush();

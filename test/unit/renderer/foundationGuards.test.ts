@@ -216,8 +216,6 @@ const CSS_ALLOWLIST: Readonly<Record<string, string>> = {
     "colour-dot ring: a 1.5px bg-toolbar outline separates the dot from the tab strip; a hairline ring, not a shadow",
   ".text-props-btn[aria-pressed=\"true\"]|box-shadow":
     "pressed-button inset hairline ring (select-edge); a state edge, not elevation (Phase 113: the legacy .text-props-btn-active class is retired; the pressed state is driven by [aria-pressed=\"true\"])",
-  ".thumb-current|box-shadow":
-    "current-thumbnail selection ring (accent); a state indicator, not elevation",
   ".page-input:focus|box-shadow":
     "focus ring on the page field: raw accent alpha forms the 2px halo; a functional focus affordance, not elevation",
   ".tools-badge-tracker:focus-visible|box-shadow":

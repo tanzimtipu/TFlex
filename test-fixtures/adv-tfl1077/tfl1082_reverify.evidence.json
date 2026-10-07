@@ -1,0 +1,46 @@
+{
+  "task": "TFL-1082",
+  "role": "qa",
+  "date": "2026-10-07",
+  "phase": 111,
+  "defects": ["DEF-615", "DEF-616", "DEF-617"],
+  "fix_under_test": "TFL-1080 (re-fix; first fix TFL-1078 failed TFL-1079)",
+  "verdict": "FAIL - DEF-615, DEF-616, DEF-617 all remain OPEN",
+  "build_note": "dist/ was STALE (built 00:48) relative to the TFL-1080 source (00:59-01:00). Rebuilt dist/renderer + dist/main via npm run build:renderer && build:node before any in-app check; all in-app numbers below are against the rebuilt bundle.",
+  "probe": {
+    "command": "node test-fixtures/adv-tfl1077/adv_navigator_probe.cjs",
+    "passed": true,
+    "P1": { "bodyTransform": "none", "anchoredToViewport": true, "menuRendered": [100, 360], "menuRequested": [100, 360], "clippedByAncestorBottom": false },
+    "P1_negativeControl": { "bodyTransform": "matrix(1,0,0,1,0,0)", "anchoredToViewport": false, "menuRendered": [200, 452], "clippedByAncestorBottom": true, "detects_defect": true },
+    "P2": { "overflowX": "hidden", "scrollWidth": 240, "clientWidth": 240, "horizontalOverflow": false },
+    "oracle_gap": "The probe models ONLY the transform containing-block mechanism. It passes while the real app still fails because the remaining trap is a STACKING CONTEXT from the body's active opacity animation, which the probe does not model."
+  },
+  "in_app_evidence_spec": {
+    "command": "npm run test:e2e -- tfl1079_def615_617_evidence",
+    "result": "4 failed / 2 passed (57.8s)",
+    "DEF615_animations_on": { "bodyTransform": "none", "deltaLeft": 0, "deltaTop": 4, "deleteHitInsideMenu": false, "verdict": "FAIL - geometry fixed but menu occluded by .document-content over the stage" },
+    "DEF615_reduced_motion": { "bodyTransform": "none", "deltaLeft": 0, "deltaTop": 4, "deleteHitInsideMenu": true, "verdict": "PASS (only because reduced-motion sets animation:none!important on the body)" },
+    "DEF615_animations_off": { "bodyTransform": "none", "deltaLeft": 0, "deltaTop": 4, "deleteHitInsideMenu": false, "verdict": "FAIL" },
+    "DEF616": { "overflowX": "hidden", "scrollWidth": 229, "clientWidth": 229, "deepestIndent": "104px", "moreInsidePanel": true, "moreReachable": false, "verdict": "overflow FIXED; only failure is a TEST ARTIFACT - the deepest (Deep 10) row is scrolled off-screen so the hit-test point is below the viewport" },
+    "DEF617": { "treeRoles": "PASS", "retargetPopover": "FAIL - row click intercepted by .document-content (menu occluded); dismiss/focus-return could not be exercised" }
+  },
+  "root_cause_proven": {
+    "confirmation": "Runtime DOM probe in the rebuilt app: temporarily setting animation:none on #context-panel-outline-body makes the menu hit-testable (elementFromPoint returns the menu); restoring it re-traps the menu.",
+    "mechanism": "The active tf-anim-materialize animation (fill-mode:both) on .context-panel-outline-body creates a stacking context in Chromium even though the keyframe is opacity-only and computed transform is 'none'. The position:fixed row menu / retarget popover are trapped in that context, which paints beneath .workspace-main, so they are occluded and unclickable wherever they extend past the navigator into the document area.",
+    "tfl1080_hypothesis": "FALSE - 'opacity-only keyframe removes the containing block' does not hold; the animation itself (not transform) still traps fixed descendants."
+  },
+  "required_suites": {
+    "tfl1073_phase111_navigator_e2e": { "result": "7 passed (49.7s)" },
+    "phase111_unit_set": { "command": "npm run test:unit -- <8 phase111 files>", "result": "8 files / 68 tests passed" },
+    "verify": { "result": "clean (conventions 384 files; tsc --noEmit exit 0)" }
+  },
+  "artifacts": [
+    "screenshots/tfl1082-diag-menu.png (menu drawn only over the navigator; right portion occluded by the document)",
+    "test-fixtures/adv-tfl1077/tfl1082_diag.log (runtime probes: escapeTest, clipProbe, appendProbe, animProbe)",
+    "test-fixtures/adv-tfl1077/e2e_def615_617_fresh.log",
+    "test-fixtures/adv-tfl1077/tfl1082_e2e_tfl1073.log",
+    "test-fixtures/adv-tfl1077/tfl1082_unit_phase111.log",
+    "test-fixtures/adv-tfl1077/tfl1082_verify.log"
+  ],
+  "disposition": "DEF-615/616/617 kept OPEN; a further fix is required (remove the body's animation influence on fixed descendants, e.g. drop the fill-mode animation / portal the surfaces / use a non-animated wrapper)."
+}

@@ -45,9 +45,20 @@ const MIN_WINDOW_HEIGHT = 480;
 
 /** Phase 112 (TFL-992) — allowed width range (CSS px) for the LEFT page
  *  panel. A stored `panelLeftWidthPx` outside this range is dropped by
- *  `normalizeSettings`; absent/invalid resolves to the consumer default 240. */
-export const PANEL_LEFT_WIDTH_MIN = 220;
-export const PANEL_LEFT_WIDTH_MAX = 320;
+ *  `normalizeSettings`; absent/invalid resolves to the consumer default 280. */
+export const PANEL_LEFT_WIDTH_MIN = 240;
+export const PANEL_LEFT_WIDTH_MAX = 420;
+
+/** Phase 111 (TFL-1067) — allowed navigator layout modes. A stored
+ *  `navigatorLayout` outside this allowlist is dropped by
+ *  `normalizeSettings`; absent/invalid resolves to the consumer default
+ *  'stacked'. */
+export const NAVIGATOR_LAYOUTS = ['stacked', 'split'] as const;
+/** Phase 111 (TFL-1067) — allowed Split Navigator ratio range. A stored
+ *  `navigatorSplitRatio` outside this range is dropped by
+ *  `normalizeSettings`; absent/invalid resolves to the consumer default 0.6. */
+export const NAVIGATOR_SPLIT_RATIO_MIN = 0.1;
+export const NAVIGATOR_SPLIT_RATIO_MAX = 0.9;
 
 /** Phase 112 (TFL-992) — allowed width range (CSS px) for the RIGHT
  *  inspector panel. A stored `panelRightWidthPx` outside this range is
@@ -1317,6 +1328,26 @@ export function normalizeSettings(raw: unknown): AppSettings {
   }
   if (typeof rawObj.inspectorCollapsed === 'boolean') {
     settings.inspectorCollapsed = rawObj.inspectorCollapsed;
+  }
+
+  // Phase 111 (TFL-1067): navigator layout + split ratio. Preserve-if-valid:
+  // the layout survives only when it is a string in NAVIGATOR_LAYOUTS; the
+  // ratio survives only when it is a finite number inside its range. Every
+  // absent/invalid field is left unset so the consumer applies its documented
+  // default ('stacked' / 0.6) — the default is never stored here.
+  if (
+    typeof rawObj.navigatorLayout === 'string' &&
+    (NAVIGATOR_LAYOUTS as readonly string[]).includes(rawObj.navigatorLayout)
+  ) {
+    settings.navigatorLayout = rawObj.navigatorLayout as 'stacked' | 'split';
+  }
+  const navigatorSplitRatio = normalizeBoundedWidth(
+    rawObj.navigatorSplitRatio,
+    NAVIGATOR_SPLIT_RATIO_MIN,
+    NAVIGATOR_SPLIT_RATIO_MAX,
+  );
+  if (navigatorSplitRatio !== null) {
+    settings.navigatorSplitRatio = navigatorSplitRatio;
   }
 
   // Phase 19: preserve annotationRecentTools only when the value survives

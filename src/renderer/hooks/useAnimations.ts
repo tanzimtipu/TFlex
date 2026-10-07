@@ -289,38 +289,6 @@ export function useSlideAnimation(options: SlideOptions): MotionVariantSet {
 }
 
 /* ----------------------------------------------------------------------- */
-/* Rail content swap — Phase 16 collapse/expand                            */
-
-/** Rail content swap (Phase 16 collapse/expand): OPACITY + a SLIGHT
- *  SCALE (--motion-scale-exit 0.98 swell — subtle, per the spec), no
- *  travel. Entry runs on the PANEL band (280ms) so the ruler numbers /
- *  thumbnail panel appear in step with the grid-column width tween;
- *  exit runs on the FAST band so the outgoing content recedes a touch
- *  ahead of the incoming one. The pair is always absolute-positioned
- *  swap layers (.rail-content-swap), so both can be mid-crossfade
- *  without any layout jump. Reduced motion: opacity only, instant. */
-export function useRailSwapAnimation(): MotionVariantSet {
-  const instant = useInstantMotion();
-  return useMemo<MotionVariantSet>(() => {
-    if (instant) return reducedVariants();
-    return {
-      initial: { opacity: MOTION_OPACITY.hidden, scale: MOTION_SCALE.exit },
-      animate: {
-        opacity: MOTION_OPACITY.visible,
-        scale: 1,
-        transition: { duration: msToSeconds(MOTION_DURATION.panel), ease: MOTION_EASE.enter },
-      },
-      exit: {
-        opacity: MOTION_OPACITY.hidden,
-        scale: MOTION_SCALE.exit,
-        transition: { duration: msToSeconds(MOTION_DURATION.fast), ease: MOTION_EASE.exit },
-        pointerEvents: "none",
-      },
-    };
-  }, [instant]);
-}
-
-/* ----------------------------------------------------------------------- */
 /* Popovers / menus / dropdowns — Pop In / Pop Out / Drop Reveal            */
 
 export interface PopOptions {

@@ -24,7 +24,7 @@ import {
   clampMenuPosition,
 } from "../../../src/renderer/components/ContextPanel";
 import { THUMB_WIDTH } from "../../../src/renderer/components/thumbGeometry";
-import type { OutlineEditorConfig } from "../../../src/renderer/components/SideRail";
+import type { OutlineEditorConfig, RailTab } from "../../../src/renderer/components/SideRail";
 import type { EngineState } from "../../../src/renderer/engine/types";
 import { ok } from "../../../src/shared/result";
 import type { OutlineNode } from "../../../src/renderer/pdf/pdfjs";
@@ -121,6 +121,10 @@ onExtractPages?: (page: number) => void;
   onInsertBlank?: (page: number) => void;
   onReplacePages?: (page: number) => void;
   onDeletePage?: (page: number) => void;
+  onRemoveBlankPages?: () => void;
+  /** Phase 111 (chunk B) — the host-owned batch selection set. */
+  pageSelection?: readonly number[] | null;
+  onPageSelectionChange?: ((pages: number[]) => void) | null;
 }
 
 interface PanelOptions extends PanelHandlers {
@@ -130,6 +134,8 @@ interface PanelOptions extends PanelHandlers {
   outline?: OutlineNode[] | null;
   outlineEditor?: OutlineEditorConfig | null;
   doc?: PDFDocumentProxy;
+  railTab?: RailTab;
+  onRailTabChange?: (tab: RailTab) => void;
 }
 
 function renderPanel(
@@ -160,11 +166,16 @@ function renderPanel(
           onJump={current.onJump ?? ((): void => undefined)}
           outline={current.outline === undefined ? null : current.outline}
           outlineEditor={current.outlineEditor ?? null}
+          railTab={current.railTab}
+          onRailTabChange={current.onRailTabChange}
           onMerge={current.onMerge}
           onExtractPages={current.onExtractPages}
           onInsertBlank={current.onInsertBlank}
 onReplacePages={current.onReplacePages}
           onDeletePage={current.onDeletePage}
+          onRemoveBlankPages={current.onRemoveBlankPages}
+          pageSelection={current.pageSelection === undefined ? null : current.pageSelection}
+          onPageSelectionChange={current.onPageSelectionChange ?? null}
         />,
       );
     });
@@ -194,7 +205,7 @@ async function flushRenders(): Promise<void> {
 
 /** Dispatch a pointerdown on `target`, bubbling so the thumb's React
  *  handler sees it with the right event target (the cross-bubbling guard
- *  reads `event.target.closest('.thumb-verbs')`). */
+ *  reads `event.target.closest('.thumb-more, .thumb-checkbox')`). */
 function pointerDownOn(target: Element): void {
   act((): void => {
     target.dispatchEvent(
@@ -238,15 +249,19 @@ const thumb = (host: HTMLElement, page: number): HTMLElement => {
   return el;
 };
 
-/** The verbs are `role="button"` spans: the thumb stays the one real button
- *  per page (a nested <button> is invalid HTML). */
-const verb = (host: HTMLElement, page: number, id: string): HTMLElement => {
+/** Phase 111 (chunk B) — the card footer's per-page More control. */
+const cardMore = (host: HTMLElement, page: number): HTMLElement => {
   const el = host.querySelector<HTMLElement>(
-    `.thumb-item[data-page="${page}"] [data-thumb-verb="${id}"]`,
+    `.thumb-item[data-page="${page}"] [data-thumb-more]`,
   );
-  if (el === null) throw new Error(`no ${id} verb on page ${page}`);
+  if (el === null) throw new Error(`no More control on page ${page}`);
   return el;
 };
+
+/** Open a card's More menu. */
+function openCardMore(host: HTMLElement, page: number): void {
+  clickOn(cardMore(host, page));
+}
 
 const menuItem = (host: HTMLElement, id: string): HTMLButtonElement => {
   const el = host.querySelector<HTMLButtonElement>(`[data-menu-item="${id}"]`);
@@ -294,8 +309,12 @@ describe("ContextPanel — header (title removed + Combine)", () => {
     const { host, unmount } = renderPanel({ pageCount: 3, onMerge });
     try {
       // Phase 37 (item 15) — the "Pages · N" title text is removed; the
-      // header keeps the Combine entry and the collapse control.
+      // header keeps the More entry and the collapse control. Phase 111
+      // (chunk B) moved Combine into that More menu.
       expect(host.querySelector(".glass-sidebar-title")).toBeNull();
+      const more = host.querySelector<HTMLButtonElement>("[data-context-panel-more]");
+      expect(more).not.toBeNull();
+      clickOn(more as HTMLButtonElement);
       const combine = host.querySelector<HTMLButtonElement>("[data-context-panel-combine]");
       expect(combine).not.toBeNull();
       expect(combine?.textContent).toContain("Combine");
@@ -426,107 +445,73 @@ describe("ContextPanel — the live thumbnail stack (re-parented ThumbnailRail)"
   });
 });
 
-describe("ContextPanel — inline hover verbs", () => {
-  it("renders three ghost icon verbs per thumbnail with aria-labels", () => {
+describe("ContextPanel — the page card footer", () => {
+  it("renders a checkbox + label + More and drops the over-preview verbs", () => {
     const { host, unmount } = renderPanel({ pageCount: 3 });
     try {
       for (const page of [1, 2, 3]) {
-        const verbs = thumb(host, page).querySelectorAll("[data-thumb-verb]");
-        expect(verbs.length).toBe(3);
-        expect(
-          [...verbs].map((v) => v.getAttribute("data-thumb-verb")),
-        ).toEqual(["rotate-cw", "extract", "delete"]);
+        const card = thumb(host, page);
+        // The retired inline verb cluster is GONE.
+        expect(card.querySelector("[data-thumb-verbs]")).toBeNull();
+        expect(card.querySelector("[data-thumb-verb]")).toBeNull();
+        // The footer: checkbox + label + More.
+        expect(card.querySelector("[data-thumb-checkbox]")).not.toBeNull();
+        expect(card.querySelector(".thumb-label")?.textContent).toBe(String(page));
+        expect(card.querySelector("[data-thumb-more]")).not.toBeNull();
       }
-      // Lucide icons (svg), never text glyphs: the label is on the button.
-      expect(verb(host, 2, "rotate-cw").querySelector("svg")).not.toBeNull();
-      expect(verb(host, 2, "rotate-cw").getAttribute("aria-label")).toBe(
-        "Rotate page 2 clockwise",
-      );
-      expect(verb(host, 2, "extract").getAttribute("aria-label")).toBe("Extract page 2");
-      expect(verb(host, 2, "delete").getAttribute("aria-label")).toBe("Delete page 2");
-      expect(verb(host, 2, "extract").textContent).toBe("");
+      // The preview is a real button; the footer controls are its siblings.
+      expect(thumb(host, 1).querySelector(".thumb-page")?.tagName).toBe("BUTTON");
     } finally {
       unmount();
     }
   });
 
-  it("are role=button spans (never a nested <button>) and activate on Enter", () => {
-    const onOp = vi.fn();
-    const { host, unmount } = renderPanel({ pageCount: 3, onOp });
+  it("a checkbox change toggles the host set and never navigates", () => {
+    const onPageSelectionChange = vi.fn();
+    const onJump = vi.fn();
+    const { host, unmount } = renderPanel({
+      pageCount: 3,
+      pageSelection: [],
+      onPageSelectionChange,
+      onJump,
+    });
     try {
-      const v = verb(host, 2, "rotate-cw");
-      expect(v.tagName).toBe("SPAN");
-      expect(v.getAttribute("role")).toBe("button");
-      expect(v.getAttribute("tabindex")).toBe("0");
-      // A <button> inside the thumb's own <button> is invalid HTML.
-      expect(host.querySelector(".thumb-item button")).toBeNull();
-      act((): void => {
-        v.dispatchEvent(
-          new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }),
-        );
-      });
-      expect(onOp).toHaveBeenCalledWith({ kind: "rotate", page: 2, dir: "cw" });
-      // Keyboard activation does not navigate either.
-      expect(host.querySelector(".thumb-current")?.getAttribute("data-page")).toBe("1");
+      clickOn(thumb(host, 2).querySelector("[data-thumb-checkbox]") as Element);
+      expect(onPageSelectionChange).toHaveBeenCalledWith([2]);
+      expect(onJump).not.toHaveBeenCalled();
     } finally {
       unmount();
     }
   });
 
-  it("runs the EXISTING rotate handler for the verb's own page", () => {
+  it("the More menu runs the EXISTING per-page handlers for its own page", () => {
     const onOp = vi.fn();
-    const { host, unmount } = renderPanel({ pageCount: 4, onOp });
-    try {
-      clickOn(verb(host, 3, "rotate-cw"));
-      expect(onOp).toHaveBeenCalledTimes(1);
-      expect(onOp).toHaveBeenCalledWith({ kind: "rotate", page: 3, dir: "cw" });
-    } finally {
-      unmount();
-    }
-  });
-
-  it("runs the extract and delete handlers with the verb's own page", () => {
     const onExtractPages = vi.fn();
     const onDelete = vi.fn();
-    const { host, unmount } = renderPanel({ pageCount: 4, onExtractPages, onDelete });
+    const { host, unmount } = renderPanel({ pageCount: 4, onOp, onExtractPages, onDelete });
     try {
-      clickOn(verb(host, 2, "extract"));
+      openCardMore(host, 3);
+      clickOn(menuItem(host, "rotate-cw"));
+      expect(onOp).toHaveBeenCalledWith({ kind: "rotate", page: 3, dir: "cw" });
+      openCardMore(host, 2);
+      clickOn(menuItem(host, "extract"));
       expect(onExtractPages).toHaveBeenCalledWith(2);
-      clickOn(verb(host, 4, "delete"));
+      openCardMore(host, 4);
+      clickOn(menuItem(host, "delete"));
       expect(onDelete).toHaveBeenCalledWith([4]);
     } finally {
       unmount();
     }
   });
 
-  it("a verb click changes neither the page nor the selection (cross-bubbling guard)", () => {
-    const onJump = vi.fn();
-    const onOp = vi.fn();
-    const { host, unmount } = renderPanel({ pageCount: 3, onJump, onOp });
-    try {
-      clickOn(verb(host, 2, "rotate-cw"));
-      expect(onOp).toHaveBeenCalledTimes(1);
-      // The click did NOT bubble into the thumb's own handler.
-      expect(onJump).not.toHaveBeenCalled();
-      expect(host.querySelector(".thumb-selected")).toBeNull();
-      expect(host.querySelector("[data-rail-action-bar]")).toBeNull();
-      expect(host.querySelector(".thumb-current")?.getAttribute("data-page")).toBe("1");
-    } finally {
-      unmount();
-    }
-  });
-
-  it("a press that starts on a verb never starts a page drag", () => {
+  it("a press that starts on the More control never starts a page drag", () => {
     const onReorder = vi.fn();
     const { host, unmount } = renderPanel({ pageCount: 3, onReorder });
     try {
       // Press on the lucide GLYPH (an SVGElement, not an HTMLElement) — the
       // real-world target — so the guard is proven for both node kinds.
-      const glyph = verb(host, 2, "extract").querySelector("svg");
+      const glyph = cardMore(host, 2).querySelector("svg");
       expect(glyph).not.toBeNull();
-      // The guard reads the ANCESTOR CHAIN via `Element.closest`, not
-      // `instanceof HTMLElement` — an SVG glyph is not an HTMLElement, and
-      // pressing exactly there is what a user does.
       expect(glyph instanceof HTMLElement).toBe(false);
       pointerDownOn(glyph as Element);
       const t = thumb(host, 2);
@@ -663,13 +648,14 @@ it("each item runs its own EXISTING handler with the menu's page", () => {
     }
   });
 
-  it("the hover trash verb stays an IMMEDIATE per-page delete (onDelete([page]))", () => {
+  it("the card More's Delete stays an IMMEDIATE per-page delete (onDelete([page]))", () => {
     const onDelete = vi.fn();
     const onDeletePage = vi.fn();
     const { host, unmount } = renderPanel({ pageCount: 4, onDelete, onDeletePage });
     try {
-      clickOn(verb(host, 3, "delete"));
-      // The verb is a one-click delete, not the dialog.
+      openCardMore(host, 3);
+      clickOn(menuItem(host, "delete"));
+      // The More Delete is a one-click delete, not the dialog.
       expect(onDelete).toHaveBeenCalledTimes(1);
       expect(onDelete).toHaveBeenCalledWith([3]);
       expect(onDeletePage).not.toHaveBeenCalled();
@@ -768,7 +754,7 @@ it("keeps the SIX items in ONE data list (labels + wiring together)", () => {
 describe("ContextPanel — the outline section", () => {
   it("re-parents the outline tree and navigates on a bookmark click", async () => {
     const onJump = vi.fn();
-    const { host, unmount } = renderPanel({ pageCount: 8, outline: OUTLINE, onJump });
+    const { host, unmount } = renderPanel({ pageCount: 8, outline: OUTLINE, railTab: "outline", onJump });
     try {
       expect(host.querySelector("[data-context-panel-outline]")).not.toBeNull();
       const links = [...host.querySelectorAll<HTMLButtonElement>(".outline-link")];
@@ -784,21 +770,26 @@ describe("ContextPanel — the outline section", () => {
     }
   });
 
-  it("toggles the section open and closed, keeping its own collapse state", () => {
-    const { host, unmount } = renderPanel({ pageCount: 8, outline: OUTLINE });
+  it("switches the navigator view from the host-owned railTab (no disclosure)", () => {
+    const onRailTabChange = vi.fn();
+    const { host, rerender, unmount } = renderPanel({ pageCount: 8, outline: OUTLINE, onRailTabChange });
     try {
-      const toggle = host.querySelector<HTMLButtonElement>("[data-outline-toggle]");
-      expect(toggle).not.toBeNull();
-      expect(toggle?.getAttribute("aria-expanded")).toBe("true");
-      expect(host.querySelector("[data-context-panel-outline-body]")).not.toBeNull();
-      clickOn(toggle as HTMLButtonElement);
-      expect(toggle?.getAttribute("aria-expanded")).toBe("false");
-      expect(host.querySelector("[data-context-panel-outline-body]")).toBeNull();
-      // The thumbnail stack stays mounted while the outline collapses.
+      // Default (undefined railTab) is the Pages view; no disclosure remains.
+      expect(host.querySelector('[data-context-panel-view="pages"]')).not.toBeNull();
+      expect(host.querySelector("[data-outline-toggle]")).toBeNull();
       expect(host.querySelectorAll(".thumb-item").length).toBe(8);
-      clickOn(toggle as HTMLButtonElement);
-      expect(toggle?.getAttribute("aria-expanded")).toBe("true");
+      // The panel's own Outline tab reports the choice to the host.
+      clickOn(host.querySelector('[data-context-panel-view-tab="outline"]') as Element);
+      expect(onRailTabChange).toHaveBeenLastCalledWith("outline");
+      // When the host selects the Outline view, only the tree is mounted.
+      rerender({ pageCount: 8, outline: OUTLINE, railTab: "outline", onRailTabChange });
+      expect(host.querySelector('[data-context-panel-view="outline"]')).not.toBeNull();
       expect(host.querySelector("[data-context-panel-outline-body]")).not.toBeNull();
+      expect(host.querySelectorAll(".thumb-item").length).toBe(0);
+      // Back to Pages.
+      rerender({ pageCount: 8, outline: OUTLINE, railTab: "thumbs", onRailTabChange });
+      expect(host.querySelector('[data-context-panel-view="pages"]')).not.toBeNull();
+      expect(host.querySelectorAll(".thumb-item").length).toBe(8);
     } finally {
       unmount();
     }
@@ -826,7 +817,7 @@ describe("ContextPanel — the outline section", () => {
       visiblePageCount: 3,
       commit: async () => ok(makeEngineState(3)),
     };
-    const editable = renderPanel({ pageCount: 3, outline: null, outlineEditor: editor });
+    const editable = renderPanel({ pageCount: 3, outline: null, outlineEditor: editor, railTab: "outline" });
     try {
       expect(editable.host.querySelector("[data-context-panel-outline]")).not.toBeNull();
       expect(editable.host.querySelector("[data-outline-editable]")).not.toBeNull();
@@ -835,20 +826,22 @@ describe("ContextPanel — the outline section", () => {
       editable.unmount();
     }
 
-    // View-only path unchanged: no editor and a null tree stays hidden.
-    const viewOnly = renderPanel({ pageCount: 3, outline: null, outlineEditor: null });
+    // View-only path: with no editor the Outline view shows the designed
+    // "No bookmarks" empty state instead of fabricating a tree.
+    const viewOnly = renderPanel({ pageCount: 3, outline: null, outlineEditor: null, railTab: "outline" });
     try {
-      expect(viewOnly.host.querySelector("[data-context-panel-outline]")).toBeNull();
+      expect(viewOnly.host.querySelector("[data-context-panel-outline]")).not.toBeNull();
+      expect(viewOnly.host.querySelector("[data-context-panel-outline-empty]")).not.toBeNull();
+      expect(viewOnly.host.querySelector("[data-outline-add]")).toBeNull();
     } finally {
       viewOnly.unmount();
     }
   });
 
-  // DEF-494 — with no row selected the toolbar must fit the narrow panel, so it
-  // renders ONLY the enabled add control. The six-verb set overflowed left
-  // under the always-on stage rail, making [data-outline-add] un-hittable and
-  // blocking the first-bookmark path (DEF-492).
-  it("shows ONLY the add control in the no-selection toolbar (DEF-494)", async () => {
+  // DEF-494 / Phase 111 (chunk C) — the retired inline toolbar is gone. The
+  // outline's ONE add control is the header Add; the per-row verbs live in the
+  // row More menu, so an empty tree exposes no inline verbs at all.
+  it("shows ONLY the header add control with no inline verbs (DEF-494)", async () => {
     const commit = vi.fn(async () => ok(makeEngineState(3)));
     const editor: OutlineEditorConfig = {
       docId: "d",
@@ -860,18 +853,21 @@ describe("ContextPanel — the outline section", () => {
       pageCount: 3,
       outline: null,
       outlineEditor: editor,
+      railTab: "outline",
     });
     try {
-      const toolbar = host.querySelector("[data-outline-toolbar]");
-      expect(toolbar).not.toBeNull();
-      expect(toolbar?.querySelector("[data-outline-add]")).not.toBeNull();
-      expect(toolbar?.querySelector("[data-outline-rename]")).toBeNull();
-      expect(toolbar?.querySelector("[data-outline-retarget]")).toBeNull();
-      expect(toolbar?.querySelector("[data-outline-indent]")).toBeNull();
-      expect(toolbar?.querySelector("[data-outline-outdent]")).toBeNull();
-      expect(toolbar?.querySelector("[data-outline-delete]")).toBeNull();
+      expect(host.querySelector("[data-outline-toolbar]")).toBeNull();
+      expect(host.querySelector(".outline-verbs")).toBeNull();
+      const add = host.querySelector("[data-outline-add]");
+      expect(add).not.toBeNull();
+      expect(add?.closest(".outline-head")).not.toBeNull();
+      expect(host.querySelector("[data-outline-rename]")).toBeNull();
+      expect(host.querySelector("[data-outline-retarget]")).toBeNull();
+      expect(host.querySelector("[data-outline-indent]")).toBeNull();
+      expect(host.querySelector("[data-outline-outdent]")).toBeNull();
+      expect(host.querySelector("[data-outline-delete]")).toBeNull();
       // The lone add control still creates the first row.
-      clickOn(toolbar?.querySelector("[data-outline-add]") as Element);
+      clickOn(add as Element);
       await flushRenders();
       expect(commit).toHaveBeenCalledTimes(1);
       const payload = (commit.mock.calls[0] as unknown as [string, Array<{ title: string }>])[1];
@@ -908,56 +904,50 @@ function ruleBody(css: string, selector: string): string {
 }
 
 describe("ContextPanel — DEF-310 outline containment", () => {
-  it("nests the absolute outline tree inside the section body, never the stack", () => {
-    const { host, unmount } = renderPanel({ pageCount: 8, outline: OUTLINE });
+  it("nests the absolute outline tree inside the bounded view body", () => {
+    const { host, unmount } = renderPanel({ pageCount: 8, outline: OUTLINE, railTab: "outline" });
     try {
-      const section = host.querySelector("[data-context-panel-outline]");
+      const view = host.querySelector("[data-context-panel-view='outline']");
       const body = host.querySelector("[data-context-panel-outline-body]");
       const panel = host.querySelector(".outline-panel");
-      const stack = host.querySelector("[data-context-panel-thumbs]");
-      expect(section).not.toBeNull();
+      expect(view).not.toBeNull();
       expect(body).not.toBeNull();
       expect(panel).not.toBeNull();
-      expect(stack).not.toBeNull();
-      // The overlay is a DIRECT child of the bounded body, which is the
-      // section's content box — the box that bounds it.
-      expect(body?.parentElement).toBe(section);
+      // The tree is a DIRECT child of the bounded body, which is the view's
+      // content box — the box that bounds it.
+      expect(body?.parentElement).toBe(view);
       expect(panel?.parentElement).toBe(body);
-      // Nothing in the outline tree is inside (or around) the thumbnail stack.
-      expect(stack?.contains(panel as Node)).toBe(false);
-      expect(panel?.contains(stack as Node)).toBe(false);
-      expect(section?.contains(stack as Node)).toBe(false);
-      expect(body?.contains(stack as Node)).toBe(false);
+      // The thumbnails are not mounted in the Outline view at all.
+      expect(host.querySelector("[data-context-panel-thumbs]")).toBeNull();
     } finally {
       unmount();
     }
   });
 
-  it("orders the section AFTER the stack, so a bounded outline cannot paint over it", () => {
-    const { host, unmount } = renderPanel({ pageCount: 8, outline: OUTLINE });
+  it("mounts exactly ONE view at a time (Pages XOR Outline)", () => {
+    const pages = renderPanel({ pageCount: 8, outline: OUTLINE });
     try {
-      const panelBody = host.querySelector(".context-panel-body");
-      const stack = host.querySelector("[data-context-panel-thumbs]");
-      const section = host.querySelector("[data-context-panel-outline]");
-      const children = [...(panelBody?.children ?? [])];
-      expect(children.indexOf(stack as Element)).toBeGreaterThanOrEqual(0);
-      expect(children.indexOf(section as Element)).toBeGreaterThan(
-        children.indexOf(stack as Element),
-      );
+      expect(pages.host.querySelector("[data-context-panel-view='pages']")).not.toBeNull();
+      expect(pages.host.querySelector("[data-context-panel-view='outline']")).toBeNull();
     } finally {
-      unmount();
+      pages.unmount();
+    }
+    const outline = renderPanel({ pageCount: 8, outline: OUTLINE, railTab: "outline" });
+    try {
+      expect(outline.host.querySelector("[data-context-panel-view='outline']")).not.toBeNull();
+      expect(outline.host.querySelector("[data-context-panel-view='pages']")).toBeNull();
+    } finally {
+      outline.unmount();
     }
   });
 
-  it("keeps every thumbnail outside the outline section and clickable", () => {
+  it("keeps the thumbnails clickable in the Pages view (never drawn inside the Outline view)", () => {
     const onJump = vi.fn();
     const { host, unmount } = renderPanel({ pageCount: 8, outline: OUTLINE, onJump });
     try {
-      const section = host.querySelector("[data-context-panel-outline]");
       expect(thumbs(host).length).toBe(8);
-      for (const t of thumbs(host)) {
-        expect(section?.contains(t)).toBe(false);
-      }
+      // The Outline view is not mounted while Pages is showing.
+      expect(host.querySelector("[data-context-panel-view='outline']")).toBeNull();
       // The press reaches the thumbnail: the scroll-sync jump still fires.
       clickOn(thumb(host, 7));
       expect(onJump).toHaveBeenCalledWith(7);
@@ -966,54 +956,43 @@ describe("ContextPanel — DEF-310 outline containment", () => {
     }
   });
 
-  it("keeps the OUTLINE toggle outside the overlay and clickable both ways", () => {
-    const { host, unmount } = renderPanel({ pageCount: 8, outline: OUTLINE });
+  it("keeps the view selector outside the outline body (never covered by the tree)", () => {
+    const onRailTabChange = vi.fn();
+    const { host, unmount } = renderPanel({ pageCount: 8, outline: OUTLINE, railTab: "outline", onRailTabChange });
     try {
-      const toggle = host.querySelector<HTMLButtonElement>("[data-outline-toggle]");
-      const section = host.querySelector("[data-context-panel-outline]");
       const body = host.querySelector("[data-context-panel-outline-body]");
-      // The toggle is the section's own first child; the overlay lives inside
-      // the body BELOW it, so the toggle can never be covered by the tree.
-      expect(toggle?.parentElement).toBe(section);
-      expect(body?.contains(toggle as Node)).toBe(false);
-      clickOn(toggle as HTMLButtonElement);
-      expect(toggle?.getAttribute("aria-expanded")).toBe("false");
-      clickOn(toggle as HTMLButtonElement);
-      expect(toggle?.getAttribute("aria-expanded")).toBe("true");
+      const tablist = host.querySelector("[data-context-panel-view-tabs]");
+      expect(tablist).not.toBeNull();
+      expect(body?.contains(tablist as Node)).toBe(false);
+      // The selector is live above the tree: its Pages tab still reports.
+      clickOn(host.querySelector('[data-context-panel-view-tab="pages"]') as Element);
+      expect(onRailTabChange).toHaveBeenLastCalledWith("thumbs");
     } finally {
       unmount();
     }
   });
 
-  it("styles.css makes the section body the positioning context the rail's .rail-content is", () => {
+  it("styles.css makes the view body the positioning context the rail's .rail-content is", () => {
     const css = readStyles();
     // The rail is untouched: `.rail-content` still bounds the rail's own
     // absolute `.outline-panel` tab.
     expect(ruleBody(css, "\\.rail-content")).toMatch(/position:\s*relative/);
-    // The panel's section body plays that same role.
+    // The Outline view body plays that same role.
     const body = ruleBody(css, "\\.context-panel-outline-body");
     expect(body).toMatch(/position:\s*relative/);
     // The body is a bounded box, not a scroller: `.outline-panel` scrolls
-    // inside it and can never reach the thumbnails.
+    // inside it and can never reach the selector or the tab strip.
     expect(body).toMatch(/overflow:\s*hidden/);
     expect(body).not.toMatch(/overflow-y:\s*auto/);
-    // While the body is mounted the section must still bound the (now
-    // in-flow) tree. Phase 40 (item 10) — the rule keys on the section's own
-    // `data-outline-open` state, not `:has()`. Phase 59 (item 5 / DEF-419) —
-    // the section HUGS its content and keeps the old share only as an upper
-    // bound, so a short outline leaves no dead space under the last row.
-    const sectionWithBody = ruleBody(
-      css,
-      "\\.context-panel-outline\\[data-outline-open='true'\\]",
-    );
-    expect(sectionWithBody).toMatch(/height:\s*auto/);
-    expect(sectionWithBody).toMatch(/max-height:\s*40%/);
-    // The re-parented tree joins the flow inside the section so the section
-    // can size to it, capped so a long outline still scrolls in place.
+    // Phase 111 (chunk A) — the view body fills the panel body; only ONE view
+    // is mounted at a time.
+    const view = ruleBody(css, "\\.context-panel-view-body");
+    expect(view).toMatch(/flex:\s*1 1 auto/);
+    expect(view).toMatch(/min-height:\s*0/);
+    // The scoped tree rule only zeroes the bottom padding; the shared
+    // `.outline-panel` rule still owns the absolute inset + internal scroll.
     const scopedPanel = ruleBody(css, "\\.context-panel-outline \\.outline-panel");
-    expect(scopedPanel).toMatch(/position:\s*static/);
-    expect(scopedPanel).toMatch(/max-height:\s*100%/);
-    // `.outline-panel`'s own rule is unchanged — the rail depends on it.
+    expect(scopedPanel).toMatch(/padding-bottom:\s*0/);
     const outlinePanel = ruleBody(css, "\\.outline-panel");
     expect(outlinePanel).toMatch(/position:\s*absolute/);
     expect(outlinePanel).toMatch(/inset:\s*0/);

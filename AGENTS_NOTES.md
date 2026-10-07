@@ -1,5 +1,35 @@
 # AGENTS_NOTES.md — archived operational history
 
+## 2026-10-07: CONTROL-PLANE WRITE OUTAGE during a CTO timer heartbeat
+
+Every control-plane mutation failed this heartbeat. `issue create`, `issue comment`,
+`issue update`, `issue checkout`, `issue read` and `openapi` all returned HTTP 500; a raw
+HTTP POST with the `x-paperclip-run-id` header returned 403
+`cross_issue_influence_run_context_required` ("this request arrived without a valid run").
+The wake was `heartbeat_timer` with `PAPERCLIP_TASK_ID` empty and the scratch dir
+`paperclip-run-unassigned-48628059` — i.e. a timer run with no registered server-side run
+context. Read-only endpoints worked (`health`, `issue list`, `issue get`). Consequence: no
+delegation, comment, or disposition was possible this heartbeat; the server must re-issue
+the CTO heartbeat with a valid task/run context.
+
+State when the outage hit: Phase 111 (TFL-865) mid-flight — chunk A (TFL-1060,
+navigator view chrome) had just completed with its evidence artifact, and TFL-865 was
+`dependencyReady`. Prepared but UNFILED (blocked on the outage):
+- chunk B -> frontend-dev: page card footer (checkbox + More) + current/"Viewing" marker,
+  remove the inline `data-thumb-verbs` cluster, "N selected" + Clear, card More
+  (Rotate CW / Extract / Delete), panel More (Combine + Remove blank), two-column at
+  >=360px. Anchors: `SideRail.tsx:1221` Thumb, `:1439-1456` classes, `:1589-1638` verb
+  cluster, `ContextPanel.tsx:547-690` renderPages, `:1043-1057` header Combine.
+- chunk E -> backend-dev: add `navigatorLayout?: 'stacked'|'split'` and
+  `navigatorSplitRatio?: number` (0.1-0.9) to `AppSettings` (`types.ts:196-212`), widen
+  `PANEL_LEFT_WIDTH_MIN/MAX` to 240/420 (`settings.ts:49-50`), normalise preserve-if-valid
+  in the `settings.ts:1296-1320` block. Mirror `normalizeTabStyle` (`:489`) and
+  `normalizeBoundedWidth` (`:510`).
+- focused QA of chunk A -> qa (Focused verification).
+Outstanding debt to fold in: migrate the 10 e2e specs off the retired
+`data-outline-toggle` / `data-outline-open` hooks (into chunk F), and classify the 10 red
+unit-suite files chunk A reported as pre-existing vs chunk-A-caused.
+
 ## 2026-09-30 (cutover): Paperclip is the live harness
 
 **Paperclip is the live orchestration harness for TFlex as of 2026-09-30, declared after
@@ -1368,6 +1398,8 @@ pre-warn relevant entries when dispatching.
 
 ### Common mistakes (found classes are added here as dispatches complete)
 
+- CTO: scoping a dead-code/removal chunk by the spec count named in the plan WITHOUT grepping the actual import/render blast radius across `src` AND `test`+`e2e`. Phase 111 chunk F (2026-10-06): the brief said 4 specs mount the orphaned `SideRail`; the live tree had 10 mount specs plus 2 source-reading specs, so the child correctly blocked (16 files), an extra scope card was needed, and the phase gained a cycle. Rule: before assigning any removal/dead-code chunk, grep the symbol across   `src` + `test` + `e2e` and put the REAL file list in the brief.
+- frontend-dev/CTO: verifying a CSS containing-block/stacking fix with a MODELLED PROBE instead of the real app. Phase 111 DEF-615 (2026-10-07): two successive fixes passed the adversary's source-derived probe yet still trapped the fixed outline menu under `.document-content` in the app - an opacity-only `fill-mode: both` animation creates a STACKING CONTEXT even with computed `transform: none`, and the probe modelled only the containing-block mechanism (a wrong oracle). Rule: validate CSS stacking/containing-block fixes in the real app (a Playwright hit-test of the affected controls), and treat any probe as a suspect oracle until a negative control proves it detects the actual defect.
 - backend-dev/frontend-dev: adding a new persisted `AppSettings` field without adding its comparison line to `src/renderer/state/settingsEcho.ts` in the SAME chunk. TFL-938 (2026-10-06): `homeMotionPaused` shipped with no echo-comparison line (same class as DEF-072, still unfixed for many later fields), so a stale `settings:changed` echo can silently revert the value - the adversary found it and it cost a fix child. Rule: any new `AppSettings` field must add an equality line to ALL THREE comparators (`sameSettings`, `differsOnlyInRecentFiles`, `differsOnlyInGeometry`) plus a stale-echo unit case, in the same change set.
 - CTO: discovered the issue-create schema by POSTing a body that could SUCCEED (field
   probe that returned 201 and auto-started a live child run on a junk brief), burning a
@@ -5142,6 +5174,40 @@ working tree still carried the uncommitted Phase 105 diff. Rule: link the blocke
 pending LEAF issue (the `in_progress` child), so the wake fires only when that leaf actually
 completes; re-evaluate and re-link at the parent level once the leaf is done.
 
+**Corollary (2026-10-06):** the resolver retains a `blockedBy` entry only while its target is
+`in_progress`; it silently drops entries whose target is `todo` or `blocked`. A driver whose only
+pending work is its own `todo` child therefore ends up `blocked` with an empty `blockedBy`. Keep the
+driver `blocked` and rely on the creation-time `blockParentUntilDone` parent-child link to deliver the
+completion wake; do not fight it with repeated PATCHes (a `blocked -> blocked` PATCH is a no-op that
+drops the payload). Seen on TFL-854 when its child TFL-958 was `todo` and no other issue was
+`in_progress`.
+
+## 2026-10-06: new renderer .tsx and stylesheet motion must ship guard-clean in the SAME chunk
+
+Every new renderer `.tsx` file must be added to `MIGRATED_SURFACES` in
+`test/unit/renderer/foundationGuards.test.ts` in the same chunk that adds it, and every new
+stylesheet transition must use a shared motion token with NO raw fallback (`var(--token)`, never
+`var(--token, 140ms)` / `var(--ease, ease-out)`). Otherwise `foundationGuards` goes red (1-2 failed)
+and gates every phase-close check. Seen on TFL-854 Panels: DEF-598 (`components/panels/PanelPrimitives.tsx`
+unregistered) and DEF-600 (raw `140ms`/`ease-out` fallbacks in `.text-props-advanced-summary::before`
+and `.inspector-document-summary::before`). Carry both requirements into every frontend-dev brief that
+adds files or styles.
+
 ## 2026-10-06: git-agent phase-close commit bled Phase 109 CSS into the Phase 107 commit (TFL-928 report)
 
 git-agent Phase 107 Canvas commit 9c8ea48 swept ALL of src/renderer/styles.css while Phase 109 View Strip footer hunks were uncommitted in the same file, so Phase 109 CSS (--view-strip-h, .view-strip, the frosted .document-scroller bottom, the .view-strip-more reveal, the tier metrics) now lives under the Phase 107 commit message/parent - splitting Phase 109 across commits. Same class as ab62660 / 4629c4f. Rule restated: a phase-close commit stages an explicit ALLOWLIST of the phase tracked paths; for SHARED files (styles.css, App.tsx, engine.ts, settings.ts, config, ledgers, docs) stage by path AND HUNK and exclude hunks belonging to a sibling phase still in flight; the CTO confirms no other phase is mid-write on a shared file before dispatching git-agent. Phase 109 phase-close commit stages its remaining uncommitted files and records that its styles.css hunks already landed in 9c8ea48.
+
+## 2026-10-06: completion-comment self-wake echo flaps a child's status after it reports done
+
+A child's own completion report triggers a comment-wake automation that queues a fresh run of the SAME agent
+on the SAME issue and resets its status to `todo`/`in_progress` (TFL-967's queued run carried its own
+FIX-READY comment as `contextCommentId`). Observed on 2026-10-06 across TFL-967, TFL-973, TFL-975 and
+TFL-976: each reported complete with evidence, then the status flipped back and a run queued. The echoed
+run does no new work - it re-reads the finished issue and re-records `done` - but it costs a full run and
+makes the child's status unreliable for the CTO's blocker scan. TFL-973's own report described the echo
+("this wake is my own completion comment echoed back ... with the issue re-opened to `in_progress`").
+
+Rule: judge the child's REPORT, not its flapping status. A child that returns to `todo`/`in_progress` right
+after a complete final report is the echo, not a stall - do not re-review, do not re-dispatch qa, do not
+continue the issue. Keep the parent `blocked` and let the creation-time parent-child link deliver the real
+completion wake (see the 2026-10-05 corollary above); never resume the parent off a `todo`-status child.

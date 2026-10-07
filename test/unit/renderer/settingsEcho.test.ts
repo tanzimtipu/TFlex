@@ -966,6 +966,26 @@ describe("DEF-072 — sameSettings covers every optional AppSettings field", () 
     { field: "defaultStampId", hint: "Phase 12 default stamp id" },
     { field: "saveAsLinearize", hint: "Phase 13 Save-As linearize" },
     { field: "spellCheck", hint: "Phase 82 offline spell-check preference" },
+    { field: "redactionColor", hint: "DEF-072 redaction highlight color" },
+    { field: "accountsEnabled", hint: "DEF-072 accounts opt-in" },
+    { field: "syncDeviceId", hint: "DEF-072 sync device id" },
+    { field: "lastSyncedAt", hint: "DEF-072 last sync timestamp" },
+    { field: "tabStyle", hint: "DEF-072 tab style" },
+    { field: "blankPageInkThreshold", hint: "DEF-072 blank-page ink threshold" },
+    { field: "annotationRecentTools", hint: "DEF-072 recent annotation tools" },
+    { field: "dockPins", hint: "DEF-072 dock pins" },
+    { field: "dockUnpinned", hint: "DEF-072 dock unpinned" },
+    { field: "homeTools", hint: "DEF-072 home tools" },
+    { field: "toolUsage", hint: "DEF-072 tool usage counters" },
+    { field: "sanitizeOptions", hint: "DEF-072 sanitize options" },
+    { field: "batesDefaults", hint: "DEF-072 Bates defaults" },
+    { field: "encryptDefaults", hint: "DEF-072 encrypt defaults" },
+    { field: "convertDefaults", hint: "DEF-072 convert defaults" },
+    { field: "imageImportDefaults", hint: "DEF-072 image import defaults" },
+    { field: "pdfValidationDefaults", hint: "DEF-072 PDF validation defaults" },
+    { field: "officeConvertDefaults", hint: "DEF-072 office convert defaults" },
+    { field: "readingDefaults", hint: "DEF-072 reading defaults" },
+    { field: "printPresets", hint: "DEF-072 print presets" },
   ];
 
   for (const { field, hint } of requiredFields) {
@@ -1094,6 +1114,174 @@ describe("TFL-1000 DEF-603 — a stale recents-only echo cannot revert a pin", (
       recentFiles: [{ ...pinned, openedAt: "2026-01-03T00:00:00Z" }],
     });
     expect(differsOnlyInRecentFiles(echo, persisted)).toBe(true);
+    expect(shouldApplyEcho(echo, 2, persisted)).toBe(true);
+  });
+});
+
+// TFL-1014 (DEF-072) — completeness sweep. Every optional AppSettings field
+// the comparator previously ignored could let a stale echo clobber a newer
+// local write. Each case proves the stale echo is rejected by all three
+// comparators and by shouldApplyEcho.
+describe("TFL-1014 DEF-072 — every remaining AppSettings field participates in the echo filter", () => {
+  const cases: ReadonlyArray<{
+    field: keyof AppSettings;
+    stale: unknown;
+    latest: unknown;
+  }> = [
+    { field: "redactionColor", stale: "#ff0000", latest: "#000000" },
+    { field: "accountsEnabled", stale: false, latest: true },
+    { field: "syncDeviceId", stale: "device-a", latest: "device-b" },
+    { field: "lastSyncedAt", stale: "2026-01-01T00:00:00Z", latest: "2026-02-01T00:00:00Z" },
+    { field: "tabStyle", stale: "standard", latest: "colorful" },
+    { field: "blankPageInkThreshold", stale: 0.2, latest: 0.4 },
+    { field: "annotationRecentTools", stale: ["select"], latest: ["select", "pen"] },
+    { field: "dockPins", stale: ["pen"], latest: ["pen", "eraser"] },
+    { field: "dockUnpinned", stale: ["eraser"], latest: ["eraser", "pen"] },
+    { field: "homeTools", stale: ["stamp"], latest: ["stamp", "sign"] },
+    { field: "toolUsage", stale: { select: 1 }, latest: { select: 1, pen: 2 } },
+    {
+      field: "sanitizeOptions",
+      stale: { javascript: true, launchActions: true, embeddedFiles: true, metadata: true },
+      latest: { javascript: false, launchActions: true, embeddedFiles: true, metadata: true },
+    },
+    {
+      field: "batesDefaults",
+      stale: { prefix: "A", suffix: "", startNumber: 1, padding: 4, position: "footer-right" },
+      latest: { prefix: "B", suffix: "", startNumber: 1, padding: 4, position: "footer-right" },
+    },
+    {
+      field: "encryptDefaults",
+      stale: { algorithm: "aes-128", permissions: { print: true } },
+      latest: { algorithm: "aes-256", permissions: { print: true } },
+    },
+    {
+      field: "convertDefaults",
+      stale: {
+        pageSize: "a4",
+        marginMm: 10,
+        textFontFamily: "Helvetica",
+        textFontSizePt: 11,
+        csvDelimiter: "auto",
+        csvFormMapping: false,
+        htmlPrintBackgrounds: false,
+      },
+      latest: {
+        pageSize: "letter",
+        marginMm: 10,
+        textFontFamily: "Helvetica",
+        textFontSizePt: 11,
+        csvDelimiter: "auto",
+        csvFormMapping: false,
+        htmlPrintBackgrounds: false,
+      },
+    },
+    {
+      field: "imageImportDefaults",
+      stale: { pageSizeMode: "image", fixedPageSize: "a4", fit: "contain", rotationDeg: 0 },
+      latest: { pageSizeMode: "fixed", fixedPageSize: "a4", fit: "contain", rotationDeg: 0 },
+    },
+    {
+      field: "pdfValidationDefaults",
+      stale: { target: "none", onViolation: "warn" },
+      latest: { target: "pdfa-1b", onViolation: "warn" },
+    },
+    {
+      field: "officeConvertDefaults",
+      stale: {
+        spreadsheets: { gridlines: true, fitToWidth: true, orientation: "auto" },
+        presentations: { includeNotes: true },
+        exports: { includeImages: true },
+      },
+      latest: {
+        spreadsheets: { gridlines: false, fitToWidth: true, orientation: "auto" },
+        presentations: { includeNotes: true },
+        exports: { includeImages: true },
+      },
+    },
+    {
+      field: "readingDefaults",
+      stale: {
+        epub: { fontSizePt: 12, lineHeight: 1.5, theme: "light" },
+        comics: { layout: "single", fit: "width", rightToLeft: false },
+      },
+      latest: {
+        epub: { fontSizePt: 14, lineHeight: 1.5, theme: "light" },
+        comics: { layout: "single", fit: "width", rightToLeft: false },
+      },
+    },
+    {
+      field: "printPresets",
+      stale: [{ name: "A", settings: { copies: 1 } }],
+      latest: [{ name: "B", settings: { copies: 1 } }],
+    },
+  ];
+
+  it("covers exactly the 20 remaining fields", () => {
+    expect(cases).toHaveLength(20);
+  });
+
+  for (const { field, stale, latest } of cases) {
+    it(`discards a stale echo that disagrees on ${String(field)}`, () => {
+      const persisted = baseSettings({ [field]: latest } as Partial<AppSettings>);
+      const echo = baseSettings({ [field]: stale } as Partial<AppSettings>);
+      expect(sameSettings(echo, persisted)).toBe(false);
+      expect(differsOnlyInRecentFiles(echo, persisted)).toBe(false);
+      expect(shouldApplyEcho(echo, 2, persisted)).toBe(false);
+    });
+  }
+
+  it("still applies a canonical echo carrying all 20 fields equal", () => {
+    const all = {
+      redactionColor: "#000000",
+      accountsEnabled: true,
+      syncDeviceId: "device-a",
+      lastSyncedAt: "2026-01-01T00:00:00Z",
+      tabStyle: "colorful",
+      blankPageInkThreshold: 0.4,
+      annotationRecentTools: ["select", "pen"],
+      dockPins: ["pen"],
+      dockUnpinned: ["eraser"],
+      homeTools: ["stamp"],
+      toolUsage: { select: 1, pen: 2 },
+      sanitizeOptions: {
+        javascript: true,
+        launchActions: true,
+        embeddedFiles: true,
+        metadata: true,
+      },
+      batesDefaults: { prefix: "A", suffix: "", startNumber: 1, padding: 4, position: "footer-right" },
+      encryptDefaults: { algorithm: "aes-256", permissions: { print: true } },
+      convertDefaults: {
+        pageSize: "a4",
+        marginMm: 10,
+        textFontFamily: "Helvetica",
+        textFontSizePt: 11,
+        csvDelimiter: "auto",
+        csvFormMapping: false,
+        htmlPrintBackgrounds: false,
+      },
+      imageImportDefaults: {
+        pageSizeMode: "image",
+        fixedPageSize: "a4",
+        fit: "contain",
+        rotationDeg: 0,
+      },
+      pdfValidationDefaults: { target: "none", onViolation: "warn" },
+      officeConvertDefaults: {
+        spreadsheets: { gridlines: true, fitToWidth: true, orientation: "auto" },
+        presentations: { includeNotes: true },
+        exports: { includeImages: true },
+      },
+      readingDefaults: {
+        epub: { fontSizePt: 12, lineHeight: 1.5, theme: "light" },
+        comics: { layout: "single", fit: "width", rightToLeft: false },
+      },
+      printPresets: [{ name: "A", settings: { copies: 1 } }],
+    } as unknown as Partial<AppSettings>;
+    const persisted = baseSettings(all);
+    const echo = baseSettings(JSON.parse(JSON.stringify(all)) as Partial<AppSettings>);
+    expect(sameSettings(echo, persisted)).toBe(true);
+    expect(differsOnlyInRecentFiles(echo, persisted)).toBe(false);
     expect(shouldApplyEcho(echo, 2, persisted)).toBe(true);
   });
 });

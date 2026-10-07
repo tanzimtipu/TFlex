@@ -1,0 +1,9 @@
+
+ RUN  v4.1.11 C:/Users/tanzi/OneDrive/App Development/TFlex
+
+
+ Test Files  10 passed (10)
+      Tests  387 passed (387)
+   Start at  11:32:14
+   Duration  2.99s (transform 1.56s, setup 5.46s, import 3.25s, tests 1.86s, environment 11.75s)
+

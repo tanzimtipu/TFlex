@@ -1068,15 +1068,14 @@ describe("Phase D — three-theme coherence + embedded theme picker license", ()
     if (activeGlow !== null) {
       expect(activeGlow[1] ?? "").toMatch(/\d+px\s+rgba\(124,\s*58,\s*237/);
     }
-    // Phase 41 (item 3) split .thumb-selected out of the frosted accent-halo
-    // rule: the CURRENT-page marker keeps the frosted-scoped accent halo; the
-    // SELECTED thumb now consumes the shared neutral selection trio.
+    // Phase 111 (TFL-1074 / DEF-612) retired the frosted `.thumb-current`
+    // accent halo outright: the current card is NEUTRAL and keeps only the
+    // violet 2px leading marker + the "Viewing" label. The selected thumb
+    // owns the shared neutral selection trio instead (asserted in
+    // phase14Glass). No frosted `.thumb-current` accent glow may return.
     const thumbGlow =
       /:root\[data-theme="frosted"\]\s+\.thumb-current\s*\{([\s\S]*?)\n\}/.exec(cssClean);
-    expect(thumbGlow).not.toBeNull();
-    if (thumbGlow !== null) {
-      expect(thumbGlow[1] ?? "").toMatch(/\d+px\s+rgba\(124,\s*58,\s*237/);
-    }
+    expect(thumbGlow).toBeNull();
     // 3) No PDF content surface may ever carry a background-image.
     for (const cls of ["pdf-page", "page-slot", "textLayer", "pdf-page-canvas", "thumb-canvas"]) {
       for (const m of cssClean.matchAll(
@@ -1690,7 +1689,8 @@ describe("DEF-234 — reduced-motion travel class", () => {
   const TRAVEL_SURFACES: { selector: string; keyframe: string; surface: string }[] = [
     { selector: ".edit-inline-editor", keyframe: "edit-bar-in", surface: "edit inline editor" },
     { selector: ".tab-active::after", keyframe: "indicator-in", surface: "active tab underline" },
-    { selector: ".thumb-current", keyframe: "thumb-select", surface: "current thumbnail" },
+    // Phase 111 (TFL-1074 / DEF-612) — `.thumb-current` no longer applies the
+    // `thumb-select` swell, so it is retired from this reduced-motion set.
     { selector: ".tool-btn-save-clean", keyframe: "success-pop", surface: "save-clean button" },
     { selector: ".color-palette-error", keyframe: "shake-x", surface: "color palette error" },
     { selector: ".optimize-error", keyframe: "shake-x", surface: "optimize error" },
