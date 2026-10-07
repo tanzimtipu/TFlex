@@ -70,9 +70,9 @@ export const MIN_PANE_WIDTH_PX = 320;
 export const INSPECTOR_W_PX = 264;
 
 /** Phase 37 (item 3) — the Inspector's COLLAPSED width: a narrow strip that
- *  keeps the expand control reachable (mirrors the Stage Rail's 44px track).
- *  The canvas reclaims everything else; the strip never overlaps it because
- *  the same value drives `--tf-tools-inset` while collapsed. */
+ *  keeps the expand control reachable. The canvas reclaims everything else;
+ *  the strip never overlaps it because the same value drives
+ *  `--tf-tools-inset` while collapsed. */
 export const INSPECTOR_COLLAPSED_W_PX = 44;
 
 /** The largest inset the panes may consume at `stageWidth` before their

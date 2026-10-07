@@ -13,10 +13,10 @@
 // introduces no palette of its own (the four per-theme `--tf-stage-*` tokens
 // arrive with the stage-panel chunk).
 //
-// Placement note (chunk 1b): the rail is mounted by App inside `.app-main`
-// as a fixed, left-edge overlay so it disturbs none of the surfaces the
-// later chunks re-home. It claims no grid track and reflows nothing; the
-// panels are re-parented around it in their own chunk.
+// Placement note (DEF-320, Phase 108): the rail is mounted by App inside
+// `.app-main` as a REAL grid track (column 1, `--tf-stage-rail-w`, 72px), so
+// it reserves its own space and can never stack over the ContextPanel. The
+// chunk-1 absolute overlay is retired.
 
 import { useEffect, useState } from 'react';
 import type { ReactElement } from 'react';

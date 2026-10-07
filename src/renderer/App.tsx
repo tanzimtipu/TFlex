@@ -11470,8 +11470,9 @@ pushToast(
         data-tools-open={inspectorVisible ? "true" : "false"}
         data-rail-collapsed={pagesPanelCollapsedEffective || bookViewActive ? "true" : "false"}
         data-inspector-collapsed={inspectorCollapsedForBookView ? "true" : "false"}
-        // Phase 37 (item 8) — true on the welcome/home screen. Collapses the
-        // rail's 44px track and lets the stage span the full frame.
+        // Phase 37 (item 8) — true on the welcome/home screen. Drops the
+        // rail's track (Phase 108 Workspace Rail: --tf-stage-rail-w, 72px)
+        // and lets the stage span the full frame.
         data-stage-rail-hidden={stageRailVisible ? "false" : "true"}
       >
         {/* Phase 112 (TFL-854, chunk H) — the resizable panel separators. The
@@ -11497,11 +11498,12 @@ pushToast(
             data-testid="panel-resize-right"
           />
         )}
-        {/* Phase 36 (chunk 1b) — the Stage Rail. Mounted here as a REAL 44px
-         * grid track inside .app-main (already `position: relative`); it
-         * claims only its own column and reflows nothing. The gear opens the
-         * same Preferences sheet as the title-bar gear. Phase 37 (item 8) —
-         * it is NOT rendered on the welcome screen (a document surface). */}
+        {/* Phase 36 (chunk 1b) — the Stage Rail. Mounted here as a REAL
+         * --tf-stage-rail-w grid track (72px since Phase 108, DEF-320) inside
+         * .app-main (already `position: relative`); it claims only its own
+         * column and reflows nothing. The gear opens the same Preferences
+         * sheet as the title-bar gear. Phase 37 (item 8) — it is NOT rendered
+         * on the welcome screen (a document surface). */}
         {stageRailVisible && (
           <StageRail
             activeStage={activeStage}
