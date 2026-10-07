@@ -208,4 +208,3 @@ EDIT-stage hue (`--tf-stage-edit`). The dock edit pen (`.action-dock-edit`, incl
 repointed to pin the new rest/active treatment. No handler or `data-*` selector changes.
 Regenerate `docs/phase-specs/phase-103.md` after this edit.
 
-

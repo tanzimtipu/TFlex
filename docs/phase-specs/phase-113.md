@@ -123,12 +123,10 @@ Migrate the Focus Dock tiles (geometry unchanged), the View Strip exclusive segm
 in-canvas/contextual toolbars and Home tool row onto the canonical kinds. New spec
 `test/unit/renderer/phase113_dockToolbars.test.tsx`. Blocked by B.
 
-**E. Migration wave 3 - Panels, inspectors, menus and context menus (frontend-dev, chunk E;
-split into E1/E2).** E1 migrates panel/inspector actions and panel main-workflow primaries
-onto the canonical intent/density (new spec
-`test/unit/renderer/phase113_panelsInspectors.test.tsx`). E2 migrates the
-CommandMenu/context-menu surfaces onto the canonical intent/density, preserving disclosure
-keyboard semantics (spec named at E2 dispatch). Blocked by B.
+**E. Migration wave 3 - Panels, inspectors, menus and context menus (frontend-dev, chunk E).**
+Migrate panel/inspector actions, panel main-workflow primaries and the CommandMenu/context-menu
+surfaces onto the canonical intent/density, preserving disclosure keyboard semantics. New spec
+`test/unit/renderer/phase113_panelsMenus.test.tsx`. Blocked by B.
 
 **F. Migration wave 4 - Dialogs, notices and empty states + busy wiring (frontend-dev, chunk
 F).** Migrate dialog confirm/cancel/destructive actions, notices/empty-state actions and the
@@ -210,8 +208,8 @@ PDFs / Check for update; `phase113_homeTitleTabs.test.tsx`), title-bar Open/Save
 tab controls (`phase113_homeTitleTabs.test.tsx`), dock tiles and More/Tools
 (`phase113_dockToolbars.test.tsx`), View Strip exclusive segments
 (`phase113_dockToolbars.test.tsx`), panel/inspector actions and panel primaries
-(`phase113_panelsInspectors.test.tsx`), menu/context-menu disclosures
-(wave E2; spec named at dispatch), dialog confirm/cancel/destructive actions and notice/empty
+(`phase113_panelsMenus.test.tsx`), menu/context-menu disclosures
+(`phase113_panelsMenus.test.tsx`), dialog confirm/cancel/destructive actions and notice/empty
 actions with busy/duplicate guards (`phase113_dialogsNotices.test.tsx`). The existing per-surface
 suites (`buttonTaxonomyContract.test.ts`, `buttonSystem.test.tsx`, `phase59PanelButtons.test.tsx`
 and the spec files that pin each migrated control) must stay green. No no-op may appear; qa's
