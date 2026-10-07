@@ -142,10 +142,12 @@ test('VERSION GATE: installed FileVersion and app.getVersion() match package.jso
 // ===========================================================================
 test("ABOUT: Help > About reports the package.json version and a non-empty What's New highlight", async () => {
   await withApp(async (win, pageErrors) => {
-    // Help > About Jovrel via the title-bar application menu (real user action).
-    await win.click('[data-menu-button]');
-    await win.waitForSelector('[data-menu-popover]', { timeout: 10000 });
-    await win.click('[data-menu-action="about"]');
+    // Help > About Jovrel via the application menu (real user action). Since
+    // Phase 105 the title-bar `[data-menu-button]` opens the File-ONLY menu;
+    // the non-File groups (incl. Help/About) live on the application menu.
+    await win.click('[data-app-menu]');
+    await win.waitForSelector('[data-app-menu-popover]', { timeout: 10000 });
+    await win.click('[data-app-menu-popover] [data-menu-action="about"]');
     await win.waitForSelector('[data-about-dialog]:visible', { timeout: 15000 });
     // The dialog mounts with a defensive "unavailable" fallback and fills in
     // from the async app:getInfo IPC; wait for it to settle before reading
@@ -345,7 +347,12 @@ test('CORE 6: the animations preference toggles the root data-animations hook', 
   await withApp(async (win, pageErrors) => {
     const rootFlag = () => win.evaluate(() => document.documentElement.getAttribute('data-animations'));
     expect(await rootFlag(), 'animations on by default').toBe('on');
-    await win.click('[data-open-preferences]');
+    // Preferences moved off the retired `[data-open-preferences]` title-bar
+    // control; the application menu's Edit group opens the same sheet
+    // (`[data-app-menu-popover] [data-menu-action="preferences"]`).
+    await win.click('[data-app-menu]');
+    await win.waitForSelector('[data-app-menu-popover]', { timeout: 10000 });
+    await win.click('[data-app-menu-popover] [data-menu-action="preferences"]');
     await win.waitForSelector('[data-prefs-dialog]', { timeout: 8000 });
     const box = win.locator('[data-prefs-animations]');
     await box.waitFor({ state: 'visible', timeout: 8000 });
@@ -365,10 +372,14 @@ test('CORE 6: the animations preference toggles the root data-animations hook', 
 // 7. flush canvas + the Inspector inset contract
 // ===========================================================================
 // STAGES made the Inspector the default-open right panel, so the scroller is
-// inset on its right by the Inspector width (--tf-tools-inset = 264px). That
-// inset is the CURRENT contract, not a gutter: the canvas content stays flush
-// (no padding/margin on .document-content, no padding on the scroller) and the
-// page area is the canvas minus the Inspector.
+// inset on its right by the Inspector width (--tf-tools-inset = 280px, the
+// Phase 111 right-panel default). That inset is the CURRENT contract, not a
+// gutter: the canvas content stays horizontally flush (no left/right padding
+// on the scroller, no padding/margin on .document-content) and the page area
+// is the canvas minus the Inspector. Phase 104 (chunk 2) reserves a bottom
+// scroll clearance (--dock-band-reserved) so the last page can clear the
+// floating ActionDock; that bottom padding is part of the contract, not a
+// gutter.
 test('CORE 7: the canvas is flush and the page area is inset by the Inspector', async () => {
   await withApp(async (win, pageErrors, app) => {
     await openReport(app, win);
@@ -391,27 +402,34 @@ test('CORE 7: the canvas is flush and the page area is inset by the Inspector', 
       const inspR = insp ? insp.getBoundingClientRect() : null;
       return { theme: document.documentElement.dataset.theme, scroller: cs(sc), content: cs(ct),
         inset: getComputedStyle(document.querySelector('.app-main')).getPropertyValue('--tf-tools-inset').trim(),
+        dockBandReserved: getComputedStyle(document.documentElement).getPropertyValue('--dock-band-reserved').trim(),
         scrollerWidth: Math.round(scR.width), mainWidth: Math.round(mainR.width),
         inspectorWidth: inspR ? Math.round(inspR.width) : null,
         slotTopGap: +(slR.top - scR.top).toFixed(2) };
     });
     log('flush', m);
-    // The canvas itself stays flush: the scroller carries no padding and the
-    // content wrapper carries no padding or margin.
-    for (const k of ['pt', 'pb', 'pl', 'pr', 'mt', 'mb', 'ml']) {
+    // The canvas itself stays horizontally flush: the scroller carries no
+    // left/right padding and no non-inset margin; the content wrapper carries
+    // no padding or margin. The scroller's bottom padding is the Phase 104
+    // dock clearance, so it must equal --dock-band-reserved (not an arbitrary
+    // gutter); it is 0 when no dock band is reserved.
+    for (const k of ['pt', 'pl', 'pr', 'mt', 'mb', 'ml']) {
       expect(m.scroller[k], `.document-scroller ${k} is 0`).toMatch(/^0(px)?$/);
     }
+    expect(m.scroller.pb, '.document-scroller padding-bottom is the reserved dock band').toBe(
+      m.dockBandReserved === '' ? '0px' : m.dockBandReserved);
     for (const [k, v] of Object.entries(m.content)) {
-      expect(v, `.document-content ${k} is 0`).toMatch(/^0(px)?$/);
+      expect(v, `.document-content ${k} is 0`).toMatch(/^0(px)$/);
     }
-    // The Inspector is default-open: the scroller's right inset IS the
+    // The Inspector is default-open at its documented Phase 111 default
+    // (PANEL_RIGHT_WIDTH.default = 280px): the scroller's right inset IS the
     // Inspector width, and the page area is the canvas minus that inset.
-    expect(m.inset, 'the Inspector inset token').toBe('264px');
+    expect(m.inset, 'the Inspector inset token').toBe('280px');
     expect(m.scroller.mr, '.document-scroller margin-right is the Inspector inset').toBe(m.inset);
-    expect(m.inspectorWidth, 'the Inspector renders at the inset width').toBeGreaterThanOrEqual(258);
-    expect(m.inspectorWidth).toBeLessThanOrEqual(270);
-    expect(m.mainWidth - m.scrollerWidth, 'the scroller width is the canvas minus the Inspector').toBeGreaterThanOrEqual(255);
-    expect(m.mainWidth - m.scrollerWidth).toBeLessThanOrEqual(272);
+    expect(m.inspectorWidth, 'the Inspector renders at the inset width').toBeGreaterThanOrEqual(278);
+    expect(m.inspectorWidth).toBeLessThanOrEqual(282);
+    expect(m.mainWidth - m.scrollerWidth, 'the scroller width is the canvas minus the Inspector').toBeGreaterThanOrEqual(278);
+    expect(m.mainWidth - m.scrollerWidth).toBeLessThanOrEqual(282);
     expect(Math.abs(m.slotTopGap), 'page slot flush with the scroller top').toBeLessThanOrEqual(1);
     expect(pageErrors, 'zero uncaught renderer page errors').toEqual([]);
   }, 'canonical-core7');
