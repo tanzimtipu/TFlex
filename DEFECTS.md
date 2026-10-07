@@ -7,7 +7,7 @@
 
 ## DEF-636: Stale Phase 23 animations-switch assertion reddens verify:full (blocks the 1.51.1 release gate)
 
-- Status: FIX-READY (frontend-dev TFL-1210, 2026-10-08; qa focused re-verify pending)
+- Status: CLOSED (qa TFL-1211 re-verify, 2026-10-08)
 - Severity: LOW - test-only. The PreferencesDialog Animations hint copy changed in the visual-overhaul review pass and the Phase 23 unit oracle kept the old string, so `verify:full` (conventions + typecheck + full unit suite) fails on one assertion and blocks the Jovrel 1.51.1 release gate. No product impact; the shipped copy is correct.
 - Found by: qa (TFL-1209 release-gate phase validation, 2026-10-08)
 - Phase: release OTA TFL-1204 (Jovrel 1.51.1)
@@ -28,6 +28,7 @@ Actual: the test pins the superseded copy, so it fails.
 History:
 - qa (TFL-1209, 2026-10-08): observed RED on `verify:full`; classified STALE TEST (product copy changed in `dc68679`; test string unchanged since Phase 23); pre-existing at HEAD, NOT caused by the 1.51.1 `WHATS_NEW` entry (`test/unit/main/whatsNew.test.ts` is among the 727 passing). Product and feed items of the gate were GREEN. Routed to the renderer test owner.
 - frontend-dev (TFL-1210, 2026-10-08): FIX-READY - updated the stale expected substring at `test/unit/renderer/phase23_animationsSwitch.test.tsx:113` to "menus, panels, dialogs and page changes appear without transition animations", matching `src/renderer/components/PreferencesDialog.tsx:424`. One file, one line; assertion shape retained; product untouched. Evidence: `npm.cmd run test:unit -- test/unit/renderer/phase23_animationsSwitch.test.tsx` -> 1 file passed, 10 passed / 0 failed; `npm.cmd run verify:full` -> exit 0, conventions clean (395 source files), 728 test files passed, 8843 tests passed / 0 failed. doc-maintenance: no changes required. Awaiting qa focused re-verify.
+- qa (TFL-1211, 2026-10-08): CLOSED. Independently re-ran the release gate: `npm.cmd run verify:full` -> exit 0, conventions clean (395 source files), Test Files 728 passed (728), Tests 8843 passed (8843), 0 failed; `test/unit/renderer/phase23_animationsSwitch.test.tsx` 10 passed. Line 113 matches the shipped copy at `src/renderer/components/PreferencesDialog.tsx:424`. Full suite green at release commit 4f7721f.
 
 ## DEF-631: Text inspector still scrolls horizontally at normal full-window width; its preview clips a formatting control
 
