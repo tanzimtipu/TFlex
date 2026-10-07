@@ -20,12 +20,28 @@ const OUT = process.env.PHASE94_SHOTS
 fs.mkdirSync(OUT, { recursive: true });
 test.setTimeout(240000);
 
+// Phase 105 retired the title-bar `[data-theme-toggle]` picker; the live route
+// cycles the application menu's "Toggle Theme" row until the requested theme is
+// live.
 async function setTheme(win, theme) {
-  await win.click('[data-theme-toggle]');
-  await win.waitForSelector('.theme-toggle-popover', { timeout: 5000 });
-  await win.click(`[data-theme-option="${theme}"]`);
-  await win.waitForFunction((w) => document.documentElement.getAttribute('data-theme') === w, theme);
-  await win.waitForTimeout(500);
+  for (let i = 0; i < 4; i += 1) {
+    if ((await win.evaluate(() => document.documentElement.getAttribute('data-theme'))) === theme) return;
+    await win.locator('[data-app-menu]').first().click();
+    await win.waitForSelector('[data-app-menu-popover]', { state: 'visible', timeout: 8000 });
+    await win.locator('[data-app-menu-popover] [data-menu-action="toggleTheme"]').first().click();
+    await win.waitForTimeout(700);
+  }
+  const now = await win.evaluate(() => document.documentElement.getAttribute('data-theme'));
+  if (now !== theme) throw new Error(`setTheme: could not reach '${theme}' (stuck at '${now}')`);
+}
+
+// Phase 105 retired `[data-open-preferences]`; the live route is the
+// application menu's "Preferences" row.
+async function openPreferences(win) {
+  await win.locator('[data-app-menu]').first().click();
+  await win.waitForSelector('[data-app-menu-popover]', { state: 'visible', timeout: 8000 });
+  await win.locator('[data-app-menu-popover] [data-menu-action="preferences"]').first().click();
+  await win.waitForSelector('[data-prefs-dialog]', { timeout: 8000 });
 }
 
 async function openDoc(app, win) {
@@ -51,8 +67,7 @@ for (const theme of ['light', 'dark']) {
     await openDoc(app, win);
     await win.screenshot({ path: path.join(OUT, `editor-${theme}.png`) });
 
-    await win.click('[data-open-preferences]');
-    await win.waitForSelector('[data-prefs-dialog]', { timeout: 8000 });
+    await openPreferences(win);
     await win.waitForTimeout(500);
     await win.locator('[data-prefs-dialog]').screenshot({
       path: path.join(OUT, `preferences-${theme}.png`),
@@ -124,8 +139,7 @@ test('Phase 94 icon accessibility — controls keep names, glyphs decorative', a
 
   await win.keyboard.press('Escape');
   await win.waitForTimeout(300);
-  await win.click('[data-open-preferences]');
-  await win.waitForSelector('[data-prefs-dialog]', { timeout: 8000 });
+  await openPreferences(win);
   const closeInfo = await win.evaluate(() => {
     const el = document.querySelector('[data-prefs-dialog] .sheet-close');
     if (!el) return null;

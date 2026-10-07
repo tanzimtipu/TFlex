@@ -7,13 +7,13 @@
 //           present with title "Collapse panel"; view-toggle icons
 //           (thumbnails / annotations / bookmarks) still work while expanded.
 //   P16C-2  Collapse button shrinks the rail to the 48px ruler strip; the
-//           grid column tweens 220px -> 48px on the registered --tf-rail-w
+//           grid column tweens 280px -> 48px on the registered --tf-rail-w
 //           token (Phase-15 motion token, 140ms since the 2026-09-14 panel
 //           speed-up). The SETTLED width is asserted deterministically
 //           (ruler mounted, then 350ms past the 140ms token, one-shot read)
 //           - never from a rAF sample.
 //   P16C-2b The tween itself is proven by rAF sampling mid-flight (a frame
-//           strictly between 48 and 220), kept in its own test so a slow
+//           strictly between 48 and 280), kept in its own test so a slow
 //           React commit can never race a settled assertion.
 //   P16C-3  Ruler numbers: one per page, no scrollbar chrome, current page
 //           painted in the theme's ACCENT token + bold, plain numbers in the
@@ -43,17 +43,21 @@ const { launchDev, openSample, diag, shot, hardClose, gotoStage } = require('./l
 // window is observable. Drop it before any launch.
 delete process.env.ELECTRON_RUN_AS_NODE;
 
-// Set the theme through the UI (title-bar theme popover), the way a user
-// would, and wait for data-theme + the 400ms crossfade to settle.
+// Set the theme through the UI (application menu), the way a user would, and
+// wait for data-theme + the 400ms crossfade to settle. Phase 105 retired the
+// title-bar `[data-theme-toggle]` picker; the live route cycles the app menu's
+// "Toggle Theme" row until the requested concrete theme is live.
 async function setTheme(window, want) {
-  await window.click('[data-theme-toggle]');
-  await window.click(`[data-theme-option="${want}"]`);
-  await window.waitForFunction(
-    (w) => document.documentElement.getAttribute('data-theme') === w,
-    want,
-    { timeout: 10000 },
-  );
-  await window.waitForTimeout(800); // 400ms crossfade token + settle
+  for (let i = 0; i < 4; i += 1) {
+    const now = await window.evaluate(() => document.documentElement.getAttribute('data-theme'));
+    if (now === want) return;
+    await window.locator('[data-app-menu]').first().click();
+    await window.waitForSelector('[data-app-menu-popover]', { state: 'visible', timeout: 8000 });
+    await window.locator('[data-app-menu-popover] [data-menu-action="toggleTheme"]').first().click();
+    await window.waitForTimeout(900); // 400ms crossfade token + settle
+  }
+  const now = await window.evaluate(() => document.documentElement.getAttribute('data-theme'));
+  if (now !== want) throw new Error(`setTheme: could not reach '${want}' (stuck at '${now}')`);
 }
 
 // Sample the workspace's first grid column (the rail column, resolved from
@@ -164,9 +168,10 @@ test('P16C-1: icon-only header; view-toggle icons work while expanded', async ()
     }
 
     // Annotations section renders the annotations panel in the REVIEW body.
+    // Phase 111 retired the `[data-context-panel-section="annotations"]` wrapper;
+    // the live annotations surface is `[data-annotation-panel]`.
     await gotoStage(window, 3);
-    const annTab = window.locator('[data-context-panel-section="annotations"]');
-    await expect(annTab).toBeVisible();
+    await expect(window.locator('[data-annotation-panel]')).toBeVisible();
     await window.locator('[data-annotation-panel]').waitFor({ timeout: 10000 });
     await gotoStage(window, 1); // back to PAGES for the screenshot
 
@@ -191,7 +196,7 @@ test('P16C-2: collapse button -> 48px ruler strip, settled on the registered tok
       };
     });
     console.log(`[P16C-2] baseline: ${JSON.stringify(base)}`);
-    expect(base.col1, 'rail column at rest is 220px').toBeCloseTo(220, 0);
+    expect(base.col1, 'rail column at rest is 280px').toBeCloseTo(280, 0);
     expect(
       base.hasRailTokenTransition,
       '.workspace must transition --tf-rail-w (registered token; no hardcoded duration)',
@@ -267,7 +272,7 @@ test('P16C-2b: rail width tweens through intermediate frames (no snap)', async (
     await window.locator('[data-rail-collapse]').click();
     const s = await samples;
 
-    const mids = s.filter((x) => x.w !== null && x.w > 48.5 && x.w < 219.5);
+    const mids = s.filter((x) => x.w !== null && x.w > 48.5 && x.w < 279.5);
     expect(mids.length, 'width must TWEEN 220->48 with intermediate frames, not snap').toBeGreaterThan(0);
     console.log(`[P16C-2b] mid-tween frames: ${JSON.stringify(mids.slice(0, 6))} ... total=${mids.length}`);
   } finally {
@@ -428,11 +433,14 @@ test('P16C-6: no-op sweep - every new control double-clicked, nothing hangs', as
       await outlineTab.click();
       await outlineTab.click();
     }
-    // Annotations section lives in the REVIEW body.
+    // Annotations section lives in the REVIEW body. Phase 111 retired the
+    // `[data-context-panel-section="annotations"]` wrapper; the live annotations
+    // surface is `[data-annotation-panel]`.
     await gotoStage(window, 3);
-    const annTab = window.locator('[data-context-panel-section="annotations"]');
-    await annTab.click();
-    await annTab.click();
+    const annPanel = window.locator('[data-annotation-panel]');
+    await annPanel.waitFor({ timeout: 10000 });
+    await annPanel.click();
+    await annPanel.click();
     await settle();
     await assertResponsive(window, 'after section double-clicks');
     const d2 = await window.evaluate(() => window.tflexDiagnostics());

@@ -492,11 +492,23 @@ describe("Phase 14 — spring tool motion", () => {
   });
 
   it("reduced motion removes the hover lift outright (wash and glow stay)", () => {
-    const block = /@media\s*\(prefers-reduced-motion:\s*reduce\)\s*\{([\s\S]*?)\n\}/.exec(
-      stripCssComments(css),
-    );
-    expect(block).not.toBeNull();
-    const body = block?.[1] ?? "";
+    // The file declares several reduced-motion blocks; walk each one (brace-
+    // matched so the body spans the WHOLE media block) and take the block
+    // that carries the tool-entry rule.
+    const stripped = stripCssComments(css);
+    const marker = "@media (prefers-reduced-motion: reduce)";
+    let body = "";
+    let from = 0;
+    for (;;) {
+      const idx = stripped.indexOf(marker, from);
+      if (idx === -1) break;
+      const candidate = extractRuleBody(stripped, idx);
+      if (candidate.includes(".tools-palette-entry")) {
+        body = candidate;
+        break;
+      }
+      from = idx + marker.length;
+    }
     expect(body).toMatch(/\.tools-palette-entry/);
     expect(body).toMatch(/transform:\s*none\s*!important/);
   });

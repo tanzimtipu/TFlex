@@ -218,8 +218,9 @@ describe("DEF-240 — the panel-slide pair resolves from the motion tokens", () 
   });
 
   it("declares --panel-slide-* as ALIASES of the motion tokens (no literals)", () => {
-    const rootIdx = STYLES_CSS.indexOf(":root {");
-    const body = STYLES_CSS.slice(rootIdx, STYLES_CSS.indexOf("}", rootIdx));
+    // Brace-match the :root block: a naive slice to the first `}` lands on a
+    // brace inside a comment and truncates before the --panel-slide-* pair.
+    const body = cssBlock(STYLES_CSS, "\n:root {");
     expect(body).toMatch(/--panel-slide-duration:\s*var\(--motion-duration-micro\)/);
     expect(body).toMatch(/--panel-slide-ease:\s*var\(--motion-ease-panel\)/);
   });

@@ -187,17 +187,18 @@ async function armAnnotationTool(window, kind) {
   await window.waitForTimeout(300);
 }
 
-// Phase 36 (chunk 6) — the Multi Mode toggle moved to the TITLE BAR
-// (`[data-header-multi-mode]`), the single control that switches the mode in
-// BOTH directions (it renders while Multi Mode is on too). The retired
-// All-tools badge/palette path this helper used is gone. The name is kept so
-// the many call sites stay unchanged; the behaviour is the original "toggle
-// Multi Mode through its real control, then let the panes settle".
+// Phase 36 (chunk 6) — the Multi Mode toggle moved out of the retired
+// `[data-header-multi-mode]` title-bar control. Phase 105 relocated it into the
+// application menu: `[data-app-menu]` -> `[data-app-menu-popover]
+// [data-menu-action="multiMode"]`, the single row that switches the mode in BOTH
+// directions. The name is kept so the many call sites stay unchanged; the
+// behaviour is the original "toggle Multi Mode through its real control, then
+// let the panes settle".
 async function toggleMultiModeViaPalette(window) {
-  const toggle = window.locator('[data-header-multi-mode]').first();
-  await toggle.waitFor({ state: 'visible', timeout: 10000 });
-  await toggle.click();
-  await window.waitForTimeout(600);
+  await window.locator('[data-app-menu]').first().click();
+  await window.waitForSelector('[data-app-menu-popover]', { state: 'visible', timeout: 8000 });
+  await window.locator('[data-app-menu-popover] [data-menu-action="multiMode"]').first().click();
+  await window.waitForTimeout(700);
 }
 
 // ---------------------------------------------------------------------------

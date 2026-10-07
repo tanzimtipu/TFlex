@@ -45,31 +45,40 @@ async function openDoc(filePath) {
   await win.waitForTimeout(900);
 }
 
+// Set the theme through the UI (application menu), the way a user would.
+// Phase 105 retired the title-bar `[data-theme-toggle]` picker; the live route
+// cycles the app menu's "Toggle Theme" row until the requested theme is live.
 async function setTheme(theme) {
-  await win.click('[data-theme-toggle]');
-  await win.waitForSelector('.theme-toggle-popover', { timeout: 5000 });
-  await win.click(`[data-theme-option="${theme}"]`);
-  await win.waitForFunction((w) => document.documentElement.getAttribute('data-theme') === w, theme);
-  await win.waitForTimeout(600);
+  for (let i = 0; i < 4; i += 1) {
+    if ((await win.evaluate(() => document.documentElement.getAttribute('data-theme'))) === theme) return;
+    await win.locator('[data-app-menu]').first().click();
+    await win.waitForSelector('[data-app-menu-popover]', { state: 'visible', timeout: 8000 });
+    await win.locator('[data-app-menu-popover] [data-menu-action="toggleTheme"]').first().click();
+    await win.waitForTimeout(900);
+  }
+  const now = await win.evaluate(() => document.documentElement.getAttribute('data-theme'));
+  if (now !== theme) throw new Error(`setTheme: could not reach '${theme}' (stuck at '${now}')`);
 }
 
 // ---------------------------------------------------------------------------
 // Item 9 — the single-view page-layout control.
 // ---------------------------------------------------------------------------
 const LAYOUT_STATE = `(() => {
-  const ctl = document.querySelector('[data-page-layout-control]');
-  if (!ctl) return null;
+  const strip = document.querySelector('[data-view-strip]');
+  if (!strip) return null;
+  const ctl = strip.querySelector('.view-strip-layout') || strip;
   const opts = [...ctl.querySelectorAll('[data-page-layout-option]')].map((b) => ({
     mode: b.getAttribute('data-page-layout-option'), pressed: b.getAttribute('aria-pressed'),
     label: b.getAttribute('aria-label'), active: b.classList.contains('tool-btn-active') }));
+  const content = document.querySelector('.document-content');
   const sc = document.querySelector('.document-scroller');
   const sr = sc ? sc.getBoundingClientRect() : null;
   const pages = [...document.querySelectorAll('.tab-pane[aria-hidden="false"] .pdf-page')];
   const rects = pages.map((p) => { const r = p.getBoundingClientRect();
     return { page: p.getAttribute('data-page'), left: Math.round(r.left), top: Math.round(r.top), right: Math.round(r.right), bottom: Math.round(r.bottom), w: Math.round(r.width), h: Math.round(r.height) }; });
   const fully = sr ? rects.filter((r) => r.w > 0 && r.h > 0 && r.left >= sr.left - 2 && r.right <= sr.right + 2 && r.top >= sr.top - 2 && r.bottom <= sr.bottom + 2) : [];
-  const input = document.querySelector('[data-page-pill] .page-input');
-  return { active: ctl.getAttribute('data-page-layout-active'), opts,
+  const input = strip.querySelector('.view-strip-page .page-input');
+  return { active: content ? content.getAttribute('data-page-layout') : null, opts,
     scroller: sr ? { left: Math.round(sr.left), top: Math.round(sr.top), right: Math.round(sr.right), bottom: Math.round(sr.bottom) } : null,
     fullyVisible: fully.length, fullyPages: fully.map((r) => r.page), readout: input ? input.value : null };
 })()`;
@@ -248,6 +257,14 @@ const PALETTE_MEASURE = `(() => {
   // The declared token set also includes the dock's primary-verb ink
   // (--dock-primary-fg, DEF-340) — the accent family's dock-specific value.
   const dockPrimary = cs.getPropertyValue('--dock-primary-fg').trim();
+  // The icon redesign (phase 103/108/111) introduced the declared icon ink
+  // ladder (--tf-icon-rest / --tf-icon-active) and the strong text ink
+  // (--fg-strong). These are named, declared tokens the dock verbs and other
+  // palette-hooked controls legitimately resolve to, so the finite palette
+  // includes them. Read the LIVE values from :root; an undeclared raw colour
+  // still has no matching token and fails below.
+  const declaredInk = ['--tf-icon-rest', '--tf-icon-active', '--fg-strong'];
+  const inkVals = {}; for (const r of declaredInk) inkVals[r] = cs.getPropertyValue(r).trim();
   const norm = (v) => { const h = /^#([0-9a-f]{6})$/i.exec((v || '').trim());
     if (h) { const n = parseInt(h[1], 16); return 'rgb(' + ((n >> 16) & 255) + ', ' + ((n >> 8) & 255) + ', ' + (n & 255) + ')'; }
     const p = parse(v); return p ? 'rgb(' + p.r + ', ' + p.g + ', ' + p.b + ')' : v; };
@@ -255,9 +272,9 @@ const PALETTE_MEASURE = `(() => {
   const hooked = [...document.querySelectorAll('[data-dock-verb], .tool-btn[data-icon], .ann-tool-btn[data-tool], .tools-palette-entry[data-tool-id], .rail-tab[data-rail-tab]')];
   const samples = hooked.map((el) => ({ sel: el.tagName + (el.getAttribute('data-dock-verb') ? '[dock=' + el.getAttribute('data-dock-verb') + ']' : '') + (el.getAttribute('data-icon') ? '[icon=' + el.getAttribute('data-icon') + ']' : '') + (el.getAttribute('data-tool') ? '[tool=' + el.getAttribute('data-tool') + ']' : '') + (el.getAttribute('data-tool-id') ? '[tid=' + el.getAttribute('data-tool-id') + ']' : '') + (el.getAttribute('data-rail-tab') ? '[rail=' + el.getAttribute('data-rail-tab') + ']' : ''),
     color: getComputedStyle(el).color }));
-  const allowed = new Set([...Object.values(roleVals), dockPrimary].map(norm));
+  const allowed = new Set([...Object.values(roleVals), dockPrimary, ...Object.values(inkVals)].map(norm));
   const outside = samples.filter((s) => !allowed.has(s.color));
-  return { theme: document.documentElement.getAttribute('data-theme'), roleVals, dockPrimary,
+  return { theme: document.documentElement.getAttribute('data-theme'), roleVals, dockPrimary, inkVals,
     dockPrimaryMatchesPrimary: norm(dockPrimary) === norm(roleVals['--sem-primary']),
     allowed: [...allowed], sampleCount: samples.length, outside };
 })()`;
@@ -272,7 +289,7 @@ test('P40-12 palette finite + contrast table in all three themes', async () => {
   for (const theme of ['light', 'dark', 'frosted']) {
     await setTheme(theme);
     const m = await win.evaluate(PALETTE_MEASURE);
-    console.log(`[P40 item12 ${theme}] roles=${JSON.stringify(m.roleVals)} dockPrimary=${m.dockPrimary} dockPrimaryMatchesPrimary=${m.dockPrimaryMatchesPrimary} samples=${m.sampleCount} outside=${JSON.stringify(m.outside)}`);
+    console.log(`[P40 item12 ${theme}] roles=${JSON.stringify(m.roleVals)} dockPrimary=${m.dockPrimary} ink=${JSON.stringify(m.inkVals)} dockPrimaryMatchesPrimary=${m.dockPrimaryMatchesPrimary} samples=${m.sampleCount} outside=${JSON.stringify(m.outside)}`);
     expect(m.outside, `${theme}: no palette-hooked control uses a colour outside the declared set`).toEqual([]);
     table.push({ theme, roles: m.roleVals, dockPrimary: m.dockPrimary });
   }
