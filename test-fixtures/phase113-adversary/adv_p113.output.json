@@ -2,12 +2,12 @@
   "S1a": {
     "mergeTilePresent": true,
     "mergeAfterDoubleCounts": {
-      "open": 2,
+      "open": 1,
       "save": 0
     },
     "mergeAfterDoubleDialogs": 0,
     "mergeAfterStormCounts": {
-      "open": 5,
+      "open": 1,
       "save": 0
     },
     "mergeAfterStormDialogs": 0,
@@ -15,7 +15,7 @@
   },
   "S1b": {
     "openCounts": {
-      "open": 2,
+      "open": 1,
       "save": 0
     },
     "openDialogs": 0,
@@ -26,8 +26,8 @@
     },
     "saveAsDialogs": 1,
     "rotateBefore": 0,
-    "rotateAfter": 2,
-    "rotateDelta": 2,
+    "rotateAfter": 1,
+    "rotateDelta": 1,
     "menuClosedAfterVerb": true
   },
   "S2": {
@@ -76,15 +76,15 @@
       "text": ""
     },
     "paletteFocusAfterEscape": {
-      "tag": "BODY",
+      "tag": "BUTTON",
       "id": null,
-      "cls": "",
+      "cls": "btn btn-ghost btn-icon btn-compact header-tool-search",
       "action": null,
-      "ariaLabel": null,
+      "ariaLabel": "Search tools and commands (Ctrl+K)",
       "dataMenuButton": false,
       "dataAppMenu": false,
-      "dataToolSearch": false,
-      "text": "JovrelFileOpenSign in1791302"
+      "dataToolSearch": true,
+      "text": ""
     },
     "prefsRowPresent": true,
     "prefsOpenFocus": {
@@ -99,15 +99,15 @@
       "text": ""
     },
     "prefsFocusAfterClose": {
-      "tag": "BODY",
+      "tag": "BUTTON",
       "id": null,
-      "cls": "",
+      "cls": "btn btn-secondary btn-icon btn-disclosure btn-compact app-menu-trigger",
       "action": null,
-      "ariaLabel": null,
+      "ariaLabel": "Application menu",
       "dataMenuButton": false,
-      "dataAppMenu": false,
+      "dataAppMenu": true,
       "dataToolSearch": false,
-      "text": "JovrelFileOpenSign in1791302"
+      "text": ""
     },
     "prefsClosed": true
   },
@@ -272,11 +272,11 @@
     "dockMoreAriaExpandedBefore": "false",
     "dockMoreAriaExpandedAfter": "true",
     "dockMoreRect": {
-      "x": 1269,
+      "x": 1289,
       "y": 1072,
       "w": 300,
       "h": 190,
-      "right": 1569,
+      "right": 1589,
       "bottom": 1262,
       "vw": 2560,
       "vh": 1392,
@@ -295,12 +295,12 @@
     },
     "dockMoreEscapeDetached": true,
     "ctxRect": {
-      "x": 186,
-      "y": 894,
+      "x": 206,
+      "y": 769,
       "w": 300,
       "h": 266,
-      "right": 486,
-      "bottom": 1160,
+      "right": 506,
+      "bottom": 1035,
       "vw": 2560,
       "vh": 1392,
       "position": "fixed"

@@ -13887,7 +13887,8 @@ Retest evidence:
 
 ## DEF-610: A real double-click fires the Home hero Merge and the title-bar Open native pickers twice (ADV-236)
 
-- Status: OPEN
+- Status: CLOSED (TFL-1087 qa retest, 2026-10-07)
+- Fix (TFL-1087, frontend-dev verbatim): `onOpenClick` synchronous re-entry guard (`openInFlightRef`, finally release); `runFromScratchMerge` re-entry guard (`mergeInFlightRef` + 500ms start cooldown, so a real 60ms double-click is de-duplicated, not only same-tick); `CommandMenu.activate` `activatedRef` guard reset on close. Evidence: `e2e/def610_611_reentry_focus.spec.cjs` -> 1 passed; `adv_realdbl.output.json` S1a dblclick open 1, two-clicks-60ms open 1, S1b open 1, rotateDelta 1; `adv_p113.output.json` S1a/S1b open 1, rotateDelta 1; vitest commandMenu + def331_paletteEscape + dialogShell -> 59 passed; `npm run verify` conventions clean (384 files) + typecheck pass.
 - Severity: MEDIUM - a real double-click (or two clicks ~60 ms apart) on the Home hero Merge action and the title-bar Open action invokes the native `showOpenDialog` twice; a five-click storm fires it five times. The page-thumb `rotate-cw` row is also unguarded in a single synchronous task (two sync `.click()` -> delta 2).
 - Found by: adversary (ADV-236)
 - Phase: 113 (Quiet Actions - chunk H adversarial diff-pass)
@@ -13896,10 +13897,17 @@ Retest evidence:
 - Probe: `test-fixtures/phase113-adversary/adv_realdbl.spec.cjs`, `adv_p113.spec.cjs` (S1a/S1b); measurements `adv_realdbl.output.json`, `adv_p113.output.json`.
 - Class: PRE-EXISTING - the detached-HEAD `f9a88c2` oracle produced byte-identical numbers (merge 2/2, storm 5, open 2, rotate synchronously delta 2).
 - Closure: does NOT block Phase 113 (pre-existing, out of this presentation-only phase's scope; criterion 7 preserves behaviour). Tracked by deferred issue TFL-1057.
+- QA retest (TFL-1090, 2026-10-07): PASS -> CLOSED. Re-ran the TFL-1087 renderer fix in the live app; all counts now de-duplicate.
+  - `npx.cmd playwright test e2e/def610_611_reentry_focus.spec.cjs` -> 1 passed. `[data-home-tool="merge"]` dblclick open=1; two real clicks 60ms apart open=1; `[data-toolbar-open]` dblclick open=1; `[data-context-menu] [data-menu-item="rotate-cw"]` two synchronous clicks -> engine rotations delta=1.
+  - `npx.cmd playwright test --config=test-fixtures/phase113-adversary/playwright.config.cjs ...adv_realdbl.spec.cjs ...adv_p113.spec.cjs` -> 10 passed. `adv_realdbl.output.json`: S1a afterDblclick open 1, afterTwoClicks60ms open 1; S1b openAfterDblclick open 1, rotateDelta 1. `adv_p113.output.json`: S1a mergeAfterDoubleCounts open 1 / mergeAfterStormCounts open 1; S1b openCounts open 1, rotateDelta 1.
+  - `npx.cmd vitest run test/unit/renderer/commandMenu.test.tsx test/unit/renderer/def331_paletteEscape.test.tsx test/unit/renderer/dialogShell.test.tsx` -> 3 files, 59 tests passed (new same-tick double-activation case in commandMenu.test.tsx present + green).
+  - `npm.cmd run verify` -> conventions clean (384 files) + typecheck pass.
+  - Blast radius: single activation still dispatches exactly once (merge open=1, rotate delta=1), so the guard does not suppress legitimate use; title-bar Open / Save As neighbour unchanged (adv_p113 S1b saveAsCounts open 0 save 0, saveAsDialogs 1).
 
 ## DEF-611: Closing the Command Palette or Preferences drops focus to `<body>` instead of the opener (ADV-237)
 
-- Status: OPEN
+- Status: CLOSED (TFL-1087 qa retest, 2026-10-07)
+- Fix (TFL-1087, frontend-dev verbatim): `CommandPalette.tsx` return focus to `[data-header-tool-search]` on close; `PreferencesDialog.tsx` return focus to `[data-app-menu]` on close (DialogShell untouched). Evidence: `e2e/def610_611_reentry_focus.spec.cjs` -> 1 passed (palette focus = Search-tools BUTTON, prefs focus = app-menu BUTTON in `adv_p113.output.json` S2); vitest commandMenu + def331_paletteEscape + dialogShell -> 59 passed; `npm run verify` conventions clean (384 files) + typecheck pass.
 - Severity: LOW - after Escape-closing the Command Palette (`Ctrl+K`) or Preferences, `document.activeElement` is `BODY` instead of the invoking control, so a keyboard user must Tab from the top of the page. Every other disclosure (File menu, dock More overflow, thumbnail context menu) returns focus correctly.
 - Found by: adversary (ADV-237)
 - Phase: 113 (Quiet Actions - chunk H adversarial diff-pass)
@@ -13908,6 +13916,12 @@ Retest evidence:
 - Probe: `test-fixtures/phase113-adversary/adv_p113.spec.cjs` (S2); measurements `adv_p113.output.json`.
 - Class: PRE-EXISTING - no focus logic changed by the Phase 113 diff; identical at HEAD `f9a88c2`.
 - Closure: does NOT block Phase 113 (pre-existing, out of scope). Tracked by deferred issue TFL-1057.
+- QA retest (TFL-1090, 2026-10-07): PASS -> CLOSED. Focus now returns to the opener instead of `BODY`.
+  - `npx.cmd playwright test e2e/def610_611_reentry_focus.spec.cjs` -> 1 passed. Palette Escape focuses `[data-header-tool-search]`; Preferences Escape focuses `[data-app-menu]`; both `document.activeElement.tag !== BODY`.
+  - `npx.cmd playwright test --config=test-fixtures/phase113-adversary/playwright.config.cjs ...adv_p113.spec.cjs` -> 10 passed. S2 paletteFocusAfterEscape = BUTTON `header-tool-search` (dataToolSearch=true); prefsFocusAfterClose = BUTTON `app-menu-trigger` (dataAppMenu=true).
+  - `npx.cmd vitest run test/unit/renderer/def331_paletteEscape.test.tsx ...` -> 59 passed (new palette close-focus case present + green).
+  - `npm.cmd run verify` -> conventions clean (384 files) + typecheck pass.
+  - Blast radius: `DialogShell.tsx` untouched; `dialogShell.test.tsx` green; the File-menu focus return neighbour (adv_p113 S2 fileFocusAfterEscape, aria-expanded false) unchanged.
 
 ## DEF-612: The current page card carries the full accent-selected wash + ring, so current is not visually distinct from the selected set
 

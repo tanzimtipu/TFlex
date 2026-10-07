@@ -29,7 +29,7 @@
 // have to honour it on the next `addRecentFile`.)
 
 import type { KeyboardEvent as ReactKeyboardEvent, ReactElement } from 'react';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import {
   FileType2,
   FolderOpen,
@@ -176,6 +176,24 @@ export function PreferencesDialog(props: PreferencesDialogProps): ReactElement |
   // active category button is tabbable; arrow keys move between them.
   const [category, setCategory] = useState<PrefsCategoryId>('general');
   const categoryRefs = useRef<Partial<Record<PrefsCategoryId, HTMLButtonElement | null>>>({});
+
+  // DEF-611 — return focus to the application-menu trigger on close. The sheet
+  // opens from that menu row; DialogShell lands initial focus inside the sheet
+  // and (by design) never restores it, so the return-focus is scoped to
+  // Preferences here rather than changing the shared shell for every dialog.
+  const returnFocusRef = useRef<HTMLElement | null>(null);
+  const focusSeededRef = useRef(false);
+  useLayoutEffect((): void => {
+    if (!open) {
+      focusSeededRef.current = false;
+      const target = returnFocusRef.current;
+      if (target !== null && document.contains(target)) target.focus();
+      return;
+    }
+    if (focusSeededRef.current) return;
+    focusSeededRef.current = true;
+    returnFocusRef.current = document.querySelector<HTMLElement>('[data-app-menu]');
+  }, [open]);
 
   const selectCategory = (next: PrefsCategoryId): void => {
     setCategory(next);

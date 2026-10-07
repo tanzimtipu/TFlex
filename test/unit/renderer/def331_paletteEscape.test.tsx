@@ -116,4 +116,31 @@ describe('DEF-331 — Escape closes the palette before the dialog beneath it', (
       window.removeEventListener('keydown', listener);
     }
   });
+
+  it('returns focus to the Search tools opener on close (DEF-611)', () => {
+    const opener = document.body.appendChild(document.createElement('button'));
+    opener.setAttribute('data-header-tool-search', 'true');
+    const host = document.body.appendChild(document.createElement('div'));
+    const root = createRoot(host);
+    const onClose = vi.fn();
+    try {
+      act((): void => {
+        root.render(
+          <CommandPalette open onClose={onClose} onRunTool={vi.fn()} onPinTool={vi.fn()} />,
+        );
+      });
+      act((): void => {
+        root.render(
+          <CommandPalette open={false} onClose={onClose} onRunTool={vi.fn()} onPinTool={vi.fn()} />,
+        );
+      });
+      expect(document.activeElement).toBe(opener);
+    } finally {
+      act((): void => {
+        root.unmount();
+      });
+      host.remove();
+      opener.remove();
+    }
+  });
 });

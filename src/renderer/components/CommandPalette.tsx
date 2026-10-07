@@ -22,7 +22,7 @@
 // with the reason copy the Action Dock already shows. Nothing here is a second
 // implementation of anything.
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { ChangeEvent, MouseEvent as ReactMouseEvent, ReactElement } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import { Pin, Search, TextSearch } from 'lucide-react';
@@ -124,6 +124,25 @@ export function CommandPalette(props: CommandPaletteProps): ReactElement {
   const [notice, setNotice] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement | null>(null);
   const boxRef = useRef<HTMLDivElement | null>(null);
+  // DEF-611 — return focus on close. The palette has TWO openers (the header
+  // Search-tools button and the `Ctrl+K` chord), so the target is the declared
+  // button `[data-header-tool-search]`, not whichever element held focus. The
+  // capture runs before the input takes focus; the restore runs in the `!open`
+  // branch (mirrors CommandMenu's `returnFocusRef` pattern), and the seed flag
+  // keeps a mount while already closed from focusing anything.
+  const returnFocusRef = useRef<HTMLElement | null>(null);
+  const focusSeededRef = useRef(false);
+  useLayoutEffect((): void => {
+    if (!open) {
+      focusSeededRef.current = false;
+      const target = returnFocusRef.current;
+      if (target !== null && document.contains(target)) target.focus();
+      return;
+    }
+    if (focusSeededRef.current) return;
+    focusSeededRef.current = true;
+    returnFocusRef.current = document.querySelector<HTMLElement>('[data-header-tool-search]');
+  }, [open]);
 
   // The availability gate is read through a ref: the host rebuilds that
   // callback whenever any live App state it reads changes, and rebuilding the

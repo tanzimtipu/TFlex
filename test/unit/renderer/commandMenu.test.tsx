@@ -300,6 +300,27 @@ describe("TFL-901 — CommandMenu keyboard model", () => {
     cleanup();
   });
 
+  it("fires onSelect once for two synchronous clicks on the same row (DEF-610)", () => {
+    const onSelect = vi.fn();
+    const onClose = vi.fn();
+    const { container, cleanup } = mount(
+      <CommandMenu
+        open
+        groups={sampleGroups()}
+        ariaLabel="Application menu"
+        onClose={onClose}
+        onSelect={onSelect}
+      />,
+    );
+    const open = rowByAction(container, "file.open") as HTMLButtonElement;
+    // Two activations in the SAME tick, before any close re-render can unmount
+    // the surface: the re-entry guard must dispatch the command exactly once.
+    firePointer(open, "click");
+    firePointer(open, "click");
+    expect(onSelect).toHaveBeenCalledTimes(1);
+    cleanup();
+  });
+
   it("renders a checked row as menuitemcheckbox with aria-checked=true", () => {
     const { container, cleanup } = mount(
       <CommandMenu open groups={sampleGroups()} ariaLabel="Application menu" onClose={vi.fn()} />,

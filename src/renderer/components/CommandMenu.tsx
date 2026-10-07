@@ -472,6 +472,10 @@ export function CommandMenu(props: CommandMenuProps): ReactElement {
   const rootListRef = useRef<HTMLDivElement | null>(null);
   const returnFocusRef = useRef<HTMLElement | null>(null);
   const focusSeededRef = useRef(false);
+  // DEF-610 — synchronous re-entry guard: two same-tick activations of one row
+  // (a real double-click, or `el.click(); el.click()`) must dispatch once. The
+  // flag is set on the first activation and cleared when the surface closes.
+  const activatedRef = useRef(false);
   const onCloseRef = useRef(onClose);
   onCloseRef.current = onClose;
   const onSelectRef = useRef(onSelect);
@@ -495,6 +499,10 @@ export function CommandMenu(props: CommandMenuProps): ReactElement {
 
   const activate = useCallback((item: CommandMenuItem): void => {
     if (item.disabled === true) return;
+    // DEF-610 — dispatch at most once per open surface; the flag is reset when
+    // the surface closes (the `!open` branch below) so the next open is fresh.
+    if (activatedRef.current) return;
+    activatedRef.current = true;
     if (onSelectRef.current !== undefined) onSelectRef.current(item);
     else item.onSelect?.(item);
     onCloseRef.current?.();
@@ -508,6 +516,7 @@ export function CommandMenu(props: CommandMenuProps): ReactElement {
   useLayoutEffect(() => {
     if (!open) {
       focusSeededRef.current = false;
+      activatedRef.current = false;
       const target = returnFocusRef.current;
       if (target !== null && document.contains(target)) target.focus();
       return undefined;

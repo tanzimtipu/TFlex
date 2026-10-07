@@ -2495,17 +2495,29 @@ export function App(): ReactElement {
     [openPdfFromPath],
   );
 
+  // DEF-610 — a synchronous re-entry guard for the generic Open. A title-bar
+  // double-click (or two rapid clicks) invokes `onOpenClick` twice in the same
+  // tick before the first `openFileDialog` promise settles, so the native picker
+  // opened twice. The ref is set synchronously on entry and released in
+  // `finally`, so the second invocation is a no-op until the first resolves.
+  const openInFlightRef = useRef(false);
   const onOpenClick = useCallback(async (): Promise<void> => {
-    // DEF-375 — the generic Open path routes non-PDF files through the
-    // conversion bridge, so the OS dialog must offer the grouped Phase 53
-    // filters (`openFileDialog('document')`), not the PDF-only default.
-    const picked = await window.tflex.openFileDialog("document");
-    if (picked === null) return;
-    // Phase 32 (DEF-277/DEF-278) — in Multi Mode this generic open lands in
-    // the focused pane; a file that is already the OTHER pane's document is
-    // refused up front so no tab is created for a document that would never
-    // become visible. Single mode: the ref's methods are no-ops/false.
-    await openFromRequest(picked);
+    if (openInFlightRef.current) return;
+    openInFlightRef.current = true;
+    try {
+      // DEF-375 — the generic Open path routes non-PDF files through the
+      // conversion bridge, so the OS dialog must offer the grouped Phase 53
+      // filters (`openFileDialog('document')`), not the PDF-only default.
+      const picked = await window.tflex.openFileDialog("document");
+      if (picked === null) return;
+      // Phase 32 (DEF-277/DEF-278) — in Multi Mode this generic open lands in
+      // the focused pane; a file that is already the OTHER pane's document is
+      // refused up front so no tab is created for a document that would never
+      // become visible. Single mode: the ref's methods are no-ops/false.
+      await openFromRequest(picked);
+    } finally {
+      openInFlightRef.current = false;
+    }
   }, [openFromRequest]);
 
   // Phase 35 — Windows integration. A PDF dropped from Explorer opens the
@@ -5161,81 +5173,105 @@ export function App(): ReactElement {
   // sequencing lives in the pure `runMergeFromScratch` helper so it is
   // unit-tested without mounting App; these closures supply the real
   // picker / engine / tab wiring.
+  // DEF-610 — a synchronous re-entry guard for the from-scratch Merge. The
+  // Home hero tile, the File menu and the dock all funnel into this callback;
+  // a rapid double activation started the multi-select picker twice before the
+  // first promise settled. The ref is set on entry and released in `finally`,
+  // and a short cooldown from the last START also de-duplicates a real OS
+  // double-click (two independent completed flows, clicks ~60ms apart) which a
+  // per-flow `finally` alone would not cover once a cancelled picker resolves
+  // in a few milliseconds.
+  const MERGE_REENTRY_WINDOW_MS = 500;
+  const mergeInFlightRef = useRef(false);
+  const mergeLastStartRef = useRef(0);
   const runFromScratchMerge = useCallback(async (): Promise<void> => {
-    const pickPdfPaths = window.tflex.openFilesDialog;
-    if (pickPdfPaths === undefined) {
-      pushToast("error", "This build cannot select multiple PDFs.");
+    const startedAt = Date.now();
+    if (
+      mergeInFlightRef.current ||
+      startedAt - mergeLastStartRef.current < MERGE_REENTRY_WINDOW_MS
+    ) {
       return;
     }
-    await runMergeFromScratch({
-      pickPdfPaths: (): Promise<string[]> => pickPdfPaths("pdf"),
-      openSinglePdf: (path: string): Promise<unknown> => openPdfFromPath(path),
-      openFirstAsCombined: async (
-        firstPath: string,
-        totalPicked: number,
-      ): Promise<{ tabId: string; engineDocId: string } | null> => {
-        const loaded = await window.tflex.loadPdf(firstPath);
-        if (!loaded.ok) {
-          pushToast("error", toastForPdfError(loaded.error.code, firstPath));
-          return null;
-        }
-        // In-memory: a from-scratch merge is a NEW document and must
-        // never overwrite the first source file (Save-As is required
-        // to keep it, exactly like split / extract / optimize).
-        const opened = await openFromBytes(toArrayBuffer(loaded.value), {
-          kind: "file",
-          path: `<merge>${firstPath}`,
-          displayName: `Merged (${totalPicked} files)`,
-          onDiskPath: null,
-          dedupePath: false,
-        });
-        if (opened === null) return null;
-        return { tabId: opened.tabId, engineDocId: opened.engineDocId };
-      },
-      mergeRest: async (
-        tabId: string,
-        engineDocId: string,
-        otherPaths: string[],
-      ): Promise<{ ok: boolean; message?: string }> => {
-        const result = await engineRef.current.merge(
-          engineDocId,
-          otherPaths,
-          "after",
-        );
-        if (!result.ok) {
-          return {
-            ok: false,
-            message: describeEngineError(result.error.code, result.error.message),
-          };
-        }
-        noteOpApplied(tabId, result.value);
-        // Merge mutates page content: rebuild the tab's PDF.js proxy
-        // so the merged-in pages render (same refresh crop / stamp /
-        // the doc-bound merge already use).
-        const refreshFn = refreshDocProxyForRef.current;
-        if (refreshFn !== null) {
-          void refreshFn(tabId).catch(() => undefined);
-        }
-        return { ok: true };
-      },
-      onError: (message: string): void => {
-        pushToast("error", message);
-      },
-      onMerged: (tabId: string, totalPicked: number): void => {
-        // Mark the combined tab modified so the header dot shows it
-        // has not been saved yet (mirrors the split / extract flow).
-        dispatchTabs({ type: "set-modified", id: tabId, modified: true });
-        setOpenTabs((prev) => {
-          const tab = prev[tabId];
-          if (tab === undefined) return prev;
-          return {
-            ...prev,
-            [tabId]: { ...tab, meta: { ...tab.meta, modified: true } },
-          };
-        });
-        pushToast("info", `Merged ${totalPicked} PDFs into one document.`);
-      },
-    });
+    mergeLastStartRef.current = startedAt;
+    mergeInFlightRef.current = true;
+    try {
+      const pickPdfPaths = window.tflex.openFilesDialog;
+      if (pickPdfPaths === undefined) {
+        pushToast("error", "This build cannot select multiple PDFs.");
+        return;
+      }
+      await runMergeFromScratch({
+        pickPdfPaths: (): Promise<string[]> => pickPdfPaths("pdf"),
+        openSinglePdf: (path: string): Promise<unknown> => openPdfFromPath(path),
+        openFirstAsCombined: async (
+          firstPath: string,
+          totalPicked: number,
+        ): Promise<{ tabId: string; engineDocId: string } | null> => {
+          const loaded = await window.tflex.loadPdf(firstPath);
+          if (!loaded.ok) {
+            pushToast("error", toastForPdfError(loaded.error.code, firstPath));
+            return null;
+          }
+          // In-memory: a from-scratch merge is a NEW document and must
+          // never overwrite the first source file (Save-As is required
+          // to keep it, exactly like split / extract / optimize).
+          const opened = await openFromBytes(toArrayBuffer(loaded.value), {
+            kind: "file",
+            path: `<merge>${firstPath}`,
+            displayName: `Merged (${totalPicked} files)`,
+            onDiskPath: null,
+            dedupePath: false,
+          });
+          if (opened === null) return null;
+          return { tabId: opened.tabId, engineDocId: opened.engineDocId };
+        },
+        mergeRest: async (
+          tabId: string,
+          engineDocId: string,
+          otherPaths: string[],
+        ): Promise<{ ok: boolean; message?: string }> => {
+          const result = await engineRef.current.merge(
+            engineDocId,
+            otherPaths,
+            "after",
+          );
+          if (!result.ok) {
+            return {
+              ok: false,
+              message: describeEngineError(result.error.code, result.error.message),
+            };
+          }
+          noteOpApplied(tabId, result.value);
+          // Merge mutates page content: rebuild the tab's PDF.js proxy
+          // so the merged-in pages render (same refresh crop / stamp /
+          // the doc-bound merge already use).
+          const refreshFn = refreshDocProxyForRef.current;
+          if (refreshFn !== null) {
+            void refreshFn(tabId).catch(() => undefined);
+          }
+          return { ok: true };
+        },
+        onError: (message: string): void => {
+          pushToast("error", message);
+        },
+        onMerged: (tabId: string, totalPicked: number): void => {
+          // Mark the combined tab modified so the header dot shows it
+          // has not been saved yet (mirrors the split / extract flow).
+          dispatchTabs({ type: "set-modified", id: tabId, modified: true });
+          setOpenTabs((prev) => {
+            const tab = prev[tabId];
+            if (tab === undefined) return prev;
+            return {
+              ...prev,
+              [tabId]: { ...tab, meta: { ...tab.meta, modified: true } },
+            };
+          });
+          pushToast("info", `Merged ${totalPicked} PDFs into one document.`);
+        },
+      });
+    } finally {
+      mergeInFlightRef.current = false;
+    }
   }, [openFromBytes, openPdfFromPath, pushToast, noteOpApplied, toastForPdfError]);
 
   /** Phase 40 item 4 — one Merge entry point for the Welcome screen,
