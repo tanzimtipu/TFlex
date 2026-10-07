@@ -5211,3 +5211,21 @@ Rule: judge the child's REPORT, not its flapping status. A child that returns to
 after a complete final report is the echo, not a stall - do not re-review, do not re-dispatch qa, do not
 continue the issue. Keep the parent `blocked` and let the creation-time parent-child link deliver the real
 completion wake (see the 2026-10-05 corollary above); never resume the parent off a `todo`-status child.
+
+## 2026-10-07: the canonical installed-build spec drifts silently because it is NOT in `verify:full` (v1.51.0 release gate)
+
+The 1.51.0 release gate (TFL-1111) failed on `e2e/installed/canonical_installed_build.spec.cjs`: its ABOUT
+test clicked `[data-menu-button]`, which since Phase 105 opens the File-only menu, so
+`[data-menu-action="about"]` never appears; Help/About moved to the AppHeader application menu
+`[data-app-menu]` (`AppHeader.tsx:361`, popover `[data-app-menu-popover]`). Because `e2e/installed/**` is
+excluded from the standard suite, `verify:full` stayed GREEN while the installed spec rotted through the
+Phase 103-113 chrome overhaul (CORE 6's retired `[data-open-preferences]` and CORE 7's 264px Inspector inset
+were stale too). Cost: a blocked release plus a fix cycle (TFL-1112). Rule: the canonical spec's VERSION
+assertions stay pinned to `package.json` but its SURFACE selectors MUST move with the app - when a chunk
+moves or renames a title-row / chrome / menu hook, update `e2e/installed/canonical_installed_build.spec.cjs`
+in the SAME chunk, and run it at any phase gate that touches chrome - not only at release:
+`TFLEX_PACKAGED_EXE=release/win-unpacked/Jovrel.exe npx.cmd playwright test --config=e2e/installed/playwright.installed.config.js canonical_installed_build`.
+
+Environment note (same gate): the agent shell is non-elevated, so the silent per-machine install
+(`Jovrel-Setup-<version>-x64.exe /S`) is INCONCLUSIVE and the installed build stays at the prior version; the
+PACKAGED-build override above is the available packaging evidence, and the portable smoke is the other.
