@@ -1,0 +1,25 @@
+{
+  "categories": [
+    "Search and Command Palette",
+    "Feedback and Progress",
+    "Preferences and Themes",
+    "Forms and Validation",
+    "Comments and Review",
+    "Selection and Manipulation",
+    "Drag Drop and Import",
+    "Responsive and Accessibility",
+    "Print and Output"
+  ],
+  "layouts": 18,
+  "widths": [
+    736,
+    520,
+    360,
+    320
+  ],
+  "themes": [
+    "light",
+    "dark"
+  ],
+  "engineTesting": false
+}

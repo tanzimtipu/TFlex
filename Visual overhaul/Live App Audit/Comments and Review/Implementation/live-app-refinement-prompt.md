@@ -1,0 +1,9 @@
+# Orchestrator refinement prompt — Comments and Review
+
+Read `Specifications/live-app-refinements.md` beside this category's original specification and implementation prompt. Apply this live-app addendum first wherever a schematic visual or generic instruction conflicts with actual behavior. Preserve the shared tokens, colorful document identities, accessible states and original acceptance criteria.
+
+Entered Review with the bundled form, which has zero annotations. Both left and right panels repeat annotation count, empty-state instructions, Bates numbering, watermarks and signatures. Right panel also exposes FDF import/export. Dock exposes Annotate, Sign, Stamp, Forms, Flatten, Bates numbering, comment/form-data exchange, validation, sanitization and engineering layers.
+
+Implement the existing ownership recommendation concretely: left panel owns annotation navigation and filtering; right owns selected-item properties, with document properties when nothing is selected. Show the empty explanation once with an action that opens existing annotation tools. Move FDF exchange into list-level actions rather than duplicating the list. Keep Bates, watermark and signature summaries available as compact document sections. Threaded replies, authors and Resolve/Reopen remain capability-dependent proposals; an empty sample does not establish their availability or absence. Do not add fake collaboration metadata.
+
+First map these observed controls to their real renderer components, command IDs and engine/IPC handlers in source. Implement the visual migration without removing existing capabilities. Treat any proposed additional behavior as a separate capability-backed extension. Run the listed fixture checks, report what passed and what remains unverified, and provide screenshots of the actual revised app. Prototype interaction checks do not constitute engine/output tests.

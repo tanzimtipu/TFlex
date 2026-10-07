@@ -1,0 +1,7 @@
+# Live-app refinement — Comments and Review
+
+Inspected 5 October 2026 using the installed `C:\Program Files\Jovrel\Jovrel.exe` via native UI automation. This addendum takes precedence over illustrative layouts and generic implementation choices in the earlier handoff for the behaviors below. Shared Quiet Precision tokens and the user's colorful-tab requirement remain in force.
+
+Entered Review with the bundled form, which has zero annotations. Both left and right panels repeat annotation count, empty-state instructions, Bates numbering, watermarks and signatures. Right panel also exposes FDF import/export. Dock exposes Annotate, Sign, Stamp, Forms, Flatten, Bates numbering, comment/form-data exchange, validation, sanitization and engineering layers.
+
+Implement the existing ownership recommendation concretely: left panel owns annotation navigation and filtering; right owns selected-item properties, with document properties when nothing is selected. Show the empty explanation once with an action that opens existing annotation tools. Move FDF exchange into list-level actions rather than duplicating the list. Keep Bates, watermark and signature summaries available as compact document sections. Threaded replies, authors and Resolve/Reopen remain capability-dependent proposals; an empty sample does not establish their availability or absence. Do not add fake collaboration metadata.

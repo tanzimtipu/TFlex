@@ -1,0 +1,9 @@
+# Orchestrator refinement prompt — Canvas
+
+Read `Specifications/live-app-refinements.md` beside this category's original specification and implementation prompt. Apply this live-app addendum first wherever a schematic visual or generic instruction conflicts with actual behavior. Preserve the shared tokens, colorful document identities, accessible states and original acceptance criteria.
+
+The form renders interactive widgets over the PDF page. Multi Mode with one document presents pane A, an empty pane B with Open PDF, a resizable divider, pane-A thumbnails, per-pane navigation/zoom, and “Drag page 1 to another document (Ctrl to copy).” Entering it from Review presents Pages-oriented controls; returning restores the single-document Review view.
+
+Extend Paper Stage to both panes, preserving independent viewport/selection state and a visible active pane. Reserve pane-thumbnail width and ensure widgets retain correct PDF transforms; UI resizing must not truncate widget contents incorrectly. Empty-pane artwork uses the same brand vocabulary with a real Open action. Preserve explicit move versus Ctrl-copy transfer semantics and undo behavior; new-tab creation restrictions remain visible. Divider needs a keyboard alternative and minimum pane widths. Page transfer, two-populated-pane behavior and undo were not tested, so they are required regression fixtures.
+
+First map these observed controls to their real renderer components, command IDs and engine/IPC handlers in source. Implement the visual migration without removing existing capabilities. Treat any proposed additional behavior as a separate capability-backed extension. Run the listed fixture checks, report what passed and what remains unverified, and provide screenshots of the actual revised app. Prototype interaction checks do not constitute engine/output tests.

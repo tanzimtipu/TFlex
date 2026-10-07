@@ -1,0 +1,14 @@
+{
+  "category": "Drag Drop and Import",
+  "recommended": "Intake Tray",
+  "alternative": "Compact Intake",
+  "sharedSource": "Design System/unified-ui.tokens.json",
+  "geometry": {
+    "controlRadius": 9,
+    "surfaceRadius": 14,
+    "spacingUnit": 4,
+    "finePointerTarget": 32,
+    "coarsePointerTarget": 44,
+    "motionMs": 140
+  }
+}

@@ -1,0 +1,14 @@
+{
+  "category": "Print and Output",
+  "recommended": "Output Studio",
+  "alternative": "Compact Output",
+  "sharedSource": "Design System/unified-ui.tokens.json",
+  "geometry": {
+    "controlRadius": 9,
+    "surfaceRadius": 14,
+    "spacingUnit": 4,
+    "finePointerTarget": 32,
+    "coarsePointerTarget": 44,
+    "motionMs": 140
+  }
+}

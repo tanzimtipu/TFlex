@@ -1,0 +1,64 @@
+{
+  "name": "Quiet Precision / unified semantic roles",
+  "light": {
+    "surface": "#FFFFFF",
+    "canvas": "#F5F6F8",
+    "foreground": "#485164",
+    "strong": "#232A38",
+    "secondary": "#667085",
+    "border": "#E1E4EB",
+    "accent": "#7050D6",
+    "selectedSurface": "#F0EBFC",
+    "danger": "#B82E43"
+  },
+  "dark": {
+    "surface": "#20232B",
+    "canvas": "#171A21",
+    "foreground": "#B8C0D0",
+    "strong": "#EEF1F7",
+    "secondary": "#929BAC",
+    "border": "#3B414E",
+    "accent": "#B9A4FF",
+    "selectedSurface": "#302740",
+    "danger": "#FF9AAD"
+  },
+  "success": {
+    "light": "#25754A",
+    "dark": "#85D3A6"
+  },
+  "warning": {
+    "light": "#87581D",
+    "dark": "#E7BD79"
+  },
+  "geometry": {
+    "spacingUnit": 4,
+    "controlRadius": 9,
+    "floatingSurfaceRadius": 14,
+    "attachedPanelHeaderHeight": 52,
+    "navigatorViewSelectorHeight": 40,
+    "navigatorWidth": 280,
+    "finePointerTarget": 32,
+    "coarsePointerTarget": 44,
+    "motionMs": 140
+  },
+  "typography": {
+    "family": [
+      "Segoe UI Variable",
+      "Segoe UI",
+      "system-ui",
+      "sans-serif"
+    ],
+    "pageTitle": 32,
+    "dialogTitle": 18,
+    "panelTitle": 16,
+    "body": 14,
+    "control": 13,
+    "helper": 12,
+    "compactException": 11
+  },
+  "policy": {
+    "tabIdentity": "Top Bar and Tabs / tab-identity.tokens.json remains authoritative",
+    "pdfPixels": "Preserve original rendering and output",
+    "reducedMotion": "Suppress optional transitions and decorative Home motion"
+  }
+}

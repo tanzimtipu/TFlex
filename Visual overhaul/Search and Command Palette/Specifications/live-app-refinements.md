@@ -1,0 +1,7 @@
+# Live-app refinement — Search and Command Palette
+
+Inspected 5 October 2026 using the installed `C:\Program Files\Jovrel\Jovrel.exe` via native UI automation. This addendum takes precedence over illustrative layouts and generic implementation choices in the earlier handoff for the behaviors below. Shared Quiet Precision tokens and the user's colorful-tab requirement remain in force.
+
+Opened the command palette on Home. Its search includes tools, recent files and view actions, reports 105 results in the initial state, and exposes disabled commands with “Open a document first.” It advertises arrows, Enter and Ctrl+Enter pin-to-dock. Stage switching is not pinnable. Find in document opens a separate workspace strip with query, Toggle replace, Previous/Next hit and Close; Enter/Shift+Enter navigate.
+
+Preserve files and view actions alongside tools, stable command IDs and existing pin/unpin behavior. Keep disabled explanations. The proposed Tools/In document selector is optional presentation; retain Ctrl+K and Ctrl+F entry points and their distinct state. Include a replacement row and existing permission/capability gates; never silently drop Replace. A query was entered into the form sample, but match navigation and replacement were not exercised; do not treat this as a search-engine validation. Fixtures with real text layers, scanned pages, no matches and form-widget values must establish search scope before claiming coverage.

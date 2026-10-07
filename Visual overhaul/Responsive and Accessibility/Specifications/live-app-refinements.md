@@ -1,0 +1,7 @@
+# Live-app refinement — Responsive and Accessibility
+
+Inspected 5 October 2026 using the installed `C:\Program Files\Jovrel\Jovrel.exe` via native UI automation. This addendum takes precedence over illustrative layouts and generic implementation choices in the earlier handoff for the behaviors below. Shared Quiet Precision tokens and the user's colorful-tab requirement remain in force.
+
+Observed the main app maximized and subsequently in a restored narrow window of about 1289×864 screenshot pixels. Top-bar tabs shrank and truncated even with two tabs while utilities retained space. Review dock exposed horizontal-scroll arrows and clipped labels. Multi Mode squeezed the page and its widget labels when pane A thumbnails and the right inspector were both present. These are screenshot dimensions, not calibrated logical breakpoints.
+
+Allocate explicit minimum document-tab width and overflow rather than compressing titles into unreadable slivers. Collapse optional utilities before filenames; preserve access through a labelled overflow menu. Retain keyboard/pointer alternatives to dock scrolling; promote the most useful actions plus More at constrained widths. Compute workspace width after rail, inspector and pane navigator allocations. Allow one active properties surface at a time and accessible pane navigator collapse. Establish actual logical breakpoints against native DPI; do not derive them directly from screenshot pixels. Screen-reader, 200% DPI, forced colors and localization remain acceptance tests, not completed checks.

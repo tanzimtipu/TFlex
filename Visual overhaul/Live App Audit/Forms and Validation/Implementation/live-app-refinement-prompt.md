@@ -1,0 +1,9 @@
+# Orchestrator refinement prompt — Forms and Validation
+
+Read `Specifications/live-app-refinements.md` beside this category's original specification and implementation prompt. Apply this live-app addendum first wherever a schematic visual or generic instruction conflicts with actual behavior. Preserve the shared tokens, colorful document identities, accessible states and original acceptance criteria.
+
+Opened bundled form.pdf: one page, inspector reports eight form fields. Canvas exposes three text inputs, checkboxes, radio choices, a dropdown and a list. Accessibility names are generic (“Text”, “Checkbox”, “Dropdown”), with radio choices labelled 0/1/2. Review exposes Forms, Flatten, CSV mapping, FDF/XFDF form-data import/export and PDF/A/PDF/X validation as distinct commands.
+
+Keep all widget types and their actual export values, appearance, grouping, flags and order. Improve accessible labels from PDF field names/tooltips with a truthful fallback; do not infer required/email semantics from a screenshot. Guided Fill is a proposed helper, not an existing completion engine. Keep form-value validation distinct from document-conformance validation. Flatten must remain an explicit operation with its consequence flow. Keep CSV and FDF/XFDF actions discoverable in the form workflow. No values were edited and no save/reopen, field validation, CSV mapping or conformance scan was performed.
+
+First map these observed controls to their real renderer components, command IDs and engine/IPC handlers in source. Implement the visual migration without removing existing capabilities. Treat any proposed additional behavior as a separate capability-backed extension. Run the listed fixture checks, report what passed and what remains unverified, and provide screenshots of the actual revised app. Prototype interaction checks do not constitute engine/output tests.

@@ -1,0 +1,3 @@
+# Orchestrator: apply installed-app refinements
+
+Read audit-and-revised-plan.md, then each category's Specifications/live-app-refinements.md and Implementation/live-app-refinement-prompt.md in Visual overhaul. They amend the original plans; apply their observed lifecycle/capability constraints before schematic visuals. Keep the Quiet Precision visual language and vivid stable per-tab colors. Implement the five-step sequence in the audit, preserve existing commands/options and report real app/engine validation separately from prototype tests. Source inventory must establish any difference between installed and development builds. Do not manufacture features or remove existing ones to match a mockup.

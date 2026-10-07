@@ -1,0 +1,9 @@
+# Orchestrator refinement prompt — Print and Output
+
+Read `Specifications/live-app-refinements.md` beside this category's original specification and implementation prompt. Apply this live-app addendum first wherever a schematic visual or generic instruction conflicts with actual behavior. Preserve the shared tokens, colorful document identities, accessible states and original acceptance criteria.
+
+Opened Print for the bundled one-page form. It creates a separate “Print - Jovrel” window with actual preview and Close/Print footer. Observed print presets and preset name/save/delete, printer, Single/N-up layout, copies/collate, all/current/custom page range, fit/actual/shrink/custom scaling, orientation, duplex, colour, pages per sheet/order, odd/even, reverse and Include annotations. Some controls are conditionally disabled. Closed without printing.
+
+Apply Output Studio to this existing dedicated window. Preserve every control and actual conditional availability; advanced grouping may collapse details but must not remove them. Use a two-column settings/preview layout when space permits, stacked compact layout otherwise; sticky header/footer and body scrolling must keep labels and actions visible. Reuse its real rendering and sheet calculation. Do not assume a native dialog precedes or follows Print; audit the actual handler. Use the actual Print label unless execution truly delegates to another dialog. Printer capability support and output fidelity remain untested.
+
+First map these observed controls to their real renderer components, command IDs and engine/IPC handlers in source. Implement the visual migration without removing existing capabilities. Treat any proposed additional behavior as a separate capability-backed extension. Run the listed fixture checks, report what passed and what remains unverified, and provide screenshots of the actual revised app. Prototype interaction checks do not constitute engine/output tests.
