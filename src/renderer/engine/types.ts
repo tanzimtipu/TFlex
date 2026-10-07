@@ -883,52 +883,106 @@ export function describeEngineError(code: EngineError, context?: string): string
 // ---------------------------------------------------------------------------
 // Page-range parsing (1-based, friendly string format)
 
-/** Parse a page-range expression like "10-20" or "1,3,5-7" into an explicit
- *  sorted, deduped array of 1-based page numbers. Returns null when the
- *  input is invalid (empty, NaN, descending span). `totalPages` clamps and
- *  validates the resulting list. */
-export function parsePageRange(input: string, totalPages: number): number[] | null {
-  if (totalPages <= 0) {
-    return null;
+/** The four states a page-range expression can be in. R22: a range field must
+ *  explain the ACTUAL reason an entry is rejected - empty, malformed,
+ *  out-of-bounds or valid - instead of always claiming the (wrong) empty
+ *  message. */
+export type PageRangeState = "empty" | "malformed" | "out-of-bounds" | "valid";
+
+export interface PageRangeCheck {
+  state: PageRangeState;
+  /** The parsed, sorted, deduped 1-based pages; non-null ONLY when valid. */
+  pages: number[] | null;
+  /** The field-close message; null when valid. */
+  message: string | null;
+}
+
+/** The user-facing message for a range state. Empty keeps the shipped wording;
+ *  out-of-bounds names the real 1..totalPages bound (R22). */
+export function pageRangeMessage(
+  state: PageRangeState,
+  totalPages: number,
+): string | null {
+  switch (state) {
+    case "valid":
+      return null;
+    case "empty":
+      return "Enter at least one page (e.g. 1-3).";
+    case "malformed":
+      return "Enter pages like 1-3 or 2,4.";
+    case "out-of-bounds":
+      return totalPages > 0
+        ? `Page numbers must be between 1 and ${totalPages}.`
+        : "Open a document first.";
   }
+}
+
+/** Classify a page-range expression into one of the four states without losing
+ *  the parser's clamp. A structural problem (empty token, NaN, descending span)
+ *  reads as malformed; a well-formed token outside 1..totalPages reads as
+ *  out-of-bounds. `parsePageRange` is the thin null-only view of this. */
+export function classifyPageRange(input: string, totalPages: number): PageRangeCheck {
+  const result = (
+    state: PageRangeState,
+    pages: number[] | null = null,
+  ): PageRangeCheck => ({ state, pages, message: pageRangeMessage(state, totalPages) });
+
   const trimmed = input.trim();
   if (trimmed.length === 0) {
-    return null;
+    return result("empty");
   }
   const set = new Set<number>();
+  let outOfBounds = false;
   for (const raw of trimmed.split(",")) {
     const part = raw.trim();
     if (part.length === 0) {
-      return null;
+      return result("malformed");
     }
     if (part.includes("-")) {
       const pieces = part.split("-");
       if (pieces.length !== 2) {
-        return null;
+        return result("malformed");
       }
       const lo = Number.parseInt(pieces[0].trim(), 10);
       const hi = Number.parseInt(pieces[1].trim(), 10);
-      if (!Number.isFinite(lo) || !Number.isFinite(hi)) {
-        return null;
+      if (!Number.isFinite(lo) || !Number.isFinite(hi) || lo > hi) {
+        return result("malformed");
       }
-      if (lo < 1 || hi > totalPages || lo > hi) {
-        return null;
+      if (lo < 1 || hi > totalPages) {
+        outOfBounds = true;
+        continue;
       }
       for (let p = lo; p <= hi; p += 1) {
         set.add(p);
       }
     } else {
       const n = Number.parseInt(part, 10);
-      if (!Number.isFinite(n) || n < 1 || n > totalPages) {
-        return null;
+      if (!Number.isFinite(n)) {
+        return result("malformed");
+      }
+      if (n < 1 || n > totalPages) {
+        outOfBounds = true;
+        continue;
       }
       set.add(n);
     }
   }
-  if (set.size === 0) {
-    return null;
+  if (outOfBounds) {
+    return result("out-of-bounds");
   }
-  return [...set].sort((a, b) => a - b);
+  if (set.size === 0) {
+    return result("empty");
+  }
+  return result("valid", [...set].sort((a, b) => a - b));
+}
+
+/** Parse a page-range expression like "10-20" or "1,3,5-7" into an explicit
+ *  sorted, deduped array of 1-based page numbers. Returns null when the
+ *  input is invalid (empty, NaN, descending span, out of bounds). `totalPages`
+ *  clamps and validates the resulting list. */
+export function parsePageRange(input: string, totalPages: number): number[] | null {
+  const check = classifyPageRange(input, totalPages);
+  return check.state === "valid" ? check.pages : null;
 }
 
 /** Build a default page-range string for "all pages". */

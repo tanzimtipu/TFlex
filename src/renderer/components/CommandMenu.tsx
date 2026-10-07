@@ -23,6 +23,7 @@
 import {
   useCallback,
   useEffect,
+  useId,
   useLayoutEffect,
   useRef,
   useState,
@@ -33,11 +34,13 @@ import type {
   ReactElement,
   RefObject,
 } from "react";
+import { createPortal } from "react-dom";
 import { AnimatePresence } from "motion/react";
 import { Icon } from "../icons/Icon";
 import type { QuietIconId } from "../icons/quietPrecision";
 import { Button, type ButtonDensity, type ButtonIntent } from "./Button";
 import { TfMenu } from "./motion/TfMotion";
+import { useOverlayPlacement, useSubmenuPlacement } from "./useOverlayPlacement";
 
 /** A command-menu entry. Superset of the shipped `MenuEntry`. */
 export interface CommandMenuItem {
@@ -128,6 +131,13 @@ export interface CommandMenuProps {
    *  instead of the default flow/anchored placement. Additive; default
    *  `undefined` keeps today's flow positioning. */
   position?: { left: number; top: number };
+  /** TFL-1116 (R03) — opt into the shared collision-aware overlay placement.
+   *  When `true` the root is portaled to `document.body` and positioned with
+   *  `placeOverlay` from the `openerRef` rect (fixed, viewport-bounded,
+   *  vertical-scroll only), and nested submenus are portaled and placed
+   *  beside their row with a right-to-left flip. Additive; default `false`
+   *  keeps today's anchored placement for every existing adopter. */
+  collisionAware?: boolean;
   /** Dismiss when any scroll happens (capture phase, never swallowing the
    *  event). Additive; default `false` keeps today's scroll-agnostic menus. */
   dismissOnScroll?: boolean;
@@ -198,11 +208,78 @@ function descIdFor(baseKey: string, index: number): string {
   return `command-menu-desc-${baseKey}-${index}`.replace(/[^a-zA-Z0-9_-]/g, "_");
 }
 
+interface CollisionSubmenuProps {
+  /** Ownership id mirrored from the root so outside-dismiss keeps the level. */
+  menuId: string;
+  ariaLabel: string;
+  children: ReactElement;
+}
+
+/** TFL-1116 (R03) — a collision-aware nested submenu. It renders a zero-size
+ *  anchor marker inside its row (so the row rect is measurable without a ref
+ *  map) and portals the surface to `document.body`, positioned beside the row
+ *  with the shared `placeOverlay` rule: defaulting to the right, shifting back
+ *  to the left when the right edge would overflow, and bounded to the viewport
+ *  height. The portal is needed because the root surface sets `overflow:hidden`
+ *  and motion applies a transform while it enters — a fixed child would be
+ *  clipped and mis-anchored there. */
+function CollisionSubmenu(props: CollisionSubmenuProps): ReactElement {
+  const anchorRef = useRef<HTMLSpanElement | null>(null);
+  const surfaceRef = useRef<HTMLDivElement | null>(null);
+  const placement = useSubmenuPlacement(anchorRef, surfaceRef, {
+    minHeight: 160,
+    maxHeightCap: 560,
+  });
+  const style: CSSProperties = {};
+  if (placement !== null) {
+    style.position = "fixed";
+    style.left = placement.left;
+    style.top = placement.top;
+    // DEF-618 — never inherit a right-edge anchor; the fixed `left` and the
+    // content-bounded width own the horizontal box.
+    style.right = "auto";
+    style.maxHeight = placement.maxHeight;
+    style.maxWidth = placement.maxWidth;
+    style.overflowX = "hidden";
+    style.overflowY = "auto";
+  }
+  return (
+    <>
+      <span
+        ref={anchorRef}
+        className="command-menu-submenu-anchor"
+        aria-hidden
+        style={{ position: "absolute", inset: 0, pointerEvents: "none" }}
+      />
+      {createPortal(
+        <div
+          ref={surfaceRef}
+          className="command-menu-submenu"
+          role="menu"
+          aria-label={props.ariaLabel}
+          data-menu-submenu
+          data-command-menu-id={props.menuId}
+          style={style}
+        >
+          {props.children}
+        </div>,
+        document.body,
+      )}
+    </>
+  );
+}
+
 interface MenuListProps {
   rows: FlatRow[];
   /** Stable prefix for this level's row keys + description ids. */
   baseKey: string;
   isRoot: boolean;
+  /** TFL-1116 (R03) — place nested submenus through the shared collision-aware
+   *  rule (portal to `document.body` + right-to-left flip). */
+  collisionAware?: boolean;
+  /** This CommandMenu instance's ownership id, used to keep outside-dismiss
+   *  from treating a portaled submenu as "outside". */
+  menuId: string;
   /** Root supplies the outer list ref used for first-focus + height clamping. */
   listRef?: RefObject<HTMLDivElement | null>;
   onActivate: (item: CommandMenuItem, key: string) => void;
@@ -214,7 +291,7 @@ interface MenuListProps {
  *  Rendered recursively; every non-root level stops key propagation so the
  *  parent level never double-handles the same event. */
 function MenuList(props: MenuListProps): ReactElement {
-  const { rows, baseKey, isRoot, listRef, onActivate, onDismiss } = props;
+  const { rows, baseKey, isRoot, collisionAware, menuId, listRef, onActivate, onDismiss } = props;
   const localRef = useRef<HTMLDivElement | null>(null);
   const listEl = listRef ?? localRef;
   const [openChildKey, setOpenChildKey] = useState<string | null>(null);
@@ -428,20 +505,36 @@ function MenuList(props: MenuListProps): ReactElement {
                 )}
               </Button>
               {hasSubmenu && openChildKey === row.key && item.submenu !== undefined && (
-                <div
-                  className="command-menu-submenu"
-                  role="menu"
-                  aria-label={item.label}
-                  data-menu-submenu
-                >
-                  <MenuList
-                    rows={flattenItems(item.submenu, row.key)}
-                    baseKey={row.key}
-                    isRoot={false}
-                    onActivate={onActivate}
-                    onDismiss={dismissChild}
-                  />
-                </div>
+                collisionAware === true ? (
+                  <CollisionSubmenu menuId={menuId} ariaLabel={item.label}>
+                    <MenuList
+                      rows={flattenItems(item.submenu, row.key)}
+                      baseKey={row.key}
+                      isRoot={false}
+                      collisionAware={collisionAware}
+                      menuId={menuId}
+                      onActivate={onActivate}
+                      onDismiss={dismissChild}
+                    />
+                  </CollisionSubmenu>
+                ) : (
+                  <div
+                    className="command-menu-submenu"
+                    role="menu"
+                    aria-label={item.label}
+                    data-menu-submenu
+                  >
+                    <MenuList
+                      rows={flattenItems(item.submenu, row.key)}
+                      baseKey={row.key}
+                      isRoot={false}
+                      collisionAware={collisionAware}
+                      menuId={menuId}
+                      onActivate={onActivate}
+                      onDismiss={dismissChild}
+                    />
+                  </div>
+                )
               )}
             </div>
           );
@@ -466,10 +559,14 @@ export function CommandMenu(props: CommandMenuProps): ReactElement {
     popoverRef,
     popoverDataAttrs,
     position,
+    collisionAware = false,
     dismissOnScroll = false,
   } = props;
   const rootRef = useRef<HTMLDivElement | null>(null);
   const rootListRef = useRef<HTMLDivElement | null>(null);
+  // TFL-1116 (R03) — a stable per-instance id so outside-dismiss can tell a
+  // portaled submenu of THIS menu from an unrelated surface.
+  const menuId = useId();
   const returnFocusRef = useRef<HTMLElement | null>(null);
   const focusSeededRef = useRef(false);
   // DEF-610 — synchronous re-entry guard: two same-tick activations of one row
@@ -491,6 +588,28 @@ export function CommandMenu(props: CommandMenuProps): ReactElement {
       if (popoverRef !== undefined) popoverRef.current = node;
     },
     [popoverRef],
+  );
+
+  // TFL-1116 (R03) — measure the opener and the (possibly portaled) root and
+  // expose the collision-aware placement; recomputes on open, resize and
+  // capture-phase scroll. Gated on `collisionAware` so every existing adopter
+  // keeps today's flow placement and this hook stays a no-op for them.
+  const collisionPlacement = useOverlayPlacement(
+    collisionAware ? openerRef : undefined,
+    rootRef,
+    { align, minHeight: 160, maxHeightCap: 560, open },
+  );
+
+  // A pointerdown / Escape whose target lives inside THIS menu — its root or
+  // any of its portaled submenus — is not "outside". Portaled submenus carry
+  // the same `data-command-menu-id`, so a single closest() check covers them.
+  const ownsTarget = useCallback(
+    (target: EventTarget | null): boolean => {
+      if (!(target instanceof Element)) return false;
+      const owner = target.closest("[data-command-menu-id]");
+      return owner !== null && owner.getAttribute("data-command-menu-id") === menuId;
+    },
+    [menuId],
   );
 
   const dismiss = useCallback((): void => {
@@ -550,6 +669,7 @@ export function CommandMenu(props: CommandMenuProps): ReactElement {
     const onPointer = (event: PointerEvent): void => {
       const target = event.target;
       if (target instanceof Node) {
+        if (ownsTarget(target)) return;
         if (rootRef.current?.contains(target) === true) return;
         if (openerRef?.current?.contains(target) === true) return;
       }
@@ -557,7 +677,7 @@ export function CommandMenu(props: CommandMenuProps): ReactElement {
     };
     window.addEventListener("pointerdown", onPointer);
     return (): void => window.removeEventListener("pointerdown", onPointer);
-  }, [open, openerRef]);
+  }, [open, openerRef, ownsTarget]);
 
   // Optional scroll dismissal (pointer-anchored menus that must not detach
   // from their trigger when the surface scrolls). A capture-phase scroll
@@ -580,19 +700,22 @@ export function CommandMenu(props: CommandMenuProps): ReactElement {
     const onKey = (event: KeyboardEvent): void => {
       if (event.key !== "Escape") return;
       const target = event.target;
+      if (ownsTarget(target)) return;
       if (target instanceof Node && rootRef.current?.contains(target) === true) return;
       event.preventDefault();
       onCloseRef.current?.();
     };
     window.addEventListener("keydown", onKey);
     return (): void => window.removeEventListener("keydown", onKey);
-  }, [open]);
+  }, [open, ownsTarget]);
 
   // Clamp the ROW LIST to the available space (never the whole surface) so the
   // bottom command is scrollable rather than silently clipped; flip the
-  // placement hint near the bottom edge.
+  // placement hint near the bottom edge. TFL-1116 (R03): when `collisionAware`
+  // the shared placement already bounds the whole surface, so this legacy
+  // row-list clamp is folded into `placeOverlay` and skipped.
   useLayoutEffect(() => {
-    if (!open) return undefined;
+    if (!open || collisionAware) return undefined;
     const list = rootListRef.current;
     const root = rootRef.current;
     if (list === null || root === null) return undefined;
@@ -610,7 +733,7 @@ export function CommandMenu(props: CommandMenuProps): ReactElement {
     clamp();
     window.addEventListener("resize", clamp);
     return (): void => window.removeEventListener("resize", clamp);
-  }, [open]);
+  }, [open, collisionAware]);
 
   const groupRows = flattenCommandGroups(groups);
   const classes = [
@@ -621,6 +744,31 @@ export function CommandMenu(props: CommandMenuProps): ReactElement {
   ]
     .filter((part): part is string => part !== undefined && part !== "")
     .join(" ");
+  // TFL-1116 (R03) — DEF-618: in the collision-aware path the surface is
+  // portaled and content-bounded. `right: auto` neutralizes the inherited
+  // `.app-menu-popover { right: 0 }` anchor, which — combined with the fixed
+  // `left` — used to stretch the box all the way to the viewport right edge
+  // (right gutter 0). `width: max-content` keeps it as wide as its content,
+  // capped by the viewport-bounded `maxWidth`. Both are applied on EVERY
+  // collision-aware render, including the first measurement pass, so the hook
+  // measures the true content width instead of a stretched box.
+  const collisionStyle: CSSProperties = collisionAware
+    ? {
+        right: "auto",
+        width: "max-content",
+        overflowX: "hidden",
+        overflowY: "auto",
+        ...(collisionPlacement === null
+          ? {}
+          : {
+              position: "fixed",
+              left: collisionPlacement.left,
+              top: collisionPlacement.top,
+              maxHeight: collisionPlacement.maxHeight,
+              maxWidth: collisionPlacement.maxWidth,
+            }),
+      }
+    : {};
   const style: CSSProperties = {
     ...(width === undefined ? {} : { width: `${width}px` }),
     ...(position === undefined
@@ -630,31 +778,43 @@ export function CommandMenu(props: CommandMenuProps): ReactElement {
           left: position.left,
           top: position.top,
         }),
+    ...collisionStyle,
   };
 
-  return (
+  const surface = (
+    <TfMenu
+      ref={setRootRef}
+      className={classes}
+      role="menu"
+      aria-label={ariaLabel}
+      data-menu-popover
+      data-command-menu-id={menuId}
+      data-testid={testId}
+      style={style}
+      {...popoverDataAttrs}
+    >
+      <MenuList
+        rows={groupRows}
+        baseKey="root"
+        isRoot
+        collisionAware={collisionAware}
+        menuId={menuId}
+        listRef={rootListRef}
+        onActivate={activate}
+        onDismiss={dismiss}
+      />
+    </TfMenu>
+  );
+
+  const tree = (
     <AnimatePresence>
-      {open ? (
-        <TfMenu
-          ref={setRootRef}
-          className={classes}
-          role="menu"
-          aria-label={ariaLabel}
-          data-menu-popover
-          data-testid={testId}
-          style={style}
-          {...popoverDataAttrs}
-        >
-          <MenuList
-            rows={groupRows}
-            baseKey="root"
-            isRoot
-            listRef={rootListRef}
-            onActivate={activate}
-            onDismiss={dismiss}
-          />
-        </TfMenu>
-      ) : null}
+      {open ? surface : null}
     </AnimatePresence>
   );
+
+  // TFL-1116 (R03) — the collision-aware surface escapes `.app-menu` (and any
+  // transformed ancestor) by portaling to `document.body`. The portal wraps the
+  // whole AnimatePresence so the enter/exit motion still runs on the portaled
+  // tree.
+  return collisionAware ? createPortal(tree, document.body) : tree;
 }

@@ -49,8 +49,22 @@ export interface BookViewProps {
   /** The stored comic reading layout; seeds the initial single/double state
    *  once (REQUIREMENTS.md feature D). The header toggle then owns it. */
   defaultLayout: ReadingDefaults['comics']['layout'];
-  /** Leave Book View and restore the prior rail / Inspector / dock state. */
-  onClose: () => void;
+  /** TFL-1116 R25 — the reading location to open at (1-based). The host passes
+   *  the tab's stored `persisted.currentPage`. Absent / non-finite opens at
+   *  page 1 (the pre-change behaviour). */
+  initialPage?: number;
+  /** Leave Book View. TFL-1116 R25 — carries the 1-based page the reader
+   *  reached (the visible spread's first page) so the host can persist it and
+   *  the DocumentView re-mounts at that location; `undefined` for an empty
+   *  document. */
+  onClose: (finalPage?: number) => void;
+  /** TFL-1116 R25 (DEF-627) — report the reading location reached in Book View
+   *  on EVERY exit route, not just the header Close button. The host persists
+   *  the reached page when Book View unmounts for any reason (a tab switch
+   *  included), so leaving by activating another tab no longer loses the
+   *  location. `undefined` for an empty document. Absent keeps the pre-change
+   *  behaviour (only `onClose` reports). */
+  onLocationChange?: (finalPage?: number) => void;
   /** Phase 66 (chunk 3) — the document's committed annotations (all pages).
    *  BookView filters them per visible page and hands each `PageView` only
    *  its own slice. */
@@ -138,6 +152,25 @@ const ANNOTATION_UI_ROOTS = '.annotation-layer, [data-content-action-bar], [data
 const isAnnotationUi = (target: Element | null): boolean =>
   target?.closest?.(ANNOTATION_UI_ROOTS) != null;
 
+/** TFL-1116 R25 — map a 1-based reading page to BookView's zero-based spread
+ *  index for the layout. Single: `page - 1`. Double: the spread's first index,
+ *  which is even because the comic pairing is (1,2), (3,4), ... (the same
+ *  window `stepForward` / `finishTurn` commit to), clamped to the last spread's
+ *  index. A missing / non-finite page opens at index 0 (page 1). */
+function seedPageIndex(
+  initialPage: number | undefined,
+  layout: ReadingDefaults['comics']['layout'],
+  total: number,
+): number {
+  if (initialPage === undefined || !Number.isFinite(initialPage)) return 0;
+  const step = layout === 'double' ? 2 : 1;
+  const maxIndex = Math.max(total - step, 0);
+  const page = Math.min(Math.max(Math.floor(initialPage), 1), Math.max(total, 1));
+  const base = page - 1;
+  const index = step === 2 ? base - (base % 2) : base;
+  return Math.min(Math.max(index, 0), maxIndex);
+}
+
 /** One book page, rendered read-only with the EXISTING `PageView` and scaled
  *  to CONTAIN within the measured stage (fit both axes — a book page must
  *  never overflow the canvas). Split into its own component so the stable
@@ -219,7 +252,9 @@ export function BookView(props: BookViewProps): ReactElement {
     pageCount,
     title,
     defaultLayout,
+    initialPage,
     onClose,
+    onLocationChange,
     annotations,
     liveAnnTextIds,
     onCreateAnnotation,
@@ -268,7 +303,11 @@ export function BookView(props: BookViewProps): ReactElement {
 
   // Zero-based page index, mirroring the comic view's window semantics
   // (ReadingView.tsx:236-254 forward/back, 293-300 the [i, i + step) window).
-  const [pageIndex, setPageIndex] = useState(0);
+  // TFL-1116 R25 — seeded ONCE from the reading location the host passed, so
+  // Book View opens where the reader was instead of always at page 1.
+  const [pageIndex, setPageIndex] = useState(() =>
+    seedPageIndex(initialPage, defaultLayout, total),
+  );
   const maxIndex = Math.max(total - step, 0);
   const current = total === 0 ? 0 : Math.min(Math.max(pageIndex, 0), maxIndex);
 
@@ -408,6 +447,34 @@ export function BookView(props: BookViewProps): ReactElement {
   // reader is heading while the spread itself stays on the outgoing page until
   // the turn settles.
   const displayIndex = turn === null ? current : turn.target;
+
+  // TFL-1116 R25 — report the reading location back through `onClose`. The
+  // visible spread's first page is `displayIndex + 1` (the same value the
+  // progress label shows), so the host persists exactly what the reader sees.
+  const handleClose = useCallback((): void => {
+    onClose(total === 0 ? undefined : displayIndex + 1);
+  }, [onClose, total, displayIndex]);
+
+  // DEF-627 (R25) — publish the reading location on ANY exit route. The header
+  // Close button calls `onClose` (persist + close); every OTHER exit — most
+  // importantly switching to another tab while Book View is "open" — does not
+  // run `onClose`, so the host never learned the reached page. The page is
+  // reported whenever the committed spread changes AND once more on unmount, so
+  // the persisted viewer always tracks what the reader saw. Both reads go
+  // through refs: the latest page is never stale and the mount-scoped effect
+  // never re-runs mid-session. Absent prop keeps the pre-change behaviour.
+  const latestPageRef = useRef<number | undefined>(undefined);
+  latestPageRef.current = total === 0 ? undefined : displayIndex + 1;
+  const onLocationChangeRef = useRef(onLocationChange);
+  onLocationChangeRef.current = onLocationChange;
+  useEffect((): void => {
+    onLocationChangeRef.current?.(latestPageRef.current);
+  }, [displayIndex, total]);
+  useEffect((): (() => void) => {
+    return (): void => {
+      onLocationChangeRef.current?.(latestPageRef.current);
+    };
+  }, []);
 
   // Measure the stage so fit scaling can size the page. The observer is
   // optional (jsdom has none) and only affects presentation. The same
@@ -609,7 +676,7 @@ export function BookView(props: BookViewProps): ReactElement {
           kind="action"
           density="compact"
           className="book-view-close"
-          onClick={onClose}
+          onClick={handleClose}
           data-book-close
           icon={<Icon icon={X} size="sm" />}
         />

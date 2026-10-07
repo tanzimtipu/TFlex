@@ -15,7 +15,7 @@
 // only opens for the explicit "Delete" toolbar action).
 
 import { useEffect, useMemo, useRef, useState, type ReactElement } from "react";
-import { parsePageRange } from "../engine/types";
+import { classifyPageRange } from "../engine/types";
 import { Icon } from "../icons/Icon";
 import { DialogShell, type DialogAction } from "./DialogShell";
 
@@ -87,13 +87,11 @@ export function DeletePageDialog(
     if (mode !== "range") {
       return { pages: [], valid: true };
     }
-    const list = parsePageRange(rangeText, totalPages);
-    if (list === null) {
-      return { pages: [], valid: false, error: "Invalid range" };
+    const check = classifyPageRange(rangeText, totalPages);
+    if (check.state !== "valid" || check.pages === null) {
+      return { pages: [], valid: false, error: check.message ?? "Invalid range" };
     }
-    if (list.length === 0) {
-      return { pages: [], valid: false, error: "Range is empty" };
-    }
+    const list = check.pages;
     if (list.length >= totalPages) {
       return {
         pages: list,
@@ -203,6 +201,8 @@ export function DeletePageDialog(
             onChange={(e): void => setRangeText(e.target.value)}
             placeholder={String(currentPage)}
             data-delete-range
+            aria-describedby={displayError !== null ? "delete-range-error" : undefined}
+            aria-invalid={!parsedRange.valid}
           />
           <span className="modal-hint">
             Contiguous range (e.g. <code>2-5</code>) or comma list
@@ -212,7 +212,12 @@ export function DeletePageDialog(
       )}
 
       {displayError !== null && (
-        <div className="modal-status optimize-error" role="alert">
+        <div
+          id="delete-range-error"
+          className="modal-status optimize-error"
+          role="alert"
+          data-delete-range-error
+        >
           <span>{displayError}</span>
         </div>
       )}

@@ -12,6 +12,7 @@ import {
   type WindowMinimizedChange,
 } from "../shared/ipc";
 import type { BugReportCaptureResult, BugReportInput } from "../shared/bugReport";
+import { TFLEX_PACKAGED_ENV, parsePackagedFlag } from "../shared/packagedSignal";
 import type {
   AppInfo,
   AppSettings,
@@ -914,6 +915,9 @@ const api = {
   },
   // Phase 6: About / preferences
   app: {
+    // TFL-1148 - synchronous packaged-vs-dev runtime signal; main encodes
+    // `app.isPackaged` into the env carrier before the first window is made.
+    isPackaged: parsePackagedFlag(process.env[TFLEX_PACKAGED_ENV]),
     getInfo(): Promise<AppInfo> {
       return ipcRenderer.invoke(IPC.appGetInfo);
     },

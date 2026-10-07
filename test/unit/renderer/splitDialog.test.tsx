@@ -110,4 +110,35 @@ describe("SplitDialog — DialogShell render contract", () => {
       cleanup();
     }
   });
+
+  it("R22: 0,521 on a 520-page doc reports the real bound and keeps the input", () => {
+    const onConfirm = vi.fn();
+    const { container, cleanup } = renderDialog({ totalPages: 520, onConfirm });
+    try {
+      const input = container.querySelector<HTMLInputElement>("#split-page-range");
+      expect(input).not.toBeNull();
+      const setter = Object.getOwnPropertyDescriptor(
+        window.HTMLInputElement.prototype,
+        "value",
+      )?.set;
+      act((): void => {
+        setter?.call(input, "0,521");
+        input?.dispatchEvent(new Event("input", { bubbles: true }));
+      });
+      expect(input?.value).toBe("0,521");
+      expect(input?.getAttribute("aria-describedby")).toBe("split-range-status");
+      const status = container.querySelector("#split-range-status");
+      expect(status?.textContent).toContain("Page numbers must be between 1 and 520.");
+      const confirm = container.querySelector<HTMLButtonElement>(
+        '[data-dialog-action="confirm"]',
+      );
+      expect(confirm?.disabled).toBe(true);
+      act((): void => {
+        confirm?.click();
+      });
+      expect(onConfirm).not.toHaveBeenCalled();
+    } finally {
+      cleanup();
+    }
+  });
 });

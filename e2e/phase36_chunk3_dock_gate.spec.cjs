@@ -14,6 +14,10 @@ const os = require('node:os');
 const { launchApp } = require('./lib/launch.cjs');
 const { hardClose, toggleMultiModeViaPalette, armAnnotationTool } = require('./lib/helpers.cjs');
 
+// The harness launches this worker with ELECTRON_RUN_AS_NODE=1; Playwright's
+// Electron driver needs it cleared to launch the real app.
+delete process.env.ELECTRON_RUN_AS_NODE;
+
 const SHOTS = path.resolve(__dirname, '..', 'screenshots');
 fs.mkdirSync(SHOTS, { recursive: true });
 const DOCK_SHOT = path.join(SHOTS, 'phase36-chunk3-dock.png');
@@ -392,11 +396,71 @@ test('P36-C3-D dock curation (un-pin) persists across a relaunch', async () => {
   }
 });
 
+// TFL-1116 C6 (R12) — the settled chrome paints CHROME only. This probe
+// returns an ENABLED control's effective opacity (the product from the control
+// up to its root) and the WCAG ratio of its colour composited over the real
+// chrome surface. Mirrors e2e/tfl1116_r12_idle_legibility.spec.cjs.
+async function r12Probe(rootSel, controlSel) {
+  return win.evaluate(({ rootSel, controlSel }) => {
+    const root = document.querySelector(rootSel);
+    const ctl = document.querySelector(controlSel);
+    if (root === null || ctl === null) return null;
+    const parse = (s) => {
+      const m = String(s).match(/rgba?\(([^)]+)\)/);
+      if (m === null) return null;
+      const p = m[1].split(',').map((x) => parseFloat(x.trim()));
+      return { r: p[0], g: p[1], b: p[2], a: p[3] === undefined ? 1 : p[3] };
+    };
+    const mix = (fg, bg, a) => ({
+      r: fg.r * a + bg.r * (1 - a),
+      g: fg.g * a + bg.g * (1 - a),
+      b: fg.b * a + bg.b * (1 - a),
+      a: 1,
+    });
+    const ch = (c) => {
+      const s = c / 255;
+      return s <= 0.03928 ? s / 12.92 : Math.pow((s + 0.055) / 1.055, 2.4);
+    };
+    const lum = (c) => 0.2126 * ch(c.r) + 0.7152 * ch(c.g) + 0.0722 * ch(c.b);
+    const ratio = (a, b) => {
+      const l1 = lum(a);
+      const l2 = lum(b);
+      return (Math.max(l1, l2) + 0.05) / (Math.min(l1, l2) + 0.05);
+    };
+    let eff = 1;
+    let el = ctl;
+    while (el !== null) {
+      eff *= parseFloat(getComputedStyle(el).opacity) || 0;
+      if (el === root) break;
+      el = el.parentElement;
+    }
+    const ink = parse(getComputedStyle(ctl).color) || { r: 0, g: 0, b: 0, a: 1 };
+    let bg = parse(getComputedStyle(root).backgroundColor) || { r: 255, g: 255, b: 255, a: 1 };
+    if (bg.a < 1) {
+      const page = parse(getComputedStyle(document.body).backgroundColor) || { r: 255, g: 255, b: 255, a: 1 };
+      bg = mix(bg, page, bg.a);
+    }
+    const compositedInk = mix(ink, bg, Math.max(0, Math.min(1, ink.a * eff)));
+    return {
+      idle: root.getAttribute('data-dock-idle') || root.getAttribute('data-view-strip-idle'),
+      rootOpacity: parseFloat(getComputedStyle(root).opacity),
+      controlOpacity: parseFloat(getComputedStyle(ctl).opacity),
+      effectiveOpacity: eff,
+      label: ctl.getAttribute('aria-label') || (ctl.textContent || '').trim(),
+      color: getComputedStyle(ctl).color,
+      background: getComputedStyle(root).backgroundColor,
+      ratio: ratio(compositedInk, bg),
+    };
+  }, { rootSel, controlSel });
+}
+
 // ---------------------------------------------------------------------------
-// E. State 4 — the idle fade: 3s to ~40%, restored on hover, and NEVER while a
-//    tool is armed or a drag is in progress.
+// E. State 4 — the idle STATE: 3s to idle, restored on hover, and NEVER while a
+//    tool is armed or a drag is in progress. TFL-1116 C6 (R12) RETIRED the
+//    parent-opacity fade: idle now paints CHROME only (dock elevation / footer
+//    separator) and the enabled label/icon content stays at full opacity.
 // ---------------------------------------------------------------------------
-test('P36-C3-E idle: fade ~40% after 3s, hover restores, suppressed armed/dragging', async () => {
+test('P36-C3-E idle: 3s to idle, chrome-only content legible, suppressed armed/dragging', async () => {
   await openSample();
   const dock = win.locator('[data-action-dock]');
   const neutral = async () => {
@@ -409,18 +473,26 @@ test('P36-C3-E idle: fade ~40% after 3s, hover restores, suppressed armed/draggi
   expect(await dock.getAttribute('data-dock-idle'), 'not idle immediately').toBe('false');
   await win.waitForTimeout(3600);
   expect(await dock.getAttribute('data-dock-idle')).toBe('true');
-  const op = await opacity(dock);
-  console.log(`[P36C3-E] idle dock opacity=${op}`);
-  expect(op, 'idle fades to ~40%').toBeGreaterThan(0.3);
-  expect(op).toBeLessThan(0.5);
 
-  // The View Strip footer fades in lockstep with the dock (Phase 109 replaced
-  // the retired CanvasPills with the footer, whose `.view-strip-page` group
-  // dims on the same idle flip).
+  // R12 contract (replaces the removed 40% fade): the dock root opacity is 1
+  // and an enabled verb stays legible at full effective opacity, clear of the
+  // 4.5:1 floor.
+  const dockProbe = await r12Probe('[data-action-dock]', '[data-action-dock] [data-dock-verb]:not([disabled])');
+  console.log(`[P36C3-E] idle dock probe=${JSON.stringify(dockProbe)}`);
+  expect(dockProbe, 'an enabled dock verb was measurable').not.toBeNull();
+  expect(dockProbe.rootOpacity, 'the idle dock root opacity is 1 (no fade)').toBe(1);
+  expect(dockProbe.effectiveOpacity, `enabled dock verb "${dockProbe.label}" effective opacity`).toBeGreaterThanOrEqual(0.99);
+  expect(dockProbe.ratio, `enabled dock verb "${dockProbe.label}" composited contrast`).toBeGreaterThanOrEqual(4.5);
+
+  // The View Strip footer holds the same idle STATE and the same R12 contract
+  // (Phase 109 replaced the retired CanvasPills with the footer).
   expect(await win.locator('[data-view-strip]').getAttribute('data-view-strip-idle')).toBe('true');
-  const pillOp = await opacity(win.locator('[data-view-strip] .view-strip-page'));
-  console.log(`[P36C3-E] idle footer page-group opacity=${pillOp}`);
-  expect(pillOp).toBeLessThan(0.5);
+  const footerProbe = await r12Probe('[data-view-strip]', '[data-view-strip] .view-strip-view [aria-label="Zoom in"]');
+  console.log(`[P36C3-E] idle footer probe=${JSON.stringify(footerProbe)}`);
+  expect(footerProbe, 'an enabled footer control was measurable').not.toBeNull();
+  expect(footerProbe.rootOpacity, 'the idle footer root opacity is 1 (no fade)').toBe(1);
+  expect(footerProbe.effectiveOpacity, `enabled footer control "${footerProbe.label}" effective opacity`).toBeGreaterThanOrEqual(0.99);
+  expect(footerProbe.ratio, `enabled footer control "${footerProbe.label}" composited contrast`).toBeGreaterThanOrEqual(4.5);
 
   await dock.hover();
   await win.waitForTimeout(450);
@@ -431,12 +503,15 @@ test('P36-C3-E idle: fade ~40% after 3s, hover restores, suppressed armed/draggi
   await setStage(3);
   await win.locator('[data-dock-verb="annotate"]').click();
   await win.waitForSelector('[data-annotation-flyout]', { state: 'visible', timeout: 8000 });
-  await win.locator('[data-ann-tools-visible] button[data-tool="highlight"]').click();
+  await armAnnotationTool(win, 'highlight');
   await neutral();
   await win.waitForTimeout(3800);
   expect(await dock.getAttribute('data-dock-idle'), 'an armed tool suppresses idle').toBe('false');
 
-  await win.locator('[data-ann-tools-visible] button[data-tool="select"]').click();
+  // Disarm through the canonical helper: the armed tool's persisted MRU may
+  // keep `select` out of the five VISIBLE buttons, so armAnnotationTool falls
+  // back to the toolbar's all-tools dropdown when the button is not on screen.
+  await armAnnotationTool(win, 'select');
   await neutral();
   await win.waitForTimeout(3600);
   expect(await dock.getAttribute('data-dock-idle'), 'disarmed -> idle returns').toBe('true');

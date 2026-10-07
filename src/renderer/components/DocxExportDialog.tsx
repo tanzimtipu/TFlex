@@ -29,7 +29,7 @@ import {
   fetchTextFreePageNumbers,
   type TextFreePagesEngine,
 } from "../utils/exportWithoutText";
-import { defaultPageRange, parsePageRange } from "../engine/types";
+import { classifyPageRange, defaultPageRange } from "../engine/types";
 import {
   clampExportImageDpi,
   DEFAULT_EXPORT_IMAGE_DPI,
@@ -164,11 +164,12 @@ export function DocxExportDialog(
     };
   }, [open, docId, engine]);
 
-  const parsed = useMemo(
-    () => parsePageRange(rangeText, totalPages),
+  const rangeCheck = useMemo(
+    () => classifyPageRange(rangeText, totalPages),
     [rangeText, totalPages],
   );
-  const valid = parsed !== null && parsed.length > 0 && !running;
+  const parsed = rangeCheck.pages;
+  const valid = rangeCheck.state === "valid" && !running;
 
   // Esc-to-close, the backdrop drag guard and initial focus are owned by
   // DialogShell. The primary Export action is marked `default` so it
@@ -360,10 +361,24 @@ export function DocxExportDialog(
           autoCapitalize="off"
           data-docx-export-range
           disabled={running}
+          aria-describedby={
+            rangeCheck.state === "valid" ? "docx-range-help" : "docx-range-error"
+          }
+          aria-invalid={rangeCheck.state !== "valid"}
         />
-        <span className="modal-hint">
+        <span className="modal-hint" id="docx-range-help">
           Examples: <code>10-20</code>, <code>1,3,5-7</code>.
         </span>
+        {rangeCheck.state !== "valid" && (
+          <span
+            className="export-config-error"
+            id="docx-range-error"
+            role="alert"
+            data-docx-range-error
+          >
+            {rangeCheck.message}
+          </span>
+        )}
       </label>
 
       <label className="modal-field">

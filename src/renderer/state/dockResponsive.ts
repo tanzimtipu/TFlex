@@ -102,6 +102,69 @@ export function inspectorCollapsedFor(
 }
 
 /**
+ * R01 (TFL-1117) — the Inspector's THREE render surfaces. At/above the ladder
+ * threshold (rung 1 idle) the panel is `expanded` or `collapsed` from the
+ * user's persisted preference, exactly as before. Below the threshold the
+ * panel cannot reserve a column, so a user's "Expand inspector" intent is
+ * honoured as an overlay `drawer`; with no such intent it stays a `collapsed`
+ * strip (the ladder-forced state).
+ */
+export type InspectorSurface = 'expanded' | 'collapsed' | 'drawer';
+
+/**
+ * R01 (TFL-1117) — resolve the Inspector's render surface from the measured
+ * workspace width, the persisted user-collapse preference and the in-memory
+ * drawer-open intent.
+ *
+ * The ladder rung (width < `DOCK_LADDER_BREAKPOINTS.inspector`) still keeps the
+ * surface away from `expanded`, but unlike `inspectorCollapsedFor` it can now
+ * surface the drawer: below the threshold `drawerOpen` picks `drawer` over
+ * `collapsed`. At/above the threshold the drawer is irrelevant and the existing
+ * preference semantics apply unchanged (`userCollapsed` -> `collapsed`, else
+ * `expanded`). Pure, so the truth table is unit-testable without a DOM.
+ */
+export function resolveInspectorSurface(
+  width: number,
+  userCollapsed: boolean,
+  drawerOpen: boolean,
+): InspectorSurface {
+  if (width >= DOCK_LADDER_BREAKPOINTS.inspector) {
+    return userCollapsed ? 'collapsed' : 'expanded';
+  }
+  return drawerOpen ? 'drawer' : 'collapsed';
+}
+
+/**
+ * TFL-1116 C11 (R16) — the Context Panel's THREE render surfaces, mirroring the
+ * Inspector's R01 resolution. At/above the panel threshold the navigator is
+ * `expanded` or `collapsed` from the user's persisted preference; below it the
+ * panel cannot reserve a column, so the compact stage launcher's "open" intent
+ * is honoured as an overlay `drawer`; with no such intent it stays a `collapsed`
+ * strip.
+ */
+export type ContextPanelSurface = 'expanded' | 'collapsed' | 'drawer';
+
+/**
+ * TFL-1116 C11 (R16) — resolve the Context Panel's render surface from the
+ * measured workspace width, the persisted panel-collapse preference and the
+ * in-memory drawer-open intent. Rung 2 (width < `DOCK_LADDER_BREAKPOINTS.panel`)
+ * keeps the surface away from `expanded`; below the threshold `drawerOpen` picks
+ * `drawer` over `collapsed`. At/above the threshold the drawer is irrelevant and
+ * the existing preference semantics apply unchanged. Pure, so the truth table is
+ * unit-testable without a DOM.
+ */
+export function resolveContextPanelSurface(
+  width: number,
+  userCollapsed: boolean,
+  drawerOpen: boolean,
+): ContextPanelSurface {
+  if (width >= DOCK_LADDER_BREAKPOINTS.panel) {
+    return userCollapsed ? 'collapsed' : 'expanded';
+  }
+  return drawerOpen ? 'drawer' : 'collapsed';
+}
+
+/**
  * DEF-335 — the user preference the surface's collapse control records on a
  * click, given the EFFECTIVE state the control currently renders.
  *

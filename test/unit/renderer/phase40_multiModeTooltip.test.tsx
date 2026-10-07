@@ -53,7 +53,7 @@ function multiModeRow(container: HTMLElement): HTMLButtonElement {
   act((): void => {
     container.querySelector<HTMLButtonElement>("[data-app-menu]")?.click();
   });
-  const el = container.querySelector<HTMLButtonElement>("[data-menu-action='multiMode']");
+  const el = document.querySelector<HTMLButtonElement>("[data-menu-action='multiMode']");
   if (el === null) throw new Error("Multi Mode menu row missing");
   return el;
 }

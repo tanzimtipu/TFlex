@@ -5,6 +5,45 @@
 > inspect the current `OPEN`, `FIX-READY`, and `DISPUTED` entries first; closed records are
 > historical evidence and must not be loaded wholesale.
 
+## DEF-618: R03 collision-aware app menu is not content-bounded - stretched full-bleed to the viewport right edge (0px gutter)
+
+- Status: CLOSED (qa TFL-1123, 2026-10-07)
+- Severity: MEDIUM - the R03 overflow symptom (horizontal scrollbar / content outside the window) is gone, but the overlay still fails the R03 correction ("8px viewport gutter" both sides; "content-bounded", "bounded column"): it loses its bounded-popover shape, opens far from its trigger, and its width scales with the window. No document/data impact.
+- Found by: qa (TFL-1122 focused verification, TFL-1116 C3)
+- Phase: visual-overhaul correction (TFL-1116), R03
+
+Files:
+- `src/renderer/styles.css:19137` - `.app-menu-popover { position: absolute; top: calc(100% + 4px); right: 0; ... }` (pre-existing rule).
+- `src/renderer/components/CommandMenu.tsx:753-763` - the `collisionAware` inline style sets `position: fixed; left; top; maxHeight; maxWidth; overflowX; overflowY` but never clears `right`, so portaling to `document.body` makes `right: 0` viewport-relative and stretches the fixed surface between `left` and the window's right edge.
+- `src/renderer/components/overlayPlacement.ts` - `placeOverlay` measures that stretched width and clamps `left` accordingly.
+
+Steps to reproduce:
+1. `npm.cmd run build`; launch the app on Home (no document open).
+2. Size the window to 960x640 (unmaximize first), click the application menu (`[data-app-menu]`).
+3. Read `[data-app-menu-popover]`: `getBoundingClientRect()` and `getComputedStyle(...).right`.
+
+Expected: a content-bounded popover placed near its trigger, keeping the 8px viewport gutter on both sides (per R03's correction).
+
+Actual: the surface is stretched from a clamped `left` to the viewport's right edge - `right` = `window.innerWidth` exactly, `computedStyle.right` = `0px`, right gutter = 0px. Width scales with the window instead of the content: 874.8 (960) / 899.9 (1024) / 965.6 (1280) / 1208.8 (maximized), while the trigger sits at x 646.7-674.7 (960) - the menu opens ~560px left of its trigger. No submenu rows exist in the app menu.
+
+Command output (`npm.cmd run test:e2e -- e2e/tfl1116_r03_app_menu_fit.spec.cjs`):
+```
+[tfl1122] size=960 {"innerWidth":960,...,"left":85.203125,"right":960,...,"width":874.796875,"rightGutter":0,"cssRight":"0px","triggerLeft":646.65625,"triggerRight":674.65625,...}
+1) TFL-1122 R03: application menu stays inside the viewport at every size
+   Error: 960: 8px right viewport gutter
+   Expected: >= 7
+   Received:    0
+1 failed
+```
+The brief's width proxy (`width <= innerWidth - 16`) passes only incidentally because the clamped `left` exceeds 16; asserting the named right gutter directly fails at every size.
+
+Screenshots: screenshots/tfl1116_r03_menu_960.png, `_1024.png`, `_1280.png`, `_max.png` (menu shown as a near-full-width slab).
+
+History:
+- qa (TFL-1122, 2026-10-07): opened - independent e2e on the real Electron app at 960x640, 1024x768, 1280x800 and maximized.
+- CTO (TFL-1121 reopened, 2026-10-07): FIX-READY - relaying frontend-dev: `CommandMenu.tsx` collisionAware root inline style always sets `right: auto` + `width: max-content` and applies `position/left/top/maxHeight/maxWidth` after measurement; `useOverlayPlacement.ts` measures with `offsetWidth`/`offsetHeight` (layout box, transform-independent) instead of `getBoundingClientRect`; `styles.css` adds `.app-menu-popover.command-menu { right: auto; }` for the first render. DOM contract unchanged.
+- qa (TFL-1123, 2026-10-07): FIX-READY re-verification PASS -> CLOSED. Focused unit suite: `Test Files 3 passed (3)`, `Tests 42 passed (42)`, EXIT=0. `npm run verify`: conventions clean (389 source files scanned) + typecheck EXIT=0. `electron.launch` initially failed with `bad option: --remote-debugging-port=0` because the harness exported `ELECTRON_RUN_AS_NODE=1`; after `unset ELECTRON_RUN_AS_NODE` the built app ran: `1 passed` and the DEF-618 probe's right gutter is now non-zero at every size (960: 8.484, 1024: 8.484, 1280: 8.484, max: 8.484), popover width constant 333.5 (content-bounded, previously 874.8/899.9/965.6/1208.8), `position: fixed`, `cssRight: 8.484px`, `overflowX: hidden`, `submenuCount: 0`. Blast-radius neighbours (`titleBarFileMenu.test.tsx`, `pageThumbMenu.test.tsx`): `Test Files 2 passed (2)`, `Tests 12 passed (12)`. Screenshots `screenshots/tfl1116_r03_menu_{960,1024,1280,max}.png` inspected: content-bounded popover near its trigger, ~8px right gutter, fully inside the window.
+
 ## DEF-597: Repo-wide typecheck is red - preferencesReducer lacks an ending return (src/renderer/state/preferences.ts)
 
 - Status: CLOSED (qa TFL-961, 2026-10-06)
@@ -14027,3 +14066,316 @@ History:
 - orchestrator: FIX-READY relaying TFL-1076 (migrate the phase-owned stale selectors)
 - qa: CLOSED (TFL-1076) — the 7 named specs were migrated to the live navigator UI: `[data-outline-toggle]`/`data-outline-open` -> the Outline view selector (`[data-context-panel-view-tab="outline"]` / `[data-context-panel-view="outline"]`); `[data-thumb-verbs]`/`[data-thumb-verb]` -> the card `[data-thumb-more]` + `[data-menu-item]` CommandMenu rows; the chunk-C row verbs -> the `[data-outline-more]` menu rows; `[data-outline-toolbar]` -> `.outline-head`; `[data-context-panel-combine]` -> the `[data-context-panel-more]` menu. Result: 0 PHASE-OWNED failures remain. Remaining failures are pre-existing out-of-phase only: `[data-theme-toggle]` (phase16 P16C-7, phase40 P40-12, phase94 x2), `[data-header-multi-mode]` (phase40 P40-10), the retired annotations section (phase16 P16C-1/P16C-6), the retired `[data-open-preferences]` (phase94 a11y) — all tracked by TFL-1075 — plus two further pre-existing out-of-phase failures NOT yet in the TFL-1075 list: phase16 P16C-2 (`.workspace` rail column is 280px, spec expects 220px) and phase40 P40-9 (`[data-page-layout-control]` retired by the Phase-109 ViewStrip). Also: the Phase-59 SHORT-outline "content-hugging section" assertion was updated because Phase 111 chunk A replaced the 40%-cap section with a full-height view (the overflow flush contract is unchanged and still passes). Evidence: `e2e_focused2.log`, `e2e_focused3.log`, `e2e_p36b.log` (scratch dir) — 8-spec phase-owned set: 0 phase-owned failures / 10 pre-existing.
 
+## DEF-619: A committed page jump on a large document intermittently unmounts the whole renderer (blank window) - React #185 max update depth
+
+- Status: CLOSED (qa TFL-1128, 2026-10-07)
+- Severity: HIGH - the entire application UI unmounts to a blank window mid-navigation (no in-app recovery); the document workflow is lost. Intermittent (~40-50% of runs).
+- Found by: qa (TFL-1127 focused verification of TFL-1116 C5 / finding R04)
+- Phase: visual overhaul (TFL-1116), R04 navigation synchronization
+
+Files:
+- `src/renderer/components/SideRail.tsx:598-644` - the new R04 `revealSeq` reveal effect sets `scroller.scrollTop` on a committed jump.
+- `src/renderer/components/DocumentView.tsx:3002` - `jumpToPage` bumps `revealSeq`; threaded via `ContextPanel.tsx:981,1076` / `PaneThumbStrip.tsx:245`.
+
+Steps to reproduce (from application launch):
+1. `npm.cmd run build` (exit 0), then `npm.cmd run test:e2e -- e2e/tfl1116_r04_navigation_sync.spec.cjs`.
+2. Open the generated 520-page fixture (`beforeAll` builds it in `%TEMP%/tfl1116-r04`).
+3. Tick page 2's `[data-thumb-checkbox]`, then jump 1 -> 260 via `input.page-input[aria-label="Current page"]` (fill + Enter).
+
+Expected: the pane stays mounted, the rail reveals page 260's thumb, the footer input reads 260.
+Actual (intermittent): a renderer console error `Minified React error #185` (Maximum update depth exceeded) is thrown during the committed jump; the React root unmounts and the window goes blank. Playwright then fails `expect(locator).toHaveValue('260')` at `e2e/tfl1116_r04_navigation_sync.spec.cjs:146` with `element(s) not found`.
+
+Evidence:
+- Dev spec run 10x: 4 failed (React #185, all at line 146), 6 passed.
+- QA isolation probe `e2e/tfl1116_r04_navigation_sync.qa.spec.cjs` (verbatim dev flow): 3/6 runs crashed (`paneAfterJump=0`, 1 console error). Blank-window capture: `screenshots/tfl1116_r04_qa_crash.png`.
+- Controls: the same committed jump on a 40-page doc (`--grep QA-E`) crashed 0/6; idle open of the 520-page doc crashed 0/1; tracked non-C5 `e2e/phase109_viewstrip.spec.cjs --grep P109-3` passed.
+- Raw logs (scratch): `step3_e2e.log`, `flake_run1.log`, `flake_run5.log`, `qad_run1.log`.
+- Attribution is on the C5 committed-jump / large-document rail-reveal path (the crash was observed only there). Isolation from other concurrent uncommitted work was not possible without reverting other agents' files.
+
+History:
+- qa: opened (TFL-1127, TFL-1116 C5 / R04 focused verification)
+- CTO: assigned to frontend-dev (TFL-1126 reopened with the fix brief), 2026-10-07
+- frontend-dev: FIX-READY (TFL-1126) - root cause: `DocumentView` published the growing page-size map to the host synchronously per Map change during a far jump, re-rendering the App once per mounted page and exceeding React's max update depth; fix coalesces the report to one requestAnimationFrame (`DocumentView.tsx:4209-4226`) and bails the rail seeding effect when the visible set is unchanged (`SideRail.tsx:589-611`). Evidence: e2e 10/10 + QA probe 10 passed, unit 6/29, verify + build green. Awaiting qa re-verification.
+- qa (TFL-1128, 2026-10-07): FIX-READY re-verification PASS -> CLOSED. Confirmed both source changes in-tree (`DocumentView.tsx:4209-4226` coalesced rAF report reading `pageSizesRef` with unmount cancel; `SideRail.tsx:589-611` identity bail-out). `npm.cmd run build` exit 0. Dev spec `e2e/tfl1116_r04_navigation_sync.spec.cjs --repeat-each=10` -> `10 passed (2.9m)` (baseline was 4/10 failing), 0 occurrences of `Minified React error #185`. QA crash probe `e2e/tfl1116_r04_navigation_sync.qa.spec.cjs --repeat-each=2` -> `10 passed`, every run `consoleErrors=0`, 0 "CRASH captured" (baseline 3/6 crashing). Focused unit suite -> `Test Files 6 passed (6)`, `Tests 29 passed (29)`. `npm.cmd run verify` -> conventions clean (390 files) + typecheck exit 0. Blast radius (page geometry) -> 4 specs (`pageGeometry`, `defDEF141_mixedPageGeometry`, `defDEF148PerPageThumbAspect`, `phaseC_pageViewSmoothRefresh`) `Test Files 4 passed (4)`, `Tests 45 passed (45)`. R04 acceptance re-confirmed via the refreshed screenshots (inspected as images): jump 1->260 shows page 260's thumb revealed inside the rail scroller, footer input `260 / 520`, selection still `1 selected`/Page 2; jump 260->520 shows `520 / 520` with Next disabled; tab away/back agrees at 520/520 with the rail marker on 520. Blast-radius extra: a separate pre-existing stale-Inspector-size defect filed as DEF-620 (reproduces on small documents with no 520-page crash path, so it is not a regression of this coalescing change).
+
+## DEF-620: The Inspector's page Size row is stale (or "Not available") after switching tabs - it shows the OTHER tab's page geometry
+
+- Status: CLOSED (qa TFL-1133, 2026-10-07)
+- Severity: MEDIUM - the Inspector's Size value is wrong for the active document after a tab away/back round trip (shows the previously-focused tab's page size, or "Not available" when the page is absent from that other tab's map). No document/data impact; the Crop path and the thumb aspect logic are unaffected. Pre-existing: reproduces on small documents with no large-document crash path, so it is NOT a regression of the DEF-619 coalescing change.
+- Found by: qa (TFL-1128 DEF-619 blast-radius sweep of the page-size report path, 2026-10-07)
+- Phase: visual overhaul (TFL-1116), R04 navigation synchronization - Inspector page geometry
+
+Files:
+- `src/renderer/App.tsx:10596-10606` - `livePageSizes` is keyed by pane (`reportPageSizesFor(pane, sizes)` at `:11876`); in single-pane mode every tab reports under the same `"single"` key, so the last tab to report overwrites the shared map.
+- `src/renderer/App.tsx:10621-10625` - the Inspector resolves Size from `livePageSizesForScope` (`resolveInspectorPageSize`), which is the shared `"single"` map - not the active tab's own map.
+- `src/renderer/components/DocumentView.tsx:4210-4217` - the report effect keys only on `[pageSizes]`, so a tab that is re-activated without a new page-size change never re-reports; the host keeps the other tab's map.
+
+Steps to reproduce (from application launch):
+1. `npm.cmd run build` (exit 0); launch with `npm.cmd run test:e2e -- e2e/tfl1128_geometry_generic.qa.spec.cjs`.
+2. Open a 3-page 612x792 pt document (tab A); read `[data-inspector-row="size"]` -> `612 x 792 pt`.
+3. Open a 5-page 595x842 pt document (tab B); read Size -> `595 x 842 pt`.
+4. Click tab A to return; read Size after 3s.
+
+Expected: the Inspector shows tab A's page size (`612 x 792 pt`).
+
+Actual: the Inspector keeps tab B's size (`595 x 842 pt`) - the previously-focused tab's geometry. On the DEF-619 520-page fixture, returning to the big tab while page 260 is current reads "Not available" instead, because page 260 is not in the other (small) document's map. Also visible in the refreshed `screenshots/tfl1116_r04_tab_return.png` (Inspector `Size: Not available`), captured by the dev's own spec run.
+
+Command output (`npm.cmd run test:e2e -- e2e/tfl1128_geometry_generic.qa.spec.cjs`):
+```
+[TFL-1128-generic] A size on open = "Size\n612 x 792 pt"
+[TFL-1128-generic] B size on open = "Size\n595 x 842 pt"
+[TFL-1128-generic] A size after tab return = "Size\n595 x 842 pt"
+```
+And the DEF-619 blast-radius probe (`e2e/tfl1128_def619_geometry_probe.qa.spec.cjs`, 520-page doc) after returning to the big tab with page 260 current:
+```
+[TFL-1128] inspector size after tab return = "Size\nNot available"
+```
+
+Regression test (expected to fail until fixed): `e2e/tfl1128_geometry_generic.qa.spec.cjs` (kept as `test.fixme` so it documents the defect without reddening the suite). Screenshots: `screenshots/tfl1128_geometry_tab_return.png`, `screenshots/tfl1116_r04_tab_return.png`.
+
+History:
+- qa (TFL-1128, 2026-10-07): opened during the DEF-619 blast-radius sweep of the page-size report path. Proven pre-existing/independent of the DEF-619 fix: it reproduces with two small documents and no far committed jump, so the rAF coalescing cannot produce it. Not filed against DEF-619 closure; routed for the CTO to decide.
+- qa (TFL-1133, 2026-10-07): FIX-READY re-verification PASS -> CLOSED. Confirmed the source change in-tree: `livePageSizes` is now keyed by `livePageSizeScopeKey(stagePane, tabs.activeId)` (`App.tsx:10615-10616`), `reportPageSizesFor(livePageSizeScopeKey(pane, tabId), sizes)` at `App.tsx:11899`, new pure `src/renderer/state/pageSizeScope.ts` (pane in Multi Mode, active tab id in single mode, `"single"` only when both null). New unit `test/unit/renderer/tfl1116_pageSizeScope.test.ts`; both DEF-620 probes un-fixme'd (`e2e/tfl1128_geometry_generic.qa.spec.cjs`, `e2e/tfl1128_def619_geometry_probe.qa.spec.cjs` now run as guards). Both probes PASS: generic `A size after tab return = "Size\n612 x 792 pt"` (was `595 x 842 pt`); DEF-619 520-page probe `after tab return = "Size\n612 x 792 pt"` (was `Not available`), `2 passed (22.0s)`. Focused unit suite `Test Files 4 passed (4)`, `Tests 47 passed (47)`. `npm.cmd run verify` -> conventions clean (391 files) + typecheck EXIT=0. `npm.cmd run build` EXIT=0. Blast radius: `livePageSizeScopeKey` pane branch is byte-identical to the pre-fix `pane ?? "single"` key (proved via `git diff HEAD -- src/renderer/App.tsx`), so Multi Mode keying is unchanged; the tfl1116 unit case "keeps the two panes independent in Multi Mode" and the neighbour consumers (`pageGeometry`, `defDEF141_mixedPageGeometry`, `defDEF148PerPageThumbAspect`) all pass. A separate pre-existing Multi Mode gap (pane Size reads "Not available" for a normally-opened document) was observed with a real-app probe and filed as DEF-622; it is NOT a regression of this fix (the Multi Mode keying is unchanged).
+
+## DEF-621: R03 collision-aware app-menu portal reddens phase40_multiModeTooltip.test.tsx (unit oracle queries the un-portaled container)
+
+- Status: CLOSED (qa TFL-1134, 2026-10-07)
+- Severity: LOW - test-oracle regression, no user-facing behaviour change: the app menu still renders (portaled to `document.body` by the R03 collision-aware change, visually verified at the DEF-618 qa closure). It reddens 2 unit tests that any full-suite run executes; it does NOT fail `npm run verify` (conventions + typecheck only) and no product workflow is affected.
+- Found by: qa (TFL-1131, TFL-1116 C5b focused-verification blast-radius sweep, 2026-10-07)
+- Phase: visual overhaul (TFL-1116), R03 collision-aware application menu (C3)
+
+Files:
+- `src/renderer/components/CommandMenu.tsx:819` - `return collisionAware ? createPortal(tree, document.body) : tree;` (R03/C3): the collision-aware root is portaled OUT of the adopter's subtree.
+- `src/renderer/components/AppHeader.tsx:396` - the app menu passes `collisionAware`, so its `[data-menu-action]` rows render under `document.body`, not under the AppHeader container.
+- `test/unit/renderer/phase40_multiModeTooltip.test.tsx:56` - `multiModeRow` queries `container.querySelector("[data-menu-action='multiMode']")`; the container no longer holds the portaled menu.
+
+Steps to reproduce (no build needed; fresh tree):
+1. `npm.cmd run test:unit -- test/unit/renderer/phase40_multiModeTooltip.test.tsx`.
+
+Expected: `Tests 3 passed (3)` (the R03 portal is transparent to the Multi Mode row's accessible name).
+
+Actual: `Test Files 1 failed (1)`, `Tests 2 failed | 1 passed (3)`; both failures throw `Error: Multi Mode menu row missing` at `phase40_multiModeTooltip.test.tsx:57`.
+
+Command output:
+```
+FAIL test/unit/renderer/phase40_multiModeTooltip.test.tsx > Phase 40 item 8 - the Multi Mode command names view AND edit > the relocated row label says view/edit two documents side by side
+Error: Multi Mode menu row missing
+  multiModeRow test/unit/renderer/phase40_multiModeTooltip.test.tsx:57:26
+Test Files  1 failed (1)
+     Tests  2 failed | 1 passed (3)
+```
+
+Isolation from C5b: C5b's file set is `ViewStrip.tsx`, `BookView.tsx`, `App.tsx` (BookView wiring), `DocumentView.tsx`, `CanvasPills.tsx`, `pageLayoutMode.ts`. The failing test renders only `AppHeader` and exercises neither ViewStrip nor BookView. `git diff HEAD --numstat` shows `CommandMenu.tsx` +202/-42 and `AppHeader.tsx` +17/-2 from the R03/C3 (portal) and R04/C4 (`commandSurface`) chunks; the portal line `:819` and `collisionAware` at `AppHeader.tsx:396` are the direct cause. So it is a stale test-oracle introduced by R03/C3, not a C5b regression.
+
+Fix owner: R03/C3 frontend-dev - update the oracle to query `document.body` (or scope the portal); do NOT weaken the assertion. Not edited by qa (unit tests are not QA-editable).
+
+History:
+- qa (TFL-1131, 2026-10-07): opened during the C5b blast-radius sweep after observing `phase40_multiModeTooltip.test.tsx` red; classified as an R03/C3 regression of the collision-aware portal, outside the C5b file set. Filed per CTO instruction on the TFL-1131 continuation rather than silently attributed.
+- frontend-dev (TFL-1132): FIX-READY. Updated the oracle only - `test/unit/renderer/phase40_multiModeTooltip.test.tsx:56` now queries `document.querySelector("[data-menu-action='multiMode']")` (the trigger lookup at line 54 stays container-scoped). No assertion weakened/added/deleted; the R03/C3 portal (`CommandMenu.tsx:819`) is untouched.
+- qa (TFL-1134 FIX-READY re-verification, 2026-10-07): CLOSED. Diff verified as the single one-line `container` -> `document` oracle change (`git diff -- test/unit/renderer/phase40_multiModeTooltip.test.tsx`: 1 file, 1 insertion, 1 deletion); CommandMenu.tsx portal (`createPortal(tree, document.body)`, `:819`) unchanged. `npm.cmd run test:unit -- test/unit/renderer/phase40_multiModeTooltip.test.tsx` -> `Test Files 1 passed (1)` / `Tests 3 passed (3)`. Blast radius (shared `CommandMenu`/menu-row path): `commandMenu`, `appHeaderAppMenu`, `titleBarFileMenu`, `pageThumbMenu` -> `Test Files 4 passed (4)` / `Tests 45 passed (45)`, 0 failed. `npm.cmd run verify` -> conventions clean (391 files), `tsc --noEmit` exit 0. Reproduction from the original report no longer throws `Multi Mode menu row missing`.
+
+## DEF-622: Multi Mode - the Inspector page Size row reads "Not available" for a normally-opened document (pane maps never receive a page-size report)
+
+- Status: CLOSED (qa TFL-1136, 2026-10-07)
+- Severity: MEDIUM - the shared Inspector's Size value is absent for both panes in Multi Mode even though each pane's document is rendered and measured, so the geometry readout is unusable in a supported mode. No document/data impact. Pre-existing: the Multi Mode (pane) scope key is unchanged by the TFL-1130 DEF-620 fix (see below), so this is NOT a regression of that fix.
+- Found by: qa (TFL-1133, TFL-1116 DEF-620 FIX-READY blast-radius sweep, 2026-10-07)
+- Phase: visual overhaul (TFL-1116), R04 navigation synchronization - Inspector page geometry (Multi Mode)
+
+Files:
+- `src/renderer/App.tsx:10615-10616` - the Inspector reads `livePageSizes[livePageSizeScopeKey(stagePane, tabs.activeId)]`, i.e. `livePageSizes["A"|"B"]` in Multi Mode.
+- `src/renderer/components/MultiPane.tsx:544-546` - Multi Mode reuses the SAME `.tab-pane` (keyed by `tab.id`, "no remount") and only flips `data-pane`, so a pane's `DocumentView` instance is not remounted when the mode turns on.
+- `src/renderer/components/DocumentView.tsx:4214-4221` - the page-size report effect keys only on `[pageSizes]`; entering Multi Mode changes neither `pageSizes` nor the map identity, so the DocumentView never re-reports under the pane key. The `"A"`/`"B"` maps stay empty (pre-fix this was equally true: the pane branch key was `pane ?? "single"` -> `"A"|"B"`).
+
+Steps to reproduce (from application launch):
+1. `npm.cmd run build` (exit 0); run `npm.cmd run test:e2e -- e2e/tfl1130_multimode_geometry.qa.spec.cjs` (currently `test.fixme` so it is skipped; remove the fixme to run it).
+2. Open a 3-page 612x792 pt document, then a 5-page 595x842 pt document; make the 612x792 doc the active tab.
+3. Toggle Multi Mode; pick the 595x842 doc into pane B; wait for its canvas.
+4. Focus pane A; read `[data-inspector-row="size"]`. Focus pane B; read it again.
+
+Expected: pane A reads `612 x 792 pt` and pane B reads `595 x 842 pt` (each pane resolves its own measured map).
+
+Actual: both panes read `Size\nNot available` despite their pages being rendered and measured, and despite the pane focus being correct.
+
+Command output (`npm.cmd run test:e2e -- e2e/tfl1130_multimode_geometry.qa.spec.cjs`):
+```
+[TFL-1130-mm] pane A focused=true size="Size
+Not available"
+[TFL-1130-mm] pane B focused=true size="Size
+Not available"
+  1) ... Error: pane A Size reads A own geometry
+    Expected substring: "612 x 792 pt"
+    Received string:    "Size
+    Not available"
+1 failed
+```
+
+Isolation from the TFL-1130 DEF-620 fix: `git diff HEAD -- src/renderer/App.tsx` shows the pre-fix report key was `const key = pane ?? "single"` and the pre-fix lookup was `livePageSizes[stagePane ?? "single"]`; `livePageSizeScopeKey(pane, tabId)` returns `pane` whenever `pane !== null`, so in Multi Mode the key is `"A"|"B"` both before and after the fix - byte-for-byte the same behaviour. Likewise the DEF-619 R04 coalescing change kept the report effect deps as `[pageSizes]`. So the empty pane maps cannot be produced by either change.
+
+Screenshots: `screenshots/tfl1130_multimode_pane_a.png` (pane A focused, Inspector `Size: Not available`), `screenshots/tfl1130_multimode_pane_b.png`.
+
+History:
+- qa (TFL-1133, 2026-10-07): opened during the DEF-620 FIX-READY blast-radius check. Multi Mode is the pane branch of `livePageSizeScopeKey`; the branch is unchanged (proved via `git diff HEAD`), so this is a pre-existing defect, not a regression. Filed so the CTO can triage it separately from DEF-620 (which is CLOSED: its single-mode defect is fixed and verified).
+- qa (TFL-1136 FIX-READY re-verification, 2026-10-07): CLOSED. Independently confirmed the in-tree fix: `src/renderer/components/DocumentView.tsx:4225-4241` the page-size report effect now keys on `[pageSizes, multiPane]` (was `[pageSizes]`), reading the LIVE map via `pageSizesRef` inside the one-rAF coalescing callback, with the unmount cancel intact; `multiPane` is the pane component of the host's `livePageSizeScopeKey`, so entering Multi Mode / rebinding a pane re-publishes this view's OWN measured map under `"A"`/`"B"` without a remount. Raw repro: `npm.cmd run test:e2e -- e2e/tfl1130_multimode_geometry.qa.spec.cjs` -> `1 passed` with `pane A focused=true size="Size\n612 x 792 pt"` and `pane B focused=true size="Size\n595 x 842 pt"` (was `Not available` for both). Screenshots `screenshots/tfl1130_multimode_pane_a.png` / `_pane_b.png` regenerated (00:59) and inspected as images: pane A Inspector `Size 612 x 792 pt` with the alpha tab active, pane B `Size 595 x 842 pt` with the beta tab active. Focused unit suite `npm.cmd run test:unit -- test/unit/renderer/tfl1116_multimodePageSize.test.tsx test/unit/renderer/tfl1116_pageSizeScope.test.ts test/unit/renderer/pageGeometry.test.ts test/unit/renderer/defDEF141_mixedPageGeometry.test.ts test/unit/renderer/defDEF148PerPageThumbAspect.test.tsx` -> `Test Files 5 passed (5)`, `Tests 49 passed (49)`, 0 failed. `npm.cmd run verify` -> conventions clean (391 files) + `tsc --noEmit` exit 0. `npm.cmd run build` exit 0. Blast radius: DEF-620 single-pane probe `e2e/tfl1128_geometry_generic.qa.spec.cjs` PASSES (`A size after tab return = "Size\n612 x 792 pt"`), so DEF-620 is not regressed. Note (out of scope, not caused by this fix): `e2e/phase32_multi_mode.spec.cjs` C1/C2b/C6 and `e2e/phase33_multi_layout.spec.cjs` C4 fail on stale selectors (`[data-header-multi-mode]`, `[data-pill-pane="A"] .zoom-percent`, `[data-theme-toggle]`) that no longer exist after the Phase 105 header relocation / visual-overhaul work - test-implementation drift outside the page-size report path, reported to the CTO for triage, not filed as a DEF-622 regression.
+
+## DEF-623: TFL-1116 C7 R06 CSS comment breaks the DEF-244 caption-band unit tests (`mediaBlock(900)` resolves the new `.titlebar > .brand` rule instead of the 900px band)
+
+- Status: CLOSED (qa TFL-1175 C15 phase-close, 2026-10-07)
+- Severity: MEDIUM - no user-facing impact (R06/R07 render correctly and the C7 e2e passes), but C7's new stylesheet comment reddens 2 existing `phase22_titlebarFileGroup` tests, so the chunk cannot merge green and the DEF-244 caption-band regression guard is lost until fixed.
+- Found by: qa (TFL-1142 focused verification, TFL-1116 C7)
+- Phase: visual overhaul (TFL-1116), R06 titlebar brand inset
+
+Files:
+- `src/renderer/styles.css:2063-2071` - the new R06 comment (added by C7) says the rule "used to live inside the `@media (max-width: 900px)` band". Its literal `@media (max-width: 900px)` text now appears BEFORE the first real 900px media block (`src/renderer/styles.css:2279`).
+- `test/unit/renderer/phase22_titlebarFileGroup.test.tsx:490-502` - `mediaBlock(maxWidth)` uses `CSS_SRC.indexOf("@media (max-width: Npx)")` and consumes the first match; it does not skip comments, so it resolves the C7 `.titlebar > .brand` rule body.
+
+Steps to reproduce (from a clean checkout of the C7 working tree):
+1. `npm.cmd run build` (exit 0).
+2. `npm.cmd run test:unit -- test/unit/renderer/phase22_titlebarFileGroup.test.tsx`.
+
+Expected: 31/31 tests pass (0 failed).
+Actual: 2 fail, both in the DEF-244 caption-band suite. `mediaBlock(900)` returns `"\r\n  padding-left: var(--space-standard);\r\n  align-self: center;"` (the `.titlebar > .brand` body) instead of the 900px band.
+
+Command output:
+```
+FAIL test/unit/renderer/phase22_titlebarFileGroup.test.tsx > DEF-244 ... > below 900px the Open label goes icon-only but stays in the DOM
+AssertionError: expected '\r\n  padding-left: var(--space-stand...' to match /\.titlebar-file-label\s*\{\s*display:\s*none;/
+FAIL test/unit/renderer/phase22_titlebarFileGroup.test.tsx > DEF-244 ... > below 900px the group tightens its trailing margin so the strip gets the space
+AssertionError: expected '\r\n  padding-left: var(--space-stand...' to match /\.titlebar-file\s*\{\s*margin-right:\s*var\(--sp-2\);/
+Test Files  1 failed | 2 passed (3)
+      Tests  2 failed | 43 passed (45)
+```
+
+Isolation (C7 is the sole cause): `git diff HEAD -- src/renderer/styles.css` attributes the R06 comment to C7. Re-inserting ONLY that comment+rule onto a pristine `HEAD` (1eb048c) worktree reproduces exactly these 2 failures (`Tests 2 failed | 43 passed`); the pristine worktree is green for the same files (`8 passed (8) / 125 passed`). Stripping comments from the working `styles.css` makes `mediaBlock(900)` resolve correctly (`contains .titlebar-file-label: true`; 169 chars vs 65).
+
+Fix direction (dev): reword the R06 comment so it does not contain the literal `@media (max-width: 900px)` (e.g. "the 900px media band"); QA may not edit unit tests, so this is a dev-side fix.
+
+Screenshots: n/a (unit-only).
+
+History:
+- qa (TFL-1175 C15 phase-close, 2026-10-07): CLOSED. Re-ran the named oracle `test/unit/renderer/phase22_titlebarFileGroup.test.tsx` -> `Test Files 1 passed (1)`, `Tests 31 passed (31)` (expected 31/31). The R06 comment still names the 900px band, but the test's `mediaBlock(maxWidth)` now strips comments before `indexOf` (mirroring `cssRuleBody`), so it resolves the real 900px band body; the DEF-244 caption-band assertions are intact, not weakened. The same reconcile also folds the TFL-1116 C4 (R05) `activeDocId` narrowing into the Save/Save-As oracle, which is correct in-tree (`git diff HEAD -- test/unit/renderer/phase22_titlebarFileGroup.test.tsx`, 28 insertions / 21 deletions). Symptom no longer reproduces; tracked unit suite green.
+
+## DEF-624: TFL-1116 styles refactor adds a raw `border-radius: 999px` on `.tf-panel-scroll::-webkit-scrollbar-thumb`, reddening the Phase-100 foundationGuards radii guard
+
+- Status: CLOSED (qa TFL-1170, 2026-10-07) - source fix confirmed in-tree (`src/renderer/styles.css` `.tf-panel-scroll::-webkit-scrollbar-thumb` now `border-radius: var(--radius-pill)`); named Phase-100 `foundationGuards.test.ts` green (30/30) and the reconciled sibling R11 oracle `tfl1116_scrollbar.test.ts` green. Re-sweep `phase40 phase22 phase105 phase36TitleBar printEntryPoints designTokensContract foundationGuards phase111_restore tfl1116_scrollbar phase13Controls` -> `Test Files 1 failed | 22 passed (23)`, `Tests 1 failed | 290 passed (291)`; the sole remaining red is the stale R03 portal oracle `phase13Controls.test.tsx:115` (unrelated AppHeader-menu path).
+- Severity: LOW - no user-facing impact (the scrollbar pill renders identically), but a NEW raw radii literal in a migrated stylesheet breaks the Phase-100 foundation guard, so the tracked unit suite cannot go green until it is tokenized or allowlisted.
+- Found by: qa (TFL-1162 focused verification + suite reconciliation of TFL-1116 C11)
+- Phase: visual overhaul (TFL-1116) - panel/scroll styles refactor (uncommitted working tree)
+
+Files:
+- `src/renderer/styles.css:22416-22420` - `.tf-panel-scroll::-webkit-scrollbar-thumb { ... border-radius: 999px; }`. `git diff HEAD -- src/renderer/styles.css` shows every `.tf-panel-scroll` block (including this thumb rule) as a `+` addition, so the literal is newly introduced by the uncommitted refactor.
+- `test/unit/renderer/foundationGuards.test.ts:757-770` - `cssFoundationViolations` flags raw elevation/radii literals in `MIGRATED_CSS_RULES` unless present in `CSS_ALLOWLIST`; `999px` is not allowlisted and the guard is unmodified.
+
+Steps to reproduce:
+1. `npm.cmd run test:unit -- test/unit/renderer/foundationGuards.test.ts`.
+Expected: `Test Files 1 passed (1)`, `Tests 30 passed (30)`.
+Actual: `Test Files 1 failed (1)`, `Tests 1 failed | 29 passed (30)`:
+```
+AssertionError: raw elevation / radii literal in a migrated stylesheet: expected [ Array(1) ] to deeply equal []
+- []
++ [ "styles.css .tf-panel-scroll::-webkit-scrollbar-thumb { border-radius: 999px }" ]
+  test/unit/renderer/foundationGuards.test.ts:769:82
+```
+
+Isolation: the guard is unchanged and its winning value is NEW (the rule did not exist at HEAD `1eb048c`), so this is a real new contract breach, NOT a stale oracle and NOT pre-existing. Distinct from DEF-565: that fix tokenized `.multi-divider-grip` / `.page-drop-indicator` / `.thumb-drop-line` to `var(--radius-pill)`; this `.tf-panel-scroll` rule is new and was not covered.
+
+Fix direction (dev): use `border-radius: var(--radius-pill)` (the canonical fully-rounded token; `--radius-pill: 9999px` at `styles.css:194`), or add a justified allowlist entry. QA may not edit unit tests or product CSS.
+
+Screenshots: n/a (unit-only).
+
+History:
+- frontend-dev (TFL-1167): FIX-READY. `src/renderer/styles.css:22420` now reads `border-radius: var(--radius-pill);` (was the raw `999px`); the named Phase-100 foundationGuards radii guard is green.
+- qa (TFL-1168 focused verification of TFL-1167, 2026-10-07): NOT CLOSED - verdict FAIL. The source fix itself is correct and the named guard (`foundationGuards.test.ts`, 30/30) passes, so DEF-624's own criterion is met. However, the same edit reddens a nearest-neighbour oracle that pinned the removed raw literal - `test/unit/renderer/tfl1116_scrollbar.test.ts:34` (filed as DEF-625) - so the tracked suite is not green and the fix batch cannot be verified clean. Fix direction is right; the R11 oracle must be reconciled before DEF-624 can close.
+- qa (TFL-1170 C13 re-sweep, 2026-10-07): CLOSED. Re-swept the named set and confirmed green: `foundationGuards.test.ts` 30/30; the reconciled R11 oracle `tfl1116_scrollbar.test.ts` 5/5 (token form). The batch's named C11 reconcile specs pass (`Test Files 21 passed (21)` in the 22-green subset). Sole remaining red in the re-sweep is `phase13Controls.test.tsx:115` (stale R03 CommandMenu-portal oracle; the row is now `createPortal(..., document.body)` at `CommandMenu.tsx:819`, so `host.querySelector` misses it) - unrelated to the `.tf-panel-scroll` path.
+
+## DEF-625: DEF-624's `var(--radius-pill)` tokenization reddens the R11 panel-scrollbar unit oracle, which still pins the forbidden raw `border-radius: 999px`
+
+- Status: CLOSED (qa TFL-1170, 2026-10-07) - the R11 oracle at `test/unit/renderer/tfl1116_scrollbar.test.ts` now asserts the token form (`border-radius:\s*var\(--radius-pill\)`); `npm.cmd run test:unit -- ... tfl1116_scrollbar.test.ts ...` is green (5/5) and the DEF-624 source rule is unchanged (`var(--radius-pill)`).
+- Severity: LOW - test-oracle regression only, no user-facing impact: the scrollbar thumb renders identically (`var(--radius-pill)` = `9999px`, fully rounded) and the Phase-100 foundationGuards radii guard is now green. But it leaves the tracked unit suite red on `tfl1116_scrollbar.test.ts`, blocking a green merge.
+- Found by: qa (TFL-1168, TFL-1167 fix-batch blast-radius sweep, 2026-10-07)
+- Phase: visual overhaul (TFL-1116) - R11 shared panel scrollbar + DEF-624 fix
+
+Files:
+- `src/renderer/styles.css:22420` - `.tf-panel-scroll::-webkit-scrollbar-thumb` now `border-radius: var(--radius-pill);` (the DEF-624 fix; was the raw `999px`).
+- `test/unit/renderer/tfl1116_scrollbar.test.ts:34` - `expect(thumb).toMatch(/border-radius:\s*999px/);` still pins the removed raw literal (R11, TFL-1155).
+
+Steps to reproduce (from application launch; unit-only):
+1. `npm.cmd run test:unit -- test/unit/renderer/tfl1116_scrollbar.test.ts`.
+
+Expected: `Test Files 1 passed (1)`, `Tests 5 passed (5)`.
+Actual: `Test Files 1 failed (1)`, `Tests 1 failed | 4 passed (5)`.
+
+Command output:
+```
+FAIL test/unit/renderer/tfl1116_scrollbar.test.ts > R11 - the one shared panel scrollbar rule > is a thin thumb on a transparent track
+AssertionError: expected '\r\n  background: var(--tf-panel-scro...' to match /border-radius:\s*999px/
+ - Expected: /border-radius:\s*999px/
+ + Received: "... border-radius: var(--radius-pill);"
+  test/unit/renderer/tfl1116_scrollbar.test.ts:34:19
+```
+
+Isolation: `git status` shows `tfl1116_scrollbar.test.ts` untracked (R11, TFL-1155); it passed while the raw literal was present, and the only change to the asserted rule is DEF-624's tokenization. The sibling oracle `phase34_multi_layout.test.tsx:434,794,837` accepts both forms (`var(--radius-pill)|999px`) and stays green.
+
+Fix direction (dev): update the R11 oracle to assert the token - `border-radius:\s*var\(--radius-pill\)` - or adopt the same dual-form pattern used by `phase34_multi_layout.test.tsx`. QA may not edit unit tests.
+
+Screenshots: n/a (unit-only).
+
+History:
+- qa (TFL-1168, 2026-10-07): opened during the TFL-1167 fix-batch blast-radius sweep of the `.tf-panel-scroll` path; the DEF-624 source fix is correct but did not reconcile this oracle. Directly caused by the DEF-624 edit. Blocks closure of DEF-624.
+- qa (TFL-1170 C13 re-sweep, 2026-10-07): CLOSED. The oracle now asserts `border-radius:\s*var\(--radius-pill\)` (line 37); the focused run of `tfl1116_scrollbar.test.ts` is `Test Files 1 passed (1)` / `Tests 5 passed (5)`. The `phase34_multi_layout.test.tsx` sibling stays green. No product change; the scrollbar thumb still renders fully rounded.
+
+## DEF-626: R05 does not cover the Command Palette; document-only Save / Save a copy / Close Tab remain present and enabled on Home (silently no-op behind an active empty tab)
+
+- Status: CLOSED (qa TFL-1177, 2026-10-07) - post-gate fix on TFL-1176 re-verified. `filterEntriesForSurface` (`src/renderer/state/commandCapability.ts:71`) drops document-only `TOOL_REGISTRY` rows on `"home"`; `App.tsx:11322` feeds the filtered corpus to `CommandPalette`, and `paletteAppActions.save/saveAs/closeTab` + `appActionGates` key on `activeTabHasDocument` (`App.tsx:11002`). e2e `R05 Case D` asserts `[data-palette-tool-id="save"|"saveAs"|"tabClose"]` count 0 while `tabNew` survives on Home behind an active empty tab, and all three return with a document active (7/7 e2e green). Screenshots inspected.
+- Severity: MEDIUM - the Command Palette offers runnable, enabled document-only rows on Home; activating them silently does nothing (no toast, no state change), hiding a missing surface gate behind a passing-looking control. Violates the R05/gate-1 contract that document-only commands be ABSENT from the command surface on Home.
+- Found by: adversary (TFL-1174 C16 diff-pass, 2026-10-07; ADV-241)
+- Phase: visual overhaul (TFL-1116) - R05 Home command capability
+
+Files:
+- `src/renderer/App.tsx:11184-11196` - `paletteAppActions.save` / `.saveAs` / `.closeTab` gate on `activeTabIdRefLocal.current !== null` only.
+- `src/renderer/App.tsx:11337-11338` - `case "tab": return tabs.activeId !== null;`.
+- `src/renderer/state/toolsRegistry.ts:1089-1107` (`save`, `saveAs`) and `:1231-1240` (`tabClose`) - `availability: 'tab'`.
+- `src/renderer/components/CommandPalette.tsx:99-100` - lists the full registry; reachable on Home via the app menu "Command Palette..." row (`App.tsx:9893`, action `showToolsPalette`) or Ctrl+Shift+P.
+- The R05 filter to reuse: `src/renderer/state/commandCapability.ts:48` `filterMenuGroupsForSurface` + `deriveCommandSurface`/`isDocumentOnlyMenuAction`.
+
+Steps to reproduce:
+1. Launch fresh (Home, zero documents); open a sample; create an empty tab (the "document open BEHIND an active Home tab" state).
+2. Press Ctrl+K / Ctrl+Shift+P for the Command Palette.
+3. Search Save / Save a copy / Close Tab: rows PRESENT and ENABLED (empty tab has non-null `tabs.activeId`).
+4. Enter on Save -> `onSave(activeTabId)` -> `openTabsRef.current[tabId]` is undefined -> immediate return; silent no-op.
+
+Expected: on Home these commands are ABSENT (R05) from the palette; at minimum not offered as runnable enabled rows. Actual: present, enabled, silent no-op.
+
+Fix direction (not applied): route the palette's availability through the surface evaluator (drop `DOCUMENT_ONLY_MENU_ACTIONS` rows on `"home"`), and key the `save`/`saveAs`/`tabClose` gate on `activeTabHasDocument`.
+
+History:
+- adversary (TFL-1174 C16, 2026-10-07): opened as ADV-241.
+- CTO (2026-10-07): triaged ACCEPTED -> DEF-626 (MEDIUM); assigned to frontend-dev (TFL-1176).
+- frontend-dev (TFL-1176): FIX-READY - `filterEntriesForSurface` + palette corpus filter + `activeTabHasDocument` gates.
+- qa (TFL-1177, 2026-10-07): re-verified PASS -> CLOSED. Unit `tfl1116_commandCapability.test.ts` (45/45 across the focused set incl. the flat-corpus filter), `verify` exit 0, `build` exit 0, e2e 7/7 (`R05 Case D` proves ABSENT-not-disabled on Home and present-with-document). Blast radius: dock/menu neighbour `menuEnabledWiring.test.ts` green; `filterMenuGroupsForSurface` (File/app-menu) covered by `R05 Cases A-C` e2e.
+
+## DEF-627: Book View reading location is lost when the reader leaves via a tab switch (R25 partial)
+
+- Status: CLOSED (qa TFL-1177, 2026-10-07) - post-gate fix on TFL-1176 re-verified. `BookView` now takes `onLocationChange?: (finalPage?: number) => void` (`src/renderer/components/BookView.tsx:61`), published on each committed spread change and once on unmount (`BookView.tsx:458`); `App.tsx:11886` persists `open.persisted` `currentPage` without closing. e2e `DEF-627` reaches page 6 in Book View on tab A, exits via a tab-switch (opens tab B), returns to tab A and asserts the page input reads 6 (7/7 e2e green). Screenshots inspected: entry `Page 6 of 12`; return `6 / 12` with the page-6 thumbnail marked Viewing.
+- Severity: MEDIUM - R25 requires carrying the Book View reading location back; this only works on the header Close button. Leaving Book View by activating another tab (the AppHeader tab strip stays visible/clickable while Book View is open) loses the reached page, so returning to the document does not resume the Book View location. Partial R25.
+- Found by: adversary (TFL-1174 C16 diff-pass, 2026-10-07; ADV-242)
+- Phase: visual overhaul (TFL-1116) - R25 Book View reading location (C5b)
+
+Files:
+- `src/renderer/components/BookView.tsx:60` `onClose: (finalPage?: number) => void`; `:446-448` `handleClose` reports `displayIndex + 1`; the ONLY caller of `handleClose` is the header Close button (`BookView.tsx:650`).
+- `src/renderer/App.tsx:11852-11863` persists it (`initialPage={open.persisted.currentPage}` in; `persistFor(meta.id)({ ...open.persisted, currentPage: finalPage })` out).
+- `src/renderer/App.tsx:1110` / `:11833` Book View is rendered conditionally on `bookViewActive`; `activateTab` (`App.tsx:10320-10339`) and `onTabStripActivate` do not call `closeBookView` (`setBookViewTabId` only at `App.tsx:10730` open / `:10733` close).
+
+Steps to reproduce:
+1. Open a fixture with >= 8 pages; jump to page 5; open Book View; turn to a later page.
+2. Click a DIFFERENT tab in the AppHeader tab strip (not the Book View Close button).
+3. Return to the document: the location reached in Book View is not restored (the Close path persists it; the tab-switch path does not).
+
+Expected: leaving Book View by any route carries the reading location back. Actual: only the Close button does.
+
+Fix direction (not applied): invoke the same `handleClose`/report path when Book View is unmounted by a tab switch (or persist the location on every page turn / on unmount).
+
+History:
+- adversary (TFL-1174 C16, 2026-10-07): opened as ADV-242.
+- CTO (2026-10-07): triaged ACCEPTED -> DEF-627 (MEDIUM); assigned to frontend-dev (TFL-1176).
+- frontend-dev (TFL-1176): FIX-READY - `onLocationChange` published on every committed spread change and on unmount; `App.tsx` persists `currentPage` without closing.
+- qa (TFL-1177, 2026-10-07): re-verified PASS -> CLOSED. Unit `tfl1116_bookViewLocation.test.tsx` + `bookView.test.tsx` + `bookViewSpread.test.tsx` + `tfl1116_navigationSync.test.ts` green (45/45 focused set), `verify` exit 0, `build` exit 0, e2e 7/7. Blast radius: Book View neighbours covered by the same specs; prop wiring typechecks clean.

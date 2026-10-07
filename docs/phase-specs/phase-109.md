@@ -165,7 +165,11 @@ existing `phase36CanvasPills.test.tsx`; zoom out/in, fit width/page and pan keep
 `data-page-layout-option` and its aria-labels (`PageLayoutControl.tsx:48-78`), proven by
 `phase40_pageLayoutControl.test.tsx`; the Book View entry keeps `data-book-view-open`
 (`DocumentView.tsx:4869-4880`); the page readout keeps its label-aware form
-(`phase40_pageReadout.test.tsx`). The native accelerators (`Ctrl+=`/`Ctrl+-`/`Ctrl+0`/`Ctrl+9`,
+(`phase40_pageReadout.test.tsx`). TFL-1116 R24 (C5b) later split the focused
+page from the visible range in the footer's page control: the jump field now
+carries the focused page ("7") and a separate `Visible 7-10` summary names the
+multi-page group the viewport holds (`pageVisibleRangeLabel`,
+`tfl1116_pageRangeTruth.test.tsx`). The native accelerators (`Ctrl+=`/`Ctrl+-`/`Ctrl+0`/`Ctrl+9`,
 View > Toggle Full Screen) and the Command Palette view verbs are unchanged. No no-op may appear.
 
 **Settings impact:** none. No new persisted `AppSettings` field and no new settings channel.

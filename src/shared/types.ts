@@ -343,6 +343,11 @@ export interface AppInfo {
   version: string;
   electronVersion: string;
   nodeVersion: string;
+  /** TFL-1148 - mirrors main's `app.isPackaged` (true only in a packaged
+   *  build). Optional so renderer-owned fallback literals stay valid; the
+   *  synchronous renderer gate reads the bridge `window.tflex.app.isPackaged`
+   *  (required), not this field. */
+  isPackaged?: boolean;
   storagePaths: {
     userData: string;
     settings: string;

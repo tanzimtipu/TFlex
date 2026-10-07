@@ -49,6 +49,17 @@ export type DocumentRailTab = TabInput & { colorId?: string; filePath?: string }
 /** DEF-288 — the reason shown on the disabled "+" while Multi Mode is on. */
 export const NEW_TAB_MULTI_MODE_REASON = "Turn off Multi Mode to create a new document";
 
+/** TFL-1141 (TFL-1116 C7, R07) — the document rail is a DOCUMENT surface.
+ *  With ZERO document sessions there is nothing to switch between, so the 40px
+ *  rail row must not be mounted at all: Home gets no reserved blank tab strip.
+ *  One session or more shows it. App folds the Multi Mode composite workspace
+ *  into `stripTabs`, so `tabCount` already counts that composite tab — the rail
+ *  therefore stays present while Multi Mode is on. Pure and exported so App
+ *  keys the mount off ONE source and the unit test can pin the truth table. */
+export function isDocumentRailVisible(tabCount: number): boolean {
+  return tabCount > 0;
+}
+
 /* -------------------------------------------------------------------------
  * Phase 105 (chunk D) — the RESPONSIVE rail capacity planner.
  *

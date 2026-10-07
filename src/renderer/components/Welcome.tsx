@@ -12,6 +12,7 @@ import { recentContextLabels } from "../utils/recentContext";
 import { toolById } from "../state/toolsRegistry";
 import { HomeRecentRow } from "./home/HomeRecentRow";
 import { HomeSampleCard } from "./home/HomeSampleCard";
+import { isDevelopmentBuild } from "../utils/devEnvironment";
 import { OrbitMotif } from "./home/OrbitMotif";
 import { useOrbitMotion } from "../hooks/useOrbitMotion";
 import {
@@ -100,6 +101,10 @@ interface WelcomeProps {
   /** Persist a new home-tool list (remove / add). */
   onSetHomeTools?: (ids: string[]) => void;
   samplesResolver: () => Promise<SampleDocument[]>;
+  /** TFL-1143 (R09) — whether the development sample fixtures render at all.
+   *  Absent follows the build: visible in a dev build / test run, hidden in a
+   *  production build. The host passes the resolved value explicitly. */
+  showSamples?: boolean;
   /** TFL-938 - the persisted Home-only decorative-motion pause. True pins the
    *  arcs to their static pose and touches NOTHING else: menu, panel and
    *  dialog animations still follow the global Animations setting. */
@@ -132,6 +137,7 @@ export function Welcome(props: WelcomeProps): ReactElement {
     onRunHomeTool,
     onSetHomeTools,
     samplesResolver,
+    showSamples: showSamplesProp,
     homeMotionPaused,
     onSetHomeMotionPaused,
     onToggleRecentPin,
@@ -144,6 +150,9 @@ export function Welcome(props: WelcomeProps): ReactElement {
   // touches the global Animations setting.
   const paused = homeMotionPaused === true;
   const orbitMotion = useOrbitMotion(paused);
+  // TFL-1143 (R09) — the development sample fixtures (Explore grid + sample
+  // invite copy) are hidden in a production build; the host may override.
+  const showSamples = showSamplesProp ?? isDevelopmentBuild();
   const [samples, setSamples] = useState<SampleDocument[] | null>(null);
   /** Phase 58 (chunk 4) — the home row's EDIT mode: the pen arms it, every
    *  removable tile grows a minus affordance and the plus opens the picker. */
@@ -159,6 +168,9 @@ export function Welcome(props: WelcomeProps): ReactElement {
   const pickerRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
+    // TFL-1143 (R09) — never resolve (or render) the fixture list when the
+    // sample surface is hidden, so a production Home makes no sample IPC call.
+    if (!showSamples) return undefined;
     let cancelled = false;
     void samplesResolver()
       .then((list) => {
@@ -173,7 +185,7 @@ export function Welcome(props: WelcomeProps): ReactElement {
     return (): void => {
       cancelled = true;
     };
-  }, [samplesResolver]);
+  }, [samplesResolver, showSamples]);
 
   // Phase 58 / DEF-410 — Escape closes the picker FIRST when it is open and
   // leaves EDIT mode armed (a second Escape then exits EDIT mode). A targeted
@@ -339,8 +351,9 @@ export function Welcome(props: WelcomeProps): ReactElement {
           )}
           <h1 className="welcome-title">A clear space for your documents.</h1>
           <p className="welcome-sub">
-            Open a file to begin, resume a recent document, or pick a sample
-            below to see Jovrel in action.
+            {showSamples
+              ? "Open a file to begin, resume a recent document, or pick a sample below to see Jovrel in action."
+              : "Open a file to begin, or resume a recent document."}
           </p>
         {/* Phase 58 (chunk 4) — the editable home tool row. The first tile is
             the FIXED Open action (primary, never removable); the rest are the
@@ -492,7 +505,7 @@ export function Welcome(props: WelcomeProps): ReactElement {
           </p>
         )}
         </header>
-        <div className="welcome-body orbit-desk-body">
+        <div className="welcome-body orbit-desk-body" data-home-samples={showSamples ? "true" : "false"}>
         <section className="welcome-section orbit-desk-recents" data-home-recents>
           <h3>
             <span>Continue working</span>
@@ -526,39 +539,43 @@ export function Welcome(props: WelcomeProps): ReactElement {
             </div>
           )}
         </section>
-        <section className="welcome-section orbit-desk-explore" data-home-explore>
-          <h3>
-            <span>Explore Jovrel</span>
-            <span className="count">{sampleCount}</span>
-          </h3>
-          {samples === null ? (
-            <div className="samples-grid">
-              <div className="samples-empty">
-                <BrandLoader className="update-indicator-spin" />
-                <span>Loading samples…</span>
+        {/* TFL-1143 (R09) — the development-only sample fixtures. Production
+            Home renders no Explore section and no sample invite copy. */}
+        {showSamples && (
+          <section className="welcome-section orbit-desk-explore" data-home-explore>
+            <h3>
+              <span>Explore Jovrel</span>
+              <span className="count">{sampleCount}</span>
+            </h3>
+            {samples === null ? (
+              <div className="samples-grid">
+                <div className="samples-empty">
+                  <BrandLoader className="update-indicator-spin" />
+                  <span>Loading samples…</span>
+                </div>
               </div>
-            </div>
-          ) : samples.length === 0 ? (
-            <div className="samples-grid">
-              <EmptyState
-                icon={Sparkles}
-                headline="No bundled samples"
-                help="Place PDF files in assets/samples/ and rebuild."
-                className="samples-empty"
-              />
-            </div>
-          ) : (
-            <div className="samples-grid">
-              {samples.map((sample) => (
-                <HomeSampleCard
-                  key={sample.path}
-                  sample={sample}
-                  onOpen={onSampleClick}
+            ) : samples.length === 0 ? (
+              <div className="samples-grid">
+                <EmptyState
+                  icon={Sparkles}
+                  headline="No bundled samples"
+                  help="Place PDF files in assets/samples/ and rebuild."
+                  className="samples-empty"
                 />
-              ))}
-            </div>
-          )}
-        </section>
+              </div>
+            ) : (
+              <div className="samples-grid">
+                {samples.map((sample) => (
+                  <HomeSampleCard
+                    key={sample.path}
+                    sample={sample}
+                    onOpen={onSampleClick}
+                  />
+                ))}
+              </div>
+            )}
+          </section>
+        )}
         </div>
       </div>
       <span hidden>

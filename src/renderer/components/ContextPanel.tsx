@@ -25,7 +25,7 @@
 // toggle. Page state, selection, edit state, signatures and engine ops all
 // belong to the host (DocumentView/App) and are threaded through.
 
-import { useCallback, useContext, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type {
   KeyboardEvent as ReactKeyboardEvent,
   PointerEvent as ReactPointerEvent,
@@ -42,9 +42,11 @@ import {
   PanelRightOpen,
   ScanText,
   TextCursor,
+  X,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { Icon } from '../icons/Icon';
+import type { QuietIconId } from '../icons/quietPrecision';
 import { Button, IconButton } from './Button';
 import { CommandMenu } from './CommandMenu';
 import type { CommandMenuGroup, CommandMenuItem } from './CommandMenu';
@@ -64,7 +66,7 @@ import { protectionSummary } from '../security/protection';
 import type { EngineState } from '../engine/types';
 import type { OutlineNode } from '../pdf/pdfjs';
 import type { PageDropOp } from '../state/pageDrag';
-import type { Stage } from '../state/stages';
+import { STAGE_LABELS, type Stage } from '../state/stages';
 import { EDIT_DEFAULT_FONTS } from '../state/preferences';
 import { EXPORT_FIDELITY_NOTES, type ExportFormat } from '../../shared/export';
 import { countOutline } from '../../shared/outline';
@@ -184,6 +186,10 @@ export interface ContextPanelProps {
   onReorder?: (fromIndex: number, toIndex: number) => void;
   onUndo?: () => void;
   onJump: (page: number) => void;
+  /** TFL-1116 R04 — the document-scoped committed-navigation counter the host
+   *  bumps on every jump; the panel forwards it to the pages navigator so a
+   *  ViewStrip / Next / external jump reveals the viewed thumb. */
+  revealSeq?: number;
   outline: OutlineNode[] | null;
   onError?: (message: string) => void;
   /** Phase 85 — the editable outline configuration (doc id, seeded entries,
@@ -228,6 +234,15 @@ onInsertBlank?: (page: number) => void;
   collapsed?: boolean;
   /** Phase 16 — asks the host to toggle the collapsed state. */
   onToggleCollapsed?: () => void;
+  /** TFL-1116 C11 (R16) — render as the compact OVERLAY drawer instead of the
+   *  docked panel. Below the panel threshold the panel cannot reserve a grid
+   *  column, so the compact stage launcher opens the ACTIVE stage's context as
+   *  an overlay drawer. Pages keeps its page-number ruler; Edit/Review/Deliver
+   *  open their stage content here. */
+  drawer?: boolean;
+  /** TFL-1116 C11 (R16) — closes the compact drawer (Escape / the close
+   *  control). The host owns the drawer intent; this only reports the close. */
+  onClose?: () => void;
 
   // --- Host-owned rail tab (Phase 59 item 7 follow-up; Phase 111 chunk A) --
   /** The host's active rail tab (App's `railTab`). The PAGES body lives in
@@ -338,6 +353,15 @@ onInsertBlank?: (page: number) => void;
 // callers keep resolving unchanged.
 export { buildPageMenuItems, clampMenuPosition } from './pageThumbMenu';
 export type { PageMenuHandlers, PageMenuItem } from './pageThumbMenu';
+
+/** TFL-1116 C11 (R16) — the compact stage launcher's glyph per non-pages
+ *  stage. Pages keeps the page-number ruler; Edit/Review/Deliver open their
+ *  stage context instead. */
+const CONTEXT_STAGE_ICONS: Record<Exclude<Stage, 'pages'>, QuietIconId> = {
+  edit: 'stageEdit',
+  review: 'stageReview',
+  deliver: 'stageDeliver',
+};
 
 /** The header title per stage. Phase 37 (item 15) REMOVED the PAGES title:
  *  the panel header is now just the Combine entry + the collapse control,
@@ -469,6 +493,7 @@ export function ContextPanel(props: ContextPanelProps): ReactElement {
     onReorder,
     onUndo,
     onJump,
+    revealSeq = 0,
     outline,
     onError,
     outlineEditor = null,
@@ -483,6 +508,8 @@ onInsertBlank,
     onPageSelectionChange = null,
     collapsed = false,
     onToggleCollapsed,
+    drawer = false,
+    onClose,
     railTab,
     onRailTabChange,
     navigatorLayout = 'stacked',
@@ -520,6 +547,20 @@ onInsertBlank,
   } = props;
 
 const pageCount = engineState.pageCount;
+
+  // R16 — Escape closes the compact drawer. Bound only while it is the open
+  // surface (the host passes `onClose` only then), so the wide panel keeps its
+  // existing keyboard behaviour unchanged.
+  useEffect((): (() => void) | undefined => {
+    if (!drawer || onClose === undefined) return undefined;
+    const onKey = (event: KeyboardEvent): void => {
+      if (event.key !== 'Escape') return;
+      event.preventDefault();
+      onClose();
+    };
+    window.addEventListener('keydown', onKey);
+    return (): void => window.removeEventListener('keydown', onKey);
+  }, [drawer, onClose]);
 
   // Phase 85 — an explicit `outlineEditor` prop wins, else the config App
   // publishes through the context. Null keeps the outline view-only.
@@ -973,6 +1014,7 @@ const pageCount = engineState.pageCount;
                 onReorder={onReorder}
                 onUndo={onUndo}
                 onJump={onJump}
+                revealSeq={revealSeq}
                 crossDoc={crossDoc}
                 thumbVerbs={verbs}
                 onThumbContextMenu={openMenu}
@@ -1067,6 +1109,7 @@ const pageCount = engineState.pageCount;
                   onReorder={onReorder}
                   onUndo={onUndo}
                   onJump={onJump}
+                  revealSeq={revealSeq}
                   crossDoc={crossDoc}
                   thumbVerbs={verbs}
                   onThumbContextMenu={openMenu}
@@ -1385,7 +1428,7 @@ const pageCount = engineState.pageCount;
           ) : (
             <>
               <p className="tf-panel-section-note" data-deliver-observation-legend>
-                Observations, not blockers: they describe the document and never stop an export.
+                Observations, not blockers.
               </p>
               <PropertyRow
                 className="context-panel-row"
@@ -1471,11 +1514,12 @@ const headerTitle = contextPanelTitle(stage, pageCount);
 
   return (
     <PanelShell
-      className="context-panel"
+      className={drawer ? 'context-panel context-panel-drawer' : 'context-panel'}
       label="Context panel"
       data-context-panel={stage}
       data-context-panel-stage={stage}
       data-context-panel-collapsed={collapsed ? 'true' : undefined}
+      data-context-panel-drawer={drawer ? 'true' : undefined}
     >
       <ScopedHeader
         className="context-panel-header"
@@ -1504,14 +1548,55 @@ const headerTitle = contextPanelTitle(stage, pageCount);
               </Button>
             )}
             {collapseButton}
+            {/* R16 — the compact drawer's explicit close control. The wide
+                panel keeps exactly its existing header (no close control). */}
+            {drawer && onClose !== undefined && (
+              <IconButton
+                label="Close context panel"
+                intent="tertiary"
+                kind="action"
+                density="standard"
+                className="context-panel-close"
+                data-context-panel-close
+                onClick={onClose}
+                icon={<Icon icon={X} size="md" aria-hidden />}
+              />
+            )}
           </div>
         }
       />
-      <GlassSidebarBody className="context-panel-body">
+      <GlassSidebarBody className="context-panel-body tf-panel-body tf-panel-scroll">
         {collapsed ? (
-          <div className="context-panel-ruler" data-context-panel-ruler>
-            <RulerStrip pageCount={pageCount} currentPage={currentPage} onJump={onJump} />
-          </div>
+          stage === 'pages' ? (
+            <div className="context-panel-ruler" data-context-panel-ruler>
+              <RulerStrip pageCount={pageCount} currentPage={currentPage} onJump={onJump} />
+            </div>
+          ) : (
+            /* R16 — the compact stage launcher. Pages keeps the page-number
+               ruler above; Edit/Review/Deliver open the ACTIVE stage's context
+               as the overlay drawer instead of inheriting a generic page list. */
+            <div
+              className="context-panel-launcher"
+              data-context-panel-launcher
+              data-context-panel-launcher-stage={stage}
+            >
+              <button
+                type="button"
+                className="btn btn-ghost context-panel-launcher-btn"
+                data-context-panel-launcher-open
+                aria-label={`Open ${STAGE_LABELS[stage]} context`}
+                title={`Open ${STAGE_LABELS[stage]} context`}
+                onClick={(): void => onToggleCollapsed?.()}
+              >
+                <span className="context-panel-launcher-icon" aria-hidden>
+                  <Icon name={CONTEXT_STAGE_ICONS[stage]} size="lg" />
+                </span>
+                <span className="context-panel-launcher-label" aria-hidden>
+                  {STAGE_LABELS[stage]}
+                </span>
+              </button>
+            </div>
+          )
         ) : (
           <div className="context-panel-body-fill" ref={bodyRef}>
             {body}

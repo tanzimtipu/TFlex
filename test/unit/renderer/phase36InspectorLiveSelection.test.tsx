@@ -139,7 +139,9 @@ describe('Phase 36 chunk 6 — the real selected object reaches the Inspector', 
       textPanel: inspectorTextPanelFor(null),
     });
     try {
-      expect(slots(host)).toEqual(['cropbox']);
+      // TFL-1116 C11 (R17) — the default EDIT page state is page facts, never
+      // an empty CropBox (the CropBox renders only in an active crop session).
+      expect(slots(host)).toEqual(['page', 'document']);
       expect(host.querySelector('[data-inspector-text-panel]')).toBeNull();
     } finally {
       unmount();

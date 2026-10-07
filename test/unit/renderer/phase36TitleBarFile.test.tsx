@@ -226,7 +226,7 @@ describe('Phase 36 chunk 6 — the application-menu Multi Mode command', () => {
       act((): void => {
         trigger?.click();
       });
-      const row = container.querySelector<HTMLButtonElement>("[data-menu-action='multiMode']");
+      const row = document.querySelector<HTMLButtonElement>("[data-menu-action='multiMode']");
       expect(row).not.toBeNull();
       expect(row?.textContent).toContain(MULTI_MODE_ACCESSIBLE_NAME);
       act((): void => {

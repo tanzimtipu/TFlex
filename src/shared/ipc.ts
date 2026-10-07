@@ -1271,6 +1271,10 @@ setEnabled(state: import("./types").MenuEnabledState): void;
    *  Optional because preload wiring is being added in parallel
    *  by backend-dev; the renderer guards with a runtime check. */
   app?: {
+    /** TFL-1148 - synchronous runtime signal that mirrors main's
+     *  `app.isPackaged`: true only in a packaged build, false for an
+     *  unpackaged run (e2e harness / `npm run dev` / `electron .`). */
+    readonly isPackaged: boolean;
     getInfo(): Promise<AppInfo>;
     openPath(path: string): Promise<void>;
     /** Phase 50 — open Windows' Default-apps settings so the user can make

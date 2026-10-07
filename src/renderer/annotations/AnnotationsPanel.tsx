@@ -236,7 +236,7 @@ export function AnnotationsPanel(props: AnnotationsPanelProps): ReactElement {
                 </span>
               ))}
           </div>
-          <div className="ann-panel-list">
+          <div className="ann-panel-list tf-panel-scroll">
             {groups.map((group) => (
               <PanelSection
                 key={group.page}

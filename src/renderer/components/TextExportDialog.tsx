@@ -15,7 +15,7 @@
 
 import { useEffect, useMemo, useRef, useState, type ReactElement } from "react";
 import { DialogShell, type DialogAction } from "./DialogShell";
-import { defaultPageRange, parsePageRange } from "../engine/types";
+import { classifyPageRange, defaultPageRange } from "../engine/types";
 import {
   defaultTextExportFilename,
   downloadBlob,
@@ -120,11 +120,12 @@ export function TextExportDialog(
   // DialogShell. The primary Export action is marked `default` so it
   // receives focus on open.
 
-  const parsed = useMemo(
-    () => parsePageRange(rangeText, totalPages),
+  const rangeCheck = useMemo(
+    () => classifyPageRange(rangeText, totalPages),
     [rangeText, totalPages],
   );
-  const valid = parsed !== null && parsed.length > 0 && !running;
+  const parsed = rangeCheck.pages;
+  const valid = rangeCheck.state === "valid" && !running;
 
   const onConfirmClick = async (): Promise<void> => {
     if (!valid || parsed === null) return;
@@ -242,10 +243,24 @@ export function TextExportDialog(
               autoCapitalize="off"
               data-text-export-range
               disabled={running}
+              aria-describedby={
+                rangeCheck.state === "valid" ? "text-range-help" : "text-range-error"
+              }
+              aria-invalid={rangeCheck.state !== "valid"}
             />
-            <span className="modal-hint">
+            <span className="modal-hint" id="text-range-help">
               Examples: <code>10-20</code>, <code>1,3,5-7</code>.
             </span>
+            {rangeCheck.state !== "valid" && (
+              <span
+                className="export-config-error"
+                id="text-range-error"
+                role="alert"
+                data-text-range-error
+              >
+                {rangeCheck.message}
+              </span>
+            )}
           </label>
 
           <fieldset className="modal-position export-format">

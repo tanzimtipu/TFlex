@@ -225,7 +225,7 @@ describe("Phase 37 item 17 - print entry points open the standalone window", () 
     expect(printOpen).not.toHaveBeenCalled();
   });
 
-  it("disables Print on an empty placeholder tab and fails loud on a direct request", async () => {
+  it("removes Print on an empty placeholder tab and fails loud on a direct request", async () => {
     await bootWithDocument();
 
     // The "+" makes an EMPTY placeholder tab active while the document tab
@@ -238,11 +238,10 @@ describe("Phase 37 item 17 - print entry points open the standalone window", () 
     });
     await flushAsync();
 
-    // DEF-336 — the control is disabled with a reason, not enabled and inert.
-    const print = container.querySelector<HTMLButtonElement>("[data-print]");
-    expect(print).not.toBeNull();
-    expect(print?.disabled).toBe(true);
-    expect(print?.getAttribute("title")).toContain("Open a document");
+    // TFL-1116 R05 — on the Home surface (no document on the active tab) the
+    // document-only Print command is ABSENT from the title row, not merely
+    // disabled. Its menu / Ctrl+P route still runs, but must fail loud.
+    expect(container.querySelector("[data-print]")).toBeNull();
 
     // A direct Ctrl+P / menu request must still fail loud, not silently no-op.
     await act(async (): Promise<void> => {

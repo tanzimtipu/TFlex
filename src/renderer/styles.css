@@ -339,6 +339,12 @@
   --btn-primary-fg: #FFFFFF;
   --btn-primary-hover: #6341C5;
   --btn-primary-pressed: #5734B6;
+  /* Phase 114 (TFL-1139 R21) — the primary button's disabled pair. A muted
+   * violet surface + readable ink, so a disabled primary CTA stays clearly
+   * distinct WITHOUT a parent opacity fade (contrast-clearing, unlike the
+   * --fg-disabled wash). Consumed by `.export-config-action[disabled]`. */
+  --btn-primary-disabled-bg: #F0EBFC;
+  --btn-primary-disabled-fg: #7050D6;
   --btn-neutral-pressed: #EAEDF2;
   --btn-selected-bg: #F0EBFC;
   --btn-selected-fg: #7050D6;
@@ -813,6 +819,9 @@
   --btn-primary-fg: #171A21;
   --btn-primary-hover: #C5B4FF;
   --btn-primary-pressed: #AC94F5;
+  /* Phase 114 (TFL-1139 R21) — dark disabled pair for the primary CTA. */
+  --btn-primary-disabled-bg: #302740;
+  --btn-primary-disabled-fg: #B9A4FF;
   --btn-neutral-pressed: #303641;
   --btn-selected-bg: #302740;
   --btn-selected-fg: #B9A4FF;
@@ -1664,12 +1673,26 @@ input[type="checkbox"] {
    *
    * Two rows: the OCR suspects bar (a FLOW element, DEF-126) spans row 1 and
    * the rail + stage share row 2. With no bar, row 1 is empty (auto -> 0) and
-   * row 2 (1fr) owns the whole frame, exactly the old flex-column result. */
+   * row 2 (1fr) owns the whole frame, exactly the old flex-column result.
+   *
+   * TFL-1141 (TFL-1116 C7, R07) — `.app` is `auto auto 1fr`: row 1 the
+   * TitleBar, row 2 the document rail, row 3 this main area. When the rail is
+   * NOT mounted (Home with zero tabs) this element would auto-flow UP into the
+   * `auto` row 2 and the `1fr` row 3 would sit empty, collapsing the welcome
+   * pane to 0px. Pin this element to the LAST track so it always fills the
+   * viewport whether or not the rail row exists. */
+  grid-row: 3;
   display: grid;
   grid-template-columns: var(--tf-stage-rail-w, 72px) minmax(0, 1fr);
   grid-template-rows: auto minmax(0, 1fr);
   min-height: 0;
   position: relative;
+  /* TFL-1155 (TFL-1116 C9 / R11) — the shared workspace baseline: the band the
+   * canvas footer (the View Strip) occupies at the bottom of the canvas column.
+   * `.workspace-main` resolves `--view-strip-h` through this token and every
+   * docked panel's scroll body ends on the same line, so the Navigator, the
+   * Inspector and the canvas viewport share one bottom edge. */
+  --tf-workspace-baseline: 48px;
 }
 
 /* Phase 37 (item 8) — on the welcome/home screen the Stage Rail is not
@@ -1974,13 +1997,29 @@ input[type="checkbox"] {
   min-width: 0;
 }
 
+/* TFL-1116 (R03) — a long label wraps inside the row instead of widening the
+ * popover: the flex child is allowed to shrink and break a long unbroken token
+ * so the overlay stays content-bounded and can shrink to the viewport. */
+.titlebar-menu-row-label > span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
 .titlebar-menu-row-icon {
   flex: 0 0 auto;
   color: var(--fg-muted);
 }
 
+/* TFL-1116 (R03) — the accelerator is a non-shrinking, bounded column: it
+ * never collapses and never forces the row (and so the overlay) wider than its
+ * track. */
 .titlebar-menu-row-kbd {
   flex: 0 0 auto;
+  max-width: 40%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* Window controls — trailing edge. Three identical rounded squares;
@@ -2024,6 +2063,18 @@ input[type="checkbox"] {
   letter-spacing: -0.01em;
   color: var(--fg-strong);
   user-select: none;
+}
+
+/* TFL-1141 (TFL-1116 C7, R06) — the brand leads the title row and keeps a
+ * 16px leading inset (--space-standard) at EVERY width, so it never touches
+ * the native left edge at the default (wide) window size. This rule used to
+ * live inside the `@media (max-width: 900px)` band, so above 900px the brand
+ * had no leading padding and sat flush against the frame edge. It stays a
+ * drag surface (`.brand` keeps `-webkit-app-region: drag`), so the inset does
+ * not open a dead strip at the window's left edge. */
+.titlebar > .brand {
+  padding-left: var(--space-standard);
+  align-self: center;
 }
 
 /* Phase 69 (feature B) - the JOVREL "Halo" mark is an inline SVG (BrandMark);
@@ -4104,10 +4155,19 @@ body.tab-reordering .tab-list[data-reorder="true"] .tab {
   padding: var(--sp-5) var(--sp-4);
 }
 
+/* TFL-1143 (R08) — ONE shared track definition for every recent row:
+ * icon / minmax(0,1fr) filename / type / status / date / actions. The flexible
+ * track is the filename; every other track is fixed, so a row with no Missing
+ * badge (or fewer actions) keeps the date and actions in the SAME columns as a
+ * row that has them. The open button and the meta cluster ride `subgrid` so no
+ * rule re-declares the tracks. */
 .recent-row {
-  display: flex;
-  align-items: stretch;
-  gap: var(--sp-2);
+  --recent-row-grid: auto minmax(0, 1fr) 84px 92px 80px 116px;
+  display: grid;
+  grid-template-columns: var(--recent-row-grid);
+  align-items: center;
+  column-gap: var(--sp-3);
+  padding: 8px var(--sp-3);
   border-bottom: 1px solid var(--border-subtle);
   background: transparent;
   font-size: var(--fs-sm);
@@ -4124,20 +4184,22 @@ body.tab-reordering .tab-list[data-reorder="true"] .tab {
 .recent-row:hover { background: var(--bg-hover); }
 
 /* Phase 91 D3 — canonical `btn btn-ghost`; this legacy class is a LAYOUT alias
- * only. The full-width grid row keeps its own rhythm (`height: auto` so the
- * two-line name/path box holds its natural height); colour, hover and focus
- * come from `.btn-ghost` (docs/BUTTON-SYSTEM.md). */
+ * only. TFL-1143 (R08) — the open affordance claims the icon + filename tracks
+ * (1 / 3) and lays its two cells out on the row's own tracks via `subgrid`, so
+ * the name ellipsis is bounded by the flexible track and nothing re-declares a
+ * column. Colour, hover and focus come from `.btn-ghost`. */
 .recent-row-open {
-  flex: 1 1 auto;
+  grid-column: 1 / 3;
   display: grid;
-  grid-template-columns: auto 1fr auto;
+  grid-template-columns: subgrid;
   align-items: center;
-  gap: var(--sp-3);
-  /* Phase 4 — compact row (10px -> 8px vertical). */
-  padding: 8px var(--sp-3);
+  column-gap: var(--sp-3);
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-1);
   font: inherit;
   text-align: left;
-  min-width: 0;
   height: auto;
   /* Chunk 2 — the open action lifts on hover and settles on press
    * like every other row-level control. */
@@ -4158,17 +4220,49 @@ body.tab-reordering .tab-list[data-reorder="true"] .tab {
 .recent-row .doc-icon { width: 18px; height: 18px; color: var(--fg-muted); display: grid; place-items: center; }
 .recent-row .doc-name { font-weight: 500; color: var(--fg-strong); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .recent-row .doc-path { color: var(--tf-text-supporting); font-size: var(--fs-xs); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 360px; }
-.recent-row .doc-when { color: var(--tf-text-supporting); font-size: var(--fs-xs); font-variant-numeric: tabular-nums; }
+/* R08 — the date rides its OWN fixed track and reads with tabular numerals so
+ * the column is optically stable down the list. */
+.recent-row .doc-when {
+  justify-self: end;
+  min-width: 0;
+  text-align: right;
+  color: var(--tf-text-supporting);
+  font-size: var(--fs-xs);
+  font-variant-numeric: tabular-nums;
+}
 
-/* Phase 112 (C6b) — the format / converted / missing / last-opened chips ride
- * ONE trailing meta cell, so the recent-row grid stays a stable three tracks
- * whether or not the optional converted / missing markers render. */
+/* TFL-1143 (R08) — the type / status / date cluster spans tracks 3 / 6 and
+ * rides `subgrid`, so its three cells land on the row's own tracks. The status
+ * cell is ALWAYS present (empty when no marker applies), which is what keeps
+ * the date and actions from sliding row to row. */
 .recent-row-meta {
+  grid-column: 3 / 6;
+  display: grid;
+  grid-template-columns: subgrid;
+  align-items: center;
+  column-gap: var(--sp-3);
+  min-width: 0;
+}
+
+.recent-row .doc-format {
+  justify-self: start;
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* R08 — the status track. Empty at rest for a healthy row; it reserves the
+ * column so a Missing / Converted badge never moves a neighbour. */
+.recent-row-status {
   display: flex;
   align-items: center;
-  justify-content: flex-end;
-  gap: var(--sp-2);
+  gap: var(--sp-1);
+  justify-self: start;
   min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
 }
 
 /* Phase 112 (C6b) — a converted working PDF is marked honestly (the file on
@@ -4193,13 +4287,16 @@ body.tab-reordering .tab-list[data-reorder="true"] .tab {
  * missing / remove). It reveals on row hover and on focus-within, and is
  * ALWAYS shown for a missing file so Locate stays discoverable. Each button is
  * the canonical `btn btn-ghost btn-icon`; this only places the cluster and
- * pins the 26px box against `.btn-icon`'s 36px floor. */
+ * pins the 26px box against `.btn-icon`'s 36px floor. R08 — the cluster owns
+ * the fixed final track and reveals by OPACITY only, so a hover can never
+ * shift the date or the actions. */
 .recent-row-actions {
-  flex: 0 0 auto;
+  grid-column: 6;
   display: flex;
   align-items: center;
+  justify-content: flex-end;
   gap: var(--sp-1);
-  padding-right: var(--sp-2);
+  min-width: 0;
   opacity: 0;
   transition: opacity var(--motion-fast) var(--ease-out);
 }
@@ -4219,6 +4316,36 @@ body.tab-reordering .tab-list[data-reorder="true"] .tab {
 }
 
 .recent-row-action[aria-pressed="true"] { color: var(--accent); }
+
+/* TFL-1143 (R08) — compact width: the type / status / date cluster drops to a
+ * designed secondary line beneath the filename, while the actions keep their
+ * reserved track on the first line so recovery stays reachable. The icon / name
+ * row rides the same subgrid as the wide layout. */
+@media (max-width: 720px) {
+  .recent-row {
+    grid-template-columns: auto minmax(0, 1fr) 116px;
+    grid-template-rows: auto auto;
+    row-gap: 2px;
+    column-gap: var(--sp-2);
+  }
+  .recent-row-open {
+    grid-column: 1 / 3;
+    grid-row: 1;
+  }
+  .recent-row-actions {
+    grid-column: 3;
+    grid-row: 1;
+  }
+  /* The secondary line is a self-contained three-track line so the format stays
+   * left, the status reads inline and the date hugs the row's right edge. */
+  .recent-row-meta {
+    grid-column: 1 / 4;
+    grid-row: 2;
+    display: grid;
+    grid-template-columns: minmax(0, auto) minmax(0, 1fr) auto;
+    column-gap: var(--sp-2);
+  }
+}
 
 .samples-grid {
   display: grid;
@@ -4387,6 +4514,13 @@ body.tab-reordering .tab-list[data-reorder="true"] .tab {
   align-items: start;
 }
 
+/* TFL-1143 (R09) — with the development sample fixtures hidden there is no
+ * right-hand Explore column, so the body collapses to the ONE full-width
+ * Recent column instead of leaving an empty 1fr track. */
+.orbit-desk .welcome-body[data-home-samples="false"] {
+  grid-template-columns: minmax(0, 1fr);
+}
+
 /* Source-format truth — the recent row's format chip. */
 .orbit-desk .doc-format {
   align-self: center;
@@ -4409,23 +4543,31 @@ body.tab-reordering .tab-list[data-reorder="true"] .tab {
 /* ---------------------------------------------------------------------------
  * Phase 106 (chunk B) — the Orbit Desk decorative motif + motion pause.
  *
- * Thin low-opacity violet/amber concentric arcs beside and behind the header,
- * inspired by the brand mark's circular geometry. Decorative only: the
- * wrapper is aria-hidden and pointer-events:none, it renders no SVG (CSS
- * conic-gradient rings masked to a 2px stroke), and it animates TRANSFORM
- * ONLY through --motion-duration-orbit (18s) / --motion-orbit-swing (20deg).
- * The JS gate (useOrbitMotion) writes data-orbit-motion="on" only when
- * reduced motion is off, Animations is on, the document is visible and the
- * window is neither minimised nor blurred; otherwise the layer holds its
- * static pose. The violet/amber pairing is the ONE brand-illustration
+ * TFL-1116 (R10) — low-opacity violet/amber concentric arcs beside and behind
+ * the header, inked from the Jovrel Halo mark's violet/amber gradient stops.
+ * Decorative only: the wrapper is aria-hidden and pointer-events:none, it
+ * renders no SVG (CSS conic-gradient rings masked to a 2px stroke), and it
+ * animates the parent's TRANSFORM through --motion-duration-orbit (18s) /
+ * --motion-orbit-swing (20deg) plus a slow FILTER hue drift on the rings. The
+ * JS gate (useOrbitMotion) writes data-orbit-motion="on" only when reduced
+ * motion is off, Animations is on, the document is visible, the Home pause is
+ * off and the window is neither minimised nor blurred; otherwise the layer
+ * holds its static pose. The violet/amber pairing is the ONE brand-illustration
  * exception to the single-accent rule (Home design spec: "Pair violet with
  * restrained amber solely in this brand illustration").
+ *
+ * R10 raised the arcs' visible contrast and occupied area MODESTLY: the ink is
+ * the logo violet (--tf-accent, #7C3AED) with a deepened logo amber tuned for
+ * the light Home canvas, the ring layer grew 320 -> 360px, and the opacity
+ * moved into the top of the sanctioned 0.18-0.28 band. Nothing flashes and no
+ * gradient moves under the text: the drift is a small hue oscillation on the
+ * decorative rings alone.
  * ------------------------------------------------------------------------- */
 .orbit-desk-motif {
   --orbit-violet: var(--tf-accent);
-  --orbit-amber: #b77526;
+  --orbit-amber: #B45309;
   --orbit-inner: var(--border);
-  --orbit-opacity: 0.22;
+  --orbit-opacity: 0.28;
   position: absolute;
   inset: 0;
   z-index: 0;
@@ -4433,19 +4575,21 @@ body.tab-reordering .tab-list[data-reorder="true"] .tab {
   pointer-events: none;
 }
 
-:root[data-theme="dark"] .orbit-desk-motif,
-:root[data-theme="frosted"] .orbit-desk-motif {
-  --orbit-violet: #b9a4ff;
-  --orbit-amber: #e9bc7d;
-  --orbit-opacity: 0.2;
+/* Dark is the ONLY theme that needs the lightened ring ink: frosted paints the
+ * same LIGHT --bg-sunken (#e8ebf0) the light theme does, so it keeps the deep
+ * logo ink above instead of the washed-out dark pastels (the R10 faintness). */
+:root[data-theme="dark"] .orbit-desk-motif {
+  --orbit-violet: #B9A4FF;
+  --orbit-amber: #FBB724;
+  --orbit-opacity: 0.26;
 }
 
 .orbit-desk-orbit {
   position: absolute;
-  top: -56px;
-  right: -64px;
-  width: 320px;
-  height: 320px;
+  top: -64px;
+  right: -72px;
+  width: 360px;
+  height: 360px;
   opacity: var(--orbit-opacity);
   transform: rotate(0deg);
   will-change: transform;
@@ -4478,13 +4622,13 @@ body.tab-reordering .tab-list[data-reorder="true"] .tab {
 }
 
 .orbit-desk-orbit::after {
-  inset: 34px;
+  inset: 38px;
   transform: rotate(100deg);
 }
 
 .orbit-desk-orbit-inner {
   position: absolute;
-  inset: 72px;
+  inset: 82px;
   border: 1px solid var(--orbit-inner);
   border-radius: 50%;
 }
@@ -4494,12 +4638,31 @@ body.tab-reordering .tab-list[data-reorder="true"] .tab {
     infinite alternate;
 }
 
+/* R10 — the slow COLOUR drift. A small hue oscillation on the decorative rings
+ * themselves (the two pseudo-elements), never on the parent and never through
+ * opacity or a moving gradient: the arcs' palette breathes over the same 18s
+ * token while the text behind stays on a stable, non-moving background. */
+.orbit-desk-orbit[data-orbit-motion="on"]::before,
+.orbit-desk-orbit[data-orbit-motion="on"]::after {
+  animation: tf-anim-orbit-hue var(--motion-duration-orbit) var(--motion-ease-standard)
+    infinite alternate;
+}
+
 @keyframes tf-anim-orbit {
   from {
     transform: rotate(calc(var(--motion-orbit-swing) / -2));
   }
   to {
     transform: rotate(calc(var(--motion-orbit-swing) / 2));
+  }
+}
+
+@keyframes tf-anim-orbit-hue {
+  from {
+    filter: hue-rotate(-6deg);
+  }
+  to {
+    filter: hue-rotate(6deg);
   }
 }
 
@@ -4601,7 +4764,7 @@ body.tab-reordering .tab-list[data-reorder="true"] .tab {
    * .document-content was shoved a viewport down (DEF-179). Empty
    * rows collapse to 0px; the scroller always owns the 1fr row and row 6 is
    * the fixed-height View Strip footer (Phase 109, `--view-strip-h`). */
-  --view-strip-h: 48px;
+  --view-strip-h: var(--tf-workspace-baseline, 48px);
   grid-template-rows: auto auto auto auto 1fr auto;
   background: var(--bg-canvas);
   min-width: 0;
@@ -5372,10 +5535,21 @@ body.tab-reordering .tab-list[data-reorder="true"] .tab {
 .outline-page {
   flex: 0 0 32px;
   width: 32px;
+  /* TFL-1116 C13 (R23) — the target badge was `--fg-faint` at `--fs-xs`, which
+   * read as disabled/placeholder ink and was barely visible. It is now readable
+   * SECONDARY text: `--fg-muted` clears the 4.5:1 text floor on both themes and
+   * `--fs-sm` is the label size, with a medium weight. The fixed right-aligned
+   * 32px column (pinned by phase111_outline) is the shared target column, and
+   * `align-self: center` keeps every badge on the row's vertical centre so the
+   * column reads as a column even when a long title wraps to two lines. The
+   * title's wrap/ellipsis (`.outline-link`) and the tree keyboard model are
+   * untouched. */
+  align-self: center;
   text-align: right;
   font-variant-numeric: tabular-nums;
-  font-size: var(--fs-xs);
-  color: var(--fg-faint);
+  font-size: var(--fs-sm);
+  font-weight: 500;
+  color: var(--fg-muted);
   background: var(--bg-secondary);
   border-radius: var(--radius-1);
   padding: 1px 4px;
@@ -5670,6 +5844,20 @@ body.tab-reordering .tab-list[data-reorder="true"] .tab {
   color: var(--accent-text);
 }
 
+/* TFL-1116 R24 — the SEPARATE visible-range summary ("Visible 7-10") beside
+ * the jump field in a multi-page layout. Muted supporting metadata, calmer
+ * than the page input it sits next to, so the focused page stays the primary
+ * readout. */
+.page-visible-range {
+  display: inline-flex;
+  align-items: center;
+  padding: 0 2px;
+  color: var(--tf-text-supporting);
+  font-size: var(--fs-xs);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
 .zoom-percent {
   display: inline-block;
   min-width: 44px;
@@ -5882,15 +6070,16 @@ body.tab-reordering .tab-list[data-reorder="true"] .tab {
   background: var(--bg-hover);
 }
 
-/* State-4 idle: the footer chrome dims with the dock's idle flip, mirroring
- * the retired pills, then restores. Motion through the shared token. */
-.view-strip-page,
-.view-strip-view {
-  transition: opacity var(--motion-duration-fast) var(--motion-ease-standard);
+/* State-4 idle: R12 (TFL-1136) — idle calms the footer CHROME (the top
+ * separator) on the shared dock idle flip, mirroring the retired pills, then
+ * restores. Enabled page/view labels and icons keep FULL opacity so the settled
+ * footer stays legible at rest, on hover and under keyboard focus. Motion
+ * through the shared token. */
+.view-strip {
+  transition: border-top-color var(--motion-duration-fast) var(--motion-ease-standard);
 }
-.view-strip[data-view-strip-idle='true'] .view-strip-page,
-.view-strip[data-view-strip-idle='true'] .view-strip-view {
-  opacity: 0.4;
+.view-strip[data-view-strip-idle='true'] {
+  border-top-color: transparent;
 }
 
 /* Phase 109 (chunk B) — the per-pane footer's own inline-size container and
@@ -5911,7 +6100,8 @@ body.tab-reordering .tab-list[data-reorder="true"] .tab {
 @container multi-view-strip (max-width: 407px) {
   .view-strip .zoom-percent,
   .view-strip .page-total,
-  .view-strip .page-label-hint {
+  .view-strip .page-label-hint,
+  .view-strip .page-visible-range {
     display: none;
   }
 
@@ -5977,7 +6167,8 @@ body.tab-reordering .tab-list[data-reorder="true"] .tab {
 @container single-view-strip (max-width: 667px) {
   .view-strip .zoom-percent,
   .view-strip .page-total,
-  .view-strip .page-label-hint {
+  .view-strip .page-label-hint,
+  .view-strip .page-visible-range {
     display: none;
   }
 
@@ -9929,6 +10120,48 @@ rect.ann-highlight.ann-preview {
   --tf-tools-inset: var(--tools-panel-w, 44px);
 }
 
+/* ===========================================================================
+ * TFL-1117 (R01) — the compact Inspector DRAWER.
+ *
+ * At workspace widths below the ladder's Inspector threshold (1200 DIP) the
+ * panel cannot reserve a grid column without starving the page, so the
+ * "Expand inspector" control opens the Inspector as an OVERLAY drawer instead
+ * of the wide expanded/collapsed pair. It floats at the trailing edge over
+ * the canvas with an 8px viewport gutter, is bounded to the viewport so its
+ * body scrolls, and reserves NO inset — .app-main keeps --tf-tools-inset at 0
+ * while it is open, so the page never narrows behind it.
+ * ------------------------------------------------------------------------- */
+.inspector.inspector-drawer {
+  top: var(--sp-2);
+  right: var(--sp-2);
+  bottom: auto;
+  width: min(360px, calc(100% - (2 * var(--sp-2))));
+  max-height: calc(100% - (2 * var(--sp-2)));
+  border: 1px solid var(--panel-border);
+  border-radius: var(--tf-radius-md);
+  box-shadow: var(--shadow-popover);
+  overflow: hidden;
+  z-index: 40;
+  animation: inspector-drawer-in var(--tf-panel-motion-duration)
+    var(--tf-panel-motion-ease);
+}
+
+@keyframes inspector-drawer-in {
+  from {
+    opacity: 0;
+    transform: translateX(12px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* The drawer body is the ONE scroller inside the bounded overlay. */
+.inspector-drawer .inspector-body {
+  overflow-y: auto;
+}
+
 .inspector-collapsed-strip {
   display: flex;
   flex-direction: column;
@@ -10102,7 +10335,7 @@ rect.ann-highlight.ann-preview {
  *  there instead of duplicating the list). */
 .inspector-note {
   margin: 0;
-  font-size: var(--fs-xs);
+  font-size: var(--type-helper-size);
   color: var(--tf-text-supporting);
 }
 
@@ -12001,8 +12234,8 @@ rect.ann-highlight.ann-preview {
 .export-fidelity {
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  padding: 8px 10px;
+  gap: 2px;
+  padding: 6px 8px;
   background: var(--bg-toolbar);
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-2);
@@ -12014,21 +12247,21 @@ rect.ann-highlight.ann-preview {
   align-items: center;
   gap: 6px;
   color: var(--fg);
-  font-size: var(--fs-xs);
+  font-size: var(--type-helper-size);
   font-weight: 600;
 }
 
 .export-fidelity-list {
   margin: 0;
-  padding-left: 18px;
+  padding-left: 16px;
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 1px;
 }
 
 .export-fidelity-list li {
-  font-size: var(--fs-xs);
-  line-height: 1.45;
+  font-size: var(--type-helper-size);
+  line-height: 1.3;
 }
 
 [role="button"][data-tool-id="createFromImages"],
@@ -13380,6 +13613,91 @@ rect.ann-highlight.ann-preview {
   max-width: none;
 }
 .ocr-suspects-panel-inline .ocr-suspects-confidence { flex: 0 0 auto; }
+
+/* ===========================================================================
+ * TFL-1116 C12 (R18/R19) — OCR suspects review polish + bounded rendering.
+ *
+ * R18: an explicit Word / Confidence column rule, a VISIBLE selected row and a
+ * truthful navigation-only note (the engine offers no correct / accept / skip
+ * operation). R19: above the windowed threshold the list mounts a bounded slice
+ * between two spacers. `--ocr-suspect-row-h` MUST stay in lock-step with
+ * `OCR_SUSPECT_ROW_H` in ocrSuspectsModel.ts or the spacer offsets drift.
+ * ========================================================================= */
+.ocr-suspects-panel {
+  --ocr-suspect-row-h: 30px;
+}
+.ocr-suspects-count-value {
+  font-variant-numeric: tabular-nums;
+  color: var(--fg-strong);
+}
+.ocr-suspects-columns {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--sp-2);
+  padding: 0 0 var(--sp-1) 0;
+  margin-bottom: var(--sp-1);
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--fg-faint);
+  border-bottom: 1px solid var(--border-subtle);
+}
+.ocr-suspects-note {
+  margin: 0 0 var(--sp-1) 0;
+  font-size: var(--fs-xs);
+  color: var(--fg-muted);
+}
+/* R18 — the row the user navigated to stays visibly selected. */
+.ocr-suspects-entry-selected .ocr-suspects-entry-btn,
+.ocr-suspects-entry-selected.ocr-suspects-entry-btn {
+  border-color: var(--accent);
+  background: var(--bg-hover);
+  color: var(--fg-strong);
+}
+.ocr-suspects-entry-selected .ocr-suspects-word {
+  color: var(--fg-strong);
+}
+.ocr-suspects-panel-inline .ocr-suspects-entry-btn {
+  min-height: var(--ocr-suspect-row-h, 30px);
+}
+/* R19 — the bounded window. Only the visible slice mounts; the two spacers
+ * preserve the full list's scroll height. */
+.ocr-suspects-window {
+  position: relative;
+  display: block;
+  overflow-y: auto;
+  overflow-x: hidden;
+  max-height: min(52vh, 420px);
+  outline: none;
+}
+.ocr-suspects-window:focus-visible {
+  border-radius: var(--radius-1);
+  box-shadow: var(--focus-ring);
+}
+.ocr-suspects-window-spacer {
+  width: 100%;
+  pointer-events: none;
+}
+.ocr-suspects-page-virtual {
+  height: var(--ocr-suspect-row-h, 30px);
+  display: flex;
+  align-items: center;
+  width: 100%;
+  min-width: 0;
+  padding: 0;
+}
+.ocr-suspects-virtual-row {
+  height: var(--ocr-suspect-row-h, 30px);
+  display: flex;
+  align-items: stretch;
+}
+.ocr-suspects-virtual-row .ocr-suspects-entry-btn {
+  width: 100%;
+  height: calc(var(--ocr-suspect-row-h, 30px) - 2px);
+  min-height: 0;
+}
+
 
 
 /* ---------------------------------------------------------------------------
@@ -17329,6 +17647,77 @@ rect.ann-highlight.ann-preview {
 }
 .context-panel-ruler .rail-ruler { position: absolute; inset: 0; }
 
+/* ===========================================================================
+ * TFL-1116 C11 (R16) — the compact Context Panel DRAWER + stage launcher.
+ *
+ * Below the panel ladder threshold (1000 DIP) the navigator cannot reserve a
+ * grid column, so a non-Pages stage renders a compact LAUNCHER in the collapsed
+ * strip. Opening it overlays the ACTIVE stage's context as a drawer instead of
+ * replacing the stage with a generic page-number rail. Pages keeps its ruler.
+ * ------------------------------------------------------------------------- */
+
+/* The overlay's positioning context: the drawer spans the workspace's left
+ * edge (the collapsed strip + canvas) without reserving a column. */
+.workspace { position: relative; }
+
+.context-panel-launcher {
+  display: flex;
+  flex: 1 1 auto;
+  align-items: flex-start;
+  justify-content: center;
+  min-height: 0;
+  padding-top: var(--sp-2);
+  overflow: hidden;
+}
+
+.context-panel-launcher-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--sp-1);
+  width: 100%;
+  padding: var(--sp-1) 0;
+}
+
+.context-panel-launcher-label {
+  font-size: var(--fs-xs);
+  line-height: 1;
+  letter-spacing: 0.02em;
+  writing-mode: vertical-rl;
+}
+
+.context-panel.context-panel-drawer {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: min(320px, calc(100% - (2 * var(--sp-2))));
+  height: auto;
+  background: var(--panel-bg);
+  border: 1px solid var(--panel-border);
+  border-radius: var(--tf-radius-md);
+  box-shadow: var(--shadow-popover);
+  overflow: hidden;
+  z-index: 40;
+  animation: context-drawer-in var(--tf-panel-motion-duration) var(--tf-panel-motion-ease);
+}
+
+@keyframes context-drawer-in {
+  from {
+    opacity: 0;
+    transform: translateX(-12px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* The drawer body is the ONE scroller inside the bounded overlay. */
+.context-panel-drawer .context-panel-body {
+  overflow-y: auto;
+}
+
 /* ---- Phase 111 (chunk B) — the Pages navigator card footer ---- */
 
 /* The card is now a plain container; the preview is its own real button
@@ -17595,7 +17984,8 @@ rect.ann-highlight.ann-preview {
   pointer-events: auto;
   transition:
     transform var(--motion-duration-panel) var(--motion-ease-standard),
-    opacity var(--motion-duration-panel) var(--motion-ease-standard),
+    /* R12 (TFL-1136) — idle eases the dock's elevation, not its content. */
+    box-shadow var(--motion-duration-panel) var(--motion-ease-standard),
     /* Phase 58 — the dock's own box eases when EDIT mode adds/removes verbs
        (the row can now overflow and scroll). Token-driven, so it is instant
        under reduced motion and with Animations OFF. */
@@ -17650,11 +18040,14 @@ rect.ann-highlight.ann-preview {
 }
 
 
-/* State 4 — idle: ~40% after 3s without activity. The transition is the
- * existing panel token (140ms); reduced motion collapses it to 0ms through
+/* State 4 — idle after 3s without activity. R12 (TFL-1136): idle now calms the
+ * dock CHROME (drops the floating elevation) and never fades the enabled
+ * control content — labels and icons stay at full opacity so a settled dock is
+ * still legible at rest, on hover and under keyboard focus. The transition is
+ * the existing panel token (140ms); reduced motion collapses it to 0ms through
  * the animations.css reduced-motion overrides. */
 .action-dock[data-dock-idle='true'] {
-  opacity: 0.4;
+  box-shadow: none;
 }
 
 /* ---------------------------------------------------------------------------
@@ -19091,6 +19484,17 @@ cursor: pointer;
   box-shadow: var(--shadow-popover);
 }
 
+/* DEF-618 (TFL-1121) — the application menu is now a portaled, fixed,
+ * collision-aware CommandMenu. The legacy `right: 0` above is a viewport-
+ * relative anchor once the surface escapes `.app-menu`, so with the placement
+ * `left` it stretched the box to the window's right edge (right gutter 0). The
+ * fixed path supplies `left` and `right: auto`, and the surface is
+ * content-bounded; re-assert that here at higher specificity so the anchor can
+ * never leak back in on the first render before the inline style lands. */
+.app-menu-popover.command-menu {
+  right: auto;
+}
+
 @media (max-width: 900px) {
 /* The flexible genuine drag region between the document-action cluster and the
  * utility cluster. It absorbs the row's slack, so the caption can be dragged
@@ -19100,13 +19504,6 @@ cursor: pointer;
   min-width: 24px;
   align-self: stretch;
   -webkit-app-region: drag;
-}
-
-/* The brand leads the title row (moved out of AppHeader in chunk C). It keeps
- * the caption's leading inset and the divider before the File menu. */
-.titlebar > .brand {
-  padding-left: var(--space-standard);
-  align-self: center;
 }
 
 .header-actions {
@@ -21827,6 +22224,9 @@ cursor: pointer;
 .command-menu {
   /* The shell owns the frame; the inner `.command-menu-list` owns the scroll. */
   overflow: hidden;
+  /* TFL-1116 (R03) — the overlay is content-bounded and can shrink to the
+   * viewport: never a horizontal scrollbar, only vertical. */
+  overflow-x: hidden;
   max-height: none;
   padding: var(--isf-menu-pad);
   min-width: var(--isf-menu-width);
@@ -21845,7 +22245,10 @@ cursor: pointer;
   display: flex;
   flex-direction: column;
   gap: 2px;
+  min-width: 0;
   overflow-y: auto;
+  /* TFL-1116 (R03) — vertical scroll only; rows wrap rather than overflow. */
+  overflow-x: hidden;
   overscroll-behavior: contain;
 }
 
@@ -21942,8 +22345,15 @@ cursor: pointer;
   --tf-panel-section-gap: 20px;
   --tf-panel-header-height-preferred: 52px;
   --tf-panel-field-radius: 9px;
-  --tf-panel-heading-size: 14px;
+  /* Phase 114 (TFL-1139 R26) — the panel type roles now resolve the shared
+   * Quiet Precision tokens: panel titles 16, body 14, controls 13, helper 12.
+   * The legacy --tf-panel-secondary-label-size (12px) stays for the metadata
+   * rules that predate the split. */
+  --tf-panel-heading-size: var(--type-panel-size);
   --tf-panel-heading-weight: 500;
+  --tf-panel-body-size: var(--type-body-size);
+  --tf-panel-control-size: var(--type-row-size);
+  --tf-panel-helper-size: var(--type-helper-size);
   --tf-panel-secondary-label-size: 12px;
   --tf-panel-boundary-width: 1px;
   --tf-panel-motion-duration: var(--motion-duration-panel, 140ms);
@@ -21952,6 +22362,11 @@ cursor: pointer;
   --tf-panel-boundary: var(--panel-border, var(--border));
   --tf-panel-ink: var(--fg-strong);
   --tf-panel-ink-secondary: var(--fg-muted);
+  /* TFL-1155 (TFL-1116 C9 / R11) — the ONE theme-aware scrollbar pair every
+   * panel body resolves. Both point at existing theme tokens, so the thumb
+   * tracks light / dark / frosted without a value of its own. */
+  --tf-panel-scroll-thumb: var(--border-strong);
+  --tf-panel-scroll-thumb-hover: var(--fg-muted);
 }
 
 .tf-panel-shell {
@@ -21960,6 +22375,93 @@ cursor: pointer;
   min-width: 0;
   min-height: 0;
   background: var(--tf-panel-surface);
+}
+
+/* R11 — the shell owns the panel's scroll structure: the header (and any other
+ * non-body child, e.g. a view tab strip) is FIXED at its intrinsic height; the
+ * body takes the remaining space and scrolls; the optional footer is FIXED
+ * below the body. */
+.tf-panel-shell > .tf-panel-header,
+.tf-panel-shell > .glass-sidebar-header,
+.tf-panel-shell > .tf-panel-footer {
+  flex: 0 0 auto;
+}
+
+/* R11 — the optional fixed panel footer. */
+.tf-panel-footer {
+  min-width: 0;
+}
+
+/* R11 — THE shared panel scroll body. `flex: 1 1 auto` + `min-height: 0` let
+ * it shrink inside the shell's flex column (never pushing the header off); the
+ * bottom margin is the shared workspace baseline, so the body and any scrollbar
+ * it owns end level with the canvas footer top instead of running to the column
+ * bottom. Horizontal overflow is clipped: a panel body never scrolls sideways. */
+.tf-panel-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  margin-bottom: var(--tf-workspace-baseline, 0px);
+}
+
+/* R11 — ONE theme-aware scrollbar for every panel scroll body. A thin rounded
+ * thumb rides a transparent track; at rest the 3px transparent border insets
+ * the visible thumb, and on hover / keyboard focus the border narrows to 2px
+ * so the thumb (and its hit-area) expands. Native scrollbar arrow buttons are
+ * suppressed. Forced-colors hands the scrollbar back to the platform. */
+.tf-panel-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: var(--tf-panel-scroll-thumb) transparent;
+}
+
+.tf-panel-scroll::-webkit-scrollbar {
+  width: 10px;
+  height: 0;
+}
+
+.tf-panel-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.tf-panel-scroll::-webkit-scrollbar-thumb {
+  background: var(--tf-panel-scroll-thumb);
+  background-clip: padding-box;
+  border: 3px solid transparent;
+  border-radius: var(--radius-pill);
+}
+
+.tf-panel-scroll:hover::-webkit-scrollbar-thumb,
+.tf-panel-scroll:focus-visible::-webkit-scrollbar-thumb,
+.tf-panel-scroll:focus-within::-webkit-scrollbar-thumb {
+  background: var(--tf-panel-scroll-thumb-hover);
+  border-width: 2px;
+}
+
+.tf-panel-scroll::-webkit-scrollbar-button,
+.tf-panel-scroll::-webkit-scrollbar-corner {
+  display: none;
+}
+
+@media (forced-colors: active) {
+  .tf-panel-scroll {
+    scrollbar-width: auto;
+    scrollbar-color: auto;
+  }
+
+  .tf-panel-scroll::-webkit-scrollbar {
+    width: auto;
+    height: auto;
+  }
+
+  .tf-panel-scroll::-webkit-scrollbar-thumb {
+    background: ButtonText;
+    border: 0;
+  }
+
+  .tf-panel-scroll::-webkit-scrollbar-button {
+    display: initial;
+  }
 }
 
 .tf-panel-header {
@@ -21994,6 +22496,12 @@ cursor: pointer;
   color: var(--tf-panel-ink);
 }
 
+/* Phase 114 (TFL-1139 R26) — the panel body reads the shared 14px body role;
+ * control and helper descendants step down to their own roles below. */
+.tf-panel-section-body {
+  font-size: var(--tf-panel-body-size);
+}
+
 .tf-panel-row {
   display: flex;
   align-items: center;
@@ -22004,7 +22512,7 @@ cursor: pointer;
 }
 
 .tf-panel-row-label {
-  font-size: var(--tf-panel-secondary-label-size);
+  font-size: var(--tf-panel-control-size);
   color: var(--tf-panel-ink-secondary);
 }
 
@@ -22042,7 +22550,7 @@ cursor: pointer;
 
 .tf-panel-empty-help {
   margin: 0;
-  font-size: var(--tf-panel-secondary-label-size);
+  font-size: var(--tf-panel-helper-size);
   color: var(--tf-panel-ink-secondary);
 }
 
@@ -22084,7 +22592,7 @@ cursor: pointer;
  * ========================================================================== */
 .tf-panel-section-note {
   margin: 0;
-  font-size: var(--tf-panel-secondary-label-size);
+  font-size: var(--tf-panel-helper-size);
   color: var(--tf-panel-ink-secondary);
 }
 
@@ -22104,7 +22612,7 @@ cursor: pointer;
 }
 
 .export-config-group-title {
-  font-size: var(--tf-panel-secondary-label-size);
+  font-size: var(--tf-panel-control-size);
   font-weight: var(--tf-panel-heading-weight);
   color: var(--tf-panel-ink-secondary);
 }
@@ -22119,7 +22627,7 @@ cursor: pointer;
   display: flex;
   align-items: center;
   gap: var(--space-small, 8px);
-  font-size: var(--tf-panel-secondary-label-size);
+  font-size: var(--tf-panel-control-size);
   color: var(--tf-panel-ink);
 }
 
@@ -22131,27 +22639,52 @@ cursor: pointer;
   background: var(--bg-input);
   color: var(--fg-strong);
   font: inherit;
-  font-size: var(--tf-panel-secondary-label-size);
+  font-size: var(--tf-panel-control-size);
 }
 
 .export-config-value {
-  font-size: var(--tf-panel-secondary-label-size);
+  font-size: var(--tf-panel-body-size);
   color: var(--tf-panel-ink);
 }
 
 .export-config-error {
-  font-size: var(--tf-panel-secondary-label-size);
+  font-size: var(--tf-panel-helper-size);
   color: var(--error);
 }
 
 .export-config-status {
-  font-size: var(--tf-panel-secondary-label-size);
+  font-size: var(--tf-panel-helper-size);
   color: var(--tf-panel-ink-secondary);
 }
 
+/* Phase 114 (TFL-1139 R21) — the Deliver export primary action is a real CTA:
+ * a 40px minimum height, a 13px semibold label and a currentColor glyph that
+ * inherits the primary ink (the Inspector's `.inspector svg` neutral rule would
+ * otherwise paint the glyph grey ON the violet fill). Disabled is an explicit
+ * muted violet pair, never a parent opacity fade (R26: disabled stays
+ * distinguishable without opacity-only disabling). */
 .export-config-action {
   justify-content: center;
+  min-height: 40px;
   border-radius: var(--tf-panel-field-radius);
+  font-size: var(--type-row-size);
+  font-weight: 600;
+  color: var(--btn-primary-fg);
+}
+
+/* (0,1,1) — ties `.inspector svg`; this rule's later source position wins, so
+ * the glyph rides the label ink instead of the neutral icon ink. */
+.export-config-action svg {
+  color: currentColor;
+}
+
+.export-config-action[disabled],
+.export-config-action[aria-disabled="true"] {
+  opacity: 1;
+  background: var(--btn-primary-disabled-bg);
+  border-color: var(--btn-primary-disabled-bg);
+  color: var(--btn-primary-disabled-fg);
+  cursor: not-allowed;
 }
 
 /* ---------------------------------------------------------------------------

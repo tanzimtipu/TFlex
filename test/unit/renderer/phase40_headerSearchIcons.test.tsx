@@ -92,7 +92,7 @@ describe("Phase 40 item 5 — the header's two search affordances", () => {
       const k = button(h.container, "[data-header-tool-search]");
       expect(k.tagName).toBe("BUTTON");
       openAppMenu(h.container);
-      const f = button(h.container, "[data-menu-action='find']");
+      const f = button(document.body, "[data-menu-action='find']");
       expect(f.tagName).toBe("BUTTON");
       expect(f).not.toBe(k);
     } finally {
@@ -105,7 +105,7 @@ describe("Phase 40 item 5 — the header's two search affordances", () => {
     try {
       const kSvg = button(h.container, "[data-header-tool-search] svg");
       openAppMenu(h.container);
-      const fSvg = button(h.container, "[data-menu-action='find'] svg");
+      const fSvg = button(document.body, "[data-menu-action='find'] svg");
       // Phase 103 — both glyphs are authored Quiet Precision shapes, so the
       // distinction is pinned by geometry, not by a Lucide class name: the
       // Ctrl+K command-palette glyph is a framed field, the Ctrl+F glyph is a
@@ -127,7 +127,7 @@ describe("Phase 40 item 5 — the header's two search affordances", () => {
       expect(TOOL_SEARCH_ACCESSIBLE_NAME).toContain("Ctrl+K");
       expect(k.getAttribute("title")).toContain("Ctrl+K");
       openAppMenu(h.container);
-      const f = button(h.container, "[data-menu-action='find']");
+      const f = button(document.body, "[data-menu-action='find']");
       expect(f.textContent).toContain(FIND_IN_DOCUMENT_ACCESSIBLE_NAME);
       expect(FIND_IN_DOCUMENT_ACCESSIBLE_NAME).toContain("Ctrl+F");
       expect(f.textContent).toContain("Ctrl+F");
@@ -144,7 +144,7 @@ describe("Phase 40 item 5 — the header's two search affordances", () => {
       expect(h.onOpenFind).not.toHaveBeenCalled();
 
       openAppMenu(h.container);
-      click(button(h.container, "[data-menu-action='find']"));
+      click(button(document.body, "[data-menu-action='find']"));
       expect(h.onOpenFind).toHaveBeenCalledTimes(1);
       expect(h.onOpenToolSearch).toHaveBeenCalledTimes(1);
     } finally {
@@ -156,7 +156,7 @@ describe("Phase 40 item 5 — the header's two search affordances", () => {
     const h = renderHeader(false);
     try {
       openAppMenu(h.container);
-      const f = button(h.container, "[data-menu-action='find']");
+      const f = button(document.body, "[data-menu-action='find']");
       expect(f.hasAttribute("disabled")).toBe(true);
       expect(f.getAttribute("title")).toContain("Open a document");
       click(f);

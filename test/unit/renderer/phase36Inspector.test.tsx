@@ -61,7 +61,9 @@ describe("Phase 36 chunk 5 — inspectorSections resolves the per-stage contract
     // Phase 37 (item 1) — a selected text object lifts the panel to the TOP;
     // the sections BELOW are the stage's existing content.
     ["edit", "text", ["document"]],
-    ["edit", "page", ["cropbox"]],
+    // TFL-1116 C11 (R17) — the default EDIT page state is page facts, NOT a
+    // bare cropbox; the CropBox renders only during an active crop session.
+    ["edit", "page", ["page", "document"]],
     ["edit", "none", ["document"]],
     ["review", "signature", ["signature"]],
     ["review", "none", ["comments", "review-elements"]],

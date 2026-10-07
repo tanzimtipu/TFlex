@@ -111,7 +111,9 @@ describe("Phase 13 — AppHeader application menu carries the Settings command",
     act((): void => {
       trigger?.click();
     });
-    const row = host.querySelector<HTMLButtonElement>("[data-menu-action='preferences']");
+    // TFL-1116 (R03) — the application menu is portaled to document.body,
+    // so the row must be queried document-wide (mirrors appHeaderAppMenu).
+    const row = document.querySelector<HTMLButtonElement>("[data-menu-action='preferences']");
     expect(row).not.toBeNull();
     act((): void => {
       row?.click();

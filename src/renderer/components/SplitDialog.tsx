@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type ReactElement } from "react";
-import { defaultPageRange, parsePageRange } from "../engine/types";
+import { classifyPageRange, defaultPageRange } from "../engine/types";
 import type { DialogAction } from "./DialogShell";
 import { TaskDialog } from "./TaskDialog";
 
@@ -34,8 +34,9 @@ export function SplitDialog(props: SplitDialogProps): ReactElement | null {
     }
   }, [open, totalPages]);
 
-  const parsed = useMemo(() => parsePageRange(text, totalPages), [text, totalPages]);
-  const valid = parsed !== null && parsed.length > 0;
+  const check = useMemo(() => classifyPageRange(text, totalPages), [text, totalPages]);
+  const parsed = check.state === "valid" ? check.pages : null;
+  const valid = check.state === "valid" && parsed !== null;
 
   // DialogShell owns Esc-to-close, the backdrop drag guard and initial focus.
   const actions: DialogAction[] = [
@@ -78,6 +79,7 @@ export function SplitDialog(props: SplitDialogProps): ReactElement | null {
           <label className="modal-field">
             <span>Page range</span>
             <input
+              id="split-page-range"
               type="text"
               className="modal-input"
               value={text}
@@ -86,13 +88,22 @@ export function SplitDialog(props: SplitDialogProps): ReactElement | null {
               spellCheck={false}
               autoCorrect="off"
               autoCapitalize="off"
+              aria-describedby="split-range-status"
+              aria-invalid={!valid}
             />
           </label>
-          <div className="modal-status" aria-live="polite">
-            {valid ? (
+          <div
+            id="split-range-status"
+            className="modal-status"
+            aria-live="polite"
+            data-range-state={check.state}
+          >
+            {valid && parsed !== null ? (
               <span>{parsed.length} page{parsed.length === 1 ? "" : "s"} selected</span>
             ) : (
-              <span className="hint">Enter at least one page (e.g. 1-3).</span>
+              <span className="hint" data-range-error>
+                {check.message}
+              </span>
             )}
           </div>
           <fieldset className="modal-position">

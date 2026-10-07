@@ -21,7 +21,7 @@
 // Sections are resolved by the pure `inspectorSections(stage, kind)` so the
 // per-stage/per-selection contract is unit-testable without a DOM.
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type { ReactElement, ReactNode } from 'react';
 import { MousePointerClick, PanelRightClose, PanelRightOpen, X } from 'lucide-react';
 import { Icon } from '../icons/Icon';
@@ -44,6 +44,7 @@ import {
   type ExportPageScope,
 } from './exportConfig';
 import { ExportFidelityNotes } from './ExportFidelityNotes';
+import type { ExportDraft } from '../state/exportDraft';
 import {
   clampExportImageDpi,
   DEFAULT_EXPORT_IMAGE_DPI,
@@ -126,8 +127,46 @@ export type InspectorSectionId =
   | 'export'
   | 'ocr-suspects';
 
-/** The sections a (stage, selection) pair renders, in order. Pure, so the
- *  per-stage / per-selection contract is pinned by tests without a DOM.
+/** TFL-1116 C11 (R17) — the Inspector's explicit render STATE, resolved from
+ *  the stage, the live selection and the two session signals. The state — not
+ *  the raw selection kind — decides which sections render, so entering EDIT
+ *  with Select (a `page` selection, no crop session) can no longer inherit an
+ *  empty CropBox. */
+export type InspectorStateKind =
+  | 'none'
+  | 'page'
+  | 'text'
+  | 'signature'
+  | 'crop'
+  | 'ocr-review'
+  | 'export';
+
+/** TFL-1116 C11 (R17) — resolve the explicit Inspector state. Precedence is
+ *  deliberate and documented: an OPEN OCR review surface wins (it is a scoped
+ *  working state), then an ACTIVE crop session (its geometry is what the user
+ *  is manipulating), then a selected object (text / image / annotation or a
+ *  signature), then the DELIVER export surface, then page facts for a page
+ *  selection, and finally the document-only `none`. Pure, so the truth table is
+ *  pinned without a DOM. */
+export function resolveInspectorState(args: {
+  stage: Stage;
+  selection: InspectorSelection;
+  cropActive?: boolean;
+  ocrSuspectsOpen?: boolean;
+}): InspectorStateKind {
+  if (args.ocrSuspectsOpen === true) return 'ocr-review';
+  // The crop session belongs to EDIT only: a cropBox published while another
+  // stage is active must never hijack that stage's sections.
+  if (args.cropActive === true && args.stage === 'edit') return 'crop';
+  if (args.selection.kind === 'text') return 'text';
+  if (args.selection.kind === 'signature') return 'signature';
+  if (args.stage === 'deliver') return 'export';
+  if (args.selection.kind === 'page') return 'page';
+  return 'none';
+}
+
+/** The sections a resolved Inspector STATE renders, in order, for a stage.
+ *  Pure, so the contract is pinned by tests without a DOM.
  *
  *  Phase 37 (item 1) — these are the sections BELOW the text-manipulation
  *  block. When a text object is selected (EDIT or the REVIEW/annotate flow)
@@ -136,33 +175,50 @@ export type InspectorSectionId =
  *  divider. The `text` section id is therefore retired from the returned lists
  *  (the panel is no longer one of the stage's sections).
  *
- *  Section 3A surface discipline:
- *   - The EDIT/page section is the CropBox ONLY (ruling 4: the OCR status is
- *     the EDIT ContextPanel's Recognition section, never repeated here).
- *   - The PAGES page section carries read-only Size / Rotation, the Label
+ *  R17 surface discipline:
+ *   - The CropBox section renders ONLY in the `crop` state (an active crop
+ *     session). The default EDIT `page` state offers page facts + guidance.
+ *   - The PAGES page state carries read-only Size / Rotation, the Label
  *     renumber affordance, and the annotations jump — no Crop row (ruling 3)
  *     and no rotate affordance (ruling 1). */
+export function inspectorSectionsForState(
+  state: InspectorStateKind,
+  stage: Stage,
+): InspectorSectionId[] {
+  switch (state) {
+    case 'ocr-review':
+      // The suspects view is rendered separately (its own slot) so it can be
+      // absent when the host has no review open; no stage sections accompany
+      // it — the review IS the current scoped state.
+      return [];
+    case 'crop':
+      return ['cropbox'];
+    case 'text':
+      // The text panel rides ABOVE; the stage content stays below.
+      return stage === 'review' ? ['comments', 'review-elements'] : ['document'];
+    case 'signature':
+      return ['signature'];
+    case 'export':
+      return ['export', 'document'];
+    case 'page':
+      return stage === 'pages' ? ['page', 'on-page', 'document'] : ['page', 'document'];
+    case 'none':
+      return stage === 'review' ? ['comments', 'review-elements'] : ['document'];
+  }
+}
+
+/** The sections a (stage, selection) pair renders, in order. A thin wrapper
+ *  over the explicit-state model with no session signals: it resolves to the
+ *  default state for that pair (no active crop, no OCR review). Kept as the
+ *  documented pure per-stage/per-selection contract. */
 export function inspectorSections(
   stage: Stage,
   kind: InspectorSelectionKind,
 ): InspectorSectionId[] {
-  switch (stage) {
-    case 'pages':
-      return kind === 'page' ? ['page', 'on-page', 'document'] : ['document'];
-    case 'edit':
-      // EDIT + text: the text panel rides ABOVE; the document facts stay below.
-      if (kind === 'text') return ['document'];
-      if (kind === 'page') return ['cropbox'];
-      return ['document'];
-    case 'review':
-      // A selected signature inspects the signature; the document view
-      // hosts the comments + the re-parented annotations list. Phase 37
-      // (item 1): a selected TEXT object keeps those same below-sections and
-      // lifts the text panel to the top.
-      return kind === 'signature' ? ['signature'] : ['comments', 'review-elements'];
-    case 'deliver':
-      return ['export', 'document'];
-  }
+  return inspectorSectionsForState(
+    resolveInspectorState({ stage, selection: { kind } }),
+    stage,
+  );
 }
 
 /** The header's selection label. */
@@ -401,6 +457,12 @@ export interface InspectorProps {
    *  preference, so a manual expand can never fight the ladder. */
   collapsed?: boolean;
   onToggleCollapsed?: () => void;
+  /** TFL-1117 (R01) — render as the compact OVERLAY drawer instead of the
+   *  docked panel. The host resolves this below the ladder's Inspector
+   *  threshold; the drawer overlays the canvas (no reserved inset), closes on
+   *  Escape and on the existing `onClose` control, and returns focus to its
+   *  Expand opener once the collapsed strip remounts. */
+  drawer?: boolean;
 
 
   // --- PAGES / DOCUMENT ------------------------------------------------
@@ -418,6 +480,12 @@ export interface InspectorProps {
   pageRotationMixed?: boolean;
   pageLabelMixed?: boolean;
   cropBox?: { x: number; y: number; width: number; height: number } | null;
+  /** TFL-1116 C11 (R17) — true while a crop SESSION is active (the host's crop
+   *  workflow is engaged). The CropBox section renders ONLY in this state; a
+   *  plain page selection in EDIT shows page facts + selection guidance, never
+   *  an empty CropBox. A non-null `cropBox` also counts as an active crop (the
+   *  geometry is present), so existing hosts that publish the box keep working. */
+  cropActive?: boolean;
   annotationCount?: number;
   formFieldCount?: number;
   /** Phase 59 item 4 — the most recent native-fill report. When present and
@@ -481,6 +549,13 @@ export interface InspectorProps {
   exportSourceName?: string | null;
   /** The persisted image DPI the options default to. */
   exportDpi?: number;
+  /** TFL-1119 (TFL-1116 C2) - the document-scoped export draft. When provided,
+   *  this CONTROLLED value is the source of truth for the Deliver export
+   *  surface, so a collapse remount, a stage switch or a tab switch re-renders
+   *  from the stored draft instead of resetting to the persisted default. */
+  exportDraft?: ExportDraft;
+  /** Fired with the changed fields when the user edits the controlled draft. */
+  onExportDraftChange?: (patch: Partial<ExportDraft>) => void;
   /** The page the "Current page" scope targets. */
   exportCurrentPage?: number;
   /** Per-format office bridge availability (`window.tflex.export`). */
@@ -579,6 +654,9 @@ function ExportConfigSection(props: {
   onRun?: (request: InspectorExportRequest) => void;
   legacyExport?: () => void;
   status: InspectorExportStatus | null;
+  /** TFL-1119 - the controlled document-scoped draft (source of truth). */
+  exportDraft?: ExportDraft;
+  onExportDraftChange?: (patch: Partial<ExportDraft>) => void;
 }): ReactElement {
   const {
     format: formatProp,
@@ -593,14 +671,24 @@ function ExportConfigSection(props: {
     onRun,
     legacyExport,
     status,
+    exportDraft,
+    onExportDraftChange,
   } = props;
 
-  const [format, setFormat] = useState<ExportConfigFormat>(
+  const controlled = exportDraft !== undefined;
+  const [formatState, setFormatState] = useState<ExportConfigFormat>(
     formatProp ?? DEFAULT_EXPORT_CONFIG_FORMAT,
   );
-  const [scope, setScope] = useState<ExportPageScope>('all');
-  const [customRange, setCustomRange] = useState<string>('');
-  const [dpi, setDpi] = useState<number>(clampExportImageDpi(initialDpi));
+  const [scopeState, setScopeState] = useState<ExportPageScope>('all');
+  const [customRangeState, setCustomRangeState] = useState<string>('');
+  const [dpiState, setDpiState] = useState<number>(clampExportImageDpi(initialDpi));
+
+  // The controlled draft wins; the local state is only the uncontrolled
+  // (LEGACY / no draft) fallback, so nothing else changes.
+  const format = controlled ? exportDraft.format : formatState;
+  const scope = controlled ? exportDraft.scope : scopeState;
+  const customRange = controlled ? exportDraft.customRange : customRangeState;
+  const dpi = controlled ? exportDraft.dpi : dpiState;
 
   const option = exportFormatOption(format);
   const group = option?.group ?? 'image';
@@ -615,8 +703,26 @@ function ExportConfigSection(props: {
   const fidelity = exportFidelityNotes(format);
 
   const selectFormat = (next: ExportConfigFormat): void => {
-    setFormat(next);
+    if (controlled) onExportDraftChange?.({ format: next });
+    else setFormatState(next);
+    // Optional extra notification; the draft is now authoritative.
     onFormatChange?.(next);
+  };
+
+  const selectScope = (next: ExportPageScope): void => {
+    if (controlled) onExportDraftChange?.({ scope: next });
+    else setScopeState(next);
+  };
+
+  const changeCustomRange = (next: string): void => {
+    if (controlled) onExportDraftChange?.({ customRange: next });
+    else setCustomRangeState(next);
+  };
+
+  const changeDpi = (next: number): void => {
+    const clamped = clampExportImageDpi(next);
+    if (controlled) onExportDraftChange?.({ dpi: clamped });
+    else setDpiState(clamped);
   };
 
   const run = (): void => {
@@ -674,7 +780,7 @@ function ExportConfigSection(props: {
                 type="radio"
                 name="export-config-scope"
                 checked={s === scope}
-                onChange={(): void => setScope(s)}
+                onChange={(): void => selectScope(s)}
                 data-export-config-scope={s}
               />
               <span>{exportScopeLabel(s)}</span>
@@ -686,7 +792,7 @@ function ExportConfigSection(props: {
             type="text"
             className="export-config-input"
             value={customRange}
-            onChange={(e): void => setCustomRange(e.target.value)}
+            onChange={(e): void => changeCustomRange(e.target.value)}
             placeholder={totalPages > 0 ? `1-${totalPages}` : ''}
             spellCheck={false}
             data-export-config-range
@@ -721,7 +827,7 @@ function ExportConfigSection(props: {
             value={dpi}
             onChange={(e): void => {
               const next = Number.parseInt(e.target.value, 10);
-              if (Number.isFinite(next)) setDpi(clampExportImageDpi(next));
+              if (Number.isFinite(next)) changeDpi(next);
             }}
             data-export-config-dpi-input
           />
@@ -784,6 +890,7 @@ export function Inspector(props: InspectorProps): ReactElement {
     onClose,
     collapsed = false,
     onToggleCollapsed,
+    drawer = false,
     pageCount = 0,
     pageSize = null,
     pageRotation = null,
@@ -793,6 +900,7 @@ export function Inspector(props: InspectorProps): ReactElement {
     pageRotationMixed = false,
     pageLabelMixed = false,
     cropBox = null,
+    cropActive = false,
     annotationCount = 0,
     formFieldCount = 0,
     formFillReport,
@@ -822,6 +930,8 @@ fileSize = null,
     exportPreset = null,
     exportSourceName = null,
     exportDpi = DEFAULT_EXPORT_IMAGE_DPI,
+    exportDraft,
+    onExportDraftChange,
     exportCurrentPage = 1,
     exportBridge = null,
     onExportFormatChange,
@@ -830,10 +940,55 @@ fileSize = null,
     exportStatus = null,
   } = props;
 
-  const sections = useMemo(
-    () => inspectorSections(stage, selection.kind),
-    [stage, selection.kind],
+  // TFL-1116 C11 (R17) — the EXPLICIT Inspector state. Precedence lives in the
+  // pure resolver; the component only feeds the session signals. A published
+  // `cropBox` counts as an active crop so the geometry is never hidden when a
+  // host supplies it without the explicit flag.
+  const ocrSuspectsOpen = ocrSuspects !== null;
+  const inspectorState = useMemo(
+    () =>
+      resolveInspectorState({
+        stage,
+        selection,
+        cropActive: cropActive || cropBox !== null,
+        ocrSuspectsOpen,
+      }),
+    [stage, selection, cropActive, cropBox !== null, ocrSuspectsOpen],
   );
+  const sections = useMemo(
+    () => inspectorSectionsForState(inspectorState, stage),
+    [inspectorState, stage],
+  );
+
+  // TFL-1117 (R01) — the compact drawer's opener (the collapse control) and a
+  // record of the previous drawer state so a close can return focus. The
+  // control is unmounted while the drawer is open, so the ref is re-attached
+  // to the strip control once the drawer closes and the strip remounts; the
+  // effect below restores focus to that fresh node.
+  const collapseOpenerRef = useRef<HTMLButtonElement | null>(null);
+  const drawerWasOpenRef = useRef(false);
+  useEffect((): void => {
+    const wasOpen = drawerWasOpenRef.current;
+    drawerWasOpenRef.current = drawer;
+    if (wasOpen && !drawer && collapsed) {
+      const opener = collapseOpenerRef.current;
+      if (opener !== null && document.contains(opener)) opener.focus();
+    }
+  }, [drawer, collapsed]);
+
+  // TFL-1117 (R01) — Escape closes the compact drawer. Bound only while it is
+  // the open surface (the host passes `onClose` only then), so the wide panel
+  // keeps its existing keyboard behaviour unchanged.
+  useEffect((): (() => void) | undefined => {
+    if (!drawer || onClose === undefined) return undefined;
+    const onKey = (event: KeyboardEvent): void => {
+      if (event.key !== 'Escape') return;
+      event.preventDefault();
+      onClose();
+    };
+    window.addEventListener('keydown', onKey);
+    return (): void => window.removeEventListener('keydown', onKey);
+  }, [drawer, onClose]);
 
   // Phase 59 item 4 — the fill-report summary is dismissible. Dismissal is
   // keyed by the report's content, so a NEW report re-appears even after the
@@ -886,6 +1041,14 @@ fileSize = null,
           />
         </span>
       </Row>
+      {/* R17 — the default EDIT state (no crop session, no object selected)
+       *  offers selection guidance + these page facts instead of an empty
+       *  CropBox. */}
+      {stage === 'edit' && inspectorState === 'page' && (
+        <p className="inspector-note" data-inspector-edit-guidance>
+          Select a text or image object on the page to edit its properties.
+        </p>
+      )}
     </Section>
   );
   /** PAGES - the counts that apply to the selected page. The annotations
@@ -983,27 +1146,33 @@ fileSize = null,
       </>
     );
 
-  /** EDIT - the selected page's CropBox values. Section 3A ruling 4: no OCR
-   *  status here — the EDIT ContextPanel's Recognition section is its home. */
+  /** EDIT — the active crop session's bounds. R17: this section exists ONLY in
+   *  the `crop` state, so the default EDIT (Select, no crop workflow) shows page
+   *  facts + selection guidance below instead of an empty CropBox. Section 3A
+   *  ruling 4: no OCR status here — the EDIT ContextPanel owns the Recognition
+   *  summary. */
   const renderCropBoxSection = (): ReactElement => (
-    <Section id="cropbox" title="CropBox">
+    <Section id="cropbox" title="Crop bounds">
       {cropBox === null ? (
-        <Row id="cropbox" label="Box">
-          {'\u2014'}
-        </Row>
+        <p className="inspector-note" data-inspector-crop-empty>
+          Drag the crop rectangle in the Crop pages dialog to set the crop bounds.
+        </p>
       ) : (
         <>
           <Row id="cropbox-x" label="X">
-            {Math.round(cropBox.x)}
+            {`${Math.round(cropBox.x)} pt`}
           </Row>
           <Row id="cropbox-y" label="Y">
-            {Math.round(cropBox.y)}
+            {`${Math.round(cropBox.y)} pt`}
           </Row>
           <Row id="cropbox-w" label="Width">
-            {Math.round(cropBox.width)}
+            {`${Math.round(cropBox.width)} pt`}
           </Row>
           <Row id="cropbox-h" label="Height">
-            {Math.round(cropBox.height)}
+            {`${Math.round(cropBox.height)} pt`}
+          </Row>
+          <Row id="cropbox-units" label="Units">
+            pt
           </Row>
         </>
       )}
@@ -1112,8 +1281,13 @@ const renderSignatureSection = (): ReactElement => (
     // marks categories (one renderer, one set of `data-review-*` hooks) but the
     // Annotations category renders the Inspector's annotation scope, never a
     // second copy of the LEFT navigator's list.
+    // TFL-1116 C13 (R20) — the section now owns the SELECTION scope only: the
+    // document-wide Bates / watermark / signature summaries have exactly ONE
+    // authoritative home (the LEFT review navigator), so the Inspector never
+    // repeats them. The selected-annotation scope stays here.
     <Section id="review-elements" title="Review elements">
       <ReviewElementsPanel
+        scope="selection"
         annotations={annotations}
         onJumpToAnnotation={onJumpToAnnotation}
         onEditAnnotation={onEditAnnotation}
@@ -1145,6 +1319,8 @@ const renderSignatureSection = (): ReactElement => (
         onRun={onExportRun}
         legacyExport={onExport}
         status={exportStatus}
+        exportDraft={exportDraft}
+        onExportDraftChange={onExportDraftChange}
       />
     </Section>
   );
@@ -1177,11 +1353,14 @@ const renderSignatureSection = (): ReactElement => (
 
   /** Phase 37 (item 3) — the expand/collapse control. ONE control, rendered in
    *  both states (the header when expanded, the strip when collapsed), wired to
-   *  the host's `onToggleCollapsed`. It toggles the USER's preference only; the
-   *  ladder's rung 1 is OR-ed by the host, so a manual expand can never fight
-   *  the ladder. */
+   *  the host's `onToggleCollapsed`. At wide widths it toggles the USER's
+   *  preference only (the ladder's rung 1 is OR-ed by the host, so a manual
+   *  expand can never fight the ladder); at compact widths the host routes it
+   *  to the overlay drawer. The ref lets the drawer return focus to this
+   *  control once the collapsed strip remounts on close. */
   const collapseControl = (
     <IconButton
+      ref={collapseOpenerRef}
       label={collapsed ? 'Expand inspector' : 'Collapse inspector'}
       intent="tertiary"
       kind="toggle"
@@ -1203,12 +1382,14 @@ const renderSignatureSection = (): ReactElement => (
 
   return (
     <PanelShell
-      className="inspector"
+      className={drawer ? 'inspector inspector-drawer' : 'inspector'}
       role="complementary"
       label="Inspector"
       data-inspector
+      data-inspector-drawer={drawer ? 'true' : 'false'}
       data-inspector-stage={stage}
       data-inspector-selection={selection.kind}
+      data-inspector-state={inspectorState}
       data-inspector-collapsed={collapsed ? 'true' : 'false'}
     >
       {collapsed ? (
@@ -1243,7 +1424,7 @@ const renderSignatureSection = (): ReactElement => (
               </div>
             }
           />
-          <GlassSidebarBody className="inspector-body">
+          <GlassSidebarBody className="inspector-body tf-panel-body tf-panel-scroll">
             {/* Phase 37 (item 1) — the text-manipulation block leads the column,
                 with the stage sections below the divider. */}
             {renderTextBlock()}

@@ -25,6 +25,7 @@ import {
   DOCK_STAGE_IDS,
   dockPrimaryIdsForStage,
 } from "../../../src/renderer/state/toolsRegistry";
+import { resolveInspectorSurface } from "../../../src/renderer/state/dockResponsive";
 import type { Stage } from "../../../src/renderer/state/stages";
 
 const STAGES: readonly Stage[] = ["pages", "edit", "review", "deliver"];
@@ -172,5 +173,28 @@ describe("Phase 104 (chunk 2) — the anchored More popover", () => {
     } finally {
       unmount();
     }
+  });
+});
+
+// TFL-1117 (R01) — the compact Inspector's surface resolver. Below the ladder
+// threshold the persisted preference cannot expand the docked panel, so an
+// explicit open intent becomes the overlay `drawer`; with no intent it stays
+// the ladder-forced collapsed strip. At/above the threshold the existing
+// expanded/collapsed preference semantics are unchanged.
+describe("TFL-1117 (R01) — resolveInspectorSurface", () => {
+  it("compact widths use the drawer only while the open intent is set", () => {
+    expect(resolveInspectorSurface(960, false, false)).toBe("collapsed");
+    expect(resolveInspectorSurface(960, false, true)).toBe("drawer");
+    expect(resolveInspectorSurface(960, true, true)).toBe("drawer");
+    expect(resolveInspectorSurface(1199, false, true)).toBe("drawer");
+  });
+
+  it("wide widths keep the persisted expanded/collapsed preference", () => {
+    expect(resolveInspectorSurface(1200, false, false)).toBe("expanded");
+    expect(resolveInspectorSurface(1200, true, false)).toBe("collapsed");
+    expect(resolveInspectorSurface(1600, false, false)).toBe("expanded");
+    // The drawer intent is irrelevant once the docked column fits again.
+    expect(resolveInspectorSurface(1200, false, true)).toBe("expanded");
+    expect(resolveInspectorSurface(1200, true, true)).toBe("collapsed");
   });
 });

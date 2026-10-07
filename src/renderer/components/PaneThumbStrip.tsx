@@ -72,6 +72,11 @@ export interface PaneThumbStripProps {
    *  click is synthetic (the pane's own pointerdown capture handles the
    *  real gesture). */
   onJump: (page: number) => void;
+  /** TFL-1116 R04 — the document-scoped committed-navigation counter the host
+   *  bumps on every jump. Forwarded to the shared rail so a jump committed
+   *  outside this pane's strip (toolbar / input / external request) reveals
+   *  the viewed thumb. */
+  revealSeq?: number;
   /** Focus this strip's pane (a thumb click does it; DEF-291 removed the
    *  strip's own header, so the pane's pointerdown capture covers the rest). */
   onFocusPane: () => void;
@@ -115,6 +120,7 @@ export function PaneThumbStrip(props: PaneThumbStripProps): ReactElement {
     onReorder,
     onUndo,
 onJump,
+    revealSeq = 0,
     onFocusPane,
     documentCount,
     crossDoc,
@@ -236,6 +242,7 @@ const pageLabelMap = useMemo(
           onReorder={onReorder}
           onUndo={onUndo}
 onJump={jumpAndFocus}
+          revealSeq={revealSeq}
           thumbWidth={thumbWidth}
           crossDoc={crossDoc}
           thumbVerbs={verbs}

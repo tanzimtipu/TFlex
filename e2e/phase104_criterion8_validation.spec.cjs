@@ -333,7 +333,7 @@ test('criterion-8: themes, panels, viewports, text scale, keyboard, states, reac
   await gotoStage(win, 1);
   await win.waitForTimeout(300);
   const toolsText = ((await win.locator('[data-dock-tools]').first().textContent()) ?? '').replace(/\s+/g, ' ').trim();
-  expect(toolsText, 'Tools button is labelled').toBe('Tools');
+  expect(toolsText, 'All commands button is labelled').toBe('All commands');
   await win.locator('[data-dock-tools]').first().click();
   await win.waitForSelector('[data-command-palette]', { state: 'visible', timeout: 8000 });
   console.log('[P104-C8 tools] labelled Tools button opened the command palette');

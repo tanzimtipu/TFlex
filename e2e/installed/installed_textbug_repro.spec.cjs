@@ -37,7 +37,7 @@ test.setTimeout(240000);
 async function launchInstalledApp() {
   const app = await launchApp([], null, PACKAGED_EXE);
   const win = await app.firstWindow();
-  await win.waitForSelector('.sample-card', { timeout: 40000 });
+  await win.waitForSelector('.welcome', { timeout: 40000 }); // R09: packed Home hides .sample-card
   await dismissUpdatePrompt(win);
   return { app, win };
 }

@@ -184,11 +184,11 @@ describe("Phase 105 chunk C — application menu", () => {
     const container = renderChrome();
     const trigger = container.querySelector<HTMLButtonElement>("[data-app-menu]");
     expect(trigger).not.toBeNull();
-    expect(container.querySelector("[data-app-menu-popover]")).toBeNull();
+    expect(document.querySelector("[data-app-menu-popover]")).toBeNull();
     act((): void => {
       trigger?.click();
     });
-    expect(container.querySelector("[data-app-menu-popover]")).not.toBeNull();
+    expect(document.querySelector("[data-app-menu-popover]")).not.toBeNull();
     act((): void => {
       trigger?.click();
     });
@@ -204,14 +204,14 @@ describe("Phase 105 chunk C — application menu", () => {
     act((): void => {
       trigger?.click();
     });
-    expect(container.querySelector("[data-app-menu-popover]")).not.toBeNull();
+    expect(document.querySelector("[data-app-menu-popover]")).not.toBeNull();
     act((): void => {
       window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
     });
     // Focus returns synchronously; the animated popover leaves after its exit.
     expect(document.activeElement).toBe(trigger);
     await settle();
-    expect(container.querySelector("[data-app-menu-popover]")).toBeNull();
+    expect(document.querySelector("[data-app-menu-popover]")).toBeNull();
     (window as unknown as { tflex?: unknown }).tflex = undefined;
   });
 });

@@ -47,9 +47,9 @@ import {
   DOCK_BULK_IDS,
   DOCK_CLEAR_ID,
   DOCK_IDLE_MS,
-  canPinMore,
   defaultDockEnabled,
   dedupePinsAgainst,
+  dockPinAffordance,
   dockPrimaryState,
   isDockCompact,
   isDockIconOnly,
@@ -63,11 +63,11 @@ import { useRowOverflow } from '../hooks/useRowOverflow';
 import { useInstantMotion } from '../hooks/useAnimations';
 import { MOTION_DURATION } from '../hooks/motionTokens';
 import {
-  DOCK_DEFAULT_RESERVE,
   DOCK_PILL_GAP,
   dockBand,
   dockCap,
   dockPlanWidth,
+  dockReserveFor,
   iconOnlyDockNeed,
   labelledDockNeed,
   labelsFitBand,
@@ -78,7 +78,7 @@ import {
   shouldLiftDock,
   type PillBox,
 } from '../state/dockFit';
-import { toolById, dockToolsForStage, dockPrimaryIdsForStage, DOCK_SHORT_LABELS, dockPickerIdsForStage, isPinVisibleInStage, type ToolEntry } from '../state/toolsRegistry';
+import { toolById, dockToolsForStage, dockPrimaryIdsForStage, DOCK_SHORT_LABELS, dockEligible, dockEligibleIdsForStage, isPinVisibleInStage, type ToolEntry } from '../state/toolsRegistry';
 import {
   PAGE_COMPACT_W,
   PAGE_FULL_W,
@@ -130,8 +130,17 @@ export interface ActionDockProps {
   /** Idle suppression: a page drag is in progress. */
   dragInProgress?: boolean;
   /** The canvas width for the responsive rules. When omitted the dock measures
-   *  its own container and re-renders on resize. */
+   *  its own container and re-renders on resize. TFL-1116 (R15) — the host
+   *  passes the CANVAS VIEWPORT width (the `.document-scroller`), never the
+   *  fitted paper width. */
   canvasWidth?: number;
+  /** TFL-1116 (R15) — the canvas has NO floating pills to clear (the app's
+   *  single-mode canvas: phase 109 retired the page/zoom pills). With this set
+   *  the dock sizes against the CANVAS VIEWPORT width instead of subtracting a
+   *  phantom 476px pill reserve, and the labelled row routes to the arrows lane
+   *  only when it genuinely cannot fit. Omitted (standalone mounts, Multi Mode
+   *  panes) keeps the legacy pill-clearance behaviour. */
+  pillsRetired?: boolean;
   /** Phase 37 (items 2 + 6) — the ONE responsive ladder resolved by the host
    *  from the measured workspace width. When omitted the dock derives the same
    *  ladder from its own measured width (standalone / test mounts). */
@@ -349,6 +358,7 @@ export function ActionDock(props: ActionDockProps): ReactElement {
     toolArmed = false,
     dragInProgress = false,
     canvasWidth,
+    pillsRetired = false,
     ladder: ladderProp,
     toolUsage,
     activeToolIds,
@@ -534,7 +544,14 @@ export function ActionDock(props: ActionDockProps): ReactElement {
   // DEF-315 — the band the dock may occupy and whether the pills leave room
   // for it at all. `reserve` is the measured pill band, consumed by the CSS
   // cap (`max-width: 100% - var(--dock-reserve)`) and the inline cap here.
-  const reserve = pill?.reserve ?? DOCK_DEFAULT_RESERVE;
+  // TFL-1116 (R15) — `dockReserveFor` returns the MEASURED reserve, the
+  // conservative default while pills may still appear, and 0 when the canvas
+  // has no pills at all (the app's `pillsRetired` single-mode canvas), so the
+  // dock sizes against the CANVAS VIEWPORT instead of a phantom 476px band.
+  const reserve = dockReserveFor({
+    measured: pill?.reserve ?? null,
+    pillsPresent: !pillsRetired,
+  });
   const band = dockBand(width, reserve);
   const lifted = pill !== null && shouldLiftDock(band);
   // Phase 39 (DEF-348b/c) — publish the vertical yield so the Multi Mode host
@@ -715,15 +732,17 @@ export function ActionDock(props: ActionDockProps): ReactElement {
   );
 
   // Phase 58 — the EDIT-mode picker: the stage + global dock tools, minus the
-  // ids already rendered (primary tiles, More verbs and pins). Registry-derived,
-  // so no unknown ids and no tool can be added twice.
+  // ids already rendered (primary tiles, More verbs and pins). TFL-1116 C10
+  // (R14) — the rows are the `dockEligible` set, so the SAME capability
+  // predicate gates the chooser, the pin affordance and pin execution: an
+  // unsupported command is never offered as an addable tool.
   const pickerEntries = useMemo<ToolEntry[]>(() => {
     const rendered = new Set<string>([
       ...stageDockIds,
       ...primaryIds,
       ...pinnedVerbs.map((v) => v.id),
     ]);
-    return dockPickerIdsForStage(activeStage).flatMap((id) => {
+    return dockEligibleIdsForStage(activeStage).flatMap((id) => {
       if (rendered.has(id)) return [];
       const entry = toolById(id);
       return entry === undefined ? [] : [entry];
@@ -752,9 +771,18 @@ export function ActionDock(props: ActionDockProps): ReactElement {
       pinnedVerbs.map((v) => v.label),
     ) + DOCK_EDIT_SLOT;
   const iconOnly = ladder.iconOnly;
+  // TFL-1116 (R15) — with the canvas's pills RETIRED the labelled row runs
+  // through the ARROWS lane only when it genuinely cannot fit the canvas
+  // viewport band. The legacy `isDockIconOnly(width)` term must NOT apply then:
+  // the app measures the CANVAS viewport (e.g. 798 at a 962 window), which is
+  // below 900 while the WINDOW ladder rung keeps the labels, so the old
+  // unconditional term forced a scrolling lane on a dock that comfortably fits.
+  // The ladder stays the label authority; the fit test is the lane authority.
   const measuredLabelOverflow =
     !iconOnly &&
-    (isDockIconOnly(width) || (pill !== null && !labelsFitBand(need, labelBand)));
+    (pillsRetired
+      ? !labelsFitBand(need, labelBand)
+      : isDockIconOnly(width) || (pill !== null && !labelsFitBand(need, labelBand)));
   // DEF-571 — the icon-only row carries the same 58px Focus Dock tiles as the
   // labelled row, so at the icon rung it can exceed the pill-free band while
   // NEITHER the arrows rung NOR the labelled fit test is engaged (the 720-880
@@ -858,9 +886,14 @@ export function ActionDock(props: ActionDockProps): ReactElement {
 
   /** Pin a tool and bloom its verb in. The id is recorded BEFORE the host's
    *  `dockPins` update lands, so the new verb's very first paint already
-   *  carries `.anim-verb-in` — never a flash of an un-animated verb. */
+   *  carries `.anim-verb-in` — never a flash of an un-animated verb.
+   *  TFL-1116 C10 (R14) — the SAME `dockEligible` predicate gate as the chooser
+   *  and the pin affordance: an id the dock cannot host is never pinned, so
+   *  execution can never diverge from what the affordance offered. */
   const addTool = useCallback(
     (id: string): void => {
+      const entry = toolById(id);
+      if (entry === undefined || !dockEligible(entry)) return;
       setEnteringIds((prev) => new Set(prev).add(id));
       onPinTool(id);
     },
@@ -959,6 +992,14 @@ export function ActionDock(props: ActionDockProps): ReactElement {
     },
     [instant, onUnpinTool],
   );
+
+  /** TFL-1116 C10 (R14) — the explicit Done action for customization (EDIT)
+   *  mode. It leaves customization in one click and closes the dedicated
+   *  chooser, instead of relying on Escape or re-toggling Customize dock. */
+  const exitCustomize = useCallback((): void => {
+    setEditMode(false);
+    setPlusOpen(false);
+  }, []);
 
   // An EXITING verb is rendered ONCE — as its ghost. Its live entry is filtered
   // out for the whole collapse, so the ghost can never be a duplicate key and
@@ -1190,52 +1231,56 @@ export function ActionDock(props: ActionDockProps): ReactElement {
   // `rowDataAttrs` / `rowClassName`. The group heading names the verb under the
   // pointer (mirroring the thumbnail menu's `Page N` heading), falling back to
   // the id when the registry has no label.
-  const pinMenuGroups = useMemo<CommandMenuGroup[]>(
-    () =>
-      menu === null
-        ? []
-        : [
-            {
-              id: 'dock-pin',
-              label: toolById(menu.id)?.label ?? menu.id,
-              entries: [
-                {
-                  id: 'pin',
-                  label: 'Pin to dock',
-                  intent: 'secondary',
-                  density: 'compact',
-                  disabled: menuPinned || !canPinMore(pins),
-                  disabledReason:
-                    !menuPinned && !canPinMore(pins) ? 'Dock is full' : undefined,
-                  rowClassName: 'action-dock-menu-item',
-                  rowDataAttrs: { 'data-dock-menu-item': 'pin' },
-                  onSelect: (): void => {
-                    setMenu(null);
-                    addTool(menu.id);
-                  },
-                },
-                {
-                  id: 'unpin',
-                  label: 'Unpin from dock',
-                  intent: 'secondary',
-                  density: 'compact',
-                  // Phase 37 (item 21) — ANY rendered verb can be unpinned now:
-                  // a default stage verb is recorded in `dockUnpinned`, an
-                  // explicit pin is dropped from `dockPins`. The host owns which
-                  // list. Phase 59 (item 3) — it routes through `unpinFromMenu`,
-                  // so the verb collapses out in its own slot like a minus click.
-                  rowClassName: 'action-dock-menu-item',
-                  rowDataAttrs: { 'data-dock-menu-item': 'unpin' },
-                  onSelect: (): void => {
-                    setMenu(null);
-                    unpinFromMenu(menu.id);
-                  },
-                },
-              ],
+  const pinMenuGroups = useMemo<CommandMenuGroup[]>(() => {
+    if (menu === null) return [];
+    const entry = toolById(menu.id);
+    // TFL-1116 C10 (R14) — the pin AFFORDANCE consults the ONE `dockEligible`
+    // predicate (through `dockPinAffordance`), so it can never offer a pin that
+    // the execution path (`addTool` -> `addDockPin`) would refuse.
+    const affordance =
+      entry === undefined
+        ? { allowed: false, reason: undefined }
+        : dockPinAffordance({ entry, alreadyPinned: menuPinned, pins });
+    return [
+      {
+        id: 'dock-pin',
+        label: entry?.label ?? menu.id,
+        entries: [
+          {
+            id: 'pin',
+            label: 'Pin to dock',
+            intent: 'secondary',
+            density: 'compact',
+            disabled: !affordance.allowed,
+            disabledReason: affordance.reason,
+            rowClassName: 'action-dock-menu-item',
+            rowDataAttrs: { 'data-dock-menu-item': 'pin' },
+            onSelect: (): void => {
+              setMenu(null);
+              addTool(menu.id);
             },
-          ],
-    [menu, menuPinned, pins, addTool, unpinFromMenu],
-  );
+          },
+          {
+            id: 'unpin',
+            label: 'Unpin from dock',
+            intent: 'secondary',
+            density: 'compact',
+            // Phase 37 (item 21) — ANY rendered verb can be unpinned now:
+            // a default stage verb is recorded in `dockUnpinned`, an
+            // explicit pin is dropped from `dockPins`. The host owns which
+            // list. Phase 59 (item 3) — it routes through `unpinFromMenu`,
+            // so the verb collapses out in its own slot like a minus click.
+            rowClassName: 'action-dock-menu-item',
+            rowDataAttrs: { 'data-dock-menu-item': 'unpin' },
+            onSelect: (): void => {
+              setMenu(null);
+              unpinFromMenu(menu.id);
+            },
+          },
+        ],
+      },
+    ];
+  }, [menu, menuPinned, pins, addTool, unpinFromMenu]);
 
   /** Phase 113 (Quiet Actions) — the dock tile's intent by verb id. Everything
    *  not listed is `secondary` (the supporting-tool default). */
@@ -1291,6 +1336,10 @@ export function ActionDock(props: ActionDockProps): ReactElement {
           className={classes.join(' ')}
           data-dock-verb={verb.id}
           data-dock-pin={opts.pin ? verb.id : undefined}
+          /* TFL-1116 C10 (R14) — a persisted pin whose tool is temporarily
+             unavailable is EXPLAINED (disabled with its refusal `title`) rather
+             than hidden or reset. This hook marks just that case. */
+          data-dock-pin-ineligible={opts.pin && !verb.enabled ? verb.id : undefined}
           data-dock-exiting={opts.out === true ? verb.id : undefined}
           aria-label={verb.label}
           aria-pressed={pressed ? true : undefined}
@@ -1590,20 +1639,22 @@ export function ActionDock(props: ActionDockProps): ReactElement {
           popoverDataAttrs={{ 'data-dock-overflow-menu': 'true' }}
         />
       </div>
-      {/* Phase 104 (chunk 1) — the dock's TRAILING UTILITY: a labelled Tools
-          button that opens the EXISTING command palette (the SAME
-          `openCommandPalette` the Ctrl+K chord and the header's Tools row run).
-          It replaces the retired detached Ctrl+K hint and occupies the retired
-          edit pen's row slot; the fit budget still charges `DOCK_EDIT_SLOT`.
-          Docking customization now lives in the More menu (Customize dock). */}
+      {/* TFL-1116 C10 (R13) — the dock's TRAILING UTILITY. The ambiguous
+          "Tools" label is replaced by "All commands", which honestly names the
+          global Command Palette it opens (the SAME `openCommandPalette` the
+          Ctrl+K chord and the header's palette entry run). The canvas-level
+          entry is still needed for discoverability, so it is RELABELLED rather
+          than removed; the `data-dock-tools` hook is unchanged. Docking
+          customization lives in the More menu (Customize dock) and never
+          routes here. */}
       <Button
         intent="tertiary"
         kind="disclosure"
         density="standard"
         className="action-dock-verb action-dock-tools"
         data-dock-tools
-        aria-label="Tools"
-        title="Tools"
+        aria-label="All commands"
+        title="All commands"
         disabled={onOpenTools === undefined}
         onClick={(): void => {
           setMenu(null);
@@ -1614,8 +1665,26 @@ export function ActionDock(props: ActionDockProps): ReactElement {
         <span className="action-dock-icon" aria-hidden>
           <Icon name="toolsPalette" size="lg" />
         </span>
-        {!iconOnly && <span className="action-dock-tools-label">Tools</span>}
+        {!iconOnly && <span className="action-dock-tools-label">All commands</span>}
       </Button>
+      {/* TFL-1116 C10 (R14) — the explicit Done action for customization (EDIT)
+          mode. Visible only while customizing, it leaves the mode and closes the
+          dedicated chooser in one click. */}
+      {editMode && (
+        <Button
+          type="button"
+          intent="primary"
+          kind="action"
+          density="standard"
+          className="action-dock-done"
+          data-dock-done
+          aria-label="Done customizing the dock"
+          title="Done customizing the dock"
+          onClick={exitCustomize}
+        >
+          Done
+        </Button>
+      )}
       {/* DEF-312 — the Pin/Unpin menu is portaled to `document.body`. The dock
           carries `transform: translateX(-50%)`, and a transformed ancestor is
           the containing block for `position: fixed` descendants, so the menu

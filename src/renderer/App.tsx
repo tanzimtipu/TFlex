@@ -54,7 +54,7 @@ import { AppHeader } from "./components/AppHeader";
 // Phase 111 (chunk D1) — the Split Navigator ratio's clamp is the panel's ONE
 // exported contract, so App persists the same value the panel displays.
 import { clampSplitRatio } from "./components/ContextPanel";
-import { DocumentRail } from "./components/DocumentRail";
+import { DocumentRail, isDocumentRailVisible } from "./components/DocumentRail";
 import { Toasts, type Toast } from "./components/Toasts";
 import { printWindowOpenFailureMessage } from "./print-window/context";
 import { TitleBar, type MenuGroup } from "./components/TitleBar";
@@ -119,9 +119,18 @@ import {
   type DockAvailability,
 } from "./state/dockModel";
 import { saveIntentFor } from "./state/saveGuard";
-import { collapsePreferenceAfterToggle, inspectorCollapsedFor, resolveDockLadder } from "./state/dockResponsive";
-import { dockToolsForStage, toolById, type ToolEntry } from "./state/toolsRegistry";
+import {
+  collapsePreferenceAfterToggle,
+  DOCK_LADDER_BREAKPOINTS,
+  inspectorCollapsedFor,
+  resolveContextPanelSurface,
+  resolveDockLadder,
+  resolveInspectorSurface,
+} from "./state/dockResponsive";
+import type { ContextPanelSurface, InspectorSurface } from "./state/dockResponsive";
+import { dockToolsForStage, toolById, TOOL_REGISTRY, type ToolEntry } from "./state/toolsRegistry";
 import { DEFAULT_HOME_TOOLS, HOME_FIXED_TOOL_ID, sanitizeHomeTools } from "./state/homeTools";
+import { deriveCommandSurface, filterEntriesForSurface, filterMenuGroupsForSurface } from "./state/commandCapability";
 // Phase 36 (chunk 4) — the Command Palette. `paletteChordFor` owns the
 // Ctrl+K / legacy Ctrl+Shift+P chords (Ctrl+P is deliberately absent — it
 // stays Print) and `bumpToolUsage` is the frequency counter the palette
@@ -187,6 +196,7 @@ import {
   preferencesReducer,
 } from "./state/preferences";
 import { applyAnnotationPaletteChange } from "./state/colorPalette";
+import { exportDraftFor, type ExportDraft } from "./state/exportDraft";
 import {
   dispatchMenuAction,
   gateOnActiveDoc,
@@ -209,7 +219,10 @@ import {
   type SetOutlineFn,
 } from "./state/outlineEditor";
 import { recordRailTab, restoreRailTab } from "./state/navigatorState";
+import { livePageSizeScopeKey } from "./state/pageSizeScope";
 import { splitRecentPath } from "./utils/recentPath";
+import { isDevelopmentBuild } from "./utils/devEnvironment";
+import { recordSampleRecent } from "./utils/sampleRecents";
 import { toArrayBuffer } from "./utils/toArrayBuffer";
 import { createDebouncer } from "./utils/debounce";
 import { formatBytes as formatBytesForToast } from "./utils/formatBytes";
@@ -784,6 +797,20 @@ export function App(): ReactElement {
   // fight the ladder.
   const [inspectorCollapsed, setInspectorCollapsed] = useState(false);
   const inspectorCollapsedEffective = inspectorCollapsedFor(inspectorCollapsed, dockLadder);
+  // TFL-1117 (R01) — the compact Inspector's in-memory drawer-open intent.
+  // Below the ladder threshold the panel cannot reserve a grid column without
+  // starving the page, so the "Expand inspector" control opens it as an
+  // OVERLAY drawer instead of the wide expanded/collapsed pair. This is
+  // session-only panel-open intent (never a persisted AppSettings field): the
+  // persisted `inspectorCollapsed` still records the wide-width collapse
+  // preference, and the drawer clears itself once the window is wide again.
+  const [inspectorDrawerOpen, setInspectorDrawerOpen] = useState(false);
+  // TFL-1116 C11 (R16) — the compact ContextPanel's in-memory drawer-open
+  // intent, the panel-scoped mirror of `inspectorDrawerOpen`. Below the panel
+  // ladder threshold the compact stage launcher's open intent surfaces the
+  // ACTIVE stage's context as an overlay drawer; it clears itself once the
+  // window is wide enough for the docked panel.
+  const [panelDrawerOpen, setPanelDrawerOpen] = useState(false);
   // Phase 112 (TFL-854, chunk H) — the resizable side-panel widths. App owns
   // the live value (a drag updates it without a settings write per frame); the
   // settings write happens on gesture commit through the shared trackAndSave
@@ -830,6 +857,10 @@ export function App(): ReactElement {
   // fails loud with a toast rather than a silent no-op.
   const activeTabHasDocument =
     tabs.activeId !== null && openTabs[tabs.activeId] !== undefined;
+  // TFL-1116 C4 (R05) — the ONE surface capability evaluator. Document-only
+  // commands (Save / Save As / Close Tab / Undo / Redo / OCR / Find / Print)
+  // are ABSENT — not merely disabled — on Home.
+  const commandSurface = deriveCommandSurface(activeTabHasDocument);
   // Dialog state
   const [mergeOpen, setMergeOpen] = useState(false);
   const [splitOpen, setSplitOpen] = useState(false);
@@ -982,6 +1013,12 @@ export function App(): ReactElement {
   // changes and refreshed after a successful layer toggle. The 3D list is
   // also rendered as a non-dismissible notice above the page area.
   const [layersByDoc, setLayersByDoc] = useState<Record<string, PdfLayer[]>>({});
+  // TFL-1119 (TFL-1116 C2) - the document-scoped Deliver export draft, keyed
+  // by the active tab id (per-document and stable across a tab switch). Owned
+  // here so the Inspector's controlled export surface re-renders from stored
+  // state after a collapse remount, a stage switch or a tab switch; reading or
+  // writing it never runs an export. Renderer-local and in-memory only.
+  const [exportDrafts, setExportDrafts] = useState<Record<string, ExportDraft>>({});
   const [cadByDoc, setCadByDoc] = useState<Record<string, PdfCadMetadata | null>>({});
   const [content3dByDoc, setContent3dByDoc] = useState<Record<string, Pdf3dContent[]>>({});
   // Phase 111 (chunk D2a) — the active navigator view, remembered SEPARATELY
@@ -1071,7 +1108,42 @@ export function App(): ReactElement {
   // rail and Inspector collapse (derived, never persisted) and is cleared
   // simply by the mode closing or the active tab changing.
   const bookViewActive = bookViewTabId !== null && bookViewTabId === tabs.activeId;
-  const inspectorCollapsedForBookView = inspectorCollapsedEffective || bookViewActive;
+  // TFL-1116 C11 (R16) — the ContextPanel's ONE render surface. Below the panel
+  // ladder threshold this resolves to the compact `drawer` (when the launcher
+  // opened it) or the collapsed stage-launcher strip; at/above the threshold it
+  // keeps the existing persisted expanded/collapsed behaviour. Book view forces
+  // the panel shut, so it wins over the drawer.
+  const panelSurface: ContextPanelSurface = resolveContextPanelSurface(
+    viewportWidth,
+    pagesPanelCollapsed,
+    panelDrawerOpen,
+  );
+  const panelCollapsedSurface = panelSurface === 'collapsed' || bookViewActive;
+  const panelDrawerSurface = panelSurface === 'drawer' && !bookViewActive;
+  // Once the window is wide enough for the docked panel the drawer is no longer
+  // reachable; drop the stale open intent rather than letting it re-open on the
+  // next shrink.
+  useEffect((): void => {
+    if (viewportWidth >= DOCK_LADDER_BREAKPOINTS.panel) setPanelDrawerOpen(false);
+  }, [viewportWidth]);
+  // TFL-1117 (R01) — the Inspector's ONE render surface. Below the ladder
+  // threshold this resolves to the compact `drawer` (when the user opened it)
+  // or the collapsed strip; at/above the threshold it keeps the existing
+  // persisted expanded/collapsed behaviour unchanged. Book view still forces
+  // the panel shut, so it wins over the drawer.
+  const inspectorSurface: InspectorSurface = resolveInspectorSurface(
+    viewportWidth,
+    inspectorCollapsed,
+    inspectorDrawerOpen,
+  );
+  const inspectorCollapsedSurface = inspectorSurface === 'collapsed' || bookViewActive;
+  const inspectorDrawerSurface = inspectorSurface === 'drawer' && !bookViewActive;
+  // Once the window is wide enough for the docked panel the drawer is no
+  // longer reachable; drop the stale open intent rather than letting it
+  // re-open the drawer on the next shrink.
+  useEffect((): void => {
+    if (viewportWidth >= DOCK_LADDER_BREAKPOINTS.inspector) setInspectorDrawerOpen(false);
+  }, [viewportWidth]);
   const [aboutOpen, setAboutOpen] = useState(false);
   const [prefsOpen, setPrefsOpen] = useState(false);
   // Phase 44 — the account surface. `accountsOpen` is only ever meaningful
@@ -1738,6 +1810,14 @@ export function App(): ReactElement {
   // writing a partial object would wipe theme / geometry / recents
   // (same null-guard shape as onToggleTheme above).
   const togglePagesPanelCollapsed = useCallback((): void => {
+    // TFL-1116 C11 (R16) — below the panel ladder threshold the panel cannot
+    // reserve a column, so the control opens/closes the overlay DRAWER (the
+    // compact stage launcher's open intent) instead of writing the persisted
+    // preference. At/above the threshold the existing semantics are unchanged.
+    if (viewportWidth < DOCK_LADDER_BREAKPOINTS.panel) {
+      setPanelDrawerOpen((open) => !open);
+      return;
+    }
     // DEF-335 — record the intent the control's label shows. While rung 2
     // forces the panel collapsed the control reads "Expand", so one click
     // records the expand preference; the panel then expands once the window
@@ -1747,13 +1827,28 @@ export function App(): ReactElement {
     if (settings === null) return;
     const updated: AppSettings = { ...settings, pagesPanelCollapsed: next };
     trackAndSave(updated);
-  }, [pagesPanelCollapsedEffective, settings, trackAndSave]);
+  }, [viewportWidth, pagesPanelCollapsedEffective, settings, trackAndSave]);
+
+  // TFL-1116 C11 (R16) — the compact context drawer's close handler. It drops
+  // the drawer intent; the panel returns to its collapsed stage launcher.
+  const closePanelDrawer = useCallback((): void => {
+    setPanelDrawerOpen(false);
+  }, []);
 
   // Phase 112 (TFL-854, chunk H) — the Inspector collapse control persists its
   // preference through the SAME trackAndSave path. DEF-335: the control records
   // the intent its label shows (while the ladder forces the collapse it reads
   // "Expand", so one click records the expand preference).
+  //
+  // TFL-1117 (R01) — below the ladder threshold the panel cannot reserve a
+  // column, so the control opens/closes the overlay DRAWER instead of writing
+  // the persisted preference. At/above the threshold the existing
+  // preference semantics are unchanged.
   const toggleInspectorCollapsed = useCallback((): void => {
+    if (viewportWidth < DOCK_LADDER_BREAKPOINTS.inspector) {
+      setInspectorDrawerOpen((open) => !open);
+      return;
+    }
     const next = collapsePreferenceAfterToggle(inspectorCollapsedEffective);
     setInspectorCollapsed(next);
     setSettings((prev) => {
@@ -1762,7 +1857,14 @@ export function App(): ReactElement {
       trackAndSave(updated);
       return updated;
     });
-  }, [inspectorCollapsedEffective, trackAndSave]);
+  }, [viewportWidth, inspectorCollapsedEffective, trackAndSave]);
+
+  // TFL-1117 (R01) — the compact drawer's close handler (`onClose`). It drops
+  // the drawer intent; the Inspector returns focus to its Expand opener once
+  // the collapsed strip remounts (see the Inspector's drawer effect).
+  const closeInspectorDrawer = useCallback((): void => {
+    setInspectorDrawerOpen(false);
+  }, []);
 
   const pushToast = useCallback((kind: Toast["kind"], text: string): void => {
     dispatchError({ type: "push", toast: { kind, text } });
@@ -2558,12 +2660,10 @@ export function App(): ReactElement {
         });
         if (opened !== null && routing !== null) routing.show(opened.tabId);
         if (settings !== null) {
-          const recent: RecentFile = {
-            path: samplePath,
-            name,
-            openedAt: new Date().toISOString(),
-          };
-          await window.tflex.addRecentFile(recent);
+          // TFL-1143 (R09) — a bundled-sample open is recorded in the Recent
+          // list ONLY in a development build, so fixture opens never pollute a
+          // production user's real MRU.
+          await recordSampleRecent(name, window.tflex);
         }
       } catch (e) {
         const msg = e instanceof Error ? e.message : String(e);
@@ -9293,7 +9393,7 @@ pushToast(
     // does nothing. The dep includes `activeTabHasDocument` because a document
     // loads into an already-active tab without `tabs.activeId` changing.
     window.tflex.menu.setEnabled(
-      snapshotMenuEnabled(tabs.activeId !== null, activeTabHasDocument),
+      snapshotMenuEnabled(activeTabHasDocument, activeTabHasDocument),
     );
   }, [tabs.activeId, activeTabHasDocument]);
 
@@ -9459,6 +9559,11 @@ pushToast(
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent): void => {
+      // TFL-1116 C4 (R05) — the document-only routes below key off the ONE
+      // surface evaluator. `activeDocId` is the narrowed projection of
+      // `activeTabHasDocument`: it is the active id only when the surface is a
+      // real document, and null on Home, so the branches are no-ops there.
+      const activeDocId = activeTabHasDocument ? tabs.activeId : null;
       // Bug 4 — Escape disarms any armed tool. The per-document
       // annotation tool is disarmed by DocumentView's own keydown
       // handler (its reducer lives there); App-owned arms (Sign,
@@ -9495,10 +9600,10 @@ pushToast(
         (e.ctrlKey || e.metaKey) &&
         e.key.toLowerCase() === "s" &&
         !e.shiftKey &&
-        tabs.activeId !== null
+        activeDocId !== null
       ) {
         e.preventDefault();
-        void onSave(tabs.activeId);
+        void onSave(activeDocId);
       } else if (
         // DEF-243 — Ctrl/Cmd+Shift+S reaches Save As. This is the same
         // route the menu's `menuContext.saveAs` entry takes (identical
@@ -9511,27 +9616,27 @@ pushToast(
         (e.ctrlKey || e.metaKey) &&
         e.shiftKey &&
         e.key.toLowerCase() === "s" &&
-        tabs.activeId !== null
+        activeDocId !== null
       ) {
         e.preventDefault();
-        void onSaveAs(tabs.activeId);
+        void onSaveAs(activeDocId);
       } else if (
         (e.ctrlKey || e.metaKey) &&
         (e.key.toLowerCase() === "z" || e.key.toLowerCase() === "y") &&
-        tabs.activeId !== null &&
+        activeDocId !== null &&
         !e.shiftKey
       ) {
         e.preventDefault();
-        if (e.key.toLowerCase() === "z") void onUndo(tabs.activeId);
-        else void onRedo(tabs.activeId);
+        if (e.key.toLowerCase() === "z") void onUndo(activeDocId);
+        else void onRedo(activeDocId);
       } else if (
         (e.ctrlKey || e.metaKey) &&
         e.shiftKey &&
         e.key.toLowerCase() === "z" &&
-        tabs.activeId !== null
+        activeDocId !== null
       ) {
         e.preventDefault();
-        void onRedo(tabs.activeId);
+        void onRedo(activeDocId);
       } else if (
         // DEF-049 — Ctrl/Cmd+Shift+R opens the OCR dialog. The native
         // menu already wires the same accelerator (src/main/menu.ts:
@@ -9546,7 +9651,7 @@ pushToast(
         (e.ctrlKey || e.metaKey) &&
         e.shiftKey &&
         e.key.toLowerCase() === "r" &&
-        tabs.activeId !== null
+        activeDocId !== null
       ) {
         e.preventDefault();
         onOcrClick();
@@ -9554,7 +9659,7 @@ pushToast(
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [onOpenClick, closeTab, onSave, onSaveAs, onUndo, onRedo, onOcrClick, tabs.activeId, disarmEditTools]);
+  }, [onOpenClick, closeTab, onSave, onSaveAs, onUndo, onRedo, onOcrClick, tabs.activeId, activeTabHasDocument, disarmEditTools]);
 
   useEffect(() => {
     let cancelled = false;
@@ -9807,17 +9912,22 @@ pushToast(
     [],
   );
 
+  const filteredMenuGroups = useMemo<MenuGroup[]>(
+    () => filterMenuGroupsForSurface(menuGroups, commandSurface),
+    [menuGroups, commandSurface],
+  );
+
   // Phase 105 (chunk C) — the File trigger and the application menu consume
   // DISJOINT slices of the same audited group list. The File popover keeps the
   // File group only; the application menu takes Edit / View / Tools / Help.
   // No group, row, label or action id is added, removed or renamed.
   const fileMenuGroups = useMemo<MenuGroup[]>(
-    () => menuGroups.filter((g) => g.id === "file"),
-    [menuGroups],
+    () => filteredMenuGroups.filter((g) => g.id === "file"),
+    [filteredMenuGroups],
   );
   const appMenuGroups = useMemo<MenuGroup[]>(
-    () => menuGroups.filter((g) => g.id !== "file"),
-    [menuGroups],
+    () => filteredMenuGroups.filter((g) => g.id !== "file"),
+    [filteredMenuGroups],
   );
 
   /** True when the active tab is an empty placeholder (no document).
@@ -9828,6 +9938,30 @@ pushToast(
 
   const activeTab = tabs.activeId !== null ? openTabs[tabs.activeId] : null;
   const activeEngineUi = tabs.activeId !== null ? engineUi[tabs.activeId] : null;
+
+  // TFL-1119 (TFL-1116 C2) - the active document's controlled export draft.
+  // `exportDrafts` is keyed by the active tab id, so a tab switch resolves that
+  // document's own draft and a remount re-renders from it instead of resetting.
+  const activeExportDraft = exportDraftFor(
+    exportDrafts,
+    tabs.activeId,
+    settings?.exportImageDpi ?? DEFAULT_EXPORT_IMAGE_DPI,
+  );
+  const onExportDraftChange = useCallback(
+    (patch: Partial<ExportDraft>): void => {
+      const docId = tabs.activeId;
+      if (docId === null) return;
+      setExportDrafts((prev) => {
+        const current = exportDraftFor(
+          prev,
+          docId,
+          settingsRef.current?.exportImageDpi ?? DEFAULT_EXPORT_IMAGE_DPI,
+        );
+        return { ...prev, [docId]: { ...current, ...patch } };
+      });
+    },
+    [tabs.activeId],
+  );
 
   // Phase 57 (feature A) — fetch the active document's engineering surfaces
   // (layers, PDF/E metadata, 3D content) whenever the active engine doc id
@@ -9904,6 +10038,12 @@ pushToast(
   // visibility also honours the ladder's rung 1. The inset machinery and the
   // .app-main data attributes read this ONE derived flag.
   const inspectorVisible = inspectorOpen && !inspectorCollapsedEffective;
+  // TFL-1117 (R01) — while the compact DRAWER is open the Inspector overlays
+  // the canvas, so it must reserve NO grid column/inset. The composition is
+  // told the panel is not open and the inline style pins --tools-panel-w /
+  // --tf-tools-inset to 0. `data-tools-open` already reads `inspectorVisible`
+  // (false at compact widths), so its inset driver stays off too.
+  const inspectorReserveOpen = inspectorOpen && !inspectorDrawerSurface;
 
   // Phase 112 (TFL-854, chunk H) — the ONE panel composition. The rail's
   // effective collapse folds in the ladder rung + book view (the same condition
@@ -9919,8 +10059,8 @@ pushToast(
     railWidthPx: panelLeftWidth,
     railCollapsed: railCollapsedEffective,
     toolsWidthPx: panelRightWidth,
-    toolsCollapsed: inspectorCollapsedForBookView,
-    inspectorOpen,
+    toolsCollapsed: inspectorCollapsedSurface,
+    inspectorOpen: inspectorReserveOpen,
   });
   const railWidthPx = panelComposition.railPx;
   const toolsWidthPx = panelComposition.toolsPx;
@@ -9928,7 +10068,12 @@ pushToast(
   const appMainPanelStyle: CSSProperties = {
     "--tf-rail-w": `${railWidthPx}px`,
     "--tf-tools-inset": `${toolsInsetPx}px`,
-    ...(inspectorOpen ? { "--tools-panel-w": `${toolsWidthPx}px` } : {}),
+    ...(inspectorReserveOpen ? { "--tools-panel-w": `${toolsWidthPx}px` } : {}),
+    // The open drawer overlays the canvas: it reserves no inset and no docked
+    // width, so the page never narrows behind it.
+    ...(inspectorDrawerSurface
+      ? { "--tools-panel-w": "0px", "--tf-tools-inset": "0px" }
+      : {}),
   } as CSSProperties;
 
   const onPanelLeftResize = useCallback((next: number): void => {
@@ -10484,21 +10629,30 @@ pushToast(
 
   // Phase 112 (TFL-854 C2 follow-up) — each mounted DocumentView publishes the
   // page sizes it has ALREADY measured for its mounted PageViews (its
-  // `onPageSize` map). The host reads the FOCUSED pane's map first so a
+  // `onPageSize` map). The host reads the ACTIVE scope's map first so a
   // normally-opened document shows real dimensions WITHOUT opening the Crop
-  // dialog (which is what seeds `activePageSizes`). Keyed by pane, mirroring
-  // `pageSelections`. Nothing extra is measured here: no getPage sweep on open.
+  // dialog (which is what seeds `activePageSizes`).
+  //
+  // TFL-1130 (TFL-1116 DEF-620) — the scope is the PANE in Multi Mode ("A" /
+  // "B") and the TAB id in single mode, via `livePageSizeScopeKey`. Keying the
+  // single mode map by a shared `"single"` string collided across tabs: every
+  // mounted tab reports, the last one overwrote the map, and a re-activated tab
+  // never re-reported, so the Inspector's Size row showed the previously-focused
+  // tab's geometry. Per-tab keying (mirroring `exportDraft` / `navigatorState`)
+  // keeps each tab's measured map so a tab-away/tab-back round trip resolves the
+  // ACTIVE tab's own geometry. Nothing extra is measured here: no getPage sweep
+  // on open.
   const [livePageSizes, setLivePageSizes] = useState<
     Record<string, ReadonlyMap<number, { w: number; h: number }>>
   >({});
   const reportPageSizesFor = useCallback(
-    (pane: PaneId | null, sizes: ReadonlyMap<number, { w: number; h: number }>): void => {
-      const key = pane ?? "single";
-      setLivePageSizes((prev) => (prev[key] === sizes ? prev : { ...prev, [key]: sizes }));
+    (scopeKey: string, sizes: ReadonlyMap<number, { w: number; h: number }>): void => {
+      setLivePageSizes((prev) => (prev[scopeKey] === sizes ? prev : { ...prev, [scopeKey]: sizes }));
     },
     [],
   );
-  const livePageSizesForScope = livePageSizes[stagePane ?? "single"];
+  const livePageSizesForScope =
+    livePageSizes[livePageSizeScopeKey(stagePane, tabs.activeId)];
   const activePageSelection: number[] = useMemo(() => {
     if (multiMode.enabled) return pageSelections[multiMode.focused] ?? [];
     return pageSelections["single"] ?? [];
@@ -10841,12 +10995,19 @@ pushToast(
   // Command Palette) read this ONE map, so neither can offer a no-op.
   const appActionGates = useMemo<Record<string, () => boolean>>(
     () => ({
+      // DEF-626 (R05) — the document-only File verbs behind the palette. An
+      // empty placeholder tab has a non-null `tabs.activeId` but no engine
+      // session, so a bare id check would offer them enabled on Home; the gate
+      // is the existing `activeTabHasDocument` predicate (a real document).
+      save: (): boolean => activeTabHasDocument,
+      saveAs: (): boolean => activeTabHasDocument,
+      closeTab: (): boolean => activeTabHasDocument,
       undo: (): boolean => activeEngineUi?.canUndo ?? false,
       redo: (): boolean => activeEngineUi?.canRedo ?? false,
       paneOpen: (): boolean => multiMode.enabled,
       paneClear: (): boolean => multiMode.enabled,
     }),
-    [activeEngineUi, multiMode.enabled],
+    [activeEngineUi, multiMode.enabled, activeTabHasDocument],
   );
 
   const dockAppToolEnabled = useCallback(
@@ -11028,15 +11189,18 @@ pushToast(
         void onOpenClick();
       },
       save: (): void => {
+        if (!activeTabHasDocument) return;
         const id = activeTabIdRefLocal.current;
         if (id !== null) void onSave(id);
       },
       saveAs: (): void => {
+        if (!activeTabHasDocument) return;
         const id = activeTabIdRefLocal.current;
         if (id !== null) void onSaveAs(id);
       },
       print: openPrintWindow,
       closeTab: (): void => {
+        if (!activeTabHasDocument) return;
         const id = activeTabIdRefLocal.current;
         if (id !== null) closeTab(id);
       },
@@ -11099,6 +11263,7 @@ pushToast(
       onClearPane,
       onStageChange,
       selectRailTab,
+      activeTabHasDocument,
     ],
   );
   // Phase 58 (chunk 4) — the HOME row's run map. It carries ONLY tools that
@@ -11146,6 +11311,17 @@ pushToast(
         ? [...DEFAULT_HOME_TOOLS]
         : sanitizeHomeTools(settings.homeTools),
     [settings?.homeTools],
+  );
+
+  // DEF-626 (R05) — the Command Palette corpus must obey the SAME surface
+  // capability algebra as the File / application menus. On Home the
+  // document-only rows (Save / Save As / Close Tab / Undo / Redo / Recognize
+  // Text) are DROPPED from the corpus entirely — absent, not listed-disabled —
+  // so the palette cannot offer a silent no-op while an empty tab keeps
+  // `tabs.activeId` non-null. On a document the registry is passed by reference.
+  const paletteEntries = useMemo(
+    () => filterEntriesForSurface(TOOL_REGISTRY, commandSurface),
+    [commandSurface],
   );
 
   // The live availability gate. DEF-327 — the FOCUSED pane's published dock
@@ -11381,8 +11557,9 @@ pushToast(
           appMenuGroups={appMenuGroups}
           menuContext={menuContext}
           onMultiModeToggle={onMultiModeToggle}
-          onOpenFind={openFindInDocument}
+          onOpenFind={activeTabHasDocument ? openFindInDocument : undefined}
           findEnabled={activeTabHasDocument}
+          commandSurface={commandSurface}
           // Phase 30 — the Print icon. Phase 40 (item 5) — Ctrl+K Search tools.
           onPrint={openPrintWindow}
           // DEF-336 — enabled only with a real document on the active tab.
@@ -11427,27 +11604,34 @@ pushToast(
           title row. It owns the tab strip (`.tab-area`/`.tab-list`), the "+"
           new tab affordance, the reorder / tear-out gesture and the uniform
           overflow plan. The Multi Mode composite tab and its disabled "+"
-          reason are unchanged; chunk D adds the All-tabs switcher. */}
-      <DocumentRail
-        activeId={stripActiveId}
-        // `stripTabs` is memoised above so its reference is stable across App
-        // re-renders that don't actually change tab state.
-        tabs={stripTabs}
-        // Phase 32 — the strip click is the Multi Mode routing seam.
-        onActivate={onTabStripActivate}
-        // Phase 34 (chunk 2) — the composite tab's close runs the
-        // per-document modified queue over BOTH pane documents.
-        onClose={onHeaderClose}
-        // Phase 58 (chunk 5) — reorder the strip.
-        onMoveTab={onMoveTab}
-        // Phase 58 (chunk 6b) — tear a tab out into a new app window.
-        onDetachTab={detachTab}
-        onNewEmptyTab={onNewEmptyTab}
-        // DEF-288 — while Multi Mode is on the "+" is disabled with a reason.
-        multiModeEnabled={multiMode.enabled}
-        // Phase 58 — the tab-strip style preference.
-        tabStyle={settings.tabStyle ?? DEFAULT_TAB_STYLE}
-      />
+          reason are unchanged; chunk D adds the All-tabs switcher.
+          TFL-1141 (R07) — the row is mounted ONLY when at least one document
+          session exists (`stripTabs` already counts the Multi Mode composite
+          tab). With zero tabs Home reserves NO blank tab strip; Home's Open
+          action is the primary route to a document, and the rail's own "+"
+          affordance was already gated on `tabs.length >= 1` inside the rail. */}
+      {isDocumentRailVisible(stripTabs.length) && (
+        <DocumentRail
+          activeId={stripActiveId}
+          // `stripTabs` is memoised above so its reference is stable across App
+          // re-renders that don't actually change tab state.
+          tabs={stripTabs}
+          // Phase 32 — the strip click is the Multi Mode routing seam.
+          onActivate={onTabStripActivate}
+          // Phase 34 (chunk 2) — the composite tab's close runs the
+          // per-document modified queue over BOTH pane documents.
+          onClose={onHeaderClose}
+          // Phase 58 (chunk 5) — reorder the strip.
+          onMoveTab={onMoveTab}
+          // Phase 58 (chunk 6b) — tear a tab out into a new app window.
+          onDetachTab={detachTab}
+          onNewEmptyTab={onNewEmptyTab}
+          // DEF-288 — while Multi Mode is on the "+" is disabled with a reason.
+          multiModeEnabled={multiMode.enabled}
+          // Phase 58 — the tab-strip style preference.
+          tabStyle={settings.tabStyle ?? DEFAULT_TAB_STYLE}
+        />
+      )}
       {/* Phase 36 (chunk 5) — the open INSPECTOR's state lives on .app-main
           as a data attribute, driven by the SAME `inspectorOpen` flag that
           mounts the panel below. The CSS animates --tf-tools-inset from it
@@ -11469,7 +11653,10 @@ pushToast(
         style={appMainPanelStyle}
         data-tools-open={inspectorVisible ? "true" : "false"}
         data-rail-collapsed={pagesPanelCollapsedEffective || bookViewActive ? "true" : "false"}
-        data-inspector-collapsed={inspectorCollapsedForBookView ? "true" : "false"}
+        data-inspector-collapsed={inspectorCollapsedSurface ? "true" : "false"}
+        // TFL-1117 (R01) — true while the compact Inspector overlays the
+        // canvas as a drawer instead of reserving a grid column.
+        data-inspector-drawer={inspectorDrawerSurface ? "true" : "false"}
         // Phase 37 (item 8) — true on the welcome/home screen. Drops the
         // rail's track (Phase 108 Workspace Rail: --tf-stage-rail-w, 72px)
         // and lets the stage span the full frame.
@@ -11489,7 +11676,7 @@ pushToast(
             data-testid="panel-resize-left"
           />
         )}
-        {inspectorOpen && !inspectorCollapsedForBookView && (
+        {inspectorReserveOpen && !inspectorCollapsedSurface && (
           <PanelResizeHandle
             side="right"
             width={panelRightWidth}
@@ -11562,6 +11749,8 @@ pushToast(
                 });
               }}
               samplesResolver={samplesResolver}
+              // TFL-1143 (R09) — sample fixtures render only in a dev build.
+              showSamples={isDevelopmentBuild()}
             />
           }
           multiMode={multiMode}
@@ -11683,7 +11872,25 @@ pushToast(
                 defaultLayout={
                   (settings.readingDefaults ?? DEFAULT_READING_DEFAULTS).comics.layout
                 }
-                onClose={closeBookView}
+                initialPage={open.persisted.currentPage}
+                onClose={(finalPage?: number): void => {
+                  // TFL-1116 R25 — carry the reading location reached in Book
+                  // View back into the tab's persisted viewer, so the
+                  // DocumentView re-mounts at that page instead of the page it
+                  // held before Book View opened.
+                  if (typeof finalPage === 'number' && Number.isFinite(finalPage)) {
+                    persistFor(meta.id)({ ...open.persisted, currentPage: finalPage });
+                  }
+                  closeBookView();
+                }}
+                onLocationChange={(finalPage?: number): void => {
+                  // DEF-627 — the SAME persist without the close, so a tab-switch
+                  // exit (which unmounts Book View without `onClose`) still
+                  // writes the reached page before the tab is backgrounded.
+                  if (typeof finalPage === 'number' && Number.isFinite(finalPage)) {
+                    persistFor(meta.id)({ ...open.persisted, currentPage: finalPage });
+                  }
+                }}
                 annotations={ann.annotations}
                 liveAnnTextIds={ann.liveAnnTextIds}
                 onCreateAnnotation={ann.createAnnotation}
@@ -11763,8 +11970,12 @@ pushToast(
                     }
                     // Phase 112 (TFL-854 C2 follow-up) — publish this pane's
                     // live measured page sizes so the Inspector's Size row is
-                    // real on a normally-opened document.
-                    onPageSizesReport={(sizes): void => reportPageSizesFor(pane, sizes)}
+                    // real on a normally-opened document. TFL-1130 keys this by
+                    // the active tab in single mode (pane null) so a tab-away /
+                    // tab-back round trip keeps the ACTIVE tab's own geometry.
+                    onPageSizesReport={(sizes): void =>
+                      reportPageSizesFor(livePageSizeScopeKey(pane, tabId), sizes)
+                    }
                     onToast={pushToast}
                     engineState={engine.engineState}
                     // DEF-139 — visible-order flag for the slot ->
@@ -11959,8 +12170,14 @@ pushToast(
                     // Phase 16 — pages-panel collapsed state: App owns
                     // the persisted value; DocumentView threads it to
                     // the SideRail (the rail never owns the state).
-                    pagesPanelCollapsed={pagesPanelCollapsedEffective}
+                    // TFL-1116 C11 (R16) — the ContextPanel's effective surface.
+                    // At/above the panel threshold this is the persisted
+                    // preference (collapsed/expanded); below it the panel stays
+                    // collapsed to its stage launcher and the drawer overlays.
+                    pagesPanelCollapsed={panelCollapsedSurface}
                     onTogglePagesPanelCollapsed={togglePagesPanelCollapsed}
+                    contextDrawer={panelDrawerSurface}
+                    onCloseContextDrawer={panelDrawerSurface ? closePanelDrawer : undefined}
                     // Phase 59 (item 7 follow-up) — the host-owned rail tab,
                     // threaded to the Pages ContextPanel so the palette's
                     // "Page thumbnails" / "Bookmarks" commands switch it and
@@ -12120,7 +12337,12 @@ pushToast(
         {inspectorOpen && activeTab !== null && tabs.activeId !== null && (
           <Inspector
             stage={activeStage}
-            collapsed={inspectorCollapsedForBookView}
+            collapsed={inspectorCollapsedSurface}
+            // TFL-1117 (R01) — below the ladder threshold the panel renders as
+            // an overlay drawer; the close control is wired only for the
+            // drawer, so the wide expanded/collapsed behaviour is unchanged.
+            drawer={inspectorDrawerSurface}
+            onClose={inspectorDrawerSurface ? closeInspectorDrawer : undefined}
             // DEF-335 — the control's label follows the EFFECTIVE state, so a
             // click records the intent it shows: while the ladder forces the
             // collapse the control reads "Expand" and one click records the
@@ -12196,6 +12418,11 @@ pushToast(
             // then launches the EXISTING flow. `exportBridge` carries the same
             // optional `window.tflex.export` guard the dock/palette read.
             exportFormat={settings.exportImageFormat ?? null}
+            // TFL-1119 (TFL-1116 C2) - the controlled document-scoped draft
+            // survives a resize/collapse remount, a stage switch and a tab
+            // switch; editing it merges the patch into the active doc's entry.
+            exportDraft={activeExportDraft}
+            onExportDraftChange={onExportDraftChange}
             exportSourceName={activeTab.displayName}
             exportDpi={settings.exportImageDpi ?? DEFAULT_EXPORT_IMAGE_DPI}
             exportCurrentPage={Math.max(1, Math.floor(activeTab.persisted.currentPage))}
@@ -12847,6 +13074,7 @@ pushToast(
         toolUsage={settings.toolUsage}
         recentFiles={paletteRecents}
         onOpenRecent={onPaletteOpenRecent}
+        entries={paletteEntries}
       />
       {/* Phase 56 (features A / C / D) — the ONE shared reading-view shell.
           The stored `readingDefaults` seed the session; the user can change

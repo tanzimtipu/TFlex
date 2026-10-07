@@ -30,7 +30,7 @@ caught at the source instead of in a retest pass.
 
 | Control | Selector | Promised action | Unit test | E2e |
 |---|---|---|---|---|
-| `.app` grid template | `.app` (grid container) | Three rows (Phase 105 chunk C): the 48px title row (auto), the 40px document rail (auto) and app-main (1fr). The pre-Phase-105 two-row template (`.titlebar` + app-main) collapsed to two because the AppHeader sat inside the TitleBar; the rail is a real third grid item now. DEF-579: the single column is pinned to `minmax(0, 1fr)`, so no grid item (the document rail included) can size the track to its content and push the shell past the viewport. | `test/unit/renderer/designTokensContract.test.ts` (grid contract pins `auto auto 1fr`) + `test/unit/renderer/phase105_titleRow.test.tsx` | `e2e/phase13_gate_final.spec.cjs` SC1/SC5 (welcomescreen + workspace visible after gate) |
+| `.app` grid template | `.app` (grid container) | Three rows (Phase 105 chunk C): the 48px title row (auto), the 40px document rail (auto) and app-main (1fr). The pre-Phase-105 two-row template (`.titlebar` + app-main) collapsed to two because the AppHeader sat inside the TitleBar; the rail is a real third grid item now. TFL-1141 (R07): that rail row is conditional — it mounts only with >= 1 document tab — so `.app-main` is pinned to the final track (`grid-row: 3`) and can no longer auto-flow into the empty `auto` row (which collapsed the welcome pane). DEF-579: the single column is pinned to `minmax(0, 1fr)`, so no grid item (the document rail included) can size the track to its content and push the shell past the viewport. | `test/unit/renderer/designTokensContract.test.ts` (grid contract pins `auto auto 1fr`) + `test/unit/renderer/phase105_titleRow.test.tsx` + `test/unit/renderer/tfl1116_homeChrome.test.ts` (R07 gate + R06 inset) | `e2e/phase13_gate_final.spec.cjs` SC1/SC5 (welcomescreen + workspace visible after gate) + `e2e/tfl1116_r06_r07_home_chrome.spec.cjs` (zero-doc Home welcome visible with no rail) |
 | `.app-main` fills viewport | `.app-main` | Has non-zero height and contains the Welcome screen or Workspace after boot. Playwright's `toBeVisible()` on `.welcome` / `.workspace` proves the workspace is rendered, not hidden. | (CSS-level; new designTokensContract test pins the grid template) | `e2e/phase13_gate_final.spec.cjs` SC1 (`.titlebar` and `.welcome` both visible after launch) |
 
 ## Menu popover
@@ -61,6 +61,369 @@ Mode / Find rows (with the Find row's `disabledReason`) are preserved verbatim. 
 also adds Tab-close to `CommandMenu`, so both the File and application menus close on
 Tab. The application menu enters with the shared `TfMenu` motion in place of the
 retired FLIP morph. Test: `test/unit/renderer/appHeaderAppMenu.test.tsx`.
+
+TFL-1116 (Visual overhaul R03, chunk C3): the application menu now fits the
+viewport through ONE shared collision-aware placement, `placeOverlay`
+(`src/renderer/components/overlayPlacement.ts`, bound by the
+`useOverlayPlacement` / `useSubmenuPlacement` hooks in
+`useOverlayPlacement.ts`, mirroring the pure-clamp philosophy of
+`controlPlacement.ts`). `CommandMenu` gains an additive `collisionAware` prop
+(default `false`, so no other adopter changes): when set, the root is portaled to
+`document.body` and positioned `fixed` from the opener rect with the 8px viewport
+gutter, a viewport-bounded `max-height` / `max-width` and vertical-scroll only,
+and nested submenus are portaled and placed beside their row with a right-to-left
+flip when the right edge would overflow. Long labels wrap and the `.kbd`
+accelerator is a bounded non-shrinking column, so the popover is content-bounded
+and can shrink to the viewport. The `data-app-menu` / `data-app-menu-popover` /
+`.titlebar-menu-*` / `data-menu-action` / `.kbd` DOM contract is unchanged; the
+AppHeader application menu opts in via `collisionAware`. Tests:
+`test/unit/renderer/tfl1116_overlayPlacement.test.ts` (pure `placeOverlay` edge
+cases) + `test/unit/renderer/appHeaderAppMenu.test.tsx` (portal-scoped lookups,
+behaviour unchanged) + `test/unit/renderer/commandMenu.test.tsx`.
+
+DEF-618 (TFL-1121 rework, same chunk C3): the collision-aware surface must also
+be content-bounded, not merely clipped. The portaled/fixed root clears the legacy
+`.app-menu-popover { right: 0 }` anchor (`right: auto`) and renders at
+`width: max-content`, capped by the viewport-bounded `max-width`; the
+`.app-menu-popover.command-menu` rule re-asserts `right: auto` for the first
+render before the inline style lands, and the nested submenu clears `right` too.
+`useOverlayPlacement` measures the layout box (`offsetWidth` / `offsetHeight`)
+instead of `getBoundingClientRect`, because the `TfMenu` enter animation's
+`scale(0.95)` made the client rect 5% small and under-shifted the horizontal
+clamp. Guarded by the qa-owned e2e `e2e/tfl1116_r03_app_menu_fit.spec.cjs` (8px
+gutter on both sides, no horizontal scroll, at 960x640 / 1024x768 / 1280x800 /
+maximized).
+
+TFL-1124 (TFL-1116 C4, R05): the ACTIVE SURFACE decides document-only command
+availability through ONE renderer capability evaluator,
+`src/renderer/state/commandCapability.ts` (pure, React-free). "Home" means no
+document on the active tab, derived from the existing `activeTabHasDocument`
+predicate in `App.tsx`; `deriveCommandSurface` maps it to `"home"` / `"document"`.
+On Home the document-only commands — Save, Save As, Close Tab, Undo, Redo,
+Recognize Text, Find and Print — are ABSENT (not merely disabled) from the File
+popover, the application menu and the title-row toolbar, and their Ctrl/Cmd
+keyboard routes are no-ops; on a document they behave exactly as before. The
+File / application groups are derived from `filterMenuGroupsForSurface`
+(document-only action ids: `save`, `saveAs`, `closeTab`, `undo`, `redo`,
+`recognizeText`; an emptied group, e.g. Tools, is dropped). `AppHeader` gains an
+additive `commandSurface` prop (default `"document"`, so existing callers/tests
+are unchanged) that omits the Save / Save As / Print controls and the relocated
+Find row on Home while keeping Open, the Command Palette icon, the application
+menu trigger, the update indicator and the account slot. The `snapshotMenuEnabled`
+snapshot now keys Save / Save As / Close Tab / Undo / Redo to the document
+surface rather than a bare active-tab id. Tests:
+`test/unit/renderer/tfl1116_commandCapability.test.ts`; e2e
+`e2e/tfl1116_r05_home_command_gating.spec.cjs` (File / app menu / toolbar /
+keyboard on Home, document and background-document Home).
+
+DEF-626 (TFL-1176): the Command Palette is a FOURTH R05 surface and now obeys
+the same algebra. Its flat corpus is filtered with `filterEntriesForSurface`
+(the flat-shape sibling of `filterMenuGroupsForSurface`), so on Home the Save /
+Save a copy / Close Tab rows are ABSENT from the palette — not listed-disabled —
+even when an empty placeholder tab keeps `tabs.activeId` non-null; on a document
+the registry is passed by reference and the rows return. The `save` / `saveAs` /
+`closeTab` palette handlers key on `activeTabHasDocument` (a real engine session,
+`App.tsx`), and `appActionGates` carries the same three gates so the live
+availability can never disagree with the corpus. Tests:
+`test/unit/renderer/tfl1116_commandCapability.test.ts` (flat corpus on home /
+document); e2e `e2e/tfl1116_r05_home_command_gating.spec.cjs` Case D (Home behind
+an active empty tab: palette rows absent; document tab: rows present).
+
+TFL-1126 (TFL-1116 C5, R04): one document-scoped navigation model keeps the
+thumbnail navigator, the canvas and the ViewStrip footer in step after a
+COMMITTED page jump. `DocumentView` bumps a per-document `revealSeq` counter
+inside its single `jumpToPage` funnel (the ViewStrip input, the Next/Previous
+verbs, an external Multi Mode request, an outline/annotation jump and the
+initial-page restore all pass through it) and threads it to the thumbnail
+navigator through `ContextPanel` / `PaneThumbStrip`. `ThumbnailRail` recentres
+the viewed page's ACTUAL thumb element when that counter changes (layout-truth
+box, not the uniform slot estimate, so a far jump in a 520-page rail lands
+correctly), while a scroll-driven `currentPage` change leaves the counter
+untouched and preserves the Bug 3 gate. A commit that never lands releases the
+DEF-058 jump lock only when the scroller moves AWAY from the target, so the
+persisted reading page is the SETTLED canvas page rather than a mid-flight
+optimistic value; page selection is never mutated by a jump. Unit:
+`test/unit/renderer/tfl1116_navigationSync.test.tsx`; e2e
+`e2e/tfl1116_r04_navigation_sync.spec.cjs` (520-page doc: 1 -> 260 -> 520
+reveals the thumb, the footer agrees, Next is disabled at 520 and the
+selection is unchanged; tab away-and-back agrees). DEF-619 (QA reopened C5): a
+far committed jump across a 520-page document intermittently tripped React error
+#185 (maximum update depth) and blanked the window. Root cause: during the jump's
+smooth scroll the canvas mounts pages continuously and `DocumentView` published
+the growing `pageSizes` map to the host synchronously on every change, so the
+whole App re-rendered once per page; that render -> passive-effect -> setState
+cascade exceeded React's update-depth limit. Fix: `DocumentView` coalesces the
+page-size report to one `requestAnimationFrame` (the frame callback reads the
+live map, so no size is lost), and `SideRail`'s `slotTops`-keyed seeding effect
+bails out when the visible set is unchanged. Verified: dev e2e 10/10 and the QA
+isolation probe 0 crashes over 10 executions; R04 behaviour unchanged.
+
+TFL-1130 (TFL-1116 DEF-620): the Inspector's Page `Size` row no longer goes
+stale after a tab away/back round trip in single mode. Root cause: the host's
+`livePageSizes` map was keyed by pane (`reportPageSizesFor(pane, sizes)`), so in
+single mode (pane `null`) every mounted tab published under the same `"single"`
+key - the last tab to report overwrote it, and a re-activated tab whose measured
+sizes had not changed never re-reported. Fix: `livePageSizeScopeKey`
+(`src/renderer/state/pageSizeScope.ts`) keys the map by the PANE in Multi Mode
+(`"A"` / `"B"`, preserving the two-pane behaviour) and by the ACTIVE TAB id in
+single mode (mirroring the per-document keying of `exportDraft` /
+`navigatorState`), so each tab's measured geometry is stored under its own key
+and survives the round trip; the Inspector lookup reads
+`livePageSizes[livePageSizeScopeKey(stagePane, tabs.activeId)]`. Unit:
+`test/unit/renderer/tfl1116_pageSizeScope.test.ts`; e2e
+`e2e/tfl1128_geometry_generic.qa.spec.cjs` +
+`e2e/tfl1128_def619_geometry_probe.qa.spec.cjs` (both un-fixme'd; the generic
+spec also gains its missing `expect` import).
+
+TFL-1135 (TFL-1116 DEF-622): Multi Mode's shared Inspector Page `Size` row no
+longer reads "Not available" for a normally-opened document. Root cause: Multi
+Mode reuses the same `.tab-pane` (keyed by tab id, no remount) and only flips
+`multiPane`, so entering the mode / binding a document to a pane left
+`DocumentView`'s `pageSizes` (and its identity) untouched and the report effect,
+keyed only on `[pageSizes]`, never re-published: the host's pane-keyed
+`livePageSizes` maps stayed empty. Fix: the report effect also keys on
+`multiPane` (the pane component of `livePageSizeScopeKey`; single mode is keyed
+by this per-tab view's constant tab id), so entry to Multi Mode and every pane
+reassignment re-publish that view's OWN measured map under `"A"`/`"B"` with no
+remount. Unit: `test/unit/renderer/tfl1116_multimodePageSize.test.tsx`; e2e
+`e2e/tfl1130_multimode_geometry.qa.spec.cjs` (un-fixme'd: pane A 612x792, pane B
+595x842). The DEF-620 single-mode per-tab keying is unchanged.
+
+TFL-1137 (TFL-1116 C6, R12): the settled Action Dock and View Strip footer no
+longer fade their ENABLED label/icon content when idle. The 3s State 4 idle, its
+hover/focus restore and the `data-dock-idle` / `data-view-strip-idle` hooks are
+unchanged; only WHAT idle paints moved to chrome. `.action-dock[data-dock-idle='true']`
+drops the floating elevation (`box-shadow: none`) instead of `opacity: 0.4`, and
+`.view-strip[data-view-strip-idle='true']` calms the top separator
+(`border-top-color: transparent`) instead of fading `.view-strip-page` /
+`.view-strip-view`. Enabled content stays at full opacity (composited resting
+contrast for `--tf-icon-rest` on `--bg-elevated` and `--fg` on `--bg-toolbar`
+clears 4.5:1 in light/dark/frosted), while the canonical `.btn[disabled]`
+`opacity: 0.55` keeps disabled controls visibly muted. Unit:
+`test/unit/renderer/tfl1116_idleLegibility.test.ts`; e2e
+`e2e/tfl1116_r12_idle_legibility.spec.cjs` (settled dock + footer probes +
+screenshots `screenshots/tfl1116_r12_dock_idle.png` /
+`screenshots/tfl1116_r12_footer_idle.png`).
+
+TFL-1139 (TFL-1116 C6b, R21 + R26): the Deliver export primary action
+(`.export-config-action`, `Button intent="primary"`) is now a real CTA — 40px
+minimum height, a 13px semibold label and a `currentColor` glyph whose ink rides
+the button rather than the Inspector's neutral `.inspector svg` rule
+(`.export-config-action svg { color: currentColor }`). Disabled is an explicit
+muted-violet pair (`--btn-primary-disabled-bg` / `--btn-primary-disabled-fg`,
+new light + dark tokens) instead of a parent opacity fade; enabled and disabled
+ink both clear 4.5:1 (5.52:1 / 4.73:1 light). R26 unifies the panel type roles on
+the shared Quiet Precision tokens — `--tf-panel-heading-size` (16),
+`--tf-panel-body-size` (14), `--tf-panel-control-size` (13),
+`--tf-panel-helper-size` (12) — and shortens the Deliver output-checks legend,
+tightens the fidelity-notes block so it does not bury the CTA, and keeps the
+legacy `--tf-panel-secondary-label-size`. Unit:
+`test/unit/renderer/tfl1116_exportCtaTokens.test.ts`; e2e
+`e2e/tfl1116_r21_r26_export_cta.spec.cjs` (enabled/disabled contrast + compact
+960x640 drawer reachability; screenshots `screenshots/tfl1116_r21_cta_enabled.png`
+/ `screenshots/tfl1116_r21_cta_disabled.png` /
+`screenshots/tfl1116_r26_cta_compact_drawer.png`).
+
+TFL-1141 (TFL-1116 C7, R06 + R07): Home chrome. R06 — the title-bar brand
+(`.titlebar > .brand`) keeps a 16px leading inset (`--space-standard`) at EVERY
+width; the rule previously lived inside the `@media (max-width: 900px)` band, so
+at the default wide window the brand had no leading padding and its mark touched
+the native left edge. The rule is now global (the brand stays a drag surface, so
+the inset opens no dead strip). R07 — the 40px document rail is mounted only when
+at least one document session exists: `isDocumentRailVisible(tabCount)`
+(`DocumentRail.tsx`, mirroring `isStageRailVisible`) gates the App mount, so Home
+with zero tabs renders NO `.document-rail` / `.tab-area` row; one tab or more
+(including the Multi Mode composite session, which App folds into `stripTabs`)
+shows the colorful strip. `.app-main` is pinned to the final `1fr` grid track
+(`grid-row: 3`) so removing the rail row cannot auto-flow the main area into the
+`auto` row and collapse the welcome pane. Unit:
+`test/unit/renderer/tfl1116_homeChrome.test.ts`; e2e
+`e2e/tfl1116_r06_r07_home_chrome.spec.cjs` (zero-doc Home has no rail; brand inset
+16px; one-doc Home shows the strip; screenshots
+`screenshots/tfl1116_r06_brand_inset.png` /
+`screenshots/tfl1116_r07_zero_tab_home.png`).
+
+TFL-1153 (TFL-1116 C8, R10): Home Orbit arc contrast + motion scope. R10 — the
+thin violet/amber arcs read too faint on the gray Home canvas. The motif is now
+inked from the Jovrel Halo mark's violet/amber: the base light AND frosted
+surfaces use the brand violet (`var(--tf-accent)`) with a deepened amber
+(`#B45309`), and dark uses the lightened pair (`#B9A4FF` / `#FBB724`). Frosted
+previously inherited the dark pastels even though it paints the same LIGHT
+`--bg-sunken` (`#e8ebf0`), so its arcs washed out; it now shares the deep light
+ink. The ring layer grew 320 -> 360px and the opacity moved to the top of the
+sanctioned 0.18-0.28 band (0.28 base / 0.26 dark). A slow FILTER hue drift
+(`tf-anim-orbit-hue`, hue-rotate +/-6deg over the shared 18s
+`--motion-duration-orbit`) runs on the decorative rings only - never opacity,
+never a moving gradient - so the copy stays on a stable background; the global
+reduced-motion stop kills it and the `::after` ring keeps its authored static
+pose. The four-gate effective motion scope is unchanged and pinned (Animations
+ON AND reduced-motion OFF AND Home visible AND Home pause OFF; each gate
+independently disables the drift). Unit:
+`test/unit/renderer/tfl1116_orbitContrast.test.ts` +
+`test/unit/renderer/tfl1116_orbitScope.test.ts`; e2e
+`e2e/tfl1116_r10_orbit.spec.cjs` (rest / paused / reduced-motion screenshots
+`screenshots/tfl1116_r10_orbit_rest.png` /
+`screenshots/tfl1116_r10_orbit_paused.png` /
+`screenshots/tfl1116_r10_orbit_reduced.png`).
+
+TFL-1155 (TFL-1116 C9, R11): one panel shell + one shared scrollbar. R11 — panel
+scroll ownership was inconsistent (the Navigator body ran to the column bottom, the
+Inspector body had different bounds, and the native arrowed scrollbars looked dated).
+`PanelShell` (`src/renderer/components/panels/PanelPrimitives.tsx`) now takes an optional
+`footer` and renders it as a FIXED `.tf-panel-footer`; the shared `.tf-panel-shell`
+geometry fixes the header, gives the body `flex: 1 1 auto; min-height: 0; overflow-y: auto`
+and clips horizontal overflow, and the `.tf-panel-body` bottom margin is the new shared
+`--tf-workspace-baseline` (declared on `.app-main`; `.workspace-main` resolves
+`--view-strip-h` through it). Both docked panels adopt it
+(`.context-panel-body` / `.inspector-body`, plus the navigator's `.thumb-scroller-inner` /
+`.outline-panel` and the `.ann-panel-list`), so every panel scroll region ends level with
+the canvas footer top instead of the column bottom. ONE theme-aware `.tf-panel-scroll`
+rule replaces the native arrowed scrollbars: a thin rounded thumb on a transparent track
+that widens (hit-area grows) on hover / keyboard focus, suppresses
+`::-webkit-scrollbar-button`, and hands the scrollbar back to the platform under
+`@media (forced-colors: active)`; keyboard/wheel scrolling and the document-scroller are
+untouched. Unit: `test/unit/renderer/tfl1116_panelShell.test.tsx` +
+`test/unit/renderer/tfl1116_scrollbar.test.ts`; e2e `e2e/tfl1116_r11_panel_shell.spec.cjs`
+(screenshot `screenshots/tfl1116_r11_panels.png`).
+
+TFL-1159 (TFL-1116 C10, R13 + R14): the Action Dock's More-vs-Tools intent and
+one `dockEligible` capability predicate. R13 — More is the stage overflow plus
+"Customize dock"; the ambiguous trailing "Tools" utility that opened the global
+Command Palette is RELABELLED "All commands" (it stays because the canvas-level
+global entry is still needed; the `data-dock-tools` hook and its palette routing
+are unchanged). "Customize dock" reaches the DEDICATED Add-a-tool chooser
+(`[data-dock-picker]`), never the global palette. R14 — ONE
+`dockEligible(entry)` predicate (`src/renderer/state/toolsRegistry.ts`) now backs
+the chooser rows (`dockEligibleIdsForStage`), the pin affordance
+(`dockPinAffordance`) and pin execution (`addDockPin` and the Command Palette's
+pin paths), so a tool is addable/pinnable exactly when the dock can execute it;
+a build-level unsupported command (`DOCK_UNSUPPORTED_AVAILABILITY`, e.g. Validate
+document) is never offered or pinned, while a TEMPORARILY unavailable persisted
+pin is RETAINED and EXPLAINED (disabled with its refusal `title`,
+`data-dock-pin-ineligible`) rather than reset, and customization (EDIT) mode
+gains an explicit Done action (`[data-dock-done]`). Unit:
+`test/unit/renderer/tfl1116_dockEligible.test.ts`; e2e
+`e2e/tfl1116_r13_r14_dock_intent.spec.cjs` (screenshots
+`screenshots/tfl1116_r13_more.png` / `screenshots/tfl1116_r14_customize_dock.png`).
+
+TFL-1161 (TFL-1116 C11, R16 + R17): compact stage context + explicit Inspector
+state. R16 — below the panel ladder threshold the collapsed Context Panel
+rendered its page-number ruler in every stage, so Edit/Review/Deliver lost their
+meaning. The compact strip is now stage-aware: Pages keeps the ruler, while
+Edit/Review/Deliver render a LAUNCHER (`[data-context-panel-launcher]`,
+`data-context-panel-launcher-stage`) whose open intent surfaces the ACTIVE
+stage's context as an overlay drawer (`resolveContextPanelSurface` in
+`src/renderer/state/dockResponsive.ts`; `.context-panel.context-panel-drawer`),
+closing on Escape / the close control — the panel-scoped mirror of the R01
+compact Inspector drawer. R17 — the Inspector now resolves ONE explicit state
+(`resolveInspectorState`: none / page / text / signature / crop / ocr-review /
+export) and the CropBox section renders ONLY during an active crop session
+(`cropActive`); the default EDIT page state shows page facts + selection
+guidance instead of an empty "CROPBOX / Box". Unit:
+`test/unit/renderer/tfl1116_compactStage.test.tsx` +
+`test/unit/renderer/tfl1116_inspectorState.test.ts`; e2e
+`e2e/tfl1116_r16_r17_stage_inspector.spec.cjs` (screenshots
+`screenshots/tfl1116_r16_compact_stage.png` /
+`screenshots/tfl1116_r17_edit_no_cropbox.png`).
+
+TFL-1163 (TFL-1116 C12, R18 + R19): OCR suspects review polish + bounded
+rendering. R18 — the Inspector suspects section now names the suspect COUNT
+(`[data-ocr-suspect-count]`) and the page grouping, renders explicit Word /
+Confidence columns (`[data-ocr-suspects-columns]`), keeps the navigated-to row
+VISIBLY selected (`[data-ocr-suspect-selected]`), hands the engine's REAL page
+and word bounds to the host and exposes them on the row
+(`data-ocr-suspect-page` / `data-ocr-suspect-bounds`), and labels the surface
+navigation-only (`[data-ocr-suspects-navigation-only]`) because the engine ships
+no correct / accept / skip operation. R19 — above
+`OCR_SUSPECT_WINDOW_THRESHOLD` (200) the panel renders a bounded window of the
+flattened page/row stream (`[data-ocr-suspects-window]`, listbox semantics,
+stable keys, Up/Down roving navigation) instead of mounting every row; the pure
+model is `src/renderer/components/ocrSuspectsModel.ts`. Unit:
+`test/unit/renderer/tfl1116_ocrSuspects.test.tsx` +
+`test/unit/renderer/tfl1116_ocrPerf.test.ts` (measured: 3708 entries -> group
+0.47 ms / flatten 0.82 ms, 19 mounted; 10000 -> group 0.28 ms / flatten
+0.43 ms, 19 mounted); e2e `e2e/tfl1116_r18_r19_ocr_review.spec.cjs` (dense
+scanned.pdf: 21819 suspects, 20 mounted, selected row visible; screenshot
+`screenshots/tfl1116_r18_ocr_review.png`).
+
+TFL-1169 (TFL-1116 C13, R20 + R23): review summary de-duplication + outline
+badge legibility. R20 — the REVIEW surface no longer repeats the document-wide
+summaries on both sides. The LEFT ContextPanel review navigator is the ONE
+authoritative inventory (the four categories with their select / edit / delete
+actions); the RIGHT Inspector's review section renders only the SELECTED
+annotation's scope. `ReviewElementsPanel` now takes `scope: 'document' |
+'selection'` (default `'document'`) and exposes `data-review-elements-scope`;
+the Inspector passes `scope="selection"`, so the Bates / watermark / signature
+categories and rows have exactly one home. This supersedes the Phase-90
+Ruling-6 clause that the Inspector renders the full category list. R23 — the
+outline target badge `.outline-page` moves from the faint `--fg-faint` /
+`--fs-xs` tier to readable secondary text (`--fg-muted`, `--fs-sm`,
+`font-weight: 500`) on the fixed right-aligned 32px target column; the title's
+two-line wrap/ellipsis (`.outline-link`) and the tree keyboard model are
+unchanged. Unit: `test/unit/renderer/tfl1116_reviewSummary.test.tsx` +
+`test/unit/renderer/tfl1116_outlineBadge.test.tsx`; e2e
+`e2e/tfl1116_r20_r23_review_outline.spec.cjs` (screenshots
+`screenshots/tfl1116_r20_review.png` / `screenshots/tfl1116_r23_outline.png`).
+
+TFL-1116 CONTROL-INDEX backfill (from the C15 report): four shipped
+Visual-overhaul controls had no index entry. Recorded here with their proving
+tests.
+
+R01 — compact Inspector drawer (TFL-1117). Below the dock ladder's Inspector
+threshold the panel cannot reserve a grid column, so activating "Expand
+inspector" opens the Inspector as an overlay DRAWER over the canvas rather than
+a docked column. The pure surface resolver is `resolveInspectorSurface`
+(`src/renderer/state/dockResponsive.ts`); the drawer root exposes its own hook,
+a close control and Escape dismissal, and returns focus to the Expand opener on
+close. Unit: `test/unit/renderer/tfl1116_compactInspectorDrawer.test.tsx`; e2e
+`e2e/tfl1117_r01_compact_inspector.spec.cjs` (960x640 drawer overlays the canvas
+unbounded, closes with focus return; 1280x800 wide layout unchanged).
+
+R02 — Deliver export draft retention (TFL-1119). The export configuration used
+to live in local `useState` inside `ExportConfigSection`, so the compact-width
+Inspector collapse/remount reset format / scope / range / DPI to the persisted
+default. It is now a document-scoped store
+(`src/renderer/state/exportDraft.ts`: `defaultExportDraft`, `exportDraftFor`,
+`withExportFormat`, `withExportScope`, `withExportCustomRange`, `withExportDpi`)
+that backs the controlled Inspector surface, so the draft survives an
+unmount/remount and a stage return, and a resize never runs an export. Unit:
+`test/unit/renderer/tfl1116_exportDraftRetention.test.tsx`; e2e
+`e2e/tfl1119_r02_export_draft_retention.spec.cjs`.
+
+R15 — Action Dock width from the canvas viewport (TFL-1157). The Dock sizes
+against the CANVAS VIEWPORT width (`dockReserveFor` / `DOCK_DEFAULT_RESERVE`,
+`src/renderer/state/dockFit.ts`; `DOCK_RESERVED_ROW_WIDTH` in `ActionDock.tsx`),
+measured from the `.document-scroller` client width — not the fitted-paper width
+and not the retired floating-pill reserve — so it keeps its labelled row until
+the row genuinely cannot fit and only then scrolls. Unit:
+`test/unit/renderer/tfl1116_dockWidth.test.ts`; e2e
+`e2e/tfl1116_r15_dock_width.spec.cjs` (962x620: canvas ~788px vs fitted paper
+~394px, no chevrons; 640x620 scroll case).
+
+R22 — range validation messages (TFL-1116 C14). Entering `0,521` on a 520-page
+document disabled the action but the helper claimed the EMPTY reason. The range
+field now classifies empty / malformed / out-of-bounds / valid
+(`classifyPageRange` / `parsePageRange`, `src/renderer/engine/types.ts`;
+`validateExportRange`, `src/renderer/components/exportConfig.ts`), keeps the
+typed value, links the message to the field via `aria-describedby`, and never
+runs the operation on an invalid range. Unit:
+`test/unit/renderer/tfl1116_rangeValidation.test.tsx` (empty / malformed /
+out-of-bounds / valid messages; no dedicated e2e — proven by the unit suite).
+
+R25 — Book View reading location (TFL-1116 C5b; DEF-627 TFL-1176). Book View
+opens at the tab's stored `persisted.currentPage` and carries the reached page
+(the visible spread's first page) back so the DocumentView resumes there. The
+host passes the seed as `initialPage` and persists the report through
+`persistFor(meta.id)` (`App.tsx`). DEF-627: the report previously ran only on the
+header Close button, so leaving Book View by any OTHER route — a tab switch in
+particular — lost the reached page. `BookView` now also publishes the location
+through an additive `onLocationChange` prop, reported whenever the committed
+spread changes and once more on unmount, so the persisted viewer always tracks
+what the reader saw; the header Close button keeps reporting through `onClose`.
+Tests: `test/unit/renderer/tfl1116_bookViewLocation.test.tsx` (seed / turn /
+unmount-only report / tab-switch exit-and-return); e2e
+`e2e/tfl1116_r24_r25_location.spec.cjs` (R25 close path + the DEF-627 tab-switch
+exit case; screenshots `screenshots/tfl1116_r25_bookview_tab_switch_return.png`).
 
 TFL-998 (TFL-855 chunk C8): the thumbnail right-click menu (`[data-context-menu]`,
 `src/renderer/components/pageThumbMenu.tsx`) now renders through the same
@@ -174,7 +537,7 @@ collapsed `app-main` reveals the same native background.
 | Control | Selector | Promised action | Unit test | E2e |
 |---|---|---|---|---|
 | Brand mark | `.brand .brand-mark` | Non-interactive logotype ("Jovrel" wordmark beside the halo mark). Phase 105 (chunk C): the brand leads the 48px title row inside TitleBar. | (CSS contract test) | (visible at launch) |
-| Document rail | `.document-rail .tab-list` | The 40px rail below the title row: renders every open tab; click activates, close removes; reorder / tear-out gestures unchanged. | `test/unit/renderer/phase105_titleRow.test.tsx` + `test/unit/renderer/appHeader.test.tsx` | (covered by every workspace e2e) |
+| Document rail | `.document-rail .tab-list` | The 40px rail below the title row: renders every open tab; click activates, close removes; reorder / tear-out gestures unchanged. TFL-1141 (R07): the rail is not mounted at all when zero document tabs exist (Home reserves no blank strip). | `test/unit/renderer/phase105_titleRow.test.tsx` + `test/unit/renderer/appHeader.test.tsx` + `test/unit/renderer/tfl1116_homeChrome.test.ts` | (covered by every workspace e2e) |
 | '+ new tab' button | `[data-new-tab]` | Appends an empty placeholder tab; hidden when `tabs.length === 0`; disabled with a reason in Multi Mode. | `test/unit/renderer/phase105_titleRow.test.tsx` + `test/unit/renderer/phase34_chunk2.test.tsx` | (e2e in phase7 spec) |
 | Application menu trigger | `.app-menu-trigger` (`data-app-menu`) | Opens the non-File menu groups (Edit / View / Tools / Help) plus the relocated Multi Mode / Find rows; Escape / Tab / outside-click close and refocus the trigger (TFL-993 chunk C7, on the shared `CommandMenu`). | `test/unit/renderer/phase105_titleRow.test.tsx` + `test/unit/renderer/appHeaderAppMenu.test.tsx` | (qa: menu opens) |
 | Update indicator slot | `.update-indicator` | See "Update indicator" rows above. | (same) | (same) |
@@ -255,7 +618,7 @@ hierarchy) in `src/renderer/styles.css`.
 | Tools group | `.glass-control-group[aria-label='Tools']` | Search / rotate ccw+cw / hand / edit / delete / optimize / audit / flatten in ONE capsule | `test/unit/renderer/commandBar.test.tsx` (a11y sweep) | (qa: no-op sweep by data-*) |
 | Actions group | `.glass-control-group[aria-label='Document actions']` | Merge / Split / Sign / More (ellipsis, `data-tools-toggle` kept), pinned to the trailing edge | `test/unit/renderer/commandBar.test.tsx` | (qa: capsule pinned right, palette opens) |
 | GlassChrome title bar | `.titlebar.glass-chrome-title` | Standardized 48px title row (Phase 105 chunk C; was 44px), drag region + no-drag children unchanged | `test/unit/renderer/glassChrome.test.tsx` (variant class + height var + data passthrough), `test/unit/renderer/phase14Glass.test.ts` (48px token) | `e2e/phase13_gate_final.spec.cjs` SC1 (drag/controls unchanged) |
-| Document rail | `.document-rail` | Standardized 40px rail below the title row holding the tab strip (Phase 105 chunk C); chunk D adds responsive capacity — the New-tab and All-tabs controls are reserved first, a tab is never narrower than 136px, overflowed sessions stay open and are hidden from the rail. The rail/tab-area/tab-list chain is viewport-constrained at FIRST layout (DEF-579), so the capacity planner measures the available width rather than the strip's own expanded content. | `test/unit/renderer/phase105_titleRow.test.tsx`, `test/unit/renderer/phase105_documentRail.test.tsx` (capacity planner + hidden-overflow DOM) | (qa: rail below the title row; narrow-window overflow) |
+| Document rail | `.document-rail` | Standardized 40px rail below the title row holding the tab strip (Phase 105 chunk C); chunk D adds responsive capacity — the New-tab and All-tabs controls are reserved first, a tab is never narrower than 136px, overflowed sessions stay open and are hidden from the rail. The rail/tab-area/tab-list chain is viewport-constrained at FIRST layout (DEF-579), so the capacity planner measures the available width rather than the strip's own expanded content. TFL-1141 (R07): mounted only when at least one document session exists — `isDocumentRailVisible(tabCount)` gates the App mount, so Home with zero tabs renders no `.document-rail` / `.tab-area` row. | `test/unit/renderer/phase105_titleRow.test.tsx`, `test/unit/renderer/phase105_documentRail.test.tsx` (capacity planner + hidden-overflow DOM), `test/unit/renderer/tfl1116_homeChrome.test.ts` (R07 truth table + App wiring) | `e2e/tfl1116_r06_r07_home_chrome.spec.cjs` (zero-doc Home has no rail; one-doc Home shows the colorful strip) |
 | All-tabs switcher | `[data-all-tabs]` / `.all-tabs-popover` | Phase 105 (chunk D) disclosure control after `[data-new-tab]`; opens an anchored, opaque, collision-aware popover listing every session in canonical order with the full filename, the total count, a dirty dot + "Unsaved changes" description and duplicate-basename folder context; arrow roving, Enter/Space activate, Escape closes and refocuses the trigger. | `test/unit/renderer/phase105_documentRail.test.tsx` | (qa: overflowed session reachable + activated from the switcher) |
 | GlassSidebar header (Pages) | `.side-rail .glass-sidebar-header` | "Pages" title left + view tabs right in ONE 44px shared row | `test/unit/renderer/glassSidebar.test.tsx` | (qa: rail header) |
 | GlassSidebar header (Tools) | `.tools-palette .glass-sidebar-header` | "Tools" title + layout toggle + close; SAME header component as Pages (material parity) | `test/unit/renderer/glassSidebar.test.tsx` | (qa: palette header) |
@@ -318,8 +681,20 @@ real handler and no no-op.
 | Deliver checks + Export config | `exportConfigGate` (`components/exportConfig.ts:157`; `Inspector.tsx:608`) + named Export button | Factual output checks and a clearly named Export using the parse-validated range | `test/unit/renderer/phase112_deliver.test.tsx` | (qa: deliver + export) |
 | Recent row actions | `[data-recent-action="open"]` / `="pin"` / `="show"` / `="locate"` / `="remove"` (`components/home/HomeRecentRow.tsx:85`, `124`, `137`, `149`, `160`) | Each row action routes to its real handler; Remove never deletes the file | `test/unit/renderer/phase112_home.test.tsx` | `e2e/phase112_phaseclose_qa.spec.cjs` |
 | Recent missing detection (proactive) | App effect -> `window.tflex.checkMissing` (`App.tsx:9587-9591`) -> main `recent:checkMissing` (`src/shared/ipc.ts:137`, bridge `src/preload/preload.ts:764`) | A vanished recent file shows Missing + Locate on first paint with no click | `test/unit/renderer/phase112_home.test.tsx` (proactive-detection case, `323-436`) + `test/unit/main/phase112Recents.test.ts` | `e2e/phase112_phaseclose_qa.spec.cjs` |
-| Sample card Open | `.sample-card` (`components/home/HomeSampleCard.tsx:23`; rendered by `Welcome.tsx:545`) | Opens the sample through the existing safe exploration flow | `test/unit/renderer/phase112_home.test.tsx` | `e2e/phase112_phaseclose_qa.spec.cjs` |
+| Sample card Open | `.sample-card` (`components/home/HomeSampleCard.tsx:23`; rendered by `Welcome.tsx` only when `showSamples`) | Opens the sample through the existing safe exploration flow. TFL-1143 (R09): the Explore grid is a DEVELOPMENT fixture — it renders only when `showSamples` resolves true (`isDevelopmentBuild()`), so PRODUCTION Home carries no sample cards | `test/unit/renderer/phase112_home.test.tsx` + `test/unit/renderer/tfl1116_homeSamples.test.tsx` | `e2e/phase112_phaseclose_qa.spec.cjs` (dev launch keeps fixtures) |
 | Panel resize / collapse | `PanelResizeHandle` (role=separator, pointer + keyboard; `components/panels/PanelResizeHandle.tsx`; mounted `App.tsx:11353`, `11362`) + `[data-rail-collapse]` (`ContextPanel.tsx:508`) | Resizes within 240-420 (left, default 280; Phase 111 chunk D1) / 260-380 (right) and persists width + collapse state | `test/unit/renderer/phase112_panelLayout.test.tsx` | `e2e/phase112_phaseclose_qa.spec.cjs` (P112CLOSE-3) |
+
+## TFL-1116 C7b - Home recent grid + production sample gate (TFL-1143)
+
+Appended 2026-10-07. R08 re-bases the Home recent row onto ONE six-track CSS
+grid; R09 gates the bundled-sample fixtures to development builds only.
+
+| Control | Selector | Promised action | Unit test | E2e |
+|---|---|---|---|---|
+| Recent row grid | `.recent-row` (`components/home/HomeRecentRow.tsx`) | ONE shared track definition `icon / minmax(0,1fr) filename / 84px type / 92px status / 80px date / 116px actions` (`--recent-row-grid`). The open button (`grid-column 1/3`) and the meta cluster (`grid-column 3/6`) ride `subgrid`; the status cell is ALWAYS rendered so a Missing badge never moves the date/actions; dates use tabular numerals; the actions track is fixed and reveals by opacity only. Compact (`<=720px`) drops type/status/date to a designed secondary line | `test/unit/renderer/tfl1116_recentGrid.test.tsx` | `e2e/tfl1116_r08_r09_home_recent.spec.cjs` (date/actions x identical with and without Missing) |
+| Development sample gate | `Welcome` prop `showSamples` = `isDevelopmentBuild()` (`utils/devEnvironment.ts`); `[data-home-samples]` on `.welcome-body` | TFL-1148/TFL-1150: the gate prefers the RUNTIME preload signal `window.tflex.app.isPackaged` — `false` (unpackaged dev/e2e run) keeps the fixtures, `true` (packaged app) hides them — and falls back to Vite's bundle mode only when the bridge is absent (jsdom/unit tests, older builds). Packaged PRODUCTION Home renders no `[data-home-explore]` section and no sample invite copy; the body collapses to one full-width column. Dev builds and test runs (including the standard unpackaged e2e suite, whose bundle is production-built but whose app is not packaged) keep the fixtures | `test/unit/renderer/tfl1116_homeSamples.test.tsx` + `test/unit/renderer/devEnvironment.test.ts` | `e2e/tfl1116_r08_r09_home_recent.spec.cjs` (packaged Home has no Explore/sample section) |
+| Sample open MRU gate | `recordSampleRecent(name, window.tflex)` (`utils/sampleRecents.ts`; `App.tsx`) | A bundled-sample open writes a Recent entry ONLY in a development build; production opens leave no MRU entry | `test/unit/renderer/tfl1116_homeSamples.test.tsx` | (unit) |
+| RESOLVED (TFL-1144 C1+C2) | The build-time dev gate hid sample cards in the standard e2e app because it keyed on the renderer BUNDLE mode (`import.meta.env.PROD` in a production-built `dist/renderer`). TFL-1148 (C1) exposes `window.tflex.app.isPackaged` from main's `app.isPackaged`; TFL-1150 (C2) makes `isDevelopmentBuild()` prefer that runtime signal, so the unpackaged e2e app reports dev and `.sample-card` fixtures render again. | `test/unit/main/appPackagedSignal.test.ts` + `test/unit/renderer/devEnvironment.test.ts` | (unit) | - |
 
 ## Phase 111 (chunk A) - Navigator view chrome (TFL-1060) addendum
 

@@ -28,8 +28,16 @@ export interface ViewStripProps {
   /** Phase 12 — logical page label for the active page (e.g. "iv", "A1"). */
   pageLabel?: string | null;
   /** Phase 40 (item 9) — the layout-aware readout string (a grid row's page
-   *  RANGE, "3-4"); absent in a single-column layout. */
+   *  RANGE, "3-4"); absent in a single-column layout. LEGACY: it seeds the
+   *  jump input's resting value. TFL-1116 R24 moved the real UI to `visibleRange`
+   *  so the jump field stays the focused page; this prop remains for the
+   *  isolated component contract only. */
   pageReadout?: string | null;
+  /** TFL-1116 R24 — the SEPARATE visible-range summary for a multi-page
+   *  layout ("7-10" in FOUR, "7-8" in TWO). Rendered as "Visible 7-10" beside
+   *  the jump field; absent (null) in a single-page layout. The jump field
+   *  itself always carries the focused page. */
+  visibleRange?: string | null;
   zoomPercent: number;
   zoomMode: ZoomMode;
   onJump: (input: string) => void;
@@ -63,6 +71,7 @@ export function ViewStrip(props: ViewStripProps): ReactElement {
     pageCount,
     pageLabel = null,
     pageReadout = null,
+    visibleRange = null,
     zoomPercent,
     zoomMode,
     onJump,
@@ -222,6 +231,15 @@ export function ViewStrip(props: ViewStripProps): ReactElement {
               title={`Logical page label for page ${page}`}
             >
               {pageLabel}
+            </span>
+          )}
+          {visibleRange !== null && (
+            <span
+              className="page-visible-range"
+              data-page-visible-range={visibleRange}
+              title={`Pages visible in this layout: ${visibleRange}`}
+            >
+              Visible {visibleRange}
             </span>
           )}
         </div>

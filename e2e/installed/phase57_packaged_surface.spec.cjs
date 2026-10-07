@@ -60,7 +60,7 @@ test.beforeEach(async () => {
   app = await launchApp([], null, PACKAGED_EXE);
   win = await app.firstWindow();
   win.on('pageerror', (e) => pageErrors.push(String(e).slice(0, 400)));
-  await win.waitForSelector('.sample-card', { timeout: 60000 });
+  await win.waitForSelector('.welcome', { timeout: 60000 }); // R09: packed Home hides .sample-card
   await dismissUpdatePrompt(win);
 });
 
@@ -334,7 +334,7 @@ test('S5 SETTINGS PERSISTENCE: a preference survives a restart with the same use
   app = await launchApp([], userData, PACKAGED_EXE);
   win = await app.firstWindow();
   win.on('pageerror', (e) => pageErrors.push(String(e).slice(0, 400)));
-  await win.waitForSelector('.sample-card', { timeout: 60000 });
+  await win.waitForSelector('.welcome', { timeout: 60000 }); // R09: packed Home hides .sample-card
   await dismissUpdatePrompt(win);
 
   await win.locator('[data-open-preferences]').first().click();
@@ -351,7 +351,7 @@ test('S5 SETTINGS PERSISTENCE: a preference survives a restart with the same use
   app = await launchApp([], userData, PACKAGED_EXE);
   win = await app.firstWindow();
   win.on('pageerror', (e) => pageErrors.push(String(e).slice(0, 400)));
-  await win.waitForSelector('.sample-card', { timeout: 60000 });
+  await win.waitForSelector('.welcome', { timeout: 60000 }); // R09: packed Home hides .sample-card
   await dismissUpdatePrompt(win);
   await win.locator('[data-open-preferences]').first().click();
   await win.waitForSelector('[data-prefs-convert-section]', { timeout: 20000 });

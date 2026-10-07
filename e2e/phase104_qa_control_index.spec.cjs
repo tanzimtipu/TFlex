@@ -191,8 +191,8 @@ test('Phase 104 control-index sweep (a-h) + stage screenshots', async () => {
   await win.waitForSelector('[data-command-palette]', { state: 'visible', timeout: 8000 });
   evidence.tools = { text: toolsText, aria: toolsAria, paletteOpened: true };
   console.log(`[P104 tools] text="${toolsText}" aria="${toolsAria}" palette=open`);
-  expect(toolsText).toBe('Tools');
-  expect(toolsAria).toBe('Tools');
+  expect(toolsText).toBe('All commands');
+  expect(toolsAria).toBe('All commands');
   await closeMenus();
   await win.keyboard.press('Escape');
   await win.waitForTimeout(250);

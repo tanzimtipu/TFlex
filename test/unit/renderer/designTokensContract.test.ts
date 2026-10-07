@@ -1979,10 +1979,23 @@ describe("Phase 22 — radius ladder + surface families", () => {
         `${sel} must resolve its corner from --radius-3 in every theme`,
       ).toMatch(/border-radius:\s*var\(--radius-3\)/);
     }
-    // The old cross-theme divergence is gone: no menu rule resolves its
-    // corner from the frosted-only --tf-radius-md, and the light/dark
-    // 5px --radius-2 corner is not used by the menu surfaces.
-    expect(cssClean).not.toMatch(/border-radius:\s*var\(--tf-radius-md\)/);
+    // The old cross-theme divergence is gone: no menu-SURFACE rule resolves
+    // its corner from the frosted-only --tf-radius-md. The check is scoped to
+    // the menu family (DEF-249) rather than the whole stylesheet: the R01/R16
+    // panel drawers legitimately adopt --tf-radius-md and are not menus.
+    for (const sel of [
+      ".titlebar-menu-popover",
+      ".theme-toggle-popover",
+      ".ann-tool-menu",
+      ".color-popover",
+    ]) {
+      for (const body of bodiesFor(sel)) {
+        expect(
+          body,
+          `${sel} must not resolve its corner from the frosted-only --tf-radius-md`,
+        ).not.toMatch(/border-radius:\s*var\(--tf-radius-md\)/);
+      }
+    }
     for (const sel of [".titlebar-menu-popover", ".ann-tool-menu"]) {
       for (const body of bodiesFor(sel)) {
         expect(body).not.toMatch(/border-radius:\s*var\(--radius-2\)/);

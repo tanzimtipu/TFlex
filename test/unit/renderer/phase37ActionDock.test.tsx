@@ -465,7 +465,7 @@ it("renders a labelled Tools button that opens the palette at usable widths", ()
       expect(host.querySelector("[data-dock-hint]")).toBeNull();
       const tools = host.querySelector<HTMLElement>("[data-dock-tools]");
       expect(tools).not.toBeNull();
-      expect(tools?.textContent?.replace(/\s+/g, " ").trim()).toBe("Tools");
+      expect(tools?.textContent?.replace(/\s+/g, " ").trim()).toBe("All commands");
       act((): void => {
         tools?.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
       });

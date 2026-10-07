@@ -260,7 +260,11 @@ function makeEngineState(pageCount: number): EngineState {
 }
 
 describe('Phase 90 — Ruling 6: both panels render the unified list', () => {
-  it('mounts the panel in the Inspector REVIEW stage', () => {
+  it('mounts the panel in the Inspector REVIEW stage with the SELECTION scope only', () => {
+    // TFL-1116 C13 (R20) — the Inspector keeps the shared annotations category
+    // (the selected-annotation scope) but no longer repeats the document-wide
+    // Bates / watermark / signature summaries; those have exactly one
+    // authoritative home (the LEFT review navigator).
     const m = mount(
       <Inspector
         stage="review"
@@ -272,18 +276,17 @@ describe('Phase 90 — Ruling 6: both panels render the unified list', () => {
     );
     try {
       expect(m.host.querySelector('[data-review-elements]')).not.toBeNull();
-      expect(categories(m.host)).toEqual([
-        'annotations',
-        'bates',
-        'watermarks',
-        'signatures',
-      ]);
+      expect(
+        m.host.querySelector('[data-review-elements]')?.getAttribute('data-review-elements-scope'),
+      ).toBe('selection');
+      expect(categories(m.host)).toEqual(['annotations']);
+      expect(m.host.querySelectorAll('[data-review-element-type]')).toHaveLength(0);
     } finally {
       m.unmount();
     }
   });
 
-  it('mounts the panel in the ContextPanel REVIEW stage', () => {
+  it('mounts the panel in the ContextPanel REVIEW stage with the full DOCUMENT inventory', () => {
     const m = mount(
       <ContextPanel
         stage="review"
@@ -304,6 +307,9 @@ describe('Phase 90 — Ruling 6: both panels render the unified list', () => {
     );
     try {
       expect(m.host.querySelector('[data-review-elements]')).not.toBeNull();
+      expect(
+        m.host.querySelector('[data-review-elements]')?.getAttribute('data-review-elements-scope'),
+      ).toBe('document');
       expect(categories(m.host)).toEqual([
         'annotations',
         'bates',

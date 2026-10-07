@@ -211,7 +211,11 @@ describe('Phase 90 C2 — the panels forward onEditReviewElement', () => {
     }
   });
 
-  it('Inspector stage="review" forwards the edit handler into the list', () => {
+  it('Inspector stage="review" renders no document-wide rows (R20 one-location)', () => {
+    // TFL-1116 C13 (R20) — the Inspector owns the SELECTED annotation scope
+    // only; the document-wide Bates / watermark / signature rows (and their edit
+    // actions) live in exactly ONE place, the LEFT review navigator, so the
+    // Inspector no longer forwards a marks-row edit.
     const onEditReviewElement = vi.fn<(el: ReviewElementRef) => void>();
     const m = mount(
       <Inspector
@@ -221,13 +225,10 @@ describe('Phase 90 C2 — the panels forward onEditReviewElement', () => {
       />,
     );
     try {
-      click(m.host, '[data-review-element-type="bates"] [data-review-element-edit]');
-      expect(onEditReviewElement).toHaveBeenCalledTimes(1);
-      expect(onEditReviewElement.mock.calls[0]?.[0]).toMatchObject({
-        type: 'bates',
-        id: 'bates-1',
-        page: 2,
-      });
+      expect(m.host.querySelector('[data-review-element-type="bates"]')).toBeNull();
+      expect(m.host.querySelector('[data-review-element-edit]')).toBeNull();
+      expect(onEditReviewElement).not.toHaveBeenCalled();
+      expect(m.host.querySelector('[data-review-category="annotations"]')).not.toBeNull();
     } finally {
       m.unmount();
     }

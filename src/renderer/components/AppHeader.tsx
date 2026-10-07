@@ -25,6 +25,7 @@ import { Icon } from "../icons/Icon";
 import { CommandMenu, type CommandMenuGroup, type CommandMenuItem } from "./CommandMenu";
 import { Button, IconButton } from "./Button";
 import { dispatchMenuAction, type MenuActionContext } from "../state/menuActions";
+import type { CommandSurface } from "../state/commandCapability";
 import {
   toCommandGroups,
   type MenuEntry,
@@ -132,6 +133,10 @@ interface AppHeaderProps {
   /** Whether a document is open to search: the relocated Find row disables
    *  (with a reason in its tooltip) when false, mirroring the old icon. */
   findEnabled?: boolean;
+  /** TFL-1116 C4 (R05) — the ACTIVE surface. On `"home"` the document-only
+   *  toolbar controls (Save / Save As / Print) and the relocated Find row are
+   *  ABSENT. Defaults to `"document"` so existing callers/tests are unchanged. */
+  commandSurface?: CommandSurface;
 }
 
 /** Phase 105 (chunk C) — build the application menu's groups: the host's
@@ -177,6 +182,7 @@ export function AppHeader(props: AppHeaderProps): ReactElement {
     onMultiModeToggle,
     onOpenFind,
     findEnabled = false,
+    commandSurface = "document",
   } = props;
 
   // Phase 105 (chunk C7) — the application menu is the shared `CommandMenu`
@@ -199,7 +205,7 @@ export function AppHeader(props: AppHeaderProps): ReactElement {
         onSelect: onMultiModeToggle,
       });
     }
-    if (onOpenFind !== undefined) {
+    if (onOpenFind !== undefined && commandSurface !== "home") {
       relocated.push({
         id: "find",
         label: FIND_IN_DOCUMENT_ACCESSIBLE_NAME,
@@ -209,7 +215,7 @@ export function AppHeader(props: AppHeaderProps): ReactElement {
       });
     }
     return buildAppMenuGroups(appMenuGroups, relocated);
-  }, [appMenuGroups, onMultiModeToggle, onOpenFind, findEnabled]);
+  }, [appMenuGroups, onMultiModeToggle, onOpenFind, findEnabled, commandSurface]);
 
   // Adapt to the shared model via C5's `toCommandGroups` (no duplicated
   // conversion), then attach the disabled Find row's accessible reason. The
@@ -278,7 +284,10 @@ export function AppHeader(props: AppHeaderProps): ReactElement {
         >
           <span className="titlebar-file-label">Open</span>
         </Button>
+        {commandSurface !== "home" && (
         <span className="titlebar-file-sep" aria-hidden />
+        )}
+        {commandSurface !== "home" && (
         <Button
           intent="secondary"
           kind="action"
@@ -296,6 +305,8 @@ export function AppHeader(props: AppHeaderProps): ReactElement {
             aria-hidden
           />
         </Button>
+        )}
+        {commandSurface !== "home" && (
         <Button
           intent="secondary"
           kind="action"
@@ -308,6 +319,7 @@ export function AppHeader(props: AppHeaderProps): ReactElement {
           data-toolbar-save-as
           icon={<Icon name="saveAs" size="md" aria-hidden />}
         />
+        )}
       </div>
       {/* Phase 105 (chunk C) — the genuine flexible drag region between the
           document-action cluster and the trailing utilities. Interactive
@@ -330,6 +342,7 @@ export function AppHeader(props: AppHeaderProps): ReactElement {
           />
         )}
         {/* Phase 30 — Print. Same surface as File > Print and Ctrl+P. */}
+        {commandSurface !== "home" && (
         <Button
           intent="tertiary"
           kind="action"
@@ -343,6 +356,7 @@ export function AppHeader(props: AppHeaderProps): ReactElement {
           data-print
           icon={<Icon name="print" size="md" aria-hidden />}
         />
+        )}
         {/* Phase 105 (chunk C) — the ONE application menu. Lists the Edit /
             View / Tools / Help groups plus the relocated Multi Mode and Find
             commands. */}
@@ -379,6 +393,7 @@ export function AppHeader(props: AppHeaderProps): ReactElement {
               openerRef={appMenuButtonRef}
               className="app-menu-popover"
               popoverDataAttrs={{ "data-app-menu-popover": "true" }}
+              collisionAware
             />
           </div>
         )}

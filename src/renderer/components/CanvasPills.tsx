@@ -37,6 +37,10 @@ export interface CanvasPillsProps {
    *  the input swaps it back to the numeric page for editing; the shared
    *  `pageJump` parses the leading integer, so committing a range is harmless. */
   pageReadout?: string | null;
+  /** TFL-1116 R24 — the SEPARATE visible-range summary for a multi-page
+   *  layout ("7-10" in FOUR, "7-8" in TWO). Rendered as "Visible 7-10" beside
+   *  the jump field; absent in a single-page layout. Mirrors `ViewStrip`. */
+  visibleRange?: string | null;
   zoomPercent: number;
   zoomMode: ZoomMode;
   onJump: (input: string) => void;
@@ -68,6 +72,7 @@ export function CanvasPills(props: CanvasPillsProps): ReactElement {
     pageCount,
     pageLabel = null,
     pageReadout = null,
+    visibleRange = null,
     zoomPercent,
     zoomMode,
     onJump,
@@ -165,6 +170,15 @@ export function CanvasPills(props: CanvasPillsProps): ReactElement {
               title={`Logical page label for page ${page}`}
             >
               {pageLabel}
+            </span>
+          )}
+          {visibleRange !== null && (
+            <span
+              className="page-visible-range"
+              data-page-visible-range={visibleRange}
+              title={`Pages visible in this layout: ${visibleRange}`}
+            >
+              Visible {visibleRange}
             </span>
           )}
         </div>

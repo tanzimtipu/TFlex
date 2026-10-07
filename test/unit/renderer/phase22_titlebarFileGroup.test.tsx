@@ -452,8 +452,10 @@ describe("DEF-243 — Ctrl+Shift+S routes to Save As, Ctrl+S still saves in plac
   it("the Ctrl+S branch excludes Shift, so the Shift variant cannot be swallowed", () => {
     const b = globalKeydownHandler();
     expect(b).toMatch(/e\.key\.toLowerCase\(\) === "s" &&\s+!e\.shiftKey/);
-    // Same handler and same gate as before the guard: Save is untouched.
-    expect(b).toMatch(/void onSave\(tabs\.activeId\)/);
+    // Same handler and same gate as before the guard: Save is untouched. The
+    // TFL-1116 C4 (R05) surface evaluator narrows the id to `activeDocId`
+    // (the active id only on a real document surface), so the branch keys on it.
+    expect(b).toMatch(/void onSave\(activeDocId\)/);
   });
 
   it("a dedicated Ctrl+Shift+S branch opens the Save-As flow through onSaveAs", () => {
@@ -461,14 +463,14 @@ describe("DEF-243 — Ctrl+Shift+S routes to Save As, Ctrl+S still saves in plac
     // Ctrl (or Cmd) + Shift + S, gated on an active document, preventDefault
     // then the same handler the menu's menuContext.saveAs entry calls.
     expect(b).toMatch(
-      /e\.shiftKey &&\s+e\.key\.toLowerCase\(\) === "s" &&\s+tabs\.activeId !== null\s*\)\s*\{\s*e\.preventDefault\(\);\s*void onSaveAs\(tabs\.activeId\)/,
+      /e\.shiftKey &&\s+e\.key\.toLowerCase\(\) === "s" &&\s+activeDocId !== null\s*\)\s*\{\s*e\.preventDefault\(\);\s*void onSaveAs\(activeDocId\)/,
     );
   });
 
   it("orders the Save branch before the Save-As branch and keeps the Z/Y guards", () => {
     const b = globalKeydownHandler();
-    expect(b.indexOf("void onSave(tabs.activeId)")).toBeGreaterThan(-1);
-    expect(b.indexOf("void onSave(tabs.activeId)")).toBeLessThan(b.indexOf("void onSaveAs(tabs.activeId)"));
+    expect(b.indexOf("void onSave(activeDocId)")).toBeGreaterThan(-1);
+    expect(b.indexOf("void onSave(activeDocId)")).toBeLessThan(b.indexOf("void onSaveAs(activeDocId)"));
     // Undo/Redo routing is unchanged (plain Z/Y, Shift+Z redo).
     expect(b).toMatch(/e\.key\.toLowerCase\(\) === "z"[\s\S]{0,80}?!e\.shiftKey/);
     expect(b).toMatch(/e\.shiftKey &&\s+e\.key\.toLowerCase\(\) === "z"/);
@@ -476,7 +478,7 @@ describe("DEF-243 — Ctrl+Shift+S routes to Save As, Ctrl+S still saves in plac
 
   it("re-subscribes when the onSaveAs identity changes (no stale accelerator)", () => {
     expect(APP_SRC).toMatch(
-      /\[onOpenClick, closeTab, onSave, onSaveAs, onUndo, onRedo, onOcrClick, tabs\.activeId, disarmEditTools\]/,
+      /\[onOpenClick, closeTab, onSave, onSaveAs, onUndo, onRedo, onOcrClick, tabs\.activeId, activeTabHasDocument, disarmEditTools\]/,
     );
   });
 });
@@ -489,16 +491,21 @@ describe("DEF-243 — Ctrl+Shift+S routes to Save As, Ctrl+S still saves in plac
 // ---------------------------------------------------------------------------
 function mediaBlock(maxWidth: number): string {
   const marker = `@media (max-width: ${maxWidth}px)`;
-  const idx = CSS_SRC.indexOf(marker);
+  // DEF-623 — a stylesheet comment can carry the marker text before the real
+  // media rule (the R06 brand comment names the 900px band), so match on a
+  // comment-stripped copy exactly like `cssRuleBody` above; the previous
+  // comment-blind `indexOf` resolved to the comment's following rule body.
+  const stripped = CSS_SRC.replace(/\/\*[\s\S]*?\*\//g, "");
+  const idx = stripped.indexOf(marker);
   if (idx === -1) return "";
-  const braceOpen = CSS_SRC.indexOf("{", idx);
+  const braceOpen = stripped.indexOf("{", idx);
   if (braceOpen === -1) return "";
   let depth = 0;
-  for (let i = braceOpen; i < CSS_SRC.length; i += 1) {
-    if (CSS_SRC[i] === "{") depth += 1;
-    else if (CSS_SRC[i] === "}") {
+  for (let i = braceOpen; i < stripped.length; i += 1) {
+    if (stripped[i] === "{") depth += 1;
+    else if (stripped[i] === "}") {
       depth -= 1;
-      if (depth === 0) return CSS_SRC.slice(braceOpen + 1, i);
+      if (depth === 0) return stripped.slice(braceOpen + 1, i);
     }
   }
   return "";

@@ -44,7 +44,7 @@ import {
 } from '../state/commandPalette';
 import { palettePinAllowed } from '../state/dockModel';
 import type { Stage } from '../state/stages';
-import { isDockPinnableId } from '../state/toolsRegistry';
+import { dockEligible } from '../state/toolsRegistry';
 import type { ToolEntry } from '../state/toolsRegistry';
 import { useBackdropFadeAnimation, useCommandPaletteAnimation } from '../hooks/useAnimations';
 
@@ -221,7 +221,7 @@ export function CommandPalette(props: CommandPaletteProps): ReactElement {
   const pinRow = useCallback(
     (row: PaletteRow): void => {
       if (row.kind !== 'tool' || !row.enabled) return;
-      if (!isDockPinnableId(row.id)) {
+      if (!dockEligible(row.entry)) {
         setNotice(`${row.entry.label} cannot be added to the dock`);
         return;
       }
@@ -264,7 +264,7 @@ export function CommandPalette(props: CommandPaletteProps): ReactElement {
       // box, so the latter would not close anyway — this is the run guard).
       event.stopPropagation();
       if (row.kind !== 'tool' || !row.enabled) return;
-      if (!isDockPinnableId(row.id)) {
+      if (!dockEligible(row.entry)) {
         setNotice(`${row.entry.label} cannot be added to the dock`);
         return;
       }
@@ -512,9 +512,10 @@ function PaletteRowItem(props: PaletteRowItemProps): ReactElement {
   const pinState = palettePinStateFor(row);
   const pinOn = pinState !== 'unpinned';
   const pinDock = palettePinDockName(row);
-  // TFL-660 — the palette is another dock ADD path: an id no dock may host is
-  // not pinnable, so the toggle is disabled and says why.
-  const dockPinnable = isDockPinnableId(row.id);
+  // TFL-660 / TFL-1116 C10 (R14) — the palette is another dock ADD path: an id
+  // no dock may host is not pinnable, so the toggle is disabled and says why.
+  // It consults the SAME `dockEligible` predicate as the dock chooser.
+  const dockPinnable = dockEligible(row.entry);
   const pinLabel = !dockPinnable
     ? `${row.entry.label} cannot be added to the dock`
     : pinOn

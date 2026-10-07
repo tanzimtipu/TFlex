@@ -100,6 +100,7 @@ import { closePrintWindow, notifyPrintDocumentGone, openPrintWindow } from './pr
 import { createTabWindows } from './services/tabWindows';
 import { extractFileArgument, isPdfFamilyTarget, looksLikeOpenablePath, looksLikePdfPath } from './open-path';
 import type { BugReportInput } from '../shared/bugReport';
+import { TFLEX_PACKAGED_ENV, encodePackagedFlag } from '../shared/packagedSignal';
 import {
   createBugReportService,
   installIpcHandlerCapture,
@@ -1224,6 +1225,7 @@ export async function start(): Promise<void> {
       version: app.getVersion(),
       electronVersion: process.versions.electron ?? 'unknown',
       nodeVersion: process.versions.node ?? 'unknown',
+      isPackaged: app.isPackaged,
       storagePaths: {
         userData: app.getPath('userData'),
         settings: join(app.getPath('userData'), 'settings.json'),
@@ -1443,6 +1445,12 @@ export async function start(): Promise<void> {
       });
     }
   };
+  // TFL-1148 - hand main's `app.isPackaged` to the sandboxed preload
+  // synchronously (the preload's process.env carries it) BEFORE the first
+  // BrowserWindow is constructed, so the renderer gate can read a plain
+  // boolean instead of the renderer bundle's Vite mode.
+  process.env[TFLEX_PACKAGED_ENV] = encodePackagedFlag(app.isPackaged);
+
   recreateMainWindow = createWindow;
   createWindow();
 

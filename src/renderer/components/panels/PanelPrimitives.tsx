@@ -34,12 +34,19 @@ export interface PanelShellProps extends DataAttrs {
   className?: string;
   /** Landmark role; the shared default is a named region. */
   role?: string;
+  /** TFL-1155 (TFL-1116 C9 / R11) — an optional FIXED footer below the scroll
+   *  body. Omitted renders no footer element at all, so a panel keeps exactly
+   *  the header + body structure it has today. */
+  footer?: ReactNode;
   children?: ReactNode;
 }
 
-/** The opaque panel surface every workspace panel mounts as its root. */
+/** The opaque panel surface every workspace panel mounts as its root. The shell
+ *  is the ONE panel column (R11): a fixed header, a `min-height: 0` scroll body
+ *  and an optional fixed footer all come from the shared `.tf-panel-shell`
+ *  geometry in `styles.css`; the shell only composes the footer slot. */
 export function PanelShell(props: PanelShellProps): ReactElement {
-  const { label, className, role = "region", children, ...rest } = props;
+  const { label, className, role = "region", footer, children, ...rest } = props;
   const forwarded = rest as unknown as HTMLAttributes<HTMLDivElement>;
   return (
     <div
@@ -49,6 +56,7 @@ export function PanelShell(props: PanelShellProps): ReactElement {
       {...forwarded}
     >
       {children}
+      {footer !== undefined && <footer className="tf-panel-footer">{footer}</footer>}
     </div>
   );
 }

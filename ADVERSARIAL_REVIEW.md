@@ -11970,3 +11970,209 @@ says it is. Precedes: the canvas. Follows: the document view.
 - Cleanup is complete: the dead `SideRail` component, `SideRailProps`,
   `useRailSwapAnimation` and the `.rail-content-swap` rule are gone with only
   negative guards left behind.
+
+## TFL-1174 / TFL-1116 C16 diff-pass — Home command leak to the Command Palette, Book View reading-location lost on tab exit
+
+Session label: `diff-pass`. Scope: the current working-tree diff produced by the
+TFL-1116 correction work (R01-R26, chunks C1-C14). Attacked the five named
+surfaces: (1) Home command capability (`commandCapability.ts`, `App.tsx` menu
+filter + native enable snapshot + keyboard `activeDocId`, `AppHeader.tsx` home
+guards); (2) overlay containment (`overlayPlacement.ts`, `useOverlayPlacement.ts`,
+`CommandMenu.tsx`, `styles.css`); (3) navigation synchronization
+(`DocumentView.tsx` `revealSeq`/`jumpToPage`, `SideRail.tsx` reveal, `BookView.tsx`
+reading location); (4) document-scoped state (`exportDraft.ts`, `pageSizeScope.ts`,
+`App.tsx` `livePageSizeScopeKey`); (5) settings persistence / R09 runtime sample
+gate (`devEnvironment.ts`, `sampleRecents.ts`, `packagedSignal.ts`). Product code,
+tests, `DEFECTS.md`, `REQUIREMENTS.md` and `AGENTS.md` were read but NOT modified.
+
+Method note: `.paperclip-build.lock` was held by another agent (owner `qa`,
+task TFL-1175, acquired 2026-10-07T17:01:16Z — ~30s before this pass started), so
+per the BUILD MUTEX rule NO `vitest` / Playwright / build command was run. Every
+verdict below is source-reading and static trace; the named probe is the exact
+runtime step a later run must execute to confirm. Two findings filed.
+
+## ADV-241: The Command Palette still exposes document-only commands (Save / Save a copy / Close Tab) on Home, enabled and silently no-op, behind an active Home tab
+
+- Session: diff-pass
+- Suggested severity: MEDIUM
+
+What I did: Traced every route to the document-only commands on the active
+surface. The C4/R05 correction filters the File menu and the application menu
+through `filterMenuGroupsForSurface` (`src/renderer/state/commandCapability.ts:48`,
+consumed at `src/renderer/App.tsx:9915-9931`), hides the toolbar Save / Save As /
+Print / Find (`src/renderer/components/AppHeader.tsx:284-360`), gates the
+keyboard routes on `activeDocId` (`src/renderer/App.tsx:9566-9662`), and disables
+the native items from the surface predicate (`App.tsx:9396`
+`snapshotMenuEnabled(activeTabHasDocument, activeTabHasDocument)`). It does NOT
+touch the Command Palette. The palette's own availability gate keys Save / Save
+As / Close Tab on `availability: "tab"` and resolves that to
+`tabs.activeId !== null`:
+
+- `src/renderer/App.tsx:11184-11196` — `paletteAppActions.save` / `.saveAs` /
+  `.closeTab` gate on `activeTabIdRefLocal.current !== null` only.
+- `src/renderer/App.tsx:11337-11338` — `case "tab": return tabs.activeId !== null;`.
+- `src/renderer/state/toolsRegistry.ts:1089-1107` (`save`, `saveAs`) and
+  `:1231-1240` (`tabClose`) — `availability: 'tab'`.
+- The palette lists the full registry (`CommandPalette.tsx:99-100`, `entries`
+  defaults to the single registry) and is reachable on Home via the app menu's
+  "Command Palette..." row (`App.tsx:9893`, action `showToolsPalette`,
+  document-agnostic) or the `Ctrl+Shift+P` chord.
+
+Repro (runtime probe a later run must execute — the phase's own
+`e2e/tfl1116_r05_home_command_gating.spec.cjs` covers File menu / application
+menu / toolbar / keyboard but never opens the palette):
+
+1. Launch fresh (Home, zero documents).
+2. Click a sample to open a document; then `[data-new-tab]` to create and
+   activate an empty tab (the exact "document open BEHIND an active Home tab"
+   state the R05 contract names, and the state its Case C tests).
+3. Press `Ctrl+K` or `Ctrl+Shift+P` to open the Command Palette.
+4. Search `Save`/`Save a copy`/`Close Tab`: the rows are PRESENT and, because
+   the empty tab still has a non-null `tabs.activeId`, ENABLED.
+5. Press Enter on "Save": it dispatches `onSave(activeTabId)` →
+   `App.tsx:5130-5131` `openTabsRef.current[tabId]` is `undefined` for an empty
+   tab → immediate `return`. Nothing happens, no toast, no state change.
+
+Expected: on Home these commands are ABSENT (R05) — at minimum not offered as a
+runnable, enabled row. Actual: present and enabled, and activating one is a
+silent no-op (a click that triggers nothing, which the adversary rules classify
+as a finding: it hides a missing surface gate behind a passing-looking control).
+On a zero-tab Home they are at least present-but-disabled, still short of
+"absent"; the enabled variant above is the concrete exploit.
+
+Note: `undo` / `redo` are also listed but resolve to disabled on Home via
+`appActionGates` (`App.tsx:10996-11002`) — that half is at least honest.
+
+Fix direction (not applied): route the palette's availability through
+`deriveCommandSurface`/`isDocumentOnlyMenuAction` (or drop
+`DOCUMENT_ONLY_MENU_ACTIONS` rows from the palette corpus on `"home"`), and key
+the `save`/`saveAs`/`tabClose` gate on `activeTabHasDocument`, not
+`tabs.activeId !== null`.
+
+## ADV-242: Book View reading location is lost when the reader leaves via a tab switch, not the Close button (R25 partial)
+
+- Session: diff-pass
+- Suggested severity: MEDIUM
+
+What I did: R25 wired the Book View reading location back through `onClose`.
+`BookView.tsx:60` now types `onClose: (finalPage?: number) => void`;
+`BookView.tsx:446-448` `handleClose` reports `displayIndex + 1`; the only caller
+of `handleClose` is the header Close button (`BookView.tsx:650`). App persists it
+at `App.tsx:11852-11863` (`initialPage={open.persisted.currentPage}` in,
+`persistFor(meta.id)({ ...open.persisted, currentPage: finalPage })` out). But
+Book View is rendered conditionally on `bookViewActive` (`App.tsx:1110`,
+`App.tsx:11833`), and no other exit path invokes `onClose`: `activateTab`
+(`App.tsx:10320-10339`) and `onTabStripActivate` do not call `closeBookView`
+(`setBookViewTabId` appears only at `App.tsx:10730` open and `:10733` close).
+`.book-view` is `flex: 1 1 auto` inside the stage (`styles.css:21446`), so the
+AppHeader tab strip stays visible and clickable while Book View is open.
+
+Repro (runtime probe a later run must execute; the phase's
+`e2e/tfl1116_r24_r25_location.spec.cjs` only closes via the Close button):
+
+1. Open a fixture with >= 8 pages, jump to page 5.
+2. Open Book View — it starts at page 5 (correct).
+3. Turn forward twice so the reader is on page 7 (`[data-book-progress]` reads 7).
+4. Click a DIFFERENT tab in the tab strip (do not press Close). Book View
+   unmounts and `onClose` never fires.
+5. Click back to the original tab. Because `bookViewTabId` was never cleared,
+   Book View RE-OPENS, but at `open.persisted.currentPage` = 5, not 7 — the
+   reached location is lost, and the DocumentView footer/persisted reading page
+   also still read 5.
+
+Expected: leaving Book View by any route carries the reached location back (R25).
+Actual: only the Close button does; a tab-away/tab-back round trip discards it.
+
+Fix direction (not applied): clear `bookViewTabId` in `activateTab` (closing Book
+View explicitly and reporting the page first), or lift the reading location out
+of `handleClose` into a state that is published on unmount.
+
+## Surfaces attacked with NO exploitable issue found (probe noted)
+
+- **Overlay containment (C3/R03) — CLEAN.** `placeOverlay`
+  (`overlayPlacement.ts:71-113`) clamps `left`/`top` into
+  `[GAP, viewport - GAP - size]`, never returns a negative coordinate, flips
+  below/above on fit, and bounds the box with `maxHeight = max(minHeight,
+  min(maxHeightCap, sideSpace))`. `useOverlayPlacement`/`useSubmenuPlacement`
+  measure the transform-independent `offsetWidth/offsetHeight` (DEF-618) and
+  recompute on resize + capture-phase scroll; the root portals to `document.body`
+  with `right:auto; width:max-content` (`CommandMenu.tsx:288-304`). Traced the
+  960x640-minimum and maximized cases for the app menu (anchor near the right
+  header edge, `align: "start"`): the horizontal clamp pins the right gutter to
+  >= 8px and the vertical clamp pins to the 8px gutter; oversized boxes pin to
+  the leading gutter rather than escaping. No path produces an out-of-viewport or
+  negative coordinate. Probe run: code trace of every branch + the existing
+  `e2e/tfl1116_r03_app_menu_fit.spec.cjs` oracle (not executed — build mutex).
+- **Navigation sync (C5/R04, R24, R25 entry/exit) — CLEAN except ADV-242.**
+  `revealSeq` is bumped only in `DocumentView.jumpToPage` (`DocumentView.tsx:3029`)
+  so scroll-driven `currentPage` changes leave the Bug-3 gate intact; the rail's
+  reveal reads the live `.thumb-item` rect (`SideRail.tsx:643-661`) and every page
+  registers its outer element unconditionally (`SideRail.tsx:1327`,
+  `registerThumb` at `:903-910`), so a far committed jump still has a real
+  element to centre even when its inner canvas is virtualized off. `visibleRange`
+  (`DocumentView.tsx:3177-3185`, `pageLayoutMode.ts:183-200`) matches the FOUR
+  (4-page) / TWO (2-page) on-screen group. Probe run: code trace + reading
+  `e2e/tfl1116_r04_navigation_sync.spec.cjs`.
+- **Document-scoped state (C2/R02, DEF-620/622) — CLEAN.** `exportDraft` is keyed
+  by `tabs.activeId`, immutable, and resolved through `exportDraftFor`
+  (`App.tsx:9942-9962`); a collapse remount/tab switch re-reads the stored draft
+  because the Inspector's `ExportConfigSection` is controlled (`exportDraft !==
+  undefined`), and reading it never runs an export. `livePageSizeScopeKey`
+  (`pageSizeScope.ts:30-36`) keys Multi Mode by pane and single mode by tab id,
+  and the report site and read site use the same function
+  (`App.tsx:11944-11947` vs `:10643`), so no cross-tab map collision. Probe run:
+  code trace of the write/read scope keys + the two existing unit specs.
+- **Settings / R09 runtime gate — CLEAN.** `isDevelopmentBuild`
+  (`devEnvironment.ts:29-41`) prefers the preload `isPackaged` boolean and falls
+  back to Vite `PROD`/`DEV`; `recordSampleRecent` (`sampleRecents.ts:32-46`)
+  writes `samples/<name>` only when dev, and the only sample-open path
+  (`App.tsx:2662-2667`) routes through it, so production cannot pollute the MRU.
+  The Home motion-pause write (`App.tsx:11718-11728`,
+  `preferences.ts:258-264`) preserves-if-valid and short-circuits the default.
+  Probe run: code trace + `test/unit/renderer/devEnvironment.test.ts`.
+
+## Design critique: the changed Home / navigator / overlay surfaces (TFL-1116 C16)
+
+User context: a desktop PDF user whose job is "get a document open and reading,
+then find/act on a page, without the chrome lying about what is available";
+success is that every surface offers only commands that can actually run.
+Precedes: launching the app. Follows: the document canvas.
+
+### Must-fix (blocks ship)
+- **Affordance / consistency:** the Command Palette offers document-only commands
+  on Home as runnable, enabled rows that do nothing (ADV-241). Because the
+  palette is the app's browse-everything surface, an enabled dead row is worse
+  here than a missing one — it trains the user to distrust the palette. **Try:**
+  filter the palette corpus by `commandSurface`, mirroring the menus.
+
+### Should-fix (before broader rollout)
+- **State honesty:** Book View's reading location silently resets when the reader
+  changes tab instead of pressing Close (ADV-242). **Try:** make any Book View
+  exit publish the reached page, not just the Close button.
+
+### Nice-to-fix (when there's room)
+- **Error/empty copy:** on a zero-tab Home the palette still lists Save / Save a
+  copy / Close Tab as disabled rows with no reason; consider hiding them (R05's
+  "absent") rather than showing a disabled set the user can never need on Home.
+
+### Strengths to keep
+- The File menu, application menu, title-row toolbar and keyboard all derive
+  their document-only visibility from ONE pure evaluator
+  (`commandCapability.ts`), so those four routes cannot drift apart again.
+- The overlay placement is one shared pure rule for root and submenu, measured
+  transform-independently, so a long accelerator label can no longer stretch the
+  app menu to the window edge.
+- The navigator reveal distinguishes a committed jump from a user scroll with a
+  single counter, preserving the Bug-3 "don't recentre while reading" behaviour
+  while still revealing an external jump.
+
+## CTO triage log (2026-10-07) - TFL-1116 C16 diff-pass
+
+- ADV-241: ACCEPTED -> DEF-626 (MEDIUM). The R05 correction does not cover the
+  Command Palette; the document-only Save / Save a copy / Close Tab rows remain
+  present and enabled on Home (behind an active empty tab) and silently no-op.
+  Owner frontend-dev (TFL-1176). Not REJECTED: gate 1 requires document-only
+  commands to be absent from the command surface on Home.
+- ADV-242: ACCEPTED -> DEF-627 (MEDIUM). R25 reports the Book View reading
+  location only via the header Close button; leaving Book View by switching tabs
+  loses the reached location. Owner frontend-dev (TFL-1176).

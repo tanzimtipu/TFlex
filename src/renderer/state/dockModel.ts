@@ -19,6 +19,7 @@
 import type { Stage } from './stages';
 import type { ConvertFormatId } from '../../shared/convert';
 import {
+  dockEligible,
   isDockHostedAction,
   isDockPinnableId,
   toolById,
@@ -312,15 +313,38 @@ export function sanitizeDockPins(raw: unknown, max: number = DOCK_MAX_PINS): str
 }
 
 /**
- * Append a pin: unknown ids are refused, an existing pin is a no-op (identity),
- * and a full dock keeps its current pins rather than silently evicting one.
+ * Append a pin: unknown ids are refused, a dock-ineligible id (a non-dock id
+ * or a build-unsupported command, per `dockEligible`) is refused, an existing
+ * pin is a no-op (identity), and a full dock keeps its current pins rather
+ * than silently evicting one. This is the ONE pin-EXECUTION gate, so it agrees
+ * with the chooser rows and the pin affordance (TFL-1116 C10 / R14).
  */
 export function addDockPin(pins: readonly string[], id: string): string[] {
-  if (toolById(id) === undefined) return [...pins];
-  if (!isDockPinnableId(id)) return [...pins];
+  const entry = toolById(id);
+  if (entry === undefined) return [...pins];
+  if (!dockEligible(entry)) return [...pins];
   if (pins.includes(id)) return [...pins];
   if (pins.length >= DOCK_MAX_PINS) return [...pins];
   return [...pins, id];
+}
+
+/** TFL-1116 C10 (R14) — the dock pin AFFORDANCE verdict for one entry. It
+ *  consults the SAME `dockEligible` predicate the chooser rows and
+ *  `addDockPin` use, plus the live pin state: an ineligible entry, an
+ *  already-pinned entry or a full dock refuses with a reason. The dock's
+ *  Pin-to-dock row renders `allowed`/`reason` verbatim, so the affordance can
+ *  never offer a pin the execution path would refuse. */
+export function dockPinAffordance(args: {
+  entry: ToolEntry;
+  alreadyPinned: boolean;
+  pins: readonly string[];
+}): { allowed: boolean; reason: string | undefined } {
+  if (args.alreadyPinned) return { allowed: false, reason: 'Already pinned' };
+  if (!dockEligible(args.entry)) {
+    return { allowed: false, reason: `${args.entry.label} cannot be added to the dock` };
+  }
+  if (!canPinMore(args.pins)) return { allowed: false, reason: 'Dock is full' };
+  return { allowed: true, reason: undefined };
 }
 
 /** Remove a pin; a missing id is a no-op. */

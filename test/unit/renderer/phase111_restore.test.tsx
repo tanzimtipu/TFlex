@@ -299,7 +299,7 @@ function renderRail(pageCount: number): RailHarness {
 }
 
 describe("Phase 111 chunk D2a — Pages scroll anchor", () => {
-  it("preserves the thumb-rail anchor across a page-list mutation", () => {
+  it("re-centres the pending committed reveal across a page-list mutation", () => {
     const h = renderRail(5);
     try {
       const scroller = h.host.querySelector<HTMLElement>(".thumb-scroller-inner");
@@ -319,12 +319,15 @@ describe("Phase 111 chunk D2a — Pages scroll anchor", () => {
           proto.set?.call(el, value);
         },
       });
-      // A page-list mutation (5 -> 6) must not force-scroll the rail, so the
-      // visible anchor is preserved without a write.
+      // TFL-1116 R04 — the rail seeds its last-seen reveal counter to -1, so
+      // the mount counts as a COMMITTED jump: the viewed page's reveal stays
+      // pending until an ordinary scroll-driven `currentPage` change spends it.
+      // A page-list mutation is a later geometry change, so the rail re-centres
+      // the still-pending committed page rather than stranding it off-screen.
       h.render(6);
       expect(h.host.querySelectorAll("[data-page]").length).toBeGreaterThan(0);
-      expect(writes).toEqual([]);
-      expect(el.scrollTop).toBe(320);
+      expect(writes).toEqual([0]);
+      expect(el.scrollTop).toBe(0);
     } finally {
       h.unmount();
     }

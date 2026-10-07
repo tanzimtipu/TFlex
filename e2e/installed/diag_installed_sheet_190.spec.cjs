@@ -22,7 +22,7 @@ test('diag: installed app sheet-backdrop source', async () => {
   const electronApp = await launchApp([], null, INSTALLED);
   const win = await electronApp.firstWindow();
   try {
-    await win.waitForSelector('.sample-card', { timeout: 30000 });
+    await win.waitForSelector('.welcome', { timeout: 30000 }); // R09: packed Home hides .sample-card
     // Poll for up to 25s: does a sheet-backdrop appear (update prompt timing)?
     let seen = null;
     for (let i = 0; i < 25; i += 1) {

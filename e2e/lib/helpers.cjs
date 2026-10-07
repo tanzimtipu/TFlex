@@ -32,7 +32,9 @@ async function launchDev(extraArgs = []) {
 async function launchInstalled(extraArgs = []) {
   const electronApp = await launchApp(extraArgs, null, INSTALLED);
   const window = await electronApp.firstWindow();
-  await window.waitForSelector('.sample-card', { timeout: 30000 });
+  // R09: a PACKAGED production Home renders no `.sample-card`; `.welcome` is the
+  // production-safe Home-ready signal (the installed path never shows samples).
+  await window.waitForSelector('.welcome', { timeout: 30000 });
   // DEF-172: when a release newer than the installed build is published, the
   // startup autoUpdater check pops the modal UpdatePromptDialog within ~3s of
   // launch and its full-screen .sheet-backdrop intercepts every pointer

@@ -44,7 +44,7 @@ function inter(a, b) {
 test('installed 1.30.0: one-doc Multi Mode dock + thumbnail geometry', async () => {
   app = await launchApp([], null, EXE);
   win = await app.firstWindow();
-  await win.waitForSelector('.sample-card', { timeout: 40000 });
+  await win.waitForSelector('.welcome', { timeout: 40000 }); // R09: packed Home hides .sample-card
   await dismissUpdatePrompt(win);
   await openInto(app, win, getSamplePath('report.pdf'));
   await win.waitForSelector('.pdf-page canvas', { timeout: 30000 });
@@ -72,7 +72,7 @@ test('installed 1.30.0: one-doc Multi Mode dock + thumbnail geometry', async () 
 test('installed 1.30.0: pane Open-a-PDF with one document', async () => {
   app = await launchApp([], null, EXE);
   win = await app.firstWindow();
-  await win.waitForSelector('.sample-card', { timeout: 40000 });
+  await win.waitForSelector('.welcome', { timeout: 40000 }); // R09: packed Home hides .sample-card
   await dismissUpdatePrompt(win);
   await openInto(app, win, getSamplePath('report.pdf'));
   await win.waitForSelector('.pdf-page canvas', { timeout: 30000 });

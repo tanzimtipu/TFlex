@@ -84,7 +84,7 @@ describe("Phase 104 (chunk 1) — the Tools utility button", () => {
     try {
       const tools = host.querySelector<HTMLElement>("[data-dock-tools]");
       expect(tools).not.toBeNull();
-      expect(tools?.textContent?.replace(/\s+/g, " ").trim()).toBe("Tools");
+      expect(tools?.textContent?.replace(/\s+/g, " ").trim()).toBe("All commands");
       clickOn(tools as Element);
       expect(onOpenTools).toHaveBeenCalledTimes(1);
     } finally {

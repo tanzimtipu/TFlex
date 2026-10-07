@@ -283,6 +283,17 @@ export interface ThumbnailRailProps {
    *  host (DocumentView), which is what the ActionDock consumes. */
   pageSelection?: readonly number[] | null;
   onPageSelectionChange?: ((pages: number[]) => void) | null;
+  /** TFL-1116 R04 — a document-scoped COMMITTED-navigation counter. The
+   *  host (DocumentView) bumps it every time a page jump is committed by
+   *  any surface outside this rail (the ViewStrip page input, the
+   *  Next/Previous verbs, an external jump request, an outline or
+   *  annotation jump, the initial-page restore). When it changes the rail
+   *  scrolls `currentPage`'s thumb into view, exactly like a rail click
+   *  does — while an ordinary scroll-driven `currentPage` change leaves
+   *  the counter untouched, preserving the Bug 3 gate. Defaults to 0 so
+   *  every direct consumer/test that omits it keeps the pre-R04 behaviour
+   *  byte-for-byte. */
+  revealSeq?: number;
 }
 
 /** Phase 36 (chunk 2) — ContextPanel's per-thumbnail verbs. */
@@ -318,6 +329,7 @@ export function ThumbnailRail({
   onThumbContextMenu = null,
   pageSelection = null,
   onPageSelectionChange = null,
+  revealSeq = 0,
 }: ThumbnailRailProps) {
   const scrollerRef = useRef<HTMLDivElement | null>(null);
   const thumbElsRef = useRef(new Map<number, HTMLElement>());
@@ -566,35 +578,88 @@ export function ThumbnailRail({
         next.add(p);
         ioExtraThumbsRef.current.add(p);
       }
+      // TFL-1116 R04 / DEF-619 — bail out when the visible set is byte-identical.
+      // This effect's deps include `slotTops`, which changes identity whenever a
+      // page reports its size; during a far committed jump the canvas reports
+      // many sizes in quick succession, and returning a NEW Set each time forced
+      // a rail re-render per report. That render/effect cascade could exceed
+      // React's update-depth limit (error #185) and blank the window. Returning
+      // `prev` when nothing changed makes the effect idempotent; the seeding and
+      // geometry behaviour are unchanged.
+      if (next.size === prev.size) {
+        let same = true;
+        for (const p of next) {
+          if (!prev.has(p)) {
+            same = false;
+            break;
+          }
+        }
+        if (same) return prev;
+      }
       return next;
     });
     computeGeometryMountRef.current();
   }, [pageCount, currentPage, slotTops]);
 
+  // TFL-1116 R04 — the reveal counter's last-seen value. Seeded to -1 so the
+  // FIRST effect run always reveals the mounted `currentPage` (a document
+  // reopened on its stored reading page shows that thumb immediately); every
+  // later run only reveals when the host commits a new jump.
+  const lastRevealSeqRef = useRef(-1);
+  // TFL-1116 R04 — the page a committed navigation still needs pinned into
+  // view. Kept until an ordinary scroll-driven `currentPage` change supersedes
+  // it, so a geometry change that lands just AFTER the jump (the panel
+  // resizing and flipping the rail to two columns, page sizes reporting) still
+  // re-centres instead of leaving the viewed thumb off-screen.
+  const pendingRevealPageRef = useRef<number | null>(null);
+
   useEffect(() => {
     const scroller = scrollerRef.current;
     if (scroller === null || pageCount <= 0) return;
-    // Bug 3 — only recentre the thumb rail when the jump was
-    // triggered by THIS rail (a thumb click), not when
-    // `currentPage` is just reflecting the user's main-view
-    // scroll position. Without this gate every scroll through
-    // the main document re-pinned `scroller.scrollTop`,
-    // snapping the rail back to the active page on every tick.
-    // The ref is set by the rail's `Thumb.onClick` handler below
-    // and cleared at the start of this effect so a single click
-    // only recentres once.
-    if (railJumpTargetRef.current !== currentPage) return;
-    railJumpTargetRef.current = null;
-    const slot = slotTops[currentPage + 1] - slotTops[currentPage];
-    if (!Number.isFinite(slot) || slot <= 0) return;
-    const targetTop = slotTops[currentPage] ?? THUMB_OUTER_PADDING;
-    const desiredTop = targetTop - scroller.clientHeight / 2 + slot / 2;
+    // TFL-1116 R04 — a COMMITTED navigation signal from the host. This is
+    // true only when DocumentView's `jumpToPage` ran (ViewStrip input,
+    // Next/Previous, an external/Multi Mode request, an outline/annotation
+    // jump, or the initial-page restore) — never for a scroll-driven
+    // `currentPage` change.
+    const committed = revealSeq !== lastRevealSeqRef.current;
+    // Bug 3 — a rail-originated thumb click still pins via this ref, so the
+    // two paths share one centre routine. Neither fires for the main view's
+    // scroll: the committed counter is unchanged and the ref only matches the
+    // click's own page.
+    const railClick = railJumpTargetRef.current === currentPage;
+    if (committed) {
+      lastRevealSeqRef.current = revealSeq;
+      pendingRevealPageRef.current = currentPage;
+    } else if (railClick) {
+      pendingRevealPageRef.current = currentPage;
+    } else if (
+      pendingRevealPageRef.current !== null &&
+      pendingRevealPageRef.current !== currentPage
+    ) {
+      // The main view scrolled to a different page: the reveal is spent.
+      pendingRevealPageRef.current = null;
+    }
+    if (railClick) railJumpTargetRef.current = null;
+    const target = pendingRevealPageRef.current;
+    if (target === null) return;
+    // Scroll the page's ACTUAL thumbnail element into view. The per-page slot
+    // geometry (`slotTops`) is a uniform estimate used for the virtualised
+    // window; the rendered card's real pitch can differ (card footer, label,
+    // borders), and over hundreds of pages that drift is more than a viewport.
+    // Reading the live element's box is layout-truth, so the viewed thumb is
+    // centred no matter how large the document is.
+    const el = thumbElsRef.current.get(target);
+    if (el === undefined) return;
+    const scrollerRect = scroller.getBoundingClientRect();
+    const elRect = el.getBoundingClientRect();
+    const elOffset = elRect.top - scrollerRect.top + scroller.scrollTop;
+    const desiredTop = elOffset - scroller.clientHeight / 2 + elRect.height / 2;
     const maxTop = Math.max(0, scroller.scrollHeight - scroller.clientHeight);
     const nextTop = Math.max(0, Math.min(desiredTop, maxTop));
     if (Math.abs(scroller.scrollTop - nextTop) > 1) {
       scroller.scrollTop = nextTop;
     }
-  }, [currentPage, pageCount, slotTops]);
+  }, [currentPage, pageCount, revealSeq, twoCol]);
 
   // Drop selection when the selected page goes away (delete, etc.). In
   // multi-select the HOST prunes the set (DocumentView), so this legacy
@@ -761,7 +826,9 @@ const onDragStart = (page: number) => (e: React.DragEvent<HTMLElement>): void =>
       <div
         ref={scrollerRef}
         className={
-          twoCol ? 'thumb-scroller-inner thumb-scroller-inner--two-col' : 'thumb-scroller-inner'
+          twoCol
+            ? 'thumb-scroller-inner thumb-scroller-inner--two-col tf-panel-scroll'
+            : 'thumb-scroller-inner tf-panel-scroll'
         }
         data-thumb-columns={twoCol ? '2' : '1'}
       >
@@ -1941,7 +2008,7 @@ export function OutlinePanel({ doc, outline, onJump, onError, editor = null }: O
   );
 
   if (!editable) {
-    return <div className="outline-panel">{renderNodes(outline, '', 0)}</div>;
+    return <div className="outline-panel tf-panel-scroll">{renderNodes(outline, '', 0)}</div>;
   }
 
   const retargetEntry = retargetPath === null ? null : entryAt(modelRef.current, retargetPath);
@@ -1949,7 +2016,7 @@ export function OutlinePanel({ doc, outline, onJump, onError, editor = null }: O
   for (let p = 1; p <= visiblePageCount; p += 1) retargetPages.push(p);
 
   return (
-    <div className="outline-panel" data-outline-editable ref={outlineScrollRef}>
+    <div className="outline-panel tf-panel-scroll" data-outline-editable ref={outlineScrollRef}>
       {error !== null && (
         <div className="outline-error" data-outline-error role="alert">
           <Icon icon={AlertCircle} size="xs" />

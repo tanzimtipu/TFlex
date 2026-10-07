@@ -16,7 +16,7 @@
 
 import { useEffect, useMemo, useState, type ReactElement } from "react";
 import { Icon } from "../icons/Icon";
-import { defaultPageRange, parsePageRange } from "../engine/types";
+import { classifyPageRange, defaultPageRange } from "../engine/types";
 import { DialogShell, type DialogAction } from "./DialogShell";
 
 export interface ReplacePagesConfirm {
@@ -86,18 +86,16 @@ export function ReplacePagesDialog(
     valid: boolean;
     error?: string;
   }>(() => {
-    const list = parsePageRange(rangeText, totalPages);
-    if (list === null) {
+    const check = classifyPageRange(rangeText, totalPages);
+    if (check.state !== "valid" || check.pages === null) {
       return {
         start: 0,
         end: 0,
         valid: false,
-        error: "Invalid range",
+        error: check.message ?? "Invalid range",
       };
     }
-    if (list.length === 0) {
-      return { start: 0, end: 0, valid: false, error: "Range is empty" };
-    }
+    const list = check.pages;
     const first = list[0];
     const last = list[list.length - 1];
     if (first === undefined || last === undefined) {
@@ -227,6 +225,12 @@ export function ReplacePagesDialog(
               onChange={(e): void => setRangeText(e.target.value)}
               placeholder={defaultPageRange(totalPages)}
               data-replace-range
+              aria-describedby={
+                parsed.error !== undefined && rangeText.trim().length > 0
+                  ? "replace-range-error"
+                  : undefined
+              }
+              aria-invalid={!parsed.valid && rangeText.trim().length > 0}
             />
             <span className="modal-hint">
               Contiguous range (e.g. <code>2-5</code>) in the active document.
@@ -236,7 +240,12 @@ export function ReplacePagesDialog(
           </label>
 
           {parsed.error !== undefined && rangeText.trim().length > 0 && (
-            <div className="modal-status optimize-error" role="alert">
+            <div
+              id="replace-range-error"
+              className="modal-status optimize-error"
+              role="alert"
+              data-replace-range-error
+            >
               <span>{parsed.error}</span>
             </div>
           )}

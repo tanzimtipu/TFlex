@@ -85,7 +85,7 @@ test.describe('packaged runtime checks', () => {
     app = await launchApp([], null, PACKAGED_EXE);
     win = await app.firstWindow();
     win.on('pageerror', (e) => pageErrors.push(String(e).slice(0, 400)));
-    await win.waitForSelector('.sample-card', { timeout: 60000 });
+    await win.waitForSelector('.welcome', { timeout: 60000 }); // R09: packed Home hides .sample-card
     await dismissUpdatePrompt(win);
   });
 

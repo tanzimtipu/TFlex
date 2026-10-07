@@ -30,7 +30,7 @@ import {
   EXPORT_IMAGE_FORMATS,
   clampExportImageDpi,
 } from "../state/preferences";
-import { defaultPageRange, parsePageRange } from "../engine/types";
+import { classifyPageRange, defaultPageRange } from "../engine/types";
 import {
   isEngineNativeFormat,
   rasterizePageToBlob,
@@ -148,11 +148,12 @@ export function ExportDialog(props: ExportDialogProps): ReactElement | null {
   // DialogShell. The primary Export action is marked `default` so it
   // receives focus on open.
 
-  const parsed = useMemo(
-    () => parsePageRange(rangeText, totalPages),
+  const rangeCheck = useMemo(
+    () => classifyPageRange(rangeText, totalPages),
     [rangeText, totalPages],
   );
-  const valid = parsed !== null && parsed.length > 0 && !running;
+  const parsed = rangeCheck.pages;
+  const valid = rangeCheck.state === "valid" && !running;
 
   const onConfirmClick = async (): Promise<void> => {
     if (!valid || parsed === null) return;
@@ -329,10 +330,24 @@ export function ExportDialog(props: ExportDialogProps): ReactElement | null {
               autoCapitalize="off"
               data-export-range
               disabled={running}
+              aria-describedby={
+                rangeCheck.state === "valid" ? "export-range-help" : "export-range-error"
+              }
+              aria-invalid={rangeCheck.state !== "valid"}
             />
-            <span className="modal-hint">
+            <span className="modal-hint" id="export-range-help">
               Examples: <code>10-20</code>, <code>1,3,5-7</code>.
             </span>
+            {rangeCheck.state !== "valid" && (
+              <span
+                className="export-config-error"
+                id="export-range-error"
+                role="alert"
+                data-export-range-error
+              >
+                {rangeCheck.message}
+              </span>
+            )}
           </label>
 
           <fieldset className="modal-position export-format">

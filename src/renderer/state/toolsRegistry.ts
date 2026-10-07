@@ -1797,6 +1797,42 @@ export function dockPickerIdsForStage(stage: Stage): readonly string[] {
   return out;
 }
 
+/** TFL-1116 C10 (R14) — the declared availabilities that are a BUILD-LEVEL
+ *  refusal: this build can never run the command, whatever the host state
+ *  ("Validation is not available in this build"). Such a command must never be
+ *  OFFERED as an addable / pinnable dock tool. */
+export const DOCK_UNSUPPORTED_AVAILABILITY: ReadonlySet<ToolAvailability> =
+  new Set<ToolAvailability>(['validation']);
+
+/** TFL-1116 C10 (R14) — the ONE dock-eligibility capability predicate. A tool
+ *  is a legal dock CHOICE exactly when the dock can execute it:
+ *
+ *    - it is a dock-pinnable id (`isDockPinnableId` — the curation rule that
+ *      keeps every offered / pinned id runnable by the dock's own routing), and
+ *    - its declared availability is not a build-level refusal
+ *      (`DOCK_UNSUPPORTED_AVAILABILITY`).
+ *
+ *  The chooser rows, the pin affordance and pin execution all consult THIS
+ *  predicate, so the three can never disagree about what may be added.
+ *
+ *  A tool that is only TEMPORARILY unavailable (a live gate such as "This
+ *  document has no reading view") stays eligible: a persisted pin is retained
+ *  and rendered with its refusal copy rather than reset (R14). */
+export function dockEligible(entry: ToolEntry): boolean {
+  if (!isDockPinnableId(entry.id)) return false;
+  return !DOCK_UNSUPPORTED_AVAILABILITY.has(entry.availability);
+}
+
+/** TFL-1116 C10 (R14) — the CHOOOSER's eligible rows: every dock-picker id for
+ *  the stage whose entry passes `dockEligible`, in registry order, deduped.
+ *  The single eligible-tool source the dock's Add chooser renders. */
+export function dockEligibleIdsForStage(stage: Stage): readonly string[] {
+  return dockPickerIdsForStage(stage).filter((id) => {
+    const entry = BY_ID.get(id);
+    return entry !== undefined && dockEligible(entry);
+  });
+}
+
 /** True when the Action Dock hosts this entry as a verb. Phase 37 (item 21):
  *  the dock renders the explicit `DOCK_STAGE_IDS` set, which now includes the
  *  palette's dialog commands; the flyout-hosted annotation tools stay off (the

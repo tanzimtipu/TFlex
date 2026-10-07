@@ -20,7 +20,7 @@ import {
   EXPORT_IMAGE_FORMATS,
 } from '../state/preferences';
 import type { ExportImageFormat } from '../../shared/types';
-import { defaultPageRange, parsePageRange } from '../engine/types';
+import { classifyPageRange, defaultPageRange } from '../engine/types';
 import { DOCK_AVAILABILITY_REASON, officeExportGate } from '../state/dockModel';
 
 /** Every format the Deliver export surface can prepare. */
@@ -135,15 +135,17 @@ export function validateExportRange(
   if (totalPages <= 0) {
     return { valid: false, parsed: null, error: 'Open a document first.' };
   }
-  const parsed = parsePageRange(text, totalPages);
-  if (parsed === null || parsed.length === 0) {
+  const check = classifyPageRange(text, totalPages);
+  if (check.state !== 'valid' || check.pages === null) {
     return {
       valid: false,
       parsed: null,
-      error: `Enter a page range between 1 and ${totalPages} (e.g. 1-3 or 2,4).`,
+      error:
+        check.message ??
+        `Enter a page range between 1 and ${totalPages} (e.g. 1-3 or 2,4).`,
     };
   }
-  return { valid: true, parsed, error: null };
+  return { valid: true, parsed: check.pages, error: null };
 }
 
 export interface ExportGate {

@@ -164,6 +164,41 @@ export function pageReadoutLabel(
   return endPage > startPage ? `${startPage}-${endPage}` : String(startPage);
 }
 
+/**
+ * The HONEST visible-range readout for a grid layout (TFL-1116 R24).
+ *
+ * `pageReadoutLabel` reports one ROW's page range, which is the right string
+ * for a two-page layout (columns 2, one fit row). A FOUR layout puts TWO fit
+ * rows in the viewport, so the visible group is `columns * fitRows` pages: the
+ * focused page's row plus the row below it. Reporting only the row range hid
+ * half the group the user actually sees. This normalizes `page` to its row
+ * (the SAME `pageToRow` / `rowToFirstPage` math `pageReadoutLabel` uses) and
+ * extends the end by the fit rows, e.g. focused page 7 at columns 2 / rows 2
+ * reads "7-10". A single-page layout collapses to a bare page ("7"), and the
+ * caller suppresses the summary entirely when the layout shows one page.
+ *
+ * Pure: no DOM, safe to call inside render. `pageReadoutLabel`'s own range
+ * math is untouched — this is a separate viewport-sized readout.
+ */
+export function pageVisibleRangeLabel(
+  page: number,
+  columns: number,
+  rows: number,
+  pageCount: number,
+): string {
+  const cols = Math.max(1, columns);
+  const fitRows = Math.max(1, rows);
+  const counted = Math.max(1, pageCount);
+  // `pageReadoutLabel` stays the truthful range source: its first number is the
+  // focused page's ROW-start, which is also the visible group's start. Extend
+  // that start by the pages the extra fit rows put on screen.
+  const rowLabel = pageReadoutLabel(page, cols, counted);
+  const rowStart = Number.parseInt(rowLabel, 10);
+  const startPage = Number.isFinite(rowStart) ? rowStart : Math.max(1, page);
+  const endPage = Math.min(counted, startPage + cols * fitRows - 1);
+  return endPage > startPage ? `${startPage}-${endPage}` : String(startPage);
+}
+
 /** Collapse the per-page geometry into per-ROW geometry (CSS grid rows). */
 export function buildRowGeom(
   geom: readonly MixedPageGeom[],

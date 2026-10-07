@@ -59,7 +59,9 @@ async function withApp(fn, label) {
   const win = await app.firstWindow();
   const pageErrors = [];
   win.on('pageerror', (e) => pageErrors.push(String(e).slice(0, 300)));
-  await win.waitForSelector('.sample-card', { timeout: 40000 });
+  // R09: a PACKAGED production Home renders no sample cards; `.welcome` is the
+  // production-safe Home-ready signal (the same gate tfl1116_r09 uses).
+  await win.waitForSelector('.welcome', { timeout: 40000 });
   await dismissUpdatePrompt(win);
   try {
     return await fn(win, pageErrors, app);

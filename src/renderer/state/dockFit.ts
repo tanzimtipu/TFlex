@@ -32,6 +32,38 @@ export const DOCK_PILL_GAP = 8;
  *  the widest pill above: 2 * (12 + 218) + 2 * 8. */
 export const DOCK_DEFAULT_RESERVE = 476;
 
+/**
+ * TFL-1116 (R15) — the reserve the dock subtracts from the CANVAS VIEWPORT
+ * width.
+ *
+ * R15: at 962x620 the canvas has substantial spare width, but the dock stayed
+ * clamped to `viewport - 476`, a band roughly the fitted-paper width, and its
+ * labelled row was forced into the scrolling arrows lane even though the window
+ * was well above the label rung. Root cause: the app's single-mode canvas no
+ * longer MEASURES a pill (Phase 109 retired the floating page/zoom pills, so
+ * `pill` is always null), and the old fallback charged the conservative 476px
+ * reserve unconditionally — clearing pills that do not exist.
+ *
+ * The reserve is therefore a function of what is actually on the canvas:
+ *
+ *   * measured pills (`measured !== null`)          -> their measured reserve;
+ *   * pills present but not yet measured (`pillsPresent`) -> the conservative
+ *     default (a pill may still appear);
+ *   * pills retired / absent                         -> 0: there is nothing to
+ *     clear, so the dock may use the whole canvas viewport, independent of the
+ *     paper's zoom/width.
+ *
+ * Pure, so the truth table is unit-testable without a DOM.
+ */
+export function dockReserveFor(args: {
+  measured: number | null;
+  /** True when the canvas may carry floating pills the dock must clear. */
+  pillsPresent: boolean;
+}): number {
+  if (args.measured !== null) return args.measured;
+  return args.pillsPresent ? DOCK_DEFAULT_RESERVE : 0;
+}
+
 /** Below this free band the dock yields vertically (above the pill row). One
  *  icon verb (38px) + the `...` chip (38px) + their gap + the dock's padding. */
 export const DOCK_MIN_BAND = 96;

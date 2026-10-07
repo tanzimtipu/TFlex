@@ -1,5 +1,10 @@
 // Phase 106 (chunk A) — the ONE shared Home recent row.
 // Phase 112 (TFL-990, chunk C6b) — reworked onto the shared panel vocabulary.
+// TFL-1143 (TFL-1116 C7b, R08) — the row is now ONE CSS grid. Every row shares
+// the SAME track definition (icon / filename / type / status / date / actions)
+// so a column never shifts when an optional Missing badge or an action is
+// absent: empty optional cells keep their tracks. Dates use tabular numerals and
+// the action track is fixed, so a hover reveal cannot move the date or actions.
 //
 // A recent entry shows its real basename, a short containing-folder shorthand,
 // the TRUE last-opened time (`formatOpenedAt`) and only VERIFIED metadata: the
@@ -59,6 +64,9 @@ export function HomeRecentRow(props: HomeRecentRowProps): ReactElement {
   const converted = entry.converted === true;
   const pinned = entry.pinned === true;
   const location = contextLabel.length > 0 ? contextLabel : "\u2014";
+  // R08 — the status cell is ALWAYS rendered (empty when neither marker applies)
+  // so its track holds and the date / actions tracks never move row to row.
+  const hasStatus = converted || missing;
 
   const formatTitle = verified
     ? `Verified source format: ${formatLabel}`
@@ -94,17 +102,26 @@ export function HomeRecentRow(props: HomeRecentRowProps): ReactElement {
           <span className="doc-name">{meta.name}</span>
           <span className="doc-path">{location}</span>
         </span>
-        <span className="recent-row-meta">
-          <span
-            className="doc-format"
-            data-source-format={formatKind}
-            data-source-verified={verified ? "verified" : "hint"}
-            title={formatTitle}
-          >
-            {formatLabel}
-          </span>
+      </button>
+      <span className="recent-row-meta">
+        <span
+          className="doc-format"
+          data-source-format={formatKind}
+          data-source-verified={verified ? "verified" : "hint"}
+          title={formatTitle}
+        >
+          {formatLabel}
+        </span>
+        <span
+          className="recent-row-status"
+          data-recent-status={hasStatus ? "present" : "none"}
+        >
           {converted && (
-            <span className="doc-converted" data-recent-converted title="Converted to PDF for editing">
+            <span
+              className="doc-converted"
+              data-recent-converted
+              title="Converted to PDF for editing"
+            >
               Converted
             </span>
           )}
@@ -113,9 +130,9 @@ export function HomeRecentRow(props: HomeRecentRowProps): ReactElement {
               Missing
             </span>
           )}
-          <span className="doc-when">{formatOpenedAt(entry.openedAt)}</span>
         </span>
-      </button>
+        <span className="doc-when">{formatOpenedAt(entry.openedAt)}</span>
+      </span>
       <div className="recent-row-actions">
         {onTogglePin !== undefined && (
           <button

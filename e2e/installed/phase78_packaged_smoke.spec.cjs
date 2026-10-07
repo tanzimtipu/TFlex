@@ -84,9 +84,9 @@ function overlaps(a, b) {
 
 test('packaged 1.46.0 launches, version correct, zero startup errors, Phase 78 notice surface', async () => {
   // ------------------------------------------------------------------
-  // Item 1 — main window opens and stays open (welcome grid renders).
+  // Item 1 ï¿½ main window opens and stays open (welcome grid renders).
   // ------------------------------------------------------------------
-  await win.waitForSelector('.sample-card', { timeout: 60000 });
+  await win.waitForSelector('.welcome', { timeout: 60000 }); // R09: packed Home hides .sample-card
   await dismissUpdatePrompt(win);
   const title = await win.title();
   const winCount = await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().length);
@@ -94,7 +94,7 @@ test('packaged 1.46.0 launches, version correct, zero startup errors, Phase 78 n
   expect(winCount, 'main window is open').toBeGreaterThanOrEqual(1);
 
   // ------------------------------------------------------------------
-  // Item 3 — reported app version is 1.46.0.
+  // Item 3 ï¿½ reported app version is 1.46.0.
   // ------------------------------------------------------------------
   const av = await app.evaluate(({ app: a }) => a.getVersion());
   console.log(`[p78-packaged] app.getVersion()=${av} expected=${EXPECTED}`);
@@ -102,14 +102,14 @@ test('packaged 1.46.0 launches, version correct, zero startup errors, Phase 78 n
   expect(av, 'packaged app.getVersion()').toBe('1.46.0');
 
   // ------------------------------------------------------------------
-  // Item 2 — no pageerror / console error during startup (up to first paint).
+  // Item 2 ï¿½ no pageerror / console error during startup (up to first paint).
   // ------------------------------------------------------------------
   console.log(`[p78-packaged] startup pageerrors=${JSON.stringify(pageErrors)} consoleErrors=${JSON.stringify(consoleErrors)}`);
   expect(pageErrors, 'zero startup renderer page errors').toEqual([]);
   expect(consoleErrors, 'zero startup renderer console errors').toEqual([]);
 
   // ------------------------------------------------------------------
-  // Item 4 — Phase 78 surface: open an encrypted fixture so the protection
+  // Item 4 ï¿½ Phase 78 surface: open an encrypted fixture so the protection
   // notice appears inside the canvas top-right.
   // ------------------------------------------------------------------
   const fixture = await makeEncryptedFixture({
@@ -160,7 +160,7 @@ test('packaged 1.46.0 launches, version correct, zero startup errors, Phase 78 n
   expect(overlaps(icon, layout), 'collapsed "i" does not overlap page-layout control').toBe(false);
   await win.screenshot({ path: path.join(SHOTS, 'phase78-packaged-protection-collapsed.png') });
 
-  // Item 2 (whole run) — still no renderer errors after the surface smoke.
+  // Item 2 (whole run) ï¿½ still no renderer errors after the surface smoke.
   console.log(`[p78-packaged] total pageerrors=${JSON.stringify(pageErrors)} consoleErrors=${JSON.stringify(consoleErrors)}`);
   expect(pageErrors, 'zero renderer page errors across the run').toEqual([]);
 });

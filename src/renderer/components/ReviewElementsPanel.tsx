@@ -49,6 +49,15 @@ export interface ReviewElementsPanelProps {
    *  list, so the LEFT navigator's list is never duplicated into the right
    *  panel. The LEFT navigator omits it and keeps the list. */
   renderAnnotations?: (() => ReactElement) | null;
+  /** TFL-1116 C13 (R20) — which document-wide scope this renderer owns. The
+   *  LEFT navigator renders `'document'` (the authoritative inventory: the four
+   *  categories with their rows plus the select / edit / delete actions). The
+   *  Inspector's REVIEW section renders `'selection'`: only the annotations
+   *  category (the selected annotation's scope), so the document-wide Bates /
+   *  watermark / signature summaries are never repeated on both sides — they
+   *  have exactly ONE authoritative home (the LEFT navigator). Defaults to
+   *  `'document'`, so every pre-existing caller is byte-for-byte unchanged. */
+  scope?: 'document' | 'selection';
 }
 
 /** A row's display label + jump page, derived purely from its source record. */
@@ -197,6 +206,7 @@ export function ReviewElementsPanel(props: ReviewElementsPanelProps): ReactEleme
     onDelete = null,
     errorFor = null,
     renderAnnotations = null,
+    scope = 'document',
   } = props;
 
   const rowProps = { onSelect, onEdit, onDelete, errorFor };
@@ -220,29 +230,49 @@ export function ReviewElementsPanel(props: ReviewElementsPanelProps): ReactEleme
     label: signatureRowLabel(placement),
   }));
 
+  // R20 — the Annotations category is the one section the Inspector's selection
+  // scope keeps; it renders the list on the LEFT (no slot) and the selected
+  // annotation scope on the RIGHT (the slot). Built once, mounted in whichever
+  // scope this renderer owns.
+  const annotationsSection = (
+    <PanelSection
+      className="review-elements-category"
+      titleClassName="review-elements-category-title"
+      bodyClassName="review-elements-category-body"
+      data-review-category="annotations"
+      aria-label="Annotations"
+      title="Annotations"
+    >
+      {renderAnnotations === null ? (
+        <div className="context-panel-annotations" data-context-panel-annotations>
+          <AnnotationsPanel
+            annotations={[...annotations]}
+            onJumpTo={(page, id): void => onJumpToAnnotation?.(page, id)}
+            onEdit={(id, patch): void => onEditAnnotation?.(id, patch)}
+            onDelete={(id): void => onDeleteAnnotation?.(id)}
+          />
+        </div>
+      ) : (
+        renderAnnotations()
+      )}
+    </PanelSection>
+  );
+
+  // R20 — the selection scope stops at the annotations category: the
+  // document-wide summaries live in exactly ONE place (the LEFT navigator), so
+  // the Inspector never re-renders them. The document scope renders the full
+  // authoritative inventory with its actions.
+  if (scope === 'selection') {
+    return (
+      <div className="review-elements" data-review-elements data-review-elements-scope="selection">
+        {annotationsSection}
+      </div>
+    );
+  }
+
   return (
-    <div className="review-elements" data-review-elements>
-      <PanelSection
-        className="review-elements-category"
-        titleClassName="review-elements-category-title"
-        bodyClassName="review-elements-category-body"
-        data-review-category="annotations"
-        aria-label="Annotations"
-        title="Annotations"
-      >
-        {renderAnnotations === null ? (
-          <div className="context-panel-annotations" data-context-panel-annotations>
-            <AnnotationsPanel
-              annotations={[...annotations]}
-              onJumpTo={(page, id): void => onJumpToAnnotation?.(page, id)}
-              onEdit={(id, patch): void => onEditAnnotation?.(id, patch)}
-              onDelete={(id): void => onDeleteAnnotation?.(id)}
-            />
-          </div>
-        ) : (
-          renderAnnotations()
-        )}
-      </PanelSection>
+    <div className="review-elements" data-review-elements data-review-elements-scope="document">
+      {annotationsSection}
       {renderCategory({
         category: 'bates',
         title: 'Bates numbering',

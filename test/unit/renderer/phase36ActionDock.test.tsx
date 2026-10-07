@@ -623,7 +623,7 @@ describe("Phase 36/37 — ActionDock responsive rules", () => {
       expect(host.querySelector("[data-dock-hint]")).toBeNull();
       const tools = host.querySelector<HTMLElement>("[data-dock-tools]");
       expect(tools).not.toBeNull();
-      expect(tools?.textContent?.replace(/\s+/g, " ").trim()).toBe("Tools");
+      expect(tools?.textContent?.replace(/\s+/g, " ").trim()).toBe("All commands");
       clickOn(tools as Element);
       expect(onOpenTools).toHaveBeenCalledTimes(1);
     } finally {

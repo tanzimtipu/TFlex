@@ -7,6 +7,13 @@
 // `.app-menu-popover` / `[data-app-menu-popover]` selector hooks, while the
 // shared dismiss/focus ownership (Escape, outside-click, Tab,
 // focus-return-to-trigger) works through the AppHeader trigger.
+//
+// TFL-1116 (R03 chunk C3) — the application menu now opts into the shared
+// collision-aware placement (`collisionAware`), so the popover is PORTALED to
+// `document.body`. The behavioural contract below is unchanged; only the
+// element lookups for the (now portaled) popover and its rows are
+// document-scoped instead of container-scoped, exactly like the sibling
+// portaled-menu specs (def311_314_dockCuration.test.tsx).
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -125,8 +132,8 @@ async function settle(): Promise<void> {
   });
 }
 
-function row(h: Harness, action: string): HTMLButtonElement {
-  const el = h.container.querySelector<HTMLButtonElement>(`[data-menu-action="${action}"]`);
+function row(action: string): HTMLButtonElement {
+  const el = document.querySelector<HTMLButtonElement>(`[data-menu-action="${action}"]`);
   if (el === null) throw new Error(`menu row ${action} missing`);
   return el;
 }
@@ -136,12 +143,12 @@ describe("TFL-993 - application menu on CommandMenu", () => {
     const h = renderHeader({ onMultiModeToggle: vi.fn(), onOpenFind: vi.fn(), findEnabled: true });
     try {
       open(h);
-      const actions = [...h.container.querySelectorAll<HTMLButtonElement>("[data-menu-action]")].map(
+const actions = [...document.querySelectorAll<HTMLButtonElement>("[data-menu-action]")].map(
         (r) => r.getAttribute("data-menu-action"),
       );
       expect(actions).toEqual(["preferences", "toggleTheme", "multiMode", "find", "optimize", "about"]);
-      expect(row(h, "multiMode").textContent).toContain(MULTI_MODE_ACCESSIBLE_NAME);
-      expect(row(h, "find").textContent).toContain(FIND_IN_DOCUMENT_ACCESSIBLE_NAME);
+      expect(row("multiMode").textContent).toContain(MULTI_MODE_ACCESSIBLE_NAME);
+      expect(row("find").textContent).toContain(FIND_IN_DOCUMENT_ACCESSIBLE_NAME);
     } finally {
       h.cleanup();
     }
@@ -153,12 +160,12 @@ describe("TFL-993 - application menu on CommandMenu", () => {
     try {
       open(h);
       act((): void => {
-        row(h, "toggleTheme").click();
+        row("toggleTheme").click();
       });
       expect(ctx.toggleTheme).toHaveBeenCalledTimes(1);
       expect(ctx.preferences).not.toHaveBeenCalled();
       await settle();
-      expect(h.container.querySelector("[data-app-menu-popover]")).toBeNull();
+      expect(document.querySelector("[data-app-menu-popover]")).toBeNull();
     } finally {
       h.cleanup();
     }
@@ -171,12 +178,12 @@ describe("TFL-993 - application menu on CommandMenu", () => {
     try {
       open(h);
       act((): void => {
-        row(h, "multiMode").click();
+        row("multiMode").click();
       });
       expect(onMultiModeToggle).toHaveBeenCalledTimes(1);
       open(h);
       act((): void => {
-        row(h, "find").click();
+        row("find").click();
       });
       expect(onOpenFind).toHaveBeenCalledTimes(1);
     } finally {
@@ -188,12 +195,12 @@ describe("TFL-993 - application menu on CommandMenu", () => {
     const h = renderHeader({ onOpenFind: vi.fn(), findEnabled: false });
     try {
       open(h);
-      const find = row(h, "find");
+      const find = row("find");
       expect(find.hasAttribute("disabled")).toBe(true);
       expect(find.getAttribute("title")).toBe(FIND_DISABLED_REASON);
       const descId = find.getAttribute("aria-describedby");
       expect(descId).toBeTruthy();
-      expect(h.container.querySelector(`#${descId as string}`)?.textContent).toBe(
+      expect(document.querySelector(`#${descId as string}`)?.textContent).toBe(
         FIND_DISABLED_REASON,
       );
     } finally {
@@ -205,7 +212,7 @@ describe("TFL-993 - application menu on CommandMenu", () => {
     const h = renderHeader({ onOpenFind: vi.fn(), findEnabled: true });
     try {
       open(h);
-      const menu = h.container.querySelector("[data-app-menu-popover]");
+      const menu = document.querySelector("[data-app-menu-popover]");
       expect(menu).not.toBeNull();
       expect(menu?.classList.contains("app-menu-popover")).toBe(true);
       expect(menu?.classList.contains("command-menu")).toBe(true);
@@ -219,13 +226,13 @@ describe("TFL-993 - application menu on CommandMenu", () => {
     const h = renderHeader({});
     try {
       open(h);
-      expect(h.container.querySelector("[data-app-menu-popover]")).not.toBeNull();
+      expect(document.querySelector("[data-app-menu-popover]")).not.toBeNull();
       act((): void => {
         window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
       });
       expect(document.activeElement).toBe(h.trigger);
       await settle();
-      expect(h.container.querySelector("[data-app-menu-popover]")).toBeNull();
+      expect(document.querySelector("[data-app-menu-popover]")).toBeNull();
       expect(h.trigger.getAttribute("aria-expanded")).toBe("false");
     } finally {
       h.cleanup();
@@ -236,13 +243,13 @@ describe("TFL-993 - application menu on CommandMenu", () => {
     const h = renderHeader({});
     try {
       open(h);
-      const first = row(h, "preferences");
+      const first = row("preferences");
       act((): void => {
         first.dispatchEvent(new KeyboardEvent("keydown", { key: "Tab", bubbles: true, cancelable: true }));
       });
       expect(document.activeElement).toBe(h.trigger);
       await settle();
-      expect(h.container.querySelector("[data-app-menu-popover]")).toBeNull();
+      expect(document.querySelector("[data-app-menu-popover]")).toBeNull();
     } finally {
       h.cleanup();
     }
@@ -256,12 +263,12 @@ describe("TFL-993 - application menu on CommandMenu", () => {
     document.addEventListener("pointerdown", onDocPointerDown);
     try {
       open(h);
-      expect(h.container.querySelector("[data-app-menu-popover]")).not.toBeNull();
+      expect(document.querySelector("[data-app-menu-popover]")).not.toBeNull();
       act((): void => {
         outside.dispatchEvent(new MouseEvent("pointerdown", { bubbles: true, cancelable: true, button: 0 }));
       });
       await settle();
-      expect(h.container.querySelector("[data-app-menu-popover]")).toBeNull();
+      expect(document.querySelector("[data-app-menu-popover]")).toBeNull();
       expect(onDocPointerDown).toHaveBeenCalled();
     } finally {
       document.removeEventListener("pointerdown", onDocPointerDown);

@@ -20,7 +20,7 @@
 
 import { useEffect, useMemo, useRef, useState, type ReactElement } from "react";
 import { DialogShell, type DialogAction } from "./DialogShell";
-import { defaultPageRange, parsePageRange } from "../engine/types";
+import { classifyPageRange, defaultPageRange } from "../engine/types";
 import {
   clampExportImageDpi,
   DEFAULT_EXPORT_IMAGE_DPI,
@@ -173,18 +173,18 @@ export function OfficeExportDialog(
     cancelRef.current.aborted = false;
   }, [open, totalPages, format, initialRangeText, initialDpiValue]);
 
-  const parsed = useMemo(
-    () => parsePageRange(rangeText, totalPages),
+  const rangeCheck = useMemo(
+    () => classifyPageRange(rangeText, totalPages),
     [rangeText, totalPages],
   );
+  const parsed = rangeCheck.pages;
   // The optional bridge member for THIS format, guarded for absence. This read
   // only detects presence for the enable gate; the actual call below is a
   // member call on `client`.
   const methodPresent =
     format === "xlsx" ? client?.xlsx !== undefined : client?.pptx !== undefined;
   const ready = docId !== null && methodPresent;
-  const valid =
-    parsed !== null && parsed.length > 0 && !running && ready;
+  const valid = rangeCheck.state === "valid" && !running && ready;
 
   // Esc-to-close, the backdrop drag guard and initial focus are owned by
   // DialogShell. The primary Export action is marked `default` so it
@@ -375,10 +375,24 @@ export function OfficeExportDialog(
           autoCapitalize="off"
           data-office-export-range
           disabled={running}
+          aria-describedby={
+            rangeCheck.state === "valid" ? "office-range-help" : "office-range-error"
+          }
+          aria-invalid={rangeCheck.state !== "valid"}
         />
-        <span className="modal-hint">
+        <span className="modal-hint" id="office-range-help">
           Examples: <code>10-20</code>, <code>1,3,5-7</code>.
         </span>
+        {rangeCheck.state !== "valid" && (
+          <span
+            className="export-config-error"
+            id="office-range-error"
+            role="alert"
+            data-office-range-error
+          >
+            {rangeCheck.message}
+          </span>
+        )}
       </label>
 
       <label className="modal-field">

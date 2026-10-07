@@ -172,7 +172,9 @@ describe("panelPrimitives — the scoped .tf-panel token mapping", () => {
     expect(scope).toContain("--tf-panel-section-gap: 20px;");
     expect(scope).toContain("--tf-panel-header-height-preferred: 52px;");
     expect(scope).toContain("--tf-panel-field-radius: 9px;");
-    expect(scope).toContain("--tf-panel-heading-size: 14px;");
+    // Phase 114 (TFL-1139 R26) — the panel title role now resolves the shared
+    // Quiet Precision token (16px) instead of the retired literal.
+    expect(scope).toContain("--tf-panel-heading-size: var(--type-panel-size);");
     expect(scope).toContain("--tf-panel-heading-weight: 500;");
     expect(scope).toContain("--tf-panel-secondary-label-size: 12px;");
     expect(scope).toContain("--tf-panel-boundary-width: 1px;");

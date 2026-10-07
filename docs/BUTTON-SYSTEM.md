@@ -81,6 +81,8 @@ Phase 15 `--motion-*` tokens in `styles/animations.css`.
 | `--btn-primary-fg` | `#FFFFFF` (dark `#171A21`) | `.btn-primary` ink |
 | `--btn-primary-hover` | `#6341C5` (dark `#C5B4FF`) | `.btn-primary:hover` |
 | `--btn-primary-pressed` | `#5734B6` (dark `#AC94F5`) | `.btn-primary:active` |
+| `--btn-primary-disabled-bg` | `#F0EBFC` (dark `#302740`) | primary CTA disabled fill (muted violet) |
+| `--btn-primary-disabled-fg` | `#7050D6` (dark `#B9A4FF`) | primary CTA disabled ink (clears 4.5:1) |
 | `--btn-neutral-pressed` | `#EAEDF2` (dark `#303641`) | ghost/secondary/toggle/disclosure press |
 | `--btn-selected-bg` | `#F0EBFC` (dark `#302740`) | `.btn-toggle[aria-pressed="true"]` |
 | `--btn-selected-fg` | `#7050D6` (dark `#B9A4FF`) | selected ink |
@@ -144,7 +146,10 @@ sizing and radius, its internal spacing, its icon usage and its states.
 - **Icon usage** — optional leading glyph; decorative, the text is the label.
 - **States** — default `--btn-primary-bg`; hover `--btn-primary-hover`;
   active/pressed `--btn-primary-pressed` plus the shared press transform; focus
-  `--focus-ring`; disabled dimmed with `cursor: not-allowed`.
+  `--focus-ring`; disabled dimmed with `cursor: not-allowed`. A primary CTA on a
+  fixed footer (e.g. the Deliver export action) may instead opt into the explicit
+  `--btn-primary-disabled-*` pair so the disabled look is distinguishable by
+  colour, not opacity alone.
 
 ### Secondary — `.btn-secondary`
 

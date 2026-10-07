@@ -12,18 +12,52 @@
 //   - 'bar' (legacy/testing): the pre-Phase-51 horizontal top bar, retained so
 //     the bar's own history and tests keep a working harness.
 //
+// TFL-1116 C12 (R18/R19) — review polish + bounded rendering:
+//   - R18: the header names the suspect COUNT and the page grouping; rows keep
+//     stable word / confidence columns; the row the user navigated to stays
+//     visibly SELECTED; and navigation hands the engine's REAL word rect (page
+//     points) to the host AND exposes it on the row, so the highlight consumes
+//     the actual bounds instead of guessing a target. Correction / accept / skip
+//     are NOT offered — the engine has no such operation — so the surface is
+//     labelled navigation-only honestly.
+//   - R19: a noisy scan produced 3708 suspects, all mounted (the accessibility
+//     tree exposed thousands of children). Above
+//     `OCR_SUSPECT_WINDOW_THRESHOLD` the panel renders a BOUNDED window of the
+//     flattened page/row stream with stable keys and listbox semantics, so only
+//     the visible slice mounts. The measured 3708 / 10000 profiles live in
+//     `test/unit/renderer/tfl1116_ocrPerf.test.ts`.
+//
 // Each entry shows the word, its page, and a colour-coded confidence bar
 // against the 60% engine threshold (SUSPECT_CONFIDENCE_THRESHOLD). Clicking an
-// entry navigates to the suspect's page and pulses a short highlight. The panel
-// never edits text (correction is out of contract for Phase 11).
+// entry navigates to the suspect's page and highlights the selected row. The
+// panel never edits text (correction is out of contract).
 
-import type { ReactElement } from 'react';
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type KeyboardEvent,
+  type ReactElement,
+} from 'react';
 import { X } from 'lucide-react';
 import { Icon } from '../icons/Icon';
 import { Button, IconButton } from './Button';
 import type { OcrSuspect } from '../../shared/types';
 import { SUSPECT_CONFIDENCE_THRESHOLD } from '../../shared/types';
 import { TfBarTop } from './motion/TfMotion';
+import {
+  FALLBACK_VIEWPORT_H,
+  OCR_SUSPECT_ROW_H,
+  OCR_SUSPECT_WINDOW_THRESHOLD,
+  computeWindowRange,
+  flattenSuspectItems,
+  formatSuspectBounds,
+  groupByPage,
+  suspectAtIndex,
+  suspectOptionId,
+  type GroupedPage,
+} from './ocrSuspectsModel';
 
 export interface OcrSuspectsPanelProps {
   /** Low-confidence words from the most recent OCR run on the active doc. */
@@ -40,10 +74,37 @@ export interface OcrSuspectsPanelProps {
   layout?: 'bar' | 'inspector';
 }
 
+export type OcrSuspectsLayout = NonNullable<OcrSuspectsPanelProps['layout']>;
+
 export function OcrSuspectsPanel(props: OcrSuspectsPanelProps): ReactElement {
   const { suspects, hasRun, onNavigate, onClose, layout = 'bar' } = props;
-  const grouped = groupByPage(suspects);
+  const grouped = useMemo(() => groupByPage(suspects), [suspects]);
   const totalPages = grouped.length;
+  const flatSuspects = useMemo(
+    () => grouped.flatMap((page) => page.entries),
+    [grouped],
+  );
+  const indexOf = useMemo(() => {
+    const map = new Map<OcrSuspect, number>();
+    flatSuspects.forEach((entry, index) => map.set(entry, index));
+    return map;
+  }, [flatSuspects]);
+
+  // R18 — the navigated-to row stays visibly selected. Selection is keyed by
+  // the flat suspect index, which is stable for a given suspect list.
+  const [selectedIndex, setSelectedIndex] = useState<number | null>(null);
+  useEffect(() => {
+    setSelectedIndex((prev) =>
+      prev !== null && prev >= flatSuspects.length ? null : prev,
+    );
+  }, [flatSuspects.length]);
+
+  const onSelect = (suspect: OcrSuspect, index: number): void => {
+    setSelectedIndex(index);
+    onNavigate(suspect);
+  };
+
+  const bounded = suspects.length > OCR_SUSPECT_WINDOW_THRESHOLD;
 
   const header = (
     <header className="ocr-suspects-header">
@@ -54,12 +115,17 @@ export function OcrSuspectsPanel(props: OcrSuspectsPanelProps): ReactElement {
       <div className="ocr-suspects-summary" aria-live="polite">
         {hasRun ? (
           <>
-            <span>
-              {suspects.length} low-confidence{' '}
-              {suspects.length === 1 ? 'word' : 'words'}
+            <span
+              className="ocr-suspects-count"
+              data-ocr-suspect-count={suspects.length}
+            >
+              <strong className="ocr-suspects-count-value">{suspects.length}</strong>{' '}
+              low-confidence {suspects.length === 1 ? 'word' : 'words'}
             </span>
             {totalPages > 1 && (
-              <span className="ocr-suspects-pages">across {totalPages} pages</span>
+              <span className="ocr-suspects-pages">
+                across {totalPages} pages
+              </span>
             )}
           </>
         ) : (
@@ -78,11 +144,22 @@ export function OcrSuspectsPanel(props: OcrSuspectsPanelProps): ReactElement {
     </header>
   );
 
-  const list = (
+  const hasEntries = hasRun && suspects.length > 0;
+  const list = bounded ? (
+    <VirtualSuspectList
+      grouped={grouped}
+      flatCount={flatSuspects.length}
+      indexOf={indexOf}
+      selectedIndex={selectedIndex}
+      onSelect={onSelect}
+    />
+  ) : (
     <SuspectGroups
       grouped={grouped}
       hasRun={hasRun}
-      onNavigate={onNavigate}
+      indexOf={indexOf}
+      selectedIndex={selectedIndex}
+      onSelect={onSelect}
     />
   );
 
@@ -97,6 +174,22 @@ export function OcrSuspectsPanel(props: OcrSuspectsPanelProps): ReactElement {
       >
         {header}
         <div className="inspector-section-body ocr-suspects-body ocr-suspects-body-inline">
+          {hasEntries && (
+            <>
+              <div
+                className="ocr-suspects-columns"
+                data-ocr-suspects-columns
+                aria-hidden
+              >
+                <span className="ocr-suspects-col-word">Word</span>
+                <span className="ocr-suspects-col-confidence">Confidence</span>
+              </div>
+              <p className="ocr-suspects-note" data-ocr-suspects-navigation-only>
+                Navigation only. The OCR engine does not support correcting
+                words here.
+              </p>
+            </>
+          )}
           {list}
         </div>
       </section>
@@ -116,14 +209,17 @@ export function OcrSuspectsPanel(props: OcrSuspectsPanelProps): ReactElement {
   );
 }
 
-/** The grouped list body. Shared by both layouts so the word rows, page
- *  headers and data attributes are identical wherever it renders. */
+/** The grouped list body for small lists. Every page renders its own section
+ *  with a header and a `<ul>` of rows — the exact DOM the Phase 11 / Phase 51
+ *  tests pin. */
 function SuspectGroups(props: {
   grouped: readonly GroupedPage[];
   hasRun: boolean;
-  onNavigate: (suspect: OcrSuspect) => void;
+  indexOf: ReadonlyMap<OcrSuspect, number>;
+  selectedIndex: number | null;
+  onSelect: (suspect: OcrSuspect, index: number) => void;
 }): ReactElement {
-  const { grouped, hasRun, onNavigate } = props;
+  const { grouped, hasRun, indexOf, selectedIndex, onSelect } = props;
   return (
     <>
       {hasRun && grouped.length === 0 && (
@@ -142,50 +238,29 @@ function SuspectGroups(props: {
           className="ocr-suspects-page"
           data-ocr-suspects-page={page.page}
         >
-          <header className="ocr-suspects-page-header">
-            <span className="ocr-suspects-page-label">Page {page.page}</span>
-            <span className="ocr-suspects-page-count">
-              {page.entries.length} {page.entries.length === 1 ? 'word' : 'words'}
-            </span>
-          </header>
+          <PageHeading page={page.page} count={page.entries.length} />
           <ul className="ocr-suspects-list">
-            {page.entries.map((entry, idx) => (
-              <li
-                key={`${entry.page}-${idx}-${entry.rect.x}-${entry.rect.y}`}
-                className="ocr-suspects-entry"
-              >
-                <Button
-                  intent="tertiary"
-                  kind="action"
-                  density="compact"
-                  className="ocr-suspects-entry-btn"
-                  onClick={(): void => onNavigate(entry)}
-                  title={`Navigate to page ${entry.page}`}
-                  data-ocr-suspect-word={entry.word}
+            {page.entries.map((entry) => {
+              const index = indexOf.get(entry) ?? -1;
+              const selected = index >= 0 && index === selectedIndex;
+              return (
+                <li
+                  key={`r:${entry.page}:${index}`}
+                  className={
+                    selected
+                      ? 'ocr-suspects-entry ocr-suspects-entry-selected'
+                      : 'ocr-suspects-entry'
+                  }
+                  data-ocr-suspect-selected={selected ? 'true' : undefined}
                 >
-                  <span className="ocr-suspects-word">{entry.word}</span>
-                  <span className="ocr-suspects-confidence">
-                    <span
-                      className={
-                        entry.confidence < SUSPECT_CONFIDENCE_THRESHOLD
-                          ? 'ocr-suspects-confidence-bar ocr-suspects-confidence-low'
-                          : 'ocr-suspects-confidence-bar'
-                      }
-                      aria-hidden
-                    >
-                      <span
-                        style={{
-                          width: `${Math.max(0, Math.min(100, entry.confidence))}%`,
-                        }}
-                      />
-                    </span>
-                    <span className="ocr-suspects-confidence-label">
-                      {entry.confidence.toFixed(0)}%
-                    </span>
-                  </span>
-                </Button>
-              </li>
-            ))}
+                  <SuspectButton
+                    suspect={entry}
+                    selected={selected}
+                    onSelect={(): void => onSelect(entry, index)}
+                  />
+                </li>
+              );
+            })}
           </ul>
         </section>
       ))}
@@ -193,22 +268,216 @@ function SuspectGroups(props: {
   );
 }
 
-interface GroupedPage {
-  page: number;
-  entries: OcrSuspect[];
+/** R19 — the bounded window. The page/row stream is flattened, only the
+ *  `[start, end)` slice mounts between two spacers, and the listbox owns
+ *  keyboard navigation (Up/Down) over the WHOLE list, not just the window. */
+function VirtualSuspectList(props: {
+  grouped: readonly GroupedPage[];
+  flatCount: number;
+  indexOf: ReadonlyMap<OcrSuspect, number>;
+  selectedIndex: number | null;
+  onSelect: (suspect: OcrSuspect, index: number) => void;
+}): ReactElement {
+  const { grouped, flatCount, indexOf, selectedIndex, onSelect } = props;
+  const items = useMemo(() => flattenSuspectItems(grouped), [grouped]);
+  const windowRef = useRef<HTMLDivElement | null>(null);
+  const [scrollTop, setScrollTop] = useState(0);
+  const [viewportH, setViewportH] = useState(FALLBACK_VIEWPORT_H);
+
+  useEffect(() => {
+    const el = windowRef.current;
+    if (el === null) return undefined;
+    const measure = (): void => {
+      setViewportH(el.clientHeight > 0 ? el.clientHeight : FALLBACK_VIEWPORT_H);
+    };
+    measure();
+    window.addEventListener('resize', measure);
+    return (): void => {
+      window.removeEventListener('resize', measure);
+    };
+  }, []);
+
+  // Keep the selected row inside the window when selection moves by keyboard.
+  useEffect(() => {
+    const el = windowRef.current;
+    if (el === null || selectedIndex === null) return;
+    const suspect = suspectAtIndex(grouped, selectedIndex);
+    if (suspect === null) return;
+    const itemIndex = items.findIndex(
+      (item) => item.kind === 'row' && item.suspect === suspect,
+    );
+    if (itemIndex < 0) return;
+    const top = itemIndex * OCR_SUSPECT_ROW_H;
+    const bottom = top + OCR_SUSPECT_ROW_H;
+    if (top < el.scrollTop) {
+      el.scrollTop = top;
+    } else if (bottom > el.scrollTop + el.clientHeight) {
+      el.scrollTop = bottom - el.clientHeight;
+    }
+  }, [selectedIndex, items, grouped]);
+
+  const { start, end } = computeWindowRange(scrollTop, viewportH, items.length);
+  const visible = items.slice(start, end);
+  const topPad = start * OCR_SUSPECT_ROW_H;
+  const bottomPad = Math.max(0, (items.length - end) * OCR_SUSPECT_ROW_H);
+
+  const onKeyDown = (event: KeyboardEvent<HTMLDivElement>): void => {
+    if (event.key !== 'ArrowDown' && event.key !== 'ArrowUp') return;
+    if (flatCount === 0) return;
+    event.preventDefault();
+    const dir = event.key === 'ArrowDown' ? 1 : -1;
+    const base =
+      selectedIndex === null ? (dir === 1 ? -1 : flatCount) : selectedIndex;
+    const next = Math.max(0, Math.min(flatCount - 1, base + dir));
+    const suspect = suspectAtIndex(grouped, next);
+    if (suspect !== null) onSelect(suspect, next);
+  };
+
+  const label = `OCR suspects: ${flatCount} low-confidence ${
+    flatCount === 1 ? 'word' : 'words'
+  } across ${grouped.length} ${grouped.length === 1 ? 'page' : 'pages'}`;
+
+  return (
+    <div
+      ref={windowRef}
+      className="ocr-suspects-window"
+      role="listbox"
+      aria-label={label}
+      aria-activedescendant={
+        selectedIndex !== null && selectedIndex >= 0
+          ? suspectOptionId(selectedIndex)
+          : undefined
+      }
+      tabIndex={0}
+      data-ocr-suspects-window
+      onScroll={(event): void => setScrollTop(event.currentTarget.scrollTop)}
+      onKeyDown={onKeyDown}
+    >
+      {topPad > 0 && (
+        <div
+          className="ocr-suspects-window-spacer"
+          style={{ height: topPad }}
+          aria-hidden
+        />
+      )}
+      {visible.map((item) => {
+        if (item.kind === 'page') {
+          return (
+            <div
+              key={item.key}
+              className="ocr-suspects-page ocr-suspects-page-virtual"
+              data-ocr-suspects-page={item.page}
+              role="presentation"
+            >
+              <PageHeading page={item.page} count={item.pageCount} />
+            </div>
+          );
+        }
+        const suspect = item.suspect;
+        if (suspect === null) return null;
+        const index = indexOf.get(suspect) ?? -1;
+        const selected = index >= 0 && index === selectedIndex;
+        return (
+          <div
+            key={item.key}
+            id={index >= 0 ? suspectOptionId(index) : undefined}
+            className={
+              selected
+                ? 'ocr-suspects-virtual-row ocr-suspects-entry-selected'
+                : 'ocr-suspects-virtual-row'
+            }
+            role="option"
+            aria-selected={selected}
+            aria-setsize={flatCount}
+            aria-posinset={index + 1}
+            data-ocr-suspect-selected={selected ? 'true' : undefined}
+          >
+            <SuspectButton
+              suspect={suspect}
+              selected={selected}
+              focusable={false}
+              onSelect={(): void => {
+                if (index >= 0) onSelect(suspect, index);
+              }}
+            />
+          </div>
+        );
+      })}
+      {bottomPad > 0 && (
+        <div
+          className="ocr-suspects-window-spacer"
+          style={{ height: bottomPad }}
+          aria-hidden
+        />
+      )}
+      {flatCount === 0 && (
+        <div className="ocr-suspects-empty" data-ocr-suspects-empty>
+          <span>No low-confidence words — recognition looks clean.</span>
+        </div>
+      )}
+    </div>
+  );
 }
 
-function groupByPage(suspects: readonly OcrSuspect[]): GroupedPage[] {
-  const map = new Map<number, OcrSuspect[]>();
-  for (const s of suspects) {
-    const list = map.get(s.page);
-    if (list === undefined) {
-      map.set(s.page, [s]);
-    } else {
-      list.push(s);
-    }
-  }
-  return [...map.entries()]
-    .sort((a, b) => a[0] - b[0])
-    .map(([page, entries]) => ({ page, entries }));
+function PageHeading({ page, count }: { page: number; count: number }): ReactElement {
+  return (
+    <header className="ocr-suspects-page-header">
+      <span className="ocr-suspects-page-label">Page {page}</span>
+      <span className="ocr-suspects-page-count">
+        {count} {count === 1 ? 'word' : 'words'}
+      </span>
+    </header>
+  );
 }
+
+/** One suspect row's button. Shared by both layouts so the word / confidence
+ *  columns, the confidence bar and every `data-ocr-suspect-*` hook are
+ *  identical wherever a row renders. */
+function SuspectButton(props: {
+  suspect: OcrSuspect;
+  selected: boolean;
+  onSelect: () => void;
+  focusable?: boolean;
+}): ReactElement {
+  const { suspect, selected, onSelect, focusable = true } = props;
+  const low = suspect.confidence < SUSPECT_CONFIDENCE_THRESHOLD;
+  const bounds = formatSuspectBounds(suspect);
+  return (
+    <Button
+      intent="tertiary"
+      kind="action"
+      density="compact"
+      className="ocr-suspects-entry-btn"
+      onClick={onSelect}
+      tabIndex={focusable ? 0 : -1}
+      title={`Navigate to page ${suspect.page} — word bounds ${bounds} pt`}
+      aria-current={selected ? 'true' : undefined}
+      data-ocr-suspect-word={suspect.word}
+      data-ocr-suspect-page={suspect.page}
+      data-ocr-suspect-bounds={bounds}
+      data-ocr-suspect-confidence={suspect.confidence.toFixed(0)}
+    >
+      <span className="ocr-suspects-word">{suspect.word}</span>
+      <span className="ocr-suspects-confidence">
+        <span
+          className={
+            low
+              ? 'ocr-suspects-confidence-bar ocr-suspects-confidence-low'
+              : 'ocr-suspects-confidence-bar'
+          }
+          aria-hidden
+        >
+          <span
+            style={{
+              width: `${Math.max(0, Math.min(100, suspect.confidence))}%`,
+            }}
+          />
+        </span>
+        <span className="ocr-suspects-confidence-label">
+          {suspect.confidence.toFixed(0)}%
+        </span>
+      </span>
+    </Button>
+  );
+}
+

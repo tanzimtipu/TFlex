@@ -78,7 +78,8 @@ import {
   pageLayoutColumns,
   pageLayoutFitMode,
   pageLayoutFitPages,
-  pageReadoutLabel,
+  pageLayoutFitRows,
+  pageVisibleRangeLabel,
   pageToRow,
   rowToFirstPage,
   rowsToPageRange,
@@ -613,6 +614,12 @@ interface DocumentViewProps extends DocumentViewDockProps {
    *  state. Threaded to the SideRail, whose expand/collapse button
    *  calls it; the rail never owns the value itself. */
   onTogglePagesPanelCollapsed?: () => void;
+  /** TFL-1116 C11 (R16) — render the single-mode ContextPanel as the compact
+   *  overlay drawer. The host (App) resolves this below the panel threshold;
+   *  the drawer overlays the canvas and closes on Escape / the close control. */
+  contextDrawer?: boolean;
+  /** TFL-1116 C11 (R16) — asks the host to close the compact context drawer. */
+  onCloseContextDrawer?: () => void;
   /** Phase 59 (item 7 follow-up) — the host-owned active rail tab (App's
    *  `railTab`), threaded to the Pages ContextPanel so the "Page thumbnails" /
    *  "Bookmarks" commands switch the panel's body. Optional: absent = the
@@ -1078,6 +1085,8 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
   onEditModeToggle,
   pagesPanelCollapsed,
   onTogglePagesPanelCollapsed,
+  contextDrawer = false,
+  onCloseContextDrawer,
   railTab,
   onRailTabChange,
   navigatorLayout,
@@ -1114,6 +1123,27 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
   ref,
 ) {
   const scrollerRef = useRef<HTMLDivElement | null>(null);
+  // TFL-1116 (R15) — the CANVAS VIEWPORT width the dock sizes against. The
+  // dock lives inside `.canvas-overlay` (the same box as the scroller), but it
+  // must never key on the FITTED PAPER width: measure the visible canvas host
+  // itself (`.document-scroller`, which already excludes the open Inspector's
+  // `--tf-tools-inset`) and thread it to `ActionDock` as `canvasWidth`, so its
+  // responsive plan is independent of the paper's zoom/width. `undefined` until
+  // the first measurement so the dock falls back to its own host measure.
+  const [canvasViewportWidth, setCanvasViewportWidth] = useState<number | undefined>(undefined);
+  useEffect((): (() => void) | undefined => {
+    const el = scrollerRef.current;
+    if (el === null) return undefined;
+    const measure = (): void => {
+      const w = el.clientWidth;
+      if (w > 0) setCanvasViewportWidth(w);
+    };
+    measure();
+    if (typeof ResizeObserver === "undefined") return undefined;
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return (): void => ro.disconnect();
+  }, []);
   // Phase-C frosted layering â€” the full-bleed scroller needs the
   // measured chrome stack height so .document-content pads down by
   // exactly the toolbar rows that float above it (see the
@@ -1858,6 +1888,14 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
   const [mountedPages, setMountedPages] = useState<Set<number>>(new Set());
   const [viewportBox, setViewportBox] = useState({ w: 0, h: 0 });
   const [currentPage, setCurrentPage] = useState(initial.currentPage);
+  // TFL-1116 R04 — the document-scoped COMMITTED-navigation counter. Every
+  // call to `jumpToPage` (the ONE funnel for the ViewStrip input, the
+  // Next/Previous verbs, a rail thumb click, an outline / annotation jump,
+  // the external Multi Mode request and the initial-page restore) bumps it.
+  // It is published to the thumbnail navigator so the viewed page's thumb is
+  // revealed after a jump committed OUTSIDE the rail, while a scroll-driven
+  // `currentPage` change leaves it untouched (the Bug 3 gate).
+  const [revealSeq, setRevealSeq] = useState(0);
   // DEF-141 â€” per-page sizes (un-rotated pt dims) reported by each
   // mounted PageView's `onPageSize`. The scroller renders every slot
   // at ITS OWN page's size so a per-page crop of page 1 no longer
@@ -2801,6 +2839,14 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
   // mount-sync effect from INSTANT-killing an in-flight smooth
   // scroll: a click that *did* scroll must never be re-applied.
   const pendingJumpLandingRef = useRef(false);
+  // TFL-1116 R04 — the scroller's ABSOLUTE distance from the in-flight
+  // committed-jump target at the previous scroll tick. A normal smooth scroll
+  // only ever shrinks it; if it GROWS the animation was cancelled and a user
+  // scroll (or a hidden-while-animating pane) has taken over, so the lock must
+  // release and the heuristic reconcile `currentPage` with what is on screen.
+  // This is what stops a committed jump that never lands from leaving a stale
+  // page in `currentPage` (and therefore in the persisted reading position).
+  const jumpApproachDistRef = useRef<number | null>(null);
   // DEF-098 â€” gates the initial-page-restore effect to a single run
   // per DocumentView mount (see the effect for the why).
   const didInitialRestoreRef = useRef(false);
@@ -2868,6 +2914,7 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
         const scroller = scrollerRef.current;
         if (scroller !== null && scroller.scrollTop >= targetTop - 1) {
           jumpTargetRef.current = null;
+          jumpApproachDistRef.current = null;
           if (jumpLockTimerRef.current !== null) {
             window.clearTimeout(jumpLockTimerRef.current);
             jumpLockTimerRef.current = null;
@@ -2875,6 +2922,27 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
           // The heuristic below will recompute from the final
           // scrollTop; fall through to it.
         } else {
+          // TFL-1116 R04 — the scroller is moving AWAY from the committed
+          // target: the smooth animation was cancelled and a user scroll has
+          // taken over (or the pane was hidden mid-flight). Release the lock
+          // and let the heuristic reflect the page actually on screen, so
+          // `currentPage` — and the persisted reading page — cannot go stale.
+          // A normal forward/back jump only shrinks the distance, so the
+          // DEF-058/DEF-098 sticky-target behaviour is untouched.
+          const dist = scroller === null ? null : Math.abs(scroller.scrollTop - targetTop);
+          const prevDist = jumpApproachDistRef.current;
+          if (dist !== null && prevDist !== null && dist > prevDist + 8) {
+            jumpTargetRef.current = null;
+            jumpApproachDistRef.current = null;
+            if (jumpLockTimerRef.current !== null) {
+              window.clearTimeout(jumpLockTimerRef.current);
+              jumpLockTimerRef.current = null;
+            }
+            computeCurrentPage();
+            computeGeometryMountRef.current();
+            return;
+          }
+          jumpApproachDistRef.current = dist;
           // Still mid-jump. Re-arm the fallback timer in case the
           // smooth scroll never fires `scrollend` (some harnesses).
           if (jumpLockTimerRef.current === null) {
@@ -2925,6 +2993,7 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
     const onScrollEnd = (): void => {
       if (jumpTargetRef.current !== null) {
         jumpTargetRef.current = null;
+        jumpApproachDistRef.current = null;
         if (jumpLockTimerRef.current !== null) {
           window.clearTimeout(jumpLockTimerRef.current);
           jumpLockTimerRef.current = null;
@@ -2957,12 +3026,18 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
       // the fallback path below. The optimistic currentPage update
       // is what makes the click feel responsive at first paint.
       setCurrentPage(page);
+      // TFL-1116 R04 — record the committed navigation so the thumbnail
+      // navigator reveals `page` even when the jump originated outside the
+      // rail (ViewStrip / Next / external request / restore).
+      setRevealSeq((s) => s + 1);
       jumpTargetRef.current = page;
+      jumpApproachDistRef.current = null;
       if (jumpLockTimerRef.current !== null) {
         window.clearTimeout(jumpLockTimerRef.current);
       }
       jumpLockTimerRef.current = window.setTimeout(() => {
         jumpTargetRef.current = null;
+        jumpApproachDistRef.current = null;
         jumpLockTimerRef.current = null;
         // DEF-098 â€” release-only. No forced recompute from whatever
         // scrollTop the scroller happens to hold now (it may still
@@ -3096,16 +3171,19 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
     [captureLayoutFlip, setMode],
   );
 
-  // Phase 40 (item 9) — the honest readout for the current layout. Single
-  // column leaves it null (the pill shows the bare page, unchanged); a
-  // multi-column grid shows the row's page range so an even-page jump reports
-  // the page it landed on, not just the row's first page.
-  const pageReadout = useMemo(
-    () =>
-      layoutColumns > 1
-        ? pageReadoutLabel(currentPage, layoutColumns, pageCount)
-        : null,
-    [layoutColumns, currentPage, pageCount],
+  // TFL-1116 R24 — the SEPARATE visible-range summary for the current layout.
+  // Single page shows it as null (the footer shows just the focused page); a
+  // multi-page layout shows the group the viewport actually holds: the focused
+  // page's row plus the extra fit rows (FOUR = 4 pages, TWO = 2). The jump
+  // input keeps the focused page (`currentPage`) — it no longer shows a range.
+  const visibleRange = useMemo(
+    () => {
+      const rows = pageLayoutFitRows(layoutMode);
+      return layoutColumns * rows > 1
+        ? pageVisibleRangeLabel(currentPage, layoutColumns, rows, pageCount)
+        : null;
+    },
+    [layoutColumns, layoutMode, currentPage, pageCount],
   );
 
   // ---- ctrl+wheel zoom -----------------------------------------------------------------
@@ -4152,9 +4230,44 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
   // on the map identity, so an inline host callback never re-fires it.
   const onPageSizesReportRef = useRef(onPageSizesReport);
   onPageSizesReportRef.current = onPageSizesReport;
+  // TFL-1116 R04 / DEF-619 — a far committed jump mounts pages continuously as
+  // the smooth scroll crosses the document, and every mount grows `pageSizes`.
+  // Reporting on EVERY growth re-rendered the entire App once per page; across a
+  // 520-page jump that synchronous render -> passive-effect -> setState cascade
+  // could exceed React's maximum update depth (error #185) and blank the window.
+  // Coalescing to one report per animation frame keeps the host's map current
+  // (at most one frame behind, which the Inspector cannot perceive) while
+  // breaking the synchronous cascade. The frame callback reads the LIVE map
+  // through `pageSizesRef`, so no intermediate size is ever lost.
+  //
+  // TFL-1116 (DEF-622) — the report must ALSO re-fire when this view's SCOPE
+  // changes. Multi Mode reuses the SAME `.tab-pane` (keyed by tab id, no
+  // remount) and only flips `multiPane`, so entering Multi Mode / binding a
+  // document to a pane leaves `pageSizes` (and its identity) untouched and a
+  // `[pageSizes]`-only effect never re-publishes: the host's pane-keyed maps
+  // stay empty and the shared Inspector's Size row reads "Not available".
+  // `multiPane` IS the pane component of the host's `livePageSizeScopeKey`
+  // (single mode is keyed by tab id, which is constant for this per-tab
+  // view), so keying the effect on it re-publishes this view's OWN measured
+  // map under "A"/"B" on entry and on pane reassignment, with no remount.
+  const pageSizesReportRafRef = useRef(0);
   useEffect((): void => {
-    onPageSizesReportRef.current?.(pageSizes);
-  }, [pageSizes]);
+    if (pageSizesReportRafRef.current === 0) {
+      pageSizesReportRafRef.current = window.requestAnimationFrame((): void => {
+        pageSizesReportRafRef.current = 0;
+        onPageSizesReportRef.current?.(pageSizesRef.current);
+      });
+    }
+  }, [pageSizes, multiPane]);
+  useEffect(
+    (): (() => void) => (): void => {
+      if (pageSizesReportRafRef.current !== 0) {
+        window.cancelAnimationFrame(pageSizesReportRafRef.current);
+        pageSizesReportRafRef.current = 0;
+      }
+    },
+    [],
+  );
 
   // ---- Phase 36 (chunk 3b / chunk 7): the annotations flyout + shared idle --
   //
@@ -4401,6 +4514,7 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
       onReorder={onReorder}
       onUndo={onUndo}
       onJump={(p): void => jumpToPage(p)}
+      revealSeq={revealSeq}
       outline={outline}
       onError={railError}
       onMerge={onMerge}
@@ -4420,6 +4534,8 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
       // host (App) owns the value; the panel renders it and reports toggles.
       collapsed={pagesPanelCollapsed ?? false}
       onToggleCollapsed={onTogglePagesPanelCollapsed}
+      drawer={contextDrawer}
+      onClose={onCloseContextDrawer}
       // Phase 59 (item 7 follow-up) — the host-owned rail tab reaches the
       // Pages body, so the palette's "Page thumbnails" / "Bookmarks" rows
       // switch the panel and the panel's own outline toggle writes it back.
@@ -4489,6 +4605,7 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
       onReorder={onReorder}
       onUndo={onUndo}
       onJump={(p): void => jumpToPage(p)}
+      revealSeq={revealSeq}
       // Phase 37 (chunk 5, item 19) — Multi Mode strips carry the SAME options
       // as the single-mode panel: the right-click menu's dialog entries, the
       // inline hover verbs (built inside the strip from onOp/onDelete + these),
@@ -4892,7 +5009,7 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
             page={currentPage}
             pageCount={pageCount}
             pageLabel={resolvePageLabel(currentPage, engineState.pageLabels)}
-            pageReadout={pageReadout}
+            visibleRange={visibleRange}
             zoomPercent={Math.round(effectiveScale * 100)}
             zoomMode={zoom.mode}
             onJump={pageJump}
@@ -5004,6 +5121,11 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
             bulk={dockBulk}
             dockPins={dockPinsSanitized}
             dockUnpinned={dockUnpinned}
+            canvasWidth={canvasViewportWidth}
+            // TFL-1116 (R15) — Phase 109 retired the floating page/zoom pills
+            // from the single-mode canvas, so the dock has nothing to clear and
+            // sizes against the canvas viewport above.
+            pillsRetired
             ladder={dockLadder}
             onPinTool={(id): void => onDockPin?.(id)}
             onUnpinTool={(id): void => onDockUnpin?.(id)}

@@ -21,7 +21,7 @@
 //      it via the Cancel button, and the same click lands on the control
 //      afterwards.
 const { test, expect } = require('@playwright/test');
-const { launchInstalled, dismissUpdatePrompt, hardClose } = require('../lib/helpers.cjs');
+const { launchInstalled, dismissUpdatePrompt, hardClose, openSamplePath, getSamplePath } = require('../lib/helpers.cjs');
 
 let electronApp = null;
 let win = null;
@@ -104,10 +104,11 @@ test('DEF-172 B: dismissUpdatePrompt detects and dismisses the update prompt', a
 
   // Control returned: a real click now lands and drives the app (the first
   // pointer event of a sweep - exactly what the backdrop used to swallow).
+  // R09: a PACKAGED production Home renders no `.sample-card`, so drive the
+  // OS-open / Open-dialog path through the real Home "Open Files" tool instead.
   const t0 = Date.now();
-  await win.locator('.sample-card').first().click({ timeout: 10000 });
-  await win.waitForSelector('.workspace', { timeout: 15000 });
+  await openSamplePath(win, electronApp, getSamplePath('report.pdf'));
   const clickMs = Date.now() - t0;
-  console.log(`[DEF-172] sample-card click after dismissal landed in ${clickMs}ms`);
+  console.log(`[DEF-172] home Open click after dismissal landed in ${clickMs}ms`);
   expect(clickMs).toBeLessThan(10000);
 });
