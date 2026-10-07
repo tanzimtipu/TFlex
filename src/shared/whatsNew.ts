@@ -23,6 +23,20 @@ export interface WhatsNewEntry {
 /** Ordered newest first. */
 export const WHATS_NEW: WhatsNewEntry[] = [
   {
+    version: '1.51.1',
+    date: '2026-10-08',
+    highlights: [
+      'A quality pass on the visual overhaul, with fixes across the Home screen, menus, panels and dock.',
+      'The app menu keeps its proper gutter instead of stretching to the right edge.',
+      'A large document no longer flashes blank when you jump to a page.',
+      'The Inspector page Size row updates correctly after switching tabs and in Multi Mode.',
+      'Home only shows Save, Save a copy and Close Tab when they can actually apply.',
+      'Book View keeps your place when you switch tabs and come back.',
+      'The Text inspector no longer scrolls sideways or clips its formatting controls.',
+      'The image and Stamp dialogs, all-pages PNG export and Output checks are clearer and easier to act on.',
+    ],
+  },
+  {
     version: '1.51.0',
     date: '2026-10-07',
     highlights: [

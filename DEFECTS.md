@@ -5,6 +5,30 @@
 > inspect the current `OPEN`, `FIX-READY`, and `DISPUTED` entries first; closed records are
 > historical evidence and must not be loaded wholesale.
 
+## DEF-636: Stale Phase 23 animations-switch assertion reddens verify:full (blocks the 1.51.1 release gate)
+
+- Status: FIX-READY (frontend-dev TFL-1210, 2026-10-08; qa focused re-verify pending)
+- Severity: LOW - test-only. The PreferencesDialog Animations hint copy changed in the visual-overhaul review pass and the Phase 23 unit oracle kept the old string, so `verify:full` (conventions + typecheck + full unit suite) fails on one assertion and blocks the Jovrel 1.51.1 release gate. No product impact; the shipped copy is correct.
+- Found by: qa (TFL-1209 release-gate phase validation, 2026-10-08)
+- Phase: release OTA TFL-1204 (Jovrel 1.51.1)
+
+Files:
+- `test/unit/renderer/phase23_animationsSwitch.test.tsx:113` - asserts `toContain("menus, panels and dialogs appear instantly")` (string unchanged since `e0b817e`, Phase 23).
+- `src/renderer/components/PreferencesDialog.tsx:424` - the hint now reads "When off, menus, panels, dialogs and page changes appear without transition animations." (copy changed in `dc68679`, TFL-1146 AR-01..AR-09).
+
+Steps to reproduce:
+1. `npm.cmd run verify:full`.
+2. `test/unit/renderer/phase23_animationsSwitch.test.tsx > PreferencesDialog Animations control > renders the stored value and the explanatory hint` fails. Suite: Test Files 1 failed | 727 passed (728); Tests 1 failed | 8842 passed (8843). Deterministic: re-run alone -> 1 failed | 9 passed.
+
+Expected: the assertion matches the current shipped hint copy so the release gate is green.
+
+Actual: the test pins the superseded copy, so it fails.
+- Command: `npm.cmd run test:unit -- test/unit/renderer/phase23_animationsSwitch.test.tsx` -> 1 failed.
+
+History:
+- qa (TFL-1209, 2026-10-08): observed RED on `verify:full`; classified STALE TEST (product copy changed in `dc68679`; test string unchanged since Phase 23); pre-existing at HEAD, NOT caused by the 1.51.1 `WHATS_NEW` entry (`test/unit/main/whatsNew.test.ts` is among the 727 passing). Product and feed items of the gate were GREEN. Routed to the renderer test owner.
+- frontend-dev (TFL-1210, 2026-10-08): FIX-READY - updated the stale expected substring at `test/unit/renderer/phase23_animationsSwitch.test.tsx:113` to "menus, panels, dialogs and page changes appear without transition animations", matching `src/renderer/components/PreferencesDialog.tsx:424`. One file, one line; assertion shape retained; product untouched. Evidence: `npm.cmd run test:unit -- test/unit/renderer/phase23_animationsSwitch.test.tsx` -> 1 file passed, 10 passed / 0 failed; `npm.cmd run verify:full` -> exit 0, conventions clean (395 source files), 728 test files passed, 8843 tests passed / 0 failed. doc-maintenance: no changes required. Awaiting qa focused re-verify.
+
 ## DEF-631: Text inspector still scrolls horizontally at normal full-window width; its preview clips a formatting control
 
 - Status: CLOSED (qa TFL-1198 retest, 2026-10-08)
