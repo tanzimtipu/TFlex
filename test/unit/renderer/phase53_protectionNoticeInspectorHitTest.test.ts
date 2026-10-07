@@ -125,7 +125,11 @@ describe("phase 52 — the protection banner reserves the fixed Inspector's colu
       resolve(__dirname, "../../../src/renderer/components/ProtectionNotice.tsx"),
       "utf8",
     );
-    expect(source.match(/<button/g)?.length ?? 0).toBe(2);
+    // Phase 113 (wave 4) migrated both notice controls onto the shared
+    // `IconButton` primitive; each `IconButton` still renders one real
+    // `<button>` (Button.tsx), so one in-flow collapse control + one absolute
+    // overlay icon = two usages.
+    expect(source.match(/<IconButton/g)?.length ?? 0).toBe(2);
     expect(source).toContain('data-protection-collapse');
     expect(source).toContain('data-protection-icon');
   });

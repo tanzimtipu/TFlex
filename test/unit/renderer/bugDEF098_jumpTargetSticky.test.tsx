@@ -63,7 +63,7 @@ import type { PDFDocumentProxy } from "pdfjs-dist";
 import { DocumentView, type PersistedViewer } from "../../../src/renderer/components/DocumentView";
 import type { DocDiagnostics } from "../../../src/renderer/components/DocumentView";
 import type { EngineState } from "../../../src/renderer/engine/types";
-import { slotOffsetTop, CONTENT_PADDING_PX } from "../../../src/renderer/components/pageGeometry";
+import { slotOffsetTop, CONTENT_PADDING_PX, FIT_MARGIN_PX } from "../../../src/renderer/components/pageGeometry";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -351,8 +351,10 @@ async function mountView(opts: MountOpts = {}): Promise<Harness> {
 
 /** Position of a page's top inside the scroller (same math jumpToPage uses).
  *  The fake viewport is 1200px wide, so fit-width scale =
- *  (clientWidth - 2*CONTENT_PADDING_PX) / 612pt. */
-const FIT_SCALE = (1200 - CONTENT_PADDING_PX * 2) / 612;
+ *  (clientWidth - 2*FIT_MARGIN_PX) / 612pt. Phase 107 (chunk B) added the
+ *  logical fit margin (FIT_MARGIN_PX = 28); CONTENT_PADDING_PX stays 0 so the
+ *  scroll-landing math is unchanged. */
+const FIT_SCALE = (1200 - FIT_MARGIN_PX * 2) / 612;
 function pageTop(page: number): number {
   return slotOffsetTop(page, 792, FIT_SCALE) - CONTENT_PADDING_PX;
 }

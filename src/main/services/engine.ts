@@ -5890,7 +5890,17 @@ async function restoreSnapshot(doc: EngineDoc, snap: Snapshot): Promise<void> {
 async function tryRestorePdfBytes(doc: EngineDoc, bytes: Uint8Array | undefined): Promise<void> {
   if (!bytes) return;
   try {
-    const reloaded = await PDFDocument.load(bytes, { preserveXFA: true });
+    // TFL-1107 — `updateMetadata: false` keeps this reload a pure parse.
+    // `PDFDocument.load()` defaults to `updateMetadata: true`, whose
+    // constructor calls `updateInfoDict()`, stamping the Info `/ModDate` with
+    // the CURRENT wall clock. Undo/redo restore a byte snapshot captured from
+    // the pre-op document, so a reload that re-stamps `/ModDate` makes the
+    // restored doc serialize to different bytes than the state it restores
+    // (a 1-second wall-clock race: the E7 byte round-trip invariant failed
+    // only when the reload straddled a second boundary). Preserving the
+    // snapshot's own timestamps makes `serializeDoc(restore(snapshot))`
+    // byte-identical to `serializeDoc(originalState)`.
+    const reloaded = await PDFDocument.load(bytes, { preserveXFA: true, updateMetadata: false });
     doc.pdfDoc = reloaded;
   } catch {
     // Best-effort: leave the current pdfDoc in place.

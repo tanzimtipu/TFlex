@@ -69,7 +69,10 @@ describe("Phase C — frosted chrome over the document (full-bleed scroller)", (
     expect(body).toMatch(/position:\s*absolute/);
     expect(body).toMatch(/top:\s*0/);
     expect(body).toMatch(/right:\s*0/);
-    expect(body).toMatch(/bottom:\s*0/);
+    // Phase 109 — the unified View Strip is the real grid row 6 below the
+    // viewport, so the frosted full-bleed scroller stops above it by the
+    // footer-height token instead of running to `bottom: 0`.
+    expect(body).toMatch(/bottom:\s*var\(--view-strip-h,\s*48px\)/);
     expect(body).toMatch(/left:\s*0/);
     // z-index 0 keeps the scroller UNDER the floating chrome rows.
     expect(body).toMatch(/z-index:\s*0/);

@@ -58,22 +58,25 @@ function mount(node: ReactElement): { host: HTMLElement; unmount: () => void } {
 }
 
 describe("phase112 panelLayout — the width contract", () => {
-  it("documents the left band 220..320 default 240 and right 260..380 default 280", () => {
-    expect(PANEL_LEFT_WIDTH).toEqual({ min: 220, max: 320, default: 240 });
+  it("documents the left band 240..420 default 280 and right 260..380 default 280", () => {
+    // Phase 111 (chunk D1) widened the navigator to the Consistency
+    // Corrections contract (280 default, 240-420) reusing `panelLeftWidthPx`;
+    // the right inspector band is unchanged.
+    expect(PANEL_LEFT_WIDTH).toEqual({ min: 240, max: 420, default: 280 });
     expect(PANEL_RIGHT_WIDTH).toEqual({ min: 260, max: 380, default: 280 });
   });
 
-  it("resolves the persisted values and the 240 / 280 defaults when unset", () => {
+  it("resolves the persisted values and the 280 defaults when unset", () => {
     expect(resolvePanelWidth("left", 300)).toBe(300);
     expect(resolvePanelWidth("right", 320)).toBe(320);
-    expect(resolvePanelWidth("left", undefined)).toBe(240);
+    expect(resolvePanelWidth("left", undefined)).toBe(280);
     expect(resolvePanelWidth("right", undefined)).toBe(280);
-    expect(resolvePanelWidth("left", Number.NaN)).toBe(240);
+    expect(resolvePanelWidth("left", Number.NaN)).toBe(280);
   });
 
   it("clamps to the band at both ends", () => {
-    expect(clampPanelWidth("left", 100)).toBe(220);
-    expect(clampPanelWidth("left", 9999)).toBe(320);
+    expect(clampPanelWidth("left", 100)).toBe(240);
+    expect(clampPanelWidth("left", 9999)).toBe(420);
     expect(clampPanelWidth("right", 0)).toBe(260);
     expect(clampPanelWidth("right", 9999)).toBe(380);
     expect(clampPanelWidth("left", 240.4)).toBe(240);
@@ -86,12 +89,14 @@ describe("phase112 panelLayout — the width contract", () => {
   });
 
   it("maps the arrow keys to a clamped step per side", () => {
-    expect(panelWidthAfterKey("left", 240, "ArrowRight")).toBe(240 + PANEL_RESIZE_STEP_PX);
-    expect(panelWidthAfterKey("left", 240, "ArrowLeft")).toBe(240 - PANEL_RESIZE_STEP_PX);
+    // Phase 111 widened the left band to 240..420; start mid-band so both
+    // arrow directions step without hitting the (now higher) 240 floor.
+    expect(panelWidthAfterKey("left", 300, "ArrowRight")).toBe(300 + PANEL_RESIZE_STEP_PX);
+    expect(panelWidthAfterKey("left", 300, "ArrowLeft")).toBe(300 - PANEL_RESIZE_STEP_PX);
     expect(panelWidthAfterKey("right", 280, "ArrowRight")).toBe(280 - PANEL_RESIZE_STEP_PX);
     expect(panelWidthAfterKey("right", 280, "ArrowLeft")).toBe(280 + PANEL_RESIZE_STEP_PX);
-    expect(panelWidthAfterKey("left", 240, "Home")).toBe(220);
-    expect(panelWidthAfterKey("left", 240, "End")).toBe(320);
+    expect(panelWidthAfterKey("left", 240, "Home")).toBe(240);
+    expect(panelWidthAfterKey("left", 240, "End")).toBe(420);
     expect(panelWidthAfterKey("left", 240, "a")).toBeNull();
   });
 });
@@ -111,8 +116,8 @@ describe("phase112 panelLayout — the resize handle", () => {
     expect(handle?.getAttribute("role")).toBe("separator");
     expect(handle?.getAttribute("aria-orientation")).toBe("vertical");
     expect(handle?.getAttribute("aria-valuenow")).toBe("240");
-    expect(handle?.getAttribute("aria-valuemin")).toBe("220");
-    expect(handle?.getAttribute("aria-valuemax")).toBe("320");
+    expect(handle?.getAttribute("aria-valuemin")).toBe("240");
+    expect(handle?.getAttribute("aria-valuemax")).toBe("420");
     expect(handle?.getAttribute("tabindex")).toBe("0");
     unmount();
   });
@@ -123,7 +128,7 @@ describe("phase112 panelLayout — the resize handle", () => {
     const { host, unmount } = mount(
       createElement(PanelResizeHandle, {
         side: "left",
-        width: 240,
+        width: 300,
         onResize: (w: number): void => {
           resized.push(w);
         },
@@ -144,8 +149,8 @@ describe("phase112 panelLayout — the resize handle", () => {
     key("ArrowLeft");
     key("Home");
     key("End");
-    expect(resized).toEqual([256, 256, 224, 220, 320]);
-    expect(committed).toEqual([256, 256, 224, 220, 320]);
+    expect(resized).toEqual([316, 316, 284, 240, 420]);
+    expect(committed).toEqual([316, 316, 284, 240, 420]);
     unmount();
   });
 });

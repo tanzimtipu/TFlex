@@ -5211,28 +5211,3 @@ Rule: judge the child's REPORT, not its flapping status. A child that returns to
 after a complete final report is the echo, not a stall - do not re-review, do not re-dispatch qa, do not
 continue the issue. Keep the parent `blocked` and let the creation-time parent-child link deliver the real
 completion wake (see the 2026-10-05 corollary above); never resume the parent off a `todo`-status child.
-
-## 2026-10-07: two-tier model + team-lead layer (operator decision; recorded per the model-change rule)
-
-Model pins (Paperclip adapterConfig is the authoritative source): the CTO moved OFF
-`openrouter/moonshotai/kimi-k3` to `openrouter/z-ai/glm-5.2` (strategy tier, judgment
-only - planning, gating, decisions; its token volume is tiny so the cost is
-negligible). The CEO runs `openrouter/deepseek/deepseek-v4.1-flash` (since
-2026-10-01). team-lead, backend-dev, frontend-dev, qa, the adversary and git-agent all
-run `openrouter/deepseek/deepseek-v4.1-flash` (tactical tier); feature-scout runs
-`openrouter/z-ai/glm-5.3-flash`. A build role on flash, or the CTO on glm-5.2, is
-CORRECT, not a fallback.
-
-Org restructure (same day): team-lead (deepseek-v4.1-flash, holds phase-level context,
-sequences chunks, writes anchored dev/qa briefs, reports to the CTO in the structured
-format DECISIONS-NEEDED / BLOCKERS / DONE-CRITERIA-STATUS / NEXT-CHUNK-SPEC) inserted
-between the CTO and the build roles. Reporting chains now: backend-dev, frontend-dev,
-qa, adversary and git-agent report to team-lead; team-lead and feature-scout report to
-the CTO; the CTO reports to the CEO. Routing rule: phases decomposing into MORE THAN
-TWO developer chunks go to team-lead as ONE issue; one- and two-chunk tasks are briefed
-by the CTO directly. The gate, ledger triage, push gate and releases stay the CTO's.
-
-Process reminder (operator standing rule, 2026-10-07): the backlog is operator-only.
-No agent - and no operator-side automation - runs, activates, comments on, or
-repurposes a backlog card. Only the human commissions backlog work. (Phase 114 page-flip
-was commissioned prematurely and wound back the same day; TFL-1094 cancelled.)

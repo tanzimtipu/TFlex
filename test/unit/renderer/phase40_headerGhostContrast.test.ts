@@ -213,8 +213,11 @@ describe("Phase 40 items 2 + 13 — the caption strip's Open / Save controls", (
     expect(CSS_NO_COMMENTS).toMatch(
       /\.btn-secondary:hover:not\(\[disabled\]\):not\(\[aria-disabled="true"\]\)\s*\{\s*background:\s*var\(--bg-hover\)/,
     );
+    // Phase 113 (Quiet Actions) moved the secondary pressed fill from the
+    // violet `--accent-pressed-soft` to the neutral `--btn-neutral-pressed`
+    // token (buttons.tokens.json) so ordinary commands do not flash accent.
     expect(CSS_NO_COMMENTS).toMatch(
-      /\.btn-secondary:active:not\(\[disabled\]\):not\(\[aria-disabled="true"\]\)\s*\{\s*background:\s*var\(--accent-pressed-soft\)/,
+      /\.btn-secondary:active:not\(\[disabled\]\):not\(\[aria-disabled="true"\]\)\s*\{\s*background:\s*var\(--btn-neutral-pressed\)/,
     );
     expect(CSS_NO_COMMENTS).toMatch(
       /\.btn-secondary:focus-visible,[\s\S]*?box-shadow:\s*var\(--focus-ring\)/,

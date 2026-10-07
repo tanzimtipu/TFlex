@@ -253,9 +253,12 @@ describe("DEF-343 — the settle window is inset-aware", () => {
 
   it("App supplies the requested Inspector inset AND the pane's document readiness", () => {
     const app = readFileSync(resolve(__dirname, "../../../src/renderer/App.tsx"), "utf8");
-    expect(app).toMatch(/paneInsetTarget=\{\s*inspectorOpen/);
+    // Phase 112 (chunk H) replaced the boolean `inspectorOpen` target with the
+    // resolved `toolsInsetPx` from `resolvePanelComposition` (the same inset the
+    // CSS consumes and the panes are fed); `paneContentReady` is unchanged.
+    expect(app).toMatch(/paneInsetTarget=\{\s*toolsInsetPx/);
     expect(app).toMatch(/paneContentReady=\{meta\.kind !== "empty"\}/);
-    expect(app).toMatch(/INSPECTOR_COLLAPSED_W_PX/);
+    expect(app).toMatch(/resolvePanelComposition/);
   });
 
   it("re-arms the first-fit gate when a CLEARED pane is re-opened (Multi Mode stays on)", () => {

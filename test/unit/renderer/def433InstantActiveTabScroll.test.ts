@@ -83,9 +83,12 @@ describe("DEF-433 — the strip keeps every tab in one row (Phase 72 item 8)", (
     });
     const list = host.querySelector<HTMLElement>(".tab-list");
     expect(list).not.toBeNull();
-    // 3 colorful tabs in 640px fit at their natural 180px, so no fit width is
-    // written and the strip is not scroll-driven.
-    expect(list?.style.getPropertyValue("--tf-tab-width")).toBe("");
+    // Phase 105 (chunk D) — the document rail now measures the strip, reserves
+    // New tab + All tabs, and rides the planned uniform width on
+    // `--tf-tab-width`. Three tabs in 640px plan at the 200px ideal, so the
+    // planner writes 200px (the Phase-72 "leave the resting layout alone"
+    // behaviour only applies while the strip is unmeasured).
+    expect(list?.style.getPropertyValue("--tf-tab-width")).toBe("200px");
     expect(host.querySelectorAll(".tab")).toHaveLength(3);
     act((): void => {
       root.unmount();

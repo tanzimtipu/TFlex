@@ -335,15 +335,34 @@ function collectDock(stage: Stage): Capability[] {
   const ids: Capability[] = [];
   const stageHost = mount(createElement(ActionDock, base));
   try {
-    for (const el of stageHost.host.querySelectorAll('[data-dock-verb]')) {
-      ids.push(el.getAttribute('data-dock-verb') ?? '');
-    }
+    collectDockVerbIds(stageHost.host, ids);
   } finally {
     stageHost.unmount();
   }
   // State 2 = the pages selection override.
   ids.push(...buildSelectionVerbs([1, 2], bulk, vi.fn()).map((v) => v.id));
   return ids.filter((id) => id !== '');
+}
+
+/** Phase 104 (chunk 2) — the dock split its verbs into the labelled PRIMARY
+ *  tiles and a More overflow menu. `data-dock-verb` is on the primary tiles /
+ *  pins only; the displaced stage verbs (Delete, Replace, Split, …) render in
+ *  the More popover as `data-dock-overflow-item` rows. This opens the popover
+ *  so the discipline sweep and ruling 1 still observe the full
+ *  `DOCK_STAGE_IDS` membership. Shared so both read the same set. */
+function collectDockVerbIds(host: HTMLElement, out: Capability[]): void {
+  for (const el of host.querySelectorAll('[data-dock-verb]')) {
+    out.push(el.getAttribute('data-dock-verb') ?? '');
+  }
+  const more = host.querySelector('[data-dock-overflow]');
+  if (more !== null) {
+    act((): void => {
+      more.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+    });
+    for (const el of host.querySelectorAll('[data-dock-overflow-item]')) {
+      out.push(el.getAttribute('data-dock-overflow-item') ?? '');
+    }
+  }
 }
 
 /** PANEL � the ContextPanel's own action affordances for a stage. */
@@ -719,9 +738,8 @@ describe('Phase 36 / 3A � the nine rulings', () => {
     }
     const dock = mountDock('pages');
     try {
-      const ids = [...dock.host.querySelectorAll('[data-dock-verb]')].map((e) =>
-        e.getAttribute('data-dock-verb'),
-      );
+      const ids: string[] = [];
+      collectDockVerbIds(dock.host, ids);
       expect(ids).toEqual(expect.arrayContaining(['rotate', 'extract', 'delete']));
     } finally {
       dock.unmount();

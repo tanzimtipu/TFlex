@@ -35,7 +35,7 @@ import {
   type DocDiagnostics,
 } from "../../../src/renderer/components/DocumentView";
 import type { EngineState } from "../../../src/renderer/engine/types";
-import { CONTENT_PADDING_PX } from "../../../src/renderer/components/pageGeometry";
+import { FIT_MARGIN_PX } from "../../../src/renderer/components/pageGeometry";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -192,10 +192,11 @@ const BASE_VIEWER: PersistedViewer = {
   activeHitIndex: -1,
 };
 
-/** The fake viewport is 1200px wide / 800px tall; fit thresholds derive
- *  from those (minus the content padding). */
-const AVAIL_W = 1200 - CONTENT_PADDING_PX * 2; // 1144
-const AVAIL_H = 800 - CONTENT_PADDING_PX * 2; // 744
+/** The fake viewport is 1200px wide / 800px tall; the fit scale is computed
+ *  against the viewport minus the Phase-107 logical fit margin on each side
+ *  (FIT_MARGIN_PX = 28 -> 1144 x 744). CONTENT_PADDING_PX stays 0. */
+const AVAIL_W = 1200 - FIT_MARGIN_PX * 2; // 1144
+const AVAIL_H = 800 - FIT_MARGIN_PX * 2; // 744
 const fitWidth = (w: number): number => AVAIL_W / w;
 const fitPage = (w: number, h: number): number => Math.min(AVAIL_W / w, AVAIL_H / h);
 const rounded = (scale: number): number => Math.round(scale * 100) / 100;

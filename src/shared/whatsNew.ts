@@ -23,6 +23,20 @@ export interface WhatsNewEntry {
 /** Ordered newest first. */
 export const WHATS_NEW: WhatsNewEntry[] = [
   {
+    version: '1.51.0',
+    date: '2026-10-07',
+    highlights: [
+      'A calm, consistent visual overhaul built on one shared foundation: a single icon set, one button system, one type scale, and one set of colours, spacing and elevation now run across the whole app.',
+      'The Top Bar and Tabs are rebuilt with a structured title row and a document rail that gives every open document its own tab identity.',
+      'The tool dock is rebuilt as one reusable command dock that shows only the tools that can act in the current context.',
+      'The editor canvas is now a quiet Paper Stage that keeps your page the clear focus.',
+      'The stage rail became a Workspace Rail, and the viewing controls are unified into a single View Strip footer.',
+      'The Home screen is now a real start surface with your recent files and your pinned tools.',
+      'Panels are rebuilt as a Context Pair with shared primitives for a consistent inspector.',
+      'Thumbnails and the document outline are combined into one Document Navigator.',
+    ],
+  },
+  {
     version: '1.50.0',
     date: '2026-10-05',
     highlights: [
