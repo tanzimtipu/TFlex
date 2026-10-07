@@ -1,0 +1,28 @@
+{
+  "checks": [
+    "== Part 1: overflow tier discovery ==",
+    "  [width-scan] req=620 actualInner=640 stripWidth=476 more=none",
+    "  [width-scan] req=580 actualInner=640 stripWidth=476 more=none",
+    "  [width-scan] req=540 actualInner=640 stripWidth=476 more=none",
+    "  [width-scan] req=500 actualInner=640 stripWidth=476 more=none",
+    "  [width-scan] req=470 actualInner=640 stripWidth=476 more=none",
+    "  [width-scan] req=440 actualInner=640 stripWidth=476 more=none",
+    "  tier: {\"innerWidth\":640,\"innerHeight\":480,\"stripWidth\":476,\"stripIdle\":\"true\",\"more\":\"none\",\"layout\":\"flex\",\"book\":\"flex\"}",
+    "  ABORT-PART-1: could not reach the <=419px overflow tier; more= none stripWidth= 476",
+    "== Part 8: Book View footer lifecycle at 1440x900 ==",
+    "  footer count before/during/after Book View: 1 0 1",
+    "== Part 9: stale state after rapid tab switch ==",
+    "  page input value after switch-away (typed 5, not committed): 4",
+    "== Part 10: pan mode + footer hit-test ==",
+    "  footer centre hit while Pan armed: {\"top\":\"div.textLayer\",\"inStrip\":false}",
+    "== Part 11: reduced motion on the footer/menu ==",
+    "  [width-scan] req=620 actualInner=640 stripWidth=476 more=none",
+    "  [width-scan] req=580 actualInner=640 stripWidth=476 more=none",
+    "  [width-scan] req=540 actualInner=640 stripWidth=476 more=none",
+    "  [width-scan] req=500 actualInner=640 stripWidth=476 more=none",
+    "  [width-scan] req=470 actualInner=640 stripWidth=476 more=none",
+    "  [width-scan] req=440 actualInner=640 stripWidth=476 more=none",
+    "  reduced-motion durations: {\"menuAnim\":null,\"menuTransition\":null,\"viewTransition\":\"1e-05s\"}"
+  ],
+  "notes": []
+}

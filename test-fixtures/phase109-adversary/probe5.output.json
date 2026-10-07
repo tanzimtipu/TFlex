@@ -1,0 +1,16 @@
+[
+  "== baseline ==",
+  "   {\"theme\":\"light\",\"workspaceMain\":[256,88,1184,812],\"scroller\":[256,88,920,764],\"strip\":[256,852,920,48],\"footerTop\":852,\"scrollerBottom\":852,\"overlapPx\":0,\"topAtFooterCenter\":\"div.view-strip\",\"inStrip\":true}",
+  "  after 2.5s settle: {\"theme\":\"light\",\"workspaceMain\":[256,88,1184,812],\"scroller\":[256,88,920,764],\"strip\":[256,852,920,48],\"footerTop\":852,\"scrollerBottom\":852,\"overlapPx\":0,\"topAtFooterCenter\":\"div.view-strip\",\"inStrip\":true}",
+  "== theme toggles only (no Book View) ==",
+  "  after toggle 1: {\"theme\":\"frosted\",\"workspaceMain\":[256,88,1184,812],\"scroller\":[256,88,920,812],\"strip\":[256,852,920,48],\"footerTop\":852,\"scrollerBottom\":900,\"overlapPx\":48,\"topAtFooterCenter\":\"div.textLayer\",\"inStrip\":false}",
+  "  after toggle 2: {\"theme\":\"dark\",\"workspaceMain\":[256,88,1184,812],\"scroller\":[256,88,920,764],\"strip\":[256,852,920,48],\"footerTop\":852,\"scrollerBottom\":852,\"overlapPx\":0,\"topAtFooterCenter\":\"div.view-strip\",\"inStrip\":true}",
+  "  after toggle 3: {\"theme\":\"light\",\"workspaceMain\":[256,88,1184,812],\"scroller\":[256,88,920,764],\"strip\":[256,852,920,48],\"footerTop\":852,\"scrollerBottom\":852,\"overlapPx\":0,\"topAtFooterCenter\":\"div.view-strip\",\"inStrip\":true}",
+  "  after toggle 4: {\"theme\":\"frosted\",\"workspaceMain\":[256,88,1184,812],\"scroller\":[256,88,920,812],\"strip\":[256,852,920,48],\"footerTop\":852,\"scrollerBottom\":900,\"overlapPx\":48,\"topAtFooterCenter\":\"div.textLayer\",\"inStrip\":false}",
+  "== Book View open/close only (no theme toggle) ==",
+  "  after book close: {\"theme\":\"frosted\",\"workspaceMain\":[256,88,1184,812],\"scroller\":[256,88,920,812],\"strip\":[256,852,920,48],\"footerTop\":852,\"scrollerBottom\":900,\"overlapPx\":48,\"topAtFooterCenter\":\"div.textLayer\",\"inStrip\":false}",
+  "  after book close +2s: {\"theme\":\"frosted\",\"workspaceMain\":[256,88,1184,812],\"scroller\":[256,88,920,812],\"strip\":[256,852,920,48],\"footerTop\":852,\"scrollerBottom\":900,\"overlapPx\":48,\"topAtFooterCenter\":\"div.textLayer\",\"inStrip\":false}",
+  "== book close THEN theme toggle ==",
+  "  after book close + theme: {\"theme\":\"dark\",\"workspaceMain\":[256,88,1184,812],\"scroller\":[256,88,920,764],\"strip\":[256,852,920,48],\"footerTop\":852,\"scrollerBottom\":852,\"overlapPx\":0,\"topAtFooterCenter\":\"div.view-strip\",\"inStrip\":true}",
+  "  +2.5s settle: {\"theme\":\"dark\",\"workspaceMain\":[256,88,1184,812],\"scroller\":[256,88,920,764],\"strip\":[256,852,920,48],\"footerTop\":852,\"scrollerBottom\":852,\"overlapPx\":0,\"topAtFooterCenter\":\"div.view-strip\",\"inStrip\":true}"
+]

@@ -1,0 +1,32 @@
+{
+  "pointerOpened": true,
+  "options": [
+    {
+      "mode": "one",
+      "w": 162,
+      "h": 35,
+      "hit": true,
+      "top": "span."
+    },
+    {
+      "mode": "two",
+      "w": 162,
+      "h": 35,
+      "hit": true,
+      "top": "span."
+    },
+    {
+      "mode": "four",
+      "w": 162,
+      "h": 35,
+      "hit": true,
+      "top": "span."
+    }
+  ],
+  "book": {
+    "w": 162,
+    "h": 35,
+    "hit": true,
+    "top": "span."
+  }
+}

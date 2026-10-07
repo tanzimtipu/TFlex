@@ -1,0 +1,19 @@
+[
+  "== A. <=419px overflow config: 640x480 physical + text scaling 150% ==",
+  "  audit: {\"innerW\":427,\"stripWidth\":263,\"stripTop\":272,\"moreDisplay\":\"none\",\"layoutDisplay\":\"none\",\"bookDisplay\":\"none\",\"visibleLayoutOptions\":0,\"visibleBookEntries\":0,\"visibleMoreToggles\":0,\"topAtFooterCenter\":{\"tag\":\"button\",\"cls\":\"btn btn-toolbar tool-btn\",\"inStrip\":true,\"outer\":\"<button type=\\\"button\\\" class=\\\"btn btn-toolbar tool-btn\\\" aria-label=\\\"Zoom out\\\" title=\\\"Zoom out\\\"><svg viewBox=\\\"0 0 24 24\\\" f\"}}",
+  "     {\"name\":\"Prev/Next page group\",\"present\":true,\"display\":\"flex\",\"w\":77,\"visible\":true,\"hit\":true}",
+  "     {\"name\":\"Zoom out\",\"present\":true,\"display\":\"flex\",\"w\":32,\"visible\":true,\"hit\":true}",
+  "     {\"name\":\"Zoom in\",\"present\":true,\"display\":\"flex\",\"w\":32,\"visible\":true,\"hit\":true}",
+  "     {\"name\":\"Fit width\",\"present\":true,\"display\":\"flex\",\"w\":32,\"visible\":true,\"hit\":true}",
+  "     {\"name\":\"Fit page\",\"present\":true,\"display\":\"flex\",\"w\":32,\"visible\":true,\"hit\":true}",
+  "     {\"name\":\"Pan mode\",\"present\":true,\"display\":\"flex\",\"w\":32,\"visible\":true,\"hit\":true}",
+  "     {\"name\":\"One page\",\"present\":true,\"display\":\"inline-flex\",\"w\":0,\"visible\":false,\"hit\":false}",
+  "     {\"name\":\"Two pages side by side\",\"present\":true,\"display\":\"inline-flex\",\"w\":0,\"visible\":false,\"hit\":false}",
+  "     {\"name\":\"Four pages in two rows\",\"present\":true,\"display\":\"inline-flex\",\"w\":0,\"visible\":false,\"hit\":false}",
+  "     {\"name\":\"Book View\",\"present\":true,\"display\":\"none\",\"w\":0,\"visible\":false,\"hit\":false}",
+  "     {\"name\":\"More viewing controls\",\"present\":true,\"display\":\"inline-flex\",\"w\":0,\"visible\":false,\"hit\":false}",
+  "== B. post-theme-toggle / post-book-close footer hit anomaly ==",
+  "  round 1 audit: {\"innerW\":1440,\"stripWidth\":920,\"stripTop\":852,\"moreDisplay\":\"none\",\"layoutDisplay\":\"flex\",\"bookDisplay\":\"flex\",\"visibleLayoutOptions\":3,\"visibleBookEntries\":1,\"visibleMoreToggles\":0,\"topAtFooterCenter\":{\"tag\":\"div\",\"cls\":\"textLayer\",\"inStrip\":false,\"outer\":\"<div class=\\\"textLayer\\\" data-main-rotation=\\\"0\\\" style=\\\"width: round(down, var(--scale-factor) * 612px, var(--scale-round-x\"}}",
+  "  round 1 detail: {\"theme\":\"frosted\",\"topChain\":[{\"tag\":\"div\",\"cls\":\"textLayer\",\"z\":\"auto\",\"pos\":\"absolute\",\"rect\":[419,868,584,756]},{\"tag\":\"div\",\"cls\":\"pdf-page\",\"z\":\"auto\",\"pos\":\"relative\",\"rect\":[419,868,584,756]},{\"tag\":\"div\",\"cls\":\"page-slot\",\"z\":\"auto\",\"pos\":\"relative\",\"rect\":[419,868,584,756]},{\"tag\":\"div\",\"cls\":\"document-content\",\"z\":\"auto\",\"pos\":\"static\",\"rect\":[256,88,910,26496]},{\"tag\":\"div\",\"cls\":\"document-scroller\",\"z\":\"0\",\"pos\":\"absolute\",\"rect\":[256,88,920,812]},{\"tag\":\"div\",\"cls\":\"workspace-main\",\"z\":\"auto\",\"pos\":\"relative\",\"rect\":[256,88,1184,812]},{\"tag\":\"div\",\"cls\":\"workspace\",\"z\":\"auto\",\"pos\":\"static\",\"rect\":[72,88,1368,812]},{\"tag\":\"div\",\"cls\":\"tab-pane\",\"z\":\"auto\",\"pos\":\"absolute\",\"rect\":[72,88,1368,812]}],\"strips\":[{\"rect\":[256,852,920,48],\"opacity\":\"1\",\"z\":\"auto\",\"vis\":\"visible\",\"pe\":\"auto\"}],\"scrollerOverflow\":\"hidden auto\"}",
+  "  round 2 audit: {\"innerW\":1440,\"stripWidth\":920,\"stripTop\":852,\"moreDisplay\":\"none\",\"layoutDisplay\":\"flex\",\"bookDisplay\":\"flex\",\"visibleLayoutOptions\":3,\"visibleBookEntries\":1,\"visibleMoreToggles\":0,\"topAtFooterCenter\":{\"tag\":\"div\",\"cls\":\"view-strip\",\"inStrip\":true,\"outer\":\"<div class=\\\"view-strip\\\" role=\\\"group\\\" aria-label=\\\"Viewing controls\\\" data-view-strip=\\\"true\\\" data-view-strip-idle=\\\"false\\\"><\"}}"
+]

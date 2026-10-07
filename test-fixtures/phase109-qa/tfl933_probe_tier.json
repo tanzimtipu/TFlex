@@ -1,0 +1,22 @@
+{
+  "inlineSize": 263,
+  "stripRight": 383,
+  "toggleRight": 371,
+  "toggleBox": [
+    349,
+    282,
+    22,
+    28
+  ],
+  "stripBox": [
+    120,
+    272,
+    263,
+    48
+  ],
+  "hitIsToggle": true,
+  "topElement": "circle.[object SVGAnimatedString]",
+  "more": "flex",
+  "layout": "none",
+  "book": "none"
+}

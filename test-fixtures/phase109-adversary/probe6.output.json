@@ -1,0 +1,11 @@
+[
+  "== light theme control hit-test ==",
+  "  light: [{\"label\":\"Previous page\",\"top\":\"svg.[object SVGAnimatedString]\",\"hit\":true},{\"label\":\"Current page\",\"top\":\"input.page-input\",\"hit\":true},{\"label\":\"Next page\",\"top\":\"svg.[object SVGAnimatedString]\",\"hit\":true},{\"label\":\"Zoom out\",\"top\":\"svg.[object SVGAnimatedString]\",\"hit\":true},{\"label\":\"Zoom in\",\"top\":\"svg.[object SVGAnimatedString]\",\"hit\":true},{\"label\":\"Fit width\",\"top\":\"path.[object SVGAnimatedString]\",\"hit\":true},{\"label\":\"Fit page\",\"top\":\"svg.[object SVGAnimatedString]\",\"hit\":true},{\"label\":\"Pan mode\",\"top\":\"svg.[object SVGAnimatedString]\",\"hit\":true},{\"label\":\"One page\",\"top\":\"svg.[object SVGAnimatedString]\",\"hit\":true},{\"label\":\"Two pages side by side\",\"top\":\"rect.[object SVGAnimatedString]\",\"hit\":true},{\"label\":\"Four pages in two rows\",\"top\":\"svg.[object SVGAnimatedString]\",\"hit\":true},{\"label\":\"Book View\",\"top\":\"span.view-strip-book-label\",\"hit\":true}]",
+  "  light all hit: true",
+  "== frosted theme control hit-test ==",
+  "  frosted: [{\"label\":\"Previous page\",\"top\":\"svg.[object SVGAnimatedString]\",\"hit\":true},{\"label\":\"Current page\",\"top\":\"div.document-content\",\"hit\":false},{\"label\":\"Next page\",\"top\":\"div.document-content\",\"hit\":false},{\"label\":\"Zoom out\",\"top\":\"div.textLayer\",\"hit\":false},{\"label\":\"Zoom in\",\"top\":\"div.textLayer\",\"hit\":false},{\"label\":\"Fit width\",\"top\":\"div.textLayer\",\"hit\":false},{\"label\":\"Fit page\",\"top\":\"div.textLayer\",\"hit\":false},{\"label\":\"Pan mode\",\"top\":\"div.textLayer\",\"hit\":false},{\"label\":\"One page\",\"top\":\"div.textLayer\",\"hit\":false},{\"label\":\"Two pages side by side\",\"top\":\"div.document-content\",\"hit\":false},{\"label\":\"Four pages in two rows\",\"top\":\"div.document-content\",\"hit\":false},{\"label\":\"Book View\",\"top\":\"div.document-content\",\"hit\":false}]",
+  "  frosted all hit: false",
+  "  frosted geom: {\"scroller\":[256,88,920,812,900],\"footer\":[256,852,920,48],\"workspaceMain\":[256,88,1184,812],\"scrollerZ\":\"0\",\"scrollerPos\":\"absolute\"}",
+  "  frosted Fit width click: resolved",
+  "  frosted Fit width aria-pressed after click: true zoom before= 95%"
+]

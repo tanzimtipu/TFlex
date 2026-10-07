@@ -1,0 +1,28 @@
+TFL-981 FIX-READY retest evidence — DEF-599 / ADV-227 (settingsEcho homeMotionPaused/animationsEnabled)
+Date: 2026-10-06
+Agent: qa (model openrouter/deepseek/deepseek-v4.1-flash)
+
+Fix under retest: src/renderer/state/settingsEcho.ts — sameSettings, differsOnlyInRecentFiles,
+differsOnlyInGeometry each guard `homeMotionPaused` and `animationsEnabled`.
+
+COMMAND 1 — npx.cmd vitest run test/unit/renderer/settingsEcho.test.ts test/unit/renderer/adv_phase82_settingsEcho.test.ts
+RESULT: Test Files 2 passed (2); Tests 89 passed (89); exit 0
+
+COMMAND 2 — npx.cmd vitest run test/unit/renderer/phase106OrbitMotion.test.tsx test/unit/main/settings.test.ts
+RESULT: Test Files 2 passed (2); Tests 184 passed (184); exit 0
+
+COMMAND 3 — npm.cmd run verify
+RESULT: conventions: clean (381 source file(s) scanned); tsc --noEmit clean; exit 0
+
+COMMAND 4 — npx.cmd playwright test e2e/phase106_orbit_motion.spec.cjs (live Electron app)
+RESULT: 7 passed (15.4s); exit 0
+
+COMMAND 5 — adversary real-module probe
+  node_modules\.bin\esbuild.cmd test-fixtures\phase106-tfl938-adversary\probe.ts --bundle --platform=node --format=esm --outfile=<scratch>\tfl938-probe.mjs
+  node <scratch>\tfl938-probe.mjs
+RESULT: TOTAL=23 FAILED=0; node exit 0
+  Previously-failing checks now pass:
+  - 2-echo "stale echo carrying old homeMotionPaused=true is discarded" -> pass:true, shouldApply:false (was FAILED)
+  - 2-echo "stale echo carrying old animationsEnabled=true is discarded" -> pass:true, shouldApply:false (was FAILED)
+
+DISPOSITION: PASS. Original defect no longer reproduces. DEF-599 status remains CLOSED.
