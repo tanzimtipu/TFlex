@@ -19,7 +19,7 @@ import { classifyPageRange, parsePageRange } from "../../../src/renderer/engine/
 
 const EMPTY_MESSAGE = "Enter at least one page (e.g. 1-3).";
 const MALFORMED_MESSAGE = "Enter pages like 1-3 or 2,4.";
-const OOB_520_MESSAGE = "Page numbers must be between 1 and 520.";
+const OOB_520_MESSAGE = "Pages 0, 521 are outside the document's 1-520 pages.";
 
 function setInputValue(input: HTMLInputElement, value: string): void {
   const setter = Object.getOwnPropertyDescriptor(
@@ -90,6 +90,57 @@ describe("classifyPageRange — the four states", () => {
     expect(parsePageRange("0,521", 520)).toBeNull();
     expect(parsePageRange("", 520)).toBeNull();
     expect(parsePageRange("1-3", 5)).toEqual([1, 2, 3]);
+  });
+});
+
+describe("AR-07 — out-of-bounds names the offending token AND the bound", () => {
+  const cases: ReadonlyArray<readonly [string, string]> = [
+    ["999", "Page 999 is outside the document's 1-34 pages."],
+    ["0", "Page 0 is outside the document's 1-34 pages."],
+    ["1-999", "Page 999 is outside the document's 1-34 pages."],
+    ["1-3,999", "Page 999 is outside the document's 1-34 pages."],
+  ];
+
+  for (const [input, message] of cases) {
+    it(`"${input}" on a 34-page doc names the token and the 1-34 bound`, () => {
+      const check = classifyPageRange(input, 34);
+      expect(check.state).toBe("out-of-bounds");
+      expect(check.pages).toBeNull();
+      expect(check.message).toBe(message);
+    });
+  }
+
+  it("names every invalid token, in input order, when several are out of bounds", () => {
+    const check = classifyPageRange("999,0", 34);
+    expect(check.invalidTokens).toEqual([999, 0]);
+    expect(check.message).toBe("Pages 999, 0 are outside the document's 1-34 pages.");
+  });
+
+  it("keeps the empty and malformed wording byte-for-byte", () => {
+    expect(classifyPageRange("", 34).message).toBe(EMPTY_MESSAGE);
+    expect(classifyPageRange("   ", 34).message).toBe(EMPTY_MESSAGE);
+    expect(classifyPageRange("9-2", 34).message).toBe(MALFORMED_MESSAGE);
+    expect(classifyPageRange("abc", 34).message).toBe(MALFORMED_MESSAGE);
+  });
+
+  it("DEF-630 — a wholly-above-range span names BOTH endpoints", () => {
+    const above = classifyPageRange("50-60", 34);
+    expect(above.state).toBe("out-of-bounds");
+    expect(above.pages).toBeNull();
+    expect(above.message).toBe("Pages 50, 60 are outside the document's 1-34 pages.");
+
+    const higher = classifyPageRange("35-40", 34);
+    expect(higher.state).toBe("out-of-bounds");
+    expect(higher.message).toBe("Pages 35, 40 are outside the document's 1-34 pages.");
+  });
+
+  it("DEF-629 — a trailing-garbage token is malformed, not valid", () => {
+    for (const token of ["1abc", "2-3x", "1.9", "12px"]) {
+      const check = classifyPageRange(token, 34);
+      expect(check.state).toBe("malformed");
+      expect(check.pages).toBeNull();
+      expect(check.message).toBe(MALFORMED_MESSAGE);
+    }
   });
 });
 

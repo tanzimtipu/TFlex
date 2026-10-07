@@ -56,30 +56,58 @@ describe('Phase 35 — fitGeometryToWorkArea', () => {
   });
 
   it('clamps x left so the window stays on the desktop', () => {
+    // The 800x600 saved size is below the 960x640 provisional floor, so the
+    // floor lifts it first; x then clamps to 1920 - 960 = 960.
     expect(fitGeometryToWorkArea(geo(5000, 100, 800, 600), PRIMARY)).toEqual<WindowBounds>({
-      x: 1120,
+      x: 960,
       y: 100,
-      width: 800,
-      height: 600,
+      width: 960,
+      height: 640,
     });
   });
 
   it('clamps a negative secondary-monitor position into that work area', () => {
     const left = { x: -1920, y: 0, width: 1920, height: 1040 };
+    // Same floor lift as above; x already sits inside the left work area.
     expect(fitGeometryToWorkArea(geo(-1800, 100, 800, 600), left)).toEqual<WindowBounds>({
       x: -1800,
       y: 100,
-      width: 800,
-      height: 600,
+      width: 960,
+      height: 640,
     });
   });
 
-  it('preserves the minimum size floor on a tiny work area', () => {
+  it('raises a saved geometry smaller than the provisional floor up to 960x640', () => {
+    // A normal display keeps the full DESIRED_MIN_* floor: a 400x300 saved
+    // window clamps UP to 960x640 (the issue's "smaller than 960x640 clamps
+    // up" case on the 1920x1040 reference work area).
+    expect(fitGeometryToWorkArea(geo(100, 100, 400, 300), PRIMARY)).toEqual<WindowBounds>({
+      x: 100,
+      y: 100,
+      width: 960,
+      height: 640,
+    });
+  });
+
+  it('clamps the floor DOWN to a small work area (never larger than the screen)', () => {
+    // 800x560 work area: the 960x640 floor is itself clamped to the work
+    // area, so the window is 800x560 - never larger than the screen.
+    expect(fitGeometryToWorkArea(geo(0, 0, 1440, 900), { x: 0, y: 0, width: 800, height: 560 })).toEqual<WindowBounds>({
+      x: 0,
+      y: 0,
+      width: 800,
+      height: 560,
+    });
+  });
+
+  it('clamps the floor down to a tiny work area', () => {
+    // The old fixed 640x480 floor produced an off-screen-sized window here;
+    // the floor is now clamped to the 500x400 work area instead.
     expect(fitGeometryToWorkArea(geo(0, 0, 1440, 900), { x: 0, y: 0, width: 500, height: 400 })).toEqual<WindowBounds>({
       x: 0,
       y: 0,
-      width: 640,
-      height: 480,
+      width: 500,
+      height: 400,
     });
   });
 });

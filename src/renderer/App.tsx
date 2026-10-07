@@ -177,7 +177,7 @@ import { SharedToolController } from "./components/multiToolController";
 import { PageDragProvider } from "./state/PageDragContext";
 import { applyPageDrop, type PageDropDeps } from "./state/pageDragApply";
 import type { PageDropOp } from "./state/pageDrag";
-import { nextTheme, resolveThemeDefault } from "./state/theme";
+import { applyThemeDefault, applyToggleTheme, resolveThemeDefault } from "./state/theme";
 import { useThemeTransition } from "./hooks/useAnimations";
 import { setAnimationsEnabledPreference } from "./hooks/motionPolicy";
 import { createAmbientController } from "./state/ambient";
@@ -222,7 +222,7 @@ import { recordRailTab, restoreRailTab } from "./state/navigatorState";
 import { livePageSizeScopeKey } from "./state/pageSizeScope";
 import { splitRecentPath } from "./utils/recentPath";
 import { isDevelopmentBuild } from "./utils/devEnvironment";
-import { recordSampleRecent } from "./utils/sampleRecents";
+import { isSampleRecentPath, recordSampleRecent } from "./utils/sampleRecents";
 import { toArrayBuffer } from "./utils/toArrayBuffer";
 import { createDebouncer } from "./utils/debounce";
 import { formatBytes as formatBytesForToast } from "./utils/formatBytes";
@@ -1790,7 +1790,14 @@ export function App(): ReactElement {
   const onToggleTheme = useCallback((): void => {
     setSettings((prev) => {
       if (prev === null) return prev;
-      const next: AppSettings = { ...prev, theme: nextTheme(prev.theme) };
+      // DEF-628 (AR-08) — Toggle Theme must keep the persisted `themeDefault`
+      // coherent with the effective theme it just applied. Writing `theme`
+      // alone left the Preferences dropdown (which reads
+      // `settings.themeDefault ?? settings.theme`) showing the OLD default
+      // while the shell rendered the new one. `applyToggleTheme` moves both
+      // fields together in this single update, mirroring `applyThemeDefault`
+      // from chunk C.
+      const next: AppSettings = applyToggleTheme(prev);
       setTheme(next.theme);
       trackAndSave(next);
       return next;
@@ -9764,7 +9771,13 @@ pushToast(
   );
   useEffect((): (() => void) | undefined => {
     if (typeof window.tflex.checkMissing !== "function") return undefined;
-    const paths = allRecents.map((r) => r.path).filter((p) => p.length > 0);
+    // AR-05 (TFL-1184) — a virtual bundled-sample recent (`samples/<name>`) names
+    // a fixture inside the bundle, not a real on-disk file, so it must never be
+    // handed to `checkMissing` (which would flag it Missing). Exclude it here; the
+    // record itself is preserved (a later real open can replace it).
+    const paths = allRecents
+      .map((r) => r.path)
+      .filter((p) => p.length > 0 && !isSampleRecentPath(p));
     if (paths.length === 0) return undefined;
     let cancelled = false;
     void window.tflex.checkMissing(paths).then((missing) => {
@@ -13130,23 +13143,28 @@ pushToast(
         themeDefault={settings.themeDefault ?? settings.theme}
         recentsCap={settings.recentsCap ?? DEFAULT_RECENTS_CAP}
         onSetThemeDefault={(next): void => {
+          // AR-08 — ONE atomic persist for a dropdown pick: the
+          // preference AND the concrete theme land in the SAME settings
+          // object, so the on-disk result can never be
+          // `theme=light, themeDefault=dark`. 'system' resolves to the
+          // OS preference at pick time; boot applies `settings.theme`,
+          // so the next launch shows the pick.
           setSettings((prev) => {
             if (prev === null) return prev;
-            const updated = preferencesReducer(prev, { type: 'set-theme-default', value: next });
+            const updated = applyThemeDefault(
+              prev,
+              next,
+              window.matchMedia("(prefers-color-scheme: dark)").matches,
+            );
+            setTheme(updated.theme);
             trackAndSave(updated);
             return updated;
           });
         }}
-        // Immediate apply: flipping the dropdown also flips the LIVE
-        // theme right now (the shared contract promises "the live
-        // theme flips too"). 'system' resolves to the OS's current
-        // colour preference at choice time (resolveThemeDefault); the
-        // resolved concrete theme is persisted alongside
-        // themeDefault (written by onSetThemeDefault above) so boot —
-        // which applies `settings.theme` — shows the same look on the
-        // next launch. Same trackAndSave + setTheme path as the
-        // header picker; the no-op guard skips a redundant persist
-        // when the pick resolves to the theme already showing.
+        // Header picker: flips the LIVE theme only. The dropdown path
+        // above already wrote the concrete theme atomically, so when a
+        // dropdown pick routes here too this resolves to a no-op (the
+        // guard below) and never writes a second, competing value.
         onThemeChange={(next): void => {
           const concrete = resolveThemeDefault(
             next,

@@ -406,7 +406,11 @@ field now classifies empty / malformed / out-of-bounds / valid
 (`classifyPageRange` / `parsePageRange`, `src/renderer/engine/types.ts`;
 `validateExportRange`, `src/renderer/components/exportConfig.ts`), keeps the
 typed value, links the message to the field via `aria-describedby`, and never
-runs the operation on an invalid range. Unit:
+runs the operation on an invalid range. AR-07 (TFL-1182) sharpens the
+out-of-bounds message: it names the offending token(s) and the real 1..N bound
+(e.g. `Page 999 is outside the document's 1-34 pages.`), not only the bound; the
+empty / malformed wording and the Extract/Split disabled gating are unchanged.
+Unit:
 `test/unit/renderer/tfl1116_rangeValidation.test.tsx` (empty / malformed /
 out-of-bounds / valid messages; no dedicated e2e — proven by the unit suite).
 
@@ -862,4 +866,37 @@ fixed in source + CSS + tokens (left uncommitted for git-agent).
 - `docs/phase-specs/phase-111.md` regenerated (`scripts/split-requirements.py`):
   the F spec now reads `phase111_splitLayout.test.tsx`; no
   `phase111_navigatorLayout.test.tsx` reference remains.
+
+## TFL-1146 D - AR-02 navigator drawer a11y + AR-01 marker + AR-05 sample identity (TFL-1184)
+
+Appended 2026-10-08. Three adversarial re-audit residues closed (correctness
+around the visual overhaul); no styles or layout changed.
+
+- AR-02 - the compact Navigator drawer's trigger `[data-rail-collapse]`
+  (`components/ContextPanel.tsx`) now passes `expanded={!collapsed}` (a real
+  `aria-expanded`) and remounts a `collapseOpenerRef`; the Inspector's R01
+  focus-restore effect (`Inspector.tsx:963-977`) is mirrored inside
+  `ContextPanel`, so Escape / the close control returns focus to the trigger
+  once the collapsed strip remounts.
+- AR-01 residue - the collapsed Navigator ruler's current-page item
+  (`RulerStrip`, `components/SideRail.tsx`) carries `data-thumb-current-marker`
+  in addition to the thumb card (`.thumb-item`), so the navigation-agreement
+  assertion resolves on the compact surface too. Selectors:
+  `[data-ruler-page="N"][data-thumb-current-marker]` and
+  `.rail-ruler-current[data-thumb-current-marker]`.
+- AR-05 - new predicate `isSampleRecentPath(path)` (`utils/sampleRecents.ts`)
+  is true for virtual `samples/<name>` paths. `App.tsx` excludes them from the
+  `checkMissing` probe and `Welcome.tsx` forces a sample-sourced row's `missing`
+  to false, so a stale sample Recent is never labelled Missing. No user Recent
+  data is deleted or migrated.
+
+| Control | Selector | Contract | Unit test |
+|---|---|---|---|
+| Navigator drawer trigger | `[data-rail-collapse]` | `aria-expanded` reflects the collapse state; a drawer close returns focus to the trigger | `test/unit/renderer/phase111_navigatorChrome.test.tsx` (AR-02) |
+| Compact navigator current page | `[data-ruler-page][data-thumb-current-marker]` | The collapsed ruler marks the current page machine-discoverably | `test/unit/renderer/phase111_navigatorChrome.test.tsx` (AR-01) |
+| Sample recent identity | `isSampleRecentPath` (`utils/sampleRecents.ts`) | A `samples/<name>` recent is never sent to `checkMissing` and never renders Missing | `test/unit/renderer/tfl1116_homeSamples.test.tsx` + `test/unit/renderer/bugDEF429_recentSampleReopen.test.tsx` |
+
+e2e is qa-owned: `e2e/tfl1179_ar_navigation.spec.cjs` aligns its AR-01 selector
+to `[data-thumb-current-marker]` on the ruler item and its AR-02 focus-return
+check to `[data-rail-collapse]`.
 

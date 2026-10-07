@@ -562,6 +562,23 @@ const pageCount = engineState.pageCount;
     return (): void => window.removeEventListener('keydown', onKey);
   }, [drawer, onClose]);
 
+  // AR-02 (TFL-1184) — the compact drawer's opener (the collapse control) and a
+  // record of the previous drawer state so a close returns focus to it. Mirrors
+  // Inspector's TFL-1117 (R01) pattern: the ref re-attaches to the control when
+  // the collapsed strip remounts after the drawer closes, and the effect then
+  // moves focus back to that fresh node (Escape and the close control both route
+  // through the host's `onClose`).
+  const collapseOpenerRef = useRef<HTMLButtonElement | null>(null);
+  const drawerWasOpenRef = useRef(false);
+  useEffect((): void => {
+    const wasOpen = drawerWasOpenRef.current;
+    drawerWasOpenRef.current = drawer;
+    if (wasOpen && !drawer && collapsed) {
+      const opener = collapseOpenerRef.current;
+      if (opener !== null && document.contains(opener)) opener.focus();
+    }
+  }, [drawer, collapsed]);
+
   // Phase 85 — an explicit `outlineEditor` prop wins, else the config App
   // publishes through the context. Null keeps the outline view-only.
   const contextOutlineEditor = useContext(OutlineEditorContext);
@@ -846,12 +863,14 @@ const pageCount = engineState.pageCount;
   // existing e2e contract resolves in both states.
   const collapseButton = (
     <IconButton
+      ref={collapseOpenerRef}
       label={collapsed ? 'Expand panel' : 'Collapse panel'}
       intent="tertiary"
       kind="toggle"
       density="standard"
       className="rail-tab rail-tab-collapse context-panel-collapse"
       onClick={(): void => onToggleCollapsed?.()}
+      expanded={!collapsed}
       data-rail-collapse
       data-collapse-direction={collapsed ? 'expand' : 'collapse'}
       icon={collapsed ? <Icon icon={PanelRightOpen} size="md" aria-hidden /> : <Icon icon={PanelLeftClose} size="md" aria-hidden />}

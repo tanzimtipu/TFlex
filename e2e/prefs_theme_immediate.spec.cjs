@@ -2,6 +2,9 @@
 // and the applied theme is still in effect after the dialog closes.
 //
 // Selector notes (app markup, verified in source):
+//   - Preferences opens from the application menu (TFL-1116 retired the old
+//     [data-open-preferences] gear); the route is [data-app-menu] ->
+//     [data-app-menu-popover] [data-menu-action="preferences"].
 //   - the prefs select is [data-prefs-theme-default] (PreferencesDialog.tsx),
 //     not [data-prefs-theme-select];
 //   - the close button is the sheet's .sheet-close (aria-label
@@ -12,14 +15,13 @@
 //     a target theme DIFFERENT from the current one — re-picking the
 //     current theme is guarded as a no-op by design (App.tsx).
 const { test, expect } = require('@playwright/test');
-const { launchDev, hardClose, shot } = require('./lib/helpers.cjs');
+const { launchDev, hardClose, shot, openPreferences } = require('./lib/helpers.cjs');
 
 test('Preferences theme changes apply immediately', async () => {
   const { electronApp, window } = await launchDev();
 
-  // Open Preferences
-  await window.click('[data-open-preferences]');
-  await window.waitForSelector('[data-prefs-dialog]', { timeout: 5000 });
+  // Open Preferences via the application menu (current control).
+  await openPreferences(window);
 
   // Get initial applied theme
   const initialTheme = await window.evaluate(() => document.documentElement.dataset.theme);

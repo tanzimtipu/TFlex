@@ -79,6 +79,36 @@ export interface ZoomFlipPending {
   anchorPage: number | null;
   /** That page's top offset below the scroller's top edge BEFORE the zoom. */
   anchorOffsetBefore: number;
+  /**
+   * TFL-1146 (AR-01) — the normalized in-page fraction (0..1) of the anchor
+   * page that sat at the viewport top BEFORE the layout change. The restore
+   * lands the SAME in-page point at the same viewport offset after the reflow,
+   * so a resize / fit recompute that changes the anchor page's height (mixed
+   * page sizes / rotation) does not drift. Defaults to 0 (the top edge), which
+   * is the pre-TFL-1146 behaviour.
+   */
+  anchorFraction?: number;
+  /**
+   * TFL-1146 (AR-01) — the anchor page's height BEFORE the layout change. The
+   * fraction restore needs it to compute how far the in-page point moved when
+   * the page re-scaled. Defaults to the live (post-change) height, which makes
+   * the fraction correction a no-op for same-height reflows.
+   */
+  anchorHeightBefore?: number;
+  /**
+   * TFL-1146 — the layout/document generation this capture belonged to. A
+   * restore whose generation no longer matches the current one (a document
+   * swap or a newer layout change landed first) is discarded. Undefined keeps
+   * the pre-TFL-1146 semantics (never stale).
+   */
+  generation?: number;
+  /**
+   * TFL-1146 — whether to play the page FLIP. Resize / dock-drag / explicit
+   * fit captures are anchor-only (`false`): the scroll anchor is still restored
+   * but pages do not animate on every drag frame. Defaults to true (a zoom does
+   * animate), so pre-existing captures are unchanged.
+   */
+  animate?: boolean;
 }
 
 /** Class the applier toggles for the one-shot zoom animation. The matching
@@ -201,6 +231,45 @@ export function scrollAnchorDelta(beforeOffset: number, afterOffset: number): nu
   return Number.isFinite(d) ? d : 0;
 }
 
+/** TFL-1146 (AR-01) — the normalized in-page fraction the viewport top cuts
+ *  the anchor page at: `topOffset` is the anchor page's top edge relative to
+ *  the scroller's top edge (negative when scrolled into the page). The result
+ *  is clamped to 0..1; an anchor page fully below the viewport top (scrolled to
+ *  the very start) reads as fraction 0. Non-finite / zero height -> 0. */
+export function normalizedAnchorFraction(topOffset: number, height: number): number {
+  if (!Number.isFinite(topOffset) || !Number.isFinite(height) || height <= 0) {
+    return 0;
+  }
+  const f = -topOffset / height;
+  return Math.min(1, Math.max(0, f));
+}
+
+/** TFL-1146 (AR-01) — the anchor page's NEW top offset (relative to the
+ *  scroller's top edge) that keeps the recorded in-page fraction at the same
+ *  viewport position after the page's height changes from `heightBefore` to
+ *  `heightAfter`. When the page grows, the recorded point moves down within the
+ *  page by `fraction * (heightAfter - heightBefore)`, so the top edge must sit
+ *  that much higher. A non-finite input falls back to `topOffsetBefore`. */
+export function anchorOffsetAfter(
+  topOffsetBefore: number,
+  fraction: number,
+  heightBefore: number,
+  heightAfter: number,
+): number {
+  const f = Number.isFinite(fraction) ? Math.min(1, Math.max(0, fraction)) : 0;
+  const shift = f * (heightAfter - heightBefore);
+  const next = topOffsetBefore - shift;
+  return Number.isFinite(next) ? next : topOffsetBefore;
+}
+
+/** TFL-1146 — true when a captured pending belongs to an OLDER layout /
+ *  document generation than `generation`, so its scroll restore must be
+ *  discarded instead of applied against the current layout. A pending without
+ *  a generation is never stale (pre-TFL-1146 shape). */
+export function zoomFlipIsStale(pending: ZoomFlipPending, generation: number): boolean {
+  return pending.generation !== undefined && pending.generation !== generation;
+}
+
 function clearZoomFlipVars(el: HTMLElement): void {
   el.style.removeProperty(ZOOM_FLIP_FROM_VAR);
   el.style.removeProperty(ZOOM_FLIP_DX_VAR);
@@ -259,32 +328,49 @@ export function isZoomFlipEnd(
  *  (`ZOOM_FLIP_UNIT_SELECTOR`, the paper + content element) from its
  *  pre-zoom rect to identity. Under instant motion (reduced motion /
  *  Animations off) the scroll anchor is still preserved but no page animates.
- *  Returns the number of units that played the animation. */
+ *  TFL-1146 (AR-01): the anchor restore generalizes the top-edge rule to the
+ *  recorded in-page fraction, so a scale OR page-height change keeps the same
+ *  point of the anchor page under the viewport top; a pending whose recorded
+ *  `generation` is older than the current one is discarded entirely. A pending
+ *  captured with `animate: false` (resize / dock / explicit fit) restores the
+ *  anchor but plays no page animation. Returns the number of units animated. */
 export function runZoomFlip(
   scroller: { scrollTop: number; getBoundingClientRect: () => ZoomFlipRect },
   pages: readonly ZoomFlipPageEl[],
   pending: ZoomFlipPending,
   instant: boolean,
   kind: FlipKind = "zoom",
+  generation?: number,
 ): number {
+  if (generation !== undefined && zoomFlipIsStale(pending, generation)) {
+    return 0;
+  }
   const scrollerTop = scroller.getBoundingClientRect().top;
   if (pending.anchorPage !== null) {
     const anchor = pages.find((p) => p.page === pending.anchorPage) ?? null;
     if (anchor !== null) {
-      const after = anchor.el.getBoundingClientRect().top - scrollerTop;
-      const delta = scrollAnchorDelta(pending.anchorOffsetBefore, after);
+      const rect = anchor.el.getBoundingClientRect();
+      const after = rect.top - scrollerTop;
+      const target = anchorOffsetAfter(
+        pending.anchorOffsetBefore,
+        pending.anchorFraction ?? 0,
+        pending.anchorHeightBefore ?? rect.height,
+        rect.height,
+      );
+      const delta = scrollAnchorDelta(target, after);
       if (delta !== 0) {
         scroller.scrollTop += delta;
       }
     }
   }
+  const animatePages = pending.animate !== false;
   let animated = 0;
   for (const p of pages) {
     const first = pending.firstRects.get(p.page);
     if (first === undefined) {
       continue;
     }
-    if (instant) {
+    if (instant || !animatePages) {
       clearZoomFlip(p.el);
       continue;
     }

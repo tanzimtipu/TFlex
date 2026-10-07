@@ -9,6 +9,7 @@ import { CommandMenu } from "./CommandMenu";
 import type { CommandMenuGroup, CommandMenuItem } from "./CommandMenu";
 import type { RecentFile, SampleDocument } from "../../shared/types";
 import { recentContextLabels } from "../utils/recentContext";
+import { isSampleRecentPath } from "../utils/sampleRecents";
 import { toolById } from "../state/toolsRegistry";
 import { HomeRecentRow } from "./home/HomeRecentRow";
 import { HomeSampleCard } from "./home/HomeSampleCard";
@@ -528,7 +529,7 @@ export function Welcome(props: WelcomeProps): ReactElement {
                   entry={row.entry}
                   meta={row.meta}
                   contextLabel={contextLabels[index] ?? ""}
-                  missing={missingPaths.has(row.entry.path)}
+                  missing={!isSampleRecentPath(row.entry.path) && missingPaths.has(row.entry.path)}
                   onOpen={onOpenRecent}
                   onRemove={onRemoveRecent}
                   onTogglePin={onToggleRecentPin}

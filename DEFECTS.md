@@ -5,6 +5,80 @@
 > inspect the current `OPEN`, `FIX-READY`, and `DISPUTED` entries first; closed records are
 > historical evidence and must not be loaded wholesale.
 
+## DEF-628: View > Toggle Theme persists the live theme without updating `themeDefault`, so Preferences and the effective shell disagree
+
+- Status: CLOSED (qa TFL-1190, 2026-10-08)
+- Severity: MEDIUM - the persisted and effective theme are not coherent: after the Toggle Theme command the shell shows the toggled theme while Preferences "Theme default" still reads the old value, so the two states conflict (the AR-08 failure mode). Relaunch follows `settings.theme`, so the disagreement is user-visible without a relaunch.
+- Found by: adversary (ADV-243)
+- Phase: visual-overhaul correction 2 (TFL-1146), AR-08
+
+Files:
+- `src/renderer/App.tsx:1790-1798` - `onToggleTheme` writes `{ ...prev, theme: nextTheme(prev.theme) }` and never sets `themeDefault`; the Preferences dropdown reads `settings.themeDefault ?? settings.theme` (`App.tsx:13130`).
+
+Steps to reproduce:
+1. `npm.cmd run build`; open the app, use View > Toggle Theme once.
+2. Inspect the persisted `settings.json` `theme` and `themeDefault`.
+3. Open Preferences and read the "Theme default" value, then compare with the shell's effective theme.
+
+Expected: the persisted default and the effective theme agree (no two conflicting states), per AR-08.
+
+Actual: e.g. persisted `theme=light, themeDefault=dark`; Preferences shows Dark over a light shell.
+
+Screenshot: screenshots/adv-243-theme-residue.png
+
+History:
+- CTO (TFL-1146, 2026-10-07): filed from adversary diff-pass ADV-243; triage ACCEPTED. Routed to frontend-dev.
+- qa (TFL-1190, 2026-10-08): FIX-READY retest PASS, CLOSED. Live View > Toggle Theme x3 through the app menu: persisted `theme === themeDefault === <html data-theme>` at each step (frosted/dark/light); Preferences "Theme default" read `light` over the settled light shell (no Dark-over-light); a Preferences dropdown pick to `dark` applied immediately and persisted `theme=themeDefault=dark` (dropdown path no regression). Command: `npx playwright test e2e/tfl1190_def628_629_630_retest.spec.cjs` -> 4 passed (23.1s); unit `npx vitest run` on the 4 named specs -> 4 files / 61 tests passed. Screenshot: screenshots/tfl1190_def628_prefs.png.
+
+## DEF-629: Extract accepts malformed range tokens with trailing garbage and acts on the leading number
+
+- Status: CLOSED (qa TFL-1190, 2026-10-08)
+- Severity: MEDIUM - a syntax-error entry is silently treated as valid and Extract is enabled, bypassing the "whole input must be valid" gate (AR-07): `1abc` -> page 1, `2-3x` -> pages 2-3, `1.9`/`12px` -> page 1.
+- Found by: adversary (ADV-244)
+- Phase: visual-overhaul correction 2 (TFL-1146), AR-07
+
+Files:
+- `src/renderer/engine/types.ts:966-967,982` - `classifyPageRange` parses span endpoints and single tokens with `Number.parseInt`, which drops a non-numeric suffix.
+
+Steps to reproduce:
+1. `npm.cmd run build`; open `report.pdf` (34 pages), open the Extract dialog.
+2. Type `1abc` (then `2-3x`, `1.9`, `12px`) into the range field.
+3. Read the status text and the confirm button state.
+
+Expected: a token with trailing garbage is a syntax error (`malformed`), `pages` null, Extract disabled.
+
+Actual: each classifies as `valid` and Extract is enabled, acting on the leading number.
+
+Screenshot: screenshots/adv-244-range-trailing-garbage.png
+
+History:
+- CTO (TFL-1146, 2026-10-07): filed from adversary diff-pass ADV-244; triage ACCEPTED. Routed to frontend-dev.
+- qa (TFL-1190, 2026-10-08): FIX-READY retest PASS, CLOSED. Live Extract dialog on bundled report.pdf (34 pages): `1abc`, `2-3x`, `1.9`, `12px` each classified `malformed`, pages null (message "Enter pages like 1-3 or 2,4.", input preserved, Extract disabled); valid inputs `1,3,5-7` -> 5 selected, `007` -> 1 selected, ` 10 - 12 ` -> 3 selected all `valid` with Extract enabled; `empty` wording byte-for-byte unchanged. Command: `npx playwright test e2e/tfl1190_def628_629_630_retest.spec.cjs` -> 4 passed (23.1s); unit 4 files / 61 tests passed. Screenshot: screenshots/tfl1190_def629_malformed.png.
+
+## DEF-630: Out-of-bounds span names only its upper endpoint, never the lower one
+
+- Status: CLOSED (qa TFL-1190, 2026-10-08)
+- Severity: LOW - AR-07's `invalidTokens` message is imprecise for a wholly-above-range span: `50-60` -> "Page 60 is outside the document's 1-34 pages." with `50` unnamed; `35-40` -> "Page 40 ...". The gate itself is correct (Extract disabled, pages null).
+- Found by: adversary (ADV-245)
+- Phase: visual-overhaul correction 2 (TFL-1146), AR-07
+
+Files:
+- `src/renderer/engine/types.ts:971-976` - the span branch adds `lo` only when `lo < 1`, never when `lo > totalPages`, so only `hi` is reported.
+
+Steps to reproduce:
+1. `npm.cmd run build`; open `report.pdf` (34 pages), open the Extract dialog.
+2. Type `50-60`, then `35-40`.
+
+Expected: every offending endpoint is named (both ends of a wholly out-of-bounds span).
+
+Actual: only the upper endpoint is named.
+
+Screenshot: screenshots/adv-245-range-span-endpoint.png
+
+History:
+- CTO (TFL-1146, 2026-10-07): filed from adversary diff-pass ADV-245; triage ACCEPTED. Routed to frontend-dev (folded with DEF-629).
+- qa (TFL-1190, 2026-10-08): FIX-READY retest PASS, CLOSED. Live Extract dialog: `50-60` -> "Pages 50, 60 are outside the document's 1-34 pages." and `35-40` -> "Pages 35, 40 are outside the document's 1-34 pages." (both ends named); `1-999` -> "Page 999 is outside the document's 1-34 pages." (in-bounds end unnamed). Blast radius: the nearest sibling call site (Delete pages dialog) still gates `50-60`/`1-999` disabled and `2-5` enabled; the 8 call sites share classifyPageRange (pages null on out-of-bounds). Command: `npx playwright test e2e/tfl1190_def628_629_630_retest.spec.cjs` -> 4 passed (23.1s); unit 4 files / 61 tests passed. Screenshots: screenshots/tfl1190_def630_span.png, screenshots/tfl1190_blast_delete.png.
+
 ## DEF-618: R03 collision-aware app menu is not content-bounded - stretched full-bleed to the viewport right edge (0px gutter)
 
 - Status: CLOSED (qa TFL-1123, 2026-10-07)

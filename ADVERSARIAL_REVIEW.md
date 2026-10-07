@@ -12176,3 +12176,185 @@ Precedes: launching the app. Follows: the document canvas.
 - ADV-242: ACCEPTED -> DEF-627 (MEDIUM). R25 reports the Book View reading
   location only via the header Close button; leaving Book View by switching tabs
   loses the reached location. Owner frontend-dev (TFL-1176).
+
+## ADV-243: Toggle Theme leaves `themeDefault` stale — the AR-08 residue and the Preferences/shell disagreement are still reproducible
+
+- Session: diff-pass (phase-gate, TFL-1146)
+- Suggested severity: MEDIUM
+
+What I did (built app v1.51.0, `scaleFactor` 1.5, window 1220x961 DIP maximized,
+launched with a fresh userData through `e2e/lib/launch.cjs`):
+1. App menu -> Edit > Preferences. The "Theme default" dropdown shows `Light`.
+2. Select `Dark`. Live `<html data-theme>` becomes `dark`, and `settings.json`
+   becomes `theme=dark, themeDefault=dark` — the atomic AR-08 fix works for a
+   dropdown pick.
+3. Close Preferences. App menu -> View > Toggle Theme (the shipped cycle route;
+   `nextTheme('dark')` -> `light`).
+4. Live `<html data-theme>` becomes `light`, but `settings.json` is now
+   `theme=light, themeDefault=dark` — the exact residue the AR-08 fix comment
+   (`src/renderer/state/theme.ts:35`) claims "can never" occur.
+5. Reopen Preferences: the dropdown reads `Dark` while the shell is visibly
+   `Light`.
+
+Expected: per Additional Live Review item 6 ("selecting Dark must change all app
+surfaces coherently and persist after relaunch") and item 7 of the audit
+(AR-08), `themeDefault` and the effective theme stay coherent after any theme
+change, so Preferences never shows a theme that disagrees with the shell.
+
+Actual: `onToggleTheme` (`src/renderer/App.tsx:1790-1798`) writes only
+`theme: nextTheme(prev.theme)` and never touches `themeDefault`. The shipped
+Toggle Theme command therefore produces `theme=light, themeDefault=dark`, and
+Preferences (`themeDefault={settings.themeDefault ?? settings.theme}`,
+`App.tsx:13136`) then displays a theme that disagrees with the effective one.
+The correction pass only made the dropdown pick atomic; it did not make the
+toggle coherent nor reconcile the residue.
+
+Evidence:
+- `screenshots/adv-243-theme-residue.png` (Preferences open: dropdown `Dark`,
+  shell light).
+- Probe `test-fixtures/tfl1188-adversary/live_probe_theme.cjs` — prints
+  `PERSISTED theme=light themeDefault=dark` and
+  `VERDICT residue=true (select=dark, live=light)`.
+- Unit probe `test-fixtures/tfl1188-adversary/adv_probe.test.ts`
+  ("a live theme toggle keeps the persisted themeDefault equal to the effective
+  theme (AR-08 invariant)") — fails.
+
+Disposition: ACCEPTED -> DEF-628 (MEDIUM). CTO triage 2026-10-07 (TFL-1146): in scope - AR-08 requires the persisted and effective theme to be coherent and not present two conflicting states; the View > Toggle Theme command is a live theme route that leaves `themeDefault` stale. Routed to frontend-dev; qa to close after retest.
+
+## ADV-244: Extract accepts malformed tokens with trailing garbage and acts on the leading number
+
+- Session: diff-pass (phase-gate, TFL-1146)
+- Suggested severity: MEDIUM
+
+What I did (built app v1.51.0): opened the bundled `report.pdf` (34 pages),
+opened the Extract dialog (View/Edit tool `extract`), and typed these values into
+`#split-page-range`, reading `#split-range-status` and the confirm button state:
+`1abc`, `2-3x`, `1.9`, `12px`.
+
+Expected: per Additional Live Review item 5 ("Distinguish empty input, syntax
+errors, ... out-of-bounds pages ..."; "Keep Extract/Split disabled until the
+entire input is acceptable"), a token carrying trailing garbage is a syntax
+error: the field reads `malformed`, `pages` is null, and Extract stays disabled.
+
+Actual: all four inputs classify as `valid` and Extract is ENABLED:
+`1abc` -> "1 page selected" (page 1), `2-3x` -> "2 pages selected" (pages 2-3),
+`1.9` -> "1 page selected", `12px` -> "1 page selected". `classifyPageRange`
+(`src/renderer/engine/types.ts:966-967, 982`) uses `Number.parseInt`, which
+silently discards the non-numeric suffix, so the whole-input gate is bypassed and
+a malformed entry is acted on. QA's `e2e/tfl1183_ar07_08_09_live.spec.cjs` covers
+`abc` and `9-2` but never a number-plus-suffix, so this passed QA.
+
+Evidence:
+- `screenshots/adv-244-range-trailing-garbage.png` (`1abc`, state `valid`,
+  Extract enabled).
+- `test-fixtures/tfl1188-adversary/live_probe_range.log` (full case table).
+- Unit probe `test-fixtures/tfl1188-adversary/adv_probe.test.ts`
+  ("rejects tokens with trailing garbage rather than acting on the leading
+  number") — fails.
+
+Disposition: ACCEPTED -> DEF-629 (MEDIUM). CTO triage 2026-10-07 (TFL-1146): in scope - AR-07 requires syntax errors to be distinguished and Extract/Split disabled until the WHOLE input is valid; `Number.parseInt` silently drops a trailing suffix. Routed to frontend-dev; qa to close after retest.
+
+## ADV-245: Out-of-bounds span names only the upper endpoint, never the lower one
+
+- Session: diff-pass (phase-gate, TFL-1146)
+- Suggested severity: LOW
+
+What I did (built app v1.51.0): same Extract dialog on the 34-page `report.pdf`;
+typed `50-60` and `35-40`.
+
+Expected: per AR-07 ("It should identify allowed range 1–34 and the invalid
+token"), a span whose lower end is also above the document maximum names every
+offending endpoint, so the user is not led to believe the lower number is
+acceptable.
+
+Actual: `50-60` -> "Page 60 is outside the document's 1-34 pages." and
+`35-40` -> "Page 40 is outside the document's 1-34 pages." — `50` and `35`
+respectively are unnamed. `classifyPageRange`'s span branch
+(`src/renderer/engine/types.ts:971-976`) adds `lo` only when `lo < 1`; it never
+adds `lo` when `lo > totalPages`, so only the `hi` endpoint is reported for a
+wholly-above-range span. The gate itself is correct (Extract disabled, pages
+null); this is the new `invalidTokens` feature's message precision.
+
+Evidence:
+- `screenshots/adv-245-range-span-endpoint.png`.
+- `test-fixtures/tfl1188-adversary/live_probe_range.log`.
+- Unit probe `test-fixtures/tfl1188-adversary/adv_probe.test.ts`
+  ("names BOTH ends of a wholly out-of-bounds span") — fails.
+
+Disposition: ACCEPTED -> DEF-630 (LOW). CTO triage 2026-10-07 (TFL-1146): in scope - AR-07's `invalidTokens` message must name the offending token(s); a wholly-above-range span currently names only its upper endpoint. Routed to frontend-dev (folded with DEF-629); qa to close after retest.
+
+## Classes that held (TFL-1146 diff-pass)
+
+- **AR-05 sample / Recents identity — HOLDS.** `isSampleRecentPath`
+  (`samples/` prefix only) never matches a real filesystem path: Windows drive
+  paths, forward-slash, UNC and a `samples` folder mid-path, the bare word
+  `samples`, `samplesx/`, `SAMPLES/` and the backslash `samples\...` form all
+  return false; only the virtual `samples/<name>` form matches
+  (`test-fixtures/tfl1188-adversary/adv_probe.test.ts`). Git history confirms the
+  writer (`recordSampleRecent`, and the earlier `samplePath` sites) has always
+  emitted the forward-slash `samples/${name}` form, so no legacy record can be a
+  false negative; a real saved copy of a sample and a genuinely missing real path
+  are handled separately (QA `e2e/tfl1185_ar05_sample_identity.spec.cjs` passed).
+- **Chunk F window bounds — HOLDS.** `fitGeometryToWorkArea` never returns a
+  width/height above the supplied work area nor a rect outside it, for 1920x1040,
+  1280x984 (left monitor) and an 800x480 work area, across oversized and
+  off-screen geometries (`adv_probe.test.ts`); a work area smaller than the
+  960x640 floor clamps the window down to the work area rather than exceeding it.
+  The dev/QA oracles (`test/unit/main/phase35WindowFit.test.ts`,
+  `e2e/tfl1187_window_min.spec.cjs`) pass, and both `createMainWindow` and
+  `createDetachedWindow` clamp `minWidth`/`minHeight` to the relevant work area.
+- **AR-01 / AR-04 anchor maths — HOLDS.** `normalizedAnchorFraction` clamps to
+  0..1 with 0 for the top edge and non-finite/zero-height input;
+  `anchorOffsetAfter` preserves the invariant `target + fraction*heightAfter ===
+  before + fraction*heightBefore` across grow and shrink; `zoomFlipIsStale`
+  discards a mismatched defined generation and `runZoomFlip` then performs no
+  scroll and no animation (`adv_probe.test.ts`; dev
+  `test/unit/renderer/tfl1146_anchorPreservation.test.ts` passed). Source trace:
+  the apply effect clears the pending and drops a generation-stale capture
+  (`DocumentView.tsx:2340-2364`), the resize/pane effects capture only in a fit
+  mode before the box is published (`:2506-2570`), and every scale-changing path
+  (`zoomTo`, wheel, `setMode`, `onChangePageLayout`) captures first.
+- **AR-02 compact drawer a11y — HOLDS.** The collapse control carries
+  `aria-expanded={!collapsed}` and the focus-return ref/effect mirrors the
+  Inspector pattern (`ContextPanel.tsx:565-580, 865-877`); Escape and the close
+  control both route through the host `onClose`. QA
+  `e2e/tfl1179_ar_navigation.spec.cjs` passed both sizes, and dev
+  `test/unit/renderer/phase111_navigatorChrome.test.tsx` passed.
+
+Baseline: `npm.cmd run verify` exit 0; `npm.cmd run build` exit 0 (renderer +
+build:node). The phase's own unit oracle set (7 files, 110 tests) passes.
+
+## Design critique: the TFL-1146 changed surfaces (Preferences Appearance, compact drawer, Home Recents)
+
+User context: a desktop PDF reader who sets preferences once and expects the
+shell to match them, and who navigates a document from a compact window.
+
+### Must-fix (blocks ship)
+- **State honesty:** the "Theme default" row claims "Applies immediately, and is
+  the theme the app starts in on the next launch", but after View > Toggle Theme
+  the dropdown and the live shell show different themes with no visible override
+  indicator (ADV-243). **Try:** have Toggle Theme write the default too (or show
+  the live override beside the default) so the surface never contradicts the
+  shell.
+- **Inputs / validation:** the range field shows a green "N pages selected" and
+  an enabled Extract for `1abc` (ADV-244). **Try:** reject any token whose text
+  is not a clean integer/range before it can register as valid.
+
+### Should-fix (before broader rollout)
+- **Error copy:** an out-of-bounds span names only its top end (ADV-245).
+  **Try:** name every endpoint outside 1..totalPages, or quote the whole token.
+
+### Nice-to-fix (when there's room)
+- **Copy:** the "Theme default" hint does not mention the View > Toggle Theme
+  override at all; a short clause would explain why a later session can differ.
+
+### Strengths to keep
+- The Preferences pick is now a single atomic write (`applyThemeDefault`), so
+  picking Dark can no longer leave the documented `theme=light, themeDefault=dark`
+  residue on its own.
+- Range validation keeps Extract/Split disabled for genuine out-of-bounds and
+  malformed input, and names the bound (`1-34`) for the simple cases the audit
+  cited.
+- The compact drawer exposes `aria-expanded` in both states and returns focus to
+  the collapse control on Escape and close.
+

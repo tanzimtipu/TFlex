@@ -44,11 +44,15 @@ async function zoomState() {
   return win.evaluate(() => {
     const d = window.tflexDiagnostics();
     // Scope to the ACTIVE pane: every open tab keeps its own DocumentView (and
-    // its own zoom pill) mounted, so a bare querySelector would read the first
-    // (inactive) document's pill.
+    // its own View Strip) mounted, so a bare querySelector would read the first
+    // (inactive) document's controls.
+    //
+    // Phase 109 (chunk A) retired the floating `[data-zoom-pill]` and moved the
+    // viewing controls into the unified View Strip footer `[data-view-strip]`;
+    // the Fit page / Fit width toggles carry the SAME aria-labels there.
     const pane = document.querySelector('.tab-pane[aria-hidden="false"]') ?? document;
-    const fitPage = pane.querySelector('[data-zoom-pill] button[aria-label="Fit page"]');
-    const fitWidth = pane.querySelector('[data-zoom-pill] button[aria-label="Fit width"]');
+    const fitPage = pane.querySelector('[data-view-strip] button[aria-label="Fit page"]');
+    const fitWidth = pane.querySelector('[data-view-strip] button[aria-label="Fit width"]');
     return {
       mode: d.mode,
       zoom: d.zoom,
@@ -58,18 +62,57 @@ async function zoomState() {
   });
 }
 
+// Fit Page must not merely mark the mode: the canonical page has to FIT the
+// usable canvas width AND sit centred in it. Measured from the live DOM
+// geometry of the current pane (never inferred from a CSS/token value).
+async function fitGeometry(pageNum) {
+  return win.evaluate((n) => {
+    const pane = document.querySelector('.tab-pane[aria-hidden="false"]') ?? document;
+    const scroller = pane.querySelector('.document-scroller');
+    const slot = pane.querySelector(`.page-slot[data-page="${n}"]`);
+    if (scroller === null || slot === null) return null;
+    const sr = scroller.getBoundingClientRect();
+    const r = slot.getBoundingClientRect();
+    // clientWidth excludes the webkit scrollbar; clientLeft is the border.
+    const left = Math.round(r.left - sr.left - scroller.clientLeft);
+    return {
+      leftGap: left,
+      rightGap: Math.round(scroller.clientWidth - left - r.width),
+      pageW: Math.round(r.width),
+      viewW: scroller.clientWidth,
+      fitsWidth: r.width <= scroller.clientWidth + 2,
+    };
+  }, pageNum);
+}
+
 test('a document opens at Fit page; a zoom change is honoured; the next document opens at Fit page again', async () => {
   // 1. First document opens at Fit page.
   await openSample('report.pdf');
   const first = await zoomState();
   console.log(`[P59-fitpage] first doc=${JSON.stringify(first)}`);
   expect(first.mode, 'first document opens at fit-page').toBe('fit-page');
-  expect(first.fitPagePressed, 'the Fit page pill is active').toBe('true');
-  expect(first.fitWidthPressed, 'the Fit width pill is not active').toBe('false');
+  expect(first.fitPagePressed, 'the Fit page toggle is active').toBe('true');
+  expect(first.fitWidthPressed, 'the Fit width toggle is not active').toBe('false');
+
+  // 1b. Fit Page actually FITS and RECENTERS the canonical page (page 1), not
+  //     merely flips the mode flag.
+  const pageNow = await win
+    .locator('.tab-pane[aria-hidden="false"] input.page-input[aria-label="Current page"]')
+    .first()
+    .inputValue();
+  expect(pageNow, 'the canonical (current) page after open is page 1').toBe('1');
+  const fit = await fitGeometry(1);
+  console.log(`[P59-fitpage] fit geometry page1=${JSON.stringify(fit)}`);
+  expect(fit, 'Fit Page page geometry is measurable').not.toBeNull();
+  expect(fit.fitsWidth, 'Fit Page fits the canonical page to the canvas width').toBe(true);
+  expect(
+    Math.abs(fit.leftGap - fit.rightGap),
+    'Fit Page recenters the canonical page in the canvas',
+  ).toBeLessThanOrEqual(4);
   await win.screenshot({ path: path.join(SHOTS, 'p59-fitpage-first.png') });
 
   // 2. Change the zoom (Zoom in) -> manual; the change is honoured.
-  await win.locator('.tab-pane[aria-hidden="false"] [data-zoom-pill] button[aria-label="Zoom in"]').click();
+  await win.locator('.tab-pane[aria-hidden="false"] [data-view-strip] button[aria-label="Zoom in"]').click();
   await win.waitForTimeout(500);
   const changed = await zoomState();
   console.log(`[P59-fitpage] after zoom-in=${JSON.stringify(changed)}`);

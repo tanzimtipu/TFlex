@@ -39,8 +39,10 @@ import { useInstantMotion } from "../hooks/useAnimations";
 import {
   clearZoomFlip,
   isZoomFlipEnd,
+  normalizedAnchorFraction,
   runZoomFlip,
   zoomAnchorPage,
+  zoomFlipIsStale,
   type ZoomFlipPending,
   type ZoomFlipPageEl,
   type ZoomFlipRect,
@@ -1887,6 +1889,12 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
   // freezing the renderer on open.
   const [mountedPages, setMountedPages] = useState<Set<number>>(new Set());
   const [viewportBox, setViewportBox] = useState({ w: 0, h: 0 });
+  // TFL-1146 (AR-01) — the committed viewport box, read synchronously inside
+  // the ResizeObserver / pane-assignment effects to decide whether a fit
+  // recompute is actually about to happen (and therefore whether an anchor has
+  // to be captured) without making those refs a dependency.
+  const viewportBoxRef = useRef(viewportBox);
+  viewportBoxRef.current = viewportBox;
   const [currentPage, setCurrentPage] = useState(initial.currentPage);
   // TFL-1116 R04 — the document-scoped COMMITTED-navigation counter. Every
   // call to `jumpToPage` (the ONE funnel for the ViewStrip input, the
@@ -1914,6 +1922,16 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
     mode: initial.zoomMode,
     manualScale: initial.manualScale,
   } as ZoomState);
+
+  // TFL-1146 (AR-01) — the live zoom mode, read synchronously from the resize /
+  // pane-assignment effects. Only a fit mode recomputes from `viewportBox`; a
+  // manual zoom ignores it, so only fit modes need an anchor captured there.
+  const fitModeRef = useRef<ZoomMode>(zoom.mode);
+  fitModeRef.current = zoom.mode;
+  // TFL-1146 — bumped on each explicit fit so the apply effect runs even when
+  // `effectiveScale` is unchanged (re-pressing the active Fit Page pill must
+  // recover the reading location instead of no-op'ing on a stale offset).
+  const [layoutApplyEpoch, setLayoutApplyEpoch] = useState(0);
 
   // Phase 3 â€” per-annotation flash highlight. The annotation tool state
   // itself is declared above (the Phase-21 panel block reads it).
@@ -2204,6 +2222,17 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
   const instantMotionRef = useRef(instantMotion);
   instantMotionRef.current = instantMotion;
 
+  // TFL-1146 — the layout/document generation. A capture records this value;
+  // the apply effect discards a pending whose generation no longer matches.
+  // Only a document identity / page-count change bumps it (a resize / zoom /
+  // fit / layout switch carries its own capture and must still apply), so a
+  // scroll restore can never be resolved against a different document or a
+  // layout that was superseded before it was applied.
+  const layoutGenerationRef = useRef(0);
+  useLayoutEffect(() => {
+    layoutGenerationRef.current += 1;
+  }, [doc, pageCount]);
+
   /** The paper-owning page unit for a page number: its `.page-slot`. This is
    *  the element the zoom FLIP animates (paper background + content in one). */
   const pageUnitFor = (page: number | null): HTMLElement | null => {
@@ -2211,12 +2240,28 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
     return slotRefsRef.current.get(page) ?? null;
   };
 
+  /** TFL-1146 — options for an anchor capture that is not a plain zoom step.
+   *  `anchorPage` / `anchorOffsetBefore` force the restore target (explicit Fit
+   *  Page recenters the CURRENT page at the viewport top); `animate` keeps a
+   *  resize / fit capture from playing a page FLIP. */
+  interface CaptureAnchorOptions {
+    anchorPage?: number;
+    anchorOffsetBefore?: number;
+    animate?: boolean;
+  }
+
   /** Synchronously record the pre-zoom rects + scroll anchor. Returns false
    *  when nothing is mounted to animate. Called just before the zoom dispatch
    *  so `First` is the OLD layout. Only slots holding a mounted PageView (a
    *  real sheet) are captured; an empty placeholder slot has no content to
-   *  track and reflows instantly like native zoom (accepted). */
-  const captureZoomFlip = useCallback((): boolean => {
+   *  track and reflows instantly like native zoom (accepted).
+   *
+   *  TFL-1146 (AR-01) — the anchor also records the NORMALIZED in-page fraction
+   *  plus the anchor page's pre-change height, so the restore keeps the same
+   *  in-page point under the viewport top across a scale or page-height change.
+   *  Every layout-changing path (zoom, layout switch, resize, dock reflow,
+   *  explicit fit) captures here; there is only this one anchor system. */
+  const captureZoomFlip = useCallback((opts?: CaptureAnchorOptions): boolean => {
     const scroller = scrollerRef.current;
     if (scroller === null) return false;
     const scrollerTop = scroller.getBoundingClientRect().top;
@@ -2229,13 +2274,42 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
       firstRects.set(page, { left: r.left, top: r.top, width: r.width, height: r.height });
       pages.push({ page, el: slotEl });
     });
-    if (pages.length === 0) return false;
-    const anchor = zoomAnchorPage(pages, scrollerTop);
-    if (anchor === null) return false;
+
+    let anchorPage: number;
+    let anchorRect: ZoomFlipRect | null;
+    if (opts?.anchorPage !== undefined) {
+      // Forced anchor (Fit Page recenter): the target page may sit outside the
+      // mounted/anchor scan, so read its slot directly.
+      anchorPage = opts.anchorPage;
+      const slotEl = slotRefsRef.current.get(anchorPage) ?? null;
+      if (slotEl === null) {
+        anchorRect = null;
+      } else {
+        const r = slotEl.getBoundingClientRect();
+        anchorRect = { left: r.left, top: r.top, width: r.width, height: r.height };
+      }
+    } else {
+      if (pages.length === 0) return false;
+      const anchor = zoomAnchorPage(pages, scrollerTop);
+      if (anchor === null) return false;
+      anchorPage = anchor.page;
+      anchorRect = firstRects.get(anchor.page) ?? null;
+    }
+
+    const forcedOffset = opts?.anchorOffsetBefore;
+    const offsetBefore =
+      forcedOffset !== undefined ? forcedOffset : (anchorRect?.top ?? 0) - scrollerTop;
+    const heightBefore = anchorRect?.height ?? 0;
     pendingZoomFlipRef.current = {
       firstRects,
-      anchorPage: anchor.page,
-      anchorOffsetBefore: anchor.el.getBoundingClientRect().top - scrollerTop,
+      anchorPage,
+      anchorOffsetBefore: offsetBefore,
+      // A forced target pins the top edge (fraction 0); a natural capture
+      // keeps the exact in-page point the viewport top was cutting.
+      anchorFraction: forcedOffset !== undefined ? 0 : normalizedAnchorFraction(offsetBefore, heightBefore),
+      anchorHeightBefore: heightBefore,
+      generation: layoutGenerationRef.current,
+      animate: opts?.animate,
     };
     pendingFlipKindRef.current = "zoom";
     return true;
@@ -2251,10 +2325,18 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
     return ok;
   }, [captureZoomFlip]);
 
-  // Apply the zoom FLIP after the new layout commits. Keyed on
-  // `effectiveScale`: manual zoom steps change it; fit-mode recomputes are
-  // never captured (see zoomTo / the wheel handler), so a resize drag runs
-  // this effect with a null pending and does nothing.
+  // TFL-1146 — a synchronous handle for the resize / pane-assignment effects
+  // (which are declared with empty deps so they may read the LATEST capture).
+  const captureZoomFlipRef = useRef(captureZoomFlip);
+  captureZoomFlipRef.current = captureZoomFlip;
+
+  // Apply the zoom FLIP after the new layout commits. Keyed on `effectiveScale`
+  // (manual zoom steps / resize / dock reflow / fit recompute change it),
+  // `layoutMode` (page-layout switch) and `layoutApplyEpoch` (an explicit fit
+  // whose scale did not change). Every one of those paths captures first (see
+  // zoomTo / the wheel handler / setMode / the resize + pane effects); a
+  // generation-stale pending is dropped rather than restored against the
+  // current document.
   useLayoutEffect(() => {
     const pending = pendingZoomFlipRef.current;
     if (pending === null) return;
@@ -2263,17 +2345,28 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
     pendingFlipKindRef.current = "zoom";
     const scroller = scrollerRef.current;
     if (scroller === null) return;
+    if (zoomFlipIsStale(pending, layoutGenerationRef.current)) return;
     const pages: ZoomFlipPageEl[] = [];
+    const seen = new Set<number>();
     pending.firstRects.forEach((_rect, page) => {
       const el = pageUnitFor(page);
-      if (el !== null) pages.push({ page, el });
+      if (el !== null) {
+        pages.push({ page, el });
+        seen.add(page);
+      }
     });
-    runZoomFlip(scroller, pages, pending, instantMotionRef.current, kind);
-    // `effectiveScale` and `layoutMode` are the two committed signals that the
-    // slot geometry moved (zoom step / page-layout switch). A fit recompute
-    // without a capture runs this with a null pending and does nothing.
+    // A forced anchor (Fit Page) may not be in `firstRects`; still hand its
+    // mounted slot to the restore.
+    if (pending.anchorPage !== null && !seen.has(pending.anchorPage)) {
+      const el = pageUnitFor(pending.anchorPage);
+      if (el !== null) pages.push({ page: pending.anchorPage, el });
+    }
+    runZoomFlip(scroller, pages, pending, instantMotionRef.current, kind, layoutGenerationRef.current);
+    // `effectiveScale`, `layoutMode` and `layoutApplyEpoch` are the committed
+    // signals that the slot geometry moved (zoom step / resize / fit / layout
+    // switch). An unrelated render runs this with a null pending.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [effectiveScale, layoutMode]);
+  }, [effectiveScale, layoutMode, layoutApplyEpoch]);
 
 
   // ---- per-page slot geometry (DEF-141) ----------------------------------
@@ -2413,13 +2506,43 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
     if (el === null) {
       return;
     }
-    const ro = new ResizeObserver(() => {
-      setViewportBox({ w: el.clientWidth, h: el.clientHeight });
+    let raf = 0;
+    const publish = (): void => {
+      raf = 0;
+      const next = { w: el.clientWidth, h: el.clientHeight };
+      setViewportBox((prev) => (prev.w === next.w && prev.h === next.h ? prev : next));
       computeGeometryMountRef.current();
-    });
+    };
+    // TFL-1146 (AR-01) — a window resize / dock-width change moves the scroller
+    // box, which recomputes the fit scale. Capture the scroll anchor BEFORE
+    // that recompute (the slots still hold the OLD scale here, React has not
+    // re-rendered), so the apply effect can keep the same document location.
+    // Manual zoom ignores `viewportBox`, so only a fit mode can drift. The
+    // publish is coalesced to one rAF per frame.
+    const onResize = (): void => {
+      const nextW = el.clientWidth;
+      const nextH = el.clientHeight;
+      const committed = viewportBoxRef.current;
+      if (fitModeRef.current !== "manual" && (nextW !== committed.w || nextH !== committed.h)) {
+        captureZoomFlipRef.current({ animate: false });
+      }
+      if (raf === 0) {
+        if (typeof window.requestAnimationFrame === "function") {
+          raf = window.requestAnimationFrame(publish);
+        } else {
+          publish();
+        }
+      }
+    };
+    const ro = new ResizeObserver(onResize);
     ro.observe(el);
-    setViewportBox({ w: el.clientWidth, h: el.clientHeight });
-    return () => ro.disconnect();
+    publish();
+    return () => {
+      ro.disconnect();
+      if (raf !== 0 && typeof window.cancelAnimationFrame === "function") {
+        window.cancelAnimationFrame(raf);
+      }
+    };
   }, []);
 
   // DEF-338 — a Multi Mode pane's scroller is only the pane-constrained box
@@ -2439,6 +2562,15 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
       return;
     }
     const next = { w: el.clientWidth, h: el.clientHeight };
+    // TFL-1146 (AR-01) — assigning a painted tab to a pane narrows the scroller
+    // like a dock-width change: capture the scroll anchor before the fit
+    // recomputes so the reading location survives the pane reflow.
+    if (
+      fitModeRef.current !== "manual" &&
+      (next.w !== viewportBoxRef.current.w || next.h !== viewportBoxRef.current.h)
+    ) {
+      captureZoomFlipRef.current({ animate: false });
+    }
     setViewportBox((prev) => (prev.w === next.w && prev.h === next.h ? prev : next));
   }, [multiModeEnabled, multiPane]);
 
@@ -3145,9 +3277,24 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
         // deliberate fit actions.
         setFitAnchor(firstPageSize);
       }
+      if (mode === "fit-width" || mode === "fit-page") {
+        // TFL-1146 (AR-04) — capture the scroll anchor BEFORE the fit
+        // recomputes. Fit Page forces the CURRENT canonical page to the top of
+        // the viewport (recenter / recover); Fit Width preserves the natural
+        // reading anchor. `animate: false` keeps a fit click from playing a
+        // page FLIP. The epoch forces the apply effect to run even when the
+        // scale is already correct, so re-pressing the active Fit Page pill
+        // recovers instead of no-op'ing on a stale offset.
+        captureZoomFlip(
+          mode === "fit-page"
+            ? { anchorPage: currentPage, anchorOffsetBefore: 0, animate: false }
+            : { animate: false },
+        );
+        setLayoutApplyEpoch((epoch) => epoch + 1);
+      }
       dispatchZoom({ type: "set-mode", mode });
     },
-    [firstPageSize],
+    [firstPageSize, currentPage, captureZoomFlip],
   );
 
   // Phase 40 (item 9) — selecting a page-layout mode establishes that mode's
@@ -3160,13 +3307,14 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
   // be fitted to ONE page by clicking the active ONE option.
   const onChangePageLayout = useCallback(
     (mode: PageLayoutMode): void => {
-      // Phase 43 (item 1) — capture First (the pre-switch `.page-slot` rects +
-      // scroll anchor) before the grid reflows, so the apply effect plays the
-      // LAYOUT-token FLIP for every mounted page (transform only; the page
-      // pixels are never recoloured or cross-faded).
-      captureLayoutFlip();
       setPageLayout(mode);
+      // Phase 40 — the layout switch also establishes that mode's fit.
       setMode(pageLayoutFitMode(mode));
+      // TFL-1146 — capture LAST: `setMode` captures a fit anchor of its own,
+      // and this layout capture must win so the apply effect plays the LAYOUT
+      // FLIP. React has not committed the state updates yet, so this still
+      // reads the pre-switch `.page-slot` rects + scroll anchor (Phase 43).
+      captureLayoutFlip();
     },
     [captureLayoutFlip, setMode],
   );

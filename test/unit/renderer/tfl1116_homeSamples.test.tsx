@@ -15,12 +15,29 @@ import { resolve } from "node:path";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { Welcome } from "../../../src/renderer/components/Welcome";
-import { recordSampleRecent } from "../../../src/renderer/utils/sampleRecents";
-import type { SampleDocument } from "../../../src/shared/types";
+import { isSampleRecentPath, recordSampleRecent } from "../../../src/renderer/utils/sampleRecents";
+import type { RecentFile, SampleDocument } from "../../../src/shared/types";
 
 const SAMPLES: SampleDocument[] = [{ name: "report.pdf", path: "samples/report.pdf" }];
 
-function renderWelcome(showSamples: boolean, resolver: () => Promise<SampleDocument[]>): {
+interface RecentDisplay {
+  entry: RecentFile;
+  meta: { name: string; dir: string; isSample: boolean };
+}
+
+function recentRow(path: string, name: string): RecentDisplay {
+  return {
+    entry: { path, name, openedAt: "2020-01-01T00:00:00.000Z" },
+    meta: { name, dir: path.includes("/") ? path.slice(0, path.lastIndexOf("/")) : "", isSample: path.startsWith("samples/") },
+  };
+}
+
+function renderWelcome(
+  showSamples: boolean,
+  resolver: () => Promise<SampleDocument[]>,
+  recentFiles: RecentDisplay[] = [],
+  missingRecentPaths: readonly string[] = [],
+): {
   host: HTMLElement;
   unmount: () => void;
 } {
@@ -30,7 +47,8 @@ function renderWelcome(showSamples: boolean, resolver: () => Promise<SampleDocum
   act((): void => {
     root.render(
       <Welcome
-        recentFiles={[]}
+        recentFiles={recentFiles}
+        missingRecentPaths={missingRecentPaths}
         onOpenRecent={(): void => undefined}
         onRemoveRecent={(): void => undefined}
         onOpenFile={(): void => undefined}
@@ -120,5 +138,63 @@ describe("TFL-1143 R09 — App wires the flag and the MRU gate", () => {
 
   it("records a bundled sample open through the gated helper", () => {
     expect(app).toContain("recordSampleRecent(name, window.tflex)");
+  });
+});
+
+// AR-05 (TFL-1184) — a Recent row whose stored path is a virtual bundled-sample
+// path (`samples/<name>`) is NEVER labelled Missing, and the missing probe never
+// hands those paths to checkMissing.
+describe("AR-05 — honest sample/Recent identity", () => {
+  it("recognises only samples/-prefixed virtual paths", () => {
+    expect(isSampleRecentPath("samples/report.pdf")).toBe(true);
+    expect(isSampleRecentPath("samples/nested/name.pdf")).toBe(true);
+    expect(isSampleRecentPath("C:\\docs\\report.pdf")).toBe(false);
+    expect(isSampleRecentPath("/home/me/report.pdf")).toBe(false);
+    expect(isSampleRecentPath("samples")).toBe(false);
+    expect(isSampleRecentPath("")).toBe(false);
+  });
+
+  it("never renders Missing for a sample recent even when the host reports it missing", () => {
+    const { host, unmount } = renderWelcome(
+      false,
+      async (): Promise<SampleDocument[]> => SAMPLES,
+      [recentRow("samples/report.pdf", "report.pdf")],
+      ["samples/report.pdf"],
+    );
+    try {
+      const row = host.querySelector("[data-recent-row]");
+      expect(row).not.toBeNull();
+      expect(row?.getAttribute("data-recent-missing")).toBe("false");
+      expect(host.querySelector("[data-recent-missing-note]")).toBeNull();
+      expect(host.querySelector('[data-recent-action="locate"]')).toBeNull();
+    } finally {
+      unmount();
+    }
+  });
+
+  it("still renders Missing for a real on-disk path the host reports missing", () => {
+    const { host, unmount } = renderWelcome(
+      false,
+      async (): Promise<SampleDocument[]> => SAMPLES,
+      [recentRow("C:\\docs\\gone.pdf", "gone.pdf")],
+      ["C:\\docs\\gone.pdf"],
+    );
+    try {
+      const row = host.querySelector("[data-recent-row]");
+      expect(row?.getAttribute("data-recent-missing")).toBe("true");
+      expect(host.querySelector("[data-recent-missing-note]")).not.toBeNull();
+    } finally {
+      unmount();
+    }
+  });
+
+  it("App excludes virtual sample paths from the checkMissing probe", () => {
+    const app = readFileSync(resolve(__dirname, "../../../src/renderer/App.tsx"), "utf8");
+    const probe = app.indexOf("window.tflex.checkMissing(paths)");
+    expect(probe).toBeGreaterThan(-1);
+    const filterAt = app.lastIndexOf("isSampleRecentPath(p)", probe);
+    expect(filterAt).toBeGreaterThan(-1);
+    expect(filterAt).toBeLessThan(probe);
+    expect(app).toContain("import { isSampleRecentPath, recordSampleRecent } from \"./utils/sampleRecents\";");
   });
 });

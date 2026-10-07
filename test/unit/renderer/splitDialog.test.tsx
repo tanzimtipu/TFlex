@@ -128,7 +128,9 @@ describe("SplitDialog — DialogShell render contract", () => {
       expect(input?.value).toBe("0,521");
       expect(input?.getAttribute("aria-describedby")).toBe("split-range-status");
       const status = container.querySelector("#split-range-status");
-      expect(status?.textContent).toContain("Page numbers must be between 1 and 520.");
+      expect(status?.textContent).toContain(
+        "Pages 0, 521 are outside the document's 1-520 pages.",
+      );
       const confirm = container.querySelector<HTMLButtonElement>(
         '[data-dialog-action="confirm"]',
       );

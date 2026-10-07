@@ -699,4 +699,32 @@ async function closeStandalonePrintWindow(electronApp, printPage) {
     .catch(() => {});
 }
 
-module.exports = { launchDev, launchInstalled, dismissUpdatePrompt, openSample, openSamplePath, diag, shot, dumpEngine, getSamplePath, scrollToPage, sampleCanvasPageRect, hardClose, armAnnotationTool, toggleMultiModeViaPalette, gotoStage, openDockVerb, clickDockVerb, runTool, ensurePanelExpanded, toggleEditMode, armSignTool, openAnnotationFlyout, textPanelRight, openStandalonePrintWindow, closeStandalonePrintWindow };
+// ---------------------------------------------------------------------------
+// TFL-1116 header overhaul retired the old title-bar controls
+// `[data-open-preferences]` (gear button) and `[data-theme-toggle]` /
+// `[data-theme-option]` (bespoke theme popover). The CURRENT routes are the
+// application menu: Edit > Preferences... and View > Toggle Theme. These
+// helpers drive those real rows so the theme oracles keep asserting the same
+// behaviour against the shipped controls.
+// ---------------------------------------------------------------------------
+async function openPreferences(window) {
+  await window.locator('[data-app-menu]').first().click();
+  await window.waitForSelector('[data-app-menu-popover]', { state: 'visible', timeout: 8000 });
+  await window.locator('[data-app-menu-popover] [data-menu-action="preferences"]').first().click();
+  await window.waitForSelector('[data-prefs-dialog]', { timeout: 8000 });
+}
+
+// The View > Toggle Theme command cycles frosted -> dark -> light -> frosted
+// (state/theme.ts nextTheme), so a single activation on a fresh profile (which
+// boots frosted) lands on dark.
+async function toggleThemeViaAppMenu(window) {
+  await window.locator('[data-app-menu]').first().click();
+  await window.waitForSelector('[data-app-menu-popover]', { state: 'visible', timeout: 8000 });
+  await window.locator('[data-app-menu-popover] [data-menu-action="toggleTheme"]').first().click();
+  await window
+    .waitForSelector('[data-app-menu-popover]', { state: 'detached', timeout: 8000 })
+    .catch(() => {});
+  await window.waitForTimeout(300);
+}
+
+module.exports = { launchDev, launchInstalled, dismissUpdatePrompt, openSample, openSamplePath, diag, shot, dumpEngine, getSamplePath, scrollToPage, sampleCanvasPageRect, hardClose, armAnnotationTool, toggleMultiModeViaPalette, gotoStage, openDockVerb, clickDockVerb, runTool, ensurePanelExpanded, toggleEditMode, armSignTool, openAnnotationFlyout, textPanelRight, openStandalonePrintWindow, closeStandalonePrintWindow, openPreferences, toggleThemeViaAppMenu };

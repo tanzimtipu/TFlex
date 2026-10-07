@@ -26,7 +26,7 @@ const os = require('node:os');
 const path = require('node:path');
 const fs = require('node:fs');
 const { launchApp } = require('./lib/launch.cjs');
-const { hardClose, shot } = require('./lib/helpers.cjs');
+const { hardClose, shot, openPreferences } = require('./lib/helpers.cjs');
 
 const userDataDir = path.join(os.tmpdir(), 'tflex-e2e-probe-settings');
 const settingsPath = path.join(userDataDir, 'settings.json');
@@ -68,6 +68,10 @@ test('RETEST DEF-213: fresh-profile dropdown shows Frosted and selecting Dark pe
   // 1. Fresh empty user-data dir (factory profile) -> the app boots Frosted.
   if (fs.existsSync(userDataDir)) fs.rmSync(userDataDir, { recursive: true, force: true });
   fs.mkdirSync(userDataDir, { recursive: true });
+  // This host's legacy-userdata migration copies %APPDATA%\tflex into any
+  // profile that LACKS settings.json; seed an empty one so the profile is
+  // truly isolated and the factory-default premise holds (TFL-1179 audit).
+  fs.writeFileSync(settingsPath, '{}');
 
   const app = await launchApp([], userDataDir, null);
   const window = await app.firstWindow();
@@ -75,10 +79,10 @@ test('RETEST DEF-213: fresh-profile dropdown shows Frosted and selecting Dark pe
     await window.waitForSelector('.sample-card', { timeout: 30000 });
     dump('boot (fresh profile, welcome screen)');
 
-    // 2. Open Preferences via the gear and read the "Appearance -> Theme
-    //    default" select value on the fresh profile.
-    await window.click('[data-open-preferences]');
-    await window.waitForSelector('[data-prefs-dialog]', { timeout: 10000 });
+    // 2. Open Preferences via the application menu (Edit > Preferences...) and
+    //    read the "Appearance -> Theme default" select value on the fresh
+    //    profile. TFL-1116 retired the old [data-open-preferences] gear.
+    await openPreferences(window);
     const bootValue = await window.locator('[data-prefs-theme-default]').inputValue();
     console.log(`[fresh-profile] theme-default select value = ${bootValue}`);
     dump('boot (dialog open, fresh profile, nothing selected)');

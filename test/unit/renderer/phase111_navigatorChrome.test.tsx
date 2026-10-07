@@ -90,6 +90,11 @@ interface PanelOptions {
   outline?: OutlineNode[] | null;
   railTab?: RailTab;
   onRailTabChange?: (tab: RailTab) => void;
+  currentPage?: number;
+  collapsed?: boolean;
+  drawer?: boolean;
+  onClose?: () => void;
+  onToggleCollapsed?: () => void;
 }
 
 function renderPanel(
@@ -107,7 +112,7 @@ function renderPanel(
         <ContextPanel
           stage="pages"
           doc={makeDocStub(pageCount)}
-          currentPage={1}
+          currentPage={current.currentPage ?? 1}
           defaultWidthPt={612}
           defaultHeightPt={792}
           engineState={makeEngineState(pageCount)}
@@ -116,6 +121,10 @@ function renderPanel(
           outline={current.outline === undefined ? null : current.outline}
           railTab={current.railTab}
           onRailTabChange={current.onRailTabChange}
+          collapsed={current.collapsed}
+          drawer={current.drawer}
+          onClose={current.onClose}
+          onToggleCollapsed={current.onToggleCollapsed}
         />,
       );
     });
@@ -294,6 +303,60 @@ describe("Phase 111 chunk A — the navigator view selector", () => {
       expect(host.querySelector("[data-outline-toggle]")).toBeNull();
     } finally {
       unmount();
+    }
+  });
+});
+
+// AR-02 (TFL-1184) — the compact Navigator drawer's accessibility contract.
+// Mirrors the Inspector (TFL-1117 R01): the collapse trigger exposes an
+// accurate `aria-expanded`, and a drawer close returns focus to that trigger.
+describe("AR-02 — compact Navigator drawer a11y", () => {
+  function trigger(host: HTMLElement): HTMLElement {
+    const el = host.querySelector<HTMLElement>("[data-rail-collapse]");
+    if (el === null) throw new Error("no [data-rail-collapse] trigger");
+    return el;
+  }
+
+  it("exposes an accurate aria-expanded that flips with the collapse state", () => {
+    const panel = renderPanel({ pageCount: 3, collapsed: false });
+    try {
+      expect(trigger(panel.host).getAttribute("aria-expanded")).toBe("true");
+      expect(trigger(panel.host).getAttribute("data-collapse-direction")).toBe("collapse");
+      panel.rerender({ pageCount: 3, collapsed: true });
+      expect(trigger(panel.host).getAttribute("aria-expanded")).toBe("false");
+      expect(trigger(panel.host).getAttribute("data-collapse-direction")).toBe("expand");
+    } finally {
+      panel.unmount();
+    }
+  });
+
+  it("returns focus to the trigger when the compact drawer closes", () => {
+    const panel = renderPanel({ pageCount: 3, drawer: true, collapsed: false });
+    try {
+      // The drawer is the open surface; the trigger is not the focused node yet.
+      const el = trigger(panel.host);
+      el.blur();
+      expect(document.activeElement).not.toBe(el);
+
+      panel.rerender({ pageCount: 3, drawer: false, collapsed: true });
+      expect(document.activeElement).toBe(trigger(panel.host));
+    } finally {
+      panel.unmount();
+    }
+  });
+});
+
+// AR-01 (TFL-1184) — the collapsed Navigator is the ruler strip; its current
+// page item carries the same machine-discoverable marker as the thumb card.
+describe("AR-01 — navigator current-page marker", () => {
+  it("marks only the current ruler page with data-thumb-current-marker", () => {
+    const panel = renderPanel({ pageCount: 3, collapsed: true, currentPage: 2 });
+    try {
+      const marked = [...panel.host.querySelectorAll("[data-ruler-page][data-thumb-current-marker]")];
+      expect(marked.map((el) => el.getAttribute("data-ruler-page"))).toEqual(["2"]);
+      expect(marked[0].classList.contains("rail-ruler-current")).toBe(true);
+    } finally {
+      panel.unmount();
     }
   });
 });

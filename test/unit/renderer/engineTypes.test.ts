@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { describe, expect, it } from "vitest";
 import {
+  classifyPageRange,
   defaultInsertPosition,
   defaultPageRange,
   describeEngineError,
@@ -67,6 +68,89 @@ describe("parsePageRange", () => {
   it("page 1-N boundary works", () => {
     expect(parsePageRange("1-1", 1)).toEqual([1]);
     expect(parsePageRange("1-2", 2)).toEqual([1, 2]);
+  });
+});
+
+describe("classifyPageRange — out-of-bounds names the token (AR-07)", () => {
+  it("names the offending token AND the 1-34 bound", () => {
+    expect(classifyPageRange("999", 34).message).toBe(
+      "Page 999 is outside the document's 1-34 pages.",
+    );
+    expect(classifyPageRange("0", 34).message).toBe(
+      "Page 0 is outside the document's 1-34 pages.",
+    );
+    expect(classifyPageRange("1-999", 34).message).toBe(
+      "Page 999 is outside the document's 1-34 pages.",
+    );
+    expect(classifyPageRange("1-3,999", 34).message).toBe(
+      "Page 999 is outside the document's 1-34 pages.",
+    );
+  });
+
+  it("keeps state out-of-bounds and pages null so the disabled gating is unchanged", () => {
+    const check = classifyPageRange("999", 34);
+    expect(check.state).toBe("out-of-bounds");
+    expect(check.pages).toBeNull();
+    expect(check.invalidTokens).toEqual([999]);
+  });
+
+  it("names several invalid tokens in input order", () => {
+    expect(classifyPageRange("999,0", 34).message).toBe(
+      "Pages 999, 0 are outside the document's 1-34 pages.",
+    );
+  });
+
+  it("leaves the empty and malformed wording untouched", () => {
+    expect(classifyPageRange("", 34).message).toBe("Enter at least one page (e.g. 1-3).");
+    expect(classifyPageRange("abc", 34).message).toBe("Enter pages like 1-3 or 2,4.");
+  });
+});
+
+describe("DEF-629 — trailing garbage is a syntax error (AR-07)", () => {
+  const malformedTokens = ["1abc", "2-3x", "1.9", "12px"];
+
+  for (const token of malformedTokens) {
+    it(`"${token}" classifies as malformed with pages null on 34 pages`, () => {
+      const check = classifyPageRange(token, 34);
+      expect(check.state).toBe("malformed");
+      expect(check.pages).toBeNull();
+      expect(check.message).toBe("Enter pages like 1-3 or 2,4.");
+    });
+  }
+
+  it("keeps strict valid inputs valid (leading zeros stay acceptable)", () => {
+    expect(classifyPageRange("10-20", 34).state).toBe("valid");
+    expect(classifyPageRange("1,3,5-7", 34).state).toBe("valid");
+    expect(classifyPageRange(" 10 - 12 ", 34).state).toBe("valid");
+    expect(classifyPageRange("007", 34)).toMatchObject({
+      state: "valid",
+      pages: [7],
+    });
+  });
+});
+
+describe("DEF-630 — a wholly-above-range span names every endpoint (AR-07)", () => {
+  it("names both ends of 50-60 on 34 pages", () => {
+    const check = classifyPageRange("50-60", 34);
+    expect(check.state).toBe("out-of-bounds");
+    expect(check.pages).toBeNull();
+    expect(check.invalidTokens).toEqual([50, 60]);
+    expect(check.message).toBe(
+      "Pages 50, 60 are outside the document's 1-34 pages.",
+    );
+  });
+
+  it("names both ends of 35-40 on 34 pages", () => {
+    const check = classifyPageRange("35-40", 34);
+    expect(check.invalidTokens).toEqual([35, 40]);
+    expect(check.message).toBe(
+      "Pages 35, 40 are outside the document's 1-34 pages.",
+    );
+  });
+
+  it("still names only the offending end when the other end is in bounds", () => {
+    expect(classifyPageRange("1-999", 34).invalidTokens).toEqual([999]);
+    expect(classifyPageRange("0-5", 34).invalidTokens).toEqual([0]);
   });
 });
 

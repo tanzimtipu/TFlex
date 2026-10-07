@@ -485,6 +485,42 @@ describe('createMainWindow', () => {
     expect(opts).toMatchObject({ width: 1920, height: 1040, x: 0, y: 0 });
   });
 
+  it('sets the provisional 960x640 minimum on a normal work area', () => {
+    _getAllDisplays.mockReturnValue([
+      {
+        workArea: { x: 0, y: 0, width: 1920, height: 1040 },
+        bounds: { x: 0, y: 0, width: 1920, height: 1080 },
+      },
+    ]);
+
+    createMainWindow(defaultSettings, {
+      rendererHtml: '/app/renderer/index.html',
+      onGeometryChanged: vi.fn(),
+    });
+
+    const opts = lastWindow()._opts as Record<string, unknown>;
+    expect(opts.minWidth).toBe(960);
+    expect(opts.minHeight).toBe(640);
+  });
+
+  it('clamps the minimum down to a small work area (never larger than the screen)', () => {
+    _getAllDisplays.mockReturnValue([
+      {
+        workArea: { x: 0, y: 0, width: 800, height: 560 },
+        bounds: { x: 0, y: 0, width: 800, height: 600 },
+      },
+    ]);
+
+    createMainWindow(defaultSettings, {
+      rendererHtml: '/app/renderer/index.html',
+      onGeometryChanged: vi.fn(),
+    });
+
+    const opts = lastWindow()._opts as Record<string, unknown>;
+    expect(opts.minWidth).toBe(800);
+    expect(opts.minHeight).toBe(560);
+  });
+
   // No DWM background material must be requested: Windows 11 acrylic
   // re-renders its wallpaper blur on every mouse-move invalidation (Chromium
   // repaints hover states on each move), which made the wallpaper behind the

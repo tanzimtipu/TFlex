@@ -1,5 +1,5 @@
 import type { AppSettings, AppTheme } from '../../shared/types';
-import type { ThemeDefault } from './preferences';
+import { preferencesReducer, type ThemeDefault } from './preferences';
 
 export type Theme = AppSettings['theme'];
 
@@ -29,6 +29,23 @@ export function resolveThemeDefault(
   return themeDefault;
 }
 
+/** AR-08 — resolve a Preferences dropdown pick into ONE coherent settings
+ *  object: the chosen `themeDefault` AND the concrete `theme` it implies,
+ *  written together so the on-disk record can never disagree (the residue
+ *  was `theme=light, themeDefault=dark` after a Dark pick). The concrete
+ *  theme is `resolveThemeDefault` at decision time, so boot — which applies
+ *  `settings.theme` — shows the same look the pick applied live. */
+export function applyThemeDefault(
+  settings: AppSettings,
+  next: ThemeDefault,
+  prefersDark: boolean,
+): AppSettings {
+  return {
+    ...preferencesReducer(settings, { type: 'set-theme-default', value: next }),
+    theme: resolveThemeDefault(next, prefersDark),
+  };
+}
+
 /** Cycle the View->Toggle Theme command through ALL three themes
  *  (frosted -> dark -> light -> frosted) so the default theme stays
  *  reachable from the keyboard. The cycle follows the theme-dropdown
@@ -42,4 +59,17 @@ export function nextTheme(theme: Theme): Theme {
     case 'light':
       return 'frosted';
   }
+}
+
+/** DEF-628 (AR-08) — resolve a View > Toggle Theme command into ONE coherent
+ *  settings object: the cycled concrete `theme` AND the matching
+ *  `themeDefault`, written together so the on-disk record can never disagree
+ *  (the residue was `theme=light, themeDefault=dark` after Toggle Theme wrote
+ *  only `theme`, leaving Preferences reading a stale default). The concrete
+ *  theme is `nextTheme(theme)`, so boot — which applies `settings.theme` —
+ *  shows the same look the toggle applied live. Mirrors `applyThemeDefault`
+ *  for the dropdown path. */
+export function applyToggleTheme(settings: AppSettings): AppSettings {
+  const theme = nextTheme(settings.theme);
+  return { ...settings, theme, themeDefault: theme };
 }

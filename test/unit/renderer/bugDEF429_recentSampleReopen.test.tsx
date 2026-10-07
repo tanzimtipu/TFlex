@@ -94,4 +94,19 @@ describe("DEF-429 — sample Recents reopen through the sample flow", () => {
     const body = extractBody(text, "const onRecentClick = useCallback(");
     expect(body).toContain("await openFromRequest(entry.path);");
   });
+
+  // AR-05 (TFL-1184) — the sample identity is ALSO honoured by the missing-file
+  // probe: a virtual `samples/<name>` path is never handed to checkMissing, so a
+  // sample-sourced row can never render Missing.
+  it("excludes virtual sample paths from the checkMissing probe", async () => {
+    const text = await appSource();
+    const probe = text.indexOf("window.tflex.checkMissing(paths)");
+    expect(probe).toBeGreaterThan(-1);
+    const filterAt = text.lastIndexOf("isSampleRecentPath(p)", probe);
+    expect(filterAt).toBeGreaterThan(-1);
+    expect(filterAt).toBeLessThan(probe);
+    expect(text).toMatch(
+      /import \{[^}]*isSampleRecentPath[^}]*\} from "\.\/utils\/sampleRecents"/,
+    );
+  });
 });

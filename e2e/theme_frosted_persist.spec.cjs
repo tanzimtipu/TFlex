@@ -13,15 +13,14 @@ const os = require('node:os');
 const path = require('node:path');
 const fs = require('node:fs');
 const { launchApp } = require('./lib/launch.cjs');
-const { hardClose } = require('./lib/helpers.cjs');
+const { hardClose, openPreferences, toggleThemeViaAppMenu } = require('./lib/helpers.cjs');
 
 const themeSelect = '[data-prefs-theme-default]';
 const userDataDir = path.join(os.tmpdir(), 'tflex-e2e-frosted-persist');
 const settingsPath = path.join(userDataDir, 'settings.json');
 
 async function openPrefs(window) {
-  await window.click('[data-open-preferences]');
-  await window.waitForSelector('[data-prefs-dialog]', { timeout: 5000 });
+  await openPreferences(window);
 }
 
 async function bootTheme(window, want) {
@@ -33,6 +32,11 @@ async function bootTheme(window, want) {
 function freshProfile() {
   if (fs.existsSync(userDataDir)) fs.rmSync(userDataDir, { recursive: true, force: true });
   fs.mkdirSync(userDataDir, { recursive: true });
+  // This host's one-time legacy-userdata migration copies the operator's
+  // %APPDATA%\tflex state into any profile that LACKS settings.json, so a bare
+  // temp dir is not isolated (TFL-1179 audit / TFL-1183). Seeding an empty
+  // settings.json skips the migration and keeps the factory-default premise.
+  fs.writeFileSync(settingsPath, '{}');
 }
 
 test('Frosted selectable and selection persists across restart', async () => {
@@ -70,13 +74,13 @@ test('Frosted selectable and selection persists across restart', async () => {
 test('persisted themeDefault applies on next launch', async () => {
   freshProfile();
 
-  // Launch 1: set the APPLIED theme to dark via the header picker
-  // (applied immediately and persisted), so the factory default
-  // 'frosted' cannot mask whether themeDefault is honoured at boot.
+  // Launch 1: set the APPLIED theme to dark via the View > Toggle Theme
+  // command (applied immediately and persisted), so the factory default
+  // 'frosted' cannot mask whether themeDefault is honoured at boot. A fresh
+  // profile boots frosted; the command cycles frosted -> dark.
   let app = await launchApp([], userDataDir, null);
   let window = await app.firstWindow();
-  await window.click('[data-theme-toggle]');
-  await window.click('[data-theme-option="dark"]');
+  await toggleThemeViaAppMenu(window);
   await bootTheme(window, 'dark');
   await hardClose(app);
 

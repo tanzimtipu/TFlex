@@ -419,9 +419,9 @@ export function PreferencesDialog(props: PreferencesDialogProps): ReactElement |
                           </div>
                           <div className="prefs-row">
                             <div className="prefs-row-text">
-                              <label className="prefs-row-label" htmlFor="prefs-animations">Animations</label>
+                              <label className="prefs-row-label" htmlFor="prefs-animations">Enable animations</label>
                               <p className="prefs-hint">
-                                Turns off every animation in the app - menus, panels and dialogs appear instantly.
+                                When off, menus, panels, dialogs and page changes appear without transition animations.
                               </p>
                             </div>
                             <input

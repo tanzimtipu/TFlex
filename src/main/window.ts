@@ -37,9 +37,12 @@ interface WindowDeps {
 
 const GEOMETRY_DEBOUNCE_MS = 300;
 
-/** Matches minWidth / minHeight below; the fit helper must not shrink past them. */
-const MIN_WINDOW_WIDTH = 640;
-const MIN_WINDOW_HEIGHT = 480;
+/** Provisional logical minimum (DIP). Electron minWidth / minHeight are in
+ *  DIP, so these are DIP too. The fit helper and every BrowserWindow clamp the
+ *  actual floor down to the target display's WORK AREA, so the minimum can
+ *  never be larger than the available screen. */
+const DESIRED_MIN_WINDOW_WIDTH = 960;
+const DESIRED_MIN_WINDOW_HEIGHT = 640;
 
 export interface WindowBounds {
   x: number;
@@ -411,15 +414,19 @@ export function workAreaForGeometry(
  * Phase 35 - clamp a saved geometry into a display's work area: the
  * window may never be larger than the work area, nor positioned so it
  * hangs over the taskbar strip or off the desktop. The min-size floor is
- * preserved so a tiny work area cannot collapse the window below the
- * BrowserWindow minimum. Pure and exported for the unit tests.
+ * clamped to the work area first, so a tiny work area collapses the window
+ * only down to that work area (never larger than the screen) while a normal
+ * display keeps the DESIRED_MIN_* floor. Pure and exported for the unit
+ * tests.
  */
 export function fitGeometryToWorkArea(
   geometry: WindowGeometry,
   workArea: Rectangle,
 ): WindowBounds {
-  const width = Math.max(MIN_WINDOW_WIDTH, Math.min(geometry.width, workArea.width));
-  const height = Math.max(MIN_WINDOW_HEIGHT, Math.min(geometry.height, workArea.height));
+  const floorW = Math.min(DESIRED_MIN_WINDOW_WIDTH, workArea.width);
+  const floorH = Math.min(DESIRED_MIN_WINDOW_HEIGHT, workArea.height);
+  const width = Math.max(floorW, Math.min(geometry.width, workArea.width));
+  const height = Math.max(floorH, Math.min(geometry.height, workArea.height));
   const maxX = workArea.x + workArea.width - width;
   const maxY = workArea.y + workArea.height - height;
   const x = Math.min(Math.max(geometry.x, workArea.x), Math.max(workArea.x, maxX));
@@ -483,8 +490,8 @@ export function createMainWindow(settings: AppSettings, deps: WindowDeps): Brows
     height: bounds.height,
     x: visible ? bounds.x : undefined,
     y: visible ? bounds.y : undefined,
-    minWidth: MIN_WINDOW_WIDTH,
-    minHeight: MIN_WINDOW_HEIGHT,
+    minWidth: Math.min(DESIRED_MIN_WINDOW_WIDTH, workArea.width),
+    minHeight: Math.min(DESIRED_MIN_WINDOW_HEIGHT, workArea.height),
     frame: false,
     resizable: true,
     maximizable: true,
@@ -628,13 +635,16 @@ export function createDetachedWindow(deps: {
   onCloseRequested?: (win: BrowserWindow, event: { preventDefault(): void }) => void;
 }): DetachedWindowHandle {
   const cursor = screen.getCursorScreenPoint();
+  // Clamp the detached window's minimum to the cursor display's WORK AREA so
+  // the floor can never exceed the screen the window opens on.
+  const cursorWorkArea = screen.getDisplayNearestPoint(cursor).workArea;
   const win = new BrowserWindow({
     width: 1100,
     height: 800,
     x: cursor.x + 40,
     y: cursor.y + 40,
-    minWidth: MIN_WINDOW_WIDTH,
-    minHeight: MIN_WINDOW_HEIGHT,
+    minWidth: Math.min(DESIRED_MIN_WINDOW_WIDTH, cursorWorkArea.width),
+    minHeight: Math.min(DESIRED_MIN_WINDOW_HEIGHT, cursorWorkArea.height),
     frame: false,
     resizable: true,
     maximizable: true,

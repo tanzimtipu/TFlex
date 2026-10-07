@@ -24,6 +24,18 @@ export function sampleRecentsEnabled(isDev: boolean = isDevelopmentBuild()): boo
 }
 
 /**
+ * AR-05 (TFL-1184) — the ONE sample-identity predicate. A virtual bundled-sample
+ * path is the `samples/<name>` form `recordSampleRecent` writes; it names a
+ * fixture inside the app bundle, never a real on-disk file. Legacy production
+ * recents from older builds can still hold one of these, so every consumer that
+ * decides whether a Recent points at a missing file (the `checkMissing` probe)
+ * or renders a Missing state must consult this predicate first.
+ */
+export function isSampleRecentPath(path: string): boolean {
+  return typeof path === "string" && path.startsWith("samples/");
+}
+
+/**
  * Record a bundled-sample open in the MRU, but ONLY in a development build.
  * Returns true when a record was written, false when the production gate
  * suppressed it. Never throws on a bridge rejection; a failed write is a

@@ -893,15 +893,20 @@ export interface PageRangeCheck {
   state: PageRangeState;
   /** The parsed, sorted, deduped 1-based pages; non-null ONLY when valid. */
   pages: number[] | null;
+  /** Every well-formed token that fell outside 1..totalPages, in input order
+   *  and deduped (AR-07). Empty for every state other than out-of-bounds. */
+  invalidTokens: number[];
   /** The field-close message; null when valid. */
   message: string | null;
 }
 
-/** The user-facing message for a range state. Empty keeps the shipped wording;
- *  out-of-bounds names the real 1..totalPages bound (R22). */
+/** The user-facing message for a range state. Empty and malformed keep the
+ *  shipped wording; out-of-bounds names the offending token(s) AND the real
+ *  1..totalPages bound (R22 + AR-07). */
 export function pageRangeMessage(
   state: PageRangeState,
   totalPages: number,
+  invalidTokens: readonly number[] = [],
 ): string | null {
   switch (state) {
     case "valid":
@@ -910,10 +915,19 @@ export function pageRangeMessage(
       return "Enter at least one page (e.g. 1-3).";
     case "malformed":
       return "Enter pages like 1-3 or 2,4.";
-    case "out-of-bounds":
-      return totalPages > 0
-        ? `Page numbers must be between 1 and ${totalPages}.`
-        : "Open a document first.";
+    case "out-of-bounds": {
+      if (totalPages <= 0) {
+        return "Open a document first.";
+      }
+      if (invalidTokens.length === 0) {
+        return `Page numbers must be between 1 and ${totalPages}.`;
+      }
+      const bound = `the document's 1-${totalPages} pages`;
+      if (invalidTokens.length === 1) {
+        return `Page ${invalidTokens[0]} is outside ${bound}.`;
+      }
+      return `Pages ${invalidTokens.join(", ")} are outside ${bound}.`;
+    }
   }
 }
 
@@ -925,14 +939,20 @@ export function classifyPageRange(input: string, totalPages: number): PageRangeC
   const result = (
     state: PageRangeState,
     pages: number[] | null = null,
-  ): PageRangeCheck => ({ state, pages, message: pageRangeMessage(state, totalPages) });
+    invalidTokens: number[] = [],
+  ): PageRangeCheck => ({
+    state,
+    pages,
+    invalidTokens,
+    message: pageRangeMessage(state, totalPages, invalidTokens),
+  });
 
   const trimmed = input.trim();
   if (trimmed.length === 0) {
     return result("empty");
   }
   const set = new Set<number>();
-  let outOfBounds = false;
+  const invalid = new Set<number>();
   for (const raw of trimmed.split(",")) {
     const part = raw.trim();
     if (part.length === 0) {
@@ -943,32 +963,49 @@ export function classifyPageRange(input: string, totalPages: number): PageRangeC
       if (pieces.length !== 2) {
         return result("malformed");
       }
-      const lo = Number.parseInt(pieces[0].trim(), 10);
-      const hi = Number.parseInt(pieces[1].trim(), 10);
+      // DEF-629 (AR-07) — each endpoint must be a strict unsigned integer
+      // string. `Number.parseInt` silently dropped trailing garbage
+      // ("2-3x" -> 2-3, "1.9" -> 1), letting a malformed range read as valid
+      // and enabling Extract/Split. Leading zeros stay acceptable.
+      const loText = pieces[0].trim();
+      const hiText = pieces[1].trim();
+      if (!/^\d+$/.test(loText) || !/^\d+$/.test(hiText)) {
+        return result("malformed");
+      }
+      const lo = Number.parseInt(loText, 10);
+      const hi = Number.parseInt(hiText, 10);
       if (!Number.isFinite(lo) || !Number.isFinite(hi) || lo > hi) {
         return result("malformed");
       }
       if (lo < 1 || hi > totalPages) {
-        outOfBounds = true;
+        // AR-07 — keep the offending bound value(s) so the message can name
+        // them; an in-bounds end of the span stays unnamed. DEF-630 — a
+        // wholly-above-range span names BOTH ends (was only `hi`).
+        if (lo < 1 || lo > totalPages) invalid.add(lo);
+        if (hi < 1 || hi > totalPages) invalid.add(hi);
         continue;
       }
       for (let p = lo; p <= hi; p += 1) {
         set.add(p);
       }
     } else {
+      // DEF-629 (AR-07) — same strict unsigned-integer rule as span endpoints.
+      if (!/^\d+$/.test(part)) {
+        return result("malformed");
+      }
       const n = Number.parseInt(part, 10);
       if (!Number.isFinite(n)) {
         return result("malformed");
       }
       if (n < 1 || n > totalPages) {
-        outOfBounds = true;
+        invalid.add(n);
         continue;
       }
       set.add(n);
     }
   }
-  if (outOfBounds) {
-    return result("out-of-bounds");
+  if (invalid.size > 0) {
+    return result("out-of-bounds", null, [...invalid]);
   }
   if (set.size === 0) {
     return result("empty");

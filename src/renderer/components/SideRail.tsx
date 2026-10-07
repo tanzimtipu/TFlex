@@ -960,6 +960,12 @@ export function RulerStrip({
           }
           onClick={() => onJump(page)}
           data-ruler-page={page}
+          /* AR-01 (TFL-1184) — the compact Navigator's current-page element.
+             The thumb card carries `data-thumb-current-marker` (SideRail.tsx
+             Thumb); the collapsed ruler is the only navigator surface mounted
+             at compact widths, so the same machine-discoverable marker rides
+             the current ruler item too. */
+          data-thumb-current-marker={page === currentPage ? 'true' : undefined}
           {...hover}
         >
           {page}

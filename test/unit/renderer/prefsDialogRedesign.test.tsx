@@ -174,6 +174,20 @@ describe("PreferencesDialog single-panel redesign (DEF-215)", () => {
     unmount();
   });
 
+  it("labels the motion toggle 'Enable animations' with unambiguous polarity (AR-09)", () => {
+    const { host, unmount } = mountPrefs();
+    const input = host.querySelector<HTMLInputElement>("[data-prefs-animations]");
+    expect(input).not.toBeNull();
+    const row = input?.closest(".prefs-row");
+    const label = row?.querySelector<HTMLElement>(".prefs-row-label");
+    expect(label?.textContent?.trim()).toBe("Enable animations");
+    const hint = row?.querySelector<HTMLElement>(".prefs-hint");
+    expect(hint?.textContent?.trim()).toBe(
+      "When off, menus, panels, dialogs and page changes appear without transition animations.",
+    );
+    unmount();
+  });
+
   it("committing the recents cap with Enter fires onSetRecentsCap once with the parsed number", () => {
     const { host, onSetRecentsCap, unmount } = mountPrefs({ recentsCap: 10 });
     typeAndCommitCap(host, "25");
