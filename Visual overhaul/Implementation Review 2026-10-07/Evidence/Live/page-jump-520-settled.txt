@@ -1,0 +1,121 @@
+Window: "Jovrel", App: Jovrel.exe.
+	0 window Jovrel Secondary Actions: Raise
+		1 pane (disabled)
+		2 region Jovrel
+			3 region
+				4 region
+					5 region
+						6 region
+							7 region
+								8 region
+									9 document Jovrel Value: file:///C:/Program%20Files/Jovrel/resources/app.asar/dist/renderer/index.html ID: RootWebArea
+										10 group
+											11 group ID: root
+												12 text Jovrel
+												13 button File menu Description: File menu
+												14 header
+													15 group File actions
+														16 button Open PDF document Description: Open PDF (Ctrl+O)
+														17 button (disabled) Save Description: Saved — no changes to save
+														18 button Save a copy Description: Save a copy (Ctrl+Shift+S)
+													19 button Search tools and commands (Ctrl+K) Description: Search tools and commands (Ctrl+K)
+													20 button Print Description: Print (Ctrl+P)
+													21 button Application menu Description: Application menu
+													22 button Sign in or create an account Description: Sign in or create an account
+												23 button Minimize window Description: Minimize
+												24 button Restore window Description: Restore window
+												25 button Close window Description: Close
+												26 tab Open documents
+													27 list
+														28 list item long.pdf
+															29 tab item (selectable) long.pdf Close long.pdf
+																30 button Close long.pdf
+														31 list item scanned.pdf
+															32 tab item (selectable) scanned.pdf Close scanned.pdf
+																33 button Close scanned.pdf
+														34 list item report.pdf
+															35 tab item (selectable) report.pdf Close report.pdf
+																36 button Close report.pdf
+														37 list item
+															38 button New empty tab Description: New empty tab
+														39 list item
+															40 button All open documents (3) Description: All open documents (3)
+												300 thumb Resize navigator panel Value: 280
+												301 thumb Resize inspector panel Value: 280
+												43 navigation Work stages
+													44 toggle button Pages stage Description: Pages (Ctrl+1)
+													45 toggle button Edit stage Description: Edit (Ctrl+2)
+													46 toggle button Review stage Description: Review (Ctrl+3)
+													47 toggle button Deliver stage Description: Deliver (Ctrl+4)
+													48 button Open preferences Description: Preferences (Ctrl+,)
+												443 group
+													444 region Context panel
+														445 header
+															508 button More actions Description: More actions
+															447 button Collapse panel Description: Collapse panel
+														509 tab Navigator view
+															510 tab item (selectable) Pages · 520 ID: context-panel-view-tab-pages
+															511 tab item (selectable) Outline · 0 ID: context-panel-view-tab-outline
+														512 tab panel Pages · 520 ID: context-panel-view-pages
+															537 group (truncated: child_limit, omitted 521 children)
+													541 text Page 519 of 520
+													542 text This is page 519 of the long test document.
+													543 text Performance testing requires a significant number of pages.
+													544 text Page 520 of 520
+													545 text This is page 520 of the long test document.
+													546 text Performance testing requires a significant number of pages.
+													477 group Viewing controls
+														478 group Page navigation
+															479 button Previous page Description: Previous page
+															480 edit (settable, string) Current page Value: 520
+															481 text /
+															482 text 520
+															483 button (disabled) Next page Description: Next page
+														484 group View and zoom
+															485 button Zoom out Description: Zoom out
+															486 group Description: Current zoom
+																487 text 158
+																488 text %
+															489 button Zoom in Description: Zoom in
+															490 toggle button Fit width Description: Fit width
+															491 toggle button Fit page Description: Fit page
+															492 toggle button Pan mode Description: Pan mode
+															493 group Page layout
+																494 toggle button One page Description: One page
+																495 toggle button Two pages side by side Description: Two pages side by side
+																496 toggle button Four pages in two rows Description: Four pages in two rows
+															497 button Book View
+													498 tool bar Action dock
+														515 button Rotate pages Description: Rotate the selected page clockwise or counter-clockwise.
+														516 button Extract pages Description: Pull specific pages into a new document.
+														517 button Insert pages Description: Insert a blank page, or import pages from another PDF.
+														518 button Merge PDFs Description: Combine another PDF with the active document.
+														519 button Crop pages Description: Set the CropBox/TrimBox for every page.
+														504 separator
+														505 button (disabled) Open comic view Description: This document has no reading view
+														506 button More actions Description: More actions
+														507 button Tools Description: Tools
+												164 complementary Inspector
+													349 section header
+														350 text Inspector · Page 520
+														351 button Collapse inspector Description: Collapse inspector
+													520 heading PAGE
+													521 text Size
+													522 text 612 x 792 pt
+													523 text Rotation
+													524 text 0°
+													525 text Label
+													526 text Not available
+													527 button rename Description: rename
+													528 heading ON THIS PAGE
+													529 text Annotations
+													530 button 0 Description: Show the annotations list in the REVIEW panel
+													531 text Form fields
+													532 text 0
+													533 details
+														534 disclosure triangle ▸ DOCUMENT DETAILS
+															535 text ▸
+															536 text DOCUMENT DETAILS
+												185 status
+								186 region
+

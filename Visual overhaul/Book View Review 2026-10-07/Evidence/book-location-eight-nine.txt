@@ -1,0 +1,149 @@
+Window: "Jovrel", App: Jovrel.exe.
+	0 window Jovrel Secondary Actions: Raise
+		1 pane (disabled)
+		2 region Jovrel
+			3 region
+				4 region
+					5 region
+						6 region
+							7 region
+								8 region
+									9 document Jovrel Value: file:///C:/Program%20Files/Jovrel/resources/app.asar/dist/renderer/index.html ID: RootWebArea
+										544 group
+											10 group ID: root
+												11 text Jovrel
+												12 button File menu Description: File menu
+												13 header
+													14 group File actions
+														15 button Open PDF document Description: Open PDF (Ctrl+O)
+														16 button (disabled) Save Description: Saved — no changes to save
+														17 button Save a copy Description: Save a copy (Ctrl+Shift+S)
+													18 button Search tools and commands (Ctrl+K) Description: Search tools and commands (Ctrl+K)
+													19 button Print Description: Print (Ctrl+P)
+													20 button Application menu Description: Application menu
+													21 button Sign in or create an account Description: Sign in or create an account
+												22 button Minimize window Description: Minimize
+												23 button Maximize window Description: Maximize window
+												24 button Close window Description: Close
+												25 tab Open documents
+													26 list
+														109 list item report.pdf
+															110 tab item (selectable) report.pdf Close report.pdf
+																111 button Close report.pdf
+														112 list item
+															113 button New empty tab Description: New empty tab
+														114 list item
+															115 button All open documents (1) Description: All open documents (1)
+												118 navigation Work stages
+													119 toggle button Pages stage Description: Pages (Ctrl+1)
+													120 toggle button Edit stage Description: Edit (Ctrl+2)
+													121 toggle button Review stage Description: Review (Ctrl+3)
+													122 toggle button Deliver stage Description: Deliver (Ctrl+4)
+													123 button Open preferences Description: Preferences (Ctrl+,)
+												124 group
+													545 region Book view
+														546 header
+															547 text report.pdf
+															548 text Page 8-9 of 34
+															549 group Book layout
+																550 toggle button Book single page Description: Book single page
+																551 toggle button Book double page Description: Book double page
+															552 button Close book view Description: Close book view
+														553 group Annotate
+															554 group Recent annotation tools
+																555 toggle button Rectangle Description: Rectangle
+																556 toggle button Text box Description: Text box
+																557 toggle button Callout Description: Callout
+																558 toggle button Arrow Description: Arrow
+																559 toggle button Highlight Description: Highlight
+															560 button All annotation tools Description: All annotation tools
+														650 figure
+															1072 text Chapter 4: The Art of Orchestration
+															1073 text This document serves as a test fixture for TFlex. The orchestration of complex PDF
+															1074 text structures requires careful management of internal objects. We must ensure that the
+															1075 text orchestration layer correctly handles multiple page streams. Strategic orchestration is
+															1076 text key to maintaining document integrity. Orchestration of elements within the file structure
+															1077 text is a primary concern. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed do
+															1078 text eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam,
+															1079 text quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis
+															1080 text aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla
+															1081 text pariatur. Excepteur sint occaecat cupidatat non proident.
+															1082 text This document serves as a test fixture for TFlex. The orchestration of complex PDF
+															1083 text structures requires careful management of internal objects. We must ensure that the
+															1084 text orchestration layer correctly handles multiple page streams. Strategic orchestration is
+															1085 text key to maintaining document integrity. Orchestration of elements within the file structure
+															1086 text is a primary concern. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed do
+															1087 text eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam,
+															1088 text quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis
+															1089 text aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla
+															1090 text pariatur. Excepteur sint occaecat cupidatat non proident.
+															1091 text This document serves as a test fixture for TFlex. The orchestration of complex PDF
+															1092 text structures requires careful management of internal objects. We must ensure that the
+															1093 text orchestration layer correctly handles multiple page streams. Strategic orchestration is
+															1094 text key to maintaining document integrity. Orchestration of elements within the file structure
+															1095 text is a primary concern. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed do
+															1096 text eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam,
+															1097 text quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis
+															1098 text aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla
+															1099 text pariatur. Excepteur sint occaecat cupidatat non proident.
+															1100 text This document serves as a test fixture for TFlex. The orchestration of complex PDF
+															1101 text structures requires careful management of internal objects. We must ensure that the
+															1102 text orchestration layer correctly handles multiple page streams. Strategic orchestration is
+															1103 text key to maintaining document integrity. Orchestration of elements within the file structure
+															1104 text is a primary concern. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed do
+															1105 text eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam,
+															1106 text quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis
+															1107 text aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla
+															1108 text pariatur. Excepteur sint occaecat cupidatat non proident.
+															1109 text This document serves as a test fixture for TFlex. The orchestration of complex PDF
+															1110 text structures requires careful management of internal objects. We must ensure that the
+															1111 text orchestration layer correctly handles multiple page streams. Strategic orchestration is
+														651 figure
+															1112 text key to maintaining document integrity. Orchestration of elements within the file structure
+															1113 text is a primary concern. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed do
+															1114 text eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam,
+															1115 text quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis
+															1116 text aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla
+															1117 text pariatur. Excepteur sint occaecat cupidatat non proident.
+															1118 text This document serves as a test fixture for TFlex. The orchestration of complex PDF
+															1119 text structures requires careful management of internal objects. We must ensure that the
+															1120 text orchestration layer correctly handles multiple page streams. Strategic orchestration is
+															1121 text key to maintaining document integrity. Orchestration of elements within the file structure
+															1122 text is a primary concern. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed do
+															1123 text eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam,
+															1124 text quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis
+															1125 text aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla
+															1126 text pariatur. Excepteur sint occaecat cupidatat non proident.
+															1127 text This document serves as a test fixture for TFlex. The orchestration of complex PDF
+															1128 text structures requires careful management of internal objects. We must ensure that the
+															1129 text orchestration layer correctly handles multiple page streams. Strategic orchestration is
+															1130 text key to maintaining document integrity. Orchestration of elements within the file structure
+															1131 text is a primary concern. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed do
+															1132 text eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam,
+															1133 text quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis
+															1134 text aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla
+															1135 text pariatur. Excepteur sint occaecat cupidatat non proident.
+															1136 text This document serves as a test fixture for TFlex. The orchestration of complex PDF
+															1137 text structures requires careful management of internal objects. We must ensure that the
+															1138 text orchestration layer correctly handles multiple page streams. Strategic orchestration is
+															1139 text key to maintaining document integrity. Orchestration of elements within the file structure
+															1140 text is a primary concern. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed do
+															1141 text eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam,
+															1142 text quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis
+															1143 text aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla
+															1144 text pariatur. Excepteur sint occaecat cupidatat non proident.
+														562 navigation Book navigation
+															563 button Previous page
+															564 button Next page
+												337 complementary Inspector
+													565 button Expand inspector Description: Expand inspector
+												107 status
+								108 region
+
+Selected text: ```
+Chapter 4: The Art of OrchestrationThis document serves as a test fixture for TFlex. The orchestration of complex PDFstructures requires careful management of internal objects. We must ensure that theorchestration layer correctly handles multiple page streams. Strategic orchestration iskey to maintaining document integrity. Orchestration of elements within the file structureis a primary concern. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed doeiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam,quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duisaute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nullapariatur. Excepteur sint occaecat cupidatat non proident.This document serves as a test fixture for TFlex. The orchestration of complex PDFstructures requires careful management of internal objects. We must ensure that theorchestration layer correctly handles multiple page streams. Strategic orchestration iskey to maintaining document integrity. Orchestration of elements within the file structureis a primary concern. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed doeiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam,quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duisaute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nullapariatur. Excepteur sint occaecat cupidatat non proident.This document serves as a test fixture for TFlex. The orchestration of complex PDFstructures requires careful management of internal objects. We must ensure that theorchestration layer correctly handles multiple page streams. Strategic orchestration iskey to maintaining document integrity. Orchestration of elements within the file structureis a primary concern. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed doeiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam,quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duisaute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nullapariatur. Excepteur sint occaecat cupidatat non proident.This document serves as a test fixture for TFlex. The orchestration of complex PDFstructures requires careful management of internal objects. We must ensure that theorchestration layer correctly handles multiple page streams. Strategic orchestration iskey to maintaining document integrity. Orchestration of elements within the file structureis a primary concern. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed doeiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam,quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duisaute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nullapariatur. Excepteur sint occaecat cupidatat non proident.This document serves as a test fixture for TFlex. The orchestration of complex PDFstructures requires careful management of internal objects. We must ensure that theorchestration layer correctly handles multiple page streams. Strategic orchestration is
+￼
+￼
+```
+
+Note: Pay special attention to the content selected by the user. If the user asks a question or refers to the content they are looking at on-screen, they might be referring to the selected content (but they might be referring to something else that's visible, too).

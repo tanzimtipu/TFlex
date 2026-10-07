@@ -1,0 +1,230 @@
+Window: "Jovrel", App: Jovrel.exe.
+	0 window Jovrel Secondary Actions: Raise
+		9 pane (disabled)
+		1 region Jovrel
+			2 region
+				3 region
+					4 region
+						5 region
+							6 region
+								7 region
+									10 document Jovrel Value: file:///C:/Program%20Files/Jovrel/resources/app.asar/dist/renderer/index.html ID: RootWebArea
+										11 group ID: root
+											261 text Jovrel
+											13 button File menu Description: File menu
+											14 header
+												15 group File actions
+													16 button Open PDF document Description: Open PDF (Ctrl+O)
+													17 button (disabled) Save Description: Saved — no changes to save
+													18 button Save a copy Description: Save a copy (Ctrl+Shift+S)
+												253 button Search tools and commands (Ctrl+K) Description: Search tools and commands (Ctrl+K)
+												20 button Print Description: Print (Ctrl+P)
+												21 button Application menu Description: Application menu
+												23 button Sign in or create an account Description: Sign in or create an account
+											24 button Minimize window Description: Minimize
+											25 button Restore window Description: Restore window
+											26 button Close window Description: Close
+											27 tab Open documents
+												28 list
+													1119 list item long.pdf
+														1120 tab item (selectable) long.pdf Close long.pdf
+															1121 button Close long.pdf
+													598 list item scanned.pdf
+														599 tab item (selectable) scanned.pdf Close scanned.pdf
+															600 button Close scanned.pdf
+													1039 list item report.pdf
+														1040 tab item (selectable) report.pdf Close report.pdf
+															1041 button Close report.pdf
+													137 list item
+														138 button New empty tab Description: New empty tab
+													139 list item
+														140 button All open documents (3) Description: All open documents (3)
+											1206 thumb Resize navigator panel Value: 280
+											1207 thumb Resize inspector panel Value: 280
+											1208 navigation Work stages
+												1209 toggle button Pages stage Description: Pages (Ctrl+1)
+												1210 toggle button Edit stage Description: Edit (Ctrl+2)
+												1211 toggle button Review stage Description: Review (Ctrl+3)
+												1212 toggle button Deliver stage Description: Deliver (Ctrl+4)
+												1213 button Open preferences Description: Preferences (Ctrl+,)
+											1214 group
+												1215 region Context panel
+													1216 header
+														1380 button More actions Description: More actions
+														1218 button Collapse panel Description: Collapse panel
+													1381 tab Navigator view
+														1382 tab item (selectable) Pages · 34 ID: context-panel-view-tab-pages
+														1383 tab item (selectable) Outline · 8 ID: context-panel-view-tab-outline
+													1384 tab panel Outline · 0 ID: context-panel-view-outline
+														1578 button Add bookmark Description: Add bookmark
+														1579 tree Document outline
+															1580 tree item (selectable) Chapter 1: The Art of Orchestration Page 2 Bookmark actions
+																1581 group
+																	1582 button Chapter 1: The Art of Orchestration Description: Chapter 1: The Art of Orchestration
+																	1583 group Page 2 Description: Page 2
+																	1584 button Bookmark actions Description: Bookmark actions
+															1585 tree item (selectable) Chapter 2: The Art of Orchestration Page 4 Bookmark actions
+																1586 group
+																	1587 button Chapter 2: The Art of Orchestration Description: Chapter 2: The Art of Orchestration
+																	1588 group Page 4 Description: Page 4
+																	1589 button Bookmark actions Description: Bookmark actions
+															1590 tree item (selectable) Chapter 3: The Art of Orchestration Page 6 Bookmark actions
+																1591 group
+																	1592 button Chapter 3: The Art of Orchestration Description: Chapter 3: The Art of Orchestration
+																	1593 group Page 6 Description: Page 6
+																	1594 button Bookmark actions Description: Bookmark actions
+															1595 tree item (selectable) Chapter 4: The Art of Orchestration Page 8 Bookmark actions
+																1596 group
+																	1597 button Chapter 4: The Art of Orchestration Description: Chapter 4: The Art of Orchestration
+																	1598 group Page 8 Description: Page 8
+																	1599 button Bookmark actions Description: Bookmark actions
+															1600 tree item (selectable) Chapter 5: The Art of Orchestration Page 10 Bookmark actions
+																1601 group
+																	1602 button Chapter 5: The Art of Orchestration Description: Chapter 5: The Art of Orchestration
+																	1603 group Page 10 Description: Page 10
+																	1604 button Bookmark actions Description: Bookmark actions
+															1605 tree item (selectable) Chapter 6: The Art of Orchestration Page 12 Bookmark actions
+																1606 group
+																	1607 button Chapter 6: The Art of Orchestration Description: Chapter 6: The Art of Orchestration
+																	1608 group Page 12 Description: Page 12
+																	1609 button Bookmark actions Description: Bookmark actions
+															1610 tree item (selectable) Chapter 7: The Art of Orchestration Page 14 Bookmark actions
+																1611 group
+																	1612 button Chapter 7: The Art of Orchestration Description: Chapter 7: The Art of Orchestration
+																	1613 group Page 14 Description: Page 14
+																	1614 button Bookmark actions Description: Bookmark actions
+															1615 tree item (selectable) Chapter 8: The Art of Orchestration Page 16 Bookmark actions
+																1616 group
+																	1617 button Chapter 8: The Art of Orchestration Description: Chapter 8: The Art of Orchestration
+																	1618 group Page 16 Description: Page 16
+																	1619 button Bookmark actions Description: Bookmark actions
+												1304 text TFlex Technical Report
+												1305 text A study in PDF orchestration and performance.
+												1306 text Chapter 1: The Art of Orchestration
+												1307 text This document serves as a test fixture for TFlex. The orchestration of complex PDF
+												1308 text structures requires careful management of internal objects. We must ensure that the
+												1309 text orchestration layer correctly handles multiple page streams. Strategic orchestration is
+												1310 text key to maintaining document integrity. Orchestration of elements within the file structure
+												1311 text is a primary concern. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed do
+												1312 text eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam,
+												1313 text quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis
+												1314 text aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla
+												1315 text pariatur. Excepteur sint occaecat cupidatat non proident.
+												1316 text This document serves as a test fixture for TFlex. The orchestration of complex PDF
+												1317 text structures requires careful management of internal objects. We must ensure that the
+												1318 text orchestration layer correctly handles multiple page streams. Strategic orchestration is
+												1319 text key to maintaining document integrity. Orchestration of elements within the file structure
+												1320 text is a primary concern. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed do
+												1321 text eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam,
+												1322 text quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis
+												1323 text aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla
+												1324 text pariatur. Excepteur sint occaecat cupidatat non proident.
+												1325 text This document serves as a test fixture for TFlex. The orchestration of complex PDF
+												1326 text structures requires careful management of internal objects. We must ensure that the
+												1327 text orchestration layer correctly handles multiple page streams. Strategic orchestration is
+												1328 text key to maintaining document integrity. Orchestration of elements within the file structure
+												1329 text is a primary concern. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed do
+												1330 text eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam,
+												1331 text quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis
+												1332 text aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla
+												1333 text pariatur. Excepteur sint occaecat cupidatat non proident.
+												1334 text This document serves as a test fixture for TFlex. The orchestration of complex PDF
+												1335 text structures requires careful management of internal objects. We must ensure that the
+												1336 text orchestration layer correctly handles multiple page streams. Strategic orchestration is
+												1337 text key to maintaining document integrity. Orchestration of elements within the file structure
+												1338 text is a primary concern. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed do
+												1339 text eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam,
+												1340 text quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis
+												1341 text aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla
+												1342 text pariatur. Excepteur sint occaecat cupidatat non proident.
+												1343 text This document serves as a test fixture for TFlex. The orchestration of complex PDF
+												1344 text structures requires careful management of internal objects. We must ensure that the
+												1345 text orchestration layer correctly handles multiple page streams. Strategic orchestration is
+												1346 text key to maintaining document integrity. Orchestration of elements within the file structure
+												1347 text is a primary concern. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed do
+												1348 text eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam,
+												1349 text quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis
+												1350 text aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla
+												1351 text pariatur. Excepteur sint occaecat cupidatat non proident.
+												1352 text This document serves as a test fixture for TFlex. The orchestration of complex PDF
+												1353 text structures requires careful management of internal objects. We must ensure that the
+												1354 text orchestration layer correctly handles multiple page streams. Strategic orchestration is
+												1355 text key to maintaining document integrity. Orchestration of elements within the file structure
+												1356 text is a primary concern. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed do
+												1357 text eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam,
+												1358 text quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis
+												1359 text aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla
+												1360 text pariatur. Excepteur sint occaecat cupidatat non proident.
+												1361 text This document serves as a test fixture for TFlex. The orchestration of complex PDF
+												1362 text structures requires careful management of internal objects. We must ensure that the
+												1363 text orchestration layer correctly handles multiple page streams. Strategic orchestration is
+												1364 text key to maintaining document integrity. Orchestration of elements within the file structure
+												1365 text is a primary concern. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed do
+												1366 text eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam,
+												1367 text quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis
+												1368 text aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla
+												1369 text pariatur. Excepteur sint occaecat cupidatat non proident.
+												1370 text This document serves as a test fixture for TFlex. The orchestration of complex PDF
+												1371 text structures requires careful management of internal objects. We must ensure that the
+												1372 text orchestration layer correctly handles multiple page streams. Strategic orchestration is
+												1373 text key to maintaining document integrity. Orchestration of elements within the file structure
+												1374 text is a primary concern. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed do
+												1375 text eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam,
+												1376 text quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis
+												1377 text aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla
+												1378 text pariatur. Excepteur sint occaecat cupidatat non proident.
+												1234 group Viewing controls
+													1235 group Page navigation
+														1236 button (disabled) Previous page Description: Previous page
+														1237 edit (settable, string) Current page Value: 1
+														1238 text /
+														1239 text 34
+														1240 button Next page Description: Next page
+													1241 group View and zoom
+														1242 button Zoom out Description: Zoom out
+														1243 group Description: Current zoom
+															1244 text 158
+															1245 text %
+														1246 button Zoom in Description: Zoom in
+														1247 toggle button Fit width Description: Fit width
+														1248 toggle button Fit page Description: Fit page
+														1249 toggle button Pan mode Description: Pan mode
+														1250 group Page layout
+															1251 toggle button One page Description: One page
+															1252 toggle button Two pages side by side Description: Two pages side by side
+															1253 toggle button Four pages in two rows Description: Four pages in two rows
+														1254 button Book View
+												1255 tool bar Action dock
+													1558 button Rotate pages Description: Rotate the selected page clockwise or counter-clockwise.
+													1559 button Extract pages Description: Pull specific pages into a new document.
+													1560 button Insert pages Description: Insert a blank page, or import pages from another PDF.
+													1561 button Merge PDFs Description: Combine another PDF with the active document.
+													1562 button Crop pages Description: Set the CropBox/TrimBox for every page.
+													1261 separator
+													1262 button (disabled) Open comic view Description: This document has no reading view
+													1263 button More actions Description: More actions
+													1264 button Tools Description: Tools
+											1265 complementary Inspector
+												1266 section header
+													1267 text Inspector · Page 1
+													1268 button Collapse inspector Description: Collapse inspector
+												1563 heading PAGE
+												1564 text Size
+												1565 text 612 x 792 pt
+												1566 text Rotation
+												1567 text 0°
+												1568 text Label
+												1569 text Not available
+												1570 button rename Description: rename
+												1571 heading ON THIS PAGE
+												1572 text Annotations
+												1573 button 0 Description: Show the annotations list in the REVIEW panel
+												1574 text Form fields
+												1575 text 0
+												1300 details
+													1301 disclosure triangle ▸ DOCUMENT DETAILS
+														1577 text ▸
+														1303 text DOCUMENT DETAILS
+											109 status
+								8 region
+

@@ -1,0 +1,13 @@
+# Live inspection log and limitations
+
+Audit date:7 October2026. Installed About surface: Jovrel1.51.0, release2026-10-07, Electron44.0.0, Node24.18.1. Controlled the installed desktop app with the computer-use skill and @oai/sky. All findings labelled Live were UI observations, not inferred from repository source. Read-only bundled fixtures long.pdf520 pages, report.pdf34 pages/eight bookmarks, scanned.pdf6 pages were used. Private recent documents were not opened.
+
+Inspected: Home at zero-document and Home-with-open-document states; File and Application menus; wrapping/metadata layout; native size floor; compact and expanded context/inspector; all four stages; dock overflow, customizer, Add picker and global Tools route; current-page jump520; empty/populated outline; one/two/four viewing layouts, fit page, Book View transition; extract/split invalid input and Escape; OCR dialog/run on one current page,3708-entry suspect list and closing it; Word export configuration; About/version. Settled states were checked beyond immediate post-click transitions.
+
+Actual window dimensions are listed in the size policy. Large PDF and noisy scan were deliberate stress fixtures. OCR completion was observed; no accuracy score or processing-speed benchmark was performed. Brief100% progress before completion was not treated as a defect. Accessibility tree size is evidence of a potentially unbounded list, not proof of a memory leak.
+
+Not completed: every possible dialog/tool, all tab-overflow counts, populated annotation editing, dark-theme pixel audit, full keyboard/screen-reader traversal, DPI/large-text matrix, actual export/print results, import/drag-drop, authentication or update installation. Those limitations matter: this is a broad installed-UI audit of completed surfaces, not certification of every pending workflow.
+
+No document was saved or output generated. No pins were changed. One-page OCR modified only the open bundled scanned session; it remains unsaved. Window size, stages, page positions and layout were changed during inspection. The application is left running with its fixture tabs; do not assume these are user document edits. About showed an update status through its own UI; the update action was not requested or clicked.
+
+Additional late check: after returning to long.pdf, inspector and input said520 while the canvas displayed fixture Page150. Re-entering520 moved the actual canvas to520; the thumbnail navigator remained at the start. Both captures are retained. This strengthens the need to verify anchor restoration separately from stored current-page metadata.

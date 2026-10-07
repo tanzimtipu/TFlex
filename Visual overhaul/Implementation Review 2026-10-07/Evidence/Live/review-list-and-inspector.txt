@@ -1,0 +1,160 @@
+Window: "Jovrel", App: Jovrel.exe.
+	0 window Jovrel Secondary Actions: Raise
+		1 pane (disabled)
+		2 region Jovrel
+			3 region
+				4 region
+					5 region
+						6 region
+							7 region
+								8 region
+									9 document Jovrel Value: file:///C:/Program%20Files/Jovrel/resources/app.asar/dist/renderer/index.html ID: RootWebArea
+										10 group
+											11 group ID: root
+												12 text Jovrel
+												13 button File menu Description: File menu
+												14 header
+													15 group File actions
+														16 button Open PDF document Description: Open PDF (Ctrl+O)
+														17 button (disabled) Save Description: Saved — no changes to save
+														18 button Save a copy Description: Save a copy (Ctrl+Shift+S)
+													19 button Search tools and commands (Ctrl+K) Description: Search tools and commands (Ctrl+K)
+													20 button Print Description: Print (Ctrl+P)
+													21 button Application menu Description: Application menu
+													22 button Sign in or create an account Description: Sign in or create an account
+												23 button Minimize window Description: Minimize
+												24 button Restore window Description: Restore window
+												25 button Close window Description: Close
+												26 tab Open documents
+													27 list
+														28 list item long.pdf
+															29 tab item (selectable) long.pdf Close long.pdf
+																30 button Close long.pdf
+														31 list item scanned.pdf
+															32 tab item (selectable) scanned.pdf Close scanned.pdf
+																33 button Close scanned.pdf
+														34 list item report.pdf
+															35 tab item (selectable) report.pdf Close report.pdf
+																36 button Close report.pdf
+														37 list item
+															38 button New empty tab Description: New empty tab
+														39 list item
+															40 button All open documents (3) Description: All open documents (3)
+												300 thumb Resize navigator panel Value: 280
+												301 thumb Resize inspector panel Value: 280
+												43 navigation Work stages
+													44 toggle button Pages stage Description: Pages (Ctrl+1)
+													45 toggle button Edit stage Description: Edit (Ctrl+2)
+													46 toggle button Review stage Description: Review (Ctrl+3)
+													47 toggle button Deliver stage Description: Deliver (Ctrl+4)
+													48 button Open preferences Description: Preferences (Ctrl+,)
+												49 group
+													50 region Context panel
+														51 header
+															403 text Review
+															53 button Collapse panel Description: Collapse panel
+														404 region Annotations
+															405 heading Annotations
+															406 region Annotations
+																407 section header
+																	408 text Annotations
+																	409 text 0
+																410 text No annotations
+																411 text Pick an annotation tool from the toolbar, then click or drag on a page.
+														412 region Bates numbering
+															413 heading Bates numbering
+															414 text No Bates numbering applied.
+														415 region Watermarks
+															416 heading Watermarks
+															417 text No watermarks applied.
+														418 region Signatures
+															419 heading Signatures
+															420 text No signatures placed.
+													369 text key to maintaining document integrity. Orchestration of elements within the file structure
+													370 text is a primary concern. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed do
+													371 text eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam,
+													372 text quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis
+													373 text aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla
+													374 text pariatur. Excepteur sint occaecat cupidatat non proident.
+													375 text This document serves as a test fixture for TFlex. The orchestration of complex PDF
+													376 text structures requires careful management of internal objects. We must ensure that the
+													377 text orchestration layer correctly handles multiple page streams. Strategic orchestration is
+													378 text key to maintaining document integrity. Orchestration of elements within the file structure
+													379 text is a primary concern. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed do
+													380 text eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam,
+													381 text quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis
+													382 text aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla
+													383 text pariatur. Excepteur sint occaecat cupidatat non proident.
+													384 text This document serves as a test fixture for TFlex. The orchestration of complex PDF
+													385 text structures requires careful management of internal objects. We must ensure that the
+													386 text orchestration layer correctly handles multiple page streams. Strategic orchestration is
+													387 text key to maintaining document integrity. Orchestration of elements within the file structure
+													388 text is a primary concern. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed do
+													389 text eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam,
+													390 text quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis
+													391 text aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla
+													392 text pariatur. Excepteur sint occaecat cupidatat non proident.
+													393 text This document serves as a test fixture for TFlex. The orchestration of complex PDF
+													394 text structures requires careful management of internal objects. We must ensure that the
+													395 text orchestration layer correctly handles multiple page streams. Strategic orchestration is
+													396 text key to maintaining document integrity. Orchestration of elements within the file structure
+													397 text is a primary concern. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed do
+													398 text eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam,
+													399 text quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis
+													400 text aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla
+													401 text pariatur. Excepteur sint occaecat cupidatat non proident.
+													133 group Viewing controls
+														134 group Page navigation
+															135 button Previous page Description: Previous page
+															136 edit (settable, string) Current page Value: 7
+															137 text /
+															138 text 34
+															139 button Next page Description: Next page
+														140 group View and zoom
+															141 button Zoom out Description: Zoom out
+															142 group Description: Current zoom
+																143 text 158
+																144 text %
+															145 button Zoom in Description: Zoom in
+															146 toggle button Fit width Description: Fit width
+															147 toggle button Fit page Description: Fit page
+															148 toggle button Pan mode Description: Pan mode
+															149 group Page layout
+																150 toggle button One page Description: One page
+																151 toggle button Two pages side by side Description: Two pages side by side
+																152 toggle button Four pages in two rows Description: Four pages in two rows
+															153 button Book View
+													154 tool bar Action dock
+														421 button Annotate Description: Show the annotation tools: markup, shapes, ink and notes.
+														422 button Sign Description: Draw, type, or place a saved signature.
+														423 button Stamp Description: Drop an APPROVED, DRAFT, CONFIDENTIAL or FINAL stamp.
+														424 button (disabled) Forms Description: This document has no form fields
+														425 button Bates numbering… Description: Stamp sequential Bates numbers on the selected pages.
+														160 separator
+														161 button (disabled) Open comic view Description: This document has no reading view
+														162 button More actions Description: More actions
+														163 button Tools Description: Tools
+												164 complementary Inspector
+													349 section header
+														350 text Inspector · Page 7
+														351 button Collapse inspector Description: Collapse inspector
+													426 heading COMMENTS
+													427 button Export FDF Description: Export FDF
+													428 button Import FDF Description: Import FDF
+													429 heading REVIEW ELEMENTS
+													430 region Annotations
+														431 heading Annotations
+														432 text No annotation selected
+														433 text Select an annotation on a page or in the review list to inspect it.
+													434 region Bates numbering
+														435 heading Bates numbering
+														436 text No Bates numbering applied.
+													437 region Watermarks
+														438 heading Watermarks
+														439 text No watermarks applied.
+													440 region Signatures
+														441 heading Signatures
+														442 text No signatures placed.
+												185 status
+								186 region
+

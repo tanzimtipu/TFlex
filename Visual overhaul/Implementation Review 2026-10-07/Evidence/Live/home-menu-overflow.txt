@@ -1,0 +1,139 @@
+Window: "Jovrel", App: Jovrel.exe.
+	0 window Jovrel Secondary Actions: Raise
+		9 pane (disabled)
+		1 region Jovrel
+			2 region
+				3 region
+					4 region
+						5 region
+							6 region
+								7 region
+									10 document Jovrel Value: file:///C:/Program%20Files/Jovrel/resources/app.asar/dist/renderer/index.html ID: RootWebArea
+										11 group ID: root
+											261 text Jovrel
+											13 button File menu Description: File menu
+											14 header
+												15 group File actions
+													16 button Open PDF document Description: Open PDF (Ctrl+O)
+													17 button (disabled) Save Description: Saved — no changes to save
+													18 button Save a copy Description: Save a copy (Ctrl+Shift+S)
+												253 button Search tools and commands (Ctrl+K) Description: Search tools and commands (Ctrl+K)
+												20 button (disabled) Print Description: Open a document to print
+												21 button Application menu Description: Application menu
+												1126 menu Application menu
+													1127 text EDIT
+													1128 menu item Undo Ctrl+Z
+													1129 menu item Redo Ctrl+Shift+Z
+													1130 menu item Preferences... Ctrl+,
+													1131 text VIEW
+													1132 menu item Toggle Theme Ctrl+Shift+T
+													1133 menu item Command Palette... Ctrl+Shift+P
+													1134 menu item Multi Mode: view/edit two documents side by side
+													1135 menu item (disabled) Find in document (Ctrl+F) Open a document to search it Description: Open a document to search it
+													1136 text TOOLS
+													1137 menu item Recognize Text... Ctrl+Shift+R
+													1138 text HELP
+													1139 menu item Check for Update... Ctrl+Shift+U
+													1140 menu item About Jovrel
+												23 button Sign in or create an account Description: Sign in or create an account
+											24 button Minimize window Description: Minimize
+											25 button Restore window Description: Restore window
+											26 button Close window Description: Close
+											27 tab Open documents
+												28 list
+													1119 list item long.pdf
+														1120 tab item (selectable) long.pdf Close long.pdf
+															1121 button Close long.pdf
+													598 list item scanned.pdf
+														599 tab item (selectable) scanned.pdf Close scanned.pdf
+															600 button Close scanned.pdf
+													1039 list item Empty tab
+														1040 tab item (selectable) Empty tab Close Empty tab
+															1041 button Close Empty tab
+													137 list item
+														138 button New empty tab Description: New empty tab
+													139 list item
+														140 button All open documents (3) Description: All open documents (3)
+											1042 header
+												1043 text Jovrel
+												1044 toggle button Pause background motion Description: Pause background motion
+												1045 heading A clear space for your documents.
+												1046 text Open a file to begin, resume a recent document, or pick a sample below to see Jovrel in action.
+												1047 button Open Files Ctrl O Description: Open Files (Ctrl+O)
+												1048 button Create PDF from images Description: Combine picked images into a new PDF document.
+												1049 button Merge PDFs Description: Combine another PDF with the active document.
+												1050 button Check for Update Description: Ask the updater whether a newer Jovrel exists.
+												1051 toggle button Edit home tools Description: Edit home tools
+											1052 heading Continue working 10
+											1053 group samples/scanned.pdf Description: samples/scanned.pdf
+												1054 button Open scanned.pdf, PDF (unverified hint), in samples, file not found. Full path: samples/scanned.pdf Description: File not found: samples/scanned.pdf
+													1055 group Description: Format inferred from the file extension (not verified): PDF
+												1056 toggle button Pin scanned.pdf to the top Description: Pin to the top
+												1057 button Show scanned.pdf in its folder Description: Show in folder
+												1058 button Locate the missing file scanned.pdf Description: Locate missing file
+												1059 button Remove scanned.pdf from Recents Description: Remove from Recents (does not delete the file)
+											1060 group samples/long.pdf Description: samples/long.pdf
+												1061 button Open long.pdf, PDF (unverified hint), in samples, file not found. Full path: samples/long.pdf Description: File not found: samples/long.pdf
+													1062 group Description: Format inferred from the file extension (not verified): PDF
+												1063 toggle button Pin long.pdf to the top Description: Pin to the top
+												1064 button Show long.pdf in its folder Description: Show in folder
+												1065 button Locate the missing file long.pdf Description: Locate missing file
+												1066 button Remove long.pdf from Recents Description: Remove from Recents (does not delete the file)
+											1067 group samples/form.pdf Description: samples/form.pdf
+												1068 button Open form.pdf, PDF (unverified hint), in samples, file not found. Full path: samples/form.pdf Description: File not found: samples/form.pdf
+													1069 group Description: Format inferred from the file extension (not verified): PDF
+												1070 toggle button Pin form.pdf to the top Description: Pin to the top
+												1071 button Show form.pdf in its folder Description: Show in folder
+												1072 button Locate the missing file form.pdf Description: Locate missing file
+												1073 button Remove form.pdf from Recents Description: Remove from Recents (does not delete the file)
+											1074 group C:\Users\tanzi\Documents\kimi\tasks\2026-09-16\11-38-58-ab40ee99\agent-os-build-prompt.md Description: C:\Users\tanzi\Documents\kimi\tasks\2026-09-16\11-38-58-ab40ee99\agent-os-build-prompt.md
+												1075 button Open agent-os-build-prompt.md, MD (unverified hint), in 11-38-58-ab40ee99. Full path: C:\Users\tanzi\Documents\kimi\tasks\2026-09-16\11-38-58-ab40ee99\agent-os-build-prompt.md Description: Open C:\Users\tanzi\Documents\kimi\tasks\2026-09-16\11-38-58-ab40ee99\agent-os-build-prompt.md
+													1076 group Description: Format inferred from the file extension (not verified): MD
+												1077 toggle button Pin agent-os-build-prompt.md to the top Description: Pin to the top
+												1078 button Show agent-os-build-prompt.md in its folder Description: Show in folder
+												1079 button Remove agent-os-build-prompt.md from Recents Description: Remove from Recents (does not delete the file)
+											1080 group samples/report.pdf Description: samples/report.pdf
+												1081 button Open report.pdf, PDF (unverified hint), in samples, file not found. Full path: samples/report.pdf Description: File not found: samples/report.pdf
+													1082 group Description: Format inferred from the file extension (not verified): PDF
+												1083 toggle button Pin report.pdf to the top Description: Pin to the top
+												1084 button Show report.pdf in its folder Description: Show in folder
+												1085 button Locate the missing file report.pdf Description: Locate missing file
+												1086 button Remove report.pdf from Recents Description: Remove from Recents (does not delete the file)
+											1087 group C:\Users\tanzi\OneDrive\App Development\TFlex\Visual overhaul\Icons\Implementation\orchestrator-prompt.md Description: C:\Users\tanzi\OneDrive\App Development\TFlex\Visual overhaul\Icons\Implementation\orchestrator-prompt.md
+												1088 button Open orchestrator-prompt.md, MD (unverified hint), in Implementation. Full path: C:\Users\tanzi\OneDrive\App Development\TFlex\Visual overhaul\Icons\Implementation\orchestrator-prompt.md Description: Open C:\Users\tanzi\OneDrive\App Development\TFlex\Visual overhaul\Icons\Implementation\orchestrator-prompt.md
+													1089 group Description: Format inferred from the file extension (not verified): MD
+												1090 toggle button Pin orchestrator-prompt.md to the top Description: Pin to the top
+												1091 button Show orchestrator-prompt.md in its folder Description: Show in folder
+												1092 button Remove orchestrator-prompt.md from Recents Description: Remove from Recents (does not delete the file)
+											1093 group C:\Users\tanzi\OneDrive\App Development\TFlex\Visual overhaul\Design System\design-decisions.md Description: C:\Users\tanzi\OneDrive\App Development\TFlex\Visual overhaul\Design System\design-decisions.md
+												1094 button Open design-decisions.md, MD (unverified hint), in Design System. Full path: C:\Users\tanzi\OneDrive\App Development\TFlex\Visual overhaul\Design System\design-decisions.md Description: Open C:\Users\tanzi\OneDrive\App Development\TFlex\Visual overhaul\Design System\design-decisions.md
+													1095 group Description: Format inferred from the file extension (not verified): MD
+												1096 toggle button Pin design-decisions.md to the top Description: Pin to the top
+												1097 button Show design-decisions.md in its folder Description: Show in folder
+												1098 button Remove design-decisions.md from Recents Description: Remove from Recents (does not delete the file)
+											1099 group C:\Users\tanzi\OneDrive\App Development\TFlex\test-fixtures\phase55\rows20000.xlsx Description: C:\Users\tanzi\OneDrive\App Development\TFlex\test-fixtures\phase55\rows20000.xlsx
+												1100 button Open rows20000.xlsx, XLSX (unverified hint), in phase55. Full path: C:\Users\tanzi\OneDrive\App Development\TFlex\test-fixtures\phase55\rows20000.xlsx Description: Open C:\Users\tanzi\OneDrive\App Development\TFlex\test-fixtures\phase55\rows20000.xlsx
+													1101 group Description: Format inferred from the file extension (not verified): XLSX
+												1102 toggle button Pin rows20000.xlsx to the top Description: Pin to the top
+												1103 button Show rows20000.xlsx in its folder Description: Show in folder
+												1104 button Remove rows20000.xlsx from Recents Description: Remove from Recents (does not delete the file)
+											1105 group C:\Users\tanzi\OneDrive\App Development\TFlex\test-fixtures\phase55\legacy.doc Description: C:\Users\tanzi\OneDrive\App Development\TFlex\test-fixtures\phase55\legacy.doc
+												1106 button Open legacy.doc, DOC (unverified hint), in phase55. Full path: C:\Users\tanzi\OneDrive\App Development\TFlex\test-fixtures\phase55\legacy.doc Description: Open C:\Users\tanzi\OneDrive\App Development\TFlex\test-fixtures\phase55\legacy.doc
+													1107 group Description: Format inferred from the file extension (not verified): DOC
+												1108 toggle button Pin legacy.doc to the top Description: Pin to the top
+												1109 button Show legacy.doc in its folder Description: Show in folder
+												1110 button Remove legacy.doc from Recents Description: Remove from Recents (does not delete the file)
+											1111 group C:\Users\tanzi\OneDrive\App Development\TFlex\test-fixtures\phase54\frames-3.tiff Description: C:\Users\tanzi\OneDrive\App Development\TFlex\test-fixtures\phase54\frames-3.tiff
+												1112 button Open frames-3.tiff, TIFF (unverified hint), in phase54. Full path: C:\Users\tanzi\OneDrive\App Development\TFlex\test-fixtures\phase54\frames-3.tiff Description: Open C:\Users\tanzi\OneDrive\App Development\TFlex\test-fixtures\phase54\frames-3.tiff
+													1113 group Description: Format inferred from the file extension (not verified): TIFF
+												1114 toggle button Pin frames-3.tiff to the top Description: Pin to the top
+												1115 button Show frames-3.tiff in its folder Description: Show in folder
+												1116 button Remove frames-3.tiff from Recents Description: Remove from Recents (does not delete the file)
+											1117 heading Explore Jovrel 4
+											1122 button Try form fields: form.pdf (PDF). Fill and edit interactive fields on a copy. Opens a copy. Description: Try form fields · form.pdf
+											1123 button Read and navigate: long.pdf (PDF). Jump between pages in a long document. Opens a copy. Description: Read and navigate · long.pdf
+											1124 button Read and navigate: report.pdf (PDF). Jump between pages in a long document. Opens a copy. Description: Read and navigate · report.pdf
+											1125 button Explore recognition: scanned.pdf (PDF). Run text recognition on a scanned page. Opens a copy. Description: Explore recognition · scanned.pdf
+											109 status
+								8 region
+

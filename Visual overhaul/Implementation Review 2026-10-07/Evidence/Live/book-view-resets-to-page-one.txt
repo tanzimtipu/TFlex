@@ -1,0 +1,76 @@
+Window: "Jovrel", App: Jovrel.exe.
+	0 window Jovrel Secondary Actions: Raise
+		9 pane (disabled)
+		1 region Jovrel
+			2 region
+				3 region
+					4 region
+						5 region
+							6 region
+								7 region
+									10 document Jovrel Value: file:///C:/Program%20Files/Jovrel/resources/app.asar/dist/renderer/index.html ID: RootWebArea
+										1969 group
+											11 group ID: root
+												261 text Jovrel
+												13 button File menu Description: File menu
+												14 header
+													15 group File actions
+														16 button Open PDF document Description: Open PDF (Ctrl+O)
+														17 button (disabled) Save Description: Saved — no changes to save
+														18 button Save a copy Description: Save a copy (Ctrl+Shift+S)
+													253 button Search tools and commands (Ctrl+K) Description: Search tools and commands (Ctrl+K)
+													20 button Print Description: Print (Ctrl+P)
+													21 button Application menu Description: Application menu
+													23 button Sign in or create an account Description: Sign in or create an account
+												24 button Minimize window Description: Minimize
+												25 button Restore window Description: Restore window
+												26 button Close window Description: Close
+												27 tab Open documents
+													28 list
+														1119 list item long.pdf
+															1120 tab item (selectable) long.pdf Close long.pdf
+																1121 button Close long.pdf
+														598 list item scanned.pdf
+															599 tab item (selectable) scanned.pdf Close scanned.pdf
+																600 button Close scanned.pdf
+														1039 list item report.pdf
+															1040 tab item (selectable) report.pdf Close report.pdf
+																1041 button Close report.pdf
+														137 list item
+															138 button New empty tab Description: New empty tab
+														139 list item
+															140 button All open documents (3) Description: All open documents (3)
+												1208 navigation Work stages
+													1209 toggle button Pages stage Description: Pages (Ctrl+1)
+													1210 toggle button Edit stage Description: Edit (Ctrl+2)
+													1211 toggle button Review stage Description: Review (Ctrl+3)
+													1212 toggle button Deliver stage Description: Deliver (Ctrl+4)
+													1213 button Open preferences Description: Preferences (Ctrl+,)
+												1214 group
+													1970 region Book view
+														1971 header
+															1972 text report.pdf
+															1973 text Page 1 of 34
+															1974 group Book layout
+																1975 toggle button Book single page Description: Book single page
+																1976 toggle button Book double page Description: Book double page
+															1977 button Close book view Description: Close book view
+														1978 group Annotate
+															1979 group Recent annotation tools
+																1980 toggle button Rectangle Description: Rectangle
+																1981 toggle button Text box Description: Text box
+																1982 toggle button Callout Description: Callout
+																1983 toggle button Arrow Description: Arrow
+																1984 toggle button Highlight Description: Highlight
+															1985 button All annotation tools Description: All annotation tools
+														1986 figure
+															1991 text TFlex Technical Report
+															1992 text A study in PDF orchestration and performance.
+														1987 navigation Book navigation
+															1988 button (disabled) Previous page
+															1989 button Next page
+												1265 complementary Inspector
+													1990 button Expand inspector Description: Expand inspector
+												109 status
+								8 region
+

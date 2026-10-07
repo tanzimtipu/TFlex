@@ -1,0 +1,97 @@
+[
+  {
+    "path": "Evidence/animations-off-instant-change.png",
+    "bytes": 84036,
+    "sha256": "bd17dca6926095a30585f921f3fbf08e460c4d24b648c21e6c1e71cc80074936"
+  },
+  {
+    "path": "Evidence/animations-off-instant-change.txt",
+    "bytes": 3609,
+    "sha256": "4e6763d8bfcb37346d1ad606e7f5fb606e4c98cd225ca2c0f22691f2c99aef50"
+  },
+  {
+    "path": "Evidence/book-location-eight-nine.png",
+    "bytes": 84313,
+    "sha256": "c0331fa623a8a7312c13d8ce94a63602b506f6729f24ef17c808dcdfa2a6b07e"
+  },
+  {
+    "path": "Evidence/book-location-eight-nine.txt",
+    "bytes": 14730,
+    "sha256": "8c4aecc732d9188d0a56421d9585706f204458564ce2b3925e0694b01d100ed9"
+  },
+  {
+    "path": "Evidence/compact-spread.png",
+    "bytes": 73184,
+    "sha256": "022e1640c5e5f01dca97e3a74da9bde91dd65cf8d673a2c76e0084be255d7971"
+  },
+  {
+    "path": "Evidence/compact-spread.txt",
+    "bytes": 14655,
+    "sha256": "b533ed0dba1a018b26622f0c8fc9d1960bc1efd72ea0f86eacfcb2d10e0d0cc2"
+  },
+  {
+    "path": "Evidence/edge-drag-selects-text.png",
+    "bytes": 537405,
+    "sha256": "9ad96766b710f7184c8647180b66548fffdf3179a39e20796106dbf8c37c0497"
+  },
+  {
+    "path": "Evidence/edge-drag-selects-text.txt",
+    "bytes": 14147,
+    "sha256": "989aad1dd860d4938a2546b801c7a05de756cccd6d50caa56e072e5f7c986cb2"
+  },
+  {
+    "path": "Evidence/exit-restores-old-page-seven.png",
+    "bytes": 66049,
+    "sha256": "0e34729861fadc3018747980a30bfb8a7af1100663ee71ea848197c98e330e74"
+  },
+  {
+    "path": "Evidence/exit-restores-old-page-seven.txt",
+    "bytes": 9320,
+    "sha256": "7746983f49e9194966c6eca72934dd2245eed4660e196b554f4215ffa0540912"
+  },
+  {
+    "path": "Evidence/selection-persists-after-turn.png",
+    "bytes": 535002,
+    "sha256": "72ccff041e69c25a86f1474302ef598df3b0f9a5dae53108f2ffa5fb415181f6"
+  },
+  {
+    "path": "Evidence/selection-persists-after-turn.txt",
+    "bytes": 14655,
+    "sha256": "b533ed0dba1a018b26622f0c8fc9d1960bc1efd72ea0f86eacfcb2d10e0d0cc2"
+  },
+  {
+    "path": "Evidence/spread-before-drag.png",
+    "bytes": 544921,
+    "sha256": "27edd3aa9992db8c9f63b8f681f3ca27e01ba5dc08ebadf55689e31f74608338"
+  },
+  {
+    "path": "Evidence/spread-before-drag.txt",
+    "bytes": 11102,
+    "sha256": "10aa942c91b43c087609c9f0eab48158ccefcaddac0699d3bce602a81bbc198f"
+  },
+  {
+    "path": "Evidence/turn-flat-sheet.png",
+    "bytes": 96815,
+    "sha256": "a3eadaf5a189c3ed0eee17f9eca7764e0ecfef8dce3784c2618e817b7a230487"
+  },
+  {
+    "path": "Evidence/turn-flat-sheet.txt",
+    "bytes": 3407,
+    "sha256": "b31e7657c0f8077d6f6319a1b12da613ce5cf79c3d90ae82ca81a8c11c1f4fc8"
+  },
+  {
+    "path": "Implementation/orchestrator-prompt.md",
+    "bytes": 19692,
+    "sha256": "a17c1f951c645f52adee3e9f3af6d7e342d8dfcc7b866f44b5fe60f707a56439"
+  },
+  {
+    "path": "README.md",
+    "bytes": 791,
+    "sha256": "b0a6d37b39c28af13aa44274f387d9a3a6d64776a828191593c8292371bb8eda"
+  },
+  {
+    "path": "Specifications/live-audit-and-recommendation.md",
+    "bytes": 5105,
+    "sha256": "b397002816597b6abd7f8c62aa6e85fd7e2c8439cdb45b62b74179a42fac152e"
+  }
+]

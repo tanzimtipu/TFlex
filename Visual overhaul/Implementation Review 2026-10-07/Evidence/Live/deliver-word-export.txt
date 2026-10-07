@@ -1,0 +1,93 @@
+Window: "Jovrel", App: Jovrel.exe.
+	0 window Jovrel Secondary Actions: Raise
+		9 pane (disabled)
+		1 region Jovrel
+			2 region
+				3 region
+					4 region
+						5 region
+							6 region
+								7 region
+									10 document Jovrel Value: file:///C:/Program%20Files/Jovrel/resources/app.asar/dist/renderer/index.html ID: RootWebArea
+										11 group ID: root
+											261 text Jovrel
+											13 button File menu Description: File menu
+											14 header
+												15 group File actions
+													16 button Open PDF document Description: Open PDF (Ctrl+O)
+													17 button (disabled) Save Description: Read-only document — use Save As to save a copy
+													18 button Save a copy Description: Save a copy (Ctrl+Shift+S)
+												253 button Search tools and commands (Ctrl+K) Description: Search tools and commands (Ctrl+K)
+												20 button Print Description: Print (Ctrl+P)
+												21 button Application menu Description: Application menu
+												23 button Sign in or create an account Description: Sign in or create an account
+											24 button Minimize window Description: Minimize
+											25 button Restore window Description: Restore window
+											26 button Close window Description: Close
+											27 tab Open documents
+												28 list
+													678 list item long.pdf
+														679 tab item (selectable) long.pdf Close long.pdf
+															680 button Close long.pdf
+													598 list item scanned.pdf
+														599 tab item (selectable) scanned.pdf Close scanned.pdf
+															600 button Close scanned.pdf
+													137 list item
+														138 button New empty tab Description: New empty tab
+													139 list item
+														140 button All open documents (2) Description: All open documents (2)
+											685 thumb Resize navigator panel Value: 280
+											686 thumb Resize inspector panel Value: 280
+											687 navigation Work stages
+												688 toggle button Pages stage Description: Pages (Ctrl+1)
+												689 toggle button Edit stage Description: Edit (Ctrl+2)
+												690 toggle button Review stage Description: Review (Ctrl+3)
+												691 toggle button Deliver stage Description: Deliver (Ctrl+4)
+												692 button Open preferences Description: Preferences (Ctrl+,)
+											693 group (truncated: child_limit, omitted 5834 children)
+											744 complementary Inspector
+												745 section header
+													746 text Inspector · Page 1
+													747 button Collapse inspector Description: Collapse inspector
+												865 heading EXPORT
+												866 group Format
+													867 text Format
+													868 radio button (selectable, settable, string) Images · PNG (lossless)
+													869 text Images · PNG (lossless)
+													870 radio button (selectable, settable, string) Images · JPEG (smaller, lossy)
+													871 text Images · JPEG (smaller, lossy)
+													872 radio button (selectable, settable, string) Images · TIFF (print-grade raster)
+													873 text Images · TIFF (print-grade raster)
+													874 radio button (selectable, settable, string) Text (.txt)
+													875 text Text (.txt)
+													876 radio button (selectable, settable, string) Word (.docx)
+													877 text Word (.docx)
+													878 radio button (selectable, settable, string) Excel (.xlsx)
+													879 text Excel (.xlsx)
+													880 radio button (selectable, settable, string) PowerPoint (.pptx)
+													881 text PowerPoint (.pptx)
+												882 text Pages
+												883 radio group (settable, string) Page scope
+													884 radio button (selectable, settable, string) All pages
+													885 text All pages
+													886 radio button (selectable, settable, string) Current page
+													887 text Current page
+													888 radio button (selectable, settable, string) Custom range
+													889 text Custom range
+												890 text 1-6
+												891 text Output name
+												892 text scanned.docx
+												900 region Export fidelity limits
+													901 text Fidelity limits
+													902 list
+														903 list item Editable text: each page becomes real Word paragraphs you can edit.
+														904 list item Fonts, weights, colours and exact positioning become plain paragraphs, so the page will not look identical.
+														905 list item Pages with no extractable text appear as page images instead of text.
+												895 button Export Word (.docx) Description: Export Word (.docx)
+												896 details
+													897 disclosure triangle ▸ DOCUMENT DETAILS
+														898 text ▸
+														899 text DOCUMENT DETAILS
+											109 status
+								8 region
+

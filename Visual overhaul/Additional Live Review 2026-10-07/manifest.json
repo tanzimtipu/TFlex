@@ -1,0 +1,72 @@
+[
+  {
+    "path": "Evidence/compact-expand-no-effect.png",
+    "bytes": 37555,
+    "sha256": "109798e50907a13fc74506d6dcd0a6d1fc5845a5b2f6d1843937f16502744e8e"
+  },
+  {
+    "path": "Evidence/compact-inspector-direct-click.png",
+    "bytes": 37580,
+    "sha256": "33a7e234a008e30712c997edc94327b788570a5c0a0ad50d46ee1aaa064d7822"
+  },
+  {
+    "path": "Evidence/compact-inspector-no-effect.png",
+    "bytes": 37528,
+    "sha256": "ba9f8193847d7c0764067f659634043d77c3d5753a6579210f0918fa51a49176"
+  },
+  {
+    "path": "Evidence/fit-page-keeps-wrong-anchor.png",
+    "bytes": 37616,
+    "sha256": "dbddebe1a90e8282a2df307d9feb66d06ed53abb8cd9a68d6a270f5e7a8325d8"
+  },
+  {
+    "path": "Evidence/home-sample-recents-missing.png",
+    "bytes": 138643,
+    "sha256": "c813790bef48432df79fb13e77944fe444f80ab653696ddea470bc1a4c682a3c"
+  },
+  {
+    "path": "Evidence/idle-controls-outline.png",
+    "bytes": 120458,
+    "sha256": "b8318e0588ba09104de95b2d4ac93cd53817724a755c75ad0af553145b0e435f"
+  },
+  {
+    "path": "Evidence/maximized-location-recovers.png",
+    "bytes": 370013,
+    "sha256": "d78270c7b19d3f52b392cb2d82f047aa52ad370dbe1eabbf8934fd9125a13652"
+  },
+  {
+    "path": "Evidence/outline-jump-settled.png",
+    "bytes": 369637,
+    "sha256": "d00ca6892a980943363c8779e3ed4b6b5dd52c00ac86b389d0a44befaf8e6d72"
+  },
+  {
+    "path": "Evidence/preferences-theme-state-copy.png",
+    "bytes": 53668,
+    "sha256": "2d981f7506036d1599a87343b291bd0298224f2a0de5bd3dd46a34497a9f2ec0"
+  },
+  {
+    "path": "Evidence/range-validation-generic.png",
+    "bytes": 50836,
+    "sha256": "ddda5dab5e09cf1651443bbd3b5e1381c892943b7d5a8c098bd2651e2f0fae4b"
+  },
+  {
+    "path": "Evidence/resize-anchor-mismatch.png",
+    "bytes": 37298,
+    "sha256": "d8dfba6d16b8aa2357488ffab1d86295d1f38c3cbdbfce210c15ece9a250e630"
+  },
+  {
+    "path": "Implementation/orchestrator-prompt.md",
+    "bytes": 9450,
+    "sha256": "eefc3244d30ca961fb54b57e83f0a7f1b40ffd746c4267129b8b22909701b3c4"
+  },
+  {
+    "path": "README.md",
+    "bytes": 729,
+    "sha256": "94e2380abb41bd3fbb1793ec6d61daf40ac54e65fa2876b4e11623f6df385c01"
+  },
+  {
+    "path": "Specifications/live-audit.md",
+    "bytes": 5716,
+    "sha256": "c503b7abb5265fecbcf9cb9a09965d78c72d33ae4f7513c82fc4a9f0a1ba44e8"
+  }
+]

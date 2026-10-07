@@ -1,0 +1,39 @@
+TFL-1170 - TFL-1116 C13 QA (R20 + R23) + DEF-624 closure re-sweep
+Model: openrouter/deepseek/deepseek-v4.1-flash
+Date: 2026-10-07T16:53Z..16:56Z
+
+=== Command 1: focused C13 unit suite ===
+npm.cmd run test:unit -- test/unit/renderer/tfl1116_reviewSummary.test.tsx test/unit/renderer/tfl1116_outlineBadge.test.tsx test/unit/renderer/phase112_review.test.tsx test/unit/renderer/phase90ReviewElementsPanel.test.tsx test/unit/renderer/phase90ReviewEdit.test.tsx test/unit/renderer/phase111_outline.test.tsx test/unit/renderer/phase85OutlineEditor.test.tsx
+-> Test Files 7 passed (7) | Tests 78 passed (78) | 0 failed
+
+=== Command 2: verify ===
+npm.cmd run verify
+-> conventions: clean (395 source file(s) scanned)
+-> tsc --noEmit -p tsconfig.json ; EXIT=0
+
+=== Command 3: build + e2e ===
+npm.cmd run build -> EXIT=0
+npm.cmd run test:e2e -- e2e/tfl1116_r20_r23_review_outline.spec.cjs
+-> 2 passed (8.2s)
+   R20 evidence: {"panelScope":"document","inspectorScope":"selection","panelCats":["annotations","bates","watermarks","signatures"],"inspectorCats":["annotations"],"docCategoriesOnPage":{"bates":1,"watermarks":1,"signatures":1},"inspectorRows":0}
+   R23 evidence: {"count":8,"colors":["rgb(102, 112, 133)"],"weights":["500"],"sizes":["12px"],"rightEdges":[305,305,305,305,305,305,305,305],"muted":"rgb(102, 112, 133)","faint":"rgb(148, 163, 184)"}; keyboard jump target 2 -> currentPage 2
+
+=== Command 4: DEF-624 closure re-sweep ===
+npm.cmd run test:unit -- phase40 phase22 phase105 phase36TitleBar printEntryPoints designTokensContract foundationGuards phase111_restore test/unit/renderer/tfl1116_scrollbar.test.ts test/unit/renderer/phase13Controls
+Run A (16:54:14): Test Files 2 failed | 21 passed (23) | Tests 4 failed | 287 passed (291)
+  - phase13Controls.test.tsx (1 failed): "choosing Preferences in the menu fires menuContext.preferences" - [data-menu-action='preferences'] null (row is portaled to document.body by R03 CommandMenu.tsx:819).
+  - printEntryPoints.test.tsx (3 failed): "ReferenceError: parsePageRange is not defined" at src/renderer/components/SplitDialog.tsx:37 - TRANSIENT: frontend-dev was mid-edit of SplitDialog.tsx for C14 (TFL-1171, started 16:52:36); the file now imports classifyPageRange and is correct.
+Run B (16:54:34, settled tree): Test Files 1 failed | 22 passed (23) | Tests 1 failed | 290 passed (291)
+  - Sole remaining red: phase13Controls.test.tsx:115 (stale R03 portal oracle, unrelated AppHeader-menu path).
+  - foundationGuards.test.ts: green (30/30). tfl1116_scrollbar.test.ts: green (5/5).
+
+Classification:
+- phase13Controls.test.tsx:115 -> STALE ORACLE from this phase's R03 portal refactor (list for a fix chunk; same class as DEF-621 which was already migrated for phase40_multiModeTooltip).
+- printEntryPoints.test.tsx -> TRANSIENT shared-workspace mid-edit from C14 (TFL-1171); resolved on re-run.
+- No real regression observed on the C13/review/outline path.
+
+Ledger:
+- DEF-624 CLOSED (qa TFL-1170, 2026-10-07).
+- DEF-625 CLOSED (qa TFL-1170, 2026-10-07).
+
+Listed stale e2e oracle (dev-flagged, static confirmation): e2e/phase90_bates_inspector.spec.cjs:475 still asserts the Inspector re-renders the document-wide Bates category, superseded by R20 (Inspector is selection-scoped). Needs re-scoping in a fix chunk; not run here.
