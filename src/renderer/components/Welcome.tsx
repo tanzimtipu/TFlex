@@ -27,6 +27,8 @@ import { BrandLoader } from "./BrandLoader";
 import { BrandMark } from "./BrandMark";
 import { BrandWordmark } from "./BrandWordmark";
 import { Button, IconButton } from "./Button";
+import { IntakeTray } from "../intake/IntakeTray";
+import type { IntakeItem } from "../intake/model";
 
 /** DEF-410 — fallback home-picker box used before the portal is measured (or in
  *  jsdom, which reports zero-size rects). Only affects the viewport clamp. */
@@ -122,6 +124,19 @@ interface WelcomeProps {
   /** Paths the host knows are missing / unopenable, so the row renders its
    *  missing state and the Locate-missing action. */
   missingRecentPaths?: readonly string[];
+  /** TFL-1244 (TFL-1230 D) — the shared intake queue rendered beside the hero
+   *  as the primary Home intake. The host owns the queue (the ONE
+   *  `src/renderer/intake/model.ts` instance); Home only renders it and
+   *  forwards remove / reorder intent. Absent keeps legacy / minimal mounts
+   *  unchanged — no tray. */
+  intakeItems?: readonly IntakeItem[];
+  /** DEF-644 — true while an eligible OS file drag is over the app, forwarded
+   *  to the tray's `active` prop so Home shows the drop indication. */
+  intakeActive?: boolean;
+  onIntakeRemove?: (id: string) => void;
+  onIntakeMove?: (index: number, dir: -1 | 1) => void;
+  /** Ruling 12 — the ONE completion / dispatch trigger on the tray. */
+  onIntakeOpen?: () => void;
 }
 
 export function Welcome(props: WelcomeProps): ReactElement {
@@ -145,6 +160,11 @@ export function Welcome(props: WelcomeProps): ReactElement {
     onShowRecentInFolder,
     onLocateRecentMissing,
     missingRecentPaths,
+    intakeItems,
+    intakeActive,
+    onIntakeRemove,
+    onIntakeMove,
+    onIntakeOpen,
   } = props;
   // Phase 106 (chunk B) — the decorative orbit's live on/off decision. TFL-938
   // moves the Home pause onto its own persisted preference so it no longer
@@ -504,6 +524,21 @@ export function Welcome(props: WelcomeProps): ReactElement {
           <p className="home-tools-hint" data-home-full-hint>
             Home row is full (max 14 tools)
           </p>
+        )}
+        {/* TFL-1244 (TFL-1230 D) — the concise Intake Tray sits beside the hero
+            actions as Home's primary intake: the Open / drop paths feed the ONE
+            ordered queue and an empty Home grows into a visible, reorderable
+            list. The host owns the model; this surface only renders it. */}
+        {intakeItems !== undefined && (
+          <div className="welcome-intake" data-home-intake>
+            <IntakeTray
+              items={intakeItems}
+              active={intakeActive}
+              onRemove={onIntakeRemove}
+              onMove={onIntakeMove}
+              onOpen={onIntakeOpen}
+            />
+          </div>
         )}
         </header>
         <div className="welcome-body orbit-desk-body" data-home-samples={showSamples ? "true" : "false"}>

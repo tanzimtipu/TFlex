@@ -31,6 +31,7 @@
 // channel for "open image files").
 
 import {
+  useCallback,
   useEffect,
   useRef,
   useState,
@@ -46,6 +47,7 @@ import {
   qualityFractionToPercent,
   qualityPercentToFraction,
 } from "../state/preferences";
+import { createIntakeModel, type IntakeItem, type IntakeModel } from "../intake/model";
 import { pickImageFilesInRenderer, type PickedImages } from "../utils/pickImageFiles";
 import type {
   ClipboardImageReason,
@@ -153,6 +155,19 @@ function sniffClipboardImageType(bytes: Uint8Array): { mime: string; ext: string
   return { mime: "image/png", ext: "png" };
 }
 
+/** The de-dupe key the queue has always used: name + byte size. Re-picking
+ *  the exact same file is a no-op; two distinct files that happen to share a
+ *  name (different size) are both kept. */
+function intakeFileKey(file: File): string {
+  return `${file.name}|${file.size}`;
+}
+
+/** Narrow an intake item's payload back to the File this dialog only ever
+ *  queues, so the confirm contract stays `File[]`. */
+function itemFile(item: IntakeItem): File | undefined {
+  return typeof item.pathOrFile === "string" ? undefined : item.pathOrFile;
+}
+
 /** One row's preview thumbnail. Owns its object URL so it is revoked
  *  exactly when the row unmounts (remove, re-open, dialog close) -
  *  the leak the old list could not have managed because it rendered
@@ -191,7 +206,20 @@ export function CreateFromImagesDialog(
     readClipboard,
     onClose,
   } = props;
-  const [files, setFiles] = useState<File[]>([]);
+  // TFL-1245 (TFL-1230 E) — the queue is a consumer of the ONE renderer
+  // intake model, not a dialog-local `File[]`. Picker, clipboard and (where
+  // offered) a compact intake layout all feed this single ordered queue and
+  // call the same add / remove / reorder handlers. The model is
+  // framework-free, so its queue is mirrored into React state to drive the
+  // render, exactly as the host App mirrors its own instance.
+  const intakeModelRef = useRef<IntakeModel | null>(null);
+  if (intakeModelRef.current === null) {
+    intakeModelRef.current = createIntakeModel();
+  }
+  const [items, setItems] = useState<readonly IntakeItem[]>([]);
+  const syncItems = useCallback((): void => {
+    setItems(intakeModelRef.current?.items() ?? []);
+  }, []);
   // Monotonic counter for clipboard-image filenames so repeated pastes
   // do not collide in the list (`Clipboard image 1.png`, `…2.png`).
   const clipboardCountRef = useRef(0);
@@ -207,14 +235,38 @@ export function CreateFromImagesDialog(
   const [error, setError] = useState<string | null>(null);
 
   // Reset every time we re-open so a stale file list doesn't sneak in.
+  // DEF-646 — reset ONLY on a closed -> open transition. The host echoes an
+  // edited quality back through `initialQuality` (the same value that seeds the
+  // input), and the previous `[open, initialQuality]` effect re-ran on that
+  // echo, clearing the picked queue and disabling Create. Seed the quality at
+  // open; a later quality echo must never touch the queue.
+  const wasOpenRef = useRef(false);
   useEffect(() => {
-    if (!open) return;
-    setFiles([]);
+    if (!open) {
+      wasOpenRef.current = false;
+      return;
+    }
+    if (wasOpenRef.current) return;
+    wasOpenRef.current = true;
+    intakeModelRef.current?.clear();
+    setItems([]);
     setError(null);
     setQualityPercent(qualityFractionToPercent(initialQuality));
     setPicking(false);
     clipboardCountRef.current = 0;
   }, [open, initialQuality]);
+
+  /** The visible queue reduced back to the `File[]` the confirm contract
+   *  speaks. This dialog only ever queues real Files (picker / clipboard). */
+  const files: File[] = items
+    .map(itemFile)
+    .filter((file): file is File => file !== undefined);
+
+  /** Rows paired with their File so the render keeps the model's order and
+   *  identity (the same File instance the model holds, byte-for-byte). */
+  const imageRows = items
+    .map((item) => ({ item, file: itemFile(item) }))
+    .filter((row): row is { item: IntakeItem; file: File } => row.file !== undefined);
 
   // Convert back to fraction for the engine call. The engine's
   // expected quality is the fraction (0..1) so the wire shape
@@ -226,26 +278,41 @@ export function CreateFromImagesDialog(
   // renderer fallback (older preload).
   const clipboardReady = clipboardImageBridge() !== null || readClipboard !== undefined;
 
+  /** Append one real image File to the shared queue and mark it a truthful
+   *  image (these inputs are picked/clipboard images, never guessed). */
+  const addImageFile = useCallback(
+    (file: File): void => {
+      const model = intakeModelRef.current;
+      if (model === null) return;
+      const item = model.add({ pathOrFile: file });
+      model.classify(item.id, { kind: "image" });
+      syncItems();
+    },
+    [syncItems],
+  );
+
   const pickFiles = async (): Promise<void> => {
     setPicking(true);
     setError(null);
     try {
       const picked: PickedImages = await pickImageFilesInRenderer();
       if (picked.files.length > 0) {
-        setFiles((prev) => {
-          // De-dupe by name + size so re-picking the same file twice
-          // doesn't grow the list with phantom entries.
-          const seen = new Set(prev.map((f) => `${f.name}|${f.size}`));
-          const out = prev.slice();
-          for (const f of picked.files) {
-            const key = `${f.name}|${f.size}`;
-            if (!seen.has(key)) {
-              seen.add(key);
-              out.push(f);
-            }
-          }
-          return out;
-        });
+        const model = intakeModelRef.current;
+        // De-dupe by name + size so re-picking the same file twice doesn't
+        // grow the queue with phantom entries. Duplicate names with distinct
+        // sizes stay separate (the model disambiguates the visible label).
+        const seen = new Set(
+          model?.items().map((item) => {
+            const file = itemFile(item);
+            return file === undefined ? `string:${item.name}` : intakeFileKey(file);
+          }) ?? [],
+        );
+        for (const file of picked.files) {
+          const key = intakeFileKey(file);
+          if (seen.has(key)) continue;
+          seen.add(key);
+          addImageFile(file);
+        }
       }
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
@@ -256,23 +323,18 @@ export function CreateFromImagesDialog(
   };
 
   const removeAt = (idx: number): void => {
-    setFiles((prev) => prev.filter((_, i) => i !== idx));
+    const item = items[idx];
+    if (item === undefined) return;
+    intakeModelRef.current?.remove(item.id);
+    syncItems();
   };
 
-  /** Reorder a single image by one slot. Only the array order changes:
+  /** Reorder a single image by one slot. Only the queue order changes:
    *  every File keeps its bytes, name and de-dupe key, so the confirm
    *  payload is the visible list order with the exact same files. */
   const moveAt = (idx: number, dir: -1 | 1): void => {
-    setFiles((prev) => {
-      const to = idx + dir;
-      if (to < 0 || to >= prev.length) return prev;
-      const moved = prev[idx];
-      if (moved === undefined) return prev;
-      const out = prev.slice();
-      out.splice(idx, 1);
-      out.splice(to, 0, moved);
-      return out;
-    });
+    intakeModelRef.current?.reorder(idx, dir);
+    syncItems();
   };
 
   /** Alt+ArrowUp / Alt+ArrowDown from a focused row handle moves that
@@ -305,7 +367,7 @@ export function CreateFromImagesDialog(
     clipboardCountRef.current += 1;
     const name = `Clipboard image ${clipboardCountRef.current}.${ext}`;
     const file = new File([bytes as BlobPart], name, { type: mime });
-    setFiles((prev) => [...prev, file]);
+    addImageFile(file);
   };
 
   const onClipboardClick = async (): Promise<void> => {
@@ -447,56 +509,59 @@ export function CreateFromImagesDialog(
               aria-label="Selected images"
               data-create-list
             >
-              {files.map((f, idx) => (
-                <li
-                  key={`${f.name}-${idx}`}
-                  className="create-image-row"
-                  data-create-image-row={idx}
-                  tabIndex={0}
-                  aria-label={`Image ${idx + 1}: ${f.name}`}
-                  onKeyDown={onRowKeyDown(idx)}
-                >
-                  <span className="create-image-index">{idx + 1}</span>
-                  <ImageThumb file={f} />
-                  <span className="create-image-name" title={f.name}>
-                    {f.name}
-                  </span>
-                  <div className="create-image-controls">
-                    <button
-                      type="button"
-                      className="btn btn-ghost btn-icon create-image-move"
-                      onClick={(): void => moveAt(idx, -1)}
-                      disabled={idx === 0}
-                      aria-label={`Move ${f.name} up`}
-                      title="Move up"
-                      data-create-move-up={idx}
-                    >
-                      <Icon icon={ChevronUp} size="sm" />
-                    </button>
-                    <button
-                      type="button"
-                      className="btn btn-ghost btn-icon create-image-move"
-                      onClick={(): void => moveAt(idx, 1)}
-                      disabled={idx === files.length - 1}
-                      aria-label={`Move ${f.name} down`}
-                      title="Move down"
-                      data-create-move-down={idx}
-                    >
-                      <Icon icon={ChevronDown} size="sm" />
-                    </button>
-                    <button
-                      type="button"
-                      className="btn btn-ghost btn-icon create-image-remove"
-                      onClick={(): void => removeAt(idx)}
-                      aria-label={`Remove ${f.name}`}
-                      title="Remove"
-                      data-create-remove={idx}
-                    >
-                      <Icon name="dialogClose" size="sm" />
-                    </button>
-                  </div>
-                </li>
-              ))}
+              {imageRows.map(({ item, file }, idx) => {
+                const label = item.name;
+                return (
+                  <li
+                    key={item.id}
+                    className="create-image-row"
+                    data-create-image-row={idx}
+                    tabIndex={0}
+                    aria-label={`Image ${idx + 1}: ${label}`}
+                    onKeyDown={onRowKeyDown(idx)}
+                  >
+                    <span className="create-image-index">{idx + 1}</span>
+                    <ImageThumb file={file} />
+                    <span className="create-image-name" title={label}>
+                      {label}
+                    </span>
+                    <div className="create-image-controls">
+                      <button
+                        type="button"
+                        className="btn btn-ghost btn-icon create-image-move"
+                        onClick={(): void => moveAt(idx, -1)}
+                        disabled={idx === 0}
+                        aria-label={`Move ${label} up`}
+                        title="Move up"
+                        data-create-move-up={idx}
+                      >
+                        <Icon icon={ChevronUp} size="sm" />
+                      </button>
+                      <button
+                        type="button"
+                        className="btn btn-ghost btn-icon create-image-move"
+                        onClick={(): void => moveAt(idx, 1)}
+                        disabled={idx === imageRows.length - 1}
+                        aria-label={`Move ${label} down`}
+                        title="Move down"
+                        data-create-move-down={idx}
+                      >
+                        <Icon icon={ChevronDown} size="sm" />
+                      </button>
+                      <button
+                        type="button"
+                        className="btn btn-ghost btn-icon create-image-remove"
+                        onClick={(): void => removeAt(idx)}
+                        aria-label={`Remove ${label}`}
+                        title="Remove"
+                        data-create-remove={idx}
+                      >
+                        <Icon name="dialogClose" size="sm" />
+                      </button>
+                    </div>
+                  </li>
+                );
+              })}
             </ul>
           )}
 

@@ -1,8 +1,10 @@
 // Phase 35 — Windows integration for the renderer (DEF-295 + the OS-open
-// path). Two hooks, both window-level, both routing through the ONE shared
-// open path (`openRequestedPath`):
+// path); Phase 118 routes every OS file drop through the ONE intake model.
+// Two hooks, both window-level:
 //
-//   useOsFileDrop        — an OS file drop from Explorer opens the document.
+//   useOsFileDrop        — an OS file drop from Explorer: every dropped file
+//                          is handed to the host's `onIntake` (the Phase 118
+//                          intake model) in drop order, never opened directly.
 //   useOsOpenPathRequests — main pushes a PDF path (launch argv / second
 //                           instance) and the renderer opens it.
 //
@@ -11,6 +13,10 @@
 // which uses `text/plain`: a non-Files drag/drop is left completely alone.
 // Both `dragover` and `drop` are `preventDefault`ed for a file drag so
 // Chromium can never navigate the window to the dropped file.
+//
+// Phase 118 also exposes the eligible-drag state (`onDragActiveChange`) with a
+// leave-depth guard so the intake surface can show its subtle drop
+// indication; the indication clears on drop, leave or a non-Files drag.
 
 import { useEffect, useRef } from "react";
 
@@ -57,46 +63,116 @@ export function resolveDroppedPath(file: File): string | null {
   }
 }
 
+/** One resolvable dropped OS file: the dropped `File` plus the absolute
+ *  on-disk path `resolveDroppedPath` resolved for it. DEF-657 — the path must
+ *  survive to dispatch so the drop route opens the real file, not the bare
+ *  basename (a same-named file elsewhere would otherwise be opened). */
+export interface OsDropEntry {
+  path: string;
+  file: File;
+}
+
 export interface OsFileDropOptions {
-  /** The shared renderer open path (Multi Mode routing included). */
-  openPath: (path: string) => void | Promise<void>;
+  /** Phase 118 — hand EVERY dropped OS file to the ONE intake model, in drop
+   *  order, carrying both the dropped `File` and its resolved absolute path.
+   *  The production host (App) always provides this; the drop handler then
+   *  never opens a document directly. */
+  onIntake?: (files: OsDropEntry[]) => void;
+  /** Legacy direct-open path, used ONLY when `onIntake` is absent so a caller
+   *  that predates Phase 118 keeps its "open the first file" behaviour. */
+  openPath?: (path: string) => void | Promise<void>;
   /** The app's existing error toast. */
   onError: (message: string) => void;
-  /** The app's existing info toast (used for the extra-files notice). */
+  /** The app's existing info toast (legacy extra-files notice only). */
   onNotice?: (message: string) => void;
+  /** Phase 118 — reports whether an eligible OS file drag is over the app, so
+   *  the intake surface can show (and clear) its subtle drop indication. */
+  onDragActiveChange?: (active: boolean) => void;
 }
 
 /**
- * Window-level OS file-drop handler (DEF-295).
+ * Window-level OS file-drop handler (DEF-295, Phase 118).
  *
- * Rule: open the FIRST dropped file through the shared, convert-aware path
- * (`openPath` -> `openFromRequest` -> `openPdfFromPath` -> `routeOpenPath`),
- * exactly like the Open dialog and the OS-open listener. A file the shared
- * path cannot open fails loud there with a truthful message; this handler
- * only reports a dropped file it cannot read or resolve. Extra files beyond
- * the first are reported once with the info toast (the app opens one
- * document per drop).
+ * Rule: every file the OS drag carries is handed to the host's `onIntake` in
+ * drop order, so the ONE intake model classifies it by real content and routes
+ * the real existing operation. The handler never opens a document itself. A
+ * dropped file whose on-disk path cannot be resolved (a synthetic / pathless
+ * `File`) fails loud with a truthful message instead of throwing; `onIntake`
+ * only receives the files that were actually resolvable, still in order.
+ *
+ * `onIntake` is the Phase 118 contract; the legacy `openPath` first-file path
+ * is kept only as a fallback for callers that do not supply `onIntake`.
  */
 export function useOsFileDrop(options: OsFileDropOptions): void {
   const optionsRef = useRef(options);
   optionsRef.current = options;
 
   useEffect(() => {
+    // Leave-depth guard: dragenter bubbles for every nested element, so count
+    // them and clear the indication only when the last one leaves.
+    let depth = 0;
+    let active = false;
+    const setActive = (next: boolean): void => {
+      if (active === next) return;
+      active = next;
+      optionsRef.current.onDragActiveChange?.(next);
+    };
+
     const onDragOver = (e: DragEvent): void => {
       if (!isFileDragEvent(e)) return; // in-app page drag owns the rest
       e.preventDefault();
       if (e.dataTransfer !== null) e.dataTransfer.dropEffect = "copy";
     };
+    const onDragEnter = (e: DragEvent): void => {
+      if (!isFileDragEvent(e)) {
+        // A non-Files drag over the app must never leave a stale indication.
+        depth = 0;
+        setActive(false);
+        return;
+      }
+      depth += 1;
+      if (depth === 1) setActive(true);
+    };
+    const onDragLeave = (): void => {
+      if (depth === 0) {
+        setActive(false);
+        return;
+      }
+      depth -= 1;
+      if (depth === 0) setActive(false);
+    };
     const onDrop = (e: DragEvent): void => {
-      if (!isFileDragEvent(e)) return; // never interfere with in-app DnD
+      if (!isFileDragEvent(e)) {
+        // Never interfere with the in-app page-drag DnD.
+        depth = 0;
+        setActive(false);
+        return;
+      }
       e.preventDefault();
-      const { openPath, onError, onNotice } = optionsRef.current;
+      depth = 0;
+      setActive(false);
+      const { openPath, onIntake, onError, onNotice } = optionsRef.current;
       const files = e.dataTransfer === null ? [] : Array.from(e.dataTransfer.files);
-      const first = files[0];
-      if (first === undefined) {
+      if (files.length === 0) {
         onError("Jovrel could not read the dropped file.");
         return;
       }
+      if (onIntake !== undefined) {
+        const resolvable: OsDropEntry[] = [];
+        for (const file of files) {
+          const path = resolveDroppedPath(file);
+          if (path === null) {
+            onError(`Jovrel could not resolve the dropped file "${file.name}".`);
+            continue;
+          }
+          resolvable.push({ path, file });
+        }
+        if (resolvable.length > 0) onIntake(resolvable);
+        return;
+      }
+      // Legacy fallback for a caller that does not route through the intake.
+      if (openPath === undefined) return;
+      const first = files[0];
       const path = resolveDroppedPath(first);
       if (path === null) {
         onError("Jovrel could not resolve the dropped file's location.");
@@ -110,9 +186,13 @@ export function useOsFileDrop(options: OsFileDropOptions): void {
       }
     };
     window.addEventListener("dragover", onDragOver);
+    window.addEventListener("dragenter", onDragEnter);
+    window.addEventListener("dragleave", onDragLeave);
     window.addEventListener("drop", onDrop);
     return (): void => {
       window.removeEventListener("dragover", onDragOver);
+      window.removeEventListener("dragenter", onDragEnter);
+      window.removeEventListener("dragleave", onDragLeave);
       window.removeEventListener("drop", onDrop);
     };
   }, []);

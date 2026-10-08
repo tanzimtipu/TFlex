@@ -251,7 +251,12 @@ import {
   UPDATE_OPERATION_ID,
   updateStateAction,
 } from "./state/activityShelf";
-import type { ActivityCompletionAction, ActivityOperation } from "./state/activity";
+import { createOperation } from "./state/activity";
+import type {
+  ActivityCompletionAction,
+  ActivityFailure,
+  ActivityOperation,
+} from "./state/activity";
 import { ReadingView } from "./components/ReadingView";
 import { BookView } from "./components/BookView";
 import { BookOpen } from "lucide-react";
@@ -410,8 +415,10 @@ import {
   resolveEngineStateForDiagnostics,
 } from "./diagnostics/resolve";
 import { openRequestedPath } from "./openRequestedPath";
-import { useOsFileDrop, useOsOpenPathRequests } from "./hooks/useOsIntegration";
-import { createIntakeModel, type IntakeModel } from "./intake/model";
+import { useOsFileDrop, useOsOpenPathRequests, resolveDroppedPath, type OsDropEntry } from "./hooks/useOsIntegration";
+import { createIntakeModel, basename, type IntakeItem, type IntakeModel } from "./intake/model";
+import { detectIntakeItem } from "./intake/detect";
+import { IntakeTray } from "./intake/IntakeTray";
 import { useMinimizedPause } from "./hooks/useMinimizedPause";
 import {
   noteSettingsRestore,
@@ -2808,47 +2815,118 @@ export function App(): ReactElement {
    *  refused). Reads `routeOpenedTabRef.current` at call time so it always
    *  sees the current focused pane. */
   const openFromRequest = useCallback(
-    async (path: string): Promise<void> => {
-      await openRequestedPath(path, openPdfFromPath, routeOpenedTabRef.current);
+    async (path: string): Promise<string | null> => {
+      return openRequestedPath(path, openPdfFromPath, routeOpenedTabRef.current);
     },
     [openPdfFromPath],
   );
 
+  // Phase 118 — the ONE intake model. Home, the generic Open, OS file drops
+  // and the canvas all feed this ordered queue; no entry point opens a
+  // document directly (chunks D/E render the Tray and dispatch through the
+  // real existing operations).
+  const intakeModelRef = useRef<IntakeModel | null>(null);
+  if (intakeModelRef.current === null) {
+    intakeModelRef.current = createIntakeModel();
+  }
+  // The model is intentionally framework-free, so its queue is mirrored into
+  // React state after every mutation to drive the Intake Tray render.
+  const [intakeItems, setIntakeItems] = useState<readonly IntakeItem[]>([]);
+  // DEF-644 — the eligible OS file-drag indication. `useOsFileDrop` raises it
+  // over the whole app; the hosts forward it to the Intake Tray's `active`
+  // prop so the drop zone shows (and clears) the subtle indication.
+  const [osDragActive, setOsDragActive] = useState(false);
+  const syncIntakeItems = useCallback((): void => {
+    // DEF-645 — snapshot each item. The model mutates its item objects in
+    // place during `dispatch` (validating -> converting -> done / failed) and
+    // App re-renders mid-dispatch for unrelated reasons (a tab opens), so
+    // sharing the live objects let those transient states leak into the DOM.
+    // A copy keeps the rendered queue at the last committed sync until the
+    // dispatch settles, so the tray reflects only truthful terminal states.
+    setIntakeItems((intakeModelRef.current?.items() ?? []).map((item) => ({ ...item })));
+  }, []);
+  // Phase 118 chunk F — truthful detection on add: every queued id is
+  // classified against REAL content / engine detection, so a row moves
+  // validating -> ready / failed and carries the engine's own error text.
+  // Nothing is opened here: the queue is a holding surface (the chunk-D
+  // entry-point contract) and the host routes through the model's real
+  // operations without opening anything at the call site.
+  const classifyIntake = useCallback(
+    async (ids: readonly string[]): Promise<void> => {
+      const model = intakeModelRef.current;
+      if (model === null) return;
+      for (const id of ids) {
+        const item = model.items().find((entry) => entry.id === id);
+        if (item === undefined) continue;
+        const file = typeof item.pathOrFile === "string" ? null : item.pathOrFile;
+        const path = file === null ? (item.pathOrFile as string) : resolveDroppedPath(file);
+        const detection = await detectIntakeItem({
+          path,
+          name: item.name,
+          mimeType: file?.type,
+          api: window.tflex.convert,
+        });
+        model.classify(id, detection);
+        syncIntakeItems();
+      }
+    },
+    [syncIntakeItems],
+  );
+  // DEF-657 — the OS drop hook resolves every dropped File to its absolute
+  // on-disk path, so `pathOrFile` is the real path (mirroring the picked-path
+  // route below) and dispatch opens the dropped file, never a same-named file
+  // by bare basename. `file` keeps the File for the image-dispatch byte path.
+  const onIntakeFiles = useCallback((files: OsDropEntry[]): void => {
+    const added =
+      intakeModelRef.current?.addMany(
+        files.map(({ path, file }) => ({ pathOrFile: path, name: file.name, file })),
+      ) ?? [];
+    syncIntakeItems();
+    void classifyIntake(added.map((item) => item.id));
+  }, [classifyIntake, syncIntakeItems]);
+  const onIntakeRemove = useCallback((id: string): void => {
+    intakeModelRef.current?.remove(id);
+    syncIntakeItems();
+  }, [syncIntakeItems]);
+  const onIntakeMove = useCallback((index: number, dir: -1 | 1): void => {
+    intakeModelRef.current?.reorder(index, dir);
+    syncIntakeItems();
+  }, [syncIntakeItems]);
+
   // DEF-610 — a synchronous re-entry guard for the generic Open. A title-bar
   // double-click (or two rapid clicks) invokes `onOpenClick` twice in the same
-  // tick before the first `openFileDialog` promise settles, so the native picker
-  // opened twice. The ref is set synchronously on entry and released in
-  // `finally`, so the second invocation is a no-op until the first resolves.
+  // tick before the first dialog promise settles, so the native picker opened
+  // twice. The ref is set synchronously on entry and released in `finally`, so
+  // the second invocation is a no-op until the first resolves.
   const openInFlightRef = useRef(false);
   const onOpenClick = useCallback(async (): Promise<void> => {
     if (openInFlightRef.current) return;
     openInFlightRef.current = true;
     try {
-      // DEF-375 — the generic Open path routes non-PDF files through the
-      // conversion bridge, so the OS dialog must offer the grouped Phase 53
-      // filters (`openFileDialog('document')`), not the PDF-only default.
-      const picked = await window.tflex.openFileDialog("document");
-      if (picked === null) return;
-      // Phase 32 (DEF-277/DEF-278) — in Multi Mode this generic open lands in
-      // the focused pane; a file that is already the OTHER pane's document is
-      // refused up front so no tab is created for a document that would never
-      // become visible. Single mode: the ref's methods are no-ops/false.
-      await openFromRequest(picked);
+      const pickMany = window.tflex.openFilesDialog;
+      if (typeof pickMany !== "function") {
+        // A bridge without the Phase 40 multi-select picker (legacy / partial
+        // stubs) keeps the exact single-file open path unchanged.
+        const picked = await window.tflex.openFileDialog("document");
+        if (picked === null) return;
+        await openFromRequest(picked);
+        return;
+      }
+      // TFL-1244 (TFL-1230 D) — the generic Open is an INTAKE entry point: it
+      // offers the same grouped Phase 53 document filters through the Phase 40
+      // multi-select picker and adds every picked path to the shared queue in
+      // selection order. It never opens a document directly; the Intake Tray
+      // owns the ordered queue.
+      const picked = await pickMany("document");
+      if (picked.length === 0) return;
+      const added =
+        intakeModelRef.current?.addMany(picked.map((path) => ({ pathOrFile: path }))) ?? [];
+      syncIntakeItems();
+      void classifyIntake(added.map((item) => item.id));
     } finally {
       openInFlightRef.current = false;
     }
-  }, [openFromRequest]);
-
-  // Phase 118 — the ONE intake model. OS file drops feed this ordered queue
-  // (chunks D/E render the Tray and dispatch through the real existing
-  // operations); the drop handler never opens a document directly.
-  const intakeModelRef = useRef<IntakeModel | null>(null);
-  if (intakeModelRef.current === null) {
-    intakeModelRef.current = createIntakeModel();
-  }
-  const onIntakeFiles = useCallback((files: File[]): void => {
-    intakeModelRef.current?.addMany(files.map((file) => ({ pathOrFile: file })));
-  }, []);
+  }, [classifyIntake, openFromRequest, syncIntakeItems]);
 
   // Phase 35 — Windows integration. An OS file drop from Explorer feeds the
   // shared intake model (Phase 118) instead of opening its first file; main's
@@ -2857,9 +2935,12 @@ export function App(): ReactElement {
   useOsFileDrop({
     onIntake: onIntakeFiles,
     onError: (message): void => pushToast("error", message),
+    onDragActiveChange: setOsDragActive,
   });
   useOsOpenPathRequests({
-    openPath: openFromRequest,
+    openPath: (path): void => {
+      void openFromRequest(path);
+    },
     onError: (message): void => pushToast("error", message),
   });
 
@@ -6249,17 +6330,18 @@ const onPickMergeFile = useCallback(async (): Promise<{ path: string; bytes: Uin
     [pushToast],
   );
 
-  const onCreateConfirm = useCallback(
-    async (files: File[], quality: number): Promise<void> => {
-      setCreateOpen(false);
+  /** Phase 118 ruling 12 — open a created image-collection PDF as a new tab
+   *  and report a truthful outcome so BOTH the images dialog confirm and the
+   *  Tray completion control settle from the SAME pipeline. */
+  const createPdfFromImageFiles = useCallback(
+    async (
+      files: File[],
+      quality: number,
+    ): Promise<{ ok: true } | { ok: false; error: string }> => {
       const result = await runCreateFromImages(files, quality);
-      if ("error" in result) {
-        pushToast("error", `Could not create PDF: ${result.error}`);
-        return;
-      }
-      // Open the result as a new tab. We seed a synthesised
-      // display name from the first image's name (strip extension
-      // and prefix with "Created from ").
+      if ("error" in result) return { ok: false, error: result.error };
+      // Open the result as a new tab. We seed a synthesised display name from
+      // the first image's name (strip extension, prefix with "Created from ").
       const firstName = files[0]?.name ?? "new.pdf";
       const baseName = firstName.replace(/\.[^/.]+$/, "");
       const displayName = `Created from ${baseName}.pdf`;
@@ -6277,26 +6359,107 @@ const onPickMergeFile = useCallback(async (): Promise<{ path: string; bytes: Uin
           ? { engineDocId: result.conversion.docId }
           : {}),
       });
-      if (opened !== null) {
-        dispatchTabs({ type: "set-modified", id: opened.tabId, modified: true });
-        // Phase 54 — a DPI-aware multi-image import carries the conversion
-        // metadata; surface the full warning set in the same per-tab card
-        // Phase 53 uses for converted imports (keyed by tab id).
-        if (result.conversion !== undefined) {
-          const conversion = result.conversion;
-          setConvertNotices((prev) => ({
-            ...prev,
-            [opened.tabId]: noticeFromManyResult(conversion),
-          }));
-          setSourceFormatByTab((prev) => ({
-            ...prev,
-            [opened.tabId]: conversion.sourceFormats[0] ?? "png",
-          }));
-        }
-        pushToast("info", `Created PDF from ${files.length} image${files.length === 1 ? "" : "s"}.`);
+      if (opened === null) {
+        return { ok: false, error: "the created PDF could not be opened" };
+      }
+      dispatchTabs({ type: "set-modified", id: opened.tabId, modified: true });
+      // Phase 54 — a DPI-aware multi-image import carries the conversion
+      // metadata; surface the full warning set in the same per-tab card
+      // Phase 53 uses for converted imports (keyed by tab id).
+      if (result.conversion !== undefined) {
+        const conversion = result.conversion;
+        setConvertNotices((prev) => ({
+          ...prev,
+          [opened.tabId]: noticeFromManyResult(conversion),
+        }));
+        setSourceFormatByTab((prev) => ({
+          ...prev,
+          [opened.tabId]: conversion.sourceFormats[0] ?? "png",
+        }));
+      }
+      pushToast("info", `Created PDF from ${files.length} image${files.length === 1 ? "" : "s"}.`);
+      return { ok: true };
+    },
+    [dispatchTabs, openFromBytes, pushToast, runCreateFromImages],
+  );
+
+  const onCreateConfirm = useCallback(
+    async (files: File[], quality: number): Promise<void> => {
+      setCreateOpen(false);
+      const outcome = await createPdfFromImageFiles(files, quality);
+      if (!outcome.ok) {
+        pushToast("error", `Could not create PDF: ${outcome.error}`);
       }
     },
-    [openFromBytes, pushToast, runCreateFromImages],
+    [createPdfFromImageFiles, pushToast],
+  );
+
+  // Phase 118 ruling 12 — the ONE dispatch trigger, called by the Tray
+  // completion control. It routes each `ready` item to the REAL operation it
+  // supports (`begin` -> `settle`): every ready PDF opens as its own session in
+  // queue order, a ready image set builds ONE PDF through the existing
+  // `runCreateFromImages` / `createFromImagesRoute` pipeline, and `convertible`
+  // / `unknown` / `failed` items stay in the queue with their truthful error.
+  // Successes leave the queue; the run is presented through the EXISTING
+  // Activity Shelf, never a second progress surface.
+  const intakeRunningRef = useRef(false);
+  const runIntake = useCallback(
+    async (): Promise<void> => {
+      const model = intakeModelRef.current;
+      if (model === null || intakeRunningRef.current) return;
+      const readyCount = model.items().filter((item) => item.state === "ready").length;
+      if (readyCount === 0) return;
+      intakeRunningRef.current = true;
+      const batchId = crypto.randomUUID();
+      dispatchActivityShelf({
+        type: "begin",
+        operation: createOperation({
+          id: batchId,
+          document: { docId: batchId, tabId: batchId, path: null, displayName: "Intake" },
+          task: {
+            name: "Import files",
+            scope: `${readyCount} file${readyCount === 1 ? "" : "s"}`,
+          },
+        }),
+        phaseText: "Opening files",
+      });
+      try {
+        const result = await model.dispatch(
+          {
+            openPdf: async (path: string): Promise<void> => {
+              const tabId = await openFromRequest(path);
+              if (tabId === null) {
+                throw new Error(`"${basename(path)}" could not be opened.`);
+              }
+            },
+            createFromImages: async (files, quality): Promise<unknown> => {
+              const fileList = files.filter((file): file is File => typeof file !== "string");
+              if (fileList.length === 0) {
+                throw new Error("The image set could not be created.");
+              }
+              const outcome = await createPdfFromImageFiles(fileList, quality);
+              if (!outcome.ok) throw new Error(outcome.error);
+              return outcome;
+            },
+          },
+          settingsRef.current?.createImageQuality ?? DEFAULT_CREATE_IMAGE_QUALITY,
+        );
+        // Successes leave the queue; failed items stay with their error.
+        for (const item of [...result.opened, ...result.images]) model.remove(item.id);
+        syncIntakeItems();
+        const failures: ActivityFailure[] = result.skipped
+          .filter((item) => item.state === "failed")
+          .map((item) => ({ item: item.name, reason: item.error ?? "Import failed." }));
+        if (failures.length === 0) {
+          dispatchActivityShelf({ type: "complete", id: batchId });
+        } else {
+          dispatchActivityShelf({ type: "complete-partial", id: batchId, failed: failures });
+        }
+      } finally {
+        intakeRunningRef.current = false;
+      }
+    },
+    [createPdfFromImageFiles, dispatchActivityShelf, openFromRequest, syncIntakeItems],
   );
 
   /** Host callback: `engine.exportPages` against the active tab. The
@@ -12302,6 +12465,13 @@ pushToast(
                 });
               }}
               samplesResolver={samplesResolver}
+              // TFL-1244 (TFL-1230 D) — Home renders the shared intake queue
+              // beside the hero; Open / OS drops feed this same model.
+              intakeItems={intakeItems}
+              intakeActive={osDragActive}
+              onIntakeRemove={onIntakeRemove}
+              onIntakeMove={onIntakeMove}
+              onIntakeOpen={runIntake}
               // TFL-1143 (R09) — sample fixtures render only in a dev build.
               showSamples={isDevelopmentBuild()}
             />
@@ -13054,6 +13224,21 @@ pushToast(
         readClipboard={readClipboard}
         onClose={onCancelCreate}
       />
+      {/* DEF-645 — after a dispatch the successful items leave the queue while
+          the failed / skipped ones must stay reachable. Home owns the primary
+          tray; once a document opens and Home unmounts, the same queue (same
+          model + handlers) is surfaced here so partial-failure rows persist. */}
+      {intakeItems.length > 0 && !showWelcomeEffective ? (
+        <div className="intake-persistent" data-intake-persistent>
+          <IntakeTray
+            items={intakeItems}
+            active={osDragActive}
+            onRemove={onIntakeRemove}
+            onMove={onIntakeMove}
+            onOpen={runIntake}
+          />
+        </div>
+      ) : null}
       <ExportDialog
         open={exportOpen}
         totalPages={

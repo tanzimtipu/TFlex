@@ -24252,7 +24252,7 @@ cursor: pointer;
 .intake-state {
   display: inline-flex;
   align-items: center;
-  height: 20px;
+  min-height: 20px;
   padding: 0 var(--sp-2);
   border: 1px solid var(--border);
   border-radius: var(--radius-pill);
@@ -24265,6 +24265,10 @@ cursor: pointer;
 .intake-state--ready,
 .intake-state--done {
   color: var(--success);
+}
+
+.intake-state--validating {
+  color: var(--fg-muted);
 }
 
 .intake-state--converting {
@@ -24298,6 +24302,53 @@ cursor: pointer;
   padding-left: 24px;
   color: var(--error);
   font-size: var(--fs-xs);
+}
+
+/* Ruling 12 — the ONE completion / dispatch control, right-aligned under the
+ * queue. It keeps the shared primary Button skin; only layout lives here. */
+.intake-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
+/* DEF-645 — the persisted queue surface. Home owns the primary tray; once a
+ * document opens and Home unmounts, the same Intake Tray (same model and
+ * handlers) is surfaced here so failed / skipped rows stay reachable through a
+ * partial failure. Fixed, bounded and scrollable so a long queue never covers
+ * the document; semantic tokens only. */
+.intake-persistent {
+  position: fixed;
+  left: var(--sp-4);
+  bottom: var(--sp-4);
+  z-index: 40;
+  width: min(420px, calc(100vw - 32px));
+  max-height: 45vh;
+  overflow-y: auto;
+  padding: var(--sp-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-panel);
+  background: var(--bg-elevated);
+  box-shadow: var(--isf-shadow);
+}
+
+/* ---- Reduced motion --------------------------------------------------- */
+/* The rows, drop indication and hover tint settle instantly when the user
+ * asks for less motion; nothing about the queue depends on the transition. */
+@media (prefers-reduced-motion: reduce) {
+  .intake-dropzone,
+  .intake-row {
+    transition: none;
+  }
+}
+
+/* ---- Narrow supported windows ---------------------------------------- */
+/* At a narrow window (or 200% scaling of a small window) the detected-type
+ * label is the first thing to go: the basename, state and every control stay
+ * reachable, and nothing is clipped. */
+@media (max-width: 480px) {
+  .intake-kind {
+    display: none;
+  }
 }
 
 /* ---- Forced colors / high contrast ----------------------------------- */

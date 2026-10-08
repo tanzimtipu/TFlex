@@ -12808,7 +12808,7 @@ disabled while a dispatch runs.
 Evidence: `test-fixtures/tfl1248-adversary/probe-intake-dispatch.mjs`,
 `test-fixtures/tfl1248-adversary/probe-intake-dispatch.log` (section D).
 
-Disposition: PENDING
+Disposition: ACCEPTED -> DEF-655 (CTO triage 2026-10-08, TFL-1230). The dispatch loop must not lose a queued file to a mid-flight Remove: snapshot the queue before iterating and skip ids no longer present in `list`, so a Remove affects only that row. In scope for Phase 118 (truthful intake). Fix in flight as TFL-1346.
 
 ## ADV-252: Two dispatches during one slow PDF open build the images PDF twice
 
@@ -12841,7 +12841,7 @@ at collection time and make `dispatch` reject or no-op a concurrent call.
 Evidence: `test-fixtures/tfl1248-adversary/probe-intake-dispatch.mjs`,
 `test-fixtures/tfl1248-adversary/probe-intake-dispatch.log` (section E).
 
-Disposition: PENDING
+Disposition: ACCEPTED -> DEF-656 (CTO triage 2026-10-08, TFL-1230). A second dispatch() during an in-flight open must no-op and image items must enter `converting` at collection time. The host already guards with `intakeRunningRef` (App.tsx:6407), so this is model-level defense-in-depth. In scope for Phase 118. Fix in flight as TFL-1346.
 
 ## Classes that held (Phase 118 intake model chunk B)
 
@@ -13027,6 +13027,182 @@ handle the service's TS parameter properties), no product source/test/ledger edi
 app's dev Electron launch requires `ELECTRON_RUN_AS_NODE` to be unset in this sandbox
 (inherited by `launch.cjs`); that is an environment condition, not a product defect.
 Findings left PENDING for CTO triage; spec, probe and log left uncommitted for git-agent.
+
+## ADV-255: A custom page range silently collapses duplicate pages, and the new consequence summary presents the collapsed set without saying so
+
+- Session: diff-pass
+- Suggested severity: LOW
+
+What I did: attacked the Phase 120 E acceptance text "no silent drop of duplicate
+pages" on the live Output Studio. Launched the real app via `e2e/lib/launch.cjs`,
+opened a copy of `test-fixtures/report.pdf` (34 pages), opened the standalone print
+window from the title-bar Print control, chose Custom range, and typed `1,1,3`. Read
+`[data-print-summary-pages]` and `[data-print-preview-meta]`. Then typed `3,1` and
+`3-1`. Repro: `test-fixtures/tfl1259-adversary/live_probe.cjs` (run 1,
+`selection-duplicates` / `selection-reordered` / `selection-reversed-error-attached`).
+
+Expected: per CTO ruling 6 and feature E ("established user order / duplicate-page
+semantics are preserved - duplicates are never silently dropped", "no silent drop of
+duplicate pages"), the surface should not silently collapse a repeated page.
+
+Actual: `1,1,3` resolves to pages `[1, 3]` and the summary reads "1, 3 of 34"
+(`Pages1, 3 of 34`); `3,1` also resolves to `[1, 3]`. Duplicates are collapsed and
+order is normalised ascending. Root cause is the pre-existing, unit-pinned
+`parsePageRanges` (`src/renderer/pdf/printSelection.ts:57,79,98` uses a `Set` then
+`sort`; `test/unit/renderer/printSelection.test.ts:22` asserts "sorts and
+de-duplicates overlapping entries"), so this is NOT a Phase 120 regression - but the
+phase's own `formatPageSet` doc comment states "Duplicates are preserved exactly as
+the real selection produced them"
+(`src/renderer/components/PrintPanel.tsx:113-115`), which is false at the selection
+level, and the new consequence summary surfaces the collapse to the user for the
+first time. The `3-1` reversed case is correctly rejected and the error stays attached
+to the field (`[data-print-range-error]` visible, input `aria-invalid="true"`).
+
+Evidence: `test-fixtures/tfl1259-adversary/live_probe_all.log`,
+`test-fixtures/tfl1259-adversary/live_probe_results.json`.
+
+Disposition: ACCEPTED -> DEF-650
+
+CTO triage (2026-10-08): the duplicate collapse itself is the pre-existing,
+unit-pinned shared `parsePageRanges` (`src/renderer/pdf/printSelection.ts:57,79,98`)
+that Phase 120 ruling 6 deliberately reuses ("page-range validation uses the shared
+range parser"), so the parser and its sort/dedupe are NOT changed. The real in-phase
+gap is the Phase 120 surface: the new `formatPageSet` doc comment falsely claims
+duplicates are preserved, and the new consequence summary presents a merged set
+without disclosing the merge. Filed as DEF-650; owner frontend-dev.
+
+## ADV-256: In the dark theme the preview "paper" shows dark letterbox bands - the page raster does not fill the white sheet, revealing the dark cell background
+
+- Session: diff-pass
+- Suggested severity: LOW
+
+What I did: opened the standalone print window on `report.pdf`, switched the print
+window to the dark theme, and measured the preview geometry. Repro:
+`test-fixtures/tfl1259-adversary/diag2.cjs`.
+
+Expected: ruling 5 / feature B / success criterion 6 - "a neutral preview stage with
+white paper that stays white in light and dark ... with no output-pixel tinting".
+
+Actual: the `.print-preview-sheet` background is `rgb(255, 255, 255)` in dark, but the
+sheet carries a fixed `aspect-ratio: 1 / 1.414` while the raster is the document's own
+page aspect; `object-fit: contain` letterboxes the raster inside
+`.print-preview-cell`, whose background is `var(--bg-base)` = `rgb(11, 13, 15)` in
+dark. The measured cell is 177x256 px and the `<img>` element 176x255 px, so the
+raster content is narrower/shorter than its box and ~13 px dark bands show at the top
+and bottom of the white sheet. In the light theme `--bg-base` is near-white so the
+bands are invisible, which is why qa's light capture looks clean. Cosmetic only: the
+composed print output is untouched (the printed bytes are white paper), and no output
+pixel is tinted. Root cause is the pre-existing
+`src/renderer/styles.css:13436-13445` cell background plus the fixed sheet aspect, but
+the Phase 120 preview stage re-claims the dark-white-paper contract, so it is in
+scope for this diff-pass.
+
+Evidence: `screenshots/adv-tfl1259-dark-wide.png` (dark, bands visible),
+`screenshots/phase120-output-studio-wide-light.png` (light, bands not visible),
+`test-fixtures/tfl1259-adversary/diag2.log` (geometry + computed colours).
+
+Disposition: ACCEPTED -> DEF-649 (duplicate of qa's DEF-649 from TFL-1258; same fix, in flight as TFL-1297)
+
+CTO triage (2026-10-08): independent confirmation of qa's dark-theme letterbox
+finding with added geometry (fixed sheet aspect + `object-fit: contain` over a
+`var(--bg-base)` cell). No separate defect filed; TFL-1297 (paper-white preview
+cell) resolves it and qa's phase-close retest closes DEF-649.
+
+## Classes that held (Phase 120 E diff-pass - TFL-1259)
+
+Scope attacked: `src/renderer/print-window/PrintWindowApp.tsx`,
+`src/renderer/components/PrintPanel.tsx`, `src/renderer/styles.css` (print sections),
+and the print execution path they drive. All attacks run on the real app launched
+through `e2e/lib/launch.cjs`; the phase-120 `usePrintControls` / `printSettings` /
+`services/print.ts` / `print-window.ts` are unchanged by the diff (verified with
+`git diff --stat HEAD`). Evidence: `test-fixtures/tfl1259-adversary/live_probe_all.log`,
+`.../live_probe_results.json`, `.../diag.cjs`, `.../diag2.cjs`, `.../diag3.cjs`.
+
+- **No control lost or hidden-only at the compact width - HOLDS (live).** At 560x860
+  (`data-print-layout-mode="compact"`) every advanced group (`quality`, `booklet`,
+  `poster`) is collapsed but expands on its `<summary>` and every control is
+  functional: duplex/colour, booklet gutter/creep/subset, poster rows/cols/overlap/
+  scale/cut-marks all committed and read back. Closed `<details>` content is genuinely
+  not visible (Playwright `isVisible` false; the details box grows from ~55 px closed
+  to ~116 px open), so the collapse is real, not an artifact of the jsdom unit test.
+- **Silence sweep - HOLDS (live).** presets name/save/apply/delete, printer, copies/
+  collate gating, range all/current/custom + input, scaling fit/actual/shrink/custom +
+  percent gating, orientation, N-up, page order (enabled only once N-up > 1), odd/even,
+  reverse and Include annotations each produced an observable state change; no
+  actionable control was inert.
+- **Selection semantics - HOLDS except the duplicate note above (live).** `3-1`
+  rejected with the error attached to the range field (`aria-invalid="true"`), a page
+  beyond the real count (`1,999` on 34 pages) rejected with Print disabled, and
+  odd/even + reverse combined resolves to `2, 4, 6` (reverse applied after the filter,
+  the established order). See ADV-255 for the duplicate-page wording.
+- **Completion honesty - HOLDS (live + source/unit).** Through the REAL virtual-PDF
+  pipeline (only the native Save-As picker stubbed, since it cannot be automated) the
+  success copy is "Saved to <path>", the file exists and starts with `%PDF-`
+  (372,896 bytes); cancelling the Save-As leaves no success banner, no error banner and
+  no file. The real-printer copy ("Sent N pages to <printer>.") is spool acceptance,
+  pinned by `test/unit/renderer/phase120_outputStates.test.tsx:208`; I did NOT send a
+  job to the operator's physical Canon printer, so that branch is source+unit verified,
+  not live. A timeout surfaces the typed error, never a success claim.
+- **Cancellation integrity - HOLDS (live).** Cancelling a 34-page run mid-raster leaves
+  no error/success banner, the progress strip clears, the source document stays open
+  and unmodified (SHA-256 unchanged) and the print window remains usable.
+- **Failure recovery - HOLDS (live).** A real write failure (Save-As pointed at
+  `Z:\no-such-drive\...`) shows "Could not write the PDF to the selected location.",
+  retains the settings (copies stayed 2) and leaves the Print action enabled as the
+  retry path.
+- **Document mutation / pixel recolor - HOLDS (live).** Configuring scaling, custom
+  percent, orientation, greyscale, annotations off and Booklet left the opened copy's
+  SHA-256 identical (`9b39af69...` before and after); the preview image is a
+  `data:image/...` canvas raster, not the document bytes.
+- **Single source / no parallel subsystem - HOLDS (live + source).** Exactly one
+  `.print-body`, `.print-controls`, `[data-print-confirm]`, `[data-print-printer]` and
+  `[data-print-summary]` in the window; the compact layout is the same DOM/handlers
+  switched by `data-print-layout-mode`. No second state store.
+- **Async hostile sequence - HOLDS (live).** Starting a print, resizing the window
+  compact<->wide mid-run and hammering the primary action 4x while running produced
+  exactly ONE Save-As call (`saveCalls=1`, DEF-272 `inFlightRef` guard), one persisted
+  PDF, and left the source document open.
+- **Sibling non-overlap - HOLDS (live + source).** The phase diff touches only the
+  three print files; the Export dialog still exposes png/jpeg/tiff, its range control
+  and its confirm action. Forms / Comments / Stamp surfaces are untouched by the diff.
+- **Dark theme, minimum width - HOLDS except ADV-256 (live).** Paper background stays
+  `rgb(255,255,255)`; at the 480 px minimum window the layout is compact with zero
+  horizontal overflow, the sticky header and the pinned footer (summary + Close/Print)
+  stay inside the viewport.
+
+## Design critique: Phase 120 Output Studio print window (TFL-1259)
+
+User: a person who has a document open in Jovrel and wants a physical print or a PDF
+copy. Job: pick the destination and page scope, understand what will come out, and run
+it. Success: the job lands where they expect with the settings they chose.
+
+### Should-fix (before broader rollout)
+- **Copy / honesty:** the consequence summary labels the page set ("Pages 1-34 of 34")
+  but never the print ORDER, so with Reverse on (or odd/even + reverse) the summary
+  reads identically to the forward run. **Try:** when the resolved order differs from
+  ascending, append the direction (e.g. "1-34, reversed") so the summary describes the
+  job, not just the set. (Same code path as ADV-255.)
+
+### Nice-to-fix (when there's room)
+- **States:** the dark-theme preview shows dark letterbox bands around the white page
+  (ADV-256). **Try:** give `.print-preview-cell` the same paper-white background as the
+  sheet, or size the sheet from the real page aspect, so the paper reads uniformly
+  white in every theme.
+- **Hierarchy:** in the compact layout the "Destination" and "Pages" groups dominate the
+  first screen while "Layout"/"Appearance" sit below the fold; the primary action is
+  pinned, so this is acceptable, but the group order could lead with "Pages" (the most
+  common tweak) before "Destination".
+
+### Strengths to keep
+- Two-column settings|preview when wide, one-column stacked when narrow, switched by ONE
+  declared logical-pixel breakpoint - no per-call-site media query, no second subsystem.
+- Grouped settings use native `<fieldset>/<legend>` and `<details>/<summary>`, so the
+  advanced groups collapse but every control stays reachable and keyboard-operable.
+- The pre-execution consequence summary (pages / destination / format) is derived from
+  the real hook state and states the real operation; the failure strip keeps the
+  settings and names the one retry path.
+- The preview renders the real geometry and page rasters, and the paper stays white in
+  light and dark; disabled states and the Escape/cancel contract are coherent.
 
 ## ADV-257: The completed conversion's Open (open-result) and View details actions are silent no-ops
 
@@ -13223,3 +13399,79 @@ what happened, and - when offered - act on the result without leaving the docume
   failure content is announced assertively (`role="alert"`) with the explicit failed-item
   list for partial success.
 
+## ADV-260: A dropped OS file's resolved on-disk path is thrown away, so its PDF route can only open by bare basename
+
+- Session: diff-pass (unassigned heartbeat; Phase 118 intake - landed chunks C/D wiring, uncommitted, TFL-1248 / parent TFL-1230)
+- Suggested severity: MEDIUM (latent - `dispatch` is not yet wired to a host operation; becomes HIGH if chunk F routes `openPdf` straight to the shared open path)
+
+What I did: drove the SHIPPED drop pipeline with a simulated but faithful preload
+(`webUtils.getPathForFile` as exposed at `src/preload/preload.ts:876-881`) and the
+SHIPPED `resolveDroppedPath` + `createIntakeModel().dispatch`. Plain-Node probe (Node
+type-stripping), no vitest/build/e2e:
+`node test-fixtures/tfl1248-adversary/probe-intake-drop-path.mjs`.
+
+Expected: a file dropped from Explorer keeps its absolute on-disk path from the point
+the drop hook resolves it through to the open operation, so the right file opens
+(attack surface "OS drop routing"; goal "drag-drop and import behave as one consistent,
+truthful surface").
+
+Actual: `useOsFileDrop` resolves the dropped `File` to an absolute path ONLY to test it
+is not null, then discards the result and hands the bare `File` on
+(`useOsIntegration.ts:150-159`: `if (resolveDroppedPath(file) === null) {...continue;}
+resolvable.push(file); ... onIntake(resolvable);`). App stores that `File` verbatim
+(`App.tsx:2821-2824`: `addMany(files.map((file) => ({ pathOrFile: file })))`), and the
+model opens a `File` payload by `file.name` (`model.ts:137-141`, `openPathFor`). The
+resolved absolute path is unrecoverable by then: `IntakeDispatchCallbacks.openPdf`
+receives a `string`, never the `File`, so no later resolver can re-derive it. Probe
+output:
+```
+=== F: dropped OS PDF - is the resolved on-disk path carried to dispatch? ===
+  resolveDroppedPath(file) = "C:\\Users\\me\\Documents\\report.pdf"
+  file.name               = "report.pdf"
+  dispatch openPdf(path)  = "report.pdf"
+  VERDICT: PATH LOST - opened by bare basename
+=== F2: picked-path PDF (Open dialog route) for contrast ===
+  dispatch openPdf(path)  = "C:\\Users\\me\\Documents\\picked.pdf" (full path kept)
+```
+A same-named file in the process working directory - or, on a host that treats a bare
+name as relative, any name-collision - would be the file `openPdf` is asked for, not the
+one the user dropped. The contrast shows the picked-path route (Open dialog) keeps the
+full path; only the drop route loses it.
+
+Evidence: `test-fixtures/tfl1248-adversary/probe-intake-drop-path.mjs`,
+`test-fixtures/tfl1248-adversary/probe-intake-drop-path.log`.
+
+Disposition: ACCEPTED -> DEF-657 (CTO triage 2026-10-08, TFL-1230). A dropped file's resolved absolute path must survive from the drop hook to dispatch; the drop route must not open by bare basename. HIGH because the drop route is now wired to the shared open path. In scope for Phase 118. Fix in flight as TFL-1346.
+
+## Classes that held (Phase 118 landed intake wiring - TFL-1248)
+
+Scope: the now-landed Phase 118 chunks (B model + Tray, C drop routing, D Home/Open,
+E Create-from-images) as they sit in the working tree. This supersedes the earlier
+"chunks C-F are unwritten" note under ADV-251/252: the host wiring now exists and was
+re-checked. No vitest/build/e2e was run (build mutex not acquired); this is source
+review plus two plain-Node probes against shipped modules.
+
+- **ADV-251 and ADV-252 still reproduce unchanged** against the current
+  `src/renderer/intake/model.ts` (`node test-fixtures/tfl1248-adversary/probe-intake-dispatch.mjs`;
+  sections D and E). The model was not touched by chunks C/D/E, so both remain live
+  latent model defects pending a host `dispatch`.
+- **No extension-only trust / no bogus "Ready" - HOLDS.** `add` still yields
+  `validating` + `kind:"unknown"`; nothing in the landed wiring classifies from a
+  filename. `isPdfFile` (`useOsIntegration.ts:47-50`) does extension sniffing but has no
+  caller (dead, not a live trust path).
+- **One intake subsystem, not two - HOLDS (structural).** `src/renderer/intake/model.ts`
+  is the single model; App (`App.tsx:2811-2813`) and `CreateFromImagesDialog`
+  (`CreateFromImagesDialog.tsx:215-218`) each construct it through the same factory, and
+  `IntakeTray` owns no state. No second queue/duplicate store was found.
+- **remove is queue-only - HOLDS.** `remove` splices and returns; no IO, no delete.
+- **No dead control for an unsupported operation - structurally HOLDS** (the Tray only
+  renders move/remove; there is no insert-into-document control to be dead).
+- **No document mutation / dirty flag / network from intake - HOLDS.** The model and
+  Tray import nothing that performs IO/network/print.
+- **Gating fact (not a defect): the model's `dispatch` is wired to NO host operation
+  yet.** Across `src/` the only `classify`/`add` caller is the dialog and the only
+  `dispatch` caller is tests - App never calls `classify` or `dispatch`, so Home/Open/
+  drop items stay `validating` and nothing opens. This is the pending chunk F
+  ("Intake async states, partial failure, a11y and adaptation") work the unblock
+  descriptor names, so it is recorded here as scope-gating, not filed as a finding.
+  ADV-260 is the one landed-wiring hazard F must not inherit while filling this gap.
