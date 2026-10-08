@@ -44,6 +44,9 @@ export interface FormSnapshotEntry {
 /** /Ff bit 1 — the ReadOnly flag (PDF 32000-1 Table 227). */
 const READONLY_FLAG = 1;
 
+/** /Ff bit 2 - the Required flag (PDF 32000-1 Table 227). */
+const REQUIRED_FLAG = 2;
+
 /** Number of widget annotations a field carries. A button field with more
  *  than one widget is an option GROUP (radio-like), not a single check box. */
 export function formFieldWidgetCount(field: PDFField): number {
@@ -671,6 +674,13 @@ export function getFormFields(pdfDoc: PDFDocument): FormField[] {
     }
     if (formFieldReadOnly(field)) {
       formField.readOnly = true;
+    }
+    if ((field.acroField.getFlags() & REQUIRED_FLAG) !== 0) {
+      formField.required = true;
+    }
+    const tooltip = decodeTextObject(field.acroField.dict.get(PDFName.of('TU')));
+    if (tooltip !== '') {
+      formField.tooltip = tooltip;
     }
     if (field instanceof PDFButton) {
       formField.pushButton = true;

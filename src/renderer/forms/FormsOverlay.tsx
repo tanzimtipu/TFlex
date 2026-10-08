@@ -18,20 +18,18 @@
 // cssScale to size them on screen. Click-outside blurs an editor without
 // dispatching a fillFormField (the debounce in App handles that).
 
-import { useEffect, useMemo, useRef, type ReactElement } from "react";
+import { useMemo, type ReactElement } from "react";
 import type { CSSProperties } from "react";
 import { Check, X } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { Icon } from "../icons/Icon";
-import { Button } from "../components/Button";
-import type {
-  FormField,
-  FormFieldOption,
-  FormFieldRect,
-  FormFieldWidget,
-  FormFillReport,
-} from "../../shared/types";
-import { fieldKindLabel, isFillableFieldKind, nonFillableFieldReason, reportStatusReason } from "./model";
+import type { FormField, FormFieldRect, FormFillReport } from "../../shared/types";
+import { isFillableFieldKind, nonFillableFieldReason, reportStatusReason } from "./model";
+import { FormFieldControl } from "./FormFieldControl";
+
+// Phase 59 item 4 — the truthful read-only reason now lives with the shared
+// value control and is re-exported here for existing importers.
+export { READ_ONLY_REASON } from "./FormFieldControl";
 
 interface FormsOverlayProps {
   page: number;
@@ -46,6 +44,12 @@ interface FormsOverlayProps {
   rotation?: number;
   pageWidthPt?: number;
   pageHeightPt?: number;
+  /** Phase 115 E - the field linked to the Guided Fill panel's focused row.
+   *  Its editor is highlighted with `data-form-focused`; no focus is moved. */
+  focusedFieldId?: string | null;
+  /** Phase 115 E - reports that a canvas editor gained focus. Never moves
+   *  focus; the host only records the id. */
+  onFieldFocus?: (id: string) => void;
 }
 
 // Minimum editor height so a 1-line text field doesn't collapse to a
@@ -63,9 +67,6 @@ const MARK_ICONS: Record<"check" | "close", LucideIcon> = {
   close: X,
 };
 
-// Phase 59 item 4 — the truthful reason shown on every non-editable control.
-export const READ_ONLY_REASON = "This field is read-only";
-
 export function FormsOverlay(props: FormsOverlayProps): ReactElement | null {
   const {
     page,
@@ -76,6 +77,8 @@ export function FormsOverlay(props: FormsOverlayProps): ReactElement | null {
     rotation = 0,
     pageWidthPt = 0,
     pageHeightPt = 0,
+    focusedFieldId = null,
+    onFieldFocus,
   } = props;
   const pageFields = useMemo(() => fields.filter((f) => f.page === page), [fields, page]);
   // Phase 65 item 4 (DEF-436) — PER-FIELD degenerate-rect fallback. The
@@ -133,6 +136,10 @@ export function FormsOverlay(props: FormsOverlayProps): ReactElement | null {
             cssScale={cssScale}
             onValueChange={onValueChange}
             onToggleListbox={onToggleListbox}
+            focused={field.id === focusedFieldId}
+            onFocus={
+              onFieldFocus === undefined ? undefined : (): void => onFieldFocus(field.id)
+            }
           />
         );
       })}
@@ -158,6 +165,10 @@ interface FieldEditorProps {
   cssScale: number;
   onValueChange: (id: string, value: string | string[]) => void;
   onToggleListbox: (id: string, option: string) => void;
+  /** Phase 115 E - true when this editor is the panel-linked field. */
+  focused?: boolean;
+  /** Phase 115 E - reports focus upward; never moves focus. */
+  onFocus?: () => void;
 }
 
 function FieldEditor(props: FieldEditorProps): ReactElement | null {
@@ -214,15 +225,60 @@ function FieldEditor(props: FieldEditorProps): ReactElement | null {
   }
   switch (field.kind) {
     case "text":
-      return <TextEditor field={field} cssScale={cssScale} onChange={onValueChange} />;
+      return (
+        <TextEditor
+          field={field}
+          cssScale={cssScale}
+          onChange={onValueChange}
+          onToggleListbox={onToggleListbox}
+          focused={props.focused}
+          onFocus={props.onFocus}
+        />
+      );
     case "checkbox":
-      return <CheckboxEditor field={field} cssScale={cssScale} onChange={onValueChange} />;
+      return (
+        <CheckboxEditor
+          field={field}
+          cssScale={cssScale}
+          onChange={onValueChange}
+          onToggleListbox={onToggleListbox}
+          focused={props.focused}
+          onFocus={props.onFocus}
+        />
+      );
     case "radio":
-      return <RadioEditor field={field} cssScale={cssScale} onChange={onValueChange} />;
+      return (
+        <RadioEditor
+          field={field}
+          cssScale={cssScale}
+          onChange={onValueChange}
+          onToggleListbox={onToggleListbox}
+          focused={props.focused}
+          onFocus={props.onFocus}
+        />
+      );
     case "dropdown":
-      return <DropdownEditor field={field} cssScale={cssScale} onChange={onValueChange} />;
+      return (
+        <DropdownEditor
+          field={field}
+          cssScale={cssScale}
+          onChange={onValueChange}
+          onToggleListbox={onToggleListbox}
+          focused={props.focused}
+          onFocus={props.onFocus}
+        />
+      );
     case "listbox":
-      return <ListboxEditor field={field} cssScale={cssScale} onToggle={onToggleListbox} />;
+      return (
+        <ListboxEditor
+          field={field}
+          cssScale={cssScale}
+          onChange={onValueChange}
+          onToggleListbox={onToggleListbox}
+          focused={props.focused}
+          onFocus={props.onFocus}
+        />
+      );
   }
 }
 
@@ -256,80 +312,43 @@ function NonFillableView({
   );
 }
 
-// ---- Text editor ---------------------------------------------------------
+// ---- Shared editor props -------------------------------------------------
 
-function TextEditor({
-  field,
-  cssScale,
-  onChange,
-}: {
+/** The callbacks and scale every per-kind editor forwards to the shared
+ *  `FormFieldControl`. */
+interface EditorProps {
   field: FormField;
   cssScale: number;
   onChange: (id: string, value: string | string[]) => void;
-}): ReactElement {
-  const ref = useRef<HTMLTextAreaElement | HTMLInputElement | null>(null);
-  // Keep the DOM focused text in sync with the reducer. We don't want to
-  // trample the user's caret position, so only push external value
-  // changes (e.g. from the engine echoing back after a debounce flush).
-  useEffect(() => {
-    const el = ref.current;
-    if (el === null) return;
-    if (el.value !== field.value) {
-      el.value = String(field.value);
-    }
-  }, [field.value]);
-  const style = editorStyle(field.rect, cssScale);
+  onToggleListbox: (id: string, option: string) => void;
+  /** Phase 115 E - highlight hook + focus report, forwarded to the shared
+   *  control. Neither moves focus. */
+  focused?: boolean;
+  onFocus?: () => void;
+}
+
+// ---- Text editor ---------------------------------------------------------
+
+function TextEditor(props: EditorProps): ReactElement {
+  const { field, cssScale } = props;
   const multiline = field.rect.height >= 24;
-  const value = String(field.value);
-  const readOnly = field.readOnly === true;
-  if (multiline) {
-    return (
-      <textarea
-        ref={ref as React.Ref<HTMLTextAreaElement>}
-        className="form-editor form-textarea"
-        data-form-field={field.id}
-        data-form-kind="text"
-        data-form-readonly={readOnly ? "true" : undefined}
-        aria-label={fieldKindLabel(field.kind)}
-        title={readOnly ? READ_ONLY_REASON : undefined}
-        disabled={readOnly}
-        defaultValue={value}
-        onChange={(e): void => onChange(field.id, e.target.value)}
-        style={style}
-        rows={2}
-      />
-    );
-  }
   return (
-    <input
-      ref={ref as React.Ref<HTMLInputElement>}
-      type="text"
-      className="form-editor form-input"
-      data-form-field={field.id}
-      data-form-kind="text"
-      data-form-readonly={readOnly ? "true" : undefined}
-      aria-label={fieldKindLabel(field.kind)}
-      title={readOnly ? READ_ONLY_REASON : undefined}
-      disabled={readOnly}
-      defaultValue={value}
-      onChange={(e): void => onChange(field.id, e.target.value)}
-      style={style}
+    <FormFieldControl
+      field={field}
+      onChange={props.onChange}
+      onToggleListbox={props.onToggleListbox}
+      data-form-focused={props.focused === true ? "true" : undefined}
+      onFocus={props.onFocus}
+      className={multiline ? "form-editor form-textarea" : "form-editor form-input"}
+      style={editorStyle(field.rect, cssScale)}
     />
   );
 }
 
 // ---- Checkbox ------------------------------------------------------------
 
-function CheckboxEditor({
-  field,
-  cssScale,
-  onChange,
-}: {
-  field: FormField;
-  cssScale: number;
-  onChange: (id: string, value: string | string[]) => void;
-}): ReactElement {
-  const checked = field.value === "true" || (Array.isArray(field.value) === false && field.value === "Yes");
+function CheckboxEditor(props: EditorProps): ReactElement {
+  const { field, cssScale } = props;
   const box = CHECKBOX_BOX_PT;
   const wrap: CSSProperties = {
     position: "absolute",
@@ -339,63 +358,32 @@ function CheckboxEditor({
     height: box * cssScale,
   };
   return (
-    <Button
-      intent="secondary"
-      kind="toggle"
-      density="compact"
-      className={checked ? "form-checkbox form-checkbox-checked" : "form-checkbox"}
-      data-form-field={field.id}
-      data-form-kind="checkbox"
-      data-form-readonly={field.readOnly === true ? "true" : undefined}
-      aria-label={fieldKindLabel(field.kind)}
-      aria-pressed={checked}
-      title={field.readOnly === true ? READ_ONLY_REASON : undefined}
-      disabled={field.readOnly === true}
-      onClick={(): void => onChange(field.id, checked ? "false" : "true")}
+    <FormFieldControl
+      field={field}
+      onChange={props.onChange}
+      onToggleListbox={props.onToggleListbox}
+      data-form-focused={props.focused === true ? "true" : undefined}
+      onFocus={props.onFocus}
+      className="form-checkbox"
       style={wrap}
-    >
-      {/* The tick must scale with the rendered field. `.form-checkbox svg`
-          sizes the glyph to 70% of this `box * cssScale` button, so the `xs`
-          token is only the attribute-level base and CSS tracks page zoom. */}
-      {checked && <Icon icon={MARK_ICONS.check} size="xs" variant="bold" />}
-    </Button>
+    />
   );
 }
 
 // ---- Radio ---------------------------------------------------------------
 
-function RadioEditor({
-  field,
-  cssScale,
-  onChange,
-}: {
-  field: FormField;
-  cssScale: number;
-  onChange: (id: string, value: string | string[]) => void;
-}): ReactElement {
-  // Phase 59 item 4 — a multi-widget button group ships one entry per widget
-  // position. Render one control per widget at its own rect (the group may
-  // have 6 options spread across 24 widget boxes), each showing its own
-  // on-state value. Single-control groups without per-widget data keep the
-  // options-based layout below.
+function RadioEditor(props: EditorProps): ReactElement {
+  const { field, cssScale } = props;
+  // A multi-widget button group ships one entry per widget position; its
+  // controls are placed per widget (see WidgetRadioEditor). Single-control
+  // groups without per-widget data use the options layout below.
   const widgets = field.widgets;
   if (widgets !== undefined && widgets.length > 1) {
-    return (
-      <WidgetRadioEditor
-        field={field}
-        widgets={widgets}
-        cssScale={cssScale}
-        onChange={onChange}
-      />
-    );
+    return <WidgetRadioEditor {...props} />;
   }
-  const options: FormFieldOption[] = field.options ?? [];
-  const current = String(field.value);
-  // Lay radio options out horizontally when the rect is wide enough for
-  // a single row, otherwise stack vertically (the AcroForm author
-  // controls whether a radio group is laid out in a column or a row by
-  // drawing the rects of the individual buttons — but here we use the
-  // enclosing field rect as the bounding box).
+  // Lay radio options out horizontally when the rect is wide enough for a
+  // single row, otherwise stack vertically (the enclosing field rect is the
+  // bounding box).
   const horizontal = field.rect.width >= 80;
   const wrap: CSSProperties = {
     position: "absolute",
@@ -410,49 +398,15 @@ function RadioEditor({
     alignItems: horizontal ? "center" : "flex-start",
   };
   return (
-    <div
+    <FormFieldControl
+      field={field}
+      onChange={props.onChange}
+      onToggleListbox={props.onToggleListbox}
+      data-form-focused={props.focused === true ? "true" : undefined}
+      onFocus={props.onFocus}
       className="form-radio-group"
-      data-form-field={field.id}
-      data-form-kind="radio"
-      aria-label={fieldKindLabel(field.kind)}
       style={wrap}
-    >
-      {options.map((opt) => {
-        const selected = opt.value === current;
-        const dotSize = RADIO_DOT_PT * cssScale;
-        return (
-          <Button
-            key={opt.value}
-            intent="secondary"
-            kind="exclusive-selection"
-            density="compact"
-            className={selected ? "form-radio form-radio-checked" : "form-radio"}
-            data-form-option={opt.value}
-            data-form-readonly={field.readOnly === true ? "true" : undefined}
-            title={field.readOnly === true ? READ_ONLY_REASON : undefined}
-            disabled={field.readOnly === true}
-            onClick={(): void => onChange(field.id, opt.value)}
-          >
-            <span
-              className="form-radio-dot"
-              style={{ width: dotSize, height: dotSize }}
-              aria-hidden
-            >
-              {selected && (
-                <span
-                  className="form-radio-dot-inner"
-                  style={{
-                    width: dotSize * 0.45,
-                    height: dotSize * 0.45,
-                  }}
-                />
-              )}
-            </span>
-            <span className="form-radio-label">{opt.label}</span>
-          </Button>
-        );
-      })}
-    </div>
+    />
   );
 }
 
@@ -464,164 +418,56 @@ function RadioEditor({
  *  others), so exactly one control reads selected. `widgets[].selected` is
  *  the engine's authoritative mark; the live field value takes precedence
  *  while the optimistic local edit is in flight. */
-function WidgetRadioEditor({
-  field,
-  widgets,
-  cssScale,
-  onChange,
-}: {
-  field: FormField;
-  widgets: FormFieldWidget[];
-  cssScale: number;
-  onChange: (id: string, value: string | string[]) => void;
-}): ReactElement {
-  const current = String(Array.isArray(field.value) ? field.value[0] ?? "" : field.value);
-  const readOnly = field.readOnly === true;
-  const dotSize = RADIO_DOT_PT * cssScale;
+function WidgetRadioEditor(props: EditorProps): ReactElement {
+  const { field, cssScale } = props;
+  // The injected absolute style doubles as the pixel-scale source for the
+  // per-widget controls FormFieldControl places.
   return (
-    <>
-      {widgets.map((widget, index) => {
-        const selected =
-          current !== "" ? widget.value === current : widget.selected === true;
-        const style: CSSProperties = {
-          position: "absolute",
-          left: widget.rect.x * cssScale,
-          top: widget.rect.y * cssScale,
-          width: Math.max(widget.rect.width * cssScale, dotSize),
-          minHeight: Math.max(widget.rect.height * cssScale, dotSize),
-        };
-        return (
-          <Button
-            key={`${widget.value}-${index}`}
-            intent="secondary"
-            kind="exclusive-selection"
-            density="compact"
-            className={
-              selected
-                ? "form-radio form-radio-widget form-radio-checked"
-                : "form-radio form-radio-widget"
-            }
-            data-form-field={field.id}
-            data-form-kind="radio"
-            data-form-widget={index}
-            data-form-widget-value={widget.value}
-            data-form-readonly={readOnly ? "true" : undefined}
-            aria-label={widget.value}
-            aria-pressed={selected}
-            title={readOnly ? READ_ONLY_REASON : widget.value}
-            disabled={readOnly}
-            onClick={(): void => onChange(field.id, widget.value)}
-            style={style}
-          >
-            <span
-              className="form-radio-dot"
-              style={{ width: dotSize, height: dotSize }}
-              aria-hidden
-            >
-              {selected && (
-                <span
-                  className="form-radio-dot-inner"
-                  style={{ width: dotSize * 0.45, height: dotSize * 0.45 }}
-                />
-              )}
-            </span>
-            <span className="form-radio-label">{widget.value}</span>
-          </Button>
-        );
-      })}
-    </>
+    <FormFieldControl
+      field={field}
+      onChange={props.onChange}
+      onToggleListbox={props.onToggleListbox}
+      data-form-focused={props.focused === true ? "true" : undefined}
+      onFocus={props.onFocus}
+      style={editorStyle(field.rect, cssScale)}
+    />
   );
 }
 
 // ---- Dropdown ------------------------------------------------------------
 
-function DropdownEditor({
-  field,
-  cssScale,
-  onChange,
-}: {
-  field: FormField;
-  cssScale: number;
-  onChange: (id: string, value: string | string[]) => void;
-}): ReactElement {
-  const options: FormFieldOption[] = field.options ?? [];
-  const style = editorStyle(field.rect, cssScale);
-  const readOnly = field.readOnly === true;
+function DropdownEditor(props: EditorProps): ReactElement {
   return (
-    <select
+    <FormFieldControl
+      field={props.field}
+      onChange={props.onChange}
+      onToggleListbox={props.onToggleListbox}
+      data-form-focused={props.focused === true ? "true" : undefined}
+      onFocus={props.onFocus}
       className="form-editor form-select"
-      data-form-field={field.id}
-      data-form-kind="dropdown"
-      data-form-readonly={readOnly ? "true" : undefined}
-      aria-label={fieldKindLabel(field.kind)}
-      title={readOnly ? READ_ONLY_REASON : undefined}
-      disabled={readOnly}
-      value={String(field.value)}
-      onChange={(e): void => onChange(field.id, e.target.value)}
-      style={style}
-    >
-      <option value="">— select —</option>
-      {options.map((opt) => (
-        <option key={opt.value} value={opt.value}>
-          {opt.label}
-        </option>
-      ))}
-    </select>
+      style={editorStyle(props.field.rect, props.cssScale)}
+    />
   );
 }
 
 // ---- Listbox -------------------------------------------------------------
 
-function ListboxEditor({
-  field,
-  cssScale,
-  onToggle,
-}: {
-  field: FormField;
-  cssScale: number;
-  onToggle: (id: string, option: string) => void;
-}): ReactElement {
-  const options: FormFieldOption[] = field.options ?? [];
-  const selected = Array.isArray(field.value) ? field.value : [];
-  const readOnly = field.readOnly === true;
+function ListboxEditor(props: EditorProps): ReactElement {
   const style: CSSProperties = {
-    ...editorStyle(field.rect, cssScale),
+    ...editorStyle(props.field.rect, props.cssScale),
     overflowY: "auto",
     padding: "2px 4px",
   };
   return (
-    <ul
+    <FormFieldControl
+      field={props.field}
+      onChange={props.onChange}
+      onToggleListbox={props.onToggleListbox}
+      data-form-focused={props.focused === true ? "true" : undefined}
+      onFocus={props.onFocus}
       className="form-editor form-listbox"
-      data-form-field={field.id}
-      data-form-kind="listbox"
-      data-form-readonly={readOnly ? "true" : undefined}
-      aria-label={fieldKindLabel(field.kind)}
-      aria-multiselectable={field.multi === true ? "true" : undefined}
-      title={readOnly ? READ_ONLY_REASON : undefined}
       style={style}
-    >
-      {options.map((opt) => {
-        const on = selected.includes(opt.value);
-        return (
-          <li key={opt.value}>
-            <Button
-              intent="secondary"
-              kind="toggle"
-              density="compact"
-              className={on ? "form-listbox-row form-listbox-row-on" : "form-listbox-row"}
-              data-form-option={opt.value}
-              disabled={readOnly}
-              onClick={(): void => onToggle(field.id, opt.value)}
-            >
-              <span className="form-listbox-tick" aria-hidden>
-                {on ? "\u2713" : ""}
-              </span>
-              <span className="form-listbox-label">{opt.label}</span>
-            </Button>
-          </li>
-        );
-      })}
-    </ul>
+    />
   );
 }
 

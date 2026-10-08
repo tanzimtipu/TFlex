@@ -943,6 +943,12 @@ export interface AnnModel {
    *  the round-trip sentinel on /Contents both read this. See
    *  `AnnTextStyle`. */
   style?: AnnTextStyle;
+  /** Phase 116 - the annotation dict's real /T text; present only when the
+   *  document provides a non-empty value. */
+  author?: string;
+  /** Phase 116 - the annotation dict's real /M date string, verbatim; present
+   *  only when non-empty. */
+  modifiedAt?: string;
 }
 
 /** Payload the renderer sends over IPC for createAnnotation. Matches the
@@ -1089,6 +1095,10 @@ export interface FormField {
    *  canvas-paints a push button under AnnotationMode.ENABLE_FORMS, so the renderer suppresses its
    *  overlay editor. Absent for every other field. */
   pushButton?: boolean;
+  /** Phase 115 - true only when the AcroForm field's /Ff Required flag (bit position 2) is set. Absent otherwise. */
+  required?: boolean;
+  /** Phase 115 - the field's real /TU tooltip text; present only when the document provides a non-empty one. */
+  tooltip?: string;
 }
 
 /** Phase 59 item 4 — one widget position of a multi-widget button GROUP

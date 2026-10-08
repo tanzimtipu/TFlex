@@ -64,7 +64,7 @@ import {
   inspectorTextPanelForSelection,
   resolveInspectorPageSize,
 } from "./components/Inspector";
-import type { InspectorExportRequest, InspectorTextSelection } from "./components/Inspector";
+import type { InspectorEditGeometry, InspectorExportRequest, InspectorTextSelection } from "./components/Inspector";
 import { AboutDialog } from "./components/AboutDialog";
 import { AccountsDialog } from "./components/AccountsDialog";
 import { AccountMenu } from "./components/AccountMenu";
@@ -349,6 +349,7 @@ import { BlankPagesDialog } from "./components/BlankPagesDialog";
 import { CloseTabPromptDialog, type CloseTabPromptChoice } from "./components/CloseTabPromptDialog";
 import { SignatureManagerModal } from "./signatures/SignatureManagerModal";
 import { FlattenConfirmDialog } from "./forms/FlattenConfirmDialog";
+import { GuidedFillPanel } from "./forms/GuidedFillPanel";
 import {
   OcrDialog,
   type OcrDialogConfirm,
@@ -379,6 +380,7 @@ import {
   type EditAction,
   type EditState,
   type EditTextStyle,
+  type ImagePlacement,
 } from "./edit/model";
 import {
   defaultImageDecoder,
@@ -899,6 +901,12 @@ export function App(): ReactElement {
   // Phase 4 — signature manager modal + flatten confirm
   const [sigModalOpen, setSigModalOpen] = useState(false);
   const [flattenOpen, setFlattenOpen] = useState(false);
+  const [formsPanelOpen, setFormsPanelOpen] = useState(false);
+  // Phase 115 E — the field whose control has focus, shared between the Guided
+  // Fill panel and the canvas so each highlights the other. HIGHLIGHT ONLY:
+  // nothing here moves DOM focus, so focus can never cycle.
+  const [formFocusFieldId, setFormFocusFieldId] = useState<string | null>(null);
+  const formPanelReturnFocusRef = useRef<HTMLElement | null>(null);
   // Phase 36 (chunk 6) — the LIVE text-object selection published by the
   // active DocumentView (the edit model's selected box, or the text-run
   // target the panel edits). The Inspector's EDIT/text section reads it;
@@ -906,6 +914,12 @@ export function App(): ReactElement {
   // this merely mirrors the snapshot it hands up.
   const [inspectorTextSelection, setInspectorTextSelection] =
     useState<InspectorTextSelection | null>(null);
+  // Phase 116 (TFL-1228) — the selected REVIEW annotation's REAL id (ANY
+  // kind), published by the active DocumentView on a dedicated seam. The text
+  // kinds also publish a text snapshot; the shape kinds publish ONLY here, so
+  // this is the Inspector's source for them. Mirrors the text selection: the
+  // view owns it, this merely holds what it hands up.
+  const [inspectorAnnotationId, setInspectorAnnotationId] = useState<string | null>(null);
   // Phase 8 — Optimize + Audit Space dialogs. Optimistic state: the
   // dialogs themselves drive the engine IPC; the dialog result is
   // routed back into `openFromBytes` (optimize) or rendered directly
@@ -9156,10 +9170,14 @@ pushToast(
    *  and dropped so no row lingers. A closed tab — or a tab that no longer
    *  holds the operation's captured document — makes the action a truthful
    *  no-op, so the panel is never opened against the wrong tab.
-   *  TFL-1216 (chunk C5) — a conversion completes with its result already open
-   *  and its fidelity card attached to the document, so a conversion action
-   *  only acknowledges the notice; it never routes into another producer's UI
-   *  (the OCR suspects panel). */
+   *  DEF-652 — a conversion's declared `open-result` / `view-details` are REAL:
+   *  `open-result` activates the converted document's tab (the user lands on the
+   *  result); `view-details` does that AND reveals the document-attached
+   *  `ConversionNotice` (the fidelity / warnings card). Both address the
+   *  operation's CAPTURED document, never the active tab; a closed tab is a
+   *  truthful no-op, and the row is acknowledged afterwards so no row lingers.
+   *  Neither action ever routes into another producer's UI (the OCR suspects
+   *  panel). */
   const onActivityShelfAction = useCallback(
     (id: string, action: ActivityCompletionAction): void => {
       const op = activityShelf.operations.find((candidate) => candidate.id === id);
@@ -9802,6 +9820,8 @@ pushToast(
         armedSignatureId: string | null;
         onFormValueChange: (id: string, value: string | string[]) => void;
         onFormListboxToggle: (id: string, option: string) => void;
+        focusedFieldId: string | null;
+        onFieldFocus: (id: string) => void;
         onPlaceSignature: (signatureId: string, page: number, rect: SignaturePlacement["rect"]) => void;
         onMoveSignature: (placementId: string, rect: SignaturePlacement["rect"]) => void;
         onDeleteSignature: (placementId: string) => void;
@@ -9824,7 +9844,8 @@ pushToast(
         cached.formFields === formFields &&
         cached.signatures === signatures &&
         cached.savedSignatures === savedSignatures &&
-        cached.armedSignatureId === armedSignatureId
+        cached.armedSignatureId === armedSignatureId &&
+        cached.focusedFieldId === formFocusFieldId
       ) {
         return cached;
       }
@@ -9838,6 +9859,10 @@ pushToast(
         },
         onFormListboxToggle: (id: string, option: string): void => {
           onFormListboxToggle(tabId, id, option);
+        },
+        focusedFieldId: formFocusFieldId,
+        onFieldFocus: (id: string): void => {
+          setFormFocusFieldId(id);
         },
         onPlaceSignature: (signatureId: string, page: number, rect: SignaturePlacement["rect"]): void => {
           void placeSignatureFull(tabId, signatureId, page, rect);
@@ -9864,6 +9889,7 @@ pushToast(
     openTabs,
     savedSignatures,
     armedSignatureId,
+    formFocusFieldId,
     onFormValueChange,
     onFormListboxToggle,
     placeSignatureFull,
@@ -11408,17 +11434,74 @@ pushToast(
     text: inspectorTextSelection,
     signatureLabel: armedSignature === null ? null : armedSignature.label,
     page: Math.max(1, Math.floor(activeTab?.persisted.currentPage ?? 1)),
+    // Phase 116 (TFL-1228) — a selected shape annotation (ink / rect) has no
+    // text snapshot, but it still resolves to the `text` scope so the
+    // review-elements annotation panel renders for it.
+    annotationSelected: inspectorAnnotationId !== null,
   });
   const inspectorTextPanel = inspectorTextPanelForSelection(
     inspectorSelection,
     inspectorTextSelection,
   );
+  // Phase 117 (chunk D follow-up, TFL-1316) — the selected IMAGE's live
+  // page-point geometry for the Inspector's numeric row. The source is the
+  // SAME edit-state placement
+  // the overlay renders (`edit.state.selectedImage` -> `placements`), and
+  // `onChange` routes through the SAME `onCommitImageEdit` move / resize
+  // handler the image overlay's pointerup uses, so a numeric edit and a drag
+  // settle ONE identical engine op. Null when no image is selected (the
+  // Inspector then renders its truthful disabled row, or nothing at all).
+  //
+  // The active-tool guard (`tool === 'image'`) follows the overlay: the image
+  // placement + selection chrome renders only under the image tool, so a stale
+  // `selectedImage` left over after a tool switch must never mask the active
+  // text-box selection with a wrong-kind geometry row.
+  const activeEditHandlers =
+    editModeOpen && tabs.activeId !== null ? editHandlers(tabs.activeId) : null;
+  const activeSelectedImagePlacement: ImagePlacement | null = ((): ImagePlacement | null => {
+    const state = activeEditHandlers?.state;
+    if (state === undefined || state.tool !== 'image') return null;
+    const selected = state.selectedImage ?? null;
+    if (selected === null) return null;
+    return state.placements.find((p) => p.id === selected.id) ?? null;
+  })();
+  const inspectorEditGeometry: InspectorEditGeometry | null =
+    activeSelectedImagePlacement === null
+      ? null
+      : {
+          kind: 'image',
+          rect: activeSelectedImagePlacement.rect,
+          onChange: (next): void => {
+            const handlers = activeEditHandlers;
+            if (handlers === null) return;
+            const placement = activeSelectedImagePlacement;
+            const oldRect = { ...placement.rect };
+            handlers.onAction({
+              type: 'set-image-rect',
+              id: placement.id,
+              rect: next,
+            });
+            handlers.onCommitImageEdit({
+              op: next.x !== oldRect.x || next.y !== oldRect.y ? 'move' : 'resize',
+              oldRect,
+              newRect: next,
+              bytes: placement.bytes,
+              format: placement.format,
+              id: placement.id,
+              page: placement.page,
+            });
+          },
+        };
   // Multi Mode's shared Inspector follows the FOCUSED pane (Phase 36 chunk 7):
   // entering the mode withdraws a single-mode selection, and a focus switch
   // withdraws the previous pane's, so the panel never shows a background
   // pane's object. The newly focused pane re-publishes on its next change.
   useEffect((): void => {
     if (multiMode.enabled) setInspectorTextSelection(null);
+  }, [multiMode.enabled, multiMode.focused]);
+  // Phase 116 (TFL-1228) — the annotation id follows the same rule.
+  useEffect((): void => {
+    if (multiMode.enabled) setInspectorAnnotationId(null);
   }, [multiMode.enabled, multiMode.focused]);
 
   // ---- Phase 36 (chunk 3a): the Action Dock's host wiring -----------------
@@ -11467,7 +11550,14 @@ pushToast(
         if (editModeOpenRef.current) setEditMode(false);
         setSigModalOpen(true);
       },
-      forms: (): void => setFlattenOpen(true),
+      forms: (): void => {
+        // Phase 115 E — capture the opener so closing (Escape included) can
+        // return focus there, and reset the shared focus link.
+        const active = document.activeElement;
+        formPanelReturnFocusRef.current = active instanceof HTMLElement ? active : null;
+        setFormFocusFieldId(null);
+        setFormsPanelOpen(true);
+      },
       flatten: (): void => setFlattenOpen(true),
       stamp: onStampClick,
       redact: (): void => setRedactArmed(true),
@@ -11818,6 +11908,17 @@ pushToast(
         selection,
       );
       if (decision.apply) setInspectorTextSelection(decision.value);
+    },
+    [multiMode.focused],
+  );
+
+  // Phase 116 (TFL-1228) — the SAME focused-pane rule for the selected
+  // annotation's id, so the shared Inspector follows the pane the user is
+  // working in and never shows a background pane's annotation.
+  const onPaneAnnotationSelection = useCallback(
+    (pane: PaneId | null, id: string | null): void => {
+      const decision = resolvePaneSelection<string | null>(pane, multiMode.focused, id);
+      if (decision.apply) setInspectorAnnotationId(decision.value ?? null);
     },
     [multiMode.focused],
   );
@@ -12754,6 +12855,13 @@ pushToast(
                       // always applies, unchanged).
                       (selection): void => onPaneTextSelection(pane, selection)
                     }
+                    // Phase 116 (TFL-1228) — the selected REVIEW annotation's
+                    // REAL id (ANY kind), so the Inspector's annotation scope
+                    // populates for the shape kinds too. Same focused-pane
+                    // guard as the text selection.
+                    onAnnotationSelectionChange={
+                      (id): void => onPaneAnnotationSelection(pane, id)
+                    }
                     // DEF-041 — toolbar Rotate clockwise button. The
                     // page indicator's "current" page is what the
                     // user sees on screen; rotating that page is
@@ -12783,6 +12891,8 @@ pushToast(
                     formFields={fs.formFields}
                     onFormValueChange={fs.onFormValueChange}
                     onFormListboxToggle={fs.onFormListboxToggle}
+                    focusedFieldId={fs.focusedFieldId}
+                    onFieldFocus={fs.onFieldFocus}
                     signatures={fs.signatures}
                     savedSignatures={fs.savedSignatures}
                     // Phase 90 (TFL-509-C1) — the unified review list's
@@ -12794,6 +12904,8 @@ pushToast(
                     onEditReviewElement={onEditReviewElement}
                     onDeleteReviewElement={onDeleteReviewElement}
                     reviewErrorFor={reviewErrorFor}
+                    onExportComments={onCommentExportClick}
+                    onImportComments={onCommentImportClick}
                     armedSignatureId={fs.armedSignatureId}
                     onPlaceSignature={fs.onPlaceSignature}
                     onMoveSignature={fs.onMoveSignature}
@@ -13075,6 +13187,8 @@ pushToast(
             onToggleCollapsed={toggleInspectorCollapsed}
             selection={inspectorSelection}
             textPanel={inspectorTextPanel}
+            annotationTheme={settings.theme === 'light' ? 'light' : 'dark'}
+            editGeometry={inspectorEditGeometry}
             signatureStyle={
               armedSignature === null
                 ? null
@@ -13114,6 +13228,10 @@ pushToast(
             // delete verbs and every other handler live in the REVIEW panel, so
             // the Inspector is handed no per-annotation callbacks at all.
             annotations={annotationHandlers(tabs.activeId).annotations}
+            // Phase 116 (TFL-1228) — the selected REVIEW annotation's REAL id
+            // (ANY kind), so the annotation scope resolves the shape kinds that
+            // publish no text snapshot.
+            selectedAnnotationId={inspectorAnnotationId}
             // Phase 90 (TFL-509-C1) — Ruling 6: the Inspector's REVIEW stage
             // re-parents the SAME unified review list. The annotations
             // handlers and the non-annotation sources/handlers are threaded
@@ -13134,8 +13252,6 @@ pushToast(
             onEditReviewElement={onEditReviewElement}
             onDeleteReviewElement={onDeleteReviewElement}
             reviewErrorFor={reviewErrorFor}
-            onExportComments={onCommentExportClick}
-            onImportComments={onCommentImportClick}
             // Phase 112 (C5) - the Deliver export surface prepares the format,
             // the parser-validated page scope, the output name and the options,
             // then launches the EXISTING flow. `exportBridge` carries the same
@@ -13303,6 +13419,29 @@ pushToast(
           void onFlattenConfirm();
         }}
       />
+      {formsPanelOpen && activeTab !== null ? (
+        <div className="guided-fill-panel-host">
+          <GuidedFillPanel
+            key={activeEngineDocId ?? "none"}
+            fields={activeTab.forms.fields}
+            currentPage={Math.max(1, Math.floor(activeTab.persisted.currentPage ?? 1))}
+            totalPages={activeEngineUi?.state.pageCount ?? activeTab.session.doc.numPages}
+            onValueChange={(id, v): void => {
+              if (tabs.activeId !== null) onFormValueChange(tabs.activeId, id, v);
+            }}
+            onToggleListbox={(id, opt): void => {
+              if (tabs.activeId !== null) onFormListboxToggle(tabs.activeId, id, opt);
+            }}
+            focusedFieldId={formFocusFieldId}
+            onFieldFocus={(id): void => setFormFocusFieldId(id)}
+            onClose={(): void => {
+              setFormsPanelOpen(false);
+              setFormFocusFieldId(null);
+              formPanelReturnFocusRef.current?.focus();
+            }}
+          />
+        </div>
+      ) : null}
       <OptimizeDialog
         open={optimizeOpen}
         initialPreset={settings.optimizePreset ?? DEFAULT_OPTIMIZE_PRESET}

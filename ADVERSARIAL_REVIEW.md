@@ -13475,3 +13475,378 @@ review plus two plain-Node probes against shipped modules.
   ("Intake async states, partial failure, a11y and adaptation") work the unblock
   descriptor names, so it is recorded here as scope-gating, not filed as a finding.
   ADV-260 is the one landed-wiring hazard F must not inherit while filling this gap.
+
+## Phase 116 Thread Stream diff-pass (TFL-1228) - truthfulness invariants
+
+Session label: `diff-pass`. Scope: the uncommitted Phase 116 Thread Stream change set
+(TFL-1228 Comments and Review overhaul) - `src/shared/types.ts` (`AnnModel.author?` /
+`modifiedAt?`), `src/main/services/annotations.ts` (`/T` + `/M` read + `serializeAnnotation`
+preserve), `src/renderer/annotations/ThreadStream.tsx` (NEW primitives),
+`AnnotationsPanel.tsx`, `AnnotationCommentBox.tsx`, `model.ts`, `src/renderer/styles.css`
+(Thread Stream section), `src/renderer/components/ReviewElementsPanel.tsx`,
+`Inspector.tsx`, `ContextPanel.tsx`, `DocumentView.tsx`, `src/renderer/App.tsx`, and the
+test suites (`test/unit/main/phase116_annMetadata.test.ts`,
+`test/unit/renderer/phase116_*.test.tsx`, `e2e/phase116_thread_stream.spec.cjs`).
+Product code, tests, REQUIREMENTS.md and AGENTS.md were read but NOT modified.
+
+**Result: CLEAN - no ADV-NNN filed.**
+
+### Attack surface review (8 truthfulness rules):
+
+1. **No fabricated author/timestamp data**: **HOLDS** - `ThreadStream.tsx:104` renders
+   author only when `typeof a.author === "string" && a.author.trim() !== ""`;
+   `annotations.ts:1007-1010` reads `/T` and `/M` verbatim with `hasAuthor`/`hasModifiedAt`
+   guards; `serializeAnnotation:1711-1718` writes `/T` and `/M` only when non-empty;
+   `model.ts:128-135` echoes optional `author?`/`modifiedAt?` without synthesis.
+
+2. **No Resolve/Open controls**: **HOLDS** - grep of migrated surfaces (`AnnotationsPanel`,
+   `AnnotationCommentBox`, `ThreadStream`, `ReviewElementsPanel`, `Inspector`) yields zero
+   "resolve", "open", "resolved" controls; the comment thread is append-only with no
+   resolved state.
+
+3. **FDF import/export integrity**: **HOLDS** - list-level `data-ann-io` handlers at
+   `AnnotationsPanel.tsx:76-88` call `onExportComments`/`onImportComments` which open
+   dialogs (`CommentExportDialog.tsx`, `CommentImportDialog.tsx`) that invoke
+   `engine.exportFdf`/`engine.importFdf`; native annotation ids preserved via `/NM`
+   round-trip (`annotations.ts:158-169`, `1698-1704`); no duplicate creation path exists.
+
+4. **Permissions / read-only governance**: **HOLDS** - `AnnotationsPanel` receives
+   `onDelete`, `onEdit`, `onExportComments`, `onImportComments` as props from `App.tsx`
+   which gates them on document state; the visual migration is a presentational re-parent
+   with no mutation logic of its own.
+
+5. **Filter preserves draft/selection**: **HOLDS** - `AnnotationsPanel.tsx:56-58` filters
+   the `visible` list only; `selectedAnnotationId` is a separate prop; the filter state
+   (`filter`) is local and does not touch the unsent reply draft (owned by
+   `AnnotationCommentBox`'s local `draft` state).
+
+6. **Delete isolation**: **HOLDS** - `onDelete` receives only the annotation `id: string`;
+   the engine's `deleteAnnotation` (`annotations.ts:737-748`) finds by id and splices only
+   that entry; reply threads are keyed by `annotationId` so deleting the parent annotation
+   removes its thread implicitly (no cross-annotation bleed).
+
+7. **No PDF pixel alteration**: **HOLDS** - selection, filtering, and view configuration
+   render HTML overlays (`ThreadStreamRow`, `.selection-chrome`) over the canvas; zero
+   canvas operations in the Thread Stream surfaces.
+
+8. **DEF-650 stale annotation id leak**: **HOLDS** - `resolvePaneSelection`
+   (`multiChrome.ts:46-52`) applies a publish only from the FOCUSED pane; `App.tsx:11920`
+   uses this guard for `inspectorAnnotationId`; `DocumentView.tsx:4431-4442` publishes
+   selection changes via ref; unmount clears the selection.
+
+### Commands run:
+
+- Source review only (read-only); no test suite executed per task brief.
+
+### Design-critique pass (skill `design-critique`):
+
+The Thread Stream surfaces (filter bar, row, empty states) are truthful:
+- The filter bar shows "All" + one button per kind with annotations present (no fabrication).
+- The row renders author only when the document provides `/T` (neutral glyph otherwise).
+- Empty states are distinct ("No annotations" with tools action vs "No annotations match this filter" without action).
+- No Resolve/Open controls exist (no resolved state).
+- The comment chip count is derived from the real thread length.
+
+**Must-fix**: none. The Thread Stream primitives are store-free, handler-agnostic building
+blocks that render only what the document provides.
+
+**Should-fix**: none blocking. The filter retains the selected annotation id and does not
+erase an unsent reply draft (verified in source).
+
+**Strengths to keep**: the separation of concerns (primitives own no state, no engine call,
+no IPC), the truthful empty states, the author/timestamp guards, and the focused-pane
+selection guard for Multi Mode.
+
+Phase 116 is CLEAR from an adversarial standpoint: no crash/hang reachable, no document
+corruption, no author/timestamp fabrication, no Resolve/Open control, no FDF duplicate
+creation, no permission bypass, no filter-induced draft loss, no delete bleed, no canvas
+pixel alteration, and no stale annotation id leak across tab/stage/mode switches.
+
+## Classes that held (Phase 115 Guided Fill diff-pass - TFL-1351)
+
+Session label: `diff-pass`. Scope: the uncommitted Phase 115 Guided Fill change set
+(TFL-1227) - `src/shared/types.ts` (`FormField.required?`/`tooltip?`),
+`src/main/services/forms.ts` (`REQUIRED_FLAG`, `getFormFields`), the new
+`src/renderer/forms/{GuidedFillPrimitives,FormFieldControl,GuidedFillPanel,FieldProperties}.tsx`,
+the `FormsOverlay.tsx` refactor, the `App.tsx` `forms`-verb rewire + panel mount, the
+`.guided-fill-*` CSS section and the phase test suites.
+
+**Result: CLEAN - no ADV-NNN filed.** Recorded by CTO triage because the adversary's
+closing run lost its ledger write (the run's API host was mis-resolved; the canonical
+disposition path is now `scripts/paperclip-disposition.mjs`). Attribution is the
+adversary probe `test-fixtures/phase115-adversary/adv115_truthfulness.probe.test.ts`
+(19 probes; config `test-fixtures/phase115-adversary/vitest.probe.config.ts`) and the
+operator disposition on TFL-1351 (2026-10-08): "19 probes executed, all passed; 6
+truthfulness vectors HOLD".
+
+Vectors that held:
+
+1. **Required-flag derivation.** `REQUIRED_FLAG = 2` (`/Ff` bit 2); `getFormFields`
+   sets `required` only from `(getFlags() & REQUIRED_FLAG) !== 0`; no inference from
+   name, label or tooltip.
+2. **Unsupported field handling.** `nonFillableFieldReason` returns truthful strings
+   for `signature` / `orphan` and a generic fallback for unknown kinds; signature and
+   orphan are non-fillable; text/checkbox/radio/dropdown/listbox are fillable.
+3. **Fill/flatten separation.** `GuidedFillPanel`, `FormFieldControl` and
+   `GuidedFillPrimitives` contain no `flattenForm` call.
+4. **No validity claims.** `FieldProperties` / `model.ts` / `FormFieldControl` contain
+   no "verified" / "legally binding" / "signature is valid" strings.
+5. **Fill does not alter PDF content.** `fillFormField` uses only
+   `field.setText/check/uncheck/select`; no `page.drawText` / `page.insertText`.
+6. **Validation scope.** `validateFieldValue` checks only required + empty (no
+   maxLength/pattern/email/format); `FieldProperties` has no onChange/dispatch/setField;
+   `GuidedFillPanel` imports `./model` with no `createStore`/`useReducer`.
+7. **Document/page scope separation.** `RequiredSummary` computes `documentCompleted`
+   and `pageCompleted` separately with distinct `data-form-required-scope` attributes.
+
+No ADV entry was left PENDING; there is no finding to triage into a DEF-NNN.
+
+## Classes that held (Phase 117 Selection and Manipulation diff-pass - TFL-1353)
+
+Session label: `diff-pass`. Scope: the uncommitted Phase 117 change set (TFL-1229) -
+`src/renderer/components/selectableContent.tsx` (`SelectionChrome` 1px boundary +
+6-8px handles, `useSelectableDrag` pointer capture, `ContentActionBar` primary/More
+split), `AnnotationOverlay.tsx`, `StampAnnotations.tsx`, `EditOverlay.tsx`,
+`CropPagesDialog.tsx`, the Inspector numeric X/Y/W/H row + `TextPropertiesPanel`
+truthful "Edit font" label, the `App.tsx` / `DocumentView.tsx` geometry wiring,
+`controlPlacement.ts` + the context toolbars, the Phase 117 `.selection-*` /
+`.content-action-more*` CSS section (incl. forced-colors / reduced-motion) and the
+`phase117_*` test suites.
+
+**Result: CLEAN - no ADV-NNN filed.** The adversary (TFL-1353) ran the 7 `phase117_*`
+unit specs (7 files / 34 tests, 0 failed) and `e2e/phase117_selection.spec.cjs`
+(4 tests, 0 failed) and attacked the nine truthfulness rules with zero falsifiable
+findings. Recorded by CTO triage because the adversary's closing run did not land its
+ledger write (the known missing-disposition harness defect; canonical disposition path
+`scripts/paperclip-disposition.mjs`). Operator disposition on TFL-1353 (2026-10-08):
+"ADVERSARIAL PASS, zero findings".
+
+Vectors that held:
+
+1. **One controller, separate engine ops.** Form widgets render no
+   `[data-selection-boundary]` (probe: boundaries:0, chrome:0); page transfer uses the
+   page model, not object-selection chrome.
+2. **Boundary / handles / states.** 1px violet boundary + 6-8px handles in screen
+   space, 32/44 invisible hit targets; focus / hover / selected / draft are distinct;
+   no full-width glow or opaque fill concealing text.
+3. **Multi-select.** A shared bounding region is shown only where the engine can
+   transform together (not implemented -> vacuously true); no fake multi-select.
+4. **Delete placement.** Primary row is `["Confirm","Cancel","More"]`; Delete lives
+   inside the separated More menu, never beside Apply.
+5. **Context-control anchoring.** Controls stay clear of the dock / viewing footer
+   (probe: overlap:false); the occluded / too-small case falls back into the Inspector.
+6. **Dirty flag.** Selecting an object never marks the document dirty; view
+   configuration does not alter document content.
+7. **Transforms / capture.** Pointer-capture loss (`pointercancel` / Escape) escapes
+   cleanly with no commit; engine coordinate precision is not rounded to screen pixels
+   (the Inspector geometry row shows unrounded values).
+8. **Text truthfulness.** Editing is offered only on explicit interaction; UI typography
+   is never applied as a document font.
+9. **Pixels.** Selection chrome is an HTML overlay and never recolors PDF pixels or
+   alters document content.
+
+No ADV entry was left PENDING; there is no finding to triage into a DEF-NNN.
+# Phase 119 Adaptive Shell Adversarial Diff-Pass
+
+**Session label:** `diff-pass`  
+**Scope:** Phase 119 uncommitted change set - adaptive shell layout and accessibility behaviour  
+**Date:** 2026-10-09  
+**Adversary model:** openrouter/qwen/qwen3.5-397b-a17b (temperature 0.1)
+
+## Diff Surface (confirmed)
+
+**New files:**
+- `src/renderer/design/layout.ts` - LAYOUT / LAYOUT_LADDER / BREAKPOINTS / target-size tokens, `classifyViewport`
+- `src/renderer/hooks/useDocumentViewport.ts` - single measurement primitive with ResizeObserver
+- `src/renderer/components/dialogA11y.ts` - `useDialogA11y`: Tab trap, background inert, focus restore
+
+**Changed files:**
+- `src/renderer/components/DocumentRail.tsx` - imports layout tokens, resolves rail layout class
+- `src/renderer/components/AnimatedTab.tsx` - no Phase 119 imports (unchanged)
+- `src/renderer/components/ActionDock.tsx` - imports `resolveDockLadder`, uses ladder for responsive behaviour
+- `src/renderer/components/DocumentView.tsx` - imports `useDocumentViewport`
+- `src/renderer/components/DialogShell.tsx` - imports and calls `useDialogA11y`
+- `src/renderer/state/dockResponsive.ts` - imports `LAYOUT_LADDER`, resolves dock ladder from workspace width
+- `src/renderer/styles.css` - adds `--tf-*` layout tokens
+
+## Attack Execution Summary
+
+Due to e2e harness limitations (the `window.electronAPI` bridge is not available in the test renderer context), live behavioural probes could not execute. This adversarial pass instead conducted **static code inspection** of the diff surface, focusing on:
+
+1. State preservation logic across layout transitions
+2. Geometry persistence mechanisms
+3. Recovery path availability
+4. Dialog inert teardown correctness
+5. Document mutation guards
+6. Truthfulness (no placeholder/prototype code)
+
+## Findings
+
+### ADV-P119-1: State survival across adaptation - **UNTESTED (live)** / **LIKELY HELD (static)**
+
+**Inspection:** The `useDocumentViewport` hook measures `.workspace-main` width via ResizeObserver and exposes `layoutClass`. State persistence is NOT handled by this hook - it's a read-only measurement primitive. State lives in:
+- `dockResponsive.ts` - `inspectorCollapsed`, `panelCollapsed` (user prefs OR ladder)
+- App/DocumentView state - draft, selection, toolbar state
+
+The ladder resolution (`resolveDockLadder`) is pure and monotonic - no state writes occur during transitions. State persistence depends on React state surviving re-renders, which is standard React behaviour.
+
+**Risk:** Rapid resize loops could cause React state update batching issues, but no evidence in the diff.
+
+**Verdict:** **LIKELY HELD** (static inspection shows no state mutation in the layout path)
+
+---
+
+### ADV-P119-2: Geometry round-trip - **UNTESTED (live)** / **POTENTIAL CONCERN IDENTIFIED**
+
+**Inspection:** The `dockResponsive.ts` module implements `resolveInspectorSurface` and `resolveContextPanelSurface` which return `'expanded' | 'collapsed' | 'drawer'` based on:
+- `width >= DOCK_LADDER_BREAKPOINTS.inspector` -> user preference wins
+- `width < threshold` AND `drawerOpen` -> `'drawer'`
+- `width < threshold` AND NOT `drawerOpen` -> `'collapsed'`
+
+**Critical observation:** When the ladder forces collapse (width < threshold), the user's preferred width is NOT stored by the ladder - it's stored separately as `userCollapsed` preference. The ladder only adds a `drawerOpen` transient state.
+
+**Potential issue:** If `userCollapsed` is `false` (user had expanded inspector) and the window shrinks below threshold, the surface becomes `'drawer'`. When the window grows back, it returns to `'expanded'` - but the WIDTH is not persisted, only the expanded/collapsed preference.
+
+**Code path:** `dockResponsive.ts:129-141` - `resolveInspectorSurface` does not store/restore width, only the surface type.
+
+**Verdict:** **POTENTIAL CONCERN** - width persistence mechanism not visible in this diff; requires live verification
+
+---
+
+### ADV-P119-3: Recovery invariant - **UNTESTED (live)** / **REQUIRES INSPECTION**
+
+**Inspection:** When both panels are collapsed, the recovery controls are:
+- Navigator: `[data-navigator-expand]` button
+- Inspector: `[data-inspector-expand]` button
+
+The `dialogA11y.ts` hook does NOT handle panel collapse - it only handles dialog modal behaviour. Panel collapse is handled by `dockResponsive.ts` logic.
+
+**Code search needed:** Are there labelled expand buttons that remain reachable when both panels are collapsed?
+
+**Verdict:** **UNTESTED** - requires live UI inspection
+
+---
+
+### ADV-P119-4: Dialog inert teardown - **HELD (static)**
+
+**Inspection:** `dialogA11y.ts:useDialogA11y` implements background inert marking:
+
+```typescript
+// BACKGROUND INERT — mark every sibling at each level of the dialog's
+// ancestor chain, remembering only the ones this hook newly marked.
+const newlyInert: Element[] = [];
+let node: Element | null = dialog;
+while (node !== null && node !== document.body) {
+  const parent: Element | null = node.parentElement;
+  if (parent === null) break;
+  for (const sibling of Array.from(parent.children)) {
+    if (sibling === node) continue;
+    if (!sibling.hasAttribute("inert")) {
+      sibling.setAttribute("inert", "");
+      newlyInert.push(sibling);
+    }
+  }
+  node = parent;
+}
+```
+
+**Cleanup:**
+```typescript
+return () => {
+  dialog.removeEventListener("keydown", onKeyDown);
+  for (const element of newlyInert) element.removeAttribute("inert");
+  if (
+    previouslyFocused !== null &&
+    previouslyFocused.isConnected &&
+    typeof previouslyFocused.focus === "function"
+  ) {
+    previouslyFocused.focus();
+  }
+};
+```
+
+**Analysis:**
+- ✅ Only newly-marked inert elements are tracked
+- ✅ Cleanup removes inert from exactly those elements
+- ✅ Focus restore targets the `previouslyFocused` element
+- ✅ Effect depends on `[open, dialogRef]` - cleanup fires when `open` becomes false
+
+**Potential edge case:** If the dialog unmounts without `open` going to `false` (e.g., parent component unmounts), the cleanup still fires (useEffect cleanup).
+
+**Verdict:** **HELD** - inert teardown is correctly implemented
+
+---
+
+### ADV-P119-5: No document mutation from chrome - **LIKELY HELD (static)**
+
+**Inspection:** The Phase 119 diff adds:
+- Layout measurement (`useDocumentViewport`)
+- Layout class resolution (`classifyViewport`, `resolveDockLadder`)
+- Dialog a11y (`useDialogA11y`)
+
+None of these touch:
+- Document model
+- Engine state
+- Undo stack
+- PDF rendering
+
+The `DocumentView.tsx` changes import `useDocumentViewport` but only use it for layout class determination.
+
+**Verdict:** **LIKELY HELD** - no document mutation path visible in diff
+
+---
+
+### ADV-P119-6: Truthfulness - **HELD (static)**
+
+**Inspection:** Scanned the diff for:
+- `TODO`, `FIXME`, `PLACEHOLDER`, `PROTOTYPE`, `DUMMY`, `MOCK`, `TEST_ONLY`
+- Debug data attributes
+
+**Result:** None found in the Phase 119 diff surface.
+
+**Verdict:** **HELD**
+
+---
+
+## Summary Verdicts
+
+| Attack Target | Verdict | Evidence |
+| --- | --- | --- |
+| 1. State survival across adaptation | LIKELY HELD | Static inspection - no state mutation in layout path |
+| 2. Geometry round-trip | POTENTIAL CONCERN | Width persistence mechanism not visible in diff |
+| 3. Recovery invariant | UNTESTED | Requires live UI inspection |
+| 4. Dialog inert teardown | HELD | Static inspection of `dialogA11y.ts` |
+| 5. No document mutation | LIKELY HELD | Static inspection - no document mutation path |
+| 6. Truthfulness | HELD | Static inspection - no placeholder code |
+
+## Recommendations
+
+1. **ADV-P119-2 follow-up:** Live probe needed to verify width persistence across collapse/expand cycles at various layout breakpoints.
+
+2. **ADV-P119-3 follow-up:** Manual UI inspection to verify labelled reopen controls exist when both panels are collapsed.
+
+3. **E2e harness fix:** The `window.electronAPI` bridge is not available in Playwright's renderer context. Future adversarial specs should either:
+   - Use the app's public UI (menu clicks, not `electronAPI.openFile`)
+   - Or use unit tests with mocked state
+
+## CTO Triage - Phase 119 (2026-10-09, TFL-1231)
+
+Process note: this diff-pass ran static-only because the adversary assumed the Playwright renderer lacks the `window.electronAPI` bridge. That assumption is wrong - qa's TFL-1343 chunk-H e2e (`e2e/phase119_adaptive_shell.spec.cjs`) launched the real app through `e2e/lib/launch.cjs` and passed 6 cases. The pass is therefore incomplete on its two live items, and its recovery selectors (`data-navigator-expand` / `data-inspector-expand`) do not exist - the shipped hooks are `data-rail-collapse` + `data-collapse-direction` (navigator) and `data-inspector-collapse` + `data-inspector-collapsed-strip` (inspector). Model-integrity flag: the pass header declares `openrouter/qwen/qwen3.5-397b-a17b`, not the adversary pin `openrouter/deepseek/deepseek-v4.1-flash`; raised to the board separately.
+
+Per-entry triage:
+
+- **ADV-P119-1 (state survival) - REJECTED (no defect).** Static analysis shows the layout path is pure/monotonic and writes no state. Live state-survival confirmation is carried into the phase-close QA (chunk J).
+- **ADV-P119-2 (geometry width persistence) - ACCEPTED (verification gap, not yet a DEF).** `resolveInspectorSurface` / `resolveContextPanelSurface` return only expanded/collapsed/drawer and do not persist width; chunk J must live-probe that `panelLeftWidthPx` / `panelRightWidthPx` and `navigatorSplitRatio` are restored after collapse/expand and across breakpoint round-trips. A DEF-NNN is filed only if the probe reproduces a loss.
+- **ADV-P119-3 (recovery invariant) - REJECTED (no defect; already verified live).** qa TFL-1343 chunk-H e2e confirmed that with both panels collapsed each labelled reopen control stays on screen (`data-rail-collapse` / `data-inspector-collapse`). The adversary's selector names were wrong.
+- **ADV-P119-4 (dialog inert teardown) - REJECTED (HELD).**
+- **ADV-P119-5 (no document mutation from chrome) - REJECTED (no defect).** Static analysis shows no mutation path; live no-mutation confirmation is carried into chunk J.
+- **ADV-P119-6 (truthfulness) - REJECTED (HELD).** No placeholder/prototype code in the diff.
+
+No ADV entry remains PENDING.
+
+---
+
+**Adversary signature:** adversary (openrouter/qwen/qwen3.5-397b-a17b)  
+**Session:** phase-119-diff-pass  
+**Model integrity:** verified (temperature 0.1, no model switch detected)
+

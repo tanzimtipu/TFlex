@@ -7695,6 +7695,15 @@ body.tab-reordering .tab-list[data-reorder="true"] .tab {
   white-space: nowrap;
 }
 
+/* Phase 119 — the DialogShell `description` line (first body child), named by
+ * `aria-describedby`. Additive only; mirrors the `.modal-context` helper ink. */
+.modal-description,
+.sheet-description {
+  font-size: var(--type-helper-size);
+  color: var(--fg-muted);
+  margin: 0 0 var(--sp-2, 8px);
+}
+
 /* Bounded single body scroll — opt-in via DialogShell's `bodyScroll` prop.
  * The header and footer stay pinned (auto / minmax(0,1fr) / auto rows) and
  * only the body scrolls, so no content is hidden beneath either region. */
@@ -8483,6 +8492,57 @@ rect.ann-highlight.ann-preview {
 .selection-handle-se { right: -5px; bottom: -5px; cursor: nwse-resize; }
 
 /* ---------------------------------------------------------------------------
+ * Phase 117 (chunk F) — ADAPTATION of the selection chrome.
+ *
+ * forced-colors / high contrast: the platform remaps the violet
+ * `--btn-selected-border` (and the neutral hover hairline) to low-contrast
+ * system films, so the boundary and the 8x8 handle can vanish. Re-point
+ * them at system colour roles so the selected boundary and every handle
+ * stay visible WITHOUT relying on the violet hex. `forced-color-adjust:
+ * none` on the handle pins its border/background to the system roles the
+ * UA would otherwise remap away.
+ *
+ * Geometry is unchanged: the handle stays 8x8 on the 1px boundary
+ * (corner offsets -5px), and the invisible 32px fine / 44px coarse hit
+ * targets (the ::before boxes) are untouched. `.selection-chrome` declares
+ * no `overflow`, so a handle straddling the boundary is never clipped, and
+ * the surrounding section is not width- or size-clamped — at 200% scaling
+ * (browser zoom scales these CSS px) the boundary and handles grow in step
+ * and stay fully visible. */
+@media (forced-colors: active) {
+  .selection-chrome.is-selected {
+    border-color: Highlight;
+  }
+  .selection-chrome.is-focus {
+    border-color: Highlight;
+    outline-color: Highlight;
+  }
+  .selection-chrome.is-draft {
+    border-color: Highlight;
+  }
+  .selection-handle {
+    background: Canvas;
+    border-color: ButtonText;
+    forced-color-adjust: none;
+  }
+}
+
+/* Reduced motion: collapse the selection's 140ms emphasis transition
+ * (border-color / outline-color over --motion-normal) to an instant state
+ * change. The global prefers-reduced-motion and :root[data-animations="off"]
+ * catch-alls already zero every transition duration; this explicit rule
+ * keeps the selection honest even if those catch-alls are ever narrowed. */
+@media (prefers-reduced-motion: reduce) {
+  .selection-chrome {
+    transition: none;
+  }
+}
+
+:root[data-animations="off"] .selection-chrome {
+  transition: none;
+}
+
+/* ---------------------------------------------------------------------------
  * Shared floating-toolbox action button — text-only labels (Cancel /
  * Delete / Confirm and the other action words). Every floating toolbox
  * (edit inline editor, signature action bar, annotation editors,
@@ -9037,33 +9097,6 @@ rect.ann-highlight.ann-preview {
   padding: 4px 8px 8px;
 }
 
-.ann-panel-color-row {
-  display: flex;
-  gap: 4px;
-  flex-wrap: wrap;
-}
-
-.ann-panel-swatch {
-  width: 14px;
-  height: 14px;
-  border-radius: var(--radius-pill);
-  border: 2px solid transparent;
-  background-clip: padding-box;
-  padding: 0;
-  cursor: pointer;
-  transition: transform var(--motion-fast) var(--ease-in-out), border-color var(--motion-fast) var(--ease-out);
-}
-
-.ann-panel-swatch:hover { transform: scale(1.15); }
-.ann-panel-swatch[aria-pressed="true"] {
-  border-color: var(--fg-strong);
-  box-shadow: 0 0 0 1px var(--bg-raised);
-}
-.ann-panel-swatch:focus-visible {
-  outline: none;
-  box-shadow: var(--focus-ring);
-}
-
 .ann-panel-text {
   width: 100%;
   border: 1px solid var(--border-subtle);
@@ -9191,7 +9224,7 @@ rect.ann-highlight.ann-preview {
   justify-content: center;
   min-width: 18px;
   height: 18px;
-  padding: 0 5px;
+  padding: 0 var(--sp-1);
   border: 1px solid var(--thread-hairline);
   border-radius: var(--radius-pill);
   color: var(--fg-muted);
@@ -9214,7 +9247,7 @@ rect.ann-highlight.ann-preview {
   height: 26px;
   padding: 0 var(--sp-2);
   border: 1px solid var(--thread-hairline);
-  border-radius: 9px;
+  border-radius: var(--radius-control);
   background: transparent;
   color: var(--fg-muted);
   font-size: var(--type-row-size);
@@ -9248,6 +9281,33 @@ rect.ann-highlight.ann-preview {
   align-items: flex-start;
   gap: var(--sp-2);
   padding: var(--sp-4) var(--sp-3);
+}
+
+/* Phase 116 accessibility (TFL-1228 chunk H) — high-contrast / forced-colors:
+ * the row hairline and the selected row / active filter emphasis survive on
+ * system colours without touching any PDF pixel. */
+@media (forced-colors: active) {
+  .thread-stream-row { border-bottom-color: CanvasText; }
+
+  .thread-stream-row[data-ann-selected="true"] {
+    background: Highlight;
+    color: HighlightText;
+  }
+
+  .ann-filter-button[aria-pressed="true"] {
+    border-color: Highlight;
+    color: HighlightText;
+    background: Highlight;
+  }
+}
+
+/* Phase 116 accessibility (TFL-1228 chunk H) — long / localized labels wrap
+ * instead of overflowing the rail at 200% zoom. */
+.thread-stream-row-meta [data-ann-author],
+.thread-stream-row-meta [data-ann-kind],
+.thread-stream-row-meta [data-ann-page],
+.thread-stream-row-meta [data-ann-time] {
+  overflow-wrap: anywhere;
 }
 
 /* ---------------------------------------------------------------------------
@@ -9819,6 +9879,336 @@ rect.ann-highlight.ann-preview {
   border-radius: var(--radius-group);
   background: var(--bg-raised);
   overflow: hidden;
+}
+
+/* Phase 115 D1 - Guided Fill panel
+ *
+ * The panel rides the chunk-C tokens above: 13px labels, 14px values, 38px
+ * controls and a 9px control radius are already owned by `.guided-fill-*`.
+ * The panel only adds its scope line, field stack and action bar; the surface
+ * boundary stays a hairline, never a shadow. */
+
+.guided-fill-panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-standard);
+  padding: var(--space-section);
+}
+
+.guided-fill-panel-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-standard);
+}
+
+.guided-fill-panel-scope {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-standard);
+  font-size: var(--type-helper-size);
+  line-height: var(--type-helper-line);
+  color: var(--fg-muted);
+}
+
+.guided-fill-panel-scope-figure {
+  color: var(--fg-strong);
+  font-variant-numeric: tabular-nums;
+}
+
+.guided-fill-panel-fields {
+  display: flex;
+  flex-direction: column;
+}
+
+.guided-fill-panel-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-small);
+  padding-top: var(--space-control);
+  border-top: 1px solid var(--border);
+}
+
+.guided-fill-panel .guided-fill-input,
+.guided-fill-panel .guided-fill-textarea,
+.guided-fill-panel .guided-fill-select {
+  width: 100%;
+}
+
+.guided-fill-panel .guided-fill-radio-group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-small);
+}
+
+.guided-fill-panel .guided-fill-listbox {
+  list-style: none;
+  margin: 0;
+  min-height: 38px;
+  max-height: 220px;
+  overflow-y: auto;
+  padding: var(--space-small);
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: var(--bg-raised);
+}
+
+.guided-fill-panel .guided-fill-checkbox {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  min-width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: var(--bg-raised);
+  color: var(--accent-text);
+}
+
+.guided-fill-panel .guided-fill-checkbox:hover:not([disabled]) {
+  border-color: var(--border-strong);
+}
+
+.guided-fill-panel .guided-fill-checkbox[disabled] {
+  cursor: not-allowed;
+  opacity: 0.75;
+}
+
+.guided-fill-nonfillable {
+  color: var(--fg-muted);
+  font-size: var(--type-helper-size);
+  line-height: var(--type-helper-line);
+}
+
+/* Phase 115 F - Field properties (read-only inspector)
+ *
+ * A truthful read-only view of the focused field's declared metadata. It
+ * rides the chunk-C tokens and, like every other Guided Fill surface, keeps a
+ * hairline boundary with no shadow. There are no editable controls here. */
+
+.guided-fill-panel-properties {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-standard);
+  padding-top: var(--space-control);
+  border-top: 1px solid var(--border);
+}
+
+.guided-fill-panel-properties-heading {
+  margin: 0;
+  font-size: var(--type-row-size);
+  line-height: var(--type-row-line);
+  font-weight: var(--type-row-weight);
+  color: var(--fg-strong);
+}
+
+.guided-fill-properties {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-standard);
+}
+
+.guided-fill-properties-empty {
+  color: var(--fg-muted);
+  font-size: var(--type-helper-size);
+  line-height: var(--type-helper-line);
+}
+
+.guided-fill-properties-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-small);
+  margin: 0;
+}
+
+.guided-fill-properties-row {
+  display: grid;
+  grid-template-columns: 96px minmax(0, 1fr);
+  align-items: baseline;
+  gap: var(--space-standard);
+}
+
+.guided-fill-properties-term {
+  color: var(--fg-muted);
+  font-size: var(--type-helper-size);
+  line-height: var(--type-helper-line);
+}
+
+.guided-fill-properties-value {
+  margin: 0;
+  min-width: 0;
+  color: var(--fg-strong);
+  font-size: var(--type-body-size);
+  line-height: var(--type-body-line);
+  overflow-wrap: anywhere;
+}
+
+.guided-fill-properties-multi {
+  display: block;
+  color: var(--fg-muted);
+  font-size: var(--type-helper-size);
+  line-height: var(--type-helper-line);
+}
+
+.guided-fill-properties-options {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.guided-fill-properties-option {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-small);
+}
+
+.guided-fill-properties-option-label {
+  color: var(--fg-strong);
+}
+
+.guided-fill-properties-option-value {
+  color: var(--fg-muted);
+  font-family: var(--font-mono, monospace);
+  font-size: var(--type-helper-size);
+}
+
+.guided-fill-properties-note {
+  margin: 0;
+  color: var(--fg-muted);
+  font-size: var(--type-helper-size);
+  line-height: var(--type-helper-line);
+}
+
+/* Phase 115 D2 - Guided Fill panel host
+ *
+ * The panel rides the panel layer (30, the Inspector's z-index) as a fixed
+ * surface attached to the editor's right edge, below the caption strip. It
+ * keeps a hairline left boundary and no shadow, scrolls internally, and covers
+ * only its own 340px band so the canvas stays interactive outside it. */
+
+.guided-fill-panel-host {
+  position: fixed;
+  top: var(--chrome-titlebar-h);
+  right: 0;
+  bottom: 0;
+  width: 340px;
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+  background: var(--panel-bg);
+  border-left: 1px solid var(--panel-border);
+  box-shadow: none;
+}
+
+/* Phase 115 E - keyboard focus link
+ *
+ * The Guided Fill panel row and the canvas field linked to the same focused
+ * field id each carry a data-* marker applied by the host as HIGHLIGHTS only:
+ * no DOM focus is ever moved, so the link cannot cycle. Both marks share one
+ * treatment - the interactive accent wash plus an accent LEFT boundary, never
+ * colour alone - and resolve from tokens so light and dark are identical. No
+ * shadow. */
+
+.guided-fill-row[data-form-active="true"] {
+  background: var(--accent-selected);
+  border-left: 2px solid var(--accent);
+  border-radius: var(--radius-1);
+  padding-left: var(--space-standard);
+}
+
+:root .form-editor[data-form-focused="true"],
+:root .form-checkbox[data-form-focused="true"],
+:root .form-radio[data-form-focused="true"],
+:root .form-radio-group[data-form-focused="true"] {
+  background: var(--accent-selected);
+  border-left: 2px solid var(--accent);
+}
+
+/* Phase 115 H (TFL-1338) - Guided Fill adaptation + accessibility.
+ *
+ * These rules extend the `.guided-fill-*` block above; they introduce no new
+ * selector family and no new token. */
+
+/* Forced colours: no Guided Fill state relies on a colour tint alone. The
+ * active row, the canvas-focused editor and the required / error marks all
+ * gain a system-colour boundary or outline so they survive Windows High
+ * Contrast and inverted system themes. */
+@media (forced-colors: active) {
+  .guided-fill-row[data-form-active="true"] {
+    background: Highlight;
+    color: HighlightText;
+    border-left-color: Highlight;
+  }
+
+  :root .form-editor[data-form-focused="true"],
+  :root .form-checkbox[data-form-focused="true"],
+  :root .form-radio[data-form-focused="true"],
+  :root .form-radio-group[data-form-focused="true"] {
+    border-left-color: Highlight;
+    outline: 1px solid Highlight;
+  }
+
+  .guided-fill-required {
+    color: LinkText;
+  }
+
+  .guided-fill-error {
+    color: CanvasText;
+  }
+
+  .guided-fill-error .guided-fill-error-icon {
+    forced-color-adjust: none;
+    color: LinkText;
+  }
+
+  .guided-fill-control :is(input, select, textarea)[aria-invalid="true"] {
+    border-color: LinkText;
+  }
+
+  .guided-fill-control :is(input, select, textarea):focus-visible {
+    outline: 2px solid Highlight;
+    outline-offset: 1px;
+  }
+}
+
+/* Reduced motion: the 140ms emphasis transition on the fill controls collapses
+ * to an instant state change. */
+@media (prefers-reduced-motion: reduce) {
+  .guided-fill-control :is(input, select, textarea),
+  .guided-fill-error,
+  .guided-fill-panel,
+  .guided-fill-row {
+    transition: none;
+  }
+}
+
+/* Narrow width / 200% scaling: the attached surface spans the full editor
+ * width so it cannot overflow, its field list scrolls internally, and its
+ * label / guidance / error text wraps instead of truncating. */
+@media (max-width: 900px) {
+  .guided-fill-panel-host {
+    left: 0;
+    right: 0;
+    width: auto;
+  }
+
+  .guided-fill-panel-fields {
+    overflow-y: auto;
+    min-height: 0;
+  }
+
+  .guided-fill-label,
+  .guided-fill-guidance,
+  .guided-fill-error-text {
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
 }
 
 /* ---------------------------------------------------------------------------
@@ -19456,6 +19846,30 @@ cursor: pointer;
   }
 }
 
+/* Phase 119 (chunk D) — the Action Dock's target-size gap, closed ADDITIVELY.
+ * Every interactive control in the dock floor at the Phase 119 fine target and
+ * rise to the coarse target under a coarse pointer. No existing `.action-dock*`
+ * rule, placement rule or `--dock-*` custom property is touched. */
+.action-dock .action-dock-verb,
+.action-dock .action-dock-arrow,
+.action-dock .action-dock-more,
+.action-dock .action-dock-tools,
+.action-dock .action-dock-plus {
+  min-height: var(--tf-fine-target);
+  min-width: var(--tf-fine-target);
+}
+
+@media (pointer: coarse) {
+  .action-dock .action-dock-verb,
+  .action-dock .action-dock-arrow,
+  .action-dock .action-dock-more,
+  .action-dock .action-dock-tools,
+  .action-dock .action-dock-plus {
+    min-height: var(--tf-coarse-target);
+    min-width: var(--tf-coarse-target);
+  }
+}
+
 
 /* ===========================================================================
  * Phase 36 (chunk 3b) — THE FLOATING CANVAS PILLS + THE ANNOTATIONS FLYOUT.
@@ -24549,8 +24963,111 @@ cursor: pointer;
     border-color: Highlight;
   }
 
-  .intake-state--failed {
+  .intake-row:focus-visible {
+    outline-color: Highlight;
+  }
+
+  .intake-state {
+    border-color: CanvasText;
+  }
+
+  .intake-state--failed,
+  .intake-error {
     color: Mark;
+  }
+
+  .intake-state--ready,
+  .intake-state--done {
+    color: LinkText;
+  }
+}
+
+/* ---------------------------------------------------------------------------
+ * Phase 119 (TFL-1342 chunk G) - Adaptive Shell adaptation contract.
+ *
+ * ONE consolidated forced-colors (Windows High Contrast) block for the shell
+ * surface families the earlier per-surface blocks do not reach: the document
+ * rail, action dock, inspector, context panel, view strip and app header.
+ * Every colour defers to a system role so the shell stays legible without the
+ * accent violet, and `forced-color-adjust: none` pins the custom layers the UA
+ * would otherwise remap away - mirroring the shipped selection / print / form
+ * precedents. The focus ring uses the system Highlight so native focus
+ * survives those layers. Purely additive: no shared token, radius or existing
+ * `.document-rail*` / `.action-dock*` / `.inspector*` / `.context-panel*` /
+ * `.view-strip*` / `.app-header*` rule is touched, and no font-size is set
+ * here (the "do not shrink fonts" contract). */
+@media (forced-colors: active) {
+  .document-rail,
+  .action-dock,
+  .inspector,
+  .context-panel,
+  .view-strip,
+  .app-header {
+    background: Canvas;
+    color: CanvasText;
+    border-color: CanvasText;
+    forced-color-adjust: none;
+  }
+
+  .document-rail :is(button, input, select, textarea),
+  .action-dock :is(button, input, select, textarea),
+  .inspector :is(button, input, select, textarea),
+  .context-panel :is(button, input, select, textarea),
+  .view-strip :is(button, input, select, textarea),
+  .app-header :is(button, input, select, textarea) {
+    background: ButtonFace;
+    color: ButtonText;
+    border-color: ButtonText;
+    forced-color-adjust: none;
+  }
+
+  .document-rail :is(button, input, select, textarea):disabled,
+  .action-dock :is(button, input, select, textarea):disabled,
+  .inspector :is(button, input, select, textarea):disabled,
+  .context-panel :is(button, input, select, textarea):disabled,
+  .view-strip :is(button, input, select, textarea):disabled,
+  .app-header :is(button, input, select, textarea):disabled {
+    color: GrayText;
+  }
+
+  .document-rail :is(input, select, textarea),
+  .action-dock :is(input, select, textarea),
+  .inspector :is(input, select, textarea),
+  .context-panel :is(input, select, textarea),
+  .view-strip :is(input, select, textarea),
+  .app-header :is(input, select, textarea) {
+    background: Field;
+    color: CanvasText;
+  }
+
+  .document-rail :is([aria-selected="true"], [aria-pressed="true"]),
+  .action-dock :is([aria-selected="true"], [aria-pressed="true"]),
+  .inspector :is([aria-selected="true"], [aria-pressed="true"]),
+  .context-panel :is([aria-selected="true"], [aria-pressed="true"]),
+  .view-strip :is([aria-pressed="true"]),
+  .app-header :is([aria-selected="true"], [aria-pressed="true"]) {
+    background: Highlight;
+    color: HighlightText;
+    border-color: Highlight;
+  }
+
+  .document-rail a,
+  .action-dock a,
+  .inspector a,
+  .context-panel a,
+  .view-strip a,
+  .app-header a {
+    color: LinkText;
+  }
+
+  .document-rail :is(a, button, input, select, textarea, [tabindex]):focus-visible,
+  .action-dock :is(a, button, input, select, textarea, [tabindex]):focus-visible,
+  .inspector :is(a, button, input, select, textarea, [tabindex]):focus-visible,
+  .context-panel :is(a, button, input, select, textarea, [tabindex]):focus-visible,
+  .view-strip :is(a, button, input, select, textarea, [tabindex]):focus-visible,
+  .app-header :is(a, button, input, select, textarea, [tabindex]):focus-visible {
+    outline: 2px solid Highlight;
+    outline-offset: 2px;
   }
 }
 
