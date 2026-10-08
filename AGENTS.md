@@ -1,10 +1,8 @@
 # TFlex — Build Rules
 
-> **STATUS (2026-09-30): Paperclip is the live harness; this OpenCode orchestration
-> is INACTIVE, kept as emergency GUI fallback only.** This file remains the shared
-> rules layer — it auto-loads into every Paperclip run. Do not drive TFlex from the
-> OpenCode GUI while Paperclip agents are active (single-writer rule); the GUI
-> fallback is re-marked active only by an explicit operator decision.
+> **Runtime: Paperclip manages all agents and tasks.**
+> The live application workspace is `C:/Users/tanzi/OneDrive/App Development/TFlex`.
+> Agent models and ownership come from the live Paperclip configuration.
 
 These rules apply to every agent working on this project.
 
@@ -50,7 +48,7 @@ never grow the settings shape ad-hoc.
 
 ## The team
 
-- **orchestrator** (primary) — plans, delegates, reviews, gates phases. Does not write code.
+- **CTO** (orchestrator) — plans, delegates, reviews, gates phases. Does not write code.
 - **frontend-dev** — all renderer code (React UI, PDF.js display, interactions) and
   renderer unit tests. It can look at its own screenshots, but judgment of the product's
   intended look belongs to qa.
@@ -75,12 +73,6 @@ never grow the settings shape ad-hoc.
 Role boundaries are enforced by permissions and are absolute. Do not work around them with
 shell commands: if the edit tool would deny a file, do not modify that file any other way.
 
-**One local role at a time.** There is no local-model role since 2026-09-18 (git-agent
-moved to the cloud), so nothing contends for the NInfer decode slot — this stays only as
-the rule of record if a role is ever repinned local: local roles would be strictly
-serialised through the single decode slot, one dispatch at a time, while cloud roles may
-overlap them. Parallel-dispatch guardrails for the cloud team live in orchestrator.md.
-
 Shared contracts live in `src/shared/` (typed IPC and domain types). Both developers may
 read them; only the orchestrator may approve changes to them mid-phase (a developer
 proposes, the orchestrator amends the task spec).
@@ -91,7 +83,7 @@ proposes, the orchestrator amends the task spec).
   is the ONLY folder for user-sharable application files: the NSIS installer, the
   portable build, and `latest.yml`. Everything else is dev-only: source (`src/`),
   tests (`e2e/`, `test/`), fixtures, screenshots, ledgers, orchestration
-  (`.opencode/`, `AGENTS*.md`), build intermediates (`dist/`), and tooling configs.
+  (`AGENTS*.md`, Paperclip role bundles), build intermediates (`dist/`), and tooling configs.
   No dev file may be placed under `release/`, and no packaging step may emit user
   artifacts anywhere else. Sample PDFs bundled INTO the installer are assets
   (`assets/`), referenced by the builder — they are not copies dropped into
@@ -105,7 +97,7 @@ proposes, the orchestrator amends the task spec).
   Electron launches in e2e all go through the canonical helper `e2e/lib/launch.cjs`
   (import `launchApp`) — no ad-hoc launchers. Paths with spaces (this repo) are passed
   as separate argv array elements, never through shell shims (`*.cmd`) or concatenated
-  `file://` strings. `npm run test:e2e` (i.e. `playwright test`) is the only runner
+  `file://` strings. `npm.cmd run test:e2e` (i.e. `playwright test`) is the only runner
   command — use `npm.cmd` per machine policy.
 - Screenshots live under `screenshots/`.
 - Test fixture PDFs live under `test-fixtures/`. Only qa and adversary add files there.
@@ -119,7 +111,7 @@ proposes, the orchestrator amends the task spec).
 
 ## Test discipline — do not run the full suite by default
 
-`npm run test:unit` with no filter runs the entire suite. **Do not run it** unless the human
+`npm.cmd run test:unit` with no filter runs the entire suite. **Do not run it** unless the human
 explicitly asks, you are at the release-push gate (a version commit, tag or GitHub Release
 push — there it is MANDATORY and must be green before the push; see the orchestrator's
 PUSH GATE), or the task itself requires full regression.
@@ -127,9 +119,9 @@ It is slow and burns the operator's budget for no extra signal on a small change
 
 What to run instead, after every task:
 
-- `npm run typecheck` — fast, catches the obvious breakage.
-- Targeted unit tests for the files you changed, e.g. `npm run test:unit -- --grep "<pattern>"`.
-- A build check where the change could affect bundling: `npm run build:renderer` or `npm run build`.
+- `npm.cmd run typecheck` — fast, catches the obvious breakage.
+- Targeted unit tests for the files you changed, e.g. `npm.cmd run test:unit -- test/unit/<relevant-file>.test.ts`.
+- A build check where the change could affect bundling: `npm.cmd run build:renderer` or `npm.cmd run build`.
 
 This applies to **frontend-dev, backend-dev, qa and the orchestrator**: the orchestrator must not
 ask a developer for a full suite run unless one of the two conditions above holds. The full suite
@@ -236,56 +228,12 @@ the next numbered phase, in the original template, **including the mandatory Set
 impact line**. The page list the scout reads is maintained by hand in
 `docs/FEATURE-SOURCES.md`.
 
-## Model integrity — hard stop rule
+## Model configuration
 
-Every agent runs only on the model pinned for its role. OpenCode is the only active
-orchestration harness:
-
-- **OpenCode** — the `model:` field in that role's `.opencode/agents/*.md` definition.
-  Every role is a cloud route now (git-agent moved off `local-ninfer/qwen3.8-27b` on
-  2026-09-18). The retired NInfer provider entry stays in `opencode.json` and the serving
-  script stays in `scripts/` as fallback infrastructure only; the guard runs
-  `ninfer-model.ps1 stop` at run end to keep the card clear.
-
-The split-tier build model (operator decision 2026-09-30): the **orchestrator** runs
-on `openrouter/moonshotai/kimi-k3` (strategy tier). The five build roles — backend-dev,
-frontend-dev, qa, the adversary and git-agent — ALL run on
-`openrouter/deepseek/deepseek-v4.1-flash` (tactical tier; shared since 2026-09-17/18,
-~1M-token context, cloud vision for qa and the adversary). Any role on its own tier's
-model is correct, not a fallback; feature-scout on glm-5.3-flash completes the team. A
-silent fallback means
-an agent running on any model OTHER than its pinned one (today: any build role on
-kimi-k3 or glm, the orchestrator on deepseek, feature-scout on anything else). It is a
-hard stop either way. If a sub-agent cannot load its pinned model
-(provider error, account
-data-policy rejection, invalid ID) or starts on any other model, the build **stops** —
-no planning, no real task dispatch, no work on the fallback model. The orchestrator
-reports the failure to the human operator and waits. Only the human may resolve a model
-failure (fix the account setting, or swap the pin per the fallback table below) and
-restart the build.
-
-## Model fallbacks
-
-The active pin is the agent definition. A fallback is a human-approved configuration
-change, not an automatic retry. Keep it short and current:
-
-- git-agent:
-  `openrouter/deepseek/deepseek-v4.1-flash` -> `openrouter/z-ai/glm-5.3-flash`.
-  (Back to local: human repins `local-ninfer/qwen3.8-27b` AND re-adds git-agent to the
-  guard's LOCAL_ROLES — the provider entry and serving script stay in place.)
-- backend-dev, frontend-dev, qa, adversary, git-agent: no automatic fallback —
-  their pin is `deepseek-v4.1-flash` (the tactical-tier shared model); stop and ask
-  the human.
-- feature-scout: `openrouter/z-ai/glm-5.3-flash` ->
-  `openrouter/deepseek/deepseek-v4-flash`.
-- orchestrator: no fallback — stop and ask the human. (Pinned to
-  `openrouter/moonshotai/kimi-k3` on 2026-09-30; before that,
-  `deepseek-v4.1-flash`.)
-
-Every cloud role runs on its pinned model by design; no fallback routing between cloud
-models. Record approved
-model changes in `AGENTS_NOTES.md`; that file is historical reference, not mandatory
-startup context.
+All agent inference uses cloud models. Paperclip agent configuration is the source
+of truth for each model; repository files do not define model pins. Model changes
+require operator direction. Report a provider failure with its actual error and
+leave a valid task disposition; do not switch providers autonomously.
 
 ## Escalation after three failed attempts
 
@@ -302,16 +250,9 @@ contract if the spec is the problem — then re-dispatches the same sub-agent to
 continue. The orchestrator never takes over the fix and never writes code; the same
 agent keeps doing its own work.
 
-A sub-agent that stops because it ran out of context or token budget has **not** failed the
-task, and its work is not lost. Resume that OpenCode task with its `task_id` and a one-line
-continuation naming where it stopped. Never restart the same task from scratch because a child
-filled its context, and never treat it as a reason for the orchestrator to take over.
-
-An empty step — the child settles with no text and no tool calls — is also a token-limit
-stop, not a dead session: on the shared cloud model the generation budget includes
-reasoning, so a resumed child can burn the whole cap silently planning. Resume the same
-session with a halved scope and the prefix "Do not deliberate — start producing output
-immediately"; never re-dispatch fresh after one or two empty steps.
+Paperclip owns session recovery. Preserve task evidence and resume the assigned
+issue through Paperclip; do not launch a separate orchestration session. An empty
+response is not proof of a token limit: inspect the actual run error and tool output.
 
 ## Cross-bubbling event rules (to prevent ghost/unclickable regressions)
 
@@ -347,101 +288,13 @@ on the action bar's confirm button and assert it fires (not swallowed), and
 include a click on a disarm-eligible element asserting the tool disarms while
 the click still completes.
 
-## Animation System (Phase 15)
+## Animation system
 
-All UI animations must use the centralized motion system. Do NOT hardcode animation values.
-
-### Motion Tokens (src/renderer/styles/animations.css)
-
-**Duration tokens:**
-- `--motion-duration-micro: 150ms` - tooltips, micro-feedback
-- `--motion-duration-fast: 200ms` - buttons, toggles, hovers
-- `--motion-duration-standard: 250ms` - dialogs, popovers, panels
-- `--motion-duration-panel: 280ms` - sidebar open/close
-- `--motion-duration-layout: 350ms` - large layout changes
-- `--motion-theme-crossfade: 400ms` - theme transitions
-
-**Easing tokens:**
-- `--motion-ease-standard: cubic-bezier(0.4, 0, 0.2, 1)`
-- `--motion-ease-enter: cubic-bezier(0, 0, 0.2, 1)`
-- `--motion-ease-exit: cubic-bezier(0.4, 0, 1, 1)`
-- `--motion-ease-layout: cubic-bezier(0.4, 0, 0.2, 1)`
-
-**Scale tokens:**
-- `--motion-scale-press: 0.97` - button press
-- `--motion-scale-enter: 0.95` - dialog/popover enter
-- `--motion-scale-exit: 0.98` - dialog/popover exit
-
-### Animation Patterns by Component
-
-**Dialogs/Modals:**
-- Open: Bloom In (scale 0.95→1, opacity 0→1, 200ms)
-- Close: Bloom Out (reverse)
-- Backdrop: Fade In/Out (180ms)
-- Use: `AnimatedDialog` wrapper
-
-**Popovers/Menus:**
-- Open: Pop In (scale 0.95→1, 180ms)
-- Dropdown: Drop Reveal (translateY -8px→0, 180ms)
-- Tooltip: Micro Fade Lift (120ms)
-- Menu Item Hover: Soft Material Highlight (150ms)
-- Use: `usePopAnimation()` hook
-
-**Sidebars/Panels:**
-- Open: Slide In (translateX -100%→0, 280ms)
-- Close: Slide Out (translateX 0→-100%, 220ms)
-- Resize: Elastic Resize (300ms)
-- Use: `AnimatedPanel` wrapper
-
-**Tabs:**
-- Switch: Crossfade (200ms)
-- Indicator: Liquid Glide (transform translateX, 200ms)
-- Use: `AnimatedTab` wrapper
-
-**Buttons/Controls:**
-- Hover: Luminous Hover (subtle lift, 150ms)
-- Press: Soft Compression (scale 0.97, 100ms)
-- Release: Spring Return (scale 1, 200ms)
-- Toggle: Selection Fill (150ms)
-- Use: `useScaleAnimation()` + token `--motion-scale-press`
-
-**Thumbnails:**
-- Select: Selection Bloom (border + shadow, 150ms)
-- Hover: Lift (translateY -4px, 150ms)
-- Drag: Floating Lift (scale 1.05, 200ms)
-
-**Theme Transitions:**
-- Switch: Crossfade (400ms)
-- Uses View Transitions API when available
-- PDF content NEVER animates (stays white)
-- All themes use IDENTICAL timing
-
-### Animation Rules
-
-1. **NO hardcoded values** - import from `motionTokens.ts`
-2. **Same motion across themes** - only visual properties (shadow, highlight) differ
-3. **Transform/opacity only** - no layout thrashing
-4. **Respect reduced-motion** - check `prefers-reduced-motion`
-5. **60fps target** - keep animations under 16ms frame budget
-6. **PDF protection** - never animate PDF content (page colors, text)
-
-### Component Checklist
-
-When adding any animated component:
-- [ ] Uses centralized tokens
-- [ ] Same timing in light/dark/frosted themes
-- [ ] Reduced motion fallback
-- [ ] 60fps verified
-- [ ] PDF content unaffected
-
-### Files
-
-- `src/renderer/styles/animations.css` - token definitions
-- `src/renderer/hooks/useAnimations.ts` - animation hooks
-- `src/renderer/hooks/motionTokens.ts` - JS constants
-- `src/renderer/components/AnimatedDialog.tsx` - dialog wrapper
-- `src/renderer/components/AnimatedPanel.tsx` - panel wrapper
-- `src/renderer/components/AnimatedTab.tsx` - tab wrapper
+When changing UI motion, read docs/ANIMATION-RULES.md and the centralized tokens
+in src/renderer/styles/animations.css and src/renderer/hooks/motionTokens.ts.
+Use the existing animated component wrappers and hooks. Keep timing consistent
+across themes, respect reduced motion, prefer transform/opacity, meet the 60fps
+budget, and never animate PDF page content. Do not hardcode token values.
 
 ## Release pipeline (OTA)
 
@@ -482,3 +335,76 @@ repository is private, the OTA pipeline is wired to real GitHub Releases, and an
 unauthorised push to origin can ship a broken or partially-tested build to users
 who have auto-update enabled. When a phase gate is green, the orchestrator reports
 "ready to push" and waits for the operator's go/no-go before dispatching git-agent.
+
+## Paperclip execution contract
+
+Use only `C:/Users/tanzi/OneDrive/App Development/TFlex` for application commands.
+Each shell call must specify that working directory. Read only the assigned phase
+extract, relevant source, and named ledger entries; do not scan the full requirements
+or ledgers for a focused task. Historical comments are evidence, not current rules.
+
+Use `npm.cmd` and `npx.cmd` on Windows. For Paperclip bookkeeping use the installed
+CLI directly, avoiding package downloads and version drift:
+
+    & 'C:/Program Files/nodejs/node.exe' 'C:/Users/tanzi/Documents/paperclip-tflex/app/node_modules/paperclipai/dist/index.js' <arguments>
+
+In PowerShell, environment variables use `$env:PAPERCLIP_TASK_ID` (and similarly
+for API_URL, API_KEY, AGENT_ID, RUN_ID). In bash they use `$PAPERCLIP_TASK_ID`.
+Never read or print credential values. Execute actual tools and inspect their exit
+status; describing a call or inventing a completion callback executes nothing.
+
+### Shared workspace and builds
+
+Only git-agent stages or commits files. All other roles leave allowed work products
+uncommitted and hand off explicit paths. Never stage everything, revert another
+task's work, or commit another agent's files.
+
+Heavy builds, typechecks, test runs, packaging, and Electron probes share one lock.
+Use the helper; do not hand-write JSON or copy example identities/timestamps:
+
+    node scripts/paperclip-build-lock.mjs acquire
+    node scripts/paperclip-build-lock.mjs status
+    node scripts/paperclip-build-lock.mjs release
+
+Run heavy commands only after acquire succeeds (exit 0). Release in a finally block.
+Acquire is atomic; a busy or malformed lock is a reason to inspect its real owner,
+not to overwrite it. Age alone never proves the owner stopped. Escalate abandoned
+locks with current run evidence. While busy, perform useful source review and
+recheck briefly; if still blocked, name the actual owning issue as a dependency.
+
+### Final task state
+
+Before ending an assigned run you MUST record the disposition on the board with
+the canonical helper — a comment, or a prose "Final Disposition" line, changes
+nothing:
+
+    node scripts/paperclip-disposition.mjs done "PASS: <one-line verdict + evidence pointer>"
+    node scripts/paperclip-disposition.mjs comment "<markdown report>"
+    node scripts/paperclip-disposition.mjs blocked "<why>" --by <ISSUE_ID[,ISSUE_ID...]> --owner <AGENT_ID> --action "<concrete action>"
+
+The helper reads PAPERCLIP_API_URL (already includes `/api`), PAPERCLIP_API_KEY,
+PAPERCLIP_TASK_ID and PAPERCLIP_RUN_ID from the run environment, writes the
+comment and/or status change, and prints the HTTP result. If it exits non-zero,
+fix the call and retry — do NOT fall back to hand-written curl or
+Invoke-WebRequest, and NEVER invent an API host: there is no cloud Paperclip
+API (api.paperclip.dev and similar do not exist). The only base URL is the one
+in PAPERCLIP_API_URL, which points at the local control plane. Use done only
+with evidence, in_review only with a real reviewer, or blocked with a concrete
+unblock action. Never park completed runs in_progress.
+
+The blocker JSON shape is:
+
+    {"status":"blocked","blockedByIssueIds":["<actual blocking issue UUID>"],"unblockDescriptor":{"owner":{"agentId":"<responsible agent UUID>"},"action":"<concrete action>"}}
+
+Use real dependency IDs, never the issue itself. Recheck blockers through tools in
+the current run; old missing-file, lock, or launch-error reports may be obsolete.
+After three attempts without progress, preserve evidence and ask the CTO for a
+changed approach rather than repeat the same run. Check API writes succeeded.
+
+### Inspectable artifacts
+
+Upload decisive evidence using the installed CLI's `issue attachment:upload`, then
+register `issue work-product:create` with type artifact, provider paperclip and
+metadata.attachmentId from the upload response. An attachment alone does not appear
+on the Artifacts board. Record commit/release handoffs as typed work products too.
+Stop after two failed identical writes and report the exact failure.
