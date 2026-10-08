@@ -37,8 +37,14 @@ import type {
 import { AnimatePresence } from "motion/react";
 import {
   ContentActionBar,
+  SelectionChrome,
   useSelectableDrag,
 } from "../components/selectableContent";
+import {
+  chromeObstaclesIn,
+  contextControlFits,
+  type ControlAnchorBox,
+} from "../components/controlPlacement";
 import { selectionActionBarBox } from "./AnnotationCommentBox";
 import { rectsClose, type ImageResizeHandle } from "../edit/geometry";
 import { measureTextWidthCss } from "../edit/rasterize";
@@ -517,6 +523,31 @@ export function AnnotationOverlay(props: AnnotationOverlayProps): ReactElement {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [toolKind, cssScale]);
 
+  // Phase 117 — Escape during a selection drag CANCELS it exactly like a
+  // lost pointer: the gesture ends through the shared controller (capture
+  // released) and the live draft is dropped, so no commit runs and no
+  // stale drag state survives.
+  useEffect(() => {
+    if (selDrag.drag === null) return undefined;
+    const onKey = (e: KeyboardEvent): void => {
+      if (e.key === "Escape" && !e.isComposing) {
+        selDrag.endDrag();
+        setAnnDraft(null);
+      }
+    };
+    // The shared controller already ends the gesture on pointercancel
+    // (releasing capture); this clear drops the live draft so no stale
+    // moved preview survives the cancelled pointer.
+    const onCancel = (): void => setAnnDraft(null);
+    window.addEventListener("keydown", onKey);
+    window.addEventListener("pointercancel", onCancel);
+    return (): void => {
+      window.removeEventListener("keydown", onKey);
+      window.removeEventListener("pointercancel", onCancel);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selDrag.drag]);
+
   // ---- unified selection derived state (DEF-153/154) ----
 
   const effectiveAnnotations = useMemo((): Annotation[] => {
@@ -552,6 +583,17 @@ export function AnnotationOverlay(props: AnnotationOverlayProps): ReactElement {
       .filter((a) => a.id !== selectedAnn.id)
       .map((a) => annotationBounds(a));
   }, [effectiveAnnotations, selectedAnn]);
+
+  /** Phase 117 — the app-chrome rects (rail / inspector / dock / viewing
+   *  footer) in the annotation layer's coordinate space. The selection
+   *  bar and the comment card are placed clear of these, and fall back to
+   *  the Inspector when no placement fits. Read from the EXISTING mounted
+   *  chrome elements, never a second layout system. */
+  const selectionObstacles = useMemo((): readonly ControlAnchorBox[] => {
+    if (selectedAnn === null) return [];
+    return chromeObstaclesIn(rootRef.current);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedAnn, cssScale]);
 
   // Phase 21 (annotations) — report the selected committed annotation
   // upward. `selectedAnn` keeps a stable object identity while the
@@ -832,7 +874,7 @@ export function AnnotationOverlay(props: AnnotationOverlayProps): ReactElement {
       // press on them selects / drags the content, it never starts a
       // create-drag on the page behind it.
       const interactive = target.closest(
-        ".ann-editor, .ann-textbox-actions, .ann-textbox-wrap, .ann-note-editor, .ann-note, .ann-shape, .ann-ink-hit, .ann-arrow-hit, .ann-arrow-head-hit, .ann-callout-arrow-hit, .ann-callout-arrow-head-hit, .ann-textbox, .ann-callout, .content-action-bar, .content-resize-handle, .content-selection-bounds, .content-move-hint, .color-palette, .ann-comment-box, button, input, textarea, select, [role='button'], [role='menuitem'], [role='tab'], [contenteditable='true']",
+        ".ann-editor, .ann-textbox-actions, .ann-textbox-wrap, .ann-note-editor, .ann-note, .ann-shape, .ann-ink-hit, .ann-arrow-hit, .ann-arrow-head-hit, .ann-callout-arrow-hit, .ann-callout-arrow-head-hit, .ann-textbox, .ann-callout, .content-action-bar, .content-resize-handle, .content-selection-bounds, .content-move-hint, .color-palette, .ann-comment-box, .selection-chrome, .selection-handle, button, input, textarea, select, [role='button'], [role='menuitem'], [role='tab'], [contenteditable='true']",
       );
       if (interactive !== null) {
         // The click is on a UI control / committed surface — let the
@@ -1244,6 +1286,7 @@ export function AnnotationOverlay(props: AnnotationOverlayProps): ReactElement {
             cssScale={cssScale}
             widthPt={widthPt}
             heightPt={heightPt}
+            obstacles={selectionObstacles}
             paletteTheme={paletteTheme}
             annotationPalette={annotationPalette}
             onAnnotationPaletteChange={onAnnotationPaletteChange}
@@ -1286,6 +1329,7 @@ export function AnnotationOverlay(props: AnnotationOverlayProps): ReactElement {
           cssScale={cssScale}
           widthPt={widthPt}
           heightPt={heightPt}
+          obstacles={selectionObstacles}
           // DEF-326 — the OTHER annotations' bounds, so the card never
           // lands on a neighbouring annotation's hit surface (a reopened
           // note behind the card could otherwise never be selected).
@@ -2299,6 +2343,11 @@ interface SelectedContentChromeProps {
    *  clamped into the page's vertical bounds (a shape at the bottom edge
    *  used to push the bar past the page). */
   heightPt: number;
+  /** Phase 117 — app-chrome rects (rail / inspector / dock / viewing
+   *  footer) in page-view coordinates. The action bar never covers one;
+   *  when no placement fits the bar is not rendered (the Inspector owns
+   *  the selection). */
+  obstacles?: readonly ControlAnchorBox[];
   paletteTheme?: AnnotationTheme;
   annotationPalette?: AnnotationColors;
   onAnnotationPaletteChange?: (next: AnnotationColors) => void;
@@ -2328,6 +2377,7 @@ function SelectedContentChrome(props: SelectedContentChromeProps): ReactElement 
     cssScale,
     widthPt,
     heightPt,
+    obstacles = [],
     paletteTheme,
     annotationPalette,
     onAnnotationPaletteChange,
@@ -2346,8 +2396,21 @@ function SelectedContentChrome(props: SelectedContentChromeProps): ReactElement 
   // page's bottom edge flips the bar above the shape (or clamps it
   // inside) instead of rendering the Delete control outside the visible
   // page. The comment card derives from the SAME box, so the two can
-  // never collide again.
-  const barBox = selectionActionBarBox(bounds, cssScale, widthPt, heightPt);
+  // never collide again. Phase 117 — the bar also never covers an
+  // app-chrome obstacle, and a too-small / occluded anchor renders NO
+  // floating bar (the Inspector owns the selection).
+  const barBox = selectionActionBarBox(bounds, cssScale, widthPt, heightPt, obstacles);
+  const barFits = contextControlFits(
+    {
+      left: ring.left,
+      top: ring.top,
+      bottom: ring.top + ring.height,
+      right: ring.left + ring.width,
+    },
+    { width: barBox.width, height: barBox.height },
+    { width: widthPt * cssScale, height: heightPt * cssScale },
+    obstacles,
+  );
   // Phase 52 follow-up — text boxes (textbox / callout) already paint their
   // OWN single rounded frame; the selection is carried by that frame's
   // border changing to the accent, so the extra 1px bounds ring would be a
@@ -2355,43 +2418,30 @@ function SelectedContentChrome(props: SelectedContentChromeProps): ReactElement 
   const carriesOwnFrame = ann.kind === "textbox" || ann.kind === "callout";
   return (
     <>
-      {/* DEF-154 — the frame positions the ring + handles as ONE unit
-          at the annotation's bounds. The handles use the same -5px
-          corner offsets as the edit-box handles, so they MUST be
-          children of a positioned frame at the ring rect (as
-          siblings of the ring, anchored to the page layer, they
-          collapsed onto the page's corners instead of the shape). */}
-      <div
-        className="content-selection-frame"
-        data-content-selection-frame
-        style={{
-          left: ring.left - 2,
-          top: ring.top - 2,
-          width: ring.width + 4,
-          height: ring.height + 4,
+      {/* Phase 117 (chunk C) — the selection frame / bounds / handles are
+          the ONE shared `SelectionChrome`. The frame rect keeps the
+          historic -2 / +4 expansion; `data-content-selection-frame` is
+          preserved on the root. The boundary rect is omitted for the
+          textbox / callout kinds (their own frame carries the selection);
+          handles render only for a resizable kind. Move/up stay on the
+          layer root below, an ancestor of the handles. */}
+      <SelectionChrome
+        left={ring.left - 2}
+        top={ring.top - 2}
+        width={ring.width + 4}
+        height={ring.height + 4}
+        kind="annotation"
+        state="selected"
+        handles={resizable}
+        boundary={!carriesOwnFrame}
+        handleDataAttr="data-annotation-resize-handle"
+        onHandlePointerDown={(e, h): void => {
+          e.stopPropagation();
+          onSurfacePointerDown(e, ann, h);
         }}
-        aria-hidden
-      >
-        {!carriesOwnFrame && (
-          <div
-            className="content-selection-bounds"
-            data-content-selection-bounds
-            aria-hidden
-          />
-        )}
-        {resizable &&
-          (["nw", "ne", "sw", "se"] as const).map((h) => (
-            <div
-              key={h}
-              className={`content-resize-handle content-resize-handle-${h}`}
-              data-annotation-resize-handle={h}
-              onPointerDown={(e): void => {
-                e.stopPropagation();
-                onSurfacePointerDown(e, ann, h);
-              }}
-            />
-          ))}
-      </div>
+        dataAttributes={{ "data-content-selection-frame": "" }}
+      />
+      {barFits && (
       <ContentActionBar
         className="content-action-bar ann-content-action"
         dataBar={`ann-${ann.kind}`}
@@ -2425,6 +2475,7 @@ function SelectedContentChrome(props: SelectedContentChromeProps): ReactElement 
         deleteAria="Delete annotation"
         dataActionPrefix={`ann-${ann.kind}`}
       />
+      )}
     </>
   );
 }

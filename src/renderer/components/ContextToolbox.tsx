@@ -16,6 +16,8 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { ReactElement, ReactNode } from "react";
 import { TfBar } from "./motion/TfMotion";
 import {
+  chromeObstaclesIn,
+  contextControlFits,
   placeControlNearAnchor,
   type ControlAnchorBox,
   type ControlPosition,
@@ -55,6 +57,12 @@ export interface ContextToolboxProps {
    *  sites keep their stable selectors. Core hooks (data-context-toolbox,
    *  data-placement) always win. */
   dataAttributes?: Record<string, string | undefined>;
+  /** Phase 117 — app-chrome rects (rail / inspector / dock / viewing
+   *  footer) in the SAME coordinate space as `anchor` / `viewport`. A
+   *  placement never covers one; when no side is clear the surface does
+   *  not render at all (the Inspector owns the selection). When omitted,
+   *  the existing mounted chrome elements are read live. */
+  obstacles?: readonly ControlAnchorBox[];
 }
 
 /** Place the measured surface beside the anchor, flipping and clamping into
@@ -64,11 +72,13 @@ function place(
   el: HTMLElement | null,
   size: ControlSize | undefined,
   viewport: ControlViewport | undefined,
+  obstacles: readonly ControlAnchorBox[],
 ): ControlPosition {
   return placeControlNearAnchor({
     anchor,
     size: size ?? { width: el?.offsetWidth ?? 0, height: el?.offsetHeight ?? 0 },
     viewport: viewport ?? { width: window.innerWidth, height: window.innerHeight },
+    obstacles,
   });
 }
 
@@ -86,26 +96,43 @@ export function ContextToolbox(props: ContextToolboxProps): ReactElement | null 
     viewport,
     coordinateSpace = "window",
     dataAttributes,
+    obstacles,
   } = props;
   const ref = useRef<HTMLDivElement | null>(null);
   const [position, setPosition] = useState<ControlPosition | null>(null);
+  const [fits, setFits] = useState(true);
 
   useLayoutEffect(() => {
     if (!open) return undefined;
     const pageView = coordinateSpace === "page-view";
-    const reposition = (): void =>
-      setPosition(place(anchor, ref.current, size, pageView ? viewport : undefined));
+    const clampViewport = pageView
+      ? viewport ?? { width: window.innerWidth, height: window.innerHeight }
+      : { width: window.innerWidth, height: window.innerHeight };
+    const reposition = (): void => {
+      const chrome = obstacles ?? chromeObstaclesIn(pageView ? ref.current?.offsetParent ?? null : null);
+      setPosition(place(anchor, ref.current, size, pageView ? viewport : undefined, chrome));
+      setFits(
+        contextControlFits(
+          anchor,
+          size ?? { width: ref.current?.offsetWidth ?? 0, height: ref.current?.offsetHeight ?? 0 },
+          clampViewport,
+          chrome,
+        ),
+      );
+    };
     reposition();
     window.addEventListener("resize", reposition);
     return (): void => window.removeEventListener("resize", reposition);
     // Anchor geometry and the coordinate-space inputs are read field-by-field
-    // so a fresh object with the same values does not re-run placement.
+    // so a fresh object with the same values does not re-run placement. The
+    // obstacle list is intentionally read live, not tracked as a dependency.
   }, [
     open,
     coordinateSpace,
     anchor.left,
     anchor.top,
     anchor.bottom,
+    anchor.right,
     size?.width,
     size?.height,
     viewport?.width,
@@ -122,6 +149,9 @@ export function ContextToolbox(props: ContextToolboxProps): ReactElement | null 
   }, [open, onClose]);
 
   if (!open) return null;
+  // Phase 117 — a control that cannot fit clear of the app chrome does
+  // not render a floating surface; the Inspector owns the selection.
+  if (!fits) return null;
 
   const above = position !== null && position.top < anchor.top;
   const classes = [

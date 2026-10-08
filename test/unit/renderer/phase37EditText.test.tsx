@@ -2,9 +2,10 @@
 //
 // Phase 37 (features C + D) — the edit-text items 11 / 12 / 13 / 14.
 //
-//   Item 11  the edit-flow action bar is Confirm / Delete / Cancel in that
-//            order, with NO Edit (selecting text already brings the panel);
-//            Cancel reverts the renderer-local pending move.
+//   Item 11  the edit-flow action bar is Confirm / Cancel primary with Delete
+//            behind the separated More control (Phase 117 order), with NO Edit
+//            (selecting text already brings the panel); Cancel reverts the
+//            renderer-local pending move.
 //   Item 12  the selected text stays VISIBLE — the white eraser cover must
 //            always be backed by the run preview.
 //   Item 13  the EDIT stage is the Edit-mode switch (the dock verb is gone).
@@ -142,9 +143,12 @@ describe("Phase 37 item 11 — the edit-flow bar is Confirm / Delete / Cancel", 
     try {
       selectRun(m.host);
       expect(m.host.querySelector("[data-textrun-selection]")).not.toBeNull();
-      expect(barButtons(m.host, "textrun")).toEqual(["Confirm", "Delete", "Cancel"]);
+      // Phase 117 chunk B — the primary row is Confirm / Cancel plus the
+      // separated More control; Delete moved behind it.
+      expect(barButtons(m.host, "textrun")).toEqual(["Confirm", "Cancel", "More"]);
       expect(m.host.querySelector('[data-content-action="textrun-edit"]')).toBeNull();
       expect(m.host.querySelector('[data-content-action="textrun-confirm"]')).not.toBeNull();
+      clickAction(m.host, '[data-content-action="textrun-more"]');
       expect(m.host.querySelector('[data-content-action="textrun-delete"]')).not.toBeNull();
       expect(m.host.querySelector('[data-content-action="textrun-cancel"]')).not.toBeNull();
     } finally {
@@ -268,7 +272,17 @@ function mountBox(initial: EditState): {
   };
 }
 
-describe("Phase 37 item 11 � the box bar is Confirm / Delete / Cancel and Cancel reverts", () => {
+function openMore(host: HTMLElement): void {
+  const more = host.querySelector<HTMLButtonElement>(
+    "[data-content-action='editbox-more']",
+  );
+  if (more === null) throw new Error("expected the More control");
+  act((): void => {
+    more.click();
+  });
+}
+
+describe("Phase 37 item 11 � the box bar is Confirm / Cancel primary with Delete behind More, and Cancel reverts", () => {
   it("renders the three verbs in order (no Edit)", () => {
     const initial: EditState = {
       ...initialEditState,
@@ -280,11 +294,16 @@ describe("Phase 37 item 11 � the box bar is Confirm / Delete / Cancel and Canc
     try {
       const bar = m.host.querySelector("[data-edit-box-toolbar]");
       expect(bar).not.toBeNull();
-      const verbs = [...(bar?.querySelectorAll("button") ?? [])].map((b) =>
-        b.textContent?.trim(),
-      );
-      expect(verbs).toEqual(["Confirm", "Delete", "Cancel"]);
+      const primaryVerbs = [...(bar?.querySelectorAll("button") ?? [])]
+        .filter((b) => b.closest(".content-action-more-menu") === null)
+        .map((b) => b.textContent?.trim());
+      expect(primaryVerbs).toEqual(["Confirm", "Cancel", "More"]);
       expect(m.host.querySelector("[data-edit-box-action='edit']")).toBeNull();
+      expect(m.host.querySelector("[data-edit-box-action='delete']")).toBeNull();
+      openMore(m.host);
+      const del = m.host.querySelector("[data-edit-box-action='delete']");
+      expect(del, "Delete lives behind More").not.toBeNull();
+      expect(del?.closest(".content-action-more-menu")).not.toBeNull();
     } finally {
       m.unmount();
     }

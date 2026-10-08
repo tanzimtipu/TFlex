@@ -141,6 +141,14 @@ function clickEl(el: Element): void {
   });
 }
 
+/** Phase 117 chunk B — Edit/Delete now live behind the separated More
+ *  control, so a selection must open it before the verbs exist in the DOM. */
+function openMore(host: HTMLElement): void {
+  const more = host.querySelector<HTMLButtonElement>("[data-content-action='stamp-more']");
+  if (more === null) throw new Error("stamp more control not found");
+  clickEl(more);
+}
+
 function press(el: Element, x: number, y: number): void {
   act((): void => {
     el.dispatchEvent(
@@ -245,6 +253,7 @@ describe("Bug 6 — placed stamps are selectable / movable / deletable / retypea
       const node = host.querySelector<HTMLElement>(".stamp-annotation");
       if (node === null) throw new Error("stamp annotation not rendered");
       clickEl(node);
+      openMore(host);
       const bar = barOf(host);
       expect(bar).not.toBeNull();
       expect(
@@ -291,6 +300,7 @@ describe("Bug 6 — placed stamps are selectable / movable / deletable / retypea
       const node = host.querySelector<HTMLElement>(".stamp-annotation");
       if (node === null) throw new Error("stamp annotation not rendered");
       clickEl(node);
+      openMore(host);
       clickEl(deleteBtn(host));
       expect(onDelete).toHaveBeenCalledTimes(1);
       expect(onDelete.mock.calls[0]?.[0]?.id).toBe("p-1");
@@ -306,6 +316,7 @@ describe("Bug 6 — placed stamps are selectable / movable / deletable / retypea
       const node = host.querySelector<HTMLElement>(".stamp-annotation");
       if (node === null) throw new Error("stamp annotation not rendered");
       clickEl(node);
+      openMore(host);
       const edit = host.querySelector<HTMLButtonElement>(
         "[data-content-action='stamp-edit']",
       );

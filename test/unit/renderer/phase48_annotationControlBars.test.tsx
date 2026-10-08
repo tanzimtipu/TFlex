@@ -261,6 +261,8 @@ describe("Phase 48 item 3 - rendered action bar stays inside the page", () => {
       expect(left).toBeGreaterThanOrEqual(CONTROL_EDGE_GAP);
       expect(left + 240).toBeLessThanOrEqual(PAGE_W - CONTROL_EDGE_GAP);
       // The Delete control (the reported offender) is inside the page.
+      // Phase 117 chunk B — it now lives behind the separated More control.
+      clickEl(h.host.querySelector("[data-content-action='ann-rect-more']"));
       expect(h.host.querySelector("[data-content-action='ann-rect-delete']")).not.toBeNull();
     } finally {
       h.cleanup();

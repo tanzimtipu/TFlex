@@ -200,7 +200,12 @@ describe("DEF-366 — the rendered bottom-edge overlay keeps Delete reachable", 
 
       // The Delete control is present and its click path works when the
       // card is clear of it (the true elementFromPoint proof is the
-      // Phase-48 e2e gate).
+      // Phase-48 e2e gate). Phase 117 chunk B — Delete now lives behind
+      // the separated More control, so open it first.
+      const more = h.host.querySelector<HTMLButtonElement>("[data-content-action='ann-rect-more']");
+      act((): void => {
+        more?.click();
+      });
       const del = h.host.querySelector<HTMLButtonElement>("[data-content-action='ann-rect-delete']");
       expect(del, "Delete control mounted").not.toBeNull();
       act((): void => {

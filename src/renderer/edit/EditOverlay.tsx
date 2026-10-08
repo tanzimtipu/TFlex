@@ -54,7 +54,10 @@ import { colorToHex, fontFamilyFor } from "./editColor";
 import { ContextToolbox } from "../components/ContextToolbox";
 import {
   ContentActionBar,
+  SelectionChrome,
+  type SelectionHandleCorner,
 } from "../components/selectableContent";
+import { Icon } from "../icons/Icon";
 import {
   CONTROL_BAR_HEIGHT,
   placeControlNearAnchor,
@@ -549,6 +552,55 @@ export function EditOverlay(props: EditOverlayProps): ReactElement | null {
   // open, so a fresh open never commits a stale position.
   useEffect(() => {
   }, [textTarget]);
+
+  // Phase 117 — a cancelled pointer (OS gesture steal / capture loss) or
+  // Escape during ANY local edit drag ends it cleanly: every live preview
+  // is restored to the gesture's start rect (so the reducer carries no
+  // in-flight mutation), the drag state is dropped, and NOTHING is
+  // committed. The engine ops only ever run on a real pointerup.
+  const cancelEditDrag = useCallback((): void => {
+    if (imageDrag !== null) {
+      if (imageDrag.id !== undefined) {
+        dispatch({ type: "set-image-rect", id: imageDrag.id, rect: { ...imageDrag.startRect } });
+      }
+      setImageDrag(null);
+    }
+    if (textBoxDrag !== null) {
+      dispatch({ type: "set-text-box-rect", id: textBoxDrag.id, rect: { ...textBoxDrag.startRect } });
+      setTextBoxDrag(null);
+    }
+    if (boxDrag !== null) setBoxDrag(null);
+    if (cropDrag !== null) {
+      setCropDrag(null);
+      if (edit.cropping) dispatch({ type: "set-cropping", cropping: false });
+    }
+    const runDrag = runDragRef.current;
+    if (runDrag !== null) {
+      runDragRef.current = null;
+      setRunDragFromRect(null);
+      setRunSelection((prev) => (prev === null ? prev : { ...prev, rect: { ...runDrag.startRect } }));
+    }
+  }, [imageDrag, textBoxDrag, boxDrag, cropDrag, edit.cropping, dispatch]);
+
+  const editDragActive =
+    imageDrag !== null ||
+    textBoxDrag !== null ||
+    boxDrag !== null ||
+    cropDrag !== null ||
+    runDragFromRect !== null;
+  useEffect(() => {
+    if (!editDragActive) return undefined;
+    const onCancel = (): void => cancelEditDrag();
+    const onKey = (e: KeyboardEvent): void => {
+      if (e.key === "Escape" && !e.isComposing) cancelEditDrag();
+    };
+    window.addEventListener("pointercancel", onCancel);
+    window.addEventListener("keydown", onKey);
+    return (): void => {
+      window.removeEventListener("pointercancel", onCancel);
+      window.removeEventListener("keydown", onKey);
+    };
+  }, [editDragActive, cancelEditDrag]);
 
   // Helpers ----------------------------------------------------------------
 
@@ -1909,7 +1961,10 @@ interface PlacementViewProps {
   cssScale: number;
   selected: boolean;
   isResizing: boolean;
-  onPointerDownHandle: (e: ReactPointerEvent<HTMLDivElement>, handle: ImageResizeHandle) => void;
+  onPointerDownHandle: (
+    e: ReactPointerEvent<HTMLSpanElement>,
+    handle: SelectionHandleCorner,
+  ) => void;
 }
 
 function PlacementView(props: PlacementViewProps): ReactElement {
@@ -1938,16 +1993,25 @@ function PlacementView(props: PlacementViewProps): ReactElement {
         draggable={false}
       />
       {selected && (
-        <>
-          {(["nw", "ne", "sw", "se"] as const).map((h) => (
-            <div
-              key={h}
-              className={`edit-image-handle edit-image-handle-${h}`}
-              data-handle={h}
-              onPointerDown={(e): void => onPointerDownHandle(e, h)}
-            />
-          ))}
-        </>
+        // Phase 117 (chunk D) — the image selection chrome is the ONE shared
+        // `SelectionChrome` (same boundary + handles as every other kind);
+        // `data-handle` survives on each handle as the stable selector.
+        // A rotate handle is deliberately NOT rendered: the engine exposes no
+        // object-rotation op (only per-page quarter turns).
+        <SelectionChrome
+          left={0}
+          top={0}
+          width={placement.rect.width * cssScale}
+          height={placement.rect.height * cssScale}
+          kind="image"
+          state="selected"
+          handles
+          handleDataAttr="data-handle"
+          onHandlePointerDown={(e, h): void => {
+            e.stopPropagation();
+            onPointerDownHandle(e, h);
+          }}
+        />
       )}
       {/* Marker rendered during a resize drag so the user sees
           a thin border without the dashed selected border being
@@ -2118,7 +2182,10 @@ interface TextBoxViewProps {
    *  toolbox mid-drag; the registry rect is untouched until the
    *  user confirms. Null = the box is not being drag-previewed. */
   dragOffsetCss?: { x: number; y: number } | null;
-  onPointerDownHandle: (e: ReactPointerEvent<HTMLDivElement>, handle: ImageResizeHandle) => void;
+  onPointerDownHandle: (
+    e: ReactPointerEvent<HTMLSpanElement>,
+    handle: SelectionHandleCorner,
+  ) => void;
 }
 
 /** B5 + DEF-127 — a committed text box's selection + drag surface.
@@ -2240,15 +2307,26 @@ function TextBoxView(props: TextBoxViewProps): ReactElement {
           </div>
         ))}
       </div>
-      {selected &&
-        (["nw", "ne", "sw", "se"] as const).map((h) => (
-          <div
-            key={h}
-            className={`edit-box-handle edit-box-handle-${h}`}
-            data-edit-box-handle={h}
-            onPointerDown={(e): void => onPointerDownHandle(e, h)}
-          />
-        ))}
+      {selected && (
+        // Phase 117 (chunk D) — the committed text box's selection chrome is
+        // the ONE shared `SelectionChrome`; `data-edit-box-handle` survives on
+        // each handle as the stable selector. No rotate handle: the engine has
+        // no object-rotation op (only per-page quarter turns).
+        <SelectionChrome
+          left={0}
+          top={0}
+          width={box.rect.width * cssScale}
+          height={box.rect.height * cssScale}
+          kind="textBox"
+          state="selected"
+          handles
+          handleDataAttr="data-edit-box-handle"
+          onHandlePointerDown={(e, h): void => {
+            e.stopPropagation();
+            onPointerDownHandle(e, h);
+          }}
+        />
+      )}
     </div>
   );
 }
@@ -2298,6 +2376,12 @@ function TextBoxToolbar(props: TextBoxToolbarProps): ReactElement {
   // we pass the page-view box plus the historical fixed size. Cancel is an
   // existing revert action, so ContextToolbox also wires Escape through
   // onClose (no new transaction cancel is invented).
+  // Phase 117 (chunk D) — the primary row is Confirm + Cancel only; the red
+  // Delete is no longer a sibling of Confirm. It lives behind the ONE
+  // separated More control, reusing the shared `content-action-more`
+  // structure, so no destructive verb is the highest-salience control beside
+  // Confirm. Every `data-edit-box-action` selector survives.
+  const [moreOpen, setMoreOpen] = useState(false);
   return (
     <ContextToolbox
       open
@@ -2305,6 +2389,7 @@ function TextBoxToolbar(props: TextBoxToolbarProps): ReactElement {
         left: box.rect.x * cssScale,
         top: box.rect.y * cssScale,
         bottom: (box.rect.y + box.rect.height) * cssScale,
+        right: (box.rect.x + box.rect.width) * cssScale,
       }}
       ariaLabel="Text box actions"
       onClose={onCancel}
@@ -2326,16 +2411,6 @@ function TextBoxToolbar(props: TextBoxToolbarProps): ReactElement {
       </button>
       <button
         type="button"
-        className="btn btn-danger toolbox-action-btn toolbox-action-btn--delete edit-box-toolbar-btn edit-box-toolbar-btn-danger"
-        onClick={onDelete}
-        data-edit-box-action="delete"
-        aria-label="Delete text box"
-        title="Delete text box"
-      >
-        Delete
-      </button>
-      <button
-        type="button"
         className="btn btn-secondary toolbox-action-btn toolbox-action-btn--cancel edit-box-toolbar-btn"
         onClick={onCancel}
         data-edit-box-action="cancel"
@@ -2344,6 +2419,46 @@ function TextBoxToolbar(props: TextBoxToolbarProps): ReactElement {
       >
         Cancel
       </button>
+      <div className="content-action-more" data-content-action-more-host>
+        <span className="content-action-more-sep" aria-hidden />
+        <button
+          type="button"
+          className="btn btn-secondary toolbox-action-btn edit-box-toolbar-btn content-action-more-btn"
+          onClick={(): void => setMoreOpen((v) => !v)}
+          data-content-action="editbox-more"
+          aria-label="More actions"
+          aria-haspopup="menu"
+          aria-expanded={moreOpen}
+          title="More actions"
+        >
+          <Icon name="dockOverflow" size="sm" aria-hidden />
+          <span className="content-action-more-label">More</span>
+        </button>
+        {moreOpen && (
+          <div
+            className="content-action-more-menu anim-menu-pop"
+            role="menu"
+            aria-label="More actions"
+            data-content-action-more-menu
+          >
+            <button
+              type="button"
+              role="menuitem"
+              className="btn btn-danger toolbox-action-btn toolbox-action-btn--delete edit-box-toolbar-btn edit-box-toolbar-btn-danger"
+              onClick={(): void => {
+                setMoreOpen(false);
+                onDelete();
+              }}
+              data-edit-box-action="delete"
+              data-content-action="editbox-delete"
+              aria-label="Delete text box"
+              title="Delete text box"
+            >
+              Delete
+            </button>
+          </div>
+        )}
+      </div>
     </ContextToolbox>
   );
 }
@@ -2354,6 +2469,10 @@ function PlacementToolbar(props: PlacementToolbarProps): ReactElement {
   // coordinate space, preserving the legacy clamp and above/below flip
   // exactly. There is no cancel/revert action on this bar, so no onClose is
   // wired and ContextToolbox owns Escape only when the host supplies one.
+  // Phase 117 (chunk D) — Replace + Crop stay in the primary row; the red
+  // Remove is behind the ONE separated More control (never a sibling of
+  // Replace) so no destructive verb is the highest-salience control.
+  const [moreOpen, setMoreOpen] = useState(false);
   return (
     <ContextToolbox
       open
@@ -2361,6 +2480,7 @@ function PlacementToolbar(props: PlacementToolbarProps): ReactElement {
         left: placement.rect.x * cssScale,
         top: placement.rect.y * cssScale,
         bottom: (placement.rect.y + placement.rect.height) * cssScale,
+        right: (placement.rect.x + placement.rect.width) * cssScale,
       }}
       ariaLabel="Image placement actions"
       className="edit-image-toolbar"
@@ -2389,15 +2509,45 @@ function PlacementToolbar(props: PlacementToolbarProps): ReactElement {
       >
         Crop
       </button>
-      <button
-        type="button"
-        className="btn btn-danger toolbox-action-btn toolbox-action-btn--delete edit-image-toolbar-btn edit-image-toolbar-btn-danger"
-        onClick={onDelete}
-        aria-label="Remove image"
-        title="Remove from edit list"
-      >
-        Remove
-      </button>
+      <div className="content-action-more" data-content-action-more-host>
+        <span className="content-action-more-sep" aria-hidden />
+        <button
+          type="button"
+          className="btn btn-secondary toolbox-action-btn edit-image-toolbar-btn content-action-more-btn"
+          onClick={(): void => setMoreOpen((v) => !v)}
+          data-content-action="image-more"
+          aria-label="More actions"
+          aria-haspopup="menu"
+          aria-expanded={moreOpen}
+          title="More actions"
+        >
+          <Icon name="dockOverflow" size="sm" aria-hidden />
+          <span className="content-action-more-label">More</span>
+        </button>
+        {moreOpen && (
+          <div
+            className="content-action-more-menu anim-menu-pop"
+            role="menu"
+            aria-label="More actions"
+            data-content-action-more-menu
+          >
+            <button
+              type="button"
+              role="menuitem"
+              className="btn btn-danger toolbox-action-btn toolbox-action-btn--delete edit-image-toolbar-btn edit-image-toolbar-btn-danger"
+              onClick={(): void => {
+                setMoreOpen(false);
+                onDelete();
+              }}
+              data-content-action="image-delete"
+              aria-label="Remove image"
+              title="Remove from edit list"
+            >
+              Remove
+            </button>
+          </div>
+        )}
+      </div>
     </ContextToolbox>
   );
 }

@@ -57,7 +57,8 @@ import type { SpellCheckState } from '../spell/useSpellCheck';
 import { OcrSuspectsPanel } from './OcrSuspectsPanel';
 import type { OcrSuspectsPanelProps } from './OcrSuspectsPanel';
 import { formatBytes } from '../utils/formatBytes';
-import { kindLabel, type Annotation, type AnnotationPatch } from '../annotations/model';
+import { kindLabel, type Annotation, type AnnotationPatch, type PageRect } from '../annotations/model';
+import AnnColorBox from '../annotations/AnnColorBox';
 import type {
   BatesInfo,
   SignaturePlacement,
@@ -114,6 +115,49 @@ export interface InspectorTextSelection {
    *  that owns the text session, so the re-parented text panel renders the
    *  underline toggle. Optional so existing snapshot builders stay valid. */
   spellCheck?: SpellCheckState;
+  /** Phase 117 (chunk D) — the selected object's LIVE page-point geometry, so
+   *  the Inspector can expose numeric X / Y / width / height fields (page
+   *  points) plus keyboard nudge that route to the SAME overlay move / resize
+   *  handler the drag path uses. Optional: the host publishes it for a text
+   *  box / image selection when a real rect exists. When the rect is absent
+   *  the geometry row renders DISABLED with a truthful reason — the Inspector
+   *  never invents geometry. */
+  geometry?: InspectorEditGeometry;
+}
+
+/** Phase 117 (chunk D) — the kinds whose numeric geometry the Inspector can
+ *  expose. Text runs are deliberately NOT here: they have no engine rect the
+ *  Inspector may move numerically (their edit op is text-only). */
+export type InspectorEditGeometryKind = 'textBox' | 'image';
+
+export interface InspectorEditGeometry {
+  kind: InspectorEditGeometryKind;
+  /** The live page-point rect, or absent when the host has no live rect for
+   *  this kind (the row then renders disabled, never fabricated). */
+  rect?: { x: number; y: number; width: number; height: number };
+  /** Route a committed numeric change to the SAME overlay handler the drag
+   *  path uses (page points, never rounded to screen pixels). */
+  onChange?: (rect: { x: number; y: number; width: number; height: number }) => void;
+}
+
+/** Phase 117 (chunk D) — the numeric fields the geometry row exposes. */
+export type InspectorGeometryField = 'x' | 'y' | 'width' | 'height';
+
+/** Phase 117 (chunk D) — apply a keyboard nudge (page points) to one field.
+ *  A position field shifts x / y; a size field grows / shrinks the side,
+ *  clamped to a 1 pt minimum so a nudge can never invert the rect. Pure, so
+ *  the keyboard alternative is unit-testable without a DOM. */
+export function applyGeometryNudge(
+  rect: { x: number; y: number; width: number; height: number },
+  field: InspectorGeometryField,
+  delta: number,
+): { x: number; y: number; width: number; height: number } {
+  const next = { ...rect };
+  if (field === 'x') next.x += delta;
+  else if (field === 'y') next.y += delta;
+  else if (field === 'width') next.width = Math.max(1, next.width + delta);
+  else next.height = Math.max(1, next.height + delta);
+  return next;
 }
 
 export type InspectorSectionId =
@@ -122,7 +166,6 @@ export type InspectorSectionId =
   | 'document'
   | 'cropbox'
   | 'signature'
-  | 'comments'
   | 'annotations'
   | 'review-elements'
   | 'export'
@@ -196,7 +239,7 @@ export function inspectorSectionsForState(
       return ['cropbox'];
     case 'text':
       // The text panel rides ABOVE; the stage content stays below.
-      return stage === 'review' ? ['comments', 'review-elements'] : ['document'];
+      return stage === 'review' ? ['review-elements'] : ['document'];
     case 'signature':
       return ['signature'];
     case 'export':
@@ -204,7 +247,7 @@ export function inspectorSectionsForState(
     case 'page':
       return stage === 'pages' ? ['page', 'on-page', 'document'] : ['page', 'document'];
     case 'none':
-      return stage === 'review' ? ['comments', 'review-elements'] : ['document'];
+      return stage === 'review' ? ['review-elements'] : ['document'];
   }
 }
 
@@ -269,12 +312,24 @@ export function inspectorSelectionFor(args: {
   text: InspectorTextSelection | null;
   signatureLabel: string | null;
   page: number;
+  /** Phase 116 (TFL-1228) — true when a REVIEW annotation (ANY kind) is
+   *  selected. A shape annotation (ink / rect) publishes no text-panel
+   *  snapshot, so without this signal the selection fell back to `page` and
+   *  the review-elements section (and its annotation scope) never rendered.
+   *  Optional so every existing caller/test stays valid. */
+  annotationSelected?: boolean;
 }): InspectorSelection {
   // Phase 37 (item 1) — the text-manipulation panel is integrated into the
   // Inspector for BOTH flows: the EDIT flow (stage `edit`) and the ANNOTATE
   // flow (stage `review`, where a text annotation is selected).
   if ((args.stage === 'edit' || args.stage === 'review') && args.text !== null) {
     return { kind: 'text', name: args.text.name };
+  }
+  // Phase 116 (TFL-1228) — a selected annotation without a text snapshot still
+  // resolves to the text scope so the review-elements annotation panel renders
+  // (the text-properties block stays absent: `text` is null).
+  if (args.stage === 'review' && args.annotationSelected === true) {
+    return { kind: 'text', name: 'Text annotation' };
   }
   if (args.stage === 'review' && args.signatureLabel !== null) {
     return { kind: 'signature', name: args.signatureLabel };
@@ -283,22 +338,45 @@ export function inspectorSelectionFor(args: {
 }
 
 /** Phase 112 (TFL-854 C4) — the annotation the REVIEW inspector inspects.
- *  The host publishes the selected annotation as a text-panel snapshot (mode
- *  `annotation`), so that snapshot's `targetKey` is the authoritative id: the
- *  Inspector resolves the REAL annotation from the document list and never
- *  guesses a row. `null` when nothing annotation is selected (the section then
- *  shows a short hint, not a duplicate list). Pure, so the contract is pinned
- *  without mounting App. */
+ *  Phase 116 (TFL-1228) — the host publishes the selected annotation's REAL id
+ *  on a dedicated `selectedAnnotationId` prop for EVERY annotation kind (the
+ *  shape kinds publish no text-panel snapshot), and still publishes a
+ *  text-panel snapshot (mode `annotation`) for the text kinds. Either source
+ *  resolves the REAL annotation from the document list; the Inspector never
+ *  guesses a row. `null` when nothing is selected (the section then shows a
+ *  short hint, not a duplicate list). Pure, so the contract is pinned without
+ *  mounting App. */
 export function selectedReviewAnnotation(
   selection: InspectorSelection,
   textPanel: ReviewAnnotationSelectionSource | null,
   annotations: readonly Annotation[],
+  selectedAnnotationId?: string | null,
 ): Annotation | null {
+  // The host's dedicated selected-annotation publish is authoritative when it
+  // supplies one: it names the REAL annotation id for ANY kind, including the
+  // shape annotations (ink / rect) that publish no text-panel snapshot. The
+  // published id may carry the `annotation:` target-key prefix, so it is
+  // normalized before the lookup.
+  if (selectedAnnotationId !== undefined && selectedAnnotationId !== null) {
+    const id = stripAnnotationKeyPrefix(selectedAnnotationId);
+    return annotations.find((a) => a.id === id) ?? null;
+  }
   if (selection.kind !== 'text') return null;
   if (textPanel === null || textPanel.mode !== 'annotation') return null;
   const targetKey = textPanel.targetKey;
   if (targetKey === undefined) return null;
-  return annotations.find((a) => a.id === targetKey) ?? null;
+  // Phase 116 (TFL-1228) — the host publishes the text-annotation snapshot's
+  // target key as `annotation:<id>`; the raw document id has no prefix. Strip
+  // the optional prefix so the annotation resolves (the hand-built unit
+  // snapshots use the raw id and stay valid).
+  return annotations.find((a) => a.id === stripAnnotationKeyPrefix(targetKey)) ?? null;
+}
+
+/** Phase 116 (TFL-1228) — strip the optional `annotation:` target-key prefix
+ *  from a published selection key, yielding the raw document annotation id. */
+function stripAnnotationKeyPrefix(key: string): string {
+  const prefix = 'annotation:';
+  return key.startsWith(prefix) ? key.slice(prefix.length) : key;
 }
 
 /** Phase 112 (TFL-854 C2 follow-up) — resolve the Inspector's page size for a
@@ -327,6 +405,10 @@ export function resolveInspectorPageSize(
 export type InspectorTextPanel = TextPropertiesPanelProps & {
   targetKey?: string;
   name?: string;
+  /** Phase 117 (chunk D) — the selected object's live geometry, threaded
+   *  through from the published text snapshot so the Inspector renders the
+   *  numeric geometry rows for a selected text box. */
+  geometry?: InspectorEditGeometry;
 };
 
 /** The minimal selected-target shape the REVIEW inspector resolves an
@@ -361,6 +443,7 @@ export function inspectorTextPanelFor(
     spellCheck: text.spellCheck,
     targetKey: text.targetKey,
     name: text.name,
+    geometry: text.geometry,
   };
 }
 
@@ -512,6 +595,11 @@ export interface InspectorProps {
    *  carries the selection identity (targetKey/name) so the REVIEW inspector
    *  resolves the selected annotation without a second selection model. */
   textPanel?: InspectorTextPanel | null;
+  /** Phase 117 (chunk D) — the numeric geometry of a selected IMAGE placement
+   *  (an image has no text-panel snapshot, so it travels on its own prop).
+   *  The host publishes it when a live rect exists; the same `data-edit-geometry`
+   *  row renders and routes a change to the overlay's move / resize handler. */
+  editGeometry?: InspectorEditGeometry | null;
   /** Phase 51 (item 10) — the re-parented OCR suspects view. Non-null only
    *  while the host has the suspects panel open; it renders as an Inspector
    *  section (the product home) instead of the retired top bar. */
@@ -524,9 +612,18 @@ export interface InspectorProps {
    *  stage re-parents the unified `ReviewElementsPanel`, whose Annotations
    *  category consumes this list plus the three handlers below. */
   annotations?: readonly Annotation[];
+  /** Phase 116 (TFL-1228) — the REAL id of the selected REVIEW annotation
+   *  (ANY kind), published by the owning DocumentView. Shape annotations
+   *  (ink / rect) publish no text-panel snapshot, so this is the only source
+   *  that can resolve them; it also carries the text kinds. Optional so every
+   *  existing host/test stays valid. */
+  selectedAnnotationId?: string | null;
   onJumpToAnnotation?: ((page: number, id: string) => void) | null;
   onEditAnnotation?: ((id: string, patch: AnnotationPatch) => void) | null;
   onDeleteAnnotation?: ((id: string) => void) | null;
+  /** Phase 116 (chunk E) — the active theme bucket the selected annotation's
+   *  colour box edits. Optional; absent falls back to 'light'. */
+  annotationTheme?: 'light' | 'dark';
   /** Phase 90 (TFL-509-C1) — the unified review list's non-annotation sources
    *  and handlers (Ruling 6: BOTH panels render it). */
   bates?: readonly BatesInfo[];
@@ -536,8 +633,6 @@ export interface InspectorProps {
   onEditReviewElement?: ((el: ReviewElementRef) => void) | null;
   onDeleteReviewElement?: ((el: ReviewElementRef) => void) | null;
   reviewErrorFor?: ((el: ReviewElementRef) => string | null) | null;
-  onExportComments?: () => void;
-  onImportComments?: () => void;
 
   // --- DELIVER / EXPORT CONFIGURATION ---------------------------------
   /** Phase 112 (C5) — the format the export surface opens on. The shipped
@@ -632,6 +727,88 @@ function Section(props: {
       title={props.title}
     >
       {props.children}
+    </PanelSection>
+  );
+}
+
+/** Phase 117 (chunk D) — the numeric geometry row for a selected text box /
+ *  image. Page points, never rounded. Each field commits a typed value and an
+ *  arrow-key nudge through the SAME `onChange` the overlay's drag path uses;
+ *  when the host publishes no live rect the row renders DISABLED with the
+ *  truthful reason instead of inventing values. */
+function EditGeometryFields(props: { geometry: InspectorEditGeometry }): ReactElement {
+  const { geometry } = props;
+  const rect = geometry.rect;
+  const onChange = geometry.onChange;
+  const kindWord = geometry.kind === 'image' ? 'image' : 'text box';
+  if (rect === undefined || onChange === undefined) {
+    return (
+      <PanelSection
+        className="inspector-section"
+        titleClassName="inspector-section-title"
+        bodyClassName="inspector-section-body"
+        title="Geometry"
+        data-inspector-section="edit-geometry"
+        data-edit-geometry
+        data-edit-geometry-kind={geometry.kind}
+        data-edit-geometry-disabled
+      >
+        <p className="inspector-note" data-edit-geometry-reason>
+          {`No live selection rectangle is available for this ${kindWord}, so X / Y / width / height cannot be shown.`}
+        </p>
+      </PanelSection>
+    );
+  }
+  const fields: readonly { field: InspectorGeometryField; label: string }[] = [
+    { field: 'x', label: 'X' },
+    { field: 'y', label: 'Y' },
+    { field: 'width', label: 'Width' },
+    { field: 'height', label: 'Height' },
+  ];
+  const setField = (field: InspectorGeometryField, value: number): void => {
+    const next = { ...rect };
+    if (field === 'x') next.x = value;
+    else if (field === 'y') next.y = value;
+    else if (field === 'width') next.width = value;
+    else next.height = value;
+    onChange(next);
+  };
+  return (
+    <PanelSection
+      className="inspector-section"
+      titleClassName="inspector-section-title"
+      bodyClassName="inspector-section-body"
+      title="Geometry"
+      data-inspector-section="edit-geometry"
+      data-edit-geometry
+      data-edit-geometry-kind={geometry.kind}
+    >
+      {fields.map(({ field, label }) => (
+        <Row key={field} id={`edit-geometry-${field}`} label={label}>
+          <input
+            className="inspector-geometry-input"
+            data-edit-geometry-field={field}
+            type="number"
+            step={1}
+            value={rect[field]}
+            aria-label={`${label} (page points)`}
+            title={`${label} in page points. Arrow keys nudge by 1 pt, Shift+Arrow by 10 pt.`}
+            onChange={(e): void => {
+              const n = Number(e.target.value);
+              if (Number.isFinite(n)) setField(field, n);
+            }}
+            onKeyDown={(e): void => {
+              const step = e.shiftKey ? 10 : 1;
+              let delta = 0;
+              if (e.key === 'ArrowLeft' || e.key === 'ArrowDown') delta = -step;
+              else if (e.key === 'ArrowRight' || e.key === 'ArrowUp') delta = step;
+              else return;
+              e.preventDefault();
+              onChange(applyGeometryNudge(rect, field, delta));
+            }}
+          />
+        </Row>
+      ))}
     </PanelSection>
   );
 }
@@ -932,13 +1109,16 @@ fileSize = null,
     onRenumberPages,
     onJumpToReview,
     textPanel = null,
+    editGeometry = null,
     ocrSuspects = null,
     signatureStyle = null,
     signatureHint = null,
     annotations = [],
+    selectedAnnotationId,
     onJumpToAnnotation = null,
     onEditAnnotation = null,
     onDeleteAnnotation = null,
+    annotationTheme,
     bates = [],
     watermarks = [],
     signatures = [],
@@ -946,8 +1126,6 @@ fileSize = null,
     onEditReviewElement = null,
     onDeleteReviewElement = null,
     reviewErrorFor = null,
-    onExportComments,
-    onImportComments,
     exportFormat = null,
     exportPages = null,
     exportPreset = null,
@@ -1169,6 +1347,19 @@ fileSize = null,
       </>
     );
 
+  /** Phase 117 (chunk D) — the numeric geometry block for a selected text box
+   *  or image. A text box's geometry rides its published text snapshot; an
+   *  image has no text snapshot, so the host passes the dedicated
+   *  `editGeometry` prop. When neither publishes a rect the block still
+   *  renders (when a kind is known) DISABLED with the truthful reason. */
+  const resolvedEditGeometry = editGeometry ?? textPanel?.geometry ?? null;
+  const renderEditGeometryBlock = (): ReactElement | null =>
+    resolvedEditGeometry === null ? null : (
+      <div className="inspector-slot" data-inspector-slot="edit-geometry">
+        <EditGeometryFields geometry={resolvedEditGeometry} />
+      </div>
+    );
+
   /** EDIT — the active crop session's bounds. R17: this section exists ONLY in
    *  the `crop` state, so the default EDIT (Select, no crop workflow) shows page
    *  facts + selection guidance below instead of an empty CropBox. Section 3A
@@ -1213,23 +1404,6 @@ const renderSignatureSection = (): ReactElement => (
     </Section>
   );
 
-  const renderCommentsSection = (): ReactElement => (
-    <Section id="comments" title="Comments">
-      <div className="inspector-quick-actions">
-        <Action
-          id="export-comments"
-          label={'Export FDF'}
-          onClick={onExportComments}
-        />
-        <Action
-          id="import-comments"
-          label={'Import FDF'}
-          onClick={onImportComments}
-        />
-      </div>
-    </Section>
-  );
-
   const renderAnnotationsSection = (): ReactElement => (
     // Phase 36 (chunk 6) — the annotations LIST has exactly ONE home: the
     // REVIEW stage's ContextPanel body (it re-parents AnnotationsPanel). This
@@ -1251,7 +1425,7 @@ const renderSignatureSection = (): ReactElement => (
    *  content facts + supported actions; with nothing selected it is a short
    *  designed hint. The authoritative list stays in the LEFT navigator. */
   const renderAnnotationInspector = (): ReactElement => {
-    const selected = selectedReviewAnnotation(selection, textPanel, annotations);
+    const selected = selectedReviewAnnotation(selection, textPanel, annotations, selectedAnnotationId);
     if (selected === null) {
       return (
         <PanelEmptyState
@@ -1262,13 +1436,38 @@ const renderSignatureSection = (): ReactElement => (
         />
       );
     }
+    const author = selected.author;
+    const hasAuthor = typeof author === 'string' && author.trim() !== '';
+    const geometry = selected as { rect?: PageRect; rects?: PageRect[] };
+    const r = geometry.rect ?? geometry.rects?.[0];
     return (
       <>
+        {hasAuthor && (
+          <Row id="annotation-author" label="Author">
+            {author}
+          </Row>
+        )}
         <Row id="annotation-type" label="Type">
           {kindLabel(selected.kind)}
         </Row>
         <Row id="annotation-page" label="Page">
           {selected.page}
+        </Row>
+        {r !== undefined && (
+          <Row id="annotation-position" label="Position">
+            {`${Math.round(r.x)}, ${Math.round(r.y)} \u00b7 ${Math.round(r.width)}\u00d7${Math.round(r.height)} pt`}
+          </Row>
+        )}
+        <Row id="annotation-color" label="Color">
+          <span data-ann-prop="color">
+            <AnnColorBox
+              color={selected.color}
+              theme={annotationTheme ?? 'light'}
+              onApply={(c): void => {
+                onEditAnnotation?.(selected.id, { color: c });
+              }}
+            />
+          </span>
         </Row>
         <ActionList
           className="inspector-quick-actions"
@@ -1359,8 +1558,6 @@ const renderSignatureSection = (): ReactElement => (
         return renderCropBoxSection();
       case 'signature':
         return renderSignatureSection();
-      case 'comments':
-        return renderCommentsSection();
       case 'annotations':
         return renderAnnotationsSection();
       case 'review-elements':
@@ -1451,6 +1648,9 @@ const renderSignatureSection = (): ReactElement => (
             {/* Phase 37 (item 1) — the text-manipulation block leads the column,
                 with the stage sections below the divider. */}
             {renderTextBlock()}
+            {/* Phase 117 (chunk D) — numeric geometry for a selected text box
+                or image (Inspector First). */}
+            {renderEditGeometryBlock()}
             {/* Phase 59 item 4 — the native-fill outcome. Compact and
                 dismissible; sits above the stage sections and never covers
                 the page. */}

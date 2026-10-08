@@ -20,6 +20,7 @@ import type { PDFDocumentProxy } from "pdfjs-dist";
 import type { CropEntry } from "../../shared/types";
 import { DialogShell, type DialogAction } from "./DialogShell";
 import { TfResize } from "./motion/TfResize";
+import { SelectionChrome } from "./selectableContent";
 
 export type CropMode = "allPages" | "perPage";
 
@@ -500,13 +501,24 @@ function CropEditor(props: CropEditorProps): ReactElement {
       setDrag(null);
       onCommit(box);
     };
+    // Phase 117 — a lost pointer capture (or Escape) ends the crop drag
+    // WITHOUT committing: the drag state is dropped and the box keeps its
+    // last applied value, so no half-finished crop is ever committed.
+    const onCancel = (): void => {
+      setDrag(null);
+    };
+    const onKey = (e: KeyboardEvent): void => {
+      if (e.key === "Escape" && !e.isComposing) setDrag(null);
+    };
     window.addEventListener("pointermove", onMove);
     window.addEventListener("pointerup", onUp);
-    window.addEventListener("pointercancel", onUp);
+    window.addEventListener("pointercancel", onCancel);
+    window.addEventListener("keydown", onKey);
     return (): void => {
       window.removeEventListener("pointermove", onMove);
       window.removeEventListener("pointerup", onUp);
-      window.removeEventListener("pointercancel", onUp);
+      window.removeEventListener("pointercancel", onCancel);
+      window.removeEventListener("keydown", onKey);
     };
     // We intentionally depend on `box` so onUp sees the latest value.
     // The setDrag(null) above clears the drag on commit, so this
@@ -591,6 +603,12 @@ function CropEditor(props: CropEditorProps): ReactElement {
             top,
             width,
             height,
+            // Phase 117 (chunk E) — the crop box's outline is now the
+            // shared selection boundary below (the canonical 1 px violet
+            // `.selection-chrome`). The mask keeps only its soft wash,
+            // the move surface and the label, so the two never draw a
+            // double border.
+            border: "none",
           }}
           onPointerDown={startMoveDrag}
           data-crop-handle="move"
@@ -599,47 +617,64 @@ function CropEditor(props: CropEditorProps): ReactElement {
         >
           <span className="crop-editor-label">{label}</span>
         </div>
-        {/* Corner handles */}
+        {/* Phase 117 (chunk E) — the crop-region selection chrome is the
+            ONE shared grammar. The boundary is the shared
+            `SelectionChrome` (`.selection-chrome.is-selected`: 1 px violet,
+            plus the shared hover / focus / selected / draft state classes);
+            the four resize targets below reuse the shared `.selection-handle`
+            class for the 8 px visual handle and its 32 px / 44 px invisible
+            hit target. `handleSize` still positions the corners, every
+            `data-crop-handle` (move / nw / ne / sw / se) survives, and the
+            `startMoveDrag` / `startResizeDrag` maths are unchanged. */}
+        <SelectionChrome
+          left={left}
+          top={top}
+          width={width}
+          height={height}
+          kind="crop"
+          state="selected"
+          handles={false}
+        />
         <div
-          className="crop-editor-handle crop-editor-handle-nw"
+          className="selection-handle selection-handle-nw"
           style={{
             left: left - handleSize / 2,
             top: top - handleSize / 2,
-            width: handleSize,
-            height: handleSize,
+            right: "auto",
+            bottom: "auto",
           }}
           onPointerDown={(e): void => startResizeDrag(e, "nw")}
           data-crop-handle="nw"
         />
         <div
-          className="crop-editor-handle crop-editor-handle-ne"
+          className="selection-handle selection-handle-ne"
           style={{
             left: left + width - handleSize / 2,
             top: top - handleSize / 2,
-            width: handleSize,
-            height: handleSize,
+            right: "auto",
+            bottom: "auto",
           }}
           onPointerDown={(e): void => startResizeDrag(e, "ne")}
           data-crop-handle="ne"
         />
         <div
-          className="crop-editor-handle crop-editor-handle-sw"
+          className="selection-handle selection-handle-sw"
           style={{
             left: left - handleSize / 2,
             top: top + height - handleSize / 2,
-            width: handleSize,
-            height: handleSize,
+            right: "auto",
+            bottom: "auto",
           }}
           onPointerDown={(e): void => startResizeDrag(e, "sw")}
           data-crop-handle="sw"
         />
         <div
-          className="crop-editor-handle crop-editor-handle-se"
+          className="selection-handle selection-handle-se"
           style={{
             left: left + width - handleSize / 2,
             top: top + height - handleSize / 2,
-            width: handleSize,
-            height: handleSize,
+            right: "auto",
+            bottom: "auto",
           }}
           onPointerDown={(e): void => startResizeDrag(e, "se")}
           data-crop-handle="se"

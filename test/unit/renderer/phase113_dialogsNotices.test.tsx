@@ -538,6 +538,8 @@ describe("Phase 113 — wave F2 annotation and form overlays", () => {
     });
     try {
       click(host.querySelector(".stamp-annotation"));
+      // Phase 117 chunk B — Edit now lives behind the separated More control.
+      click(host.querySelector("[data-content-action='stamp-more']"));
       click(host.querySelector("[data-content-action='stamp-edit']"));
       const chip = host.querySelector("[data-stamp-type-btn='APPROVED']");
       expect(cls(chip)).toContain("btn-secondary");

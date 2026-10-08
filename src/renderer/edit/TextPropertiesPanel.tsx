@@ -305,11 +305,12 @@ export function TextPropertiesPanel(props: TextPropertiesPanelProps): ReactEleme
             {text !== null && text.trim() !== "" ? text : "Preview"}
           </div>
           <label className="text-props-row">
-            <span className="text-props-label">Family</span>
+            <span className="text-props-label">Edit font</span>
             <select
               className="text-props-select"
               data-txt-font
               value={values.font}
+              title="Font applied to edited text, not the document's own font."
               onChange={(e): void => onPatch({ font: e.target.value as EditFont })}
             >
               {FONT_OPTIONS.map((g) => (

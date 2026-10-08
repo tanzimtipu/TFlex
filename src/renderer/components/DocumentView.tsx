@@ -36,6 +36,7 @@ import {
 } from "../state/handPan";
 import type { OutlineNode } from "../pdf/pdfjs";
 import { useInstantMotion } from "../hooks/useAnimations";
+import { useDocumentViewport } from "../hooks/useDocumentViewport";
 import {
   clearZoomFlip,
   isZoomFlipEnd,
@@ -54,7 +55,7 @@ import { SearchBar } from "./SearchBar";
 import { PaneThumbStrip } from "./PaneThumbStrip";
 import { ContextPanel, type ContextPanelEditContent } from "./ContextPanel";
 import type { RailTab } from "./SideRail";
-import { type InspectorTextSelection } from "./Inspector";
+import { type InspectorEditGeometry, type InspectorTextSelection } from "./Inspector";
 import { ActionDock, type DockBulkActions } from "./ActionDock";
 import { prunePageSelection } from "../state/pageSelection";
 import { dockAvailabilityFor, dockEnabledWithFallback, sanitizeDockPins, type DockAvailability } from "../state/dockModel";
@@ -489,6 +490,11 @@ interface DocumentViewProps extends DocumentViewDockProps {
   formFields?: FormField[];
   onFormValueChange?: (id: string, value: string | string[]) => void;
   onFormListboxToggle?: (id: string, option: string) => void;
+  /** Phase 115 E - the field linked to the Guided Fill panel's focused row.
+   *  Its canvas editor is highlighted; no focus is moved. */
+  focusedFieldId?: string | null;
+  /** Phase 115 E - reports a canvas editor focus upward; never moves focus. */
+  onFieldFocus?: (id: string) => void;
   // -- Phase 4: signatures --
   signatures?: SignaturePlacement[];
   savedSignatures?: SavedSignature[];
@@ -514,6 +520,13 @@ interface DocumentViewProps extends DocumentViewDockProps {
    *  `resolvePaneSelection` guard keeps only the FOCUSED pane's publish, so the
    *  ONE shared Inspector follows the pane the user is working in. */
   onTextSelectionChange?: (selection: InspectorTextSelection | null) => void;
+  /** Phase 116 (TFL-1228) — publish the REAL id of the selected annotation
+   *  (ANY kind: ink / rect / textbox / note / callout) upward so the REVIEW
+   *  Inspector resolves the selected annotation from the document list. The
+   *  text kinds already ride `onTextSelectionChange`; the shape kinds publish
+   *  no text snapshot, so this dedicated seam is the only source that can
+   *  represent them. `null` when nothing is selected. */
+  onAnnotationSelectionChange?: (id: string | null) => void;
   /** Phase 82 — the offline spell-check preference for the text surfaces
    *  (Inspector Text field + on-canvas run editor). Optional so direct-mount
    *  hosts/tests without the spell layer render with it off. */
@@ -988,6 +1001,10 @@ export interface DocumentViewDockProps {
   /** Phase 104 (chunk 1) — the host's command-palette opener, forwarded to the
    *  Action Dock's labelled Tools utility button. */
   onOpenTools?: () => void;
+  /** Phase 116 (TFL-1228 chunk G) — the list-level FDF comment import / export
+   *  handlers, forwarded down to the REVIEW ContextPanel's AnnotationsPanel. */
+  onExportComments?: () => void;
+  onImportComments?: () => void;
 }
 
 /**
@@ -1048,6 +1065,8 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
   formFields = [],
   onFormValueChange,
   onFormListboxToggle,
+  focusedFieldId = null,
+  onFieldFocus,
   signatures = [],
   savedSignatures = [],
   armedSignatureId = null,
@@ -1061,6 +1080,7 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
   fileSize = null,
   onCreateFromImages,
   onTextSelectionChange,
+  onAnnotationSelectionChange,
   armedStamp = null,
   onPlaceStamp,
   redactArmed = false,
@@ -1119,6 +1139,8 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
   onDockToolAction,
   isDockToolEnabled,
   onOpenTools,
+  onExportComments,
+  onImportComments,
   spellCheckEnabled = false,
   onSpellCheckEnabledChange,
 }: DocumentViewProps,
@@ -1151,6 +1173,11 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
   // exactly the toolbar rows that float above it (see the
   // measurement effect below).
   const mainRef = useRef<HTMLDivElement | null>(null);
+  // Phase 119 (chunk E) — publish the measured document-viewport class on
+  // `.workspace-main` as the ONE measurement source of record. This chunk is
+  // additive wiring only: the attributes are never read to change layout,
+  // insets, the ladder or rendering, and no second observer is added.
+  const vp = useDocumentViewport(mainRef);
   const slotRefsRef = useRef(new Map<number, HTMLDivElement>());
   const observerRef = useRef<IntersectionObserver | null>(null);
   const wheelRemainderRef = useRef(0);
@@ -3602,6 +3629,12 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
     },
     [onFormListboxToggle],
   );
+  const onFieldFocusStable = useCallback(
+    (id: string): void => {
+      onFieldFocus?.(id);
+    },
+    [onFieldFocus],
+  );
   const onPlaceSignatureStable = useCallback(
     (signatureId: string, page: number, rect: SignaturePlacement["rect"]): void => {
       onPlaceSignature?.(signatureId, page, rect);
@@ -4256,6 +4289,47 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
   // placement defaults reachable after the floating card was retired.
   const textSelection = useMemo<InspectorTextSelection | null>(() => {
     if (!textPanelSelectionActive) return null;
+    // Phase 117 (chunk D follow-up, TFL-1316) — publish the selected committed
+    // text box's LIVE page-point rect so the Inspector's numeric geometry row
+    // is ENABLED. The
+    // `onChange` mirrors the overlay's committed-box path EXACTLY: the live
+    // `set-text-box-rect` registry follow (pointermove) plus the engine move
+    // the Confirm button fires (`onCommitTextBoxMove`), so a numeric edit and
+    // a drag settle ONE identical engine result. `geometry` is left absent
+    // for an annotation target or an armed tool with no box, so the Inspector
+    // keeps its truthful disabled row.
+    //
+    // The active-tool guard (`edit.state.tool === 'box'`) follows the overlay:
+    // the committed-box selection chrome itself renders only under the box
+    // tool, so a stale `selectedTextBox` left over after a tool switch must
+    // never be presented as live geometry. No live box selection loses its
+    // row, because the box tool is the only path that selects one.
+    const geometry: InspectorEditGeometry | undefined =
+      textPanelMode !== 'annotation' &&
+      selectedTextBox !== null &&
+      edit !== null &&
+      edit.state.tool === 'box'
+        ? {
+            kind: 'textBox',
+            rect: selectedTextBox.rect,
+            onChange: (next): void => {
+              edit.onAction({
+                type: 'set-text-box-rect',
+                id: selectedTextBox.id,
+                rect: next,
+              });
+              edit.onCommitTextBoxMove({
+                oldRect: { ...selectedTextBox.rect },
+                newRect: next,
+                text: selectedTextBox.text,
+                style: selectedTextBox.style,
+                background: selectedTextBox.background,
+                id: selectedTextBox.id,
+                page: selectedTextBox.page,
+              });
+            },
+          }
+        : undefined;
     return {
       targetKey: textTargetKeyNow ?? 'none',
       name:
@@ -4280,6 +4354,7 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
       onArmPainter: handleArmPainter,
       onCancelPainter: handleCancelPainter,
       spellCheck,
+      ...(geometry === undefined ? {} : { geometry }),
     };
     // `textPanelValues` is rebuilt each render by design (it merges the live
     // annotation style), so the snapshot identity is not the publish signal â€”
@@ -4303,6 +4378,8 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
     handleArmPainter,
     handleCancelPainter,
     spellCheck,
+    selectedTextBox,
+    edit,
   ]);
 
   const onTextSelectionChangeRef = useRef(onTextSelectionChange);
@@ -4324,6 +4401,9 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
           textSelection.painterHint ?? '',
           (textSelection.spellCheck?.enabled ?? false) ? 'spell-on' : 'spell-off',
           textSelection.spellCheck?.status ?? 'off',
+          textSelection.geometry === undefined
+            ? ''
+            : `geo:${textSelection.geometry.kind}:${JSON.stringify(textSelection.geometry.rect ?? null)}`,
         ].join('\u0000');
   const lastTextSelectionKeyRef = useRef<string | null>(null);
   // DEF-321 â€” a LAYOUT effect: the floating pop-out closes on the same commit
@@ -4340,6 +4420,26 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
       // Withdraw the selection when this view unmounts (tab switch / close)
       // so the host's Inspector never shows a stale text object.
       onTextSelectionChangeRef.current?.(null);
+    };
+  }, []);
+
+  // Phase 116 (TFL-1228) — the dedicated selected-annotation publish. It
+  // carries the REAL annotation id for ANY kind, so the REVIEW Inspector's
+  // annotation scope populates for the shape kinds (ink / rect) that publish
+  // no text-panel snapshot. Keyed on the id so it fires only on a change, and
+  // withdrawn on unmount so a tab switch never leaves a stale row.
+  const onAnnotationSelectionChangeRef = useRef(onAnnotationSelectionChange);
+  onAnnotationSelectionChangeRef.current = onAnnotationSelectionChange;
+  const selectedAnnotationId = selectedAnnotation === null ? null : selectedAnnotation.id;
+  const lastAnnSelectionIdRef = useRef<string | null | undefined>(undefined);
+  useLayoutEffect((): void => {
+    if (lastAnnSelectionIdRef.current === selectedAnnotationId) return;
+    lastAnnSelectionIdRef.current = selectedAnnotationId;
+    onAnnotationSelectionChangeRef.current?.(selectedAnnotationId);
+  });
+  useEffect((): (() => void) => {
+    return (): void => {
+      onAnnotationSelectionChangeRef.current?.(null);
     };
   }, []);
 
@@ -4711,9 +4811,17 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
       // REVIEW â€” the annotations list (the ONE home for it) plus the
       // saved-signatures section.
       annotations={annotations}
+      selectedAnnotationId={selectedAnnotation?.id ?? null}
+      // DEF-658 — the REVIEW empty-document state's "Open annotation tools"
+      // action opens the SAME Annotate flyout the dock/toolbar use. This is
+      // view-local (the flyout state), never the App-level command palette.
+      onOpenTools={(): void => setFlyoutOpen(true)}
       onJumpToAnnotation={onAnnJump}
+      onExportComments={onExportComments}
+      onImportComments={onImportComments}
       onEditAnnotation={onEditAnnotation}
       onDeleteAnnotation={onDeleteAnnotation}
+      comments={engineState.comments}
       bates={bates}
       watermarks={watermarks}
       signatures={signatures}
@@ -4837,7 +4945,14 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
       data-rail-side={showRail ? railSide : undefined}
     >
       {showRail && railSide === "left" ? railNode : null}
-      <div ref={mainRef} className="workspace-main">
+      <div
+        ref={mainRef}
+        className="workspace-main"
+        data-layout-width={Math.round(vp.width)}
+        data-layout-class={vp.layoutClass}
+        data-layout-compact={vp.compact ? "true" : undefined}
+        data-layout-coarse={vp.coarsePointer ? "true" : undefined}
+      >
         {/* Phase 36 (chunk 3b) â€” the per-view command toolbar ROW is RETIRED
             in SINGLE mode: every control it hosted is reachable from its new
             home (page nav + zoom/fit -> the floating CanvasPills; pan -> the
@@ -5051,6 +5166,8 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
                       formFields={formFieldsByPage.get(visiblePage) ?? EMPTY_FIELDS}
                       onFormValueChange={onFormValueChangeStable}
                       onFormListboxToggle={onFormListboxToggleStable}
+                      focusedFieldId={focusedFieldId}
+                      onFieldFocus={onFieldFocusStable}
                       signatures={signaturesByPage.get(visiblePage) ?? EMPTY_PLACEMENTS}
                       savedSignatures={savedSignatureMap}
                       armedSignatureId={armedSignatureId}

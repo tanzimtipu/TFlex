@@ -14876,6 +14876,28 @@ History:
 - cto: FIX-READY relayed from frontend-dev TFL-1290 (2026-10-08): `.sheet-body-prefs:has(> .settings-studio-shell){display:flex;flex-direction:column}` establishes a definite height; `.settings-studio-shell{flex:1 1 auto;height:auto}` and `> .settings-studio{flex:1 1 auto}` (was `flex:1 1 0`). Real-app E1 geometry after fix: shell 470, studio 436 (was 0), footer inside the sheet bottom, nav hit = settings-nav-label; `phase114_settings_studio.spec.cjs` 7/7, `phase114_persistStatus`+`phase114_a11y` 16/16, `npm run verify` clean (406 files). A static CSS guard was added to `phase114_a11y.test.tsx`. Scope note: the `:has()` rule selects `.sheet-body-prefs` (the Preferences sheet body that hosts the shell), not a `.settings-*` selector - required to break the indefinite-height chain. Pending qa retest.
 - qa (TFL-1293, 2026-10-08): CLOSED. Retest green. `npm.cmd run build` clean; `npx playwright test e2e/phase114_settings_studio.spec.cjs -c e2e/playwright.dev.config.js` -> 7 passed (E1 now passes). E1 geometry (isolated profile): `.settings-studio` 838x436 (was 0), `.settings-studio-shell` 470, sheet 525, persist footer 838x34 at the sheet bottom, and `document.elementFromPoint` at the nav centre returns `settings-nav-label` (the real click lands). All four `[data-prefs-category]` panels render non-zero and one is active at a time. Blast radius / scope (new `e2e/tfl1293_scope_footer.spec.cjs`, 2/2): `.sheet-body-prefs` is mounted only in the Studio sheet (0 on Home, 0 on a document surface), its computed `display` is `flex` with the shell as direct child; the footer is pinned below the scrolling `.settings-studio-body` and stays visible at both full and 520px compact width. See `test-fixtures/tfl1293-phase114-verdict.md` and `test-fixtures/tfl1293-control-index-sweep.md`.
 
+## DEF-663: The Phase 37 text-box action-bar unit oracle pinned the pre-Phase-117 primary order (Delete beside Confirm/Cancel)
+
+- Status: CLOSED (qa TFL-1364 Phase 117 phase-close, 2026-10-09)
+- Severity: LOW - test-implementation only. `phase37EditText.test.tsx` pinned the retired Phase-37 primary order (red Delete beside Confirm/Cancel); the deliberate Phase 117 Delete-behind-More change (ruling 6) makes that oracle stale. Product behaviour was correct (proven by `e2e/phase117_selection.spec.cjs`); the blast-radius update was the only red suite in the Phase 117 chunk-G pass, so it blocked the phase's "existing suites stay green" gate.
+- Found by: qa (TFL-1337 Phase 117 chunk G, 2026-10-08; recorded in `test-fixtures/phase117-qa-evidence.md`)
+- Phase: 117 (TFL-1229)
+- Numbering note: the chunk-G evidence and the TFL-1364 brief both label this "DEF-659", but DEF-659 is the Phase 116 Inspector REVIEW-scope defect (closed by qa TFL-1352). This Phase 117 stale-oracle regression was never allocated its own number; it is filed here as the next free DEF-663 to avoid corrupting the DEF-659 record.
+
+Files:
+- `test/unit/renderer/phase37EditText.test.tsx:285-310` - the oracle now asserts the Phase 117 order: primary row `["Confirm","Cancel","More"]`, `[data-edit-box-action='edit']` and `[data-edit-box-action='delete']` absent until the separated More is opened, then Delete lives inside `.content-action-more-menu`.
+
+Steps to reproduce (pre-fix):
+1. `npm.cmd run test:unit -- test/unit/renderer/phase37EditText.test.tsx`.
+2. Observe the item-11 test fails: the primary verbs are `["Confirm","Cancel","More"]` while the stale oracle expected Delete as a primary sibling.
+
+Expected: the Phase 37 oracle reflects the Phase 117 separated-More contract (ruling 6) with no weakening of the Cancel-reverts assertion.
+Actual (pre-fix): the stale oracle failed against correct product behaviour.
+
+Commands + output (verbatim, TFL-1364):
+- `npm.cmd run test:unit -- test/unit/renderer/phase37EditText.test.tsx test/unit/renderer/bugDEF135_textBoxPlacementToolbar.test.tsx` -> `Test Files  2 passed (2)` / `Tests  18 passed (18)` (exit 0).
+- Focused e2e `npm.cmd run test:e2e -- e2e/phase117_selection.spec.cjs` -> `4 passed (30.1s)` with `textbox-primary ["Confirm","Cancel","More"]`.
+
 ## DEF-644: Intake Tray drop zone: eligible OS drag does not show the drop indication
 
 - Status: CLOSED (qa TFL-1249 phase-close, 2026-10-08)

@@ -30,6 +30,7 @@ import { AnimatePresence, useIsPresent } from "motion/react";
 import type { StampId } from "../../shared/types";
 import {
   ContentActionBar,
+  SelectionChrome,
   useSelectableDrag,
 } from "../components/selectableContent";
 import {
@@ -83,8 +84,6 @@ interface StampAnnotationsProps {
    *  NEXT page instead of being covered by it. */
   onSelectionChange?: (selected: boolean) => void;
 }
-
-const RESIZE_HANDLES: readonly ImageResizeHandle[] = ["nw", "ne", "sw", "se"];
 
 /** DEF-176 — aspect-locked corner resize for a placed stamp.
  *
@@ -177,6 +176,27 @@ export function StampAnnotations(props: StampAnnotationsProps): ReactElement | n
   const movedRef = useRef(false);
   const selDrag = useSelectableDrag();
 
+  // Phase 117 — Escape during a stamp selection drag cancels it exactly
+  // like a lost pointer: the shared controller ends the gesture (capture
+  // released), the live draft is dropped, and no pending move is parked.
+  useEffect(() => {
+    if (selDrag.drag === null) return undefined;
+    const onKey = (e: KeyboardEvent): void => {
+      if (e.key === "Escape" && !e.isComposing) {
+        selDrag.endDrag();
+        setDraft(null);
+      }
+    };
+    const onCancel = (): void => setDraft(null);
+    window.addEventListener("keydown", onKey);
+    window.addEventListener("pointercancel", onCancel);
+    return (): void => {
+      window.removeEventListener("keydown", onKey);
+      window.removeEventListener("pointercancel", onCancel);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selDrag.drag]);
+
   // Drop selection / picker when the stamps list changes underneath
   // (a delete-echo removed the selected stamp). Bug 2-style echo-wait:
   // after Confirm, the pending move stays visible until the host's
@@ -244,7 +264,7 @@ export function StampAnnotations(props: StampAnnotationsProps): ReactElement | n
   );
 
   const beginSurfaceDrag = useCallback(
-    (e: ReactPointerEvent<HTMLDivElement>, stamp: PlacedStamp, handle?: ImageResizeHandle): void => {
+    (e: ReactPointerEvent<HTMLElement>, stamp: PlacedStamp, handle?: ImageResizeHandle): void => {
       if (e.button !== 0) return;
       e.stopPropagation();
       if (editId === stamp.id) return;
@@ -450,45 +470,34 @@ export function StampAnnotations(props: StampAnnotationsProps): ReactElement | n
       })}
       {selectedStamp !== null && barPos !== null && (
         <>
-          {/* Selection ring + corner resize handles (shared chrome).
-              DEF-176 — the pointermove / pointerup handlers live
-              HERE (the handles' ancestor), not on the stamp surface:
-              a handle's pointerdown calls setPointerCapture on the
-              HANDLE, so every follow-up move/up is retargeted to the
-              handle and bubbles through this frame — the sibling
-              `.stamp-annotation` surface never sees them (the
-              annotation overlay avoids this by keeping its move/up
-              on the layer root, an ancestor of the handles; this
-              frame plays that role for the stamp chrome). */}
-          <div
-            className="content-selection-frame"
-            data-content-selection-frame
-            style={{
-              left: selectedBounds !== null ? selectedBounds.x * cssScale - 2 : -2,
-              top: selectedBounds !== null ? selectedBounds.y * cssScale - 2 : -2,
-              width:
-                selectedBounds !== null ? selectedBounds.width * cssScale + 4 : 0,
-              height:
-                selectedBounds !== null ? selectedBounds.height * cssScale + 4 : 0,
+          {/* Selection ring + corner resize handles (the ONE shared
+              `SelectionChrome`). DEF-176 — the pointermove / pointerup
+              handlers live HERE (the handles' ancestor), not on the
+              stamp surface: a handle's pointerdown calls
+              setPointerCapture on the HANDLE, so every follow-up
+              move/up is retargeted to the handle and bubbles through
+              this chrome — the sibling `.stamp-annotation` surface
+              never sees them (the annotation overlay avoids this by
+              keeping its move/up on the layer root, an ancestor of
+              the handles; the chrome plays that role here). The
+              `data-content-selection-frame` selector is preserved on
+              the chrome root. */}
+          <SelectionChrome
+            left={selectedBounds !== null ? selectedBounds.x * cssScale - 2 : -2}
+            top={selectedBounds !== null ? selectedBounds.y * cssScale - 2 : -2}
+            width={selectedBounds !== null ? selectedBounds.width * cssScale + 4 : 0}
+            height={selectedBounds !== null ? selectedBounds.height * cssScale + 4 : 0}
+            kind="stamp"
+            state="selected"
+            handleDataAttr="data-stamp-resize-handle"
+            onHandlePointerDown={(e, h): void => {
+              e.stopPropagation();
+              beginSurfaceDrag(e, selectedStamp, h);
             }}
-            aria-hidden
             onPointerMove={onSurfaceMove}
             onPointerUp={onSurfaceUp}
-          >
-            <div className="content-selection-bounds" aria-hidden />
-            {RESIZE_HANDLES.map((h) => (
-              <div
-                key={h}
-                className={`content-resize-handle content-resize-handle-${h}`}
-                data-stamp-resize-handle={h}
-                aria-hidden
-                onPointerDown={(e): void => {
-                  e.stopPropagation();
-                  beginSurfaceDrag(e, selectedStamp, h);
-                }}
-              />
-            ))}
-          </div>
+            dataAttributes={{ "data-content-selection-frame": "" }}
+          />
           <AnimatePresence>
             {editId === selectedStamp.id ? (
               <StampTypeEditor
