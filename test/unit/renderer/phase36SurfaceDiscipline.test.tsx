@@ -113,12 +113,12 @@ const SANCTIONED: Record<Capability, { surfaces: Surface[]; why: string }> = {
   forms: { surfaces: ['dock'], why: 'Phase 37 item 21: Forms dialog command rides the REVIEW dock' },
   watermark: { surfaces: ['dock'], why: 'Phase 37 item 21 (and item 20): Watermark rides the REVIEW dock' },
   exportComments: {
-    surfaces: ['dock', 'inspector'],
-    why: 'Phase 37 item 21 adds the REVIEW dock verb; ruling 8 keeps the Inspector FDF export',
+    surfaces: ['dock'],
+    why: 'Phase 116 (TFL-1228 chunk G): the dock verb + the list-header action; the Inspector duplicate was removed',
   },
   importComments: {
-    surfaces: ['dock', 'inspector'],
-    why: 'Phase 37 item 21 adds the REVIEW dock verb; ruling 8 keeps the Inspector FDF import',
+    surfaces: ['dock'],
+    why: 'Phase 116 (TFL-1228 chunk G): the dock verb + the list-header action; the Inspector duplicate was removed',
   },
   fillFromCsv: {
     surfaces: ['dock'],
@@ -284,8 +284,6 @@ function mount(node: ReactElement): { host: HTMLElement; unmount: () => void } {
 const INSPECTOR_ACTION_MAP: Record<string, Capability> = {
   renumber: 'renumberPages',
   'jump-to-review': 'jumpToReview',
-  'export-comments': 'exportComments',
-  'import-comments': 'importComments',
   export: 'exportPages',
 };
 
@@ -440,8 +438,6 @@ function collectInspector(): Capability[] {
         signatureStyle: 'Drawn',
         signatureHint: 'Click a page to place',
         annotations: [],
-        onExportComments: vi.fn(),
-        onImportComments: vi.fn(),
         exportFormat: 'png',
         exportPages: 'All',
         exportPreset: 'Default',
@@ -533,11 +529,13 @@ describe('Phase 36 / 3A criterion 11(a) � surface discipline sweep', () => {
     // header retains its `＋ Combine…` affordance.
     expect(observed.dock.has('merge')).toBe(true);
     expect(observed.panel.has('merge')).toBe(true);
-    // rulings 5 / 8 � optimize/audit are DELIVER dock+panel, FDF is REVIEW inspector
+    // rulings 5 / 8 � optimize/audit are DELIVER dock+panel; chunk G moved FDF
+    // out of the Inspector onto the dock + the list header.
     expect(observed.inspector.has('optimize')).toBe(false);
     expect(observed.inspector.has('audit')).toBe(false);
-    expect(observed.inspector.has('exportComments')).toBe(true);
+    expect(observed.inspector.has('exportComments')).toBe(false);
     expect(observed.panel.has('exportComments')).toBe(false);
+    expect(observed.dock.has('exportComments')).toBe(true);
   });
 
   it('names the four surfaces it checks (future duplicates fail loudly)', () => {
@@ -896,19 +894,17 @@ describe('Phase 36 / 3A � the nine rulings', () => {
     }
   });
 
-  it('ruling 8: FDF export/import is the REVIEW inspector ONLY', () => {
+  it('ruling 8 (superseded by chunk G): FDF export/import leaves the Inspector for the list header', () => {
     const { host, unmount } = mount(
       createElement(Inspector, {
         stage: 'review',
         selection: { kind: 'none' },
         annotations: [],
-        onExportComments: vi.fn(),
-        onImportComments: vi.fn(),
       }),
     );
     try {
-      expect(host.querySelector('[data-inspector-action="export-comments"]')).not.toBeNull();
-      expect(host.querySelector('[data-inspector-action="import-comments"]')).not.toBeNull();
+      expect(host.querySelector('[data-inspector-action="export-comments"]')).toBeNull();
+      expect(host.querySelector('[data-inspector-action="import-comments"]')).toBeNull();
     } finally {
       unmount();
     }

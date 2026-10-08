@@ -18,6 +18,7 @@ import { PanelEmptyState, PanelSection } from './panels/PanelPrimitives';
 import type { Annotation, AnnotationPatch } from '../annotations/model';
 import type {
   BatesInfo,
+  CommentThread,
   SignaturePlacement,
   WatermarkInfo,
 } from '../../shared/types';
@@ -58,6 +59,15 @@ export interface ReviewElementsPanelProps {
    *  have exactly ONE authoritative home (the LEFT navigator). Defaults to
    *  `'document'`, so every pre-existing caller is byte-for-byte unchanged. */
   scope?: 'document' | 'selection';
+  /** Phase 116 (TFL-1228 chunk D) — the LEFT navigator's Thread Stream
+   *  pass-throughs. Optional, so every pre-existing caller is unchanged. */
+  selectedAnnotationId?: string | null;
+  onOpenTools?: () => void;
+  comments?: readonly CommentThread[];
+  /** Phase 116 (TFL-1228 chunk G) — the list-level FDF comment import / export
+   *  pass-throughs for the LEFT navigator's AnnotationsPanel. Optional. */
+  onExportComments?: () => void;
+  onImportComments?: () => void;
 }
 
 /** A row's display label + jump page, derived purely from its source record. */
@@ -207,6 +217,11 @@ export function ReviewElementsPanel(props: ReviewElementsPanelProps): ReactEleme
     errorFor = null,
     renderAnnotations = null,
     scope = 'document',
+    selectedAnnotationId = null,
+    onOpenTools,
+    comments,
+    onExportComments,
+    onImportComments,
   } = props;
 
   const rowProps = { onSelect, onEdit, onDelete, errorFor };
@@ -250,6 +265,11 @@ export function ReviewElementsPanel(props: ReviewElementsPanelProps): ReactEleme
             onJumpTo={(page, id): void => onJumpToAnnotation?.(page, id)}
             onEdit={(id, patch): void => onEditAnnotation?.(id, patch)}
             onDelete={(id): void => onDeleteAnnotation?.(id)}
+            selectedAnnotationId={selectedAnnotationId}
+            onOpenTools={onOpenTools}
+            comments={comments}
+            onExportComments={onExportComments}
+            onImportComments={onImportComments}
           />
         </div>
       ) : (

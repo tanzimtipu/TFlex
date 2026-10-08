@@ -137,8 +137,6 @@ function inspector(): { host: HTMLElement; unmount: () => void } {
       bates={[BATES]}
       watermarks={[WATERMARK]}
       signatures={[SIGNATURE]}
-      onExportComments={vi.fn()}
-      onImportComments={vi.fn()}
     />,
   );
 }

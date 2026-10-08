@@ -66,7 +66,7 @@ describe("Phase 36 chunk 5 — inspectorSections resolves the per-stage contract
     ["edit", "page", ["page", "document"]],
     ["edit", "none", ["document"]],
     ["review", "signature", ["signature"]],
-    ["review", "none", ["comments", "review-elements"]],
+    ["review", "none", ["review-elements"]],
     ["deliver", "none", ["export", "document"]],
   ] as const)("%s + %s renders %j", (stage, kind, expected) => {
     expect(inspectorSections(stage, kind)).toEqual(expected);
@@ -320,18 +320,14 @@ it("EDIT + a page shows ONLY the CropBox values (no OCR status — ruling 4)", (
     }
   });
 
-  it("REVIEW + the document shows the annotation hint (never a duplicate list) and wires the FDF actions", () => {
-    const onExportComments = vi.fn();
-    const onImportComments = vi.fn();
+  it("REVIEW + the document shows the annotation hint (never a duplicate list) with no FDF quick-actions", () => {
     const { host, unmount } = mount({
       stage: "review",
       selection: { kind: "none" },
       annotations: [],
-      onExportComments,
-      onImportComments,
     });
     try {
-      expect(slots(host)).toEqual(["comments", "review-elements"]);
+      expect(slots(host)).toEqual(["review-elements"]);
       // Phase 112 (TFL-854 C4) — the Inspector keeps the shared review marks
       // categories but the Annotations category is the SELECTED annotation's
       // scope, never a second copy of the LEFT navigator's list. With nothing
@@ -349,10 +345,10 @@ it("EDIT + a page shows ONLY the CropBox values (no OCR status — ruling 4)", (
       expect(host.querySelector('[data-inspector-action="annotation-jump"]')).toBeNull();
       expect(host.querySelector('[data-inspector-action="annotation-edit"]')).toBeNull();
       expect(host.querySelector('[data-inspector-action="annotation-delete"]')).toBeNull();
-      click(host, '[data-inspector-action="export-comments"]');
-      click(host, '[data-inspector-action="import-comments"]');
-      expect(onExportComments).toHaveBeenCalledTimes(1);
-      expect(onImportComments).toHaveBeenCalledTimes(1);
+      // Phase 116 (TFL-1228 chunk G) — the FDF comment actions moved to the
+      // list header, so the Inspector no longer duplicates them.
+      expect(host.querySelector('[data-inspector-action="export-comments"]')).toBeNull();
+      expect(host.querySelector('[data-inspector-action="import-comments"]')).toBeNull();
     } finally {
       unmount();
     }

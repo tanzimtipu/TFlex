@@ -11,7 +11,7 @@ const { test, expect } = require('@playwright/test');
 const path = require('node:path');
 const fs = require('node:fs');
 const { launchApp } = require('./lib/launch.cjs');
-const { hardClose, armAnnotationTool, openAnnotationFlyout, gotoStage } = require('./lib/helpers.cjs');
+const { launchDev, hardClose, armAnnotationTool, openAnnotationFlyout, gotoStage, openSample, slotBox } = require('./lib/helpers.cjs');
 
 const SHOTS = path.resolve(__dirname, '..', 'screenshots');
 fs.mkdirSync(SHOTS, { recursive: true });
@@ -26,33 +26,18 @@ test.afterEach(async () => {
   win = null;
 });
 
-async function openSample(name = 'report.pdf') {
-  await win.locator('.sample-card').filter({ hasText: name }).first().click();
-  await win.waitForSelector('.pdf-page canvas', { timeout: 30000 });
-  await win.waitForTimeout(1200);
-}
 
-async function slotBox(page = 1) {
-  return win.evaluate((want) => {
-    const pane = document.querySelector('.tab-pane[aria-hidden="false"]');
-    const slot = pane && pane.querySelector(`.page-slot[data-page="${want}"]`);
-    if (!slot) return null;
-    const r = slot.getBoundingClientRect();
-    return { x: r.x, y: r.y, w: r.width, h: r.height };
-  }, page);
-}
 
 test('DEF-362: the annotation flash overlay animates on --motion-duration-flash', async () => {
-  app = await launchApp();
-  win = await app.firstWindow();
+  ({ electronApp: app, window: win } = await launchDev());
   await win.waitForSelector('.sample-card', { timeout: 30000 });
-  await openSample();
+  await openSample(win);
 
   // Create one annotation so the REVIEW panel has a row to jump to.
   await openAnnotationFlyout(win);
   await armAnnotationTool(win, 'ink');
   await win.waitForTimeout(400);
-  const box = await slotBox(1);
+   const box = await slotBox(win, 1);
   expect(box, 'page slot 1 mounted').not.toBeNull();
   await win.mouse.move(box.x + box.w * 0.35, box.y + box.h * 0.3);
   await win.mouse.down();
@@ -62,15 +47,17 @@ test('DEF-362: the annotation flash overlay animates on --motion-duration-flash'
 
   // REVIEW stage -> the annotations panel row.
   await gotoStage(win, 3);
-  await win.waitForSelector('[data-context-panel="review"] [data-annotation-panel]', { timeout: 8000 });
-  const row = win.locator('[data-context-panel="review"] .ann-panel-row').first();
+  const row = win.locator('[data-annotation-row]').first();
   await expect(row).toBeVisible();
 
-  // Click the row's jump button; the flash overlay mounts.
-  await row.locator('.ann-panel-row-jump').click();
-  await win.waitForSelector('.ann-flash', { state: 'attached', timeout: 5000 });
+  // Click the row's real Jump control: it calls onJumpTo -> setFlashId, which
+  // mounts the `.ann-flash` overlay on the page (ThreadStreamRow owns no
+  // row-level click handler).
+  await row.locator('button[aria-label^="Jump"]').click();
+  const flash = win.locator('.ann-flash').first();
+  await expect(flash).toBeAttached({ timeout: 5000 });
 
-  const anim = await win.locator('.ann-flash').first().evaluate((el) => {
+  const anim = await flash.evaluate((el) => {
     const cs = getComputedStyle(el);
     return {
       name: cs.animationName,

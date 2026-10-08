@@ -7,10 +7,10 @@
 // classes / ARIA the primitive emits; no behaviour (label, handler, data-* hook,
 // disabled predicate) is re-derived here.
 //
-// DELIBERATE EXCEPTION — the annotation colour swatch (`AnnotationsPanel.tsx`)
-// keeps its native markup because it carries a live colour fill the generic
-// primitive cannot express (same precedent as the dock swatch exception); it is
-// asserted here as the documented surface exception.
+// DELIBERATE EXCEPTION — the annotation colour swatch formerly lived on the
+// panel rows; Phase 116 (TFL-1228 chunk D) retired it (colour editing belongs to
+// the inspector), so the call-site test now pins its ABSENCE and the row's
+// Thread Stream hooks instead.
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -325,7 +325,7 @@ const ANNOTATION = {
 } as unknown as Annotation;
 
 describe("Phase 113 — AnnotationsPanel call sites", () => {
-  it("keeps the colour swatch native, driven by aria-pressed, with no -active class", () => {
+  it("retires the per-row colour swatch (colour editing lives in the inspector)", () => {
     const host = mount(
       <AnnotationsPanel
         annotations={[ANNOTATION]}
@@ -334,15 +334,14 @@ describe("Phase 113 — AnnotationsPanel call sites", () => {
         onDelete={NOOP}
       />,
     );
-    const swatch = host.querySelector('[data-color="yellow"]');
-    expect(swatch).not.toBeNull();
-    expect(cls(swatch)).toContain("ann-panel-swatch");
-    expect(cls(swatch)).not.toContain("ann-panel-swatch-active");
-    expect(cls(swatch)).not.toContain("btn");
-    expect(swatch?.getAttribute("aria-pressed")).toBe("true");
+    const row = host.querySelector("[data-annotation-row]");
+    expect(row).not.toBeNull();
+    expect(row?.querySelector('[data-color="yellow"]')).toBeNull();
+    expect(host.querySelector(".ann-panel-swatch")).toBeNull();
+    expect(host.querySelector("[data-color]")).toBeNull();
   });
 
-  it("keeps the jump row's accessible name and the canonical classes", () => {
+  it("keeps the jump row's accessible name and the Thread Stream hooks", () => {
     const host = mount(
       <AnnotationsPanel
         annotations={[ANNOTATION]}
@@ -351,9 +350,12 @@ describe("Phase 113 — AnnotationsPanel call sites", () => {
         onDelete={NOOP}
       />,
     );
-    const jump = host.querySelector(".ann-panel-row-jump");
+    const row = host.querySelector("[data-annotation-row]");
+    const jump = row?.querySelector('[aria-label^="Jump to "]') ?? null;
+    expect(jump).not.toBeNull();
     expect(cls(jump)).toContain("btn-secondary");
     expect(jump?.getAttribute("aria-label")?.startsWith("Jump to ")).toBe(true);
+    expect(row?.querySelector("[data-ann-kind]")).not.toBeNull();
   });
 });
 

@@ -137,6 +137,12 @@ interface AnnotationBase {
    *  Helvetica 12, left-aligned, 1.35 line step, no highlight/list/indent.
    *  The engine bakes the same fields into the /AP stream at save time. */
   style?: AnnTextStyle;
+  /** Phase 116 - the annotation dict's real /T author echoed by the engine;
+   *  present only when the document provides one. */
+  author?: string;
+  /** Phase 116 - the annotation dict's real /M date string, verbatim;
+   *  present only when the document provides one. */
+  modifiedAt?: string;
 }
 
 /** Text markup: highlight / underline / strikeout anchored to text quads

@@ -256,7 +256,7 @@ describe("Phase 59 item 9 - Inspector labels carry no trailing ellipsis", () => 
     }
   });
 
-  it("shows the bare rename / Export FDF / Import FDF / Export labels", () => {
+  it("shows the bare rename / Export labels", () => {
     const pages = mountInspector({
       stage: "pages",
       selection: { kind: "page", page: 1 },
@@ -268,21 +268,6 @@ describe("Phase 59 item 9 - Inspector labels carry no trailing ellipsis", () => 
       expect(renumber?.textContent ?? "").not.toContain(ELLIPSIS);
     } finally {
       pages.unmount();
-    }
-    const review = mountInspector({
-      stage: "review",
-      selection: { kind: "none" },
-      onExportComments: vi.fn(),
-      onImportComments: vi.fn(),
-    });
-    try {
-      const text = review.host.textContent ?? "";
-      expect(text).toContain("Export FDF");
-      expect(text).toContain("Import FDF");
-      expect(text).not.toContain(`Export FDF${ELLIPSIS}`);
-      expect(text).not.toContain(`Import FDF${ELLIPSIS}`);
-    } finally {
-      review.unmount();
     }
     const deliver = mountInspector({
       stage: "deliver",

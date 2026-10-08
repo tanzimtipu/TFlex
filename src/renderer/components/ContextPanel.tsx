@@ -73,6 +73,7 @@ import { countOutline } from '../../shared/outline';
 import type { OutlineEntry } from '../../shared/outline';
 import type {
   BatesInfo,
+  CommentThread,
   DocumentProtectionState,
   EditFont,
   SavedSignature,
@@ -308,6 +309,15 @@ onInsertBlank?: (page: number) => void;
   onJumpToAnnotation?: ((page: number, id: string) => void) | null;
   onEditAnnotation?: ((id: string, patch: AnnotationPatch) => void) | null;
   onDeleteAnnotation?: ((id: string) => void) | null;
+  /** Phase 116 (TFL-1228 chunk D) — the Thread Stream pass-throughs for the
+   *  LEFT navigator's AnnotationsPanel. Optional; the host wires them later. */
+  selectedAnnotationId?: string | null;
+  onOpenTools?: () => void;
+  comments?: readonly CommentThread[];
+  /** Phase 116 (TFL-1228 chunk G) — the list-level FDF comment import / export
+   *  pass-throughs for the LEFT navigator's AnnotationsPanel. Optional. */
+  onExportComments?: () => void;
+  onImportComments?: () => void;
   /** Phase 90 (TFL-509-C1) — the unified review list's non-annotation sources
    *  and handlers. The annotation fields above feed its Annotations category;
    *  `signatures` is the PLACED-signature list (`EngineState.signatures`). */
@@ -532,6 +542,11 @@ onInsertBlank,
     onJumpToAnnotation = null,
     onEditAnnotation = null,
     onDeleteAnnotation = null,
+    selectedAnnotationId = null,
+    onOpenTools,
+    comments,
+    onExportComments,
+    onImportComments,
     bates = [],
     watermarks = [],
     signatures = [],
@@ -897,6 +912,24 @@ const pageCount = engineState.pageCount;
     (outline === null || outline === undefined || outline.length === 0) &&
     effectiveOutlineEditor === null;
 
+  // Phase 118 (TFL-1345) — the EXISTING "create from images" entry, surfaced
+  // in the document view's default Pages stage so the intake path stays
+  // reachable once Home is gone (a created document opens as a tab). It
+  // carries `data-home-tool="createFromImages"` so it is the SAME command
+  // identity the Home tool row exposes, not a second flow.
+  const newDocumentActions = [
+    {
+      id: 'from-images',
+      label: 'From images',
+      icon: <Icon name="insertPages" size="md" aria-hidden />,
+      onClick: onCreateFromImages ?? undefined,
+      dataAttrs: {
+        'data-context-panel-action': 'from-images',
+        'data-home-tool': 'createFromImages',
+      },
+    },
+  ];
+
   const renderPages = (): ReactElement => (
     <>
       <div
@@ -1045,6 +1078,19 @@ const pageCount = engineState.pageCount;
           </div>
         </div>
       )}
+      <PanelSection
+        className="context-panel-section"
+        titleClassName="context-panel-section-title"
+        bodyClassName="context-panel-section-body"
+        data-context-panel-section="new-document"
+        title="New document"
+      >
+        <ActionList
+          className="context-panel-actions-row"
+          data-deliver-actions="new-document"
+          actions={newDocumentActions}
+        />
+      </PanelSection>
     </>
   );
 
@@ -1387,6 +1433,11 @@ const pageCount = engineState.pageCount;
       onJumpToAnnotation={onJumpToAnnotation}
       onEditAnnotation={onEditAnnotation}
       onDeleteAnnotation={onDeleteAnnotation}
+      selectedAnnotationId={selectedAnnotationId}
+      onOpenTools={onOpenTools}
+      comments={comments}
+      onExportComments={onExportComments}
+      onImportComments={onImportComments}
       bates={bates}
       watermarks={watermarks}
       signatures={signatures}
@@ -1431,15 +1482,6 @@ const pageCount = engineState.pageCount;
         icon: <Icon name="optimize" size="md" aria-hidden />,
         onClick: onOptimize,
         dataAttrs: { 'data-context-panel-action': 'optimize' },
-      },
-    ];
-    const newDocumentActions = [
-      {
-        id: 'from-images',
-        label: 'From images',
-        icon: <Icon name="insertPages" size="md" aria-hidden />,
-        onClick: onCreateFromImages ?? undefined,
-        dataAttrs: { 'data-context-panel-action': 'from-images' },
       },
     ];
     return (

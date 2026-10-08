@@ -50,6 +50,7 @@ const MIGRATED_SURFACES: readonly string[] = [
   "annotations/ColorPalette.tsx",
   "annotations/StampAnnotations.tsx",
   "annotations/StampOverlay.tsx",
+  "annotations/ThreadStream.tsx",
   "bug-report/BugReportErrorBoundary.tsx",
   "components/AboutDialog.tsx",
   "components/AccountMenu.tsx",
@@ -227,8 +228,6 @@ const CSS_ALLOWLIST: Readonly<Record<string, string>> = {
     "thumbnail drop-indicator ring plus a soft select-edge glow; a drag affordance, not elevation",
   ".ann-color-swatch-active|box-shadow":
     "active annotation swatch ring (bg-toolbar); a state edge, not elevation",
-  ".ann-panel-swatch[aria-pressed=\"true\"]|box-shadow":
-    "active annotation-panel swatch ring (bg-raised); a state edge, not elevation (Phase 113: the legacy .ann-panel-swatch-active class is retired; selection rides [aria-pressed=\"true\"])",
   ".form-editor:focus|box-shadow":
     "form-field focus ring (accent-soft); a functional focus affordance, not elevation",
   ".stamp-annotation:hover|box-shadow":

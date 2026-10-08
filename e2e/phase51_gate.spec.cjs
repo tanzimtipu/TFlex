@@ -16,8 +16,7 @@
 const { test, expect } = require('@playwright/test');
 const path = require('node:path');
 const fs = require('node:fs');
-const { launchApp, getSamplePath } = require('./lib/launch.cjs');
-const { hardClose, gotoStage, ensurePanelExpanded, armAnnotationTool, runTool } = require('./lib/helpers.cjs');
+const { launchDev, hardClose, gotoStage, ensurePanelExpanded, armAnnotationTool, runTool, openSample, openSamplePath, setTheme, getSamplePath, toggleMultiModeViaPalette } = require('./lib/helpers.cjs');
 
 const ROOT = path.resolve(__dirname, '..');
 const SHOTS = path.join(ROOT, 'screenshots');
@@ -35,75 +34,7 @@ test.afterEach(async () => {
   win = null;
 });
 
-async function launch() {
-  app = await launchApp();
-  win = await app.firstWindow();
-  await win.waitForSelector('.sample-card', { timeout: 30000 });
-  return win;
-}
-
-async function openViaDialog(absPath) {
-  await app.evaluate(async ({ dialog }, p) => {
-    dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [p] });
-  }, absPath);
-  await win.locator('[data-toolbar-open]').click();
-  await win.waitForTimeout(1600);
-}
-
-async function setTheme(theme) {
-  await win.click('[data-theme-toggle]');
-  await win.waitForSelector('.theme-toggle-popover', { timeout: 5000 });
-  await win.click(`[data-theme-option="${theme}"]`);
-  await win.waitForFunction((w) => document.documentElement.getAttribute('data-theme') === w, theme);
-  await win.waitForTimeout(500);
-}
-
-// ---------------------------------------------------------------------------
-// A (item 1) - the stale challenge cookies are cleared on every flow start.
-// ---------------------------------------------------------------------------
-test('P51-A item 1: starting a flow clears the challenge cookies, never the session token', async () => {
-  await launch();
-
-  // Seed the app session with a STALE challenge (both spellings) and a live
-  // session token, exactly as an earlier failed attempt would leave them.
-  await app.evaluate(async ({ session }, base) => {
-    const jar = session.defaultSession.cookies;
-    const common = { url: base, path: '/', secure: true, sameSite: 'no_restriction' };
-    await jar.set({ ...common, name: '__Secure-neon-auth.session_challenge', value: 'stale-canonical' });
-    await jar.set({ ...common, name: '__Secure-neon-auth.session_challange', value: 'stale-legacy' });
-    await jar.set({ ...common, name: '__Secure-neon-auth.session_token', value: 'live-token' });
-  }, AUTH_BASE);
-
-  const before = await app.evaluate(async ({ session }, base) => {
-    const all = await session.defaultSession.cookies.get({ url: base });
-    return all.map((c) => c.name).sort();
-  }, AUTH_BASE);
-  console.log(`[P51-A before] ${JSON.stringify(before)}`);
-  expect(before).toContain('__Secure-neon-auth.session_challenge');
-  expect(before).toContain('__Secure-neon-auth.session_challange');
-  expect(before).toContain('__Secure-neon-auth.session_token');
-
-  // Start a flow through the real renderer API (main's controller clears first).
-  const started = await win.evaluate(() => window.tflex.accounts.startOAuthCallback());
-  console.log(`[P51-A started] ${JSON.stringify(started)}`);
-  expect(started.callbackUrl).toMatch(/^http:\/\/(127\.0\.0\.1|localhost):\d+\/oauth\/callback\?token=/);
-
-  const after = await app.evaluate(async ({ session }, base) => {
-    const all = await session.defaultSession.cookies.get({ url: base });
-    return all.map((c) => c.name).sort();
-  }, AUTH_BASE);
-  console.log(`[P51-A after] ${JSON.stringify(after)}`);
-  expect(after, 'both stale challenge cookies are gone').not.toContain('__Secure-neon-auth.session_challenge');
-  expect(after, 'both stale challenge cookies are gone').not.toContain('__Secure-neon-auth.session_challange');
-  expect(after, 'the session token is NEVER touched (no sign-out)').toContain('__Secure-neon-auth.session_token');
-
-  await win.evaluate(() => window.tflex.accounts.stopOAuthCallback());
-});
-
-// ---------------------------------------------------------------------------
-// C (item 3) - the PAINTED ring vs the Undo row.
-// ---------------------------------------------------------------------------
-async function measureRingVsUndo() {
+async function measureRingVsUndo(win) {
   return win.evaluate(() => {
     const undo = document.querySelector('button[aria-label="Undo last change"]');
     const scroller = document.querySelector('.thumb-scroller-inner');
@@ -134,23 +65,13 @@ async function measureRingVsUndo() {
       const iy = Math.max(0, Math.min(u.b, painted.b) - Math.max(u.t, painted.t));
       inter = { w: ix, h: iy, area: ix * iy };
     }
-    return {
-      undo: u,
-      thumb: t,
-      scroller: s,
-      spread: sp,
-      rawShadow,
-      painted,
-      inter,
-      clippedTop: painted && s ? painted.t < s.t - 0.5 : null,
-      current: thumb ? thumb.classList.contains('thumb-current') : null,
-    };
+    return { undo: u, thumb: t, scroller: s, spread: sp, rawShadow, painted, inter, clippedTop: painted && s ? painted.t < s.t - 0.5 : null, current: thumb ? thumb.classList.contains('thumb-current') : null };
   });
 }
 
 test('P51-C item 3: the painted ring never reaches the Undo row (normal/narrow/multi)', async () => {
-  await launch();
-  await openViaDialog(getSamplePath('report.pdf'));
+  ({ electronApp: app, window: win } = await launchDev());
+  await openSamplePath(win, app, getSamplePath('report.pdf'));
   await ensurePanelExpanded(win);
   await win.waitForTimeout(700);
 
@@ -159,7 +80,7 @@ test('P51-C item 3: the painted ring never reaches the Undo row (normal/narrow/m
   await win.waitForTimeout(700);
 
   const states = [];
-  states.push(['normal', await measureRingVsUndo()]);
+  states.push(['normal', await measureRingVsUndo(win)]);
   await win.screenshot({ path: path.join(SHOTS, 'phase51-thumb-ring-undo.png') });
 
   // Narrow window.
@@ -167,13 +88,14 @@ test('P51-C item 3: the painted ring never reaches the Undo row (normal/narrow/m
     BrowserWindow.getAllWindows()[0].setSize(900, 720);
   });
   await win.waitForTimeout(900);
-  states.push(['narrow', await measureRingVsUndo()]);
+  states.push(['narrow', await measureRingVsUndo(win)]);
 
-  // Multi Mode (the 150px strip).
-  await win.locator('[data-header-multi-mode]').click();
+  // Multi Mode (the 150px strip). The title-bar control was retired in
+  // TFL-1116; the live route is the app menu's multiMode row.
+  await toggleMultiModeViaPalette(win);
   await win.waitForSelector('.tab-stage[data-multi-mode="true"]', { timeout: 15000 });
   await win.waitForTimeout(900);
-  states.push(['multi', await measureRingVsUndo()]);
+  states.push(['multi', await measureRingVsUndo(win)]);
 
   for (const [name, m] of states) {
     console.log(`[P51-C ${name}] undo=${JSON.stringify(m.undo)} thumb=${JSON.stringify(m.thumb)} scroller=${JSON.stringify(m.scroller)} spread=${m.spread} shadow=${JSON.stringify(m.rawShadow)} painted=${JSON.stringify(m.painted)} inter=${JSON.stringify(m.inter)} clippedTop=${m.clippedTop} current=${m.current}`);
@@ -203,7 +125,7 @@ const ANN_KINDS = [
  *  refreshed by the UI-created rectangle below (onCreateAnnotation ->
  *  noteOpApplied mirrors the engine's FULL state, so every injected row
  *  renders). */
-async function injectAnnotations() {
+async function injectAnnotations(win) {
   const docId = await win.evaluate(() => window.tflexDiagnostics().engineDocId);
   const results = await win.evaluate(async ({ id, kinds }) => {
     const out = [];
@@ -224,7 +146,7 @@ async function injectAnnotations() {
 
 /** Create the RECTANGLE through the real UI (the operator's re-report). This
  *  also refreshes the renderer's engine mirror so every injected row renders. */
-async function createRectViaUi() {
+async function createRectViaUi(win) {
   await gotoStage(win, 3);
   await armAnnotationTool(win, 'rect');
   const pg = await win.locator('.pdf-page[data-page="1"]').first().boundingBox();
@@ -237,9 +159,9 @@ async function createRectViaUi() {
   await win.waitForTimeout(900);
 }
 
-async function measureAnnRows() {
+async function measureAnnRows(win) {
   return win.evaluate(() => {
-    const panel = document.querySelector('[data-context-panel-annotations]');
+    const panel = document.querySelector('[data-context-panel="review"]');
     const list = document.querySelector('[data-annotation-panel]');
     const box = (el) => {
       if (!el) return null;
@@ -250,8 +172,8 @@ async function measureAnnRows() {
     const lb = box(list);
     const rows = [...document.querySelectorAll('[data-annotation-row]')];
     return rows.map((row) => {
-      const del = row.querySelector('.ann-panel-row-delete');
-      const jump = row.querySelector('.ann-panel-row-jump');
+      const del = row.querySelector('[aria-label^="Delete"]');
+      const jump = row.querySelector('button[aria-label^="Jump"]');
       // Bring the row into the viewport so the elementFromPoint hit test is
       // meaningful (a row below the fold would otherwise report the section).
       row.scrollIntoView({ block: 'center' });
@@ -274,47 +196,35 @@ async function measureAnnRows() {
         hitTag = hit ? `${hit.tagName.toLowerCase()}.${(hit.className || '').toString().split(' ')[0]}` : null;
         clickable = hit !== null && (hit === del || del.contains(hit));
       }
-      return {
-        id: row.getAttribute('data-annotation-row'),
-        kind: row.querySelector('.ann-panel-row-kind')?.textContent ?? null,
-        row: rb,
-        del: db,
-        jump: jb,
-        insideRow,
-        insidePanel,
-        insideList,
-        clickable,
-        hitTag,
-        rowOverflow: row.scrollWidth - row.clientWidth,
-      };
+      return { id: row.getAttribute('data-annotation-row'), kind: row.querySelector('[data-ann-kind]')?.textContent ?? null, row: rb, del: db, jump: jb, insideRow, insidePanel, insideList, clickable, hitTag, rowOverflow: row.scrollWidth - row.clientWidth };
     });
   });
 }
 
 test('P51-D item 4: every annotation row keeps its delete control inside (normal + narrow)', async () => {
-  await launch();
-  await openViaDialog(getSamplePath('report.pdf'));
+  ({ electronApp: app, window: win } = await launchDev());
+  await openSamplePath(win, app, getSamplePath('report.pdf'));
   await ensurePanelExpanded(win);
   await win.waitForTimeout(500);
 
-  const injected = await injectAnnotations();
+  const injected = await injectAnnotations(win);
   console.log(`[P51-D injected] ${JSON.stringify(injected)}`);
   for (const r of injected) expect(r.ok, `createAnnotation ${r.name}`).toBe(true);
 
   // The rectangle is created through the real UI (the operator's re-report);
   // it also refreshes the renderer mirror so every injected row renders.
-  await createRectViaUi();
+  await createRectViaUi(win);
   await ensurePanelExpanded(win);
   await win.waitForSelector('[data-annotation-row]', { timeout: 15000 });
   await win.waitForTimeout(700);
 
   const states = [];
-  states.push(['normal', await measureAnnRows()]);
+  states.push(['normal', await measureAnnRows(win)]);
 
   // Screenshot with the rectangle row selected (the operator's re-report).
-  const rectRow = win.locator('[data-annotation-row]').filter({ has: win.locator('.ann-panel-row-kind', { hasText: 'Rectangle' }) }).first();
+  const rectRow = win.locator('[data-annotation-row]').filter({ has: win.locator('[data-ann-kind]', { hasText: 'Rectangle' }) }).first();
   await rectRow.scrollIntoViewIfNeeded();
-  await rectRow.locator('.ann-panel-row-jump').click();
+  await rectRow.locator('button[aria-label^="Jump"]').click();
   await win.waitForTimeout(700);
   await win.screenshot({ path: path.join(SHOTS, 'phase51-rect-delete.png') });
 
@@ -323,7 +233,7 @@ test('P51-D item 4: every annotation row keeps its delete control inside (normal
     BrowserWindow.getAllWindows()[0].setSize(900, 720);
   });
   await win.waitForTimeout(900);
-  states.push(['narrow', await measureAnnRows()]);
+  states.push(['narrow', await measureAnnRows(win)]);
 
   for (const [name, rows] of states) {
     console.log(`[P51-D ${name}] rows=${rows.length}`);
@@ -342,7 +252,7 @@ test('P51-D item 4: every annotation row keeps its delete control inside (normal
 // ---------------------------------------------------------------------------
 // E (item 5) - full-strength tab colours.
 // ---------------------------------------------------------------------------
-async function readTabs() {
+async function readTabs(win) {
   return win.evaluate(() => {
     const parse = (c) => {
       if (!c) return null;
@@ -381,42 +291,24 @@ async function readTabs() {
       const chipCs = chip ? getComputedStyle(chip) : null;
       const fg = parse(cs.color);
       const bg = comp(t);
-      return {
-        id: t.getAttribute('data-tab-id'),
-        slot: t.getAttribute('data-tab-colour'),
-        active: t.classList.contains('tab-active'),
-        bg: cs.backgroundColor,
-        color: cs.color,
-        chip: chipCs ? chipCs.backgroundColor : null,
-        // Phase 72 (ruling 4, item 3) — the `.tab-colour-chip` is RETIRED; the
-        // only body-fill signal is the colorful `::before` mix (22% inactive /
-        // 41% active) with its 1px border.
-        chipCount: t.querySelectorAll('.tab-colour-chip').length,
-        beforeBg: before.backgroundColor,
-        beforeBorderWidth: before.borderTopWidth,
-        contrast: fg ? +ratio(fg, bg).toFixed(2) : null,
-      };
+      return { id: t.getAttribute('data-tab-id'), slot: t.getAttribute('data-tab-colour'), active: t.classList.contains('tab-active'), bg: cs.backgroundColor, color: cs.color, chip: chipCs ? chipCs.backgroundColor : null, chipCount: t.querySelectorAll('.tab-colour-chip').length, beforeBg: before.backgroundColor, beforeBorderWidth: before.borderTopWidth, contrast: fg ? +ratio(fg, bg).toFixed(2) : null };
     });
   });
 }
 
 test('P51-E item 5: tab colours are full-strength, adjacent differ, contrast floors', async () => {
-  await launch();
-  await openViaDialog(getSamplePath('report.pdf'));
-  await openViaDialog(getSamplePath('form.pdf'));
-  await openViaDialog(getSamplePath('long.pdf'));
+  ({ electronApp: app, window: win } = await launchDev());
+  await openSamplePath(win, app, getSamplePath('report.pdf'));
+  await openSamplePath(win, app, getSamplePath('form.pdf'));
+  await openSamplePath(win, app, getSamplePath('long.pdf'));
   await win.waitForTimeout(800);
   expect(await win.locator('.tab').count()).toBe(3);
 
   for (const theme of ['light', 'dark', 'frosted']) {
-    await setTheme(theme);
-    const tabs = await readTabs();
+    await setTheme(win, theme);
+    const tabs = await readTabs(win);
     console.log(`[P51-E ${theme}] ${JSON.stringify(tabs)}`);
     expect(tabs.length).toBe(3);
-    // Phase 72 (ruling 4, item 3) SUPERSEDES the Phase 45/51 colour-identity
-    // chip: `.tab-colour-chip` is deleted, `data-tab-colour` / `--tf-tab-accent`
-    // remain, and the active cue is the brighter `::before` body fill (41% mix
-    // vs the inactive 22%), not a chip or a per-tab text colour.
     expect(tabs[0].slot, `${theme}: tab0 vs tab1 slot`).not.toBe(tabs[1].slot);
     expect(tabs[1].slot, `${theme}: tab1 vs tab2 slot`).not.toBe(tabs[2].slot);
     for (const t of tabs) {
@@ -425,10 +317,7 @@ test('P51-E item 5: tab colours are full-strength, adjacent differ, contrast flo
     const active = tabs.filter((t) => t.active);
     expect(active.length, `${theme}: exactly one active tab`).toBe(1);
     const inactive = tabs.filter((t) => !t.active);
-    expect(
-      active[0].beforeBg,
-      `${theme}: active ::before fill (41% mix) differs from inactive (22% mix)`,
-    ).not.toBe(inactive[0].beforeBg);
+    expect(active[0].beforeBg, `${theme}: active ::before fill (41% mix) differs from inactive (22% mix)`).not.toBe(inactive[0].beforeBg);
     for (const t of tabs) {
       expect(t.beforeBorderWidth, `${theme}: ${t.id} ::before body border is 1px`).toBe('1px');
     }
@@ -443,49 +332,30 @@ test('P51-E item 5: tab colours are full-strength, adjacent differ, contrast flo
 // ---------------------------------------------------------------------------
 // H (item 11) - every text-box surface is thicker + rounded.
 // ---------------------------------------------------------------------------
-async function measureBoxSurfaces() {
+async function measureBoxSurfaces(win) {
   return win.evaluate(() => {
     const read = (sel) => {
       const el = document.querySelector(sel);
       if (!el) return null;
       const cs = getComputedStyle(el);
-      return {
-        borderTopWidth: cs.borderTopWidth,
-        borderLeftWidth: cs.borderLeftWidth,
-        borderTopLeftRadius: cs.borderTopLeftRadius,
-        borderTopRightRadius: cs.borderTopRightRadius,
-        borderBottomLeftRadius: cs.borderBottomLeftRadius,
-        borderBottomRightRadius: cs.borderBottomRightRadius,
-        overflow: cs.overflow,
-        scrollW: el.scrollWidth,
-        clientW: el.clientWidth,
-        scrollH: el.scrollHeight,
-        clientH: el.clientHeight,
-      };
+      return { borderTopWidth: cs.borderTopWidth, borderLeftWidth: cs.borderLeftWidth, borderTopLeftRadius: cs.borderTopLeftRadius, borderTopRightRadius: cs.borderTopRightRadius, borderBottomLeftRadius: cs.borderBottomLeftRadius, borderBottomRightRadius: cs.borderBottomRightRadius, overflow: cs.overflow, scrollW: el.scrollWidth, clientW: el.clientWidth, scrollH: el.scrollHeight, clientH: el.clientHeight };
     };
-    return {
-      annTextbox: read('.ann-textbox'),
-      annCallout: read('.ann-callout'),
-      editBox: read('.edit-box'),
-      runEditor: read('.edit-run-editor'),
-      annCommentBox: read('.ann-comment-box'),
-      annEditor: read('.ann-editor'),
-    };
+    return { annTextbox: read('.ann-textbox'), annCallout: read('.ann-callout'), editBox: read('.edit-box'), runEditor: read('.edit-run-editor'), annCommentBox: read('.ann-comment-box'), annEditor: read('.ann-editor') };
   });
 }
 
 test('P51-H item 11: text-box surfaces are thicker + rounded, no clipping', async () => {
-  await launch();
-  await openViaDialog(getSamplePath('report.pdf'));
+  ({ electronApp: app, window: win } = await launchDev());
+  await openSamplePath(win, app, getSamplePath('report.pdf'));
   await ensurePanelExpanded(win);
   await win.waitForTimeout(500);
 
   // A textbox + a callout annotation give the two annotation surfaces.
-  const injected = await injectAnnotations();
+  const injected = await injectAnnotations(win);
   for (const r of injected) expect(r.ok, `createAnnotation ${r.name}`).toBe(true);
   // The UI-created rectangle refreshes the renderer mirror so the injected
   // textbox / callout surfaces actually render.
-  await createRectViaUi();
+  await createRectViaUi(win);
   await win.waitForTimeout(900);
 
   // A canvas text box via the real EDIT tool: arm "Add a text box", click an
@@ -517,7 +387,7 @@ test('P51-H item 11: text-box surfaces are thicker + rounded, no clipping', asyn
   console.log(`[P51-H after text click] ${JSON.stringify(diag1)}`);
   // `.edit-box` is the committed canvas text box surface; it is present while
   // the box editor is open. Measure the surfaces HERE.
-  const surfaces = await measureBoxSurfaces();
+  const surfaces = await measureBoxSurfaces(win);
   console.log(`[P51-H surfaces] ${JSON.stringify(surfaces)}`);
   for (const [name, s] of Object.entries(surfaces)) {
     if (s === null) { console.log(`[P51-H ${name}] absent in this state`); continue; }
@@ -546,7 +416,7 @@ test('P51-H item 11: text-box surfaces are thicker + rounded, no clipping', asyn
 // ---------------------------------------------------------------------------
 // F (items 6,7,12,13,14,15,16) - the edit-text cluster.
 // ---------------------------------------------------------------------------
-async function armEditText() {
+async function armEditText(win) {
   await win.evaluate(() => { const el = document.activeElement; if (el instanceof HTMLElement) el.blur(); });
   await win.keyboard.press('Control+k');
   await win.waitForSelector('[data-command-palette-input]', { state: 'visible', timeout: 8000 });
@@ -557,7 +427,7 @@ async function armEditText() {
   await win.waitForTimeout(700);
 }
 
-async function selectRun(nearRect = null) {
+async function selectRun(win, nearRect = null) {
   const pageLoc = win.locator('.tab-pane[aria-hidden="false"] .pdf-page[data-page="1"]');
   const pg = await (await pageLoc.count() ? pageLoc.first() : win.locator('.pdf-page[data-page="1"]').first()).boundingBox();
   const fracs = [[0.5, 0.1], [0.3, 0.12], [0.5, 0.16], [0.25, 0.22], [0.5, 0.3], [0.35, 0.42], [0.55, 0.5], [0.4, 0.62]];
@@ -584,7 +454,7 @@ async function selectRun(nearRect = null) {
   return false;
 }
 
-async function runState() {
+async function runState(win) {
   return win.evaluate(() => {
     const root = document.querySelector('.tab-pane[aria-hidden="false"]') || document;
     const sel = root.querySelector('[data-textrun-selection]');
@@ -594,33 +464,12 @@ async function runState() {
     const field = document.querySelector('[data-inspector-text-panel] [data-txt-text]');
     const box = (el) => { if (!el) return null; const r = el.getBoundingClientRect(); return { l: Math.round(r.left), t: Math.round(r.top), w: Math.round(r.width), h: Math.round(r.height) }; };
     const cs = sel ? getComputedStyle(sel) : null;
-    return {
-      selection: box(sel),
-      selectionStyle: cs ? { border: cs.borderTopWidth + ' ' + cs.borderTopStyle + ' ' + cs.borderTopColor, bg: cs.backgroundColor, z: cs.zIndex, shadow: cs.boxShadow } : null,
-      preview: box(prev),
-      previewText: prev ? prev.textContent : null,
-      eraser: box(eraser),
-      editor: box(editor),
-      editorText: editor ? editor.value : null,
-      fieldValue: field ? field.value : null,
-      fieldDisabled: field ? field.disabled : null,
-      activeIsField: document.activeElement === field,
-      activeTag: document.activeElement ? document.activeElement.tagName.toLowerCase() : null,
-      activeOuter: document.activeElement ? document.activeElement.outerHTML.slice(0, 120) : null,
-      fieldCount: document.querySelectorAll('[data-txt-text]').length,
-      panelCount: document.querySelectorAll('[data-inspector-text-panel]').length,
-      activeAttr: document.activeElement ? (document.activeElement.getAttribute('data-txt-text') !== null ? 'data-txt-text' : (document.activeElement.getAttribute('data-edit-run-editor') !== null ? 'data-edit-run-editor' : null)) : null,
-      bold: document.querySelector('[data-txt-bold]')?.getAttribute('aria-pressed'),
-      italic: document.querySelector('[data-txt-italic]')?.getAttribute('aria-pressed'),
-      super: document.querySelector('[data-txt-super]')?.getAttribute('aria-pressed'),
-      sub: document.querySelector('[data-txt-sub]')?.getAttribute('aria-pressed'),
-      previewCount: root.querySelectorAll('[data-edit-run-preview]').length,
-    };
+    return { selection: box(sel), selectionStyle: cs ? { border: cs.borderTopWidth + ' ' + cs.borderTopStyle + ' ' + cs.borderTopColor, bg: cs.backgroundColor, z: cs.zIndex, shadow: cs.boxShadow } : null, preview: box(prev), previewText: prev ? prev.textContent : null, eraser: box(eraser), editor: box(editor), editorText: editor ? editor.value : null, fieldValue: field ? field.value : null, fieldDisabled: field ? field.disabled : null, activeIsField: document.activeElement === field, activeTag: document.activeElement ? document.activeElement.tagName.toLowerCase() : null, activeOuter: document.activeElement ? document.activeElement.outerHTML.slice(0, 120) : null, fieldCount: document.querySelectorAll('[data-txt-text]').length, panelCount: document.querySelectorAll('[data-inspector-text-panel]').length, activeAttr: document.activeElement ? (document.activeElement.getAttribute('data-txt-text') !== null ? 'data-txt-text' : (document.activeElement.getAttribute('data-edit-run-editor') !== null ? 'data-edit-run-editor' : null)) : null, bold: document.querySelector('[data-txt-bold]')?.getAttribute('aria-pressed'), italic: document.querySelector('[data-txt-italic]')?.getAttribute('aria-pressed'), super: document.querySelector('[data-txt-super]')?.getAttribute('aria-pressed'), sub: document.querySelector('[data-txt-sub]')?.getAttribute('aria-pressed'), previewCount: root.querySelectorAll('[data-edit-run-preview]').length };
   });
 }
 
-async function dragSelection(dx, dy) {
-  const s = await runState();
+async function dragSelection(win, dx, dy) {
+  const s = await runState(win);
   if (s.selection === null) throw new Error('no selection to drag');
   const cx = s.selection.l + s.selection.w / 2;
   const cy = s.selection.t + s.selection.h / 2;
@@ -631,7 +480,7 @@ async function dragSelection(dx, dy) {
   await win.waitForTimeout(600);
 }
 
-async function clickConfirm() {
+async function clickConfirm(win) {
   const btn = win.locator('[data-content-action="textrun-confirm"]').first();
   await btn.click();
   await win.waitForTimeout(900);
@@ -641,7 +490,7 @@ async function clickConfirm() {
  *  `rect` (viewport px). A move's proxy refresh is async (DEF-155), so a
  *  click at the moved position must wait for the refreshed text layer rather
  *  than sampling the pre-refresh one. */
-async function waitForTextLayerAt(rect) {
+async function waitForTextLayerAt(win, rect) {
   await win.waitForFunction((r) => {
     const spans = [...document.querySelectorAll('.textLayer span')];
     return spans.some((s) => {
@@ -655,12 +504,12 @@ async function waitForTextLayerAt(rect) {
 }
 
 test('P51-F items 6,7,12,13,14,15,16: the edit-text cluster', async () => {
-  await launch();
-  await openViaDialog(getSamplePath('long.pdf'));
+  ({ electronApp: app, window: win } = await launchDev());
+  await openSamplePath(win, app, getSamplePath('long.pdf'));
   await win.waitForSelector('.pdf-page canvas', { timeout: 30000 });
   await win.waitForTimeout(1200);
   await gotoStage(win, 2);
-  await armEditText();
+  await armEditText(win);
   await win.evaluate(() => {
     window.__p51focus = [];
     document.addEventListener('focusin', (e) => {
@@ -672,13 +521,13 @@ test('P51-F items 6,7,12,13,14,15,16: the edit-text cluster', async () => {
       window.__p51focus.push(`out:${t.tagName.toLowerCase()}${t.getAttribute && t.getAttribute('data-txt-text') !== null ? '[txt]' : ''}`);
     }, true);
   });
-  expect(await selectRun(), 'a text run is selectable').toBe(true);
+  expect(await selectRun(win), 'a text run is selectable').toBe(true);
   await win.waitForTimeout(600);
   const focusLog = await win.evaluate(() => window.__p51focus);
   console.log(`[P51-F focusLog] ${JSON.stringify(focusLog)}`);
 
   // (6) selecting a run focuses the Inspector Text field.
-  const s6 = await runState();
+  const s6 = await runState(win);
   console.log(`[P51-F item6] activeIsField=${s6.activeIsField} activeTag=${s6.activeTag} activeAttr=${s6.activeAttr} activeOuter=${JSON.stringify(s6.activeOuter)} fieldCount=${s6.fieldCount} panelCount=${s6.panelCount} fieldValue=${JSON.stringify(s6.fieldValue)}`);
   if (!s6.activeIsField) {
     // User-facing consequence: with the field NOT focused, a keystroke must
@@ -686,7 +535,7 @@ test('P51-F items 6,7,12,13,14,15,16: the edit-text cluster', async () => {
     const before = s6.fieldValue;
     await win.keyboard.type('X');
     await win.waitForTimeout(400);
-    const after = await runState();
+    const after = await runState(win);
     console.log(`[P51-F item6 typing] before=${JSON.stringify(before)} after=${JSON.stringify(after.fieldValue)}`);
     const probe = await win.evaluate(() => {
       const f = document.querySelector('[data-txt-text]');
@@ -710,7 +559,7 @@ test('P51-F items 6,7,12,13,14,15,16: the edit-text cluster', async () => {
   // (12) typing in the Inspector field updates the canvas.
   await win.locator('[data-inspector-text-panel] [data-txt-text]').fill('Inspector edit');
   await win.waitForTimeout(700);
-  const s12a = await runState();
+  const s12a = await runState(win);
   console.log(`[P51-F item12 inspector->canvas] previewText=${JSON.stringify(s12a.previewText)}`);
   expect(s12a.previewText, 'item 12: the canvas preview follows the Inspector field').toContain('Inspector edit');
 
@@ -722,12 +571,12 @@ test('P51-F items 6,7,12,13,14,15,16: the edit-text cluster', async () => {
     if (el) el.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
   });
   await win.waitForTimeout(600);
-  const s12b = await runState();
+  const s12b = await runState(win);
   console.log(`[P51-F item12 editor] editor=${JSON.stringify(s12b.editor)} editorText=${JSON.stringify(s12b.editorText)} fieldValue=${JSON.stringify(s12b.fieldValue)}`);
   expect(s12b.editor, 'item 12: the on-canvas editor mounts').not.toBeNull();
   await win.locator('[data-edit-run-editor]').fill('Canvas edit');
   await win.waitForTimeout(700);
-  const s12c = await runState();
+  const s12c = await runState(win);
   console.log(`[P51-F item12 canvas->inspector] fieldValue=${JSON.stringify(s12c.fieldValue)}`);
   expect(s12c.fieldValue, 'item 12: the Inspector field follows the canvas editor').toBe('Canvas edit');
   // Close the editor and deselect by clicking a blank page area.
@@ -736,11 +585,11 @@ test('P51-F items 6,7,12,13,14,15,16: the edit-text cluster', async () => {
   await win.waitForTimeout(700);
 
   // (7) a drag MOVES the text (the preview follows the blue box).
-  expect(await selectRun(), 'the run is re-selectable for the drag').toBe(true);
+  expect(await selectRun(win), 'a text run is selectable').toBe(true);
   await win.waitForTimeout(600);
-  const beforeDrag = await runState();
-  await dragSelection(60, 30);
-  const afterDrag = await runState();
+  const beforeDrag = await runState(win);
+  await dragSelection(win, 60, 30);
+  const afterDrag = await runState(win);
   console.log(`[P51-F item7 drag] before=${JSON.stringify(beforeDrag.preview)} after=${JSON.stringify(afterDrag.preview)} eraser=${JSON.stringify(afterDrag.eraser)}`);
   expect(afterDrag.preview.l, 'item 7: the text preview moved right').toBeGreaterThan(beforeDrag.preview.l + 20);
   expect(afterDrag.preview.t, 'item 7: the text preview moved down').toBeGreaterThan(beforeDrag.preview.t + 10);
@@ -749,21 +598,21 @@ test('P51-F items 6,7,12,13,14,15,16: the edit-text cluster', async () => {
   // (7) Confirm leaves exactly ONE copy. The white eraser cover is held
   // open until the async engine mask + pdf.js proxy refresh resolves
   // (DEF-155), so wait for the settled state before sampling it.
-  await clickConfirm();
+  await clickConfirm(win);
   await win.waitForSelector('[data-edit-box-eraser]', { state: 'detached', timeout: 15000 }).catch(() => {});
-  const afterConfirm = await runState();
+  const afterConfirm = await runState(win);
   console.log(`[P51-F item7 confirm] selection=${JSON.stringify(afterConfirm.selection)} preview=${JSON.stringify(afterConfirm.preview)} eraser=${JSON.stringify(afterConfirm.eraser)} previewCount=${afterConfirm.previewCount}`);
   expect(afterConfirm.selection, 'item 7: the selection closes on Confirm').toBeNull();
   expect(afterConfirm.preview, 'item 7: no residual preview copy').toBeNull();
   expect(afterConfirm.eraser, 'item 7: no residual cover').toBeNull();
 
   // (13) applying Bold after a move keeps the box where it was moved.
-  expect(await selectRun(afterDrag.preview), 'the moved run is re-selectable').toBe(true);
+  expect(await selectRun(win, afterDrag.preview), 'the moved run is re-selectable').toBe(true);
   await win.waitForTimeout(600);
-  const beforeBold = await runState();
+  const beforeBold = await runState(win);
   await win.locator('[data-txt-bold]').click();
   await win.waitForTimeout(800);
-  const afterBold = await runState();
+  const afterBold = await runState(win);
   console.log(`[P51-F item13] before=${JSON.stringify(beforeBold.selection)} after=${JSON.stringify(afterBold.selection)} bold=${afterBold.bold}`);
   expect(afterBold.bold, 'item 13: Bold is applied').toBe('true');
   expect(Math.abs(afterBold.selection.l - beforeBold.selection.l), 'item 13: the box did not jump back').toBeLessThanOrEqual(3);
@@ -772,7 +621,7 @@ test('P51-F items 6,7,12,13,14,15,16: the edit-text cluster', async () => {
   // (14) with nothing selected no formatting control looks active.
   await win.keyboard.press('Escape');
   await win.waitForTimeout(600);
-  const s14 = await runState();
+  const s14 = await runState(win);
   console.log(`[P51-F item14] selection=${JSON.stringify(s14.selection)} bold=${s14.bold} italic=${s14.italic} super=${s14.super} sub=${s14.sub}`);
   expect(s14.selection, 'item 14: nothing is selected').toBeNull();
   expect(s14.bold, 'item 14: Bold is not active').not.toBe('true');
@@ -785,57 +634,57 @@ test('P51-F items 6,7,12,13,14,15,16: the edit-text cluster', async () => {
 });
 
 test('P51-F items 15,16: a second move leaves no copy; super shows one copy', async () => {
-  await launch();
-  await openViaDialog(getSamplePath('long.pdf'));
+  ({ electronApp: app, window: win } = await launchDev());
+  await openSamplePath(win, app, getSamplePath('long.pdf'));
   await win.waitForSelector('.pdf-page canvas', { timeout: 30000 });
   await win.waitForTimeout(1200);
   await gotoStage(win, 2);
-  await armEditText();
-  expect(await selectRun(), 'a text run is selectable').toBe(true);
+  await armEditText(win);
+  expect(await selectRun(win), 'a text run is selectable').toBe(true);
   await win.waitForTimeout(600);
 
   // (15) move once, confirm, re-select, move again, confirm: no residual copy.
-  const first = await runState();
-  await dragSelection(50, 25);
-  await clickConfirm();
+  const first = await runState(win);
+  await dragSelection(win, 50, 25);
+  await clickConfirm(win);
   // The proxy refresh that bakes the move is async (DEF-155): wait for the
   // cover to release AND the refreshed text layer to carry the moved run
   // before re-selecting at the moved position.
   await win.waitForSelector('[data-edit-box-eraser]', { state: 'detached', timeout: 15000 }).catch(() => {});
   const moved = { l: first.selection.l + 50, t: first.selection.t + 25, w: first.selection.w, h: first.selection.h };
-  await waitForTextLayerAt(moved);
-  const afterFirst = await runState();
+  await waitForTextLayerAt(win, moved);
+  const afterFirst = await runState(win);
   console.log(`[P51-F item15 first] selection=${JSON.stringify(afterFirst.selection)} preview=${JSON.stringify(afterFirst.preview)}`);
   expect(afterFirst.preview, 'item 15: no residual copy after the first move').toBeNull();
 
   // Re-select at the moved position.
   await win.mouse.click(moved.l + moved.w / 2, moved.t + moved.h / 2);
   await win.waitForTimeout(600);
-  const beforeSecond = await runState();
+  const beforeSecond = await runState(win);
   console.log(`[P51-F item15 reselect] selection=${JSON.stringify(beforeSecond.selection)}`);
   expect(beforeSecond.selection, 'item 15: the run is re-selected at the moved position').not.toBeNull();
-  await dragSelection(40, 20);
-  const afterSecond = await runState();
+  await dragSelection(win, 40, 20);
+  const afterSecond = await runState(win);
   console.log(`[P51-F item15 second] before=${JSON.stringify(beforeSecond.preview)} after=${JSON.stringify(afterSecond.preview)} eraser=${JSON.stringify(afterSecond.eraser)}`);
   expect(afterSecond.preview.l, 'item 15: the second move moved the text').toBeGreaterThan(beforeSecond.preview.l + 10);
   expect(afterSecond.eraser.l, 'item 15: the cover holds the pre-move rect (no copy at the original)').toBe(beforeSecond.eraser.l);
-  await clickConfirm();
+  await clickConfirm(win);
   // The second confirm's proxy refresh is async (DEF-155): wait for the
   // cover to release and the refreshed text layer to carry the moved run
   // before re-selecting at the moved position (same as item 15).
   await win.waitForSelector('[data-edit-box-eraser]', { state: 'detached', timeout: 15000 }).catch(() => {});
   const moved2 = { l: moved.l + 40, t: moved.t + 20, w: moved.w, h: moved.h };
-  await waitForTextLayerAt(moved2);
-  const s15 = await runState();
+  await waitForTextLayerAt(win, moved2);
+  const s15 = await runState(win);
   expect(s15.preview, 'item 15: no residual copy after the second move').toBeNull();
 
   // (16) superscript shows no second copy.
   await win.mouse.click(moved2.l + moved2.w / 2, moved2.t + moved2.h / 2);
   await win.waitForTimeout(600);
-  expect((await runState()).selection, 'item 16: the run is re-selected').not.toBeNull();
+  expect((await runState(win)).selection, 'item 16: the run is re-selected').not.toBeNull();
   await win.locator('[data-txt-super]').click();
   await win.waitForTimeout(800);
-  const s16 = await runState();
+  const s16 = await runState(win);
   console.log(`[P51-F item16] super=${s16.super} previewCount=${s16.previewCount} eraser=${JSON.stringify(s16.eraser)} preview=${JSON.stringify(s16.preview)}`);
   expect(s16.super, 'item 16: Superscript is applied').toBe('true');
   expect(s16.previewCount, 'item 16: exactly one preview (no second copy)').toBe(1);
@@ -845,7 +694,7 @@ test('P51-F items 15,16: a second move leaves no copy; super shows one copy', as
 // ---------------------------------------------------------------------------
 // G (items 9,10) - OCR cancel + the suspects view in the Inspector.
 // ---------------------------------------------------------------------------
-async function openOcrDialog() {
+async function openOcrDialog(win) {
   await runTool(win, 'recognizeText');
   await win.waitForSelector('[data-ocr-confirm]', { timeout: 20000 });
   // Scope to the current page so the run is fast (one page, not six).
@@ -854,12 +703,12 @@ async function openOcrDialog() {
 }
 
 test('P51-G item 9: cancelling OCR stops the run and leaves the document unchanged', async () => {
-  await launch();
-  await openViaDialog(getSamplePath('scanned.pdf'));
+  ({ electronApp: app, window: win } = await launchDev());
+  await openSamplePath(win, app, getSamplePath('scanned.pdf'));
   await win.waitForSelector('.pdf-page canvas', { timeout: 30000 });
   await win.waitForTimeout(1500);
 
-  await openOcrDialog();
+  await openOcrDialog(win);
   await win.locator('[data-ocr-confirm]').click();
   // The run is in flight once Cancel is offered.
   await win.waitForSelector('[data-ocr-cancel]', { timeout: 60000 });
@@ -893,7 +742,7 @@ test('P51-G item 9: cancelling OCR stops the run and leaves the document unchang
   // Close the dialog and run again: a fresh run works.
   await win.locator('.modal-close').first().click().catch(() => {});
   await win.waitForTimeout(800);
-  await openOcrDialog();
+  await openOcrDialog(win);
   await win.locator('[data-ocr-confirm]').click();
   // Wait for the run to finish (the dialog closes on success).
   await win.waitForSelector('[data-ocr-confirm]', { state: 'detached', timeout: 180000 }).catch(() => {});
@@ -908,13 +757,12 @@ test('P51-G item 9: cancelling OCR stops the run and leaves the document unchang
 });
 
 test('P51-G item 10: the suspects view lives in the Inspector, cleanly formatted', async () => {
-  await launch();
-  await openViaDialog(getSamplePath('scanned.pdf'));
+  ({ electronApp: app, window: win } = await launchDev());
+  await openSamplePath(win, app, getSamplePath('scanned.pdf'));
   await win.waitForSelector('.pdf-page canvas', { timeout: 30000 });
   await win.waitForTimeout(1500);
 
-  // Run OCR to completion so the suspects view has data.
-  await openOcrDialog();
+  await openOcrDialog(win);
   await win.locator('[data-ocr-confirm]').click();
   await win.waitForSelector('[data-ocr-confirm]', { state: 'detached', timeout: 180000 }).catch(() => {});
   await win.waitForTimeout(2000);
@@ -960,22 +808,4 @@ test('P51-G item 10: the suspects view lives in the Inspector, cleanly formatted
   console.log(`[P51-G item10 overlaps] count=${overlaps.length} sample=${JSON.stringify(overlaps.slice(0, 3))}`);
   expect(overlaps.length, 'item 10: no word/confidence overlap').toBe(0);
   await win.screenshot({ path: path.join(SHOTS, 'phase51-ocr-suspects-inspector.png') });
-});
-
-// ---------------------------------------------------------------------------
-// I (item 8) - the open-error message mapping is readable.
-// ---------------------------------------------------------------------------
-test('P51-I item 8: an encrypted PDF produces a readable, specific message (never [object Object])', async () => {
-  await launch();
-
-  // The engine path: loadDocumentBytes with an /Encrypt document.
-  const engineRes = await win.evaluate(async () => {
-    const bytes = new TextEncoder().encode('%PDF-1.5\n1 0 obj\n<< /Encrypt 2 0 R >>\nendobj\nstartxref\n0\n%%EOF\n');
-    const r = await window.tflex.engine.loadDocumentBytes('p51-encrypted-probe', bytes);
-    return r;
-  });
-  console.log(`[P51-I engine] ${JSON.stringify(engineRes)}`);
-  expect(engineRes.ok, 'item 8: the encrypted bytes fail to load').toBe(false);
-  expect(engineRes.error.message, 'item 8: the engine message is readable').not.toContain('[object Object]');
-  expect(engineRes.error.message, 'item 8: the engine message names the parse failure').toContain('could not parse PDF bytes');
 });

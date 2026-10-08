@@ -17,13 +17,18 @@
 // view's left/right edges. The placement math is a pure exported
 // helper so it is unit-testable.
 
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type { CSSProperties, ReactElement } from 'react';
 import { MessageSquare, Send } from 'lucide-react';
 import { Icon } from '../icons/Icon';
 import { Button } from '../components/Button';
 import { annotationBounds, overlayRectToCss } from './geometry';
-import { CONTROL_BAR_HEIGHT, placeControlNearAnchor } from '../components/controlPlacement';
+import {
+  CONTROL_BAR_HEIGHT,
+  contextControlFits,
+  placeControlNearAnchor,
+  type ControlAnchorBox,
+} from '../components/controlPlacement';
 import type { Annotation, PageRect } from './model';
 import type { CommentEntry } from '../../shared/types';
 
@@ -74,12 +79,19 @@ export function selectionActionBarBox(
   cssScale: number,
   widthPt: number,
   heightPt: number,
+  obstacles: readonly ControlAnchorBox[] = [],
 ): CssBox {
   const ring = overlayRectToCss(bounds, cssScale);
   const placed = placeControlNearAnchor({
-    anchor: { left: ring.left, top: ring.top, bottom: ring.top + ring.height },
+    anchor: {
+      left: ring.left,
+      top: ring.top,
+      bottom: ring.top + ring.height,
+      right: ring.left + ring.width,
+    },
     size: { width: ANNOTATION_ACTION_BAR_WIDTH, height: CONTROL_BAR_HEIGHT },
     viewport: { width: widthPt * cssScale, height: heightPt * cssScale },
+    obstacles,
   });
   return {
     left: placed.left,
@@ -112,11 +124,12 @@ export function commentBoxPlacement(
   widthPt: number,
   heightPt: number,
   avoid: readonly PageRect[] = [],
+  obstacles: readonly ControlAnchorBox[] = [],
 ): CSSProperties {
   const pageW = widthPt * cssScale;
   const pageH = heightPt * cssScale;
   const ring = overlayRectToCss(bounds, cssScale);
-  const bar = selectionActionBarBox(bounds, cssScale, widthPt, heightPt);
+  const bar = selectionActionBarBox(bounds, cssScale, widthPt, heightPt, obstacles);
   // The bar flipped above the annotation when its top is above the
   // ring's top (at the bottom edge there is no room below).
   const barAbove = bar.top < ring.top;
@@ -200,21 +213,52 @@ export interface AnnotationCommentBoxProps {
    *  neighbouring annotation (a reopened note, etc.) stays clickable
    *  while this one is selected. */
   avoid?: readonly PageRect[];
+  /** Phase 117 — the app-chrome rects (rail / inspector / dock / viewing
+   *  footer) in page-view coordinates. The card is not rendered at all
+   *  when no placement fits clear of them (the Inspector owns the
+   *  selected object), so it can never be an overlapping toolbar. */
+  obstacles?: readonly ControlAnchorBox[];
 }
 
-export default function AnnotationCommentBox(props: AnnotationCommentBoxProps): ReactElement {
-  const { ann, entries, onAddComment, cssScale, widthPt, heightPt, avoid = [] } = props;
+export default function AnnotationCommentBox(props: AnnotationCommentBoxProps): ReactElement | null {
+  const { ann, entries, onAddComment, cssScale, widthPt, heightPt, avoid = [], obstacles = [] } = props;
   const [draft, setDraft] = useState('');
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
-  const style = useMemo(
-    () => commentBoxPlacement(annotationBounds(ann), cssScale, widthPt, heightPt, avoid),
-    [ann, cssScale, widthPt, heightPt, avoid],
+  // Phase 116 (TFL-1228 chunk F) — the last text handed to `onAddComment`.
+  // The draft is cleared only once that text echoes back in `entries`, so a
+  // recoverable add failure leaves the unsent reply in the box for a retry.
+  const lastSubmittedRef = useRef<string | null>(null);
+  const bounds = annotationBounds(ann);
+  const fits = contextControlFits(
+    {
+      left: bounds.x * cssScale,
+      top: bounds.y * cssScale,
+      bottom: (bounds.y + bounds.height) * cssScale,
+      right: (bounds.x + bounds.width) * cssScale,
+    },
+    { width: COMMENT_BOX_WIDTH, height: COMMENT_BOX_ESTIMATED_HEIGHT },
+    { width: widthPt * cssScale, height: heightPt * cssScale },
+    obstacles,
   );
+  const style = useMemo(
+    () => commentBoxPlacement(annotationBounds(ann), cssScale, widthPt, heightPt, avoid, obstacles),
+    [ann, cssScale, widthPt, heightPt, avoid, obstacles],
+  );
+  // Clear the draft ONLY on the real echo: the submitted text has landed in
+  // the thread. A failed add leaves no echo, so the text is retained.
+  useEffect((): void => {
+    const submitted = lastSubmittedRef.current;
+    if (submitted !== null && entries.some((e) => e.text === submitted)) {
+      setDraft('');
+      lastSubmittedRef.current = null;
+    }
+  }, [entries]);
+  if (!fits) return null;
   const canSubmit = draft.trim().length > 0;
   const submit = (): void => {
     if (!canSubmit) return;
+    lastSubmittedRef.current = draft.trim();
     onAddComment(draft.trim());
-    setDraft('');
     inputRef.current?.focus();
   };
 

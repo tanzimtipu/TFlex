@@ -127,7 +127,7 @@ const SIGNATURE: SignaturePlacement = {
 } as unknown as SignaturePlacement;
 
 describe("Phase 112 C4 ï¿½ the LEFT review navigator: the annotation list", () => {
-  it("groups the list by page with a group header and preserves the row hooks", () => {
+  it("renders the flat Thread Stream in page order with the row hooks", () => {
     const annotations = [markup("h1", 2, "yellow"), note("n1", 1, "green"), markup("h2", 1, "blue")];
     const onJumpTo = vi.fn();
     const onEdit = vi.fn();
@@ -145,59 +145,54 @@ describe("Phase 112 C4 ï¿½ the LEFT review navigator: the annotation list", (
       expect(root).not.toBeNull();
       expect(root?.classList.contains("tf-panel-shell")).toBe(true);
 
-      const groups = [...host.querySelectorAll<HTMLElement>("[data-annotation-page]")];
-      expect(groups.map((g) => g.getAttribute("data-annotation-page"))).toEqual(["1", "2"]);
-      for (const g of groups) expect(g.classList.contains("tf-panel-section")).toBe(true);
-      expect(groups[0]?.querySelector(".ann-panel-group-title")?.textContent).toBe("Page 1");
-      expect(groups[0]?.querySelectorAll("[data-annotation-row]").length).toBe(2);
+      // The page grouping is retired: no page nodes and no group headers.
+      expect(host.querySelectorAll("[data-annotation-page]")).toHaveLength(0);
+      expect(host.querySelector(".ann-panel-group-title")).toBeNull();
 
       const rows = [...host.querySelectorAll<HTMLElement>("[data-annotation-row]")];
       expect(rows).toHaveLength(3);
-      const first = rows[0];
-      expect(first?.querySelector(".ann-panel-row-jump")).not.toBeNull();
-      expect(first?.querySelector(".ann-panel-row-delete")).not.toBeNull();
-      expect(first?.querySelector(".ann-panel-row-kind")?.textContent).toBeTruthy();
-      expect(first?.querySelectorAll("[data-color]").length).toBeGreaterThan(0);
+      // Page 1 (same createdAt -> id order: h2 before n1), then page 2 (h1).
+      expect(rows.map((r) => r.getAttribute("data-annotation-row"))).toEqual(["h2", "n1", "h1"]);
 
-      clickOn(first?.querySelector(".ann-panel-row-jump") ?? null);
+      const first = rows[0];
+      expect(first?.querySelector("[data-ann-kind]")?.textContent).toBeTruthy();
+
+      clickOn(first?.querySelector('[aria-label^="Jump to "]') ?? null);
       expect(onJumpTo).toHaveBeenCalledTimes(1);
-      clickOn(first?.querySelector(".ann-panel-row-delete") ?? null);
+      clickOn(first?.querySelector('[aria-label^="Delete "]') ?? null);
       expect(onDelete).toHaveBeenCalledTimes(1);
+      expect(onEdit).not.toHaveBeenCalled();
     } finally {
       unmount();
     }
   });
 
-  it("edits a row's colour through its swatch", () => {
-    const onEdit = vi.fn();
+  it("exposes no per-row colour swatch on the panel surface", () => {
     const { host, unmount } = mount(
       <AnnotationsPanel
         annotations={[markup("h1", 1, "yellow")]}
         onJumpTo={vi.fn()}
-        onEdit={onEdit}
+        onEdit={vi.fn()}
         onDelete={vi.fn()}
       />,
     );
     try {
-      const green = host.querySelector('[data-color="green"]');
-      expect(green).not.toBeNull();
-      clickOn(green);
-      expect(onEdit).toHaveBeenCalledWith("h1", { color: "green" });
+      expect(host.querySelector('[data-color="green"]')).toBeNull();
+      expect(host.querySelector(".ann-panel-swatch")).toBeNull();
+      expect(host.querySelector("[data-annotation-row]")).not.toBeNull();
     } finally {
       unmount();
     }
   });
 
-  it("renders the no-annotations state through PanelEmptyState", () => {
+  it("renders the no-annotations empty state", () => {
     const { host, unmount } = mount(
       <AnnotationsPanel annotations={[]} onJumpTo={vi.fn()} onEdit={vi.fn()} onDelete={vi.fn()} />,
     );
     try {
       const empty = host.querySelector<HTMLElement>("[data-annotation-empty]");
       expect(empty).not.toBeNull();
-      expect(empty?.classList.contains("tf-panel-empty")).toBe(true);
       expect(empty?.querySelector(".tf-panel-empty-headline")?.textContent).toBe("No annotations");
-      expect(host.querySelector(".hint")).not.toBeNull();
       expect(host.querySelectorAll("[data-annotation-row]").length).toBe(0);
     } finally {
       unmount();
@@ -286,8 +281,6 @@ describe("Phase 112 C4 - the RIGHT annotation inspector", () => {
         stage="review"
         selection={{ kind: "none" }}
         annotations={[]}
-        onExportComments={vi.fn()}
-        onImportComments={vi.fn()}
       />,
     );
     try {
@@ -300,8 +293,10 @@ describe("Phase 112 C4 - the RIGHT annotation inspector", () => {
       expect(host.querySelector("[data-annotation-panel]")).toBeNull();
       expect(host.querySelector("[data-review-elements]")).not.toBeNull();
       expect(host.querySelector('[data-review-category="annotations"]')).not.toBeNull();
-      expect(host.querySelector('[data-inspector-action="export-comments"]')).not.toBeNull();
-      expect(host.querySelector('[data-inspector-action="import-comments"]')).not.toBeNull();
+      // Phase 116 (TFL-1228 chunk G) — the FDF comment actions live on the
+      // list header, not in the Inspector.
+      expect(host.querySelector('[data-inspector-action="export-comments"]')).toBeNull();
+      expect(host.querySelector('[data-inspector-action="import-comments"]')).toBeNull();
     } finally {
       unmount();
     }

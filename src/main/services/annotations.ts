@@ -1001,6 +1001,14 @@ function parseOneAnnotation(
   const subject = parsePdfString(dict.get('Subj'));
   const content = contents ?? subject ?? undefined;
 
+  // Phase 116 - the annotation dict's real /T (author) and /M (modified date).
+  // Read verbatim; presence is decided by a non-empty trim below so neither a
+  // missing entry nor a whitespace-only one leaks an empty placeholder.
+  const author = parsePdfString(dict.get('T'));
+  const modifiedAt = parsePdfString(dict.get('M'));
+  const hasAuthor = author !== undefined && author.trim().length > 0;
+  const hasModifiedAt = modifiedAt !== undefined && modifiedAt.trim().length > 0;
+
   // DEF-164: flip every parsed geometry from PDF bottom-left user space back
   // to the renderer's top-left space. The rects built above (from /Rect,
   // /QuadPoints or /L) and the points/at (from /L, /InkList, /Callout) are all
@@ -1037,6 +1045,8 @@ function parseOneAnnotation(
     blendMode,
     lineEnds,
     style,
+    ...(hasAuthor ? { author } : {}),
+    ...(hasModifiedAt ? { modifiedAt } : {}),
   };
 }
 
@@ -1695,6 +1705,16 @@ function serializeAnnotation(
   const contents = encodeAnnotationContents(ann);
   if (contents !== undefined && contents.length > 0) {
     dictEntries.push(['Contents', PDFString.of(contents)]);
+  }
+
+  // Phase 116 - persist the real /T (author) and /M (modified date) verbatim so
+  // save/reopen round-trips them. Only a non-empty value is written; an absent
+  // or whitespace-only value stays out of the dictionary entirely.
+  if (typeof ann.author === 'string' && ann.author.trim().length > 0) {
+    dictEntries.push(['T', PDFString.of(ann.author)]);
+  }
+  if (typeof ann.modifiedAt === 'string' && ann.modifiedAt.trim().length > 0) {
+    dictEntries.push(['M', PDFString.of(ann.modifiedAt)]);
   }
 
   if (ann.opacity !== undefined) {

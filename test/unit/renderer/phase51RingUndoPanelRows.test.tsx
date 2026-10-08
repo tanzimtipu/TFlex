@@ -162,16 +162,15 @@ describe('Phase 51 item 4 — every annotation row keeps its delete control insi
       );
     });
     try {
-      const rows = [...host.querySelectorAll('.ann-panel-row')];
+      const rows = [...host.querySelectorAll('[data-annotation-row]')];
       expect(rows.length, 'one row per annotation').toBe(ALL_KINDS.length);
       for (const row of rows) {
-        const jump = row.querySelector('.ann-panel-row-jump');
-        const del = row.querySelector('.ann-panel-row-delete');
+        const jump = row.querySelector('[aria-label^="Jump to "]');
+        const del = row.querySelector('[aria-label^="Delete "]');
         expect(jump, 'every row has the jump button').not.toBeNull();
         expect(del, 'every row has the delete control').not.toBeNull();
-        // The delete is a sibling of the jump inside the row head, so the
-        // flex shrink rules above apply to every kind identically.
-        expect(del?.parentElement?.className).toContain('ann-panel-row-head');
+        // The delete is a sibling of the jump inside the row, so the flex
+        // shrink rules above apply to every kind identically.
         expect(jump?.parentElement).toBe(del?.parentElement);
       }
     } finally {
