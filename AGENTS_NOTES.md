@@ -1,5 +1,18 @@
 # AGENTS_NOTES.md — archived operational history
 
+## 2026-10-09: A phase-close commit can omit a phase-owned hunk in a file outside the CTO's named set
+
+Phase 119 (TFL-1231): the chunk K commit (5a6d418, TFL-1373) omitted two unmistakable Phase 119
+changes because they sat in files the CTO stage list missed - `src/renderer/design/index.ts` (the
+barrel export `export * from "./layout";`) and `PERFORMANCE.md` (the Phase 119 latency section qa
+added). git-agent correctly left them untouched for a CTO decision, forcing a completion commit
+(K2, TFL-1374). The same phase also showed the shared-tree hazard: four named files (DocumentView.tsx,
+styles.css, REQUIREMENTS.md, ADVERSARIAL_REVIEW.md) had NO diff at commit time because their Phase 119
+content had already been swept into earlier Phase 115/117 commits (f3350c3 / 2afb587). Rule: a
+phase-close commit brief must (a) name the phase file set exactly, and (b) instruct git-agent to scan
+the whole worktree for any hunk unmistakably owned by the phase (new symbol / new module / phase
+test-name) and commit it, reporting ambiguous hunks rather than guessing.
+
 ## 2026-10-07: CONTROL-PLANE WRITE OUTAGE during a CTO timer heartbeat
 
 Every control-plane mutation failed this heartbeat. `issue create`, `issue comment`,

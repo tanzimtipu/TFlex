@@ -215,3 +215,14 @@ Packaged walkthrough: P57_PACKAGED_MATRIX total 28, covered 28, failed 0 — eve
 
 *Method: `e2e/tfl1073_phase111_perf.spec.cjs`, dev dist (npm run build:renderer + build:node), canonical launchApp() with a generated 120-page fixture. REQUIREMENTS Phase 111 names three items to time (view switch, panel resize / split drag, long-list scroll) but publishes no numeric budget; the only documented timing is the shared 140 ms motion token, used above as the reference band. The split-toggle figure includes two Playwright click round-trips and menu mount, so it is an upper bound, not a frame budget. Recorded by qa at the TFL-1073 focused QA + visual verdict.*
 
+
+## Phase 119 Adaptive Shell interaction latency (TFL-1371 chunk J phase-close QA, 2026-10-09)
+
+| Metric | Target | Result | Status |
+| --- | --- | --- | --- |
+| Navigator collapse applied (attribute flip) | no Phase 119 numeric budget; shared 140 ms motion band | 50 ms | PASS |
+| Navigator re-expand applied | shared 140 ms motion band | 301 ms (includes the exit/enter animation of the collapsed strip) | recorded |
+| Dock More overflow open | no numeric budget | 282 ms (includes Playwright click + menu mount) | recorded |
+| Layout class re-resolved after resize | no numeric budget | 720 ms wall-clock; the shared resize helper waits 700 ms, residual reclass < 20 ms | PASS |
+
+*Method: `e2e/phase119_adaptive_shell.spec.cjs` "Performance: shell interaction wall-clock latency", dev dist, canonical launchApp() with report.pdf, 1440x900, wall-clock including Playwright action dispatch. REQUIREMENTS.md Phase 119 declares NO shell-interaction latency budget; `LAYOUT.motionMs = 140` is the shared emphasis-transition token used as the reference band. Recorded by qa at the Phase 119 phase-close verdict (TFL-1371).*

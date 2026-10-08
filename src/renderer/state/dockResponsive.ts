@@ -25,17 +25,20 @@
 // at 1920 nothing is shed; at 640 all four rungs are engaged and the dock is a
 // scrolling, icon-only single row with arrows.
 
+import { LAYOUT_LADDER } from '../design/layout';
+
 /** The four ladder thresholds, widest first. A width STRICTLY below a
- *  threshold engages that rung and every rung after it. */
+ *  threshold engages that rung and every rung after it. Sourced from the ONE
+ *  layout foundation (`LAYOUT_LADDER`) so the ladder can never drift from it. */
 export const DOCK_LADDER_BREAKPOINTS = {
   /** Below this the Inspector collapses (rung 1). */
-  inspector: 1200,
+  inspector: LAYOUT_LADDER.inspectorPx,
   /** Below this the thumbnail panel collapses (rung 2). */
-  panel: 1000,
+  panel: LAYOUT_LADDER.panelPx,
   /** Below this the dock's verb labels are hidden (rung 3). */
-  labels: 880,
+  labels: LAYOUT_LADDER.labelsPx,
   /** Below this the dock shrinks and shows its scroll arrows (rung 4). */
-  arrows: 720,
+  arrows: LAYOUT_LADDER.arrowsPx,
 } as const;
 
 /** The rungs in the spec's shrink order, with the width each engages at. */

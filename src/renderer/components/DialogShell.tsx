@@ -17,6 +17,7 @@
 
 import {
   useEffect,
+  useId,
   useRef,
   type KeyboardEventHandler,
   type PointerEvent as ReactPointerEvent,
@@ -26,6 +27,7 @@ import {
 import { Icon } from "../icons/Icon";
 import { AnimatePresence } from "motion/react";
 import { useBackdropClose } from "./modalBackdrop";
+import { useDialogA11y } from "./dialogA11y";
 import { TfBackdrop, TfDialog, TfSheet } from "./motion/TfMotion";
 import { useDragWindow } from "./useDragWindow";
 
@@ -46,6 +48,9 @@ export interface DialogShellProps {
   open: boolean;
   title: string;
   titleId?: string;
+  /** Optional description line rendered as the first body child and exposed
+   *  via `aria-describedby` (unless the adopter supplies its own). */
+  description?: ReactNode;
   /** Omit to make the dialog must-answer: no close X, no backdrop close, no Esc. */
   onClose?: () => void;
   /** While true the backdrop ignores clicks; Esc and the close X are unaffected. */
@@ -127,6 +132,7 @@ export function DialogShell(props: DialogShellProps): ReactElement {
     open,
     title,
     titleId,
+    description,
     onClose,
     blockBackdropClose = false,
     closeDisabled = false,
@@ -151,6 +157,16 @@ export function DialogShell(props: DialogShellProps): ReactElement {
   const dialogRef = useRef<HTMLDivElement | null>(null);
   // DEF-525 — a stable per-instance identity for the open-shell stack.
   const shellToken = useRef(Symbol()).current;
+  // Phase 119 — always give the dialog an accessible name; adopters may still
+  // supply their own `titleId`. Both ids are generated unconditionally so the
+  // hook order never changes.
+  const generatedTitleId = useId();
+  const generatedDescId = useId();
+  const autoTitleId = titleId ?? "dialog-title-" + generatedTitleId;
+  const descId = "dialog-desc-" + generatedDescId;
+  // Phase 119 — framework-native modal behaviour: focus trap, background
+  // inert, and focus restore, all keyed off the ONE `open` flag.
+  useDialogA11y({ open, dialogRef });
   // DEF-147 floating window. Called unconditionally (hook order) even when
   // `draggable` is unset; the fallback selector is only ever consulted from
   // `handleProps.onPointerDown`, which is never wired in that case.
@@ -237,7 +253,7 @@ export function DialogShell(props: DialogShellProps): ReactElement {
       ])}
     >
       {icon}
-      <h2 className={isSheet ? "sheet-title" : "modal-title"} id={titleId}>
+      <h2 className={isSheet ? "sheet-title" : "modal-title"} id={autoTitleId}>
         {title}
       </h2>
       {onClose !== undefined && (
@@ -267,6 +283,14 @@ export function DialogShell(props: DialogShellProps): ReactElement {
         bodyClassName,
       ])}
     >
+      {description !== undefined && (
+        <div
+          id={descId}
+          className={isSheet ? "sheet-description" : "modal-description"}
+        >
+          {description}
+        </div>
+      )}
       {children}
     </div>
   );
@@ -332,12 +356,13 @@ export function DialogShell(props: DialogShellProps): ReactElement {
         isSheet ? (
           <TfBackdrop className="sheet-backdrop" {...backdrop}>
             <TfSheet
+              aria-describedby={description !== undefined ? descId : undefined}
               {...rest}
               ref={dialogRefCallback}
               className={sheetClassName}
               role={role}
               aria-modal="true"
-              aria-labelledby={titleId}
+              aria-labelledby={autoTitleId}
               data-dialog-shell={testId ?? true}
               {...dragProps}
             >
@@ -349,12 +374,13 @@ export function DialogShell(props: DialogShellProps): ReactElement {
         ) : (
           <TfBackdrop className="modal-backdrop" {...backdrop}>
             <TfDialog
+              aria-describedby={description !== undefined ? descId : undefined}
               {...rest}
               ref={dialogRefCallback}
               className={dialogClassName}
               role={role}
               aria-modal="true"
-              aria-labelledby={titleId}
+              aria-labelledby={autoTitleId}
               data-dialog-shell={testId ?? true}
               {...dragProps}
             >

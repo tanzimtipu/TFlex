@@ -32,6 +32,7 @@ import type { CSSProperties, ReactElement } from 'react';
 import type { LucideIcon } from 'lucide-react';
 import { Plus } from 'lucide-react';
 import { Icon } from '../icons/Icon';
+import { isCoarsePointer } from '../design/layout';
 import type { QuietIconId } from '../icons/quietPrecision';
 import { Button, IconButton } from './Button';
 import type { ButtonIntent } from './Button';
@@ -1447,6 +1448,7 @@ export function ActionDock(props: ActionDockProps): ReactElement {
       aria-label="Action dock"
       aria-orientation="horizontal"
       data-action-dock
+      data-dock-coarse={isCoarsePointer() ? 'true' : undefined}
       data-dock-state={primaryState}
       data-dock-edit={editMode ? 'true' : 'false'}
       data-dock-idle={idle ? 'true' : 'false'}

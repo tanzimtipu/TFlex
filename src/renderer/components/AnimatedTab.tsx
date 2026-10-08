@@ -221,6 +221,7 @@ export function AnimatedTab(props: AnimatedTabProps): ReactElement {
             }
             aria-hidden
           />
+          {modified && <span className="visually-hidden">Unsaved changes</span>}
           {/* TFL-248 (DEF-462) — only the TEXT carries the ellipsis clip. The
            *  title's leading dirty dot is a sibling of this span, so the clip
            *  can never eat it at the squeezed fit width. */}

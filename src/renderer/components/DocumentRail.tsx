@@ -38,6 +38,11 @@ import { AnimatedTab } from "./AnimatedTab";
 import { Button, IconButton } from "./Button";
 import { TfMorph } from "./motion/TfMotion";
 import { useMorphPreset } from "./motion/useMorphPreset";
+// Phase 119 (chunk C) — the shared Adaptive Shell layout foundation. The rail
+// resolves its layout class from the SAME strip measurement it already takes
+// (no second observer, no useDocumentViewport); at "tight" the optional "+"
+// utility collapses so the freed width keeps more document filenames visible.
+import { LAYOUT, classifyViewport, type LayoutClass } from "../design/layout";
 
 /** The tab projection the rail renders. `colorId` is the Phase 105 (chunk B)
  *  stable per-session identity; optional so legacy / harness callers that pass
@@ -89,10 +94,11 @@ export const HARD_MIN_TAB_WIDTH = 24;
 
 /** Phase 105 (chunk D) — the rail tab width band. The ideal (resting) tab is
  *  200px, it may grow to 220px when the strip is roomy, and it is NEVER
- *  rendered below 136px (tabs past the capacity are hidden, not squeezed). */
+ *  rendered below 148px (Phase 119 chunk C widened the floor to the shared
+ *  `LAYOUT.railMinTabPx`; tabs past the capacity are hidden, not squeezed). */
 export const RAIL_TAB_IDEAL_WIDTH = 200;
 export const RAIL_TAB_MAX_WIDTH = 220;
-export const RAIL_TAB_MIN_WIDTH = 136;
+export const RAIL_TAB_MIN_WIDTH = LAYOUT.railMinTabPx;
 
 /** Phase 105 (chunk D) — the responsive plan: the width every VISIBLE tab
  *  takes and how many tabs fit before the rest are hidden. */
@@ -364,6 +370,11 @@ export function DocumentRail(props: DocumentRailProps): ReactElement {
   // is applied while the strip is unmeasured (jsdom / zero width), so a bare
   // harness mount renders every tab at its resting width.
   const [railPlan, setRailPlan] = useState<RailCapacityPlan | null>(null);
+  // Phase 119 (chunk C) — the resolved layout class for the rail, read from the
+  // SAME `.tab-list` measurement below. "tight" collapses the standalone "+"
+  // utility (its width is freed for document filenames) and moves New tab into
+  // the All-tabs popover. Unmeasured (jsdom / zero width) stays "wide".
+  const [railLayoutClass, setRailLayoutClass] = useState<LayoutClass>("wide");
   const windowStartRef = useRef(0);
   useEffect((): (() => void) | undefined => {
     const list = tabListRef.current;
@@ -378,10 +389,18 @@ export function DocumentRail(props: DocumentRailProps): ReactElement {
         setRailPlan(null);
         return;
       }
+      // Phase 119 (chunk C) — resolve the layout class from the SAME measured
+      // width (no second observer / viewport hook). At "tight" the standalone
+      // "+" collapses, so `newTab` reserves no width and the freed space keeps
+      // more document tabs (filenames) visible.
+      const layoutClass = classifyViewport(available);
+      setRailLayoutClass((prev) => (prev === layoutClass ? prev : layoutClass));
+      const collapsed = layoutClass === "tight";
       // Phase 105 (chunk D) — reserve BOTH controls (and one gap each) FIRST,
       // so the New-tab and All-tabs controls are never clipped by the plan.
-      const newTab =
-        (list.querySelector(".tab-list-new") as HTMLElement | null)?.offsetWidth ?? 0;
+      const newTab = collapsed
+        ? 0
+        : ((list.querySelector(".tab-list-new") as HTMLElement | null)?.offsetWidth ?? 0);
       const allTabs =
         (list.querySelector(".tab-list-all") as HTMLElement | null)?.offsetWidth ?? 0;
       const next = planRailCapacity({
@@ -434,6 +453,12 @@ export function DocumentRail(props: DocumentRailProps): ReactElement {
     railPlan !== null
       ? ({ "--tf-tab-width": `${railPlan.width}px` } as CSSProperties)
       : undefined;
+
+  // Phase 119 (chunk C) — at a "tight" rail the standalone "+" utility collapses
+  // and New tab moves into the All-tabs popover as its FIRST labelled row, so
+  // the freed width keeps more document filenames visible. There is never more
+  // than one New-tab affordance at a time.
+  const railCollapsed = railLayoutClass === "tight";
 
   // Phase 105 (chunk D) — the All-tabs switcher. An anchored, opaque,
   // collision-aware popover listing EVERY session in canonical order. Mirrors
@@ -516,6 +541,13 @@ export function DocumentRail(props: DocumentRailProps): ReactElement {
     },
     [onActivate],
   );
+
+  // Phase 119 (chunk C) — the overflow New-tab row. It reuses the existing
+  // `onNewEmptyTab` prop (no second creation path) and closes the popover.
+  const onSwitcherNewTab = useCallback((): void => {
+    onNewEmptyTab();
+    setSwitcherOpen(false);
+  }, [onNewEmptyTab]);
 
   const onSwitcherKeyDown = useCallback((e: ReactKeyboardEvent<HTMLDivElement>): void => {
     if (e.key !== "ArrowDown" && e.key !== "ArrowUp") return;
@@ -868,7 +900,11 @@ export function DocumentRail(props: DocumentRailProps): ReactElement {
   };
 
   return (
-    <div className="document-rail" data-document-rail>
+    <div
+      className="document-rail"
+      data-document-rail
+      data-rail-overflow={railCollapsed ? "true" : undefined}
+    >
       <div className="tab-area" role="tablist" aria-label="Open documents" data-tab-style={tabStyle} data-tab-tearout={tearOut ? "true" : undefined}>
         <ul
           className="tab-list"
@@ -938,10 +974,14 @@ export function DocumentRail(props: DocumentRailProps): ReactElement {
               DEF-055 — the affordance is gated on `tabs.length >= 1`.
               DEF-288 — while Multi Mode is on the strip shows ONE
               composite workspace tab, so the "+" is disabled and carries
-              the reason instead of mutating hidden state. */}
+              the reason instead of mutating hidden state.
+              Phase 119 (chunk C) — at a "tight" rail the standalone "+"
+              collapses (`data-rail-new-collapsed`); New tab moves into the
+              All-tabs popover below and this utility reserves no width. */}
           {tabs.length >= 1 && (
             <li
               className="tab-list-new"
+              data-rail-new-collapsed={railCollapsed ? "true" : undefined}
               title={multiModeEnabled ? NEW_TAB_MULTI_MODE_REASON : undefined}
             >
               <IconButton
@@ -953,6 +993,7 @@ export function DocumentRail(props: DocumentRailProps): ReactElement {
                 onMouseDown={onNewTabMouseDown}
                 onClick={onNewEmptyTab}
                 disabled={multiModeEnabled}
+                hidden={railCollapsed}
                 data-new-tab
                 icon={<Icon name="tabNew" size="md" aria-hidden />}
               />
@@ -991,6 +1032,25 @@ export function DocumentRail(props: DocumentRailProps): ReactElement {
                       {`${tabs.length} ${tabs.length === 1 ? "document" : "documents"}`}
                     </div>
                     <div className="all-tabs-rows">
+                      {/* Phase 119 (chunk C) — when the standalone "+" is
+                          collapsed the popover leads with a labelled New-tab
+                          row, wired to the SAME `onNewEmptyTab` prop. It is
+                          never rendered beside a visible "+". */}
+                      {railCollapsed && (
+                        <Button
+                          intent="secondary"
+                          kind="action"
+                          density="standard"
+                          className="all-tabs-row"
+                          role="menuitem"
+                          data-rail-overflow-new
+                          disabled={multiModeEnabled}
+                          title={multiModeEnabled ? NEW_TAB_MULTI_MODE_REASON : undefined}
+                          onClick={onSwitcherNewTab}
+                        >
+                          <span className="all-tabs-name">New tab</span>
+                        </Button>
+                      )}
                       {switcherRows.map((row, rowIndex) => (
                         <Button
                           key={row.id}
