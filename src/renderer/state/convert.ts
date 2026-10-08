@@ -186,6 +186,14 @@ export function noticeFromResult(
   };
 }
 
+/** How one conversion settles. `opened` names the tab the converted document
+ *  landed in; `cancelled` is the user's own cancel (quiet, never an error);
+ *  `failed` means no tab was created (a failure toast was pushed). */
+export type ConvertOpenOutcome =
+  | { kind: 'opened'; tabId: string }
+  | { kind: 'cancelled' }
+  | { kind: 'failed' };
+
 export interface ConvertOpenDeps {
   path: string;
   displayName: string;
@@ -211,7 +219,7 @@ export interface ConvertOpenDeps {
  * engine document. Subscribes to progress, unsubscribes on settle, and
  * never creates a tab for a failed or cancelled conversion.
  */
-export async function runConvertOpen(deps: ConvertOpenDeps): Promise<{ tabId: string } | null> {
+export async function runConvertOpen(deps: ConvertOpenDeps): Promise<ConvertOpenOutcome> {
   const docId = (deps.mintDocId ?? ((): string => crypto.randomUUID()))();
   let settled = false;
   const unsubscribe = deps.api.onProgress((progress: ConvertProgress): void => {
@@ -222,20 +230,19 @@ export async function runConvertOpen(deps: ConvertOpenDeps): Promise<{ tabId: st
     const converted = await deps.api.toDocument(docId, deps.path);
     if (!converted.ok) {
       // A cancelled conversion is quiet: the app is left exactly as it was.
-      if (converted.error.code !== 'cancelled') {
-        deps.pushToast('error', toastForConvertError(converted.error.code, deps.displayName));
-      }
-      return null;
+      if (converted.error.code === 'cancelled') return { kind: 'cancelled' };
+      deps.pushToast('error', toastForConvertError(converted.error.code, deps.displayName));
+      return { kind: 'failed' };
     }
     const bytesResult = await deps.getDocumentBytes(docId);
     if (!bytesResult.ok) {
       deps.pushToast('error', convertBytesUnreadableMessage(deps.displayName));
-      return null;
+      return { kind: 'failed' };
     }
     const tabId = await deps.createTab({ docId, bytes: bytesResult.value });
-    if (tabId === null) return null;
+    if (tabId === null) return { kind: 'failed' };
     deps.onOpened({ tabId, result: converted.value });
-    return { tabId };
+    return { kind: 'opened', tabId };
   } finally {
     settled = true;
     unsubscribe();

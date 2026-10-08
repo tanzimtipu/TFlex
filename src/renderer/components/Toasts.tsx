@@ -27,6 +27,22 @@ export function toastIcon(kind: Toast['kind']): typeof AlertCircle {
   }
 }
 
+/** Pure durability contract for the toast surface. Only non-actionable
+ *  kinds auto-dismiss; `null` means the toast persists until the user
+ *  clicks Dismiss. Actionable kinds (`warning`, `error`) must never
+ *  vanish before they are read. Extracted so tests can pin the
+ *  kind -> auto-dismiss contract without rendering the component. */
+export function toastAutoDismissMs(kind: Toast['kind']): number | null {
+  switch (kind) {
+    case 'success':
+    case 'info':
+      return 5000;
+    case 'warning':
+    case 'error':
+      return null;
+  }
+}
+
 export function Toasts({
   items,
   onDismiss,
@@ -47,9 +63,11 @@ export function Toasts({
 
 function ToastItem({ toast, onDismiss }: { toast: Toast; onDismiss: (id: number) => void }) {
   useEffect(() => {
-    const timer = window.setTimeout(() => onDismiss(toast.id), 5000);
+    const autoDismissMs = toastAutoDismissMs(toast.kind);
+    if (autoDismissMs === null) return;
+    const timer = window.setTimeout(() => onDismiss(toast.id), autoDismissMs);
     return () => window.clearTimeout(timer);
-  }, [toast.id, onDismiss]);
+  }, [toast.id, toast.kind, onDismiss]);
 
   const ToastGlyph = toastIcon(toast.kind);
   return (

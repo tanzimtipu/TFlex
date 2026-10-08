@@ -123,7 +123,9 @@ Hairlines separate surfaces; they are non-text and never carry meaning alone.
 
 Status tokens only; they never claim a primary-action slot. Each pairs with a
 `-soft` wash for a chip. As a solid swatch/border they are state accents; when
-used as ink they ride their `-soft` chip with `--fg-strong`.
+used as ink they ride their `-soft` chip with `--fg-strong`. The `--feedback-*`
+pair added in TFL-1241 is an ink-only feedback signal consumed by the Activity
+Shelf; it has no `-soft` wash and mirrors the `--tf-icon-*` state signals.
 
 | Token | Light | Dark | Frosted | Purpose | Measured contrast vs `--bg-base` |
 | --- | --- | --- | --- | --- | --- |
@@ -135,6 +137,8 @@ used as ink they ride their `-soft` chip with `--fg-strong`.
 | `--warning-soft` | `rgba(217,164,65,0.14)` | `rgba(217,164,65,0.18)` | `rgba(217,164,65,0.14)` | Warning chip wash. | chip tint |
 | `--error` | `#d96c63` | `#d96c63` | `#d96c63` | Error / destructive state. | 3.35 / 5.82 / 2.95 |
 | `--error-soft` | `rgba(217,108,99,0.12)` | `rgba(217,108,99,0.16)` | `rgba(217,108,99,0.12)` | Error chip wash. | chip tint |
+| `--feedback-success` | `#25754A` | `#85D3A6` | `#25754A` | Feedback success ink (Activity Shelf, TFL-1241); mirrors `--tf-icon-success`. | see `--tf-icon-success` |
+| `--feedback-danger` | `#B82E43` | `#FF9AAD` | `#B82E43` | Feedback danger ink (Activity Shelf, TFL-1241); mirrors `--tf-icon-danger`. | see `--tf-icon-danger` |
 ## 8. Four-role palette
 
 Four named roles assigned by tool CATEGORY, never per-tool whim. The icon shape

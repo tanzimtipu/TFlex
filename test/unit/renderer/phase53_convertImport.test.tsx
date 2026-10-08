@@ -158,7 +158,7 @@ describe("phase 53 — runConvertOpen", () => {
     const out = await runConvertOpen(
       runDeps({ api, getDocumentBytes, mintDocId: () => "doc-1" }),
     );
-    expect(out).toEqual({ tabId: "tab-1" });
+    expect(out).toEqual({ kind: "opened", tabId: "tab-1" });
     expect(toDocument).toHaveBeenCalledTimes(1);
     expect(getDocumentBytes).toHaveBeenCalledTimes(1);
     // The engine doc id is the SAME value for the conversion and the bytes
@@ -197,7 +197,7 @@ describe("phase 53 — runConvertOpen", () => {
       toDocument: async () => ({ ok: false, error: { code: "decode-failed", message: "bad" } }),
     });
     const out = await runConvertOpen(runDeps({ api, createTab, onOpened, pushToast }));
-    expect(out).toBeNull();
+    expect(out).toEqual({ kind: "failed" });
     expect(createTab).not.toHaveBeenCalled();
     expect(onOpened).not.toHaveBeenCalled();
     expect(pushToast).toHaveBeenCalledTimes(1);
@@ -211,7 +211,9 @@ describe("phase 53 — runConvertOpen", () => {
     const api = fakeApi({
       toDocument: async () => ({ ok: false, error: { code: "cancelled", message: "x" } }),
     });
-    await expect(runConvertOpen(runDeps({ api, createTab, pushToast }))).resolves.toBeNull();
+    await expect(runConvertOpen(runDeps({ api, createTab, pushToast }))).resolves.toEqual({
+      kind: "cancelled",
+    });
     expect(createTab).not.toHaveBeenCalled();
     expect(pushToast).not.toHaveBeenCalled();
   });
@@ -229,7 +231,7 @@ describe("phase 53 — runConvertOpen", () => {
         }),
       }),
     );
-    expect(out).toBeNull();
+    expect(out).toEqual({ kind: "failed" });
     expect(createTab).not.toHaveBeenCalled();
     expect(pushToast).toHaveBeenCalledTimes(1);
   });
@@ -239,7 +241,7 @@ describe("phase 53 — runConvertOpen", () => {
     const out = await runConvertOpen(
       runDeps({ createTab: async () => null, onOpened }),
     );
-    expect(out).toBeNull();
+    expect(out).toEqual({ kind: "failed" });
     expect(onOpened).not.toHaveBeenCalled();
   });
 
@@ -248,7 +250,7 @@ describe("phase 53 — runConvertOpen", () => {
     // Bound (the App pattern): the method keeps `this` -> `this.inner.read`.
     await expect(
       runConvertOpen(runDeps({ getDocumentBytes: (id) => engine.getDocumentBytes(id) })),
-    ).resolves.toEqual({ tabId: "tab-1" });
+    ).resolves.toEqual({ kind: "opened", tabId: "tab-1" });
     // Unbound (the bug App.tsx shipped): extracting the prototype method into a
     // local loses `this` and throws, exactly as RealEngineAdapter does.
     const unbound = engine.getDocumentBytes;

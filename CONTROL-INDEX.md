@@ -900,3 +900,80 @@ e2e is qa-owned: `e2e/tfl1179_ar_navigation.spec.cjs` aligns its AR-01 selector
 to `[data-thumb-current-marker]` on the ruler item and its AR-02 focus-return
 check to `[data-rail-collapse]`.
 
+## Feedback and Progress (TFL-1216) - Activity Shelf
+
+Appended 2026-10-08. Chunk C2 adds the Activity Shelf surface primitives
+(`src/renderer/components/ActivityShelf.tsx`) and their scoped styles
+(`.activity-shelf` in `src/renderer/styles.css`). Chunk C3 adds the pure store
+and producer adapters (`src/renderer/state/activityShelf.ts`). Chunk C4b wires
+them into the app: `App.tsx` holds the store in a reducer, mounts the surface
+once for the whole window through the fixed `.activity-shelf-host` (anchored
+bottom-right, clear of the View Strip footer and Focus Dock), and drives it from
+real producers. C4b wires the OCR producer (`runOcrForActiveTab` /
+`cancelOcrForActiveTab` / `subscribeOcrProgress`); C5 wires the conversion
+producer (`openConvertedFromPath` -> `convertStartAction` /
+`convertProgressAction`, cancel via `convertShelfOpRef` -> `convert:cancel`) and
+removes the standalone `<ConversionProgress>` widget, so the shelf is the single
+running affordance for an import. `runConvertOpen` now settles as a discriminated
+`{ kind: 'opened'; tabId: string } | { kind: 'cancelled' } | { kind: 'failed' }`.
+Progress text is always "N of M unit" or an
+indeterminate phase, never a percentage or ETA; a cancel REQUEST reads
+"Cancelling..." and never "Cancelled" before the engine confirms it.
+
+| Control | Selector | Contract | Unit test | e2e |
+|---|---|---|---|---|
+| Open summary | `[data-activity-shelf-open]` | Invokes `onOpen`; the summary renders `null` (no `[data-activity-shelf-summary]`) when there are no operations | `test/unit/renderer/activityShelf.test.tsx` | `e2e/tfl1216_activityShelf.spec.cjs` |
+| Close panel | `[data-activity-shelf-close]` and Escape | Escape on the open panel invokes `onClose`; the click control does the same | `test/unit/renderer/activityShelf.test.tsx` | `e2e/tfl1216_activityShelf.spec.cjs` |
+| Per-row Cancel | `[data-activity-cancel]` | Renders only for a `running`/`cancellation-requested` state with `canCancel` true; label reads "Cancelling..." after the request and never "Cancelled" before confirmation | `test/unit/renderer/activityShelf.test.tsx` | `e2e/tfl1216_activityShelf.spec.cjs` |
+| Open result | `[data-activity-action="open-result"]` | Rendered only when `availableCompletionActions` offers it; invokes `onAction` | `test/unit/renderer/activityShelf.test.tsx` | `e2e/tfl1216_activityShelf.spec.cjs` |
+| Show in folder | `[data-activity-action="show-in-folder"]` | Rendered only when `availableCompletionActions` offers it; invokes `onAction` | `test/unit/renderer/activityShelf.test.tsx` | `e2e/tfl1216_activityShelf.spec.cjs` |
+| View details | `[data-activity-action="view-details"]` | Rendered only when `availableCompletionActions` offers it (completed, partial-success and failed); invokes `onAction` | `test/unit/renderer/activityShelf.test.tsx` | `e2e/tfl1216_activityShelf.spec.cjs` |
+| Undo | `[data-activity-action="undo"]` | Rendered only when the operation carries a reversible transaction id | `test/unit/renderer/activityShelf.test.tsx` | `e2e/tfl1216_activityShelf.spec.cjs` |
+| Dismiss notice | `[data-activity-shelf-dismiss]` | Invokes `onDismiss`; shown only when a terminal notice exists | `test/unit/renderer/activityShelf.test.tsx` | `e2e/tfl1216_activityShelf.spec.cjs` |
+
+e2e is qa-owned: `e2e/tfl1216_activityShelf.spec.cjs` will exercise the summary
+open, the panel Escape/close, the per-row cancel and the completion actions.
+
+Chunk C7 mirrors the live app-updater lifecycle onto the same shelf (no new
+control and no new selector): one stable update operation is mapped from the
+existing `updateState` through `updateStateAction`
+(`src/renderer/state/activityShelf.ts`) in `App.tsx`, with no second
+`onStatusChanged` subscription. `available` / `downloading` render a running
+indeterminate row ("Update available" / "Downloading update"); `downloaded`
+completes it with no completion actions; `error` fails it; `checking` /
+`up-to-date` / `unsupported` / a cleared state removes it. No percentage is
+rendered on the shelf - the Top Bar badge stays the Download / Install / Check
+action surface (TFL-856/857/903 seam). Covered by
+`test/unit/renderer/activityShelfStore.test.ts`.
+
+Chunk C8 (TFL-1313) reconciles the feedback palette and hardens accessibility,
+adding no new control or selector. General feedback tokens
+`--feedback-success` / `--feedback-danger` are declared in all three theme
+scopes (`src/renderer/styles.css`, `#25754A` / `#B82E43` light and frosted,
+`#85D3A6` / `#FF9AAD` dark, mirroring `--tf-icon-success` / `--tf-icon-danger`)
+and the shelf roles now resolve `.activity-shelf { --activity-success:
+var(--feedback-success); --activity-danger: var(--feedback-danger) }`; the
+shared `--success` / `--error` roles are unchanged. `failed` reasons and
+`partial-success` failed-item lists carry `role="alert"`; the summary stays
+`role="status" aria-live="polite"` with its determinate counter out of the
+accessibility tree so progress points are not announced; opening the panel
+moves focus into the non-modal `role="dialog"`, Escape / close restores focus to
+the summary trigger (`openButtonRef`), and a row-removing action does not strand
+focus. Pinned by `test/unit/renderer/foundationMirrors.test.ts` and
+`test/unit/renderer/activityShelf.test.tsx`. The DEF-651 stale Toasts anchor in
+`docs/ACTIVITY-SHELF-INVENTORY.md` was corrected to `Toasts.tsx:35`.
+
+TFL-1320 (accepted adversary fixes DEF-652 / DEF-653 / DEF-654) corrects the
+shelf action / reducer / App wiring with no new control or selector. A completed
+conversion's `open-result` now activates the converted document's still-open tab
+(resolved by the operation's captured `document.docId`, never the active tab) and
+`view-details` also reveals its document-attached `ConversionNotice`; a closed
+tab is a truthful no-op, and `convert.completionActions` stays unchanged. A new
+update lifecycle after a terminal row now removes the stale row and starts a
+fresh `begin` (`runningUpdateAction` returns `begin` when the current op is
+terminal), so the row can no longer stay stuck. The per-row OCR Cancel now fires
+`engine.ocrCancel` for the operation's captured document instead of
+`cancelOcrForActiveTab()`. Pinned by `test/unit/renderer/activityShelfStore.test.ts`.
+
+
+

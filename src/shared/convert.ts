@@ -216,7 +216,9 @@ export interface CsvFieldMappingResult {
 export interface ConvertProgress {
   jobId: string;
   phase: string;
-  /** 0..1 when the phase can estimate its extent. */
+  /** 0..1 ESTIMATE when the phase can estimate its extent. It is NOT a known
+   *  total: consumers must never turn it into a total, a percentage or an ETA
+   *  (use `toTruthfulProgress` from `src/shared/activity.ts`). */
   ratio?: number;
 }
 

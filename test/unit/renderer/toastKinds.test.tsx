@@ -15,11 +15,16 @@
 //      stylesheet is the contract — these tests assert the class
 //      names exist on the rendered DOM so a stylesheet refactor
 //      doesn't silently drop a variant.
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { AlertCircle, AlertTriangle, CheckCircle, Info } from "lucide-react";
-import { Toasts, toastIcon, type Toast } from "../../../src/renderer/components/Toasts";
+import {
+  Toasts,
+  toastAutoDismissMs,
+  toastIcon,
+  type Toast,
+} from "../../../src/renderer/components/Toasts";
 
 function makeToasts(): Toast[] {
   return [
@@ -60,6 +65,64 @@ describe("toastIcon — kind -> icon mapping (pure, exhaustive)", () => {
   });
   it("maps warning -> AlertTriangle", () => {
     expect(toastIcon("warning")).toBe(AlertTriangle);
+  });
+});
+
+describe("toastAutoDismissMs — durability contract (pure)", () => {
+  it("auto-dismisses success after 5000 ms", () => {
+    expect(toastAutoDismissMs("success")).toBe(5000);
+  });
+  it("auto-dismisses info after 5000 ms", () => {
+    expect(toastAutoDismissMs("info")).toBe(5000);
+  });
+  it("never auto-dismisses warning (null means persist)", () => {
+    expect(toastAutoDismissMs("warning")).toBeNull();
+  });
+  it("never auto-dismisses error (null means persist)", () => {
+    expect(toastAutoDismissMs("error")).toBeNull();
+  });
+});
+
+describe("ToastItem — timer honours toastAutoDismissMs", () => {
+  it("dismisses success/info after 5000 ms but persists warning/error", () => {
+    const cases = [
+      { id: 1, kind: "success", dismisses: true },
+      { id: 2, kind: "info", dismisses: true },
+      { id: 3, kind: "warning", dismisses: false },
+      { id: 4, kind: "error", dismisses: false },
+    ] as const;
+    vi.useFakeTimers();
+    try {
+      for (const { id, kind, dismisses } of cases) {
+        const onDismiss = vi.fn();
+        const container = document.createElement("div");
+        document.body.appendChild(container);
+        const root = createRoot(container);
+        act((): void => {
+          root.render(
+            <Toasts
+              items={[{ id, kind, text: `${kind} message` }]}
+              onDismiss={onDismiss}
+            />,
+          );
+        });
+        act((): void => {
+          vi.advanceTimersByTime(5000);
+        });
+        if (dismisses) {
+          expect(onDismiss).toHaveBeenCalledTimes(1);
+          expect(onDismiss).toHaveBeenCalledWith(id);
+        } else {
+          expect(onDismiss).not.toHaveBeenCalled();
+        }
+        act((): void => {
+          root.unmount();
+        });
+        container.remove();
+      }
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
 

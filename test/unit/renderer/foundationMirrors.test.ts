@@ -202,6 +202,34 @@ describe("foundation mirrors — color.ts three-scope parity", () => {
   });
 });
 
+// TFL-1241 (TFL-1216 chunk C8) - the general semantic FEEDBACK palette. Light
+// and dark mirror the icon ink state signals; frosted (a light acrylic surface)
+// mirrors the light values. The Activity Shelf's success / danger roles consume
+// these WITHOUT touching the shared --success / --error tokens other categories
+// still use.
+describe("foundation mirrors — feedback palette (TFL-1241)", () => {
+  const shelf = decls(block(".activity-shelf"));
+
+  it("pins the feedback success / danger tokens in all three scopes", () => {
+    expect(token(root, "--feedback-success")).toBe("#25754A");
+    expect(token(root, "--feedback-danger")).toBe("#B82E43");
+    expect(token(dark, "--feedback-success")).toBe("#85D3A6");
+    expect(token(dark, "--feedback-danger")).toBe("#FF9AAD");
+    expect(token(frosted, "--feedback-success")).toBe("#25754A");
+    expect(token(frosted, "--feedback-danger")).toBe("#B82E43");
+  });
+
+  it("points the shelf success / danger roles at the feedback tokens", () => {
+    expect(shelf.get("--activity-success")).toBe("var(--feedback-success)");
+    expect(shelf.get("--activity-danger")).toBe("var(--feedback-danger)");
+  });
+
+  it("leaves the shared --success / --error values untouched", () => {
+    expect(token(root, "--success")).toBe("#76a66a");
+    expect(token(root, "--error")).toBe("#d96c63");
+  });
+});
+
 describe("foundation barrel — re-export, never copy", () => {
   it("exposes the motion and icon single sources through src/renderer/design", async () => {
     const design = await import("../../../src/renderer/design");

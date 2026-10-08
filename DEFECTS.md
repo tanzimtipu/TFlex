@@ -14875,7 +14875,7 @@ History:
 
 ## DEF-647: The Activity shelf offers an inert Cancel on the running search-index row (no cancellation channel)
 
-- Status: FIX-READY (frontend-dev TFL-1292, 2026-10-08; awaiting qa re-verification)
+- Status: CLOSED (qa TFL-1295, 2026-10-08; verified fixed, C5b e2e green)
 - Severity: MEDIUM - a false affordance. The shelf presents a Cancel control that claims to stop the background search-index build but cannot: clicking it moves the row to "Cancelling..." while the index walk continues, and the operation later settles to `completed` (never `cancelled`). The shelf's honesty contract (and `docs/ACTIVITY-SHELF-INVENTORY.md:104`, "No Cancel is rendered") is contradicted. No data loss; the build is a background optimization.
 - Found by: qa (TFL-1291 focused verification, 2026-10-08)
 - Phase: 116 / chunk C5b (TFL-1216)
@@ -14901,3 +14901,100 @@ Evidence: `tfl1291_e2e_c5b.log`; `screenshots/tfl1216-c5b-search-index-shelf.png
 History:
 - qa (TFL-1291, 2026-10-08): found during focused verification of C5b; the producer/shelf wiring otherwise verifies (determinate `pages`, diagnostics mirror unchanged, `null`-only settle, tab-close removal). Owner frontend-dev.
 - frontend-dev (TFL-1292, 2026-10-08): FIX-READY. Added a per-operation `cancelable` capability mirroring C4a `completionActions`: `ActivityOperation.cancelable` (+ `createOperation` default false), adapters declare OCR true / convert true / search-index false. `ActivityShelfPanel` now passes `canCancel={operation.cancelable}` (`ActivityShelf.tsx:276`); `onActivityShelfCancel` guards on it so a non-cancelable op dispatches no `request-cancel` and fires no engine cancel. Dependent oracles updated: `activityShelf.test.tsx` (16), `activityShelfStore.test.ts` (30), `activityShelfState.test.ts` unchanged (17). `phase53_convertImport` 20; `ocr` 122; typecheck clean; build:renderer built. The search-index row no longer renders a Cancel. Awaiting qa re-verification (including the C5b e2e case) to CLOSE.
+- qa (TFL-1295, 2026-10-08): CLOSED. Independent review PASS: `ActivityOperation.cancelable` present (`activity.ts:106`), `createOperation` defaults false (`:149`), every state helper carries it through (all transitions spread `...op`); three producers only - OCR true (`activityShelf.ts:281`), convert true (`:352`), search-index false (`:426`); `ActivityShelfPanel` passes `canCancel={operation.cancelable}` (`ActivityShelf.tsx:276`) and the row renders Cancel only when `cancelable && running` (`:111`); `onActivityShelfCancel` guards `!target.cancelable` (`App.tsx:8862`) so a non-cancelable op dispatches no request and fires no engine cancel; OCR/convert retain real engine cancel channels with request-then-confirm (request never sets `cancelled`; only the engine's `confirm-cancellation` does). Retest: activityShelfStore 30, activityShelf.test.tsx 16, activityShelfState 17, phase53_convertImport 20, ocr 15 files/122, typecheck clean, build:renderer built. E2E `e2e/tfl1216_activityShelf.spec.cjs` 3 passed (55.8s); C5b live log `rowState=running rowText="34 of 34 pages" actions=[] cancelCount=0` (was red on `cancelCount === 0`). Evidence `screenshots/tfl1216-c5b-search-index-panel.png` shows the running row with no Cancel. Blast radius (C4b/C5 OCR + convert cases) green together.
+
+## DEF-651: Inventory doc cites a stale `Toasts.tsx` line for toast durability after the C5c edit
+
+- Status: OPEN
+- Severity: LOW - docs only. The C5c reconciliation content is otherwise correct, but `docs/ACTIVITY-SHELF-INVENTORY.md` asserts at line 21 that "All line references were verified", and the durability anchor is now wrong.
+- Found by: qa (TFL-1300)
+- Phase: 1216 / C5c
+
+Files:
+- `docs/ACTIVITY-SHELF-INVENTORY.md:86` - cites `Toasts.tsx:50` for error-toast durability. After C5c, `src/renderer/components/Toasts.tsx:50` is the `items: Toast[];` prop declaration, not the durability code. The durability contract lives at `:35` (`toastAutoDismissMs`) and the timer effect at `:64-70`.
+
+Steps to reproduce:
+1. Read `docs/ACTIVITY-SHELF-INVENTORY.md` line 86 (the Toasts note).
+2. Read `src/renderer/components/Toasts.tsx` line 50.
+
+Expected: the anchor points at the durability code (pre-C5c, line 50 was `const timer = window.setTimeout(() => onDismiss(toast.id), 5000);`).
+Actual: line 50 is `  items: Toast[];` - the anchor is stale, left over from before the C5c edit.
+
+Evidence: `docs/ACTIVITY-SHELF-INVENTORY.md:86`, `src/renderer/components/Toasts.tsx:35,50,64-70`.
+
+History:
+- qa (TFL-1300, 2026-10-08): found during the C5c focused verification while checking the doc's anchors. Required named anchors (`PrintWindowApp.tsx:276`, `Inspector.tsx:436`) were both correct; only this secondary anchor is stale. Owner: frontend-dev (update the anchor to `Toasts.tsx:35`).
+
+## DEF-652: A completed conversion's Open (open-result) and View details actions were silent no-ops
+
+- Status: CLOSED
+- Severity: MEDIUM - a control the surface declares and renders did nothing but dismiss the notice; the converted tab already existed so no data was lost, but the affordance was dishonest (ADV-257 suggested MEDIUM).
+- Found by: adversary (ADV-257)
+- Phase: TFL-1216
+
+Files:
+- `src/renderer/App.tsx:9188` - `onActivityShelfAction`: the conversion branch (task name `Import`) resolves the operation's CAPTURED document tab via `resolveOpenTabForDoc(op.document.docId, op.document.tabId)`, activates it, and for `view-details` also calls `revealConversionNotice()` (`App.tsx:9002`), which expands the collapsed card and scrolls the document-attached `ConversionNotice` into view. The OCR `view-details` guarded path (B11) is the untouched first branch.
+
+Steps to reproduce:
+1. Launch TFlex, convert a `.txt` via Open (or the `app:openPathRequest` route) to completion.
+2. Open the Activity Shelf panel.
+3. Click "Open" (`[data-activity-action="open-result"]`) and separately "View details".
+
+Expected: `open-result` activates the converted document's open tab; `view-details` does the same AND reveals the document-attached `ConversionNotice`; a closed tab is a truthful no-op.
+Actual (pre-fix): both fell through to `acknowledge` + `remove` - the row vanished and nothing opened (`tabsBefore === tabsAfter`).
+
+Fix: TFL-1320 - the conversion branch above; no new control or selector; `convert`'s declared `completionActions` unchanged (`open-result`, `view-details`).
+
+History:
+- adversary (ADV-257, 2026-10-08): found on the real app; both offered controls only made the notice disappear.
+- cto (2026-10-08): ACCEPTED -> DEF-652 (a declared capability the surface cannot honour).
+- qa (TFL-1322, 2026-10-08): CLOSED. Source verified in-tree (`App.tsx:9188-9215`, `activityShelf.ts:341-344`). Retest: `test/unit/renderer/activityShelfStore.test.ts` -> 1 file / 40 passed (incl. "a conversion declares open-result and view-details; both are offered on completion (DEF-652)"); `test/unit/renderer/activityShelf.test.tsx` -> 1 file / 21 passed. Live: e2e `e2e/tfl1216_activityShelf.spec.cjs` C5 settles `rowState=completed actions=["open-result","view-details"]`; the OCR B11 guard `test/unit/renderer/bugB11_ocrSuspectsEmptyTabGuard.test.ts` -> 4 passed (guarded path untouched).
+
+## DEF-653: After a failed update download, a later successful download left the update row stuck on the old failed state
+
+- Status: CLOSED
+- Severity: MEDIUM - the single live-app update row could show a stale terminal state after the download actually succeeded (pure-mapper trace; no data loss). ADV-258 suggested MEDIUM.
+- Found by: adversary (ADV-258)
+- Phase: TFL-1216
+
+Files:
+- `src/renderer/state/activityShelf.ts:525` - `runningUpdateAction` now returns a fresh `begin` when `current` is terminal (was `progress`, which the C1 reducer ignores on a terminal operation).
+- `src/renderer/App.tsx:1950` - the `updateState` effect removes the stale terminal `UPDATE_OPERATION_ID` row before dispatching that `begin`, so at most one update row exists.
+
+Steps to reproduce:
+1. Drive the real `updateStateAction` mapper + reducer over `available -> error -> downloading -> downloaded`.
+2. Read the single update row's state after the second `downloaded`.
+
+Expected: the row reaches `completed` (never a stale `failed`); at most one update row; a `completed -> available -> ...` cycle likewise reaches `completed`.
+Actual (pre-fix): the row stayed `failed` for the whole second cycle; a `completed` row never re-entered a new cycle.
+
+Fix: TFL-1320 as above.
+
+History:
+- adversary (ADV-258, 2026-10-08): found via the pure trace `test-fixtures/tfl1315/probe_update.cjs`.
+- cto (2026-10-08): ACCEPTED -> DEF-653.
+- qa (TFL-1322, 2026-10-08): CLOSED. Source verified (`activityShelf.ts:525-537`, `App.tsx:1950-1951`). Retest: `test/unit/renderer/activityShelfStore.test.ts` -> 1 file / 40 passed (incl. "a new cycle after a FAILED update maps to a fresh begin, then reaches completed (DEF-653)" and the COMPLETED-cycle case).
+
+## DEF-654: The OCR shelf Cancel addressed the ACTIVE tab's document, not the operation's captured document
+
+- Status: CLOSED
+- Severity: LOW - latent contract violation: the shelf's OCR Cancel was unreachable behind the modal OCR scrim, and the reachable dialog Cancel targets the only possible tab (defense-in-depth). ADV-259 suggested LOW.
+- Found by: adversary (ADV-259)
+- Phase: TFL-1216
+
+Files:
+- `src/renderer/App.tsx:9139` - `onActivityShelfCancel`: for the running OCR op it now resolves the operation's captured document via `resolveOpenTabForDoc(target.document.docId, target.document.tabId)` and fires `engine.ocrCancel` on THAT tab's engine document (was `cancelOcrForActiveTab()`, which read the active tab). A closed tab is a truthful no-op (the row stays "Cancelling..." until the engine confirms). The dialog's own `cancelOcrForActiveTab` is unchanged.
+
+Steps to reproduce:
+1. Launch TFlex, start OCR on document A, switch the active tab to document B (only reachable in the latent state; the modal scrim covers the shelf during a live run).
+2. Click the shelf's Cancel on the OCR row.
+
+Expected: `engine.ocrCancel` fires for A's engine document, never B's.
+Actual (pre-fix): it fired for whatever tab was active (B).
+
+Fix: TFL-1320 as above.
+
+History:
+- adversary (ADV-259, 2026-10-08): found by source review; live reachability nil (modal scrim), filed as latent defense-in-depth.
+- cto (2026-10-08): ACCEPTED -> DEF-654.
+- qa (TFL-1322, 2026-10-08): CLOSED. Source verified in-tree (`App.tsx:9139-9160`); the captured-identity invariant is pinned by `test/unit/renderer/activityShelfStore.test.ts` -> 1 file / 40 passed ("ocrStartAction yields a begin whose operation is running with the captured identity"). Live reachability remains nil by design (the OCR dialog scrim covers the shelf while running), so verification is source + unit, not a live click.

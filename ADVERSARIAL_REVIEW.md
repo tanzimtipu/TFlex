@@ -13027,3 +13027,199 @@ handle the service's TS parameter properties), no product source/test/ledger edi
 app's dev Electron launch requires `ELECTRON_RUN_AS_NODE` to be unset in this sandbox
 (inherited by `launch.cjs`); that is an environment condition, not a product defect.
 Findings left PENDING for CTO triage; spec, probe and log left uncommitted for git-agent.
+
+## ADV-257: The completed conversion's Open (open-result) and View details actions are silent no-ops
+
+- Session: diff-pass
+- Suggested severity: MEDIUM
+
+What I did: launched the app with a disposable large `.txt` so the universal-import
+conversion runs (`env -u ELECTRON_RUN_AS_NODE node test-fixtures/tfl1315/probe3.cjs`,
+real app through `e2e/lib/launch.cjs`), opened the Activity panel while the "Import"
+row ran, waited for the row to reach `completed`, inspected the offered actions, then
+clicked the `data-activity-action="open-result"` ("Open") button and re-read the DOM.
+
+Expected: class 7 - "Open result on a completed conversion opens the REAL converted
+document." The row declares `open-result` in the convert capability
+(`src/shared/activity.ts:33-37`) and the model comment calls it "a real action"
+(`src/renderer/state/activityShelf.ts:341-344`).
+
+Actual: the completed row offers `["open-result","view-details"]`. Clicking Open
+returned `panel:false`, the row gone, `tabsBefore:3` and `tabsAfter:3` - no tab
+activated, nothing opened, no navigation. `onActivityShelfAction`
+(`src/renderer/App.tsx:8950-8971`) handles `view-details` ONLY when
+`op.task.name === OCR_TASK_NAME`; every other action - including the conversion's
+`open-result` AND `view-details` - falls straight through to `acknowledge` + `remove`.
+So both offered conversion controls are dead: they only make the notice disappear. The
+converted result tab is already open at completion, so this is not data loss, but it
+is a silent no-op control and a capability the surface declares yet cannot honour.
+
+Screenshot: screenshots/tfl1315-c7-open-result.png
+Evidence: `test-fixtures/tfl1315/probe3.cjs`, `tfl1315_probe3_results.json`,
+`tfl1315_probe3.log` (probe `class7-convert-open-result`).
+
+Disposition: ACCEPTED -> DEF-652 (cto, 2026-10-08: a declared capability the surface cannot honour - the conversion's `open-result` / `view-details` must not be silent no-ops; route them to a real action or drop the declaration).
+
+## ADV-258: After a failed update download, a later successful download leaves the update row stuck on the old failed state
+
+- Session: diff-pass
+- Suggested severity: MEDIUM
+
+What I did: exercised the real pure mapper `updateStateAction` and the real store
+reducer, reproducing App's same-kind key guard, over the live `UpdateState` sequence
+`available -> error -> downloading -> downloaded`:
+`env -u ELECTRON_RUN_AS_NODE node test-fixtures/tfl1315/probe_update.cjs`.
+
+Expected: class 4 - no fabricated state; a later successful download should move the
+single update row forward (to `completed`) instead of continuing to show the old
+failure.
+
+Actual: the row stays `failed` for the whole second cycle. `updateStateAction` reuses
+the SAME stable operation id (`UPDATE_OPERATION_ID`) and returns `progress` / `complete`
+(`src/renderer/state/activityShelf.ts:519-573`), but the C1 reducer ignores every
+transition on a terminal operation (`updateProgress` / `completeOperation` early-return
+for terminal states - `src/renderer/state/activity.ts:145-153,174-180`). Trace:
+`available -> [row running]`, `error -> [row failed]`, `downloading -> [row failed,
+action ignored]`, `downloaded -> [row failed, action ignored]`. The same trace shows a
+`completed` row never re-enters a new cycle (`completed -> available -> downloading ->
+downloaded` stays `completed`). Reachability: `onUpdateDownload` calls
+`updateApi.download()` directly (`src/renderer/App.tsx:2095-2101`) with no intervening
+`checking`, so a retry/fresh download after an error can produce this sequence. The
+other class-4 edges hold: `downloaded` with no prior row yields no row (no crash),
+repeated same-kind pushes collapse to one row with no fabricated percentage via the key
+guard, and `unsupported` removes the row.
+
+Evidence: `test-fixtures/tfl1315/probe_update.cjs` (traces printed in
+`tfl1315_probe_update.log`).
+
+Disposition: ACCEPTED -> DEF-653 (cto, 2026-10-08: the update operation must recover across lifecycles - a new `available`/`downloading` after a terminal `failed`/`completed` update op must start a fresh row instead of being ignored).
+
+## ADV-259: The OCR shelf Cancel addresses the ACTIVE tab's document, not the operation's captured document
+
+- Session: diff-pass
+- Suggested severity: LOW
+
+What I did: source review of the cancel wiring, plus a live OCR run through the modal
+dialog (probe `class1-ocr-cancel` in `test-fixtures/tfl1315/probe3.cjs`).
+
+Expected: class 2 / model invariant 5 - an operation stays bound to the document
+captured at creation, so its cancel channel must address that same document, never
+"the active tab".
+
+Actual: `onActivityShelfCancel` (`src/renderer/App.tsx:8918-8938`) dispatches the
+request and, for an OCR row, calls `cancelOcrForActiveTab()` (`App.tsx:8925`).
+`cancelOcrForActiveTab` reads `activeTabIdRefLocal.current` and fires
+`engine.ocrCancel(...)` for whatever tab is active (`App.tsx:8811-8824`); it never
+reads `op.document`. If the OCR row's document is not the active tab, the engine cancel
+goes to the wrong document while the row still moves to `Cancelling...`. Live
+reachability today is nil: the OCR run is driven inside the modal OcrDialog
+(`blockBackdropClose={running}`, `src/renderer/components/OcrDialog.tsx:470`) whose
+scrim covers the shelf - the live probe confirms `elementFromPoint` over the summary
+returns `modal-backdrop` - so the shelf's Cancel is unclickable for the whole run, and
+the reachable Cancel is the dialog's own button (which correctly targets the only
+possible tab). Filed as a latent contract violation / defense-in-depth, not a live
+failure.
+
+Evidence: source lines above; `tfl1315_probe3_results.json` probe `class1-ocr-cancel`
+(modal occlusion + a truthful `Cancelled` settle via the dialog Cancel).
+
+Disposition: ACCEPTED -> DEF-654 (cto, 2026-10-08: the OCR shelf cancel must address `op.document`, not the active tab - latent today behind the modal scrim, but it violates the document-identity invariant; cheap defense-in-depth).
+
+## Classes that held (Activity Shelf diff-pass - TFL-1315)
+
+Scope attacked: the Activity Shelf diff C1-C8 as it runs -
+`src/shared/activity.ts`, `src/renderer/state/activity.ts`,
+`src/renderer/state/activityShelf.ts`, `src/renderer/components/ActivityShelf.tsx`,
+the App wiring for OCR / conversion / search-index / update, and `Toasts.tsx`. All
+attacks ran on the real app through `e2e/lib/launch.cjs` (build:renderer + build:node
+rebuilt first, mutex held). Evidence: `test-fixtures/tfl1315/probe2.cjs`,
+`probe3.cjs`, `probe4.cjs`, `probe_update.cjs`, and their `.log` / `_results.json`
+outputs.
+
+- **Cancellation truthfulness - HOLDS except ADV-259 (live).** Conversion: the running
+  row exposes a Cancel; clicking it moves the row to `cancellation-requested` (the
+  Cancel button label becomes "Cancelling...") and the row does NOT read a terminal
+  state until the engine confirms, then settles to `cancelled` with the summary
+  "Import - Cancelled". OCR: the dialog Cancel leaves the run, and the summary later
+  moves to `Recognize text - Cancelled` (engine-confirmed), never early. `requestCancellation`
+  only acts on `running`, so a double-cancel is idempotent; no Cancel is rendered once
+  an operation is terminal, so cancel-after-completion has no surface.
+- **Non-cancelable operation renders no Cancel - HOLDS (live).** The search-index build
+  row reached `running` with `cancelCount:0`, no completion actions, truthful
+  determinate "34 of 34 pages"; capabilityFor('search-index') declares
+  `cancelable:false, completionActions:[]`.
+- **Progress honesty - HOLDS (live).** Conversion rows are indeterminate and never
+  fabricate a `ratio`/total; OCR and search-index rows read real `done of total pages`;
+  no percentage or ETA appeared anywhere in the summary, row text, or the accessibility
+  tree.
+- **Error durability - HOLDS (live).** A real failing Save-As (write to a non-existent
+  directory) produced `toast-error` "Could not write file: saveAs failed: ENOENT ..."
+  that was still present 10.5 s later; a succeeding Save-As produced `toast-info`
+  "Saved a copy of report.pdf." that auto-dismissed by 9 s. Matches
+  `toastAutoDismissMs` (warning/error -> null; success/info -> 5000 ms).
+- **Accessibility / live regions - HOLDS (live + source).** During a determinate run the
+  summary is `role="status" aria-live="polite"`, the determinate counter (" - 0 of 34
+  pages") is inside an `aria-hidden` span so only the stable identity/stage is
+  announced, the role mark is `aria-hidden`, and a running row carries no `role="alert"`.
+  Failed / partial-success content uses `role="alert"`. `styles.css` provides scoped
+  `prefers-reduced-motion` (24154-24364) and `forced-colors` (24369-24387) blocks for the
+  shelf.
+- **Renderer never blocks on PDF work - HOLDS (live).** While a 150k-line conversion ran,
+  `requestAnimationFrame` fired in 5 ms and five consecutive `evaluate` round-trips each
+  returned in 1 ms.
+- **Update mapping edges - HOLDS except ADV-258 (pure trace).** `downloaded` with no
+  prior row -> no row, no crash; repeated same-kind pushes collapse to one row; no
+  fabricated percentage (the updater percentage is discarded); `unsupported`/`up-to-date`
+  /`checking`/null remove an existing row. Only the stale-terminal case (ADV-258) fails.
+- **Cross-document identity - HELD on every scenario reachable in this build; the
+  multi-document race could not be constructed.** The generic Open now feeds the shared
+  intake queue (`App.tsx:2852-2860`) rather than opening a document, so during a run the
+  UI offers no path to open a second document, and the OCR dialog is modal for its whole
+  run; the only reachable identity exercises (single OCR, single conversion, search-index
+  row bound to its tab) stayed bound correctly. ADV-259 records the one latent
+  active-tab weakness in the cancel path.
+
+## Design critique: Activity Shelf (TFL-1216)
+
+User: a person with a document open who has started a background job (recognize text,
+import/conversion, search indexing, or an app update) and wants to know it is running,
+what happened, and - when offered - act on the result without leaving the document.
+
+### Must-fix (blocks ship)
+- **Affordance / honesty:** the completed conversion row offers "Open" and "View
+  details" that do nothing (ADV-257). **Try:** wire `open-result` to activate the
+  already-open converted tab (and `view-details` to the conversion fidelity report), or
+  remove the undeclared actions from the convert capability so the surface cannot promise
+  what it does not do.
+
+### Should-fix (before broader rollout)
+- **States:** a retried update can leave the row showing a stale "failed" after the
+  download actually succeeded (ADV-258). **Try:** mint a fresh operation id per update
+  cycle, or have the store clear/replace a terminal update row on the next `begin`.
+- **Copy:** while cancellation is requested the row's status line keeps the phase text;
+  only the small Cancel button reads "Cancelling...". **Try:** reflect the request in the
+  row status so the operation's state is legible without reading the button.
+
+### Nice-to-fix (when there's room)
+- **Consistency:** the shelf's OCR Cancel can never be clicked (the modal scrim covers
+  it), so the dialog is the only OCR cancel surface. **Try:** either make the shelf the
+  single cancel surface, or omit the unreachable control in a way that is explicit rather
+  than incidental (it is currently hidden by z-order, not by intent).
+- **Hierarchy:** the collapsed summary is quiet and good; with several operations the
+  count leads and the single "active" line is chosen by first-running order. **Try:** name
+  the oldest running operation consistently so the summary does not jump between rows as
+  operations settle.
+
+### Strengths to keep
+- The summary is `role="status" aria-live="polite"` and removes the per-point determinate
+  counter from the accessibility tree, so the polite region announces stage changes and
+  never each percentage - exactly the feedback-and-progress design decision.
+- Truthful progress everywhere: determinate only with a real total, otherwise a phase
+  label; no percentage and no ETA anywhere in the model or the surface.
+- Capability-gated controls: `cancelable:false` operations render no inert Cancel, and
+  completion actions come only from `availableCompletionActions`, so `undo` appears only
+  with a real reversible transaction id.
+- Error toasts persist until Dismiss while success/info auto-dismiss, and the shelf's
+  failure content is announced assertively (`role="alert"`) with the explicit failed-item
+  list for partial success.
+

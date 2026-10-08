@@ -238,6 +238,7 @@ import { ActivityShelfPanel, ActivityShelfSummary } from "./components/ActivityS
 import {
   convertProgressAction,
   convertStartAction,
+  CONVERT_TASK_NAME,
   initialActivityShelfState,
   OCR_TASK_NAME,
   ocrProgressAction,
@@ -247,8 +248,10 @@ import {
   searchIndexStartAction,
   selectActiveOperations,
   selectVisibleNotices,
+  UPDATE_OPERATION_ID,
+  updateStateAction,
 } from "./state/activityShelf";
-import type { ActivityCompletionAction } from "./state/activity";
+import type { ActivityCompletionAction, ActivityOperation } from "./state/activity";
 import { ReadingView } from "./components/ReadingView";
 import { BookView } from "./components/BookView";
 import { BookOpen } from "lucide-react";
@@ -1286,6 +1289,20 @@ export function App(): ReactElement {
     (): number => Date.now(),
   );
   const [activityShelfFrozen, setActivityShelfFrozen] = useState(false);
+  // TFL-1216 (chunk C8) - the summary "Activity" trigger. Closing the panel
+  // (Escape or the close control) restores focus to it, so a keyboard user is
+  // never stranded when the non-modal shelf closes.
+  const activityShelfTriggerRef = useRef<HTMLButtonElement | null>(null);
+  // TFL-1216 (chunk C7) — the single update operation currently on the shelf,
+  // mirrored from the reducer so the update-state effect below can tell "begin"
+  // from "keep" without depending on `activityShelf` (which would re-run and
+  // re-dispatch on every unrelated shelf change). This effect only writes a ref.
+  const updateShelfOpRef = useRef<ActivityOperation | undefined>(undefined);
+  useEffect((): void => {
+    updateShelfOpRef.current = activityShelf.operations.find(
+      (op) => op.id === UPDATE_OPERATION_ID,
+    );
+  }, [activityShelf]);
   // The OCR operation currently driving the shelf. The ref is the synchronous
   // handle the cancel path reads; the state drives the App-level progress
   // subscription effect below.
@@ -1893,6 +1910,35 @@ export function App(): ReactElement {
       setUpdatePromptOpen(true);
     }
   }, [updateState, updatePromptOpen, updateDownloadInFlight, updateDismissedKey]);
+
+  // TFL-1216 (chunk C7) — mirror the live updater lifecycle onto the Activity
+  // Shelf. This reuses the existing `onStatusChanged` subscription above (no
+  // second subscription); it only maps each `updateState` transition to one
+  // shelf action. Only a real transition is dispatched (the key guard skips a
+  // repeated push of the same kind, e.g. each `downloading` tick), and
+  // `updateShelfOpRef` tells the pure mapper whether a row already exists. The
+  // Top Bar badge/dialog stay untouched: they keep owning the Download /
+  // Install / "Restart to update" action surface. The shelf carries the state
+  // and the notice only.
+  const updateShelfKeyRef = useRef<string | null>(null);
+  useEffect((): void => {
+    if (updateState === undefined) return;
+    const key = updateState === null ? "null" : updateState.kind;
+    if (updateShelfKeyRef.current === key) return;
+    updateShelfKeyRef.current = key;
+    const action = updateStateAction(updateShelfOpRef.current, updateState);
+    if (action === null) return;
+    // DEF-653 — a new `available`/`downloading` lifecycle after a TERMINAL
+    // update op maps to a fresh `begin`. The C1 reducer ignores transitions on
+    // a terminal operation, so reusing the stable UPDATE_OPERATION_ID without
+    // first dropping the terminal row would leave it stuck (`failed` stays
+    // failed, `completed` stays completed). Remove the stale row first, then
+    // append the fresh begin: exactly one update row at all times.
+    if (action.type === "begin" && updateShelfOpRef.current !== undefined) {
+      dispatchActivityShelf({ type: "remove", id: UPDATE_OPERATION_ID });
+    }
+    dispatchActivityShelf(action);
+  }, [updateState]);
 
   const onToggleTheme = useCallback((): void => {
     setSettings((prev) => {
@@ -8741,6 +8787,56 @@ pushToast(
     [noteOpApplied],
   );
 
+  /** Resolve the still-open tab that hosts an operation's CAPTURED document.
+   *  Identity is the engine doc id, never "the active tab" - a shelf action
+   *  addresses the document the operation was started for. Returns null when no
+   *  open tab holds that document, which the callers treat as a truthful
+   *  no-op. */
+  const resolveOpenTabForDoc = useCallback(
+    (docId: string, tabId: string): string | null => {
+      const direct = openTabsRef.current[tabId];
+      if (direct !== undefined && direct.session.engineDocId === docId) {
+        return tabId;
+      }
+      for (const candidateId of Object.keys(openTabsRef.current)) {
+        const open = openTabsRef.current[candidateId];
+        if (open !== undefined && open.session.engineDocId === docId) {
+          return candidateId;
+        }
+      }
+      return null;
+    },
+    [],
+  );
+
+  /** DEF-652 - bring a converted document's own `ConversionNotice` (the
+   *  fidelity / warnings card) into view for a conversion `view-details`. The
+   *  card owns its collapse machine, so when it has collapsed to the "i"
+   *  affordance this expands it and then scrolls the card into view. That is
+   *  the real detail; the row is still acknowledged afterwards, but the action
+   *  is never a silent dismiss. */
+  const revealConversionNotice = useCallback((): void => {
+    const reveal = (): void => {
+      const scope =
+        document.querySelector<HTMLElement>('[data-document-converted="true"]') ??
+        document.body;
+      const collapsed = scope.querySelector<HTMLElement>('[data-conversion-icon]');
+      if (collapsed !== null) {
+        collapsed.click();
+        window.requestAnimationFrame((): void => {
+          scope
+            .querySelector<HTMLElement>('[data-conversion-notice]')
+            ?.scrollIntoView?.({ block: 'nearest' });
+        });
+        return;
+      }
+      scope
+        .querySelector<HTMLElement>('[data-conversion-notice]')
+        ?.scrollIntoView?.({ block: 'nearest' });
+    };
+    window.requestAnimationFrame(reveal);
+  }, []);
+
   /** Phase 51 (item 9) — flag the active tab's in-flight OCR run for
    *  cancellation. Wired to the OCR dialog's Cancel control. Main
    *  restores the pre-run bytes and resolves the pending `ocrRecognize`
@@ -8863,7 +8959,20 @@ pushToast(
       dispatchActivityShelf({ type: 'request-cancel', id });
       const op = ocrShelfOpRef.current;
       if (op !== null && op.operationId === id) {
-        cancelOcrForActiveTab();
+        // DEF-654 — fire the engine cancel for the operation's CAPTURED
+        // document, never whichever tab is active now. A closed tab is a
+        // truthful no-op: the row stays "Cancelling..." until the engine's own
+        // confirmation settles it (or the run resolves on its own).
+        const tabId = resolveOpenTabForDoc(
+          target.document.docId,
+          target.document.tabId,
+        );
+        if (tabId !== null) {
+          const open = openTabsRef.current[tabId];
+          if (open !== undefined) {
+            void engineRef.current.ocrCancel?.(open.session.engineDocId);
+          }
+        }
         return;
       }
       // TFL-1216 (chunk C5) — the conversion's cancel channel, addressed by the
@@ -8875,7 +8984,7 @@ pushToast(
         window.tflex.convert?.cancel(docId);
       }
     },
-    [activityShelf, cancelOcrForActiveTab],
+    [activityShelf, resolveOpenTabForDoc],
   );
 
   /** Run a completion action. OCR's `view-details` activates the operation's
@@ -8904,11 +9013,23 @@ pushToast(
           if (activeTabIdRefLocal.current !== opTabId) activateTab(opTabId);
           onOpenOcrSuspectsRef.current(opTabId);
         }
+      } else if (op !== undefined && op.task.name === CONVERT_TASK_NAME) {
+        // DEF-652 — resolve the converted document's still-open tab and land
+        // the user on it. A closed tab is a truthful no-op (never a pretend
+        // success); the row is still acknowledged below because the user acted.
+        const tabId = resolveOpenTabForDoc(
+          op.document.docId,
+          op.document.tabId,
+        );
+        if (tabId !== null) {
+          if (activeTabIdRefLocal.current !== tabId) activateTab(tabId);
+          if (action === 'view-details') revealConversionNotice();
+        }
       }
       dispatchActivityShelf({ type: 'acknowledge', id });
       dispatchActivityShelf({ type: 'remove', id });
     },
-    [activityShelf, activateTab],
+    [activityShelf, activateTab, resolveOpenTabForDoc, revealConversionNotice],
   );
 
   /** Dismiss every visible terminal notice: acknowledge first (hides it from
@@ -8920,6 +9041,27 @@ pushToast(
       dispatchActivityShelf({ type: 'remove', id: op.id });
     }
   }, [activityShelf, activityShelfNowMs]);
+
+  /** TFL-1216 (chunk C8) - close the shelf panel and hand keyboard focus back
+   *  to the summary trigger (Escape or the close control). The trigger stays
+   *  mounted while the panel is open, so closing never strands focus. */
+  const onActivityShelfClose = useCallback((): void => {
+    setActivityShelfOpen(false);
+    const trigger = activityShelfTriggerRef.current;
+    if (trigger !== null && document.contains(trigger)) trigger.focus();
+  }, []);
+
+  // TFL-1216 (chunk C8) - a completion action removes its row, which can strand
+  // focus on <body>. When that happens while the panel is still open, return
+  // focus to the summary trigger so keyboard navigation continues on the user's
+  // task (a destination surface that takes focus, e.g. the OCR suspects panel,
+  // wins because it moves focus itself).
+  useEffect((): void => {
+    if (!activityShelfOpen) return;
+    if (document.activeElement !== document.body) return;
+    const trigger = activityShelfTriggerRef.current;
+    if (trigger !== null && document.contains(trigger)) trigger.focus();
+  }, [activityShelf, activityShelfOpen]);
 
   /** Navigate to a suspect's page and pulse a short-lived
    *  highlight so the user can spot the word on the page. The
@@ -13471,7 +13613,7 @@ pushToast(
           {activityShelfOpen && (
             <ActivityShelfPanel
               operations={activityShelfVisible}
-              onClose={(): void => setActivityShelfOpen(false)}
+              onClose={onActivityShelfClose}
               onCancel={onActivityShelfCancel}
               onAction={onActivityShelfAction}
               onDismiss={onActivityShelfDismiss}
@@ -13480,6 +13622,7 @@ pushToast(
           <ActivityShelfSummary
             operations={activityShelfVisible}
             onOpen={(): void => setActivityShelfOpen(true)}
+            openButtonRef={activityShelfTriggerRef}
           />
         </div>
       )}

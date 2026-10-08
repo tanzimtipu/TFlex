@@ -89,6 +89,13 @@
   --tf-icon-disabled: #70798A;
   --tf-icon-danger: #B82E43;
   --tf-icon-success: #25754A;
+  /* TFL-1241 (TFL-1216 chunk C8) - the general semantic FEEDBACK palette the
+   * Activity Shelf consumes. These mirror the icon ink state signals above
+   * (--tf-icon-success / --tf-icon-danger) so the feedback ink has ONE source;
+   * the shared --success / --error tokens are deliberately untouched, so no
+   * other category is recoloured. */
+  --feedback-success: #25754A;
+  --feedback-danger: #B82E43;
   --tf-label-size: var(--type-label-size);
   --tf-label-size-md: var(--type-row-size);
   /* Phase 38 (feature B) — the Stage Rail's width. Was a hardcoded 44px; the
@@ -1018,6 +1025,10 @@
   --tf-icon-disabled: #929BAC;
   --tf-icon-danger: #FF9AAD;
   --tf-icon-success: #85D3A6;
+  /* TFL-1241 (TFL-1216 chunk C8) - the dark FEEDBACK palette, mirroring the
+   * dark icon ink above; see the :root declaration for the contract. */
+  --feedback-success: #85D3A6;
+  --feedback-danger: #FF9AAD;
 
   /* Phase 96 — per-theme completion of the shared token families. These
    * already resolved through the :root cascade; they are declared explicitly
@@ -1300,6 +1311,11 @@
   --tf-icon-disabled: #70798A;
   --tf-icon-danger: var(--sem-attention);
   --tf-icon-success: var(--sem-affirmative);
+  /* TFL-1241 (TFL-1216 chunk C8) - the frosted FEEDBACK palette. Frosted is a
+   * light acrylic surface, so it mirrors the light feedback values; see the
+   * :root declaration for the contract. */
+  --feedback-success: #25754A;
+  --feedback-danger: #B82E43;
 
   /* Phase 96 — per-theme completion, the same contract as the dark block: the
    * families that previously rode the :root cascade are declared explicitly so
@@ -23808,17 +23824,20 @@ cursor: pointer;
  * existing semantic token (never a hex literal) so the primitives follow the
  * active theme:
  *   --activity-progress -> --accent   (normal work stays violet)
- *   --activity-success  -> --success
+ *   --activity-success  -> --feedback-success  (TFL-1241: #25754A / #85D3A6)
  *   --activity-warning  -> --warning
- *   --activity-danger   -> --error
+ *   --activity-danger   -> --feedback-danger   (TFL-1241: #B82E43 / #FF9AAD)
+ * TFL-1241 (chunk C8): success / danger point at the dedicated feedback tokens
+ * so the shelf carries the Consistency Corrections palette without recolouring
+ * the shared --success / --error roles other categories still consume.
  * State is never colour-only: every role also carries a task icon plus the
  * honest state text, and forced-colors remaps the marks onto system roles.
  * ========================================================================= */
 .activity-shelf {
   --activity-progress: var(--accent);
-  --activity-success: var(--success);
+  --activity-success: var(--feedback-success);
   --activity-warning: var(--warning);
-  --activity-danger: var(--error);
+  --activity-danger: var(--feedback-danger);
   --activity-neutral: var(--fg-muted);
   --activity-radius: 14px;
   --activity-transition: 140ms;

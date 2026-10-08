@@ -435,6 +435,8 @@ export async function start(): Promise<void> {
     emitProgress: (progress) => {
       for (const window of BrowserWindow.getAllWindows()) {
         if (!window.isDestroyed()) {
+          // Raw `ConvertProgress`; truthful normalization is
+          // `toTruthfulProgress` in `src/shared/activity.ts`.
           window.webContents.send(IPC.convertProgressEvent, progress);
         }
       }
@@ -1072,6 +1074,8 @@ export async function start(): Promise<void> {
     const sender = event.sender;
     return engine.ocrRecognize(docId, options, (p: OcrProgress) => {
       if (sender && !sender.isDestroyed()) {
+        // `OcrProgress` (`src/shared/types.ts`) is already truthful (1-based
+        // `page` / real `totalPages` / phase); no total fabrication needed.
         sender.send(IPC.engineOcrProgressEvent, p);
       }
     });
