@@ -29,7 +29,7 @@ interface Mount {
   onSetRecentsCap: ReturnType<typeof vi.fn>;
 }
 
-function mount(): Mount {
+function mount(recentsCap = 10): Mount {
   const host = document.createElement("div");
   document.body.appendChild(host);
   const root = createRoot(host);
@@ -43,7 +43,7 @@ function mount(): Mount {
       open
       onClose={vi.fn((): void => undefined)}
       themeDefault="dark"
-      recentsCap={10}
+      recentsCap={recentsCap}
       onSetThemeDefault={onSetThemeDefault}
       onThemeChange={onThemeChange}
       onSetRecentsCap={onSetRecentsCap}
@@ -157,6 +157,25 @@ describe("Settings Studio — migrated Preferences shell (chunk C)", () => {
     expect(text).toContain("Applies immediately.");
     expect(text).toContain("Takes effect on next launch.");
     unmount();
+  });
+
+  it("import group states the next-import timing once", () => {
+    const { host, unmount } = mount();
+    const text = host.textContent ?? "";
+    expect((text.match(/Applies to the next import\./g) ?? []).length).toBe(1);
+    expect(text).toContain(
+      "Used by every file import that produces a new PDF, and by Fill form fields from CSV.",
+    );
+    unmount();
+  });
+
+  it("recents-cap no-op commit resets the draft to the committed value", () => {
+    const m = mount(50);
+    commitNumber(m.host, "[data-prefs-recents-cap]", "999");
+    expect(m.onSetRecentsCap).not.toHaveBeenCalled();
+    const input = m.host.querySelector<HTMLInputElement>("[data-prefs-recents-cap]");
+    expect(input?.value).toBe("50");
+    m.unmount();
   });
 
   it("ArrowDown on the rail moves the selection to the next category", () => {

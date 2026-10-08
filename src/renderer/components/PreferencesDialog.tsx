@@ -45,6 +45,7 @@ import type { TabStyle } from '../../shared/types';
 import { DEFAULT_CONVERT_DEFAULTS } from '../../shared/convert';
 import type { ConvertDefaults } from '../../shared/convert';
 import type { ThemeDefault } from '../state/preferences';
+import { clampRecentsCap } from '../state/preferences';
 import { DialogShell } from './DialogShell';
 import { Button } from './Button';
 import { ConfirmDialog } from './ConfirmDialog';
@@ -271,7 +272,12 @@ export function PreferencesDialog(props: PreferencesDialogProps): ReactElement |
   const commitCap = (): void => {
     const n = Number.parseInt(capDraft, 10);
     if (Number.isFinite(n)) {
-      onSetRecentsCap(n);
+      const clamped = clampRecentsCap(n);
+      if (clamped !== recentsCap) {
+        onSetRecentsCap(clamped);
+      } else {
+        setCapDraft(String(clamped));
+      }
     } else {
       setCapDraft(String(recentsCap));
     }
@@ -674,7 +680,7 @@ export function PreferencesDialog(props: PreferencesDialogProps): ReactElement |
                           }
                         />
                         <SettingsSupport>
-                          Used by every file import that produces a new PDF, and by Fill form fields from CSV. Applies to the next import.
+                          Used by every file import that produces a new PDF, and by Fill form fields from CSV.
                         </SettingsSupport>
                       </SettingsSection>
                     )}
