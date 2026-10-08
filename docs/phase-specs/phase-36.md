@@ -32,9 +32,7 @@ and re-homed, never rewritten.
   floating at the bottom-centre of the canvas over the workspace chrome. Nothing else may occupy the
   bottom-centre of the canvas as WORKSPACE chrome - the object-level action bars (annotation place/confirm,
   `EditToolbar`) and the floating text panel keep their current behaviour and are exempt.
-  Idle (TFL-1137 R12: chrome-only - the dock's elevation and the footer's separator
-  calm; ENABLED labels/icons keep full opacity) must NEVER trigger while a tool is armed
-  or a drag is in progress. Pins persist
+  Idle (fade to ~40%) must NEVER trigger while a tool is armed or a drag is in progress. Pins persist
   (`dockPins`, max 4, oldest overflow into a "..." chip); a pinned tool already present in the stage set is
   not duplicated.
 - **Inspector**: the right panel (240-280px) showing live properties of the current selection with the

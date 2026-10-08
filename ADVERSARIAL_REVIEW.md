@@ -12472,4 +12472,558 @@ what lands on disk.
 - The stamp dialog now states the real click-to-place + Escape-cancel flow and no
   longer promises a page/centering the handler ignores.
 
+## ADV-246: A settings-write rollback can drop a newer legitimate settings value and revert the UI to an older snapshot
 
+- Session: diff-pass (TFL-1254, Phase 114 chunk C)
+- Suggested severity: MEDIUM
+
+What I did: attacked the chunk-C claim "a failed settings write restores the prior
+value in the UI" at the renderer event level. I modelled the exact chunk-C
+bookkeeping (`settingsWriteSeqRef` -> seq, `settingsPersistedRef` -> ref,
+`onSettingsRestore` -> `ref = diskSnapshot` with seq untouched) and fed every
+decision through the REAL `shouldApplyEcho` the `settings.changed` listener uses
+(`node --experimental-strip-types test-fixtures/tfl1254-adversary/probe_rollback_echo.mjs`):
+
+1. Write #1 (theme `frosted`) goes out optimistically: `trackAndSave` -> seq 1, ref X.
+2. A rapid second change (theme `light`) goes out before the failure surfaces:
+   `trackAndSave` -> seq 2, ref Z.
+3. Write #1 fails; main rolls back and pushes `settings:writeError`; the hook calls
+   `loadSettings()` and `onSettingsRestore(disk)` with the pre-toggle value P ->
+   `settingsPersistedRef = P`, **seq stays 2** (`App.tsx:1901-1905`).
+4. Write #2 then succeeds and main broadcasts its `settings.changed` echo (content Z).
+
+Expected: the echo for the write that actually reached disk (Z) is applied, so the
+UI converges on the value on disk.
+
+Actual: `shouldApplyEcho(Z, seq=2, ref=P)` returns **false** — `writeSeq !== 0`,
+content differs from the snapshot, and it is not a recents-/geometry-only diff
+(`settingsEcho.ts:430-459`) — so the legitimate newer echo is discarded while
+`shouldApplyEcho(P, seq, ref)` returns true. The probe output:
+
+```
+after two writes: seq = 2
+echo Z without restore -> true (expect true)
+after restore: ref = P, seq = 2
+echo Z AFTER restore -> false (false = legitimate newer value DROPPED)
+echo P AFTER restore -> true (true = stale value re-applied)
+```
+
+So after a failed write, a newer successful write's echo can be permanently
+dropped and the UI left showing the older restored value while disk holds the newer
+one. The next whole-object write the renderer makes (it persists `{...settingsState}`)
+can then overwrite the newer disk value with the stale UI state, turning the
+divergence into silent loss of the newer setting. `onSettingsRestore` overwriting
+`settingsPersistedRef` without advancing `settingsWriteSeqRef` is the root cause;
+the restore snapshot is assumed to be newer than any in-flight write, which the
+interleaving above violates.
+
+Reachability: needs a write failure (the exact scenario this feature exists for)
+plus one more settings write issued before the failure round-trip completes (rapid
+toggles/sliders). Verified at the decision-logic level with the shipped pure
+filter; the scheduler timing of the fs write is what decides whether the restore
+snapshot or write #2's echo wins.
+
+Test gap (escape): the dev's own `test/unit/renderer/phase114_settingsRollback.test.tsx`
+exercises the hook in isolation with stable callback props and a mocked bridge; it
+never wires the hook's `onRestore` to `settingsPersistedRef` + `shouldApplyEcho`, so
+it cannot see this race. The hook contract holds; the integration does not.
+
+Evidence: `test-fixtures/tfl1254-adversary/probe_rollback_echo.mjs`,
+`test-fixtures/tfl1254-adversary/probe_rollback_echo.log`.
+
+Disposition: ACCEPTED -> DEF-637 (MEDIUM). CTO triage 2026-10-08 (TFL-1219): real
+integration race - after a failed-write restore the echo filter has
+`settingsPersistedRef` set but `settingsWriteSeqRef` not advanced, so a newer
+legitimate `settings.changed` is dropped and the UI diverges from disk (a later
+whole-object write can then clobber the newer disk value). Owner frontend-dev;
+fix tracked as TFL-1262 (restore must keep the echo filter coherent).
+
+## ADV-247: When `loadSettings()` fails after a write error, the UI keeps the value that never persisted
+
+- Session: diff-pass (TFL-1254, Phase 114 chunk C)
+- Suggested severity: LOW
+
+What I did: followed the hook's write-failure branch
+(`src/renderer/hooks/useSettingsWriteRollback.ts:28-37`). On `settings:writeError` it
+calls `onError(message)` (the toast) unconditionally, then
+`window.tflex.loadSettings().then(result => { if (result.ok) onRestore(result.value); }).catch(() => undefined)`.
+
+Expected: per the claim, a failed write restores the prior value in the UI. If the
+authoritative re-read cannot be obtained, the UI must still not keep a value that
+never persisted (or the failure must be surfaced as a distinct state).
+
+Actual: when `loadSettings()` rejects, or resolves with `ok: false` (io / corrupt
+read, `src/main/services/settings.ts:1552-1576`), no `onRestore` fires, so the
+optimistically-applied value stays in the UI with only the generic toast. The
+restore is best-effort, so the claim holds only when the re-read succeeds; the
+"keeps a value that never persisted" case the change is meant to close is still
+reachable on the load-failure path. Narrow (needs the same store to be
+unreadable while a write failed), hence LOW.
+
+Evidence: source trace `useSettingsWriteRollback.ts:30-35` (no restore on the
+non-`ok` and catch branches).
+
+Disposition: ACCEPTED -> DEF-638 (LOW). CTO triage 2026-10-08 (TFL-1219): when the
+`loadSettings()` re-read rejects or returns `ok:false`, no restore fires and the UI
+keeps the value that never persisted. Owner frontend-dev; fix tracked as TFL-1262
+(fall back to the last confirmed snapshot).
+
+## ADV-248: A settings write queued behind a failed write is persisted as the rolled-back value, silently dropping the newer change
+
+- Session: diff-pass (TFL-1254, Phase 114 chunk C)
+- Suggested severity: MEDIUM
+
+What I did: traced the backend the chunk-C rollback rides
+(`src/main/services/settings.ts`, DEF-230), because "restores the prior value"
+depends on what actually reaches disk. `save(s)` sets `this.current = normalize(s)`
+and enqueues `_doSave(this.current)` — the argument is read **when the queued task
+runs**, not at enqueue time (`settings.ts:1578-1583`). On a failed write the catch
+sets `this.current = structuredClone(this.persisted)` (`settings.ts:1636-1637`).
+
+Expected: a second settings write issued after a first one fails still persists its
+own value (the newer one), so the user's latest change is not silently dropped.
+
+Actual: sequence — write #1 (value X) fails; write #2 (value Z) was enqueued before
+write #1 settled. Write #1's catch rolls `this.current` back to P; write #2's task
+then runs `_doSave(this.current)` and reads P, so it persists P and echoes P. The
+user's newer Z never reaches disk, and the renderer converges to P (via ADV-246's
+restore/echo path) with only the generic toast. The new `loadSettings()` call in
+`useSettingsWriteRollback.ts:31` compounds the same hazard: `load()` also mutates
+`this.current`/`this.persisted` from disk (`settings.ts:1573-1574`) while queued
+writes read `this.current` at execution, so a rollback re-read can additionally
+clobber a pending write.
+
+This is pre-existing DEF-230 backend behaviour rather than one of the two diff
+files, but the chunk-C feature's promise ("the UI drops the value it optimistically
+showed") is built on it and does not close the corresponding disk-side loss; filed
+so the CTO can route it. Static trace only (build mutex held by qa for TFL-1255 and
+the task forbids builds/e2e), not runtime-reproduced.
+
+Evidence: `src/main/services/settings.ts:1578-1583, 1615-1638, 1573-1574`;
+`src/renderer/hooks/useSettingsWriteRollback.ts:31`.
+
+Disposition: ACCEPTED -> DEF-639 (MEDIUM). CTO triage 2026-10-08 (TFL-1219):
+`save()` reads `this.current` when the queued task runs, so a failed write's
+rollback makes the next queued write persist the rolled-back value - the newer
+change is silently dropped on disk. CTO re-rules Phase 114 scope to allow this
+main-process persistence-correctness fix (no settings field, no new IPC). Owner
+backend-dev; fix tracked as TFL-1263 (snapshot the argument at call time).
+
+## Classes that held (TFL-1254 diff-pass)
+
+- **`onRestore`/`onError` identity churn (attack 2) — HOLDS. No missing event.**
+  The hook's effect deps are `[onRestore, onError]`
+  (`useSettingsWriteRollback.ts:37`). `onSettingsWriteError` depends on `pushToast`
+  (`useCallback`, `[]`, `App.tsx:1885-1887`), `onSettingsRestore` depends on
+  `applySettings` (`App.tsx:1901-1905`), and `applySettings` depends only on
+  `setTheme` (`App.tsx:1471-1506`), which is `useCallback(..., [])`
+  (`useAnimations.ts:523, 597`). All three identities are stable across renders, so
+  the `settings:writeError` listener is not torn down/re-registered mid-flight and
+  cannot miss an event. This also means the sibling `settings.changed` effect's
+  `applySettings` dep (`App.tsx:1600`) does not re-run `runBoot`.
+- **Failed THEME write revert (attack 4) — HOLDS for the normal path.**
+  `onToggleTheme` applies the theme optimistically (`App.tsx:1799-1814`); on rollback
+  `applySettings` sees `<html data-theme>` differs and calls `setTheme(restored)`
+  (`App.tsx:1503-1505`), which is a single, genuine revert crossfade — not the
+  DEF-199 double-apply (that guard is on an *identical* theme and `lastAppliedRef`
+  is the failed theme, so the revert is legitimate). Residual, not filed: on the
+  `view-transition` strategy `applyTheme` writes `data-theme` inside the async
+  update callback (`useAnimations.ts:567-568`, `state/theme.ts:8`), so a restore
+  landing in the one-frame window before that callback runs would read the old
+  attribute, skip the revert, and then let the pending transition paint the failed
+  theme — a `settings` vs `<html>` desync. The writeError+load round-trip is far
+  longer than that window, so I could not justify filing it; noted for the
+  maintainer.
+- **No double toast / double restore on repeated failures — HOLDS.** Each
+  `writeError` yields exactly one toast and one `loadSettings()`; repeated failures
+  re-apply the same disk snapshot idempotently.
+
+Method note: build mutex held by qa (TFL-1255) at review time and the task forbids
+`build`/e2e, so this pass is source-review plus one plain-Node probe of the shipped
+pure filter (`shouldApplyEcho`), no vitest/build/e2e. Baseline: not run (mutex).
+
+## ADV-249: A foreign annotation whose /T or /M is a hex string loses its author and modified date on the next save
+
+- Session: diff-pass (unassigned heartbeat; Phase 116 engine change `annotations.ts` /T + /M, uncommitted, parent TFL-1228)
+- Suggested severity: MEDIUM (silent loss of existing metadata in the user's file on save)
+
+What I did: attacked the uncommitted Phase 116 change (`annotations.ts:796-799`
+read via `parsePdfString`, `:1007-1012` `hasAuthor`/`hasModifiedAt`, `:1710-1718`
+write via `serializeAnnotation`) with a PDF whose annotation `/T` (author) and
+`/M` (modified date) are encoded as `PDFHexString` (UTF-16BE). That is what a
+foreign viewer writes for any non-Latin1 author (Acrobat/Preview/Chrome all emit
+hex for CJK, Cyrillic, Greek, Arabic). Probe:
+`node test-fixtures/tfl116-adversary/probe-ann-metadata.mjs`; specimen
+`test-fixtures/tfl116-adversary/foreign-hex-author.pdf`.
+
+Expected (per the chunk's own claim "engine read + preserve" and the adjacent
+`/NM` reader that deliberately accepts `PDFHexString` at `annotations.ts:154-170`):
+the hex `/T` and `/M` decode like any other text string and are re-serialized.
+
+Actual: `parsePdfString` (`annotations.ts:796-799`) accepts ONLY
+`val instanceof PDFString` and returns `undefined` for a `PDFHexString` (they are
+not related classes in pdf-lib). So `hasAuthor`/`hasModifiedAt` are both false,
+the `AnnModel` carries no author/date, and `serializeAnnotation` omits both
+entries. Because every save rebuilds modeled annotations from the `AnnModel`
+(`serializeAnnotations` strips the source dicts, `annotations.ts:1956-1958`, and
+`serializeAnnotation` pushes a fresh `dictEntries` list, `:1674-1718`) the
+original `/T` and `/M` are gone from the output bytes. Probe output:
+
+```
+=== A: foreign /T and /M encoded as PDFHexString (UTF-16BE) ===
+  on disk instanceof PDFString : false
+  on disk instanceof PDFHexString: true
+  disk raw decodeText           : José Author
+  product parsePdfString(/T)    : undefined
+  product parsePdfString(/M)    : undefined
+  -> hasAuthor = false
+=== D: end-to-end metadata loss for a hex-encoded foreign /T ===
+  parsed author: undefined
+  after save+reload: has /T ? false
+  after save+reload: has /M ? false
+  -> original CJK author + date LOST on save
+```
+
+`parseAnnotationsFromDoc` (`annotations.ts:1081-1094`) admits every modeled
+subtype annotation regardless of origin, and the main save path re-serializes them
+(`engine.ts:7213` and `:7386`), so any real-world PDF carrying a comment authored
+in a non-Latin script loses that author/date the first time it is saved from
+TFlex. The round-trip is not content-corrupting but it is silent, irreversible
+metadata loss in the user's only copy - the class the doctrine ranks highest.
+
+Reachability: open any PDF whose annotation `/T`/`/M` are hex strings (UTF-16BE)
+and save. The sibling `/NM` reader already handles exactly this encoding, so the
+new `/T`/`/M` reader is an inconsistency in the same file, not a new capability.
+
+Test gap: the dev's `test/unit/main/phase116_annMetadata.test.ts` builds the
+source with `PDFString.of(...)` only (`:29-30`), so it never exercises the
+`PDFHexString` branch that real documents use.
+
+Fix direction (for the CTO to route; not fixed here): decode `/T` and `/M` with a
+`PDFString | PDFHexString` aware helper (as `parseAnnotationNameId` already does)
+and re-emit non-Latin1 text with `PDFHexString.fromText`.
+
+Evidence: `test-fixtures/tfl116-adversary/probe-ann-metadata.mjs`,
+`test-fixtures/tfl116-adversary/probe-ann-metadata.log`,
+`test-fixtures/tfl116-adversary/foreign-hex-author.pdf`.
+
+Disposition: PENDING.
+
+## ADV-250: A non-Latin1 annotation author is written into /T as mojibake because the write path uses PDFString.of
+
+- Session: diff-pass (unassigned heartbeat; Phase 116 engine change `annotations.ts` /T + /M, uncommitted, parent TFL-1228)
+- Suggested severity: LOW (latent - the write line is in the diff, but no renderer currently sets `AnnModel.author`; fix or land the setter with the encoder)
+
+What I did: exercised the write half of the same change,
+`annotations.ts:1713-1714` `PDFString.of(ann.author)`, against non-Latin1 authors
+in the shipped `@cantoo/pdf-lib` (probe above, sections B and C).
+
+Expected: an author name is stored as readable text and decodes back to the
+same string on reload.
+
+Actual: `PDFString.of` silently encodes only Latin1/PDFDocEncoding; for
+`'李雷'` it produces a literal whose `decodeText()` is `"N÷"` (no throw, no
+error), and that is exactly what lands in `/T` after save+reload:
+
+```
+  of("李雷") -> decodeText="N÷" ok=false
+  CJK reloaded /T decodeText: "N÷"
+```
+
+So once any surface lets the user set an author (the Thread Stream chunks that
+follow), a CJK/Cyrillic/Greek name will be persisted as corrupt bytes. `'José'`
+(Latin1) round-trips fine, so the dev's ASCII-only test passes while the defect
+stays hidden. The correct encoding for non-Latin1 text is
+`PDFHexString.fromText(ann.author)` (the read path must then accept it too - see
+ADV-249; the two should be fixed together).
+
+Evidence: `test-fixtures/tfl116-adversary/probe-ann-metadata.mjs` (sections B/C),
+`test-fixtures/tfl116-adversary/probe-ann-metadata.log`.
+
+Disposition: PENDING.
+
+## Classes that held (Phase 116 /T + /M diff-pass)
+
+- **Absent / whitespace-only values stay absent — HOLDS.** `hasAuthor` /
+  `hasModifiedAt` trim before deciding (`annotations.ts:1009-1010`) and the write
+  side re-checks `trim().length > 0` (`:1713, :1716`), so neither a missing entry
+  nor a whitespace-only one leaks a `''` placeholder into the dict or the model.
+- **Latin1 literal round-trip — HOLDS.** A `PDFString` `/T` (what TFlex itself
+  writes, and what most ASCII-authored PDFs carry) parses and re-serializes
+  byte-exact; probe section C shows `'José'` reloads as `'José'`.
+- **Non-string `/T` (name / number / array) is dropped, not thrown — HOLDS.**
+  `parsePdfString` returns `undefined` for anything that is not a PDF string, so a
+  hostile dict entry cannot crash the open or save path.
+- **Phase 115 `FormField.required` / `/TU` read — HOLDS.** `decodeTextObject`
+  (`forms.ts:495-504`) is duck-typed on `.decodeText()` and therefore accepts
+  `PDFHexString` as well as `PDFString`, so a hex `/TU` tooltip is not dropped;
+  the Required bit test (`forms.ts:678`) mirrors the existing ReadOnly pattern.
+  Residual, not filed: `tooltip !== ''` (`forms.ts:681`) does not trim, so a
+  whitespace-only `/TU` surfaces as a blank accessible name (`"   "`); advice, not
+  a defect.
+
+Method note: unassigned idle heartbeat with no ready adversary issue (both open
+assignments TFL-1248 and TFL-1259 are dependency-blocked via their `heartbeat-context`
+`blockedBy` chains). Build mutex was absent and not taken; this is source review
+plus one plain-Node probe against the shipped `@cantoo/pdf-lib` - no vitest, build
+or e2e. Findings left PENDING for CTO triage; fixture and probe left uncommitted
+for git-agent.
+
+
+
+## ADV-251: A mid-dispatch Remove silently skips the next queued file (live-array mutation across the openPdf await)
+
+- Session: diff-pass (unassigned heartbeat; Phase 118 intake model chunk B `src/renderer/intake/model.ts`, uncommitted, TFL-1248 / parent TFL-1230)
+- Suggested severity: MEDIUM
+
+What I did: drove the shipped `createIntakeModel().dispatch` with three ready PDFs
+(`a`, `b`, `c`) and removed the row currently being opened - the realistic shape,
+because `IntakeTray` keeps every Remove button enabled while a multi-PDF open runs
+(the tray has no busy state). Plain-Node probe (Node type-stripping), no
+vitest/build/e2e: `node test-fixtures/tfl1248-adversary/probe-intake-dispatch.mjs`.
+
+Expected: removing a row affects only that row; the remaining queued files still
+open, in order (success criterion 3/7 and the task's "no silent ... drop of extra
+files").
+
+Actual: `dispatch` iterates the LIVE queue with `for (const item of list)`
+(`model.ts:223`) and awaits `openPdf` inside the loop. A `remove()` during that
+await splices the array, so the array iterator's next index lands past the
+following unvisited item: `b.pdf` is never visited - not opened, not reported as
+skipped - and stays `ready` with no error. It silently disappears from the
+dispatch pass. Probe output:
+```
+=== D: remove while a dispatch is in flight ===
+  opened: ["C:\\q\\a.pdf","C:\\q\\c.pdf"]
+  skipped ids: []
+  b.pdf (id=id2) was NOT removed by the user - visited by dispatch? false
+  remaining queue: [["id2","ready"],["id3","done"]]
+```
+The same hazard applies to `reorder` during the await (order shifts under the
+iterator). `items()` returns a copy, but `dispatch` does not use it. Fix direction
+(route via CTO; not fixed here): iterate a snapshot (`list.slice()`) and/or guard
+`dispatch` with an in-flight flag surfaced to the tray so Remove/reorder are
+disabled while a dispatch runs.
+
+Evidence: `test-fixtures/tfl1248-adversary/probe-intake-dispatch.mjs`,
+`test-fixtures/tfl1248-adversary/probe-intake-dispatch.log` (section D).
+
+Disposition: PENDING
+
+## ADV-252: Two dispatches during one slow PDF open build the images PDF twice
+
+- Session: diff-pass (unassigned heartbeat; Phase 118 intake model chunk B `src/renderer/intake/model.ts`, uncommitted, TFL-1248 / parent TFL-1230)
+- Suggested severity: MEDIUM
+
+What I did: queued two images then a PDF (`[one.png, two.png, doc.pdf]`), started
+`dispatch`, and - while the PDF `openPdf` was still pending - started a second
+`dispatch` (a double trigger of "open all", the "repeat-storm / run during another
+operation" attack class). Probe section E.
+
+Expected: `createFromImages` runs exactly once per image collection; a second
+dispatch while one is in flight either no-ops or reports busy.
+
+Actual: image items are only moved to `converting` AFTER the PDF loop
+(`model.ts:246-247`), so they stay `ready` throughout the `openPdf` await. The
+second dispatch collects the same still-`ready` images and calls
+`createFromImages`, and when the first dispatch resumes its own already-collected
+`imageItems` call it again - two PDF builds for one image set:
+```
+=== E: repeat-storm - two dispatches while one PDF open is pending ===
+  openPdf calls=1 (expect 1)
+  createFromImages calls=2 (expect 1 - a value of 2 is a duplicate PDF build)
+```
+`dispatch` has no in-flight guard and exposes no busy state for the host to
+disable the action. PDF opens are protected by the `converting` guard; the image
+batch is not. Fix direction (route via CTO): set each image item to `converting`
+at collection time and make `dispatch` reject or no-op a concurrent call.
+
+Evidence: `test-fixtures/tfl1248-adversary/probe-intake-dispatch.mjs`,
+`test-fixtures/tfl1248-adversary/probe-intake-dispatch.log` (section E).
+
+Disposition: PENDING
+
+## Classes that held (Phase 118 intake model chunk B)
+
+- **No extension-only trust / no bogus "Ready" - HOLDS.** `add` always yields
+  `validating` + `kind:"unknown"` (`model.ts:169-175`); the kind and readiness come
+  only from the caller's `classify` detection result. Probe section A.
+- **Duplicate basenames disambiguated, order preserved - HOLDS.** `uniqueName`
+  yields `report.pdf` then `report (2).pdf`; insertion order is the queue order
+  (`model.ts:123-133, 166-178`). Probe section B.
+- **Synthetic / pathless `File` - HOLDS (no crash).** `new File([], "")` adds,
+  classifies and removes without throwing; the row name renders empty (cosmetic
+  only, not filed). Probe section C.
+- **Remove is queue-only - HOLDS.** `remove` splices and returns; the model does
+  no IO and holds no path to a filesystem delete (`model.ts:197-201`).
+- **No parallel store / no IO / no network - HOLDS.** `model.ts` imports nothing;
+  `IntakeTray.tsx` imports only icons, `IconButton` and `unsupportedFileMessage`;
+  there is no fetch / IPC / print / mail call in the module.
+
+Method note: unassigned heartbeat. TFL-1248 is dependency-blocked (heartbeat-context
+`blockedBy` = TFL-1247, whose terminal blocker is TFL-1242; neither is `done`) and a
+fresh build mutex (`owner` qa, task TFL-1273) was held, so no vitest / build / e2e was
+run. This is source review plus one plain-Node probe against the shipped
+`src/renderer/intake/model.ts`. The running-app entry points this task names (OS drop
+routing, clipboard intake, Home, Create-from-images) do not exist on disk yet - chunks
+C-F are unwritten and no app file imports `src/renderer/intake/` - so those attack
+classes were NOT exercisable. Findings left PENDING; probe and fixture left uncommitted
+for git-agent.
+
+## ADV-253: Restore defaults silently truncates the recent-files history it promises to keep
+
+- Session: phase-114 gate
+- Suggested severity: MEDIUM
+
+What I did: attacked the Phase 114 (chunk H) "restore-defaults scope (no
+document/history/asset loss)" claim end-to-end. Seeded an isolated profile with
+`recentsCap: 20` and 15 real recent-files entries, launched the app through the
+canonical `e2e/lib/launch.cjs` helper, opened the Settings Studio with the real
+Ctrl+, accelerator, clicked Restore defaults, and confirmed the shared dialog. Then
+read the on-disk `settings.json` of that profile. Fixture/seed and steps:
+`e2e/tfl1280_adversary_restore.spec.cjs` (test 1). Support probe driving the REAL
+`SettingsService` + REAL `restoreDefaultSettings`: `test-fixtures/tfl1280-adversary/probe-restore-history.mjs`.
+
+Expected: the confirm dialog states, verbatim, "Restores the appearance, tab,
+recent-files and import settings to their defaults. Your documents, recent-files
+history, window layout and saved signatures are kept." (`RESTORE_DEFAULTS_SCOPE`,
+`PreferencesDialog.tsx:137-138`), and phase-114.md criterion 9: Restore defaults
+"restores settings only, never documents, history or user assets". The 15 history
+entries must survive.
+
+Actual: the replace-style restart (`SettingsRow`) — `onRestoreDefaults` sends the whole
+object (`App.tsx:13471-13476`), `restoreDefaultSettings` lowers `recentsCap` to 10 while
+keeping `recentFiles`, and the main-process `normalizeSettings` then runs
+`normalizeRecentFiles(rawObj.recentFiles, recentsCap)` (`src/main/services/settings.ts:1182,1190`)
+which slices the history to the new cap (`settings.ts:427-428`). Five entries are
+permanently dropped from disk. Live log (`e2e-restore-live.log`):
+
+```
+[tfl1280] before: cap = 20 history = 15
+[tfl1280] after : cap = 10 history = 10
+```
+
+The probe against the real service reproduces it headlessly: 15 on disk -> 10 after
+`restoreDefaultSettings` + `SettingsService.save()`. The dev unit test
+(`test/unit/renderer/phase114_importRestore.test.tsx:262-315`) only asserts the pure
+result keeps `recentFiles` and seeds a single entry, and the phase e2e E4 also seeds a
+single entry, so neither exercises the backend truncation. This contradicts the scope
+the user just accepted; the loss is silent (no toast, no notice), and the affected list
+is a persisted user asset the criterion names explicitly.
+
+Evidence: `e2e/tfl1280_adversary_restore.spec.cjs` (test 1, failing),
+`test-fixtures/tfl1280-adversary/e2e-restore-live.log`,
+`test-fixtures/tfl1280-adversary/probe-restore-history.mjs`,
+`test-fixtures/tfl1280-adversary/probe-restore-history.log`.
+
+Disposition: ACCEPTED -> DEF-644 (MEDIUM; filed by qa in the Phase 114 close pass - renumber if taken). CTO triage 2026-10-08 (TFL-1219):
+confirmed - `restoreDefaultSettings` lowers `recentsCap` to 10 and the backend
+`normalizeSettings` slices `recentFiles` to the cap on save
+(`src/main/services/settings.ts:1182-1190,427-428`), so history is lossy although the
+scope text promises it is kept. This is a CTO brief error: chunk E listed
+`recentsCap` among the reset fields. Fix: stop resetting `recentsCap` (preserve it
+and `recentFiles`) and reword the scope text truthfully. Owner frontend-dev; fix
+tracked as TFL-1282.
+
+## ADV-254: A double failure on the Restore-defaults path keeps the unpersisted reset in the UI (DEF-638 re-entered)
+
+- Session: phase-114 gate
+- Suggested severity: LOW
+
+What I did: attacked the chunk-H "failure rollback honesty" claim on the Restore-defaults
+action, using the exact DEF-638 precondition (a write fails AND the rollback re-read
+fails). Seeded a profile with `theme: dark`, launched, opened the Studio, and replaced
+the profile's `settings.json` with a directory so the queued write's `rename` fails and
+the rollback `loadSettings()` read fails with `EISDIR`/`ok:false`. Then clicked Restore
+defaults and confirmed. Repro: `e2e/tfl1280_adversary_restore.spec.cjs` (test 3).
+
+Expected: per the accepted DEF-638/ADV-247 contract — "the UI still drops the optimistic
+value instead of keeping one that never persisted" — the renderer must fall back to the
+last confirmed snapshot when the re-read fails (`useSettingsWriteRollback.ts:53-58`), so
+the theme should revert to the boot theme `dark`.
+
+Actual: the UI keeps `frosted` — the Restore-defaults value that never persisted. Live log:
+
+```
+[tfl1280-rf] boot theme = dark
+[tfl1280-rf] theme after double failure = frosted (last confirmed = dark)
+```
+
+Root cause: `onRestoreDefaults` calls `applySettings(reset)` BEFORE the write is confirmed
+(`App.tsx:13474`), and `applySettings` unconditionally sets
+`lastConfirmedRef.current = s` (`App.tsx:1528`). The reset therefore becomes the "last
+confirmed" snapshot the fallback restores. Every other writer (theme/cap/tab/enable) sets
+`settings` optimistically without calling `applySettings`, so `lastConfirmedRef` only ever
+held genuinely persisted values before this call site. Precondition is the same narrow
+double failure DEF-638 accepted as LOW, hence LOW.
+
+Evidence: `e2e/tfl1280_adversary_restore.spec.cjs` (test 3, failing),
+`test-fixtures/tfl1280-adversary/e2e-restore-live.log`; source trace
+`App.tsx:1528,1968-1982,13471-13476`, `useSettingsWriteRollback.ts:53-58`.
+
+Disposition: ACCEPTED -> DEF-645 (LOW; filed by qa in the Phase 114 close pass - renumber if taken). CTO triage 2026-10-08 (TFL-1219):
+confirmed - `onRestoreDefaults` calls `applySettings(reset)` optimistically and
+`applySettings` sets `lastConfirmedRef.current`, so on the DEF-638 double failure the
+unpersisted reset becomes the fallback snapshot. Fix: the restore-defaults optimistic
+path must not mark the value confirmed; only an applied echo / `onSettingsRestore`
+updates `lastConfirmedRef`. Owner frontend-dev; fix tracked as TFL-1282.
+
+## Design critique: Phase 114 Settings Studio (TFL-1280)
+
+Scope: the migrated renderer surfaces only (`PreferencesDialog.tsx`,
+`SettingsStudio.tsx`, the `.settings-*` styles). User job: adjust app preferences in one
+place and understand when each takes effect. Success: every setting lands, with its timing
+and persistence state visible. Reviewed by source (live screenshots not captured this
+pass; the app launches were driven through the canonical helper).
+
+### Should-fix (before broader rollout)
+- **States / feedback visibility:** the persistence-status line is the LAST child of the
+  scrolling groups column (`.settings-studio-body { overflow-y: auto }`), so on the long
+  General or Import panels the honest failure sentence and "All changes saved." scroll
+  below the fold. **Try:** pin the status line to the sheet footer/body edge so it stays
+  visible while the panel scrolls.
+
+### Nice-to-fix (when there's room)
+- **Copy:** the Import group shows the timing twice — the group
+  `description="Applies to the next import."` and a closing `SettingsSupport` repeating
+  "…Applies to the next import." **Try:** keep one instance, prefer the group description.
+- **Edge cases:** the recents-cap input commits on blur/Enter and relies on the reducer to
+  clamp; typing an out-of-range value that clamps to the CURRENT value (e.g. "999" while the
+  cap is 50) writes nothing and leaves the raw typed text in the box, so the displayed value
+  diverges from the stored one until the next cap change. **Try:** on commit, always
+  reflect the clamped value back into the field even when the reduce is a no-op.
+
+### Strengths to keep
+- The nav is a real `role="tablist"` with roving tabindex, arrow/Home/End keys and a
+  visible focus ring; Escape and focus return to `[data-app-menu]` are wired.
+- The forced-colors block remaps the selected nav item and focus to system `Highlight`
+  roles instead of ornamental fills.
+- Timing help is honest per row ("Applies immediately; … next launch", "… next import")
+  and there is no invented Apply/Cancel footer.
+
+## Classes that held (Phase 114 Settings Studio gate pass)
+
+- **Failure rollback honesty, normal path - HOLDS (live).** With `settings.json` set
+  read-only, a Studio theme change flipped optimistically and then reverted to the boot
+  theme, `[data-prefs-persist-status]` read "Settings could not be saved: EPERM: … Your
+  previous value was restored.", and disk kept the prior theme. Repro test 2 of
+  `e2e/tfl1280_adversary_restore.spec.cjs` (passes).
+- **ADV-246/247/248 fixes present - HOLDS (source + unit).** `noteSettingsRestore`
+  resets the write seq on restore (`useSettingsWriteRollback.ts:37-44`, used at
+  `App.tsx:1973`); the hook's `getLastConfirmed` fallback exists (`:53-58`); and
+  `SettingsService.save` snapshots its argument at call time
+  (`src/main/services/settings.ts:1578-1588`), with `test/unit/main/settingsQueueFailure.test.ts`
+  pinning it. No new regression found in those three.
+- **Escape stacking - HOLDS (source).** The restore ConfirmDialog opens after the sheet and
+  owns the tail of the DEF-525 open-shell stack (`DialogShell.tsx:120-179`), so Escape
+  closes the confirm, not the whole Studio.
+- **One surface, no second store - HOLDS (source).** Every `data-prefs-*` control still
+  routes through the existing `trackAndSave`/reducer; no parallel preferences reducer or
+  per-call-site theme store was introduced.
+
+Method note: Phase 114 chunk H. Build mutex was taken and released by the adversary; two
+live Electron runs through `e2e/lib/launch.cjs`, one plain-Node probe (esbuild-bundled to
+handle the service's TS parameter properties), no product source/test/ledger edits. The
+app's dev Electron launch requires `ELECTRON_RUN_AS_NODE` to be unset in this sandbox
+(inherited by `launch.cjs`); that is an environment condition, not a product defect.
+Findings left PENDING for CTO triage; spec, probe and log left uncommitted for git-agent.

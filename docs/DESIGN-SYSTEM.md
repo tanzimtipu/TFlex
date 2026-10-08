@@ -714,3 +714,45 @@ root, `ScopedHeader` at the preferred height, and the Inspector's section via
 Pinned by `test/unit/renderer/panelPrimitives.test.tsx`.
 
 
+## 20. Phase 114 - Settings Studio primitives (chunk B, landed)
+
+Phase 114 replaces the Preferences and Themes surface with one Settings Studio.
+Chunk B lands the foundation only: the shared primitives and their scoped CSS,
+WITHOUT migrating the shipped `PreferencesDialog` (chunks C/D/E do that). No
+existing control, setting, handler or `data-prefs-*` hook changes.
+
+### 20.1 The shared primitives
+
+`src/renderer/components/SettingsStudio.tsx` exports the vocabulary the Studio
+builds from, all rendered through the shipped `Button` / `Icon` / `TfResize`:
+`SettingsStudio` (the navigator + scrolling body layout, with an optional
+`resizeAxis` height frame), `SettingsNav` (vertical `role="tablist"` with a
+roving tabindex and Arrow/Home/End keys; each item is a `Button` carrying
+`data-settings-nav-item` and `aria-controls={settingsPanelId(id)}`),
+`SettingsSection` (a `role="group"` labelled by its title - the settings group),
+`SettingsRow` (label + support text in the flexing text track, the native control
+in the bounded track, an optional current value) and `SettingsSupport` (the
+supporting-text line). The stable id helpers `settingsNavId` / `settingsPanelId`
+keep the navigator tab and its panel wired. Each navigator section may override its
+item id (`navId`) and `aria-controls` (`panelId`) and carry extra legacy `data-*`
+hooks (`navDataAttrs`); `SettingsSection` accepts `dataAttrs`. That pass-through is
+what chunks C/D/E use to keep the shipped `data-prefs-*` hooks (`data-prefs-category`
+on each nav button, `data-prefs-default-pdf-section` / `data-prefs-convert-section`
+on the group sections) while migrating.
+
+### 20.2 Scoped Studio tokens
+
+A `.settings-*` block at the END of `styles.css` carries the category geometry
+(`Visual overhaul/Preferences and Themes/Specifications/design-decisions.md`):
+a 160-180px navigator (176px), 24px body padding (`--sp-5`), 20px group gaps
+(`calc(var(--sp-4) + var(--sp-1))`), the shared 9px control radius
+(`--btn-radius`), the 36px row-height floor (`--control-height`) and the 4px
+grid. Colour resolves through the semantic `--bg-*` / `--fg-*` / `--border*` /
+`--accent-selected` tokens only. The scope re-honours `prefers-reduced-motion`
+(the global token catch-alls), a 44px `(pointer: coarse)` target, a
+`(max-width: 720px)` stacked navigator and `forced-colors: active` (Highlight /
+CanvasText).
+
+Pinned by `test/unit/renderer/phase114_settingsStudio.test.tsx`.
+
+

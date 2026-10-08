@@ -106,6 +106,14 @@
   --sp-5: 24px;
   --sp-6: 32px;
 
+  /* Phase 119 - Adaptive Shell layout tokens */
+  --tf-fine-target: 32px;
+  --tf-coarse-target: 44px;
+  --tf-rail-min-tab: 148px;
+  --tf-break-narrow: 900px;
+  --tf-break-compact: 720px;
+  --tf-break-tight: 520px;
+
   /* Accent — the one brand violet (Phase 96). The base accent is #7C3AED:
    * hover lightens to #8B5CF6, press deepens to #6D28D9. Every soft wash
    * below derives from the same 124/58/237 triple so the whole state ladder
@@ -8190,6 +8198,45 @@ rect.ann-highlight.ann-preview {
   pointer-events: auto;
 }
 
+/* Phase 117 (chunk B) — the separated More control. The primary row is
+ * Confirm / Apply + Cancel only; secondary and destructive verbs live
+ * behind this ONE control, which opens the established menu surface
+ * (`.content-action-more-menu`, animated by `.anim-menu-pop`). */
+.content-action-more {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+}
+.content-action-more-sep {
+  width: 1px;
+  align-self: stretch;
+  margin: 0 4px;
+  background: var(--border);
+}
+.content-action-more-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.content-action-more-menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  display: flex;
+  flex-direction: column;
+  min-width: 132px;
+  padding: 4px;
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-2);
+  box-shadow: var(--shadow-popover);
+  z-index: 13;
+}
+.content-action-more-menu .content-action-btn {
+  justify-content: flex-start;
+  width: 100%;
+}
+
 /* DEF-161 (feature) — the color row inside the committed textbox /
  * callout toolbox: a labelled, wrapping swatch strip between the
  * textarea and the action bar. It reuses the action bar's raised
@@ -8333,6 +8380,91 @@ rect.ann-highlight.ann-preview {
 .content-resize-handle-ne { right: -5px; top: -5px; cursor: nesw-resize; }
 .content-resize-handle-sw { left: -5px; bottom: -5px; cursor: nesw-resize; }
 .content-resize-handle-se { right: -5px; bottom: -5px; cursor: nwse-resize; }
+
+/* ---------------------------------------------------------------------------
+ * Phase 117 (chunk B) — the ONE shared selection chrome.
+ *
+ * A 1 px boundary + four 8x8 px visual corner handles. The boundary
+ * colour is the interactive violet token `--btn-selected-border` in both
+ * themes (light #7050D6 / dark #B9A4FF) — never a new hex, never a
+ * second violet. The INVISIBLE hit targets are the authoritative
+ * geometry tokens (32 px fine pointer / 44 px coarse pointer), which
+ * supersede the retired "approximately 24 px" wording.
+ *
+ * hover / focus / selected / draft are SEPARATE, visually distinct
+ * states: hover is a neutral hairline (deliberately NOT the violet
+ * boundary), selected is the violet boundary, focus adds a ring OUTSIDE
+ * the boundary, draft is dashed. Never a full-width glow and never an
+ * opaque fill over the content.
+ * ------------------------------------------------------------------------- */
+
+.selection-chrome {
+  position: absolute;
+  box-sizing: border-box;
+  border: 1px solid transparent;
+  border-radius: var(--radius-1);
+  pointer-events: none;
+  z-index: 6;
+  transition: border-color var(--motion-normal) var(--ease-out), outline-color var(--motion-normal) var(--ease-out);
+}
+
+/* hover — subtle NEUTRAL outline only; never violet-boundary-equal. */
+.selection-chrome.is-hover {
+  border-color: var(--border-strong);
+}
+
+/* selected — the 1 px violet boundary. */
+.selection-chrome.is-selected {
+  border-color: var(--btn-selected-border);
+}
+
+/* focus — the violet boundary plus a distinct ring outside it, so
+ * keyboard focus reads separately from hover and from selection. */
+.selection-chrome.is-focus {
+  border-color: var(--btn-selected-border);
+  outline: 2px solid var(--btn-selected-border);
+  outline-offset: 2px;
+}
+
+/* draft — an in-progress, not-yet-committed region. */
+.selection-chrome.is-draft {
+  border-style: dashed;
+  border-color: var(--btn-selected-border);
+}
+
+/* The 8x8 visual handles sit exactly on the rect corners via the
+ * existing -5px corner-offset convention (mirrors `.content-resize-
+ * handle-*` above). The glyph is 8x8; the hit target is a centred
+ * pseudo-element sized by the pointer class. */
+.selection-handle {
+  position: absolute;
+  width: 8px;
+  height: 8px;
+  background: var(--bg-raised);
+  border: 1px solid var(--btn-selected-border);
+  border-radius: 2px;
+  pointer-events: auto;
+  z-index: 7;
+}
+.selection-handle::before {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 32px; /* geometry.finePointerTarget */
+  height: 32px;
+  transform: translate(-50%, -50%);
+}
+@media (pointer: coarse) {
+  .selection-handle::before {
+    width: 44px; /* geometry.coarsePointerTarget */
+    height: 44px;
+  }
+}
+.selection-handle-nw { left: -5px; top: -5px; cursor: nwse-resize; }
+.selection-handle-ne { right: -5px; top: -5px; cursor: nesw-resize; }
+.selection-handle-sw { left: -5px; bottom: -5px; cursor: nesw-resize; }
+.selection-handle-se { right: -5px; bottom: -5px; cursor: nwse-resize; }
 
 /* ---------------------------------------------------------------------------
  * Shared floating-toolbox action button — text-only labels (Cancel /
@@ -8962,6 +9094,147 @@ rect.ann-highlight.ann-preview {
 }
 
 /* ---------------------------------------------------------------------------
+ * Phase 116 (TFL-1228 chunk C) - Thread Stream
+ *
+ * The framework-native annotation stream: a kind filter bar, one hairline
+ * row per annotation, and the two empty states. Type roles follow the shared
+ * Quiet Precision scale (body 14 / author+action 13 / page+type+time 12); the
+ * 4px grid and 9px control radius mirror the panel tokens. Boundaries are
+ * hairlines, never floating shadows; every colour resolves an existing
+ * semantic var so light / dark / frosted track the rest of the app. Emphasis
+ * transitions ride the 140ms --motion-duration-panel token.
+ * ------------------------------------------------------------------------- */
+
+.thread-stream-row,
+.ann-filter-bar,
+.ann-empty {
+  /* Phase 116 hairline boundary: a touch cooler than --border-subtle so a
+   * dense stream reads as ruled rows rather than cards. */
+  --thread-hairline: #e1e4eb;
+}
+
+:root[data-theme="dark"] .thread-stream-row,
+:root[data-theme="dark"] .ann-filter-bar,
+:root[data-theme="dark"] .ann-empty {
+  --thread-hairline: #3b414e;
+}
+
+.thread-stream-row {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-1);
+  padding: var(--sp-2) var(--sp-1);
+  border-bottom: 1px solid var(--thread-hairline);
+  background: transparent;
+  list-style: none;
+  transition:
+    background var(--motion-duration-panel) var(--ease-out),
+    border-color var(--motion-duration-panel) var(--ease-out);
+}
+
+.thread-stream-row:hover { background: var(--bg-hover); }
+
+.thread-stream-row[data-ann-selected="true"] {
+  background: var(--accent-soft, var(--bg-hover));
+  border-bottom-color: var(--accent);
+}
+
+.thread-stream-row-meta {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: var(--sp-1);
+  min-width: 0;
+  flex: 1 1 auto;
+  font-size: var(--type-body-size);
+  color: var(--fg-muted);
+}
+
+.thread-stream-row-meta [data-ann-icon] {
+  display: inline-flex;
+  align-self: center;
+  color: var(--fg-faint);
+}
+
+.thread-stream-row-meta [data-ann-author] {
+  font-size: var(--type-row-size);
+  font-weight: var(--type-row-weight);
+  color: var(--fg-strong);
+}
+
+.thread-stream-row-meta [data-ann-kind],
+.thread-stream-row-meta [data-ann-page],
+.thread-stream-row-meta [data-ann-time] {
+  font-size: var(--type-helper-size);
+  color: var(--fg-muted);
+}
+
+.thread-stream-row [data-ann-comment-count] {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border: 1px solid var(--thread-hairline);
+  border-radius: var(--radius-pill);
+  color: var(--fg-muted);
+  font-size: var(--type-helper-size);
+  font-variant-numeric: tabular-nums;
+}
+
+.ann-filter-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-1);
+  padding: var(--sp-2) var(--sp-1);
+  border-bottom: 1px solid var(--thread-hairline);
+}
+
+.ann-filter-button {
+  display: inline-flex;
+  align-items: center;
+  height: 26px;
+  padding: 0 var(--sp-2);
+  border: 1px solid var(--thread-hairline);
+  border-radius: 9px;
+  background: transparent;
+  color: var(--fg-muted);
+  font-size: var(--type-row-size);
+  font-weight: var(--type-row-weight);
+  cursor: pointer;
+  transition:
+    background var(--motion-duration-panel) var(--ease-out),
+    border-color var(--motion-duration-panel) var(--ease-out),
+    color var(--motion-duration-panel) var(--ease-out);
+}
+
+.ann-filter-button:hover {
+  background: var(--bg-hover);
+  color: var(--fg-strong);
+}
+
+.ann-filter-button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.ann-filter-button[aria-pressed="true"] {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: var(--accent-soft, var(--bg-hover));
+}
+
+.ann-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--sp-2);
+  padding: var(--sp-4) var(--sp-3);
+}
+
+/* ---------------------------------------------------------------------------
  * Phase 4 - Forms editor layer
  * ------------------------------------------------------------------------- */
 
@@ -9386,6 +9659,151 @@ rect.ann-highlight.ann-preview {
 }
 
 .tool-btn-form { color: var(--accent); }
+
+/* ---------------------------------------------------------------------------
+ * Phase 115 - Guided Fill field primitives
+ *
+ * The shared primitives in src/renderer/forms/GuidedFillPrimitives.tsx: one
+ * field row, a required summary and the pure validator. Geometry follows the
+ * Guided Fill spec: 13px labels, 14px values, 12px guidance, 38px control
+ * heights, a 9px control radius and a 12px floating-surface radius. Every
+ * colour is a semantic token, so light/dark ride the existing :root[data-theme]
+ * scopes with no per-theme literal. Attached surfaces use a hairline boundary,
+ * never a drop shadow.
+ * ------------------------------------------------------------------------- */
+
+.guided-fill-row {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-standard);
+  padding: var(--space-control) 0;
+}
+
+.guided-fill-row-head {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-small);
+}
+
+.guided-fill-label {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 3px;
+  font-size: var(--type-row-size);
+  line-height: var(--type-row-line);
+  font-weight: var(--type-row-weight);
+  color: var(--fg-strong);
+}
+
+.guided-fill-required {
+  color: var(--error);
+  font-size: var(--type-row-size);
+  line-height: var(--type-row-line);
+}
+
+.guided-fill-control {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-small);
+}
+
+.guided-fill-control :is(input, select, textarea) {
+  min-height: 38px;
+  padding: 0 var(--space-control);
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: var(--bg-raised);
+  color: var(--fg);
+  font-family: inherit;
+  font-size: var(--type-body-size);
+  line-height: var(--type-body-line);
+  font-weight: var(--type-body-weight);
+  outline: none;
+  transition:
+    border-color var(--motion-duration-panel) var(--ease-out),
+    background var(--motion-duration-panel) var(--ease-out);
+}
+
+.guided-fill-control :is(input, select, textarea):hover {
+  border-color: var(--border-strong);
+}
+
+.guided-fill-control :is(input, select, textarea):focus-visible {
+  border-color: var(--accent-hover);
+  box-shadow: var(--focus-ring);
+}
+
+.guided-fill-control :is(input, select, textarea)[aria-invalid="true"] {
+  border-color: var(--error);
+}
+
+.guided-fill-guidance {
+  margin: 0;
+  font-size: var(--type-helper-size);
+  line-height: var(--type-helper-line);
+  font-weight: var(--type-helper-weight);
+  color: var(--fg-muted);
+}
+
+.guided-fill-error {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-small);
+  margin: 0;
+  font-size: var(--type-helper-size);
+  line-height: var(--type-helper-line);
+  font-weight: var(--type-helper-weight);
+  color: var(--error);
+  transition: color var(--motion-duration-panel) var(--ease-out);
+}
+
+.guided-fill-error-icon {
+  flex: 0 0 auto;
+  margin-top: 2px;
+}
+
+.guided-fill-error-text {
+  min-width: 0;
+}
+
+.guided-fill-summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-standard) var(--space-section);
+  padding: var(--space-control) var(--space-standard);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-group);
+  background: var(--bg-raised);
+  color: var(--fg);
+  font-size: var(--type-helper-size);
+  line-height: var(--type-helper-line);
+}
+
+.guided-fill-summary-item {
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--space-small);
+}
+
+.guided-fill-summary-label {
+  color: var(--fg-muted);
+}
+
+.guided-fill-summary-figure {
+  font-size: var(--type-body-size);
+  line-height: var(--type-body-line);
+  font-weight: var(--type-row-weight);
+  color: var(--fg-strong);
+  font-variant-numeric: tabular-nums;
+}
+
+.guided-fill-surface {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-group);
+  background: var(--bg-raised);
+  overflow: hidden;
+}
 
 /* ---------------------------------------------------------------------------
  * Phase 4 - Signatures placement overlay + manager modal
@@ -9866,6 +10284,14 @@ rect.ann-highlight.ann-preview {
   z-index: 3;
 }
 
+/* Phase 119 (chunk C) — at a "tight" rail the standalone "+" utility collapses
+ * so the freed width keeps more document filenames visible; the New-tab action
+ * moves into the All-tabs popover. Purely additive: no existing rail rule
+ * changes. */
+.tab-list-new[data-rail-new-collapsed="true"] {
+  display: none;
+}
+
 .tab-new {
   /* Match .tab exactly so the "+ tab" affordance sits on the same
    * baseline as the rightmost tab — previously a 24px button against
@@ -9986,6 +10412,14 @@ rect.ann-highlight.ann-preview {
 
 .all-tabs-row-current {
   background: var(--accent-selected);
+}
+
+/* Phase 119 (chunk C) — the overflow New-tab row leads the popover when the
+ * standalone "+" is collapsed. It reuses `.all-tabs-row` verbatim and adds only
+ * a hairline (existing token) so the utility reads apart from the document
+ * rows. No existing popover rule changes. */
+.all-tabs-rows > [data-rail-overflow-new] {
+  border-bottom: 1px solid var(--border);
 }
 
 .all-tabs-name {
@@ -13308,6 +13742,118 @@ rect.ann-highlight.ann-preview {
   font-size: var(--fs-sm);
   color: var(--fg-muted);
   line-height: 1.5;
+}
+
+/* ---------------------------------------------------------------------------
+ * Phase 120 B - Output Studio layout for the standalone print window.
+ *
+ * The shared print surface becomes a two-column studio: a settings column of
+ * semantic groups beside a neutral preview stage. ONE declared logical-pixel
+ * threshold switches the SAME surface to the stacked compact form; the switch
+ * rides the `data-print-layout-mode` attribute set in PrintPanel (it mirrors
+ * the shared --tf-break-compact token), never a per-call-site media query.
+ * ------------------------------------------------------------------------- */
+
+/* Sticky window chrome: the Output Studio header stays visible while the panel
+ * body scrolls and the footer stays pinned by the panel grid. */
+.print-studio-header {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+}
+
+.print-studio-heading {
+  align-items: baseline;
+}
+
+/* The 16px Output Studio title (--fs-lg -> --type-panel-size). */
+.print-studio-title {
+  font-size: var(--fs-lg);
+}
+
+/* Document name and page count read as neutral supporting metadata. */
+.print-studio-meta {
+  color: var(--fg-muted);
+}
+
+/* Banner / loading / error states share the studio surface tokens. */
+.print-studio-banner {
+  background: var(--bg-raised);
+  border-bottom: 1px solid var(--border-subtle);
+  color: var(--fg-strong);
+}
+
+/* Two-column settings | preview when wide; the SAME controls stack above a
+ * small centred preview when narrow. */
+.print-body[data-print-layout-mode="compact"] {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.print-body[data-print-layout-mode="compact"] .print-preview {
+  position: static;
+}
+
+.print-body[data-print-layout-mode="compact"] .print-preview-sheet {
+  max-width: 240px;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+/* Semantic settings groups: attached sections with hairline boundaries and
+ * headings, never floating shadows. */
+.print-group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+  padding: var(--sp-3);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-3);
+  background: var(--bg-raised);
+}
+
+.print-group-heading {
+  margin: 0;
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  color: var(--fg-strong);
+  letter-spacing: 0.01em;
+}
+
+.print-group-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+}
+
+/* Advanced groups collapse to their heading in the compact layout; the
+ * summary is the heading and every control stays in the DOM and reachable. */
+.print-group-advanced > .print-group-heading {
+  cursor: pointer;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.print-group-advanced[open] > .print-group-heading {
+  margin-bottom: var(--sp-1);
+}
+
+/* The preview column is a neutral stage: a grey surface with the white paper
+ * centred. The sheet keeps its paper-white background in every theme. */
+.print-preview {
+  background: var(--bg-sunken);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-3);
+  padding: var(--sp-3);
+  gap: var(--sp-2);
+}
+
+.print-preview-stage {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-start;
+  gap: var(--sp-3);
+  padding: var(--sp-3);
 }
 
 /* Suspects panel (top bar over the workspace) */
@@ -23007,6 +23553,747 @@ cursor: pointer;
 
 .ann-note-selected.btn:hover:not([disabled]) {
   background: var(--accent-soft);
+}
+
+/* ----- Phase 114 — Settings Studio primitives -----
+ *
+ * The shared building blocks for the Settings Studio surface (chunk B): the
+ * section navigator, the scrolling body of settings groups, and the group /
+ * row / support text inside it. Geometry is the category handoff
+ * ("Visual overhaul/Preferences and Themes/Specifications/design-decisions.md"):
+ * 720-880px preferred surface width, 160-180px section navigator, 24px body
+ * padding, 20px group gaps, 9px control radius, 36-40px row height with 44px
+ * coarse targets and the 4px spacing grid. Every value below is a Phase 100
+ * token or a 4px-grid multiple of one; call sites carry no visual override and
+ * colour comes from the per-theme semantic tokens only. */
+.settings-studio {
+  display: flex;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+}
+.settings-studio-nav {
+  flex: 0 0 auto;
+  width: 176px;                 /* spec band 160-180px */
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+  padding: var(--sp-3);
+  background: var(--bg-rail);
+  border-right: 1px solid var(--border-subtle);
+  overflow-y: auto;
+}
+.settings-nav-item {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  width: 100%;
+  min-height: var(--control-height);      /* 36px row height floor */
+  padding: 0 var(--sp-3);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--btn-radius);       /* 9px control radius */
+  color: var(--fg);
+  font-family: inherit;
+  font-size: var(--type-row-size);
+  line-height: var(--type-row-line);
+  text-align: left;
+  cursor: pointer;
+  transition:
+    background var(--motion-duration-fast) var(--motion-ease-standard),
+    color var(--motion-duration-fast) var(--motion-ease-standard),
+    border-color var(--motion-duration-fast) var(--motion-ease-standard);
+}
+.settings-nav-item:hover { background: var(--bg-hover); }
+.settings-nav-item[aria-selected="true"] {
+  background: var(--accent-selected);
+  color: var(--fg-strong);
+  font-weight: 600;
+}
+.settings-nav-icon { flex: 0 0 auto; color: var(--fg-muted); }
+.settings-nav-item[aria-selected="true"] .settings-nav-icon { color: var(--accent); }
+.settings-nav-label { flex: 1 1 auto; min-width: 0; }
+.settings-nav-item:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+.settings-studio-body {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  overflow-y: auto;
+  padding: var(--sp-5);                   /* 24px body padding */
+}
+.settings-studio-groups {
+  display: flex;
+  flex-direction: column;
+  gap: calc(var(--sp-4) + var(--sp-1));   /* 20px group gap */
+}
+.settings-group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+}
+.settings-group-title {
+  margin: 0;
+  color: var(--fg-strong);
+  font-size: var(--type-label-size);
+  line-height: var(--type-label-line);
+  font-weight: var(--type-label-weight);
+}
+.settings-support {
+  margin: 0;
+  color: var(--tf-text-supporting);
+  font-size: var(--fs-xs);
+}
+.settings-group-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+}
+/* Two-column rows: the flexing text track (label + support text) and the
+ * bounded control track, with a real gutter so they can never collide. */
+.settings-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(160px, 260px);
+  align-items: start;
+  column-gap: var(--sp-5);
+}
+.settings-row-text {
+  grid-column: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+}
+.settings-row-label {
+  grid-column: 1;
+  min-width: 0;
+  color: var(--fg);
+  font-size: var(--type-row-size);
+  line-height: var(--type-row-line);
+}
+.settings-row-control {
+  grid-column: 2;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--sp-2);
+  min-height: var(--control-height);
+}
+.settings-row-value {
+  color: var(--fg-muted);
+  font-size: var(--fs-xs);
+  font-variant-numeric: tabular-nums;
+}
+/* Native controls inside a row ride the same 9px radius and 36px floor; colour
+ * is the shared input token pair (identical in every theme's semantic layer). */
+.settings-row-control select,
+.settings-row-control input[type="text"],
+.settings-row-control input[type="number"] {
+  min-height: var(--control-height);
+  width: 100%;
+  max-width: 260px;
+  padding: 0 var(--sp-3);
+  font-family: inherit;
+  font-size: var(--type-row-size);
+  color: var(--fg-strong);
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: var(--btn-radius);
+}
+.settings-row-control input[type="number"] { font-variant-numeric: tabular-nums; }
+.settings-row-control input[type="checkbox"] {
+  width: 18px;
+  height: 18px;
+  accent-color: var(--accent);
+}
+.settings-row-control button {
+  min-height: var(--control-height);
+  border-radius: var(--btn-radius);
+}
+.settings-row-control select:focus,
+.settings-row-control input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+.settings-row-control :is(select, input, button):focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+/* Coarse pointers get the spec's 44px target without changing the fine layout. */
+@media (pointer: coarse) {
+  .settings-nav-item { min-height: var(--control-height-large); }
+  .settings-row-control :is(select, input, button) {
+    min-height: var(--control-height-large);
+  }
+}
+/* Constrained widths stack the section selector above the body (spec), so the
+ * navigator never squeezes the settings text into a collision. */
+@media (max-width: 720px) {
+  .settings-studio { flex-direction: column; }
+  .settings-studio-nav {
+    width: 100%;
+    flex-direction: row;
+    flex-wrap: wrap;
+    border-right: none;
+    border-bottom: 1px solid var(--border-subtle);
+  }
+  .settings-nav-item { width: auto; }
+}
+/* Forced colors / high contrast: ornamental fills give way to system roles
+ * while the selected state and the visible focus ring stay legible. */
+@media (forced-colors: active) {
+  .settings-nav-item[aria-selected="true"] {
+    background: Highlight;
+    color: HighlightText;
+    forced-color-adjust: none;
+  }
+  .settings-nav-item[aria-selected="true"] .settings-nav-icon {
+    color: HighlightText;
+  }
+  .settings-nav-item:focus-visible {
+    outline: 2px solid Highlight;
+    box-shadow: none;
+  }
+  .settings-studio-nav { border-color: CanvasText; }
+}
+
+/* TFL-1282 (DEF-643 / DEF-644 + adversary should-fix) — the persistence-feedback
+ * footer. `.settings-studio-shell` is the Preferences sheet body stack: the
+ * Studio fills the remaining height and `.settings-studio-body` scrolls
+ * INTERNALLY, so `[data-prefs-persist-status]` rides a non-scrolling footer row
+ * and the honest failure sentence stays visible on the long General / Import
+ * panels instead of scrolling below the fold. Every `.settings-*` selector lives
+ * in this block, colour comes from a shared semantic token only (no raw literal
+ * — see the Studio token contract test), and the one `.sheet-body-prefs` rule
+ * below is `:has()`-scoped to the Studio's own sheet body so no other panel is
+ * touched. */
+/* DEF-646: the Preferences sheet body must BOUND the Studio stack. As a plain
+ * block it had no definite height, so the shell's `height: 100%` resolved
+ * against an indefinite parent and the `flex-basis: 0` child collapsed to 0px
+ * (the Studio overlapped the navigator and E1's real click timed out). Making
+ * the body a flex column gives the shell a resolved (definite) height; the
+ * shell then fills it with `flex: 1 1 auto` and the Studio grows/shrinks inside
+ * it, so `.settings-studio-body` scrolls INTERNALLY and the pinned footer rides
+ * a non-scrolling row (DEF-641 intent preserved). The `:has()` scope limits the
+ * body change to the sheet that actually hosts the Studio; no other surface. */
+.sheet-body-prefs:has(> .settings-studio-shell) {
+  display: flex;
+  flex-direction: column;
+}
+.settings-studio-shell {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: auto;
+  min-height: 0;
+}
+.settings-studio-shell > .settings-studio {
+  flex: 1 1 auto;
+  height: auto;
+  min-height: 0;
+}
+.settings-persist-status {
+  flex: 0 0 auto;
+  padding: var(--sp-2) var(--sp-5);
+  border-top: 1px solid var(--border-subtle);
+}
+
+/* =========================================================================
+ * TFL-1216 (chunk C2) - Activity Shelf surface primitives.
+ *
+ * Scoped under `.activity-shelf`. Every shelf-scoped variable REFERENCES an
+ * existing semantic token (never a hex literal) so the primitives follow the
+ * active theme:
+ *   --activity-progress -> --accent   (normal work stays violet)
+ *   --activity-success  -> --success
+ *   --activity-warning  -> --warning
+ *   --activity-danger   -> --error
+ * State is never colour-only: every role also carries a task icon plus the
+ * honest state text, and forced-colors remaps the marks onto system roles.
+ * ========================================================================= */
+.activity-shelf {
+  --activity-progress: var(--accent);
+  --activity-success: var(--success);
+  --activity-warning: var(--warning);
+  --activity-danger: var(--error);
+  --activity-neutral: var(--fg-muted);
+  --activity-radius: 14px;
+  --activity-transition: 140ms;
+}
+
+/* TFL-1216 (chunk C4b) — the app-level shelf host. It is the positioned
+ * ancestor the panel expects (`bottom: 100%; right: 0`). The host mounts once
+ * at the window level as a sibling of `.app-main`, so it is `position: fixed`
+ * (it cannot rely on `.app-main`'s position: relative). Anchored bottom-right
+ * and raised clear of the View Strip footer band (48px) and the Focus Dock
+ * band above it (its 16px inset + 68px min height), so it never overlaps the
+ * dock or the page controls. `z-index` keeps it above the canvas chrome but
+ * below modals (800) and toasts (1000). */
+.activity-shelf-host {
+  position: fixed;
+  right: var(--sp-4);
+  bottom: calc(48px + var(--sp-4) + 68px + var(--sp-4));
+  z-index: 45;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  pointer-events: auto;
+}
+
+/* ---- Collapsed summary ------------------------------------------------ */
+.activity-shelf-summary {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+  min-height: var(--control-height);
+  padding: var(--sp-1) var(--sp-2) var(--sp-1) var(--sp-3);
+  border: 1px solid var(--border);
+  border-radius: var(--activity-radius);
+  background: var(--bg-elevated);
+  color: var(--fg);
+  box-shadow: var(--elevation-1);
+}
+
+.activity-shelf-summary-mark {
+  flex: 0 0 auto;
+  width: 6px;
+  height: 6px;
+  border-radius: var(--radius-pill);
+  background: var(--activity-neutral);
+}
+
+.activity-shelf-summary-mark[data-activity-shelf-role="progress"] { background: var(--activity-progress); }
+.activity-shelf-summary-mark[data-activity-shelf-role="success"] { background: var(--activity-success); }
+.activity-shelf-summary-mark[data-activity-shelf-role="warning"] { background: var(--activity-warning); }
+.activity-shelf-summary-mark[data-activity-shelf-role="danger"] { background: var(--activity-danger); }
+
+.activity-shelf-summary-text {
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--sp-2);
+  min-width: 0;
+  font-size: var(--type-label-size);
+  line-height: var(--type-label-line);
+  color: var(--fg-muted);
+}
+
+.activity-shelf-summary-count {
+  font-weight: var(--type-label-weight);
+  color: var(--fg-strong);
+  white-space: nowrap;
+}
+
+.activity-shelf-summary-active {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ---- Opened panel ----------------------------------------------------- */
+.activity-shelf-panel {
+  position: absolute;
+  right: 0;
+  bottom: calc(100% + var(--sp-2));
+  z-index: 40;
+  display: flex;
+  flex-direction: column;
+  width: clamp(360px, 24vw, 420px);
+  max-height: min(60vh, 480px);
+  padding: var(--sp-2);
+  border: 1px solid var(--border);
+  border-radius: var(--activity-radius);
+  background: var(--bg-elevated);
+  color: var(--fg);
+  box-shadow: var(--elevation-2);
+  animation: activity-shelf-panel-in var(--motion-duration-fast) var(--motion-ease-enter) both;
+}
+
+@keyframes activity-shelf-panel-in {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.activity-shelf-header {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: var(--sp-1) var(--sp-1) var(--sp-2) var(--sp-2);
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.activity-shelf-title {
+  margin: 0;
+  margin-right: auto;
+  font-size: var(--type-panel-size);
+  line-height: var(--type-panel-line);
+  font-weight: var(--type-panel-weight);
+  color: var(--fg-strong);
+  letter-spacing: 0.01em;
+}
+
+.activity-shelf-list {
+  list-style: none;
+  margin: 0;
+  padding: var(--sp-1) 0 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+}
+
+/* ---- Row -------------------------------------------------------------- */
+.activity-shelf-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: start;
+  gap: var(--sp-2);
+  padding: var(--sp-2);
+  border-radius: var(--radius-3);
+  transition: background var(--activity-transition) var(--motion-ease-standard);
+}
+
+.activity-shelf-row:hover { background: var(--bg-panel); }
+
+.activity-shelf-row-icon {
+  margin-top: 1px;
+  color: var(--activity-progress);
+}
+
+.activity-shelf-row[data-activity-role="success"] .activity-shelf-row-icon { color: var(--activity-success); }
+.activity-shelf-row[data-activity-role="warning"] .activity-shelf-row-icon { color: var(--activity-warning); }
+.activity-shelf-row[data-activity-role="danger"] .activity-shelf-row-icon { color: var(--activity-danger); }
+.activity-shelf-row[data-activity-role="neutral"] .activity-shelf-row-icon { color: var(--activity-neutral); }
+
+.activity-shelf-row-main {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.activity-shelf-row-title {
+  margin: 0;
+  display: flex;
+  align-items: baseline;
+  gap: var(--sp-2);
+  min-width: 0;
+}
+
+.activity-shelf-row-name {
+  font-size: var(--type-row-size);
+  line-height: var(--type-row-line);
+  font-weight: var(--type-row-weight);
+  color: var(--fg-strong);
+}
+
+.activity-shelf-row-scope {
+  font-size: var(--type-helper-size);
+  line-height: var(--type-helper-line);
+  color: var(--fg-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.activity-shelf-row-text {
+  margin: 0;
+  font-size: var(--type-label-size);
+  line-height: var(--type-label-line);
+  color: var(--fg-muted);
+}
+
+.activity-shelf-row-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: var(--sp-1);
+}
+
+/* ---- 6px progress track ---------------------------------------------- */
+.activity-shelf-track {
+  position: relative;
+  height: 6px;
+  margin-top: var(--sp-1);
+  border-radius: var(--radius-pill);
+  background: var(--accent-soft);
+  overflow: hidden;
+}
+
+.activity-shelf-track-bar {
+  display: block;
+  width: 100%;
+  height: 100%;
+  transform-origin: left center;
+  border-radius: var(--radius-pill);
+  background: var(--activity-progress);
+  transition: transform var(--activity-transition) var(--motion-ease-standard);
+}
+
+.activity-shelf-track-bar--indeterminate {
+  width: 40%;
+  animation: activity-shelf-indeterminate 1.4s var(--motion-ease-standard) infinite;
+}
+
+@keyframes activity-shelf-indeterminate {
+  from { transform: translateX(-100%); }
+  to { transform: translateX(250%); }
+}
+
+/* ---- Failure detail --------------------------------------------------- */
+.activity-shelf-failed {
+  list-style: none;
+  margin: var(--sp-1) 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.activity-shelf-failed-item {
+  display: flex;
+  gap: var(--sp-2);
+  font-size: var(--type-helper-size);
+  line-height: var(--type-helper-line);
+  color: var(--fg-muted);
+}
+
+.activity-shelf-failed-name { color: var(--fg-strong); }
+
+.activity-shelf-failure-reason {
+  margin: var(--sp-1) 0 0;
+  font-size: var(--type-helper-size);
+  line-height: var(--type-helper-line);
+  color: var(--activity-danger);
+}
+
+/* ---- Reduced motion --------------------------------------------------- */
+@media (prefers-reduced-motion: reduce) {
+  .activity-shelf-row,
+  .activity-shelf-track-bar,
+  .activity-shelf-panel {
+    transition: none;
+    animation: none;
+  }
+
+  .activity-shelf-track-bar--indeterminate {
+    width: 100%;
+    transform: none;
+  }
+}
+
+/* ---- Forced colors / high contrast ----------------------------------- */
+@media (forced-colors: active) {
+  .activity-shelf-panel,
+  .activity-shelf-summary {
+    border-color: CanvasText;
+    box-shadow: none;
+  }
+
+  .activity-shelf-summary-mark,
+  .activity-shelf-track-bar {
+    background: Highlight;
+    forced-color-adjust: none;
+  }
+
+  .activity-shelf-track {
+    border: 1px solid CanvasText;
+    background: Canvas;
+  }
+
+  .activity-shelf-row-icon { color: CanvasText; }
+  .activity-shelf-row[data-activity-role="danger"] .activity-shelf-row-icon { color: Mark; }
+}
+
+/* ---------------------------------------------------------------------------
+ * Phase 118 - Drag Drop and Import: the Intake Tray
+ *
+ * ONE intake surface shared by Home, Open, OS / canvas drops and Create PDF
+ * from images. Scoped to `.intake-*` / `data-intake-*`; semantic tokens only
+ * (surface, text, boundary, interactive violet, floating / control radius,
+ * 140ms emphasis). No per-call-site overrides - every host reuses these rules.
+ * ------------------------------------------------------------------------- */
+
+.intake-tray {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  color: var(--fg);
+  font-size: var(--fs-sm);
+}
+
+.intake-dropzone {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  padding: var(--sp-3) var(--sp-4);
+  border: 1px dashed var(--border);
+  border-radius: var(--radius-group);
+  background: var(--bg-toolbar);
+  transition:
+    border-color var(--motion-duration-panel) var(--motion-ease-panel),
+    background-color var(--motion-duration-panel) var(--motion-ease-panel);
+}
+
+.intake-dropzone[data-intake-active] {
+  border-color: var(--btn-selected-border);
+  background: var(--btn-selected-bg);
+}
+
+.intake-dropzone-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  flex: 0 0 auto;
+  color: var(--btn-selected-fg);
+}
+
+.intake-dropzone-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.intake-dropzone-title {
+  color: var(--fg-strong);
+  font-weight: 600;
+}
+
+.intake-dropzone-hint {
+  color: var(--fg-muted);
+  font-size: var(--fs-xs);
+}
+
+.intake-empty {
+  margin: 0;
+  padding: var(--sp-2) 0;
+  color: var(--fg-muted);
+}
+
+.intake-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-group);
+  background: var(--bg-elevated);
+  overflow: hidden;
+}
+
+.intake-row {
+  padding: var(--sp-2) var(--sp-3);
+  border-bottom: 1px solid var(--border-subtle);
+  transition: background-color var(--motion-duration-micro) var(--motion-ease-standard);
+}
+
+.intake-row:last-child {
+  border-bottom: none;
+}
+
+.intake-row:hover {
+  background: var(--bg-hover);
+}
+
+.intake-row:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.intake-row-main {
+  display: grid;
+  grid-template-columns: 24px minmax(0, 1fr) auto auto auto;
+  align-items: center;
+  gap: var(--sp-2);
+}
+
+.intake-index {
+  color: var(--fg-faint);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.intake-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--fg-strong);
+}
+
+.intake-kind {
+  color: var(--fg-muted);
+  font-size: var(--fs-xs);
+  white-space: nowrap;
+}
+
+.intake-state {
+  display: inline-flex;
+  align-items: center;
+  height: 20px;
+  padding: 0 var(--sp-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  white-space: nowrap;
+  color: var(--fg-muted);
+}
+
+.intake-state--ready,
+.intake-state--done {
+  color: var(--success);
+}
+
+.intake-state--converting {
+  color: var(--sem-primary);
+}
+
+.intake-state--failed {
+  color: var(--error);
+}
+
+.intake-row-controls {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+/* Phase 91 canonical `btn btn-ghost btn-icon`; layout alias only, so colour,
+ * hover, focus and disabled come from the shared ghost icon button. */
+.btn.intake-move,
+.btn.intake-remove {
+  width: 22px;
+  min-width: 22px;
+  height: 22px;
+  padding: 0;
+  gap: 0;
+  border-radius: var(--radius-1);
+}
+
+.intake-error {
+  margin: var(--sp-1) 0 0;
+  padding-left: 24px;
+  color: var(--error);
+  font-size: var(--fs-xs);
+}
+
+/* ---- Forced colors / high contrast ----------------------------------- */
+@media (forced-colors: active) {
+  .intake-dropzone {
+    border-color: CanvasText;
+  }
+
+  .intake-dropzone[data-intake-active] {
+    border-color: Highlight;
+  }
+
+  .intake-state--failed {
+    color: Mark;
+  }
 }
 
 

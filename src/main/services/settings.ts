@@ -1576,8 +1576,13 @@ export class SettingsService {
   }
 
   save(settings: AppSettings): Promise<void> {
-    this.current = normalizeSettings(settings);
-    const task = this._saveQueue.then(() => this._doSave(this.current));
+    // Snapshot at call time (not execution time): a prior failed write rolls
+    // `this.current` back to `this.persisted` (DEF-230), so reading `this.current`
+    // when this queued task later runs would persist the rolled-back value and
+    // silently drop the newer change the caller asked us to save.
+    const snapshot = normalizeSettings(settings);
+    this.current = snapshot;
+    const task = this._saveQueue.then(() => this._doSave(snapshot));
     this._saveQueue = task.catch(() => {});
     return task;
   }

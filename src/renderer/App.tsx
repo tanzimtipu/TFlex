@@ -182,6 +182,7 @@ import { useThemeTransition } from "./hooks/useAnimations";
 import { setAnimationsEnabledPreference } from "./hooks/motionPolicy";
 import { createAmbientController } from "./state/ambient";
 import { resolveInitialSettings, settingsRecoveryNotice } from "./state/settings";
+import { confirmedSnapshotAfterApply, restoreDefaultSettings } from "./state/defaults";
 import {
   DEFAULT_OPTIMIZE_PRESET,
   DEFAULT_RECENTS_CAP,
@@ -229,7 +230,25 @@ import { formatBytes as formatBytesForToast } from "./utils/formatBytes";
 import { downloadBlob } from "./utils/exportDownload";
 import { PasswordPromptDialog } from "./components/PasswordPromptDialog";
 import { ProtectionNotice } from "./components/ProtectionNotice";
-import { ConversionNotice, ConversionProgress } from "./components/ConversionNotice";
+import { ConversionNotice } from "./components/ConversionNotice";
+// TFL-1216 (chunk C4b) — the Activity Shelf surface (summary + panel) and the
+// store that owns its operations. The App mounts the surface once and feeds it
+// operations the OCR producer creates; all transitions stay in the pure store.
+import { ActivityShelfPanel, ActivityShelfSummary } from "./components/ActivityShelf";
+import {
+  convertProgressAction,
+  convertStartAction,
+  initialActivityShelfState,
+  OCR_TASK_NAME,
+  ocrProgressAction,
+  ocrStartAction,
+  reduceActivityShelf,
+  searchIndexProgressAction,
+  searchIndexStartAction,
+  selectActiveOperations,
+  selectVisibleNotices,
+} from "./state/activityShelf";
+import type { ActivityCompletionAction } from "./state/activity";
 import { ReadingView } from "./components/ReadingView";
 import { BookView } from "./components/BookView";
 import { BookOpen } from "lucide-react";
@@ -244,7 +263,6 @@ import {
   toastForConvertError,
   unsupportedFileMessage,
   type ConvertNoticeState,
-  type ConvertProgressState,
 } from "./state/convert";
 import { EncryptDialog, type EncryptDialogConfirm } from "./components/EncryptDialog";
 import {
@@ -326,7 +344,6 @@ import { FlattenConfirmDialog } from "./forms/FlattenConfirmDialog";
 import {
   OcrDialog,
   type OcrDialogConfirm,
-  type OcrScope,
 } from "./components/OcrDialog";
 import { rasterizePagesForOcr } from "./pdf/ocrRasterize";
 import { scanBlankDocument, formatScanReport } from "./pdf/blankScan";
@@ -391,7 +408,12 @@ import {
 } from "./diagnostics/resolve";
 import { openRequestedPath } from "./openRequestedPath";
 import { useOsFileDrop, useOsOpenPathRequests } from "./hooks/useOsIntegration";
+import { createIntakeModel, type IntakeModel } from "./intake/model";
 import { useMinimizedPause } from "./hooks/useMinimizedPause";
+import {
+  noteSettingsRestore,
+  useSettingsWriteRollback,
+} from "./hooks/useSettingsWriteRollback";
 
 /** Phase 7 — settings persist policy.
  *
@@ -913,8 +935,9 @@ export function App(): ReactElement {
     Record<string, DocumentProtectionState>
   >({});
   // Phase 53 (feature I) — the import surface. `convertNotices` is the
-  // conversion card payload per tab (dismissed entries are deleted);
-  // `convertProgress` is the live affordance, null when no import runs.
+  // conversion card payload per tab (dismissed entries are deleted). The
+  // running affordance is the Activity Shelf (TFL-1216 C5); the standalone
+  // ConversionProgress widget is no longer mounted.
   const [convertNotices, setConvertNotices] = useState<Record<string, ConvertNoticeState>>({});
   // Phase 56 (features A / C) — the NON-dismissible source format per tab. The
   // conversion card above can be dismissed; this record cannot, so the
@@ -923,7 +946,6 @@ export function App(): ReactElement {
   const [sourceFormatByTab, setSourceFormatByTab] = useState<
     Record<string, ConvertFormatId>
   >({});
-  const [convertProgress, setConvertProgress] = useState<ConvertProgressState | null>(null);
   // Phase 52 (feature D) — the Encrypt dialog + its in-flight flag.
   const [encryptOpen, setEncryptOpen] = useState(false);
   const [encryptBusy, setEncryptBusy] = useState(false);
@@ -1146,6 +1168,11 @@ export function App(): ReactElement {
   }, [viewportWidth]);
   const [aboutOpen, setAboutOpen] = useState(false);
   const [prefsOpen, setPrefsOpen] = useState(false);
+  // DEF-641 — the Settings Studio persistence-feedback line. Null is the
+  // at-rest success state ("All changes saved."); a failed settings write
+  // records the honest failure + rollback sentence, and the next confirmed
+  // settings echo clears it back.
+  const [persistStatusMessage, setPersistStatusMessage] = useState<string | null>(null);
   // Phase 44 — the account surface. `accountsOpen` is only ever meaningful
   // while `settings.accountsEnabled` is true; the flag gates BOTH the top-bar
   // control and this dialog, so with the flag off nothing account-related is
@@ -1243,6 +1270,50 @@ export function App(): ReactElement {
   const [ocrSuspectsByTab, setOcrSuspectsByTab] = useState<Record<string, OcrSuspect[]>>({});
   /** Per-tab "an OCR run has completed on this doc" flag. */
   const [ocrRunByTab, setOcrRunByTab] = useState<Record<string, boolean>>({});
+  // TFL-1216 (chunk C4b) — the app-level Activity Shelf. The pure store owns
+  // the operations; App owns the shelf-open intent, the notice clock and the
+  // hover/focus freeze. The shelf is mounted ONCE for the whole window.
+  const [activityShelf, dispatchActivityShelf] = useReducer(
+    reduceActivityShelf,
+    initialActivityShelfState,
+  );
+  const [activityShelfOpen, setActivityShelfOpen] = useState(false);
+  // The clock `selectVisibleNotices` reads. It only advances while a
+  // `completed`/`partial-success` notice is visible and is frozen (no tick)
+  // while the shelf is hovered or focused, which pauses auto-dismiss by
+  // construction.
+  const [activityShelfNowMs, setActivityShelfNowMs] = useState<number>(
+    (): number => Date.now(),
+  );
+  const [activityShelfFrozen, setActivityShelfFrozen] = useState(false);
+  // The OCR operation currently driving the shelf. The ref is the synchronous
+  // handle the cancel path reads; the state drives the App-level progress
+  // subscription effect below.
+  const ocrShelfOpRef = useRef<{
+    operationId: string;
+    docId: string;
+    displayName: string;
+  } | null>(null);
+  const [ocrShelfOp, setOcrShelfOp] = useState<{
+    operationId: string;
+    docId: string;
+  } | null>(null);
+  // TFL-1216 (chunk C5) — the conversion operation currently driving the
+  // shelf. Progress arrives through runConvertOpen's own subscription, so a ref
+  // is enough: it is the synchronous handle the shelf cancel path reads to
+  // route the engine `convert:cancel` at the conversion's docId.
+  const convertShelfOpRef = useRef<{
+    operationId: string;
+    docId: string;
+  } | null>(null);
+  // TFL-1216 (chunk C5b) — the background search-index build currently driving
+  // the shelf, keyed by the tab that owns the index. The ref is the synchronous
+  // handle both the progress callback and the tab-close cleanup read: closing a
+  // tab abandons its build, so the row is removed rather than left running (the
+  // build offers no output to open or failure the user can act on).
+  const searchIndexShelfOpRef = useRef<
+    Map<string, { operationId: string; docId: string; displayName: string }>
+  >(new Map());
   // Saved signatures (renderer mirror). The signature service is the
   // source of truth; we cache the list locally so the modal renders
   // synchronously after the first load.
@@ -1359,6 +1430,13 @@ export function App(): ReactElement {
   // pattern as `activeTabIdRefLocal` above).
   const ocrRunByTabRef = useRef<Record<string, boolean>>({});
   ocrRunByTabRef.current = ocrRunByTab;
+  // DEF-643 — mirror of the guarded `onOpenOcrSuspects` handler for callers
+  // declared before it (the Activity Shelf's OCR `view-details` action). The
+  // ref is filled in next to the handler so the shelf action reaches the
+  // current guard without reordering hooks. Same forward-declared-ref pattern
+  // as `ocrRunByTabRef` above. The optional `tabId` opens against the
+  // operation's captured tab instead of whichever tab is active.
+  const onOpenOcrSuspectsRef = useRef<(tabId?: string) => void>(() => undefined);
   // Forward declaration for `refreshDocProxyFor` (defined later in
   // this component). The ref is filled in after the useCallback
   // resolves; the early callers (e.g. `onCropPagesConfirm`) read
@@ -1429,6 +1507,11 @@ export function App(): ReactElement {
   // `shouldApplyEcho(...)` to drop stale echoes.
   const settingsWriteSeqRef = useRef(0);
   const settingsPersistedRef = useRef<AppSettings | null>(null);
+  // ADV-247 — the last settings value the app confirmed (boot / an applied
+  // echo / a restore). The write-failure rollback hook falls back to this when
+  // the authoritative re-read cannot be obtained, so the UI still drops the
+  // optimistic value instead of keeping one that never persisted.
+  const lastConfirmedRef = useRef<AppSettings | null>(null);
 
   // DEF-202 — the window's live maximize state, mirrored from main.
   // The geometry inside `settings` is NOT a reliable caption source:
@@ -1462,6 +1545,59 @@ export function App(): ReactElement {
     void window.tflex.saveSettings(s);
   }, []);
 
+  // Phase 114 (TFL-1239, chunk C) — the one settings-apply path. The
+  // `settings.changed` echo (after the DEF-037 stale-echo filter) and the
+  // write-failure rollback both ride this function, so a restored value lands
+  // exactly like an echoed one: settings, pages panel, panel widths, inspector,
+  // navigator layout/ratio and the theme (only when <html> differs — DEF-199).
+  const applySettings = useCallback((s: AppSettings, confirmed = false): void => {
+    // ADV-247 — the rollback hook falls back to the last CONFIRMED value when
+    // the authoritative re-read fails. DEF-644 — only a persisted echo or an
+    // authoritative restore marks the value confirmed; the optimistic
+    // restore-defaults apply must NOT, so on a double failure (write fails AND
+    // re-read fails) the fallback restores the last real settings instead of
+    // the reset that never reached disk.
+    lastConfirmedRef.current = confirmedSnapshotAfterApply(
+      lastConfirmedRef.current,
+      s,
+      confirmed,
+    );
+    setSettings(s);
+    // Phase 16 — keep the pages-panel collapsed state in sync with settings
+    // echoes (main re-sends the persisted value, e.g. after another window
+    // writes it). Absent / invalid field: the reducer leaves local state alone
+    // (preserve-if-valid, like the backend).
+    dispatchPagesPanel({ type: "sync", value: s.pagesPanelCollapsed });
+    // Phase 112 (TFL-854, chunk H) — keep the panel widths + inspector collapse
+    // in sync (preserve-if-valid: an absent / invalid field leaves the local
+    // value alone).
+    setPanelLeftWidth((prev) => syncPanelWidth("left", s.panelLeftWidthPx, prev));
+    setPanelRightWidth((prev) => syncPanelWidth("right", s.panelRightWidthPx, prev));
+    if (typeof s.inspectorCollapsed === "boolean") {
+      setInspectorCollapsed(s.inspectorCollapsed);
+    }
+    // Phase 111 (chunk D1) — keep the Split Navigator in sync (preserve-if-valid:
+    // an absent / invalid field leaves the local value alone, so a stale echo
+    // can never revert the live layout).
+    if (s.navigatorLayout === "stacked" || s.navigatorLayout === "split") {
+      setNavigatorLayout(s.navigatorLayout);
+    }
+    if (typeof s.navigatorSplitRatio === "number" && Number.isFinite(s.navigatorSplitRatio)) {
+      setNavigatorSplitRatio(clampSplitRatio(s.navigatorSplitRatio));
+    }
+    // DEF-199 — skip the theme re-apply when the document is already showing the
+    // echoed theme. The settings.changed echo of our own write re-applies an
+    // identical theme, and that second apply used to start a SECOND View
+    // Transition that Chromium skips, rejecting the first transition's .finished
+    // promise unhandled (renderer pageerror "Transition was skipped" — at boot
+    // and on every flip). The data-theme attribute is the ground truth of what
+    // <html> shows; the hook's own identity guards are the second line of
+    // defense for the same echo.
+    if (document.documentElement.getAttribute("data-theme") !== s.theme) {
+      setTheme(s.theme);
+    }
+  }, [setTheme]);
+
   // Phase 84 — persist the chosen redaction mark colour through the same
   // settings write path every other preference uses.
   const onMarkColorChange = useCallback(
@@ -1483,6 +1619,7 @@ export function App(): ReactElement {
       if (cancelled) return;
       setBootstrap(b);
       setSettings(b.settings);
+      lastConfirmedRef.current = b.settings;
       setTheme(b.settings.theme);
       // Phase 16 — restore the pages-panel collapsed state from the
       // boot settings; absent field means the documented default (false).
@@ -1548,47 +1685,17 @@ export function App(): ReactElement {
       ) {
         return;
       }
-      setSettings(s);
-      // Phase 16 — keep the pages-panel collapsed state in sync with
-      // settings echoes (main re-sends the persisted value, e.g. after
-      // another window writes it). Absent / invalid field: the reducer
-      // leaves local state alone (preserve-if-valid, like the backend).
-      dispatchPagesPanel({ type: "sync", value: s.pagesPanelCollapsed });
-      // Phase 112 (TFL-854, chunk H) — keep the panel widths + inspector
-      // collapse in sync with settings echoes (preserve-if-valid: an absent /
-      // invalid field leaves the local value alone).
-      setPanelLeftWidth((prev) => syncPanelWidth("left", s.panelLeftWidthPx, prev));
-      setPanelRightWidth((prev) => syncPanelWidth("right", s.panelRightWidthPx, prev));
-      if (typeof s.inspectorCollapsed === "boolean") {
-        setInspectorCollapsed(s.inspectorCollapsed);
-      }
-      // Phase 111 (chunk D1) — keep the Split Navigator in sync with settings
-      // echoes (preserve-if-valid: an absent / invalid field leaves the local
-      // value alone, so a stale echo can never revert the live layout).
-      if (s.navigatorLayout === "stacked" || s.navigatorLayout === "split") {
-        setNavigatorLayout(s.navigatorLayout);
-      }
-      if (typeof s.navigatorSplitRatio === "number" && Number.isFinite(s.navigatorSplitRatio)) {
-        setNavigatorSplitRatio(clampSplitRatio(s.navigatorSplitRatio));
-      }
-      // DEF-199 — skip the theme re-apply when the document is already
-      // showing the echoed theme. The settings.changed echo of our own
-      // write re-applies an identical theme, and that second apply
-      // used to start a SECOND View Transition that Chromium skips,
-      // rejecting the first transition's .finished promise unhandled
-      // (renderer pageerror "Transition was skipped" — at boot and on
-      // every flip). The data-theme attribute is the ground truth of
-      // what <html> shows; the hook's own identity guards are the
-      // second line of defense for the same echo.
-      if (document.documentElement.getAttribute("data-theme") !== s.theme) {
-        setTheme(s.theme);
-      }
+      applySettings(s, true);
+      // DEF-641 — a confirmed settings echo means the write reached the
+      // renderer's authoritative copy: clear the Studio persistence feedback
+      // back to the at-rest success state.
+      setPersistStatusMessage(null);
     });
     return () => {
       cancelled = true;
       unsubscribe();
     };
-  }, [setTheme]);
+  }, [applySettings]);
 
   // Phase 23 — the Animations setting drives BOTH motion layers from one
   // place: the module-level effective-motion store (read by every JS
@@ -1880,23 +1987,35 @@ export function App(): ReactElement {
     dispatchError({ type: "dismiss", id });
   }, []);
 
-  // DEF-230 (ADV-049) — a failed settings write no longer rejects:
-  // the backend rolls the in-memory state back to the last persisted
-  // value and resolves, then pushes `settings:writeError`. This
-  // subscription is the ONLY signal the renderer gets that the value
-  // did not persist, so surface it as an error toast (the DEF-207
-  // settings-recovery notice style) instead of letting the failure
-  // pass as a silent no-op. Mirrors the settings.changed subscription
-  // above, including its unsubscribe.
-  useEffect(() => {
-    const settingsApi = window.tflex.settings;
-    if (settingsApi === undefined || typeof settingsApi.writeError !== "function") {
-      return;
-    }
-    return settingsApi.writeError((message): void => {
-      pushToast("error", `Settings could not be saved: ${message}`);
-    });
+  // Phase 114 (TFL-1239, chunk C) — a failed settings write no longer rejects:
+  // the backend rolls the in-memory state back to the last persisted value and
+  // resolves, then pushes `settings:writeError`. `useSettingsWriteRollback`
+  // keeps the DEF-230 error toast AND re-reads the authoritative settings, so
+  // the UI drops the value it optimistically showed instead of keeping a value
+  // that never persisted.
+  const onSettingsWriteError = useCallback((message: string): void => {
+    // DEF-641 — mirror the failure in the Settings Studio surface (with the
+    // honest rollback sentence) while keeping the global toast.
+    setPersistStatusMessage(
+      `Settings could not be saved: ${message}. Your previous value was restored.`,
+    );
+    pushToast("error", `Settings could not be saved: ${message}`);
   }, [pushToast]);
+  const onSettingsRestore = useCallback((restored: AppSettings): void => {
+    // ADV-246 — disk is authoritative again after a restore: record the disk
+    // snapshot AND reset the local-write seq (see noteSettingsRestore), so a
+    // newer legitimate echo from a write that did reach disk is applied
+    // instead of being discarded against the stale restore snapshot.
+    noteSettingsRestore(settingsWriteSeqRef, settingsPersistedRef, restored);
+    applySettings(restored, true);
+  }, [applySettings]);
+  // ADV-247 — read the last confirmed settings for the failed-re-read fallback.
+  const getLastConfirmed = useCallback((): AppSettings | null => lastConfirmedRef.current, []);
+  useSettingsWriteRollback({
+    onError: onSettingsWriteError,
+    onRestore: onSettingsRestore,
+    getLastConfirmed,
+  });
 
   // OTA UX — manual re-check handler. Wires Help -> Check for
   // Update and the About dialog's "Check for Updates" button.
@@ -2484,9 +2603,23 @@ export function App(): ReactElement {
         onDiskPath: null,
       };
       const docId = crypto.randomUUID();
-      // A visible affordance from the first frame; runConvertOpen refines
-      // the phase as main pushes progress.
-      setConvertProgress({ docId, phase: "Preparing" });
+      // TFL-1216 (chunk C5) — capture the operation identity at start. The
+      // conversion has no tab yet, so the minted docId is the stable placeholder
+      // for the tab id; the real tab arrives on `opened` and is returned to the
+      // caller. Progress and the settle below address this operation id, never
+      // whichever tab is active now.
+      const operationId = crypto.randomUUID();
+      convertShelfOpRef.current = { operationId, docId };
+      dispatchActivityShelf(
+        convertStartAction(
+          { operationId, docId, tabId: docId, path, displayName },
+          "Preparing",
+        ),
+      );
+      // The terminal shelf notice must name the real failure. runConvertOpen
+      // keeps pushing the error toast; capture that SAME text here so the
+      // `failed` settle below reuses it (never a fabricated reason).
+      let failureText: string | null = null;
       const opened = await runConvertOpen({
         path,
         displayName,
@@ -2517,13 +2650,44 @@ export function App(): ReactElement {
           // The non-dismissible tab state the reader trigger gates on.
           setSourceFormatByTab((prev) => ({ ...prev, [tabId]: result.sourceFormat }));
         },
-        onProgress: setConvertProgress,
-        pushToast,
+        // TFL-1216 (chunk C5) — the shelf owns the running affordance.
+        // `ratio` is discarded by convertProgressAction: an indeterminate phase
+        // label, never a fabricated total or percentage.
+        onProgress: (progress) => {
+          if (progress === null) return;
+          dispatchActivityShelf(
+            convertProgressAction(operationId, {
+              jobId: progress.docId,
+              phase: progress.phase,
+              ratio: progress.ratio,
+            }),
+          );
+        },
+        pushToast: (kind, text) => {
+          if (kind === "error") failureText = text;
+          pushToast(kind, text);
+        },
         mintDocId: () => docId,
       });
-      if (opened === null) return null;
-      await recordRecentOpen(path, displayName);
-      return opened.tabId;
+      convertShelfOpRef.current = null;
+      if (opened.kind === "opened") {
+        dispatchActivityShelf({ type: "complete", id: operationId });
+        await recordRecentOpen(path, displayName);
+        return opened.tabId;
+      }
+      if (opened.kind === "cancelled") {
+        dispatchActivityShelf({ type: "confirm-cancel", id: operationId });
+        return null;
+      }
+      dispatchActivityShelf({
+        type: "fail",
+        id: operationId,
+        failure: {
+          item: displayName,
+          reason: failureText ?? toastForConvertError("internal", displayName),
+        },
+      });
+      return null;
     },
     [openFromBytes, recordRecentOpen],
   );
@@ -2629,13 +2793,24 @@ export function App(): ReactElement {
     }
   }, [openFromRequest]);
 
-  // Phase 35 — Windows integration. A PDF dropped from Explorer opens the
-  // document through the SAME shared path as the dialog (DEF-295); main's
-  // launch-argv / second-instance path push routes through it too.
+  // Phase 118 — the ONE intake model. OS file drops feed this ordered queue
+  // (chunks D/E render the Tray and dispatch through the real existing
+  // operations); the drop handler never opens a document directly.
+  const intakeModelRef = useRef<IntakeModel | null>(null);
+  if (intakeModelRef.current === null) {
+    intakeModelRef.current = createIntakeModel();
+  }
+  const onIntakeFiles = useCallback((files: File[]): void => {
+    intakeModelRef.current?.addMany(files.map((file) => ({ pathOrFile: file })));
+  }, []);
+
+  // Phase 35 — Windows integration. An OS file drop from Explorer feeds the
+  // shared intake model (Phase 118) instead of opening its first file; main's
+  // launch-argv / second-instance path push still routes through the shared
+  // open path.
   useOsFileDrop({
-    openPath: openFromRequest,
+    onIntake: onIntakeFiles,
     onError: (message): void => pushToast("error", message),
-    onNotice: (message): void => pushToast("info", message),
   });
   useOsOpenPathRequests({
     openPath: openFromRequest,
@@ -3009,6 +3184,15 @@ export function App(): ReactElement {
       }
       return { ...prev, activeTool: null };
     });
+    // TFL-1216 (chunk C5b) — a closed tab abandons its background search-index
+    // build. The build has no result to open and no failure the user can act
+    // on, so the row is removed rather than left running or shown as a stale
+    // failed notice.
+    const searchIndexOp = searchIndexShelfOpRef.current.get(id);
+    if (searchIndexOp !== undefined) {
+      searchIndexShelfOpRef.current.delete(id);
+      dispatchActivityShelf({ type: 'remove', id: searchIndexOp.operationId });
+    }
   }, []);
 
   // ---------------------------------------------------------------------
@@ -8470,6 +8654,51 @@ pushToast(
       if (activeId === null) return { error: "No active document." };
       const open = openTabsRef.current[activeId];
       if (open === undefined) return { error: "No active document." };
+
+      // TFL-1216 (chunk C4b) — capture the document identity at START and keep
+      // it with the operation forever. Progress and the settle below address
+      // this operation id, never "the active tab".
+      const operationId = crypto.randomUUID();
+      const displayName = open.displayName;
+      ocrShelfOpRef.current = {
+        operationId,
+        docId: open.session.engineDocId,
+        displayName,
+      };
+      setOcrShelfOp({ operationId, docId: open.session.engineDocId });
+      dispatchActivityShelf(
+        ocrStartAction({
+          operationId,
+          docId: open.session.engineDocId,
+          tabId: activeId,
+          path: open.session.onDiskPath ?? null,
+          displayName,
+          pageCount: open.session.doc.numPages,
+        }),
+      );
+      // Settle the shelf operation exactly once, where this run resolves, and
+      // stop the App-level progress subscription.
+      const settle = (
+        outcome:
+          | { kind: 'ok' }
+          | { kind: 'cancelled' }
+          | { kind: 'error'; error: string },
+      ): void => {
+        ocrShelfOpRef.current = null;
+        setOcrShelfOp(null);
+        if (outcome.kind === 'ok') {
+          dispatchActivityShelf({ type: 'complete', id: operationId });
+        } else if (outcome.kind === 'cancelled') {
+          dispatchActivityShelf({ type: 'confirm-cancel', id: operationId });
+        } else {
+          dispatchActivityShelf({
+            type: 'fail',
+            id: operationId,
+            failure: { item: displayName, reason: outcome.error },
+          });
+        }
+      };
+
       const result = await engineRef.current.ocrRecognize(
         open.session.engineDocId,
         options,
@@ -8478,15 +8707,21 @@ pushToast(
       // flight. Skip the state mirror and the suspects fetch so no partial
       // result is applied. The engine's cancel path restores the pre-run
       // bytes, so the document is unchanged.
-      if (signal?.aborted === true) return { cancelled: true };
+      if (signal?.aborted === true) {
+        settle({ kind: 'cancelled' });
+        return { cancelled: true };
+      }
       if (!result.ok) {
         // The engine confirmed the cancellation: `ocrCancel` flagged the run
         // and `ocrRecognize` resolved with error.code === 'cancelled' after
         // restoring the snapshot. Expected outcome, not an error toast.
-        if (result.error.code === "cancelled") return { cancelled: true };
-        return {
-          error: describeEngineError(result.error.code, result.error.message),
-        };
+        if (result.error.code === "cancelled") {
+          settle({ kind: 'cancelled' });
+          return { cancelled: true };
+        }
+        const error = describeEngineError(result.error.code, result.error.message);
+        settle({ kind: 'error', error });
+        return { error };
       }
       // Refresh the active tab's engine state mirror so any
       // renderer-side readers (annotation overlays, undo counters)
@@ -8500,6 +8735,7 @@ pushToast(
         open.session.engineDocId,
       );
       const suspects = suspectsResult.ok ? suspectsResult.value : [];
+      settle({ kind: 'ok' });
       return { ok: true, suspects };
     },
     [noteOpApplied],
@@ -8519,12 +8755,21 @@ pushToast(
     const open = openTabsRef.current[activeId];
     if (open === undefined) return;
     void engineRef.current.ocrCancel?.(open.session.engineDocId);
+    // TFL-1216 (chunk C4b) — a cancel REQUEST only; the engine's own
+    // confirmation (the settle path in runOcrForActiveTab) is what moves the
+    // shelf operation to `cancelled`.
+    const op = ocrShelfOpRef.current;
+    if (op !== null) {
+      dispatchActivityShelf({ type: 'request-cancel', id: op.operationId });
+    }
   }, []);
 
   /** Dialog confirm: the dialog has already routed the engine
-   *  call; we close the dialog and surface a toast with the
-   *  suspect count, then auto-open the suspects panel so the user
-   *  can browse the results without a second click. */
+   *  call; we close the dialog and auto-open the suspects panel so
+   *  the user can browse the results without a second click. The
+   *  Activity Shelf notice is the completion surface — the old
+   *  `info` toast here would complete the same operation in two
+   *  widgets (TFL-1216 C4b). */
   const onOcrConfirm = useCallback(
     (result: OcrDialogConfirm): void => {
       setOcrOpen(false);
@@ -8558,21 +8803,123 @@ pushToast(
           invalidateSearchIndexFor(activeId);
         }
       });
-      const suspectCount = result.suspects.length;
-      const scopeLabel: OcrScope = result.scope;
-      const pageLabel = scopeLabel === "currentPage"
-        ? "current page"
-        : `${result.pages.length} pages`;
-      const verdict = suspectCount === 0
-        ? "no low-confidence words"
-        : `${suspectCount} low-confidence ${suspectCount === 1 ? "word" : "words"}`;
-      pushToast(
-        "info",
-        `Recognized text on ${pageLabel}: ${verdict}. Save the document to keep the searchable layer.`,
-      );
     },
-    [invalidateSearchIndexFor, pushToast, refreshDocProxyFor],
+    [invalidateSearchIndexFor, refreshDocProxyFor],
   );
+
+  // TFL-1216 (chunk C4b) — while an OCR operation is running, mirror engine
+  // progress events into the shelf. This only subscribes (it never runs OCR
+  // work on the UI thread) and matches on the captured docId; the operation id
+  // from start time addresses the row, never whichever tab is active now.
+  useEffect((): (() => void) | undefined => {
+    if (ocrShelfOp === null) return undefined;
+    const { operationId, docId } = ocrShelfOp;
+    const unsubscribe = subscribeOcrProgress((p: OcrProgress): void => {
+      if (p.docId !== docId) return;
+      dispatchActivityShelf(ocrProgressAction(operationId, p));
+    });
+    return unsubscribe;
+  }, [ocrShelfOp, subscribeOcrProgress]);
+
+  // The operations the shelf renders: active work plus terminal notices that
+  // have not been acknowledged or auto-dismissed. Terminal ops the clock has
+  // retired drop out, so the shelf disappears once nothing is left to report.
+  const activityShelfVisible = useMemo(() => {
+    const keep = new Set<string>([
+      ...selectActiveOperations(activityShelf).map((op) => op.id),
+      ...selectVisibleNotices(activityShelf, activityShelfNowMs).map((op) => op.id),
+    ]);
+    return activityShelf.operations.filter((op) => keep.has(op.id));
+  }, [activityShelf, activityShelfNowMs]);
+
+  const activityShelfHasTimedNotice = useMemo(
+    () =>
+      selectVisibleNotices(activityShelf, activityShelfNowMs).some(
+        (op) => op.state.kind === 'completed' || op.state.kind === 'partial-success',
+      ),
+    [activityShelf, activityShelfNowMs],
+  );
+
+  // Advance the notice clock only while a success notice is visible, and
+  // freeze it while the shelf is hovered or focused so auto-dismiss pauses.
+  useEffect((): (() => void) | undefined => {
+    if (activityShelfFrozen || !activityShelfHasTimedNotice) return undefined;
+    const timer = window.setInterval((): void => {
+      setActivityShelfNowMs(Date.now());
+    }, 1000);
+    return (): void => window.clearInterval(timer);
+  }, [activityShelfFrozen, activityShelfHasTimedNotice]);
+
+  /** Cancel an operation from the shelf. Guarded by the per-operation
+   *  `cancelable` capability (DEF-647): an operation with no cancellation
+   *  channel does not dispatch a request nor fire an engine cancel, so no
+   *  inert Cancel can ever move a non-cancelable op to "Cancelling...". When
+   *  the operation is the running OCR or conversion op it also fires the real
+   *  engine cancel, whose confirmation settles the operation. */
+  const onActivityShelfCancel = useCallback(
+    (id: string): void => {
+      const target = activityShelf.operations.find((op) => op.id === id);
+      if (target === undefined || !target.cancelable) return;
+      dispatchActivityShelf({ type: 'request-cancel', id });
+      const op = ocrShelfOpRef.current;
+      if (op !== null && op.operationId === id) {
+        cancelOcrForActiveTab();
+        return;
+      }
+      // TFL-1216 (chunk C5) — the conversion's cancel channel, addressed by the
+      // job id (the engine doc id). The engine's own confirmation is what
+      // settles the shelf operation to `cancelled`.
+      const convertOp = convertShelfOpRef.current;
+      if (convertOp !== null && convertOp.operationId === id) {
+        const docId = convertOp.docId;
+        window.tflex.convert?.cancel(docId);
+      }
+    },
+    [activityShelf, cancelOcrForActiveTab],
+  );
+
+  /** Run a completion action. OCR's `view-details` activates the operation's
+   *  ORIGINAL tab and opens the existing suspects panel through the guarded
+   *  `onOpenOcrSuspects` handler (DEF-643); the operation is then acknowledged
+   *  and dropped so no row lingers. A closed tab — or a tab that no longer
+   *  holds the operation's captured document — makes the action a truthful
+   *  no-op, so the panel is never opened against the wrong tab.
+   *  TFL-1216 (chunk C5) — a conversion completes with its result already open
+   *  and its fidelity card attached to the document, so a conversion action
+   *  only acknowledges the notice; it never routes into another producer's UI
+   *  (the OCR suspects panel). */
+  const onActivityShelfAction = useCallback(
+    (id: string, action: ActivityCompletionAction): void => {
+      const op = activityShelf.operations.find((candidate) => candidate.id === id);
+      if (action === 'view-details' && op?.task.name === OCR_TASK_NAME) {
+        // DEF-643 — honour the operation's captured identity. We never send a
+        // raw setOcrSuspectsOpen(true); the guarded handler checks that OCR
+        // actually ran on this tab, which the B11 fix requires.
+        const opTabId = op.document.tabId;
+        const open = openTabsRef.current[opTabId];
+        if (
+          open !== undefined &&
+          open.session.engineDocId === op.document.docId
+        ) {
+          if (activeTabIdRefLocal.current !== opTabId) activateTab(opTabId);
+          onOpenOcrSuspectsRef.current(opTabId);
+        }
+      }
+      dispatchActivityShelf({ type: 'acknowledge', id });
+      dispatchActivityShelf({ type: 'remove', id });
+    },
+    [activityShelf, activateTab],
+  );
+
+  /** Dismiss every visible terminal notice: acknowledge first (hides it from
+   *  `selectVisibleNotices`), then drop it from the store. */
+  const onActivityShelfDismiss = useCallback((): void => {
+    const notices = selectVisibleNotices(activityShelf, activityShelfNowMs);
+    for (const op of notices) {
+      dispatchActivityShelf({ type: 'acknowledge', id: op.id });
+      dispatchActivityShelf({ type: 'remove', id: op.id });
+    }
+  }, [activityShelf, activityShelfNowMs]);
 
   /** Navigate to a suspect's page and pulse a short-lived
    *  highlight so the user can spot the word on the page. The
@@ -8718,9 +9065,12 @@ pushToast(
    *  an active document AND a successful OCR run on that tab
    *  before opening; otherwise the button click is a no-op
    *  (matches the onOcrSuspects button's `hasOcrSuspects` gate
-   *  in the Tools palette). */
-  const onOpenOcrSuspects = useCallback((): void => {
-    const activeId = activeTabIdRefLocal.current;
+   *  in the Tools palette). DEF-643 — an optional `tabId` lets the
+   *  Activity Shelf's OCR `view-details` target the operation's captured tab
+   *  explicitly; when omitted the current active tab is used, so every
+   *  existing call site is unchanged. */
+  const onOpenOcrSuspects = useCallback((tabId?: string): void => {
+    const activeId = tabId ?? activeTabIdRefLocal.current;
     if (activeId === null) return;
     if (ocrRunByTabRef.current[activeId] !== true) return;
     // Phase 51 (item 10) — the suspects view is an Inspector section now, so
@@ -8729,6 +9079,8 @@ pushToast(
     setInspectorCollapsed(false);
     setOcrSuspectsOpen(true);
   }, []);
+  // DEF-643 — fill the forward-declared ref for the Activity Shelf action.
+  onOpenOcrSuspectsRef.current = onOpenOcrSuspects;
 
   // ---- Phase 12: FDF IO helpers ----
 
@@ -8987,6 +9339,52 @@ pushToast(
       const fn = (p: SearchIndexProgress | null): void => {
         searchIndexProgressRef.current = p;
         setDiagnostics((prev) => ({ ...prev, searchIndexProgress: p }));
+        // TFL-1216 (chunk C5b) — mirror the background index build onto the
+        // Activity Shelf. The diagnostics mirror above is unchanged. Identity
+        // is captured from the tab the first time a build is observed, so the
+        // row stays attached to the original document.
+        const live = searchIndexShelfOpRef.current.get(tabId);
+        if (p === null) {
+          // The index settled (the searched query is no longer being indexed).
+          if (live !== undefined) {
+            searchIndexShelfOpRef.current.delete(tabId);
+            dispatchActivityShelf({ type: 'complete', id: live.operationId });
+          }
+          return;
+        }
+        const open = openTabsRef.current[tabId];
+        if (open === undefined) {
+          // The tab is gone; its close path already dropped the row, so a late
+          // snapshot must not attach an orphan operation.
+          return;
+        }
+        let op = live;
+        if (op === undefined || op.docId !== open.session.engineDocId) {
+          if (op !== undefined) {
+            searchIndexShelfOpRef.current.delete(tabId);
+            dispatchActivityShelf({ type: 'remove', id: op.operationId });
+          }
+          const operationId = crypto.randomUUID();
+          op = {
+            operationId,
+            docId: open.session.engineDocId,
+            displayName: open.displayName,
+          };
+          searchIndexShelfOpRef.current.set(tabId, op);
+          dispatchActivityShelf(
+            searchIndexStartAction(
+              {
+                operationId,
+                docId: op.docId,
+                tabId,
+                path: open.session.onDiskPath ?? null,
+                displayName: op.displayName,
+              },
+              p.total,
+            ),
+          );
+        }
+        dispatchActivityShelf(searchIndexProgressAction(op.operationId, p));
       };
       cache.set(tabId, fn);
       return fn;
@@ -13056,18 +13454,35 @@ pushToast(
           void onCloseTabPromptChoose(choice);
         }}
       />
-      {/* Phase 53 (feature I) — the import progress affordance. Mounted once
-       * for the whole window (a conversion runs before its tab exists), with
-       * a cancel control addressed by the job id. */}
-      {convertProgress !== null && (
-        <ConversionProgress
-          progress={convertProgress}
-          onCancel={(docId): void => {
-            window.tflex.convert?.cancel(docId);
-          }}
-        />
-      )}
       <Toasts items={errorState.toasts} onDismiss={dismissToast} />
+      {/* TFL-1216 (chunk C4b) — the Activity Shelf, mounted ONCE for the whole
+       * window next to the other window-level overlays. The host is the
+       * positioned ancestor the panel expects (`bottom: 100%; right: 0`) and
+       * sits clear of the View Strip footer and the Focus Dock band. Hover or
+       * focus freezes the notice clock so auto-dismiss pauses. */}
+      {activityShelfVisible.length > 0 && (
+        <div
+          className="activity-shelf-host"
+          onMouseEnter={(): void => setActivityShelfFrozen(true)}
+          onMouseLeave={(): void => setActivityShelfFrozen(false)}
+          onFocusCapture={(): void => setActivityShelfFrozen(true)}
+          onBlurCapture={(): void => setActivityShelfFrozen(false)}
+        >
+          {activityShelfOpen && (
+            <ActivityShelfPanel
+              operations={activityShelfVisible}
+              onClose={(): void => setActivityShelfOpen(false)}
+              onCancel={onActivityShelfCancel}
+              onAction={onActivityShelfAction}
+              onDismiss={onActivityShelfDismiss}
+            />
+          )}
+          <ActivityShelfSummary
+            operations={activityShelfVisible}
+            onOpen={(): void => setActivityShelfOpen(true)}
+          />
+        </div>
+      )}
       {/* Phase 36 (chunk 4) — the Command Palette. Mounted once for the whole
        * window (so it works on the welcome screen and never doubles up in
        * Multi Mode); every row runs an EXISTING handler, and `Ctrl+Enter` pins
@@ -13138,6 +13553,9 @@ pushToast(
       <PreferencesDialog
         open={prefsOpen}
         onClose={(): void => setPrefsOpen(false)}
+        // DEF-641 — the Studio's persistence-feedback line. Null is the at-rest
+        // success default; a failed write swaps in the failure + rollback line.
+        persistStatus={persistStatusMessage ?? undefined}
         // DEF-213 — an absent themeDefault means the app boots on
         // the concrete `settings.theme`; show that, not 'dark'.
         themeDefault={settings.themeDefault ?? settings.theme}
@@ -13218,6 +13636,20 @@ pushToast(
             trackAndSave(updated);
             return updated;
           });
+        }}
+        // Phase 114 (chunk E) — "Restore defaults": a scoped reset of the
+        // Studio-surfaced settings. Composed from the live snapshot, applied
+        // through the one apply path (theme, animations, tab style and import
+        // defaults) then persisted; a failed write rolls back through
+        // `useSettingsWriteRollback`. DEF-644 — this optimistic apply is NOT
+        // confirmed (`confirmed` defaults to false), so a failed write plus a
+        // failed re-read falls back to the last CONFIRMED settings, never the
+        // unpersisted reset. `recentsCap`/`recentFiles` are preserved (DEF-643).
+        onRestoreDefaults={(): void => {
+          if (settings === null) return;
+          const reset = restoreDefaultSettings(settings);
+          applySettings(reset);
+          trackAndSave(reset);
         }}
       />
     </div>

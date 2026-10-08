@@ -128,8 +128,13 @@ describe("PreferencesDialog single-panel redesign (DEF-215)", () => {
 
   it("renders the five sections in order: Appearance, Recent files, Default PDF app, Import and conversion, Storage locations", () => {
     const { host, unmount } = mountPrefs();
+    // Phase 114 (chunk C) — the General panel migrated onto the Settings Studio
+    // primitives, so its two group titles are `.settings-group-title` while the
+    // unmigrated Documents / Import / Storage sections keep `.prefs-section-title`.
     const titles = Array.from(
-      host.querySelectorAll<HTMLElement>("[data-prefs-dialog] .prefs-section-title"),
+      host.querySelectorAll<HTMLElement>(
+        "[data-prefs-dialog] .prefs-section-title, [data-prefs-dialog] .settings-group-title",
+      ),
     ).map((el): string => el.textContent ?? "");
     expect(titles).toEqual([
       "Appearance",
@@ -178,12 +183,13 @@ describe("PreferencesDialog single-panel redesign (DEF-215)", () => {
     const { host, unmount } = mountPrefs();
     const input = host.querySelector<HTMLInputElement>("[data-prefs-animations]");
     expect(input).not.toBeNull();
-    const row = input?.closest(".prefs-row");
-    const label = row?.querySelector<HTMLElement>(".prefs-row-label");
+    // Phase 114 (chunk C) — the General rows are Settings Studio rows now.
+    const row = input?.closest(".settings-row");
+    const label = row?.querySelector<HTMLElement>(".settings-row-label");
     expect(label?.textContent?.trim()).toBe("Enable animations");
-    const hint = row?.querySelector<HTMLElement>(".prefs-hint");
+    const hint = row?.querySelector<HTMLElement>(".settings-support");
     expect(hint?.textContent?.trim()).toBe(
-      "When off, menus, panels, dialogs and page changes appear without transition animations.",
+      "Applies immediately; when off, menus, panels, dialogs and page changes run without transition animations.",
     );
     unmount();
   });

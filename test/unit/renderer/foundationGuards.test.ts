@@ -126,6 +126,7 @@ const MIGRATED_SURFACES: readonly string[] = [
   "components/SanitizeDialog.tsx",
   "components/SaveAsDialog.tsx",
   "components/SearchBar.tsx",
+  "components/SettingsStudio.tsx",
   "components/SideRail.tsx",
   "components/SplitDialog.tsx",
   "components/StageRail.tsx",

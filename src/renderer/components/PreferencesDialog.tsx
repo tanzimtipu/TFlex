@@ -28,7 +28,7 @@
 // current cap is owned by the backend settings service, which would
 // have to honour it on the next `addRecentFile`.)
 
-import type { KeyboardEvent as ReactKeyboardEvent, ReactElement } from 'react';
+import type { ReactElement, ReactNode } from 'react';
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import {
   FileType2,
@@ -47,7 +47,14 @@ import type { ConvertDefaults } from '../../shared/convert';
 import type { ThemeDefault } from '../state/preferences';
 import { DialogShell } from './DialogShell';
 import { Button } from './Button';
-import { TfResize } from './motion/TfResize';
+import { ConfirmDialog } from './ConfirmDialog';
+import {
+  SettingsRow,
+  SettingsSection,
+  SettingsStudio,
+  SettingsSupport,
+} from './SettingsStudio';
+import type { SettingsSectionDef } from './SettingsStudio';
 
 interface PreferencesDialogProps {
   open: boolean;
@@ -77,6 +84,15 @@ interface PreferencesDialogProps {
    *  (never a silent no-op). */
   tabStyle?: TabStyle;
   onSetTabStyle?: (next: TabStyle) => void;
+  /** Phase 114 (chunk E) — the "Restore defaults" action. Optional so older
+   *  mounts keep rendering; absent means the Reset group is not rendered
+   *  (never a silent no-op). */
+  onRestoreDefaults?: () => void;
+  /** DEF-641 / Phase 114 criterion 4 — the persistence-feedback line shown in
+   *  the Studio body whenever the sheet is open. The host swaps in the honest
+   *  failure sentence after a failed settings write and clears it back once the
+   *  write is confirmed. Absent means the at-rest success text. */
+  persistStatus?: ReactNode;
 }
 
 /** Phase 53 — the font families the settings validator accepts for
@@ -115,6 +131,18 @@ export function clampFontSizePt(value: number): number {
   );
 }
 
+/** Phase 114 (chunk E) — the exact scope sentence for the "Restore defaults"
+ *  reset. Shared verbatim by the Settings Studio support text and the confirm
+ *  dialog so the promise the user reads is the promise that runs. */
+export const RESTORE_DEFAULTS_SCOPE =
+  'Restores the appearance, tab and import settings to their defaults. Your documents, recent files, window layout and saved signatures are kept.';
+
+/** DEF-641 / Phase 114 criterion 4 — the at-rest persistence-feedback line.
+ *  Shown whenever the Settings Studio is open and every loaded setting is
+ *  persisted. The host replaces it with the honest failure sentence after a
+ *  failed write instead of ever claiming "saved". */
+export const PERSIST_STATUS_SAVED = 'All changes saved.';
+
 const FALLBACK_PATHS: AppInfo['storagePaths'] = {
   userData: 'unavailable',
   settings: 'unavailable',
@@ -145,6 +173,21 @@ const PREFS_CATEGORIES: readonly PrefsCategoryDef[] = [
   { id: 'storage', label: 'Storage', icon: FolderOpen },
 ];
 
+/** Phase 114 (chunk C) — the category registry mapped onto the Studio's
+ *  section defs. The legacy `prefs-cat-*` / `prefs-panel-*` ids and the
+ *  `data-prefs-category` hook ride through as explicit pass-throughs, so the
+ *  migrated shell keeps every shipped anchor. */
+const PREFS_SECTIONS: readonly SettingsSectionDef[] = PREFS_CATEGORIES.map(
+  (cat): SettingsSectionDef => ({
+    id: cat.id,
+    label: cat.label,
+    icon: cat.icon,
+    navId: `prefs-cat-${cat.id}`,
+    panelId: `prefs-panel-${cat.id}`,
+    navDataAttrs: { 'data-prefs-category': cat.id },
+  }),
+);
+
 export function PreferencesDialog(props: PreferencesDialogProps): ReactElement | null {
   const {
     open,
@@ -160,6 +203,8 @@ export function PreferencesDialog(props: PreferencesDialogProps): ReactElement |
     onSetConvertDefaults,
     tabStyle = 'colorful',
     onSetTabStyle,
+    onRestoreDefaults,
+    persistStatus = PERSIST_STATUS_SAVED,
   } = props;
   const [capDraft, setCapDraft] = useState(String(recentsCap));
   // Phase 53 — the two numeric conversion controls are drafts committed on
@@ -175,7 +220,9 @@ export function PreferencesDialog(props: PreferencesDialogProps): ReactElement |
   // Phase 59 (item 8) — the active category. Roving tabindex: only the
   // active category button is tabbable; arrow keys move between them.
   const [category, setCategory] = useState<PrefsCategoryId>('general');
-  const categoryRefs = useRef<Partial<Record<PrefsCategoryId, HTMLButtonElement | null>>>({});
+  // Phase 114 (chunk E) — the "Restore defaults" confirm dialog. Local to the
+  // sheet: the sheet owns the open state, the host owns the reset side-effect.
+  const [restoreOpen, setRestoreOpen] = useState(false);
 
   // DEF-611 — return focus to the application-menu trigger on close. The sheet
   // opens from that menu row; DialogShell lands initial focus inside the sheet
@@ -194,29 +241,6 @@ export function PreferencesDialog(props: PreferencesDialogProps): ReactElement |
     focusSeededRef.current = true;
     returnFocusRef.current = document.querySelector<HTMLElement>('[data-app-menu]');
   }, [open]);
-
-  const selectCategory = (next: PrefsCategoryId): void => {
-    setCategory(next);
-    categoryRefs.current[next]?.focus();
-  };
-
-  const handleRailKeyDown = (e: ReactKeyboardEvent<HTMLElement>): void => {
-    const ids = PREFS_CATEGORIES.map((c): PrefsCategoryId => c.id);
-    const current = ids.indexOf(category);
-    let next: PrefsCategoryId | null = null;
-    if (e.key === 'ArrowDown' || e.key === 'ArrowRight') {
-      next = ids[(current + 1) % ids.length] ?? null;
-    } else if (e.key === 'ArrowUp' || e.key === 'ArrowLeft') {
-      next = ids[(current - 1 + ids.length) % ids.length] ?? null;
-    } else if (e.key === 'Home') {
-      next = ids[0] ?? null;
-    } else if (e.key === 'End') {
-      next = ids[ids.length - 1] ?? null;
-    }
-    if (next === null) return;
-    e.preventDefault();
-    selectCategory(next);
-  };
 
   useEffect(() => {
     setCapDraft(String(recentsCap));
@@ -326,10 +350,11 @@ export function PreferencesDialog(props: PreferencesDialogProps): ReactElement |
   };
 
   return (
+    <>
     <DialogShell
       surface="sheet"
       open={open}
-      title="Preferences"
+      title="Settings Studio"
       titleId="prefs-title"
       onClose={onClose}
       closeAriaLabel="Close preferences"
@@ -337,109 +362,80 @@ export function PreferencesDialog(props: PreferencesDialogProps): ReactElement |
       data-prefs-dialog
       bodyClassName="sheet-body-prefs"
     >
-      <div className="prefs-layout">
-            <nav
-              className="prefs-rail"
-              role="tablist"
-              aria-orientation="vertical"
-              aria-label="Preferences categories"
-              onKeyDown={handleRailKeyDown}
-            >
-              {PREFS_CATEGORIES.map((cat) => {
-                const isActive = category === cat.id;
-                const CategoryIcon = cat.icon;
-                return (
-                  <Button
-                    key={cat.id}
-                    type="button"
-                    role="tab"
-                    id={`prefs-cat-${cat.id}`}
-                    intent="secondary"
-                    kind="exclusive-selection"
-                    density="compact"
-                    className="prefs-cat"
-                    aria-selected={isActive}
-                    aria-controls={`prefs-panel-${cat.id}`}
-                    tabIndex={isActive ? 0 : -1}
-                    data-prefs-category={cat.id}
-                    ref={(el): void => {
-                      categoryRefs.current[cat.id] = el;
-                    }}
-                    onClick={(): void => selectCategory(cat.id)}
-                  >
-                    <Icon className="prefs-cat-icon" icon={CategoryIcon} size="sm" />
-                    <span className="prefs-cat-label">{cat.label}</span>
-                  </Button>
-                );
-              })}
-            </nav>
-            <div className="prefs-content">
-              <TfResize axes="height">
-              {PREFS_CATEGORIES.map((cat) => {
-                const isActive = category === cat.id;
-                return (
-                  <div
-                    key={cat.id}
-                    id={`prefs-panel-${cat.id}`}
-                    role="tabpanel"
-                    aria-labelledby={`prefs-cat-${cat.id}`}
-                    className={isActive ? 'prefs-panel anim-tab-in' : 'prefs-panel'}
-                    data-prefs-panel={cat.id}
-                    data-active={isActive ? 'true' : 'false'}
-                    hidden={!isActive}
-                  >
+      <div className="settings-studio-shell">
+      <SettingsStudio
+      sections={PREFS_SECTIONS}
+      activeId={category}
+      onSelect={(id): void => setCategory(id as PrefsCategoryId)}
+      ariaLabel="Preferences categories"
+      resizeAxis="height"
+    >
+      {PREFS_CATEGORIES.map((cat) => {
+        const isActive = category === cat.id;
+        return (
+          <div
+            key={cat.id}
+            id={`prefs-panel-${cat.id}`}
+            role="tabpanel"
+            aria-labelledby={`prefs-cat-${cat.id}`}
+            className={isActive ? 'prefs-panel anim-tab-in' : 'prefs-panel'}
+            data-prefs-panel={cat.id}
+            data-active={isActive ? 'true' : 'false'}
+            hidden={!isActive}
+          >
                     {cat.id === 'general' && (
                       <>
-                        <section className="prefs-section">
-                          <h3 className="prefs-section-title">Appearance</h3>
-                          <div className="prefs-row">
-                            <div className="prefs-row-text">
-                              <label className="prefs-row-label" htmlFor="prefs-theme-default">Theme default</label>
-                              <p className="prefs-hint">Applies immediately, and is the theme the app starts in on the next launch.</p>
-                            </div>
-                            <select
-                              id="prefs-theme-default"
-                              className="prefs-select"
-                              value={themeDefault}
-                              onChange={(e): void => {
-                                const next = e.target.value as ThemeDefault;
-                                // Persist the default (next launch), then apply the
-                                // choice to the LIVE theme immediately — no Save
-                                // click, the dialog stays open.
-                                onSetThemeDefault(next);
-                                onThemeChange(next);
-                              }}
-                              data-prefs-theme-default
-                            >
-                              <option value="light">Light</option>
-                              <option value="dark">Dark</option>
-                              <option value="frosted">Frosted</option>
-                              <option value="system">System default</option>
-                            </select>
-                          </div>
-                          <div className="prefs-row">
-                            <div className="prefs-row-text">
-                              <label className="prefs-row-label" htmlFor="prefs-animations">Enable animations</label>
-                              <p className="prefs-hint">
-                                When off, menus, panels, dialogs and page changes appear without transition animations.
-                              </p>
-                            </div>
-                            <input
-                              id="prefs-animations"
-                              type="checkbox"
-                              className="prefs-check"
-                              checked={animationsEnabled}
-                              onChange={(e): void => onSetAnimationsEnabled(e.target.checked)}
-                              data-prefs-animations
-                            />
-                          </div>
+                        <SettingsSection title="Appearance">
+                          <SettingsRow
+                            id="theme-default"
+                            label="Theme default"
+                            htmlFor="prefs-theme-default"
+                            hint="Applies immediately; the app starts in this theme on the next launch."
+                            control={
+                              <select
+                                id="prefs-theme-default"
+                                className="prefs-select"
+                                value={themeDefault}
+                                onChange={(e): void => {
+                                  const next = e.target.value as ThemeDefault;
+                                  // Persist the default (next launch), then apply the
+                                  // choice to the LIVE theme immediately — no Save
+                                  // click, the dialog stays open.
+                                  onSetThemeDefault(next);
+                                  onThemeChange(next);
+                                }}
+                                data-prefs-theme-default
+                              >
+                                <option value="light">Light</option>
+                                <option value="dark">Dark</option>
+                                <option value="frosted">Frosted</option>
+                                <option value="system">System default</option>
+                              </select>
+                            }
+                          />
+                          <SettingsRow
+                            id="animations"
+                            label="Enable animations"
+                            htmlFor="prefs-animations"
+                            hint="Applies immediately; when off, menus, panels, dialogs and page changes run without transition animations."
+                            control={
+                              <input
+                                id="prefs-animations"
+                                type="checkbox"
+                                className="prefs-check"
+                                checked={animationsEnabled}
+                                onChange={(e): void => onSetAnimationsEnabled(e.target.checked)}
+                                data-prefs-animations
+                              />
+                            }
+                          />
                           {onSetTabStyle !== undefined && (
-                            <>
-                              <div className="prefs-row">
-                                <div className="prefs-row-text">
-                                  <label className="prefs-row-label" htmlFor="prefs-tab-style">Tab style</label>
-                                  <p className="prefs-hint">Colorful gives each tab its own flat colour; Standard keeps the classic tab look.</p>
-                                </div>
+                            <SettingsRow
+                              id="tab-style"
+                              label="Tab style"
+                              htmlFor="prefs-tab-style"
+                              hint="Applies immediately."
+                              control={
                                 <select
                                   id="prefs-tab-style"
                                   className="prefs-select"
@@ -450,205 +446,241 @@ export function PreferencesDialog(props: PreferencesDialogProps): ReactElement |
                                   <option value="colorful">Colorful</option>
                                   <option value="standard">Standard</option>
                                 </select>
-                              </div>
-                            </>
-                          )}
-                        </section>
-
-                        <section className="prefs-section">
-                          <h3 className="prefs-section-title">Recent files</h3>
-                          <div className="prefs-row">
-                            <div className="prefs-row-text">
-                              <label className="prefs-row-label" htmlFor="prefs-recents-cap">Maximum entries</label>
-                              <p className="prefs-hint">Older entries roll off when this cap is reached. Takes effect on next launch.</p>
-                            </div>
-                            <input
-                              id="prefs-recents-cap"
-                              type="number"
-                              min={1}
-                              max={50}
-                              step={1}
-                              className="prefs-input"
-                              value={capDraft}
-                              onChange={(e): void => setCapDraft(e.target.value)}
-                              onBlur={commitCap}
-                              onKeyDown={(e): void => {
-                                if (e.key === 'Enter') {
-                                  e.preventDefault();
-                                  commitCap();
-                                }
-                              }}
-                              data-prefs-recents-cap
+                              }
                             />
-                          </div>
-                        </section>
+                          )}
+                        </SettingsSection>
+
+                        <SettingsSection title="Recent files">
+                          <SettingsRow
+                            id="recents-cap"
+                            label="Maximum entries"
+                            htmlFor="prefs-recents-cap"
+                            hint="Takes effect on next launch."
+                            control={
+                              <input
+                                id="prefs-recents-cap"
+                                type="number"
+                                min={1}
+                                max={50}
+                                step={1}
+                                className="prefs-input"
+                                value={capDraft}
+                                onChange={(e): void => setCapDraft(e.target.value)}
+                                onBlur={commitCap}
+                                onKeyDown={(e): void => {
+                                  if (e.key === 'Enter') {
+                                    e.preventDefault();
+                                    commitCap();
+                                  }
+                                }}
+                                data-prefs-recents-cap
+                              />
+                            }
+                          />
+                        </SettingsSection>
+
+                        {onRestoreDefaults !== undefined && (
+                          <SettingsSection title="Reset">
+                            <SettingsRow
+                              id="restore-defaults"
+                              label="Restore defaults"
+                              hint={RESTORE_DEFAULTS_SCOPE}
+                              control={
+                                <Button
+                                  type="button"
+                                  intent="secondary"
+                                  kind="action"
+                                  density="compact"
+                                  onClick={(): void => setRestoreOpen(true)}
+                                  data-prefs-restore-defaults
+                                >
+                                  Restore defaults
+                                </Button>
+                              }
+                            />
+                          </SettingsSection>
+                        )}
                       </>
                     )}
 
                     {cat.id === 'documents' && (
-                      <section className="prefs-section" data-prefs-default-pdf-section>
-                        <h3 className="prefs-section-title">Default PDF app</h3>
-                        <div className="prefs-row">
-                          <div className="prefs-row-text">
-                            <p className="prefs-hint">
-                              Windows does not let an installer change the default PDF handler silently. Choose Jovrel
-                              in the settings that open, and Explorer will show the Jovrel icon and type name for PDFs.
-                            </p>
-                          </div>
-                          <button
-                            type="button"
-                            className="btn btn-secondary prefs-action"
-                            onClick={openDefaultApps}
-                            data-prefs-default-pdf
-                          >
-                            <Icon icon={MonitorCog} size="sm" />
-                            Make Jovrel the default PDF app
-                          </button>
-                        </div>
+                      <SettingsSection
+                        title="Default PDF app"
+                        dataAttrs={{ 'data-prefs-default-pdf-section': '' }}
+                      >
+                        <SettingsRow
+                          id="default-pdf-app"
+                          label="Windows default PDF app"
+                          hint="Windows does not let an installer change the default PDF handler silently. Choose Jovrel in the settings that open, and Explorer will show the Jovrel icon and type name for PDFs."
+                          control={
+                            <button
+                              type="button"
+                              className="btn btn-secondary prefs-action"
+                              onClick={openDefaultApps}
+                              data-prefs-default-pdf
+                            >
+                              <Icon icon={MonitorCog} size="sm" />
+                              Make Jovrel the default PDF app
+                            </button>
+                          }
+                        />
                         {defaultAppsNotice !== null && (
                           <p className="prefs-hint prefs-action-status" role="status" data-prefs-default-pdf-status>
                             {defaultAppsNotice}
                           </p>
                         )}
-                      </section>
+                      </SettingsSection>
                     )}
 
                     {cat.id === 'import' && (
-                      <section className="prefs-section" data-prefs-convert-section>
-                        <h3 className="prefs-section-title">Import and conversion</h3>
-                        <div className="prefs-row">
-                          <div className="prefs-row-text">
-                            <label className="prefs-row-label" htmlFor="prefs-convert-page-size">Page size</label>
-                          </div>
-                          <select
-                            id="prefs-convert-page-size"
-                            className="prefs-select"
-                            value={convertDefaults.pageSize}
-                            onChange={(e): void => setConvert('pageSize', e.target.value as ConvertDefaults['pageSize'])}
-                            data-prefs-convert-page-size
-                          >
-                            <option value="a4">A4</option>
-                            <option value="letter">Letter</option>
-                          </select>
-                        </div>
-                        <div className="prefs-row">
-                          <div className="prefs-row-text">
-                            <label className="prefs-row-label" htmlFor="prefs-convert-margin">Margin (mm)</label>
-                          </div>
-                          <input
-                            id="prefs-convert-margin"
-                            type="number"
-                            min={CONVERT_MARGIN_MIN_MM}
-                            max={CONVERT_MARGIN_MAX_MM}
-                            step={1}
-                            className="prefs-input"
-                            value={marginDraft}
-                            onChange={(e): void => setMarginDraft(e.target.value)}
-                            onBlur={commitMargin}
-                            onKeyDown={(e): void => {
-                              if (e.key === 'Enter') {
-                                e.preventDefault();
-                                commitMargin();
-                              }
-                            }}
-                            data-prefs-convert-margin
-                          />
-                        </div>
-                        <div className="prefs-row">
-                          <div className="prefs-row-text">
-                            <label className="prefs-row-label" htmlFor="prefs-convert-font">Text font</label>
-                          </div>
-                          <select
-                            id="prefs-convert-font"
-                            className="prefs-select"
-                            value={convertDefaults.textFontFamily}
-                            onChange={(e): void => setConvert('textFontFamily', e.target.value)}
-                            data-prefs-convert-font
-                          >
-                            {CONVERT_FONT_FAMILIES.map((family) => (
-                              <option key={family} value={family}>{family}</option>
-                            ))}
-                          </select>
-                        </div>
-                        <div className="prefs-row">
-                          <div className="prefs-row-text">
-                            <label className="prefs-row-label" htmlFor="prefs-convert-font-size">Text font size (pt)</label>
-                          </div>
-                          <input
-                            id="prefs-convert-font-size"
-                            type="number"
-                            min={CONVERT_FONT_SIZE_MIN_PT}
-                            max={CONVERT_FONT_SIZE_MAX_PT}
-                            step={1}
-                            className="prefs-input"
-                            value={fontSizeDraft}
-                            onChange={(e): void => setFontSizeDraft(e.target.value)}
-                            onBlur={commitFontSize}
-                            onKeyDown={(e): void => {
-                              if (e.key === 'Enter') {
-                                e.preventDefault();
-                                commitFontSize();
-                              }
-                            }}
-                            data-prefs-convert-font-size
-                          />
-                        </div>
-                        <div className="prefs-row">
-                          <div className="prefs-row-text">
-                            <label className="prefs-row-label" htmlFor="prefs-convert-delimiter">CSV delimiter</label>
-                          </div>
-                          <select
-                            id="prefs-convert-delimiter"
-                            className="prefs-select"
-                            value={convertDefaults.csvDelimiter}
-                            onChange={(e): void => setConvert('csvDelimiter', e.target.value as ConvertDefaults['csvDelimiter'])}
-                            data-prefs-convert-delimiter
-                          >
-                            <option value="auto">Auto-detect</option>
-                            <option value=",">Comma (,)</option>
-                            <option value=";">Semicolon (;)</option>
-                            <option value={'\t'}>Tab</option>
-                          </select>
-                        </div>
-                        <div className="prefs-row">
-                          <div className="prefs-row-text">
-                            <label className="prefs-row-label" htmlFor="prefs-convert-csv-mapping">Map CSV columns to form fields</label>
-                          </div>
-                          <input
-                            id="prefs-convert-csv-mapping"
-                            type="checkbox"
-                            className="prefs-check"
-                            checked={convertDefaults.csvFormMapping}
-                            onChange={(e): void => setConvert('csvFormMapping', e.target.checked)}
-                            data-prefs-convert-csv-mapping
-                          />
-                        </div>
-                        <div className="prefs-row">
-                          <div className="prefs-row-text">
-                            <label className="prefs-row-label" htmlFor="prefs-convert-html-backgrounds">Print HTML backgrounds</label>
-                          </div>
-                          <input
-                            id="prefs-convert-html-backgrounds"
-                            type="checkbox"
-                            className="prefs-check"
-                            checked={convertDefaults.htmlPrintBackgrounds}
-                            onChange={(e): void => setConvert('htmlPrintBackgrounds', e.target.checked)}
-                            data-prefs-convert-html-backgrounds
-                          />
-                        </div>
-                        <div className="prefs-row">
-                          <div className="prefs-row-text">
-                            <p className="prefs-hint">
-                              Used by every file import that produces a new PDF, and by Fill form fields from CSV. Applies to the next import.
-                            </p>
-                          </div>
-                        </div>
-                      </section>
+                      <SettingsSection
+                        title="Import and conversion"
+                        description="Applies to the next import."
+                        dataAttrs={{ 'data-prefs-convert-section': '' }}
+                      >
+                        <SettingsRow
+                          id="convert-page-size"
+                          label="Page size"
+                          htmlFor="prefs-convert-page-size"
+                          control={
+                            <select
+                              id="prefs-convert-page-size"
+                              className="prefs-select"
+                              value={convertDefaults.pageSize}
+                              onChange={(e): void => setConvert('pageSize', e.target.value as ConvertDefaults['pageSize'])}
+                              data-prefs-convert-page-size
+                            >
+                              <option value="a4">A4</option>
+                              <option value="letter">Letter</option>
+                            </select>
+                          }
+                        />
+                        <SettingsRow
+                          id="convert-margin"
+                          label="Margin (mm)"
+                          htmlFor="prefs-convert-margin"
+                          control={
+                            <input
+                              id="prefs-convert-margin"
+                              type="number"
+                              min={CONVERT_MARGIN_MIN_MM}
+                              max={CONVERT_MARGIN_MAX_MM}
+                              step={1}
+                              className="prefs-input"
+                              value={marginDraft}
+                              onChange={(e): void => setMarginDraft(e.target.value)}
+                              onBlur={commitMargin}
+                              onKeyDown={(e): void => {
+                                if (e.key === 'Enter') {
+                                  e.preventDefault();
+                                  commitMargin();
+                                }
+                              }}
+                              data-prefs-convert-margin
+                            />
+                          }
+                        />
+                        <SettingsRow
+                          id="convert-font"
+                          label="Text font"
+                          htmlFor="prefs-convert-font"
+                          control={
+                            <select
+                              id="prefs-convert-font"
+                              className="prefs-select"
+                              value={convertDefaults.textFontFamily}
+                              onChange={(e): void => setConvert('textFontFamily', e.target.value)}
+                              data-prefs-convert-font
+                            >
+                              {CONVERT_FONT_FAMILIES.map((family) => (
+                                <option key={family} value={family}>{family}</option>
+                              ))}
+                            </select>
+                          }
+                        />
+                        <SettingsRow
+                          id="convert-font-size"
+                          label="Text font size (pt)"
+                          htmlFor="prefs-convert-font-size"
+                          control={
+                            <input
+                              id="prefs-convert-font-size"
+                              type="number"
+                              min={CONVERT_FONT_SIZE_MIN_PT}
+                              max={CONVERT_FONT_SIZE_MAX_PT}
+                              step={1}
+                              className="prefs-input"
+                              value={fontSizeDraft}
+                              onChange={(e): void => setFontSizeDraft(e.target.value)}
+                              onBlur={commitFontSize}
+                              onKeyDown={(e): void => {
+                                if (e.key === 'Enter') {
+                                  e.preventDefault();
+                                  commitFontSize();
+                                }
+                              }}
+                              data-prefs-convert-font-size
+                            />
+                          }
+                        />
+                        <SettingsRow
+                          id="convert-delimiter"
+                          label="CSV delimiter"
+                          htmlFor="prefs-convert-delimiter"
+                          control={
+                            <select
+                              id="prefs-convert-delimiter"
+                              className="prefs-select"
+                              value={convertDefaults.csvDelimiter}
+                              onChange={(e): void => setConvert('csvDelimiter', e.target.value as ConvertDefaults['csvDelimiter'])}
+                              data-prefs-convert-delimiter
+                            >
+                              <option value="auto">Auto-detect</option>
+                              <option value=",">Comma (,)</option>
+                              <option value=";">Semicolon (;)</option>
+                              <option value={'\t'}>Tab</option>
+                            </select>
+                          }
+                        />
+                        <SettingsRow
+                          id="convert-csv-mapping"
+                          label="Map CSV columns to form fields"
+                          htmlFor="prefs-convert-csv-mapping"
+                          control={
+                            <input
+                              id="prefs-convert-csv-mapping"
+                              type="checkbox"
+                              className="prefs-check"
+                              checked={convertDefaults.csvFormMapping}
+                              onChange={(e): void => setConvert('csvFormMapping', e.target.checked)}
+                              data-prefs-convert-csv-mapping
+                            />
+                          }
+                        />
+                        <SettingsRow
+                          id="convert-html-backgrounds"
+                          label="Print HTML backgrounds"
+                          htmlFor="prefs-convert-html-backgrounds"
+                          control={
+                            <input
+                              id="prefs-convert-html-backgrounds"
+                              type="checkbox"
+                              className="prefs-check"
+                              checked={convertDefaults.htmlPrintBackgrounds}
+                              onChange={(e): void => setConvert('htmlPrintBackgrounds', e.target.checked)}
+                              data-prefs-convert-html-backgrounds
+                            />
+                          }
+                        />
+                        <SettingsSupport>
+                          Used by every file import that produces a new PDF, and by Fill form fields from CSV. Applies to the next import.
+                        </SettingsSupport>
+                      </SettingsSection>
                     )}
 
                     {cat.id === 'storage' && (
-                      <section className="prefs-section">
-                        <h3 className="prefs-section-title">Storage locations</h3>
+                      <SettingsSection title="Storage locations">
                         <div className="prefs-paths">
                           <Button
                             type="button"
@@ -687,14 +719,36 @@ export function PreferencesDialog(props: PreferencesDialogProps): ReactElement |
                             <span className="prefs-path-value">{paths.signatures}</span>
                           </Button>
                         </div>
-                      </section>
+                      </SettingsSection>
                     )}
                   </div>
                 );
               })}
-              </TfResize>
-            </div>
-          </div>
-    </DialogShell>
+      </SettingsStudio>
+      {/* DEF-641 / Phase 114 criterion 4 — honest persistence feedback, present
+          whenever the Studio is open. At rest it shows "All changes saved.";
+          the host swaps in the failure + rollback sentence on a failed write.
+          TFL-1282 (adversary should-fix) — this line is pinned OUTSIDE the
+          scrolling `.settings-studio-body` (a non-scrolling footer row of the
+          shell) so the honest failure sentence stays visible on the long
+          General / Import panels instead of scrolling below the fold. */}
+      <p className="settings-support settings-persist-status prefs-persist-status" role="status" data-prefs-persist-status>
+        {persistStatus}
+      </p>
+      </div>
+  </DialogShell>
+      <ConfirmDialog
+        open={open && restoreOpen}
+        title="Restore default settings?"
+        message={RESTORE_DEFAULTS_SCOPE}
+        confirmLabel="Restore defaults"
+        cancelLabel="Cancel"
+        onConfirm={(): void => {
+          onRestoreDefaults?.();
+          setRestoreOpen(false);
+        }}
+        onCancel={(): void => setRestoreOpen(false)}
+      />
+    </>
   );
 }

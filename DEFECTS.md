@@ -5,6 +5,137 @@
 > inspect the current `OPEN`, `FIX-READY`, and `DISPUTED` entries first; closed records are
 > historical evidence and must not be loaded wholesale.
 
+## DEF-637: A settings-write rollback drops a newer legitimate settings echo, diverging the UI from disk
+
+- Status: CLOSED
+- Severity: MEDIUM - after a failed write's restore, a legitimately newer `settings.changed` echo is discarded while the older restored snapshot is re-applied, so the UI can diverge from disk; the next whole-object write can then overwrite the newer disk value (silent loss of the newer setting).
+- Found by: adversary (ADV-246)
+- Phase: 114
+
+Files:
+- `src/renderer/App.tsx:1901-1905` - `onSettingsRestore` sets `settingsPersistedRef.current = restored` but never advances `settingsWriteSeqRef.current`, so the restore snapshot is assumed newer than any in-flight write.
+- `src/renderer/state/settingsEcho.ts:430-459` - `shouldApplyEcho` returns false for a content-mismatched echo when `writeSeq !== 0`.
+
+Steps to reproduce:
+1. `node --experimental-strip-types test-fixtures/tfl1254-adversary/probe_rollback_echo.mjs` - models the chunk-C bookkeeping (`settingsWriteSeqRef` -> seq, `settingsPersistedRef` -> ref, `onSettingsRestore` -> ref = disk with seq untouched) and feeds every decision through the REAL `shouldApplyEcho`.
+
+Expected: the echo for the write that actually reached disk (Z) is applied, so the UI converges on the value on disk.
+
+Actual: after write #1 fails and the restore sets `ref = P` (seq stays 2), `shouldApplyEcho(Z, 2, P)` returns false (the newer Z is DROPPED) while `shouldApplyEcho(P, 2, P)` returns true (the stale P is re-applied). Probe output matches the recorded log.
+
+Evidence: `test-fixtures/tfl1254-adversary/probe_rollback_echo.mjs`, `test-fixtures/tfl1254-adversary/probe_rollback_echo.log`, re-run log `test-fixtures/tfl1264-adversary/probe_rollback_echo.log`.
+
+History:
+- qa: opened from ADV-246 (reproduced; probe output matches the adversary log).
+- cto: FIX-READY relayed from frontend-dev TFL-1262 (2026-10-08): `noteSettingsRestore` sets `settingsPersistedRef` and resets `settingsWriteSeqRef` to 0 on restore, so a legitimately newer echo is applied; `phase114_rollbackCoherence.test.tsx` added (3 spec files, 13 tests, `npm run verify` clean). Pending qa retest.
+- qa: CLOSED 2026-10-08 (TFL-1273). The probe now drives the REAL `noteSettingsRestore` (no longer models the pre-fix bookkeeping): `node --experimental-strip-types test-fixtures/tfl1254-adversary/probe_rollback_echo.mjs` -> `echo Z AFTER restore -> true` (newer value applied; was false). Regression `phase114_rollbackCoherence.test.tsx` 2/2 green; e2e `phase114_settings_studio.spec.cjs` 7/7 green.
+
+## DEF-638: When `loadSettings()` fails after a write error, the UI keeps the value that never persisted
+
+- Status: CLOSED
+- Severity: LOW - the write-failure rollback is best-effort: when the authoritative re-read rejects or returns `ok:false`, no restore fires, so the optimistically-applied (never-persisted) value stays in the UI with only the generic toast. Narrow: requires the settings store to be unreadable while a write fails.
+- Found by: adversary (ADV-247)
+- Phase: 114
+
+Files:
+- `src/renderer/hooks/useSettingsWriteRollback.ts:28-36` - on `settings:writeError` it calls `onError(message)`, then `loadSettings().then(result => { if (result.ok) onRestore(result.value); }).catch(() => undefined)`; neither the non-`ok` nor the reject branch fires a restore.
+
+Steps to reproduce:
+1. `node test-fixtures/tfl1264-adversary/probe_loadfail_keep.mjs` (mirrors the hook body verbatim against a mocked `window.tflex`).
+2. Drive `writeError` with `loadSettings()` resolving `{ok:true}`, then `{ok:false}`, then rejecting.
+
+Expected: on any write failure the UI must not keep a value that never persisted (the chunk-C claim: a failed write restores the prior value).
+
+Actual: `{ok:true}` -> `onRestore` fires (claim holds); `{ok:false}` and reject -> `onRestore` NOT called, only the toast, and the unpersisted value stays.
+
+Evidence: `test-fixtures/tfl1264-adversary/probe_loadfail_keep.mjs`, `test-fixtures/tfl1264-adversary/probe_loadfail_keep.log`.
+
+History:
+- qa: opened from ADV-247 (reproduced; `{ok:false}` and reject fire no restore).
+- cto: FIX-READY relayed from frontend-dev TFL-1262 (2026-10-08): the hook now takes `getLastConfirmed` and restores it when `loadSettings()` resolves `ok:false` or rejects; `phase114_settingsRollback.test.tsx` covers both branches. Pending qa retest.
+- qa: CLOSED 2026-10-08 (TFL-1273). Probe mirrors the fixed hook body: `node test-fixtures/tfl1264-adversary/probe_loadfail_keep.mjs` -> `{ok:true}`, `{ok:false}` and reject all call `onRestore` with `keptOptimistic=false` (was: `{ok:false}`/reject fired no restore). Regression `phase114_settingsRollback.test.tsx` 6/6 green.
+
+## DEF-639: A settings write queued behind a failed write is persisted as the rolled-back value, silently dropping the newer change
+
+- Status: CLOSED
+- Severity: MEDIUM - after a failed settings write, the next queued write persists the rolled-back value instead of the user's newer change, so the newer setting is silently dropped on disk with only the generic toast (documented change loss in the persistence path).
+- Found by: adversary (ADV-248)
+- Phase: 114
+
+Files:
+- `src/main/services/settings.ts:1578-1583` (committed HEAD 5347365) - `save()` reads `this.current` when the queued `_doSave` task runs, not at call time.
+- `src/main/services/settings.ts:1636` - the write-failure catch sets `this.current = structuredClone(this.persisted)` (DEF-230 rollback).
+
+Steps to reproduce:
+1. Bundle and run `test-fixtures/tfl1264-adversary/probe_queued_write_drop.mjs` (esbuild command in the probe header); it drives the REAL `SettingsService` queue with committed-HEAD `save()` semantics.
+2. The probe persists P (theme `dark`), makes write #1 fail (blocks the atomic tmp path), issues write #1 X (theme `frosted`) then write #2 Z (theme `light`) before #1 settles, then lets #2 land.
+
+Expected: write #2 persists the user's newer value Z (theme `light`); the failed write's rollback does not clobber it.
+
+Actual: write #1's catch rolls `this.current` back to P (`dark`); write #2's task then reads `this.current` = P and persists P. Disk ends `theme=dark`, echoes `dark,dark`; the newer `light` never reaches disk. The same probe against the working tree (which already carries backend-dev's TFL-1263 snapshot-at-call-time fix, uncommitted) keeps Z (`theme=light`), confirming the defect is against the committed HEAD the adversary reviewed.
+
+Evidence: `test-fixtures/tfl1264-adversary/probe_queued_write_drop.mjs`, `test-fixtures/tfl1264-adversary/probe_queued_write_drop.log`.
+
+History:
+- qa: opened from ADV-248 (reproduced against committed HEAD 5347365; working tree already carries the TFL-1263 fix, uncommitted).
+- cto: FIX-READY relayed from backend-dev TFL-1263 (2026-10-08): `save()` snapshots the argument at call time and persists the snapshot; `test/unit/main/settingsQueueFailure.test.ts` added (2 files, 197 tests, `npm run verify` clean; negative control discriminates the defect). Pending qa retest.
+- qa: CLOSED 2026-10-08 (TFL-1273). Bundle+run `test-fixtures/tfl1264-adversary/probe_queued_write_drop.bundle.mjs`: working-tree `save()` semantics -> `echo themes dark,light` / `disk theme light` / "no defect - newer Z persisted" (committed-HEAD semantics still drop Z, the negative control). Regression `test/unit/main/settingsQueueFailure.test.ts` 2/2 green.
+
+## DEF-640: C4a completion-action change leaves the C2 ActivityShelf component test red
+
+- Status: CLOSED (qa TFL-1274 re-verify, 2026-10-08)
+- Severity: MEDIUM - test-only regression that reddens the unit suite. C4a changed `availableCompletionActions` to return only the operation's declared actions, but the C2 component oracle still pins the removed hardcoded set, so `npm run test:unit` fails on one test. No product data impact (the model/store are still unwired into App), but the Activity Shelf work cannot show a green suite.
+- Found by: qa (TFL-1270 blast-radius check, 2026-10-08)
+- Phase: TFL-1216 C4a
+
+Files:
+- `src/renderer/state/activity.ts:302-318` - C4a `availableCompletionActions` returns exactly the declared `completionActions` (undo gated on a non-empty `transactionId`); failed returns `['view-details']`; default `[]`.
+- `test/unit/renderer/activityShelf.test.tsx:155-169` - the C2 oracle builds an operation via `createOperation` with no declared actions and expects `['open-result', 'show-in-folder', 'view-details']` (and `undo` with a transaction id). Not updated by C4a; its mtime (2026-10-08T00:24Z) predates the C4a edit window (~01:12Z).
+
+Steps to reproduce:
+1. `npm.cmd run test:unit -- test/unit/renderer/activityShelf.test.tsx`.
+2. The test `activityShelf completion actions > renders only the actions availableCompletionActions offers, and undo only with a transaction id` fails at `activityShelf.test.tsx:158`.
+
+Expected: the C2 oracle reflects the C4a contract (declared-only actions) and the file is green.
+
+Actual: `Test Files 1 failed (1)`, `Tests 1 failed | 15 passed (16)`; `AssertionError: expected [] to deeply equal [ 'open-result', ...(2) ]` (- open-result, show-in-folder, view-details / + []).
+
+Evidence: `tfl1270_unit_neighbour.log`.
+
+History:
+- qa (TFL-1270, 2026-10-08): found via the standing blast-radius check; the two C4a-named test files pass (17/17 and 20/20) and `npm run typecheck` is clean, but this dependent C2 test is red. C4a's brief named only the two test files it modified, so this dependent oracle was missed. Fix is to update the stale oracle (product behaviour is intentional per C4a); not applied by qa.
+- frontend-dev (TFL-1272, 2026-10-08): FIX-READY. Updated the stale C2 oracle `test/unit/renderer/activityShelf.test.tsx` to the C4a declared-actions contract; test-only, no product file modified. New test `offers exactly the declared actions, defaults to none, and gates undo on both declaration and a transaction id` drives the real imported `availableCompletionActions` both directly and through `ActivityShelfPanel`, pinning: declared `['view-details']` completed -> `['view-details']`; `[]` -> `[]`; `['undo']` with no transaction id -> `[]`; `['undo']` with a non-empty transaction id -> `['undo']`. `npm.cmd run test:unit -- test/unit/renderer/activityShelf.test.tsx` -> Test Files 1 passed (1), Tests 16 passed (16); `npm.cmd run typecheck` clean. Awaiting qa re-verification to CLOSE.
+- qa (TFL-1274, 2026-10-08): CLOSED. Re-verified the fix. Retest commands: `npm.cmd run test:unit -- test/unit/renderer/activityShelf.test.tsx` -> Test Files 1 passed (1), Tests 16 passed (16); `npm.cmd run test:unit -- test/unit/renderer/activityShelfState.test.ts` -> 1 file / 17 passed; `npm.cmd run test:unit -- test/unit/renderer/activityShelfStore.test.ts` -> 1 file / 20 passed; `npm.cmd run typecheck` clean (exit 0). Independent review: the new test drives the REAL imported `availableCompletionActions` (no mock) and pins declared `['view-details']` completed -> `['view-details']`, `[]` -> `[]`, `['undo']` no tx id -> `[]`, `['undo']` with non-empty tx id -> `['undo']`; test count unchanged at 16 (stale assertion replaced, not deleted). Fix scope confirmed test-only: `test/unit/renderer/activityShelf.test.tsx` mtime 2026-10-08T12:29:31+11:00 is the latest-touched file; no product file (`activity.ts`, `activityShelf.ts`, `ActivityShelf.tsx`, App/DocumentView) changed after the C4a window. Activity Shelf cluster (3 files + typecheck) green together.
+
+## DEF-641: The Phase 114 CONTROL-INDEX persistence-status control (`data-prefs-persist-status`) does not exist
+
+- Status: CLOSED (qa TFL-1293 retest, 2026-10-08)
+- Severity: MEDIUM - the Phase 114 `CONTROL-INDEX` (REQUIREMENTS.md:8617) names `data-prefs-persist-status` as a Studio control proven by a named test, and success criterion 4 requires immediate settings to show "Close plus persistence feedback". No such element, hook or handler exists in the renderer: immediate settings (theme, animations, tab style) apply with no rendered persistence feedback, only the global write-failure toast. A CONTROL-INDEX row with no production handler is a no-op.
+- Found by: qa (TFL-1273 phase validation, 2026-10-08)
+- Phase: 114
+
+Files:
+- `REQUIREMENTS.md:8617` - CONTROL-INDEX lists "persistence status (`data-prefs-persist-status`)".  `REQUIREMENTS.md:8579` (criterion 4) - "immediate with Close + persistence feedback".
+- `docs/SETTINGS-STUDIO-INVENTORY.md:210` - the inventory itself records that `data-prefs-persist-status` "is the remaining selector from `phase-114.md:59` not yet in the source".
+- `src/renderer/components/PreferencesDialog.tsx` - contains no `data-prefs-persist-status` (the only `role="status"` line is `data-prefs-default-pdf-status`, `:516`).
+
+Steps to reproduce:
+1. `cd "C:\Users\tanzi\OneDrive\App Development\TFlex"`.
+2. Search the production renderer for the hook: `grep -rn "data-prefs-persist-status" src/` -> no match.
+3. `node -e "const s=require('fs').readFileSync('src/renderer/components/PreferencesDialog.tsx','utf8');console.log(s.includes('data-prefs-persist-status'))"` -> `false`.
+
+Expected: the CONTROL-INDEX row has a real production handler and a proving test, and the Studio shows persistence feedback for its immediate settings.
+
+Actual: no `data-prefs-persist-status` element, hook or handler anywhere in `src/renderer/**`; the row is a no-op and criterion 4's persistence-feedback half is unmet.
+
+Evidence: `test-fixtures/tfl1273-control-index-sweep.md` (row 9 = FAIL), e2e `phase114_settings_studio.spec.cjs`, `screenshots/phase114/studio-general.png`.
+
+History:
+- qa (TFL-1273, 2026-10-08): found in the Phase 114 CONTROL-INDEX sweep; filed, not fixed. All other 10 rows PASS.
+- cto: FIX-READY relayed from frontend-dev TFL-1276 (2026-10-08): added `[data-prefs-persist-status]` (`role="status"`, `.settings-support`) in the Studio body via a new `persistStatus` prop (default "All changes saved."); App records the failure message in `onSettingsWriteError` and clears it on the next `settings.changed` echo; `phase114_persistStatus.test.tsx` (3 tests) added; `npm run verify` clean; 2 files / 8 tests green. Pending qa retest.
+- qa (TFL-1285, 2026-10-08): retest NOT PASSED -> left OPEN. `phase114_persistStatus.test.tsx` is green (4/4: role=status, success/failure text, and the TFL-1282 "not a descendant of the scrolling groups column" guard), so the control itself satisfies the row. But the same TFL-1282 change that pinned the line into a non-scrolling footer collapses the Studio body to 0px and overlaps the section navigator, so the real-app e2e E1 (`[data-prefs-category]` click) times out; filed DEF-646 (HIGH). The row cannot be closed while its fix leaves the Studio unusable.
+- qa (TFL-1293, 2026-10-08): CLOSED. DEF-646 fixed (TFL-1290), so the control is now visible and usable in the real app. Retest: `npx vitest run test/unit/renderer/phase114_persistStatus.test.tsx` -> 4 passed (role=status; at-rest "All changes saved."; failure+rollback sentence; not a descendant of the scrolling column). Real-app visibility proven in `e2e/tfl1293_scope_footer.spec.cjs` S2: `[data-prefs-persist-status]` is visible and on screen, sits on the shell footer BELOW the scrolling `.settings-studio-body` (overflow-y auto), inside the sheet bottom, and stays visible/pinned at full and 520px compact width; `screenshots/phase114/studio-full-footer.png` + `studio-compact-footer.png`. Phase 114 CONTROL-INDEX row 9 now PASS (10 PASS / 0 FAIL) - `test-fixtures/tfl1293-control-index-sweep.md`.
+
 ## DEF-636: Stale Phase 23 animations-switch assertion reddens verify:full (blocks the 1.51.1 release gate)
 
 - Status: CLOSED (qa TFL-1211 re-verify, 2026-10-08)
@@ -14600,3 +14731,173 @@ History:
 - CTO (2026-10-07): triaged ACCEPTED -> DEF-627 (MEDIUM); assigned to frontend-dev (TFL-1176).
 - frontend-dev (TFL-1176): FIX-READY - `onLocationChange` published on every committed spread change and on unmount; `App.tsx` persists `currentPage` without closing.
 - qa (TFL-1177, 2026-10-07): re-verified PASS -> CLOSED. Unit `tfl1116_bookViewLocation.test.tsx` + `bookView.test.tsx` + `bookViewSpread.test.tsx` + `tfl1116_navigationSync.test.ts` green (45/45 focused set), `verify` exit 0, `build` exit 0, e2e 7/7. Blast radius: Book View neighbours covered by the same specs; prop wiring typechecks clean.
+
+## DEF-642: The Activity Shelf summary is occluded by the modal OCR dialog scrim while an OCR run is in progress
+
+- Status: REJECTED (CTO, 2026-10-08 - working as intended; see History)
+- Severity: LOW - the shelf's in-progress summary is rendered at z-index 45 while the OCR dialog's `.modal-backdrop` scrim is z-index 800 and covers the whole viewport, so the summary is dimmed behind the scrim and cannot be clicked until the dialog closes. No workflow is blocked (the OCR dialog shows its own progress); this is a design/UX gap in the window-level activity surface during modal operations.
+- Found by: qa (TFL-1279, C4b focused verification)
+- Phase: TFL-1216 (Activity Shelf)
+
+Files:
+- `src/renderer/styles.css:23491-23500` - `.activity-shelf-host { z-index: 45 }`.
+- `src/renderer/styles.css:7385-7391` - `.modal-backdrop { z-index: 800; inset: 0; pointer-events: auto }`.
+- `src/renderer/App.tsx:13289-13308` - the shelf is mounted once at window level.
+- `src/renderer/components/OcrDialog.tsx:470` - `blockBackdropClose={running}` keeps the modal scrim up for the whole run.
+
+Steps to reproduce:
+1. Launch TFlex and open a scanned PDF (e.g. a disposable copy of `test-fixtures/scanned.pdf`).
+2. Run OCR through the real affordance: command palette -> Recognize text (OCR) -> Current page -> Recognize text.
+3. While the run is in progress, inspect the shelf summary in the bottom-right (the OCR dialog is still open).
+
+Expected: the Activity Shelf summary is visible and usable while an operation is in progress.
+Actual: the summary is rendered ("1 operation  Recognize text - 1 of 1 pages") but sits behind the modal scrim; `document.elementFromPoint` at its centre returns `.modal-backdrop`, and a real click is intercepted by the backdrop. After the dialog closes the shelf opens normally and carries the completion notice.
+
+Evidence: `screenshots/tfl1216-c4b-activity-shelf-inprogress.png`, `screenshots/tfl1216-c4b-activity-shelf.png`; e2e probe `in-progress occlusion probe={"found":true,"topTag":"DIV","topClass":"modal-backdrop","selfOrChild":false}`.
+
+History:
+- qa (TFL-1279, 2026-10-08): opened during C4b focused verification. The C4b e2e step asked to open the shelf while the run is in progress; that step is unreachable while the modal OCR dialog is up. Verification still PASSED on the reachable behaviour (summary reports the running operation; the shelf is the completion surface after settle).
+- cto (TFL-1216, 2026-10-08): REJECTED - working as intended. A modal dialog legitimately owns the foreground; the Activity Shelf is deliberately a window-chrome surface below modals and toasts (z-index 45 < modal backdrop 800), so it must not float over or steal interaction from an open modal. For a modal task the modal itself is the progress and cancel owner; the shelf's role is the post-settle completion notice (already wired for OCR in C4b). Raising the shelf above modal scrims would create a second, competing progress/cancel surface for the same operation and violate the "one operation, one surface" rule. The spec's "shows while work runs" is satisfied for the non-modal background operations (conversion, update download, print/export raster, search index) that the following migration chunks bring onto the shelf. The C4b e2e already asserts the reachable behaviour (the summary reports the running operation) and need not click through an open modal. Documented as a supported limit, not a defect.
+
+## DEF-643: C5 conversion-on-shelf added a 4th unguarded `setOcrSuspectsOpen(true)` and broke the B11 OCR guard test
+
+- Status: CLOSED (qa TFL-1287 retest, 2026-10-08)
+- Severity: MEDIUM - the B11 guard exists to stop the suspects panel opening against a tab that never ran OCR; the new `onActivityShelfAction` path calls `setOcrSuspectsOpen(true)` without the `activeId` / `ocrRunByTabRef` guards, so an OCR shelf notice's View details action can open the panel against whichever tab is active (the B11 wrong-tab class). It also red-lines a pinned OCR unit suite.
+- Found by: qa (TFL-1283, C5 focused verification)
+- Phase: TFL-1216 (Activity Shelf) chunk C5
+
+Files:
+- `src/renderer/App.tsx:8852` - new direct `setOcrSuspectsOpen(true)` inside `onActivityShelfAction`, guarded only by `action === 'view-details' && op?.task.name === OCR_TASK_NAME`.
+- `test/unit/renderer/bugB11_ocrSuspectsEmptyTabGuard.test.ts:133` - pins `directCalls.length <= 3`; the working tree now has 4 (was 3 at HEAD).
+
+Steps to reproduce:
+1. `npm.cmd run test:unit -- ocr` from the repo root.
+
+Expected: the OCR suite is green (the B11 guard test passes; `setOcrSuspectsOpen(true)` direct calls stay within the guarded contexts).
+Actual: 1 file / 1 test fails:
+```
+FAIL test/unit/renderer/bugB11_ocrSuspectsEmptyTabGuard.test.ts > ... the only direct setOcrSuspectsOpen(true) calls in App.tsx are inside the guarded onOpenOcrSuspects / OCR-confirm / batch paths
+AssertionError: expected 4 to be less than or equal to 3
+ ❯ test/unit/renderer/bugB11_ocrSuspectsEmptyTabGuard.test.ts:133:32
+Test Files  1 failed | 14 passed (15)
+Tests  1 failed | 121 passed (122)
+```
+
+Evidence: `HEAD:src/renderer/App.tsx` has 3 direct calls (comment line excluded); the working tree has 4, the extra being the C5 call at `App.tsx:8852`.
+
+History:
+- qa (TFL-1283, 2026-10-08): opened during C5 focused verification (blast-radius item 4, "conversion/OCR suites stay green"). C5's own conversion suites and the shelf store/renderer suites are green; this OCR guard suite is not.
+- frontend-dev (TFL-1284, 2026-10-08): FIX-READY. `src/renderer/App.tsx` only: forwarded `onOpenOcrSuspectsRef` (mirrors `ocrRunByTabRef`); the shelf OCR `view-details` now resolves the operation captured `tabId`, verifies the tab is open and its `session.engineDocId === op.document.docId`, activates it via the existing `activateTab` only if it differs, then calls the guarded `onOpenOcrSuspectsRef.current(tabId)` (which gained an optional `tabId` and keeps both B11 guards). A closed/reused tab is a truthful no-op (acknowledge + remove only); conversion `view-details` stays acknowledge-only. Direct `setOcrSuspectsOpen(true)` count in App.tsx is 3 again (was 4); the B11 pinned count was not edited. `npm.cmd run test:unit -- ocr` 15 files / 122 passed; `bugB11_ocrSuspectsEmptyTabGuard` 4 passed; shelf 24/16/17; phase53_convertImport 20; typecheck clean; build:renderer built. Awaiting qa re-verification to CLOSE.
+- qa (TFL-1287, 2026-10-08): CLOSED. Retest commands + counts: `npm.cmd run test:unit -- test/unit/renderer/bugB11_ocrSuspectsEmptyTabGuard.test.ts` 1 file / 4 passed (was 1 failed); `-- ocr` 15 files / 122 passed; `activityShelfStore.test.ts` 1 / 24; `activityShelf.test.tsx` 1 / 16; `activityShelfState.test.ts` 1 / 17; `phase53_convertImport.test.tsx` 1 / 20; `npm.cmd run typecheck` clean; `npm.cmd run build:renderer` built (only the pre-existing chunk-size / ineffective-dynamic-import warnings). Static review: direct `setOcrSuspectsOpen(true)` calls in `src/renderer/App.tsx` = 3 (lines 8767 onOcrConfirm, 9021 post-batch, 9056 guarded handler; comment mentions excluded); `bugB11_ocrSuspectsEmptyTabGuard.test.ts` unmodified (no git diff) so the pinned `<=3` was not loosened. Shelf OCR `view-details` (`App.tsx:8870-8882`) resolves `op.document.tabId`, requires the tab open AND `session.engineDocId === op.document.docId`, activates via `activateTab` only when it differs, then calls `onOpenOcrSuspectsRef.current(opTabId)`; a closed/reused tab skips the open and only acknowledges+removes. Conversion `view-details` stays acknowledge-only (`op?.task.name === OCR_TASK_NAME` where OCR='Recognize text', conversion='Import'). Wrong-tab guard `ocrRunByTabRef.current[activeId] !== true` still enforced at `App.tsx:9051`. Blast-radius cluster (OCR 122 + B11 4 + shelf 24/16/17 + convert 20) green together.
+
+## DEF-644: Restore defaults silently truncates the recent-files history it promises to keep
+
+- Status: CLOSED (qa TFL-1285 retest, 2026-10-08)
+- Severity: MEDIUM - the Studio's Restore-defaults scope text promises recent-files history is kept, but the reset lowered `recentsCap` and the backend trimmed the history to the new cap on save, so accumulated user history is dropped silently (no toast, no notice). Documented change loss of a persisted user asset that criterion 9 names explicitly.
+- Found by: adversary (ADV-253)
+- Phase: 114
+
+Files:
+- `src/renderer/state/defaults.ts:52-61` - `restoreDefaultSettings` spreads `current` but (pre-fix) also lowered `recentsCap` to 10, so the whole object sent through `settings:save` carried the lower cap.
+- `src/main/services/settings.ts:1182-1190` - `normalizeSettings` runs `normalizeRecentFiles(rawObj.recentFiles, recentsCap)`; `:427-428` slices the list to the cap.
+- `src/renderer/App.tsx:13578-13583` - `onRestoreDefaults` sends the whole `restoreDefaultSettings(settings)` object through `trackAndSave`.
+- `src/renderer/components/PreferencesDialog.tsx:137-138` - `RESTORE_DEFAULTS_SCOPE` promised "Restores the appearance, tab and import settings to their defaults. Your documents, recent files, window layout and saved signatures are kept."
+
+Steps to reproduce:
+1. Seed an isolated profile with `recentsCap: 20` and 15 real recent-files entries (live: `e2e/tfl1280_adversary_restore.spec.cjs` test 1; headless: `test-fixtures/tfl1280-adversary/probe-restore-history.mjs`).
+2. Launch through the canonical `launchApp` helper, open the Studio with Ctrl+, click Restore defaults, confirm.
+3. Read the on-disk `settings.json` of that profile.
+
+Expected: the 15 history entries and the cap survive (scope text promises history kept; phase-114 criterion 9: restores settings only, never history).
+
+Actual: `restoreDefaultSettings` lowered `recentsCap` to 10 and the backend `normalizeSettings` trimmed `recentFiles` to 10, so five entries were permanently dropped from disk. Live log: `before: cap = 20 history = 15` / `after : cap = 10 history = 10`.
+
+Evidence: `test-fixtures/tfl1280-adversary/probe-restore-history.mjs`, `test-fixtures/tfl1280-adversary/probe-restore-history.log`, `test-fixtures/tfl1280-adversary/e2e-restore-live.log`, `e2e/tfl1280_adversary_restore.spec.cjs` test 1.
+
+History:
+- qa: opened from ADV-253.
+- qa (TFL-1285, 2026-10-08): CLOSED. TFL-1282 makes `restoreDefaultSettings` spread `current` and reset only theme/themeDefault/animations/tabStyle/convertDefaults, leaving `recentsCap` and `recentFiles` untouched (`src/renderer/state/defaults.ts:52-61`; the source comment labels this DEF-643 - a label mismatch, the ledger's ADV-253 mapping is DEF-644). Retest: esbuild-bundle + run `test-fixtures/tfl1280-adversary/probe-restore-history.bundle.mjs` -> `recentsCap 20`, `recentFiles on disk: 15`, `RESULT: history kept as promised.` (was `LOSS - 5 ... dropped`). Unit `npx vitest run test/unit/renderer/phase114_importRestore.test.tsx` -> 10 passed incl. the cap/history-preservation regression. e2e `npx playwright test e2e/tfl1280_adversary_restore.spec.cjs` test 1 -> green (`after : cap = 20 history = 15`); the test's cap oracle was updated from the old buggy `cap == 10` to `cap preserved`.
+
+## DEF-645: A double failure on the Restore-defaults path keeps the unpersisted reset in the UI
+
+- Status: CLOSED (qa TFL-1285 retest, 2026-10-08)
+- Severity: LOW - on the narrow DEF-638 precondition (settings write fails AND the authoritative rollback re-read fails), the Restore-defaults reset that never reached disk stays in the UI because the optimistic apply advanced the rollback fallback snapshot. UI/disk divergence with no data loss beyond the already-failed write.
+- Found by: adversary (ADV-254)
+- Phase: 114
+
+Files:
+- `src/renderer/App.tsx:13578-13583` - `onRestoreDefaults` calls `applySettings(reset)` optimistically before the write is confirmed.
+- `src/renderer/App.tsx:1543-1554` - `applySettings` (pre-fix) unconditionally set `lastConfirmedRef.current = s`, so the unpersisted reset became the fallback snapshot.
+- `src/renderer/hooks/useSettingsWriteRollback.ts:53-58` - on a failed re-read, the hook restores the last confirmed snapshot.
+
+Steps to reproduce:
+1. Seed a profile with `theme: dark`; launch through the canonical helper; open the Studio (Ctrl+,).
+2. Break BOTH the write and the re-read: replace the profile's `settings.json` with a directory (the tmp->rename write fails; reading it is EISDIR -> `ok:false`).
+3. Click Restore defaults and confirm.
+
+Expected: per the accepted DEF-638/ADV-247 contract, the UI drops the unpersisted reset and falls back to the last confirmed snapshot (boot theme `dark`).
+
+Actual: the UI keeps `frosted` (the Restore-defaults value that never persisted); `lastConfirmedRef` had been advanced to the reset by the optimistic `applySettings`. Live log: `theme after double failure = frosted (last confirmed = dark)`.
+
+Evidence: `e2e/tfl1280_adversary_restore.spec.cjs` test 3 (failing), `test-fixtures/tfl1280-adversary/e2e-restore-live.log`.
+
+History:
+- qa: opened from ADV-254.
+- qa (TFL-1285, 2026-10-08): CLOSED. TFL-1282 adds `confirmedSnapshotAfterApply` (`src/renderer/state/defaults.ts:72-78`) and `App.applySettings` now advances `lastConfirmedRef` only on a confirmed apply (`App.tsx:1543-1554`); `onRestoreDefaults` calls `applySettings(reset)` with `confirmed=false` (`App.tsx:13578-13583`), so the double-failure fallback restores the last CONFIRMED settings. The source comment labels this DEF-644 - a label mismatch; the ledger's ADV-254 mapping is DEF-645. Retest: `npx vitest run test/unit/renderer/phase114_settingsRollback.test.tsx` -> 8 passed (incl. the double-failure restore-last-confirmed test). e2e `npx playwright test e2e/tfl1280_adversary_restore.spec.cjs` test 3 -> green: `theme after double failure = dark (last confirmed = dark)`. Note: the adversary's test 3 read `<html data-theme>` immediately after the status text appeared, before the async re-read rejected; the oracle now polls for the theme, which is the same contract (UI drops the unpersisted reset) - the fix itself is correct.
+
+## DEF-646: The persistence-status footer wrapper collapses the Settings Studio body to zero height and overlaps the section navigator
+
+- Status: CLOSED (qa TFL-1293 retest, 2026-10-08)
+- Severity: HIGH - the TFL-1282 wrapper that pins `[data-prefs-persist-status]` to a non-scrolling footer makes `.settings-studio-shell` a flex column whose `.settings-studio` child (`flex:1 1 0`, `min-height:0`) collapses to 0px inside the auto-height sheet body. The whole Studio sheet shrinks to header + a 34px footer (measured 89px tall), the settings body renders nothing, and the footer overlaps the category navigator so a real click cannot reach it. The Settings Studio's primary navigation and body are unusable.
+- Found by: qa (TFL-1285 phase-close validation, 2026-10-08)
+- Phase: 114
+
+Files:
+- `src/renderer/components/PreferencesDialog.tsx:365-739` - `[data-prefs-persist-status]` was moved out of the scrolling groups column into a new `.settings-studio-shell` wrapper (TFL-1282).
+- `src/renderer/styles.css:23613-23629` - `.settings-studio-shell { height:100% }` plus `.settings-studio-shell > .settings-studio { flex:1 1 0; height:auto; min-height:0 }`. The sheet body `.sheet-body-prefs` has no definite height (`.sheet` sets only `max-height`, never `height`), so `height:100%` resolves to `auto`, the flex-basis-0 studio takes 0, and the shell is only as tall as the footer.
+- `src/renderer/styles.css:23412-23419` - `.settings-studio { display:flex; height:100%; min-height:0 }`; as a direct child of the auto-height body (pre-TFL-1282) its own content gave the sheet its height, which the wrapper removed.
+
+Steps to reproduce:
+1. `npm.cmd run build`, then launch the app through `e2e/lib/launch.cjs` (or run `npx playwright test e2e/phase114_settings_studio.spec.cjs --config=e2e/playwright.dev.config.js`).
+2. Open the Studio with Ctrl+, or the Stage Rail gear.
+3. Inspect the sheet: it is ~89px tall; `[data-prefs-category="general"]` is at y=717 h=36 while `[data-prefs-persist-status]` is at y=705 h=34 and is the topmost element at the nav button's centre.
+
+Expected: the Studio shows its navigator and settings body, capped by the sheet max-height, with the persistence footer pinned below the scrolling body (the TFL-1282 intent).
+
+Actual: `.settings-studio` measures 0px high, the sheet measures 89px, and `document.elementFromPoint` at the nav button centre returns `[data-prefs-persist-status]`; the real click is intercepted (`locator.click` times out after 30s). Reproduced in e2e E1; visible in the E4 confirm screenshot (the Studio is a small empty box with a horizontal scrollbar).
+
+Evidence: `tfl1285_e2e.log` (E1 failure), `screenshots/phase114/studio-e1-nav-geom.png`, `screenshots/phase114/studio-restore-defaults-confirm.png`; measured geometry `studio.h=0`, `shell.h=34`, `sheet.h=89`, `topTag=P`.
+
+History:
+- qa (TFL-1285, 2026-10-08): found in the Phase 114 close pass while retesting DEF-641. E1 (category navigator) fails; E2-E7 pass (they do not click the navigator). The DEF-641 unit spec passes because jsdom has no layout, so only the real-app e2e catches it. This blocks the DEF-641 close: the control exists and is placed outside the scrolling body, but the wrapper that placed it breaks the Studio. Owner frontend-dev.
+- cto: FIX-READY relayed from frontend-dev TFL-1290 (2026-10-08): `.sheet-body-prefs:has(> .settings-studio-shell){display:flex;flex-direction:column}` establishes a definite height; `.settings-studio-shell{flex:1 1 auto;height:auto}` and `> .settings-studio{flex:1 1 auto}` (was `flex:1 1 0`). Real-app E1 geometry after fix: shell 470, studio 436 (was 0), footer inside the sheet bottom, nav hit = settings-nav-label; `phase114_settings_studio.spec.cjs` 7/7, `phase114_persistStatus`+`phase114_a11y` 16/16, `npm run verify` clean (406 files). A static CSS guard was added to `phase114_a11y.test.tsx`. Scope note: the `:has()` rule selects `.sheet-body-prefs` (the Preferences sheet body that hosts the shell), not a `.settings-*` selector - required to break the indefinite-height chain. Pending qa retest.
+- qa (TFL-1293, 2026-10-08): CLOSED. Retest green. `npm.cmd run build` clean; `npx playwright test e2e/phase114_settings_studio.spec.cjs -c e2e/playwright.dev.config.js` -> 7 passed (E1 now passes). E1 geometry (isolated profile): `.settings-studio` 838x436 (was 0), `.settings-studio-shell` 470, sheet 525, persist footer 838x34 at the sheet bottom, and `document.elementFromPoint` at the nav centre returns `settings-nav-label` (the real click lands). All four `[data-prefs-category]` panels render non-zero and one is active at a time. Blast radius / scope (new `e2e/tfl1293_scope_footer.spec.cjs`, 2/2): `.sheet-body-prefs` is mounted only in the Studio sheet (0 on Home, 0 on a document surface), its computed `display` is `flex` with the shell as direct child; the footer is pinned below the scrolling `.settings-studio-body` and stays visible at both full and 520px compact width. See `test-fixtures/tfl1293-phase114-verdict.md` and `test-fixtures/tfl1293-control-index-sweep.md`.
+
+## DEF-647: The Activity shelf offers an inert Cancel on the running search-index row (no cancellation channel)
+
+- Status: FIX-READY (frontend-dev TFL-1292, 2026-10-08; awaiting qa re-verification)
+- Severity: MEDIUM - a false affordance. The shelf presents a Cancel control that claims to stop the background search-index build but cannot: clicking it moves the row to "Cancelling..." while the index walk continues, and the operation later settles to `completed` (never `cancelled`). The shelf's honesty contract (and `docs/ACTIVITY-SHELF-INVENTORY.md:104`, "No Cancel is rendered") is contradicted. No data loss; the build is a background optimization.
+- Found by: qa (TFL-1291 focused verification, 2026-10-08)
+- Phase: 116 / chunk C5b (TFL-1216)
+
+Files:
+- `src/renderer/components/ActivityShelf.tsx:276` - `ActivityShelfPanel` passes `canCancel` (true) unconditionally to every row; `ActivityRow` shows the Cancel only when `canCancel && running` (`:111`).
+- `src/renderer/App.tsx:8856-8874` - `onActivityShelfCancel` always dispatches `request-cancel`, but fires a real engine cancel only for the OCR op (`ocrShelfOpRef`) or the conversion op (`convertShelfOpRef`). A search-index operation has neither, so nothing ever confirms the cancellation.
+- `src/renderer/state/activityShelf.ts:423` - the search-index op declares `completionActions: []` and the module comment states the shelf "renders neither completion buttons nor an inert Cancel"; the completion-actions gate does not, in fact, govern the Cancel control.
+
+Steps to reproduce:
+1. `npm.cmd run build`, then launch through the canonical helper (`e2e/lib/launch.cjs`).
+2. Open a text PDF (e.g. `test-fixtures/report.pdf`).
+3. Press Ctrl+F and type a query (e.g. `the`). The background index build starts and the window shelf summary shows "Index for search - N of 34 pages".
+4. Open the Activity panel (hover the shelf host, click the Activity button).
+5. The running row offers a "Cancel" button; click it.
+
+Expected: no Cancel control (the build has no cancellation channel; the C5b design and inventory doc both say so).
+
+Actual: a Cancel button is rendered; clicking it sets the row to "Cancelling..." and the background index continues to completion. Live log: `rowState=running rowText="34 of 34 pages" actions=[] cancelCount=1`.
+
+Evidence: `tfl1291_e2e_c5b.log`; `screenshots/tfl1216-c5b-search-index-shelf.png`, `screenshots/tfl1216-c5b-search-index-panel.png`; e2e `e2e/tfl1216_activityShelf.spec.cjs` (test "TFL-1216 C5b ... no cancel/completion controls", red only on the `cancelCount === 0` assertion).
+
+History:
+- qa (TFL-1291, 2026-10-08): found during focused verification of C5b; the producer/shelf wiring otherwise verifies (determinate `pages`, diagnostics mirror unchanged, `null`-only settle, tab-close removal). Owner frontend-dev.
+- frontend-dev (TFL-1292, 2026-10-08): FIX-READY. Added a per-operation `cancelable` capability mirroring C4a `completionActions`: `ActivityOperation.cancelable` (+ `createOperation` default false), adapters declare OCR true / convert true / search-index false. `ActivityShelfPanel` now passes `canCancel={operation.cancelable}` (`ActivityShelf.tsx:276`); `onActivityShelfCancel` guards on it so a non-cancelable op dispatches no `request-cancel` and fires no engine cancel. Dependent oracles updated: `activityShelf.test.tsx` (16), `activityShelfStore.test.ts` (30), `activityShelfState.test.ts` unchanged (17). `phase53_convertImport` 20; `ocr` 122; typecheck clean; build:renderer built. The search-index row no longer renders a Cancel. Awaiting qa re-verification (including the C5b e2e case) to CLOSE.

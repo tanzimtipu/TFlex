@@ -95,16 +95,12 @@ overlap, duplicate or re-home any chrome command, tab control or session model.
    opacity), never behind body text at full intensity, and never replaced, distorted or animated over
    the real logo. The static composition must remain attractive with motion off.
 7. **Motion.** The decorative motion is slow (about an 18s easing cycle through roughly 20 degrees),
-   transform/opacity on a small decorative layer, and must obey, in order: `prefers-reduced-motion`,
+   transform/opacity only on a small decorative layer, and must obey, in order: `prefers-reduced-motion`,
    the existing global `AppSettings.animationsEnabled` switch, document visibility (`document.hidden`)
    and window minimized/blur (suspend when not visible, resume only per user preference). It must be
    pausable through a discoverable control; the pause reuses the existing settings path (no new
-   persisted field). No layout/text/thumbnail/PDF animation, no continuous canvas redraws. Any new
-   animation uses the shared motion tokens only (AGENTS.md Animation System). TFL-1116 (R10) refines
-   the motif: the arcs are inked from the logo violet/amber (deepened for the light canvas), the ring
-   layer is larger and more opaque, and the same 18s token carries a slow FILTER hue drift on the
-   decorative rings only - no opacity flashing and no moving gradient under the text, so the copy
-   stays on a stable background.
+   persisted field). No layout/text/thumbnail/PDF animation, no animated filters or continuous canvas
+   redraws. Any new animation uses the shared motion tokens only (AGENTS.md Animation System).
 8. **Evidence + flow.** `npm run verify` plus the targeted Home unit tests; `npm run build:renderer`
    where bundling is affected; the full suite is NOT run by default. Evidence includes light/dark
    screenshots of the real revised app, populated/empty/missing-file recents, duplicate names,

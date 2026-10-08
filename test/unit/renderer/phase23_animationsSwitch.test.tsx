@@ -110,7 +110,7 @@ describe("PreferencesDialog Animations control", () => {
     const box = off.host.querySelector<HTMLInputElement>("[data-prefs-animations]");
     expect(box).not.toBeNull();
     expect(box?.checked).toBe(false);
-    expect(off.host.textContent).toContain("menus, panels, dialogs and page changes appear without transition animations");
+    expect(off.host.textContent).toContain("menus, panels, dialogs and page changes run without transition animations");
     off.unmount();
 
     const on = mountPrefs(true);

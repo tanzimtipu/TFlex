@@ -178,7 +178,8 @@ describe("Phase 113 — PreferencesDialog call sites", () => {
     expect(cls(tab)).toContain("btn-secondary");
     expect(cls(tab)).toContain("btn-segmented-item");
     expect(cls(tab)).toContain("btn-compact");
-    expect(cls(tab)).toContain("prefs-cat");
+    // Phase 114 (Settings Studio) migrated the rail item onto the shared SettingsNav primitive class.
+    expect(cls(tab)).toContain("settings-nav-item");
     expect(tab?.getAttribute("role")).toBe("tab");
     expect(tab?.getAttribute("aria-selected")).toBe("true");
   });
