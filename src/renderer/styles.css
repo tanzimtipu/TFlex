@@ -13454,7 +13454,12 @@ rect.ann-highlight.ann-preview {
   align-items: center;
   justify-content: center;
   overflow: hidden;
-  background: var(--bg-base);
+  /* DEF-649 — the page-bearing cell is paper, not stage. It stays white in
+   * every theme so a `object-fit: contain` page raster never letterboxes
+   * against a near-black `--bg-base` in dark mode. `.print-preview-blank`
+   * comes later and still overrides this with the stage colour for empty
+   * grid slots. */
+  background: #ffffff;
   border: 1px solid var(--border-subtle);
   min-width: 0;
   min-height: 0;
@@ -13870,6 +13875,189 @@ rect.ann-highlight.ann-preview {
   justify-content: flex-start;
   gap: var(--sp-3);
   padding: var(--sp-3);
+}
+
+/* ---------------------------------------------------------------------------
+ * Phase 120 C - the print surface's interaction layer: the pre-execution
+ * consequence summary, the execution / failure / completion states and the
+ * shared accessibility contract (focus, forced colors, reduced motion).
+ *
+ * Every value resolves through an existing design token; there is no
+ * per-call-site colour literal and no per-call-site override of another
+ * surface. `data-print-*` hooks and all copy owned by `usePrintControls`
+ * are untouched.
+ * ------------------------------------------------------------------------- */
+
+/* The pinned footer carries the consequence summary beside the shared actions.
+ * It wraps instead of clipping, and every value keeps its full text in a
+ * `title` so an ellipsized localized label still has an accessible name. */
+.print-footer {
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  row-gap: var(--sp-2);
+}
+
+.print-summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--sp-1) var(--sp-3);
+  min-width: 0;
+  margin-right: auto;
+  color: var(--fg-muted);
+  font-size: var(--fs-xs);
+}
+
+.print-summary-item {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  min-width: 0;
+}
+
+.print-summary-key {
+  color: var(--fg-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+}
+
+.print-summary-value {
+  color: var(--fg-strong);
+  min-width: 0;
+  max-width: 32ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.print-summary-note {
+  color: var(--fg-muted);
+  font-style: italic;
+}
+
+.print-footer-actions {
+  display: inline-flex;
+  gap: var(--sp-2);
+  flex: none;
+}
+
+/* Execution / failure / completion read as one attached status strip with a
+ * hairline boundary (never a floating shadow). Failure keeps the settings and
+ * points at the ONE retry path - the primary Print action. */
+.print-status {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: var(--sp-2) var(--sp-3);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-2);
+  background: var(--bg-raised);
+  color: var(--fg-strong);
+  font-size: var(--fs-xs);
+  transition:
+    border-color var(--motion-fast) var(--ease-out),
+    background-color var(--motion-fast) var(--ease-out);
+}
+
+.print-status-error {
+  border-color: var(--danger, #dc2626);
+}
+
+.print-status-text {
+  overflow-wrap: anywhere;
+}
+
+.print-status-hint {
+  color: var(--fg-muted);
+}
+
+.print-progress .ocr-progress-header {
+  color: var(--fg-strong);
+}
+
+/* Focus is visible independently of selected / hover, sourced from the shared
+ * --focus-ring token so it tracks light / dark / frosted alike. */
+.print-body :is(a, button, input, select, summary, [tabindex]):focus-visible,
+.print-footer :is(button, [tabindex]):focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+  border-radius: var(--radius-1);
+}
+
+/* Grouped settings never clip a long / localized heading; the legend wraps
+ * and the nested fieldset can shrink (no min-content floor). */
+.print-group {
+  margin: 0;
+  min-inline-size: 0;
+}
+
+.print-group-heading {
+  padding: 0;
+  overflow-wrap: anywhere;
+}
+
+/* Reduced motion: the surface's non-essential transitions are removed. The
+ * global catch-all already collapses durations; this states the contract for
+ * the print surface explicitly. */
+@media (prefers-reduced-motion: reduce) {
+  .print-body .print-group,
+  .print-body .print-preview,
+  .print-footer,
+  .print-status {
+    transition: none;
+  }
+}
+
+/* Forced colors (the platform high-contrast path): re-point boundaries, ink
+ * and markers at system colour values so groups, status strips and the
+ * consequence summary stay visible and solid without relying on colour. */
+@media (forced-colors: active) {
+  .print-group,
+  .print-preview,
+  .print-status,
+  .print-preview-cell {
+    border: 1px solid CanvasText;
+    forced-color-adjust: none;
+  }
+
+  .print-group-heading,
+  .print-summary-value,
+  .print-status-text {
+    color: CanvasText;
+  }
+
+  .print-summary-key,
+  .print-status-hint,
+  .print-preview-meta {
+    color: GrayText;
+  }
+
+  .print-status-error {
+    border-color: LinkText;
+  }
+
+  .print-preview-sheet {
+    border: 1px solid CanvasText;
+  }
+
+  /* A visible left marker distinguishes a status strip from a settings group
+   * even when every fill collapses to the same system colour. */
+  .print-status {
+    border-left-width: 3px;
+  }
+
+  .print-body :is(a, button, input, select, summary, [tabindex]):focus-visible,
+  .print-footer :is(button, [tabindex]):focus-visible {
+    outline: 2px solid Highlight;
+    outline-offset: 2px;
+    box-shadow: none;
+  }
+
+  .ocr-progress-track {
+    border: 1px solid CanvasText;
+  }
 }
 
 /* Suspects panel (top bar over the workspace) */

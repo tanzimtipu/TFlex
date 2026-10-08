@@ -15196,7 +15196,7 @@ History:
 
 ## DEF-650: A custom print page range silently collapses duplicate pages, and the consequence summary presented the collapsed set without disclosing the merge
 
-- Status: FIX-READY (fix present in-tree; pending qa retest)
+- Status: CLOSED (qa TFL-1260 phase-close, 2026-10-09; disclosure verified live on the final build)
 - Severity: LOW - the Phase 120 pre-execution consequence summary presented a de-duplicated / ascending page set as if it were the user's literal selection, and the `formatPageSet` doc comment falsely claimed duplicates were preserved. The collapse itself is the pre-existing, unit-pinned shared `parsePageRanges` (deliberately reused by Phase 120 ruling 6); the in-phase gap was the summary's nondisclosure and the false doc comment.
 - Found by: adversary (ADV-255)
 - Phase: 120 (TFL-1259 diff-pass)
@@ -15221,6 +15221,7 @@ History:
 - adversary (ADV-255, 2026-10-08): found on the live Output Studio; the collapse is the pre-existing shared parser, the in-phase gap was the summary disclosure plus the false `formatPageSet` doc comment.
 - cto (ADV-255 triage, 2026-10-08): ACCEPTED -> DEF-650; owner frontend-dev.
 - cto (TFL-1355, 2026-10-08): FIX-READY - the doc comment is corrected and `duplicateMergeDisclosure` is present (`PrintPanel.tsx:113-116,287-292`); pending qa confirmation.
+- qa (TFL-1260 phase-close, 2026-10-09): CLOSED. Live retest on the final build (`e2e/tfl1260_def650_retest.spec.cjs`, 1 passed): custom range `1,1,3` renders `Pages1, 3 of 34 (duplicate page numbers merged)`; `1,3` renders `Pages1, 3 of 34` with no disclosure. Screenshot `screenshots/tfl1260-def650-disclosure.png`. Documented limitation confirmed: overlap-only input such as `1-3, 2` is not disclosed (the shared parser normalises to a set; CTO ruling 6 keeps the parser) - documented behaviour, not a defect. Unit spec `phase120_outputStates.test.tsx` covers both cases.
 
 ## DEF-655: Intake dispatch loses a queued file when a row is removed mid-open
 

@@ -229,24 +229,24 @@ onClose: closeWindow,
 
   return (
     <div className="print-window" data-print-window>
-      <header className="print-window-header">
+      <header className="print-window-header print-studio-header">
         <div className="print-window-brand">
           <BrandMark size={18} className="print-window-brand-mark" />
           <BrandWordmark className="print-window-brand-name" />
         </div>
-        <div className="print-window-heading">
-          <h1 className="print-window-title">Print</h1>
-          <span className="print-window-doc" data-print-window-doc title={documentName}>
+        <div className="print-window-heading print-studio-heading">
+          <h1 id="print-window-title" className="print-window-title print-studio-title">Print</h1>
+          <span className="print-window-doc print-studio-meta" data-print-window-doc title={documentName}>
             {documentName}
           </span>
+          <span className="print-window-pages print-studio-meta">
+            {doc?.numPages ?? pageCount} page{(doc?.numPages ?? pageCount) === 1 ? "" : "s"}
+          </span>
         </div>
-        <span className="print-window-pages">
-          {doc?.numPages ?? pageCount} page{(doc?.numPages ?? pageCount) === 1 ? "" : "s"}
-        </span>
       </header>
 
       {gone && (
-        <div className="print-window-banner" role="alert" data-print-document-gone>
+        <div className="print-window-banner print-studio-banner" role="alert" data-print-document-gone>
           <Icon icon={TriangleAlert} size="sm" />
           <span>
             This document was closed in Jovrel. Its pages can no longer be printed from
@@ -256,22 +256,25 @@ onClose: closeWindow,
       )}
 
       {!gone && loadError !== null && (
-        <div className="print-window-banner" role="alert" data-print-window-load-error>
+        <div className="print-window-banner print-studio-banner" role="alert" data-print-window-load-error>
           <Icon icon={TriangleAlert} size="sm" />
           <span>{loadError}</span>
         </div>
       )}
 
       {!gone && loadError === null && doc === null && (
-        <div className="print-window-banner print-window-banner-quiet" data-print-window-loading>
+        <div
+          className="print-window-banner print-window-banner-quiet print-studio-banner"
+          data-print-window-loading
+        >
           <BrandLoader />
           <span>Loading the document…</span>
         </div>
       )}
 
-      <div className="print-window-panel">
+      <main className="print-window-panel" aria-labelledby="print-window-title">
         <PrintPanel print={print} />
-      </div>
+      </main>
     </div>
   );
 }
