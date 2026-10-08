@@ -1,4 +1,4 @@
-// TFL-1293 (Phase 114) — DEF-646 blast-radius + scope check, and the DEF-641
+// TFL-1293 (Phase 114) — DEF-662 blast-radius + scope check, and the DEF-641
 // footer full/compact evidence.
 //
 // The TFL-1290 fix scopes the Preferences sheet body with

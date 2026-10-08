@@ -12916,7 +12916,7 @@ Evidence: `e2e/tfl1280_adversary_restore.spec.cjs` (test 1, failing),
 `test-fixtures/tfl1280-adversary/probe-restore-history.mjs`,
 `test-fixtures/tfl1280-adversary/probe-restore-history.log`.
 
-Disposition: ACCEPTED -> DEF-644 (MEDIUM; filed by qa in the Phase 114 close pass - renumber if taken). CTO triage 2026-10-08 (TFL-1219):
+Disposition: ACCEPTED -> DEF-660 (renumbered from DEF-644 by the CTO TFL-1355 ruling 2026-10-08: the Phase 118 Intake Tray intake defects own DEF-644/645/646 in the shipped code/tests/e2e/CONTROL-INDEX/docs/phase-specs/phase-118.md, and ADV-253 was filed with the standing qualifier "renumber if taken") (MEDIUM; filed by qa in the Phase 114 close pass). CTO triage 2026-10-08 (TFL-1219):
 confirmed - `restoreDefaultSettings` lowers `recentsCap` to 10 and the backend
 `normalizeSettings` slices `recentFiles` to the cap on save
 (`src/main/services/settings.ts:1182-1190,427-428`), so history is lossy although the
@@ -12961,7 +12961,7 @@ Evidence: `e2e/tfl1280_adversary_restore.spec.cjs` (test 3, failing),
 `test-fixtures/tfl1280-adversary/e2e-restore-live.log`; source trace
 `App.tsx:1528,1968-1982,13471-13476`, `useSettingsWriteRollback.ts:53-58`.
 
-Disposition: ACCEPTED -> DEF-645 (LOW; filed by qa in the Phase 114 close pass - renumber if taken). CTO triage 2026-10-08 (TFL-1219):
+Disposition: ACCEPTED -> DEF-661 (renumbered from DEF-645 by the CTO TFL-1355 ruling 2026-10-08: the Phase 118 Intake Tray intake defects own DEF-644/645/646, and ADV-254 was filed with the standing qualifier "renumber if taken") (LOW; filed by qa in the Phase 114 close pass). CTO triage 2026-10-08 (TFL-1219):
 confirmed - `onRestoreDefaults` calls `applySettings(reset)` optimistically and
 `applySettings` sets `lastConfirmedRef.current`, so on the DEF-638 double failure the
 unpersisted reset becomes the fallback snapshot. Fix: the restore-defaults optimistic

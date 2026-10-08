@@ -287,7 +287,7 @@ test('E4 Restore defaults: confirm dialog carries the exact scope text; confirm 
   expect(await win.locator('[data-prefs-theme-default]').inputValue()).toBe('frosted');
   expect(await win.locator('[data-prefs-tab-style]').inputValue()).toBe('colorful');
   expect(await win.locator('[data-prefs-animations]').isChecked()).toBe(true);
-  // DEF-644 (TFL-1282) - the cap set before the reset (7) is preserved, NOT
+  // DEF-660 (TFL-1282) - the cap set before the reset (7) is preserved, NOT
   // lowered to the product default (10): a lower cap would let the backend
   // truncate the recent-files history the scope text promises to keep.
   await expect

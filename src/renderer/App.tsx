@@ -1576,7 +1576,7 @@ export function App(): ReactElement {
   // navigator layout/ratio and the theme (only when <html> differs — DEF-199).
   const applySettings = useCallback((s: AppSettings, confirmed = false): void => {
     // ADV-247 — the rollback hook falls back to the last CONFIRMED value when
-    // the authoritative re-read fails. DEF-644 — only a persisted echo or an
+    // the authoritative re-read fails. DEF-661 — only a persisted echo or an
     // authoritative restore marks the value confirmed; the optimistic
     // restore-defaults apply must NOT, so on a double failure (write fails AND
     // re-read fails) the fallback restores the last real settings instead of
@@ -13969,7 +13969,7 @@ pushToast(
         // Studio-surfaced settings. Composed from the live snapshot, applied
         // through the one apply path (theme, animations, tab style and import
         // defaults) then persisted; a failed write rolls back through
-        // `useSettingsWriteRollback`. DEF-644 — this optimistic apply is NOT
+        // `useSettingsWriteRollback`. DEF-661 — this optimistic apply is NOT
         // confirmed (`confirmed` defaults to false), so a failed write plus a
         // failed re-read falls back to the last CONFIRMED settings, never the
         // unpersisted reset. `recentsCap`/`recentFiles` are preserved (DEF-643).

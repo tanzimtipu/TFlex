@@ -88,7 +88,7 @@ test('Restore defaults keeps recent-files history beyond the default cap (scope 
 
   const after = JSON.parse(fs.readFileSync(path.join(ud, 'settings.json'), 'utf8'));
   console.log('[tfl1280] after : cap =', after.recentsCap, 'history =', after.recentFiles.length);
-  // DEF-644 (TFL-1282): the reset must NOT lower recentsCap (the backend trims
+  // DEF-660 (TFL-1282): the reset must NOT lower recentsCap (the backend trims
   // recentFiles to the cap on save), and the scope sentence promises the
   // recent-files history is KEPT.
   expect(after.recentsCap, 'recentsCap preserved by Restore defaults').toBe(before.recentsCap);

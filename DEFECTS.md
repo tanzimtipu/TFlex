@@ -133,8 +133,8 @@ Evidence: `test-fixtures/tfl1273-control-index-sweep.md` (row 9 = FAIL), e2e `ph
 History:
 - qa (TFL-1273, 2026-10-08): found in the Phase 114 CONTROL-INDEX sweep; filed, not fixed. All other 10 rows PASS.
 - cto: FIX-READY relayed from frontend-dev TFL-1276 (2026-10-08): added `[data-prefs-persist-status]` (`role="status"`, `.settings-support`) in the Studio body via a new `persistStatus` prop (default "All changes saved."); App records the failure message in `onSettingsWriteError` and clears it on the next `settings.changed` echo; `phase114_persistStatus.test.tsx` (3 tests) added; `npm run verify` clean; 2 files / 8 tests green. Pending qa retest.
-- qa (TFL-1285, 2026-10-08): retest NOT PASSED -> left OPEN. `phase114_persistStatus.test.tsx` is green (4/4: role=status, success/failure text, and the TFL-1282 "not a descendant of the scrolling groups column" guard), so the control itself satisfies the row. But the same TFL-1282 change that pinned the line into a non-scrolling footer collapses the Studio body to 0px and overlaps the section navigator, so the real-app e2e E1 (`[data-prefs-category]` click) times out; filed DEF-646 (HIGH). The row cannot be closed while its fix leaves the Studio unusable.
-- qa (TFL-1293, 2026-10-08): CLOSED. DEF-646 fixed (TFL-1290), so the control is now visible and usable in the real app. Retest: `npx vitest run test/unit/renderer/phase114_persistStatus.test.tsx` -> 4 passed (role=status; at-rest "All changes saved."; failure+rollback sentence; not a descendant of the scrolling column). Real-app visibility proven in `e2e/tfl1293_scope_footer.spec.cjs` S2: `[data-prefs-persist-status]` is visible and on screen, sits on the shell footer BELOW the scrolling `.settings-studio-body` (overflow-y auto), inside the sheet bottom, and stays visible/pinned at full and 520px compact width; `screenshots/phase114/studio-full-footer.png` + `studio-compact-footer.png`. Phase 114 CONTROL-INDEX row 9 now PASS (10 PASS / 0 FAIL) - `test-fixtures/tfl1293-control-index-sweep.md`.
+- qa (TFL-1285, 2026-10-08): retest NOT PASSED -> left OPEN. `phase114_persistStatus.test.tsx` is green (4/4: role=status, success/failure text, and the TFL-1282 "not a descendant of the scrolling groups column" guard), so the control itself satisfies the row. But the same TFL-1282 change that pinned the line into a non-scrolling footer collapses the Studio body to 0px and overlaps the section navigator, so the real-app e2e E1 (`[data-prefs-category]` click) times out; filed DEF-662 (HIGH). The row cannot be closed while its fix leaves the Studio unusable.
+- qa (TFL-1293, 2026-10-08): CLOSED. DEF-662 fixed (TFL-1290) (renumbered from DEF-646 by the TFL-1355 ruling), so the control is now visible and usable in the real app. Retest: `npx vitest run test/unit/renderer/phase114_persistStatus.test.tsx` -> 4 passed (role=status; at-rest "All changes saved."; failure+rollback sentence; not a descendant of the scrolling column). Real-app visibility proven in `e2e/tfl1293_scope_footer.spec.cjs` S2: `[data-prefs-persist-status]` is visible and on screen, sits on the shell footer BELOW the scrolling `.settings-studio-body` (overflow-y auto), inside the sheet bottom, and stays visible/pinned at full and 520px compact width; `screenshots/phase114/studio-full-footer.png` + `studio-compact-footer.png`. Phase 114 CONTROL-INDEX row 9 now PASS (10 PASS / 0 FAIL) - `test-fixtures/tfl1293-control-index-sweep.md`.
 
 ## DEF-636: Stale Phase 23 animations-switch assertion reddens verify:full (blocks the 1.51.1 release gate)
 
@@ -14790,12 +14790,13 @@ History:
 - frontend-dev (TFL-1284, 2026-10-08): FIX-READY. `src/renderer/App.tsx` only: forwarded `onOpenOcrSuspectsRef` (mirrors `ocrRunByTabRef`); the shelf OCR `view-details` now resolves the operation captured `tabId`, verifies the tab is open and its `session.engineDocId === op.document.docId`, activates it via the existing `activateTab` only if it differs, then calls the guarded `onOpenOcrSuspectsRef.current(tabId)` (which gained an optional `tabId` and keeps both B11 guards). A closed/reused tab is a truthful no-op (acknowledge + remove only); conversion `view-details` stays acknowledge-only. Direct `setOcrSuspectsOpen(true)` count in App.tsx is 3 again (was 4); the B11 pinned count was not edited. `npm.cmd run test:unit -- ocr` 15 files / 122 passed; `bugB11_ocrSuspectsEmptyTabGuard` 4 passed; shelf 24/16/17; phase53_convertImport 20; typecheck clean; build:renderer built. Awaiting qa re-verification to CLOSE.
 - qa (TFL-1287, 2026-10-08): CLOSED. Retest commands + counts: `npm.cmd run test:unit -- test/unit/renderer/bugB11_ocrSuspectsEmptyTabGuard.test.ts` 1 file / 4 passed (was 1 failed); `-- ocr` 15 files / 122 passed; `activityShelfStore.test.ts` 1 / 24; `activityShelf.test.tsx` 1 / 16; `activityShelfState.test.ts` 1 / 17; `phase53_convertImport.test.tsx` 1 / 20; `npm.cmd run typecheck` clean; `npm.cmd run build:renderer` built (only the pre-existing chunk-size / ineffective-dynamic-import warnings). Static review: direct `setOcrSuspectsOpen(true)` calls in `src/renderer/App.tsx` = 3 (lines 8767 onOcrConfirm, 9021 post-batch, 9056 guarded handler; comment mentions excluded); `bugB11_ocrSuspectsEmptyTabGuard.test.ts` unmodified (no git diff) so the pinned `<=3` was not loosened. Shelf OCR `view-details` (`App.tsx:8870-8882`) resolves `op.document.tabId`, requires the tab open AND `session.engineDocId === op.document.docId`, activates via `activateTab` only when it differs, then calls `onOpenOcrSuspectsRef.current(opTabId)`; a closed/reused tab skips the open and only acknowledges+removes. Conversion `view-details` stays acknowledge-only (`op?.task.name === OCR_TASK_NAME` where OCR='Recognize text', conversion='Import'). Wrong-tab guard `ocrRunByTabRef.current[activeId] !== true` still enforced at `App.tsx:9051`. Blast-radius cluster (OCR 122 + B11 4 + shelf 24/16/17 + convert 20) green together.
 
-## DEF-644: Restore defaults silently truncates the recent-files history it promises to keep
+## DEF-660: Restore defaults silently truncates the recent-files history it promises to keep
 
 - Status: CLOSED (qa TFL-1285 retest, 2026-10-08)
 - Severity: MEDIUM - the Studio's Restore-defaults scope text promises recent-files history is kept, but the reset lowered `recentsCap` and the backend trimmed the history to the new cap on save, so accumulated user history is dropped silently (no toast, no notice). Documented change loss of a persisted user asset that criterion 9 names explicitly.
 - Found by: adversary (ADV-253)
 - Phase: 114
+- Numbering note: renumbered from DEF-644 by the CTO TFL-1355 ruling (renumber114, 2026-10-08): the Phase 118 Intake Tray intake defects own DEF-644/645/646 in the shipped code/tests/e2e/CONTROL-INDEX/docs/phase-specs/phase-118.md, and ADV-253 was filed with the standing qualifier "renumber if taken".
 
 Files:
 - `src/renderer/state/defaults.ts:52-61` - `restoreDefaultSettings` spreads `current` but (pre-fix) also lowered `recentsCap` to 10, so the whole object sent through `settings:save` carried the lower cap.
@@ -14816,14 +14817,15 @@ Evidence: `test-fixtures/tfl1280-adversary/probe-restore-history.mjs`, `test-fix
 
 History:
 - qa: opened from ADV-253.
-- qa (TFL-1285, 2026-10-08): CLOSED. TFL-1282 makes `restoreDefaultSettings` spread `current` and reset only theme/themeDefault/animations/tabStyle/convertDefaults, leaving `recentsCap` and `recentFiles` untouched (`src/renderer/state/defaults.ts:52-61`; the source comment labels this DEF-643 - a label mismatch, the ledger's ADV-253 mapping is DEF-644). Retest: esbuild-bundle + run `test-fixtures/tfl1280-adversary/probe-restore-history.bundle.mjs` -> `recentsCap 20`, `recentFiles on disk: 15`, `RESULT: history kept as promised.` (was `LOSS - 5 ... dropped`). Unit `npx vitest run test/unit/renderer/phase114_importRestore.test.tsx` -> 10 passed incl. the cap/history-preservation regression. e2e `npx playwright test e2e/tfl1280_adversary_restore.spec.cjs` test 1 -> green (`after : cap = 20 history = 15`); the test's cap oracle was updated from the old buggy `cap == 10` to `cap preserved`.
+- qa (TFL-1285, 2026-10-08): CLOSED. TFL-1282 makes `restoreDefaultSettings` spread `current` and reset only theme/themeDefault/animations/tabStyle/convertDefaults, leaving `recentsCap` and `recentFiles` untouched (`src/renderer/state/defaults.ts:52-61`; the source comment labels this DEF-643 - a label mismatch, the ledger's ADV-253 mapping is DEF-660, renumbered from DEF-644 by the TFL-1355 ruling). Retest: esbuild-bundle + run `test-fixtures/tfl1280-adversary/probe-restore-history.bundle.mjs` -> `recentsCap 20`, `recentFiles on disk: 15`, `RESULT: history kept as promised.` (was `LOSS - 5 ... dropped`). Unit `npx vitest run test/unit/renderer/phase114_importRestore.test.tsx` -> 10 passed incl. the cap/history-preservation regression. e2e `npx playwright test e2e/tfl1280_adversary_restore.spec.cjs` test 1 -> green (`after : cap = 20 history = 15`); the test's cap oracle was updated from the old buggy `cap == 10` to `cap preserved`.
 
-## DEF-645: A double failure on the Restore-defaults path keeps the unpersisted reset in the UI
+## DEF-661: A double failure on the Restore-defaults path keeps the unpersisted reset in the UI
 
 - Status: CLOSED (qa TFL-1285 retest, 2026-10-08)
 - Severity: LOW - on the narrow DEF-638 precondition (settings write fails AND the authoritative rollback re-read fails), the Restore-defaults reset that never reached disk stays in the UI because the optimistic apply advanced the rollback fallback snapshot. UI/disk divergence with no data loss beyond the already-failed write.
 - Found by: adversary (ADV-254)
 - Phase: 114
+- Numbering note: renumbered from DEF-645 by the CTO TFL-1355 ruling (renumber114, 2026-10-08): the Phase 118 Intake Tray intake defects own DEF-644/645/646 in the shipped code/tests/e2e/CONTROL-INDEX/docs/phase-specs/phase-118.md, and ADV-254 was filed with the standing qualifier "renumber if taken".
 
 Files:
 - `src/renderer/App.tsx:13578-13583` - `onRestoreDefaults` calls `applySettings(reset)` optimistically before the write is confirmed.
@@ -14843,14 +14845,15 @@ Evidence: `e2e/tfl1280_adversary_restore.spec.cjs` test 3 (failing), `test-fixtu
 
 History:
 - qa: opened from ADV-254.
-- qa (TFL-1285, 2026-10-08): CLOSED. TFL-1282 adds `confirmedSnapshotAfterApply` (`src/renderer/state/defaults.ts:72-78`) and `App.applySettings` now advances `lastConfirmedRef` only on a confirmed apply (`App.tsx:1543-1554`); `onRestoreDefaults` calls `applySettings(reset)` with `confirmed=false` (`App.tsx:13578-13583`), so the double-failure fallback restores the last CONFIRMED settings. The source comment labels this DEF-644 - a label mismatch; the ledger's ADV-254 mapping is DEF-645. Retest: `npx vitest run test/unit/renderer/phase114_settingsRollback.test.tsx` -> 8 passed (incl. the double-failure restore-last-confirmed test). e2e `npx playwright test e2e/tfl1280_adversary_restore.spec.cjs` test 3 -> green: `theme after double failure = dark (last confirmed = dark)`. Note: the adversary's test 3 read `<html data-theme>` immediately after the status text appeared, before the async re-read rejected; the oracle now polls for the theme, which is the same contract (UI drops the unpersisted reset) - the fix itself is correct.
+- qa (TFL-1285, 2026-10-08): CLOSED. TFL-1282 adds `confirmedSnapshotAfterApply` (`src/renderer/state/defaults.ts:72-78`) and `App.applySettings` now advances `lastConfirmedRef` only on a confirmed apply (`App.tsx:1543-1554`); `onRestoreDefaults` calls `applySettings(reset)` with `confirmed=false` (`App.tsx:13578-13583`), so the double-failure fallback restores the last CONFIRMED settings. The source comment labels this DEF-644 - a label mismatch; the ledger's ADV-254 mapping is DEF-661, renumbered from DEF-645 by the TFL-1355 ruling. Retest: `npx vitest run test/unit/renderer/phase114_settingsRollback.test.tsx` -> 8 passed (incl. the double-failure restore-last-confirmed test). e2e `npx playwright test e2e/tfl1280_adversary_restore.spec.cjs` test 3 -> green: `theme after double failure = dark (last confirmed = dark)`. Note: the adversary's test 3 read `<html data-theme>` immediately after the status text appeared, before the async re-read rejected; the oracle now polls for the theme, which is the same contract (UI drops the unpersisted reset) - the fix itself is correct.
 
-## DEF-646: The persistence-status footer wrapper collapses the Settings Studio body to zero height and overlaps the section navigator
+## DEF-662: The persistence-status footer wrapper collapses the Settings Studio body to zero height and overlaps the section navigator
 
 - Status: CLOSED (qa TFL-1293 retest, 2026-10-08)
 - Severity: HIGH - the TFL-1282 wrapper that pins `[data-prefs-persist-status]` to a non-scrolling footer makes `.settings-studio-shell` a flex column whose `.settings-studio` child (`flex:1 1 0`, `min-height:0`) collapses to 0px inside the auto-height sheet body. The whole Studio sheet shrinks to header + a 34px footer (measured 89px tall), the settings body renders nothing, and the footer overlaps the category navigator so a real click cannot reach it. The Settings Studio's primary navigation and body are unusable.
 - Found by: qa (TFL-1285 phase-close validation, 2026-10-08)
 - Phase: 114
+- Numbering note: renumbered from DEF-646 by the CTO TFL-1355 ruling (renumber114, 2026-10-08): the Phase 118 Intake Tray intake defects own DEF-644/645/646 in the shipped code/tests/e2e/CONTROL-INDEX/docs/phase-specs/phase-118.md. (DEF-646 had no ADV entry - filed directly by qa.)
 
 Files:
 - `src/renderer/components/PreferencesDialog.tsx:365-739` - `[data-prefs-persist-status]` was moved out of the scrolling groups column into a new `.settings-studio-shell` wrapper (TFL-1282).
@@ -14872,6 +14875,84 @@ History:
 - qa (TFL-1285, 2026-10-08): found in the Phase 114 close pass while retesting DEF-641. E1 (category navigator) fails; E2-E7 pass (they do not click the navigator). The DEF-641 unit spec passes because jsdom has no layout, so only the real-app e2e catches it. This blocks the DEF-641 close: the control exists and is placed outside the scrolling body, but the wrapper that placed it breaks the Studio. Owner frontend-dev.
 - cto: FIX-READY relayed from frontend-dev TFL-1290 (2026-10-08): `.sheet-body-prefs:has(> .settings-studio-shell){display:flex;flex-direction:column}` establishes a definite height; `.settings-studio-shell{flex:1 1 auto;height:auto}` and `> .settings-studio{flex:1 1 auto}` (was `flex:1 1 0`). Real-app E1 geometry after fix: shell 470, studio 436 (was 0), footer inside the sheet bottom, nav hit = settings-nav-label; `phase114_settings_studio.spec.cjs` 7/7, `phase114_persistStatus`+`phase114_a11y` 16/16, `npm run verify` clean (406 files). A static CSS guard was added to `phase114_a11y.test.tsx`. Scope note: the `:has()` rule selects `.sheet-body-prefs` (the Preferences sheet body that hosts the shell), not a `.settings-*` selector - required to break the indefinite-height chain. Pending qa retest.
 - qa (TFL-1293, 2026-10-08): CLOSED. Retest green. `npm.cmd run build` clean; `npx playwright test e2e/phase114_settings_studio.spec.cjs -c e2e/playwright.dev.config.js` -> 7 passed (E1 now passes). E1 geometry (isolated profile): `.settings-studio` 838x436 (was 0), `.settings-studio-shell` 470, sheet 525, persist footer 838x34 at the sheet bottom, and `document.elementFromPoint` at the nav centre returns `settings-nav-label` (the real click lands). All four `[data-prefs-category]` panels render non-zero and one is active at a time. Blast radius / scope (new `e2e/tfl1293_scope_footer.spec.cjs`, 2/2): `.sheet-body-prefs` is mounted only in the Studio sheet (0 on Home, 0 on a document surface), its computed `display` is `flex` with the shell as direct child; the footer is pinned below the scrolling `.settings-studio-body` and stays visible at both full and 520px compact width. See `test-fixtures/tfl1293-phase114-verdict.md` and `test-fixtures/tfl1293-control-index-sweep.md`.
+
+## DEF-644: Intake Tray drop zone: eligible OS drag does not show the drop indication
+
+- Status: CLOSED (qa TFL-1249 phase-close, 2026-10-08)
+- Numbering note: canonical owner of DEF-644 per the CTO TFL-1355 ruling (renumber114, 2026-10-08); the Phase 114 Settings-Studio entry that previously held DEF-644 was renumbered DEF-660.
+- History:
+  - cto: FIX-READY relayed from frontend-dev TFL-1345 (2026-10-08): host `osDragActive` state in `App.tsx` is wired via `onDragActiveChange: setOsDragActive` on `useOsFileDrop` and forwarded through `Welcome` `intakeActive` into `IntakeTray active` -> `data-intake-active`, so an eligible OS file drag shows the drop indication and it clears on drop (spec T2). Pending qa retest.
+  - qa: CLOSED 2026-10-08 (TFL-1249 phase-close). Retest e2e `phase118_intake.spec.cjs` T2 -> `{overrode:false, activeVisible:true, activeAfterDrop:false, dropPrevented:true}`: the eligible OS drag shows `[data-intake-active]` and it clears on drop, and the drop is intercepted. The `overrode:false` line is only the in-renderer `webUtils.getPathForFile` stub limitation (resolved-path staging skips), not a defect - the resolved-path route is proven by T6.
+- Severity: MEDIUM - The visual feedback for dragging files over the drop zone is missing, leading to a poor user experience as the user is unsure if the drop will be successful.
+- Found by: qa (TFL-1247 e2e verification, 2026-10-08)
+- Phase: 118
+
+Files:
+- `e2e/phase118_intake.spec.cjs`
+
+Steps to reproduce:
+1. `npm.cmd run dist`
+2. `npx playwright test e2e/phase118_intake.spec.cjs --reporter=list`
+3. Observe test `T2 drop zone: eligible OS drag shows the drop indication and routes files` failing.
+4. Manually drag a file over the Intake Tray drop zone.
+
+Expected: The drop zone shows a visual indication (e.g., a border, a highlight) when a file is dragged over it.
+
+Actual: No visual indication is shown when dragging a file over the drop zone. The test `expect(res.activeVisible).toBe(true)` fails.
+
+Evidence: e2e test output for `T2 drop zone`.
+
+## DEF-645: Intake Tray truthful intake: unsupported files are not correctly staged or rejected with message
+
+- Status: CLOSED (qa TFL-1249 phase-close, 2026-10-08)
+- Numbering note: canonical owner of DEF-645 per the CTO TFL-1355 ruling (renumber114, 2026-10-08); the Phase 114 entry that previously held DEF-645 was renumbered DEF-661.
+- History:
+  - cto: FIX-READY relayed from frontend-dev TFL-1345 (2026-10-08): the Home tray unmounts when a document opens, so failed/skipped rows vanished; a persistent intake surface (`data-intake-persistent`, class `intake-persistent`) now renders from `App.tsx` whenever `intakeItems.length > 0 && !showWelcomeEffective`, reusing the same model/handlers so failed rows stay reachable with their truthful `data-intake-error` (spec T4). Pending qa retest.
+  - qa: CLOSED 2026-10-08 (TFL-1249 phase-close). Retest e2e `phase118_intake.spec.cjs` T4 -> staged `unsupported.xyz` / `misleading.png` both `failed` with their own `data-intake-error` message (no bogus Ready), `protected.pdf` `ready` then `failed` ("could not be opened") on dispatch, `report-a.pdf` opened; the failed rows persist in the queue after the good PDF opens (partial failure). PASS.
+- Severity: MEDIUM - Unsupported files are not handled as expected; they are neither staged in the list with an error message nor explicitly rejected. This leads to confusion for the user.
+- Found by: qa (TFL-1247 e2e verification, 2026-10-08)
+- Phase: 118
+
+Files:
+- `e2e/phase118_intake.spec.cjs`
+
+Steps to reproduce:
+1. `npm.cmd run dist`
+2. `npx playwright test e2e/phase118_intake.spec.cjs --reporter=list`
+3. Observe test `T4 truthful intake: unsupported / misleading-extension / protected partial errors` failing.
+4. Manually drag and drop an unsupported file (e.g., `.xyz`) into the Intake Tray.
+
+Expected: Unsupported files are either staged in the list with an error message indicating they cannot be imported, or they are rejected with a clear message.
+
+Actual: The test `expect(names).toContain('unsupported.xyz')` fails because the array of staged files (`names`) is empty. This suggests unsupported files are not appearing in the intake list at all, with or without an error message.
+
+Evidence: e2e test output for `T4 truthful intake`.
+
+## DEF-646: Intake Tray create-from-images: Confirm button is disabled when it should be enabled
+
+- Status: CLOSED (qa TFL-1249 phase-close, 2026-10-08)
+- Numbering note: canonical owner of DEF-646 per the CTO TFL-1355 ruling (renumber114, 2026-10-08); the Phase 114 entry that previously held DEF-646 was renumbered DEF-662.
+- History:
+  - cto: FIX-READY relayed from frontend-dev TFL-1345 (2026-10-08): root cause was the reset effect keyed on `[open, initialQuality]` re-running when the host echoed the edited quality back, which cleared the picked queue; guarded to reset only on a closed->open transition (`wasOpenRef`), so `data-create-confirm` stays enabled with images queued. Regression test added to `phase118_imagesIntake.test.tsx`. Pending qa retest.
+  - qa: CLOSED 2026-10-08 (TFL-1249 phase-close). Retest e2e `phase118_intake.spec.cjs` T5 -> after picking two images `data-create-confirm` is enabled (asserted `isDisabled()===false`), reorder/remove/quality wired, confirm built ONE PDF and opened it as a new tab. Regression `phase118_imagesIntake.test.tsx` green (5 files / 53 tests).
+- Severity: MEDIUM - The "Create PDF" button in the image creation dialog remains disabled even when it should be active, preventing the user from creating a PDF from images.
+- Found by: qa (TFL-1247 e2e verification, 2026-10-08)
+- Phase: 118
+
+Files:
+- `e2e/phase118_intake.spec.cjs`
+
+Steps to reproduce:
+1. `npm.cmd run dist`
+2. `npx playwright test e2e/phase118_intake.spec.cjs --reporter=list`
+3. Observe test `T5 create-from-images: data-create-* controls, one PDF, disabled Create, clipboard message` failing with a `TimeoutError`.
+4. Manually open the "Create PDF from images" dialog, add images.
+
+Expected: After adding images, the "Create PDF" button becomes enabled, allowing the user to proceed.
+
+Actual: The "Create PDF" button remains disabled, leading to a `TimeoutError` in the e2e test when attempting to click it.
+
+Evidence: e2e test output for `T5 create-from-images` (TimeoutError).
 
 ## DEF-647: The Activity shelf offers an inert Cancel on the running search-index row (no cancellation channel)
 
@@ -14902,6 +14983,53 @@ History:
 - qa (TFL-1291, 2026-10-08): found during focused verification of C5b; the producer/shelf wiring otherwise verifies (determinate `pages`, diagnostics mirror unchanged, `null`-only settle, tab-close removal). Owner frontend-dev.
 - frontend-dev (TFL-1292, 2026-10-08): FIX-READY. Added a per-operation `cancelable` capability mirroring C4a `completionActions`: `ActivityOperation.cancelable` (+ `createOperation` default false), adapters declare OCR true / convert true / search-index false. `ActivityShelfPanel` now passes `canCancel={operation.cancelable}` (`ActivityShelf.tsx:276`); `onActivityShelfCancel` guards on it so a non-cancelable op dispatches no `request-cancel` and fires no engine cancel. Dependent oracles updated: `activityShelf.test.tsx` (16), `activityShelfStore.test.ts` (30), `activityShelfState.test.ts` unchanged (17). `phase53_convertImport` 20; `ocr` 122; typecheck clean; build:renderer built. The search-index row no longer renders a Cancel. Awaiting qa re-verification (including the C5b e2e case) to CLOSE.
 - qa (TFL-1295, 2026-10-08): CLOSED. Independent review PASS: `ActivityOperation.cancelable` present (`activity.ts:106`), `createOperation` defaults false (`:149`), every state helper carries it through (all transitions spread `...op`); three producers only - OCR true (`activityShelf.ts:281`), convert true (`:352`), search-index false (`:426`); `ActivityShelfPanel` passes `canCancel={operation.cancelable}` (`ActivityShelf.tsx:276`) and the row renders Cancel only when `cancelable && running` (`:111`); `onActivityShelfCancel` guards `!target.cancelable` (`App.tsx:8862`) so a non-cancelable op dispatches no request and fires no engine cancel; OCR/convert retain real engine cancel channels with request-then-confirm (request never sets `cancelled`; only the engine's `confirm-cancellation` does). Retest: activityShelfStore 30, activityShelf.test.tsx 16, activityShelfState 17, phase53_convertImport 20, ocr 15 files/122, typecheck clean, build:renderer built. E2E `e2e/tfl1216_activityShelf.spec.cjs` 3 passed (55.8s); C5b live log `rowState=running rowText="34 of 34 pages" actions=[] cancelCount=0` (was red on `cancelCount === 0`). Evidence `screenshots/tfl1216-c5b-search-index-panel.png` shows the running row with no Cancel. Blast radius (C4b/C5 OCR + convert cases) green together.
+
+## DEF-648: The four Phase 30 print regression e2e specs drive the retired in-app print surface
+
+- Status: CLOSED (qa TFL-1298, 2026-10-09; migrated to the standalone print window, family green)
+- Severity: MEDIUM - test-only. The four specs fail at the first print-surface wait because they open the standalone `?tfWindow=print` window but then read/drive `[data-print-*]` on the MAIN window, where the print controls do not exist. No product impact; pre-existing since the Phase 37 migration.
+- Found by: qa (TFL-1258 focused verification, 2026-10-08)
+- Phase: 120 / print and output overhaul (TFL-1233)
+
+Files:
+- `e2e/phase30_print_annotations.spec.cjs`, `e2e/phase30_print_output.spec.cjs`, `e2e/phase30_print_copies_collate.spec.cjs`, `e2e/phase30_print_control_index.spec.cjs` - each called `openStandalonePrintWindow` (or predated it) yet continued to target the MAIN window (`win`) for every `[data-print-*]` control and the preview raster; `PrintPanel` renders only inside `PrintWindowApp` (`src/renderer/print-window/PrintWindowApp.tsx:276`).
+
+Steps to reproduce:
+1. `npm.cmd run test:e2e -- e2e/phase30_print_output.spec.cjs e2e/phase30_print_control_index.spec.cjs e2e/phase30_print_copies_collate.spec.cjs e2e/phase30_print_annotations.spec.cjs`.
+2. Observe failures at the first print-surface wait, or `previewSrc(win)` returning null.
+
+Expected: the four specs drive the shipped standalone print window and pass.
+Actual (pre-fix): 7 failed / 1 passed.
+
+Evidence: `screenshots/TFL-1258-phase120-qa-report.md` section 1 command 4.
+
+History:
+- qa (TFL-1258, 2026-10-08): filed; pre-existing since the Phase 37 migration (`729467dd`), not a Phase 120 regression. `phase30_print_dialog.spec.cjs` already passed and proves the standalone surface.
+- qa (TFL-1298, 2026-10-09): CLOSED. Migrated all four specs to the standalone-window helper - retargeted every `[data-print-*]` interaction to the returned `printPage` (window-target only; no selector or assertion weakened or deleted); moved the printer-list stubs to the `WebContents` prototype because `print:listPrinters` resolves on the invoking webContents (`listPrinters(event.sender)`, `src/main/services/print.ts:626`); switched `closeDialog` to await the print window's `close` event (Cancel closes the window, so the printer selector never detaches in-page). Retest: `Remove-Item Env:ELECTRON_RUN_AS_NODE; npm.cmd run test:e2e -- e2e/phase30_print_dialog.spec.cjs e2e/phase30_print_output.spec.cjs e2e/phase30_print_control_index.spec.cjs e2e/phase30_print_copies_collate.spec.cjs e2e/phase30_print_annotations.spec.cjs` -> 8 passed / 0 failed.
+
+## DEF-649: Dark-theme print preview renders a near-black mat inside the white sheet
+
+- Status: CLOSED (qa TFL-1298, 2026-10-09; judged on the TFL-1297 build)
+- Severity: LOW - cosmetic. In the dark theme the `object-fit: contain` page raster letterboxed against the cell's near-black `--bg-base`, showing dark bands inside the white paper. The composed print output was untouched (no output-pixel tinting).
+- Found by: qa (TFL-1258 focused verification, 2026-10-08; independently confirmed ADV-256, 2026-10-08)
+- Phase: 120 / print and output overhaul (TFL-1233)
+
+Files:
+- `src/renderer/styles.css:13842-13856` - `.print-preview-cell` now sets `background: #ffffff` (was `var(--bg-base)`, near-black in dark), so the page-bearing cell is paper in every theme; `.print-preview-blank` (`:13865`) still overrides it with the stage colour for empty grid slots.
+
+Steps to reproduce:
+1. Open the standalone print window on any document, set the print window to the dark theme.
+2. Inspect the preview sheet margins for dark bands inside the white paper.
+
+Expected: white paper with no dark mat in either theme.
+Actual (pre-fix): ~13px dark bands at the top/bottom of the white sheet.
+
+Evidence: `screenshots/adv-tfl1259-dark-wide.png` (pre-fix, bands visible), `screenshots/tfl1298-preview-dark.png` (post-fix, clean).
+
+History:
+- qa (TFL-1258, 2026-10-08): filed LOW from `screenshots/phase120-output-studio-wide-dark.png`.
+- adversary (ADV-256, TFL-1259 phase-close diff-pass, 2026-10-08): ACCEPTED, duplicate of DEF-649; CTO routed the fix to TFL-1297 (paper-white preview cell).
+- qa (TFL-1298, 2026-10-09): CLOSED. The TFL-1297 fix holds in the built app: `e2e/tfl1298_preview_geometry.spec.cjs` reads the dark-theme cell `getComputedStyle(el).backgroundColor === "rgb(255, 255, 255)"` (1 passed), and `screenshots/tfl1298-preview-dark.png` shows clean white paper with no dark bands.
 
 ## DEF-651: Inventory doc cites a stale `Toasts.tsx` line for toast durability after the C5c edit
 
@@ -14998,3 +15126,164 @@ History:
 - adversary (ADV-259, 2026-10-08): found by source review; live reachability nil (modal scrim), filed as latent defense-in-depth.
 - cto (2026-10-08): ACCEPTED -> DEF-654.
 - qa (TFL-1322, 2026-10-08): CLOSED. Source verified in-tree (`App.tsx:9139-9160`); the captured-identity invariant is pinned by `test/unit/renderer/activityShelfStore.test.ts` -> 1 file / 40 passed ("ocrStartAction yields a begin whose operation is running with the captured identity"). Live reachability remains nil by design (the OCR dialog scrim covers the shelf while running), so verification is source + unit, not a live click.
+
+## DEF-658: The empty-document Thread Stream state offered no action to open the annotation tools
+
+- Status: CLOSED
+- Severity: MEDIUM - the REVIEW empty state promised "Use the annotation tools to mark up this document." but rendered no action, so the empty document had no in-panel route into the annotation tools. No document corruption. (Originally suggested MEDIUM by qa TFL-1339.)
+- Found by: qa (TFL-1339 Phase 116 focused QA, 2026-10-08)
+- Phase: 116 (TFL-1228) - originally surfaced by TFL-1339; fix TFL-1348.
+
+Files:
+- `src/renderer/components/DocumentView.tsx:4815-4818` - the REVIEW `<ContextPanel>` now passes `onOpenTools={(): void => setFlyoutOpen(true)}` (the SAME view-local Annotate-flyout state the dock/toolbar open). Chain: ContextPanel -> ReviewElementsPanel -> AnnotationsPanel -> ThreadStream `:164-174`, which renders `[data-ann-empty-action]` ("Open annotation tools") only when `onOpenTools` is supplied, `onClick={onOpenTools}`.
+
+Steps to reproduce:
+1. Launch TFlex (`launchApp`) and open `assets/samples/report.pdf` (ships with no annotations).
+2. Switch to the REVIEW stage (dock verb Annotate / stage 3) and expand the left panel.
+3. Observe the empty-document state under Annotations.
+
+Expected: the empty-document state renders `[data-ann-empty-action]` labelled "Open annotation tools", and clicking it opens `[data-annotation-flyout]`.
+Actual (pre-fix): the action never rendered (the host never supplied `onOpenTools`); `[data-ann-empty-action]` count 0.
+
+Fix: TFL-1348 as above.
+
+Commands + output (verbatim, TFL-1352 run):
+- `npm.cmd run test:e2e -- e2e/phase116_thread_stream.spec.cjs e2e/def362_flash_verify.spec.cjs e2e/phase51_gate.spec.cjs --workers=1 --reporter=list` -> `phase116_thread_stream` 9 passed (P116-3 now HARD-passes; its soft assertion on `[data-ann-empty-action]` holds), `def362_flash_verify` 1 passed, `phase51_gate` 7 passed / 1 failed (P51-E only, foreign to Phase 116).
+- Temporary QA probe (created, run, deleted) `e2e/tfl1352_empty_action_probe.spec.cjs` -> 1 passed: `[data-ann-empty-action]` visible, text "Open annotation tools", `[data-annotation-flyout]` count 0 before the click and visible after it.
+
+Evidence: `screenshots/phase116-empty-doc.png` (action visible in the empty state) and `screenshots/phase116-empty-doc-action.png` (flyout open after the click).
+
+History:
+- qa (TFL-1339, 2026-10-08): opened as DEF-658; `data-ann-empty-action` never rendered.
+- frontend-dev (TFL-1348): fixed via `onOpenTools` at `DocumentView.tsx:4815-4818`.
+- qa (TFL-1352, 2026-10-08): CLOSED. Re-verified on the current tree; e2e P116-3 green plus the click probe proving the flyout opens; screenshots refreshed.
+
+## DEF-659: The Inspector REVIEW scope never populated for a selected annotation (no annotation-selection publish)
+
+- Status: CLOSED
+- Severity: MEDIUM - a selected annotation's editable properties (`[data-inspector-review-actions]`, `[data-ann-prop="color"]`) never reached the right Inspector, so that scope was dead for every annotation kind. No document corruption. (Originally suggested MEDIUM by qa TFL-1339.)
+- Found by: qa (TFL-1339 Phase 116 focused QA, 2026-10-08)
+- Phase: 116 (TFL-1228) - originally surfaced by TFL-1339 (as "DEF-650"); fix TFL-1348.
+- Numbering note: DEF-650 collides - `ADVERSARIAL_REVIEW.md:13236-13244` (ADV-255, CTO triage 2026-10-08) already allocates DEF-650 to the Phase 120 print-preview page-range merge/disclosure defect. Renumbered to DEF-659 (next free; DEF-655/656/657 are reserved for Phase 118 TFL-1230, DEF-658 is the Phase-116 empty-doc defect).
+
+Files:
+- `src/renderer/components/DocumentView.tsx:4431-4442` - a dedicated `onAnnotationSelectionChange` publish fires the selected annotation id (or `null`) on change.
+- `src/renderer/App.tsx:922` (`inspectorAnnotationId`), `:12862` (wired from DocumentView), `:13234` (passed to Inspector as `selectedAnnotationId`).
+- `src/renderer/components/Inspector.tsx:1433` (`[data-inspector-review-empty]`), `:1462` (`[data-ann-prop="color"]`), `:1474` (`[data-inspector-review-actions]`); the id is normalized (`annotation:`-prefix) so ANY annotation kind resolves.
+
+Steps to reproduce:
+1. Launch TFlex (`launchApp`) and open `assets/samples/report.pdf`.
+2. Create a Text box annotation via the Annotate tool (or select any existing annotation).
+3. Observe the right Inspector.
+
+Expected: for a selected annotation the Inspector REVIEW scope shows `[data-inspector-review-actions]` and `[data-ann-prop="color"]`, and `[data-inspector-review-empty]` is absent.
+Actual (pre-fix): the scope stayed empty for every selected annotation kind (no selection publish reached the Inspector).
+
+Fix: TFL-1348 as above.
+
+Commands + output (verbatim, TFL-1352 run):
+- `npm.cmd run test:unit -- <7 Phase-116 specs>` -> Test Files 7 passed (7), Tests 36 passed (36) (the inspector spec gained the raw-id resolution and shape cases).
+- `npm.cmd run verify` -> `conventions: clean (412 source file(s) scanned)`; `tsc --noEmit` exit 0.
+- `npm.cmd run build:renderer` -> exit 0.
+- Focused e2e (as above): `phase116_thread_stream` 9 passed - P116-4 now HARD-passes (`[data-inspector-review-actions]` and `[data-ann-prop="color"]` visible).
+
+Evidence: `screenshots/phase116-inspector-color.png` - the right Inspector reads "Inspector - Text annotation" with the populated REVIEW ELEMENTS -> Annotations scope (Type, Page, Position, Color: red, "Jump to page 1", "Delete annotation"); the empty hint is absent.
+
+History:
+- qa (TFL-1339, 2026-10-08): opened as "DEF-650"; selection never populated the Inspector scope.
+- frontend-dev (TFL-1348): fixed via the `onAnnotationSelectionChange` publish + id normalization.
+- qa (TFL-1352, 2026-10-08): CLOSED. Renumbered to DEF-659 (DEF-650 collision with the Phase 120 print defect); re-verified on the current tree; unit 36/36, P116-4 green; screenshot refreshed.
+
+## DEF-650: A custom print page range silently collapses duplicate pages, and the consequence summary presented the collapsed set without disclosing the merge
+
+- Status: FIX-READY (fix present in-tree; pending qa retest)
+- Severity: LOW - the Phase 120 pre-execution consequence summary presented a de-duplicated / ascending page set as if it were the user's literal selection, and the `formatPageSet` doc comment falsely claimed duplicates were preserved. The collapse itself is the pre-existing, unit-pinned shared `parsePageRanges` (deliberately reused by Phase 120 ruling 6); the in-phase gap was the summary's nondisclosure and the false doc comment.
+- Found by: adversary (ADV-255)
+- Phase: 120 (TFL-1259 diff-pass)
+- Numbering note: at ADV-255 triage (CTO, 2026-10-08) this finding was filed as DEF-650 ("owner frontend-dev"), which is why the Phase 116 inspector defect qa opened as "DEF-650" was renumbered DEF-659. The raw Phase 116 "DEF-650" block recovered during the TFL-1350 restore was a duplicate of DEF-659 and is not retained here.
+
+Files:
+- `src/renderer/pdf/printSelection.ts:57,79,98` - `parsePageRanges` uses a `Set` then `sort`, so a repeated page collapses and order normalises (pre-existing; `test/unit/renderer/printSelection.test.ts:22` pins the de-dup).
+- `src/renderer/components/PrintPanel.tsx:113-116` - the `formatPageSet` doc comment now states the truth ("The shared `parsePageRanges` normalises a typed range to a sorted, de-duplicated page set; this helper only formats that normalised set"), replacing the false "Duplicates are preserved" claim.
+- `src/renderer/components/PrintPanel.tsx:287-292` - `duplicateMergeDisclosure` appends " (duplicate page numbers merged)" to the consequence summary when a custom range repeats a page.
+
+Steps to reproduce:
+1. Launch TFlex through `e2e/lib/launch.cjs`, open the standalone print window, choose Custom range.
+2. Type `1,1,3` and read `[data-print-summary-pages]`.
+
+Expected: the surface does not silently collapse a repeated page (Phase 120 feature E / CTO ruling 6), and discloses the merge if it collapses.
+
+Actual (pre-fix): `1,1,3` resolved to pages `[1, 3]` and the summary read "1, 3 of 34" with no disclosure. Post-fix: the summary reads "1, 3 of 34 (duplicate page numbers merged)".
+
+Evidence: `test-fixtures/tfl1259-adversary/live_probe_all.log`, `test-fixtures/tfl1259-adversary/live_probe_results.json`; ADV-255; fix at `src/renderer/components/PrintPanel.tsx:113-116,287-292`.
+
+History:
+- adversary (ADV-255, 2026-10-08): found on the live Output Studio; the collapse is the pre-existing shared parser, the in-phase gap was the summary disclosure plus the false `formatPageSet` doc comment.
+- cto (ADV-255 triage, 2026-10-08): ACCEPTED -> DEF-650; owner frontend-dev.
+- cto (TFL-1355, 2026-10-08): FIX-READY - the doc comment is corrected and `duplicateMergeDisclosure` is present (`PrintPanel.tsx:113-116,287-292`); pending qa confirmation.
+
+## DEF-655: Intake dispatch loses a queued file when a row is removed mid-open
+
+- Status: CLOSED (qa TFL-1249 phase-close, 2026-10-08)
+- History:
+  - cto: FIX-READY relayed from frontend-dev TFL-1346 (2026-10-08): `createIntakeModel.dispatch` now iterates a `list.slice()` snapshot and skips any item no longer in the live `list` (`if (!list.includes(item)) continue`), so a mid-dispatch `remove()` affects only that row and no queued file is skipped. Pending qa retest.
+  - qa: CLOSED 2026-10-08 (TFL-1249 phase-close). Retest `node test-fixtures/tfl1248-adversary/probe-intake-dispatch.mjs` section D -> `skipped ids: []`, `b.pdf ... visited by dispatch? true` (false = silently dropped; was false pre-fix); all three queued PDFs opened. Model regression green in `phase118_intakeModel.test.tsx` (5 files / 53 tests).
+- Severity: MEDIUM - A user removing a row while an import is running can silently lose the next queued file; violates the phase's "truthful intake" criterion.
+- Found by: adversary (TFL-1248, ADV-251, 2026-10-08)
+- Phase: 118
+- Source: ADVERSARIAL_REVIEW.md ADV-251
+
+Files:
+- `src/renderer/intake/model.ts` (dispatch loop line 262; remove() lines 209-213)
+
+Steps to reproduce:
+1. `node test-fixtures/tfl1248-adversary/probe-intake-dispatch.mjs` (section D): queue three ready PDFs a/b/c, start `dispatch`, remove the row being opened.
+2. Expected: removing a row affects only that row; the remaining queued files still open, in order.
+3. Actual: `dispatch` iterates the live `list` across the `await openPdf`, so the splice makes the iterator skip the next item.
+
+Evidence: probe section D (openPdf calls drop below the queued count).
+
+## DEF-656: Two dispatches during one slow PDF open build the images PDF twice
+
+- Status: CLOSED (qa TFL-1249 phase-close, 2026-10-08)
+- History:
+  - cto: FIX-READY relayed from frontend-dev TFL-1346 (2026-10-08): `dispatch` gained a closure in-flight guard `dispatchInFlight` (a concurrent `dispatch()` returns `{ opened: [], images: [], skipped: [] }`), and image items now enter `converting` at collection time inside the loop; `liveImageItems` is filtered against `list`. Host guard `intakeRunningRef` untouched. Pending qa retest.
+  - qa: CLOSED 2026-10-08 (TFL-1249 phase-close). Retest `probe-intake-dispatch.mjs` section E -> `openPdf calls=1`, `createFromImages calls=1` (a value of 2 is a duplicate PDF build; was 2 pre-fix). Regression green in `phase118_intakeModel.test.tsx`.
+- Severity: LOW - The host already guards with `intakeRunningRef`, so no user-visible duplicate today; the model itself has no in-flight guard (defense-in-depth).
+- Found by: adversary (TFL-1248, ADV-252, 2026-10-08)
+- Phase: 118
+- Source: ADVERSARIAL_REVIEW.md ADV-252
+
+Files:
+- `src/renderer/intake/model.ts` (dispatch line 253; image collection line 286)
+
+Steps to reproduce:
+1. `node test-fixtures/tfl1248-adversary/probe-intake-dispatch.mjs` (section E): queue `[one.png, two.png, doc.pdf]`, start `dispatch`, start a second `dispatch` while `openPdf` is pending.
+2. Expected: `createFromImages` runs exactly once; a second dispatch no-ops or reports busy.
+3. Actual: images stay `ready` until after the PDF loop, so the second dispatch re-collects them - `createFromImages calls=2`.
+
+Evidence: probe section E.
+
+## DEF-657: A dropped OS file's resolved on-disk path is discarded, so its PDF route opens by bare basename
+
+- Status: CLOSED (qa TFL-1249 phase-close, 2026-10-08)
+- History:
+  - cto: FIX-READY relayed from frontend-dev TFL-1346 (2026-10-08): `useOsFileDrop.onIntake` now receives `OsDropEntry[]` (`{ path, file }`) carrying the `resolveDroppedPath` result through to the model, and `App.tsx` `onIntakeFiles` stores the resolved path so a dropped file opens by its absolute on-disk path, not its basename. Pending qa retest.
+  - qa: CLOSED 2026-10-08 (TFL-1249 phase-close). Retest e2e `phase118_intake.spec.cjs` T6 (real CDP `Input.dispatchDragEvent` drop of `dupA/same.pdf` over a colliding `dupB/same.pdf` basename): staged `ready`, then dispatched and opened by its RESOLVED absolute path, queue cleared -> PASS. Source confirms the fix at the right layer: `useOsIntegration.ts:160-170` hand `{ path, file }` to `onIntake`; `App.tsx:2887-2890` `onIntakeFiles` stores `pathOrFile: path`. NOTE: the adversary `probe-intake-drop-path.mjs` section F is a stale oracle - it manually replays the pre-fix `add({ pathOrFile: file })` contract instead of driving the fixed hook/App wiring, so its "PATH LOST" line is not a valid post-fix result.
+- Severity: HIGH - The drop route is now wired to the shared open path; a same-named file elsewhere would be opened instead of the dropped file.
+- Found by: adversary (TFL-1248, ADV-260, 2026-10-08)
+- Phase: 118
+- Source: ADVERSARIAL_REVIEW.md ADV-260
+
+Files:
+- `src/renderer/hooks/useOsIntegration.ts:150-159`
+- `src/renderer/App.tsx:2885`
+- `src/renderer/intake/model.ts:149-153`
+
+Steps to reproduce:
+1. `node test-fixtures/tfl1248-adversary/probe-intake-drop-path.mjs`.
+2. Expected: a dropped file keeps its absolute on-disk path from the drop hook through to the open operation.
+3. Actual: `resolveDroppedPath(file)` is used only for a null-check, then the bare `File` is passed on; `openPathFor` falls back to `file.name`, so `dispatch openPdf(path) = "report.pdf"` (basename).
+
+Evidence: probe output section F.
+
