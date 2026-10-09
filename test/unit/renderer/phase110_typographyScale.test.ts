@@ -92,8 +92,8 @@ describe("Phase 110 (chunk A) - the semantic type scale", () => {
 });
 
 describe("Phase 110 (chunk A) - supporting-text colour", () => {
-  it("is #667085 in :root and #929BAC in the dark theme", () => {
-    expect(token(LIGHT, "tf-text-supporting")).toBe("#667085");
+  it("is #5b6577 in :root and #929BAC in the dark theme", () => {
+    expect(token(LIGHT, "tf-text-supporting")).toBe("#5b6577");
     expect(token(DARK, "tf-text-supporting")).toBe("#929BAC");
   });
 

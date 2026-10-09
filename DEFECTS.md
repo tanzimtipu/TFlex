@@ -5,6 +5,30 @@
 > inspect the current `OPEN`, `FIX-READY`, and `DISPUTED` entries first; closed records are
 > historical evidence and must not be loaded wholesale.
 
+## DEF-672: DEF-668's fix and its new unit assertion target the orphaned `.ann-panel-row-delete` selector, which no longer renders
+
+- Status: OPEN
+- Severity: MEDIUM - the Phase 125 chunk-F "fix" for DEF-668 edits dead CSS: `.ann-panel-row-delete` matches ZERO elements in the live annotation panel. Phase 116 migrated the row to `ThreadStreamRow`, whose delete control is an `IconButton` rendering `btn btn-danger btn-icon`. The new assertion in `phase125_textLegibility.test.ts:299-307` only checks the stylesheet TEXT, so it passes green without covering the rendered control - a false oracle that can hide a future delete-ink regression. No user-visible harm today: the live control measures 5.98:1 (light) / 9.71:1 (dark), above the 3:1 icon floor.
+- Found by: qa (TFL-1495, DEF-668 focused verification)
+- Phase: 125 (text legibility)
+
+Files:
+- `src/renderer/styles.css:9300-9320` - the `.ann-panel-row-delete` rule (now `color: var(--fg-muted)`) has no renderer: a repo-wide search finds the class only in `styles.css`, tests, and archived specs.
+- `src/renderer/annotations/ThreadStream.tsx:132-139` - the live per-row delete control is `IconButton intent="destructive"` with no class; computes `btn btn-danger btn-icon`.
+- `test/unit/renderer/phase125_textLegibility.test.ts:299-307` - the new assertion checks the CSS text only, never the rendered element.
+
+Steps to reproduce:
+1. `npm.cmd run test:e2e -- e2e/phase125_def668_delete_ink.spec.cjs`
+2. Places a rect annotation, opens the REVIEW-stage Annotations panel (`[data-annotation-panel]`), reads the row's delete control.
+3. Actual: `document.querySelectorAll('.ann-panel-row-delete').length === 0`; the row's `button[aria-label^="Delete"]` class is `btn btn-danger btn-icon`, ink `rgb(184,46,67)` (light) / `rgb(255,154,173)` (dark).
+
+Expected: if the fix is meant to control the rendered delete icon, the class must be applied to that control (or the assertion must target the rendered control's computed ink). The current patch changes a rule nothing uses.
+
+Evidence: `screenshots/phase125/def668-delete-{light,dark}.png`, `screenshots/phase125/def668-ann-row-{light,dark}.png`, `screenshots/phase125/def668-delete-ink.json`.
+
+History:
+- qa: filed 2026-10-09 (TFL-1495 DEF-668 focused verification). Owner role: frontend-dev.
+
 ## DEF-669: Phase 127's trigger retirement left direct test-side references to the retired `[data-app-menu]`
 
 - Status: CLOSED
@@ -35,6 +59,26 @@ Evidence: residue scan over `e2e/**` (20 active files, 1 installed) and `test/**
 History:
 - qa: filed 2026-10-09 (TFL-1501 focused re-verify of the DEF-667 fix). Owner role: qa.
 - qa: CLOSED 2026-10-09 (TFL-1509, focused re-verify + phase-close). `rg -n data-app-menu e2e` (excl. installed/archived) -> only the negative assertion in `e2e/tfl1430_topbar_restore.spec.cjs` (0 live drivers); `rg -n data-app-menu test` -> no fabricated trigger, only negative assertions plus the generic `popoverDataAttrs` probe (`commandMenu.test.tsx`) and doc comments; `src/renderer` has 0 live hits. `npm.cmd run verify` -> conventions clean (410 files) + typecheck clean. `npm.cmd run test:unit -- test/unit/renderer/phase114_a11y.test.tsx test/unit/renderer/phase127TopBarRestore.test.tsx` -> 19/19 passed. Build exit 0; migrated-spec run (`phase105_topbar_rail`, `phase119_adaptive_shell`, `tfl1116_r03_app_menu_fit`, `phase94_iconEvidence`, `phase16_control_index`) -> 13 passed / 18 failed, but every failure repros the `openSample` / local-open-helper timeouts of DEF-670/DEF-671 and none touches the retired selector. The retired trigger is no longer driven or asserted except as a negative assertion, so this defect is resolved; the non-green run is owned by the still-open DEF-670/DEF-671.
+
+## DEF-668: The annotation-panel row delete icon rides `--fg-faint` at rest, failing the 3:1 icon floor
+
+- Status: CLOSED
+- Severity: MEDIUM - the interactive per-row delete icon on the annotation panel renders at rest in `--fg-faint` (light `#94a3b8` = 2.67:1 on the panel bg `#f1f4f8`; dark `#5b626b` = 2.89:1 on `#181d24`), below the 3:1 essential-icon floor and far below the 4.5:1 interactive-text floor. The affordance is legible only on hover (which repaints `--fg-strong`). No data or functional impact.
+- Found by: adversary (ADV-1460-01, TFL-1460 Phase 125 diff-pass)
+- Phase: 125 (text legibility) - a pre-existing `--fg-faint` usage surfaced by the phase-125 ink audit
+
+Files:
+- `src/renderer/styles.css:9300-9320` - `.ann-panel-row-delete` sets `color: var(--fg-faint)` at `:9311` (rest); `:9322` hover repaints `--fg-strong`. The 24px icon button is an interactive control, not a decorative mark or disabled state.
+- Sibling control `.ann-panel-row-jump` uses `var(--fg)` at rest (`styles.css:9250`).
+
+Fix: repoint the rest ink at `:9311` to `var(--fg-muted)` (light `#556070` ~5.7:1, dark `#828a97` ~4.8:1 on the same surfaces), mirroring the ink-ladder secondary tier; leave the `:hover`/`:focus-visible` `--fg-strong` repaint unchanged.
+
+Evidence: ADVERSARIAL_REVIEW.md ADV-1460-01 (measured ratios above).
+
+History:
+- adversary: filed 2026-10-09 from the TFL-1460 Phase 125 diff-pass (ADV-1460-01). Owner role: frontend-dev.
+- CTO: ACCEPTED 2026-10-09 (TFL-1419 triage). Assigned to frontend-dev as Phase 125 chunk F; blocks the Phase 125 close.
+- qa: CLOSED 2026-10-09 (TFL-1495 focused verification). Reproduction does NOT recur: the live annotation-panel delete icon (REVIEW-stage `[data-annotation-panel]`, `ThreadStreamRow`'s `IconButton intent="destructive"`) computes `btn btn-danger btn-icon` at 5.98:1 light / 9.71:1 dark, above the 3:1 icon floor - clearly visible, not ghosted. Caveat: the chunk-F patch is INERT - `.ann-panel-row-delete` matches 0 rendered elements (Phase 116 migrated the row off that class); the fix and its new assertion edit/assert dead CSS only. Tracked as DEF-672 (owner frontend-dev).
 
 ## DEF-667: Retiring the Phase-105 app-menu left the shared e2e helpers pointing at `[data-app-menu]`
 

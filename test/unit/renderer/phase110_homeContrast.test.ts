@@ -2,12 +2,13 @@
 //
 // Phase 110 (chunk E2) / DEF-594 / ADV-224 - the LIGHT Home-hero supporting
 // text contrast. `.welcome-sub` and `.welcome-section h3 .count` ride the
-// global `--tf-text-supporting` token, but the Home hero (`.welcome.orbit-desk`)
-// paints `--bg-sunken` behind them. In light that pair measures 4.07:1, below
-// the 4.5:1 interactive-text floor, so the light theme gives those two hero
-// labels a Home-hero-scoped ink. This spec parses the real stylesheet, resolves
-// the applied ink and the surface, and computes the WCAG 2.1 relative-luminance
-// ratio (the same formula phase38LegibilityContrast.test.ts uses).
+// global `--tf-text-supporting` token, and the Home hero (`.welcome.orbit-desk`)
+// paints `--bg-sunken` behind them. Phase 125 raised the global token to
+// `#5b6577`, which clears 4.5:1 on `--bg-sunken` on its own; the light theme
+// still gives those two hero labels a Home-hero-scoped `--fg-muted` ink for
+// extra headroom. This spec parses the real stylesheet, resolves the applied
+// ink and the surface, and computes the WCAG 2.1 relative-luminance ratio (the
+// same formula phase38LegibilityContrast.test.ts uses).
 
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
@@ -107,8 +108,8 @@ function heroRule(): { selector: string; body: string } {
 }
 
 describe("Phase 110 (chunk E2) - light Home-hero supporting-text contrast", () => {
-  it("leaves the global --tf-text-supporting token unchanged", () => {
-    expect(resolveToken("--tf-text-supporting", LIGHT)).toBe("#667085");
+  it("carries the Phase 125 global --tf-text-supporting value", () => {
+    expect(resolveToken("--tf-text-supporting", LIGHT)).toBe("#5b6577");
     expect(resolveToken("--tf-text-supporting", DARK)).toBe("#929BAC");
   });
 
@@ -136,13 +137,15 @@ describe("Phase 110 (chunk E2) - light Home-hero supporting-text contrast", () =
     expect(sunkenRaw, "resolved --bg-sunken").toBeTruthy();
 
     const ratio = contrast(parseColor(inkRaw!), parseColor(sunkenRaw!));
-    const before = contrast(parseColor("#667085"), parseColor(sunkenRaw!));
+    const globalRaw = resolveToken("--tf-text-supporting", LIGHT);
+    expect(globalRaw, "resolved global supporting token").toBeTruthy();
+    const globalRatio = contrast(parseColor(globalRaw!), parseColor(sunkenRaw!));
     console.log(
-      `[P110-E2] light Home hero supporting ink on --bg-sunken: before ${before.toFixed(2)} -> after ${ratio.toFixed(2)}`,
+      `[P110-E2] light Home hero on --bg-sunken: global token ${globalRatio.toFixed(2)} -> hero override ${ratio.toFixed(2)}`,
     );
 
-    // The raw global token is the documented gap this override closes.
-    expect(before).toBeLessThan(FLOOR);
+    // Phase 125 raised the global token; it now clears the floor on --bg-sunken.
+    expect(globalRatio, `global token on --bg-sunken = ${globalRatio.toFixed(2)}`).toBeGreaterThanOrEqual(FLOOR);
     // Both hero labels share the override, so one ratio proves both.
     expect(ratio, `hero ink on --bg-sunken = ${ratio.toFixed(2)}`).toBeGreaterThanOrEqual(FLOOR);
   });

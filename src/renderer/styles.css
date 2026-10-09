@@ -9308,7 +9308,7 @@ rect.ann-highlight.ann-preview {
   justify-content: center;
   background: transparent;
   border: none;
-  color: var(--fg-faint);
+  color: var(--fg-muted);
   cursor: pointer;
   border-radius: var(--radius-1);
   margin-right: 4px;

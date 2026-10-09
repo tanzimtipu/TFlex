@@ -492,15 +492,17 @@ describe("Phase 41 item 3 — the selection trio clears the text floor", () => {
 
 /**
  * Phase 110 (chunk E2) / DEF-594 / ADV-224 — the supporting-text token on the
- * Home `--bg-sunken` surface. `.welcome-sub` and `.welcome-section h3 .count`
- * ride `--tf-text-supporting`; on the Home hero (`.welcome.orbit-desk`) the
- * surface is `--bg-sunken`. Dark clears easily (#929BAC on #08090b = 7.12); the
- * LIGHT #e4e9ef sunken measures 4.07 for the raw token, below the floor, which
- * is exactly why the light Home hero overrides its ink to `--fg-muted` (5.22,
- * scored by phase110_homeContrast). This test pins both facts so neither drifts.
+ * Home `--bg-sunken` surface, retuned by Phase 125. `.welcome-sub` and
+ * `.welcome-section h3 .count` ride `--tf-text-supporting`; on the Home hero
+ * (`.welcome.orbit-desk`) the surface is `--bg-sunken`. Dark clears easily
+ * (#929BAC on #08090b = 7.12). Phase 125 raised the LIGHT token from #667085
+ * (4.07 on #e4e9ef, below the floor) to #5b6577, which now clears 4.5:1 on that
+ * surface as well; the light Home hero still overrides its ink to `--fg-muted`
+ * (5.22, scored by phase110_homeContrast). This test pins both facts so neither
+ * drifts.
  */
 describe("Phase 110 E2 — --tf-text-supporting on the Home --bg-sunken surface", () => {
-  it("clears the text floor on dark, and documents the light gap the hero override closes", () => {
+  it("clears the text floor on light and dark after the Phase 125 token raise", () => {
     const lightRatio = contrast(
       tokenColor(BASE, "--tf-text-supporting"),
       surfaceColor(BASE, "--bg-sunken"),
@@ -514,8 +516,8 @@ describe("Phase 110 E2 — --tf-text-supporting on the Home --bg-sunken surface"
     );
     // Dark keeps the global token and clears the floor.
     expect(darkRatio).toBeGreaterThanOrEqual(TEXT_FLOOR);
-    // Light raw token is the documented gap the Home-hero override closes.
-    expect(lightRatio).toBeLessThan(TEXT_FLOOR);
+    // Phase 125 raised the light token to #5b6577; it clears the floor too.
+    expect(lightRatio).toBeGreaterThanOrEqual(TEXT_FLOOR);
   });
 
   it("scores the token on the raised chrome surfaces it is applied on in every theme", () => {
