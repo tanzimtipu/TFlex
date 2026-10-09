@@ -37,6 +37,18 @@ async function measure(win) {
       if (!el) return { hook: s, present: false };
       const r = el.getBoundingClientRect();
       const label = el.querySelector('.context-panel-page-action-label');
+      let clippedBy = null;
+      for (let n = el.parentElement; n && n !== document.body; n = n.parentElement) {
+        const nr = n.getBoundingClientRect();
+        if (r.right > nr.right + 1 || r.left < nr.left - 1) {
+          clippedBy = `${n.className || n.tagName}:${Math.round(nr.left)}-${Math.round(nr.right)}`;
+          break;
+        }
+      }
+      const cx = (r.left + r.right) / 2;
+      const cy = (r.top + r.bottom) / 2;
+      const hit = document.elementFromPoint(cx, cy);
+      const topmost = hit ? (el.contains(hit) || el === hit) : false;
       return {
         hook: s,
         present: true,
@@ -46,6 +58,9 @@ async function measure(win) {
         height: Math.round(r.height),
         left: Math.round(r.left),
         right: Math.round(r.right),
+        clippedBy,
+        topmostAtCenter: topmost,
+        hitEl: hit ? `${hit.tagName}.${hit.className || ''}|${(hit.getAttribute && hit.getAttribute('data-context-panel-close')) || ''}` : null,
         labelTruncated: label ? label.scrollWidth > label.clientWidth + 1 : false,
         labelVisible: label ? label.getBoundingClientRect().width > 0 : false,
       };
@@ -69,14 +84,11 @@ async function measure(win) {
   }, HOOKS);
 }
 
-async function setPanelWidth(win, px) {
-  return win.evaluate((w) => {
-    const panel = document.querySelector('.context-panel');
-    if (!panel) return null;
-    panel.style.width = `${w}px`;
-    panel.style.flex = `0 0 ${w}px`;
-    return Math.round(panel.getBoundingClientRect().width);
-  }, px);
+async function resizeViaHandle(win, key) {
+  const handle = win.locator('[data-testid="panel-resize-left"]');
+  await handle.focus();
+  await handle.press(key);
+  await win.waitForTimeout(500);
 }
 
 function evaluateCriteria(m) {
@@ -89,6 +101,8 @@ function evaluateCriteria(m) {
     if (!b.hasIcon) fail(`button ${b.hook} has no icon`);
     if (!b.labelVisible) fail(`button ${b.hook} label not visible`);
     if (b.labelTruncated) fail(`button ${b.hook} label truncated`);
+    if (b.clippedBy) fail(`button ${b.hook} clipped by ancestor ${b.clippedBy}`);
+    if (b.topmostAtCenter === false) fail(`button ${b.hook} not topmost at center`);
   }
   if (present.length === 3) {
     const ws = present.map((b) => b.width);
@@ -103,16 +117,56 @@ function evaluateCriteria(m) {
   return out;
 }
 
-async function capture(win, theme, width, name) {
+async function capture(win, theme, widthLabel, name, resizeKey) {
+  if (resizeKey) await resizeViaHandle(win, resizeKey);
   await setTheme(win, theme);
-  await setPanelWidth(win, width);
   await win.waitForTimeout(500);
   const m = await measure(win);
   const verdict = evaluateCriteria(m);
   await win.locator('.context-panel-header').screenshot({ path: path.join(SHOTS, name) });
   await win.screenshot({ path: path.join(SHOTS, name.replace('.png', '-window.png')) });
-  log(`${theme}-${width}`, { ...m, verdict });
+  log(`${theme}-${widthLabel}`, { ...m, verdict });
   return verdict;
+}
+
+async function hoverActiveEvidence(win) {
+  const combine = win.locator('[data-context-panel-combine]');
+  const layout = win.locator('[data-context-panel-layout-split]');
+  const styleOf = (loc, prop) =>
+    loc.evaluate((el, p) => getComputedStyle(el).getPropertyValue(p), prop);
+  const idle = await styleOf(combine, 'background-color');
+  await combine.hover();
+  await win.waitForTimeout(250);
+  const hover = await styleOf(combine, 'background-color');
+  await win.locator('.context-panel-header').screenshot({
+    path: path.join(SHOTS, 'qa-tfl1561-header-dark-280-hover.png'),
+  });
+  const layoutPressed = await layout.getAttribute('aria-pressed');
+  const layoutBg = await styleOf(layout, 'background-color');
+  const combineBg = await styleOf(combine, 'background-color');
+  await layout.click();
+  await win.waitForTimeout(400);
+  const pressedAfterClick = await layout.getAttribute('aria-pressed');
+  const layoutBgPressed = await styleOf(layout, 'background-color');
+  await win.locator('.context-panel-header').screenshot({
+    path: path.join(SHOTS, 'qa-tfl1561-header-dark-280-active.png'),
+  });
+  await layout.click();
+  await win.waitForTimeout(400);
+  const result = {
+    combineIdleBg: idle,
+    combineHoverBg: hover,
+    hoverChangesBackground: idle !== hover,
+    layoutAriaPressed: layoutPressed,
+    layoutBg,
+    combineBg,
+    pressedAfterClick,
+    togglesPressed: pressedAfterClick !== layoutPressed,
+    layoutBgPressed,
+    activeChangesBackground: layoutBgPressed !== layoutBg,
+  };
+  log('interaction', result);
+  return result.hoverChangesBackground;
 }
 
 async function main() {
@@ -132,9 +186,10 @@ async function main() {
 
   const results = {};
   results['dark-280'] = await capture(win, 'dark', 280, 'qa-tfl1561-header-dark-280.png');
-  results['dark-240'] = await capture(win, 'dark', 240, 'qa-tfl1561-header-dark-240.png');
-  results['dark-420'] = await capture(win, 'dark', 420, 'qa-tfl1561-header-dark-420.png');
+  await hoverActiveEvidence(win);
   results['light-280'] = await capture(win, 'light', 280, 'qa-tfl1561-header-light-280.png');
+  results['dark-240'] = await capture(win, 'dark', 240, 'qa-tfl1561-header-dark-240.png', 'Home');
+  results['dark-420'] = await capture(win, 'dark', 420, 'qa-tfl1561-header-dark-420.png', 'End');
 
   const allOk = Object.values(results).every((r) => r.ok);
   log('SUMMARY', { allOk, perWidth: Object.fromEntries(Object.entries(results).map(([k, v]) => [k, v.ok])) });
