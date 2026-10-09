@@ -231,7 +231,7 @@ describe("Phase 117 (chunk C) — stamp selection chrome", () => {
 });
 
 describe("Phase 117 (chunk C) — action bar primary row", () => {
-  it("keeps Confirm + Cancel primary and moves Delete behind the More control", () => {
+  it("keeps Confirm + Cancel + Delete inline in the primary row", () => {
     const { host, cleanup } = mountAnnotation([RECT_ANN]);
     try {
       clickEl(host.querySelector(".ann-shape[data-annotation-id='rect-1']"));
@@ -241,14 +241,11 @@ describe("Phase 117 (chunk C) — action bar primary row", () => {
       expect(cancel).not.toBeNull();
       expect(confirm?.closest(".content-action-more-menu"), "Confirm is in the primary row").toBeNull();
       expect(cancel?.closest(".content-action-more-menu"), "Cancel is in the primary row").toBeNull();
-      // Delete is not a sibling of Confirm / Cancel: it is behind More.
-      expect(host.querySelector("[data-content-action='ann-rect-delete']")).toBeNull();
-      const more = host.querySelector("[data-content-action='ann-rect-more']");
-      expect(more, "the separated More control renders").not.toBeNull();
-      clickEl(more);
+      // Delete is a direct sibling of Confirm / Cancel, not behind More.
       const del = host.querySelector("[data-content-action='ann-rect-delete']");
-      expect(del, "Delete appears only after More opens").not.toBeNull();
-      expect(del?.closest(".content-action-more-menu"), "Delete lives inside the More surface").not.toBeNull();
+      expect(del, "Delete renders inline").not.toBeNull();
+      expect(del?.closest(".content-action-more-menu"), "Delete is not in a More surface").toBeNull();
+      expect(host.querySelector("[data-content-action='ann-rect-more']"), "the More control is gone").toBeNull();
     } finally {
       cleanup();
     }

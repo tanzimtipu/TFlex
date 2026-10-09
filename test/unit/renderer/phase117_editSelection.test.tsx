@@ -223,8 +223,8 @@ describe("Phase 117 (chunk D) — image + text-box selection chrome", () => {
   });
 });
 
-describe("Phase 117 (chunk D) — text-box toolbar Delete behind More", () => {
-  it("primary row is Confirm + Cancel and Delete lives behind the More control", () => {
+describe("Phase 117 (chunk D) — text-box toolbar Delete inline", () => {
+  it("primary row is Confirm + Cancel + Delete, all inline", () => {
     const { host, unmount } = mountEdit("box", {
       selectedTextBox: "tb-1",
       textBoxes: [makeTextBox()],
@@ -240,18 +240,12 @@ describe("Phase 117 (chunk D) — text-box toolbar Delete behind More", () => {
         .map((b) => b.textContent?.trim());
       expect(primaryVerbs, "Confirm is primary").toContain("Confirm");
       expect(primaryVerbs, "Cancel is primary").toContain("Cancel");
-      expect(primaryVerbs, "no red Delete in the primary row").not.toContain("Delete");
-      // Delete is not a sibling of Confirm / Cancel until More opens.
-      expect(host.querySelector("[data-edit-box-action='delete']")).toBeNull();
-      const more = host.querySelector("[data-content-action='editbox-more']");
-      expect(more, "the separated More control renders").not.toBeNull();
-      if (more === null) return;
-      act((): void => {
-        more.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
-      });
+      expect(primaryVerbs, "Delete is primary").toContain("Delete");
+      // Delete is a direct sibling of Confirm / Cancel, not behind More.
       const del = host.querySelector("[data-edit-box-action='delete']");
-      expect(del, "Delete appears only after More opens").not.toBeNull();
-      expect(del?.closest(".content-action-more-menu"), "Delete lives inside More").not.toBeNull();
+      expect(del, "Delete renders inline").not.toBeNull();
+      expect(del?.closest(".content-action-more-menu"), "Delete is not in a More surface").toBeNull();
+      expect(host.querySelector("[data-content-action='editbox-more']"), "the More control is gone").toBeNull();
     } finally {
       unmount();
     }

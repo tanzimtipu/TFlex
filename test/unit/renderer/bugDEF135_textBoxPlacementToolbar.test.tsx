@@ -123,18 +123,9 @@ function selectedBoxTool(initial: Partial<EditState> = {}): EditState {
   };
 }
 
-/** Phase 117 (chunk D) — open the separated More control so its menu (with
- * the Delete verb) mounts. */
-function openMore(host: HTMLElement): void {
-  const more = host.querySelector<HTMLButtonElement>("[data-content-action='editbox-more']");
-  if (more === null) throw new Error("expected the More control");
-  act((): void => {
-    more.click();
-  });
-}
-
+// Phase 117 (chunk D) — the separated More control is gone; Delete is inline.
 describe("DEF-135/136 — committed text box placement toolbar", () => {
-  it("renders Confirm + Cancel primary with Delete behind More (no Edit)", () => {
+  it("renders Confirm + Cancel + Delete inline (no Edit)", () => {
     const { host, unmount } = mountBoxTool(selectedBoxTool());
     try {
       const bar = host.querySelector("[data-edit-box-toolbar]");
@@ -143,16 +134,15 @@ describe("DEF-135/136 — committed text box placement toolbar", () => {
       expect(host.querySelector("[data-edit-box-action='cancel']")).not.toBeNull();
       // Phase 37 item 11 — the Edit verb is gone.
       expect(host.querySelector("[data-edit-box-action='edit']")).toBeNull();
-      // Phase 117 (chunk D) — Delete is no longer a primary-row sibling.
-      expect(host.querySelector("[data-edit-box-action='delete']")).toBeNull();
+      // Phase 117 (chunk D) — Delete is a direct sibling of Confirm / Cancel.
       const primaryVerbs = [...(bar?.querySelectorAll("button") ?? [])]
         .filter((b) => b.closest(".content-action-more-menu") === null)
         .map((b) => b.textContent?.trim());
-      expect(primaryVerbs).toEqual(["Confirm", "Cancel", "More"]);
-      openMore(host);
+      expect(primaryVerbs).toEqual(["Confirm", "Cancel", "Delete"]);
       const del = host.querySelector("[data-edit-box-action='delete']");
-      expect(del, "Delete lives behind More").not.toBeNull();
-      expect(del?.closest(".content-action-more-menu")).not.toBeNull();
+      expect(del, "Delete renders inline").not.toBeNull();
+      expect(del?.closest(".content-action-more-menu")).toBeNull();
+      expect(host.querySelector("[data-content-action='editbox-more']")).toBeNull();
     } finally {
       unmount();
     }
@@ -161,7 +151,6 @@ describe("DEF-135/136 — committed text box placement toolbar", () => {
   it("Delete routes the box id through onDeleteTextBox", () => {
     const { host, onDeleteTextBox, unmount } = mountBoxTool(selectedBoxTool());
     try {
-      openMore(host);
       const del = host.querySelector<HTMLButtonElement>("[data-edit-box-action='delete']");
       expect(del).not.toBeNull();
       if (del === null) return;
@@ -179,7 +168,6 @@ describe("DEF-135/136 — committed text box placement toolbar", () => {
   it("a toolbar-button press does not start a drag-to-create and the click completes (no swallow)", () => {
     const { host, onDeleteTextBox, unmount } = mountBoxTool(selectedBoxTool());
     try {
-      openMore(host);
       const del = host.querySelector<HTMLButtonElement>("[data-edit-box-action='delete']");
       expect(del).not.toBeNull();
       if (del === null) return;
@@ -232,10 +220,7 @@ describe("DEF-135/136 — committed text box placement toolbar", () => {
       expect(host.querySelector("[data-edit-box-action='cancel']")).not.toBeNull();
       expect(host.querySelector(".toolbox-action-btn--confirm")).not.toBeNull();
       expect(host.querySelector(".toolbox-action-btn--cancel")).not.toBeNull();
-      // Phase 117 (chunk D) — the Delete hooks survive but only mount once
-      // the More control opens.
-      expect(host.querySelector("[data-edit-box-action='delete']")).toBeNull();
-      openMore(host);
+      // Phase 117 (chunk D) — the Delete hooks survive and are inline now.
       expect(host.querySelector("[data-edit-box-action='delete']")).not.toBeNull();
       expect(host.querySelector(".toolbox-action-btn--delete")).not.toBeNull();
     } finally {

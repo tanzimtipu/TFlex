@@ -182,24 +182,19 @@ describe("DEF-152 — the moved box's action bar carries Confirm + Cancel with D
       expect(onCommitTextBoxMove).not.toHaveBeenCalled();
       const bar = host.querySelector("[data-edit-box-toolbar]");
       expect(bar, "bar appears for the selected/moved box").not.toBeNull();
-      // Phase 117 (DEF-663) — the primary row is Confirm + Cancel / More; the
-      // destructive Delete lives behind the ONE separated More control, never a
-      // sibling of Confirm. The Edit verb stays gone.
+      // Phase 117 (DEF-663) — the primary row is Confirm + Cancel + Delete; the
+      // destructive Delete is a direct sibling of Confirm (the More control was
+      // removed). The Edit verb stays gone.
       const primaryVerbs = [...(bar?.querySelectorAll("button") ?? [])]
         .filter((b) => b.closest(".content-action-more-menu") === null)
         .map((b) => b.textContent?.trim());
-      expect(primaryVerbs).toEqual(["Confirm", "Cancel", "More"]);
-      expect(host.querySelector("[data-edit-box-action='delete']"), "Delete is not in the primary row").toBeNull();
+      expect(primaryVerbs).toEqual(["Confirm", "Cancel", "Delete"]);
       expect(host.querySelector("[data-edit-box-action='edit']"), "no Edit verb").toBeNull();
-      const more = host.querySelector<HTMLButtonElement>("[data-content-action='editbox-more']");
-      if (more === null) throw new Error("More control not found");
-      act((): void => {
-        more.click();
-      });
       const del = host.querySelector("[data-edit-box-action='delete']");
-      expect(del, "Delete lives behind More").not.toBeNull();
+      expect(del, "Delete renders inline").not.toBeNull();
       expect(del?.textContent?.trim()).toBe("Delete");
-      expect(del?.closest(".content-action-more-menu")).not.toBeNull();
+      expect(del?.closest(".content-action-more-menu")).toBeNull();
+      expect(host.querySelector("[data-content-action='editbox-more']")).toBeNull();
       // Confirm commits the THREADED position (old = engine rect,
       // new = drag end).
       clickConfirm(host);

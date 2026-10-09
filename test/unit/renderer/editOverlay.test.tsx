@@ -493,26 +493,18 @@ describe("TFL-987 — image placement bar adopts ContextToolbox", () => {
       expect(bar.getAttribute("data-context-toolbox")).toBe("true");
       expect(bar.getAttribute("role")).toBe("toolbar");
       expect(bar.getAttribute("aria-label")).toBe("Image placement actions");
-      // Phase 117 (DEF-663) — the primary row is Replace + Crop with the
-      // destructive Remove behind the ONE separated More control (never a
-      // sibling of Replace).
+      // Phase 117 (DEF-663) — the primary row is Replace + Crop + Remove; the
+      // destructive Remove is a direct sibling of Replace (the More control was
+      // removed).
       const primaryVerbs = [...bar.querySelectorAll("button")]
         .filter((b) => b.closest(".content-action-more-menu") === null)
         .map((b) => b.textContent?.trim());
-      expect(primaryVerbs).toEqual(["Replace", "Crop", "More"]);
-      expect(
-        bar.querySelector("[data-content-action='image-delete']"),
-        "Remove is not in the primary row",
-      ).toBeNull();
-      const more = bar.querySelector<HTMLButtonElement>("[data-content-action='image-more']");
-      if (more === null) throw new Error("image More control not found");
-      act((): void => {
-        more.click();
-      });
+      expect(primaryVerbs).toEqual(["Replace", "Crop", "Remove"]);
       const remove = bar.querySelector("[data-content-action='image-delete']");
-      expect(remove, "Remove lives behind More").not.toBeNull();
+      expect(remove, "Remove renders inline").not.toBeNull();
       expect(remove?.textContent?.trim()).toBe("Remove");
-      expect(remove?.closest(".content-action-more-menu")).not.toBeNull();
+      expect(remove?.closest(".content-action-more-menu")).toBeNull();
+      expect(bar.querySelector("[data-content-action='image-more']")).toBeNull();
       expect(host.querySelector("[data-crop-toggle]")).not.toBeNull();
       // Legacy placement: rect at (100,100,200x100); the bar floats 4pt below
       // and clamps left to the placement's left edge.

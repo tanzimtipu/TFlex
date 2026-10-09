@@ -5,6 +5,144 @@
 > inspect the current `OPEN`, `FIX-READY`, and `DISPUTED` entries first; closed records are
 > historical evidence and must not be loaded wholesale.
 
+## DEF-677: ActivityAlertNotice tone channel is dead — the status dot is transparent and the left border is absent (activity tokens scoped to .activity-shelf)
+
+- Status: OPEN
+- Severity: MEDIUM
+- Found by: qa (TFL-1550)
+- Phase: ActivityAlertNotice (TFL-1531 / TFL-1549)
+
+Steps to reproduce:
+1. Build the current tree (`npm.cmd run build`) and launch TFlex via the canonical `launchApp` helper.
+2. Open the scanned sample (`assets/samples/scanned.pdf`) through Home intake.
+3. Run a long operation: Ctrl+K -> "Recognize text" -> Recognize (all pages).
+4. Observe the activity notice in the canvas top-right cluster (`.canvas-top-right .canvas-notices [data-activity-alert-notice]`).
+
+Expected: the notice shows a 6 px status dot filled with the violet activity accent and a 3 px solid violet left border (`--activity-progress` = `--accent` = #7C3AED), distinct from `--warning` (amber) and `--error` (red).
+
+Actual: the status dot is transparent (no fill) and the notice has no left border (computed `border-left-width: 0px`, `border-left-style: none`). The tone colour channel is entirely absent, so the notice reads as a plain text box.
+
+Root cause: the `--activity-*` tokens are declared ONLY on `.activity-shelf` (`src/renderer/styles.css`: `.activity-shelf { --activity-progress: var(--accent); --activity-success: var(--feedback-success); --activity-warning: var(--warning); --activity-danger: var(--feedback-danger); --activity-neutral: var(--fg-muted); }`). The new `ActivityAlertNotice` renders inside `.canvas-top-right` (DocumentView's canvas overlay), which has NO `.activity-shelf` ancestor (the old window-level shelf host is retired), so those tokens are undefined on the notice. The consumers `.activity-alert-notice[data-activity-alert-tone="progress"] { border-left: 3px solid var(--activity-progress); }` and `.activity-alert-notice-mark[data-activity-alert-role="progress"] { background: var(--activity-progress); }` are then invalid at computed-value time: the border is dropped and the mark background falls back to transparent. Fix direction: define the activity tokens at `:root` (or any scope containing both the shelf and the canvas notice), or reference the root semantic tokens directly.
+
+Evidence:
+- `e2e/tfl1550_activity_alert_notice.spec.cjs` test 1 fails on the tone channel (4 soft assertions): `left border is 3 px` Expected "3px" Received "0px"; `left border is solid` Expected "solid" Received "none"; `left border is the violet activity accent` Expected "rgb(124, 58, 237)" Received "rgb(30, 41, 59)"; `status dot carries the activity accent` Expected "rgb(124, 58, 237)" Received "rgba(0, 0, 0, 0)". Command: `npm.cmd run test:e2e -- e2e/tfl1550_activity_alert_notice.spec.cjs`.
+- Live probe on the notice: `getPropertyValue('--activity-progress')` = "" (empty) on the notice AND on `:root`; `.activity-alert-notice-mark` computed `background-color` = `rgba(0, 0, 0, 0)`; notice computed `border-left` = `0px none rgb(30, 41, 59)`; no `.activity-shelf` ancestor.
+- Screenshot: `screenshots/tfl1550-activity-notice-expanded.png` — the notice reads "1 operation  Recognize text - 1 of 12 pages" with no dot and no left accent border.
+- Not build staleness: reproduced after a fresh `npm.cmd run build` of the current tree.
+
+Files:
+- `src/renderer/styles.css` — `.activity-shelf { --activity-* }` (token scope) plus the `.activity-alert-notice[data-activity-alert-tone=...]` and `.activity-alert-notice-mark[data-activity-alert-role=...]` consumers.
+- `src/renderer/components/ActivityAlertNotice.tsx` — renders outside `.activity-shelf`.
+
+History:
+- qa: filed DEF-677 2026-10-10 from the TFL-1550 focused verification. The notice placement, icon-first enter, 6 px dot size, bold count, dim label, auto-collapse, collapse/expand, retired Activity button/host absence, no-operation empty state, and reduced-motion criteria all pass — only the tone colour channel fails.
+
+Severity justification: MEDIUM — the notice still renders, counts and collapses, but its tone signal (dot fill and the violet accent border) is entirely missing, so the notice cannot convey progress/success/warning/danger and the phase's stated visual criteria (6 px dot colour, violet left border distinct from warning/error) fail.
+
+## DEF-675: Single-mode stage rail switches but the left ContextPanel stays on Pages (stageForScope single-mode scope dropped)
+
+- Status: CLOSED
+- Severity: HIGH
+- Found by: qa (TFL-1564 sweep)
+- Phase: stage context panels (regression from the TFL-1570 per-tab stage refactor)
+
+Steps to reproduce:
+1. Build the current tree (`npm.cmd run build:renderer` + `build:node`) and launch TFlex via the canonical `launchApp` helper.
+2. Open a PDF (report.pdf) through the Home intake.
+3. In single mode, click the Review stage in the Stage Rail (or press Ctrl+3).
+4. Observe the LEFT Context panel.
+
+Expected: the left Context panel switches to the REVIEW context (the "Annotations" section with Import/Export and the annotation list), exactly as EDIT and DELIVER do. Only the active tab's own stage changes.
+
+Actual: the Stage Rail reports the switch (`[data-stage-rail][data-active-stage="review"]`) but the left Context panel stays `data-context-panel-stage="pages"` and renders the Pages navigator. EDIT and DELIVER are equally unreachable in single mode: the left panel is pinned to Pages, so the REVIEW Annotations context panel never mounts and TFL-1564's four criteria cannot be exercised.
+
+Root cause:
+- `src/renderer/App.tsx:12839` passes `activeStage={stageForScope(stageState, null, pane)}` to `DocumentView`. In single mode `pane` is `null` (`MultiPane.tsx:533-539`), so `stageForScope(state, null, null)` returns `DEFAULT_STAGE` ('pages') - see `src/renderer/state/stages.ts:123-134`.
+- The rail instead resolves the TAB scope: `App.tsx:11361` `stageForScope(stageState, tabs.activeId, stagePane)` and `onStageChange` dispatches `{ type: 'set', tabId, stage }` (`App.tsx:11379-11390`), so the rail advances while `DocumentView`/`ContextPanel` does not.
+- TFL-1570 replaced `stageForPane(stageState, pane)` (pane `null` -> `state.single`) with `stageForScope(stageState, null, pane)` (pane `null` + tabId `null` -> default), dropping the single-mode read. The single-mode read must supply the active tab, e.g. `stageForScope(stageState, meta.id, pane)`.
+
+Evidence:
+- `e2e/tfl1564_review_annotations_panel.spec.cjs` - all 4 targeted tests fail at panel reachability (TFL-1564-1: `[data-context-panel="review"]` element not found). Command: `npm.cmd run test:e2e -- e2e/tfl1564_review_annotations_panel.spec.cjs --reporter=list`.
+- `e2e/tfl1411_review_panel_action_overflow.spec.cjs` - the existing regression spec fails identically: `Expected: "review" / Received: "pages"` at its `data-context-panel-stage` assertion.
+- Probe: after clicking `[data-stage="review"]`, `[data-stage-rail][data-active-stage]="review"` while `.context-panel[data-context-panel-stage]="pages"`.
+
+Files:
+- `src/renderer/App.tsx:12839` - single-mode `DocumentView` stage read drops the tab scope.
+- `src/renderer/state/stages.ts:123-134` - `stageForScope` returns the default when both scope keys are null.
+
+History:
+- qa: filed DEF-675 2026-10-10 from the TFL-1564 verification run; blocks the TFL-1564 phase gate (the REVIEW Annotations context panel is unreachable in single mode).
+- TFL-1575 (frontend-dev) fixed the wiring: `App.tsx:12839` now passes the active tab id (`stageForScope(stageState, pane === null ? meta.id : null, pane)`).
+- qa: CLOSED 2026-10-10. Rebuilt the tree and re-ran: `e2e/tfl1564_review_annotations_panel.spec.cjs` 4/4 pass (the REVIEW panel is reachable); `e2e/tfl1411_review_panel_action_overflow.spec.cjs` reaches `data-context-panel-stage="review"` and its breadth sweep passes.
+- qa: 2026-10-10 (TFL-1577) — the same dropped single-mode scope also froze the Action Dock, not just the ContextPanel. Pre-fix probe: rail `data-active-stage="edit"` while `[data-dock-verb]` stayed on the PAGES set (`rotate/extract/insertPages/merge/cropPages`) and `[data-context-panel][data-context-panel-stage="pages"]`. Evidence: `screenshots/tfl1577-dock-frozen-on-edit.png`. After frontend-dev's TFL-1575 fix (`App.tsx:12839` now passes `pane === null ? meta.id : null`) and a rebuilt renderer, the probe shows rail/panel/dock all following the stage (`review` -> `annotate/sign/stamp/bates`). The two specs updated under TFL-1577 pass: `e2e/phase117_selection.spec.cjs` 4/4, `e2e/phase37_gate.spec.cjs` 7/7.
+
+
+## DEF-674: Text-run move Confirm leaves stale artifact at previous position (incomplete eraser coverage)
+
+- Status: OPEN
+- Severity: MEDIUM
+- Found by: operator (TFL-1542)
+- Phase: edit-text move (recurrence of TFL-1405)
+
+Steps to reproduce:
+1. Launch TFlex, open a PDF with text, switch to Edit mode and select the text tool.
+2. Click a text run to select it, then drag it to a new position on the page.
+3. Click the Confirm button in the action bar.
+4. Observe the old position briefly: a ghost of the original text (descenders or partial glyphs) flashes before disappearing.
+
+Expected: The white eraser cover over the old position fully masks the original text for the entire commit window (engine mask + proxy refresh + paint barrier). No part of the original text is visible at the old position during or after Confirm.
+
+Actual: The commit-window eraser `pendingRunEdit.coverRect` uses the raw pdf.js run rect without the `runCoverRect` descent extension. During the drag the pre-commit eraser (`textTarget` path) correctly applies `runCoverRect` with `RUN_COVER_DESCENT = 0.25`, extending below the baseline. When Confirm is clicked, the eraser switches to the raw rect from `pendingRunEdit`, shrinking the cover at the bottom and exposing descenders for the commit window.
+
+Files:
+- `src/renderer/edit/EditOverlay.tsx:1454-1455` - the `pendingRunEdit` branch of `eraserRect` returns raw `{ ...pendingRunEdit.coverRect }` without `runCoverRect(...)`.
+- `src/renderer/edit/EditOverlay.tsx:1735-1740` - `setPendingRunEdit` stores `coverRect: { ...p.oldRect }` (raw pdf.js rect).
+- `src/renderer/edit/EditOverlay.tsx:1467-1469` - the pre-commit `textTarget` path correctly calls `runCoverRect(oldRect, textStyle?.baselineShift ?? 0)`.
+- `src/renderer/edit/EditOverlay.tsx:139-156` - `runCoverRect` adds `RUN_COVER_DESCENT = 0.25` height extension and baseline-shift offset.
+
+History:
+- cto: filed DEF-674 2026-10-10 from operator report TFL-1542. ESCAPE: no-probe — no existing test or e2e screenshot asserts that the old-position frame is fully covered during the Confirm commit window; TFL-1431/TFL-1432 focused on the new position. qa to add the missing regression test.
+
+
+## DEF-673: Collapsed panel headers render partial/truncated text and inspector collapse arrow is on wrong side
+
+- Status: CLOSED
+- Severity: MEDIUM
+- Found by: operator
+- Phase: UI polish (post-v1 shell refinement)
+
+Steps to reproduce:
+1. Launch TFlex, open any PDF.
+2. Switch to the REVIEW, EDIT, or DELIVER stage.
+3. Collapse the left Context panel (click the chevron in its header).
+4. Observe the collapsed 48px strip header: a truncated word like "D.." (Deliver) or "R.." (Review) is visible next to the expand arrow.
+5. Expand the Context panel, then collapse the right Inspector panel.
+6. Observe the Inspector collapsed strip: it shows only the expand arrow, with no label.
+7. Expand the Inspector panel and observe the expanded header: the collapse arrow sits on the RIGHT side of the title, not the left.
+
+Expected:
+1. Collapsed Context panel header shows ONLY the expand arrow, zero title text.
+2. Expanded Inspector panel header has the collapse/expand arrow on the LEFT side of the title.
+3. Collapsed Inspector panel strip shows the word "Inspector" rendered vertically (rotated), with the arrow on the left (same left-side position as in the expanded header).
+
+Actual:
+1. Collapsed Context panel header still renders the stage title (Edit/Review/Deliver) which truncates to a partial word in the 48px strip.
+2. Inspector expanded header renders the arrow on the right, in the `actions` slot of `ScopedHeader`.
+3. Inspector collapsed strip renders only the arrow, no vertical label.
+
+Files:
+- `src/renderer/components/ContextPanel.tsx:1525` - `ScopedHeader` receives `title={headerTitle}` even when `collapsed === true`, so the title span renders and truncates.
+- `src/renderer/components/Inspector.tsx:1625-1646` - `collapseControl` is passed in the `actions` slot, placing it on the right of the title per `ScopedHeader` layout.
+- `src/renderer/components/Inspector.tsx:1615-1622` - collapsed strip contains only `collapseControl`, no label element.
+- `src/renderer/components/panels/PanelPrimitives.tsx:76-98` - `ScopedHeader` has no `leadingActions` prop; title always precedes actions.
+
+History:
+- operator: reported via TFL-1534 (screenshot shows partial "D.." label beside arrow and arrow on wrong side).
+- cto: filed DEF-673 2026-10-10. ESCAPE: no-probe.
+- frontend-dev: fix landed 2026-10-10 (TFL-1557): ContextPanel.tsx passes `title={collapsed || headerTitle === '' ? undefined : headerTitle}`; PanelPrimitives.tsx gains optional `leadingActions` prop rendered before title; Inspector.tsx moves `collapseControl` to `leadingActions` slot and adds `inspector-collapsed-label` vertical span to collapsed strip; CSS rules added for `.tf-panel-header-leading-actions` and `.inspector-collapsed-label`.
+- cto: set FIX-READY 2026-10-10. Awaiting qa focused verification.
+- qa: CLOSED 2026-10-10 (TFL-1583). Focused verification PASS. Unit: panelPrimitives (13), phase37Inspector (17), def320_stageRailTrack (9), phase119_propertiesSurfaces (7), phase124PanelChrome (6) all pass. New e2e `e2e/tfl1583_collapsed_panel_headers.spec.cjs` (3/3 pass): collapsed context header is arrow-only in EDIT/REVIEW/DELIVER (no title element, empty header text) light+dark; expanded Inspector leading cluster precedes title and arrow is left of it; collapsed Inspector strip shows vertical `Inspector` label (writing-mode vertical) with the arrow above; expanded-layout regression holds. Blast radius: `e2e/tfl1417_panel_chrome.spec.cjs` 3/3 pass (chevron direction + single-control hook intact). `npm run verify` exit 0. Screenshots: `screenshots/tfl1583_*.png`.
+
 ## DEF-672: DEF-668's fix and its new unit assertion target the orphaned `.ann-panel-row-delete` selector, which no longer renders
 
 - Status: CLOSED
@@ -15542,3 +15680,60 @@ History:
 - CTO (2026-10-09): set FIX-READY; assigned qa the re-verification (TFL-1504) to re-run the phase126 e2e + CONTROL-INDEX sweep and re-issue the Phase 126 phase-close verdict.
 - qa (TFL-1504, 2026-10-09): CLOSED. Reproduction fixed on the current tree. `npm.cmd run test:e2e -- e2e/phase126_canvas_alert_notice.spec.cjs e2e/phase58_def414_417.spec.cjs` -> 5/5 PASS (phase126 now PASSES; the final assertion proves `.canvas-top-right .canvas-notices [data-canvas-alert-notice][data-canvas-alert-tone="warning"]` count 1 while the document tab is active; phase58_def414_417 4/4). Fresh canvas evidence `screenshots/phase126-canvas-expanded.png` shows the expanded warning box inside the canvas notice cluster. `npm.cmd run verify` clean (conventions 410 files + tsc). Focused units 11 files / 251 tests PASS: phase126CanvasAlert 7, phase126CanvasAlertRouting 10, phase67NoticeCollapse 13, toastKinds 9, designTokensContract 86, phase58Def414_417 7, activityShelf 21, activityShelfStore 45, activityShelfState 17, activityContract 6, foundationGuards 30. CONTROL-INDEX rows 1-8 all PASS (row 6 canvas placement now PASS). Phase 78 spot-check: a plain 3D PDF opened through the current Intake path renders `.canvas-top-right .canvas-notices [data-pdf3d-notice]` inside `[data-canvas-overlay]` (probe `{"canvasNotices":1,"pdf3dNotice":1,"insideOverlay":true}`; `screenshots/tfl1504-phase78-3d-in-canvas.png`), so the same fix restores the pre-existing Protection/Conversion/3D notices. Phase 126 success criteria 1-7: 1-7 PASS.
 
+
+## DEF-676: Action bars that include a Cancel button are not height-uniform (Cancel renders 4px shorter)
+
+- Status: OPEN (qa TFL-1574, 2026-10-09)
+- Severity: LOW - cosmetic ragged edge; the destructive verb itself is uniform with Confirm on every bar, so no workflow is broken.
+- Found by: qa (TFL-1574, 2026-10-09; Phase-validation sweep for the inline-Delete change)
+- Phase: TFL-1573 / TFL-1574 (inline Delete in dialog/text-box action bars)
+- Pre-existing: yes - the responsible rule is present at HEAD; not introduced by TFL-1573.
+
+Files:
+- `src/renderer/styles.css:24043-24051` - `.toolbox-action-btn--cancel.btn { height:auto; padding:4px 8px; font-size:var(--fs-xs) }` renders every secondary Cancel at 32px while primary/confirm (36px) and danger (36px) keep the canonical `.btn` box.
+- `src/renderer/components/selectableContent.tsx:441-466` - Confirm/Edit/Delete carry no compact override; the annotation `middle` swatch (`AnnColorBox` IconButton) renders at 18px.
+
+Steps to reproduce:
+1. `npm.cmd run build`.
+2. `npx.cmd playwright test e2e/tfl1574_inline_action_bars.spec.cjs`.
+3. Read the `[TFL1574] *-heights` logs: annotation `[Confirm 36, swatch 18, Cancel 32, Delete 36]`; text-run and TextBoxToolbar `[Confirm 36, Cancel 32, Delete 36]`; stamp and PlacementToolbar `[36, 36, 36]`.
+4. Expected (task visual sweep): all buttons in the bar have the same height, no ragged edges.
+5. Actual: on the three bars that include Cancel, Cancel is 4px shorter; the annotation swatch is 18px.
+
+Evidence:
+- `e2e/tfl1574_run.log` (height logs); `screenshots/tfl1574-annotation-medium.png`, `screenshots/tfl1574-textbox-medium.png`, `screenshots/tfl1574-textrun-medium.png` show the shorter Cancel.
+- The five bars' destructive verbs are all 36px and equal their Confirm height, so the inline-Delete change introduces no raggedness.
+
+Note: recorded during the TFL-1574 phase sweep; the phase's own acceptance (NO More control, inline Delete/Remove/Edit, `.btn-danger`) PASSES on all five surfaces. CTO to decide whether the pre-existing Cancel/swatch sizing is in scope.
+
+History:
+- qa (TFL-1574, 2026-10-09): opened during phase-validation sweep.
+- CTO (TFL-1545 phase-close, 2026-10-09): pre-existing cosmetic issue; the `.toolbox-action-btn--cancel.btn` override at styles.css:24386 predates TFL-1573. The inline-Delete change successfully makes destructive verbs uniform with Confirm (36px) on all five surfaces. Cancel height and swatch sizing are cosmetic consistency issues, not workflow blockers. Deferred to a standalone maintenance issue focused on action-bar button sizing. Phase TFL-1545 closes with DEF-676 remaining OPEN as tracked debt.
+
+
+## DEF-677: View Strip footer default action-icon contrast fails in dark theme (1.53:1)
+
+- Status: OPEN (qa TFL-1581, 2026-10-09; post-dev fix verification of TFL-1580)
+- Severity: MEDIUM - the dark theme's default (unselected) View Strip action glyphs render at 1.53:1, roughly half the brief's stated 3:1 non-text floor, so the page-nav / zoom icons are hard to see at rest in a supported theme. No workflow is blocked and no document data is at risk.
+- Found by: qa (TFL-1581, focused verification of the TFL-1580 View Strip ink fix)
+- Phase: TFL-1580 / TFL-1581 (View Strip footer icon contrast across themes)
+- Pre-existing: the missing transparent background is pre-existing; TFL-1580 introduced the (incorrect) >=5:1 default claim because it validated the new default ink against `--bg-toolbar` rather than the surface the button actually paints.
+
+Files:
+- `src/renderer/styles.css:6410` - the TFL-1580 ladder sets `.view-strip .btn { color: var(--fg-muted) }` but adds NO background; `.btn-toolbar` (`styles.css:3786`) also sets no background, so the plain action buttons (prev/next/zoom-out/zoom-in) inherit the UA `buttonface`.
+- `src/renderer/styles.css:1085` - `color-scheme: dark` on the dark theme is what turns that UA `buttonface` into `#6b6b6b`; light/frosted use `#f0f0f0`, which is why only dark fails.
+- `src/renderer/components/Button.tsx:211-224` - `IconButton variant="toolbar"` renders `btn btn-toolbar btn-compact` with no variant background class.
+
+Steps to reproduce:
+1. Launch the dev build (`launchApp`), open `report.pdf` via the generic Open (Intake).
+2. Switch to the dark theme (`setTheme(win, 'dark')` / the real theme pill).
+3. Inspect the right-hand View Strip action glyphs; the zoom-out button paints `background-color: rgb(107,107,107)` (UA buttonface) and `color: rgb(130,138,151)` (`--fg-muted`).
+4. Expected: every state clears the 3:1 icon floor (the TFL-1580 ladder comment claims >=5:1 on the footer bar). Actual: the default state is 1.53:1.
+
+Evidence:
+- `npm.cmd run test:e2e -- e2e/tfl1581_view_strip_contrast.spec.cjs` -> FAIL with `dark default: rgb(130, 138, 151) on rgb(107,107,107) = 1.53 < 3.0`. All other states/themes PASS: light default 5.6 / hover 15.67 / disabled 4.1 / selected 4.47; dark hover 4.38 / disabled 6.77 / selected 7.8; frosted default 12.38 / hover 15.46 / disabled 4.06 / selected 4.41.
+- Accent parity PASSES in all three themes (all pressed controls share `rgb(112,80,214)` / `rgb(185,164,255)` ink on `rgba(124,58,237,0.12)`).
+- Geometry PASSES: footer band 48px, every visible `.btn-toolbar` target 32x32 and in-band (the "More viewing controls" control is `display:none` at wide widths by design, revealed only under the narrow container query).
+- Screenshots: `screenshots/tfl1581-view-strip-light.png`, `screenshots/tfl1581-view-strip-dark.png`, `screenshots/tfl1581-view-strip-frosted.png`.
+
+Smallest fix (frontend-dev): give the View Strip's plain action buttons an explicit transparent (or token) background, e.g. `.view-strip .btn-toolbar { background: transparent; }`, so the ink ladder is measured against `--bg-toolbar` as intended; then re-check the dark default ratio.

@@ -3,9 +3,9 @@
 //
 // CONTROL-INDEX rows exercised here (paired with the phase117 unit specs):
 //   * a selected annotation draws the shared boundary + four
-//     `data-selection-handle` corners and the separated More / Delete;
+//     `data-selection-handle` corners and the inline Delete;
 //   * a text box and an image draw the same shared chrome with Confirm /
-//     Cancel primary and Delete behind More (`data-content-action="*-delete"`);
+//     Cancel / Delete inline (`data-content-action="*-delete"`);
 //   * a crop region draws the shared handles inside CropPagesDialog;
 //   * a form widget renders NO `[data-selection-boundary]`;
 //   * a context control stays clear of the dock / viewing footer;
@@ -103,7 +103,7 @@ test('Phase 117 selection surface — annotation, text box, image, crop, form, d
       await win.waitForTimeout(400);
     });
 
-    await test.step('annotation: shared boundary + 4 handles + separated More/Delete', async () => {
+    await test.step('annotation: shared boundary + 4 handles + inline Delete', async () => {
       await gotoStage(win, 3);
       await armAnnotationTool(win, 'rect');
       await dragOnPage(win, 0.25, 0.25, 0.5, 0.4);
@@ -117,10 +117,8 @@ test('Phase 117 selection surface — annotation, text box, image, crop, form, d
       expect(chrome.kind).toBe('annotation');
       expect(chrome.handleCount, 'annotation renders four shared handles').toBe(4);
       expect(chrome.handleCorners).toEqual(['ne', 'nw', 'se', 'sw']);
-      // Separated More / Delete: Delete absent until More opens.
-      expect(await win.locator('[data-content-action="ann-rect-more"]').count()).toBeGreaterThan(0);
-      expect(await win.locator('[data-content-action="ann-rect-delete"]').count()).toBe(0);
-      await win.locator('[data-content-action="ann-rect-more"]').first().click();
+      // TFL-1573: the More control was removed; Delete is inline in the bar.
+      expect(await win.locator('[data-content-action="ann-rect-more"]').count()).toBe(0);
       await expect(win.locator('[data-content-action="ann-rect-delete"]')).toHaveCount(1);
       await win.keyboard.press('Escape');
       // Context control clear of the dock / viewing footer.
@@ -144,7 +142,7 @@ test('Phase 117 selection surface — annotation, text box, image, crop, form, d
   }
 });
 
-test('Phase 117 selection surface — text box + image shared chrome, Delete behind More', async () => {
+test('Phase 117 selection surface — text box + image shared chrome, Delete inline', async () => {
   const app = await launchApp();
   const win = await app.firstWindow();
   await win.waitForSelector('.sample-card');
@@ -152,7 +150,7 @@ test('Phase 117 selection surface — text box + image shared chrome, Delete beh
   try {
     await openSamplePath(win, app, getSamplePath('report.pdf'));
 
-    await test.step('text box: shared chrome + Confirm/Cancel primary, Delete behind More', async () => {
+    await test.step('text box: shared chrome + Confirm/Cancel/Delete inline', async () => {
       await gotoStage(win, 2);
       await win.locator('[data-dock-verb="editTextBox"]').waitFor({ state: 'visible', timeout: 10000 });
       await win.locator('[data-dock-verb="editTextBox"]').click();
@@ -176,24 +174,21 @@ test('Phase 117 selection surface — text box + image shared chrome, Delete beh
       expect(chrome.hasBoundary, 'text box renders the shared boundary').toBe(true);
       expect(chrome.kind).toBe('textBox');
       expect(chrome.handleCount, 'text box renders four shared handles').toBe(4);
-      // Primary row = Confirm + Cancel; Delete is not a sibling until More opens.
+      // TFL-1573: the primary row is Confirm + Cancel + Delete, all inline.
       const primary = await win.evaluate(() =>
         [...document.querySelectorAll('[data-edit-box-toolbar] button')]
-          .filter((b) => b.closest('.content-action-more-menu') === null)
           .map((b) => b.textContent.trim()));
       log('textbox-primary', primary);
       expect(primary).toContain('Confirm');
       expect(primary).toContain('Cancel');
-      expect(primary).not.toContain('Delete');
-      expect(await win.locator("[data-edit-box-action='delete']").count()).toBe(0);
-      expect(await win.locator("[data-content-action='editbox-more']").count()).toBeGreaterThan(0);
-      await win.locator("[data-content-action='editbox-more']").first().click();
+      expect(primary).toContain('Delete');
       await expect(win.locator("[data-edit-box-action='delete']")).toHaveCount(1);
+      expect(await win.locator("[data-content-action='editbox-more']").count()).toBe(0);
       await win.screenshot({ path: path.join(SHOTS, 'phase117-textbox-selection.png') });
       await win.keyboard.press('Escape');
     });
 
-    await test.step('image: shared chrome + Delete behind More', async () => {
+    await test.step('image: shared chrome + Delete inline', async () => {
       await win.locator('[data-dock-verb="editImage"]').waitFor({ state: 'visible', timeout: 10000 });
       await win.locator('[data-dock-verb="editImage"]').click();
       const box = await slotBox(win, 1);
@@ -209,15 +204,13 @@ test('Phase 117 selection surface — text box + image shared chrome, Delete beh
       await win.waitForSelector('.edit-image-placement', { timeout: 10000 });
       await win.waitForTimeout(800);
       await win.locator('.edit-image-placement').first().click({ position: { x: 6, y: 6 } });
-      await win.waitForSelector("[data-content-action='image-more']", { timeout: 8000 });
+      await win.waitForSelector("[data-content-action='image-delete']", { timeout: 8000 });
       const chrome = await chromeSnapshot(win, 'image');
       log('image-chrome', chrome);
       expect(chrome.hasBoundary, 'image renders the shared boundary').toBe(true);
       expect(chrome.kind).toBe('image');
       expect(chrome.handleCount, 'image renders four shared handles').toBe(4);
-      expect(await win.locator("[data-content-action='image-more']").count()).toBeGreaterThan(0);
-      expect(await win.locator("[data-content-action='image-delete']").count()).toBe(0);
-      await win.locator("[data-content-action='image-more']").first().click();
+      expect(await win.locator("[data-content-action='image-more']").count()).toBe(0);
       await expect(win.locator("[data-content-action='image-delete']")).toHaveCount(1);
       await win.keyboard.press('Escape');
       await win.screenshot({ path: path.join(SHOTS, 'phase117-image-selection.png') });

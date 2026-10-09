@@ -398,7 +398,6 @@ export function ContentActionBar(props: ContentActionBarProps): ReactElement {
     children,
   } = props;
   const prefix = dataActionPrefix;
-  const [moreOpen, setMoreOpen] = useState(false);
   const hasEdit = showEdit && onEdit !== undefined;
   const hasDelete = showDelete && onDelete !== undefined;
   const cancelButton = onCancel !== undefined && (
@@ -439,70 +438,31 @@ export function ContentActionBar(props: ContentActionBarProps): ReactElement {
       )}
       {middle}
       {cancelButton}
-      {(hasEdit || hasDelete) && (
-        // Phase 117 (chunk B) — destructive and secondary verbs are no
-        // longer siblings of Confirm: ONE separated More control opens
-        // the existing menu surface. The Delete control keeps its
-        // `data-content-action="<prefix>-delete"` hook inside.
-        <div className="content-action-more" data-content-action-more-host>
-          <span className="content-action-more-sep" aria-hidden />
-          <button
-            type="button"
-            className="btn btn-secondary toolbox-action-btn content-action-btn content-action-more-btn"
-            onClick={(): void => setMoreOpen((v) => !v)}
-            data-content-action={`${prefix}-more`}
-            aria-label="More actions"
-            aria-haspopup="menu"
-            aria-expanded={moreOpen}
-            title="More actions"
-          >
-            <Icon name="dockOverflow" size="sm" aria-hidden />
-            <span className="content-action-more-label">More</span>
-          </button>
-          {moreOpen && (
-            <div
-              className="content-action-more-menu anim-menu-pop"
-              role="menu"
-              aria-label="More actions"
-              data-content-action-more-menu
-            >
-              {hasEdit && onEdit !== undefined && (
-                <button
-                  type="button"
-                  role="menuitem"
-                  className="btn btn-secondary toolbox-action-btn content-action-btn"
-                  onClick={(): void => {
-                    setMoreOpen(false);
-                    onEdit();
-                  }}
-                  data-content-action={`${prefix}-edit`}
-                  {...(dataActions?.edit !== undefined ? { "data-edit-box-action": dataActions.edit } : {})}
-                  aria-label={editAria ?? editLabel}
-                  title={editTitle}
-                >
-                  {editLabel}
-                </button>
-              )}
-              {hasDelete && onDelete !== undefined && (
-                <button
-                  type="button"
-                  role="menuitem"
-                  className="btn btn-danger toolbox-action-btn toolbox-action-btn--delete content-action-btn"
-                  onClick={(): void => {
-                    setMoreOpen(false);
-                    onDelete();
-                  }}
-                  data-content-action={`${prefix}-delete`}
-                  {...(dataActions?.delete !== undefined ? { "data-edit-box-action": dataActions.delete } : {})}
-                  aria-label={deleteAria ?? deleteLabel}
-                  title={deleteTitle}
-                >
-                  {deleteLabel}
-                </button>
-              )}
-            </div>
-          )}
-        </div>
+      {hasEdit && onEdit !== undefined && (
+        <button
+          type="button"
+          className="btn btn-secondary toolbox-action-btn content-action-btn"
+          onClick={onEdit}
+          data-content-action={`${prefix}-edit`}
+          {...(dataActions?.edit !== undefined ? { "data-edit-box-action": dataActions.edit } : {})}
+          aria-label={editAria ?? editLabel}
+          title={editTitle}
+        >
+          {editLabel}
+        </button>
+      )}
+      {hasDelete && onDelete !== undefined && (
+        <button
+          type="button"
+          className="btn btn-danger toolbox-action-btn toolbox-action-btn--delete content-action-btn"
+          onClick={onDelete}
+          data-content-action={`${prefix}-delete`}
+          {...(dataActions?.delete !== undefined ? { "data-edit-box-action": dataActions.delete } : {})}
+          aria-label={deleteAria ?? deleteLabel}
+          title={deleteTitle}
+        >
+          {deleteLabel}
+        </button>
       )}
       {children}
     </TfBar>

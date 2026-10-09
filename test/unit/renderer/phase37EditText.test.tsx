@@ -143,12 +143,11 @@ describe("Phase 37 item 11 — the edit-flow bar is Confirm / Delete / Cancel", 
     try {
       selectRun(m.host);
       expect(m.host.querySelector("[data-textrun-selection]")).not.toBeNull();
-      // Phase 117 chunk B — the primary row is Confirm / Cancel plus the
-      // separated More control; Delete moved behind it.
-      expect(barButtons(m.host, "textrun")).toEqual(["Confirm", "Cancel", "More"]);
+      // TFL-1573 — the primary row is Confirm / Cancel / Delete; the
+      // separated More control was removed and Delete is inline.
+      expect(barButtons(m.host, "textrun")).toEqual(["Confirm", "Cancel", "Delete"]);
       expect(m.host.querySelector('[data-content-action="textrun-edit"]')).toBeNull();
       expect(m.host.querySelector('[data-content-action="textrun-confirm"]')).not.toBeNull();
-      clickAction(m.host, '[data-content-action="textrun-more"]');
       expect(m.host.querySelector('[data-content-action="textrun-delete"]')).not.toBeNull();
       expect(m.host.querySelector('[data-content-action="textrun-cancel"]')).not.toBeNull();
     } finally {
@@ -272,17 +271,7 @@ function mountBox(initial: EditState): {
   };
 }
 
-function openMore(host: HTMLElement): void {
-  const more = host.querySelector<HTMLButtonElement>(
-    "[data-content-action='editbox-more']",
-  );
-  if (more === null) throw new Error("expected the More control");
-  act((): void => {
-    more.click();
-  });
-}
-
-describe("Phase 37 item 11 � the box bar is Confirm / Cancel primary with Delete behind More, and Cancel reverts", () => {
+describe("Phase 37 item 11 — the box bar is Confirm / Cancel / Delete inline, and Cancel reverts", () => {
   it("renders the three verbs in order (no Edit)", () => {
     const initial: EditState = {
       ...initialEditState,
@@ -297,13 +286,12 @@ describe("Phase 37 item 11 � the box bar is Confirm / Cancel primary with Dele
       const primaryVerbs = [...(bar?.querySelectorAll("button") ?? [])]
         .filter((b) => b.closest(".content-action-more-menu") === null)
         .map((b) => b.textContent?.trim());
-      expect(primaryVerbs).toEqual(["Confirm", "Cancel", "More"]);
+      expect(primaryVerbs).toEqual(["Confirm", "Cancel", "Delete"]);
       expect(m.host.querySelector("[data-edit-box-action='edit']")).toBeNull();
-      expect(m.host.querySelector("[data-edit-box-action='delete']")).toBeNull();
-      openMore(m.host);
       const del = m.host.querySelector("[data-edit-box-action='delete']");
-      expect(del, "Delete lives behind More").not.toBeNull();
-      expect(del?.closest(".content-action-more-menu")).not.toBeNull();
+      expect(del, "Delete renders inline").not.toBeNull();
+      expect(del?.closest(".content-action-more-menu")).toBeNull();
+      expect(m.host.querySelector("[data-content-action='editbox-more']")).toBeNull();
     } finally {
       m.unmount();
     }

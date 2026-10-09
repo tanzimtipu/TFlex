@@ -57,7 +57,6 @@ import {
   SelectionChrome,
   type SelectionHandleCorner,
 } from "../components/selectableContent";
-import { Icon } from "../icons/Icon";
 import {
   CONTROL_BAR_HEIGHT,
   placeControlNearAnchor,
@@ -1452,7 +1451,7 @@ export function EditOverlay(props: EditOverlayProps): ReactElement | null {
       return { ...pendingTextBoxMove.oldRect };
     }
     if (pendingRunEdit !== null) {
-      return { ...pendingRunEdit.coverRect };
+      return runCoverRect(pendingRunEdit.coverRect, pendingRunEdit.style.baselineShift ?? 0);
     }
     if (textTarget !== null && textTarget.kind === "box") {
       return { ...textTarget.rect };
@@ -2431,12 +2430,10 @@ function TextBoxToolbar(props: TextBoxToolbarProps): ReactElement {
   // we pass the page-view box plus the historical fixed size. Cancel is an
   // existing revert action, so ContextToolbox also wires Escape through
   // onClose (no new transaction cancel is invented).
-  // Phase 117 (chunk D) — the primary row is Confirm + Cancel only; the red
-  // Delete is no longer a sibling of Confirm. It lives behind the ONE
-  // separated More control, reusing the shared `content-action-more`
-  // structure, so no destructive verb is the highest-salience control beside
-  // Confirm. Every `data-edit-box-action` selector survives.
-  const [moreOpen, setMoreOpen] = useState(false);
+  // Phase 117 (chunk D) — the primary row is Confirm + Cancel + Delete.
+  // TFL-1573 — the red Delete is now a direct sibling of Confirm (the More
+  // control was removed) so no extra click layer stands between the user and
+  // the destructive verb. Every `data-edit-box-action` selector survives.
   return (
     <ContextToolbox
       open
@@ -2474,46 +2471,17 @@ function TextBoxToolbar(props: TextBoxToolbarProps): ReactElement {
       >
         Cancel
       </button>
-      <div className="content-action-more" data-content-action-more-host>
-        <span className="content-action-more-sep" aria-hidden />
-        <button
-          type="button"
-          className="btn btn-secondary toolbox-action-btn edit-box-toolbar-btn content-action-more-btn"
-          onClick={(): void => setMoreOpen((v) => !v)}
-          data-content-action="editbox-more"
-          aria-label="More actions"
-          aria-haspopup="menu"
-          aria-expanded={moreOpen}
-          title="More actions"
-        >
-          <Icon name="dockOverflow" size="sm" aria-hidden />
-          <span className="content-action-more-label">More</span>
-        </button>
-        {moreOpen && (
-          <div
-            className="content-action-more-menu anim-menu-pop"
-            role="menu"
-            aria-label="More actions"
-            data-content-action-more-menu
-          >
-            <button
-              type="button"
-              role="menuitem"
-              className="btn btn-danger toolbox-action-btn toolbox-action-btn--delete edit-box-toolbar-btn edit-box-toolbar-btn-danger"
-              onClick={(): void => {
-                setMoreOpen(false);
-                onDelete();
-              }}
-              data-edit-box-action="delete"
-              data-content-action="editbox-delete"
-              aria-label="Delete text box"
-              title="Delete text box"
-            >
-              Delete
-            </button>
-          </div>
-        )}
-      </div>
+      <button
+        type="button"
+        className="btn btn-danger toolbox-action-btn toolbox-action-btn--delete edit-box-toolbar-btn edit-box-toolbar-btn-danger"
+        onClick={onDelete}
+        data-edit-box-action="delete"
+        data-content-action="editbox-delete"
+        aria-label="Delete text box"
+        title="Delete text box"
+      >
+        Delete
+      </button>
     </ContextToolbox>
   );
 }
@@ -2524,10 +2492,10 @@ function PlacementToolbar(props: PlacementToolbarProps): ReactElement {
   // coordinate space, preserving the legacy clamp and above/below flip
   // exactly. There is no cancel/revert action on this bar, so no onClose is
   // wired and ContextToolbox owns Escape only when the host supplies one.
-  // Phase 117 (chunk D) — Replace + Crop stay in the primary row; the red
-  // Remove is behind the ONE separated More control (never a sibling of
-  // Replace) so no destructive verb is the highest-salience control.
-  const [moreOpen, setMoreOpen] = useState(false);
+  // Phase 117 (chunk D) — Replace + Crop + Remove are all in the primary row.
+  // TFL-1573 — the red Remove is now a direct sibling of Replace/Crop (the
+  // More control was removed) so no extra click layer stands between the user
+  // and the destructive verb.
   return (
     <ContextToolbox
       open
@@ -2564,45 +2532,16 @@ function PlacementToolbar(props: PlacementToolbarProps): ReactElement {
       >
         Crop
       </button>
-      <div className="content-action-more" data-content-action-more-host>
-        <span className="content-action-more-sep" aria-hidden />
-        <button
-          type="button"
-          className="btn btn-secondary toolbox-action-btn edit-image-toolbar-btn content-action-more-btn"
-          onClick={(): void => setMoreOpen((v) => !v)}
-          data-content-action="image-more"
-          aria-label="More actions"
-          aria-haspopup="menu"
-          aria-expanded={moreOpen}
-          title="More actions"
-        >
-          <Icon name="dockOverflow" size="sm" aria-hidden />
-          <span className="content-action-more-label">More</span>
-        </button>
-        {moreOpen && (
-          <div
-            className="content-action-more-menu anim-menu-pop"
-            role="menu"
-            aria-label="More actions"
-            data-content-action-more-menu
-          >
-            <button
-              type="button"
-              role="menuitem"
-              className="btn btn-danger toolbox-action-btn toolbox-action-btn--delete edit-image-toolbar-btn edit-image-toolbar-btn-danger"
-              onClick={(): void => {
-                setMoreOpen(false);
-                onDelete();
-              }}
-              data-content-action="image-delete"
-              aria-label="Remove image"
-              title="Remove from edit list"
-            >
-              Remove
-            </button>
-          </div>
-        )}
-      </div>
+      <button
+        type="button"
+        className="btn btn-danger toolbox-action-btn toolbox-action-btn--delete edit-image-toolbar-btn edit-image-toolbar-btn-danger"
+        onClick={onDelete}
+        data-content-action="image-delete"
+        aria-label="Remove image"
+        title="Remove from edit list"
+      >
+        Remove
+      </button>
     </ContextToolbox>
   );
 }

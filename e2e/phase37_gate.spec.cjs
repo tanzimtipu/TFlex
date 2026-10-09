@@ -718,17 +718,12 @@ test('P37-C edit text: Confirm/Delete/Cancel, selected text visible, stage is th
     };
   });
   console.log(`[P37-C] text-run bar=${JSON.stringify(bar)}`);
-  // Re-baseline (TFL-1489): Phase 117 (chunk B) moved the destructive/secondary
-  // verbs behind ONE separated More control, so the inline bar is now
-  // Confirm / Cancel / More and Delete lives inside the More menu.
-  expect(bar.verbs, 'the action bar is Confirm / Cancel inline plus a More control').toEqual(['Confirm', 'Cancel', 'More']);
+  // TFL-1573: the More control was removed; the destructive verb is inline,
+  // so the action bar is Confirm / Cancel / Delete.
+  expect(bar.verbs, 'the action bar is Confirm / Cancel / Delete inline').toEqual(['Confirm', 'Cancel', 'Delete']);
   expect(bar.hasEdit, 'no Edit option for a text run').toBe(0);
   expect(bar.confirm + bar.cancel, 'Confirm and Cancel are the inline verbs').toBe(2);
-  await win.locator('[data-content-action="textrun-more"]').click();
-  await win.waitForSelector('[data-content-action-more-menu]', { state: 'visible', timeout: 8000 });
-  expect(await win.locator('[data-content-action="textrun-delete"]').count(), 'Delete is reachable behind the More control').toBe(1);
-  await win.locator('[data-content-action="textrun-more"]').click();
-  await win.waitForTimeout(250);
+  expect(await win.locator('[data-content-action="textrun-delete"]').count(), 'Delete is inline in the bar').toBe(1);
 
   const visible = await win.evaluate(() => {
     const eraser = document.querySelector('[data-edit-box-eraser]');

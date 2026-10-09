@@ -98,7 +98,7 @@ describe("Phase 117 — SelectionChrome", () => {
 });
 
 describe("Phase 117 — ContentActionBar", () => {
-  it("keeps Confirm + Cancel primary and hides Delete behind More", () => {
+  it("keeps Confirm + Cancel primary and shows Delete inline", () => {
     const host = mount(
       <ContentActionBar
         left={0}
@@ -111,18 +111,14 @@ describe("Phase 117 — ContentActionBar", () => {
     );
     expect(host.querySelector('[data-content-action="ann-rect-confirm"]')).not.toBeNull();
     expect(host.querySelector('[data-content-action="ann-rect-cancel"]')).not.toBeNull();
-    expect(host.querySelector('[data-content-action="ann-rect-delete"]')).toBeNull();
-
-    const more = host.querySelector('[data-content-action="ann-rect-more"]');
-    expect(more).not.toBeNull();
-    click(more);
 
     const del = host.querySelector('[data-content-action="ann-rect-delete"]');
     expect(del).not.toBeNull();
-    expect(del?.closest(".content-action-more-menu")).not.toBeNull();
+    expect(del?.closest(".content-action-more-menu")).toBeNull();
+    expect(host.querySelector('[data-content-action="ann-rect-more"]')).toBeNull();
   });
 
-  it("runs the Delete handler from inside the More surface", () => {
+  it("runs the Delete handler from the inline button", () => {
     let deletes = 0;
     const host = mount(
       <ContentActionBar
@@ -135,7 +131,6 @@ describe("Phase 117 — ContentActionBar", () => {
         }}
       />,
     );
-    click(host.querySelector('[data-content-action="stamp-more"]'));
     click(host.querySelector('[data-content-action="stamp-delete"]'));
     expect(deletes).toBe(1);
   });
