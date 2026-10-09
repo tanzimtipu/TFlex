@@ -53,7 +53,7 @@ const AUDITED: Record<string, readonly string[]> = {
     "editDefaultFont", "recognizeText", "batchOcr", "ocrSuspects",
   ],
   review: [
-    "annotate", "sign", "forms", "flatten", "stamp", "watermark", "bates", "redact", "exportComments",
+    "annotate", "sign", "flatten", "stamp", "watermark", "bates", "redact", "exportComments",
     "importComments", "fillFromCsv", "exportFormData", "importFormData", "validateDocument",
     "sanitize",
     "engineeringLayers", "documentInfo", "annotationsPanel", "annSelect", "annHighlight",
@@ -89,7 +89,6 @@ const PALETTE_TEXT: Record<string, readonly [string, string]> = {
   renumberPages: ["Rename pages", "Set logical page labels (e.g. i, ii, iii)."],
   cropPages: ["Crop pages", "Set the CropBox/TrimBox for every page."],
   sign: ["Sign", "Draw, type, or place a saved signature."],
-  forms: ["Forms", "Fill AcroForm fields. Flatten when finished."],
   flatten: ["Flatten", "Bake filled form values into the page content."],
   optimize: ["Reduce file size", "Re-serialise the document with a compression preset."],
   audit: ["Audit space usage", "See a per-element breakdown of the file size."],
@@ -220,7 +219,7 @@ describe("toolsRegistry — canonical surface + the curated dock sets (DEF-313)"
       "editToolOff", "editText", "editImage", "editTextBox", "recognizeText", "batchOcr", "ocrSuspects",
     ]);
     expect(dockToolsForStage("review").map((e) => e.id)).toEqual([
-      "annotate", "sign", "stamp", "flatten", "forms", "watermark", "bates",
+      "annotate", "sign", "stamp", "flatten", "watermark", "bates",
       "exportComments", "importComments", "fillFromCsv", "exportFormData",
       "importFormData", "validateDocument", "sanitize", "engineeringLayers", "documentInfo",
     ]);
@@ -313,10 +312,10 @@ describe("toolsRegistry — Phase 42: one icon per tool and one home per tool", 
   });
 });
 
-describe("toolsRegistry — the palette's 31 entries", () => {
-  it("preserves the 31 ids, their canonical order and the four groups", () => {
-    expect(PALETTE_TOOL_IDS).toHaveLength(31);
-    expect(new Set(PALETTE_TOOL_IDS).size).toBe(31);
+describe("toolsRegistry — the palette's 30 entries", () => {
+  it("preserves the 30 ids, their canonical order and the four groups", () => {
+    expect(PALETTE_TOOL_IDS).toHaveLength(30);
+    expect(new Set(PALETTE_TOOL_IDS).size).toBe(30);
     expect(PALETTE_GROUPS.map((g) => g.id)).toEqual([
       "organize",
       "document",
@@ -327,7 +326,7 @@ describe("toolsRegistry — the palette's 31 entries", () => {
   });
 
   it("keeps every palette label and description byte-identical", () => {
-    expect(Object.keys(PALETTE_TEXT)).toHaveLength(31);
+    expect(Object.keys(PALETTE_TEXT)).toHaveLength(30);
     for (const [id, [label, description]] of Object.entries(PALETTE_TEXT)) {
       expect(toolById(id)?.label, id).toBe(label);
       expect(toolById(id)?.description, id).toBe(description);
@@ -365,7 +364,6 @@ function mountFullyWiredPalette(): HTMLElement {
         onRotate={noop}
         onDelete={noop}
         onSign={noop}
-        onForms={noop}
         onFlatten={noop}
         onOptimize={noop}
         onAudit={noop}
@@ -401,7 +399,7 @@ function mountFullyWiredPalette(): HTMLElement {
 }
 
 describe("ToolsPalette reads the registry", () => {
-  it("renders the registry's 31 entries, in registry order, with registry text and icons", () => {
+  it("renders the registry's 30 entries, in registry order, with registry text and icons", () => {
     const host = mountFullyWiredPalette();
     const ids = [...host.querySelectorAll("[data-tool-id]")].map((el) =>
       el.getAttribute("data-tool-id"),

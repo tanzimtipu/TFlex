@@ -50,6 +50,12 @@ const CHROME_IDS: readonly string[] = [
 /** The four palette GROUP ids in `toolsRegistry.ts`; not command ids. */
 const PALETTE_GROUP_IDS: readonly string[] = ["organize", "document", "recognition", "export"];
 
+/** Glyph ids still referenced by the UI outside the command / chrome union.
+ *  TFL-1436 retired the `forms` command, but the Home sample-task framing
+ *  (`utils/sampleTask.ts`) still uses the `forms` glyph for its "Try form
+ *  fields" sample card, so the glyph survives as a non-command id. */
+const NON_COMMAND_GLYPH_IDS: readonly string[] = ["forms"];
+
 function commandIds(): string[] {
   const text = readFileSync(resolve(RENDERER, "state/toolsRegistry.ts"), "utf8");
   const all = [...text.matchAll(/^\s*id:\s*'([^']+)'/gm)].map((m) => m[1]);
@@ -57,11 +63,11 @@ function commandIds(): string[] {
 }
 
 const COMMAND_IDS = commandIds();
-const ALL_IDS = [...COMMAND_IDS, ...CHROME_IDS];
+const ALL_IDS = [...COMMAND_IDS, ...CHROME_IDS, ...NON_COMMAND_GLYPH_IDS];
 
 describe("Phase 103 — the Quiet Precision registry keys", () => {
-  it("(b) extracts the 108 registry command ids plus the 15 chrome ids", () => {
-    expect(COMMAND_IDS).toHaveLength(108);
+  it("(b) extracts the 107 registry command ids plus the 15 chrome ids", () => {
+    expect(COMMAND_IDS).toHaveLength(107);
     expect(CHROME_IDS).toHaveLength(15);
     expect(ALL_IDS).toHaveLength(123);
   });

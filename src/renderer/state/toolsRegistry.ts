@@ -134,7 +134,6 @@ import {
   ImageDown,
   Images,
   Info,
-  Layers,
   Layers2,
   LayoutGrid,
   List,
@@ -292,7 +291,7 @@ export const PALETTE_GROUPS: ReadonlyArray<{
   {
     id: 'document',
     label: 'Document',
-    entryIds: ['sign', 'forms', 'flatten', 'optimize', 'audit', 'stamp', 'watermark', 'createFromImages', 'multi-mode', 'engineeringLayers', 'documentInfo'],
+    entryIds: ['sign', 'flatten', 'optimize', 'audit', 'stamp', 'watermark', 'createFromImages', 'multi-mode', 'engineeringLayers', 'documentInfo'],
   },
   {
     id: 'recognition',
@@ -587,16 +586,6 @@ const REGISTRY = [
     stage: 'review',
     action: 'sign',
     availability: 'always',
-  },
-  {
-    id: 'forms',
-    label: 'Forms',
-    description: 'Fill AcroForm fields. Flatten when finished.',
-    icon: Layers,
-    shortcut: '',
-    stage: 'review',
-    action: 'forms',
-    availability: 'form-fields',
   },
   {
     id: 'flatten',
@@ -1546,10 +1535,9 @@ const SURFACE_BY_ID: Record<ToolId, ToolSurface> = {
   batchOcr: 'palette',
   ocrSuspects: 'palette',
   // REVIEW — the curated dock set is annotate/sign/stamp/flatten; the
-  // annotation set lives in the flyout; forms/watermark/comments are palette.
+  // annotation set lives in the flyout; watermark/comments are palette.
   annotate: 'dock',
   sign: 'dock',
-  forms: 'palette',
   flatten: 'dock',
   stamp: 'dock',
   watermark: 'palette',
@@ -1686,7 +1674,6 @@ export const DOCK_STAGE_IDS: Readonly<Record<Stage, readonly string[]>> = {
     'sign',
     'stamp',
     'flatten',
-    'forms',
     'watermark',
     'bates',
     'exportComments',
@@ -1713,7 +1700,7 @@ export const DOCK_STAGE_IDS: Readonly<Record<Stage, readonly string[]>> = {
 export const DOCK_PRIMARY_IDS: Readonly<Record<Stage, readonly string[]>> = {
   pages: ['rotate', 'extract', 'insertPages', 'merge', 'cropPages'],
   edit: ['editToolOff', 'editText', 'editImage', 'editTextBox', 'recognizeText'],
-  review: ['annotate', 'sign', 'stamp', 'forms', 'bates'],
+  review: ['annotate', 'sign', 'stamp', 'bates'],
   deliver: ['optimize', 'exportPages', 'exportText', 'exportDocx', 'encrypt'],
 };
 
@@ -1743,7 +1730,6 @@ export const DOCK_SHORT_LABELS: Readonly<Record<string, string>> = {
   annotate: 'Annotate',
   sign: 'Sign',
   stamp: 'Stamp',
-  forms: 'Forms',
   bates: 'Bates',
   optimize: 'Optimize',
   exportPages: 'Images',

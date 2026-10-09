@@ -422,7 +422,6 @@ describe("Phase 36 (chunk 7) ï¿½ the ONE shared Action Dock", () => {
         "annotate",
         "sign",
         "stamp",
-        "forms",
         "bates",
       ]);
       // The UNFOCUSED pane's stage change never leaks into the dock.
@@ -433,7 +432,6 @@ describe("Phase 36 (chunk 7) ï¿½ the ONE shared Action Dock", () => {
         "annotate",
         "sign",
         "stamp",
-        "forms",
         "bates",
       ]);
     } finally {

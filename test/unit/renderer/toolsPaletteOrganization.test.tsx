@@ -42,7 +42,6 @@ function mountPalette(args: {
         onRotate={(): void => undefined}
         onDelete={(): void => undefined}
         onSign={(): void => undefined}
-        onForms={(): void => undefined}
         onOptimize={(): void => undefined}
         onAudit={(): void => undefined}
         onClose={(): void => undefined}
@@ -94,13 +93,12 @@ describe("Tools palette organization (UI/UX redesign)", () => {
     expect(order.slice(0, 5)).toEqual(["merge", "split", "extract", "rotate", "delete"]);
   });
 
-  it("DOCUMENT orders Sign / Forms / Flatten / Reduce file size / Optimize positions", () => {
+  it("DOCUMENT orders Sign / Flatten / Reduce file size / Optimize positions", () => {
     const { host } = mountPalette({ wireFlatten: true });
     const order = entryOrderInGroup(host, "document");
-    // The redesign screenshot's DOCUMENT ladder: sign, forms,
-    // flatten, reduce-file-size (optimize), optimize (audit).
-    expect(order.indexOf("sign")).toBeLessThan(order.indexOf("forms"));
-    expect(order.indexOf("forms")).toBeLessThan(order.indexOf("flatten"));
+    // The redesigned DOCUMENT ladder: sign, flatten, reduce-file-size
+    // (optimize), optimize (audit).
+    expect(order.indexOf("sign")).toBeLessThan(order.indexOf("flatten"));
     expect(order.indexOf("flatten")).toBeLessThan(order.indexOf("optimize"));
     expect(order.indexOf("optimize")).toBeLessThan(order.indexOf("audit"));
   });

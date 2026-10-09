@@ -25,7 +25,7 @@ test.setTimeout(300000);
 const STAGE_IDS = {
   pages: ['rotate', 'extract', 'insertPages', 'replacePages', 'split', 'delete', 'merge', 'cropPages'],
   edit: ['editToolOff', 'editText', 'editImage', 'editTextBox', 'recognizeText', 'batchOcr', 'ocrSuspects'],
-  review: ['annotate', 'sign', 'stamp', 'flatten', 'forms', 'watermark', 'bates', 'exportComments',
+  review: ['annotate', 'sign', 'stamp', 'flatten', 'watermark', 'bates', 'exportComments',
     'importComments', 'fillFromCsv', 'exportFormData', 'importFormData', 'validateDocument',
     'sanitize', 'engineeringLayers', 'documentInfo'],
   deliver: ['optimize', 'audit', 'exportPages', 'exportText', 'exportDocx', 'exportXlsx', 'exportPptx',
@@ -306,12 +306,22 @@ test('criterion-8: themes, panels, viewports, text scale, keyboard, states, reac
 
   await gotoStage(win, 3);
   await win.waitForTimeout(400);
-  const disabled = await win.evaluate(() => {
-    const el = document.querySelector('[data-action-dock] [data-dock-verb="forms"]');
-    return el ? { disabled: el.disabled, aria: el.getAttribute('aria-label'), title: el.getAttribute('title') } : null;
+  let disabled = await win.evaluate(() => {
+    const el = document.querySelector('[data-action-dock] [data-dock-verb][disabled]');
+    return el ? { id: el.getAttribute('data-dock-verb'), disabled: el.disabled, aria: el.getAttribute('aria-label'), title: el.getAttribute('title') } : null;
   });
+  if (disabled === null) {
+    await win.locator('[data-dock-overflow]').first().click();
+    await win.waitForSelector('[data-dock-overflow-menu]', { state: 'visible', timeout: 8000 });
+    disabled = await win.evaluate(() => {
+      const el = document.querySelector('[data-dock-overflow-menu] [data-dock-overflow-item][disabled]');
+      return el ? { id: el.getAttribute('data-dock-overflow-item'), disabled: true, aria: el.getAttribute('aria-label'), title: el.getAttribute('title') } : null;
+    });
+    await win.keyboard.press('Escape');
+    await win.waitForTimeout(250);
+  }
   console.log(`[P104-C8 disabled] ${JSON.stringify(disabled)}`);
-  expect(disabled, 'forms verb rendered').not.toBeNull();
+  expect(disabled, 'a disabled REVIEW dock verb rendered').not.toBeNull();
   expect(disabled.disabled, 'unavailable command is disabled').toBe(true);
   expect(disabled.title, 'disabled reason surfaced via the title').toBeTruthy();
 

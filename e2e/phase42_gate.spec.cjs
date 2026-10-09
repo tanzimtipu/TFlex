@@ -87,7 +87,7 @@ async function collectDock() {
 const EXPECTED = {
   pages: ['rotate', 'extract', 'insertPages', 'replacePages', 'split', 'delete', 'merge', 'cropPages'],
   edit: ['editText', 'editImage', 'editTextBox', 'editToolOff', 'recognizeText', 'batchOcr', 'ocrSuspects'],
-  review: ['annotate', 'sign', 'stamp', 'flatten', 'forms', 'watermark', 'exportComments', 'importComments'],
+  review: ['annotate', 'sign', 'stamp', 'flatten', 'watermark', 'exportComments', 'importComments'],
   deliver: ['optimize', 'audit', 'exportPages', 'exportText', 'exportDocx', 'createFromImages'],
 };
 

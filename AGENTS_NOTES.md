@@ -1,5 +1,30 @@
 # AGENTS_NOTES.md — archived operational history
 
+## 2026-10-09: Filing a child issue with a multi-line brief on Windows (paperclipai CLI quirks)
+
+Two traps cost repeated attempts while filing the TFL-1393 children. (1)
+`paperclipai issue create --description "<text>"` truncates at the first newline: the
+`paperclipai.cmd` shim cannot survive a multi-line argument, so only line one lands. (2)
+`issue child:create --payload-json` parses the payload with plain `JSON.parse` - the
+helper named `parseJson5` is literally `JSON.parse` - and that same `.cmd` shim strips
+double quotes, so an inline JSON payload either loses its quotes ("Expected property
+name") or, when the arg splits on spaces, is read as unknown `-` options. Rule: write the
+CreateChildIssue JSON to a file and spawn the CLI without a shell, e.g.
+`execFileSync(process.execPath, [<...>/paperclipai/dist/index.js, 'issue', 'child:create',
+parent, '--payload-json', readFileSync(file, 'utf8'), '--json'])`; execFileSync passes
+argv directly, so quotes and `\n` survive. Use the same spawn-without-shell pattern for
+any long or structured CLI payload. The disposition helper
+(`scripts/paperclip-disposition.mjs`) is called as `node` directly, so its multi-line
+comment arg is fine. (3) Follow-up trap (TFL-1468): `paperclipai issue create` also
+SILENTLY IGNORES `--parent-id`, `--assignee-agent-id` and `--status`, producing a
+parentless backlog issue - a direct violation of "never file a parentless issue". And
+the `.cmd` shim truncates `issue update --description` and `issue comment --body` the
+same way as `issue create`. Rule: create the issue, then `paperclipai issue update
+<id> --parent-id ... --assignee-agent-id ... --status todo`, and deliver any
+multi-line brief as a comment via `scripts/paperclip-disposition.mjs comment`
+(with `PAPERCLIP_TASK_ID` overridden to the child id when the target is not the
+current issue).
+
 ## 2026-10-09: A release publish chunk must NOT be blockedBy the gate chunk (completion != PASS)
 
 TFL-1380 (Release OTA 1.52.0): K3 (TFL-1383, qa) reported the release gate RED - 18 unit

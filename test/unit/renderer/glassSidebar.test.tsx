@@ -138,7 +138,6 @@ function mountPalette(): HTMLElement {
       onRotate={noop}
       onDelete={noop}
       onSign={noop}
-      onForms={noop}
       onOptimize={noop}
       onAudit={noop}
       onClose={noop}

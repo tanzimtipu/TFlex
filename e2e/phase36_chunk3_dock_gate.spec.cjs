@@ -87,7 +87,7 @@ async function loadSettings() {
 const EXPECTED = {
   pages: ['rotate', 'extract', 'insertPages', 'replacePages', 'split', 'delete', 'merge', 'cropPages'],
   edit: ['editText', 'editImage', 'editTextBox', 'editToolOff', 'recognizeText', 'batchOcr', 'ocrSuspects'],
-  review: ['annotate', 'sign', 'stamp', 'flatten', 'forms', 'watermark', 'exportComments', 'importComments'],
+  review: ['annotate', 'sign', 'stamp', 'flatten', 'watermark', 'exportComments', 'importComments'],
   deliver: ['optimize', 'audit', 'exportPages', 'exportText', 'exportDocx', 'createFromImages'],
 };
 
@@ -1191,7 +1191,7 @@ test('P36-C3-J reachability: every relocated control acts from its new home', as
 // K. Reachability on a form document — forms + flatten act from the REVIEW dock
 //    (they are gated on form fields, so they need form.pdf).
 // ---------------------------------------------------------------------------
-test('P36-C3-K reachability on a form document: forms + flatten act from REVIEW dock', async () => {
+test('P36-C3-K reachability on a form document: flatten acts from the REVIEW dock', async () => {
   await openSample('form.pdf');
 
   // The PAGES panel's multi-select clears on an empty-space click (form.pdf has
@@ -1226,20 +1226,13 @@ test('P36-C3-K reachability on a form document: forms + flatten act from REVIEW 
     const b = document.querySelector('[data-dock-verb="flatten"]');
     return b !== null && b.disabled === false;
   }, null, { timeout: 20000 });
-  // Phase 37 item 21 — `forms` is a dock verb again (the full REVIEW set).
-  expect(await win.locator('[data-dock-verb="forms"]').count(), 'forms is a dock verb again').toBe(1);
+  // TFL-1436 (C2) - the `forms` dock verb is retired; the old forms step opened
+  // the same FlattenConfirmDialog already verified above.
   await clickDock('flatten');
   await win.waitForSelector('#flatten-title', { state: 'visible', timeout: 10000 });
   console.log('[P36C3-K] flatten dialog opened on form.pdf');
   await win.keyboard.press('Escape');
   await win.waitForTimeout(600);
-  // forms runs from the dock too (same dialog).
-  await setStage(3);
-  await clickDock('forms');
-  await win.waitForSelector('#flatten-title', { state: 'visible', timeout: 10000 });
-  console.log('[P36C3-K] forms (dock) dialog opened on form.pdf');
-  await win.keyboard.press('Escape');
-  await win.waitForTimeout(500);
 });
 
 // ---------------------------------------------------------------------------

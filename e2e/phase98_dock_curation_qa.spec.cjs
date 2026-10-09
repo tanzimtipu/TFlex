@@ -24,7 +24,7 @@ const GLOBALS = ['undo', 'redo', 'openReadingView', 'openComicView'];
 const ALLOWED = {
   pages: ['rotate', 'extract', 'insertPages', 'replacePages', 'split', 'delete', 'merge', 'cropPages', ...GLOBALS],
   edit: ['editToolOff', 'editText', 'editImage', 'editTextBox', 'recognizeText', 'batchOcr', 'ocrSuspects', ...GLOBALS],
-  review: ['annotate', 'sign', 'stamp', 'flatten', 'forms', 'watermark', 'bates', 'exportComments',
+  review: ['annotate', 'sign', 'stamp', 'flatten', 'watermark', 'bates', 'exportComments',
     'importComments', 'fillFromCsv', 'exportFormData', 'importFormData', 'validateDocument',
     'sanitize', 'engineeringLayers', 'documentInfo', ...GLOBALS],
   deliver: ['optimize', 'audit', 'exportPages', 'exportText', 'exportDocx', 'exportXlsx', 'exportPptx',
@@ -97,10 +97,26 @@ test('DEF-531 curated picker + disabled-row removal via minus and Unpin', async 
     // ---- 2. A disabled pinnable row, removable via BOTH paths ------------
     await gotoStage(win, 3); // REVIEW
     await dockEditOn(win);
-    const rows = await win.$$eval(`${DOCK} [data-dock-verb]`, (els) =>
+    const readRows = () => win.$$eval(`${DOCK} [data-dock-verb]`, (els) =>
       els.map((e) => ({ id: e.getAttribute('data-dock-verb'), disabled: e.disabled, title: e.getAttribute('title') })));
+    let rows = await readRows();
     console.log(`[QA-DEF531] review rows=${JSON.stringify(rows)}`);
-    const greyed = rows.find((r) => r.id === 'forms' && r.disabled) || rows.find((r) => r.disabled);
+    // TFL-1436 (C2) retired the `forms` primary tile, which was the only
+    // disabled inline REVIEW row. The surviving disabled REVIEW verbs
+    // (flatten / fillFromCsv / exportFormData / importFormData) are non-primary
+    // and render in the More overflow, so pin a disabled global (undo/redo on a
+    // fresh document) through the picker to keep the DEF-531 greyed-row removal
+    // paths exercised against a real disabled pinnable row.
+    if (rows.every((r) => !r.disabled)) {
+      const offered = await pickerIds(win);
+      const disabledGlobal = ['undo', 'redo'].find((g) => offered.includes(g));
+      expect(disabledGlobal, 'the picker offers a disabled global to pin').toBeTruthy();
+      await win.locator(`[data-dock-picker-item="${disabledGlobal}"]`).click();
+      await win.waitForTimeout(900);
+      rows = await readRows();
+      console.log(`[QA-DEF531] pinned disabled global "${disabledGlobal}" rows=${JSON.stringify(rows)}`);
+    }
+    const greyed = rows.find((r) => r.disabled) || null;
     expect(greyed, 'the REVIEW stage renders a disabled (greyed) dock row').toBeTruthy();
     const id = greyed.id;
     console.log(`[QA-DEF531] greyed row id=${id} title="${greyed.title}"`);

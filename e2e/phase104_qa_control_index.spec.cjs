@@ -27,7 +27,7 @@ test.setTimeout(420000);
 const STAGE_IDS = {
   pages: ['rotate', 'extract', 'insertPages', 'replacePages', 'split', 'delete', 'merge', 'cropPages'],
   edit: ['editToolOff', 'editText', 'editImage', 'editTextBox', 'recognizeText', 'batchOcr', 'ocrSuspects'],
-  review: ['annotate', 'sign', 'stamp', 'flatten', 'forms', 'watermark', 'bates', 'exportComments',
+  review: ['annotate', 'sign', 'stamp', 'flatten', 'watermark', 'bates', 'exportComments',
     'importComments', 'fillFromCsv', 'exportFormData', 'importFormData', 'validateDocument',
     'sanitize', 'engineeringLayers', 'documentInfo'],
   deliver: ['optimize', 'audit', 'exportPages', 'exportText', 'exportDocx', 'exportXlsx', 'exportPptx',
@@ -36,20 +36,20 @@ const STAGE_IDS = {
 const PRIMARY = {
   pages: ['rotate', 'extract', 'insertPages', 'merge', 'cropPages'],
   edit: ['editToolOff', 'editText', 'editImage', 'editTextBox', 'recognizeText'],
-  review: ['annotate', 'sign', 'stamp', 'forms', 'bates'],
+  review: ['annotate', 'sign', 'stamp', 'bates'],
   deliver: ['optimize', 'exportPages', 'exportText', 'exportDocx', 'encrypt'],
 };
 const SHORT = {
   rotate: 'Rotate', extract: 'Extract', insertPages: 'Insert', merge: 'Merge', cropPages: 'Crop',
   editToolOff: 'Select', editText: 'Text', editImage: 'Images', editTextBox: 'Text box', recognizeText: 'OCR',
-  annotate: 'Annotate', sign: 'Sign', stamp: 'Stamp', forms: 'Forms', bates: 'Bates',
+  annotate: 'Annotate', sign: 'Sign', stamp: 'Stamp', bates: 'Bates',
   optimize: 'Optimize', exportPages: 'Images', exportText: 'Text', exportDocx: 'Word', encrypt: 'Encrypt',
 };
 const FULL = {
   rotate: 'Rotate pages', extract: 'Extract pages', insertPages: 'Insert pages', merge: 'Merge PDFs',
   cropPages: 'Crop pages', editToolOff: 'Edit mode off', editText: 'Edit text', editImage: 'Edit images',
   editTextBox: 'Add a text box', recognizeText: 'Recognize text (OCR)', annotate: 'Annotate', sign: 'Sign',
-  stamp: 'Stamp', forms: 'Forms', bates: 'Bates numbering\u2026', optimize: 'Reduce file size',
+  stamp: 'Stamp', bates: 'Bates numbering\u2026', optimize: 'Reduce file size',
   exportPages: 'Export pages as images', exportText: 'Export text', exportDocx: 'Export to Word (.docx)',
   encrypt: 'Encrypt document',
 };

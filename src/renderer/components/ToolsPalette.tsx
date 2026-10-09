@@ -1,7 +1,7 @@
 // Phase 6 — tools palette right panel.
 //
 // A right-side overlay panel listing the major document tools: merge,
-// split, extract, rotate, delete, sign, forms. The user opens it via
+// split, extract, rotate, delete, sign. The user opens it via
 // the Tools button on the toolbar (or Ctrl+Shift+P from the menu).
 //
 // Layout toggle: list (one rich row per tool, the default) and grid
@@ -43,7 +43,6 @@ interface ToolsPaletteProps {
   onRotate: () => void;
   onDelete: () => void;
   onSign: () => void;
-  onForms: () => void;
   onOptimize: () => void;
   onAudit: () => void;
   onClose: () => void;
@@ -150,7 +149,6 @@ export function ToolsPalette(props: ToolsPaletteProps): ReactElement {
     onRotate,
     onDelete,
     onSign,
-    onForms,
     onOptimize,
     onAudit,
     onClose,
@@ -211,7 +209,6 @@ export function ToolsPalette(props: ToolsPaletteProps): ReactElement {
       // actually clicks.
       return onBatchOcr !== undefined;
     }
-    if (id === 'forms') return hasFormFields;
     if (id === 'flatten') return hasFormFields && onFlatten !== undefined;
     if (id === 'exportPages') return onExportPages !== undefined;
     if (id === 'exportText') return onExportText !== undefined;
@@ -242,7 +239,6 @@ export function ToolsPalette(props: ToolsPaletteProps): ReactElement {
   wired.set('rotate', { action: onRotate });
   wired.set('delete', { action: onDelete });
   wired.set('sign', { action: onSign });
-  wired.set('forms', { action: onForms });
   wired.set('optimize', { action: onOptimize });
   wired.set('audit', { action: onAudit });
   if (onFlatten !== undefined) wired.set('flatten', { action: onFlatten });

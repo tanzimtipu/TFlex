@@ -27,7 +27,7 @@ const DOCK_STAGE_IDS = {
   pages: ['rotate', 'extract', 'insertPages', 'replacePages', 'split', 'delete', 'merge', 'cropPages'],
   edit: ['editToolOff', 'editText', 'editImage', 'editTextBox', 'recognizeText', 'batchOcr', 'ocrSuspects'],
   review: [
-    'annotate', 'sign', 'stamp', 'flatten', 'forms', 'watermark', 'bates', 'exportComments',
+    'annotate', 'sign', 'stamp', 'flatten', 'watermark', 'bates', 'exportComments',
     'importComments', 'fillFromCsv', 'exportFormData', 'importFormData', 'validateDocument',
     'sanitize', 'engineeringLayers', 'documentInfo',
   ],

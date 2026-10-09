@@ -33,7 +33,7 @@ const STAGES: readonly Stage[] = ["pages", "edit", "review", "deliver"];
 const EXPECTED_PRIMARY: Readonly<Record<Stage, readonly string[]>> = {
   pages: ["rotate", "extract", "insertPages", "merge", "cropPages"],
   edit: ["editToolOff", "editText", "editImage", "editTextBox", "recognizeText"],
-  review: ["annotate", "sign", "stamp", "forms", "bates"],
+  review: ["annotate", "sign", "stamp", "bates"],
   deliver: ["optimize", "exportPages", "exportText", "exportDocx", "encrypt"],
 };
 
@@ -94,7 +94,7 @@ function overflowItemIds(host: HTMLElement): string[] {
 }
 
 describe("Phase 104 (chunk 2) — the dock primary curation", () => {
-  it("(a) dockPrimaryIdsForStage returns exactly the five curated ids per stage", () => {
+  it("(a) dockPrimaryIdsForStage returns exactly the curated ids per stage", () => {
     for (const stage of STAGES) {
       expect(dockPrimaryIdsForStage(stage), stage).toEqual(EXPECTED_PRIMARY[stage]);
       // Every primary id is also part of the stage's FULL membership.

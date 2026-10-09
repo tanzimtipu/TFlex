@@ -38,7 +38,6 @@ function mountPalette(args: {
         onRotate={onRotate}
         onDelete={(): void => undefined}
         onSign={(): void => undefined}
-        onForms={(): void => undefined}
         onOptimize={(): void => undefined}
         onAudit={(): void => undefined}
         onClose={(): void => undefined}
