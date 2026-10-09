@@ -40,10 +40,10 @@
   --type-helper-size: 12px;    --type-helper-line: 18px;    --type-helper-weight: 400;
   --type-compact-size: 11px;   --type-compact-line: 16px;   --type-compact-weight: 500;
   /* Phase 110 - THE semantic supporting-text colour. Small readable helper text
-   * reads this by role (#667085 light, overridden to #929BAC in dark); the
+   * reads this by role (#5b6577 light as of Phase 125, #929BAC in dark); the
    * non-text/disabled token --tf-icon-disabled (#70798A) is deliberately NOT
    * this and stays untouched. */
-  --tf-text-supporting: #667085;
+  --tf-text-supporting: #5b6577;
 
   /* Phase 38 (feature B) — LEGIBILITY FLOOR. --fs-xs is raised from 11px
    * to 12px so every interactive control label that rides the body ladder
@@ -168,7 +168,7 @@
    * untouched. Declared in light, dark AND frosted. */
   --tf-nav-surface: #FFFFFF;
   --tf-nav-body-ink: #485164;
-  --tf-nav-helper-ink: #667085;
+  --tf-nav-helper-ink: #5b6577;
   --tf-nav-selected-surface: #F0EBFC;
   --tf-nav-selected-ink: #7050D6;
 
@@ -241,6 +241,11 @@
   --space-standard: var(--sp-4);
   --space-section: var(--sp-5);
   --space-major: var(--sp-6);
+  /* TFL-1396 (Phase 121) - the enforced MINIMUM vertical gap between two stacked
+   * sibling REGIONS in a column (Home hero tool row -> intake drop zone, panel
+   * sections, dialog blocks). One named value so a new stacked region inherits the
+   * rule instead of inventing an ad hoc margin. Resolves to --sp-4 (16px). */
+  --space-stack-min: var(--sp-4);
 
   /* Phase 67 / DEF-447 — horizontal clearance for the collapsed notice-icon
    * ROW at the canvas top-left. The single-source base for all three fixed
@@ -1177,7 +1182,7 @@
    * (body 7.96, helper 4.97, selected 4.73). Navigator-scoped names only. */
   --tf-nav-surface: #FFFFFF;
   --tf-nav-body-ink: #485164;
-  --tf-nav-helper-ink: #667085;
+  --tf-nav-helper-ink: #5b6577;
   --tf-nav-selected-surface: #F0EBFC;
   --tf-nav-selected-ink: #7050D6;
   /* Phase 108 (Workspace Rail) — frosted keeps the same glass/sidebar material
@@ -1595,7 +1600,6 @@ body {
   line-height: 1.45;
   color: var(--fg);
   background: var(--bg-base);
-  -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
   font-feature-settings: "cv11", "ss01", "ss03";
 }
@@ -3594,6 +3598,14 @@ body.tab-reordering .tab-list[data-reorder="true"] .tab {
   color: var(--tf-text-supporting);
 }
 
+/* TFL-1396 (Phase 121) - the intake drop zone keeps the enforced minimum vertical
+ * gap from the editable tool row above it (the pre-fix gap was 0: the dashed drop
+ * zone abutted the buttons). Consumes the shared minimum-stack token, never an ad
+ * hoc margin. */
+.welcome-intake {
+  margin-top: var(--space-stack-min);
+}
+
 .btn {
   display: inline-flex;
   align-items: center;
@@ -4048,7 +4060,7 @@ body.tab-reordering .tab-list[data-reorder="true"] .tab {
 }
 
 /* ===========================================================================
- * Phase 123 (chunk B) â CHROME TAB STYLE.
+ * Phase 123 (chunk B) — CHROME TAB STYLE.
  *
  * The operator's reference is a Chrome browser tab strip. This scoped block
  * (mirroring the Phase 58/62/68/72 colorful override structure) paints it
@@ -4369,6 +4381,21 @@ body.tab-reordering .tab-list[data-reorder="true"] .tab {
   color: var(--tf-text-supporting);
 }
 
+/* TFL-1413 - a designed EmptyState rendered as the body of a titled panel
+ * section reads as body text, not as a centred hero heading: left-aligned
+ * and regular weight, subordinate to its bold section heading. Scoped to
+ * .tf-panel-section only, so the global heroes (Welcome, Command Palette,
+ * PAGES thumbnail rail) are unchanged. */
+.tf-panel-section .empty-state {
+  align-items: flex-start;
+  text-align: left;
+}
+
+.tf-panel-section .empty-state .empty-state-headline {
+  font-size: var(--tf-panel-body-size);
+  font-weight: var(--type-body-weight);
+}
+
 /* `.recent-empty` is the EmptyState rendered inside the recent-list card: the
  * card already supplies the surface, so this only trims the padding. */
 .recent-empty {
@@ -4683,14 +4710,14 @@ body.tab-reordering .tab-list[data-reorder="true"] .tab {
 }
 
 /* DEF-594 / ADV-224 — the LIGHT Home-hero supporting ink. `.welcome-sub` and
- * `.welcome-section h3 .count` ride the global `--tf-text-supporting` (#667085),
- * but the Home hero sits on `.welcome.orbit-desk`, whose surface is
- * `--bg-sunken` (#e4e9ef in light). #667085 on that surface measures 4.07:1,
- * below the 4.5:1 interactive-text floor, while the retired `--fg-muted`
- * (#556070) measures 5.22:1. This override is scoped to the LIGHT theme only
- * (`:root` is light; `data-theme="dark"`/`"frosted"` are excluded) and to the
- * orbit-desk hero, so dark (7.12:1 on #08090b), frosted and every other surface
- * keep the global token unchanged. The token itself is NOT edited here. */
+ * `.welcome-section h3 .count` ride the global `--tf-text-supporting`. Phase 125
+ * raised that token to `#5b6577`, which measures 4.81:1 on the Home hero's
+ * `--bg-sunken` (#e4e9ef in light) and so clears the 4.5:1 floor on its own (the
+ * retired #667085 measured 4.07:1). This light-only override to `--fg-muted`
+ * (#556070, 5.22:1) is retained for the extra headroom. Scoped to the LIGHT theme
+ * only (`:root` is light; `data-theme="dark"`/`"frosted"` are excluded) and to
+ * the orbit-desk hero, so dark (7.12:1 on #08090b), frosted and every other
+ * surface keep the global token unchanged. */
 :root:not([data-theme="dark"]):not([data-theme="frosted"]) .welcome.orbit-desk .welcome-sub,
 :root:not([data-theme="dark"]):not([data-theme="frosted"]) .welcome.orbit-desk .welcome-section h3 .count {
   color: var(--fg-muted);
@@ -5107,6 +5134,20 @@ body.tab-reordering .tab-list[data-reorder="true"] .tab {
   .panel-resize-grip {
     transition: none;
   }
+}
+
+/* TFL-1455 (TFL-1415 chunk B) — while a separator drag is live the handle must
+ * track the pointer 1:1. The panel edge lags because the layout surfaces ease
+ * toward each drag frame: `.workspace` tweens the registered `--tf-rail-w`
+ * (140ms), `.workspace-main` tweens `--tf-tools-inset`, and the inspector width
+ * rides `--tools-panel-w`. Cancel ONLY those transitions, scoped to the
+ * gesture flag App sets on `.app-main` for the duration of a pointer drag, so
+ * the open/close/collapse animations are byte-for-byte unchanged when NOT
+ * dragging. */
+.app-main[data-panel-resizing] .workspace,
+.app-main[data-panel-resizing] .workspace-main,
+.app-main[data-panel-resizing] .inspector {
+  transition: none;
 }
 
 /* DEF-241 (ADV-057) — RETIRED by Phase 25. The docked text-properties
@@ -5622,6 +5663,18 @@ body.tab-reordering .tab-list[data-reorder="true"] .tab {
 
 .thumb:hover { background: var(--bg-hover); }
 
+/* TFL-1465 — card mode (the ContextPanel/pane page-navigator) HUGS its preview:
+ * the card shrinks to the preview's own width and centers in the navigator
+ * column, so the border/inset gap between the card edge and the page preview is
+ * the SAME 7px (6px padding + 1px border) on all four sides — matching the top
+ * gap the user asked for. The label-only rail/pane thumbs keep width:100%. */
+.thumb.thumb-card {
+  width: fit-content;
+  max-width: 100%;
+  margin-left: auto;
+  margin-right: auto;
+}
+
 /* Phase 4 — keyboard focus on a thumbnail uses the accent ring
  * (outline, not box-shadow, so it never collides with the
  * current-page selection ring). */
@@ -5869,7 +5922,7 @@ body.tab-reordering .tab-list[data-reorder="true"] .tab {
 .outline-empty {
   padding: 4px 12px;
   font-size: var(--fs-sm);
-  color: var(--fg-faint);
+  color: var(--tf-text-supporting);
 }
 
 .outline-error {
@@ -6984,12 +7037,6 @@ body.tab-reordering .tab-list[data-reorder="true"] .tab {
  * theme palette. The 3px left bar is the primary state cue; the icon
  * color picks up the same token via `color: currentColor` inheritance
  * from the toast-text span (the icon is set explicitly per kind below). */
-.toast-error {
-  border-left-color: var(--error);
-  color: var(--fg-strong);
-}
-.toast-error .toast-icon { color: var(--error); }
-
 .toast-info {
   border-left-color: var(--info);
   color: var(--fg-strong);
@@ -7001,12 +7048,6 @@ body.tab-reordering .tab-list[data-reorder="true"] .tab {
   color: var(--fg-strong);
 }
 .toast-success .toast-icon { color: var(--success); }
-
-.toast-warning {
-  border-left-color: var(--warning);
-  color: var(--fg-strong);
-}
-.toast-warning .toast-icon { color: var(--warning); }
 
 .toast-text {
   color: var(--tf-text-supporting);
@@ -7540,7 +7581,7 @@ body.tab-reordering .tab-list[data-reorder="true"] .tab {
 .thumb-empty {
   padding: var(--sp-4) var(--sp-3);
   font-size: var(--fs-xs);
-  color: var(--fg-faint);
+  color: var(--tf-text-supporting);
   text-align: center;
 }
 
@@ -9252,7 +9293,7 @@ rect.ann-highlight.ann-preview {
 
 .ann-panel-row-page {
   font-size: var(--fs-xs);
-  color: var(--fg-faint);
+  color: var(--tf-text-supporting);
   font-variant-numeric: tabular-nums;
 }
 
@@ -9333,7 +9374,7 @@ rect.ann-highlight.ann-preview {
 .ann-panel-text-readonly {
   border: 1px solid transparent;
   background: transparent;
-  color: var(--fg-faint);
+  color: var(--tf-text-supporting);
   font-style: italic;
   display: block;
 }
@@ -9931,481 +9972,6 @@ rect.ann-highlight.ann-preview {
 }
 
 .tool-btn-form { color: var(--accent); }
-
-/* ---------------------------------------------------------------------------
- * Phase 115 - Guided Fill field primitives
- *
- * The shared primitives in src/renderer/forms/GuidedFillPrimitives.tsx: one
- * field row, a required summary and the pure validator. Geometry follows the
- * Guided Fill spec: 13px labels, 14px values, 12px guidance, 38px control
- * heights, a 9px control radius and a 12px floating-surface radius. Every
- * colour is a semantic token, so light/dark ride the existing :root[data-theme]
- * scopes with no per-theme literal. Attached surfaces use a hairline boundary,
- * never a drop shadow.
- * ------------------------------------------------------------------------- */
-
-.guided-fill-row {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-standard);
-  padding: var(--space-control) 0;
-}
-
-.guided-fill-row-head {
-  display: flex;
-  align-items: baseline;
-  gap: var(--space-small);
-}
-
-.guided-fill-label {
-  display: inline-flex;
-  align-items: baseline;
-  gap: 3px;
-  font-size: var(--type-row-size);
-  line-height: var(--type-row-line);
-  font-weight: var(--type-row-weight);
-  color: var(--fg-strong);
-}
-
-.guided-fill-required {
-  color: var(--error);
-  font-size: var(--type-row-size);
-  line-height: var(--type-row-line);
-}
-
-.guided-fill-control {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-small);
-}
-
-.guided-fill-control :is(input, select, textarea) {
-  min-height: 38px;
-  padding: 0 var(--space-control);
-  border: 1px solid var(--border);
-  border-radius: var(--btn-radius);
-  background: var(--bg-raised);
-  color: var(--fg);
-  font-family: inherit;
-  font-size: var(--type-body-size);
-  line-height: var(--type-body-line);
-  font-weight: var(--type-body-weight);
-  outline: none;
-  transition:
-    border-color var(--motion-duration-panel) var(--ease-out),
-    background var(--motion-duration-panel) var(--ease-out);
-}
-
-.guided-fill-control :is(input, select, textarea):hover {
-  border-color: var(--border-strong);
-}
-
-.guided-fill-control :is(input, select, textarea):focus-visible {
-  border-color: var(--accent-hover);
-  box-shadow: var(--focus-ring);
-}
-
-.guided-fill-control :is(input, select, textarea)[aria-invalid="true"] {
-  border-color: var(--error);
-}
-
-.guided-fill-guidance {
-  margin: 0;
-  font-size: var(--type-helper-size);
-  line-height: var(--type-helper-line);
-  font-weight: var(--type-helper-weight);
-  color: var(--fg-muted);
-}
-
-.guided-fill-error {
-  display: flex;
-  align-items: flex-start;
-  gap: var(--space-small);
-  margin: 0;
-  font-size: var(--type-helper-size);
-  line-height: var(--type-helper-line);
-  font-weight: var(--type-helper-weight);
-  color: var(--error);
-  transition: color var(--motion-duration-panel) var(--ease-out);
-}
-
-.guided-fill-error-icon {
-  flex: 0 0 auto;
-  margin-top: 2px;
-}
-
-.guided-fill-error-text {
-  min-width: 0;
-}
-
-.guided-fill-summary {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: var(--space-standard) var(--space-section);
-  padding: var(--space-control) var(--space-standard);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-group);
-  background: var(--bg-raised);
-  color: var(--fg);
-  font-size: var(--type-helper-size);
-  line-height: var(--type-helper-line);
-}
-
-.guided-fill-summary-item {
-  display: inline-flex;
-  align-items: baseline;
-  gap: var(--space-small);
-}
-
-.guided-fill-summary-label {
-  color: var(--fg-muted);
-}
-
-.guided-fill-summary-figure {
-  font-size: var(--type-body-size);
-  line-height: var(--type-body-line);
-  font-weight: var(--type-row-weight);
-  color: var(--fg-strong);
-  font-variant-numeric: tabular-nums;
-}
-
-.guided-fill-surface {
-  border: 1px solid var(--border);
-  border-radius: var(--radius-group);
-  background: var(--bg-raised);
-  overflow: hidden;
-}
-
-/* Phase 115 D1 - Guided Fill panel
- *
- * The panel rides the chunk-C tokens above: 13px labels, 14px values, 38px
- * controls and a 9px control radius are already owned by `.guided-fill-*`.
- * The panel only adds its scope line, field stack and action bar; the surface
- * boundary stays a hairline, never a shadow. */
-
-.guided-fill-panel {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-standard);
-  padding: var(--space-section);
-}
-
-.guided-fill-panel-head {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: var(--space-standard);
-}
-
-.guided-fill-panel-scope {
-  display: flex;
-  align-items: baseline;
-  gap: var(--space-standard);
-  font-size: var(--type-helper-size);
-  line-height: var(--type-helper-line);
-  color: var(--fg-muted);
-}
-
-.guided-fill-panel-scope-figure {
-  color: var(--fg-strong);
-  font-variant-numeric: tabular-nums;
-}
-
-.guided-fill-panel-fields {
-  display: flex;
-  flex-direction: column;
-}
-
-.guided-fill-panel-actions {
-  display: flex;
-  justify-content: flex-end;
-  gap: var(--space-small);
-  padding-top: var(--space-control);
-  border-top: 1px solid var(--border);
-}
-
-.guided-fill-panel .guided-fill-input,
-.guided-fill-panel .guided-fill-textarea,
-.guided-fill-panel .guided-fill-select {
-  width: 100%;
-}
-
-.guided-fill-panel .guided-fill-radio-group {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-small);
-}
-
-.guided-fill-panel .guided-fill-listbox {
-  list-style: none;
-  margin: 0;
-  min-height: 38px;
-  max-height: 220px;
-  overflow-y: auto;
-  padding: var(--space-small);
-  border: 1px solid var(--border);
-  border-radius: var(--btn-radius);
-  background: var(--bg-raised);
-}
-
-.guided-fill-panel .guided-fill-checkbox {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 24px;
-  min-width: 24px;
-  height: 24px;
-  padding: 0;
-  border: 1px solid var(--border);
-  border-radius: var(--btn-radius);
-  background: var(--bg-raised);
-  color: var(--accent-text);
-}
-
-.guided-fill-panel .guided-fill-checkbox:hover:not([disabled]) {
-  border-color: var(--border-strong);
-}
-
-.guided-fill-panel .guided-fill-checkbox[disabled] {
-  cursor: not-allowed;
-  opacity: 0.75;
-}
-
-.guided-fill-nonfillable {
-  color: var(--fg-muted);
-  font-size: var(--type-helper-size);
-  line-height: var(--type-helper-line);
-}
-
-/* Phase 115 F - Field properties (read-only inspector)
- *
- * A truthful read-only view of the focused field's declared metadata. It
- * rides the chunk-C tokens and, like every other Guided Fill surface, keeps a
- * hairline boundary with no shadow. There are no editable controls here. */
-
-.guided-fill-panel-properties {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-standard);
-  padding-top: var(--space-control);
-  border-top: 1px solid var(--border);
-}
-
-.guided-fill-panel-properties-heading {
-  margin: 0;
-  font-size: var(--type-row-size);
-  line-height: var(--type-row-line);
-  font-weight: var(--type-row-weight);
-  color: var(--fg-strong);
-}
-
-.guided-fill-properties {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-standard);
-}
-
-.guided-fill-properties-empty {
-  color: var(--fg-muted);
-  font-size: var(--type-helper-size);
-  line-height: var(--type-helper-line);
-}
-
-.guided-fill-properties-list {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-small);
-  margin: 0;
-}
-
-.guided-fill-properties-row {
-  display: grid;
-  grid-template-columns: 96px minmax(0, 1fr);
-  align-items: baseline;
-  gap: var(--space-standard);
-}
-
-.guided-fill-properties-term {
-  color: var(--fg-muted);
-  font-size: var(--type-helper-size);
-  line-height: var(--type-helper-line);
-}
-
-.guided-fill-properties-value {
-  margin: 0;
-  min-width: 0;
-  color: var(--fg-strong);
-  font-size: var(--type-body-size);
-  line-height: var(--type-body-line);
-  overflow-wrap: anywhere;
-}
-
-.guided-fill-properties-multi {
-  display: block;
-  color: var(--fg-muted);
-  font-size: var(--type-helper-size);
-  line-height: var(--type-helper-line);
-}
-
-.guided-fill-properties-options {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-
-.guided-fill-properties-option {
-  display: flex;
-  align-items: baseline;
-  gap: var(--space-small);
-}
-
-.guided-fill-properties-option-label {
-  color: var(--fg-strong);
-}
-
-.guided-fill-properties-option-value {
-  color: var(--fg-muted);
-  font-family: var(--font-mono, monospace);
-  font-size: var(--type-helper-size);
-}
-
-.guided-fill-properties-note {
-  margin: 0;
-  color: var(--fg-muted);
-  font-size: var(--type-helper-size);
-  line-height: var(--type-helper-line);
-}
-
-/* Phase 115 D2 - Guided Fill panel host
- *
- * The panel rides the panel layer (30, the Inspector's z-index) as a fixed
- * surface attached to the editor's right edge, below the caption strip. It
- * keeps a hairline left boundary and no shadow, scrolls internally, and covers
- * only its own 340px band so the canvas stays interactive outside it. */
-
-.guided-fill-panel-host {
-  position: fixed;
-  top: var(--chrome-titlebar-h);
-  right: 0;
-  bottom: 0;
-  width: 340px;
-  z-index: 30;
-  display: flex;
-  flex-direction: column;
-  overflow-y: auto;
-  background: var(--panel-bg);
-  border-left: 1px solid var(--panel-border);
-  box-shadow: none;
-}
-
-/* Phase 115 E - keyboard focus link
- *
- * The Guided Fill panel row and the canvas field linked to the same focused
- * field id each carry a data-* marker applied by the host as HIGHLIGHTS only:
- * no DOM focus is ever moved, so the link cannot cycle. Both marks share one
- * treatment - the interactive accent wash plus an accent LEFT boundary, never
- * colour alone - and resolve from tokens so light and dark are identical. No
- * shadow. */
-
-.guided-fill-row[data-form-active="true"] {
-  background: var(--accent-selected);
-  border-left: 2px solid var(--accent);
-  border-radius: var(--radius-1);
-  padding-left: var(--space-standard);
-}
-
-:root .form-editor[data-form-focused="true"],
-:root .form-checkbox[data-form-focused="true"],
-:root .form-radio[data-form-focused="true"],
-:root .form-radio-group[data-form-focused="true"] {
-  background: var(--accent-selected);
-  border-left: 2px solid var(--accent);
-}
-
-/* Phase 115 H (TFL-1338) - Guided Fill adaptation + accessibility.
- *
- * These rules extend the `.guided-fill-*` block above; they introduce no new
- * selector family and no new token. */
-
-/* Forced colours: no Guided Fill state relies on a colour tint alone. The
- * active row, the canvas-focused editor and the required / error marks all
- * gain a system-colour boundary or outline so they survive Windows High
- * Contrast and inverted system themes. */
-@media (forced-colors: active) {
-  .guided-fill-row[data-form-active="true"] {
-    background: Highlight;
-    color: HighlightText;
-    border-left-color: Highlight;
-  }
-
-  :root .form-editor[data-form-focused="true"],
-  :root .form-checkbox[data-form-focused="true"],
-  :root .form-radio[data-form-focused="true"],
-  :root .form-radio-group[data-form-focused="true"] {
-    border-left-color: Highlight;
-    outline: 1px solid Highlight;
-  }
-
-  .guided-fill-required {
-    color: LinkText;
-  }
-
-  .guided-fill-error {
-    color: CanvasText;
-  }
-
-  .guided-fill-error .guided-fill-error-icon {
-    forced-color-adjust: none;
-    color: LinkText;
-  }
-
-  .guided-fill-control :is(input, select, textarea)[aria-invalid="true"] {
-    border-color: LinkText;
-  }
-
-  .guided-fill-control :is(input, select, textarea):focus-visible {
-    outline: 2px solid Highlight;
-    outline-offset: 1px;
-  }
-}
-
-/* Reduced motion: the 140ms emphasis transition on the fill controls collapses
- * to an instant state change. */
-@media (prefers-reduced-motion: reduce) {
-  .guided-fill-control :is(input, select, textarea),
-  .guided-fill-error,
-  .guided-fill-panel,
-  .guided-fill-row {
-    transition: none;
-  }
-}
-
-/* Narrow width / 200% scaling: the attached surface spans the full editor
- * width so it cannot overflow, its field list scrolls internally, and its
- * label / guidance / error text wraps instead of truncating. */
-@media (max-width: 900px) {
-  .guided-fill-panel-host {
-    left: 0;
-    right: 0;
-    width: auto;
-  }
-
-  .guided-fill-panel-fields {
-    overflow-y: auto;
-    min-height: 0;
-  }
-
-  .guided-fill-label,
-  .guided-fill-guidance,
-  .guided-fill-error-text {
-    white-space: normal;
-    overflow-wrap: anywhere;
-  }
-}
 
 /* ---------------------------------------------------------------------------
  * Phase 4 - Signatures placement overlay + manager modal
@@ -11617,7 +11183,7 @@ rect.ann-highlight.ann-preview {
 }
 .tools-palette-entry-shortcut {
   font-size: var(--fs-xs);
-  color: var(--fg-faint);
+  color: var(--tf-text-supporting);
   font-family: var(--font-mono);
 }
 
@@ -12621,7 +12187,7 @@ rect.ann-highlight.ann-preview {
 }
 .color-palette-count {
   font-weight: 500;
-  color: var(--fg-faint);
+  color: var(--tf-text-supporting);
 }
 .color-palette-empty {
   color: var(--fg-faint);
@@ -12959,7 +12525,7 @@ rect.ann-highlight.ann-preview {
   font-weight: 500;
 }
 
-.optimize-fft-muted { color: var(--fg-faint); font-weight: 400; }
+.optimize-fft-muted { color: var(--tf-text-supporting); font-weight: 400; }
 
 .optimize-fft-positive {
   color: var(--accent-text);
@@ -13073,7 +12639,7 @@ rect.ann-highlight.ann-preview {
 .audit-bar-hint {
   margin: 0;
   font-size: var(--fs-xs);
-  color: var(--fg-faint);
+  color: var(--tf-text-supporting);
   line-height: 1.4;
 }
 
@@ -13178,7 +12744,7 @@ rect.ann-highlight.ann-preview {
 }
 
 .create-image-index {
-  color: var(--fg-faint);
+  color: var(--tf-text-supporting);
   font-variant-numeric: tabular-nums;
   text-align: right;
 }
@@ -14784,7 +14350,7 @@ rect.ann-highlight.ann-preview {
 }
 
 .ocr-suspects-pages {
-  color: var(--fg-faint);
+  color: var(--tf-text-supporting);
 }
 
 .ocr-suspects-body {
@@ -14830,7 +14396,7 @@ rect.ann-highlight.ann-preview {
 }
 
 .ocr-suspects-page-count {
-  color: var(--fg-faint);
+  color: var(--tf-text-supporting);
 }
 
 .ocr-suspects-list {
@@ -15010,7 +14576,7 @@ rect.ann-highlight.ann-preview {
   font-weight: 600;
   letter-spacing: 0.04em;
   text-transform: uppercase;
-  color: var(--fg-faint);
+  color: var(--tf-text-supporting);
   border-bottom: 1px solid var(--border-subtle);
 }
 .ocr-suspects-note {
@@ -15775,8 +15341,6 @@ rect.ann-highlight.ann-preview {
 .tools-palette-entry[data-tool-id="delete"]:hover .tools-palette-entry-icon { color: var(--sem-attention); }
 .tools-palette-entry[data-tool-id="sign"] .tools-palette-entry-icon,
 .tools-palette-entry[data-tool-id="sign"]:hover .tools-palette-entry-icon { color: var(--sem-affirmative); }
-.tools-palette-entry[data-tool-id="forms"] .tools-palette-entry-icon,
-.tools-palette-entry[data-tool-id="forms"]:hover .tools-palette-entry-icon { color: var(--sem-affirmative); }
 .tools-palette-entry[data-tool-id="flatten"] .tools-palette-entry-icon,
 .tools-palette-entry[data-tool-id="flatten"]:hover .tools-palette-entry-icon { color: var(--sem-attention); }
 .tools-palette-entry[data-tool-id="optimize"] .tools-palette-entry-icon,
@@ -16744,7 +16308,10 @@ rect.ann-highlight.ann-preview {
 }
 
 .glass-sidebar-header {
-  height: var(--glass-sidebar-header-h);
+  /* TFL-1411 — min-height replaces the fixed height so a wrapped second
+   * action row GROWS the header instead of being clipped. Same 44px value
+   * keeps every single-line header pixel-identical. */
+  min-height: var(--glass-sidebar-header-h);
   flex: 0 0 auto;
   display: flex;
   align-items: center;
@@ -16770,13 +16337,21 @@ rect.ann-highlight.ann-preview {
 /* Phase 105+ (TFL-854 C1) — the opt-in 52px header override. Applied only
  * when a caller passes height="preferred"; the default stays 44px. */
 .glass-sidebar-header-preferred {
-  height: var(--glass-sidebar-header-h-preferred);
+  /* TFL-1411 — min-height so the 52px preferred header grows when the
+   * action cluster wraps rather than clipping the second row. */
+  min-height: var(--glass-sidebar-header-h-preferred);
 }
 
 .glass-sidebar-actions {
   display: flex;
   align-items: center;
+  /* TFL-1411 — wrap + min-width let the shared header action cluster flow
+   * onto extra rows inside narrow panels instead of overflowing/clipping.
+   * flex-end keeps wrapped rows trailing-aligned; gap doubles as row+column gap. */
+  flex-wrap: wrap;
+  justify-content: flex-end;
   gap: var(--space-small);
+  min-width: 0;
   min-height: 0;
 }
 
@@ -18323,9 +17898,10 @@ rect.ann-highlight.ann-preview {
   align-items: center;
   gap: var(--space-small);
   /* Phase 37 (item 15) — the PAGES header has no title, so the actions cluster
-   * fills the header row: Combine stays at the leading edge and the collapse
-   * chevron is pushed to the trailing edge by its own margin-left:auto. With a
-   * title present (EDIT/REVIEW/DELIVER) this is a harmless flex-grow. */
+   * fills the header row: the direct tool icons (layout / combine / remove
+   * blank pages) stay at the leading edge and the collapse chevron is pushed to
+   * the trailing edge by its own margin-left:auto. With a title present
+   * (EDIT/REVIEW/DELIVER) this is a harmless flex-grow. */
   flex: 1 1 auto;
 }
 
@@ -18334,26 +17910,31 @@ rect.ann-highlight.ann-preview {
   min-width: 0;
 }
 
-/* The header's merge entry — Phase 91: migrated to the canonical button
- * system (`btn btn-secondary`). The legacy class is a LAYOUT alias only. */
+/* The header's direct tool icons — Phase 124 retired the labelled More menu.
+ * Layout aliases only; colour comes from the canonical tertiary variant. */
+.context-panel-layout,
+.context-panel-remove-blank,
 .context-panel-combine {
   flex: 0 0 auto;
 }
 
-/* Phase 111 (chunk B) — the header's labelled More entry (Combine and
- * Remove blank pages live in its menu now). Layout alias only; colour comes
- * from the canonical secondary variant. */
-.context-panel-more {
-  flex: 0 0 auto;
-}
-
-/* Phase 111 (chunk D2b) — the header More is a navigator primary control, so it
- * meets the same 44px coarse-pointer target as `.thumb-more`. */
+/* Phase 124 — the header's direct tool icons are navigator primary controls,
+ * so each meets the same 44px coarse-pointer target as `.thumb-more`. */
 @media (pointer: coarse) {
-  .context-panel-more {
+  .context-panel-layout {
+    min-height: 44px;
+  }
+
+  .context-panel-remove-blank {
+    min-height: 44px;
+  }
+
+  .context-panel-combine {
     min-height: 44px;
   }
 }
+
+
 
 .context-panel-body {
   display: flex;
@@ -19112,12 +18693,28 @@ rect.ann-highlight.ann-preview {
   border-radius: var(--radius-1);
 }
 
-.thumb-footer {
+/* TFL-1465 — the card's controls are now an OVERLAY bar pinned to the bottom
+ * edge of the page preview itself. Absolute offsets resolve against the card's
+ * PADDING box, so 6px equals the 6px padding gap = the preview's outer edge
+ * (7px from the card's outer edge incl. the 1px border). Checkbox left, label,
+ * current eye indicator, More right. It overlays the preview, so the card's flow
+ * height stays preview + uniform inset. A translucent glass bar keeps the row
+ * legible over the white page in every theme. */
+.thumb-overlay {
+  position: absolute;
+  left: 6px;
+  right: 6px;
+  bottom: 6px;
   display: flex;
   align-items: center;
   gap: var(--sp-1);
-  margin-top: 6px;
-  min-height: 32px;
+  min-height: 34px;
+  padding: 0 var(--sp-1);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-1);
+  background: color-mix(in srgb, var(--bg-raised) 88%, transparent);
+  -webkit-backdrop-filter: var(--glass-blur);
+  backdrop-filter: var(--glass-blur);
   text-align: left;
 }
 
@@ -19130,7 +18727,7 @@ rect.ann-highlight.ann-preview {
   cursor: pointer;
 }
 
-.thumb-footer .thumb-label {
+.thumb-overlay .thumb-label {
   margin-top: 0;
   flex: 1 1 auto;
   min-width: 0;
@@ -19141,13 +18738,13 @@ rect.ann-highlight.ann-preview {
 }
 
 /* Current page is DISTINCT from the batch selection: a violet leading marker
- * on the card plus this visible "Viewing" label. Never inferred from the set. */
+ * on the card plus this eye-icon indicator in the overlay row (TFL-1465 — the
+ * old "Viewing" text is now an icon). Never inferred from the batch set. */
 .thumb-viewing {
   flex: 0 0 auto;
-  font-size: var(--fs-xs);
-  font-weight: 500;
+  display: inline-flex;
+  align-items: center;
   color: var(--accent);
-  white-space: nowrap;
 }
 
 .thumb-current-marker {
@@ -20483,7 +20080,7 @@ cursor: pointer;
 }
 
 .command-palette-input::placeholder {
-  color: var(--fg-faint);
+  color: var(--tf-text-supporting);
 }
 
 /* The visible focus ring the palette's keyboard contract needs. */
@@ -22606,7 +22203,7 @@ cursor: pointer;
 }
 
 .doc-info-section-empty {
-  color: var(--fg-faint);
+  color: var(--tf-text-supporting);
   font-size: var(--fs-sm);
 }
 
@@ -23291,6 +22888,19 @@ cursor: pointer;
   pointer-events: auto;
 }
 
+/* Phase 126 (chunk A) — the in-canvas warning/error notice joins the same
+ * cluster, adopting the identical region/toggle treatment so its collapsed "i"
+ * sits on the control row exactly like the other notices. */
+.canvas-notices .canvas-alert-notice-region {
+  display: contents;
+}
+
+.canvas-notices .canvas-alert-notice-collapsed-toggle {
+  position: static;
+  order: -2;
+  pointer-events: auto;
+}
+
 /* Each expanded box is a rounded, slightly translucent surface. It is a
  * full-width wrapped item, so it always occupies its own line below the
  * control row: two expanded boxes stack vertically (never overlap) and every
@@ -23299,7 +22909,8 @@ cursor: pointer;
  * morph growing from the collapsed "i" origin. */
 .canvas-top-right .protection-notice,
 .canvas-top-right .conversion-notice,
-.canvas-top-right .pdf3d-notice {
+.canvas-top-right .pdf3d-notice,
+.canvas-top-right .canvas-alert-notice {
   position: static;
   flex: 0 0 100%;
   margin: 0;
@@ -23325,6 +22936,152 @@ cursor: pointer;
   align-items: flex-start;
   max-height: calc(100cqh - var(--tf-chrome-y, 0px) - 200px);
   overflow: auto;
+}
+
+/* Phase 126 (chunk A) — the in-canvas warning/error notice. The box geometry
+ * lives in the shared `.canvas-top-right` block above; this block adds its
+ * flex layout, tone accent, list body and the Phase 59/67 enter/exit motion.
+ * Tone is carried by the existing `--warning` / `--error` tokens only: a
+ * functional left accent on the box, no new token, no hardcoded value. */
+.canvas-alert-notice {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--sp-2);
+  font-size: var(--fs-sm);
+  line-height: 1.45;
+  animation: canvas-alert-notice-in var(--motion-duration-standard) var(--motion-ease-enter) both;
+}
+
+.canvas-alert-notice[data-canvas-alert-tone="warning"] {
+  border-left: 3px solid var(--warning);
+}
+
+.canvas-alert-notice[data-canvas-alert-tone="error"] {
+  border-left: 3px solid var(--error);
+}
+
+.canvas-alert-notice--leaving {
+  animation: canvas-alert-notice-out var(--motion-duration-fast) var(--motion-ease-exit) both;
+}
+
+@keyframes canvas-alert-notice-in {
+  from {
+    opacity: 0;
+    transform: scale(var(--motion-scale-enter));
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes canvas-alert-notice-out {
+  from {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: translateY(-4px) scale(var(--motion-scale-exit));
+  }
+}
+
+.canvas-alert-notice-messages {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.canvas-alert-notice-message {
+  margin: 0;
+}
+
+/* Phase 126 — the collapse control mirrors the sibling notices' own hover ink
+ * and never lifts off the box. */
+.canvas-alert-notice-collapse {
+  margin-left: auto;
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  min-width: 0;
+  height: 24px;
+  padding: 0;
+  gap: 0;
+  border: none;
+  border-radius: var(--radius-2);
+  background: transparent;
+  color: var(--fg-muted);
+  cursor: pointer;
+  transition: background-color var(--motion-duration-fast) var(--motion-ease-standard);
+}
+
+.canvas-alert-notice-collapse:hover {
+  background: var(--accent);
+  color: var(--bg-base);
+}
+
+.canvas-alert-notice-collapse:focus-visible,
+.canvas-alert-notice-collapsed-toggle:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
+.canvas-alert-notice-collapsed-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  min-width: 0;
+  height: 28px;
+  padding: 0;
+  gap: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-2);
+  background: var(--bg-elevated);
+  color: var(--accent-text);
+  cursor: pointer;
+  box-shadow: var(--shadow-popover);
+  transform-origin: top left;
+  animation: canvas-alert-notice-icon-in var(--motion-duration-fast) var(--motion-ease-enter) both;
+}
+
+.canvas-alert-notice-collapsed-toggle:hover {
+  background: var(--accent);
+  color: var(--bg-base);
+}
+
+@keyframes canvas-alert-notice-icon-in {
+  from {
+    opacity: 0;
+    transform: scale(var(--motion-scale-enter));
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+/* Reduced-motion / Animations-OFF catch-all: the shared duration tokens already
+ * collapse to the canonical no-motion value; this drops the notice animations
+ * outright so the settled box is never mid-keyframe on that path. */
+@media (prefers-reduced-motion: reduce) {
+  .canvas-alert-notice,
+  .canvas-alert-notice--leaving,
+  .canvas-alert-notice-collapsed-toggle {
+    animation: none;
+  }
+}
+
+:root[data-animations="off"] .canvas-alert-notice,
+:root[data-animations="off"] .canvas-alert-notice--leaving,
+:root[data-animations="off"] .canvas-alert-notice-collapsed-toggle {
+  animation: none;
 }
 
 /* Enter morph — the Phase 59/67 `*-notice-in` keyframes are redefined below to
@@ -23866,7 +23623,9 @@ cursor: pointer;
 }
 
 .tf-panel-header-preferred {
-  height: var(--tf-panel-header-height-preferred);
+  /* TFL-1411 — min-height so this 52px header grows when the action
+   * cluster wraps instead of clipping it. */
+  min-height: var(--tf-panel-header-height-preferred);
 }
 
 .tf-panel-header-title {
@@ -23920,15 +23679,16 @@ cursor: pointer;
   border-radius: var(--tf-panel-field-radius);
 }
 
+/* TFL-1413 - panel empty-state body text reads as normal body text: left-aligned. */
 .tf-panel-empty {
   display: flex;
   flex-direction: column;
-  align-items: center;
+  align-items: flex-start;
   justify-content: center;
   gap: var(--space-small, 8px);
   padding: var(--tf-panel-padding);
   color: var(--tf-panel-ink-secondary);
-  text-align: center;
+  text-align: left;
 }
 
 .tf-panel-empty-mark {
@@ -23937,8 +23697,8 @@ cursor: pointer;
 
 .tf-panel-empty-headline {
   margin: 0;
-  font-size: var(--tf-panel-heading-size);
-  font-weight: var(--tf-panel-heading-weight);
+  font-size: var(--tf-panel-body-size);
+  font-weight: var(--type-body-weight);
   color: var(--tf-panel-ink);
 }
 
@@ -25028,7 +24788,7 @@ cursor: pointer;
 }
 
 .intake-index {
-  color: var(--fg-faint);
+  color: var(--tf-text-supporting);
   font-variant-numeric: tabular-nums;
   text-align: right;
 }
