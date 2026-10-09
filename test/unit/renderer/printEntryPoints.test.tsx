@@ -21,9 +21,21 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 
-vi.mock("../../../src/renderer/components/DocumentView", () => ({
-  DocumentView: (): unknown => null,
-}));
+vi.mock("../../../src/renderer/components/DocumentView", async () => {
+  const { createElement } = await import("react");
+  return {
+    // Phase 126 — warning/error feedback renders as the in-canvas
+    // `CanvasAlertNotice`. For a document tab the box is handed to DocumentView
+    // as `canvasNotices`, so this stand-in must mount them for the assertion
+    // (the retired `.toast-text` surface is never produced for an error).
+    DocumentView: ({ canvasNotices }: { canvasNotices?: unknown }): unknown =>
+      createElement(
+        "div",
+        { className: "stub-document", "data-canvas-overlay": true },
+        canvasNotices as never,
+      ),
+  };
+});
 vi.mock("../../../src/renderer/pdf/pdfjs", () => ({
   openPdfDocument: async (): Promise<unknown> => ({
     doc: {
@@ -121,6 +133,17 @@ async function flushAsync(): Promise<void> {
   });
 }
 
+/** Phase 126 — the in-canvas notice enters as a collapsed "i" and commits to
+ *  the expanded box on a double rAF (`useNoticeCollapse`). The App boots with
+ *  animations ON (`DEFAULT_SETTINGS.animationsEnabled`), so give that hand-off
+ *  real time to settle before asserting the message is mounted. */
+async function settleNoticeEnter(): Promise<void> {
+  await act(async (): Promise<void> => {
+    await new Promise<void>((resolve) => setTimeout(resolve, 60));
+  });
+  await flushAsync();
+}
+
 describe("Phase 37 item 17 - print entry points open the standalone window", () => {
   let container: HTMLElement;
   let root: Root;
@@ -207,7 +230,10 @@ describe("Phase 37 item 17 - print entry points open the standalone window", () 
       await flushAsync();
     });
 
-    const toast = container.querySelector<HTMLElement>(".toast-text");
+    await settleNoticeEnter();
+    const toast = container.querySelector<HTMLElement>(
+      '[data-canvas-alert-tone="error"] [data-canvas-alert-message]',
+    );
     expect(toast).not.toBeNull();
     expect(toast?.textContent).toContain("Could not open the print window");
     expect(toast?.textContent).toContain("The print window context is invalid.");
@@ -249,7 +275,10 @@ describe("Phase 37 item 17 - print entry points open the standalone window", () 
       await flushAsync();
     });
     expect(printOpen).not.toHaveBeenCalled();
-    const toast = container.querySelector<HTMLElement>(".toast-text");
+    await settleNoticeEnter();
+    const toast = container.querySelector<HTMLElement>(
+      '[data-canvas-alert-tone="error"] [data-canvas-alert-message]',
+    );
     expect(toast).not.toBeNull();
     expect(toast?.textContent).toContain("Open a document to print");
   });

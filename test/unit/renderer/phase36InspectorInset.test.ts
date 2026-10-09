@@ -44,7 +44,10 @@ describe("Phase 36 chunk 5 — the Inspector's width", () => {
   });
 
   it("the Inspector surface consumes the shared token (no magic width)", () => {
-    const rule = CLEAN.match(/\.inspector\s*\{([^}]*)\}/);
+    // Anchor to the line-leading `.inspector` rule: the sheet also declares a
+    // scoped `.app-main[data-panel-resizing] .inspector { transition: none }`
+    // rule EARLIER, which an unanchored match would resolve instead.
+    const rule = CLEAN.match(/^[ \t]*\.inspector[ \t]*\{([^}]*)\}/m);
     expect(rule, ".inspector rule missing").not.toBeNull();
     expect(rule?.[1] ?? "").toMatch(/width:\s*var\(--tools-panel-w,\s*264px\)/);
   });
@@ -114,7 +117,12 @@ describe("Phase 36 chunk 5 — DEF-297 frosted rules are untouched", () => {
   });
 
   it("the Inspector stylesheet is token-only (no hardcoded colours)", () => {
-    const idx = CLEAN.indexOf(".inspector {");
+    // Start at the line-leading base `.inspector` rule (a scoped
+    // `.app-main[data-panel-resizing] .inspector` rule sits earlier in the
+    // sheet; slice from it would swallow the whole stylesheet).
+    const start = CLEAN.match(/^[ \t]*\.inspector[ \t]*\{/m);
+    expect(start, "base `.inspector {` rule missing").not.toBeNull();
+    const idx = start === null ? -1 : start.index;
     const block = CLEAN.slice(idx, CLEAN.indexOf(".inspector .ocr-suspects-panel"));
     expect(block).not.toMatch(/#[0-9a-fA-F]{3,8}\b/);
     expect(block).not.toMatch(/rgba?\(/);

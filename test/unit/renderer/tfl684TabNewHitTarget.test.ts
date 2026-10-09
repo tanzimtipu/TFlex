@@ -29,22 +29,39 @@ function readStyles(): string {
   return readFileSync(STYLES_PATH, "utf8");
 }
 
+/** True when `idx` is the first non-whitespace token on its line, so a
+ *  selector is not part of a longer compound / descendant selector. The tab
+ *  strip now carries scoped variants (`.tab-area[data-tab-style="chrome"]
+ *  .tab-list-new`) whose rule sits EARLIER in the sheet than the base rule; an
+ *  unanchored match would resolve the scoped variant instead. */
+function startsLine(src: string, idx: number): boolean {
+  for (let i = idx - 1; i >= 0; i -= 1) {
+    const ch = src[i];
+    if (ch === "\n") return true;
+    if (!/\s/.test(ch ?? "")) return false;
+  }
+  return true;
+}
+
 /** Body of a top-level rule whose selector matches `selector {`, or null. */
 function ruleBody(src: string, selector: string): string | null {
   const stripped = src.replace(/\/\*[\s\S]*?\*\//g, "");
   const re = new RegExp(`${selector}\\s*\\{`, "g");
-  const m = re.exec(stripped);
-  if (m === null) return null;
-  const braceOpen = stripped.indexOf("{", m.index);
-  if (braceOpen === -1) return null;
-  let depth = 0;
-  for (let i = braceOpen; i < stripped.length; i += 1) {
-    const ch = stripped[i];
-    if (ch === "{") depth += 1;
-    else if (ch === "}") {
-      depth -= 1;
-      if (depth === 0) return stripped.slice(braceOpen + 1, i);
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(stripped)) !== null) {
+    if (!startsLine(stripped, m.index)) continue;
+    const braceOpen = stripped.indexOf("{", m.index);
+    if (braceOpen === -1) return null;
+    let depth = 0;
+    for (let i = braceOpen; i < stripped.length; i += 1) {
+      const ch = stripped[i];
+      if (ch === "{") depth += 1;
+      else if (ch === "}") {
+        depth -= 1;
+        if (depth === 0) return stripped.slice(braceOpen + 1, i);
+      }
     }
+    return null;
   }
   return null;
 }

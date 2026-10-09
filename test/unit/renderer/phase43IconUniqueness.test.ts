@@ -179,7 +179,6 @@ const SHARED_ALLOW: Readonly<Record<string, string>> = {
   PanelRightDashed: "the clear-a-pane verb (registry + the shared Quiet Precision registry holds its retained glyph)",
   SeparatorVertical: "the resize-panes verb (registry + the shared Quiet Precision registry holds its retained glyph)",
   Info: "the about verb (registry + the shared Quiet Precision registry holds its retained glyph)",
-  Menu: "the application-menu verb (registry + the shared Quiet Precision registry holds its retained glyph)",
   Minimize: "the minimize-window caption control (registry + the shared Quiet Precision registry holds its retained glyph)",
   Palette: "the annotation-colour verb (registry + the shared Quiet Precision registry holds its retained glyph)",
   // Phase 103 (TFL-831, chunk 3a) — the wave-1 Quiet Precision command IDs

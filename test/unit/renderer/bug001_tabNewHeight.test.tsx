@@ -39,6 +39,20 @@ function extractRuleBody(src: string, selectorIndex: number): string {
   return "";
 }
 
+/** True when `idx` is the first non-whitespace token on its line, so a
+ *  selector is not part of a longer compound / descendant selector. The tab
+ *  strip now carries scoped variants (e.g. `.tab-area[data-tab-style="chrome"]
+ *  .tab-new`) that appear EARLIER in the sheet than the base rule; an
+ *  unanchored indexOf would resolve those instead of the base contract. */
+function startsLine(src: string, idx: number): boolean {
+  for (let i = idx - 1; i >= 0; i -= 1) {
+    const ch = src[i];
+    if (ch === "\n") return true;
+    if (!/\s/.test(ch ?? "")) return false;
+  }
+  return true;
+}
+
 function findRuleBody(src: string, selector: string): string | null {
   const stripped = stripCssComments(src);
   let from = 0;
@@ -47,7 +61,9 @@ function findRuleBody(src: string, selector: string): string | null {
     if (idx === -1) return null;
     let cursor = idx + selector.length;
     while (cursor < stripped.length && /\s/.test(stripped[cursor] ?? "")) cursor += 1;
-    if (stripped[cursor] === "{") return extractRuleBody(stripped, idx);
+    if (stripped[cursor] === "{" && startsLine(stripped, idx)) {
+      return extractRuleBody(stripped, idx);
+    }
     from = idx + selector.length;
   }
 }
