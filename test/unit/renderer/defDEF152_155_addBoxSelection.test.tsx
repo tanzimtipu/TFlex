@@ -171,8 +171,8 @@ function msgBoxTool(): EditState {
   return { ...initialEditState, tool: "box", textBoxes: [makeTextBox()] };
 }
 
-describe("DEF-152 — the moved box's action bar carries Confirm / Edit / Delete and Confirm commits the threaded position", () => {
-  it("the bar renders Confirm (DEF-152) + Edit + Delete for a selected/moved box; a drag parks a PENDING move", () => {
+describe("DEF-152 — the moved box's action bar carries Confirm + Cancel with Delete behind More, and Confirm commits the threaded position", () => {
+  it("the bar renders Confirm + Cancel (Phase 117) with Delete behind More for a selected/moved box; a drag parks a PENDING move", () => {
     const { host, onCommitTextBoxMove, unmount } = mountBoxTool(msgBoxTool());
     try {
       pressBox(host, 120, 120);
@@ -182,11 +182,24 @@ describe("DEF-152 — the moved box's action bar carries Confirm / Edit / Delete
       expect(onCommitTextBoxMove).not.toHaveBeenCalled();
       const bar = host.querySelector("[data-edit-box-toolbar]");
       expect(bar, "bar appears for the selected/moved box").not.toBeNull();
-      // Phase 37 item 11 — Confirm / Delete / Cancel (the Edit verb is gone).
-      expect(host.querySelector("[data-edit-box-action='confirm']")?.textContent?.trim()).toBe("Confirm");
-      expect(host.querySelector("[data-edit-box-action='delete']")?.textContent?.trim()).toBe("Delete");
-      expect(host.querySelector("[data-edit-box-action='cancel']")?.textContent?.trim()).toBe("Cancel");
+      // Phase 117 (DEF-663) — the primary row is Confirm + Cancel / More; the
+      // destructive Delete lives behind the ONE separated More control, never a
+      // sibling of Confirm. The Edit verb stays gone.
+      const primaryVerbs = [...(bar?.querySelectorAll("button") ?? [])]
+        .filter((b) => b.closest(".content-action-more-menu") === null)
+        .map((b) => b.textContent?.trim());
+      expect(primaryVerbs).toEqual(["Confirm", "Cancel", "More"]);
+      expect(host.querySelector("[data-edit-box-action='delete']"), "Delete is not in the primary row").toBeNull();
       expect(host.querySelector("[data-edit-box-action='edit']"), "no Edit verb").toBeNull();
+      const more = host.querySelector<HTMLButtonElement>("[data-content-action='editbox-more']");
+      if (more === null) throw new Error("More control not found");
+      act((): void => {
+        more.click();
+      });
+      const del = host.querySelector("[data-edit-box-action='delete']");
+      expect(del, "Delete lives behind More").not.toBeNull();
+      expect(del?.textContent?.trim()).toBe("Delete");
+      expect(del?.closest(".content-action-more-menu")).not.toBeNull();
       // Confirm commits the THREADED position (old = engine rect,
       // new = drag end).
       clickConfirm(host);

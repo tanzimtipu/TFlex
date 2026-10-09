@@ -253,6 +253,8 @@ const ANIMATION_EXEMPT: Readonly<Record<string, string>> = {
   ".update-prompt-spinner": "documented indeterminate loading spinner (progress feedback, not an interaction)",
   ".update-prompt-progress-indeterminate .update-prompt-progress-bar":
     "documented indeterminate progress bar (progress feedback, not an interaction)",
+  ".activity-shelf-track-bar--indeterminate":
+    "Phase 118 (TFL-1216 chunk C2) Activity Shelf indeterminate progress bar (progress feedback, not an interaction): the 1.4s loop must keep advancing when reduced-motion / animations-off collapse every --motion-duration-* token to 0ms",
 };
 
 /**

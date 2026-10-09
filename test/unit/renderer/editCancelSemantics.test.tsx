@@ -70,6 +70,25 @@ Element.prototype.releasePointerCapture = function (this: Element): void {
   void this;
 };
 
+// Phase 117 gave the box action bar a fit gate: when the page-view anchors a
+// control smaller than the minimum (a sub-8px box) or where no side can clear
+// the viewport, it does not render. jsdom reports clientWidth/Height 0, which
+// collapses the fit scale to its 50px floor and starves the gate, so give the
+// scroller a real viewport exactly as a window would (the TFL-1116 harness).
+const hostProto = window.HTMLElement.prototype as unknown as {
+  clientHeight?: number;
+  clientWidth?: number;
+  scrollTo?: (o: { top: number; behavior?: ScrollBehavior }) => void;
+};
+Object.defineProperty(hostProto, "clientHeight", { configurable: true, get: (): number => 800 });
+Object.defineProperty(hostProto, "clientWidth", { configurable: true, get: (): number => 1200 });
+if (typeof hostProto.scrollTo !== "function") {
+  hostProto.scrollTo = function (this: Element, o: { top: number; behavior?: ScrollBehavior }): void {
+    void this;
+    void o;
+  };
+}
+
 /** A one-page stub whose text layer yields a single run at page points
  *  (100, 100) size 200x20 (PDF transform[5] = pageHeight - y - height). */
 function makeDocStub(numPages: number, withRun = false): PDFDocumentProxy {

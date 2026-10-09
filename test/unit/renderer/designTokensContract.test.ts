@@ -1167,8 +1167,12 @@ describe("Phase D — three-theme coherence + embedded theme picker license", ()
     const roleSelectors = [...css.matchAll(/([^{}]*)\{[^}]*color:\s*var\(--(?:sem-[a-z]+|tf-stage-[a-z]+)\)/g)];
     expect(roleSelectors.length).toBe(roleUses.length);
     for (const m of roleSelectors) {
+      // Surface allow-list. Phase 118 added the Intake Tray: its
+      // `.intake-state--converting` state legitimately routes through the
+      // declared `--sem-primary` role (colour + label both signal the state),
+      // so the intake surface joins the known-surface list here.
       expect(m[1] ?? "").toMatch(
-        /\[data-(?:icon|tool|edit-tool|tool-id|rail-tab|stage|dock-verb|context-panel-stage|home-tool)=|tools-palette-entry-icon|action-dock-verb|action-dock-edit|titlebar-file-btn|header-|theme-toggle|tab-new|stage-rail|canvas-pill|command-palette-row-icon|inspector|context-panel|tool-btn|\.context-panel|\.inspector|\.command-palette/,
+        /\[data-(?:icon|tool|edit-tool|tool-id|rail-tab|stage|dock-verb|context-panel-stage|home-tool)=|tools-palette-entry-icon|action-dock-verb|action-dock-edit|titlebar-file-btn|header-|theme-toggle|tab-new|stage-rail|canvas-pill|command-palette-row-icon|intake-state|inspector|context-panel|tool-btn|\.context-panel|\.inspector|\.command-palette/,
       );
     }
   });

@@ -219,8 +219,10 @@ describe('Phase 105 (chunk D) — the responsive rail DOM contract', () => {
   it('the responsive plan rides --tf-tab-width on .tab-list and the .tab consumes it', () => {
     const host = renderOverflowRail(16);
     const list = host.querySelector<HTMLElement>('.tab-list');
-    // At 700px only five 136px tabs fit; the plan writes the 136px floor.
-    expect(list?.style.getPropertyValue('--tf-tab-width')).toBe('136px');
+    // Phase 119 (chunk C) raised the rail tab floor to 148px
+    // (LAYOUT.railMinTabPx); at 700px the plan fits four 148px tabs, so the
+    // plan writes the 148px floor.
+    expect(list?.style.getPropertyValue('--tf-tab-width')).toBe('148px');
     expect(blockFor('.tab {')).toContain('width: var(--tf-tab-width');
     for (const tab of host.querySelectorAll('.tab')) {
       expect(tab.classList.contains('tab')).toBe(true);

@@ -198,7 +198,10 @@ describe('DEF-318 — the rendered REVIEW body keeps the sibling categories reac
     const { host, unmount } = mountReview();
     try {
       const wrapper = host.querySelector('[data-context-panel-annotations]');
-      const hint = wrapper?.querySelector('.hint');
+      // Phase 116 (TFL-1228 chunk D) migrated the empty-state hint onto the
+      // shared Thread Stream `AnnotationEmptyState` (`.ann-empty`); the legacy
+      // `.hint` node is gone. The containment intent is unchanged.
+      const hint = wrapper?.querySelector('.ann-empty');
       expect(hint, 'the hint is inside the annotations wrapper').not.toBeNull();
       // The hint belongs to the annotations category, never another one.
       expect(

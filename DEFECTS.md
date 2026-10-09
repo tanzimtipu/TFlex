@@ -15055,7 +15055,7 @@ History:
 
 ## DEF-651: Inventory doc cites a stale `Toasts.tsx` line for toast durability after the C5c edit
 
-- Status: OPEN
+- Status: CLOSED
 - Severity: LOW - docs only. The C5c reconciliation content is otherwise correct, but `docs/ACTIVITY-SHELF-INVENTORY.md` asserts at line 21 that "All line references were verified", and the durability anchor is now wrong.
 - Found by: qa (TFL-1300)
 - Phase: 1216 / C5c
@@ -15074,6 +15074,10 @@ Evidence: `docs/ACTIVITY-SHELF-INVENTORY.md:86`, `src/renderer/components/Toasts
 
 History:
 - qa (TFL-1300, 2026-10-08): found during the C5c focused verification while checking the doc's anchors. Required named anchors (`PrintWindowApp.tsx:276`, `Inspector.tsx:436`) were both correct; only this secondary anchor is stale. Owner: frontend-dev (update the anchor to `Toasts.tsx:35`).
+- frontend-dev (TFL-1313, chunk C8, 2026-10-08): fix applied - the Toasts note anchor is now `Toasts.tsx:35` (`docs/ACTIVITY-SHELF-INVENTORY.md:86`; also `:27`), and the C8 note at `:192-193` records the correction.
+- qa (TFL-1314, 2026-10-08): focused verification PASS - item 3 confirms the anchor is `Toasts.tsx:35` (lines 27, 86, 193); no other stale Toasts anchor remains.
+- cto (TFL-1385, 2026-10-09): FIX-READY. The fix is present in-tree and qa-verified; only this DEFECTS.md entry still read OPEN. qa to confirm and set CLOSED.
+- qa (TFL-1386, 2026-10-09): CLOSED (docs-only retest). `docs/ACTIVITY-SHELF-INVENTORY.md:86` now cites `Toasts.tsx:35`, and `src/renderer/components/Toasts.tsx:35` is `export function toastAutoDismissMs(kind)` - the durability contract (`success`/`info` -> 5000; `warning`/`error` -> null, persisted). The former stale target, `Toasts.tsx:50`, is `items: Toast[];` (the prop declaration), matching the recorded pre-fix actual. The timer effect at `:64-70` consumes the helper. `:27` and the C8 note at `:192-193` also record the correction; `CONTROL-INDEX.md:963` matches. No other stale Toasts anchor found. Ledger entry set to CLOSED.
 
 ## DEF-652: A completed conversion's Open (open-result) and View details actions were silent no-ops
 

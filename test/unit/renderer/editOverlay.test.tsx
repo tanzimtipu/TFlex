@@ -413,8 +413,12 @@ describe("DEF-223 — image placement move/resize commits the pre-drag rect", ()
     );
     try {
       const layer = host.querySelector(".edit-layer") as HTMLElement | null;
+      // Phase 117 (chunk D) migrated the image handles onto the shared
+      // SelectionChrome: the SE handle is `.selection-handle-se` with
+      // `data-selection-handle="se"` (the legacy `.edit-image-handle-se` class
+      // is gone).
       const handle = host.querySelector(
-        ".edit-image-handle-se",
+        ".selection-handle-se",
       ) as HTMLElement | null;
       expect(layer).not.toBeNull();
       expect(handle).not.toBeNull();
@@ -489,8 +493,26 @@ describe("TFL-987 — image placement bar adopts ContextToolbox", () => {
       expect(bar.getAttribute("data-context-toolbox")).toBe("true");
       expect(bar.getAttribute("role")).toBe("toolbar");
       expect(bar.getAttribute("aria-label")).toBe("Image placement actions");
-      const verbs = [...bar.querySelectorAll("button")].map((b) => b.textContent?.trim());
-      expect(verbs).toEqual(["Replace", "Crop", "Remove"]);
+      // Phase 117 (DEF-663) — the primary row is Replace + Crop with the
+      // destructive Remove behind the ONE separated More control (never a
+      // sibling of Replace).
+      const primaryVerbs = [...bar.querySelectorAll("button")]
+        .filter((b) => b.closest(".content-action-more-menu") === null)
+        .map((b) => b.textContent?.trim());
+      expect(primaryVerbs).toEqual(["Replace", "Crop", "More"]);
+      expect(
+        bar.querySelector("[data-content-action='image-delete']"),
+        "Remove is not in the primary row",
+      ).toBeNull();
+      const more = bar.querySelector<HTMLButtonElement>("[data-content-action='image-more']");
+      if (more === null) throw new Error("image More control not found");
+      act((): void => {
+        more.click();
+      });
+      const remove = bar.querySelector("[data-content-action='image-delete']");
+      expect(remove, "Remove lives behind More").not.toBeNull();
+      expect(remove?.textContent?.trim()).toBe("Remove");
+      expect(remove?.closest(".content-action-more-menu")).not.toBeNull();
       expect(host.querySelector("[data-crop-toggle]")).not.toBeNull();
       // Legacy placement: rect at (100,100,200x100); the bar floats 4pt below
       // and clamps left to the placement's left edge.

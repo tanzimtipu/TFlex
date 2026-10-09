@@ -51,7 +51,11 @@ const NAMED_FILES: readonly string[] = [
   "components/ContextPanel.tsx",
   "components/Inspector.tsx",
   "components/OcrSuspectsPanel.tsx",
-  "annotations/AnnotationsPanel.tsx",
+  // Phase 116 (TFL-1228 chunk D) migrated the annotations list onto the Thread
+  // Stream primitives: the panel is now a composition shell that renders no
+  // glyph, so the icon-identity surface moves to the primitives that own the
+  // ann* row icons and the delete verb.
+  "annotations/ThreadStream.tsx",
   "annotations/AnnotationToolbar.tsx",
   "annotations/AnnotationOverlay.tsx",
   "annotations/AnnCommentIcon.tsx",
@@ -140,6 +144,9 @@ const SHARED_ALLOW: Readonly<Record<string, string>> = {
   PanelRightOpen: "expand a side panel (rail + context panel + inspector)",
   Check: "the check/confirm mark (registry toggle + annotation tool menu selection)",
   Ellipsis: "the more-actions overflow (registry pageContextMenu/dockOverflow retained glyph + toolsRegistry)",
+  // Phase 117 (chunk D) — the content-action-bar More control (selectableContent)
+  // reuses the dock overflow glyph for the same "more actions" disclosure.
+  dockOverflow: "the more-actions overflow disclosure (the ActionDock overflow control + the shared content-action-bar More control); one overflow metaphor, two chrome surfaces",
   // Phase 111 (chunk B) — the More affordance on the page-card footer and the
   // PAGES panel header. One overflow metaphor, two sibling surfaces.
   MoreHorizontal: "the More overflow affordance (the PAGES panel header More + the per-page card footer More)",

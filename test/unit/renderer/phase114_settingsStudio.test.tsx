@@ -367,7 +367,10 @@ describe("Settings Studio CSS geometry contract (chunk B)", () => {
   });
 
   it("uses semantic tokens only — no raw colour literal in the Studio section", () => {
-    expect(studioCss()).not.toMatch(/#[0-9a-fA-F]{3,8}\b/);
+    // The slice now runs to EOF and includes the later Activity Shelf / Intake
+    // Tray sections, whose explanatory comments quote token hex values (e.g.
+    // the TFL-1241 note). Strip comments so only real declarations are scanned.
+    expect(studioCss().replace(/\/\*[\s\S]*?\*\//g, "")).not.toMatch(/#[0-9a-fA-F]{3,8}\b/);
   });
 });
 

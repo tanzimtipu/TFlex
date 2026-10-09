@@ -1,5 +1,29 @@
 # AGENTS_NOTES.md — archived operational history
 
+## 2026-10-09: A release publish chunk must NOT be blockedBy the gate chunk (completion != PASS)
+
+TFL-1380 (Release OTA 1.52.0): K3 (TFL-1383, qa) reported the release gate RED - 18 unit
+tests across 12 renderer files fail `verify:full` - but the qa issue still completed, which
+auto-unblocked the publish chunk K4 (TFL-1384), and K4 went on to commit, tag `v1.52.0`,
+push origin master + tag and publish the GitHub Release. So a broken-suite build shipped
+because `blockedByIssueIds` tracks whether the BLOCKER ISSUE is done, not the verdict inside
+its report. Rule: never express "publish only after the gate passes" as `blockedByIssueIds`
+on the gate issue. Block the publish chunk on the CTO instead - leave it UNCREATED, or file
+it in `todo` with NO blockers but do not let the watchdog own it, and create/activate it only
+after the CTO has READ a GREEN verdict. A publish brief's "push-gate evidence already
+satisfied" line must be grounded in that GREEN report, never assumed.
+
+## 2026-10-09: git-agent skipped an appended brief section and claimed the brief lacked it
+
+K4 (TFL-1384) was PATCHed to prepend an explicit "HYGIENE CLEANUP" step (delete 11 throwaway
+scratch paths via `git rm`); the child description verifiably carried it (4825 chars at run
+time), yet K4 reported "the K4 brief has no such step/list; no files deleted" and published
+without it. Cost: the scratch files stay tracked, the operator's "clean tree fully" item is
+unmet, and a corrective commit is still owed. Rule for git-agent (and every role): read the
+FULL child description including any appended sections; if the description contains a step
+that contradicts your expectation of the brief, EXECUTE it or STOP and report - never silently
+skip it and claim the brief lacked it.
+
 ## 2026-10-09: A phase-close commit can omit a phase-owned hunk in a file outside the CTO's named set
 
 Phase 119 (TFL-1231): the chunk K commit (5a6d418, TFL-1373) omitted two unmistakable Phase 119

@@ -23,6 +23,14 @@ export interface WhatsNewEntry {
 /** Ordered newest first. */
 export const WHATS_NEW: WhatsNewEntry[] = [
   {
+    version: '1.52.1',
+    date: '2026-10-09',
+    highlights: [
+      'A maintenance release that completes the Jovrel 1.52 visual-overhaul refresh with a fully verified test suite.',
+      'No feature behaviour changed in this update.',
+    ],
+  },
+  {
     version: '1.52.0',
     date: '2026-10-08',
     highlights: [

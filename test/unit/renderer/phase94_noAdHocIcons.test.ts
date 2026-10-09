@@ -93,7 +93,12 @@ const RAW_SIZE_SCAN_FILES: readonly string[] = [
   // its StickyNote render is a zoom-scaled on-page page-content mark (dynamic
   // `size`), not chrome, so it keeps its direct render.
   "annotations/AnnotationCommentBox.tsx",
-  "annotations/AnnotationsPanel.tsx",
+  // Phase 116 (TFL-1228 chunk D) migrated the annotations list onto the Thread
+  // Stream primitives: AnnotationsPanel is now a composition shell that renders
+  // no glyph in-file (it delegates to ThreadStreamRow), so the wrapper-presence
+  // surface follows the primitives that own the ann* row icons and the delete
+  // verb.
+  "annotations/ThreadStream.tsx",
   "App.tsx",
   "components/AccountMenu.tsx",
   "components/AnimatedTab.tsx",

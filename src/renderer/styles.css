@@ -9787,7 +9787,7 @@ rect.ann-highlight.ann-preview {
   min-height: 38px;
   padding: 0 var(--space-control);
   border: 1px solid var(--border);
-  border-radius: 9px;
+  border-radius: var(--btn-radius);
   background: var(--bg-raised);
   color: var(--fg);
   font-family: inherit;
@@ -9949,7 +9949,7 @@ rect.ann-highlight.ann-preview {
   overflow-y: auto;
   padding: var(--space-small);
   border: 1px solid var(--border);
-  border-radius: 9px;
+  border-radius: var(--btn-radius);
   background: var(--bg-raised);
 }
 
@@ -9962,7 +9962,7 @@ rect.ann-highlight.ann-preview {
   height: 24px;
   padding: 0;
   border: 1px solid var(--border);
-  border-radius: 9px;
+  border-radius: var(--btn-radius);
   background: var(--bg-raised);
   color: var(--accent-text);
 }

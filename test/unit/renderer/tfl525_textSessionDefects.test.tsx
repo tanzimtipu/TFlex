@@ -70,6 +70,25 @@ Element.prototype.releasePointerCapture = function (this: Element): void {
   void this;
 };
 
+// Phase 117 gave the box action bar a fit gate: a page-view anchor smaller than
+// the minimum (or with no side clear of the viewport) suppresses the floating
+// bar. jsdom reports clientWidth/Height 0, collapsing the fit scale to its 50px
+// floor and starving the gate; give the scroller a real viewport as a window
+// would (the TFL-1116 harness) so the Confirm bar is reachable.
+const hostProto = window.HTMLElement.prototype as unknown as {
+  clientHeight?: number;
+  clientWidth?: number;
+  scrollTo?: (o: { top: number; behavior?: ScrollBehavior }) => void;
+};
+Object.defineProperty(hostProto, "clientHeight", { configurable: true, get: (): number => 800 });
+Object.defineProperty(hostProto, "clientWidth", { configurable: true, get: (): number => 1200 });
+if (typeof hostProto.scrollTo !== "function") {
+  hostProto.scrollTo = function (this: Element, o: { top: number; behavior?: ScrollBehavior }): void {
+    void this;
+    void o;
+  };
+}
+
 // DEF-540/541 — the real DocumentView's PageView renders each page through a
 // 2D canvas context before it snapshots the text items. jsdom's getContext
 // returns null, so the render effect bailed BEFORE `textItemsRef` was set and

@@ -56,6 +56,7 @@ const MIGRATED_SURFACES: readonly string[] = [
   "components/AccountMenu.tsx",
   "components/AccountsDialog.tsx",
   "components/ActionDock.tsx",
+  "components/ActivityShelf.tsx",
   "components/AnimatedDialog.tsx",
   "components/AnimatedPanel.tsx",
   "components/AnimatedTab.tsx",
@@ -154,10 +155,15 @@ const MIGRATED_SURFACES: readonly string[] = [
   "components/selectableContent.tsx",
   "edit/EditOverlay.tsx",
   "edit/TextPropertiesPanel.tsx",
+  "forms/FieldProperties.tsx",
   "forms/FlattenConfirmDialog.tsx",
+  "forms/FormFieldControl.tsx",
   "forms/FormsOverlay.tsx",
+  "forms/GuidedFillPanel.tsx",
+  "forms/GuidedFillPrimitives.tsx",
   "icons/Icon.tsx",
   "icons/quietPrecision.tsx",
+  "intake/IntakeTray.tsx",
   "main.tsx",
   "print-window/PrintWindowApp.tsx",
   "redaction/RedactionOverlay.tsx",
@@ -276,6 +282,8 @@ const CSS_ALLOWLIST: Readonly<Record<string, string>> = {
   // --- structural corner geometry: composed radii, not a single token ---
   ".tab-active::after|border-radius":
     "single-edge structural underline geometry (1px 1px 0 0); a 2px-tall shape, below the 3px token floor",
+  ".selection-handle|border-radius":
+    "Phase 117 shared selection handle: an 8x8 corner grip with a 2px softening radius, below the 3px --radius-1 token floor; a functional affordance, not a tokenised surface",
   ".side-rail|border-radius":
     "structural single-corner rounding (0 0 panel-radius 0): the rail docks flush to the window, only the inner corner rounds",
   ".ann-textbox-grip, .content-grip|border-radius":
@@ -302,6 +310,8 @@ const CSS_ALLOWLIST: Readonly<Record<string, string>> = {
     "documented indeterminate loading spinner (progress feedback, not an interaction): same deliberate exemption from the collapsible motion durations as .update-indicator-spin (phase43AnimationTokens.test.ts ANIMATION_EXEMPT)",
   ".update-prompt-progress-indeterminate .update-prompt-progress-bar|animation":
     "documented indeterminate progress bar (progress feedback, not an interaction): same deliberate exemption from the collapsible motion durations as the loading spinner (phase43AnimationTokens.test.ts ANIMATION_EXEMPT)",
+  ".activity-shelf-track-bar--indeterminate|animation":
+    "Phase 118 (TFL-1216 chunk C2) Activity Shelf indeterminate progress bar (progress feedback, not an interaction): the 1.4s loop must keep advancing when reduced-motion / animations-off collapse every --motion-duration-* token to 0ms, so it deliberately carries a literal duration (phase43AnimationTokens.test.ts ANIMATION_EXEMPT)",
   // --- DEF-546: on-page / paper / data surfaces, never chrome ---
   ".pdf-page|background":
     "on-page paper: DEF-099 keeps the PDF page white in every theme (a blank page must read as paper, not a dark panel); the page's own background is document surface, not chrome",
@@ -319,6 +329,8 @@ const CSS_ALLOWLIST: Readonly<Record<string, string>> = {
     "on-page edit content: the inline text editor overlays the paper page and pins white-on-black text so the on-page content is never inverted in dark mode",
   ".print-preview-sheet|background":
     "on-page paper: the print-preview sheet renders the page as physical paper, white in every theme",
+  ".print-preview-cell|background":
+    "on-page paper (DEF-649): the page-bearing preview cell paints the page as paper-white in every theme so a contain-fitted page raster never letterboxes against dark --bg-base; document surface, not chrome",
   ".watermark-preview-frame|background":
     "on-page paper: the watermark preview frame shows the watermark over paper, white in every theme",
   ".reading-comic-page|background":
