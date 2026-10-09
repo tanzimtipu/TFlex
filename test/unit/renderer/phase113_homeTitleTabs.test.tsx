@@ -170,13 +170,11 @@ describe("Phase 113 — TitleBar File disclosure", () => {
   });
 });
 
-const APP_MENU_GROUPS = [
-  { id: "view", label: "View", entries: [{ id: "zoom", label: "Zoom", action: "zoom" }] },
-];
+const noop = (): void => undefined;
 
 describe("Phase 113 — AppHeader call sites", () => {
   it("renders Save and Save a copy as secondary compact actions", () => {
-    const host = mount(<AppHeader activeId="t1" appMenuGroups={APP_MENU_GROUPS} />);
+    const host = mount(<AppHeader activeId="t1" onOpenPreferences={noop} onThemeChange={noop} />);
     const save = host.querySelector("[data-toolbar-save]");
     const saveAs = host.querySelector("[data-toolbar-save-as]");
     expect(cls(save)).toContain("btn-secondary");
@@ -186,14 +184,15 @@ describe("Phase 113 — AppHeader call sites", () => {
   });
 
   it("keeps Save disabled until the document is modified", () => {
-    const clean = mount(<AppHeader activeId="t1" appMenuGroups={APP_MENU_GROUPS} />);
+    const clean = mount(<AppHeader activeId="t1" onOpenPreferences={noop} onThemeChange={noop} />);
     expect((clean.querySelector("[data-toolbar-save]") as HTMLButtonElement).disabled).toBe(
       true,
     );
     const dirty = mount(
       <AppHeader
         activeId="t1"
-        appMenuGroups={APP_MENU_GROUPS}
+        onOpenPreferences={noop}
+        onThemeChange={noop}
         saveModified
         saveInPlaceEnabled
       />,
@@ -203,24 +202,26 @@ describe("Phase 113 — AppHeader call sites", () => {
     );
   });
 
-  it("renders Search / Print as tertiary compact actions and the app menu as a secondary compact disclosure", () => {
+  it("renders Search / Print as tertiary compact actions and the gear as a ghost compact disclosure", () => {
     const host = mount(
       <AppHeader
         activeId="t1"
-        appMenuGroups={APP_MENU_GROUPS}
+        onOpenPreferences={noop}
+        onThemeChange={noop}
         onOpenToolSearch={(): void => undefined}
       />,
     );
     const search = host.querySelector("[data-header-tool-search]");
     const print = host.querySelector("[data-print]");
-    const appMenu = host.querySelector("[data-app-menu]");
+    const gear = host.querySelector("[data-open-preferences]");
     expect(cls(search)).toContain("btn-ghost");
     expect(cls(search)).toContain("btn-compact");
     expect(cls(print)).toContain("btn-ghost");
     expect(cls(print)).toContain("btn-compact");
-    expect(cls(appMenu)).toContain("btn-secondary");
-    expect(cls(appMenu)).toContain("btn-disclosure");
-    expect(appMenu?.getAttribute("aria-expanded")).toBe("false");
+    expect(cls(gear)).toContain("btn-ghost");
+    expect(cls(gear)).toContain("btn-icon");
+    expect(gear?.getAttribute("aria-haspopup")).toBe("dialog");
+    expect(host.querySelector("[data-app-menu]")).toBeNull();
   });
 });
 

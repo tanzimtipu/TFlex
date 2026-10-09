@@ -16,10 +16,6 @@ import {
   AppHeader,
   MULTI_MODE_ACCESSIBLE_NAME,
 } from "../../../src/renderer/components/AppHeader";
-import type { MenuGroup } from "../../../src/renderer/components/TitleBar";
-
-/** Phase 105 (chunk C) — an empty View group hosts the spliced Multi Mode row. */
-const APP_MENU_GROUPS: MenuGroup[] = [{ id: "view", label: "View", entries: [] }];
 
 function renderHeader(): { container: HTMLElement; cleanup: () => void } {
   const container = document.createElement("div");
@@ -29,11 +25,12 @@ function renderHeader(): { container: HTMLElement; cleanup: () => void } {
     root.render(
       <AppHeader
         activeId={null}
-        appMenuGroups={APP_MENU_GROUPS}
         onPrint={(): void => undefined}
         onOpenFile={(): void => undefined}
         onSave={(): void => undefined}
         onSaveAs={(): void => undefined}
+        onOpenPreferences={(): void => undefined}
+        onThemeChange={(): void => undefined}
         onMultiModeToggle={(): void => undefined}
       />,
     );
@@ -49,20 +46,17 @@ function renderHeader(): { container: HTMLElement; cleanup: () => void } {
   };
 }
 
-function multiModeRow(container: HTMLElement): HTMLButtonElement {
-  act((): void => {
-    container.querySelector<HTMLButtonElement>("[data-app-menu]")?.click();
-  });
-  const el = document.querySelector<HTMLButtonElement>("[data-menu-action='multiMode']");
-  if (el === null) throw new Error("Multi Mode menu row missing");
+function multiModeToggle(container: HTMLElement): HTMLButtonElement {
+  const el = container.querySelector<HTMLButtonElement>("[data-header-multi-mode]");
+  if (el === null) throw new Error("Multi Mode toggle missing");
   return el;
 }
 
 describe("Phase 40 item 8 — the Multi Mode command names view AND edit", () => {
-  it("the relocated row label says view/edit two documents side by side", () => {
+  it("the toggle title says view/edit two documents side by side", () => {
     const { container, cleanup } = renderHeader();
     try {
-      const label = multiModeRow(container).textContent ?? "";
+      const label = multiModeToggle(container).getAttribute("title") ?? "";
       expect(label).toContain("view/edit two");
       expect(label.toLowerCase()).toContain("side by side");
       expect(label).toContain("edit");
@@ -71,11 +65,16 @@ describe("Phase 40 item 8 — the Multi Mode command names view AND edit", () =>
     }
   });
 
-  it("the accessible name stays consistent with the row label", () => {
+  it("the accessible name stays consistent with the tooltip label", () => {
     const { container, cleanup } = renderHeader();
     try {
       expect(MULTI_MODE_ACCESSIBLE_NAME).toContain("view/edit two");
-      expect(multiModeRow(container).textContent).toContain(MULTI_MODE_ACCESSIBLE_NAME);
+      expect(multiModeToggle(container).getAttribute("aria-label")).toBe(
+        MULTI_MODE_ACCESSIBLE_NAME,
+      );
+      expect(multiModeToggle(container).getAttribute("title")).toContain(
+        MULTI_MODE_ACCESSIBLE_NAME,
+      );
     } finally {
       cleanup();
     }

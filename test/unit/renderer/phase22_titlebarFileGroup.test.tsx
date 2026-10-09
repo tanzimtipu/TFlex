@@ -61,6 +61,8 @@ function headerElement(args: HeaderArgs = {}): ReactElement {
       onSaveAs={args.onSaveAs ?? NOOP}
       saveModified={args.saveModified ?? false}
       saveInPlaceEnabled={args.saveInPlaceEnabled ?? true}
+      onOpenPreferences={NOOP}
+      onThemeChange={NOOP}
     />
   );
 }
@@ -100,6 +102,8 @@ describe("Phase 22 — title-bar file group placement", () => {
               onOpenFile={NOOP}
               onSave={NOOP}
               onSaveAs={NOOP}
+              onOpenPreferences={NOOP}
+              onThemeChange={NOOP}
             />
           </TitleBar>
           <DocumentRail

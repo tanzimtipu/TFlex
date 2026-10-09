@@ -6,7 +6,6 @@ import { describe, expect, it, vi } from "vitest";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { AppHeader } from "../../../src/renderer/components/AppHeader";
-import type { MenuGroup } from "../../../src/renderer/components/TitleBar";
 
 /**
  * Phase 30 — the title-bar Print affordance. Pins the placement
@@ -23,10 +22,6 @@ interface HeaderOptions {
   onPrint?: () => void;
 }
 
-const APP_MENU_GROUPS: MenuGroup[] = [
-  { id: "view", label: "View", entries: [{ id: "theme", label: "Toggle Theme", action: "toggleTheme" }] },
-];
-
 function renderHeader(opts: HeaderOptions = {}): HTMLElement {
   const container = document.createElement("div");
   document.body.appendChild(container);
@@ -35,8 +30,9 @@ function renderHeader(opts: HeaderOptions = {}): HTMLElement {
     root.render(
       <AppHeader
         activeId={opts.activeId ?? null}
-        appMenuGroups={APP_MENU_GROUPS}
         onPrint={opts.onPrint ?? ((): void => undefined)}
+        onOpenPreferences={(): void => undefined}
+        onThemeChange={(): void => undefined}
       />,
     );
   });
@@ -44,17 +40,16 @@ function renderHeader(opts: HeaderOptions = {}): HTMLElement {
 }
 
 describe("AppHeader — Print button (Phase 30)", () => {
-  it("renders the Print button immediately left of the application menu", () => {
+  it("renders the Print button immediately left of the settings gear", () => {
     const root = renderHeader();
     const actions = root.querySelector(".header-actions");
     expect(actions).not.toBeNull();
     const print = actions?.querySelector("[data-print]");
-    const appMenu = actions?.querySelector("[data-app-menu]");
+    const gear = actions?.querySelector("[data-open-preferences]");
     expect(print).not.toBeNull();
-    expect(appMenu).not.toBeNull();
+    expect(gear).not.toBeNull();
     const children = Array.from(actions?.children ?? []);
-    const appMenuWrap = actions?.querySelector(".app-menu");
-    expect(children.indexOf(print as Element) + 1).toBe(children.indexOf(appMenuWrap as Element));
+    expect(children.indexOf(print as Element) + 1).toBe(children.indexOf(gear as Element));
   });
 
   it("fires onPrint when clicked with an active document", () => {

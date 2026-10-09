@@ -104,15 +104,12 @@ describe("Phase 103 — pilot surfaces render via the registry", () => {
 
   it("(c) the App Header renders its utilities through `name=`", () => {
     const text = readFileSync(resolve(RENDERER, "components/AppHeader.tsx"), "utf8");
-    // Phase 105 (chunk C) — the title row keeps the document actions, Search
-    // tools, Print and the application-menu trigger; the relocated Theme /
-    // Preferences / Find / Multi Mode commands render as application-menu rows
-    // with their registry icon ids.
-    for (const id of ["open", "save", "saveAs", "headerCommand", "print", "appMenu"]) {
+    // Phase 127 (v1.50.0 restore) — the title row keeps the document actions,
+    // Search tools and Print as registry-backed icons; Find and Multi Mode use
+    // the Lucide APP_HEADER_GLYPHS map (as in v1.50.0), and the settings gear
+    // plus the theme dropdown glyphs are Lucide too.
+    for (const id of ["open", "save", "saveAs", "headerCommand", "print"]) {
       expect(text, `header renders name="${id}"`).toContain(`name="${id}"`);
-    }
-    for (const id of ["multi-mode", "find"]) {
-      expect(text, `header app-menu row uses icon "${id}"`).toContain(`icon: "${id}"`);
     }
   });
 });

@@ -1,15 +1,16 @@
 // @vitest-environment jsdom
-// Phase 105 (chunk C) — the structured title row + application menu + rail.
+// Phase 105 (chunk C) — the structured title row + document rail.
 //
 // Pins the chunk-C layout contract:
 //   - ONE 48px title row (the `.titlebar` / `.app-header` surfaces) with the
 //     brand, the File trigger, the Open / Save / Save-a-copy controls, the
-//     genuine drag region, Search tools, Print, the NEW `[data-app-menu]`
-//     trigger, the update/account slots and the reserved caption controls;
+//     genuine drag region, Search tools, Print, the update/account slots and
+//     the reserved caption controls;
 //   - a separate 40px document rail (`.document-rail`) below it holding the
-//     tab strip (`.tab-area` / `[data-tab-id]` / `[data-new-tab]`);
-//   - the application menu popover toggles, closes on Escape and returns focus
-//     to its trigger.
+//     tab strip (`.tab-area` / `[data-tab-id]` / `[data-new-tab]`).
+//
+// Phase 127 retired the `[data-app-menu]` trigger the chunk-C work introduced;
+// the assertion below pins its absence alongside the restored controls.
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
 import { readFileSync } from "node:fs";
@@ -61,14 +62,6 @@ const FILE_GROUPS: MenuGroup[] = [
   },
 ];
 
-const APP_GROUPS: MenuGroup[] = [
-  {
-    id: "view",
-    label: "View",
-    entries: [{ id: "theme", label: "Toggle Theme", action: "toggleTheme" }],
-  },
-];
-
 interface TflexStub {
   minimizeWindow: ReturnType<typeof vi.fn>;
   maximizeWindow: ReturnType<typeof vi.fn>;
@@ -85,12 +78,6 @@ function installTflex(): TflexStub {
   return stub;
 }
 
-async function settle(): Promise<void> {
-  await act(async (): Promise<void> => {
-    await new Promise((r) => setTimeout(r, 40));
-  });
-}
-
 function renderChrome(): HTMLElement {
   const container = document.createElement("div");
   document.body.appendChild(container);
@@ -101,8 +88,6 @@ function renderChrome(): HTMLElement {
         <TitleBar menuGroups={FILE_GROUPS} menuContext={noopContext()} maximized={false}>
           <AppHeader
             activeId="a"
-            appMenuGroups={APP_GROUPS}
-            menuContext={noopContext()}
             onOpenFile={noop}
             onSave={noop}
             onSaveAs={noop}
@@ -110,6 +95,8 @@ function renderChrome(): HTMLElement {
             onOpenToolSearch={noop}
             onOpenFind={noop}
             findEnabled
+            onOpenPreferences={noop}
+            onThemeChange={noop}
             updateIndicator={<span data-update-indicator />}
             accountSlot={<span data-test-account-slot />}
           />
@@ -178,40 +165,13 @@ describe("Phase 105 chunk C — structured title row", () => {
   });
 });
 
-describe("Phase 105 chunk C — application menu", () => {
-  it("toggles its popover from the [data-app-menu] trigger", () => {
+describe("Phase 127 — the application-menu trigger is retired", () => {
+  it("does not render [data-app-menu] or [data-app-menu-popover]", () => {
     installTflex();
     const container = renderChrome();
-    const trigger = container.querySelector<HTMLButtonElement>("[data-app-menu]");
-    expect(trigger).not.toBeNull();
-    expect(document.querySelector("[data-app-menu-popover]")).toBeNull();
-    act((): void => {
-      trigger?.click();
-    });
-    expect(document.querySelector("[data-app-menu-popover]")).not.toBeNull();
-    act((): void => {
-      trigger?.click();
-    });
-    expect(trigger?.getAttribute("aria-expanded")).toBe("false");
-    (window as unknown as { tflex?: unknown }).tflex = undefined;
-  });
-
-  it("closes on Escape and returns focus to the trigger", async () => {
-    installTflex();
-    const container = renderChrome();
-    const trigger = container.querySelector<HTMLButtonElement>("[data-app-menu]");
-    expect(trigger).not.toBeNull();
-    act((): void => {
-      trigger?.click();
-    });
-    expect(document.querySelector("[data-app-menu-popover]")).not.toBeNull();
-    act((): void => {
-      window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
-    });
-    // Focus returns synchronously; the animated popover leaves after its exit.
-    expect(document.activeElement).toBe(trigger);
-    await settle();
-    expect(document.querySelector("[data-app-menu-popover]")).toBeNull();
+    expect(container.querySelector("[data-app-menu]")).toBeNull();
+    expect(container.querySelector("[data-app-menu-popover]")).toBeNull();
+    expect(container.querySelector(".app-menu")).toBeNull();
     (window as unknown as { tflex?: unknown }).tflex = undefined;
   });
 });

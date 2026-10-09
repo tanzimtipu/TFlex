@@ -567,9 +567,10 @@ describe("AppHeader â€” update indicator slot (DEF-077)", () => {
       root.render(
         <AppHeader
           activeId={null}
-          appMenuGroups={[{ id: "view", label: "View", entries: [] }]}
+          onOpenPreferences={(): void => undefined}
+          onThemeChange={(): void => undefined}
           updateIndicator={<UpdateIndicator />}
-        />,
+        />
       );
       await Promise.resolve();
       await Promise.resolve();
@@ -578,25 +579,10 @@ describe("AppHeader â€” update indicator slot (DEF-077)", () => {
     expect(actions).not.toBeNull();
     const indicator = actions?.querySelector("[data-update-indicator]");
     expect(indicator).not.toBeNull();
-    // The application menu trigger is the control BEFORE the indicator (the
-    // Phase 105 title-row order is search, print, app menu, update, account),
-    // and both live inside .header-actions.
-    const appMenu = actions?.querySelector("[data-app-menu]");
-    expect(appMenu).not.toBeNull();
-    // Order: menu trigger appears before the indicator. Use
-    // querySelectorAll("*") to walk every descendant.
-    const descendants = Array.from(actions?.querySelectorAll("*") ?? []);
-    const indicatorIdx = descendants.findIndex(
-      (el) =>
-        el.matches("[data-update-indicator]") ||
-        el.querySelector("[data-update-indicator]") !== null,
-    );
-    const appMenuIdx = descendants.findIndex(
-      (el) => (el as HTMLElement).classList.contains("app-menu-trigger"),
-    );
-    expect(indicatorIdx).toBeGreaterThanOrEqual(0);
-    expect(appMenuIdx).toBeGreaterThanOrEqual(0);
-    expect(appMenuIdx).toBeLessThan(indicatorIdx);
+    // Phase 127 (v1.50.0 restore) — the update indicator leads the trailing
+    // utility cluster, and the retired app-menu trigger is gone.
+    expect(actions?.querySelector("[data-app-menu]")).toBeNull();
+    expect(actions?.firstElementChild).toBe(indicator);
     act((): void => {
       root.unmount();
     });
@@ -616,6 +602,8 @@ describe("AppHeader â€” update indicator slot (DEF-077)", () => {
       root.render(
         <AppHeader
           activeId={null}
+          onOpenPreferences={(): void => undefined}
+          onThemeChange={(): void => undefined}
         />,
       );
     });

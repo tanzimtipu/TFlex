@@ -32,6 +32,8 @@ function renderHeader(accountSlot?: ReactNode): HTMLElement {
         onOpenFile={(): void => undefined}
         onSave={(): void => undefined}
         onSaveAs={(): void => undefined}
+        onOpenPreferences={(): void => undefined}
+        onThemeChange={(): void => undefined}
         accountSlot={accountSlot}
       />,
     );

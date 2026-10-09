@@ -1,12 +1,14 @@
 import {
   useCallback,
-  useMemo,
+  useEffect,
   useRef,
   useState,
+  type KeyboardEvent as ReactKeyboardEvent,
   type ReactElement,
   type ReactNode,
 } from "react";
 import {
+  Check,
   ChevronDown,
   Command,
   Monitor,
@@ -21,16 +23,13 @@ import {
   Sun,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
+import { AnimatePresence } from "motion/react";
 import { Icon } from "../icons/Icon";
-import { CommandMenu, type CommandMenuGroup, type CommandMenuItem } from "./CommandMenu";
+import type { ThemeDefault } from "../state/preferences";
+import { TfMorph } from "./motion/TfMotion";
+import { useMorphPreset } from "./motion/useMorphPreset";
 import { Button, IconButton } from "./Button";
-import { dispatchMenuAction, type MenuActionContext } from "../state/menuActions";
 import type { CommandSurface } from "../state/commandCapability";
-import {
-  toCommandGroups,
-  type MenuEntry,
-  type MenuGroup,
-} from "./TitleBar";
 import type { DocumentRailTab } from "./DocumentRail";
 
 // Phase 105 (chunk C) — the tab strip (and its pure planner) moved to the
@@ -53,9 +52,7 @@ export type { TabOverflowPlan } from "./DocumentRail";
  *  tab type so legacy importers still compile. */
 export type AppHeaderTab = DocumentRailTab;
 
-/** Phase 40 (item 8) — the Multi Mode toggle's accessible name. Also the
- *  label the application menu's relocated Multi Mode row reuses verbatim, so
- *  the control and its menu entry can never drift apart. */
+/** Phase 40 (item 8) — the Multi Mode toggle's accessible name. */
 export const MULTI_MODE_ACCESSIBLE_NAME =
   "Multi Mode: view/edit two documents side by side";
 
@@ -64,15 +61,8 @@ export const MULTI_MODE_ACCESSIBLE_NAME =
  *  can never be confused with the Ctrl+F find icon beside it. */
 export const TOOL_SEARCH_ACCESSIBLE_NAME = "Search tools and commands (Ctrl+K)";
 
-/** Phase 40 (item 5) — the Ctrl+F find icon's accessible name. Reused
- *  verbatim as the relocated Find row's label. */
+/** Phase 40 (item 5) — the Ctrl+F find icon's accessible name. */
 export const FIND_IN_DOCUMENT_ACCESSIBLE_NAME = "Find in document (Ctrl+F)";
-
-/** Phase 105 (chunk C7) — the relocated Find row's accessible reason when no
- *  document is open. Rendered by `CommandMenu` via the row's `title` +
- *  `aria-describedby`, replacing the bespoke hard-coded title the inline
- *  popover carried. */
-export const FIND_DISABLED_REASON = "Open a document to search it";
 
 /** The header's migrated glyphs. Declared with an `icon:` property so the
  *  Phase 43 icon-identity guard still attributes each glyph to this surface.
@@ -93,6 +83,28 @@ export const APP_HEADER_GLYPHS = {
   sun: { icon: Sun },
 } as const satisfies Record<string, { icon: LucideIcon }>;
 
+/** Phase 127 (v1.50.0 restore) — the four theme options the picker offers, in
+ *  display order (frosted leads: it is the default). The 'system' meta-option
+ *  follows the concrete themes: it is a preference (which theme to follow),
+ *  not a theme itself, so it resolves to light/dark at pick time. */
+const THEME_OPTIONS: ReadonlyArray<{ value: ThemeDefault; label: string }> = [
+  { value: "frosted", label: "Frosted Glass" },
+  { value: "dark", label: "Dark" },
+  { value: "light", label: "Light" },
+  { value: "system", label: "System default" },
+];
+
+function themeIcon(value: ThemeDefault): LucideIcon {
+  if (value === "dark") return APP_HEADER_GLYPHS.moon.icon;
+  if (value === "light") return APP_HEADER_GLYPHS.sun.icon;
+  if (value === "system") return APP_HEADER_GLYPHS.monitor.icon;
+  return APP_HEADER_GLYPHS.snowflake.icon;
+}
+
+function themeLabel(value: ThemeDefault): string {
+  return THEME_OPTIONS.find((o) => o.value === value)?.label ?? "Frosted Glass";
+}
+
 interface AppHeaderProps {
   activeId: string | null;
   /** Phase 22 — the relocated Open / Save / Save As actions owned by the
@@ -112,56 +124,32 @@ interface AppHeaderProps {
   printEnabled?: boolean;
   /** Phase 40 (item 5) — the Ctrl+K tool-search icon (Command Palette). */
   onOpenToolSearch?: () => void;
+  /** Phase 127 (v1.50.0 restore) — the settings gear opens Preferences. */
+  onOpenPreferences: () => void;
   /** DEF-077 — optional slot for the OTA update indicator. */
   updateIndicator?: ReactNode;
   /** Phase 44 — the account section, built by the host. */
   accountSlot?: ReactNode;
-  /** Phase 105 (chunk C) — the application menu's groups (Edit / View /
-   *  Tools / Help). Omitted means the trigger is not rendered. */
-  appMenuGroups?: MenuGroup[];
-  /** The context `dispatchMenuAction` receives for the application menu's
-   *  id-backed rows. */
-  menuContext?: MenuActionContext;
-  /** Phase 36 (chunk 6) — the Multi Mode toggle. Relocated into the
-   *  application menu in chunk C. Omitted means the row is not rendered. */
+  /** Phase 36 (chunk 6) — the Multi Mode toggle. Omitted means the control is
+   *  not rendered. */
   onMultiModeToggle?: () => void;
-  /** Whether Multi Mode is on: the relocated row reflects it. */
+  /** Whether Multi Mode is on: the toggle reflects it via aria-pressed. */
   multiModeEnabled?: boolean;
-  /** Phase 40 (item 5) — Find in document. Relocated into the application
-   *  menu in chunk C. Omitted means the row is not rendered. */
+  /** Phase 40 (item 5) — Find in document. Omitted means the control is not
+   *  rendered. */
   onOpenFind?: () => void;
-  /** Whether a document is open to search: the relocated Find row disables
-   *  (with a reason in its tooltip) when false, mirroring the old icon. */
+  /** Whether a document is open to search: the Find control disables (with a
+   *  reason in its tooltip) when false. */
   findEnabled?: boolean;
+  /** Phase 127 (v1.50.0 restore) — the saved theme preference the dropdown
+   *  marks as selected (falls back to the concrete theme when unset). */
+  themeDefault?: ThemeDefault;
+  /** Phase 127 (v1.50.0 restore) — the theme dropdown's selection handler. */
+  onThemeChange: (next: ThemeDefault) => void;
   /** TFL-1116 C4 (R05) — the ACTIVE surface. On `"home"` the document-only
-   *  toolbar controls (Save / Save As / Print) and the relocated Find row are
+   *  toolbar controls (Save / Save As / Print) and the Find control are
    *  ABSENT. Defaults to `"document"` so existing callers/tests are unchanged. */
   commandSurface?: CommandSurface;
-}
-
-/** Phase 105 (chunk C) — build the application menu's groups: the host's
- *  NON-File groups (Edit / View / Tools / Help) plus the relocated icon
- *  commands that have no menu action id (Multi Mode, Find). The relocated rows
- *  splice into the existing View group so no menu group id or label is
- *  invented. Pure: used by the popover and pinned by tests. */
-export function buildAppMenuGroups(
-  appMenuGroups: MenuGroup[] | undefined,
-  relocated: readonly MenuEntry[],
-): MenuGroup[] {
-  const groups = appMenuGroups ?? [];
-  if (relocated.length === 0) return groups;
-  let spliced = false;
-  const out = groups.map((g) => {
-    if (!spliced && g.id === "view") {
-      spliced = true;
-      return { ...g, entries: [...g.entries, ...relocated] };
-    }
-    return g;
-  });
-  if (!spliced) {
-    out.push({ id: "view", label: "View", entries: [...relocated] });
-  }
-  return out;
 }
 
 export function AppHeader(props: AppHeaderProps): ReactElement {
@@ -175,80 +163,133 @@ export function AppHeader(props: AppHeaderProps): ReactElement {
     onPrint,
     printEnabled = true,
     onOpenToolSearch,
+    onOpenPreferences,
     updateIndicator = null,
     accountSlot = null,
-    appMenuGroups,
-    menuContext,
     onMultiModeToggle,
+    multiModeEnabled = false,
     onOpenFind,
     findEnabled = false,
+    themeDefault,
+    onThemeChange,
     commandSurface = "document",
   } = props;
 
-  // Phase 105 (chunk C7) — the application menu is the shared `CommandMenu`
-  // primitive, mirroring the TitleBar File menu migration (C5). CommandMenu
-  // owns outside-click dismiss, Escape/Tab close, focus capture/return and the
-  // row keyboard model, so this component keeps no bespoke menu plumbing.
-  // Hooks stay above any return (DEF-117).
-  const [appMenuOpen, setAppMenuOpen] = useState(false);
-  const appMenuButtonRef = useRef<HTMLButtonElement | null>(null);
+  // Phase 127 (v1.50.0 restore) — the embedded theme dropdown. All hooks stay
+  // at the top of the component (DEF-117 hook-order contract): no early
+  // returns. The picker's selection is the SAVED preference (`themeDefault`)
+  // when set; otherwise it falls back to the concrete theme so the control
+  // mirrors the applied look on first run.
+  const selected: ThemeDefault = themeDefault ?? "frosted";
+  const [themeMenuOpen, setThemeMenuOpen] = useState(false);
+  const themeTriggerRef = useRef<HTMLButtonElement | null>(null);
+  const themePopoverRef = useRef<HTMLDivElement | null>(null);
+  const themeOptionRefs = useRef<Array<HTMLButtonElement | null>>([]);
+  const themeMorph = useMorphPreset({
+    open: themeMenuOpen,
+    triggerRef: themeTriggerRef,
+    surfaceRef: themePopoverRef,
+    anchorCorner: "top-right",
+  });
 
-  // The groups the menu lists: the host's NON-File groups plus the relocated
-  // icon commands that carry their own handler (Multi Mode, Find).
-  const groups = useMemo<MenuGroup[]>(() => {
-    const relocated: MenuEntry[] = [];
-    if (onMultiModeToggle !== undefined) {
-      relocated.push({
-        id: "multiMode",
-        label: MULTI_MODE_ACCESSIBLE_NAME,
-        icon: "multi-mode",
-        onSelect: onMultiModeToggle,
-      });
-    }
-    if (onOpenFind !== undefined && commandSurface !== "home") {
-      relocated.push({
-        id: "find",
-        label: FIND_IN_DOCUMENT_ACCESSIBLE_NAME,
-        icon: "find",
-        onSelect: onOpenFind,
-        disabled: !findEnabled,
-      });
-    }
-    return buildAppMenuGroups(appMenuGroups, relocated);
-  }, [appMenuGroups, onMultiModeToggle, onOpenFind, findEnabled, commandSurface]);
+  // When the menu opens, land focus on the currently-selected option (the
+  // first one when the persisted value is somehow outside the list).
+  useEffect(() => {
+    if (!themeMenuOpen) return;
+    const idx = THEME_OPTIONS.findIndex((o) => o.value === selected);
+    const target = themeOptionRefs.current[idx >= 0 ? idx : 0];
+    target?.focus();
+  }, [themeMenuOpen, selected]);
 
-  // Adapt to the shared model via C5's `toCommandGroups` (no duplicated
-  // conversion), then attach the disabled Find row's accessible reason. The
-  // shipped `MenuEntry` carries no `disabledReason`, so the reason is injected
-  // on the already-converted row; every other field passes through verbatim.
-  const commandGroups = useMemo<CommandMenuGroup[]>(() => {
-    const converted = toCommandGroups(groups);
-    return converted.map((group) => ({
-      ...group,
-      entries: group.entries.map((entry) =>
-        entry.id === "find" && entry.disabled === true
-          ? { ...entry, disabledReason: FIND_DISABLED_REASON }
-          : entry,
-      ),
-    }));
-  }, [groups]);
+  // Close on outside click / Escape / Tab (same pattern as the TitleBar's menu
+  // popover). The pointerdown listener only closes — it never preventDefaults
+  // or stops propagation, so interactive elements under the pointer keep their
+  // normal click (cross-bubbling guard, DEF-087/088/090).
+  useEffect(() => {
+    if (!themeMenuOpen) return;
+    const onPointer = (e: PointerEvent): void => {
+      const t = e.target as Node | null;
+      if (t === null) return;
+      if (themeTriggerRef.current?.contains(t)) return;
+      if (themePopoverRef.current?.contains(t)) return;
+      setThemeMenuOpen(false);
+    };
+    const onKey = (e: KeyboardEvent): void => {
+      if (e.key === "Escape") {
+        setThemeMenuOpen(false);
+        themeTriggerRef.current?.focus();
+      } else if (e.key === "Tab") {
+        setThemeMenuOpen(false);
+      }
+    };
+    window.addEventListener("pointerdown", onPointer);
+    window.addEventListener("keydown", onKey);
+    return (): void => {
+      window.removeEventListener("pointerdown", onPointer);
+      window.removeEventListener("keydown", onKey);
+    };
+  }, [themeMenuOpen]);
 
-  const onAppMenuToggle = useCallback((): void => {
-    setAppMenuOpen((v) => !v);
+  const focusThemeOption = useCallback((index: number): void => {
+    const count = THEME_OPTIONS.length;
+    if (count === 0) return;
+    const clamped = ((index % count) + count) % count;
+    themeOptionRefs.current[clamped]?.focus();
   }, []);
 
-  const onAppMenuEntry = useCallback(
-    (entry: CommandMenuItem): void => {
-      if (entry.disabled === true) return;
-      if (entry.onSelect !== undefined) {
-        entry.onSelect(entry);
-      } else if (entry.action !== undefined && menuContext !== undefined) {
-        dispatchMenuAction(entry.action, menuContext);
+  const onThemeTriggerClick = useCallback((): void => {
+    setThemeMenuOpen((v) => !v);
+  }, []);
+
+  const onThemeTriggerKeyDown = useCallback(
+    (e: ReactKeyboardEvent<HTMLButtonElement>): void => {
+      if (e.key === "Enter" || e.key === " ") {
+        e.preventDefault();
+        setThemeMenuOpen((v) => !v);
+      } else if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+        e.preventDefault();
+        setThemeMenuOpen(true);
       }
-      setAppMenuOpen(false);
     },
-    [menuContext],
+    [],
   );
+
+  const onThemeSelect = useCallback(
+    (next: ThemeDefault): void => {
+      setThemeMenuOpen(false);
+      if (next !== selected) onThemeChange(next);
+      themeTriggerRef.current?.focus();
+    },
+    [onThemeChange, selected],
+  );
+
+  // Roving focus on the option list: arrows move, Home/End jump, and
+  // Enter/Space activate the focused option.
+  const onThemePopoverKeyDown = useCallback(
+    (e: ReactKeyboardEvent<HTMLDivElement>): void => {
+      if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+        e.preventDefault();
+        const focused = themeOptionRefs.current.findIndex((el) => el === document.activeElement);
+        const base = focused >= 0 ? focused : THEME_OPTIONS.findIndex((o) => o.value === selected);
+        const dir = e.key === "ArrowDown" ? 1 : -1;
+        focusThemeOption(base + dir);
+      } else if (e.key === "Home") {
+        e.preventDefault();
+        focusThemeOption(0);
+      } else if (e.key === "End") {
+        e.preventDefault();
+        focusThemeOption(THEME_OPTIONS.length - 1);
+      } else if (e.key === "Enter" || e.key === " ") {
+        e.preventDefault();
+        const idx = themeOptionRefs.current.findIndex((el) => el === document.activeElement);
+        const opt = THEME_OPTIONS[idx];
+        if (opt !== undefined) onThemeSelect(opt.value);
+      }
+    },
+    [selected, focusThemeOption, onThemeSelect],
+  );
+
+  const currentThemeLabel = themeLabel(selected);
 
   // Phase 22 — the relocated Save control's state ladder. Identical semantics
   // to the CommandBar Save button it replaces: warning tint + dot mark unsaved
@@ -327,6 +368,8 @@ export function AppHeader(props: AppHeaderProps): ReactElement {
           stylesheet contract. */}
       <div className="titlebar-drag" aria-hidden />
       <div className="header-actions">
+        {/* DEF-077 — OTA update indicator, leading the trailing chrome. */}
+        {updateIndicator}
         {/* Phase 40 (item 5) — Search tools (Ctrl+K) opens the Command Palette. */}
         {onOpenToolSearch !== undefined && (
           <IconButton
@@ -340,6 +383,40 @@ export function AppHeader(props: AppHeaderProps): ReactElement {
             data-header-tool-search
             icon={<Icon name="headerCommand" size="md" aria-hidden />}
           />
+        )}
+        {/* Phase 40 (item 5) — Find in document (Ctrl+F). Disabled (with a
+            reason) when no document is open to search. */}
+        {onOpenFind !== undefined && commandSurface !== "home" && (
+          <button
+            type="button"
+            className="btn btn-ghost btn-icon header-find"
+            onClick={onOpenFind}
+            disabled={!findEnabled}
+            aria-label={FIND_IN_DOCUMENT_ACCESSIBLE_NAME}
+            title={findEnabled ? "Find in document (Ctrl+F)" : "Open a document to search it"}
+            data-header-find
+          >
+            <Icon icon={APP_HEADER_GLYPHS.search.icon} size="md" aria-hidden />
+          </button>
+        )}
+        {/* Phase 36 (chunk 6) — the Multi Mode toggle. */}
+        {onMultiModeToggle !== undefined && (
+          <button
+            type="button"
+            className="btn btn-ghost btn-icon btn-toggle header-multi-mode"
+            onClick={onMultiModeToggle}
+            aria-pressed={multiModeEnabled}
+            aria-label={MULTI_MODE_ACCESSIBLE_NAME}
+            title={
+              multiModeEnabled
+                ? "Multi Mode on — view/edit two documents side by side. Click to return to one document."
+                : "Multi Mode: view/edit two documents side by side in one workspace"
+            }
+            data-header-multi-mode
+            data-multi-mode-active={multiModeEnabled ? "true" : "false"}
+          >
+            <Icon icon={APP_HEADER_GLYPHS.multiMode.icon} size="md" aria-hidden />
+          </button>
         )}
         {/* Phase 30 — Print. Same surface as File > Print and Ctrl+P. */}
         {commandSurface !== "home" && (
@@ -357,49 +434,74 @@ export function AppHeader(props: AppHeaderProps): ReactElement {
           icon={<Icon name="print" size="md" aria-hidden />}
         />
         )}
-        {/* Phase 105 (chunk C) — the ONE application menu. Lists the Edit /
-            View / Tools / Help groups plus the relocated Multi Mode and Find
-            commands. */}
-        {appMenuGroups !== undefined && appMenuGroups.length > 0 && (
-          <div className="app-menu">
-            <IconButton
-              ref={appMenuButtonRef}
-              label="Application menu"
-              intent="secondary"
-              kind="disclosure"
-              density="compact"
-              expanded={appMenuOpen}
-              className={appMenuOpen ? "app-menu-trigger app-menu-trigger-active" : "app-menu-trigger"}
-              onClick={onAppMenuToggle}
-              aria-haspopup="menu"
-              data-app-menu
-              icon={<Icon name="appMenu" size="md" aria-hidden />}
-            />
-            {/* Phase 105 (chunk C7) — the shared `CommandMenu`. It emits the
-                shipped `.titlebar-menu-*` DOM contract verbatim (headings,
-                separators, `data-menu-action` rows with their `.kbd`
-                accelerator) and owns outside-click / Escape / Tab dismiss,
-                first-focus and focus-return-to-opener. The `app-menu-popover`
-                class and `data-app-menu-popover` hook survive via
-                `className` + `popoverDataAttrs` so existing selectors keep
-                resolving. Enters with the shared `TfMenu` motion in place of
-                the retired bespoke FLIP morph. */}
-            <CommandMenu
-              open={appMenuOpen}
-              groups={commandGroups}
-              ariaLabel="Application menu"
-              onClose={(): void => setAppMenuOpen(false)}
-              onSelect={onAppMenuEntry}
-              openerRef={appMenuButtonRef}
-              className="app-menu-popover"
-              popoverDataAttrs={{ "data-app-menu-popover": "true" }}
-              collisionAware
-            />
-          </div>
-        )}
-        {/* DEF-077 — the OTA update indicator, then the account slot, at the
-            trailing edge of the title row. */}
-        {updateIndicator}
+        {/* Phase 127 (v1.50.0 restore) — Settings gear opens Preferences. */}
+        <button
+          type="button"
+          className="btn btn-ghost btn-icon header-gear"
+          onClick={onOpenPreferences}
+          aria-haspopup="dialog"
+          aria-label="Open preferences"
+          title="Preferences (Ctrl+,)"
+          data-open-preferences
+        >
+          <Icon icon={APP_HEADER_GLYPHS.settings.icon} size="md" aria-hidden />
+        </button>
+        {/* Phase 127 (v1.50.0 restore) — embedded borderless theme picker: a
+            labelled pill that opens an attached option list. */}
+        <div className="theme-toggle-wrap">
+          <button
+            ref={themeTriggerRef}
+            type="button"
+            className="btn btn-ghost theme-toggle theme-toggle-trigger"
+            data-theme-toggle
+            onClick={onThemeTriggerClick}
+            onKeyDown={onThemeTriggerKeyDown}
+            aria-haspopup="menu"
+            aria-expanded={themeMenuOpen}
+            aria-label="Change theme"
+            title={`Change theme (current: ${currentThemeLabel})`}
+          >
+            <Icon icon={themeIcon(selected)} size="md" aria-hidden />
+            <span className="theme-toggle-label">{currentThemeLabel}</span>
+            <Icon icon={APP_HEADER_GLYPHS.chevronDown.icon} size="md" aria-hidden />
+          </button>
+          <AnimatePresence>
+            {themeMenuOpen && (
+              <TfMorph
+                morph={themeMorph}
+                ref={themePopoverRef}
+                className="theme-toggle-popover"
+                role="menu"
+                aria-label="Change theme"
+                onKeyDown={onThemePopoverKeyDown}
+              >
+                {THEME_OPTIONS.map((opt, i) => {
+                  const isSelected = opt.value === selected;
+                  return (
+                    <button
+                      key={opt.value}
+                      ref={(el): void => {
+                        themeOptionRefs.current[i] = el;
+                      }}
+                      type="button"
+                      role="menuitem"
+                      aria-checked={isSelected}
+                      className={isSelected ? "theme-toggle-option theme-toggle-option-selected" : "theme-toggle-option"}
+                      data-theme-option={opt.value}
+                      onClick={(): void => onThemeSelect(opt.value)}
+                    >
+                      <span className="theme-toggle-option-mark" aria-hidden>
+                        {isSelected && <Icon icon={Check} size="md" />}
+                      </span>
+                      <span className="theme-toggle-option-label">{opt.label}</span>
+                    </button>
+                  );
+                })}
+              </TfMorph>
+            )}
+          </AnimatePresence>
+        </div>
+        {/* Phase 44 — the account section, at the trailing edge. */}
         {accountSlot}
       </div>
     </header>
