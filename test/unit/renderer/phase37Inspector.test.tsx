@@ -178,6 +178,45 @@ describe('Phase 37 item 5 — flush geometry and one collapse control', () => {
     }
   });
 
+  it('TFL-1557 — the collapsed strip names the panel vertically with the arrow above it, and the expanded header leads with the arrow', () => {
+    const collapsed = mount({
+      stage: 'pages',
+      selection: { kind: 'none' },
+      collapsed: true,
+      onToggleCollapsed: vi.fn(),
+    });
+    try {
+      const strip = collapsed.host.querySelector('[data-inspector-collapsed-strip]');
+      const label = strip?.querySelector('.inspector-collapsed-label');
+      expect(label?.textContent).toBe('Inspector');
+      expect(label?.getAttribute('aria-hidden')).toBe('true');
+      // The expand arrow precedes the vertical label inside the strip.
+      const stripChildren = Array.from(strip?.children ?? []);
+      expect(stripChildren[0]?.hasAttribute('data-inspector-collapse')).toBe(true);
+      expect(stripChildren[1]?.classList.contains('inspector-collapsed-label')).toBe(true);
+    } finally {
+      collapsed.unmount();
+    }
+
+    const expanded = mount({
+      stage: 'pages',
+      selection: { kind: 'none' },
+      collapsed: false,
+      onToggleCollapsed: vi.fn(),
+    });
+    try {
+      const header = expanded.host.querySelector('.inspector-header');
+      const leading = header?.querySelector('.tf-panel-header-leading-actions');
+      expect(leading?.querySelector('[data-inspector-collapse]')).not.toBeNull();
+      // The leading control cluster precedes the title in the expanded header.
+      const headerChildren = Array.from(header?.children ?? []);
+      expect(headerChildren[0]?.classList.contains('tf-panel-header-leading-actions')).toBe(true);
+      expect(headerChildren[1]?.classList.contains('tf-panel-header-title')).toBe(true);
+    } finally {
+      expanded.unmount();
+    }
+  });
+
   it('precedence is `user || rung`: the ladder never loses to a manual expand', () => {
     const wide = resolveDockLadder(1600);
     const narrow = resolveDockLadder(1100);

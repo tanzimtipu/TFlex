@@ -107,6 +107,30 @@ describe("panelPrimitives — the shared vocabulary", () => {
     unmount();
   });
 
+  it("ScopedHeader renders the optional leadingActions cluster BEFORE the title", () => {
+    const { host, unmount } = mount(
+      createElement(ScopedHeader, {
+        title: "Inspector \u00b7 Page 1",
+        leadingActions: createElement("button", { type: "button" }, "Lead"),
+        actions: createElement("button", { type: "button" }, "Trail"),
+      }),
+    );
+    const header = host.querySelector<HTMLElement>(".tf-panel-header");
+    const leading = header?.querySelector(".tf-panel-header-leading-actions");
+    expect(leading?.querySelector("button")?.textContent).toBe("Lead");
+    const order = Array.from(header?.children ?? []).map((el) => el.className);
+    expect(order[0]).toContain("tf-panel-header-leading-actions");
+    expect(order[1]).toContain("tf-panel-header-title");
+    expect(order[2]).toContain("tf-panel-header-actions");
+    unmount();
+  });
+
+  it("ScopedHeader omits the leading cluster when the prop is not passed", () => {
+    const { host, unmount } = mount(createElement(ScopedHeader, { title: "x" }));
+    expect(host.querySelector(".tf-panel-header-leading-actions")).toBeNull();
+    unmount();
+  });
+
   it("PanelSection renders a heading and body slot", () => {
     const { host, unmount } = mount(
       createElement(PanelSection, { title: "Document" }, createElement("p", null, "inner")),

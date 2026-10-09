@@ -64,6 +64,11 @@ export function PanelShell(props: PanelShellProps): ReactElement {
 export interface ScopedHeaderProps extends DataAttrs {
   /** Sentence-case title; an empty/omitted title renders the action slot alone. */
   title?: string;
+  /** TFL-1557 — an optional leading control cluster rendered BEFORE the title.
+   *  Lets a panel place its collapse/expand affordance on the left edge while
+   *  the trailing `actions` cluster stays on the right. Omitted renders the
+   *  header exactly as before. */
+  leadingActions?: ReactNode;
   /** The trailing action cluster. */
   actions?: ReactNode;
   /** Legacy header class (e.g. "context-panel-header" / "inspector-header"). */
@@ -74,7 +79,7 @@ export interface ScopedHeaderProps extends DataAttrs {
 
 /** The scoped 52px panel header: title left, actions right. */
 export function ScopedHeader(props: ScopedHeaderProps): ReactElement {
-  const { title, actions, className, preferredHeight = false, ...rest } = props;
+  const { title, leadingActions, actions, className, preferredHeight = false, ...rest } = props;
   const forwarded = rest as unknown as HTMLAttributes<HTMLElement>;
   return (
     <header
@@ -87,6 +92,11 @@ export function ScopedHeader(props: ScopedHeaderProps): ReactElement {
       data-tf-panel-header={preferredHeight ? "preferred" : "default"}
       {...forwarded}
     >
+      {leadingActions !== undefined && (
+        <div className="glass-sidebar-leading-actions tf-panel-header-leading-actions">
+          {leadingActions}
+        </div>
+      )}
       {title !== undefined && title !== "" && (
         <span className="glass-sidebar-title tf-panel-header-title">{title}</span>
       )}

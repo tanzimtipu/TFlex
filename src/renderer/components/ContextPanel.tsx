@@ -56,6 +56,11 @@ import { GlassSidebarBody } from './GlassSidebar';
 import { ActionList, PanelEmptyState, PanelSection, PanelShell, PropertyRow, ScopedHeader } from './panels/PanelPrimitives';
 import { ReviewElementsPanel } from './ReviewElementsPanel';
 import type { ReviewElementRef } from './ReviewElementsPanel';
+// TFL-1589 — the page-selection summary animates in/out (scale-fade) and its
+// count / range values crossfade on change. Motion tokens only; reduced
+// motion collapses both to the shared instant opacity path.
+import { AnimatePresence, motion } from 'motion/react';
+import { useContentCrossfadeAnimation, useSelectionPopAnimation } from '../hooks/useAnimations';
 import type { Annotation, AnnotationPatch } from '../annotations/model';
 import { buildPageLabelMap } from './pageGeometry';
 import { formatBytes } from '../utils/formatBytes';
@@ -694,6 +699,16 @@ const pageCount = engineState.pageCount;
   const resolvedNavigatorLayout = resolveNavigatorLayout(navigatorLayout, bodyHeight);
   const splitActive = stage === 'pages' && resolvedNavigatorLayout === 'split';
 
+  // TFL-1589 — the Selection summary's motion. `selectionPop` animates the
+  // card box in/out; `valueCrossfade` dissolves the count / range text when a
+  // value changes. Both are hooks (called unconditionally) so the stacked and
+  // split layouts share one variant source.
+  const selectionPop = useSelectionPopAnimation();
+  const valueCrossfade = useContentCrossfadeAnimation();
+  const selectionActive = pageSelection !== null && pageSelection.length >= 1;
+  const selectionCountText = selectionActive ? `${pageSelection.length} selected` : '';
+  const selectionRangeText = selectionActive ? pageRangeText(pageSelection) : '';
+
   // Live drag updates local state only; the host is told once the gesture
   // settles (pointerup) or on a keyboard step, so no per-frame settings write.
   const [dragRatio, setDragRatio] = useState<number | null>(null);
@@ -837,6 +852,88 @@ const pageCount = engineState.pageCount;
     },
   ];
 
+  // TFL-1589 — the Selection summary, shared by the stacked and split Pages
+  // layouts. The card box scale-fades in/out through AnimatePresence and its
+  // count / range values crossfade when they change. The card's DOM structure,
+  // CSS classes and `data-context-panel-selection-*` hooks are unchanged: only
+  // the motion wrappers are added around them.
+  const renderSelectionSummary = (): ReactElement => (
+    <AnimatePresence initial={false}>
+      {selectionActive && (
+        <motion.div
+          className="context-panel-selection-motion"
+          data-context-panel-selection-motion
+          style={{ flex: '0 0 auto' }}
+          variants={selectionPop}
+          initial="initial"
+          animate="animate"
+          exit="exit"
+        >
+          <PanelSection
+            className="context-panel-selection"
+            data-context-panel-selection
+            title="Selection"
+            aria-label="Selection"
+          >
+            <span
+              className="visually-hidden"
+              data-context-panel-selection-live
+              role="status"
+              aria-live="polite"
+            >{selectionCountText}</span>
+            <PropertyRow
+              label="Pages"
+              value={
+                <AnimatePresence mode="wait" initial={false}>
+                  <motion.span
+                    key={`count:${selectionCountText}`}
+                    className="context-panel-selection-crossfade"
+                    data-context-panel-selection-count-value
+                    variants={valueCrossfade}
+                    initial="initial"
+                    animate="animate"
+                    exit="exit"
+                  >{selectionCountText}</motion.span>
+                </AnimatePresence>
+              }
+              data-context-panel-selection-count
+            />
+            <PropertyRow
+              label="Range"
+              value={
+                <AnimatePresence mode="wait" initial={false}>
+                  <motion.span
+                    key={`range:${selectionRangeText}`}
+                    className="context-panel-selection-crossfade"
+                    data-context-panel-selection-range-value
+                    variants={valueCrossfade}
+                    initial="initial"
+                    animate="animate"
+                    exit="exit"
+                  >{selectionRangeText}</motion.span>
+                </AnimatePresence>
+              }
+              data-context-panel-selection-range
+            />
+            <div className="context-panel-selection-actions">
+              <Button
+                intent="tertiary"
+                kind="action"
+                density="compact"
+                className="context-panel-selection-clear"
+                data-context-panel-selection-clear
+                onClick={(): void => onPageSelectionChange?.([])}
+                aria-label="Clear page selection"
+              >
+                Clear
+              </Button>
+            </div>
+          </PanelSection>
+        </motion.div>
+      )}
+    </AnimatePresence>
+  );
+
   const renderPages = (): ReactElement => (
     <>
       <div
@@ -910,45 +1007,9 @@ const pageCount = engineState.pageCount;
           {/* Phase 111 (chunk B) — the compact selection summary sits ABOVE
            *  the scrolling list and renders for ANY real selection (>= 1),
            *  not just multi-page. Count + range read straight off the host
-           *  set; Clear routes to the host clear path and never navigates. */}
-          {pageSelection !== null && pageSelection.length >= 1 && (
-            <PanelSection
-              className="context-panel-selection"
-              data-context-panel-selection
-              title="Selection"
-              aria-label="Selection"
-            >
-              <span
-                className="visually-hidden"
-                data-context-panel-selection-live
-                role="status"
-                aria-live="polite"
-              >{`${pageSelection.length} selected`}</span>
-              <PropertyRow
-                label="Pages"
-                value={`${pageSelection.length} selected`}
-                data-context-panel-selection-count
-              />
-              <PropertyRow
-                label="Range"
-                value={pageRangeText(pageSelection)}
-                data-context-panel-selection-range
-              />
-              <div className="context-panel-selection-actions">
-                <Button
-                  intent="tertiary"
-                  kind="action"
-                  density="compact"
-                  className="context-panel-selection-clear"
-                  data-context-panel-selection-clear
-                  onClick={(): void => onPageSelectionChange?.([])}
-                  aria-label="Clear page selection"
-                >
-                  Clear
-                </Button>
-              </div>
-            </PanelSection>
-          )}
+           *  set; Clear routes to the host clear path and never navigates.
+           *  TFL-1589 — it renders through the shared animated summary. */}
+          {renderSelectionSummary()}
           <div className="context-panel-thumbs" data-context-panel-thumbs>
             {pageCount === 0 ? (
               <EmptyState
@@ -1019,44 +1080,8 @@ const pageCount = engineState.pageCount;
             {`Pages \u00B7 ${pageCount}`}
           </div>
           <div className="context-panel-view-body" data-context-panel-view="pages">
-            {pageSelection !== null && pageSelection.length >= 1 && (
-              <PanelSection
-                className="context-panel-selection"
-                data-context-panel-selection
-                title="Selection"
-                aria-label="Selection"
-              >
-                <span
-                  className="visually-hidden"
-                  data-context-panel-selection-live
-                  role="status"
-                  aria-live="polite"
-                >{`${pageSelection.length} selected`}</span>
-                <PropertyRow
-                  label="Pages"
-                  value={`${pageSelection.length} selected`}
-                  data-context-panel-selection-count
-                />
-                <PropertyRow
-                  label="Range"
-                  value={pageRangeText(pageSelection)}
-                  data-context-panel-selection-range
-                />
-                <div className="context-panel-selection-actions">
-                  <Button
-                    intent="tertiary"
-                    kind="action"
-                    density="compact"
-                    className="context-panel-selection-clear"
-                    data-context-panel-selection-clear
-                    onClick={(): void => onPageSelectionChange?.([])}
-                    aria-label="Clear page selection"
-                  >
-                    Clear
-                  </Button>
-                </div>
-              </PanelSection>
-            )}
+            {/* TFL-1589 — the shared animated selection summary. */}
+            {renderSelectionSummary()}
             <div className="context-panel-thumbs" data-context-panel-thumbs>
               {pageCount === 0 ? (
                 <EmptyState
@@ -1226,17 +1251,7 @@ const pageCount = engineState.pageCount;
               </Button>
             ))}
           </div>
-        ) : contentState === 'no-content' ? (
-          // A real, empty page. The Phase-96 shared designed empty state keeps
-          // its `empty-state` hooks (phase96_design_system e2e) and its exact
-          // copy; no Blank/Scanned claim is made without engine data.
-          <EmptyState
-            icon={TextCursor}
-            className="context-panel-empty"
-            data-edit-content-empty
-            headline="No editable content on this page."
-          />
-        ) : (
+        ) : contentState === 'no-content' ? null : (
           // Phase 112 (C3) — the remaining diagnostics (no selection /
           // unsupported / permission restricted) are the shared PanelEmptyState.
           <PanelEmptyState
@@ -1521,50 +1536,61 @@ const headerTitle = contextPanelTitle(stage, pageCount);
         className="context-panel-header"
         preferredHeight
         /* Phase 37 (item 15) — the PAGES title is GONE (empty title = no
-         * title span). EDIT / REVIEW / DELIVER keep their word. */
-        title={headerTitle === '' ? undefined : headerTitle}
+         * title span). EDIT / REVIEW / DELIVER keep their word.
+         * TFL-1557 — while collapsed, the header is arrow-only: never render
+         * the (truncated) title in the 48px stripped header. */
+        title={collapsed || headerTitle === '' ? undefined : headerTitle}
         actions={
           <div className="context-panel-actions">
             {!collapsed && stage === 'pages' && (
-              <>
-                <IconButton
-                  label={navigatorLayout === 'stacked' ? 'Use split layout' : 'Use stacked layout'}
-                  intent="tertiary"
-                  kind="toggle"
+              <div className="context-panel-page-actions">
+                <Button
+                  intent="secondary"
+                  kind="action"
                   density="standard"
                   className="context-panel-layout"
-                  pressed={navigatorLayout === 'split'}
+                  aria-pressed={navigatorLayout === 'split'}
+                  aria-label={navigatorLayout === 'stacked' ? 'Use split layout' : 'Use stacked layout'}
+                  title={navigatorLayout === 'stacked' ? 'Use split layout' : 'Use stacked layout'}
                   data-context-panel-layout-split
                   onClick={(): void =>
                     onNavigatorLayoutChange?.(navigatorLayout === 'split' ? 'stacked' : 'split')
                   }
-                  icon={<Icon name="split" size="md" aria-hidden />}
-                />
+                  icon={<Icon name="split" size="sm" aria-hidden />}
+                >
+                  <span className="context-panel-page-action-label">Layout</span>
+                </Button>
                 {onMerge !== undefined && (
-                  <IconButton
-                    label="Combine with another PDF"
-                    intent="tertiary"
+                  <Button
+                    intent="secondary"
                     kind="action"
                     density="standard"
                     className="context-panel-combine"
+                    aria-label="Combine with another PDF"
+                    title="Combine with another PDF"
                     data-context-panel-combine
                     onClick={onMerge}
-                    icon={<Icon name="merge" size="md" aria-hidden />}
-                  />
+                    icon={<Icon name="merge" size="sm" aria-hidden />}
+                  >
+                    <span className="context-panel-page-action-label">Combine</span>
+                  </Button>
                 )}
                 {onRemoveBlankPages !== undefined && (
-                  <IconButton
-                    label="Remove blank pages"
-                    intent="tertiary"
+                  <Button
+                    intent="secondary"
                     kind="action"
                     density="standard"
                     className="context-panel-remove-blank"
+                    aria-label="Remove blank pages"
+                    title="Remove blank pages"
                     data-blank-scan-open
                     onClick={onRemoveBlankPages}
-                    icon={<Icon icon={FileMinus} size="md" aria-hidden />}
-                  />
+                    icon={<Icon icon={FileMinus} size="sm" aria-hidden />}
+                  >
+                    <span className="context-panel-page-action-label">Clean</span>
+                  </Button>
                 )}
-              </>
+              </div>
             )}
             {collapseButton}
             {/* R16 — the compact drawer's explicit close control. The wide

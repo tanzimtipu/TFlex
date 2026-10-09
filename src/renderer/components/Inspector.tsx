@@ -1618,7 +1618,11 @@ const renderSignatureSection = (): ReactElement => (
         // strip). The host gives it its own inset width, so it never overlaps
         // the canvas.
         <div className="inspector-collapsed-strip" data-inspector-collapsed-strip>
+          {/* TFL-1557 — the collapsed strip names the panel with vertical text;
+              the expand arrow sits ABOVE it, mirroring the context launcher's
+              control-over-label arrangement for a collapsed panel. */}
           {collapseControl}
+          <span className="inspector-collapsed-label" aria-hidden="true">Inspector</span>
         </div>
       ) : (
         <>
@@ -1626,9 +1630,9 @@ const renderSignatureSection = (): ReactElement => (
             className="inspector-header"
             preferredHeight
             title={`Inspector \u00b7 ${inspectorScopeLabel(selection, pageSelection)}`}
+            leadingActions={collapseControl}
             actions={
               <div className="inspector-header-actions">
-                {collapseControl}
                 {onClose !== undefined ? (
                   <IconButton
                     label="Close inspector"

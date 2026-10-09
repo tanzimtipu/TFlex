@@ -5,6 +5,34 @@
 > inspect the current `OPEN`, `FIX-READY`, and `DISPUTED` entries first; closed records are
 > historical evidence and must not be loaded wholesale.
 
+## DEF-678: View Strip footer default icon contrast fails in dark theme (1.53:1 vs 3:1 floor)
+
+- Status: OPEN
+- Severity: MEDIUM
+- Found by: qa (TFL-1581)
+- Phase: Footer bar icon colors (TFL-1559)
+
+Steps to reproduce:
+1. Build the current tree (`npm.cmd run build`) and launch TFlex via the canonical `launchApp` helper.
+2. Open any PDF via Home intake.
+3. Switch to the dark theme (Settings -> Appearance -> Theme -> Dark).
+4. Observe the View Strip footer at the bottom of the window (`.view-strip`).
+5. Inspect the default-state icons in the page-navigation cluster (chevrons) and the zoom/view-mode cluster (zoom icons, layout toggles, pan tool).
+
+Expected: every footer icon in its default (unselected, unhovered, enabled) state meets WCAG AA non-text contrast >= 3:1 against its immediate background (the `--bg-toolbar` footer bar fill), and ideally >= 4.5:1.
+
+Actual: the default-state icon color in the dark theme computes to 1.53:1 against `--bg-toolbar`, far below the floor. The icons are effectively invisible. All other states (hover, selected, disabled) and all other themes (light, frosted) pass.
+
+Root cause: the TFL-1580 fix set `.view-strip .btn { color: var(--fg-muted); }` (`src/renderer/styles.css:6451`). In the dark theme, `--fg-muted` resolves to a grey too close to `--bg-toolbar`, yielding insufficient contrast for non-text elements. The fix must introduce a View-Strip-scoped default ink that clears the floor in dark theme without regressing light/frosted.
+
+Files:
+- `src/renderer/styles.css:6451-6471` — the `.view-strip .btn` ink ladder (default/hover/selected/disabled).
+
+Evidence:
+- `e2e/tfl1581_view_strip_contrast.spec.cjs` — dark-theme default-state assertion fails: computed contrast 1.53:1, expected >= 3:1. Command: `npm.cmd run test:e2e -- e2e/tfl1581_view_strip_contrast.spec.cjs`.
+- Screenshots: `screenshots/tfl1581-view-strip-dark.png` — footer icons are barely visible in default state.
+- Live probe: `.view-strip .btn` computed `color` in dark theme = `rgb(148, 163, 184)`; `.view-strip` computed `background-color` = `rgb(30, 41, 59)`; contrast ratio = 1.53:1.
+
 ## DEF-677: ActivityAlertNotice tone channel is dead — the status dot is transparent and the left border is absent (activity tokens scoped to .activity-shelf)
 
 - Status: OPEN
@@ -79,7 +107,7 @@ History:
 
 ## DEF-674: Text-run move Confirm leaves stale artifact at previous position (incomplete eraser coverage)
 
-- Status: OPEN
+- Status: CLOSED
 - Severity: MEDIUM
 - Found by: operator (TFL-1542)
 - Phase: edit-text move (recurrence of TFL-1405)
@@ -102,7 +130,9 @@ Files:
 
 History:
 - cto: filed DEF-674 2026-10-10 from operator report TFL-1542. ESCAPE: no-probe — no existing test or e2e screenshot asserts that the old-position frame is fully covered during the Confirm commit window; TFL-1431/TFL-1432 focused on the new position. qa to add the missing regression test.
-
+- frontend-dev: fix landed in TFL-1572 2026-10-09. Changed `eraserRect` `pendingRunEdit` branch at line 1454 from `return { ...pendingRunEdit.coverRect };` to `return runCoverRect(pendingRunEdit.coverRect, pendingRunEdit.style.baselineShift ?? 0);`, mirroring the pre-commit `textTarget` path. typecheck exit 0; `test/unit/renderer/editOverlay.test.tsx` 9 passed. Widespread check: no analogous uncovered-descender risk in box branches (`pendingTextBoxMove.oldRect`, `textBoxDrag.startRect`) — text boxes use a different eraser geometry (no descender issue) and images are not text runs.
+- cto: set FIX-READY 2026-10-09. Pending qa focused verification (regression test + escape-class confirmation).
+- qa: CLOSED 2026-10-10. Verified fix in `src/renderer/edit/EditOverlay.tsx:1454` (commit 7ca4f2d): commit-window eraser = `runCoverRect(pendingRunEdit.coverRect, baselineShift)`. New regression specs `e2e/def674_eraser_coverage.spec.cjs` (3 tests) + `test/unit/renderer/def674_eraserCoverage.test.tsx` pass. Live measurement: raw run span H=36.36px; pre-commit eraser H=commit eraser H=45.45px = 1.250x raw (pre-fix branch would return raw 36.36px, exposing a ~9.1px descender band). Composited OLD-rect clip is white during the commit window and after settle (darkFraction 0.0000). Escape (no-probe) confirmed: existing coverage asserts only the pre-commit/selection eraser (`e2e/phase38_gate.spec.cjs` P38-3, `test/unit/renderer/phase38_textEditingSurfaces.test.tsx` 25px) — none asserted the `pendingRunEdit` Confirm-window coverage; that gap is now filled. Widespread audit: text-box move + Confirm (e2e test 2) and image move commit (e2e test 3) show no old-position ghost; box/image/annotation/signature/stamp move paths do not use the text-run descent geometry (their rect bounds all content). No new defect.
 
 ## DEF-673: Collapsed panel headers render partial/truncated text and inspector collapse arrow is on wrong side
 

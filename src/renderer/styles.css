@@ -4083,33 +4083,40 @@ body.tab-reordering .tab-list[data-reorder="true"] .tab {
  * Animations-OFF collapse them globally).
  * ========================================================================= */
 
-/* The strip stretches so the active tab's fill can reach its foot; the
- * inactive tabs hang from the top edge. The `+1px` / `-1px` extends the strip
- * over the header's own 1px bottom border so the active tab's raised surface
- * covers it and reads as connected to the document (no separating line) while
- * the line still runs beneath every inactive tab. Strip height tokens are
- * untouched. */
+/* Phase 123 redo — the strip is bottom-anchored in the 40px rail. The tab row
+ * itself is the 34px chrome height and sits flush on the rail's foot so the
+ * active tab's fill can merge with the content below. The `+1px` / `-1px`
+ * extends the area over the header's own 1px bottom border so the active raised
+ * surface covers it (no separating line). The 8px chrome top-corner radius is
+ * scoped here; the shared `--tf-tab-radius-top` remains the 9px identity
+ * silhouette used by the other styles. Strip height tokens are untouched. */
 .tab-area[data-tab-style="chrome"] {
   align-self: stretch;
   height: calc(100% + 1px);
   margin-bottom: -1px;
+  --tf-tab-radius-top: 8px;
 }
 
+/* The row is the 34px chrome tab height and bottom-aligns every tab, so an
+ * inactive tab's body sits on the strip surface and the active tab's fill
+ * reaches the strip foot. */
 .tab-area[data-tab-style="chrome"] .tab-list {
-  align-items: flex-start;
+  align-items: flex-end;
+  height: 34px;
 }
 
-/* Geometry: a compact fixed-height tab, banded min/max width, content
- * ellipsised, shrinking uniformly through the planner's `--tf-tab-width`. */
+/* Geometry: an inactive tab is a 30px muted chip. The planner's
+ * `--tf-tab-width` keeps it inside the Chrome band (72px crowded floor / 240px
+ * ceiling) and the padding yields at squeezed widths (the colorful
+ * `min(var(--sp-2), width * 0.25)` pattern). Tabs touch (zero gap). */
 .tab-area[data-tab-style="chrome"] .tab {
   height: 30px;
-  width: var(--tf-tab-width, 220px);
-  min-width: 108px;
-  max-width: 220px;
+  width: var(--tf-tab-width, 240px);
+  min-width: 72px;
+  max-width: 240px;
   box-sizing: border-box;
-  padding: 0 min(var(--sp-2), calc(var(--tf-tab-width, 220px) * 0.25)) 0
-    min(var(--sp-3), calc(var(--tf-tab-width, 220px) * 0.25));
-  margin-right: var(--tf-tab-gap, 2px);
+  padding: 0 min(var(--sp-2), calc(var(--tf-tab-width, 240px) * 0.25));
+  margin-right: 0;
   border: none;
   border-radius: 0;
   background: transparent;
@@ -4117,7 +4124,8 @@ body.tab-reordering .tab-list[data-reorder="true"] .tab {
   font-weight: 400;
 }
 
-/* The muted inactive body: rounded top corners, flush square foot. */
+/* The muted inactive body: 8px rounded top corners, flush square foot, the
+ * toolbar surface. */
 .tab-area[data-tab-style="chrome"] .tab::before {
   content: "";
   position: absolute;
@@ -4143,16 +4151,36 @@ body.tab-reordering .tab-list[data-reorder="true"] .tab {
   color: var(--fg-muted);
 }
 
+/* Per-session identity on an INACTIVE chrome tab is decorative only: a SUBTLE
+ * tint into the toolbar surface (<= 15%), so it reads muted, never a bright
+ * chip. The ACTIVE tab never paints the saturated identity - it stays the
+ * raised content surface below. */
+.tab-area[data-tab-style="chrome"] .tab[data-tab-color-id]:not(.tab-active)::before {
+  background: color-mix(in srgb, var(--tf-tab-identity) 14%, var(--bg-toolbar));
+}
+
 /* Neutralise the shared `.tab:hover` brightness filter for every chrome tab:
- * the active tab must never be hover-lightened. */
+ * the active tab must never be hover-lightened, and the surface is painted by
+ * ::before so the element background stays transparent. */
 .tab-area[data-tab-style="chrome"] .tab:hover {
   filter: none;
+  background: transparent;
 }
 
 /* INACTIVE-ONLY hover: a subtle body lighten toward the raised surface. The
- * selector excludes the active tab, so hovering it changes nothing. */
+ * selector excludes the active tab, so hovering it changes nothing, and it
+ * only touches `background` - no size / margin / transform - so there is zero
+ * layout shift. */
 .tab-area[data-tab-style="chrome"] .tab:not(.tab-active):hover::before {
-  background: color-mix(in srgb, var(--bg-raised) 45%, var(--bg-toolbar));
+  background: color-mix(in srgb, var(--bg-raised) 25%, var(--bg-toolbar));
+}
+
+.tab-area[data-tab-style="chrome"] .tab[data-tab-color-id]:not(.tab-active):hover::before {
+  background: color-mix(
+    in srgb,
+    var(--bg-raised) 25%,
+    color-mix(in srgb, var(--tf-tab-identity) 14%, var(--bg-toolbar))
+  );
 }
 
 .tab-area[data-tab-style="chrome"] .tab[data-tab-color-id]:not(.tab-active):hover {
@@ -4161,20 +4189,18 @@ body.tab-reordering .tab-list[data-reorder="true"] .tab {
 
 /* Active tab: the raised, contrasting surface connected to the content below.
  * It fills the strip's foot, squares its bottom corners and drops the shared
- * identity keyline and the VS Code underline (no separating border/line). */
+ * identity keyline and the VS Code underline (no separating border/line). The
+ * label is Chrome's medium 500 (not the shared 600) and the surface is stable -
+ * hover never lightens it. */
 .tab-area[data-tab-style="chrome"] .tab-list > li[data-tab-active="true"] {
   align-self: stretch;
 }
 
-.tab-area[data-tab-style="chrome"] .tab-active {
+.tab-area[data-tab-style="chrome"] .tab-active,
+.tab-area[data-tab-style="chrome"] .tab.tab-active[data-tab-color-id] {
   height: 100%;
   color: var(--fg-strong);
-  font-weight: 600;
-  box-shadow: none;
-}
-
-.tab-area[data-tab-style="chrome"] .tab.tab-active[data-tab-color-id] {
-  color: var(--fg-strong);
+  font-weight: 500;
   box-shadow: none;
 }
 
@@ -4206,12 +4232,13 @@ body.tab-reordering .tab-list[data-reorder="true"] .tab {
 }
 
 .tab-area[data-tab-style="chrome"] .tab-close:hover {
-  background: color-mix(in srgb, var(--fg-strong) 14%, transparent);
+  background: color-mix(in srgb, var(--fg-strong) 12%, transparent);
   opacity: 1;
 }
 
 /* Title yields the trailing space and ellipsises rather than crowding the
- * pinned close control. */
+ * pinned close control. Short titles are protected by the 72px tab floor (the
+ * inner `.tab-title-text` owns the clip). */
 .tab-area[data-tab-style="chrome"] .tab-title {
   max-width: none;
   min-width: 0;
@@ -4222,14 +4249,14 @@ body.tab-reordering .tab-list[data-reorder="true"] .tab {
 /* Chrome-style "+" new-tab: a compact muted square on the tab baseline. The
  * existing control (and its Multi-Mode disabled reason) is only restyled. */
 .tab-area[data-tab-style="chrome"] .tab-list-new {
-  align-items: flex-start;
+  align-items: flex-end;
 }
 
 .tab-area[data-tab-style="chrome"] .tab-new {
   width: 28px;
   min-width: 28px;
   height: 28px;
-  margin: 1px 0 0 4px;
+  margin: 0 0 3px 4px;
   border-radius: var(--radius-2);
   color: var(--fg-muted);
 }
@@ -5705,6 +5732,18 @@ body.tab-reordering .tab-list[data-reorder="true"] .tab {
   place-items: center;
 }
 
+/* TFL-1585 — card mode's sizing frame: its layout box is the ROTATED preview
+ * footprint (width/height swap at 90/270), so the fit-content card hugs the
+ * rotated page and the rotated canvas + its border never spill outside the
+ * card. The frame carries no border of its own; the `.thumb-canvas-wrap`
+ * inside owns the border and is the element the rotation turns. */
+.thumb-frame {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0 auto;
+}
+
 .thumb-canvas { display: block; }
 
 .thumb-placeholder {
@@ -6166,6 +6205,13 @@ body.tab-reordering .tab-list[data-reorder="true"] .tab {
 }
 
 .search-bar {
+  /* TFL-1569 — the Find and Replace inputs share ONE width token so the bar
+   * reads as a single coherent two-row control: both boxes get the same
+   * height, the same left/right edges and the same padding / radius, no matter
+   * how the two rows' right-hand control clusters differ. The value is a
+   * viewport-relative clamp, so it stays identical for both inputs (same
+   * viewport) and responsive across window sizes. */
+  --search-input-w: clamp(220px, 36vw, 460px);
   display: flex;
   align-items: center;
   gap: 6px;
@@ -6206,7 +6252,11 @@ body.tab-reordering .tab-list[data-reorder="true"] .tab {
 }
 
 .search-input {
-  flex: 1 1 auto;
+  /* TFL-1569 — fixed, shared width (see --search-input-w on .search-bar) so
+   * the Find and Replace boxes line up at both edges; no flex grow, because a
+   * grower would size each row from its own, different, control cluster. */
+  flex: 0 0 auto;
+  width: var(--search-input-w, 340px);
   height: 28px;
   padding: 0 var(--sp-2);
   background: var(--bg-input);
@@ -6218,6 +6268,24 @@ body.tab-reordering .tab-list[data-reorder="true"] .tab {
 }
 
 .search-input:focus { border-color: var(--accent); }
+
+/* TFL-1569 — the replace row was inline-styled in SearchBar.tsx; it is
+ * promoted to CSS so both rows lay out identically. It spans the full bar
+ * width and matches the base row's 6px vertical rhythm through the bar gap. */
+.search-replace-row {
+  flex-basis: 100%;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+}
+
+/* TFL-1569 — pin each row's right-hand control cluster to the bar's right
+ * edge, so the two rows share one alignment column and neither the status /
+ * navigation group nor the labelled Replace buttons is clipped. */
+.search-bar > .search-status,
+.search-replace-row > button:first-of-type {
+  margin-left: auto;
+}
 
 .search-status {
   font-size: var(--fs-xs);
@@ -6328,6 +6396,13 @@ body.tab-reordering .tab-list[data-reorder="true"] .tab {
 .view-strip .page-input {
   height: var(--view-strip-target);
   border-radius: var(--view-strip-radius);
+  color: var(--fg-muted);
+}
+
+/* TFL-1580 — the jump field's typed value takes the strong ink only while
+ * focused, so the resting readout shares the footer's muted tier. */
+.view-strip .page-input:focus {
+  color: var(--fg-strong);
 }
 
 .view-strip .page-total {
@@ -6340,6 +6415,7 @@ body.tab-reordering .tab-list[data-reorder="true"] .tab {
   min-width: 44px;
   font-size: var(--fs-sm);
   font-variant-numeric: tabular-nums;
+  color: var(--fg-muted);
 }
 
 .view-strip .page-label-hint {
@@ -6350,8 +6426,49 @@ body.tab-reordering .tab-list[data-reorder="true"] .tab {
  * fill; ordinary view commands carry no `aria-pressed` and stay neutral. */
 .view-strip .btn[aria-pressed='true'] {
   background: var(--accent-soft);
-  color: var(--accent-text);
+  color: var(--btn-selected-fg);
   border-color: transparent;
+}
+
+/* TFL-1580 — the footer ICON + LABEL ink ladder. Before this, the page-nav and
+ * zoom action controls (`.btn-toolbar`) inherited the app `--fg` while the
+ * toggle / disclosure / segmented / secondary controls carried `--fg-strong`,
+ * so the same resting footer glyph rendered at two different weights and the
+ * hover / selected / disabled states were never declared for the action glyphs.
+ * One explicit ladder now covers EVERY interactive glyph in the View Strip on
+ * the shared token set, so a theme switch recolours them together:
+ *   default  --fg-muted         (>= 5:1 on the footer bar in all three themes)
+ *   hover    --fg-strong
+ *   selected --btn-selected-fg  (the shared accent ink on the shared soft fill)
+ *   disabled --tf-icon-disabled (the purpose-built non-text disabled glyph ink).
+ * The brief suggested `--fg-faint` here, but that token measures only 2.48:1
+ * (light) / 2.94:1 (dark) on the footer bar — below the same brief's "disabled
+ * composite >= 3:1" constraint. `--tf-icon-disabled` is the existing, theme-aware
+ * disabled-glyph token and clears the floor in every theme (4.23 / 6.49 / 4.16)
+ * while still reading clearly lighter than the default ink. It is held at full
+ * opacity: the family's 0.55 fade would drop the composite back to ~1.6-2.0:1.
+ * The text readouts ride the same muted tier so icon and label read as one. */
+.view-strip .btn {
+  color: var(--fg-muted);
+}
+
+.view-strip .btn:hover:not([disabled]):not([aria-disabled="true"]) {
+  color: var(--fg-strong);
+}
+
+.view-strip .btn[aria-pressed="true"],
+.view-strip .btn[aria-pressed="true"]:hover:not([disabled]):not([aria-disabled="true"]) {
+  color: var(--btn-selected-fg);
+}
+
+.view-strip .btn[aria-expanded="true"] {
+  color: var(--btn-selected-fg);
+}
+
+.view-strip .btn[disabled],
+.view-strip .btn[aria-disabled="true"] {
+  color: var(--tf-icon-disabled);
+  opacity: 1;
 }
 
 /* The Book View entry: a labelled, neutral footer command. */
@@ -9182,24 +9299,25 @@ rect.ann-highlight.ann-preview {
 
 .ann-panel-empty .hint {
   color: var(--tf-text-supporting);
-  font-size: var(--fs-xs);
+  font-size: var(--tf-panel-helper-size);
 }
 
 .ann-panel-summary {
   display: flex;
   flex-wrap: wrap;
-  gap: 4px;
+  gap: var(--space-micro);
   padding: var(--sp-2) var(--sp-3);
   border-bottom: 1px solid var(--border-subtle);
+  font-size: var(--tf-panel-control-size);
 }
 
 .ann-panel-summary-pill {
   background: var(--bg-raised);
-  color: var(--fg-muted);
+  color: var(--tf-panel-ink-secondary);
   border: 1px solid var(--border);
   border-radius: var(--radius-pill);
   padding: 2px 8px;
-  font-size: var(--fs-xs);
+  font-size: var(--tf-panel-helper-size);
   font-variant-numeric: tabular-nums;
 }
 
@@ -10770,6 +10888,17 @@ rect.ann-highlight.ann-preview {
   flex-direction: column;
   align-items: center;
   padding-top: var(--sp-2);
+}
+
+/* TFL-1557 — the collapsed strip names the panel with rotated text; the expand
+ * arrow sits above it. Mirrors .context-panel-launcher-label's vertical text. */
+.inspector-collapsed-label {
+  font-size: var(--fs-xs);
+  line-height: 1;
+  letter-spacing: 0.02em;
+  writing-mode: vertical-rl;
+  color: var(--fg-muted);
+  margin-top: var(--sp-2);
 }
 
 .inspector-header-actions {
@@ -16331,6 +16460,14 @@ rect.ann-highlight.ann-preview {
   min-height: 0;
 }
 
+/* TFL-1557 — the optional header cluster rendered BEFORE the title, so a panel
+ * can put its collapse/expand affordance on the LEFT edge of the header. */
+.tf-panel-header-leading-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-1);
+}
+
 .glass-sidebar-body {
   flex: 1 1 auto;
   min-height: 0;
@@ -17886,12 +18023,48 @@ rect.ann-highlight.ann-preview {
   min-width: 0;
 }
 
-/* The header's direct tool icons — Phase 124 retired the labelled More menu.
- * Layout aliases only; colour comes from the canonical tertiary variant. */
-.context-panel-layout,
-.context-panel-remove-blank,
-.context-panel-combine {
-  flex: 0 0 auto;
+/* TFL-1582 — the PAGES header's direct tools are now labelled, equally-sized,
+ * panel-responsive controls matching the Book View labelled-action style. A
+ * `repeat(auto-fit, minmax(...))` grid keeps the three buttons at ONE equal
+ * width whether they sit on a single row (wide / max 420px panel, where the
+ * tracks grow to fill) or wrap onto extra rows (the 280px default and 240px
+ * min panel, where the header's min-height already grows per TFL-1411). A plain
+ * `flex: 1 1 0` row was tried first but its equal thirds are only ~62px at the
+ * 280px default panel — narrower than the "Combine" label — so the labels
+ * truncated to "C...". The grid floor keeps every label whole. Colour comes
+ * from the canonical secondary variant; these rules only add layout +
+ * Book-View-sized metrics. */
+.context-panel-page-actions {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(96px, 1fr));
+  flex: 1 1 auto;
+  gap: var(--space-small);
+  min-width: 0;
+}
+
+.context-panel-page-actions .context-panel-layout,
+.context-panel-page-actions .context-panel-remove-blank,
+.context-panel-page-actions .context-panel-combine {
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  height: var(--view-strip-target, 32px);
+  padding: 0 10px;
+  border-radius: var(--view-strip-radius, 8px);
+  gap: 6px;
+  font-size: var(--fs-sm);
+  color: var(--fg-strong);
+}
+
+/* The visible label clamps with an ellipsis only if the flex layout is ever
+ * forced below the label's min-content width; the equal-share layout prevents
+ * it in normal use. */
+.context-panel-page-actions .context-panel-page-action-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* Phase 124 — the header's direct tool icons are navigator primary controls,
@@ -18040,6 +18213,19 @@ rect.ann-highlight.ann-preview {
 
 .context-panel-selection-clear {
   flex: 0 0 auto;
+}
+
+/* TFL-1589 — the Selection summary's motion wrappers. The scale-fade itself is
+ * driven by motion/react variants (motion tokens only); these rules just keep
+ * the card's layout box identical to its pre-animation state and hold the
+ * crossfading value text in place, so appearing / dismissing / a value change
+ * never shifts the panel's scroll position or widens a property row. */
+.context-panel-selection-motion {
+  flex: 0 0 auto;
+}
+
+.context-panel-selection-crossfade {
+  display: inline-block;
 }
 
 /* The view-only no-bookmarks state fills the bounded outline body. */
@@ -18669,29 +18855,30 @@ rect.ann-highlight.ann-preview {
   border-radius: var(--radius-1);
 }
 
-/* TFL-1465 — the card's controls are now an OVERLAY bar pinned to the bottom
- * edge of the page preview itself. Absolute offsets resolve against the card's
- * PADDING box, so 6px equals the 6px padding gap = the preview's outer edge
- * (7px from the card's outer edge incl. the 1px border). Checkbox left, label,
- * current eye indicator, More right. It overlays the preview, so the card's flow
- * height stays preview + uniform inset. A translucent glass bar keeps the row
- * legible over the white page in every theme. */
+/* TFL-1585 — the card's controls sit DIRECTLY on the page preview as a
+ * transparent, horizontally CENTERED row (checkbox, label, current eye
+ * indicator, More) on the preview's bottom edge. The old opaque glass bar is
+ * gone (no background, no backdrop blur, no border); the row is centered over
+ * the preview via left:50% + translateX(-50%) so it stays inside the preview
+ * bounds at every rotation, and max-width keeps it from overhanging. */
 .thumb-overlay {
   position: absolute;
-  left: 6px;
-  right: 6px;
+  left: 50%;
   bottom: 6px;
+  transform: translateX(-50%);
   display: flex;
   align-items: center;
+  justify-content: center;
   gap: var(--sp-1);
   min-height: 34px;
+  width: max-content;
+  max-width: calc(100% - 12px);
   padding: 0 var(--sp-1);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-1);
-  background: color-mix(in srgb, var(--bg-raised) 88%, transparent);
-  -webkit-backdrop-filter: var(--glass-blur);
-  backdrop-filter: var(--glass-blur);
-  text-align: left;
+  border: none;
+  background: transparent;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+  text-align: center;
 }
 
 .thumb-checkbox {
@@ -18705,12 +18892,19 @@ rect.ann-highlight.ann-preview {
 
 .thumb-overlay .thumb-label {
   margin-top: 0;
-  flex: 1 1 auto;
+  flex: 0 1 auto;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  text-align: left;
+  text-align: center;
+  color: var(--fg-strong);
+  font-weight: 500;
+  /* TFL-1585 — the label sits on the page preview with no bar behind it, so a
+   * theme-aware halo keeps it legible on the white page in every theme. */
+  text-shadow:
+    0 0 2px var(--bg-raised),
+    0 0 4px var(--bg-raised);
 }
 
 /* Current page is DISTINCT from the batch selection: a violet leading marker
@@ -22871,6 +23065,7 @@ cursor: pointer;
   display: flex;
   align-items: flex-start;
   gap: var(--sp-2);
+  padding: var(--sp-2) var(--space-standard);
   font-size: var(--fs-sm);
   line-height: 1.45;
   animation: canvas-alert-notice-in var(--motion-duration-standard) var(--motion-ease-enter) both;
@@ -23041,6 +23236,174 @@ cursor: pointer;
 :root[data-animations="off"] .canvas-alert-notice,
 :root[data-animations="off"] .canvas-alert-notice--leaving,
 :root[data-animations="off"] .canvas-alert-notice-collapsed-toggle {
+  animation: none;
+}
+
+/* TFL-1531 - activity alert notice joins the canvas notice cluster. */
+.canvas-notices .activity-alert-notice-region {
+  display: contents;
+}
+
+.canvas-notices .activity-alert-notice-collapsed-toggle {
+  position: static;
+  order: -2;
+  pointer-events: auto;
+}
+
+/* Activity alert expanded box shares the same canvas-top-right geometry. */
+.canvas-top-right .activity-alert-notice {
+  position: static;
+  flex: 0 0 100%;
+  margin: 0;
+  width: auto;
+  max-width: none;
+  background: var(--bg-elevated);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-3);
+  box-shadow: var(--shadow-menu);
+  -webkit-backdrop-filter: var(--glass-blur);
+  backdrop-filter: var(--glass-blur);
+  pointer-events: auto;
+  transform-origin: top right;
+  align-items: flex-start;
+  max-height: calc(100cqh - var(--tf-chrome-y, 0px) - 200px);
+  overflow: auto;
+}
+
+.activity-alert-notice {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--sp-2);
+  font-size: var(--fs-sm);
+  line-height: 1.45;
+  animation: activity-alert-notice-in var(--motion-duration-standard) var(--motion-ease-enter) both;
+}
+
+.activity-alert-notice[data-activity-alert-tone="progress"] { border-left: 3px solid var(--activity-progress); }
+.activity-alert-notice[data-activity-alert-tone="success"] { border-left: 3px solid var(--activity-success); }
+.activity-alert-notice[data-activity-alert-tone="warning"] { border-left: 3px solid var(--activity-warning); }
+.activity-alert-notice[data-activity-alert-tone="danger"] { border-left: 3px solid var(--activity-danger); }
+.activity-alert-notice[data-activity-alert-tone="neutral"] { border-left: 3px solid var(--activity-neutral); }
+
+.activity-alert-notice--leaving {
+  animation: activity-alert-notice-out var(--motion-duration-fast) var(--motion-ease-exit) both;
+}
+
+@keyframes activity-alert-notice-in {
+  from { opacity: 0; transform: scale(var(--motion-scale-enter)); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+@keyframes activity-alert-notice-out {
+  from { opacity: 1; transform: translateY(0) scale(1); }
+  to { opacity: 0; transform: translateY(-4px) scale(var(--motion-scale-exit)); }
+}
+
+.activity-alert-notice-body {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.activity-alert-notice-mark {
+  flex: 0 0 auto;
+  width: 6px;
+  height: 6px;
+  border-radius: var(--radius-pill);
+  background: var(--activity-neutral);
+}
+
+.activity-alert-notice-mark[data-activity-alert-role="progress"] { background: var(--activity-progress); }
+.activity-alert-notice-mark[data-activity-alert-role="success"] { background: var(--activity-success); }
+.activity-alert-notice-mark[data-activity-alert-role="warning"] { background: var(--activity-warning); }
+.activity-alert-notice-mark[data-activity-alert-role="danger"] { background: var(--activity-danger); }
+.activity-alert-notice-mark[data-activity-alert-role="neutral"] { background: var(--activity-neutral); }
+
+.activity-alert-notice-count {
+  font-weight: 600;
+  color: var(--fg-strong);
+  white-space: nowrap;
+}
+
+.activity-alert-notice-active {
+  color: var(--fg-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.activity-alert-notice-collapse {
+  margin-left: auto;
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  min-width: 0;
+  height: 24px;
+  padding: 0;
+  gap: 0;
+  border: none;
+  border-radius: var(--radius-2);
+  background: transparent;
+  color: var(--fg-muted);
+  cursor: pointer;
+  transition: background-color var(--motion-duration-fast) var(--motion-ease-standard);
+}
+
+.activity-alert-notice-collapse:hover {
+  background: var(--accent);
+  color: var(--bg-base);
+}
+
+.activity-alert-notice-collapse:focus-visible,
+.activity-alert-notice-collapsed-toggle:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
+.activity-alert-notice-collapsed-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  min-width: 0;
+  height: 28px;
+  padding: 0;
+  gap: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-2);
+  background: var(--bg-elevated);
+  color: var(--accent-text);
+  cursor: pointer;
+  box-shadow: var(--shadow-popover);
+  transform-origin: top left;
+  animation: activity-alert-notice-icon-in var(--motion-duration-fast) var(--motion-ease-enter) both;
+}
+
+.activity-alert-notice-collapsed-toggle:hover {
+  background: var(--accent);
+  color: var(--bg-base);
+}
+
+@keyframes activity-alert-notice-icon-in {
+  from { opacity: 0; transform: scale(var(--motion-scale-enter)); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .activity-alert-notice,
+  .activity-alert-notice--leaving,
+  .activity-alert-notice-collapsed-toggle {
+    animation: none;
+  }
+}
+
+:root[data-animations="off"] .activity-alert-notice,
+:root[data-animations="off"] .activity-alert-notice--leaving,
+:root[data-animations="off"] .activity-alert-notice-collapsed-toggle {
   animation: none;
 }
 
