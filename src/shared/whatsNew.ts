@@ -23,6 +23,20 @@ export interface WhatsNewEntry {
 /** Ordered newest first. */
 export const WHATS_NEW: WhatsNewEntry[] = [
   {
+    version: '1.52.0',
+    date: '2026-10-08',
+    highlights: [
+      'A new Settings Studio brings your preferences, theme and recent files together in one clear place.',
+      'Guided Fill walks you through a document\u2019s form fields so you can complete them in a single pass.',
+      'One Thread Stream keeps every annotation and review comment together as a single conversation.',
+      'Select an object and its properties and actions appear together, so editing is simple and direct.',
+      'An Intake Tray makes it easy to bring files into the app by dragging and dropping them in.',
+      'Panels now adapt to the space available, so the app stays comfortable at any window size.',
+      'The Output Studio brings print and export output together in one clear, focused surface.',
+      'Together these complete the visual overhaul, so the whole app looks and feels consistent.',
+    ],
+  },
+  {
     version: '1.51.1',
     date: '2026-10-08',
     highlights: [
