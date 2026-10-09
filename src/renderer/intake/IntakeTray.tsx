@@ -14,6 +14,7 @@
 // named, Alt+ArrowUp / Alt+ArrowDown reorder a focused row (IME-safe), and an
 // item error is a `role="alert"` node.
 
+import { Fragment } from "react";
 import type { KeyboardEvent as ReactKeyboardEvent, ReactElement } from "react";
 import { ChevronDown, ChevronUp, FolderOpen } from "lucide-react";
 import { Icon } from "../icons/Icon";
@@ -161,72 +162,85 @@ export function IntakeTray({
           {items.map((item, index) => {
             const errorText = errorTextFor(item);
             const errorId = `intake-error-${item.id}`;
+            // One hairline between the drop-zone block and the first file
+            // (only while the drop zone shows) and between each adjacent pair
+            // of rows. The last row never carries a trailing separator.
+            const showSep = index > 0 || showDropzone;
             return (
-              <li
-                key={item.id}
-                className="intake-row"
-                data-intake-row={index}
-                tabIndex={0}
-                aria-label={rowLabel(item, index)}
-                {...(errorText !== null
-                  ? { "aria-describedby": errorId }
-                  : {})}
-                onKeyDown={onRowKeyDown(index)}
-              >
-                <div className="intake-row-main">
-                  <span className="intake-index" aria-hidden="true">
-                    {index + 1}
-                  </span>
-                  <span className="intake-name" title={sourceTitle(item)}>
-                    {item.name}
-                  </span>
-                  <span className="intake-kind">{KIND_LABEL[item.kind]}</span>
-                  <span
-                    className={`intake-state intake-state--${item.state}`}
-                    data-intake-state={item.state}
-                  >
-                    {STATE_LABEL[item.state]}
-                  </span>
-                  <div className="intake-row-controls">
-                    <IconButton
-                      label={`Move ${item.name} up`}
-                      size="sm"
-                      className="intake-move"
-                      disabled={index === 0}
-                      data-intake-move-up={index}
-                      icon={<Icon icon={ChevronUp} size="sm" />}
-                      onClick={(): void => onMove?.(index, -1)}
-                    />
-                    <IconButton
-                      label={`Move ${item.name} down`}
-                      size="sm"
-                      className="intake-move"
-                      disabled={index === items.length - 1}
-                      data-intake-move-down={index}
-                      icon={<Icon icon={ChevronDown} size="sm" />}
-                      onClick={(): void => onMove?.(index, 1)}
-                    />
-                    <IconButton
-                      label={`Remove ${item.name} from the queue`}
-                      size="sm"
-                      className="intake-remove"
-                      data-intake-remove={index}
-                      icon={<Icon name="dialogClose" size="sm" />}
-                      onClick={(): void => onRemove?.(item.id)}
-                    />
-                  </div>
-                </div>
-                {errorText !== null ? (
-                  <p
-                    className="intake-error"
-                    id={errorId}
-                    data-intake-error={index}
-                    role="alert"
-                  >
-                    {errorText}
-                  </p>
+              <Fragment key={item.id}>
+                {showSep ? (
+                  <li
+                    className="intake-sep"
+                    role="presentation"
+                    aria-hidden="true"
+                    data-intake-sep
+                  />
                 ) : null}
-              </li>
+                <li
+                  className="intake-row"
+                  data-intake-row={index}
+                  tabIndex={0}
+                  aria-label={rowLabel(item, index)}
+                  {...(errorText !== null
+                    ? { "aria-describedby": errorId }
+                    : {})}
+                  onKeyDown={onRowKeyDown(index)}
+                >
+                  <div className="intake-row-main">
+                    <span className="intake-index" aria-hidden="true">
+                      {index + 1}
+                    </span>
+                    <span className="intake-name" title={sourceTitle(item)}>
+                      {item.name}
+                    </span>
+                    <span className="intake-kind">{KIND_LABEL[item.kind]}</span>
+                    <span
+                      className={`intake-state intake-state--${item.state}`}
+                      data-intake-state={item.state}
+                    >
+                      {STATE_LABEL[item.state]}
+                    </span>
+                    <div className="intake-row-controls">
+                      <IconButton
+                        label={`Move ${item.name} up`}
+                        size="sm"
+                        className="intake-move"
+                        disabled={index === 0}
+                        data-intake-move-up={index}
+                        icon={<Icon icon={ChevronUp} size="sm" />}
+                        onClick={(): void => onMove?.(index, -1)}
+                      />
+                      <IconButton
+                        label={`Move ${item.name} down`}
+                        size="sm"
+                        className="intake-move"
+                        disabled={index === items.length - 1}
+                        data-intake-move-down={index}
+                        icon={<Icon icon={ChevronDown} size="sm" />}
+                        onClick={(): void => onMove?.(index, 1)}
+                      />
+                      <IconButton
+                        label={`Remove ${item.name} from the queue`}
+                        size="sm"
+                        className="intake-remove"
+                        data-intake-remove={index}
+                        icon={<Icon name="dialogClose" size="sm" />}
+                        onClick={(): void => onRemove?.(item.id)}
+                      />
+                    </div>
+                  </div>
+                  {errorText !== null ? (
+                    <p
+                      className="intake-error"
+                      id={errorId}
+                      data-intake-error={index}
+                      role="alert"
+                    >
+                      {errorText}
+                    </p>
+                  ) : null}
+                </li>
+              </Fragment>
             );
           })}
         </ul>

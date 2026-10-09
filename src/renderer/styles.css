@@ -24587,9 +24587,13 @@ cursor: pointer;
 .intake-tray {
   display: flex;
   flex-direction: column;
-  gap: var(--sp-2);
+  gap: 0;
   color: var(--fg);
   font-size: var(--fs-sm);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-group);
+  background: var(--bg-elevated);
+  overflow: hidden;
 }
 
 .intake-dropzone {
@@ -24597,16 +24601,10 @@ cursor: pointer;
   align-items: center;
   gap: var(--sp-3);
   padding: var(--sp-3) var(--sp-4);
-  border: 1px dashed var(--border);
-  border-radius: var(--radius-group);
-  background: var(--bg-toolbar);
-  transition:
-    border-color var(--motion-duration-panel) var(--motion-ease-panel),
-    background-color var(--motion-duration-panel) var(--motion-ease-panel);
+  transition: background-color var(--motion-duration-panel) var(--motion-ease-panel);
 }
 
 .intake-dropzone[data-intake-active] {
-  border-color: var(--btn-selected-border);
   background: var(--btn-selected-bg);
 }
 
@@ -24638,28 +24636,25 @@ cursor: pointer;
 
 .intake-empty {
   margin: 0;
-  padding: var(--sp-2) 0;
+  padding: 0 var(--sp-4) var(--sp-3);
   color: var(--fg-muted);
+}
+
+.intake-sep {
+  height: 1px;
+  flex: 0 0 auto;
+  background: var(--border-subtle);
 }
 
 .intake-list {
   list-style: none;
   margin: 0;
   padding: 0;
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-group);
-  background: var(--bg-elevated);
-  overflow: hidden;
 }
 
 .intake-row {
   padding: var(--sp-2) var(--sp-3);
-  border-bottom: 1px solid var(--border-subtle);
   transition: background-color var(--motion-duration-micro) var(--motion-ease-standard);
-}
-
-.intake-row:last-child {
-  border-bottom: none;
 }
 
 .intake-row:hover {
@@ -24758,6 +24753,7 @@ cursor: pointer;
 .intake-actions {
   display: flex;
   justify-content: flex-end;
+  padding: var(--sp-2) var(--sp-3) var(--sp-3);
 }
 
 /* DEF-645 — the persisted queue surface. Home owns the primary tray; once a
@@ -24778,6 +24774,16 @@ cursor: pointer;
   border-radius: var(--radius-panel);
   background: var(--bg-elevated);
   box-shadow: var(--isf-shadow);
+}
+
+/* The canvas panel is already the single boundary; the shared `.intake-tray`
+ * box would nest a second one inside it. Neutralise the shared box here so the
+ * floating surface keeps exactly its shipped look (no visual regression). */
+.intake-persistent .intake-tray {
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  overflow: visible;
 }
 
 /* ---- Reduced motion --------------------------------------------------- */
@@ -24802,8 +24808,12 @@ cursor: pointer;
 
 /* ---- Forced colors / high contrast ----------------------------------- */
 @media (forced-colors: active) {
-  .intake-dropzone {
+  .intake-tray {
     border-color: CanvasText;
+  }
+
+  .intake-sep {
+    background: CanvasText;
   }
 
   .intake-dropzone[data-intake-active] {
