@@ -1,5 +1,23 @@
 # AGENTS_NOTES.md — archived operational history
 
+## 2026-10-09: Phase-close commit must gate on the QA verdict, not a sibling's completion (TFL-1430 Phase 127)
+
+Phase 127 chained A (dev) -> B (qa) -> C (adversary) -> D (git-agent commit). D was
+`blockedBy` C only, so when C completed (adversary PASS) D auto-ran and committed
+`4d51942` even though B had returned a **FAIL** phase-close verdict (DEF-666/DEF-667
+OPEN). Same class as the 1.52.0 release lesson above: `blockedByIssueIds` tracks
+whether an issue is DONE, not whether its verdict is GREEN. Rule: the phase-close
+commit child must be `blockedBy` the phase-close QA child, and the CTO moves it only
+after reading a GREEN verdict; an adversary PASS is not a phase approval.
+
+Separately, git-agent's report flagged a commit-hygiene defect: the earlier TFL-1415
+phase-close commit `c353821` staged `src/renderer/App.tsx` WHOLESALE, capturing Phase
+127 header wiring (`onOpenPreferences`, `themeDefault`, `onThemeChange`, `onOpenFind`,
+`findEnabled`) before the matching `AppHeader` props existed, so HEAD `d54235d` did not
+build until `4d51942`. Rule: a phase-close commit stages explicit pathspecs and, for a
+file carrying mixed-phase hunks (`App.tsx`, `styles.css`), stages only the phase's hunks
+(`git add -p` or a scoped `git apply`); never `git add` a whole mixed-phase file.
+
 ## 2026-10-09: Filing a child issue with a multi-line brief on Windows (paperclipai CLI quirks)
 
 Two traps cost repeated attempts while filing the TFL-1393 children. (1)

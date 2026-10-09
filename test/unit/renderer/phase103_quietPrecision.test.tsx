@@ -38,7 +38,6 @@ const CHROME_IDS: readonly string[] = [
   "dockRemove",
   "dockEditPencil",
   "headerCommand",
-  "headerTheme",
   "headerMenuDisclosure",
   "layoutOnePage",
   "layoutTwoPage",
@@ -66,10 +65,10 @@ const COMMAND_IDS = commandIds();
 const ALL_IDS = [...COMMAND_IDS, ...CHROME_IDS, ...NON_COMMAND_GLYPH_IDS];
 
 describe("Phase 103 — the Quiet Precision registry keys", () => {
-  it("(b) extracts the 107 registry command ids plus the 15 chrome ids", () => {
-    expect(COMMAND_IDS).toHaveLength(107);
-    expect(CHROME_IDS).toHaveLength(15);
-    expect(ALL_IDS).toHaveLength(123);
+  it("(b) extracts the 106 registry command ids plus the 14 chrome ids", () => {
+    expect(COMMAND_IDS).toHaveLength(106);
+    expect(CHROME_IDS).toHaveLength(14);
+    expect(ALL_IDS).toHaveLength(121);
   });
 
   it("(a) has no missing key and no duplicate key", () => {

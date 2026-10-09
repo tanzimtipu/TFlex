@@ -352,6 +352,8 @@ This requires manually corrupting the settings file and launching the app.
 
 **Disposition:** FINDINGS FILED — one LOW severity defect, seven NONE, eight DEFERRED (out of scope for diff-pass).
 
+CTO disposition (2026-10-09, TFL-1430 Phase 127): ADV-1484-01 ACCEPTED -> DEF-666 (owner frontend-dev; also covers the `appMenu` toolsRegistry entry `toolsRegistry.ts:1350/1356/1613` and the `commandPalette.ts:85` suppression string). The NONE and DEFERRED probes carry no defect and stay unnumbered.
+
 ---
 
 ## Session: TFL-1460 phase-125 gate — diff-pass (app-wide text-ink change)

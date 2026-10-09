@@ -5,6 +5,55 @@
 > inspect the current `OPEN`, `FIX-READY`, and `DISPUTED` entries first; closed records are
 > historical evidence and must not be loaded wholesale.
 
+## DEF-667: Retiring the Phase-105 app-menu left the shared e2e helpers pointing at `[data-app-menu]`
+
+- Status: CLOSED
+- Severity: MEDIUM - not user-visible, but it breaks the shared QA harness: `e2e/lib/helpers.cjs` still drives the now-retired `[data-app-menu]` trigger in `setTheme`, `openPreferences`, `toggleMultiModeViaPalette` and `toggleThemeViaAppMenu`, so every spec that calls them now times out. A `Select-String` over `e2e/*.cjs` shows those helper names referenced across ~80 spec files (e.g. `sweep_visual_dev.spec.cjs`, `phase118_intake.spec.cjs`, `phase106_home_orbit.spec.cjs`), so the phase's own blast radius is large even though the product code is fine.
+- Found by: qa (TFL-1483 phase-close, blast-radius analysis, 2026-10-09)
+- Phase: 127
+
+Files:
+- `e2e/lib/helpers.cjs:244-249` `toggleMultiModeViaPalette` -> `[data-app-menu]`
+- `e2e/lib/helpers.cjs:738-756` `openPreferences` / `toggleThemeViaAppMenu` -> `[data-app-menu]`
+- `e2e/lib/helpers.cjs:779-798` `setTheme` -> `[data-app-menu]`
+
+Steps to reproduce:
+1. `npm.cmd run test:e2e -- e2e/phase118_intake.spec.cjs` (any spec whose setup calls `setTheme`/`openPreferences`/`toggleMultiModeViaPalette`).
+2. Expected: the helper reaches the theme/Preferences/Multi Mode control through the live UI.
+3. Actual: the helper clicks `[data-app-menu]`, which no longer exists -> locator timeout.
+
+Evidence: `Select-String -Path 'e2e/*.cjs' -Pattern 'toggleMultiModeViaPalette|setTheme\(|openPreferences\(|toggleThemeViaAppMenu'` groups matches in ~80 spec files. The phase restored the same behaviours behind the File menu (`[data-menu-action="toggleTheme"|"preferences"]`), the title-bar gear (`[data-open-preferences]`) and Multi Mode icon (`[data-header-multi-mode]`), and the theme pill (`[data-theme-toggle]`), so migration is mechanical. Owner role: qa.
+
+History:
+- qa: filed 2026-10-09 (TFL-1483 phase-close, blast-radius analysis). Owner role: qa.
+- qa: FIX claimed 2026-10-09 (TFL-1500): migrated the shared helpers (`setTheme`, `openPreferences`, `toggleMultiModeViaPalette`, `toggleThemeViaAppMenu`) off `[data-app-menu]` onto the restored chrome (`[data-menu-button]`/`[data-menu-popover]`, `[data-open-preferences]`, `[data-header-multi-mode]`, `[data-theme-toggle]`).
+- qa: CLOSED 2026-10-09 (TFL-1501, focused re-verify). Scan of `e2e/lib` for `data-app-menu` -> 0 hits; the helper-driven specs no longer time out: `npm.cmd run test:e2e -- e2e/tfl1430_topbar_restore.spec.cjs e2e/phase118_intake.spec.cjs e2e/phase106_home_orbit.spec.cjs` -> 9 passed (25.6s). Residue outside the helper's scope (specs that drive `[data-app-menu]` directly) filed as DEF-669.
+
+## DEF-666: Orphaned `appMenu` icon/registry/palette strings remain after the application-menu trigger was retired
+
+- Status: CLOSED
+- Severity: LOW - dead code only; the DOM trigger, its CSS and its unit spec were removed, so nothing user-visible regresses. But Phase 127 success criterion 4 explicitly requires "no dead code, no orphaned CSS, no leftover string", and Phase 127 ruling 3 explicitly named the `appMenu` entry in `quietPrecision.tsx` for removal.
+- Found by: qa (TFL-1483 phase-close, 2026-10-09)
+- Phase: 127
+
+Files:
+- `src/renderer/icons/quietPrecision.tsx:165` - `"appMenu"` still in the `IconName` union.
+- `src/renderer/icons/quietPrecision.tsx:936` - `appMenu: { kind: "lucide", icon: Menu }` glyph map entry (no `name="appMenu"` consumer remains).
+- `src/renderer/state/toolsRegistry.ts:1349-1358` - the `appMenu` command entry ("Application menu", `action: 'appMenu'`) with no handler anywhere in `src/`.
+- `src/renderer/state/commandPalette.ts:85` - `'appMenu'` in `PALETTE_UNRUNNABLE_ACTIONS`, which existed only to hide the retired row.
+
+Steps to reproduce:
+1. `Select-String -Path 'src/**' -Pattern 'appMenu'` (ripgrep).
+2. Expected: no renderer-side `appMenu` identifier remains after the trigger retirement.
+3. Actual: the four entries above remain; the only survivors are the native Electron `buildAppMenu` (`src/main/menu.ts`), which is unrelated.
+
+Evidence: ripgrep over `src/` lists only the four renderer entries above plus `src/main/{index,menu}.ts` (native menu). `AppHeader.tsx` renders no `appMenu`; the restored File trigger owns the File/Edit/View/Tools/Help menu. Owner role: frontend-dev.
+
+History:
+- qa: filed 2026-10-09 (TFL-1483 phase-close). Owner role: frontend-dev.
+- frontend-dev: FIX claimed 2026-10-09 (TFL-1499): removed the `appMenu` / `headerTheme` `IconName`/`QuietIconId` union entries and glyph-map entries in `src/renderer/icons/quietPrecision.tsx`, the `appMenu` command in `toolsRegistry.ts`, and the `commandPalette.ts` suppression string.
+- qa: CLOSED 2026-10-09 (TFL-1501, focused re-verify). Scan of `src/renderer` for `appMenu|headerTheme` -> 0 hits; `npm.cmd run verify` -> conventions clean (410 files) + typecheck clean (exit 0); `npm.cmd run build` -> exit 0; chunk-A unit specs `phase127TopBarRestore` / `phase103_quietPrecision` / `titleBar` / `appHeader` -> 4 files / 42 tests passed. Residue: one unrelated synthetic fixture in `test/unit/renderer/phase114_a11y.test.tsx` still fabricates a `[data-app-menu]` button as a DEF-611 return-focus target -> tracked in DEF-669.
+
 ## DEF-665: The navigator separator's panel edge trails the pointer during a drag (panel-resize trail)
 
 - Status: CLOSED

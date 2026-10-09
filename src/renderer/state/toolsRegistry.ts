@@ -140,7 +140,6 @@ import {
   ListX,
   LockKeyhole,
   Maximize2,
-  Menu,
   MessageCirclePlus,
   MessageSquareText,
   Minimize,
@@ -1347,16 +1346,6 @@ const REGISTRY = [
     availability: 'always',
   },
   {
-    id: 'appMenu',
-    label: 'Application menu',
-    description: 'Open the File / Edit / View / Tools / Help menu.',
-    icon: Menu,
-    shortcut: '',
-    stage: 'global',
-    action: 'appMenu',
-    availability: 'always',
-  },
-  {
     // Phase 36 (chunk 4) — this entry now opens the COMMAND PALETTE: the
     // browse-everything surface that supersedes the All-tools panel. The
     // `Ctrl+Shift+P` accelerator stays its legacy alias, and the panel itself
@@ -1610,7 +1599,6 @@ const SURFACE_BY_ID: Record<ToolId, ToolSurface> = {
   updateDownload: 'palette',
   updateInstall: 'palette',
   about: 'palette',
-  appMenu: 'palette',
   toolsPalette: 'palette',
   panMode: 'panel',
   railCollapse: 'panel',

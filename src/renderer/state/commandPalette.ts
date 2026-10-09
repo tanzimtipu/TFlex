@@ -82,7 +82,6 @@ export const PALETTE_UNRUNNABLE_ACTIONS: ReadonlySet<string> = new Set<string>([
   'openRecent', // the palette's own recent rows already open a file
   'removeRecent', // the recents list's own remove control
   'openSample', // the welcome screen's sample tiles
-  'appMenu', // the title bar's File menu
   'panePick', // the Multi Mode pane header
   'paneResize', // the Multi Mode divider drag
 ]);

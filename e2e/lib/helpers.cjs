@@ -234,17 +234,29 @@ async function armAnnotationTool(window, kind) {
   await window.waitForTimeout(300);
 }
 
-// Phase 36 (chunk 6) — the Multi Mode toggle moved out of the retired
-// `[data-header-multi-mode]` title-bar control. Phase 105 relocated it into the
-// application menu: `[data-app-menu]` -> `[data-app-menu-popover]
-// [data-menu-action="multiMode"]`, the single row that switches the mode in BOTH
+// Phase 36 (chunk 6) — the Multi Mode toggle. Phase 105 relocated it into the
+// retired application menu; Phase 127 restored the v1.50.0 title-row control
+// `[data-header-multi-mode]`, the single button that switches the mode in BOTH
 // directions. The name is kept so the many call sites stay unchanged; the
 // behaviour is the original "toggle Multi Mode through its real control, then
-// let the panes settle".
+// let the panes settle". Call sites toggle repeatedly (ON then OFF), so wait
+// for the button's own `data-multi-mode-active` state to flip rather than for a
+// fixed direction.
 async function toggleMultiModeViaPalette(window) {
-  await window.locator('[data-app-menu]').first().click();
-  await window.waitForSelector('[data-app-menu-popover]', { state: 'visible', timeout: 8000 });
-  await window.locator('[data-app-menu-popover] [data-menu-action="multiMode"]').first().click();
+  const multi = window.locator('[data-header-multi-mode]').first();
+  await multi.waitFor({ state: 'visible', timeout: 8000 });
+  const before = await multi.getAttribute('data-multi-mode-active');
+  await multi.click();
+  await window
+    .waitForFunction(
+      (prev) => {
+        const el = document.querySelector('[data-header-multi-mode]');
+        return el !== null && el.getAttribute('data-multi-mode-active') !== prev;
+      },
+      before,
+      { timeout: 8000 },
+    )
+    .catch(() => {});
   await window.waitForTimeout(700);
 }
 
@@ -728,29 +740,26 @@ async function closeStandalonePrintWindow(electronApp, printPage) {
 }
 
 // ---------------------------------------------------------------------------
-// TFL-1116 header overhaul retired the old title-bar controls
-// `[data-open-preferences]` (gear button) and `[data-theme-toggle]` /
-// `[data-theme-option]` (bespoke theme popover). The CURRENT routes are the
-// application menu: Edit > Preferences... and View > Toggle Theme. These
-// helpers drive those real rows so the theme oracles keep asserting the same
-// behaviour against the shipped controls.
+// Phase 127 restored the v1.50.0 title-row chrome: the settings gear
+// `[data-open-preferences]`, the View menu's Toggle Theme row and the theme
+// pill `[data-theme-toggle]` / `[data-theme-option]`. These helpers drive those
+// real controls so the theme oracles keep asserting the same behaviour against
+// the shipped surface.
 // ---------------------------------------------------------------------------
 async function openPreferences(window) {
-  await window.locator('[data-app-menu]').first().click();
-  await window.waitForSelector('[data-app-menu-popover]', { state: 'visible', timeout: 8000 });
-  await window.locator('[data-app-menu-popover] [data-menu-action="preferences"]').first().click();
+  await window.locator('[data-open-preferences]').first().click();
   await window.waitForSelector('[data-prefs-dialog]', { timeout: 8000 });
 }
 
-// The View > Toggle Theme command cycles frosted -> dark -> light -> frosted
+// The File menu's Toggle Theme command cycles frosted -> dark -> light -> frosted
 // (state/theme.ts nextTheme), so a single activation on a fresh profile (which
 // boots frosted) lands on dark.
 async function toggleThemeViaAppMenu(window) {
-  await window.locator('[data-app-menu]').first().click();
-  await window.waitForSelector('[data-app-menu-popover]', { state: 'visible', timeout: 8000 });
-  await window.locator('[data-app-menu-popover] [data-menu-action="toggleTheme"]').first().click();
+  await window.locator('[data-menu-button]').first().click();
+  await window.waitForSelector('[data-menu-popover]', { state: 'visible', timeout: 8000 });
+  await window.locator('[data-menu-popover] [data-menu-action="toggleTheme"]').first().click();
   await window
-    .waitForSelector('[data-app-menu-popover]', { state: 'detached', timeout: 8000 })
+    .waitForSelector('[data-menu-popover]', { state: 'detached', timeout: 8000 })
     .catch(() => {});
   await window.waitForTimeout(300);
 }
@@ -777,20 +786,34 @@ async function createAnnotationByDragging(window, x1, y1, x2, y2, page = 1) {
 }
 
 async function setTheme(window, theme) {
-  // TFL-1116 retired the old `[data-theme-toggle]` popover. The live control is
-  // the View > Toggle Theme command (`[data-menu-action="toggleTheme"]`), which
-  // cycles frosted -> dark -> light. Drive it through the app menu until the
-  // <html data-theme> attribute matches the requested theme.
+  // Phase 127 restored the v1.50.0 theme pill `[data-theme-toggle]` >
+  // `[data-theme-option="<theme>"]`. Prefer it: one click selects the concrete
+  // theme directly. Fall back to cycling the File menu's Toggle Theme command
+  // (frosted -> dark -> light) only when the pill is unavailable.
+  const current = await window.evaluate(() => document.documentElement.getAttribute('data-theme'));
+  if (current === theme) {
+    await window.waitForTimeout(300);
+    return;
+  }
+  const pill = window.locator('[data-theme-toggle]').first();
+  if ((await pill.count()) > 0) {
+    await pill.click();
+    await window.waitForSelector(`[data-theme-option="${theme}"]`, { state: 'visible', timeout: 8000 });
+    await window.locator(`[data-theme-option="${theme}"]`).first().click();
+    await window.waitForTimeout(400);
+    const applied = await window.evaluate(() => document.documentElement.getAttribute('data-theme'));
+    if (applied === theme) return;
+  }
   for (let attempt = 0; attempt < 4; attempt += 1) {
-    const current = await window.evaluate(() => document.documentElement.getAttribute('data-theme'));
-    if (current === theme) {
+    const now = await window.evaluate(() => document.documentElement.getAttribute('data-theme'));
+    if (now === theme) {
       await window.waitForTimeout(300);
       return;
     }
-    await window.locator('[data-app-menu]').first().click();
-    await window.waitForSelector('[data-app-menu-popover]', { state: 'visible', timeout: 8000 });
-    await window.locator('[data-app-menu-popover] [data-menu-action="toggleTheme"]').first().click();
-    await window.waitForSelector('[data-app-menu-popover]', { state: 'detached', timeout: 8000 }).catch(() => {});
+    await window.locator('[data-menu-button]').first().click();
+    await window.waitForSelector('[data-menu-popover]', { state: 'visible', timeout: 8000 });
+    await window.locator('[data-menu-popover] [data-menu-action="toggleTheme"]').first().click();
+    await window.waitForSelector('[data-menu-popover]', { state: 'detached', timeout: 8000 }).catch(() => {});
     await window.waitForTimeout(400);
   }
   const final = await window.evaluate(() => document.documentElement.getAttribute('data-theme'));

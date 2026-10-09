@@ -38,7 +38,6 @@ import {
   Highlighter,
   Info,
   ListX,
-  Menu,
   MessageCirclePlus,
   MessageSquareText,
   Minimize,
@@ -162,7 +161,6 @@ export type QuietIconId =
   | "updateDownload"
   | "updateInstall"
   | "about"
-  | "appMenu"
   | "toolsPalette"
   | "panMode"
   | "railCollapse"
@@ -185,7 +183,6 @@ export type QuietIconId =
   | "dockRemove"
   | "dockEditPencil"
   | "headerCommand"
-  | "headerTheme"
   | "headerMenuDisclosure"
   | "layoutOnePage"
   | "layoutTwoPage"
@@ -933,7 +930,6 @@ export const QUIET_ICONS: Record<QuietIconId, QuietGlyph> = {
   updateDownload: { kind: "lucide", icon: Download },
   updateInstall: { kind: "lucide", icon: Check },
   about: { kind: "lucide", icon: Info },
-  appMenu: { kind: "lucide", icon: Menu },
   // NEW — browse all tools: a panel with a tool list.
   toolsPalette: {
     kind: "shapes",
@@ -1059,15 +1055,6 @@ export const QUIET_ICONS: Record<QuietIconId, QuietGlyph> = {
         <rect x="3" y="5" width="18" height="14" rx="3" />
         <circle cx="10.5" cy="12" r="3.2" />
         <path d="m12.8 14.3 3 3" />
-      </>
-    ),
-  },
-  headerTheme: {
-    kind: "shapes",
-    shapes: (
-      <>
-        <circle cx="12" cy="12" r="8.5" />
-        <path d="M12 3.5v17" />
       </>
     ),
   },
