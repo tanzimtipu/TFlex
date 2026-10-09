@@ -2,9 +2,10 @@
 //
 // Phase 111 (chunk B) — the PAGES navigator's page cards.
 //
-// The over-preview hover verbs are gone. Each page is now a card with a footer:
-// a real checkbox + label on the left and a 32px More button on the right. The
-// current page carries a violet leading marker + a visible "Viewing" label,
+// The over-preview hover verbs are gone. Each page is now a card that HUGS its
+// preview (uniform 7px inset) with an overlay bar on the preview's bottom edge:
+// a real checkbox + label on the left, a current-page eye icon, and a 32px More
+// button on the right. The current page also carries a violet leading marker,
 // distinct from the batch selection (checkbox + tint). These tests pin:
 //   (a) the footer controls and the retired [data-thumb-verbs] cluster's absence,
 //   (b) the checkbox toggling the host set WITHOUT navigating,
@@ -253,7 +254,12 @@ describe("Phase 111 chunk B — the page card footer", () => {
       const current = thumb(host, 2);
       expect(current.classList.contains("thumb-current")).toBe(true);
       expect(current.querySelector("[data-thumb-current-marker]")).not.toBeNull();
-      expect(current.querySelector("[data-thumb-viewing]")?.textContent).toBe("Viewing");
+      // TFL-1465 — the current row shows an eye ICON, not the old "Viewing" text.
+      const viewing = current.querySelector("[data-thumb-viewing]");
+      expect(viewing).not.toBeNull();
+      expect(viewing?.querySelector("svg")).not.toBeNull();
+      expect(viewing?.textContent).not.toContain("Viewing");
+      expect(viewing?.getAttribute("aria-label")).toBe("Currently viewing");
       expect(
         current.querySelector<HTMLInputElement>("[data-thumb-checkbox]")?.checked,
       ).toBe(false);
@@ -340,38 +346,34 @@ describe("Phase 111 chunk B — the per-card More menu", () => {
   });
 });
 
-describe("Phase 111 chunk B — the panel More menu", () => {
-  function openPanelMore(host: HTMLElement): void {
-    const more = host.querySelector<HTMLButtonElement>("[data-context-panel-more]");
-    if (more === null) throw new Error("no panel More button");
-    clickOn(more);
-  }
-
-  it("moves Combine and a separated destructive Remove blank pages into More", () => {
+describe("Phase 124 — the panel header tool buttons", () => {
+  it("renders Combine and Remove blank pages as direct header buttons", () => {
     const onMerge = vi.fn();
     const onRemoveBlankPages = vi.fn();
     const { host, unmount } = renderPanel({ pageCount: 3, onMerge, onRemoveBlankPages });
     try {
-      // The standalone controls are gone from the header and the Pages body.
-      expect(host.querySelector("[data-context-panel-combine]")).toBeNull();
-      expect(host.querySelector("[data-blank-scan-open]")).toBeNull();
-
-      openPanelMore(host);
-      const combine = host.querySelector("[data-context-panel-combine]");
-      const blank = host.querySelector("[data-blank-scan-open]");
-      expect(combine?.textContent).toContain("Combine with another PDF");
-      expect(blank?.textContent).toContain("Remove blank pages");
-      // Remove blank pages sits in a clearly separated destructive section.
-      expect(blank?.getAttribute("data-menu-variant")).toBe("danger");
-      expect(blank?.classList.contains("command-menu-row-danger")).toBe(true);
-      expect(host.textContent).toContain("Destructive");
+      const combine = host.querySelector<HTMLButtonElement>("[data-context-panel-combine]");
+      const blank = host.querySelector<HTMLButtonElement>("[data-blank-scan-open]");
+      expect(combine).not.toBeNull();
+      expect(blank).not.toBeNull();
+      expect(combine?.getAttribute("aria-label")).toBe("Combine with another PDF");
+      expect(blank?.getAttribute("aria-label")).toBe("Remove blank pages");
 
       clickOn(combine as HTMLElement);
       expect(onMerge).toHaveBeenCalledTimes(1);
 
-      openPanelMore(host);
-      clickOn(host.querySelector("[data-blank-scan-open]") as HTMLElement);
+      clickOn(blank as HTMLElement);
       expect(onRemoveBlankPages).toHaveBeenCalledTimes(1);
+    } finally {
+      unmount();
+    }
+  });
+
+  it("omits Combine and Remove blank pages when the host does not wire them", () => {
+    const { host, unmount } = renderPanel({ pageCount: 3 });
+    try {
+      expect(host.querySelector("[data-context-panel-combine]")).toBeNull();
+      expect(host.querySelector("[data-blank-scan-open]")).toBeNull();
     } finally {
       unmount();
     }
@@ -522,8 +524,54 @@ describe("Phase 111 (chunk G / DEF-612) — the current card is neutral", () => 
     expect(frosted).toBeNull();
   });
 
-  it("keeps the current-only leading marker and Viewing label as the sole affordances", () => {
+  it("keeps the current-only leading marker and eye indicator as the sole affordances", () => {
     expect(STYLES).toMatch(/\.thumb-current-marker\s*\{[^}]*background:\s*var\(--accent\)/);
     expect(STYLES).toMatch(/\.thumb-viewing\s*\{[^}]*color:\s*var\(--accent\)/);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// TFL-1465 — the page card HUGS its preview (uniform inset), the controls sit on
+// the preview's bottom edge as an overlay bar, and the current indicator is an
+// eye icon (not the retired "Viewing" text).
+
+describe("TFL-1465 — thumbnail card: uniform inset, bottom overlay, eye icon", () => {
+  it("card mode hugs the preview with a .thumb-card class", () => {
+    const { host, unmount } = renderPanel({ pageCount: 3 });
+    try {
+      expect(thumb(host, 1).classList.contains("thumb-card")).toBe(true);
+    } finally {
+      unmount();
+    }
+  });
+
+  it("renders the controls in an overlay SIBLING of the preview button", () => {
+    const { host, unmount } = renderPanel({ pageCount: 3 });
+    try {
+      const card = thumb(host, 1);
+      const page = card.querySelector(".thumb-page");
+      const overlay = card.querySelector("[data-thumb-overlay]");
+      expect(page).not.toBeNull();
+      expect(overlay).not.toBeNull();
+      // The overlay is the preview button's sibling, never nested inside it.
+      expect(page?.contains(overlay as Node)).toBe(false);
+      // The row carries the checkbox, label and More on the preview bottom.
+      expect(overlay?.querySelector("[data-thumb-checkbox]")).not.toBeNull();
+      expect(overlay?.querySelector(".thumb-label")?.textContent).toBe("1");
+      expect(overlay?.querySelector("[data-thumb-more]")).not.toBeNull();
+    } finally {
+      unmount();
+    }
+  });
+
+  it("hugs via CSS (fit-content) and anchors the overlay to the preview bottom", () => {
+    const cardBody = findRuleBody(STYLES, ".thumb.thumb-card");
+    expect(cardBody).not.toBeNull();
+    expect(cardBody ?? "").toMatch(/width:\s*fit-content/);
+
+    const overlayBody = findRuleBody(STYLES, ".thumb-overlay");
+    expect(overlayBody).not.toBeNull();
+    expect(overlayBody ?? "").toMatch(/position:\s*absolute/);
+    expect(overlayBody ?? "").toMatch(/bottom:\s*6px/);
   });
 });

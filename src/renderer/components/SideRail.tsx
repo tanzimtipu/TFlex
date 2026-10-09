@@ -1,4 +1,4 @@
-import { AlertCircle, MoreHorizontal, Plus, SquareChevronRight } from 'lucide-react';
+import { AlertCircle, Eye, MoreHorizontal, Plus, SquareChevronRight } from 'lucide-react';
 import { createPortal } from 'react-dom';
 import { Icon } from '../icons/Icon';
 import { CommandMenu } from './CommandMenu';
@@ -71,10 +71,13 @@ const THUMB_PADDING_PX = 6;
 const THUMB_BORDER_PX = 1;
 const THUMB_LABEL_PX = 18;
 const THUMB_MARGIN_BOTTOM_PX = 6;
-// Phase 111 (chunk B) — the card footer's height (checkbox + label + 32px More
-// button on one row). The card-mode slot math uses this instead of the plain
-// 18px label line so the navigator's virtualization stays accurate.
-const THUMB_CARD_FOOTER_PX = 34;
+// TFL-1465 — in card mode the footer row (checkbox + label + current eye + More)
+// is now an ABSOLUTE overlay pinned to the page preview's bottom edge, so it no
+// longer consumes any flow height. The card-mode slot math therefore adds 0 px
+// below the preview (vs the plain 18px label line for the label-only rail/pane
+// thumbs). This keeps the navigator's virtualization walk aligned with the new
+// HUG card height: wrap + 6px padding*2 + 1px border*2 + 0 + 6px margin.
+const THUMB_CARD_FOOTER_PX = 0;
 const THUMB_OUTER_PADDING = 8;
 // Initial thumbs on open dropped from 6 -> 3: each thumb keeps a backing
 // ImageBitmap (~190KB at dpr 1.5), so 3 fewer mounted thumbs at startup
@@ -1267,6 +1270,10 @@ function Thumb({
   const rotDeg = (rotation * 90) as 0 | 90 | 180 | 270;
   const classes = [
     'thumb',
+    // TFL-1465 — card mode HUGS the preview: the card shrinks to the preview's
+    // width so the border/inset gap is the same 7px on all four sides. The
+    // label-only rail/pane thumbs keep their full-width box.
+    thumbVerbs !== null ? 'thumb-card' : '',
     // DEF-098 — `.thumb-item` is the stable selector qa's e2e
     // harness uses to target a thumbnail (`.thumb-item` nth(1) is
     // page 2). This is the SAME interactive button — an alias
@@ -1463,7 +1470,11 @@ function Thumb({
         </span>
       </button>
       {cardMode ? (
-        <div className="thumb-footer">
+        /* TFL-1465 — the footer row is now an overlay bar pinned to the page
+           preview's bottom edge (checkbox left, label, current eye indicator,
+           More right). It is a SIBLING of the `.thumb-page` button, not a child,
+           so the preview stays the card's one real navigation control. */
+        <div className="thumb-overlay" data-thumb-overlay>
           <input
             type="checkbox"
             className="thumb-checkbox"
@@ -1477,8 +1488,13 @@ function Thumb({
             {pageLabel !== null ? pageLabel : label}
           </span>
           {isCurrent && (
-            <span className="thumb-viewing" data-thumb-viewing>
-              Viewing
+            <span
+              className="thumb-viewing"
+              data-thumb-viewing
+              aria-label="Currently viewing"
+              title="Currently viewing"
+            >
+              <Icon icon={Eye} size="sm" aria-hidden />
             </span>
           )}
           <button

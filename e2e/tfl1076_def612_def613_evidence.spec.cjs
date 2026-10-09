@@ -17,7 +17,7 @@ const { test, expect } = require('@playwright/test');
 const path = require('node:path');
 const fs = require('node:fs');
 const { launchApp, getSamplePath } = require('./lib/launch.cjs');
-const { hardClose } = require('./lib/helpers.cjs');
+const { hardClose, openSamplePath } = require('./lib/helpers.cjs');
 
 delete process.env.ELECTRON_RUN_AS_NODE;
 
@@ -49,11 +49,10 @@ test.afterEach(async () => {
 });
 
 async function openFixture(filePath) {
-  await app.evaluate(async ({ dialog }, fp) => {
-    dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [fp] });
-  }, filePath);
-  await win.locator('[data-toolbar-open]').first().click();
-  await win.waitForSelector('.workspace', { timeout: 30000 });
+  // TFL-1478 — Phase 118 made the generic Open stage files in Intake; a raw
+  // dialog stub plus an Open click no longer reaches a workspace. Use the
+  // canonical shared opener (stub, Intake classify, explicit Intake Open).
+  await openSamplePath(win, app, filePath);
   await win.waitForSelector(`${PANEL} .thumb-item`, { timeout: 30000 });
   await win.waitForTimeout(1500);
 }
@@ -189,7 +188,12 @@ test('TFL1076-DEF612 current card is neutral and distinct from the selected card
   await win.locator(`${PANEL} .thumb-item[data-page="2"] [data-thumb-checkbox]`).check();
   await win.waitForTimeout(400);
   await expect(win.locator('.thumb-item[data-page="1"] [data-thumb-current-marker]')).toHaveCount(1);
-  await expect(win.locator('.thumb-item[data-page="1"] [data-thumb-viewing]')).toHaveText('Viewing');
+  // TFL-1422/TFL-1465 — the retired "Viewing" text is now a lucide Eye glyph in
+  // the same overlay row; assert the icon state (an SVG child, no text node),
+  // not the retired label.
+  await expect(win.locator('.thumb-item[data-page="1"] [data-thumb-viewing] svg')).toHaveCount(1);
+  await expect(win.locator('.thumb-item[data-page="1"] [data-thumb-viewing]')).toHaveAttribute('aria-label', 'Currently viewing');
+  await expect(win.locator('.thumb-item[data-page="1"] [data-thumb-viewing]')).toHaveText('');
   await expect(win.locator('.thumb-item[data-page="1"]')).not.toHaveClass(/thumb-selected/);
   await expect(win.locator('.thumb-item[data-page="2"]')).toHaveClass(/thumb-selected/);
 

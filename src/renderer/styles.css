@@ -20434,58 +20434,6 @@ cursor: pointer;
   -webkit-app-region: no-drag;
 }
 
-/* ADV-225 / DEF-579 — the application-menu rules are GLOBAL, never nested in
- * the 900px responsive band. They were declared inside `@media (max-width:
- * 900px)` (the same class of defect as DEF-579): above 900px the popover
- * computed `position: static` and rendered as a ~925px in-flow block that
- * overlapped the title row and rail. The menu is width-independent chrome and
- * the default window is 1440x900, so the anchored popover must be styled at
- * every width. */
-.app-menu {
-  position: relative;
-  display: flex;
-  align-items: center;
-}
-
-.btn.app-menu-trigger {
-  width: 28px;
-  min-width: 28px;
-  height: 28px;
-  flex-shrink: 0;
-  border-radius: var(--radius-2);
-}
-
-.app-menu-trigger-active {
-  background: var(--accent-selected);
-  color: var(--fg-strong);
-}
-
-.app-menu-popover {
-  position: absolute;
-  top: calc(100% + 4px);
-  right: 0;
-  z-index: 60;
-  min-width: 232px;
-  max-height: min(70vh, 520px);
-  overflow-y: auto;
-  padding: var(--space-small) 0;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-3);
-  background: var(--bg-panel, var(--bg-toolbar));
-  box-shadow: var(--shadow-popover);
-}
-
-/* DEF-618 (TFL-1121) — the application menu is now a portaled, fixed,
- * collision-aware CommandMenu. The legacy `right: 0` above is a viewport-
- * relative anchor once the surface escapes `.app-menu`, so with the placement
- * `left` it stretched the box to the window's right edge (right gutter 0). The
- * fixed path supplies `left` and `right: auto`, and the surface is
- * content-bounded; re-assert that here at higher specificity so the anchor can
- * never leak back in on the first render before the inline style lands. */
-.app-menu-popover.command-menu {
-  right: auto;
-}
-
 @media (max-width: 900px) {
 /* The flexible genuine drag region between the document-action cluster and the
  * utility cluster. It absorbs the row's slack, so the caption can be dragged

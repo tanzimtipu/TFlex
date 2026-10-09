@@ -588,7 +588,7 @@ title-bar affordances, and repoints the single accent to `#2563eb`.
 | More (ellipsis) | `[data-tools-toggle]` | Opens/closes the Tools palette (the overflow surface); stable attribute from DEF-094 kept | `test/unit/renderer/bugDEF094_toolsToggleAttribute.test.tsx` ("More tools") | (qa: palette opens) |
 | Edit toolbar icon-only | `.edit-toolbar [data-edit-tool]` | Off / Edit text / Add box / Image as icon-only buttons | `test/unit/renderer/phase13Controls.test.tsx` | (qa: edit tools switch) |
 | Accent re-point | `--accent` (`#2563eb`), `--tf-accent*`, all soft washes | Single blue accent across all three themes; Open button, active tools, selection rings, focus rings, glows all follow; default annotation ink follows the accent | `test/unit/renderer/designTokensContract.test.ts` (frosted glow pins 37/99/235), `test/unit/renderer/annotationModel.test.ts` (default color #2563eb) | (qa: theme sweep screenshots `phase13-0*.png`) |
-| Current page card | `.thumb-current` | Phase 111 (TFL-1074 / DEF-612): NEUTRAL, distinct from the batch selection — carries only the violet 2px leading marker (`[data-thumb-current-marker]`) + the "Viewing" label (`[data-thumb-viewing]`). The full 1.5px accent ring + `--accent-selected` wash it once shared with `.thumb-selected` are retired | `test/unit/renderer/phase111_pages.test.tsx` (static CSS guard) | (qa: thumbnails) |
+| Current page card | `.thumb-current` | Phase 111 (TFL-1074 / DEF-612): NEUTRAL, distinct from the batch selection — carries only the violet 2px leading marker (`[data-thumb-current-marker]`) + the current-page eye icon (`[data-thumb-viewing]`, TFL-1465: the old "Viewing" text). The full 1.5px accent ring + `--accent-selected` wash it once shared with `.thumb-selected` are retired | `test/unit/renderer/phase111_pages.test.tsx` (static CSS guard) | (qa: thumbnails) |
 
 ### QA gate notes for this round
 
@@ -724,13 +724,16 @@ replaced by a 40px Pages/Outline view selector (`role="tablist"`,
 
 ## Phase 111 (chunk B) - Page cards + More menus (TFL-1065) addendum
 
-Appended 2026-10-07. The PAGES navigator's thumbnails are page CARDS: the
-over-preview hover verbs (`[data-thumb-verbs]`, `[data-thumb-verb]`) are
-retired and replaced by a footer below the preview - a real
+Appended 2026-10-07, updated 2026-10-09 (TFL-1465). The PAGES navigator's
+thumbnails are page CARDS: the over-preview hover verbs (`[data-thumb-verbs]`,
+`[data-thumb-verb]`) are retired. Each card HUGS its preview (`width: fit-content`
+via `.thumb-card`; the border/inset gap is the same 7px on all four sides) and
+its controls live in an overlay bar (`.thumb-overlay` / `[data-thumb-overlay]`)
+pinned to the bottom edge of the page preview itself: a real
 `[data-thumb-checkbox]` + `.thumb-label` on the left and a 32px
 `[data-thumb-more]` button (44px under coarse pointers) on the right. The
 current page keeps a violet 2px leading marker (`[data-thumb-current-marker]`)
-plus a visible "Viewing" label (`[data-thumb-viewing]`), distinct from the
+plus a current-page eye icon (`[data-thumb-viewing]`), distinct from the
 selected set (checkbox checked + `.thumb-selected` tint).
 
 | Control | Selector | Promised action | Unit test |
@@ -738,15 +741,16 @@ selected set (checkbox checked + `.thumb-selected` tint).
 | Card checkbox | `[data-thumb-checkbox]` | Toggles the host batch set via `onPageSelectionChange`; never navigates | `test/unit/renderer/phase111_pages.test.tsx` |
 | Card More | `[data-thumb-more]` | `CommandMenu` with Rotate CW / Extract this page / Delete this page (Delete separated + danger); each runs the matching handler | `test/unit/renderer/phase111_pages.test.tsx` |
 | Selection summary + Clear | `[data-context-panel-selection]` (`-count` / `-range` / `-clear`) | Renders for any selection `>= 1`; Clear routes to `onPageSelectionChange([])` and never navigates | `test/unit/renderer/phase111_pages.test.tsx` |
-| Panel More | `[data-context-panel-more]` | `CommandMenu` with Combine (`[data-context-panel-combine]`) in the Document group and Remove blank pages (`[data-blank-scan-open]`) in a separated destructive group | `test/unit/renderer/phase111_pages.test.tsx` |
+| Panel header tools | `[data-context-panel-layout-split]` / `[data-context-panel-combine]` / `[data-blank-scan-open]` | Three direct header `IconButton`s (the labelled More menu is retired): layout toggle -> `onNavigatorLayoutChange` (opposite); Combine -> `onMerge()`; Remove blank pages -> `onRemoveBlankPages()` | `test/unit/renderer/phase124PanelChrome.test.tsx` + `phase111_pages.test.tsx` |
 | Two-column grid | `.thumb-scroller-inner--two-col` / `[data-thumb-columns]` | Two columns at navigator content width `>= 360px` (min 152px card), one below | `test/unit/renderer/phase111_pages.test.tsx` |
 
 - Migrated assertions (same chunk): `phase36ContextPanel.test.tsx`,
   `phase112_pages.test.tsx`, `phase59PanelButtons.test.tsx`,
   `phase113_panelsInspectors.test.tsx`, `phase37Chunk5.test.tsx`,
-  `phase36SurfaceDiscipline.test.tsx` (collectPanel/More),
-  `phase43IconUniqueness.test.ts` (MoreHorizontal allow-listed; Trash2 /
-  RotateCw / Scissors / merge de-shared), `bugDEF098_thumbnailJumpVisiblePage`
+  `phase36SurfaceDiscipline.test.tsx` (collectPanel header tool),
+  `phase43IconUniqueness.test.ts` (MoreHorizontal dropped from the allow-list;
+  `merge` / `split` allow-listed for the Phase 124 header),
+  `bugDEF098_thumbnailJumpVisiblePage`
   (`.thumb-item` is a card container, still the navigate target).
 - FOLLOW-UP (qa-owned): the e2e spec `e2e/def327_331_retest.spec.cjs` still
   clicks `[data-thumb-verb="rotate-cw"]`; migrate it to `[data-thumb-more]` +
@@ -801,7 +805,7 @@ preserve-if-valid.
 
 | Control | Selector | Promised action | Unit test |
 |---|---|---|---|
-| Layout menu | `[data-context-panel-layout-split]` (first group of `[data-context-panel-more]`) | Toggles stacked/split via `onNavigatorLayoutChange`; label flips with the current layout | `test/unit/renderer/phase111_splitLayout.test.tsx` |
+| Layout toggle | `[data-context-panel-layout-split]` (direct header button, no More menu) | Toggles stacked/split via `onNavigatorLayoutChange`; aria-label flips with the current layout | `test/unit/renderer/phase124PanelChrome.test.tsx` + `phase111_splitLayout.test.tsx` |
 | Split divider | `[data-context-panel-split-divider]` (`role="separator"`, `aria-orientation="horizontal"`, keyboard ArrowUp/Down/Home/End) | Edits `navigatorSplitRatio` (0.1-0.9); pointer commits on gesture settle, not per frame | `test/unit/renderer/phase111_splitLayout.test.tsx` |
 | Split sections | `[data-context-panel-view="pages"]` + `[data-context-panel-view="outline"]` | Both mounted at once with independent scroll regions; compact `Pages · N` / `Outline · N` titles | `test/unit/renderer/phase111_splitLayout.test.tsx` |
 
@@ -840,7 +844,8 @@ fixed in source + CSS + tokens (left uncommitted for git-agent).
   the shared `--accent-selected` wash or the 1.5px `--accent` ring (and the
   frosted `--glass-selected-bg` halo override is removed); the `thumb-select`
   swell is retired. Current keeps only the violet 2px leading marker
-  (`[data-thumb-current-marker]`) + the "Viewing" label (`[data-thumb-viewing]`).
+  (`[data-thumb-current-marker]`) + the current-page eye icon
+  (`[data-thumb-viewing]`; TFL-1465 replaced the "Viewing" text).
   Selected cards keep the select-fill tint + checkbox. Guard specs migrated to
   pin the absence: `phase51RingUndoPanelRows.test.tsx`,
   `designTokensContract.test.ts` (frosted glow must be null; `thumb-select`
@@ -974,6 +979,65 @@ fresh `begin` (`runningUpdateAction` returns `begin` when the current op is
 terminal), so the row can no longer stay stuck. The per-row OCR Cancel now fires
 `engine.ocrCancel` for the operation's captured document instead of
 `cancelOcrForActiveTab()`. Pinned by `test/unit/renderer/activityShelfStore.test.ts`.
+
+TFL-1397: the Guided Fill panel no longer takes the window down when a
+document-less tab becomes active. Root cause: the panel's mount guard in
+`App.tsx` tested only `activeTab !== null`, but the caption "+" mints an
+"Empty tab" whose `tabs.activeId` has no `openTabs` entry, so `activeTab` is
+`undefined` — not `null` — and the mount dereferenced `activeTab.forms.fields`
+(`App.tsx:13426`), throwing during render and unmounting the whole tree (blank
+window) after a form edit followed by a new tab. Fix: the guard now also
+requires the existing `activeTabHasDocument` predicate, so the panel renders
+only against a real engine session and stays hidden on a document-less tab (it
+reappears unchanged when a document tab is active). Pinned by
+`test/unit/renderer/tfl1393_formFreeze.test.tsx` (opens a seeded-form document,
+opens the guided fill panel through the Command Palette `forms` verb, edits a
+field, opens a new tab, and asserts the app chrome survives with no
+max-update-depth error). Superseded by TFL-1436 below: the panel and its mount
+guard are retired, and the freeze pin is replaced by
+`test/unit/renderer/tfl1393_retireGuidedForm.test.tsx`.
+
+TFL-1436: the guided-form entry point and the fixed right-hand guided form-fill
+panel are retired. The dock "Forms" tile, the Command Palette `forms` row, the
+`App` `dockAppActions.forms` handler, the `formsPanelOpen` / `formFocusFieldId` /
+`formPanelReturnFocusRef` state and the `GuidedFillPanel` /
+`GuidedFillPrimitives` / `FieldProperties` modules are removed, along with the
+`.guided-fill-*` CSS section. The on-canvas overlay (`FormsOverlay` +
+`FormFieldControl`) stays and remains the single way to view or change a form
+field through `engine.fillFormField`; `flatten` / `fillFromCsv` /
+`exportFormData` / `importFormData` and the ToolsPalette / stage Inspector
+surfaces are unchanged. Pinned by
+`test/unit/renderer/tfl1393_retireGuidedForm.test.tsx` (opens a seeded-form
+document, asserts no `[data-palette-tool-id="forms"]` and no
+`[data-form-panel="true"]`, opens a new tab, and asserts the app chrome survives
+with no max-update-depth error).
+
+TFL-1469 (C2b): the dead Tools-palette colour rule for the retired `forms`
+tool is removed from `styles.css`
+(`.tools-palette-entry[data-tool-id="forms"] ... .tools-palette-entry-icon`).
+The palette emits `data-tool-id` only from `PALETTE_TOOL_IDS`, so the selector
+could never match after TFL-1436 dropped the `forms` registry entry. Pinned by
+`test/unit/renderer/tfl1469_retiredFormsPaletteCss.test.ts`, which asserts every
+`data-tool-id` colour selector in `styles.css` names a live palette tool and
+that every live palette tool keeps a colour rule.
+
+## TFL-1422 - Thumbnail page view: uniform inset, bottom controls, eye icon (TFL-1465) addendum
+
+Appended 2026-10-09. The page-preview card (PAGES navigator + pane thumb
+strips) is retuned to the operator's three corrections:
+
+| Control | Selector | Promised action | Unit test |
+|---|---|---|---|
+| Hugged card | `.thumb-card` (on the `.thumb` root in card mode) | `width: fit-content` + centered, so the border/inset gap is the same 7px on all four sides (matches today's top gap: 6px padding + 1px border) | `test/unit/renderer/phase111_pages.test.tsx` |
+| Preview-bottom overlay | `.thumb-overlay` / `[data-thumb-overlay]` | Absolute bar pinned to the preview's bottom edge (6px from the card padding box); a SIBLING of `.thumb-page` so the preview button stays the card's one navigation control | `test/unit/renderer/phase111_pages.test.tsx` |
+| Current-page indicator | `[data-thumb-viewing]` (`aria-label="Currently viewing"`) | Eye icon (`Eye`, lucide) in the overlay row — replaces the retired "Viewing" text | `test/unit/renderer/phase111_pages.test.tsx` |
+
+Slot geometry: card mode now adds 0px below the preview
+(`THUMB_CARD_FOOTER_PX = 0`; the overlay is out of flow), so
+`thumbSlotHeightFor`/`thumbSlotTops` stay aligned with the HUG card. The
+label-only rail/pane thumbs keep the 18px label line and their full-width box
+unchanged. qa-owned e2e `e2e/tfl1076_def612_def613_evidence.spec.cjs:192` still
+asserts the old "Viewing" text and must migrate to the eye-icon assertion.
 
 
 
