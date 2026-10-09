@@ -346,7 +346,7 @@ or ledgers for a focused task. Historical comments are evidence, not current rul
 Use `npm.cmd` and `npx.cmd` on Windows. For Paperclip bookkeeping use the installed
 CLI directly, avoiding package downloads and version drift:
 
-    & 'C:/Program Files/nodejs/node.exe' 'C:/Users/tanzi/Documents/paperclip-tflex/app/node_modules/paperclipai/dist/index.js' <arguments>
+    "C:/Program Files/nodejs/node.exe" "C:/Users/tanzi/Documents/paperclip-tflex/app/node_modules/paperclipai/dist/index.js" <arguments>
 
 In PowerShell, environment variables use `$env:PAPERCLIP_TASK_ID` (and similarly
 for API_URL, API_KEY, AGENT_ID, RUN_ID). In bash they use `$PAPERCLIP_TASK_ID`.
