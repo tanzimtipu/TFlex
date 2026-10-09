@@ -9297,36 +9297,6 @@ rect.ann-highlight.ann-preview {
   font-variant-numeric: tabular-nums;
 }
 
-.ann-panel-row-delete {
-  /* Phase 51 (item 4) — the 24px target is a fixed control: it must never be
-     the item that shrinks/clips. The label column yields space instead. */
-  flex: 0 0 auto;
-  width: 24px;
-  height: 24px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  background: transparent;
-  border: none;
-  color: var(--fg-muted);
-  cursor: pointer;
-  border-radius: var(--radius-1);
-  margin-right: 4px;
-  transition:
-    background var(--motion-fast) var(--ease-out),
-    color var(--motion-fast) var(--ease-out),
-    box-shadow var(--motion-fast) var(--ease-out),
-    transform var(--motion-fast) var(--ease-in-out);
-}
-
-.ann-panel-row-delete:hover { background: var(--bg-hover); color: var(--fg-strong); }
-
-.ann-panel-row-delete:focus-visible {
-  outline: none;
-  box-shadow: var(--focus-ring);
-  color: var(--fg-strong);
-}
-
 .ann-panel-row-body {
   display: flex;
   flex-direction: column;

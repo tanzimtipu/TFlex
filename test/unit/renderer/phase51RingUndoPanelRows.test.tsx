@@ -101,7 +101,6 @@ describe('Phase 51 item 3 — the selection ring stays inside the scroller', () 
 const RJ = rule('.ann-panel-row');
 const RJ_HEAD = rule('.ann-panel-row-head');
 const RJ_JUMP = rule('.ann-panel-row-jump');
-const RJ_DELETE = rule('.ann-panel-row-delete');
 
 function ann(id: string, kind: Annotation['kind']): Annotation {
   const base = { id, page: 1, color: 'yellow' as const, createdAt: '2026-09-28T00:00:00Z' };
@@ -140,9 +139,6 @@ describe('Phase 51 item 4 — every annotation row keeps its delete control insi
     // rowR 227 in the running app).
     expect(decl(RJ_JUMP, 'min-width')).toBe('0');
     expect(decl(RJ_JUMP, 'flex')).toBe('1 1 auto');
-    // The delete is a fixed 24px control and never yields space.
-    expect(decl(RJ_DELETE, 'flex')).toBe('0 0 auto');
-    expect(decl(RJ_DELETE, 'width')).toBe('24px');
     expect(decl(RJ_HEAD, 'display')).toBe('flex');
   });
 

@@ -295,14 +295,4 @@ describe("Phase 125 chunk B — the whole-app text-legibility sweep", () => {
       );
     }
   });
-
-  it("keeps the .ann-panel-row-delete rest ink on --fg-muted, not --fg-faint", () => {
-    const rule = block(CSS_NO_COMMENTS, /\.ann-panel-row-delete\s*\{/);
-    expect(rule, "rest color resolves to --fg-muted").toMatch(/color:\s*var\(--fg-muted\)/);
-    expect(rule, "rest color never resolves to --fg-faint").not.toMatch(
-      /color:\s*var\(--fg-faint\)/,
-    );
-    expect(tokenColor(BASE, "--fg-muted"), "light --fg-muted").toEqual(parseColor("#556070"));
-    expect(tokenColor(DARK, "--fg-muted"), "dark --fg-muted").toEqual(parseColor("#828a97"));
-  });
 });
