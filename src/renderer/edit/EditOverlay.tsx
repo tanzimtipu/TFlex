@@ -441,8 +441,18 @@ export function EditOverlay(props: EditOverlayProps): ReactElement | null {
   // toolbox is OPEN over a run (the "content stays on the page"
   // complaint — the run is lifted into the toolbox, not left behind).
   const [pendingRunEdit, setPendingRunEdit] = useState<{
-    rect: { x: number; y: number; width: number; height: number };
+    /** The run's ORIGINAL baked rect — the white eraser covers it while
+     *  the engine mask + proxy refresh are in flight. */
+    coverRect: { x: number; y: number; width: number; height: number };
+    /** TFL-1431 — the run's DESTINATION rect: the live preview keeps
+     *  painting the moved run here for the whole in-flight commit
+     *  window, so Confirm settles at the NEW position with no stale
+     *  frame (equals `coverRect` for a plain in-place edit). */
+    previewRect: { x: number; y: number; width: number; height: number };
     text: string;
+    /** The style the commit is baking (the live preview mirrors it so
+     *  nothing shifts when the engine result lands). */
+    style: EditTextStyle;
   } | null>(null);
   // DEF-153 — the text tool's SELECTED (movable) text run. Single
   // click selects the run + shows the Confirm / Delete / Cancel bar
@@ -678,7 +688,13 @@ export function EditOverlay(props: EditOverlayProps): ReactElement | null {
     if (target === null || target.kind !== "run") return;
     const next = runLiveRef.current;
     if (next === null || next === target.text) return;
-    setPendingRunEdit({ rect: { ...target.rect }, text: next });
+    const commitStyle = textStyle ?? defaultEditTextStyle(defaultFont);
+    setPendingRunEdit({
+      coverRect: { ...target.rect },
+      previewRect: { ...target.rect },
+      text: next,
+      style: commitStyle,
+    });
     const result = onCommitTextEdit({
       rect: { ...target.rect },
       newText: next,
@@ -1436,7 +1452,7 @@ export function EditOverlay(props: EditOverlayProps): ReactElement | null {
       return { ...pendingTextBoxMove.oldRect };
     }
     if (pendingRunEdit !== null) {
-      return { ...pendingRunEdit.rect };
+      return { ...pendingRunEdit.coverRect };
     }
     if (textTarget !== null && textTarget.kind === "box") {
       return { ...textTarget.rect };
@@ -1471,6 +1487,22 @@ export function EditOverlay(props: EditOverlayProps): ReactElement | null {
   const runLiveRect =
     tool === "text" && textTarget !== null && textTarget.kind === "run"
       ? runCoverRect(runSelection?.rect ?? textTarget.rect, textStyle?.baselineShift ?? 0)
+      : null;
+
+  // TFL-1431 — the in-flight commit's live preview. The selected-run preview
+  // above unmounts the moment `textTarget` clears on Confirm, which left the
+  // moved run blank at its NEW rect until the host's whole-document re-parse
+  // landed (the "stale artifact then delayed reposition"). Keep the moved run
+  // painted at the DESTINATION rect for the whole commit window, in the same
+  // padded geometry + style the commit is baking; the eraser above covers the
+  // ORIGINAL rect for the same duration.
+  const pendingRunPreview =
+    pendingRunEdit !== null && pendingRunEdit.text.length > 0
+      ? {
+          rect: runCoverRect(pendingRunEdit.previewRect, pendingRunEdit.style.baselineShift ?? 0),
+          text: pendingRunEdit.text,
+          style: pendingRunEdit.style,
+        }
       : null;
 
   // Phase 48 (item 3) — the text-run action bar is placed under the run
@@ -1696,7 +1728,16 @@ export function EditOverlay(props: EditOverlayProps): ReactElement | null {
             // refresh resolve (same timing contract as the editor
             // commit above). The selection closes immediately; the
             // cover releases when the host's promise lands.
-            setPendingRunEdit({ rect: { ...p.oldRect }, text: newText });
+            // TFL-1431 — carry the DESTINATION rect too: the live preview
+            // keeps painting the moved run there for the whole in-flight
+            // window, so Confirm settles at the NEW position with no blank
+            // frame while the host re-parses.
+            setPendingRunEdit({
+              coverRect: { ...p.oldRect },
+              previewRect: { ...p.newRect },
+              text: newText,
+              style,
+            });
             const res = onCommitTextEdit({
               rect: { ...p.newRect },
               newText,
@@ -1907,6 +1948,20 @@ export function EditOverlay(props: EditOverlayProps): ReactElement | null {
             cssScale={cssScale}
           />
         ) : null}
+      {/* TFL-1431 — the run commit is in flight: the selected-run preview
+          above is gone (its target cleared on Confirm), but the moved run must
+          stay painted at its DESTINATION rect until the host's commit promise
+          + paint barrier resolve, so Confirm settles at the NEW position with
+          no stale/blank frame. The eraser above covers the ORIGINAL rect for
+          the same window. */}
+      {pendingRunPreview !== null && (
+        <RunLivePreview
+          rect={pendingRunPreview.rect}
+          text={pendingRunPreview.text}
+          style={pendingRunPreview.style}
+          cssScale={cssScale}
+        />
+      )}
     </div>
   );
 }
