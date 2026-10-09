@@ -26,6 +26,8 @@ export interface IntakeTrayProps {
   items: readonly IntakeItem[];
   /** True while an eligible OS file drag is over the app (drop indication). */
   active?: boolean;
+  /** Render the in-tray drop hint; the canvas surface opts out (Home keeps it). */
+  showDropzone?: boolean;
   /** Empty-state sentence; a concise default is used when omitted. */
   emptyHint?: string;
   /** Remove from queue only - the host must never delete the file. */
@@ -77,6 +79,7 @@ function rowLabel(item: IntakeItem, index: number): string {
 export function IntakeTray({
   items,
   active = false,
+  showDropzone = true,
   emptyHint,
   onRemove,
   onMove,
@@ -129,23 +132,25 @@ export function IntakeTray({
       aria-label="Intake queue"
       {...(busy ? { "aria-busy": true } : {})}
     >
-      <div
-        className="intake-dropzone"
-        data-intake-dropzone
-        {...(active ? { "data-intake-active": true } : {})}
-      >
-        <span className="intake-dropzone-icon" aria-hidden="true">
-          <Icon icon={FolderOpen} size="md" />
-        </span>
-        <span className="intake-dropzone-text">
-          <span className="intake-dropzone-title">
-            Drop files to add them to the queue
+      {showDropzone ? (
+        <div
+          className="intake-dropzone"
+          data-intake-dropzone
+          {...(active ? { "data-intake-active": true } : {})}
+        >
+          <span className="intake-dropzone-icon" aria-hidden="true">
+            <Icon icon={FolderOpen} size="md" />
           </span>
-          <span className="intake-dropzone-hint">
-            PDFs open as tabs; images become one PDF.
+          <span className="intake-dropzone-text">
+            <span className="intake-dropzone-title">
+              Drop files to add them to the queue
+            </span>
+            <span className="intake-dropzone-hint">
+              PDFs open as tabs; images become one PDF.
+            </span>
           </span>
-        </span>
-      </div>
+        </div>
+      ) : null}
 
       {items.length === 0 ? (
         <p className="intake-empty">

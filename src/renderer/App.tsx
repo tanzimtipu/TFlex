@@ -13348,7 +13348,7 @@ pushToast(
         <div className="intake-persistent" data-intake-persistent>
           <IntakeTray
             items={intakeItems}
-            active={osDragActive}
+            showDropzone={false}
             onRemove={onIntakeRemove}
             onMove={onIntakeMove}
             onOpen={runIntake}
