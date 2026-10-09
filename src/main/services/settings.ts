@@ -318,10 +318,10 @@ export const DEFAULT_SETTINGS: AppSettings = {
   // missing/invalid stored value, so a settings.json written before this
   // change (no `accountsEnabled` key) resolves to ON too.
   accountsEnabled: true,
-  // Phase 58 (operator default): the Action Dock tabs ship COLORFUL. Single
+  // Phase 123 (operator default): the Action Dock tabs ship CHROME. Single
   // source of the default; `normalizeSettings` resolves a missing/invalid
   // stored value to it (explicit-default, same shape as accountsEnabled).
-  tabStyle: 'colorful',
+  tabStyle: 'chrome',
   // Phase 84 (True redaction) default mark colour. Single source of the
   // default; `normalizeSettings` resolves a missing/invalid stored value to
   // it (explicit-default, same shape as tabStyle).
@@ -350,8 +350,8 @@ const THEMES: readonly AppTheme[] = ['light', 'dark', 'frosted'];
 
 /** Phase 58 — the set of accepted `TabStyle` values. `tabStyle` is validated
  *  preserve-if-valid against this list in `normalizeSettings`; anything else
- *  resolves to the consumer default `'colorful'`. */
-export const TAB_STYLES: readonly TabStyle[] = ['standard', 'colorful'];
+ *  resolves to the consumer default `'chrome'` (Phase 123). */
+export const TAB_STYLES: readonly TabStyle[] = ['standard', 'colorful', 'chrome'];
 
 /** Phase 58 — maximum number of home-row tool ids persisted (`homeTools`),
  *  excluding the fixed Open-file tile. The validator truncates an over-long
@@ -496,7 +496,7 @@ export function normalizeDockUnpinned(raw: unknown): string[] | null {
 
 /** Phase 58 — normalise a raw `tabStyle` value, preserve-if-valid. Returns
  *  the value only when it is a string in `TAB_STYLES`, else `null` (so the
- *  caller resolves the consumer default `'colorful'`). */
+ *  caller resolves the consumer default `'chrome'`, Phase 123). */
 export function normalizeTabStyle(raw: unknown): TabStyle | null {
   if (typeof raw !== 'string') return null;
   return (TAB_STYLES as readonly string[]).includes(raw) ? (raw as TabStyle) : null;

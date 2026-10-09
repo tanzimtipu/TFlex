@@ -4047,6 +4047,188 @@ body.tab-reordering .tab-list[data-reorder="true"] .tab {
   opacity: 1;
 }
 
+/* ===========================================================================
+ * Phase 123 (chunk B) â CHROME TAB STYLE.
+ *
+ * The operator's reference is a Chrome browser tab strip. This scoped block
+ * (mirroring the Phase 58/62/68/72 colorful override structure) paints it
+ * WITHOUT touching the 'standard' or 'colorful' looks, the header / strip
+ * height tokens, or the tab ARIA / open / close / switch / reorder behavior.
+ *
+ * Silhouette: an inactive tab is the muted strip surface (the toolbar
+ * surface, no per-session hue) with rounded top corners and a flush, square
+ * bottom edge. The active tab is the raised, lighter/contrasting surface that
+ * fills the strip's foot - square bottom corners, no separating border or
+ * underline - so it reads as connected to the document below. Exactly one tab
+ * is active at all times (the existing `active` / `aria-selected` contract).
+ *
+ * Hover is strictly visual, inactive-only: it subtly lightens the tab body and
+ * reveals its close control, with NO width / height / margin / transform
+ * change (zero layout shift), no reorder and no active change. The active tab
+ * is never hover-lightened. The whole surface is painted by a ::before layer
+ * so it covers the canonical `.btn` background the tab element would
+ * otherwise carry. Motion reuses the shared tokens (reduced-motion /
+ * Animations-OFF collapse them globally).
+ * ========================================================================= */
+
+/* The strip stretches so the active tab's fill can reach its foot; the
+ * inactive tabs hang from the top edge. The `+1px` / `-1px` extends the strip
+ * over the header's own 1px bottom border so the active tab's raised surface
+ * covers it and reads as connected to the document (no separating line) while
+ * the line still runs beneath every inactive tab. Strip height tokens are
+ * untouched. */
+.tab-area[data-tab-style="chrome"] {
+  align-self: stretch;
+  height: calc(100% + 1px);
+  margin-bottom: -1px;
+}
+
+.tab-area[data-tab-style="chrome"] .tab-list {
+  align-items: flex-start;
+}
+
+/* Geometry: a compact fixed-height tab, banded min/max width, content
+ * ellipsised, shrinking uniformly through the planner's `--tf-tab-width`. */
+.tab-area[data-tab-style="chrome"] .tab {
+  height: 30px;
+  width: var(--tf-tab-width, 220px);
+  min-width: 108px;
+  max-width: 220px;
+  box-sizing: border-box;
+  padding: 0 min(var(--sp-2), calc(var(--tf-tab-width, 220px) * 0.25)) 0
+    min(var(--sp-3), calc(var(--tf-tab-width, 220px) * 0.25));
+  margin-right: var(--tf-tab-gap, 2px);
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  color: var(--fg-muted);
+  font-weight: 400;
+}
+
+/* The muted inactive body: rounded top corners, flush square foot. */
+.tab-area[data-tab-style="chrome"] .tab::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  border-top-left-radius: var(--tf-tab-radius-top);
+  border-top-right-radius: var(--tf-tab-radius-top);
+  border-bottom-left-radius: 0;
+  border-bottom-right-radius: 0;
+  background: var(--bg-toolbar);
+  transition: background var(--motion-fast) var(--ease-out);
+}
+
+/* Keep the tab's own content (dot, title, close) above the fill layer. */
+.tab-area[data-tab-style="chrome"] .tab > * {
+  position: relative;
+  z-index: 1;
+}
+
+/* Inactive label stays muted (this re-asserts over the Phase 105 identity
+ * tint for a tab that carries a `data-tab-color-id`). */
+.tab-area[data-tab-style="chrome"] .tab[data-tab-color-id]:not(.tab-active) {
+  color: var(--fg-muted);
+}
+
+/* Neutralise the shared `.tab:hover` brightness filter for every chrome tab:
+ * the active tab must never be hover-lightened. */
+.tab-area[data-tab-style="chrome"] .tab:hover {
+  filter: none;
+}
+
+/* INACTIVE-ONLY hover: a subtle body lighten toward the raised surface. The
+ * selector excludes the active tab, so hovering it changes nothing. */
+.tab-area[data-tab-style="chrome"] .tab:not(.tab-active):hover::before {
+  background: color-mix(in srgb, var(--bg-raised) 45%, var(--bg-toolbar));
+}
+
+.tab-area[data-tab-style="chrome"] .tab[data-tab-color-id]:not(.tab-active):hover {
+  color: var(--fg-strong);
+}
+
+/* Active tab: the raised, contrasting surface connected to the content below.
+ * It fills the strip's foot, squares its bottom corners and drops the shared
+ * identity keyline and the VS Code underline (no separating border/line). */
+.tab-area[data-tab-style="chrome"] .tab-list > li[data-tab-active="true"] {
+  align-self: stretch;
+}
+
+.tab-area[data-tab-style="chrome"] .tab-active {
+  height: 100%;
+  color: var(--fg-strong);
+  font-weight: 600;
+  box-shadow: none;
+}
+
+.tab-area[data-tab-style="chrome"] .tab.tab-active[data-tab-color-id] {
+  color: var(--fg-strong);
+  box-shadow: none;
+}
+
+.tab-area[data-tab-style="chrome"] .tab-active::before {
+  background: var(--bg-raised);
+  border-bottom-left-radius: 0;
+  border-bottom-right-radius: 0;
+}
+
+.tab-area[data-tab-style="chrome"] .tab-active::after {
+  content: none;
+}
+
+/* Close control: hidden at rest on an inactive tab (opacity only, so the 18px
+ * slot is always reserved - no layout shift), revealed on the active tab and
+ * on inactive hover / keyboard focus, with its own hover wash. */
+.tab-area[data-tab-style="chrome"] .tab-close {
+  margin-left: auto;
+  opacity: 0;
+}
+
+.tab-area[data-tab-style="chrome"] .tab-active .tab-close,
+.tab-area[data-tab-style="chrome"] .tab:not(.tab-active):hover .tab-close {
+  opacity: 1;
+}
+
+.tab-area[data-tab-style="chrome"] .tab-close:focus-visible {
+  opacity: 1;
+}
+
+.tab-area[data-tab-style="chrome"] .tab-close:hover {
+  background: color-mix(in srgb, var(--fg-strong) 14%, transparent);
+  opacity: 1;
+}
+
+/* Title yields the trailing space and ellipsises rather than crowding the
+ * pinned close control. */
+.tab-area[data-tab-style="chrome"] .tab-title {
+  max-width: none;
+  min-width: 0;
+  flex: 0 1 auto;
+  overflow: visible;
+}
+
+/* Chrome-style "+" new-tab: a compact muted square on the tab baseline. The
+ * existing control (and its Multi-Mode disabled reason) is only restyled. */
+.tab-area[data-tab-style="chrome"] .tab-list-new {
+  align-items: flex-start;
+}
+
+.tab-area[data-tab-style="chrome"] .tab-new {
+  width: 28px;
+  min-width: 28px;
+  height: 28px;
+  margin: 1px 0 0 4px;
+  border-radius: var(--radius-2);
+  color: var(--fg-muted);
+}
+
+.tab-area[data-tab-style="chrome"] .tab-new:hover:not([disabled]):not([aria-disabled="true"]) {
+  background: var(--bg-hover);
+  color: var(--fg-strong);
+}
+
+/* === Phase 123 chrome block end === */
+
 /* ---------------------------------------------------------------------------
  * Phase 113 (Quiet Actions) — wave D alias re-pins.
  *

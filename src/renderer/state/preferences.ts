@@ -32,9 +32,11 @@ export const DEFAULT_RECENTS_CAP = 10;
 export type ThemeDefault = 'light' | 'dark' | 'system' | 'frosted';
 
 /** Phase 58 — the tab-strip style. 'colorful' gives each tab its own
- *  flat colour; 'standard' keeps the classic tab look. Mirrors the
- *  shared `TabStyle` union and the backend's settings.ts validation. */
-export const DEFAULT_TAB_STYLE: TabStyle = 'colorful';
+ *  flat colour; 'standard' keeps the classic tab look; Phase 123 adds
+ *  'chrome' (the Chrome browser silhouette) and makes it the default.
+ *  Mirrors the shared `TabStyle` union and the backend's settings.ts
+ *  validation. */
+export const DEFAULT_TAB_STYLE: TabStyle = 'chrome';
 
 export type PreferencesAction =
   | { type: 'set-theme-default'; value: ThemeDefault }
@@ -153,11 +155,18 @@ export function preferencesReducer(
       return { ...state, themeDefault: action.value };
     }
     case 'set-tab-style': {
-      // Phase 58 — allowlist guard: drop anything outside the two
-      // supported tab styles (mirrors the backend's preserve-if-valid
-      // TabStyle validation). An unchanged value is an identity no-op
-      // so a re-render doesn't churn the settings IPC.
-      if (action.value !== 'standard' && action.value !== 'colorful') return state;
+      // Phase 58 — allowlist guard: drop anything outside the supported
+      // tab styles (mirrors the backend's preserve-if-valid TabStyle
+      // validation). Phase 123 widens it with 'chrome'. An unchanged
+      // value is an identity no-op so a re-render doesn't churn the
+      // settings IPC.
+      if (
+        action.value !== 'chrome' &&
+        action.value !== 'standard' &&
+        action.value !== 'colorful'
+      ) {
+        return state;
+      }
       if (state.tabStyle === action.value) return state;
       return { ...state, tabStyle: action.value };
     }

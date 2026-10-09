@@ -5,6 +5,35 @@
 > inspect the current `OPEN`, `FIX-READY`, and `DISPUTED` entries first; closed records are
 > historical evidence and must not be loaded wholesale.
 
+## DEF-664: The dock EDIT-mode red minus (remove) badge turns invisible under the pointer on hover
+
+- Status: OPEN
+- Severity: MEDIUM - a remove control becomes invisible exactly when the user hovers it to click it, so removal is unreliable; no data loss, no crash.
+- Found by: operator (relayed by CEO as TFL-1404 "Customize dock remove icon bug")
+- Phase: 123 (fix tracked by TFL-1406)
+
+Files:
+- `src/renderer/styles.css:4256-4262` - the Phase 113 wave-D `.action-dock-minus.btn` re-pin restores the badge box (`padding`/`gap`/`min-width`/`border`/`justify-content`) but NOT its hover/active fill, ink or transform. This is the omission.
+- `src/renderer/styles.css:19561-19584` - base `.action-dock-minus` sets the attention fill (`background: var(--sem-attention, var(--accent))`, `color: var(--fg-on-accent)`) at specificity (0,1,0); `.action-dock-minus:hover` sets only `transform: scale(1.12)` at (0,2,0).
+- `src/renderer/styles.css:3767-3769` - `.btn-ghost:hover:not([disabled]):not([aria-disabled="true"])` repaints `background: var(--bg-hover)` at (0,4,0); it WINS on hover, replacing the red fill with the neutral hover film.
+- `src/renderer/styles.css:15400` - `.btn:hover:not([disabled])` sets `transform: translateY(-1px)` at (0,3,0); it beats the badge's own (0,2,0) `scale(1.12)`.
+- `src/renderer/components/ActionDock.tsx:1376-1398` - the badge is `<span class="btn btn-ghost btn-compact action-dock-minus" role="button">` (JSX is correct and unchanged by this fix).
+
+Steps to reproduce:
+1. Launch TFlex, open a PDF, and open the Action Dock's More (overflow) menu.
+2. Choose "Customize dock" (ActionDock.tsx:963) - this arms EDIT mode (`data-dock-edit="true"`), so every verb grows the red `.action-dock-minus` badge.
+3. Hover the red minus badge on any verb.
+4. The badge's fill flips from the attention red to the light `--bg-hover` film while its glyph keeps `--fg-on-accent`: an on-accent glyph on a light surface, so the control appears to vanish under the pointer. Its intended `scale(1.12)` is also replaced by the generic 1px lift.
+
+Expected: the red minus stays fully visible and hit-testable for the whole hover, and clicking it removes the verb.
+
+Actual: on hover the canonical `.btn-ghost:hover` chrome (0,4,0) overrides the badge's attention fill and the global `.btn:hover` (0,3,0) overrides its scale, so the badge reads as gone at the moment of interaction.
+
+Scope finding: ISOLATED, not systemic. The sibling Home remove badge `.home-tool-minus.btn:hover/active` (`src/renderer/styles.css:3969-3980`) already re-pins its attention fill, ink and `scale(1.12)`/`none` over the canonical family, so it does not reproduce. `.create-image-remove` (`styles.css:13194-13201`) is a plain canonical ghost icon with no bespoke fill, so the canonical hover film IS its intended state. No other dock-item control (pen, plus, arrows, More) carries `.action-dock-minus`. `ActionDock.tsx` is the only renderer file that emits the class.
+
+History:
+- cto: filed 2026-10-09 from operator report TFL-1404. ESCAPE: no-probe - no existing test or probe asserted the EDIT-mode badge's hover visibility (the Phase 95 guard `test/unit/renderer/phase95_dockMinusContainment.test.ts` only pins geometry, not hover ink); qa adds the hover regression, adversary adds the class to its matrix.
+
 ## DEF-637: A settings-write rollback drops a newer legitimate settings echo, diverging the UI from disk
 
 - Status: CLOSED

@@ -7,7 +7,7 @@
 //   b. PreferencesDialog renders the Tab style row ONLY when an
 //      `onSetTabStyle` handler is supplied, and calls it with the pick.
 //   c. preferencesReducer's `set-tab-style` writes a valid value and
-//      drops an invalid one; DEFAULT_TAB_STYLE is 'colorful'.
+//      drops an invalid one; DEFAULT_TAB_STYLE is 'chrome' (Phase 123).
 //   d. Phase 62 retired the DEF-409 decorative `.tab-flare`; AnimatedTab no
 //      longer renders it and the colorful silhouette is a rounded chip.
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -146,8 +146,8 @@ describe("PreferencesDialog — Phase 58 Tab style row", () => {
 });
 
 describe("preferencesReducer — Phase 58 set-tab-style", () => {
-  it("DEFAULT_TAB_STYLE is 'colorful'", () => {
-    expect(DEFAULT_TAB_STYLE).toBe("colorful");
+  it("DEFAULT_TAB_STYLE is 'chrome'", () => {
+    expect(DEFAULT_TAB_STYLE).toBe("chrome");
   });
 
   it("sets tabStyle to the requested value", () => {

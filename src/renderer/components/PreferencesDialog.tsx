@@ -202,7 +202,7 @@ export function PreferencesDialog(props: PreferencesDialogProps): ReactElement |
     onSetAnimationsEnabled,
     convertDefaults = DEFAULT_CONVERT_DEFAULTS,
     onSetConvertDefaults,
-    tabStyle = 'colorful',
+    tabStyle = 'chrome',
     onSetTabStyle,
     onRestoreDefaults,
     persistStatus = PERSIST_STATUS_SAVED,
@@ -449,6 +449,7 @@ export function PreferencesDialog(props: PreferencesDialogProps): ReactElement |
                                   onChange={(e): void => onSetTabStyle(e.target.value as TabStyle)}
                                   data-prefs-tab-style
                                 >
+                                  <option value="chrome">Chrome</option>
                                   <option value="colorful">Colorful</option>
                                   <option value="standard">Standard</option>
                                 </select>

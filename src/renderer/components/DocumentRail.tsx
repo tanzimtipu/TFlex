@@ -234,6 +234,10 @@ export function tabFitAvailableWidth(args: {
 export const TAB_OVERFLOW_METRICS: Readonly<Record<TabStyle, { natural: number; floor: number }>> = {
   colorful: { natural: 180, floor: MIN_TAB_WIDTH },
   standard: { natural: 168, floor: 96 },
+  /** Phase 123 — Chrome tabs are wider at rest (a readable filename) and keep
+   *  a floor that still leaves a short title legible while a long one
+   *  ellipsises; the planner writes this into `--tf-tab-width`. */
+  chrome: { natural: 220, floor: 112 },
 };
 
 /** Phase 105 (chunk D) — the parent-folder label for duplicate-name context.

@@ -100,9 +100,9 @@ describe('SettingsService.load', () => {
       // Phase 44 (operator change): the normalizer always emits this field
       // now (default true), so the round-trip expectation includes it.
       accountsEnabled: true,
-      // Phase 58: same explicit-default shape — the normalizer always emits
-      // tabStyle, resolving missing/invalid to 'colorful'.
-      tabStyle: 'colorful' as const,
+      // Phase 123: same explicit-default shape — the normalizer always emits
+      // tabStyle, resolving missing/invalid to 'chrome'.
+      tabStyle: 'chrome' as const,
       // Phase 84: same explicit-default shape — the normalizer always emits
       // redactionColor, resolving missing/invalid to '#000000'.
       redactionColor: '#000000' as const,
@@ -1464,23 +1464,25 @@ describe('Phase 36: dockPins validation', () => {
 });
 
 describe('Phase 58: tabStyle validation', () => {
-  it('preserves the two valid tab styles', () => {
+  it('preserves the three valid tab styles', () => {
     expect(normalizeSettings({ tabStyle: 'standard' }).tabStyle).toBe('standard');
     expect(normalizeSettings({ tabStyle: 'colorful' }).tabStyle).toBe('colorful');
+    expect(normalizeSettings({ tabStyle: 'chrome' }).tabStyle).toBe('chrome');
   });
 
-  it('resolves an invalid stored value to the colorful default', () => {
+  it('resolves an invalid stored value to the chrome default', () => {
     for (const bad of ['holographic', 7, {}, null, undefined] as unknown[]) {
-      expect(normalizeSettings({ tabStyle: bad }).tabStyle).toBe('colorful');
+      expect(normalizeSettings({ tabStyle: bad }).tabStyle).toBe('chrome');
     }
   });
 
   it('normalizeTabStyle returns null for anything outside TAB_STYLES', () => {
     expect(normalizeTabStyle('standard')).toBe('standard');
     expect(normalizeTabStyle('colorful')).toBe('colorful');
+    expect(normalizeTabStyle('chrome')).toBe('chrome');
     expect(normalizeTabStyle('holographic')).toBeNull();
     expect(normalizeTabStyle(7)).toBeNull();
-    expect(TAB_STYLES).toEqual(['standard', 'colorful']);
+    expect(TAB_STYLES).toEqual(['standard', 'colorful', 'chrome']);
   });
 });
 

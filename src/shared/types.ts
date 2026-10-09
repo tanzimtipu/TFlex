@@ -102,10 +102,11 @@ export interface AnnotationColors {
 export type AppTheme = 'light' | 'dark' | 'frosted';
 
 /** Phase 58 — the Action Dock tab look. `'standard'` is the plain tab
- *  chrome; `'colorful'` tints each tab. Validated preserve-if-valid against
- *  these two values in settings.ts; a missing/invalid stored value resolves
- *  to the consumer default `'colorful'`. */
-export type TabStyle = 'standard' | 'colorful';
+ *  chrome; `'colorful'` tints each tab; `'chrome'` (Phase 123) reads and
+ *  behaves like Chrome browser tabs. Validated preserve-if-valid against
+ *  these three values in settings.ts; a missing/invalid stored value resolves
+ *  to the consumer default `'chrome'` (Phase 123). */
+export type TabStyle = 'standard' | 'colorful' | 'chrome';
 
 /** Phase 82 — the bundled offline spell-check dictionary language. Only the
  *  US-English list ships in v1. */

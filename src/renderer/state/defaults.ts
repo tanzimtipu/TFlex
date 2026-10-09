@@ -25,10 +25,10 @@ export const DEFAULT_SETTINGS: AppSettings = {
   // the main-process default here so a failed loadSettings behaves like a
   // fresh install instead of silently hiding the account section.
   accountsEnabled: true,
-  // Phase 58 — the tab-strip style. Matches the backend's settings.ts
-  // default ('colorful') so a failed loadSettings boots with the
-  // operator's reference tab look.
-  tabStyle: 'colorful',
+  // Phase 58 — the tab-strip style. Phase 123 makes 'chrome' the
+  // default; this mirrors the backend's settings.ts default so a failed
+  // loadSettings boots with the operator's reference Chrome tab look.
+  tabStyle: 'chrome',
   // Phase 58 (chunk 4) — the welcome screen's editable tool row, minus the
   // fixed Open tile. Mirrors the backend's shipped home row so a failed
   // loadSettings boots with the same three-action welcome the UI shipped.

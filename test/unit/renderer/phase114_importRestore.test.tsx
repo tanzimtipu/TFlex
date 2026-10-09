@@ -308,7 +308,7 @@ describe("restoreDefaultSettings (chunk E)", () => {
     expect(out.themeDefault).toBe("frosted");
     expect(out.animationsEnabled).toBe(true);
     expect(out.tabStyle).toBe(DEFAULT_TAB_STYLE);
-    expect(out.tabStyle).toBe("colorful");
+    expect(out.tabStyle).toBe("chrome");
     expect(out.convertDefaults).toEqual(DEFAULT_CONVERT_DEFAULTS);
   });
 

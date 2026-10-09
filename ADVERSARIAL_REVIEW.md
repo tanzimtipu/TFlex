@@ -3,6 +3,85 @@
 > Read discipline: this is a historical evidence ledger. Search for the assigned `ADV-NNN`
 > or unresolved `Disposition: PENDING` entries; do not load prior campaigns wholesale.
 
+## Phase 123 Chrome Tab Strip diff-pass (TFL-1403) - CLEAN
+
+Session label: `diff-pass`. Scope: the Phase 123 Chrome tab strip implementation -
+`src/renderer/styles.css:4093-4243` (`[data-tab-style="chrome"]` block), the contract
+change `src/shared/types.ts:104-108` (TabStyle union), defaults in
+`src/renderer/state/preferences.ts:37` and `src/renderer/state/defaults.ts:31,58`,
+the metrics entry `DocumentRail.tsx:234-237` (TAB_OVERFLOW_METRICS.chrome), and the
+unit spec `test/unit/renderer/phase123ChromeTabs.test.tsx`. Product code, tests,
+REQUIREMENTS.md and AGENTS.md were read but NOT modified.
+
+**Result: CLEAN - no ADV-NNN filed.**
+
+Exact commands:
+
+- Unit spec: `npm.cmd run test:unit -- phase123ChromeTabs` -> **6 passed / 0 failed**.
+- Typecheck: `npm.cmd run typecheck` -> clean (the chrome entry in TAB_OVERFLOW_METRICS
+  satisfies the `Record<TabStyle, ...>` type).
+- Build: `npm.cmd run build:renderer` -> clean (dist/renderer/assets/index-*.js/css built).
+
+Attack-surface results (task probes 1-7):
+
+1. **Hover INACTIVE tab — body lighten, close appear, NO layout shift: HOLDS.**
+   CSS `styles.css:4155-4157` implements inactive-only hover via
+   `.tab:not(.tab-active):hover::before` with a `background: color-mix()` lighten.
+   The close control (`styles.css:4195-4203`) uses `opacity: 0` at rest and
+   `opacity: 1` on active/hover, reserving the 18px slot (no layout shift).
+   The unit spec verifies the selector exists and targets only `:not(.tab-active)`.
+
+2. **ACTIVE tab is NEVER hover-lightened: HOLDS.**
+   `styles.css:4149-4151` neutralizes the shared `.tab:hover` filter with `filter: none`,
+   and the block contains no `.tab-active:hover` selector. The inactive-only hover
+   selector at `:4155` explicitly excludes `.tab-active`.
+
+3. **Exactly one active tab tracking the open document: HOLDS.**
+   This is the existing ARIA contract (`role="tab"`, `aria-selected="true"`) that
+   Phase 123 does not modify. The unit spec (`phase123ChromeTabs.test.tsx:92-97`)
+   asserts exactly one `[aria-selected="true"]` tab with the expected id.
+
+4. **Close control visibility states: HOLDS.**
+   `styles.css:4195-4203`: hidden at rest on inactive (`opacity: 0`), shown on
+   active tab and on inactive hover (`opacity: 1`), with its own hover state
+   (`:4209-4211`). Focus-visible forces visibility (`:4205-4207`).
+
+5. **"+" is a real control (opens tab; Multi-Mode disables): HOLDS.**
+   The "+" is the existing `[data-new-tab]` control (`DocumentRail.tsx:981-1001`),
+   only restyled (`styles.css:4229-4240`). Multi-Mode disabled reason is preserved
+   (unchanged logic).
+
+6. **Reduced-motion collapses transitions; focus-visible ring present: HOLDS.**
+   The hover transition uses `--motion-fast` / `--ease-out` tokens
+   (`styles.css:4132`), which are zeroed under `prefers-reduced-motion` by the
+   app-wide catch-all (`docs/ANIMATION-RULES.md`, `styles.css` reduced-motion block).
+   Focus-visible ring is the existing `.tab:focus-visible` rule (untouched).
+
+7. **No regression to open/close/switch/reorder/tear-out/overflow: HOLDS.**
+   Phase 123 is a pure re-skin - no handler, IPC, or behavioral logic changed.
+   The CONTROL-INDEX (REQUIREMENTS.md:9114) confirms no new interactive control,
+   only restyled existing controls.
+
+Design-critique pass (skill `design-critique`) on the changed surface - the Chrome
+tab strip across rest/hover/active states. User job: recognise the active document
+at a glance and read hover states without hesitation.
+
+- **Must-fix: none.** The muted-inactive / raised-active relationship is clear;
+  inactive hover lightening is subtle but distinct; the active tab is never
+  hover-lightened.
+- **Should-fix: none.** Close control visibility is consistent (hidden at rest on
+  inactive, shown on active/hover/focus).
+- **Nice-to-fix:** The close control's 18px slot is always reserved (opacity-only),
+  which is correct but could be documented for future maintainers.
+- **Strengths to keep:** Inactive-only hover, no layout shift, preserved ARIA,
+  reduced-motion compliance, Multi-Mode disabled reason on "+".
+
+**Verdict:** Phase 123 Chrome tab strip is CLEAN from an adversarial standpoint.
+The implementation matches the CTO rulings in phase-123.md:17-21, with no crashes,
+hangs, unhandled errors, silent failures, or regressions reachable through the
+adversarial probe set. The unit spec passes, the typecheck compiles, and the CSS
+implementation is scoped correctly under `[data-tab-style="chrome"]`.
+
 ## Phase 104 Focus Dock diff-pass (TFL-850) - selection-state delete duplication, stale dock e2e oracles, pre-existing icon-only pill overlap
 
 Session label: `diff-pass`. Scope: the uncommitted Phase 104 Focus Dock change set -
