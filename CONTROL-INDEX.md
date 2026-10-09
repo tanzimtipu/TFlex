@@ -1004,12 +1004,13 @@ document-less tab becomes active. Root cause: the panel's mount guard in
 window) after a form edit followed by a new tab. Fix: the guard now also
 requires the existing `activeTabHasDocument` predicate, so the panel renders
 only against a real engine session and stays hidden on a document-less tab (it
-reappears unchanged when a document tab is active). Pinned by
+reappears unchanged when a document tab is active). Originally pinned by
 `test/unit/renderer/tfl1393_formFreeze.test.tsx` (opens a seeded-form document,
 opens the guided fill panel through the Command Palette `forms` verb, edits a
 field, opens a new tab, and asserts the app chrome survives with no
-max-update-depth error). Superseded by TFL-1436 below: the panel and its mount
-guard are retired, and the freeze pin is replaced by
+max-update-depth error); that pin file was deleted when the panel was retired.
+Superseded by TFL-1436 below: the panel and its mount guard are retired, and the
+pin now lives in
 `test/unit/renderer/tfl1393_retireGuidedForm.test.tsx`.
 
 TFL-1436: the guided-form entry point and the fixed right-hand guided form-fill

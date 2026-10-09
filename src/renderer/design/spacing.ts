@@ -27,3 +27,8 @@ export const SPACE = {
 
 export type SpacingStep = keyof typeof SPACING;
 export type SpaceName = keyof typeof SPACE;
+
+/** TFL-1396 (Phase 121) - the enforced minimum vertical gap between two stacked
+ *  sibling regions in a column. Mirrors the --space-stack-min token (resolves to
+ *  --sp-4). */
+export const STACK_GAP_MIN = SPACING[4];

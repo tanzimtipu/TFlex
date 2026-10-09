@@ -490,7 +490,7 @@ One value, one canonical name; aliases resolve through it so no rule breaks.
 
 | Family | Canonical tokens | Aliases (point at canonical) |
 | --- | --- | --- |
-| spacing | `--sp-1`..`--sp-6` (4/8/12/16/24/32px) | `--space-micro/small/control/standard/section/major` |
+| spacing | `--sp-1`..`--sp-6` (4/8/12/16/24/32px) | `--space-micro/small/control/standard/section/major`, `--space-stack-min` -> `--sp-4` |
 | radii | `--radius-1..3`, `--radius-window/panel/group/control/pill` | `--tf-radius-sm` -> `--radius-2`, `--tf-radius-md` -> `--radius-3`, `--tf-radius-lg` -> `--radius-dialog` |
 | motion | `--tf-motion-*` / `--tf-ease-*` | `--motion-*` / `--ease-*` |
 | colour | `--accent*`, `--sem-*`, `--info/success/warning/error` (+`-soft`) | `--tf-accent*` |
@@ -526,6 +526,22 @@ literal only), a `style="..."` string, and an inline SVG `fill`/`stroke` present
 attribute with raw hex (DEF-547). A written allow-list (`ALLOWLIST` for TSX,
 `CSS_ALLOWLIST` for CSS) records the few functional/data literals that may remain, each
 with a reason, and a companion test fails any stale entry.
+
+### The minimum-stack-gap rule (Phase 121)
+
+`--space-stack-min` is the enforced **minimum vertical gap between two stacked
+sibling regions in a column** — the Home hero tool row above the intake drop
+zone, panel sections, dialog blocks. It is an alias resolving to `--sp-4`
+(16px), mirrored in TS as `STACK_GAP_MIN = SPACING[4]`. The Home intake drop
+zone (`.welcome-intake`) consumes it (`margin-top: var(--space-stack-min)`), so
+a new stacked region inherits the rule instead of inventing an ad hoc margin.
+
+Enforcement is a shared token plus a source-contract unit test
+(`test/unit/renderer/tfl1396HomeStackGap.test.ts`, which parses the `:root`
+block and `.welcome-intake`) and the geometric assertion in
+`e2e/tfl1396_home_spacing.spec.cjs`. This layered mechanism was chosen because
+the repo has no visual-regression harness: the token test pins the source, and
+the e2e assertion measures the actual rendered gap.
 
 ## 17. Phase 107 — Paper Stage canvas (chunk A, applied)
 
@@ -595,7 +611,7 @@ The home role also carries a constrained variant
 `--font-sans` and `--font-ui` are `var(--type-family)`
 (`"Segoe UI Variable", "Segoe UI", system-ui, sans-serif`); `--font-mono` is
 unchanged and the bundled Inter import stays (Inter is the document editing
-font). `--tf-text-supporting` is `#667085` in `:root` and `#929BAC` in dark; the
+font). `--tf-text-supporting` is `#5b6577` in `:root` and `#929BAC` in dark; the
 non-text/disabled `--tf-icon-disabled` (`#70798A`) is untouched.
 
 ### 18.3 Legacy tokens alias the roles
@@ -665,17 +681,19 @@ so content text scales with display DPI / UI scale but the app adds no separate
 text-size preference. Pinned by
 `test/unit/renderer/phase110_typographyContent.test.ts`.
 
-### 18.7 Home-hero contrast exception (DEF-594 / ADV-224)
+### 18.7 Home-hero contrast exception (DEF-594 / ADV-224, retuned by Phase 125)
 
-The global `--tf-text-supporting` (`#667085` light) is unchanged. On the Home
-hero (`.welcome.orbit-desk`) the surface is `--bg-sunken` (`#e4e9ef` light),
-where `#667085` measures 4.07:1, below the 4.5:1 interactive-text floor. In the
-LIGHT theme only, `.welcome-sub` and `.welcome-section h3 .count` therefore read
-the retired `--fg-muted` (`#556070`, 5.22:1 on the same surface). The override is
-scoped with `:root:not([data-theme="dark"]):not([data-theme="frosted"])`, so dark
-(`#929BAC` on `#08090b` = 7.12:1), frosted and every other surface keep the
-global token. Pinned by `test/unit/renderer/phase110_homeContrast.test.ts` and
-the `--bg-sunken` scoring in `test/unit/renderer/phase38LegibilityContrast.test.ts`.
+Phase 125 raised the global `--tf-text-supporting` to `#5b6577` light
+(`#929BAC` dark). On the Home hero (`.welcome.orbit-desk`) the surface is
+`--bg-sunken` (`#e4e9ef` light), where the raised `#5b6577` measures 4.81:1 and
+now clears the 4.5:1 interactive-text floor on its own (the retired `#667085`
+measured 4.07:1). In the LIGHT theme only, `.welcome-sub` and
+`.welcome-section h3 .count` still read the retired `--fg-muted` (`#556070`,
+5.22:1 on the same surface) for extra headroom. The override is scoped with
+`:root:not([data-theme="dark"]):not([data-theme="frosted"])`, so dark (`#929BAC`
+on `#08090b` = 7.12:1), frosted and every other surface keep the global token.
+Pinned by `test/unit/renderer/phase110_homeContrast.test.ts` and the
+`--bg-sunken` scoring in `test/unit/renderer/phase38LegibilityContrast.test.ts`.
 
 ## 19. Phase 112 - shared panel primitives + scoped panel tokens (chunk A, applied)
 
