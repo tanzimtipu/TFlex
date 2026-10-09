@@ -6,8 +6,9 @@
 //     collapsible section);
 //   - `[data-thumb-verbs]` / `[data-thumb-verb]` (chunk B: the over-preview
 //     hover verbs were replaced by the card footer's 32px `[data-thumb-more]`);
-//   - `[data-context-panel-combine]` in the header (chunk B: Combine and Remove
-//     blank pages moved into the labelled `[data-context-panel-more]` menu).
+//   - `[data-context-panel-combine]` in the header (chunk B moved Combine and
+//     Remove blank pages into the labelled `[data-context-panel-more]` menu,
+//     which Phase 124 retired for direct header icon buttons).
 //
 // The legacy specs in the focused e2e set still click those retired hooks, so
 // this spec replaces their coverage for the NEW controls (brief: "add a small
@@ -18,7 +19,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const { PDFDocument, PDFName, PDFString, PDFNumber } = require('@cantoo/pdf-lib');
 const { launchApp } = require('./lib/launch.cjs');
-const { hardClose } = require('./lib/helpers.cjs');
+const { hardClose, openSamplePath } = require('./lib/helpers.cjs');
 
 delete process.env.ELECTRON_RUN_AS_NODE;
 
@@ -87,11 +88,11 @@ test.afterEach(async () => {
 });
 
 async function openFixture(filePath) {
-  await app.evaluate(async ({ dialog }, fp) => {
-    dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [fp] });
-  }, filePath);
-  await win.locator('[data-toolbar-open]').first().click();
-  await win.waitForSelector('.workspace', { timeout: 30000 });
+  // Phase 118 contract: the generic Open enqueues into Intake; the shared helper
+  // stubs the native picker, clicks the real Open control and finishes the
+  // Intake dispatch. The old stub+[data-toolbar-open]+wait-.workspace pattern
+  // predates Intake and no longer opens a document.
+  await openSamplePath(win, app, filePath);
   await win.waitForSelector(`${PANEL} .thumb-item`, { timeout: 30000 });
   await win.waitForTimeout(1500);
 }
@@ -185,13 +186,14 @@ test('TF1073-B card checkbox never navigates; card and panel More menus are real
   await win.keyboard.press('Escape');
   await expect(cardMenu).toHaveCount(0);
 
-  await win.locator('[data-context-panel-more]').click();
-  const panelMenu = win.locator('[data-context-panel-more-menu]');
-  await expect(panelMenu).toHaveCount(1);
-  await expect(panelMenu.locator('[data-context-panel-layout-split]')).toHaveCount(1);
-  await expect(panelMenu.locator('[data-context-panel-combine]')).toHaveCount(1);
-  await expect(panelMenu.locator('[data-blank-scan-open]')).toHaveCount(1);
-  await win.keyboard.press('Escape');
+  // Phase 124 — the header More menu is retired; the three tools are direct
+  // icon buttons in the panel header.
+  await expect(win.locator('[data-context-panel-more]')).toHaveCount(0);
+  await expect(win.locator('[data-context-panel-more-menu]')).toHaveCount(0);
+  const panelHeader = win.locator('[data-context-panel="pages"]');
+  await expect(panelHeader.locator('[data-context-panel-layout-split]')).toHaveCount(1);
+  await expect(panelHeader.locator('[data-context-panel-combine]')).toHaveCount(1);
+  await expect(panelHeader.locator('[data-blank-scan-open]')).toHaveCount(1);
 });
 
 // --- TF1073-C: outline rows + More menu (chunk C) --------------------------
@@ -229,7 +231,6 @@ test('TF1073-C outline rows keep metrics, row More menu and header Add', async (
 
 test('TF1073-D split layout mounts both views with a keyboard-resizable divider', async () => {
   await openFixture(OUTLINE_FIXTURE);
-  await win.locator('[data-context-panel-more]').click();
   await win.locator('[data-context-panel-layout-split]').click();
 
   const divider = win.locator('[data-context-panel-split-divider]');
@@ -270,7 +271,6 @@ test('TF1073-E captures the navigator in light/dark/narrow/split', async () => {
   await setTheme('dark');
   await shot('tfl1073-outline-dark');
 
-  await win.locator('[data-context-panel-more]').click();
   await win.locator('[data-context-panel-layout-split]').click();
   await expect(win.locator('[data-context-panel-split-divider]')).toHaveCount(1);
   await setTheme('light');

@@ -267,13 +267,12 @@ test('P36C2-A the panel is the default left slot; no dev markers, no rail; chrom
   expect(painted.length, 'at least one panel preview painted').toBeGreaterThan(0);
   for (const t of painted) expect(t.ink, `panel page ${t.page} has real ink`).toBeGreaterThan(0);
   await expect(win.locator(`${PANEL} .thumb-current`)).toHaveAttribute('data-page', '1');
-  // The chrome exists (the per-card More is mounted; Combine lives in the
-  // header's labelled More menu — Phase 111 chunk B).
+  // The chrome exists (the per-card More is mounted; Phase 124 retired the
+  // header's labelled More menu — the three tools are now direct icon buttons).
   expect(await win.locator(`${PANEL} .thumb-item[data-page="1"] [data-thumb-more]`).count()).toBe(1);
-  await win.locator('[data-context-panel-more]').click();
-  await expect(win.locator('[data-context-panel-more-menu] [data-context-panel-combine]')).toHaveCount(1);
-  await win.keyboard.press('Escape');
+  await expect(win.locator('[data-context-panel-more]')).toHaveCount(0);
   await expect(win.locator('[data-context-panel-more-menu]')).toHaveCount(0);
+  await expect(win.locator(`${PANEL} [data-context-panel-combine]`)).toHaveCount(1);
   console.log(`[P36C2-A] panel default: count=${panel.count} painted=${JSON.stringify(paintedPages(panel))}`);
 });
 
@@ -694,9 +693,8 @@ test('P36C2-E Combine opens the merge dialog; the outline section toggles and na
   
   await openReport();
 
-  // Combine moved into the header's labelled More menu (Phase 111 chunk B).
-  await win.locator('[data-context-panel-more]').click();
-  await win.locator('[data-context-panel-more-menu] [data-context-panel-combine]').click();
+  // Phase 124 — Combine is a direct header icon button (the More menu is gone).
+  await win.locator('[data-context-panel-combine]').click();
   await win.waitForSelector('[data-merge-pick]', { timeout: 8000 });
   console.log('[P36C2-E] Combine… opened the EXISTING merge dialog');
   await closeDialog('[data-merge-pick]');

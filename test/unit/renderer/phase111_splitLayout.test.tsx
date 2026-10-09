@@ -290,18 +290,15 @@ describe("Phase 111 chunk D1 — the Split Navigator render", () => {
   });
 });
 
-describe("Phase 111 chunk D1 — the layout menu", () => {
-  it("opens the More menu and selects the split layout while stacked", () => {
+describe("Phase 124 — the direct navigator layout toggle", () => {
+  it("selects the split layout while stacked", () => {
     const onNavigatorLayoutChange = vi.fn();
     const { host, unmount } = renderPanel({ pageCount: 3, onNavigatorLayoutChange });
     try {
-      const more = host.querySelector<HTMLButtonElement>("[data-context-panel-more]");
-      expect(more).not.toBeNull();
-      clickOn(more as HTMLElement);
-      const row = host.querySelector("[data-context-panel-layout-split]");
-      expect(row).not.toBeNull();
-      expect(row?.textContent).toContain("Use split layout");
-      clickOn(row as HTMLElement);
+      const toggle = host.querySelector<HTMLButtonElement>("[data-context-panel-layout-split]");
+      expect(toggle).not.toBeNull();
+      expect(toggle?.getAttribute("aria-label")).toBe("Use split layout");
+      clickOn(toggle as HTMLElement);
       expect(onNavigatorLayoutChange).toHaveBeenLastCalledWith("split");
     } finally {
       unmount();
@@ -316,11 +313,10 @@ describe("Phase 111 chunk D1 — the layout menu", () => {
       onNavigatorLayoutChange,
     });
     try {
-      clickOn(host.querySelector("[data-context-panel-more]") as HTMLElement);
-      const row = host.querySelector("[data-context-panel-layout-split]");
-      expect(row).not.toBeNull();
-      expect(row?.textContent).toContain("Use stacked layout");
-      clickOn(row as HTMLElement);
+      const toggle = host.querySelector<HTMLButtonElement>("[data-context-panel-layout-split]");
+      expect(toggle).not.toBeNull();
+      expect(toggle?.getAttribute("aria-label")).toBe("Use stacked layout");
+      clickOn(toggle as HTMLElement);
       expect(onNavigatorLayoutChange).toHaveBeenLastCalledWith("stacked");
     } finally {
       unmount();

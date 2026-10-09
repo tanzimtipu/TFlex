@@ -13,7 +13,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const { PDFDocument } = require('@cantoo/pdf-lib');
 const { launchApp } = require('./lib/launch.cjs');
-const { hardClose } = require('./lib/helpers.cjs');
+const { hardClose, openSamplePath } = require('./lib/helpers.cjs');
 
 delete process.env.ELECTRON_RUN_AS_NODE;
 
@@ -51,11 +51,11 @@ test.afterEach(async () => {
 });
 
 async function openFixture(filePath) {
-  await app.evaluate(async ({ dialog }, fp) => {
-    dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [fp] });
-  }, filePath);
-  await win.locator('[data-toolbar-open]').first().click();
-  await win.waitForSelector('.workspace', { timeout: 30000 });
+  // Phase 118 contract: the generic Open enqueues into Intake; the shared helper
+  // stubs the native picker, clicks the real Open control and finishes the
+  // Intake dispatch. The old stub+[data-toolbar-open]+wait-.workspace pattern
+  // predates Intake and no longer opens a document.
+  await openSamplePath(win, app, filePath);
   await win.waitForSelector(`${PANEL} .thumb-item`, { timeout: 30000 });
   await win.waitForTimeout(1500);
 }
@@ -83,7 +83,6 @@ test('TF1073-PERF view switch, split toggle, panel resize and long-list scroll',
 
   // 2. Split toggle.
   const tSplit = Date.now();
-  await win.locator('[data-context-panel-more]').click();
   await win.locator('[data-context-panel-layout-split]').click();
   await expect(win.locator('[data-context-panel-split-divider]')).toHaveCount(1);
   console.log('[TF1073-PERF] splitToggle ' + (Date.now() - tSplit) + 'ms');

@@ -309,15 +309,12 @@ describe("ContextPanel — header (title removed + Combine)", () => {
     const { host, unmount } = renderPanel({ pageCount: 3, onMerge });
     try {
       // Phase 37 (item 15) — the "Pages · N" title text is removed; the
-      // header keeps the More entry and the collapse control. Phase 111
-      // (chunk B) moved Combine into that More menu.
+      // header keeps the collapse control. Phase 124 moved Combine out of the
+      // retired More menu and onto a direct header icon button.
       expect(host.querySelector(".glass-sidebar-title")).toBeNull();
-      const more = host.querySelector<HTMLButtonElement>("[data-context-panel-more]");
-      expect(more).not.toBeNull();
-      clickOn(more as HTMLButtonElement);
       const combine = host.querySelector<HTMLButtonElement>("[data-context-panel-combine]");
       expect(combine).not.toBeNull();
-      expect(combine?.textContent).toContain("Combine");
+      expect(combine?.getAttribute("aria-label")).toContain("Combine");
       clickOn(combine as HTMLButtonElement);
       expect(onMerge).toHaveBeenCalledTimes(1);
       // Phase 36 (chunk 6) — the dev badge is retired with the dev flag: the

@@ -277,24 +277,24 @@ function renderCollapsePanel(initial: boolean): PanelHandle {
 }
 
 describe("Phase 37 item 4 - the collapse glyph flips", () => {
-  it("expanded shows PanelLeftClose and collapsed shows PanelRightOpen, both directions", () => {
+  it("expanded shows ChevronLeft and collapsed shows ChevronRight, both directions", () => {
     const h = renderCollapsePanel(false);
     try {
       const btn = (): HTMLElement | null => h.host.querySelector("[data-rail-collapse]");
       expect(btn()?.getAttribute("data-collapse-direction")).toBe("collapse");
       expect(btn()?.getAttribute("title")).toBe("Collapse panel");
-      expect(btn()?.querySelector("svg.lucide-panel-left-close")).not.toBeNull();
-      expect(btn()?.querySelector("svg.lucide-panel-right-open")).toBeNull();
+      expect(btn()?.querySelector("svg.lucide-chevron-left")).not.toBeNull();
+      expect(btn()?.querySelector("svg.lucide-chevron-right")).toBeNull();
 
       h.rerender(true);
       expect(btn()?.getAttribute("data-collapse-direction")).toBe("expand");
       expect(btn()?.getAttribute("title")).toBe("Expand panel");
-      expect(btn()?.querySelector("svg.lucide-panel-right-open")).not.toBeNull();
-      expect(btn()?.querySelector("svg.lucide-panel-left-close")).toBeNull();
+      expect(btn()?.querySelector("svg.lucide-chevron-right")).not.toBeNull();
+      expect(btn()?.querySelector("svg.lucide-chevron-left")).toBeNull();
 
       h.rerender(false);
-      expect(btn()?.querySelector("svg.lucide-panel-left-close")).not.toBeNull();
-      expect(btn()?.querySelector("svg.lucide-panel-right-open")).toBeNull();
+      expect(btn()?.querySelector("svg.lucide-chevron-left")).not.toBeNull();
+      expect(btn()?.querySelector("svg.lucide-chevron-right")).toBeNull();
     } finally {
       h.unmount();
     }
@@ -371,8 +371,9 @@ describe("Phase 37 item 15 - no PAGES title, narrower panel", () => {
     );
     try {
       expect(host.querySelector(".glass-sidebar-title")).toBeNull();
-      // Phase 111 (chunk B) — Combine moved into the labelled More menu.
-      expect(host.querySelector("[data-context-panel-more]")).not.toBeNull();
+      // Phase 124 — the header now surfaces its tools as direct icon buttons
+      // (the labelled More menu is retired).
+      expect(host.querySelector("[data-context-panel-layout-split]")).not.toBeNull();
       expect(host.querySelector("[data-rail-collapse]")).not.toBeNull();
     } finally {
       unmount();

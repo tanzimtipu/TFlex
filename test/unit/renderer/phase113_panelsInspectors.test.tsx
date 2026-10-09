@@ -52,13 +52,6 @@ function cls(el: Element | null): string {
   return el.getAttribute("class") ?? "";
 }
 
-/** Dispatch a bubbling click on a rendered control. */
-function clickOn(target: Element): void {
-  act((): void => {
-    target.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
-  });
-}
-
 beforeEach((): void => {
   roots = [];
   hosts = [];
@@ -153,15 +146,13 @@ describe("Phase 113 — ContextPanel call sites", () => {
     );
   }
 
-  it("renders the page-view actions on the secondary compact primitive", () => {
+  it("renders the page-view tool buttons on the canonical icon primitive", () => {
     const host = renderPanel();
-    // Phase 111 (chunk B) — Combine + Remove blank pages live in the More menu.
-    clickOn(host.querySelector("[data-context-panel-more]") as HTMLElement);
+    // Phase 124 — the header tool buttons are direct IconButtons.
     const blank = host.querySelector("[data-blank-scan-open]");
     expect(cls(blank)).toContain("btn");
-    // Remove blank pages is a destructive More-menu row now.
-    expect(cls(blank)).toContain("btn-danger");
-    expect(cls(blank)).toContain("btn-compact");
+    expect(cls(blank)).toContain("btn-ghost");
+    expect(cls(blank)).toContain("btn-icon");
   });
 
   it("renders the navigator view selector on the canonical segmented primitive", () => {
@@ -186,12 +177,11 @@ describe("Phase 113 — ContextPanel call sites", () => {
 
   it("keeps the Combine action's accessible name", () => {
     const host = renderPanel();
-    // Phase 111 (chunk B) — Combine is a More-menu row now; its accessible
-    // name is the visible label.
-    clickOn(host.querySelector("[data-context-panel-more]") as HTMLElement);
+    // Phase 124 — Combine is a direct header icon button; its accessible name
+    // is exposed through aria-label.
     const combine = host.querySelector("[data-context-panel-combine]");
-    expect(combine?.textContent).toContain("Combine with another PDF");
-    expect(cls(combine)).toContain("btn-secondary");
+    expect(combine?.getAttribute("aria-label")).toBe("Combine with another PDF");
+    expect(cls(combine)).toContain("btn-ghost");
   });
 });
 

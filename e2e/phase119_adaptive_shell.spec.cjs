@@ -672,8 +672,7 @@ test.describe.serial('Phase 119 phase-close probes', () => {
     await gotoStage(win, 1);
     await ensurePanelExpanded(win);
     await sleep(400);
-    await win.locator('[data-context-panel-more]').first().click();
-    await sleep(300);
+    // Phase 124 — the layout toggle is a direct header button (no More menu).
     const splitRow = win.locator('[data-context-panel-layout-split]');
     expect(await splitRow.count()).toBeGreaterThan(0);
     await splitRow.first().click();

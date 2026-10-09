@@ -46,13 +46,6 @@ function ruleBody(css: string, selector: string): string {
   return m?.[1] ?? "";
 }
 
-/** Dispatch a bubbling click on a rendered control. */
-function clickOn(target: Element): void {
-  act((): void => {
-    target.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
-  });
-}
-
 function stubObservers(): void {
   const g = globalThis as unknown as {
     IntersectionObserver?: unknown;
@@ -198,12 +191,12 @@ describe("Phase 59 item 9 - no rendered button label ends with an ellipsis", () 
   it("ContextPanel exposes the bare action names (dialog-promising labels stripped)", () => {
     const pages = renderContextPanel({ stage: "pages", onMerge: vi.fn() });
     try {
-      // Phase 111 (chunk B) — Combine now lives in the panel More menu; the
-      // label stays dialog-promise free (no trailing ellipsis).
-      clickOn(pages.host.querySelector("[data-context-panel-more]") as HTMLElement);
-      const combine = pages.host.querySelector("[data-context-panel-combine]")?.textContent?.trim() ?? "";
-      expect(combine).toContain("Combine");
-      expect(combine).not.toContain(ELLIPSIS);
+      // Phase 124 — Combine is a direct header icon button; its accessible
+      // name stays dialog-promise free (no trailing ellipsis).
+      const combine = pages.host.querySelector("[data-context-panel-combine]");
+      const label = combine?.getAttribute("aria-label") ?? "";
+      expect(label).toContain("Combine");
+      expect(label).not.toContain(ELLIPSIS);
     } finally {
       pages.unmount();
     }
@@ -312,19 +305,15 @@ describe("Phase 91 - panel controls compose the canonical button classes", () =>
     });
     try {
       const combine = pages.host.querySelector("[data-context-panel-combine]");
-      // Phase 111 (chunk B) — Combine + Remove blank pages moved into the
-      // panel More menu; the data hooks and canonical button classes move
-      // with them.
-      expect(combine).toBeNull();
-      clickOn(pages.host.querySelector("[data-context-panel-more]") as HTMLElement);
-      const combineRow = pages.host.querySelector("[data-context-panel-combine]");
-      expect(combineRow?.classList.contains("btn")).toBe(true);
-      expect(combineRow?.classList.contains("btn-secondary")).toBe(true);
+      // Phase 124 — Combine + Remove blank pages are direct header IconButtons;
+      // the data hooks and canonical button classes live on the buttons.
+      expect(combine?.classList.contains("btn")).toBe(true);
+      expect(combine?.classList.contains("btn-ghost")).toBe(true);
+      expect(combine?.classList.contains("btn-icon")).toBe(true);
       const blank = pages.host.querySelector("[data-blank-scan-open]");
-      // Remove blank pages is a destructive More-menu row now.
       expect(blank?.classList.contains("btn")).toBe(true);
-      expect(blank?.classList.contains("btn-danger")).toBe(true);
-      expect(blank?.classList.contains("btn-compact")).toBe(true);
+      expect(blank?.classList.contains("btn-ghost")).toBe(true);
+      expect(blank?.classList.contains("btn-icon")).toBe(true);
       // Phase 111 (chunk A) — the retired disclosure is replaced by the
       // navigator view selector, which composes the canonical segmented chrome.
       const pagesTab = pages.host.querySelector('[data-context-panel-view-tab="pages"]');

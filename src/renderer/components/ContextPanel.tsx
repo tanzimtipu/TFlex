@@ -33,13 +33,13 @@ import type {
 } from 'react';
 import type { PDFDocumentProxy } from 'pdfjs-dist';
 import {
+  ChevronLeft,
+  ChevronRight,
+  FileMinus,
   FileWarning,
   Images,
   Lock,
-  MoreHorizontal,
   MousePointerClick,
-  PanelLeftClose,
-  PanelRightOpen,
   ScanText,
   TextCursor,
   X,
@@ -48,9 +48,6 @@ import type { LucideIcon } from 'lucide-react';
 import { Icon } from '../icons/Icon';
 import type { QuietIconId } from '../icons/quietPrecision';
 import { Button, IconButton } from './Button';
-import { CommandMenu } from './CommandMenu';
-import type { CommandMenuGroup, CommandMenuItem } from './CommandMenu';
-import { clampMenuPosition } from './pageThumbMenu';
 import { EmptyState } from './EmptyState';
 import { OutlinePanel, OutlineEditorContext, RulerStrip, ThumbnailRail } from './SideRail';
 import type { OutlineEditorConfig, RailTab, ThumbVerbs } from './SideRail';
@@ -669,96 +666,6 @@ const pageCount = engineState.pageCount;
     onDeletePage: (page: number): void => onDeletePage?.(page),
   });
 
-  // Phase 111 (chunk B) — the panel More menu. The header's standalone
-  // Combine entry and the Pages view's standalone Remove blank pages button
-  // move here: Combine in the Document group, Remove blank pages in a clearly
-  // separated destructive group. The ActionDock remains the owner of batch
-  // Rotate / Extract / Delete, so this is NOT a second action toolbar.
-  const [panelMoreOpen, setPanelMoreOpen] = useState(false);
-  const [panelMorePos, setPanelMorePos] = useState<{ left: number; top: number } | null>(null);
-  const panelMoreBtnRef = useRef<HTMLButtonElement | null>(null);
-  const closePanelMore = (): void => setPanelMoreOpen(false);
-  const openPanelMore = (): void => {
-    const rect = panelMoreBtnRef.current?.getBoundingClientRect();
-    if (rect !== undefined) {
-      setPanelMorePos(
-        clampMenuPosition(rect.left, rect.bottom + 4, 220, 140, window.innerWidth, window.innerHeight),
-      );
-    }
-    setPanelMoreOpen(true);
-  };
-  const panelMoreGroups = useMemo<CommandMenuGroup[]>(() => {
-    const documentRows: CommandMenuItem[] = [];
-    if (onMerge !== undefined) {
-      documentRows.push({
-        id: 'combine',
-        label: 'Combine with another PDF',
-        intent: 'secondary',
-        density: 'compact',
-        rowClassName: 'context-menu-item',
-        rowDataAttrs: { 'data-context-panel-combine': 'true' },
-        onSelect: (): void => onMerge(),
-      });
-    }
-    const destructiveRows: CommandMenuItem[] = [];
-    if (onRemoveBlankPages !== undefined) {
-      destructiveRows.push({
-        id: 'remove-blank',
-        label: 'Remove blank pages',
-        intent: 'destructive',
-        variant: 'danger',
-        density: 'compact',
-        rowClassName: 'context-menu-item context-menu-item-danger',
-        rowDataAttrs: { 'data-blank-scan-open': 'true' },
-        onSelect: (): void => onRemoveBlankPages(),
-      });
-    }
-    // Phase 111 (chunk D1) — the FIRST group is the navigator layout toggle.
-    // One row, always present; its label flips with the CURRENT layout, and its
-    // selection persists through the host (never a second header button).
-    const layoutRow: CommandMenuItem =
-      navigatorLayout === 'split'
-        ? {
-            id: 'navigator-layout',
-            label: 'Use stacked layout',
-            intent: 'secondary',
-            density: 'compact',
-            rowClassName: 'context-menu-item',
-            rowDataAttrs: { 'data-context-panel-layout-split': 'true' },
-            onSelect: (): void => onNavigatorLayoutChange?.('stacked'),
-          }
-        : {
-            id: 'navigator-layout',
-            label: 'Use split layout',
-            intent: 'secondary',
-            density: 'compact',
-            rowClassName: 'context-menu-item',
-            rowDataAttrs: { 'data-context-panel-layout-split': 'true' },
-            onSelect: (): void => onNavigatorLayoutChange?.('split'),
-          };
-    const groups: CommandMenuGroup[] = [
-      { id: 'panel-layout', label: 'Layout', entries: [layoutRow] },
-    ];
-    if (documentRows.length > 0) groups.push({ id: 'panel-document', label: 'Document', entries: documentRows });
-    if (destructiveRows.length > 0) {
-      groups.push({ id: 'panel-destructive', label: 'Destructive', entries: destructiveRows });
-    }
-    return groups;
-  }, [navigatorLayout, onMerge, onNavigatorLayoutChange, onRemoveBlankPages]);
-  const panelMoreNode =
-    panelMoreOpen && panelMoreGroups.length > 0 ? (
-      <CommandMenu
-        open
-        groups={panelMoreGroups}
-        ariaLabel="More actions"
-        onClose={closePanelMore}
-        align="end"
-        position={panelMorePos ?? undefined}
-        openerRef={panelMoreBtnRef}
-        popoverDataAttrs={{ 'data-context-panel-more-menu': 'true' }}
-      />
-    ) : null;
-
   // ---- Split Navigator (Phase 111 chunk D1) ----------------------------
   // The panel body's live height decides whether the split layout fits. A
   // `ResizeObserver` (no new dependency) plus a window-resize listener keep it
@@ -871,12 +778,12 @@ const pageCount = engineState.pageCount;
   );
 
   // Phase 37 (item 4) — the collapse control is the RAIL's affordance,
-  // re-homed to this header. The glyph FLIPS with the state: expanded shows
-  // PanelLeftClose (press to collapse toward the edge), collapsed shows
-  // PanelRightOpen (press to expand). Phase 43 replaced the retired chevrons
-  // here so the glyph matches the rail's own collapse/expand affordance.
-  // `data-rail-collapse` and the two titles/aria-labels are unchanged, so the
-  // existing e2e contract resolves in both states.
+  // re-homed to this header. The glyph is a single directional chevron that
+  // points the way the panel will move: expanded shows ChevronLeft (press to
+  // collapse leftward, toward the edge), collapsed shows ChevronRight (press to
+  // expand rightward). Phase 124 unified both panel collapse controls on this
+  // one arrow; `data-rail-collapse` and the two titles/aria-labels are
+  // unchanged, so the existing e2e contract resolves in both states.
   const collapseButton = (
     <IconButton
       ref={collapseOpenerRef}
@@ -889,7 +796,7 @@ const pageCount = engineState.pageCount;
       expanded={!collapsed}
       data-rail-collapse
       data-collapse-direction={collapsed ? 'expand' : 'collapse'}
-      icon={collapsed ? <Icon icon={PanelRightOpen} size="md" aria-hidden /> : <Icon icon={PanelLeftClose} size="md" aria-hidden />}
+      icon={collapsed ? <Icon icon={ChevronRight} size="md" aria-hidden /> : <Icon icon={ChevronLeft} size="md" aria-hidden />}
     />
   );
 
@@ -1619,22 +1526,45 @@ const headerTitle = contextPanelTitle(stage, pageCount);
         actions={
           <div className="context-panel-actions">
             {!collapsed && stage === 'pages' && (
-              <Button
-                intent="secondary"
-                kind="action"
-                density="standard"
-                className="context-panel-more"
-                ref={panelMoreBtnRef}
-                onClick={openPanelMore}
-                title="More actions"
-                aria-label="More actions"
-                aria-haspopup="menu"
-                aria-expanded={panelMoreOpen}
-                data-context-panel-more
-              >
-                <Icon icon={MoreHorizontal} size="md" aria-hidden />
-                <span>More</span>
-              </Button>
+              <>
+                <IconButton
+                  label={navigatorLayout === 'stacked' ? 'Use split layout' : 'Use stacked layout'}
+                  intent="tertiary"
+                  kind="toggle"
+                  density="standard"
+                  className="context-panel-layout"
+                  pressed={navigatorLayout === 'split'}
+                  data-context-panel-layout-split
+                  onClick={(): void =>
+                    onNavigatorLayoutChange?.(navigatorLayout === 'split' ? 'stacked' : 'split')
+                  }
+                  icon={<Icon name="split" size="md" aria-hidden />}
+                />
+                {onMerge !== undefined && (
+                  <IconButton
+                    label="Combine with another PDF"
+                    intent="tertiary"
+                    kind="action"
+                    density="standard"
+                    className="context-panel-combine"
+                    data-context-panel-combine
+                    onClick={onMerge}
+                    icon={<Icon name="merge" size="md" aria-hidden />}
+                  />
+                )}
+                {onRemoveBlankPages !== undefined && (
+                  <IconButton
+                    label="Remove blank pages"
+                    intent="tertiary"
+                    kind="action"
+                    density="standard"
+                    className="context-panel-remove-blank"
+                    data-blank-scan-open
+                    onClick={onRemoveBlankPages}
+                    icon={<Icon icon={FileMinus} size="md" aria-hidden />}
+                  />
+                )}
+              </>
             )}
             {collapseButton}
             {/* R16 — the compact drawer's explicit close control. The wide
@@ -1692,7 +1622,6 @@ const headerTitle = contextPanelTitle(stage, pageCount);
           </div>
         )}
         {menuNode}
-        {panelMoreNode}
       </GlassSidebarBody>
     </PanelShell>
   );

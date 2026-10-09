@@ -255,9 +255,9 @@ describe("Phase 111 D2b — selection-count live announcement", () => {
 describe("Phase 111 D2b — navigator coarse targets and 200% scaling", () => {
   const src = readFileSync(STYLES_PATH, "utf8");
 
-  it("gives .context-panel-more a 44px min-height on coarse pointers", () => {
+  it("gives the header tool icons a 44px min-height on coarse pointers", () => {
     const coarse = mediaBlocks(src, "@media (pointer: coarse)").join("\n");
-    const body = findRuleBody(coarse, ".context-panel-more");
+    const body = findRuleBody(coarse, ".context-panel-layout");
     expect(body).not.toBeNull();
     expect(declarationsOf(body ?? "").get("min-height")).toBe("44px");
   });

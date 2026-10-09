@@ -23,7 +23,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { ReactElement, ReactNode } from 'react';
-import { MousePointerClick, PanelRightClose, PanelRightOpen, X } from 'lucide-react';
+import { ChevronLeft, ChevronRight, MousePointerClick, X } from 'lucide-react';
 import { Icon } from '../icons/Icon';
 import { Button, IconButton } from './Button';
 import { EmptyState } from './EmptyState';
@@ -1592,9 +1592,9 @@ const renderSignatureSection = (): ReactElement => (
       expanded={!collapsed}
       icon={
         collapsed ? (
-          <Icon icon={PanelRightOpen} size="sm" />
+          <Icon icon={ChevronLeft} size="sm" />
         ) : (
-          <Icon icon={PanelRightClose} size="sm" />
+          <Icon icon={ChevronRight} size="sm" />
         )
       }
     />

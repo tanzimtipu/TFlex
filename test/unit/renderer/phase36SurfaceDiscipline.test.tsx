@@ -401,14 +401,8 @@ const caps: Capability[] = [];
       const cap = PANEL_ACTION_MAP[id];
       if (cap !== undefined) caps.push(cap);
     }
-    // Phase 111 (chunk B) — Combine + Remove blank pages live in the labelled
-    // panel More menu; open it so the sweep still observes `merge`.
-    const more = host.host.querySelector('[data-context-panel-more]');
-    if (more !== null) {
-      act((): void => {
-        more.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
-      });
-    }
+    // Phase 124 — Combine is a direct header button; its data hook is present
+    // when the host wires `onMerge`.
     if (host.host.querySelector('[data-context-panel-combine]') !== null) caps.push('merge');
   } finally {
     host.unmount();
@@ -925,14 +919,9 @@ describe('Phase 36 / 3A � the nine rulings', () => {
       'delete',
       'clearPageSelection',
     ]);
-    // Merge is the PAGES panel More menu's combine affordance only.
+    // Merge is the PAGES panel's direct header combine affordance.
     const panel = mountPanel('pages');
     try {
-      const more = panel.host.querySelector('[data-context-panel-more]');
-      expect(more).not.toBeNull();
-      act((): void => {
-        (more as Element).dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
-      });
       expect(panel.host.querySelector('[data-context-panel-combine]')).not.toBeNull();
     } finally {
       panel.unmount();

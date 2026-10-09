@@ -140,16 +140,11 @@ const SHARED_ALLOW: Readonly<Record<string, string>> = {
   ArrowUpRight: "arrow annotation metaphor (registry annArrow entry + the shared Quiet Precision registry holds its retained glyph)",
   StickyNote: "sticky-note annotation metaphor (registry annNote entry + the shared Quiet Precision registry holds its retained glyph) and the placed on-page note marker, which renders the note it represents",
   MessageCirclePlus: "add-comment annotation metaphor (registry annCallout entry + the shared Quiet Precision registry holds its retained glyph)",
-  PanelLeftClose: "collapse a side panel (rail + context panel + registry railCollapse)",
-  PanelRightOpen: "expand a side panel (rail + context panel + inspector)",
   Check: "the check/confirm mark (registry toggle + annotation tool menu selection)",
   Ellipsis: "the more-actions overflow (registry pageContextMenu/dockOverflow retained glyph + toolsRegistry)",
   // Phase 117 (chunk D) — the content-action-bar More control (selectableContent)
   // reuses the dock overflow glyph for the same "more actions" disclosure.
   dockOverflow: "the more-actions overflow disclosure (the ActionDock overflow control + the shared content-action-bar More control); one overflow metaphor, two chrome surfaces",
-  // Phase 111 (chunk B) — the More affordance on the page-card footer and the
-  // PAGES panel header. One overflow metaphor, two sibling surfaces.
-  MoreHorizontal: "the More overflow affordance (the PAGES panel header More + the per-page card footer More)",
   File: "the generic document/file item glyph (Multi Mode untitled pane + welcome-recents file row); both denote an open PDF document",
   ClipboardPaste: "the create-PDF-from-clipboard verb (registry createFromClipboard + toolsRegistry holds its retained glyph)",
   GripVertical: "the drag-handle affordance (page drag + the Multi Mode divider)",
@@ -246,6 +241,10 @@ const SHARED_ALLOW: Readonly<Record<string, string>> = {
   optimize: "the reduce-file-size / Optimize verb (the CommandBar toolbar's 'Reduce file size' control + the ContextPanel Deliver Optimize action); both invoke the same onOptimize command, one command, one glyph",
   ScanText: "the recognize-text / OCR metaphor (the registry recognizeText entry's Lucide glyph + the ContextPanel Recognition empty-state illustration); one OCR concept across the panel and its command",
   MousePointerClick: "the click-to-select empty-state illustration (the ContextPanel EDIT no-selection state + the Inspector no-document-open state); one 'nothing selected yet' empty-state metaphor, two designed empty states",
+  // Phase 124 (chunk A) — the PAGES header surfaces two existing CommandBar
+  // verbs as direct icon buttons.
+  merge: "the combine-documents verb (the CommandBar 'Merge with another PDF' control + the ContextPanel header 'Combine with another PDF' button); both invoke the same combine command, one glyph",
+  split: "the divide-a-surface metaphor (the CommandBar 'Extract or split pages' control + the ContextPanel header navigator split/stacked layout toggle); one split glyph for dividing a document and dividing the panel",
 };
 
 interface Usage {

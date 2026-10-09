@@ -266,17 +266,15 @@ describe("Phase 112 C2 — the LEFT Pages navigator", () => {
     }
   });
 
-  it("preserves the Combine entry (now in the panel More menu) and its onMerge handler", () => {
+  it("preserves the Combine entry as a direct header button and its onMerge handler", () => {
     const onMerge = vi.fn();
     const { host, unmount } = mountContextPanel({ onMerge });
     try {
-      // Phase 111 (chunk B) — Combine moved off the header into the labelled
-      // More menu; the data hook is preserved on the menu row.
-      expect(host.querySelector("[data-context-panel-combine]")).toBeNull();
-      clickOn(host.querySelector("[data-context-panel-more]") as HTMLElement);
+      // Phase 124 — Combine is a direct header icon button; the data hook sits
+      // on the button itself.
       const combine = host.querySelector<HTMLButtonElement>("[data-context-panel-combine]");
       expect(combine).not.toBeNull();
-      expect(combine?.textContent).toContain("Combine");
+      expect(combine?.getAttribute("aria-label")).toContain("Combine");
       clickOn(combine as HTMLButtonElement);
       expect(onMerge).toHaveBeenCalledTimes(1);
     } finally {
