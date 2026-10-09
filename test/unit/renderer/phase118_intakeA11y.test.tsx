@@ -352,24 +352,33 @@ describe("phase118 chunk F — keyboard and screen-reader surface", () => {
   });
 
   it("closes the transient Activity surface on Escape", () => {
-    const onClose = vi.fn();
-    const operation = createOperation({
-      id: "op-1",
-      document: { docId: "op-1", tabId: "op-1", path: null, displayName: "Intake" },
-      task: { name: "Import files", scope: "2 files" },
-    });
-    mount(
-      <ActivityShelfPanel
-        operations={[operation]}
-        onClose={onClose}
-        onCancel={(): void => undefined}
-        onAction={(): void => undefined}
-      />,
-    );
-    act((): void => {
-      document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
-    });
-    expect(onClose).toHaveBeenCalledTimes(1);
+    vi.useFakeTimers();
+    try {
+      const onClose = vi.fn();
+      const operation = createOperation({
+        id: "op-1",
+        document: { docId: "op-1", tabId: "op-1", path: null, displayName: "Intake" },
+        task: { name: "Import files", scope: "2 files" },
+      });
+      mount(
+        <ActivityShelfPanel
+          operations={[operation]}
+          onClose={onClose}
+          onCancel={(): void => undefined}
+          onAction={(): void => undefined}
+        />,
+      );
+      act((): void => {
+        document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
+      });
+      // TFL-1620 — the exit keyframe plays first, then the host is notified.
+      act((): void => {
+        vi.advanceTimersByTime(200);
+      });
+      expect(onClose).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
 

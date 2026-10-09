@@ -5,9 +5,56 @@
 > inspect the current `OPEN`, `FIX-READY`, and `DISPUTED` entries first; closed records are
 > historical evidence and must not be loaded wholesale.
 
-## DEF-679: ActivityAlertNotice unmounts before collapse animation finishes (auto-collapse lifecycle)
+## DEF-681: CONTROL-INDEX cites tfl1620_exitTransitions.test.tsx as evidence for the ContextPanel drawer dismiss, but that file has no ContextPanel test (false coverage claim)
 
 - Status: OPEN
+- Severity: LOW
+- Found by: qa (TFL-1625 focused verification of TFL-1620)
+- Phase: Exit transitions (TFL-1620, parent TFL-1605) — documentation accuracy, not a product failure
+
+Steps to reproduce:
+1. Read `CONTROL-INDEX.md` TFL-1620 motion table (the "ContextPanel drawer dismiss" row).
+2. Open the cited `test/unit/renderer/tfl1620_exitTransitions.test.tsx`.
+
+Expected: the cited test exercises the ContextPanel drawer's leaving pose.
+
+Actual: the file has four `describe` blocks only — `useExitTransition` (3 tests), the compact Inspector drawer (1), and the Activity Shelf panel (1). There is no ContextPanel mount or `context-panel-drawer--leaving` assertion. `grep -n "ContextPanel" test/unit/renderer/tfl1620_exitTransitions.test.tsx` returns nothing.
+
+Evidence:
+- `test/unit/renderer/tfl1620_exitTransitions.test.tsx` (149 lines) — no ContextPanel import or test.
+- The ContextPanel exit works (verified live in the running app): a per-frame sampler observed `.context-panel.context-panel-drawer--leaving` for ~9 frames (~150 ms) with `animation-name: context-drawer-out`, `pointer-events: none`.
+- Gap closed by the new durable e2e `e2e/tfl1625_exit_transitions.spec.cjs` (1 passed), which asserts the reverse keyframe for both drawer surfaces.
+
+Fix direction: correct the CONTROL-INDEX evidence cell to cite `e2e/tfl1625_exit_transitions.spec.cjs`, or add a ContextPanel drawer unit test in `tfl1620_exitTransitions.test.tsx`. QA test/doc maintenance; no product change required.
+
+## DEF-680: phase109_viewstrip P109-12 compact-tier assertion is unreachable after the window minimum width rose to 960 (test-oracle drift)
+
+- Status: OPEN
+- Severity: LOW
+- Found by: qa (TFL-1623 phase-close QA of TFL-1559)
+- Phase: View Strip footer icon colours (TFL-1559) — observed while running the neighbour regression suite; NOT caused by the phase
+
+Steps to reproduce:
+1. Build the current tree (`npm.cmd run build`) and launch via the canonical `launchApp` helper.
+2. Open any PDF via Home intake.
+3. Run `npm.cmd run test:e2e -- e2e/phase109_viewstrip.spec.cjs`.
+4. P109-12 fails at `e2e/phase109_viewstrip.spec.cjs:635`.
+
+Expected: at `setWindow(640, 480)` the `single-view-strip` container drops below the 667px compact breakpoint, so `.zoom-percent` and `.view-strip-book-label` compute `display: none`.
+
+Actual: `setWindow(640, 480)` clamps to the BrowserWindow minimum width (`DESIRED_MIN_WINDOW_WIDTH = 960`, `src/main/window.ts:44`), so the container measures ~796px (> 667) and both elements stay `display: block`. The other P109-12 assertions (one 48px row, no clipping, narrower than at 1440x900) still pass.
+
+Root cause: `src/main/window.ts` raised the minimum window from 640x480 to 960x640 in commit dc68679 (2026-10-08, TFL-1146), before this phase. P109-12 (written when the floor was 640) still assumes a 640px window; the compact tier is now reachable only by raising the OS zoom factor (`phase109_final_screenshots.spec.cjs` P109-F4 reaches it at 640x480 @150%), not by shrinking the window. No phase change touched geometry/display: TFL-1580 (`styles.css` `.view-strip .btn` ink ladder) and DEF-678 (`background: transparent`) are CSS `color`/`background` only.
+
+Evidence:
+- `npm.cmd run test:e2e -- e2e/phase109_viewstrip.spec.cjs` = 11 passed / 1 failed; log `[P109-12] 640x480 ... tier={"stripWidth":796,...,"zoomPct":"block","bookLabel":"block"}` vs 1440x900 `stripWidth 808`.
+- Phase diff is CSS colour-only (`git show --stat 5d1a583`, `602f75d`).
+
+Fix direction: update P109-12 to reach the compact tier by a mechanism the 960px floor allows (BrowserWindow zoom factor as in P109-F4, or lower `minWidth` inside the harness), or retire the 640x480 premise. QA test maintenance; no product change required.
+
+## DEF-679: ActivityAlertNotice unmounts before collapse animation finishes (auto-collapse lifecycle)
+
+- Status: CLOSED
 - Severity: MEDIUM
 - Found by: adversary (ADV-1552-02)
 - Phase: ActivityAlertNotice (TFL-1531 / TFL-1549)
@@ -36,9 +83,18 @@ Files:
 - `src/renderer/components/ActivityAlertNotice.tsx` — may need a lingering-render wrapper.
 - `src/renderer/hooks/useNoticeCollapse.ts` — the collapse state machine (read-only for diagnosis; do not change its contract).
 
-History:
+ History:
 - adversary: filed ADV-1552-02 2026-10-10 from TFL-1552 phase gate.
 - cto: accepted into DEF-679 2026-10-10. Assigned to frontend-dev.
+- frontend-dev: fix landed 2026-10-10 (TFL-1604): added `useLingeringValue` hook in App.tsx (line 716) that keeps the last `activityAlert` alive for 2 s after the memo returns undefined; replaced `activityAlert` with `lingeringActivityAlert` in the render path (line 9243, 13187).
+- cto: set FIX-READY 2026-10-10.
+- qa (TFL-1612): FAIL — the 2 s linger is shorter than the 10 s auto-collapse dwell (NOTICE_AUTO_COLLAPSE_MS) + 250 ms closing animation (MOTION_DURATION.standard). 
+- frontend-dev (TFL-1613/TFL-1617): extended the linger to NOTICE_AUTO_COLLAPSE_MS + MOTION_DURATION.standard + 500 = 10,750 ms. ADV-1552-08 now passes (notice reaches collapsed), but e2e/tfl1550_activity_alert_notice.spec.cjs:102 fails because its 5 s settle window is shorter than the new linger. The fix is correct; spec expectation requires updating.
+- cto: filed qa child TFL-1620 2026-10-10 to update the spec. Set TFL-1531 blocked on TFL-1620. DEF-679 remains OPEN pending qa spec fix and re-run PASS.
+- qa: RE-VERIFY FAILED 2026-10-10 (TFL-1612). The fix is incomplete: `e2e/adversary-1552-activity-notice.spec.cjs` ADV-1552-08 still returns `null` instead of `collapsed` (deterministic, 2/2 runs). The 2000 ms linger is shorter than the notice's 10 s auto-collapse dwell (`NOTICE_AUTO_COLLAPSE_MS`), so when the operation leaves `activityShelfVisible` at ~9 s the linger expires at ~11 s and the host unmounts before the dwell timer fires. Live probe timeline: `expanded` from 1.8 s to 10.4 s, then DOM `null` at 11.1 s; no `[data-activity-alert-icon]` ever appears. The focused spec `e2e/tfl1550_activity_alert_notice.spec.cjs` reaches `collapsed` only because it keeps the OCR running until after the dwell. Remains OPEN. Fix must hold the notice mounted until `phase === 'collapsed'` (e.g. linger >= dwell, or gate host unmount on the collapse phase).
+- qa: RE-VERIFY FAILED 2026-10-10 (TFL-1619). The 10.75 s linger fixes the ADV-1552-08 reproduction: `e2e/adversary-1552-activity-notice.spec.cjs:298` now reaches `collapsed` and re-expands (spec 8/8 pass, ADV-1552-08 ~12.4 s). But the required lifecycle spec `e2e/tfl1550_activity_alert_notice.spec.cjs:102` now fails deterministically (2/2 runs: 1 failed / 1 passed). After the sample-open "Import files" notice collapses, its `[data-activity-alert-icon]` stays mounted longer than the spec's 5 s settle window, because the fixed 10.75 s linger holds the completed operation's snapshot well past the 250 ms collapse it was meant to cover. Lines 98-102 encode the pre-fix never-lingers behaviour and now conflict with the new "collapsed icon persists" contract (ADV-1552-08 requires that persistence). Remains OPEN pending CTO decision: update the tfl1550 settle precondition or hold-until-`collapsed` instead of a fixed 10.75 s linger.
+- qa: RE-VERIFY FAILED 2026-10-10 (TFL-1622). Spec maintenance DONE: `e2e/tfl1550_activity_alert_notice.spec.cjs` lines 98-102 now wait for the whole activity surface (expanded box + collapsed icon) to unmount with a 30 s window instead of a 5 s icon window, so the extended linger no longer trips the precondition. `npm.cmd run build:renderer` exit 0; `npm.cmd run test:unit -- test/unit/renderer/activityShelf.test.tsx` 21/21; `npm.cmd run test:e2e -- e2e/tfl1550_activity_alert_notice.spec.cjs` 2/2 pass. HOWEVER the DEF-679 product fix is NOT in the working tree: `src/renderer/App.tsx:9243` still reads `useLingeringValue(activityAlert, 2000)` (TFL-1617's 10,750 ms change is absent; `git log -- src/renderer/App.tsx` shows no linger commit — it lived only as an uncommitted working-tree edit and was lost). Running the rebuilt renderer, `npm.cmd run test:e2e -- e2e/adversary-1552-activity-notice.spec.cjs` is 7 passed / 1 failed: ADV-1552-08 `Expected: "collapsed" / Received: null` — the exact DEF-679 symptom. The task premise (fix already landed) is false; DEF-679 remains OPEN and the fix must be re-landed.
+- qa: VERIFIED PASS 2026-10-10 (TFL-1622 re-verify after TFL-1624). The linger fix is now in the tree: `src/renderer/App.tsx` imports `NOTICE_AUTO_COLLAPSE_MS` (line 184) and `MOTION_DURATION` (line 185) and calls `useLingeringValue(activityAlert, NOTICE_AUTO_COLLAPSE_MS + MOTION_DURATION.standard + 500)` (10,750 ms). Independent run on the rebuilt renderer: `npm.cmd run build:renderer` exit 0; `npm.cmd run test:unit -- test/unit/renderer/activityShelf.test.tsx` 21/21; `npm.cmd run test:e2e -- e2e/tfl1550_activity_alert_notice.spec.cjs` 2/2; `npm.cmd run test:e2e -- e2e/adversary-1552-activity-notice.spec.cjs` 8/8 (ADV-1552-08 reaches `collapsed` and re-expands in ~12.5 s). Both acceptance specs pass with the new linger. DEF-679 CLOSED.
 
 ## DEF-678: View Strip footer default icon contrast fails in dark theme (1.53:1 vs 3:1 floor)
 
@@ -72,7 +128,7 @@ Evidence:
 
 ## DEF-677: ActivityAlertNotice tone channel is dead — the status dot is transparent and the left border is absent (activity tokens scoped to .activity-shelf)
 
-- Status: OPEN
+- Status: CLOSED
 - Severity: MEDIUM
 - Found by: qa (TFL-1550)
 - Phase: ActivityAlertNotice (TFL-1531 / TFL-1549)
@@ -102,6 +158,9 @@ Files:
 History:
 - qa: filed DEF-677 2026-10-10 from the TFL-1550 focused verification. The notice placement, icon-first enter, 6 px dot size, bold count, dim label, auto-collapse, collapse/expand, retired Activity button/host absence, no-operation empty state, and reduced-motion criteria all pass — only the tone colour channel fails.
 - adversary: confirmed independently as ADV-1552-01 (TFL-1552 phase gate) 2026-10-10.
+- frontend-dev: fix landed 2026-10-10 (TFL-1604): moved `--activity-*` tokens from `.activity-shelf` to `:root`; prefixed `.canvas-top-right` to tone-based `border-left` and `.activity-alert-notice-mark` background rules for specificity parity.
+- cto: set FIX-READY 2026-10-10. Pending qa focused re-verify.
+- qa: CLOSED 2026-10-10 (TFL-1612). Rebuilt the renderer (`npm.cmd run build:renderer`, exit 0) and re-ran `e2e/tfl1550_activity_alert_notice.spec.cjs` 2/2 pass and `e2e/adversary-1552-activity-notice.spec.cjs` ADV-1552-02 pass. Live probe: expanded notice computes `border-left: 3px solid`, `.activity-alert-notice-mark` box `6x6` filled with the tone colour; `--activity-progress` resolves at `:root` (`#7c3aed`). Tone colour is distinct from `--warning` (`rgb(217,164,65)`) and `--error` (`rgb(217,108,99)`). Tone channel is alive.
 
 Severity justification: MEDIUM — the notice still renders, counts and collapses, but its tone signal (dot fill and the violet accent border) is entirely missing, so the notice cannot convey progress/success/warning/danger and the phase's stated visual criteria (6 px dot colour, violet left border distinct from warning/error) fail.
 

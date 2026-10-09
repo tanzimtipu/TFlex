@@ -68,6 +68,12 @@ All UI animations must use the centralized motion system. Do NOT hardcode animat
 - Verb group swap: `AnimatePresence mode="wait"` (old dissolves, new blooms)
 - Use: `useSelectionPopAnimation()` + `useContentCrossfadeAnimation()`
 
+**Enter-only CSS surfaces with an exit (compact Inspector drawer, compact ContextPanel drawer, Activity Shelf panel):** (TFL-1620)
+- Enter: unchanged CSS keyframe on class add (`inspector-drawer-in` / `context-drawer-in` / `activity-shelf-panel-in`)
+- Dismiss: `animation: <name>-out ... var(--motion-duration-micro) var(--motion-ease-exit) both` on the `--leaving` modifier
+- The drawer `--leaving` class pins `pointer-events: none` so a closing surface never eats the click underneath
+- Use: `useExitTransition(active, MOTION_DURATION.micro)` holds the surface one exit band, then releases it; the Animations-OFF / reduced-motion path releases instantly with no held frame
+
 **Theme Transitions:**
 - Switch: Crossfade (400ms)
 - Uses View Transitions API when available
@@ -96,6 +102,7 @@ When adding any animated component:
 
 - `src/renderer/styles/animations.css` - token definitions
 - `src/renderer/hooks/useAnimations.ts` - animation hooks
+- `src/renderer/hooks/useExitTransition.ts` - exit state machine for enter-only CSS surfaces (TFL-1620)
 - `src/renderer/hooks/motionTokens.ts` - JS constants
 - `src/renderer/components/AnimatedDialog.tsx` - dialog wrapper
 - `src/renderer/components/AnimatedPanel.tsx` - panel wrapper

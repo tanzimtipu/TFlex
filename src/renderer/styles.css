@@ -10900,6 +10900,39 @@ rect.ann-highlight.ann-preview {
   }
 }
 
+/* TFL-1620 — the drawer's EXIT. The enter keyframe above ran on class add but
+ * the drawer used to snap out the instant the intent cleared. `--leaving` plays
+ * the reverse over the MICRO band (150ms) and pins pointer-events so a closing
+ * drawer never eats the click underneath it (the DEF-087 guard). The class is
+ * applied by Inspector.tsx while `useExitTransition` holds the surface. */
+.inspector.inspector-drawer--leaving {
+  animation: inspector-drawer-out var(--motion-duration-micro) var(--motion-ease-exit) both;
+  pointer-events: none;
+}
+
+@keyframes inspector-drawer-out {
+  from {
+    opacity: 1;
+    transform: none;
+  }
+  to {
+    opacity: 0;
+    transform: translateX(12px);
+  }
+}
+
+/* Reduced motion / Animations OFF: the exit token already collapses to 0ms;
+ * this drops the keyframe outright so the settled strip is never mid-frame. */
+@media (prefers-reduced-motion: reduce) {
+  .inspector.inspector-drawer--leaving {
+    animation: none;
+  }
+}
+
+:root[data-animations="off"] .inspector.inspector-drawer--leaving {
+  animation: none;
+}
+
 /* The drawer body is the ONE scroller inside the bounded overlay. */
 .inspector-drawer .inspector-body {
   overflow-y: auto;
@@ -18848,6 +18881,36 @@ rect.ann-highlight.ann-preview {
   }
 }
 
+/* TFL-1620 — the compact context drawer's EXIT (mirrors the Inspector drawer
+ * below its own rule): reverse slide over the MICRO band with pointer-events
+ * pinned so a closing drawer never swallows a click. Applied by ContextPanel.tsx
+ * while `useExitTransition` holds the surface. */
+.context-panel.context-panel-drawer--leaving {
+  animation: context-drawer-out var(--motion-duration-micro) var(--motion-ease-exit) both;
+  pointer-events: none;
+}
+
+@keyframes context-drawer-out {
+  from {
+    opacity: 1;
+    transform: none;
+  }
+  to {
+    opacity: 0;
+    transform: translateX(-12px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .context-panel.context-panel-drawer--leaving {
+    animation: none;
+  }
+}
+
+:root[data-animations="off"] .context-panel.context-panel-drawer--leaving {
+  animation: none;
+}
+
 /* The drawer body is the ONE scroller inside the bounded overlay. */
 .context-panel-drawer .context-panel-body {
   overflow-y: auto;
@@ -24843,6 +24906,30 @@ cursor: pointer;
 @keyframes activity-shelf-panel-in {
   from { opacity: 0; transform: translateY(4px); }
   to { opacity: 1; transform: translateY(0); }
+}
+
+/* TFL-1620 — the shelf panel's EXIT. The enter keyframe above snapped out on
+ * unmount; `--leaving` reverses it over the MICRO band with pointer-events
+ * pinned. Applied by ActivityShelf.tsx while its own close controls hold the
+ * surface before notifying the host. */
+.activity-shelf-panel--leaving {
+  animation: activity-shelf-panel-out var(--motion-duration-micro) var(--motion-ease-exit) both;
+  pointer-events: none;
+}
+
+@keyframes activity-shelf-panel-out {
+  from { opacity: 1; transform: translateY(0); }
+  to { opacity: 0; transform: translateY(4px); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .activity-shelf-panel--leaving {
+    animation: none;
+  }
+}
+
+:root[data-animations="off"] .activity-shelf-panel--leaving {
+  animation: none;
 }
 
 .activity-shelf-header {

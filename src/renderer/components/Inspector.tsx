@@ -71,6 +71,8 @@ import { ReviewElementsPanel } from './ReviewElementsPanel';
 import { FormFillReportSummary } from '../forms/FormsOverlay';
 import type { TextStyleValues } from '../edit/textStyle';
 import type { Stage } from '../state/stages';
+import { useExitTransition } from '../hooks/useExitTransition';
+import { MOTION_DURATION } from '../hooks/motionTokens';
 
 /** What the Inspector is currently showing. `none` is the DOCUMENT
  *  inspector: nothing is selected, so the panel falls back to the
@@ -1167,15 +1169,23 @@ fileSize = null,
   // to the strip control once the drawer closes and the strip remounts; the
   // effect below restores focus to that fresh node.
   const collapseOpenerRef = useRef<HTMLButtonElement | null>(null);
+  // TFL-1620 — the compact drawer's EXIT. When the drawer intent clears while
+  // the panel is collapsed, hold the drawer for one MICRO-band exit so
+  // `inspector-drawer-out` can play, then reveal the collapsed strip. `showDrawer`
+  // is the EFFECTIVE render flag: the drawer root stays mounted through the exit
+  // (its `data-inspector-drawer` still reads "true" so an in-flight e2e wait
+  // sees the surface until the keyframe finishes).
+  const drawerLeaving = useExitTransition(drawer, MOTION_DURATION.micro);
+  const showDrawer = drawer || (drawerLeaving && collapsed);
   const drawerWasOpenRef = useRef(false);
   useEffect((): void => {
     const wasOpen = drawerWasOpenRef.current;
-    drawerWasOpenRef.current = drawer;
-    if (wasOpen && !drawer && collapsed) {
+    drawerWasOpenRef.current = showDrawer;
+    if (wasOpen && !showDrawer && collapsed) {
       const opener = collapseOpenerRef.current;
       if (opener !== null && document.contains(opener)) opener.focus();
     }
-  }, [drawer, collapsed]);
+  }, [showDrawer, collapsed]);
 
   // TFL-1117 (R01) — Escape closes the compact drawer. Bound only while it is
   // the open surface (the host passes `onClose` only then), so the wide panel
@@ -1602,17 +1612,23 @@ const renderSignatureSection = (): ReactElement => (
 
   return (
     <PanelShell
-      className={drawer ? 'inspector inspector-drawer' : 'inspector'}
+      className={
+        !showDrawer
+          ? 'inspector'
+          : drawerLeaving
+            ? 'inspector inspector-drawer inspector-drawer--leaving'
+            : 'inspector inspector-drawer'
+      }
       role="complementary"
       label="Inspector"
       data-inspector
-      data-inspector-drawer={drawer ? 'true' : 'false'}
+      data-inspector-drawer={showDrawer ? 'true' : 'false'}
       data-inspector-stage={stage}
       data-inspector-selection={selection.kind}
       data-inspector-state={inspectorState}
       data-inspector-collapsed={collapsed ? 'true' : 'false'}
     >
-      {collapsed ? (
+      {collapsed && !showDrawer ? (
         // Phase 37 (item 3) — the collapsed Inspector is a narrow strip that
         // keeps the expand control reachable (mirrors the pages panel's ruler
         // strip). The host gives it its own inset width, so it never overlaps

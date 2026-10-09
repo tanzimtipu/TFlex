@@ -98,8 +98,19 @@ test('TFL-1550: the activity notice lives in the canvas top-right cluster and mi
     // The Intake dispatch itself runs an "Import files" operation, so wait for
     // its success notice to auto-dismiss: the notice under test is then the
     // OCR operation alone, and a settled empty shelf re-proves criterion 8.
-    await expect.poll(() => win.locator('[data-activity-alert-notice]').count(), { timeout: 25000 }).toBe(0);
-    await expect.poll(() => win.locator('[data-activity-alert-icon]').count(), { timeout: 5000 }).toBe(0);
+    //
+    // ADV-1552-02 / DEF-679 — after the operation leaves `activityShelfVisible`
+    // the completed snapshot LINGERS for the full collapse cycle
+    // (`NOTICE_AUTO_COLLAPSE_MS` 10 s dwell + `MOTION_DURATION.standard` 250 ms
+    // exit + a 500 ms buffer = ~10.75 s), so the collapsed `[data-activity-alert-icon]`
+    // stays mounted for the whole linger, not the 5 s the old never-lingering
+    // contract allowed. Wait for the ENTIRE activity surface (expanded box AND
+    // collapsed icon) to unmount with a window that covers that linger; do NOT
+    // assert the notice is gone before ~11 s after the operation completes, or
+    // a still-lingering icon fails this precondition.
+    const SETTLE_TIMEOUT_MS = 30000;
+    await expect.poll(() => win.locator('[data-activity-alert-notice]').count(), { timeout: SETTLE_TIMEOUT_MS }).toBe(0);
+    await expect.poll(() => win.locator('[data-activity-alert-icon]').count(), { timeout: SETTLE_TIMEOUT_MS }).toBe(0);
 
     // A real long-running operation (OCR on the scanned sample).
     await triggerOcr(win);

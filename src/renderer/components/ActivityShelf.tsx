@@ -11,10 +11,12 @@
 //   - completion actions come only from `availableCompletionActions`, so
 //     `undo` appears only when the model offers it.
 
-import { useEffect, useRef, type ReactElement, type Ref } from 'react';
+import { useCallback, useEffect, useRef, useState, type ReactElement, type Ref } from 'react';
 import { FileText, X } from 'lucide-react';
 import { Icon } from '../icons/Icon';
 import { Button, IconButton } from './Button';
+import { useInstantMotion } from '../hooks/useAnimations';
+import { MOTION_DURATION } from '../hooks/motionTokens';
 import {
   availableCompletionActions,
   isRunning,
@@ -202,13 +204,45 @@ export function ActivityShelfPanel(props: ActivityShelfPanelProps): ReactElement
   const { operations, onClose, onCancel, onAction, onDismiss } = props;
   const panelRef = useRef<HTMLElement | null>(null);
 
+  // TFL-1620 — the panel used to snap out the instant the host unmounted it.
+  // Its own close affordances (Escape, the close control) now play the EXIT
+  // keyframe first, then notify the host after the MICRO band, so the surface
+  // animates out before it leaves the DOM. Reduced motion / Animations OFF route
+  // straight to `onClose` (no held frame). A genuine host-driven unmount
+  // (operations.length -> 0) still bypasses this, which the host owns.
+  const instant = useInstantMotion();
+  const [leaving, setLeaving] = useState(false);
+  const closeTimerRef = useRef<number | null>(null);
+
+  useEffect((): (() => void) => {
+    return (): void => {
+      if (closeTimerRef.current !== null) {
+        window.clearTimeout(closeTimerRef.current);
+        closeTimerRef.current = null;
+      }
+    };
+  }, []);
+
+  const requestClose = useCallback((): void => {
+    if (leaving || closeTimerRef.current !== null) return;
+    if (instant) {
+      onClose();
+      return;
+    }
+    setLeaving(true);
+    closeTimerRef.current = window.setTimeout((): void => {
+      closeTimerRef.current = null;
+      onClose();
+    }, MOTION_DURATION.micro);
+  }, [instant, leaving, onClose]);
+
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent): void => {
-      if (event.key === 'Escape') onClose();
+      if (event.key === 'Escape') requestClose();
     };
     document.addEventListener('keydown', onKeyDown);
     return (): void => document.removeEventListener('keydown', onKeyDown);
-  }, [onClose]);
+  }, [requestClose]);
 
   // TFL-1216 (chunk C8) - opening the shelf moves keyboard focus into the
   // panel (the dialog container, announced by its aria-label) so Escape and
@@ -225,7 +259,11 @@ export function ActivityShelfPanel(props: ActivityShelfPanelProps): ReactElement
 
   return (
     <section
-      className="activity-shelf activity-shelf-panel"
+      className={
+        leaving
+          ? 'activity-shelf activity-shelf-panel activity-shelf-panel--leaving'
+          : 'activity-shelf activity-shelf-panel'
+      }
       role="dialog"
       aria-modal="false"
       aria-label="Activity"
@@ -254,7 +292,7 @@ export function ActivityShelfPanel(props: ActivityShelfPanelProps): ReactElement
           density="compact"
           className="activity-shelf-close"
           data-activity-shelf-close
-          onClick={onClose}
+          onClick={requestClose}
           icon={<Icon icon={X} size="sm" />}
         />
       </header>

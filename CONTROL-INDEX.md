@@ -1232,7 +1232,10 @@ ADV-1552-02 (premature unmount): `activityAlert` became `undefined` the instant 
 operation left `activityShelfVisible`, so the host either skipped
 `DocumentSurfaceColumn` entirely or stopped rendering the notice before
 `useNoticeCollapse` reached `collapsed`. A new `useLingeringValue` helper in
-`App.tsx` holds the last non-null alert for 2 s; `tabActivityAlert` and the mount
+`App.tsx` holds the last non-null alert for `NOTICE_AUTO_COLLAPSE_MS +
+MOTION_DURATION.standard + 500` = 10,750 ms (10 s dwell + 250 ms exit + 500 ms
+margin; DEF-679 re-landed in TFL-1624 after the original uncommitted 2 s -> 10,750 ms
+edit was lost); `tabActivityAlert` and the mount
 guard now read the lingered value, so the notice stays mounted through
 `closing -> collapsed`, the collapsed icon (`[data-activity-alert-icon]`) appears
 and is clickable, and a new operation replaces the linger immediately (the pending
@@ -1249,9 +1252,54 @@ timeout is cancelled). `useNoticeCollapse` / `ActivityAlertNotice.tsx` /
 Verification: `npm run typecheck` exit 0; `npm run test:unit --
 test/unit/renderer/activityShelf.test.tsx` 21/21 passed; `npm run build:renderer`
 exit 0; `npm run test:e2e -- e2e/tfl1550_activity_alert_notice.spec.cjs` 2/2 passed.
+TFL-1624 re-land verification: `npm run build:renderer` exit 0; `npm run test:e2e --
+e2e/adversary-1552-activity-notice.spec.cjs` 8/8 (ADV-1552-08 reaches `collapsed`);
+`npm run test:e2e -- e2e/tfl1550_activity_alert_notice.spec.cjs` 2/2.
 Screenshots: `screenshots/tfl1550-activity-notice-expanded.png`,
 `-collapsed.png`, `-reduced-motion.png`. `REQUIREMENTS.md` and the TFL-1531/TFL-1216
 records above remain the historical record and were not edited.
+
+## TFL-1620 - Exit transitions for the compact Inspector drawer, compact ContextPanel drawer and Activity Shelf panel
+
+Appended 2026-10-10. Renderer-only motion. Three surfaces had an ENTER CSS
+keyframe but snapped out because the element was removed from the DOM with no
+out keyframe (deferred from the TFL-1568 audit, TFL-1605). Each now plays a
+reverse keyframe on a `--leaving` modifier over the MICRO band (150ms,
+`--motion-ease-exit`, `both` fill); the two drawers additionally pin
+`pointer-events: none` so a closing surface never eats the click beneath it.
+Timing is owned by a new shared hook `src/renderer/hooks/useExitTransition.ts`
+(the `useNoticeCollapse` `closing`-phase pattern for enter-only CSS surfaces):
+it holds the surface for one exit band when the active flag clears, cancels on
+re-open, and releases instantly under reduced motion / Animations OFF.
+
+`Inspector.tsx` and `ContextPanel.tsx` derive an effective `showDrawer` flag
+(`drawer || (leaving && collapsed)`) so the drawer root stays mounted and its
+`data-inspector-drawer` / `data-context-panel-drawer` still reads "true" through
+the exit; the collapsed strip / launcher mounts and receives focus once the
+keyframe finishes. `ActivityShelfPanel.tsx` defers its `onClose` until its own
+exit keyframe completes (Escape and the close control both route through it);
+a host-driven unmount at `operations.length === 0` still bypasses that.
+
+Note: TFL-1549 retired the App mount of `ActivityShelfPanel` (the in-canvas
+`ActivityAlertNotice` is the live activity surface and already animates both
+ways), so the shelf-panel exit is dormant in the running app and is pinned by
+unit tests only.
+
+| Motion | Selector | Behaviour | Evidence |
+|---|---|---|---|
+| Inspector drawer dismiss | `.inspector.inspector-drawer--leaving` | reverse slide + opacity out, MICRO, pointer-events pinned | `test/unit/renderer/tfl1620_exitTransitions.test.tsx`, `tfl1116_compactInspectorDrawer.test.tsx` |
+| ContextPanel drawer dismiss | `.context-panel.context-panel-drawer--leaving` | reverse slide + opacity out, MICRO, pointer-events pinned | `test/unit/renderer/tfl1620_exitTransitions.test.tsx` |
+| Activity Shelf panel dismiss | `.activity-shelf-panel--leaving` | reverse rise + opacity out, MICRO; onClose deferred | `test/unit/renderer/tfl1620_exitTransitions.test.tsx`, `activityShelf.test.tsx` |
+| Exit state machine | `src/renderer/hooks/useExitTransition.ts` | hold one exit band; cancel on re-open; instant when Animations OFF | `test/unit/renderer/tfl1620_exitTransitions.test.tsx` |
+
+Verification: `npm run verify` exit 0 (conventions + typecheck);
+`npm run build:renderer` exit 0; renderer unit suite 6638 passed / 4 failed,
+where the 4 failures (`foundationGuards` MIGRATED_SURFACES missing
+`ActivityAlertNotice.tsx`, two raw-literal rule-body findings, and the
+`foundationMirrors` shelf-token lookup plus the `phase53` App source grep) are
+pre-existing on this tree and unrelated to this change. `REQUIREMENTS.md`
+remains the historical record and was not edited; `docs/ANIMATION-RULES.md`
+gains the exit-pattern entry and the new hook in its file list.
 
 
 

@@ -102,27 +102,45 @@ describe("TFL-1117 (R01) — the compact Inspector drawer surface", () => {
     }
   });
 
-  it("returns focus to the Expand opener once the drawer closes", () => {
-    const onToggleCollapsed = vi.fn();
-    const view = renderInspector({
-      stage: "pages",
-      drawer: true,
-      onClose: vi.fn(),
-      onToggleCollapsed,
-    });
+  it("returns focus to the Expand opener once the drawer's exit finishes", () => {
+    vi.useFakeTimers();
     try {
-      view.rerender({
+      const onToggleCollapsed = vi.fn();
+      const view = renderInspector({
         stage: "pages",
-        collapsed: true,
-        drawer: false,
-        onClose: undefined,
+        drawer: true,
+        onClose: vi.fn(),
         onToggleCollapsed,
       });
-      const opener = view.host.querySelector<HTMLElement>("[data-inspector-collapse]");
-      expect(opener).not.toBeNull();
-      expect(document.activeElement).toBe(opener);
+      try {
+        view.rerender({
+          stage: "pages",
+          collapsed: true,
+          drawer: false,
+          onClose: undefined,
+          onToggleCollapsed,
+        });
+        // TFL-1620 — the drawer holds its exit pose first (the surface stays
+        // mounted and still reports the drawer) so the out keyframe can play...
+        expect(
+          view.host
+            .querySelector("[data-inspector-drawer]")
+            ?.getAttribute("data-inspector-drawer"),
+        ).toBe("true");
+        expect(view.host.querySelector(".inspector-drawer--leaving")).not.toBeNull();
+        act((): void => {
+          vi.advanceTimersByTime(200);
+        });
+        // ...then resolves into the collapsed strip and returns focus to it.
+        const opener = view.host.querySelector<HTMLElement>("[data-inspector-collapse]");
+        expect(opener).not.toBeNull();
+        expect(view.host.querySelector(".inspector-drawer--leaving")).toBeNull();
+        expect(document.activeElement).toBe(opener);
+      } finally {
+        view.unmount();
+      }
     } finally {
-      view.unmount();
+      vi.useRealTimers();
     }
   });
 });

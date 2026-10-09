@@ -231,13 +231,25 @@ describe('activityShelf failure detail (retired to the canvas alert)', () => {
 });
 
 describe('activityShelf panel and summary controls', () => {
-  it('calls onClose when Escape is pressed on the open panel', () => {
-    const onClose = vi.fn();
-    renderPanel([running()], { onClose });
-    act((): void => {
-      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
-    });
-    expect(onClose).toHaveBeenCalledTimes(1);
+  it('plays the exit keyframe on Escape, then notifies onClose after the MICRO band', () => {
+    vi.useFakeTimers();
+    try {
+      const onClose = vi.fn();
+      const host = renderPanel([running()], { onClose });
+      act((): void => {
+        document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+      });
+      // TFL-1620 — the surface holds its leaving pose; onClose is deferred so
+      // the out keyframe can play before the host unmounts the panel.
+      expect(onClose).not.toHaveBeenCalled();
+      expect(host.querySelector('.activity-shelf-panel--leaving')).not.toBeNull();
+      act((): void => {
+        vi.advanceTimersByTime(200);
+      });
+      expect(onClose).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('renders the summary as null with no operations', () => {

@@ -61,6 +61,9 @@ import type { ReviewElementRef } from './ReviewElementsPanel';
 // motion collapses both to the shared instant opacity path.
 import { AnimatePresence, motion } from 'motion/react';
 import { useContentCrossfadeAnimation, useSelectionPopAnimation } from '../hooks/useAnimations';
+// TFL-1620 — the compact drawer's exit state machine + its MICRO-band duration.
+import { useExitTransition } from '../hooks/useExitTransition';
+import { MOTION_DURATION } from '../hooks/motionTokens';
 import type { Annotation, AnnotationPatch } from '../annotations/model';
 import { buildPageLabelMap } from './pageGeometry';
 import { formatBytes } from '../utils/formatBytes';
@@ -587,15 +590,22 @@ const pageCount = engineState.pageCount;
   // moves focus back to that fresh node (Escape and the close control both route
   // through the host's `onClose`).
   const collapseOpenerRef = useRef<HTMLButtonElement | null>(null);
+  // TFL-1620 — the compact drawer's EXIT. When the drawer intent clears while
+  // the panel is collapsed, hold the drawer one MICRO-band exit so
+  // `context-drawer-out` can play, then reveal the collapsed launcher/ruler.
+  // `showDrawer` is the effective render flag; `data-context-panel-drawer` stays
+  // "true" through the exit so an in-flight e2e wait sees the surface finish.
+  const drawerLeaving = useExitTransition(drawer, MOTION_DURATION.micro);
+  const showDrawer = drawer || (drawerLeaving && collapsed);
   const drawerWasOpenRef = useRef(false);
   useEffect((): void => {
     const wasOpen = drawerWasOpenRef.current;
-    drawerWasOpenRef.current = drawer;
-    if (wasOpen && !drawer && collapsed) {
+    drawerWasOpenRef.current = showDrawer;
+    if (wasOpen && !showDrawer && collapsed) {
       const opener = collapseOpenerRef.current;
       if (opener !== null && document.contains(opener)) opener.focus();
     }
-  }, [drawer, collapsed]);
+  }, [showDrawer, collapsed]);
 
   // Phase 85 — an explicit `outlineEditor` prop wins, else the config App
   // publishes through the context. Null keeps the outline view-only.
@@ -1525,12 +1535,18 @@ const headerTitle = contextPanelTitle(stage, pageCount);
 
   return (
     <PanelShell
-      className={drawer ? 'context-panel context-panel-drawer' : 'context-panel'}
+      className={
+        !showDrawer
+          ? 'context-panel'
+          : drawerLeaving
+            ? 'context-panel context-panel-drawer context-panel-drawer--leaving'
+            : 'context-panel context-panel-drawer'
+      }
       label="Context panel"
       data-context-panel={stage}
       data-context-panel-stage={stage}
       data-context-panel-collapsed={collapsed ? 'true' : undefined}
-      data-context-panel-drawer={drawer ? 'true' : undefined}
+      data-context-panel-drawer={showDrawer ? 'true' : undefined}
     >
       <ScopedHeader
         className="context-panel-header"
@@ -1611,7 +1627,7 @@ const headerTitle = contextPanelTitle(stage, pageCount);
         }
       />
       <GlassSidebarBody className="context-panel-body tf-panel-body tf-panel-scroll">
-        {collapsed ? (
+        {collapsed && !showDrawer ? (
           stage === 'pages' ? (
             <div className="context-panel-ruler" data-context-panel-ruler>
               <RulerStrip pageCount={pageCount} currentPage={currentPage} onJump={onJump} />

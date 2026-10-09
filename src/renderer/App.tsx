@@ -181,6 +181,8 @@ import type { PageDropOp } from "./state/pageDrag";
 import { applyThemeDefault, applyToggleTheme, resolveThemeDefault } from "./state/theme";
 import { useThemeTransition } from "./hooks/useAnimations";
 import { setAnimationsEnabledPreference } from "./hooks/motionPolicy";
+import { NOTICE_AUTO_COLLAPSE_MS } from "./hooks/useNoticeCollapse";
+import { MOTION_DURATION } from "./hooks/motionTokens";
 import { createAmbientController } from "./state/ambient";
 import { resolveInitialSettings, settingsRecoveryNotice } from "./state/settings";
 import { confirmedSnapshotAfterApply, restoreDefaultSettings } from "./state/defaults";
@@ -9240,7 +9242,10 @@ pushToast(
   // linger keeps the host mounted so `useNoticeCollapse` can reach `collapsed`
   // and the collapsed icon becomes clickable. A new operation replaces this
   // immediately (the hook cancels the pending timeout).
-  const lingeringActivityAlert = useLingeringValue(activityAlert, 2000);
+  const lingeringActivityAlert = useLingeringValue(
+    activityAlert,
+    NOTICE_AUTO_COLLAPSE_MS + MOTION_DURATION.standard + 500,
+  );
 
   // Phase 126 (chunk B2) - a settled `failed`/`partial-success` operation now
   // surfaces as the in-canvas `CanvasAlertNotice` instead of a shelf notice.
