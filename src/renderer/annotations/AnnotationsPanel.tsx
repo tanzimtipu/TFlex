@@ -20,7 +20,7 @@ import {
   ThreadStreamRow,
   type AnnotationFilter,
 } from "./ThreadStream";
-import { PanelShell, ScopedHeader } from "../components/panels/PanelPrimitives";
+import { PanelShell } from "../components/panels/PanelPrimitives";
 import { Button } from "../components/Button";
 import type { CommentThread } from "../../shared/types";
 
@@ -62,36 +62,29 @@ export function AnnotationsPanel(props: AnnotationsPanelProps): ReactElement {
 
   return (
     <PanelShell className="ann-panel" label="Annotations" data-annotation-panel>
-      <ScopedHeader
-        className="ann-panel-header"
-        preferredHeight
-        title="Annotations"
-        actions={
-          <>
-            <span className="ann-panel-count">{total}</span>
-            <Button
-              intent="secondary"
-              kind="action"
-              density="compact"
-              data-ann-io="export"
-              onClick={onExportComments}
-              disabled={onExportComments === undefined}
-            >
-              Export comments
-            </Button>
-            <Button
-              intent="secondary"
-              kind="action"
-              density="compact"
-              data-ann-io="import"
-              onClick={onImportComments}
-              disabled={onImportComments === undefined}
-            >
-              Import comments
-            </Button>
-          </>
-        }
-      />
+      <div className="context-panel-actions-row ann-panel-actions" data-ann-io-row>
+        <span className="ann-panel-count">{total}</span>
+        <Button
+          intent="secondary"
+          kind="action"
+          density="compact"
+          data-ann-io="export"
+          onClick={onExportComments}
+          disabled={onExportComments === undefined}
+        >
+          Export comments
+        </Button>
+        <Button
+          intent="secondary"
+          kind="action"
+          density="compact"
+          data-ann-io="import"
+          onClick={onImportComments}
+          disabled={onImportComments === undefined}
+        >
+          Import comments
+        </Button>
+      </div>
       {annotations.length === 0 ? (
         <AnnotationEmptyState variant="document" onOpenTools={onOpenTools} />
       ) : (
@@ -105,7 +98,7 @@ export function AnnotationsPanel(props: AnnotationsPanelProps): ReactElement {
           {visible.length === 0 ? (
             <AnnotationEmptyState variant="filter" />
           ) : (
-            <ul className="tf-panel-scroll">
+            <ul className="tf-panel-scroll ann-panel-list">
               {visible.map((a) => (
                 <ThreadStreamRow
                   key={a.id}

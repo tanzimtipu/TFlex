@@ -9149,33 +9149,31 @@ rect.ann-highlight.ann-preview {
   min-height: 0;
 }
 
-.ann-panel-header {
-  display: flex;
+/* TFL-1563 — the panel owns its action bar (count + Import / Export) directly
+ * in the body; the redundant inner ScopedHeader is gone. The bar rides the
+ * shared `.context-panel-actions-row` flex wrap so the controls sit on one row
+ * and wrap cleanly at narrow widths. */
+.ann-panel-actions {
+  flex: 0 0 auto;
   align-items: center;
-  justify-content: space-between;
-  padding: var(--sp-2) var(--sp-3);
-  border-bottom: 1px solid var(--border-subtle);
-  background: var(--bg-toolbar);
-  font-size: var(--fs-sm);
-  font-weight: 600;
-  color: var(--fg-strong);
+  padding: var(--sp-1) 0;
 }
 
 .ann-panel-count {
   background: var(--bg-raised);
-  color: var(--fg-muted);
+  color: var(--tf-panel-ink-secondary);
   border: 1px solid var(--border);
   border-radius: var(--radius-pill);
   padding: 0 7px;
-  font-size: var(--fs-xs);
+  font-size: var(--tf-panel-helper-size);
   font-weight: 500;
   font-variant-numeric: tabular-nums;
 }
 
 .ann-panel-empty {
   padding: var(--sp-4) var(--sp-3);
-  font-size: var(--fs-sm);
-  color: var(--fg-muted);
+  font-size: var(--tf-panel-body-size);
+  color: var(--tf-panel-ink-secondary);
   display: flex;
   flex-direction: column;
   gap: 4px;
@@ -9382,6 +9380,8 @@ rect.ann-highlight.ann-preview {
   padding: var(--sp-2) var(--sp-1);
   border-bottom: 1px solid var(--thread-hairline);
   background: transparent;
+  width: 100%;
+  box-sizing: border-box;
   list-style: none;
   transition:
     background var(--motion-duration-panel) var(--ease-out),
@@ -9457,8 +9457,8 @@ rect.ann-highlight.ann-preview {
   border-radius: var(--radius-control);
   background: transparent;
   color: var(--fg-muted);
-  font-size: var(--type-row-size);
-  font-weight: var(--type-row-weight);
+  font-size: var(--tf-panel-control-size);
+  font-weight: var(--tf-panel-control-weight);
   cursor: pointer;
   transition:
     background var(--motion-duration-panel) var(--ease-out),
@@ -9486,8 +9486,14 @@ rect.ann-highlight.ann-preview {
   display: flex;
   flex-direction: column;
   align-items: flex-start;
-  gap: var(--sp-2);
-  padding: var(--sp-4) var(--sp-3);
+  gap: var(--space-small, 8px);
+  padding: var(--tf-panel-padding);
+}
+
+/* TFL-1563 — the nested shared empty state already owns the panel padding; zero
+ * it here so the wrapper's padding is the single inset (no double padding). */
+.ann-empty > .ann-empty-inner {
+  padding: 0;
 }
 
 /* Phase 116 accessibility (TFL-1228 chunk H) — high-contrast / forced-colors:
@@ -23458,6 +23464,7 @@ cursor: pointer;
   --tf-panel-heading-weight: 500;
   --tf-panel-body-size: var(--type-body-size);
   --tf-panel-control-size: var(--type-row-size);
+  --tf-panel-control-weight: var(--type-row-weight);
   --tf-panel-helper-size: var(--type-helper-size);
   --tf-panel-secondary-label-size: 12px;
   --tf-panel-boundary-width: 1px;

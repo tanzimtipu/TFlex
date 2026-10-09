@@ -151,13 +151,14 @@ export function AnnotationEmptyState(props: {
   if (variant === "filter") {
     return (
       <div className="ann-empty" data-ann-filtered-empty="">
-        <PanelEmptyState headline="No annotations match this filter" />
+        <PanelEmptyState className="ann-empty-inner" headline="No annotations match this filter" />
       </div>
     );
   }
   return (
     <div className="ann-empty" data-annotation-empty="">
       <PanelEmptyState
+        className="ann-empty-inner"
         headline="No annotations"
         help="Use the annotation tools to mark up this document."
       />
