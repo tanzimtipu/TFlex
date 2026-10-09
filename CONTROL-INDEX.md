@@ -1167,6 +1167,21 @@ scoped `.view-strip .btn` colour override is the documented exception the brief
 authorised; `REQUIREMENTS.md`'s "no surface may override a canonical variant's
 colour" line is outside this change's edit set and was left untouched.
 
+DEF-678 (2026-10-10, qa TFL-1581): the default ratios above were measured against
+`--bg-toolbar`, but the plain action buttons declared no `background`, so they
+painted the UA `buttonface` (240,240,240 light / 107,107,107 dark) and the dark
+default actually rendered 1.53:1. Fix: a strip-scoped
+`.view-strip .btn-toolbar:not(.btn-toggle):not(.btn-segmented-item):not(.btn-disclosure)`
+rule (`styles.css`, immediately after the `.view-strip .btn` ink rule) sets
+`background: transparent` so `--bg-toolbar` reads through. Scoped to
+`.btn-toolbar` so the Book View `.btn-secondary` surface is untouched; the three
+state-bearing toolbar kinds are excluded so their rest/hover/pressed fills
+(toggle `--bg-hover` / `--btn-selected-bg`, segmented `--accent-soft`, disclosure)
+are never overridden - the `[aria-pressed="true"]` accent parity holds. With this
+the documented default row (6.16 / 5.22 / 13.43) is now the real rendered value;
+dark default ink computed `background-color` is `rgba(0, 0, 0, 0)`. Verified by
+`e2e/tfl1581_view_strip_contrast.spec.cjs` (1 passed) and `npm.cmd run verify`.
+
 ## TFL-1589 - Page-selection transition animations (Selection card + dock chip)
 
 Appended 2026-10-10. Renderer-only motion. The PAGES panel's Selection summary

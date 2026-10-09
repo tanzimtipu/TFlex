@@ -6462,6 +6462,18 @@ body.tab-reordering .tab-list[data-reorder="true"] .tab {
   color: var(--fg-muted);
 }
 
+/* DEF-678 — the strip's ACTION toolbar icons (zoom out/in, prev/next page)
+ * declared no `background`, so they fell back to the UA `buttonface` — an
+ * opaque slab (240,240,240 light / 107,107,107 dark) that masked the toolbar
+ * fill and dropped dark default ink to 1.53:1. Transparent lets `--bg-toolbar`
+ * read through (dark default now ~5.22:1). Scoped to `.btn-toolbar` so the
+ * Book View `.btn-secondary` surface is untouched, and the three state-bearing
+ * toolbar kinds (toggle / segmented-item / disclosure) are excluded so their
+ * rest, hover and pressed fills are never overridden. */
+.view-strip .btn-toolbar:not(.btn-toggle):not(.btn-segmented-item):not(.btn-disclosure) {
+  background: transparent;
+}
+
 .view-strip .btn:hover:not([disabled]):not([aria-disabled="true"]) {
   color: var(--fg-strong);
 }

@@ -42,10 +42,12 @@ History:
 
 ## DEF-678: View Strip footer default icon contrast fails in dark theme (1.53:1 vs 3:1 floor)
 
-- Status: OPEN
+- Status: CLOSED
 - Severity: MEDIUM
 - Found by: qa (TFL-1581)
 - Phase: Footer bar icon colors (TFL-1559)
+- frontend-dev: fix landed 2026-10-10 (TFL-1618): added `src/renderer/styles.css:6473-6475` rule `.view-strip .btn-toolbar:not(.btn-toggle):not(.btn-segmented-item):not(.btn-disclosure) { background: transparent; }` so plain action buttons let `--bg-toolbar` read through instead of the UA `buttonface` slab.
+- qa: CLOSED 2026-10-10 (TFL-1618). `npm.cmd run verify` exit 0. `e2e/tfl1581_view_strip_contrast.spec.cjs` 1 passed / 0 failed. Dark-theme plain action button (`Zoom out`) computed `background-color` = `rgba(0, 0, 0, 0)` (transparent); dark default contrast 1.53:1 -> 5.22:1. All states clear the floor in all themes (light d/h/s/d = 6.16/17.24/4.47/4.23; dark = 5.22/14.93/7.80/6.49; frosted = 13.43/16.77/4.41/4.17). Segmented-item pressed accent parity and footer geometry assertions still pass.
 
 Steps to reproduce:
 1. Build the current tree (`npm.cmd run build`) and launch TFlex via the canonical `launchApp` helper.
