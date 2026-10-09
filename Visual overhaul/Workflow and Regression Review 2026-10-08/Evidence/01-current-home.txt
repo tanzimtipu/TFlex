@@ -1,0 +1,212 @@
+Window: "Jovrel", App: Jovrel.exe.
+	0 window Jovrel Secondary Actions: Raise
+		9 pane (disabled)
+		1 region Jovrel
+			2 region
+				3 region
+					4 region
+						5 region
+							6 region
+								7 region
+									10 document Jovrel Value: file:///C:/Program%20Files/Jovrel/resources/app.asar/dist/renderer/index.html ID: RootWebArea
+										17 group
+											11 group ID: root
+												18 text Jovrel
+												19 button File menu Description: File menu
+												20 header
+													21 group File actions
+														22 button Open PDF document Description: Open PDF (Ctrl+O)
+													23 button Search tools and commands (Ctrl+K) Description: Search tools and commands (Ctrl+K)
+													24 button Application menu Description: Application menu
+													26 button Sign in or create an account Description: Sign in or create an account
+												27 button Minimize window Description: Minimize
+												28 button Restore window Description: Restore window
+												29 button Close window Description: Close
+												30 header
+													31 text Jovrel
+													32 toggle button Pause background motion Description: Pause background motion
+													33 heading A clear space for your documents.
+													34 text Open a file to begin, or resume a recent document.
+													35 button Open Files Ctrl O Description: Open Files (Ctrl+O)
+													36 button Create PDF from images Description: Combine picked images into a new PDF document.
+													37 button Merge PDFs Description: Combine another PDF with the active document.
+													38 button Check for Update Description: Ask the updater whether a newer Jovrel exists.
+													39 toggle button Edit home tools Description: Edit home tools
+												40 heading Continue working 10
+												41 group samples/report.pdf Description: samples/report.pdf
+													42 button Open report.pdf, PDF (unverified hint), in samples. Full path: samples/report.pdf Description: Open samples/report.pdf
+													43 group Description: Format inferred from the file extension (not verified): PDF
+														44 text PDF
+													45 text Today
+													46 toggle button Pin report.pdf to the top Description: Pin to the top
+													47 button Show report.pdf in its folder Description: Show in folder
+													48 button Remove report.pdf from Recents Description: Remove from Recents (does not delete the file)
+												49 group samples/scanned.pdf Description: samples/scanned.pdf
+													50 button Open scanned.pdf, PDF (unverified hint), in samples. Full path: samples/scanned.pdf Description: Open samples/scanned.pdf
+													51 group Description: Format inferred from the file extension (not verified): PDF
+														52 text PDF
+													53 text Today
+													54 toggle button Pin scanned.pdf to the top Description: Pin to the top
+													55 button Show scanned.pdf in its folder Description: Show in folder
+													56 button Remove scanned.pdf from Recents Description: Remove from Recents (does not delete the file)
+												57 group samples/long.pdf Description: samples/long.pdf
+													58 button Open long.pdf, PDF (unverified hint), in samples. Full path: samples/long.pdf Description: Open samples/long.pdf
+													59 group Description: Format inferred from the file extension (not verified): PDF
+														60 text PDF
+													61 text Today
+													62 toggle button Pin long.pdf to the top Description: Pin to the top
+													63 button Show long.pdf in its folder Description: Show in folder
+													64 button Remove long.pdf from Recents Description: Remove from Recents (does not delete the file)
+												65 group samples/form.pdf Description: samples/form.pdf
+													66 button Open form.pdf, PDF (unverified hint), in samples. Full path: samples/form.pdf Description: Open samples/form.pdf
+													67 group Description: Format inferred from the file extension (not verified): PDF
+														68 text PDF
+													69 text Today
+													70 toggle button Pin form.pdf to the top Description: Pin to the top
+													71 button Show form.pdf in its folder Description: Show in folder
+													72 button Remove form.pdf from Recents Description: Remove from Recents (does not delete the file)
+												73 group C:\Users\tanzi\Documents\kimi\tasks\2026-09-16\11-38-58-ab40ee99\agent-os-build-prompt.md Description: C:\Users\tanzi\Documents\kimi\tasks\2026-09-16\11-38-58-ab40ee99\agent-os-build-prompt.md
+													74 button Open agent-os-build-prompt.md, MD (unverified hint), in 11-38-58-ab40ee99. Full path: C:\Users\tanzi\Documents\kimi\tasks\2026-09-16\11-38-58-ab40ee99\agent-os-build-prompt.md Description: Open C:\Users\tanzi\Documents\kimi\tasks\2026-09-16\11-38-58-ab40ee99\agent-os-build-prompt.md
+													75 group Description: Format inferred from the file extension (not verified): MD
+														76 text MD
+													77 text Yesterday
+													78 toggle button Pin agent-os-build-prompt.md to the top Description: Pin to the top
+													79 button Show agent-os-build-prompt.md in its folder Description: Show in folder
+													80 button Remove agent-os-build-prompt.md from Recents Description: Remove from Recents (does not delete the file)
+												81 group C:\Users\tanzi\OneDrive\App Development\TFlex\Visual overhaul\Icons\Implementation\orchestrator-prompt.md Description: C:\Users\tanzi\OneDrive\App Development\TFlex\Visual overhaul\Icons\Implementation\orchestrator-prompt.md
+													82 button Open orchestrator-prompt.md, MD (unverified hint), in Implementation. Full path: C:\Users\tanzi\OneDrive\App Development\TFlex\Visual overhaul\Icons\Implementation\orchestrator-prompt.md Description: Open C:\Users\tanzi\OneDrive\App Development\TFlex\Visual overhaul\Icons\Implementation\orchestrator-prompt.md
+													83 group Description: Format inferred from the file extension (not verified): MD
+														84 text MD
+													85 text 2d ago
+													86 toggle button Pin orchestrator-prompt.md to the top Description: Pin to the top
+													87 button Show orchestrator-prompt.md in its folder Description: Show in folder
+													88 button Remove orchestrator-prompt.md from Recents Description: Remove from Recents (does not delete the file)
+												89 group C:\Users\tanzi\OneDrive\App Development\TFlex\Visual overhaul\Design System\design-decisions.md Description: C:\Users\tanzi\OneDrive\App Development\TFlex\Visual overhaul\Design System\design-decisions.md
+													90 button Open design-decisions.md, MD (unverified hint), in Design System. Full path: C:\Users\tanzi\OneDrive\App Development\TFlex\Visual overhaul\Design System\design-decisions.md Description: Open C:\Users\tanzi\OneDrive\App Development\TFlex\Visual overhaul\Design System\design-decisions.md
+													91 group Description: Format inferred from the file extension (not verified): MD
+														92 text MD
+													93 text 2d ago
+													94 toggle button Pin design-decisions.md to the top Description: Pin to the top
+													95 button Show design-decisions.md in its folder Description: Show in folder
+													96 button Remove design-decisions.md from Recents Description: Remove from Recents (does not delete the file)
+												97 group C:\Users\tanzi\OneDrive\App Development\TFlex\test-fixtures\phase55\rows20000.xlsx Description: C:\Users\tanzi\OneDrive\App Development\TFlex\test-fixtures\phase55\rows20000.xlsx
+													98 button Open rows20000.xlsx, XLSX (unverified hint), in phase55. Full path: C:\Users\tanzi\OneDrive\App Development\TFlex\test-fixtures\phase55\rows20000.xlsx Description: Open C:\Users\tanzi\OneDrive\App Development\TFlex\test-fixtures\phase55\rows20000.xlsx
+													99 group Description: Format inferred from the file extension (not verified): XLSX
+														100 text XLSX
+													101 text 6d ago
+													102 toggle button Pin rows20000.xlsx to the top Description: Pin to the top
+													103 button Show rows20000.xlsx in its folder Description: Show in folder
+													104 button Remove rows20000.xlsx from Recents Description: Remove from Recents (does not delete the file)
+												105 group C:\Users\tanzi\OneDrive\App Development\TFlex\test-fixtures\phase55\legacy.doc Description: C:\Users\tanzi\OneDrive\App Development\TFlex\test-fixtures\phase55\legacy.doc
+													106 button Open legacy.doc, DOC (unverified hint), in phase55. Full path: C:\Users\tanzi\OneDrive\App Development\TFlex\test-fixtures\phase55\legacy.doc Description: Open C:\Users\tanzi\OneDrive\App Development\TFlex\test-fixtures\phase55\legacy.doc
+													107 group Description: Format inferred from the file extension (not verified): DOC
+														108 text DOC
+													109 text 6d ago
+													110 toggle button Pin legacy.doc to the top Description: Pin to the top
+													111 button Show legacy.doc in its folder Description: Show in folder
+													112 button Remove legacy.doc from Recents Description: Remove from Recents (does not delete the file)
+												113 group C:\Users\tanzi\OneDrive\App Development\TFlex\test-fixtures\phase54\frames-3.tiff Description: C:\Users\tanzi\OneDrive\App Development\TFlex\test-fixtures\phase54\frames-3.tiff
+													114 button Open frames-3.tiff, TIFF (unverified hint), in phase54. Full path: C:\Users\tanzi\OneDrive\App Development\TFlex\test-fixtures\phase54\frames-3.tiff Description: Open C:\Users\tanzi\OneDrive\App Development\TFlex\test-fixtures\phase54\frames-3.tiff
+													115 group Description: Format inferred from the file extension (not verified): TIFF
+														116 text TIFF
+													117 text 6d ago
+													118 toggle button Pin frames-3.tiff to the top Description: Pin to the top
+													119 button Show frames-3.tiff in its folder Description: Show in folder
+													120 button Remove frames-3.tiff from Recents Description: Remove from Recents (does not delete the file)
+												121 status
+								8 region
+
+Document text: ```
+Jovrel
+File menu
+Open
+Search tools and commands (Ctrl+K)
+Application menu
+Sign in
+Minimize window
+Restore window
+Close window
+Jovrel
+Pause background motion
+A clear space for your documents.
+Open a file to begin, or resume a recent document.
+Open Files
+Ctrl O
+Create PDF from images
+Merge PDFs
+Check for Update
+Edit home tools
+Continue working
+10
+report.pdf
+samples
+PDF
+Today
+Pin report.pdf to the top
+Show report.pdf in its folder
+Remove report.pdf from Recents
+scanned.pdf
+samples
+PDF
+Today
+Pin scanned.pdf to the top
+Show scanned.pdf in its folder
+Remove scanned.pdf from Recents
+long.pdf
+samples
+PDF
+Today
+Pin long.pdf to the top
+Show long.pdf in its folder
+Remove long.pdf from Recents
+form.pdf
+samples
+PDF
+Today
+Pin form.pdf to the top
+Show form.pdf in its folder
+Remove form.pdf from Recents
+agent-os-build-prompt.md
+11-38-58-ab40ee99
+MD
+Yesterday
+Pin agent-os-build-prompt.md to the top
+Show agent-os-build-prompt.md in its folder
+Remove agent-os-build-prompt.md from Recents
+orchestrator-prompt.md
+Implementation
+MD
+2d ago
+Pin orchestrator-prompt.md to the top
+Show orchestrator-prompt.md in its folder
+Remove orchestrator-prompt.md from Recents
+design-decisions.md
+Design System
+MD
+2d ago
+Pin design-decisions.md to the top
+Show design-decisions.md in its folder
+Remove design-decisions.md from Recents
+rows20000.xlsx
+phase55
+XLSX
+6d ago
+Pin rows20000.xlsx to the top
+Show rows20000.xlsx in its folder
+Remove rows20000.xlsx from Recents
+legacy.doc
+phase55
+DOC
+6d ago
+Pin legacy.doc to the top
+Show legacy.doc in its folder
+Remove legacy.doc from Recents
+frames-3.tiff
+phase54
+TIFF
+6d ago
+Pin frames-3.tiff to the top
+Show frames-3.tiff in its folder
+Remove frames-3.tiff from Recents
+￼
+```

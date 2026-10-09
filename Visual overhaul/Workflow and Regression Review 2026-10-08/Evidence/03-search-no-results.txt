@@ -1,0 +1,336 @@
+Window: "Jovrel", App: Jovrel.exe.
+	0 window Jovrel Secondary Actions: Raise
+		9 pane (disabled)
+		1 region Jovrel
+			2 region
+				3 region
+					4 region
+						5 region
+							6 region
+								7 region
+									10 document Jovrel Value: file:///C:/Program%20Files/Jovrel/resources/app.asar/dist/renderer/index.html ID: RootWebArea
+										17 group
+											11 group ID: root
+												18 text Jovrel
+												19 button File menu Description: File menu
+												20 header
+													21 group File actions
+														22 button Open PDF document Description: Open PDF (Ctrl+O)
+														122 button (disabled) Save Description: Saved — no changes to save
+														123 button Save a copy Description: Save a copy (Ctrl+Shift+S)
+													23 button Search tools and commands (Ctrl+K) Description: Search tools and commands (Ctrl+K)
+													124 button Print Description: Print (Ctrl+P)
+													24 button Application menu Description: Application menu
+													26 button Sign in or create an account Description: Sign in or create an account
+												27 button Minimize window Description: Minimize
+												28 button Restore window Description: Restore window
+												29 button Close window Description: Close
+												125 tab Open documents
+													126 list
+														127 list item report.pdf
+															128 tab item (selectable) report.pdf Close report.pdf
+																129 button Close report.pdf
+														130 list item
+															131 button New empty tab Description: New empty tab
+														132 list item
+															133 button All open documents (1) Description: All open documents (1)
+												134 thumb Resize navigator panel Value: 240
+												135 thumb Resize inspector panel Value: 260
+												136 navigation Work stages
+													137 toggle button Pages stage Description: Pages (Ctrl+1)
+													138 toggle button Edit stage Description: Edit (Ctrl+2)
+													139 toggle button Review stage Description: Review (Ctrl+3)
+													140 toggle button Deliver stage Description: Deliver (Ctrl+4)
+													141 button Open preferences Description: Preferences (Ctrl+,)
+												142 group
+													143 region Context panel
+														144 header
+															145 button More actions Description: More actions
+															146 button Collapse panel Description: Collapse panel
+														147 tab Navigator view
+															148 tab item (selectable) Pages · 34 ID: context-panel-view-tab-pages
+															149 tab item (selectable) Outline · 8 ID: context-panel-view-tab-outline
+														150 tab panel Pages · 34 ID: context-panel-view-pages
+															151 group
+																152 button (disabled) Undo last change Description: Nothing to undo
+																153 group Page 1 Description: Page 1
+																	154 button Page 1 Description: Page 1
+																	155 check box (settable, string) Select page 1
+																	156 text 1
+																	157 text Viewing
+																	158 button Page 1 actions
+																159 group Page 2 Description: Page 2
+																	160 button Page 2 Description: Page 2
+																	161 check box (settable, string) Select page 2
+																	162 text 2
+																	163 button Page 2 actions
+																164 group Page 3 Description: Page 3
+																	165 button Page 3 Description: Page 3
+																	166 check box (settable, string) Select page 3
+																	167 text 3
+																	168 button Page 3 actions
+																169 group Page 4 Description: Page 4
+																	170 button Page 4 Description: Page 4
+																	171 check box (settable, string) Select page 4
+																	172 text 4
+																	173 button Page 4 actions
+																174 group Page 5 Description: Page 5
+																	175 button Page 5 Description: Page 5
+																	176 check box (settable, string) Select page 5
+																	177 text 5
+																	178 button Page 5 actions
+																179 group Page 6 Description: Page 6
+																	180 button Page 6 Description: Page 6
+																	181 check box (settable, string) Select page 6
+																	182 text 6
+																	183 button Page 6 actions
+																184 group Page 7 Description: Page 7
+																	185 button Page 7 Description: Page 7
+																	186 check box (settable, string) Select page 7
+																	187 text 7
+																	188 button Page 7 actions
+																189 group Page 8 Description: Page 8
+																	190 button Page 8 Description: Page 8
+																	191 check box (settable, string) Select page 8
+																	192 text 8
+																	193 button Page 8 actions
+																194 group Page 9 Description: Page 9
+																	195 button Page 9 Description: Page 9
+																	196 check box (settable, string) Select page 9
+																	197 text 9
+																	198 button Page 9 actions
+																199 group Page 10 Description: Page 10
+																	200 button Page 10 Description: Page 10
+																	201 check box (settable, string) Select page 10
+																	202 text 10
+																	203 button Page 10 actions
+																204 group Page 11 Description: Page 11
+																	205 button Page 11 Description: Page 11
+																	206 check box (settable, string) Select page 11
+																	207 text 11
+																	208 button Page 11 actions
+																209 group Page 12 Description: Page 12
+																	210 button Page 12 Description: Page 12
+																	211 check box (settable, string) Select page 12
+																	212 text 12
+																	213 button Page 12 actions
+																214 group Page 13 Description: Page 13
+																	215 button Page 13 Description: Page 13
+																	216 check box (settable, string) Select page 13
+																	217 text 13
+																	218 button Page 13 actions
+																219 group Page 14 Description: Page 14
+																	220 button Page 14 Description: Page 14
+																	221 check box (settable, string) Select page 14
+																	222 text 14
+																	223 button Page 14 actions
+																224 group Page 15 Description: Page 15
+																	225 button Page 15 Description: Page 15
+																	226 check box (settable, string) Select page 15
+																	227 text 15
+																	228 button Page 15 actions
+																229 group Page 16 Description: Page 16
+																	230 button Page 16 Description: Page 16
+																	231 check box (settable, string) Select page 16
+																	232 text 16
+																	233 button Page 16 actions
+																234 group Page 17 Description: Page 17
+																	235 button Page 17 Description: Page 17
+																	236 check box (settable, string) Select page 17
+																	237 text 17
+																	238 button Page 17 actions
+																239 group Page 18 Description: Page 18
+																	240 button Page 18 Description: Page 18
+																	241 check box (settable, string) Select page 18
+																	242 text 18
+																	243 button Page 18 actions
+																244 group Page 19 Description: Page 19
+																	245 button Page 19 Description: Page 19
+																	246 check box (settable, string) Select page 19
+																	247 text 19
+																	248 button Page 19 actions
+																249 group Page 20 Description: Page 20
+																	250 button Page 20 Description: Page 20
+																	251 check box (settable, string) Select page 20
+																	252 text 20
+																	253 button Page 20 actions
+																254 group Page 21 Description: Page 21
+																	255 button Page 21 Description: Page 21
+																	256 check box (settable, string) Select page 21
+																	257 text 21
+																	258 button Page 21 actions
+																259 group Page 22 Description: Page 22
+																	260 button Page 22 Description: Page 22
+																	261 check box (settable, string) Select page 22
+																	262 text 22
+																	263 button Page 22 actions
+																264 group Page 23 Description: Page 23
+																	265 button Page 23 Description: Page 23
+																	266 check box (settable, string) Select page 23
+																	267 text 23
+																	268 button Page 23 actions
+																269 group Page 24 Description: Page 24
+																	270 button Page 24 Description: Page 24
+																	271 check box (settable, string) Select page 24
+																	272 text 24
+																	273 button Page 24 actions
+																274 group Page 25 Description: Page 25
+																	275 button Page 25 Description: Page 25
+																	276 check box (settable, string) Select page 25
+																	277 text 25
+																	278 button Page 25 actions
+																279 group Page 26 Description: Page 26
+																	280 button Page 26 Description: Page 26
+																	281 check box (settable, string) Select page 26
+																	282 text 26
+																	283 button Page 26 actions
+																284 group Page 27 Description: Page 27
+																	285 button Page 27 Description: Page 27
+																	286 check box (settable, string) Select page 27
+																	287 text 27
+																	288 button Page 27 actions
+																289 group Page 28 Description: Page 28
+																	290 button Page 28 Description: Page 28
+																	291 check box (settable, string) Select page 28
+																	292 text 28
+																	293 button Page 28 actions
+																294 group Page 29 Description: Page 29
+																	295 button Page 29 Description: Page 29
+																	296 check box (settable, string) Select page 29
+																	297 text 29
+																	298 button Page 29 actions
+																299 group Page 30 Description: Page 30
+																	300 button Page 30 Description: Page 30
+																	301 check box (settable, string) Select page 30
+																	302 text 30
+																	303 button Page 30 actions
+																304 group Page 31 Description: Page 31
+																	305 button Page 31 Description: Page 31
+																	306 check box (settable, string) Select page 31
+																	307 text 31
+																	308 button Page 31 actions
+																309 group Page 32 Description: Page 32
+																	310 button Page 32 Description: Page 32
+																	311 check box (settable, string) Select page 32
+																	312 text 32
+																	313 button Page 32 actions
+																314 group Page 33 Description: Page 33
+																	315 button Page 33 Description: Page 33
+																	316 check box (settable, string) Select page 33
+																	317 text 33
+																	318 button Page 33 actions
+																319 group Page 34 Description: Page 34
+																	320 button Page 34 Description: Page 34
+																	321 check box (settable, string) Select page 34
+																	322 text 34
+																	323 button Page 34 actions
+													452 edit (settable, string) Search query Description: Find in document Value: zzzz_no_match_987
+													453 text No results
+													454 toggle button Toggle replace Description: Toggle replace
+													455 button (disabled) Previous hit Description: Previous hit (Shift+Enter)
+													456 button (disabled) Next hit Description: Next hit (Enter)
+													457 button Close search Description: Close search (Esc)
+													501 edit (settable, string) Replacement text Description: Replace with
+													502 button (disabled) Replace Description: Replace the active match
+													503 button (disabled) Replace all Description: Replace all matches
+													504 status
+													505 text TFlex Technical Report
+													506 text A study in PDF orchestration and performance.
+													507 text Chapter 1: The Art of Orchestration
+													508 text This document serves as a test fixture for TFlex. The orchestration of complex PDF
+													509 text structures requires careful management of internal objects. We must ensure that the
+													510 text orchestration layer correctly handles multiple page streams. Strategic orchestration is
+													511 text key to maintaining document integrity. Orchestration of elements within the file structure
+													512 text is a primary concern. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed do
+													513 text eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam,
+													514 text quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis
+													515 text aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla
+													516 text pariatur. Excepteur sint occaecat cupidatat non proident.
+													517 text This document serves as a test fixture for TFlex. The orchestration of complex PDF
+													518 text structures requires careful management of internal objects. We must ensure that the
+													519 text orchestration layer correctly handles multiple page streams. Strategic orchestration is
+													520 text key to maintaining document integrity. Orchestration of elements within the file structure
+													521 text is a primary concern. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed do
+													522 text eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam,
+													523 text quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis
+													524 text aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla
+													525 text pariatur. Excepteur sint occaecat cupidatat non proident.
+													526 text This document serves as a test fixture for TFlex. The orchestration of complex PDF
+													527 text structures requires careful management of internal objects. We must ensure that the
+													528 text orchestration layer correctly handles multiple page streams. Strategic orchestration is
+													529 text key to maintaining document integrity. Orchestration of elements within the file structure
+													530 text is a primary concern. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed do
+													531 text eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam,
+													532 text quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis
+													533 text aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla
+													534 text pariatur. Excepteur sint occaecat cupidatat non proident.
+													535 text This document serves as a test fixture for TFlex. The orchestration of complex PDF
+													536 text structures requires careful management of internal objects. We must ensure that the
+													537 text orchestration layer correctly handles multiple page streams. Strategic orchestration is
+													538 text key to maintaining document integrity. Orchestration of elements within the file structure
+													539 text is a primary concern. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed do
+													540 text eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam,
+													541 text quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis
+													542 text aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla
+													543 text pariatur. Excepteur sint occaecat cupidatat non proident.
+													544 text This document serves as a test fixture for TFlex. The orchestration of complex PDF
+													545 text structures requires careful management of internal objects. We must ensure that the
+													546 text orchestration layer correctly handles multiple page streams. Strategic orchestration is
+													324 group Viewing controls
+														325 group Page navigation
+															326 button (disabled) Previous page Description: Previous page
+															327 edit (settable, string) Current page Value: 1
+															328 text /
+															329 text 34
+															330 button Next page Description: Next page
+														331 group View and zoom
+															332 button Zoom out Description: Zoom out
+															333 group Description: Current zoom
+																334 text 147
+																335 text %
+															336 button Zoom in Description: Zoom in
+															337 toggle button Fit width Description: Fit width
+															338 toggle button Fit page Description: Fit page
+															339 toggle button Pan mode Description: Pan mode
+															340 group Page layout
+																341 toggle button One page Description: One page
+																342 toggle button Two pages side by side Description: Two pages side by side
+																343 toggle button Four pages in two rows Description: Four pages in two rows
+															344 button Book View
+													345 tool bar Action dock
+														346 button Rotate pages Description: Rotate the selected page clockwise or counter-clockwise.
+														347 button Extract pages Description: Pull specific pages into a new document.
+														348 button Insert pages Description: Insert a blank page, or import pages from another PDF.
+														349 button Merge PDFs Description: Combine another PDF with the active document.
+														350 button Crop pages Description: Set the CropBox/TrimBox for every page.
+														351 separator
+														352 button (disabled) Open comic view Description: This document has no reading view
+														353 button More actions Description: More actions
+														354 button All commands Description: All commands
+												355 complementary Inspector
+													356 section header
+														357 text Inspector · Page 1
+														358 button Collapse inspector Description: Collapse inspector
+													359 heading PAGE
+													360 text Size
+													361 text 612 x 792 pt
+													362 text Rotation
+													363 text 0°
+													364 text Label
+													365 text Not available
+													366 button rename Description: rename
+													367 heading ON THIS PAGE
+													368 text Annotations
+													369 button 0 Description: Show the annotations list in the REVIEW panel
+													370 text Form fields
+													371 text 0
+													372 details
+														373 disclosure triangle ▸ DOCUMENT DETAILS
+															500 text ▸
+															375 text DOCUMENT DETAILS
+												121 status
+								8 region
+
+Document text: ```
+1
+```

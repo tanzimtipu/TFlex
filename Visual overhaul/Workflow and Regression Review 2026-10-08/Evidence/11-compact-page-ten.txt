@@ -1,0 +1,164 @@
+Window: "Jovrel", App: Jovrel.exe.
+	0 window Jovrel Secondary Actions: Raise
+		9 pane (disabled)
+		1 region Jovrel
+			2 region
+				3 region
+					4 region
+						5 region
+							6 region
+								7 region
+									10 document Jovrel Value: file:///C:/Program%20Files/Jovrel/resources/app.asar/dist/renderer/index.html ID: RootWebArea
+										17 group
+											11 group ID: root
+												18 text Jovrel
+												19 button File menu Description: File menu
+												20 header
+													21 group File actions
+														22 button Open PDF document Description: Open PDF (Ctrl+O)
+														122 button (disabled) Save Description: Saved — no changes to save
+														123 button Save a copy Description: Save a copy (Ctrl+Shift+S)
+													23 button Search tools and commands (Ctrl+K) Description: Search tools and commands (Ctrl+K)
+													124 button Print Description: Print (Ctrl+P)
+													24 button Application menu Description: Application menu
+													26 button Sign in or create an account Description: Sign in or create an account
+												27 button Minimize window Description: Minimize
+												28 button Maximize window Description: Maximize window
+												29 button Close window Description: Close
+												125 tab Open documents
+													126 list
+														127 list item report.pdf
+															128 tab item (selectable) report.pdf Close report.pdf
+																129 button Close report.pdf
+														130 list item
+															131 button New empty tab Description: New empty tab
+														132 list item
+															133 button All open documents (1) Description: All open documents (1)
+												136 navigation Work stages
+													137 toggle button Pages stage Description: Pages (Ctrl+1)
+													138 toggle button Edit stage Description: Edit (Ctrl+2)
+													139 toggle button Review stage Description: Review (Ctrl+3)
+													140 toggle button Deliver stage Description: Deliver (Ctrl+4)
+													141 button Open preferences Description: Preferences (Ctrl+,)
+												142 group
+													143 region Context panel
+														144 header
+															146 button Expand panel Description: Expand panel
+														795 button 1
+														796 button 2
+														797 button 3
+														798 button 4
+														799 button 5
+														800 button 6
+														801 button 7
+														802 button 8
+														803 button 9
+														804 button 10
+														805 button 11
+														806 button 12
+														807 button 13
+														808 button 14
+														809 button 15
+														810 button 16
+														811 button 17
+														812 button 18
+														813 button 19
+														814 button 20
+														815 button 21
+														816 button 22
+														817 button 23
+														818 button 24
+														819 button 25
+														820 button 26
+														821 button 27
+														822 button 28
+														823 button 29
+														824 button 30
+														825 button 31
+														826 button 32
+														827 button 33
+														828 button 34
+													835 text Chapter 5: The Art of Orchestration
+													836 text This document serves as a test fixture for TFlex. The orchestration of complex PDF
+													837 text structures requires careful management of internal objects. We must ensure that the
+													838 text orchestration layer correctly handles multiple page streams. Strategic orchestration is
+													839 text key to maintaining document integrity. Orchestration of elements within the file structure
+													840 text is a primary concern. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed do
+													841 text eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam,
+													842 text quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis
+													843 text aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla
+													844 text pariatur. Excepteur sint occaecat cupidatat non proident.
+													845 text This document serves as a test fixture for TFlex. The orchestration of complex PDF
+													846 text structures requires careful management of internal objects. We must ensure that the
+													847 text orchestration layer correctly handles multiple page streams. Strategic orchestration is
+													848 text key to maintaining document integrity. Orchestration of elements within the file structure
+													849 text is a primary concern. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed do
+													850 text eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam,
+													851 text quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis
+													852 text aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla
+													853 text pariatur. Excepteur sint occaecat cupidatat non proident.
+													854 text This document serves as a test fixture for TFlex. The orchestration of complex PDF
+													855 text structures requires careful management of internal objects. We must ensure that the
+													856 text orchestration layer correctly handles multiple page streams. Strategic orchestration is
+													857 text key to maintaining document integrity. Orchestration of elements within the file structure
+													858 text is a primary concern. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed do
+													859 text eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam,
+													860 text quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis
+													861 text aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla
+													862 text pariatur. Excepteur sint occaecat cupidatat non proident.
+													863 text This document serves as a test fixture for TFlex. The orchestration of complex PDF
+													864 text structures requires careful management of internal objects. We must ensure that the
+													865 text orchestration layer correctly handles multiple page streams. Strategic orchestration is
+													866 text key to maintaining document integrity. Orchestration of elements within the file structure
+													867 text is a primary concern. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed do
+													868 text eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam,
+													869 text quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis
+													870 text aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla
+													871 text pariatur. Excepteur sint occaecat cupidatat non proident.
+													872 text This document serves as a test fixture for TFlex. The orchestration of complex PDF
+													873 text structures requires careful management of internal objects. We must ensure that the
+													874 text orchestration layer correctly handles multiple page streams. Strategic orchestration is
+													875 text key to maintaining document integrity. Orchestration of elements within the file structure
+													876 text is a primary concern. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed do
+													877 text eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam,
+													878 text quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis
+													879 text aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla
+													324 group Viewing controls
+														325 group Page navigation
+															326 button Previous page Description: Previous page
+															327 edit (settable, string) Current page Value: 10
+															880 text /
+															881 text 34
+															330 button Next page Description: Next page
+														331 group View and zoom
+															332 button Zoom out Description: Zoom out
+															882 group Description: Current zoom
+																883 text 59
+																884 text %
+															336 button Zoom in Description: Zoom in
+															337 toggle button Fit width Description: Fit width
+															338 toggle button Fit page Description: Fit page
+															339 toggle button Pan mode Description: Pan mode
+															829 group Page layout
+																830 toggle button One page Description: One page
+																831 toggle button Two pages side by side Description: Two pages side by side
+																832 toggle button Four pages in two rows Description: Four pages in two rows
+															833 button Book View
+													345 tool bar Action dock
+														346 button Rotate pages Description: Rotate the selected page clockwise or counter-clockwise.
+														347 button Extract pages Description: Pull specific pages into a new document.
+														348 button Insert pages Description: Insert a blank page, or import pages from another PDF.
+														349 button Merge PDFs Description: Combine another PDF with the active document.
+														350 button Crop pages Description: Set the CropBox/TrimBox for every page.
+														351 separator
+														352 button (disabled) Open comic view Description: This document has no reading view
+														353 button More actions Description: More actions
+														354 button All commands Description: All commands
+												355 complementary Inspector
+													834 button Expand inspector Description: Expand inspector
+												121 status
+								8 region
+
+Document text: ```
+10
+```

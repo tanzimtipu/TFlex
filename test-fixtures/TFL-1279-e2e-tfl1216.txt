@@ -1,0 +1,14 @@
+
+> tflex@1.51.1 test:e2e
+> playwright test e2e/tfl1216_activityShelf.spec.cjs
+
+
+Running 1 test using 1 worker
+
+[TFL-1216 C4b] in-progress summary role=progress active="Recognize text - 1 of 1 pages"
+[TFL-1216 C4b] in-progress occlusion probe={"found":true,"topTag":"DIV","topClass":"modal-backdrop","selfOrChild":false}
+[TFL-1216 C4b] in-progress role=progress settled=completed occluded={"found":true,"topTag":"DIV","topClass":"modal-backdrop","selfOrChild":false} shot=C:\Users\tanzi\OneDrive\App Development\TFlex\screenshots\tfl1216-c4b-activity-shelf.png
+[tfl1216 +181ms] closed normally in 181ms
+  ok 1 e2e\tfl1216_activityShelf.spec.cjs:95:1 › TFL-1216 C4b: the Activity Shelf reports the OCR run; the removed toast is gone (41.1s)
+
+  1 passed (41.6s)

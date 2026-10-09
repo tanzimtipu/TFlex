@@ -1,0 +1,383 @@
+
+Running 20 tests using 1 worker
+
+[def362-flash +152ms] closed normally in 152ms
+  x   1 e2e\def362_flash_verify.spec.cjs:45:1 › DEF-362: the annotation flash overlay animates on --motion-duration-flash (11.7s)
+[p116-thread-stream +182ms] closed normally in 182ms
+  x   2 e2e\phase116_thread_stream.spec.cjs:76:1 › P116-1: annotation rows are rendered correctly (5.2s)
+[p116-thread-stream +187ms] closed normally in 187ms
+  x   3 e2e\phase116_thread_stream.spec.cjs:101:1 › P116-2: filter bar filters and restores annotations (5.1s)
+[p116-thread-stream +133ms] closed normally in 133ms
+  x   4 e2e\phase116_thread_stream.spec.cjs:141:1 › P116-3: empty states and empty filtered results (30.9s)
+[p116-thread-stream +3923ms] closed normally in 3923ms
+  x   5 e2e\phase116_thread_stream.spec.cjs:167:1 › P116-4: inspector updates on selection and color changes (8.9s)
+[p116-thread-stream +197ms] closed normally in 197ms
+  x   6 e2e\phase116_thread_stream.spec.cjs:195:1 › P116-5: comment thread and list-level FDF actions (5.1s)
+[p116-thread-stream +189ms] closed normally in 189ms
+  x   7 e2e\phase116_thread_stream.spec.cjs:223:1 › P116-6: delete affects only the intended row (5.2s)
+[p116-thread-stream +3790ms] closed normally in 3790ms
+  x   8 e2e\phase116_thread_stream.spec.cjs:252:1 › P116-7: Bates, watermark, signature summaries render exactly once in left navigator (34.6s)
+[p116-thread-stream +215ms] closed normally in 215ms
+  x   9 e2e\phase116_thread_stream.spec.cjs:280:1 › P116-8: selecting row/filtering/view config does not recolor PDF pixels (5.1s)
+[p116-thread-stream +187ms] closed normally in 187ms
+  x  10 e2e\phase116_thread_stream.spec.cjs:376:1 › P116-screenshots: capture screenshots for different themes and widths (5.2s)
+[P51-A before] ["__Secure-neon-auth.session_challange","__Secure-neon-auth.session_challenge","__Secure-neon-auth.session_token"]
+[P51-A started] {"callbackUrl":"http://localhost:51351/oauth/callback?token=y_TNkWcpul0hmOnYwcDzRa2KhSuPiZIJQylwRZE9bIw"}
+[P51-A after] ["__Secure-neon-auth.session_token"]
+[p51-gate +143ms] closed normally in 143ms
+  ok 11 e2e\phase51_gate.spec.cjs:64:1 › P51-A item 1: starting a flow clears the challenge cookies, never the session token (1.3s)
+[p51-gate +134ms] closed normally in 134ms
+  x  12 e2e\phase51_gate.spec.cjs:151:1 › P51-C item 3: the painted ring never reaches the Undo row (normal/narrow/multi) (33.5s)
+[P51-D injected] [{"name":"highlight","ok":false,"error":{"code":"engine-error","message":"unknown document: null"}},{"name":"underline","ok":false,"error":{"code":"engine-error","message":"unknown document: null"}},{"name":"strikeout","ok":false,"error":{"code":"engine-error","message":"unknown document: null"}},{"name":"ink","ok":false,"error":{"code":"engine-error","message":"unknown document: null"}},{"name":"textbox","ok":false,"error":{"code":"engine-error","message":"unknown document: null"}},{"name":"ellipse","ok":false,"error":{"code":"engine-error","message":"unknown document: null"}},{"name":"arrow","ok":false,"error":{"code":"engine-error","message":"unknown document: null"}},{"name":"note","ok":false,"error":{"code":"engine-error","message":"unknown document: null"}},{"name":"callout","ok":false,"error":{"code":"engine-error","message":"unknown document: null"}}]
+[p51-gate +145ms] closed normally in 145ms
+  x  13 e2e\phase51_gate.spec.cjs:294:1 › P51-D item 4: every annotation row keeps its delete control inside (normal + narrow) (3.4s)
+[p51-gate +154ms] closed normally in 154ms
+  x  14 e2e\phase51_gate.spec.cjs:403:1 › P51-E item 5: tab colours are full-strength, adjacent differ, contrast floors (7.0s)
+[p51-gate +141ms] closed normally in 141ms
+  x  15 e2e\phase51_gate.spec.cjs:477:1 › P51-H item 11: text-box surfaces are thicker + rounded, no clipping (3.4s)
+[p51-gate +146ms] closed normally in 146ms
+  x  16 e2e\phase51_gate.spec.cjs:657:1 › P51-F items 6,7,12,13,14,15,16: the edit-text cluster (33.0s)
+[p51-gate +148ms] closed normally in 148ms
+  x  17 e2e\phase51_gate.spec.cjs:787:1 › P51-F items 15,16: a second move leaves no copy; super shows one copy (32.9s)
+[p51-gate +139ms] closed normally in 139ms
+  x  18 e2e\phase51_gate.spec.cjs:856:1 › P51-G item 9: cancelling OCR stops the run and leaves the document unchanged (32.9s)
+[p51-gate +135ms] closed normally in 135ms
+  x  19 e2e\phase51_gate.spec.cjs:910:1 › P51-G item 10: the suspects view lives in the Inspector, cleanly formatted (32.9s)
+  x  20 e2e\phase51_gate.spec.cjs:968:1 › P51-I item 8: an encrypted PDF produces a readable, specific message (never [object Object]) (0ms)
+
+
+  1) e2e\def362_flash_verify.spec.cjs:45:1 › DEF-362: the annotation flash overlay animates on --motion-duration-flash 
+
+    TimeoutError: page.waitForSelector: Timeout 5000ms exceeded.
+    Call log:
+      - waiting for locator('.ann-flash')
+
+
+      68 |   // Click the row's jump button; the flash overlay mounts.
+      69 |   await row.click();
+    > 70 |   await win.waitForSelector('.ann-flash', { state: 'attached', timeout: 5000 });
+         |             ^
+      71 |
+      72 |   const anim = await win.locator('.ann-flash').first().evaluate((el) => {
+      73 |     const cs = getComputedStyle(el);
+        at C:\Users\tanzi\OneDrive\App Development\TFlex\e2e\def362_flash_verify.spec.cjs:70:13
+
+    Error Context: test-results\def362_flash_verify-DEF-36-e0ed1--on---motion-duration-flash\error-context.md
+
+  2) e2e\phase116_thread_stream.spec.cjs:76:1 › P116-1: annotation rows are rendered correctly ─────
+
+    TypeError: createAnnotationByDragging is not a function
+
+      81 |   // Create an ink annotation
+      82 |   await armAnnotationTool(win, 'ink');
+    > 83 |   await createAnnotationByDragging(win, 0.35, 0.3, 0.55, 0.42);
+         |         ^
+      84 |   await win.waitForTimeout(500);
+      85 |
+      86 |   // Create a highlight annotation
+        at C:\Users\tanzi\OneDrive\App Development\TFlex\e2e\phase116_thread_stream.spec.cjs:83:9
+
+    Error Context: test-results\phase116_thread_stream-P11-1adef-rows-are-rendered-correctly\error-context.md
+
+  3) e2e\phase116_thread_stream.spec.cjs:101:1 › P116-2: filter bar filters and restores annotations 
+
+    TypeError: createAnnotationByDragging is not a function
+
+      105 |
+      106 |   await armAnnotationTool(win, 'ink');
+    > 107 |   await createAnnotationByDragging(win, 0.35, 0.3, 0.55, 0.42); // Ink
+          |         ^
+      108 |   await win.waitForTimeout(500);
+      109 |
+      110 |   await armAnnotationTool(win, 'highlight');
+        at C:\Users\tanzi\OneDrive\App Development\TFlex\e2e\phase116_thread_stream.spec.cjs:107:9
+
+    Error Context: test-results\phase116_thread_stream-P11-657ea-rs-and-restores-annotations\error-context.md
+
+  4) e2e\phase116_thread_stream.spec.cjs:141:1 › P116-3: empty states and empty filtered results ───
+
+    TimeoutError: locator.click: Timeout 30000ms exceeded.
+    Call log:
+      - waiting for locator('.sample-card').filter({ hasText: 'empty.pdf' }).first()
+
+
+      49 |
+      50 | async function openSample(name = 'report.pdf') {
+    > 51 |   await win.locator('.sample-card').filter({ hasText: name }).first().click();
+         |                                                                       ^
+      52 |   await win.waitForSelector('.pdf-page canvas', { timeout: 30000 });
+      53 |   await win.waitForTimeout(1200);
+      54 | }
+        at openSample (C:\Users\tanzi\OneDrive\App Development\TFlex\e2e\phase116_thread_stream.spec.cjs:51:71)
+        at C:\Users\tanzi\OneDrive\App Development\TFlex\e2e\phase116_thread_stream.spec.cjs:143:9
+
+    Error Context: test-results\phase116_thread_stream-P11-ac7c4--and-empty-filtered-results\error-context.md
+
+  5) e2e\phase116_thread_stream.spec.cjs:167:1 › P116-4: inspector updates on selection and color changes 
+
+    TypeError: createAnnotationByDragging is not a function
+
+      171 |
+      172 |   await armAnnotationTool(win, 'ink');
+    > 173 |   await createAnnotationByDragging(win, 0.35, 0.3, 0.55, 0.42); // Ink
+          |         ^
+      174 |   await win.waitForTimeout(500);
+      175 |
+      176 |   await gotoStage(win, 3);
+        at C:\Users\tanzi\OneDrive\App Development\TFlex\e2e\phase116_thread_stream.spec.cjs:173:9
+
+    Error Context: test-results\phase116_thread_stream-P11-bf8de-selection-and-color-changes\error-context.md
+
+  6) e2e\phase116_thread_stream.spec.cjs:195:1 › P116-5: comment thread and list-level FDF actions ─
+
+    TypeError: createAnnotationByDragging is not a function
+
+      199 |
+      200 |   await armAnnotationTool(win, 'ink');
+    > 201 |   await createAnnotationByDragging(win, 0.35, 0.3, 0.55, 0.42); // Ink
+          |         ^
+      202 |   await win.waitForTimeout(500);
+      203 |
+      204 |   await gotoStage(win, 3);
+        at C:\Users\tanzi\OneDrive\App Development\TFlex\e2e\phase116_thread_stream.spec.cjs:201:9
+
+    Error Context: test-results\phase116_thread_stream-P11-39608--and-list-level-FDF-actions\error-context.md
+
+  7) e2e\phase116_thread_stream.spec.cjs:223:1 › P116-6: delete affects only the intended row ──────
+
+    TypeError: createAnnotationByDragging is not a function
+
+      227 |
+      228 |   await armAnnotationTool(win, 'ink');
+    > 229 |   await createAnnotationByDragging(win, 0.35, 0.3, 0.55, 0.42); // Ink 1
+          |         ^
+      230 |   await win.waitForTimeout(500);
+      231 |
+      232 |   await armAnnotationTool(win, 'highlight');
+        at C:\Users\tanzi\OneDrive\App Development\TFlex\e2e\phase116_thread_stream.spec.cjs:229:9
+
+    Error Context: test-results\phase116_thread_stream-P11-92bdc-fects-only-the-intended-row\error-context.md
+
+  8) e2e\phase116_thread_stream.spec.cjs:252:1 › P116-7: Bates, watermark, signature summaries render exactly once in left navigator 
+
+    TimeoutError: locator.click: Timeout 30000ms exceeded.
+    Call log:
+      - waiting for locator('.sample-card').filter({ hasText: 'sample-bates.pdf' }).first()
+
+
+      49 |
+      50 | async function openSample(name = 'report.pdf') {
+    > 51 |   await win.locator('.sample-card').filter({ hasText: name }).first().click();
+         |                                                                       ^
+      52 |   await win.waitForSelector('.pdf-page canvas', { timeout: 30000 });
+      53 |   await win.waitForTimeout(1200);
+      54 | }
+        at openSample (C:\Users\tanzi\OneDrive\App Development\TFlex\e2e\phase116_thread_stream.spec.cjs:51:71)
+        at C:\Users\tanzi\OneDrive\App Development\TFlex\e2e\phase116_thread_stream.spec.cjs:254:9
+
+    Error Context: test-results\phase116_thread_stream-P11-ad3fc-ctly-once-in-left-navigator\error-context.md
+
+  9) e2e\phase116_thread_stream.spec.cjs:280:1 › P116-8: selecting row/filtering/view config does not recolor PDF pixels 
+
+    TypeError: createAnnotationByDragging is not a function
+
+      284 |
+      285 |   await armAnnotationTool(win, 'ink');
+    > 286 |   await createAnnotationByDragging(win, 0.35, 0.3, 0.55, 0.42); // Ink
+          |         ^
+      287 |   await win.waitForTimeout(500);
+      288 |
+      289 |   await gotoStage(win, 3);
+        at C:\Users\tanzi\OneDrive\App Development\TFlex\e2e\phase116_thread_stream.spec.cjs:286:9
+
+    Error Context: test-results\phase116_thread_stream-P11-1b4b6-does-not-recolor-PDF-pixels\error-context.md
+
+  10) e2e\phase116_thread_stream.spec.cjs:376:1 › P116-screenshots: capture screenshots for different themes and widths 
+
+    TypeError: createAnnotationByDragging is not a function
+
+      326 |   await openAnnotationFlyout(win);
+      327 |   await armAnnotationTool(win, 'ink');
+    > 328 |   await createAnnotationByDragging(win, 0.35, 0.3, 0.55, 0.42); // Ink
+          |         ^
+      329 |   await win.waitForTimeout(500);
+      330 |   await gotoStage(win, 3);
+      331 |   await ensurePanelExpanded(win);
+        at captureScreenshotsForThemesAndWidths (C:\Users\tanzi\OneDrive\App Development\TFlex\e2e\phase116_thread_stream.spec.cjs:328:9)
+        at C:\Users\tanzi\OneDrive\App Development\TFlex\e2e\phase116_thread_stream.spec.cjs:377:3
+
+    Error Context: test-results\phase116_thread_stream-P11-24973-different-themes-and-widths\error-context.md
+
+  11) e2e\phase51_gate.spec.cjs:151:1 › P51-C item 3: the painted ring never reaches the Undo row (normal/narrow/multi) 
+
+    TimeoutError: locator.click: Timeout 30000ms exceeded.
+    Call log:
+      - waiting for locator('.thumb').first()
+
+
+      156 |
+      157 |   // Select the FIRST page (the operator's view).
+    > 158 |   await win.locator('.thumb').first().click();
+          |                                       ^
+      159 |   await win.waitForTimeout(700);
+      160 |
+      161 |   const states = [];
+        at C:\Users\tanzi\OneDrive\App Development\TFlex\e2e\phase51_gate.spec.cjs:158:39
+
+    Error Context: test-results\phase51_gate-P51-C-item-3--2dba3-do-row-normal-narrow-multi-\error-context.md
+
+  12) e2e\phase51_gate.spec.cjs:294:1 › P51-D item 4: every annotation row keeps its delete control inside (normal + narrow) 
+
+    Error: createAnnotation highlight
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: true
+    Received: false
+
+      300 |   const injected = await injectAnnotations();
+      301 |   console.log(`[P51-D injected] ${JSON.stringify(injected)}`);
+    > 302 |   for (const r of injected) expect(r.ok, `createAnnotation ${r.name}`).toBe(true);
+          |                                                                        ^
+      303 |
+      304 |   // The rectangle is created through the real UI (the operator's re-report);
+      305 |   // it also refreshes the renderer mirror so every injected row renders.
+        at C:\Users\tanzi\OneDrive\App Development\TFlex\e2e\phase51_gate.spec.cjs:302:72
+
+    Error Context: test-results\phase51_gate-P51-D-item-4--5c095-ntrol-inside-normal-narrow-\error-context.md
+
+  13) e2e\phase51_gate.spec.cjs:403:1 › P51-E item 5: tab colours are full-strength, adjacent differ, contrast floors 
+
+    Error: expect(received).toBe(expected) // Object.is equality
+
+    Expected: 3
+    Received: 0
+
+      407 |   await openViaDialog(getSamplePath('long.pdf'));
+      408 |   await win.waitForTimeout(800);
+    > 409 |   expect(await win.locator('.tab').count()).toBe(3);
+          |                                             ^
+      410 |
+      411 |   for (const theme of ['light', 'dark', 'frosted']) {
+      412 |     await setTheme(theme);
+        at C:\Users\tanzi\OneDrive\App Development\TFlex\e2e\phase51_gate.spec.cjs:409:45
+
+    Error Context: test-results\phase51_gate-P51-E-item-5--ba9b0-cent-differ-contrast-floors\error-context.md
+
+  14) e2e\phase51_gate.spec.cjs:477:1 › P51-H item 11: text-box surfaces are thicker + rounded, no clipping 
+
+    Error: createAnnotation highlight
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: true
+    Received: false
+
+      483 |   // A textbox + a callout annotation give the two annotation surfaces.
+      484 |   const injected = await injectAnnotations();
+    > 485 |   for (const r of injected) expect(r.ok, `createAnnotation ${r.name}`).toBe(true);
+          |                                                                        ^
+      486 |   // The UI-created rectangle refreshes the renderer mirror so the injected
+      487 |   // textbox / callout surfaces actually render.
+      488 |   await createRectViaUi();
+        at C:\Users\tanzi\OneDrive\App Development\TFlex\e2e\phase51_gate.spec.cjs:485:72
+
+    Error Context: test-results\phase51_gate-P51-H-item-11-4b4cd-thicker-rounded-no-clipping\error-context.md
+
+  15) e2e\phase51_gate.spec.cjs:657:1 › P51-F items 6,7,12,13,14,15,16: the edit-text cluster ──────
+
+    TimeoutError: page.waitForSelector: Timeout 30000ms exceeded.
+    Call log:
+      - waiting for locator('.pdf-page canvas') to be visible
+
+
+      658 |   await launch();
+      659 |   await openViaDialog(getSamplePath('long.pdf'));
+    > 660 |   await win.waitForSelector('.pdf-page canvas', { timeout: 30000 });
+          |             ^
+      661 |   await win.waitForTimeout(1200);
+      662 |   await gotoStage(win, 2);
+      663 |   await armEditText();
+        at C:\Users\tanzi\OneDrive\App Development\TFlex\e2e\phase51_gate.spec.cjs:660:13
+
+    Error Context: test-results\phase51_gate-P51-F-items-6-64fa8-15-16-the-edit-text-cluster\error-context.md
+
+  16) e2e\phase51_gate.spec.cjs:787:1 › P51-F items 15,16: a second move leaves no copy; super shows one copy 
+
+    TimeoutError: page.waitForSelector: Timeout 30000ms exceeded.
+    Call log:
+      - waiting for locator('.pdf-page canvas') to be visible
+
+
+      788 |   await launch();
+      789 |   await openViaDialog(getSamplePath('long.pdf'));
+    > 790 |   await win.waitForSelector('.pdf-page canvas', { timeout: 30000 });
+          |             ^
+      791 |   await win.waitForTimeout(1200);
+      792 |   await gotoStage(win, 2);
+      793 |   await armEditText();
+        at C:\Users\tanzi\OneDrive\App Development\TFlex\e2e\phase51_gate.spec.cjs:790:13
+
+    Error Context: test-results\phase51_gate-P51-F-items-1-7aefc-o-copy-super-shows-one-copy\error-context.md
+
+  17) e2e\phase51_gate.spec.cjs:856:1 › P51-G item 9: cancelling OCR stops the run and leaves the document unchanged 
+
+    TimeoutError: page.waitForSelector: Timeout 30000ms exceeded.
+    Call log:
+      - waiting for locator('.pdf-page canvas') to be visible
+
+
+      857 |   await launch();
+      858 |   await openViaDialog(getSamplePath('scanned.pdf'));
+    > 859 |   await win.waitForSelector('.pdf-page canvas', { timeout: 30000 });
+          |             ^
+      860 |   await win.waitForTimeout(1500);
+      861 |
+      862 |   await openOcrDialog();
+        at C:\Users\tanzi\OneDrive\App Development\TFlex\e2e\phase51_gate.spec.cjs:859:13
+
+    Error Context: test-results\phase51_gate-P51-G-item-9--37e5e-aves-the-document-unchanged\error-context.md
+
+  18) e2e\phase51_gate.spec.cjs:910:1 › P51-G item 10: the suspects view lives in the Inspector, cleanly formatted 
+
+    TimeoutError: page.waitForSelector: Timeout 30000ms exceeded.
+    Call log:
+      - waiting for locator('.pdf-page canvas') to be visible
+
+
+      911 |   await launch();
+      912 |   await openViaDialog(getSamplePath('scanned.pdf'));
+    > 913 |   await win.waitForSelector('.pdf-page canvas', { timeout: 30000 });
+          |             ^
+      914 |   await win.waitForTimeout(1500);
+      915 |
+      916 |   // Run OCR to completion so the suspects view has data.
+        at C:\Users\tanzi\OneDrive\App Development\TFlex\e2e\phase51_gate.spec.cjs:913:13
+
+    Error Context: test-results\phase51_gate-P51-G-item-10-e0328-Inspector-cleanly-formatted\error-context.md
+
+  19) e2e\phase51_gate.spec.cjs:968:1 › P51-I item 8: an encrypted PDF produces a readable, specific message (never [object Object]) 
+
+    Error: worker process exited unexpectedly (code=3221225794, signal=null)
+
+  19 failed
+    e2e\def362_flash_verify.spec.cjs:45:1 › DEF-362: the annotation flash overlay animates on --motion-duration-flash 
+    e2e\phase116_thread_stream.spec.cjs:76:1 › P116-1: annotation rows are rendered correctly ──────
+    e2e\phase116_thread_stream.spec.cjs:101:1 › P116-2: filter bar filters and restores annotations 
+    e2e\phase116_thread_stream.spec.cjs:141:1 › P116-3: empty states and empty filtered results ────
+    e2e\phase116_thread_stream.spec.cjs:167:1 › P116-4: inspector updates on selection and color changes 
+    e2e\phase116_thread_stream.spec.cjs:195:1 › P116-5: comment thread and list-level FDF actions ──
+    e2e\phase116_thread_stream.spec.cjs:223:1 › P116-6: delete affects only the intended row ───────
+    e2e\phase116_thread_stream.spec.cjs:252:1 › P116-7: Bates, watermark, signature summaries render exactly once in left navigator 
+    e2e\phase116_thread_stream.spec.cjs:280:1 › P116-8: selecting row/filtering/view config does not recolor PDF pixels 
+    e2e\phase116_thread_stream.spec.cjs:376:1 › P116-screenshots: capture screenshots for different themes and widths 
+    e2e\phase51_gate.spec.cjs:151:1 › P51-C item 3: the painted ring never reaches the Undo row (normal/narrow/multi) 
+    e2e\phase51_gate.spec.cjs:294:1 › P51-D item 4: every annotation row keeps its delete control inside (normal + narrow) 
+    e2e\phase51_gate.spec.cjs:403:1 › P51-E item 5: tab colours are full-strength, adjacent differ, contrast floors 
+    e2e\phase51_gate.spec.cjs:477:1 › P51-H item 11: text-box surfaces are thicker + rounded, no clipping 
+    e2e\phase51_gate.spec.cjs:657:1 › P51-F items 6,7,12,13,14,15,16: the edit-text cluster ────────
+    e2e\phase51_gate.spec.cjs:787:1 › P51-F items 15,16: a second move leaves no copy; super shows one copy 
+    e2e\phase51_gate.spec.cjs:856:1 › P51-G item 9: cancelling OCR stops the run and leaves the document unchanged 
+    e2e\phase51_gate.spec.cjs:910:1 › P51-G item 10: the suspects view lives in the Inspector, cleanly formatted 
+    e2e\phase51_gate.spec.cjs:968:1 › P51-I item 8: an encrypted PDF produces a readable, specific message (never [object Object]) 
+  1 passed (5.1m)

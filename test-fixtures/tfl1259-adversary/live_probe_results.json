@@ -1,0 +1,316 @@
+{
+  "pass": 19,
+  "fail": 4,
+  "results": [
+    {
+      "id": "single-source",
+      "ok": true,
+      "detail": {
+        "[data-print-confirm]": 1,
+        "[data-print-cancel]": 1,
+        ".print-body": 1,
+        ".print-controls": 1,
+        "[data-print-summary]": 1,
+        "[data-print-printer]": 1
+      }
+    },
+    {
+      "id": "compact-mode",
+      "ok": true,
+      "detail": "compact"
+    },
+    {
+      "id": "compact-quality-functional",
+      "ok": true,
+      "detail": {
+        "qualityExpandable": true,
+        "duplexValue": "longEdge",
+        "colorValue": "grey"
+      }
+    },
+    {
+      "id": "compact-booklet-functional",
+      "ok": true,
+      "detail": {
+        "open": true,
+        "gutter": "12",
+        "creep": "6",
+        "subset": "front"
+      }
+    },
+    {
+      "id": "compact-poster-functional",
+      "ok": true,
+      "detail": {
+        "open": true,
+        "rows": "3",
+        "cols": "4",
+        "overlap": "9",
+        "scale": "150",
+        "cut": true
+      }
+    },
+    {
+      "id": "silence-presets",
+      "ok": true,
+      "detail": {
+        "presetSaved": "Preset \"ADV sweep\" saved.",
+        "presetApplied": "Applied preset \"ADV sweep\".",
+        "presetDeleted": "Deleted preset \"ADV sweep\".",
+        "collateEnabled": true,
+        "collateChecked": true,
+        "inputEnabled": true,
+        "customMeta": "2 pages · 2 sheets",
+        "percentEnabled": true,
+        "percentValue": "150",
+        "percentDisabledForShrink": true,
+        "orientation": true,
+        "orderState": {
+          "layout": "single",
+          "nup": "4",
+          "orderDisabled": false
+        },
+        "order": "vertical",
+        "oddEven": "even",
+        "reverse": true,
+        "annotations": false
+      }
+    },
+    {
+      "id": "silence-copies-collate",
+      "ok": true,
+      "detail": {
+        "presetSaved": "Preset \"ADV sweep\" saved.",
+        "presetApplied": "Applied preset \"ADV sweep\".",
+        "presetDeleted": "Deleted preset \"ADV sweep\".",
+        "collateEnabled": true,
+        "collateChecked": true,
+        "inputEnabled": true,
+        "customMeta": "2 pages · 2 sheets",
+        "percentEnabled": true,
+        "percentValue": "150",
+        "percentDisabledForShrink": true,
+        "orientation": true,
+        "orderState": {
+          "layout": "single",
+          "nup": "4",
+          "orderDisabled": false
+        },
+        "order": "vertical",
+        "oddEven": "even",
+        "reverse": true,
+        "annotations": false
+      }
+    },
+    {
+      "id": "silence-range-custom",
+      "ok": true,
+      "detail": {
+        "presetSaved": "Preset \"ADV sweep\" saved.",
+        "presetApplied": "Applied preset \"ADV sweep\".",
+        "presetDeleted": "Deleted preset \"ADV sweep\".",
+        "collateEnabled": true,
+        "collateChecked": true,
+        "inputEnabled": true,
+        "customMeta": "2 pages · 2 sheets",
+        "percentEnabled": true,
+        "percentValue": "150",
+        "percentDisabledForShrink": true,
+        "orientation": true,
+        "orderState": {
+          "layout": "single",
+          "nup": "4",
+          "orderDisabled": false
+        },
+        "order": "vertical",
+        "oddEven": "even",
+        "reverse": true,
+        "annotations": false
+      }
+    },
+    {
+      "id": "silence-scaling",
+      "ok": true,
+      "detail": {
+        "presetSaved": "Preset \"ADV sweep\" saved.",
+        "presetApplied": "Applied preset \"ADV sweep\".",
+        "presetDeleted": "Deleted preset \"ADV sweep\".",
+        "collateEnabled": true,
+        "collateChecked": true,
+        "inputEnabled": true,
+        "customMeta": "2 pages · 2 sheets",
+        "percentEnabled": true,
+        "percentValue": "150",
+        "percentDisabledForShrink": true,
+        "orientation": true,
+        "orderState": {
+          "layout": "single",
+          "nup": "4",
+          "orderDisabled": false
+        },
+        "order": "vertical",
+        "oddEven": "even",
+        "reverse": true,
+        "annotations": false
+      }
+    },
+    {
+      "id": "silence-misc-controls",
+      "ok": false,
+      "detail": {
+        "_cond": [
+          true,
+          false,
+          true,
+          true,
+          true,
+          true
+        ],
+        "presetSaved": "Preset \"ADV sweep\" saved.",
+        "presetApplied": "Applied preset \"ADV sweep\".",
+        "presetDeleted": "Deleted preset \"ADV sweep\".",
+        "collateEnabled": true,
+        "collateChecked": true,
+        "inputEnabled": true,
+        "customMeta": "2 pages · 2 sheets",
+        "percentEnabled": true,
+        "percentValue": "150",
+        "percentDisabledForShrink": true,
+        "orientation": true,
+        "orderState": {
+          "layout": "single",
+          "nup": "4",
+          "orderDisabled": false
+        },
+        "order": "vertical",
+        "oddEven": "even",
+        "reverse": true,
+        "annotations": false
+      }
+    },
+    {
+      "id": "selection-duplicates",
+      "ok": true,
+      "detail": "summary=\"Pages1, 3 of 34\" (established parser de-dupes/sorts; see ADV entry)"
+    },
+    {
+      "id": "selection-reordered",
+      "ok": true,
+      "detail": "summary=\"Pages1, 3 of 34\""
+    },
+    {
+      "id": "selection-reversed-error-attached",
+      "ok": true,
+      "detail": {
+        "errVisible": true,
+        "errText": "Range \"3-1\" is reversed (start after end).",
+        "ariaInvalid": "true",
+        "inputDisabled": false,
+        "summary": "PagesRange \"3-1\" is reversed (start after end)."
+      }
+    },
+    {
+      "id": "selection-out-of-range",
+      "ok": true,
+      "detail": {
+        "errText": "Page 999 is out of range (1-34).",
+        "summary": "PagesPage 999 is out of range (1-34).",
+        "confirmDisabled": true
+      }
+    },
+    {
+      "id": "selection-even-reverse",
+      "ok": false,
+      "detail": {
+        "mode": "compact",
+        "pages": "Pages2, 4, 6 of 34",
+        "dest": "DestinationCanon TS3100 series",
+        "format": "FormatPrint job",
+        "note": null,
+        "meta": "3 pages · 3 sheets"
+      }
+    },
+    {
+      "id": "document-bytes-unchanged",
+      "ok": true,
+      "detail": {
+        "before": "9b39af69e81ee8a5",
+        "after": "9b39af69e81ee8a5"
+      }
+    },
+    {
+      "id": "preview-is-raster",
+      "ok": false,
+      "detail": null
+    },
+    {
+      "id": "virtual-summary-labels",
+      "ok": false,
+      "detail": {
+        "mode": "wide",
+        "pages": "Pages1-34 of 34",
+        "dest": "DestinationPDF file",
+        "format": "FormatPDF",
+        "note": "A Save-As dialog will appear to choose where the PDF is saved.",
+        "meta": "34 pages · 34 sheets"
+      }
+    },
+    {
+      "id": "completion-saved-honest",
+      "ok": true,
+      "detail": {
+        "success": "Saved to C:\\Users\\tanzi\\AppData\\Local\\Temp\\paperclip-run-tfl-1259-4facd1d8-417-OfqBmw\\tfl1259-saved-1791430155771.pdf",
+        "fileExists": true,
+        "magic": "%PDF-",
+        "size": 372896
+      }
+    },
+    {
+      "id": "completion-save-cancel-quiet",
+      "ok": true,
+      "detail": {
+        "success": false,
+        "error": false,
+        "running": false
+      }
+    },
+    {
+      "id": "cancellation-integrity",
+      "ok": true,
+      "detail": {
+        "afterCancel": {
+          "running": false,
+          "error": null,
+          "success": null,
+          "confirmDisabled": false
+        },
+        "winAlive": true,
+        "printUsable": true,
+        "bytesUnchanged": true
+      }
+    },
+    {
+      "id": "failure-retains-settings",
+      "ok": true,
+      "detail": {
+        "error": "Could not write the PDF to the selected location.Your settings are unchanged. Choose Print to try again, or pick another destination above to save a different copy.",
+        "hint": "Your settings are unchanged. Choose Print to try again, or pick another destination above to save a different copy.",
+        "copies": "2",
+        "confirmDisabled": false
+      }
+    },
+    {
+      "id": "sibling-export-unchanged",
+      "ok": true,
+      "detail": {
+        "formats": [
+          "png",
+          "jpeg",
+          "tiff"
+        ],
+        "hasRange": true,
+        "hasConfirm": true
+      }
+    }
+  ]
+}

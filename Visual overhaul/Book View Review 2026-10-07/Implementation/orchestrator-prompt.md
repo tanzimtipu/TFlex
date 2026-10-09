@@ -16,7 +16,7 @@ Allow only one active turn. During settling, retain at most one pending navigati
 
 ## 2. Choose and isolate the engine
 
-Default recommendation: a locally bundled Three.js WebGL renderer behind a BookRenderer adapter, reusing Jovrel's existing PDF page-raster service. Pin a compatible dependency version and record its license. Evaluate DearFlip only as a time-boxed alternative if it passes offline packaged-Electron operation, redistribution licensing, restrictive CSP, existing-PDF integration, drag control, instant mode, accessibility and resource lifecycle tests. Do not assume that its web/demo license or API meets desktop distribution needs. Avoid introducing a second PDF parser or independent document state merely to use a flipbook library.
+Use a locally bundled Three.js WebGL renderer behind a BookRenderer adapter, reusing Jovrel's existing PDF page-raster service. Pin a compatible dependency version and record its license. Do not introduce a commercial flipbook dependency: the user will not purchase a flipbook license. Avoid introducing a second PDF parser or independent document state.
 
 Animated turns must use actual tessellated 3D page geometry, not a flat rectangle rotating with CSS or 2D canvas distortion. DOM and 2D PDF rendering remain appropriate for resting text/annotation interaction, reduced-motion mode and fallback. A WebGL canvas alone must not remove text selection, search, links, accessibility or annotation support already present in Book View.
 
@@ -88,11 +88,29 @@ Home decorative-motion pause is separate and must not govern Book View. Keep Nex
 
 ## 9. Responsive containment
 
+### Continuous transformation of the existing document workspace
+
+Book View must feel like the current document canvas becoming a book, rather than a new reader canvas appearing. Retain the same workspace host, background, document identity and page anchor. Do not open another window, overlay an unrelated reader shell, replace the workspace background, or briefly show two copies of the current page. Renderer internals may use a WebGL surface, but the user must see one continuous document surface.
+
+For entry, capture the current visible page's actual screen bounds and prepare its matching WebGL texture before beginning. Register the flat WebGL page exactly over the current PDF page, then hand off between renderers without a blank frame or visible jump. Animate that page's position, scale, perspective, restrained paper depth and book framing into the target Book View layout. If the editor is zoomed or scrolled, start from the actual visible geometry, including its clipping, rather than teleporting to a pre-fitted rectangle. When a spread is needed, reveal the companion page coherently around the binding while retaining the focused page. Transform the existing toolbar/context presentation within the same host without hiding the page abruptly. Reverse the transformation on exit into the editor's destination page geometry and restore its text/link/annotation layers after the handoff.
+
+Start with a 280–420 ms transform using a smooth monotonic easing curve with no bounce. Treat this as a tunable target. Do not animate through unrelated PDF pages. Hold the existing rendered page intact if target textures are not ready, with a subtle preparing status; begin only when the handoff can complete coherently. Keep front/back texture correctness, resource ownership and canonical navigation state unchanged.
+
+### Animated single-page / double-page toggle
+
+The single and double page controls must transition between layouts, not abruptly rebuild or pop in a second canvas. Preserve the focused PDF page. Animate page positions, scale, book-root centering/camera framing and the companion page's reveal/removal around the binding as one coordinated transition. Use the established spread resolver: the focused page remains the same PDF page even when its left/right position changes. Keep the binding relationship physically coherent; do not rotate a page arbitrarily just to make the toggle theatrical. Start with 220–320 ms and tune for immediate, smooth response.
+
+Define cover/final-page cases explicitly: synthetic empty surfaces never increment the page count, and there is no fabricated companion PDF page. Prepare the companion texture before revealing it. During the layout transition suppress only interaction layers whose coordinates are temporarily misaligned and restore them on settlement. Make rapid repeated toggles last-intent-wins with bounded work; never stack a queue of transitions or create extra renderers. Resize, tab change, close and a page-turn gesture must resolve through the shared controller so competing transforms cannot commit stale state. Add a layout-transition state distinct from a page turn.
+
+Both workspace entry/exit and single/double toggle animations obey application animationsEnabled and prefers-reduced-motion. With animation disabled or reduced motion requested, perform the same handoff/layout change immediately, without flipping, fading, camera travel or a delayed transition. Changing the preference mid-transition resolves once to the latest intended stable layout and removes all animation callbacks. Home decorative-motion pause does not control these transitions.
+
 Measure the Book View container with ResizeObserver. Fit the book to usable width AND height after toolbar/footer; keep navigation visible. A narrow container defaults to a readable single page, preserving the focused PDF page; remember the user's preferred wide spread mode so it can return at wider sizes. Choose the breakpoint from minimum useful page width, initially about420 DIP per page plus gutters, and test at 973×633 and 960×640 window sizes as well as maximized.
 
 On resize during a gesture, settle/cancel through the controller before applying new geometry; do not mutate camera/page dimensions halfway through a drag. Recompute projection, drawing buffer and interaction transforms coherently. Coalesce resize updates and re-rasterize only when needed. No layout feedback loop, extra renderer creation or blank-frame flash on every resize. Avoid vertical scrolling merely because the default fit ignored available height; allow deliberate zoom/pan separately.
 
 ## 10. Verification and performance gates
+
+Capture entry, exit and single/double toggles as video in the packaged app, including zoomed/scrolled editor states. Verify continuous page registration at the renderer handoff: no new-looking canvas, background replacement, duplicate page, white flash, wrong page or abrupt scale/position jump. Test repeated toggles, first/last pages, resize and close mid-transition. Check annotation/link hit regions after settling. With animation off and reduced motion, verify instantaneous transitions and no remaining RAF work. Confirm the transition does not create a renderer or upload duplicate document textures on every toggle. These gates supplement page-turn profiling below.
 
 Test a 1-page PDF,2 pages, odd/even page counts,34-page text PDF, scanned pages, mixed page sizes/rotations,520 pages and a 1000-page stress fixture. Test first/last page, covers, reverse turns, middle jumps, single/spread, repeated/alternating input, cancel, blur, tab changes and close mid-load. Verify correct front/back texture content and absence of mirrored text.
 
@@ -108,4 +126,4 @@ First fix shared reading state, input arbitration and responsive instant mode. N
 
 Deliver the integrated wrapper, curl renderer/controller, raster adapter/cache, disposal code, security integration if needed, tests and measured verification report. Document any supported-feature gaps; do not mark the project production-ready based solely on an attractive demo.
 
-References: [Three.js resource cleanup](https://threejs.org/manual/pages/cleanup.html), [WebGLRenderer API](https://threejs.org/docs/pages/WebGLRenderer.html), [Electron security](https://www.electronjs.org/docs/latest/tutorial/security/), [Electron protocol API](https://www.electronjs.org/docs/latest/api/protocol), [PDF.js rendering examples](https://mozilla.github.io/pdf.js/examples/), [DearFlip documentation](https://js.dearflip.com/docs/). Verify exact APIs against the repository's pinned versions.
+References: [Three.js resource cleanup](https://threejs.org/manual/pages/cleanup.html), [WebGLRenderer API](https://threejs.org/docs/pages/WebGLRenderer.html), [Electron security](https://www.electronjs.org/docs/latest/tutorial/security/), [Electron protocol API](https://www.electronjs.org/docs/latest/api/protocol), [PDF.js rendering examples](https://mozilla.github.io/pdf.js/examples/). Verify exact APIs against the repository's pinned versions.

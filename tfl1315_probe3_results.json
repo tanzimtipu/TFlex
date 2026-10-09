@@ -1,0 +1,93 @@
+[
+  {
+    "probe": "class7-convert-open-result",
+    "last": {
+      "panel": true,
+      "rowState": "completed",
+      "rowText": "Completed",
+      "cancelLabel": null,
+      "actions": [
+        "open-result",
+        "view-details"
+      ],
+      "summaryRole": "success",
+      "summaryActive": "Import - Completed"
+    },
+    "done": {
+      "panel": true,
+      "rowState": "completed",
+      "rowText": "Completed",
+      "cancelLabel": null,
+      "actions": [
+        "open-result",
+        "view-details"
+      ],
+      "summaryRole": "success",
+      "summaryActive": "Import - Completed"
+    },
+    "before": {
+      "panel": true,
+      "rowState": "completed",
+      "rowText": "Completed",
+      "cancelLabel": null,
+      "actions": [
+        "open-result",
+        "view-details"
+      ],
+      "summaryRole": "success",
+      "summaryActive": "Import - Completed"
+    },
+    "clicked": "open-result",
+    "after": {
+      "panel": false,
+      "rowState": null,
+      "rowText": null,
+      "cancelLabel": null,
+      "actions": [],
+      "summaryRole": null,
+      "summaryActive": null
+    },
+    "tabsBefore": 3,
+    "tabsAfter": 3
+  },
+  {
+    "probe": "class1-ocr-cancel",
+    "during": {
+      "panel": false,
+      "rowState": null,
+      "rowText": null,
+      "cancelLabel": null,
+      "actions": [],
+      "summaryRole": "progress",
+      "summaryActive": "Recognize text - 1 of 1 pages"
+    },
+    "occluded": {
+      "top": "modal-backdrop",
+      "self": false
+    },
+    "clicked": true,
+    "afterClick": {
+      "panel": false,
+      "rowState": null,
+      "rowText": null,
+      "cancelLabel": null,
+      "actions": [],
+      "summaryRole": "progress",
+      "summaryActive": "Recognize text - 1 of 1 pages"
+    },
+    "settled": {
+      "panel": false,
+      "rowState": null,
+      "rowText": null,
+      "cancelLabel": null,
+      "actions": [],
+      "summaryRole": "neutral",
+      "summaryActive": "Recognize text - Cancelled"
+    },
+    "dialogAfter": {
+      "dialogOpen": true,
+      "cancelBtn": null,
+      "closeBtn": "Close"
+    }
+  }
+]

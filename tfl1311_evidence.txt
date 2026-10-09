@@ -1,0 +1,43 @@
+TFL-1311 C7 QA - Live-app update states on the Activity Shelf
+Focused verification evidence. Repo: C:\Users\tanzi\OneDrive\App Development\TFlex
+Date: 2026-10-08 (UTC). Model: openrouter/deepseek/deepseek-v4.1-flash
+
+COMMANDS AND RESULTS (exact)
+1) npm.cmd run test:unit -- test/unit/renderer/activityShelfStore.test.ts
+   Test Files 1 passed (1) | Tests 37 passed (37) | Duration 733ms
+2) npm.cmd run test:unit -- test/unit/renderer/activityShelf.test.tsx
+   Test Files 1 passed (1) | Tests 16 passed (16) | Duration 1.82s
+3) npm.cmd run test:unit -- test/unit/renderer/updateIndicator.test.tsx
+   Test Files 1 passed (1) | Tests 27 passed (27) | Duration 2.02s
+4) npm.cmd run typecheck
+   tsc --noEmit -p tsconfig.json -> exit 0 (clean)
+5) npm.cmd run build:renderer
+   vite v8.2.2 -> 2722 modules transformed, built in 861ms, exit 0
+   (only expected chunk-size / ineffective-dynamic-import warnings)
+
+FULL SUITE AND E2E WERE NOT RUN (per task scope).
+
+CODE REVIEW (read src/renderer/state/activityShelf.ts:466-573, App.tsx:1295-1300/1855-1856/1909-1926)
+- updateStateAction mapping PASS:
+  available -> running indeterminate "Update available"
+  downloading -> running indeterminate "Downloading update"
+  downloaded -> complete
+  error -> fail, failure {item:'Update', reason: next.message} (real message)
+  checking | up-to-date | unsupported | null -> remove (or null when no row)
+- No percentage/total/unit:'percent'/ETA PASS: running updates call
+  makeProgress({phaseText}) only; downloading.progress is never read.
+- Capability PASS: capabilityFor('update') = {cancelable:false, completionActions:[]}
+  (src/shared/activity.ts:43); row renders no Cancel and no completion buttons.
+- Single subscription PASS: App reuses the existing updateApi.onStatusChanged ->
+  setUpdateState (App.tsx:1855) and maps it in one effect on [updateState]
+  (App.tsx:1919-1926). No second subscription.
+- Top Bar seam unchanged PASS: git diff HEAD shows
+  UpdateIndicator.tsx / UpdatePromptDialog.tsx / updateStateNormalize.ts unmodified.
+
+BLAST RADIUS
+- Shared path: the update lifecycle state (updateState -> badge + shelf).
+- Neighbour suite updateIndicator.test.tsx green (27/27); no badge regression.
+- The update operation uses one stable id (tflex-update) -> at most one shelf row;
+  no duplicate-completion evidence. The badge keeps owning "Restart to update".
+
+VERDICT: PASS. No defect filed.

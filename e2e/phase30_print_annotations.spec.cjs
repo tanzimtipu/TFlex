@@ -18,15 +18,15 @@ const { test, expect } = require('@playwright/test');
 const path = require('node:path');
 const fs = require('node:fs');
 const { launchApp } = require('./lib/launch.cjs');
-const { openSamplePath, hardClose } = require('./lib/helpers.cjs');
+const { openSamplePath, hardClose, openStandalonePrintWindow } = require('./lib/helpers.cjs');
 
 const SHOTS = path.resolve(__dirname, '..', 'screenshots');
 fs.mkdirSync(SHOTS, { recursive: true });
 
 const FIXTURE = path.resolve(__dirname, '..', 'test-fixtures', 'squiggly-native.pdf');
 
-function previewSrc(win) {
-  return win.evaluate(() => {
+function previewSrc(page) {
+  return page.evaluate(() => {
     const img = document.querySelector('[data-print-preview] img');
     return img ? img.getAttribute('src') : null;
   });
@@ -52,27 +52,27 @@ test('Phase 30 print preview reflects the annotations toggle', async () => {
     expect(anns, 'fixture imports its native /Squiggly annotation').toContain('squiggly');
 
     // --- open the print dialog --------------------------------------------
-    await win.click('[data-print]');
-    await win.waitForSelector('[data-print-printer]', { state: 'visible', timeout: 15000 });
+    const printPage = await openStandalonePrintWindow(app, win);
+    await printPage.waitForSelector('[data-print-printer]', { state: 'visible', timeout: 15000 });
 
-    const onByDefault = await win.isChecked('[data-print-annotations]');
+    const onByDefault = await printPage.isChecked('[data-print-annotations]');
     console.log(`[P30ann] annotations toggle ON by default=${onByDefault}`);
     expect(onByDefault, 'annotations toggle is ON by default').toBe(true);
 
     // --- wait for the preview raster (the <img>, not a DOM overlay) -------
-    await win.waitForSelector('[data-print-preview] img', { timeout: 20000 });
-    await win.waitForTimeout(600);
-    const srcOn = await previewSrc(win);
+    await printPage.waitForSelector('[data-print-preview] img', { timeout: 20000 });
+    await printPage.waitForTimeout(600);
+    const srcOn = await previewSrc(printPage);
     console.log(`[P30ann] ON src present=${srcOn !== null} length=${srcOn ? srcOn.length : 0}`);
     expect(srcOn, 'preview raster present with annotations ON').toBeTruthy();
 
-    await win.locator('[data-print-preview]').screenshot({
+    await printPage.locator('[data-print-preview]').screenshot({
       path: path.join(SHOTS, 'phase30-annot-on.png'),
     });
 
     // --- toggle annotations OFF and wait for the preview to re-raster -----
-    await win.click('[data-print-annotations]');
-    await win.waitForFunction(
+    await printPage.click('[data-print-annotations]');
+    await printPage.waitForFunction(
       (prev) => {
         const img = document.querySelector('[data-print-preview] img');
         return img !== null && img.getAttribute('src') !== prev;
@@ -80,12 +80,12 @@ test('Phase 30 print preview reflects the annotations toggle', async () => {
       srcOn,
       { timeout: 20000 },
     );
-    await win.waitForTimeout(600);
-    const srcOff = await previewSrc(win);
+    await printPage.waitForTimeout(600);
+    const srcOff = await previewSrc(printPage);
     console.log(`[P30ann] OFF src present=${srcOff !== null} length=${srcOff ? srcOff.length : 0}`);
     expect(srcOff, 'preview raster present with annotations OFF').toBeTruthy();
 
-    await win.locator('[data-print-preview]').screenshot({
+    await printPage.locator('[data-print-preview]').screenshot({
       path: path.join(SHOTS, 'phase30-annot-off.png'),
     });
 

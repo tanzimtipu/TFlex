@@ -1,0 +1,38 @@
+[
+  {
+    "probe": "class5-a11y-searchindex",
+    "summaryRole": "status",
+    "summaryLive": "polite",
+    "activeVisibleText": "Index for search - 0 of 34 pages",
+    "determinateCounterAriaHidden": " - 0 of 34 pages",
+    "markAriaHidden": "true",
+    "runningRowHasAlert": false
+  },
+  {
+    "probe": "class3a-error-toast-durability",
+    "after2_5s": [
+      {
+        "cls": "toast toast-error",
+        "text": "Could not write file: saveAs failed: ENOENT: no such file or directory, open 'C:\\tfl1315-missing-dir-1791435311824\\out.pdf'"
+      }
+    ],
+    "after10_5s": [
+      {
+        "cls": "toast toast-error",
+        "text": "Could not write file: saveAs failed: ENOENT: no such file or directory, open 'C:\\tfl1315-missing-dir-1791435311824\\out.pdf'"
+      }
+    ],
+    "persisted": true
+  },
+  {
+    "probe": "class3b-success-toast-autodismiss",
+    "after2_5s": [
+      {
+        "cls": "toast toast-info",
+        "text": "Saved a copy of report.pdf."
+      }
+    ],
+    "after9s": [],
+    "savedFileExists": true
+  }
+]

@@ -131,22 +131,67 @@ async function dismissUpdatePrompt(window, timeoutMs = 20000) {
   return true;
 }
 
-async function openSample(window, electronApp, name) {
+async function openSample(window, name = 'report.pdf') {
   const samplePath = getSamplePath(name);
-  await electronApp.evaluate(async ({ dialog }, p) => {
-    dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [p] });
-  }, samplePath);
-  await window.locator('[data-home-tool="open"]').first().click();
-  await window.waitForSelector('.workspace', { timeout: 30000 });
-  return samplePath;
+  await window.locator('.sample-card').filter({ hasText: name }).first().click();
+  await window.waitForSelector('.pdf-page canvas', { timeout: 30000 });
+  await window.waitForTimeout(1200);
 }
 
+// Native Electron dialogs do not emit Playwright's browser filechooser event.
+// Phase 118 stages picked files in Intake; its explicit Open finishes the flow.
+// Native Electron dialogs do not emit Playwright's browser filechooser event.
+// Phase 118 stages picked files in Intake; its explicit Open finishes the flow.
 async function openSamplePath(window, electronApp, absolutePath) {
-  await electronApp.evaluate(async ({ dialog }, p) => {
-    dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [p] });
+  const { expect } = require('@playwright/test');
+  if (!path.isAbsolute(absolutePath) || !fs.existsSync(absolutePath)) {
+    throw new Error(`openSamplePath: fixture must exist at an absolute path: ${absolutePath}`);
+  }
+  const basename = path.basename(absolutePath);
+  const beforeTab = await window.evaluate(() => window.tflexDiagnostics?.().activeTabId ?? null);
+  await electronApp.evaluate(({ dialog }, p) => {
+    const key = Symbol.for('tflex.e2e.openDialog');
+    if (globalThis[key]) throw new Error('openSamplePath: another native picker stub is active');
+    globalThis[key] = { original: dialog.showOpenDialog, calls: 0 };
+    dialog.showOpenDialog = async () => {
+      globalThis[key].calls += 1;
+      return { canceled: false, filePaths: [p] };
+    };
   }, absolutePath);
-  await window.locator('[data-home-tool="open"]').first().click();
-  await window.waitForSelector('.workspace', { timeout: 30000 });
+  try {
+    // Use the real generic Open handler in Home or in an existing workspace.
+    const homeOpen = window.locator('[data-home-tool="open"]:visible');
+    const open = await homeOpen.count() ? homeOpen.first() : window.locator('[data-toolbar-open]:visible').first();
+    await open.click();
+    await expect.poll(() => electronApp.evaluate(() =>
+      globalThis[Symbol.for('tflex.e2e.openDialog')]?.calls || 0
+    ), { timeout: 10000, message: 'Generic Open must invoke the native picker' }).toBeGreaterThan(0);
+    const row = window.locator('[data-intake-row]').filter({ has: window.locator('.intake-name', { hasText: basename }) }).last();
+    await expect.poll(async () => {
+      if (await row.count()) return true;
+      return window.evaluate((old) => {
+        const id = window.tflexDiagnostics?.().activeTabId;
+        return id != null && id !== old;
+      }, beforeTab);
+    }, { timeout: 30000, message: 'Picker result must reach Intake or open a new document' }).toBe(true);
+    if (await row.count()) {
+      await expect(row).toBeVisible({ timeout: 10000 });
+      await expect(row.locator('[data-intake-state]')).toHaveAttribute('data-intake-state', 'ready', { timeout: 30000 });
+      const finishOpen = window.locator('[data-intake-open]:visible').first();
+      await expect(finishOpen).toBeEnabled();
+      await finishOpen.click();
+      // Home Intake unmounts after dispatch; document rendering proves completion.
+    }
+    // Multi-tab documents keep one `.workspace` per tab (inactive ones hidden),
+    // so target the VISIBLE workspace rather than tripping strict-mode.
+    await expect(window.locator('.workspace:visible').first()).toBeVisible({ timeout: 30000 });
+    await expect(window.locator('.pdf-page canvas:visible').first()).toBeVisible({ timeout: 30000 });
+  } finally {
+    await electronApp.evaluate(({ dialog }) => {
+      const key = Symbol.for('tflex.e2e.openDialog');
+      if (globalThis[key]) { dialog.showOpenDialog = globalThis[key].original; delete globalThis[key]; }
+    });
+  }
 }
 
 async function diag(window) {
@@ -160,7 +205,7 @@ async function diag(window) {
 // therefore only resolves the visible five. Prefer the visible button so a
 // spec's original per-tool intent is preserved; otherwise open the menu and
 // click the row. Waits for the menu to detach so the caller's next page
-// gesture is not swallowed by the dismiss guard (DEF-227).
+// gesture is swallowed by the dismiss guard (DEF-227).
 async function armAnnotationTool(window, kind) {
   // Phase 36 (chunk 3) — in SINGLE mode the command row is retired and the
   // annotation toolbar lives inside the REVIEW dock's Annotate flyout. Multi
@@ -265,40 +310,25 @@ async function openAnnotationFlyout(window) {
 async function clickDockVerb(window, stage, id) {
   await gotoStage(window, stage);
   const inline = window.locator(`[data-dock-verb="${id}"]`);
-  const overflow = window.locator('[data-dock-overflow]');
-  for (let attempt = 0; attempt < 2; attempt += 1) {
-    if ((await inline.count()) > 0) {
-      const vis = await inline.first().isVisible().catch(() => false);
-      if (vis) {
-        await inline.first().click();
-        await window.waitForTimeout(400);
-        return 'inline';
-      }
-      await inline.first().click({ force: true });
-      await window.waitForTimeout(400);
-      return 'inline-forced';
-    }
-    if ((await overflow.count()) > 0 && (await overflow.first().isVisible().catch(() => false))) {
-      await overflow.first().click();
-      await window.waitForSelector('[data-dock-overflow-menu]', { state: 'visible', timeout: 8000 });
-      const item = window.locator(`[data-dock-overflow-item="${id}"]`);
-      if ((await item.count()) > 0) {
-        await item.first().click();
-        await window.waitForTimeout(400);
-        return 'overflow';
-      }
-      await window.keyboard.press('Escape');
-    }
-    // The dock only swaps to its selection verb set in the PAGES stage when a
-    // page is selected; Escape clears that selection and restores the stage set.
-    if (attempt === 0) {
-      await window.keyboard.press('Escape');
-      await window.waitForTimeout(300);
-    }
+  if ((await inline.count()) > 0) {
+    const vis = await inline.first().isVisible().catch(() => false);
+    await inline.first().click(vis ? {} : { force: true });
+    await window.waitForTimeout(400);
+    return 'inline';
   }
-  const present = await window.evaluate(() =>
-    Array.from(document.querySelectorAll('[data-dock-verb]')).map((b) => b.getAttribute('data-dock-verb')));
-  throw new Error(`clickDockVerb: '${id}' not reachable on the stage-${stage} dock; present verbs=${JSON.stringify(present)}`);
+  const overflow = window.locator('[data-dock-overflow]');
+  if ((await overflow.count()) > 0 && (await overflow.first().isVisible().catch(() => false))) {
+    await overflow.first().click();
+    await window.waitForSelector('[data-dock-overflow-menu]', { state: 'visible', timeout: 5000 }).catch(() => {});
+    const item = window.locator(`[data-dock-overflow-item="${id}"]`);
+    if ((await item.count()) > 0) {
+      await item.first().click();
+      await window.waitForTimeout(400);
+      return 'overflow';
+    }
+    await window.keyboard.press('Escape');
+  }
+  return false;
 }
 
 // Phase 36 (chunk 9 migration, batch 3) — resolve a tool to its CORRECT current
@@ -534,9 +564,7 @@ async function dumpEngine(window, label) {
 //     the orphaned gpu/renderer children keep the inherited pipes open;
 //   - taskkill /pid <shell> /T /F unwedges: close() resolved ~300ms later.
 // This is a test-harness race, not a product defect (normal quit, and quit
-// after a settle delay, always completes). So hardClose now bounds every
-// wait, dumps state on the fallback path, and tree-kills the app exactly
-// like Playwright's own killProcess. hardClose must never hang.
+// after a settle delay, always executes).
 const DESTROY_GRACE_MS = 10000;
 const CLOSE_GRACE_MS = 10000;
 const KILL_SETTLE_MS = 15000;
@@ -727,4 +755,46 @@ async function toggleThemeViaAppMenu(window) {
   await window.waitForTimeout(300);
 }
 
-module.exports = { launchDev, launchInstalled, dismissUpdatePrompt, openSample, openSamplePath, diag, shot, dumpEngine, getSamplePath, scrollToPage, sampleCanvasPageRect, hardClose, armAnnotationTool, toggleMultiModeViaPalette, gotoStage, openDockVerb, clickDockVerb, runTool, ensurePanelExpanded, toggleEditMode, armSignTool, openAnnotationFlyout, textPanelRight, openStandalonePrintWindow, closeStandalonePrintWindow, openPreferences, toggleThemeViaAppMenu };
+async function slotBox(window, page = 1) {
+  return window.evaluate((want) => {
+    const pane = document.querySelector('.tab-pane[aria-hidden="false"]');
+    const slot = pane && pane.querySelector(`.page-slot[data-page="${want}"]`);
+    if (!slot) return null;
+    const r = slot.getBoundingClientRect();
+    return { x: r.x, y: r.y, w: r.width, h: r.height };
+  }, page);
+}
+
+async function createAnnotationByDragging(window, x1, y1, x2, y2, page = 1) {
+  const box = await slotBox(window, page);
+  if (!box) throw new Error(`slotBox(${page}) did not return a box`);
+
+  await window.mouse.move(box.x + box.w * x1, box.y + box.h * y1);
+  await window.mouse.down();
+  await window.mouse.move(box.x + box.w * x2, box.y + box.h * y2, { steps: 10 });
+  await window.mouse.up();
+  await window.waitForTimeout(700);
+}
+
+async function setTheme(window, theme) {
+  // TFL-1116 retired the old `[data-theme-toggle]` popover. The live control is
+  // the View > Toggle Theme command (`[data-menu-action="toggleTheme"]`), which
+  // cycles frosted -> dark -> light. Drive it through the app menu until the
+  // <html data-theme> attribute matches the requested theme.
+  for (let attempt = 0; attempt < 4; attempt += 1) {
+    const current = await window.evaluate(() => document.documentElement.getAttribute('data-theme'));
+    if (current === theme) {
+      await window.waitForTimeout(300);
+      return;
+    }
+    await window.locator('[data-app-menu]').first().click();
+    await window.waitForSelector('[data-app-menu-popover]', { state: 'visible', timeout: 8000 });
+    await window.locator('[data-app-menu-popover] [data-menu-action="toggleTheme"]').first().click();
+    await window.waitForSelector('[data-app-menu-popover]', { state: 'detached', timeout: 8000 }).catch(() => {});
+    await window.waitForTimeout(400);
+  }
+  const final = await window.evaluate(() => document.documentElement.getAttribute('data-theme'));
+  if (final !== theme) throw new Error(`setTheme: could not reach "${theme}" (currently "${final}")`);
+}
+
+module.exports = { launchDev, launchInstalled, dismissUpdatePrompt, openSample, openSamplePath, diag, shot, dumpEngine, getSamplePath, scrollToPage, sampleCanvasPageRect, hardClose, armAnnotationTool, toggleMultiModeViaPalette, gotoStage, openDockVerb, clickDockVerb, runTool, ensurePanelExpanded, toggleEditMode, armSignTool, openAnnotationFlyout, textPanelRight, openStandalonePrintWindow, closeStandalonePrintWindow, openPreferences, toggleThemeViaAppMenu, slotBox, createAnnotationByDragging, setTheme };

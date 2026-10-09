@@ -1,0 +1,91 @@
+Window: "Print - Jovrel", App: Jovrel.exe.
+	0 window Print - Jovrel Secondary Actions: Raise
+		1 pane (disabled)
+		2 region Print - Jovrel
+			3 region
+				4 region
+					5 region
+						6 region
+							7 region
+								8 region
+									9 document Print - Jovrel Value: file:///C:/Program%20Files/Jovrel/resources/app.asar/dist/renderer/index.html?tfWindow=print&context=%7B%22docId%22%3A%220457bf23-afc3-429e-9b18-d89f34f619ad%22%2C%22documentName%22%3A%22report.pdf%22%2C%22pageCount%22%3A34%2C%22settings%22%3A%7B%22copies%22%3A1%2C%22collate%22%3Afalse%2C%22scaling%22%3A%22fit%22%2C%22landscape%22%3Afalse%2C%22duplex%22%3A%22simplex%22%2C%22color%22%3Atrue%2C%22pagesPerSheet%22%3A1%2C%22pageOrder%22%3A%22horizontal%22%2C%22oddEven%22%3A%22all%22%2C%22reverse%22%3Afalse%2C%22printAnnotations%22%3Atrue%7D%7D ID: RootWebArea
+										10 group ID: root
+											12 header
+												13 text Jovrel
+												14 heading Print
+												15 text report.pdf
+												16 text 34
+												17 text page
+												18 text s
+											19 text Preset
+											20 combo box (settable, string) Print preset Value: Custom
+											21 text Preset name
+											22 edit (settable, string) Preset name Description: e.g. Duplex greyscale
+											23 button Save preset
+											24 button (disabled) Delete
+											25 text Printer
+											26 combo box (settable, string) Printer Value: Canon TS3100 series (default)
+											27 text Layout
+											28 combo box (settable, string) Print layout Value: Single / N-up
+											29 text Copies
+											30 spin button (settable, float) Copies Value: 1
+											31 check box (disabled) Collate
+											32 text Collate
+											33 group Page range
+												34 text Page range
+												35 radio button (selectable, settable, string) All pages (34)
+												36 text All pages (
+												37 text 34
+												38 text )
+												39 radio button (selectable, settable, string) Current page (1)
+												40 text Current page (
+												41 text 1
+												42 text )
+												43 radio button (selectable, settable, string) Custom
+												44 text Custom
+											45 edit (settable, string) Custom page range Description: 1-5, 8, 11-13 Value: 2-3
+											46 group Scaling
+												47 text Scaling
+												48 radio button (selectable, settable, string) Fit to page
+												49 text Fit to page
+												50 radio button (selectable, settable, string) Actual size
+												51 text Actual size
+												52 radio button (selectable, settable, string) Shrink oversized pages
+												53 text Shrink oversized pages
+												54 radio button (selectable, settable, string) Custom
+												55 text Custom
+											56 text Scale percent
+											57 spin button (disabled) Custom scale percent Value: 100
+											58 group Orientation
+												59 text Orientation
+												60 radio button (selectable, settable, string) Auto
+												61 text Auto
+												62 radio button (selectable, settable, string) Portrait
+												63 text Portrait
+												64 radio button (selectable, settable, string) Landscape
+												65 text Landscape
+											66 text Duplex
+											67 combo box (settable, string) Duplex Value: Simplex
+											68 text Colour
+											69 combo box (settable, string) Colour mode Value: Colour
+											70 text Pages per sheet
+											71 combo box (settable, string) Pages per sheet Value: 2
+											72 text Page order
+											73 combo box (settable, string) Page order Value: Horizontal
+											74 text Pages
+											75 combo box (settable, string) Odd or even pages Value: All
+											76 check box (settable, string) Reverse order
+											77 text Reverse order
+											78 check box (settable, string) Include annotations
+											79 text Include annotations
+											80 text Preview
+											87 graphic Page 2
+											94 graphic Page 3
+											82 text 2 pages · 1 sheet
+											83 button Close
+											84 button Print
+								11 region
+
+Document text: ```
+2-3
+```

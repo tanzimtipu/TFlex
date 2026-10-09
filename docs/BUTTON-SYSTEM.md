@@ -396,12 +396,12 @@ the base `.btn` height applies.
   fill from the active tool, which the generic icon/text primitive cannot
   express, so it keeps its native markup and is deliberately NOT migrated
   (Phase 113 wave D; pinned by `phase113_dockToolbars.test.tsx`).
-  Fourth exception (Phase 113 wave E1): the annotation-panel colour swatch
-  (`.ann-panel-swatch` in `AnnotationsPanel.tsx`) carries the same live
-  `background` fill per `data-color`, so it too keeps its native markup; its
-  selected state is driven only by `[aria-pressed="true"]` (the legacy
-  `.ann-panel-swatch-active` class is retired), pinned by
-  `phase113_panelsInspectors.test.tsx`. Fifth exception: the resizable panel
+  Fourth exception (Phase 113 wave E1, retired Phase 116 chunk D): the
+  annotation-panel colour swatch (`.ann-panel-swatch` in `AnnotationsPanel.tsx`)
+  carried a live `background` fill per `data-color` with its selected state on
+  `[aria-pressed="true"]`; Phase 116 removed the per-row swatch strip entirely
+  (colour editing moved to the right inspector), so this exception no longer
+  applies. Fifth exception: the resizable panel
   separator (`.panel-resize-handle` in `panels/PanelResizeHandle.tsx`) is a
   genuine `role="separator"` with keyboard resize semantics and
   `aria-valuenow/min/max`, not a button, so it stays native and is NOT migrated.
@@ -413,11 +413,12 @@ the base `.btn` height applies.
   accent/ink block. Substituting the plain primitive would drop that gesture (or
   require wrapping the primitive in a motion component it does not support), so
   it keeps its native markup and is NOT migrated.
-  Seventh exception (Phase 113 wave F1): the crop editor's drag surface and
-  corner handles (`.crop-editor-mask`, a `<div role="button">`, and the four
-  `.crop-editor-handle` `<div>`s in `CropPagesDialog.tsx`) are pointer-drag
+  Seventh exception (Phase 113 wave F1; Phase 117 chunk E): the crop editor's
+  drag surface and corner handles (`.crop-editor-mask`, a `<div role="button">`,
+  and the four `[data-crop-handle]` `<div>` targets, which now ride the shared
+  `.selection-handle` selection grammar in `CropPagesDialog.tsx`) are pointer-drag
   targets, not command buttons, so they keep their native markup and are NOT
-  migrated. The Command Palette's result rows (`CommandPalette.tsx`) are
+  migrated to the `Button` primitive. The Command Palette's result rows (`CommandPalette.tsx`) are
   `role="option"` listbox items that each host a nested pin toggle, so they
   cannot become a plain `<button>`; like `.tab`, they adopt the canonical axes
   (`btn btn-secondary`) on the `<li>` while `.command-palette-row` keeps owning

@@ -1,0 +1,150 @@
+[
+  {
+    "probe": "class6-renderer-responsive",
+    "running": {
+      "hasSummary": true,
+      "summaryRole": "progress",
+      "summaryActive": "Import - laying-out",
+      "rowState": null,
+      "rowText": null,
+      "rows": 0,
+      "cancelCount": 0,
+      "actions": [],
+      "summaryLive": "polite",
+      "summaryRoleAttr": "status",
+      "failedRoles": []
+    },
+    "rafDelayMs": 5,
+    "evaluateLatencyMs": [
+      1,
+      1,
+      1,
+      1,
+      1
+    ]
+  },
+  {
+    "probe": "class1-convert-cancel",
+    "running": {
+      "hasSummary": true,
+      "summaryRole": "progress",
+      "summaryActive": "Import - decoding",
+      "rowState": null,
+      "rowText": null,
+      "rows": 0,
+      "cancelCount": 0,
+      "actions": [],
+      "summaryLive": "polite",
+      "summaryRoleAttr": "status",
+      "failedRoles": []
+    },
+    "panelBefore": {
+      "hasSummary": true,
+      "summaryRole": "progress",
+      "summaryActive": "Import - laying-out",
+      "rowState": "running",
+      "rowText": "laying-out",
+      "rows": 1,
+      "cancelCount": 1,
+      "actions": [],
+      "summaryLive": "polite",
+      "summaryRoleAttr": "status",
+      "failedRoles": []
+    },
+    "clicked": true,
+    "afterClick": {
+      "hasSummary": true,
+      "summaryRole": "progress",
+      "summaryActive": "Import - laying-out",
+      "rowState": "cancellation-requested",
+      "rowText": "laying-out",
+      "rows": 1,
+      "cancelCount": 1,
+      "actions": [],
+      "summaryLive": "polite",
+      "summaryRoleAttr": "status",
+      "failedRoles": []
+    },
+    "settled": {
+      "hasSummary": true,
+      "summaryRole": "neutral",
+      "summaryActive": "Import - Cancelled",
+      "rowState": "cancelled",
+      "rowText": "Cancelled",
+      "rows": 1,
+      "cancelCount": 0,
+      "actions": [],
+      "summaryLive": "polite",
+      "summaryRoleAttr": "status",
+      "failedRoles": []
+    }
+  },
+  {
+    "probe": "class7-convert-open-result",
+    "error": "TimeoutError: locator.hover: Timeout 30000ms exceeded.\nCall log:\n\u001b[2m  - waiting for locator('.activity-shelf-host')\u001b[22m\n"
+  },
+  {
+    "probe": "class1-searchindex-noncancelable",
+    "running": {
+      "hasSummary": true,
+      "summaryRole": "progress",
+      "summaryActive": "Index for search - 0 of 34 pages",
+      "rowState": null,
+      "rowText": null,
+      "rows": 0,
+      "cancelCount": 0,
+      "actions": [],
+      "summaryLive": "polite",
+      "summaryRoleAttr": "status",
+      "failedRoles": []
+    },
+    "panel": {
+      "hasSummary": true,
+      "summaryRole": "progress",
+      "summaryActive": "Index for search - 34 of 34 pages",
+      "rowState": "running",
+      "rowText": "34 of 34 pages",
+      "rows": 1,
+      "cancelCount": 0,
+      "actions": [],
+      "summaryLive": "polite",
+      "summaryRoleAttr": "status",
+      "failedRoles": []
+    }
+  },
+  {
+    "probe": "class1-ocr-cancel",
+    "during": {
+      "hasSummary": true,
+      "summaryRole": "progress",
+      "summaryActive": "Recognize text - 1 of 1 pages",
+      "rowState": null,
+      "rowText": null,
+      "rows": 0,
+      "cancelCount": 0,
+      "actions": [],
+      "summaryLive": "polite",
+      "summaryRoleAttr": "status",
+      "failedRoles": []
+    },
+    "clicked": true,
+    "afterClick": {
+      "hasSummary": true,
+      "summaryRole": "progress",
+      "summaryActive": "Recognize text - 1 of 1 pages",
+      "rowState": null,
+      "rowText": null,
+      "rows": 0,
+      "cancelCount": 0,
+      "actions": [],
+      "summaryLive": "polite",
+      "summaryRoleAttr": "status",
+      "failedRoles": []
+    },
+    "settled": null
+  },
+  {
+    "probe": "class3-error-toast-durability",
+    "error": "TimeoutError: electronApplication.firstWindow: Timeout 30000ms exceeded while waiting for event \"window\""
+  }
+]

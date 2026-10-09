@@ -1,5 +1,10 @@
 [
   {
+    "path": "README.md",
+    "bytes": 791,
+    "sha256": "b0a6d37b39c28af13aa44274f387d9a3a6d64776a828191593c8292371bb8eda"
+  },
+  {
     "path": "Evidence/animations-off-instant-change.png",
     "bytes": 84036,
     "sha256": "bd17dca6926095a30585f921f3fbf08e460c4d24b648c21e6c1e71cc80074936"
@@ -81,17 +86,12 @@
   },
   {
     "path": "Implementation/orchestrator-prompt.md",
-    "bytes": 19692,
-    "sha256": "a17c1f951c645f52adee3e9f3af6d7e342d8dfcc7b866f44b5fe60f707a56439"
-  },
-  {
-    "path": "README.md",
-    "bytes": 791,
-    "sha256": "b0a6d37b39c28af13aa44274f387d9a3a6d64776a828191593c8292371bb8eda"
+    "bytes": 23670,
+    "sha256": "2d80768291fdddd3a946980c580c577e8dd592f395869f4b9e6df7b745c3ad5a"
   },
   {
     "path": "Specifications/live-audit-and-recommendation.md",
-    "bytes": 5105,
-    "sha256": "b397002816597b6abd7f8c62aa6e85fd7e2c8439cdb45b62b74179a42fac152e"
+    "bytes": 5673,
+    "sha256": "afff80cc607b7da081109d58343a75b43488c42e028757aa6f9047df5909e518"
   }
 ]

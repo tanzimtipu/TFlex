@@ -1,0 +1,142 @@
+Window: "Jovrel", App: Jovrel.exe.
+	0 window Jovrel Secondary Actions: Raise
+		9 pane (disabled)
+		1 region Jovrel
+			2 region
+				3 region
+					4 region
+						5 region
+							6 region
+								7 region
+									10 document Jovrel Value: file:///C:/Program%20Files/Jovrel/resources/app.asar/dist/renderer/index.html ID: RootWebArea
+										17 group
+											11 group ID: root
+												18 text Jovrel
+												19 button File menu Description: File menu
+												20 header
+													21 group File actions
+														22 button Open PDF document Description: Open PDF (Ctrl+O)
+														122 button (disabled) Save Description: Saved — no changes to save
+														123 button Save a copy Description: Save a copy (Ctrl+Shift+S)
+													23 button Search tools and commands (Ctrl+K) Description: Search tools and commands (Ctrl+K)
+													124 button Print Description: Print (Ctrl+P)
+													24 button Application menu Description: Application menu
+													26 button Sign in or create an account Description: Sign in or create an account
+												27 button Minimize window Description: Minimize
+												28 button Maximize window Description: Maximize window
+												29 button Close window Description: Close
+												125 tab Open documents
+													126 list
+														127 list item report.pdf
+															128 tab item (selectable) report.pdf Close report.pdf
+																129 button Close report.pdf
+														130 list item
+															131 button New empty tab Description: New empty tab
+														132 list item
+															133 button All open documents (1) Description: All open documents (1)
+												136 navigation Work stages
+													137 toggle button Pages stage Description: Pages (Ctrl+1)
+													138 toggle button Edit stage Description: Edit (Ctrl+2)
+													139 toggle button Review stage Description: Review (Ctrl+3)
+													140 toggle button Deliver stage Description: Deliver (Ctrl+4)
+													141 button Open preferences Description: Preferences (Ctrl+,)
+												142 group
+													965 region Book view
+														966 header
+															967 text report.pdf
+															968 text Page 11 of 34
+															969 group Book layout
+																970 toggle button Book single page Description: Book single page
+																971 toggle button Book double page Description: Book double page
+															972 button Close book view Description: Close book view
+														973 group Annotate
+															974 group Recent annotation tools
+																975 toggle button Rectangle Description: Rectangle
+																976 toggle button Text box Description: Text box
+																977 toggle button Callout Description: Callout
+																978 toggle button Arrow Description: Arrow
+																979 toggle button Highlight Description: Highlight
+															980 button All annotation tools Description: All annotation tools
+														981 figure
+															1098 text key to maintaining document integrity. Orchestration of elements within the file structure
+															1099 text is a primary concern. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed do
+															1100 text eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam,
+															1101 text quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis
+															1102 text aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla
+															1103 text pariatur. Excepteur sint occaecat cupidatat non proident.
+															1104 text This document serves as a test fixture for TFlex. The orchestration of complex PDF
+															1105 text structures requires careful management of internal objects. We must ensure that the
+															1106 text orchestration layer correctly handles multiple page streams. Strategic orchestration is
+															1107 text key to maintaining document integrity. Orchestration of elements within the file structure
+															1108 text is a primary concern. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed do
+															1109 text eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam,
+															1110 text quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis
+															1111 text aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla
+															1112 text pariatur. Excepteur sint occaecat cupidatat non proident.
+															1113 text This document serves as a test fixture for TFlex. The orchestration of complex PDF
+															1114 text structures requires careful management of internal objects. We must ensure that the
+															1115 text orchestration layer correctly handles multiple page streams. Strategic orchestration is
+															1116 text key to maintaining document integrity. Orchestration of elements within the file structure
+															1117 text is a primary concern. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed do
+															1118 text eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam,
+															1119 text quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis
+															1120 text aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla
+															1121 text pariatur. Excepteur sint occaecat cupidatat non proident.
+															1122 text This document serves as a test fixture for TFlex. The orchestration of complex PDF
+															1123 text structures requires careful management of internal objects. We must ensure that the
+															1124 text orchestration layer correctly handles multiple page streams. Strategic orchestration is
+															1125 text key to maintaining document integrity. Orchestration of elements within the file structure
+															1126 text is a primary concern. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed do
+															1127 text eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam,
+															1128 text quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis
+															1129 text aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla
+															1130 text pariatur. Excepteur sint occaecat cupidatat non proident.
+														982 navigation Book navigation
+															983 button Previous page
+															984 button Next page
+												355 complementary Inspector
+													921 button Expand inspector Description: Expand inspector
+												121 status
+								8 region
+
+Document text: ```
+Jovrel
+File menu
+Open
+Save
+Save a copy
+Search tools and commands (Ctrl+K)
+Print
+Application menu
+Sign in
+Minimize window
+Maximize window
+Close window
+report.pdf
+Close report.pdf
+New empty tab
+All open documents (1)
+Pages stage
+Edit stage
+Review stage
+Deliver stage
+Open preferences
+report.pdf
+Page 11 of 34
+Book single page
+Book double page
+Close book view
+Rectangle
+Text box
+Callout
+Arrow
+Highlight
+All annotation tools
+key to maintaining document integrity. Orchestration of elements within the file structureis a primary concern. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed doeiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam,quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duisaute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nullapariatur. Excepteur sint occaecat cupidatat non proident.This document serves as a test fixture for TFlex. The orchestration of complex PDFstructures requires careful management of internal objects. We must ensure that theorchestration layer correctly handles multiple page streams. Strategic orchestration iskey to maintaining document integrity. Orchestration of elements within the file structureis a primary concern. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed doeiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam,quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duisaute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nullapariatur. Excepteur sint occaecat cupidatat non proident.This document serves as a test fixture for TFlex. The orchestration of complex PDFstructures requires careful management of internal objects. We must ensure that theorchestration layer correctly handles multiple page streams. Strategic orchestration iskey to maintaining document integrity. Orchestration of elements within the file structureis a primary concern. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed doeiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam,quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duisaute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nullapariatur. Excepteur sint occaecat cupidatat non proident.This document serves as a test fixture for TFlex. The orchestration of complex PDFstructures requires careful management of internal objects. We must ensure that theorchestration layer correctly handles multiple page streams. Strategic orchestration iskey to maintaining document integrity. Orchestration of elements within the file structureis a primary concern. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed doeiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam,quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duisaute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nullapariatur. Excepteur sint occaecat cupidatat non proident.
+￼
+￼
+Previous
+Next
+Expand inspector
+￼
+```

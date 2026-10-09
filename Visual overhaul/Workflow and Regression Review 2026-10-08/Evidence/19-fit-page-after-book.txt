@@ -1,0 +1,155 @@
+Window: "Jovrel", App: Jovrel.exe.
+	0 window Jovrel Secondary Actions: Raise
+		9 pane (disabled)
+		1 region Jovrel
+			2 region
+				3 region
+					4 region
+						5 region
+							6 region
+								7 region
+									10 document Jovrel Value: file:///C:/Program%20Files/Jovrel/resources/app.asar/dist/renderer/index.html ID: RootWebArea
+										17 group
+											11 group ID: root
+												18 text Jovrel
+												19 button File menu Description: File menu
+												20 header
+													21 group File actions
+														22 button Open PDF document Description: Open PDF (Ctrl+O)
+														122 button (disabled) Save Description: Saved — no changes to save
+														123 button Save a copy Description: Save a copy (Ctrl+Shift+S)
+													23 button Search tools and commands (Ctrl+K) Description: Search tools and commands (Ctrl+K)
+													124 button Print Description: Print (Ctrl+P)
+													24 button Application menu Description: Application menu
+													26 button Sign in or create an account Description: Sign in or create an account
+												27 button Minimize window Description: Minimize
+												28 button Maximize window Description: Maximize window
+												29 button Close window Description: Close
+												125 tab Open documents
+													126 list
+														127 list item report.pdf
+															128 tab item (selectable) report.pdf Close report.pdf
+																129 button Close report.pdf
+														130 list item
+															131 button New empty tab Description: New empty tab
+														132 list item
+															133 button All open documents (1) Description: All open documents (1)
+												136 navigation Work stages
+													137 toggle button Pages stage Description: Pages (Ctrl+1)
+													138 toggle button Edit stage Description: Edit (Ctrl+2)
+													139 toggle button Review stage Description: Review (Ctrl+3)
+													140 toggle button Deliver stage Description: Deliver (Ctrl+4)
+													141 button Open preferences Description: Preferences (Ctrl+,)
+												142 group
+													1131 region Context panel
+														1132 header
+															1133 button Expand panel Description: Expand panel
+														1134 button 1
+														1135 button 2
+														1136 button 3
+														1137 button 4
+														1138 button 5
+														1139 button 6
+														1140 button 7
+														1141 button 8
+														1142 button 9
+														1143 button 10
+														1144 button 11
+														1145 button 12
+														1146 button 13
+														1147 button 14
+														1148 button 15
+														1149 button 16
+														1150 button 17
+														1151 button 18
+														1152 button 19
+														1153 button 20
+														1154 button 21
+														1155 button 22
+														1156 button 23
+														1157 button 24
+														1158 button 25
+														1159 button 26
+														1160 button 27
+														1161 button 28
+														1162 button 29
+														1163 button 30
+														1164 button 31
+														1165 button 32
+														1166 button 33
+														1167 button 34
+													1199 text key to maintaining document integrity. Orchestration of elements within the file structure
+													1200 text is a primary concern. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed do
+													1201 text eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam,
+													1202 text quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis
+													1203 text aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla
+													1204 text pariatur. Excepteur sint occaecat cupidatat non proident.
+													1205 text This document serves as a test fixture for TFlex. The orchestration of complex PDF
+													1206 text structures requires careful management of internal objects. We must ensure that the
+													1207 text orchestration layer correctly handles multiple page streams. Strategic orchestration is
+													1208 text key to maintaining document integrity. Orchestration of elements within the file structure
+													1209 text is a primary concern. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed do
+													1210 text eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam,
+													1211 text quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis
+													1212 text aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla
+													1213 text pariatur. Excepteur sint occaecat cupidatat non proident.
+													1214 text This document serves as a test fixture for TFlex. The orchestration of complex PDF
+													1215 text structures requires careful management of internal objects. We must ensure that the
+													1216 text orchestration layer correctly handles multiple page streams. Strategic orchestration is
+													1217 text key to maintaining document integrity. Orchestration of elements within the file structure
+													1218 text is a primary concern. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed do
+													1219 text eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam,
+													1220 text quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis
+													1221 text aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla
+													1222 text pariatur. Excepteur sint occaecat cupidatat non proident.
+													1223 text This document serves as a test fixture for TFlex. The orchestration of complex PDF
+													1224 text structures requires careful management of internal objects. We must ensure that the
+													1225 text orchestration layer correctly handles multiple page streams. Strategic orchestration is
+													1226 text key to maintaining document integrity. Orchestration of elements within the file structure
+													1227 text is a primary concern. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed do
+													1228 text eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam,
+													1229 text quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis
+													1230 text aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla
+													1231 text pariatur. Excepteur sint occaecat cupidatat non proident.
+													1232 text Chapter 6: The Art of Orchestration
+													1233 text This document serves as a test fixture for TFlex. The orchestration of complex PDF
+													1234 text structures requires careful management of internal objects. We must ensure that the
+													1168 group Viewing controls
+														1169 group Page navigation
+															1170 button Previous page Description: Previous page
+															1171 edit (settable, string) Current page Value: 11
+															1172 text /
+															1173 text 34
+															1174 button Next page Description: Next page
+														1175 group View and zoom
+															1176 button Zoom out Description: Zoom out
+															1177 group Description: Current zoom
+																1178 text 59
+																1179 text %
+															1180 button Zoom in Description: Zoom in
+															1181 toggle button Fit width Description: Fit width
+															1182 toggle button Fit page Description: Fit page
+															1183 toggle button Pan mode Description: Pan mode
+															1184 group Page layout
+																1185 toggle button One page Description: One page
+																1186 toggle button Two pages side by side Description: Two pages side by side
+																1187 toggle button Four pages in two rows Description: Four pages in two rows
+															1188 button Book View
+													1189 tool bar Action dock
+														1190 button Rotate pages Description: Rotate the selected page clockwise or counter-clockwise.
+														1191 button Extract pages Description: Pull specific pages into a new document.
+														1192 button Insert pages Description: Insert a blank page, or import pages from another PDF.
+														1193 button Merge PDFs Description: Combine another PDF with the active document.
+														1194 button Crop pages Description: Set the CropBox/TrimBox for every page.
+														1195 separator
+														1196 button (disabled) Open comic view Description: This document has no reading view
+														1197 button More actions Description: More actions
+														1198 button All commands Description: All commands
+												355 complementary Inspector
+													921 button Expand inspector Description: Expand inspector
+												121 status
+								8 region
+
+Document text: ```
+11
+```

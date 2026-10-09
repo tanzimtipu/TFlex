@@ -143,9 +143,14 @@ heightPt: number;
    *  or unmount). Always called exactly once per onRenderStart. */
   onRenderEnd?: () => void;
   // -- Phase 4: forms --
-  formFields?: FormField[];
+formFields?: FormField[];
   onFormValueChange?: (id: string, value: string | string[]) => void;
   onFormListboxToggle?: (id: string, option: string) => void;
+  /** Phase 115 E - the field linked to the Guided Fill panel's focused row.
+   *  Its canvas editor is highlighted; no focus is moved. */
+  focusedFieldId?: string | null;
+  /** Phase 115 E - reports a canvas editor focus upward; never moves focus. */
+  onFieldFocus?: (id: string) => void;
   // -- Phase 4: signatures --
   signatures?: SignaturePlacement[];
   savedSignatures?: Record<string, SavedSignature>;
@@ -370,9 +375,11 @@ heightPt,
     onRetypeStamp,
     onRenderStart,
     onRenderEnd,
-    formFields,
+formFields,
     onFormValueChange,
     onFormListboxToggle,
+    focusedFieldId,
+    onFieldFocus,
     signatures,
     savedSignatures,
     armedSignatureId,
@@ -994,6 +1001,8 @@ redactArmed = false,
         pageHeightPt={heightPt}
         onValueChange={(id, v): void => onFormValueChange?.(id, v)}
         onToggleListbox={(id, opt): void => onFormListboxToggle?.(id, opt)}
+        focusedFieldId={focusedFieldId}
+        onFieldFocus={(id): void => onFieldFocus?.(id)}
       />
       <SignaturesOverlay
         page={page}

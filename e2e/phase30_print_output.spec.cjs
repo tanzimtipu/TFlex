@@ -33,7 +33,7 @@ const path = require('node:path');
 const fs = require('node:fs');
 const os = require('node:os');
 const { launchApp } = require('./lib/launch.cjs');
-const { openSamplePath, hardClose } = require('./lib/helpers.cjs');
+const { openSamplePath, hardClose, openStandalonePrintWindow } = require('./lib/helpers.cjs');
 
 const REPORT = path.resolve(__dirname, '..', 'test-fixtures', 'report.pdf');
 const OUT_DIR = path.join(os.tmpdir(), 'opencode');
@@ -182,10 +182,10 @@ async function produce(app, win, index, outPath) {
 }
 
 // --- dialog driving --------------------------------------------------------
-async function openDialog(win) {
-  await win.click('[data-print]');
-  await win.waitForSelector('[data-print-printer]', { state: 'visible', timeout: 15000 });
-  await win.waitForFunction(
+async function openDialog(app, win) {
+  const printPage = await openStandalonePrintWindow(app, win);
+  await printPage.waitForSelector('[data-print-printer]', { state: 'visible', timeout: 15000 });
+  await printPage.waitForFunction(
     () => {
       const sel = document.querySelector('[data-print-printer]');
       if (sel === null) return false;
@@ -197,16 +197,19 @@ async function openDialog(win) {
     null,
     { timeout: 20000 },
   );
+  return printPage;
 }
 
-async function closeDialog(win) {
-  await win.click('[data-print-cancel]');
-  await win.locator('[data-print-printer]').waitFor({ state: 'detached', timeout: 8000 });
+async function closeDialog(printPage) {
+  if (printPage.isClosed()) return;
+  const closed = printPage.waitForEvent('close', { timeout: 8000 }).catch(() => {});
+  await printPage.click('[data-print-cancel]').catch(() => {});
+  await closed;
 }
 
-async function confirmAndWait(win) {
-  await win.click('[data-print-confirm]');
-  await win.waitForSelector('[data-print-success]', { state: 'visible', timeout: 120000 });
+async function confirmAndWait(printPage) {
+  await printPage.click('[data-print-confirm]');
+  await printPage.waitForSelector('[data-print-success]', { state: 'visible', timeout: 120000 });
 }
 
 test('Phase 30 print output: captured payload + real produced PDFs', async () => {
@@ -231,54 +234,54 @@ test('Phase 30 print output: captured payload + real produced PDFs', async () =>
     console.log(`[P30out] capture mode=${mode}`);
 
     // Case A - custom range 3-5 (defaults: fit, portrait, 1-up)
-    await openDialog(win);
-    await win.click('[data-print-range-custom]');
-    await win.fill('[data-print-range-input]', '3-5');
-    await confirmAndWait(win);
-    await closeDialog(win);
+    let printPage = await openDialog(app, win);
+    await printPage.click('[data-print-range-custom]');
+    await printPage.fill('[data-print-range-input]', '3-5');
+    await confirmAndWait(printPage);
+    await closeDialog(printPage);
 
     // Case B - range 1-4 + N-up 2 + landscape
-    await openDialog(win);
-    await win.click('[data-print-range-custom]');
-    await win.fill('[data-print-range-input]', '1-4');
-    await win.selectOption('[data-print-nup]', '2');
-    await win.click('[data-print-orientation-landscape]');
-    await confirmAndWait(win);
-    await closeDialog(win);
+    printPage = await openDialog(app, win);
+    await printPage.click('[data-print-range-custom]');
+    await printPage.fill('[data-print-range-input]', '1-4');
+    await printPage.selectOption('[data-print-nup]', '2');
+    await printPage.click('[data-print-orientation-landscape]');
+    await confirmAndWait(printPage);
+    await closeDialog(printPage);
 
     // Case C - range 3-5 + reverse
-    await openDialog(win);
-    await win.click('[data-print-range-custom]');
-    await win.fill('[data-print-range-input]', '3-5');
-    await win.click('[data-print-reverse]');
-    await confirmAndWait(win);
-    await closeDialog(win);
+    printPage = await openDialog(app, win);
+    await printPage.click('[data-print-range-custom]');
+    await printPage.fill('[data-print-range-input]', '3-5');
+    await printPage.click('[data-print-reverse]');
+    await confirmAndWait(printPage);
+    await closeDialog(printPage);
 
     // Case D - range 3-5 + custom scaling 50%
-    await openDialog(win);
-    await win.click('[data-print-range-custom]');
-    await win.fill('[data-print-range-input]', '3-5');
-    await win.click('[data-print-scale-custom]');
-    await win.fill('[data-print-scale-percent]', '50');
-    await confirmAndWait(win);
-    await closeDialog(win);
+    printPage = await openDialog(app, win);
+    await printPage.click('[data-print-range-custom]');
+    await printPage.fill('[data-print-range-input]', '3-5');
+    await printPage.click('[data-print-scale-custom]');
+    await printPage.fill('[data-print-scale-percent]', '50');
+    await confirmAndWait(printPage);
+    await closeDialog(printPage);
 
     // Supplementary reverse proof. report.pdf pages 3 and 5 are byte-identical
     // (same content stream), so Case C's range 3-5 cannot show a reorder by
     // comparing first images. Range 2-4 has distinct endpoints (page 2 != 4),
     // so capture it both ways and prove the order actually reverses.
-    await openDialog(win);
-    await win.click('[data-print-range-custom]');
-    await win.fill('[data-print-range-input]', '2-4');
-    await confirmAndWait(win);
-    await closeDialog(win);
+    printPage = await openDialog(app, win);
+    await printPage.click('[data-print-range-custom]');
+    await printPage.fill('[data-print-range-input]', '2-4');
+    await confirmAndWait(printPage);
+    await closeDialog(printPage);
 
-    await openDialog(win);
-    await win.click('[data-print-range-custom]');
-    await win.fill('[data-print-range-input]', '2-4');
-    await win.click('[data-print-reverse]');
-    await confirmAndWait(win);
-    await closeDialog(win);
+    printPage = await openDialog(app, win);
+    await printPage.click('[data-print-range-custom]');
+    await printPage.fill('[data-print-range-input]', '2-4');
+    await printPage.click('[data-print-reverse]');
+    await confirmAndWait(printPage);
+    await closeDialog(printPage);
 
     const payloads = await getCaptured(app, win, mode);
     console.log(`[P30out] captured payloads=${payloads.length}`);

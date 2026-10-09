@@ -25,7 +25,9 @@ Evidence is in ../Evidence: turn-flat-sheet; spread-before-drag; edge-drag-selec
 
 Use one shared reading-state model and a renderer adapter. Preserve Jovrel's existing PDF engine and settled interaction layers. Animate only the turning leaf with a true subdivided 3D mesh; use a developable curl and a bounded damped spring for release. Maintain a small number of visible meshes and a byte-budgeted texture cache. DOM remains responsible for accessible controls and exact text/annotation interaction when pages are flat.
 
-My preference is a custom Three.js adapter if it can be kept small and validated, rather than embedding a separate reader whose navigation and PDF loader compete with the app. DearFlip is an alternative only after license, offline packaging, CSP and integration tests. Its current documentation does not by itself establish that those requirements are satisfied.
+Use a custom, locally bundled Three.js adapter integrated with the existing document renderer and navigation. Commercial flipbook dependencies are excluded because the user will not purchase a flipbook license.
+
+User amendment: Book View must be a continuous transformation of the existing document canvas, with the same workspace host and background. Prepare and align the WebGL page over the current rendered PDF page, then transform its geometry/framing into the book layout; reverse this on exit. No visibly separate reader canvas, duplicate page or blank-frame handoff. Single/double-page toggles also use a coordinated position/scale/framing and companion-page transition, preserving the focused PDF page and correct spread mapping. All these transitions become immediate when application animations are disabled or reduced motion is requested. See section 9 and the transition acceptance gates in the implementation prompt.
 
 ## Changes to the supplied proposal
 
