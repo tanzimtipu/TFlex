@@ -7,7 +7,7 @@
 
 ## DEF-664: The dock EDIT-mode red minus (remove) badge turns invisible under the pointer on hover
 
-- Status: OPEN
+- Status: CLOSED
 - Severity: MEDIUM - a remove control becomes invisible exactly when the user hovers it to click it, so removal is unreliable; no data loss, no crash.
 - Found by: operator (relayed by CEO as TFL-1404 "Customize dock remove icon bug")
 - Phase: 123 (fix tracked by TFL-1406)
@@ -31,8 +31,11 @@ Actual: on hover the canonical `.btn-ghost:hover` chrome (0,4,0) overrides the b
 
 Scope finding: ISOLATED, not systemic. The sibling Home remove badge `.home-tool-minus.btn:hover/active` (`src/renderer/styles.css:3969-3980`) already re-pins its attention fill, ink and `scale(1.12)`/`none` over the canonical family, so it does not reproduce. `.create-image-remove` (`styles.css:13194-13201`) is a plain canonical ghost icon with no bespoke fill, so the canonical hover film IS its intended state. No other dock-item control (pen, plus, arrows, More) carries `.action-dock-minus`. `ActionDock.tsx` is the only renderer file that emits the class.
 
+Evidence: `e2e/def664_dock_minus_hover.spec.cjs` (PASS), screenshot `screenshots/def664_dock_minus_hover.png`.
+
 History:
 - cto: filed 2026-10-09 from operator report TFL-1404. ESCAPE: no-probe - no existing test or probe asserted the EDIT-mode badge's hover visibility (the Phase 95 guard `test/unit/renderer/phase95_dockMinusContainment.test.ts` only pins geometry, not hover ink); qa adds the hover regression, adversary adds the class to its matrix.
+- qa: CLOSED 2026-10-09 (TFL-1406 chunk B / TFL-1466). Verified all three outcomes against the built app. (1) Static specs RUN: `npm.cmd run test:unit -- test/unit/renderer/def664_dockMinusHover.test.ts` -> 1 file, 4/4; `...phase95_dockMinusContainment.test.ts` -> 1 file, 5/5. (2) In EDIT mode, hovering a `[data-dock-minus]` badge: `getComputedStyle` at rest AND hovered = `rgb(190, 18, 60)` = attention fill (NOT the `rgba(15, 23, 42, 0.04)` `--bg-hover` film), ink `rgb(255, 255, 255)` = `--fg-on-accent`, `transform: matrix(1.12, 0, 0, 1.12, 0, 0)` = `scale(1.12)`, centre hit-testable (`elementFromPoint` -> badge descendant); screenshot shows the red minus still red while hovered. (3) Clicking the badge removed verb `rotate` (dock verb count 5 -> 4). Blast radius: the sibling verb button on the same dock/edit-mode path kept the canonical `--bg-hover` film (`rgba(15, 23, 42, 0.04)`, never the badge attention fill) and the badge paint was undisturbed by that neighbouring hover. Escape follow-up (qa side) confirmed: the hover regression `test/unit/renderer/def664_dockMinusHover.test.ts` exists (4 its), and the runtime oracle `e2e/def664_dock_minus_hover.spec.cjs` is added and green.
 
 ## DEF-637: A settings-write rollback drops a newer legitimate settings echo, diverging the UI from disk
 

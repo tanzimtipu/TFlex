@@ -4248,6 +4248,20 @@ body.tab-reordering .tab-list[data-reorder="true"] .tab {
   justify-content: center;
 }
 
+/* DEF-664 - restore the badge hover/active paint over the canonical .btn chrome */
+.action-dock-minus.btn:hover:not([disabled]):not([aria-disabled="true"]) {
+  background: var(--sem-attention, var(--accent));
+  border-color: transparent;
+  color: var(--fg-on-accent);
+  transform: scale(1.12);
+}
+
+.action-dock-minus.btn:active:not([disabled]):not([aria-disabled="true"]) {
+  background: var(--sem-attention, var(--accent));
+  color: var(--fg-on-accent);
+  transform: none;
+}
+
 .view-strip-layout .btn-segmented-item {
   padding: 0;
   justify-content: center;
