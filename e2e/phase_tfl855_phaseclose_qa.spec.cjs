@@ -4,7 +4,6 @@
 // migrated onto the shared primitives:
 //   * Welcome home-tools picker        -> CommandMenu  ([data-home-picker])
 //   * File menu                        -> CommandMenu  ([data-menu-popover])
-//   * Application menu                 -> CommandMenu  ([data-app-menu-popover])
 //   * Dock More overflow               -> CommandMenu  ([data-dock-overflow-menu])
 //   * Dock Add-a-tool picker           -> CommandMenu  ([data-dock-picker])
 //   * Split / Extract dialog           -> TaskDialog   (#split-dialog-title)
@@ -36,16 +35,15 @@ test.afterEach(async () => {
 });
 
 async function setTheme(theme) {
-  // The borderless theme picker is retired; the application menu (present on
-  // both the Welcome screen and the workspace) owns View > Toggle Theme, whose
-  // CommandMenu row exposes data-menu-action="toggleTheme" and cycles
-  // frosted -> dark -> light -> frosted.
+  // The File menu (present on both the Welcome screen and the workspace) owns
+  // View > Toggle Theme, whose CommandMenu row exposes
+  // data-menu-action="toggleTheme" and cycles frosted -> dark -> light -> frosted.
   for (let i = 0; i < 4; i += 1) {
     const current = await win.evaluate(() => document.documentElement.getAttribute('data-theme'));
     if (current === theme) break;
     await win.keyboard.press('Escape').catch(() => {});
     await win.waitForTimeout(150);
-    await win.click('[data-app-menu]');
+    await win.click('[data-menu-button]');
     await win.waitForSelector('[data-menu-action="toggleTheme"]', { state: 'visible', timeout: 8000 });
     await win.click('[data-menu-action="toggleTheme"]');
     await win.waitForTimeout(500);
@@ -94,12 +92,6 @@ for (const theme of ['light', 'dark']) {
     // File menu (CommandMenu).
     await win.click('[data-menu-button]');
     await capture('[data-menu-popover]', `tfl855-file-menu-${theme}.png`);
-    await win.keyboard.press('Escape');
-    await win.waitForTimeout(250);
-
-    // Application menu (CommandMenu).
-    await win.click('[data-app-menu]');
-    await capture('[data-app-menu-popover]', `tfl855-app-menu-${theme}.png`);
     await win.keyboard.press('Escape');
     await win.waitForTimeout(250);
 

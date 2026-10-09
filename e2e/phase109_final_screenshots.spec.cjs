@@ -59,9 +59,9 @@ async function currentTheme() { return win.evaluate(() => document.documentEleme
 async function setTheme(theme) {
   for (let i = 0; i < 4; i += 1) {
     if ((await currentTheme()) === theme) return;
-    await win.locator('[data-app-menu]').first().click();
-    await win.waitForSelector('[data-app-menu-popover]', { state: 'visible', timeout: 8000 });
-    await win.locator('[data-app-menu-popover] [data-menu-action="toggleTheme"]').first().click();
+    await win.locator('[data-menu-button]').first().click();
+    await win.waitForSelector('[data-menu-popover]', { state: 'visible', timeout: 8000 });
+    await win.locator('[data-menu-popover] [data-menu-action="toggleTheme"]').first().click();
     await win.waitForTimeout(900);
   }
   const now = await currentTheme();
@@ -69,9 +69,7 @@ async function setTheme(theme) {
 }
 
 async function toggleMultiMode() {
-  await win.locator('[data-app-menu]').first().click();
-  await win.waitForSelector('[data-app-menu-popover]', { state: 'visible', timeout: 8000 });
-  await win.locator('[data-app-menu-popover] [data-menu-action="multiMode"]').first().click();
+  await win.locator('[data-header-multi-mode]').first().click();
   await win.waitForTimeout(700);
 }
 

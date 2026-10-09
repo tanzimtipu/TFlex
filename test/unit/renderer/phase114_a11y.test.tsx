@@ -7,7 +7,7 @@
 // tablist/tab/tabpanel wiring, roving tabindex + Arrow/Home/End, row
 // label -> control association, the "Restore defaults" accessible name with its
 // exact scope promise, Escape closing the sheet and returning focus to
-// `[data-app-menu]` (DEF-611 preserved), and the static CSS guards for the
+// `[data-open-preferences]` (DEF-611 preserved), and the static CSS guards for
 // 720px stacked layout, the forced-colors remap and the absence of glass fill
 // inside the `.settings-*` block.
 
@@ -33,13 +33,13 @@ interface Mount {
   unmount: () => void;
 }
 
-/** Mount the real sheet with an app-menu trigger present so the DEF-611
+/** Mount the real sheet with the Preferences trigger present so the DEF-611
  *  return-focus target resolves, and expose an open toggle. */
 function mount(open = true): Mount {
-  const appMenu = document.createElement("button");
-  appMenu.type = "button";
-  appMenu.setAttribute("data-app-menu", "");
-  document.body.appendChild(appMenu);
+  const prefsTrigger = document.createElement("button");
+  prefsTrigger.type = "button";
+  prefsTrigger.setAttribute("data-open-preferences", "");
+  document.body.appendChild(prefsTrigger);
 
   const host = document.createElement("div");
   document.body.appendChild(host);
@@ -84,7 +84,7 @@ function mount(open = true): Mount {
         root.unmount();
       });
       host.remove();
-      appMenu.remove();
+      prefsTrigger.remove();
     },
   };
 }
@@ -229,17 +229,17 @@ describe("Preferences sheet — Escape and focus return (chunk F)", () => {
     document.body.innerHTML = "";
   });
 
-  it("Escape calls onClose, and closing returns focus to [data-app-menu] (DEF-611)", () => {
+  it("Escape calls onClose, and closing returns focus to [data-open-preferences] (DEF-611)", () => {
     const m = mount(true);
-    const appMenu = document.querySelector<HTMLButtonElement>("[data-app-menu]");
-    expect(appMenu).not.toBeNull();
+    const prefsTrigger = document.querySelector<HTMLButtonElement>("[data-open-preferences]");
+    expect(prefsTrigger).not.toBeNull();
 
     pressEscape();
     expect(m.onClose).toHaveBeenCalledTimes(1);
 
     // The host flips `open` false; the sheet's useLayoutEffect restores focus.
     m.setOpen(false);
-    expect(document.activeElement).toBe(appMenu);
+    expect(document.activeElement).toBe(prefsTrigger);
     m.unmount();
   });
 

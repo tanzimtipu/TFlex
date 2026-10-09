@@ -45,15 +45,15 @@ async function openDoc(filePath) {
   await win.waitForTimeout(900);
 }
 
-// Set the theme through the UI (application menu), the way a user would.
-// Phase 105 retired the title-bar `[data-theme-toggle]` picker; the live route
-// cycles the app menu's "Toggle Theme" row until the requested theme is live.
+// Set the theme through the UI (File menu), the way a user would. Phase 127
+// restored the title-bar chrome; the File menu's "Toggle Theme" row cycles
+// frosted -> dark -> light until the requested theme is live.
 async function setTheme(theme) {
   for (let i = 0; i < 4; i += 1) {
     if ((await win.evaluate(() => document.documentElement.getAttribute('data-theme'))) === theme) return;
-    await win.locator('[data-app-menu]').first().click();
-    await win.waitForSelector('[data-app-menu-popover]', { state: 'visible', timeout: 8000 });
-    await win.locator('[data-app-menu-popover] [data-menu-action="toggleTheme"]').first().click();
+    await win.locator('[data-menu-button]').first().click();
+    await win.waitForSelector('[data-menu-popover]', { state: 'visible', timeout: 8000 });
+    await win.locator('[data-menu-popover] [data-menu-action="toggleTheme"]').first().click();
     await win.waitForTimeout(900);
   }
   const now = await win.evaluate(() => document.documentElement.getAttribute('data-theme'));

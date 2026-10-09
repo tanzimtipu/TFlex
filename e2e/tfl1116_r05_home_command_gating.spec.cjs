@@ -56,10 +56,10 @@ test('R05 Case A - Home with zero documents hides document-only commands', async
   await win.keyboard.press('Escape');
   await win.waitForTimeout(250);
 
-  // 2. Application menu: Preferences / Toggle Theme / About / Check for Update
-  //    remain; Undo / Redo / Recognize Text gone.
-  await win.locator('[data-app-menu]').first().click();
-  await win.waitForSelector('[data-app-menu-popover]', { timeout: 8000 });
+  // 2. File menu: Preferences / Toggle Theme / About / Check for Update remain;
+  //    Undo / Redo / Recognize Text gone (document-only rows filtered on Home).
+  await win.locator('[data-menu-button]').first().click();
+  await win.waitForSelector('[data-menu-popover]', { timeout: 8000 });
   expect(await count('[data-menu-action="preferences"]')).toBeGreaterThan(0);
   expect(await count('[data-menu-action="toggleTheme"]')).toBeGreaterThan(0);
   expect(await count('[data-menu-action="about"]')).toBeGreaterThan(0);
@@ -94,9 +94,9 @@ test('R05 Case B - an active document restores document-only commands', async ()
   expect(await count('[data-print]')).toBe(1);
   await win.screenshot({ path: shot('tfl1116_r05_document_toolbar.png') });
 
-  // Application menu inverse.
-  await win.locator('[data-app-menu]').first().click();
-  await win.waitForSelector('[data-app-menu-popover]', { timeout: 8000 });
+  // File menu inverse.
+  await win.locator('[data-menu-button]').first().click();
+  await win.waitForSelector('[data-menu-popover]', { timeout: 8000 });
   expect(await count('[data-menu-action="undo"]')).toBeGreaterThan(0);
   expect(await count('[data-menu-action="recognizeText"]')).toBeGreaterThan(0);
   await win.screenshot({ path: shot('tfl1116_r05_document_menu.png') });

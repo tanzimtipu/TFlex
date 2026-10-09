@@ -13,11 +13,10 @@
 // Launches ONLY through the canonical launchApp helper. Output:
 // screenshots/phase107-canvas/.
 //
-// NOTE (shared-tree reality): the theme picker and the Multi Mode toggle are no
-// longer the retired `[data-theme-toggle]` / `[data-header-multi-mode]` controls;
-// Phase 105/109 moved them into the application menu (`[data-app-menu]` rows
-// `[data-menu-action="toggleTheme"]` / `[data-menu-action="multiMode"]`). This
-// spec drives the controls that actually exist in the tree under test.
+// NOTE (Phase 127 restored the v1.50.0 chrome): the theme route is the File
+// menu's `[data-menu-action="toggleTheme"]` row and Multi Mode is the restored
+// `[data-header-multi-mode]` header control. This spec drives the controls that
+// actually exist in the tree under test.
 const { test, expect } = require('@playwright/test');
 const path = require('node:path');
 const fs = require('node:fs');
@@ -47,14 +46,14 @@ async function currentTheme() {
   return win.evaluate(() => document.documentElement.getAttribute('data-theme'));
 }
 
-// The title-row theme picker is retired (Phase 105); cycle the app menu's
-// "Toggle Theme" row until the requested concrete theme is live.
+// Cycle the File menu's "Toggle Theme" row until the requested concrete theme
+// is live (frosted -> dark -> light -> frosted).
 async function setTheme(theme) {
   for (let i = 0; i < 4; i += 1) {
     if ((await currentTheme()) === theme) return;
-    await win.locator('[data-app-menu]').first().click();
-    await win.waitForSelector('[data-app-menu-popover]', { state: 'visible', timeout: 8000 });
-    await win.locator('[data-app-menu-popover] [data-menu-action="toggleTheme"]').first().click();
+    await win.locator('[data-menu-button]').first().click();
+    await win.waitForSelector('[data-menu-popover]', { state: 'visible', timeout: 8000 });
+    await win.locator('[data-menu-popover] [data-menu-action="toggleTheme"]').first().click();
     await win.waitForTimeout(800);
   }
   const now = await currentTheme();
@@ -255,9 +254,7 @@ async function focusPane(pane) {
 }
 
 async function enableMultiMode() {
-  await win.locator('[data-app-menu]').first().click();
-  await win.waitForSelector('[data-app-menu-popover]', { state: 'visible', timeout: 8000 });
-  await win.locator('[data-app-menu-popover] [data-menu-action="multiMode"]').first().click();
+  await win.locator('[data-header-multi-mode]').first().click();
   await win.waitForTimeout(1000);
 }
 

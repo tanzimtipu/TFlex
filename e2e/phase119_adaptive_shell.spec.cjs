@@ -237,10 +237,10 @@ test.describe.serial('Phase 119 Adaptive Shell', () => {
     const rowsBefore = await win.locator('[data-annotation-row]').count();
     expect(rowsBefore).toBeGreaterThan(0);
 
-    // Open the About sheet through the real application menu (Help > About).
-    await win.locator('[data-app-menu]').first().click();
-    await expect(win.locator('[data-app-menu-popover]')).toBeVisible({ timeout: 8000 });
-    await win.locator('[data-app-menu-popover] [data-menu-action="about"]').first().click();
+    // Open the About sheet through the real File menu (Help > About Jovrel).
+    await win.locator('[data-menu-button]').first().click();
+    await expect(win.locator('[data-menu-popover]')).toBeVisible({ timeout: 8000 });
+    await win.locator('[data-menu-popover] [data-menu-action="about"]').first().click();
     const dialog = win.locator('[data-about-dialog]');
     await expect(dialog).toBeVisible({ timeout: 8000 });
 
@@ -283,7 +283,7 @@ test.describe.serial('Phase 119 Adaptive Shell', () => {
     await shot(win, 'phase119_dialog_midtrap.png');
 
     // Escape closes the topmost surface and returns focus to a real opener
-    // (the About sheet's opener is the application-menu trigger).
+    // (the About sheet's opener is the File-menu trigger).
     await win.keyboard.press('Escape');
     // The dialog signalled close once the modal inert teardown runs.
     await expect
@@ -294,7 +294,7 @@ test.describe.serial('Phase 119 Adaptive Shell', () => {
       if (!el) return null;
       return {
         isBody: el === document.body,
-        inAppMenu: !!(el.closest && el.closest('[data-app-menu]')),
+        inFileMenu: !!(el.closest && el.closest('[data-menu-button]')),
       };
     });
     expect(focusAfter).not.toBeNull();
@@ -896,9 +896,9 @@ test.describe.serial('Phase 119 phase-close probes', () => {
   test('Dialog description: shipped adopters expose title, description capability', async () => {
     await resize(app, 1440, 900);
 
-    // About sheet (a DialogShell adopter).
-    await win.locator('[data-app-menu]').first().click();
-    await win.locator('[data-app-menu-popover] [data-menu-action="about"]').first().click();
+    // About sheet (a DialogShell adopter), opened from the File menu.
+    await win.locator('[data-menu-button]').first().click();
+    await win.locator('[data-menu-popover] [data-menu-action="about"]').first().click();
     await expect(win.locator('[data-about-dialog]')).toBeVisible({ timeout: 8000 });
     const about = await win.evaluate(() => {
       const d = document.querySelector('[data-about-dialog]');
@@ -920,8 +920,7 @@ test.describe.serial('Phase 119 phase-close probes', () => {
 
     // Preferences sheet (the one shipped adopter that passes a description-shaped
     // prop - verify whether it reaches DialogShell's `description`).
-    await win.locator('[data-app-menu]').first().click();
-    await win.locator('[data-app-menu-popover] [data-menu-action="preferences"]').first().click();
+    await win.locator('[data-open-preferences]').first().click();
     await expect(win.locator('[data-prefs-dialog]')).toBeVisible({ timeout: 8000 });
     const prefs = await win.evaluate(() => {
       const d = document.querySelector('[data-prefs-dialog]');

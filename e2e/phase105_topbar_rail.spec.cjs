@@ -209,8 +209,8 @@ async function hitTest(selector) {
 
 async function toggleThemeViaAppMenu() {
   const before = await win.evaluate(() => document.documentElement.getAttribute('data-theme'));
-  await win.locator('[data-app-menu]').click();
-  await win.waitForSelector('[data-app-menu-popover]', { state: 'visible', timeout: 8000 });
+  await win.locator('[data-menu-button]').click();
+  await win.waitForSelector('[data-menu-popover]', { state: 'visible', timeout: 8000 });
   await win.locator('[data-menu-action="toggleTheme"]').first().click();
   await win.waitForFunction(
     (prev) => document.documentElement.getAttribute('data-theme') !== prev,
@@ -221,7 +221,7 @@ async function toggleThemeViaAppMenu() {
   return win.evaluate(() => document.documentElement.getAttribute('data-theme'));
 }
 
-// Toggle the theme (via the app menu) until it reaches `target`; the cycle is
+// Toggle the theme (via the File menu) until it reaches `target`; the cycle is
 // frosted -> dark -> light, and the persisted default may be any of the three.
 async function ensureTheme(target) {
   for (let i = 0; i < 4; i += 1) {
@@ -264,11 +264,10 @@ async function rotateActiveViaDock() {
 }
 
 // ---------------------------------------------------------------------------
-// 1. Title row — every command present and clickable; File menu and the
-//    application menu open; Escape returns focus to the application menu
-//    trigger. Light + dark title-row screenshots.
+// 1. Title row — every command present and clickable; the File menu opens;
+//    Escape returns focus to its trigger. Light + dark title-row screenshots.
 // ---------------------------------------------------------------------------
-test('title row: every command present + clickable; menus open; Escape restores app-menu focus', async () => {
+test('title row: every command present + clickable; File menu opens; Escape restores File-menu focus', async () => {
   const [docPath] = await openCopies(1, 'title');
   await win.waitForSelector('.workspace', { timeout: 30000 });
 
@@ -277,7 +276,7 @@ test('title row: every command present + clickable; menus open; Escape restores 
     '[data-toolbar-save]',
     '[data-toolbar-save-as]',
     '[data-menu-button]',
-    '[data-app-menu]',
+    '[data-open-preferences]',
     '[data-header-tool-search]',
     '[data-print]',
     '[data-window-minimize]',
@@ -351,22 +350,16 @@ test('title row: every command present + clickable; menus open; Escape restores 
   await win.waitForTimeout(2500);
   expect(fs.existsSync(outPath), 'Save a copy writes the file (no no-op)').toBe(true);
 
-  // File menu opens and Escape closes it.
+  // File menu opens; Escape closes it AND returns focus to the trigger.
   await win.locator('[data-menu-button]').click();
   await win.waitForSelector('[data-menu-popover]', { state: 'visible', timeout: 8000 });
   await win.keyboard.press('Escape');
   await waitForPopoverClosed('[data-menu-popover]');
-
-  // Application menu opens; Escape closes it AND returns focus to the trigger.
-  await win.locator('[data-app-menu]').click();
-  await win.waitForSelector('[data-app-menu-popover]', { state: 'visible', timeout: 8000 });
-  await win.keyboard.press('Escape');
-  await waitForPopoverClosed('[data-app-menu-popover]');
   const focusOnTrigger = await win.evaluate(() => {
-    const el = document.querySelector('[data-app-menu]');
+    const el = document.querySelector('[data-menu-button]');
     return el !== null && document.activeElement === el;
   });
-  expect(focusOnTrigger, 'Escape returns focus to [data-app-menu]').toBe(true);
+  expect(focusOnTrigger, 'Escape returns focus to [data-menu-button]').toBe(true);
 
   // Search tools opens the Command Palette; Escape closes it.
   await win.locator('[data-header-tool-search]').click();
@@ -675,9 +668,7 @@ test('preserved behaviour: dirty-close Cancel keeps the tab; + creates an empty 
   expect(emptyActive, 'the + creates an empty session').toBe('Empty tab');
 
   // Multi Mode disables the "+" with the documented reason.
-  await win.locator('[data-app-menu]').click();
-  await win.waitForSelector('[data-app-menu-popover]', { state: 'visible', timeout: 8000 });
-  await win.locator('[data-menu-action="multiMode"]').first().click();
+  await win.locator('[data-header-multi-mode]').first().click();
   await win.waitForTimeout(700);
   const newTabState = await win.evaluate(() => {
     const b = document.querySelector('[data-new-tab]');
@@ -689,9 +680,7 @@ test('preserved behaviour: dirty-close Cancel keeps the tab; + creates an empty 
   expect(newTabState.title, 'the + carries the Multi Mode disabled reason').toBe(MULTI_MODE_REASON);
 
   // Leave Multi Mode.
-  await win.locator('[data-app-menu]').click();
-  await win.waitForSelector('[data-app-menu-popover]', { state: 'visible', timeout: 8000 });
-  await win.locator('[data-menu-action="multiMode"]').first().click();
+  await win.locator('[data-header-multi-mode]').first().click();
   await win.waitForTimeout(500);
 });
 
@@ -756,31 +745,36 @@ test('CONTROL-INDEX: File and application menus carry every inventoried command;
     expect(fileActions, `File menu carries ${a}`).toContain(a);
   }
 
-  await win.locator('[data-app-menu]').click();
-  await win.waitForSelector('[data-app-menu-popover]', { state: 'visible', timeout: 8000 });
+  // The retired application menu's rows now live in the File menu; Multi Mode
+  // and Find are the restored header controls.
+  await win.locator('[data-menu-button]').click();
+  await win.waitForSelector('[data-menu-popover]', { state: 'visible', timeout: 8000 });
   const appActions = await win.evaluate(() =>
-    Array.from(document.querySelectorAll('[data-app-menu-popover] [data-menu-action]')).map((e) =>
+    Array.from(document.querySelectorAll('[data-menu-popover] [data-menu-action]')).map((e) =>
       e.getAttribute('data-menu-action'),
     ),
   );
   await win.keyboard.press('Escape');
-  console.log(`[P105 CI] App menu actions=${JSON.stringify(appActions)}`);
+  console.log(`[P105 CI] File menu actions=${JSON.stringify(appActions)}`);
   for (const a of [
     'undo', 'redo', 'preferences', 'toggleTheme', 'showToolsPalette',
-    'recognizeText', 'checkForUpdate', 'about', 'multiMode', 'find',
+    'recognizeText', 'checkForUpdate', 'about',
   ]) {
-    expect(appActions, `application menu carries ${a}`).toContain(a);
+    expect(appActions, `File menu carries ${a}`).toContain(a);
   }
+  expect(await win.locator('[data-header-multi-mode]').count(), 'Multi Mode header control present').toBeGreaterThan(0);
+  expect(await win.locator('[data-header-find]').count(), 'Find header control present').toBeGreaterThan(0);
 });
 
 // ---------------------------------------------------------------------------
-// ADV-225 (DEF-* HIGH) rendered regression guard: above 900px the
-// application-menu popover must stay an anchored, opaque, width-bounded
-// dropdown. Pre-fix the `.app-menu*` rules were nested in the 900px responsive
+// ADV-225 (DEF-* HIGH) rendered regression guard: above 900px the File-menu
+// popover must stay an anchored, opaque, width-bounded dropdown. Pre-fix the
+// retired app-menu's `.app-menu*` rules were nested in the 900px responsive
 // band, so at 1440/1280 the popover computed `position: static` and rendered as
 // a ~925px in-flow block that overlapped the title row and the document rail.
+// The restored Phase 127 File menu inherits the same containment contract.
 // ---------------------------------------------------------------------------
-test('ADV-225 regression: app-menu popover is anchored + bounded above 900px (no in-flow rail overlap)', async () => {
+test('ADV-225 regression: File-menu popover is anchored + bounded above 900px (no in-flow rail overlap)', async () => {
   await openCopies(1, 'adv225');
   await win.waitForSelector('.workspace', { timeout: 30000 });
 
@@ -788,13 +782,13 @@ test('ADV-225 regression: app-menu popover is anchored + bounded above 900px (no
     await setWindowSize(w, h);
     await win.waitForFunction((vw) => window.innerWidth <= vw + 1, w, { timeout: 8000 });
 
-    await win.locator('[data-app-menu]').click();
-    await win.waitForSelector('[data-app-menu-popover]', { state: 'visible', timeout: 8000 });
+    await win.locator('[data-menu-button]').click();
+    await win.waitForSelector('[data-menu-popover]', { state: 'visible', timeout: 8000 });
     await win.waitForTimeout(200);
 
     const geo = await win.evaluate(() => {
-      const pop = document.querySelector('[data-app-menu-popover]');
-      const trig = document.querySelector('[data-app-menu]');
+      const pop = document.querySelector('[data-menu-popover]');
+      const trig = document.querySelector('[data-menu-button]');
       if (pop === null || trig === null) return null;
       const pr = pop.getBoundingClientRect();
       const tr = trig.getBoundingClientRect();
@@ -825,7 +819,7 @@ test('ADV-225 regression: app-menu popover is anchored + bounded above 900px (no
       };
     });
     console.log(`[P105 ADV-225 ${w}x${h}] ${JSON.stringify(geo)}`);
-    expect(geo, `${w}: app-menu popover + trigger present`).not.toBeNull();
+    expect(geo, `${w}: File-menu popover + trigger present`).not.toBeNull();
 
     expect(geo.viewportW, `${w}: viewport is in the >900px band (defect trigger)`).toBeGreaterThan(900);
     expect(['absolute', 'fixed'], `${w}: popover is out of flow (position ${geo.position})`).toContain(geo.position);
@@ -842,11 +836,11 @@ test('ADV-225 regression: app-menu popover is anchored + bounded above 900px (no
     }
 
     if (w === 1440) {
-      await win.screenshot({ path: path.join(SHOTS, 'phase105-adv225-appmenu-1440x900.png') });
+      await win.screenshot({ path: path.join(SHOTS, 'phase105-adv225-filemenu-1440x900.png') });
     }
 
     await win.keyboard.press('Escape');
-    await waitForPopoverClosed('[data-app-menu-popover]');
+    await waitForPopoverClosed('[data-menu-popover]');
   }
 });
 // ADV-225-END

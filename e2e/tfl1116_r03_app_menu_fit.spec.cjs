@@ -1,8 +1,9 @@
-// TFL-1122 (TFL-1116 C3 / R03) focused QA verification: the application menu
-// (R03 is a VISUAL-CONTAINMENT defect) stays fully inside the viewport with no
-// horizontal menu scroll at 960x640, 1024x768, 1280x800 and maximized, on Home
-// (the surface R03 was reported against). Launches ONLY through the canonical
-// launchApp helper; qa-owned; read-only product checks.
+// TFL-1122 (TFL-1116 C3 / R03) focused QA verification: the File menu (the
+// restored Phase 127 CommandMenu surface; R03 is a VISUAL-CONTAINMENT defect)
+// stays fully inside the viewport with no horizontal menu scroll at 960x640,
+// 1024x768, 1280x800 and maximized, on Home (the surface R03 was reported
+// against). Launches ONLY through the canonical launchApp helper; qa-owned;
+// read-only product checks.
 const { test, expect } = require('@playwright/test');
 const path = require('node:path');
 const fs = require('node:fs');
@@ -19,7 +20,7 @@ let win = null;
 test.beforeAll(async () => {
   app = await launchApp();
   win = await app.firstWindow();
-  await win.waitForSelector('[data-app-menu]', { timeout: 30000 });
+  await win.waitForSelector('[data-menu-button]', { timeout: 30000 });
 });
 
 test.afterAll(async () => {
@@ -72,24 +73,24 @@ const maximize = async () => {
 };
 
 const openMenu = async () => {
-  await win.click('[data-app-menu]');
-  await win.waitForSelector('[data-app-menu-popover]', { state: 'visible', timeout: 8000 });
+  await win.click('[data-menu-button]');
+  await win.waitForSelector('[data-menu-popover]', { state: 'visible', timeout: 8000 });
   await win.waitForTimeout(300);
 };
 
 const closeMenu = async () => {
   await win.keyboard.press('Escape');
   await win
-    .waitForSelector('[data-app-menu-popover]', { state: 'detached', timeout: 8000 })
+    .waitForSelector('[data-menu-popover]', { state: 'detached', timeout: 8000 })
     .catch(() => {});
   await win.waitForTimeout(200);
 };
 
 const menuMetrics = () =>
   win.evaluate(() => {
-    const pop = document.querySelector('[data-app-menu-popover]');
+    const pop = document.querySelector('[data-menu-popover]');
     const list = pop ? pop.querySelector('.command-menu-list') : null;
-    const trigger = document.querySelector('[data-app-menu]');
+    const trigger = document.querySelector('[data-menu-button]');
     const tb = trigger ? trigger.getBoundingClientRect() : null;
     const r = pop.getBoundingClientRect();
     const cs = getComputedStyle(pop);
@@ -112,7 +113,7 @@ const menuMetrics = () =>
       overflowX: cs.overflowX,
       triggerLeft: tb ? tb.left : null,
       triggerRight: tb ? tb.right : null,
-      submenuCount: document.querySelectorAll('[data-app-menu-popover] [data-menu-submenu]').length,
+      submenuCount: document.querySelectorAll('[data-menu-popover] [data-menu-submenu]').length,
     };
   });
 
@@ -122,7 +123,7 @@ const SIZES = [
   { name: '1280', w: 1280, h: 800 },
 ];
 
-test('TFL-1122 R03: application menu stays inside the viewport at every size', async () => {
+test('TFL-1122 R03: File menu stays inside the viewport at every size', async () => {
   const cases = [...SIZES, { name: 'max' }];
   for (const c of cases) {
     if (c.name === 'max') await maximize();
@@ -149,12 +150,15 @@ test('TFL-1122 R03: application menu stays inside the viewport at every size', a
     // Vertical scrolling only: no horizontal overflow on the surface or list.
     expect(m.popScrollW, `${c.name}: popover has no horizontal scroll`).toBeLessThanOrEqual(m.popClientW + tol);
     expect(m.listScrollW, `${c.name}: .command-menu-list has no horizontal scroll`).toBeLessThanOrEqual(m.listClientW + tol);
-    // The collision-aware path: fixed placement, overflow-x hidden.
-    expect(m.position, `${c.name}: collision-aware fixed placement`).toBe('fixed');
+    // The File menu anchors under its trigger (absolute) or via the
+    // collision-aware fixed path; either way it must stay out of flow. (The
+    // retired app-menu used fixed placement; the restored Phase 127 File menu
+    // anchors absolutely, so accept both.)
+    expect(['absolute', 'fixed'], `${c.name}: popover is out of flow (position ${m.position})`).toContain(m.position);
     expect(m.overflowX, `${c.name}: overflow-x is hidden`).toBe('hidden');
-    // The app menu is built from flat MenuEntry groups (no submenu field), so
+    // The File menu is built from flat MenuEntry groups (no submenu field), so
     // it exposes no nested submenu; assert the root only.
-    expect(m.submenuCount, `${c.name}: app menu has no submenu rows`).toBe(0);
+    expect(m.submenuCount, `${c.name}: File menu has no submenu rows`).toBe(0);
 
     await closeMenu();
   }

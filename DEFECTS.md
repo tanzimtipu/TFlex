@@ -5,6 +5,37 @@
 > inspect the current `OPEN`, `FIX-READY`, and `DISPUTED` entries first; closed records are
 > historical evidence and must not be loaded wholesale.
 
+## DEF-669: Phase 127's trigger retirement left direct test-side references to the retired `[data-app-menu]`
+
+- Status: CLOSED
+- Severity: MEDIUM - the retired trigger's product surface is gone, but ~20 active (non-installed / non-archived) e2e spec files still select/click `[data-app-menu]` / `[data-app-menu-popover]`, so those specs time out; one unit spec also fabricates a `[data-app-menu]` button. The shared helpers (`e2e/lib/helpers.cjs`) were migrated under DEF-667, but specs that drive the trigger directly were not. Breaks the harness for any run of those specs; no product impact.
+- Found by: qa (TFL-1501 focused re-verify of the DEF-667 fix; surfaced by the CTO's "no `data-app-menu` over `e2e/`" gate)
+- Phase: 127
+
+Files (direct drivers, highest count first):
+- `e2e/phase105_topbar_rail.spec.cjs` (20 refs) - clicks `[data-app-menu]` at :212, :361, :678, :692, :759, :791.
+- `e2e/phase119_adaptive_shell.spec.cjs` (8) - :241, :900, :923.
+- `e2e/phase107_canvas_stage.spec.cjs` (7) - :55, :258; `e2e/phase109_viewstrip.spec.cjs` (7) - :69, :81; `e2e/tfl1116_r03_app_menu_fit.spec.cjs` (7).
+- `e2e/phase109_final_screenshots.spec.cjs` (6), `e2e/phase94_iconEvidence.spec.cjs` (6).
+- `e2e/def610_611_reentry_focus.spec.cjs` (4), `e2e/phase114_settings_studio.spec.cjs` (4), `e2e/phase125_screenshots.spec.cjs` (4), `e2e/phase_tfl855_phaseclose_qa.spec.cjs` (4), `e2e/tfl1116_r05_home_command_gating.spec.cjs` (4), `e2e/tfl1196_er_uncovered_audit.spec.cjs` (5).
+- `e2e/phase109_def587_def588_retest.spec.cjs` (3), `e2e/phase16_control_index.spec.cjs` (3), `e2e/phase40_design.spec.cjs` (3), `e2e/phase106_orbit_motion.spec.cjs` (2).
+- Benign comment-only: `e2e/phase104_criterion8_validation.spec.cjs`, `e2e/prefs_theme_immediate.spec.cjs`.
+- Benign negative assertions (expected): `e2e/tfl1430_topbar_restore.spec.cjs:32-34` asserts count 0.
+- Unit fixture to repoint: `test/unit/renderer/phase114_a11y.test.tsx:39-42,234-242` fabricates `[data-app-menu]` as the DEF-611 return-focus target (should be `[data-open-preferences]`).
+
+Steps to reproduce:
+1. Scan `e2e/**` (excluding `installed/` and `archived/`) for `data-app-menu` -> 20 active files.
+2. `npm.cmd run test:e2e -- e2e/phase105_topbar_rail.spec.cjs` -> locator `[data-app-menu]` timeout (the trigger no longer renders; the real-app spec `e2e/tfl1430_topbar_restore.spec.cjs` asserts its count is 0).
+
+Expected: no test drives or asserts the retired trigger except as a negative assertion.
+Actual: ~20 active specs still drive it directly.
+
+Evidence: residue scan over `e2e/**` (20 active files, 1 installed) and `test/**` (1 file); `src/renderer` has 0 `appMenu`/`headerTheme` hits. Owner role: qa (e2e/test maintenance). Distinct from DEF-666 (product dead code) and DEF-667 (shared helpers).
+
+History:
+- qa: filed 2026-10-09 (TFL-1501 focused re-verify of the DEF-667 fix). Owner role: qa.
+- qa: CLOSED 2026-10-09 (TFL-1509, focused re-verify + phase-close). `rg -n data-app-menu e2e` (excl. installed/archived) -> only the negative assertion in `e2e/tfl1430_topbar_restore.spec.cjs` (0 live drivers); `rg -n data-app-menu test` -> no fabricated trigger, only negative assertions plus the generic `popoverDataAttrs` probe (`commandMenu.test.tsx`) and doc comments; `src/renderer` has 0 live hits. `npm.cmd run verify` -> conventions clean (410 files) + typecheck clean. `npm.cmd run test:unit -- test/unit/renderer/phase114_a11y.test.tsx test/unit/renderer/phase127TopBarRestore.test.tsx` -> 19/19 passed. Build exit 0; migrated-spec run (`phase105_topbar_rail`, `phase119_adaptive_shell`, `tfl1116_r03_app_menu_fit`, `phase94_iconEvidence`, `phase16_control_index`) -> 13 passed / 18 failed, but every failure repros the `openSample` / local-open-helper timeouts of DEF-670/DEF-671 and none touches the retired selector. The retired trigger is no longer driven or asserted except as a negative assertion, so this defect is resolved; the non-green run is owned by the still-open DEF-670/DEF-671.
+
 ## DEF-667: Retiring the Phase-105 app-menu left the shared e2e helpers pointing at `[data-app-menu]`
 
 - Status: CLOSED

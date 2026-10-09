@@ -2,9 +2,8 @@
 // and the applied theme is still in effect after the dialog closes.
 //
 // Selector notes (app markup, verified in source):
-//   - Preferences opens from the application menu (TFL-1116 retired the old
-//     [data-open-preferences] gear); the route is [data-app-menu] ->
-//     [data-app-menu-popover] [data-menu-action="preferences"].
+//   - Preferences opens from the restored title-bar gear [data-open-preferences]
+//     (Phase 127 v1.50.0 chrome); the dialog is [data-prefs-dialog].
 //   - the prefs select is [data-prefs-theme-default] (PreferencesDialog.tsx),
 //     not [data-prefs-theme-select];
 //   - the close button is the sheet's .sheet-close (aria-label

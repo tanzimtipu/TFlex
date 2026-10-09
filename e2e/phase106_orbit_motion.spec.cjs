@@ -414,10 +414,8 @@ test('chunk B - pausing Home leaves app motion intact; the Preferences switch st
   );
   expect(await win.evaluate(() => document.documentElement.getAttribute('data-animations'))).toBe('on');
 
-  // Preferences opens from the application menu in the current top bar.
-  await win.locator('[data-app-menu]').click();
-  await win.waitForSelector('[data-app-menu-popover]', { state: 'visible', timeout: 8000 });
-  await win.locator('[data-menu-action="preferences"]').first().click();
+  // Preferences opens from the restored title-bar gear in the current top bar.
+  await win.locator('[data-open-preferences]').click();
   await win.waitForSelector('[data-prefs-dialog]', { timeout: 8000 });
   await win.click('[data-prefs-category="general"]');
 

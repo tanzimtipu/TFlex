@@ -67,7 +67,7 @@ function activeFlags() {
     return {
       tag: el.tagName,
       search: el.hasAttribute("data-header-tool-search"),
-      appMenu: el.hasAttribute("data-app-menu"),
+      prefsGear: el.hasAttribute("data-open-preferences"),
     };
   });
 }
@@ -139,13 +139,8 @@ test("DEF-610/611 — same-tick re-entry guards + focus return on close", async 
   expect(paletteFocus?.search).toBe(true);
   expect(paletteFocus?.tag).not.toBe("BODY");
 
-  // ---- B2: Preferences — Escape returns focus to the app-menu trigger ----
-  await win.click("[data-app-menu]");
-  await win.waitForSelector("[data-app-menu-popover]", { state: "visible", timeout: 8000 });
-  await win.waitForTimeout(250);
-  const prefsRow = win.locator('[data-app-menu-popover] [data-menu-action="preferences"]');
-  expect(await prefsRow.count()).toBeGreaterThan(0);
-  await prefsRow.first().click();
+  // ---- B2: Preferences — Escape returns focus to the title-bar gear ----
+  await win.click("[data-open-preferences]");
   await win.waitForSelector("[data-prefs-dialog]", { state: "visible", timeout: 8000 });
   await win.waitForTimeout(400);
   await win.keyboard.press("Escape");
@@ -154,7 +149,7 @@ test("DEF-610/611 — same-tick re-entry guards + focus return on close", async 
     .catch(() => {});
   await win.waitForTimeout(300);
   const prefsFocus = await activeFlags();
-  expect(prefsFocus?.appMenu).toBe(true);
+  expect(prefsFocus?.prefsGear).toBe(true);
   expect(prefsFocus?.tag).not.toBe("BODY");
 });
 

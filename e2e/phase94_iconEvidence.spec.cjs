@@ -20,27 +20,24 @@ const OUT = process.env.PHASE94_SHOTS
 fs.mkdirSync(OUT, { recursive: true });
 test.setTimeout(240000);
 
-// Phase 105 retired the title-bar `[data-theme-toggle]` picker; the live route
-// cycles the application menu's "Toggle Theme" row until the requested theme is
-// live.
+// Phase 127 restored the v1.50.0 chrome; the File menu's "Toggle Theme" row
+// cycles frosted -> dark -> light until the requested theme is live.
 async function setTheme(win, theme) {
   for (let i = 0; i < 4; i += 1) {
     if ((await win.evaluate(() => document.documentElement.getAttribute('data-theme'))) === theme) return;
-    await win.locator('[data-app-menu]').first().click();
-    await win.waitForSelector('[data-app-menu-popover]', { state: 'visible', timeout: 8000 });
-    await win.locator('[data-app-menu-popover] [data-menu-action="toggleTheme"]').first().click();
+    await win.locator('[data-menu-button]').first().click();
+    await win.waitForSelector('[data-menu-popover]', { state: 'visible', timeout: 8000 });
+    await win.locator('[data-menu-popover] [data-menu-action="toggleTheme"]').first().click();
     await win.waitForTimeout(700);
   }
   const now = await win.evaluate(() => document.documentElement.getAttribute('data-theme'));
   if (now !== theme) throw new Error(`setTheme: could not reach '${theme}' (stuck at '${now}')`);
 }
 
-// Phase 105 retired `[data-open-preferences]`; the live route is the
-// application menu's "Preferences" row.
+// Phase 127 restored the title-bar gear `[data-open-preferences]`; it opens the
+// Preferences sheet `[data-prefs-dialog]`.
 async function openPreferences(win) {
-  await win.locator('[data-app-menu]').first().click();
-  await win.waitForSelector('[data-app-menu-popover]', { state: 'visible', timeout: 8000 });
-  await win.locator('[data-app-menu-popover] [data-menu-action="preferences"]').first().click();
+  await win.locator('[data-open-preferences]').first().click();
   await win.waitForSelector('[data-prefs-dialog]', { timeout: 8000 });
 }
 

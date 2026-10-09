@@ -79,10 +79,8 @@ async function openViaCtrlComma() {
   await win.waitForSelector('[data-prefs-dialog]', { timeout: 10000 });
   await win.waitForTimeout(300);
 }
-async function openViaMenu() {
-  await win.click('[data-app-menu]');
-  await win.waitForSelector('[data-app-menu-popover]', { state: 'visible', timeout: 8000 });
-  await win.click('[data-menu-action="preferences"]');
+async function openViaGear() {
+  await win.click('[data-open-preferences]');
   await win.waitForSelector('[data-prefs-dialog]', { timeout: 10000 });
   await win.waitForTimeout(300);
 }
@@ -313,15 +311,15 @@ test('E4 Restore defaults: confirm dialog carries the exact scope text; confirm 
   await win.screenshot({ path: shot('studio-restore-defaults-after.png') });
 });
 
-test('E5 Escape closes the sheet and focus returns to the application-menu trigger', async () => {
-  await openViaMenu();
+test('E5 Escape closes the sheet and focus returns to the title-bar gear', async () => {
+  await openViaGear();
   await win.keyboard.press('Escape');
   await win.waitForSelector('[data-prefs-dialog]', { state: 'hidden', timeout: 8000 });
   const focused = await win.evaluate(() => {
     const el = document.activeElement;
-    return { hasAppMenu: el ? el.hasAttribute('data-app-menu') : false };
+    return { hasGear: el ? el.hasAttribute('data-open-preferences') : false };
   });
-  expect(focused.hasAppMenu, 'focus returns to [data-app-menu] after Escape').toBe(true);
+  expect(focused.hasGear, 'focus returns to [data-open-preferences] after Escape').toBe(true);
 });
 
 test('E6 constrained width: native floor is 960 DIP (520 unreachable by resize); at 200% scaling the selector stacks above the body with no horizontal overflow', async () => {

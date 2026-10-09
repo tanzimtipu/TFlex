@@ -43,17 +43,16 @@ const { launchDev, openSample, diag, shot, hardClose, gotoStage } = require('./l
 // window is observable. Drop it before any launch.
 delete process.env.ELECTRON_RUN_AS_NODE;
 
-// Set the theme through the UI (application menu), the way a user would, and
-// wait for data-theme + the 400ms crossfade to settle. Phase 105 retired the
-// title-bar `[data-theme-toggle]` picker; the live route cycles the app menu's
-// "Toggle Theme" row until the requested concrete theme is live.
+// Set the theme through the UI (File menu), the way a user would, and wait for
+// data-theme + the 400ms crossfade to settle. Phase 127 restored the title-bar
+// chrome; the File menu's "Toggle Theme" row cycles frosted -> dark -> light.
 async function setTheme(window, want) {
   for (let i = 0; i < 4; i += 1) {
     const now = await window.evaluate(() => document.documentElement.getAttribute('data-theme'));
     if (now === want) return;
-    await window.locator('[data-app-menu]').first().click();
-    await window.waitForSelector('[data-app-menu-popover]', { state: 'visible', timeout: 8000 });
-    await window.locator('[data-app-menu-popover] [data-menu-action="toggleTheme"]').first().click();
+    await window.locator('[data-menu-button]').first().click();
+    await window.waitForSelector('[data-menu-popover]', { state: 'visible', timeout: 8000 });
+    await window.locator('[data-menu-popover] [data-menu-action="toggleTheme"]').first().click();
     await window.waitForTimeout(900); // 400ms crossfade token + settle
   }
   const now = await window.evaluate(() => document.documentElement.getAttribute('data-theme'));

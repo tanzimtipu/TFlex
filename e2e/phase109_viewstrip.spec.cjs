@@ -7,12 +7,10 @@
 // Launches only through the canonical e2e/lib/launch.cjs launchApp helper.
 // Captures screenshots into screenshots/ named phase109-*.
 //
-// SHARED-TREE REALITY: the retired `[data-theme-toggle]` and
-// `[data-header-multi-mode]` controls no longer exist - Phase 105 relocated the
-// theme toggle and the Multi Mode toggle into the application menu
-// (`[data-app-menu]` rows `[data-menu-action="toggleTheme"]` /
-// `[data-menu-action="multiMode"]`). This spec drives the controls that
-// actually exist in the tree under test.
+// PHASE 127 (v1.50.0) restored the title-bar chrome: the theme route is the
+// File menu's `[data-menu-action="toggleTheme"]` row and Multi Mode is the
+// restored `[data-header-multi-mode]` header control. This spec drives the
+// controls that actually exist in the tree under test.
 const { test, expect } = require('@playwright/test');
 const path = require('node:path');
 const fs = require('node:fs');
@@ -61,26 +59,23 @@ async function currentTheme() {
   return win.evaluate(() => document.documentElement.getAttribute('data-theme'));
 }
 
-// Phase 105 retired the title-row theme picker; cycle the app menu's
-// "Toggle Theme" row until the requested concrete theme is live.
+// Cycle the File menu's "Toggle Theme" row until the requested concrete theme
+// is live (frosted -> dark -> light -> frosted).
 async function setTheme(theme) {
   for (let i = 0; i < 4; i += 1) {
     if ((await currentTheme()) === theme) return;
-    await win.locator('[data-app-menu]').first().click();
-    await win.waitForSelector('[data-app-menu-popover]', { state: 'visible', timeout: 8000 });
-    await win.locator('[data-app-menu-popover] [data-menu-action="toggleTheme"]').first().click();
+    await win.locator('[data-menu-button]').first().click();
+    await win.waitForSelector('[data-menu-popover]', { state: 'visible', timeout: 8000 });
+    await win.locator('[data-menu-popover] [data-menu-action="toggleTheme"]').first().click();
     await win.waitForTimeout(800);
   }
   const now = await currentTheme();
   if (now !== theme) throw new Error(`setTheme: could not reach '${theme}' (stuck at '${now}')`);
 }
 
-// Phase 105 relocated the Multi Mode toggle into the application menu; the
-// retired `[data-header-multi-mode]` control no longer exists.
+// Phase 127 restored the Multi Mode header control `[data-header-multi-mode]`.
 async function toggleMultiMode() {
-  await win.locator('[data-app-menu]').first().click();
-  await win.waitForSelector('[data-app-menu-popover]', { state: 'visible', timeout: 8000 });
-  await win.locator('[data-app-menu-popover] [data-menu-action="multiMode"]').first().click();
+  await win.locator('[data-header-multi-mode]').first().click();
   await win.waitForTimeout(700);
 }
 

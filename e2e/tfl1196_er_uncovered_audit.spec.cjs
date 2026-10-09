@@ -127,15 +127,15 @@ test('A: Home + image dialog + compact app menu (ER04/ER16/ER18, scenario 2)', a
   }));
   console.log(`[tfl1196-ER16-home] ${JSON.stringify(readingStrings)}`);
 
-  // Required scenario 2 — compact Home application menu at the right edge:
+  // Required scenario 2 — compact Home File menu at the right edge:
   // no horizontal scrollbar; Escape closes and returns focus to the trigger.
   await setSize(985, 645);
   console.log(`[tfl1196-compact] ${JSON.stringify(await dims())}`);
-  await win.click('[data-app-menu]');
-  await win.waitForSelector('[data-app-menu-popover]', { state: 'visible', timeout: 8000 });
+  await win.click('[data-menu-button]');
+  await win.waitForSelector('[data-menu-popover]', { state: 'visible', timeout: 8000 });
   await win.waitForTimeout(300);
   const menu = await win.evaluate(() => {
-    const pop = document.querySelector('[data-app-menu-popover]');
+    const pop = document.querySelector('[data-menu-popover]');
     const list = pop ? pop.querySelector('.command-menu-list') : null;
     const r = pop.getBoundingClientRect();
     const cs = getComputedStyle(pop);
@@ -153,9 +153,9 @@ test('A: Home + image dialog + compact app menu (ER04/ER16/ER18, scenario 2)', a
   expect(menu.popScrollW, 'compact menu no horizontal scroll').toBeLessThanOrEqual(menu.popClientW + 1);
   expect(menu.listScrollW || 0, 'compact menu list no horizontal scroll').toBeLessThanOrEqual((menu.listClientW || 0) + 1);
   await win.keyboard.press('Escape');
-  await win.waitForSelector('[data-app-menu-popover]', { state: 'detached', timeout: 8000 }).catch(() => {});
+  await win.waitForSelector('[data-menu-popover]', { state: 'detached', timeout: 8000 }).catch(() => {});
   await win.waitForTimeout(200);
-  const focusBack = await win.evaluate(() => !!document.activeElement && document.activeElement.hasAttribute('data-app-menu'));
+  const focusBack = await win.evaluate(() => !!document.activeElement && document.activeElement.hasAttribute('data-menu-button'));
   console.log(`[tfl1196-scenario2-focus] escapeReturnedFocus=${focusBack}`);
 });
 
